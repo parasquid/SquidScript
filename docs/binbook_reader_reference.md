@@ -56,7 +56,7 @@ state {
   tocTop: 0,
   jumpPage: 1,
   browserIndex: 0,
-  view: "browser"
+  uiState: "browser"
 }
 ```
 
@@ -72,7 +72,7 @@ and restored by:
 state.load()
 ```
 
-The firmware owns the storage location and atomic write behavior. The app persists only small serializable values: file path, page index, cached title/counts, UI selection, and current view.
+The firmware owns the storage location and atomic write behavior. The app persists only small serializable values: file path, page index, cached title/counts, UI selection, and current UI state.
 
 ---
 
@@ -128,20 +128,24 @@ This keeps resume behavior inside the BinBook reader's own app state.
 
 ## Navigation Model
 
-`view` is a persisted string used by key handlers to route input. This avoids needing a `screen.current()` built-in.
+`uiState` is a persisted string used by `stateMachine.*` to route input. The state machine is backed by that normal app state variable, so direct assignments to `uiState` and calls to `stateMachine.enter("uiState", "...")` affect the same source of truth.
 
 ```squid
 onKey("SELECT") {
-  if (view == "reader") {
+  handleSelect()
+}
+
+function handleSelect() {
+  if (stateMachine.is("uiState", "reader")) {
     openJump()
   } else {
-    if (view == "toc") {
+    if (stateMachine.is("uiState", "toc")) {
       openSelectedTocEntry()
     } else {
-      if (view == "jump") {
+      if (stateMachine.is("uiState", "jump")) {
         commitJump()
       } else {
-        if (view == "browser") {
+        if (stateMachine.is("uiState", "browser")) {
           openSelectedBrowserItem()
         }
       }
@@ -234,7 +238,7 @@ This example intentionally pressures a few v0.2 design choices:
 
 - It uses app-owned persistent state for resume instead of a separate library/recent-books capability.
 - It uses `content.pickFile(".binbook")` as the browse action because v0.2 does not expose direct directory enumeration.
-- It uses a `view` state string to route key handlers without requiring a `screen.current()` built-in.
+- It uses `stateMachine.*` backed by a `uiState` string to route key handlers without requiring a `screen.current()` built-in or hidden state-machine storage.
 - It uses `binbook.navCount(book)` and `binbook.navEntry(book, index)` from the draft capability contract.
 - It treats read-only BinBook operations as render-safe so screens can open, resolve, and draw a page without storing handles in persistent state.
 - It uses bounded chapter scans instead of unbounded search.

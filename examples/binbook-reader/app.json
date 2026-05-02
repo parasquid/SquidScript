@@ -40,6 +40,7 @@
       "display.draw",
       "state.read",
       "state.write",
+      "stateMachine",
       "content.pick",
       "content.read",
       "binbook.read"

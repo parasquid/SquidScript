@@ -14,7 +14,7 @@ state {
   tocTop: 0,
   jumpPage: 1,
   browserIndex: 0,
-  view: "browser"
+  uiState: "browser"
 }
 
 onStart() {
@@ -31,81 +31,39 @@ onSuspend() {
 }
 
 onKey("RIGHT") {
-  if (view == "reader") {
+  if (stateMachine.is("uiState", "reader")) {
     nextPage()
   } else {
-    if (view == "jump") {
+    if (stateMachine.is("uiState", "jump")) {
       jumpForward10()
     }
   }
 }
 
 onKey("LEFT") {
-  if (view == "reader") {
+  if (stateMachine.is("uiState", "reader")) {
     previousPage()
   } else {
-    if (view == "jump") {
+    if (stateMachine.is("uiState", "jump")) {
       jumpBack10()
     }
   }
 }
 
 onKey("UP") {
-  if (view == "reader") {
-    previousChapter()
-  } else {
-    if (view == "toc") {
-      tocPrevious()
-    } else {
-      if (view == "jump") {
-        jumpForward1()
-      } else {
-        if (view == "browser") {
-          browserPrevious()
-        }
-      }
-    }
-  }
+  handleUp()
 }
 
 onKey("DOWN") {
-  if (view == "reader") {
-    nextChapter()
-  } else {
-    if (view == "toc") {
-      tocNext()
-    } else {
-      if (view == "jump") {
-        jumpBack1()
-      } else {
-        if (view == "browser") {
-          browserNext()
-        }
-      }
-    }
-  }
+  handleDown()
 }
 
 onKey("SELECT") {
-  if (view == "reader") {
-    openJump()
-  } else {
-    if (view == "toc") {
-      openSelectedTocEntry()
-    } else {
-      if (view == "jump") {
-        commitJump()
-      } else {
-        if (view == "browser") {
-          openSelectedBrowserItem()
-        }
-      }
-    }
-  }
+  handleSelect()
 }
 
 onKey("MENU") {
-  if (view == "reader") {
+  if (stateMachine.is("uiState", "reader")) {
     openToc()
   } else {
     openReader()
@@ -113,10 +71,10 @@ onKey("MENU") {
 }
 
 onKey("BACK") {
-  if (view == "reader") {
+  if (stateMachine.is("uiState", "reader")) {
     openBrowser()
   } else {
-    if (view == "browser") {
+    if (stateMachine.is("uiState", "browser")) {
       state.save()
       app.exit()
     } else {

@@ -85,10 +85,14 @@ Examples:
 
 - `display.*`
 - `screen.*`
+- `input.*`
 - `state.*`
 - `content.*`
 - `data.*`
 - `string.*`
+- `wifi.*`
+- `httpServer.*`
+- `bluetoothHid.*`
 - `binbook.*`
 
 These are built in from an app author's perspective, but they are not core language syntax. They are namespaced, permissioned, bounded firmware/runtime APIs.

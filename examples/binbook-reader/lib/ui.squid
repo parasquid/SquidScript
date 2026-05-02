@@ -26,7 +26,7 @@ function saveAndRefresh() {
 }
 
 function openBrowser() {
-  view = "browser"
+  stateMachine.enter("uiState", "browser")
   screen.open("browser")
 }
 
@@ -86,19 +86,73 @@ function openToc() {
     tocTop = tocIndex - 7
   }
 
-  view = "toc"
+  stateMachine.enter("uiState", "toc")
   screen.open("toc")
 }
 
 function openJump() {
   jumpPage = pageIndex + 1
-  view = "jump"
+  stateMachine.enter("uiState", "jump")
   screen.open("jump")
 }
 
 function openReader() {
-  view = "reader"
+  stateMachine.enter("uiState", "reader")
   screen.open("reader")
+}
+
+function handleUp() {
+  if (stateMachine.is("uiState", "reader")) {
+    previousChapter()
+  } else {
+    if (stateMachine.is("uiState", "toc")) {
+      tocPrevious()
+    } else {
+      if (stateMachine.is("uiState", "jump")) {
+        jumpForward1()
+      } else {
+        if (stateMachine.is("uiState", "browser")) {
+          browserPrevious()
+        }
+      }
+    }
+  }
+}
+
+function handleDown() {
+  if (stateMachine.is("uiState", "reader")) {
+    nextChapter()
+  } else {
+    if (stateMachine.is("uiState", "toc")) {
+      tocNext()
+    } else {
+      if (stateMachine.is("uiState", "jump")) {
+        jumpBack1()
+      } else {
+        if (stateMachine.is("uiState", "browser")) {
+          browserNext()
+        }
+      }
+    }
+  }
+}
+
+function handleSelect() {
+  if (stateMachine.is("uiState", "reader")) {
+    openJump()
+  } else {
+    if (stateMachine.is("uiState", "toc")) {
+      openSelectedTocEntry()
+    } else {
+      if (stateMachine.is("uiState", "jump")) {
+        commitJump()
+      } else {
+        if (stateMachine.is("uiState", "browser")) {
+          openSelectedBrowserItem()
+        }
+      }
+    }
+  }
 }
 
 function previousPage() {

@@ -244,64 +244,7 @@ Production bytecode app example:
 }
 ```
 
-BinBook reader example:
-
-```json
-{
-  "format": "squidapp-v1",
-  "id": "binbook-reader",
-  "name": "BinBook Reader",
-  "kind": "app",
-  "version": "1.0.0",
-  "runtime": {
-    "language": "squidscript",
-    "version": "0.2"
-  },
-  "entry": {
-    "type": "bytecode",
-    "file": "main.sqbc"
-  },
-  "source": {
-    "file": "main.squid",
-    "optional": true
-  },
-  "sourceMap": {
-    "file": "source-map.json",
-    "optional": true
-  },
-  "permissions": [
-    "state.read",
-    "state.write",
-    "display.draw",
-    "content.pick",
-    "content.read",
-    "binbook.read"
-  ],
-  "requires": {
-    "runtime": "squidscript>=0.2",
-    "display": {
-      "minWidth": 480,
-      "minHeight": 800,
-      "pixelFormats": ["GRAY2_PACKED"]
-    },
-    "keys": ["LEFT", "RIGHT", "BACK"],
-    "features": [
-      "display.draw",
-      "state.read",
-      "state.write",
-      "content.pick",
-      "content.read",
-      "binbook.read"
-    ]
-  },
-  "opens": [
-    {
-      "extension": ".binbook",
-      "label": "BinBook"
-    }
-  ]
-}
-```
+The BinBook reader reference manifest is maintained in `examples/binbook-reader/app.json`.
 
 Required manifest fields:
 - format
@@ -351,7 +294,7 @@ Supported `requires` fields:
 - `display.minWidth` and `display.minHeight`: minimum logical display size
 - `display.pixelFormats`: acceptable display pixel formats such as `GRAY1_PACKED` and `GRAY2_PACKED`
 - `keys`: required logical input keys
-- `features`: required firmware/runtime capabilities such as `display.draw`, `state.read`, `state.write`, `content.read`, and `binbook.read`
+- `features`: required firmware/runtime capabilities such as `display.draw`, `state.read`, `state.write`, `content.read`, `binbook.read`, `wifi.connect`, `httpServer.serve`, and `bluetoothHid.keys`
 
 The optional `targets` object restricts an app to exact hardware targets when capability matching is insufficient.
 
@@ -1035,7 +978,12 @@ v0.2 uses these built-in namespaces:
 - `app.*` for app-level actions such as exit and firmware dialogs
 - `screen.*` for current-screen navigation and refresh
 - `display.*` for drawing commands, logical display coordinates, and display-ready resources
+- `input.*` for firmware-owned text entry dialogs
 - `state.*` for firmware-managed persistent state
+- `stateMachine.*` for generic app state/mode helpers backed by persistent state variables
+- `wifi.*` for firmware-owned Wi-Fi profile connection and status
+- `httpServer.*` for small foreground-only firmware-owned HTTP services
+- `bluetoothHid.*` for foreground-only Bluetooth HID peripheral behavior
 - `content.*` for user-selected content files and bounded reads
 - `data.*` for parsed declarative app data
 - `string.*` for deterministic string utilities
@@ -1541,7 +1489,60 @@ Rules:
 
 ---
 
-## 27. State Built-ins
+## 27. Input Built-ins
+
+The `input.*` namespace provides firmware-owned text entry UI.
+
+Input dialogs are system overlays, not SquidScript screens. While an input dialog is active, app bytecode is not executing. Firmware owns drawing, key navigation, cursor movement, editing, layout switching, cancellation, and restoration of the app screen after the dialog closes.
+
+When an input dialog closes, firmware must invalidate the current screen. After the event handler that called `input.text(...)` returns, firmware must re-render the current `screen("...")` block automatically. Apps do not need to call `screen.refresh()` only to erase the keyboard or restore the screen that was underneath it.
+
+input.text(title, options)
+
+Shows a firmware-owned text entry dialog and returns the entered string.
+
+Requires permission:
+
+```text
+input.text
+```
+
+Example:
+
+```squid
+let label = input.text("Book label", { maxLength: 40 })
+
+if (label != "") {
+  title = label
+  state.save()
+}
+```
+
+Allowed options:
+- `maxLength`: int
+- `initial`: string
+- `placeholder`: string
+
+The firmware may provide an e-ink-friendly grid keyboard with layout modes such as lowercase, uppercase, numbers, and symbols. Logical keys navigate and select keys:
+- `LEFT` and `RIGHT` move across keyboard keys
+- `UP` and `DOWN` move between rows
+- `SELECT` activates the highlighted key
+- `BACK` cancels or closes
+- `MENU` may switch keyboard layout
+
+Rules:
+- `input.text(...)` may be called only from event handlers and user-defined functions reached from event handlers.
+- `input.text(...)` is not render-safe and must not be called from screen blocks.
+- returned strings are bounded by `maxLength` and target profile limits.
+- cancellation returns an empty string.
+- firmware may clamp `maxLength` according to target limits.
+- app instruction limits do not advance while firmware input UI is active.
+- closing the input dialog schedules an automatic re-render of the current screen after the calling event handler returns.
+- password or credential entry for system services should use the owning system capability, such as `wifi.openSetup()`, instead of returning secrets to app code.
+
+---
+
+## 28. State Built-ins
 
 state.load()
 
@@ -1606,7 +1607,330 @@ Recommended write strategy:
 
 ---
 
-## 28. File and Data Built-ins
+## 29. State Machine Built-ins
+
+The `stateMachine.*` namespace provides generic helpers for app modes and small finite-state workflows.
+
+State machines are not new syntax and they do not store hidden runtime state. A state machine is backed by an existing string variable declared in the app's `state { ... }` block. The backing variable remains the source of truth: direct assignments to that variable immediately change the state observed by `stateMachine.current(...)` and `stateMachine.is(...)`.
+
+Example:
+
+```squid
+state {
+  uiState: "browser"
+}
+
+function openReader() {
+  stateMachine.enter("uiState", "reader")
+  screen.open("reader")
+}
+
+onKey("RIGHT") {
+  if (stateMachine.is("uiState", "reader")) {
+    nextPage()
+  } else {
+    if (stateMachine.is("uiState", "jump")) {
+      jumpForward10()
+    }
+  }
+}
+```
+
+stateMachine.current(backingStateName)
+
+Returns the current state name from the backing state variable.
+
+Example:
+
+```squid
+let current = stateMachine.current("uiState")
+```
+
+stateMachine.is(backingStateName, stateName)
+
+Returns bool.
+
+Example:
+
+```squid
+if (stateMachine.is("uiState", "reader")) {
+  nextPage()
+}
+```
+
+stateMachine.enter(backingStateName, stateName)
+
+Sets the backing state variable to `stateName`.
+
+Example:
+
+```squid
+stateMachine.enter("uiState", "toc")
+screen.open("toc")
+```
+
+Rules:
+- `backingStateName` must be a string literal naming an existing `state { ... }` variable
+- the backing variable must have type string
+- `stateName` must be a string literal
+- `stateMachine.*` requires the `stateMachine` runtime feature but does not require a separate permission
+- `stateMachine.enter(...)` mutates the in-memory backing variable but does not call `state.save()`
+- screen navigation remains explicit; `stateMachine.enter(...)` does not call `screen.open(...)`
+- state machines are generic app behavior helpers and must not contain domain-specific states
+
+squidc should validate state machine use per backing variable:
+- every referenced backing variable exists and is string-typed
+- every entered state is a non-empty string literal
+- every literal state tested with `stateMachine.is(...)` is either the backing variable's default value or appears in a `stateMachine.enter(...)` call for the same backing variable
+- direct assignments to a backing variable are allowed, but assigned string literals must be in the same validated state set
+- squidc should reject non-literal assignments to a backing variable unless it can prove the assigned value is one of the validated states
+
+This validation allows misspelled states to be caught without adding enum declarations or new state-machine syntax.
+
+---
+
+## 30. Wi-Fi Built-ins
+
+The `wifi.*` namespace provides foreground apps with bounded access to firmware-managed Wi-Fi connectivity.
+
+Apps do not receive, store, or transmit Wi-Fi passwords. Wi-Fi credentials are owned by firmware and stored in a system-managed profile store outside app state and outside app-readable files. Apps may store a profile name or ID, but not raw credentials.
+
+wifi.status()
+
+Returns a read-only record describing current Wi-Fi state.
+
+Example:
+
+```squid
+let info = wifi.status()
+
+if (info.connected) {
+  display.text(info.ipAddress, { x: 20, y: 80, size: "medium" })
+}
+```
+
+Suggested fields:
+- `connected`: bool
+- `profile`: string
+- `ssid`: string
+- `ipAddress`: string
+- `rssi`: int
+- `error`: string
+
+wifi.connect(profileName)
+
+Requests connection to a firmware-managed Wi-Fi profile.
+
+Requires permission:
+
+```text
+wifi.connect
+```
+
+Example:
+
+```squid
+wifi.connect("home")
+```
+
+`profileName` must be a string. If the profile is missing, disabled, or invalid, firmware must fail predictably and expose the failure through `wifi.status()`.
+
+wifi.disconnect()
+
+Requests disconnect from Wi-Fi if this app owns the foreground connection request.
+
+Requires permission:
+
+```text
+wifi.connect
+```
+
+wifi.openSetup()
+
+Opens firmware-owned Wi-Fi setup UI for scanning networks, entering credentials, saving profiles, and connecting.
+
+The Wi-Fi setup UI may use the same firmware keyboard implementation as `input.text(...)`, but passwords entered inside Wi-Fi setup are passed only to the firmware Wi-Fi profile manager. They are not returned to the app.
+
+Requires permission:
+
+```text
+wifi.setup
+```
+
+Example:
+
+```squid
+wifi.openSetup()
+```
+
+Rules:
+- Wi-Fi credentials must never be exposed to SquidScript source, state, records, logs, diagnostics, or source maps.
+- Firmware owns credential storage, protection, profile editing, and network scanning UI.
+- Apps may request connection by profile name or ID.
+- Apps may show connection status and IP address.
+- Wi-Fi activity requested by a normal app is foreground-only in v0.2.
+- Firmware must stop or release app-owned Wi-Fi requests when the app is suspended, exits, crashes, or loses foreground.
+
+---
+
+## 31. HTTP Server Built-ins
+
+The `httpServer.*` namespace provides small foreground-only HTTP services owned by firmware.
+
+SquidScript apps do not parse HTTP, accept raw sockets, or stream arbitrary request bodies. Firmware owns request parsing, path matching, upload limits, temporary file storage, cleanup, and server lifecycle. Apps start a named service and poll bounded events.
+
+httpServer.start(serviceName, options)
+
+Starts a named foreground HTTP service for the current app.
+
+Requires permission:
+
+```text
+httpServer.serve
+```
+
+Example:
+
+```squid
+httpServer.start("uploads", { port: 8080, uploadExtension: ".binbook", maxUploadBytes: 4194304 })
+```
+
+Allowed options:
+- `port`: int
+- `uploadExtension`: string
+- `maxUploadBytes`: int
+
+The runtime may clamp or reject ports and upload limits according to the target profile.
+
+httpServer.stop(serviceName)
+
+Stops a named HTTP service owned by the current app.
+
+Example:
+
+```squid
+httpServer.stop("uploads")
+```
+
+httpServer.status(serviceName)
+
+Returns a read-only record describing service state.
+
+Suggested fields:
+- `running`: bool
+- `url`: string
+- `port`: int
+- `error`: string
+
+httpServer.poll(serviceName)
+
+Returns one bounded event record for the named service, or a record with `kind: "none"` if no event is pending.
+
+Example:
+
+```squid
+let event = httpServer.poll("uploads")
+
+if (event.kind == "uploadComplete") {
+  file = event.path
+  state.save()
+  screen.refresh()
+}
+```
+
+Suggested event fields:
+- `kind`: string such as `"none"`, `"uploadStarted"`, `"uploadProgress"`, `"uploadComplete"`, or `"error"`
+- `path`: string for completed uploaded files
+- `bytesReceived`: int
+- `totalBytes`: int
+- `error`: string
+
+Rules:
+- HTTP server services are foreground-only in v0.2.
+- Firmware must stop all services owned by an app when that app is suspended, exits, crashes, or loses foreground.
+- Uploaded files must be written only to firmware-approved temporary or app-owned storage locations.
+- Completed upload paths must be safe paths accepted by app/content APIs; apps must not receive arbitrary filesystem paths.
+- Firmware must enforce maximum body size, request count, service count, path length, header size, and event queue limits.
+- Raw sockets, arbitrary outbound HTTP clients, TLS configuration, and general web frameworks are not part of v0.2.
+
+---
+
+## 32. Bluetooth HID Built-ins
+
+The `bluetoothHid.*` namespace provides bounded Bluetooth HID peripheral behavior for apps such as presentation clickers.
+
+Generic Bluetooth scanning, arbitrary GATT services, and raw Bluetooth data transfer are not part of v0.2.
+
+bluetoothHid.start(deviceName)
+
+Starts foreground-only Bluetooth HID advertising or reconnect behavior for the current app.
+
+Requires permission:
+
+```text
+bluetoothHid.advertise
+```
+
+Example:
+
+```squid
+bluetoothHid.start("Squid Clicker")
+```
+
+bluetoothHid.stop()
+
+Stops Bluetooth HID behavior owned by the current app.
+
+bluetoothHid.status()
+
+Returns a read-only record describing HID state.
+
+Suggested fields:
+- `active`: bool
+- `connected`: bool
+- `paired`: bool
+- `deviceName`: string
+- `error`: string
+
+bluetoothHid.sendKey(keyName)
+
+Sends one approved HID key press/release sequence.
+
+Requires permission:
+
+```text
+bluetoothHid.keys
+```
+
+Example:
+
+```squid
+bluetoothHid.sendKey("PAGE_DOWN")
+```
+
+Suggested key names:
+- `PAGE_UP`
+- `PAGE_DOWN`
+- `LEFT`
+- `RIGHT`
+- `UP`
+- `DOWN`
+- `ENTER`
+- `ESCAPE`
+- `SPACE`
+- `VOLUME_UP`
+- `VOLUME_DOWN`
+
+Rules:
+- Bluetooth HID is foreground-only in v0.2.
+- Firmware must stop advertising, disconnect, or release app-owned HID behavior when the app is suspended, exits, crashes, or loses foreground.
+- Firmware owns pairing, bonding, host trust decisions, HID report descriptors, rate limiting, and platform compatibility.
+- Apps may request sending only allowlisted keys supported by the target profile.
+- Apps must not construct raw HID reports in v0.2.
+
+---
+
+## 33. File and Data Built-ins
 
 content.pickFile(extension)
 
@@ -1710,7 +2034,7 @@ Path restrictions:
 
 ---
 
-## 29. Generic Data Format
+## 34. Generic Data Format
 
 SquidScript may support a generic structured text format for app-specific data.
 
@@ -1756,7 +2080,7 @@ It must not contain executable code.
 
 ---
 
-## 30. BinBook Capability
+## 35. BinBook Capability
 
 BinBook support is provided as a firmware-native capability module.
 
@@ -1926,7 +2250,7 @@ state {
 
 ---
 
-## 30.1 Launcher Capability
+## 35.1 Launcher Capability
 
 Launcher support is provided as a firmware-native capability module exposed to SquidScript launcher apps.
 
@@ -2077,7 +2401,7 @@ onKey("SELECT") {
 
 ---
 
-## 31. Permissions
+## 36. Permissions
 
 Permissions are declared in app.json.
 
@@ -2104,6 +2428,24 @@ content.pick
 content.read
 - Allows reading a user-selected external content file.
 
+input.text
+- Allows opening firmware-owned text entry dialogs for non-credential app input.
+
+wifi.connect
+- Allows requesting connection and disconnection for firmware-managed Wi-Fi profiles.
+
+wifi.setup
+- Allows opening firmware-owned Wi-Fi setup UI. This does not expose Wi-Fi credentials to the app.
+
+httpServer.serve
+- Allows starting foreground-only firmware-owned HTTP services for bounded app use cases such as uploads.
+
+bluetoothHid.advertise
+- Allows starting foreground-only Bluetooth HID peripheral advertising or reconnect behavior.
+
+bluetoothHid.keys
+- Allows sending allowlisted Bluetooth HID key events while this app owns the foreground HID session.
+
 binbook.read
 - Allows BinBook document APIs.
 
@@ -2124,11 +2466,13 @@ system.launcher.chooseDefault
 
 Permission checks happen during source compilation, bytecode validation, and runtime execution.
 
-If bytecode calls a built-in without declared permission, firmware must reject the app or stop execution with an error.
+If bytecode calls a permissioned built-in without declared permission, firmware must reject the app or stop execution with an error.
+
+Some built-ins may be feature-gated without a separate permission when they do not grant access to external resources or privileged firmware behavior. For example, `stateMachine.*` is validated through `requires.features` and normal state-variable rules.
 
 ---
 
-## 32. Bytecode Execution Model
+## 37. Bytecode Execution Model
 
 The canonical executable format is .sqbc.
 
@@ -2158,7 +2502,7 @@ Runtime execution:
 
 ---
 
-## 33. SQBC Bytecode File
+## 38. SQBC Bytecode File
 
 .sqbc is the SquidScript bytecode format.
 
@@ -2246,7 +2590,7 @@ The fixed header is followed by arrays of string-pool IDs for required logical k
 
 ---
 
-## 34. Bytecode Validation
+## 39. Bytecode Validation
 
 Precompiled bytecode is untrusted input.
 
@@ -2282,7 +2626,7 @@ If validation fails, the app is marked invalid and must not run.
 
 ---
 
-## 35. Internal Bytecode Sketch
+## 40. Internal Bytecode Sketch
 
 Possible opcodes:
 
@@ -2365,7 +2709,7 @@ enum SquidValueType {
 
 ---
 
-## 36. Screen Compilation
+## 41. Screen Compilation
 
 Screen blocks may be compiled into draw-command templates.
 
@@ -2396,7 +2740,7 @@ The draw IR is:
 
 ---
 
-## 37. Source Maps
+## 42. Source Maps
 
 Source maps are optional debug metadata.
 
@@ -2493,7 +2837,7 @@ Production firmware may show only file names and line numbers.
 
 ---
 
-## 38. Runtime Diagnostics
+## 43. Runtime Diagnostics
 
 On runtime error, squidvm should record:
 - app ID
@@ -2548,7 +2892,7 @@ Source:
 
 ---
 
-## 39. Runtime Quotas
+## 44. Runtime Quotas
 
 Suggested v0.2 limits:
 
@@ -2577,7 +2921,7 @@ The runtime may reject apps or stop execution if limits are exceeded.
 
 ---
 
-## 40. Memory Model
+## 45. Memory Model
 
 Runtime memory should be bounded.
 
@@ -2606,7 +2950,7 @@ Large document data such as BinBook pages should be streamed or tiled by firmwar
 
 ---
 
-## 41. Execution Model
+## 46. Execution Model
 
 The runtime is event-driven.
 
@@ -2640,7 +2984,7 @@ Default launcher selection is user-mediated. Apps may open a firmware-provided l
 
 ---
 
-## 42. Error Handling
+## 47. Error Handling
 
 Bytecode validation error:
 - app is marked invalid
@@ -2678,7 +3022,7 @@ Error: permission binbook.read required for binbook.open()
 
 ---
 
-## 43. Crash Recovery
+## 48. Crash Recovery
 
 Before launching an app, firmware records:
 - app ID
@@ -2713,7 +3057,7 @@ Crash marker example:
 
 ---
 
-## 44. Security Rules
+## 49. Security Rules
 
 SquidScript apps are untrusted.
 
@@ -2724,6 +3068,8 @@ Rules:
 - no arbitrary filesystem writes
 - no path traversal
 - no direct hardware access
+- no app-visible Wi-Fi credentials
+- no raw sockets in v0.2
 - no raw display driver access
 - no unbounded execution
 - no hidden autostart without user action
@@ -2759,7 +3105,7 @@ onSlideOpen() {
 
 ---
 
-## 45. Unsupported JavaScript Features
+## 50. Unsupported JavaScript Features
 
 SquidScript v0.2 does not support:
 - var
@@ -2805,7 +3151,7 @@ Unsupported bytecode is a firmware validation error.
 
 ---
 
-## 46. Compatibility
+## 51. Compatibility
 
 Runtime version is declared in app.json.
 
@@ -2826,7 +3172,7 @@ Future versions should avoid breaking v0.2 apps where possible.
 
 ---
 
-## 47. Compiler: squidc
+## 52. Compiler: squidc
 
 squidc is the off-device SquidScript compiler.
 
@@ -2865,7 +3211,7 @@ screens/reader.squid:38: binbook.page requires permission binbook.read
 
 ---
 
-## 48. Example: Simple Counter App
+## 53. Example: Simple Counter App
 
 app.json:
 
@@ -2946,7 +3292,7 @@ squidc build /sd/apps/simple-counter --out /sd/apps/simple-counter/main.sqbc --s
 
 ---
 
-## 49. Example: BinBook Reader App
+## 54. Example: BinBook Reader App
 
 The draft reference implementation is documented in:
 
@@ -2970,331 +3316,7 @@ This example is intentionally limited to reading and navigation:
 
 It does not include dictionaries, annotations, highlighting, search, bookmarks, or background indexing.
 
-app.json:
-
-```json
-{
-  "format": "squidapp-v1",
-  "id": "binbook-reader",
-  "name": "BinBook Reader",
-  "kind": "app",
-  "version": "1.0.0",
-  "runtime": {
-    "language": "squidscript",
-    "version": "0.2"
-  },
-  "entry": {
-    "type": "bytecode",
-    "file": "main.sqbc"
-  },
-  "source": {
-    "file": "main.squid",
-    "optional": true
-  },
-  "sourceMap": {
-    "file": "source-map.json",
-    "optional": true
-  },
-  "permissions": [
-    "state.read",
-    "state.write",
-    "display.draw",
-    "content.pick",
-    "content.read",
-    "binbook.read"
-  ],
-  "requires": {
-    "runtime": "squidscript>=0.2",
-    "display": {
-      "minWidth": 480,
-      "minHeight": 800,
-      "pixelFormats": ["GRAY2_PACKED"]
-    },
-    "keys": ["UP", "DOWN", "LEFT", "RIGHT", "SELECT", "BACK", "MENU"],
-    "features": [
-      "display.draw",
-      "state.read",
-      "state.write",
-      "content.pick",
-      "content.read",
-      "binbook.read"
-    ]
-  ],
-  "opens": [
-    {
-      "extension": ".binbook",
-      "label": "BinBook"
-    }
-  ]
-}
-```
-
-main.squid:
-
-```squid
-include "lib/ui.squid"
-include "screens/browser.squid"
-include "screens/reader.squid"
-include "screens/toc.squid"
-include "screens/jump.squid"
-
-state {
-  file: "",
-  title: "",
-  pageCount: 0,
-  pageIndex: 0,
-  navCount: 0,
-  tocIndex: 0,
-  tocTop: 0,
-  jumpPage: 1,
-  browserIndex: 0,
-  view: "browser"
-}
-
-onStart() {
-  state.load()
-  openBrowser()
-}
-
-onKey("RIGHT") {
-  if (view == "reader") {
-    nextPage()
-  } else {
-    if (view == "jump") {
-      jumpForward10()
-    }
-  }
-}
-
-onKey("LEFT") {
-  if (view == "reader") {
-    previousPage()
-  } else {
-    if (view == "jump") {
-      jumpBack10()
-    }
-  }
-}
-
-onKey("UP") {
-  if (view == "reader") {
-    previousChapter()
-  } else {
-    if (view == "toc") {
-      tocPrevious()
-    } else {
-      if (view == "jump") {
-        jumpForward1()
-      } else {
-        if (view == "browser") {
-          browserPrevious()
-        }
-      }
-    }
-  }
-}
-
-onKey("DOWN") {
-  if (view == "reader") {
-    nextChapter()
-  } else {
-    if (view == "toc") {
-      tocNext()
-    } else {
-      if (view == "jump") {
-        jumpBack1()
-      } else {
-        if (view == "browser") {
-          browserNext()
-        }
-      }
-    }
-  }
-}
-
-onKey("SELECT") {
-  if (view == "reader") {
-    openJump()
-  } else {
-    if (view == "toc") {
-      openSelectedTocEntry()
-    } else {
-      if (view == "jump") {
-        commitJump()
-      } else {
-        if (view == "browser") {
-          openSelectedBrowserItem()
-        }
-      }
-    }
-  }
-}
-
-onKey("MENU") {
-  if (view == "reader") {
-    openToc()
-  } else {
-    openReader()
-  }
-}
-
-onKey("BACK") {
-  if (view == "reader") {
-    openBrowser()
-  } else {
-    if (view == "browser") {
-      state.save()
-      app.exit()
-    } else {
-      openReader()
-    }
-  }
-}
-```
-
-lib/ui.squid:
-
-```squid
-function openBook() {
-  let book = binbook.open(file)
-  let info = binbook.info(book)
-
-  title = info.title
-  pageCount = info.pageCount
-  navCount = info.navCount
-
-  if (pageCount <= 0) {
-    pageIndex = 0
-  } else {
-    if (pageIndex >= pageCount) {
-      pageIndex = pageCount - 1
-    }
-  }
-}
-
-function openBrowser() {
-  view = "browser"
-  screen.open("browser")
-}
-
-function browseForBook() {
-  let picked = content.pickFile(".binbook")
-
-  if (picked != "") {
-    file = picked
-    pageIndex = 0
-    tocIndex = 0
-    tocTop = 0
-    jumpPage = 1
-    openBook()
-    state.save()
-    openReader()
-  }
-}
-
-function resumeBook() {
-  if (file != "") {
-    openBook()
-    state.save()
-    openReader()
-  }
-}
-
-function browserPrevious() {
-  if (browserIndex > 0) {
-    browserIndex = browserIndex - 1
-    state.save()
-    screen.refresh()
-  }
-}
-
-function browserNext() {
-  if (file != "") {
-    if (browserIndex < 1) {
-      browserIndex = browserIndex + 1
-      state.save()
-      screen.refresh()
-    }
-  }
-}
-
-function openSelectedBrowserItem() {
-  if (browserIndex == 0) {
-    browseForBook()
-  } else {
-    resumeBook()
-  }
-}
-
-function nextPage() {
-  if (pageIndex < pageCount - 1) {
-    pageIndex = pageIndex + 1
-    state.save()
-    screen.refresh()
-  }
-}
-
-function previousPage() {
-  if (pageIndex > 0) {
-    pageIndex = pageIndex - 1
-    state.save()
-    screen.refresh()
-  }
-}
-
-function openToc() {
-  view = "toc"
-  screen.open("toc")
-}
-
-function openJump() {
-  jumpPage = pageIndex + 1
-  view = "jump"
-  screen.open("jump")
-}
-
-function openReader() {
-  view = "reader"
-  screen.open("reader")
-}
-
-function openSelectedTocEntry() {
-  if (navCount > 0) {
-    let book = binbook.open(file)
-    let entry = binbook.navEntry(book, tocIndex)
-    pageIndex = entry.renderedPageNumber
-    state.save()
-    openReader()
-  }
-}
-```
-
-screens/reader.squid:
-
-```squid
-screen("reader") {
-  display.clear("white")
-
-  let book = binbook.open(file)
-  let page = binbook.page(book, pageIndex)
-  let image = binbook.pageImage(page)
-
-  display.draw(image, { x: 0, y: 0 })
-
-  drawFooter(string.format("{}/{}", pageIndex + 1, pageCount))
-}
-```
-
-screens/toc.squid and screens/jump.squid are shown in the full reference document.
-
-Additional helper used by the abbreviated reader screen:
-
-```squid
-function drawFooter(label) {
-  display.line(0, 740, 480, 740)
-  display.text(label, { x: 360, y: 760, size: "small" })
-}
-```
+The language specification does not duplicate the reader source. The reference document explains the design choices, and the files under `examples/binbook-reader/` are the source of truth for the example implementation.
 
 Build:
 
@@ -3304,7 +3326,7 @@ squidc build /sd/apps/binbook-reader --out /sd/apps/binbook-reader/main.sqbc --s
 
 ---
 
-## 50. Recommended MVP
+## 55. Recommended MVP
 
 The first implementation should support:
 
@@ -3370,7 +3392,7 @@ Test apps:
 
 ---
 
-## 51. Summary
+## 56. Summary
 
 SquidScript is a JavaScript-like source language for low-RAM e-ink miniapps.
 
@@ -3396,6 +3418,9 @@ Firmware:
 - display/input/storage/power
 - permissions
 - BinBook module
+- Wi-Fi profile manager
+- foreground HTTP server module
+- Bluetooth HID module
 - crash recovery
 - optional source-map diagnostics
 

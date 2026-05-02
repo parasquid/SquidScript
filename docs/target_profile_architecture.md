@@ -360,11 +360,18 @@ Example ESP32-C3 low-RAM runtime:
   "features": [
     "squidscript.bytecode",
     "display.draw",
+    "input.text",
     "state.read",
     "state.write",
+    "stateMachine",
     "content.pick",
     "content.read",
-    "binbook.read"
+    "binbook.read",
+    "wifi.connect",
+    "wifi.setup",
+    "httpServer.serve",
+    "bluetoothHid.advertise",
+    "bluetoothHid.keys"
   ]
 }
 ```
@@ -396,11 +403,18 @@ Example ESP32-S3 PSRAM runtime:
   "features": [
     "squidscript.bytecode",
     "display.draw",
+    "input.text",
     "state.read",
     "state.write",
+    "stateMachine",
     "content.pick",
     "content.read",
     "binbook.read",
+    "wifi.connect",
+    "wifi.setup",
+    "httpServer.serve",
+    "bluetoothHid.advertise",
+    "bluetoothHid.keys",
     "debug-ui"
   ]
 }
@@ -722,9 +736,12 @@ Example:
     "keys": ["LEFT", "RIGHT", "BACK"],
     "features": [
       "display.draw",
+      "input.text",
       "state.read",
       "state.write",
-      "binbook.read"
+      "binbook.read",
+      "wifi.connect",
+      "httpServer.serve"
     ]
   }
 }
@@ -787,6 +804,7 @@ squidc build apps/simple-counter \
 - available logical keys
 - available built-ins
 - required permissions
+- foreground radio/server capabilities such as `wifi.*`, `httpServer.*`, and `bluetoothHid.*`
 - bytecode size limit
 - draw command limit
 - max file read size
