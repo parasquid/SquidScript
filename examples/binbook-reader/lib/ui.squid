@@ -1,0 +1,259 @@
+function loadBookInfo() {
+  let book = binbook.open(file)
+  let info = binbook.info(book)
+
+  title = info.title
+  pageCount = info.pageCount
+  navCount = info.navCount
+
+  if (pageCount <= 0) {
+    pageIndex = 0
+  } else {
+    if (pageIndex >= pageCount) {
+      pageIndex = pageCount - 1
+    }
+  }
+
+  if (tocIndex >= navCount) {
+    tocIndex = 0
+    tocTop = 0
+  }
+}
+
+function saveAndRefresh() {
+  state.save()
+  screen.refresh()
+}
+
+function openBrowser() {
+  view = "browser"
+  screen.open("browser")
+}
+
+function browserPrevious() {
+  if (browserIndex > 0) {
+    browserIndex = browserIndex - 1
+    saveAndRefresh()
+  }
+}
+
+function browserNext() {
+  if (file != "") {
+    if (browserIndex < 1) {
+      browserIndex = browserIndex + 1
+      saveAndRefresh()
+    }
+  }
+}
+
+function openSelectedBrowserItem() {
+  if (browserIndex == 0) {
+    browseForBook()
+  } else {
+    resumeBook()
+  }
+}
+
+function browseForBook() {
+  let picked = content.pickFile(".binbook")
+
+  if (picked != "") {
+    file = picked
+    pageIndex = 0
+    tocIndex = 0
+    tocTop = 0
+    jumpPage = 1
+    loadBookInfo()
+    state.save()
+    openReader()
+  }
+}
+
+function resumeBook() {
+  if (file != "") {
+    loadBookInfo()
+    state.save()
+    openReader()
+  }
+}
+
+function openToc() {
+  if (tocIndex < tocTop) {
+    tocTop = tocIndex
+  }
+
+  if (tocIndex >= tocTop + 8) {
+    tocTop = tocIndex - 7
+  }
+
+  view = "toc"
+  screen.open("toc")
+}
+
+function openJump() {
+  jumpPage = pageIndex + 1
+  view = "jump"
+  screen.open("jump")
+}
+
+function openReader() {
+  view = "reader"
+  screen.open("reader")
+}
+
+function previousPage() {
+  if (pageIndex > 0) {
+    pageIndex = pageIndex - 1
+    saveAndRefresh()
+  }
+}
+
+function nextPage() {
+  if (pageIndex < pageCount - 1) {
+    pageIndex = pageIndex + 1
+    saveAndRefresh()
+  }
+}
+
+function setPage(newPageIndex) {
+  if (newPageIndex < 0) {
+    pageIndex = 0
+  } else {
+    if (newPageIndex >= pageCount) {
+      pageIndex = pageCount - 1
+    } else {
+      pageIndex = newPageIndex
+    }
+  }
+
+  saveAndRefresh()
+}
+
+function nextChapter() {
+  if (navCount > 0) {
+    let book = binbook.open(file)
+    let scan = tocIndex + 1
+
+    repeat (32) {
+      if (scan < navCount) {
+        let entry = binbook.navEntry(book, scan)
+
+        if (entry.renderedPageNumber > pageIndex) {
+          tocIndex = scan
+          setPage(entry.renderedPageNumber)
+          return
+        }
+
+        scan = scan + 1
+      }
+    }
+  }
+}
+
+function previousChapter() {
+  if (navCount > 0) {
+    let book = binbook.open(file)
+    let scan = tocIndex - 1
+
+    repeat (32) {
+      if (scan >= 0) {
+        let entry = binbook.navEntry(book, scan)
+
+        if (entry.renderedPageNumber < pageIndex) {
+          tocIndex = scan
+          setPage(entry.renderedPageNumber)
+          return
+        }
+
+        scan = scan - 1
+      }
+    }
+  }
+}
+
+function tocPrevious() {
+  if (tocIndex > 0) {
+    tocIndex = tocIndex - 1
+
+    if (tocIndex < tocTop) {
+      tocTop = tocIndex
+    }
+
+    saveAndRefresh()
+  }
+}
+
+function tocNext() {
+  if (tocIndex < navCount - 1) {
+    tocIndex = tocIndex + 1
+
+    if (tocIndex >= tocTop + 8) {
+      tocTop = tocTop + 1
+    }
+
+    saveAndRefresh()
+  }
+}
+
+function openSelectedTocEntry() {
+  if (navCount > 0) {
+    let book = binbook.open(file)
+    let entry = binbook.navEntry(book, tocIndex)
+
+    pageIndex = entry.renderedPageNumber
+    state.save()
+    openReader()
+  }
+}
+
+function jumpForward10() {
+  if (jumpPage + 10 <= pageCount) {
+    jumpPage = jumpPage + 10
+  } else {
+    jumpPage = pageCount
+  }
+
+  saveAndRefresh()
+}
+
+function jumpBack10() {
+  if (jumpPage > 10) {
+    jumpPage = jumpPage - 10
+  } else {
+    jumpPage = 1
+  }
+
+  saveAndRefresh()
+}
+
+function jumpForward1() {
+  if (jumpPage < pageCount) {
+    jumpPage = jumpPage + 1
+    saveAndRefresh()
+  }
+}
+
+function jumpBack1() {
+  if (jumpPage > 1) {
+    jumpPage = jumpPage - 1
+    saveAndRefresh()
+  }
+}
+
+function commitJump() {
+  pageIndex = jumpPage - 1
+  state.save()
+  openReader()
+}
+
+function drawTopBar(label) {
+  display.rect(0, 0, 480, 36, { fill: "white" })
+  display.text(label, { x: 12, y: 8, w: 456, h: 24, size: "small" })
+  display.line(0, 38, 480, 38)
+}
+
+function drawBottomBar(label) {
+  display.rect(0, 758, 480, 42, { fill: "white" })
+  display.line(0, 758, 480, 758)
+  display.text(label, { x: 12, y: 770, w: 456, h: 24, size: "small", align: "right" })
+}

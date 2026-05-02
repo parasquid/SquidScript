@@ -1,0 +1,31 @@
+screen("browser") {
+  display.clear("white")
+  drawTopBar("BinBook Reader")
+
+  if (browserIndex == 0) {
+    display.rect(20, 120, 440, 72, { fill: "gray2" })
+  }
+
+  display.text("Browse for BinBook", { x: 36, y: 142, w: 408, h: 32, size: "medium" })
+
+  if (file != "") {
+    if (browserIndex == 1) {
+      display.rect(20, 220, 440, 112, { fill: "gray2" })
+    }
+
+    display.text("Resume", { x: 36, y: 238, w: 408, h: 32, size: "medium" })
+    display.text(title, { x: 36, y: 278, w: 320, h: 28, size: "small" })
+    display.text(string.format("{}/{}", pageIndex + 1, pageCount), {
+      x: 360,
+      y: 278,
+      w: 84,
+      h: 28,
+      size: "small",
+      align: "right"
+    })
+  } else {
+    display.text("No book to resume", { x: 36, y: 238, w: 408, h: 32, size: "small" })
+  }
+
+  drawBottomBar("UP/DOWN select  SELECT open  BACK exit")
+}

@@ -1,0 +1,41 @@
+function drawTocRow(row, navIndex) {
+  if (navIndex < navCount) {
+    let book = binbook.open(file)
+    let entry = binbook.navEntry(book, navIndex)
+    let y = 64 + row * 72
+
+    if (navIndex == tocIndex) {
+      display.rect(0, y - 8, 480, 60, { fill: "gray2" })
+    }
+
+    display.text(entry.title, { x: 24, y: y, w: 360, h: 32, size: "small" })
+    display.text(string.format("{}", entry.renderedPageNumber + 1), {
+      x: 390,
+      y: y,
+      w: 70,
+      h: 32,
+      size: "small",
+      align: "right"
+    })
+  }
+}
+
+screen("toc") {
+  display.clear("white")
+  drawTopBar("Table of Contents")
+
+  if (navCount == 0) {
+    display.text("No table of contents", { x: 24, y: 120, w: 432, h: 40, size: "medium" })
+  } else {
+    drawTocRow(0, tocTop)
+    drawTocRow(1, tocTop + 1)
+    drawTocRow(2, tocTop + 2)
+    drawTocRow(3, tocTop + 3)
+    drawTocRow(4, tocTop + 4)
+    drawTocRow(5, tocTop + 5)
+    drawTocRow(6, tocTop + 6)
+    drawTocRow(7, tocTop + 7)
+  }
+
+  drawBottomBar("UP/DOWN select  SELECT open  BACK reader")
+}
