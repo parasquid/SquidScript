@@ -615,6 +615,50 @@ typedef struct {
 } DisplayDriver;
 ```
 
+### 7.1.1 Firmware Rendering Note: Strip-Streamed E-Paper
+
+For low-RAM e-paper targets such as XTEINK X4, firmware should prefer strip-streamed page rendering over a full-screen framebuffer for large document surfaces. This should not force every UI path into the same rendering model.
+
+Reference idea: Pulp-OS for XTEINK X4 renders the 800x480 SSD1677 display in horizontal physical strips, using a small strip buffer instead of a full 1bpp framebuffer. A 40-row strip at 800 pixels wide is about 4 KB at 1bpp, while a full 800x480 framebuffer is about 48 KB at 1bpp and about 96 KB at 2bpp.
+
+The SquidScript-facing display API should not expose this detail. Apps still submit bounded draw commands and display-ready drawables through `display.*`. The firmware renderer may replay the current screen's draw command list once per physical strip or partial-refresh window:
+
+```text
+screen render
+  -> bounded draw command list
+  -> for each physical strip/window:
+       clear reusable strip buffer
+       replay intersecting draw commands into the strip
+       ask drawables to render only intersecting rows/pixels
+       stream strip bytes to the display controller over SPI
+  -> trigger full or partial e-paper refresh
+```
+
+`binbook.pageImage(page)` should therefore be allowed to return a transient drawable descriptor rather than a decoded full-page pixel buffer. The BinBook renderer can decode, convert, dither, or copy only the rows needed for the active strip. This keeps page rendering compatible with low-memory targets and avoids making BinBook page buffers part of app-visible state.
+
+Recommended split:
+
+- layout is performed off-device when producing BinBook, or cached by firmware when runtime layout is unavoidable
+- large page rendering is strip-based, especially for BinBook pages and other document-like surfaces
+- interactive UI uses small dirty-region buffers or direct small-window updates where that is simpler than replaying the whole screen by strips
+- firmware may combine these strategies in one render pass as long as the app-visible behavior remains `display.*` draw commands and drawables
+
+Implementation rules:
+
+- keep strip buffers firmware-owned and target-specific
+- keep display rotation and logical-to-physical mapping in the display driver/profile
+- make drawables renderable into an arbitrary clipped strip/window
+- allow small dirty-region buffers for menus, cursors, modal UI, and other interactive surfaces
+- avoid requiring the VM, app state, or language spec to know whether the target uses a full framebuffer, tiles, strips, or direct streaming
+- account for pixel format honestly: `GRAY1_PACKED` can use the smallest strips; `GRAY2_PACKED` needs larger strips or per-strip conversion to the panel's native format
+
+References:
+
+- AnswerOverflow thread: https://www.answeroverflow.com/m/1478448257716850871
+- Pulp-OS repository: https://github.com/hansmrtn/pulp-os
+- Pulp-OS strip renderer: `kernel/src/drivers/strip.rs`
+- Pulp-OS SSD1677 driver: `kernel/src/drivers/ssd1677.rs`
+
 ### 7.2 Input Interface
 
 ```c
