@@ -24,19 +24,37 @@ SquidScript apps should target capabilities where possible, not specific boards.
 
 ## 2. Core Concept
 
-A target is a composition of profiles.
+A target definition describes what one concrete firmware build target provides.
+
+For integrated production devices, the canonical v1 form is a single target JSON file with sections for board hardware, display, input, storage, power, runtime limits, features, and compatibility.
+
+Example:
 
 ```text
-Target profile =
-  board profile
-+ display profile
-+ input profile
-+ storage profile
-+ power profile
-+ runtime profile
+targets/xteink-x4.target.json
 ```
 
-Every profile JSON object must declare a `format` string and an `id`.
+The detailed schema reference is maintained in:
+
+```text
+docs/target_definition_reference.md
+```
+
+Split component profiles are still useful for reusable development-board combinations, but they are an advanced composition mode rather than the default shape for integrated devices such as XTEINK X4.
+
+Conceptually, every target still resolves to the same categories:
+
+```text
+Resolved target =
+  board hardware
++ display behavior
++ input behavior
++ storage behavior
++ power behavior
++ runtime limits
+```
+
+Every standalone target or profile JSON object must declare a `format` string and an `id`.
 
 The `format` value identifies the schema family and major version. Tools must reject unknown required schema versions rather than guessing.
 
@@ -51,17 +69,9 @@ Examples:
 - `squid-target-v1`
 - `squid-compat-profile-v1`
 
-Example:
+Split composition example:
 
 ```yaml
-xteink-x4:
-  board: xteink-x4-board
-  display: xteink-x4-display
-  input: xteink-x4-buttons
-  storage: xteink-x4-sdcard
-  power: xteink-x4-power
-  runtime: esp32c3-lowram
-
 dev-esp32s3-waveshare-7in5:
   board: esp32s3-devkit
   display: waveshare-7in5-v2
@@ -86,6 +96,7 @@ Examples:
 - internal SRAM
 - PSRAM
 - flash size
+- firmware update mechanism
 - available buses
 - GPIO assignments
 - onboard peripherals
@@ -108,6 +119,12 @@ Example board profile:
   "flash": {
     "sizeMB": 16
   },
+  "firmwareUpdate": {
+    "formats": ["uf2", "esp-idf-bin"],
+    "preferredFormat": "uf2",
+    "uf2FamilyId": "ESP32S3",
+    "userReplacement": "usb-mass-storage"
+  },
   "buses": {
     "spi": ["spi2", "spi3"],
     "i2c": ["i2c0"],
@@ -115,6 +132,10 @@ Example board profile:
   }
 }
 ```
+
+`firmwareUpdate.formats` lists the firmware image formats that the board and selected bootloader support. `preferredFormat` should be `uf2` for boards intended to be user-serviceable through drag-and-drop replacement. `uf2FamilyId` identifies the UF2 target family used by the conversion tool and bootloader validation. `userReplacement` describes the primary user-facing replacement path; `usb-mass-storage` means the device can enter an update mode where the host computer sees a removable drive and the user copies a `.uf2` file onto it.
+
+Boards that cannot support UF2 should omit `uf2` from `firmwareUpdate.formats` and must still provide the native flashing artifacts required by their MCU/toolchain.
 
 ---
 
@@ -137,7 +158,9 @@ It should include:
 - fast refresh support
 - framebuffer strategy
 
-Example XTEINK X4 display profile:
+Illustrative split-profile XTEINK-style display fragment:
+
+This is not the canonical XTEINK X4 hardware source. Use `targets/xteink-x4.target.json` for verified XTEINK X4 pins and display wiring.
 
 ```json
 {
@@ -309,7 +332,9 @@ Example:
 }
 ```
 
-Example battery profile:
+Illustrative split-profile battery target fragment:
+
+This shows the older component-profile shape. Use `targets/xteink-x4.target.json` for the canonical XTEINK X4 power and battery metadata.
 
 ```json
 {
@@ -368,8 +393,12 @@ Example ESP32-C3 low-RAM runtime:
     "content.read",
     "binbook.read",
     "wifi.connect",
+    "wifi.scan",
+    "wifi.accessPoint",
+    "wifi.configureIp",
     "wifi.setup",
     "httpServer.serve",
+    "bleTransfer.receive",
     "bluetoothHid.advertise",
     "bluetoothHid.keys"
   ]
@@ -411,8 +440,12 @@ Example ESP32-S3 PSRAM runtime:
     "content.read",
     "binbook.read",
     "wifi.connect",
+    "wifi.scan",
+    "wifi.accessPoint",
+    "wifi.configureIp",
     "wifi.setup",
     "httpServer.serve",
+    "bleTransfer.receive",
     "bluetoothHid.advertise",
     "bluetoothHid.keys",
     "debug-ui"
@@ -424,21 +457,33 @@ Example ESP32-S3 PSRAM runtime:
 
 ## 4. Target Profile
 
-A target profile composes the other profiles.
+A target profile describes one concrete build target.
 
-Example XTEINK X4 target:
+For integrated devices, use one complete target file. The full XTEINK X4 reference target is maintained at:
+
+```text
+targets/xteink-x4.target.json
+```
+
+Trimmed XTEINK X4 shape:
 
 ```json
 {
   "format": "squid-target-v1",
   "id": "xteink-x4",
   "name": "XTEINK X4",
-  "board": "xteink-x4-board",
-  "display": "xteink-x4-display",
-  "input": "xteink-x4-buttons",
-  "storage": "xteink-x4-sdcard",
-  "power": "xteink-x4-power",
-  "runtime": "esp32c3-lowram",
+  "mcu": {
+    "part": "ESP32-C3",
+    "family": "ESP32C3"
+  },
+  "pins": {},
+  "buses": {},
+  "devices": {},
+  "display": {},
+  "input": {},
+  "storage": {},
+  "power": {},
+  "runtime": {},
   "compatibility": [
     "squidscript-0.2",
     "portrait-480x800",
@@ -455,7 +500,9 @@ Example XTEINK X4 target:
 }
 ```
 
-Example ESP32-S3 + Waveshare development target:
+Split composition remains useful for development targets that intentionally recombine reusable parts.
+
+Example ESP32-S3 + Waveshare development target using split profile parts:
 
 ```json
 {
@@ -492,29 +539,29 @@ Example ESP32-S3 + Waveshare development target:
 
 ## 5. Recommended Directory Layout
 
+For the SquidScript repository, target source artifacts should live under:
+
+```text
+targets/
+`-- xteink-x4.target.json
+```
+
+Firmware implementations may copy or vendor those target definitions, or consume them directly from this repository when build tooling allows it.
+
+For firmware source trees, the recommended layout is:
+
 ```text
 firmware/
 |-- targets/
 |   |-- xteink-x4.target.json
 |   `-- esp32s3-waveshare-7in5.target.json
-|-- boards/
-|   |-- xteink-x4-board.json
-|   `-- esp32s3-devkit.json
-|-- displays/
-|   |-- xteink-x4-display.json
-|   `-- waveshare-7in5-v2.json
-|-- inputs/
-|   |-- xteink-x4-buttons.json
-|   `-- dev-buttons-6key.json
-|-- storage/
-|   |-- xteink-x4-sdcard.json
-|   `-- spi-sdcard-dev.json
-|-- power/
-|   |-- xteink-x4-power.json
-|   `-- usb-dev-power.json
-|-- runtime-profiles/
-|   |-- esp32c3-lowram.json
-|   `-- esp32s3-psram.json
+|-- profile-parts/          # optional, for reusable dev-board composition
+|   |-- boards/
+|   |-- displays/
+|   |-- inputs/
+|   |-- storage/
+|   |-- power/
+|   `-- runtime-profiles/
 `-- src/
     |-- main.c
     |-- target/
@@ -524,6 +571,8 @@ firmware/
     |-- binbook/
     `-- app_lifecycle/
 ```
+
+Integrated production targets should prefer one complete `*.target.json` file. Optional `profile-parts/` files should be introduced only when a component is genuinely reused across several targets.
 
 ---
 
@@ -546,11 +595,29 @@ make target=esp32s3-waveshare-7in5 build
 
 The build system should load the target profile and generate a C header.
 
+For production and developer handoff builds, the build should also produce a UF2 firmware image whenever the selected board profile includes `uf2` in `firmwareUpdate.formats`.
+
+Expected firmware artifacts:
+
+```text
+build/
+|-- firmware.bin          # native toolchain image or merged flash image
+|-- firmware.uf2          # user-replaceable image when supported by target
+|-- firmware.manifest.json
+`-- target_config.h
+```
+
+`firmware.uf2` is the preferred artifact for non-developer replacement flows. Users should be able to place the device in update mode, copy the UF2 file to the exposed USB mass-storage volume, and let the bootloader install it. The native `.bin` artifacts remain required for factory flashing, CI validation, recovery over serial/JTAG, and boards without UF2 support.
+
+`firmware.manifest.json` should record at least the target ID, firmware version, source revision, native image hash, UF2 image hash when present, UF2 family ID when present, build time, and compatibility strings embedded into the firmware. This manifest is a distribution and diagnostics artifact; it is not loaded by SquidScript apps.
+
 Example generated header:
 
 ```c
 #define DEVICE_TARGET_ID "xteink-x4"
 #define DEVICE_MCU_ESP32C3 1
+#define FIRMWARE_UPDATE_UF2 0
+/* UF2 support is desired but deferred for XTEINK X4 until the bootloader/update path is verified. */
 
 #define DISPLAY_DRIVER_XTEINK_X4 1
 #define DISPLAY_LOGICAL_WIDTH 480
@@ -741,6 +808,7 @@ Example:
       "state.write",
       "binbook.read",
       "wifi.connect",
+      "wifi.accessPoint",
       "httpServer.serve"
     ]
   }
@@ -800,10 +868,9 @@ squidc build apps/simple-counter \
 - logical display size
 - orientation
 - available pixel formats
-- available pixel formats
 - available logical keys
 - available built-ins
-- required permissions
+- required manifest capability declarations
 - foreground radio/server capabilities such as `wifi.*`, `httpServer.*`, and `bluetoothHid.*`
 - bytecode size limit
 - draw command limit
@@ -973,7 +1040,7 @@ When launching an app, firmware should check:
 - current display satisfies display requirements
 - current input profile provides required keys
 - current runtime profile can satisfy bytecode resource limits
-- app permissions are declared and allowed
+- app capability declarations are declared and allowed
 - required document capabilities are available
 - optional source map matches bytecode hash if source map is used
 
@@ -1174,20 +1241,25 @@ Array replacement is intentional because lists such as `features`, `buttons`, an
 
 ## 18. Target Profile Schema
 
-Conceptual target schema:
+The canonical practical v1 schema is `squid-target-v1` and is documented in detail in `docs/target_definition_reference.md`.
+
+Integrated target schema shape:
 
 ```json
 {
   "format": "squid-target-v1",
   "id": "target-id",
   "name": "Human Name",
-  "extends": "optional-base-target-id",
-  "board": "board-id",
-  "display": "display-id",
-  "input": "input-id",
-  "storage": "storage-id",
-  "power": "power-id",
-  "runtime": "runtime-id",
+  "mcu": {},
+  "firmwareUpdate": {},
+  "pins": {},
+  "buses": {},
+  "devices": {},
+  "display": {},
+  "input": {},
+  "storage": {},
+  "power": {},
+  "runtime": {},
   "compatibility": [
     "squidscript-0.2",
     "portrait-480x800",
@@ -1204,6 +1276,27 @@ Conceptual target schema:
 }
 ```
 
+Optional split composition schema shape:
+
+```json
+{
+  "format": "squid-target-v1",
+  "id": "target-id",
+  "name": "Human Name",
+  "extends": "optional-base-target-id",
+  "board": "board-id",
+  "display": "display-id",
+  "input": "input-id",
+  "storage": "storage-id",
+  "power": "power-id",
+  "runtime": "runtime-id",
+  "compatibility": [],
+  "features": []
+}
+```
+
+Split composition should resolve to the same internal model as the integrated schema before firmware config generation.
+
 ---
 
 ## 19. Build System Responsibilities
@@ -1212,10 +1305,10 @@ The firmware build system should:
 
 1. Accept `DEVICE_TARGET`.
 2. Load the target JSON.
-3. Resolve target inheritance.
-4. Load referenced board/display/input/storage/power/runtime profiles.
-5. Resolve component profile inheritance.
-6. Validate the combined profile.
+3. Resolve target inheritance if used.
+4. Load referenced board/display/input/storage/power/runtime profile parts only when the target uses split composition.
+5. Resolve component profile inheritance only when split composition is used.
+6. Normalize the integrated or split source form into one resolved target model.
 7. Validate bus and GPIO bindings.
 8. Validate feature, compatibility, and pixel-format names.
 9. Validate that target features are backed by selected profiles and drivers.
@@ -1225,14 +1318,21 @@ The firmware build system should:
 13. Set runtime limits.
 14. Embed target ID and compatibility info into firmware.
 15. Expose target info to launcher and SquidScript runtime.
+16. Emit native flashing artifacts for the selected MCU/toolchain.
+17. Emit `firmware.uf2` when the selected board supports UF2.
+18. Emit a firmware manifest with hashes for all distributed images.
 
 Combined profile validation must check:
 
-- referenced profile IDs exist
-- all profile `format` values are known and compatible
+- referenced profile IDs exist when split composition is used
+- all `format` values are known and compatible
 - display/input/storage bus references exist on the selected board
 - GPIO assignments are valid for the selected MCU/board
 - GPIO assignments do not conflict unless explicitly marked as shared
+- UF2 is requested only when the selected board profile declares UF2 support
+- UF2 family ID is present when `firmwareUpdate.formats` includes `uf2`
+- ADC ladder ranges on the same ADC input do not overlap
+- logical key names are known to the SquidScript input model
 - storage `maxFileReadSize` does not exceed the runtime limit exposed to apps
 - display `defaultPixelFormat` is listed in `supportedPixelFormats`
 - display `defaultBpp` is consistent with `defaultPixelFormat`
@@ -1251,7 +1351,62 @@ The compiler tooling should:
 
 ---
 
-## 20. Avoiding `#ifdef` Sprawl
+## 20. Firmware Replacement Artifacts
+
+UF2 support is a firmware distribution feature, not a SquidScript app packaging feature.
+
+The firmware build should prefer UF2 for user-facing replacement when the bootloader and board can support it because the replacement flow is simple:
+
+1. User enters firmware update mode.
+2. Device exposes a USB mass-storage volume.
+3. User copies `firmware.uf2` onto the volume.
+4. Bootloader validates the UF2 family and writes the firmware image.
+5. Device reboots into the new firmware.
+
+The UF2 image must contain only firmware flash payloads for the selected target. It must not be used to install `.sqbc` apps, `.binbook` content, app manifests, source maps, or user state. Those remain storage-level files managed by the launcher, app installer, or content workflows.
+
+The bootloader/update flow should preserve user storage by default. Firmware replacement must not erase installed apps, BinBook files, launcher selection, Wi-Fi profiles, or app state unless the user explicitly chooses a factory reset or recovery image documented as destructive.
+
+Recommended artifact naming:
+
+```text
+squidscript-firmware-${target}-${version}.uf2
+squidscript-firmware-${target}-${version}.bin
+squidscript-firmware-${target}-${version}.manifest.json
+```
+
+The firmware manifest should mark the intended replacement mode:
+
+```json
+{
+  "format": "squid-firmware-manifest-v1",
+  "target": "xteink-x4",
+  "version": "0.2.0",
+  "replacement": {
+    "preferredFormat": "uf2",
+    "userReplacement": "usb-mass-storage",
+    "preservesUserStorage": true
+  },
+  "artifacts": [
+    {
+      "path": "squidscript-firmware-xteink-x4-0.2.0.uf2",
+      "format": "uf2",
+      "sha256": "..."
+    },
+    {
+      "path": "squidscript-firmware-xteink-x4-0.2.0.bin",
+      "format": "esp-idf-bin",
+      "sha256": "..."
+    }
+  ]
+}
+```
+
+When UF2 is not supported, the manifest should still describe the native replacement path, such as serial flashing, factory flashing, or recovery flashing.
+
+---
+
+## 21. Avoiding `#ifdef` Sprawl
 
 Bad pattern:
 
@@ -1288,61 +1443,40 @@ Do not use `#ifdef` throughout app logic, VM logic, or renderer logic unless una
 
 ---
 
-## 21. Recommended Rules
+## 22. Recommended Rules
 
 1. Treat target profiles as first-class project artifacts.
-2. Compose targets from: board + display + input + storage + power + runtime.
+2. Use one integrated `*.target.json` file for fixed production devices.
 3. Apps should target capabilities, not boards, unless necessary.
 4. `squidc` should compile against a target or compatibility profile.
 5. `.sqbc` should include compatibility metadata.
 6. Firmware should validate app compatibility before launch.
 7. SquidScript apps should use logical coordinates.
-8. Display rotation belongs in the display driver/profile, not in apps.
+8. Display rotation belongs in the target display section and display driver, not in apps.
 9. Development targets should be normal targets, not hacks.
 10. Keep runtime limits target-specific.
 11. Avoid scattering device-specific conditionals through the codebase.
-12. Use profile inheritance for prototypes and families, but validate only fully resolved profiles.
+12. Use split profile parts and inheritance only when they reduce real reuse burden, and validate only fully resolved targets.
 
 ---
 
-## 22. Practical Recommendation
+## 23. Practical Recommendation
 
 For your initial targets, define at least:
 
 Targets:
 
-- xteink-x4
-- esp32s3-waveshare-7in5
+- `targets/xteink-x4.target.json`
+- `targets/esp32s3-waveshare-7in5.target.json`
 
-Boards:
+Optional reusable profile parts:
 
-- xteink-x4-board
-- esp32s3-devkit
-
-Displays:
-
-- xteink-x4-display
-- waveshare-7in5-v2
-
-Inputs:
-
-- xteink-x4-buttons
-- dev-buttons-6key
-
-Storage:
-
-- xteink-x4-sdcard
-- spi-sdcard-dev
-
-Power:
-
-- xteink-x4-power
-- usb-dev-power
-
-Runtime profiles:
-
-- esp32c3-lowram
-- esp32s3-psram
+- `esp32s3-devkit`
+- `waveshare-7in5-v2`
+- `dev-buttons-6key`
+- `spi-sdcard-dev`
+- `usb-dev-power`
+- `esp32s3-psram`
 
 Compatibility profiles:
 

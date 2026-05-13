@@ -355,6 +355,40 @@
             ]
         },
         {
+            "name": "inspect",
+            "qualifiedName": "binbook.inspect",
+            "builtinId": "BINBOOK_INSPECT_UPLOAD",
+            "args": [
+                {
+                    "name": "upload",
+                    "type": "handle<upload>"
+                }
+            ],
+            "returns": "record<binbook.info>",
+            "permission": "binbook.read",
+            "targetFeatures": [
+                "binbook.read"
+            ],
+            "renderSafe": true,
+            "handleBehavior": "does not create handles",
+            "errors": [
+                "permissionDenied",
+                "invalidHandle",
+                "uploadIncomplete",
+                "invalidMagic",
+                "unsupportedVersion",
+                "missingRequiredSection",
+                "unsupportedRequiredFeature",
+                "unsupportedPixelFormat",
+                "unsupportedCompressionMethod",
+                "invalidProfile",
+                "invalidStringRef",
+                "crcMismatch",
+                "outOfMemory",
+                "ioError"
+            ]
+        },
+        {
             "name": "info",
             "qualifiedName": "binbook.info",
             "builtinId": "BINBOOK_INFO",

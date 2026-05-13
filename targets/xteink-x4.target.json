@@ -1,0 +1,390 @@
+{
+  "format": "squid-target-v1",
+  "id": "xteink-x4",
+  "name": "XTEINK X4",
+  "status": "reference",
+  "sourceAttribution": [
+    {
+      "name": "Papyrix X4 Specifications",
+      "url": "https://github.com/bigbag/papyrix-reader/blob/main/docs/x4-specifications.md",
+      "scope": "Display panel/controller, display pins, SD pins, battery monitoring, USB detection, and pin summary."
+    },
+    {
+      "name": "Papyrix source constants",
+      "url": "https://github.com/bigbag/papyrix-reader/blob/main/src/main.cpp",
+      "scope": "Display and SD SPI pin constants used by the firmware."
+    },
+    {
+      "name": "Papyrix InputManager",
+      "url": "https://github.com/bigbag/papyrix-reader/blob/main/lib/InputManager/src/InputManager.cpp",
+      "scope": "ADC ladder ranges and button mapping."
+    },
+    {
+      "name": "Papyrix SDCardManager",
+      "url": "https://github.com/bigbag/papyrix-reader/blob/main/lib/SDCardManager/src/SDCardManager.cpp",
+      "scope": "microSD chip-select pin and SD initialization frequency."
+    },
+    {
+      "name": "CrossPoint storage and web upload code",
+      "url": "https://github.com/crosspoint-reader/crosspoint-reader",
+      "scope": "Reference behavior for XTEINK-family SD initialization, web upload staging, incomplete upload cleanup, and AP/STA IP reporting."
+    },
+    {
+      "name": "Adafruit XTEINK X4 CircuitPython Pinouts",
+      "url": "https://learn.adafruit.com/circuitpython-on-the-xteink-x4-ereader/pinouts",
+      "scope": "Independent confirmation of display, SD, button, and battery wiring."
+    }
+  ],
+  "mcu": {
+    "part": "ESP32-C3",
+    "family": "ESP32C3",
+    "cpu": {
+      "cores": 1,
+      "frequencyMHz": 160
+    },
+    "memory": {
+      "internalSramKB": 400,
+      "psramKB": 0
+    },
+    "flash": {
+      "sizeMB": 16
+    }
+  },
+  "firmwareUpdate": {
+    "formats": ["esp-idf-bin"],
+    "preferredFormat": "esp-idf-bin",
+    "userReplacement": "serial-or-web-flash",
+    "uf2": {
+      "status": "deferred",
+      "reason": "UF2 support is desired for SquidScript firmware replacement, but the verified XTEINK X4 bootloader/update path has not yet been confirmed as UF2-capable."
+    }
+  },
+  "pins": {
+    "GPIO0": {
+      "capabilities": ["gpio", "adc"],
+      "voltage": "3v3",
+      "usedBy": ["battery.voltage"]
+    },
+    "GPIO1": {
+      "capabilities": ["gpio", "adc"],
+      "voltage": "3v3",
+      "usedBy": ["input.buttons_adc_1"]
+    },
+    "GPIO2": {
+      "capabilities": ["gpio", "adc"],
+      "voltage": "3v3",
+      "usedBy": ["input.buttons_adc_2"]
+    },
+    "GPIO3": {
+      "capabilities": ["gpio", "wake"],
+      "voltage": "3v3",
+      "usedBy": ["input.power_button"]
+    },
+    "GPIO4": {
+      "capabilities": ["gpio"],
+      "voltage": "3v3",
+      "usedBy": ["display.dc"]
+    },
+    "GPIO5": {
+      "capabilities": ["gpio"],
+      "voltage": "3v3",
+      "usedBy": ["display.rst"]
+    },
+    "GPIO6": {
+      "capabilities": ["gpio"],
+      "voltage": "3v3",
+      "usedBy": ["display.busy"]
+    },
+    "GPIO7": {
+      "capabilities": ["gpio", "spi_miso"],
+      "voltage": "3v3",
+      "usedBy": ["storage.sd.miso"]
+    },
+    "GPIO8": {
+      "capabilities": ["gpio", "spi_sck"],
+      "voltage": "3v3",
+      "usedBy": ["bus.spi.shared.sck"]
+    },
+    "GPIO10": {
+      "capabilities": ["gpio", "spi_mosi"],
+      "voltage": "3v3",
+      "usedBy": ["bus.spi.shared.mosi"]
+    },
+    "GPIO12": {
+      "capabilities": ["gpio"],
+      "voltage": "3v3",
+      "usedBy": ["storage.sd.cs"]
+    },
+    "GPIO20": {
+      "capabilities": ["gpio", "uart_rx"],
+      "voltage": "3v3",
+      "usedBy": ["power.usb_detect"]
+    },
+    "GPIO21": {
+      "capabilities": ["gpio"],
+      "voltage": "3v3",
+      "usedBy": ["display.cs"]
+    }
+  },
+  "buses": {
+    "spi": {
+      "shared": {
+        "sck": "GPIO8",
+        "mosi": "GPIO10",
+        "miso": "GPIO7",
+        "mode": 0,
+        "bitOrder": "msb-first",
+        "maxFrequencyHz": 40000000,
+        "devices": ["display.epd", "storage.sd"]
+      }
+    }
+  },
+  "devices": {
+    "display.epd": {
+      "type": "epaper-display",
+      "controller": "SSD1677",
+      "panel": "GDEQ0426T82",
+      "bus": "spi.shared",
+      "pins": {
+        "cs": "GPIO21",
+        "dc": "GPIO4",
+        "rst": "GPIO5",
+        "busy": "GPIO6"
+      }
+    },
+    "storage.sd": {
+      "type": "spi-sdcard",
+      "bus": "spi.shared",
+      "pins": {
+        "cs": "GPIO12",
+        "miso": "GPIO7"
+      }
+    },
+    "battery.voltage": {
+      "type": "adc-voltage-divider",
+      "adc": "GPIO0",
+      "dividerMultiplier": 2.0
+    },
+    "power.usb_detect": {
+      "type": "gpio-usb-detect",
+      "gpio": "GPIO20",
+      "activeHigh": true
+    }
+  },
+  "display": {
+    "device": "display.epd",
+    "driver": "ssd1677_xteink_x4",
+    "physical": {
+      "width": 800,
+      "height": 480
+    },
+    "logical": {
+      "width": 480,
+      "height": 800,
+      "rotation": 90
+    },
+    "color": {
+      "supportedBpp": [1, 2],
+      "defaultBpp": 2,
+      "supportedPixelFormats": ["GRAY1_PACKED", "GRAY2_PACKED"],
+      "defaultPixelFormat": "GRAY2_PACKED"
+    },
+    "refresh": {
+      "full": true,
+      "half": true,
+      "fast": true,
+      "partial": true
+    },
+    "framebuffer": {
+      "preferredMode": "single",
+      "fullBufferBytes1bpp": 48000,
+      "dualBufferBytes1bpp": 96000,
+      "maxFullBufferBpp": 2
+    },
+    "quirks": [
+      {
+        "id": "sunlight-fading-fix",
+        "description": "Power down the display after refresh to reduce sunlight fading risk on XTEINK X4 SSD1677 hardware."
+      }
+    ]
+  },
+  "storage": {
+    "type": "spi-sdcard",
+    "device": "storage.sd",
+    "mount": "/sd",
+    "filesystem": {
+      "required": ["fat32"],
+      "optional": ["exfat"]
+    },
+    "removable": true,
+    "cardDetect": null,
+    "writeProtect": null,
+    "hotSwap": {
+      "detect": "io-error-or-remount",
+      "requiresUnmountForRemoval": true
+    },
+    "libraries": [
+      {
+        "id": "books",
+        "volume": "sd",
+        "path": "/books",
+        "contentTypes": ["binbook"],
+        "primary": true
+      },
+      {
+        "id": "apps-inbox",
+        "volume": "sd",
+        "path": "/inbox/apps",
+        "contentTypes": ["squidapp.zip"],
+        "primary": true
+      },
+      {
+        "id": "flash-library",
+        "volume": "flash",
+        "status": "deferred",
+        "reason": "Requires an explicit writable flash filesystem partition; it is not implicit unused firmware flash."
+      }
+    ],
+    "supportsApps": true,
+    "supportsContent": true,
+    "maxFileReadSize": 65536
+  },
+  "input": {
+    "type": "mixed",
+    "debounceMs": 5,
+    "buttons": [
+      {
+        "logical": "BACK",
+        "type": "adc-ladder-button",
+        "adc": "GPIO1",
+        "range": {
+          "minExclusive": 3100,
+          "maxInclusive": 3900
+        }
+      },
+      {
+        "logical": "SELECT",
+        "type": "adc-ladder-button",
+        "adc": "GPIO1",
+        "range": {
+          "minExclusive": 2090,
+          "maxInclusive": 3100
+        }
+      },
+      {
+        "logical": "LEFT",
+        "type": "adc-ladder-button",
+        "adc": "GPIO1",
+        "range": {
+          "minExclusive": 750,
+          "maxInclusive": 2090
+        }
+      },
+      {
+        "logical": "RIGHT",
+        "type": "adc-ladder-button",
+        "adc": "GPIO1",
+        "range": {
+          "minExclusive": null,
+          "maxInclusive": 750
+        }
+      },
+      {
+        "logical": "UP",
+        "type": "adc-ladder-button",
+        "adc": "GPIO2",
+        "range": {
+          "minExclusive": 1120,
+          "maxInclusive": 3900
+        }
+      },
+      {
+        "logical": "DOWN",
+        "type": "adc-ladder-button",
+        "adc": "GPIO2",
+        "range": {
+          "minExclusive": null,
+          "maxInclusive": 1120
+        }
+      },
+      {
+        "logical": "POWER",
+        "type": "gpio-button",
+        "gpio": "GPIO3",
+        "mode": "input_pullup",
+        "activeLow": true,
+        "wake": true
+      }
+    ]
+  },
+  "power": {
+    "type": "battery",
+    "battery": {
+      "monitor": "battery.voltage",
+      "emptyMillivolts": 3000,
+      "fullMillivolts": 4200
+    },
+    "usbDetect": "power.usb_detect",
+    "deepSleep": true,
+    "wakeKeys": ["POWER"],
+    "sleepPolicy": {
+      "displaySleep": true,
+      "syncStorageBeforeSleep": true,
+      "saveAppStateBeforeSleep": true
+    }
+  },
+  "runtime": {
+    "squidscript": {
+      "version": "0.2",
+      "maxBytecodeSize": 32768,
+      "maxStateVariables": 64,
+      "maxSerializedStateSize": 8192,
+      "maxStringLength": 1024,
+      "maxFunctionCount": 64,
+      "maxFunctionParameters": 8,
+      "maxLocalVariablesPerFunction": 32,
+      "maxCallDepth": 8,
+      "maxInstructionsPerEvent": 2000,
+      "maxLoopIterationsPerEvent": 100,
+      "maxScreenDrawCommands": 128,
+      "maxFileReadSize": 65536,
+      "maxParsedDataSections": 256,
+      "maxListItemsReturned": 256,
+      "maxHandles": 16
+    }
+  },
+  "compatibility": [
+    "squidscript-0.2",
+    "portrait-480x800",
+    "pixel-format.GRAY1_PACKED",
+    "pixel-format.GRAY2_PACKED",
+    "binbook"
+  ],
+  "features": [
+    "sdcard",
+    "buttons",
+    "adc-button-ladder",
+    "battery.adc",
+    "usb-detect",
+    "display.draw",
+    "display.epaper.ssd1677",
+    "squidscript.bytecode",
+    "state.read",
+    "state.write",
+    "content.pick",
+    "content.read",
+    "input.text",
+    "stateMachine",
+    "library.books.read",
+    "library.books.write",
+    "library.appsInbox.write",
+    "wifi.connect",
+    "wifi.scan",
+    "wifi.accessPoint",
+    "wifi.configureIp",
+    "wifi.setup",
+    "httpServer.serve",
+    "bleTransfer.receive",
+    "binbook.read"
+  ]
+}

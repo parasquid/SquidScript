@@ -537,8 +537,11 @@ The relationship between the formats is:
 - `.squid` is SquidScript source.
 - `.sqbc` is executable SquidScript bytecode produced by `squidc`.
 - `.binbook` is a compiled raster-book document container produced by BinBook tooling.
+- `.uf2` is a firmware replacement image produced by the firmware build, not by `squidc`.
 
 SQBC should not embed, redefine, or reinterpret the BinBook binary file format. SquidScript apps should access BinBook documents through firmware-native capabilities.
+
+Likewise, SQBC tooling should not package apps into UF2 images. UF2 belongs to firmware replacement for targets whose bootloader supports a drag-and-drop update flow; app installation remains a storage and launcher concern.
 
 The draft BinBook capability contract lives at:
 

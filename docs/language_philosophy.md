@@ -12,7 +12,9 @@ This document describes the design philosophy that should guide SquidScript lang
 
 The language specification defines what SquidScript is. This document explains why it should stay that way, how future changes should be evaluated, and where new behavior should live.
 
-SquidScript is intended for user-authored miniapps on low-RAM e-ink/display devices. It should make useful device apps possible without turning the device into a general-purpose JavaScript runtime, a native plugin host, or an unrestricted filesystem scripting environment.
+SquidScript is intended for first-class device apps on low-RAM e-ink/display devices. Apps may be written in SquidScript, firmware-native C/C++, or trusted scripts in another language; each app model needs clear platform contracts for display, storage, networking, hardware, lifecycle, and diagnostics.
+
+SquidScript should make useful device apps possible without turning the device into a general-purpose JavaScript runtime, a native plugin host, or an undefined filesystem scripting environment.
 
 Future versions may change current v0.2 details when the details do not align with these principles.
 
@@ -34,7 +36,7 @@ SquidScript is designed around:
 - e-ink and low-refresh display behavior
 - off-device compilation
 - prevalidated bytecode execution
-- user-authored SD-card miniapps
+- user-authored SD-card apps
 - firmware-owned hardware and document capabilities
 - bounded execution, memory use, storage access, and rendering work
 
@@ -46,10 +48,10 @@ SquidScript is not designed around:
 - dynamic package loading
 - on-device source compilation as a production requirement
 - native app binaries loaded from user storage
-- raw framebuffer or memory access from apps
+- raw framebuffer, hardware register, or memory access from apps
 - unbounded general-purpose computation
 
-The language should be useful because it is constrained, not despite being constrained.
+The language should be useful because its device contracts are explicit, not because it is less trusted than other app languages.
 
 ---
 
@@ -95,14 +97,14 @@ Examples:
 - `bluetoothHid.*`
 - `binbook.*`
 
-These are built in from an app author's perspective, but they are not core language syntax. They are namespaced, permissioned, bounded firmware/runtime APIs.
+These are built in from an app author's perspective, but they are not core language syntax. They are namespaced, declared, bounded firmware/runtime APIs.
 
 The compiler should know each standard capability's:
 
 - name
 - argument rules
 - return type
-- required permission
+- required capability declaration
 - target feature requirements
 - render-safety behavior
 - handle behavior
@@ -143,9 +145,11 @@ SquidScript should preserve explicit limits for:
 
 When a feature cannot be bounded clearly, it should not be added until its bounds can be specified and validated.
 
-### 3.5 Firmware Owns Scarce Or Dangerous Resources
+### 3.5 Firmware Owns Scarce Or Shared Resources
 
-Apps should not directly own hardware, raw file handles, decoded page buffers, native pointers, display framebuffers, system files, or memory-managed resources.
+Apps should not directly own hardware registers, decoded page buffers, native pointers, display framebuffers, or memory-managed resources.
+
+This is not because SquidScript apps are second-class. It is because on a small device these resources are shared platform services with lifecycle, recovery, and power-management rules. C/C++ app modules and Ruby scripts should also use equivalent platform contracts when they participate in the managed app environment.
 
 The firmware/runtime should own these resources and expose them through:
 
@@ -153,7 +157,7 @@ The firmware/runtime should own these resources and expose them through:
 - read-only records
 - bounded lists
 - display-ready drawables
-- manifest permissions
+- manifest capability declarations
 - target-profile requirements
 - structured diagnostics
 
@@ -468,7 +472,7 @@ Examples:
 | `binbook.showPage(file, index)` | Require review | Convenient, but may bypass composition and combine too many responsibilities |
 | User package imports | Defer/reject for early versions | Adds dependency, versioning, validation, and runtime model complexity |
 
-The concrete reference for capability-based platform extensibility is `capabilities/binbook.cap.json`. Future standard domain capabilities should be comparable: contract-first, namespaced, permissioned, target-profile-aware, compiler-visible, VM-validatable, and implemented by firmware/runtime code outside the compiler.
+The concrete reference for capability-based platform extensibility is `capabilities/binbook.cap.json`. Future standard domain capabilities should be comparable: contract-first, namespaced, declared in the app manifest, target-profile-aware, compiler-visible, VM-validatable, and implemented by firmware/runtime code outside the compiler.
 
 ---
 
@@ -490,15 +494,15 @@ BinBook is the model case. App authors should not parse BinBook bytes, validate 
 
 The BinBook capability contract makes this extensibility concrete. It gives the compiler an interface to check without making the compiler a BinBook implementation. It gives the VM stable builtin IDs and validation rules without putting JSON metadata into `.sqbc`. It gives firmware a clear responsibility boundary: implement the native document capability according to the BinBook file-format spec and the SquidScript capability contract.
 
-This distinction matters for future design. Adding `binbook.pageImage(page)` expands the standard platform. Adding BinBook-specific syntax expands the language. The first can be permissioned, profiled, validated, and implemented as a firmware module. The second changes how the language is parsed and taught. SquidScript should choose the first path unless the second is clearly necessary.
+This distinction matters for future design. Adding `binbook.pageImage(page)` expands the standard platform. Adding BinBook-specific syntax expands the language. The first can be declared, profiled, validated, and implemented as a firmware module. The second changes how the language is parsed and taught. SquidScript should choose the first path unless the second is clearly necessary.
 
-The same principle applies beyond BinBook. New features should be reviewed by what they cost the whole system, not just by whether they make one example shorter. A good feature is bounded, diagnosable, fixture-testable, permissionable, target-aware, and composable. It should fail predictably. It should not require the firmware to guess. It should not hide unbounded work behind friendly syntax.
+The same principle applies beyond BinBook. New features should be reviewed by what they cost the whole system, not just by whether they make one example shorter. A good feature is bounded, diagnosable, fixture-testable, declarable in the manifest, target-aware, and composable. It should fail predictably. It should not require the firmware to guess. It should not hide unbounded work behind friendly syntax.
 
 SquidScript should prefer explicit failure over surprising continuation. It should prefer handles over pointers, records over mutable objects, capability calls over global magic, and off-device compilation over on-device cleverness. It should make the safe path obvious and the unsafe path unavailable.
 
 The result should feel practical rather than minimalistic. A small app should be easy to write. A broken app should be easy to diagnose. A firmware implementation should be able to validate bytecode before trusting it. A future spec author should be able to decide where a feature belongs without asking whether SquidScript is trying to become a general-purpose language.
 
-SquidScript is not a sandboxed JavaScript. It is a small, compiled, capability-oriented device language for safe miniapps on constrained displays.
+SquidScript is not a sandboxed JavaScript. It is a small, compiled, capability-oriented language for first-class apps on constrained display devices.
 
 ---
 
