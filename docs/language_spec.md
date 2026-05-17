@@ -1202,6 +1202,7 @@ onKey("SELECT") {}
 onKey("BACK") {}
 onKey("MENU") {}
 onKey("HOME") {}
+onKey("POWER") {}
 ```
 
 Example:
@@ -1217,6 +1218,44 @@ onKey("RIGHT") {
 Key names are logical input names, not raw GPIOs.
 
 The firmware maps hardware buttons to logical keys.
+
+Targets may also expose long-press events for logical keys:
+
+```squid
+onLongKey("POWER") {
+  system.sleep()
+}
+```
+
+Long-press handling is target- and firmware-policy-aware. Firmware may reserve some long-press actions for system behavior, such as putting the device to sleep, forcing a refresh, or entering recovery. When an app defines `onLongKey("POWER")`, firmware should dispatch it only if target policy allows app-visible long-press handling for that key. Otherwise the system action wins.
+
+Short key events and long key events should be distinct. A long press should not also deliver `onKey(...)` unless the target explicitly opts into that behavior.
+
+Long-press events are threshold-triggered. If a key is held past the target's long-press duration, firmware should fire the long-press event or system action immediately at that threshold. It should not wait for button release. For example, if long `POWER` sleeps after 2000 ms, the device should enter sleep once the button has been held for 2000 ms even if the user is still holding the button.
+
+Long press is defined on logical keys, not on a specific electrical input type. GPIO buttons, key matrices, and ADC ladders may all support long press if the firmware input driver can report stable press/release state over time.
+
+Targets may also expose key combinations, also called chords:
+
+```squid
+onChord(["POWER", "DOWN"]) {
+  screen.refresh()
+}
+```
+
+Combination presses are target-defined logical input events. Firmware should emit a chord only when all listed keys are pressed within the target's chord timing window and the underlying input driver can report the combination reliably.
+
+Chord events should have explicit precedence over their component short key events. For example, if `POWER+DOWN` is recognized as a chord, firmware should suppress the individual short `POWER` and `DOWN` events for that press sequence unless the target explicitly opts into delivering both.
+
+Chord and long-press precedence must be target-defined. A common policy is:
+
+1. system-owned long press
+2. system-owned chord
+3. app-owned chord
+4. app-owned long press
+5. short key
+
+This lets long `POWER` sleep remain reliable even if `POWER` participates in app-visible combinations.
 
 ---
 

@@ -154,6 +154,8 @@ function handleSelect() {
 }
 ```
 
+On XTEINK X4, the seventh logical key is `POWER`, not `MENU`. The reference app may use a short foreground `POWER` press as a menu/TOC shortcut when firmware policy allows app-visible power key events. Long-press sleep and wake behavior remains firmware-owned.
+
 The main views are:
 
 - `browser`: choose Browse or Resume

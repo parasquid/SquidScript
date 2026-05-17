@@ -40,6 +40,12 @@ The detailed schema reference is maintained in:
 docs/target_definition_reference.md
 ```
 
+Firmware build orchestration, backend selection, and simulator backend policy are described in:
+
+```text
+docs/firmware_build_architecture.md
+```
+
 Split component profiles are still useful for reusable development-board combinations, but they are an advanced composition mode rather than the default shape for integrated devices such as XTEINK X4.
 
 Conceptually, every target still resolves to the same categories:
@@ -52,6 +58,7 @@ Resolved target =
 + storage behavior
 + power behavior
 + runtime limits
++ optional simulator layout metadata
 ```
 
 Every standalone target or profile JSON object must declare a `format` string and an `id`.
@@ -75,7 +82,7 @@ Split composition example:
 dev-esp32s3-waveshare-7in5:
   board: esp32s3-devkit
   display: waveshare-7in5-v2
-  input: dev-buttons-6key
+  input: dev-buttons-7key
   storage: spi-sdcard-dev
   power: usb-dev-power
   runtime: esp32s3-psram
@@ -250,12 +257,16 @@ Logical keys:
 - `HOME`
 - `POWER`
 
+Input profiles may also define long-press behavior and key combinations for logical keys. Long press is threshold-triggered: firmware fires the long-press event or system action when the key has been held for the configured duration, without waiting for release. This can apply to GPIO buttons, matrix keys, and ADC ladder buttons when the input driver can report stable press/release state.
+
+Key combinations, or chords, are also target-defined. A chord such as `POWER+DOWN` should be emitted only when the input hardware can detect both logical keys reliably within the configured timing window.
+
 Example input profile:
 
 ```json
 {
   "format": "squid-target-input-v1",
-  "id": "dev-buttons-6key",
+  "id": "dev-buttons-7key",
   "type": "gpio-buttons",
   "buttons": [
     { "logical": "UP", "gpio": 1, "activeLow": true },
@@ -263,7 +274,28 @@ Example input profile:
     { "logical": "LEFT", "gpio": 3, "activeLow": true },
     { "logical": "RIGHT", "gpio": 4, "activeLow": true },
     { "logical": "SELECT", "gpio": 5, "activeLow": true },
-    { "logical": "BACK", "gpio": 6, "activeLow": true }
+    { "logical": "BACK", "gpio": 6, "activeLow": true },
+    { "logical": "POWER", "gpio": 7, "activeLow": true }
+  ],
+  "longPress": [
+    {
+      "logical": "POWER",
+      "durationMs": 2000,
+      "trigger": "threshold",
+      "owner": "system",
+      "action": "sleep",
+      "suppressShortKey": true
+    }
+  ],
+  "chords": [
+    {
+      "logical": ["POWER", "DOWN"],
+      "name": "force-refresh",
+      "owner": "system",
+      "action": "refresh-display",
+      "windowMs": 120,
+      "suppressComponentKeys": true
+    }
   ]
 }
 ```
@@ -511,7 +543,7 @@ Example ESP32-S3 + Waveshare development target using split profile parts:
   "name": "ESP32-S3 DevKit + Waveshare 7.5in e-Paper",
   "board": "esp32s3-devkit",
   "display": "waveshare-7in5-v2",
-  "input": "dev-buttons-6key",
+  "input": "dev-buttons-7key",
   "storage": "spi-sdcard-dev",
   "power": "usb-dev-power",
   "runtime": "esp32s3-psram",
@@ -1165,7 +1197,7 @@ Example:
   "id": "esp32s3-dev-waveshare",
   "board": "esp32s3-devkit",
   "display": "waveshare-7in5-v2",
-  "input": "dev-buttons-6key",
+  "input": "dev-buttons-7key",
   "storage": "spi-sdcard-dev",
   "power": "usb-dev-power",
   "runtime": "esp32s3-psram"
@@ -1473,7 +1505,7 @@ Optional reusable profile parts:
 
 - `esp32s3-devkit`
 - `waveshare-7in5-v2`
-- `dev-buttons-6key`
+- `dev-buttons-7key`
 - `spi-sdcard-dev`
 - `usb-dev-power`
 - `esp32s3-psram`

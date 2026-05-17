@@ -62,7 +62,7 @@ onKey("SELECT") {
   handleSelect()
 }
 
-onKey("MENU") {
+onKey("POWER") {
   if (stateMachine.is("uiState", "reader")) {
     openToc()
   } else {

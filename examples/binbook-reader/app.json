@@ -35,7 +35,7 @@
       "minHeight": 800,
       "pixelFormats": ["GRAY2_PACKED"]
     },
-    "keys": ["UP", "DOWN", "LEFT", "RIGHT", "SELECT", "BACK", "MENU"],
+    "keys": ["UP", "DOWN", "LEFT", "RIGHT", "SELECT", "BACK", "POWER"],
     "features": [
       "display.draw",
       "state.read",

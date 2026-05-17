@@ -605,6 +605,6 @@
         "The compiler depends on this contract, not on BinBook parser or decoder source code.",
         "The firmware BinBook module depends on BINBOOK_FORMAT_SPEC.md for binary validation and decoding behavior.",
         "Function builtinId values are symbolic until assigned numeric values by the SQBC builtin registry.",
-        "Read-only BinBook operations are renderSafe because they are side-effect-free from the app's perspective, but firmware must still enforce target-profile limits for file IO, validation, decoding, handle count, and drawable memory."
+        "Read-only BinBook operations are renderSafe because they are side-effect-free from the app's perspective, but firmware must still enforce target-definition limits for file IO, validation, decoding, handle count, and drawable memory."
     ]
 }

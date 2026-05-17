@@ -16,6 +16,12 @@ The goal is to avoid premature implementation friction while still ending with a
 
 `squidc` is the compiler. SQBC is the bytecode format emitted by the compiler.
 
+Firmware build orchestration, backend selection, generated firmware artifacts, and simulator backend policy are described in:
+
+```text
+docs/firmware_build_architecture.md
+```
+
 ---
 
 ## 2. Core Decision
@@ -24,7 +30,7 @@ The SquidScript compiler should not start directly as a Rust-only compiler.
 
 Instead:
 
-- Ruby should be used first to explore syntax, semantics, diagnostics, target-profile behavior, binary layout, and sourcemap shape.
+- Ruby should be used first to explore syntax, semantics, diagnostics, target-definition behavior, binary layout, and sourcemap shape.
 - Rust should be introduced once the core language behavior and target model are stable enough to justify a production implementation.
 - The final authority should be the written specification plus golden fixtures, not the Ruby prototype itself.
 
@@ -48,8 +54,8 @@ The early compiler will likely need frequent changes to:
 - source syntax
 - AST shape
 - validation rules
-- target-profile schema
-- board/display/input/storage/power/runtime target-profile model
+- target-definition schema
+- integrated target model
 - diagnostics
 - binary format details
 - sourcemap format
@@ -153,7 +159,7 @@ compiler/
 
     valid/
       hello_world.squid
-      xteinkx4_menu.squid
+      xteink-x4_menu.squid
       simple_buttons.squid
       binbook_reader.squid
 
@@ -163,31 +169,12 @@ compiler/
       unknown_button.squid
       unsupported_display_mode.squid
 
-    profiles/
-      boards/
-        esp32c3.toml
-        esp32s3.toml
+    targets/
+      xteink-x4.target.json
+      browser-sim-xteink-x4.target.json
 
-      displays/
-        gdeq0426t82.toml
-        waveshare_4_2_bw.toml
-
-      inputs/
-        xteinkx4_buttons.toml
-        custom_buttons.toml
-
-      storage/
-        xteinkx4_sdcard.toml
-
-      power/
-        xteinkx4_power.toml
-
-      runtime/
-        esp32c3_lowram.toml
-        esp32s3_psram.toml
-
-      targets/
-        xteinkx4.toml
+    layouts/
+      xteink-x4.layout.json
 
     expected/
       hello_world.ir.json
@@ -195,10 +182,10 @@ compiler/
       hello_world.sourcemap.json
       hello_world.sqbc
 
-      xteinkx4_menu.ir.json
-      xteinkx4_menu.diagnostics.json
-      xteinkx4_menu.sourcemap.json
-      xteinkx4_menu.sqbc
+      xteink-x4_menu.ir.json
+      xteink-x4_menu.diagnostics.json
+      xteink-x4_menu.sourcemap.json
+      xteink-x4_menu.sqbc
 
       binbook_reader.ir.json
       binbook_reader.diagnostics.json
@@ -280,7 +267,7 @@ IR means intermediate representation: the compiler's normalized internal form be
 
 IR JSON should be treated as an internal compiler test artifact unless an external consumer is explicitly introduced. Its schema should be versioned separately from the SQBC binary format so compiler internals can evolve without weakening bytecode compatibility.
 
-Binary fixtures should be byte-exact for a fixed source set, fixed target profile, fixed SQBC format version, and fixed compiler compatibility mode.
+Binary fixtures should be byte-exact for a fixed source set, fixed target definition, fixed SQBC format version, and fixed compiler compatibility mode.
 
 When the SQBC binary format intentionally changes, the format version and fixture expectations must change together.
 
@@ -296,7 +283,7 @@ For each fixture, the manifest should record:
 
 - source files
 - entrypoint
-- target profile
+- target definition
 - expected success or failure
 - expected output files
 - SQBC format version
@@ -305,7 +292,7 @@ For each fixture, the manifest should record:
 A valid fixture should usually include:
 
 - `.squid` source file
-- target profile
+- target definition
 - expected diagnostics
 - expected IR
 - expected `.sqbc` binary output
@@ -316,7 +303,7 @@ Integration fixtures should include a minimal BinBook reader app compiled to `.s
 An invalid fixture should usually include:
 
 - `.squid` source file
-- target profile
+- target definition
 - expected diagnostic codes
 - expected diagnostic spans
 - expected help messages, where applicable
@@ -469,9 +456,27 @@ Browser-facing requests should use virtual, normalized paths so diagnostics and 
 
 ---
 
-## 13. Target Profile Model
+## 13. Target Definition Model
 
-SquidScript compilation should support separate but composable target concepts:
+SquidScript compilation should primarily compile against an integrated target definition.
+
+Example:
+
+```bash
+squidc build app.squid --target xteink-x4
+```
+
+The compiler should load the resolved target model produced from:
+
+```text
+targets/xteink-x4.target.json
+```
+
+Integrated targets are the default for production devices because they keep board, display, input, storage, power, runtime, feature, compatibility, firmware-update, and simulator metadata in one maintainable source artifact.
+
+Split profile parts remain an optional advanced authoring mode for development-board reuse. If used, they should resolve to the same integrated target model before compiler validation.
+
+Optional composable profile concepts:
 
 - board profile
 - display profile
@@ -481,18 +486,18 @@ SquidScript compilation should support separate but composable target concepts:
 - runtime profile
 - target alias
 
-Example:
+Illustrative split composition:
 
 ```text
-xteinkx4 =
+xteink-x4 =
   board: esp32c3
   display: gdeq0426t82
-  input: xteinkx4_buttons
-  storage: xteinkx4_sdcard
-  power: xteinkx4_power
+  input: xteink_x4_buttons
+  storage: xteink_x4_sdcard
+  power: xteink_x4_power
   runtime: esp32c3_lowram
 
-xteinkx4_buttons =
+xteink_x4_buttons =
   buttons:
     button_0: gpio ...
     button_1: gpio ...
@@ -503,15 +508,15 @@ xteinkx4_buttons =
     button_6: gpio ...
 ```
 
-The compiler should allow both:
+The compiler may eventually allow both:
 
-1. compiling against a target alias
-2. compiling against explicit board/display/input/storage/power/runtime profile components
+1. compiling against an integrated target ID
+2. compiling against explicit split profile components for development targets
 
 Example CLI forms:
 
 ```bash
-squidc build app.squid --target xteinkx4
+squidc build app.squid --target xteink-x4
 
 squidc build app.squid \
   --board esp32s3 \
@@ -522,7 +527,7 @@ squidc build app.squid \
   --runtime esp32s3_psram.toml
 ```
 
-The profile resolver should expand aliases into a fully resolved target profile before validation.
+The resolver should expand aliases and split profile parts into a fully resolved target model before validation. `squidc` should validate app requirements against that resolved model, not against partially loaded profile fragments.
 
 ---
 
@@ -607,7 +612,7 @@ Example diagnostic:
 {
   "severity": "error",
   "code": "SQBC_DISPLAY_BIT_DEPTH_UNSUPPORTED",
-  "message": "Target xteinkx4 supports 2-bit pages only.",
+  "message": "Target xteink-x4 supports 2-bit pages only.",
   "file": "main.squid",
   "span": {
     "start": 120,
@@ -646,7 +651,7 @@ Preferred behavior:
 - explicit section offsets
 - explicit checksums if used
 - golden binary fixtures for compatibility
-- byte-exact fixture matching for fixed inputs, target profile, SQBC format version, and compiler compatibility mode
+- byte-exact fixture matching for fixed inputs, target definition, SQBC format version, and compiler compatibility mode
 
 The Ruby prototype may generate early binary layouts.
 
@@ -694,14 +699,14 @@ The most important rule is to give agents small, testable tasks.
 Good agent task:
 
 ```text
-Implement target-profile validation for display bit depth.
+Implement target-definition validation for display bit depth.
 
 Context:
 - Read spec/SQBC_TARGET_PROFILES.md.
 - Read rust/crates/squidc-core/src/profile.rs.
 - Read rust/crates/squidc-core/src/diagnostics.rs.
 - Do not change public structs unless necessary.
-- Add tests for invalid 4-bit pages on xteinkx4.
+- Add tests for invalid 4-bit pages on xteink-x4.
 - Expected diagnostic code: SQBC_DISPLAY_BIT_DEPTH_UNSUPPORTED.
 - Run cargo test.
 ```
@@ -748,8 +753,8 @@ Goals:
 - establish basic syntax
 - parse simple SquidScript files
 - define initial AST
-- resolve target aliases
-- validate xteinkx4 constraints
+- resolve target IDs and optional aliases
+- validate xteink-x4 constraints
 - emit basic diagnostics
 - emit basic IR
 - emit experimental binary output
@@ -760,7 +765,7 @@ Exit criteria:
 - at least one valid compile path
 - at least one invalid diagnostic path
 - at least one BinBook capability compile path
-- initial xteinkx4 profile
+- initial xteink-x4 target definition
 - initial binary header
 - initial sourcemap format
 - fixture directory created
@@ -845,7 +850,7 @@ Exit criteria:
 Goals:
 
 - build playground/editor
-- add target profile selector
+- add target selector
 - add syntax highlighting
 - add diagnostics panel
 - add preview/simulator if useful
@@ -854,7 +859,7 @@ Goals:
 Exit criteria:
 
 - user can write SquidScript in browser
-- user can select xteinkx4
+- user can select xteink-x4
 - user can compile in browser
 - user can inspect errors
 - user can export the compiled package
@@ -868,8 +873,8 @@ Do not wait until the Ruby compiler is complete.
 Start Rust when the following are stable enough:
 
 - basic syntax
-- target profile model
-- xteinkx4 alias expansion
+- target definition model
+- xteink-x4 target resolution
 - display bit-depth validation
 - diagnostics shape
 - binary header

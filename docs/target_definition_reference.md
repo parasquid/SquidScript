@@ -26,6 +26,12 @@ The firmware target compiler should read the target JSON, validate it, and gener
 
 Production firmware consumes generated constants and structs, not raw JSON.
 
+Firmware build orchestration, backend selection, and simulator backend policy are described in:
+
+```text
+docs/firmware_build_architecture.md
+```
+
 ---
 
 ## 2. Design Rules
@@ -90,6 +96,7 @@ Optional fields:
 - `status`: lifecycle marker such as `draft`, `reference`, or `production`.
 - `sourceAttribution`: list of sources used to verify hardware facts.
 - `firmwareUpdate`: firmware image and replacement metadata.
+- `simulator`: optional simulator and layout metadata.
 
 ---
 
@@ -118,6 +125,84 @@ Example:
 ```
 
 The target compiler should use this section to select MCU-specific build settings, validate known GPIO names, validate memory-sensitive runtime limits, and emit generated firmware constants.
+
+---
+
+## 5.1 Simulator Section
+
+`simulator` describes optional metadata used by simulator backends, documentation renderers, and web tools.
+
+This section must not replace electrical hardware definitions. Firmware wiring still comes from `pins`, `buses`, `devices`, `display`, `input`, `storage`, and `power`.
+
+Example:
+
+```json
+{
+  "simulator": {
+    "layout": "targets/layouts/xteink-x4.layout.json",
+    "defaultBackend": "browser-sim"
+  }
+}
+```
+
+Fields:
+
+- `layout`: path to a `squid-layout-v1` layout file.
+- `defaultBackend`: optional simulator backend hint such as `browser-sim`.
+
+The layout file is presentation metadata. It may describe device outline, screen placement, button positions, LEDs, ports, labels, and simulator hit targets.
+
+Example layout:
+
+```json
+{
+  "format": "squid-layout-v1",
+  "id": "xteink-x4-layout",
+  "target": "xteink-x4",
+  "units": "px",
+  "canvas": {
+    "width": 720,
+    "height": 1120
+  },
+  "device": {
+    "shape": "rounded-rect",
+    "x": 40,
+    "y": 40,
+    "width": 640,
+    "height": 1040,
+    "radius": 24
+  },
+  "elements": [
+    {
+      "id": "display",
+      "kind": "display",
+      "device": "display.epd",
+      "x": 120,
+      "y": 120,
+      "width": 480,
+      "height": 800
+    },
+    {
+      "id": "button-select",
+      "kind": "button",
+      "logical": "SELECT",
+      "x": 320,
+      "y": 980,
+      "width": 80,
+      "height": 48,
+      "label": "Select"
+    }
+  ]
+}
+```
+
+Layout rules:
+
+1. `kind: "display"` elements should reference a target `devices` ID through `device`.
+2. `kind: "button"` elements should reference target logical keys through `logical`.
+3. Layout coordinates are simulator/documentation coordinates, not physical millimeters unless `units` says otherwise.
+4. Placeholder, guessed, or approximate positions must be explicitly marked with `status: "placeholder"` or equivalent notes.
+5. The browser simulator may use button elements as pointer/touch hit targets, but the target `input` section remains the source of valid logical keys.
 
 ---
 
@@ -401,6 +486,79 @@ Example:
 ```
 
 The target compiler should validate that ranges on the same ADC do not overlap and that logical key names are known.
+
+Targets may describe long-press behavior separately from the physical button definition.
+
+Example:
+
+```json
+{
+  "longPress": [
+    {
+      "logical": "POWER",
+      "durationMs": 2000,
+      "owner": "system",
+      "action": "sleep"
+    }
+  ]
+}
+```
+
+Fields:
+
+- `logical`: logical key name.
+- `durationMs`: press duration threshold. The event/action fires when the button has been held for this duration; firmware must not wait for release.
+- `owner`: `"system"` or `"app"`.
+- `action`: optional system action name, such as `"sleep"`.
+
+Rules:
+
+- Short and long key events are distinct.
+- A system-owned long press should not be delivered to app code unless firmware policy explicitly allows it.
+- A target may allow short `POWER` presses to reach foreground apps while reserving long `POWER` for sleep.
+- Firmware should document whether long press also emits a short press. The default should be no duplicate short press after a long press.
+- A threshold-triggered system action such as long-press sleep should execute as soon as the threshold is crossed, even if the user continues holding the button.
+- Long press is valid for GPIO buttons, key-matrix keys, and ADC ladder buttons when the input driver can report a stable pressed/released state over time.
+- Matrix-key long press depends on the matrix scanner's debounce, ghosting, and rollover behavior. Targets should document any combinations that cannot be detected reliably.
+- ADC-ladder long press depends on stable ADC ranges. If multiple simultaneous ADC-ladder buttons collapse into ambiguous values, firmware should treat long press as valid only for unambiguous single-key states.
+
+Targets may also describe key combinations, also called chords.
+
+Example:
+
+```json
+{
+  "chords": [
+    {
+      "logical": ["POWER", "DOWN"],
+      "name": "force-refresh",
+      "owner": "system",
+      "action": "refresh-display",
+      "windowMs": 120,
+      "suppressComponentKeys": true
+    }
+  ]
+}
+```
+
+Fields:
+
+- `logical`: list of logical key names in the chord.
+- `name`: stable chord ID for diagnostics, simulator UI, and generated firmware constants.
+- `owner`: `"system"` or `"app"`.
+- `action`: optional system action name.
+- `windowMs`: maximum interval between first and last key press for chord recognition.
+- `suppressComponentKeys`: whether recognized chords suppress individual short key events.
+
+Chord rules:
+
+- Chords are defined on logical keys, not GPIOs.
+- Firmware should emit a chord only when all listed keys are observed as pressed within the target's chord timing window.
+- Chords must be validated against what the input hardware can detect.
+- GPIO buttons can usually participate in chords when independently readable.
+- Matrix-key chords depend on rollover and ghosting behavior.
+- ADC-ladder chords are valid only when simultaneous button states produce unambiguous ADC values. If an ADC ladder can only identify one key at a time, chords between keys on that same ladder should be marked unsupported or omitted.
+- Chord and long-press precedence must be explicit. System-owned long press, such as long `POWER` sleep, should normally outrank app-owned chords.
 
 ---
 
