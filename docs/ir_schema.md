@@ -36,6 +36,7 @@ Consumers must reject unknown `format` values and unsupported versions.
       "value": 0
     }
   ],
+  "functions": [],
   "handlers": [
     {
       "event": "onKey.DOWN",
@@ -90,6 +91,12 @@ Consumers must reject unknown `format` values and unsupported versions.
 The browser runtime currently recognizes:
 
 - `assign`
+- `let`
+- `if`
+- `repeat`
+- `for`
+- `return`
+- `call`
 - `screen.refresh`
 - `screen.open`
 - `app.exit`
@@ -101,3 +108,16 @@ The browser runtime currently recognizes:
 - `display.line`
 
 Display statements are rendered when they appear in a screen body. Non-display statements are executed in handlers. Unknown statements should be treated as runtime errors once runtime diagnostics are formalized.
+
+## v1 Expressions
+
+The browser-sim IR currently recognizes:
+
+- `literal`
+- `state`
+- `binary` with `+`, `-`, `==`, `!=`, `<`, `<=`, `>`, and `>=`
+- `call`
+
+## v1 Validation
+
+The compiler currently reports diagnostics for missing app declarations, missing screens, target mismatches, duplicate screen and function names, unknown `screen.open(...)` targets, unsupported screen render policies, direct mutating statements inside screen bodies, and display calls outside screen rendering.

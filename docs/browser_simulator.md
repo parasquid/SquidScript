@@ -97,6 +97,8 @@ The log is intended for simulator/runtime debugging, not for app-visible behavio
 
 The browser app tries to load `src/compiler/wasm/squidc_wasm.js`. When that generated module is present, compile status reports `Compiler: WASM`. If it is absent, browser-sim uses the TypeScript fallback compiler and reports `Compiler: FALLBACK`.
 
+The Rust/WASM compiler is the authoritative browser-sim compiler path. The TypeScript fallback exists only so the UI remains demonstrable when the generated WASM package is unavailable. It must stay constrained to documented SquidScript syntax and must not introduce simulator-only syntax or semantics.
+
 Build the WASM package from `simulator/browser`:
 
 ```bash
@@ -147,18 +149,22 @@ Currently supported syntax:
 - `onStart() { ... }`
 - `onKey("KEY") { ... }`
 - `screen("name", { render: "compose" }) { ... }`
+- `function name(...) { ... }`
 - `state.load()`, `state.save()`
 - `screen.open("name")`, `screen.refresh()`
 - `app.exit()`
-- simple assignment with `+` and `-`
+- local `let` bindings, assignment, `if/else`, `repeat`, and bounded `for ... in ... max ...`
+- expression calls and binary operators `+`, `-`, `==`, `!=`, `<`, `<=`, `>`, and `>=`
 - `display.clear(...)`, `display.text(...)`, `display.rect(...)`, `display.line(...)`
 
-Unsupported areas remain explicit future work: functions, conditionals, loops, includes, modules, typed declarations, full expression precedence, content APIs, BinBook APIs, and production SQBC execution.
+Unsupported areas remain explicit future work: includes, modules, typed declarations, full expression precedence, content APIs, BinBook APIs, and production SQBC execution.
 
 ## Missing Target Metadata
 
-Implementation currently exposes one target-definition gap:
+The target definition now references an external simulator layout file:
 
-- `targets/xteink-x4.target.json` has no concrete simulator layout path or physical button placement data.
+```text
+targets/layouts/xteink-x4.layout.json
+```
 
-The workaround is isolated in the browser layout provider and labelled approximate. The long-term fix is a `squid-layout-v1` layout file referenced from the target's optional `simulator.layout` field.
+The browser simulator still keeps a derived fallback layout in code for resilience. When the layout JSON is available, that file is the preferred source for shell and physical button placement.

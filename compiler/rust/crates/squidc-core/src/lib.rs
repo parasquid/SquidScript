@@ -73,6 +73,7 @@ pub struct IrProgram {
     pub version: u32,
     pub app: IrApp,
     pub state: Vec<IrStateValue>,
+    pub functions: Vec<IrFunction>,
     pub handlers: Vec<IrHandler>,
     pub screens: Vec<IrScreen>,
 }
@@ -93,6 +94,13 @@ pub struct IrStateValue {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IrHandler {
     pub event: String,
+    pub statements: Vec<IrStatement>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct IrFunction {
+    pub name: String,
+    pub params: Vec<String>,
     pub statements: Vec<IrStatement>,
 }
 
@@ -118,6 +126,27 @@ pub enum IrStatement {
     AppExit,
     #[serde(rename = "assign")]
     Assign { name: String, expr: IrExpr },
+    #[serde(rename = "let")]
+    Let { name: String, expr: IrExpr },
+    #[serde(rename = "if")]
+    If {
+        condition: IrExpr,
+        then_statements: Vec<IrStatement>,
+        else_statements: Vec<IrStatement>,
+    },
+    #[serde(rename = "repeat")]
+    Repeat { count: IrExpr, statements: Vec<IrStatement> },
+    #[serde(rename = "for")]
+    For {
+        item: String,
+        list: IrExpr,
+        max: Option<IrExpr>,
+        statements: Vec<IrStatement>,
+    },
+    #[serde(rename = "return")]
+    Return { expr: Option<IrExpr> },
+    #[serde(rename = "call")]
+    Call { name: String, args: Vec<IrExpr> },
     #[serde(rename = "display.clear")]
     DisplayClear { color: String },
     #[serde(rename = "display.text")]
@@ -141,6 +170,8 @@ pub enum IrExpr {
         operator: String,
         right: Box<IrExpr>,
     },
+    #[serde(rename = "call")]
+    Call { name: String, args: Vec<IrExpr> },
 }
 
 pub const SQBC_MAGIC: &[u8; 4] = b"SQBC";
@@ -167,6 +198,7 @@ pub struct ParsedSource {
 pub struct AstRoot {
     pub app: Option<AstAppDecl>,
     pub state: Option<AstStateBlock>,
+    pub functions: Vec<AstFunction>,
     pub handlers: Vec<AstHandler>,
     pub screens: Vec<AstScreen>,
 }
@@ -201,6 +233,14 @@ pub struct AstHandler {
     pub span: SourceSpan,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AstFunction {
+    pub name: String,
+    pub params: Vec<String>,
+    pub statements: Vec<IrStatement>,
+    pub span: SourceSpan,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TokenKind {
     Ident,
@@ -214,6 +254,9 @@ enum TokenKind {
     Dot,
     Comma,
     Equals,
+    Bang,
+    Less,
+    Greater,
     Plus,
     Minus,
     Whitespace,
@@ -264,6 +307,7 @@ pub fn compile(request: CompileRequest) -> CompileResponse {
             parsed.diagnostics.push(error("E_TARGET_MISMATCH", "source target does not match selected target", 0, request.source.len().min(1)));
         }
     }
+    validate_semantics(&ast, &mut parsed.diagnostics);
 
     let ok = parsed.diagnostics.iter().all(|d| d.severity != "error");
     let ir = if ok {
@@ -271,6 +315,11 @@ pub fn compile(request: CompileRequest) -> CompileResponse {
         let handlers = ast.handlers.into_iter().map(|handler| IrHandler {
             event: handler.event,
             statements: handler.statements,
+        }).collect();
+        let functions = ast.functions.into_iter().map(|function| IrFunction {
+            name: function.name,
+            params: function.params,
+            statements: function.statements,
         }).collect();
         Some(IrProgram {
             format: "squidscript-ir".to_string(),
@@ -281,6 +330,7 @@ pub fn compile(request: CompileRequest) -> CompileResponse {
                 target: request.target_id,
             },
             state: ast.state.map(|state| state.values).unwrap_or_default(),
+            functions,
             handlers,
             screens: ast.screens.into_iter().map(|screen| IrScreen {
                 name: screen.name,
@@ -313,6 +363,8 @@ impl Parser<'_> {
                 self.parse_state(builder);
             } else if self.peek().map(|token| token.kind == TokenKind::Ident && token.text.starts_with("on")).unwrap_or(false) {
                 self.parse_handler(builder);
+            } else if self.at_ident("function") {
+                self.parse_function(builder);
             } else if self.at_ident("screen") {
                 self.parse_screen(builder);
             } else if !self.at_end() {
@@ -484,6 +536,29 @@ impl Parser<'_> {
         });
     }
 
+    fn parse_function(&mut self, builder: &mut GreenNodeBuilder) {
+        builder.start_node(SquidLang::kind_to_raw(SquidKind::Token));
+        let start = self.peek().map(|token| token.span.start).unwrap_or(0);
+        self.bump(builder);
+        self.consume_ws(builder);
+        let name = self.consume_ident(builder).unwrap_or_default();
+        let params = self.parse_param_list(builder);
+
+        self.consume_ws(builder);
+        if self.at_kind(TokenKind::OpenBrace) {
+            self.bump(builder);
+        }
+        let statements = self.parse_statements_until_close(builder);
+        let end = self.previous_end().unwrap_or(start);
+        builder.finish_node();
+        self.ast.functions.push(AstFunction {
+            name,
+            params,
+            statements,
+            span: SourceSpan { start, end },
+        });
+    }
+
     fn parse_statements_until_close(&mut self, builder: &mut GreenNodeBuilder) -> Vec<IrStatement> {
         let mut statements = Vec::new();
 
@@ -513,11 +588,53 @@ impl Parser<'_> {
         self.bump(builder);
         self.consume_ws(builder);
 
+        if first == "let" {
+            let name = self.consume_ident(builder)?;
+            self.consume_ws(builder);
+            if self.at_kind(TokenKind::Colon) {
+                self.bump(builder);
+                self.consume_ws(builder);
+                let _type_name = self.consume_ident(builder);
+                self.consume_ws(builder);
+            }
+            if self.at_kind(TokenKind::Equals) {
+                self.bump(builder);
+            }
+            self.consume_ws(builder);
+            let expr = self.parse_expr(builder)?;
+            return Some(IrStatement::Let { name, expr });
+        }
+
+        if first == "if" {
+            return self.parse_if_statement(builder);
+        }
+
+        if first == "repeat" {
+            return self.parse_repeat_statement(builder);
+        }
+
+        if first == "for" {
+            return self.parse_for_statement(builder);
+        }
+
+        if first == "return" {
+            if self.at_kind(TokenKind::CloseBrace) {
+                return Some(IrStatement::Return { expr: None });
+            }
+            let expr = self.parse_expr(builder);
+            return Some(IrStatement::Return { expr });
+        }
+
         if self.at_kind(TokenKind::Equals) {
             self.bump(builder);
             self.consume_ws(builder);
             let expr = self.parse_expr(builder)?;
             return Some(IrStatement::Assign { name: first, expr });
+        }
+
+        if self.at_kind(TokenKind::OpenParen) {
+            let args = self.parse_call_args(builder);
+            return Some(IrStatement::Call { name: first, args });
         }
 
         if !self.at_kind(TokenKind::Dot) {
@@ -605,32 +722,217 @@ impl Parser<'_> {
     }
 
     fn parse_expr(&mut self, builder: &mut GreenNodeBuilder) -> Option<IrExpr> {
-        let left = if self.at_kind(TokenKind::Number) {
+        self.parse_comparison_expr(builder)
+    }
+
+    fn parse_comparison_expr(&mut self, builder: &mut GreenNodeBuilder) -> Option<IrExpr> {
+        let mut expr = self.parse_additive_expr(builder)?;
+        loop {
+            self.consume_ws(builder);
+            if !(self.at_kind(TokenKind::Less) || self.at_kind(TokenKind::Greater) || self.at_kind(TokenKind::Equals) || self.at_kind(TokenKind::Bang)) {
+                break;
+            }
+            let operator = self.consume_binary_operator(builder)?;
+            self.consume_ws(builder);
+            let right = self.parse_additive_expr(builder)?;
+            expr = IrExpr::Binary {
+                left: Box::new(expr),
+                operator,
+                right: Box::new(right),
+            };
+        }
+        Some(expr)
+    }
+
+    fn parse_additive_expr(&mut self, builder: &mut GreenNodeBuilder) -> Option<IrExpr> {
+        let mut expr = self.parse_primary_expr(builder)?;
+        loop {
+            self.consume_ws(builder);
+            if !(self.at_kind(TokenKind::Plus) || self.at_kind(TokenKind::Minus)) {
+                break;
+            }
+            let operator = self.consume_binary_operator(builder)?;
+            self.consume_ws(builder);
+            let right = self.parse_primary_expr(builder)?;
+            expr = IrExpr::Binary {
+                left: Box::new(expr),
+                operator,
+                right: Box::new(right),
+            };
+        }
+        Some(expr)
+    }
+
+    fn parse_primary_expr(&mut self, builder: &mut GreenNodeBuilder) -> Option<IrExpr> {
+        let expr = if self.at_kind(TokenKind::OpenParen) {
+            self.bump(builder);
+            self.consume_ws(builder);
+            let expr = self.parse_expr(builder)?;
+            self.consume_ws(builder);
+            if self.at_kind(TokenKind::CloseParen) {
+                self.bump(builder);
+            }
+            expr
+        } else if self.at_kind(TokenKind::Number) {
             IrExpr::Literal { value: serde_json::json!(self.consume_number(builder)?) }
         } else if self.at_kind(TokenKind::String) {
             IrExpr::Literal { value: serde_json::json!(self.consume_string(builder)?) }
         } else if self.at_kind(TokenKind::Ident) {
             let name = self.peek()?.text.clone();
             self.bump(builder);
-            IrExpr::State { name }
+            if name == "true" {
+                IrExpr::Literal { value: serde_json::json!(true) }
+            } else if name == "false" {
+                IrExpr::Literal { value: serde_json::json!(false) }
+            } else if name == "null" {
+                IrExpr::Literal { value: serde_json::Value::Null }
+            } else if self.at_kind(TokenKind::OpenParen) {
+                IrExpr::Call { name, args: self.parse_call_args(builder) }
+            } else {
+                IrExpr::State { name }
+            }
         } else {
             return None;
         };
+        Some(expr)
+    }
 
+    fn parse_if_statement(&mut self, builder: &mut GreenNodeBuilder) -> Option<IrStatement> {
         self.consume_ws(builder);
-        if self.at_kind(TokenKind::Plus) || self.at_kind(TokenKind::Minus) {
-            let operator = self.peek()?.text.clone();
+        if self.at_kind(TokenKind::OpenParen) {
+            self.bump(builder);
+        }
+        self.consume_ws(builder);
+        let condition = self.parse_expr(builder)?;
+        self.consume_ws(builder);
+        if self.at_kind(TokenKind::CloseParen) {
+            self.bump(builder);
+        }
+        self.consume_ws(builder);
+        if self.at_kind(TokenKind::OpenBrace) {
+            self.bump(builder);
+        }
+        let then_statements = self.parse_statements_until_close(builder);
+        self.consume_ws(builder);
+        let else_statements = if self.at_ident("else") {
             self.bump(builder);
             self.consume_ws(builder);
-            let right = self.parse_expr(builder)?;
-            Some(IrExpr::Binary {
-                left: Box::new(left),
-                operator,
-                right: Box::new(right),
-            })
+            if self.at_kind(TokenKind::OpenBrace) {
+                self.bump(builder);
+            }
+            self.parse_statements_until_close(builder)
         } else {
-            Some(left)
+            Vec::new()
+        };
+        Some(IrStatement::If { condition, then_statements, else_statements })
+    }
+
+    fn parse_repeat_statement(&mut self, builder: &mut GreenNodeBuilder) -> Option<IrStatement> {
+        self.consume_ws(builder);
+        if self.at_kind(TokenKind::OpenParen) {
+            self.bump(builder);
         }
+        self.consume_ws(builder);
+        let count = self.parse_expr(builder)?;
+        self.consume_ws(builder);
+        if self.at_kind(TokenKind::CloseParen) {
+            self.bump(builder);
+        }
+        self.consume_ws(builder);
+        if self.at_kind(TokenKind::OpenBrace) {
+            self.bump(builder);
+        }
+        let statements = self.parse_statements_until_close(builder);
+        Some(IrStatement::Repeat { count, statements })
+    }
+
+    fn parse_for_statement(&mut self, builder: &mut GreenNodeBuilder) -> Option<IrStatement> {
+        self.consume_ws(builder);
+        let item = self.consume_ident(builder)?;
+        self.consume_ws(builder);
+        if self.at_ident("in") {
+            self.bump(builder);
+        }
+        self.consume_ws(builder);
+        let list = self.parse_expr(builder)?;
+        self.consume_ws(builder);
+        let max = if self.at_ident("max") {
+            self.bump(builder);
+            self.consume_ws(builder);
+            self.parse_expr(builder)
+        } else {
+            None
+        };
+        self.consume_ws(builder);
+        if self.at_kind(TokenKind::OpenBrace) {
+            self.bump(builder);
+        }
+        let statements = self.parse_statements_until_close(builder);
+        Some(IrStatement::For { item, list, max, statements })
+    }
+
+    fn parse_param_list(&mut self, builder: &mut GreenNodeBuilder) -> Vec<String> {
+        let mut params = Vec::new();
+        self.consume_ws(builder);
+        if !self.at_kind(TokenKind::OpenParen) {
+            return params;
+        }
+        self.bump(builder);
+        while !self.at_end() {
+            self.consume_ws(builder);
+            if self.at_kind(TokenKind::CloseParen) {
+                self.bump(builder);
+                break;
+            }
+            if let Some(param) = self.consume_ident(builder) {
+                params.push(param);
+            }
+            self.consume_ws(builder);
+            if self.at_kind(TokenKind::Comma) {
+                self.bump(builder);
+            }
+        }
+        params
+    }
+
+    fn parse_call_args(&mut self, builder: &mut GreenNodeBuilder) -> Vec<IrExpr> {
+        let mut args = Vec::new();
+        if !self.at_kind(TokenKind::OpenParen) {
+            return args;
+        }
+        self.bump(builder);
+        while !self.at_end() {
+            self.consume_ws(builder);
+            if self.at_kind(TokenKind::CloseParen) {
+                self.bump(builder);
+                break;
+            }
+            if let Some(arg) = self.parse_expr(builder) {
+                args.push(arg);
+            } else {
+                self.bump(builder);
+            }
+            self.consume_ws(builder);
+            if self.at_kind(TokenKind::Comma) {
+                self.bump(builder);
+            }
+        }
+        args
+    }
+
+    fn consume_binary_operator(&mut self, builder: &mut GreenNodeBuilder) -> Option<String> {
+        let first = self.peek()?.text.clone();
+        if matches!(self.peek()?.kind, TokenKind::Equals | TokenKind::Bang | TokenKind::Less | TokenKind::Greater) {
+            self.bump(builder);
+            if self.at_kind(TokenKind::Equals) {
+                let second = self.peek()?.text.clone();
+                self.bump(builder);
+                return Some(format!("{first}{second}"));
+            }
+            return Some(first);
+        }
+        self.bump(builder);
+        Some(first)
     }
 
     fn parse_options_object(&mut self, builder: &mut GreenNodeBuilder) -> serde_json::Value {
@@ -723,6 +1025,15 @@ impl Parser<'_> {
         let text = self.peek()?.text.clone();
         self.bump(builder);
         Some(text.trim_matches('"').to_string())
+    }
+
+    fn consume_ident(&mut self, builder: &mut GreenNodeBuilder) -> Option<String> {
+        if !self.at_kind(TokenKind::Ident) {
+            return None;
+        }
+        let text = self.peek()?.text.clone();
+        self.bump(builder);
+        Some(text)
     }
 
     fn consume_number(&mut self, builder: &mut GreenNodeBuilder) -> Option<i64> {
@@ -822,6 +1133,9 @@ fn lex(source: &str) -> Vec<LexToken> {
                 '.' => TokenKind::Dot,
                 ',' => TokenKind::Comma,
                 '=' => TokenKind::Equals,
+                '!' => TokenKind::Bang,
+                '<' => TokenKind::Less,
+                '>' => TokenKind::Greater,
                 '+' => TokenKind::Plus,
                 '-' => TokenKind::Minus,
                 _ => TokenKind::Unknown,
@@ -856,6 +1170,9 @@ fn syntax_kind_for(kind: TokenKind) -> SquidKind {
         | TokenKind::Dot
         | TokenKind::Comma
         | TokenKind::Equals
+        | TokenKind::Bang
+        | TokenKind::Less
+        | TokenKind::Greater
         | TokenKind::Plus
         | TokenKind::Minus => SquidKind::Token,
     }
@@ -877,6 +1194,108 @@ fn error(code: &str, message: &str, start: usize, end: usize) -> Diagnostic {
         severity: "error".to_string(),
         message: message.to_string(),
         span: SourceSpan { start, end },
+    }
+}
+
+fn validate_semantics(ast: &AstRoot, diagnostics: &mut Vec<Diagnostic>) {
+    let mut screen_names = std::collections::BTreeSet::new();
+    for screen in &ast.screens {
+        if !screen_names.insert(screen.name.clone()) {
+            diagnostics.push(error("E_DUPLICATE_SCREEN", "screen names must be unique", screen.span.start, screen.span.end));
+        }
+        if screen.render != "compose" && screen.render != "stream" {
+            diagnostics.push(error("E_RENDER_POLICY", "screen render policy must be compose or stream", screen.span.start, screen.span.end));
+        }
+        validate_screen_statements(&screen.statements, screen.span.start, screen.span.end, diagnostics);
+    }
+
+    let mut function_names = std::collections::BTreeSet::new();
+    for function in &ast.functions {
+        if !function_names.insert(function.name.clone()) {
+            diagnostics.push(error("E_DUPLICATE_FUNCTION", "function names must be unique", function.span.start, function.span.end));
+        }
+    }
+
+    for handler in &ast.handlers {
+        validate_handler_statements(&handler.statements, handler.span.start, handler.span.end, &screen_names, diagnostics);
+    }
+    for function in &ast.functions {
+        validate_screen_references(&function.statements, function.span.start, function.span.end, &screen_names, diagnostics);
+    }
+}
+
+fn validate_screen_statements(statements: &[IrStatement], start: usize, end: usize, diagnostics: &mut Vec<Diagnostic>) {
+    for statement in statements {
+        match statement {
+            IrStatement::StateLoad
+            | IrStatement::StateSave
+            | IrStatement::ScreenOpen { .. }
+            | IrStatement::ScreenRefresh
+            | IrStatement::AppExit
+            | IrStatement::Assign { .. } => {
+                diagnostics.push(error("E_RENDER_PURITY", "screen bodies must not directly mutate state or app lifecycle", start, end));
+            }
+            IrStatement::If { then_statements, else_statements, .. } => {
+                validate_screen_statements(then_statements, start, end, diagnostics);
+                validate_screen_statements(else_statements, start, end, diagnostics);
+            }
+            IrStatement::Repeat { statements, .. } | IrStatement::For { statements, .. } => {
+                validate_screen_statements(statements, start, end, diagnostics);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn validate_handler_statements(
+    statements: &[IrStatement],
+    start: usize,
+    end: usize,
+    screen_names: &std::collections::BTreeSet<String>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for statement in statements {
+        match statement {
+            IrStatement::DisplayClear { .. }
+            | IrStatement::DisplayText { .. }
+            | IrStatement::DisplayRect { .. }
+            | IrStatement::DisplayLine { .. } => {
+                diagnostics.push(error("E_DISPLAY_OUTSIDE_SCREEN", "display calls are only valid while rendering a screen", start, end));
+            }
+            IrStatement::If { then_statements, else_statements, .. } => {
+                validate_handler_statements(then_statements, start, end, screen_names, diagnostics);
+                validate_handler_statements(else_statements, start, end, screen_names, diagnostics);
+            }
+            IrStatement::Repeat { statements, .. } | IrStatement::For { statements, .. } => {
+                validate_handler_statements(statements, start, end, screen_names, diagnostics);
+            }
+            _ => {}
+        }
+    }
+    validate_screen_references(statements, start, end, screen_names, diagnostics);
+}
+
+fn validate_screen_references(
+    statements: &[IrStatement],
+    start: usize,
+    end: usize,
+    screen_names: &std::collections::BTreeSet<String>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for statement in statements {
+        match statement {
+            IrStatement::ScreenOpen { screen } if !screen_names.contains(screen) => {
+                diagnostics.push(error("E_UNKNOWN_SCREEN", "screen.open references an unknown screen", start, end));
+            }
+            IrStatement::If { then_statements, else_statements, .. } => {
+                validate_screen_references(then_statements, start, end, screen_names, diagnostics);
+                validate_screen_references(else_statements, start, end, screen_names, diagnostics);
+            }
+            IrStatement::Repeat { statements, .. } | IrStatement::For { statements, .. } => {
+                validate_screen_references(statements, start, end, screen_names, diagnostics);
+            }
+            _ => {}
+        }
     }
 }
 
@@ -933,6 +1352,102 @@ screen("main") {
     }
 
     #[test]
+    fn parses_and_lowers_functions_locals_conditionals_and_returns() {
+        let source = r#"app "control-flow" target "xteink-x4"
+state { selected: 0 }
+
+function chooseScreen(value) {
+  if (value == 0) {
+    return "main"
+  } else {
+    return "detail"
+  }
+}
+
+onKey("SELECT") {
+  if (selected == 0) {
+    screen.open("detail")
+  } else {
+    app.exit()
+  }
+}
+
+screen("main") {
+  let label = "Hello"
+  display.clear("gray0")
+  drawLabel(label)
+}
+
+screen("detail") {
+  display.clear("gray0")
+}
+"#;
+        let output = compile(CompileRequest { source: source.to_string(), target_id: "xteink-x4".to_string() });
+        assert!(output.ok, "{:?}", output.diagnostics);
+        let ir = output.ir.unwrap();
+        assert_eq!(ir.functions.len(), 1);
+        assert_eq!(ir.functions[0].name, "chooseScreen");
+        assert_eq!(ir.functions[0].params, vec!["value"]);
+        assert!(matches!(ir.functions[0].statements[0], IrStatement::If { .. }));
+        assert!(matches!(ir.handlers[0].statements[0], IrStatement::If { .. }));
+        assert!(ir.screens[0].statements.iter().any(|statement| matches!(statement, IrStatement::Let { name, .. } if name == "label")));
+        assert!(ir.screens[0].statements.iter().any(|statement| matches!(statement, IrStatement::Call { name, .. } if name == "drawLabel")));
+    }
+
+    #[test]
+    fn parses_and_lowers_bounded_loops() {
+        let source = r#"app "loops" target "xteink-x4"
+state { selected: 0 }
+onStart() {
+  repeat (3) {
+    selected = selected + 1
+  }
+  screen.open("main")
+}
+screen("main") {
+  let rows = visibleRows()
+  for row in rows max 5 {
+    drawRow(row)
+  }
+}
+"#;
+        let output = compile(CompileRequest { source: source.to_string(), target_id: "xteink-x4".to_string() });
+        assert!(output.ok, "{:?}", output.diagnostics);
+        let ir = output.ir.unwrap();
+        assert!(matches!(ir.handlers[0].statements[0], IrStatement::Repeat { .. }));
+        assert!(ir.screens[0].statements.iter().any(|statement| matches!(statement, IrStatement::For { item, max: Some(_), .. } if item == "row")));
+    }
+
+    #[test]
+    fn parses_typed_locals_and_comparison_precedence() {
+        let source = r#"app "precedence" target "xteink-x4"
+state { count: 0 }
+onKey("SELECT") {
+  let next: int = count + 1
+  if (count + 1 < 10) {
+    screen.open("main")
+  }
+}
+screen("main") {
+  display.clear("gray0")
+}
+"#;
+        let output = compile(CompileRequest { source: source.to_string(), target_id: "xteink-x4".to_string() });
+        assert!(output.ok, "{:?}", output.diagnostics);
+        let ir = output.ir.unwrap();
+        assert!(matches!(ir.handlers[0].statements[0], IrStatement::Let { ref name, .. } if name == "next"));
+        let IrStatement::If { condition, .. } = &ir.handlers[0].statements[1] else {
+            panic!("expected if statement");
+        };
+        let IrExpr::Binary { left, operator, right } = condition else {
+            panic!("expected comparison expression");
+        };
+        assert_eq!(operator, "<");
+        assert!(matches!(left.as_ref(), IrExpr::Binary { operator, .. } if operator == "+"));
+        assert!(matches!(right.as_ref(), IrExpr::Literal { .. }));
+    }
+
+    #[test]
     fn matches_hello_menu_ir_fixture() {
         let source = include_str!("../../../../fixtures/valid/hello_menu.squid");
         let expected = include_str!("../../../../fixtures/expected/hello_menu.ir.json");
@@ -972,5 +1487,31 @@ screen("main") {
         let output = compile(CompileRequest { source: "screen(\"main\") {}\n".to_string(), target_id: "xteink-x4".to_string() });
         assert!(!output.ok);
         assert!(output.diagnostics.iter().any(|d| d.code == "E_APP_REQUIRED" && d.span.end >= d.span.start));
+    }
+
+    #[test]
+    fn reports_real_semantic_diagnostics() {
+        let source = r#"app "bad" target "xteink-x4"
+state { selected: 0 }
+onStart() {
+  screen.open("missing")
+  display.clear("gray0")
+}
+screen("main", { render: "invalid" }) {
+  selected = selected + 1
+}
+screen("main") {
+  display.clear("gray0")
+}
+"#;
+        let output = compile(CompileRequest { source: source.to_string(), target_id: "xteink-x4".to_string() });
+        assert!(!output.ok);
+        let codes = output.diagnostics.iter().map(|diagnostic| diagnostic.code.as_str()).collect::<Vec<_>>();
+        assert!(codes.contains(&"E_UNKNOWN_SCREEN"));
+        assert!(codes.contains(&"E_DISPLAY_OUTSIDE_SCREEN"));
+        assert!(codes.contains(&"E_RENDER_POLICY"));
+        assert!(codes.contains(&"E_RENDER_PURITY"));
+        assert!(codes.contains(&"E_DUPLICATE_SCREEN"));
+        assert!(output.diagnostics.iter().all(|diagnostic| diagnostic.span.end >= diagnostic.span.start));
     }
 }

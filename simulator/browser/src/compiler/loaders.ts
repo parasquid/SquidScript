@@ -15,6 +15,7 @@ export class IrJsonLoader implements ExecutableLoader<IrProgram> {
       name: input.app.name,
       target: input.app.target,
       stateDefaults: Object.fromEntries(input.state.map((entry) => [entry.name, entry.value])),
+      functions: new Map((input.functions ?? []).map((fn) => [fn.name, fn])),
       handlers: new Map(input.handlers.map((handler) => [handler.event, handler.statements])),
       screens: new Map(input.screens.map((screen) => [screen.name, screen]))
     };

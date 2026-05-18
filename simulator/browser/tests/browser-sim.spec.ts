@@ -31,6 +31,11 @@ test("compile, upload, run, input, diagnostics, and reset flow", async ({ page }
   await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-selected", "1");
   await expect(page.getByLabel("debug log")).toContainText("button outcome");
   await expect(page.getByLabel("debug log")).toContainText("key dispatched");
+
+  await page.reload();
+  await page.getByRole("button", { name: /Run/ }).click();
+  await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-selected", "1");
+
   await page.keyboard.press("ArrowUp");
   await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-selected", "0");
   await page.keyboard.press("ArrowDown");

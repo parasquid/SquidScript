@@ -10,8 +10,14 @@ export interface RuntimeSnapshot {
   drawCommands: DrawCommand[];
 }
 
+interface ExecResult {
+  returned: boolean;
+  value?: unknown;
+}
+
 export class BrowserRuntime {
   private state: Record<string, unknown> = {};
+  private locals: Array<Record<string, unknown>> = [];
   private currentScreen = "";
   private running = false;
   private exited = false;
@@ -29,7 +35,7 @@ export class BrowserRuntime {
     this.state = { ...this.program.stateDefaults, ...(await this.loadState()) };
     await this.executeEvent("onStart");
     if (!this.currentScreen) this.currentScreen = this.program.screens.keys().next().value ?? "";
-    if (this.drawCommands.length === 0) this.refresh();
+    if (this.drawCommands.length === 0) await this.refresh();
     return this.snapshot();
   }
 
@@ -44,7 +50,7 @@ export class BrowserRuntime {
     await this.vfs.removePrefix(`/sd/system/app-state/${this.program.id}`);
     this.state = { ...this.program.stateDefaults };
     this.currentScreen = this.program.screens.keys().next().value ?? "";
-    this.refresh();
+    await this.refresh();
     return this.snapshot();
   }
 
@@ -62,13 +68,18 @@ export class BrowserRuntime {
   private async executeEvent(event: string): Promise<void> {
     const statements = this.program.handlers.get(event);
     if (!statements) {
-      this.refresh();
+      await this.refresh();
       return;
     }
+    this.locals.push({});
+    try {
     await this.executeStatements(statements);
+    } finally {
+      this.locals.pop();
+    }
   }
 
-  private async executeStatements(statements: IrStatement[]): Promise<void> {
+  private async executeStatements(statements: IrStatement[], renderCommands?: DrawCommand[]): Promise<ExecResult> {
     let needsRefresh = false;
     for (const statement of statements) {
       if (statement.op === "state.load") {
@@ -84,11 +95,39 @@ export class BrowserRuntime {
         await this.exit();
         needsRefresh = true;
       } else if (statement.op === "assign") {
-        this.state[statement.name] = this.evaluateExpr(statement.expr);
+        this.state[statement.name] = await this.evaluateExpr(statement.expr);
+      } else if (statement.op === "let") {
+        this.currentLocals()[statement.name] = await this.evaluateExpr(statement.expr);
+      } else if (statement.op === "if") {
+        const branch = this.isTruthy(await this.evaluateExpr(statement.condition)) ? statement.then_statements : statement.else_statements;
+        const result = await this.executeStatements(branch, renderCommands);
+        if (result.returned) return result;
+      } else if (statement.op === "repeat") {
+        const count = Math.max(0, Number(await this.evaluateExpr(statement.count) ?? 0));
+        for (let index = 0; index < count; index += 1) {
+          const result = await this.executeStatements(statement.statements, renderCommands);
+          if (result.returned) return result;
+        }
+      } else if (statement.op === "for") {
+        const list = await this.evaluateExpr(statement.list);
+        const values = Array.isArray(list) ? list : [];
+        const max = statement.max ? Math.max(0, Number(await this.evaluateExpr(statement.max) ?? values.length)) : values.length;
+        for (const value of values.slice(0, max)) {
+          this.currentLocals()[statement.item] = value;
+          const result = await this.executeStatements(statement.statements, renderCommands);
+          if (result.returned) return result;
+        }
+      } else if (statement.op === "call") {
+        await this.callFunction(statement.name, await Promise.all(statement.args.map((arg) => this.evaluateExpr(arg))), renderCommands);
+      } else if (statement.op === "return") {
+        return { returned: true, value: statement.expr ? await this.evaluateExpr(statement.expr) : undefined };
+      } else if (renderCommands) {
+        this.appendDrawCommand(statement, renderCommands);
       }
     }
 
-    if (needsRefresh) this.refresh();
+    if (needsRefresh) await this.refresh();
+    return { returned: false };
   }
 
   private async exit(): Promise<void> {
@@ -97,7 +136,7 @@ export class BrowserRuntime {
     this.running = false;
   }
 
-  private refresh(): void {
+  private async refresh(): Promise<void> {
     if (this.exited) {
       this.drawCommands = [
         { op: "clear", gray: 15 },
@@ -107,70 +146,116 @@ export class BrowserRuntime {
     }
 
     const screen = this.program.screens.get(this.currentScreen);
-    const commands = screen ? this.renderScreen(screen.statements) : [{ op: "clear" as const, gray: 15 }];
+    const commands = screen ? await this.renderScreen(screen.statements) : [{ op: "clear" as const, gray: 15 }];
     this.drawCommands = commands;
   }
 
-  private renderScreen(statements: IrStatement[]): DrawCommand[] {
+  private async renderScreen(statements: IrStatement[]): Promise<DrawCommand[]> {
     const commands: DrawCommand[] = [];
-    for (const statement of statements) {
-      if (statement.op === "display.clear") {
-        commands.push({ op: "clear", gray: colorToGray(statement.color) });
-      } else if (statement.op === "display.text") {
-        const x = numberOption(statement.options, "x", 0);
-        const y = numberOption(statement.options, "y", 0);
-        const w = numberOption(statement.options, "w", 480);
-        const h = numberOption(statement.options, "h", 0);
-        const backgroundColor = stringOption(statement.options, "backgroundColor");
-        if (backgroundColor && h > 0) {
-          commands.push({ op: "rect", x, y, width: w, height: h, gray: colorToGray(backgroundColor), fill: true });
-        }
-        const align = alignOption(statement.options);
-        commands.push({
-          op: "text",
-          x: align === "center" ? x + w / 2 : align === "right" ? x + w : x,
-          y,
-          text: statement.text,
-          gray: colorToGray(stringOption(statement.options, "textColor") ?? "gray15"),
-          fontHeight: numberOption(statement.options, "fontHeight", undefined),
-          align,
-          maxWidth: w
-        });
-      } else if (statement.op === "display.rect") {
-        const fillColor = stringOption(statement.options, "fillColor");
-        commands.push({
-          op: "rect",
-          x: statement.x,
-          y: statement.y,
-          width: statement.w,
-          height: statement.h,
-          gray: colorToGray(fillColor ?? stringOption(statement.options, "strokeColor") ?? "gray15"),
-          fill: Boolean(fillColor)
-        });
-      } else if (statement.op === "display.line") {
-        const x = Math.min(statement.x1, statement.x2);
-        const y = Math.min(statement.y1, statement.y2);
-        commands.push({
-          op: "rect",
-          x,
-          y,
-          width: Math.max(1, Math.abs(statement.x2 - statement.x1)),
-          height: Math.max(1, Math.abs(statement.y2 - statement.y1)),
-          gray: colorToGray(stringOption(statement.options, "color") ?? "gray15"),
-          fill: true
-        });
-      }
+    this.locals.push({});
+    try {
+      await this.executeStatements(statements, commands);
+    } finally {
+      this.locals.pop();
     }
     return commands.length > 0 ? commands : [{ op: "clear", gray: 15 }];
   }
 
-  private evaluateExpr(expr: IrExpr): unknown {
-    if (expr.op === "literal") return expr.value;
-    if (expr.op === "state") return this.state[expr.name] ?? 0;
+  private appendDrawCommand(statement: IrStatement, commands: DrawCommand[]): void {
+    if (statement.op === "display.clear") {
+      commands.push({ op: "clear", gray: colorToGray(statement.color) });
+    } else if (statement.op === "display.text") {
+      const x = numberOption(statement.options, "x", 0);
+      const y = numberOption(statement.options, "y", 0);
+      const w = numberOption(statement.options, "w", 480);
+      const h = numberOption(statement.options, "h", 0);
+      const backgroundColor = stringOption(statement.options, "backgroundColor");
+      if (backgroundColor && h > 0) {
+        commands.push({ op: "rect", x, y, width: w, height: h, gray: colorToGray(backgroundColor), fill: true });
+      }
+      const align = alignOption(statement.options);
+      commands.push({
+        op: "text",
+        x: align === "center" ? x + w / 2 : align === "right" ? x + w : x,
+        y,
+        text: statement.text,
+        gray: colorToGray(stringOption(statement.options, "textColor") ?? "gray15"),
+        fontHeight: numberOption(statement.options, "fontHeight", undefined),
+        align,
+        maxWidth: w
+      });
+    } else if (statement.op === "display.rect") {
+      const fillColor = stringOption(statement.options, "fillColor");
+      commands.push({
+        op: "rect",
+        x: statement.x,
+        y: statement.y,
+        width: statement.w,
+        height: statement.h,
+        gray: colorToGray(fillColor ?? stringOption(statement.options, "strokeColor") ?? "gray15"),
+        fill: Boolean(fillColor)
+      });
+    } else if (statement.op === "display.line") {
+      commands.push({
+        op: "line",
+        x1: statement.x1,
+        y1: statement.y1,
+        x2: statement.x2,
+        y2: statement.y2,
+        gray: colorToGray(stringOption(statement.options, "color") ?? "gray15")
+      });
+    }
+  }
 
-    const left = Number(this.evaluateExpr(expr.left) ?? 0);
-    const right = Number(this.evaluateExpr(expr.right) ?? 0);
-    return expr.operator === "+" ? left + right : left - right;
+  private async evaluateExpr(expr: IrExpr): Promise<unknown> {
+    if (expr.op === "literal") return expr.value;
+    if (expr.op === "state") return this.resolveName(expr.name);
+    if (expr.op === "call") return this.callFunction(expr.name, await Promise.all(expr.args.map((arg) => this.evaluateExpr(arg))));
+
+    const leftValue = await this.evaluateExpr(expr.left);
+    const rightValue = await this.evaluateExpr(expr.right);
+    const left = Number(leftValue ?? 0);
+    const right = Number(rightValue ?? 0);
+    if (expr.operator === "+") return left + right;
+    if (expr.operator === "-") return left - right;
+    if (expr.operator === "==") return leftValue === rightValue;
+    if (expr.operator === "!=") return leftValue !== rightValue;
+    if (expr.operator === "<") return left < right;
+    if (expr.operator === "<=") return left <= right;
+    if (expr.operator === ">") return left > right;
+    return left >= right;
+  }
+
+  private async callFunction(name: string, args: unknown[], renderCommands?: DrawCommand[]): Promise<unknown> {
+    const fn = this.program.functions.get(name);
+    if (!fn) return undefined;
+    const frame: Record<string, unknown> = {};
+    fn.params.forEach((param, index) => {
+      frame[param] = args[index];
+    });
+    this.locals.push(frame);
+    try {
+      const result = await this.executeStatements(fn.statements, renderCommands);
+      return result.value;
+    } finally {
+      this.locals.pop();
+    }
+  }
+
+  private currentLocals(): Record<string, unknown> {
+    if (this.locals.length === 0) this.locals.push({});
+    return this.locals[this.locals.length - 1];
+  }
+
+  private resolveName(name: string): unknown {
+    for (let index = this.locals.length - 1; index >= 0; index -= 1) {
+      if (Object.hasOwn(this.locals[index], name)) return this.locals[index][name];
+    }
+    return this.state[name] ?? 0;
+  }
+
+  private isTruthy(value: unknown): boolean {
+    return value !== false && value !== null && value !== undefined && value !== 0 && value !== "";
   }
 
   private async loadState(): Promise<Record<string, unknown>> {

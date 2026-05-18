@@ -21,6 +21,7 @@ export interface IrProgram {
     target: string;
   };
   state: Array<{ name: string; value: unknown }>;
+  functions: IrFunction[];
   handlers: Array<{ event: string; statements: IrStatement[] }>;
   screens: IrScreen[];
 }
@@ -28,7 +29,8 @@ export interface IrProgram {
 export type IrExpr =
   | { op: "literal"; value: unknown }
   | { op: "state"; name: string }
-  | { op: "binary"; left: IrExpr; operator: "+" | "-"; right: IrExpr };
+  | { op: "binary"; left: IrExpr; operator: "+" | "-" | "==" | "!=" | "<" | "<=" | ">" | ">="; right: IrExpr }
+  | { op: "call"; name: string; args: IrExpr[] };
 
 export type IrStatement =
   | { op: "state.load" }
@@ -37,10 +39,22 @@ export type IrStatement =
   | { op: "screen.refresh" }
   | { op: "app.exit" }
   | { op: "assign"; name: string; expr: IrExpr }
+  | { op: "let"; name: string; expr: IrExpr }
+  | { op: "if"; condition: IrExpr; then_statements: IrStatement[]; else_statements: IrStatement[] }
+  | { op: "repeat"; count: IrExpr; statements: IrStatement[] }
+  | { op: "for"; item: string; list: IrExpr; max?: IrExpr | null; statements: IrStatement[] }
+  | { op: "return"; expr?: IrExpr | null }
+  | { op: "call"; name: string; args: IrExpr[] }
   | { op: "display.clear"; color: string }
   | { op: "display.text"; text: string; options: Record<string, unknown> }
   | { op: "display.rect"; x: number; y: number; w: number; h: number; options: Record<string, unknown> }
   | { op: "display.line"; x1: number; y1: number; x2: number; y2: number; options: Record<string, unknown> };
+
+export interface IrFunction {
+  name: string;
+  params: string[];
+  statements: IrStatement[];
+}
 
 export interface IrScreen {
   name: string;
@@ -93,6 +107,7 @@ export interface RuntimeProgram {
   name: string;
   target: string;
   stateDefaults: Record<string, unknown>;
+  functions: Map<string, IrFunction>;
   handlers: Map<string, IrStatement[]>;
   screens: Map<string, IrScreen>;
 }
@@ -100,6 +115,7 @@ export interface RuntimeProgram {
 export type DrawCommand =
   | { op: "clear"; gray: number }
   | { op: "rect"; x: number; y: number; width: number; height: number; gray: number; fill?: boolean }
+  | { op: "line"; x1: number; y1: number; x2: number; y2: number; gray: number }
   | { op: "text"; x: number; y: number; text: string; gray: number; fontHeight?: number; align?: "left" | "center" | "right"; maxWidth?: number };
 
 export interface TargetDefinition {

@@ -34,6 +34,14 @@ export function renderCommands(canvas: HTMLCanvasElement, commands: DrawCommand[
       else context.strokeRect(command.x, command.y, command.width, command.height);
     }
 
+    if (command.op === "line") {
+      context.strokeStyle = grayToCss(command.gray, target.display.color.logicalGrayscaleLevels);
+      context.beginPath();
+      context.moveTo(command.x1, command.y1);
+      context.lineTo(command.x2, command.y2);
+      context.stroke();
+    }
+
     if (command.op === "text") {
       const font = selectBitmapFont(command.fontHeight, target.display.text.fontHeights.supported, target.display.text.fontHeights.default);
       context.fillStyle = grayToCss(command.gray, target.display.color.logicalGrayscaleLevels);

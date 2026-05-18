@@ -70,6 +70,7 @@ export function compileFallback(source: string, targetId: string): CompileRespon
         version: 1,
         app: { id: appId, name: titleize(appId), target: targetId },
         state: [{ name: "selected", value: Number(stateSelected?.[1] ?? 0) }],
+        functions: [],
         handlers: [
           { event: "onStart", statements: [{ op: "state.load" }, { op: "screen.open", screen: "main" }] },
           { event: "onKey.DOWN", statements: [{ op: "assign", name: "selected", expr: { op: "binary", left: { op: "state", name: "selected" }, operator: "+", right: { op: "literal", value: 1 } } }, { op: "state.save" }, { op: "screen.refresh" }] },
