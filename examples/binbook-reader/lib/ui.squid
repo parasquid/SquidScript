@@ -301,13 +301,13 @@ function commitJump() {
 }
 
 function drawTopBar(label) {
-  display.rect(0, 0, 480, 36, { fill: "white" })
-  display.text(label, { x: 12, y: 8, w: 456, h: 24, size: "small" })
-  display.line(0, 38, 480, 38)
+  display.rect(0, 0, 480, 36, { fillColor: "gray0" })
+  display.text(label, { x: 12, y: 8, w: 456, h: 24, fontHeight: 18 })
+  display.line(0, 38, 480, 38, { color: "gray15" })
 }
 
 function drawBottomBar(label) {
-  display.rect(0, 758, 480, 42, { fill: "white" })
-  display.line(0, 758, 480, 758)
-  display.text(label, { x: 12, y: 770, w: 456, h: 24, size: "small", align: "right" })
+  display.rect(0, 758, 480, 42, { fillColor: "gray0" })
+  display.line(0, 758, 480, 758, { color: "gray15" })
+  display.text(label, { x: 12, y: 770, w: 456, h: 24, fontHeight: 18, align: "right" })
 }

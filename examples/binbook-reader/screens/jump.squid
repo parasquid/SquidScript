@@ -7,7 +7,7 @@ screen("jump") {
     y: 260,
     w: 480,
     h: 80,
-    size: "huge",
+    fontHeight: 48,
     align: "center"
   })
 
@@ -16,12 +16,12 @@ screen("jump") {
     y: 350,
     w: 480,
     h: 40,
-    size: "medium",
+    fontHeight: 24,
     align: "center"
   })
 
-  display.text("LEFT/RIGHT -10/+10", { x: 40, y: 500, w: 400, h: 32, size: "small", align: "center" })
-  display.text("DOWN/UP -1/+1", { x: 40, y: 540, w: 400, h: 32, size: "small", align: "center" })
+  display.text("LEFT/RIGHT -10/+10", { x: 40, y: 500, w: 400, h: 32, fontHeight: 18, align: "center" })
+  display.text("DOWN/UP -1/+1", { x: 40, y: 540, w: 400, h: 32, fontHeight: 18, align: "center" })
 
   drawBottomBar("SELECT jump  BACK reader")
 }

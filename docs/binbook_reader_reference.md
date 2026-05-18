@@ -167,10 +167,10 @@ The main views are:
 
 ## Reader Screen
 
-The reader screen composes BinBook page rendering through `display.draw`.
+The reader screen composes BinBook page rendering through `display.draw` and declares `render: "stream"` because it is page-image-dominant. Browser, TOC, and jump screens omit `render`, so they use the target default policy.
 
 ```squid
-screen("reader") {
+screen("reader", { render: "stream" }) {
   display.clear("white")
 
   let book = binbook.open(file)

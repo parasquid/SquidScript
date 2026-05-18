@@ -159,11 +159,15 @@ It should include:
 - rotation
 - supported bit depths
 - supported pixel formats
+- logical grayscale levels exposed to SquidScript
+- color mapping and dithering behavior
+- text font-height support and default text height
 - default bit depth
 - default pixel format
 - partial refresh support
 - fast refresh support
-- framebuffer strategy
+- display render mode support and default initialization mode
+- app-visible screen render policy support and default policy
 
 Illustrative split-profile XTEINK-style display fragment:
 
@@ -185,18 +189,38 @@ This is not the canonical XTEINK X4 hardware source. Use `targets/xteink-x4.targ
     "rotation": 90
   },
   "color": {
+    "logicalGrayscaleLevels": 16,
     "supportedBpp": [1, 2],
     "defaultBpp": 2,
     "supportedPixelFormats": ["GRAY1_PACKED", "GRAY2_PACKED"],
-    "defaultPixelFormat": "GRAY2_PACKED"
+    "defaultPixelFormat": "GRAY2_PACKED",
+    "mapping": "nearest-or-dither",
+    "dithering": ["none", "ordered", "error-diffusion"]
+  },
+  "text": {
+    "fontHeights": {
+      "supported": [16, 18, 20, 24, 32, 48],
+      "default": 20,
+      "selection": "nearest"
+    }
   },
   "refresh": {
     "full": true,
     "partial": true,
     "fast": false
   },
-  "framebuffer": {
-    "preferredMode": "tiled",
+  "rendering": {
+    "screenPolicies": ["compose", "stream"],
+    "defaultPolicy": "compose",
+    "policyModeMap": {
+      "compose": ["single", "strip"],
+      "stream": ["strip", "single"]
+    },
+    "supportedModes": ["strip", "single"],
+    "defaultMode": "strip",
+    "stripBufferBytes": 4096,
+    "singleBufferBytes1bpp": 48000,
+    "singleBufferBytes2bpp": 96000,
     "maxFullBufferBpp": 2
   }
 }
@@ -220,22 +244,52 @@ Example Waveshare display profile:
     "rotation": 0
   },
   "color": {
+    "logicalGrayscaleLevels": 16,
     "supportedBpp": [1],
     "defaultBpp": 1,
     "supportedPixelFormats": ["GRAY1_PACKED"],
-    "defaultPixelFormat": "GRAY1_PACKED"
+    "defaultPixelFormat": "GRAY1_PACKED",
+    "mapping": "nearest-or-dither",
+    "dithering": ["none", "ordered"]
+  },
+  "text": {
+    "fontHeights": {
+      "supported": [16, 20, 24, 32],
+      "default": 20,
+      "selection": "nearest"
+    }
   },
   "refresh": {
     "full": true,
     "partial": false,
     "fast": false
   },
-  "framebuffer": {
-    "preferredMode": "tiled",
+  "rendering": {
+    "screenPolicies": ["compose", "stream"],
+    "defaultPolicy": "compose",
+    "policyModeMap": {
+      "compose": ["single", "strip"],
+      "stream": ["strip", "single"]
+    },
+    "supportedModes": ["strip", "single"],
+    "defaultMode": "strip",
     "maxFullBufferBpp": 1
   }
 }
 ```
+
+Display rendering has two related but separate concepts:
+
+- Screen render policy is app-visible SquidScript intent, such as `compose` or `stream`.
+- Display render mode is firmware-visible implementation, such as `single` or `strip`.
+
+If a SquidScript screen omits `render`, firmware uses the target's `rendering.defaultPolicy`. A low-RAM target such as XTEINK X4 may default to `compose` for ordinary app screens while still initializing the display service with a `strip` default mode. `compose` means normal UI composition; `stream` means page- or image-dominant rendering. `single` means firmware keeps one full framebuffer in RAM. `strip` means firmware fills a bounded strip buffer and transfers that strip to the EPD.
+
+Firmware should use `policyModeMap` as a preference order. For example, `compose` may prefer `single` when enough memory is available and fall back to `strip` when equivalent output can be preserved. `stream` should prefer `strip` for large drawables and may use `single` when memory is available or when a backend cannot stream efficiently.
+
+SquidScript exposes a logical grayscale palette rather than native panel color levels. v0.2 uses 16 grayscale levels, `gray0` through `gray15`, where `gray0` is white and `gray15` is black. Firmware maps those logical values to the target display's native pixel format. If the native display has fewer levels than the logical palette, firmware may use the target's declared dithering modes to approximate intermediate grays.
+
+SquidScript text uses `fontHeight` in logical pixels. Targets declare the supported font heights, the default font height used when a text call omits `fontHeight`, and whether unsupported requested heights are rejected or mapped to a supported height. The initial XTEINK X4 policy uses nearest supported height selection.
 
 ---
 
@@ -584,6 +638,7 @@ For firmware source trees, the recommended layout is:
 
 ```text
 firmware/
+|-- README.md
 |-- targets/
 |   |-- xteink-x4.target.json
 |   `-- esp32s3-waveshare-7in5.target.json
@@ -594,17 +649,20 @@ firmware/
 |   |-- storage/
 |   |-- power/
 |   `-- runtime-profiles/
-`-- src/
-    |-- main.c
-    |-- target/
-    |-- hal/
-    |-- drivers/
-    |-- squidvm/
-    |-- binbook/
-    `-- app_lifecycle/
+`-- crates/
+    |-- squid-firmware/      # board entrypoint and boot flow
+    |-- squid-kernel/        # scheduler, services, lifecycle, console
+    |-- squid-hal/           # target-neutral HAL traits
+    |-- squid-hal-esp32c3/   # esp-hal XTEINK X4 implementation
+    |-- squid-display/       # display services and render modes
+    |-- squidvm/             # SQBC validation and execution
+    |-- squid-binbook/       # firmware BinBook service
+    `-- squid-console/       # serial and EPD boot console
 ```
 
 Integrated production targets should prefer one complete `*.target.json` file. Optional `profile-parts/` files should be introduced only when a component is genuinely reused across several targets.
+
+The first reference implementation should be Rust-first and may use `esp-hal`, `esp-hal-embassy`, Embassy, and `esp-radio` for the ESP32-C3 XTEINK X4 target. ESP-IDF remains a candidate backend if a required XTEINK X4 function is not practical in the Rust ESP stack.
 
 ---
 
@@ -612,7 +670,13 @@ Integrated production targets should prefer one complete `*.target.json` file. O
 
 The firmware build should select a concrete target.
 
-Example with ESP-IDF:
+Example with the Rust ESP reference backend:
+
+```sh
+cargo build -p squid-firmware --features target-xteink-x4
+```
+
+Example with ESP-IDF if that backend is selected:
 
 ```sh
 idf.py -DDEVICE_TARGET=xteink-x4 build
@@ -625,7 +689,7 @@ make target=xteink-x4 build
 make target=esp32s3-waveshare-7in5 build
 ```
 
-The build system should load the target profile and generate a C header.
+The build system should load the target profile and generate backend-facing target constants, such as a Rust module for `esp-rust` or a C header for ESP-IDF.
 
 For production and developer handoff builds, the build should also produce a UF2 firmware image whenever the selected board profile includes `uf2` in `firmwareUpdate.formats`.
 
@@ -636,7 +700,7 @@ build/
 |-- firmware.bin          # native toolchain image or merged flash image
 |-- firmware.uf2          # user-replaceable image when supported by target
 |-- firmware.manifest.json
-`-- target_config.h
+`-- target_config.rs       # or target_config.h for C/C++ backends
 ```
 
 `firmware.uf2` is the preferred artifact for non-developer replacement flows. Users should be able to place the device in update mode, copy the UF2 file to the exposed USB mass-storage volume, and let the bootloader install it. The native `.bin` artifacts remain required for factory flashing, CI validation, recovery over serial/JTAG, and boards without UF2 support.
@@ -660,6 +724,12 @@ Example generated header:
 #define DISPLAY_DEFAULT_BPP 2
 #define DISPLAY_PIXEL_FORMAT_GRAY2_PACKED 1
 #define DISPLAY_DEFAULT_PIXEL_FORMAT DISPLAY_PIXEL_FORMAT_GRAY2_PACKED
+#define DISPLAY_RENDER_MODE_STRIP 1
+#define DISPLAY_RENDER_MODE_SINGLE 2
+#define DISPLAY_DEFAULT_RENDER_MODE DISPLAY_RENDER_MODE_STRIP
+#define DISPLAY_STRIP_BUFFER_BYTES 4096
+#define DISPLAY_SINGLE_BUFFER_BYTES_1BPP 48000
+#define DISPLAY_SINGLE_BUFFER_BYTES_2BPP 96000
 #define DISPLAY_SUPPORTS_PARTIAL_REFRESH 1
 
 #define SQUIDSCRIPT_VERSION_MAJOR 0
@@ -683,36 +753,54 @@ The firmware should use interfaces and driver registration instead of device-spe
 
 The firmware should expose hardware through common interfaces.
 
+The examples below are interface sketches. The XTEINK X4 reference firmware should express these as Rust traits and concrete `esp-hal` implementations, while other backends may use equivalent C/C++ or simulator interfaces.
+
 ### 7.1 Display Interface
 
-```c
-typedef enum {
-    PIXEL_FORMAT_GRAY1_PACKED,
-    PIXEL_FORMAT_GRAY2_PACKED
-} PixelFormat;
+```rust
+enum PixelFormat {
+    Gray1Packed,
+    Gray2Packed,
+}
 
-typedef struct {
-    uint16_t logical_width;
-    uint16_t logical_height;
-    uint16_t physical_width;
-    uint16_t physical_height;
-    uint8_t rotation;
-    uint8_t default_bpp;
-    PixelFormat default_pixel_format;
-    bool partial_refresh;
-    bool fast_refresh;
-} DisplayInfo;
+enum DisplayRenderMode {
+    Strip,
+    Single,
+}
 
-typedef struct {
-    bool (*init)(void);
-    DisplayInfo (*info)(void);
-    bool (*clear)(uint8_t color);
-    bool (*draw_tile)(int x, int y, int w, int h, const uint8_t *pixels, uint8_t bpp);
-    bool (*refresh_full)(void);
-    bool (*refresh_partial)(int x, int y, int w, int h);
-    void (*sleep)(void);
-} DisplayDriver;
+enum ScreenRenderPolicy {
+    Compose,
+    Stream,
+}
+
+struct DisplayInfo {
+    logical_width: u16,
+    logical_height: u16,
+    physical_width: u16,
+    physical_height: u16,
+    rotation: u8,
+    default_bpp: u8,
+    default_pixel_format: PixelFormat,
+    supported_render_modes: &'static [DisplayRenderMode],
+    default_render_mode: DisplayRenderMode,
+    supported_screen_policies: &'static [ScreenRenderPolicy],
+    default_screen_policy: ScreenRenderPolicy,
+    partial_refresh: bool,
+    fast_refresh: bool,
+}
+
+trait DisplayDriver {
+    fn init(&mut self, mode: DisplayRenderMode) -> Result<(), DisplayError>;
+    fn info(&self) -> DisplayInfo;
+    fn clear(&mut self, color: u8) -> Result<(), DisplayError>;
+    fn draw_tile(&mut self, x: i32, y: i32, w: u16, h: u16, pixels: &[u8], bpp: u8) -> Result<(), DisplayError>;
+    fn refresh_full(&mut self) -> Result<(), DisplayError>;
+    fn refresh_partial(&mut self, x: i32, y: i32, w: u16, h: u16) -> Result<(), DisplayError>;
+    fn sleep(&mut self);
+}
 ```
+
+`ScreenRenderPolicy` values such as `Compose` and `Stream` come from SquidScript screen declarations. `DisplayRenderMode::Strip` and `DisplayRenderMode::Single` are display initialization choices. The display service receives logical SquidScript draw operations and renders them through the selected mode. `Strip` uses a bounded strip buffer and may replay draw operations per strip; `Single` keeps one full framebuffer and transfers it after composition.
 
 ### 7.2 Input Interface
 
@@ -772,36 +860,19 @@ typedef struct {
 
 ## 8. Firmware Source Organization
 
-Recommended source organization:
+Recommended source organization for the Rust reference firmware:
 
 ```text
-src/
-|-- main.c
-|-- target/
-|   |-- target_config.h
-|   `-- target_registry.c
-|-- hal/
-|   |-- display_driver.h
-|   |-- input_driver.h
-|   |-- storage_driver.h
-|   `-- power_driver.h
-|-- drivers/
-|   |-- display_xteink_x4.c
-|   |-- display_waveshare_7in5.c
-|   |-- input_gpio_buttons.c
-|   |-- storage_sd_spi.c
-|   `-- power_usb_dev.c
-|-- squidvm/
-|   |-- squid_vm.c
-|   |-- squid_bytecode.c
-|   |-- squid_loader.c
-|   `-- squid_builtins.c
-|-- binbook/
-|   |-- binbook.c
-|   `-- binbook_render.c
-`-- app_lifecycle/
-    |-- launcher_host.c
-    `-- app_registry.c
+firmware/
+`-- crates/
+    |-- squid-firmware/
+    |-- squid-kernel/
+    |-- squid-hal/
+    |-- squid-hal-esp32c3/
+    |-- squid-display/
+    |-- squidvm/
+    |-- squid-binbook/
+    `-- squid-console/
 ```
 
 The firmware app-lifecycle host owns app registry access, bytecode validation, launch transitions, crash recovery, and returning control to the active launcher.
@@ -1170,7 +1241,7 @@ SCREEN_PIXEL_FORMAT
 Example:
 
 ```squid
-screen("main") {
+screen("main", { render: "compose" }) {
   display.text("Hello", {
     x: 20,
     y: 20,
@@ -1344,7 +1415,7 @@ The firmware build system should:
 7. Validate bus and GPIO bindings.
 8. Validate feature, compatibility, and pixel-format names.
 9. Validate that target features are backed by selected profiles and drivers.
-10. Generate `target_config.h`.
+10. Generate backend-facing target configuration such as `target_config.rs` or `target_config.h`.
 11. Compile only required drivers where practical.
 12. Register selected drivers.
 13. Set runtime limits.

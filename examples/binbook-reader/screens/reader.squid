@@ -1,4 +1,4 @@
-screen("reader") {
+screen("reader", { render: "stream" }) {
   display.clear("white")
 
   let book = binbook.open(file)

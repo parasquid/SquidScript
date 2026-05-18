@@ -337,6 +337,10 @@ For XTEINK X4:
 - physical resolution: 800 x 480
 - logical app coordinate system: 480 x 800, rotated 90 degrees
 - supported app pixel formats: `GRAY1_PACKED` and `GRAY2_PACKED`
+- SquidScript logical grayscale palette: `gray0` through `gray15`
+- supported text font heights and default font height
+- supported display render modes: `strip` and `single`, with `strip` as the low-RAM default
+- supported SquidScript screen render policies: `compose` and `stream`, with `compose` as the default when a screen omits `render`
 
 Example:
 
@@ -354,17 +358,49 @@ Example:
     "rotation": 90
   },
   "color": {
+    "logicalGrayscaleLevels": 16,
     "supportedBpp": [1, 2],
     "defaultBpp": 2,
     "supportedPixelFormats": ["GRAY1_PACKED", "GRAY2_PACKED"],
-    "defaultPixelFormat": "GRAY2_PACKED"
+    "defaultPixelFormat": "GRAY2_PACKED",
+    "mapping": "nearest-or-dither",
+    "dithering": ["none", "ordered", "error-diffusion"]
+  },
+  "text": {
+    "fontHeights": {
+      "supported": [16, 18, 20, 24, 32, 48],
+      "default": 20,
+      "selection": "nearest"
+    }
+  },
+  "rendering": {
+    "screenPolicies": ["compose", "stream"],
+    "defaultPolicy": "compose",
+    "policyModeMap": {
+      "compose": ["single", "strip"],
+      "stream": ["strip", "single"]
+    },
+    "supportedModes": ["strip", "single"],
+    "defaultMode": "strip",
+    "stripBufferBytes": 4096,
+    "singleBufferBytes1bpp": 48000,
+    "singleBufferBytes2bpp": 96000,
+    "maxFullBufferBpp": 2
   }
 }
 ```
 
-The target compiler should generate display constants for dimensions, rotation, driver selection, SPI pins, control pins, pixel formats, and refresh capability flags.
+The target compiler should generate display constants for dimensions, rotation, driver selection, SPI pins, control pins, logical grayscale levels, pixel formats, color mapping, dithering modes, text font-height support, screen render policies, display render modes, buffer sizes, and refresh capability flags.
 
 SquidScript apps should use logical coordinates. Firmware owns physical panel rotation and packed-pixel conversion.
+
+SquidScript apps should use logical grayscale colors such as `gray0`, `gray4`, `gray8`, and `gray15`. Firmware maps these values to the selected display pixel format. On displays with fewer native levels than the logical palette, firmware should either map to the nearest native gray or apply a target-supported dithering strategy.
+
+SquidScript apps request text size through `fontHeight` in logical pixels. Firmware maps requested font heights through `display.text.fontHeights.selection`. For XTEINK X4, unsupported requested heights are mapped to the nearest supported height.
+
+Screen render policy is app-visible SquidScript intent. `compose` means normal UI composition. `stream` means page- or image-dominant rendering. Display render mode is a firmware/display initialization choice. `strip` means the display service renders into bounded strips and transfers those strips to the EPD. `single` means the display service keeps one full framebuffer for composition before transfer.
+
+If a SquidScript screen omits `render`, firmware should use `rendering.defaultPolicy`. For XTEINK X4 that default is `compose`. The XTEINK X4 reference firmware should initialize the display service with `strip` as the low-RAM default mode, while allowing `single` for debug builds or workflows where the extra RAM is justified. `policyModeMap` is a firmware preference order for mapping app-visible policy to target-supported display modes.
 
 ---
 
@@ -661,7 +697,7 @@ The firmware target compiler should:
 5. Validate that every referenced pin exists in `pins`.
 6. Validate bus references from `devices`.
 7. Validate shared bus rules.
-8. Validate display dimensions, rotation, pixel formats, and framebuffer size.
+8. Validate display dimensions, rotation, logical grayscale levels, pixel formats, color mapping, dithering modes, text font heights, screen render policies, render modes, and buffer sizes.
 9. Validate ADC ladder ranges.
 10. Validate logical key names.
 11. Validate storage limits against runtime limits.
@@ -675,7 +711,7 @@ The target compiler must not silently guess missing values. Missing required val
 
 ## 17. Generated Firmware Interface
 
-Initial generated `target_config.h` should include constants equivalent to:
+Initial generated firmware configuration should include constants equivalent to the following. Rust reference firmware may emit these as `target_config.rs`; C/C++ backends may emit `target_config.h`.
 
 ```c
 #define DEVICE_TARGET_ID "xteink-x4"
@@ -696,6 +732,22 @@ Initial generated `target_config.h` should include constants equivalent to:
 #define DISPLAY_PIN_DC 4
 #define DISPLAY_PIN_RST 5
 #define DISPLAY_PIN_BUSY 6
+#define DISPLAY_LOGICAL_GRAYSCALE_LEVELS 16
+#define DISPLAY_COLOR_MAPPING_NEAREST_OR_DITHER 1
+#define DISPLAY_DITHERING_NONE 1
+#define DISPLAY_DITHERING_ORDERED 1
+#define DISPLAY_DITHERING_ERROR_DIFFUSION 1
+#define DISPLAY_TEXT_DEFAULT_FONT_HEIGHT 20
+#define DISPLAY_TEXT_FONT_HEIGHT_SELECTION_NEAREST 1
+#define DISPLAY_RENDER_MODE_STRIP 1
+#define DISPLAY_RENDER_MODE_SINGLE 2
+#define DISPLAY_DEFAULT_RENDER_MODE DISPLAY_RENDER_MODE_STRIP
+#define SCREEN_RENDER_POLICY_COMPOSE 1
+#define SCREEN_RENDER_POLICY_STREAM 2
+#define SCREEN_DEFAULT_RENDER_POLICY SCREEN_RENDER_POLICY_COMPOSE
+#define DISPLAY_STRIP_BUFFER_BYTES 4096
+#define DISPLAY_SINGLE_BUFFER_BYTES_1BPP 48000
+#define DISPLAY_SINGLE_BUFFER_BYTES_2BPP 96000
 
 #define SD_SPI_SCK 8
 #define SD_SPI_MOSI 10

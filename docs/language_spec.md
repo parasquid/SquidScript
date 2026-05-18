@@ -851,7 +851,7 @@ Option objects are allowed only as direct built-in call arguments.
 Example:
 
 ```squid
-display.text("Hello", { x: 20, y: 40, size: "large" })
+display.text("Hello", { x: 20, y: 40, fontHeight: 32 })
 ```
 
 Option objects are parsed by squidc and encoded into bytecode metadata.
@@ -1274,8 +1274,44 @@ Example:
 ```squid
 screen("main") {
   display.clear("white")
-  display.text("Count", { x: 20, y: 40, size: "large" })
-  display.text(count, { x: 20, y: 120, size: "huge" })
+  display.text("Count", { x: 20, y: 40, fontHeight: 32 })
+  display.text(count, { x: 20, y: 120, fontHeight: 48 })
+}
+```
+
+Screens may optionally declare a render policy.
+
+Syntax:
+
+```squid
+screen("name", { render: "compose" }) {
+  ...
+}
+
+screen("name", { render: "stream" }) {
+  ...
+}
+```
+
+If `render` is omitted, the target's default screen render policy is used.
+
+v0.2 render policy values:
+
+- `compose`: normal UI composition. This is intended for launchers, menus, settings, dialogs, dashboards, and other screens made from several draw commands.
+- `stream`: page- or image-dominant rendering. This is intended for reader pages and other screens where one large drawable should be streamed efficiently and lightweight overlays may be composed around it.
+
+Render policy expresses app intent. It is not a request for a specific hardware buffer implementation. Firmware maps render policies to target-supported display render modes such as `single` or `strip`.
+
+Example BinBook reader screen:
+
+```squid
+screen("reader", { render: "stream" }) {
+  let book = binbook.open(file)
+  let page = binbook.page(book, pageIndex)
+  let image = binbook.pageImage(page)
+
+  display.draw(image, { x: 0, y: 0 })
+  drawBottomBar(string.format("{}/{}", pageIndex + 1, pageCount))
 }
 ```
 
@@ -1337,7 +1373,72 @@ squidc should reject calls from screen blocks to functions that perform state wr
 
 ---
 
-## 24. Display Coordinate System
+## 24. Draw Hierarchy And Refresh Semantics
+
+The display model is redraw-from-state.
+
+The app-visible hierarchy is:
+
+```text
+screen
+  render pass
+    ordered draw commands
+      display.clear
+      display.line
+      display.rect
+      display.text
+      display.image
+      display.draw
+    drawable resources
+      firmware-owned handles such as BinBook page images
+```
+
+Draw commands execute in source order. Later commands are composited over earlier commands.
+
+Example:
+
+```squid
+display.clear("gray0")
+display.rect(20, 120, 440, 48, { fillColor: "gray15" })
+display.text("Selected", {
+  x: 20,
+  y: 120,
+  w: 440,
+  h: 48,
+  fontHeight: 22,
+  align: "center",
+  valign: "middle",
+  textColor: "gray0"
+})
+```
+
+The visual order is:
+
+1. clear to white
+2. draw the black rectangle
+3. draw the white text over the rectangle
+
+Command-specific internal work is allowed when it preserves this source-order result. For example, `backgroundColor` on `display.text(...)` draws the text box background before drawing glyphs for that same command.
+
+`screen.open(screenName)` stores the current screen name and renders that screen.
+
+`screen.refresh()` does not save pixels, inspect the previous framebuffer, or reverse-engineer prior draw commands. It reruns the current screen block from bytecode using current app state and produces a fresh draw-command stream.
+
+The source of truth for a refresh is:
+
+- current screen name, owned by firmware/runtime
+- current app state and variables, owned by squidvm
+- compiled bytecode for the screen block
+
+Firmware may keep private caches such as a previous draw-command stream, dirty regions, a framebuffer, partial-refresh regions, or strip-render plans. These are optimizations only. The language semantics remain full redraw from app state.
+
+This is why screen blocks must be render-pure. Changing menu selection, page number, or other visual state should happen in event handlers. The handler updates state and calls `screen.refresh()` or `screen.open(...)`; the screen block then redraws the entire desired visual state.
+
+v0.2 has no app-visible retained scene graph, layers, groups, blend modes, opacity, transforms, or direct framebuffer mutation. Firmware may internally reorder or batch work only when the visual result is equivalent to source-order composition.
+
+---
+
+## 25. Display Coordinate System
 
 SquidScript apps draw in the target's logical display coordinate system.
 
@@ -1360,9 +1461,11 @@ Apps should use logical coordinates from the selected target profile, not physic
 
 The display driver owns rotation and physical mapping.
 
+Apps must not assume a framebuffer exists or that pixels can be read or mutated directly. The render policy on a screen influences how firmware should render that screen, but final composition, clipping, strip/full-buffer selection, packed-pixel conversion, physical rotation, refresh mode, and EPD transfer remain firmware responsibilities.
+
 ---
 
-## 25. Drawing Built-ins
+## 26. Drawing Built-ins
 
 display.clear(color)
 
@@ -1375,17 +1478,22 @@ display.clear("white")
 Supported colors in v0.2:
 - "white"
 - "black"
-- "gray1"
-- "gray2"
+- "gray0" through "gray15"
 
-The exact gray support depends on display capabilities.
+`gray0` is white. `gray15` is black. Intermediate values are perceptual grayscale steps from light to dark.
+
+Named aliases:
+- "white" is equivalent to "gray0"
+- "black" is equivalent to "gray15"
+
+The exact native gray support depends on display capabilities. Firmware should map requested grayscale values to the nearest supported display level. If the selected target and render mode support dithering, firmware may dither intermediate grays when the physical display has fewer native levels than SquidScript's 16-level logical grayscale.
 
 display.text(value, options)
 
 Example:
 
 ```squid
-display.text("Hello", { x: 20, y: 40, size: "large" })
+display.text("Hello", { x: 20, y: 40, fontHeight: 32 })
 ```
 
 Example with wrapping:
@@ -1396,7 +1504,24 @@ display.text(body, {
   y: 120,
   w: 440,
   h: 560,
+  fontHeight: 20,
   wrap: true
+})
+```
+
+Example with centered highlighted text:
+
+```squid
+display.text("Open Book", {
+  x: 20,
+  y: 120,
+  w: 440,
+  h: 48,
+  fontHeight: 22,
+  align: "center",
+  valign: "middle",
+  textColor: "gray0",
+  backgroundColor: "gray15"
 })
 ```
 
@@ -1407,32 +1532,62 @@ Required options:
 Optional options:
 - w
 - h
-- size
+- fontHeight
 - align
+- valign
 - wrap
-- color
+- textColor
+- backgroundColor
 
-display.line(x1, y1, x2, y2)
+`w` and `h` define the text box. `fontHeight` defines the requested font height in logical pixels. Text is clipped to the text box by default. If no `w` or `h` is provided, firmware clips to the logical screen.
+
+`align` values:
+- "left"
+- "center"
+- "right"
+
+`valign` values:
+- "top"
+- "middle"
+- "bottom"
+
+Text defaults:
+- `fontHeight`: target text default
+- `align`: "left"
+- `valign`: "top"
+- `textColor`: "gray15"
+- `backgroundColor`: none
+- `wrap`: false
+
+display.line(x1, y1, x2, y2, options?)
 
 Example:
 
 ```squid
 display.line(20, 96, 460, 96)
+display.line(20, 96, 460, 96, { color: "gray15" })
 ```
+
+Optional options:
+- color
 
 display.rect(x, y, w, h, options)
 
 Example:
 
 ```squid
-display.rect(20, 100, 440, 80, { stroke: "black" })
+display.rect(20, 100, 440, 80, { strokeColor: "gray15" })
 ```
 
 Example filled:
 
 ```squid
-display.rect(0, 0, 480, 40, { fill: "black" })
+display.rect(0, 0, 480, 40, { fillColor: "gray15" })
 ```
+
+Optional options:
+- strokeColor
+- fillColor
 
 display.image(path, options)
 
@@ -1458,7 +1613,7 @@ The runtime may reject excessive draw commands.
 
 ---
 
-## 26. System Built-ins
+## 27. System Built-ins
 
 screen.open(screenName)
 
@@ -1534,7 +1689,7 @@ Rules:
 
 ---
 
-## 27. Input Built-ins
+## 28. Input Built-ins
 
 The `input.*` namespace provides firmware-owned text entry UI.
 
@@ -1587,7 +1742,7 @@ Rules:
 
 ---
 
-## 28. State Built-ins
+## 29. State Built-ins
 
 state.load()
 
@@ -1652,7 +1807,7 @@ Recommended write strategy:
 
 ---
 
-## 29. State Machine Built-ins
+## 30. State Machine Built-ins
 
 The `stateMachine.*` namespace provides generic helpers for app modes and small finite-state workflows.
 
@@ -1734,7 +1889,7 @@ This validation allows misspelled states to be caught without adding enum declar
 
 ---
 
-## 30. Wi-Fi Built-ins
+## 31. Wi-Fi Built-ins
 
 The `wifi.*` namespace provides foreground apps with bounded access to firmware-managed Wi-Fi connectivity.
 
@@ -1750,7 +1905,7 @@ Example:
 let info = wifi.status()
 
 if (info.connected) {
-  display.text(info.ipAddress, { x: 20, y: 80, size: "medium" })
+  display.text(info.ipAddress, { x: 20, y: 80, fontHeight: 24 })
 }
 ```
 
@@ -1835,7 +1990,7 @@ wifi.startAP("SquidScript-XTEINK", {
 })
 
 let ap = wifi.getAPIP()
-display.text("http://" + ap.ip + "/", { x: 20, y: 80, size: "medium" })
+display.text("http://" + ap.ip + "/", { x: 20, y: 80, fontHeight: 24 })
 ```
 
 Allowed options:
@@ -1959,7 +2114,7 @@ Rules:
 
 ---
 
-## 31. HTTP Server Built-ins
+## 32. HTTP Server Built-ins
 
 The `httpServer.*` namespace provides small foreground-only HTTP services owned by firmware.
 
@@ -2105,7 +2260,7 @@ Rules:
 
 ---
 
-## 32. Bluetooth Built-ins
+## 33. Bluetooth Built-ins
 
 The `bluetoothHid.*` namespace provides bounded Bluetooth HID peripheral behavior for apps such as presentation clickers.
 
@@ -2270,7 +2425,7 @@ Rules:
 
 ---
 
-## 33. File and Data Built-ins
+## 34. File and Data Built-ins
 
 SquidScript file management should use target-defined libraries rather than raw device paths.
 
@@ -2501,7 +2656,7 @@ Returns a result record:
 ```squid
 let result = library.mkdir("books", "/manuals")
 if (!result.ok) {
-  display.text(result.error, { x: 20, y: 60, size: "medium" })
+  display.text(result.error, { x: 20, y: 60, fontHeight: 24 })
 }
 ```
 
@@ -2604,7 +2759,7 @@ Rules:
 
 ---
 
-## 34. Generic Data Format
+## 35. Generic Data Format
 
 SquidScript may support a generic structured text format for app-specific data.
 
@@ -2650,7 +2805,7 @@ It must not contain executable code.
 
 ---
 
-## 35. BinBook Capability
+## 36. BinBook Capability
 
 BinBook support is provided as a firmware-native capability module.
 
@@ -2854,7 +3009,7 @@ state {
 
 ---
 
-## 35.1 Launcher Capability
+## 36.1 Launcher Capability
 
 Launcher support is provided as a firmware-native capability module exposed to SquidScript launcher apps.
 
@@ -3005,7 +3160,7 @@ onKey("SELECT") {
 
 ---
 
-## 36. Permissions
+## 37. Permissions
 
 Permissions are declared in app.json.
 
@@ -3103,7 +3258,7 @@ Some built-ins may be feature-gated without a separate permission when they do n
 
 ---
 
-## 37. Bytecode Execution Model
+## 38. Bytecode Execution Model
 
 The canonical executable format is .sqbc.
 
@@ -3133,7 +3288,7 @@ Runtime execution:
 
 ---
 
-## 38. SQBC Bytecode File
+## 39. SQBC Bytecode File
 
 .sqbc is the SquidScript bytecode format.
 
@@ -3221,7 +3376,7 @@ The fixed header is followed by arrays of string-pool IDs for required logical k
 
 ---
 
-## 39. Bytecode Validation
+## 40. Bytecode Validation
 
 Precompiled bytecode is an external app artifact and must be validated before execution.
 
@@ -3257,7 +3412,7 @@ If validation fails, the app is marked invalid and must not run.
 
 ---
 
-## 40. Internal Bytecode Sketch
+## 41. Internal Bytecode Sketch
 
 Possible opcodes:
 
@@ -3340,17 +3495,17 @@ enum SquidValueType {
 
 ---
 
-## 41. Screen Compilation
+## 42. Screen Compilation
 
 Screen blocks may be compiled into draw-command templates.
 
 Example source:
 
 ```squid
-screen("main") {
+screen("main", { render: "compose" }) {
   display.clear("white")
-  display.text(title, { x: 20, y: 40, size: "large" })
-  display.line(20, 96, 460, 96)
+  display.text(title, { x: 20, y: 40, fontHeight: 32 })
+  display.line(20, 96, 460, 96, { color: "gray15" })
 }
 ```
 
@@ -3369,9 +3524,11 @@ The draw IR is:
 - executed only during render
 - not allowed to mutate persistent state
 
+The screen render policy should be encoded with or adjacent to the screen's draw-command template. Firmware uses that policy to select an appropriate renderer for the target. For example, an XTEINK X4 firmware may map `compose` to a single-buffer renderer when enough SRAM is available, and map `stream` to strip rendering for BinBook page screens.
+
 ---
 
-## 42. Source Maps
+## 43. Source Maps
 
 Source maps are optional debug metadata.
 
@@ -3468,7 +3625,7 @@ Production firmware may show only file names and line numbers.
 
 ---
 
-## 43. Runtime Diagnostics
+## 44. Runtime Diagnostics
 
 On runtime error, squidvm should record:
 - app ID
@@ -3523,7 +3680,7 @@ Source:
 
 ---
 
-## 44. Runtime Quotas
+## 45. Runtime Quotas
 
 Suggested v0.2 limits:
 
@@ -3552,7 +3709,7 @@ The runtime may reject apps or stop execution if limits are exceeded.
 
 ---
 
-## 45. Memory Model
+## 46. Memory Model
 
 Runtime memory should be bounded.
 
@@ -3581,7 +3738,7 @@ Large document data such as BinBook pages should be streamed or tiled by firmwar
 
 ---
 
-## 46. Execution Model
+## 47. Execution Model
 
 The runtime is event-driven.
 
@@ -3615,7 +3772,7 @@ Default launcher selection is user-mediated. Apps may open a firmware-provided l
 
 ---
 
-## 47. Error Handling
+## 48. Error Handling
 
 Bytecode validation error:
 - app is marked invalid
@@ -3653,7 +3810,7 @@ Error: permission binbook.read required for binbook.open()
 
 ---
 
-## 48. Crash Recovery
+## 49. Crash Recovery
 
 Before launching an app, firmware records:
 - app ID
@@ -3688,7 +3845,7 @@ Crash marker example:
 
 ---
 
-## 49. Runtime and Platform Safety Rules
+## 50. Runtime and Platform Safety Rules
 
 SquidScript apps are first-class device apps. Firmware still validates app packages and `.sqbc` bytecode before execution, just as a device platform should validate any installable app artifact before running it.
 
@@ -3737,7 +3894,7 @@ onSlideOpen() {
 
 ---
 
-## 50. Unsupported JavaScript Features
+## 51. Unsupported JavaScript Features
 
 SquidScript v0.2 does not support:
 - var
@@ -3783,7 +3940,7 @@ Unsupported bytecode is a firmware validation error.
 
 ---
 
-## 51. Compatibility
+## 52. Compatibility
 
 Runtime version is declared in app.json.
 
@@ -3804,7 +3961,7 @@ Future versions should avoid breaking v0.2 apps where possible.
 
 ---
 
-## 52. Compiler: squidc
+## 53. Compiler: squidc
 
 squidc is the off-device SquidScript compiler.
 
@@ -3843,15 +4000,15 @@ screens/reader.squid:38: binbook.page requires permission binbook.read
 
 ---
 
-## 53. Example: Simple Counter App
+## 54. Example: Hello Menu App
 
 app.json:
 
 ```json
 {
   "format": "squidapp-v1",
-  "id": "simple-counter",
-  "name": "Simple Counter",
+  "id": "hello-menu",
+  "name": "Hello Menu",
   "kind": "app",
   "version": "1.0.0",
   "runtime": {
@@ -3883,48 +4040,160 @@ main.squid:
 
 ```squid
 state {
-  count: 0
+  selected: 0
 }
 
 onStart() {
   state.load()
-  screen.open("main")
+  screen.open("menu")
 }
 
-onKey("RIGHT") {
-  count = count + 1
-  state.save()
-  screen.refresh()
-}
-
-onKey("LEFT") {
-  if (count > 0) {
-    count = count - 1
+onKey("DOWN") {
+  if (selected < 2) {
+    selected = selected + 1
     state.save()
     screen.refresh()
   }
 }
 
+onKey("UP") {
+  if (selected > 0) {
+    selected = selected - 1
+    state.save()
+    screen.refresh()
+  }
+}
+
+onKey("SELECT") {
+  if (selected == 0) {
+    screen.open("hello")
+  } else {
+    if (selected == 1) {
+      screen.open("about")
+    } else {
+      app.exit()
+    }
+  }
+}
+
 onKey("BACK") {
+  state.save()
   app.exit()
 }
 
-screen("main") {
-  display.clear("white")
-  display.text("Count", { x: 20, y: 40, size: "large" })
-  display.text(count, { x: 20, y: 120, size: "huge" })
+function drawMenuRow(index, label, y) {
+  if (selected == index) {
+    display.text(label, {
+      x: 32,
+      y: y,
+      w: 416,
+      h: 48,
+      fontHeight: 22,
+      align: "center",
+      valign: "middle",
+      textColor: "gray0",
+      backgroundColor: "gray15"
+    })
+  } else {
+    display.text(label, {
+      x: 32,
+      y: y,
+      w: 416,
+      h: 48,
+      fontHeight: 22,
+      align: "center",
+      valign: "middle",
+      textColor: "gray15",
+      backgroundColor: "gray0"
+    })
+  }
+}
+
+screen("menu", { render: "compose" }) {
+  display.clear("gray0")
+
+  display.text("Hello Menu", {
+    x: 20,
+    y: 60,
+    w: 440,
+    h: 48,
+    fontHeight: 32,
+    align: "center",
+    valign: "middle"
+  })
+
+  drawMenuRow(0, "Say Hello", 160)
+  drawMenuRow(1, "About", 216)
+  drawMenuRow(2, "Exit", 272)
+
+  display.text("UP/DOWN select  SELECT open", {
+    x: 20,
+    y: 720,
+    w: 440,
+    h: 32,
+    fontHeight: 18,
+    align: "center",
+    valign: "middle",
+    textColor: "gray8"
+  })
+}
+
+screen("hello") {
+  display.clear("gray0")
+  display.text("Hello, Squid!", {
+    x: 20,
+    y: 120,
+    w: 440,
+    h: 64,
+    fontHeight: 32,
+    align: "center",
+    valign: "middle"
+  })
+  display.text("BACK exits this example", {
+    x: 20,
+    y: 720,
+    w: 440,
+    h: 32,
+    fontHeight: 18,
+    align: "center",
+    valign: "middle",
+    textColor: "gray8"
+  })
+}
+
+screen("about") {
+  display.clear("gray0")
+  display.text("Selection is state.", {
+    x: 32,
+    y: 120,
+    w: 416,
+    h: 48,
+    fontHeight: 24,
+    align: "center",
+    valign: "middle"
+  })
+  display.text("Changing selected then calling screen.refresh redraws the menu from state. The old highlight is not manually erased.", {
+    x: 32,
+    y: 200,
+    w: 416,
+    h: 160,
+    fontHeight: 18,
+    wrap: true
+  })
 }
 ```
+
+In this example, `onKey("UP")` and `onKey("DOWN")` update `selected` and call `screen.refresh()`. The runtime reruns `screen("menu")`, so the newly selected row is drawn highlighted and the previously selected row is drawn normally. The app never erases the old highlight directly.
 
 Build:
 
 ```sh
-squidc build /sd/apps/simple-counter --out /sd/apps/simple-counter/main.sqbc --source-map
+squidc build /sd/apps/hello-menu --out /sd/apps/hello-menu/main.sqbc --source-map
 ```
 
 ---
 
-## 54. Example: BinBook Reader App
+## 55. Example: BinBook Reader App
 
 The draft reference implementation is documented in:
 
@@ -3958,7 +4227,7 @@ squidc build /sd/apps/binbook-reader --out /sd/apps/binbook-reader/main.sqbc --s
 
 ---
 
-## 55. Recommended MVP
+## 56. Recommended MVP
 
 The first implementation should support:
 
@@ -4018,13 +4287,13 @@ Source language:
 - opaque handles
 
 Test apps:
-1. Simple Counter
+1. Hello Menu
 2. BinBook Reader
 3. Presentation Clicker
 
 ---
 
-## 56. Summary
+## 57. Summary
 
 SquidScript is a JavaScript-like source language for first-class apps on low-RAM e-ink/display devices.
 

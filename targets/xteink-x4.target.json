@@ -184,10 +184,20 @@
       "rotation": 90
     },
     "color": {
+      "logicalGrayscaleLevels": 16,
       "supportedBpp": [1, 2],
       "defaultBpp": 2,
       "supportedPixelFormats": ["GRAY1_PACKED", "GRAY2_PACKED"],
-      "defaultPixelFormat": "GRAY2_PACKED"
+      "defaultPixelFormat": "GRAY2_PACKED",
+      "mapping": "nearest-or-dither",
+      "dithering": ["none", "ordered", "error-diffusion"]
+    },
+    "text": {
+      "fontHeights": {
+        "supported": [16, 18, 20, 24, 32, 48],
+        "default": 20,
+        "selection": "nearest"
+      }
     },
     "refresh": {
       "full": true,
@@ -195,10 +205,18 @@
       "fast": true,
       "partial": true
     },
-    "framebuffer": {
-      "preferredMode": "single",
-      "fullBufferBytes1bpp": 48000,
-      "dualBufferBytes1bpp": 96000,
+    "rendering": {
+      "screenPolicies": ["compose", "stream"],
+      "defaultPolicy": "compose",
+      "policyModeMap": {
+        "compose": ["single", "strip"],
+        "stream": ["strip", "single"]
+      },
+      "supportedModes": ["strip", "single"],
+      "defaultMode": "strip",
+      "stripBufferBytes": 4096,
+      "singleBufferBytes1bpp": 48000,
+      "singleBufferBytes2bpp": 96000,
       "maxFullBufferBpp": 2
     },
     "quirks": [
@@ -374,6 +392,10 @@
       "maxListItemsReturned": 256,
       "maxHandles": 16
     }
+  },
+  "simulator": {
+    "layout": "targets/layouts/xteink-x4.layout.json",
+    "defaultBackend": "browser-sim"
   },
   "compatibility": [
     "squidscript-0.2",

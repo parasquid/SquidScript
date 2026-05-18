@@ -26,6 +26,7 @@ The top-level SquidScript build tooling should coordinate target definitions, ge
 - Keep `targets/*.target.json` as the canonical description of device hardware and capabilities.
 - Provide an Espruino-like developer experience with simple build commands.
 - Use native vendor SDKs underneath instead of hiding major platform differences.
+- Build the first XTEINK X4 reference firmware in Rust where the current embedded ESP ecosystem is practical.
 - Avoid PlatformIO as a canonical build dependency.
 - Make simulator builds first-class so SquidScript apps can be tested in a browser.
 - Keep generated backend artifacts out of hand-maintained target definitions.
@@ -82,6 +83,7 @@ The target definition should eventually include a backend identifier or resolve 
 Example backend IDs:
 
 ```text
+esp-rust
 esp-idf
 zephyr-nrf
 browser-sim
@@ -92,9 +94,49 @@ Backend selection is a build-time concern. SquidScript apps should still target 
 
 ---
 
-## 6. ESP32-C3 Backend
+## 6. ESP32-C3 Reference Backend
 
-The ESP32-C3 backend should use ESP-IDF directly.
+The initial XTEINK X4 reference firmware, provisionally named `squid-firmware`, should be Rust-first.
+
+Backend ID:
+
+```text
+esp-rust
+```
+
+The expected stack is:
+
+- Rust `no_std` firmware where practical
+- `esp-hal` for ESP32-C3 hardware access
+- Embassy and `esp-hal-embassy` for async task execution
+- `esp-radio` for Wi-Fi/BLE work when the radio stack is needed
+- target-specific display, input, storage, power, and console drivers
+
+This reference firmware should use `pulp-os` as an architecture reference, not a dependency or compatibility target. Relevant ideas include a small kernel/service split, Embassy-based concurrency, shared SPI discipline, no-framebuffer or strip-buffer display rendering, static allocation bias, and a boot console that is usable before SquidScript apps are available.
+
+The first hardware milestone is a boot console over both serial and the EPD. The console should support early diagnostics and bring-up commands before the launcher, SD app loading, or SquidVM execution are required.
+
+Generated artifacts may include:
+
+- Rust target configuration modules or generated constants
+- linker/build configuration
+- partition/flash layout metadata
+- firmware manifest metadata
+- generated app capability tables
+
+Expected outputs:
+
+- app firmware `.bin` or backend-native ESP image artifacts
+- optional merged flash image
+- optional UF2 only when the selected bootloader/update path is verified to support it
+
+ESP-IDF remains a candidate backend for the reference firmware if the Rust ESP stack cannot satisfy a required hardware, storage, radio, or maintenance need.
+
+---
+
+## 7. ESP-IDF Candidate Backend
+
+The ESP-IDF backend remains a supported candidate for ESP32-C3 firmware work, but it is not the default reference implementation path while `squid-firmware` is being designed around Rust.
 
 Backend ID:
 
@@ -125,11 +167,11 @@ Expected outputs:
 - optional merged flash image
 - optional UF2 only when the selected bootloader/update path is verified to support it
 
-XTEINK X4 should use this backend unless future hardware evidence points to a different firmware stack.
+XTEINK X4 may use this backend if the Rust reference backend proves impractical for required hardware features.
 
 ---
 
-## 7. nRF52 Backend
+## 8. nRF52 Backend
 
 The forward-looking nRF52 backend should use Nordic's nRF Connect SDK, which is Zephyr-based.
 
@@ -167,7 +209,7 @@ The older Nordic nRF5 SDK is in maintenance mode. It may remain useful for simpl
 
 ---
 
-## 8. Browser Simulator Backend
+## 9. Browser Simulator Backend
 
 The browser simulator should be a first-class backend, not just a debug afterthought.
 
@@ -209,7 +251,7 @@ The browser simulator should model:
 
 The simulator should not pretend to validate hardware timing, power draw, flash endurance, radio performance, or real SD-card failure behavior. Those remain firmware/hardware concerns.
 
-### 8.1 Board Layout Metadata
+### 9.1 Board Layout Metadata
 
 The simulator should be able to render a board or device from target-adjacent layout metadata, similar in spirit to Espruino's board-definition information.
 
@@ -312,7 +354,7 @@ The browser simulator should use `kind: "button"` elements to generate pointer/t
 
 ---
 
-## 9. Native Host Simulator Backend
+## 10. Native Host Simulator Backend
 
 A native host simulator may also be useful for CI and fast tests.
 
@@ -334,7 +376,7 @@ The browser simulator and native host simulator may share core VM and platform-s
 
 ---
 
-## 10. PlatformIO Policy
+## 11. PlatformIO Policy
 
 PlatformIO should not be the canonical build system.
 
@@ -349,7 +391,7 @@ PlatformIO support may be added later as an optional wrapper for contributors wh
 
 ---
 
-## 11. Target Definition Integration
+## 12. Target Definition Integration
 
 The target definition is the source of truth for:
 
@@ -373,8 +415,8 @@ targets/xteink-x4.target.json
   -> target validator
   -> resolved target model
   -> backend generator
-  -> ESP-IDF generated files
-  -> idf.py build
+  -> Rust/ESP generated files
+  -> cargo or backend wrapper build
 ```
 
 Simulator flow:
@@ -389,7 +431,7 @@ targets/browser-sim-xteink-x4.target.json
 
 ---
 
-## 12. Generated Files
+## 13. Generated Files
 
 Generated files should be reproducible from source target definitions and build inputs.
 
@@ -403,6 +445,7 @@ Examples:
 
 ```text
 build/generated/xteink-x4/target_config.h
+build/generated/xteink-x4/target_config.rs
 build/generated/xteink-x4/sdkconfig.defaults
 build/generated/xteink-x4/partitions.csv
 
@@ -418,7 +461,7 @@ Hand-edited source files should stay in `targets/`, `docs/`, `firmware/`, `compi
 
 ---
 
-## 13. Relationship To Device Drivers
+## 14. Relationship To Device Drivers
 
 Device drivers should be firmware-native code.
 
@@ -430,7 +473,7 @@ Layering:
 Apps
   SquidScript app
   optional mruby app
-  native C/C++ app
+  native Rust/C/C++ app
 
 Language bindings
   SquidScript built-ins
@@ -448,6 +491,7 @@ Platform services
   power
 
 Backend/device drivers
+  Rust esp-hal drivers
   ESP-IDF drivers
   Zephyr/nRF drivers
   browser simulator devices
@@ -457,11 +501,11 @@ Low-level GPIO/I2C/SPI APIs may be added later for targets that explicitly expos
 
 ---
 
-## 14. Release Artifacts
+## 15. Release Artifacts
 
 Firmware release artifacts should be backend-specific but collected consistently.
 
-ESP-IDF target release example:
+ESP32 target release example:
 
 ```text
 dist/xteink-x4/firmware.bin
@@ -490,9 +534,10 @@ UF2 should be emitted only for targets whose bootloader/update path is verified 
 
 ---
 
-## 15. Open Questions
+## 16. Open Questions
 
 - Should backend selection be stored directly in `targets/*.target.json`, or in a separate build-target registry?
+- What is the minimum stable subset of `esp-hal`, Embassy, and `esp-radio` required for XTEINK X4 boot-console bring-up?
 - Should browser simulator targets be exact simulated hardware targets or generic compatibility targets?
 - Should the browser simulator run the production Rust/WASM compiler in-browser, or consume precompiled `.sqbc` first?
 - Should simulator storage use IndexedDB, in-memory storage, local files through browser APIs, or all three?
