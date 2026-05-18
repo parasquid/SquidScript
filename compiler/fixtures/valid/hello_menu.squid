@@ -1,0 +1,46 @@
+app "hello-menu" target "xteink-x4"
+
+state {
+  selected: 0
+}
+
+onStart() {
+  state.load()
+  screen.open("main")
+}
+
+onKey("DOWN") {
+  selected = selected + 1
+  state.save()
+  screen.refresh()
+}
+
+onKey("UP") {
+  selected = selected - 1
+  state.save()
+  screen.refresh()
+}
+
+onKey("SELECT") {
+  screen.open("detail")
+}
+
+onKey("BACK") {
+  app.exit()
+}
+
+screen("main", { render: "compose" }) {
+  display.clear("gray0")
+  display.text("Hello Menu", { x: 20, y: 60, w: 440, h: 48, fontHeight: 32, align: "center" })
+  display.text("Say Hello", { x: 32, y: 160, w: 416, h: 48, fontHeight: 22, align: "center" })
+  display.text("About", { x: 32, y: 216, w: 416, h: 48, fontHeight: 22, align: "center" })
+  display.text("Exit", { x: 32, y: 272, w: 416, h: 48, fontHeight: 22, align: "center" })
+  display.text("UP/DOWN select  SELECT open", { x: 20, y: 720, w: 440, h: 32, fontHeight: 18, align: "center", textColor: "gray8" })
+}
+
+screen("detail") {
+  display.clear("gray0")
+  display.text("Hello, Squid!", { x: 20, y: 120, w: 440, h: 64, fontHeight: 32, align: "center" })
+  display.text("BACK exits this example", { x: 20, y: 720, w: 440, h: 32, fontHeight: 18, align: "center", textColor: "gray8" })
+}
+

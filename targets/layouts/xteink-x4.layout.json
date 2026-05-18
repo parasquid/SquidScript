@@ -1,0 +1,109 @@
+{
+  "format": "squid-layout-v1",
+  "id": "xteink-x4-browser-layout",
+  "target": "xteink-x4",
+  "units": "px",
+  "status": "placeholder",
+  "note": "Approximate browser-sim shell layout. Display dimensions are target-derived; button placement is estimated until verified physical placement data is available.",
+  "canvas": {
+    "width": 620,
+    "height": 1040
+  },
+  "device": {
+    "shape": "rounded-rect",
+    "x": 24,
+    "y": 20,
+    "width": 572,
+    "height": 1000,
+    "radius": 28
+  },
+  "elements": [
+    {
+      "id": "display",
+      "kind": "display",
+      "device": "display.epd",
+      "x": 70,
+      "y": 72,
+      "width": 480,
+      "height": 800
+    },
+    {
+      "id": "button-up",
+      "kind": "button",
+      "logical": "UP",
+      "x": 260,
+      "y": 898,
+      "width": 72,
+      "height": 42,
+      "label": "Up",
+      "status": "placeholder"
+    },
+    {
+      "id": "button-left",
+      "kind": "button",
+      "logical": "LEFT",
+      "x": 174,
+      "y": 942,
+      "width": 72,
+      "height": 42,
+      "label": "Left",
+      "status": "placeholder"
+    },
+    {
+      "id": "button-select",
+      "kind": "button",
+      "logical": "SELECT",
+      "x": 260,
+      "y": 942,
+      "width": 72,
+      "height": 42,
+      "label": "Select",
+      "status": "placeholder"
+    },
+    {
+      "id": "button-right",
+      "kind": "button",
+      "logical": "RIGHT",
+      "x": 346,
+      "y": 942,
+      "width": 72,
+      "height": 42,
+      "label": "Right",
+      "status": "placeholder"
+    },
+    {
+      "id": "button-down",
+      "kind": "button",
+      "logical": "DOWN",
+      "x": 260,
+      "y": 986,
+      "width": 72,
+      "height": 42,
+      "label": "Down",
+      "status": "placeholder"
+    },
+    {
+      "id": "button-back",
+      "kind": "button",
+      "logical": "BACK",
+      "x": 78,
+      "y": 942,
+      "width": 72,
+      "height": 42,
+      "label": "Back",
+      "status": "placeholder"
+    },
+    {
+      "id": "button-power",
+      "kind": "button",
+      "logical": "POWER",
+      "x": 470,
+      "y": 942,
+      "width": 72,
+      "height": 42,
+      "label": "Power",
+      "status": "placeholder"
+    }
+  ]
+}
+

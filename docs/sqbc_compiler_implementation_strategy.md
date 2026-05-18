@@ -159,7 +159,7 @@ compiler/
 
     valid/
       hello_world.squid
-      xteink-x4_menu.squid
+      xteink-x4_hello_menu.squid
       simple_buttons.squid
       binbook_reader.squid
 
@@ -182,10 +182,10 @@ compiler/
       hello_world.sourcemap.json
       hello_world.sqbc
 
-      xteink-x4_menu.ir.json
-      xteink-x4_menu.diagnostics.json
-      xteink-x4_menu.sourcemap.json
-      xteink-x4_menu.sqbc
+      xteink-x4_hello_menu.ir.json
+      xteink-x4_hello_menu.diagnostics.json
+      xteink-x4_hello_menu.sourcemap.json
+      xteink-x4_hello_menu.sqbc
 
       binbook_reader.ir.json
       binbook_reader.diagnostics.json
@@ -905,7 +905,23 @@ Any accepted Ruby behavior should be moved into specs and fixtures.
 
 ---
 
-## 22. Final Recommendation
+## 22. Browser Simulator Rust/WASM Path
+
+The browser XTEINK X4 simulator brings the Rust/WASM compiler work forward for the Hello Menu subset. Ruby can still be useful as a reference-oriented prototype, but browser-sim needs a Rust compiler frontend early because the simulator's normal compile path must run in the browser.
+
+For browser-sim v1, the Rust frontend may emit versioned IR JSON instead of SQBC:
+
+```text
+.squid -> CST -> typed AST -> validated IR JSON
+```
+
+That IR JSON is a browser-simulator development artifact. It is installed only with `entry.type = "ir"` manifests under simulated `/sd`, and production firmware must continue to require SQBC bytecode.
+
+Runtime loading should remain behind an executable boundary so the current `IrJsonLoader -> RuntimeProgram` path can be joined later by `SqbcLoader -> RuntimeProgram` without rewriting simulator UI code.
+
+---
+
+## 23. Final Recommendation
 
 Use Ruby first for speed.
 
