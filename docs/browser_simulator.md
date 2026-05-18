@@ -153,11 +153,12 @@ Currently supported syntax:
 - `state.load()`, `state.save()`
 - `screen.open("name")`, `screen.refresh()`
 - `app.exit()`
-- local `let` bindings, assignment, `if/else`, `repeat`, and bounded `for ... in ... max ...`
+- local `let` bindings, typed local annotations, assignment, `if/else`, `repeat`, and bounded `for ... in ... max ...`
 - expression calls and binary operators `+`, `-`, `==`, `!=`, `<`, `<=`, `>`, and `>=`
 - `display.clear(...)`, `display.text(...)`, `display.rect(...)`, `display.line(...)`
+- expression-valued `display.text(...)` text arguments and option values
 
-Unsupported areas remain explicit future work: includes, modules, typed declarations, full expression precedence, content APIs, BinBook APIs, and production SQBC execution.
+Unsupported areas remain explicit future work: includes, modules, full arithmetic/logical expression precedence, content APIs, BinBook APIs, and production SQBC execution.
 
 ## Missing Target Metadata
 

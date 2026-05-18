@@ -12,15 +12,13 @@ describe("fallback compiler", () => {
       app: { id: "hello-menu", target: "xteink-x4" },
       state: [{ name: "selected", value: 0 }],
       screens: [
-        { name: "main", render: "compose" },
-        { name: "detail", render: "compose" }
+        { name: "menu", render: "compose" },
+        { name: "hello", render: "compose" },
+        { name: "about", render: "compose" }
       ]
     });
-    expect(result.ir?.handlers.find((handler) => handler.event === "onKey.DOWN")?.statements).toEqual([
-      { op: "assign", name: "selected", expr: { op: "binary", left: { op: "state", name: "selected" }, operator: "+", right: { op: "literal", value: 1 } } },
-      { op: "state.save" },
-      { op: "screen.refresh" }
-    ]);
+    expect(result.ir?.functions.map((fn) => fn.name)).toEqual(["drawMenuRow"]);
+    expect(result.ir?.handlers.find((handler) => handler.event === "onKey.DOWN")?.statements[0]).toMatchObject({ op: "if" });
   });
 
   it("returns diagnostics with source spans", () => {

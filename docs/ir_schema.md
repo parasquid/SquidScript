@@ -42,17 +42,29 @@ Consumers must reject unknown `format` values and unsupported versions.
       "event": "onKey.DOWN",
       "statements": [
         {
-          "op": "assign",
-          "name": "selected",
-          "expr": {
+          "op": "if",
+          "condition": {
             "op": "binary",
             "left": { "op": "state", "name": "selected" },
-            "operator": "+",
-            "right": { "op": "literal", "value": 1 }
-          }
-        },
-        { "op": "state.save" },
-        { "op": "screen.refresh" }
+            "operator": "<",
+            "right": { "op": "literal", "value": 2 }
+          },
+          "then_statements": [
+            {
+              "op": "assign",
+              "name": "selected",
+              "expr": {
+                "op": "binary",
+                "left": { "op": "state", "name": "selected" },
+                "operator": "+",
+                "right": { "op": "literal", "value": 1 }
+              }
+            },
+            { "op": "state.save" },
+            { "op": "screen.refresh" }
+          ],
+          "else_statements": []
+        }
       ]
     }
   ],
@@ -64,8 +76,15 @@ Consumers must reject unknown `format` values and unsupported versions.
         { "op": "display.clear", "color": "gray0" },
         {
           "op": "display.text",
-          "text": "Hello Menu",
-          "options": { "x": 20, "y": 60, "w": 440, "h": 48, "fontHeight": 32, "align": "center" }
+          "text": { "op": "literal", "value": "Hello Menu" },
+          "options": {
+            "x": { "op": "literal", "value": 20 },
+            "y": { "op": "literal", "value": 60 },
+            "w": { "op": "literal", "value": 440 },
+            "h": { "op": "literal", "value": 48 },
+            "fontHeight": { "op": "literal", "value": 32 },
+            "align": { "op": "literal", "value": "center" }
+          }
         }
       ]
     }

@@ -6,41 +6,139 @@ state {
 
 onStart() {
   state.load()
-  screen.open("main")
+  screen.open("menu")
 }
 
 onKey("DOWN") {
-  selected = selected + 1
-  state.save()
-  screen.refresh()
+  if (selected < 2) {
+    selected = selected + 1
+    state.save()
+    screen.refresh()
+  }
 }
 
 onKey("UP") {
-  selected = selected - 1
-  state.save()
-  screen.refresh()
+  if (selected > 0) {
+    selected = selected - 1
+    state.save()
+    screen.refresh()
+  }
 }
 
 onKey("SELECT") {
-  screen.open("detail")
+  if (selected == 0) {
+    screen.open("hello")
+  } else {
+    if (selected == 1) {
+      screen.open("about")
+    } else {
+      app.exit()
+    }
+  }
 }
 
 onKey("BACK") {
+  state.save()
   app.exit()
 }
 
-screen("main", { render: "compose" }) {
-  display.clear("gray0")
-  display.text("Hello Menu", { x: 20, y: 60, w: 440, h: 48, fontHeight: 32, align: "center" })
-  display.text("Say Hello", { x: 32, y: 160, w: 416, h: 48, fontHeight: 22, align: "center" })
-  display.text("About", { x: 32, y: 216, w: 416, h: 48, fontHeight: 22, align: "center" })
-  display.text("Exit", { x: 32, y: 272, w: 416, h: 48, fontHeight: 22, align: "center" })
-  display.text("UP/DOWN select  SELECT open", { x: 20, y: 720, w: 440, h: 32, fontHeight: 18, align: "center", textColor: "gray8" })
+function drawMenuRow(index, label, y) {
+  if (selected == index) {
+    display.text(label, {
+      x: 32,
+      y: y,
+      w: 416,
+      h: 48,
+      fontHeight: 22,
+      align: "center",
+      valign: "middle",
+      textColor: "gray0",
+      backgroundColor: "gray15"
+    })
+  } else {
+    display.text(label, {
+      x: 32,
+      y: y,
+      w: 416,
+      h: 48,
+      fontHeight: 22,
+      align: "center",
+      valign: "middle",
+      textColor: "gray15",
+      backgroundColor: "gray0"
+    })
+  }
 }
 
-screen("detail") {
+screen("menu", { render: "compose" }) {
   display.clear("gray0")
-  display.text("Hello, Squid!", { x: 20, y: 120, w: 440, h: 64, fontHeight: 32, align: "center" })
-  display.text("BACK exits this example", { x: 20, y: 720, w: 440, h: 32, fontHeight: 18, align: "center", textColor: "gray8" })
+
+  display.text("Hello Menu", {
+    x: 20,
+    y: 60,
+    w: 440,
+    h: 48,
+    fontHeight: 32,
+    align: "center",
+    valign: "middle"
+  })
+
+  drawMenuRow(0, "Say Hello", 160)
+  drawMenuRow(1, "About", 216)
+  drawMenuRow(2, "Exit", 272)
+
+  display.text("UP/DOWN select  SELECT open", {
+    x: 20,
+    y: 720,
+    w: 440,
+    h: 32,
+    fontHeight: 18,
+    align: "center",
+    valign: "middle",
+    textColor: "gray8"
+  })
 }
 
+screen("hello") {
+  display.clear("gray0")
+  display.text("Hello, Squid!", {
+    x: 20,
+    y: 120,
+    w: 440,
+    h: 64,
+    fontHeight: 32,
+    align: "center",
+    valign: "middle"
+  })
+  display.text("BACK exits this example", {
+    x: 20,
+    y: 720,
+    w: 440,
+    h: 32,
+    fontHeight: 18,
+    align: "center",
+    valign: "middle",
+    textColor: "gray8"
+  })
+}
+
+screen("about") {
+  display.clear("gray0")
+  display.text("Selection is state.", {
+    x: 32,
+    y: 120,
+    w: 416,
+    h: 48,
+    fontHeight: 24,
+    align: "center",
+    valign: "middle"
+  })
+  display.text("Changing selected then calling screen.refresh redraws the menu from state. The old highlight is not manually erased.", {
+    x: 32,
+    y: 200,
+    w: 416,
+    h: 160,
+    fontHeight: 18,
+    wrap: true
+  })
+}

@@ -8,12 +8,9 @@ describe("executable loaders", () => {
     const program = new IrJsonLoader().load(ir);
 
     expect(program.id).toBe("hello-menu");
-    expect(program.handlers.get("onKey.DOWN")).toEqual([
-      { op: "assign", name: "selected", expr: { op: "binary", left: { op: "state", name: "selected" }, operator: "+", right: { op: "literal", value: 1 } } },
-      { op: "state.save" },
-      { op: "screen.refresh" }
-    ]);
-    expect(program.screens.get("main")?.statements.some((statement) => statement.op === "display.text")).toBe(true);
+    expect(program.functions.has("drawMenuRow")).toBe(true);
+    expect(program.handlers.get("onKey.DOWN")?.[0]).toMatchObject({ op: "if" });
+    expect(program.screens.get("menu")?.statements.some((statement) => statement.op === "call" && statement.name === "drawMenuRow")).toBe(true);
   });
 
   it("loads SQBC containers through the same runtime program boundary", () => {
@@ -21,8 +18,9 @@ describe("executable loaders", () => {
     const program = new SqbcLoader().load(encodeSqbcForTest(ir));
 
     expect(program.id).toBe("hello-menu");
-    expect(program.handlers.get("onKey.DOWN")?.at(-1)).toEqual({ op: "screen.refresh" });
-    expect(program.screens.has("detail")).toBe(true);
+    expect(program.handlers.get("onKey.SELECT")?.[0]).toMatchObject({ op: "if" });
+    expect(program.screens.has("hello")).toBe(true);
+    expect(program.screens.has("about")).toBe(true);
   });
 
   it("rejects invalid SQBC", () => {

@@ -122,7 +122,7 @@ export class BrowserRuntime {
       } else if (statement.op === "return") {
         return { returned: true, value: statement.expr ? await this.evaluateExpr(statement.expr) : undefined };
       } else if (renderCommands) {
-        this.appendDrawCommand(statement, renderCommands);
+        await this.appendDrawCommand(statement, renderCommands);
       }
     }
 
@@ -161,48 +161,52 @@ export class BrowserRuntime {
     return commands.length > 0 ? commands : [{ op: "clear", gray: 15 }];
   }
 
-  private appendDrawCommand(statement: IrStatement, commands: DrawCommand[]): void {
+  private async appendDrawCommand(statement: IrStatement, commands: DrawCommand[]): Promise<void> {
     if (statement.op === "display.clear") {
       commands.push({ op: "clear", gray: colorToGray(statement.color) });
     } else if (statement.op === "display.text") {
-      const x = numberOption(statement.options, "x", 0);
-      const y = numberOption(statement.options, "y", 0);
-      const w = numberOption(statement.options, "w", 480);
-      const h = numberOption(statement.options, "h", 0);
-      const backgroundColor = stringOption(statement.options, "backgroundColor");
+      const text = await this.evaluateValue(statement.text);
+      const x = await this.numberOption(statement.options, "x", 0);
+      const y = await this.numberOption(statement.options, "y", 0);
+      const w = await this.numberOption(statement.options, "w", 480);
+      const h = await this.numberOption(statement.options, "h", 0);
+      const backgroundColor = await this.stringOption(statement.options, "backgroundColor");
       if (backgroundColor && h > 0) {
         commands.push({ op: "rect", x, y, width: w, height: h, gray: colorToGray(backgroundColor), fill: true });
       }
-      const align = alignOption(statement.options);
+      const align = await this.alignOption(statement.options);
+      const valign = await this.valignOption(statement.options);
       commands.push({
         op: "text",
         x: align === "center" ? x + w / 2 : align === "right" ? x + w : x,
         y,
-        text: statement.text,
-        gray: colorToGray(stringOption(statement.options, "textColor") ?? "gray15"),
-        fontHeight: numberOption(statement.options, "fontHeight", undefined),
+        text: String(text ?? ""),
+        gray: colorToGray(await this.stringOption(statement.options, "textColor") ?? "gray15"),
+        fontHeight: await this.numberOption(statement.options, "fontHeight", undefined),
         align,
-        maxWidth: w
+        valign,
+        maxWidth: w,
+        boxHeight: h || undefined
       });
     } else if (statement.op === "display.rect") {
-      const fillColor = stringOption(statement.options, "fillColor");
+      const fillColor = await this.stringOption(statement.options, "fillColor");
       commands.push({
         op: "rect",
         x: statement.x,
         y: statement.y,
         width: statement.w,
         height: statement.h,
-        gray: colorToGray(fillColor ?? stringOption(statement.options, "strokeColor") ?? "gray15"),
+        gray: colorToGray(fillColor ?? await this.stringOption(statement.options, "strokeColor") ?? "gray15"),
         fill: Boolean(fillColor)
       });
     } else if (statement.op === "display.line") {
       commands.push({
         op: "line",
-        x1: statement.x1,
-        y1: statement.y1,
-        x2: statement.x2,
-        y2: statement.y2,
-        gray: colorToGray(stringOption(statement.options, "color") ?? "gray15")
+          x1: statement.x1,
+          y1: statement.y1,
+          x2: statement.x2,
+          y2: statement.y2,
+          gray: colorToGray(await this.stringOption(statement.options, "color") ?? "gray15")
       });
     }
   }
@@ -258,6 +262,37 @@ export class BrowserRuntime {
     return value !== false && value !== null && value !== undefined && value !== 0 && value !== "";
   }
 
+  private async optionValue(options: Record<string, unknown>, key: string): Promise<unknown> {
+    const value = options[key];
+    return this.evaluateValue(value);
+  }
+
+  private async evaluateValue(value: unknown): Promise<unknown> {
+    return isIrExpr(value) ? this.evaluateExpr(value) : value;
+  }
+
+  private async numberOption(options: Record<string, unknown>, key: string, fallback: number): Promise<number>;
+  private async numberOption(options: Record<string, unknown>, key: string, fallback: undefined): Promise<number | undefined>;
+  private async numberOption(options: Record<string, unknown>, key: string, fallback: number | undefined): Promise<number | undefined> {
+    const value = await this.optionValue(options, key);
+    return typeof value === "number" ? value : fallback;
+  }
+
+  private async stringOption(options: Record<string, unknown>, key: string): Promise<string | undefined> {
+    const value = await this.optionValue(options, key);
+    return typeof value === "string" ? value : undefined;
+  }
+
+  private async alignOption(options: Record<string, unknown>): Promise<"left" | "center" | "right" | undefined> {
+    const align = await this.stringOption(options, "align");
+    return align === "left" || align === "center" || align === "right" ? align : undefined;
+  }
+
+  private async valignOption(options: Record<string, unknown>): Promise<"top" | "middle" | undefined> {
+    const valign = await this.stringOption(options, "valign");
+    return valign === "top" || valign === "middle" ? valign : undefined;
+  }
+
   private async loadState(): Promise<Record<string, unknown>> {
     const raw = await this.vfs.read(`/sd/system/app-state/${this.program.id}/state.json`);
     if (!raw) return {};
@@ -278,22 +313,12 @@ function colorToGray(color: string): number {
   if (color === "white") return 15;
   const match = color.match(/^gray(\d+)$/);
   if (!match) return 15;
-  return Math.min(15, Math.max(0, Number(match[1])));
+  return 15 - Math.min(15, Math.max(0, Number(match[1])));
 }
 
-function numberOption(options: Record<string, unknown>, key: string, fallback: number): number;
-function numberOption(options: Record<string, unknown>, key: string, fallback: undefined): number | undefined;
-function numberOption(options: Record<string, unknown>, key: string, fallback: number | undefined): number | undefined {
-  const value = options[key];
-  return typeof value === "number" ? value : fallback;
-}
-
-function stringOption(options: Record<string, unknown>, key: string): string | undefined {
-  const value = options[key];
-  return typeof value === "string" ? value : undefined;
-}
-
-function alignOption(options: Record<string, unknown>): "left" | "center" | "right" | undefined {
-  const align = stringOption(options, "align");
-  return align === "left" || align === "center" || align === "right" ? align : undefined;
+function isIrExpr(value: unknown): value is IrExpr {
+  return typeof value === "object"
+    && value !== null
+    && "op" in value
+    && ["literal", "state", "binary", "call"].includes(String((value as { op?: unknown }).op));
 }

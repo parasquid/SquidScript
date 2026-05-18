@@ -12,15 +12,18 @@ describe("browser runtime", () => {
 
     let snapshot = await runtime.start();
     expect(snapshot.running).toBe(true);
-    expect(snapshot.currentScreen).toBe("main");
+    expect(snapshot.currentScreen).toBe("menu");
     expect(snapshot.drawCommands.length).toBeGreaterThan(0);
     expect(snapshot.drawCommands).toContainEqual(expect.objectContaining({ op: "text", text: "Hello Menu", x: 240, align: "center" }));
+    expect(snapshot.drawCommands).toContainEqual(expect.objectContaining({ op: "rect", x: 32, y: 160, width: 416, height: 48, gray: 0, fill: true }));
 
     snapshot = await runtime.dispatchKey("DOWN");
     expect(snapshot.state.selected).toBe(1);
+    expect(snapshot.currentScreen).toBe("menu");
+    expect(snapshot.drawCommands).toContainEqual(expect.objectContaining({ op: "rect", x: 32, y: 216, width: 416, height: 48, gray: 0, fill: true }));
 
     snapshot = await runtime.dispatchKey("SELECT");
-    expect(snapshot.currentScreen).toBe("detail");
+    expect(snapshot.currentScreen).toBe("about");
 
     snapshot = await runtime.dispatchKey("BACK");
     expect(snapshot.exited).toBe(true);
@@ -39,7 +42,7 @@ describe("browser runtime", () => {
         ["onKey.SELECT", [{ op: "app.exit" }]]
       ]),
       screens: new Map([
-        ["main", { name: "main", render: "compose", statements: [{ op: "display.clear", color: "gray0" }, { op: "display.text", text: "Custom", options: { x: 24, y: 36, w: 400, fontHeight: 24 } }] }]
+        ["main", { name: "main", render: "compose", statements: [{ op: "display.clear", color: "gray0" }, { op: "display.text", text: { op: "literal", value: "Custom" }, options: { x: 24, y: 36, w: 400, fontHeight: 24 } }] }]
       ])
     };
     const runtime = new BrowserRuntime(program, new MemoryVfs());
@@ -142,7 +145,7 @@ describe("browser runtime", () => {
 
     const snapshot = await runtime.start();
 
-    expect(snapshot.drawCommands).toContainEqual({ op: "line", x1: 0, y1: 40, x2: 480, y2: 40, gray: 15 });
-    expect(snapshot.drawCommands).toContainEqual({ op: "rect", x: 20, y: 80, width: 120, height: 32, gray: 4, fill: true });
+    expect(snapshot.drawCommands).toContainEqual({ op: "line", x1: 0, y1: 40, x2: 480, y2: 40, gray: 0 });
+    expect(snapshot.drawCommands).toContainEqual({ op: "rect", x: 20, y: 80, width: 120, height: 32, gray: 11, fill: true });
   });
 });

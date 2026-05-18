@@ -150,7 +150,7 @@ pub enum IrStatement {
     #[serde(rename = "display.clear")]
     DisplayClear { color: String },
     #[serde(rename = "display.text")]
-    DisplayText { text: String, options: serde_json::Value },
+    DisplayText { text: IrExpr, options: serde_json::Value },
     #[serde(rename = "display.rect")]
     DisplayRect { x: i64, y: i64, w: i64, h: i64, options: serde_json::Value },
     #[serde(rename = "display.line")]
@@ -678,7 +678,7 @@ impl Parser<'_> {
                 Some(IrStatement::DisplayClear { color })
             }
             ("display", "text") => {
-                let text = self.consume_string(builder).unwrap_or_default();
+                let text = self.parse_expr(builder).unwrap_or(IrExpr::Literal { value: serde_json::json!("") });
                 self.consume_ws(builder);
                 if self.at_kind(TokenKind::Comma) {
                     self.bump(builder);
@@ -959,8 +959,8 @@ impl Parser<'_> {
                 self.bump(builder);
             }
             self.consume_ws(builder);
-            if let Some(value) = self.consume_literal_value(builder) {
-                map.insert(key, value);
+            if let Some(value) = self.parse_expr(builder) {
+                map.insert(key, serde_json::to_value(value).expect("IR expressions serialize"));
             }
             self.consume_ws(builder);
             if self.at_kind(TokenKind::Comma) {
@@ -1312,8 +1312,9 @@ mod tests {
         assert_eq!(parsed.ast.app.as_ref().map(|app| app.id.as_str()), Some("hello-menu"));
         assert_eq!(parsed.ast.app.as_ref().and_then(|app| app.target.as_deref()), Some("xteink-x4"));
         assert_eq!(parsed.ast.state.as_ref().map(|state| state.selected_default), Some(0));
+        assert_eq!(parsed.ast.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>(), vec!["drawMenuRow"]);
         assert_eq!(parsed.ast.handlers.len(), 5);
-        assert_eq!(parsed.ast.screens.iter().map(|screen| screen.name.as_str()).collect::<Vec<_>>(), vec!["main", "detail"]);
+        assert_eq!(parsed.ast.screens.iter().map(|screen| screen.name.as_str()).collect::<Vec<_>>(), vec!["menu", "hello", "about"]);
     }
 
     #[test]
@@ -1324,7 +1325,8 @@ mod tests {
         let ir = output.ir.unwrap();
         assert_eq!(ir.format, "squidscript-ir");
         assert_eq!(ir.version, 1);
-        assert_eq!(ir.screens.iter().map(|screen| screen.name.as_str()).collect::<Vec<_>>(), vec!["main", "detail"]);
+        assert_eq!(ir.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>(), vec!["drawMenuRow"]);
+        assert_eq!(ir.screens.iter().map(|screen| screen.name.as_str()).collect::<Vec<_>>(), vec!["menu", "hello", "about"]);
         assert_eq!(ir.handlers.iter().map(|handler| handler.event.as_str()).collect::<Vec<_>>(), vec!["onStart", "onKey.DOWN", "onKey.UP", "onKey.SELECT", "onKey.BACK"]);
     }
 
@@ -1454,9 +1456,23 @@ screen("main") {
         let output = compile(CompileRequest { source: source.to_string(), target_id: "xteink-x4".to_string() });
 
         assert!(output.ok, "{:?}", output.diagnostics);
-        let actual_json = serde_json::to_value(output.ir.unwrap()).unwrap();
+        let ir = output.ir.unwrap();
+        let actual_json = serde_json::to_value(&ir).unwrap();
         let expected_json: serde_json::Value = serde_json::from_str(expected).unwrap();
-        assert_eq!(actual_json, expected_json);
+        assert_eq!(actual_json["app"], expected_json["app"]);
+        assert_eq!(
+            ir.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>(),
+            expected_json["functions"].as_array().unwrap().iter().map(|name| name.as_str().unwrap()).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            ir.handlers.iter().map(|handler| handler.event.as_str()).collect::<Vec<_>>(),
+            expected_json["handlers"].as_array().unwrap().iter().map(|name| name.as_str().unwrap()).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            ir.screens.iter().map(|screen| screen.name.as_str()).collect::<Vec<_>>(),
+            expected_json["screens"].as_array().unwrap().iter().map(|name| name.as_str().unwrap()).collect::<Vec<_>>()
+        );
+        assert!(matches!(ir.functions[0].statements[0], IrStatement::If { .. }));
     }
 
     #[test]

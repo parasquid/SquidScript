@@ -46,7 +46,7 @@ export type IrStatement =
   | { op: "return"; expr?: IrExpr | null }
   | { op: "call"; name: string; args: IrExpr[] }
   | { op: "display.clear"; color: string }
-  | { op: "display.text"; text: string; options: Record<string, unknown> }
+  | { op: "display.text"; text: IrExpr; options: Record<string, unknown> }
   | { op: "display.rect"; x: number; y: number; w: number; h: number; options: Record<string, unknown> }
   | { op: "display.line"; x1: number; y1: number; x2: number; y2: number; options: Record<string, unknown> };
 
@@ -116,7 +116,7 @@ export type DrawCommand =
   | { op: "clear"; gray: number }
   | { op: "rect"; x: number; y: number; width: number; height: number; gray: number; fill?: boolean }
   | { op: "line"; x1: number; y1: number; x2: number; y2: number; gray: number }
-  | { op: "text"; x: number; y: number; text: string; gray: number; fontHeight?: number; align?: "left" | "center" | "right"; maxWidth?: number };
+  | { op: "text"; x: number; y: number; text: string; gray: number; fontHeight?: number; align?: "left" | "center" | "right"; valign?: "top" | "middle"; maxWidth?: number; boxHeight?: number };
 
 export interface TargetDefinition {
   format: string;

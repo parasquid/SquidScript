@@ -46,14 +46,20 @@ export function renderCommands(canvas: HTMLCanvasElement, commands: DrawCommand[
       const font = selectBitmapFont(command.fontHeight, target.display.text.fontHeights.supported, target.display.text.fontHeights.default);
       context.fillStyle = grayToCss(command.gray, target.display.color.logicalGrayscaleLevels);
       const maxWidth = command.maxWidth ?? width - command.x;
-      wrapText(context, command.text, maxWidth, font.height).forEach((line, index) => {
+      const lines = wrapText(context, command.text, maxWidth, font.height);
+      const lineStep = Math.round(font.height * 1.25);
+      const totalHeight = font.height + Math.max(0, lines.length - 1) * lineStep;
+      const top = command.valign === "middle" && command.boxHeight
+        ? command.y + Math.max(0, Math.round((command.boxHeight - totalHeight) / 2))
+        : command.y;
+      lines.forEach((line, index) => {
         const lineWidth = measureBitmapText(line, font.height);
         const alignedX = command.align === "center"
           ? command.x - lineWidth / 2
           : command.align === "right"
             ? command.x - lineWidth
             : command.x;
-        drawBitmapText(context, line, alignedX, command.y + index * Math.round(font.height * 1.25), font.height);
+        drawBitmapText(context, line, alignedX, top + font.height + index * lineStep, font.height);
       });
     }
   }
