@@ -13,6 +13,10 @@ import { DeviceSimulator } from "./ui/DeviceSimulator";
 import "./styles.css";
 
 const SOURCE_KEY = "squidscript-browser-sim:editor-source";
+const IDLE_COMMANDS = [
+  { op: "clear" as const, gray: 0 },
+  { op: "text" as const, x: 240, y: 360, text: "No app running", gray: 8, fontHeight: 24, align: "center" as const, maxWidth: 420 }
+];
 
 export default function App() {
   const vfs = useMemo<Vfs>(() => createBrowserVfs(), []);
@@ -195,7 +199,62 @@ export default function App() {
     log("storage", "cleared simulated /sd");
   }
 
-  const commands = snapshot?.drawCommands ?? [{ op: "clear" as const, gray: 15 }];
+  async function resetSimulatorState(): Promise<void> {
+    await vfs.clear();
+    localStorage.removeItem(SOURCE_KEY);
+    setSource(DEFAULT_SOURCE);
+    setCompiled(null);
+    setCompilerBackend("unknown");
+    setInstalledAppId(null);
+    setInstalledApps([]);
+    setStorageFiles([]);
+    setRuntime(null);
+    setSnapshot(null);
+    setDebugEvents([]);
+    setStatus("Reset simulator");
+  }
+
+  async function resetSimulator(): Promise<void> {
+    await resetSimulatorState();
+    log("simulator", "reset browser simulator state");
+  }
+
+  async function cleanLaunchHelloMenu(): Promise<void> {
+    await resetSimulatorState();
+    log("simulator", "reset browser simulator state");
+
+    log("compile", "starting compile", { target: XTEINK_X4_TARGET.id, sourceBytes: DEFAULT_SOURCE.length });
+    const result = await compileSquid(DEFAULT_SOURCE, XTEINK_X4_TARGET.id);
+    setCompiled(result);
+    setCompilerBackend(result.backend);
+    log("compile", result.ok ? "compile succeeded" : "compile failed", {
+      backend: result.backend,
+      diagnostics: result.diagnostics.length,
+      appId: result.ir?.app.id
+    });
+    if (!result.ok || !result.ir) {
+      setStatus(`Compile failed with ${result.backend.toUpperCase()}`);
+      return;
+    }
+
+    log("upload", "installing IR app", { appId: result.ir.app.id });
+    const base = await installIrApp(vfs, result.ir, XTEINK_X4_TARGET);
+    setInstalledAppId(result.ir.app.id);
+    await refreshApps();
+    log("upload", "installed app files", { base, files: ["app.json", "main.ir.json"] });
+    await refreshStorageFiles();
+
+    log("run", "loading installed app", { requestedAppId: result.ir.app.id });
+    const installed = await loadInstalledApp(vfs, XTEINK_X4_TARGET, result.ir.app.id);
+    const nextRuntime = new BrowserRuntime(installed.program, vfs);
+    setRuntime(nextRuntime);
+    setSnapshot(await nextRuntime.start());
+    setInstalledAppId(installed.manifest.id);
+    setStatus(`Running ${installed.program.name} from ${installed.basePath}`);
+    log("run", "runtime started", { appId: installed.program.id, basePath: installed.basePath, entryType: installed.manifest.entry.type });
+  }
+
+  const commands = snapshot?.drawCommands ?? IDLE_COMMANDS;
 
   return (
     <main className="app-shell">
@@ -205,6 +264,7 @@ export default function App() {
         data-app-id={snapshot?.appId ?? ""}
         data-current-screen={snapshot?.currentScreen ?? "idle"}
         data-selected={snapshot?.state.selected ?? ""}
+        data-view={snapshot?.state.view ?? ""}
         data-exited={snapshot?.exited ? "true" : "false"}
       >
         <DeviceSimulator
@@ -224,6 +284,8 @@ export default function App() {
           <button onClick={() => void uninstallSelectedApp()}><Trash2 size={16} />Uninstall</button>
           <button onClick={() => void resetAppState()}><RotateCcw size={16} />Reset App State</button>
           <button onClick={() => void resetStorage()}><Save size={16} />Reset Storage</button>
+          <button onClick={() => void resetSimulator()}><RotateCcw size={16} />Reset Simulator</button>
+          <button onClick={() => void cleanLaunchHelloMenu()}><Play size={16} />Clean Launch</button>
         </div>
         <div className="app-picker" aria-label="installed apps">
           <select aria-label="installed app selector" value={installedAppId ?? ""} onChange={(event) => setInstalledAppId(event.target.value || null)}>

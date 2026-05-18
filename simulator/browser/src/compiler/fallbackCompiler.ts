@@ -3,35 +3,43 @@ import type { CompileResponse, Diagnostic, IrExpr, IrProgram, IrStatement } from
 export const DEFAULT_SOURCE = `app "hello-menu" target "xteink-x4"
 
 state {
-  selected: 0
+  selected: 0,
+  view: "menu"
 }
 
 onStart() {
   state.load()
+  view = "menu"
   screen.open("menu")
 }
 
 onKey("DOWN") {
-  if (selected < 2) {
-    selected = selected + 1
-    state.save()
-    screen.refresh()
+  if (view == "menu") {
+    if (selected < 2) {
+      selected = selected + 1
+      state.save()
+      screen.refresh()
+    }
   }
 }
 
 onKey("UP") {
-  if (selected > 0) {
-    selected = selected - 1
-    state.save()
-    screen.refresh()
+  if (view == "menu") {
+    if (selected > 0) {
+      selected = selected - 1
+      state.save()
+      screen.refresh()
+    }
   }
 }
 
 onKey("SELECT") {
   if (selected == 0) {
+    view = "hello"
     screen.open("hello")
   } else {
     if (selected == 1) {
+      view = "about"
       screen.open("about")
     } else {
       app.exit()
@@ -40,8 +48,14 @@ onKey("SELECT") {
 }
 
 onKey("BACK") {
-  state.save()
-  app.exit()
+  if (view != "menu") {
+    view = "menu"
+    state.save()
+    screen.open("menu")
+  } else {
+    state.save()
+    app.exit()
+  }
 }
 
 function drawMenuRow(index, label, y) {
@@ -112,7 +126,7 @@ screen("hello") {
     align: "center",
     valign: "middle"
   })
-  display.text("BACK exits this example", {
+  display.text("BACK returns to menu", {
     x: 20,
     y: 720,
     w: 440,
@@ -262,16 +276,21 @@ function helloMenuIr(targetId: string): IrProgram {
     format: "squidscript-ir",
     version: 1,
     app: { id: "hello-menu", name: "Hello Menu", target: targetId },
-    state: [{ name: "selected", value: 0 }],
+    state: [{ name: "selected", value: 0 }, { name: "view", value: "menu" }],
     functions: [{ name: "drawMenuRow", params: ["index", "label", "y"], statements: [drawRow] }],
     handlers: [
-      { event: "onStart", statements: [{ op: "state.load" }, { op: "screen.open", screen: "menu" }] },
+      { event: "onStart", statements: [{ op: "state.load" }, { op: "assign", name: "view", expr: lit("menu") }, { op: "screen.open", screen: "menu" }] },
       {
         event: "onKey.DOWN",
         statements: [{
           op: "if",
-          condition: bin(state("selected"), "<", lit(2)),
-          then_statements: [{ op: "assign", name: "selected", expr: bin(state("selected"), "+", lit(1)) }, { op: "state.save" }, { op: "screen.refresh" }],
+          condition: bin(state("view"), "==", lit("menu")),
+          then_statements: [{
+            op: "if",
+            condition: bin(state("selected"), "<", lit(2)),
+            then_statements: [{ op: "assign", name: "selected", expr: bin(state("selected"), "+", lit(1)) }, { op: "state.save" }, { op: "screen.refresh" }],
+            else_statements: []
+          }],
           else_statements: []
         }]
       },
@@ -279,8 +298,13 @@ function helloMenuIr(targetId: string): IrProgram {
         event: "onKey.UP",
         statements: [{
           op: "if",
-          condition: bin(state("selected"), ">", lit(0)),
-          then_statements: [{ op: "assign", name: "selected", expr: bin(state("selected"), "-", lit(1)) }, { op: "state.save" }, { op: "screen.refresh" }],
+          condition: bin(state("view"), "==", lit("menu")),
+          then_statements: [{
+            op: "if",
+            condition: bin(state("selected"), ">", lit(0)),
+            then_statements: [{ op: "assign", name: "selected", expr: bin(state("selected"), "-", lit(1)) }, { op: "state.save" }, { op: "screen.refresh" }],
+            else_statements: []
+          }],
           else_statements: []
         }]
       },
@@ -289,16 +313,24 @@ function helloMenuIr(targetId: string): IrProgram {
         statements: [{
           op: "if",
           condition: bin(state("selected"), "==", lit(0)),
-          then_statements: [{ op: "screen.open", screen: "hello" }],
+          then_statements: [{ op: "assign", name: "view", expr: lit("hello") }, { op: "screen.open", screen: "hello" }],
           else_statements: [{
             op: "if",
             condition: bin(state("selected"), "==", lit(1)),
-            then_statements: [{ op: "screen.open", screen: "about" }],
+            then_statements: [{ op: "assign", name: "view", expr: lit("about") }, { op: "screen.open", screen: "about" }],
             else_statements: [{ op: "app.exit" }]
           }]
         }]
       },
-      { event: "onKey.BACK", statements: [{ op: "state.save" }, { op: "app.exit" }] }
+      {
+        event: "onKey.BACK",
+        statements: [{
+          op: "if",
+          condition: bin(state("view"), "!=", lit("menu")),
+          then_statements: [{ op: "assign", name: "view", expr: lit("menu") }, { op: "state.save" }, { op: "screen.open", screen: "menu" }],
+          else_statements: [{ op: "state.save" }, { op: "app.exit" }]
+        }]
+      }
     ],
     screens: [
       {
@@ -319,7 +351,7 @@ function helloMenuIr(targetId: string): IrProgram {
         statements: [
           { op: "display.clear", color: "gray0" },
           { op: "display.text", text: lit("Hello, Squid!"), options: { x: lit(20), y: lit(120), w: lit(440), h: lit(64), fontHeight: lit(32), align: lit("center"), valign: lit("middle") } },
-          { op: "display.text", text: lit("BACK exits this example"), options: { x: lit(20), y: lit(720), w: lit(440), h: lit(32), fontHeight: lit(18), align: lit("center"), valign: lit("middle"), textColor: lit("gray8") } }
+          { op: "display.text", text: lit("BACK returns to menu"), options: { x: lit(20), y: lit(720), w: lit(440), h: lit(32), fontHeight: lit(18), align: lit("center"), valign: lit("middle"), textColor: lit("gray8") } }
         ]
       },
       {

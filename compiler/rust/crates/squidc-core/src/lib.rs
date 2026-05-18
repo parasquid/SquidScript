@@ -1312,6 +1312,10 @@ mod tests {
         assert_eq!(parsed.ast.app.as_ref().map(|app| app.id.as_str()), Some("hello-menu"));
         assert_eq!(parsed.ast.app.as_ref().and_then(|app| app.target.as_deref()), Some("xteink-x4"));
         assert_eq!(parsed.ast.state.as_ref().map(|state| state.selected_default), Some(0));
+        assert_eq!(
+            parsed.ast.state.as_ref().map(|state| state.values.iter().map(|value| value.name.as_str()).collect::<Vec<_>>()),
+            Some(vec!["selected", "view"])
+        );
         assert_eq!(parsed.ast.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>(), vec!["drawMenuRow"]);
         assert_eq!(parsed.ast.handlers.len(), 5);
         assert_eq!(parsed.ast.screens.iter().map(|screen| screen.name.as_str()).collect::<Vec<_>>(), vec!["menu", "hello", "about"]);
@@ -1325,9 +1329,12 @@ mod tests {
         let ir = output.ir.unwrap();
         assert_eq!(ir.format, "squidscript-ir");
         assert_eq!(ir.version, 1);
+        assert_eq!(ir.state.iter().map(|state| state.name.as_str()).collect::<Vec<_>>(), vec!["selected", "view"]);
         assert_eq!(ir.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>(), vec!["drawMenuRow"]);
         assert_eq!(ir.screens.iter().map(|screen| screen.name.as_str()).collect::<Vec<_>>(), vec!["menu", "hello", "about"]);
         assert_eq!(ir.handlers.iter().map(|handler| handler.event.as_str()).collect::<Vec<_>>(), vec!["onStart", "onKey.DOWN", "onKey.UP", "onKey.SELECT", "onKey.BACK"]);
+        assert!(matches!(ir.handlers[1].statements[0], IrStatement::If { .. }));
+        assert!(matches!(ir.handlers[4].statements[0], IrStatement::If { .. }));
     }
 
     #[test]

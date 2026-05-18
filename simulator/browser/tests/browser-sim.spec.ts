@@ -6,6 +6,10 @@ test("compile, upload, run, input, diagnostics, and reset flow", async ({ page }
   await expect(page.getByLabel("XTEINK X4 device simulator")).toBeVisible();
   await expect(page.getByLabel("Squid source")).toBeVisible();
   await expect(page.getByRole("button", { name: /Compile/ })).toBeVisible();
+  await expect(page.getByLabel("display diagnostics")).toContainText("Display 480x800");
+  await expect(page.getByLabel("X4 display")).toHaveAttribute("data-render-ok", "true");
+  await expect(page.getByLabel("display diagnostics")).toContainText("2 commands");
+  await expectCanvasPixel(page, 10, 10, [255, 255, 255]);
 
   await page.getByRole("button", { name: /Compile/ }).click();
   await expect(page.getByRole("status")).toContainText("Compiled main.ir.json");
@@ -26,6 +30,9 @@ test("compile, upload, run, input, diagnostics, and reset flow", async ({ page }
   await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-app-id", "hello-menu");
   await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-current-screen", "menu");
   await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-selected", "0");
+  await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-view", "menu");
+  await expect(page.getByLabel("display diagnostics")).toContainText("first clear");
+  await expect(page.getByLabel("X4 display")).toHaveAttribute("data-command-count", /[1-9][0-9]*/);
   await expectCanvasPixel(page, 10, 10, [255, 255, 255]);
   await expectCanvasPixel(page, 40, 170, [0, 0, 0]);
   await expectCanvasPixel(page, 40, 226, [255, 255, 255]);
@@ -47,8 +54,14 @@ test("compile, upload, run, input, diagnostics, and reset flow", async ({ page }
 
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-current-screen", "about");
+  await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-view", "about");
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-current-screen", "about");
+  await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-selected", "1");
   await page.keyboard.press("Backspace");
-  await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-exited", "true");
+  await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-exited", "false");
+  await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-current-screen", "menu");
+  await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-view", "menu");
 
   await page.getByRole("button", { name: /Reset App State/ }).click();
   await expect(page.getByRole("status")).toContainText("Reset app state");
@@ -59,6 +72,14 @@ test("compile, upload, run, input, diagnostics, and reset flow", async ({ page }
   await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-exited", "false");
   await page.getByRole("button", { name: "Select" }).click();
   await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-current-screen", "hello");
+  await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-view", "hello");
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-current-screen", "hello");
+  await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-selected", "0");
+  await page.keyboard.press("Backspace");
+  await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-current-screen", "menu");
+  await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-view", "menu");
+  await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-exited", "false");
   await page.keyboard.press("Backspace");
   await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-exited", "true");
 
@@ -74,12 +95,28 @@ test("compile, upload, run, input, diagnostics, and reset flow", async ({ page }
 
   await page.getByLabel("Squid source").fill('screen("main") {}\n');
   await page.getByRole("button", { name: /Compile/ }).click();
-  await expect(page.getByLabel("diagnostics")).toContainText("E_APP_REQUIRED");
+  await expect(page.getByLabel("diagnostics", { exact: true })).toContainText("E_APP_REQUIRED");
 
   await page.getByRole("button", { name: /Reset Storage/ }).click();
   await expect(page.getByRole("status")).toContainText("Reset simulated /sd");
   await expect(page.getByLabel("installed apps")).toContainText("0 installed");
   await expect(page.getByLabel("storage files")).toContainText("No /sd files");
+
+  await page.getByLabel("Squid source").fill('screen("stale") {}\n');
+  await page.getByRole("button", { name: /Reset Simulator/ }).click();
+  await expect(page.getByRole("status")).toContainText("Reset simulator");
+  await expect(page.getByLabel("Squid source")).toContainText('app "hello-menu" target "xteink-x4"');
+  await expect(page.getByLabel("compiler backend")).toContainText("Compiler: UNKNOWN");
+  await expect(page.getByLabel("installed apps")).toContainText("0 installed");
+  await expect(page.getByLabel("storage files")).toContainText("No /sd files");
+
+  await page.getByRole("button", { name: /Clean Launch/ }).click();
+  await expect(page.getByRole("status")).toContainText("Running Hello Menu from /sd/apps/hello-menu");
+  await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-app-id", "hello-menu");
+  await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-current-screen", "menu");
+  await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-selected", "0");
+  await expectCanvasPixel(page, 10, 10, [255, 255, 255]);
+  await expectCanvasPixel(page, 40, 170, [0, 0, 0]);
 });
 
 async function expectCanvasPixel(page: Page, x: number, y: number, rgb: [number, number, number]): Promise<void> {

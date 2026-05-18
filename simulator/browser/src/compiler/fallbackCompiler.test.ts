@@ -10,7 +10,7 @@ describe("fallback compiler", () => {
       format: "squidscript-ir",
       version: 1,
       app: { id: "hello-menu", target: "xteink-x4" },
-      state: [{ name: "selected", value: 0 }],
+      state: [{ name: "selected", value: 0 }, { name: "view", value: "menu" }],
       screens: [
         { name: "menu", render: "compose" },
         { name: "hello", render: "compose" },
@@ -18,7 +18,14 @@ describe("fallback compiler", () => {
       ]
     });
     expect(result.ir?.functions.map((fn) => fn.name)).toEqual(["drawMenuRow"]);
-    expect(result.ir?.handlers.find((handler) => handler.event === "onKey.DOWN")?.statements[0]).toMatchObject({ op: "if" });
+    expect(result.ir?.handlers.find((handler) => handler.event === "onKey.DOWN")?.statements[0]).toMatchObject({
+      op: "if",
+      condition: { op: "binary", left: { op: "state", name: "view" }, operator: "==", right: { op: "literal", value: "menu" } }
+    });
+    expect(result.ir?.handlers.find((handler) => handler.event === "onKey.BACK")?.statements[0]).toMatchObject({
+      op: "if",
+      condition: { op: "binary", left: { op: "state", name: "view" }, operator: "!=", right: { op: "literal", value: "menu" } }
+    });
   });
 
   it("returns diagnostics with source spans", () => {

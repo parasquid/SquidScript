@@ -139,14 +139,14 @@ export class BrowserRuntime {
   private async refresh(): Promise<void> {
     if (this.exited) {
       this.drawCommands = [
-        { op: "clear", gray: 15 },
+        { op: "clear", gray: 0 },
         { op: "text", x: 240, y: 380, text: "App exited", gray: 5, fontHeight: 24, align: "center", maxWidth: 420 }
       ];
       return;
     }
 
     const screen = this.program.screens.get(this.currentScreen);
-    const commands = screen ? await this.renderScreen(screen.statements) : [{ op: "clear" as const, gray: 15 }];
+    const commands = screen ? await this.renderScreen(screen.statements) : [{ op: "clear" as const, gray: 0 }];
     this.drawCommands = commands;
   }
 
@@ -158,7 +158,7 @@ export class BrowserRuntime {
     } finally {
       this.locals.pop();
     }
-    return commands.length > 0 ? commands : [{ op: "clear", gray: 15 }];
+    return commands.length > 0 ? commands : [{ op: "clear", gray: 0 }];
   }
 
   private async appendDrawCommand(statement: IrStatement, commands: DrawCommand[]): Promise<void> {
@@ -309,11 +309,11 @@ export class BrowserRuntime {
 }
 
 function colorToGray(color: string): number {
-  if (color === "black") return 0;
-  if (color === "white") return 15;
+  if (color === "black") return 15;
+  if (color === "white") return 0;
   const match = color.match(/^gray(\d+)$/);
   if (!match) return 15;
-  return 15 - Math.min(15, Math.max(0, Number(match[1])));
+  return Math.min(15, Math.max(0, Number(match[1])));
 }
 
 function isIrExpr(value: unknown): value is IrExpr {

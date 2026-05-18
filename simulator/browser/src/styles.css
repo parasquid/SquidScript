@@ -56,7 +56,26 @@ button {
   position: absolute;
   background: #fff;
   border: 2px solid #161616;
-  image-rendering: pixelated;
+  image-rendering: auto;
+}
+
+.device-display-error {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border: 2px solid #7a1616;
+  background: #fff8f5;
+  color: #7a1616;
+  padding: 16px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.display-diagnostics {
+  margin-top: 8px;
+  color: #4b4842;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .device-button {

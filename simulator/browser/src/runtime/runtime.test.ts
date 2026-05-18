@@ -6,7 +6,7 @@ import { BrowserRuntime } from "./runtime";
 import type { RuntimeProgram } from "../types";
 
 describe("browser runtime", () => {
-  it("runs onStart, dispatches keys, refreshes, saves state, and exits", async () => {
+  it("runs onStart, dispatches keys, refreshes, saves state, navigates back, and exits from menu", async () => {
     const ir = compileFallback(DEFAULT_SOURCE, "xteink-x4").ir!;
     const runtime = new BrowserRuntime(new IrJsonLoader().load(ir), new MemoryVfs());
 
@@ -15,15 +15,26 @@ describe("browser runtime", () => {
     expect(snapshot.currentScreen).toBe("menu");
     expect(snapshot.drawCommands.length).toBeGreaterThan(0);
     expect(snapshot.drawCommands).toContainEqual(expect.objectContaining({ op: "text", text: "Hello Menu", x: 240, align: "center" }));
-    expect(snapshot.drawCommands).toContainEqual(expect.objectContaining({ op: "rect", x: 32, y: 160, width: 416, height: 48, gray: 0, fill: true }));
+    expect(snapshot.drawCommands).toContainEqual(expect.objectContaining({ op: "rect", x: 32, y: 160, width: 416, height: 48, gray: 15, fill: true }));
 
     snapshot = await runtime.dispatchKey("DOWN");
     expect(snapshot.state.selected).toBe(1);
     expect(snapshot.currentScreen).toBe("menu");
-    expect(snapshot.drawCommands).toContainEqual(expect.objectContaining({ op: "rect", x: 32, y: 216, width: 416, height: 48, gray: 0, fill: true }));
+    expect(snapshot.drawCommands).toContainEqual(expect.objectContaining({ op: "rect", x: 32, y: 216, width: 416, height: 48, gray: 15, fill: true }));
 
     snapshot = await runtime.dispatchKey("SELECT");
     expect(snapshot.currentScreen).toBe("about");
+    expect(snapshot.state.view).toBe("about");
+
+    snapshot = await runtime.dispatchKey("DOWN");
+    expect(snapshot.currentScreen).toBe("about");
+    expect(snapshot.state.selected).toBe(1);
+    expect(snapshot.state.view).toBe("about");
+
+    snapshot = await runtime.dispatchKey("BACK");
+    expect(snapshot.exited).toBe(false);
+    expect(snapshot.currentScreen).toBe("menu");
+    expect(snapshot.state.view).toBe("menu");
 
     snapshot = await runtime.dispatchKey("BACK");
     expect(snapshot.exited).toBe(true);
@@ -145,7 +156,7 @@ describe("browser runtime", () => {
 
     const snapshot = await runtime.start();
 
-    expect(snapshot.drawCommands).toContainEqual({ op: "line", x1: 0, y1: 40, x2: 480, y2: 40, gray: 0 });
-    expect(snapshot.drawCommands).toContainEqual({ op: "rect", x: 20, y: 80, width: 120, height: 32, gray: 11, fill: true });
+    expect(snapshot.drawCommands).toContainEqual({ op: "line", x1: 0, y1: 40, x2: 480, y2: 40, gray: 15 });
+    expect(snapshot.drawCommands).toContainEqual({ op: "rect", x: 20, y: 80, width: 120, height: 32, gray: 4, fill: true });
   });
 });

@@ -6,8 +6,8 @@ import { XTEINK_X4_TARGET } from "../target/target";
 
 describe("renderer helpers", () => {
   it("maps 16-level grayscale deterministically", () => {
-    expect(grayToCss(0)).toBe("rgb(0, 0, 0)");
-    expect(grayToCss(15)).toBe("rgb(255, 255, 255)");
+    expect(grayToCss(0)).toBe("rgb(255, 255, 255)");
+    expect(grayToCss(15)).toBe("rgb(0, 0, 0)");
   });
 
   it("selects nearest supported font height", () => {
@@ -18,6 +18,8 @@ describe("renderer helpers", () => {
   it("uses deterministic bitmap glyph metrics and fallback glyphs", () => {
     expect(measureBitmapText("ABC", 20)).toBeGreaterThan(measureBitmapText("AB", 20));
     expect(glyphFor("A")).toEqual(glyphFor("a"));
+    expect(glyphFor(",")).toEqual(["00000", "00000", "00000", "00000", "00000", "00100", "01000"]);
+    expect(glyphFor("!")).toEqual(["00100", "00100", "00100", "00100", "00100", "00000", "00100"]);
     expect(glyphFor("~")).toHaveLength(7);
   });
 

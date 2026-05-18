@@ -4040,35 +4040,43 @@ main.squid:
 
 ```squid
 state {
-  selected: 0
+  selected: 0,
+  view: "menu"
 }
 
 onStart() {
   state.load()
+  view = "menu"
   screen.open("menu")
 }
 
 onKey("DOWN") {
-  if (selected < 2) {
-    selected = selected + 1
-    state.save()
-    screen.refresh()
+  if (view == "menu") {
+    if (selected < 2) {
+      selected = selected + 1
+      state.save()
+      screen.refresh()
+    }
   }
 }
 
 onKey("UP") {
-  if (selected > 0) {
-    selected = selected - 1
-    state.save()
-    screen.refresh()
+  if (view == "menu") {
+    if (selected > 0) {
+      selected = selected - 1
+      state.save()
+      screen.refresh()
+    }
   }
 }
 
 onKey("SELECT") {
   if (selected == 0) {
+    view = "hello"
     screen.open("hello")
   } else {
     if (selected == 1) {
+      view = "about"
       screen.open("about")
     } else {
       app.exit()
@@ -4077,8 +4085,14 @@ onKey("SELECT") {
 }
 
 onKey("BACK") {
-  state.save()
-  app.exit()
+  if (view != "menu") {
+    view = "menu"
+    state.save()
+    screen.open("menu")
+  } else {
+    state.save()
+    app.exit()
+  }
 }
 
 function drawMenuRow(index, label, y) {
@@ -4149,7 +4163,7 @@ screen("hello") {
     align: "center",
     valign: "middle"
   })
-  display.text("BACK exits this example", {
+  display.text("BACK returns to menu", {
     x: 20,
     y: 720,
     w: 440,
