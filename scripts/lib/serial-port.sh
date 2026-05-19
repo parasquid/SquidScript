@@ -25,16 +25,22 @@ resolve_esp_serial_port() {
   done
 
   local unique=()
+  local unique_real=()
   local seen
+  local real
   for path in "${candidates[@]}"; do
+    real="$(realpath "$path" 2>/dev/null || printf '%s\n' "$path")"
     seen=0
-    for existing in "${unique[@]}"; do
-      if [[ "$existing" == "$path" ]]; then
+    for existing in "${unique_real[@]}"; do
+      if [[ "$existing" == "$real" ]]; then
         seen=1
         break
       fi
     done
-    [[ "$seen" == "0" ]] && unique+=("$path")
+    if [[ "$seen" == "0" ]]; then
+      unique+=("$path")
+      unique_real+=("$real")
+    fi
   done
 
   if [[ "${#unique[@]}" == "1" ]]; then

@@ -51,7 +51,7 @@ Current order:
 5. Timer-armed app test.
 6. Generic triggered-apps test.
 7. Blinky REPL session.
-8. Blinky app run and short monitor check.
+8. Volatile blinky app run, app-list persistence check, and short monitor check.
 
 Add new hardware tests before the final blinky app unless the new test is also
 intended to be the final visible board-state check.
@@ -97,9 +97,10 @@ cargo run -p squidc -- device output
 cargo run -p squidc -- device monitor --max-lines 4
 ```
 
-Compiles, uploads, and runs the blinky SquidScript app as `main`. The serial
-output should include `blinky ready` followed by alternating `blink` values.
-The onboard LED should visibly toggle.
+Compiles, uploads, and runs the blinky SquidScript app as a temporary
+foreground app through `RUN.TEMP`. It must not persist to app storage or
+overwrite `main`. The serial output should include `blinky ready` followed by
+alternating `blink` values. The onboard LED should visibly toggle.
 
 `squidc device monitor` polls the firmware debug output buffer and prints newly
 observed `output=...` lines to the terminal. Use `--raw` only when literal
@@ -139,7 +140,7 @@ Verifies the default dev profile REPL behavior without requiring an explicit
 ```
 
 Installs the timer armed-app example and verifies `app.arm`,
-`event.addSource`, and timer-dispatched output on real firmware.
+`service.timer.*`, and timer-dispatched output on real firmware.
 
 ### Generic Triggered Apps
 

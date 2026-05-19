@@ -12,6 +12,11 @@ if [[ -z "${CC_riscv32imc_unknown_none_elf:-}" ]]; then
     export CC_riscv32imc_unknown_none_elf="$(command -v riscv32-unknown-elf-gcc)"
   elif command -v riscv64-elf-gcc >/dev/null 2>&1; then
     export CC_riscv32imc_unknown_none_elf="$(command -v riscv64-elf-gcc)"
+  elif command -v brew >/dev/null 2>&1; then
+    BREW_RISCV64_PREFIX="$(brew --prefix riscv64-elf-gcc 2>/dev/null || true)"
+    if [[ -n "$BREW_RISCV64_PREFIX" && -x "$BREW_RISCV64_PREFIX/bin/riscv64-elf-gcc" ]]; then
+      export CC_riscv32imc_unknown_none_elf="$BREW_RISCV64_PREFIX/bin/riscv64-elf-gcc"
+    fi
   fi
 fi
 

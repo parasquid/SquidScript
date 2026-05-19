@@ -6,7 +6,7 @@ state {
 
 event.on("app.start") {
   hardware.gpio.write("status_led", led)
-  event.addSource("timer.debug", { every: 500 })
+  service.timer.every("timer.debug", 500)
   debug.print("blinky ready", led)
 }
 

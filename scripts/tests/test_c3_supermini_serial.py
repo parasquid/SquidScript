@@ -10,6 +10,7 @@ from c3_supermini_serial import (
     parse_state,
     reference_firmware_test_sequence,
     run_app,
+    run_temp_app_sqbc,
 )
 
 
@@ -56,6 +57,23 @@ class C3SuperMiniSerialTests(unittest.TestCase):
         run_app(serial, "main", output=io.BytesIO(), timeout=0.01)
 
         self.assertEqual(serial.writes, [b"RUN.APP main\n"])
+
+    def test_run_temp_app_sqbc_sends_named_temp_command(self):
+        serial = FakeSerial(
+            [b"READY RUN.TEMP app=quick len=5\r\n", b"OK RUN.TEMP app=quick hash=4f9f2cab\r\n"]
+        )
+        output = io.BytesIO()
+
+        run_temp_app_sqbc(serial, "quick", b"hello", chunk_size=3, output=output)
+
+        self.assertEqual(
+            serial.writes,
+            [
+                b"RUN.TEMP quick 5 4f9f2cab\n",
+                b"hel",
+                b"lo",
+            ],
+        )
 
     def test_list_apps_requests_app_registry_block(self):
         serial = FakeSerial([b"BEGIN APPS\r\napp=main len=5 hash=4f9f2cab\r\nEND APPS\r\n"])

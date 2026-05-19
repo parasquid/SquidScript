@@ -115,7 +115,8 @@ Initial built-in IDs:
 15 reserved
 16 app.arm
 17 app.disarm
-18 event.addSource
+18 service.timer.every
+19 service.timer.after
 ```
 
 The v2 format currently supports the headless reference VM subset. Display
@@ -123,7 +124,7 @@ draw commands are emitted as headless draw-log records on the ESP32-C3 Super
 Mini reference firmware. GPIO builtins dispatch to target firmware hardware
 modules; unsupported names return a VM operand error. The canonical lifecycle
 surface is generic events plus `app.start`, `app.arm`, `app.disarm`, and
-`event.addSource`. `app.launch` remains the app replacement/launch primitive.
+`service.timer.*`. `app.launch` remains the app replacement/launch primitive.
 
 SQBC v2 includes an explicit app metadata section so tools can read the app id
 from bytecode without guessing from the string table. `squidc app install` uses this

@@ -46,9 +46,10 @@ isn't set` during flashing on some host configurations. The project scripts do
 not suppress this warning; it is harmless when flashing continues and the
 hardware test reaches `OK hardware test esp32c3-super-mini reference firmware`.
 
-The normal compile/upload/run path uses `squidc run`. If `--port` is omitted,
-`squidc` probes visible serial ports with `HELLO` and uses the single
-SquidScript firmware target it finds:
+The quick compile/upload/run path uses `squidc run`. It uploads the app to RAM
+with `RUN.TEMP`, pushes it onto the foreground stack, and does not write flash.
+If `--port` is omitted, `squidc` probes visible serial ports with `HELLO` and
+uses the single SquidScript firmware target it finds:
 
 ```sh
 cargo run -p squidc -- run examples/blinky-supermini/main.squid
@@ -94,7 +95,7 @@ lets the firmware timer fire, then verifies `OUTPUT.GET` contains
 
 The generic triggered-apps hardware test is the canonical SQBC firmware
 regression path for the app-stack work. It installs `main`, `reader-clock`, and
-`break-reminder`, verifies `app.start`, `app.arm`, `event.addSource`, session timer,
+`break-reminder`, verifies `app.start`, `app.arm`, `service.timer.*`, session timer,
 armed timer, and key exit behavior over USB serial.
 
 The current Super Mini app store uses LittleFS on the firmware-owned `squidfs`

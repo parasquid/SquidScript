@@ -15,6 +15,7 @@ troubleshooting.
 ```text
 HELLO
 INSTALL.APP <app-id> <len> <fnv32hex>
+RUN.TEMP <app-id> <len> <fnv32hex>
 RUN.APP <app-id>
 RUN.EVENT <app-id> <event>
 APP.LIST
@@ -30,8 +31,10 @@ STORAGE.FORMAT
 ```
 
 `INSTALL.APP` is followed by exactly `<len>` raw SQBC bytes and stores them in
-firmware-owned app storage under `<app-id>`. `STATE.IMPORT` is followed by
-exactly `<len>` state snapshot bytes. The hash is FNV-1a over the payload bytes.
+firmware-owned app storage under `<app-id>`. `RUN.TEMP` uses the same binary
+payload framing, but stores the SQBC in RAM only and launches it as a temporary
+foreground app. `STATE.IMPORT` is followed by exactly `<len>` state snapshot
+bytes. The hash is FNV-1a over the payload bytes.
 
 Success responses start with `OK`. Error responses start with `ERR`.
 
@@ -47,8 +50,9 @@ OK STATE.GET
 
 Installed apps are persistent in the ESP32-C3 reference firmware. On startup,
 firmware scans the app store and rebuilds the in-memory registry cache.
-`RESET` resets the development runtime state but does not erase installed apps.
-`STORAGE.FORMAT` formats the firmware app store and clears the registry cache.
+`RESET` resets the development runtime state and clears the temp app but does
+not erase installed apps. `STORAGE.FORMAT` formats the firmware app store and
+clears the registry cache.
 
 See `docs/firmware_app_storage.md` for the current ESP32-C3 storage layout.
 
@@ -108,7 +112,7 @@ The ESP32-C3 Super Mini target currently exposes:
   logical onboard LED. It is active-low on typical Super Mini boards.
 - `GPIO8` as the raw pin name for the same line.
 
-Normal upload/run uses `squidc run` and does not require a target:
+Normal quick upload/run uses volatile `squidc run` and does not require a target:
 
 ```sh
 cargo run -p squidc -- run examples/blinky-supermini/main.squid

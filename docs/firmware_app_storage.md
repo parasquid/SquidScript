@@ -68,6 +68,7 @@ needs a RISC-V ELF GCC toolchain in addition to the Rust
 Run `cargo run -p squidc -- doctor` to check the host setup.
 
 If Homebrew installs `riscv64-elf-gcc` but does not link it into `PATH`, either
-fix the Homebrew link or export `CC_riscv32imc_unknown_none_elf` to the compiler
-path for the current shell. Do not commit machine-specific Cellar paths into
-the build script.
+leave `brew` available so the build script can resolve `brew --prefix
+riscv64-elf-gcc`, fix the Homebrew link, or export
+`CC_riscv32imc_unknown_none_elf` to the compiler path for the current shell. Do
+not commit machine-specific Cellar paths into the build script.

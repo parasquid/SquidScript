@@ -18,9 +18,9 @@ cargo run -p squidc -- repl --script tests/repl/default-dev.session
 cargo run -p squidc -- doctor
 ```
 
-`run` compiles the input app, installs it on the detected SquidScript firmware
-device as `main`, and launches it. If the source app has a different name, the
-uploaded app is still standardized as `main` for process 1 replacement.
+`run` compiles the input app, uploads it with `RUN.TEMP`, and launches it as a
+temporary foreground app. It does not write flash, does not overwrite `main`,
+and is intended for quick hardware checks.
 
 ## App Commands
 
@@ -33,7 +33,7 @@ cargo run -p squidc -- app list
 
 `app install` accepts `.squid` source or `.sqbc` bytecode. Source is compiled
 before upload. `.sqbc` input must include app-id metadata unless `--as` is
-provided.
+provided. Use `app install` plus `app launch` for persistent apps.
 
 ## Device Commands
 

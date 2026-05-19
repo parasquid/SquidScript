@@ -41,6 +41,15 @@ impl SerialDevice {
         )
     }
 
+    pub fn run_temp_app(&mut self, app_id: &str, bytes: &[u8]) -> Result<String, String> {
+        self.write_install(
+            &format!("RUN.TEMP {app_id}"),
+            "READY RUN.TEMP",
+            "OK RUN.TEMP",
+            bytes,
+        )
+    }
+
     pub fn import_state(&mut self, bytes: &[u8]) -> Result<String, String> {
         self.write_install(
             "STATE.IMPORT",
@@ -214,8 +223,20 @@ pub fn candidate_ports() -> Vec<String> {
         }
     }
     out.sort();
-    out.dedup();
-    out
+    let mut unique = Vec::new();
+    let mut seen = Vec::new();
+    for path in out {
+        let real = fs::canonicalize(&path)
+            .ok()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| path.clone());
+        if seen.iter().any(|existing| existing == &real) {
+            continue;
+        }
+        seen.push(real);
+        unique.push(path);
+    }
+    unique
 }
 
 fn configure_tty(port: &str) -> Result<(), String> {

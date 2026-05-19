@@ -1660,7 +1660,7 @@ app.arm(appId)
 
 Arms an installed app for future trigger delivery. Firmware loads the target
 app, dispatches `event.on("app.arm")` in registration mode, records any
-`event.addSource(...)` registrations, and tears the VM down without pushing an active
+`service.timer.*(...)` registrations, and tears the VM down without pushing an active
 session.
 
 Example:
@@ -1673,15 +1673,26 @@ app.disarm(appId)
 
 Removes armed trigger registrations for an app.
 
-event.addSource(eventName, options)
+service.timer.every(eventName, intervalMs)
 
-Registers an event trigger. Inside `event.on("app.arm")`, registrations can launch the
-armed app later. Inside an active app session, registrations are session-local.
+Registers a repeating firmware timer service event source. Inside
+`event.on("app.arm")`, registrations can launch the armed app later. Inside an
+active app session, registrations are session-local.
 
 Example:
 
 ```squid
-event.addSource("timer.break", { every: 1500000 })
+service.timer.every("timer.clock", 60000)
+```
+
+service.timer.after(eventName, delayMs)
+
+Registers a one-shot firmware timer service event source.
+
+Example:
+
+```squid
+service.timer.after("timer.break", 1500000)
 ```
 
 Generic events are canonical:
@@ -1701,7 +1712,7 @@ Break reminder example:
 app "break-reminder"
 
 event.on("app.arm") {
-  event.addSource("timer.break", { every: 1500000 })
+  service.timer.after("timer.break", 1500000)
 }
 
 event.on("timer.break") {
@@ -3814,7 +3825,7 @@ Launch flow:
 Only one app is active at a time.
 
 Armed apps are not continuously executing background VMs. `app.arm(appId)`
-loads an app in registration mode, records `event.addSource(...)`
+loads an app in registration mode, records `service.timer.*(...)`
 registrations from `event.on("app.arm")`, then tears that VM down. When a
 registered event fires, firmware starts the armed app as the active app
 session and dispatches the event handler.

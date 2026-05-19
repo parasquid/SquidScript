@@ -326,18 +326,17 @@ fn run_app_source(args: DeviceSourceArgs, human: bool) -> Result<Value, String> 
     let sqbc = compile_source_to_sqbc(&source, &target, args.device.profile.into())?;
     let port = resolve_port(&args.device.device)?;
     let mut device = SerialDevice::open(&port)?;
-    let install = device.install_app("main", &sqbc)?;
-    let launch = device.run_app("main")?;
+    let response = device.run_temp_app(&app_id, &sqbc)?;
     if human {
-        print!("{install}{launch}");
+        print!("{response}");
     }
     Ok(json!({
         "port": port,
-        "installedAs": "main",
+        "mode": "temp",
         "sourceAppId": app_id,
         "target": target,
         "bytes": sqbc.len(),
-        "response": format!("{install}{launch}")
+        "response": response
     }))
 }
 
@@ -808,10 +807,21 @@ fn rust_target_check(target: &'static str) -> DoctorCheck {
 }
 
 fn riscv_c_toolchain_check() -> DoctorCheck {
-    let candidates = [
+    let mut candidates = vec![
         PathBuf::from("riscv32-unknown-elf-gcc"),
         PathBuf::from("riscv64-elf-gcc"),
     ];
+    if let Ok(output) = Command::new("brew")
+        .args(["--prefix", "riscv64-elf-gcc"])
+        .output()
+    {
+        if output.status.success() {
+            let prefix = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !prefix.is_empty() {
+                candidates.push(PathBuf::from(prefix).join("bin/riscv64-elf-gcc"));
+            }
+        }
+    }
     for candidate in candidates {
         if Command::new(&candidate).arg("--version").output().is_ok() {
             return DoctorCheck {
@@ -829,7 +839,7 @@ fn riscv_c_toolchain_check() -> DoctorCheck {
     DoctorCheck {
         name: "riscv-c-toolchain",
         status: "fail",
-        message: "missing RISC-V ELF GCC required by littlefs2-sys; install riscv32-unknown-elf-gcc or put riscv64-elf-gcc on PATH".to_string(),
+        message: "missing RISC-V ELF GCC required by littlefs2-sys; install riscv32-unknown-elf-gcc, put riscv64-elf-gcc on PATH, or install Homebrew riscv64-elf-gcc".to_string(),
         details: json!({"required": true}),
     }
 }

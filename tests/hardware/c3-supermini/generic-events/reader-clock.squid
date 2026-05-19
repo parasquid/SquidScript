@@ -2,7 +2,7 @@ app "reader-clock"
 
 event.on("app.start") {
   debug.print("reader start")
-  event.addSource("timer.clock", { every: 500 })
+  service.timer.every("timer.clock", 500)
 }
 
 event.on("timer.clock") {

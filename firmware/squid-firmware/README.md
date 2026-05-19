@@ -45,6 +45,7 @@ The Super Mini firmware exposes a USB Serial/JTAG shell:
 help
 info
 INSTALL.APP <app-id> <len> <fnv32hex>
+RUN.TEMP <app-id> <len> <fnv32hex>
 RUN.APP <app-id>
 RUN.EVENT <app-id> <event>
 APP.LIST
@@ -57,7 +58,7 @@ reset
 ```
 
 It also accepts the v4 developer protocol commands documented in
-`docs/developer_repl_protocol.md`, including `INSTALL.APP`, `RUN.APP`,
+`docs/developer_repl_protocol.md`, including `INSTALL.APP`, `RUN.TEMP`, `RUN.APP`,
 `RUN.EVENT`, `APP.LIST`, `STATE.GET`, `STATE.IMPORT`, `OUTPUT.GET`, and
 `DRAWLOG.GET`.
 
@@ -86,7 +87,7 @@ timer ticks, and checks debug output for app startup plus armed timer events.
 
 The generic triggered-apps hardware test is the canonical lifecycle regression
 check for the current app-stack model. It installs `main`, `reader-clock`, and
-`break-reminder`, then verifies `app.start`, `app.arm`, `event.addSource`, a
+`break-reminder`, then verifies `app.start`, `app.arm`, `service.timer.*`, a
 session-local timer, an armed timer, and key-driven `app.exit`.
 
 The installed app registry is a six-slot runtime cache over persistent app
@@ -95,10 +96,11 @@ LittleFS under `/apps/<app-id>.sqbc` on the `squidfs` flash partition and are
 loaded back into the registry at firmware startup.
 
 `INSTALL.APP` receives raw SQBC v2 bytes, validates the payload, writes app
-storage, and then publishes the app in the registry cache. `STORAGE.FORMAT`
-formats app storage and clears the cache. State persistence remains a separate
-future milestone; `state.load` and `state.save` are traced but do not write
-flash yet.
+storage, and then publishes the app in the registry cache. `RUN.TEMP` validates
+SQBC bytes into RAM and pushes the temp app onto the foreground stack without
+writing flash. `STORAGE.FORMAT` formats app storage and clears the cache. State
+persistence remains a separate future milestone; `state.load` and `state.save`
+are traced but do not write flash yet.
 
 The crate still contains `x4-hello`, a separate XTEINK X4 display bring-up
 binary. Keep X4 display work separate from the reference VM milestone.

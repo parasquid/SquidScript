@@ -6,7 +6,7 @@ state {
 
 event.on("app.arm") {
   debug.print("armed register")
-  event.addSource("timer.debug", { every: 1000 })
+  service.timer.every("timer.debug", 1000)
 }
 
 event.on("timer.debug") {

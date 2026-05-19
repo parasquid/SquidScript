@@ -51,7 +51,8 @@ const BUILTIN_HARDWARE_GPIO_READ: u8 = 12;
 const BUILTIN_APP_LAUNCH: u8 = 13;
 const BUILTIN_APP_ARM: u8 = 16;
 const BUILTIN_APP_DISARM: u8 = 17;
-const BUILTIN_EVENT_ADD_SOURCE: u8 = 18;
+const BUILTIN_SERVICE_TIMER_EVERY: u8 = 18;
+const BUILTIN_SERVICE_TIMER_AFTER: u8 = 19;
 
 const VALUE_NULL: u8 = 0;
 const VALUE_BOOL: u8 = 1;
@@ -360,11 +361,13 @@ fn collect_statement_strings(
             IrStatement::AppArm { app } | IrStatement::AppDisarm { app } => {
                 strings.intern(app)?;
             }
-            IrStatement::EventAddSource { event, every_ms } => {
+            IrStatement::ServiceTimerEvery { event, interval_ms } => {
                 strings.intern(event)?;
-                if let Some(every_ms) = every_ms {
-                    collect_expr_strings(every_ms, strings)?;
-                }
+                collect_expr_strings(interval_ms, strings)?;
+            }
+            IrStatement::ServiceTimerAfter { event, delay_ms } => {
+                strings.intern(event)?;
+                collect_expr_strings(delay_ms, strings)?;
             }
             IrStatement::HardwareGpioWrite { name, value } => {
                 strings.intern(name)?;
@@ -566,14 +569,15 @@ fn compile_statement(
             emit_string(unit, app)?;
             emit_builtin(&mut unit.code, BUILTIN_APP_DISARM);
         }
-        IrStatement::EventAddSource { event, every_ms } => {
+        IrStatement::ServiceTimerEvery { event, interval_ms } => {
             emit_string(unit, event)?;
-            if let Some(every_ms) = every_ms {
-                compile_expr(unit, frame, every_ms)?;
-            } else {
-                emit(&mut unit.code, OP_PUSH_NULL);
-            }
-            emit_builtin(&mut unit.code, BUILTIN_EVENT_ADD_SOURCE);
+            compile_expr(unit, frame, interval_ms)?;
+            emit_builtin(&mut unit.code, BUILTIN_SERVICE_TIMER_EVERY);
+        }
+        IrStatement::ServiceTimerAfter { event, delay_ms } => {
+            emit_string(unit, event)?;
+            compile_expr(unit, frame, delay_ms)?;
+            emit_builtin(&mut unit.code, BUILTIN_SERVICE_TIMER_AFTER);
         }
         IrStatement::HardwareGpioWrite { name, value } => {
             compile_expr(unit, frame, value)?;

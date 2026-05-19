@@ -57,7 +57,8 @@ const BUILTIN_HARDWARE_GPIO_READ: u8 = 12;
 const BUILTIN_APP_LAUNCH: u8 = 13;
 const BUILTIN_APP_ARM: u8 = 16;
 const BUILTIN_APP_DISARM: u8 = 17;
-const BUILTIN_EVENT_ADD_SOURCE: u8 = 18;
+const BUILTIN_SERVICE_TIMER_EVERY: u8 = 18;
+const BUILTIN_SERVICE_TIMER_AFTER: u8 = 19;
 
 const VALUE_NULL: u8 = 0;
 const VALUE_BOOL: u8 = 1;
@@ -185,7 +186,10 @@ pub trait TraceSink {
     fn app_disarm(&mut self, _app: &str) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
     }
-    fn event_add_source(&mut self, _event: &str, _every_ms: Option<i32>) -> Result<(), VmError> {
+    fn service_timer_every(&mut self, _event: &str, _interval_ms: i32) -> Result<(), VmError> {
+        Err(VmError::InvalidOperand)
+    }
+    fn service_timer_after(&mut self, _event: &str, _delay_ms: i32) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
     }
 }
@@ -607,16 +611,21 @@ impl<'a> Vm<'a> {
                 let app = self.program.string(app_id)?;
                 trace.app_disarm(app)?;
             }
-            BUILTIN_EVENT_ADD_SOURCE => {
-                let every_ms = match self.pop()? {
-                    Value::Null => None,
-                    value => Some(value.as_i32()),
-                };
+            BUILTIN_SERVICE_TIMER_EVERY => {
+                let interval_ms = self.pop()?.as_i32();
                 let Value::String(event_id) = self.pop()? else {
                     return Err(VmError::InvalidOperand);
                 };
                 let event = self.program.string(event_id)?;
-                trace.event_add_source(event, every_ms)?;
+                trace.service_timer_every(event, interval_ms)?;
+            }
+            BUILTIN_SERVICE_TIMER_AFTER => {
+                let delay_ms = self.pop()?.as_i32();
+                let Value::String(event_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let event = self.program.string(event_id)?;
+                trace.service_timer_after(event, delay_ms)?;
             }
             _ => return Err(VmError::InvalidOperand),
         }
@@ -980,13 +989,15 @@ mod tests {
             Ok(())
         }
 
-        fn event_add_source(&mut self, event: &str, every_ms: Option<i32>) -> Result<(), VmError> {
-            self.events.push(format!(
-                "event.addSource {event} {}",
-                every_ms
-                    .map(|value| value.to_string())
-                    .unwrap_or_else(|| "none".to_string())
-            ));
+        fn service_timer_every(&mut self, event: &str, interval_ms: i32) -> Result<(), VmError> {
+            self.events
+                .push(format!("service.timer.every {event} {interval_ms}"));
+            Ok(())
+        }
+
+        fn service_timer_after(&mut self, event: &str, delay_ms: i32) -> Result<(), VmError> {
+            self.events
+                .push(format!("service.timer.after {event} {delay_ms}"));
             Ok(())
         }
     }
@@ -1102,12 +1113,12 @@ screen("main") {}
     }
 
     #[test]
-    fn runs_app_launch_event_source_and_timer_handler_from_real_bytecode() {
+    fn runs_app_launch_timer_service_and_timer_handler_from_real_bytecode() {
         let source = r#"app "timer-demo"
 state { count: 0 }
 event.on("app.start") {
   app.launch("timer-armed-app")
-  event.addSource("timer.debug", { every: 1000 })
+  service.timer.every("timer.debug", 1000)
 }
 event.on("timer.debug") {
   debug.print("timer", count)
@@ -1132,7 +1143,7 @@ screen("main") {}
             vec![
                 "app.start",
                 "launch timer-armed-app",
-                "event.addSource timer.debug 1000",
+                "service.timer.every timer.debug 1000",
                 "timer.debug",
                 "debug timer 0",
             ]
@@ -1146,7 +1157,7 @@ state { count: 0 }
 event.on("app.start") {
   app.arm("break-reminder")
   app.launch("reader")
-  event.addSource("timer.clock", { every: 60000 })
+  service.timer.every("timer.clock", 60000)
 }
 event.on("timer.clock") {
   count = count + 1
@@ -1174,7 +1185,7 @@ screen("main") {}
                 "app.start",
                 "arm break-reminder",
                 "launch reader",
-                "event.addSource timer.clock 60000",
+                "service.timer.every timer.clock 60000",
                 "timer.clock",
                 "disarm break-reminder",
             ]

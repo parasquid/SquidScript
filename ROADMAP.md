@@ -16,8 +16,8 @@ persistent SquidScript app platform prototype.
 - If `main` exits, restart `main`.
 - If `main` is missing or invalid, stay in dev shell mode and report a clear
   serial error.
-- Keep `squidc run examples/foo.squid` compiling/uploading as app `main`, then
-  starting it.
+- Keep `squidc run examples/foo.squid` as a volatile quick-check path that
+  uploads with `RUN.TEMP` without overwriting persistent `main`.
 
 ### 2. Persist App State
 

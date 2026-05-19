@@ -110,6 +110,25 @@ def install_app_sqbc(
     _wait_for(serial, b"OK install.app", output, timeout, InstallError)
 
 
+def run_temp_app_sqbc(
+    serial,
+    app_id,
+    data,
+    *,
+    chunk_size=DEFAULT_CHUNK_SIZE,
+    output=sys.stdout.buffer,
+    timeout=DEFAULT_TIMEOUT,
+):
+    hash_value = compute_fnv1a(data)
+    _drain(serial, output)
+    serial.write_all(f"RUN.TEMP {app_id} {len(data)} {hash_value:08x}\n".encode("ascii"))
+    _wait_for(serial, b"READY RUN.TEMP", output, timeout, InstallError)
+    for offset in range(0, len(data), chunk_size):
+        serial.write_all(data[offset : offset + chunk_size])
+        time.sleep(0.002)
+    _wait_for(serial, b"OK RUN.TEMP", output, timeout, InstallError)
+
+
 def reference_firmware_test_sequence(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
     _send_line(serial, "RUN.EVENT main app.start", output, b"OK RUN.EVENT", timeout)
     state = _state(serial, output, timeout)
@@ -319,6 +338,10 @@ def main(argv=None):
     install_app.add_argument("app_id")
     install_app.add_argument("sqbc")
 
+    run_temp = subcommands.add_parser("run-temp", help="run named SQBC app bytes from RAM")
+    run_temp.add_argument("app_id")
+    run_temp.add_argument("sqbc")
+
     subcommands.add_parser("test-reference-firmware", help="verify headless counter reference firmware behavior")
     run = subcommands.add_parser("run-event", help="run a named app event")
     run.add_argument("app_id")
@@ -348,6 +371,9 @@ def main(argv=None):
         if args.command == "install-app":
             with open(args.sqbc, "rb") as handle:
                 install_app_sqbc(serial, args.app_id, handle.read(), timeout=args.timeout)
+        elif args.command == "run-temp":
+            with open(args.sqbc, "rb") as handle:
+                run_temp_app_sqbc(serial, args.app_id, handle.read(), timeout=args.timeout)
         elif args.command == "test-reference-firmware":
             reference_firmware_test_sequence(serial, timeout=args.timeout)
         elif args.command == "run-event":

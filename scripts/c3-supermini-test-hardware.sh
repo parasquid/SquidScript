@@ -45,6 +45,12 @@ cargo run -p squidc -- repl --script tests/repl/default-dev.session
 "$ROOT/scripts/c3-supermini-test-generic-triggered-apps.sh"
 cargo run -p squidc -- repl examples/blinky-supermini/main.squid --script tests/repl/blinky-supermini.session
 cargo run -p squidc -- run examples/blinky-supermini/main.squid
+apps_after_temp_run="$(cargo run -p squidc -- app list)"
+printf '%s\n' "$apps_after_temp_run"
+if [[ "$apps_after_temp_run" == *'app=blinky-supermini'* ]]; then
+  printf '%s\n' 'ERR hardware test: volatile squidc run persisted blinky-supermini' >&2
+  exit 1
+fi
 cargo run -p squidc -- device monitor --max-lines 4
 
 printf 'OK hardware test esp32c3-super-mini full sequence\n'

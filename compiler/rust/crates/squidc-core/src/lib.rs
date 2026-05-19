@@ -157,11 +157,10 @@ pub enum IrStatement {
     AppArm { app: String },
     #[serde(rename = "app.disarm")]
     AppDisarm { app: String },
-    #[serde(rename = "event.addSource")]
-    EventAddSource {
-        event: String,
-        every_ms: Option<IrExpr>,
-    },
+    #[serde(rename = "service.timer.every")]
+    ServiceTimerEvery { event: String, interval_ms: IrExpr },
+    #[serde(rename = "service.timer.after")]
+    ServiceTimerAfter { event: String, delay_ms: IrExpr },
     #[serde(rename = "assign")]
     Assign { name: String, expr: IrExpr },
     #[serde(rename = "let")]
@@ -779,6 +778,43 @@ impl Parser<'_> {
             };
         }
 
+        if first == "service" && method == "timer" {
+            if self.at_kind(TokenKind::Dot) {
+                self.bump(builder);
+            }
+            self.consume_ws(builder);
+            let action = self.consume_ident(builder)?;
+            self.consume_ws(builder);
+            if self.at_kind(TokenKind::OpenParen) {
+                self.bump(builder);
+            }
+            self.consume_ws(builder);
+            return match action.as_str() {
+                "every" => {
+                    let event = self.consume_string(builder).unwrap_or_default();
+                    self.consume_comma(builder);
+                    let interval_ms = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
+                        value: serde_json::json!(0),
+                    });
+                    self.consume_call_tail(builder);
+                    Some(IrStatement::ServiceTimerEvery { event, interval_ms })
+                }
+                "after" => {
+                    let event = self.consume_string(builder).unwrap_or_default();
+                    self.consume_comma(builder);
+                    let delay_ms = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
+                        value: serde_json::json!(0),
+                    });
+                    self.consume_call_tail(builder);
+                    Some(IrStatement::ServiceTimerAfter { event, delay_ms })
+                }
+                _ => {
+                    self.consume_call_tail(builder);
+                    None
+                }
+            };
+        }
+
         if self.at_kind(TokenKind::OpenParen) {
             self.bump(builder);
         }
@@ -820,12 +856,6 @@ impl Parser<'_> {
                 let app = self.consume_string(builder).unwrap_or_default();
                 self.consume_call_tail(builder);
                 Some(IrStatement::AppDisarm { app })
-            }
-            ("event", "addSource") => {
-                let event = self.consume_string(builder).unwrap_or_default();
-                let every_ms = self.parse_event_add_source_every_option(builder);
-                self.consume_call_tail(builder);
-                Some(IrStatement::EventAddSource { event, every_ms })
             }
             ("debug", "print") => {
                 let args = self.parse_call_args_after_open(builder);
@@ -1211,22 +1241,6 @@ impl Parser<'_> {
         serde_json::Value::Object(map)
     }
 
-    fn parse_event_add_source_every_option(
-        &mut self,
-        builder: &mut GreenNodeBuilder,
-    ) -> Option<IrExpr> {
-        self.consume_ws(builder);
-        if self.at_kind(TokenKind::Comma) {
-            self.bump(builder);
-        } else {
-            return None;
-        }
-        let options = self.parse_options_object(builder);
-        options
-            .get("every")
-            .and_then(|value| serde_json::from_value(value.clone()).ok())
-    }
-
     fn consume_literal_value(
         &mut self,
         builder: &mut GreenNodeBuilder,
@@ -1610,7 +1624,8 @@ fn validate_screen_statements(
             | IrStatement::AppLaunch { .. }
             | IrStatement::AppArm { .. }
             | IrStatement::AppDisarm { .. }
-            | IrStatement::EventAddSource { .. }
+            | IrStatement::ServiceTimerEvery { .. }
+            | IrStatement::ServiceTimerAfter { .. }
             | IrStatement::HardwareGpioWrite { .. }
             | IrStatement::HardwareGpioToggle { .. }
             | IrStatement::Assign { .. } => {
@@ -2185,12 +2200,12 @@ screen("main") {}
     }
 
     #[test]
-    fn parses_timer_handlers_app_launch_and_event_source() {
+    fn parses_timer_handlers_app_launch_and_timer_service() {
         let source = r#"app "timer-demo"
 state { count: 0 }
 event.on("app.start") {
   app.launch("worker")
-  event.addSource("timer.debug", { every: 1000 })
+  service.timer.every("timer.debug", 1000)
 }
 event.on("timer.debug") {
   debug.print("tick", count)
@@ -2210,7 +2225,7 @@ screen("main") {}
         ));
         assert!(matches!(
             ir.handlers[0].statements[1],
-            IrStatement::EventAddSource { .. }
+            IrStatement::ServiceTimerEvery { .. }
         ));
     }
 
@@ -2221,10 +2236,10 @@ state { ticks: 0 }
 event.on("app.start") {
   app.arm("reminder")
   app.launch("reader")
-  event.addSource("timer.clock", { every: 60000 })
+  service.timer.every("timer.clock", 60000)
 }
 event.on("app.arm") {
-  event.addSource("timer.break", { every: 1500000 })
+  service.timer.after("timer.break", 1500000)
 }
 event.on("timer.break") {
   ticks = ticks + 1
@@ -2251,10 +2266,11 @@ screen("main") {}
         ));
         assert!(matches!(
             ir.handlers[0].statements[2],
-            IrStatement::EventAddSource {
-                every_ms: Some(_),
-                ..
-            }
+            IrStatement::ServiceTimerEvery { .. }
+        ));
+        assert!(matches!(
+            ir.handlers[1].statements[0],
+            IrStatement::ServiceTimerAfter { .. }
         ));
         assert!(matches!(
             ir.handlers[2].statements[1],
