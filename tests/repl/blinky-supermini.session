@@ -1,0 +1,11 @@
+:reset
+:reload
+:output
+:expect-output output="blinky ready" false
+:key SELECT
+:output
+:expect-output output="led" true
+:key SELECT
+:output
+:expect-output output="led" false
+:key BACK

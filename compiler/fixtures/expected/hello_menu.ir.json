@@ -5,6 +5,6 @@
     "target": "xteink-x4"
   },
   "functions": ["drawMenuRow"],
-  "handlers": ["onStart", "onKey.DOWN", "onKey.UP", "onKey.SELECT", "onKey.BACK"],
+  "handlers": ["app.start", "key.DOWN", "key.UP", "key.SELECT", "key.BACK"],
   "screens": ["menu", "hello", "about"]
 }

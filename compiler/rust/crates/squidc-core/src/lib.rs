@@ -62,6 +62,31 @@ pub struct CompileRequest {
     pub target_id: String,
 }
 
+pub const PORTABLE_TARGET_ID: &str = "portable";
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum BuildProfile {
+    Dev,
+    Release,
+}
+
+impl BuildProfile {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "dev" => Some(Self::Dev),
+            "release" => Some(Self::Release),
+            _ => None,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Dev => "dev",
+            Self::Release => "release",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CompileResponse {
     pub ok: bool,
@@ -126,6 +151,19 @@ pub enum IrStatement {
     ScreenRefresh,
     #[serde(rename = "app.exit")]
     AppExit,
+    #[serde(rename = "app.launch")]
+    AppLaunch { app: String },
+    #[serde(rename = "app.start")]
+    AppStart { app: String },
+    #[serde(rename = "app.arm")]
+    AppArm { app: String },
+    #[serde(rename = "app.disarm")]
+    AppDisarm { app: String },
+    #[serde(rename = "event.addSource")]
+    EventAddSource {
+        event: String,
+        every_ms: Option<IrExpr>,
+    },
     #[serde(rename = "assign")]
     Assign { name: String, expr: IrExpr },
     #[serde(rename = "let")]
@@ -152,6 +190,12 @@ pub enum IrStatement {
     Return { expr: Option<IrExpr> },
     #[serde(rename = "call")]
     Call { name: String, args: Vec<IrExpr> },
+    #[serde(rename = "debug.print")]
+    DebugPrint { args: Vec<IrExpr> },
+    #[serde(rename = "hardware.gpio.write")]
+    HardwareGpioWrite { name: String, value: IrExpr },
+    #[serde(rename = "hardware.gpio.toggle")]
+    HardwareGpioToggle { name: String },
     #[serde(rename = "display.clear")]
     DisplayClear { color: String },
     #[serde(rename = "display.text")]
@@ -190,6 +234,8 @@ pub enum IrExpr {
         operator: String,
         right: Box<IrExpr>,
     },
+    #[serde(rename = "hardware.gpio.read")]
+    HardwareGpioRead { name: String },
     #[serde(rename = "call")]
     Call { name: String, args: Vec<IrExpr> },
 }
@@ -313,6 +359,10 @@ pub fn parse(source: &str) -> ParsedSource {
 }
 
 pub fn compile(request: CompileRequest) -> CompileResponse {
+    compile_with_profile(request, BuildProfile::Dev)
+}
+
+pub fn compile_with_profile(request: CompileRequest, profile: BuildProfile) -> CompileResponse {
     let mut parsed = parse(&request.source);
     let ast = parsed.ast.clone();
 
@@ -333,16 +383,16 @@ pub fn compile(request: CompileRequest) -> CompileResponse {
         ));
     }
     if let Some(target) = ast.app.as_ref().and_then(|app| app.target.as_ref()) {
-        if target != &request.target_id {
+        if request.target_id != PORTABLE_TARGET_ID && target != &request.target_id {
             parsed.diagnostics.push(error(
                 "E_TARGET_MISMATCH",
-                "source target does not match selected target",
+                "source target does not match selected compatibility target",
                 0,
                 request.source.len().min(1),
             ));
         }
     }
-    validate_semantics(&ast, &mut parsed.diagnostics);
+    validate_semantics(&ast, profile, &mut parsed.diagnostics);
 
     let ok = parsed.diagnostics.iter().all(|d| d.severity != "error");
     let ir = if ok {
@@ -370,7 +420,7 @@ pub fn compile(request: CompileRequest) -> CompileResponse {
             app: IrApp {
                 id: app.id,
                 name: app.name,
-                target: request.target_id,
+                target: app.target.unwrap_or_else(|| request.target_id),
             },
             state: ast.state.map(|state| state.values).unwrap_or_default(),
             functions,
@@ -412,12 +462,8 @@ impl Parser<'_> {
                 self.parse_app(builder);
             } else if self.at_ident("state") {
                 self.parse_state(builder);
-            } else if self
-                .peek()
-                .map(|token| token.kind == TokenKind::Ident && token.text.starts_with("on"))
-                .unwrap_or(false)
-            {
-                self.parse_handler(builder);
+            } else if self.at_event_method("on") {
+                self.parse_event_handler(builder);
             } else if self.at_ident("function") {
                 self.parse_function(builder);
             } else if self.at_ident("screen") {
@@ -452,14 +498,6 @@ impl Parser<'_> {
                 target: target.clone(),
                 span: SourceSpan { start, end },
             });
-        }
-        if target.is_none() {
-            self.diagnostics.push(error(
-                "E_TARGET_REQUIRED",
-                "app declaration must include target",
-                start,
-                end,
-            ));
         }
     }
 
@@ -564,41 +602,31 @@ impl Parser<'_> {
         });
     }
 
-    fn parse_handler(&mut self, builder: &mut GreenNodeBuilder) {
+    fn parse_event_handler(&mut self, builder: &mut GreenNodeBuilder) {
         builder.start_node(SquidLang::kind_to_raw(SquidKind::Token));
         let start = self.peek().map(|token| token.span.start).unwrap_or(0);
-        let handler_name = self
-            .peek()
-            .map(|token| token.text.clone())
-            .unwrap_or_default();
-        self.bump(builder);
-
-        let mut key_arg = None;
-        while !self.at_end() {
-            self.consume_ws(builder);
-            if self.at_kind(TokenKind::String) {
-                key_arg = self.consume_string(builder);
-                continue;
-            }
-            if self.at_kind(TokenKind::OpenBrace) {
-                self.bump(builder);
-                break;
-            }
+        self.bump(builder); // event
+        self.consume_ws(builder);
+        if self.at_kind(TokenKind::Dot) {
+            self.bump(builder);
+        }
+        self.consume_ws(builder);
+        let _method = self.consume_ident(builder);
+        self.consume_ws(builder);
+        if self.at_kind(TokenKind::OpenParen) {
+            self.bump(builder);
+        }
+        self.consume_ws(builder);
+        let event = self.consume_string(builder).unwrap_or_default();
+        self.consume_call_tail(builder);
+        self.consume_ws(builder);
+        if self.at_kind(TokenKind::OpenBrace) {
             self.bump(builder);
         }
 
         let statements = self.parse_statements_until_close(builder);
-
         let end = self.previous_end().unwrap_or(start);
         builder.finish_node();
-
-        let event = if handler_name == "onKey" {
-            key_arg
-                .map(|key| format!("onKey.{key}"))
-                .unwrap_or_else(|| "onKey".to_string())
-        } else {
-            handler_name
-        };
         self.ast.handlers.push(AstHandler {
             event,
             statements,
@@ -719,6 +747,40 @@ impl Parser<'_> {
             .clone();
         self.bump(builder);
         self.consume_ws(builder);
+
+        if first == "hardware" && method == "gpio" {
+            if self.at_kind(TokenKind::Dot) {
+                self.bump(builder);
+            }
+            self.consume_ws(builder);
+            let action = self.consume_ident(builder)?;
+            self.consume_ws(builder);
+            if self.at_kind(TokenKind::OpenParen) {
+                self.bump(builder);
+            }
+            self.consume_ws(builder);
+            return match action.as_str() {
+                "write" => {
+                    let name = self.consume_string(builder).unwrap_or_default();
+                    self.consume_comma(builder);
+                    let value = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
+                        value: serde_json::json!(false),
+                    });
+                    self.consume_call_tail(builder);
+                    Some(IrStatement::HardwareGpioWrite { name, value })
+                }
+                "toggle" => {
+                    let name = self.consume_string(builder).unwrap_or_default();
+                    self.consume_call_tail(builder);
+                    Some(IrStatement::HardwareGpioToggle { name })
+                }
+                _ => {
+                    self.consume_call_tail(builder);
+                    None
+                }
+            };
+        }
+
         if self.at_kind(TokenKind::OpenParen) {
             self.bump(builder);
         }
@@ -745,6 +807,36 @@ impl Parser<'_> {
             ("app", "exit") => {
                 self.consume_call_tail(builder);
                 Some(IrStatement::AppExit)
+            }
+            ("app", "launch") => {
+                let app = self.consume_string(builder).unwrap_or_default();
+                self.consume_call_tail(builder);
+                Some(IrStatement::AppLaunch { app })
+            }
+            ("app", "start") => {
+                let app = self.consume_string(builder).unwrap_or_default();
+                self.consume_call_tail(builder);
+                Some(IrStatement::AppStart { app })
+            }
+            ("app", "arm") => {
+                let app = self.consume_string(builder).unwrap_or_default();
+                self.consume_call_tail(builder);
+                Some(IrStatement::AppArm { app })
+            }
+            ("app", "disarm") => {
+                let app = self.consume_string(builder).unwrap_or_default();
+                self.consume_call_tail(builder);
+                Some(IrStatement::AppDisarm { app })
+            }
+            ("event", "addSource") => {
+                let event = self.consume_string(builder).unwrap_or_default();
+                let every_ms = self.parse_event_add_source_every_option(builder);
+                self.consume_call_tail(builder);
+                Some(IrStatement::EventAddSource { event, every_ms })
+            }
+            ("debug", "print") => {
+                let args = self.parse_call_args_after_open(builder);
+                Some(IrStatement::DebugPrint { args })
             }
             ("display", "clear") => {
                 let color = self
@@ -890,6 +982,32 @@ impl Parser<'_> {
                 IrExpr::Literal {
                     value: serde_json::Value::Null,
                 }
+            } else if name == "hardware" && self.at_kind(TokenKind::Dot) {
+                self.bump(builder);
+                self.consume_ws(builder);
+                let namespace = self.consume_ident(builder).unwrap_or_default();
+                self.consume_ws(builder);
+                if namespace == "gpio" && self.at_kind(TokenKind::Dot) {
+                    self.bump(builder);
+                    self.consume_ws(builder);
+                    let action = self.consume_ident(builder).unwrap_or_default();
+                    self.consume_ws(builder);
+                    if action == "read" {
+                        let args = self.parse_call_args(builder);
+                        let name = args
+                            .first()
+                            .and_then(|arg| match arg {
+                                IrExpr::Literal { value } => value.as_str().map(ToOwned::to_owned),
+                                _ => None,
+                            })
+                            .unwrap_or_default();
+                        IrExpr::HardwareGpioRead { name }
+                    } else {
+                        IrExpr::State { name }
+                    }
+                } else {
+                    IrExpr::State { name }
+                }
             } else if self.at_kind(TokenKind::OpenParen) {
                 IrExpr::Call {
                     name,
@@ -1012,11 +1130,15 @@ impl Parser<'_> {
     }
 
     fn parse_call_args(&mut self, builder: &mut GreenNodeBuilder) -> Vec<IrExpr> {
-        let mut args = Vec::new();
         if !self.at_kind(TokenKind::OpenParen) {
-            return args;
+            return Vec::new();
         }
         self.bump(builder);
+        self.parse_call_args_after_open(builder)
+    }
+
+    fn parse_call_args_after_open(&mut self, builder: &mut GreenNodeBuilder) -> Vec<IrExpr> {
+        let mut args = Vec::new();
         while !self.at_end() {
             self.consume_ws(builder);
             if self.at_kind(TokenKind::CloseParen) {
@@ -1096,6 +1218,22 @@ impl Parser<'_> {
         serde_json::Value::Object(map)
     }
 
+    fn parse_event_add_source_every_option(
+        &mut self,
+        builder: &mut GreenNodeBuilder,
+    ) -> Option<IrExpr> {
+        self.consume_ws(builder);
+        if self.at_kind(TokenKind::Comma) {
+            self.bump(builder);
+        } else {
+            return None;
+        }
+        let options = self.parse_options_object(builder);
+        options
+            .get("every")
+            .and_then(|value| serde_json::from_value(value.clone()).ok())
+    }
+
     fn consume_literal_value(
         &mut self,
         builder: &mut GreenNodeBuilder,
@@ -1109,6 +1247,18 @@ impl Parser<'_> {
             return self
                 .consume_string(builder)
                 .map(|text| serde_json::json!(text));
+        }
+        if self.at_ident("true") {
+            self.bump(builder);
+            return Some(serde_json::json!(true));
+        }
+        if self.at_ident("false") {
+            self.bump(builder);
+            return Some(serde_json::json!(false));
+        }
+        if self.at_ident("null") {
+            self.bump(builder);
+            return Some(serde_json::Value::Null);
         }
         None
     }
@@ -1182,6 +1332,41 @@ impl Parser<'_> {
         self.peek()
             .map(|token| token.kind == TokenKind::Ident && token.text == ident)
             .unwrap_or(false)
+    }
+
+    fn at_event_method(&self, method: &str) -> bool {
+        let mut index = self.cursor;
+        while self
+            .tokens
+            .get(index)
+            .map(|token| token.kind == TokenKind::Whitespace)
+            .unwrap_or(false)
+        {
+            index += 1;
+        }
+        matches!(
+            (
+                self.tokens.get(index),
+                self.tokens.get(index + 1),
+                self.tokens.get(index + 2)
+            ),
+            (
+                Some(LexToken {
+                    kind: TokenKind::Ident,
+                    text,
+                    ..
+                }),
+                Some(LexToken {
+                    kind: TokenKind::Dot,
+                    ..
+                }),
+                Some(LexToken {
+                    kind: TokenKind::Ident,
+                    text: method_text,
+                    ..
+                })
+            ) if text == "event" && method_text == method
+        )
     }
 
     fn at_kind(&self, kind: TokenKind) -> bool {
@@ -1357,7 +1542,7 @@ fn error(code: &str, message: &str, start: usize, end: usize) -> Diagnostic {
     }
 }
 
-fn validate_semantics(ast: &AstRoot, diagnostics: &mut Vec<Diagnostic>) {
+fn validate_semantics(ast: &AstRoot, _profile: BuildProfile, diagnostics: &mut Vec<Diagnostic>) {
     let mut screen_names = std::collections::BTreeSet::new();
     for screen in &ast.screens {
         if !screen_names.insert(screen.name.clone()) {
@@ -1429,6 +1614,13 @@ fn validate_screen_statements(
             | IrStatement::ScreenOpen { .. }
             | IrStatement::ScreenRefresh
             | IrStatement::AppExit
+            | IrStatement::AppLaunch { .. }
+            | IrStatement::AppStart { .. }
+            | IrStatement::AppArm { .. }
+            | IrStatement::AppDisarm { .. }
+            | IrStatement::EventAddSource { .. }
+            | IrStatement::HardwareGpioWrite { .. }
+            | IrStatement::HardwareGpioToggle { .. }
             | IrStatement::Assign { .. } => {
                 diagnostics.push(error(
                     "E_RENDER_PURITY",
@@ -1619,13 +1811,7 @@ mod tests {
                 .iter()
                 .map(|handler| handler.event.as_str())
                 .collect::<Vec<_>>(),
-            vec![
-                "onStart",
-                "onKey.DOWN",
-                "onKey.UP",
-                "onKey.SELECT",
-                "onKey.BACK"
-            ]
+            vec!["app.start", "key.DOWN", "key.UP", "key.SELECT", "key.BACK"]
         );
         assert!(matches!(
             ir.handlers[1].statements[0],
@@ -1635,16 +1821,32 @@ mod tests {
             ir.handlers[4].statements[0],
             IrStatement::If { .. }
         ));
+        let menu = ir
+            .screens
+            .iter()
+            .find(|screen| screen.name == "menu")
+            .expect("menu screen");
+        assert!(menu
+            .statements
+            .iter()
+            .any(|statement| matches!(statement, IrStatement::DisplayText { .. })));
+        assert_eq!(
+            menu.statements
+                .iter()
+                .filter(|statement| matches!(statement, IrStatement::Call { name, .. } if name == "drawMenuRow"))
+                .count(),
+            3
+        );
     }
 
     #[test]
     fn parses_and_lowers_simple_handlers() {
         let source = r#"app "hello-menu" target "xteink-x4"
 state { selected: 0 }
-onStart() {
+event.on("app.start") {
   screen.open("main")
 }
-onKey("DOWN") {
+event.on("key.DOWN") {
   selected = selected + 1
   screen.refresh()
 }
@@ -1659,8 +1861,8 @@ screen("main") {
         assert!(output.ok, "{:?}", output.diagnostics);
         let ir = output.ir.unwrap();
         assert_eq!(ir.handlers.len(), 2);
-        assert_eq!(ir.handlers[0].event, "onStart");
-        assert_eq!(ir.handlers[1].event, "onKey.DOWN");
+        assert_eq!(ir.handlers[0].event, "app.start");
+        assert_eq!(ir.handlers[1].event, "key.DOWN");
     }
 
     #[test]
@@ -1676,7 +1878,7 @@ function chooseScreen(value) {
   }
 }
 
-onKey("SELECT") {
+event.on("key.SELECT") {
   if (selected == 0) {
     screen.open("detail")
   } else {
@@ -1723,7 +1925,7 @@ screen("detail") {
     fn parses_and_lowers_bounded_loops() {
         let source = r#"app "loops" target "xteink-x4"
 state { selected: 0 }
-onStart() {
+event.on("app.start") {
   repeat (3) {
     selected = selected + 1
   }
@@ -1753,7 +1955,7 @@ screen("main") {
     fn parses_typed_locals_and_comparison_precedence() {
         let source = r#"app "precedence" target "xteink-x4"
 state { count: 0 }
-onKey("SELECT") {
+event.on("key.SELECT") {
   let next: int = count + 1
   if (count + 1 < 10) {
     screen.open("main")
@@ -1899,7 +2101,193 @@ screen("main") {
             u32::from_le_bytes(sqbc[8..12].try_into().unwrap()) as usize,
             sqbc.len()
         );
-        assert_eq!(u32::from_le_bytes(sqbc[12..16].try_into().unwrap()), 5);
+        assert_eq!(u32::from_le_bytes(sqbc[12..16].try_into().unwrap()), 7);
+        assert_eq!(
+            sqbc_v2::read_app_id(&sqbc).unwrap().as_deref(),
+            Some("headless-counter")
+        );
+    }
+
+    #[test]
+    fn parses_debug_print_and_release_sqbc_strips_it() {
+        let source = r#"app "debug-counter"
+state { count: 1 }
+event.on("app.start") {
+  debug.print("count", count)
+}
+screen("main") {}
+"#;
+        let output = compile_with_profile(
+            CompileRequest {
+                source: source.to_string(),
+                target_id: PORTABLE_TARGET_ID.to_string(),
+            },
+            BuildProfile::Dev,
+        );
+        assert!(output.ok, "{:?}", output.diagnostics);
+        let ir = output.ir.unwrap();
+        assert!(matches!(
+            ir.handlers[0].statements[0],
+            IrStatement::DebugPrint { .. }
+        ));
+
+        let dev = sqbc_v2::encode_sqbc_v2_with_profile(&ir, BuildProfile::Dev).unwrap();
+        let release = sqbc_v2::encode_sqbc_v2_with_profile(&ir, BuildProfile::Release).unwrap();
+        assert!(dev.len() > release.len());
+    }
+
+    #[test]
+    fn parses_render_screen_for_headless_drawlog() {
+        let source = r#"app "drawlog"
+state { count: 0 }
+event.on("app.start") {
+  screen.open("main")
+}
+screen("main") {
+  display.clear("gray0")
+  display.text("Hello", { x: 10, y: 20 })
+}
+"#;
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: PORTABLE_TARGET_ID.to_string(),
+        });
+        assert!(output.ok, "{:?}", output.diagnostics);
+        let sqbc = sqbc_v2::encode_sqbc_v2(&output.ir.unwrap()).unwrap();
+        assert_eq!(u32::from_le_bytes(sqbc[12..16].try_into().unwrap()), 7);
+    }
+
+    #[test]
+    fn parses_hardware_gpio_calls() {
+        let source = r#"app "gpio"
+state { led: false }
+event.on("app.start") {
+  hardware.gpio.write("indicator.primary", true)
+  led = hardware.gpio.read("indicator.primary")
+  hardware.gpio.toggle("pin.raw0")
+}
+screen("main") {}
+"#;
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: PORTABLE_TARGET_ID.to_string(),
+        });
+        assert!(output.ok, "{:?}", output.diagnostics);
+        let ir = output.ir.unwrap();
+        assert_eq!(ir.app.target, PORTABLE_TARGET_ID);
+        assert!(matches!(
+            ir.handlers[0].statements[0],
+            IrStatement::HardwareGpioWrite { .. }
+        ));
+        assert!(matches!(
+            ir.handlers[0].statements[1],
+            IrStatement::Assign {
+                expr: IrExpr::HardwareGpioRead { .. },
+                ..
+            }
+        ));
+        assert!(matches!(
+            ir.handlers[0].statements[2],
+            IrStatement::HardwareGpioToggle { .. }
+        ));
+    }
+
+    #[test]
+    fn parses_timer_handlers_app_launch_and_event_source() {
+        let source = r#"app "timer-demo"
+state { count: 0 }
+event.on("app.start") {
+  app.launch("worker")
+  event.addSource("timer.debug", { every: 1000 })
+}
+event.on("timer.debug") {
+  debug.print("tick", count)
+}
+screen("main") {}
+"#;
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: PORTABLE_TARGET_ID.to_string(),
+        });
+        assert!(output.ok, "{:?}", output.diagnostics);
+        let ir = output.ir.unwrap();
+        assert_eq!(ir.handlers[1].event, "timer.debug");
+        assert!(matches!(
+            ir.handlers[0].statements[0],
+            IrStatement::AppLaunch { .. }
+        ));
+        assert!(matches!(
+            ir.handlers[0].statements[1],
+            IrStatement::EventAddSource { .. }
+        ));
+    }
+
+    #[test]
+    fn parses_generic_events_and_trigger_lifecycle_calls() {
+        let source = r#"app "event-demo"
+state { ticks: 0 }
+event.on("app.start") {
+  app.arm("reminder")
+  app.start("reader")
+  event.addSource("timer.clock", { every: 60000 })
+}
+event.on("app.arm") {
+  event.addSource("timer.break", { every: 1500000 })
+}
+event.on("timer.break") {
+  ticks = ticks + 1
+  app.disarm("reminder")
+}
+screen("main") {}
+"#;
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: PORTABLE_TARGET_ID.to_string(),
+        });
+        assert!(output.ok, "{:?}", output.diagnostics);
+        let ir = output.ir.unwrap();
+        assert_eq!(ir.handlers[0].event, "app.start");
+        assert_eq!(ir.handlers[1].event, "app.arm");
+        assert_eq!(ir.handlers[2].event, "timer.break");
+        assert!(matches!(
+            ir.handlers[0].statements[0],
+            IrStatement::AppArm { .. }
+        ));
+        assert!(matches!(
+            ir.handlers[0].statements[1],
+            IrStatement::AppStart { .. }
+        ));
+        assert!(matches!(
+            ir.handlers[0].statements[2],
+            IrStatement::EventAddSource {
+                every_ms: Some(_),
+                ..
+            }
+        ));
+        assert!(matches!(
+            ir.handlers[2].statements[1],
+            IrStatement::AppDisarm { .. }
+        ));
+    }
+
+    #[test]
+    fn rejects_hardware_gpio_mutation_in_screen_render() {
+        let source = r#"app "gpio"
+state {}
+event.on("app.start") {}
+screen("main") {
+  hardware.gpio.toggle("indicator.primary")
+}
+"#;
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: PORTABLE_TARGET_ID.to_string(),
+        });
+        assert!(!output.ok);
+        assert!(output
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "E_RENDER_PURITY"));
     }
 
     #[test]
@@ -1919,7 +2307,7 @@ screen("main") {
     fn reports_real_semantic_diagnostics() {
         let source = r#"app "bad" target "xteink-x4"
 state { selected: 0 }
-onStart() {
+event.on("app.start") {
   screen.open("missing")
   display.clear("gray0")
 }

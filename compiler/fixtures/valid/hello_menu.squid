@@ -5,13 +5,13 @@ state {
   view: "menu"
 }
 
-onStart() {
+event.on("app.start") {
   state.load()
   view = "menu"
   screen.open("menu")
 }
 
-onKey("DOWN") {
+event.on("key.DOWN") {
   if (view == "menu") {
     if (selected < 2) {
       selected = selected + 1
@@ -21,7 +21,7 @@ onKey("DOWN") {
   }
 }
 
-onKey("UP") {
+event.on("key.UP") {
   if (view == "menu") {
     if (selected > 0) {
       selected = selected - 1
@@ -31,7 +31,7 @@ onKey("UP") {
   }
 }
 
-onKey("SELECT") {
+event.on("key.SELECT") {
   if (selected == 0) {
     view = "hello"
     screen.open("hello")
@@ -45,7 +45,7 @@ onKey("SELECT") {
   }
 }
 
-onKey("BACK") {
+event.on("key.BACK") {
   if (view != "menu") {
     view = "menu"
     state.save()

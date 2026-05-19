@@ -4,6 +4,7 @@ pub const MAX_STRINGS: usize = 64;
 pub const MAX_STATE: usize = 16;
 pub const MAX_FUNCTIONS: usize = 16;
 pub const MAX_HANDLERS: usize = 16;
+pub const MAX_SCREENS: usize = 16;
 pub const MAX_LOCALS: usize = 16;
 pub const MAX_STACK: usize = 32;
 pub const MAX_CALL_DEPTH: usize = 4;
@@ -15,6 +16,7 @@ const SECTION_STATE: u16 = 2;
 const SECTION_FUNCTIONS: u16 = 3;
 const SECTION_HANDLERS: u16 = 4;
 const SECTION_CODE: u16 = 5;
+const SECTION_SCREENS: u16 = 6;
 
 const OP_PUSH_INT: u8 = 1;
 const OP_PUSH_BOOL: u8 = 2;
@@ -43,6 +45,20 @@ const OP_POP: u8 = 60;
 const BUILTIN_STATE_LOAD: u8 = 1;
 const BUILTIN_STATE_SAVE: u8 = 2;
 const BUILTIN_APP_EXIT: u8 = 3;
+const BUILTIN_DEBUG_PRINT: u8 = 4;
+const BUILTIN_SCREEN_OPEN: u8 = 5;
+const BUILTIN_DISPLAY_CLEAR: u8 = 6;
+const BUILTIN_DISPLAY_TEXT: u8 = 7;
+const BUILTIN_DISPLAY_RECT: u8 = 8;
+const BUILTIN_DISPLAY_LINE: u8 = 9;
+const BUILTIN_HARDWARE_GPIO_WRITE: u8 = 10;
+const BUILTIN_HARDWARE_GPIO_TOGGLE: u8 = 11;
+const BUILTIN_HARDWARE_GPIO_READ: u8 = 12;
+const BUILTIN_APP_LAUNCH: u8 = 13;
+const BUILTIN_APP_START: u8 = 15;
+const BUILTIN_APP_ARM: u8 = 16;
+const BUILTIN_APP_DISARM: u8 = 17;
+const BUILTIN_EVENT_ADD_SOURCE: u8 = 18;
 
 const VALUE_NULL: u8 = 0;
 const VALUE_BOOL: u8 = 1;
@@ -88,6 +104,7 @@ pub enum VmError {
     TooManyStateSlots,
     TooManyFunctions,
     TooManyHandlers,
+    TooManyScreens,
     UnknownOpcode,
     InvalidOperand,
     InvalidJump,
@@ -118,6 +135,13 @@ struct Handler {
 }
 
 #[derive(Clone, Copy)]
+struct Screen {
+    name_id: u16,
+    start: usize,
+    len: usize,
+}
+
+#[derive(Clone, Copy)]
 struct StateSlot {
     name_id: u16,
     default: Value,
@@ -132,11 +156,42 @@ pub struct Program<'a> {
     function_count: usize,
     handlers: [Handler; MAX_HANDLERS],
     handler_count: usize,
+    screens: [Screen; MAX_SCREENS],
+    screen_count: usize,
     code: &'a [u8],
 }
 
 pub trait TraceSink {
     fn trace(&mut self, message: &str);
+    fn debug_print(&mut self, _program: &Program<'_>, _values: &[Value]) {}
+    fn draw_clear(&mut self, _color: &str) {}
+    fn draw_text(&mut self, _program: &Program<'_>, _text: Value, _x: i32, _y: i32) {}
+    fn draw_rect(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) {}
+    fn draw_line(&mut self, _x1: i32, _y1: i32, _x2: i32, _y2: i32) {}
+    fn hardware_gpio_write(&mut self, _name: &str, _value: bool) -> Result<(), VmError> {
+        Err(VmError::InvalidOperand)
+    }
+    fn hardware_gpio_toggle(&mut self, _name: &str) -> Result<(), VmError> {
+        Err(VmError::InvalidOperand)
+    }
+    fn hardware_gpio_read(&mut self, _name: &str) -> Result<bool, VmError> {
+        Err(VmError::InvalidOperand)
+    }
+    fn app_launch(&mut self, _app: &str) -> Result<(), VmError> {
+        Err(VmError::InvalidOperand)
+    }
+    fn app_start(&mut self, app: &str) -> Result<(), VmError> {
+        self.app_launch(app)
+    }
+    fn app_arm(&mut self, _app: &str) -> Result<(), VmError> {
+        Err(VmError::InvalidOperand)
+    }
+    fn app_disarm(&mut self, _app: &str) -> Result<(), VmError> {
+        Err(VmError::InvalidOperand)
+    }
+    fn event_add_source(&mut self, _event: &str, _every_ms: Option<i32>) -> Result<(), VmError> {
+        Err(VmError::InvalidOperand)
+    }
 }
 
 pub struct Vm<'a> {
@@ -173,12 +228,14 @@ impl<'a> Program<'a> {
         let state = section(bytes, section_count, SECTION_STATE)?;
         let functions = section(bytes, section_count, SECTION_FUNCTIONS)?;
         let handlers = section(bytes, section_count, SECTION_HANDLERS)?;
+        let screens = optional_section(bytes, section_count, SECTION_SCREENS)?;
         let code = section(bytes, section_count, SECTION_CODE)?;
 
         let (strings, string_count) = parse_strings(strings)?;
         let (state_slots, state_count) = parse_state(state)?;
         let (functions, function_count) = parse_functions(functions, code.len())?;
         let (handlers, handler_count) = parse_handlers(handlers, code.len())?;
+        let (screens, screen_count) = parse_screens(screens, code.len())?;
 
         Ok(Self {
             strings,
@@ -189,6 +246,8 @@ impl<'a> Program<'a> {
             function_count,
             handlers,
             handler_count,
+            screens,
+            screen_count,
             code,
         })
     }
@@ -208,6 +267,15 @@ impl<'a> Program<'a> {
             }
         }
         Err(VmError::HandlerNotFound)
+    }
+
+    fn screen(&self, name: &str) -> Result<Screen, VmError> {
+        for screen in self.screens.iter().take(self.screen_count) {
+            if self.string(screen.name_id)? == name {
+                return Ok(*screen);
+            }
+        }
+        Err(VmError::InvalidOperand)
     }
 }
 
@@ -283,6 +351,22 @@ impl<'a> Vm<'a> {
             return Err(VmError::StateOutOfBounds);
         }
         Ok(self.state[index])
+    }
+
+    pub fn set_state_value(&mut self, name: &str, value: Value) -> Result<(), VmError> {
+        for (index, slot) in self
+            .program
+            .state_slots
+            .iter()
+            .take(self.program.state_count)
+            .enumerate()
+        {
+            if self.program.string(slot.name_id)? == name {
+                self.state[index] = value;
+                return Ok(());
+            }
+        }
+        Err(VmError::StateOutOfBounds)
     }
 
     fn execute_range<T: TraceSink>(
@@ -406,7 +490,14 @@ impl<'a> Vm<'a> {
                 OP_CALL_BUILTIN => {
                     let builtin = *self.program.code.get(ip).ok_or(VmError::InvalidOperand)?;
                     ip += 1;
-                    self.call_builtin(builtin, trace)?;
+                    let arg_count = if builtin == BUILTIN_DEBUG_PRINT {
+                        let count = *self.program.code.get(ip).ok_or(VmError::InvalidOperand)?;
+                        ip += 1;
+                        count
+                    } else {
+                        0
+                    };
+                    self.call_builtin(builtin, arg_count, depth, trace)?;
                 }
                 OP_POP => {
                     let _ = self.pop()?;
@@ -417,13 +508,126 @@ impl<'a> Vm<'a> {
         Ok(None)
     }
 
-    fn call_builtin<T: TraceSink>(&mut self, builtin: u8, trace: &mut T) -> Result<(), VmError> {
+    fn call_builtin<T: TraceSink>(
+        &mut self,
+        builtin: u8,
+        arg_count: u8,
+        depth: usize,
+        trace: &mut T,
+    ) -> Result<(), VmError> {
         match builtin {
             BUILTIN_STATE_LOAD => trace.trace("state.load"),
             BUILTIN_STATE_SAVE => trace.trace("state.save"),
             BUILTIN_APP_EXIT => {
                 self.exited = true;
                 trace.trace("app.exit");
+            }
+            BUILTIN_DEBUG_PRINT => {
+                let count = arg_count as usize;
+                if count > self.stack_len {
+                    return Err(VmError::StackUnderflow);
+                }
+                let start = self.stack_len - count;
+                trace.debug_print(&self.program, &self.stack[start..self.stack_len]);
+                self.stack_len = start;
+            }
+            BUILTIN_SCREEN_OPEN => {
+                let Value::String(name_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let screen = self.program.screen(self.program.string(name_id)?)?;
+                let mut locals = [Value::Null; MAX_LOCALS];
+                self.execute_range(screen.start, screen.len, &mut locals, depth + 1, trace)?;
+            }
+            BUILTIN_DISPLAY_CLEAR => {
+                let Value::String(color_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                trace.draw_clear(self.program.string(color_id)?);
+            }
+            BUILTIN_DISPLAY_TEXT => {
+                let y = self.pop()?.as_i32();
+                let x = self.pop()?.as_i32();
+                let text = self.pop()?;
+                trace.draw_text(&self.program, text, x, y);
+            }
+            BUILTIN_DISPLAY_RECT => {
+                let h = self.pop()?.as_i32();
+                let w = self.pop()?.as_i32();
+                let y = self.pop()?.as_i32();
+                let x = self.pop()?.as_i32();
+                trace.draw_rect(x, y, w, h);
+            }
+            BUILTIN_DISPLAY_LINE => {
+                let y2 = self.pop()?.as_i32();
+                let x2 = self.pop()?.as_i32();
+                let y1 = self.pop()?.as_i32();
+                let x1 = self.pop()?.as_i32();
+                trace.draw_line(x1, y1, x2, y2);
+            }
+            BUILTIN_HARDWARE_GPIO_WRITE => {
+                let Value::String(name_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let Value::Bool(value) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let name = self.program.string(name_id)?;
+                trace.hardware_gpio_write(name, value)?;
+            }
+            BUILTIN_HARDWARE_GPIO_TOGGLE => {
+                let Value::String(name_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let name = self.program.string(name_id)?;
+                trace.hardware_gpio_toggle(name)?;
+            }
+            BUILTIN_HARDWARE_GPIO_READ => {
+                let Value::String(name_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let name = self.program.string(name_id)?;
+                let value = trace.hardware_gpio_read(name)?;
+                self.push(Value::Bool(value))?;
+            }
+            BUILTIN_APP_LAUNCH => {
+                let Value::String(app_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let app = self.program.string(app_id)?;
+                trace.app_launch(app)?;
+            }
+            BUILTIN_APP_START => {
+                let Value::String(app_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let app = self.program.string(app_id)?;
+                trace.app_start(app)?;
+            }
+            BUILTIN_APP_ARM => {
+                let Value::String(app_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let app = self.program.string(app_id)?;
+                trace.app_arm(app)?;
+            }
+            BUILTIN_APP_DISARM => {
+                let Value::String(app_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let app = self.program.string(app_id)?;
+                trace.app_disarm(app)?;
+            }
+            BUILTIN_EVENT_ADD_SOURCE => {
+                let every_ms = match self.pop()? {
+                    Value::Null => None,
+                    value => Some(value.as_i32()),
+                };
+                let Value::String(event_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let event = self.program.string(event_id)?;
+                trace.event_add_source(event, every_ms)?;
             }
             _ => return Err(VmError::InvalidOperand),
         }
@@ -477,6 +681,18 @@ fn section<'a>(bytes: &'a [u8], section_count: usize, kind: u16) -> Result<&'a [
         }
     }
     Err(VmError::MissingSection)
+}
+
+fn optional_section<'a>(
+    bytes: &'a [u8],
+    section_count: usize,
+    kind: u16,
+) -> Result<Option<&'a [u8]>, VmError> {
+    match section(bytes, section_count, kind) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(VmError::MissingSection) => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 fn parse_strings(bytes: &[u8]) -> Result<([&str; MAX_STRINGS], usize), VmError> {
@@ -596,6 +812,48 @@ fn parse_handlers(
     Ok((handlers, count))
 }
 
+fn parse_screens(
+    bytes: Option<&[u8]>,
+    code_len: usize,
+) -> Result<([Screen; MAX_SCREENS], usize), VmError> {
+    let Some(bytes) = bytes else {
+        return Ok((
+            [Screen {
+                name_id: 0,
+                start: 0,
+                len: 0,
+            }; MAX_SCREENS],
+            0,
+        ));
+    };
+    let count = read_u16(bytes, 0)? as usize;
+    if count > MAX_SCREENS {
+        return Err(VmError::TooManyScreens);
+    }
+    let mut screens = [Screen {
+        name_id: 0,
+        start: 0,
+        len: 0,
+    }; MAX_SCREENS];
+    let mut cursor = 2usize;
+    for screen in screens.iter_mut().take(count) {
+        let name_id = read_u16(bytes, cursor)?;
+        let start = read_u32(bytes, cursor + 2)? as usize;
+        let len = read_u32(bytes, cursor + 6)? as usize;
+        cursor += 10;
+        validate_range(start, len, code_len)?;
+        *screen = Screen {
+            name_id,
+            start,
+            len,
+        };
+    }
+    if cursor != bytes.len() {
+        return Err(VmError::InvalidSection);
+    }
+    Ok((screens, count))
+}
+
 fn validate_range(start: usize, len: usize, total: usize) -> Result<(), VmError> {
     let end = start.checked_add(len).ok_or(VmError::InvalidSection)?;
     if end > total {
@@ -663,6 +921,92 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct GpioTrace {
+        events: Vec<String>,
+        led: bool,
+    }
+
+    impl TraceSink for GpioTrace {
+        fn trace(&mut self, message: &str) {
+            self.events.push(message.to_string());
+        }
+
+        fn hardware_gpio_write(&mut self, name: &str, value: bool) -> Result<(), VmError> {
+            self.events.push(format!("write {name}={value}"));
+            self.led = value;
+            Ok(())
+        }
+
+        fn hardware_gpio_toggle(&mut self, name: &str) -> Result<(), VmError> {
+            self.events.push(format!("toggle {name}"));
+            self.led = !self.led;
+            Ok(())
+        }
+
+        fn hardware_gpio_read(&mut self, name: &str) -> Result<bool, VmError> {
+            self.events.push(format!("read {name}"));
+            Ok(self.led)
+        }
+    }
+
+    #[derive(Default)]
+    struct RuntimeTrace {
+        events: Vec<String>,
+    }
+
+    impl TraceSink for RuntimeTrace {
+        fn trace(&mut self, message: &str) {
+            self.events.push(message.to_string());
+        }
+
+        fn debug_print(&mut self, program: &Program<'_>, values: &[Value]) {
+            let mut line = String::new();
+            for (index, value) in values.iter().enumerate() {
+                if index > 0 {
+                    line.push(' ');
+                }
+                match value {
+                    Value::String(id) => line.push_str(program.string(*id).unwrap()),
+                    Value::I32(value) => line.push_str(&value.to_string()),
+                    Value::Bool(value) => line.push_str(&value.to_string()),
+                    Value::Null => line.push_str("null"),
+                }
+            }
+            self.events.push(format!("debug {line}"));
+        }
+
+        fn app_launch(&mut self, app: &str) -> Result<(), VmError> {
+            self.events.push(format!("launch {app}"));
+            Ok(())
+        }
+
+        fn app_start(&mut self, app: &str) -> Result<(), VmError> {
+            self.events.push(format!("start {app}"));
+            Ok(())
+        }
+
+        fn app_arm(&mut self, app: &str) -> Result<(), VmError> {
+            self.events.push(format!("arm {app}"));
+            Ok(())
+        }
+
+        fn app_disarm(&mut self, app: &str) -> Result<(), VmError> {
+            self.events.push(format!("disarm {app}"));
+            Ok(())
+        }
+
+        fn event_add_source(&mut self, event: &str, every_ms: Option<i32>) -> Result<(), VmError> {
+            self.events.push(format!(
+                "event.addSource {event} {}",
+                every_ms
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "none".to_string())
+            ));
+            Ok(())
+        }
+    }
+
     #[test]
     fn runs_headless_counter_fixture_from_real_bytecode() {
         let bytes = fixture_counter_sqbc();
@@ -670,27 +1014,27 @@ mod tests {
         let mut vm = Vm::new(program);
         let mut trace = Trace::default();
 
-        vm.dispatch("onStart", &mut trace).unwrap();
+        vm.dispatch("app.start", &mut trace).unwrap();
         assert_eq!(vm.state_value("started"), Ok(Value::I32(1)));
         assert_eq!(vm.state_value("count"), Ok(Value::I32(0)));
 
-        vm.dispatch("onKey.SELECT", &mut trace).unwrap();
-        vm.dispatch("onKey.SELECT", &mut trace).unwrap();
+        vm.dispatch("key.SELECT", &mut trace).unwrap();
+        vm.dispatch("key.SELECT", &mut trace).unwrap();
         assert_eq!(vm.state_value("count"), Ok(Value::I32(2)));
 
-        vm.dispatch("onKey.BACK", &mut trace).unwrap();
+        vm.dispatch("key.BACK", &mut trace).unwrap();
         assert!(vm.exited());
         assert_eq!(
             trace.events,
             vec![
-                "onStart",
+                "app.start",
                 "state.load",
                 "state.save",
-                "onKey.SELECT",
+                "key.SELECT",
                 "state.save",
-                "onKey.SELECT",
+                "key.SELECT",
                 "state.save",
-                "onKey.BACK",
+                "key.BACK",
                 "app.exit",
             ]
         );
@@ -719,19 +1063,136 @@ mod tests {
         let mut vm = Vm::new(program);
         let mut trace = Trace::default();
 
-        vm.dispatch("onStart", &mut trace).unwrap();
-        vm.dispatch("onKey.SELECT", &mut trace).unwrap();
+        vm.dispatch("app.start", &mut trace).unwrap();
+        vm.dispatch("key.SELECT", &mut trace).unwrap();
 
         assert_eq!(vm.state_value("started"), Ok(Value::I32(1)));
         assert_eq!(vm.state_value("count"), Ok(Value::I32(1)));
         assert_eq!(
             trace.events,
             vec![
-                "onStart",
+                "app.start",
                 "state.load",
                 "state.save",
-                "onKey.SELECT",
+                "key.SELECT",
                 "state.save",
+            ]
+        );
+    }
+
+    #[test]
+    fn runs_hardware_gpio_builtins_from_real_bytecode() {
+        let source = r#"app "gpio" target "esp32c3-super-mini"
+state { led: false }
+event.on("app.start") {
+  hardware.gpio.write("status_led", true)
+  led = hardware.gpio.read("status_led")
+  hardware.gpio.toggle("status_led")
+  led = hardware.gpio.read("status_led")
+}
+screen("main") {}
+"#;
+        let compiled = squidc_core::compile(squidc_core::CompileRequest {
+            source: source.to_string(),
+            target_id: "esp32c3-super-mini".to_string(),
+        });
+        assert!(compiled.ok, "{:?}", compiled.diagnostics);
+        let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
+        let program = Program::parse(&bytes).unwrap();
+        let mut vm = Vm::new(program);
+        let mut trace = GpioTrace::default();
+
+        vm.dispatch("app.start", &mut trace).unwrap();
+
+        assert_eq!(vm.state_value("led"), Ok(Value::Bool(false)));
+        assert_eq!(
+            trace.events,
+            vec![
+                "app.start",
+                "write status_led=true",
+                "read status_led",
+                "toggle status_led",
+                "read status_led",
+            ]
+        );
+    }
+
+    #[test]
+    fn runs_app_launch_event_source_and_timer_handler_from_real_bytecode() {
+        let source = r#"app "timer-demo"
+state { count: 0 }
+event.on("app.start") {
+  app.launch("timer-background")
+  event.addSource("timer.debug", { every: 1000 })
+}
+event.on("timer.debug") {
+  debug.print("timer", count)
+}
+screen("main") {}
+"#;
+        let compiled = squidc_core::compile(squidc_core::CompileRequest {
+            source: source.to_string(),
+            target_id: squidc_core::PORTABLE_TARGET_ID.to_string(),
+        });
+        assert!(compiled.ok, "{:?}", compiled.diagnostics);
+        let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
+        let program = Program::parse(&bytes).unwrap();
+        let mut vm = Vm::new(program);
+        let mut trace = RuntimeTrace::default();
+
+        vm.dispatch("app.start", &mut trace).unwrap();
+        vm.dispatch("timer.debug", &mut trace).unwrap();
+
+        assert_eq!(
+            trace.events,
+            vec![
+                "app.start",
+                "launch timer-background",
+                "event.addSource timer.debug 1000",
+                "timer.debug",
+                "debug timer 0",
+            ]
+        );
+    }
+
+    #[test]
+    fn runs_generic_event_lifecycle_builtins_from_real_bytecode() {
+        let source = r#"app "event-demo"
+state { count: 0 }
+event.on("app.start") {
+  app.arm("break-reminder")
+  app.start("reader")
+  event.addSource("timer.clock", { every: 60000 })
+}
+event.on("timer.clock") {
+  count = count + 1
+  app.disarm("break-reminder")
+}
+screen("main") {}
+"#;
+        let compiled = squidc_core::compile(squidc_core::CompileRequest {
+            source: source.to_string(),
+            target_id: squidc_core::PORTABLE_TARGET_ID.to_string(),
+        });
+        assert!(compiled.ok, "{:?}", compiled.diagnostics);
+        let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
+        let program = Program::parse(&bytes).unwrap();
+        let mut vm = Vm::new(program);
+        let mut trace = RuntimeTrace::default();
+
+        vm.dispatch("app.start", &mut trace).unwrap();
+        vm.dispatch("timer.clock", &mut trace).unwrap();
+
+        assert_eq!(vm.state_value("count"), Ok(Value::I32(1)));
+        assert_eq!(
+            trace.events,
+            vec![
+                "app.start",
+                "arm break-reminder",
+                "start reader",
+                "event.addSource timer.clock 60000",
+                "timer.clock",
+                "disarm break-reminder",
             ]
         );
     }
@@ -741,9 +1202,9 @@ mod tests {
             "headless-counter",
             "count",
             "started",
-            "onStart",
-            "onKey.SELECT",
-            "onKey.BACK",
+            "app.start",
+            "key.SELECT",
+            "key.BACK",
         ]);
         let mut state = Vec::new();
         push_u16(&mut state, 2);

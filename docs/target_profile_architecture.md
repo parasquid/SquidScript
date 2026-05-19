@@ -938,22 +938,27 @@ Capability targeting is preferred.
 
 ## 10. Compiler Target Selection
 
-`squidc` should compile against a target profile or compatibility profile.
+`squidc` should compile SquidScript source against the portable language/runtime
+API by default. Target profiles are optional metadata inputs for explicit
+compatibility checks, simulator configuration, firmware build metadata, docs,
+and autocomplete. Hardware aliases are resolved by firmware/runtime; if the
+current device lacks an alias or capability, execution should fail with a
+device/runtime error.
 
 Concrete target build:
 
 ```sh
 squidc build apps/binbook-reader \
-  --target xteink-x4 \
   --out apps/binbook-reader/main.sqbc \
   --source-map
 ```
 
-Development target build:
+Explicit compatibility check:
 
 ```sh
 squidc build apps/binbook-reader \
-  --target esp32s3-waveshare-7in5 \
+  --target targets/xteink-x4.target.json \
+  --check-target \
   --out apps/binbook-reader/main.sqbc \
   --source-map
 ```
@@ -1442,9 +1447,9 @@ Combined profile validation must check:
 - target capabilities such as `binbook.read` and `squidscript.bytecode` are provided by the selected firmware/runtime modules
 - compatibility profile claims are satisfied by the resolved target
 
-The compiler tooling should:
+Compatibility-check tooling should:
 
-1. Accept `--target` or `--profile`.
+1. Accept `--target` or `--profile` only when an explicit check is requested.
 2. Load the target/profile.
 3. Validate app requirements.
 4. Enforce target-specific limits.

@@ -10,4 +10,3 @@ pub fn compile_squidscript(source: &str, target_id: &str) -> String {
 
     serde_json::to_string(&response).expect("compile response must serialize")
 }
-

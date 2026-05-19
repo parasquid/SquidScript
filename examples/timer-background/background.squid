@@ -1,0 +1,18 @@
+app "timer-background"
+
+state {
+  ticks: 0
+}
+
+event.on("app.arm") {
+  debug.print("background register")
+  event.addSource("timer.debug", { every: 1000 })
+}
+
+event.on("timer.debug") {
+  ticks = ticks + 1
+  debug.print("background timer", ticks)
+  app.exit()
+}
+
+screen("main") {}

@@ -10,9 +10,11 @@ use esp_hal::{
     delay::Delay,
     gpio::{Level, Output, OutputConfig},
     main,
+    time::{Duration, Instant},
     usb_serial_jtag::UsbSerialJtag,
 };
 use squid_firmware::{
+    dev_harness::{DevAppId as AppId, DevTimerEvent as TimerEvent},
     protocol::{fnv1a, parse_install},
     vm::{Program, TraceSink, Value, Vm, VmError, MAX_APP_BYTES},
 };
@@ -26,9 +28,19 @@ const BREATH_STEPS: [u32; 9] = [0, 2, 7, 16, 35, 65, 84, 96, 100];
 const PWM_PERIOD_US: u32 = 2_000;
 const LINE_CAP: usize = 128;
 const TRACE_CAP: usize = 24;
+const OUTPUT_CAP: usize = 16;
+const DRAW_CAP: usize = 32;
+const LOG_LINE_CAP: usize = 80;
+const STATE_IMPORT_CAP: usize = 512;
 const INSTALL_TIMEOUT_MS: u32 = 2_000;
-
+const STACK_CAP: usize = 4;
+const TIMER_CAP: usize = 4;
 static mut APP_BYTES: [u8; MAX_APP_BYTES] = [0; MAX_APP_BYTES];
+static mut MAIN_APP_BYTES: [u8; MAX_APP_BYTES] = [0; MAX_APP_BYTES];
+static mut TIMER_BACKGROUND_BYTES: [u8; MAX_APP_BYTES] = [0; MAX_APP_BYTES];
+static mut READER_CLOCK_BYTES: [u8; MAX_APP_BYTES] = [0; MAX_APP_BYTES];
+static mut BREAK_REMINDER_BYTES: [u8; MAX_APP_BYTES] = [0; MAX_APP_BYTES];
+static mut STATE_IMPORT_BYTES: [u8; STATE_IMPORT_CAP] = [0; STATE_IMPORT_CAP];
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -37,11 +49,15 @@ fn main() -> ! {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
     let delay = Delay::new();
-    let mut led = Output::new(peripherals.GPIO8, Level::Low, OutputConfig::default());
+    let led = Output::new(peripherals.GPIO8, Level::Low, OutputConfig::default());
     let mut serial = UsbSerialJtag::new(peripherals.USB_DEVICE);
     let mut line = LineBuffer::new();
-    let mut trace = TraceLog::new();
+    let mut runtime = RuntimeSink::new(led);
     let mut app_len = 0usize;
+    let mut main_app_len = 0usize;
+    let mut timer_background_len = 0usize;
+    let mut reader_clock_len = 0usize;
+    let mut break_reminder_len = 0usize;
     let mut vm: Option<Vm<'static>> = None;
     let mut last_error: Option<VmError> = None;
 
@@ -50,7 +66,15 @@ fn main() -> ! {
     writeln!(serial, "type help").ok();
 
     loop {
-        breathe_once(&mut led, &delay);
+        runtime.breathe_once(&delay);
+        runtime.advance_time(
+            Instant::now(),
+            main_app_len,
+            timer_background_len,
+            reader_clock_len,
+            break_reminder_len,
+            &mut last_error,
+        );
         match serial.read_byte() {
             Ok(byte) => {
                 if let Some(command) = line.push(byte) {
@@ -60,8 +84,12 @@ fn main() -> ! {
                             command,
                             &mut serial,
                             &delay,
-                            &mut trace,
+                            &mut runtime,
                             &mut app_len,
+                            &mut main_app_len,
+                            &mut timer_background_len,
+                            &mut reader_clock_len,
+                            &mut break_reminder_len,
                             &mut vm,
                             &mut last_error,
                         );
@@ -77,19 +105,32 @@ fn handle_command(
     command: &str,
     serial: &mut UsbSerialJtag<'_, esp_hal::Blocking>,
     delay: &Delay,
-    trace: &mut TraceLog,
+    trace: &mut RuntimeSink<'_>,
     app_len: &mut usize,
+    main_app_len: &mut usize,
+    timer_background_len: &mut usize,
+    reader_clock_len: &mut usize,
+    break_reminder_len: &mut usize,
     vm: &mut Option<Vm<'static>>,
     last_error: &mut Option<VmError>,
 ) {
     if command == "help" {
-        writeln!(serial, "commands: help info install <len> <fnv32hex> run key SELECT key BACK state trace errors reset").ok();
-    } else if command == "info" {
+        writeln!(serial, "commands: HELLO INSTALL <len> <fnv32hex> RUN <event> KEY SELECT STATE.GET STATE.IMPORT <len> <fnv32hex> TRACE.GET OUTPUT.GET DRAWLOG.GET ERRORS.GET RESET").ok();
+    } else if command == "HELLO" || command == "hello" || command == "info" {
         writeln!(serial, "target=esp32c3-super-mini").ok();
         writeln!(serial, "build={BUILD_ID}").ok();
+        writeln!(serial, "profile=dev").ok();
         writeln!(serial, "app_len={}", *app_len).ok();
+        writeln!(serial, "main_app_len={}", *main_app_len).ok();
+        writeln!(serial, "timer_background_len={}", *timer_background_len).ok();
+        writeln!(serial, "reader_clock_len={}", *reader_clock_len).ok();
+        writeln!(serial, "break_reminder_len={}", *break_reminder_len).ok();
         writeln!(serial, "vm_loaded={}", vm.is_some()).ok();
-    } else if let Some(rest) = command.strip_prefix("install ") {
+        writeln!(serial, "OK HELLO").ok();
+    } else if let Some(rest) = command
+        .strip_prefix("INSTALL ")
+        .or_else(|| command.strip_prefix("install "))
+    {
         match parse_install(rest) {
             Ok(request) if request.len <= MAX_APP_BYTES => {
                 let len = request.len;
@@ -105,6 +146,9 @@ fn handle_command(
                 if actual_hash == request.expected_hash {
                     *app_len = len;
                     *vm = None;
+                    trace.clear();
+                    trace.clear_timers();
+                    trace.reset_stack();
                     *last_error = None;
                     writeln!(serial, "OK install hash={actual_hash:08x}").ok();
                 } else {
@@ -122,7 +166,84 @@ fn handle_command(
                 writeln!(serial, "ERR install").ok();
             }
         }
-    } else if command == "run" {
+    } else if let Some(rest) = command
+        .strip_prefix("INSTALL.APP ")
+        .or_else(|| command.strip_prefix("install.app "))
+    {
+        let Some((app_id, request_text)) = rest.split_once(' ') else {
+            writeln!(serial, "ERR install.app").ok();
+            return;
+        };
+        match parse_install(request_text) {
+            Ok(request) if request.len <= MAX_APP_BYTES => {
+                let len = request.len;
+                let Some(bytes) = app_storage_mut(app_id) else {
+                    writeln!(serial, "ERR install.app unknown").ok();
+                    return;
+                };
+                writeln!(serial, "READY install.app app={app_id} len={len}").ok();
+                let read = read_exact_timeout(serial, &mut bytes[..len], delay, INSTALL_TIMEOUT_MS);
+                if read != len {
+                    *last_error = Some(VmError::InvalidHeader);
+                    writeln!(serial, "ERR install.app timeout read={read} expected={len}").ok();
+                    return;
+                }
+                let actual_hash = fnv1a(&bytes[..len]);
+                if actual_hash == request.expected_hash {
+                    match AppId::from_runtime_name(app_id) {
+                        Some(AppId::Main) => *main_app_len = len,
+                        Some(AppId::TimerBackground) => *timer_background_len = len,
+                        Some(AppId::ReaderClock) => *reader_clock_len = len,
+                        Some(AppId::BreakReminder) => *break_reminder_len = len,
+                        _ => {}
+                    }
+                    *vm = None;
+                    trace.clear();
+                    trace.clear_timers();
+                    trace.reset_stack();
+                    *last_error = None;
+                    writeln!(serial, "OK install.app app={app_id} hash={actual_hash:08x}").ok();
+                } else {
+                    *last_error = Some(VmError::InvalidHeader);
+                    writeln!(
+                        serial,
+                        "ERR install.app hash expected={:08x} actual={actual_hash:08x}",
+                        request.expected_hash
+                    )
+                    .ok();
+                }
+            }
+            _ => {
+                *last_error = Some(VmError::TooLarge);
+                writeln!(serial, "ERR install.app").ok();
+            }
+        }
+    } else if command == "RUN.APP main" || command == "run.app main" {
+        if *main_app_len == 0 {
+            writeln!(serial, "ERR no-main-app").ok();
+            return;
+        }
+        trace.clear();
+        trace.reset_stack();
+        trace.push_app(AppId::Main);
+        match run_app_event(AppId::Main, "app.start", *main_app_len, trace) {
+            Ok(()) => {
+                process_pending_actions(
+                    trace,
+                    *timer_background_len,
+                    *main_app_len,
+                    *reader_clock_len,
+                    *break_reminder_len,
+                    last_error,
+                );
+                writeln!(serial, "OK RUN.APP main").ok();
+            }
+            Err(error) => {
+                *last_error = Some(error);
+                writeln!(serial, "ERR RUN.APP {:?}", error).ok();
+            }
+        }
+    } else if command == "LOAD" || command == "load" {
         if *app_len == 0 {
             writeln!(serial, "ERR no-app").ok();
             return;
@@ -130,12 +251,51 @@ fn handle_command(
         let bytes: &'static [u8] = unsafe { &APP_BYTES[..*app_len] };
         match Program::parse(bytes) {
             Ok(program) => {
-                let mut next_vm = Vm::new(program);
+                *vm = Some(Vm::new(program));
                 trace.clear();
-                match next_vm.dispatch("onStart", trace) {
+                *last_error = None;
+                writeln!(serial, "OK LOAD").ok();
+            }
+            Err(error) => {
+                *last_error = Some(error);
+                writeln!(serial, "ERR LOAD {:?}", error).ok();
+            }
+        }
+    } else if command == "run" || command == "RUN" || command.starts_with("RUN ") {
+        if *app_len == 0 {
+            writeln!(serial, "ERR no-app").ok();
+            return;
+        }
+        let event = command
+            .strip_prefix("RUN ")
+            .filter(|value| !value.is_empty())
+            .unwrap_or("app.start");
+        if vm.is_none() {
+            let bytes: &'static [u8] = unsafe { &APP_BYTES[..*app_len] };
+            match Program::parse(bytes) {
+                Ok(program) => {
+                    *vm = Some(Vm::new(program));
+                }
+                Err(error) => {
+                    *last_error = Some(error);
+                    writeln!(serial, "ERR load {:?}", error).ok();
+                    return;
+                }
+            }
+        }
+        match vm.as_mut() {
+            Some(active) => {
+                trace.clear();
+                match active.dispatch(event, trace) {
                     Ok(()) => {
-                        *vm = Some(next_vm);
-                        *last_error = None;
+                        process_pending_actions(
+                            trace,
+                            *timer_background_len,
+                            *main_app_len,
+                            *reader_clock_len,
+                            *break_reminder_len,
+                            last_error,
+                        );
                         writeln!(serial, "OK run").ok();
                     }
                     Err(error) => {
@@ -144,20 +304,54 @@ fn handle_command(
                     }
                 }
             }
-            Err(error) => {
-                *last_error = Some(error);
-                writeln!(serial, "ERR load {:?}", error).ok();
+            None => {
+                writeln!(serial, "ERR no-vm").ok();
             }
         }
-    } else if let Some(key) = command.strip_prefix("key ") {
+    } else if let Some(key) = command
+        .strip_prefix("KEY ")
+        .or_else(|| command.strip_prefix("key "))
+    {
         let event = if key == "SELECT" {
-            "onKey.SELECT"
+            "key.SELECT"
         } else if key == "BACK" {
-            "onKey.BACK"
+            "key.BACK"
         } else {
             writeln!(serial, "ERR key").ok();
             return;
         };
+        if let Some(app) = trace.top_app() {
+            let len = app_len_for(
+                app,
+                *main_app_len,
+                *timer_background_len,
+                *reader_clock_len,
+                *break_reminder_len,
+            );
+            match run_app_event(app, event, len, trace) {
+                Ok(()) => {
+                    if trace.exited {
+                        trace.pop_app();
+                        trace.exited = false;
+                    }
+                    process_pending_actions(
+                        trace,
+                        *timer_background_len,
+                        *main_app_len,
+                        *reader_clock_len,
+                        *break_reminder_len,
+                        last_error,
+                    );
+                    *last_error = None;
+                    writeln!(serial, "OK key {key}").ok();
+                }
+                Err(error) => {
+                    *last_error = Some(error);
+                    writeln!(serial, "ERR key {:?}", error).ok();
+                }
+            }
+            return;
+        }
         match vm.as_mut() {
             Some(active) => match active.dispatch(event, trace) {
                 Ok(()) => {
@@ -180,20 +374,127 @@ fn handle_command(
                 writeln!(serial, "ERR no-vm").ok();
             }
         }
-    } else if command == "trace" {
+    } else if command == "STATE.GET" {
+        match vm.as_ref() {
+            Some(active) => {
+                writeln!(serial, "BEGIN STATE").ok();
+                print_state(serial, active);
+                writeln!(serial, "END STATE").ok();
+                writeln!(serial, "OK STATE.GET").ok();
+            }
+            None => {
+                writeln!(serial, "ERR no-vm").ok();
+            }
+        }
+    } else if let Some(rest) = command.strip_prefix("STATE.IMPORT ") {
+        match parse_install(rest) {
+            Ok(request) if request.len <= STATE_IMPORT_CAP => {
+                writeln!(serial, "READY STATE.IMPORT len={}", request.len).ok();
+                let bytes = unsafe { &mut STATE_IMPORT_BYTES[..request.len] };
+                let read = read_exact_timeout(serial, bytes, delay, INSTALL_TIMEOUT_MS);
+                if read != request.len {
+                    writeln!(
+                        serial,
+                        "ERR STATE.IMPORT timeout read={read} expected={}",
+                        request.len
+                    )
+                    .ok();
+                    return;
+                }
+                let actual_hash = fnv1a(bytes);
+                if actual_hash != request.expected_hash {
+                    writeln!(
+                        serial,
+                        "ERR STATE.IMPORT hash expected={:08x} actual={actual_hash:08x}",
+                        request.expected_hash
+                    )
+                    .ok();
+                    return;
+                }
+                match vm.as_mut() {
+                    Some(active) => {
+                        import_state(active, bytes);
+                        writeln!(serial, "OK STATE.IMPORT hash={actual_hash:08x}").ok();
+                    }
+                    None => {
+                        writeln!(serial, "ERR no-vm").ok();
+                    }
+                }
+            }
+            _ => {
+                writeln!(serial, "ERR STATE.IMPORT").ok();
+            }
+        }
+    } else if command == "trace" || command == "TRACE.GET" {
+        if command == "TRACE.GET" {
+            writeln!(serial, "BEGIN TRACE").ok();
+        }
         trace.print(serial);
-    } else if command == "errors" {
+        if command == "TRACE.GET" {
+            writeln!(serial, "END TRACE").ok();
+            writeln!(serial, "OK TRACE.GET").ok();
+        }
+    } else if command == "OUTPUT.GET" {
+        writeln!(serial, "BEGIN OUTPUT").ok();
+        trace.print_output(serial);
+        writeln!(serial, "END OUTPUT").ok();
+        writeln!(serial, "OK OUTPUT.GET").ok();
+    } else if command == "DRAWLOG.GET" {
+        writeln!(serial, "BEGIN DRAWLOG").ok();
+        trace.print_draw(serial);
+        writeln!(serial, "END DRAWLOG").ok();
+        writeln!(serial, "OK DRAWLOG.GET").ok();
+    } else if command == "errors" || command == "ERRORS.GET" {
         match last_error {
             Some(error) => writeln!(serial, "last_error={:?}", error).ok(),
             None => writeln!(serial, "last_error=none").ok(),
         };
-    } else if command == "reset" {
+        if command == "ERRORS.GET" {
+            writeln!(serial, "OK ERRORS.GET").ok();
+        }
+    } else if command == "reset" || command == "RESET" {
         trace.clear();
+        trace.clear_timers();
         *vm = None;
         *last_error = None;
         writeln!(serial, "OK reset").ok();
     } else {
         writeln!(serial, "ERR unknown-command").ok();
+    }
+}
+
+fn import_state(vm: &mut Vm<'_>, bytes: &[u8]) {
+    let Ok(text) = core::str::from_utf8(bytes) else {
+        return;
+    };
+    for line in text.lines() {
+        let Some((name, raw_value)) = line.split_once('=') else {
+            continue;
+        };
+        if let Some(value) = parse_value(vm.program(), raw_value.trim()) {
+            let _ = vm.set_state_value(name.trim(), value);
+        }
+    }
+}
+
+fn parse_value(program: &Program<'_>, input: &str) -> Option<Value> {
+    if input == "null" {
+        Some(Value::Null)
+    } else if input == "true" {
+        Some(Value::Bool(true))
+    } else if input == "false" {
+        Some(Value::Bool(false))
+    } else if let Ok(value) = input.parse::<i32>() {
+        Some(Value::I32(value))
+    } else if let Some(text) = input.strip_prefix('"').and_then(|v| v.strip_suffix('"')) {
+        for id in 0..64u16 {
+            if program.string(id).ok()? == text {
+                return Some(Value::String(id));
+            }
+        }
+        None
+    } else {
+        None
     }
 }
 
@@ -278,21 +579,150 @@ impl LineBuffer {
     }
 }
 
-struct TraceLog {
+struct RuntimeSink<'d> {
+    status_led: Output<'d>,
+    breathing_enabled: bool,
+    current_app: AppId,
+    pending_launch: Option<AppId>,
+    pending_arm: Option<AppId>,
+    timers: [Option<TimerRegistration>; TIMER_CAP],
+    registration_mode: bool,
+    stack: [AppId; STACK_CAP],
+    stack_len: usize,
+    exited: bool,
     entries: [&'static str; TRACE_CAP],
     len: usize,
+    output: [LogLine; OUTPUT_CAP],
+    output_len: usize,
+    draw: [LogLine; DRAW_CAP],
+    draw_len: usize,
 }
 
-impl TraceLog {
-    const fn new() -> Self {
+impl<'d> RuntimeSink<'d> {
+    fn new(status_led: Output<'d>) -> Self {
         Self {
+            status_led,
+            breathing_enabled: true,
+            current_app: AppId::Legacy,
+            pending_launch: None,
+            pending_arm: None,
+            timers: [None; TIMER_CAP],
+            registration_mode: false,
+            stack: [AppId::Legacy; STACK_CAP],
+            stack_len: 0,
+            exited: false,
             entries: [""; TRACE_CAP],
             len: 0,
+            output: [LogLine::new(); OUTPUT_CAP],
+            output_len: 0,
+            draw: [LogLine::new(); DRAW_CAP],
+            draw_len: 0,
+        }
+    }
+
+    fn breathe_once(&mut self, delay: &Delay) {
+        if self.breathing_enabled {
+            breathe_once(&mut self.status_led, delay);
         }
     }
 
     fn clear(&mut self) {
         self.len = 0;
+        self.output_len = 0;
+        self.draw_len = 0;
+    }
+
+    fn clear_timers(&mut self) {
+        self.pending_launch = None;
+        self.pending_arm = None;
+        self.timers = [None; TIMER_CAP];
+        self.exited = false;
+        self.registration_mode = false;
+    }
+
+    fn reset_stack(&mut self) {
+        self.stack_len = 0;
+    }
+
+    fn push_app(&mut self, app: AppId) {
+        if self.stack_len < self.stack.len() {
+            self.stack[self.stack_len] = app;
+            self.stack_len += 1;
+        }
+    }
+
+    fn pop_app(&mut self) {
+        if self.stack_len > 1 {
+            let app = self.stack[self.stack_len - 1];
+            self.stack_len -= 1;
+            for timer in &mut self.timers {
+                if let Some(mut registration) = *timer {
+                    if registration.armed && registration.app == app {
+                        registration.next_due = Instant::now() + registration.interval;
+                        *timer = Some(registration);
+                    }
+                }
+            }
+        }
+    }
+
+    fn top_app(&self) -> Option<AppId> {
+        if self.stack_len == 0 {
+            None
+        } else {
+            Some(self.stack[self.stack_len - 1])
+        }
+    }
+
+    fn advance_time(
+        &mut self,
+        now: Instant,
+        main_app_len: usize,
+        timer_background_len: usize,
+        reader_clock_len: usize,
+        break_reminder_len: usize,
+        last_error: &mut Option<VmError>,
+    ) {
+        for index in 0..self.timers.len() {
+            let Some(mut timer) = self.timers[index] else {
+                continue;
+            };
+            if now < timer.next_due {
+                continue;
+            }
+            timer.next_due = now + timer.interval;
+            self.timers[index] = Some(timer);
+            let len = app_len_for(
+                timer.app,
+                main_app_len,
+                timer_background_len,
+                reader_clock_len,
+                break_reminder_len,
+            );
+            if len == 0 {
+                continue;
+            }
+            let is_top = self.top_app() == Some(timer.app);
+            if !timer.armed && !is_top {
+                continue;
+            }
+            if timer.armed && self.stack[..self.stack_len].contains(&timer.app) {
+                continue;
+            }
+            if !is_top {
+                self.push_app(timer.app);
+            }
+            match run_app_event(timer.app, timer.event.as_str(), len, self) {
+                Ok(()) => {
+                    if self.exited {
+                        self.pop_app();
+                        self.exited = false;
+                    }
+                    *last_error = None;
+                }
+                Err(error) => *last_error = Some(error),
+            }
+        }
     }
 
     fn print(&self, serial: &mut UsbSerialJtag<'_, esp_hal::Blocking>) {
@@ -300,25 +730,347 @@ impl TraceLog {
             writeln!(serial, "trace={entry}").ok();
         }
     }
+
+    fn print_output(&self, serial: &mut UsbSerialJtag<'_, esp_hal::Blocking>) {
+        for entry in self.output.iter().take(self.output_len) {
+            writeln!(serial, "output={}", entry.as_str()).ok();
+        }
+    }
+
+    fn print_draw(&self, serial: &mut UsbSerialJtag<'_, esp_hal::Blocking>) {
+        for entry in self.draw.iter().take(self.draw_len) {
+            writeln!(serial, "draw={}", entry.as_str()).ok();
+        }
+    }
+
+    fn push_output(&mut self, line: LogLine) {
+        if self.output_len < self.output.len() {
+            self.output[self.output_len] = line;
+            self.output_len += 1;
+        }
+    }
+
+    fn push_draw(&mut self, line: LogLine) {
+        if self.draw_len < self.draw.len() {
+            self.draw[self.draw_len] = line;
+            self.draw_len += 1;
+        }
+    }
+
+    fn write_gpio(&mut self, name: &str, logical_value: bool) -> Result<(), VmError> {
+        let raw_high = match name {
+            "indicator.status_led" | "status_led" | "status" => !logical_value,
+            "GPIO8" => logical_value,
+            _ => return Err(VmError::InvalidOperand),
+        };
+        self.breathing_enabled = false;
+        self.status_led
+            .set_level(if raw_high { Level::High } else { Level::Low });
+        Ok(())
+    }
+
+    fn read_gpio(&self, name: &str) -> Result<bool, VmError> {
+        let raw_high = self.status_led.is_set_high();
+        match name {
+            "indicator.status_led" | "status_led" | "status" => Ok(!raw_high),
+            "GPIO8" => Ok(raw_high),
+            _ => Err(VmError::InvalidOperand),
+        }
+    }
+
+    fn register_timer(&mut self, registration: TimerRegistration) -> Result<(), VmError> {
+        for timer in &mut self.timers {
+            if timer.map(|timer| (timer.app, timer.event))
+                == Some((registration.app, registration.event))
+            {
+                *timer = Some(registration);
+                return Ok(());
+            }
+        }
+        for timer in &mut self.timers {
+            if timer.is_none() {
+                *timer = Some(registration);
+                return Ok(());
+            }
+        }
+        Err(VmError::TooLarge)
+    }
 }
 
-impl TraceSink for TraceLog {
+impl TraceSink for RuntimeSink<'_> {
     fn trace(&mut self, message: &str) {
         if self.len < self.entries.len() {
             self.entries[self.len] = stable_trace(message);
             self.len += 1;
         }
     }
+
+    fn debug_print(&mut self, program: &Program<'_>, values: &[Value]) {
+        let mut line = LogLine::new();
+        for (index, value) in values.iter().enumerate() {
+            if index > 0 {
+                write!(line, " ").ok();
+            }
+            write_value(&mut line, program, *value).ok();
+        }
+        self.push_output(line);
+    }
+
+    fn draw_clear(&mut self, color: &str) {
+        let mut line = LogLine::new();
+        write!(line, "clear color={color}").ok();
+        self.push_draw(line);
+    }
+
+    fn draw_text(&mut self, program: &Program<'_>, text: Value, x: i32, y: i32) {
+        let mut line = LogLine::new();
+        write!(line, "text text=").ok();
+        write_value(&mut line, program, text).ok();
+        write!(line, " x={x} y={y}").ok();
+        self.push_draw(line);
+    }
+
+    fn draw_rect(&mut self, x: i32, y: i32, w: i32, h: i32) {
+        let mut line = LogLine::new();
+        write!(line, "rect x={x} y={y} w={w} h={h}").ok();
+        self.push_draw(line);
+    }
+
+    fn draw_line(&mut self, x1: i32, y1: i32, x2: i32, y2: i32) {
+        let mut line = LogLine::new();
+        write!(line, "line x1={x1} y1={y1} x2={x2} y2={y2}").ok();
+        self.push_draw(line);
+    }
+
+    fn hardware_gpio_write(&mut self, name: &str, value: bool) -> Result<(), VmError> {
+        self.write_gpio(name, value)
+    }
+
+    fn hardware_gpio_toggle(&mut self, name: &str) -> Result<(), VmError> {
+        let value = !self.read_gpio(name)?;
+        self.write_gpio(name, value)
+    }
+
+    fn hardware_gpio_read(&mut self, name: &str) -> Result<bool, VmError> {
+        self.read_gpio(name)
+    }
+
+    fn app_launch(&mut self, app: &str) -> Result<(), VmError> {
+        self.pending_launch = Some(AppId::from_runtime_name(app).ok_or(VmError::InvalidOperand)?);
+        Ok(())
+    }
+
+    fn app_start(&mut self, app: &str) -> Result<(), VmError> {
+        self.app_launch(app)
+    }
+
+    fn app_arm(&mut self, app: &str) -> Result<(), VmError> {
+        self.pending_arm = Some(AppId::from_runtime_name(app).ok_or(VmError::InvalidOperand)?);
+        Ok(())
+    }
+
+    fn app_disarm(&mut self, app: &str) -> Result<(), VmError> {
+        let app = AppId::from_runtime_name(app).ok_or(VmError::InvalidOperand)?;
+        for timer in &mut self.timers {
+            if timer.map(|timer| timer.app) == Some(app) {
+                *timer = None;
+            }
+        }
+        Ok(())
+    }
+
+    fn event_add_source(&mut self, event: &str, every_ms: Option<i32>) -> Result<(), VmError> {
+        let Some(interval_ms) = every_ms else {
+            return Err(VmError::InvalidOperand);
+        };
+        if interval_ms <= 0 {
+            return Err(VmError::InvalidOperand);
+        }
+        let Some(event) = TimerEvent::from_event(event) else {
+            return Err(VmError::InvalidOperand);
+        };
+        self.register_timer(TimerRegistration {
+            app: self.current_app,
+            event,
+            armed: self.registration_mode,
+            interval: Duration::from_micros((interval_ms as u64).saturating_mul(1000)),
+            next_due: Instant::now()
+                + Duration::from_micros((interval_ms as u64).saturating_mul(1000)),
+        })?;
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+struct TimerRegistration {
+    app: AppId,
+    event: TimerEvent,
+    armed: bool,
+    interval: Duration,
+    next_due: Instant,
+}
+
+fn app_storage_mut<'a>(app_id: &str) -> Option<&'a mut [u8; MAX_APP_BYTES]> {
+    match AppId::from_runtime_name(app_id)? {
+        AppId::Main => Some(unsafe { &mut MAIN_APP_BYTES }),
+        AppId::TimerBackground => Some(unsafe { &mut TIMER_BACKGROUND_BYTES }),
+        AppId::ReaderClock => Some(unsafe { &mut READER_CLOCK_BYTES }),
+        AppId::BreakReminder => Some(unsafe { &mut BREAK_REMINDER_BYTES }),
+        AppId::Legacy => None,
+    }
+}
+
+fn app_bytes(app: AppId, len: usize) -> &'static [u8] {
+    match app {
+        AppId::Main => unsafe { &MAIN_APP_BYTES[..len] },
+        AppId::TimerBackground => unsafe { &TIMER_BACKGROUND_BYTES[..len] },
+        AppId::ReaderClock => unsafe { &READER_CLOCK_BYTES[..len] },
+        AppId::BreakReminder => unsafe { &BREAK_REMINDER_BYTES[..len] },
+        AppId::Legacy => unsafe { &APP_BYTES[..len] },
+    }
+}
+
+fn run_app_event(
+    app: AppId,
+    event: &str,
+    len: usize,
+    trace: &mut RuntimeSink<'_>,
+) -> Result<(), VmError> {
+    let program = Program::parse(app_bytes(app, len))?;
+    let previous = trace.current_app;
+    trace.current_app = app;
+    let mut vm = Vm::new(program);
+    let result = vm.dispatch(event, trace);
+    if vm.exited() {
+        trace.exited = true;
+    }
+    trace.current_app = previous;
+    result
+}
+
+fn app_len_for(
+    app: AppId,
+    main_app_len: usize,
+    timer_background_len: usize,
+    reader_clock_len: usize,
+    break_reminder_len: usize,
+) -> usize {
+    app.install_len(
+        main_app_len,
+        timer_background_len,
+        reader_clock_len,
+        break_reminder_len,
+    )
+}
+
+fn process_pending_actions(
+    trace: &mut RuntimeSink<'_>,
+    timer_background_len: usize,
+    main_app_len: usize,
+    reader_clock_len: usize,
+    break_reminder_len: usize,
+    last_error: &mut Option<VmError>,
+) {
+    while let Some(app) = trace.pending_arm.take() {
+        let len = app_len_for(
+            app,
+            main_app_len,
+            timer_background_len,
+            reader_clock_len,
+            break_reminder_len,
+        );
+        if len == 0 {
+            *last_error = Some(VmError::InvalidOperand);
+            return;
+        }
+        trace.registration_mode = true;
+        let result = run_app_event(app, "app.arm", len, trace);
+        trace.registration_mode = false;
+        if let Err(error) = result {
+            *last_error = Some(error);
+            return;
+        }
+    }
+    while let Some(app) = trace.pending_launch.take() {
+        let len = app_len_for(
+            app,
+            main_app_len,
+            timer_background_len,
+            reader_clock_len,
+            break_reminder_len,
+        );
+        if len == 0 {
+            *last_error = Some(VmError::InvalidOperand);
+            return;
+        }
+        trace.push_app(app);
+        if let Err(error) = run_app_event(app, "app.start", len, trace) {
+            *last_error = Some(error);
+            return;
+        }
+        if trace.exited {
+            trace.pop_app();
+            trace.exited = false;
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct LogLine {
+    bytes: [u8; LOG_LINE_CAP],
+    len: usize,
+}
+
+impl LogLine {
+    const fn new() -> Self {
+        Self {
+            bytes: [0; LOG_LINE_CAP],
+            len: 0,
+        }
+    }
+
+    fn as_str(&self) -> &str {
+        core::str::from_utf8(&self.bytes[..self.len]).unwrap_or("<bad-log>")
+    }
+}
+
+impl Write for LogLine {
+    fn write_str(&mut self, input: &str) -> fmt::Result {
+        let remaining = self.bytes.len().saturating_sub(self.len);
+        let bytes = input.as_bytes();
+        let copy_len = remaining.min(bytes.len());
+        self.bytes[self.len..self.len + copy_len].copy_from_slice(&bytes[..copy_len]);
+        self.len += copy_len;
+        Ok(())
+    }
+}
+
+fn write_value(
+    out: &mut impl Write,
+    program: &Program<'_>,
+    value: Value,
+) -> Result<(), fmt::Error> {
+    match value {
+        Value::Null => write!(out, "null"),
+        Value::Bool(value) => write!(out, "{value}"),
+        Value::I32(value) => write!(out, "{value}"),
+        Value::String(id) => write!(out, "\"{}\"", program.string(id).unwrap_or("<bad-string>")),
+    }
 }
 
 fn stable_trace(message: &str) -> &'static str {
     match message {
-        "onStart" => "onStart",
-        "onKey.SELECT" => "onKey.SELECT",
-        "onKey.BACK" => "onKey.BACK",
         "state.load" => "state.load",
         "state.save" => "state.save",
         "app.exit" => "app.exit",
+        "app.start" => "app.start",
+        "app.arm" => "app.arm",
+        "key.SELECT" => "key.SELECT",
+        "key.BACK" => "key.BACK",
+        "timer.clock" => "timer.clock",
+        "timer.break" => "timer.break",
+        "timer.debug" => "timer.debug",
+        "app.launch" => "app.launch",
         _ => "unknown",
     }
 }
@@ -345,7 +1097,7 @@ fn pulse(led: &mut Output<'_>, delay: &Delay, duty_percent: u32) {
     }
 }
 
-impl fmt::Debug for TraceLog {
+impl fmt::Debug for RuntimeSink<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list()
             .entries(self.entries.iter().take(self.len))

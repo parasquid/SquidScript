@@ -9,7 +9,7 @@ describe("executable loaders", () => {
 
     expect(program.id).toBe("hello-menu");
     expect(program.functions.has("drawMenuRow")).toBe(true);
-    expect(program.handlers.get("onKey.DOWN")?.[0]).toMatchObject({ op: "if" });
+    expect(program.handlers.get("key.DOWN")?.[0]).toMatchObject({ op: "if" });
     expect(program.screens.get("menu")?.statements.some((statement) => statement.op === "call" && statement.name === "drawMenuRow")).toBe(true);
   });
 
@@ -18,7 +18,7 @@ describe("executable loaders", () => {
     const program = new SqbcLoader().load(encodeSqbcForTest(ir));
 
     expect(program.id).toBe("hello-menu");
-    expect(program.handlers.get("onKey.SELECT")?.[0]).toMatchObject({ op: "if" });
+    expect(program.handlers.get("key.SELECT")?.[0]).toMatchObject({ op: "if" });
     expect(program.screens.has("hello")).toBe(true);
     expect(program.screens.has("about")).toBe(true);
   });

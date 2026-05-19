@@ -45,7 +45,7 @@ Rules:
 3. Integrated production devices should use one target file with named sections.
 4. Split board/display/input/storage/power/runtime profiles are optional advanced composition, mainly for reusable development-board combinations.
 5. GPIOs, buses, onboard devices, and logical capabilities must be described in the target file.
-6. SquidScript apps must see logical capabilities such as `onKey("UP")` and `display.draw(...)`, not raw GPIOs.
+6. SquidScript apps must see logical capabilities such as `event.on("key.UP")` and `display.draw(...)`, not raw GPIOs.
 7. Placeholder, guessed, or unverified hardware values must be explicitly marked as such.
 
 ---

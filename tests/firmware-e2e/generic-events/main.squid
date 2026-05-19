@@ -1,0 +1,9 @@
+app "main"
+
+event.on("app.start") {
+  debug.print("main start")
+  app.arm("break-reminder")
+  app.start("reader-clock")
+}
+
+screen("main") {}

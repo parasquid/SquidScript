@@ -18,11 +18,11 @@ describe("fallback compiler", () => {
       ]
     });
     expect(result.ir?.functions.map((fn) => fn.name)).toEqual(["drawMenuRow"]);
-    expect(result.ir?.handlers.find((handler) => handler.event === "onKey.DOWN")?.statements[0]).toMatchObject({
+    expect(result.ir?.handlers.find((handler) => handler.event === "key.DOWN")?.statements[0]).toMatchObject({
       op: "if",
       condition: { op: "binary", left: { op: "state", name: "view" }, operator: "==", right: { op: "literal", value: "menu" } }
     });
-    expect(result.ir?.handlers.find((handler) => handler.event === "onKey.BACK")?.statements[0]).toMatchObject({
+    expect(result.ir?.handlers.find((handler) => handler.event === "key.BACK")?.statements[0]).toMatchObject({
       op: "if",
       condition: { op: "binary", left: { op: "state", name: "view" }, operator: "!=", right: { op: "literal", value: "menu" } }
     });

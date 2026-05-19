@@ -1,0 +1,31 @@
+app "blinky-supermini"
+
+state {
+  led: false
+}
+
+event.on("app.start") {
+  hardware.gpio.write("status_led", led)
+  event.addSource("timer.debug", { every: 500 })
+  debug.print("blinky ready", led)
+}
+
+event.on("timer.debug") {
+  hardware.gpio.toggle("status_led")
+  led = hardware.gpio.read("status_led")
+  debug.print("blink", led)
+}
+
+event.on("key.SELECT") {
+  hardware.gpio.toggle("status_led")
+  led = hardware.gpio.read("status_led")
+  debug.print("led", led)
+}
+
+event.on("key.BACK") {
+  led = false
+  hardware.gpio.write("status_led", led)
+  app.exit()
+}
+
+screen("main") {}

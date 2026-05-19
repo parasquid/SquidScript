@@ -89,6 +89,25 @@ def install_sqbc(
     _wait_for(serial, b"OK install", output, timeout, InstallError)
 
 
+def install_app_sqbc(
+    serial,
+    app_id,
+    data,
+    *,
+    chunk_size=DEFAULT_CHUNK_SIZE,
+    output=sys.stdout.buffer,
+    timeout=DEFAULT_TIMEOUT,
+):
+    hash_value = compute_fnv1a(data)
+    _drain(serial, output)
+    serial.write_all(f"INSTALL.APP {app_id} {len(data)} {hash_value:08x}\n".encode("ascii"))
+    _wait_for(serial, b"READY install.app", output, timeout, InstallError)
+    for offset in range(0, len(data), chunk_size):
+        serial.write_all(data[offset : offset + chunk_size])
+        time.sleep(0.002)
+    _wait_for(serial, b"OK install.app", output, timeout, InstallError)
+
+
 def smoke_sequence(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
     _send_line(serial, "run", output, b"OK run", timeout)
     state = _state(serial, output, timeout)
@@ -106,15 +125,55 @@ def smoke_sequence(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT)
     serial.write_all(b"trace\n")
     trace = _read_until_quiet(serial, output, timeout)
     for expected in (
-        b"trace=onStart",
+        b"trace=app.start",
         b"trace=state.load",
         b"trace=state.save",
-        b"trace=onKey.SELECT",
-        b"trace=onKey.BACK",
+        b"trace=key.SELECT",
+        b"trace=key.BACK",
         b"trace=app.exit",
     ):
         if expected not in trace:
             raise SmokeError(f"missing trace entry: {expected.decode('ascii')}")
+
+
+def send_line(serial, line, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
+    serial.write_all(f"{line}\n".encode("ascii"))
+    return _read_until_quiet(serial, output, timeout)
+
+
+def load_app(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
+    _send_line(serial, "LOAD", output, b"OK LOAD", timeout)
+
+
+def run_event(serial, event, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
+    _send_line(serial, f"RUN {event}", output, b"OK run", timeout)
+
+
+def run_app(serial, app_id, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
+    _send_line(serial, f"RUN.APP {app_id}", output, b"OK RUN.APP", timeout)
+
+
+def get_state(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
+    serial.write_all(b"STATE.GET\n")
+    return _wait_block(serial, b"BEGIN STATE", b"END STATE", output, timeout, SmokeError)
+
+
+def get_output(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
+    serial.write_all(b"OUTPUT.GET\n")
+    return _wait_block(serial, b"BEGIN OUTPUT", b"END OUTPUT", output, timeout, SmokeError)
+
+
+def get_drawlog(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
+    serial.write_all(b"DRAWLOG.GET\n")
+    return _wait_block(serial, b"BEGIN DRAWLOG", b"END DRAWLOG", output, timeout, SmokeError)
+
+
+def import_state(serial, state_bytes, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
+    hash_value = compute_fnv1a(state_bytes)
+    serial.write_all(f"STATE.IMPORT {len(state_bytes)} {hash_value:08x}\n".encode("ascii"))
+    _wait_for(serial, b"READY STATE.IMPORT", output, timeout, SmokeError)
+    serial.write_all(state_bytes)
+    _wait_for(serial, b"OK STATE.IMPORT", output, timeout, SmokeError)
 
 
 def parse_state(data):
@@ -126,6 +185,20 @@ def parse_state(data):
         if name in {"started", "count", "exited"}:
             values[name] = value
     return values
+
+
+def state_payload(data):
+    lines = []
+    for raw_line in data.decode("utf-8", "replace").splitlines():
+        if raw_line.startswith("BEGIN ") or raw_line.startswith("END ") or raw_line.startswith("OK "):
+            continue
+        if raw_line.startswith("exited="):
+            continue
+        if "=" in raw_line:
+            lines.append(raw_line)
+    if not lines:
+        return b""
+    return ("\n".join(lines) + "\n").encode("utf-8")
 
 
 def _state(serial, output, timeout):
@@ -189,6 +262,22 @@ def _wait_for_state(serial, output, timeout):
     raise SmokeError("timed out waiting for complete state")
 
 
+def _wait_block(serial, begin, end, output, timeout, error_type):
+    deadline = time.monotonic() + timeout
+    response = b""
+    while time.monotonic() < deadline:
+        chunk = serial.read_available(0.1)
+        if chunk:
+            output.write(chunk)
+            output.flush()
+            response += chunk
+            if begin in response and end in response and _line_complete(response, end):
+                return response
+            if b"ERR " in response:
+                raise error_type(response.decode("utf-8", "replace").strip())
+    raise error_type(f"timed out waiting for block {begin.decode('ascii')}")
+
+
 def _line_complete(response, token):
     start = response.find(token)
     if start < 0:
@@ -222,15 +311,60 @@ def main(argv=None):
     install = subcommands.add_parser("install", help="install SQBC bytes into RAM")
     install.add_argument("sqbc")
 
+    install_app = subcommands.add_parser("install-app", help="install named SQBC app bytes")
+    install_app.add_argument("app_id")
+    install_app.add_argument("sqbc")
+
     subcommands.add_parser("smoke", help="run the headless counter smoke sequence")
+    subcommands.add_parser("load", help="load installed SQBC without running an event")
+
+    run = subcommands.add_parser("run", help="run an event")
+    run.add_argument("event", nargs="?", default="app.start")
+
+    run_app_parser = subcommands.add_parser("run-app", help="run a named installed app")
+    run_app_parser.add_argument("app_id")
+
+    send = subcommands.add_parser("send", help="send a raw line and print the response")
+    send.add_argument("line")
+
+    key = subcommands.add_parser("key", help="send a logical key")
+    key.add_argument("key")
+
+    subcommands.add_parser("state", help="print structured state")
+    state_import = subcommands.add_parser("state-import", help="import state payload bytes")
+    state_import.add_argument("state_file")
+    subcommands.add_parser("output", help="print debug console output")
+    subcommands.add_parser("drawlog", help="print draw log")
 
     args = parser.parse_args(argv)
     with SerialPort(args.port) as serial:
         if args.command == "install":
             with open(args.sqbc, "rb") as handle:
                 install_sqbc(serial, handle.read(), timeout=args.timeout)
+        elif args.command == "install-app":
+            with open(args.sqbc, "rb") as handle:
+                install_app_sqbc(serial, args.app_id, handle.read(), timeout=args.timeout)
         elif args.command == "smoke":
             smoke_sequence(serial, timeout=args.timeout)
+        elif args.command == "load":
+            load_app(serial, timeout=args.timeout)
+        elif args.command == "run":
+            run_event(serial, args.event, timeout=args.timeout)
+        elif args.command == "run-app":
+            run_app(serial, args.app_id, timeout=args.timeout)
+        elif args.command == "send":
+            send_line(serial, args.line, timeout=args.timeout)
+        elif args.command == "key":
+            _send_line(serial, f"KEY {args.key}", sys.stdout.buffer, b"OK key", args.timeout)
+        elif args.command == "state":
+            get_state(serial, timeout=args.timeout)
+        elif args.command == "state-import":
+            with open(args.state_file, "rb") as handle:
+                import_state(serial, handle.read(), timeout=args.timeout)
+        elif args.command == "output":
+            get_output(serial, timeout=args.timeout)
+        elif args.command == "drawlog":
+            get_drawlog(serial, timeout=args.timeout)
     return 0
 
 

@@ -1,0 +1,21 @@
+:reset
+
+state {
+  count: 0
+}
+
+debug.print("start", count)
+count = count + 1
+debug.print("after", count)
+:state
+:output
+:expect-state count=1
+:expect-output output="start" 0
+:expect-output output="after" 1
+
+count = count + 1
+debug.print("again", count)
+:state
+:output
+:expect-state count=2
+:expect-output output="again" 2

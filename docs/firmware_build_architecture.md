@@ -350,7 +350,7 @@ Example:
 }
 ```
 
-The browser simulator should use `kind: "button"` elements to generate pointer/touch hit targets for `onKey(...)` events. The simulator must still use the target's `input` section as the source of which logical keys exist.
+The browser simulator should use `kind: "button"` elements to generate pointer/touch hit targets for `event.on("key.*")` events. The simulator must still use the target's `input` section as the source of which logical keys exist.
 
 ---
 

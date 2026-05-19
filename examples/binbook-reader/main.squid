@@ -17,20 +17,20 @@ state {
   uiState: "browser"
 }
 
-onStart() {
+event.on("app.start") {
   state.load()
   openBrowser()
 }
 
-onResume() {
+event.on("app.resume") {
   screen.refresh()
 }
 
-onSuspend() {
+event.on("app.suspend") {
   state.save()
 }
 
-onKey("RIGHT") {
+event.on("key.RIGHT") {
   if (stateMachine.is("uiState", "reader")) {
     nextPage()
   } else {
@@ -40,7 +40,7 @@ onKey("RIGHT") {
   }
 }
 
-onKey("LEFT") {
+event.on("key.LEFT") {
   if (stateMachine.is("uiState", "reader")) {
     previousPage()
   } else {
@@ -50,19 +50,19 @@ onKey("LEFT") {
   }
 }
 
-onKey("UP") {
+event.on("key.UP") {
   handleUp()
 }
 
-onKey("DOWN") {
+event.on("key.DOWN") {
   handleDown()
 }
 
-onKey("SELECT") {
+event.on("key.SELECT") {
   handleSelect()
 }
 
-onKey("POWER") {
+event.on("key.POWER") {
   if (stateMachine.is("uiState", "reader")) {
     openToc()
   } else {
@@ -70,7 +70,7 @@ onKey("POWER") {
   }
 }
 
-onKey("BACK") {
+event.on("key.BACK") {
   if (stateMachine.is("uiState", "reader")) {
     openBrowser()
   } else {

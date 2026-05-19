@@ -71,7 +71,7 @@ Examples:
 - `function`
 - `state`
 - `screen`
-- `onKey`
+- `event.on`
 
 A feature belongs in the core language only when it changes how all SquidScript programs are parsed, checked, represented, or executed.
 

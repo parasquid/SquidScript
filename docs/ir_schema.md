@@ -39,7 +39,7 @@ Consumers must reject unknown `format` values and unsupported versions.
   "functions": [],
   "handlers": [
     {
-      "event": "onKey.DOWN",
+      "event": "key.DOWN",
       "statements": [
         {
           "op": "if",
@@ -94,16 +94,16 @@ Consumers must reject unknown `format` values and unsupported versions.
 
 ## v1 Event Names
 
-- `onStart`
-- `onResume`
-- `onSuspend`
-- `onKey.UP`
-- `onKey.DOWN`
-- `onKey.LEFT`
-- `onKey.RIGHT`
-- `onKey.SELECT`
-- `onKey.BACK`
-- `onKey.POWER`
+- `app.start`
+- `app.resume`
+- `app.suspend`
+- `key.UP`
+- `key.DOWN`
+- `key.LEFT`
+- `key.RIGHT`
+- `key.SELECT`
+- `key.BACK`
+- `key.POWER`
 
 ## v1 Statements
 

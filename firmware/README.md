@@ -11,10 +11,10 @@ Current status:
 
 - `squid-firmware` builds a Super Mini reference firmware image with a serial
   shell for installing and running SQBC v2 bytes from RAM.
-- The shared host-testable VM loads real SQBC v2 bytecode, dispatches `onStart`
-  and `onKey.*` handlers, mutates in-RAM state, traces `state.load`,
-  `state.save`, and `app.exit`, and rejects the browser-only SQBC v1 IR
-  container.
+- The shared host-testable VM loads real SQBC v2 bytecode, dispatches generic
+  `event.on("...")` handlers, mutates in-RAM state, traces `state.load`,
+  `state.save`, and `app.exit`, dispatches `hardware.gpio.*` to the Super Mini
+  status LED, and rejects the browser-only SQBC v1 IR container.
 - `squid-firmware` still builds the earlier XTEINK X4 hello-world display
   bring-up image, but X4 display behavior is not part of the reference VM
   milestone.
@@ -45,6 +45,59 @@ and `BACK`, then verifies state and trace output.
 isn't set` during flashing on some host configurations. The project scripts do
 not suppress this warning; it is harmless when flashing continues and the smoke
 test reaches `OK smoke esp32c3-super-mini reference firmware`.
+
+The normal compile/upload/run path uses `squidc run`. If `--port` is omitted,
+`squidc` probes visible serial ports with `HELLO` and uses the single
+SquidScript firmware target it finds:
+
+```sh
+cargo run -p squidc -- run examples/blinky-supermini/main.squid
+cargo run -p squidc -- key SELECT
+cargo run -p squidc -- output
+```
+
+Named multi-app flows use `install` and `start`:
+
+```sh
+cargo run -p squidc -- install tests/firmware-e2e/generic-events/break-reminder.squid
+cargo run -p squidc -- install tests/firmware-e2e/generic-events/reader-clock.squid
+cargo run -p squidc -- install tests/firmware-e2e/generic-events/main.squid
+cargo run -p squidc -- start main
+```
+
+V4 snippet/session checks still use `squidc repl` script mode:
+
+```sh
+cargo run -p squidc -- repl --port /dev/ttyACM0 --script tests/repl/default-dev.session
+cargo run -p squidc -- repl --port /dev/ttyACM0 --script tests/repl/release-strips-debug.session
+cargo run -p squidc -- repl --port /dev/ttyACM0 --script tests/repl/render-drawlog.session
+cargo run -p squidc -- repl --port /dev/ttyACM0 --script tests/repl/hardware-gpio-status-led.session
+scripts/c3-supermini-timer-background-smoke.sh
+scripts/c3-supermini-generic-events-e2e.sh
+```
+
+The default `run`/`install`/`repl` profile is `dev`; the default firmware
+profile for the Super Mini reference target is also `dev`. Confirm the physical
+onboard LED toggles when testing blinky with `key SELECT`. See
+`docs/developer_repl_protocol.md` for the serial protocol. `--target` is
+optional and should be paired with
+`--check-target` only when you explicitly want host-side compatibility checks
+against a target definition.
+
+The timer/background smoke script uploads two SQBC apps, runs the foreground
+`main` app, lets the firmware timer fire, then verifies `OUTPUT.GET` contains
+`main start`, `background register`, and `background timer`.
+
+The generic-events E2E script is the canonical SQBC firmware regression path
+for the app-stack work. It installs `main`, `reader-clock`, and
+`break-reminder`, verifies `app.start`, `app.arm`, `event.addSource`, session timer,
+armed timer, and key exit behavior over USB serial.
+
+The current Super Mini app store is a temporary RAM-only development harness.
+It has fixed named slots for `main`, `timer-background`, `reader-clock`, and
+`break-reminder` so the app lifecycle can be tested before a persistent app
+registry exists. Do not treat those fixed names as language or compiler
+semantics.
 
 If `espflash` can list `/dev/ttyACM0` but cannot open it, grant the current
 login temporary access to the serial node:

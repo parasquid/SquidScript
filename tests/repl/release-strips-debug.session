@@ -1,0 +1,12 @@
+:reset
+
+state {
+  count: 0
+}
+
+:profile release
+debug.print("hidden", count)
+count = count + 1
+:state
+:output
+:expect-state count=1

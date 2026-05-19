@@ -4,27 +4,27 @@ state {
   selected: 0
 }
 
-onStart() {
+event.on("app.start") {
   screen.open("main")
 }
 
-onKey("DOWN") {
+event.on("key.DOWN") {
   selected = selected + 1
   state.save()
   screen.refresh()
 }
 
-onKey("UP") {
+event.on("key.UP") {
   selected = selected - 1
   state.save()
   screen.refresh()
 }
 
-onKey("SELECT") {
+event.on("key.SELECT") {
   screen.open("detail")
 }
 
-onKey("BACK") {
+event.on("key.BACK") {
   app.exit()
 }
 

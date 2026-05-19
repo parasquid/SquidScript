@@ -7,13 +7,13 @@ state {
   view: "menu"
 }
 
-onStart() {
+event.on("app.start") {
   state.load()
   view = "menu"
   screen.open("menu")
 }
 
-onKey("DOWN") {
+event.on("key.DOWN") {
   if (view == "menu") {
     if (selected < 2) {
       selected = selected + 1
@@ -23,7 +23,7 @@ onKey("DOWN") {
   }
 }
 
-onKey("UP") {
+event.on("key.UP") {
   if (view == "menu") {
     if (selected > 0) {
       selected = selected - 1
@@ -33,7 +33,7 @@ onKey("UP") {
   }
 }
 
-onKey("SELECT") {
+event.on("key.SELECT") {
   if (selected == 0) {
     view = "hello"
     screen.open("hello")
@@ -47,7 +47,7 @@ onKey("SELECT") {
   }
 }
 
-onKey("BACK") {
+event.on("key.BACK") {
   if (view != "menu") {
     view = "menu"
     state.save()
@@ -188,11 +188,11 @@ export function compileFallback(source: string, targetId: string): CompileRespon
         state: [{ name: "selected", value: Number(stateSelected?.[1] ?? 0) }],
         functions: [],
         handlers: [
-          { event: "onStart", statements: [{ op: "state.load" }, { op: "screen.open", screen: "menu" }] },
-          { event: "onKey.DOWN", statements: [{ op: "assign", name: "selected", expr: { op: "binary", left: { op: "state", name: "selected" }, operator: "+", right: { op: "literal", value: 1 } } }, { op: "state.save" }, { op: "screen.refresh" }] },
-          { event: "onKey.UP", statements: [{ op: "assign", name: "selected", expr: { op: "binary", left: { op: "state", name: "selected" }, operator: "-", right: { op: "literal", value: 1 } } }, { op: "state.save" }, { op: "screen.refresh" }] },
-          { event: "onKey.SELECT", statements: [{ op: "screen.open", screen: "hello" }] },
-          { event: "onKey.BACK", statements: [{ op: "app.exit" }] }
+          { event: "app.start", statements: [{ op: "state.load" }, { op: "screen.open", screen: "menu" }] },
+          { event: "key.DOWN", statements: [{ op: "assign", name: "selected", expr: { op: "binary", left: { op: "state", name: "selected" }, operator: "+", right: { op: "literal", value: 1 } } }, { op: "state.save" }, { op: "screen.refresh" }] },
+          { event: "key.UP", statements: [{ op: "assign", name: "selected", expr: { op: "binary", left: { op: "state", name: "selected" }, operator: "-", right: { op: "literal", value: 1 } } }, { op: "state.save" }, { op: "screen.refresh" }] },
+          { event: "key.SELECT", statements: [{ op: "screen.open", screen: "hello" }] },
+          { event: "key.BACK", statements: [{ op: "app.exit" }] }
         ],
         screens: screens.map((screen) => ({
           name: screen[1],
@@ -279,9 +279,9 @@ function helloMenuIr(targetId: string): IrProgram {
     state: [{ name: "selected", value: 0 }, { name: "view", value: "menu" }],
     functions: [{ name: "drawMenuRow", params: ["index", "label", "y"], statements: [drawRow] }],
     handlers: [
-      { event: "onStart", statements: [{ op: "state.load" }, { op: "assign", name: "view", expr: lit("menu") }, { op: "screen.open", screen: "menu" }] },
+      { event: "app.start", statements: [{ op: "state.load" }, { op: "assign", name: "view", expr: lit("menu") }, { op: "screen.open", screen: "menu" }] },
       {
-        event: "onKey.DOWN",
+        event: "key.DOWN",
         statements: [{
           op: "if",
           condition: bin(state("view"), "==", lit("menu")),
@@ -295,7 +295,7 @@ function helloMenuIr(targetId: string): IrProgram {
         }]
       },
       {
-        event: "onKey.UP",
+        event: "key.UP",
         statements: [{
           op: "if",
           condition: bin(state("view"), "==", lit("menu")),
@@ -309,7 +309,7 @@ function helloMenuIr(targetId: string): IrProgram {
         }]
       },
       {
-        event: "onKey.SELECT",
+        event: "key.SELECT",
         statements: [{
           op: "if",
           condition: bin(state("selected"), "==", lit(0)),
@@ -323,7 +323,7 @@ function helloMenuIr(targetId: string): IrProgram {
         }]
       },
       {
-        event: "onKey.BACK",
+        event: "key.BACK",
         statements: [{
           op: "if",
           condition: bin(state("view"), "!=", lit("menu")),

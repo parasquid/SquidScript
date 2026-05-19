@@ -4,8 +4,10 @@ import unittest
 from c3_supermini_serial import (
     InstallError,
     compute_fnv1a,
+    install_app_sqbc,
     install_sqbc,
     parse_state,
+    run_app,
     smoke_sequence,
 )
 
@@ -54,6 +56,30 @@ class C3SuperMiniSerialTests(unittest.TestCase):
         with self.assertRaisesRegex(InstallError, "ERR install"):
             install_sqbc(serial, b"hello", output=io.BytesIO(), timeout=0.01)
 
+    def test_install_app_sqbc_sends_named_command(self):
+        serial = FakeSerial(
+            [b"READY install.app app=main len=5\r\n", b"OK install.app app=main hash=4f9f2cab\r\n"]
+        )
+        output = io.BytesIO()
+
+        install_app_sqbc(serial, "main", b"hello", chunk_size=3, output=output)
+
+        self.assertEqual(
+            serial.writes,
+            [
+                b"INSTALL.APP main 5 4f9f2cab\n",
+                b"hel",
+                b"lo",
+            ],
+        )
+
+    def test_run_app_sends_named_run_command(self):
+        serial = FakeSerial([b"OK RUN.APP main\r\n"])
+
+        run_app(serial, "main", output=io.BytesIO(), timeout=0.01)
+
+        self.assertEqual(serial.writes, [b"RUN.APP main\n"])
+
     def test_parse_state_extracts_values(self):
         state = parse_state(b"started=1\r\ncount=2\r\nexited=true\r\n")
 
@@ -69,10 +95,10 @@ class C3SuperMiniSerialTests(unittest.TestCase):
                 b"started=1\r\ncount=2\r\nexited=false\r\n",
                 b"OK key BACK\r\n",
                 b"started=1\r\ncount=2\r\nexited=true\r\n",
-                b"trace=onStart\r\ntrace=state.load\r\ntrace=state.save\r\n"
-                b"trace=onKey.SELECT\r\ntrace=state.save\r\n"
-                b"trace=onKey.SELECT\r\ntrace=state.save\r\n"
-                b"trace=onKey.BACK\r\ntrace=app.exit\r\n",
+                b"trace=app.start\r\ntrace=state.load\r\ntrace=state.save\r\n"
+                b"trace=key.SELECT\r\ntrace=state.save\r\n"
+                b"trace=key.SELECT\r\ntrace=state.save\r\n"
+                b"trace=key.BACK\r\ntrace=app.exit\r\n",
             ]
         )
 

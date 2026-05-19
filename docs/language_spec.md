@@ -316,6 +316,14 @@ Example:
 
 Device targeting should be rare. Capability targeting through `requires` is the default.
 
+`.squid` source may include an optional app-level target for compatibility
+metadata, but portable SquidScript compilation does not require a board target.
+Apps should compile against the language/runtime API. Hardware names and device
+aliases are resolved by the firmware/runtime on the device. If an app uses a
+capability or alias the current device does not provide, execution must fail
+with a device/runtime error rather than requiring the host compiler to know the
+board in the normal upload path.
+
 Production firmware is required to support:
 - entry.type = "bytecode"
 
@@ -369,11 +377,7 @@ A source file contains top-level declarations.
 Allowed top-level declarations:
 - include "path"
 - state { ... }
-- onStart() { ... }
-- onResume() { ... }
-- onSuspend() { ... }
-- onKey("KEY") { ... }
-- onTimer("name") { ... }
+- event.on("event.name") { ... }
 - screen("name") { ... }
 - function name(...) { ... }
 
@@ -389,7 +393,7 @@ screen.refresh()
 Valid:
 
 ```squid
-onKey("RIGHT") {
+event.on("key.RIGHT") {
   count = count + 1
   screen.refresh()
 }
@@ -686,7 +690,7 @@ State variables are persisted by state.save() and restored by state.load().
 Example:
 
 ```squid
-onStart() {
+event.on("app.start") {
   state.load()
   screen.open("main")
 }
@@ -984,6 +988,7 @@ v0.2 uses these built-in namespaces:
 - `app.*` for app-level actions such as exit and firmware dialogs
 - `screen.*` for current-screen navigation and refresh
 - `display.*` for drawing commands, logical display coordinates, and display-ready resources
+- `hardware.*` for target-defined hardware capabilities such as GPIO
 - `input.*` for firmware-owned text entry dialogs
 - `state.*` for firmware-managed persistent state
 - `stateMachine.*` for generic app state/mode helpers backed by persistent state variables
@@ -1149,38 +1154,38 @@ squidvm must reject excessive call depth at runtime.
 Supported lifecycle handlers:
 
 ```squid
-onStart()
-onResume()
-onSuspend()
+event.on("app.start")
+event.on("app.resume")
+event.on("app.suspend")
 ```
 
-onStart runs when the app is launched.
+event.on("app.start") runs when the app is launched.
 
 Example:
 
 ```squid
-onStart() {
+event.on("app.start") {
   state.load()
   screen.open("main")
 }
 ```
 
-onResume runs when returning to an already active app.
+event.on("app.resume") runs when returning to an already active app.
 
 Example:
 
 ```squid
-onResume() {
+event.on("app.resume") {
   screen.refresh()
 }
 ```
 
-onSuspend runs before the app is suspended or exited.
+event.on("app.suspend") runs before the app is suspended or exited.
 
 Example:
 
 ```squid
-onSuspend() {
+event.on("app.suspend") {
   state.save()
 }
 ```
@@ -1194,21 +1199,21 @@ Lifecycle handlers are optional.
 Supported key handlers:
 
 ```squid
-onKey("UP") {}
-onKey("DOWN") {}
-onKey("LEFT") {}
-onKey("RIGHT") {}
-onKey("SELECT") {}
-onKey("BACK") {}
-onKey("MENU") {}
-onKey("HOME") {}
-onKey("POWER") {}
+event.on("key.UP") {}
+event.on("key.DOWN") {}
+event.on("key.LEFT") {}
+event.on("key.RIGHT") {}
+event.on("key.SELECT") {}
+event.on("key.BACK") {}
+event.on("key.MENU") {}
+event.on("key.HOME") {}
+event.on("key.POWER") {}
 ```
 
 Example:
 
 ```squid
-onKey("RIGHT") {
+event.on("key.RIGHT") {
   count = count + 1
   state.save()
   screen.refresh()
@@ -1229,7 +1234,7 @@ onLongKey("POWER") {
 
 Long-press handling is target- and firmware-policy-aware. Firmware may reserve some long-press actions for system behavior, such as putting the device to sleep, forcing a refresh, or entering recovery. When an app defines `onLongKey("POWER")`, firmware should dispatch it only if target policy allows app-visible long-press handling for that key. Otherwise the system action wins.
 
-Short key events and long key events should be distinct. A long press should not also deliver `onKey(...)` unless the target explicitly opts into that behavior.
+Short key events and long key events should be distinct. A long press should not also deliver `event.on("key.*")` unless the target explicitly opts into that behavior.
 
 Long-press events are threshold-triggered. If a key is held past the target's long-press duration, firmware should fire the long-press event or system action immediately at that threshold. It should not wait for button release. For example, if long `POWER` sleeps after 2000 ms, the device should enter sleep once the button has been held for 2000 ms even if the user is still holding the button.
 
@@ -1322,7 +1327,7 @@ The current screen is selected by screen.open("screenName").
 Example:
 
 ```squid
-onStart() {
+event.on("app.start") {
   screen.open("main")
 }
 ```
@@ -1348,6 +1353,8 @@ Disallowed in screen blocks:
 - file writes
 - app exit
 - screen.open(...)
+- hardware.gpio.write(...)
+- hardware.gpio.toggle(...)
 - long loops
 - non-render-safe handle creation
 
@@ -1639,12 +1646,77 @@ screen.refresh()
 
 app.exit()
 
-Exits the app and returns to launcher.
+Exits the current app session. Firmware pops the current session from the app
+stack. If the root `main.sqbc` app exits, firmware restarts it.
 
 Example:
 
 ```squid
 app.exit()
+```
+
+app.start(appId)
+
+Starts an installed app immediately. Firmware pushes a new app session and
+dispatches `event.on("app.start")`.
+
+Example:
+
+```squid
+app.start("binbook-reader")
+```
+
+app.arm(appId)
+
+Arms an installed app for future trigger delivery. Firmware loads the target
+app, dispatches `event.on("app.arm")` in registration mode, records any
+`event.addSource(...)` registrations, and tears the VM down without pushing an active
+session.
+
+Example:
+
+```squid
+app.arm("break-reminder")
+```
+
+app.disarm(appId)
+
+Removes armed trigger registrations for an app.
+
+event.addSource(eventName, options)
+
+Registers an event trigger. Inside `event.on("app.arm")`, registrations can launch the
+armed app later. Inside an active app session, registrations are session-local.
+
+Example:
+
+```squid
+event.addSource("timer.break", { every: 1500000 })
+```
+
+Generic events are canonical:
+
+```squid
+event.on("app.start") {}
+event.on("app.arm") {}
+event.on("key.SELECT") {}
+event.on("key.POWER.doubleTap") {}
+event.on("timer.clock") {}
+event.on("service.pageTurn.forward") {}
+```
+
+Break reminder example:
+
+```squid
+app "break-reminder"
+
+event.on("app.arm") {
+  event.addSource("timer.break", { every: 1500000 })
+}
+
+event.on("timer.break") {
+  screen.open("reminder")
+}
 ```
 
 app.message(title, body)
@@ -1757,7 +1829,7 @@ state.read
 Example:
 
 ```squid
-onStart() {
+event.on("app.start") {
   state.load()
 }
 ```
@@ -1825,7 +1897,7 @@ function openReader() {
   screen.open("reader")
 }
 
-onKey("RIGHT") {
+event.on("key.RIGHT") {
   if (stateMachine.is("uiState", "reader")) {
     nextPage()
   } else {
@@ -3146,12 +3218,12 @@ state {
   selected: 0
 }
 
-onStart() {
+event.on("app.start") {
   state.load()
   screen.open("apps")
 }
 
-onKey("SELECT") {
+event.on("key.SELECT") {
   let apps = launcher.apps()
   let app = launcher.app(apps, selected)
   launcher.launch(app.id)
@@ -3259,6 +3331,56 @@ Some built-ins may be feature-gated without a separate permission when they do n
 ---
 
 ## 38. Bytecode Execution Model
+
+## Developer Builds, REPL, And Debug Console
+
+SquidScript has build profiles. Profiles are compiler and firmware build
+settings, not source-declared privileges.
+
+Initial profiles:
+
+- `dev`: default for v4 reference firmware and `squidc repl`
+- `release`: strips debug output and is intended for smaller, less debuggable
+  app artifacts
+
+Source may contain `debug.print(...)` calls freely:
+
+```squid
+debug.print("count", count)
+```
+
+In `dev`, `debug.print(expr, ...)` evaluates its arguments left-to-right and
+writes one bounded output line to the active debug console. The concrete debug
+transport is firmware-defined; the reference development firmware exposes it
+through the developer REPL protocol.
+
+In `release`, `debug.print(...)` calls are removed along with their argument
+evaluation. Program behavior must not depend on debug argument evaluation.
+
+`hardware.gpio.*` is the initial target hardware namespace for reference
+firmware. GPIO resources are named by firmware/runtime device aliases and may
+also be described by target definitions for compatibility checks, simulator
+configuration, documentation, and autocomplete. The firmware target definition
+decides whether a logical device is active-high or active-low.
+
+```squid
+hardware.gpio.write("indicator.primary", true)
+let led = hardware.gpio.read("indicator.primary")
+hardware.gpio.toggle("pin.raw0")
+```
+
+`hardware.gpio.write(name, value)` writes a boolean logical value.
+`hardware.gpio.toggle(name)` toggles the named GPIO resource.
+`hardware.gpio.read(name)` returns the current hardware output level mapped
+through the resource's target-defined logical polarity. Raw GPIO names return
+the raw pin level. GPIO access is allowed in event handlers and functions, but
+GPIO mutation is not render-pure and is invalid inside screen blocks.
+
+The REPL is developer tooling, not SquidScript syntax. Event snippets are
+wrapped into generated handlers. Render snippets are wrapped into generated
+screen blocks and must obey screen render-purity rules.
+
+The v4 developer protocol is documented in `docs/developer_repl_protocol.md`.
 
 The canonical executable format is .sqbc.
 
@@ -3567,7 +3689,7 @@ Example source-map.json:
   "symbols": [
     {
       "kind": "handler",
-      "name": "onStart",
+      "name": "app.start",
       "source": 0,
       "lineStart": 12,
       "lineEnd": 24,
@@ -3576,7 +3698,7 @@ Example source-map.json:
     },
     {
       "kind": "handler",
-      "name": "onKey.RIGHT",
+      "name": "key.RIGHT",
       "source": 2,
       "lineStart": 10,
       "lineEnd": 18,
@@ -3644,7 +3766,7 @@ Error with source map:
 App: binbook-reader
 Error: binbook.page index out of range
 Event: KEY_RIGHT
-Handler: onKey("RIGHT")
+Handler: event.on("key.RIGHT")
 Function: loadPage()
 Source: screens/reader.squid:38
 ```
@@ -3664,14 +3786,14 @@ Crash log example:
 ```text
 App: binbook-reader
 Error: binbook.page index out of range
-Event: KEY_RIGHT
+Event: key.RIGHT
 
 Bytecode:
-- function: onKey.RIGHT
+- function: key.RIGHT
 - ip: 92
 
 Call stack:
-- onKey.RIGHT @ ip 92
+- key.RIGHT @ ip 92
 - loadPage @ ip 178
 
 Source:
@@ -3751,7 +3873,7 @@ Launch flow:
 5. runtime validates .sqbc
 6. runtime optionally loads and verifies source-map.json
 7. runtime initializes state defaults
-8. runtime runs onStart()
+8. runtime runs event.on("app.start")
 9. runtime renders current screen
 10. runtime waits for input event
 11. runtime runs matching event handler
@@ -4044,13 +4166,13 @@ state {
   view: "menu"
 }
 
-onStart() {
+event.on("app.start") {
   state.load()
   view = "menu"
   screen.open("menu")
 }
 
-onKey("DOWN") {
+event.on("key.DOWN") {
   if (view == "menu") {
     if (selected < 2) {
       selected = selected + 1
@@ -4060,7 +4182,7 @@ onKey("DOWN") {
   }
 }
 
-onKey("UP") {
+event.on("key.UP") {
   if (view == "menu") {
     if (selected > 0) {
       selected = selected - 1
@@ -4070,7 +4192,7 @@ onKey("UP") {
   }
 }
 
-onKey("SELECT") {
+event.on("key.SELECT") {
   if (selected == 0) {
     view = "hello"
     screen.open("hello")
@@ -4084,7 +4206,7 @@ onKey("SELECT") {
   }
 }
 
-onKey("BACK") {
+event.on("key.BACK") {
   if (view != "menu") {
     view = "menu"
     state.save()
@@ -4197,7 +4319,7 @@ screen("about") {
 }
 ```
 
-In this example, `onKey("UP")` and `onKey("DOWN")` update `selected` and call `screen.refresh()`. The runtime reruns `screen("menu")`, so the newly selected row is drawn highlighted and the previously selected row is drawn normally. The app never erases the old highlight directly.
+In this example, `event.on("key.UP")` and `event.on("key.DOWN")` update `selected` and call `screen.refresh()`. The runtime reruns `screen("menu")`, so the newly selected row is drawn highlighted and the previously selected row is drawn normally. The app never erases the old highlight directly.
 
 Build:
 
@@ -4287,8 +4409,7 @@ Compiler:
 
 Source language:
 - state
-- onStart
-- onKey
+- event.on
 - screen
 - function
 - let

@@ -134,6 +134,7 @@
     },
     "indicator.status_led": {
       "type": "gpio-led",
+      "aliases": ["status_led", "status"],
       "gpio": "GPIO8",
       "activeLow": true,
       "status": "typical",

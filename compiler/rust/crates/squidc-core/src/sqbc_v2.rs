@@ -1,4 +1,4 @@
-use crate::{IrExpr, IrProgram, IrStatement};
+use crate::{BuildProfile, IrExpr, IrProgram, IrStatement};
 use std::collections::BTreeMap;
 
 pub const SQBC_V2_MAGIC: &[u8; 4] = b"SQBC";
@@ -9,6 +9,8 @@ const SECTION_STATE: u16 = 2;
 const SECTION_FUNCTIONS: u16 = 3;
 const SECTION_HANDLERS: u16 = 4;
 const SECTION_CODE: u16 = 5;
+const SECTION_SCREENS: u16 = 6;
+const SECTION_APP_META: u16 = 7;
 
 const OP_PUSH_INT: u8 = 1;
 const OP_PUSH_BOOL: u8 = 2;
@@ -37,6 +39,20 @@ const OP_POP: u8 = 60;
 const BUILTIN_STATE_LOAD: u8 = 1;
 const BUILTIN_STATE_SAVE: u8 = 2;
 const BUILTIN_APP_EXIT: u8 = 3;
+const BUILTIN_DEBUG_PRINT: u8 = 4;
+const BUILTIN_SCREEN_OPEN: u8 = 5;
+const BUILTIN_DISPLAY_CLEAR: u8 = 6;
+const BUILTIN_DISPLAY_TEXT: u8 = 7;
+const BUILTIN_DISPLAY_RECT: u8 = 8;
+const BUILTIN_DISPLAY_LINE: u8 = 9;
+const BUILTIN_HARDWARE_GPIO_WRITE: u8 = 10;
+const BUILTIN_HARDWARE_GPIO_TOGGLE: u8 = 11;
+const BUILTIN_HARDWARE_GPIO_READ: u8 = 12;
+const BUILTIN_APP_LAUNCH: u8 = 13;
+const BUILTIN_APP_START: u8 = 15;
+const BUILTIN_APP_ARM: u8 = 16;
+const BUILTIN_APP_DISARM: u8 = 17;
+const BUILTIN_EVENT_ADD_SOURCE: u8 = 18;
 
 const VALUE_NULL: u8 = 0;
 const VALUE_BOOL: u8 = 1;
@@ -108,6 +124,13 @@ struct HandlerMeta {
     len: u32,
 }
 
+#[derive(Clone)]
+struct ScreenMeta {
+    name_id: u16,
+    start: u32,
+    len: u32,
+}
+
 #[derive(Default)]
 struct CompileUnit {
     strings: StringTable,
@@ -115,6 +138,7 @@ struct CompileUnit {
     functions: BTreeMap<String, u16>,
     function_metas: Vec<FunctionMeta>,
     handler_metas: Vec<HandlerMeta>,
+    screen_metas: Vec<ScreenMeta>,
     code: Vec<u8>,
 }
 
@@ -152,6 +176,13 @@ impl FrameCompiler {
 }
 
 pub fn encode_sqbc_v2(ir: &IrProgram) -> Result<Vec<u8>, SqbcV2Error> {
+    encode_sqbc_v2_with_profile(ir, BuildProfile::Dev)
+}
+
+pub fn encode_sqbc_v2_with_profile(
+    ir: &IrProgram,
+    profile: BuildProfile,
+) -> Result<Vec<u8>, SqbcV2Error> {
     let mut unit = CompileUnit::default();
     collect_strings(ir, &mut unit.strings)?;
 
@@ -169,7 +200,7 @@ pub fn encode_sqbc_v2(ir: &IrProgram) -> Result<Vec<u8>, SqbcV2Error> {
         let start =
             u32::try_from(unit.code.len()).map_err(|_| SqbcV2Error::new("code too large"))?;
         let mut frame = FrameCompiler::with_params(&function.params)?;
-        compile_statements(&mut unit, &mut frame, &function.statements)?;
+        compile_statements(&mut unit, &mut frame, &function.statements, profile)?;
         emit(&mut unit.code, OP_PUSH_NULL);
         emit(&mut unit.code, OP_RETURN);
         let end = u32::try_from(unit.code.len()).map_err(|_| SqbcV2Error::new("code too large"))?;
@@ -188,7 +219,7 @@ pub fn encode_sqbc_v2(ir: &IrProgram) -> Result<Vec<u8>, SqbcV2Error> {
         let start =
             u32::try_from(unit.code.len()).map_err(|_| SqbcV2Error::new("code too large"))?;
         let mut frame = FrameCompiler::default();
-        compile_statements(&mut unit, &mut frame, &handler.statements)?;
+        compile_statements(&mut unit, &mut frame, &handler.statements, profile)?;
         emit(&mut unit.code, OP_HALT);
         let end = u32::try_from(unit.code.len()).map_err(|_| SqbcV2Error::new("code too large"))?;
         unit.handler_metas.push(HandlerMeta {
@@ -198,14 +229,64 @@ pub fn encode_sqbc_v2(ir: &IrProgram) -> Result<Vec<u8>, SqbcV2Error> {
         });
     }
 
+    for screen in &ir.screens {
+        let name_id = unit.strings.intern(&screen.name)?;
+        let start =
+            u32::try_from(unit.code.len()).map_err(|_| SqbcV2Error::new("code too large"))?;
+        let mut frame = FrameCompiler::default();
+        compile_statements(&mut unit, &mut frame, &screen.statements, profile)?;
+        emit(&mut unit.code, OP_HALT);
+        let end = u32::try_from(unit.code.len()).map_err(|_| SqbcV2Error::new("code too large"))?;
+        unit.screen_metas.push(ScreenMeta {
+            name_id,
+            start,
+            len: end - start,
+        });
+    }
+
     let sections = vec![
+        (SECTION_APP_META, encode_app_meta(ir, &unit.strings)?),
         (SECTION_STRINGS, unit.strings.encode()?),
         (SECTION_STATE, encode_state_section(ir, &unit.strings)?),
         (SECTION_FUNCTIONS, encode_functions(&unit.function_metas)),
         (SECTION_HANDLERS, encode_handlers(&unit.handler_metas)),
+        (SECTION_SCREENS, encode_screens(&unit.screen_metas)),
         (SECTION_CODE, unit.code),
     ];
     encode_container(sections)
+}
+
+pub fn read_app_id(bytes: &[u8]) -> Result<Option<String>, SqbcV2Error> {
+    if bytes.len() < 16 || &bytes[0..4] != SQBC_V2_MAGIC {
+        return Err(SqbcV2Error::new("invalid SQBC header"));
+    }
+    if read_u16_at(bytes, 4)? != SQBC_V2_VERSION {
+        return Err(SqbcV2Error::new("unsupported SQBC version"));
+    }
+    let header_len = read_u16_at(bytes, 6)? as usize;
+    let file_len = read_u32_at(bytes, 8)? as usize;
+    let section_count = read_u32_at(bytes, 12)? as usize;
+    if file_len != bytes.len() || header_len != 16 + section_count * 12 || header_len > bytes.len()
+    {
+        return Err(SqbcV2Error::new("invalid SQBC header"));
+    }
+    let Some(meta) = section(bytes, section_count, SECTION_APP_META)? else {
+        return Ok(None);
+    };
+    if meta.len() < 2 {
+        return Err(SqbcV2Error::new("invalid app metadata section"));
+    }
+    let app_id_len = read_u16_at(meta, 0)? as usize;
+    let app_id_start = 2usize;
+    let app_id_end = app_id_start
+        .checked_add(app_id_len)
+        .ok_or_else(|| SqbcV2Error::new("invalid app metadata section"))?;
+    if app_id_end > meta.len() {
+        return Err(SqbcV2Error::new("invalid app metadata section"));
+    }
+    let app_id = std::str::from_utf8(&meta[app_id_start..app_id_end])
+        .map_err(|_| SqbcV2Error::new("app id is not utf-8"))?;
+    Ok(Some(app_id.to_string()))
 }
 
 fn collect_strings(ir: &IrProgram, strings: &mut StringTable) -> Result<(), SqbcV2Error> {
@@ -224,6 +305,10 @@ fn collect_strings(ir: &IrProgram, strings: &mut StringTable) -> Result<(), Sqbc
     for handler in &ir.handlers {
         strings.intern(&handler.event)?;
         collect_statement_strings(&handler.statements, strings)?;
+    }
+    for screen in &ir.screens {
+        strings.intern(&screen.name)?;
+        collect_statement_strings(&screen.statements, strings)?;
     }
     Ok(())
 }
@@ -265,16 +350,71 @@ fn collect_statement_strings(
                     collect_expr_strings(arg, strings)?;
                 }
             }
+            IrStatement::DebugPrint { args } => {
+                for arg in args {
+                    collect_expr_strings(arg, strings)?;
+                }
+            }
+            IrStatement::AppLaunch { app } => {
+                strings.intern(app)?;
+            }
+            IrStatement::AppStart { app }
+            | IrStatement::AppArm { app }
+            | IrStatement::AppDisarm { app } => {
+                strings.intern(app)?;
+            }
+            IrStatement::EventAddSource { event, every_ms } => {
+                strings.intern(event)?;
+                if let Some(every_ms) = every_ms {
+                    collect_expr_strings(every_ms, strings)?;
+                }
+            }
+            IrStatement::HardwareGpioWrite { name, value } => {
+                strings.intern(name)?;
+                collect_expr_strings(value, strings)?;
+            }
+            IrStatement::HardwareGpioToggle { name } => {
+                strings.intern(name)?;
+            }
+            IrStatement::DisplayText { text, options } => {
+                collect_expr_strings(text, strings)?;
+                collect_option_strings(options, strings)?;
+            }
+            IrStatement::DisplayClear { color } => {
+                strings.intern(color)?;
+            }
+            IrStatement::DisplayRect { options, .. } | IrStatement::DisplayLine { options, .. } => {
+                collect_option_strings(options, strings)?;
+            }
             IrStatement::StateLoad
             | IrStatement::StateSave
             | IrStatement::ScreenRefresh
             | IrStatement::AppExit
-            | IrStatement::For { .. }
-            | IrStatement::DisplayClear { .. }
-            | IrStatement::DisplayText { .. }
-            | IrStatement::DisplayRect { .. }
-            | IrStatement::DisplayLine { .. } => {}
+            | IrStatement::For { .. } => {}
         }
+    }
+    Ok(())
+}
+
+fn collect_option_strings(
+    value: &serde_json::Value,
+    strings: &mut StringTable,
+) -> Result<(), SqbcV2Error> {
+    match value {
+        serde_json::Value::String(text) => {
+            strings.intern(text)?;
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                collect_option_strings(value, strings)?;
+            }
+        }
+        serde_json::Value::Object(values) => {
+            for value in values.values() {
+                collect_option_strings(value, strings)?;
+            }
+        }
+        _ => {}
     }
     Ok(())
 }
@@ -287,6 +427,7 @@ fn collect_expr_strings(expr: &IrExpr, strings: &mut StringTable) -> Result<(), 
             collect_expr_strings(left, strings)?;
             collect_expr_strings(right, strings)
         }
+        IrExpr::HardwareGpioRead { name } => strings.intern(name).map(|_| ()),
         IrExpr::Call { name, args } => {
             strings.intern(name)?;
             for arg in args {
@@ -311,9 +452,10 @@ fn compile_statements(
     unit: &mut CompileUnit,
     frame: &mut FrameCompiler,
     statements: &[IrStatement],
+    profile: BuildProfile,
 ) -> Result<(), SqbcV2Error> {
     for statement in statements {
-        compile_statement(unit, frame, statement)?;
+        compile_statement(unit, frame, statement, profile)?;
     }
     Ok(())
 }
@@ -322,6 +464,7 @@ fn compile_statement(
     unit: &mut CompileUnit,
     frame: &mut FrameCompiler,
     statement: &IrStatement,
+    profile: BuildProfile,
 ) -> Result<(), SqbcV2Error> {
     match statement {
         IrStatement::StateLoad => emit_builtin(&mut unit.code, BUILTIN_STATE_LOAD),
@@ -347,11 +490,11 @@ fn compile_statement(
             compile_expr(unit, frame, condition)?;
             emit(&mut unit.code, OP_JUMP_IF_FALSE);
             let else_patch = reserve_u32(&mut unit.code);
-            compile_statements(unit, frame, then_statements)?;
+            compile_statements(unit, frame, then_statements, profile)?;
             emit(&mut unit.code, OP_JUMP);
             let end_patch = reserve_u32(&mut unit.code);
             patch_u32(&mut unit.code, else_patch)?;
-            compile_statements(unit, frame, else_statements)?;
+            compile_statements(unit, frame, else_statements, profile)?;
             patch_u32(&mut unit.code, end_patch)?;
         }
         IrStatement::Repeat { count, statements } => {
@@ -368,7 +511,7 @@ fn compile_statement(
             emit(&mut unit.code, OP_GT);
             emit(&mut unit.code, OP_JUMP_IF_FALSE);
             let end_patch = reserve_u32(&mut unit.code);
-            compile_statements(unit, frame, statements)?;
+            compile_statements(unit, frame, statements, profile)?;
             emit(&mut unit.code, OP_GET_LOCAL);
             write_u16(&mut unit.code, counter);
             emit(&mut unit.code, OP_PUSH_INT);
@@ -401,22 +544,142 @@ fn compile_statement(
             );
             emit(&mut unit.code, OP_POP);
         }
-        IrStatement::ScreenOpen { .. } | IrStatement::ScreenRefresh => {}
+        IrStatement::DebugPrint { args } => {
+            if profile == BuildProfile::Dev {
+                for arg in args {
+                    compile_expr(unit, frame, arg)?;
+                }
+                emit(&mut unit.code, OP_CALL_BUILTIN);
+                emit(&mut unit.code, BUILTIN_DEBUG_PRINT);
+                emit(
+                    &mut unit.code,
+                    u8::try_from(args.len()).map_err(|_| SqbcV2Error::new("too many args"))?,
+                );
+            }
+        }
+        IrStatement::AppLaunch { app } => {
+            emit_string(unit, app)?;
+            emit_builtin(&mut unit.code, BUILTIN_APP_LAUNCH);
+        }
+        IrStatement::AppStart { app } => {
+            emit_string(unit, app)?;
+            emit_builtin(&mut unit.code, BUILTIN_APP_START);
+        }
+        IrStatement::AppArm { app } => {
+            emit_string(unit, app)?;
+            emit_builtin(&mut unit.code, BUILTIN_APP_ARM);
+        }
+        IrStatement::AppDisarm { app } => {
+            emit_string(unit, app)?;
+            emit_builtin(&mut unit.code, BUILTIN_APP_DISARM);
+        }
+        IrStatement::EventAddSource { event, every_ms } => {
+            emit_string(unit, event)?;
+            if let Some(every_ms) = every_ms {
+                compile_expr(unit, frame, every_ms)?;
+            } else {
+                emit(&mut unit.code, OP_PUSH_NULL);
+            }
+            emit_builtin(&mut unit.code, BUILTIN_EVENT_ADD_SOURCE);
+        }
+        IrStatement::HardwareGpioWrite { name, value } => {
+            compile_expr(unit, frame, value)?;
+            emit_string(unit, name)?;
+            emit_builtin(&mut unit.code, BUILTIN_HARDWARE_GPIO_WRITE);
+        }
+        IrStatement::HardwareGpioToggle { name } => {
+            emit_string(unit, name)?;
+            emit_builtin(&mut unit.code, BUILTIN_HARDWARE_GPIO_TOGGLE);
+        }
+        IrStatement::ScreenOpen { screen } => {
+            let screen_id = unit.strings.intern(screen)?;
+            emit(&mut unit.code, OP_PUSH_STRING);
+            write_u16(&mut unit.code, screen_id);
+            emit_builtin(&mut unit.code, BUILTIN_SCREEN_OPEN);
+        }
+        IrStatement::ScreenRefresh => {}
         IrStatement::For { .. } => {
             return Err(SqbcV2Error::new(
                 "for loops are not in the reference firmware subset yet",
             ))
         }
-        IrStatement::DisplayClear { .. }
-        | IrStatement::DisplayText { .. }
-        | IrStatement::DisplayRect { .. }
-        | IrStatement::DisplayLine { .. } => {
-            return Err(SqbcV2Error::new(
-                "display statements are not in the reference firmware subset",
-            ))
+        IrStatement::DisplayClear { color } => {
+            let color_id = unit.strings.intern(color)?;
+            emit(&mut unit.code, OP_PUSH_STRING);
+            write_u16(&mut unit.code, color_id);
+            emit_builtin(&mut unit.code, BUILTIN_DISPLAY_CLEAR);
+        }
+        IrStatement::DisplayText { text, options } => {
+            compile_expr(unit, frame, text)?;
+            emit_i32_option(&mut unit.code, options, "x")?;
+            emit_i32_option(&mut unit.code, options, "y")?;
+            emit_builtin(&mut unit.code, BUILTIN_DISPLAY_TEXT);
+        }
+        IrStatement::DisplayRect {
+            x,
+            y,
+            w,
+            h,
+            options: _,
+        } => {
+            emit(&mut unit.code, OP_PUSH_INT);
+            write_i32(&mut unit.code, *x as i32);
+            emit(&mut unit.code, OP_PUSH_INT);
+            write_i32(&mut unit.code, *y as i32);
+            emit(&mut unit.code, OP_PUSH_INT);
+            write_i32(&mut unit.code, *w as i32);
+            emit(&mut unit.code, OP_PUSH_INT);
+            write_i32(&mut unit.code, *h as i32);
+            emit_builtin(&mut unit.code, BUILTIN_DISPLAY_RECT);
+        }
+        IrStatement::DisplayLine {
+            x1,
+            y1,
+            x2,
+            y2,
+            options: _,
+        } => {
+            emit(&mut unit.code, OP_PUSH_INT);
+            write_i32(&mut unit.code, *x1 as i32);
+            emit(&mut unit.code, OP_PUSH_INT);
+            write_i32(&mut unit.code, *y1 as i32);
+            emit(&mut unit.code, OP_PUSH_INT);
+            write_i32(&mut unit.code, *x2 as i32);
+            emit(&mut unit.code, OP_PUSH_INT);
+            write_i32(&mut unit.code, *y2 as i32);
+            emit_builtin(&mut unit.code, BUILTIN_DISPLAY_LINE);
         }
     }
     Ok(())
+}
+
+fn emit_i32_option(
+    code: &mut Vec<u8>,
+    options: &serde_json::Value,
+    key: &str,
+) -> Result<(), SqbcV2Error> {
+    let value = options
+        .get(key)
+        .and_then(expr_literal_i64)
+        .unwrap_or_default();
+    emit(code, OP_PUSH_INT);
+    write_i32(
+        code,
+        i32::try_from(value).map_err(|_| SqbcV2Error::new("display option out of i32 range"))?,
+    );
+    Ok(())
+}
+
+fn expr_literal_i64(value: &serde_json::Value) -> Option<i64> {
+    if let Some(number) = value.as_i64() {
+        return Some(number);
+    }
+    if let serde_json::Value::Object(object) = value {
+        if object.get("op")?.as_str()? == "literal" {
+            return object.get("value")?.as_i64();
+        }
+    }
+    None
 }
 
 fn compile_expr(
@@ -447,6 +710,11 @@ fn compile_expr(
             emit(&mut unit.code, opcode_for_operator(operator)?);
             Ok(())
         }
+        IrExpr::HardwareGpioRead { name } => {
+            emit_string(unit, name)?;
+            emit_builtin(&mut unit.code, BUILTIN_HARDWARE_GPIO_READ);
+            Ok(())
+        }
         IrExpr::Call { name, args } => {
             for arg in args {
                 compile_expr(unit, frame, arg)?;
@@ -461,6 +729,13 @@ fn compile_expr(
             Ok(())
         }
     }
+}
+
+fn emit_string(unit: &mut CompileUnit, value: &str) -> Result<(), SqbcV2Error> {
+    let id = unit.strings.intern(value)?;
+    emit(&mut unit.code, OP_PUSH_STRING);
+    write_u16(&mut unit.code, id);
+    Ok(())
 }
 
 fn compile_literal(
@@ -599,6 +874,28 @@ fn encode_handlers(handlers: &[HandlerMeta]) -> Vec<u8> {
     out
 }
 
+fn encode_screens(screens: &[ScreenMeta]) -> Vec<u8> {
+    let mut out = Vec::new();
+    write_u16(&mut out, screens.len() as u16);
+    for screen in screens {
+        write_u16(&mut out, screen.name_id);
+        write_u32(&mut out, screen.start);
+        write_u32(&mut out, screen.len);
+    }
+    out
+}
+
+fn encode_app_meta(ir: &IrProgram, _strings: &StringTable) -> Result<Vec<u8>, SqbcV2Error> {
+    let mut out = Vec::new();
+    let app_id = ir.app.id.as_bytes();
+    write_u16(
+        &mut out,
+        u16::try_from(app_id.len()).map_err(|_| SqbcV2Error::new("app id too long"))?,
+    );
+    out.extend_from_slice(app_id);
+    Ok(out)
+}
+
 fn encode_container(sections: Vec<(u16, Vec<u8>)>) -> Result<Vec<u8>, SqbcV2Error> {
     let section_count =
         u32::try_from(sections.len()).map_err(|_| SqbcV2Error::new("too many sections"))?;
@@ -665,4 +962,37 @@ fn write_u32(out: &mut Vec<u8>, value: u32) {
 
 fn write_i32(out: &mut Vec<u8>, value: i32) {
     out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn read_u16_at(bytes: &[u8], offset: usize) -> Result<u16, SqbcV2Error> {
+    let Some(slice) = bytes.get(offset..offset + 2) else {
+        return Err(SqbcV2Error::new("unexpected end of SQBC"));
+    };
+    Ok(u16::from_le_bytes(slice.try_into().unwrap()))
+}
+
+fn read_u32_at(bytes: &[u8], offset: usize) -> Result<u32, SqbcV2Error> {
+    let Some(slice) = bytes.get(offset..offset + 4) else {
+        return Err(SqbcV2Error::new("unexpected end of SQBC"));
+    };
+    Ok(u32::from_le_bytes(slice.try_into().unwrap()))
+}
+
+fn section(bytes: &[u8], section_count: usize, kind: u16) -> Result<Option<&[u8]>, SqbcV2Error> {
+    for index in 0..section_count {
+        let record_offset = 16 + index * 12;
+        if read_u16_at(bytes, record_offset)? != kind {
+            continue;
+        }
+        let offset = read_u32_at(bytes, record_offset + 4)? as usize;
+        let len = read_u32_at(bytes, record_offset + 8)? as usize;
+        let end = offset
+            .checked_add(len)
+            .ok_or_else(|| SqbcV2Error::new("invalid section bounds"))?;
+        let Some(section) = bytes.get(offset..end) else {
+            return Err(SqbcV2Error::new("invalid section bounds"));
+        };
+        return Ok(Some(section));
+    }
+    Ok(None)
 }

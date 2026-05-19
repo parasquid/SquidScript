@@ -1,0 +1,12 @@
+:reset
+
+state {
+  count: 0
+}
+
+:mode render
+display.clear("gray0")
+display.text("Hello", { x: 10, y: 20 })
+:drawlog
+:expect-draw draw=clear color=gray0
+:expect-draw draw=text text="Hello" x=10 y=20

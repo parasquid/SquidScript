@@ -1,6 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 
 pub mod bringup;
+pub mod dev_harness;
 pub mod protocol;
 pub mod target;
 pub mod vm;

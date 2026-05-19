@@ -55,6 +55,7 @@ Initial section kinds:
 3  function table
 4  handler table
 5  bytecode instruction stream
+6  screen table
 ```
 
 Initial value tags:
@@ -100,8 +101,37 @@ Initial built-in IDs:
 1  state.load
 2  state.save
 3  app.exit
+4  debug.print
+5  screen.open
+6  display.clear
+7  display.text
+8  display.rect
+9  display.line
+10 hardware.gpio.write
+11 hardware.gpio.toggle
+12 hardware.gpio.read
+13 app.launch
+14 reserved
+15 app.start
+16 app.arm
+17 app.disarm
+18 event.addSource
 ```
 
 The v2 format currently supports the headless reference VM subset. Display
-draw commands, persistent app storage, app manifests, and source maps remain
-outside this first firmware milestone.
+draw commands are emitted as headless draw-log records on the ESP32-C3 Super
+Mini reference firmware. GPIO builtins dispatch to target firmware hardware
+modules; unsupported names return a VM operand error. The canonical lifecycle
+surface is generic events plus `app.start`, `app.arm`, `app.disarm`, and
+`event.addSource`. `app.launch` remains the app replacement/launch primitive.
+
+SQBC v2 includes an explicit app metadata section so tools can read the app id
+from bytecode without guessing from the string table. `squidc install` uses this
+metadata for raw `.sqbc` files. Source installs use the `app "id"` declaration;
+if source omits it in a developer workflow, `squidc` generates a deterministic
+id from the filename and content hash.
+
+The ESP32-C3 reference firmware uses fixed RAM app slots as an E2E harness. It
+can install named SQBC apps, start `main`, arm trigger registrations, dispatch
+real timer events, and exercise app-stack behavior. Persistent app storage,
+manifests, and source maps remain outside this firmware milestone.

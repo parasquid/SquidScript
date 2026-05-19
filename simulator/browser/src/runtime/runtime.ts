@@ -33,7 +33,7 @@ export class BrowserRuntime {
     this.exited = false;
     this.currentScreen = "";
     this.state = { ...this.program.stateDefaults, ...(await this.loadState()) };
-    await this.executeEvent("onStart");
+    await this.executeEvent("app.start");
     if (!this.currentScreen) this.currentScreen = this.program.screens.keys().next().value ?? "";
     if (this.drawCommands.length === 0) await this.refresh();
     return this.snapshot();
@@ -42,7 +42,7 @@ export class BrowserRuntime {
   async dispatchKey(key: LogicalKey): Promise<RuntimeSnapshot> {
     if (!this.running || this.exited) return this.snapshot();
 
-    await this.executeEvent(`onKey.${key}`);
+    await this.executeEvent(`key.${key}`);
     return this.snapshot();
   }
 

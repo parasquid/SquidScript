@@ -6,7 +6,7 @@ import { BrowserRuntime } from "./runtime";
 import type { RuntimeProgram } from "../types";
 
 describe("browser runtime", () => {
-  it("runs onStart, dispatches keys, refreshes, saves state, navigates back, and exits from menu", async () => {
+  it("runs app.start, dispatches keys, refreshes, saves state, navigates back, and exits from menu", async () => {
     const ir = compileFallback(DEFAULT_SOURCE, "xteink-x4").ir!;
     const runtime = new BrowserRuntime(new IrJsonLoader().load(ir), new MemoryVfs());
 
@@ -48,9 +48,9 @@ describe("browser runtime", () => {
       stateDefaults: { count: 0 },
       functions: new Map(),
       handlers: new Map([
-        ["onStart", [{ op: "screen.open", screen: "main" }]],
-        ["onKey.UP", [{ op: "assign", name: "count", expr: { op: "binary", left: { op: "state", name: "count" }, operator: "+", right: { op: "literal", value: 1 } } }, { op: "screen.refresh" }]],
-        ["onKey.SELECT", [{ op: "app.exit" }]]
+        ["app.start", [{ op: "screen.open", screen: "main" }]],
+        ["key.UP", [{ op: "assign", name: "count", expr: { op: "binary", left: { op: "state", name: "count" }, operator: "+", right: { op: "literal", value: 1 } } }, { op: "screen.refresh" }]],
+        ["key.SELECT", [{ op: "app.exit" }]]
       ]),
       screens: new Map([
         ["main", { name: "main", render: "compose", statements: [{ op: "display.clear", color: "gray0" }, { op: "display.text", text: { op: "literal", value: "Custom" }, options: { x: 24, y: 36, w: 400, fontHeight: 24 } }] }]
@@ -94,8 +94,8 @@ describe("browser runtime", () => {
         }]
       ]),
       handlers: new Map([
-        ["onStart", [{ op: "screen.open", screen: "main" }]],
-        ["onKey.DOWN", [
+        ["app.start", [{ op: "screen.open", screen: "main" }]],
+        ["key.DOWN", [
           { op: "let", name: "step", expr: { op: "call", name: "getStep", args: [] } },
           { op: "repeat", count: { op: "literal", value: 2 }, statements: [{ op: "call", name: "bump", args: [{ op: "state", name: "step" }] }] },
           {
@@ -134,7 +134,7 @@ describe("browser runtime", () => {
           statements: [{ op: "display.line", x1: 0, y1: 40, x2: 480, y2: 40, options: { color: "gray15" } }]
         }]
       ]),
-      handlers: new Map([["onStart", [{ op: "screen.open", screen: "main" }]]]),
+      handlers: new Map([["app.start", [{ op: "screen.open", screen: "main" }]]]),
       screens: new Map([
         ["main", {
           name: "main",

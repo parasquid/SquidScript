@@ -81,7 +81,7 @@ The firmware owns the storage location and atomic write behavior. The app persis
 The first screen is always the app browser.
 
 ```squid
-onStart() {
+event.on("app.start") {
   state.load()
   openBrowser()
 }
@@ -131,7 +131,7 @@ This keeps resume behavior inside the BinBook reader's own app state.
 `uiState` is a persisted string used by `stateMachine.*` to route input. The state machine is backed by that normal app state variable, so direct assignments to `uiState` and calls to `stateMachine.enter("uiState", "...")` affect the same source of truth.
 
 ```squid
-onKey("SELECT") {
+event.on("key.SELECT") {
   handleSelect()
 }
 

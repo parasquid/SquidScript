@@ -54,6 +54,43 @@ errors
 reset
 ```
 
+It also accepts the v4 developer protocol commands documented in
+`docs/developer_repl_protocol.md`, including `INSTALL`, `LOAD`, `RUN`,
+`STATE.GET`, `STATE.IMPORT`, `OUTPUT.GET`, and `DRAWLOG.GET`.
+
+The ESP32-C3 Super Mini firmware maps `hardware.gpio.*` to the target-defined
+status LED aliases and raw `GPIO8`. Use these repository-root checks after
+flashing:
+
+```sh
+cargo run -p squidc -- repl --port /dev/ttyACM0 --script tests/repl/hardware-gpio-status-led.session
+cargo run -p squidc -- repl --port /dev/ttyACM0 examples/blinky-supermini/main.squid --script tests/repl/blinky-supermini.session
+cargo run -p squidc -- repl --port /dev/ttyACM0 --script examples/blinky-supermini/main.squid
+```
+
+The GPIO session verifies serial readback. The blinky session should also be
+confirmed visually on the physical onboard LED.
+
+The timer/background reference exercise uses a real firmware timer:
+
+```sh
+scripts/c3-supermini-timer-background-smoke.sh
+scripts/c3-supermini-generic-events-e2e.sh
+```
+
+It installs `main` and `timer-background` SQBC apps, runs `main`, waits for
+timer ticks, and checks debug output for foreground startup plus background
+timer events.
+
+The generic-events E2E script is the canonical lifecycle regression check for
+the current app-stack model. It installs `main`, `reader-clock`, and
+`break-reminder`, then verifies `app.start`, `app.arm`, `event.addSource`, a
+session-local timer, an armed timer, and key-driven `app.exit`.
+
+The fixed app names used by these scripts are temporary development harness
+slots, not SquidScript language semantics. The firmware keeps them in RAM only
+until a real app registry/storage model exists.
+
 `install` receives raw SQBC v2 bytes into RAM. State persistence is in-memory
 only for this milestone; `state.load` and `state.save` are traced but do not
 write flash yet.

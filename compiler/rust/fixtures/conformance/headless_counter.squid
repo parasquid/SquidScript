@@ -5,18 +5,18 @@ state {
   started: 0
 }
 
-onStart() {
+event.on("app.start") {
   state.load()
   started = 1
   state.save()
 }
 
-onKey("SELECT") {
+event.on("key.SELECT") {
   count = count + 1
   state.save()
 }
 
-onKey("BACK") {
+event.on("key.BACK") {
   app.exit()
 }
 

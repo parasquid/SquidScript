@@ -458,12 +458,20 @@ Browser-facing requests should use virtual, normalized paths so diagnostics and 
 
 ## 13. Target Definition Model
 
-SquidScript compilation should primarily compile against an integrated target definition.
+SquidScript source should compile against the portable language/runtime API by
+default. A board target is not required for normal compilation or reference
+firmware upload.
 
-Example:
+Normal portable build:
 
 ```bash
-squidc build app.squid --target xteink-x4
+squidc build app.squid --out app.sqbc
+```
+
+Explicit compatibility check:
+
+```bash
+squidc build app.squid --target targets/xteink-x4.target.json --check-target --out app.sqbc
 ```
 
 The compiler should load the resolved target model produced from:
@@ -472,7 +480,10 @@ The compiler should load the resolved target model produced from:
 targets/xteink-x4.target.json
 ```
 
-Integrated targets are the default for production devices because they keep board, display, input, storage, power, runtime, feature, compatibility, firmware-update, and simulator metadata in one maintainable source artifact.
+Integrated targets are still useful because they keep board, display, input,
+storage, power, runtime, feature, compatibility, firmware-update, simulator,
+documentation, and autocomplete metadata in one maintainable source artifact.
+They should be opt-in for explicit compatibility workflows.
 
 Split profile parts remain an optional advanced authoring mode for development-board reuse. If used, they should resolve to the same integrated target model before compiler validation.
 
@@ -508,7 +519,7 @@ xteink_x4_buttons =
     button_6: gpio ...
 ```
 
-The compiler may eventually allow both:
+Compatibility tooling may eventually allow both:
 
 1. compiling against an integrated target ID
 2. compiling against explicit split profile components for development targets
@@ -516,7 +527,7 @@ The compiler may eventually allow both:
 Example CLI forms:
 
 ```bash
-squidc build app.squid --target xteink-x4
+squidc build app.squid --target targets/xteink-x4.target.json --check-target
 
 squidc build app.squid \
   --board esp32s3 \

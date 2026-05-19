@@ -123,12 +123,12 @@ state {
   selected: 0
 }
 
-onStart() {
+event.on("app.start") {
   state.load()
   screen.open("main")
 }
 
-onKey("DOWN") {
+event.on("key.DOWN") {
   selected = selected + 1
   state.save()
   screen.refresh()
@@ -146,8 +146,8 @@ Currently supported syntax:
 
 - `app "id" target "target-id"`
 - `state { name: literal }`
-- `onStart() { ... }`
-- `onKey("KEY") { ... }`
+- `event.on("app.start") { ... }`
+- `event.on("key.KEY") { ... }`
 - `screen("name", { render: "compose" }) { ... }`
 - `function name(...) { ... }`
 - `state.load()`, `state.save()`

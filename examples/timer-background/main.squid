@@ -1,0 +1,13 @@
+app "timer-main"
+
+state {
+  started: 0
+}
+
+event.on("app.start") {
+  started = started + 1
+  debug.print("main start", started)
+  app.arm("timer-background")
+}
+
+screen("main") {}
