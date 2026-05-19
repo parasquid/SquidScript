@@ -6,6 +6,10 @@ The developer REPL protocol is a line-oriented control protocol with explicit
 binary payload phases for SQBC and state snapshot bytes. It is enabled by
 default for v4 dev firmware.
 
+Normal host workflows should use grouped `squidc` commands documented in
+`docs/squidc_cli.md`. Use `squidc protocol raw` only for low-level protocol
+troubleshooting.
+
 ## Commands
 
 ```text
@@ -103,9 +107,9 @@ Normal upload/run uses `squidc run` and does not require a target:
 
 ```sh
 cargo run -p squidc -- run examples/blinky-supermini/main.squid
-cargo run -p squidc -- key SELECT
-cargo run -p squidc -- output
-cargo run -p squidc -- monitor --max-lines 4
+cargo run -p squidc -- device key SELECT
+cargo run -p squidc -- device output
+cargo run -p squidc -- device monitor --max-lines 4
 ```
 
 Scripted REPL checks can still use session files:

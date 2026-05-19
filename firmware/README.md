@@ -26,6 +26,7 @@ scripts/c3-supermini-build.sh
 scripts/c3-supermini-flash.sh
 scripts/c3-supermini-test-reference-firmware.sh
 cargo run -p squidc -- build compiler/rust/fixtures/conformance/headless_counter.squid --out target/reference-firmware/headless_counter.sqbc
+cargo run -p squidc -- doctor
 ```
 
 The preferred hardware target check for the reference firmware milestone is:
@@ -51,17 +52,17 @@ SquidScript firmware target it finds:
 
 ```sh
 cargo run -p squidc -- run examples/blinky-supermini/main.squid
-cargo run -p squidc -- key SELECT
-cargo run -p squidc -- output
+cargo run -p squidc -- device key SELECT
+cargo run -p squidc -- device output
 ```
 
-Named multi-app flows use `install` and `start`:
+Named multi-app flows use grouped app commands:
 
 ```sh
-cargo run -p squidc -- install tests/hardware/c3-supermini/generic-events/break-reminder.squid
-cargo run -p squidc -- install tests/hardware/c3-supermini/generic-events/reader-clock.squid
-cargo run -p squidc -- install tests/hardware/c3-supermini/generic-events/main.squid
-cargo run -p squidc -- start main
+cargo run -p squidc -- app install tests/hardware/c3-supermini/generic-events/break-reminder.squid
+cargo run -p squidc -- app install tests/hardware/c3-supermini/generic-events/reader-clock.squid
+cargo run -p squidc -- app install tests/hardware/c3-supermini/generic-events/main.squid
+cargo run -p squidc -- app launch main
 ```
 
 V4 snippet/session checks still use `squidc repl` script mode:
@@ -75,13 +76,17 @@ scripts/c3-supermini-test-timer-armed-app.sh
 scripts/c3-supermini-test-generic-triggered-apps.sh
 ```
 
-The default `run`/`install`/`repl` profile is `dev`; the default firmware
+The default `run`/`app install`/`repl` profile is `dev`; the default firmware
 profile for the Super Mini reference target is also `dev`. Confirm the physical
-onboard LED toggles when testing blinky with `key SELECT`. See
+onboard LED toggles when testing blinky with `device key SELECT`. See
 `docs/developer_repl_protocol.md` for the serial protocol. `--target` is
 optional and should be paired with
 `--check-target` only when you explicitly want host-side compatibility checks
 against a target definition.
+
+`squidc doctor` performs read-only host/toolchain/device readiness checks. It
+does not flash, install apps, reset the board, or run hardware tests. See
+`docs/squidc_cli.md` for the grouped `squidc` command surface.
 
 The timer armed-app hardware test uploads two SQBC apps, runs the `main` app,
 lets the firmware timer fire, then verifies `OUTPUT.GET` contains

@@ -6,244 +6,469 @@ use std::{
     env, fs,
     io::{self, Write},
     path::{Path, PathBuf},
+    process::Command,
     time::Duration,
 };
 
 use app_id::{generated_app_id, source_app_id, source_for_compile};
+use clap::{error::ErrorKind, Args, Parser, Subcommand, ValueEnum};
 use compile::{compile_source_to_sqbc, compile_target_id};
-use serial::{detect_port, OutputTail, SerialDevice};
+use serde::Serialize;
+use serde_json::{json, Value};
+use serial::{candidate_ports, detect_port, OutputTail, SerialDevice};
 use squidc_core::BuildProfile;
 
 fn main() {
-    if let Err(error) = run() {
-        eprintln!("squidc: {error}");
-        std::process::exit(1);
-    }
-}
-
-fn run() -> Result<(), String> {
-    let args = env::args().skip(1).collect::<Vec<_>>();
-    match args.first().map(String::as_str) {
-        Some("build") => build(&args[1..]),
-        Some("repl") => repl(&args[1..]),
-        Some("run") => run_app_source(&args[1..]),
-        Some("install") => install_app(&args[1..]),
-        Some("start") => start_app(&args[1..]),
-        Some("key") => key(&args[1..]),
-        Some("reset") => device_line_command(&args[1..], "RESET"),
-        Some("send") => send(&args[1..]),
-        Some("monitor") => monitor(&args[1..]),
-        Some("apps") => device_block_command(&args[1..], "APP.LIST"),
-        Some("output") => device_block_command(&args[1..], "OUTPUT.GET"),
-        Some("state") => device_block_command(&args[1..], "STATE.GET"),
-        Some("drawlog") => device_block_command(&args[1..], "DRAWLOG.GET"),
-        _ => Err(
-            "usage: squidc build|run|install|start|key|reset|send|monitor|apps|output|state|drawlog|repl ..."
-                .to_string(),
-        ),
-    }
-}
-
-fn build(args: &[String]) -> Result<(), String> {
-    let mut input = None;
-    let mut target = None;
-    let mut check_target = false;
-    let mut out = None;
-    let mut profile = BuildProfile::Dev;
-    let mut index = 0usize;
-    while index < args.len() {
-        match args[index].as_str() {
-            "--target" => {
-                index += 1;
-                target = args.get(index).cloned();
-            }
-            "--check-target" => {
-                check_target = true;
-            }
-            "--out" => {
-                index += 1;
-                out = args.get(index).map(PathBuf::from);
-            }
-            "--profile" => {
-                index += 1;
-                let value = args
-                    .get(index)
-                    .ok_or_else(|| "missing --profile value".to_string())?;
-                profile = BuildProfile::parse(value)
-                    .ok_or_else(|| format!("unknown profile {value}; expected dev or release"))?;
-            }
-            value if input.is_none() => input = Some(PathBuf::from(value)),
-            value => return Err(format!("unexpected argument {value}")),
+    let raw_args = env::args().collect::<Vec<_>>();
+    let wants_json = raw_args.iter().any(|arg| arg == "--json");
+    let cli = match Cli::try_parse_from(raw_args) {
+        Ok(cli) => cli,
+        Err(error)
+            if matches!(
+                error.kind(),
+                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
+            ) =>
+        {
+            print!("{error}");
+            std::process::exit(0);
         }
-        index += 1;
+        Err(error) => {
+            if wants_json {
+                write_json_error("parse", error.to_string());
+            } else {
+                eprint!("{error}");
+            }
+            std::process::exit(2);
+        }
+    };
+    let json = cli.json;
+    let command = cli.command;
+    let command_name = command.name();
+    match run(command, !json, json) {
+        Ok(data) => {
+            if json {
+                write_json_success(command_name, data);
+            }
+        }
+        Err(error) => {
+            if json {
+                write_json_error(command_name, error);
+            } else {
+                eprintln!("squidc: {error}");
+            }
+            std::process::exit(1);
+        }
     }
-
-    let input = input.ok_or_else(|| "missing input .squid path".to_string())?;
-    let target = compile_target_id(target.as_deref(), check_target)?;
-    let out = out.ok_or_else(|| "missing --out".to_string())?;
-    let bytes = compile_source_to_sqbc(
-        &fs::read_to_string(&input)
-            .map_err(|error| format!("failed to read {}: {error}", input.display()))?,
-        &target,
-        profile,
-    )?;
-    fs::write(&out, bytes)
-        .map_err(|error| format!("failed to write {}: {error}", out.display()))?;
-    Ok(())
 }
 
-fn run_app_source(args: &[String]) -> Result<(), String> {
-    let mut options = DeviceOptions::default();
-    let mut input = None;
-    parse_device_args(args, &mut options, &mut input, false)?;
-    let input = input.ok_or_else(|| "missing input .squid path".to_string())?;
-    let source = fs::read_to_string(&input)
+#[derive(Parser, Debug)]
+#[command(
+    name = "squidc",
+    version,
+    about = "SquidScript compiler and reference firmware CLI"
+)]
+struct Cli {
+    #[arg(long, global = true, help = "Emit stable JSON envelope output")]
+    json: bool,
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    Build(BuildArgs),
+    Run(DeviceSourceArgs),
+    Repl(ReplArgs),
+    Doctor(DoctorArgs),
+    App {
+        #[command(subcommand)]
+        command: AppCommands,
+    },
+    Device {
+        #[command(subcommand)]
+        command: DeviceCommands,
+    },
+    Protocol {
+        #[command(subcommand)]
+        command: ProtocolCommands,
+    },
+}
+
+impl Commands {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Build(_) => "build",
+            Self::Run(_) => "run",
+            Self::Repl(_) => "repl",
+            Self::Doctor(_) => "doctor",
+            Self::App { .. } => "app",
+            Self::Device { .. } => "device",
+            Self::Protocol { .. } => "protocol",
+        }
+    }
+}
+
+#[derive(Subcommand, Debug)]
+enum AppCommands {
+    Install(AppInstallArgs),
+    Launch(AppLaunchArgs),
+    List(DeviceOnlyArgs),
+}
+
+#[derive(Subcommand, Debug)]
+enum DeviceCommands {
+    Key(DeviceKeyArgs),
+    Reset(DeviceOnlyArgs),
+    Output(DeviceOnlyArgs),
+    State(DeviceOnlyArgs),
+    Drawlog(DeviceOnlyArgs),
+    Trace(DeviceOnlyArgs),
+    Errors(DeviceOnlyArgs),
+    Monitor(MonitorArgs),
+}
+
+#[derive(Subcommand, Debug)]
+enum ProtocolCommands {
+    Raw(ProtocolRawArgs),
+}
+
+#[derive(Args, Debug)]
+struct BuildArgs {
+    input: PathBuf,
+    #[arg(long)]
+    target: Option<String>,
+    #[arg(long)]
+    check_target: bool,
+    #[arg(long)]
+    out: PathBuf,
+    #[arg(long, value_enum, default_value_t = ProfileArg::Dev)]
+    profile: ProfileArg,
+}
+
+#[derive(Args, Debug)]
+struct DeviceSourceArgs {
+    #[command(flatten)]
+    device: DeviceOptions,
+    input: PathBuf,
+}
+
+#[derive(Args, Debug)]
+struct AppInstallArgs {
+    #[command(flatten)]
+    device: DeviceOptions,
+    #[arg(long = "as")]
+    app_id_override: Option<String>,
+    input: PathBuf,
+}
+
+#[derive(Args, Debug)]
+struct AppLaunchArgs {
+    #[command(flatten)]
+    device: DeviceOnlyOptions,
+    app_id: String,
+}
+
+#[derive(Args, Debug)]
+struct DeviceKeyArgs {
+    #[command(flatten)]
+    device: DeviceOnlyOptions,
+    key: String,
+}
+
+#[derive(Args, Debug)]
+struct DeviceOnlyArgs {
+    #[command(flatten)]
+    device: DeviceOnlyOptions,
+}
+
+#[derive(Args, Debug)]
+struct ProtocolRawArgs {
+    #[command(flatten)]
+    device: DeviceOnlyOptions,
+    line: String,
+}
+
+#[derive(Args, Debug)]
+struct MonitorArgs {
+    #[command(flatten)]
+    device: DeviceOnlyOptions,
+    #[arg(long)]
+    raw: bool,
+    #[arg(long, default_value_t = 500)]
+    poll_ms: u64,
+    #[arg(long)]
+    max_lines: Option<usize>,
+}
+
+#[derive(Args, Debug)]
+struct ReplArgs {
+    #[arg(long)]
+    target: Option<String>,
+    #[arg(long)]
+    check_target: bool,
+    #[arg(long)]
+    port: Option<String>,
+    #[arg(long)]
+    script: PathBuf,
+    input_file: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+struct DoctorArgs {
+    #[arg(long)]
+    port: Option<String>,
+}
+
+#[derive(Args, Clone, Debug)]
+struct DeviceOptions {
+    #[command(flatten)]
+    device: DeviceOnlyOptions,
+    #[arg(long)]
+    target: Option<String>,
+    #[arg(long)]
+    check_target: bool,
+    #[arg(long, value_enum, default_value_t = ProfileArg::Dev)]
+    profile: ProfileArg,
+}
+
+#[derive(Args, Clone, Debug)]
+struct DeviceOnlyOptions {
+    #[arg(long)]
+    port: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum ProfileArg {
+    Dev,
+    Release,
+}
+
+impl From<ProfileArg> for BuildProfile {
+    fn from(value: ProfileArg) -> Self {
+        match value {
+            ProfileArg::Dev => BuildProfile::Dev,
+            ProfileArg::Release => BuildProfile::Release,
+        }
+    }
+}
+
+fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String> {
+    match command {
+        Commands::Build(args) => build(args),
+        Commands::Run(args) => run_app_source(args, human),
+        Commands::Repl(args) => repl(args, human),
+        Commands::Doctor(args) => doctor(args, human),
+        Commands::App { command } => match command {
+            AppCommands::Install(args) => install_app(args, human),
+            AppCommands::Launch(args) => launch_app(args, human),
+            AppCommands::List(args) => device_block_command(args.device, "APP.LIST", "apps", human),
+        },
+        Commands::Device { command } => match command {
+            DeviceCommands::Key(args) => key(args, human),
+            DeviceCommands::Reset(args) => {
+                device_line_command(args.device, "RESET", "reset", human)
+            }
+            DeviceCommands::Output(args) => {
+                device_block_command(args.device, "OUTPUT.GET", "output", human)
+            }
+            DeviceCommands::State(args) => {
+                device_block_command(args.device, "STATE.GET", "state", human)
+            }
+            DeviceCommands::Drawlog(args) => {
+                device_block_command(args.device, "DRAWLOG.GET", "drawlog", human)
+            }
+            DeviceCommands::Trace(args) => {
+                device_block_command(args.device, "TRACE.GET", "trace", human)
+            }
+            DeviceCommands::Errors(args) => {
+                device_block_command(args.device, "ERRORS.GET", "errors", human)
+            }
+            DeviceCommands::Monitor(args) => monitor(args, json_mode),
+        },
+        Commands::Protocol { command } => match command {
+            ProtocolCommands::Raw(args) => protocol_raw(args, human),
+        },
+    }
+}
+
+fn build(args: BuildArgs) -> Result<Value, String> {
+    let target = compile_target_id(args.target.as_deref(), args.check_target)?;
+    let bytes = compile_source_to_sqbc(
+        &fs::read_to_string(&args.input)
+            .map_err(|error| format!("failed to read {}: {error}", args.input.display()))?,
+        &target,
+        args.profile.into(),
+    )?;
+    if let Some(parent) = args
+        .out
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+    }
+    fs::write(&args.out, &bytes)
+        .map_err(|error| format!("failed to write {}: {error}", args.out.display()))?;
+    Ok(json!({
+        "input": args.input,
+        "out": args.out,
+        "target": target,
+        "bytes": bytes.len()
+    }))
+}
+
+fn run_app_source(args: DeviceSourceArgs, human: bool) -> Result<Value, String> {
+    let source = fs::read_to_string(&args.input)
+        .map_err(|error| format!("failed to read {}: {error}", args.input.display()))?;
+    let app_id = source_app_id(&source).unwrap_or_else(|| generated_app_id(&args.input, &source));
+    let source = source_for_compile(&source, &app_id);
+    let target = compile_target_id(args.device.target.as_deref(), args.device.check_target)?;
+    let sqbc = compile_source_to_sqbc(&source, &target, args.device.profile.into())?;
+    let port = resolve_port(&args.device.device)?;
+    let mut device = SerialDevice::open(&port)?;
+    let install = device.install_app("main", &sqbc)?;
+    let launch = device.run_app("main")?;
+    if human {
+        print!("{install}{launch}");
+    }
+    Ok(json!({
+        "port": port,
+        "installedAs": "main",
+        "sourceAppId": app_id,
+        "target": target,
+        "bytes": sqbc.len(),
+        "response": format!("{install}{launch}")
+    }))
+}
+
+fn install_app(args: AppInstallArgs, human: bool) -> Result<Value, String> {
+    let (bytes, app_id) =
+        read_installable_app(&args.input, args.app_id_override.as_deref(), &args.device)?;
+    let port = resolve_port(&args.device.device)?;
+    let mut device = SerialDevice::open(&port)?;
+    let response = device.install_app(&app_id, &bytes)?;
+    if human {
+        print!("{response}");
+    }
+    Ok(json!({
+        "port": port,
+        "appId": app_id,
+        "bytes": bytes.len(),
+        "response": response
+    }))
+}
+
+fn read_installable_app(
+    input: &Path,
+    override_id: Option<&str>,
+    options: &DeviceOptions,
+) -> Result<(Vec<u8>, String), String> {
+    if input.extension().and_then(|value| value.to_str()) == Some("sqbc") {
+        let bytes = fs::read(input)
+            .map_err(|error| format!("failed to read {}: {error}", input.display()))?;
+        let app_id = match override_id {
+            Some(app_id) => app_id.to_string(),
+            None => squidc_core::sqbc_v2::read_app_id(&bytes)
+                .map_err(|error| error.message)?
+                .ok_or_else(|| "SQBC has no app id metadata; pass --as <appId>".to_string())?,
+        };
+        return Ok((bytes, app_id));
+    }
+
+    let source = fs::read_to_string(input)
         .map_err(|error| format!("failed to read {}: {error}", input.display()))?;
-    let app_id = source_app_id(&source).unwrap_or_else(|| generated_app_id(&input, &source));
+    let app_id = override_id
+        .map(ToOwned::to_owned)
+        .or_else(|| source_app_id(&source))
+        .unwrap_or_else(|| generated_app_id(input, &source));
     let source = source_for_compile(&source, &app_id);
     let target = compile_target_id(options.target.as_deref(), options.check_target)?;
-    let sqbc = compile_source_to_sqbc(&source, &target, options.profile)?;
-    let port = options.resolve_port()?;
-    let mut device = SerialDevice::open(&port)?;
-    device.install_app("main", &sqbc)?;
-    device.run_app("main")?;
-    Ok(())
+    let bytes = compile_source_to_sqbc(&source, &target, options.profile.into())?;
+    Ok((bytes, app_id))
 }
 
-fn install_app(args: &[String]) -> Result<(), String> {
-    let mut options = DeviceOptions::default();
-    let mut input = None;
-    parse_device_args(args, &mut options, &mut input, true)?;
-    let input = input.ok_or_else(|| "missing input .squid or .sqbc path".to_string())?;
-    let bytes = if input.extension().and_then(|value| value.to_str()) == Some("sqbc") {
-        fs::read(&input).map_err(|error| format!("failed to read {}: {error}", input.display()))?
-    } else {
-        let source = fs::read_to_string(&input)
-            .map_err(|error| format!("failed to read {}: {error}", input.display()))?;
-        let app_id = options
-            .app_id_override
-            .clone()
-            .or_else(|| source_app_id(&source))
-            .unwrap_or_else(|| generated_app_id(&input, &source));
-        let source = source_for_compile(&source, &app_id);
-        let target = compile_target_id(options.target.as_deref(), options.check_target)?;
-        compile_source_to_sqbc(&source, &target, options.profile)?
-    };
-    let app_id = if let Some(app_id) = options.app_id_override.as_ref() {
-        app_id.clone()
-    } else if input.extension().and_then(|value| value.to_str()) == Some("sqbc") {
-        squidc_core::sqbc_v2::read_app_id(&bytes)
-            .map_err(|error| error.message)?
-            .ok_or_else(|| "SQBC has no app id metadata; pass --as <appId>".to_string())?
-    } else {
-        let source = fs::read_to_string(&input)
-            .map_err(|error| format!("failed to read {}: {error}", input.display()))?;
-        source_app_id(&source).unwrap_or_else(|| generated_app_id(&input, &source))
-    };
-    let port = options.resolve_port()?;
+fn launch_app(args: AppLaunchArgs, human: bool) -> Result<Value, String> {
+    let port = resolve_port(&args.device)?;
     let mut device = SerialDevice::open(&port)?;
-    device.install_app(&app_id, &bytes)?;
-    Ok(())
+    let response = device.run_app(&args.app_id)?;
+    if human {
+        print!("{response}");
+    }
+    Ok(json!({
+        "port": port,
+        "appId": args.app_id,
+        "response": response
+    }))
 }
 
-fn start_app(args: &[String]) -> Result<(), String> {
-    let mut options = DeviceOptions::default();
-    let mut app_id = None;
-    parse_device_args(args, &mut options, &mut app_id, false)?;
-    let app_id = app_id.ok_or_else(|| "missing app id".to_string())?;
-    let port = options.resolve_port()?;
+fn key(args: DeviceKeyArgs, human: bool) -> Result<Value, String> {
+    let port = resolve_port(&args.device)?;
     let mut device = SerialDevice::open(&port)?;
-    device.run_app(&app_id.to_string_lossy())?;
-    Ok(())
-}
-
-fn key(args: &[String]) -> Result<(), String> {
-    let mut options = DeviceOptions::default();
-    let mut key = None;
-    parse_device_args(args, &mut options, &mut key, false)?;
-    let key = key.ok_or_else(|| "missing key".to_string())?;
-    let port = options.resolve_port()?;
-    let mut device = SerialDevice::open(&port)?;
-    let response = device.send_line(&format!("KEY {}", key.display()))?;
-    print!("{response}");
+    let response = device.send_line(&format!("KEY {}", args.key))?;
+    if human {
+        print!("{response}");
+    }
     if !response.contains("OK key") {
         return Err(response.trim().to_string());
     }
-    Ok(())
+    Ok(json!({
+        "port": port,
+        "key": args.key,
+        "response": response
+    }))
 }
 
-fn send(args: &[String]) -> Result<(), String> {
-    let mut options = DeviceOptions::default();
-    let mut line = None;
-    parse_device_args(args, &mut options, &mut line, false)?;
-    let line = line.ok_or_else(|| "missing line".to_string())?;
-    device_line_command_with_options(options, &line.to_string_lossy())
+fn protocol_raw(args: ProtocolRawArgs, human: bool) -> Result<Value, String> {
+    device_line_command(args.device, &args.line, "protocol.raw", human)
 }
 
-fn monitor(args: &[String]) -> Result<(), String> {
-    let mut options = DeviceOptions::default();
-    let mut raw = false;
-    let mut poll_ms = 500u64;
-    let mut max_lines = None;
-    let mut index = 0usize;
-    while index < args.len() {
-        match args[index].as_str() {
-            "--port" => {
-                index += 1;
-                options.port = Some(
-                    args.get(index)
-                        .cloned()
-                        .ok_or_else(|| "missing --port value".to_string())?,
-                );
-            }
-            "--raw" => raw = true,
-            "--poll-ms" => {
-                index += 1;
-                let value = args
-                    .get(index)
-                    .ok_or_else(|| "missing --poll-ms value".to_string())?;
-                poll_ms = value
-                    .parse::<u64>()
-                    .map_err(|_| format!("invalid --poll-ms value {value}"))?;
-            }
-            "--max-lines" => {
-                index += 1;
-                let value = args
-                    .get(index)
-                    .ok_or_else(|| "missing --max-lines value".to_string())?;
-                max_lines = Some(
-                    value
-                        .parse::<usize>()
-                        .map_err(|_| format!("invalid --max-lines value {value}"))?,
-                );
-            }
-            value => return Err(format!("unexpected argument {value}")),
-        }
-        index += 1;
+fn monitor(args: MonitorArgs, json_mode: bool) -> Result<Value, String> {
+    if json_mode && args.max_lines.is_none() {
+        return Err("device monitor --json requires --max-lines".to_string());
     }
-
-    let port = options.resolve_port()?;
+    let port = resolve_port(&args.device)?;
     let mut device = SerialDevice::open(&port)?;
-    eprintln!("squidc: monitoring {port}; press Ctrl+C to stop");
-    if raw {
-        monitor_raw(&mut device, max_lines)
-    } else {
-        monitor_output(&mut device, Duration::from_millis(poll_ms), max_lines)
+    if !json_mode {
+        eprintln!("squidc: monitoring {port}; press Ctrl+C to stop");
     }
+    let lines = if args.raw {
+        monitor_raw(&mut device, args.max_lines, json_mode)?
+    } else {
+        monitor_output(
+            &mut device,
+            Duration::from_millis(args.poll_ms),
+            args.max_lines,
+            json_mode,
+        )?
+    };
+    Ok(json!({
+        "port": port,
+        "raw": args.raw,
+        "lines": lines
+    }))
 }
 
-fn monitor_raw(device: &mut SerialDevice, max_lines: Option<usize>) -> Result<(), String> {
+fn monitor_raw(
+    device: &mut SerialDevice,
+    max_lines: Option<usize>,
+    collect_only: bool,
+) -> Result<Vec<String>, String> {
     let mut printed = 0usize;
+    let mut lines = Vec::new();
     loop {
         let chunk = device.read_available_text()?;
         if !chunk.is_empty() {
-            printed += chunk.lines().count().max(1);
-            print!("{chunk}");
-            io::stdout()
-                .flush()
-                .map_err(|error| format!("stdout flush failed: {error}"))?;
+            let chunk_lines = chunk.lines().map(ToOwned::to_owned).collect::<Vec<_>>();
+            printed += chunk_lines.len().max(1);
+            lines.extend(chunk_lines);
+            if !collect_only {
+                print!("{chunk}");
+                io::stdout()
+                    .flush()
+                    .map_err(|error| format!("stdout flush failed: {error}"))?;
+            }
             if max_lines.is_some_and(|max| printed >= max) {
-                return Ok(());
+                return Ok(lines);
             }
         }
         std::thread::sleep(Duration::from_millis(20));
@@ -254,108 +479,437 @@ fn monitor_output(
     device: &mut SerialDevice,
     poll_interval: Duration,
     max_lines: Option<usize>,
-) -> Result<(), String> {
+    collect_only: bool,
+) -> Result<Vec<String>, String> {
     let mut tail = OutputTail::new();
     let mut printed = 0usize;
+    let mut lines = Vec::new();
     loop {
         let response = device.send_line("OUTPUT.GET")?;
         for line in tail.next_lines(&response) {
-            println!("{line}");
+            if !collect_only {
+                println!("{line}");
+            }
+            lines.push(line);
             printed += 1;
             if max_lines.is_some_and(|max| printed >= max) {
-                return Ok(());
+                return Ok(lines);
             }
         }
-        io::stdout()
-            .flush()
-            .map_err(|error| format!("stdout flush failed: {error}"))?;
+        if !collect_only {
+            io::stdout()
+                .flush()
+                .map_err(|error| format!("stdout flush failed: {error}"))?;
+        }
         std::thread::sleep(poll_interval);
     }
 }
 
-fn device_line_command(args: &[String], command: &str) -> Result<(), String> {
-    let mut options = DeviceOptions::default();
-    let mut unexpected = None;
-    parse_device_args(args, &mut options, &mut unexpected, false)?;
-    if let Some(value) = unexpected {
-        return Err(format!("unexpected argument {}", value.display()));
-    }
-    device_line_command_with_options(options, command)
-}
-
-fn device_line_command_with_options(options: DeviceOptions, command: &str) -> Result<(), String> {
-    let port = options.resolve_port()?;
+fn device_line_command(
+    options: DeviceOnlyOptions,
+    command: &str,
+    label: &str,
+    human: bool,
+) -> Result<Value, String> {
+    let port = resolve_port(&options)?;
     let mut device = SerialDevice::open(&port)?;
     let response = device.send_line(command)?;
-    print!("{response}");
-    Ok(())
+    if human {
+        print!("{response}");
+    }
+    Ok(json!({
+        "port": port,
+        "command": label,
+        "response": response
+    }))
 }
 
-fn device_block_command(args: &[String], command: &str) -> Result<(), String> {
-    let mut options = DeviceOptions::default();
-    let mut unexpected = None;
-    parse_device_args(args, &mut options, &mut unexpected, false)?;
-    if let Some(value) = unexpected {
-        return Err(format!("unexpected argument {}", value.display()));
-    }
-    let port = options.resolve_port()?;
-    let mut device = SerialDevice::open(&port)?;
-    let response = device.send_line(command)?;
-    print!("{response}");
-    Ok(())
+fn device_block_command(
+    options: DeviceOnlyOptions,
+    command: &str,
+    label: &str,
+    human: bool,
+) -> Result<Value, String> {
+    device_line_command(options, command, label, human)
 }
 
-fn repl(args: &[String]) -> Result<(), String> {
-    let mut target = None;
-    let mut check_target = false;
-    let mut port = env::var("ESPFLASH_PORT").ok();
-    let mut script = None;
-    let mut input_file = None;
-    let mut index = 0usize;
-    while index < args.len() {
-        match args[index].as_str() {
-            "--target" => {
-                index += 1;
-                target = args.get(index).cloned();
-            }
-            "--check-target" => {
-                check_target = true;
-            }
-            "--port" => {
-                index += 1;
-                port = Some(
-                    args.get(index)
-                        .cloned()
-                        .ok_or_else(|| "missing --port value".to_string())?,
-                );
-            }
-            "--script" => {
-                index += 1;
-                script = args.get(index).map(PathBuf::from);
-            }
-            value if input_file.is_none() => input_file = Some(PathBuf::from(value)),
-            value => return Err(format!("unexpected argument {value}")),
-        }
-        index += 1;
-    }
-    let target = compile_target_id(target.as_deref(), check_target)?;
-    let port = match port {
+fn repl(args: ReplArgs, human: bool) -> Result<Value, String> {
+    let target = compile_target_id(args.target.as_deref(), args.check_target)?;
+    let port = match args.port.or_else(|| env::var("ESPFLASH_PORT").ok()) {
         Some(port) => port,
         None => detect_port()?,
     };
-    let script = script.ok_or_else(|| "missing --script".to_string())?;
-    let script_text = fs::read_to_string(&script)
-        .map_err(|error| format!("failed to read {}: {error}", script.display()))?;
-    if script.extension().and_then(|value| value.to_str()) == Some("squid") {
-        let mut session = ReplSession::new(target, port, script_text);
-        return session.reload_base_source();
+    let script_text = fs::read_to_string(&args.script)
+        .map_err(|error| format!("failed to read {}: {error}", args.script.display()))?;
+    if args.script.extension().and_then(|value| value.to_str()) == Some("squid") {
+        let mut session = ReplSession::new(target, port.clone(), script_text, human);
+        session.reload_base_source()?;
+        return Ok(json!({"port": port, "mode": "reload"}));
     }
-    let base_source = match input_file {
+    let base_source = match args.input_file {
         Some(path) => fs::read_to_string(&path)
             .map_err(|error| format!("failed to read {}: {error}", path.display()))?,
         None => String::new(),
     };
-    ReplSession::new(target, port, base_source).run_script(&script_text)
+    ReplSession::new(target, port.clone(), base_source, human).run_script(&script_text)?;
+    Ok(json!({"port": port, "script": args.script}))
+}
+
+#[derive(Serialize)]
+struct DoctorCheck {
+    name: &'static str,
+    status: &'static str,
+    message: String,
+    details: Value,
+}
+
+fn doctor(args: DoctorArgs, human: bool) -> Result<Value, String> {
+    let mut checks = Vec::new();
+    checks.push(command_check("cargo", &["--version"], true));
+    checks.push(command_check("rustc", &["--version"], true));
+    checks.push(rustup_check());
+    checks.push(rust_target_check("riscv32imc-unknown-none-elf"));
+    checks.push(espflash_check());
+    checks.push(espflash_ports_check());
+    checks.push(command_check(
+        "riscv32-unknown-elf-size",
+        &["--version"],
+        false,
+    ));
+    checks.push(script_check("scripts/c3-supermini-test-hardware.sh"));
+    checks.push(serial_visibility_check(args.port.as_deref()));
+    checks.push(firmware_probe_check(args.port.as_deref()));
+
+    let failed = checks.iter().any(|check| check.status == "fail");
+    let warning = checks.iter().any(|check| check.status == "warn");
+    let summary = if failed {
+        "fail"
+    } else if warning {
+        "warn"
+    } else {
+        "ok"
+    };
+
+    if human {
+        for check in &checks {
+            println!("[{}] {}: {}", check.status, check.name, check.message);
+        }
+    }
+
+    Ok(json!({
+        "summary": summary,
+        "sandboxNote": "Hardware target tests and serial/flashing commands must run outside the Codex sandbox.",
+        "checks": checks
+    }))
+}
+
+fn command_check(name: &'static str, args: &[&str], required: bool) -> DoctorCheck {
+    match Command::new(name).args(args).output() {
+        Ok(output) if output.status.success() => DoctorCheck {
+            name,
+            status: "ok",
+            message: String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .next()
+                .unwrap_or("available")
+                .to_string(),
+            details: json!({"required": required}),
+        },
+        Ok(output) => DoctorCheck {
+            name,
+            status: if required { "fail" } else { "warn" },
+            message: String::from_utf8_lossy(&output.stderr)
+                .lines()
+                .next()
+                .unwrap_or("command failed")
+                .to_string(),
+            details: json!({"required": required, "status": output.status.code()}),
+        },
+        Err(error) => DoctorCheck {
+            name,
+            status: if required { "fail" } else { "warn" },
+            message: if required {
+                format!("missing required command: {error}")
+            } else {
+                format!("optional command missing: {error}")
+            },
+            details: json!({"required": required}),
+        },
+    }
+}
+
+fn rustup_check() -> DoctorCheck {
+    match Command::new("rustup")
+        .args(["target", "list", "--installed"])
+        .output()
+    {
+        Ok(output) if output.status.success() => DoctorCheck {
+            name: "rustup",
+            status: "ok",
+            message: "rustup can list installed targets".to_string(),
+            details: json!({"required": true}),
+        },
+        Ok(output) if String::from_utf8_lossy(&output.stdout).starts_with("rustup ") => {
+            DoctorCheck {
+                name: "rustup",
+                status: "warn",
+                message:
+                    "rustup is available, but version probing is unstable in this host context"
+                        .to_string(),
+                details: json!({"required": true, "status": output.status.code()}),
+            }
+        }
+        Ok(output) => DoctorCheck {
+            name: "rustup",
+            status: "fail",
+            message: String::from_utf8_lossy(&output.stderr)
+                .lines()
+                .next()
+                .unwrap_or("rustup failed")
+                .to_string(),
+            details: json!({"required": true, "status": output.status.code()}),
+        },
+        Err(error) => DoctorCheck {
+            name: "rustup",
+            status: "fail",
+            message: format!("missing required command: {error}"),
+            details: json!({"required": true}),
+        },
+    }
+}
+
+fn espflash_check() -> DoctorCheck {
+    match espflash_path().and_then(|path| {
+        Command::new(&path)
+            .arg("--version")
+            .output()
+            .ok()
+            .map(|output| (path, output))
+    }) {
+        Some((path, output)) if output.status.success() => DoctorCheck {
+            name: "espflash",
+            status: "ok",
+            message: String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .next()
+                .unwrap_or("available")
+                .to_string(),
+            details: json!({"path": path}),
+        },
+        Some((path, output)) => DoctorCheck {
+            name: "espflash",
+            status: "fail",
+            message: String::from_utf8_lossy(&output.stderr)
+                .lines()
+                .next()
+                .unwrap_or("espflash failed")
+                .to_string(),
+            details: json!({"path": path, "status": output.status.code()}),
+        },
+        None => DoctorCheck {
+            name: "espflash",
+            status: "fail",
+            message: "missing required command; install espflash or add ~/.cargo/bin to PATH"
+                .to_string(),
+            details: json!({"required": true}),
+        },
+    }
+}
+
+fn espflash_ports_check() -> DoctorCheck {
+    let Some(path) = espflash_path() else {
+        return DoctorCheck {
+            name: "espflash-ports",
+            status: "warn",
+            message: "skipped because espflash is unavailable".to_string(),
+            details: json!({}),
+        };
+    };
+    match Command::new(&path)
+        .args(["list-ports", "--list-all-ports"])
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let ports = stdout
+                .lines()
+                .filter(|line| line.trim_start().starts_with("/dev/"))
+                .map(|line| line.trim().to_string())
+                .collect::<Vec<_>>();
+            DoctorCheck {
+                name: "espflash-ports",
+                status: if ports.is_empty() { "warn" } else { "ok" },
+                message: if ports.is_empty() {
+                    "espflash saw no serial ports".to_string()
+                } else {
+                    format!("espflash ports: {}", ports.join(", "))
+                },
+                details: json!({"path": path, "ports": ports}),
+            }
+        }
+        Ok(output) => DoctorCheck {
+            name: "espflash-ports",
+            status: "warn",
+            message: String::from_utf8_lossy(&output.stderr)
+                .lines()
+                .next()
+                .unwrap_or("espflash list-ports failed")
+                .to_string(),
+            details: json!({"path": path, "status": output.status.code()}),
+        },
+        Err(error) => DoctorCheck {
+            name: "espflash-ports",
+            status: "warn",
+            message: format!("failed to run espflash list-ports: {error}"),
+            details: json!({"path": path}),
+        },
+    }
+}
+
+fn espflash_path() -> Option<PathBuf> {
+    if Command::new("espflash").arg("--version").output().is_ok() {
+        return Some(PathBuf::from("espflash"));
+    }
+    let home_path = env::var_os("HOME")
+        .map(PathBuf::from)
+        .map(|home| home.join(".cargo/bin/espflash"));
+    home_path.filter(|path| path.exists())
+}
+
+fn rust_target_check(target: &'static str) -> DoctorCheck {
+    match Command::new("rustup")
+        .args(["target", "list", "--installed"])
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            let installed = String::from_utf8_lossy(&output.stdout);
+            let present = installed.lines().any(|line| line.trim() == target);
+            DoctorCheck {
+                name: "rust-target",
+                status: if present { "ok" } else { "fail" },
+                message: if present {
+                    format!("{target} installed")
+                } else {
+                    format!("{target} missing; run rustup target add {target}")
+                },
+                details: json!({"target": target}),
+            }
+        }
+        Ok(output) => DoctorCheck {
+            name: "rust-target",
+            status: "fail",
+            message: String::from_utf8_lossy(&output.stderr).to_string(),
+            details: json!({"target": target}),
+        },
+        Err(error) => DoctorCheck {
+            name: "rust-target",
+            status: "fail",
+            message: format!("failed to run rustup: {error}"),
+            details: json!({"target": target}),
+        },
+    }
+}
+
+fn script_check(path: &'static str) -> DoctorCheck {
+    let exists = Path::new(path).exists();
+    DoctorCheck {
+        name: "hardware-test-script",
+        status: if exists { "ok" } else { "fail" },
+        message: if exists {
+            format!("{path} exists")
+        } else {
+            format!("{path} is missing")
+        },
+        details: json!({"path": path}),
+    }
+}
+
+fn serial_visibility_check(port: Option<&str>) -> DoctorCheck {
+    let candidates = match port {
+        Some(port) => vec![port.to_string()],
+        None => candidate_ports(),
+    };
+    DoctorCheck {
+        name: "serial-visibility",
+        status: if candidates.is_empty() { "warn" } else { "ok" },
+        message: if candidates.is_empty() {
+            "no /dev/ttyACM* or /dev/ttyUSB* candidates visible; run hardware checks outside the Codex sandbox".to_string()
+        } else {
+            format!("visible candidates: {}", candidates.join(", "))
+        },
+        details: json!({"candidates": candidates}),
+    }
+}
+
+fn firmware_probe_check(port: Option<&str>) -> DoctorCheck {
+    let candidates = match port {
+        Some(port) => vec![port.to_string()],
+        None => candidate_ports(),
+    };
+    if candidates.len() != 1 {
+        return DoctorCheck {
+            name: "firmware-hello",
+            status: "warn",
+            message: "skipped; pass --port or expose exactly one serial candidate".to_string(),
+            details: json!({"candidates": candidates}),
+        };
+    }
+    let port = &candidates[0];
+    match SerialDevice::probe(port) {
+        Ok(true) => DoctorCheck {
+            name: "firmware-hello",
+            status: "ok",
+            message: format!("{port} responded to HELLO"),
+            details: json!({"port": port}),
+        },
+        Ok(false) => DoctorCheck {
+            name: "firmware-hello",
+            status: "warn",
+            message: format!("{port} did not look like SquidScript firmware"),
+            details: json!({"port": port}),
+        },
+        Err(error) => DoctorCheck {
+            name: "firmware-hello",
+            status: "warn",
+            message: error,
+            details: json!({"port": port}),
+        },
+    }
+}
+
+fn resolve_port(options: &DeviceOnlyOptions) -> Result<String, String> {
+    match &options.port {
+        Some(port) => Ok(port.clone()),
+        None => detect_port(),
+    }
+}
+
+fn write_json_success(command: &str, data: Value) {
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json!({
+            "ok": true,
+            "command": command,
+            "data": data,
+            "warnings": [],
+            "errors": []
+        }))
+        .unwrap()
+    );
+}
+
+fn write_json_error(command: &str, error: String) {
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json!({
+            "ok": false,
+            "command": command,
+            "data": null,
+            "warnings": [],
+            "errors": [{"code": "SQUIDC_ERROR", "message": error}]
+        }))
+        .unwrap()
+    );
 }
 
 struct ReplSession {
@@ -370,6 +924,7 @@ struct ReplSession {
     last_output: String,
     last_drawlog: String,
     temp_dir: PathBuf,
+    echo: bool,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -379,7 +934,7 @@ enum ReplMode {
 }
 
 impl ReplSession {
-    fn new(target: String, port: String, base_source: String) -> Self {
+    fn new(target: String, port: String, base_source: String, echo: bool) -> Self {
         let state_block =
             extract_state_block(&base_source).unwrap_or_else(|| "state {}\n".to_string());
         Self {
@@ -394,6 +949,7 @@ impl ReplSession {
             last_output: String::new(),
             last_drawlog: String::new(),
             temp_dir: PathBuf::from("target/repl"),
+            echo,
         }
     }
 
@@ -471,7 +1027,7 @@ impl ReplSession {
             }
             ":reset" => {
                 self.flush_snippet()?;
-                self.serial_text(&["send", "RESET"])?;
+                self.serial_text(&["raw", "RESET"])?;
                 Ok(())
             }
             ":reload" => {
@@ -582,107 +1138,30 @@ impl ReplSession {
             ["install-app", app_id, path] => {
                 let bytes =
                     fs::read(path).map_err(|error| format!("failed to read {path}: {error}"))?;
-                device.install_app(app_id, &bytes)?;
-                String::new()
+                device.install_app(app_id, &bytes)?
             }
             ["run-app-event", app_id, event] => device.run_app_event(app_id, event)?,
             ["state-import", path] => {
                 let bytes =
                     fs::read(path).map_err(|error| format!("failed to read {path}: {error}"))?;
-                device.import_state(&bytes)?;
-                String::new()
+                device.import_state(&bytes)?
             }
             ["state"] => device.send_line("STATE.GET")?,
             ["output"] => device.send_line("OUTPUT.GET")?,
             ["drawlog"] => device.send_line("DRAWLOG.GET")?,
             ["key", key] => device.send_line(&format!("KEY {key}"))?,
-            ["send", line] => device.send_line(line)?,
+            ["raw", line] => device.send_line(line)?,
             _ => return Err(format!("unsupported repl serial command: {args:?}")),
         };
-        print!("{output}");
+        if self.echo {
+            print!("{output}");
+        }
         Ok(output)
     }
 
     fn serial_text_allow_fail(&self, args: &[&str]) -> Result<String, String> {
         self.serial_text(args).or_else(|_| Ok(String::new()))
     }
-}
-
-struct DeviceOptions {
-    port: Option<String>,
-    target: Option<String>,
-    check_target: bool,
-    profile: BuildProfile,
-    app_id_override: Option<String>,
-}
-
-impl Default for DeviceOptions {
-    fn default() -> Self {
-        Self {
-            port: None,
-            target: None,
-            check_target: false,
-            profile: BuildProfile::Dev,
-            app_id_override: None,
-        }
-    }
-}
-
-impl DeviceOptions {
-    fn resolve_port(&self) -> Result<String, String> {
-        match &self.port {
-            Some(port) => Ok(port.clone()),
-            None => detect_port(),
-        }
-    }
-}
-
-fn parse_device_args(
-    args: &[String],
-    options: &mut DeviceOptions,
-    positional: &mut Option<PathBuf>,
-    allow_as: bool,
-) -> Result<(), String> {
-    let mut index = 0usize;
-    while index < args.len() {
-        match args[index].as_str() {
-            "--port" => {
-                index += 1;
-                options.port = Some(
-                    args.get(index)
-                        .cloned()
-                        .ok_or_else(|| "missing --port value".to_string())?,
-                );
-            }
-            "--target" => {
-                index += 1;
-                options.target = args.get(index).cloned();
-            }
-            "--check-target" => {
-                options.check_target = true;
-            }
-            "--profile" => {
-                index += 1;
-                let value = args
-                    .get(index)
-                    .ok_or_else(|| "missing --profile value".to_string())?;
-                options.profile = BuildProfile::parse(value)
-                    .ok_or_else(|| format!("unknown profile {value}; expected dev or release"))?;
-            }
-            "--as" if allow_as => {
-                index += 1;
-                options.app_id_override = Some(
-                    args.get(index)
-                        .cloned()
-                        .ok_or_else(|| "missing --as value".to_string())?,
-                );
-            }
-            value if positional.is_none() => *positional = Some(PathBuf::from(value)),
-            value => return Err(format!("unexpected argument {value}")),
-        }
-        index += 1;
-    }
-    Ok(())
 }
 
 fn extract_state_block(source: &str) -> Option<String> {
@@ -724,4 +1203,72 @@ fn state_payload(state_output: &str) -> Vec<u8> {
 fn path_str(path: &Path) -> Result<&str, String> {
     path.to_str()
         .ok_or_else(|| format!("path is not UTF-8: {}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_grouped_app_install_command() {
+        let cli = Cli::try_parse_from([
+            "squidc",
+            "app",
+            "install",
+            "--as",
+            "main",
+            "examples/blinky-supermini/main.squid",
+        ])
+        .unwrap();
+        let Commands::App {
+            command: AppCommands::Install(args),
+        } = cli.command
+        else {
+            panic!("expected app install");
+        };
+        assert_eq!(args.app_id_override.as_deref(), Some("main"));
+        assert_eq!(
+            args.input,
+            PathBuf::from("examples/blinky-supermini/main.squid")
+        );
+    }
+
+    #[test]
+    fn parses_device_monitor_json_shape_requirement_inputs() {
+        let cli =
+            Cli::try_parse_from(["squidc", "--json", "device", "monitor", "--max-lines", "4"])
+                .unwrap();
+        assert!(cli.json);
+        let Commands::Device {
+            command: DeviceCommands::Monitor(args),
+        } = cli.command
+        else {
+            panic!("expected device monitor");
+        };
+        assert_eq!(args.max_lines, Some(4));
+    }
+
+    #[test]
+    fn parses_protocol_raw_command() {
+        let cli = Cli::try_parse_from(["squidc", "protocol", "raw", "APP.LIST"]).unwrap();
+        let Commands::Protocol {
+            command: ProtocolCommands::Raw(args),
+        } = cli.command
+        else {
+            panic!("expected protocol raw");
+        };
+        assert_eq!(args.line, "APP.LIST");
+    }
+
+    #[test]
+    fn json_monitor_requires_max_lines() {
+        let cli = Cli::try_parse_from(["squidc", "--json", "device", "monitor"]).unwrap();
+        let Commands::Device {
+            command: DeviceCommands::Monitor(args),
+        } = cli.command
+        else {
+            panic!("expected device monitor");
+        };
+        assert!(monitor(args, true).unwrap_err().contains("--max-lines"));
+    }
 }

@@ -126,7 +126,7 @@ surface is generic events plus `app.start`, `app.arm`, `app.disarm`, and
 `event.addSource`. `app.launch` remains the app replacement/launch primitive.
 
 SQBC v2 includes an explicit app metadata section so tools can read the app id
-from bytecode without guessing from the string table. `squidc install` uses this
+from bytecode without guessing from the string table. `squidc app install` uses this
 metadata for raw `.sqbc` files. Source installs use the `app "id"` declaration;
 if source omits it in a developer workflow, `squidc` generates a deterministic
 id from the filename and content hash.

@@ -1562,7 +1562,9 @@ Do not use `#ifdef` throughout app logic, VM logic, or renderer logic unless una
 1. Treat target profiles as first-class project artifacts.
 2. Use one integrated `*.target.json` file for fixed production devices.
 3. Apps should target capabilities, not boards, unless necessary.
-4. `squidc` should compile against a target or compatibility profile.
+4. `squidc` should compile against the portable language/runtime API by default.
+   Target profiles should be explicit opt-in inputs for compatibility checks,
+   simulator configuration, firmware metadata, docs, and autocomplete.
 5. `.sqbc` should include compatibility metadata.
 6. Firmware should validate app compatibility before launch.
 7. SquidScript apps should use logical coordinates.

@@ -44,6 +44,6 @@ cargo run -p squidc -- repl --script tests/repl/default-dev.session
 "$ROOT/scripts/c3-supermini-test-generic-triggered-apps.sh"
 cargo run -p squidc -- repl examples/blinky-supermini/main.squid --script tests/repl/blinky-supermini.session
 cargo run -p squidc -- run examples/blinky-supermini/main.squid
-cargo run -p squidc -- monitor --max-lines 4
+cargo run -p squidc -- device monitor --max-lines 4
 
 printf 'OK hardware test esp32c3-super-mini full sequence\n'

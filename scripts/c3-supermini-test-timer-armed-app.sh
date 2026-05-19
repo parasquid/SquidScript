@@ -2,13 +2,13 @@
 set -euo pipefail
 
 PORT="${ESPFLASH_PORT:-/dev/ttyACM0}"
-cargo run -p squidc -- reset --port "$PORT"
-cargo run -p squidc -- install --port "$PORT" examples/timer-armed-app/armed.squid
-cargo run -p squidc -- install --port "$PORT" --as main examples/timer-armed-app/main.squid
-cargo run -p squidc -- start --port "$PORT" main
+cargo run -p squidc -- device reset --port "$PORT"
+cargo run -p squidc -- app install --port "$PORT" examples/timer-armed-app/armed.squid
+cargo run -p squidc -- app install --port "$PORT" --as main examples/timer-armed-app/main.squid
+cargo run -p squidc -- app launch --port "$PORT" main
 sleep 3
 
-output="$(cargo run -p squidc -- output --port "$PORT")"
+output="$(cargo run -p squidc -- device output --port "$PORT")"
 printf '%s\n' "$output"
 
 case "$output" in

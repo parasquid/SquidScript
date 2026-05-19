@@ -32,7 +32,7 @@ impl SerialDevice {
         Ok(response.contains("target=") && response.contains("OK HELLO"))
     }
 
-    pub fn install_app(&mut self, app_id: &str, bytes: &[u8]) -> Result<(), String> {
+    pub fn install_app(&mut self, app_id: &str, bytes: &[u8]) -> Result<String, String> {
         self.write_install(
             &format!("INSTALL.APP {app_id}"),
             "READY install.app",
@@ -41,7 +41,7 @@ impl SerialDevice {
         )
     }
 
-    pub fn import_state(&mut self, bytes: &[u8]) -> Result<(), String> {
+    pub fn import_state(&mut self, bytes: &[u8]) -> Result<String, String> {
         self.write_install(
             "STATE.IMPORT",
             "READY STATE.IMPORT",
@@ -50,13 +50,12 @@ impl SerialDevice {
         )
     }
 
-    pub fn run_app(&mut self, app_id: &str) -> Result<(), String> {
+    pub fn run_app(&mut self, app_id: &str) -> Result<String, String> {
         let response = self.send_line(&format!("RUN.APP {app_id}"))?;
-        print!("{response}");
         if !response.contains("OK RUN.APP") {
             return Err(response.trim().to_string());
         }
-        Ok(())
+        Ok(response)
     }
 
     pub fn run_app_event(&mut self, app_id: &str, event: &str) -> Result<String, String> {
@@ -85,19 +84,17 @@ impl SerialDevice {
         ready_token: &str,
         ok_token: &str,
         bytes: &[u8],
-    ) -> Result<(), String> {
+    ) -> Result<String, String> {
         self.drain();
         let hash = fnv1a(bytes);
         self.write_all(format!("{command} {} {hash:08x}\n", bytes.len()).as_bytes())?;
         let ready = self.read_until(ready_token, DEFAULT_TIMEOUT)?;
-        print!("{ready}");
         for chunk in bytes.chunks(CHUNK_SIZE) {
             self.write_all(chunk)?;
             std::thread::sleep(Duration::from_millis(2));
         }
         let ok = self.read_until(ok_token, DEFAULT_TIMEOUT)?;
-        print!("{ok}");
-        Ok(())
+        Ok(format!("{ready}{ok}"))
     }
 
     fn drain(&mut self) {
@@ -189,7 +186,7 @@ pub fn detect_port() -> Result<String, String> {
     }
 }
 
-fn candidate_ports() -> Vec<String> {
+pub fn candidate_ports() -> Vec<String> {
     let mut out = Vec::new();
     if let Ok(entries) = fs::read_dir("/dev") {
         for entry in entries.flatten() {

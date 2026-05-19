@@ -10,9 +10,14 @@ command execution for ESP32-C3 Super Mini serial visibility checks and hardware
 target tests:
 
 ```sh
+cargo run -p squidc -- doctor
 ~/.cargo/bin/espflash list-ports --list-all-ports
 ./scripts/c3-supermini-test-hardware.sh
 ```
+
+`squidc doctor` is read-only. It reports toolchain, optional size tooling,
+serial visibility, firmware handshake, and hardware-test script readiness.
+See `docs/squidc_cli.md` for the grouped `squidc` command surface.
 
 The suite is ordered so tests that reset, install, or replace apps run before
 visual/interactive checks. Blinky runs last because it intentionally leaves the
@@ -73,15 +78,15 @@ behavior over USB serial.
 
 ```sh
 cargo run -p squidc -- run examples/blinky-supermini/main.squid
-cargo run -p squidc -- output
-cargo run -p squidc -- monitor --max-lines 4
+cargo run -p squidc -- device output
+cargo run -p squidc -- device monitor --max-lines 4
 ```
 
 Compiles, uploads, and runs the blinky SquidScript app as `main`. The serial
 output should include `blinky ready` followed by alternating `blink` values.
 The onboard LED should visibly toggle.
 
-`squidc monitor` polls the firmware debug output buffer and prints newly
+`squidc device monitor` polls the firmware debug output buffer and prints newly
 observed `output=...` lines to the terminal. Use `--raw` only when literal
 serial bytes are needed.
 
@@ -134,7 +139,7 @@ timer events, triggered app behavior, and key-event handling on real firmware.
 ## Rules
 
 - Run these checks sequentially against a given board.
-- Do not leave `squidc monitor` open while running an install, flash, REPL, or
+- Do not leave `squidc device monitor` open while running an install, flash, REPL, or
   hardware test script.
 - Prefer auto-detected ports for normal `squidc` flows. Pass `--port` only when
   the host has multiple candidate serial devices or auto-detection fails.

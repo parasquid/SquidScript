@@ -39,7 +39,7 @@ if [[ "$SKIP_FLASH" == "0" ]]; then
   sleep 1
 fi
 
-cargo run -p squidc -- install \
+cargo run -p squidc -- app install \
   --port "$PORT" \
   --as main \
   "$ROOT/compiler/rust/fixtures/conformance/headless_counter.squid"
