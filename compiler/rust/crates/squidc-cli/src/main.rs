@@ -33,11 +33,12 @@ fn run() -> Result<(), String> {
         Some("reset") => device_line_command(&args[1..], "RESET"),
         Some("send") => send(&args[1..]),
         Some("monitor") => monitor(&args[1..]),
+        Some("apps") => device_block_command(&args[1..], "APP.LIST"),
         Some("output") => device_block_command(&args[1..], "OUTPUT.GET"),
         Some("state") => device_block_command(&args[1..], "STATE.GET"),
         Some("drawlog") => device_block_command(&args[1..], "DRAWLOG.GET"),
         _ => Err(
-            "usage: squidc build|run|install|start|key|reset|send|monitor|output|state|drawlog|repl ..."
+            "usage: squidc build|run|install|start|key|reset|send|monitor|apps|output|state|drawlog|repl ..."
                 .to_string(),
         ),
     }
@@ -516,19 +517,19 @@ impl ReplSession {
         fs::write(&state_path, state_payload(&state_before))
             .map_err(|error| format!("failed to write {}: {error}", state_path.display()))?;
 
-        self.serial_text(&["install", path_str(&sqbc_path)?])?;
-        self.serial_text(&["load"])?;
+        self.serial_text(&["install-app", "repl-session", path_str(&sqbc_path)?])?;
+        self.serial_text(&["run-app-event", "repl-session", "app.start"])?;
         if fs::metadata(&state_path).map(|m| m.len()).unwrap_or(0) > 0 {
             self.serial_text(&["state-import", path_str(&state_path)?])?;
         }
 
         match self.mode {
             ReplMode::Event => {
-                self.serial_text(&["run", "repl"])?;
+                self.serial_text(&["run-app-event", "repl-session", "repl"])?;
                 self.last_output = self.serial_text(&["output"])?;
             }
             ReplMode::Render => {
-                self.serial_text(&["run", "app.start"])?;
+                self.serial_text(&["run-app-event", "repl-session", "app.start"])?;
                 self.last_drawlog = self.serial_text(&["drawlog"])?;
             }
         }
@@ -548,9 +549,8 @@ impl ReplSession {
         fs::write(&sqbc_path, sqbc)
             .map_err(|error| format!("failed to write {}: {error}", sqbc_path.display()))?;
 
-        self.serial_text(&["install", path_str(&sqbc_path)?])?;
-        self.serial_text(&["load"])?;
-        self.serial_text(&["run", "app.start"])?;
+        self.serial_text(&["install-app", "repl-session", path_str(&sqbc_path)?])?;
+        self.serial_text(&["run-app-event", "repl-session", "app.start"])?;
         self.last_output = self.serial_text(&["output"])?;
         self.last_drawlog = self.serial_text(&["drawlog"])?;
         self.last_state = self.serial_text(&["state"])?;
@@ -579,14 +579,13 @@ impl ReplSession {
     fn serial_text(&self, args: &[&str]) -> Result<String, String> {
         let mut device = SerialDevice::open(&self.port)?;
         let output = match args {
-            ["install", path] => {
+            ["install-app", app_id, path] => {
                 let bytes =
                     fs::read(path).map_err(|error| format!("failed to read {path}: {error}"))?;
-                device.install_legacy(&bytes)?;
+                device.install_app(app_id, &bytes)?;
                 String::new()
             }
-            ["load"] => device.send_line("LOAD")?,
-            ["run", event] => device.run_event(event)?,
+            ["run-app-event", app_id, event] => device.run_app_event(app_id, event)?,
             ["state-import", path] => {
                 let bytes =
                     fs::read(path).map_err(|error| format!("failed to read {path}: {error}"))?;

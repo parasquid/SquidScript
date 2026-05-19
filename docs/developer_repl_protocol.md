@@ -10,9 +10,10 @@ default for v4 dev firmware.
 
 ```text
 HELLO
-INSTALL <len> <fnv32hex>
-LOAD
-RUN <event>
+INSTALL.APP <app-id> <len> <fnv32hex>
+RUN.APP <app-id>
+RUN.EVENT <app-id> <event>
+APP.LIST
 KEY <logical-key>
 STATE.GET
 STATE.IMPORT <len> <fnv32hex>
@@ -23,9 +24,9 @@ ERRORS.GET
 RESET
 ```
 
-`INSTALL` is followed by exactly `<len>` raw SQBC bytes. `STATE.IMPORT` is
-followed by exactly `<len>` state snapshot bytes. The hash is FNV-1a over the
-payload bytes.
+`INSTALL.APP` is followed by exactly `<len>` raw SQBC bytes and stores them in
+the RAM app registry under `<app-id>`. `STATE.IMPORT` is followed by exactly
+`<len>` state snapshot bytes. The hash is FNV-1a over the payload bytes.
 
 Success responses start with `OK`. Error responses start with `ERR`.
 
@@ -38,6 +39,9 @@ exited=false
 END STATE
 OK STATE.GET
 ```
+
+Installed apps are RAM-only in the ESP32-C3 reference firmware. Resetting or
+power-cycling the board clears the registry.
 
 ## State Snapshots
 

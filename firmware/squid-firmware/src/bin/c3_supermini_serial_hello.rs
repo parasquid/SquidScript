@@ -14,7 +14,7 @@ use esp_hal::{
     usb_serial_jtag::UsbSerialJtag,
 };
 use squid_firmware::{
-    dev_harness::{DevAppId as AppId, DevTimerEvent as TimerEvent},
+    dev_harness::{AppName, AppRegistry, AppRegistryError, AppSlot, DevTimerEvent as TimerEvent, APP_REGISTRY_CAP},
     protocol::{fnv1a, parse_install},
     vm::{Program, TraceSink, Value, Vm, VmError, MAX_APP_BYTES},
 };
@@ -35,11 +35,8 @@ const STATE_IMPORT_CAP: usize = 512;
 const INSTALL_TIMEOUT_MS: u32 = 2_000;
 const STACK_CAP: usize = 4;
 const TIMER_CAP: usize = 4;
-static mut APP_BYTES: [u8; MAX_APP_BYTES] = [0; MAX_APP_BYTES];
-static mut MAIN_APP_BYTES: [u8; MAX_APP_BYTES] = [0; MAX_APP_BYTES];
-static mut TIMER_BACKGROUND_BYTES: [u8; MAX_APP_BYTES] = [0; MAX_APP_BYTES];
-static mut READER_CLOCK_BYTES: [u8; MAX_APP_BYTES] = [0; MAX_APP_BYTES];
-static mut BREAK_REMINDER_BYTES: [u8; MAX_APP_BYTES] = [0; MAX_APP_BYTES];
+static mut APP_BYTES: [[u8; MAX_APP_BYTES]; APP_REGISTRY_CAP] =
+    [[0; MAX_APP_BYTES]; APP_REGISTRY_CAP];
 static mut STATE_IMPORT_BYTES: [u8; STATE_IMPORT_CAP] = [0; STATE_IMPORT_CAP];
 
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -52,13 +49,10 @@ fn main() -> ! {
     let led = Output::new(peripherals.GPIO8, Level::Low, OutputConfig::default());
     let mut serial = UsbSerialJtag::new(peripherals.USB_DEVICE);
     let mut line = LineBuffer::new();
+    let mut registry = AppRegistry::new();
     let mut runtime = RuntimeSink::new(led);
-    let mut app_len = 0usize;
-    let mut main_app_len = 0usize;
-    let mut timer_background_len = 0usize;
-    let mut reader_clock_len = 0usize;
-    let mut break_reminder_len = 0usize;
     let mut vm: Option<Vm<'static>> = None;
+    let mut vm_slot: Option<AppSlot> = None;
     let mut last_error: Option<VmError> = None;
 
     writeln!(serial, "SquidScript reference firmware").ok();
@@ -69,10 +63,8 @@ fn main() -> ! {
         runtime.breathe_once(&delay);
         runtime.advance_time(
             Instant::now(),
-            main_app_len,
-            timer_background_len,
-            reader_clock_len,
-            break_reminder_len,
+            &registry,
+            unsafe { &APP_BYTES },
             &mut last_error,
         );
         match serial.read_byte() {
@@ -84,13 +76,11 @@ fn main() -> ! {
                             command,
                             &mut serial,
                             &delay,
+                            &mut registry,
+                            unsafe { &mut APP_BYTES },
                             &mut runtime,
-                            &mut app_len,
-                            &mut main_app_len,
-                            &mut timer_background_len,
-                            &mut reader_clock_len,
-                            &mut break_reminder_len,
                             &mut vm,
+                            &mut vm_slot,
                             &mut last_error,
                         );
                     }
@@ -105,67 +95,23 @@ fn handle_command(
     command: &str,
     serial: &mut UsbSerialJtag<'_, esp_hal::Blocking>,
     delay: &Delay,
+    registry: &mut AppRegistry,
+    app_bytes: &'static mut [[u8; MAX_APP_BYTES]; APP_REGISTRY_CAP],
     trace: &mut RuntimeSink<'_>,
-    app_len: &mut usize,
-    main_app_len: &mut usize,
-    timer_background_len: &mut usize,
-    reader_clock_len: &mut usize,
-    break_reminder_len: &mut usize,
     vm: &mut Option<Vm<'static>>,
+    vm_slot: &mut Option<AppSlot>,
     last_error: &mut Option<VmError>,
 ) {
     if command == "help" {
-        writeln!(serial, "commands: HELLO INSTALL <len> <fnv32hex> RUN <event> KEY SELECT STATE.GET STATE.IMPORT <len> <fnv32hex> TRACE.GET OUTPUT.GET DRAWLOG.GET ERRORS.GET RESET").ok();
+        writeln!(serial, "commands: HELLO INSTALL.APP <app-id> <len> <fnv32hex> RUN.APP <app-id> RUN.EVENT <app-id> <event> KEY SELECT APP.LIST STATE.GET STATE.IMPORT <len> <fnv32hex> TRACE.GET OUTPUT.GET DRAWLOG.GET ERRORS.GET RESET").ok();
     } else if command == "HELLO" || command == "hello" || command == "info" {
         writeln!(serial, "target=esp32c3-super-mini").ok();
         writeln!(serial, "build={BUILD_ID}").ok();
         writeln!(serial, "profile=dev").ok();
-        writeln!(serial, "app_len={}", *app_len).ok();
-        writeln!(serial, "main_app_len={}", *main_app_len).ok();
-        writeln!(serial, "timer_background_len={}", *timer_background_len).ok();
-        writeln!(serial, "reader_clock_len={}", *reader_clock_len).ok();
-        writeln!(serial, "break_reminder_len={}", *break_reminder_len).ok();
+        writeln!(serial, "app_slots={APP_REGISTRY_CAP}").ok();
+        writeln!(serial, "installed_apps={}", registry.iter().count()).ok();
         writeln!(serial, "vm_loaded={}", vm.is_some()).ok();
         writeln!(serial, "OK HELLO").ok();
-    } else if let Some(rest) = command
-        .strip_prefix("INSTALL ")
-        .or_else(|| command.strip_prefix("install "))
-    {
-        match parse_install(rest) {
-            Ok(request) if request.len <= MAX_APP_BYTES => {
-                let len = request.len;
-                writeln!(serial, "READY install len={len}").ok();
-                let bytes = unsafe { &mut APP_BYTES[..len] };
-                let read = read_exact_timeout(serial, bytes, delay, INSTALL_TIMEOUT_MS);
-                if read != len {
-                    *last_error = Some(VmError::InvalidHeader);
-                    writeln!(serial, "ERR install timeout read={read} expected={len}").ok();
-                    return;
-                }
-                let actual_hash = fnv1a(bytes);
-                if actual_hash == request.expected_hash {
-                    *app_len = len;
-                    *vm = None;
-                    trace.clear();
-                    trace.clear_timers();
-                    trace.reset_stack();
-                    *last_error = None;
-                    writeln!(serial, "OK install hash={actual_hash:08x}").ok();
-                } else {
-                    *last_error = Some(VmError::InvalidHeader);
-                    writeln!(
-                        serial,
-                        "ERR install hash expected={:08x} actual={actual_hash:08x}",
-                        request.expected_hash
-                    )
-                    .ok();
-                }
-            }
-            _ => {
-                *last_error = Some(VmError::TooLarge);
-                writeln!(serial, "ERR install").ok();
-            }
-        }
     } else if let Some(rest) = command
         .strip_prefix("INSTALL.APP ")
         .or_else(|| command.strip_prefix("install.app "))
@@ -177,8 +123,23 @@ fn handle_command(
         match parse_install(request_text) {
             Ok(request) if request.len <= MAX_APP_BYTES => {
                 let len = request.len;
-                let Some(bytes) = app_storage_mut(app_id) else {
-                    writeln!(serial, "ERR install.app unknown").ok();
+                let slot = match registry.reserve_install(app_id, len, MAX_APP_BYTES) {
+                    Ok(slot) => slot,
+                    Err(AppRegistryError::Full) => {
+                        writeln!(serial, "ERR install.app full").ok();
+                        return;
+                    }
+                    Err(AppRegistryError::InvalidAppId) => {
+                        writeln!(serial, "ERR install.app invalid-app-id").ok();
+                        return;
+                    }
+                    Err(_) => {
+                        writeln!(serial, "ERR install.app").ok();
+                        return;
+                    }
+                };
+                let Some(bytes) = app_bytes.get_mut(slot.0) else {
+                    writeln!(serial, "ERR install.app").ok();
                     return;
                 };
                 writeln!(serial, "READY install.app app={app_id} len={len}").ok();
@@ -190,14 +151,19 @@ fn handle_command(
                 }
                 let actual_hash = fnv1a(&bytes[..len]);
                 if actual_hash == request.expected_hash {
-                    match AppId::from_runtime_name(app_id) {
-                        Some(AppId::Main) => *main_app_len = len,
-                        Some(AppId::TimerBackground) => *timer_background_len = len,
-                        Some(AppId::ReaderClock) => *reader_clock_len = len,
-                        Some(AppId::BreakReminder) => *break_reminder_len = len,
-                        _ => {}
+                    if let Err(error) = registry.commit_install(slot, app_id, len, actual_hash) {
+                        *last_error = Some(VmError::InvalidOperand);
+                        match error {
+                            AppRegistryError::Full => writeln!(serial, "ERR install.app full").ok(),
+                            AppRegistryError::InvalidAppId => {
+                                writeln!(serial, "ERR install.app invalid-app-id").ok()
+                            }
+                            _ => writeln!(serial, "ERR install.app").ok(),
+                        };
+                        return;
                     }
                     *vm = None;
+                    *vm_slot = None;
                     trace.clear();
                     trace.clear_timers();
                     trace.reset_stack();
@@ -218,63 +184,48 @@ fn handle_command(
                 writeln!(serial, "ERR install.app").ok();
             }
         }
-    } else if command == "RUN.APP main" || command == "run.app main" {
-        if *main_app_len == 0 {
-            writeln!(serial, "ERR no-main-app").ok();
+    } else if let Some(app_id) = command
+        .strip_prefix("RUN.APP ")
+        .or_else(|| command.strip_prefix("run.app "))
+    {
+        let Some(slot) = registry.find(app_id) else {
+            writeln!(serial, "ERR no-app").ok();
             return;
-        }
+        };
         trace.clear();
         trace.reset_stack();
-        trace.push_app(AppId::Main);
-        match run_app_event(AppId::Main, "app.start", *main_app_len, trace) {
+        trace.push_app(slot);
+        match run_app_event(slot, "app.start", registry, app_bytes, trace) {
             Ok(()) => {
-                process_pending_actions(
-                    trace,
-                    *timer_background_len,
-                    *main_app_len,
-                    *reader_clock_len,
-                    *break_reminder_len,
-                    last_error,
-                );
-                writeln!(serial, "OK RUN.APP main").ok();
+                process_pending_actions(trace, registry, app_bytes, last_error);
+                writeln!(serial, "OK RUN.APP {app_id}").ok();
             }
             Err(error) => {
                 *last_error = Some(error);
                 writeln!(serial, "ERR RUN.APP {:?}", error).ok();
             }
         }
-    } else if command == "LOAD" || command == "load" {
-        if *app_len == 0 {
+    } else if let Some(rest) = command
+        .strip_prefix("RUN.EVENT ")
+        .or_else(|| command.strip_prefix("run.event "))
+    {
+        let Some((app_id, event)) = rest.split_once(' ') else {
+            writeln!(serial, "ERR RUN.EVENT").ok();
+            return;
+        };
+        let Some(slot) = registry.find(app_id) else {
             writeln!(serial, "ERR no-app").ok();
             return;
+        };
+        let bytes = registry_app_bytes(slot, registry, app_bytes);
+        if vm_slot != &Some(slot) {
+            *vm = None;
         }
-        let bytes: &'static [u8] = unsafe { &APP_BYTES[..*app_len] };
-        match Program::parse(bytes) {
-            Ok(program) => {
-                *vm = Some(Vm::new(program));
-                trace.clear();
-                *last_error = None;
-                writeln!(serial, "OK LOAD").ok();
-            }
-            Err(error) => {
-                *last_error = Some(error);
-                writeln!(serial, "ERR LOAD {:?}", error).ok();
-            }
-        }
-    } else if command == "run" || command == "RUN" || command.starts_with("RUN ") {
-        if *app_len == 0 {
-            writeln!(serial, "ERR no-app").ok();
-            return;
-        }
-        let event = command
-            .strip_prefix("RUN ")
-            .filter(|value| !value.is_empty())
-            .unwrap_or("app.start");
         if vm.is_none() {
-            let bytes: &'static [u8] = unsafe { &APP_BYTES[..*app_len] };
             match Program::parse(bytes) {
                 Ok(program) => {
                     *vm = Some(Vm::new(program));
+                    *vm_slot = Some(slot);
                 }
                 Err(error) => {
                     *last_error = Some(error);
@@ -283,31 +234,34 @@ fn handle_command(
                 }
             }
         }
-        match vm.as_mut() {
-            Some(active) => {
-                trace.clear();
-                match active.dispatch(event, trace) {
-                    Ok(()) => {
-                        process_pending_actions(
-                            trace,
-                            *timer_background_len,
-                            *main_app_len,
-                            *reader_clock_len,
-                            *break_reminder_len,
-                            last_error,
-                        );
-                        writeln!(serial, "OK run").ok();
-                    }
-                    Err(error) => {
-                        *last_error = Some(error);
-                        writeln!(serial, "ERR run {:?}", error).ok();
-                    }
-                }
+        let previous = trace.current_app;
+        trace.current_app = Some(slot);
+        let result = vm.as_mut().unwrap().dispatch(event, trace);
+        trace.current_app = previous;
+        match result {
+            Ok(()) => {
+                process_pending_actions(trace, registry, app_bytes, last_error);
+                writeln!(serial, "OK RUN.EVENT {app_id} {event}").ok();
             }
-            None => {
-                writeln!(serial, "ERR no-vm").ok();
+            Err(error) => {
+                *last_error = Some(error);
+                writeln!(serial, "ERR RUN.EVENT {:?}", error).ok();
             }
         }
+    } else if command == "APP.LIST" || command == "app.list" {
+        writeln!(serial, "BEGIN APPS").ok();
+        for (_, entry) in registry.iter() {
+            writeln!(
+                serial,
+                "app={} len={} hash={:08x}",
+                entry.name(),
+                entry.len(),
+                entry.hash()
+            )
+            .ok();
+        }
+        writeln!(serial, "END APPS").ok();
+        writeln!(serial, "OK APP.LIST").ok();
     } else if let Some(key) = command
         .strip_prefix("KEY ")
         .or_else(|| command.strip_prefix("key "))
@@ -321,27 +275,13 @@ fn handle_command(
             return;
         };
         if let Some(app) = trace.top_app() {
-            let len = app_len_for(
-                app,
-                *main_app_len,
-                *timer_background_len,
-                *reader_clock_len,
-                *break_reminder_len,
-            );
-            match run_app_event(app, event, len, trace) {
+            match run_app_event(app, event, registry, app_bytes, trace) {
                 Ok(()) => {
                     if trace.exited {
                         trace.pop_app();
                         trace.exited = false;
                     }
-                    process_pending_actions(
-                        trace,
-                        *timer_background_len,
-                        *main_app_len,
-                        *reader_clock_len,
-                        *break_reminder_len,
-                        last_error,
-                    );
+                    process_pending_actions(trace, registry, app_bytes, last_error);
                     *last_error = None;
                     writeln!(serial, "OK key {key}").ok();
                 }
@@ -582,12 +522,13 @@ impl LineBuffer {
 struct RuntimeSink<'d> {
     status_led: Output<'d>,
     breathing_enabled: bool,
-    current_app: AppId,
-    pending_launch: Option<AppId>,
-    pending_arm: Option<AppId>,
+    current_app: Option<AppSlot>,
+    pending_launch: Option<AppName>,
+    pending_arm: Option<AppName>,
+    pending_disarm: Option<AppName>,
     timers: [Option<TimerRegistration>; TIMER_CAP],
     registration_mode: bool,
-    stack: [AppId; STACK_CAP],
+    stack: [AppSlot; STACK_CAP],
     stack_len: usize,
     exited: bool,
     entries: [&'static str; TRACE_CAP],
@@ -603,12 +544,13 @@ impl<'d> RuntimeSink<'d> {
         Self {
             status_led,
             breathing_enabled: true,
-            current_app: AppId::Legacy,
+            current_app: None,
             pending_launch: None,
             pending_arm: None,
+            pending_disarm: None,
             timers: [None; TIMER_CAP],
             registration_mode: false,
-            stack: [AppId::Legacy; STACK_CAP],
+            stack: [AppSlot(0); STACK_CAP],
             stack_len: 0,
             exited: false,
             entries: [""; TRACE_CAP],
@@ -635,6 +577,7 @@ impl<'d> RuntimeSink<'d> {
     fn clear_timers(&mut self) {
         self.pending_launch = None;
         self.pending_arm = None;
+        self.pending_disarm = None;
         self.timers = [None; TIMER_CAP];
         self.exited = false;
         self.registration_mode = false;
@@ -644,7 +587,7 @@ impl<'d> RuntimeSink<'d> {
         self.stack_len = 0;
     }
 
-    fn push_app(&mut self, app: AppId) {
+    fn push_app(&mut self, app: AppSlot) {
         if self.stack_len < self.stack.len() {
             self.stack[self.stack_len] = app;
             self.stack_len += 1;
@@ -666,7 +609,7 @@ impl<'d> RuntimeSink<'d> {
         }
     }
 
-    fn top_app(&self) -> Option<AppId> {
+    fn top_app(&self) -> Option<AppSlot> {
         if self.stack_len == 0 {
             None
         } else {
@@ -677,10 +620,8 @@ impl<'d> RuntimeSink<'d> {
     fn advance_time(
         &mut self,
         now: Instant,
-        main_app_len: usize,
-        timer_background_len: usize,
-        reader_clock_len: usize,
-        break_reminder_len: usize,
+        registry: &AppRegistry,
+        app_bytes: &'static [[u8; MAX_APP_BYTES]; APP_REGISTRY_CAP],
         last_error: &mut Option<VmError>,
     ) {
         for index in 0..self.timers.len() {
@@ -692,14 +633,7 @@ impl<'d> RuntimeSink<'d> {
             }
             timer.next_due = now + timer.interval;
             self.timers[index] = Some(timer);
-            let len = app_len_for(
-                timer.app,
-                main_app_len,
-                timer_background_len,
-                reader_clock_len,
-                break_reminder_len,
-            );
-            if len == 0 {
+            if registry.entry(timer.app).is_none() {
                 continue;
             }
             let is_top = self.top_app() == Some(timer.app);
@@ -712,7 +646,7 @@ impl<'d> RuntimeSink<'d> {
             if !is_top {
                 self.push_app(timer.app);
             }
-            match run_app_event(timer.app, timer.event.as_str(), len, self) {
+            match run_app_event(timer.app, timer.event.as_str(), registry, app_bytes, self) {
                 Ok(()) => {
                     if self.exited {
                         self.pop_app();
@@ -795,6 +729,14 @@ impl<'d> RuntimeSink<'d> {
         }
         Err(VmError::TooLarge)
     }
+
+    fn remove_timers_for(&mut self, app: AppSlot) {
+        for timer in &mut self.timers {
+            if timer.map(|timer| timer.app) == Some(app) {
+                *timer = None;
+            }
+        }
+    }
 }
 
 impl TraceSink for RuntimeSink<'_> {
@@ -856,7 +798,7 @@ impl TraceSink for RuntimeSink<'_> {
     }
 
     fn app_launch(&mut self, app: &str) -> Result<(), VmError> {
-        self.pending_launch = Some(AppId::from_runtime_name(app).ok_or(VmError::InvalidOperand)?);
+        self.pending_launch = Some(AppName::new(app).map_err(|_| VmError::InvalidOperand)?);
         Ok(())
     }
 
@@ -865,17 +807,12 @@ impl TraceSink for RuntimeSink<'_> {
     }
 
     fn app_arm(&mut self, app: &str) -> Result<(), VmError> {
-        self.pending_arm = Some(AppId::from_runtime_name(app).ok_or(VmError::InvalidOperand)?);
+        self.pending_arm = Some(AppName::new(app).map_err(|_| VmError::InvalidOperand)?);
         Ok(())
     }
 
     fn app_disarm(&mut self, app: &str) -> Result<(), VmError> {
-        let app = AppId::from_runtime_name(app).ok_or(VmError::InvalidOperand)?;
-        for timer in &mut self.timers {
-            if timer.map(|timer| timer.app) == Some(app) {
-                *timer = None;
-            }
-        }
+        self.pending_disarm = Some(AppName::new(app).map_err(|_| VmError::InvalidOperand)?);
         Ok(())
     }
 
@@ -890,7 +827,7 @@ impl TraceSink for RuntimeSink<'_> {
             return Err(VmError::InvalidOperand);
         };
         self.register_timer(TimerRegistration {
-            app: self.current_app,
+            app: self.current_app.ok_or(VmError::InvalidOperand)?,
             event,
             armed: self.registration_mode,
             interval: Duration::from_micros((interval_ms as u64).saturating_mul(1000)),
@@ -903,42 +840,32 @@ impl TraceSink for RuntimeSink<'_> {
 
 #[derive(Clone, Copy)]
 struct TimerRegistration {
-    app: AppId,
+    app: AppSlot,
     event: TimerEvent,
     armed: bool,
     interval: Duration,
     next_due: Instant,
 }
 
-fn app_storage_mut<'a>(app_id: &str) -> Option<&'a mut [u8; MAX_APP_BYTES]> {
-    match AppId::from_runtime_name(app_id)? {
-        AppId::Main => Some(unsafe { &mut MAIN_APP_BYTES }),
-        AppId::TimerBackground => Some(unsafe { &mut TIMER_BACKGROUND_BYTES }),
-        AppId::ReaderClock => Some(unsafe { &mut READER_CLOCK_BYTES }),
-        AppId::BreakReminder => Some(unsafe { &mut BREAK_REMINDER_BYTES }),
-        AppId::Legacy => None,
-    }
-}
-
-fn app_bytes(app: AppId, len: usize) -> &'static [u8] {
-    match app {
-        AppId::Main => unsafe { &MAIN_APP_BYTES[..len] },
-        AppId::TimerBackground => unsafe { &TIMER_BACKGROUND_BYTES[..len] },
-        AppId::ReaderClock => unsafe { &READER_CLOCK_BYTES[..len] },
-        AppId::BreakReminder => unsafe { &BREAK_REMINDER_BYTES[..len] },
-        AppId::Legacy => unsafe { &APP_BYTES[..len] },
-    }
+fn registry_app_bytes(
+    app: AppSlot,
+    registry: &AppRegistry,
+    bytes: &'static [[u8; MAX_APP_BYTES]; APP_REGISTRY_CAP],
+) -> &'static [u8] {
+    let len = registry.len_for_slot(app).unwrap_or(0);
+    &bytes[app.0][..len]
 }
 
 fn run_app_event(
-    app: AppId,
+    app: AppSlot,
     event: &str,
-    len: usize,
+    registry: &AppRegistry,
+    app_bytes: &'static [[u8; MAX_APP_BYTES]; APP_REGISTRY_CAP],
     trace: &mut RuntimeSink<'_>,
 ) -> Result<(), VmError> {
-    let program = Program::parse(app_bytes(app, len))?;
+    let program = Program::parse(registry_app_bytes(app, registry, app_bytes))?;
     let previous = trace.current_app;
-    trace.current_app = app;
+    trace.current_app = Some(app);
     let mut vm = Vm::new(program);
     let result = vm.dispatch(event, trace);
     if vm.exited() {
@@ -948,63 +875,39 @@ fn run_app_event(
     result
 }
 
-fn app_len_for(
-    app: AppId,
-    main_app_len: usize,
-    timer_background_len: usize,
-    reader_clock_len: usize,
-    break_reminder_len: usize,
-) -> usize {
-    app.install_len(
-        main_app_len,
-        timer_background_len,
-        reader_clock_len,
-        break_reminder_len,
-    )
-}
-
 fn process_pending_actions(
     trace: &mut RuntimeSink<'_>,
-    timer_background_len: usize,
-    main_app_len: usize,
-    reader_clock_len: usize,
-    break_reminder_len: usize,
+    registry: &AppRegistry,
+    app_bytes: &'static [[u8; MAX_APP_BYTES]; APP_REGISTRY_CAP],
     last_error: &mut Option<VmError>,
 ) {
-    while let Some(app) = trace.pending_arm.take() {
-        let len = app_len_for(
-            app,
-            main_app_len,
-            timer_background_len,
-            reader_clock_len,
-            break_reminder_len,
-        );
-        if len == 0 {
+    while let Some(app_name) = trace.pending_disarm.take() {
+        let Some(app) = registry.find(app_name.as_str()) else {
             *last_error = Some(VmError::InvalidOperand);
             return;
-        }
+        };
+        trace.remove_timers_for(app);
+    }
+    while let Some(app_name) = trace.pending_arm.take() {
+        let Some(app) = registry.find(app_name.as_str()) else {
+            *last_error = Some(VmError::InvalidOperand);
+            return;
+        };
         trace.registration_mode = true;
-        let result = run_app_event(app, "app.arm", len, trace);
+        let result = run_app_event(app, "app.arm", registry, app_bytes, trace);
         trace.registration_mode = false;
         if let Err(error) = result {
             *last_error = Some(error);
             return;
         }
     }
-    while let Some(app) = trace.pending_launch.take() {
-        let len = app_len_for(
-            app,
-            main_app_len,
-            timer_background_len,
-            reader_clock_len,
-            break_reminder_len,
-        );
-        if len == 0 {
+    while let Some(app_name) = trace.pending_launch.take() {
+        let Some(app) = registry.find(app_name.as_str()) else {
             *last_error = Some(VmError::InvalidOperand);
             return;
-        }
+        };
         trace.push_app(app);
-        if let Err(error) = run_app_event(app, "app.start", len, trace) {
+        if let Err(error) = run_app_event(app, "app.start", registry, app_bytes, trace) {
             *last_error = Some(error);
             return;
         }

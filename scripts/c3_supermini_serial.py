@@ -71,24 +71,6 @@ def compute_fnv1a(data):
     return value
 
 
-def install_sqbc(
-    serial,
-    data,
-    *,
-    chunk_size=DEFAULT_CHUNK_SIZE,
-    output=sys.stdout.buffer,
-    timeout=DEFAULT_TIMEOUT,
-):
-    hash_value = compute_fnv1a(data)
-    _drain(serial, output)
-    serial.write_all(f"install {len(data)} {hash_value:08x}\n".encode("ascii"))
-    _wait_for(serial, b"READY install", output, timeout, InstallError)
-    for offset in range(0, len(data), chunk_size):
-        serial.write_all(data[offset : offset + chunk_size])
-        time.sleep(0.002)
-    _wait_for(serial, b"OK install", output, timeout, InstallError)
-
-
 def install_app_sqbc(
     serial,
     app_id,
@@ -109,7 +91,7 @@ def install_app_sqbc(
 
 
 def smoke_sequence(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
-    _send_line(serial, "run", output, b"OK run", timeout)
+    _send_line(serial, "RUN.EVENT main app.start", output, b"OK RUN.EVENT", timeout)
     state = _state(serial, output, timeout)
     _expect_state(state, {"started": "1", "count": "0", "exited": "false"})
 
@@ -141,12 +123,8 @@ def send_line(serial, line, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT
     return _read_until_quiet(serial, output, timeout)
 
 
-def load_app(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
-    _send_line(serial, "LOAD", output, b"OK LOAD", timeout)
-
-
-def run_event(serial, event, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
-    _send_line(serial, f"RUN {event}", output, b"OK run", timeout)
+def run_app_event(serial, app_id, event, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
+    _send_line(serial, f"RUN.EVENT {app_id} {event}", output, b"OK RUN.EVENT", timeout)
 
 
 def run_app(serial, app_id, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
@@ -308,17 +286,13 @@ def main(argv=None):
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
     subcommands = parser.add_subparsers(dest="command", required=True)
 
-    install = subcommands.add_parser("install", help="install SQBC bytes into RAM")
-    install.add_argument("sqbc")
-
     install_app = subcommands.add_parser("install-app", help="install named SQBC app bytes")
     install_app.add_argument("app_id")
     install_app.add_argument("sqbc")
 
     subcommands.add_parser("smoke", help="run the headless counter smoke sequence")
-    subcommands.add_parser("load", help="load installed SQBC without running an event")
-
-    run = subcommands.add_parser("run", help="run an event")
+    run = subcommands.add_parser("run-event", help="run a named app event")
+    run.add_argument("app_id")
     run.add_argument("event", nargs="?", default="app.start")
 
     run_app_parser = subcommands.add_parser("run-app", help="run a named installed app")
@@ -338,18 +312,13 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
     with SerialPort(args.port) as serial:
-        if args.command == "install":
-            with open(args.sqbc, "rb") as handle:
-                install_sqbc(serial, handle.read(), timeout=args.timeout)
-        elif args.command == "install-app":
+        if args.command == "install-app":
             with open(args.sqbc, "rb") as handle:
                 install_app_sqbc(serial, args.app_id, handle.read(), timeout=args.timeout)
         elif args.command == "smoke":
             smoke_sequence(serial, timeout=args.timeout)
-        elif args.command == "load":
-            load_app(serial, timeout=args.timeout)
-        elif args.command == "run":
-            run_event(serial, args.event, timeout=args.timeout)
+        elif args.command == "run-event":
+            run_app_event(serial, args.app_id, args.event, timeout=args.timeout)
         elif args.command == "run-app":
             run_app(serial, args.app_id, timeout=args.timeout)
         elif args.command == "send":

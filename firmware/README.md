@@ -24,7 +24,6 @@ Useful commands from the repository root:
 ```sh
 scripts/c3-supermini-build.sh
 scripts/c3-supermini-flash.sh
-scripts/c3-supermini-monitor.sh
 scripts/c3-supermini-install-sqbc.sh
 scripts/c3-supermini-smoke.sh
 scripts/squidc-build.sh build compiler/rust/fixtures/conformance/headless_counter.squid --target esp32c3-super-mini --out target/reference-firmware/headless_counter.sqbc
@@ -94,10 +93,8 @@ for the app-stack work. It installs `main`, `reader-clock`, and
 armed timer, and key exit behavior over USB serial.
 
 The current Super Mini app store is a temporary RAM-only development harness.
-It has fixed named slots for `main`, `timer-background`, `reader-clock`, and
-`break-reminder` so the app lifecycle can be tested before a persistent app
-registry exists. Do not treat those fixed names as language or compiler
-semantics.
+It has a six-slot RAM app registry so app lifecycle behavior can be tested
+before a persistent filesystem or flash-backed app store exists.
 
 If `espflash` can list `/dev/ttyACM0` but cannot open it, grant the current
 login temporary access to the serial node:

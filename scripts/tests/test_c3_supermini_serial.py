@@ -5,7 +5,6 @@ from c3_supermini_serial import (
     InstallError,
     compute_fnv1a,
     install_app_sqbc,
-    install_sqbc,
     parse_state,
     run_app,
     smoke_sequence,
@@ -31,30 +30,6 @@ class FakeSerial:
 class C3SuperMiniSerialTests(unittest.TestCase):
     def test_compute_fnv1a_matches_known_value(self):
         self.assertEqual(compute_fnv1a(b"hello"), 0x4F9F2CAB)
-
-    def test_install_sqbc_sends_command_and_payload_in_chunks(self):
-        serial = FakeSerial([b"banner\r\nREADY install len=5\r\n", b"OK install hash=4f9f2cab\r\n"])
-        output = io.BytesIO()
-
-        install_sqbc(serial, b"hello", chunk_size=2, output=output)
-
-        self.assertEqual(
-            serial.writes,
-            [
-                b"install 5 4f9f2cab\n",
-                b"he",
-                b"ll",
-                b"o",
-            ],
-        )
-        self.assertIn(b"READY install", output.getvalue())
-        self.assertIn(b"OK install", output.getvalue())
-
-    def test_install_sqbc_fails_when_ok_is_missing(self):
-        serial = FakeSerial([b"READY install len=5\r\n", b"ERR install timeout read=3 expected=5\r\n"])
-
-        with self.assertRaisesRegex(InstallError, "ERR install"):
-            install_sqbc(serial, b"hello", output=io.BytesIO(), timeout=0.01)
 
     def test_install_app_sqbc_sends_named_command(self):
         serial = FakeSerial(
@@ -88,7 +63,7 @@ class C3SuperMiniSerialTests(unittest.TestCase):
     def test_smoke_sequence_verifies_counter_behavior(self):
         serial = FakeSerial(
             [
-                b"OK run\r\n",
+                b"OK RUN.EVENT main app.start\r\n",
                 b"started=1\r\ncount=0\r\nexited=false\r\n",
                 b"OK key SELECT\r\n",
                 b"OK key SELECT\r\n",
@@ -107,7 +82,7 @@ class C3SuperMiniSerialTests(unittest.TestCase):
         self.assertEqual(
             serial.writes,
             [
-                b"run\n",
+                b"RUN.EVENT main app.start\n",
                 b"state\n",
                 b"key SELECT\n",
                 b"key SELECT\n",

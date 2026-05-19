@@ -44,19 +44,22 @@ The Super Mini firmware exposes a USB Serial/JTAG shell:
 ```text
 help
 info
-install <len> <fnv32hex>
-run
+INSTALL.APP <app-id> <len> <fnv32hex>
+RUN.APP <app-id>
+RUN.EVENT <app-id> <event>
+APP.LIST
 key SELECT
 key BACK
-state
+STATE.GET
 trace
 errors
 reset
 ```
 
 It also accepts the v4 developer protocol commands documented in
-`docs/developer_repl_protocol.md`, including `INSTALL`, `LOAD`, `RUN`,
-`STATE.GET`, `STATE.IMPORT`, `OUTPUT.GET`, and `DRAWLOG.GET`.
+`docs/developer_repl_protocol.md`, including `INSTALL.APP`, `RUN.APP`,
+`RUN.EVENT`, `APP.LIST`, `STATE.GET`, `STATE.IMPORT`, `OUTPUT.GET`, and
+`DRAWLOG.GET`.
 
 The ESP32-C3 Super Mini firmware maps `hardware.gpio.*` to the target-defined
 status LED aliases and raw `GPIO8`. Use these repository-root checks after
@@ -87,13 +90,13 @@ the current app-stack model. It installs `main`, `reader-clock`, and
 `break-reminder`, then verifies `app.start`, `app.arm`, `event.addSource`, a
 session-local timer, an armed timer, and key-driven `app.exit`.
 
-The fixed app names used by these scripts are temporary development harness
-slots, not SquidScript language semantics. The firmware keeps them in RAM only
-until a real app registry/storage model exists.
+The installed app registry is a temporary six-slot RAM-only development
+harness. It accepts arbitrary valid app IDs, but installed apps are cleared on
+reset or power loss until a persistent app registry/storage model exists.
 
-`install` receives raw SQBC v2 bytes into RAM. State persistence is in-memory
-only for this milestone; `state.load` and `state.save` are traced but do not
-write flash yet.
+`INSTALL.APP` receives raw SQBC v2 bytes into RAM. State persistence is
+in-memory only for this milestone; `state.load` and `state.save` are traced but
+do not write flash yet.
 
 The crate still contains `x4-hello`, a separate XTEINK X4 display bring-up
 binary. Keep X4 display work separate from the reference VM milestone.

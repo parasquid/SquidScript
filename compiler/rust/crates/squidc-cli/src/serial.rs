@@ -32,10 +32,6 @@ impl SerialDevice {
         Ok(response.contains("target=") && response.contains("OK HELLO"))
     }
 
-    pub fn install_legacy(&mut self, bytes: &[u8]) -> Result<(), String> {
-        self.write_install("INSTALL", "READY install", "OK install", bytes)
-    }
-
     pub fn install_app(&mut self, app_id: &str, bytes: &[u8]) -> Result<(), String> {
         self.write_install(
             &format!("INSTALL.APP {app_id}"),
@@ -63,8 +59,8 @@ impl SerialDevice {
         Ok(())
     }
 
-    pub fn run_event(&mut self, event: &str) -> Result<String, String> {
-        self.send_line(&format!("RUN {event}"))
+    pub fn run_app_event(&mut self, app_id: &str, event: &str) -> Result<String, String> {
+        self.send_line(&format!("RUN.EVENT {app_id} {event}"))
     }
 
     pub fn send_line(&mut self, line: &str) -> Result<String, String> {

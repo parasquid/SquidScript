@@ -11,4 +11,4 @@ mkdir -p "$(dirname "$OUT")"
 
 PYTHONPATH="$ROOT/scripts" python3 "$ROOT/scripts/c3_supermini_serial.py" \
   --port "$PORT" \
-  install "$OUT"
+  install-app main "$OUT"
