@@ -18,7 +18,7 @@ cargo build --release --features hardware --bin c3-supermini-serial-hello
 From the repository root, the preferred end-to-end hardware check is:
 
 ```sh
-scripts/c3-supermini-smoke.sh
+scripts/c3-supermini-test-reference-firmware.sh
 ```
 
 Use `--skip-flash` to keep the current firmware image and repeat only the SQBC
@@ -74,19 +74,18 @@ cargo run -p squidc -- repl --port /dev/ttyACM0 --script examples/blinky-supermi
 The GPIO session verifies serial readback. The blinky session should also be
 confirmed visually on the physical onboard LED.
 
-The timer/background reference exercise uses a real firmware timer:
+The timer armed-app reference exercise uses a real firmware timer:
 
 ```sh
-scripts/c3-supermini-timer-background-smoke.sh
-scripts/c3-supermini-generic-events-e2e.sh
+scripts/c3-supermini-test-timer-armed-app.sh
+scripts/c3-supermini-test-generic-triggered-apps.sh
 ```
 
-It installs `main` and `timer-background` SQBC apps, runs `main`, waits for
-timer ticks, and checks debug output for foreground startup plus background
-timer events.
+It installs `main` and `timer-armed-app` SQBC apps, runs `main`, waits for
+timer ticks, and checks debug output for app startup plus armed timer events.
 
-The generic-events E2E script is the canonical lifecycle regression check for
-the current app-stack model. It installs `main`, `reader-clock`, and
+The generic triggered-apps hardware test is the canonical lifecycle regression
+check for the current app-stack model. It installs `main`, `reader-clock`, and
 `break-reminder`, then verifies `app.start`, `app.arm`, `event.addSource`, a
 session-local timer, an armed timer, and key-driven `app.exit`.
 

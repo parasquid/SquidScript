@@ -112,7 +112,7 @@ Initial built-in IDs:
 12 hardware.gpio.read
 13 app.launch
 14 reserved
-15 app.start
+15 reserved
 16 app.arm
 17 app.disarm
 18 event.addSource

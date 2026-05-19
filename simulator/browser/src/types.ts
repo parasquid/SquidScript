@@ -78,7 +78,6 @@ export interface AppManifest {
   format: "squidapp-v1";
   id: string;
   name: string;
-  kind: "app";
   version: string;
   runtime: {
     language: "squidscript";

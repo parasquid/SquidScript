@@ -22,7 +22,6 @@ export function createBrowserSimManifest(ir: IrProgram, target: TargetDefinition
     format: "squidapp-v1",
     id: ir.app.id,
     name: ir.app.name,
-    kind: "app",
     version: "0.0.0-browser-sim",
     runtime: { language: "squidscript", version: "0.2" },
     entry: { type: "ir", file: "main.ir.json", browserSimOnly: true },

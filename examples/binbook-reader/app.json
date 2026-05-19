@@ -2,7 +2,6 @@
   "format": "squidapp-v1",
   "id": "binbook-reader",
   "name": "BinBook Reader",
-  "kind": "app",
   "version": "1.0.0",
   "runtime": {
     "language": "squidscript",

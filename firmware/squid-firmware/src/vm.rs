@@ -55,7 +55,6 @@ const BUILTIN_HARDWARE_GPIO_WRITE: u8 = 10;
 const BUILTIN_HARDWARE_GPIO_TOGGLE: u8 = 11;
 const BUILTIN_HARDWARE_GPIO_READ: u8 = 12;
 const BUILTIN_APP_LAUNCH: u8 = 13;
-const BUILTIN_APP_START: u8 = 15;
 const BUILTIN_APP_ARM: u8 = 16;
 const BUILTIN_APP_DISARM: u8 = 17;
 const BUILTIN_EVENT_ADD_SOURCE: u8 = 18;
@@ -179,9 +178,6 @@ pub trait TraceSink {
     }
     fn app_launch(&mut self, _app: &str) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
-    }
-    fn app_start(&mut self, app: &str) -> Result<(), VmError> {
-        self.app_launch(app)
     }
     fn app_arm(&mut self, _app: &str) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
@@ -597,13 +593,6 @@ impl<'a> Vm<'a> {
                 let app = self.program.string(app_id)?;
                 trace.app_launch(app)?;
             }
-            BUILTIN_APP_START => {
-                let Value::String(app_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let app = self.program.string(app_id)?;
-                trace.app_start(app)?;
-            }
             BUILTIN_APP_ARM => {
                 let Value::String(app_id) = self.pop()? else {
                     return Err(VmError::InvalidOperand);
@@ -981,11 +970,6 @@ mod tests {
             Ok(())
         }
 
-        fn app_start(&mut self, app: &str) -> Result<(), VmError> {
-            self.events.push(format!("start {app}"));
-            Ok(())
-        }
-
         fn app_arm(&mut self, app: &str) -> Result<(), VmError> {
             self.events.push(format!("arm {app}"));
             Ok(())
@@ -1122,7 +1106,7 @@ screen("main") {}
         let source = r#"app "timer-demo"
 state { count: 0 }
 event.on("app.start") {
-  app.launch("timer-background")
+  app.launch("timer-armed-app")
   event.addSource("timer.debug", { every: 1000 })
 }
 event.on("timer.debug") {
@@ -1147,7 +1131,7 @@ screen("main") {}
             trace.events,
             vec![
                 "app.start",
-                "launch timer-background",
+                "launch timer-armed-app",
                 "event.addSource timer.debug 1000",
                 "timer.debug",
                 "debug timer 0",
@@ -1161,7 +1145,7 @@ screen("main") {}
 state { count: 0 }
 event.on("app.start") {
   app.arm("break-reminder")
-  app.start("reader")
+  app.launch("reader")
   event.addSource("timer.clock", { every: 60000 })
 }
 event.on("timer.clock") {
@@ -1189,7 +1173,7 @@ screen("main") {}
             vec![
                 "app.start",
                 "arm break-reminder",
-                "start reader",
+                "launch reader",
                 "event.addSource timer.clock 60000",
                 "timer.clock",
                 "disarm break-reminder",

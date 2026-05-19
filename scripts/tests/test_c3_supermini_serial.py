@@ -6,8 +6,8 @@ from c3_supermini_serial import (
     compute_fnv1a,
     install_app_sqbc,
     parse_state,
+    reference_firmware_test_sequence,
     run_app,
-    smoke_sequence,
 )
 
 
@@ -60,7 +60,7 @@ class C3SuperMiniSerialTests(unittest.TestCase):
 
         self.assertEqual(state, {"started": "1", "count": "2", "exited": "true"})
 
-    def test_smoke_sequence_verifies_counter_behavior(self):
+    def test_reference_firmware_sequence_verifies_counter_behavior(self):
         serial = FakeSerial(
             [
                 b"OK RUN.EVENT main app.start\r\n",
@@ -77,7 +77,7 @@ class C3SuperMiniSerialTests(unittest.TestCase):
             ]
         )
 
-        smoke_sequence(serial, output=io.BytesIO(), timeout=0.01)
+        reference_firmware_test_sequence(serial, output=io.BytesIO(), timeout=0.01)
 
         self.assertEqual(
             serial.writes,

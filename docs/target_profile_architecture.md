@@ -875,9 +875,13 @@ firmware/
     `-- squid-console/
 ```
 
-The firmware app-lifecycle host owns app registry access, bytecode validation, launch transitions, crash recovery, and returning control to the active launcher.
+The firmware app-lifecycle host owns app registry access, bytecode validation,
+launch transitions, crash recovery, root `main.sqbc` restart, and returning
+control to the previous app session.
 
-The user-facing launcher UI should be a SquidScript app with `kind = "launcher"`. Different launcher designs can be installed like apps and selected by the user through firmware/system UI.
+A user-facing app picker or home screen is an ordinary SquidScript app,
+commonly installed as root `main.sqbc`. Target profiles must not require a
+special public launcher app kind.
 
 The selected target determines:
 
@@ -1152,9 +1156,11 @@ When launching an app, firmware should check:
 - required document capabilities are available
 - optional source map matches bytecode hash if source map is used
 
-If incompatible, launcher should show a clear error.
+If incompatible, firmware or the current app should show a clear error.
 
-The user-facing launcher may be implemented in SquidScript, but firmware still owns this compatibility check. A launcher requests app launches through `launcher.*` capabilities; it does not directly execute `.sqbc`.
+An app picker or home screen may be implemented in SquidScript, but firmware
+still owns compatibility checks. Apps request launches through the app
+registry/lifecycle API; they do not directly execute `.sqbc`.
 
 Example:
 
@@ -1425,7 +1431,7 @@ The firmware build system should:
 12. Register selected drivers.
 13. Set runtime limits.
 14. Embed target ID and compatibility info into firmware.
-15. Expose target info to launcher and SquidScript runtime.
+15. Expose target info to app registry tooling and SquidScript runtime.
 16. Emit native flashing artifacts for the selected MCU/toolchain.
 17. Emit `firmware.uf2` when the selected board supports UF2.
 18. Emit a firmware manifest with hashes for all distributed images.
@@ -1471,9 +1477,9 @@ The firmware build should prefer UF2 for user-facing replacement when the bootlo
 4. Bootloader validates the UF2 family and writes the firmware image.
 5. Device reboots into the new firmware.
 
-The UF2 image must contain only firmware flash payloads for the selected target. It must not be used to install `.sqbc` apps, `.binbook` content, app manifests, source maps, or user state. Those remain storage-level files managed by the launcher, app installer, or content workflows.
+The UF2 image must contain only firmware flash payloads for the selected target. It must not be used to install `.sqbc` apps, `.binbook` content, app manifests, source maps, or user state. Those remain storage-level files managed by the app registry, app installer, or content workflows.
 
-The bootloader/update flow should preserve user storage by default. Firmware replacement must not erase installed apps, BinBook files, launcher selection, Wi-Fi profiles, or app state unless the user explicitly chooses a factory reset or recovery image documented as destructive.
+The bootloader/update flow should preserve user storage by default. Firmware replacement must not erase installed apps, BinBook files, app registry state, Wi-Fi profiles, or app state unless the user explicitly chooses a factory reset or recovery image documented as destructive.
 
 Recommended artifact naming:
 

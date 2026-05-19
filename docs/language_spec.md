@@ -17,7 +17,7 @@ Design companion: docs/language_philosophy.md
 
 SquidScript is a small JavaScript-like application language for low-RAM e-ink/display devices.
 
-SquidScript apps are first-class device apps. They may provide launchers, readers, upload tools, file managers, device utilities, or other user-facing workflows, just as firmware-native C/C++ apps or trusted scripts in another language may do on the same device.
+SquidScript apps are first-class device apps. They may provide app pickers, readers, upload tools, file managers, device utilities, or other user-facing workflows, just as firmware-native C/C++ apps or trusted scripts in another language may do on the same device.
 
 SquidScript is not JavaScript.
 
@@ -41,7 +41,8 @@ Developer firmware may optionally include an on-device source compiler, but this
 
 The firmware owns:
 - boot
-- launcher
+- process 0 system/root behavior
+- starting and restarting the root `main.sqbc` app as process 1
 - input
 - display
 - storage
@@ -118,17 +119,17 @@ User writes .squid source
 
 Production device execution flow:
 
-1. Firmware loads the active launcher.
-2. Launcher scans or requests the installed app list.
-3. Launcher selects an app to run.
-4. Runtime loads the selected app's app.json.
-5. Runtime loads declared .sqbc file.
-6. Runtime validates bytecode structure and permissions.
-7. Runtime initializes state.
-8. Runtime executes event handlers.
-9. Runtime renders screens.
-10. Runtime records recoverable errors and crash diagnostics.
-11. When the app exits, crashes, or is rejected, firmware returns control to the launcher.
+1. Firmware starts process 0 as the system/root host.
+2. Firmware loads and validates the installed root `main.sqbc` app as process 1.
+3. Runtime initializes state.
+4. Runtime dispatches `event.on("app.start")`.
+5. Runtime renders screens when requested by the app.
+6. Runtime waits for input, timer, service, or app lifecycle events.
+7. Runtime dispatches matching event handlers.
+8. Runtime records recoverable errors and crash diagnostics.
+9. If an app starts another app, firmware pushes a new app session.
+10. When a non-root app exits, firmware pops that session and returns focus to the previous app.
+11. If root `main.sqbc` exits, firmware restarts it.
 
 Production firmware must execute .sqbc.
 
@@ -184,13 +185,13 @@ System-managed files:
 |-- app-errors/
 |   `-- binbook-reader.txt
 |-- app-cache/
-|-- launcher-state.json
+|-- app-registry.json
 `-- crashlog.txt
 ```
 
 Apps may read their own app directory and data directory only if granted permissions.
 
-Apps may read external content files only through explicit user selection or launcher-provided file association.
+Apps may read external content files only through explicit user selection or firmware/app-registry-provided file association.
 
 Apps may not directly write to /sd/system.
 
@@ -207,7 +208,6 @@ Production bytecode app example:
   "format": "squidapp-v1",
   "id": "simple-counter",
   "name": "Simple Counter",
-  "kind": "app",
   "version": "1.0.0",
   "runtime": {
     "language": "squidscript",
@@ -254,7 +254,6 @@ Required manifest fields:
 - format
 - id
 - name
-- kind
 - version
 - runtime.language
 - runtime.version
@@ -278,19 +277,10 @@ Optional manifest fields:
 entry.type values:
 - bytecode
 
-kind values:
-- app
-- launcher
-
-`kind = "app"` is the normal user-app kind.
-
-`kind = "launcher"` declares that an app can act as a SquidScript launcher. Launcher apps are installed like other apps, but the active default launcher is selected through a user-mediated firmware/system flow.
-
-Apps must not receive launcher capabilities merely by declaring `kind = "launcher"`. Firmware grants `launcher.*` capabilities only while running an app as the active launcher or inside an explicit user-mediated launcher-selection flow.
-
-Any installed app may declare `kind = "launcher"` if it provides the required launcher behavior and permissions. This allows alternative launchers to be installed and selected easily, similar to changing launchers on Android.
-
-Firmware must validate a candidate launcher before making it the active default. If the selected launcher is missing, invalid, incompatible, or repeatedly crashes before first render, firmware should fall back to a known-good launcher or a recovery launcher.
+There is no `kind` field in v0.2 app manifests. The public app model does not
+use launcher, foreground, background, or service categories. Apps that present
+an app picker or home screen are ordinary SquidScript apps, commonly installed
+as the root `main.sqbc` app.
 
 The optional `requires` object declares target capabilities that the app needs before launch. Firmware must reject an app if the current target cannot satisfy these requirements.
 
@@ -999,7 +989,7 @@ v0.2 uses these built-in namespaces:
 - `data.*` for parsed declarative app data
 - `string.*` for deterministic string utilities
 - `binbook.*` for BinBook document handles and drawable page resources
-- `launcher.*` for launcher apps to list, inspect, and launch installed apps
+- `app.registry.*` for installed app listing and inspection
 
 Global built-ins should not be added when a capability namespace is available.
 
@@ -1302,7 +1292,7 @@ If `render` is omitted, the target's default screen render policy is used.
 
 v0.2 render policy values:
 
-- `compose`: normal UI composition. This is intended for launchers, menus, settings, dialogs, dashboards, and other screens made from several draw commands.
+- `compose`: normal UI composition. This is intended for app pickers, menus, settings, dialogs, dashboards, and other screens made from several draw commands.
 - `stream`: page- or image-dominant rendering. This is intended for reader pages and other screens where one large drawable should be streamed efficiently and lightweight overlays may be composed around it.
 
 Render policy expresses app intent. It is not a request for a specific hardware buffer implementation. Firmware maps render policies to target-supported display render modes such as `single` or `strip`.
@@ -1655,15 +1645,15 @@ Example:
 app.exit()
 ```
 
-app.start(appId)
+app.launch(appId)
 
-Starts an installed app immediately. Firmware pushes a new app session and
+Launches an installed app immediately. Firmware pushes a new app session and
 dispatches `event.on("app.start")`.
 
 Example:
 
 ```squid
-app.start("binbook-reader")
+app.launch("binbook-reader")
 ```
 
 app.arm(appId)
@@ -2327,7 +2317,7 @@ Rules:
 - Firmware must remove incomplete staged uploads when a client disconnects, the server stops, or the owning app exits.
 - Firmware must reject path traversal and must not let upload form filenames choose final storage paths directly.
 - Firmware should validate uploaded content only after the transfer completes and the staged file is flushed. Failed validation must delete or quarantine the staged file without publishing it.
-- App packages uploaded through HTTP should use `.squidapp.zip`; firmware or launcher installation unpacks them, validates the manifest and bytecode, and installs the resulting `.squidapp` directory.
+- App packages uploaded through HTTP should use `.squidapp.zip`; firmware or app-installer code unpacks them, validates the manifest and bytecode, and installs the resulting `.squidapp` directory.
 - Raw sockets, arbitrary outbound HTTP clients, TLS configuration, and general web frameworks are not part of v0.2.
 
 ---
@@ -2504,7 +2494,7 @@ SquidScript file management should use target-defined libraries rather than raw 
 Libraries are named storage roots exposed by firmware. A target may provide libraries such as:
 
 - `books`: user book/content library, normally on SD
-- `apps-inbox`: uploaded app packages awaiting firmware/launcher install
+- `apps-inbox`: uploaded app packages awaiting firmware/app-installer validation
 - `appdata`: current app's private data area
 - `flash-library`: internal flash-backed user library when the target defines an explicit writable flash partition
 
@@ -2818,13 +2808,13 @@ let installed = library.installUpload(upload, {
 })
 ```
 
-`.squidapp.zip` uploads are staging artifacts. The launcher or firmware app installer must unzip them into an installed `.squidapp` directory, validate `manifest.json`, validate bytecode and target compatibility, and then atomically publish the installed app where the filesystem permits it.
+`.squidapp.zip` uploads are staging artifacts. The firmware app installer must unzip them into an installed `.squidapp` directory, validate `manifest.json`, validate bytecode and target compatibility, and then atomically publish the installed app where the filesystem permits it.
 
 Rules:
 - firmware must sanitize names and reject path traversal
 - firmware must enforce target storage quotas and maximum file sizes
 - writes should be atomic where the backing filesystem permits it
-- app package uploads should land in `apps-inbox`; actual app installation remains launcher/firmware-owned
+- app package uploads should land in `apps-inbox`; actual app installation remains firmware-owned
 - app package upload extensions should be `.squidapp.zip`; installed app directories should use `.squidapp`
 - large books should default to SD-backed `books`, not internal flash, unless the user or app explicitly selects `flash-library`
 - if a removable volume disappears during an operation, firmware should return a structured storage error and mark the volume unavailable until remount/probe succeeds
@@ -3081,51 +3071,45 @@ state {
 
 ---
 
-## 36.1 Launcher Capability
+## 36.1 App Registry And Launch Capability
 
-Launcher support is provided as a firmware-native capability module exposed to SquidScript launcher apps.
+App registry support is provided by firmware. SquidScript apps may request
+installed app summaries and start another installed app, but firmware owns
+manifest lookup, target compatibility checks, bytecode validation, lifecycle
+transitions, crash recovery, and returning to the previous app session.
 
-Launcher apps are SquidScript apps with:
+There is no public launcher app kind in v0.2. A home screen, shell, or app
+picker is just a SquidScript app. If it is installed as root `main.sqbc`, it is
+the first app firmware starts.
 
-```json
-{
-  "kind": "launcher"
-}
-```
-
-The active launcher is selected by the user through firmware/system UI. Any installed app may declare `kind = "launcher"`, but firmware grants `launcher.*` capabilities only while running the selected app in the launcher role.
-
-Normal apps must not silently replace the default launcher.
-
-Suggested launcher permissions:
+Suggested app registry permissions:
 
 ```text
-launcher.apps.list
-launcher.apps.inspect
-launcher.apps.launch
-system.launcher.chooseDefault
+app.registry.list
+app.registry.inspect
+app.launch
 ```
 
-Minimum launcher capability shape:
+Minimum app registry capability shape:
 
 ```text
-launcher.apps()
-launcher.app(apps, index)
-launcher.launch(appId)
-system.launcher.chooseDefault()
+app.registry()
+app.registry.get(apps, index)
+app.launch(appId)
 ```
 
-`launcher.apps()`
+`app.registry()`
 
-Returns a bounded list handle or list-like firmware-owned value containing installed launchable apps.
+Returns a bounded list handle or list-like firmware-owned value containing
+installed apps.
 
 Requires permission:
 
 ```text
-launcher.apps.list
+app.registry.list
 ```
 
-`launcher.app(apps, index)`
+`app.registry.get(apps, index)`
 
 Returns a read-only record with safe manifest summary fields.
 
@@ -3135,7 +3119,6 @@ Example record:
 {
   id: "binbook-reader",
   name: "BinBook Reader",
-  kind: "app",
   version: "1.0.0",
   description: "Read BinBook files"
 }
@@ -3144,74 +3127,24 @@ Example record:
 Requires permission:
 
 ```text
-launcher.apps.inspect
+app.registry.inspect
 ```
 
-`launcher.launch(appId)`
+`app.launch(appId)`
 
-Requests that firmware launch an installed app by app ID.
+Requests that firmware launch an installed app by app ID. Firmware pushes a new
+app session and dispatches `event.on("app.start")` in that app. When the
+started app exits, firmware returns focus to the previous app session. If root
+`main.sqbc` exits, firmware restarts it instead of leaving the device without
+an app.
 
 Requires permission:
 
 ```text
-launcher.apps.launch
+app.launch
 ```
 
-The firmware owns:
-- manifest lookup
-- target compatibility checks
-- permission validation
-- bytecode validation
-- suspending launcher VM state
-- starting the target app
-- returning control to the launcher when the app exits or crashes
-
-The launcher does not directly execute `.sqbc`.
-
-`system.launcher.chooseDefault()`
-
-Opens firmware/system UI for choosing the default launcher from installed apps that declare `kind = "launcher"`.
-
-Requires permission:
-
-```text
-system.launcher.chooseDefault
-```
-
-This API is user-mediated. It must not silently change the default launcher.
-
-Firmware should validate a candidate launcher before saving it as the default. If the selected launcher is missing, invalid, incompatible, or crash-looping before first render, firmware should fall back to a known-good launcher or recovery launcher.
-
-Example launcher manifest:
-
-```json
-{
-  "format": "squidapp-v1",
-  "id": "simple-launcher",
-  "name": "Simple Launcher",
-  "kind": "launcher",
-  "version": "1.0.0",
-  "runtime": {
-    "language": "squidscript",
-    "version": "0.2"
-  },
-  "entry": {
-    "type": "bytecode",
-    "file": "main.sqbc"
-  },
-  "permissions": [
-    "display.draw",
-    "state.read",
-    "state.write",
-    "launcher.apps.list",
-    "launcher.apps.inspect",
-    "launcher.apps.launch",
-    "system.launcher.chooseDefault"
-  ]
-}
-```
-
-Example launcher flow:
+Example app-picker flow:
 
 ```squid
 state {
@@ -3224,9 +3157,9 @@ event.on("app.start") {
 }
 
 event.on("key.SELECT") {
-  let apps = launcher.apps()
-  let app = launcher.app(apps, selected)
-  launcher.launch(app.id)
+  let apps = app.registry()
+  let selectedApp = app.registry.get(apps, selected)
+  app.launch(selectedApp.id)
 }
 ```
 
@@ -3293,7 +3226,7 @@ library.flash.write
 - Allows creating folders, installing uploads, renaming, moving, and deleting entries in the internal flash library when the target provides one.
 
 library.appsInbox.write
-- Allows installing uploaded app packages into the apps inbox for later firmware/launcher validation.
+- Allows installing uploaded app packages into the apps inbox for later firmware/app-installer validation.
 
 bluetoothHid.advertise
 - Allows starting foreground-only Bluetooth HID peripheral advertising or reconnect behavior.
@@ -3310,17 +3243,14 @@ binbook.read
 system.info
 - Allows safe device info queries.
 
-launcher.apps.list
-- Allows the active launcher to request the installed app list.
+app.registry.list
+- Allows an app to request the installed app list.
 
-launcher.apps.inspect
-- Allows the active launcher to read safe manifest summaries for installed apps.
+app.registry.inspect
+- Allows an app to read safe manifest summaries for installed apps.
 
-launcher.apps.launch
-- Allows the active launcher to request that firmware launch another app.
-
-system.launcher.chooseDefault
-- Allows opening the firmware/user-mediated default-launcher chooser. This does not allow silent launcher replacement.
+app.launch
+- Allows an app to request that firmware launch another installed app.
 
 Permission checks happen during source compilation, bytecode validation, and runtime execution.
 
@@ -3659,7 +3589,7 @@ The device does not need source maps to run an app.
 If source-map.json is present and valid, firmware may use it for:
 - friendlier runtime errors
 - crash logs
-- launcher broken-app diagnostics
+- app registry/install diagnostics
 - source-level function/handler names
 - file and line references
 
@@ -3866,31 +3796,30 @@ The runtime is event-driven.
 
 Launch flow:
 
-1. active launcher requests app launch through firmware
-2. firmware suspends launcher VM state
-3. runtime loads target app.json
-4. runtime loads target .sqbc
-5. runtime validates .sqbc
-6. runtime optionally loads and verifies source-map.json
-7. runtime initializes state defaults
-8. runtime runs event.on("app.start")
-9. runtime renders current screen
-10. runtime waits for input event
-11. runtime runs matching event handler
-12. runtime renders if requested
-13. runtime saves state if requested
-14. runtime exits or suspends app when needed
-15. firmware resumes or restarts launcher
+1. firmware starts process 0 as the system/root host
+2. firmware loads root `main.sqbc` as process 1
+3. runtime validates .sqbc
+4. runtime optionally loads and verifies source-map.json
+5. runtime initializes state defaults
+6. runtime runs event.on("app.start")
+7. runtime renders current screen when requested
+8. runtime waits for input, timer, service, or lifecycle events
+9. runtime runs matching event handler
+10. runtime renders if requested
+11. runtime saves state if requested
+12. if the app starts another app, firmware pushes a new app session
+13. when a non-root app exits, firmware pops it and returns focus to the previous app
+14. when root `main.sqbc` exits, firmware restarts it
 
 Only one app is active at a time.
 
-No background execution in v0.2.
+Armed apps are not continuously executing background VMs. `app.arm(appId)`
+loads an app in registration mode, records `event.addSource(...)`
+registrations from `event.on("app.arm")`, then tears that VM down. When a
+registered event fires, firmware starts the armed app as the active app
+session and dispatches the event handler.
 
 No multitasking in v0.2.
-
-Launcher apps are SquidScript apps with `kind = "launcher"` and launcher capabilities. They are still executed by `squidvm`; they do not directly execute arbitrary bytecode. A launcher requests app launches through firmware, and firmware owns validation, lifecycle transitions, crash recovery, and returning control to the launcher.
-
-Default launcher selection is user-mediated. Apps may open a firmware-provided launcher chooser if granted `system.launcher.chooseDefault`, but they must not silently set themselves or another app as the default launcher.
 
 ---
 
@@ -3899,12 +3828,12 @@ Default launcher selection is user-mediated. Apps may open a firmware-provided l
 Bytecode validation error:
 - app is marked invalid
 - app is not run
-- launcher may show error details
+- firmware or the current app may show error details
 
 Runtime error:
 - execution stops
 - error is recorded
-- user is returned to launcher
+- user is returned to the previous app session, or root `main.sqbc` is restarted
 
 Repeated runtime errors:
 - app may be disabled until user re-enables it
@@ -3948,7 +3877,7 @@ On clean exit or suspend:
 On boot:
 - if previous app status was starting or running, assume crash/reset
 - do not auto-resume that app
-- return to launcher
+- restart root `main.sqbc`
 - show recovery notice
 - optionally increment crash count
 
@@ -4131,7 +4060,6 @@ app.json:
   "format": "squidapp-v1",
   "id": "hello-menu",
   "name": "Hello Menu",
-  "kind": "app",
   "version": "1.0.0",
   "runtime": {
     "language": "squidscript",
@@ -4453,7 +4381,8 @@ Source maps improve crash/error messages but must never affect execution or secu
 The intended architecture is:
 
 Firmware:
-- launcher
+- process 0 system/root host
+- root `main.sqbc` app loader
 - bytecode VM
 - display/input/storage/power
 - capability validation
@@ -4461,6 +4390,7 @@ Firmware:
 - Wi-Fi profile manager
 - foreground HTTP server module
 - Bluetooth HID module
+- firmware services that emit generic events
 - crash recovery
 - optional source-map diagnostics
 
@@ -4488,5 +4418,5 @@ SquidScript intentionally avoids:
 - arbitrary filesystem access
 - unbounded loops
 - complex object mutation
-- background execution
+- continuously resident background VMs
 - unrestricted binary parsing

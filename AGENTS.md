@@ -10,6 +10,13 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - When a preference or workflow rule is likely to apply beyond the current turn, suggest adding it to `AGENTS.md`.
 - If the user agrees, update `AGENTS.md` promptly and keep the guidance concise, actionable, and specific to this repository.
 
+## Roadmap Maintenance
+
+- `ROADMAP.md` is the repository issue tracker for agent-visible project work.
+- When a roadmap item is completed, remove it from `ROADMAP.md` in the same change or in the next cleanup commit.
+- If an AI agent identifies a concrete future task or follow-up while working, add it to `ROADMAP.md` rather than leaving it only in chat.
+- Keep roadmap entries concise, actionable, and scoped to repository work.
+
 ## Language And Spec Discipline
 
 - Do not invent SquidScript syntax, keywords, helpers, or simulator-only DSL conveniences.
@@ -23,13 +30,13 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 ## Architecture Boundary Discipline
 
 - Before adding or moving tests, identify the owning layer: language/compiler semantics, SQBC encoding, firmware VM behavior, host CLI behavior, board-specific firmware harness, example app, docs, or simulator.
-- Do not make lower-level crates depend on repo-level examples or board-specific examples. In particular, `squidc-core` tests must not `include_str!` files from `examples/`; put reusable language fixtures under compiler fixtures, and test example apps through CLI/example/e2e checks.
+- Do not make lower-level crates depend on repo-level examples or board-specific examples. In particular, `squidc-core` tests must not `include_str!` files from `examples/`; put reusable language fixtures under compiler fixtures, and test example apps through CLI/example or hardware target checks.
 - Keep board-specific aliases, fixed GPIO mappings, serial protocols, and physical LED assertions out of compiler core. Compiler core may validate portable syntax and emit portable IR/SQBC; firmware/runtime layers resolve device capabilities and aliases.
 - Do not let a demo requirement define public language/runtime semantics implicitly. If a demo needs a timer, GPIO, app lifecycle, or service behavior that is not already specified, update the plan/spec first or clearly mark the implementation as harness-only.
-- It is acceptable for real implementation work to inform and reshape the language/API design, but those discoveries must be promoted through the correct boundary: spec/docs for language decisions, compiler tests for language semantics, firmware tests for runtime behavior, CLI tests for host workflow, and examples/e2e tests for board demos.
+- It is acceptable for real implementation work to inform and reshape the language/API design, but those discoveries must be promoted through the correct boundary: spec/docs for language decisions, compiler tests for language semantics, firmware tests for runtime behavior, CLI tests for host workflow, and hardware target tests for board demos.
 - Avoid large cross-layer patches when a narrow change would answer the request. If a change touches compiler, SQBC, firmware, CLI, examples, and docs together, explicitly list why each layer is necessary before editing.
-- Prefer library-quality seams over one-off firmware harness slots. Fixed app-id storage like `timer-background`, `reader-clock`, or `break-reminder` belongs only in temporary harness code and must be documented as such until replaced by a real app registry/storage model.
-- Example app tests should verify the example at its natural boundary: compile/run with `squidc`, simulator e2e, firmware e2e, or script smoke tests. They should not become compiler-core unit tests unless the example has been promoted into a compiler fixture with a language-semantics purpose.
+- Prefer library-quality seams over one-off firmware harness slots. Fixed app-id storage like `timer-armed-app`, `reader-clock`, or `break-reminder` belongs only in temporary harness code and must be documented as such until replaced by a real app registry/storage model.
+- Example app tests should verify the example at its natural boundary: compile/run with `squidc`, simulator tests, or hardware target tests. They should not become compiler-core unit tests unless the example has been promoted into a compiler fixture with a language-semantics purpose.
 
 ## Hardware And Placeholder Discipline
 
@@ -54,10 +61,12 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
 - For firmware flashing scripts, avoid auto-monitoring by default when USB reset or re-enumeration can break the serial session. Prefer `squidc monitor` for ESP32-C3 Super Mini SquidScript output, and use explicit opt-in monitoring such as `MONITOR_AFTER_FLASH=1` only when needed.
 - Do not filter or suppress flashing tool stderr in firmware scripts. Surface warnings and errors directly, and document known harmless tool warnings instead of hiding them.
 - Clearly report host visibility limits, such as Codex sandbox sessions that cannot see `/dev/ttyACM*`, `/dev/ttyUSB*`, or `/dev/bus/usb`.
-- Do not run hardware scripts or serial commands in parallel against the same physical target. A single USB serial device is a shared mutable resource; run flash, install, smoke, e2e, monitor, and `squidc` device commands sequentially.
-- Hardware acceptance checks are listed in `docs/hardware_acceptance_tests.md`; use that inventory to identify real-device tests before running them.
+- Do not run hardware scripts or serial commands in parallel against the same physical target. A single USB serial device is a shared mutable resource; run flash, install, hardware test, monitor, and `squidc` device commands sequentially.
+- Hardware target tests are listed in `docs/hardware_target_tests.md`; use that inventory to identify real-device tests before running them.
+- When running the ESP32-C3 Super Mini hardware target suite, use `scripts/c3-supermini-test-hardware.sh` so stateful checks run first and the blinky app runs last. Blinky is the final visible board-state check and should be left running unless the user asks otherwise.
+- Hardware target tests and serial/flashing commands must run outside the Codex sandbox. Sandboxed sessions do not reliably expose `/dev/ttyACM*`, `/dev/ttyUSB*`, or `/dev/serial/by-id`, even after host reboot. Use escalated command execution for ESP32-C3 Super Mini serial visibility checks and hardware target tests.
 - When troubleshooting ESP32-C3 Super Mini flashing access, check `firmware/README.md` and `firmware/squid-firmware/README.md` for the documented `/dev/ttyACM0` ACL workaround before suggesting broader sudo changes.
-- For v4 REPL work, default app and firmware profiles are `dev`. Hardware acceptance should include `tests/repl/default-dev.session`, which intentionally does not set `:profile dev`.
+- For v4 REPL work, default app and firmware profiles are `dev`. Hardware target tests should include `tests/repl/default-dev.session`, which intentionally does not set `:profile dev`.
 - For `hardware.gpio.*` work on the ESP32-C3 Super Mini, run the serial GPIO REPL session and the blinky upload session when hardware is available; the blinky check requires both serial assertions and physical onboard LED observation.
 - Do not require `--target` for normal `squidc repl` upload/run flows. SquidScript apps compile against the portable language/runtime API; target definitions are opt-in for explicit compatibility checks, simulator config, firmware metadata, docs, and autocomplete.
 

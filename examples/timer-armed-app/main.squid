@@ -7,7 +7,7 @@ state {
 event.on("app.start") {
   started = started + 1
   debug.print("main start", started)
-  app.arm("timer-background")
+  app.arm("timer-armed-app")
 }
 
 screen("main") {}

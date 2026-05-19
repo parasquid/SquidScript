@@ -114,7 +114,7 @@ The expected stack is:
 
 This reference firmware should use `pulp-os` as an architecture reference, not a dependency or compatibility target. Relevant ideas include a small kernel/service split, Embassy-based concurrency, shared SPI discipline, no-framebuffer or strip-buffer display rendering, static allocation bias, and a boot console that is usable before SquidScript apps are available.
 
-The first hardware milestone is a boot console over both serial and the EPD. The console should support early diagnostics and bring-up commands before the launcher, SD app loading, or SquidVM execution are required.
+The first hardware milestone is a boot console over both serial and the EPD. The console should support early diagnostics and bring-up commands before app registry storage, SD app loading, or SquidVM execution are required.
 
 Generated artifacts may include:
 
@@ -222,7 +222,7 @@ browser-sim
 Purpose:
 
 - run SquidScript apps without device hardware
-- test launcher, reader, upload, and file-manager flows
+- test app picker, reader, upload, and file-manager flows
 - exercise target compatibility checks
 - preview display rendering at target resolution
 - simulate buttons, storage, Wi-Fi/AP status, BLE upload events, and file uploads

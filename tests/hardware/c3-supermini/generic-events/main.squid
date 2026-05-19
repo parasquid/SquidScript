@@ -3,7 +3,7 @@ app "main"
 event.on("app.start") {
   debug.print("main start")
   app.arm("break-reminder")
-  app.start("reader-clock")
+  app.launch("reader-clock")
 }
 
 screen("main") {}

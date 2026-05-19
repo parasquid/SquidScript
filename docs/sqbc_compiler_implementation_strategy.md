@@ -60,7 +60,7 @@ The early compiler will likely need frequent changes to:
 - binary format details
 - sourcemap format
 - CLI behavior
-- launcher/package integration
+- app package and registry integration
 
 Ruby allows these details to change quickly with minimal friction.
 
@@ -94,7 +94,7 @@ Rust is especially appropriate once the compiler has a stable model for:
 - binary package generation
 - sourcemaps
 - diagnostics
-- launcher-facing metadata
+- app registry metadata
 
 Rust should become the production compiler because it is better suited to correctness-critical and distribution-critical work.
 
@@ -261,7 +261,7 @@ Important expected outputs:
 - sourcemap JSON
 - binary package output
 - profile-resolution output
-- launcher manifest output, if applicable
+- app manifest output, if applicable
 
 IR means intermediate representation: the compiler's normalized internal form between parsed source and final SQBC bytecode.
 
@@ -376,7 +376,7 @@ The Rust implementation should be responsible for:
 - structured diagnostics
 - sourcemap generation
 - long-term compatibility
-- launcher integration
+- app registry integration
 - reproducible builds
 - cross-platform distribution
 
@@ -557,7 +557,7 @@ The relationship between the formats is:
 
 SQBC should not embed, redefine, or reinterpret the BinBook binary file format. SquidScript apps should access BinBook documents through firmware-native capabilities.
 
-Likewise, SQBC tooling should not package apps into UF2 images. UF2 belongs to firmware replacement for targets whose bootloader supports a drag-and-drop update flow; app installation remains a storage and launcher concern.
+Likewise, SQBC tooling should not package apps into UF2 images. UF2 belongs to firmware replacement for targets whose bootloader supports a drag-and-drop update flow; app installation remains a storage and app-registry concern.
 
 The draft BinBook capability contract lives at:
 
@@ -676,7 +676,7 @@ When the binary format intentionally changes, the SQBC format version and fixtur
 
 ## 17. Sourcemap Contract
 
-SQBC should generate sourcemaps so launcher/runtime errors can be mapped back to source.
+SQBC should generate sourcemaps so firmware/runtime errors can be mapped back to source.
 
 The sourcemap should be stable enough to support:
 
@@ -684,7 +684,7 @@ The sourcemap should be stable enough to support:
 - bad page/resource references
 - invalid action handlers
 - debug views in browser tooling
-- runtime error reporting from firmware or launcher
+- runtime error reporting from firmware or app tooling
 
 Minimum sourcemap fields should include:
 

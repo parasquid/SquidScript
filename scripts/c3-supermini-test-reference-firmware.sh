@@ -7,7 +7,7 @@ SKIP_FLASH=0
 
 usage() {
   cat <<'EOF'
-Usage: scripts/c3-supermini-smoke.sh [--skip-flash]
+Usage: scripts/c3-supermini-test-reference-firmware.sh [--skip-flash]
 
 Builds and flashes the ESP32-C3 Super Mini reference firmware, installs the
 headless counter SQBC fixture, then verifies run/key/state/trace behavior over
@@ -39,9 +39,12 @@ if [[ "$SKIP_FLASH" == "0" ]]; then
   sleep 1
 fi
 
-"$ROOT/scripts/c3-supermini-install-sqbc.sh"
+cargo run -p squidc -- install \
+  --port "$PORT" \
+  --as main \
+  "$ROOT/compiler/rust/fixtures/conformance/headless_counter.squid"
 PYTHONPATH="$ROOT/scripts" python3 "$ROOT/scripts/c3_supermini_serial.py" \
   --port "$PORT" \
-  smoke
+  test-reference-firmware
 
-printf 'OK smoke esp32c3-super-mini reference firmware\n'
+printf 'OK hardware test esp32c3-super-mini reference firmware\n'

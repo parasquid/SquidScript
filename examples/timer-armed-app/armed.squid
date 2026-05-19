@@ -1,17 +1,17 @@
-app "timer-background"
+app "timer-armed-app"
 
 state {
   ticks: 0
 }
 
 event.on("app.arm") {
-  debug.print("background register")
+  debug.print("armed register")
   event.addSource("timer.debug", { every: 1000 })
 }
 
 event.on("timer.debug") {
   ticks = ticks + 1
-  debug.print("background timer", ticks)
+  debug.print("armed timer", ticks)
   app.exit()
 }
 

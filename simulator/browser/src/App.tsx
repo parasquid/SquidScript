@@ -78,7 +78,7 @@ export default function App() {
     const apps = await listInstalledApps(vfs);
     setInstalledApps(apps);
     if (!installedAppId && apps[0]) setInstalledAppId(apps[0].id);
-    log("launcher", "refreshed installed apps", { count: apps.length });
+    log("app-registry", "refreshed installed apps", { count: apps.length });
     await refreshStorageFiles();
   }
 
@@ -135,7 +135,7 @@ export default function App() {
     setRuntime(null);
     setSnapshot(null);
     setStatus(`Uninstalled /sd/apps/${installedAppId}`);
-    log("launcher", "uninstalled app", { appId: installedAppId });
+    log("app-registry", "uninstalled app", { appId: installedAppId });
     setInstalledAppId(null);
     await refreshApps();
   }

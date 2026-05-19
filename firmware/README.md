@@ -24,26 +24,26 @@ Useful commands from the repository root:
 ```sh
 scripts/c3-supermini-build.sh
 scripts/c3-supermini-flash.sh
-scripts/c3-supermini-install-sqbc.sh
-scripts/c3-supermini-smoke.sh
-scripts/squidc-build.sh build compiler/rust/fixtures/conformance/headless_counter.squid --target esp32c3-super-mini --out target/reference-firmware/headless_counter.sqbc
+scripts/c3-supermini-test-reference-firmware.sh
+cargo run -p squidc -- build compiler/rust/fixtures/conformance/headless_counter.squid --out target/reference-firmware/headless_counter.sqbc
 ```
 
-The preferred hardware acceptance check for the reference firmware milestone is:
+The preferred hardware target check for the reference firmware milestone is:
 
 ```sh
-scripts/c3-supermini-smoke.sh
+scripts/c3-supermini-test-reference-firmware.sh
 ```
 
-Use `scripts/c3-supermini-smoke.sh --skip-flash` when the current firmware image
-is already flashed. The smoke test compiles the headless counter fixture,
+Use `scripts/c3-supermini-test-reference-firmware.sh --skip-flash` when the
+current firmware image is already flashed. The hardware test compiles the
+headless counter fixture,
 installs SQBC v2 bytes over USB serial, runs the app, sends `SELECT`, `SELECT`,
 and `BACK`, then verifies state and trace output.
 
 `espflash` may print `Monitor options were provided, but --monitor/-M flag
 isn't set` during flashing on some host configurations. The project scripts do
-not suppress this warning; it is harmless when flashing continues and the smoke
-test reaches `OK smoke esp32c3-super-mini reference firmware`.
+not suppress this warning; it is harmless when flashing continues and the
+hardware test reaches `OK hardware test esp32c3-super-mini reference firmware`.
 
 The normal compile/upload/run path uses `squidc run`. If `--port` is omitted,
 `squidc` probes visible serial ports with `HELLO` and uses the single
@@ -58,9 +58,9 @@ cargo run -p squidc -- output
 Named multi-app flows use `install` and `start`:
 
 ```sh
-cargo run -p squidc -- install tests/firmware-e2e/generic-events/break-reminder.squid
-cargo run -p squidc -- install tests/firmware-e2e/generic-events/reader-clock.squid
-cargo run -p squidc -- install tests/firmware-e2e/generic-events/main.squid
+cargo run -p squidc -- install tests/hardware/c3-supermini/generic-events/break-reminder.squid
+cargo run -p squidc -- install tests/hardware/c3-supermini/generic-events/reader-clock.squid
+cargo run -p squidc -- install tests/hardware/c3-supermini/generic-events/main.squid
 cargo run -p squidc -- start main
 ```
 
@@ -71,8 +71,8 @@ cargo run -p squidc -- repl --port /dev/ttyACM0 --script tests/repl/default-dev.
 cargo run -p squidc -- repl --port /dev/ttyACM0 --script tests/repl/release-strips-debug.session
 cargo run -p squidc -- repl --port /dev/ttyACM0 --script tests/repl/render-drawlog.session
 cargo run -p squidc -- repl --port /dev/ttyACM0 --script tests/repl/hardware-gpio-status-led.session
-scripts/c3-supermini-timer-background-smoke.sh
-scripts/c3-supermini-generic-events-e2e.sh
+scripts/c3-supermini-test-timer-armed-app.sh
+scripts/c3-supermini-test-generic-triggered-apps.sh
 ```
 
 The default `run`/`install`/`repl` profile is `dev`; the default firmware
@@ -83,12 +83,12 @@ optional and should be paired with
 `--check-target` only when you explicitly want host-side compatibility checks
 against a target definition.
 
-The timer/background smoke script uploads two SQBC apps, runs the foreground
-`main` app, lets the firmware timer fire, then verifies `OUTPUT.GET` contains
-`main start`, `background register`, and `background timer`.
+The timer armed-app hardware test uploads two SQBC apps, runs the `main` app,
+lets the firmware timer fire, then verifies `OUTPUT.GET` contains
+`main start`, `armed register`, and `armed timer`.
 
-The generic-events E2E script is the canonical SQBC firmware regression path
-for the app-stack work. It installs `main`, `reader-clock`, and
+The generic triggered-apps hardware test is the canonical SQBC firmware
+regression path for the app-stack work. It installs `main`, `reader-clock`, and
 `break-reminder`, verifies `app.start`, `app.arm`, `event.addSource`, session timer,
 armed timer, and key exit behavior over USB serial.
 

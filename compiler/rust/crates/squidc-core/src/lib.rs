@@ -153,8 +153,6 @@ pub enum IrStatement {
     AppExit,
     #[serde(rename = "app.launch")]
     AppLaunch { app: String },
-    #[serde(rename = "app.start")]
-    AppStart { app: String },
     #[serde(rename = "app.arm")]
     AppArm { app: String },
     #[serde(rename = "app.disarm")]
@@ -812,11 +810,6 @@ impl Parser<'_> {
                 let app = self.consume_string(builder).unwrap_or_default();
                 self.consume_call_tail(builder);
                 Some(IrStatement::AppLaunch { app })
-            }
-            ("app", "start") => {
-                let app = self.consume_string(builder).unwrap_or_default();
-                self.consume_call_tail(builder);
-                Some(IrStatement::AppStart { app })
             }
             ("app", "arm") => {
                 let app = self.consume_string(builder).unwrap_or_default();
@@ -1615,7 +1608,6 @@ fn validate_screen_statements(
             | IrStatement::ScreenRefresh
             | IrStatement::AppExit
             | IrStatement::AppLaunch { .. }
-            | IrStatement::AppStart { .. }
             | IrStatement::AppArm { .. }
             | IrStatement::AppDisarm { .. }
             | IrStatement::EventAddSource { .. }
@@ -2228,7 +2220,7 @@ screen("main") {}
 state { ticks: 0 }
 event.on("app.start") {
   app.arm("reminder")
-  app.start("reader")
+  app.launch("reader")
   event.addSource("timer.clock", { every: 60000 })
 }
 event.on("app.arm") {
@@ -2255,7 +2247,7 @@ screen("main") {}
         ));
         assert!(matches!(
             ir.handlers[0].statements[1],
-            IrStatement::AppStart { .. }
+            IrStatement::AppLaunch { .. }
         ));
         assert!(matches!(
             ir.handlers[0].statements[2],

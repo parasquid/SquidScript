@@ -802,10 +802,6 @@ impl TraceSink for RuntimeSink<'_> {
         Ok(())
     }
 
-    fn app_start(&mut self, app: &str) -> Result<(), VmError> {
-        self.app_launch(app)
-    }
-
     fn app_arm(&mut self, app: &str) -> Result<(), VmError> {
         self.pending_arm = Some(AppName::new(app).map_err(|_| VmError::InvalidOperand)?);
         Ok(())

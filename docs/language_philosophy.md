@@ -188,17 +188,24 @@ The target profile system should let a program ask for logical features such as:
 
 Exact device targeting should be rare and reserved for cases where capability declarations cannot express the compatibility requirement.
 
-### 3.8 Launchers Are Apps With A User-Selected Role
+### 3.8 App Pickers Are Ordinary Apps
 
-SquidScript launchers should be written in SquidScript.
+SquidScript app pickers, shells, and home screens should be written in
+SquidScript when possible.
 
-The platform should support multiple launcher designs: grid launchers, list launchers, document-first launchers, kid-mode launchers, kiosk launchers, or other user-facing app-selection models.
+The platform should support multiple app-selection designs: grids, lists,
+document-first shells, kid-mode shells, kiosk shells, or other user-facing
+models.
 
-Launcher authority is a role, not a different source language. An app may declare `kind = "launcher"` to advertise that it can serve as a launcher. The active default launcher should be selected by the user through firmware/system UI, similar to changing Android launchers.
+There is no public app `kind` for launcher, foreground, background, or service
+behavior in v0.2. A home screen is an ordinary app, commonly installed as root
+`main.sqbc`. Apps can start other installed apps through the standard app
+registry/lifecycle API, while firmware owns validation, stack transitions, and
+return-to-previous-app behavior.
 
-Firmware should validate a candidate launcher before making it active, grant `launcher.*` capabilities only while running the selected launcher in the launcher role, and provide a recovery path if the chosen launcher is missing, invalid, incompatible, or crash-looping.
-
-Normal apps should not silently replace the default launcher. A user-mediated launcher chooser is the preferred extensibility point.
+Firmware services are not SquidScript app kinds. They are firmware modules that
+may emit generic events such as `service.pageTurn.forward` for active apps to
+handle.
 
 ### 3.9 Specifications And Fixtures Outrank Implementation Accidents
 

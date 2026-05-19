@@ -90,7 +90,7 @@ def install_app_sqbc(
     _wait_for(serial, b"OK install.app", output, timeout, InstallError)
 
 
-def smoke_sequence(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
+def reference_firmware_test_sequence(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
     _send_line(serial, "RUN.EVENT main app.start", output, b"OK RUN.EVENT", timeout)
     state = _state(serial, output, timeout)
     _expect_state(state, {"started": "1", "count": "0", "exited": "false"})
@@ -290,7 +290,7 @@ def main(argv=None):
     install_app.add_argument("app_id")
     install_app.add_argument("sqbc")
 
-    subcommands.add_parser("smoke", help="run the headless counter smoke sequence")
+    subcommands.add_parser("test-reference-firmware", help="verify headless counter reference firmware behavior")
     run = subcommands.add_parser("run-event", help="run a named app event")
     run.add_argument("app_id")
     run.add_argument("event", nargs="?", default="app.start")
@@ -315,8 +315,8 @@ def main(argv=None):
         if args.command == "install-app":
             with open(args.sqbc, "rb") as handle:
                 install_app_sqbc(serial, args.app_id, handle.read(), timeout=args.timeout)
-        elif args.command == "smoke":
-            smoke_sequence(serial, timeout=args.timeout)
+        elif args.command == "test-reference-firmware":
+            reference_firmware_test_sequence(serial, timeout=args.timeout)
         elif args.command == "run-event":
             run_app_event(serial, args.app_id, args.event, timeout=args.timeout)
         elif args.command == "run-app":

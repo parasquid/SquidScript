@@ -49,7 +49,6 @@ const BUILTIN_HARDWARE_GPIO_WRITE: u8 = 10;
 const BUILTIN_HARDWARE_GPIO_TOGGLE: u8 = 11;
 const BUILTIN_HARDWARE_GPIO_READ: u8 = 12;
 const BUILTIN_APP_LAUNCH: u8 = 13;
-const BUILTIN_APP_START: u8 = 15;
 const BUILTIN_APP_ARM: u8 = 16;
 const BUILTIN_APP_DISARM: u8 = 17;
 const BUILTIN_EVENT_ADD_SOURCE: u8 = 18;
@@ -358,9 +357,7 @@ fn collect_statement_strings(
             IrStatement::AppLaunch { app } => {
                 strings.intern(app)?;
             }
-            IrStatement::AppStart { app }
-            | IrStatement::AppArm { app }
-            | IrStatement::AppDisarm { app } => {
+            IrStatement::AppArm { app } | IrStatement::AppDisarm { app } => {
                 strings.intern(app)?;
             }
             IrStatement::EventAddSource { event, every_ms } => {
@@ -560,10 +557,6 @@ fn compile_statement(
         IrStatement::AppLaunch { app } => {
             emit_string(unit, app)?;
             emit_builtin(&mut unit.code, BUILTIN_APP_LAUNCH);
-        }
-        IrStatement::AppStart { app } => {
-            emit_string(unit, app)?;
-            emit_builtin(&mut unit.code, BUILTIN_APP_START);
         }
         IrStatement::AppArm { app } => {
             emit_string(unit, app)?;
