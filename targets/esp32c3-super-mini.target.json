@@ -182,10 +182,16 @@
     "reason": "This reference firmware target exercises headless SquidScript language behavior over serial."
   },
   "storage": {
-    "type": "ram-only-reference",
-    "supportsApps": false,
+    "type": "littlefs-reference",
+    "supportsApps": true,
     "supportsContent": false,
-    "reason": "The first reference firmware milestone installs SQBC bytes into RAM over serial; persistent app storage is deferred."
+    "partition": {
+      "name": "squidfs",
+      "offset": "0x210000",
+      "size": "0x1f0000",
+      "filesystem": "littlefs"
+    },
+    "reason": "The ESP32-C3 Super Mini reference firmware stores installed SQBC apps in a firmware-owned LittleFS partition. Content/library storage is not implemented yet."
   },
   "input": {
     "type": "board-control-only",
@@ -211,7 +217,8 @@
       "status": "reference-subset",
       "bytecode": "sqbc-v2",
       "statePersistence": "ram-only",
-      "entry": "serial-installed-bytes",
+      "appPersistence": "littlefs",
+      "entry": "persistent-app-registry",
       "reason": "This target exercises the initial headless SquidScript VM subset for language-spec conformance."
     }
   },
@@ -224,6 +231,7 @@
     "console.serial",
     "firmware.flash-test",
     "squidscript.bytecode.v2.reference",
+    "squidscript.apps.persistent",
     "squidscript.state.ram",
     "squidscript.serial-install",
     "button.boot.typical",

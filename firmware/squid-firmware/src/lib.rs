@@ -3,6 +3,8 @@
 pub mod bringup;
 pub mod dev_harness;
 pub mod protocol;
+#[cfg(feature = "hardware")]
+pub mod storage;
 pub mod target;
 pub mod vm;
 

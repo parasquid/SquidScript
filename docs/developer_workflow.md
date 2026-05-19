@@ -34,11 +34,11 @@ http://127.0.0.1:5174/
 - `wasm-pack`
 - a Rust toolchain with `wasm32-unknown-unknown`
 
-In the current development environment this is satisfied by Homebrew `rustup` plus a Rustup-managed stable toolchain:
+One portable setup is:
 
 ```bash
-brew install rustup
-/home/linuxbrew/.linuxbrew/opt/rustup/bin/rustup toolchain install stable --target wasm32-unknown-unknown
+rustup toolchain install stable --target wasm32-unknown-unknown
+cargo install wasm-pack --locked
 ```
 
 ## Full Check
@@ -55,4 +55,3 @@ This runs:
 - browser unit tests
 - browser production build, including WASM compiler generation
 - Playwright browser tests
-

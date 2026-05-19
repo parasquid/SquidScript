@@ -176,7 +176,7 @@ pub fn detect_port() -> Result<String, String> {
     match matches.len() {
         1 => Ok(matches.remove(0)),
         0 => Err(format!(
-            "no SquidScript firmware serial target found; candidates: {}; pass --port /dev/ttyACM0",
+            "no SquidScript firmware serial target found; candidates: {}; pass --port or set ESPFLASH_PORT",
             candidates.join(", ")
         )),
         _ => Err(format!(
@@ -188,17 +188,33 @@ pub fn detect_port() -> Result<String, String> {
 
 pub fn candidate_ports() -> Vec<String> {
     let mut out = Vec::new();
+    if let Ok(entries) = fs::read_dir("/dev/serial/by-id") {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if name.contains("Espressif") {
+                out.push(path.display().to_string());
+            }
+        }
+    }
     if let Ok(entries) = fs::read_dir("/dev") {
         for entry in entries.flatten() {
             let Some(name) = entry.file_name().to_str().map(ToOwned::to_owned) else {
                 continue;
             };
-            if name.starts_with("ttyACM") || name.starts_with("ttyUSB") {
+            if name.starts_with("ttyACM")
+                || name.starts_with("ttyUSB")
+                || name.starts_with("cu.usbmodem")
+                || name.starts_with("cu.SLAB_USBtoUART")
+            {
                 out.push(format!("/dev/{name}"));
             }
         }
     }
     out.sort();
+    out.dedup();
     out
 }
 

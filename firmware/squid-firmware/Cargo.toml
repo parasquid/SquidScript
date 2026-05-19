@@ -10,25 +10,33 @@ publish = false
 default = []
 hardware = [
   "dep:critical-section",
+  "dep:delog",
   "dep:embedded-graphics",
   "dep:embedded-hal-bus",
   "dep:embedded-hal",
+  "dep:embedded-storage",
   "dep:esp-backtrace",
   "dep:esp-bootloader-esp-idf",
   "dep:esp-hal",
   "dep:esp-println",
+  "dep:esp-storage",
+  "dep:littlefs2",
   "dep:ssd1677",
 ]
 
 [dependencies]
 critical-section = { version = "1", default-features = false, optional = true }
+delog = { version = "0.1.8", default-features = false, features = ["portable-atomic"], optional = true }
 embedded-graphics = { version = "0.8", default-features = false, optional = true }
 embedded-hal = { version = "1", default-features = false, optional = true }
 embedded-hal-bus = { version = "0.3", default-features = false, optional = true }
+embedded-storage = { version = "0.3", default-features = false, optional = true }
 esp-backtrace = { version = "0.17", default-features = false, features = ["esp32c3", "exception-handler", "panic-handler", "println"], optional = true }
 esp-bootloader-esp-idf = { version = "0.3", default-features = false, features = ["esp32c3"], optional = true }
 esp-hal = { version = "=1.0.0", default-features = false, features = ["esp32c3", "rt", "unstable"], optional = true }
 esp-println = { version = "0.15", default-features = false, features = ["esp32c3", "jtag-serial", "log-04"], optional = true }
+esp-storage = { version = "0.8", default-features = false, features = ["esp32c3"], optional = true }
+littlefs2 = { version = "0.7", default-features = false, features = ["c-stubs"], optional = true }
 ssd1677 = { version = "0.1", default-features = false, features = ["graphics"], optional = true }
 
 [dev-dependencies]

@@ -66,9 +66,9 @@ status LED aliases and raw `GPIO8`. Use these repository-root checks after
 flashing:
 
 ```sh
-cargo run -p squidc -- repl --port /dev/ttyACM0 --script tests/repl/hardware-gpio-status-led.session
-cargo run -p squidc -- repl --port /dev/ttyACM0 examples/blinky-supermini/main.squid --script tests/repl/blinky-supermini.session
-cargo run -p squidc -- repl --port /dev/ttyACM0 --script examples/blinky-supermini/main.squid
+cargo run -p squidc -- repl --script tests/repl/hardware-gpio-status-led.session
+cargo run -p squidc -- repl examples/blinky-supermini/main.squid --script tests/repl/blinky-supermini.session
+cargo run -p squidc -- repl --script examples/blinky-supermini/main.squid
 ```
 
 The GPIO session verifies serial readback. The blinky session should also be
@@ -89,13 +89,16 @@ check for the current app-stack model. It installs `main`, `reader-clock`, and
 `break-reminder`, then verifies `app.start`, `app.arm`, `event.addSource`, a
 session-local timer, an armed timer, and key-driven `app.exit`.
 
-The installed app registry is a temporary six-slot RAM-only development
-harness. It accepts arbitrary valid app IDs, but installed apps are cleared on
-reset or power loss until a persistent app registry/storage model exists.
+The installed app registry is a six-slot runtime cache over persistent app
+storage. On the ESP32-C3 Super Mini, installed SQBC payloads are stored in
+LittleFS under `/apps/<app-id>.sqbc` on the `squidfs` flash partition and are
+loaded back into the registry at firmware startup.
 
-`INSTALL.APP` receives raw SQBC v2 bytes into RAM. State persistence is
-in-memory only for this milestone; `state.load` and `state.save` are traced but
-do not write flash yet.
+`INSTALL.APP` receives raw SQBC v2 bytes, validates the payload, writes app
+storage, and then publishes the app in the registry cache. `STORAGE.FORMAT`
+formats app storage and clears the cache. State persistence remains a separate
+future milestone; `state.load` and `state.save` are traced but do not write
+flash yet.
 
 The crate still contains `x4-hello`, a separate XTEINK X4 display bring-up
 binary. Keep X4 display work separate from the reference VM milestone.

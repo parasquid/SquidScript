@@ -98,9 +98,10 @@ Checks include:
 
 - `cargo`, `rustc`, and `rustup`
 - the `riscv32imc-unknown-none-elf` Rust target
+- the RISC-V ELF GCC toolchain required by the LittleFS firmware build
 - `espflash`, including `~/.cargo/bin/espflash`
 - visible serial ports
-- optional `riscv32-unknown-elf-size`
+- optional `riscv64-elf-size`
 - firmware `HELLO` when exactly one candidate device is visible or `--port` is
   supplied
 - hardware target test script presence

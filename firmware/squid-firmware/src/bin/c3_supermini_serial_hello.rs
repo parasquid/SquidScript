@@ -13,9 +13,14 @@ use esp_hal::{
     time::{Duration, Instant},
     usb_serial_jtag::UsbSerialJtag,
 };
+use esp_storage::FlashStorage;
 use squid_firmware::{
-    dev_harness::{AppName, AppRegistry, AppRegistryError, AppSlot, DevTimerEvent as TimerEvent, APP_REGISTRY_CAP},
+    dev_harness::{
+        AppName, AppRegistry, AppRegistryError, AppSlot, AppStorage, AppStorageError,
+        DevTimerEvent as TimerEvent, APP_REGISTRY_CAP,
+    },
     protocol::{fnv1a, parse_install},
+    storage::{LittleFsAppStorage, SquidFlashRegion},
     vm::{Program, TraceSink, Value, Vm, VmError, MAX_APP_BYTES},
 };
 
@@ -47,6 +52,8 @@ fn main() -> ! {
     let peripherals = esp_hal::init(config);
     let delay = Delay::new();
     let led = Output::new(peripherals.GPIO8, Level::Low, OutputConfig::default());
+    let flash = FlashStorage::new(peripherals.FLASH);
+    let mut app_storage = LittleFsAppStorage::new(SquidFlashRegion::new(flash));
     let mut serial = UsbSerialJtag::new(peripherals.USB_DEVICE);
     let mut line = LineBuffer::new();
     let mut registry = AppRegistry::new();
@@ -54,6 +61,14 @@ fn main() -> ! {
     let mut vm: Option<Vm<'static>> = None;
     let mut vm_slot: Option<AppSlot> = None;
     let mut last_error: Option<VmError> = None;
+    let mut storage_error: Option<AppStorageError> = None;
+
+    match registry.load_from_storage(&mut app_storage, unsafe { &mut APP_BYTES }) {
+        Ok(_) => {}
+        Err(error) => {
+            storage_error = Some(storage_error_from_persistent(error));
+        }
+    }
 
     writeln!(serial, "SquidScript reference firmware").ok();
     writeln!(serial, "target=esp32c3-super-mini build={BUILD_ID}").ok();
@@ -77,11 +92,13 @@ fn main() -> ! {
                             &mut serial,
                             &delay,
                             &mut registry,
+                            &mut app_storage,
                             unsafe { &mut APP_BYTES },
                             &mut runtime,
                             &mut vm,
                             &mut vm_slot,
                             &mut last_error,
+                            &mut storage_error,
                         );
                     }
                 }
@@ -96,14 +113,16 @@ fn handle_command(
     serial: &mut UsbSerialJtag<'_, esp_hal::Blocking>,
     delay: &Delay,
     registry: &mut AppRegistry,
+    app_storage: &mut impl AppStorage,
     app_bytes: &'static mut [[u8; MAX_APP_BYTES]; APP_REGISTRY_CAP],
     trace: &mut RuntimeSink<'_>,
     vm: &mut Option<Vm<'static>>,
     vm_slot: &mut Option<AppSlot>,
     last_error: &mut Option<VmError>,
+    storage_error: &mut Option<AppStorageError>,
 ) {
     if command == "help" {
-        writeln!(serial, "commands: HELLO INSTALL.APP <app-id> <len> <fnv32hex> RUN.APP <app-id> RUN.EVENT <app-id> <event> KEY SELECT APP.LIST STATE.GET STATE.IMPORT <len> <fnv32hex> TRACE.GET OUTPUT.GET DRAWLOG.GET ERRORS.GET RESET").ok();
+        writeln!(serial, "commands: HELLO INSTALL.APP <app-id> <len> <fnv32hex> RUN.APP <app-id> RUN.EVENT <app-id> <event> KEY SELECT APP.LIST STATE.GET STATE.IMPORT <len> <fnv32hex> TRACE.GET OUTPUT.GET DRAWLOG.GET ERRORS.GET RESET STORAGE.FORMAT").ok();
     } else if command == "HELLO" || command == "hello" || command == "info" {
         writeln!(serial, "target=esp32c3-super-mini").ok();
         writeln!(serial, "build={BUILD_ID}").ok();
@@ -111,6 +130,12 @@ fn handle_command(
         writeln!(serial, "app_slots={APP_REGISTRY_CAP}").ok();
         writeln!(serial, "installed_apps={}", registry.iter().count()).ok();
         writeln!(serial, "vm_loaded={}", vm.is_some()).ok();
+        writeln!(
+            serial,
+            "storage={}",
+            if storage_error.is_some() { "error" } else { "ok" }
+        )
+        .ok();
         writeln!(serial, "OK HELLO").ok();
     } else if let Some(rest) = command
         .strip_prefix("INSTALL.APP ")
@@ -151,6 +176,16 @@ fn handle_command(
                 }
                 let actual_hash = fnv1a(&bytes[..len]);
                 if actual_hash == request.expected_hash {
+                    if let Err(error) = Program::parse(&bytes[..len]).map(|_| ()) {
+                        *last_error = Some(error);
+                        writeln!(serial, "ERR install.app invalid-bytecode").ok();
+                        return;
+                    }
+                    if let Err(error) = app_storage.write_app(app_id, &bytes[..len]) {
+                        *storage_error = Some(error);
+                        writeln!(serial, "ERR install.app storage").ok();
+                        return;
+                    }
                     if let Err(error) = registry.commit_install(slot, app_id, len, actual_hash) {
                         *last_error = Some(VmError::InvalidOperand);
                         match error {
@@ -168,6 +203,7 @@ fn handle_command(
                     trace.clear_timers();
                     trace.reset_stack();
                     *last_error = None;
+                    *storage_error = None;
                     writeln!(serial, "OK install.app app={app_id} hash={actual_hash:08x}").ok();
                 } else {
                     *last_error = Some(VmError::InvalidHeader);
@@ -389,6 +425,10 @@ fn handle_command(
             Some(error) => writeln!(serial, "last_error={:?}", error).ok(),
             None => writeln!(serial, "last_error=none").ok(),
         };
+        match storage_error {
+            Some(error) => writeln!(serial, "storage_error={:?}", error).ok(),
+            None => writeln!(serial, "storage_error=none").ok(),
+        };
         if command == "ERRORS.GET" {
             writeln!(serial, "OK ERRORS.GET").ok();
         }
@@ -398,8 +438,35 @@ fn handle_command(
         *vm = None;
         *last_error = None;
         writeln!(serial, "OK reset").ok();
+    } else if command == "STORAGE.FORMAT" || command == "storage.format" {
+        match app_storage.format() {
+            Ok(()) => {
+                registry.clear();
+                trace.clear();
+                trace.clear_timers();
+                trace.reset_stack();
+                *vm = None;
+                *vm_slot = None;
+                *last_error = None;
+                *storage_error = None;
+                writeln!(serial, "OK STORAGE.FORMAT").ok();
+            }
+            Err(error) => {
+                *storage_error = Some(error);
+                writeln!(serial, "ERR STORAGE.FORMAT {:?}", error).ok();
+            }
+        }
     } else {
         writeln!(serial, "ERR unknown-command").ok();
+    }
+}
+
+fn storage_error_from_persistent(
+    error: squid_firmware::dev_harness::PersistentAppError,
+) -> AppStorageError {
+    match error {
+        squid_firmware::dev_harness::PersistentAppError::Storage(error) => error,
+        _ => AppStorageError::Io,
     }
 }
 

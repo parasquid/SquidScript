@@ -26,11 +26,12 @@ OUTPUT.GET
 DRAWLOG.GET
 ERRORS.GET
 RESET
+STORAGE.FORMAT
 ```
 
 `INSTALL.APP` is followed by exactly `<len>` raw SQBC bytes and stores them in
-the RAM app registry under `<app-id>`. `STATE.IMPORT` is followed by exactly
-`<len>` state snapshot bytes. The hash is FNV-1a over the payload bytes.
+firmware-owned app storage under `<app-id>`. `STATE.IMPORT` is followed by
+exactly `<len>` state snapshot bytes. The hash is FNV-1a over the payload bytes.
 
 Success responses start with `OK`. Error responses start with `ERR`.
 
@@ -44,8 +45,12 @@ END STATE
 OK STATE.GET
 ```
 
-Installed apps are RAM-only in the ESP32-C3 reference firmware. Resetting or
-power-cycling the board clears the registry.
+Installed apps are persistent in the ESP32-C3 reference firmware. On startup,
+firmware scans the app store and rebuilds the in-memory registry cache.
+`RESET` resets the development runtime state but does not erase installed apps.
+`STORAGE.FORMAT` formats the firmware app store and clears the registry cache.
+
+See `docs/firmware_app_storage.md` for the current ESP32-C3 storage layout.
 
 ## State Snapshots
 
@@ -115,15 +120,15 @@ cargo run -p squidc -- device monitor --max-lines 4
 Scripted REPL checks can still use session files:
 
 ```sh
-cargo run -p squidc -- repl --port /dev/ttyACM0 --script tests/repl/hardware-gpio-status-led.session
-cargo run -p squidc -- repl --port /dev/ttyACM0 examples/blinky-supermini/main.squid --script tests/repl/blinky-supermini.session
+cargo run -p squidc -- repl --script tests/repl/hardware-gpio-status-led.session
+cargo run -p squidc -- repl examples/blinky-supermini/main.squid --script tests/repl/blinky-supermini.session
 ```
 
 Target definitions are optional in host tooling. Use them only for explicit
 compatibility checks and related metadata workflows:
 
 ```sh
-cargo run -p squidc -- repl --target targets/esp32c3-super-mini.target.json --check-target --port /dev/ttyACM0 --script examples/blinky-supermini/main.squid
+cargo run -p squidc -- repl --target targets/esp32c3-super-mini.target.json --check-target --script examples/blinky-supermini/main.squid
 ```
 
 The first check verifies serial-observable GPIO readback. The blinky example

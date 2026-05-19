@@ -4,7 +4,9 @@ import unittest
 from c3_supermini_serial import (
     InstallError,
     compute_fnv1a,
+    format_storage,
     install_app_sqbc,
+    list_apps,
     parse_state,
     reference_firmware_test_sequence,
     run_app,
@@ -54,6 +56,21 @@ class C3SuperMiniSerialTests(unittest.TestCase):
         run_app(serial, "main", output=io.BytesIO(), timeout=0.01)
 
         self.assertEqual(serial.writes, [b"RUN.APP main\n"])
+
+    def test_list_apps_requests_app_registry_block(self):
+        serial = FakeSerial([b"BEGIN APPS\r\napp=main len=5 hash=4f9f2cab\r\nEND APPS\r\n"])
+
+        response = list_apps(serial, output=io.BytesIO(), timeout=0.01)
+
+        self.assertIn(b"app=main", response)
+        self.assertEqual(serial.writes, [b"APP.LIST\n"])
+
+    def test_format_storage_sends_storage_format_command(self):
+        serial = FakeSerial([b"OK STORAGE.FORMAT\r\n"])
+
+        format_storage(serial, output=io.BytesIO(), timeout=0.01)
+
+        self.assertEqual(serial.writes, [b"STORAGE.FORMAT\n"])
 
     def test_parse_state_extracts_values(self):
         state = parse_state(b"started=1\r\ncount=2\r\nexited=true\r\n")

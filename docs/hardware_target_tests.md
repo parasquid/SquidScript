@@ -24,9 +24,10 @@ visual/interactive checks. Blinky runs last because it intentionally leaves the
 board in an observable state with the onboard LED toggling. If a later test
 installs another app, it will replace that visible state.
 
-The current hardware target is the ESP32-C3 Super Mini reference
-firmware on `/dev/ttyACM0` or the first auto-detected SquidScript firmware
-serial target.
+The current hardware target is the ESP32-C3 Super Mini reference firmware on
+the first auto-detected SquidScript firmware serial target. Set
+`ESPFLASH_PORT=/path/to/device` when multiple devices are connected or
+auto-detection is not enough.
 
 ## ESP32-C3 Super Mini
 
@@ -46,10 +47,11 @@ Current order:
 1. Reference firmware protocol test.
 2. GPIO REPL session.
 3. Default dev REPL session.
-4. Timer-armed app test.
-5. Generic triggered-apps test.
-6. Blinky REPL session.
-7. Blinky app run and short monitor check.
+4. Persistent app registry test.
+5. Timer-armed app test.
+6. Generic triggered-apps test.
+7. Blinky REPL session.
+8. Blinky app run and short monitor check.
 
 Add new hardware tests before the final blinky app unless the new test is also
 intended to be the final visible board-state check.
@@ -61,7 +63,10 @@ intended to be the final visible board-state check.
 ./scripts/c3-supermini-flash.sh
 ```
 
-Builds and flashes the reference firmware.
+Builds and flashes the reference firmware. Normal flashing writes the
+bootloader, partition table, and factory app partition. It does not erase the
+`squidfs` app-storage partition. Use the persistent registry test or
+`STORAGE.FORMAT` when a clean app store is needed.
 
 ### Reference Firmware Protocol
 
@@ -73,6 +78,16 @@ Builds and flashes the reference firmware.
 Builds/flashes the reference firmware unless `--skip-flash` is used, installs
 the headless counter fixture as `main`, and verifies run, key, state, and trace
 behavior over USB serial.
+
+### Persistent App Registry
+
+```sh
+./scripts/c3-supermini-test-persistent-app-registry.sh
+```
+
+Formats app storage, installs the headless counter fixture as `main`, resets the
+chip, verifies `APP.LIST` still reports `main`, then dispatches `app.start`.
+This test proves installed SQBC survives a real firmware restart.
 
 ### Blinky App
 

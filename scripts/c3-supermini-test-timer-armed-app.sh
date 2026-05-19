@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PORT="${ESPFLASH_PORT:-/dev/ttyACM0}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT/scripts/lib/serial-port.sh"
+PORT="$(resolve_esp_serial_port)"
 cargo run -p squidc -- device reset --port "$PORT"
 cargo run -p squidc -- app install --port "$PORT" examples/timer-armed-app/armed.squid
 cargo run -p squidc -- app install --port "$PORT" --as main examples/timer-armed-app/main.squid

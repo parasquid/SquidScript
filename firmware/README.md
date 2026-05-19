@@ -68,10 +68,10 @@ cargo run -p squidc -- app launch main
 V4 snippet/session checks still use `squidc repl` script mode:
 
 ```sh
-cargo run -p squidc -- repl --port /dev/ttyACM0 --script tests/repl/default-dev.session
-cargo run -p squidc -- repl --port /dev/ttyACM0 --script tests/repl/release-strips-debug.session
-cargo run -p squidc -- repl --port /dev/ttyACM0 --script tests/repl/render-drawlog.session
-cargo run -p squidc -- repl --port /dev/ttyACM0 --script tests/repl/hardware-gpio-status-led.session
+cargo run -p squidc -- repl --script tests/repl/default-dev.session
+cargo run -p squidc -- repl --script tests/repl/release-strips-debug.session
+cargo run -p squidc -- repl --script tests/repl/render-drawlog.session
+cargo run -p squidc -- repl --script tests/repl/hardware-gpio-status-led.session
 scripts/c3-supermini-test-timer-armed-app.sh
 scripts/c3-supermini-test-generic-triggered-apps.sh
 ```
@@ -97,12 +97,13 @@ regression path for the app-stack work. It installs `main`, `reader-clock`, and
 `break-reminder`, verifies `app.start`, `app.arm`, `event.addSource`, session timer,
 armed timer, and key exit behavior over USB serial.
 
-The current Super Mini app store is a temporary RAM-only development harness.
-It has a six-slot RAM app registry so app lifecycle behavior can be tested
-before a persistent filesystem or flash-backed app store exists.
+The current Super Mini app store uses LittleFS on the firmware-owned `squidfs`
+flash partition. `INSTALL.APP` accepts SQBC bytes over serial, validates the
+payload, writes `/apps/<app-id>.sqbc`, and publishes the app in the registry
+cache. See `docs/firmware_app_storage.md`.
 
-If `espflash` can list `/dev/ttyACM0` but cannot open it, grant the current
-login temporary access to the serial node:
+If `espflash` can list the board but cannot open the serial node on Linux,
+grant the current login temporary access to that node:
 
 ```sh
 sudo setfacl -m u:$USER:rw /dev/ttyACM0

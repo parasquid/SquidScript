@@ -2,15 +2,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RUSTUP_BIN="/home/linuxbrew/.linuxbrew/opt/rustup/bin"
-if [ -d "$RUSTUP_BIN" ]; then
-  export PATH="$RUSTUP_BIN:$PATH"
+if [ -n "${RUSTUP_BIN_DIR:-}" ]; then
+  export PATH="$RUSTUP_BIN_DIR:$PATH"
 fi
 if [ -d "$HOME/.cargo/bin" ]; then
   export PATH="$HOME/.cargo/bin:$PATH"
-fi
-if [ -d "/var/home/linuxbrew/.linuxbrew/lib" ]; then
-  export LD_LIBRARY_PATH="/var/home/linuxbrew/.linuxbrew/lib:${LD_LIBRARY_PATH:-}"
 fi
 
 WASM_PACK="${WASM_PACK:-wasm-pack}"

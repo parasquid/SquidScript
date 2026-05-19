@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PORT="${ESPFLASH_PORT:-/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_38:44:BE:98:72:DC-if00}"
+PORT="${ESPFLASH_PORT:-}"
 OUT_DIR="${ROOT}/target/device-backups"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP="${OUT_DIR}/xteink-x4-flash-${STAMP}.bin"
@@ -10,9 +10,16 @@ SHA="${BACKUP}.sha256"
 
 mkdir -p "$OUT_DIR"
 
+if [[ -z "$PORT" ]]; then
+  mapfile -t CANDIDATES < <(find /dev/serial/by-id -maxdepth 1 -type l -name 'usb-Espressif_USB_JTAG_serial_debug_unit_*-if00' 2>/dev/null | sort)
+  if [[ "${#CANDIDATES[@]}" == "1" ]]; then
+    PORT="${CANDIDATES[0]}"
+  fi
+fi
+
 if [[ ! -e "$PORT" ]]; then
-  printf 'Serial port not found: %s\n' "$PORT" >&2
-  printf 'Set ESPFLASH_PORT=/path/to/device if the X4 enumerated differently.\n' >&2
+  printf 'X4 serial port not found.\n' >&2
+  printf 'Set ESPFLASH_PORT=/path/to/device or connect exactly one Espressif USB JTAG serial device.\n' >&2
   exit 1
 fi
 

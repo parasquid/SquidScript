@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import glob
 import os
 import select
 import sys
@@ -8,9 +9,28 @@ import time
 import tty
 
 
-DEFAULT_PORT = "/dev/ttyACM0"
 DEFAULT_TIMEOUT = 5.0
 DEFAULT_CHUNK_SIZE = 64
+
+
+def default_port():
+    if os.environ.get("ESPFLASH_PORT"):
+        return os.environ["ESPFLASH_PORT"]
+    patterns = (
+        "/dev/serial/by-id/*Espressif*",
+        "/dev/cu.usbmodem*",
+        "/dev/cu.SLAB_USBtoUART*",
+        "/dev/ttyACM*",
+        "/dev/ttyUSB*",
+    )
+    candidates = []
+    for pattern in patterns:
+        for path in sorted(glob.glob(pattern)):
+            if path not in candidates:
+                candidates.append(path)
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
 
 
 class InstallError(RuntimeError):
@@ -144,6 +164,15 @@ def get_output(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
 def get_drawlog(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
     serial.write_all(b"DRAWLOG.GET\n")
     return _wait_block(serial, b"BEGIN DRAWLOG", b"END DRAWLOG", output, timeout, SmokeError)
+
+
+def list_apps(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
+    serial.write_all(b"APP.LIST\n")
+    return _wait_block(serial, b"BEGIN APPS", b"END APPS", output, timeout, SmokeError)
+
+
+def format_storage(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
+    _send_line(serial, "STORAGE.FORMAT", output, b"OK STORAGE.FORMAT", timeout)
 
 
 def import_state(serial, state_bytes, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
@@ -282,7 +311,7 @@ def _read_until_quiet(serial, output, timeout):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="ESP32-C3 Super Mini SQBC serial helper")
-    parser.add_argument("--port", default=os.environ.get("ESPFLASH_PORT", DEFAULT_PORT))
+    parser.add_argument("--port", default=default_port())
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
     subcommands = parser.add_subparsers(dest="command", required=True)
 
@@ -309,8 +338,12 @@ def main(argv=None):
     state_import.add_argument("state_file")
     subcommands.add_parser("output", help="print debug console output")
     subcommands.add_parser("drawlog", help="print draw log")
+    subcommands.add_parser("app-list", help="print installed app registry")
+    subcommands.add_parser("storage-format", help="format firmware app storage")
 
     args = parser.parse_args(argv)
+    if args.port is None:
+        parser.error("no serial port found; pass --port or set ESPFLASH_PORT")
     with SerialPort(args.port) as serial:
         if args.command == "install-app":
             with open(args.sqbc, "rb") as handle:
@@ -334,6 +367,10 @@ def main(argv=None):
             get_output(serial, timeout=args.timeout)
         elif args.command == "drawlog":
             get_drawlog(serial, timeout=args.timeout)
+        elif args.command == "app-list":
+            list_apps(serial, timeout=args.timeout)
+        elif args.command == "storage-format":
+            format_storage(serial, timeout=args.timeout)
     return 0
 
 

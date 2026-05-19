@@ -40,6 +40,7 @@ fi
 
 cargo run -p squidc -- repl --script tests/repl/hardware-gpio-status-led.session
 cargo run -p squidc -- repl --script tests/repl/default-dev.session
+"$ROOT/scripts/c3-supermini-test-persistent-app-registry.sh"
 "$ROOT/scripts/c3-supermini-test-timer-armed-app.sh"
 "$ROOT/scripts/c3-supermini-test-generic-triggered-apps.sh"
 cargo run -p squidc -- repl examples/blinky-supermini/main.squid --script tests/repl/blinky-supermini.session

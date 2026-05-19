@@ -2,7 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PORT="${ESPFLASH_PORT:-/dev/ttyACM0}"
+source "$ROOT/scripts/lib/serial-port.sh"
+PORT="$(resolve_esp_serial_port)"
 SKIP_FLASH=0
 
 usage() {
@@ -13,7 +14,7 @@ Builds and flashes the ESP32-C3 Super Mini reference firmware, installs the
 headless counter SQBC fixture, then verifies run/key/state/trace behavior over
 USB serial.
 
-Set ESPFLASH_PORT=/path/to/tty to override the default /dev/ttyACM0.
+Set ESPFLASH_PORT=/path/to/tty when auto-detection is not enough.
 EOF
 }
 

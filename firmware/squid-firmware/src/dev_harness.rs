@@ -1,8 +1,14 @@
 //! Temporary development harness helpers for the ESP32-C3 Super Mini reference
 //! firmware.
 //!
-//! This module intentionally models the current RAM-only app store. It is not
-//! the final persistent app registry.
+//! This module models the bounded development app registry used by the
+//! reference firmware. The registry is an in-memory cache over firmware-owned
+//! app storage.
+
+use crate::{
+    protocol::fnv1a,
+    vm::{Program, VmError, MAX_APP_BYTES},
+};
 
 pub const APP_REGISTRY_CAP: usize = 6;
 pub const APP_ID_CAP: usize = 32;
@@ -16,6 +22,41 @@ pub enum AppRegistryError {
     InvalidAppId,
     TooLarge,
     InvalidSlot,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AppStorageError {
+    Io,
+    NotFound,
+    NotMounted,
+    NoSpace,
+    InvalidName,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PersistentAppError {
+    Registry(AppRegistryError),
+    Storage(AppStorageError),
+    HashMismatch { expected: u32, actual: u32 },
+    InvalidBytecode(VmError),
+}
+
+impl From<AppRegistryError> for PersistentAppError {
+    fn from(value: AppRegistryError) -> Self {
+        Self::Registry(value)
+    }
+}
+
+impl From<AppStorageError> for PersistentAppError {
+    fn from(value: AppStorageError) -> Self {
+        Self::Storage(value)
+    }
+}
+
+impl From<VmError> for PersistentAppError {
+    fn from(value: VmError) -> Self {
+        Self::InvalidBytecode(value)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -56,7 +97,7 @@ pub struct AppRegistryEntry {
 }
 
 impl AppRegistryEntry {
-    const fn empty() -> Self {
+    pub const fn empty() -> Self {
         Self {
             name: AppName::empty(),
             len: 0,
@@ -80,6 +121,31 @@ impl AppRegistryEntry {
     pub const fn occupied(&self) -> bool {
         self.occupied
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StoredApp {
+    pub name: AppName,
+    pub len: usize,
+    pub hash: u32,
+}
+
+impl StoredApp {
+    pub const fn empty() -> Self {
+        Self {
+            name: AppName::empty(),
+            len: 0,
+            hash: 0,
+        }
+    }
+}
+
+pub trait AppStorage {
+    fn ensure_ready(&mut self) -> Result<(), AppStorageError>;
+    fn format(&mut self) -> Result<(), AppStorageError>;
+    fn write_app(&mut self, app_id: &str, bytes: &[u8]) -> Result<(), AppStorageError>;
+    fn read_app(&mut self, app_id: &str, out: &mut [u8]) -> Result<usize, AppStorageError>;
+    fn list_apps(&mut self, out: &mut [StoredApp]) -> Result<usize, AppStorageError>;
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -161,6 +227,56 @@ impl AppRegistry {
     pub fn clear(&mut self) {
         self.entries = [AppRegistryEntry::empty(); APP_REGISTRY_CAP];
     }
+
+    pub fn install_persistent<S: AppStorage>(
+        &mut self,
+        storage: &mut S,
+        app_id: &str,
+        bytes: &[u8],
+        expected_hash: u32,
+    ) -> Result<AppSlot, PersistentAppError> {
+        let len = bytes.len();
+        let slot = self.reserve_install(app_id, len, MAX_APP_BYTES)?;
+        let actual_hash = fnv1a(bytes);
+        if actual_hash != expected_hash {
+            return Err(PersistentAppError::HashMismatch {
+                expected: expected_hash,
+                actual: actual_hash,
+            });
+        }
+        Program::parse(bytes)?;
+        storage.write_app(app_id, bytes)?;
+        self.commit_install(slot, app_id, len, actual_hash)?;
+        Ok(slot)
+    }
+
+    pub fn load_from_storage<S: AppStorage>(
+        &mut self,
+        storage: &mut S,
+        app_bytes: &mut [[u8; MAX_APP_BYTES]; APP_REGISTRY_CAP],
+    ) -> Result<usize, PersistentAppError> {
+        storage.ensure_ready()?;
+        self.clear();
+        let mut stored = [StoredApp::empty(); APP_REGISTRY_CAP];
+        let count = storage.list_apps(&mut stored)?;
+        let mut loaded = 0usize;
+        for app in stored.iter().take(count) {
+            let app_id = app.name.as_str();
+            let slot = self.reserve_install(app_id, app.len, MAX_APP_BYTES)?;
+            let len = storage.read_app(app_id, &mut app_bytes[slot.0])?;
+            let bytes = &app_bytes[slot.0][..len];
+            let actual_hash = fnv1a(bytes);
+            if actual_hash != app.hash {
+                continue;
+            }
+            if Program::parse(bytes).is_err() {
+                continue;
+            }
+            self.commit_install(slot, app_id, len, actual_hash)?;
+            loaded += 1;
+        }
+        Ok(loaded)
+    }
 }
 
 impl Default for AppRegistry {
@@ -214,6 +330,7 @@ impl DevTimerEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::vec::Vec;
 
     #[test]
     fn installs_new_app_and_finds_slot() {
@@ -297,6 +414,209 @@ mod tests {
         assert_eq!(iter.next(), Some("main"));
         assert_eq!(iter.next(), Some("worker"));
         assert_eq!(iter.next(), None);
+    }
+
+    #[derive(Clone, Copy)]
+    struct MemoryApp {
+        name: AppName,
+        len: usize,
+        hash: u32,
+        bytes: [u8; MAX_APP_BYTES],
+        occupied: bool,
+    }
+
+    impl MemoryApp {
+        const fn empty() -> Self {
+            Self {
+                name: AppName::empty(),
+                len: 0,
+                hash: 0,
+                bytes: [0; MAX_APP_BYTES],
+                occupied: false,
+            }
+        }
+    }
+
+    struct MemoryAppStorage {
+        files: [MemoryApp; APP_REGISTRY_CAP],
+        ready: bool,
+    }
+
+    impl MemoryAppStorage {
+        const fn new() -> Self {
+            Self {
+                files: [MemoryApp::empty(); APP_REGISTRY_CAP],
+                ready: true,
+            }
+        }
+
+        fn find(&self, app_id: &str) -> Option<usize> {
+            self.files
+                .iter()
+                .enumerate()
+                .find(|(_, file)| file.occupied && file.name.as_str() == app_id)
+                .map(|(index, _)| index)
+        }
+    }
+
+    impl AppStorage for MemoryAppStorage {
+        fn ensure_ready(&mut self) -> Result<(), AppStorageError> {
+            if self.ready {
+                Ok(())
+            } else {
+                Err(AppStorageError::NotMounted)
+            }
+        }
+
+        fn format(&mut self) -> Result<(), AppStorageError> {
+            self.files = [MemoryApp::empty(); APP_REGISTRY_CAP];
+            self.ready = true;
+            Ok(())
+        }
+
+        fn write_app(&mut self, app_id: &str, bytes: &[u8]) -> Result<(), AppStorageError> {
+            self.ensure_ready()?;
+            validate_app_id(app_id).map_err(|_| AppStorageError::InvalidName)?;
+            if bytes.len() > MAX_APP_BYTES {
+                return Err(AppStorageError::NoSpace);
+            }
+            let index = self
+                .find(app_id)
+                .or_else(|| {
+                    self.files
+                        .iter()
+                        .enumerate()
+                        .find(|(_, file)| !file.occupied)
+                        .map(|(index, _)| index)
+                })
+                .ok_or(AppStorageError::NoSpace)?;
+            let file = &mut self.files[index];
+            file.name = AppName::new(app_id).map_err(|_| AppStorageError::InvalidName)?;
+            file.len = bytes.len();
+            file.hash = fnv1a(bytes);
+            file.bytes[..bytes.len()].copy_from_slice(bytes);
+            file.occupied = true;
+            Ok(())
+        }
+
+        fn read_app(&mut self, app_id: &str, out: &mut [u8]) -> Result<usize, AppStorageError> {
+            self.ensure_ready()?;
+            let index = self.find(app_id).ok_or(AppStorageError::NotFound)?;
+            let file = &self.files[index];
+            if out.len() < file.len {
+                return Err(AppStorageError::NoSpace);
+            }
+            out[..file.len].copy_from_slice(&file.bytes[..file.len]);
+            Ok(file.len)
+        }
+
+        fn list_apps(&mut self, out: &mut [StoredApp]) -> Result<usize, AppStorageError> {
+            self.ensure_ready()?;
+            let mut count = 0usize;
+            for file in &self.files {
+                if !file.occupied {
+                    continue;
+                }
+                if count == out.len() {
+                    break;
+                }
+                out[count] = StoredApp {
+                    name: file.name,
+                    len: file.len,
+                    hash: file.hash,
+                };
+                count += 1;
+            }
+            Ok(count)
+        }
+    }
+
+    fn sqbc_fixture() -> Vec<u8> {
+        let source = r#"
+app "main"
+
+state { count: 0 }
+
+event.on("app.start") {
+  debug.print("start", count)
+}
+
+screen("main") {}
+"#;
+        let response = squidc_core::compile_with_profile(
+            squidc_core::CompileRequest {
+                source: source.to_string(),
+                target_id: squidc_core::PORTABLE_TARGET_ID.to_string(),
+            },
+            squidc_core::BuildProfile::Dev,
+        );
+        assert_eq!(response.diagnostics, Vec::new());
+        squidc_core::sqbc_v2::encode_sqbc_v2(&response.ir.unwrap()).unwrap()
+    }
+
+    #[test]
+    fn persistent_install_writes_storage_and_cache() {
+        let mut registry = AppRegistry::new();
+        let mut storage = MemoryAppStorage::new();
+        let bytes = sqbc_fixture();
+        let hash = fnv1a(&bytes);
+
+        let slot = registry
+            .install_persistent(&mut storage, "main", &bytes, hash)
+            .unwrap();
+
+        assert_eq!(registry.find("main"), Some(slot));
+        assert_eq!(storage.list_apps(&mut [StoredApp::empty(); 1]).unwrap(), 1);
+        let entry = registry.entry(slot).unwrap();
+        assert_eq!(entry.name(), "main");
+        assert_eq!(entry.len(), bytes.len());
+        assert_eq!(entry.hash(), hash);
+    }
+
+    #[test]
+    fn persistent_install_rejects_bad_hash_before_publish() {
+        let mut registry = AppRegistry::new();
+        let mut storage = MemoryAppStorage::new();
+        let bytes = sqbc_fixture();
+
+        let error = registry
+            .install_persistent(&mut storage, "main", &bytes, 0)
+            .unwrap_err();
+
+        assert!(matches!(error, PersistentAppError::HashMismatch { .. }));
+        assert_eq!(registry.find("main"), None);
+        assert_eq!(storage.list_apps(&mut [StoredApp::empty(); 1]).unwrap(), 0);
+    }
+
+    #[test]
+    fn startup_scan_rebuilds_registry_cache() {
+        let mut storage = MemoryAppStorage::new();
+        let bytes = sqbc_fixture();
+        storage.write_app("main", &bytes).unwrap();
+
+        let mut registry = AppRegistry::new();
+        let mut app_bytes = [[0u8; MAX_APP_BYTES]; APP_REGISTRY_CAP];
+        assert_eq!(
+            registry
+                .load_from_storage(&mut storage, &mut app_bytes)
+                .unwrap(),
+            1
+        );
+
+        let slot = registry.find("main").unwrap();
+        assert_eq!(&app_bytes[slot.0][..bytes.len()], bytes.as_slice());
+        assert_eq!(registry.entry(slot).unwrap().hash(), fnv1a(&bytes));
+    }
+
+    #[test]
+    fn format_clears_persistent_apps() {
+        let mut storage = MemoryAppStorage::new();
+        let bytes = sqbc_fixture();
+        storage.write_app("main", &bytes).unwrap();
+
+        storage.format().unwrap();
+
+        assert_eq!(storage.list_apps(&mut [StoredApp::empty(); 1]).unwrap(), 0);
     }
 
     #[test]

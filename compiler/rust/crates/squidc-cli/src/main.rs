@@ -569,13 +569,10 @@ fn doctor(args: DoctorArgs, human: bool) -> Result<Value, String> {
     checks.push(command_check("rustc", &["--version"], true));
     checks.push(rustup_check());
     checks.push(rust_target_check("riscv32imc-unknown-none-elf"));
+    checks.push(riscv_c_toolchain_check());
     checks.push(espflash_check());
     checks.push(espflash_ports_check());
-    checks.push(command_check(
-        "riscv32-unknown-elf-size",
-        &["--version"],
-        false,
-    ));
+    checks.push(command_check("riscv64-elf-size", &["--version"], false));
     checks.push(script_check("scripts/c3-supermini-test-hardware.sh"));
     checks.push(serial_visibility_check(args.port.as_deref()));
     checks.push(firmware_probe_check(args.port.as_deref()));
@@ -810,6 +807,33 @@ fn rust_target_check(target: &'static str) -> DoctorCheck {
     }
 }
 
+fn riscv_c_toolchain_check() -> DoctorCheck {
+    let candidates = [
+        PathBuf::from("riscv32-unknown-elf-gcc"),
+        PathBuf::from("riscv64-elf-gcc"),
+    ];
+    for candidate in candidates {
+        if Command::new(&candidate).arg("--version").output().is_ok() {
+            return DoctorCheck {
+                name: "riscv-c-toolchain",
+                status: "ok",
+                message: format!("{} is available for LittleFS C build", candidate.display()),
+                details: json!({
+                    "required": true,
+                    "path": candidate,
+                    "note": "riscv64-elf-gcc is used with -march=rv32imc -mabi=ilp32 by scripts/c3-supermini-build.sh"
+                }),
+            };
+        }
+    }
+    DoctorCheck {
+        name: "riscv-c-toolchain",
+        status: "fail",
+        message: "missing RISC-V ELF GCC required by littlefs2-sys; install riscv32-unknown-elf-gcc or put riscv64-elf-gcc on PATH".to_string(),
+        details: json!({"required": true}),
+    }
+}
+
 fn script_check(path: &'static str) -> DoctorCheck {
     let exists = Path::new(path).exists();
     DoctorCheck {
@@ -833,7 +857,7 @@ fn serial_visibility_check(port: Option<&str>) -> DoctorCheck {
         name: "serial-visibility",
         status: if candidates.is_empty() { "warn" } else { "ok" },
         message: if candidates.is_empty() {
-            "no /dev/ttyACM* or /dev/ttyUSB* candidates visible; run hardware checks outside the Codex sandbox".to_string()
+            "no serial candidates visible; run hardware checks outside the Codex sandbox and set ESPFLASH_PORT if needed".to_string()
         } else {
             format!("visible candidates: {}", candidates.join(", "))
         },

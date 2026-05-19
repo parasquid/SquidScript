@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PORT="${ESPFLASH_PORT:-}"
 ELF="${ROOT}/firmware/squid-firmware/target/riscv32imc-unknown-none-elf/release/c3-supermini-serial-hello"
+PARTITION_TABLE="${ROOT}/firmware/squid-firmware/partitions/c3-supermini.csv"
 EXTRA_ARGS=("$@")
 MONITOR_AFTER_FLASH="${MONITOR_AFTER_FLASH:-0}"
 
@@ -25,6 +26,8 @@ if [[ -n "$PORT" ]]; then
     --before usb-reset \
     --after hard-reset \
     --flash-size 4mb
+    --partition-table "$PARTITION_TABLE" \
+    --target-app-partition factory
   )
 else
   FLASH_ARGS=(
@@ -32,6 +35,8 @@ else
     --before usb-reset \
     --after hard-reset \
     --flash-size 4mb
+    --partition-table "$PARTITION_TABLE" \
+    --target-app-partition factory
   )
 fi
 
