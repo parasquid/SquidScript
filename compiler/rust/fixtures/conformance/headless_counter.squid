@@ -1,0 +1,24 @@
+app "headless-counter" target "esp32c3-super-mini"
+
+state {
+  count: 0
+  started: 0
+}
+
+onStart() {
+  state.load()
+  started = 1
+  state.save()
+}
+
+onKey("SELECT") {
+  count = count + 1
+  state.save()
+}
+
+onKey("BACK") {
+  app.exit()
+}
+
+screen("noop") {
+}

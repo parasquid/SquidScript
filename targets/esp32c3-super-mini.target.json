@@ -178,12 +178,13 @@
   "display": {
     "type": "none",
     "status": "not-present",
-    "reason": "This development board target is for serial and flashing bring-up only."
+    "reason": "This reference firmware target exercises headless SquidScript language behavior over serial."
   },
   "storage": {
-    "type": "none",
+    "type": "ram-only-reference",
     "supportsApps": false,
-    "supportsContent": false
+    "supportsContent": false,
+    "reason": "The first reference firmware milestone installs SQBC bytes into RAM over serial; persistent app storage is deferred."
   },
   "input": {
     "type": "board-control-only",
@@ -197,7 +198,7 @@
         "status": "typical"
       }
     ],
-    "reason": "The ESP32-C3 Super Mini has a BOOT button, but this target is a flashing and serial bring-up board target, not a SquidScript input target."
+    "reason": "The ESP32-C3 Super Mini has a BOOT button, but the reference firmware uses serial commands as the primary conformance input harness."
   },
   "power": {
     "type": "usb",
@@ -206,17 +207,24 @@
   },
   "runtime": {
     "squidscript": {
-      "status": "not-supported",
-      "reason": "This target is a preliminary firmware flashing and serial bring-up target, not a SquidScript runtime target."
+      "status": "reference-subset",
+      "bytecode": "sqbc-v2",
+      "statePersistence": "ram-only",
+      "entry": "serial-installed-bytes",
+      "reason": "This target exercises the initial headless SquidScript VM subset for language-spec conformance."
     }
   },
   "compatibility": [
     "esp32c3",
-    "serial-bringup"
+    "serial-bringup",
+    "squidscript-reference-vm"
   ],
   "features": [
     "console.serial",
     "firmware.flash-test",
+    "squidscript.bytecode.v2.reference",
+    "squidscript.state.ram",
+    "squidscript.serial-install",
     "button.boot.typical",
     "indicator.led.typical"
   ]

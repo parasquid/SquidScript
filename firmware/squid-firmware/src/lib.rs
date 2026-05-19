@@ -1,7 +1,9 @@
 #![cfg_attr(not(test), no_std)]
 
 pub mod bringup;
+pub mod protocol;
 pub mod target;
+pub mod vm;
 
 pub use bringup::{
     run_bringup, run_serial_probe, BuildInfo, Color, Console, DisplayError, DisplaySurface,

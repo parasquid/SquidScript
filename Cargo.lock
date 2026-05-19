@@ -130,6 +130,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "squidc"
+version = "0.1.0"
+dependencies = [
+ "squidc-core",
+]
+
+[[package]]
 name = "squidc-core"
 version = "0.1.0"
 dependencies = [

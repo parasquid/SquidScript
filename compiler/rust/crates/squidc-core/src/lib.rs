@@ -1,6 +1,8 @@
 use rowan::{GreenNode, GreenNodeBuilder, Language, SyntaxKind};
 use serde::{Deserialize, Serialize};
 
+pub mod sqbc_v2;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u16)]
 pub enum SquidKind {
@@ -135,7 +137,10 @@ pub enum IrStatement {
         else_statements: Vec<IrStatement>,
     },
     #[serde(rename = "repeat")]
-    Repeat { count: IrExpr, statements: Vec<IrStatement> },
+    Repeat {
+        count: IrExpr,
+        statements: Vec<IrStatement>,
+    },
     #[serde(rename = "for")]
     For {
         item: String,
@@ -150,11 +155,26 @@ pub enum IrStatement {
     #[serde(rename = "display.clear")]
     DisplayClear { color: String },
     #[serde(rename = "display.text")]
-    DisplayText { text: IrExpr, options: serde_json::Value },
+    DisplayText {
+        text: IrExpr,
+        options: serde_json::Value,
+    },
     #[serde(rename = "display.rect")]
-    DisplayRect { x: i64, y: i64, w: i64, h: i64, options: serde_json::Value },
+    DisplayRect {
+        x: i64,
+        y: i64,
+        w: i64,
+        h: i64,
+        options: serde_json::Value,
+    },
     #[serde(rename = "display.line")]
-    DisplayLine { x1: i64, y1: i64, x2: i64, y2: i64, options: serde_json::Value },
+    DisplayLine {
+        x1: i64,
+        y1: i64,
+        x2: i64,
+        y2: i64,
+        options: serde_json::Value,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -297,14 +317,29 @@ pub fn compile(request: CompileRequest) -> CompileResponse {
     let ast = parsed.ast.clone();
 
     if ast.app.is_none() {
-        parsed.diagnostics.push(error("E_APP_REQUIRED", "expected app declaration", 0, request.source.len().min(1)));
+        parsed.diagnostics.push(error(
+            "E_APP_REQUIRED",
+            "expected app declaration",
+            0,
+            request.source.len().min(1),
+        ));
     }
     if ast.screens.is_empty() {
-        parsed.diagnostics.push(error("E_SCREEN_REQUIRED", "expected at least one screen declaration", 0, request.source.len().min(1)));
+        parsed.diagnostics.push(error(
+            "E_SCREEN_REQUIRED",
+            "expected at least one screen declaration",
+            0,
+            request.source.len().min(1),
+        ));
     }
     if let Some(target) = ast.app.as_ref().and_then(|app| app.target.as_ref()) {
         if target != &request.target_id {
-            parsed.diagnostics.push(error("E_TARGET_MISMATCH", "source target does not match selected target", 0, request.source.len().min(1)));
+            parsed.diagnostics.push(error(
+                "E_TARGET_MISMATCH",
+                "source target does not match selected target",
+                0,
+                request.source.len().min(1),
+            ));
         }
     }
     validate_semantics(&ast, &mut parsed.diagnostics);
@@ -312,15 +347,23 @@ pub fn compile(request: CompileRequest) -> CompileResponse {
     let ok = parsed.diagnostics.iter().all(|d| d.severity != "error");
     let ir = if ok {
         let app = ast.app.expect("app exists after validation");
-        let handlers = ast.handlers.into_iter().map(|handler| IrHandler {
-            event: handler.event,
-            statements: handler.statements,
-        }).collect();
-        let functions = ast.functions.into_iter().map(|function| IrFunction {
-            name: function.name,
-            params: function.params,
-            statements: function.statements,
-        }).collect();
+        let handlers = ast
+            .handlers
+            .into_iter()
+            .map(|handler| IrHandler {
+                event: handler.event,
+                statements: handler.statements,
+            })
+            .collect();
+        let functions = ast
+            .functions
+            .into_iter()
+            .map(|function| IrFunction {
+                name: function.name,
+                params: function.params,
+                statements: function.statements,
+            })
+            .collect();
         Some(IrProgram {
             format: "squidscript-ir".to_string(),
             version: 1,
@@ -332,17 +375,25 @@ pub fn compile(request: CompileRequest) -> CompileResponse {
             state: ast.state.map(|state| state.values).unwrap_or_default(),
             functions,
             handlers,
-            screens: ast.screens.into_iter().map(|screen| IrScreen {
-                name: screen.name,
-                render: screen.render,
-                statements: screen.statements,
-            }).collect(),
+            screens: ast
+                .screens
+                .into_iter()
+                .map(|screen| IrScreen {
+                    name: screen.name,
+                    render: screen.render,
+                    statements: screen.statements,
+                })
+                .collect(),
         })
     } else {
         None
     };
 
-    CompileResponse { ok, diagnostics: parsed.diagnostics, ir }
+    CompileResponse {
+        ok,
+        diagnostics: parsed.diagnostics,
+        ir,
+    }
 }
 
 struct Parser<'a> {
@@ -361,7 +412,11 @@ impl Parser<'_> {
                 self.parse_app(builder);
             } else if self.at_ident("state") {
                 self.parse_state(builder);
-            } else if self.peek().map(|token| token.kind == TokenKind::Ident && token.text.starts_with("on")).unwrap_or(false) {
+            } else if self
+                .peek()
+                .map(|token| token.kind == TokenKind::Ident && token.text.starts_with("on"))
+                .unwrap_or(false)
+            {
                 self.parse_handler(builder);
             } else if self.at_ident("function") {
                 self.parse_function(builder);
@@ -399,7 +454,12 @@ impl Parser<'_> {
             });
         }
         if target.is_none() {
-            self.diagnostics.push(error("E_TARGET_REQUIRED", "app declaration must include target", start, end));
+            self.diagnostics.push(error(
+                "E_TARGET_REQUIRED",
+                "app declaration must include target",
+                start,
+                end,
+            ));
         }
     }
 
@@ -421,7 +481,10 @@ impl Parser<'_> {
                 break;
             }
             if self.at_kind(TokenKind::Ident) {
-                let name = self.peek().map(|token| token.text.clone()).unwrap_or_default();
+                let name = self
+                    .peek()
+                    .map(|token| token.text.clone())
+                    .unwrap_or_default();
                 self.bump(builder);
                 self.consume_ws(builder);
                 if self.at_kind(TokenKind::Colon) {
@@ -460,7 +523,9 @@ impl Parser<'_> {
             self.bump(builder);
         }
         self.consume_ws(builder);
-        let name = self.consume_string(builder).unwrap_or_else(|| "main".to_string());
+        let name = self
+            .consume_string(builder)
+            .unwrap_or_else(|| "main".to_string());
         let mut render = "compose".to_string();
 
         while !self.at_end() {
@@ -502,7 +567,10 @@ impl Parser<'_> {
     fn parse_handler(&mut self, builder: &mut GreenNodeBuilder) {
         builder.start_node(SquidLang::kind_to_raw(SquidKind::Token));
         let start = self.peek().map(|token| token.span.start).unwrap_or(0);
-        let handler_name = self.peek().map(|token| token.text.clone()).unwrap_or_default();
+        let handler_name = self
+            .peek()
+            .map(|token| token.text.clone())
+            .unwrap_or_default();
         self.bump(builder);
 
         let mut key_arg = None;
@@ -525,7 +593,9 @@ impl Parser<'_> {
         builder.finish_node();
 
         let event = if handler_name == "onKey" {
-            key_arg.map(|key| format!("onKey.{key}")).unwrap_or_else(|| "onKey".to_string())
+            key_arg
+                .map(|key| format!("onKey.{key}"))
+                .unwrap_or_else(|| "onKey".to_string())
         } else {
             handler_name
         };
@@ -642,7 +712,11 @@ impl Parser<'_> {
         }
         self.bump(builder);
         self.consume_ws(builder);
-        let method = self.peek().filter(|token| token.kind == TokenKind::Ident)?.text.clone();
+        let method = self
+            .peek()
+            .filter(|token| token.kind == TokenKind::Ident)?
+            .text
+            .clone();
         self.bump(builder);
         self.consume_ws(builder);
         if self.at_kind(TokenKind::OpenParen) {
@@ -673,12 +747,16 @@ impl Parser<'_> {
                 Some(IrStatement::AppExit)
             }
             ("display", "clear") => {
-                let color = self.consume_string(builder).unwrap_or_else(|| "white".to_string());
+                let color = self
+                    .consume_string(builder)
+                    .unwrap_or_else(|| "white".to_string());
                 self.consume_call_tail(builder);
                 Some(IrStatement::DisplayClear { color })
             }
             ("display", "text") => {
-                let text = self.parse_expr(builder).unwrap_or(IrExpr::Literal { value: serde_json::json!("") });
+                let text = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
+                    value: serde_json::json!(""),
+                });
                 self.consume_ws(builder);
                 if self.at_kind(TokenKind::Comma) {
                     self.bump(builder);
@@ -699,7 +777,13 @@ impl Parser<'_> {
                 self.consume_comma(builder);
                 let options = self.parse_options_object(builder);
                 self.consume_call_tail(builder);
-                Some(IrStatement::DisplayRect { x, y, w, h, options })
+                Some(IrStatement::DisplayRect {
+                    x,
+                    y,
+                    w,
+                    h,
+                    options,
+                })
             }
             ("display", "line") => {
                 let x1 = self.consume_number(builder).unwrap_or(0);
@@ -712,7 +796,13 @@ impl Parser<'_> {
                 self.consume_comma(builder);
                 let options = self.parse_options_object(builder);
                 self.consume_call_tail(builder);
-                Some(IrStatement::DisplayLine { x1, y1, x2, y2, options })
+                Some(IrStatement::DisplayLine {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    options,
+                })
             }
             _ => {
                 self.consume_call_tail(builder);
@@ -729,7 +819,11 @@ impl Parser<'_> {
         let mut expr = self.parse_additive_expr(builder)?;
         loop {
             self.consume_ws(builder);
-            if !(self.at_kind(TokenKind::Less) || self.at_kind(TokenKind::Greater) || self.at_kind(TokenKind::Equals) || self.at_kind(TokenKind::Bang)) {
+            if !(self.at_kind(TokenKind::Less)
+                || self.at_kind(TokenKind::Greater)
+                || self.at_kind(TokenKind::Equals)
+                || self.at_kind(TokenKind::Bang))
+            {
                 break;
             }
             let operator = self.consume_binary_operator(builder)?;
@@ -774,20 +868,33 @@ impl Parser<'_> {
             }
             expr
         } else if self.at_kind(TokenKind::Number) {
-            IrExpr::Literal { value: serde_json::json!(self.consume_number(builder)?) }
+            IrExpr::Literal {
+                value: serde_json::json!(self.consume_number(builder)?),
+            }
         } else if self.at_kind(TokenKind::String) {
-            IrExpr::Literal { value: serde_json::json!(self.consume_string(builder)?) }
+            IrExpr::Literal {
+                value: serde_json::json!(self.consume_string(builder)?),
+            }
         } else if self.at_kind(TokenKind::Ident) {
             let name = self.peek()?.text.clone();
             self.bump(builder);
             if name == "true" {
-                IrExpr::Literal { value: serde_json::json!(true) }
+                IrExpr::Literal {
+                    value: serde_json::json!(true),
+                }
             } else if name == "false" {
-                IrExpr::Literal { value: serde_json::json!(false) }
+                IrExpr::Literal {
+                    value: serde_json::json!(false),
+                }
             } else if name == "null" {
-                IrExpr::Literal { value: serde_json::Value::Null }
+                IrExpr::Literal {
+                    value: serde_json::Value::Null,
+                }
             } else if self.at_kind(TokenKind::OpenParen) {
-                IrExpr::Call { name, args: self.parse_call_args(builder) }
+                IrExpr::Call {
+                    name,
+                    args: self.parse_call_args(builder),
+                }
             } else {
                 IrExpr::State { name }
             }
@@ -824,7 +931,11 @@ impl Parser<'_> {
         } else {
             Vec::new()
         };
-        Some(IrStatement::If { condition, then_statements, else_statements })
+        Some(IrStatement::If {
+            condition,
+            then_statements,
+            else_statements,
+        })
     }
 
     fn parse_repeat_statement(&mut self, builder: &mut GreenNodeBuilder) -> Option<IrStatement> {
@@ -868,7 +979,12 @@ impl Parser<'_> {
             self.bump(builder);
         }
         let statements = self.parse_statements_until_close(builder);
-        Some(IrStatement::For { item, list, max, statements })
+        Some(IrStatement::For {
+            item,
+            list,
+            max,
+            statements,
+        })
     }
 
     fn parse_param_list(&mut self, builder: &mut GreenNodeBuilder) -> Vec<String> {
@@ -922,7 +1038,10 @@ impl Parser<'_> {
 
     fn consume_binary_operator(&mut self, builder: &mut GreenNodeBuilder) -> Option<String> {
         let first = self.peek()?.text.clone();
-        if matches!(self.peek()?.kind, TokenKind::Equals | TokenKind::Bang | TokenKind::Less | TokenKind::Greater) {
+        if matches!(
+            self.peek()?.kind,
+            TokenKind::Equals | TokenKind::Bang | TokenKind::Less | TokenKind::Greater
+        ) {
             self.bump(builder);
             if self.at_kind(TokenKind::Equals) {
                 let second = self.peek()?.text.clone();
@@ -949,7 +1068,11 @@ impl Parser<'_> {
                 self.bump(builder);
                 break;
             }
-            let Some(key) = self.peek().filter(|token| token.kind == TokenKind::Ident).map(|token| token.text.clone()) else {
+            let Some(key) = self
+                .peek()
+                .filter(|token| token.kind == TokenKind::Ident)
+                .map(|token| token.text.clone())
+            else {
                 self.bump(builder);
                 continue;
             };
@@ -960,7 +1083,10 @@ impl Parser<'_> {
             }
             self.consume_ws(builder);
             if let Some(value) = self.parse_expr(builder) {
-                map.insert(key, serde_json::to_value(value).expect("IR expressions serialize"));
+                map.insert(
+                    key,
+                    serde_json::to_value(value).expect("IR expressions serialize"),
+                );
             }
             self.consume_ws(builder);
             if self.at_kind(TokenKind::Comma) {
@@ -970,12 +1096,19 @@ impl Parser<'_> {
         serde_json::Value::Object(map)
     }
 
-    fn consume_literal_value(&mut self, builder: &mut GreenNodeBuilder) -> Option<serde_json::Value> {
+    fn consume_literal_value(
+        &mut self,
+        builder: &mut GreenNodeBuilder,
+    ) -> Option<serde_json::Value> {
         if self.at_kind(TokenKind::Number) {
-            return self.consume_number(builder).map(|number| serde_json::json!(number));
+            return self
+                .consume_number(builder)
+                .map(|number| serde_json::json!(number));
         }
         if self.at_kind(TokenKind::String) {
-            return self.consume_string(builder).map(|text| serde_json::json!(text));
+            return self
+                .consume_string(builder)
+                .map(|text| serde_json::json!(text));
         }
         None
     }
@@ -1046,7 +1179,9 @@ impl Parser<'_> {
     }
 
     fn at_ident(&self, ident: &str) -> bool {
-        self.peek().map(|token| token.kind == TokenKind::Ident && token.text == ident).unwrap_or(false)
+        self.peek()
+            .map(|token| token.kind == TokenKind::Ident && token.text == ident)
+            .unwrap_or(false)
     }
 
     fn at_kind(&self, kind: TokenKind) -> bool {
@@ -1062,12 +1197,18 @@ impl Parser<'_> {
     }
 
     fn previous_end(&self) -> Option<usize> {
-        self.cursor.checked_sub(1).and_then(|index| self.tokens.get(index)).map(|token| token.span.end)
+        self.cursor
+            .checked_sub(1)
+            .and_then(|index| self.tokens.get(index))
+            .map(|token| token.span.end)
     }
 
     fn bump(&mut self, builder: &mut GreenNodeBuilder) {
         if let Some(token) = self.tokens.get(self.cursor) {
-            builder.token(SquidLang::kind_to_raw(syntax_kind_for(token.kind)), &token.text);
+            builder.token(
+                SquidLang::kind_to_raw(syntax_kind_for(token.kind)),
+                &token.text,
+            );
             self.cursor += 1;
         }
     }
@@ -1080,12 +1221,18 @@ fn lex(source: &str) -> Vec<LexToken> {
 
     while cursor < bytes.len() {
         let start = cursor;
-        let ch = source[cursor..].chars().next().expect("cursor is at char boundary");
+        let ch = source[cursor..]
+            .chars()
+            .next()
+            .expect("cursor is at char boundary");
 
         if ch.is_whitespace() {
             cursor += ch.len_utf8();
             while cursor < bytes.len() {
-                let next = source[cursor..].chars().next().expect("cursor is at char boundary");
+                let next = source[cursor..]
+                    .chars()
+                    .next()
+                    .expect("cursor is at char boundary");
                 if !next.is_whitespace() {
                     break;
                 }
@@ -1095,7 +1242,10 @@ fn lex(source: &str) -> Vec<LexToken> {
         } else if ch.is_ascii_alphabetic() || ch == '_' {
             cursor += ch.len_utf8();
             while cursor < bytes.len() {
-                let next = source[cursor..].chars().next().expect("cursor is at char boundary");
+                let next = source[cursor..]
+                    .chars()
+                    .next()
+                    .expect("cursor is at char boundary");
                 if !(next.is_ascii_alphanumeric() || next == '_' || next == '-') {
                     break;
                 }
@@ -1105,7 +1255,10 @@ fn lex(source: &str) -> Vec<LexToken> {
         } else if ch.is_ascii_digit() {
             cursor += ch.len_utf8();
             while cursor < bytes.len() {
-                let next = source[cursor..].chars().next().expect("cursor is at char boundary");
+                let next = source[cursor..]
+                    .chars()
+                    .next()
+                    .expect("cursor is at char boundary");
                 if !next.is_ascii_digit() {
                     break;
                 }
@@ -1115,7 +1268,10 @@ fn lex(source: &str) -> Vec<LexToken> {
         } else if ch == '"' {
             cursor += ch.len_utf8();
             while cursor < bytes.len() {
-                let next = source[cursor..].chars().next().expect("cursor is at char boundary");
+                let next = source[cursor..]
+                    .chars()
+                    .next()
+                    .expect("cursor is at char boundary");
                 cursor += next.len_utf8();
                 if next == '"' {
                     break;
@@ -1179,13 +1335,17 @@ fn syntax_kind_for(kind: TokenKind) -> SquidKind {
 }
 
 fn titleize(id: &str) -> String {
-    id.split(['-', '_']).filter(|part| !part.is_empty()).map(|part| {
-        let mut chars = part.chars();
-        match chars.next() {
-            Some(first) => format!("{}{}", first.to_ascii_uppercase(), chars.as_str()),
-            None => String::new(),
-        }
-    }).collect::<Vec<_>>().join(" ")
+    id.split(['-', '_'])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => format!("{}{}", first.to_ascii_uppercase(), chars.as_str()),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn error(code: &str, message: &str, start: usize, end: usize) -> Diagnostic {
@@ -1201,30 +1361,67 @@ fn validate_semantics(ast: &AstRoot, diagnostics: &mut Vec<Diagnostic>) {
     let mut screen_names = std::collections::BTreeSet::new();
     for screen in &ast.screens {
         if !screen_names.insert(screen.name.clone()) {
-            diagnostics.push(error("E_DUPLICATE_SCREEN", "screen names must be unique", screen.span.start, screen.span.end));
+            diagnostics.push(error(
+                "E_DUPLICATE_SCREEN",
+                "screen names must be unique",
+                screen.span.start,
+                screen.span.end,
+            ));
         }
         if screen.render != "compose" && screen.render != "stream" {
-            diagnostics.push(error("E_RENDER_POLICY", "screen render policy must be compose or stream", screen.span.start, screen.span.end));
+            diagnostics.push(error(
+                "E_RENDER_POLICY",
+                "screen render policy must be compose or stream",
+                screen.span.start,
+                screen.span.end,
+            ));
         }
-        validate_screen_statements(&screen.statements, screen.span.start, screen.span.end, diagnostics);
+        validate_screen_statements(
+            &screen.statements,
+            screen.span.start,
+            screen.span.end,
+            diagnostics,
+        );
     }
 
     let mut function_names = std::collections::BTreeSet::new();
     for function in &ast.functions {
         if !function_names.insert(function.name.clone()) {
-            diagnostics.push(error("E_DUPLICATE_FUNCTION", "function names must be unique", function.span.start, function.span.end));
+            diagnostics.push(error(
+                "E_DUPLICATE_FUNCTION",
+                "function names must be unique",
+                function.span.start,
+                function.span.end,
+            ));
         }
     }
 
     for handler in &ast.handlers {
-        validate_handler_statements(&handler.statements, handler.span.start, handler.span.end, &screen_names, diagnostics);
+        validate_handler_statements(
+            &handler.statements,
+            handler.span.start,
+            handler.span.end,
+            &screen_names,
+            diagnostics,
+        );
     }
     for function in &ast.functions {
-        validate_screen_references(&function.statements, function.span.start, function.span.end, &screen_names, diagnostics);
+        validate_screen_references(
+            &function.statements,
+            function.span.start,
+            function.span.end,
+            &screen_names,
+            diagnostics,
+        );
     }
 }
 
-fn validate_screen_statements(statements: &[IrStatement], start: usize, end: usize, diagnostics: &mut Vec<Diagnostic>) {
+fn validate_screen_statements(
+    statements: &[IrStatement],
+    start: usize,
+    end: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
     for statement in statements {
         match statement {
             IrStatement::StateLoad
@@ -1233,9 +1430,18 @@ fn validate_screen_statements(statements: &[IrStatement], start: usize, end: usi
             | IrStatement::ScreenRefresh
             | IrStatement::AppExit
             | IrStatement::Assign { .. } => {
-                diagnostics.push(error("E_RENDER_PURITY", "screen bodies must not directly mutate state or app lifecycle", start, end));
+                diagnostics.push(error(
+                    "E_RENDER_PURITY",
+                    "screen bodies must not directly mutate state or app lifecycle",
+                    start,
+                    end,
+                ));
             }
-            IrStatement::If { then_statements, else_statements, .. } => {
+            IrStatement::If {
+                then_statements,
+                else_statements,
+                ..
+            } => {
                 validate_screen_statements(then_statements, start, end, diagnostics);
                 validate_screen_statements(else_statements, start, end, diagnostics);
             }
@@ -1260,9 +1466,18 @@ fn validate_handler_statements(
             | IrStatement::DisplayText { .. }
             | IrStatement::DisplayRect { .. }
             | IrStatement::DisplayLine { .. } => {
-                diagnostics.push(error("E_DISPLAY_OUTSIDE_SCREEN", "display calls are only valid while rendering a screen", start, end));
+                diagnostics.push(error(
+                    "E_DISPLAY_OUTSIDE_SCREEN",
+                    "display calls are only valid while rendering a screen",
+                    start,
+                    end,
+                ));
             }
-            IrStatement::If { then_statements, else_statements, .. } => {
+            IrStatement::If {
+                then_statements,
+                else_statements,
+                ..
+            } => {
                 validate_handler_statements(then_statements, start, end, screen_names, diagnostics);
                 validate_handler_statements(else_statements, start, end, screen_names, diagnostics);
             }
@@ -1285,9 +1500,18 @@ fn validate_screen_references(
     for statement in statements {
         match statement {
             IrStatement::ScreenOpen { screen } if !screen_names.contains(screen) => {
-                diagnostics.push(error("E_UNKNOWN_SCREEN", "screen.open references an unknown screen", start, end));
+                diagnostics.push(error(
+                    "E_UNKNOWN_SCREEN",
+                    "screen.open references an unknown screen",
+                    start,
+                    end,
+                ));
             }
-            IrStatement::If { then_statements, else_statements, .. } => {
+            IrStatement::If {
+                then_statements,
+                else_statements,
+                ..
+            } => {
                 validate_screen_references(then_statements, start, end, screen_names, diagnostics);
                 validate_screen_references(else_statements, start, end, screen_names, diagnostics);
             }
@@ -1309,32 +1533,108 @@ mod tests {
         let parsed = parse(source);
 
         assert!(parsed.green.is_some());
-        assert_eq!(parsed.ast.app.as_ref().map(|app| app.id.as_str()), Some("hello-menu"));
-        assert_eq!(parsed.ast.app.as_ref().and_then(|app| app.target.as_deref()), Some("xteink-x4"));
-        assert_eq!(parsed.ast.state.as_ref().map(|state| state.selected_default), Some(0));
         assert_eq!(
-            parsed.ast.state.as_ref().map(|state| state.values.iter().map(|value| value.name.as_str()).collect::<Vec<_>>()),
+            parsed.ast.app.as_ref().map(|app| app.id.as_str()),
+            Some("hello-menu")
+        );
+        assert_eq!(
+            parsed
+                .ast
+                .app
+                .as_ref()
+                .and_then(|app| app.target.as_deref()),
+            Some("xteink-x4")
+        );
+        assert_eq!(
+            parsed
+                .ast
+                .state
+                .as_ref()
+                .map(|state| state.selected_default),
+            Some(0)
+        );
+        assert_eq!(
+            parsed.ast.state.as_ref().map(|state| state
+                .values
+                .iter()
+                .map(|value| value.name.as_str())
+                .collect::<Vec<_>>()),
             Some(vec!["selected", "view"])
         );
-        assert_eq!(parsed.ast.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>(), vec!["drawMenuRow"]);
+        assert_eq!(
+            parsed
+                .ast
+                .functions
+                .iter()
+                .map(|function| function.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["drawMenuRow"]
+        );
         assert_eq!(parsed.ast.handlers.len(), 5);
-        assert_eq!(parsed.ast.screens.iter().map(|screen| screen.name.as_str()).collect::<Vec<_>>(), vec!["menu", "hello", "about"]);
+        assert_eq!(
+            parsed
+                .ast
+                .screens
+                .iter()
+                .map(|screen| screen.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["menu", "hello", "about"]
+        );
     }
 
     #[test]
     fn compiles_spec_hello_menu_to_screen_ir() {
         let source = include_str!("../../../../fixtures/valid/hello_menu.squid");
-        let output = compile(CompileRequest { source: source.to_string(), target_id: "xteink-x4".to_string() });
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: "xteink-x4".to_string(),
+        });
         assert!(output.ok, "{:?}", output.diagnostics);
         let ir = output.ir.unwrap();
         assert_eq!(ir.format, "squidscript-ir");
         assert_eq!(ir.version, 1);
-        assert_eq!(ir.state.iter().map(|state| state.name.as_str()).collect::<Vec<_>>(), vec!["selected", "view"]);
-        assert_eq!(ir.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>(), vec!["drawMenuRow"]);
-        assert_eq!(ir.screens.iter().map(|screen| screen.name.as_str()).collect::<Vec<_>>(), vec!["menu", "hello", "about"]);
-        assert_eq!(ir.handlers.iter().map(|handler| handler.event.as_str()).collect::<Vec<_>>(), vec!["onStart", "onKey.DOWN", "onKey.UP", "onKey.SELECT", "onKey.BACK"]);
-        assert!(matches!(ir.handlers[1].statements[0], IrStatement::If { .. }));
-        assert!(matches!(ir.handlers[4].statements[0], IrStatement::If { .. }));
+        assert_eq!(
+            ir.state
+                .iter()
+                .map(|state| state.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["selected", "view"]
+        );
+        assert_eq!(
+            ir.functions
+                .iter()
+                .map(|function| function.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["drawMenuRow"]
+        );
+        assert_eq!(
+            ir.screens
+                .iter()
+                .map(|screen| screen.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["menu", "hello", "about"]
+        );
+        assert_eq!(
+            ir.handlers
+                .iter()
+                .map(|handler| handler.event.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "onStart",
+                "onKey.DOWN",
+                "onKey.UP",
+                "onKey.SELECT",
+                "onKey.BACK"
+            ]
+        );
+        assert!(matches!(
+            ir.handlers[1].statements[0],
+            IrStatement::If { .. }
+        ));
+        assert!(matches!(
+            ir.handlers[4].statements[0],
+            IrStatement::If { .. }
+        ));
     }
 
     #[test]
@@ -1352,7 +1652,10 @@ screen("main") {
   display.clear("gray0")
 }
 "#;
-        let output = compile(CompileRequest { source: source.to_string(), target_id: "xteink-x4".to_string() });
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: "xteink-x4".to_string(),
+        });
         assert!(output.ok, "{:?}", output.diagnostics);
         let ir = output.ir.unwrap();
         assert_eq!(ir.handlers.len(), 2);
@@ -1391,16 +1694,29 @@ screen("detail") {
   display.clear("gray0")
 }
 "#;
-        let output = compile(CompileRequest { source: source.to_string(), target_id: "xteink-x4".to_string() });
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: "xteink-x4".to_string(),
+        });
         assert!(output.ok, "{:?}", output.diagnostics);
         let ir = output.ir.unwrap();
         assert_eq!(ir.functions.len(), 1);
         assert_eq!(ir.functions[0].name, "chooseScreen");
         assert_eq!(ir.functions[0].params, vec!["value"]);
-        assert!(matches!(ir.functions[0].statements[0], IrStatement::If { .. }));
-        assert!(matches!(ir.handlers[0].statements[0], IrStatement::If { .. }));
-        assert!(ir.screens[0].statements.iter().any(|statement| matches!(statement, IrStatement::Let { name, .. } if name == "label")));
-        assert!(ir.screens[0].statements.iter().any(|statement| matches!(statement, IrStatement::Call { name, .. } if name == "drawLabel")));
+        assert!(matches!(
+            ir.functions[0].statements[0],
+            IrStatement::If { .. }
+        ));
+        assert!(matches!(
+            ir.handlers[0].statements[0],
+            IrStatement::If { .. }
+        ));
+        assert!(ir.screens[0].statements.iter().any(
+            |statement| matches!(statement, IrStatement::Let { name, .. } if name == "label")
+        ));
+        assert!(ir.screens[0].statements.iter().any(
+            |statement| matches!(statement, IrStatement::Call { name, .. } if name == "drawLabel")
+        ));
     }
 
     #[test]
@@ -1420,10 +1736,16 @@ screen("main") {
   }
 }
 "#;
-        let output = compile(CompileRequest { source: source.to_string(), target_id: "xteink-x4".to_string() });
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: "xteink-x4".to_string(),
+        });
         assert!(output.ok, "{:?}", output.diagnostics);
         let ir = output.ir.unwrap();
-        assert!(matches!(ir.handlers[0].statements[0], IrStatement::Repeat { .. }));
+        assert!(matches!(
+            ir.handlers[0].statements[0],
+            IrStatement::Repeat { .. }
+        ));
         assert!(ir.screens[0].statements.iter().any(|statement| matches!(statement, IrStatement::For { item, max: Some(_), .. } if item == "row")));
     }
 
@@ -1441,14 +1763,24 @@ screen("main") {
   display.clear("gray0")
 }
 "#;
-        let output = compile(CompileRequest { source: source.to_string(), target_id: "xteink-x4".to_string() });
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: "xteink-x4".to_string(),
+        });
         assert!(output.ok, "{:?}", output.diagnostics);
         let ir = output.ir.unwrap();
-        assert!(matches!(ir.handlers[0].statements[0], IrStatement::Let { ref name, .. } if name == "next"));
+        assert!(
+            matches!(ir.handlers[0].statements[0], IrStatement::Let { ref name, .. } if name == "next")
+        );
         let IrStatement::If { condition, .. } = &ir.handlers[0].statements[1] else {
             panic!("expected if statement");
         };
-        let IrExpr::Binary { left, operator, right } = condition else {
+        let IrExpr::Binary {
+            left,
+            operator,
+            right,
+        } = condition
+        else {
             panic!("expected comparison expression");
         };
         assert_eq!(operator, "<");
@@ -1460,7 +1792,10 @@ screen("main") {
     fn matches_hello_menu_ir_fixture() {
         let source = include_str!("../../../../fixtures/valid/hello_menu.squid");
         let expected = include_str!("../../../../fixtures/expected/hello_menu.ir.json");
-        let output = compile(CompileRequest { source: source.to_string(), target_id: "xteink-x4".to_string() });
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: "xteink-x4".to_string(),
+        });
 
         assert!(output.ok, "{:?}", output.diagnostics);
         let ir = output.ir.unwrap();
@@ -1468,24 +1803,54 @@ screen("main") {
         let expected_json: serde_json::Value = serde_json::from_str(expected).unwrap();
         assert_eq!(actual_json["app"], expected_json["app"]);
         assert_eq!(
-            ir.functions.iter().map(|function| function.name.as_str()).collect::<Vec<_>>(),
-            expected_json["functions"].as_array().unwrap().iter().map(|name| name.as_str().unwrap()).collect::<Vec<_>>()
+            ir.functions
+                .iter()
+                .map(|function| function.name.as_str())
+                .collect::<Vec<_>>(),
+            expected_json["functions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|name| name.as_str().unwrap())
+                .collect::<Vec<_>>()
         );
         assert_eq!(
-            ir.handlers.iter().map(|handler| handler.event.as_str()).collect::<Vec<_>>(),
-            expected_json["handlers"].as_array().unwrap().iter().map(|name| name.as_str().unwrap()).collect::<Vec<_>>()
+            ir.handlers
+                .iter()
+                .map(|handler| handler.event.as_str())
+                .collect::<Vec<_>>(),
+            expected_json["handlers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|name| name.as_str().unwrap())
+                .collect::<Vec<_>>()
         );
         assert_eq!(
-            ir.screens.iter().map(|screen| screen.name.as_str()).collect::<Vec<_>>(),
-            expected_json["screens"].as_array().unwrap().iter().map(|name| name.as_str().unwrap()).collect::<Vec<_>>()
+            ir.screens
+                .iter()
+                .map(|screen| screen.name.as_str())
+                .collect::<Vec<_>>(),
+            expected_json["screens"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|name| name.as_str().unwrap())
+                .collect::<Vec<_>>()
         );
-        assert!(matches!(ir.functions[0].statements[0], IrStatement::If { .. }));
+        assert!(matches!(
+            ir.functions[0].statements[0],
+            IrStatement::If { .. }
+        ));
     }
 
     #[test]
     fn compiles_browser_sim_binbook_reader_fixture() {
         let source = include_str!("../../../../fixtures/valid/binbook_reader_browser_sim.squid");
-        let output = compile(CompileRequest { source: source.to_string(), target_id: "xteink-x4".to_string() });
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: "xteink-x4".to_string(),
+        });
 
         assert!(output.ok, "{:?}", output.diagnostics);
         let ir = output.ir.unwrap();
@@ -1496,20 +1861,58 @@ screen("main") {
     #[test]
     fn encodes_minimal_sqbc_container() {
         let source = include_str!("../../../../fixtures/valid/hello_menu.squid");
-        let output = compile(CompileRequest { source: source.to_string(), target_id: "xteink-x4".to_string() });
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: "xteink-x4".to_string(),
+        });
         let ir = output.ir.unwrap();
         let sqbc = encode_sqbc(&ir);
 
         assert_eq!(&sqbc[0..4], SQBC_MAGIC);
-        assert_eq!(u32::from_le_bytes(sqbc[4..8].try_into().unwrap()), SQBC_VERSION);
-        assert_eq!(u32::from_le_bytes(sqbc[8..12].try_into().unwrap()) as usize, sqbc.len() - 12);
+        assert_eq!(
+            u32::from_le_bytes(sqbc[4..8].try_into().unwrap()),
+            SQBC_VERSION
+        );
+        assert_eq!(
+            u32::from_le_bytes(sqbc[8..12].try_into().unwrap()) as usize,
+            sqbc.len() - 12
+        );
+    }
+
+    #[test]
+    fn encodes_reference_sqbc_v2_for_headless_counter() {
+        let source = include_str!("../../../fixtures/conformance/headless_counter.squid");
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: "esp32c3-super-mini".to_string(),
+        });
+        assert!(output.ok, "{:?}", output.diagnostics);
+        let sqbc =
+            sqbc_v2::encode_sqbc_v2(&output.ir.unwrap()).expect("reference subset should encode");
+
+        assert_eq!(&sqbc[0..4], sqbc_v2::SQBC_V2_MAGIC);
+        assert_eq!(
+            u16::from_le_bytes(sqbc[4..6].try_into().unwrap()),
+            sqbc_v2::SQBC_V2_VERSION
+        );
+        assert_eq!(
+            u32::from_le_bytes(sqbc[8..12].try_into().unwrap()) as usize,
+            sqbc.len()
+        );
+        assert_eq!(u32::from_le_bytes(sqbc[12..16].try_into().unwrap()), 5);
     }
 
     #[test]
     fn reports_diagnostics_with_spans() {
-        let output = compile(CompileRequest { source: "screen(\"main\") {}\n".to_string(), target_id: "xteink-x4".to_string() });
+        let output = compile(CompileRequest {
+            source: "screen(\"main\") {}\n".to_string(),
+            target_id: "xteink-x4".to_string(),
+        });
         assert!(!output.ok);
-        assert!(output.diagnostics.iter().any(|d| d.code == "E_APP_REQUIRED" && d.span.end >= d.span.start));
+        assert!(output
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "E_APP_REQUIRED" && d.span.end >= d.span.start));
     }
 
     #[test]
@@ -1527,14 +1930,24 @@ screen("main") {
   display.clear("gray0")
 }
 "#;
-        let output = compile(CompileRequest { source: source.to_string(), target_id: "xteink-x4".to_string() });
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: "xteink-x4".to_string(),
+        });
         assert!(!output.ok);
-        let codes = output.diagnostics.iter().map(|diagnostic| diagnostic.code.as_str()).collect::<Vec<_>>();
+        let codes = output
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.code.as_str())
+            .collect::<Vec<_>>();
         assert!(codes.contains(&"E_UNKNOWN_SCREEN"));
         assert!(codes.contains(&"E_DISPLAY_OUTSIDE_SCREEN"));
         assert!(codes.contains(&"E_RENDER_POLICY"));
         assert!(codes.contains(&"E_RENDER_PURITY"));
         assert!(codes.contains(&"E_DUPLICATE_SCREEN"));
-        assert!(output.diagnostics.iter().all(|diagnostic| diagnostic.span.end >= diagnostic.span.start));
+        assert!(output
+            .diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.span.end >= diagnostic.span.start));
     }
 }

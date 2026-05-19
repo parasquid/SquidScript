@@ -31,6 +31,9 @@ esp-hal = { version = "=1.0.0", default-features = false, features = ["esp32c3",
 esp-println = { version = "0.15", default-features = false, features = ["esp32c3", "jtag-serial", "log-04"], optional = true }
 ssd1677 = { version = "0.1", default-features = false, features = ["graphics"], optional = true }
 
+[dev-dependencies]
+squidc-core = { path = "../../compiler/rust/crates/squidc-core" }
+
 [[bin]]
 name = "x4-hello"
 path = "src/bin/x4_hello.rs"

@@ -1,7 +1,7 @@
 [workspace]
 members = [
   "compiler/rust/crates/squidc-core",
+  "compiler/rust/crates/squidc-cli",
   "compiler/rust/crates/squidc-wasm"
 ]
 resolver = "2"
-

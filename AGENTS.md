@@ -17,6 +17,7 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - If a feature is not implemented yet, say so clearly and keep fixtures/tests honest.
 - Do not add tests for removed fake syntax. Treat fake syntax as if it never existed.
 - `entry.type = "ir"` is a browser-simulator development artifact only. Do not treat it as a production firmware format. See `docs/browser_simulator.md` and `docs/ir_schema.md`.
+- Reference firmware exists to exercise SquidScript language semantics on constrained hardware. Do not frame it as XTEINK X4 staging firmware unless the task explicitly targets X4 behavior.
 
 ## Hardware And Placeholder Discipline
 
@@ -41,6 +42,7 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
 - For firmware flashing scripts, avoid auto-monitoring by default when USB reset or re-enumeration can break the serial session. Prefer a separate monitor script and an explicit opt-in such as `MONITOR_AFTER_FLASH=1`.
 - Do not filter or suppress flashing tool stderr in firmware scripts. Surface warnings and errors directly, and document known harmless tool warnings instead of hiding them.
 - Clearly report host visibility limits, such as Codex sandbox sessions that cannot see `/dev/ttyACM*`, `/dev/ttyUSB*`, or `/dev/bus/usb`.
+- When troubleshooting ESP32-C3 Super Mini flashing access, check `firmware/README.md` and `firmware/squid-firmware/README.md` for the documented `/dev/ttyACM0` ACL workaround before suggesting broader sudo changes.
 
 ## Command Matrix
 
