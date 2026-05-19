@@ -1,7 +1,8 @@
 target/
+target/device-discovery/
+target/device-backups/
 node_modules/
 dist/
 test-results/
 playwright-report/
 .vite/
-

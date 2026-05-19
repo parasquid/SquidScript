@@ -1,0 +1,223 @@
+{
+  "format": "squid-target-v1",
+  "id": "esp32c3-super-mini",
+  "name": "ESP32-C3 Super Mini",
+  "status": "draft",
+  "sourceAttribution": [
+    {
+      "name": "ESP32 C3 Super Mini Development Board Details, Pinout, Specs",
+      "url": "https://www.espboards.dev/esp32/esp32-c3-super-mini/",
+      "scope": "Board class, ESP32-C3 MCU, common 4 MB flash configuration, USB-C programming, and generic board-tooling mappings."
+    },
+    {
+      "name": "MakerGuides ESP32-C3 SuperMini Board",
+      "url": "https://www.makerguides.com/esp32-c3-supermini-board/",
+      "scope": "Common front/back board photos, BOOT/RST placement, red power LED, blue GPIO8 LED, and example SPI e-paper wiring."
+    },
+    {
+      "name": "Random Nerd Tutorials ESP32-C3 Super Mini guide",
+      "url": "https://randomnerdtutorials.com/getting-started-esp32-c3-super-mini/",
+      "scope": "Common pin mapping, BOOT button on GPIO9, GPIO8 onboard LED, strapping pin cautions, and clone-board caveat."
+    },
+    {
+      "name": "Espressif ESP32-C3 Technical Reference Manual",
+      "url": "https://documentation.espressif.com/esp32-c3_technical_reference_manual_en.pdf",
+      "scope": "GPIO2, GPIO3, GPIO8, and GPIO9 boot-mode strapping behavior."
+    },
+    {
+      "name": "Espressif ESP32-C3 Serial Connection Guide",
+      "url": "https://docs.espressif.com/projects/esp-idf/en/stable/esp32c3/get-started/establish-serial-connection.html",
+      "scope": "ESP32-C3 supports flashing through native USB Serial/JTAG or through a board USB-to-UART bridge."
+    },
+    {
+      "name": "ESP32-C3 Super Mini community pinout references",
+      "url": "https://www.sudo.is/docs/esphome/boards/esp32c3supermini/",
+      "scope": "Common clone-board observation that GPIO8 is a blue inverted status LED and a strapping pin; board variants may differ."
+    }
+  ],
+  "mcu": {
+    "part": "ESP32-C3",
+    "family": "ESP32C3",
+    "cpu": {
+      "cores": 1,
+      "frequencyMHz": 160
+    },
+    "memory": {
+      "internalSramKB": 400,
+      "psramKB": 0
+    },
+    "flash": {
+      "sizeMB": 4,
+      "status": "typical",
+      "reason": "Most ESP32-C3 Super Mini boards are sold as 4 MB flash variants; verify with espflash board-info for the specific board."
+    }
+  },
+  "firmwareUpdate": {
+    "formats": ["esp-idf-bin"],
+    "preferredFormat": "esp-idf-bin",
+    "userReplacement": "serial-or-usb-flash",
+    "uf2": {
+      "status": "unsupported",
+      "reason": "Generic ESP32-C3 Super Mini boards do not expose a verified UF2 bootloader by default."
+    }
+  },
+  "pins": {
+    "GPIO2": {
+      "capabilities": ["gpio", "adc", "strapping"],
+      "voltage": "3v3",
+      "usedBy": [],
+      "status": "available-with-boot-caution",
+      "reason": "Commonly broken out on ESP32-C3 Super Mini boards, but participates in ESP32-C3 boot-mode strapping."
+    },
+    "GPIO3": {
+      "capabilities": ["gpio", "adc", "strapping"],
+      "voltage": "3v3",
+      "usedBy": [],
+      "status": "available-with-boot-caution",
+      "reason": "Commonly broken out on ESP32-C3 Super Mini boards, but participates in ESP32-C3 boot-mode strapping."
+    },
+    "GPIO8": {
+      "capabilities": ["gpio", "strapping"],
+      "voltage": "3v3",
+      "usedBy": ["indicator.status_led"],
+      "status": "typical",
+      "reason": "Common clone-board LED pin; variants may use GPIO2, GPIO7, GPIO9, or omit a controllable user LED."
+    },
+    "GPIO9": {
+      "capabilities": ["gpio", "strapping"],
+      "voltage": "3v3",
+      "usedBy": ["input.boot_button"],
+      "status": "typical",
+      "reason": "Common clone-board BOOT button pin. Holding this low during reset enters download mode on typical ESP32-C3 Super Mini boards."
+    },
+    "GPIO18": {
+      "capabilities": ["usb_d-"],
+      "voltage": "3v3",
+      "usedBy": ["usb.native"]
+    },
+    "GPIO19": {
+      "capabilities": ["usb_d+"],
+      "voltage": "3v3",
+      "usedBy": ["usb.native"]
+    },
+    "GPIO20": {
+      "capabilities": ["uart_rx"],
+      "voltage": "3v3",
+      "usedBy": ["console.uart0_rx"],
+      "status": "available-if-board-uses-uart-bridge"
+    },
+    "GPIO21": {
+      "capabilities": ["uart_tx"],
+      "voltage": "3v3",
+      "usedBy": ["console.uart0_tx"],
+      "status": "available-if-board-uses-uart-bridge"
+    }
+  },
+  "buses": {},
+  "devices": {
+    "usb.native": {
+      "type": "esp32c3-native-usb-serial-jtag",
+      "pins": {
+        "d-": "GPIO18",
+        "d+": "GPIO19"
+      },
+      "status": "preferred-for-this-bringup"
+    },
+    "console.uart0": {
+      "type": "uart-console",
+      "pins": {
+        "rx": "GPIO20",
+        "tx": "GPIO21"
+      },
+      "status": "variant-dependent",
+      "reason": "Some ESP32-C3 Super Mini boards use native USB Serial/JTAG; some expose or bridge UART0."
+    },
+    "indicator.status_led": {
+      "type": "gpio-led",
+      "gpio": "GPIO8",
+      "activeLow": true,
+      "status": "typical",
+      "physical": {
+        "label": "blue onboard LED",
+        "breakout": "GPIO8"
+      }
+    },
+    "indicator.power_led": {
+      "type": "power-led",
+      "gpio": null,
+      "softwareControllable": false,
+      "status": "typical",
+      "physical": {
+        "label": "red power LED"
+      },
+      "reason": "Common ESP32-C3 Super Mini power indicator LED is not controlled by a numbered GPIO."
+    },
+    "input.boot_button": {
+      "type": "gpio-button",
+      "gpio": "GPIO9",
+      "activeLow": true,
+      "status": "typical",
+      "physical": {
+        "label": "BOOT",
+        "breakout": "GPIO9"
+      },
+      "reason": "Common BOOT button is wired to GPIO9, which is also exposed on the header and acts as a boot strapping pin."
+    },
+    "control.reset_button": {
+      "type": "reset-button",
+      "line": "EN/CHIP_PU",
+      "gpio": null,
+      "softwareInput": false,
+      "status": "typical",
+      "physical": {
+        "label": "RST"
+      },
+      "reason": "Common RST button pulls the ESP32-C3 enable/reset line and is not a normal GPIO breakout."
+    }
+  },
+  "display": {
+    "type": "none",
+    "status": "not-present",
+    "reason": "This development board target is for serial and flashing bring-up only."
+  },
+  "storage": {
+    "type": "none",
+    "supportsApps": false,
+    "supportsContent": false
+  },
+  "input": {
+    "type": "board-control-only",
+    "buttons": [
+      {
+        "id": "boot",
+        "device": "input.boot_button",
+        "gpio": "GPIO9",
+        "role": "download-mode",
+        "runtimeInput": false,
+        "status": "typical"
+      }
+    ],
+    "reason": "The ESP32-C3 Super Mini has a BOOT button, but this target is a flashing and serial bring-up board target, not a SquidScript input target."
+  },
+  "power": {
+    "type": "usb",
+    "deepSleep": false,
+    "wakeKeys": []
+  },
+  "runtime": {
+    "squidscript": {
+      "status": "not-supported",
+      "reason": "This target is a preliminary firmware flashing and serial bring-up target, not a SquidScript runtime target."
+    }
+  },
+  "compatibility": [
+    "esp32c3",
+    "serial-bringup"
+  ],
+  "features": [
+    "console.serial",
+    "firmware.flash-test",
+    "button.boot.typical",
+    "indicator.led.typical"
+  ]
+}
