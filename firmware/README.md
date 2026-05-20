@@ -10,8 +10,8 @@ Serial/JTAG. It is not a product target and it is not XTEINK X4 staging firmware
 Current status:
 
 - `squid-firmware` builds a Super Mini reference firmware image with a serial
-  shell for installing and running SQBC v2 bytes from RAM.
-- The shared host-testable VM loads real SQBC v2 bytecode, dispatches generic
+  shell for installing and running SQBC v3 bytes.
+- The shared host-testable VM loads real SQBC v3 bytecode, dispatches generic
   `event.on("...")` handlers, mutates in-RAM state, traces `state.load`,
   `state.save`, and `app.exit`, dispatches `hardware.gpio.*` to the Super Mini
   status LED, and rejects the browser-only SQBC v1 IR container.
@@ -38,7 +38,7 @@ scripts/c3-supermini-test-reference-firmware.sh
 Use `scripts/c3-supermini-test-reference-firmware.sh --skip-flash` when the
 current firmware image is already flashed. The hardware test compiles the
 headless counter fixture,
-installs SQBC v2 bytes over USB serial, runs the app, sends `SELECT`, `SELECT`,
+installs SQBC v3 bytes over USB serial, runs the app, sends `SELECT`, `SELECT`,
 and `BACK`, then verifies state and trace output.
 
 `espflash` may print `Monitor options were provided, but --monitor/-M flag
@@ -48,6 +48,8 @@ hardware test reaches `OK hardware test esp32c3-super-mini reference firmware`.
 
 The quick compile/upload/run path uses `squidc run`. It uploads the app to RAM
 with `RUN.TEMP`, pushes it onto the foreground stack, and does not write flash.
+This is intentional for the pre-1.0 developer workflow: repeated quick runs
+should protect flash even though the temp path reserves RAM.
 If `--port` is omitted, `squidc` probes visible serial ports with `HELLO` and
 uses the single SquidScript firmware target it finds:
 

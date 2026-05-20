@@ -17,6 +17,12 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - If an AI agent identifies a concrete future task or follow-up while working, add it to `ROADMAP.md` rather than leaving it only in chat.
 - Keep roadmap entries concise, actionable, and scoped to repository work.
 
+## Documentation Planning
+
+- When making implementation plans, include documentation work explicitly.
+- Create new docs when needed, update related existing docs in the same change, and remove or revise obsolete docs so repository documentation stays aligned with the implementation and current project decisions.
+- Before finishing implementation work, check related docs for stale command examples, old API shapes, outdated storage/runtime descriptions, and obsolete compatibility notes.
+
 ## Language And Spec Discipline
 
 - Do not invent SquidScript syntax, keywords, helpers, or simulator-only DSL conveniences.
@@ -24,6 +30,7 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - If a feature is not implemented yet, say so clearly and keep fixtures/tests honest.
 - Do not add tests for removed fake syntax. Treat fake syntax as if it never existed.
 - Until the project reaches a 1.0 release, prefer direct migrations over backwards-compatible aliases or redundant wrappers. Remove obsolete scripts/APIs/docs when replacing them, unless the user explicitly asks for a compatibility bridge.
+- Before 1.0, optimize firmware and CLI workflows for development ergonomics. Do not introduce release-profile trimming, disabling of `RUN.TEMP`, or flash-writing temp runs unless the user explicitly asks to revisit that tradeoff.
 - `entry.type = "ir"` is a browser-simulator development artifact only. Do not treat it as a production firmware format. See `docs/browser_simulator.md` and `docs/ir_schema.md`.
 - Reference firmware exists to exercise SquidScript language semantics on constrained hardware. Do not frame it as XTEINK X4 staging firmware unless the task explicitly targets X4 behavior.
 
@@ -53,9 +60,10 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
 ## Test-Driven Development
 
 - Default to TDD for implementation work: write or update the smallest meaningful failing test first, then implement the behavior, then run the relevant checks.
+- For lifecycle, runtime, firmware storage, VM, compiler semantics, and CLI behavior changes, TDD is mandatory unless explicitly impossible: add or update the failing test before implementation, and do not wait for the user to remind you.
+- If a change cannot reasonably be test-driven, state the concrete reason before implementation and use the narrowest practical verification instead.
 - Keep tests honest. Do not add assertions for unsupported SquidScript syntax, simulator-only conveniences, or fake firmware behavior.
 - For firmware work, separate host-testable logic from hardware-bound code so behavior can be driven by unit tests before flashing a device.
-- If a change cannot reasonably be test-driven, say why and use the narrowest practical verification instead.
 
 ## Script And Firmware Tooling Discipline
 

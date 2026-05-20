@@ -121,6 +121,8 @@ pub struct IrStateValue {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IrHandler {
     pub event: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub preload: bool,
     pub statements: Vec<IrStatement>,
 }
 
@@ -233,6 +235,10 @@ pub enum IrExpr {
     },
     #[serde(rename = "hardware.gpio.read")]
     HardwareGpioRead { name: String },
+    #[serde(rename = "system.memory")]
+    SystemMemory,
+    #[serde(rename = "system.storage")]
+    SystemStorage { name: String },
     #[serde(rename = "call")]
     Call { name: String, args: Vec<IrExpr> },
 }
@@ -292,6 +298,7 @@ pub struct AstScreen {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AstHandler {
     pub event: String,
+    pub preload: bool,
     pub statements: Vec<IrStatement>,
     pub span: SourceSpan,
 }
@@ -322,6 +329,7 @@ enum TokenKind {
     Greater,
     Plus,
     Minus,
+    At,
     Whitespace,
     Unknown,
 }
@@ -343,6 +351,7 @@ pub fn parse(source: &str) -> ParsedSource {
         cursor: 0,
         ast: AstRoot::default(),
         diagnostics: Vec::new(),
+        pending_preload: None,
     };
 
     parser.parse_root(&mut builder);
@@ -353,6 +362,10 @@ pub fn parse(source: &str) -> ParsedSource {
         ast: parser.ast,
         diagnostics: parser.diagnostics,
     }
+}
+
+const fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 pub fn compile(request: CompileRequest) -> CompileResponse {
@@ -399,6 +412,7 @@ pub fn compile_with_profile(request: CompileRequest, profile: BuildProfile) -> C
             .into_iter()
             .map(|handler| IrHandler {
                 event: handler.event,
+                preload: handler.preload,
                 statements: handler.statements,
             })
             .collect();
@@ -448,6 +462,7 @@ struct Parser<'a> {
     cursor: usize,
     ast: AstRoot,
     diagnostics: Vec<Diagnostic>,
+    pending_preload: Option<SourceSpan>,
 }
 
 impl Parser<'_> {
@@ -455,19 +470,63 @@ impl Parser<'_> {
         while !self.at_end() {
             self.consume_ws(builder);
 
+            if self.at_kind(TokenKind::At) {
+                self.parse_attribute(builder);
+                continue;
+            }
+
             if self.at_ident("app") {
+                self.reject_pending_attribute();
                 self.parse_app(builder);
             } else if self.at_ident("state") {
+                self.reject_pending_attribute();
                 self.parse_state(builder);
             } else if self.at_event_method("on") {
-                self.parse_event_handler(builder);
+                let preload = self.pending_preload.take().is_some();
+                self.parse_event_handler(builder, preload);
             } else if self.at_ident("function") {
+                self.reject_pending_attribute();
                 self.parse_function(builder);
             } else if self.at_ident("screen") {
+                self.reject_pending_attribute();
                 self.parse_screen(builder);
             } else if !self.at_end() {
+                self.reject_pending_attribute();
                 self.bump(builder);
             }
+        }
+    }
+
+    fn parse_attribute(&mut self, builder: &mut GreenNodeBuilder) {
+        let start = self.peek().map(|token| token.span.start).unwrap_or(0);
+        self.bump(builder); // @
+        self.consume_ws(builder);
+        let Some(name) = self.consume_ident(builder) else {
+            self.diagnostics.push(error(
+                "E_ATTRIBUTE",
+                "attribute must have a name",
+                start,
+                self.previous_end().unwrap_or(start),
+            ));
+            return;
+        };
+        let end = self.previous_end().unwrap_or(start);
+        if name == "preload" {
+            self.pending_preload = Some(SourceSpan { start, end });
+        } else {
+            self.diagnostics
+                .push(error("E_ATTRIBUTE", "unsupported attribute", start, end));
+        }
+    }
+
+    fn reject_pending_attribute(&mut self) {
+        if let Some(span) = self.pending_preload.take() {
+            self.diagnostics.push(error(
+                "E_ATTRIBUTE_TARGET",
+                "@preload is only valid before event.on handlers",
+                span.start,
+                span.end,
+            ));
         }
     }
 
@@ -599,7 +658,7 @@ impl Parser<'_> {
         });
     }
 
-    fn parse_event_handler(&mut self, builder: &mut GreenNodeBuilder) {
+    fn parse_event_handler(&mut self, builder: &mut GreenNodeBuilder, preload: bool) {
         builder.start_node(SquidLang::kind_to_raw(SquidKind::Token));
         let start = self.peek().map(|token| token.span.start).unwrap_or(0);
         self.bump(builder); // event
@@ -626,6 +685,7 @@ impl Parser<'_> {
         builder.finish_node();
         self.ast.handlers.push(AstHandler {
             event,
+            preload,
             statements,
             span: SourceSpan { start, end },
         });
@@ -1005,12 +1065,26 @@ impl Parser<'_> {
                 IrExpr::Literal {
                     value: serde_json::Value::Null,
                 }
-            } else if name == "hardware" && self.at_kind(TokenKind::Dot) {
+            } else if (name == "hardware" || name == "system") && self.at_kind(TokenKind::Dot) {
                 self.bump(builder);
                 self.consume_ws(builder);
                 let namespace = self.consume_ident(builder).unwrap_or_default();
                 self.consume_ws(builder);
-                if namespace == "gpio" && self.at_kind(TokenKind::Dot) {
+                if name == "system" && namespace == "memory" {
+                    self.parse_call_args(builder);
+                    IrExpr::SystemMemory
+                } else if name == "system" && namespace == "storage" {
+                    let args = self.parse_call_args(builder);
+                    let name = args
+                        .first()
+                        .and_then(|arg| match arg {
+                            IrExpr::Literal { value } => value.as_str().map(ToOwned::to_owned),
+                            _ => None,
+                        })
+                        .unwrap_or_default();
+                    IrExpr::SystemStorage { name }
+                } else if name == "hardware" && namespace == "gpio" && self.at_kind(TokenKind::Dot)
+                {
                     self.bump(builder);
                     self.consume_ws(builder);
                     let action = self.consume_ident(builder).unwrap_or_default();
@@ -1486,6 +1560,7 @@ fn lex(source: &str) -> Vec<LexToken> {
                 '>' => TokenKind::Greater,
                 '+' => TokenKind::Plus,
                 '-' => TokenKind::Minus,
+                '@' => TokenKind::At,
                 _ => TokenKind::Unknown,
             };
             tokens.push(token(kind, source, start, cursor));
@@ -1522,7 +1597,8 @@ fn syntax_kind_for(kind: TokenKind) -> SquidKind {
         | TokenKind::Less
         | TokenKind::Greater
         | TokenKind::Plus
-        | TokenKind::Minus => SquidKind::Token,
+        | TokenKind::Minus
+        | TokenKind::At => SquidKind::Token,
     }
 }
 
@@ -1725,6 +1801,54 @@ fn validate_screen_references(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_preload_attribute_on_event_handler() {
+        let source = r#"app "preload-demo"
+@preload
+event.on("key.SELECT") {
+  debug.print("select")
+}
+screen("main") {}
+"#;
+        let parsed = parse(source);
+
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        assert_eq!(parsed.ast.handlers.len(), 1);
+        assert_eq!(parsed.ast.handlers[0].event, "key.SELECT");
+        assert!(parsed.ast.handlers[0].preload);
+
+        let compiled = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: PORTABLE_TARGET_ID.to_string(),
+        });
+        assert!(compiled.ok, "{:?}", compiled.diagnostics);
+        let ir = compiled.ir.unwrap();
+        assert_eq!(ir.handlers.len(), 1);
+        assert!(ir.handlers[0].preload);
+    }
+
+    #[test]
+    fn rejects_preload_attribute_before_non_handler() {
+        let source = r#"app "bad-preload"
+@preload
+function helper() {
+  debug.print("no")
+}
+event.on("app.start") {}
+screen("main") {}
+"#;
+        let compiled = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: PORTABLE_TARGET_ID.to_string(),
+        });
+
+        assert!(!compiled.ok);
+        assert!(compiled
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "E_ATTRIBUTE_TARGET"));
+    }
 
     #[test]
     fn parses_spec_hello_menu_into_typed_ast_and_cst() {
@@ -2089,7 +2213,7 @@ screen("main") {
     }
 
     #[test]
-    fn encodes_reference_sqbc_v2_for_headless_counter() {
+    fn encodes_reference_sqbc_v3_for_headless_counter() {
         let source = include_str!("../../../fixtures/conformance/headless_counter.squid");
         let output = compile(CompileRequest {
             source: source.to_string(),
@@ -2102,7 +2226,7 @@ screen("main") {
         assert_eq!(&sqbc[0..4], sqbc_v2::SQBC_V2_MAGIC);
         assert_eq!(
             u16::from_le_bytes(sqbc[4..6].try_into().unwrap()),
-            sqbc_v2::SQBC_V2_VERSION
+            sqbc_v2::SQBC_V3_VERSION
         );
         assert_eq!(
             u32::from_le_bytes(sqbc[8..12].try_into().unwrap()) as usize,
@@ -2200,6 +2324,37 @@ screen("main") {}
     }
 
     #[test]
+    fn parses_system_resource_string_calls() {
+        let source = r#"app "resources"
+state { ready: false }
+event.on("app.start") {
+  debug.print(system.memory())
+  debug.print(system.storage("apps"))
+}
+screen("main") {}
+"#;
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: PORTABLE_TARGET_ID.to_string(),
+        });
+        assert!(output.ok, "{:?}", output.diagnostics);
+        let ir = output.ir.unwrap();
+        let IrStatement::DebugPrint { args } = &ir.handlers[0].statements[0] else {
+            panic!("expected debug.print");
+        };
+        assert_eq!(args, &vec![IrExpr::SystemMemory]);
+        let IrStatement::DebugPrint { args } = &ir.handlers[0].statements[1] else {
+            panic!("expected debug.print");
+        };
+        assert_eq!(
+            args,
+            &vec![IrExpr::SystemStorage {
+                name: "apps".to_string()
+            }]
+        );
+    }
+
+    #[test]
     fn parses_timer_handlers_app_launch_and_timer_service() {
         let source = r#"app "timer-demo"
 state { count: 0 }
@@ -2241,6 +2396,9 @@ event.on("app.start") {
 event.on("app.arm") {
   service.timer.after("timer.break", 1500000)
 }
+event.on("app.exit") {
+  state.save()
+}
 event.on("timer.break") {
   ticks = ticks + 1
   app.disarm("reminder")
@@ -2255,7 +2413,8 @@ screen("main") {}
         let ir = output.ir.unwrap();
         assert_eq!(ir.handlers[0].event, "app.start");
         assert_eq!(ir.handlers[1].event, "app.arm");
-        assert_eq!(ir.handlers[2].event, "timer.break");
+        assert_eq!(ir.handlers[2].event, "app.exit");
+        assert_eq!(ir.handlers[3].event, "timer.break");
         assert!(matches!(
             ir.handlers[0].statements[0],
             IrStatement::AppArm { .. }
@@ -2273,7 +2432,7 @@ screen("main") {}
             IrStatement::ServiceTimerAfter { .. }
         ));
         assert!(matches!(
-            ir.handlers[2].statements[1],
+            ir.handlers[3].statements[1],
             IrStatement::AppDisarm { .. }
         ));
     }

@@ -40,6 +40,7 @@ Consumers must reject unknown `format` values and unsupported versions.
   "handlers": [
     {
       "event": "key.DOWN",
+      "preload": true,
       "statements": [
         {
           "op": "if",
@@ -95,8 +96,7 @@ Consumers must reject unknown `format` values and unsupported versions.
 ## v1 Event Names
 
 - `app.start`
-- `app.resume`
-- `app.suspend`
+- `app.exit`
 - `key.UP`
 - `key.DOWN`
 - `key.LEFT`
@@ -125,6 +125,10 @@ The browser runtime currently recognizes:
 - `display.text`
 - `display.rect`
 - `display.line`
+
+`handlers[].preload` is optional and defaults to `false`. It comes from the
+source-level `@preload` hint before `event.on(...)` and remains advisory for
+firmware/runtime chunk loading.
 
 Display statements are rendered when they appear in a screen body. Non-display statements are executed in handlers. Unknown statements should be treated as runtime errors once runtime diagnostics are formalized.
 

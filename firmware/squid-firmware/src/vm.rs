@@ -1,4 +1,4 @@
-use core::str;
+use core::{fmt, str};
 
 pub const MAX_STRINGS: usize = 64;
 pub const MAX_STATE: usize = 16;
@@ -9,7 +9,9 @@ pub const MAX_LOCALS: usize = 16;
 pub const MAX_STACK: usize = 32;
 pub const MAX_CALL_DEPTH: usize = 4;
 pub const MAX_INSTRUCTIONS_PER_EVENT: usize = 1000;
-pub const MAX_APP_BYTES: usize = 16 * 1024;
+pub const MAX_APP_BYTES: usize = 4 * 1024;
+pub const MAX_RUNTIME_STRINGS: usize = 4;
+pub const MAX_RUNTIME_STRING_BYTES: usize = 48;
 
 const SECTION_STRINGS: u16 = 1;
 const SECTION_STATE: u16 = 2;
@@ -59,6 +61,8 @@ const BUILTIN_APP_ARM: u8 = 16;
 const BUILTIN_APP_DISARM: u8 = 17;
 const BUILTIN_SERVICE_TIMER_EVERY: u8 = 18;
 const BUILTIN_SERVICE_TIMER_AFTER: u8 = 19;
+const BUILTIN_SYSTEM_MEMORY: u8 = 20;
+const BUILTIN_SYSTEM_STORAGE: u8 = 21;
 
 const VALUE_NULL: u8 = 0;
 const VALUE_BOOL: u8 = 1;
@@ -71,6 +75,7 @@ pub enum Value {
     Bool(bool),
     I32(i32),
     String(u16),
+    RuntimeString(u8),
 }
 
 impl Value {
@@ -79,7 +84,7 @@ impl Value {
             Value::Null => false,
             Value::Bool(value) => value,
             Value::I32(value) => value != 0,
-            Value::String(_) => true,
+            Value::String(_) | Value::RuntimeString(_) => true,
         }
     }
 
@@ -87,7 +92,7 @@ impl Value {
         match self {
             Value::I32(value) => value,
             Value::Bool(value) => value as i32,
-            Value::Null | Value::String(_) => 0,
+            Value::Null | Value::String(_) | Value::RuntimeString(_) => 0,
         }
     }
 }
@@ -130,6 +135,7 @@ struct Function {
 #[derive(Clone, Copy)]
 struct Handler {
     event_id: u16,
+    preload: bool,
     start: usize,
     len: usize,
 }
@@ -161,11 +167,25 @@ pub struct Program<'a> {
     code: &'a [u8],
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqbcHeader {
+    pub header_len: usize,
+    pub file_len: usize,
+    pub section_count: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqbcSection {
+    pub kind: u16,
+    pub offset: usize,
+    pub len: usize,
+}
+
 pub trait TraceSink {
     fn trace(&mut self, message: &str);
-    fn debug_print(&mut self, _program: &Program<'_>, _values: &[Value]) {}
+    fn debug_print(&mut self, _strings: &StringResolver<'_, '_>, _values: &[Value]) {}
     fn draw_clear(&mut self, _color: &str) {}
-    fn draw_text(&mut self, _program: &Program<'_>, _text: Value, _x: i32, _y: i32) {}
+    fn draw_text(&mut self, _strings: &StringResolver<'_, '_>, _text: Value, _x: i32, _y: i32) {}
     fn draw_rect(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) {}
     fn draw_line(&mut self, _x1: i32, _y1: i32, _x2: i32, _y2: i32) {}
     fn hardware_gpio_write(&mut self, _name: &str, _value: bool) -> Result<(), VmError> {
@@ -192,10 +212,227 @@ pub trait TraceSink {
     fn service_timer_after(&mut self, _event: &str, _delay_ms: i32) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
     }
+    fn system_memory_text(&mut self, _out: &mut dyn fmt::Write) -> Result<(), VmError> {
+        Err(VmError::InvalidOperand)
+    }
+    fn system_storage_text(
+        &mut self,
+        _name: &str,
+        _out: &mut dyn fmt::Write,
+    ) -> Result<(), VmError> {
+        Err(VmError::InvalidOperand)
+    }
+}
+
+pub struct StringResolver<'a, 'p> {
+    program: &'a Program<'p>,
+    runtime_strings: &'a RuntimeStrings,
+}
+
+impl<'a, 'p> StringResolver<'a, 'p> {
+    pub fn new(program: &'a Program<'p>, runtime_strings: &'a RuntimeStrings) -> Self {
+        Self {
+            program,
+            runtime_strings,
+        }
+    }
+
+    pub fn value_str(&self, value: Value) -> Result<&str, VmError> {
+        match value {
+            Value::String(id) => self.program.string(id),
+            Value::RuntimeString(id) => self.runtime_strings.get(id),
+            _ => Err(VmError::InvalidOperand),
+        }
+    }
+}
+
+pub struct RuntimeStrings {
+    bytes: [[u8; MAX_RUNTIME_STRING_BYTES]; MAX_RUNTIME_STRINGS],
+    lens: [usize; MAX_RUNTIME_STRINGS],
+    next: usize,
+}
+
+impl RuntimeStrings {
+    const fn new() -> Self {
+        Self {
+            bytes: [[0; MAX_RUNTIME_STRING_BYTES]; MAX_RUNTIME_STRINGS],
+            lens: [0; MAX_RUNTIME_STRINGS],
+            next: 0,
+        }
+    }
+
+    fn alloc(&mut self) -> Result<RuntimeStringWriter<'_>, VmError> {
+        let id = self.next;
+        self.next = (self.next + 1) % MAX_RUNTIME_STRINGS;
+        self.lens[id] = 0;
+        Ok(RuntimeStringWriter { strings: self, id })
+    }
+
+    fn get(&self, id: u8) -> Result<&str, VmError> {
+        let index = id as usize;
+        if index >= MAX_RUNTIME_STRINGS {
+            return Err(VmError::InvalidOperand);
+        }
+        str::from_utf8(&self.bytes[index][..self.lens[index]]).map_err(|_| VmError::InvalidUtf8)
+    }
+}
+
+pub struct RuntimeStringWriter<'a> {
+    strings: &'a mut RuntimeStrings,
+    id: usize,
+}
+
+impl RuntimeStringWriter<'_> {
+    fn value(&self) -> Value {
+        Value::RuntimeString(self.id as u8)
+    }
+}
+
+impl fmt::Write for RuntimeStringWriter<'_> {
+    fn write_str(&mut self, input: &str) -> fmt::Result {
+        let len = self.strings.lens[self.id];
+        let remaining = MAX_RUNTIME_STRING_BYTES.saturating_sub(len);
+        let bytes = input.as_bytes();
+        let copy_len = remaining.min(bytes.len());
+        self.strings.bytes[self.id][len..len + copy_len].copy_from_slice(&bytes[..copy_len]);
+        self.strings.lens[self.id] += copy_len;
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChunkKind {
+    Handler,
+    Function,
+    Screen,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ChunkRef {
+    pub app: u16,
+    pub kind: ChunkKind,
+    pub index: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ChunkCacheSlot {
+    key: ChunkRef,
+    preload: bool,
+    active: bool,
+    last_used: u32,
+    occupied: bool,
+}
+
+impl ChunkCacheSlot {
+    const fn empty() -> Self {
+        Self {
+            key: ChunkRef {
+                app: 0,
+                kind: ChunkKind::Handler,
+                index: 0,
+            },
+            preload: false,
+            active: false,
+            last_used: 0,
+            occupied: false,
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum ChunkCacheError {
+    Full,
+    Missing,
+}
+
+pub struct ChunkCache<const N: usize> {
+    slots: [ChunkCacheSlot; N],
+    clock: u32,
+}
+
+impl<const N: usize> ChunkCache<N> {
+    pub const fn new() -> Self {
+        Self {
+            slots: [ChunkCacheSlot::empty(); N],
+            clock: 0,
+        }
+    }
+
+    pub fn insert(&mut self, key: ChunkRef, preload: bool) -> Result<(), ChunkCacheError> {
+        self.clock = self.clock.wrapping_add(1);
+        if let Some(slot) = self.slots.iter_mut().find(|slot| slot.occupied && slot.key == key) {
+            slot.preload = preload;
+            slot.last_used = self.clock;
+            return Ok(());
+        }
+        if let Some(slot) = self.slots.iter_mut().find(|slot| !slot.occupied) {
+            *slot = ChunkCacheSlot {
+                key,
+                preload,
+                active: false,
+                last_used: self.clock,
+                occupied: true,
+            };
+            return Ok(());
+        }
+        let Some(index) = self.evict_candidate_index() else {
+            return Err(ChunkCacheError::Full);
+        };
+        self.slots[index] = ChunkCacheSlot {
+            key,
+            preload,
+            active: false,
+            last_used: self.clock,
+            occupied: true,
+        };
+        Ok(())
+    }
+
+    pub fn begin_execute(&mut self, key: ChunkRef) -> Result<(), ChunkCacheError> {
+        self.clock = self.clock.wrapping_add(1);
+        let Some(slot) = self.slots.iter_mut().find(|slot| slot.occupied && slot.key == key) else {
+            return Err(ChunkCacheError::Missing);
+        };
+        slot.active = true;
+        slot.last_used = self.clock;
+        Ok(())
+    }
+
+    pub fn end_execute(&mut self, key: ChunkRef) -> Result<(), ChunkCacheError> {
+        let Some(slot) = self.slots.iter_mut().find(|slot| slot.occupied && slot.key == key) else {
+            return Err(ChunkCacheError::Missing);
+        };
+        slot.active = false;
+        Ok(())
+    }
+
+    pub fn contains(&self, key: ChunkRef) -> bool {
+        self.slots
+            .iter()
+            .any(|slot| slot.occupied && slot.key == key)
+    }
+
+    pub fn drop_app(&mut self, app: u16) {
+        for slot in &mut self.slots {
+            if slot.occupied && slot.key.app == app {
+                *slot = ChunkCacheSlot::empty();
+            }
+        }
+    }
+
+    fn evict_candidate_index(&self) -> Option<usize> {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter(|(_, slot)| slot.occupied && !slot.active)
+            .min_by_key(|(_, slot)| (slot.preload, slot.last_used))
+            .map(|(index, _)| index)
+    }
 }
 
 pub struct Vm<'a> {
     program: Program<'a>,
+    runtime_strings: RuntimeStrings,
     state: [Value; MAX_STATE],
     stack: [Value; MAX_STACK],
     stack_len: usize,
@@ -204,19 +441,50 @@ pub struct Vm<'a> {
 }
 
 impl<'a> Program<'a> {
-    pub fn parse(bytes: &'a [u8]) -> Result<Self, VmError> {
-        if bytes.len() > MAX_APP_BYTES {
-            return Err(VmError::TooLarge);
-        }
+    pub fn parse_header(bytes: &[u8]) -> Result<SqbcHeader, VmError> {
         if bytes.len() < 16 || &bytes[0..4] != b"SQBC" {
             return Err(VmError::InvalidHeader);
         }
-        if read_u16(bytes, 4)? != 2 {
+        if read_u16(bytes, 4)? != 3 {
             return Err(VmError::UnsupportedVersion);
         }
         let header_len = read_u16(bytes, 6)? as usize;
         let file_len = read_u32(bytes, 8)? as usize;
         let section_count = read_u32(bytes, 12)? as usize;
+        if header_len != 16 + section_count * 12 || header_len < 16 {
+            return Err(VmError::InvalidHeader);
+        }
+        Ok(SqbcHeader {
+            header_len,
+            file_len,
+            section_count,
+        })
+    }
+
+    pub fn parse_section_record(header_bytes: &[u8], index: usize) -> Result<SqbcSection, VmError> {
+        let header = Self::parse_header(header_bytes)?;
+        if index >= header.section_count || header_bytes.len() < header.header_len {
+            return Err(VmError::InvalidSection);
+        }
+        let base = 16 + index * 12;
+        let kind = read_u16(header_bytes, base)?;
+        let offset = read_u32(header_bytes, base + 4)? as usize;
+        let len = read_u32(header_bytes, base + 8)? as usize;
+        let end = offset.checked_add(len).ok_or(VmError::InvalidSection)?;
+        if offset < header.header_len || end > header.file_len {
+            return Err(VmError::InvalidSection);
+        }
+        Ok(SqbcSection { kind, offset, len })
+    }
+
+    pub fn parse(bytes: &'a [u8]) -> Result<Self, VmError> {
+        if bytes.len() > MAX_APP_BYTES {
+            return Err(VmError::TooLarge);
+        }
+        let header = Self::parse_header(bytes)?;
+        let header_len = header.header_len;
+        let file_len = header.file_len;
+        let section_count = header.section_count;
         if file_len != bytes.len()
             || header_len != 16 + section_count * 12
             || header_len > bytes.len()
@@ -269,6 +537,10 @@ impl<'a> Program<'a> {
         Err(VmError::HandlerNotFound)
     }
 
+    pub fn handler_preload(&self, event: &str) -> Result<bool, VmError> {
+        Ok(self.handler(event)?.preload)
+    }
+
     fn screen(&self, name: &str) -> Result<Screen, VmError> {
         for screen in self.screens.iter().take(self.screen_count) {
             if self.string(screen.name_id)? == name {
@@ -292,6 +564,7 @@ impl<'a> Vm<'a> {
         }
         Self {
             program,
+            runtime_strings: RuntimeStrings::new(),
             state,
             stack: [Value::Null; MAX_STACK],
             stack_len: 0,
@@ -333,6 +606,10 @@ impl<'a> Vm<'a> {
 
     pub fn program(&self) -> &Program<'a> {
         &self.program
+    }
+
+    pub fn string_resolver(&self) -> StringResolver<'_, 'a> {
+        StringResolver::new(&self.program, &self.runtime_strings)
     }
 
     pub fn state_count(&self) -> usize {
@@ -528,7 +805,8 @@ impl<'a> Vm<'a> {
                     return Err(VmError::StackUnderflow);
                 }
                 let start = self.stack_len - count;
-                trace.debug_print(&self.program, &self.stack[start..self.stack_len]);
+                let strings = StringResolver::new(&self.program, &self.runtime_strings);
+                trace.debug_print(&strings, &self.stack[start..self.stack_len]);
                 self.stack_len = start;
             }
             BUILTIN_SCREEN_OPEN => {
@@ -549,7 +827,8 @@ impl<'a> Vm<'a> {
                 let y = self.pop()?.as_i32();
                 let x = self.pop()?.as_i32();
                 let text = self.pop()?;
-                trace.draw_text(&self.program, text, x, y);
+                let strings = StringResolver::new(&self.program, &self.runtime_strings);
+                trace.draw_text(&strings, text, x, y);
             }
             BUILTIN_DISPLAY_RECT => {
                 let h = self.pop()?.as_i32();
@@ -626,6 +905,22 @@ impl<'a> Vm<'a> {
                 };
                 let event = self.program.string(event_id)?;
                 trace.service_timer_after(event, delay_ms)?;
+            }
+            BUILTIN_SYSTEM_MEMORY => {
+                let mut writer = self.runtime_strings.alloc()?;
+                trace.system_memory_text(&mut writer)?;
+                let value = writer.value();
+                self.push(value)?;
+            }
+            BUILTIN_SYSTEM_STORAGE => {
+                let Value::String(name_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let name = self.program.string(name_id)?;
+                let mut writer = self.runtime_strings.alloc()?;
+                trace.system_storage_text(name, &mut writer)?;
+                let value = writer.value();
+                self.push(value)?;
             }
             _ => return Err(VmError::InvalidOperand),
         }
@@ -788,18 +1083,21 @@ fn parse_handlers(
     }
     let mut handlers = [Handler {
         event_id: 0,
+        preload: false,
         start: 0,
         len: 0,
     }; MAX_HANDLERS];
     let mut cursor = 2usize;
     for handler in handlers.iter_mut().take(count) {
         let event_id = read_u16(bytes, cursor)?;
-        let start = read_u32(bytes, cursor + 2)? as usize;
-        let len = read_u32(bytes, cursor + 6)? as usize;
-        cursor += 10;
+        let preload = read_u16(bytes, cursor + 2)? != 0;
+        let start = read_u32(bytes, cursor + 4)? as usize;
+        let len = read_u32(bytes, cursor + 8)? as usize;
+        cursor += 12;
         validate_range(start, len, code_len)?;
         *handler = Handler {
             event_id,
+            preload,
             start,
             len,
         };
@@ -958,14 +1256,16 @@ mod tests {
             self.events.push(message.to_string());
         }
 
-        fn debug_print(&mut self, program: &Program<'_>, values: &[Value]) {
+        fn debug_print(&mut self, strings: &StringResolver<'_, '_>, values: &[Value]) {
             let mut line = String::new();
             for (index, value) in values.iter().enumerate() {
                 if index > 0 {
                     line.push(' ');
                 }
                 match value {
-                    Value::String(id) => line.push_str(program.string(*id).unwrap()),
+                    Value::String(_) | Value::RuntimeString(_) => {
+                        line.push_str(strings.value_str(*value).unwrap())
+                    }
                     Value::I32(value) => line.push_str(&value.to_string()),
                     Value::Bool(value) => line.push_str(&value.to_string()),
                     Value::Null => line.push_str("null"),
@@ -999,6 +1299,18 @@ mod tests {
             self.events
                 .push(format!("service.timer.after {event} {delay_ms}"));
             Ok(())
+        }
+
+        fn system_memory_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
+            write!(out, "RAM 292 KiB").map_err(|_| VmError::InvalidOperand)
+        }
+
+        fn system_storage_text(
+            &mut self,
+            name: &str,
+            out: &mut dyn fmt::Write,
+        ) -> Result<(), VmError> {
+            write!(out, "{name} 1 MiB").map_err(|_| VmError::InvalidOperand)
         }
     }
 
@@ -1045,7 +1357,7 @@ mod tests {
     }
 
     #[test]
-    fn runs_sqbc_v2_emitted_by_squidc_core() {
+    fn runs_sqbc_v3_emitted_by_squidc_core() {
         let source =
             include_str!("../../../compiler/rust/fixtures/conformance/headless_counter.squid");
         let compiled = squidc_core::compile(squidc_core::CompileRequest {
@@ -1073,6 +1385,95 @@ mod tests {
                 "state.save",
             ]
         );
+    }
+
+    #[test]
+    fn parses_sqbc_v3_header_and_section_records_for_partial_loading() {
+        let bytes = fixture_counter_sqbc();
+        let header = Program::parse_header(&bytes[..16]).unwrap();
+        let header_bytes = &bytes[..header.header_len];
+
+        assert_eq!(header.file_len, bytes.len());
+        assert_eq!(header.section_count, 5);
+        let first = Program::parse_section_record(header_bytes, 0).unwrap();
+        assert_eq!(first.kind, SECTION_STRINGS);
+        assert!(first.offset >= header.header_len);
+        assert!(first.len > 0);
+    }
+
+    #[test]
+    fn parses_preload_handler_metadata_from_real_bytecode() {
+        let source = r#"app "preload-demo"
+@preload
+event.on("key.SELECT") {
+  debug.print("fast")
+}
+event.on("key.BACK") {
+  app.exit()
+}
+screen("main") {}
+"#;
+        let compiled = squidc_core::compile(squidc_core::CompileRequest {
+            source: source.to_string(),
+            target_id: squidc_core::PORTABLE_TARGET_ID.to_string(),
+        });
+        assert!(compiled.ok, "{:?}", compiled.diagnostics);
+        let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
+        let program = Program::parse(&bytes).unwrap();
+
+        assert_eq!(program.handler_preload("key.SELECT"), Ok(true));
+        assert_eq!(program.handler_preload("key.BACK"), Ok(false));
+    }
+
+    #[test]
+    fn chunk_cache_prefers_evicting_cold_unhinted_chunks() {
+        let hot = ChunkRef {
+            app: 1,
+            kind: ChunkKind::Handler,
+            index: 0,
+        };
+        let cold = ChunkRef {
+            app: 1,
+            kind: ChunkKind::Handler,
+            index: 1,
+        };
+        let incoming = ChunkRef {
+            app: 1,
+            kind: ChunkKind::Handler,
+            index: 2,
+        };
+        let mut cache = ChunkCache::<2>::new();
+
+        cache.insert(hot, true).unwrap();
+        cache.insert(cold, false).unwrap();
+        cache.begin_execute(hot).unwrap();
+        cache.insert(incoming, false).unwrap();
+
+        assert!(cache.contains(hot));
+        assert!(cache.contains(incoming));
+        assert!(!cache.contains(cold));
+    }
+
+    #[test]
+    fn chunk_cache_drops_all_chunks_for_replaced_app() {
+        let app_one = ChunkRef {
+            app: 1,
+            kind: ChunkKind::Handler,
+            index: 0,
+        };
+        let app_two = ChunkRef {
+            app: 2,
+            kind: ChunkKind::Handler,
+            index: 0,
+        };
+        let mut cache = ChunkCache::<2>::new();
+
+        cache.insert(app_one, true).unwrap();
+        cache.insert(app_two, false).unwrap();
+        cache.drop_app(1);
+
+        assert!(!cache.contains(app_one));
+        assert!(cache.contains(app_two));
     }
 
     #[test]
@@ -1192,6 +1593,33 @@ screen("main") {}
         );
     }
 
+    #[test]
+    fn runs_system_resource_string_builtins_from_real_bytecode() {
+        let source = r#"app "resources"
+event.on("app.start") {
+  debug.print(system.memory())
+  debug.print(system.storage("apps"))
+}
+screen("main") {}
+"#;
+        let compiled = squidc_core::compile(squidc_core::CompileRequest {
+            source: source.to_string(),
+            target_id: squidc_core::PORTABLE_TARGET_ID.to_string(),
+        });
+        assert!(compiled.ok, "{:?}", compiled.diagnostics);
+        let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
+        let program = Program::parse(&bytes).unwrap();
+        let mut vm = Vm::new(program);
+        let mut trace = RuntimeTrace::default();
+
+        vm.dispatch("app.start", &mut trace).unwrap();
+
+        assert_eq!(
+            trace.events,
+            vec!["app.start", "debug RAM 292 KiB", "debug apps 1 MiB"]
+        );
+    }
+
     fn fixture_counter_sqbc() -> Vec<u8> {
         let strings = encode_strings(&[
             "headless-counter",
@@ -1233,12 +1661,15 @@ screen("main") {}
         let mut handlers = Vec::new();
         push_u16(&mut handlers, 3);
         push_u16(&mut handlers, 3);
+        push_u16(&mut handlers, 0);
         push_u32(&mut handlers, on_start as u32);
         push_u32(&mut handlers, (select - on_start) as u32);
         push_u16(&mut handlers, 4);
+        push_u16(&mut handlers, 0);
         push_u32(&mut handlers, select as u32);
         push_u32(&mut handlers, (back - select) as u32);
         push_u16(&mut handlers, 5);
+        push_u16(&mut handlers, 0);
         push_u32(&mut handlers, back as u32);
         push_u32(&mut handlers, (code.len() - back) as u32);
 
@@ -1266,7 +1697,7 @@ screen("main") {}
         let file_len = header_len + sections.iter().map(|(_, data)| data.len()).sum::<usize>();
         let mut out = Vec::new();
         out.extend_from_slice(b"SQBC");
-        push_u16(&mut out, 2);
+        push_u16(&mut out, 3);
         push_u16(&mut out, header_len as u16);
         push_u32(&mut out, file_len as u32);
         push_u32(&mut out, sections.len() as u32);

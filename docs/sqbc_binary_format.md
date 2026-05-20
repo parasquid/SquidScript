@@ -20,16 +20,16 @@ simulator development artifact only.
 Firmware must reject SQBC v1 IR payloads and browser-only `entry.type = "ir"`
 manifests.
 
-## v2 Reference Bytecode
+## v3 Reference Bytecode
 
-SQBC v2 is the first real bytecode format used by the reference firmware. It is
-intentionally small and exists to exercise the SquidScript language spec on
-constrained hardware.
+SQBC v3 is the current real bytecode format used by the reference firmware. It
+is intentionally small and exists to exercise the SquidScript language spec on
+constrained hardware while moving installed apps toward metadata-first loading.
 
 ```text
 offset  size  field
 0       4     magic: "SQBC"
-4       2     little-endian u16 version: 2
+4       2     little-endian u16 version: 3
 6       2     little-endian u16 header length
 8       4     little-endian u32 file length
 12      4     little-endian u32 section count
@@ -56,6 +56,7 @@ Initial section kinds:
 4  handler table
 5  bytecode instruction stream
 6  screen table
+7  app metadata
 ```
 
 Initial value tags:
@@ -117,22 +118,73 @@ Initial built-in IDs:
 17 app.disarm
 18 service.timer.every
 19 service.timer.after
+20 system.memory
+21 system.storage
 ```
 
-The v2 format currently supports the headless reference VM subset. Display
+The v3 format currently supports the headless reference VM subset. Display
 draw commands are emitted as headless draw-log records on the ESP32-C3 Super
 Mini reference firmware. GPIO builtins dispatch to target firmware hardware
 modules; unsupported names return a VM operand error. The canonical lifecycle
 surface is generic events plus `app.start`, `app.arm`, `app.disarm`, and
 `service.timer.*`. `app.launch` remains the app replacement/launch primitive.
 
-SQBC v2 includes an explicit app metadata section so tools can read the app id
+SQBC v3 includes an explicit app metadata section so tools can read the app id
 from bytecode without guessing from the string table. `squidc app install` uses this
 metadata for raw `.sqbc` files. Source installs use the `app "id"` declaration;
 if source omits it in a developer workflow, `squidc` generates a deterministic
 id from the filename and content hash.
 
-The ESP32-C3 reference firmware uses fixed RAM app slots as an E2E harness. It
-can install named SQBC apps, start `main`, arm trigger registrations, dispatch
-real timer events, and exercise app-stack behavior. Persistent app storage,
-manifests, and source maps remain outside this firmware milestone.
+Handler table entries are:
+
+```text
+offset  size  field
+0       2     little-endian u16 event string id
+2       2     little-endian u16 flags
+4       4     little-endian u32 bytecode offset
+8       4     little-endian u32 bytecode length
+```
+
+Handler flags:
+
+```text
+bit 0  preload hint from @preload
+```
+
+The preload bit is advisory. Firmware may use it to load or retain
+latency-sensitive handler chunks, but app correctness must not depend on it.
+
+The ESP32-C3 reference firmware can install named SQBC apps, start `main`, arm
+trigger registrations, dispatch real timer events, and exercise app-stack
+behavior. It stores installed SQBC payloads in LittleFS. Startup registry
+rebuilds validate installed apps from the v3 header and section table with
+bounded reads rather than mirroring full app bodies in RAM.
+
+## Chunk/Index Direction
+
+The remaining SQBC v3 loader work is to execute installed apps from a small
+metadata/index read plus on-demand executable chunks. The intended execution
+shape is:
+
+```text
+|-- header and section table
+|-- app metadata
+|-- string pool
+|-- state table
+|-- function index
+|-- handler index with preload flags
+|-- screen index
+|-- executable chunks
+`-- checksum
+```
+
+Firmware should load the index first, then load handler/function/screen chunks
+from app storage as needed. Active chunks cannot be evicted. Inactive chunks are
+cache entries and may be evicted at any time. Preloaded chunks have higher cache
+priority but are not pinned. Dropping a chunk is not app lifecycle behavior and
+does not dispatch `event.on("app.exit")`.
+
+LittleFS remains the reference firmware app storage abstraction. Installed-app
+execution should use bounded indexed reads from LittleFS rather than assuming a
+memory-mapped contiguous app image. `RUN.TEMP` remains RAM-backed before 1.0 so
+rapid `squidc run` iteration does not write flash.

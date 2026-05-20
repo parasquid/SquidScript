@@ -32,3 +32,17 @@ persistent SquidScript app platform prototype.
 - Add a state persistence hardware target test that mutates/saves state,
   resets/reboots, and verifies `state.load` restores the value.
 - Keep blinky as the final visible hardware target test.
+
+### 4. Finish SQBC v3 Chunk Loader
+
+- Keep `squidc run`/`RUN.TEMP` RAM-backed before 1.0 so rapid iteration does
+  not write flash.
+- Replace installed-app execution's contiguous SQBC RAM buffer with
+  metadata-first loading from LittleFS.
+- Load handler/function/screen chunks on demand through the chunk cache.
+- Use `@preload` handler flags as cache priority hints, not correctness
+  guarantees.
+- Use `squidc device resources` and firmware ELF section sizes to compare RAM
+  before and after loader changes.
+- Defer release-profile trimming or disabling temp execution until after 1.0
+  planning.

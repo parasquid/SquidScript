@@ -127,9 +127,9 @@ Production device execution flow:
 6. Runtime waits for input, timer, service, or app lifecycle events.
 7. Runtime dispatches matching event handlers.
 8. Runtime records recoverable errors and crash diagnostics.
-9. If an app starts another app, firmware pushes a new app session.
-10. When a non-root app exits, firmware pops that session and returns focus to the previous app.
-11. If root `main.sqbc` exits, firmware restarts it.
+9. If an app starts another app, firmware runs `event.on("app.exit")` and stores only the installed app id as a return target.
+10. When an app exits, firmware starts the previous installed return target fresh with `event.on("app.start")`.
+11. If no return target exists, firmware restarts installed `main.sqbc`.
 
 Production firmware must execute .sqbc.
 
@@ -367,6 +367,7 @@ A source file contains top-level declarations.
 Allowed top-level declarations:
 - include "path"
 - state { ... }
+- @preload before `event.on(...)`
 - event.on("event.name") { ... }
 - screen("name") { ... }
 - function name(...) { ... }
@@ -447,6 +448,34 @@ SquidScript v0.2 does not support JavaScript-style import/export.
 
 ---
 
+## 8.1 Attributes And Hints
+
+Attributes attach advisory metadata to the declaration that follows them.
+
+Supported attributes:
+
+```squid
+@preload
+event.on("key.SELECT") {
+  debug.print("fast select")
+}
+```
+
+`@preload` is valid only before `event.on(...)` handlers. It tells firmware
+that the handler is latency-sensitive and should be preloaded or kept in the
+handler chunk cache when memory allows.
+
+`@preload` is a hint, not a guarantee. Firmware may ignore it or evict the
+handler chunk under memory pressure. App correctness must not depend on preload
+behavior. Evicting a handler chunk is not app lifecycle behavior and does not
+dispatch `event.on("app.exit")` or any other cleanup event.
+
+`@preload` is not valid before `function`, `screen`, `state`, `include`, or
+`app` declarations in v0.2. Script authors should mark latency-sensitive event
+handlers rather than internal helper functions.
+
+---
+
 ## 9. Comments
 
 Line comments:
@@ -515,6 +544,7 @@ Symbols and operators:
 
 ```text
 { } ( ) , : ;
+@
 + - * /
 == != < <= > >=
 && || !
@@ -990,6 +1020,7 @@ v0.2 uses these built-in namespaces:
 - `string.*` for deterministic string utilities
 - `binbook.*` for BinBook document handles and drawable page resources
 - `app.registry.*` for installed app listing and inspection
+- `system.*` for safe target/firmware information
 
 Global built-ins should not be added when a capability namespace is available.
 
@@ -1145,11 +1176,12 @@ Supported lifecycle handlers:
 
 ```squid
 event.on("app.start")
-event.on("app.resume")
-event.on("app.suspend")
+event.on("app.exit")
 ```
 
-event.on("app.start") runs when the app is launched.
+event.on("app.start") runs when the app is launched, returned to, or restarted
+from cold boot. Apps should use this as the recovery entrypoint and reload any
+state they need.
 
 Example:
 
@@ -1160,22 +1192,14 @@ event.on("app.start") {
 }
 ```
 
-event.on("app.resume") runs when returning to an already active app.
+event.on("app.exit") runs synchronously before the current app is replaced,
+exits, or returns to another installed app. Use it to save state or release
+session-local resources before handoff.
 
 Example:
 
 ```squid
-event.on("app.resume") {
-  screen.refresh()
-}
-```
-
-event.on("app.suspend") runs before the app is suspended or exited.
-
-Example:
-
-```squid
-event.on("app.suspend") {
+event.on("app.exit") {
   state.save()
 }
 ```
@@ -1636,8 +1660,10 @@ screen.refresh()
 
 app.exit()
 
-Exits the current app session. Firmware pops the current session from the app
-stack. If the root `main.sqbc` app exits, firmware restarts it.
+Exits the current app session. Firmware dispatches `event.on("app.exit")`,
+clears session-local timers, then starts the next installed return target with
+`event.on("app.start")`. If no return target exists, firmware restarts
+installed `main.sqbc`.
 
 Example:
 
@@ -1647,8 +1673,11 @@ app.exit()
 
 app.launch(appId)
 
-Launches an installed app immediately. Firmware pushes a new app session and
-dispatches `event.on("app.start")`.
+Launches an installed app immediately. Firmware dispatches the current app's
+`event.on("app.exit")`, stores the current installed app id as the return
+target, clears session-local timers, then starts the launched app with
+`event.on("app.start")`. Temporary apps are current-only and are not stored as
+return targets.
 
 Example:
 
@@ -1694,6 +1723,33 @@ Example:
 ```squid
 service.timer.after("timer.break", 1500000)
 ```
+
+system.memory()
+
+Returns a display-oriented string describing the current target firmware's RAM
+availability.
+
+Example:
+
+```squid
+display.text(system.memory(), { x: 0, y: 0 })
+```
+
+The exact metric is target-specific. On the ESP32-C3 Super Mini reference
+firmware it is the raw runtime RAM budget reported by firmware, not portable
+heap introspection.
+
+system.storage(name)
+
+Returns a display-oriented string for a firmware storage area. The current
+reference firmware supports:
+
+```squid
+system.storage("apps")
+```
+
+`"apps"` means firmware-managed writable SquidScript app storage. On the
+ESP32-C3 Super Mini this is backed by the LittleFS `squidfs` flash partition.
 
 Generic events are canonical:
 
@@ -2181,7 +2237,7 @@ Rules:
 - Apps may start an app-owned access point when the target exposes `wifi.accessPoint`.
 - Apps may show connection status, hostname, and IP address.
 - Wi-Fi activity requested by a normal app is foreground-only in v0.2.
-- Firmware must stop or release app-owned Wi-Fi requests when the app is suspended, exits, crashes, or loses foreground.
+- Firmware must stop or release app-owned Wi-Fi requests when the app exits, crashes, or loses foreground.
 - `wifi.status().ipAddress` must report the active station IP in station mode and the AP interface IP in access-point mode.
 - Optional mDNS/captive-portal behavior is firmware-owned and target-dependent.
 
@@ -2320,7 +2376,7 @@ Upload handles are transient firmware-owned references. Apps may pass them to AP
 
 Rules:
 - HTTP server services are foreground-only in v0.2.
-- Firmware must stop all services owned by an app when that app is suspended, exits, crashes, or loses foreground.
+- Firmware must stop all services owned by an app when that app exits, crashes, or loses foreground.
 - Uploaded files must first be written to firmware-managed staging storage.
 - Completed uploads should be exposed to apps as upload handles.
 - Apps install or move uploaded files through library/content APIs.
@@ -2401,7 +2457,7 @@ Suggested key names:
 
 Rules:
 - Bluetooth HID is foreground-only in v0.2.
-- Firmware must stop advertising, disconnect, or release app-owned HID behavior when the app is suspended, exits, crashes, or loses foreground.
+- Firmware must stop advertising, disconnect, or release app-owned HID behavior when the app exits, crashes, or loses foreground.
 - Firmware owns pairing, bonding, host trust decisions, HID report descriptors, rate limiting, and platform compatibility.
 - Apps may request sending only allowlisted keys supported by the target profile.
 - Apps must not construct raw HID reports in v0.2.
@@ -2488,7 +2544,7 @@ if (event.kind == "uploadComplete") {
 
 Rules:
 - BLE upload services are foreground-only in v0.2.
-- Firmware must stop services owned by an app when that app is suspended, exits, crashes, or loses foreground.
+- Firmware must stop services owned by an app when that app exits, crashes, or loses foreground.
 - Firmware must stream BLE chunks to staging storage rather than app RAM.
 - Firmware should validate uploaded content only after the transfer completes and the staged file is flushed.
 - Failed validation must delete or quarantine the staged file without publishing it.
@@ -3087,7 +3143,8 @@ state {
 App registry support is provided by firmware. SquidScript apps may request
 installed app summaries and start another installed app, but firmware owns
 manifest lookup, target compatibility checks, bytecode validation, lifecycle
-transitions, crash recovery, and returning to the previous app session.
+transitions, crash recovery, and returning to the previous installed return
+target.
 
 There is no public launcher app kind in v0.2. A home screen, shell, or app
 picker is just a SquidScript app. If it is installed as root `main.sqbc`, it is
@@ -3143,11 +3200,12 @@ app.registry.inspect
 
 `app.launch(appId)`
 
-Requests that firmware launch an installed app by app ID. Firmware pushes a new
-app session and dispatches `event.on("app.start")` in that app. When the
-started app exits, firmware returns focus to the previous app session. If root
-`main.sqbc` exits, firmware restarts it instead of leaving the device without
-an app.
+Requests that firmware launch an installed app by app ID. Firmware dispatches
+the current app's `event.on("app.exit")`, records the current installed app id
+as a return target, and dispatches `event.on("app.start")` in the launched app.
+When the launched app exits, firmware starts the previous installed return
+target fresh. If no return target exists, firmware restarts installed
+`main.sqbc`.
 
 Requires permission:
 
@@ -3252,7 +3310,8 @@ binbook.read
 - Allows BinBook document APIs.
 
 system.info
-- Allows safe device info queries.
+- Allows safe device info and resource-status queries such as
+  `system.memory()` and `system.storage("apps")`.
 
 app.registry.list
 - Allows an app to request the installed app list.
@@ -3818,11 +3877,13 @@ Launch flow:
 9. runtime runs matching event handler
 10. runtime renders if requested
 11. runtime saves state if requested
-12. if the app starts another app, firmware pushes a new app session
-13. when a non-root app exits, firmware pops it and returns focus to the previous app
-14. when root `main.sqbc` exits, firmware restarts it
+12. if the app starts another app, firmware runs `event.on("app.exit")`, clears session-local timers, and records only the installed app id as a return target
+13. when an app exits, firmware starts the previous installed return target fresh with `event.on("app.start")`
+14. when no return target exists, firmware restarts installed `main.sqbc`
 
-Only one app is active at a time.
+Only one app is active at a time. The runtime does not keep suspended VMs.
+Returning to an app is a fresh `app.start`, so apps must save and restore their
+own state.
 
 Armed apps are not continuously executing background VMs. `app.arm(appId)`
 loads an app in registration mode, records `service.timer.*(...)`
@@ -3844,7 +3905,8 @@ Bytecode validation error:
 Runtime error:
 - execution stops
 - error is recorded
-- user is returned to the previous app session, or root `main.sqbc` is restarted
+- user is returned to the previous installed return target, or root `main.sqbc`
+  is restarted
 
 Repeated runtime errors:
 - app may be disabled until user re-enables it
@@ -3882,7 +3944,7 @@ Before launching an app, firmware records:
 After first successful render:
 - status: running
 
-On clean exit or suspend:
+On clean exit:
 - status: clean
 
 On boot:

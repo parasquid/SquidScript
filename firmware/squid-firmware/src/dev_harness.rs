@@ -145,7 +145,17 @@ pub trait AppStorage {
     fn format(&mut self) -> Result<(), AppStorageError>;
     fn write_app(&mut self, app_id: &str, bytes: &[u8]) -> Result<(), AppStorageError>;
     fn read_app(&mut self, app_id: &str, out: &mut [u8]) -> Result<usize, AppStorageError>;
-    fn list_apps(&mut self, out: &mut [StoredApp]) -> Result<usize, AppStorageError>;
+    fn read_app_range(
+        &mut self,
+        app_id: &str,
+        offset: usize,
+        out: &mut [u8],
+    ) -> Result<usize, AppStorageError>;
+    fn list_apps(
+        &mut self,
+        out: &mut [StoredApp],
+        scratch: &mut [u8],
+    ) -> Result<usize, AppStorageError>;
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -253,30 +263,45 @@ impl AppRegistry {
     pub fn load_from_storage<S: AppStorage>(
         &mut self,
         storage: &mut S,
-        app_bytes: &mut [[u8; MAX_APP_BYTES]; APP_REGISTRY_CAP],
+        scratch: &mut [u8],
     ) -> Result<usize, PersistentAppError> {
         storage.ensure_ready()?;
         self.clear();
         let mut stored = [StoredApp::empty(); APP_REGISTRY_CAP];
-        let count = storage.list_apps(&mut stored)?;
+        let count = storage.list_apps(&mut stored, scratch)?;
         let mut loaded = 0usize;
         for app in stored.iter().take(count) {
             let app_id = app.name.as_str();
             let slot = self.reserve_install(app_id, app.len, MAX_APP_BYTES)?;
-            let len = storage.read_app(app_id, &mut app_bytes[slot.0])?;
-            let bytes = &app_bytes[slot.0][..len];
-            let actual_hash = fnv1a(bytes);
-            if actual_hash != app.hash {
+            if validate_stored_sqbc(storage, app_id, app.len, scratch).is_err() {
                 continue;
             }
-            if Program::parse(bytes).is_err() {
-                continue;
-            }
-            self.commit_install(slot, app_id, len, actual_hash)?;
+            self.commit_install(slot, app_id, app.len, app.hash)?;
             loaded += 1;
         }
         Ok(loaded)
     }
+}
+
+fn validate_stored_sqbc<S: AppStorage>(
+    storage: &mut S,
+    app_id: &str,
+    expected_len: usize,
+    scratch: &mut [u8],
+) -> Result<(), PersistentAppError> {
+    if scratch.len() < 16 {
+        return Err(PersistentAppError::InvalidBytecode(VmError::InvalidHeader));
+    }
+    storage.read_app_range(app_id, 0, &mut scratch[..16])?;
+    let header = Program::parse_header(&scratch[..16])?;
+    if header.file_len != expected_len || header.header_len > scratch.len() {
+        return Err(PersistentAppError::InvalidBytecode(VmError::InvalidHeader));
+    }
+    storage.read_app_range(app_id, 0, &mut scratch[..header.header_len])?;
+    for index in 0..header.section_count {
+        Program::parse_section_record(&scratch[..header.header_len], index)?;
+    }
+    Ok(())
 }
 
 impl Default for AppRegistry {
@@ -510,7 +535,30 @@ mod tests {
             Ok(file.len)
         }
 
-        fn list_apps(&mut self, out: &mut [StoredApp]) -> Result<usize, AppStorageError> {
+        fn read_app_range(
+            &mut self,
+            app_id: &str,
+            offset: usize,
+            out: &mut [u8],
+        ) -> Result<usize, AppStorageError> {
+            self.ensure_ready()?;
+            let index = self.find(app_id).ok_or(AppStorageError::NotFound)?;
+            let file = &self.files[index];
+            let end = offset
+                .checked_add(out.len())
+                .ok_or(AppStorageError::NoSpace)?;
+            if end > file.len {
+                return Err(AppStorageError::NoSpace);
+            }
+            out.copy_from_slice(&file.bytes[offset..end]);
+            Ok(out.len())
+        }
+
+        fn list_apps(
+            &mut self,
+            out: &mut [StoredApp],
+            _scratch: &mut [u8],
+        ) -> Result<usize, AppStorageError> {
             self.ensure_ready()?;
             let mut count = 0usize;
             for file in &self.files {
@@ -529,6 +577,20 @@ mod tests {
             }
             Ok(count)
         }
+    }
+
+    #[test]
+    fn app_storage_reads_exact_ranges_without_loading_whole_app() {
+        let mut storage = MemoryAppStorage::new();
+        let bytes = sqbc_fixture();
+        storage.write_app("main", &bytes).unwrap();
+        let mut header = [0u8; 16];
+
+        let read = storage.read_app_range("main", 0, &mut header).unwrap();
+
+        assert_eq!(read, header.len());
+        assert_eq!(&header[0..4], b"SQBC");
+        assert_eq!(u16::from_le_bytes(header[4..6].try_into().unwrap()), 3);
     }
 
     fn sqbc_fixture() -> Vec<u8> {
@@ -566,7 +628,12 @@ screen("main") {}
             .unwrap();
 
         assert_eq!(registry.find("main"), Some(slot));
-        assert_eq!(storage.list_apps(&mut [StoredApp::empty(); 1]).unwrap(), 1);
+        assert_eq!(
+            storage
+                .list_apps(&mut [StoredApp::empty(); 1], &mut [0u8; MAX_APP_BYTES])
+                .unwrap(),
+            1
+        );
         let entry = registry.entry(slot).unwrap();
         assert_eq!(entry.name(), "main");
         assert_eq!(entry.len(), bytes.len());
@@ -585,27 +652,30 @@ screen("main") {}
 
         assert!(matches!(error, PersistentAppError::HashMismatch { .. }));
         assert_eq!(registry.find("main"), None);
-        assert_eq!(storage.list_apps(&mut [StoredApp::empty(); 1]).unwrap(), 0);
+        assert_eq!(
+            storage
+                .list_apps(&mut [StoredApp::empty(); 1], &mut [0u8; MAX_APP_BYTES])
+                .unwrap(),
+            0
+        );
     }
 
     #[test]
-    fn startup_scan_rebuilds_registry_cache() {
+    fn startup_scan_rebuilds_registry_metadata_with_one_scratch_buffer() {
         let mut storage = MemoryAppStorage::new();
         let bytes = sqbc_fixture();
         storage.write_app("main", &bytes).unwrap();
 
         let mut registry = AppRegistry::new();
-        let mut app_bytes = [[0u8; MAX_APP_BYTES]; APP_REGISTRY_CAP];
+        let mut scratch = [0u8; MAX_APP_BYTES];
         assert_eq!(
-            registry
-                .load_from_storage(&mut storage, &mut app_bytes)
-                .unwrap(),
+            registry.load_from_storage(&mut storage, &mut scratch).unwrap(),
             1
         );
 
         let slot = registry.find("main").unwrap();
-        assert_eq!(&app_bytes[slot.0][..bytes.len()], bytes.as_slice());
         assert_eq!(registry.entry(slot).unwrap().hash(), fnv1a(&bytes));
+        assert_eq!(registry.entry(slot).unwrap().len(), bytes.len());
     }
 
     #[test]
@@ -616,7 +686,12 @@ screen("main") {}
 
         storage.format().unwrap();
 
-        assert_eq!(storage.list_apps(&mut [StoredApp::empty(); 1]).unwrap(), 0);
+        assert_eq!(
+            storage
+                .list_apps(&mut [StoredApp::empty(); 1], &mut [0u8; MAX_APP_BYTES])
+                .unwrap(),
+            0
+        );
     }
 
     #[test]

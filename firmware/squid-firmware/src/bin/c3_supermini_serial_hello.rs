@@ -20,8 +20,8 @@ use squid_firmware::{
         DevTimerEvent as TimerEvent, APP_REGISTRY_CAP,
     },
     protocol::{fnv1a, parse_install},
-    storage::{LittleFsAppStorage, SquidFlashRegion},
-    vm::{Program, TraceSink, Value, Vm, VmError, MAX_APP_BYTES},
+    storage::{LittleFsAppStorage, SquidFlashRegion, SQUIDFS_LEN},
+    vm::{Program, StringResolver, TraceSink, Value, Vm, VmError, MAX_APP_BYTES},
 };
 
 const BUILD_ID: &str = match option_env!("SQUID_FIRMWARE_BUILD_ID") {
@@ -40,9 +40,8 @@ const STATE_IMPORT_CAP: usize = 512;
 const INSTALL_TIMEOUT_MS: u32 = 2_000;
 const STACK_CAP: usize = 4;
 const TIMER_CAP: usize = 4;
-static mut APP_BYTES: [[u8; MAX_APP_BYTES]; APP_REGISTRY_CAP] =
-    [[0; MAX_APP_BYTES]; APP_REGISTRY_CAP];
-static mut TEMP_APP_BYTES: [u8; MAX_APP_BYTES] = [0; MAX_APP_BYTES];
+const MEMORY_AVAILABLE_BYTES: usize = 311_416;
+static mut APP_LOAD_BYTES: [u8; MAX_APP_BYTES] = [0; MAX_APP_BYTES];
 static mut STATE_IMPORT_BYTES: [u8; STATE_IMPORT_CAP] = [0; STATE_IMPORT_CAP];
 
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -65,7 +64,7 @@ fn main() -> ! {
     let mut last_error: Option<VmError> = None;
     let mut storage_error: Option<AppStorageError> = None;
 
-    match registry.load_from_storage(&mut app_storage, unsafe { &mut APP_BYTES }) {
+    match registry.load_from_storage(&mut app_storage, unsafe { &mut APP_LOAD_BYTES }) {
         Ok(_) => {}
         Err(error) => {
             storage_error = Some(storage_error_from_persistent(error));
@@ -81,10 +80,13 @@ fn main() -> ! {
         runtime.advance_time(
             Instant::now(),
             &registry,
-            unsafe { &APP_BYTES },
-            &temp_app,
-            unsafe { &TEMP_APP_BYTES },
+            &mut app_storage,
+            unsafe { &mut APP_LOAD_BYTES },
+            &mut temp_app,
+            &mut vm,
+            &mut vm_slot,
             &mut last_error,
+            &mut storage_error,
         );
         match serial.read_byte() {
             Ok(byte) => {
@@ -97,8 +99,7 @@ fn main() -> ! {
                             &delay,
                             &mut registry,
                             &mut app_storage,
-                            unsafe { &mut APP_BYTES },
-                            unsafe { &mut TEMP_APP_BYTES },
+                            unsafe { &mut APP_LOAD_BYTES },
                             &mut temp_app,
                             &mut runtime,
                             &mut vm,
@@ -120,8 +121,7 @@ fn handle_command(
     delay: &Delay,
     registry: &mut AppRegistry,
     app_storage: &mut impl AppStorage,
-    app_bytes: &'static mut [[u8; MAX_APP_BYTES]; APP_REGISTRY_CAP],
-    temp_app_bytes: &'static mut [u8; MAX_APP_BYTES],
+    app_load_bytes: &'static mut [u8; MAX_APP_BYTES],
     temp_app: &mut TempApp,
     trace: &mut RuntimeSink<'_>,
     vm: &mut Option<Vm<'static>>,
@@ -129,8 +129,9 @@ fn handle_command(
     last_error: &mut Option<VmError>,
     storage_error: &mut Option<AppStorageError>,
 ) {
+    trace.set_app_storage_used(registry_installed_bytes(registry));
     if command == "help" {
-        writeln!(serial, "commands: HELLO INSTALL.APP <app-id> <len> <fnv32hex> RUN.TEMP <app-id> <len> <fnv32hex> RUN.APP <app-id> RUN.EVENT <app-id> <event> KEY SELECT APP.LIST STATE.GET STATE.IMPORT <len> <fnv32hex> TRACE.GET OUTPUT.GET DRAWLOG.GET ERRORS.GET RESET STORAGE.FORMAT").ok();
+        writeln!(serial, "commands: HELLO INSTALL.APP <app-id> <len> <fnv32hex> RUN.TEMP <app-id> <len> <fnv32hex> RUN.APP <app-id> RUN.EVENT <app-id> <event> KEY SELECT APP.LIST RESOURCES.GET STATE.GET STATE.IMPORT <len> <fnv32hex> TRACE.GET OUTPUT.GET DRAWLOG.GET ERRORS.GET RESET STORAGE.FORMAT").ok();
     } else if command == "HELLO" || command == "hello" || command == "info" {
         writeln!(serial, "target=esp32c3-super-mini").ok();
         writeln!(serial, "build={BUILD_ID}").ok();
@@ -145,6 +146,8 @@ fn handle_command(
         )
         .ok();
         writeln!(serial, "OK HELLO").ok();
+    } else if command == "RESOURCES.GET" || command == "resources" {
+        print_resources(serial, registry);
     } else if let Some(rest) = command
         .strip_prefix("INSTALL.APP ")
         .or_else(|| command.strip_prefix("install.app "))
@@ -171,25 +174,22 @@ fn handle_command(
                         return;
                     }
                 };
-                let Some(bytes) = app_bytes.get_mut(slot.0) else {
-                    writeln!(serial, "ERR install.app").ok();
-                    return;
-                };
                 writeln!(serial, "READY install.app app={app_id} len={len}").ok();
-                let read = read_exact_timeout(serial, &mut bytes[..len], delay, INSTALL_TIMEOUT_MS);
+                let read =
+                    read_exact_timeout(serial, &mut app_load_bytes[..len], delay, INSTALL_TIMEOUT_MS);
                 if read != len {
                     *last_error = Some(VmError::InvalidHeader);
                     writeln!(serial, "ERR install.app timeout read={read} expected={len}").ok();
                     return;
                 }
-                let actual_hash = fnv1a(&bytes[..len]);
+                let actual_hash = fnv1a(&app_load_bytes[..len]);
                 if actual_hash == request.expected_hash {
-                    if let Err(error) = Program::parse(&bytes[..len]).map(|_| ()) {
+                    if let Err(error) = Program::parse(&app_load_bytes[..len]).map(|_| ()) {
                         *last_error = Some(error);
                         writeln!(serial, "ERR install.app invalid-bytecode").ok();
                         return;
                     }
-                    if let Err(error) = app_storage.write_app(app_id, &bytes[..len]) {
+                    if let Err(error) = app_storage.write_app(app_id, &app_load_bytes[..len]) {
                         *storage_error = Some(error);
                         writeln!(serial, "ERR install.app storage").ok();
                         return;
@@ -207,6 +207,7 @@ fn handle_command(
                     }
                     *vm = None;
                     *vm_slot = None;
+                    *temp_app = TempApp::empty();
                     trace.clear();
                     trace.clear_timers();
                     trace.reset_stack();
@@ -245,13 +246,13 @@ fn handle_command(
                 let len = request.len;
                 writeln!(serial, "READY RUN.TEMP app={app_id} len={len}").ok();
                 let read =
-                    read_exact_timeout(serial, &mut temp_app_bytes[..len], delay, INSTALL_TIMEOUT_MS);
+                    read_exact_timeout(serial, &mut app_load_bytes[..len], delay, INSTALL_TIMEOUT_MS);
                 if read != len {
                     *last_error = Some(VmError::InvalidHeader);
                     writeln!(serial, "ERR RUN.TEMP timeout read={read} expected={len}").ok();
                     return;
                 }
-                let actual_hash = fnv1a(&temp_app_bytes[..len]);
+                let actual_hash = fnv1a(&app_load_bytes[..len]);
                 if actual_hash != request.expected_hash {
                     *last_error = Some(VmError::InvalidHeader);
                     writeln!(
@@ -262,7 +263,7 @@ fn handle_command(
                     .ok();
                     return;
                 }
-                if let Err(error) = Program::parse(&temp_app_bytes[..len]).map(|_| ()) {
+                if let Err(error) = Program::parse(&app_load_bytes[..len]).map(|_| ()) {
                     *last_error = Some(error);
                     writeln!(serial, "ERR RUN.TEMP invalid-bytecode").ok();
                     return;
@@ -277,36 +278,57 @@ fn handle_command(
                 trace.clear();
                 trace.remove_timers_for(AppRef::Temp);
                 trace.remove_app_from_stack(AppRef::Temp);
-                trace.push_app(AppRef::Temp);
-                match run_app_event(
+                *vm = None;
+                *vm_slot = None;
+                trace.active_app = Some(AppRef::Temp);
+                match load_vm_for_app(
                     AppRef::Temp,
-                    "app.start",
                     registry,
-                    app_bytes,
+                    app_storage,
+                    app_load_bytes,
                     temp_app,
-                    temp_app_bytes,
-                    trace,
                 ) {
+                    Ok(loaded) => {
+                        *vm = Some(loaded);
+                        *vm_slot = None;
+                    }
+                    Err(error) => {
+                        set_runtime_error(error, last_error, storage_error);
+                        writeln!(serial, "ERR RUN.TEMP {:?}", error).ok();
+                        return;
+                    }
+                }
+                match dispatch_loaded_vm(vm, AppRef::Temp, "app.start", trace) {
                     Ok(()) => {
                         process_pending_actions(
                             trace,
                             registry,
-                            app_bytes,
+                            app_storage,
+                            app_load_bytes,
                             temp_app,
-                            temp_app_bytes,
+                            vm,
+                            vm_slot,
                             last_error,
+                            storage_error,
                         );
                         if trace.exited {
-                            trace.pop_app();
-                            trace.exited = false;
+                            finish_current_exit(
+                                trace,
+                                registry,
+                                app_storage,
+                                app_load_bytes,
+                                temp_app,
+                                vm,
+                                vm_slot,
+                                last_error,
+                                storage_error,
+                            );
                         }
-                        *vm = None;
-                        *vm_slot = None;
                         *last_error = None;
                         writeln!(serial, "OK RUN.TEMP app={app_id} hash={actual_hash:08x}").ok();
                     }
                     Err(error) => {
-                        *last_error = Some(error);
+                        set_runtime_error(error, last_error, storage_error);
                         writeln!(serial, "ERR RUN.TEMP {:?}", error).ok();
                     }
                 }
@@ -326,22 +348,44 @@ fn handle_command(
         };
         trace.clear();
         trace.reset_stack();
-        trace.push_app(AppRef::Persistent(slot));
-        match run_app_event(
+        trace.active_app = Some(AppRef::Persistent(slot));
+        *vm = None;
+        *vm_slot = None;
+        *temp_app = TempApp::empty();
+        match load_vm_for_app(
             AppRef::Persistent(slot),
-            "app.start",
             registry,
-            app_bytes,
+            app_storage,
+            app_load_bytes,
             temp_app,
-            temp_app_bytes,
-            trace,
         ) {
+            Ok(loaded) => {
+                *vm = Some(loaded);
+                *vm_slot = Some(slot);
+            }
+            Err(error) => {
+                set_runtime_error(error, last_error, storage_error);
+                writeln!(serial, "ERR RUN.APP {:?}", error).ok();
+                return;
+            }
+        }
+        match dispatch_loaded_vm(vm, AppRef::Persistent(slot), "app.start", trace) {
             Ok(()) => {
-                process_pending_actions(trace, registry, app_bytes, temp_app, temp_app_bytes, last_error);
+                process_pending_actions(
+                    trace,
+                    registry,
+                    app_storage,
+                    app_load_bytes,
+                    temp_app,
+                    vm,
+                    vm_slot,
+                    last_error,
+                    storage_error,
+                );
                 writeln!(serial, "OK RUN.APP {app_id}").ok();
             }
             Err(error) => {
-                *last_error = Some(error);
+                set_runtime_error(error, last_error, storage_error);
                 writeln!(serial, "ERR RUN.APP {:?}", error).ok();
             }
         }
@@ -357,34 +401,45 @@ fn handle_command(
             writeln!(serial, "ERR no-app").ok();
             return;
         };
-        let bytes = registry_app_bytes(slot, registry, app_bytes);
-        if vm_slot != &Some(slot) {
-            *vm = None;
-        }
-        if vm.is_none() {
-            match Program::parse(bytes) {
-                Ok(program) => {
-                    *vm = Some(Vm::new(program));
+        *temp_app = TempApp::empty();
+        *vm = None;
+        *vm_slot = None;
+        if vm_slot != &Some(slot) || vm.is_none() {
+            match load_vm_for_app(
+                AppRef::Persistent(slot),
+                registry,
+                app_storage,
+                app_load_bytes,
+                temp_app,
+            ) {
+                Ok(loaded) => {
+                    *vm = Some(loaded);
                     *vm_slot = Some(slot);
                 }
                 Err(error) => {
-                    *last_error = Some(error);
-                    writeln!(serial, "ERR load {:?}", error).ok();
+                    set_runtime_error(error, last_error, storage_error);
+                    writeln!(serial, "ERR RUN.EVENT {:?}", error).ok();
                     return;
                 }
             }
         }
-        let previous = trace.current_app;
-        trace.current_app = Some(AppRef::Persistent(slot));
-        let result = vm.as_mut().unwrap().dispatch(event, trace);
-        trace.current_app = previous;
-        match result {
+        match dispatch_loaded_vm(vm, AppRef::Persistent(slot), event, trace) {
             Ok(()) => {
-                process_pending_actions(trace, registry, app_bytes, temp_app, temp_app_bytes, last_error);
+                process_pending_actions(
+                    trace,
+                    registry,
+                    app_storage,
+                    app_load_bytes,
+                    temp_app,
+                    vm,
+                    vm_slot,
+                    last_error,
+                    storage_error,
+                );
                 writeln!(serial, "OK RUN.EVENT {app_id} {event}").ok();
             }
             Err(error) => {
-                *last_error = Some(error);
+                set_runtime_error(error, last_error, storage_error);
                 writeln!(serial, "ERR RUN.EVENT {:?}", error).ok();
             }
         }
@@ -415,33 +470,53 @@ fn handle_command(
             return;
         };
         if let Some(app) = trace.top_app() {
-            match run_app_event(
-                app,
-                event,
-                registry,
-                app_bytes,
-                temp_app,
-                temp_app_bytes,
-                trace,
-            ) {
+            if vm.is_none() {
+                match load_vm_for_app(app, registry, app_storage, app_load_bytes, temp_app) {
+                    Ok(loaded) => {
+                        *vm = Some(loaded);
+                        *vm_slot = match app {
+                            AppRef::Persistent(slot) => Some(slot),
+                            AppRef::Temp => None,
+                        };
+                    }
+                    Err(error) => {
+                        set_runtime_error(error, last_error, storage_error);
+                        writeln!(serial, "ERR key {:?}", error).ok();
+                        return;
+                    }
+                }
+            }
+            match dispatch_loaded_vm(vm, app, event, trace) {
                 Ok(()) => {
                     if trace.exited {
-                        trace.pop_app();
-                        trace.exited = false;
+                        finish_current_exit(
+                            trace,
+                            registry,
+                            app_storage,
+                            app_load_bytes,
+                            temp_app,
+                            vm,
+                            vm_slot,
+                            last_error,
+                            storage_error,
+                        );
                     }
                     process_pending_actions(
                         trace,
                         registry,
-                        app_bytes,
+                        app_storage,
+                        app_load_bytes,
                         temp_app,
-                        temp_app_bytes,
+                        vm,
+                        vm_slot,
                         last_error,
+                        storage_error,
                     );
                     *last_error = None;
                     writeln!(serial, "OK key {key}").ok();
                 }
                 Err(error) => {
-                    *last_error = Some(error);
+                    set_runtime_error(error, last_error, storage_error);
                     writeln!(serial, "ERR key {:?}", error).ok();
                 }
             }
@@ -591,6 +666,47 @@ fn storage_error_from_persistent(
     }
 }
 
+fn registry_installed_bytes(registry: &AppRegistry) -> usize {
+    registry.iter().map(|(_, entry)| entry.len()).sum()
+}
+
+fn app_storage_available_bytes(registry: &AppRegistry) -> usize {
+    SQUIDFS_LEN.saturating_sub(registry_installed_bytes(registry))
+}
+
+fn print_resources(
+    serial: &mut UsbSerialJtag<'_, esp_hal::Blocking>,
+    registry: &AppRegistry,
+) {
+    let app_used = registry_installed_bytes(registry);
+    writeln!(serial, "BEGIN RESOURCES").ok();
+    writeln!(serial, "memory_available_bytes={MEMORY_AVAILABLE_BYTES}").ok();
+    writeln!(serial, "app_storage_total_bytes={SQUIDFS_LEN}").ok();
+    writeln!(serial, "app_storage_used_bytes={app_used}").ok();
+    writeln!(
+        serial,
+        "app_storage_available_bytes={}",
+        app_storage_available_bytes(registry)
+    )
+    .ok();
+    writeln!(serial, "END RESOURCES").ok();
+    writeln!(serial, "OK RESOURCES.GET").ok();
+}
+
+fn write_human_bytes(
+    out: &mut dyn fmt::Write,
+    label: &str,
+    bytes: usize,
+) -> Result<(), fmt::Error> {
+    if bytes >= 1024 * 1024 {
+        write!(out, "{label} {} MiB", bytes / (1024 * 1024))
+    } else if bytes >= 1024 {
+        write!(out, "{label} {} KiB", bytes / 1024)
+    } else {
+        write!(out, "{label} {bytes} B")
+    }
+}
+
 fn import_state(vm: &mut Vm<'_>, bytes: &[u8]) {
     let Ok(text) = core::str::from_utf8(bytes) else {
         return;
@@ -627,11 +743,12 @@ fn parse_value(program: &Program<'_>, input: &str) -> Option<Value> {
 }
 
 fn print_state(serial: &mut UsbSerialJtag<'_, esp_hal::Blocking>, vm: &Vm<'_>) {
+    let strings = vm.string_resolver();
     for index in 0..vm.state_count() {
         let name = vm.state_name(index).unwrap_or("<bad-state>");
         let value = vm.state_at(index).unwrap_or(Value::Null);
         write!(serial, "{name}=").ok();
-        print_value(serial, vm.program(), value);
+        print_value(serial, &strings, value);
         writeln!(serial).ok();
     }
     writeln!(serial, "exited={}", vm.exited()).ok();
@@ -639,17 +756,17 @@ fn print_state(serial: &mut UsbSerialJtag<'_, esp_hal::Blocking>, vm: &Vm<'_>) {
 
 fn print_value(
     serial: &mut UsbSerialJtag<'_, esp_hal::Blocking>,
-    program: &Program<'_>,
+    strings: &StringResolver<'_, '_>,
     value: Value,
 ) {
     match value {
         Value::Null => write!(serial, "null").ok(),
         Value::Bool(value) => write!(serial, "{value}").ok(),
         Value::I32(value) => write!(serial, "{value}").ok(),
-        Value::String(id) => write!(
+        Value::String(_) | Value::RuntimeString(_) => write!(
             serial,
             "\"{}\"",
-            program.string(id).unwrap_or("<bad-string>")
+            strings.value_str(value).unwrap_or("<bad-string>")
         )
         .ok(),
     };
@@ -754,15 +871,18 @@ struct RuntimeSink<'d> {
     pending_disarm: Option<AppName>,
     timers: [Option<TimerRegistration>; TIMER_CAP],
     registration_mode: bool,
-    stack: [AppRef; STACK_CAP],
+    active_app: Option<AppRef>,
+    stack: [AppSlot; STACK_CAP],
     stack_len: usize,
     exited: bool,
+    in_exit_hook: bool,
     entries: [&'static str; TRACE_CAP],
     len: usize,
     output: [LogLine; OUTPUT_CAP],
     output_len: usize,
     draw: [LogLine; DRAW_CAP],
     draw_len: usize,
+    app_storage_used_bytes: usize,
 }
 
 impl<'d> RuntimeSink<'d> {
@@ -776,16 +896,23 @@ impl<'d> RuntimeSink<'d> {
             pending_disarm: None,
             timers: [None; TIMER_CAP],
             registration_mode: false,
-            stack: [AppRef::Persistent(AppSlot(0)); STACK_CAP],
+            active_app: None,
+            stack: [AppSlot(0); STACK_CAP],
             stack_len: 0,
             exited: false,
+            in_exit_hook: false,
             entries: [""; TRACE_CAP],
             len: 0,
             output: [LogLine::new(); OUTPUT_CAP],
             output_len: 0,
             draw: [LogLine::new(); DRAW_CAP],
             draw_len: 0,
+            app_storage_used_bytes: 0,
         }
+    }
+
+    fn set_app_storage_used(&mut self, used: usize) {
+        self.app_storage_used_bytes = used;
     }
 
     fn breathe_once(&mut self, delay: &Delay) {
@@ -811,33 +938,28 @@ impl<'d> RuntimeSink<'d> {
 
     fn reset_stack(&mut self) {
         self.stack_len = 0;
+        self.active_app = None;
     }
 
-    fn push_app(&mut self, app: AppRef) {
+    fn push_return_target(&mut self, app: AppSlot) {
         if self.stack_len < self.stack.len() {
             self.stack[self.stack_len] = app;
             self.stack_len += 1;
         }
     }
 
-    fn pop_app(&mut self) {
-        if self.stack_len > 0
-            && (self.stack_len > 1 || self.stack[self.stack_len - 1] == AppRef::Temp)
-        {
-            let app = self.stack[self.stack_len - 1];
-            self.stack_len -= 1;
-            for timer in &mut self.timers {
-                if let Some(mut registration) = *timer {
-                    if registration.armed && registration.app == app {
-                        registration.next_due = Instant::now() + registration.interval;
-                        *timer = Some(registration);
-                    }
-                }
-            }
+    fn pop_return_target(&mut self) -> Option<AppSlot> {
+        if self.stack_len == 0 {
+            return None;
         }
+        self.stack_len -= 1;
+        Some(self.stack[self.stack_len])
     }
 
     fn remove_app_from_stack(&mut self, app: AppRef) {
+        let AppRef::Persistent(app) = app else {
+            return;
+        };
         let mut write = 0usize;
         for read in 0..self.stack_len {
             if self.stack[read] != app {
@@ -849,21 +971,20 @@ impl<'d> RuntimeSink<'d> {
     }
 
     fn top_app(&self) -> Option<AppRef> {
-        if self.stack_len == 0 {
-            None
-        } else {
-            Some(self.stack[self.stack_len - 1])
-        }
+        self.active_app
     }
 
     fn advance_time(
         &mut self,
         now: Instant,
         registry: &AppRegistry,
-        app_bytes: &'static [[u8; MAX_APP_BYTES]; APP_REGISTRY_CAP],
-        temp_app: &TempApp,
-        temp_app_bytes: &'static [u8; MAX_APP_BYTES],
+        app_storage: &mut impl AppStorage,
+        app_load_bytes: &'static mut [u8; MAX_APP_BYTES],
+        temp_app: &mut TempApp,
+        vm: &mut Option<Vm<'static>>,
+        vm_slot: &mut Option<AppSlot>,
         last_error: &mut Option<VmError>,
+        storage_error: &mut Option<AppStorageError>,
     ) {
         for index in 0..self.timers.len() {
             let Some(mut timer) = self.timers[index] else {
@@ -875,16 +996,19 @@ impl<'d> RuntimeSink<'d> {
             if !app_ref_available(timer.app, registry, temp_app) {
                 continue;
             }
-            let is_top = self.top_app() == Some(timer.app);
-            if !timer.armed && !is_top {
+            let is_active = self.active_app == Some(timer.app);
+            if !timer.armed && !is_active {
                 continue;
             }
-            if timer.armed && self.stack[..self.stack_len].contains(&timer.app) {
+            if timer.armed && self.active_app == Some(timer.app) {
                 continue;
             }
-            if !is_top {
-                self.push_app(timer.app);
+            let previous_active = self.active_app;
+            if timer.armed {
+                self.active_app = Some(timer.app);
             }
+            *vm = None;
+            *vm_slot = None;
             if timer.repeating {
                 timer.next_due = now + timer.interval;
                 self.timers[index] = Some(timer);
@@ -895,19 +1019,27 @@ impl<'d> RuntimeSink<'d> {
                 timer.app,
                 timer.event.as_str(),
                 registry,
-                app_bytes,
+                app_storage,
+                app_load_bytes,
                 temp_app,
-                temp_app_bytes,
                 self,
             ) {
                 Ok(()) => {
                     if self.exited {
-                        self.pop_app();
+                        self.active_app = previous_active;
                         self.exited = false;
                     }
                     *last_error = None;
                 }
-                Err(error) => *last_error = Some(error),
+                Err(error) => {
+                    set_runtime_error(error, last_error, storage_error);
+                    if matches!(timer.app, AppRef::Temp) {
+                        *temp_app = TempApp::empty();
+                    }
+                }
+            }
+            if storage_error.is_some() {
+                return;
             }
         }
     }
@@ -1000,13 +1132,13 @@ impl TraceSink for RuntimeSink<'_> {
         }
     }
 
-    fn debug_print(&mut self, program: &Program<'_>, values: &[Value]) {
+    fn debug_print(&mut self, strings: &StringResolver<'_, '_>, values: &[Value]) {
         let mut line = LogLine::new();
         for (index, value) in values.iter().enumerate() {
             if index > 0 {
                 write!(line, " ").ok();
             }
-            write_value(&mut line, program, *value).ok();
+            write_value(&mut line, strings, *value).ok();
         }
         self.push_output(line);
     }
@@ -1017,10 +1149,10 @@ impl TraceSink for RuntimeSink<'_> {
         self.push_draw(line);
     }
 
-    fn draw_text(&mut self, program: &Program<'_>, text: Value, x: i32, y: i32) {
+    fn draw_text(&mut self, strings: &StringResolver<'_, '_>, text: Value, x: i32, y: i32) {
         let mut line = LogLine::new();
         write!(line, "text text=").ok();
-        write_value(&mut line, program, text).ok();
+        write_value(&mut line, strings, text).ok();
         write!(line, " x={x} y={y}").ok();
         self.push_draw(line);
     }
@@ -1102,6 +1234,26 @@ impl TraceSink for RuntimeSink<'_> {
         })?;
         Ok(())
     }
+
+    fn system_memory_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
+        write_human_bytes(out, "RAM", MEMORY_AVAILABLE_BYTES).map_err(|_| VmError::InvalidOperand)
+    }
+
+    fn system_storage_text(
+        &mut self,
+        name: &str,
+        out: &mut dyn fmt::Write,
+    ) -> Result<(), VmError> {
+        if name != "apps" {
+            return Err(VmError::InvalidOperand);
+        }
+        write_human_bytes(
+            out,
+            "Apps",
+            SQUIDFS_LEN.saturating_sub(self.app_storage_used_bytes),
+        )
+        .map_err(|_| VmError::InvalidOperand)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1114,13 +1266,33 @@ struct TimerRegistration {
     next_due: Instant,
 }
 
-fn registry_app_bytes(
-    app: AppSlot,
-    registry: &AppRegistry,
-    bytes: &'static [[u8; MAX_APP_BYTES]; APP_REGISTRY_CAP],
-) -> &'static [u8] {
-    let len = registry.len_for_slot(app).unwrap_or(0);
-    &bytes[app.0][..len]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RuntimeError {
+    Vm(VmError),
+    Storage(AppStorageError),
+}
+
+impl From<VmError> for RuntimeError {
+    fn from(value: VmError) -> Self {
+        Self::Vm(value)
+    }
+}
+
+impl From<AppStorageError> for RuntimeError {
+    fn from(value: AppStorageError) -> Self {
+        Self::Storage(value)
+    }
+}
+
+fn set_runtime_error(
+    error: RuntimeError,
+    last_error: &mut Option<VmError>,
+    storage_error: &mut Option<AppStorageError>,
+) {
+    match error {
+        RuntimeError::Vm(error) => *last_error = Some(error),
+        RuntimeError::Storage(error) => *storage_error = Some(error),
+    }
 }
 
 fn app_ref_available(app: AppRef, registry: &AppRegistry, temp_app: &TempApp) -> bool {
@@ -1130,16 +1302,29 @@ fn app_ref_available(app: AppRef, registry: &AppRegistry, temp_app: &TempApp) ->
     }
 }
 
-fn app_ref_bytes(
+fn load_persistent_app<'a>(
+    app: AppSlot,
+    registry: &AppRegistry,
+    storage: &mut impl AppStorage,
+    app_load_bytes: &'a mut [u8; MAX_APP_BYTES],
+) -> Result<&'a [u8], AppStorageError> {
+    let Some(entry) = registry.entry(app) else {
+        return Err(AppStorageError::NotFound);
+    };
+    let len = storage.read_app(entry.name(), app_load_bytes)?;
+    Ok(&app_load_bytes[..len])
+}
+
+fn app_ref_bytes<'a>(
     app: AppRef,
     registry: &AppRegistry,
-    app_bytes: &'static [[u8; MAX_APP_BYTES]; APP_REGISTRY_CAP],
+    storage: &mut impl AppStorage,
+    app_load_bytes: &'a mut [u8; MAX_APP_BYTES],
     temp_app: &TempApp,
-    temp_app_bytes: &'static [u8; MAX_APP_BYTES],
-) -> &'static [u8] {
+) -> Result<&'a [u8], AppStorageError> {
     match app {
-        AppRef::Persistent(slot) => registry_app_bytes(slot, registry, app_bytes),
-        AppRef::Temp => &temp_app_bytes[..temp_app.len],
+        AppRef::Persistent(slot) => load_persistent_app(slot, registry, storage, app_load_bytes),
+        AppRef::Temp => Ok(&app_load_bytes[..temp_app.len]),
     }
 }
 
@@ -1147,18 +1332,18 @@ fn run_app_event(
     app: AppRef,
     event: &str,
     registry: &AppRegistry,
-    app_bytes: &'static [[u8; MAX_APP_BYTES]; APP_REGISTRY_CAP],
+    storage: &mut impl AppStorage,
+    app_load_bytes: &mut [u8; MAX_APP_BYTES],
     temp_app: &TempApp,
-    temp_app_bytes: &'static [u8; MAX_APP_BYTES],
     trace: &mut RuntimeSink<'_>,
-) -> Result<(), VmError> {
+) -> Result<(), RuntimeError> {
     let program = Program::parse(app_ref_bytes(
         app,
         registry,
-        app_bytes,
+        storage,
+        app_load_bytes,
         temp_app,
-        temp_app_bytes,
-    ))?;
+    )?)?;
     let previous = trace.current_app;
     trace.current_app = Some(app);
     let mut vm = Vm::new(program);
@@ -1167,16 +1352,138 @@ fn run_app_event(
         trace.exited = true;
     }
     trace.current_app = previous;
-    result
+    result.map_err(RuntimeError::Vm)
+}
+
+fn load_vm_for_app(
+    app: AppRef,
+    registry: &AppRegistry,
+    storage: &mut impl AppStorage,
+    app_load_bytes: &mut [u8; MAX_APP_BYTES],
+    temp_app: &TempApp,
+) -> Result<Vm<'static>, RuntimeError> {
+    let bytes = app_ref_bytes(app, registry, storage, app_load_bytes, temp_app)?;
+    let ptr = bytes.as_ptr();
+    let len = bytes.len();
+    // The firmware owns APP_LOAD_BYTES for the lifetime of the active VM and
+    // explicitly drops the VM before reusing the buffer for another app.
+    let stable = unsafe { core::slice::from_raw_parts(ptr, len) };
+    Ok(Vm::new(Program::parse(stable)?))
+}
+
+fn dispatch_loaded_vm(
+    vm: &mut Option<Vm<'static>>,
+    app: AppRef,
+    event: &str,
+    trace: &mut RuntimeSink<'_>,
+) -> Result<(), RuntimeError> {
+    let Some(active) = vm.as_mut() else {
+        return Err(RuntimeError::Vm(VmError::InvalidOperand));
+    };
+    let previous = trace.current_app;
+    trace.current_app = Some(app);
+    let result = active.dispatch(event, trace);
+    if active.exited() {
+        trace.exited = true;
+    }
+    trace.current_app = previous;
+    result.map_err(RuntimeError::Vm)
+}
+
+fn dispatch_exit_hook(
+    app: AppRef,
+    trace: &mut RuntimeSink<'_>,
+    registry: &AppRegistry,
+    storage: &mut impl AppStorage,
+    app_load_bytes: &mut [u8; MAX_APP_BYTES],
+    temp_app: &TempApp,
+    last_error: &mut Option<VmError>,
+    storage_error: &mut Option<AppStorageError>,
+) {
+    if trace.in_exit_hook {
+        return;
+    }
+    trace.in_exit_hook = true;
+    let result = run_app_event(
+        app,
+        "app.exit",
+        registry,
+        storage,
+        app_load_bytes,
+        temp_app,
+        trace,
+    );
+    trace.in_exit_hook = false;
+    trace.exited = false;
+    match result {
+        Ok(()) | Err(RuntimeError::Vm(VmError::HandlerNotFound)) => {}
+        Err(error) => set_runtime_error(error, last_error, storage_error),
+    }
+}
+
+fn finish_current_exit(
+    trace: &mut RuntimeSink<'_>,
+    registry: &AppRegistry,
+    storage: &mut impl AppStorage,
+    app_load_bytes: &mut [u8; MAX_APP_BYTES],
+    temp_app: &mut TempApp,
+    vm: &mut Option<Vm<'static>>,
+    vm_slot: &mut Option<AppSlot>,
+    last_error: &mut Option<VmError>,
+    storage_error: &mut Option<AppStorageError>,
+) {
+    *vm = None;
+    *vm_slot = None;
+    let Some(current) = trace.active_app else {
+        trace.exited = false;
+        return;
+    };
+    dispatch_exit_hook(
+        current,
+        trace,
+        registry,
+        storage,
+        app_load_bytes,
+        temp_app,
+        last_error,
+        storage_error,
+    );
+    trace.remove_timers_for(current);
+    if matches!(current, AppRef::Temp) {
+        *temp_app = TempApp::empty();
+    }
+    trace.exited = false;
+    trace.active_app = trace
+        .pop_return_target()
+        .or_else(|| registry.find("main"))
+        .map(AppRef::Persistent);
+    if let Some(app) = trace.active_app {
+        match load_vm_for_app(app, registry, storage, app_load_bytes, temp_app) {
+            Ok(loaded) => {
+                *vm = Some(loaded);
+                *vm_slot = match app {
+                    AppRef::Persistent(slot) => Some(slot),
+                    AppRef::Temp => None,
+                };
+                if let Err(error) = dispatch_loaded_vm(vm, app, "app.start", trace) {
+                    set_runtime_error(error, last_error, storage_error);
+                }
+            }
+            Err(error) => set_runtime_error(error, last_error, storage_error),
+        }
+    }
 }
 
 fn process_pending_actions(
     trace: &mut RuntimeSink<'_>,
     registry: &AppRegistry,
-    app_bytes: &'static [[u8; MAX_APP_BYTES]; APP_REGISTRY_CAP],
-    temp_app: &TempApp,
-    temp_app_bytes: &'static [u8; MAX_APP_BYTES],
+    storage: &mut impl AppStorage,
+    app_load_bytes: &mut [u8; MAX_APP_BYTES],
+    temp_app: &mut TempApp,
+    vm: &mut Option<Vm<'static>>,
+    vm_slot: &mut Option<AppSlot>,
     last_error: &mut Option<VmError>,
+    storage_error: &mut Option<AppStorageError>,
 ) {
     while let Some(app_name) = trace.pending_disarm.take() {
         let Some(app) = registry.find(app_name.as_str()) else {
@@ -1195,14 +1502,14 @@ fn process_pending_actions(
             AppRef::Persistent(app),
             "app.arm",
             registry,
-            app_bytes,
+            storage,
+            app_load_bytes,
             temp_app,
-            temp_app_bytes,
             trace,
         );
         trace.registration_mode = false;
         if let Err(error) = result {
-            *last_error = Some(error);
+            set_runtime_error(error, last_error, storage_error);
             return;
         }
     }
@@ -1212,22 +1519,52 @@ fn process_pending_actions(
             return;
         };
         let app = AppRef::Persistent(app);
-        trace.push_app(app);
+        if let Some(AppRef::Persistent(current)) = trace.active_app {
+            trace.push_return_target(current);
+        }
+        let current = trace.active_app;
+        if let Some(current) = current {
+            *vm = None;
+            *vm_slot = None;
+            dispatch_exit_hook(
+                current,
+                trace,
+                registry,
+                storage,
+                app_load_bytes,
+                temp_app,
+                last_error,
+                storage_error,
+            );
+            trace.remove_timers_for(current);
+        }
+        trace.active_app = Some(app);
+        *vm = None;
+        *vm_slot = None;
         if let Err(error) = run_app_event(
             app,
             "app.start",
             registry,
-            app_bytes,
+            storage,
+            app_load_bytes,
             temp_app,
-            temp_app_bytes,
             trace,
         ) {
-            *last_error = Some(error);
+            set_runtime_error(error, last_error, storage_error);
             return;
         }
         if trace.exited {
-            trace.pop_app();
-            trace.exited = false;
+            finish_current_exit(
+                trace,
+                registry,
+                storage,
+                app_load_bytes,
+                temp_app,
+                vm,
+                vm_slot,
+                last_error,
+                storage_error,
+            );
         }
     }
 }
@@ -1264,14 +1601,16 @@ impl Write for LogLine {
 
 fn write_value(
     out: &mut impl Write,
-    program: &Program<'_>,
+    strings: &StringResolver<'_, '_>,
     value: Value,
 ) -> Result<(), fmt::Error> {
     match value {
         Value::Null => write!(out, "null"),
         Value::Bool(value) => write!(out, "{value}"),
         Value::I32(value) => write!(out, "{value}"),
-        Value::String(id) => write!(out, "\"{}\"", program.string(id).unwrap_or("<bad-string>")),
+        Value::String(_) | Value::RuntimeString(_) => {
+            write!(out, "\"{}\"", strings.value_str(value).unwrap_or("<bad-string>"))
+        }
     }
 }
 

@@ -20,7 +20,9 @@ cargo run -p squidc -- doctor
 
 `run` compiles the input app, uploads it with `RUN.TEMP`, and launches it as a
 temporary foreground app. It does not write flash, does not overwrite `main`,
-and is intended for quick hardware checks.
+and is intended for quick hardware checks and rapid iteration. Before 1.0,
+`RUN.TEMP` stays RAM-backed by design so repeated `squidc run` loops do not
+wear flash.
 
 ## App Commands
 
@@ -44,12 +46,17 @@ cargo run -p squidc -- device state
 cargo run -p squidc -- device drawlog
 cargo run -p squidc -- device trace
 cargo run -p squidc -- device errors
+cargo run -p squidc -- device resources
 cargo run -p squidc -- device reset
 cargo run -p squidc -- device monitor --max-lines 4
 ```
 
 `device key` sends a logical key event to the reference firmware. It does not
 press a physical button; the firmware routes the event to the current app.
+
+`device resources` reads the firmware `RESOURCES.GET` diagnostics and reports
+raw target-specific RAM and app-storage byte counts. With `--json`, parsed
+values are returned under `data.resources`.
 
 `device monitor` polls the firmware output buffer by default. Use `--raw` only
 when literal serial bytes are needed. JSON monitor output must be bounded with

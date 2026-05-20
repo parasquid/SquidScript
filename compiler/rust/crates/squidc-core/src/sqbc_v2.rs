@@ -2,7 +2,8 @@ use crate::{BuildProfile, IrExpr, IrProgram, IrStatement};
 use std::collections::BTreeMap;
 
 pub const SQBC_V2_MAGIC: &[u8; 4] = b"SQBC";
-pub const SQBC_V2_VERSION: u16 = 2;
+pub const SQBC_V3_VERSION: u16 = 3;
+pub const SQBC_V2_VERSION: u16 = SQBC_V3_VERSION;
 
 const SECTION_STRINGS: u16 = 1;
 const SECTION_STATE: u16 = 2;
@@ -53,6 +54,8 @@ const BUILTIN_APP_ARM: u8 = 16;
 const BUILTIN_APP_DISARM: u8 = 17;
 const BUILTIN_SERVICE_TIMER_EVERY: u8 = 18;
 const BUILTIN_SERVICE_TIMER_AFTER: u8 = 19;
+const BUILTIN_SYSTEM_MEMORY: u8 = 20;
+const BUILTIN_SYSTEM_STORAGE: u8 = 21;
 
 const VALUE_NULL: u8 = 0;
 const VALUE_BOOL: u8 = 1;
@@ -120,6 +123,7 @@ struct FunctionMeta {
 #[derive(Clone)]
 struct HandlerMeta {
     event_id: u16,
+    preload: bool,
     start: u32,
     len: u32,
 }
@@ -224,6 +228,7 @@ pub fn encode_sqbc_v2_with_profile(
         let end = u32::try_from(unit.code.len()).map_err(|_| SqbcV2Error::new("code too large"))?;
         unit.handler_metas.push(HandlerMeta {
             event_id,
+            preload: handler.preload,
             start,
             len: end - start,
         });
@@ -260,7 +265,7 @@ pub fn read_app_id(bytes: &[u8]) -> Result<Option<String>, SqbcV2Error> {
     if bytes.len() < 16 || &bytes[0..4] != SQBC_V2_MAGIC {
         return Err(SqbcV2Error::new("invalid SQBC header"));
     }
-    if read_u16_at(bytes, 4)? != SQBC_V2_VERSION {
+    if read_u16_at(bytes, 4)? != SQBC_V3_VERSION {
         return Err(SqbcV2Error::new("unsupported SQBC version"));
     }
     let header_len = read_u16_at(bytes, 6)? as usize;
@@ -427,7 +432,10 @@ fn collect_expr_strings(expr: &IrExpr, strings: &mut StringTable) -> Result<(), 
             collect_expr_strings(left, strings)?;
             collect_expr_strings(right, strings)
         }
-        IrExpr::HardwareGpioRead { name } => strings.intern(name).map(|_| ()),
+        IrExpr::HardwareGpioRead { name } | IrExpr::SystemStorage { name } => {
+            strings.intern(name).map(|_| ())
+        }
+        IrExpr::SystemMemory => Ok(()),
         IrExpr::Call { name, args } => {
             strings.intern(name)?;
             for arg in args {
@@ -712,6 +720,15 @@ fn compile_expr(
             emit_builtin(&mut unit.code, BUILTIN_HARDWARE_GPIO_READ);
             Ok(())
         }
+        IrExpr::SystemMemory => {
+            emit_builtin(&mut unit.code, BUILTIN_SYSTEM_MEMORY);
+            Ok(())
+        }
+        IrExpr::SystemStorage { name } => {
+            emit_string(unit, name)?;
+            emit_builtin(&mut unit.code, BUILTIN_SYSTEM_STORAGE);
+            Ok(())
+        }
         IrExpr::Call { name, args } => {
             for arg in args {
                 compile_expr(unit, frame, arg)?;
@@ -865,6 +882,7 @@ fn encode_handlers(handlers: &[HandlerMeta]) -> Vec<u8> {
     write_u16(&mut out, handlers.len() as u16);
     for handler in handlers {
         write_u16(&mut out, handler.event_id);
+        write_u16(&mut out, u16::from(handler.preload));
         write_u32(&mut out, handler.start);
         write_u32(&mut out, handler.len);
     }
@@ -914,7 +932,7 @@ fn encode_container(sections: Vec<(u16, Vec<u8>)>) -> Result<Vec<u8>, SqbcV2Erro
 
     let mut out = Vec::with_capacity(offset as usize);
     out.extend_from_slice(SQBC_V2_MAGIC);
-    write_u16(&mut out, SQBC_V2_VERSION);
+    write_u16(&mut out, SQBC_V3_VERSION);
     write_u16(
         &mut out,
         u16::try_from(header_len).map_err(|_| SqbcV2Error::new("header too large"))?,

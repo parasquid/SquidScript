@@ -26,15 +26,19 @@ TRACE.GET
 OUTPUT.GET
 DRAWLOG.GET
 ERRORS.GET
+RESOURCES.GET
 RESET
 STORAGE.FORMAT
 ```
 
-`INSTALL.APP` is followed by exactly `<len>` raw SQBC bytes and stores them in
-firmware-owned app storage under `<app-id>`. `RUN.TEMP` uses the same binary
+`INSTALL.APP` is followed by exactly `<len>` raw SQBC v3 bytes and stores them
+in firmware-owned app storage under `<app-id>`. `RUN.TEMP` uses the same binary
 payload framing, but stores the SQBC in RAM only and launches it as a temporary
-foreground app. `STATE.IMPORT` is followed by exactly `<len>` state snapshot
-bytes. The hash is FNV-1a over the payload bytes.
+foreground app. This is the pre-1.0 developer iteration path and must not write
+flash. Temp apps are current-only and volatile: they are not installed, do not
+appear in `APP.LIST`, and cannot be return targets after launching or being
+replaced by an installed app. `STATE.IMPORT` is followed by exactly `<len>`
+state snapshot bytes. The hash is FNV-1a over the payload bytes.
 
 Success responses start with `OK`. Error responses start with `ERR`.
 
@@ -47,6 +51,22 @@ exited=false
 END STATE
 OK STATE.GET
 ```
+
+Resource responses are read-only diagnostics:
+
+```text
+BEGIN RESOURCES
+memory_available_bytes=299136
+app_storage_total_bytes=2031616
+app_storage_used_bytes=0
+app_storage_available_bytes=2031616
+END RESOURCES
+OK RESOURCES.GET
+```
+
+These values are target-firmware metrics. `memory_available_bytes` is the
+ESP32-C3 reference firmware's raw runtime RAM budget, not portable heap
+introspection.
 
 Installed apps are persistent in the ESP32-C3 reference firmware. On startup,
 firmware scans the app store and rebuilds the in-memory registry cache.

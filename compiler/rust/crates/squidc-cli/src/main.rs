@@ -124,6 +124,7 @@ enum DeviceCommands {
     Drawlog(DeviceOnlyArgs),
     Trace(DeviceOnlyArgs),
     Errors(DeviceOnlyArgs),
+    Resources(DeviceOnlyArgs),
     Monitor(MonitorArgs),
 }
 
@@ -283,6 +284,7 @@ fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String>
             DeviceCommands::Errors(args) => {
                 device_block_command(args.device, "ERRORS.GET", "errors", human)
             }
+            DeviceCommands::Resources(args) => resources(args, human),
             DeviceCommands::Monitor(args) => monitor(args, json_mode),
         },
         Commands::Protocol { command } => match command {
@@ -419,6 +421,20 @@ fn key(args: DeviceKeyArgs, human: bool) -> Result<Value, String> {
 
 fn protocol_raw(args: ProtocolRawArgs, human: bool) -> Result<Value, String> {
     device_line_command(args.device, &args.line, "protocol.raw", human)
+}
+
+fn resources(args: DeviceOnlyArgs, human: bool) -> Result<Value, String> {
+    let port = resolve_port(&args.device)?;
+    let mut device = SerialDevice::open(&port)?;
+    let response = device.send_line("RESOURCES.GET")?;
+    if human {
+        print!("{response}");
+    }
+    Ok(json!({
+        "port": port,
+        "resources": parse_key_value_block(&response, "RESOURCES"),
+        "response": response
+    }))
 }
 
 fn monitor(args: MonitorArgs, json_mode: bool) -> Result<Value, String> {
@@ -918,6 +934,34 @@ fn resolve_port(options: &DeviceOnlyOptions) -> Result<String, String> {
     }
 }
 
+fn parse_key_value_block(response: &str, name: &str) -> Value {
+    let begin = format!("BEGIN {name}");
+    let end = format!("END {name}");
+    let mut in_block = false;
+    let mut values = serde_json::Map::new();
+    for line in response.lines() {
+        if line == begin {
+            in_block = true;
+            continue;
+        }
+        if line == end {
+            break;
+        }
+        if !in_block {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let value = value
+            .parse::<u64>()
+            .map(Value::from)
+            .unwrap_or_else(|_| Value::from(value));
+        values.insert(key.to_string(), value);
+    }
+    Value::Object(values)
+}
+
 fn write_json_success(command: &str, data: Value) {
     println!(
         "{}",
@@ -1096,13 +1140,13 @@ impl ReplSession {
         }
         fs::create_dir_all(&self.temp_dir)
             .map_err(|error| format!("failed to create {}: {error}", self.temp_dir.display()))?;
-        let source = self.generated_source();
+        let state_before = self.serial_text_allow_fail(&["state"]).unwrap_or_default();
+        let source = self.generated_source_with_state(&state_before);
         let sqbc = compile_source_to_sqbc(&source, &self.target, self.profile)?;
         let sqbc_path = self.temp_dir.join("repl.sqbc");
         fs::write(&sqbc_path, sqbc)
             .map_err(|error| format!("failed to write {}: {error}", sqbc_path.display()))?;
 
-        let state_before = self.serial_text_allow_fail(&["state"]).unwrap_or_default();
         let state_path = self.temp_dir.join("state.txt");
         fs::write(&state_path, state_payload(&state_before))
             .map_err(|error| format!("failed to write {}: {error}", state_path.display()))?;
@@ -1147,8 +1191,11 @@ impl ReplSession {
         Ok(())
     }
 
-    fn generated_source(&self) -> String {
-        let mut source = format!("app \"repl-session\"\n\n{}", self.state_block);
+    fn generated_source_with_state(&self, state_output: &str) -> String {
+        let mut source = format!(
+            "app \"repl-session\"\n\n{}",
+            state_block_with_values(&self.state_block, state_output)
+        );
         match self.mode {
             ReplMode::Event => {
                 source.push_str("\nevent.on(\"app.start\") {}\n\nevent.on(\"repl\") {\n");
@@ -1183,6 +1230,7 @@ impl ReplSession {
             ["state"] => device.send_line("STATE.GET")?,
             ["output"] => device.send_line("OUTPUT.GET")?,
             ["drawlog"] => device.send_line("DRAWLOG.GET")?,
+            ["resources"] => device.send_line("RESOURCES.GET")?,
             ["key", key] => device.send_line(&format!("KEY {key}"))?,
             ["raw", line] => device.send_line(line)?,
             _ => return Err(format!("unsupported repl serial command: {args:?}")),
@@ -1232,6 +1280,38 @@ fn state_payload(state_output: &str) -> Vec<u8> {
         }
     }
     out.into_bytes()
+}
+
+fn state_block_with_values(state_block: &str, state_output: &str) -> String {
+    let payload = String::from_utf8_lossy(&state_payload(state_output)).to_string();
+    let mut values = Vec::new();
+    for line in payload.lines() {
+        if let Some((name, value)) = line.split_once('=') {
+            values.push((name.trim().to_string(), value.trim().to_string()));
+        }
+    }
+    if values.is_empty() {
+        return state_block.to_string();
+    }
+
+    let mut out = String::new();
+    for line in state_block.lines() {
+        let trimmed = line.trim_start();
+        if let Some((name, _)) = trimmed.split_once(':') {
+            if let Some((_, value)) = values.iter().find(|(existing, _)| existing == name.trim()) {
+                let indent_len = line.len().saturating_sub(trimmed.len());
+                out.push_str(&line[..indent_len]);
+                out.push_str(name.trim());
+                out.push_str(": ");
+                out.push_str(value);
+                out.push('\n');
+                continue;
+            }
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
 }
 
 fn path_str(path: &Path) -> Result<&str, String> {
@@ -1292,6 +1372,35 @@ mod tests {
             panic!("expected protocol raw");
         };
         assert_eq!(args.line, "APP.LIST");
+    }
+
+    #[test]
+    fn parses_device_resources_command_and_resource_block() {
+        let cli = Cli::try_parse_from(["squidc", "device", "resources"]).unwrap();
+        let Commands::Device {
+            command: DeviceCommands::Resources(_),
+        } = cli.command
+        else {
+            panic!("expected device resources");
+        };
+        let parsed = parse_key_value_block(
+            "BEGIN RESOURCES\nmemory_available_bytes=299136\napp_storage_available_bytes=2031616\nEND RESOURCES\nOK RESOURCES.GET\n",
+            "RESOURCES",
+        );
+        assert_eq!(parsed["memory_available_bytes"], 299136u64);
+        assert_eq!(parsed["app_storage_available_bytes"], 2031616u64);
+    }
+
+    #[test]
+    fn repl_state_block_uses_previous_state_values() {
+        let state_block = "state {\n  count: 0\n  label: \"old\"\n}\n";
+        let state_output = "BEGIN STATE\ncount=2\nlabel=\"new\"\nexited=false\nEND STATE\n";
+
+        let merged = state_block_with_values(state_block, state_output);
+
+        assert!(merged.contains("count: 2"));
+        assert!(merged.contains("label: \"new\""));
+        assert!(!merged.contains("exited"));
     }
 
     #[test]

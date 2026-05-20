@@ -95,10 +95,12 @@ storage. On the ESP32-C3 Super Mini, installed SQBC payloads are stored in
 LittleFS under `/apps/<app-id>.sqbc` on the `squidfs` flash partition and are
 loaded back into the registry at firmware startup.
 
-`INSTALL.APP` receives raw SQBC v2 bytes, validates the payload, writes app
+`INSTALL.APP` receives raw SQBC v3 bytes, validates the payload, writes app
 storage, and then publishes the app in the registry cache. `RUN.TEMP` validates
 SQBC bytes into RAM and pushes the temp app onto the foreground stack without
-writing flash. `STORAGE.FORMAT` formats app storage and clears the cache. State
+writing flash. Keeping temp runs RAM-backed is intentional before 1.0 because
+`squidc run` is the rapid iteration path. `STORAGE.FORMAT` formats app storage
+and clears the cache. State
 persistence remains a separate future milestone; `state.load` and `state.save`
 are traced but do not write flash yet.
 

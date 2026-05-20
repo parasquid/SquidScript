@@ -5,7 +5,7 @@ use littlefs2::{
     consts,
     driver,
     fs::Filesystem,
-    io::{Error, Result},
+    io::{Error, Result, SeekFrom},
     path::PathBuf,
 };
 
@@ -188,9 +188,33 @@ impl<S: driver::Storage> AppStorage for LittleFsAppStorage<S> {
         .map_err(Self::map_error)
     }
 
+    fn read_app_range(
+        &mut self,
+        app_id: &str,
+        offset: usize,
+        out: &mut [u8],
+    ) -> core::result::Result<usize, AppStorageError> {
+        let path = Self::apps_path(app_id, ".sqbc").map_err(Self::map_error)?;
+        self.mount(|fs| {
+            fs.open_file_and_then(&path, |file| {
+                let len = file.len()? as usize;
+                let end = offset.checked_add(out.len()).ok_or(Error::NO_SPACE)?;
+                if end > len {
+                    return Err(Error::NO_SPACE);
+                }
+                file.seek(SeekFrom::Start(
+                    u32::try_from(offset).map_err(|_| Error::NO_SPACE)?,
+                ))?;
+                file.read(out)
+            })
+        })
+        .map_err(Self::map_error)
+    }
+
     fn list_apps(
         &mut self,
         out: &mut [StoredApp],
+        scratch: &mut [u8],
     ) -> core::result::Result<usize, AppStorageError> {
         let apps_path = PathBuf::try_from(APPS_DIR).unwrap();
         self.mount(|fs| {
@@ -207,18 +231,17 @@ impl<S: driver::Storage> AppStorage for LittleFsAppStorage<S> {
                     let Ok(app_name) = AppName::new(name) else {
                         continue;
                     };
-                    let mut bytes = [0u8; MAX_APP_BYTES];
                     let len = fs.open_file_and_then(entry.path(), |file| {
                         let len = file.len()? as usize;
-                        if len > bytes.len() {
+                        if len > scratch.len() || len > MAX_APP_BYTES {
                             return Err(Error::NO_SPACE);
                         }
-                        file.read(&mut bytes[..len])
+                        file.read(&mut scratch[..len])
                     })?;
                     out[count] = StoredApp {
                         name: app_name,
                         len,
-                        hash: fnv1a(&bytes[..len]),
+                        hash: fnv1a(&scratch[..len]),
                     };
                     count += 1;
                 }

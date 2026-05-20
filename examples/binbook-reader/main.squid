@@ -22,11 +22,7 @@ event.on("app.start") {
   openBrowser()
 }
 
-event.on("app.resume") {
-  screen.refresh()
-}
-
-event.on("app.suspend") {
+event.on("app.exit") {
   state.save()
 }
 

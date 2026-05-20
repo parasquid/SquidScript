@@ -16,6 +16,7 @@ event.on("timer.debug") {
   debug.print("blink", led)
 }
 
+@preload
 event.on("key.SELECT") {
   hardware.gpio.toggle("status_led")
   led = hardware.gpio.read("status_led")
