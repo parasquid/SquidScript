@@ -56,7 +56,15 @@ press a physical button; the firmware routes the event to the current app.
 
 `device resources` reads the firmware `RESOURCES.GET` diagnostics and reports
 raw target-specific RAM and app-storage byte counts. With `--json`, parsed
-values are returned under `data.resources`.
+values are returned under `data.resources`. Firmware reports `RUN.TEMP`
+buffer usage separately from installed-app code cache usage, so comparisons can
+distinguish volatile developer runs from persistent chunk execution.
+
+`device reset` performs a firmware soft boot. It clears the current VM, temp
+app, foreground stack, pending launches, trigger/timer registrations, and debug
+buffers, then boots installed `main` when present. It does not erase installed
+apps; use `STORAGE.FORMAT` through the protocol or the storage-format helper
+when a clean app store is needed.
 
 `device monitor` polls the firmware output buffer by default. Use `--raw` only
 when literal serial bytes are needed. JSON monitor output must be bounded with

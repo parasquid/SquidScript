@@ -40,6 +40,10 @@ if [[ "$SKIP_FLASH" == "0" ]]; then
   sleep 1
 fi
 
+PYTHONPATH="$ROOT/scripts" python3 "$ROOT/scripts/c3_supermini_serial.py" \
+  --port "$PORT" \
+  storage-format
+
 cargo run -p squidc -- app install \
   --port "$PORT" \
   --as main \

@@ -100,9 +100,9 @@ storage, and then publishes the app in the registry cache. `RUN.TEMP` validates
 SQBC bytes into RAM and pushes the temp app onto the foreground stack without
 writing flash. Keeping temp runs RAM-backed is intentional before 1.0 because
 `squidc run` is the rapid iteration path. `STORAGE.FORMAT` formats app storage
-and clears the cache. State
-persistence remains a separate future milestone; `state.load` and `state.save`
-are traced but do not write flash yet.
+and clears the cache. Installed apps persist declared primitive state through
+firmware-owned binary records. `RUN.TEMP` remains RAM-backed: `state.load`,
+`state.save`, and `state.reset` do not write flash for temp apps.
 
 The crate still contains `x4-hello`, a separate XTEINK X4 display bring-up
 binary. Keep X4 display work separate from the reference VM milestone.

@@ -1,7 +1,7 @@
 :reset
 
 state {
-  count: 0
+  count: int = 0
 }
 
 :mode render

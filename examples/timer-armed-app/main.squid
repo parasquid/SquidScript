@@ -1,13 +1,20 @@
 app "timer-main"
 
 state {
-  started: 0
+  stateVersion: int = 1
+  started: int = 0
 }
 
 event.on("app.start") {
+  state.load()
+  if (stateVersion != 1) {
+    state.reset()
+    stateVersion = 1
+  }
   started = started + 1
   debug.print("main start", started)
   app.arm("timer-armed-app")
+  state.save()
 }
 
 screen("main") {}

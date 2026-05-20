@@ -47,16 +47,17 @@ The reader uses firmware-managed SquidScript app state for resume data. It store
 
 ```squid
 state {
-  file: "",
-  title: "",
-  pageIndex: 0,
-  pageCount: 0,
-  navCount: 0,
-  tocIndex: 0,
-  tocTop: 0,
-  jumpPage: 1,
-  browserIndex: 0,
-  uiState: "browser"
+  stateVersion: int = 1
+  file: string = ""
+  title: string = ""
+  pageIndex: int = 0
+  pageCount: int = 0
+  navCount: int = 0
+  tocIndex: int = 0
+  tocTop: int = 0
+  jumpPage: int = 1
+  browserIndex: int = 0
+  uiState: string = "browser"
 }
 ```
 

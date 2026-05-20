@@ -693,42 +693,56 @@ Handles cannot be compared for equality except where a specific API explicitly p
 
 ## 12. State Block
 
-The state block declares persistent app variables.
+The state block declares typed persistent app variables.
 
 Example:
 
 ```squid
-state {
-  count: 0,
-  title: "",
-  done: false
+state({ store: "internal" }) {
+  stateVersion: int = 2
+  count: int = 0
+  title: string = ""
+  selectedBook: string? = null
+  retryAt: int? = null
+  done: bool = false
 }
 ```
 
-State variables are persisted by state.save() and restored by state.load().
+The store option is optional. Valid store classes are `default`, `internal`,
+and `removable`; omitted store means `default`. Store classes are logical
+runtime requests, not fixed filesystem paths.
+
+State variables are persisted by `state.save()` and restored by `state.load()`.
+`state.reset()` restores declared defaults for the current app and removes the
+persisted state record for installed apps.
 
 Example:
 
 ```squid
 event.on("app.start") {
   state.load()
+  if (stateVersion != 2) {
+    state.reset()
+    stateVersion = 2
+    state.save()
+  }
   screen.open("main")
 }
 ```
 
 State is stored by firmware, not by direct script file writes.
 
-The runtime stores persistent state under:
-
-```text
-/sd/system/app-state/{app_id}.json
-```
-
 Allowed persistent state types in v0.2:
 - int
 - bool
 - string
-- null
+
+`null` is a value, not a type. It is valid only for nullable slots declared
+with `?`, such as `int?`, `bool?`, or `string?`. `retryAt: int? = 0` and
+`retryAt: int? = null` are valid; `retryAt: int = null` and
+`retryAt: int = "hello"` are invalid. If a saved state record contains a value
+that does not match the compiled declaration, `state.load()` is a runtime error
+instead of silently ignoring the bad value.
 
 Optional future persistent state types:
 - bounded lists
@@ -752,8 +766,8 @@ Valid:
 
 ```squid
 state {
-  file: "",
-  pageIndex: 0
+  file: string = ""
+  pageIndex: int = 0
 }
 ```
 
@@ -1931,7 +1945,7 @@ Recommended write strategy:
 1. write state.tmp
 2. flush
 3. rename current state to state.bak
-4. rename state.tmp to state.json
+4. rename state.tmp to the firmware-owned state record
 5. optionally delete state.bak later
 
 ---
@@ -1946,7 +1960,7 @@ Example:
 
 ```squid
 state {
-  uiState: "browser"
+  uiState: string = "browser"
 }
 
 function openReader() {
@@ -3123,8 +3137,8 @@ Valid state:
 
 ```squid
 state {
-  file: "",
-  pageIndex: 0
+  file: string = ""
+  pageIndex: int = 0
 }
 ```
 
@@ -3132,7 +3146,7 @@ Invalid state:
 
 ```squid
 state {
-  book: null
+  book: string = null
 }
 ```
 
@@ -3217,7 +3231,7 @@ Example app-picker flow:
 
 ```squid
 state {
-  selected: 0
+  selected: int = 0
 }
 
 event.on("app.start") {
@@ -4163,8 +4177,8 @@ main.squid:
 
 ```squid
 state {
-  selected: 0,
-  view: "menu"
+  selected: int = 0
+  view: string = "menu"
 }
 
 event.on("app.start") {

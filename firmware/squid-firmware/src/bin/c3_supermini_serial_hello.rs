@@ -21,7 +21,10 @@ use squid_firmware::{
     },
     protocol::{fnv1a, parse_install},
     storage::{LittleFsAppStorage, SquidFlashRegion, SQUIDFS_LEN},
-    vm::{Program, StringResolver, TraceSink, Value, Vm, VmError, MAX_APP_BYTES},
+    vm::{
+        ChunkedVm, Program, ProgramIndex, SqbcReader, StringResolver, TraceSink, Value, Vm,
+        VmError, MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES,
+    },
 };
 
 const BUILD_ID: &str = match option_env!("SQUID_FIRMWARE_BUILD_ID") {
@@ -58,7 +61,7 @@ fn main() -> ! {
     let mut line = LineBuffer::new();
     let mut registry = AppRegistry::new();
     let mut runtime = RuntimeSink::new(led);
-    let mut vm: Option<Vm<'static>> = None;
+    let mut vm: Option<ActiveVm> = None;
     let mut vm_slot: Option<AppSlot> = None;
     let mut temp_app = TempApp::empty();
     let mut last_error: Option<VmError> = None;
@@ -74,6 +77,18 @@ fn main() -> ! {
     writeln!(serial, "SquidScript reference firmware").ok();
     writeln!(serial, "target=esp32c3-super-mini build={BUILD_ID}").ok();
     writeln!(serial, "type help").ok();
+    boot_main(
+        &mut serial,
+        &registry,
+        &mut app_storage,
+        unsafe { &mut APP_LOAD_BYTES },
+        &mut temp_app,
+        &mut runtime,
+        &mut vm,
+        &mut vm_slot,
+        &mut last_error,
+        &mut storage_error,
+    );
 
     loop {
         runtime.breathe_once(&delay);
@@ -88,6 +103,20 @@ fn main() -> ! {
             &mut last_error,
             &mut storage_error,
         );
+        if runtime.take_root_restart() {
+            boot_main(
+                &mut serial,
+                &registry,
+                &mut app_storage,
+                unsafe { &mut APP_LOAD_BYTES },
+                &mut temp_app,
+                &mut runtime,
+                &mut vm,
+                &mut vm_slot,
+                &mut last_error,
+                &mut storage_error,
+            );
+        }
         match serial.read_byte() {
             Ok(byte) => {
                 if let Some(command) = line.push(byte) {
@@ -124,7 +153,7 @@ fn handle_command(
     app_load_bytes: &'static mut [u8; MAX_APP_BYTES],
     temp_app: &mut TempApp,
     trace: &mut RuntimeSink<'_>,
-    vm: &mut Option<Vm<'static>>,
+    vm: &mut Option<ActiveVm>,
     vm_slot: &mut Option<AppSlot>,
     last_error: &mut Option<VmError>,
     storage_error: &mut Option<AppStorageError>,
@@ -142,12 +171,16 @@ fn handle_command(
         writeln!(
             serial,
             "storage={}",
-            if storage_error.is_some() { "error" } else { "ok" }
+            if storage_error.is_some() {
+                "error"
+            } else {
+                "ok"
+            }
         )
         .ok();
         writeln!(serial, "OK HELLO").ok();
     } else if command == "RESOURCES.GET" || command == "resources" {
-        print_resources(serial, registry);
+        print_resources(serial, registry, temp_app, vm.as_ref());
     } else if let Some(rest) = command
         .strip_prefix("INSTALL.APP ")
         .or_else(|| command.strip_prefix("install.app "))
@@ -175,8 +208,12 @@ fn handle_command(
                     }
                 };
                 writeln!(serial, "READY install.app app={app_id} len={len}").ok();
-                let read =
-                    read_exact_timeout(serial, &mut app_load_bytes[..len], delay, INSTALL_TIMEOUT_MS);
+                let read = read_exact_timeout(
+                    serial,
+                    &mut app_load_bytes[..len],
+                    delay,
+                    INSTALL_TIMEOUT_MS,
+                );
                 if read != len {
                     *last_error = Some(VmError::InvalidHeader);
                     writeln!(serial, "ERR install.app timeout read={read} expected={len}").ok();
@@ -245,8 +282,12 @@ fn handle_command(
                 }
                 let len = request.len;
                 writeln!(serial, "READY RUN.TEMP app={app_id} len={len}").ok();
-                let read =
-                    read_exact_timeout(serial, &mut app_load_bytes[..len], delay, INSTALL_TIMEOUT_MS);
+                let read = read_exact_timeout(
+                    serial,
+                    &mut app_load_bytes[..len],
+                    delay,
+                    INSTALL_TIMEOUT_MS,
+                );
                 if read != len {
                     *last_error = Some(VmError::InvalidHeader);
                     writeln!(serial, "ERR RUN.TEMP timeout read={read} expected={len}").ok();
@@ -298,7 +339,14 @@ fn handle_command(
                         return;
                     }
                 }
-                match dispatch_loaded_vm(vm, AppRef::Temp, "app.start", trace) {
+                match dispatch_loaded_vm(
+                    vm,
+                    AppRef::Temp,
+                    "app.start",
+                    registry,
+                    app_storage,
+                    trace,
+                ) {
                     Ok(()) => {
                         process_pending_actions(
                             trace,
@@ -369,7 +417,14 @@ fn handle_command(
                 return;
             }
         }
-        match dispatch_loaded_vm(vm, AppRef::Persistent(slot), "app.start", trace) {
+        match dispatch_loaded_vm(
+            vm,
+            AppRef::Persistent(slot),
+            "app.start",
+            registry,
+            app_storage,
+            trace,
+        ) {
             Ok(()) => {
                 process_pending_actions(
                     trace,
@@ -423,7 +478,14 @@ fn handle_command(
                 }
             }
         }
-        match dispatch_loaded_vm(vm, AppRef::Persistent(slot), event, trace) {
+        match dispatch_loaded_vm(
+            vm,
+            AppRef::Persistent(slot),
+            event,
+            registry,
+            app_storage,
+            trace,
+        ) {
             Ok(()) => {
                 process_pending_actions(
                     trace,
@@ -486,7 +548,7 @@ fn handle_command(
                     }
                 }
             }
-            match dispatch_loaded_vm(vm, app, event, trace) {
+            match dispatch_loaded_vm(vm, app, event, registry, app_storage, trace) {
                 Ok(()) => {
                     if trace.exited {
                         finish_current_exit(
@@ -522,14 +584,21 @@ fn handle_command(
             }
             return;
         }
-        match vm.as_mut() {
-            Some(active) => match active.dispatch(event, trace) {
+        let fallback_app = (*vm_slot).map(AppRef::Persistent).or_else(|| {
+            if temp_app.is_available() {
+                Some(AppRef::Temp)
+            } else {
+                None
+            }
+        });
+        match fallback_app {
+            Some(app) => match dispatch_loaded_vm(vm, app, event, registry, app_storage, trace) {
                 Ok(()) => {
                     *last_error = None;
                     writeln!(serial, "OK key {key}").ok();
                 }
                 Err(error) => {
-                    *last_error = Some(error);
+                    set_runtime_error(error, last_error, storage_error);
                     writeln!(serial, "ERR key {:?}", error).ok();
                 }
             },
@@ -629,9 +698,23 @@ fn handle_command(
     } else if command == "reset" || command == "RESET" {
         trace.clear();
         trace.clear_timers();
+        trace.reset_stack();
         *temp_app = TempApp::empty();
         *vm = None;
+        *vm_slot = None;
         *last_error = None;
+        boot_main(
+            serial,
+            registry,
+            app_storage,
+            app_load_bytes,
+            temp_app,
+            trace,
+            vm,
+            vm_slot,
+            last_error,
+            storage_error,
+        );
         writeln!(serial, "OK reset").ok();
     } else if command == "STORAGE.FORMAT" || command == "storage.format" {
         match app_storage.format() {
@@ -666,6 +749,91 @@ fn storage_error_from_persistent(
     }
 }
 
+fn boot_main(
+    serial: &mut UsbSerialJtag<'_, esp_hal::Blocking>,
+    registry: &AppRegistry,
+    app_storage: &mut impl AppStorage,
+    app_load_bytes: &mut [u8; MAX_APP_BYTES],
+    temp_app: &mut TempApp,
+    trace: &mut RuntimeSink<'_>,
+    vm: &mut Option<ActiveVm>,
+    vm_slot: &mut Option<AppSlot>,
+    last_error: &mut Option<VmError>,
+    storage_error: &mut Option<AppStorageError>,
+) {
+    let Some(slot) = registry.find("main") else {
+        trace.active_app = None;
+        writeln!(serial, "BOOT dev-shell no-main").ok();
+        return;
+    };
+    *temp_app = TempApp::empty();
+    trace.reset_stack();
+    trace.active_app = Some(AppRef::Persistent(slot));
+    *vm = None;
+    *vm_slot = None;
+    match load_vm_for_app(
+        AppRef::Persistent(slot),
+        registry,
+        app_storage,
+        app_load_bytes,
+        temp_app,
+    ) {
+        Ok(loaded) => {
+            *vm = Some(loaded);
+            *vm_slot = Some(slot);
+        }
+        Err(error) => {
+            set_runtime_error(error, last_error, storage_error);
+            trace.active_app = None;
+            writeln!(serial, "BOOT dev-shell invalid-main").ok();
+            return;
+        }
+    }
+    match dispatch_loaded_vm(
+        vm,
+        AppRef::Persistent(slot),
+        "app.start",
+        registry,
+        app_storage,
+        trace,
+    ) {
+        Ok(()) => {
+            process_pending_actions(
+                trace,
+                registry,
+                app_storage,
+                app_load_bytes,
+                temp_app,
+                vm,
+                vm_slot,
+                last_error,
+                storage_error,
+            );
+            if trace.exited {
+                finish_current_exit(
+                    trace,
+                    registry,
+                    app_storage,
+                    app_load_bytes,
+                    temp_app,
+                    vm,
+                    vm_slot,
+                    last_error,
+                    storage_error,
+                );
+            }
+            writeln!(serial, "BOOT main app=main").ok();
+        }
+        Err(error) => {
+            set_runtime_error(error, last_error, storage_error);
+            trace.active_app = None;
+            *vm = None;
+            *vm_slot = None;
+            writeln!(serial, "BOOT dev-shell invalid-main").ok();
+        }
+    }
+}
+
 fn registry_installed_bytes(registry: &AppRegistry) -> usize {
     registry.iter().map(|(_, entry)| entry.len()).sum()
 }
@@ -677,10 +845,30 @@ fn app_storage_available_bytes(registry: &AppRegistry) -> usize {
 fn print_resources(
     serial: &mut UsbSerialJtag<'_, esp_hal::Blocking>,
     registry: &AppRegistry,
+    temp_app: &TempApp,
+    vm: Option<&ActiveVm>,
 ) {
     let app_used = registry_installed_bytes(registry);
+    let temp_app_buffer_bytes = if temp_app.is_available() {
+        MAX_APP_BYTES
+    } else {
+        0
+    };
+    let temp_app_bytes = if temp_app.is_available() {
+        temp_app.len
+    } else {
+        0
+    };
+    let installed_code_cache_bytes = vm.map_or(0, ActiveVm::installed_code_cache_bytes);
     writeln!(serial, "BEGIN RESOURCES").ok();
     writeln!(serial, "memory_available_bytes={MEMORY_AVAILABLE_BYTES}").ok();
+    writeln!(serial, "temp_app_buffer_bytes={temp_app_buffer_bytes}").ok();
+    writeln!(serial, "temp_app_bytes={temp_app_bytes}").ok();
+    writeln!(
+        serial,
+        "installed_code_cache_bytes={installed_code_cache_bytes}"
+    )
+    .ok();
     writeln!(serial, "app_storage_total_bytes={SQUIDFS_LEN}").ok();
     writeln!(serial, "app_storage_used_bytes={app_used}").ok();
     writeln!(
@@ -707,7 +895,7 @@ fn write_human_bytes(
     }
 }
 
-fn import_state(vm: &mut Vm<'_>, bytes: &[u8]) {
+fn import_state(vm: &mut ActiveVm, bytes: &[u8]) {
     let Ok(text) = core::str::from_utf8(bytes) else {
         return;
     };
@@ -715,13 +903,13 @@ fn import_state(vm: &mut Vm<'_>, bytes: &[u8]) {
         let Some((name, raw_value)) = line.split_once('=') else {
             continue;
         };
-        if let Some(value) = parse_value(vm.program(), raw_value.trim()) {
+        if let Some(value) = parse_value(vm.string_table(), raw_value.trim()) {
             let _ = vm.set_state_value(name.trim(), value);
         }
     }
 }
 
-fn parse_value(program: &Program<'_>, input: &str) -> Option<Value> {
+fn parse_value(strings: &dyn squid_firmware::vm::StringTable, input: &str) -> Option<Value> {
     if input == "null" {
         Some(Value::Null)
     } else if input == "true" {
@@ -732,7 +920,7 @@ fn parse_value(program: &Program<'_>, input: &str) -> Option<Value> {
         Some(Value::I32(value))
     } else if let Some(text) = input.strip_prefix('"').and_then(|v| v.strip_suffix('"')) {
         for id in 0..64u16 {
-            if program.string(id).ok()? == text {
+            if strings.string(id).ok()? == text {
                 return Some(Value::String(id));
             }
         }
@@ -742,7 +930,7 @@ fn parse_value(program: &Program<'_>, input: &str) -> Option<Value> {
     }
 }
 
-fn print_state(serial: &mut UsbSerialJtag<'_, esp_hal::Blocking>, vm: &Vm<'_>) {
+fn print_state(serial: &mut UsbSerialJtag<'_, esp_hal::Blocking>, vm: &ActiveVm) {
     let strings = vm.string_resolver();
     for index in 0..vm.state_count() {
         let name = vm.state_name(index).unwrap_or("<bad-state>");
@@ -756,7 +944,7 @@ fn print_state(serial: &mut UsbSerialJtag<'_, esp_hal::Blocking>, vm: &Vm<'_>) {
 
 fn print_value(
     serial: &mut UsbSerialJtag<'_, esp_hal::Blocking>,
-    strings: &StringResolver<'_, '_>,
+    strings: &StringResolver<'_>,
     value: Value,
 ) {
     match value {
@@ -862,6 +1050,69 @@ impl TempApp {
     }
 }
 
+enum ActiveVm {
+    Temp(Vm<'static>),
+    Persistent(ChunkedVm),
+}
+
+impl ActiveVm {
+    fn exited(&self) -> bool {
+        match self {
+            Self::Temp(vm) => vm.exited(),
+            Self::Persistent(vm) => vm.exited(),
+        }
+    }
+
+    fn state_count(&self) -> usize {
+        match self {
+            Self::Temp(vm) => vm.state_count(),
+            Self::Persistent(vm) => vm.state_count(),
+        }
+    }
+
+    fn state_name(&self, index: usize) -> Result<&str, VmError> {
+        match self {
+            Self::Temp(vm) => vm.state_name(index),
+            Self::Persistent(vm) => vm.state_name(index),
+        }
+    }
+
+    fn state_at(&self, index: usize) -> Result<Value, VmError> {
+        match self {
+            Self::Temp(vm) => vm.state_at(index),
+            Self::Persistent(vm) => vm.state_at(index),
+        }
+    }
+
+    fn set_state_value(&mut self, name: &str, value: Value) -> Result<(), VmError> {
+        match self {
+            Self::Temp(vm) => vm.set_state_value(name, value),
+            Self::Persistent(vm) => vm.set_state_value(name, value),
+        }
+    }
+
+    fn string_resolver(&self) -> StringResolver<'_> {
+        match self {
+            Self::Temp(vm) => vm.string_resolver(),
+            Self::Persistent(vm) => vm.string_resolver(),
+        }
+    }
+
+    fn string_table(&self) -> &dyn squid_firmware::vm::StringTable {
+        match self {
+            Self::Temp(vm) => vm.program(),
+            Self::Persistent(vm) => vm.string_table(),
+        }
+    }
+
+    fn installed_code_cache_bytes(&self) -> usize {
+        match self {
+            Self::Temp(_) => 0,
+            Self::Persistent(_) => MAX_CODE_CHUNK_BYTES,
+        }
+    }
+}
+
 struct RuntimeSink<'d> {
     status_led: Output<'d>,
     breathing_enabled: bool,
@@ -870,6 +1121,7 @@ struct RuntimeSink<'d> {
     pending_arm: Option<AppName>,
     pending_disarm: Option<AppName>,
     timers: [Option<TimerRegistration>; TIMER_CAP],
+    root_restart_pending: bool,
     registration_mode: bool,
     active_app: Option<AppRef>,
     stack: [AppSlot; STACK_CAP],
@@ -895,6 +1147,7 @@ impl<'d> RuntimeSink<'d> {
             pending_arm: None,
             pending_disarm: None,
             timers: [None; TIMER_CAP],
+            root_restart_pending: false,
             registration_mode: false,
             active_app: None,
             stack: [AppSlot(0); STACK_CAP],
@@ -934,6 +1187,7 @@ impl<'d> RuntimeSink<'d> {
         self.timers = [None; TIMER_CAP];
         self.exited = false;
         self.registration_mode = false;
+        self.root_restart_pending = false;
     }
 
     fn reset_stack(&mut self) {
@@ -974,6 +1228,16 @@ impl<'d> RuntimeSink<'d> {
         self.active_app
     }
 
+    fn request_root_restart(&mut self) {
+        self.root_restart_pending = true;
+    }
+
+    fn take_root_restart(&mut self) -> bool {
+        let pending = self.root_restart_pending;
+        self.root_restart_pending = false;
+        pending
+    }
+
     fn advance_time(
         &mut self,
         now: Instant,
@@ -981,7 +1245,7 @@ impl<'d> RuntimeSink<'d> {
         app_storage: &mut impl AppStorage,
         app_load_bytes: &'static mut [u8; MAX_APP_BYTES],
         temp_app: &mut TempApp,
-        vm: &mut Option<Vm<'static>>,
+        vm: &mut Option<ActiveVm>,
         vm_slot: &mut Option<AppSlot>,
         last_error: &mut Option<VmError>,
         storage_error: &mut Option<AppStorageError>,
@@ -1132,7 +1396,7 @@ impl TraceSink for RuntimeSink<'_> {
         }
     }
 
-    fn debug_print(&mut self, strings: &StringResolver<'_, '_>, values: &[Value]) {
+    fn debug_print(&mut self, strings: &StringResolver<'_>, values: &[Value]) {
         let mut line = LogLine::new();
         for (index, value) in values.iter().enumerate() {
             if index > 0 {
@@ -1149,7 +1413,7 @@ impl TraceSink for RuntimeSink<'_> {
         self.push_draw(line);
     }
 
-    fn draw_text(&mut self, strings: &StringResolver<'_, '_>, text: Value, x: i32, y: i32) {
+    fn draw_text(&mut self, strings: &StringResolver<'_>, text: Value, x: i32, y: i32) {
         let mut line = LogLine::new();
         write!(line, "text text=").ok();
         write_value(&mut line, strings, text).ok();
@@ -1239,11 +1503,7 @@ impl TraceSink for RuntimeSink<'_> {
         write_human_bytes(out, "RAM", MEMORY_AVAILABLE_BYTES).map_err(|_| VmError::InvalidOperand)
     }
 
-    fn system_storage_text(
-        &mut self,
-        name: &str,
-        out: &mut dyn fmt::Write,
-    ) -> Result<(), VmError> {
+    fn system_storage_text(&mut self, name: &str, out: &mut dyn fmt::Write) -> Result<(), VmError> {
         if name != "apps" {
             return Err(VmError::InvalidOperand);
         }
@@ -1284,6 +1544,129 @@ impl From<AppStorageError> for RuntimeError {
     }
 }
 
+struct StoredAppReader<'a, S: AppStorage> {
+    storage: &'a mut S,
+    app_id: &'a str,
+}
+
+impl<S: AppStorage> SqbcReader for StoredAppReader<'_, S> {
+    fn read_exact_at(&mut self, offset: usize, out: &mut [u8]) -> Result<(), VmError> {
+        let read = self
+            .storage
+            .read_app_range(self.app_id, offset, out)
+            .map_err(|_| VmError::ReadFailed)?;
+        if read == out.len() {
+            Ok(())
+        } else {
+            Err(VmError::ReadFailed)
+        }
+    }
+}
+
+struct StoredAppHost<'a, 'd, S: AppStorage> {
+    storage: &'a mut S,
+    app_id: &'a str,
+    trace: &'a mut RuntimeSink<'d>,
+}
+
+impl<S: AppStorage> SqbcReader for StoredAppHost<'_, '_, S> {
+    fn read_exact_at(&mut self, offset: usize, out: &mut [u8]) -> Result<(), VmError> {
+        let read = self
+            .storage
+            .read_app_range(self.app_id, offset, out)
+            .map_err(|_| VmError::ReadFailed)?;
+        if read == out.len() {
+            Ok(())
+        } else {
+            Err(VmError::ReadFailed)
+        }
+    }
+}
+
+impl<S: AppStorage> TraceSink for StoredAppHost<'_, '_, S> {
+    fn trace(&mut self, message: &str) {
+        self.trace.trace(message);
+    }
+
+    fn debug_print(&mut self, strings: &StringResolver<'_>, values: &[Value]) {
+        self.trace.debug_print(strings, values);
+    }
+
+    fn draw_clear(&mut self, color: &str) {
+        self.trace.draw_clear(color);
+    }
+
+    fn draw_text(&mut self, strings: &StringResolver<'_>, text: Value, x: i32, y: i32) {
+        self.trace.draw_text(strings, text, x, y);
+    }
+
+    fn draw_rect(&mut self, x: i32, y: i32, w: i32, h: i32) {
+        self.trace.draw_rect(x, y, w, h);
+    }
+
+    fn draw_line(&mut self, x1: i32, y1: i32, x2: i32, y2: i32) {
+        self.trace.draw_line(x1, y1, x2, y2);
+    }
+
+    fn hardware_gpio_write(&mut self, name: &str, value: bool) -> Result<(), VmError> {
+        self.trace.hardware_gpio_write(name, value)
+    }
+
+    fn hardware_gpio_toggle(&mut self, name: &str) -> Result<(), VmError> {
+        self.trace.hardware_gpio_toggle(name)
+    }
+
+    fn hardware_gpio_read(&mut self, name: &str) -> Result<bool, VmError> {
+        self.trace.hardware_gpio_read(name)
+    }
+
+    fn app_launch(&mut self, app: &str) -> Result<(), VmError> {
+        self.trace.app_launch(app)
+    }
+
+    fn app_arm(&mut self, app: &str) -> Result<(), VmError> {
+        self.trace.app_arm(app)
+    }
+
+    fn app_disarm(&mut self, app: &str) -> Result<(), VmError> {
+        self.trace.app_disarm(app)
+    }
+
+    fn service_timer_every(&mut self, event: &str, interval_ms: i32) -> Result<(), VmError> {
+        self.trace.service_timer_every(event, interval_ms)
+    }
+
+    fn service_timer_after(&mut self, event: &str, delay_ms: i32) -> Result<(), VmError> {
+        self.trace.service_timer_after(event, delay_ms)
+    }
+
+    fn system_memory_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
+        self.trace.system_memory_text(out)
+    }
+
+    fn system_storage_text(&mut self, name: &str, out: &mut dyn fmt::Write) -> Result<(), VmError> {
+        self.trace.system_storage_text(name, out)
+    }
+
+    fn state_load(&mut self, out: &mut [u8]) -> Result<Option<usize>, VmError> {
+        self.storage
+            .read_state(self.app_id, out)
+            .map_err(|_| VmError::ReadFailed)
+    }
+
+    fn state_save(&mut self, bytes: &[u8]) -> Result<(), VmError> {
+        self.storage
+            .write_state(self.app_id, bytes)
+            .map_err(|_| VmError::ReadFailed)
+    }
+
+    fn state_reset_persistent(&mut self) -> Result<(), VmError> {
+        self.storage
+            .delete_state(self.app_id)
+            .map_err(|_| VmError::ReadFailed)
+    }
+}
+
 fn set_runtime_error(
     error: RuntimeError,
     last_error: &mut Option<VmError>,
@@ -1302,32 +1685,6 @@ fn app_ref_available(app: AppRef, registry: &AppRegistry, temp_app: &TempApp) ->
     }
 }
 
-fn load_persistent_app<'a>(
-    app: AppSlot,
-    registry: &AppRegistry,
-    storage: &mut impl AppStorage,
-    app_load_bytes: &'a mut [u8; MAX_APP_BYTES],
-) -> Result<&'a [u8], AppStorageError> {
-    let Some(entry) = registry.entry(app) else {
-        return Err(AppStorageError::NotFound);
-    };
-    let len = storage.read_app(entry.name(), app_load_bytes)?;
-    Ok(&app_load_bytes[..len])
-}
-
-fn app_ref_bytes<'a>(
-    app: AppRef,
-    registry: &AppRegistry,
-    storage: &mut impl AppStorage,
-    app_load_bytes: &'a mut [u8; MAX_APP_BYTES],
-    temp_app: &TempApp,
-) -> Result<&'a [u8], AppStorageError> {
-    match app {
-        AppRef::Persistent(slot) => load_persistent_app(slot, registry, storage, app_load_bytes),
-        AppRef::Temp => Ok(&app_load_bytes[..temp_app.len]),
-    }
-}
-
 fn run_app_event(
     app: AppRef,
     event: &str,
@@ -1337,22 +1694,18 @@ fn run_app_event(
     temp_app: &TempApp,
     trace: &mut RuntimeSink<'_>,
 ) -> Result<(), RuntimeError> {
-    let program = Program::parse(app_ref_bytes(
+    let previous = trace.current_app;
+    trace.current_app = Some(app);
+    let mut vm = Some(load_vm_for_app(
         app,
         registry,
         storage,
         app_load_bytes,
         temp_app,
-    )?)?;
-    let previous = trace.current_app;
-    trace.current_app = Some(app);
-    let mut vm = Vm::new(program);
-    let result = vm.dispatch(event, trace);
-    if vm.exited() {
-        trace.exited = true;
-    }
+    )?);
+    let result = dispatch_loaded_vm(&mut vm, app, event, registry, storage, trace);
     trace.current_app = previous;
-    result.map_err(RuntimeError::Vm)
+    result
 }
 
 fn load_vm_for_app(
@@ -1361,20 +1714,37 @@ fn load_vm_for_app(
     storage: &mut impl AppStorage,
     app_load_bytes: &mut [u8; MAX_APP_BYTES],
     temp_app: &TempApp,
-) -> Result<Vm<'static>, RuntimeError> {
-    let bytes = app_ref_bytes(app, registry, storage, app_load_bytes, temp_app)?;
-    let ptr = bytes.as_ptr();
-    let len = bytes.len();
-    // The firmware owns APP_LOAD_BYTES for the lifetime of the active VM and
-    // explicitly drops the VM before reusing the buffer for another app.
-    let stable = unsafe { core::slice::from_raw_parts(ptr, len) };
-    Ok(Vm::new(Program::parse(stable)?))
+) -> Result<ActiveVm, RuntimeError> {
+    match app {
+        AppRef::Temp => {
+            let bytes = &app_load_bytes[..temp_app.len];
+            let ptr = bytes.as_ptr();
+            let len = bytes.len();
+            // The firmware owns APP_LOAD_BYTES for the lifetime of the temp VM
+            // and drops that VM before reusing the buffer.
+            let stable = unsafe { core::slice::from_raw_parts(ptr, len) };
+            Ok(ActiveVm::Temp(Vm::new(Program::parse(stable)?)))
+        }
+        AppRef::Persistent(slot) => {
+            let Some(entry) = registry.entry(slot) else {
+                return Err(RuntimeError::Storage(AppStorageError::NotFound));
+            };
+            let mut reader = StoredAppReader {
+                storage,
+                app_id: entry.name(),
+            };
+            let index = ProgramIndex::parse_from_reader(&mut reader, app_load_bytes)?;
+            Ok(ActiveVm::Persistent(ChunkedVm::new(index)))
+        }
+    }
 }
 
 fn dispatch_loaded_vm(
-    vm: &mut Option<Vm<'static>>,
+    vm: &mut Option<ActiveVm>,
     app: AppRef,
     event: &str,
+    registry: &AppRegistry,
+    storage: &mut impl AppStorage,
     trace: &mut RuntimeSink<'_>,
 ) -> Result<(), RuntimeError> {
     let Some(active) = vm.as_mut() else {
@@ -1382,7 +1752,21 @@ fn dispatch_loaded_vm(
     };
     let previous = trace.current_app;
     trace.current_app = Some(app);
-    let result = active.dispatch(event, trace);
+    let result = match (&mut *active, app) {
+        (ActiveVm::Temp(active), AppRef::Temp) => active.dispatch(event, trace),
+        (ActiveVm::Persistent(active), AppRef::Persistent(slot)) => {
+            let Some(entry) = registry.entry(slot) else {
+                return Err(RuntimeError::Storage(AppStorageError::NotFound));
+            };
+            let mut host = StoredAppHost {
+                storage,
+                app_id: entry.name(),
+                trace,
+            };
+            active.dispatch(&mut host, event)
+        }
+        _ => Err(VmError::InvalidOperand),
+    };
     if active.exited() {
         trace.exited = true;
     }
@@ -1427,7 +1811,7 @@ fn finish_current_exit(
     storage: &mut impl AppStorage,
     app_load_bytes: &mut [u8; MAX_APP_BYTES],
     temp_app: &mut TempApp,
-    vm: &mut Option<Vm<'static>>,
+    vm: &mut Option<ActiveVm>,
     vm_slot: &mut Option<AppSlot>,
     last_error: &mut Option<VmError>,
     storage_error: &mut Option<AppStorageError>,
@@ -1453,10 +1837,11 @@ fn finish_current_exit(
         *temp_app = TempApp::empty();
     }
     trace.exited = false;
-    trace.active_app = trace
-        .pop_return_target()
-        .or_else(|| registry.find("main"))
-        .map(AppRef::Persistent);
+    trace.active_app = trace.pop_return_target().map(AppRef::Persistent);
+    if trace.active_app.is_none() {
+        trace.request_root_restart();
+        return;
+    }
     if let Some(app) = trace.active_app {
         match load_vm_for_app(app, registry, storage, app_load_bytes, temp_app) {
             Ok(loaded) => {
@@ -1465,7 +1850,9 @@ fn finish_current_exit(
                     AppRef::Persistent(slot) => Some(slot),
                     AppRef::Temp => None,
                 };
-                if let Err(error) = dispatch_loaded_vm(vm, app, "app.start", trace) {
+                if let Err(error) =
+                    dispatch_loaded_vm(vm, app, "app.start", registry, storage, trace)
+                {
                     set_runtime_error(error, last_error, storage_error);
                 }
             }
@@ -1480,7 +1867,7 @@ fn process_pending_actions(
     storage: &mut impl AppStorage,
     app_load_bytes: &mut [u8; MAX_APP_BYTES],
     temp_app: &mut TempApp,
-    vm: &mut Option<Vm<'static>>,
+    vm: &mut Option<ActiveVm>,
     vm_slot: &mut Option<AppSlot>,
     last_error: &mut Option<VmError>,
     storage_error: &mut Option<AppStorageError>,
@@ -1601,7 +1988,7 @@ impl Write for LogLine {
 
 fn write_value(
     out: &mut impl Write,
-    strings: &StringResolver<'_, '_>,
+    strings: &StringResolver<'_>,
     value: Value,
 ) -> Result<(), fmt::Error> {
     match value {
@@ -1609,7 +1996,11 @@ fn write_value(
         Value::Bool(value) => write!(out, "{value}"),
         Value::I32(value) => write!(out, "{value}"),
         Value::String(_) | Value::RuntimeString(_) => {
-            write!(out, "\"{}\"", strings.value_str(value).unwrap_or("<bad-string>"))
+            write!(
+                out,
+                "\"{}\"",
+                strings.value_str(value).unwrap_or("<bad-string>")
+            )
         }
     }
 }

@@ -1,7 +1,7 @@
 app "blinky-supermini"
 
 state {
-  led: false
+  led: bool = false
 }
 
 event.on("app.start") {

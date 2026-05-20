@@ -1,7 +1,7 @@
 app "binbook-reader" target "xteink-x4"
 
 state {
-  selected: 0
+  selected: int = 0
 }
 
 event.on("app.start") {

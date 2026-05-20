@@ -156,6 +156,13 @@ pub trait AppStorage {
         out: &mut [StoredApp],
         scratch: &mut [u8],
     ) -> Result<usize, AppStorageError>;
+    fn write_state(&mut self, app_id: &str, bytes: &[u8]) -> Result<(), AppStorageError>;
+    fn read_state(
+        &mut self,
+        app_id: &str,
+        out: &mut [u8],
+    ) -> Result<Option<usize>, AppStorageError>;
+    fn delete_state(&mut self, app_id: &str) -> Result<(), AppStorageError>;
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -418,7 +425,9 @@ mod tests {
                 _ => "app-f",
             };
             let slot = registry.reserve_install(name, 1, 100).unwrap();
-            registry.commit_install(slot, name, 1, index as u32).unwrap();
+            registry
+                .commit_install(slot, name, 1, index as u32)
+                .unwrap();
         }
 
         assert_eq!(
@@ -447,6 +456,9 @@ mod tests {
         len: usize,
         hash: u32,
         bytes: [u8; MAX_APP_BYTES],
+        state_len: usize,
+        state_bytes: [u8; crate::vm::MAX_SAVED_STATE_BYTES],
+        state_occupied: bool,
         occupied: bool,
     }
 
@@ -457,6 +469,9 @@ mod tests {
                 len: 0,
                 hash: 0,
                 bytes: [0; MAX_APP_BYTES],
+                state_len: 0,
+                state_bytes: [0; crate::vm::MAX_SAVED_STATE_BYTES],
+                state_occupied: false,
                 occupied: false,
             }
         }
@@ -577,6 +592,45 @@ mod tests {
             }
             Ok(count)
         }
+
+        fn write_state(&mut self, app_id: &str, bytes: &[u8]) -> Result<(), AppStorageError> {
+            self.ensure_ready()?;
+            if bytes.len() > crate::vm::MAX_SAVED_STATE_BYTES {
+                return Err(AppStorageError::NoSpace);
+            }
+            let index = self.find(app_id).ok_or(AppStorageError::NotFound)?;
+            let file = &mut self.files[index];
+            file.state_bytes[..bytes.len()].copy_from_slice(bytes);
+            file.state_len = bytes.len();
+            file.state_occupied = true;
+            Ok(())
+        }
+
+        fn read_state(
+            &mut self,
+            app_id: &str,
+            out: &mut [u8],
+        ) -> Result<Option<usize>, AppStorageError> {
+            self.ensure_ready()?;
+            let index = self.find(app_id).ok_or(AppStorageError::NotFound)?;
+            let file = &self.files[index];
+            if !file.state_occupied {
+                return Ok(None);
+            }
+            if out.len() < file.state_len {
+                return Err(AppStorageError::NoSpace);
+            }
+            out[..file.state_len].copy_from_slice(&file.state_bytes[..file.state_len]);
+            Ok(Some(file.state_len))
+        }
+
+        fn delete_state(&mut self, app_id: &str) -> Result<(), AppStorageError> {
+            self.ensure_ready()?;
+            let index = self.find(app_id).ok_or(AppStorageError::NotFound)?;
+            self.files[index].state_len = 0;
+            self.files[index].state_occupied = false;
+            Ok(())
+        }
     }
 
     #[test]
@@ -597,7 +651,7 @@ mod tests {
         let source = r#"
 app "main"
 
-state { count: 0 }
+state { count: int = 0 }
 
 event.on("app.start") {
   debug.print("start", count)
@@ -669,7 +723,9 @@ screen("main") {}
         let mut registry = AppRegistry::new();
         let mut scratch = [0u8; MAX_APP_BYTES];
         assert_eq!(
-            registry.load_from_storage(&mut storage, &mut scratch).unwrap(),
+            registry
+                .load_from_storage(&mut storage, &mut scratch)
+                .unwrap(),
             1
         );
 

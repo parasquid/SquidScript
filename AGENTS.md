@@ -67,12 +67,25 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
 
 ## Script And Firmware Tooling Discipline
 
+- Firmware source for the ESP32-C3 reference firmware lives under
+  `firmware/squid-firmware`; there is no top-level `crates/` workspace layout.
+- Before reporting that firmware build, flashing, serial, or hardware checks do
+  not work in this environment, check the relevant repository docs and wrapper
+  scripts first. Prefer the documented wrapper command over ad hoc direct tool
+  invocations, and only call something blocked after the documented path fails.
+- Use `scripts/c3-supermini-build.sh` to build or type-check the ESP32-C3
+  reference firmware binary. The wrapper sets the RISC-V C compiler and
+  freestanding flags that direct `cargo check --features hardware` misses:
+  `CC_riscv32imc_unknown_none_elf`, `CFLAGS_riscv32imc_unknown_none_elf`,
+  `-march=rv32imc`, `-mabi=ilp32`, firmware freestanding C headers, the stable
+  Rust toolchain, and `SQUID_FIRMWARE_BUILD_ID`.
 - Dry-run new scripts before calling them ready: run `bash -n`, verify required tools and Rust targets, check wrapped command help where practical, and confirm wrapper scripts forward user-supplied arguments.
 - For firmware flashing scripts, avoid auto-monitoring by default when USB reset or re-enumeration can break the serial session. Prefer `squidc device monitor` for ESP32-C3 Super Mini SquidScript output, and use explicit opt-in monitoring such as `MONITOR_AFTER_FLASH=1` only when needed.
 - Do not filter or suppress flashing tool stderr in firmware scripts. Surface warnings and errors directly, and document known harmless tool warnings instead of hiding them.
 - Clearly report host visibility limits, such as Codex sandbox sessions that cannot see `/dev/ttyACM*`, `/dev/ttyUSB*`, or `/dev/bus/usb`.
 - Do not run hardware scripts or serial commands in parallel against the same physical target. A single USB serial device is a shared mutable resource; run flash, install, hardware test, monitor, and `squidc` device commands sequentially.
 - Hardware target tests are listed in `docs/hardware_target_tests.md`; use that inventory to identify real-device tests before running them.
+- When firmware work changes behavior that has hardware coverage and an ESP32-C3 Super Mini is attached or reasonably available, run the relevant hardware target tests. Sandbox isolation is not a reason to skip them; use escalated command execution for serial visibility checks and the hardware test command, and report the result.
 - When running the ESP32-C3 Super Mini hardware target suite, use `scripts/c3-supermini-test-hardware.sh` so stateful checks run first and the blinky app runs last. Blinky is the final visible board-state check and should be left running unless the user asks otherwise.
 - Hardware target tests and serial/flashing commands must run outside the Codex sandbox. Sandboxed sessions do not reliably expose `/dev/ttyACM*`, `/dev/ttyUSB*`, or `/dev/serial/by-id`, even after host reboot. Use escalated command execution for ESP32-C3 Super Mini serial visibility checks and hardware target tests.
 - When troubleshooting ESP32-C3 Super Mini flashing access, check `firmware/README.md` and `firmware/squid-firmware/README.md` for the documented `/dev/ttyACM0` ACL workaround before suggesting broader sudo changes.

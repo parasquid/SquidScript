@@ -39,6 +39,7 @@ const OP_POP: u8 = 60;
 
 const BUILTIN_STATE_LOAD: u8 = 1;
 const BUILTIN_STATE_SAVE: u8 = 2;
+const BUILTIN_STATE_RESET: u8 = 14;
 const BUILTIN_APP_EXIT: u8 = 3;
 const BUILTIN_DEBUG_PRINT: u8 = 4;
 const BUILTIN_SCREEN_OPEN: u8 = 5;
@@ -61,6 +62,10 @@ const VALUE_NULL: u8 = 0;
 const VALUE_BOOL: u8 = 1;
 const VALUE_I32: u8 = 2;
 const VALUE_STRING: u8 = 3;
+
+const STATE_TYPE_INT: u8 = 1;
+const STATE_TYPE_BOOL: u8 = 2;
+const STATE_TYPE_STRING: u8 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SqbcV2Error {
@@ -393,6 +398,7 @@ fn collect_statement_strings(
             }
             IrStatement::StateLoad
             | IrStatement::StateSave
+            | IrStatement::StateReset
             | IrStatement::ScreenRefresh
             | IrStatement::AppExit
             | IrStatement::For { .. } => {}
@@ -477,6 +483,7 @@ fn compile_statement(
     match statement {
         IrStatement::StateLoad => emit_builtin(&mut unit.code, BUILTIN_STATE_LOAD),
         IrStatement::StateSave => emit_builtin(&mut unit.code, BUILTIN_STATE_SAVE),
+        IrStatement::StateReset => emit_builtin(&mut unit.code, BUILTIN_STATE_RESET),
         IrStatement::AppExit => emit_builtin(&mut unit.code, BUILTIN_APP_EXIT),
         IrStatement::Assign { name, expr } => {
             compile_expr(unit, frame, expr)?;
@@ -828,9 +835,20 @@ fn encode_state_section(ir: &IrProgram, strings: &StringTable) -> Result<Vec<u8>
                 .get(&state.name)
                 .ok_or_else(|| SqbcV2Error::new("missing state name string"))?,
         );
+        emit(&mut out, state_type_tag(&state.value_type)?);
+        emit(&mut out, u8::from(state.nullable));
         encode_value(&mut out, strings, &state.value)?;
     }
     Ok(out)
+}
+
+fn state_type_tag(value_type: &str) -> Result<u8, SqbcV2Error> {
+    match value_type {
+        "int" => Ok(STATE_TYPE_INT),
+        "bool" => Ok(STATE_TYPE_BOOL),
+        "string" => Ok(STATE_TYPE_STRING),
+        _ => Err(SqbcV2Error::new("unsupported state type")),
+    }
 }
 
 fn encode_value(
@@ -908,6 +926,12 @@ fn encode_app_meta(ir: &IrProgram, _strings: &StringTable) -> Result<Vec<u8>, Sq
         u16::try_from(app_id.len()).map_err(|_| SqbcV2Error::new("app id too long"))?,
     );
     out.extend_from_slice(app_id);
+    let state_store = ir.state_store.as_bytes();
+    write_u16(
+        &mut out,
+        u16::try_from(state_store.len()).map_err(|_| SqbcV2Error::new("state store too long"))?,
+    );
+    out.extend_from_slice(state_store);
     Ok(out)
 }
 

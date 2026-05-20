@@ -112,7 +112,7 @@ Initial built-in IDs:
 11 hardware.gpio.toggle
 12 hardware.gpio.read
 13 app.launch
-14 reserved
+14 state.reset
 15 reserved
 16 app.arm
 17 app.disarm
@@ -160,11 +160,11 @@ behavior. It stores installed SQBC payloads in LittleFS. Startup registry
 rebuilds validate installed apps from the v3 header and section table with
 bounded reads rather than mirroring full app bodies in RAM.
 
-## Chunk/Index Direction
+## Chunk/Index Execution
 
-The remaining SQBC v3 loader work is to execute installed apps from a small
-metadata/index read plus on-demand executable chunks. The intended execution
-shape is:
+Installed-app SQBC v3 execution reads a small owned metadata/index first, then
+loads executable handler/function/screen ranges from the code section on
+demand. The execution shape is:
 
 ```text
 |-- header and section table
@@ -178,13 +178,13 @@ shape is:
 `-- checksum
 ```
 
-Firmware should load the index first, then load handler/function/screen chunks
-from app storage as needed. Active chunks cannot be evicted. Inactive chunks are
-cache entries and may be evicted at any time. Preloaded chunks have higher cache
-priority but are not pinned. Dropping a chunk is not app lifecycle behavior and
-does not dispatch `event.on("app.exit")`.
+Firmware loads handler/function/screen chunks from app storage as needed.
+Active chunks cannot be evicted. Inactive chunks are cache entries and may be
+evicted at any time. Preloaded chunks have higher cache priority but are not
+pinned. Dropping a chunk is not app lifecycle behavior and does not dispatch
+`event.on("app.exit")`.
 
 LittleFS remains the reference firmware app storage abstraction. Installed-app
-execution should use bounded indexed reads from LittleFS rather than assuming a
+execution uses bounded indexed reads from LittleFS rather than assuming a
 memory-mapped contiguous app image. `RUN.TEMP` remains RAM-backed before 1.0 so
 rapid `squidc run` iteration does not write flash.

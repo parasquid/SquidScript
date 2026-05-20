@@ -1297,12 +1297,18 @@ fn state_block_with_values(state_block: &str, state_output: &str) -> String {
     let mut out = String::new();
     for line in state_block.lines() {
         let trimmed = line.trim_start();
-        if let Some((name, _)) = trimmed.split_once(':') {
+        if let Some((name, rest)) = trimmed.split_once(':') {
             if let Some((_, value)) = values.iter().find(|(existing, _)| existing == name.trim()) {
                 let indent_len = line.len().saturating_sub(trimmed.len());
                 out.push_str(&line[..indent_len]);
                 out.push_str(name.trim());
-                out.push_str(": ");
+                if let Some((type_part, _)) = rest.split_once('=') {
+                    out.push(':');
+                    out.push_str(type_part);
+                    out.push_str("= ");
+                } else {
+                    out.push_str(": ");
+                }
                 out.push_str(value);
                 out.push('\n');
                 continue;
@@ -1393,13 +1399,13 @@ mod tests {
 
     #[test]
     fn repl_state_block_uses_previous_state_values() {
-        let state_block = "state {\n  count: 0\n  label: \"old\"\n}\n";
+        let state_block = "state {\n  count: int = 0\n  label: string = \"old\"\n}\n";
         let state_output = "BEGIN STATE\ncount=2\nlabel=\"new\"\nexited=false\nEND STATE\n";
 
         let merged = state_block_with_values(state_block, state_output);
 
-        assert!(merged.contains("count: 2"));
-        assert!(merged.contains("label: \"new\""));
+        assert!(merged.contains("count: int = 2"));
+        assert!(merged.contains("label: string = \"new\""));
         assert!(!merged.contains("exited"));
     }
 

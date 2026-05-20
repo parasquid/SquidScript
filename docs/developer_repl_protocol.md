@@ -57,6 +57,9 @@ Resource responses are read-only diagnostics:
 ```text
 BEGIN RESOURCES
 memory_available_bytes=299136
+temp_app_buffer_bytes=0
+temp_app_bytes=0
+installed_code_cache_bytes=1024
 app_storage_total_bytes=2031616
 app_storage_used_bytes=0
 app_storage_available_bytes=2031616
@@ -66,13 +69,19 @@ OK RESOURCES.GET
 
 These values are target-firmware metrics. `memory_available_bytes` is the
 ESP32-C3 reference firmware's raw runtime RAM budget, not portable heap
-introspection.
+introspection. `temp_app_buffer_bytes` and `temp_app_bytes` describe the
+RAM-backed `RUN.TEMP` path. `installed_code_cache_bytes` describes the
+installed-app chunk buffer/cache path.
 
 Installed apps are persistent in the ESP32-C3 reference firmware. On startup,
-firmware scans the app store and rebuilds the in-memory registry cache.
-`RESET` resets the development runtime state and clears the temp app but does
-not erase installed apps. `STORAGE.FORMAT` formats the firmware app store and
-clears the registry cache.
+firmware scans the app store, rebuilds the in-memory registry cache, boots
+installed `main` when present, and dispatches `event.on("app.start")`. If
+`main` is missing or invalid, firmware remains in dev shell mode. `RESET` is a
+soft boot: it clears the current VM, temp app, foreground stack, pending
+launches, app-owned trigger/timer registrations, and debug buffers, then boots
+installed `main` if present. It does not erase installed apps.
+`STORAGE.FORMAT` formats the firmware app store, clears the registry cache, and
+leaves firmware in dev shell mode because `main` no longer exists.
 
 See `docs/firmware_app_storage.md` for the current ESP32-C3 storage layout.
 
@@ -88,8 +97,17 @@ enabled=true
 missing=null
 ```
 
-Import restores matching state names with compatible primitive values. Unknown
-or incompatible values are ignored for this milestone.
+`STATE.GET` and `STATE.IMPORT` are developer inspection tools. They preserve
+the current line-oriented shape even though installed-app persistence is
+firmware-owned and typed. Import restores matching state names with compatible
+primitive values; unknown or incompatible values are ignored by the developer
+command. In contrast, `state.load()` for installed app persistence treats a
+malformed or type-invalid saved record as a VM error.
+
+Installed-app persistence uses firmware-owned binary `SQST` records under the
+app-state store, not the `STATE.GET` text shape. `state.save()` writes the
+current compiled primitive slots atomically, and `state.reset()` restores
+compiled defaults and removes the installed app's saved record.
 
 ## Debug Console
 

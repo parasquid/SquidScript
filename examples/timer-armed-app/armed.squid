@@ -1,10 +1,16 @@
 app "timer-armed-app"
 
 state {
-  ticks: 0
+  stateVersion: int = 1
+  ticks: int = 0
 }
 
 event.on("app.arm") {
+  state.load()
+  if (stateVersion != 1) {
+    state.reset()
+    stateVersion = 1
+  }
   debug.print("armed register")
   service.timer.every("timer.debug", 1000)
 }
@@ -12,6 +18,7 @@ event.on("app.arm") {
 event.on("timer.debug") {
   ticks = ticks + 1
   debug.print("armed timer", ticks)
+  state.save()
   app.exit()
 }
 

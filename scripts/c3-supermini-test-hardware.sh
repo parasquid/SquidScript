@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT/scripts/lib/serial-port.sh"
+PORT="$(resolve_esp_serial_port)"
 SKIP_FLASH=0
 
 usage() {
@@ -32,15 +34,23 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+format_firmware_storage() {
+  PYTHONPATH="$ROOT/scripts" python3 "$ROOT/scripts/c3_supermini_serial.py" \
+    --port "$PORT" \
+    storage-format
+}
+
 if [[ "$SKIP_FLASH" == "1" ]]; then
   "$ROOT/scripts/c3-supermini-test-reference-firmware.sh" --skip-flash
 else
   "$ROOT/scripts/c3-supermini-test-reference-firmware.sh"
 fi
 
+format_firmware_storage
 cargo run -p squidc -- repl --script tests/repl/hardware-gpio-status-led.session
 cargo run -p squidc -- repl --script tests/repl/default-dev.session
 "$ROOT/scripts/c3-supermini-test-persistent-app-registry.sh"
+format_firmware_storage
 "$ROOT/scripts/c3-supermini-test-timer-armed-app.sh"
 "$ROOT/scripts/c3-supermini-test-generic-triggered-apps.sh"
 cargo run -p squidc -- repl examples/blinky-supermini/main.squid --script tests/repl/blinky-supermini.session

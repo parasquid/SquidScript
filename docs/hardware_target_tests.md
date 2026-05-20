@@ -85,9 +85,11 @@ behavior over USB serial.
 ./scripts/c3-supermini-test-persistent-app-registry.sh
 ```
 
-Formats app storage, installs the headless counter fixture as `main`, resets the
-chip, verifies `APP.LIST` still reports `main`, then dispatches `app.start`.
-This test proves installed SQBC survives a real firmware restart.
+Formats app storage, installs the headless counter fixture as `main`, runs it,
+presses `SELECT` twice to save `count=2`, resets the chip, verifies `APP.LIST`
+still reports `main`, then reads state to prove boot-time `state.load()`
+restored `count=2` and dispatched `app.start` after reset. This test proves
+installed SQBC and installed-app state survive a real firmware restart.
 
 ### Blinky App
 

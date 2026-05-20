@@ -120,7 +120,7 @@ The initial compiler subset follows the documented SquidScript app shape used by
 app "hello-menu" target "xteink-x4"
 
 state {
-  selected: 0
+  selected: int = 0
 }
 
 event.on("app.start") {
@@ -145,12 +145,12 @@ This subset compiles to versioned `squidscript-ir` JSON with state defaults, eve
 Currently supported syntax:
 
 - `app "id" target "target-id"`
-- `state { name: literal }`
+- `state { name: type = literal }`
 - `event.on("app.start") { ... }`
 - `event.on("key.KEY") { ... }`
 - `screen("name", { render: "compose" }) { ... }`
 - `function name(...) { ... }`
-- `state.load()`, `state.save()`
+- `state.load()`, `state.save()`, `state.reset()`
 - `screen.open("name")`, `screen.refresh()`
 - `app.exit()`
 - local `let` bindings, typed local annotations, assignment, `if/else`, `repeat`, and bounded `for ... in ... max ...`

@@ -10,7 +10,8 @@ usage() {
 Usage: scripts/c3-supermini-test-persistent-app-registry.sh
 
 Formats SquidScript app storage, installs the headless counter fixture as main,
-resets the ESP32-C3, then verifies APP.LIST and RUN.EVENT still work.
+mutates saved state, resets the ESP32-C3, then verifies APP.LIST, automatic
+root main boot, and persistent state restore.
 
 Set ESPFLASH_PORT=/path/to/tty when auto-detection is not enough.
 EOF
@@ -38,6 +39,25 @@ cargo run -p squidc -- app install \
   --as main \
   "$ROOT/compiler/rust/fixtures/conformance/headless_counter.squid"
 
+PYTHONPATH="$ROOT/scripts" python3 "$ROOT/scripts/c3_supermini_serial.py" \
+  --port "$PORT" \
+  run-app main
+PYTHONPATH="$ROOT/scripts" python3 "$ROOT/scripts/c3_supermini_serial.py" \
+  --port "$PORT" \
+  key SELECT
+PYTHONPATH="$ROOT/scripts" python3 "$ROOT/scripts/c3_supermini_serial.py" \
+  --port "$PORT" \
+  key SELECT
+
+STATE_BEFORE_RESET="$(PYTHONPATH="$ROOT/scripts" python3 "$ROOT/scripts/c3_supermini_serial.py" \
+  --port "$PORT" \
+  state)"
+printf '%s\n' "$STATE_BEFORE_RESET"
+if [[ "$STATE_BEFORE_RESET" != *"count=2"* ]]; then
+  printf 'persistent state setup did not save count=2 before chip reset\n' >&2
+  exit 1
+fi
+
 if command -v espflash >/dev/null 2>&1; then
   ESPFLASH_BIN="$(command -v espflash)"
 elif [[ -x "$HOME/.cargo/bin/espflash" ]]; then
@@ -59,8 +79,17 @@ if [[ "$APPS_OUTPUT" != *"app=main"* ]]; then
   exit 1
 fi
 
-PYTHONPATH="$ROOT/scripts" python3 "$ROOT/scripts/c3_supermini_serial.py" \
+STATE_OUTPUT="$(PYTHONPATH="$ROOT/scripts" python3 "$ROOT/scripts/c3_supermini_serial.py" \
   --port "$PORT" \
-  run-event main app.start
+  state)"
+printf '%s\n' "$STATE_OUTPUT"
+if [[ "$STATE_OUTPUT" != *"started=1"* ]]; then
+  printf 'root main did not auto-run app.start after chip reset\n' >&2
+  exit 1
+fi
+if [[ "$STATE_OUTPUT" != *"count=2"* ]]; then
+  printf 'state.load did not restore count=2 after chip reset\n' >&2
+  exit 1
+fi
 
 printf 'OK hardware test esp32c3-super-mini persistent app registry\n'

@@ -99,6 +99,8 @@ pub struct IrProgram {
     pub format: String,
     pub version: u32,
     pub app: IrApp,
+    #[serde(default = "default_state_store")]
+    pub state_store: String,
     pub state: Vec<IrStateValue>,
     pub functions: Vec<IrFunction>,
     pub handlers: Vec<IrHandler>,
@@ -115,7 +117,13 @@ pub struct IrApp {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IrStateValue {
     pub name: String,
+    pub value_type: String,
+    pub nullable: bool,
     pub value: serde_json::Value,
+}
+
+fn default_state_store() -> String {
+    "default".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -147,6 +155,8 @@ pub enum IrStatement {
     StateLoad,
     #[serde(rename = "state.save")]
     StateSave,
+    #[serde(rename = "state.reset")]
+    StateReset,
     #[serde(rename = "screen.open")]
     ScreenOpen { screen: String },
     #[serde(rename = "screen.refresh")]
@@ -283,6 +293,7 @@ pub struct AstAppDecl {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AstStateBlock {
     pub selected_default: i64,
+    pub store: String,
     pub values: Vec<IrStateValue>,
     pub span: SourceSpan,
 }
@@ -329,6 +340,7 @@ enum TokenKind {
     Greater,
     Plus,
     Minus,
+    Question,
     At,
     Whitespace,
     Unknown,
@@ -366,6 +378,18 @@ pub fn parse(source: &str) -> ParsedSource {
 
 const fn is_false(value: &bool) -> bool {
     !*value
+}
+
+fn state_default_matches(value_type: &str, nullable: bool, value: &serde_json::Value) -> bool {
+    if value.is_null() {
+        return nullable;
+    }
+    match value_type {
+        "int" => value.as_i64().is_some(),
+        "bool" => value.as_bool().is_some(),
+        "string" => value.as_str().is_some(),
+        _ => false,
+    }
 }
 
 pub fn compile(request: CompileRequest) -> CompileResponse {
@@ -425,6 +449,11 @@ pub fn compile_with_profile(request: CompileRequest, profile: BuildProfile) -> C
                 statements: function.statements,
             })
             .collect();
+        let state_store = ast
+            .state
+            .as_ref()
+            .map(|state| state.store.clone())
+            .unwrap_or_else(default_state_store);
         Some(IrProgram {
             format: "squidscript-ir".to_string(),
             version: 1,
@@ -433,6 +462,7 @@ pub fn compile_with_profile(request: CompileRequest, profile: BuildProfile) -> C
                 name: app.name,
                 target: app.target.unwrap_or_else(|| request.target_id),
             },
+            state_store,
             state: ast.state.map(|state| state.values).unwrap_or_default(),
             functions,
             handlers,
@@ -561,9 +591,56 @@ impl Parser<'_> {
         builder.start_node(SquidLang::kind_to_raw(SquidKind::StateBlock));
         let start = self.peek().map(|token| token.span.start).unwrap_or(0);
         let mut selected_default = 0;
+        let mut store = default_state_store();
         let mut values = Vec::new();
 
         self.bump(builder);
+        self.consume_ws(builder);
+        if self.at_kind(TokenKind::OpenParen) {
+            self.bump(builder);
+            self.consume_ws(builder);
+            if self.at_kind(TokenKind::OpenBrace) {
+                self.bump(builder);
+                loop {
+                    self.consume_ws(builder);
+                    if self.at_kind(TokenKind::CloseBrace) {
+                        self.bump(builder);
+                        break;
+                    }
+                    let Some(option) = self.consume_ident(builder) else {
+                        if self.at_end() {
+                            break;
+                        }
+                        self.bump(builder);
+                        continue;
+                    };
+                    self.consume_ws(builder);
+                    if self.at_kind(TokenKind::Colon) {
+                        self.bump(builder);
+                    }
+                    self.consume_ws(builder);
+                    let value = self.consume_string(builder).unwrap_or_default();
+                    if option == "store" {
+                        if matches!(value.as_str(), "default" | "internal" | "removable") {
+                            store = value;
+                        } else {
+                            self.diagnostics.push(error(
+                                "E_STATE_STORE",
+                                "unknown state store class",
+                                start,
+                                self.previous_end().unwrap_or(start),
+                            ));
+                        }
+                    }
+                    self.consume_ws(builder);
+                    self.consume_comma(builder);
+                }
+            }
+            self.consume_ws(builder);
+            if self.at_kind(TokenKind::CloseParen) {
+                self.bump(builder);
+            }
+        }
         while !self.at_end() {
             self.consume_ws(builder);
             if self.at_kind(TokenKind::OpenBrace) {
@@ -584,13 +661,63 @@ impl Parser<'_> {
                 if self.at_kind(TokenKind::Colon) {
                     self.bump(builder);
                     self.consume_ws(builder);
+                    let Some(mut value_type) = self.consume_ident(builder) else {
+                        self.diagnostics.push(error(
+                            "E_STATE_TYPE",
+                            "expected state slot type",
+                            start,
+                            self.previous_end().unwrap_or(start),
+                        ));
+                        continue;
+                    };
+                    let mut nullable = false;
+                    self.consume_ws(builder);
+                    if self.at_kind(TokenKind::Question) {
+                        self.bump(builder);
+                        nullable = true;
+                        value_type.push('?');
+                        self.consume_ws(builder);
+                    }
+                    if !matches!(value_type.as_str(), "int" | "bool" | "string" | "int?" | "bool?" | "string?") {
+                        self.diagnostics.push(error(
+                            "E_STATE_TYPE",
+                            "unsupported state slot type",
+                            start,
+                            self.previous_end().unwrap_or(start),
+                        ));
+                    }
+                    if self.at_kind(TokenKind::Equals) {
+                        self.bump(builder);
+                    } else {
+                        self.diagnostics.push(error(
+                            "E_STATE_DEFAULT",
+                            "expected state slot default value",
+                            start,
+                            self.previous_end().unwrap_or(start),
+                        ));
+                    }
+                    self.consume_ws(builder);
                     if let Some(value) = self.consume_literal_value(builder) {
+                        let base_type = value_type.trim_end_matches('?').to_string();
+                        if !state_default_matches(&base_type, nullable, &value) {
+                            self.diagnostics.push(error(
+                                "E_STATE_DEFAULT",
+                                "state default does not match declared type",
+                                start,
+                                self.previous_end().unwrap_or(start),
+                            ));
+                        }
                         if name == "selected" {
                             if let Some(number) = value.as_i64() {
                                 selected_default = number;
                             }
                         }
-                        values.push(IrStateValue { name, value });
+                        values.push(IrStateValue {
+                            name,
+                            value_type: base_type,
+                            nullable,
+                            value,
+                        });
                     }
                 }
                 continue;
@@ -602,6 +729,7 @@ impl Parser<'_> {
         builder.finish_node();
         self.ast.state = Some(AstStateBlock {
             selected_default,
+            store,
             values,
             span: SourceSpan { start, end },
         });
@@ -888,6 +1016,10 @@ impl Parser<'_> {
             ("state", "save") => {
                 self.consume_call_tail(builder);
                 Some(IrStatement::StateSave)
+            }
+            ("state", "reset") => {
+                self.consume_call_tail(builder);
+                Some(IrStatement::StateReset)
             }
             ("screen", "refresh") => {
                 self.consume_call_tail(builder);
@@ -1560,6 +1692,7 @@ fn lex(source: &str) -> Vec<LexToken> {
                 '>' => TokenKind::Greater,
                 '+' => TokenKind::Plus,
                 '-' => TokenKind::Minus,
+                '?' => TokenKind::Question,
                 '@' => TokenKind::At,
                 _ => TokenKind::Unknown,
             };
@@ -1598,6 +1731,7 @@ fn syntax_kind_for(kind: TokenKind) -> SquidKind {
         | TokenKind::Greater
         | TokenKind::Plus
         | TokenKind::Minus
+        | TokenKind::Question
         | TokenKind::At => SquidKind::Token,
     }
 }
@@ -1973,7 +2107,7 @@ screen("main") {}
     #[test]
     fn parses_and_lowers_simple_handlers() {
         let source = r#"app "hello-menu" target "xteink-x4"
-state { selected: 0 }
+state { selected: int = 0 }
 event.on("app.start") {
   screen.open("main")
 }
@@ -1999,7 +2133,7 @@ screen("main") {
     #[test]
     fn parses_and_lowers_functions_locals_conditionals_and_returns() {
         let source = r#"app "control-flow" target "xteink-x4"
-state { selected: 0 }
+state { selected: int = 0 }
 
 function chooseScreen(value) {
   if (value == 0) {
@@ -2055,7 +2189,7 @@ screen("detail") {
     #[test]
     fn parses_and_lowers_bounded_loops() {
         let source = r#"app "loops" target "xteink-x4"
-state { selected: 0 }
+state { selected: int = 0 }
 event.on("app.start") {
   repeat (3) {
     selected = selected + 1
@@ -2085,7 +2219,7 @@ screen("main") {
     #[test]
     fn parses_typed_locals_and_comparison_precedence() {
         let source = r#"app "precedence" target "xteink-x4"
-state { count: 0 }
+state { count: int = 0 }
 event.on("key.SELECT") {
   let next: int = count + 1
   if (count + 1 < 10) {
@@ -2242,7 +2376,7 @@ screen("main") {
     #[test]
     fn parses_debug_print_and_release_sqbc_strips_it() {
         let source = r#"app "debug-counter"
-state { count: 1 }
+state { count: int = 1 }
 event.on("app.start") {
   debug.print("count", count)
 }
@@ -2270,7 +2404,7 @@ screen("main") {}
     #[test]
     fn parses_render_screen_for_headless_drawlog() {
         let source = r#"app "drawlog"
-state { count: 0 }
+state { count: int = 0 }
 event.on("app.start") {
   screen.open("main")
 }
@@ -2291,7 +2425,7 @@ screen("main") {
     #[test]
     fn parses_hardware_gpio_calls() {
         let source = r#"app "gpio"
-state { led: false }
+state { led: bool = false }
 event.on("app.start") {
   hardware.gpio.write("indicator.primary", true)
   led = hardware.gpio.read("indicator.primary")
@@ -2326,7 +2460,7 @@ screen("main") {}
     #[test]
     fn parses_system_resource_string_calls() {
         let source = r#"app "resources"
-state { ready: false }
+state { ready: bool = false }
 event.on("app.start") {
   debug.print(system.memory())
   debug.print(system.storage("apps"))
@@ -2355,9 +2489,54 @@ screen("main") {}
     }
 
     #[test]
+    fn parses_typed_nullable_state_and_reset_call() {
+        let source = r#"app "typed-state"
+state({ store: "internal" }) {
+  stateVersion: int = 2
+  retryAt: int? = null
+  title: string = ""
+}
+event.on("app.start") {
+  state.reset()
+}
+screen("main") {}
+"#;
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: PORTABLE_TARGET_ID.to_string(),
+        });
+        assert!(output.ok, "{:?}", output.diagnostics);
+        let ir = output.ir.unwrap();
+        assert_eq!(ir.state_store, "internal");
+        assert_eq!(ir.state[1].name, "retryAt");
+        assert_eq!(ir.state[1].value_type, "int");
+        assert!(ir.state[1].nullable);
+        assert!(matches!(ir.handlers[0].statements[0], IrStatement::StateReset));
+    }
+
+    #[test]
+    fn rejects_state_default_that_does_not_match_declared_type() {
+        let source = r#"app "bad-state"
+state {
+  retryAt: int = "hello"
+}
+screen("main") {}
+"#;
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: PORTABLE_TARGET_ID.to_string(),
+        });
+        assert!(!output.ok);
+        assert!(output
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "E_STATE_DEFAULT"));
+    }
+
+    #[test]
     fn parses_timer_handlers_app_launch_and_timer_service() {
         let source = r#"app "timer-demo"
-state { count: 0 }
+state { count: int = 0 }
 event.on("app.start") {
   app.launch("worker")
   service.timer.every("timer.debug", 1000)
@@ -2387,7 +2566,7 @@ screen("main") {}
     #[test]
     fn parses_generic_events_and_trigger_lifecycle_calls() {
         let source = r#"app "event-demo"
-state { ticks: 0 }
+state { ticks: int = 0 }
 event.on("app.start") {
   app.arm("reminder")
   app.launch("reader")
@@ -2473,7 +2652,7 @@ screen("main") {
     #[test]
     fn reports_real_semantic_diagnostics() {
         let source = r#"app "bad" target "xteink-x4"
-state { selected: 0 }
+state { selected: int = 0 }
 event.on("app.start") {
   screen.open("missing")
   display.clear("gray0")
