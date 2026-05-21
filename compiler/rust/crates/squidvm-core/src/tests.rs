@@ -206,7 +206,7 @@ fn rejects_ir_json_sqbc_v1_container() {
 
 #[test]
 fn runs_sqbc_v3_emitted_by_squidc_core() {
-    let source = include_str!("../fixtures/headless_counter.squid");
+    let source = include_str!("../../../fixtures/conformance/headless_counter.squid");
     let compiled = compile(CompileRequest {
         source: source.to_string(),
         target_id: "esp32c3-super-mini".to_string(),

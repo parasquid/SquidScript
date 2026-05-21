@@ -9,6 +9,11 @@ entrypoints. Run TDD checks from this directory:
 cargo test --target x86_64-unknown-linux-gnu
 ```
 
+The ESP32-C3 serial binary keeps hardware boot wiring in
+`src/bin/c3_supermini_serial_hello.rs`. Serial command handling, runtime host
+state, lifecycle dispatch, timers, line buffering, and log formatting live under
+`src/serial/`.
+
 Build the ESP32-C3 Super Mini reference firmware:
 
 ```sh

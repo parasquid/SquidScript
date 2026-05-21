@@ -1,7 +1,7 @@
 import { unzipSync } from "fflate";
 import type { Vfs } from "../storage/vfs";
 import { normalizePackageEntryPath } from "../storage/paths";
-import { loadSquidWasm } from "../compiler/wasmModule";
+import { loadSquidWasm } from "../compiler/squidWasm";
 
 const SQBC_EXECUTABLE = "main.sqbc";
 const PACKAGE_EXTENSION = ".squid.zip";

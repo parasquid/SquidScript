@@ -53,18 +53,7 @@ persistent SquidScript app platform prototype.
   Playwright checks so Rust, Node, `wasm-pack`, and system libraries are
   reproducible without making containers mandatory for local development.
 
-### 5. Refactor Large Modules Into Logical Owners
-
-- Split the ESP32-C3 serial firmware binary so boot wiring stays in
-  `src/bin/c3_supermini_serial_hello.rs` and serial protocol, runtime host,
-  app lifecycle, timers, and logging move into library modules.
-- Move the browser WASM loader beside generated WASM assets or rename it for
-  clearer compiler ownership, and split `simulator/browser/src/types.ts` once
-  runtime/compiler/rendering/target types grow further.
-- Clarify fixture ownership across compiler language fixtures, VM runtime
-  fixtures, and hardware/CLI conformance fixtures.
-
-### 6. Draft README Project Philosophy Notes
+### 5. Draft README Project Philosophy Notes
 
 - Brainstorm a README entry explaining why the implementation leans on Rust:
   browser WASM reuse first, plus shared compiler/runtime logic, portability,

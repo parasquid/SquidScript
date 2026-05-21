@@ -116,9 +116,10 @@ The log is intended for simulator/runtime debugging, not for app-visible behavio
 
 ## WASM Compiler Build
 
-The browser app loads `src/compiler/wasm/squidc_wasm.js`. Compile status
-reports `Compiler: WASM`; if the generated module is unavailable, compilation
-fails with a diagnostic.
+The browser app loads generated WASM from `src/compiler/wasm/` through the
+hand-written `src/compiler/squidWasm.ts` bridge. Compile status reports
+`Compiler: WASM`; if the generated module is unavailable, compilation fails
+with a diagnostic.
 
 Build the WASM package from `simulator/browser`:
 

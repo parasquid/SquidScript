@@ -1,7 +1,8 @@
-import type { DrawCommand, LogicalKey } from "../types";
+import type { DrawCommand } from "../rendering/types";
+import type { LogicalKey } from "../input/types";
 import type { Vfs } from "../storage/vfs";
 import type { InstalledApp } from "./appInstall";
-import { loadSquidWasm } from "../compiler/wasmModule";
+import { loadSquidWasm } from "../compiler/squidWasm";
 
 export interface RuntimeSnapshot {
   appId: string;

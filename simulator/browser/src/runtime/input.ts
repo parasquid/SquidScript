@@ -1,4 +1,4 @@
-import type { LogicalKey } from "../types";
+import type { LogicalKey } from "../input/types";
 
 export type ButtonOutcome =
   | { type: "short"; key: LogicalKey }

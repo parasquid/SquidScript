@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DrawCommand, LogicalKey, TargetDefinition } from "../types";
+import type { LogicalKey } from "../input/types";
+import type { DrawCommand } from "../rendering/types";
+import type { TargetDefinition } from "../target/types";
 import { loadX4Layout } from "../target/layout";
 import { renderCommands, type RenderResult } from "../rendering/canvasRenderer";
 

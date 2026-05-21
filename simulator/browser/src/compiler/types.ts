@@ -1,5 +1,3 @@
-export type LogicalKey = "UP" | "DOWN" | "LEFT" | "RIGHT" | "SELECT" | "BACK" | "POWER";
-
 export interface SourceSpan {
   start: number;
   end: number;
@@ -77,31 +75,4 @@ export type CompilerBackend = "wasm";
 export interface CompileResult extends CompileResponse {
   backend: CompilerBackend;
   sqbc?: Uint8Array;
-}
-
-export type DrawCommand =
-  | { op: "clear"; gray: number }
-  | { op: "rect"; x: number; y: number; width: number; height: number; gray: number; fill?: boolean }
-  | { op: "line"; x1: number; y1: number; x2: number; y2: number; gray: number }
-  | { op: "text"; x: number; y: number; text: string; gray: number; fontHeight?: number; align?: "left" | "center" | "right"; valign?: "top" | "middle"; maxWidth?: number; boxHeight?: number };
-
-export interface TargetDefinition {
-  format: string;
-  id: string;
-  name: string;
-  display: {
-    logical: { width: number; height: number; rotation: number };
-    color: { logicalGrayscaleLevels: number; defaultPixelFormat: string; supportedPixelFormats: string[] };
-    text: { fontHeights: { supported: number[]; default: number; selection: string } };
-    rendering: { screenPolicies: string[]; defaultPolicy: string; supportedModes: string[]; defaultMode: string };
-  };
-  input: {
-    buttons: Array<{ logical: LogicalKey; type: string }>;
-    longPress?: Array<{ logical: LogicalKey; durationMs: number; action: string }>;
-    chords?: Array<{ logical: LogicalKey[]; name: string; windowMs: number; action: string }>;
-  };
-  storage: { mount: string; supportsApps: boolean };
-  simulator?: { layout?: string; defaultBackend?: string };
-  compatibility: string[];
-  features: string[];
 }

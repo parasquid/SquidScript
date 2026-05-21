@@ -278,6 +278,7 @@ When the SQBC binary format intentionally changes, the format version and fixtur
 Every meaningful feature should have fixtures.
 
 Fixtures should be listed in `fixtures/manifest.toml` instead of relying only on filename conventions.
+Repository fixture ownership is tracked in `docs/fixture_ownership.md`.
 
 For each fixture, the manifest should record:
 

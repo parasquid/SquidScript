@@ -8,7 +8,8 @@ import { ButtonArbiter, type ButtonOutcome } from "./runtime/input";
 import { BrowserRuntime, type RuntimeSnapshot } from "./runtime/runtime";
 import { createBrowserVfs, type Vfs } from "./storage/vfs";
 import { keyboardToLogicalKey, validateTarget, XTEINK_X4_TARGET } from "./target/target";
-import type { CompileResult, CompilerBackend, LogicalKey } from "./types";
+import type { CompileResult, CompilerBackend } from "./compiler/types";
+import type { LogicalKey } from "./input/types";
 import { DeviceSimulator } from "./ui/DeviceSimulator";
 import "./styles.css";
 

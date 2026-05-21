@@ -1,5 +1,5 @@
-import type { CompileResult, CompileResponse } from "../types";
-import { loadSquidWasm } from "./wasmModule";
+import type { CompileResult, CompileResponse } from "../compiler/types";
+import { loadSquidWasm } from "./squidWasm";
 
 export async function compileSquid(source: string, targetId: string): Promise<CompileResult> {
   const wasmResult = await loadWasmCompiler();

@@ -1,4 +1,5 @@
-import type { DrawCommand, TargetDefinition } from "../types";
+import type { DrawCommand } from "./types";
+import type { TargetDefinition } from "../target/types";
 import { drawBitmapText, measureBitmapText } from "./bitmapFont";
 import { selectBitmapFont, wrapText } from "./font";
 
