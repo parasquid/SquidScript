@@ -19,6 +19,23 @@ persistent SquidScript app platform prototype.
 
 ### 2. Design Portable Wi-Fi And Services Runtime
 
+- Wi-Fi is tabled for now. Resume only after an alternate client/phone and
+  board placement or power check can confirm whether AP beacons are visible
+  independently of the current host scanner.
+- Move the ESP32-C3 reference firmware toward an Embassy/async-all-the-way
+  architecture: serial, VM/app dispatch, Wi-Fi/networking, timers, indicator
+  PWM, and future HTTP should run as non-blocking tasks/actors behind firmware
+  service abstractions. Embassy is a target firmware backend detail, not a
+  SquidScript language or compiler-core concept.
+- Use the minimal Rust `wifi-ap-probe` experiment as the proof step before
+  changing the SquidScript runtime: compare the blocking `esp-radio` 0.17 probe
+  and the Embassy/`esp-radio` 0.18 probe, then verify beacon visibility and
+  client joinability before wiring the result into firmware services.
+- Investigate why Rust/esp-rs AP probes report started/configured SoftAP state
+  but host scans do not show the SSID on the current ESP32-C3 Super Mini, while
+  MicroPython AP mode has only been intermittently visible on the same board.
+  Verify with an alternate client and board placement/power checks before
+  treating this as a Rust-only radio backend issue.
 - Replace the ESP32-C3 reference runtime's serial-log AP prototype with a real
   esp-rs Wi-Fi radio backend for `service.wifi.startAP/stopAP/status/getAPIP`.
 - Complete ESP32-C3 SoftAP hardware validation: prove beacon visibility and
@@ -32,8 +49,10 @@ persistent SquidScript app platform prototype.
   the AP-first backend should not imply these are complete until verified.
 - Define password/security policy and `startAP` option support for AP mode;
   v0 currently allows open developer AP defaults only.
-- Add station/client mode, scan, profile setup, hostname, and configurable IP
-  APIs only after the AP-first service boundary is validated.
+- Table station/client mode for now. Revisit station mode, scan, profile setup,
+  hostname, and configurable IP APIs only after AP mode is reliable in the Rust
+  firmware path; current isolation shows AP TX works, while station auth fails
+  under both ESP-IDF and MicroPython against WPA APs.
 - Add target capability checks for devices without Wi-Fi or with restricted
   networking support.
 - Evaluate a portable `squid-kernel` service runtime/scheduler abstraction

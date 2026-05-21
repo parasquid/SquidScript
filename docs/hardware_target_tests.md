@@ -141,8 +141,125 @@ The example owns the indicator behavior in SquidScript:
 While the AP is active, verify from a phone or laptop that the `SquidScript`
 network is visible, attempt to join it, confirm serial output reports
 `status.clients > 0`, then disconnect and confirm `status.clients` returns to
-zero. The current ESP radio backend proves SoftAP radio start/stop and station
-counting; IP/DHCP and HTTP serving are separate follow-up work.
+zero. Until Rust AP beacon visibility is proven on hardware, treat successful
+firmware status records as internal radio-driver state only; IP/DHCP and HTTP
+serving are separate follow-up work.
+
+### ESP-IDF Wi-Fi Hardware Isolation
+
+When `service.wifi.startAP(...)` reports success but phones or laptops cannot
+see the AP, or when station-mode Wi-Fi fails in the SquidScript firmware,
+isolate hardware before continuing SquidScript firmware changes. Use the
+ESP-IDF Wi-Fi experiment:
+
+```sh
+cd experiments/esp32c3-supermini/firmware/esp-idf-softap-hwtest
+./build.sh
+./flash-monitor.sh /dev/ttyACM0
+```
+
+This is intentionally outside the SquidScript firmware stack. It uses
+Espressif's ESP-IDF C Wi-Fi driver, FreeRTOS, `esp_netif`, and DHCP path so it
+can rule out board/RF issues independently of Rust, `esp-radio`, Embassy, or the
+SquidScript runtime.
+
+ESP-IDF is an external developer dependency. Do not vendor ESP-IDF, generated
+SDK files, container layers, or `build/` outputs into this repository. The
+experiment scripts use a local `idf.py` when available, or the official
+Espressif IDF container image via Podman/Docker.
+
+The test AP is:
+
+- SSID: `ESP32C3-HWTEST`
+- password: open network
+- channel: `6`
+- expected AP IP: `192.168.4.1`
+
+For SoftAP, test channels `1`, `6`, and `11` by editing `HWTEST_WIFI_CHANNEL` in the
+experiment source and rebuilding. A reliable hardware pass means the SSID is
+visible from a phone/laptop, the device can join, and serial logs show station
+join/leave plus connected station counts.
+
+For station mode, put the target network SSID and password in an untracked env
+file such as `~/.env` as `HWTEST_STA_SSID` and `HWTEST_STA_PASSWORD`, then
+build the station variant:
+
+```sh
+cd experiments/esp32c3-supermini/firmware/esp-idf-softap-hwtest
+./build-station.sh
+./flash-monitor.sh /dev/ttyACM0
+```
+
+The station test does not print the configured SSID or password values; it logs
+their lengths, scan matches, BSSID, channel, RSSI, auth mode, disconnect reason
+labels, and IP configuration if the join succeeds. It disables Wi-Fi power save
+and uses a relaxed WPA/WPA2 auth threshold to avoid making mixed-mode routers
+look like hardware failures.
+
+Interpretation:
+
+- ESP-IDF AP visible and joinable: hardware/RF is probably fine; continue
+  debugging the SquidScript Rust firmware, `esp-radio`, and scheduler/network
+  runner architecture.
+- ESP-IDF AP also invisible: suspect board/RF/antenna, USB power, physical
+  placement, or local RF environment before blaming SquidScript.
+- AP visible only at very short range or when the board is moved/touched:
+  suspect ESP32-C3 SuperMini antenna/layout sensitivity on the specific board.
+- AP visible but DHCP/join fails: RF beaconing works; isolate ESP-IDF AP config,
+  DHCP, channel, or client compatibility separately.
+- Station scan sees the AP but disconnects with `AUTH_EXPIRE` or
+  `CONNECTION_FAIL`: the board can receive the router beacon, but auth did not
+  complete. Check password handling, router mixed WPA/WPA2 settings, PMF/router
+  compatibility, and transmit/RF strength before blaming SquidScript.
+- MicroPython station scan may see the target AP with strong RSSI while the
+  connection still fails to reach `STAT_GOT_IP`. Record the numeric status code
+  and the published MicroPython status constants from the same firmware before
+  assigning a meaning to the code; observed firmware reported status `2`, which
+  did not match its exported `STAT_*` constants.
+- Station gets an IP address: ESP-IDF station RX/TX/auth/DHCP works on this
+  board and network; focus back on SquidScript firmware, `esp-radio`, and the
+  scheduler/network runner.
+
+Known flashing caveat: containerized `idf.py flash` may fail to open
+`/dev/ttyACM0` even when the host user is in `dialout`. Use a local ESP-IDF
+install for flashing when possible. The experiment also includes an
+`espflash`-based helper for host-side flashing, but ESP-IDF's own `idf.py flash`
+is the reference path for this hardware-isolation test.
+
+### Rust Wi-Fi AP Probe Experiments
+
+After hardware isolation, use the Rust AP probes to compare esp-rs paths before
+changing the SquidScript firmware:
+
+```sh
+cd experiments/esp32c3-supermini/firmware/wifi-ap-probe
+./build.sh
+ESPFLASH_PORT=/dev/ttyACM0 ./flash.sh
+```
+
+The blocking probe follows the release-matched esp-rs blocking `access_point`
+example with `esp-radio` 0.17 and a smoltcp-backed blocking network stack.
+
+```sh
+cd experiments/esp32c3-supermini/firmware/embassy-wifi-ap-probe
+./build.sh
+ESPFLASH_PORT=/dev/ttyACM0 ./flash.sh
+```
+
+The Embassy probe follows the current upstream `embassy_access_point` shape
+with `esp-radio` 0.18, `esp-rtos`, `embassy-net`, DHCP, and an HTTP listener.
+
+Both Rust probes currently use the SSID `esp-radio` so host scans can compare
+them against the upstream examples. If serial reports a successful AP start but
+host scans still do not show the SSID, keep the result as an esp-rs/Rust
+firmware investigation item rather than changing SquidScript language or app
+semantics.
+
+Current AP visibility caveat: repeated host scans have also failed to see a
+MicroPython AP on the same board even while MicroPython reports AP active and
+configured. A previous MicroPython AP run was visible, so treat host scan
+results as part of the hardware/RF/client matrix until an alternate client
+such as a phone confirms whether the AP beacon is visible.
 
 ### GPIO REPL Session
 
