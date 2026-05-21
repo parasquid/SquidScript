@@ -30,6 +30,8 @@ export type IrExpr =
   | { op: "literal"; value: unknown }
   | { op: "state"; name: string }
   | { op: "binary"; left: IrExpr; operator: "+" | "-" | "==" | "!=" | "<" | "<=" | ">" | ">="; right: IrExpr }
+  | { op: "unary"; operator: "!"; expr: IrExpr }
+  | { op: "field"; target: IrExpr; field: string }
   | { op: "call"; name: string; args: IrExpr[] };
 
 export type IrStatement =
@@ -72,33 +74,6 @@ export type CompilerBackend = "wasm" | "fallback";
 
 export interface CompileResult extends CompileResponse {
   backend: CompilerBackend;
-}
-
-export interface AppManifest {
-  format: "squidapp-v1";
-  id: string;
-  name: string;
-  version: string;
-  runtime: {
-    language: "squidscript";
-    version: string;
-  };
-  entry: {
-    type: "ir" | "bytecode";
-    file: string;
-    browserSimOnly?: boolean;
-  };
-  permissions: string[];
-  requires: {
-    runtime: string;
-    display: {
-      minWidth: number;
-      minHeight: number;
-      pixelFormats: string[];
-    };
-    keys: LogicalKey[];
-    features: string[];
-  };
 }
 
 export interface RuntimeProgram {

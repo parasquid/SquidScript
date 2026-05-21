@@ -982,7 +982,7 @@ squidc build apps/simple-counter \
 - available pixel formats
 - available logical keys
 - available built-ins
-- required manifest capability declarations
+- SQBC target requirements
 - foreground radio/server capabilities such as `wifi.*`, `httpServer.*`, and `bluetoothHid.*`
 - bytecode size limit
 - draw command limit
@@ -1477,7 +1477,7 @@ The firmware build should prefer UF2 for user-facing replacement when the bootlo
 4. Bootloader validates the UF2 family and writes the firmware image.
 5. Device reboots into the new firmware.
 
-The UF2 image must contain only firmware flash payloads for the selected target. It must not be used to install `.sqbc` apps, `.binbook` content, app manifests, source maps, or user state. Those remain storage-level files managed by the app registry, app installer, or content workflows.
+The UF2 image must contain only firmware flash payloads for the selected target. It must not be used to install `.sqbc` apps, `.binbook` content, source maps, or user state. Those remain storage-level files managed by the app registry, app installer, or content workflows.
 
 The bootloader/update flow should preserve user storage by default. Firmware replacement must not erase installed apps, BinBook files, app registry state, Wi-Fi profiles, or app state unless the user explicitly chooses a factory reset or recovery image documented as destructive.
 

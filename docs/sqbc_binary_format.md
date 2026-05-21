@@ -17,8 +17,8 @@ offset  size  field
 The temporary v1 payload is versioned IR JSON. This format is a browser
 simulator development artifact only.
 
-Firmware must reject SQBC v1 IR payloads and browser-only `entry.type = "ir"`
-manifests.
+Firmware must reject SQBC v1 IR payloads. Browser-sim IR JSON is a development
+artifact, not a production firmware executable.
 
 ## v3 Reference Bytecode
 

@@ -317,7 +317,7 @@ fn handle_command(
                     }
                 };
                 trace.clear();
-                trace.remove_timers_for(AppRef::Temp);
+                trace.clear_timers();
                 trace.remove_app_from_stack(AppRef::Temp);
                 *vm = None;
                 *vm_slot = None;

@@ -26,7 +26,6 @@ It does not include dictionaries, annotations, highlighting, search, bookmarks, 
 
 ```text
 /sd/apps/binbook-reader/
-|-- app.json
 |-- main.sqbc
 |-- source-map.json
 |-- main.squid
@@ -223,7 +222,6 @@ The limit keeps event work bounded. A future capability helper could replace thi
 
 The draft implementation is split into:
 
-- `examples/binbook-reader/app.json`
 - `examples/binbook-reader/main.squid`
 - `examples/binbook-reader/lib/ui.squid`
 - `examples/binbook-reader/screens/browser.squid`

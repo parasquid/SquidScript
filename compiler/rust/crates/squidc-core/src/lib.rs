@@ -243,6 +243,16 @@ pub enum IrExpr {
         operator: String,
         right: Box<IrExpr>,
     },
+    #[serde(rename = "unary")]
+    Unary {
+        operator: String,
+        expr: Box<IrExpr>,
+    },
+    #[serde(rename = "field")]
+    Field {
+        target: Box<IrExpr>,
+        field: String,
+    },
     #[serde(rename = "hardware.gpio.read")]
     HardwareGpioRead { name: String },
     #[serde(rename = "system.memory")]
@@ -1003,9 +1013,12 @@ impl Parser<'_> {
             };
         }
 
-        if self.at_kind(TokenKind::OpenParen) {
+        let has_call_args = if self.at_kind(TokenKind::OpenParen) {
             self.bump(builder);
-        }
+            true
+        } else {
+            false
+        };
         self.consume_ws(builder);
 
         match (first.as_str(), method.as_str()) {
@@ -1112,8 +1125,15 @@ impl Parser<'_> {
                 })
             }
             _ => {
-                self.consume_call_tail(builder);
-                None
+                if has_call_args {
+                    Some(IrStatement::Call {
+                        name: format!("{first}.{method}"),
+                        args: self.parse_call_args_after_open(builder),
+                    })
+                } else {
+                    self.consume_call_tail(builder);
+                    None
+                }
             }
         }
     }
@@ -1129,7 +1149,7 @@ impl Parser<'_> {
             if !(self.at_kind(TokenKind::Less)
                 || self.at_kind(TokenKind::Greater)
                 || self.at_kind(TokenKind::Equals)
-                || self.at_kind(TokenKind::Bang))
+                || (self.at_kind(TokenKind::Bang) && self.next_kind() == Some(TokenKind::Equals)))
             {
                 break;
             }
@@ -1146,7 +1166,7 @@ impl Parser<'_> {
     }
 
     fn parse_additive_expr(&mut self, builder: &mut GreenNodeBuilder) -> Option<IrExpr> {
-        let mut expr = self.parse_primary_expr(builder)?;
+        let mut expr = self.parse_unary_expr(builder)?;
         loop {
             self.consume_ws(builder);
             if !(self.at_kind(TokenKind::Plus) || self.at_kind(TokenKind::Minus)) {
@@ -1154,11 +1174,45 @@ impl Parser<'_> {
             }
             let operator = self.consume_binary_operator(builder)?;
             self.consume_ws(builder);
-            let right = self.parse_primary_expr(builder)?;
+            let right = self.parse_unary_expr(builder)?;
             expr = IrExpr::Binary {
                 left: Box::new(expr),
                 operator,
                 right: Box::new(right),
+            };
+        }
+        Some(expr)
+    }
+
+    fn parse_unary_expr(&mut self, builder: &mut GreenNodeBuilder) -> Option<IrExpr> {
+        self.consume_ws(builder);
+        if self.at_kind(TokenKind::Bang) {
+            self.bump(builder);
+            self.consume_ws(builder);
+            let expr = self.parse_unary_expr(builder)?;
+            return Some(IrExpr::Unary {
+                operator: "!".to_string(),
+                expr: Box::new(expr),
+            });
+        }
+        self.parse_postfix_expr(builder)
+    }
+
+    fn parse_postfix_expr(&mut self, builder: &mut GreenNodeBuilder) -> Option<IrExpr> {
+        let mut expr = self.parse_primary_expr(builder)?;
+        loop {
+            self.consume_ws(builder);
+            if !self.at_kind(TokenKind::Dot) {
+                break;
+            }
+            self.bump(builder);
+            self.consume_ws(builder);
+            let Some(field) = self.consume_ident(builder) else {
+                break;
+            };
+            expr = IrExpr::Field {
+                target: Box::new(expr),
+                field,
             };
         }
         Some(expr)
@@ -1197,7 +1251,7 @@ impl Parser<'_> {
                 IrExpr::Literal {
                     value: serde_json::Value::Null,
                 }
-            } else if (name == "hardware" || name == "system") && self.at_kind(TokenKind::Dot) {
+            } else if self.at_kind(TokenKind::Dot) {
                 self.bump(builder);
                 self.consume_ws(builder);
                 let namespace = self.consume_ident(builder).unwrap_or_default();
@@ -1234,8 +1288,16 @@ impl Parser<'_> {
                     } else {
                         IrExpr::State { name }
                     }
+                } else if self.at_kind(TokenKind::OpenParen) {
+                    IrExpr::Call {
+                        name: format!("{name}.{namespace}"),
+                        args: self.parse_call_args(builder),
+                    }
                 } else {
-                    IrExpr::State { name }
+                    IrExpr::Field {
+                        target: Box::new(IrExpr::State { name }),
+                        field: namespace,
+                    }
                 }
             } else if self.at_kind(TokenKind::OpenParen) {
                 IrExpr::Call {
@@ -1586,6 +1648,10 @@ impl Parser<'_> {
         self.peek().map(|token| token.kind == kind).unwrap_or(false)
     }
 
+    fn next_kind(&self) -> Option<TokenKind> {
+        self.tokens.get(self.cursor + 1).map(|token| token.kind)
+    }
+
     fn at_end(&self) -> bool {
         self.cursor >= self.tokens.len()
     }
@@ -1759,6 +1825,49 @@ fn error(code: &str, message: &str, start: usize, end: usize) -> Diagnostic {
     }
 }
 
+fn warning(code: &str, message: &str, start: usize, end: usize) -> Diagnostic {
+    Diagnostic {
+        code: code.to_string(),
+        severity: "warning".to_string(),
+        message: message.to_string(),
+        span: SourceSpan { start, end },
+    }
+}
+
+fn is_fallible_builtin(name: &str) -> bool {
+    matches!(
+        name,
+        "content.pickFile"
+            | "content.readText"
+            | "content.readLines"
+            | "data.read"
+            | "library.list"
+            | "library.volumes"
+            | "library.mkdir"
+            | "library.rename"
+            | "library.move"
+            | "library.delete"
+            | "library.installUpload"
+            | "binbook.open"
+            | "binbook.inspect"
+            | "wifi.connect"
+            | "wifi.disconnect"
+            | "wifi.scan"
+            | "wifi.startAP"
+            | "wifi.stopAP"
+            | "wifi.setIP"
+            | "wifi.setAPIP"
+            | "wifi.setHostname"
+            | "wifi.openSetup"
+            | "httpServer.start"
+            | "httpServer.stop"
+            | "httpServer.poll"
+            | "bleTransfer.start"
+            | "bleTransfer.stop"
+            | "bleTransfer.poll"
+    )
+}
+
 fn validate_semantics(ast: &AstRoot, _profile: BuildProfile, diagnostics: &mut Vec<Diagnostic>) {
     let mut screen_names = std::collections::BTreeSet::new();
     for screen in &ast.screens {
@@ -1784,6 +1893,12 @@ fn validate_semantics(ast: &AstRoot, _profile: BuildProfile, diagnostics: &mut V
             screen.span.end,
             diagnostics,
         );
+        validate_ignored_fallible_results(
+            &screen.statements,
+            screen.span.start,
+            screen.span.end,
+            diagnostics,
+        );
     }
 
     let mut function_names = std::collections::BTreeSet::new();
@@ -1799,6 +1914,12 @@ fn validate_semantics(ast: &AstRoot, _profile: BuildProfile, diagnostics: &mut V
     }
 
     for handler in &ast.handlers {
+        validate_ignored_fallible_results(
+            &handler.statements,
+            handler.span.start,
+            handler.span.end,
+            diagnostics,
+        );
         validate_handler_statements(
             &handler.statements,
             handler.span.start,
@@ -1808,6 +1929,12 @@ fn validate_semantics(ast: &AstRoot, _profile: BuildProfile, diagnostics: &mut V
         );
     }
     for function in &ast.functions {
+        validate_ignored_fallible_results(
+            &function.statements,
+            function.span.start,
+            function.span.end,
+            diagnostics,
+        );
         validate_screen_references(
             &function.statements,
             function.span.start,
@@ -1815,6 +1942,38 @@ fn validate_semantics(ast: &AstRoot, _profile: BuildProfile, diagnostics: &mut V
             &screen_names,
             diagnostics,
         );
+    }
+}
+
+fn validate_ignored_fallible_results(
+    statements: &[IrStatement],
+    start: usize,
+    end: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for statement in statements {
+        match statement {
+            IrStatement::Call { name, .. } if is_fallible_builtin(name) => {
+                diagnostics.push(warning(
+                    "W_IGNORED_RESULT",
+                    "fallible API result should be checked",
+                    start,
+                    end,
+                ));
+            }
+            IrStatement::If {
+                then_statements,
+                else_statements,
+                ..
+            } => {
+                validate_ignored_fallible_results(then_statements, start, end, diagnostics);
+                validate_ignored_fallible_results(else_statements, start, end, diagnostics);
+            }
+            IrStatement::Repeat { statements, .. } | IrStatement::For { statements, .. } => {
+                validate_ignored_fallible_results(statements, start, end, diagnostics);
+            }
+            _ => {}
+        }
     }
 }
 
@@ -1842,6 +2001,14 @@ fn validate_screen_statements(
                 diagnostics.push(error(
                     "E_RENDER_PURITY",
                     "screen bodies must not directly mutate state or app lifecycle",
+                    start,
+                    end,
+                ));
+            }
+            IrStatement::Call { name, .. } if is_fallible_builtin(name) => {
+                diagnostics.push(error(
+                    "E_RENDER_PURITY",
+                    "screen bodies must not call fallible platform APIs",
                     start,
                     end,
                 ));
@@ -2683,5 +2850,62 @@ screen("main") {
             .diagnostics
             .iter()
             .all(|diagnostic| diagnostic.span.end >= diagnostic.span.start));
+    }
+
+    #[test]
+    fn parses_result_record_field_access_and_unary_not() {
+        let source = r#"app "result-records" target "xteink-x4"
+state { failed: bool = false }
+event.on("app.start") {
+  let result = library.mkdir("books", "/manuals")
+  if (!result.ok) {
+    failed = true
+    debug.print(result.error)
+  }
+  screen.open("main")
+}
+screen("main") {
+  display.clear("gray0")
+}
+"#;
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: "xteink-x4".to_string(),
+        });
+        assert!(output.ok, "{:?}", output.diagnostics);
+        let ir = output.ir.expect("expected IR");
+        let IrStatement::Let { expr, .. } = &ir.handlers[0].statements[0] else {
+            panic!("expected result let");
+        };
+        assert!(matches!(expr, IrExpr::Call { name, .. } if name == "library.mkdir"));
+        let IrStatement::If { condition, then_statements, .. } = &ir.handlers[0].statements[1] else {
+            panic!("expected result guard");
+        };
+        assert!(matches!(condition, IrExpr::Unary { operator, .. } if operator == "!"));
+        assert!(then_statements.iter().any(|statement| matches!(
+            statement,
+            IrStatement::DebugPrint { args } if matches!(args.first(), Some(IrExpr::Field { field, .. }) if field == "error")
+        )));
+    }
+
+    #[test]
+    fn warns_when_fallible_result_is_ignored() {
+        let source = r#"app "ignored-result" target "xteink-x4"
+event.on("app.start") {
+  library.mkdir("books", "/manuals")
+  screen.open("main")
+}
+screen("main") {
+  display.clear("gray0")
+}
+"#;
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: "xteink-x4".to_string(),
+        });
+        assert!(output.ok, "{:?}", output.diagnostics);
+        assert!(output.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "W_IGNORED_RESULT" && diagnostic.severity == "warning"
+        }));
     }
 }

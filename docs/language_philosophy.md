@@ -121,7 +121,11 @@ Invalid source should be rejected by `squidc` when statically detectable.
 
 Invalid dynamic behavior should stop the current app with a structured `squidvm` runtime error.
 
-The firmware must not continue normal app execution after type errors, invalid handles, permission failures, arithmetic faults, out-of-bounds access, unsupported bytecode, malformed capability data, or validation failures.
+The firmware must not continue normal app execution after type errors, invalid handles, API availability failures, arithmetic faults, out-of-bounds access, unsupported bytecode, malformed capability data, or validation failures.
+
+Recoverable platform failures should be explicit values. Fallible APIs should
+return read-only result records with `ok: bool` and `error: string` instead of
+using exceptions, hidden control flow, or multiple returns.
 
 ### 3.4 Boundedness Is A Feature
 
@@ -157,7 +161,6 @@ The firmware/runtime should own these resources and expose them through:
 - read-only records
 - bounded lists
 - display-ready drawables
-- manifest capability declarations
 - target-profile requirements
 - structured diagnostics
 
@@ -252,7 +255,7 @@ display.text("Hello", { x: 20, y: 40 })
 display.draw(image, { x: 0, y: 0 })
 ```
 
-The parser sees namespaced calls. The compiler validates the calls against known capability signatures, permissions, target features, and render-safety rules. The firmware display module owns composition, clipping, physical display mapping, and refresh behavior.
+The parser sees namespaced calls. The compiler validates the calls against known capability signatures, target features, and render-safety rules. The firmware display module owns composition, clipping, physical display mapping, and refresh behavior.
 
 ### 4.3 Domain Capability Example: `binbook.*`
 
@@ -267,6 +270,15 @@ display.draw(image, { x: 0, y: 0 })
 
 The BinBook capability owns document parsing, validation, page lookup, decoding, conversion, memory management, and safe handles. Final drawing still composes through `display.draw`.
 
+For recoverable failures, capability APIs return result records:
+
+```squid
+let opened = binbook.open(file)
+if (!opened.ok) {
+  display.text(opened.error, { x: 20, y: 60 })
+}
+```
+
 This keeps BinBook first-party and built in without adding BinBook-specific syntax to the core language.
 
 The draft BinBook capability contract is the reference example of this extensibility model:
@@ -275,7 +287,7 @@ The draft BinBook capability contract is the reference example of this extensibi
 capabilities/binbook.cap.json
 ```
 
-That contract describes what `squidc`, `.sqbc` validation, `squidvm`, and firmware must agree on: function names, signatures, return types, handle types, permissions, target features, render-safety rules, diagnostics, and symbolic builtin IDs. It deliberately does not include BinBook parser or decoder source code.
+That contract describes what `squidc`, `.sqbc` validation, `squidvm`, and firmware must agree on: function names, signatures, return types, handle types, target features, render-safety rules, diagnostics, and symbolic builtin IDs. It deliberately does not include BinBook parser or decoder source code.
 
 ---
 
@@ -368,7 +380,7 @@ refresh()
 save()
 ```
 
-Namespaces make permissions, diagnostics, documentation, and bytecode validation clearer.
+Namespaces make diagnostics, documentation, target checks, and bytecode validation clearer.
 
 ---
 
@@ -388,9 +400,10 @@ Does the feature remove work that is unsafe, too expensive, too target-specific,
 
 Can the feature compose through existing values and capabilities instead of creating a special control path?
 
-### 6.4 Permission Test
+### 6.4 Target Availability Test
 
-Can the feature be guarded by a clear manifest permission?
+Can the feature's availability be validated through known APIs, SQBC metadata,
+target profiles, and structured runtime errors?
 
 ### 6.5 Target-Profile Test
 
@@ -424,7 +437,6 @@ Early versions may change when the language is still draft, but every accepted c
 - whether it adds or changes a standard capability
 - whether it changes bytecode validation
 - whether it changes target-profile requirements
-- whether it changes permissions
 - whether old bytecode remains valid
 - whether old source remains valid
 - what diagnostics should be produced for incompatible use
@@ -465,7 +477,7 @@ When deciding where a new feature belongs:
 2. If it exposes reusable device behavior, make it a standard platform capability.
 3. If it exposes a first-party document or media workflow that lifts heavy firmware-native work, make it a standard domain capability.
 4. If it is only a convenience wrapper over existing capabilities, prefer leaving it out unless it removes common error-prone boilerplate.
-5. If it requires target-specific resources, express that through target profiles and manifest requirements.
+5. If it requires target-specific resources, express that through target profiles and SQBC metadata.
 6. If it cannot be bounded, diagnosed, validated, or fixture-tested, do not add it yet.
 
 Examples:
@@ -479,7 +491,7 @@ Examples:
 | `binbook.showPage(file, index)` | Require review | Convenient, but may bypass composition and combine too many responsibilities |
 | User package imports | Defer/reject for early versions | Adds dependency, versioning, validation, and runtime model complexity |
 
-The concrete reference for capability-based platform extensibility is `capabilities/binbook.cap.json`. Future standard domain capabilities should be comparable: contract-first, namespaced, declared in the app manifest, target-profile-aware, compiler-visible, VM-validatable, and implemented by firmware/runtime code outside the compiler.
+The concrete reference for capability-based platform extensibility is `capabilities/binbook.cap.json`. Future standard domain capabilities should be comparable: contract-first, namespaced, target-profile-aware, compiler-visible, VM-validatable, and implemented by firmware/runtime code outside the compiler.
 
 ---
 
@@ -503,7 +515,7 @@ The BinBook capability contract makes this extensibility concrete. It gives the 
 
 This distinction matters for future design. Adding `binbook.pageImage(page)` expands the standard platform. Adding BinBook-specific syntax expands the language. The first can be declared, profiled, validated, and implemented as a firmware module. The second changes how the language is parsed and taught. SquidScript should choose the first path unless the second is clearly necessary.
 
-The same principle applies beyond BinBook. New features should be reviewed by what they cost the whole system, not just by whether they make one example shorter. A good feature is bounded, diagnosable, fixture-testable, declarable in the manifest, target-aware, and composable. It should fail predictably. It should not require the firmware to guess. It should not hide unbounded work behind friendly syntax.
+The same principle applies beyond BinBook. New features should be reviewed by what they cost the whole system, not just by whether they make one example shorter. A good feature is bounded, diagnosable, fixture-testable, target-aware, and composable. It should fail predictably. It should not require the firmware to guess. It should not hide unbounded work behind friendly syntax.
 
 SquidScript should prefer explicit failure over surprising continuation. It should prefer handles over pointers, records over mutable objects, capability calls over global magic, and off-device compilation over on-device cleverness. It should make the safe path obvious and the unsafe path unavailable.
 

@@ -21,26 +21,16 @@ The simulator provides:
 The browser workflow is intentionally explicit:
 
 1. `Compile` compiles the editor source to diagnostics plus `main.ir.json`.
-2. `Upload` writes `app.json` and `main.ir.json` under `/sd/apps/<app-id>/`.
+2. `Upload` writes `main.ir.json` under `/sd/apps/<app-id>/`.
 3. `Run` loads the installed app through an executable loader and starts the app lifecycle.
 
 Editor draft source is saved separately from simulated `/sd`. A debug workflow may later upload `main.squid`, but source upload is non-authoritative.
 
-## Browser-Only IR Entry
+## Browser-Only IR Artifact
 
-Browser-sim v1 installs manifests with:
-
-```json
-{
-  "entry": {
-    "type": "ir",
-    "file": "main.ir.json",
-    "browserSimOnly": true
-  }
-}
-```
-
-`entry.type = "ir"` is a browser-simulator development artifact. Production firmware remains bytecode-only and must not treat IR JSON as an executable firmware format.
+Browser-sim v1 installs `main.ir.json` directly under simulated `/sd`. IR JSON
+is a browser-simulator development artifact. Production firmware remains
+bytecode-only and must not treat IR JSON as an executable firmware format.
 
 ## Loader Boundary
 
@@ -86,7 +76,7 @@ Current event scopes:
 
 - `compile`: compile start, backend, diagnostics count, app id
 - `upload`: app install writes to simulated `/sd`
-- `run`: manifest/executable load and runtime start
+- `run`: executable load and runtime start
 - `input`: logical key dispatch and resulting runtime state
 - `state`: app-state reset
 - `storage`: simulated `/sd` reset

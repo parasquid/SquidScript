@@ -31,7 +31,7 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - Do not add tests for removed fake syntax. Treat fake syntax as if it never existed.
 - Until the project reaches a 1.0 release, prefer direct migrations over backwards-compatible aliases or redundant wrappers. Remove obsolete scripts/APIs/docs when replacing them, unless the user explicitly asks for a compatibility bridge.
 - Before 1.0, optimize firmware and CLI workflows for development ergonomics. Do not introduce release-profile trimming, disabling of `RUN.TEMP`, or flash-writing temp runs unless the user explicitly asks to revisit that tradeoff.
-- `entry.type = "ir"` is a browser-simulator development artifact only. Do not treat it as a production firmware format. See `docs/browser_simulator.md` and `docs/ir_schema.md`.
+- Browser-sim IR JSON is a development artifact only. Do not treat it as a production firmware format. See `docs/browser_simulator.md` and `docs/ir_schema.md`.
 - Reference firmware exists to exercise SquidScript language semantics on constrained hardware. Do not frame it as XTEINK X4 staging firmware unless the task explicitly targets X4 behavior.
 
 ## Architecture Boundary Discipline
@@ -83,10 +83,21 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
 - For firmware flashing scripts, avoid auto-monitoring by default when USB reset or re-enumeration can break the serial session. Prefer `squidc device monitor` for ESP32-C3 Super Mini SquidScript output, and use explicit opt-in monitoring such as `MONITOR_AFTER_FLASH=1` only when needed.
 - Do not filter or suppress flashing tool stderr in firmware scripts. Surface warnings and errors directly, and document known harmless tool warnings instead of hiding them.
 - Clearly report host visibility limits, such as Codex sandbox sessions that cannot see `/dev/ttyACM*`, `/dev/ttyUSB*`, or `/dev/bus/usb`.
-- Do not run hardware scripts or serial commands in parallel against the same physical target. A single USB serial device is a shared mutable resource; run flash, install, hardware test, monitor, and `squidc` device commands sequentially.
+- Never run hardware scripts or serial commands in parallel against the same
+  physical target. A single USB serial device is a shared mutable resource:
+  concurrent flash, install, hardware-test, monitor, REPL, or `squidc device`
+  commands can interleave bytes, reset the board, steal foreground app state,
+  or leave hardware in a misleading state. Run hardware commands sequentially,
+  wait for each command to exit, and do not start a second monitor or helper
+  while another command owns the port.
 - Hardware target tests are listed in `docs/hardware_target_tests.md`; use that inventory to identify real-device tests before running them.
 - When firmware work changes behavior that has hardware coverage and an ESP32-C3 Super Mini is attached or reasonably available, run the relevant hardware target tests. Sandbox isolation is not a reason to skip them; use escalated command execution for serial visibility checks and the hardware test command, and report the result.
-- When running the ESP32-C3 Super Mini hardware target suite, use `scripts/c3-supermini-test-hardware.sh` so stateful checks run first and the blinky app runs last. Blinky is the final visible board-state check and should be left running unless the user asks otherwise.
+- When running the ESP32-C3 Super Mini hardware target suite, use
+  `scripts/c3-supermini-test-hardware.sh` so stateful checks run first and the
+  blinky app runs last. Blinky is the final visible board-state check and
+  should be left running unless the user asks otherwise. Do not run any serial
+  command after the final blinky launch unless you are deliberately debugging
+  the final board state.
 - Hardware target tests and serial/flashing commands must run outside the Codex sandbox. Sandboxed sessions do not reliably expose `/dev/ttyACM*`, `/dev/ttyUSB*`, or `/dev/serial/by-id`, even after host reboot. Use escalated command execution for ESP32-C3 Super Mini serial visibility checks and hardware target tests.
 - When troubleshooting ESP32-C3 Super Mini flashing access, check `firmware/README.md` and `firmware/squid-firmware/README.md` for the documented `/dev/ttyACM0` ACL workaround before suggesting broader sudo changes.
 - For v4 REPL work, default app and firmware profiles are `dev`. Hardware target tests should include `tests/repl/default-dev.session`, which intentionally does not set `:profile dev`.
@@ -124,7 +135,6 @@ Expected baseline checks:
 Hello Menu should prove:
 
 - compile succeeds with the WASM compiler
-- upload installs `/sd/apps/hello-menu/app.json`
 - upload installs `/sd/apps/hello-menu/main.ir.json`
 - run opens the `menu` screen
 - selected row pixels are black and unselected/background pixels are white

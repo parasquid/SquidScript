@@ -20,8 +20,8 @@ test("compile, upload, run, input, diagnostics, and reset flow", async ({ page }
   await expect(page.getByRole("status")).toContainText("/sd/apps/hello-menu");
   await expect(page.getByLabel("installed apps")).toContainText("1 installed");
   await expect(page.getByLabel("installed app selector")).toHaveValue("hello-menu");
-  await expect(page.getByLabel("storage files")).toContainText("/sd/apps/hello-menu/app.json");
   await expect(page.getByLabel("storage files")).toContainText("/sd/apps/hello-menu/main.ir.json");
+  await expect(page.getByLabel("storage files")).not.toContainText("/sd/apps/hello-menu/app.json");
 
   await page.reload();
   await page.getByRole("button", { name: /Run/ }).click();

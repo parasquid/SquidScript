@@ -253,7 +253,7 @@
         "id": "apps-inbox",
         "volume": "sd",
         "path": "/inbox/apps",
-        "contentTypes": ["squidapp.zip"],
+        "contentTypes": ["sqbc"],
         "primary": true
       },
       {

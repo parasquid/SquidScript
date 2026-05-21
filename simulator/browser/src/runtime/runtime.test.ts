@@ -159,4 +159,78 @@ describe("browser runtime", () => {
     expect(snapshot.drawCommands).toContainEqual({ op: "line", x1: 0, y1: 40, x2: 480, y2: 40, gray: 15 });
     expect(snapshot.drawCommands).toContainEqual({ op: "rect", x: 20, y: 80, width: 120, height: 32, gray: 4, fill: true });
   });
+
+  it("evaluates result records through field access and unary not", async () => {
+    const program: RuntimeProgram = {
+      id: "result-records",
+      name: "Result Records",
+      target: "xteink-x4",
+      stateDefaults: { failed: false, message: "" },
+      functions: new Map([
+        ["makeResult", {
+          name: "makeResult",
+          params: [],
+          statements: [{ op: "return", expr: { op: "literal", value: { ok: false, error: "unsupported" } } }]
+        }]
+      ]),
+      handlers: new Map([
+        ["app.start", [
+          { op: "let", name: "result", expr: { op: "call", name: "makeResult", args: [] } },
+          {
+            op: "if",
+            condition: { op: "unary", operator: "!", expr: { op: "field", target: { op: "state", name: "result" }, field: "ok" } },
+            then_statements: [
+              { op: "assign", name: "failed", expr: { op: "literal", value: true } },
+              { op: "assign", name: "message", expr: { op: "field", target: { op: "state", name: "result" }, field: "error" } }
+            ],
+            else_statements: []
+          },
+          { op: "screen.open", screen: "main" }
+        ]]
+      ]),
+      screens: new Map([
+        ["main", { name: "main", render: "compose", statements: [{ op: "display.clear", color: "gray0" }] }]
+      ])
+    };
+    const runtime = new BrowserRuntime(program, new MemoryVfs());
+
+    const snapshot = await runtime.start();
+
+    expect(snapshot.state.failed).toBe(true);
+    expect(snapshot.state.message).toBe("unsupported");
+  });
+
+  it("returns unsupported result records for unavailable fallible built-ins", async () => {
+    const program: RuntimeProgram = {
+      id: "unsupported-api",
+      name: "Unsupported API",
+      target: "xteink-x4",
+      stateDefaults: { failed: false, message: "" },
+      functions: new Map(),
+      handlers: new Map([
+        ["app.start", [
+          { op: "let", name: "result", expr: { op: "call", name: "wifi.connect", args: [{ op: "literal", value: "home" }] } },
+          {
+            op: "if",
+            condition: { op: "unary", operator: "!", expr: { op: "field", target: { op: "state", name: "result" }, field: "ok" } },
+            then_statements: [
+              { op: "assign", name: "failed", expr: { op: "literal", value: true } },
+              { op: "assign", name: "message", expr: { op: "field", target: { op: "state", name: "result" }, field: "error" } }
+            ],
+            else_statements: []
+          },
+          { op: "screen.open", screen: "main" }
+        ]]
+      ]),
+      screens: new Map([
+        ["main", { name: "main", render: "compose", statements: [{ op: "display.clear", color: "gray0" }] }]
+      ])
+    };
+    const runtime = new BrowserRuntime(program, new MemoryVfs());
+
+    const snapshot = await runtime.start();
+
+    expect(snapshot.state.failed).toBe(true);
+    expect(snapshot.state.message).toBe("unsupported");
+  });
 });

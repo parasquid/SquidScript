@@ -261,7 +261,7 @@ Important expected outputs:
 - sourcemap JSON
 - binary package output
 - profile-resolution output
-- app manifest output, if applicable
+- SQBC app metadata output
 
 IR means intermediate representation: the compiler's normalized internal form between parsed source and final SQBC bytecode.
 
@@ -298,7 +298,7 @@ A valid fixture should usually include:
 - expected `.sqbc` binary output
 - expected sourcemap
 
-Integration fixtures should include a minimal BinBook reader app compiled to `.sqbc` plus a sample `.binbook` resource. These fixtures should validate permissions, capability declarations, and compile-time expectations without merging the SQBC and BinBook formats.
+Integration fixtures should include a minimal BinBook reader app compiled to `.sqbc` plus a sample `.binbook` resource. These fixtures should validate API calls, target-feature expectations, and compile-time expectations without merging the SQBC and BinBook formats.
 
 An invalid fixture should usually include:
 
@@ -565,7 +565,7 @@ The draft BinBook capability contract lives at:
 capabilities/binbook.cap.json
 ```
 
-The contract defines the compiler-visible interface: names, signatures, return types, handle types, permissions, target features, render-safety rules, diagnostics, and symbolic builtin IDs. It is a spec/build artifact, not runtime metadata. The compiler should depend on this contract rather than on BinBook parser or decoder source code.
+The contract defines the compiler-visible interface: names, signatures, return types, handle types, target features, render-safety rules, diagnostics, and symbolic builtin IDs. It is a spec/build artifact, not runtime metadata. The compiler should depend on this contract rather than on BinBook parser or decoder source code.
 
 The preferred source API shape is:
 
@@ -795,7 +795,7 @@ Exit criteria:
 
 - valid fixtures have expected IR, binary, diagnostics, sourcemap
 - invalid fixtures have expected diagnostics
-- BinBook reader integration fixture has expected permissions, diagnostics, IR, binary, and sourcemap
+- BinBook reader integration fixture has expected API calls, diagnostics, IR, binary, and sourcemap
 - fixture manifest documents source files, targets, expected outputs, expected success/failure, and compatibility versions
 - profile schema documented
 - binary format documented
@@ -926,7 +926,9 @@ For browser-sim v1, the Rust frontend may emit versioned IR JSON instead of SQBC
 .squid -> CST -> typed AST -> validated IR JSON
 ```
 
-That IR JSON is a browser-simulator development artifact. It is installed only with `entry.type = "ir"` manifests under simulated `/sd`, and production firmware must continue to require SQBC bytecode.
+That IR JSON is a browser-simulator development artifact. It is installed only
+as `main.ir.json` under simulated `/sd`, and production firmware must continue
+to require SQBC bytecode.
 
 Runtime loading should remain behind an executable boundary so the current `IrJsonLoader -> RuntimeProgram` path can be joined later by `SqbcLoader -> RuntimeProgram` without rewriting simulator UI code.
 

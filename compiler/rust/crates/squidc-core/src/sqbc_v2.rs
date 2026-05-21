@@ -438,6 +438,11 @@ fn collect_expr_strings(expr: &IrExpr, strings: &mut StringTable) -> Result<(), 
             collect_expr_strings(left, strings)?;
             collect_expr_strings(right, strings)
         }
+        IrExpr::Unary { expr, .. } => collect_expr_strings(expr, strings),
+        IrExpr::Field { target, field } => {
+            collect_expr_strings(target, strings)?;
+            strings.intern(field).map(|_| ())
+        }
         IrExpr::HardwareGpioRead { name } | IrExpr::SystemStorage { name } => {
             strings.intern(name).map(|_| ())
         }
@@ -721,6 +726,18 @@ fn compile_expr(
             compile_expr(unit, frame, right)?;
             emit(&mut unit.code, opcode_for_operator(operator)?);
             Ok(())
+        }
+        IrExpr::Unary { operator, expr } => {
+            let _ = (operator, expr);
+            Err(SqbcV2Error::new(
+                "unary result-record expressions are not in the reference firmware subset yet",
+            ))
+        }
+        IrExpr::Field { target, field } => {
+            let _ = (target, field);
+            Err(SqbcV2Error::new(
+                "record field access is not in the reference firmware subset yet",
+            ))
         }
         IrExpr::HardwareGpioRead { name } => {
             emit_string(unit, name)?;

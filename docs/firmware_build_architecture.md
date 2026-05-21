@@ -245,7 +245,7 @@ The browser simulator should model:
 - app state persistence
 - target-defined libraries such as `books`, `apps-inbox`, and `appdata`
 - upload staging and post-transfer validation
-- app package installation from `.squidapp.zip`
+- app artifact installation from `.sqbc`
 - Wi-Fi/AP status records for UI testing
 - BLE transfer events for UI testing
 

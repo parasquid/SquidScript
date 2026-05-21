@@ -97,11 +97,11 @@ export default function App() {
     }
 
     log("upload", "installing IR app", { appId: ir.app.id });
-    const base = await installIrApp(vfs, ir, XTEINK_X4_TARGET);
+    const base = await installIrApp(vfs, ir);
     setInstalledAppId(ir.app.id);
     await refreshApps();
     setStatus(`Uploaded ${base}`);
-    log("upload", "installed app files", { base, files: ["app.json", "main.ir.json"] });
+    log("upload", "installed app files", { base, files: ["main.ir.json"] });
     await refreshStorageFiles();
   }
 
@@ -109,7 +109,7 @@ export default function App() {
     let installed;
     try {
       log("run", "loading installed app", { requestedAppId: installedAppId ?? "first-installed" });
-      installed = await loadInstalledApp(vfs, XTEINK_X4_TARGET, installedAppId ?? undefined);
+      installed = await loadInstalledApp(vfs, installedAppId ?? undefined);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Upload an app before run");
       log("run", "load failed", { error: error instanceof Error ? error.message : String(error) });
@@ -120,9 +120,9 @@ export default function App() {
     const nextRuntime = new BrowserRuntime(program, vfs);
     setRuntime(nextRuntime);
     setSnapshot(await nextRuntime.start());
-    setInstalledAppId(installed.manifest.id);
+    setInstalledAppId(program.id);
     setStatus(`Running ${program.name} from ${installed.basePath}`);
-    log("run", "runtime started", { appId: program.id, basePath: installed.basePath, entryType: installed.manifest.entry.type });
+    log("run", "runtime started", { appId: program.id, basePath: installed.basePath, executable: "main.ir.json" });
   }
 
   async function uninstallSelectedApp(): Promise<void> {
@@ -238,20 +238,20 @@ export default function App() {
     }
 
     log("upload", "installing IR app", { appId: result.ir.app.id });
-    const base = await installIrApp(vfs, result.ir, XTEINK_X4_TARGET);
+    const base = await installIrApp(vfs, result.ir);
     setInstalledAppId(result.ir.app.id);
     await refreshApps();
-    log("upload", "installed app files", { base, files: ["app.json", "main.ir.json"] });
+    log("upload", "installed app files", { base, files: ["main.ir.json"] });
     await refreshStorageFiles();
 
     log("run", "loading installed app", { requestedAppId: result.ir.app.id });
-    const installed = await loadInstalledApp(vfs, XTEINK_X4_TARGET, result.ir.app.id);
+    const installed = await loadInstalledApp(vfs, result.ir.app.id);
     const nextRuntime = new BrowserRuntime(installed.program, vfs);
     setRuntime(nextRuntime);
     setSnapshot(await nextRuntime.start());
-    setInstalledAppId(installed.manifest.id);
+    setInstalledAppId(installed.program.id);
     setStatus(`Running ${installed.program.name} from ${installed.basePath}`);
-    log("run", "runtime started", { appId: installed.program.id, basePath: installed.basePath, entryType: installed.manifest.entry.type });
+    log("run", "runtime started", { appId: installed.program.id, basePath: installed.basePath, executable: "main.ir.json" });
   }
 
   const commands = snapshot?.drawCommands ?? IDLE_COMMANDS;

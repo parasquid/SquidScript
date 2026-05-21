@@ -1,7 +1,11 @@
 # Hardware Target Tests
 
 Hardware target tests exercise a connected physical board. They are not unit
-tests, and they must not run in parallel against the same serial device.
+tests. Never run them in parallel against the same serial device: concurrent
+flash, install, monitor, REPL, hardware-test, or `squidc device` commands can
+interleave serial bytes, reset the board, steal foreground app state, or leave
+hardware in a misleading state. Run one hardware command at a time and wait for
+it to exit before starting the next command.
 
 Hardware target tests and serial/flashing commands must run outside the Codex
 sandbox. Sandboxed sessions do not reliably expose `/dev/ttyACM*`,
@@ -38,9 +42,10 @@ auto-detection is not enough.
 ./scripts/c3-supermini-test-hardware.sh --skip-flash
 ```
 
-Runs the hardware target checks sequentially and deliberately runs the blinky
-app last. This leaves the onboard LED visibly active after the automated serial
-checks finish.
+Runs the hardware target checks sequentially, verifies blinky timer output, and
+then deliberately launches the blinky app again as the final serial action.
+This leaves the onboard LED visibly active after the automated serial checks
+finish.
 
 Current order:
 
@@ -51,7 +56,8 @@ Current order:
 5. Timer-armed app test.
 6. Generic triggered-apps test.
 7. Blinky REPL session.
-8. Volatile blinky app run, app-list persistence check, and short monitor check.
+8. Volatile blinky app run, timer-output assertion, app-list persistence check,
+   and final blinky launch with no later serial command.
 
 Add new hardware tests before the final blinky app unless the new test is also
 intended to be the final visible board-state check.
@@ -96,7 +102,7 @@ installed SQBC and installed-app state survive a real firmware restart.
 ```sh
 cargo run -p squidc -- run examples/blinky-supermini/main.squid
 cargo run -p squidc -- device output
-cargo run -p squidc -- device monitor --max-lines 4
+cargo run -p squidc -- device monitor --max-lines 6
 ```
 
 Compiles, uploads, and runs the blinky SquidScript app as a temporary
@@ -105,8 +111,9 @@ overwrite `main`. The serial output should include `blinky ready` followed by
 alternating `blink` values. The onboard LED should visibly toggle.
 
 `squidc device monitor` polls the firmware debug output buffer and prints newly
-observed `output=...` lines to the terminal. Use `--raw` only when literal
-serial bytes are needed.
+observed `output=...` lines to the terminal. A real blinky check must observe
+both `output="blink" true` and `output="blink" false`; startup output alone is
+not enough. Use `--raw` only when literal serial bytes are needed.
 
 ### GPIO REPL Session
 
@@ -142,7 +149,9 @@ Verifies the default dev profile REPL behavior without requiring an explicit
 ```
 
 Installs the timer armed-app example and verifies `app.arm`,
-`service.timer.*`, and timer-dispatched output on real firmware.
+`service.timer.*`, and timer-dispatched output on real firmware. The test polls
+device output until the expected timer lines arrive instead of relying on a
+fixed sleep.
 
 ### Generic Triggered Apps
 
@@ -153,13 +162,20 @@ Installs the timer armed-app example and verifies `app.arm`,
 Installs the generic-events hardware fixture set from
 `tests/hardware/c3-supermini/generic-events` and verifies app start/arm flow,
 timer events, triggered app behavior, and key-event handling on real firmware.
+The timer portion polls for expected output with a timeout instead of relying on
+a fixed sleep.
 
 ## Rules
 
 - Run these checks sequentially against a given board.
-- Do not leave `squidc device monitor` open while running an install, flash, REPL, or
-  hardware test script.
+- Do not leave `squidc device monitor` open while running an install, flash,
+  REPL, or hardware test script.
+- Do not run a second serial command while any monitor, flash, install, REPL,
+  or hardware script is still running.
 - Prefer auto-detected ports for normal `squidc` flows. Pass `--port` only when
   the host has multiple candidate serial devices or auto-detection fails.
+- Use `squidc device reset` to clear VM state, timers, trace, output, and temp
+  apps between independent tests. Avoid full chip resets except for persistence
+  and boot behavior checks because USB re-enumeration adds timing noise.
 - If the device is visible but access fails, use the documented ACL workaround:
   `sudo setfacl -m u:$USER:rw /dev/ttyACM0`.

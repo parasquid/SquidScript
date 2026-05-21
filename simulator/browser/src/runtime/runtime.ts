@@ -215,6 +215,14 @@ export class BrowserRuntime {
     if (expr.op === "literal") return expr.value;
     if (expr.op === "state") return this.resolveName(expr.name);
     if (expr.op === "call") return this.callFunction(expr.name, await Promise.all(expr.args.map((arg) => this.evaluateExpr(arg))));
+    if (expr.op === "unary") return !this.isTruthy(await this.evaluateExpr(expr.expr));
+    if (expr.op === "field") {
+      const target = await this.evaluateExpr(expr.target);
+      if (!isRecordValue(target) || !Object.hasOwn(target, expr.field)) {
+        throw new Error(`Missing record field ${expr.field}`);
+      }
+      return target[expr.field];
+    }
 
     const leftValue = await this.evaluateExpr(expr.left);
     const rightValue = await this.evaluateExpr(expr.right);
@@ -232,7 +240,10 @@ export class BrowserRuntime {
 
   private async callFunction(name: string, args: unknown[], renderCommands?: DrawCommand[]): Promise<unknown> {
     const fn = this.program.functions.get(name);
-    if (!fn) return undefined;
+    if (!fn) {
+      if (isFallibleBuiltin(name)) return { ok: false, error: "unsupported" };
+      return undefined;
+    }
     const frame: Record<string, unknown> = {};
     fn.params.forEach((param, index) => {
       frame[param] = args[index];
@@ -320,5 +331,42 @@ function isIrExpr(value: unknown): value is IrExpr {
   return typeof value === "object"
     && value !== null
     && "op" in value
-    && ["literal", "state", "binary", "call"].includes(String((value as { op?: unknown }).op));
+    && ["literal", "state", "binary", "unary", "field", "call"].includes(String((value as { op?: unknown }).op));
+}
+
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isFallibleBuiltin(name: string): boolean {
+  return [
+    "content.pickFile",
+    "content.readText",
+    "content.readLines",
+    "data.read",
+    "library.list",
+    "library.volumes",
+    "library.mkdir",
+    "library.rename",
+    "library.move",
+    "library.delete",
+    "library.installUpload",
+    "binbook.open",
+    "binbook.inspect",
+    "wifi.connect",
+    "wifi.disconnect",
+    "wifi.scan",
+    "wifi.startAP",
+    "wifi.stopAP",
+    "wifi.setIP",
+    "wifi.setAPIP",
+    "wifi.setHostname",
+    "wifi.openSetup",
+    "httpServer.start",
+    "httpServer.stop",
+    "httpServer.poll",
+    "bleTransfer.start",
+    "bleTransfer.stop",
+    "bleTransfer.poll"
+  ].includes(name);
 }

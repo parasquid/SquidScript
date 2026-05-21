@@ -98,7 +98,7 @@ Invalid source should be rejected by squidc when statically detectable.
 
 Invalid dynamic behavior should stop the current app with a structured squidvm runtime error.
 
-Firmware must not continue execution after type errors, invalid handles, permission failures, arithmetic faults, out-of-bounds access, unsupported bytecode, or malformed capability data.
+Firmware must not continue execution after type errors, invalid handles, API availability failures, arithmetic faults, out-of-bounds access, unsupported bytecode, or malformed capability data.
 
 ---
 
@@ -143,7 +143,6 @@ Minimum production app:
 
 ```text
 /sd/apps/simple-counter/
-|-- app.json
 `-- main.sqbc
 ```
 
@@ -151,7 +150,6 @@ Debuggable app:
 
 ```text
 /sd/apps/simple-counter/
-|-- app.json
 |-- main.sqbc
 |-- source-map.json
 |-- main.squid
@@ -163,7 +161,6 @@ Complex app:
 
 ```text
 /sd/apps/binbook-reader/
-|-- app.json
 |-- main.sqbc
 |-- source-map.json
 |-- main.squid
@@ -189,7 +186,8 @@ System-managed files:
 `-- crashlog.txt
 ```
 
-Apps may read their own app directory and data directory only if granted permissions.
+Apps may read their own app directory and data directory through the normal
+language/runtime storage APIs.
 
 Apps may read external content files only through explicit user selection or firmware/app-registry-provided file association.
 
@@ -197,114 +195,29 @@ Apps may not directly write to /sd/system.
 
 ---
 
-## 5. Manifest: app.json
+## 5. App Artifact And Install Metadata
 
-Every app must include app.json.
+Production apps are installed and launched from their SQBC artifact. The normal
+entry point is:
 
-Production bytecode app example:
-
-```json
-{
-  "format": "squidapp-v1",
-  "id": "simple-counter",
-  "name": "Simple Counter",
-  "version": "1.0.0",
-  "runtime": {
-    "language": "squidscript",
-    "version": "0.2"
-  },
-  "entry": {
-    "type": "bytecode",
-    "file": "main.sqbc"
-  },
-  "source": {
-    "file": "main.squid",
-    "optional": true
-  },
-  "sourceMap": {
-    "file": "source-map.json",
-    "optional": true
-  },
-  "permissions": [
-    "state.read",
-    "state.write",
-    "display.draw"
-  ],
-  "requires": {
-    "runtime": "squidscript>=0.2",
-    "display": {
-      "minWidth": 480,
-      "minHeight": 800,
-      "pixelFormats": ["GRAY1_PACKED", "GRAY2_PACKED"]
-    },
-    "keys": ["SELECT", "BACK"],
-    "features": [
-      "display.draw",
-      "state.read",
-      "state.write"
-    ]
-  },
-  "opens": []
-}
+```text
+/sd/apps/<app-id>/main.sqbc
 ```
 
-The BinBook reader reference manifest is maintained in `examples/binbook-reader/app.json`.
+The SQBC file contains the app metadata needed by firmware and tools, including
+the app ID, display name, runtime compatibility, state schema, target
+requirements, and builtin/API references. Firmware validates this metadata and
+the bytecode before execution.
 
-Required manifest fields:
-- format
-- id
-- name
-- version
-- runtime.language
-- runtime.version
-- entry.type
-- entry.file
-- permissions
+There is no production `app.json`, `manifest.json`, or permission declaration
+file in v0.2. Capabilities are language/runtime APIs. The compiler validates
+known APIs, firmware validates bytecode and target requirements, and runtime
+calls fail with normal runtime or target errors when the current device cannot
+perform the requested operation.
 
-The `permissions` field is the current manifest name for declared platform capabilities. It records which firmware services the app uses, such as display drawing, storage libraries, Wi-Fi, HTTP serving, or BinBook reading. Future manifest revisions may rename this field to `capabilities` or `uses`, but v0.2 keeps `permissions` for compatibility with existing examples.
-
-Optional manifest fields:
-- source
-- sourceMap
-- requires
-- targets
-- opens
-- icon
-- description
-- author
-- data_formats
-
-entry.type values:
-- bytecode
-
-There is no `kind` field in v0.2 app manifests. The public app model does not
-use launcher, foreground, background, or service categories. Apps that present
-an app picker or home screen are ordinary SquidScript apps, commonly installed
-as the root `main.sqbc` app.
-
-The optional `requires` object declares target capabilities that the app needs before launch. Firmware must reject an app if the current target cannot satisfy these requirements.
-
-Supported `requires` fields:
-
-- `runtime`: SquidScript runtime version constraint such as `squidscript>=0.2`
-- `display.minWidth` and `display.minHeight`: minimum logical display size
-- `display.pixelFormats`: acceptable display pixel formats such as `GRAY1_PACKED` and `GRAY2_PACKED`
-- `keys`: required logical input keys
-- `features`: required firmware/runtime capabilities such as `display.draw`, `state.read`, `state.write`, `content.read`, `binbook.read`, `wifi.connect`, `wifi.accessPoint`, `httpServer.serve`, `bleTransfer.receive`, and `bluetoothHid.keys`
-
-The optional `targets` object restricts an app to exact hardware targets when capability matching is insufficient.
-
-Example:
-
-```json
-{
-  "targets": {
-    "allow": ["xteink-x4"]
-  }
-}
-```
-
-Device targeting should be rare. Capability targeting through `requires` is the default.
+There is no public launcher app kind in v0.2. A home screen, shell, or app
+picker is just a SquidScript app. If it is installed as root `main.sqbc`, it is
+the first app firmware starts.
 
 `.squid` source may include an optional app-level target for compatibility
 metadata, but portable SquidScript compilation does not require a board target.
@@ -314,18 +227,13 @@ capability or alias the current device does not provide, execution must fail
 with a device/runtime error rather than requiring the host compiler to know the
 board in the normal upload path.
 
-Production firmware is required to support:
-- entry.type = "bytecode"
-
-Firmware is not required to support source entry points.
-
-SquidScript v0.2 apps must not declare:
-- entry.type = "source"
+Production firmware is required to support SQBC bytecode artifacts. Firmware is
+not required to support source entry points.
 
 Developer tools may compile .squid source off-device and copy the resulting .sqbc to the app directory.
 
 Recommended production policy:
-- app.json should declare entry.type = "bytecode"
+- `main.sqbc` is the executable app artifact
 - source files may be included for inspection/debugging
 - source-map.json may be included for better diagnostics
 
@@ -895,6 +803,43 @@ display.text("Hello", { x: 20, y: 40, fontHeight: 32 })
 Option objects are parsed by squidc and encoded into bytecode metadata.
 
 Option objects are not general mutable objects.
+
+---
+
+## 15.1 Result Records
+
+Recoverable failures use ordinary read-only result records. SquidScript v0.2
+does not add exceptions, `try`, `catch`, `throw`, multiple returns, or special
+error-handling keywords.
+
+Fallible APIs return a record with at least:
+
+- `ok`: bool
+- `error`: string
+
+On success, `ok` is `true` and `error` is `""`. On failure, `ok` is `false`
+and `error` is a stable string code such as `unsupported`, `cancelled`,
+`not-found`, `busy`, `no-space`, `invalid`, or `io-error`. Success payloads are
+additional named fields on the same record.
+
+Example:
+
+```squid
+let result = library.mkdir("books", "/manuals")
+if (!result.ok) {
+  display.text(result.error, { x: 20, y: 60, fontHeight: 24 })
+}
+```
+
+Known fallible APIs that are unavailable on the current target return:
+
+```text
+{ ok: false, error: "unsupported" }
+```
+
+Ignoring a fallible result is valid but should produce a compiler warning.
+Programmer errors, invalid bytecode, null field access, invalid handles,
+arithmetic faults, and unknown built-ins remain fatal runtime errors.
 
 ---
 
@@ -1844,7 +1789,7 @@ input.text(title, options)
 
 Shows a firmware-owned text entry dialog and returns the entered string.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 input.text
@@ -1891,7 +1836,7 @@ state.load()
 
 Loads firmware-managed persistent state.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 state.read
@@ -1909,7 +1854,7 @@ state.save()
 
 Saves firmware-managed persistent state atomically.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 state.write
@@ -1926,7 +1871,7 @@ state.reset()
 
 Resets persistent state to defaults from the state block.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 state.write
@@ -2066,7 +2011,7 @@ wifi.connect(profileName)
 
 Requests connection to a firmware-managed Wi-Fi profile.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 wifi.connect
@@ -2075,7 +2020,10 @@ wifi.connect
 Example:
 
 ```squid
-wifi.connect("home")
+let result = wifi.connect("home")
+if (!result.ok) {
+  display.text(result.error, { x: 20, y: 60, fontHeight: 24 })
+}
 ```
 
 `profileName` must be a string. If the profile is missing, disabled, or invalid, firmware must fail predictably and expose the failure through `wifi.status()`.
@@ -2084,7 +2032,7 @@ wifi.disconnect()
 
 Requests disconnect from Wi-Fi if this app owns the foreground connection request.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 wifi.connect
@@ -2094,7 +2042,7 @@ wifi.scan()
 
 Requests a bounded scan for nearby access points.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 wifi.scan
@@ -2116,7 +2064,7 @@ wifi.startAP(ssid, options)
 
 Starts a firmware-owned Wi-Fi access point for the current foreground app. This follows Espruino's `Wifi.startAP(ssid, options, callback)` shape, adapted to SquidScript's record-returning style.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 wifi.accessPoint
@@ -2154,7 +2102,7 @@ wifi.stopAP()
 
 Stops an access point started by the current foreground app.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 wifi.accessPoint
@@ -2175,7 +2123,7 @@ wifi.setIP(options)
 
 Requests station static IP configuration or DHCP.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 wifi.configureIp
@@ -2204,7 +2152,7 @@ wifi.setAPIP(options)
 
 Requests access-point interface address configuration.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 wifi.configureIp
@@ -2220,7 +2168,7 @@ wifi.setHostname(hostname)
 
 Requests a firmware-managed network hostname for station/AP services where supported.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 wifi.configureIp
@@ -2232,7 +2180,7 @@ Opens firmware-owned Wi-Fi setup UI for scanning networks, entering credentials,
 
 The Wi-Fi setup UI may use the same firmware keyboard implementation as `input.text(...)`, but passwords entered inside Wi-Fi setup are passed only to the firmware Wi-Fi profile manager. They are not returned to the app.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 wifi.setup
@@ -2269,7 +2217,7 @@ httpServer.start(serviceName, options)
 
 Starts a named foreground HTTP service for the current app.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 httpServer.serve
@@ -2398,7 +2346,9 @@ Rules:
 - Firmware must remove incomplete staged uploads when a client disconnects, the server stops, or the owning app exits.
 - Firmware must reject path traversal and must not let upload form filenames choose final storage paths directly.
 - Firmware should validate uploaded content only after the transfer completes and the staged file is flushed. Failed validation must delete or quarantine the staged file without publishing it.
-- App packages uploaded through HTTP should use `.squidapp.zip`; firmware or app-installer code unpacks them, validates the manifest and bytecode, and installs the resulting `.squidapp` directory.
+- App uploads through HTTP should hand completed SQBC artifacts or future
+  resource packages to the firmware-owned app installer. Resource package
+  format is intentionally left for a separate design pass.
 - Raw sockets, arbitrary outbound HTTP clients, TLS configuration, and general web frameworks are not part of v0.2.
 
 ---
@@ -2413,7 +2363,7 @@ bluetoothHid.start(deviceName)
 
 Starts foreground-only Bluetooth HID advertising or reconnect behavior for the current app.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 bluetoothHid.advertise
@@ -2444,7 +2394,7 @@ bluetoothHid.sendKey(keyName)
 
 Sends one approved HID key press/release sequence.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 bluetoothHid.keys
@@ -2480,7 +2430,7 @@ Rules:
 
 The `bleTransfer.*` namespace provides small foreground-only BLE upload services for devices where Wi-Fi is unavailable, disabled, or inconvenient.
 
-BLE upload is a transport, not a separate installer. BLE, HTTP, USB-copy, and SD-card-copy workflows should all hand completed files to the same firmware-owned staging and installation pipeline. That shared pipeline validates the finished file/package, sanitizes names, selects a target library/volume, writes atomically where possible, unpacks `.squidapp.zip` packages when needed, validates app manifests and bytecode, and then publishes the result.
+BLE upload is a transport, not a separate installer. BLE, HTTP, USB-copy, and SD-card-copy workflows should all hand completed files to the same firmware-owned staging and installation pipeline. That shared pipeline validates the finished file/package, sanitizes names, selects a target library/volume, writes atomically where possible, validates SQBC bytecode and target compatibility, and then publishes the result.
 
 BLE is usually slower than Wi-Fi and should not be the primary large-book path unless the target and client tooling make that acceptable. It is a reasonable fallback for small scripts, small books, settings bundles, and recovery workflows.
 
@@ -2488,7 +2438,7 @@ bleTransfer.start(serviceName, options)
 
 Starts a named BLE upload service owned by the current foreground app.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 bleTransfer.receive
@@ -2499,7 +2449,7 @@ Example:
 ```squid
 bleTransfer.start("uploads", {
   name: "SquidScript XTEINK",
-  uploadExtension: ".squidapp.zip",
+  uploadExtension: ".sqbc",
   maxUploadBytes: 1048576
 })
 ```
@@ -2551,7 +2501,7 @@ if (event.kind == "uploadComplete") {
     library: "apps-inbox",
     volume: "sd",
     folder: "/",
-    extension: ".squidapp.zip"
+    extension: ".sqbc"
   })
 }
 ```
@@ -2564,7 +2514,9 @@ Rules:
 - Failed validation must delete or quarantine the staged file without publishing it.
 - Firmware must expose upload progress so apps can render a progress UI.
 - Firmware should clamp BLE upload size below Wi-Fi upload size unless the target explicitly supports larger BLE transfers.
-- App packages uploaded through BLE should use `.squidapp.zip` and follow the same installer rules as HTTP uploads.
+- App artifacts uploaded through BLE should use `.sqbc` until a resource
+  package format is specified, and they should follow the same installer rules
+  as HTTP uploads.
 
 ---
 
@@ -2604,7 +2556,7 @@ Removable volumes may become unavailable while the device is running. Some hardw
 
 Reference implementations for the XTEINK family use this same broad pattern. Papyrix initializes SdFat at startup, reports `SdCardNotFound` when mounting fails, and exposes storage operations through result/error records. CrossPoint initializes SD storage before normal app flow, gates file/web operations behind that storage layer, and removes incomplete uploads when a transfer aborts. Neither public code path depends on a documented XTEINK card-detect GPIO.
 
-Normal storage failures should be returned as structured results, not treated as VM crashes. Programmer errors, invalid bytecode, and capability violations may still stop the current app.
+Normal storage failures should be returned as result records, not treated as VM crashes. Programmer errors, invalid bytecode, and invalid handle or API use may still stop the current app.
 
 Common storage error codes:
 - `not-found`
@@ -2621,7 +2573,7 @@ content.pickFile(extension)
 
 Opens a firmware-controlled file picker.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 content.pick
@@ -2630,14 +2582,17 @@ content.pick
 Example:
 
 ```squid
-file = content.pickFile(".binbook")
+let picked = content.pickFile(".binbook")
+if (picked.ok) {
+  file = picked.path
+}
 ```
 
 content.readText(path)
 
 Reads a bounded text file.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 content.read or appdata.read, depending on path.
@@ -2646,7 +2601,10 @@ content.read or appdata.read, depending on path.
 Example:
 
 ```squid
-let text = content.readText(file)
+let result = content.readText(file)
+if (result.ok) {
+  text = result.text
+}
 ```
 
 content.readLines(path, maxLines)
@@ -2656,7 +2614,10 @@ Reads bounded lines from a text file.
 Example:
 
 ```squid
-let lines = content.readLines("data/notes.txt", 100)
+let result = content.readLines("data/notes.txt", 100)
+if (result.ok) {
+  lines = result.lines
+}
 ```
 
 data.read(path)
@@ -2666,7 +2627,10 @@ Reads and parses a generic structured data file.
 Example:
 
 ```squid
-let doc = data.read(file)
+let loaded = data.read(file)
+if (loaded.ok) {
+  doc = loaded.doc
+}
 ```
 
 data.countSections(doc, name)
@@ -2733,6 +2697,9 @@ Example:
 
 ```squid
 let files = library.list("books", { path: "/", extension: ".binbook" })
+if (!files.ok) {
+  display.text(files.error, { x: 20, y: 60, fontHeight: 24 })
+}
 ```
 
 Paginated example:
@@ -2771,6 +2738,9 @@ Example:
 
 ```squid
 let volumes = library.volumes("books")
+if (!volumes.ok) {
+  display.text(volumes.error, { x: 20, y: 60, fontHeight: 24 })
+}
 ```
 
 Suggested volume fields:
@@ -2791,7 +2761,7 @@ Creates a directory in a target-defined library.
 Example:
 
 ```squid
-library.mkdir("books", "/manuals")
+let result = library.mkdir("books", "/manuals")
 ```
 
 Returns a result record:
@@ -2885,18 +2855,22 @@ let installed = library.installUpload(upload, {
   library: "apps-inbox",
   volume: "sd",
   folder: "/",
-  extension: ".squidapp.zip"
+  extension: ".sqbc"
 })
 ```
 
-`.squidapp.zip` uploads are staging artifacts. The firmware app installer must unzip them into an installed `.squidapp` directory, validate `manifest.json`, validate bytecode and target compatibility, and then atomically publish the installed app where the filesystem permits it.
+Uploaded `.sqbc` files are staging artifacts until the firmware app installer
+validates bytecode and target compatibility, places the artifact under the app
+ID derived from SQBC metadata, and atomically publishes the installed app where
+the filesystem permits it. A future app resource package format may extend this
+flow for bundled files such as HTML, JavaScript, images, and content assets.
 
 Rules:
 - firmware must sanitize names and reject path traversal
 - firmware must enforce target storage quotas and maximum file sizes
 - writes should be atomic where the backing filesystem permits it
-- app package uploads should land in `apps-inbox`; actual app installation remains firmware-owned
-- app package upload extensions should be `.squidapp.zip`; installed app directories should use `.squidapp`
+- app uploads should land in `apps-inbox`; actual app installation remains firmware-owned
+- app upload extensions should be `.sqbc` until a resource package format is specified
 - large books should default to SD-backed `books`, not internal flash, unless the user or app explicitly selects `flash-library`
 - if a removable volume disappears during an operation, firmware should return a structured storage error and mark the volume unavailable until remount/probe succeeds
 
@@ -2976,7 +2950,7 @@ https://github.com/parasquid/binbook/blob/main/BINBOOK_FORMAT_SPEC.md
 
 `.uf2` is a firmware replacement image when the target bootloader supports UF2. It is not a SquidScript app format and must not be treated as a container for `.sqbc` or `.binbook` files.
 
-Required permission:
+Required runtime support:
 
 ```text
 binbook.read
@@ -2985,11 +2959,13 @@ binbook.read
 Typical usage:
 
 ```squid
-let book = binbook.open(file)
-let info = binbook.info(book)
-let page = binbook.page(book, pageIndex)
-let image = binbook.pageImage(page)
-display.draw(image, { x: 0, y: 0 })
+let opened = binbook.open(file)
+if (opened.ok) {
+  let info = binbook.info(opened.book)
+  let page = binbook.page(opened.book, pageIndex)
+  let image = binbook.pageImage(page)
+  display.draw(image, { x: 0, y: 0 })
+}
 ```
 
 The BinBook capability owns document-specific work. The display capability owns final composition. Prefer this style of composition over BinBook-specific rendering syntax or all-in-one helpers that bypass `display.*`.
@@ -3156,7 +3132,7 @@ state {
 
 App registry support is provided by firmware. SquidScript apps may request
 installed app summaries and start another installed app, but firmware owns
-manifest lookup, target compatibility checks, bytecode validation, lifecycle
+SQBC metadata lookup, target compatibility checks, bytecode validation, lifecycle
 transitions, crash recovery, and returning to the previous installed return
 target.
 
@@ -3164,7 +3140,7 @@ There is no public launcher app kind in v0.2. A home screen, shell, or app
 picker is just a SquidScript app. If it is installed as root `main.sqbc`, it is
 the first app firmware starts.
 
-Suggested app registry permissions:
+Suggested app registry API identifiers:
 
 ```text
 app.registry.list
@@ -3185,7 +3161,7 @@ app.launch(appId)
 Returns a bounded list handle or list-like firmware-owned value containing
 installed apps.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 app.registry.list
@@ -3193,7 +3169,7 @@ app.registry.list
 
 `app.registry.get(apps, index)`
 
-Returns a read-only record with safe manifest summary fields.
+Returns a read-only record with safe installed-app summary fields.
 
 Example record:
 
@@ -3206,7 +3182,7 @@ Example record:
 }
 ```
 
-Requires permission:
+Requires runtime support:
 
 ```text
 app.registry.inspect
@@ -3221,7 +3197,7 @@ When the launched app exits, firmware starts the previous installed return
 target fresh. If no return target exists, firmware restarts installed
 `main.sqbc`.
 
-Requires permission:
+Requires runtime support:
 
 ```text
 app.launch
@@ -3248,11 +3224,15 @@ event.on("key.SELECT") {
 
 ---
 
-## 37. Permissions
+## 37. Runtime APIs And Target Support
 
-Permissions are declared in app.json.
+SquidScript does not use app-declared permissions. Built-ins are normal
+language/runtime APIs. The compiler validates known APIs and call shapes,
+firmware validates bytecode and target requirements, and runtime calls fail
+with structured runtime or target errors when a supported API is unavailable on
+the current device.
 
-Suggested declared capabilities:
+Suggested API and target feature identifiers:
 
 display.draw
 - Allows display drawing operations such as display.clear, display.text, display.line, display.rect, display.image, and display.draw.
@@ -3331,16 +3311,15 @@ app.registry.list
 - Allows an app to request the installed app list.
 
 app.registry.inspect
-- Allows an app to read safe manifest summaries for installed apps.
+- Allows an app to read safe summaries for installed apps.
 
 app.launch
 - Allows an app to request that firmware launch another installed app.
 
-Permission checks happen during source compilation, bytecode validation, and runtime execution.
-
-If bytecode calls a manifest-declared built-in without the corresponding declaration, firmware must reject the app or stop execution with an error.
-
-Some built-ins may be feature-gated without a separate permission when they do not grant access to external resources or privileged firmware behavior. For example, `stateMachine.*` is validated through `requires.features` and normal state-variable rules.
+API availability checks happen during source compilation, bytecode validation,
+and runtime execution. If bytecode calls an unknown built-in, firmware must
+reject the app or stop execution with an error. If a known built-in is not
+available on the current target, firmware must return a target/runtime error.
 
 ---
 
@@ -3412,15 +3391,14 @@ squidc compiles:
 
 Runtime execution:
 
-1. Load app.json.
-2. Load .sqbc.
-3. Validate .sqbc header and sections.
-4. Validate bytecode instruction stream.
-5. Validate required manifest capability declarations against app.json.
-6. Initialize runtime state.
-7. Execute event handlers.
-8. Render screens.
-9. Record errors and crash diagnostics.
+1. Load .sqbc.
+2. Validate .sqbc header and sections.
+3. Validate bytecode instruction stream.
+4. Validate SQBC app metadata and target requirements.
+5. Initialize runtime state.
+6. Execute event handlers.
+7. Render screens.
+8. Record errors and crash diagnostics.
 
 ---
 
@@ -3444,7 +3422,6 @@ SQBC header
 |-- target runtime version
 |-- compiler version
 |-- app ID hash
-|-- required manifest capability declarations
 |-- target requirements
 |-- source hash
 |-- string pool
@@ -3534,9 +3511,8 @@ Validation checks:
 - jumps target valid instruction boundaries
 - call targets are valid
 - builtin IDs are known
-- required manifest capability declarations match app.json
 - target requirements are structurally valid
-- required features are declared in app.json and provided by the current target
+- required features are provided by the current target
 - required logical keys are provided by the current input profile
 - required pixel formats are provided by the current display profile
 - stack depth is bounded
@@ -3683,7 +3659,7 @@ source-map.json is non-authoritative.
 
 source-map.json must not affect:
 - bytecode validation
-- permissions
+- API availability checks
 - execution behavior
 - app security
 
@@ -3820,7 +3796,6 @@ Source:
 
 Suggested v0.2 limits:
 
-- max manifest size: 4 KB
 - max bytecode file size: 32 KB to 64 KB
 - max optional source size: 32 KB to 64 KB
 - max source-map size: 16 KB
@@ -3922,6 +3897,12 @@ Runtime error:
 - user is returned to the previous installed return target, or root `main.sqbc`
   is restarted
 
+Recoverable API failure:
+- the current app continues execution
+- the API returns a result record with `ok: false`
+- `error` contains a stable string code
+- unavailable target support for a known fallible API returns `unsupported`
+
 Repeated runtime errors:
 - app may be disabled until user re-enables it
 - app state may be reset by user
@@ -3933,7 +3914,7 @@ Example error report:
 App: binbook-reader
 File: main.sqbc
 Source: screens/reader.squid:38
-Error: permission binbook.read required for binbook.open()
+Error: runtime support binbook.read unavailable for binbook.open()
 ```
 
 If no valid source map exists:
@@ -3943,7 +3924,7 @@ App: binbook-reader
 File: main.sqbc
 Function: fn#3
 Instruction: 121
-Error: permission binbook.read required for binbook.open()
+Error: runtime support binbook.read unavailable for binbook.open()
 ```
 
 ---
@@ -4080,7 +4061,7 @@ Unsupported bytecode is a firmware validation error.
 
 ## 52. Compatibility
 
-Runtime version is declared in app.json.
+Runtime compatibility is encoded in SQBC metadata.
 
 Runtime version mismatch behavior:
 - if app requires newer runtime: reject app
@@ -4104,12 +4085,11 @@ Future versions should avoid breaking v0.2 apps where possible.
 squidc is the off-device SquidScript compiler.
 
 squidc responsibilities:
-- read app.json
 - resolve includes
 - tokenize .squid source
 - parse source
 - validate language rules
-- validate permissions
+- validate known API calls
 - compile to .sqbc
 - emit source-map.json if requested
 - emit diagnostics
@@ -4127,50 +4107,23 @@ Compiler diagnostics should include:
 - line number
 - column number if available
 - error message
-- missing permission if relevant
+- missing or unsupported API if relevant
 - function/screen/handler context if relevant
 
 Example:
 
 ```text
-screens/reader.squid:38: binbook.page requires permission binbook.read
+screens/reader.squid:38: binbook.page requires runtime support binbook.read
 ```
 
 ---
 
 ## 54. Example: Hello Menu App
 
-app.json:
+Installed artifact:
 
-```json
-{
-  "format": "squidapp-v1",
-  "id": "hello-menu",
-  "name": "Hello Menu",
-  "version": "1.0.0",
-  "runtime": {
-    "language": "squidscript",
-    "version": "0.2"
-  },
-  "entry": {
-    "type": "bytecode",
-    "file": "main.sqbc"
-  },
-  "source": {
-    "file": "main.squid",
-    "optional": true
-  },
-  "sourceMap": {
-    "file": "source-map.json",
-    "optional": true
-  },
-  "permissions": [
-    "state.read",
-    "state.write",
-    "display.draw"
-  ],
-  "opens": []
-}
+```text
+/sd/apps/hello-menu/main.sqbc
 ```
 
 main.squid:
@@ -4383,7 +4336,6 @@ squidc build /sd/apps/binbook-reader --out /sd/apps/binbook-reader/main.sqbc --s
 The first implementation should support:
 
 Firmware:
-- app.json parser
 - SD app scanner
 - .sqbc loader
 - .sqbc validator
@@ -4457,7 +4409,7 @@ squidvm validates and executes .sqbc on the ESP32-C3.
 
 Firmware images should be distributed as UF2 where the target bootloader supports it, so users can replace firmware through a USB mass-storage copy flow.
 
-UF2 is only for firmware replacement. SquidScript apps, app manifests, source maps, BinBook content, and user state remain normal storage files and must not be packaged into firmware UF2 images.
+UF2 is only for firmware replacement. SquidScript apps, source maps, BinBook content, and user state remain normal storage files and must not be packaged into firmware UF2 images.
 
 Production firmware should not need a source compiler.
 
@@ -4472,7 +4424,7 @@ Firmware:
 - root `main.sqbc` app loader
 - bytecode VM
 - display/input/storage/power
-- capability validation
+- API and target validation
 - BinBook module
 - Wi-Fi profile manager
 - foreground HTTP server module
@@ -4482,7 +4434,6 @@ Firmware:
 - optional source-map diagnostics
 
 SD card:
-- app manifests
 - .sqbc bytecode
 - optional .squid source
 - optional source maps

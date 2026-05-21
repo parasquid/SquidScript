@@ -14,13 +14,10 @@
         {
             "name": "SquidScript Language Specification v0.2 Draft",
             "repoPath": "squidscript/docs/language_spec.md",
-            "scope": "Defines SquidScript values, handles, permissions, render safety, bytecode validation, and capability calls."
+            "scope": "Defines SquidScript values, handles, API availability, render safety, bytecode validation, and capability calls."
         }
     ],
     "feature": "binbook.read",
-    "permissions": [
-        "binbook.read"
-    ],
     "targetRequirements": {
         "features": [
             "binbook.read",
@@ -60,16 +57,16 @@
         "Resolve binbook.* calls against this contract.",
         "Validate argument count and argument types.",
         "Infer return types for records, handles, primitive values, and drawables.",
-        "Require binbook.read permission when binbook.* calls are present.",
+        "",
         "Require binbook.read target feature when binbook.* calls are present.",
         "Reject calls from render-pure screen blocks unless the function is renderSafe.",
         "Emit stable builtin IDs into .sqbc rather than source strings.",
         "Do not parse, validate, decode, or reinterpret .binbook bytes."
     ],
     "vmResponsibilities": [
-        "Validate builtin IDs, stack effects, handle types, permissions, and target feature availability before execution.",
+        "Validate builtin IDs, stack effects, handle types, API availability, and target feature availability before execution.",
         "Dispatch binbook.* calls to the firmware BinBook module.",
-        "Stop the current app with a structured runtime error on invalid handles, invalid documents, permission failures, out-of-range pages, unsupported features, decode failures, or resource exhaustion.",
+        "Stop the current app with a structured runtime error on invalid handles, invalid documents, API availability failures, out-of-range pages, unsupported features, decode failures, or resource exhaustion.",
         "Release transient handles according to SquidScript handle lifetime rules."
     ],
     "firmwareModuleResponsibilities": [
@@ -332,14 +329,12 @@
                 }
             ],
             "returns": "handle<binbook.book>",
-            "permission": "binbook.read",
             "targetFeatures": [
                 "binbook.read"
             ],
             "renderSafe": true,
             "handleBehavior": "creates handle<binbook.book>",
             "errors": [
-                "permissionDenied",
                 "fileNotFound",
                 "invalidMagic",
                 "unsupportedVersion",
@@ -365,14 +360,12 @@
                 }
             ],
             "returns": "record<binbook.info>",
-            "permission": "binbook.read",
             "targetFeatures": [
                 "binbook.read"
             ],
             "renderSafe": true,
             "handleBehavior": "does not create handles",
             "errors": [
-                "permissionDenied",
                 "invalidHandle",
                 "uploadIncomplete",
                 "invalidMagic",
@@ -399,7 +392,6 @@
                 }
             ],
             "returns": "record<binbook.info>",
-            "permission": "binbook.read",
             "targetFeatures": [
                 "binbook.read"
             ],
@@ -422,7 +414,6 @@
                 }
             ],
             "returns": "int",
-            "permission": "binbook.read",
             "targetFeatures": [
                 "binbook.read"
             ],
@@ -448,7 +439,6 @@
                 }
             ],
             "returns": "record<binbook.pageInfo>",
-            "permission": "binbook.read",
             "targetFeatures": [
                 "binbook.read"
             ],
@@ -475,7 +465,6 @@
                 }
             ],
             "returns": "handle<binbook.page>",
-            "permission": "binbook.read",
             "targetFeatures": [
                 "binbook.read"
             ],
@@ -499,7 +488,6 @@
                 }
             ],
             "returns": "drawable",
-            "permission": "binbook.read",
             "targetFeatures": [
                 "binbook.read",
                 "display.draw"
@@ -528,7 +516,6 @@
                 }
             ],
             "returns": "int",
-            "permission": "binbook.read",
             "targetFeatures": [
                 "binbook.read"
             ],
@@ -554,7 +541,6 @@
                 }
             ],
             "returns": "record<binbook.navEntry>",
-            "permission": "binbook.read",
             "targetFeatures": [
                 "binbook.read"
             ],
@@ -577,7 +563,6 @@
                 }
             ],
             "returns": "null",
-            "permission": "binbook.read",
             "targetFeatures": [
                 "binbook.read"
             ],
