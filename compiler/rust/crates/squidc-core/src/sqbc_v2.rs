@@ -182,6 +182,17 @@ impl FrameCompiler {
     fn local(&self, name: &str) -> Option<u16> {
         self.locals.get(name).copied()
     }
+
+    fn child_scope(&self) -> Self {
+        Self {
+            locals: self.locals.clone(),
+            next_local: self.next_local,
+        }
+    }
+
+    fn reserve_child_locals(&mut self, child: &Self) {
+        self.next_local = self.next_local.max(child.next_local);
+    }
 }
 
 pub fn encode_sqbc_v2(ir: &IrProgram) -> Result<Vec<u8>, SqbcV2Error> {
@@ -193,7 +204,7 @@ pub fn encode_sqbc_v2_with_profile(
     profile: BuildProfile,
 ) -> Result<Vec<u8>, SqbcV2Error> {
     let mut unit = CompileUnit::default();
-    collect_strings(ir, &mut unit.strings)?;
+    collect_strings(ir, &mut unit.strings, profile)?;
 
     for (index, state) in ir.state.iter().enumerate() {
         let id = u16::try_from(index).map_err(|_| SqbcV2Error::new("too many state slots"))?;
@@ -299,7 +310,11 @@ pub fn read_app_id(bytes: &[u8]) -> Result<Option<String>, SqbcV2Error> {
     Ok(Some(app_id.to_string()))
 }
 
-fn collect_strings(ir: &IrProgram, strings: &mut StringTable) -> Result<(), SqbcV2Error> {
+fn collect_strings(
+    ir: &IrProgram,
+    strings: &mut StringTable,
+    profile: BuildProfile,
+) -> Result<(), SqbcV2Error> {
     strings.intern(&ir.app.id)?;
     for state in &ir.state {
         strings.intern(&state.name)?;
@@ -310,15 +325,15 @@ fn collect_strings(ir: &IrProgram, strings: &mut StringTable) -> Result<(), Sqbc
         for param in &function.params {
             strings.intern(param)?;
         }
-        collect_statement_strings(&function.statements, strings)?;
+        collect_statement_strings(&function.statements, strings, profile)?;
     }
     for handler in &ir.handlers {
         strings.intern(&handler.event)?;
-        collect_statement_strings(&handler.statements, strings)?;
+        collect_statement_strings(&handler.statements, strings, profile)?;
     }
     for screen in &ir.screens {
         strings.intern(&screen.name)?;
-        collect_statement_strings(&screen.statements, strings)?;
+        collect_statement_strings(&screen.statements, strings, profile)?;
     }
     Ok(())
 }
@@ -326,6 +341,7 @@ fn collect_strings(ir: &IrProgram, strings: &mut StringTable) -> Result<(), Sqbc
 fn collect_statement_strings(
     statements: &[IrStatement],
     strings: &mut StringTable,
+    profile: BuildProfile,
 ) -> Result<(), SqbcV2Error> {
     for statement in statements {
         match statement {
@@ -342,12 +358,12 @@ fn collect_statement_strings(
                 else_statements,
             } => {
                 collect_expr_strings(condition, strings)?;
-                collect_statement_strings(then_statements, strings)?;
-                collect_statement_strings(else_statements, strings)?;
+                collect_statement_strings(then_statements, strings, profile)?;
+                collect_statement_strings(else_statements, strings, profile)?;
             }
             IrStatement::Repeat { count, statements } => {
                 collect_expr_strings(count, strings)?;
-                collect_statement_strings(statements, strings)?;
+                collect_statement_strings(statements, strings, profile)?;
             }
             IrStatement::Return { expr } => {
                 if let Some(expr) = expr {
@@ -361,8 +377,15 @@ fn collect_statement_strings(
                 }
             }
             IrStatement::DebugPrint { args } => {
-                for arg in args {
-                    collect_expr_strings(arg, strings)?;
+                if profile == BuildProfile::Dev {
+                    for arg in args {
+                        collect_expr_strings(arg, strings)?;
+                    }
+                }
+            }
+            IrStatement::DebugBlock { statements } => {
+                if profile == BuildProfile::Dev {
+                    collect_statement_strings(statements, strings, profile)?;
                 }
             }
             IrStatement::AppLaunch { app } => {
@@ -473,8 +496,24 @@ fn compile_statements(
     statements: &[IrStatement],
     profile: BuildProfile,
 ) -> Result<(), SqbcV2Error> {
+    compile_statements_with_mode(unit, frame, statements, profile, StatementMode::Normal)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StatementMode {
+    Normal,
+    DebugBlock,
+}
+
+fn compile_statements_with_mode(
+    unit: &mut CompileUnit,
+    frame: &mut FrameCompiler,
+    statements: &[IrStatement],
+    profile: BuildProfile,
+    mode: StatementMode,
+) -> Result<(), SqbcV2Error> {
     for statement in statements {
-        compile_statement(unit, frame, statement, profile)?;
+        compile_statement(unit, frame, statement, profile, mode)?;
     }
     Ok(())
 }
@@ -484,6 +523,7 @@ fn compile_statement(
     frame: &mut FrameCompiler,
     statement: &IrStatement,
     profile: BuildProfile,
+    mode: StatementMode,
 ) -> Result<(), SqbcV2Error> {
     match statement {
         IrStatement::StateLoad => emit_builtin(&mut unit.code, BUILTIN_STATE_LOAD),
@@ -492,9 +532,17 @@ fn compile_statement(
         IrStatement::AppExit => emit_builtin(&mut unit.code, BUILTIN_APP_EXIT),
         IrStatement::Assign { name, expr } => {
             compile_expr(unit, frame, expr)?;
-            let state = state_id(unit, name)?;
-            emit(&mut unit.code, OP_SET_STATE);
-            write_u16(&mut unit.code, state);
+            if mode == StatementMode::DebugBlock {
+                let local = frame
+                    .local(name)
+                    .ok_or_else(|| SqbcV2Error::new(format!("unknown debug local {name}")))?;
+                emit(&mut unit.code, OP_SET_LOCAL);
+                write_u16(&mut unit.code, local);
+            } else {
+                let state = state_id(unit, name)?;
+                emit(&mut unit.code, OP_SET_STATE);
+                write_u16(&mut unit.code, state);
+            }
         }
         IrStatement::Let { name, expr } => {
             compile_expr(unit, frame, expr)?;
@@ -510,11 +558,11 @@ fn compile_statement(
             compile_expr(unit, frame, condition)?;
             emit(&mut unit.code, OP_JUMP_IF_FALSE);
             let else_patch = reserve_u32(&mut unit.code);
-            compile_statements(unit, frame, then_statements, profile)?;
+            compile_statements_with_mode(unit, frame, then_statements, profile, mode)?;
             emit(&mut unit.code, OP_JUMP);
             let end_patch = reserve_u32(&mut unit.code);
             patch_u32(&mut unit.code, else_patch)?;
-            compile_statements(unit, frame, else_statements, profile)?;
+            compile_statements_with_mode(unit, frame, else_statements, profile, mode)?;
             patch_u32(&mut unit.code, end_patch)?;
         }
         IrStatement::Repeat { count, statements } => {
@@ -531,7 +579,7 @@ fn compile_statement(
             emit(&mut unit.code, OP_GT);
             emit(&mut unit.code, OP_JUMP_IF_FALSE);
             let end_patch = reserve_u32(&mut unit.code);
-            compile_statements(unit, frame, statements, profile)?;
+            compile_statements_with_mode(unit, frame, statements, profile, mode)?;
             emit(&mut unit.code, OP_GET_LOCAL);
             write_u16(&mut unit.code, counter);
             emit(&mut unit.code, OP_PUSH_INT);
@@ -575,6 +623,19 @@ fn compile_statement(
                     &mut unit.code,
                     u8::try_from(args.len()).map_err(|_| SqbcV2Error::new("too many args"))?,
                 );
+            }
+        }
+        IrStatement::DebugBlock { statements } => {
+            if profile == BuildProfile::Dev {
+                let mut debug_frame = frame.child_scope();
+                compile_statements_with_mode(
+                    unit,
+                    &mut debug_frame,
+                    statements,
+                    profile,
+                    StatementMode::DebugBlock,
+                )?;
+                frame.reserve_child_locals(&debug_frame);
             }
         }
         IrStatement::AppLaunch { app } => {

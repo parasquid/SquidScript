@@ -121,6 +121,38 @@ describe("browser runtime", () => {
     expect(snapshot.exited).toBe(false);
   });
 
+  it("executes debug blocks with block-local assignment without mutating state", async () => {
+    const program: RuntimeProgram = {
+      id: "debug-block",
+      name: "Debug Block",
+      target: "xteink-x4",
+      stateDefaults: { count: 1 },
+      functions: new Map(),
+      handlers: new Map([
+        ["app.start", [
+          {
+            op: "debug.block",
+            statements: [
+              { op: "let", name: "count", expr: { op: "literal", value: 10 } },
+              { op: "assign", name: "count", expr: { op: "binary", left: { op: "state", name: "count" }, operator: "+", right: { op: "literal", value: 1 } } },
+              { op: "debug.print", args: [{ op: "state", name: "count" }] }
+            ]
+          },
+          { op: "screen.open", screen: "main" }
+        ]]
+      ]),
+      screens: new Map([
+        ["main", { name: "main", render: "compose", statements: [{ op: "display.clear", color: "gray0" }] }]
+      ])
+    };
+    const runtime = new BrowserRuntime(program, new MemoryVfs());
+
+    const snapshot = await runtime.start();
+
+    expect(snapshot.state.count).toBe(1);
+    expect(snapshot.currentScreen).toBe("main");
+  });
+
   it("renders screen-local control flow and helper function draw commands", async () => {
     const program: RuntimeProgram = {
       id: "render-flow",

@@ -79,7 +79,7 @@ export class BrowserRuntime {
     }
   }
 
-  private async executeStatements(statements: IrStatement[], renderCommands?: DrawCommand[]): Promise<ExecResult> {
+  private async executeStatements(statements: IrStatement[], renderCommands?: DrawCommand[], debugBlock = false): Promise<ExecResult> {
     let needsRefresh = false;
     for (const statement of statements) {
       if (statement.op === "state.load") {
@@ -95,17 +95,21 @@ export class BrowserRuntime {
         await this.exit();
         needsRefresh = true;
       } else if (statement.op === "assign") {
-        this.state[statement.name] = await this.evaluateExpr(statement.expr);
+        if (debugBlock && Object.hasOwn(this.currentLocals(), statement.name)) {
+          this.currentLocals()[statement.name] = await this.evaluateExpr(statement.expr);
+        } else {
+          this.state[statement.name] = await this.evaluateExpr(statement.expr);
+        }
       } else if (statement.op === "let") {
         this.currentLocals()[statement.name] = await this.evaluateExpr(statement.expr);
       } else if (statement.op === "if") {
         const branch = this.isTruthy(await this.evaluateExpr(statement.condition)) ? statement.then_statements : statement.else_statements;
-        const result = await this.executeStatements(branch, renderCommands);
+        const result = await this.executeStatements(branch, renderCommands, debugBlock);
         if (result.returned) return result;
       } else if (statement.op === "repeat") {
         const count = Math.max(0, Number(await this.evaluateExpr(statement.count) ?? 0));
         for (let index = 0; index < count; index += 1) {
-          const result = await this.executeStatements(statement.statements, renderCommands);
+          const result = await this.executeStatements(statement.statements, renderCommands, debugBlock);
           if (result.returned) return result;
         }
       } else if (statement.op === "for") {
@@ -114,13 +118,23 @@ export class BrowserRuntime {
         const max = statement.max ? Math.max(0, Number(await this.evaluateExpr(statement.max) ?? values.length)) : values.length;
         for (const value of values.slice(0, max)) {
           this.currentLocals()[statement.item] = value;
-          const result = await this.executeStatements(statement.statements, renderCommands);
+          const result = await this.executeStatements(statement.statements, renderCommands, debugBlock);
           if (result.returned) return result;
         }
       } else if (statement.op === "call") {
         await this.callFunction(statement.name, await Promise.all(statement.args.map((arg) => this.evaluateExpr(arg))), renderCommands);
       } else if (statement.op === "return") {
         return { returned: true, value: statement.expr ? await this.evaluateExpr(statement.expr) : undefined };
+      } else if (statement.op === "debug.print") {
+        await Promise.all(statement.args.map((arg) => this.evaluateExpr(arg)));
+      } else if (statement.op === "debug.block") {
+        this.locals.push({});
+        try {
+          const result = await this.executeStatements(statement.statements, renderCommands, true);
+          if (result.returned) return result;
+        } finally {
+          this.locals.pop();
+        }
       } else if (renderCommands) {
         await this.appendDrawCommand(statement, renderCommands);
       }

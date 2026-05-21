@@ -3350,6 +3350,31 @@ through the developer REPL protocol.
 In `release`, `debug.print(...)` calls are removed along with their argument
 evaluation. Program behavior must not depend on debug argument evaluation.
 
+Source may also contain dev-only diagnostic blocks:
+
+```squid
+debug {
+  let x = 3
+  let led = hardware.gpio.read("status_led")
+  debug.print("here", x, led)
+}
+```
+
+In `dev`, a `debug { ... }` block executes normally. Variables declared with
+`let` inside the block are block-local and are not visible after the block.
+Assignments inside the block are only valid for variables declared in that same
+debug block. The block may contain debug-local setup, read-only expressions,
+bounded control flow, and `debug.print(...)`.
+
+In `release`, the whole `debug { ... }` block is removed. Expressions inside
+the block are not evaluated, and no bytecode is emitted for the block.
+
+Debug blocks must not mutate app state, navigate screens, change app lifecycle,
+start timers, write or toggle GPIO, write storage or network state, draw to the
+display, return from a function, or call user-defined functions. Screen blocks
+may contain `debug { ... }`, but the contents still obey screen render-purity
+and the debug-block mutation rules.
+
 `hardware.gpio.*` is the initial target hardware namespace for reference
 firmware. GPIO resources are named by firmware/runtime device aliases and may
 also be described by target definitions for compatibility checks, simulator

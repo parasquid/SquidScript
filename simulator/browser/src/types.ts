@@ -47,6 +47,8 @@ export type IrStatement =
   | { op: "for"; item: string; list: IrExpr; max?: IrExpr | null; statements: IrStatement[] }
   | { op: "return"; expr?: IrExpr | null }
   | { op: "call"; name: string; args: IrExpr[] }
+  | { op: "debug.print"; args: IrExpr[] }
+  | { op: "debug.block"; statements: IrStatement[] }
   | { op: "display.clear"; color: string }
   | { op: "display.text"; text: IrExpr; options: Record<string, unknown> }
   | { op: "display.rect"; x: number; y: number; w: number; h: number; options: Record<string, unknown> }

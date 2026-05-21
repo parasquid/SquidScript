@@ -116,6 +116,8 @@ The browser runtime currently recognizes:
 - `for`
 - `return`
 - `call`
+- `debug.print`
+- `debug.block`
 - `screen.refresh`
 - `screen.open`
 - `app.exit`
@@ -132,6 +134,11 @@ firmware/runtime chunk loading.
 
 Display statements are rendered when they appear in a screen body. Non-display statements are executed in handlers. Unknown statements should be treated as runtime errors once runtime diagnostics are formalized.
 
+`debug.print` evaluates and emits debug output in development profiles and is
+stripped from release SQBC. `debug.block` contains a nested `statements` array;
+development SQBC encodes the nested statements, while release SQBC strips the
+entire block without evaluating contained expressions.
+
 ## v1 Expressions
 
 The browser-sim IR currently recognizes:
@@ -143,4 +150,4 @@ The browser-sim IR currently recognizes:
 
 ## v1 Validation
 
-The compiler currently reports diagnostics for missing app declarations, missing screens, target mismatches, duplicate screen and function names, unknown `screen.open(...)` targets, unsupported screen render policies, direct mutating statements inside screen bodies, and display calls outside screen rendering.
+The compiler currently reports diagnostics for missing app declarations, missing screens, target mismatches, duplicate screen and function names, unknown `screen.open(...)` targets, unsupported screen render policies, direct mutating statements inside screen bodies, display calls outside screen rendering, and invalid mutation or side effects inside `debug.block`.
