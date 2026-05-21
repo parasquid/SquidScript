@@ -10,9 +10,15 @@ cargo test --target x86_64-unknown-linux-gnu
 ```
 
 The ESP32-C3 serial binary keeps hardware boot wiring in
-`src/bin/c3_supermini_serial_hello.rs`. Serial command handling, runtime host
-state, lifecycle dispatch, timers, line buffering, and log formatting live under
-`src/serial/`.
+`src/bin/c3_supermini_serial_hello.rs`. The serial firmware module root is
+`src/serial.rs`, with implementation split under `src/serial/`:
+
+- `command.rs`: shell command parsing, install/run/key/state command handling
+- `lifecycle.rs`: boot, app launch/exit, pending actions, timer dispatch
+- `runtime.rs`: VM host callbacks, indicator/GPIO/timer behavior, trace output
+- `vm.rs`: active VM wrappers, SQBC loading, persistent app host/reader glue
+- `state.rs`: resource reporting and state import/printing helpers
+- `line.rs` and `log.rs`: line buffering and bounded log formatting
 
 Build the ESP32-C3 Super Mini reference firmware:
 
