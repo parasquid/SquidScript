@@ -100,7 +100,26 @@ Requirements:
 - `wasm-pack`
 - a Rust toolchain with the `wasm32-unknown-unknown` target installed
 
-The current Homebrew Rust toolchain in this environment does not include `wasm32-unknown-unknown`, so `npm run wasm:build` fails early with a toolchain message. The simulator remains testable through the fallback compiler until a Rustup-managed or otherwise WASM-capable Rust toolchain is available.
+When Rustup is available, `simulator/browser/scripts/build-wasm.sh` prefers the
+Rustup `stable` toolchain and exports its `rustc`/`cargo` paths before invoking
+`wasm-pack`. This avoids accidentally using another `rustc` earlier in `PATH`
+that lacks the `wasm32-unknown-unknown` target.
+
+If `wasm-pack` fails before it starts with a loader error such as
+`libbz2.so.1.0: cannot open shared object file`, the installed `wasm-pack`
+binary was linked against a bzip2 soname that is not available on the host.
+Rebuild it so `bzip2-sys` uses its vendored static bzip2 instead of a
+host-specific `pkg-config` result:
+
+```bash
+PKG_CONFIG=/bin/false rustup run stable cargo install wasm-pack --locked --force
+```
+
+Then rerun:
+
+```bash
+npm run wasm:build
+```
 
 ## Current Compiler Subset
 

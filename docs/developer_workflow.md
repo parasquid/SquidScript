@@ -41,6 +41,18 @@ rustup toolchain install stable --target wasm32-unknown-unknown
 cargo install wasm-pack --locked
 ```
 
+`simulator/browser/scripts/build-wasm.sh` prefers Rustup `stable` when Rustup is
+available and exports that toolchain's `rustc`/`cargo` paths for `wasm-pack`.
+This keeps the browser WASM build from accidentally using another Rust
+installation earlier in `PATH`.
+
+If `wasm-pack` fails to start with `libbz2.so.1.0: cannot open shared object
+file`, rebuild it without host `pkg-config` so its bzip2 dependency is vendored:
+
+```bash
+PKG_CONFIG=/bin/false rustup run stable cargo install wasm-pack --locked --force
+```
+
 ## Full Check
 
 From the repository root:

@@ -14,6 +14,13 @@ RUST_RUN=()
 
 if command -v rustup >/dev/null 2>&1; then
   RUST_RUN=(rustup run stable)
+  RUSTC_PATH="$(rustup which --toolchain stable rustc 2>/dev/null || true)"
+  CARGO_PATH="$(rustup which --toolchain stable cargo 2>/dev/null || true)"
+  if [ -n "$RUSTC_PATH" ] && [ -n "$CARGO_PATH" ]; then
+    export PATH="$(dirname "$RUSTC_PATH"):$PATH"
+    export RUSTC="${RUSTC:-$RUSTC_PATH}"
+    export CARGO="${CARGO:-$CARGO_PATH}"
+  fi
 fi
 
 if ! command -v "$WASM_PACK" >/dev/null 2>&1; then

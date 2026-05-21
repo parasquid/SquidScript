@@ -26,3 +26,9 @@ persistent SquidScript app platform prototype.
   or with restricted networking support.
 - Decide whether timers should use the same service model, including how a
   target chooses RTC-backed scheduling versus internal timer peripherals.
+
+### 3. Consider Reproducible Browser Build Container
+
+- Evaluate a Docker or devcontainer workflow for browser simulator builds and
+  Playwright checks so Rust, Node, `wasm-pack`, and system libraries are
+  reproducible without making containers mandatory for local development.
