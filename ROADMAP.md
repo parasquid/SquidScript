@@ -55,9 +55,6 @@ persistent SquidScript app platform prototype.
 
 ### 5. Refactor Large Modules Into Logical Owners
 
-- Split `squidc-core/src/lib.rs` into focused compiler modules for IR types,
-  AST types, lexer, parser, semantic validation, compile entrypoints, and
-  tests.
 - Split the ESP32-C3 serial firmware binary so boot wiring stays in
   `src/bin/c3_supermini_serial_hello.rs` and serial protocol, runtime host,
   app lifecycle, timers, and logging move into library modules.

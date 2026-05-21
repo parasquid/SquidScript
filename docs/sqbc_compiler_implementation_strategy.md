@@ -714,8 +714,8 @@ Implement target-definition validation for display bit depth.
 
 Context:
 - Read spec/SQBC_TARGET_PROFILES.md.
-- Read rust/crates/squidc-core/src/profile.rs.
-- Read rust/crates/squidc-core/src/diagnostics.rs.
+- Read compiler/rust/crates/squidc-core/src/profile.rs.
+- Read compiler/rust/crates/squidc-core/src/diagnostic.rs.
 - Do not change public structs unless necessary.
 - Add tests for invalid 4-bit pages on xteink-x4.
 - Expected diagnostic code: SQBC_DISPLAY_BIT_DEPTH_UNSUPPORTED.

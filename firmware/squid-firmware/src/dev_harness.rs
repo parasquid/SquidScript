@@ -360,6 +360,10 @@ impl DevTimerEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use squidc_core::{
+        compile::{compile_with_profile, CompileRequest},
+        profile::{BuildProfile, PORTABLE_TARGET_ID},
+    };
     use squidvm_core::limits::MAX_SAVED_STATE_BYTES;
     use std::vec::Vec;
 
@@ -658,12 +662,12 @@ event.on("app.start") {
 
 screen("main") {}
 "#;
-        let response = squidc_core::compile_with_profile(
-            squidc_core::CompileRequest {
+        let response = compile_with_profile(
+            CompileRequest {
                 source: source.to_string(),
-                target_id: squidc_core::PORTABLE_TARGET_ID.to_string(),
+                target_id: PORTABLE_TARGET_ID.to_string(),
             },
-            squidc_core::BuildProfile::Dev,
+            BuildProfile::Dev,
         );
         assert_eq!(response.diagnostics, Vec::new());
         squidc_core::sqbc_v2::encode_sqbc_v2(&response.ir.unwrap()).unwrap()

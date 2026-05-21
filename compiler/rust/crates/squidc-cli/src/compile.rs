@@ -1,8 +1,9 @@
 use std::{fs, path::Path};
 
 use squidc_core::{
-    compile_with_profile, sqbc_v2::encode_sqbc_v2_with_profile, BuildProfile, CompileRequest,
-    PORTABLE_TARGET_ID,
+    compile::{compile_with_profile, CompileRequest},
+    profile::{BuildProfile, PORTABLE_TARGET_ID},
+    sqbc_v2::encode_sqbc_v2_with_profile,
 };
 
 pub fn compile_target_id(target: Option<&str>, check_target: bool) -> Result<String, String> {

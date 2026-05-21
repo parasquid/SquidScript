@@ -1,5 +1,8 @@
-
 use core::fmt;
+use squidc_core::{
+    compile::{compile, CompileRequest},
+    profile::PORTABLE_TARGET_ID,
+};
 
 use crate::{
     bytecode::*, chunk::*, error::*, host::*, limits::*, program::*, reader::*, strings::*,
@@ -204,7 +207,7 @@ fn rejects_ir_json_sqbc_v1_container() {
 #[test]
 fn runs_sqbc_v3_emitted_by_squidc_core() {
     let source = include_str!("../fixtures/headless_counter.squid");
-    let compiled = squidc_core::compile(squidc_core::CompileRequest {
+    let compiled = compile(CompileRequest {
         source: source.to_string(),
         target_id: "esp32c3-super-mini".to_string(),
     });
@@ -341,9 +344,9 @@ event.on("key.BACK") {
 }
 screen("main") {}
 "#;
-    let compiled = squidc_core::compile(squidc_core::CompileRequest {
+    let compiled = compile(CompileRequest {
         source: source.to_string(),
-        target_id: squidc_core::PORTABLE_TARGET_ID.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
     });
     assert!(compiled.ok, "{:?}", compiled.diagnostics);
     let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
@@ -427,9 +430,9 @@ screen("main") {
   bump()
 }
 "#;
-    let compiled = squidc_core::compile(squidc_core::CompileRequest {
+    let compiled = compile(CompileRequest {
         source: source.to_string(),
-        target_id: squidc_core::PORTABLE_TARGET_ID.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
     });
     assert!(compiled.ok, "{:?}", compiled.diagnostics);
     let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
@@ -507,7 +510,7 @@ event.on("app.start") {
 }
 screen("main") {}
 "#;
-    let compiled = squidc_core::compile(squidc_core::CompileRequest {
+    let compiled = compile(CompileRequest {
         source: source.to_string(),
         target_id: "esp32c3-super-mini".to_string(),
     });
@@ -599,9 +602,9 @@ event.on("timer.debug") {
 }
 screen("main") {}
 "#;
-    let compiled = squidc_core::compile(squidc_core::CompileRequest {
+    let compiled = compile(CompileRequest {
         source: source.to_string(),
-        target_id: squidc_core::PORTABLE_TARGET_ID.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
     });
     assert!(compiled.ok, "{:?}", compiled.diagnostics);
     let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
@@ -639,9 +642,9 @@ event.on("timer.clock") {
 }
 screen("main") {}
 "#;
-    let compiled = squidc_core::compile(squidc_core::CompileRequest {
+    let compiled = compile(CompileRequest {
         source: source.to_string(),
-        target_id: squidc_core::PORTABLE_TARGET_ID.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
     });
     assert!(compiled.ok, "{:?}", compiled.diagnostics);
     let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
@@ -675,9 +678,9 @@ event.on("app.start") {
 }
 screen("main") {}
 "#;
-    let compiled = squidc_core::compile(squidc_core::CompileRequest {
+    let compiled = compile(CompileRequest {
         source: source.to_string(),
-        target_id: squidc_core::PORTABLE_TARGET_ID.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
     });
     assert!(compiled.ok, "{:?}", compiled.diagnostics);
     let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
@@ -705,9 +708,9 @@ event.on("app.start") {
 }
 screen("main") {}
 "#;
-    let compiled = squidc_core::compile(squidc_core::CompileRequest {
+    let compiled = compile(CompileRequest {
         source: source.to_string(),
-        target_id: squidc_core::PORTABLE_TARGET_ID.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
     });
     assert!(compiled.ok, "{:?}", compiled.diagnostics);
     let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
@@ -733,9 +736,9 @@ event.on("app.start") {
 }
 screen("main") {}
 "#;
-    let compiled = squidc_core::compile(squidc_core::CompileRequest {
+    let compiled = compile(CompileRequest {
         source: source.to_string(),
-        target_id: squidc_core::PORTABLE_TARGET_ID.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
     });
     assert!(compiled.ok, "{:?}", compiled.diagnostics);
     let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
@@ -816,9 +819,9 @@ fn fixture_counter_sqbc() -> Vec<u8> {
 }
 
 fn compile_sqbc(source: &str) -> Vec<u8> {
-    let compiled = squidc_core::compile(squidc_core::CompileRequest {
+    let compiled = compile(CompileRequest {
         source: source.to_string(),
-        target_id: squidc_core::PORTABLE_TARGET_ID.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
     });
     assert!(compiled.ok, "{:?}", compiled.diagnostics);
     squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap()

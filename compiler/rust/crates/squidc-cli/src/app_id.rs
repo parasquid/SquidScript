@@ -1,7 +1,8 @@
+use squidc_core::parser::parse;
 use std::path::Path;
 
 pub fn source_app_id(source: &str) -> Option<String> {
-    squidc_core::parse(source)
+    parse(source)
         .ast
         .app
         .map(|app| app.id)

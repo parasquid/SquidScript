@@ -1,4 +1,7 @@
-use crate::{BuildProfile, IrExpr, IrProgram, IrStatement};
+use crate::{
+    ir::{IrExpr, IrProgram, IrStatement},
+    profile::BuildProfile,
+};
 use std::collections::BTreeMap;
 
 pub const SQBC_V2_MAGIC: &[u8; 4] = b"SQBC";

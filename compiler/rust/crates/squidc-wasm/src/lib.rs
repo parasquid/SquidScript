@@ -1,4 +1,8 @@
-use squidc_core::{compile, compile_with_profile, sqbc_v2, BuildProfile, CompileRequest};
+use squidc_core::{
+    compile::{compile, compile_with_profile, CompileRequest},
+    profile::BuildProfile,
+    sqbc_v2,
+};
 use squidvm_core::{
     error::VmError,
     host::{DisplayLineOptions, DisplayRectOptions, DisplayTextOptions, TraceSink},

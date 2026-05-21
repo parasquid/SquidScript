@@ -16,7 +16,7 @@ use compile::{compile_source_to_sqbc, compile_target_id};
 use serde::Serialize;
 use serde_json::{json, Value};
 use serial::{candidate_ports, detect_port, OutputTail, SerialDevice};
-use squidc_core::BuildProfile;
+use squidc_core::profile::BuildProfile;
 
 fn main() {
     let raw_args = env::args().collect::<Vec<_>>();
