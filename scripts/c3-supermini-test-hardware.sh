@@ -62,7 +62,7 @@ else
 fi
 
 format_firmware_storage
-cargo run -p squidc -- repl --script tests/repl/hardware-gpio-status-led.session
+cargo run -p squidc -- repl --script tests/repl/hardware-gpio-indicator.session
 cargo run -p squidc -- repl --script tests/repl/default-dev.session
 "$ROOT/scripts/c3-supermini-test-persistent-app-registry.sh"
 format_firmware_storage

@@ -20,28 +20,57 @@ The simulator provides:
 
 The browser workflow is intentionally explicit:
 
-1. `Compile` compiles the editor source to diagnostics plus `main.ir.json`.
-2. `Upload` writes `main.ir.json` under `/sd/apps/<app-id>/`.
-3. `Run` loads the installed app through an executable loader and starts the app lifecycle.
+1. `Compile` compiles the editor source to diagnostics plus `main.sqbc`.
+2. `Upload` writes `main.sqbc` under `/sd/apps/<app-id>/`.
+3. `Run` starts the installed `main.sqbc` through the shared Rust VM.
 
 Editor draft source is saved separately from simulated `/sd`. A debug workflow may later upload `main.squid`, but source upload is non-authoritative.
 
-## Browser-Only IR Artifact
+## App Resource Packages
 
-Browser-sim v1 installs `main.ir.json` directly under simulated `/sd`. IR JSON
-is a browser-simulator development artifact. Production firmware remains
-bytecode-only and must not treat IR JSON as an executable firmware format.
+The canonical app transfer file extension is `.squid.zip`. Plain `.zip` files
+are not accepted by the browser-sim package importer.
 
-## Loader Boundary
-
-Runtime loading is split behind a common executable loader boundary:
+A package is a ZIP transfer file. It is never mounted lazily from the ZIP
+archive. Install unpacks every package entry into a read-only app directory:
 
 ```text
-IrJsonLoader -> RuntimeProgram
-SqbcLoader   -> RuntimeProgram
+/sd/apps/<app-id>/
+  main.sqbc
+  device/
+    browser-canvas.sqdevice
+  web/
+  resources/
 ```
 
-`IrJsonLoader` is active in browser-sim v1. `SqbcLoader` is reserved for the future bytecode runtime path. The simulator UI should not couple directly to either input format.
+ZIP entries are package-relative paths. Installers must reject absolute paths,
+empty paths, parent traversal with `..`, duplicate normalized paths, backslash
+paths, and installer/system paths such as `sd/...` or `system/...`. The
+browser-sim importer derives `<app-id>` from executable metadata, clears any
+previous `/sd/apps/<app-id>/` contents, and writes the unpacked files below that
+directory.
+
+Packages require `main.sqbc`. Browser-sim executes the same SQBC bytecode
+container that firmware consumes through `squidvm-core`.
+
+Bundled package resources are read-only app resources. `.sqdevice` resources
+may live at any safe package-relative path ending `.sqdevice`; package install
+stores them but does not activate them. App launch/runtime binding from
+top-level `device {}` activates them before `event.on("app.start")`. Mutable
+data belongs in app-scoped runtime state, upload staging, target libraries, or
+firmware-owned active device config, not inside the installed resource tree.
+
+Browser-side web assets and SquidScript runtime resources are separate
+concepts. When a future runtime service starts a static server with:
+
+```squid
+httpServer.start(..., { assets: "web" })
+```
+
+the server should mount `/sd/apps/<app-id>/web/` as the static asset root.
+Browser JavaScript imports, CSS URLs, images, and `fetch("./data.json")` then
+resolve as normal relative HTTP paths within that root. Static serving must
+never expose files outside the selected asset root.
 
 ## Target and Layout
 
@@ -58,7 +87,9 @@ Keyboard mapping:
 
 ## Runtime Semantics
 
-The v1 runtime executes a validated `RuntimeProgram` with services for screen redraw, display refresh, app-scoped state under `/sd/system/app-state`, and app exit.
+The runtime executes SQBC through `squidvm-core` with browser host services for
+screen redraw, display refresh, app-scoped state under `/sd/system/app-state`,
+logical input, and app exit.
 
 Rendering uses redraw-from-state semantics. Canvas rendering preserves source order, clips to the logical display, maps to the target's 16-level grayscale palette, and chooses deterministic font heights from the target definition.
 
@@ -85,9 +116,9 @@ The log is intended for simulator/runtime debugging, not for app-visible behavio
 
 ## WASM Compiler Build
 
-The browser app tries to load `src/compiler/wasm/squidc_wasm.js`. When that generated module is present, compile status reports `Compiler: WASM`. If it is absent, browser-sim uses the TypeScript fallback compiler and reports `Compiler: FALLBACK`.
-
-The Rust/WASM compiler is the authoritative browser-sim compiler path. The TypeScript fallback exists only so the UI remains demonstrable when the generated WASM package is unavailable. It must stay constrained to documented SquidScript syntax and must not introduce simulator-only syntax or semantics.
+The browser app loads `src/compiler/wasm/squidc_wasm.js`. Compile status
+reports `Compiler: WASM`; if the generated module is unavailable, compilation
+fails with a diagnostic.
 
 Build the WASM package from `simulator/browser`:
 
@@ -144,8 +175,8 @@ event.on("key.DOWN") {
 }
 
 screen("main", { render: "compose" }) {
-  display.clear("gray0")
-  display.text("Hello Menu", { x: 20, y: 60, w: 440, h: 48, fontHeight: 32, align: "center" })
+  service.display.clear("gray0")
+  service.display.text("Hello Menu", { x: 20, y: 60, w: 440, h: 48, fontHeight: 32, align: "center" })
 }
 ```
 
@@ -164,8 +195,8 @@ Currently supported syntax:
 - `app.exit()`
 - local `let` bindings, typed local annotations, assignment, `if/else`, `repeat`, and bounded `for ... in ... max ...`
 - expression calls and binary operators `+`, `-`, `==`, `!=`, `<`, `<=`, `>`, and `>=`
-- `display.clear(...)`, `display.text(...)`, `display.rect(...)`, `display.line(...)`
-- expression-valued `display.text(...)` text arguments and option values
+- `service.display.clear(...)`, `service.display.text(...)`, `service.display.rect(...)`, `service.display.line(...)`
+- expression-valued `service.display.text(...)` text arguments and option values
 
 Unsupported areas remain explicit future work: includes, modules, full arithmetic/logical expression precedence, content APIs, BinBook APIs, and production SQBC execution.
 

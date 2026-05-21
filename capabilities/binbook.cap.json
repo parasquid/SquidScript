@@ -21,7 +21,7 @@
     "targetRequirements": {
         "features": [
             "binbook.read",
-            "display.draw"
+            "service.display.draw"
         ]
     },
     "capabilityConstraints": {
@@ -313,7 +313,7 @@
         "externalReturnTypes": [
             {
                 "name": "drawable",
-                "description": "Display-ready resource accepted by display.draw(drawable, options)."
+                "description": "Display-ready resource accepted by service.display.draw(drawable, options)."
             }
         ]
     },
@@ -490,7 +490,7 @@
             "returns": "drawable",
             "targetFeatures": [
                 "binbook.read",
-                "display.draw"
+                "service.display.draw"
             ],
             "renderSafe": true,
             "handleBehavior": "creates transient drawable owned by the render/event turn",

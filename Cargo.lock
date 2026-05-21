@@ -268,7 +268,15 @@ version = "0.1.0"
 dependencies = [
  "serde_json",
  "squidc-core",
+ "squidvm-core",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "squidvm-core"
+version = "0.1.0"
+dependencies = [
+ "squidc-core",
 ]
 
 [[package]]

@@ -5,8 +5,8 @@ state {
 }
 
 :mode render
-display.clear("gray0")
-display.text("Hello", { x: 10, y: 20 })
+service.display.clear("gray0")
+service.display.text("Hello", { x: 10, y: 20 })
 :drawlog
 :expect-draw draw=clear color=gray0
 :expect-draw draw=text text="Hello" x=10 y=20

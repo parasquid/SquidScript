@@ -57,6 +57,7 @@ Initial section kinds:
 5  bytecode instruction stream
 6  screen table
 7  app metadata
+8  device binding table (planned)
 ```
 
 Initial value tags:
@@ -104,22 +105,30 @@ Initial built-in IDs:
 3  app.exit
 4  debug.print
 5  screen.open
-6  display.clear
-7  display.text
-8  display.rect
-9  display.line
+6  service.display.clear
+7  service.display.text
+8  service.display.rect
+9  service.display.line
 10 hardware.gpio.write
 11 hardware.gpio.toggle
 12 hardware.gpio.read
 13 app.launch
 14 state.reset
-15 reserved
+15 screen.refresh
 16 app.arm
 17 app.disarm
 18 service.timer.every
 19 service.timer.after
 20 system.memory
 21 system.storage
+22 device.config.load (planned)
+23 device.config.set (planned)
+24 device.config.rebind (planned)
+25 device.config.save (planned)
+26 service.display.select (planned)
+27 service.indicator.write
+28 service.indicator.toggle
+29 service.indicator.read
 ```
 
 The v3 format currently supports the headless reference VM subset. Display
@@ -159,6 +168,13 @@ trigger registrations, dispatch real timer events, and exercise app-stack
 behavior. It stores installed SQBC payloads in LittleFS. Startup registry
 rebuilds validate installed apps from the v3 header and section table with
 bounded reads rather than mirroring full app bodies in RAM.
+
+The device binding table is reserved for top-level `device {}` declarations.
+It should encode service name, binding name, and package-relative `.sqdevice`
+resource path metadata so firmware and browser runtimes can apply bindings
+before `event.on("app.start")`. Package installers store `.sqdevice` resources
+as ordinary read-only package files; active resolved config is firmware-owned
+SQDC, not embedded mutable package state.
 
 ## Chunk/Index Execution
 

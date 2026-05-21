@@ -45,7 +45,7 @@ Rules:
 3. Integrated production devices should use one target file with named sections.
 4. Split board/display/input/storage/power/runtime profiles are optional advanced composition, mainly for reusable development-board combinations.
 5. GPIOs, buses, onboard devices, and logical capabilities must be described in the target file.
-6. SquidScript apps must see logical capabilities such as `event.on("key.UP")` and `display.draw(...)`, not raw GPIOs.
+6. SquidScript apps must see logical capabilities such as `event.on("key.UP")` and `service.display.draw(...)`, not raw GPIOs.
 7. Placeholder, guessed, or unverified hardware values must be explicitly marked as such.
 
 ---
@@ -83,7 +83,7 @@ Required fields:
 - `pins`: all GPIOs used by the firmware target.
 - `buses`: named buses used by onboard devices.
 - `devices`: named onboard devices.
-- `display`: display behavior exposed through `display.*`.
+- `display`: display hardware exposed through `service.display.*`.
 - `input`: physical input mapping to logical keys.
 - `storage`: content/app storage configuration.
 - `power`: battery, sleep, wake, and USB detection behavior.
@@ -396,7 +396,7 @@ SquidScript apps should use logical coordinates. Firmware owns physical panel ro
 
 SquidScript apps should use logical grayscale colors such as `gray0`, `gray4`, `gray8`, and `gray15`. Firmware maps these values to the selected display pixel format. On displays with fewer native levels than the logical palette, firmware should either map to the nearest native gray or apply a target-supported dithering strategy.
 
-SquidScript apps request text size through `fontHeight` in logical pixels. Firmware maps requested font heights through `display.text.fontHeights.selection`. For XTEINK X4, unsupported requested heights are mapped to the nearest supported height.
+SquidScript apps request text size through `fontHeight` in logical pixels. Firmware maps requested font heights through `service.display.text.fontHeights.selection`. For XTEINK X4, unsupported requested heights are mapped to the nearest supported height.
 
 Screen render policy is app-visible SquidScript intent. `compose` means normal UI composition. `stream` means page- or image-dominant rendering. Display render mode is a firmware/display initialization choice. `strip` means the display service renders into bounded strips and transfers those strips to the EPD. `single` means the display service keeps one full framebuffer for composition before transfer.
 
@@ -657,7 +657,7 @@ The target compiler should emit these limits into firmware and compiler-facing t
 Examples:
 
 - `squidscript.bytecode`
-- `display.draw`
+- `service.display.draw`
 - `display.epaper.ssd1677`
 - `buttons`
 - `adc-button-ladder`

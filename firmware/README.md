@@ -13,8 +13,9 @@ Current status:
   shell for installing and running SQBC v3 bytes.
 - The shared host-testable VM loads real SQBC v3 bytecode, dispatches generic
   `event.on("...")` handlers, mutates in-RAM state, traces `state.load`,
-  `state.save`, and `app.exit`, dispatches `hardware.gpio.*` to the Super Mini
-  status LED, and rejects the browser-only SQBC v1 IR container.
+  `state.save`, and `app.exit`, dispatches `service.indicator.*` to the Super
+  Mini onboard indicator, keeps `hardware.gpio.*` for raw GPIO names, and
+  rejects the browser-only SQBC v1 IR container.
 - `squid-firmware` still builds the earlier XTEINK X4 hello-world display
   bring-up image, but X4 display behavior is not part of the reference VM
   milestone.
@@ -74,7 +75,7 @@ V4 snippet/session checks still use `squidc repl` script mode:
 cargo run -p squidc -- repl --script tests/repl/default-dev.session
 cargo run -p squidc -- repl --script tests/repl/release-strips-debug.session
 cargo run -p squidc -- repl --script tests/repl/render-drawlog.session
-cargo run -p squidc -- repl --script tests/repl/hardware-gpio-status-led.session
+cargo run -p squidc -- repl --script tests/repl/hardware-gpio-indicator.session
 scripts/c3-supermini-test-timer-armed-app.sh
 scripts/c3-supermini-test-generic-triggered-apps.sh
 ```

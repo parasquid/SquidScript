@@ -12,6 +12,7 @@ const SECTION_HANDLERS: u16 = 4;
 const SECTION_CODE: u16 = 5;
 const SECTION_SCREENS: u16 = 6;
 const SECTION_APP_META: u16 = 7;
+const SECTION_DEVICE_BINDINGS: u16 = 8;
 
 const OP_PUSH_INT: u8 = 1;
 const OP_PUSH_BOOL: u8 = 2;
@@ -52,11 +53,15 @@ const BUILTIN_HARDWARE_GPIO_TOGGLE: u8 = 11;
 const BUILTIN_HARDWARE_GPIO_READ: u8 = 12;
 const BUILTIN_APP_LAUNCH: u8 = 13;
 const BUILTIN_APP_ARM: u8 = 16;
+const BUILTIN_SCREEN_REFRESH: u8 = 15;
 const BUILTIN_APP_DISARM: u8 = 17;
 const BUILTIN_SERVICE_TIMER_EVERY: u8 = 18;
 const BUILTIN_SERVICE_TIMER_AFTER: u8 = 19;
 const BUILTIN_SYSTEM_MEMORY: u8 = 20;
 const BUILTIN_SYSTEM_STORAGE: u8 = 21;
+const BUILTIN_SERVICE_INDICATOR_WRITE: u8 = 27;
+const BUILTIN_SERVICE_INDICATOR_TOGGLE: u8 = 28;
+const BUILTIN_SERVICE_INDICATOR_READ: u8 = 29;
 
 const VALUE_NULL: u8 = 0;
 const VALUE_BOOL: u8 = 1;
@@ -267,6 +272,10 @@ pub fn encode_sqbc_v2_with_profile(
 
     let sections = vec![
         (SECTION_APP_META, encode_app_meta(ir, &unit.strings)?),
+        (
+            SECTION_DEVICE_BINDINGS,
+            encode_device_bindings(ir, &unit.strings)?,
+        ),
         (SECTION_STRINGS, unit.strings.encode()?),
         (SECTION_STATE, encode_state_section(ir, &unit.strings)?),
         (SECTION_FUNCTIONS, encode_functions(&unit.function_metas)),
@@ -316,6 +325,11 @@ fn collect_strings(
     profile: BuildProfile,
 ) -> Result<(), SqbcV2Error> {
     strings.intern(&ir.app.id)?;
+    for binding in &ir.device_bindings {
+        strings.intern(&binding.service)?;
+        strings.intern(&binding.binding)?;
+        strings.intern(&binding.resource)?;
+    }
     for state in &ir.state {
         strings.intern(&state.name)?;
         collect_json_value(&state.value, strings)?;
@@ -409,6 +423,10 @@ fn collect_statement_strings(
             IrStatement::HardwareGpioToggle { name } => {
                 strings.intern(name)?;
             }
+            IrStatement::ServiceIndicatorWrite { value } => {
+                collect_expr_strings(value, strings)?;
+            }
+            IrStatement::ServiceIndicatorToggle => {}
             IrStatement::DisplayText { text, options } => {
                 collect_expr_strings(text, strings)?;
                 collect_option_strings(options, strings)?;
@@ -469,6 +487,7 @@ fn collect_expr_strings(expr: &IrExpr, strings: &mut StringTable) -> Result<(), 
         IrExpr::HardwareGpioRead { name } | IrExpr::SystemStorage { name } => {
             strings.intern(name).map(|_| ())
         }
+        IrExpr::ServiceIndicatorRead => Ok(()),
         IrExpr::SystemMemory => Ok(()),
         IrExpr::Call { name, args } => {
             strings.intern(name)?;
@@ -669,13 +688,22 @@ fn compile_statement(
             emit_string(unit, name)?;
             emit_builtin(&mut unit.code, BUILTIN_HARDWARE_GPIO_TOGGLE);
         }
+        IrStatement::ServiceIndicatorWrite { value } => {
+            compile_expr(unit, frame, value)?;
+            emit_builtin(&mut unit.code, BUILTIN_SERVICE_INDICATOR_WRITE);
+        }
+        IrStatement::ServiceIndicatorToggle => {
+            emit_builtin(&mut unit.code, BUILTIN_SERVICE_INDICATOR_TOGGLE);
+        }
         IrStatement::ScreenOpen { screen } => {
             let screen_id = unit.strings.intern(screen)?;
             emit(&mut unit.code, OP_PUSH_STRING);
             write_u16(&mut unit.code, screen_id);
             emit_builtin(&mut unit.code, BUILTIN_SCREEN_OPEN);
         }
-        IrStatement::ScreenRefresh => {}
+        IrStatement::ScreenRefresh => {
+            emit_builtin(&mut unit.code, BUILTIN_SCREEN_REFRESH);
+        }
         IrStatement::For { .. } => {
             return Err(SqbcV2Error::new(
                 "for loops are not in the reference firmware subset yet",
@@ -689,8 +717,15 @@ fn compile_statement(
         }
         IrStatement::DisplayText { text, options } => {
             compile_expr(unit, frame, text)?;
-            emit_i32_option(&mut unit.code, options, "x")?;
-            emit_i32_option(&mut unit.code, options, "y")?;
+            emit_i32_option(unit, frame, options, "x")?;
+            emit_i32_option(unit, frame, options, "y")?;
+            emit_i32_option(unit, frame, options, "w")?;
+            emit_i32_option(unit, frame, options, "h")?;
+            emit_i32_option(unit, frame, options, "fontHeight")?;
+            emit_string_option(unit, options, "textColor")?;
+            emit_string_option(unit, options, "backgroundColor")?;
+            emit_string_option(unit, options, "align")?;
+            emit_string_option(unit, options, "valign")?;
             emit_builtin(&mut unit.code, BUILTIN_DISPLAY_TEXT);
         }
         IrStatement::DisplayRect {
@@ -698,7 +733,7 @@ fn compile_statement(
             y,
             w,
             h,
-            options: _,
+            options,
         } => {
             emit(&mut unit.code, OP_PUSH_INT);
             write_i32(&mut unit.code, *x as i32);
@@ -708,6 +743,8 @@ fn compile_statement(
             write_i32(&mut unit.code, *w as i32);
             emit(&mut unit.code, OP_PUSH_INT);
             write_i32(&mut unit.code, *h as i32);
+            emit_string_option(unit, options, "fillColor")?;
+            emit_string_option(unit, options, "strokeColor")?;
             emit_builtin(&mut unit.code, BUILTIN_DISPLAY_RECT);
         }
         IrStatement::DisplayLine {
@@ -715,7 +752,7 @@ fn compile_statement(
             y1,
             x2,
             y2,
-            options: _,
+            options,
         } => {
             emit(&mut unit.code, OP_PUSH_INT);
             write_i32(&mut unit.code, *x1 as i32);
@@ -725,6 +762,7 @@ fn compile_statement(
             write_i32(&mut unit.code, *x2 as i32);
             emit(&mut unit.code, OP_PUSH_INT);
             write_i32(&mut unit.code, *y2 as i32);
+            emit_string_option(unit, options, "color")?;
             emit_builtin(&mut unit.code, BUILTIN_DISPLAY_LINE);
         }
     }
@@ -732,19 +770,45 @@ fn compile_statement(
 }
 
 fn emit_i32_option(
-    code: &mut Vec<u8>,
+    unit: &mut CompileUnit,
+    frame: &FrameCompiler,
     options: &serde_json::Value,
     key: &str,
 ) -> Result<(), SqbcV2Error> {
-    let value = options
-        .get(key)
-        .and_then(expr_literal_i64)
-        .unwrap_or_default();
-    emit(code, OP_PUSH_INT);
-    write_i32(
-        code,
-        i32::try_from(value).map_err(|_| SqbcV2Error::new("display option out of i32 range"))?,
-    );
+    let Some(value) = options.get(key) else {
+        emit(&mut unit.code, OP_PUSH_INT);
+        write_i32(&mut unit.code, 0);
+        return Ok(());
+    };
+
+    if let Some(literal) = expr_literal_i64(value) {
+        emit(&mut unit.code, OP_PUSH_INT);
+        write_i32(
+            &mut unit.code,
+            i32::try_from(literal)
+                .map_err(|_| SqbcV2Error::new("display option out of i32 range"))?,
+        );
+        return Ok(());
+    }
+
+    let expr = serde_json::from_value::<IrExpr>(value.clone())
+        .map_err(|_| SqbcV2Error::new("display numeric option must be an expression"))?;
+    compile_expr(unit, frame, &expr)?;
+    Ok(())
+}
+
+fn emit_string_option(
+    unit: &mut CompileUnit,
+    options: &serde_json::Value,
+    key: &str,
+) -> Result<(), SqbcV2Error> {
+    if let Some(value) = options.get(key).and_then(expr_literal_string) {
+        let id = unit.strings.intern(value)?;
+        emit(&mut unit.code, OP_PUSH_STRING);
+        write_u16(&mut unit.code, id);
+    } else {
+        emit(&mut unit.code, OP_PUSH_NULL);
+    }
     Ok(())
 }
 
@@ -755,6 +819,18 @@ fn expr_literal_i64(value: &serde_json::Value) -> Option<i64> {
     if let serde_json::Value::Object(object) = value {
         if object.get("op")?.as_str()? == "literal" {
             return object.get("value")?.as_i64();
+        }
+    }
+    None
+}
+
+fn expr_literal_string(value: &serde_json::Value) -> Option<&str> {
+    if let Some(text) = value.as_str() {
+        return Some(text);
+    }
+    if let serde_json::Value::Object(object) = value {
+        if object.get("op").and_then(serde_json::Value::as_str) == Some("literal") {
+            return object.get("value").and_then(serde_json::Value::as_str);
         }
     }
     None
@@ -803,6 +879,10 @@ fn compile_expr(
         IrExpr::HardwareGpioRead { name } => {
             emit_string(unit, name)?;
             emit_builtin(&mut unit.code, BUILTIN_HARDWARE_GPIO_READ);
+            Ok(())
+        }
+        IrExpr::ServiceIndicatorRead => {
+            emit_builtin(&mut unit.code, BUILTIN_SERVICE_INDICATOR_READ);
             Ok(())
         }
         IrExpr::SystemMemory => {
@@ -1010,6 +1090,39 @@ fn encode_app_meta(ir: &IrProgram, _strings: &StringTable) -> Result<Vec<u8>, Sq
         u16::try_from(state_store.len()).map_err(|_| SqbcV2Error::new("state store too long"))?,
     );
     out.extend_from_slice(state_store);
+    Ok(out)
+}
+
+fn encode_device_bindings(ir: &IrProgram, strings: &StringTable) -> Result<Vec<u8>, SqbcV2Error> {
+    let mut out = Vec::new();
+    write_u16(
+        &mut out,
+        u16::try_from(ir.device_bindings.len())
+            .map_err(|_| SqbcV2Error::new("too many device bindings"))?,
+    );
+    for binding in &ir.device_bindings {
+        write_u16(
+            &mut out,
+            *strings
+                .ids
+                .get(&binding.service)
+                .ok_or_else(|| SqbcV2Error::new("missing device service string"))?,
+        );
+        write_u16(
+            &mut out,
+            *strings
+                .ids
+                .get(&binding.binding)
+                .ok_or_else(|| SqbcV2Error::new("missing device binding string"))?,
+        );
+        write_u16(
+            &mut out,
+            *strings
+                .ids
+                .get(&binding.resource)
+                .ok_or_else(|| SqbcV2Error::new("missing device resource string"))?,
+        );
+    }
     Ok(out)
 }
 

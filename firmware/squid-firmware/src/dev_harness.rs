@@ -5,10 +5,8 @@
 //! reference firmware. The registry is an in-memory cache over firmware-owned
 //! app storage.
 
-use crate::{
-    protocol::fnv1a,
-    vm::{Program, VmError, MAX_APP_BYTES},
-};
+use crate::protocol::fnv1a;
+use squidvm_core::{error::VmError, limits::MAX_APP_BYTES, program::Program};
 
 pub const APP_REGISTRY_CAP: usize = 6;
 pub const APP_ID_CAP: usize = 32;
@@ -362,6 +360,7 @@ impl DevTimerEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use squidvm_core::limits::MAX_SAVED_STATE_BYTES;
     use std::vec::Vec;
 
     #[test]
@@ -457,7 +456,7 @@ mod tests {
         hash: u32,
         bytes: [u8; MAX_APP_BYTES],
         state_len: usize,
-        state_bytes: [u8; crate::vm::MAX_SAVED_STATE_BYTES],
+        state_bytes: [u8; MAX_SAVED_STATE_BYTES],
         state_occupied: bool,
         occupied: bool,
     }
@@ -470,7 +469,7 @@ mod tests {
                 hash: 0,
                 bytes: [0; MAX_APP_BYTES],
                 state_len: 0,
-                state_bytes: [0; crate::vm::MAX_SAVED_STATE_BYTES],
+                state_bytes: [0; MAX_SAVED_STATE_BYTES],
                 state_occupied: false,
                 occupied: false,
             }
@@ -595,7 +594,7 @@ mod tests {
 
         fn write_state(&mut self, app_id: &str, bytes: &[u8]) -> Result<(), AppStorageError> {
             self.ensure_ready()?;
-            if bytes.len() > crate::vm::MAX_SAVED_STATE_BYTES {
+            if bytes.len() > MAX_SAVED_STATE_BYTES {
                 return Err(AppStorageError::NoSpace);
             }
             let index = self.find(app_id).ok_or(AppStorageError::NotFound)?;

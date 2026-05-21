@@ -1,4 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { strToU8, zipSync } from "fflate";
+import { DEFAULT_SOURCE } from "../src/compiler/defaultSource";
+import init, { compile_sqbc } from "../src/compiler/wasm/squidc_wasm.js";
 
 test("compile, upload, run, input, diagnostics, and reset flow", async ({ page }) => {
   await page.goto("/");
@@ -12,7 +17,7 @@ test("compile, upload, run, input, diagnostics, and reset flow", async ({ page }
   await expectCanvasPixel(page, 10, 10, [255, 255, 255]);
 
   await page.getByRole("button", { name: /Compile/ }).click();
-  await expect(page.getByRole("status")).toContainText("Compiled main.ir.json");
+  await expect(page.getByRole("status")).toContainText("Compiled main.sqbc");
   await expect(page.getByLabel("compiler backend")).toContainText("Compiler: WASM");
   await expect(page.getByLabel("debug log")).toContainText("compile succeeded");
 
@@ -20,12 +25,12 @@ test("compile, upload, run, input, diagnostics, and reset flow", async ({ page }
   await expect(page.getByRole("status")).toContainText("/sd/apps/hello-menu");
   await expect(page.getByLabel("installed apps")).toContainText("1 installed");
   await expect(page.getByLabel("installed app selector")).toHaveValue("hello-menu");
-  await expect(page.getByLabel("storage files")).toContainText("/sd/apps/hello-menu/main.ir.json");
+  await expect(page.getByLabel("storage files")).toContainText("/sd/apps/hello-menu/main.sqbc");
   await expect(page.getByLabel("storage files")).not.toContainText("/sd/apps/hello-menu/app.json");
 
   await page.reload();
   await page.getByRole("button", { name: /Run/ }).click();
-  await expect(page.getByRole("status")).toContainText("Running Hello Menu from /sd/apps/hello-menu");
+  await expect(page.getByRole("status")).toContainText("Running hello-menu from /sd/apps/hello-menu");
   await expect(page.getByLabel("debug log")).toContainText("runtime started");
   await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-app-id", "hello-menu");
   await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-current-screen", "menu");
@@ -102,6 +107,23 @@ test("compile, upload, run, input, diagnostics, and reset flow", async ({ page }
   await expect(page.getByLabel("installed apps")).toContainText("0 installed");
   await expect(page.getByLabel("storage files")).toContainText("No /sd files");
 
+  await page.getByLabel("package import").setInputFiles({
+    name: "hello-menu.squid.zip",
+    mimeType: "application/zip",
+    buffer: await helloMenuPackage()
+  });
+  await expect(page.getByRole("status")).toContainText("Imported /sd/apps/hello-menu");
+  await expect(page.getByLabel("installed apps")).toContainText("1 installed");
+  await expect(page.getByLabel("installed app selector")).toHaveValue("hello-menu");
+  await expect(page.getByLabel("storage files")).toContainText("/sd/apps/hello-menu/main.sqbc");
+  await expect(page.getByLabel("storage files")).toContainText("/sd/apps/hello-menu/web/index.html");
+  await expect(page.getByLabel("storage files")).toContainText("/sd/apps/hello-menu/web/js/app.js");
+  await expect(page.getByLabel("storage files")).toContainText("/sd/apps/hello-menu/resources/icon.bmp");
+  await page.getByRole("button", { name: /Run/ }).click();
+  await expect(page.getByRole("status")).toContainText("Running hello-menu from /sd/apps/hello-menu");
+  await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-current-screen", "menu");
+  await expectCanvasPixel(page, 40, 170, [0, 0, 0]);
+
   await page.getByLabel("Squid source").fill('screen("stale") {}\n');
   await page.getByRole("button", { name: /Reset Simulator/ }).click();
   await expect(page.getByRole("status")).toContainText("Reset simulator");
@@ -111,7 +133,7 @@ test("compile, upload, run, input, diagnostics, and reset flow", async ({ page }
   await expect(page.getByLabel("storage files")).toContainText("No /sd files");
 
   await page.getByRole("button", { name: /Clean Launch/ }).click();
-  await expect(page.getByRole("status")).toContainText("Running Hello Menu from /sd/apps/hello-menu");
+  await expect(page.getByRole("status")).toContainText("Running hello-menu from /sd/apps/hello-menu");
   await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-app-id", "hello-menu");
   await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-current-screen", "menu");
   await expect(page.getByTestId("runtime-state")).toHaveAttribute("data-selected", "0");
@@ -125,4 +147,22 @@ async function expectCanvasPixel(page: Page, x: number, y: number, rgb: [number,
     if (!context) return null;
     return Array.from(context.getImageData(point.x, point.y, 1, 1).data.slice(0, 3));
   }, { x, y }), { message: `canvas pixel ${x},${y}` }).toEqual(rgb);
+}
+
+let wasmReady: Promise<void> | null = null;
+
+async function helloMenuPackage(): Promise<Buffer> {
+  wasmReady ??= init({
+    module_or_path: readFileSync(join(process.cwd(), "src/compiler/wasm/squidc_wasm_bg.wasm"))
+  }).then(() => undefined);
+  await wasmReady;
+  const sqbc = compile_sqbc(DEFAULT_SOURCE, "xteink-x4");
+  return Buffer.from(zipSync({
+    "main.sqbc": sqbc,
+    "web/index.html": strToU8("<script type=\"module\" src=\"./js/app.js\"></script>"),
+    "web/js/app.js": strToU8("fetch('./data/menu.json')"),
+    "web/css/app.css": strToU8("body { color: black; }"),
+    "web/data/menu.json": strToU8("{\"items\":[\"hello\"]}"),
+    "resources/icon.bmp": new Uint8Array([0, 1, 2, 255])
+  }));
 }

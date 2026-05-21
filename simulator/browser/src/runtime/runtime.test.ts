@@ -1,19 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { compileFallback, DEFAULT_SOURCE } from "../compiler/fallbackCompiler";
-import { IrJsonLoader } from "../compiler/loaders";
+import { compileSquid } from "../compiler/compileService";
+import { DEFAULT_SOURCE } from "../compiler/defaultSource";
 import { MemoryVfs } from "../test/memoryVfs";
+import { XTEINK_X4_TARGET } from "../target/target";
 import { BrowserRuntime } from "./runtime";
-import type { RuntimeProgram } from "../types";
 
-describe("browser runtime", () => {
-  it("runs app.start, dispatches keys, refreshes, saves state, navigates back, and exits from menu", async () => {
-    const ir = compileFallback(DEFAULT_SOURCE, "xteink-x4").ir!;
-    const runtime = new BrowserRuntime(new IrJsonLoader().load(ir), new MemoryVfs());
+describe("browser SQBC runtime", () => {
+  it("runs Hello Menu through the shared WASM VM", async () => {
+    const compiled = await compileSquid(DEFAULT_SOURCE, XTEINK_X4_TARGET.id);
+    expect(compiled.ok, JSON.stringify(compiled.diagnostics)).toBe(true);
+    expect(compiled.sqbc).toBeInstanceOf(Uint8Array);
+
+    const runtime = new BrowserRuntime({
+      app: { id: compiled.ir!.app.id, name: compiled.ir!.app.name },
+      sqbc: compiled.sqbc!,
+      basePath: "/sd/apps/hello-menu"
+    }, new MemoryVfs());
 
     let snapshot = await runtime.start();
     expect(snapshot.running).toBe(true);
     expect(snapshot.currentScreen).toBe("menu");
-    expect(snapshot.drawCommands.length).toBeGreaterThan(0);
     expect(snapshot.drawCommands).toContainEqual(expect.objectContaining({ op: "text", text: "Hello Menu", x: 240, align: "center" }));
     expect(snapshot.drawCommands).toContainEqual(expect.objectContaining({ op: "rect", x: 32, y: 160, width: 416, height: 48, gray: 15, fill: true }));
 
@@ -26,243 +32,11 @@ describe("browser runtime", () => {
     expect(snapshot.currentScreen).toBe("about");
     expect(snapshot.state.view).toBe("about");
 
-    snapshot = await runtime.dispatchKey("DOWN");
-    expect(snapshot.currentScreen).toBe("about");
-    expect(snapshot.state.selected).toBe(1);
-    expect(snapshot.state.view).toBe("about");
-
     snapshot = await runtime.dispatchKey("BACK");
     expect(snapshot.exited).toBe(false);
     expect(snapshot.currentScreen).toBe("menu");
-    expect(snapshot.state.view).toBe("menu");
 
     snapshot = await runtime.dispatchKey("BACK");
     expect(snapshot.exited).toBe(true);
-  });
-
-  it("dispatches behavior from IR handlers instead of hardcoded keys", async () => {
-    const program: RuntimeProgram = {
-      id: "custom-app",
-      name: "Custom App",
-      target: "xteink-x4",
-      stateDefaults: { count: 0 },
-      functions: new Map(),
-      handlers: new Map([
-        ["app.start", [{ op: "screen.open", screen: "main" }]],
-        ["key.UP", [{ op: "assign", name: "count", expr: { op: "binary", left: { op: "state", name: "count" }, operator: "+", right: { op: "literal", value: 1 } } }, { op: "screen.refresh" }]],
-        ["key.SELECT", [{ op: "app.exit" }]]
-      ]),
-      screens: new Map([
-        ["main", { name: "main", render: "compose", statements: [{ op: "display.clear", color: "gray0" }, { op: "display.text", text: { op: "literal", value: "Custom" }, options: { x: 24, y: 36, w: 400, fontHeight: 24 } }] }]
-      ])
-    };
-    const runtime = new BrowserRuntime(program, new MemoryVfs());
-
-    let snapshot = await runtime.start();
-    expect(snapshot.currentScreen).toBe("main");
-    expect(snapshot.state.count).toBe(0);
-
-    snapshot = await runtime.dispatchKey("DOWN");
-    expect(snapshot.state.count).toBe(0);
-
-    snapshot = await runtime.dispatchKey("UP");
-    expect(snapshot.state.count).toBe(1);
-
-    snapshot = await runtime.dispatchKey("SELECT");
-    expect(snapshot.exited).toBe(true);
-  });
-
-  it("executes handler control flow, locals, functions, and bounded repeat statements", async () => {
-    const program: RuntimeProgram = {
-      id: "flow-app",
-      name: "Flow App",
-      target: "xteink-x4",
-      stateDefaults: { count: 0 },
-      functions: new Map([
-        ["getStep", {
-          name: "getStep",
-          params: [],
-          statements: [{ op: "return", expr: { op: "literal", value: 2 } }]
-        }],
-        ["bump", {
-          name: "bump",
-          params: ["amount"],
-          statements: [
-            { op: "assign", name: "count", expr: { op: "binary", left: { op: "state", name: "count" }, operator: "+", right: { op: "state", name: "amount" } } },
-            { op: "return", expr: { op: "state", name: "count" } }
-          ]
-        }]
-      ]),
-      handlers: new Map([
-        ["app.start", [{ op: "screen.open", screen: "main" }]],
-        ["key.DOWN", [
-          { op: "let", name: "step", expr: { op: "call", name: "getStep", args: [] } },
-          { op: "repeat", count: { op: "literal", value: 2 }, statements: [{ op: "call", name: "bump", args: [{ op: "state", name: "step" }] }] },
-          {
-            op: "if",
-            condition: { op: "binary", left: { op: "state", name: "count" }, operator: "==", right: { op: "literal", value: 4 } },
-            then_statements: [{ op: "screen.open", screen: "done" }],
-            else_statements: [{ op: "app.exit" }]
-          }
-        ]]
-      ]),
-      screens: new Map([
-        ["main", { name: "main", render: "compose", statements: [{ op: "display.clear", color: "gray0" }] }],
-        ["done", { name: "done", render: "compose", statements: [{ op: "display.clear", color: "gray0" }] }]
-      ])
-    };
-    const runtime = new BrowserRuntime(program, new MemoryVfs());
-
-    await runtime.start();
-    const snapshot = await runtime.dispatchKey("DOWN");
-
-    expect(snapshot.state.count).toBe(4);
-    expect(snapshot.currentScreen).toBe("done");
-    expect(snapshot.exited).toBe(false);
-  });
-
-  it("executes debug blocks with block-local assignment without mutating state", async () => {
-    const program: RuntimeProgram = {
-      id: "debug-block",
-      name: "Debug Block",
-      target: "xteink-x4",
-      stateDefaults: { count: 1 },
-      functions: new Map(),
-      handlers: new Map([
-        ["app.start", [
-          {
-            op: "debug.block",
-            statements: [
-              { op: "let", name: "count", expr: { op: "literal", value: 10 } },
-              { op: "assign", name: "count", expr: { op: "binary", left: { op: "state", name: "count" }, operator: "+", right: { op: "literal", value: 1 } } },
-              { op: "debug.print", args: [{ op: "state", name: "count" }] }
-            ]
-          },
-          { op: "screen.open", screen: "main" }
-        ]]
-      ]),
-      screens: new Map([
-        ["main", { name: "main", render: "compose", statements: [{ op: "display.clear", color: "gray0" }] }]
-      ])
-    };
-    const runtime = new BrowserRuntime(program, new MemoryVfs());
-
-    const snapshot = await runtime.start();
-
-    expect(snapshot.state.count).toBe(1);
-    expect(snapshot.currentScreen).toBe("main");
-  });
-
-  it("renders screen-local control flow and helper function draw commands", async () => {
-    const program: RuntimeProgram = {
-      id: "render-flow",
-      name: "Render Flow",
-      target: "xteink-x4",
-      stateDefaults: { selected: 1 },
-      functions: new Map([
-        ["drawDivider", {
-          name: "drawDivider",
-          params: [],
-          statements: [{ op: "display.line", x1: 0, y1: 40, x2: 480, y2: 40, options: { color: "gray15" } }]
-        }]
-      ]),
-      handlers: new Map([["app.start", [{ op: "screen.open", screen: "main" }]]]),
-      screens: new Map([
-        ["main", {
-          name: "main",
-          render: "compose",
-          statements: [
-            { op: "display.clear", color: "gray0" },
-            { op: "call", name: "drawDivider", args: [] },
-            {
-              op: "if",
-              condition: { op: "binary", left: { op: "state", name: "selected" }, operator: "==", right: { op: "literal", value: 1 } },
-              then_statements: [{ op: "display.rect", x: 20, y: 80, w: 120, h: 32, options: { fillColor: "gray4" } }],
-              else_statements: []
-            }
-          ]
-        }]
-      ])
-    };
-    const runtime = new BrowserRuntime(program, new MemoryVfs());
-
-    const snapshot = await runtime.start();
-
-    expect(snapshot.drawCommands).toContainEqual({ op: "line", x1: 0, y1: 40, x2: 480, y2: 40, gray: 15 });
-    expect(snapshot.drawCommands).toContainEqual({ op: "rect", x: 20, y: 80, width: 120, height: 32, gray: 4, fill: true });
-  });
-
-  it("evaluates result records through field access and unary not", async () => {
-    const program: RuntimeProgram = {
-      id: "result-records",
-      name: "Result Records",
-      target: "xteink-x4",
-      stateDefaults: { failed: false, message: "" },
-      functions: new Map([
-        ["makeResult", {
-          name: "makeResult",
-          params: [],
-          statements: [{ op: "return", expr: { op: "literal", value: { ok: false, error: "unsupported" } } }]
-        }]
-      ]),
-      handlers: new Map([
-        ["app.start", [
-          { op: "let", name: "result", expr: { op: "call", name: "makeResult", args: [] } },
-          {
-            op: "if",
-            condition: { op: "unary", operator: "!", expr: { op: "field", target: { op: "state", name: "result" }, field: "ok" } },
-            then_statements: [
-              { op: "assign", name: "failed", expr: { op: "literal", value: true } },
-              { op: "assign", name: "message", expr: { op: "field", target: { op: "state", name: "result" }, field: "error" } }
-            ],
-            else_statements: []
-          },
-          { op: "screen.open", screen: "main" }
-        ]]
-      ]),
-      screens: new Map([
-        ["main", { name: "main", render: "compose", statements: [{ op: "display.clear", color: "gray0" }] }]
-      ])
-    };
-    const runtime = new BrowserRuntime(program, new MemoryVfs());
-
-    const snapshot = await runtime.start();
-
-    expect(snapshot.state.failed).toBe(true);
-    expect(snapshot.state.message).toBe("unsupported");
-  });
-
-  it("returns unsupported result records for unavailable fallible built-ins", async () => {
-    const program: RuntimeProgram = {
-      id: "unsupported-api",
-      name: "Unsupported API",
-      target: "xteink-x4",
-      stateDefaults: { failed: false, message: "" },
-      functions: new Map(),
-      handlers: new Map([
-        ["app.start", [
-          { op: "let", name: "result", expr: { op: "call", name: "wifi.connect", args: [{ op: "literal", value: "home" }] } },
-          {
-            op: "if",
-            condition: { op: "unary", operator: "!", expr: { op: "field", target: { op: "state", name: "result" }, field: "ok" } },
-            then_statements: [
-              { op: "assign", name: "failed", expr: { op: "literal", value: true } },
-              { op: "assign", name: "message", expr: { op: "field", target: { op: "state", name: "result" }, field: "error" } }
-            ],
-            else_statements: []
-          },
-          { op: "screen.open", screen: "main" }
-        ]]
-      ]),
-      screens: new Map([
-        ["main", { name: "main", render: "compose", statements: [{ op: "display.clear", color: "gray0" }] }]
-      ])
-    };
-    const runtime = new BrowserRuntime(program, new MemoryVfs());
-
-    const snapshot = await runtime.start();
-
-    expect(snapshot.state.failed).toBe(true);
-    expect(snapshot.state.message).toBe("unsupported");
   });
 });

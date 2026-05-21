@@ -29,15 +29,15 @@ event.on("key.BACK") {
 }
 
 screen("main", { render: "compose" }) {
-  display.clear("gray0")
-  display.text("BinBook Reader", { x: 20, y: 60, w: 440, h: 48, fontHeight: 32, align: "center" })
-  display.text("Browse Books", { x: 32, y: 160, w: 416, h: 48, fontHeight: 22, align: "center" })
-  display.text("Resume Sample", { x: 32, y: 216, w: 416, h: 48, fontHeight: 22, align: "center" })
-  display.text("Table of Contents", { x: 32, y: 272, w: 416, h: 48, fontHeight: 22, align: "center" })
-  display.text("Jump to Page", { x: 32, y: 328, w: 416, h: 48, fontHeight: 22, align: "center" })
+  service.display.clear("gray0")
+  service.display.text("BinBook Reader", { x: 20, y: 60, w: 440, h: 48, fontHeight: 32, align: "center" })
+  service.display.text("Browse Books", { x: 32, y: 160, w: 416, h: 48, fontHeight: 22, align: "center" })
+  service.display.text("Resume Sample", { x: 32, y: 216, w: 416, h: 48, fontHeight: 22, align: "center" })
+  service.display.text("Table of Contents", { x: 32, y: 272, w: 416, h: 48, fontHeight: 22, align: "center" })
+  service.display.text("Jump to Page", { x: 32, y: 328, w: 416, h: 48, fontHeight: 22, align: "center" })
 }
 
 screen("detail") {
-  display.clear("gray0")
-  display.text("BinBook support is not implemented in browser-sim yet.", { x: 32, y: 160, w: 416, h: 96, fontHeight: 22, align: "center" })
+  service.display.clear("gray0")
+  service.display.text("BinBook support is not implemented in browser-sim yet.", { x: 32, y: 160, w: 416, h: 96, fontHeight: 22, align: "center" })
 }

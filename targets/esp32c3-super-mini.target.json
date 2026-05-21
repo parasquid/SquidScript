@@ -32,7 +32,7 @@
     {
       "name": "ESP32-C3 Super Mini community pinout references",
       "url": "https://www.sudo.is/docs/esphome/boards/esp32c3supermini/",
-      "scope": "Common clone-board observation that GPIO8 is a blue inverted status LED and a strapping pin; board variants may differ."
+      "scope": "Common clone-board observation that GPIO8 is a blue inverted onboard indicator LED and a strapping pin; board variants may differ."
     }
   ],
   "mcu": {
@@ -79,7 +79,7 @@
     "GPIO8": {
       "capabilities": ["gpio", "strapping"],
       "voltage": "3v3",
-      "usedBy": ["indicator.status_led"],
+      "usedBy": ["indicator.default"],
       "status": "typical",
       "reason": "Common clone-board LED pin; variants may use GPIO2, GPIO7, GPIO9, or omit a controllable user LED."
     },
@@ -132,9 +132,8 @@
       "status": "variant-dependent",
       "reason": "Some ESP32-C3 Super Mini boards use native USB Serial/JTAG; some expose or bridge UART0."
     },
-    "indicator.status_led": {
+    "indicator.default": {
       "type": "gpio-led",
-      "aliases": ["status_led", "status"],
       "gpio": "GPIO8",
       "activeLow": true,
       "status": "typical",

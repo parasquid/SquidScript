@@ -21,10 +21,16 @@ use squid_firmware::{
     },
     protocol::{fnv1a, parse_install},
     storage::{LittleFsAppStorage, SquidFlashRegion, SQUIDFS_LEN},
-    vm::{
-        ChunkedVm, Program, ProgramIndex, SqbcReader, StringResolver, TraceSink, Value, Vm,
-        VmError, MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES,
-    },
+};
+use squidvm_core::{
+    error::VmError,
+    host::{DisplayLineOptions, DisplayRectOptions, DisplayTextOptions, TraceSink},
+    limits::{MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES},
+    program::{Program, ProgramIndex},
+    reader::SqbcReader,
+    strings::{StringResolver, StringTable},
+    value::Value,
+    vm::{ChunkedVm, Vm},
 };
 
 const BUILD_ID: &str = match option_env!("SQUID_FIRMWARE_BUILD_ID") {
@@ -55,12 +61,13 @@ fn main() -> ! {
     let peripherals = esp_hal::init(config);
     let delay = Delay::new();
     let led = Output::new(peripherals.GPIO8, Level::Low, OutputConfig::default());
+    let external_indicator = Output::new(peripherals.GPIO10, Level::Low, OutputConfig::default());
     let flash = FlashStorage::new(peripherals.FLASH);
     let mut app_storage = LittleFsAppStorage::new(SquidFlashRegion::new(flash));
     let mut serial = UsbSerialJtag::new(peripherals.USB_DEVICE);
     let mut line = LineBuffer::new();
     let mut registry = AppRegistry::new();
-    let mut runtime = RuntimeSink::new(led);
+    let mut runtime = RuntimeSink::new(led, external_indicator);
     let mut vm: Option<ActiveVm> = None;
     let mut vm_slot: Option<AppSlot> = None;
     let mut temp_app = TempApp::empty();
@@ -909,7 +916,7 @@ fn import_state(vm: &mut ActiveVm, bytes: &[u8]) {
     }
 }
 
-fn parse_value(strings: &dyn squid_firmware::vm::StringTable, input: &str) -> Option<Value> {
+fn parse_value(strings: &dyn StringTable, input: &str) -> Option<Value> {
     if input == "null" {
         Some(Value::Null)
     } else if input == "true" {
@@ -1098,7 +1105,7 @@ impl ActiveVm {
         }
     }
 
-    fn string_table(&self) -> &dyn squid_firmware::vm::StringTable {
+    fn string_table(&self) -> &dyn StringTable {
         match self {
             Self::Temp(vm) => vm.program(),
             Self::Persistent(vm) => vm.string_table(),
@@ -1114,7 +1121,9 @@ impl ActiveVm {
 }
 
 struct RuntimeSink<'d> {
-    status_led: Output<'d>,
+    onboard_indicator: Output<'d>,
+    external_indicator: Output<'d>,
+    use_external_indicator: bool,
     breathing_enabled: bool,
     current_app: Option<AppRef>,
     pending_launch: Option<AppName>,
@@ -1138,9 +1147,11 @@ struct RuntimeSink<'d> {
 }
 
 impl<'d> RuntimeSink<'d> {
-    fn new(status_led: Output<'d>) -> Self {
+    fn new(onboard_indicator: Output<'d>, external_indicator: Output<'d>) -> Self {
         Self {
-            status_led,
+            onboard_indicator,
+            external_indicator,
+            use_external_indicator: false,
             breathing_enabled: true,
             current_app: None,
             pending_launch: None,
@@ -1170,7 +1181,7 @@ impl<'d> RuntimeSink<'d> {
 
     fn breathe_once(&mut self, delay: &Delay) {
         if self.breathing_enabled {
-            breathe_once(&mut self.status_led, delay);
+            breathe_once(&mut self.onboard_indicator, delay);
         }
     }
 
@@ -1340,23 +1351,48 @@ impl<'d> RuntimeSink<'d> {
         }
     }
 
+    fn write_indicator(&mut self, logical_value: bool) {
+        self.breathing_enabled = false;
+        if self.use_external_indicator {
+            self.external_indicator
+                .set_level(if logical_value { Level::High } else { Level::Low });
+        } else {
+            self.onboard_indicator
+                .set_level(if logical_value { Level::Low } else { Level::High });
+        }
+    }
+
+    fn read_indicator(&self) -> bool {
+        if self.use_external_indicator {
+            self.external_indicator.is_set_high()
+        } else {
+            !self.onboard_indicator.is_set_high()
+        }
+    }
+
     fn write_gpio(&mut self, name: &str, logical_value: bool) -> Result<(), VmError> {
         let raw_high = match name {
-            "indicator.status_led" | "status_led" | "status" => !logical_value,
             "GPIO8" => logical_value,
+            "GPIO10" => logical_value,
             _ => return Err(VmError::InvalidOperand),
         };
         self.breathing_enabled = false;
-        self.status_led
-            .set_level(if raw_high { Level::High } else { Level::Low });
+        match name {
+            "GPIO8" => self
+                .onboard_indicator
+                .set_level(if raw_high { Level::High } else { Level::Low }),
+            "GPIO10" => self
+                .external_indicator
+                .set_level(if raw_high { Level::High } else { Level::Low }),
+            _ => return Err(VmError::InvalidOperand),
+        }
         Ok(())
     }
 
     fn read_gpio(&self, name: &str) -> Result<bool, VmError> {
-        let raw_high = self.status_led.is_set_high();
         match name {
-            "indicator.status_led" | "status_led" | "status" => Ok(!raw_high),
-            "GPIO8" => Ok(raw_high),
+            "GPIO8" => Ok(self.onboard_indicator.is_set_high()),
+            "GPIO10" => Ok(self.external_indicator.is_set_high()),
             _ => Err(VmError::InvalidOperand),
         }
     }
@@ -1413,23 +1449,38 @@ impl TraceSink for RuntimeSink<'_> {
         self.push_draw(line);
     }
 
-    fn draw_text(&mut self, strings: &StringResolver<'_>, text: Value, x: i32, y: i32) {
+    fn draw_text(
+        &mut self,
+        strings: &StringResolver<'_>,
+        text: Value,
+        options: DisplayTextOptions<'_>,
+    ) {
         let mut line = LogLine::new();
         write!(line, "text text=").ok();
         write_value(&mut line, strings, text).ok();
-        write!(line, " x={x} y={y}").ok();
+        write!(line, " x={} y={}", options.x, options.y).ok();
         self.push_draw(line);
     }
 
-    fn draw_rect(&mut self, x: i32, y: i32, w: i32, h: i32) {
+    fn draw_rect(&mut self, options: DisplayRectOptions<'_>) {
         let mut line = LogLine::new();
-        write!(line, "rect x={x} y={y} w={w} h={h}").ok();
+        write!(
+            line,
+            "rect x={} y={} w={} h={}",
+            options.x, options.y, options.w, options.h
+        )
+        .ok();
         self.push_draw(line);
     }
 
-    fn draw_line(&mut self, x1: i32, y1: i32, x2: i32, y2: i32) {
+    fn draw_line(&mut self, options: DisplayLineOptions<'_>) {
         let mut line = LogLine::new();
-        write!(line, "line x1={x1} y1={y1} x2={x2} y2={y2}").ok();
+        write!(
+            line,
+            "line x1={} y1={} x2={} y2={}",
+            options.x1, options.y1, options.x2, options.y2
+        )
+        .ok();
         self.push_draw(line);
     }
 
@@ -1444,6 +1495,21 @@ impl TraceSink for RuntimeSink<'_> {
 
     fn hardware_gpio_read(&mut self, name: &str) -> Result<bool, VmError> {
         self.read_gpio(name)
+    }
+
+    fn service_indicator_write(&mut self, value: bool) -> Result<(), VmError> {
+        self.write_indicator(value);
+        Ok(())
+    }
+
+    fn service_indicator_toggle(&mut self) -> Result<(), VmError> {
+        let value = !self.read_indicator();
+        self.write_indicator(value);
+        Ok(())
+    }
+
+    fn service_indicator_read(&mut self) -> Result<bool, VmError> {
+        Ok(self.read_indicator())
     }
 
     fn app_launch(&mut self, app: &str) -> Result<(), VmError> {
@@ -1596,16 +1662,21 @@ impl<S: AppStorage> TraceSink for StoredAppHost<'_, '_, S> {
         self.trace.draw_clear(color);
     }
 
-    fn draw_text(&mut self, strings: &StringResolver<'_>, text: Value, x: i32, y: i32) {
-        self.trace.draw_text(strings, text, x, y);
+    fn draw_text(
+        &mut self,
+        strings: &StringResolver<'_>,
+        text: Value,
+        options: DisplayTextOptions<'_>,
+    ) {
+        self.trace.draw_text(strings, text, options);
     }
 
-    fn draw_rect(&mut self, x: i32, y: i32, w: i32, h: i32) {
-        self.trace.draw_rect(x, y, w, h);
+    fn draw_rect(&mut self, options: DisplayRectOptions<'_>) {
+        self.trace.draw_rect(options);
     }
 
-    fn draw_line(&mut self, x1: i32, y1: i32, x2: i32, y2: i32) {
-        self.trace.draw_line(x1, y1, x2, y2);
+    fn draw_line(&mut self, options: DisplayLineOptions<'_>) {
+        self.trace.draw_line(options);
     }
 
     fn hardware_gpio_write(&mut self, name: &str, value: bool) -> Result<(), VmError> {
@@ -1618,6 +1689,18 @@ impl<S: AppStorage> TraceSink for StoredAppHost<'_, '_, S> {
 
     fn hardware_gpio_read(&mut self, name: &str) -> Result<bool, VmError> {
         self.trace.hardware_gpio_read(name)
+    }
+
+    fn service_indicator_write(&mut self, value: bool) -> Result<(), VmError> {
+        self.trace.service_indicator_write(value)
+    }
+
+    fn service_indicator_toggle(&mut self) -> Result<(), VmError> {
+        self.trace.service_indicator_toggle()
+    }
+
+    fn service_indicator_read(&mut self) -> Result<bool, VmError> {
+        self.trace.service_indicator_read()
     }
 
     fn app_launch(&mut self, app: &str) -> Result<(), VmError> {

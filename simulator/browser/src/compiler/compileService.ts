@@ -1,26 +1,34 @@
 import type { CompileResult, CompileResponse } from "../types";
-import { compileFallback } from "./fallbackCompiler";
-
-type WasmCompiler = {
-  default?: (module?: unknown) => Promise<unknown>;
-  compile_squidscript: (source: string, targetId: string) => string;
-};
+import { loadSquidWasm } from "./wasmModule";
 
 export async function compileSquid(source: string, targetId: string): Promise<CompileResult> {
-  const wasm = await loadWasmCompiler();
-  if (!wasm) {
-    return { ...compileFallback(source, targetId), backend: "fallback" };
+  const wasmResult = await loadWasmCompiler();
+  if (!wasmResult.ok) {
+    return {
+      ok: false,
+      diagnostics: [{
+        code: "E_WASM_UNAVAILABLE",
+        severity: "error",
+        message: `Rust/WASM compiler is unavailable: ${wasmResult.error}`,
+        span: { start: 0, end: 0 }
+      }],
+      ir: null,
+      backend: "wasm"
+    };
   }
 
-  await wasm.default?.();
+  const wasm = wasmResult.wasm;
   const response = JSON.parse(wasm.compile_squidscript(source, targetId)) as CompileResponse;
-  return { ...response, backend: "wasm" };
+  if (!response.ok) return { ...response, backend: "wasm" };
+  return { ...response, sqbc: wasm.compile_sqbc(source, targetId), backend: "wasm" };
 }
 
-async function loadWasmCompiler(): Promise<WasmCompiler | null> {
+async function loadWasmCompiler(): Promise<
+  { ok: true; wasm: Awaited<ReturnType<typeof loadSquidWasm>> } | { ok: false; error: string }
+> {
   try {
-    return (await import("./wasm/squidc_wasm.js")) as WasmCompiler;
-  } catch {
-    return null;
+    return { ok: true, wasm: await loadSquidWasm() };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 }

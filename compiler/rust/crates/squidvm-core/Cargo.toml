@@ -1,0 +1,9 @@
+[package]
+name = "squidvm-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[dev-dependencies]
+squidc-core = { path = "../squidc-core" }

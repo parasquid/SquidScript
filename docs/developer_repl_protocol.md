@@ -146,9 +146,9 @@ missing aliases or capabilities fail at runtime on the device.
 
 The ESP32-C3 Super Mini target currently exposes:
 
-- `indicator.status_led`, with aliases `status_led` and `status`, as the
-  logical onboard LED. It is active-low on typical Super Mini boards.
-- `GPIO8` as the raw pin name for the same line.
+- `service.indicator.*` as the default logical indicator. It maps to the
+  onboard LED by default and is active-low on typical Super Mini boards.
+- `GPIO8` as the raw pin name for the onboard LED line.
 
 Normal quick upload/run uses volatile `squidc run` and does not require a target:
 
@@ -162,7 +162,7 @@ cargo run -p squidc -- device monitor --max-lines 4
 Scripted REPL checks can still use session files:
 
 ```sh
-cargo run -p squidc -- repl --script tests/repl/hardware-gpio-status-led.session
+cargo run -p squidc -- repl --script tests/repl/hardware-gpio-indicator.session
 cargo run -p squidc -- repl examples/blinky-supermini/main.squid --script tests/repl/blinky-supermini.session
 ```
 
@@ -173,6 +173,6 @@ compatibility checks and related metadata workflows:
 cargo run -p squidc -- repl --target targets/esp32c3-super-mini.target.json --check-target --script examples/blinky-supermini/main.squid
 ```
 
-The first check verifies serial-observable GPIO readback. The blinky example
-also needs physical LED observation: `SELECT` toggles the onboard LED and
-`BACK` turns it off and exits.
+The first check verifies serial-observable indicator readback and raw GPIO8
+readback. The blinky example also needs physical LED observation: `SELECT`
+toggles the default indicator and `BACK` turns it off and exits.

@@ -12,7 +12,8 @@ body {
   margin: 0;
 }
 
-button {
+button,
+.file-button {
   font: inherit;
 }
 
@@ -108,7 +109,8 @@ button {
   gap: 8px;
 }
 
-.toolbar button {
+.toolbar button,
+.file-button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -119,6 +121,15 @@ button {
   background: #f6f3ec;
   color: #171717;
   cursor: pointer;
+}
+
+.file-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .app-picker {

@@ -74,9 +74,9 @@ Consumers must reject unknown `format` values and unsupported versions.
       "name": "main",
       "render": "compose",
       "statements": [
-        { "op": "display.clear", "color": "gray0" },
+        { "op": "service.display.clear", "color": "gray0" },
         {
-          "op": "display.text",
+          "op": "service.display.text",
           "text": { "op": "literal", "value": "Hello Menu" },
           "options": {
             "x": { "op": "literal", "value": 20 },
@@ -123,10 +123,10 @@ The browser runtime currently recognizes:
 - `app.exit`
 - `state.load`
 - `state.save`
-- `display.clear`
-- `display.text`
-- `display.rect`
-- `display.line`
+- `service.display.clear`
+- `service.display.text`
+- `service.display.rect`
+- `service.display.line`
 
 `handlers[].preload` is optional and defaults to `false`. It comes from the
 source-level `@preload` hint before `event.on(...)` and remains advisory for

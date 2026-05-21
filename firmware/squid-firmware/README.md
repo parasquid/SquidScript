@@ -62,12 +62,12 @@ It also accepts the v4 developer protocol commands documented in
 `RUN.EVENT`, `APP.LIST`, `STATE.GET`, `STATE.IMPORT`, `OUTPUT.GET`, and
 `DRAWLOG.GET`.
 
-The ESP32-C3 Super Mini firmware maps `hardware.gpio.*` to the target-defined
-status LED aliases and raw `GPIO8`. Use these repository-root checks after
-flashing:
+The ESP32-C3 Super Mini firmware maps `service.indicator.*` to the default
+logical indicator and keeps `hardware.gpio.*` for raw GPIO names such as
+`GPIO8`. Use these repository-root checks after flashing:
 
 ```sh
-cargo run -p squidc -- repl --script tests/repl/hardware-gpio-status-led.session
+cargo run -p squidc -- repl --script tests/repl/hardware-gpio-indicator.session
 cargo run -p squidc -- repl examples/blinky-supermini/main.squid --script tests/repl/blinky-supermini.session
 cargo run -p squidc -- repl --script examples/blinky-supermini/main.squid
 ```

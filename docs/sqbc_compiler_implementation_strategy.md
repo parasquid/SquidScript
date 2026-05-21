@@ -574,7 +574,7 @@ let book = binbook.open(file)
 let page = binbook.page(book, pageIndex)
 let image = binbook.pageImage(page)
 
-display.draw(image, { x: 0, y: 0 })
+service.display.draw(image, { x: 0, y: 0 })
 ```
 
 The BinBook capability owns:
@@ -585,7 +585,7 @@ The BinBook capability owns:
 - decoding or streaming page content
 - converting BinBook page data into a display-ready drawable resource
 
-The display capability owns final composition through `display.draw(...)`.
+The display capability owns final composition through `service.display.draw(...)`.
 
 For the first X4 target family, keep these names distinct:
 
@@ -747,7 +747,7 @@ CODEGEN_RULES.md should include rules such as:
 - All diagnostics require stable diagnostic codes.
 - All new validation rules require invalid fixtures.
 - Fixture tests should be declared in `fixtures/manifest.toml`.
-- Capability APIs should be namespaced, such as `display.draw`, `state.load`, `content.pickFile`, and `binbook.open`.
+- Capability APIs should be namespaced, such as `service.display.draw`, `state.load`, `content.pickFile`, and `binbook.open`.
 - Do not introduce implicit truthiness, implicit local creation, unchecked arithmetic, mutable records, mutable lists, or unspecified evaluation order.
 - Invalid source should produce diagnostics; invalid dynamic behavior should produce structured runtime errors, not undefined behavior.
 - Keep modules small and explicit.
@@ -905,7 +905,7 @@ After Rust becomes the production compiler, Ruby can remain useful as:
 
 - fixture generator
 - golden-output updater
-- compatibility checker
+- conformance checker
 - quick experiment harness
 - readable behavior sketch
 - spec exploration tool
@@ -920,17 +920,14 @@ Any accepted Ruby behavior should be moved into specs and fixtures.
 
 The browser XTEINK X4 simulator brings the Rust/WASM compiler work forward for the Hello Menu subset. Ruby can still be useful as a reference-oriented prototype, but browser-sim needs a Rust compiler frontend early because the simulator's normal compile path must run in the browser.
 
-For browser-sim v1, the Rust frontend may emit versioned IR JSON instead of SQBC:
+The browser simulator compile path emits SQBC:
 
 ```text
-.squid -> CST -> typed AST -> validated IR JSON
+.squid -> CST -> typed AST -> validated IR -> SQBC
 ```
 
-That IR JSON is a browser-simulator development artifact. It is installed only
-as `main.ir.json` under simulated `/sd`, and production firmware must continue
-to require SQBC bytecode.
-
-Runtime loading should remain behind an executable boundary so the current `IrJsonLoader -> RuntimeProgram` path can be joined later by `SqbcLoader -> RuntimeProgram` without rewriting simulator UI code.
+Browser-sim installs `main.sqbc` under simulated `/sd` and runs it through
+`squidvm-core`, the same shared VM crate used by reference firmware.
 
 ---
 

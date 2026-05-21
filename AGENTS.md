@@ -9,6 +9,10 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - Watch the conversation for recurring user preferences, workflow corrections, verification expectations, and safety constraints that should guide future agents.
 - When a preference or workflow rule is likely to apply beyond the current turn, suggest adding it to `AGENTS.md`.
 - If the user agrees, update `AGENTS.md` promptly and keep the guidance concise, actionable, and specific to this repository.
+- When presenting decision questions, include the meaningful options with pros,
+  cons, and the practical impact of each choice so the user can make an
+  informed decision. Add concise examples when they help clarify what an option
+  would look like in practice.
 
 ## Roadmap Maintenance
 
@@ -29,13 +33,21 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - Implement the documented language/spec as written. Use `docs/language_spec.md` as the primary reference.
 - If a feature is not implemented yet, say so clearly and keep fixtures/tests honest.
 - Do not add tests for removed fake syntax. Treat fake syntax as if it never existed.
-- Until the project reaches a 1.0 release, prefer direct migrations over backwards-compatible aliases or redundant wrappers. Remove obsolete scripts/APIs/docs when replacing them, unless the user explicitly asks for a compatibility bridge.
+- Critical pre-1.0 rule: replace directly. Do not preserve, detect, migrate,
+  alias, wrap, special-case, document, test, or otherwise carry old APIs,
+  syntax, storage formats, examples, scripts, or behavior unless the user
+  explicitly asks for that specific bridge. Removed forms should fail through
+  the same ordinary unknown or unsupported path as any other invalid form.
 - Before 1.0, optimize firmware and CLI workflows for development ergonomics. Do not introduce release-profile trimming, disabling of `RUN.TEMP`, or flash-writing temp runs unless the user explicitly asks to revisit that tradeoff.
 - Browser-sim IR JSON is a development artifact only. Do not treat it as a production firmware format. See `docs/browser_simulator.md` and `docs/ir_schema.md`.
 - Reference firmware exists to exercise SquidScript language semantics on constrained hardware. Do not frame it as XTEINK X4 staging firmware unless the task explicitly targets X4 behavior.
 
 ## Architecture Boundary Discipline
 
+- When planning or adding a feature, research existing libraries, established
+  patterns, and relevant existing repositories before designing a custom
+  implementation. Present viable options with tradeoffs, and explain why the
+  chosen approach fits this repository's constraints.
 - Before adding or moving tests, identify the owning layer: language/compiler semantics, SQBC encoding, firmware VM behavior, host CLI behavior, board-specific firmware harness, example app, docs, or simulator.
 - When making platform decisions, distinguish the public SquidScript contract from board-specific implementation details. Standardize portable concepts in docs/specs, and keep physical storage layouts, partitions, pins, and device quirks in firmware/target-specific docs and metadata.
 - For storage decisions, model logical APIs and physical volumes separately. A board may use LittleFS, flash records, SD, or another backend without changing the portable app/compiler contract.
@@ -116,7 +128,7 @@ Run checks from the directory shown unless noted.
 | Change area | Commands |
 | --- | --- |
 | Rust compiler crates, fixtures, IR lowering, SQBC container | `cargo test` from repo root |
-| Browser simulator TypeScript runtime, compiler fallback, rendering, storage, input | `npm test` from `simulator/browser` |
+| Browser simulator TypeScript runtime, WASM compiler bridge, rendering, storage, input | `npm test` from `simulator/browser` |
 | Browser simulator production build or WASM compiler bridge | `npm run build` from `simulator/browser` |
 | Browser UI behavior, Hello Menu flow, canvas pixels, Firefox/mobile coverage | `npm run test:e2e` from `simulator/browser` |
 | Target definitions or render policy docs | `cargo test` plus relevant browser tests if browser-sim consumes the target |
@@ -135,7 +147,7 @@ Expected baseline checks:
 Hello Menu should prove:
 
 - compile succeeds with the WASM compiler
-- upload installs `/sd/apps/hello-menu/main.ir.json`
+- upload installs `/sd/apps/hello-menu/main.sqbc`
 - run opens the `menu` screen
 - selected row pixels are black and unselected/background pixels are white
 - `UP`/`DOWN` move selection correctly and stay bounded

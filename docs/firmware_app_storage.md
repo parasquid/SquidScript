@@ -74,6 +74,69 @@ length-prefixed. Scripts should use an app-level `stateVersion: int` slot and
 call `state.reset()` when the stored shape no longer matches what the new
 script expects.
 
+## Device Config Records
+
+SQDEVICE is the human-authorable text resource format for device service
+configuration. SQDC is the compact firmware-owned binary persistence format for
+the active device config. Apps may package `.sqdevice` resources and bind them
+through top-level `device {}` declarations, but package install stores those
+resources read-only and does not activate them by itself.
+
+SQDEVICE text starts with:
+
+```text
+SQDEVICE 1
+```
+
+Blank lines and `#` line comments are allowed. Each record is:
+
+```text
+<key> <type> <value>
+```
+
+Strings use the same length-prefixed style as SQSTATE text:
+
+```text
+backend string 7:ssd1677
+width int 800
+spi.sck string 5:GPIO4
+spi.miso null
+```
+
+Initial SQDEVICE value types:
+
+- `string <byte-len>:<utf8-bytes>`
+- `int <signed-32-bit-decimal>`
+- `bool true`
+- `bool false`
+- `null`
+
+Duplicate keys are import errors. Unknown keys are retained so future or
+unused driver sections can round-trip. Firmware hard-fails unknown GPIO names
+and missing required fields when a binding is initialized. Duplicate or
+conflicting known pins should return a bounded warning string, not a compiler
+error. v0.2 does not define strapping-pin or electrical-hazard policy checks.
+
+SQDC uses repo-owned binary typed records rather than CBOR or JSON. It should
+share bounded typed-record parser helpers with SQST where practical:
+
+```text
+offset  size  field
+0       4     magic: "SQDC"
+4       2     little-endian u16 version: 1
+6       2     little-endian u16 record count
+8       n     typed records
+```
+
+Each SQDC typed record stores a key string and one typed primitive value. Exact
+record packing is implementation-defined until the parser lands, but the
+format must remain bounded, duplicate-key rejecting, and MCU-parseable without
+heap-heavy generic serialization.
+
+`device.config.save("flash")` persists SQDC as the global active device config.
+`RUN.TEMP` and other temp-run workflows may import or rebind config in RAM, but
+must not persist those changes unless code explicitly saves.
+
 Measured on the ESP32-C3 Super Mini reference firmware after adding resource
 introspection and reducing `MAX_APP_BYTES` to 4 KiB:
 

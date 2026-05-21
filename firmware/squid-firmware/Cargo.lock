@@ -1367,6 +1367,7 @@ dependencies = [
  "esp-storage",
  "littlefs2",
  "squidc-core",
+ "squidvm-core",
  "ssd1677",
 ]
 
@@ -1378,6 +1379,10 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "squidvm-core"
+version = "0.1.0"
 
 [[package]]
 name = "ssd1677"

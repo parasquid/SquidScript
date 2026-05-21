@@ -6,7 +6,6 @@ pub mod protocol;
 #[cfg(feature = "hardware")]
 pub mod storage;
 pub mod target;
-pub mod vm;
 
 pub use bringup::{
     run_bringup, run_serial_probe, BuildInfo, Color, Console, DisplayError, DisplaySurface,

@@ -1,13 +1,27 @@
 import type { Vfs } from "../storage/vfs";
 
 export class MemoryVfs implements Vfs {
-  private files = new Map<string, string>();
+  private files = new Map<string, string | Uint8Array>();
+  private textEncoder = new TextEncoder();
+  private textDecoder = new TextDecoder();
 
   async read(path: string): Promise<string | null> {
-    return this.files.get(path) ?? null;
+    const value = this.files.get(path);
+    if (value === undefined) return null;
+    return typeof value === "string" ? value : this.textDecoder.decode(value);
   }
 
   async write(path: string, value: string): Promise<void> {
+    this.files.set(path, value);
+  }
+
+  async readBytes(path: string): Promise<Uint8Array | null> {
+    const value = this.files.get(path);
+    if (value === undefined) return null;
+    return typeof value === "string" ? this.textEncoder.encode(value) : value;
+  }
+
+  async writeBytes(path: string, value: Uint8Array): Promise<void> {
     this.files.set(path, value);
   }
 
@@ -25,4 +39,3 @@ export class MemoryVfs implements Vfs {
     return [...this.files.keys()].filter((path) => path.startsWith(prefix));
   }
 }
-

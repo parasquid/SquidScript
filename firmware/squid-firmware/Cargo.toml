@@ -38,6 +38,7 @@ esp-println = { version = "0.15", default-features = false, features = ["esp32c3
 esp-storage = { version = "0.8", default-features = false, features = ["esp32c3"], optional = true }
 littlefs2 = { version = "0.7", default-features = false, features = ["c-stubs"], optional = true }
 ssd1677 = { version = "0.1", default-features = false, features = ["graphics"], optional = true }
+squidvm-core = { path = "../../compiler/rust/crates/squidvm-core", default-features = false }
 
 [dev-dependencies]
 squidc-core = { path = "../../compiler/rust/crates/squidc-core" }

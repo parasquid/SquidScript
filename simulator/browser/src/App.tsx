@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Play, RefreshCw, RotateCcw, Save, Trash2, Upload, Wrench } from "lucide-react";
+import { Archive, Play, RefreshCw, RotateCcw, Save, Trash2, Upload, Wrench } from "lucide-react";
 import { compileSquid } from "./compiler/compileService";
-import { DEFAULT_SOURCE } from "./compiler/fallbackCompiler";
+import { DEFAULT_SOURCE } from "./compiler/defaultSource";
 import { createDebugEvent, formatDebugData, type DebugEvent } from "./debug/log";
-import { installIrApp, listInstalledApps, loadInstalledApp, uninstallApp, type InstalledAppSummary } from "./runtime/appInstall";
+import { installSqbcApp, installSquidPackage, listInstalledApps, loadInstalledApp, uninstallApp, type InstalledAppSummary } from "./runtime/appInstall";
 import { ButtonArbiter, type ButtonOutcome } from "./runtime/input";
 import { BrowserRuntime, type RuntimeSnapshot } from "./runtime/runtime";
 import { createBrowserVfs, type Vfs } from "./storage/vfs";
@@ -66,7 +66,7 @@ export default function App() {
     const result = await compileSquid(source, XTEINK_X4_TARGET.id);
     setCompiled(result);
     setCompilerBackend(result.backend);
-    setStatus(result.ok ? `Compiled main.ir.json with ${result.backend.toUpperCase()}` : `Compile failed with ${result.backend.toUpperCase()}`);
+    setStatus(result.ok ? `Compiled main.sqbc with ${result.backend.toUpperCase()}` : `Compile failed with ${result.backend.toUpperCase()}`);
     log("compile", result.ok ? "compile succeeded" : "compile failed", {
       backend: result.backend,
       diagnostics: result.diagnostics.length,
@@ -90,19 +90,36 @@ export default function App() {
 
   async function upload(): Promise<void> {
     const ir = compiled?.ir;
-    if (!compiled?.ok || !ir) {
+    if (!compiled?.ok || !ir || !compiled.sqbc) {
       setStatus("Compile before upload");
-      log("upload", "upload blocked without compiled IR");
+      log("upload", "upload blocked without compiled SQBC");
       return;
     }
 
-    log("upload", "installing IR app", { appId: ir.app.id });
-    const base = await installIrApp(vfs, ir);
+    log("upload", "installing SQBC app", { appId: ir.app.id });
+    const base = await installSqbcApp(vfs, ir.app, compiled.sqbc);
     setInstalledAppId(ir.app.id);
     await refreshApps();
     setStatus(`Uploaded ${base}`);
-    log("upload", "installed app files", { base, files: ["main.ir.json"] });
+    log("upload", "installed app files", { base, files: ["main.sqbc"] });
     await refreshStorageFiles();
+  }
+
+  async function importPackage(file: File | null): Promise<void> {
+    if (!file) return;
+
+    try {
+      log("package", "importing package", { filename: file.name, bytes: file.size });
+      const result = await installSquidPackage(vfs, new Uint8Array(await file.arrayBuffer()), { filename: file.name });
+      setInstalledAppId(result.appId);
+      await refreshApps();
+      setStatus(`Imported ${result.basePath}`);
+      log("package", "installed package files", { appId: result.appId, files: result.files });
+      await refreshStorageFiles();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Package import failed");
+      log("package", "import failed", { error: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   async function run(): Promise<void> {
@@ -116,13 +133,12 @@ export default function App() {
       return;
     }
 
-    const program = installed.program;
-    const nextRuntime = new BrowserRuntime(program, vfs);
+    const nextRuntime = new BrowserRuntime(installed, vfs);
     setRuntime(nextRuntime);
     setSnapshot(await nextRuntime.start());
-    setInstalledAppId(program.id);
-    setStatus(`Running ${program.name} from ${installed.basePath}`);
-    log("run", "runtime started", { appId: program.id, basePath: installed.basePath, executable: "main.ir.json" });
+    setInstalledAppId(installed.app.id);
+    setStatus(`Running ${installed.app.name} from ${installed.basePath}`);
+    log("run", "runtime started", { appId: installed.app.id, basePath: installed.basePath, executable: "main.sqbc" });
   }
 
   async function uninstallSelectedApp(): Promise<void> {
@@ -237,21 +253,26 @@ export default function App() {
       return;
     }
 
-    log("upload", "installing IR app", { appId: result.ir.app.id });
-    const base = await installIrApp(vfs, result.ir);
+    if (!result.sqbc) {
+      setStatus("Compile did not produce main.sqbc");
+      return;
+    }
+
+    log("upload", "installing SQBC app", { appId: result.ir.app.id });
+    const base = await installSqbcApp(vfs, result.ir.app, result.sqbc);
     setInstalledAppId(result.ir.app.id);
     await refreshApps();
-    log("upload", "installed app files", { base, files: ["main.ir.json"] });
+    log("upload", "installed app files", { base, files: ["main.sqbc"] });
     await refreshStorageFiles();
 
     log("run", "loading installed app", { requestedAppId: result.ir.app.id });
     const installed = await loadInstalledApp(vfs, result.ir.app.id);
-    const nextRuntime = new BrowserRuntime(installed.program, vfs);
+    const nextRuntime = new BrowserRuntime(installed, vfs);
     setRuntime(nextRuntime);
     setSnapshot(await nextRuntime.start());
-    setInstalledAppId(installed.program.id);
-    setStatus(`Running ${installed.program.name} from ${installed.basePath}`);
-    log("run", "runtime started", { appId: installed.program.id, basePath: installed.basePath, executable: "main.ir.json" });
+    setInstalledAppId(installed.app.id);
+    setStatus(`Running ${installed.app.name} from ${installed.basePath}`);
+    log("run", "runtime started", { appId: installed.app.id, basePath: installed.basePath, executable: "main.sqbc" });
   }
 
   const commands = snapshot?.drawCommands ?? IDLE_COMMANDS;
@@ -278,6 +299,19 @@ export default function App() {
         <div className="toolbar">
           <button onClick={() => void compile()}><Wrench size={16} />Compile</button>
           <button onClick={() => void upload()}><Upload size={16} />Upload</button>
+          <label className="file-button">
+            <Archive size={16} />Import Package
+            <input
+              aria-label="package import"
+              type="file"
+              accept=".squid.zip"
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0] ?? null;
+                event.currentTarget.value = "";
+                void importPackage(file);
+              }}
+            />
+          </label>
           <button onClick={() => void run()}><Play size={16} />Run</button>
           <button onClick={() => void refreshApps()}><RefreshCw size={16} />Refresh Apps</button>
           <button onClick={() => void refreshStorageFiles()}><RefreshCw size={16} />Refresh Storage</button>

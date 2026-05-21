@@ -5,11 +5,11 @@ function drawTocRow(row, navIndex) {
     let y = 64 + row * 72
 
     if (navIndex == tocIndex) {
-      display.rect(0, y - 8, 480, 60, { fillColor: "gray4" })
+      service.display.rect(0, y - 8, 480, 60, { fillColor: "gray4" })
     }
 
-    display.text(entry.title, { x: 24, y: y, w: 360, h: 32, fontHeight: 18 })
-    display.text(string.format("{}", entry.renderedPageNumber + 1), {
+    service.display.text(entry.title, { x: 24, y: y, w: 360, h: 32, fontHeight: 18 })
+    service.display.text(string.format("{}", entry.renderedPageNumber + 1), {
       x: 390,
       y: y,
       w: 70,
@@ -21,11 +21,11 @@ function drawTocRow(row, navIndex) {
 }
 
 screen("toc") {
-  display.clear("white")
+  service.display.clear("white")
   drawTopBar("Table of Contents")
 
   if (navCount == 0) {
-    display.text("No table of contents", { x: 24, y: 120, w: 432, h: 40, fontHeight: 24 })
+    service.display.text("No table of contents", { x: 24, y: 120, w: 432, h: 40, fontHeight: 24 })
   } else {
     drawTocRow(0, tocTop)
     drawTocRow(1, tocTop + 1)

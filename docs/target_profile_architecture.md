@@ -470,7 +470,7 @@ Example ESP32-C3 low-RAM runtime:
   },
   "features": [
     "squidscript.bytecode",
-    "display.draw",
+    "service.display.draw",
     "input.text",
     "state.read",
     "state.write",
@@ -517,7 +517,7 @@ Example ESP32-S3 PSRAM runtime:
   },
   "features": [
     "squidscript.bytecode",
-    "display.draw",
+    "service.display.draw",
     "input.text",
     "state.read",
     "state.write",
@@ -909,7 +909,7 @@ Example:
     },
     "keys": ["LEFT", "RIGHT", "BACK"],
     "features": [
-      "display.draw",
+      "service.display.draw",
       "input.text",
       "state.read",
       "state.write",
@@ -1035,7 +1035,7 @@ Equivalent logical metadata:
 compiled_for_target: xteink-x4
 runtime_profile: esp32c3-lowram
 required_features:
-  - display.draw
+  - service.display.draw
   - state.read
   - state.write
   - binbook.read
@@ -1067,7 +1067,7 @@ Recommended default.
 Example:
 
 - requires SquidScript 0.2
-- requires display.draw
+- requires service.display.draw
 - requires 480x800 minimum display
 - requires LEFT, RIGHT, BACK keys
 - requires binbook.read
@@ -1152,7 +1152,7 @@ When launching an app, firmware should check:
 - current display satisfies display requirements
 - current input profile provides required keys
 - current runtime profile can satisfy bytecode resource limits
-- app capability declarations are declared and allowed
+- app feature requirements are supported by the current firmware/runtime
 - required document capabilities are available
 - optional source map matches bytecode hash if source map is used
 
@@ -1253,7 +1253,7 @@ Example:
 
 ```squid
 screen("main", { render: "compose" }) {
-  display.text("Hello", {
+  service.display.text("Hello", {
     x: 20,
     y: 20,
     w: SCREEN_WIDTH - 40,

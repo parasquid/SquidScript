@@ -1,0 +1,13 @@
+:reset
+service.indicator.write(false)
+debug.print("led", service.indicator.read())
+service.indicator.write(true)
+debug.print("led", service.indicator.read())
+service.indicator.toggle()
+debug.print("led", service.indicator.read())
+hardware.gpio.write("GPIO8", true)
+debug.print("raw", hardware.gpio.read("GPIO8"))
+:output
+:expect-output output="led" false
+:expect-output output="led" true
+:expect-output output="raw" true

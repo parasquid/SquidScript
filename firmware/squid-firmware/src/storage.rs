@@ -11,8 +11,8 @@ use littlefs2::{
 use crate::{
     dev_harness::{validate_app_id, AppName, AppStorage, AppStorageError, StoredApp},
     protocol::fnv1a,
-    vm::MAX_APP_BYTES,
 };
+use squidvm_core::limits::{MAX_APP_BYTES, MAX_SAVED_STATE_BYTES};
 
 pub const SQUIDFS_OFFSET: u32 = 0x210000;
 pub const SQUIDFS_LEN: usize = 0x1f0000;
@@ -267,7 +267,7 @@ impl<S: driver::Storage> AppStorage for LittleFsAppStorage<S> {
         app_id: &str,
         bytes: &[u8],
     ) -> core::result::Result<(), AppStorageError> {
-        if bytes.len() > crate::vm::MAX_SAVED_STATE_BYTES {
+        if bytes.len() > MAX_SAVED_STATE_BYTES {
             return Err(AppStorageError::NoSpace);
         }
         let tmp = Self::state_path(app_id, ".tmp").map_err(Self::map_error)?;

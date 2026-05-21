@@ -49,10 +49,10 @@ export type IrStatement =
   | { op: "call"; name: string; args: IrExpr[] }
   | { op: "debug.print"; args: IrExpr[] }
   | { op: "debug.block"; statements: IrStatement[] }
-  | { op: "display.clear"; color: string }
-  | { op: "display.text"; text: IrExpr; options: Record<string, unknown> }
-  | { op: "display.rect"; x: number; y: number; w: number; h: number; options: Record<string, unknown> }
-  | { op: "display.line"; x1: number; y1: number; x2: number; y2: number; options: Record<string, unknown> };
+  | { op: "service.display.clear"; color: string }
+  | { op: "service.display.text"; text: IrExpr; options: Record<string, unknown> }
+  | { op: "service.display.rect"; x: number; y: number; w: number; h: number; options: Record<string, unknown> }
+  | { op: "service.display.line"; x1: number; y1: number; x2: number; y2: number; options: Record<string, unknown> };
 
 export interface IrFunction {
   name: string;
@@ -72,20 +72,11 @@ export interface CompileResponse {
   ir: IrProgram | null;
 }
 
-export type CompilerBackend = "wasm" | "fallback";
+export type CompilerBackend = "wasm";
 
 export interface CompileResult extends CompileResponse {
   backend: CompilerBackend;
-}
-
-export interface RuntimeProgram {
-  id: string;
-  name: string;
-  target: string;
-  stateDefaults: Record<string, unknown>;
-  functions: Map<string, IrFunction>;
-  handlers: Map<string, IrStatement[]>;
-  screens: Map<string, IrScreen>;
+  sqbc?: Uint8Array;
 }
 
 export type DrawCommand =

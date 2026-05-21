@@ -90,7 +90,7 @@ browser-sim
 native-host-sim
 ```
 
-Backend selection is a build-time concern. SquidScript apps should still target capabilities such as `display.draw`, `library.books.read`, `wifi.accessPoint`, or `bleTransfer.receive`.
+Backend selection is a build-time concern. SquidScript apps should still target capabilities such as `service.display.draw`, `library.books.read`, `wifi.accessPoint`, or `bleTransfer.receive`.
 
 ---
 

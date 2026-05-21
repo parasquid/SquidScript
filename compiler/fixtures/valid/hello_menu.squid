@@ -58,7 +58,7 @@ event.on("key.BACK") {
 
 function drawMenuRow(index, label, y) {
   if (selected == index) {
-    display.text(label, {
+    service.display.text(label, {
       x: 32,
       y: y,
       w: 416,
@@ -70,7 +70,7 @@ function drawMenuRow(index, label, y) {
       backgroundColor: "gray15"
     })
   } else {
-    display.text(label, {
+    service.display.text(label, {
       x: 32,
       y: y,
       w: 416,
@@ -85,9 +85,9 @@ function drawMenuRow(index, label, y) {
 }
 
 screen("menu", { render: "compose" }) {
-  display.clear("gray0")
+  service.display.clear("gray0")
 
-  display.text("Hello Menu", {
+  service.display.text("Hello Menu", {
     x: 20,
     y: 60,
     w: 440,
@@ -101,7 +101,7 @@ screen("menu", { render: "compose" }) {
   drawMenuRow(1, "About", 216)
   drawMenuRow(2, "Exit", 272)
 
-  display.text("UP/DOWN select  SELECT open", {
+  service.display.text("UP/DOWN select  SELECT open", {
     x: 20,
     y: 720,
     w: 440,
@@ -114,8 +114,8 @@ screen("menu", { render: "compose" }) {
 }
 
 screen("hello") {
-  display.clear("gray0")
-  display.text("Hello, Squid!", {
+  service.display.clear("gray0")
+  service.display.text("Hello, Squid!", {
     x: 20,
     y: 120,
     w: 440,
@@ -124,7 +124,7 @@ screen("hello") {
     align: "center",
     valign: "middle"
   })
-  display.text("BACK returns to menu", {
+  service.display.text("BACK returns to menu", {
     x: 20,
     y: 720,
     w: 440,
@@ -137,8 +137,8 @@ screen("hello") {
 }
 
 screen("about") {
-  display.clear("gray0")
-  display.text("Selection is state.", {
+  service.display.clear("gray0")
+  service.display.text("Selection is state.", {
     x: 32,
     y: 120,
     w: 416,
@@ -147,7 +147,7 @@ screen("about") {
     align: "center",
     valign: "middle"
   })
-  display.text("Changing selected then calling screen.refresh redraws the menu from state. The old highlight is not manually erased.", {
+  service.display.text("Changing selected then calling screen.refresh redraws the menu from state. The old highlight is not manually erased.", {
     x: 32,
     y: 200,
     w: 416,

@@ -1,6 +1,7 @@
 use rowan::{GreenNode, GreenNodeBuilder, Language, SyntaxKind};
 use serde::{Deserialize, Serialize};
 
+pub mod device_config;
 pub mod sqbc_v2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -101,6 +102,8 @@ pub struct IrProgram {
     pub app: IrApp,
     #[serde(default = "default_state_store")]
     pub state_store: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub device_bindings: Vec<IrDeviceBinding>,
     pub state: Vec<IrStateValue>,
     pub functions: Vec<IrFunction>,
     pub handlers: Vec<IrHandler>,
@@ -120,6 +123,13 @@ pub struct IrStateValue {
     pub value_type: String,
     pub nullable: bool,
     pub value: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct IrDeviceBinding {
+    pub service: String,
+    pub binding: String,
+    pub resource: String,
 }
 
 fn default_state_store() -> String {
@@ -207,14 +217,18 @@ pub enum IrStatement {
     HardwareGpioWrite { name: String, value: IrExpr },
     #[serde(rename = "hardware.gpio.toggle")]
     HardwareGpioToggle { name: String },
-    #[serde(rename = "display.clear")]
+    #[serde(rename = "service.indicator.write")]
+    ServiceIndicatorWrite { value: IrExpr },
+    #[serde(rename = "service.indicator.toggle")]
+    ServiceIndicatorToggle,
+    #[serde(rename = "service.display.clear")]
     DisplayClear { color: String },
-    #[serde(rename = "display.text")]
+    #[serde(rename = "service.display.text")]
     DisplayText {
         text: IrExpr,
         options: serde_json::Value,
     },
-    #[serde(rename = "display.rect")]
+    #[serde(rename = "service.display.rect")]
     DisplayRect {
         x: i64,
         y: i64,
@@ -222,7 +236,7 @@ pub enum IrStatement {
         h: i64,
         options: serde_json::Value,
     },
-    #[serde(rename = "display.line")]
+    #[serde(rename = "service.display.line")]
     DisplayLine {
         x1: i64,
         y1: i64,
@@ -251,6 +265,8 @@ pub enum IrExpr {
     Field { target: Box<IrExpr>, field: String },
     #[serde(rename = "hardware.gpio.read")]
     HardwareGpioRead { name: String },
+    #[serde(rename = "service.indicator.read")]
+    ServiceIndicatorRead,
     #[serde(rename = "system.memory")]
     SystemMemory,
     #[serde(rename = "system.storage")]
@@ -283,6 +299,7 @@ pub struct ParsedSource {
 pub struct AstRoot {
     pub app: Option<AstAppDecl>,
     pub state: Option<AstStateBlock>,
+    pub device_bindings: Vec<IrDeviceBinding>,
     pub functions: Vec<AstFunction>,
     pub handlers: Vec<AstHandler>,
     pub screens: Vec<AstScreen>,
@@ -469,6 +486,7 @@ pub fn compile_with_profile(request: CompileRequest, profile: BuildProfile) -> C
                 target: app.target.unwrap_or_else(|| request.target_id),
             },
             state_store,
+            device_bindings: ast.device_bindings,
             state: ast.state.map(|state| state.values).unwrap_or_default(),
             functions,
             handlers,
@@ -517,6 +535,9 @@ impl Parser<'_> {
             } else if self.at_ident("state") {
                 self.reject_pending_attribute();
                 self.parse_state(builder);
+            } else if self.at_ident("device") {
+                self.reject_pending_attribute();
+                self.parse_device(builder);
             } else if self.at_event_method("on") {
                 let preload = self.pending_preload.take().is_some();
                 self.parse_event_handler(builder, preload);
@@ -742,6 +763,68 @@ impl Parser<'_> {
             values,
             span: SourceSpan { start, end },
         });
+    }
+
+    fn parse_device(&mut self, builder: &mut GreenNodeBuilder) {
+        builder.start_node(SquidLang::kind_to_raw(SquidKind::Token));
+        let start = self.peek().map(|token| token.span.start).unwrap_or(0);
+        self.bump(builder);
+        self.consume_ws(builder);
+        if self.at_kind(TokenKind::OpenBrace) {
+            self.bump(builder);
+        }
+        while !self.at_end() {
+            self.consume_ws(builder);
+            if self.at_kind(TokenKind::CloseBrace) {
+                self.bump(builder);
+                break;
+            }
+            let Some(service) = self.consume_ident(builder) else {
+                self.bump(builder);
+                continue;
+            };
+            self.consume_ws(builder);
+            let binding = if self.at_kind(TokenKind::String) {
+                self.consume_string(builder)
+                    .unwrap_or_else(|| "default".to_string())
+            } else {
+                "default".to_string()
+            };
+            self.consume_ws(builder);
+            if self.at_kind(TokenKind::OpenBrace) {
+                self.bump(builder);
+            }
+            self.consume_ws(builder);
+            let mut resource = String::new();
+            if self.at_ident("use") {
+                self.bump(builder);
+                self.consume_ws(builder);
+                resource = self.consume_string(builder).unwrap_or_default();
+            }
+            while !self.at_end() {
+                self.consume_ws(builder);
+                if self.at_kind(TokenKind::CloseBrace) {
+                    self.bump(builder);
+                    break;
+                }
+                self.bump(builder);
+            }
+            if !device_config::is_safe_sqdevice_path(&resource) {
+                self.diagnostics.push(error(
+                    "E_DEVICE_PATH",
+                    "device binding must use a safe package-relative .sqdevice path",
+                    start,
+                    self.previous_end().unwrap_or(start),
+                ));
+            } else {
+                self.ast.device_bindings.push(IrDeviceBinding {
+                    service,
+                    binding,
+                    resource,
+                });
+            }
+        }
+        builder.finish_node();
     }
 
     fn parse_screen(&mut self, builder: &mut GreenNodeBuilder) {
@@ -981,7 +1064,7 @@ impl Parser<'_> {
             };
         }
 
-        if first == "service" && method == "timer" {
+        if first == "service" && matches!(method.as_str(), "timer" | "display" | "indicator") {
             if self.at_kind(TokenKind::Dot) {
                 self.bump(builder);
             }
@@ -992,8 +1075,8 @@ impl Parser<'_> {
                 self.bump(builder);
             }
             self.consume_ws(builder);
-            return match action.as_str() {
-                "every" => {
+            return match (method.as_str(), action.as_str()) {
+                ("timer", "every") => {
                     let event = self.consume_string(builder).unwrap_or_default();
                     self.consume_comma(builder);
                     let interval_ms = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
@@ -1002,7 +1085,7 @@ impl Parser<'_> {
                     self.consume_call_tail(builder);
                     Some(IrStatement::ServiceTimerEvery { event, interval_ms })
                 }
-                "after" => {
+                ("timer", "after") => {
                     let event = self.consume_string(builder).unwrap_or_default();
                     self.consume_comma(builder);
                     let delay_ms = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
@@ -1010,6 +1093,75 @@ impl Parser<'_> {
                     });
                     self.consume_call_tail(builder);
                     Some(IrStatement::ServiceTimerAfter { event, delay_ms })
+                }
+                ("indicator", "write") => {
+                    let value = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
+                        value: serde_json::json!(false),
+                    });
+                    self.consume_call_tail(builder);
+                    Some(IrStatement::ServiceIndicatorWrite { value })
+                }
+                ("indicator", "toggle") => {
+                    self.consume_call_tail(builder);
+                    Some(IrStatement::ServiceIndicatorToggle)
+                }
+                ("display", "clear") => {
+                    let color = self
+                        .consume_string(builder)
+                        .unwrap_or_else(|| "white".to_string());
+                    self.consume_call_tail(builder);
+                    Some(IrStatement::DisplayClear { color })
+                }
+                ("display", "text") => {
+                    let text = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
+                        value: serde_json::json!(""),
+                    });
+                    self.consume_ws(builder);
+                    if self.at_kind(TokenKind::Comma) {
+                        self.bump(builder);
+                    }
+                    self.consume_ws(builder);
+                    let options = self.parse_options_object(builder);
+                    self.consume_call_tail(builder);
+                    Some(IrStatement::DisplayText { text, options })
+                }
+                ("display", "rect") => {
+                    let x = self.consume_number(builder).unwrap_or(0);
+                    self.consume_comma(builder);
+                    let y = self.consume_number(builder).unwrap_or(0);
+                    self.consume_comma(builder);
+                    let w = self.consume_number(builder).unwrap_or(0);
+                    self.consume_comma(builder);
+                    let h = self.consume_number(builder).unwrap_or(0);
+                    self.consume_comma(builder);
+                    let options = self.parse_options_object(builder);
+                    self.consume_call_tail(builder);
+                    Some(IrStatement::DisplayRect {
+                        x,
+                        y,
+                        w,
+                        h,
+                        options,
+                    })
+                }
+                ("display", "line") => {
+                    let x1 = self.consume_number(builder).unwrap_or(0);
+                    self.consume_comma(builder);
+                    let y1 = self.consume_number(builder).unwrap_or(0);
+                    self.consume_comma(builder);
+                    let x2 = self.consume_number(builder).unwrap_or(0);
+                    self.consume_comma(builder);
+                    let y2 = self.consume_number(builder).unwrap_or(0);
+                    self.consume_comma(builder);
+                    let options = self.parse_options_object(builder);
+                    self.consume_call_tail(builder);
+                    Some(IrStatement::DisplayLine {
+                        x1,
+                        y1,
+                        x2,
+                        y2,
+                        options,
+                    })
                 }
                 _ => {
                     self.consume_call_tail(builder);
@@ -1070,64 +1222,6 @@ impl Parser<'_> {
             ("debug", "print") => {
                 let args = self.parse_call_args_after_open(builder);
                 Some(IrStatement::DebugPrint { args })
-            }
-            ("display", "clear") => {
-                let color = self
-                    .consume_string(builder)
-                    .unwrap_or_else(|| "white".to_string());
-                self.consume_call_tail(builder);
-                Some(IrStatement::DisplayClear { color })
-            }
-            ("display", "text") => {
-                let text = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
-                    value: serde_json::json!(""),
-                });
-                self.consume_ws(builder);
-                if self.at_kind(TokenKind::Comma) {
-                    self.bump(builder);
-                }
-                self.consume_ws(builder);
-                let options = self.parse_options_object(builder);
-                self.consume_call_tail(builder);
-                Some(IrStatement::DisplayText { text, options })
-            }
-            ("display", "rect") => {
-                let x = self.consume_number(builder).unwrap_or(0);
-                self.consume_comma(builder);
-                let y = self.consume_number(builder).unwrap_or(0);
-                self.consume_comma(builder);
-                let w = self.consume_number(builder).unwrap_or(0);
-                self.consume_comma(builder);
-                let h = self.consume_number(builder).unwrap_or(0);
-                self.consume_comma(builder);
-                let options = self.parse_options_object(builder);
-                self.consume_call_tail(builder);
-                Some(IrStatement::DisplayRect {
-                    x,
-                    y,
-                    w,
-                    h,
-                    options,
-                })
-            }
-            ("display", "line") => {
-                let x1 = self.consume_number(builder).unwrap_or(0);
-                self.consume_comma(builder);
-                let y1 = self.consume_number(builder).unwrap_or(0);
-                self.consume_comma(builder);
-                let x2 = self.consume_number(builder).unwrap_or(0);
-                self.consume_comma(builder);
-                let y2 = self.consume_number(builder).unwrap_or(0);
-                self.consume_comma(builder);
-                let options = self.parse_options_object(builder);
-                self.consume_call_tail(builder);
-                Some(IrStatement::DisplayLine {
-                    x1,
-                    y1,
-                    x2,
-                    y2,
-                    options,
-                })
             }
             _ => {
                 if has_call_args {
@@ -1290,6 +1384,20 @@ impl Parser<'_> {
                             })
                             .unwrap_or_default();
                         IrExpr::HardwareGpioRead { name }
+                    } else {
+                        IrExpr::State { name }
+                    }
+                } else if name == "service"
+                    && namespace == "indicator"
+                    && self.at_kind(TokenKind::Dot)
+                {
+                    self.bump(builder);
+                    self.consume_ws(builder);
+                    let action = self.consume_ident(builder).unwrap_or_default();
+                    self.consume_ws(builder);
+                    if action == "read" {
+                        self.parse_call_args(builder);
+                        IrExpr::ServiceIndicatorRead
                     } else {
                         IrExpr::State { name }
                     }
@@ -2226,6 +2334,8 @@ fn validate_debug_block_statements(
             | IrStatement::ServiceTimerAfter { .. }
             | IrStatement::HardwareGpioWrite { .. }
             | IrStatement::HardwareGpioToggle { .. }
+            | IrStatement::ServiceIndicatorWrite { .. }
+            | IrStatement::ServiceIndicatorToggle
             | IrStatement::Return { .. }
             | IrStatement::DisplayClear { .. }
             | IrStatement::DisplayText { .. }
@@ -2245,6 +2355,7 @@ fn validate_debug_expr(expr: &IrExpr, start: usize, end: usize, diagnostics: &mu
         IrExpr::Literal { .. }
         | IrExpr::State { .. }
         | IrExpr::HardwareGpioRead { .. }
+        | IrExpr::ServiceIndicatorRead
         | IrExpr::SystemMemory
         | IrExpr::SystemStorage { .. } => {}
         IrExpr::Binary { left, right, .. } => {
@@ -2316,6 +2427,7 @@ fn statement_uses_any_name(
         }
         IrStatement::ServiceTimerAfter { delay_ms, .. } => expr_uses_any_name(delay_ms, names),
         IrStatement::HardwareGpioWrite { value, .. } => expr_uses_any_name(value, names),
+        IrStatement::ServiceIndicatorWrite { value } => expr_uses_any_name(value, names),
         IrStatement::DisplayText { text, .. } => expr_uses_any_name(text, names),
         IrStatement::DebugBlock { .. }
         | IrStatement::StateLoad
@@ -2328,6 +2440,7 @@ fn statement_uses_any_name(
         | IrStatement::AppArm { .. }
         | IrStatement::AppDisarm { .. }
         | IrStatement::HardwareGpioToggle { .. }
+        | IrStatement::ServiceIndicatorToggle
         | IrStatement::DisplayClear { .. }
         | IrStatement::DisplayRect { .. }
         | IrStatement::DisplayLine { .. } => false,
@@ -2345,6 +2458,7 @@ fn expr_uses_any_name(expr: &IrExpr, names: &std::collections::BTreeSet<String>)
         IrExpr::Call { args, .. } => args.iter().any(|arg| expr_uses_any_name(arg, names)),
         IrExpr::Literal { .. }
         | IrExpr::HardwareGpioRead { .. }
+        | IrExpr::ServiceIndicatorRead
         | IrExpr::SystemMemory
         | IrExpr::SystemStorage { .. } => false,
     }
@@ -2405,6 +2519,8 @@ fn validate_screen_statements(
             | IrStatement::ServiceTimerAfter { .. }
             | IrStatement::HardwareGpioWrite { .. }
             | IrStatement::HardwareGpioToggle { .. }
+            | IrStatement::ServiceIndicatorWrite { .. }
+            | IrStatement::ServiceIndicatorToggle
             | IrStatement::Assign { .. } => {
                 diagnostics.push(error(
                     "E_RENDER_PURITY",
@@ -2519,6 +2635,21 @@ fn validate_screen_references(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::{Path, PathBuf};
+
+    fn repo_path(parts: &[&str]) -> PathBuf {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(4)
+            .expect("squidc-core crate should live under compiler/rust/crates");
+        parts
+            .iter()
+            .fold(repo_root.to_path_buf(), |path, part| path.join(part))
+    }
+
+    fn read_repo_fixture(parts: &[&str]) -> String {
+        std::fs::read_to_string(repo_path(parts)).expect("fixture should be readable")
+    }
 
     #[test]
     fn parses_preload_attribute_on_event_handler() {
@@ -2570,8 +2701,8 @@ screen("main") {}
 
     #[test]
     fn parses_spec_hello_menu_into_typed_ast_and_cst() {
-        let source = include_str!("../../../../fixtures/valid/hello_menu.squid");
-        let parsed = parse(source);
+        let source = read_repo_fixture(&["compiler", "fixtures", "valid", "hello_menu.squid"]);
+        let parsed = parse(&source);
 
         assert!(parsed.green.is_some());
         assert_eq!(
@@ -2625,9 +2756,9 @@ screen("main") {}
 
     #[test]
     fn compiles_spec_hello_menu_to_screen_ir() {
-        let source = include_str!("../../../../fixtures/valid/hello_menu.squid");
+        let source = read_repo_fixture(&["compiler", "fixtures", "valid", "hello_menu.squid"]);
         let output = compile(CompileRequest {
-            source: source.to_string(),
+            source,
             target_id: "xteink-x4".to_string(),
         });
         assert!(output.ok, "{:?}", output.diagnostics);
@@ -2700,7 +2831,7 @@ event.on("key.DOWN") {
   screen.refresh()
 }
 screen("main") {
-  display.clear("gray0")
+  service.display.clear("gray0")
 }
 "#;
         let output = compile(CompileRequest {
@@ -2737,12 +2868,12 @@ event.on("key.SELECT") {
 
 screen("main") {
   let label = "Hello"
-  display.clear("gray0")
+  service.display.clear("gray0")
   drawLabel(label)
 }
 
 screen("detail") {
-  display.clear("gray0")
+  service.display.clear("gray0")
 }
 "#;
         let output = compile(CompileRequest {
@@ -2811,7 +2942,7 @@ event.on("key.SELECT") {
   }
 }
 screen("main") {
-  display.clear("gray0")
+  service.display.clear("gray0")
 }
 "#;
         let output = compile(CompileRequest {
@@ -2841,17 +2972,18 @@ screen("main") {
 
     #[test]
     fn matches_hello_menu_ir_fixture() {
-        let source = include_str!("../../../../fixtures/valid/hello_menu.squid");
-        let expected = include_str!("../../../../fixtures/expected/hello_menu.ir.json");
+        let source = read_repo_fixture(&["compiler", "fixtures", "valid", "hello_menu.squid"]);
+        let expected =
+            read_repo_fixture(&["compiler", "fixtures", "expected", "hello_menu.ir.json"]);
         let output = compile(CompileRequest {
-            source: source.to_string(),
+            source,
             target_id: "xteink-x4".to_string(),
         });
 
         assert!(output.ok, "{:?}", output.diagnostics);
         let ir = output.ir.unwrap();
         let actual_json = serde_json::to_value(&ir).unwrap();
-        let expected_json: serde_json::Value = serde_json::from_str(expected).unwrap();
+        let expected_json: serde_json::Value = serde_json::from_str(&expected).unwrap();
         assert_eq!(actual_json["app"], expected_json["app"]);
         assert_eq!(
             ir.functions
@@ -2897,9 +3029,14 @@ screen("main") {
 
     #[test]
     fn compiles_browser_sim_binbook_reader_fixture() {
-        let source = include_str!("../../../../fixtures/valid/binbook_reader_browser_sim.squid");
+        let source = read_repo_fixture(&[
+            "compiler",
+            "fixtures",
+            "valid",
+            "binbook_reader_browser_sim.squid",
+        ]);
         let output = compile(CompileRequest {
-            source: source.to_string(),
+            source,
             target_id: "xteink-x4".to_string(),
         });
 
@@ -2911,9 +3048,9 @@ screen("main") {
 
     #[test]
     fn encodes_minimal_sqbc_container() {
-        let source = include_str!("../../../../fixtures/valid/hello_menu.squid");
+        let source = read_repo_fixture(&["compiler", "fixtures", "valid", "hello_menu.squid"]);
         let output = compile(CompileRequest {
-            source: source.to_string(),
+            source,
             target_id: "xteink-x4".to_string(),
         });
         let ir = output.ir.unwrap();
@@ -2932,9 +3069,15 @@ screen("main") {
 
     #[test]
     fn encodes_reference_sqbc_v3_for_headless_counter() {
-        let source = include_str!("../../../fixtures/conformance/headless_counter.squid");
+        let source = read_repo_fixture(&[
+            "compiler",
+            "rust",
+            "fixtures",
+            "conformance",
+            "headless_counter.squid",
+        ]);
         let output = compile(CompileRequest {
-            source: source.to_string(),
+            source,
             target_id: "esp32c3-super-mini".to_string(),
         });
         assert!(output.ok, "{:?}", output.diagnostics);
@@ -2950,7 +3093,7 @@ screen("main") {
             u32::from_le_bytes(sqbc[8..12].try_into().unwrap()) as usize,
             sqbc.len()
         );
-        assert_eq!(u32::from_le_bytes(sqbc[12..16].try_into().unwrap()), 7);
+        assert_eq!(u32::from_le_bytes(sqbc[12..16].try_into().unwrap()), 8);
         assert_eq!(
             sqbc_v2::read_app_id(&sqbc).unwrap().as_deref(),
             Some("headless-counter")
@@ -2998,7 +3141,7 @@ function inspect(value) {
 }
 event.on("app.start") {
   debug {
-    let led = hardware.gpio.read("status_led")
+    let led = service.indicator.read()
     debug.print("event", count, led)
   }
 }
@@ -3007,7 +3150,7 @@ screen("main") {
     let x = count
     debug.print("screen", x)
   }
-  display.clear("gray0")
+  service.display.clear("gray0")
 }
 "#;
         let output = compile(CompileRequest {
@@ -3072,8 +3215,8 @@ function inspect(value) {
     outer = 4
     value = 5
     screen.open("main")
-    hardware.gpio.toggle("status_led")
-    display.clear("gray0")
+    service.indicator.toggle()
+    service.display.clear("gray0")
     return x
   }
   debug.print(x)
@@ -3127,8 +3270,8 @@ event.on("app.start") {
   screen.open("main")
 }
 screen("main") {
-  display.clear("gray0")
-  display.text("Hello", { x: 10, y: 20 })
+  service.display.clear("gray0")
+  service.display.text("Hello", { x: 10, y: 20 })
 }
 "#;
         let output = compile(CompileRequest {
@@ -3137,7 +3280,55 @@ screen("main") {
         });
         assert!(output.ok, "{:?}", output.diagnostics);
         let sqbc = sqbc_v2::encode_sqbc_v2(&output.ir.unwrap()).unwrap();
-        assert_eq!(u32::from_le_bytes(sqbc[12..16].try_into().unwrap()), 7);
+        assert_eq!(u32::from_le_bytes(sqbc[12..16].try_into().unwrap()), 8);
+    }
+
+    #[test]
+    fn parses_device_bindings_and_rejects_unsafe_paths() {
+        let source = r#"app "device-test"
+device {
+  indicator { use "device/indicator.sqdevice" }
+  display "status" { use "device/status-display.sqdevice" }
+}
+screen("main") {
+  service.display.clear("gray0")
+}
+"#;
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: PORTABLE_TARGET_ID.to_string(),
+        });
+        assert!(output.ok, "{:?}", output.diagnostics);
+        let ir = output.ir.unwrap();
+        assert_eq!(
+            ir.device_bindings,
+            vec![
+                IrDeviceBinding {
+                    service: "indicator".to_string(),
+                    binding: "default".to_string(),
+                    resource: "device/indicator.sqdevice".to_string(),
+                },
+                IrDeviceBinding {
+                    service: "display".to_string(),
+                    binding: "status".to_string(),
+                    resource: "device/status-display.sqdevice".to_string(),
+                },
+            ]
+        );
+
+        let bad = compile(CompileRequest {
+            source: r#"app "bad-device"
+device { indicator { use "../indicator.sqdevice" } }
+screen("main") {}
+"#
+            .to_string(),
+            target_id: PORTABLE_TARGET_ID.to_string(),
+        });
+        assert!(!bad.ok);
+        assert!(bad
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "E_DEVICE_PATH"));
     }
 
     #[test]
@@ -3145,9 +3336,9 @@ screen("main") {
         let source = r#"app "gpio"
 state { led: bool = false }
 event.on("app.start") {
-  hardware.gpio.write("indicator.primary", true)
-  led = hardware.gpio.read("indicator.primary")
-  hardware.gpio.toggle("pin.raw0")
+  hardware.gpio.write("GPIO8", true)
+  led = hardware.gpio.read("GPIO8")
+  hardware.gpio.toggle("GPIO10")
 }
 screen("main") {}
 "#;
@@ -3343,7 +3534,7 @@ screen("main") {}
 state {}
 event.on("app.start") {}
 screen("main") {
-  hardware.gpio.toggle("indicator.primary")
+  hardware.gpio.toggle("GPIO8")
 }
 "#;
         let output = compile(CompileRequest {
@@ -3376,13 +3567,13 @@ screen("main") {
 state { selected: int = 0 }
 event.on("app.start") {
   screen.open("missing")
-  display.clear("gray0")
+  service.display.clear("gray0")
 }
 screen("main", { render: "invalid" }) {
   selected = selected + 1
 }
 screen("main") {
-  display.clear("gray0")
+  service.display.clear("gray0")
 }
 "#;
         let output = compile(CompileRequest {
@@ -3419,7 +3610,7 @@ event.on("app.start") {
   screen.open("main")
 }
 screen("main") {
-  display.clear("gray0")
+  service.display.clear("gray0")
 }
 "#;
         let output = compile(CompileRequest {
@@ -3455,7 +3646,7 @@ event.on("app.start") {
   screen.open("main")
 }
 screen("main") {
-  display.clear("gray0")
+  service.display.clear("gray0")
 }
 "#;
         let output = compile(CompileRequest {

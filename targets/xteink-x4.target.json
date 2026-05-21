@@ -410,7 +410,7 @@
     "adc-button-ladder",
     "battery.adc",
     "usb-detect",
-    "display.draw",
+    "service.display.draw",
     "display.epaper.ssd1677",
     "squidscript.bytecode",
     "state.read",

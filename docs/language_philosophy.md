@@ -12,7 +12,7 @@ This document describes the design philosophy that should guide SquidScript lang
 
 The language specification defines what SquidScript is. This document explains why it should stay that way, how future changes should be evaluated, and where new behavior should live.
 
-SquidScript is intended for first-class device apps on low-RAM e-ink/display devices. Apps may be written in SquidScript, firmware-native C/C++, or trusted scripts in another language; each app model needs clear platform contracts for display, storage, networking, hardware, lifecycle, and diagnostics.
+SquidScript is intended for first-class device apps on low-RAM e-ink/display devices. Apps may be written in SquidScript, firmware-native C/C++, or scripts in another language; each app model needs clear platform contracts for display, storage, networking, hardware, lifecycle, and diagnostics.
 
 SquidScript should make useful device apps possible without turning the device into a general-purpose JavaScript runtime, a native plugin host, or an undefined filesystem scripting environment.
 
@@ -51,7 +51,7 @@ SquidScript is not designed around:
 - raw framebuffer, hardware register, or memory access from apps
 - unbounded general-purpose computation
 
-The language should be useful because its device contracts are explicit, not because it is less trusted than other app languages.
+The language should be useful because its device contracts are explicit, not because it is a second-class app model.
 
 ---
 
@@ -85,7 +85,7 @@ Useful device behavior therefore enters the platform through standard capability
 
 Examples:
 
-- `display.*`
+- `service.display.*`
 - `screen.*`
 - `input.*`
 - `state.*`
@@ -186,10 +186,10 @@ The target profile system should let a program ask for logical features such as:
 - supported pixel formats
 - logical keys
 - storage/content access
-- `display.draw`
+- `service.display.draw`
 - `binbook.read`
 
-Exact device targeting should be rare and reserved for cases where capability declarations cannot express the compatibility requirement.
+Exact device targeting should be rare and reserved for cases where portable feature requirements cannot express the compatibility requirement.
 
 ### 3.8 App Pickers Are Ordinary Apps
 
@@ -246,13 +246,13 @@ if (pageIndex > 0) {
 
 The parser, validator, bytecode encoder, and VM must understand `if` as control flow. It cannot be omitted by a target profile. Every runtime supporting the same language version must implement it consistently.
 
-### 4.2 General Capability Example: `display.*`
+### 4.2 General Capability Example: `service.display.*`
 
-`display.*` is a standard platform capability.
+`service.display.*` is a standard platform capability.
 
 ```squid
-display.text("Hello", { x: 20, y: 40 })
-display.draw(image, { x: 0, y: 0 })
+service.display.text("Hello", { x: 20, y: 40 })
+service.display.draw(image, { x: 0, y: 0 })
 ```
 
 The parser sees namespaced calls. The compiler validates the calls against known capability signatures, target features, and render-safety rules. The firmware display module owns composition, clipping, physical display mapping, and refresh behavior.
@@ -265,17 +265,17 @@ The parser sees namespaced calls. The compiler validates the calls against known
 let book = binbook.open(file)
 let page = binbook.page(book, pageIndex)
 let image = binbook.pageImage(page)
-display.draw(image, { x: 0, y: 0 })
+service.display.draw(image, { x: 0, y: 0 })
 ```
 
-The BinBook capability owns document parsing, validation, page lookup, decoding, conversion, memory management, and safe handles. Final drawing still composes through `display.draw`.
+The BinBook capability owns document parsing, validation, page lookup, decoding, conversion, memory management, and safe handles. Final drawing still composes through `service.display.draw`.
 
 For recoverable failures, capability APIs return result records:
 
 ```squid
 let opened = binbook.open(file)
 if (!opened.ok) {
-  display.text(opened.error, { x: 20, y: 60 })
+  service.display.text(opened.error, { x: 20, y: 60 })
 }
 ```
 
@@ -315,7 +315,7 @@ Good:
 ```squid
 let page = binbook.page(book, pageIndex)
 let image = binbook.pageImage(page)
-display.draw(image, { x: 0, y: 0 })
+service.display.draw(image, { x: 0, y: 0 })
 ```
 
 Riskier:
@@ -485,7 +485,7 @@ Examples:
 | Proposal | Preferred Category | Rationale |
 |---|---|---|
 | `if` | Core language | Changes control flow and bytecode execution |
-| `display.draw(drawable, options)` | Standard platform capability | Exposes display composition through firmware |
+| `service.display.draw(drawable, options)` | Standard platform capability | Exposes display composition through firmware |
 | `binbook.pageImage(page)` | Standard domain capability | Converts document content into a composable drawable |
 | BinBook-specific syntax | Usually reject | Special syntax is not needed when capability calls compose |
 | `binbook.showPage(file, index)` | Require review | Convenient, but may bypass composition and combine too many responsibilities |
@@ -509,7 +509,7 @@ At the same time, the platform should not be austere for its own sake. A device 
 
 This is the balance: the language stays small, while the platform carries first-party capabilities that lift real work.
 
-BinBook is the model case. App authors should not parse BinBook bytes, validate indexes, decode page data, allocate page buffers, convert pixel formats, or tile output for a constrained display. The firmware should own that. But the BinBook capability should still compose with the rest of SquidScript. It should return handles, records, and display-ready resources. Final composition should still go through `display.draw`. The platform may be batteries included, but the batteries should have clean terminals.
+BinBook is the model case. App authors should not parse BinBook bytes, validate indexes, decode page data, allocate page buffers, convert pixel formats, or tile output for a constrained display. The firmware should own that. But the BinBook capability should still compose with the rest of SquidScript. It should return handles, records, and display-ready resources. Final composition should still go through `service.display.draw`. The platform may be batteries included, but the batteries should have clean terminals.
 
 The BinBook capability contract makes this extensibility concrete. It gives the compiler an interface to check without making the compiler a BinBook implementation. It gives the VM stable builtin IDs and validation rules without putting JSON metadata into `.sqbc`. It gives firmware a clear responsibility boundary: implement the native document capability according to the BinBook file-format spec and the SquidScript capability contract.
 

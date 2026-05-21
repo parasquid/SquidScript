@@ -1,20 +1,38 @@
 export interface Vfs {
   read(path: string): Promise<string | null>;
   write(path: string, value: string): Promise<void>;
+  readBytes(path: string): Promise<Uint8Array | null>;
+  writeBytes(path: string, value: Uint8Array): Promise<void>;
   removePrefix(prefix: string): Promise<void>;
   clear(): Promise<void>;
   list(prefix: string): Promise<string[]>;
 }
 
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+const BYTE_PREFIX = "__squidscript_bytes_base64__:";
+
 export class LocalStorageVfs implements Vfs {
   constructor(private readonly root = "squidscript-browser-sim") {}
 
   async read(path: string): Promise<string | null> {
-    return localStorage.getItem(this.key(path));
+    const value = localStorage.getItem(this.key(path));
+    if (value === null) return null;
+    return value.startsWith(BYTE_PREFIX) ? textDecoder.decode(base64ToBytes(value.slice(BYTE_PREFIX.length))) : value;
   }
 
   async write(path: string, value: string): Promise<void> {
     localStorage.setItem(this.key(path), value);
+  }
+
+  async readBytes(path: string): Promise<Uint8Array | null> {
+    const value = localStorage.getItem(this.key(path));
+    if (value === null) return null;
+    return value.startsWith(BYTE_PREFIX) ? base64ToBytes(value.slice(BYTE_PREFIX.length)) : textEncoder.encode(value);
+  }
+
+  async writeBytes(path: string, value: Uint8Array): Promise<void> {
+    localStorage.setItem(this.key(path), `${BYTE_PREFIX}${bytesToBase64(value)}`);
   }
 
   async removePrefix(prefix: string): Promise<void> {
@@ -46,14 +64,34 @@ export class IndexedDbVfs implements Vfs {
   private readonly storeName = "files";
 
   async read(path: string): Promise<string | null> {
-    const db = await this.open();
-    return this.tx<string | null>(db, "readonly", (store, resolve) => {
-      const request = store.get(path);
-      request.onsuccess = () => resolve((request.result as string | undefined) ?? null);
-    });
+    const value = await this.readValue(path);
+    if (value === null) return null;
+    return typeof value === "string" ? value : textDecoder.decode(value);
   }
 
   async write(path: string, value: string): Promise<void> {
+    await this.writeValue(path, value);
+  }
+
+  async readBytes(path: string): Promise<Uint8Array | null> {
+    const value = await this.readValue(path);
+    if (value === null) return null;
+    return typeof value === "string" ? textEncoder.encode(value) : value;
+  }
+
+  async writeBytes(path: string, value: Uint8Array): Promise<void> {
+    await this.writeValue(path, value);
+  }
+
+  private async readValue(path: string): Promise<string | Uint8Array | null> {
+    const db = await this.open();
+    return this.tx<string | Uint8Array | null>(db, "readonly", (store, resolve) => {
+      const request = store.get(path);
+      request.onsuccess = () => resolve((request.result as string | Uint8Array | undefined) ?? null);
+    });
+  }
+
+  private async writeValue(path: string, value: string | Uint8Array): Promise<void> {
     const db = await this.open();
     await this.tx<void>(db, "readwrite", (store, resolve) => {
       const request = store.put(value, path);
@@ -109,3 +147,12 @@ export function createBrowserVfs(): Vfs {
   return "indexedDB" in globalThis ? new IndexedDbVfs() : new LocalStorageVfs();
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+}

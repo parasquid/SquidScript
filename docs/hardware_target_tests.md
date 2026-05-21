@@ -118,11 +118,11 @@ not enough. Use `--raw` only when literal serial bytes are needed.
 ### GPIO REPL Session
 
 ```sh
-cargo run -p squidc -- repl --script tests/repl/hardware-gpio-status-led.session
+cargo run -p squidc -- repl --script tests/repl/hardware-gpio-indicator.session
 ```
 
-Exercises `hardware.gpio.write`, `hardware.gpio.read`, and
-`hardware.gpio.toggle` against the `status_led` alias and raw `GPIO8`.
+Exercises `service.indicator.write`, `service.indicator.read`,
+`service.indicator.toggle`, and raw `GPIO8` readback.
 
 ### Blinky REPL Session
 

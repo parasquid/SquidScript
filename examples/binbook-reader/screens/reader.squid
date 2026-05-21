@@ -1,11 +1,11 @@
 screen("reader", { render: "stream" }) {
-  display.clear("white")
+  service.display.clear("white")
 
   let book = binbook.open(file)
   let page = binbook.page(book, pageIndex)
   let image = binbook.pageImage(page)
 
-  display.draw(image, { x: 0, y: 0 })
+  service.display.draw(image, { x: 0, y: 0 })
 
   drawBottomBar(string.format("{}/{}", pageIndex + 1, pageCount))
 }

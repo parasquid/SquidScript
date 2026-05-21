@@ -5,27 +5,27 @@ state {
 }
 
 event.on("app.start") {
-  hardware.gpio.write("status_led", led)
+  service.indicator.write(led)
   service.timer.every("timer.debug", 500)
   debug.print("blinky ready", led)
 }
 
 event.on("timer.debug") {
-  hardware.gpio.toggle("status_led")
-  led = hardware.gpio.read("status_led")
+  service.indicator.toggle()
+  led = service.indicator.read()
   debug.print("blink", led)
 }
 
 @preload
 event.on("key.SELECT") {
-  hardware.gpio.toggle("status_led")
-  led = hardware.gpio.read("status_led")
+  service.indicator.toggle()
+  led = service.indicator.read()
   debug.print("led", led)
 }
 
 event.on("key.BACK") {
   led = false
-  hardware.gpio.write("status_led", led)
+  service.indicator.write(led)
   app.exit()
 }
 
