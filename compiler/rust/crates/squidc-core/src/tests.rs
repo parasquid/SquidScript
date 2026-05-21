@@ -654,6 +654,42 @@ screen("main") {
 }
 
 #[test]
+fn parses_display_namespace_as_display_service_sugar() {
+    let source = r#"app "display-sugar"
+screen("main") {
+  display.clear("white")
+  display.text("Hello", { x: 10, y: 20 })
+  display.rect(0, 0, 100, 40, { fillColor: "gray4" })
+  display.line(0, 40, 100, 40, { color: "black" })
+}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let ir = output.ir.unwrap();
+    let screen = ir.screens.iter().find(|screen| screen.name == "main").unwrap();
+    assert!(matches!(
+        screen.statements[0],
+        IrStatement::DisplayClear { ref color } if color == "white"
+    ));
+    assert!(matches!(
+        screen.statements[1],
+        IrStatement::DisplayText { .. }
+    ));
+    assert!(matches!(
+        screen.statements[2],
+        IrStatement::DisplayRect { .. }
+    ));
+    assert!(matches!(
+        screen.statements[3],
+        IrStatement::DisplayLine { .. }
+    ));
+    sqbc_v2::encode_sqbc_v2(&ir).expect("display sugar should lower to display bytecode");
+}
+
+#[test]
 fn parses_device_bindings_and_rejects_unsafe_paths() {
     let source = r#"app "device-test"
 device {

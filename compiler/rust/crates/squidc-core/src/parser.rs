@@ -603,6 +603,10 @@ impl Parser<'_> {
             };
         }
 
+        if first == "display" {
+            return self.parse_display_statement(builder, &method);
+        }
+
         if first == "service" && matches!(method.as_str(), "timer" | "display" | "indicator") {
             if self.at_kind(TokenKind::Dot) {
                 self.bump(builder);
@@ -610,6 +614,9 @@ impl Parser<'_> {
             self.consume_ws(builder);
             let action = self.consume_ident(builder)?;
             self.consume_ws(builder);
+            if method == "display" {
+                return self.parse_display_statement(builder, &action);
+            }
             if self.at_kind(TokenKind::OpenParen) {
                 self.bump(builder);
             }
@@ -643,64 +650,6 @@ impl Parser<'_> {
                 ("indicator", "toggle") => {
                     self.consume_call_tail(builder);
                     Some(IrStatement::ServiceIndicatorToggle)
-                }
-                ("display", "clear") => {
-                    let color = self
-                        .consume_string(builder)
-                        .unwrap_or_else(|| "white".to_string());
-                    self.consume_call_tail(builder);
-                    Some(IrStatement::DisplayClear { color })
-                }
-                ("display", "text") => {
-                    let text = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
-                        value: serde_json::json!(""),
-                    });
-                    self.consume_ws(builder);
-                    if self.at_kind(TokenKind::Comma) {
-                        self.bump(builder);
-                    }
-                    self.consume_ws(builder);
-                    let options = self.parse_options_object(builder);
-                    self.consume_call_tail(builder);
-                    Some(IrStatement::DisplayText { text, options })
-                }
-                ("display", "rect") => {
-                    let x = self.consume_number(builder).unwrap_or(0);
-                    self.consume_comma(builder);
-                    let y = self.consume_number(builder).unwrap_or(0);
-                    self.consume_comma(builder);
-                    let w = self.consume_number(builder).unwrap_or(0);
-                    self.consume_comma(builder);
-                    let h = self.consume_number(builder).unwrap_or(0);
-                    self.consume_comma(builder);
-                    let options = self.parse_options_object(builder);
-                    self.consume_call_tail(builder);
-                    Some(IrStatement::DisplayRect {
-                        x,
-                        y,
-                        w,
-                        h,
-                        options,
-                    })
-                }
-                ("display", "line") => {
-                    let x1 = self.consume_number(builder).unwrap_or(0);
-                    self.consume_comma(builder);
-                    let y1 = self.consume_number(builder).unwrap_or(0);
-                    self.consume_comma(builder);
-                    let x2 = self.consume_number(builder).unwrap_or(0);
-                    self.consume_comma(builder);
-                    let y2 = self.consume_number(builder).unwrap_or(0);
-                    self.consume_comma(builder);
-                    let options = self.parse_options_object(builder);
-                    self.consume_call_tail(builder);
-                    Some(IrStatement::DisplayLine {
-                        x1,
-                        y1,
-                        x2,
-                        y2,
-                        options,
-                    })
                 }
                 _ => {
                     self.consume_call_tail(builder);
@@ -772,6 +721,81 @@ impl Parser<'_> {
                     self.consume_call_tail(builder);
                     None
                 }
+            }
+        }
+    }
+
+    fn parse_display_statement(
+        &mut self,
+        builder: &mut GreenNodeBuilder,
+        action: &str,
+    ) -> Option<IrStatement> {
+        if self.at_kind(TokenKind::OpenParen) {
+            self.bump(builder);
+        }
+        self.consume_ws(builder);
+        match action {
+            "clear" => {
+                let color = self
+                    .consume_string(builder)
+                    .unwrap_or_else(|| "white".to_string());
+                self.consume_call_tail(builder);
+                Some(IrStatement::DisplayClear { color })
+            }
+            "text" => {
+                let text = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
+                    value: serde_json::json!(""),
+                });
+                self.consume_ws(builder);
+                if self.at_kind(TokenKind::Comma) {
+                    self.bump(builder);
+                }
+                self.consume_ws(builder);
+                let options = self.parse_options_object(builder);
+                self.consume_call_tail(builder);
+                Some(IrStatement::DisplayText { text, options })
+            }
+            "rect" => {
+                let x = self.consume_number(builder).unwrap_or(0);
+                self.consume_comma(builder);
+                let y = self.consume_number(builder).unwrap_or(0);
+                self.consume_comma(builder);
+                let w = self.consume_number(builder).unwrap_or(0);
+                self.consume_comma(builder);
+                let h = self.consume_number(builder).unwrap_or(0);
+                self.consume_comma(builder);
+                let options = self.parse_options_object(builder);
+                self.consume_call_tail(builder);
+                Some(IrStatement::DisplayRect {
+                    x,
+                    y,
+                    w,
+                    h,
+                    options,
+                })
+            }
+            "line" => {
+                let x1 = self.consume_number(builder).unwrap_or(0);
+                self.consume_comma(builder);
+                let y1 = self.consume_number(builder).unwrap_or(0);
+                self.consume_comma(builder);
+                let x2 = self.consume_number(builder).unwrap_or(0);
+                self.consume_comma(builder);
+                let y2 = self.consume_number(builder).unwrap_or(0);
+                self.consume_comma(builder);
+                let options = self.parse_options_object(builder);
+                self.consume_call_tail(builder);
+                Some(IrStatement::DisplayLine {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    options,
+                })
+            }
+            _ => {
+                self.consume_call_tail(builder);
+                None
             }
         }
     }

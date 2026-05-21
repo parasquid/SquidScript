@@ -1348,15 +1348,23 @@ The `screen.*` namespace controls app-level view selection and refresh.
 
 The `service.display.*` namespace draws into the current render pass using the target's logical display coordinate system.
 
-In other words, `screen.open(...)` and `screen.refresh()` decide which view is active and when it is re-rendered; `service.display.clear(...)`, `service.display.text(...)`, and `service.display.draw(...)` describe what appears during that render.
+The `service.display.*` namespace is canonical. Source may use the shorter
+`display.*` form as sugar for the same calls. `display.clear(...)`,
+`display.text(...)`, `display.line(...)`, and `display.rect(...)` compile to the
+same IR and bytecode operations as `service.display.clear(...)`,
+`service.display.text(...)`, `service.display.line(...)`, and
+`service.display.rect(...)`. The shorter form does not create a separate
+runtime capability or a different display binding model.
+
+In other words, `screen.open(...)` and `screen.refresh()` decide which view is active and when it is re-rendered; `service.display.clear(...)`, `service.display.text(...)`, and `service.display.draw(...)` describe what appears during that render. The sugar form may be used when writing source:
 
 Example:
 
 ```squid
 screen("main") {
-  service.display.clear("white")
-  service.display.text("Count", { x: 20, y: 40, fontHeight: 32 })
-  service.display.text(count, { x: 20, y: 120, fontHeight: 48 })
+  display.clear("white")
+  display.text("Count", { x: 20, y: 40, fontHeight: 32 })
+  display.text(count, { x: 20, y: 120, fontHeight: 48 })
 }
 ```
 
@@ -1421,6 +1429,10 @@ Allowed in screen blocks:
 - string.format(...)
 - safe read-only value access
 - render-safe handle creation for drawing APIs
+
+The equivalent `display.clear(...)`, `display.text(...)`,
+`display.line(...)`, and `display.rect(...)` sugar forms are also allowed in
+screen blocks.
 
 Disallowed in screen blocks:
 - persistent state mutation
@@ -1552,10 +1564,16 @@ Apps must not assume a framebuffer exists or that pixels can be read or mutated 
 
 service.display.clear(color)
 
+Source sugar:
+
+```squid
+display.clear(color)
+```
+
 Example:
 
 ```squid
-service.display.clear("white")
+display.clear("white")
 ```
 
 Supported colors in v0.2:
@@ -1573,10 +1591,16 @@ The exact native gray support depends on display capabilities. Firmware should m
 
 service.display.text(value, options)
 
+Source sugar:
+
+```squid
+display.text(value, options)
+```
+
 Example:
 
 ```squid
-service.display.text("Hello", { x: 20, y: 40, fontHeight: 32 })
+display.text("Hello", { x: 20, y: 40, fontHeight: 32 })
 ```
 
 Example with wrapping:
@@ -1644,11 +1668,17 @@ Text defaults:
 
 service.display.line(x1, y1, x2, y2, options?)
 
+Source sugar:
+
+```squid
+display.line(x1, y1, x2, y2, options?)
+```
+
 Example:
 
 ```squid
-service.display.line(20, 96, 460, 96)
-service.display.line(20, 96, 460, 96, { color: "gray15" })
+display.line(20, 96, 460, 96)
+display.line(20, 96, 460, 96, { color: "gray15" })
 ```
 
 Optional options:
@@ -1656,16 +1686,22 @@ Optional options:
 
 service.display.rect(x, y, w, h, options)
 
+Source sugar:
+
+```squid
+display.rect(x, y, w, h, options)
+```
+
 Example:
 
 ```squid
-service.display.rect(20, 100, 440, 80, { strokeColor: "gray15" })
+display.rect(20, 100, 440, 80, { strokeColor: "gray15" })
 ```
 
 Example filled:
 
 ```squid
-service.display.rect(0, 0, 480, 40, { fillColor: "gray15" })
+display.rect(0, 0, 480, 40, { fillColor: "gray15" })
 ```
 
 Optional options:

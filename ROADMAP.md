@@ -52,13 +52,3 @@ persistent SquidScript app platform prototype.
 - Evaluate a Docker or devcontainer workflow for browser simulator builds and
   Playwright checks so Rust, Node, `wasm-pack`, and system libraries are
   reproducible without making containers mandatory for local development.
-
-### 5. Draft README Project Philosophy Notes
-
-- Brainstorm a README entry explaining why the implementation leans on Rust:
-  browser WASM reuse first, plus shared compiler/runtime logic, portability,
-  memory discipline, and embedded-firmware fit.
-- Explain how SquidScript differs from Crosspoint in goals, constraints, app
-  model, runtime philosophy, and target-device assumptions.
-- Capture the project philosophy clearly enough for new contributors to
-  understand what belongs in SquidScript versus adjacent projects.
