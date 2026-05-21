@@ -3,8 +3,8 @@ import type { CompileResponse, Diagnostic, IrExpr, IrProgram, IrStatement } from
 export const DEFAULT_SOURCE = `app "hello-menu" target "xteink-x4"
 
 state {
-  selected: 0,
-  view: "menu"
+  selected: int = 0,
+  view: string = "menu"
 }
 
 event.on("app.start") {
