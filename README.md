@@ -114,6 +114,10 @@ Build or type-check the ESP32-C3 reference firmware with the repository wrapper:
 scripts/c3-supermini-build.sh
 ```
 
+## License
+
+SquidScript is licensed under the [GNU Affero General Public License v3.0](LICENSE).
+
 ## Where To Read Next
 
 - [Language specification](docs/language_spec.md)
