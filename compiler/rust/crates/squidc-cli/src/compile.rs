@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use squidc_core::{
     compile::{compile_with_profile, CompileRequest},
     profile::{BuildProfile, PORTABLE_TARGET_ID},
-    sqbc_v2::encode_sqbc_v2_with_profile,
+    sqbc::encode_sqbc_with_profile,
 };
 
 pub fn compile_target_id(target: Option<&str>, check_target: bool) -> Result<String, String> {
@@ -61,7 +61,7 @@ pub fn compile_source_to_sqbc(
     let ir = compiled
         .ir
         .ok_or_else(|| "compiler returned no IR".to_string())?;
-    encode_sqbc_v2_with_profile(&ir, profile).map_err(|error| error.message)
+    encode_sqbc_with_profile(&ir, profile).map_err(|error| error.message)
 }
 
 #[cfg(test)]
@@ -77,9 +77,7 @@ screen("main") {}
 "#;
         let bytes = compile_source_to_sqbc(source, PORTABLE_TARGET_ID, BuildProfile::Dev).unwrap();
         assert_eq!(
-            squidc_core::sqbc_v2::read_app_id(&bytes)
-                .unwrap()
-                .as_deref(),
+            squidc_core::sqbc::read_app_id(&bytes).unwrap().as_deref(),
             Some("metadata-demo")
         );
     }

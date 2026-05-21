@@ -3,7 +3,7 @@ use crate::{
     ir::{encode_sqbc, IrDeviceBinding, IrExpr, IrStatement, SQBC_MAGIC, SQBC_VERSION},
     parser::parse,
     profile::{BuildProfile, PORTABLE_TARGET_ID},
-    sqbc_v2,
+    sqbc,
 };
 use std::path::{Path, PathBuf};
 
@@ -438,7 +438,7 @@ fn encodes_minimal_sqbc_container() {
 }
 
 #[test]
-fn encodes_reference_sqbc_v3_for_headless_counter() {
+fn encodes_reference_sqbc_for_headless_counter() {
     let source = read_repo_fixture(&[
         "compiler",
         "rust",
@@ -451,21 +451,16 @@ fn encodes_reference_sqbc_v3_for_headless_counter() {
         target_id: "esp32c3-super-mini".to_string(),
     });
     assert!(output.ok, "{:?}", output.diagnostics);
-    let sqbc =
-        sqbc_v2::encode_sqbc_v2(&output.ir.unwrap()).expect("reference subset should encode");
+    let sqbc = sqbc::encode_sqbc(&output.ir.unwrap()).expect("reference subset should encode");
 
-    assert_eq!(&sqbc[0..4], sqbc_v2::SQBC_V2_MAGIC);
+    assert_eq!(&sqbc[0..4], sqbc::SQBC_MAGIC);
     assert_eq!(
-        u16::from_le_bytes(sqbc[4..6].try_into().unwrap()),
-        sqbc_v2::SQBC_V3_VERSION
-    );
-    assert_eq!(
-        u32::from_le_bytes(sqbc[8..12].try_into().unwrap()) as usize,
+        u32::from_le_bytes(sqbc[6..10].try_into().unwrap()) as usize,
         sqbc.len()
     );
-    assert_eq!(u32::from_le_bytes(sqbc[12..16].try_into().unwrap()), 8);
+    assert_eq!(u32::from_le_bytes(sqbc[10..14].try_into().unwrap()), 8);
     assert_eq!(
-        sqbc_v2::read_app_id(&sqbc).unwrap().as_deref(),
+        sqbc::read_app_id(&sqbc).unwrap().as_deref(),
         Some("headless-counter")
     );
 }
@@ -493,8 +488,8 @@ screen("main") {}
         IrStatement::DebugPrint { .. }
     ));
 
-    let dev = sqbc_v2::encode_sqbc_v2_with_profile(&ir, BuildProfile::Dev).unwrap();
-    let release = sqbc_v2::encode_sqbc_v2_with_profile(&ir, BuildProfile::Release).unwrap();
+    let dev = sqbc::encode_sqbc_with_profile(&ir, BuildProfile::Dev).unwrap();
+    let release = sqbc::encode_sqbc_with_profile(&ir, BuildProfile::Release).unwrap();
     assert!(dev.len() > release.len());
 }
 
@@ -566,8 +561,8 @@ screen("main") {}
         ir.handlers[0].statements[0],
         IrStatement::DebugBlock { .. }
     ));
-    assert!(sqbc_v2::encode_sqbc_v2_with_profile(&ir, BuildProfile::Dev).is_err());
-    let release = sqbc_v2::encode_sqbc_v2_with_profile(&ir, BuildProfile::Release)
+    assert!(sqbc::encode_sqbc_with_profile(&ir, BuildProfile::Dev).is_err());
+    let release = sqbc::encode_sqbc_with_profile(&ir, BuildProfile::Release)
         .expect("release should strip the debug block before expression compilation");
     assert!(!release.is_empty());
     assert!(!String::from_utf8_lossy(&release).contains("hidden"));
@@ -625,9 +620,9 @@ screen("main") {}
     });
     assert!(output.ok, "{:?}", output.diagnostics);
     let ir = output.ir.unwrap();
-    let dev = sqbc_v2::encode_sqbc_v2_with_profile(&ir, BuildProfile::Dev)
+    let dev = sqbc::encode_sqbc_with_profile(&ir, BuildProfile::Dev)
         .expect("debug-local assignment should encode as a local write");
-    let release = sqbc_v2::encode_sqbc_v2_with_profile(&ir, BuildProfile::Release)
+    let release = sqbc::encode_sqbc_with_profile(&ir, BuildProfile::Release)
         .expect("release should strip the debug block");
     assert!(dev.len() > release.len());
 }
@@ -649,8 +644,8 @@ screen("main") {
         target_id: PORTABLE_TARGET_ID.to_string(),
     });
     assert!(output.ok, "{:?}", output.diagnostics);
-    let sqbc = sqbc_v2::encode_sqbc_v2(&output.ir.unwrap()).unwrap();
-    assert_eq!(u32::from_le_bytes(sqbc[12..16].try_into().unwrap()), 8);
+    let sqbc = sqbc::encode_sqbc(&output.ir.unwrap()).unwrap();
+    assert_eq!(u32::from_le_bytes(sqbc[10..14].try_into().unwrap()), 8);
 }
 
 #[test]
@@ -669,7 +664,11 @@ screen("main") {
     });
     assert!(output.ok, "{:?}", output.diagnostics);
     let ir = output.ir.unwrap();
-    let screen = ir.screens.iter().find(|screen| screen.name == "main").unwrap();
+    let screen = ir
+        .screens
+        .iter()
+        .find(|screen| screen.name == "main")
+        .unwrap();
     assert!(matches!(
         screen.statements[0],
         IrStatement::DisplayClear { ref color } if color == "white"
@@ -686,7 +685,7 @@ screen("main") {
         screen.statements[3],
         IrStatement::DisplayLine { .. }
     ));
-    sqbc_v2::encode_sqbc_v2(&ir).expect("display sugar should lower to display bytecode");
+    sqbc::encode_sqbc(&ir).expect("display sugar should lower to display bytecode");
 }
 
 #[test]

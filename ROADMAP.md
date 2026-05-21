@@ -62,5 +62,5 @@ persistent SquidScript app platform prototype.
 ### 5. Consider SQBC Library Artifacts
 
 - Investigate whether reusable functionality should be packaged as SQBC library
-  artifacts that other SQBC apps can import or link against, including versioning,
+  artifacts that other SQBC apps can import or link against, including
   validation, install layout, and firmware/runtime loading semantics.

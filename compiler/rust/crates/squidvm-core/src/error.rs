@@ -2,7 +2,6 @@
 pub enum VmError {
     TooLarge,
     InvalidHeader,
-    UnsupportedVersion,
     MissingSection,
     InvalidSection,
     InvalidUtf8,

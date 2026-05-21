@@ -1,7 +1,7 @@
 use squidc_core::{
     compile::{compile, compile_with_profile, CompileRequest},
     profile::BuildProfile,
-    sqbc_v2,
+    sqbc,
 };
 use squidvm_core::{
     error::VmError,
@@ -39,13 +39,13 @@ pub fn compile_sqbc(source: &str, target_id: &str) -> Result<Vec<u8>, JsValue> {
     let ir = response
         .ir
         .ok_or_else(|| JsValue::from_str("compiler returned no IR"))?;
-    sqbc_v2::encode_sqbc_v2_with_profile(&ir, BuildProfile::Dev)
+    sqbc::encode_sqbc_with_profile(&ir, BuildProfile::Dev)
         .map_err(|error| JsValue::from_str(&error.message))
 }
 
 #[wasm_bindgen]
 pub fn read_sqbc_app_id(bytes: &[u8]) -> Result<String, JsValue> {
-    sqbc_v2::read_app_id(bytes)
+    sqbc::read_app_id(bytes)
         .map_err(|error| JsValue::from_str(&error.message))?
         .ok_or_else(|| JsValue::from_str("SQBC missing app id"))
 }

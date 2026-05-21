@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use squidc_core::{profile::BuildProfile, sqbc_v2::read_app_id};
+use squidc_core::{profile::BuildProfile, sqbc::read_app_id};
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::compile::compile_source_to_sqbc;

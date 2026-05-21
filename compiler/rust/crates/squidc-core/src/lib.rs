@@ -7,7 +7,7 @@ pub mod lexer;
 pub mod parser;
 pub mod profile;
 pub mod semantic;
-pub mod sqbc_v2;
+pub mod sqbc;
 pub mod syntax;
 
 #[cfg(test)]

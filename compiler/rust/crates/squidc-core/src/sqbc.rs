@@ -4,9 +4,8 @@ use crate::{
 };
 use std::collections::BTreeMap;
 
-pub const SQBC_V2_MAGIC: &[u8; 4] = b"SQBC";
-pub const SQBC_V3_VERSION: u16 = 3;
-pub const SQBC_V2_VERSION: u16 = SQBC_V3_VERSION;
+pub const SQBC_MAGIC: &[u8; 4] = b"SQBC";
+const SQBC_HEADER_LEN: usize = 14;
 
 const SECTION_STRINGS: u16 = 1;
 const SECTION_STATE: u16 = 2;
@@ -76,11 +75,11 @@ const STATE_TYPE_BOOL: u8 = 2;
 const STATE_TYPE_STRING: u8 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SqbcV2Error {
+pub struct SqbcError {
     pub message: String,
 }
 
-impl SqbcV2Error {
+impl SqbcError {
     fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
@@ -95,28 +94,28 @@ struct StringTable {
 }
 
 impl StringTable {
-    fn intern(&mut self, value: &str) -> Result<u16, SqbcV2Error> {
+    fn intern(&mut self, value: &str) -> Result<u16, SqbcError> {
         if let Some(id) = self.ids.get(value) {
             return Ok(*id);
         }
         let id =
-            u16::try_from(self.values.len()).map_err(|_| SqbcV2Error::new("too many strings"))?;
+            u16::try_from(self.values.len()).map_err(|_| SqbcError::new("too many strings"))?;
         self.values.push(value.to_string());
         self.ids.insert(value.to_string(), id);
         Ok(id)
     }
 
-    fn encode(&self) -> Result<Vec<u8>, SqbcV2Error> {
+    fn encode(&self) -> Result<Vec<u8>, SqbcError> {
         let mut out = Vec::new();
         write_u16(
             &mut out,
-            u16::try_from(self.values.len()).map_err(|_| SqbcV2Error::new("too many strings"))?,
+            u16::try_from(self.values.len()).map_err(|_| SqbcError::new("too many strings"))?,
         );
         for value in &self.values {
             let bytes = value.as_bytes();
             write_u16(
                 &mut out,
-                u16::try_from(bytes.len()).map_err(|_| SqbcV2Error::new("string too long"))?,
+                u16::try_from(bytes.len()).map_err(|_| SqbcError::new("string too long"))?,
             );
             out.extend_from_slice(bytes);
         }
@@ -166,7 +165,7 @@ struct FrameCompiler {
 }
 
 impl FrameCompiler {
-    fn with_params(params: &[String]) -> Result<Self, SqbcV2Error> {
+    fn with_params(params: &[String]) -> Result<Self, SqbcError> {
         let mut frame = Self::default();
         for param in params {
             frame.define_local(param)?;
@@ -174,7 +173,7 @@ impl FrameCompiler {
         Ok(frame)
     }
 
-    fn define_local(&mut self, name: &str) -> Result<u16, SqbcV2Error> {
+    fn define_local(&mut self, name: &str) -> Result<u16, SqbcError> {
         if let Some(id) = self.locals.get(name) {
             return Ok(*id);
         }
@@ -182,7 +181,7 @@ impl FrameCompiler {
         self.next_local = self
             .next_local
             .checked_add(1)
-            .ok_or_else(|| SqbcV2Error::new("too many locals"))?;
+            .ok_or_else(|| SqbcError::new("too many locals"))?;
         self.locals.insert(name.to_string(), id);
         Ok(id)
     }
@@ -203,39 +202,38 @@ impl FrameCompiler {
     }
 }
 
-pub fn encode_sqbc_v2(ir: &IrProgram) -> Result<Vec<u8>, SqbcV2Error> {
-    encode_sqbc_v2_with_profile(ir, BuildProfile::Dev)
+pub fn encode_sqbc(ir: &IrProgram) -> Result<Vec<u8>, SqbcError> {
+    encode_sqbc_with_profile(ir, BuildProfile::Dev)
 }
 
-pub fn encode_sqbc_v2_with_profile(
+pub fn encode_sqbc_with_profile(
     ir: &IrProgram,
     profile: BuildProfile,
-) -> Result<Vec<u8>, SqbcV2Error> {
+) -> Result<Vec<u8>, SqbcError> {
     let mut unit = CompileUnit::default();
     collect_strings(ir, &mut unit.strings, profile)?;
 
     for (index, state) in ir.state.iter().enumerate() {
-        let id = u16::try_from(index).map_err(|_| SqbcV2Error::new("too many state slots"))?;
+        let id = u16::try_from(index).map_err(|_| SqbcError::new("too many state slots"))?;
         unit.states.insert(state.name.clone(), id);
     }
     for (index, function) in ir.functions.iter().enumerate() {
-        let id = u16::try_from(index).map_err(|_| SqbcV2Error::new("too many functions"))?;
+        let id = u16::try_from(index).map_err(|_| SqbcError::new("too many functions"))?;
         unit.functions.insert(function.name.clone(), id);
     }
 
     for function in &ir.functions {
         let name_id = unit.strings.intern(&function.name)?;
-        let start =
-            u32::try_from(unit.code.len()).map_err(|_| SqbcV2Error::new("code too large"))?;
+        let start = u32::try_from(unit.code.len()).map_err(|_| SqbcError::new("code too large"))?;
         let mut frame = FrameCompiler::with_params(&function.params)?;
         compile_statements(&mut unit, &mut frame, &function.statements, profile)?;
         emit(&mut unit.code, OP_PUSH_NULL);
         emit(&mut unit.code, OP_RETURN);
-        let end = u32::try_from(unit.code.len()).map_err(|_| SqbcV2Error::new("code too large"))?;
+        let end = u32::try_from(unit.code.len()).map_err(|_| SqbcError::new("code too large"))?;
         unit.function_metas.push(FunctionMeta {
             name_id,
             param_count: u16::try_from(function.params.len())
-                .map_err(|_| SqbcV2Error::new("too many params"))?,
+                .map_err(|_| SqbcError::new("too many params"))?,
             local_count: frame.next_local,
             start,
             len: end - start,
@@ -244,12 +242,11 @@ pub fn encode_sqbc_v2_with_profile(
 
     for handler in &ir.handlers {
         let event_id = unit.strings.intern(&handler.event)?;
-        let start =
-            u32::try_from(unit.code.len()).map_err(|_| SqbcV2Error::new("code too large"))?;
+        let start = u32::try_from(unit.code.len()).map_err(|_| SqbcError::new("code too large"))?;
         let mut frame = FrameCompiler::default();
         compile_statements(&mut unit, &mut frame, &handler.statements, profile)?;
         emit(&mut unit.code, OP_HALT);
-        let end = u32::try_from(unit.code.len()).map_err(|_| SqbcV2Error::new("code too large"))?;
+        let end = u32::try_from(unit.code.len()).map_err(|_| SqbcError::new("code too large"))?;
         unit.handler_metas.push(HandlerMeta {
             event_id,
             preload: handler.preload,
@@ -260,12 +257,11 @@ pub fn encode_sqbc_v2_with_profile(
 
     for screen in &ir.screens {
         let name_id = unit.strings.intern(&screen.name)?;
-        let start =
-            u32::try_from(unit.code.len()).map_err(|_| SqbcV2Error::new("code too large"))?;
+        let start = u32::try_from(unit.code.len()).map_err(|_| SqbcError::new("code too large"))?;
         let mut frame = FrameCompiler::default();
         compile_statements(&mut unit, &mut frame, &screen.statements, profile)?;
         emit(&mut unit.code, OP_HALT);
-        let end = u32::try_from(unit.code.len()).map_err(|_| SqbcV2Error::new("code too large"))?;
+        let end = u32::try_from(unit.code.len()).map_err(|_| SqbcError::new("code too large"))?;
         unit.screen_metas.push(ScreenMeta {
             name_id,
             start,
@@ -289,36 +285,35 @@ pub fn encode_sqbc_v2_with_profile(
     encode_container(sections)
 }
 
-pub fn read_app_id(bytes: &[u8]) -> Result<Option<String>, SqbcV2Error> {
-    if bytes.len() < 16 || &bytes[0..4] != SQBC_V2_MAGIC {
-        return Err(SqbcV2Error::new("invalid SQBC header"));
+pub fn read_app_id(bytes: &[u8]) -> Result<Option<String>, SqbcError> {
+    if bytes.len() < SQBC_HEADER_LEN || &bytes[0..4] != SQBC_MAGIC {
+        return Err(SqbcError::new("invalid SQBC header"));
     }
-    if read_u16_at(bytes, 4)? != SQBC_V3_VERSION {
-        return Err(SqbcV2Error::new("unsupported SQBC version"));
-    }
-    let header_len = read_u16_at(bytes, 6)? as usize;
-    let file_len = read_u32_at(bytes, 8)? as usize;
-    let section_count = read_u32_at(bytes, 12)? as usize;
-    if file_len != bytes.len() || header_len != 16 + section_count * 12 || header_len > bytes.len()
+    let header_len = read_u16_at(bytes, 4)? as usize;
+    let file_len = read_u32_at(bytes, 6)? as usize;
+    let section_count = read_u32_at(bytes, 10)? as usize;
+    if file_len != bytes.len()
+        || header_len != SQBC_HEADER_LEN + section_count * 12
+        || header_len > bytes.len()
     {
-        return Err(SqbcV2Error::new("invalid SQBC header"));
+        return Err(SqbcError::new("invalid SQBC header"));
     }
     let Some(meta) = section(bytes, section_count, SECTION_APP_META)? else {
         return Ok(None);
     };
     if meta.len() < 2 {
-        return Err(SqbcV2Error::new("invalid app metadata section"));
+        return Err(SqbcError::new("invalid app metadata section"));
     }
     let app_id_len = read_u16_at(meta, 0)? as usize;
     let app_id_start = 2usize;
     let app_id_end = app_id_start
         .checked_add(app_id_len)
-        .ok_or_else(|| SqbcV2Error::new("invalid app metadata section"))?;
+        .ok_or_else(|| SqbcError::new("invalid app metadata section"))?;
     if app_id_end > meta.len() {
-        return Err(SqbcV2Error::new("invalid app metadata section"));
+        return Err(SqbcError::new("invalid app metadata section"));
     }
     let app_id = std::str::from_utf8(&meta[app_id_start..app_id_end])
-        .map_err(|_| SqbcV2Error::new("app id is not utf-8"))?;
+        .map_err(|_| SqbcError::new("app id is not utf-8"))?;
     Ok(Some(app_id.to_string()))
 }
 
@@ -326,7 +321,7 @@ fn collect_strings(
     ir: &IrProgram,
     strings: &mut StringTable,
     profile: BuildProfile,
-) -> Result<(), SqbcV2Error> {
+) -> Result<(), SqbcError> {
     strings.intern(&ir.app.id)?;
     for binding in &ir.device_bindings {
         strings.intern(&binding.service)?;
@@ -359,7 +354,7 @@ fn collect_statement_strings(
     statements: &[IrStatement],
     strings: &mut StringTable,
     profile: BuildProfile,
-) -> Result<(), SqbcV2Error> {
+) -> Result<(), SqbcError> {
     for statement in statements {
         match statement {
             IrStatement::ScreenOpen { screen } => {
@@ -454,7 +449,7 @@ fn collect_statement_strings(
 fn collect_option_strings(
     value: &serde_json::Value,
     strings: &mut StringTable,
-) -> Result<(), SqbcV2Error> {
+) -> Result<(), SqbcError> {
     match value {
         serde_json::Value::String(text) => {
             strings.intern(text)?;
@@ -474,7 +469,7 @@ fn collect_option_strings(
     Ok(())
 }
 
-fn collect_expr_strings(expr: &IrExpr, strings: &mut StringTable) -> Result<(), SqbcV2Error> {
+fn collect_expr_strings(expr: &IrExpr, strings: &mut StringTable) -> Result<(), SqbcError> {
     match expr {
         IrExpr::Literal { value } => collect_json_value(value, strings),
         IrExpr::State { name } => strings.intern(name).map(|_| ()),
@@ -505,7 +500,7 @@ fn collect_expr_strings(expr: &IrExpr, strings: &mut StringTable) -> Result<(), 
 fn collect_json_value(
     value: &serde_json::Value,
     strings: &mut StringTable,
-) -> Result<(), SqbcV2Error> {
+) -> Result<(), SqbcError> {
     if let Some(text) = value.as_str() {
         strings.intern(text)?;
     }
@@ -517,7 +512,7 @@ fn compile_statements(
     frame: &mut FrameCompiler,
     statements: &[IrStatement],
     profile: BuildProfile,
-) -> Result<(), SqbcV2Error> {
+) -> Result<(), SqbcError> {
     compile_statements_with_mode(unit, frame, statements, profile, StatementMode::Normal)
 }
 
@@ -533,7 +528,7 @@ fn compile_statements_with_mode(
     statements: &[IrStatement],
     profile: BuildProfile,
     mode: StatementMode,
-) -> Result<(), SqbcV2Error> {
+) -> Result<(), SqbcError> {
     for statement in statements {
         compile_statement(unit, frame, statement, profile, mode)?;
     }
@@ -546,7 +541,7 @@ fn compile_statement(
     statement: &IrStatement,
     profile: BuildProfile,
     mode: StatementMode,
-) -> Result<(), SqbcV2Error> {
+) -> Result<(), SqbcError> {
     match statement {
         IrStatement::StateLoad => emit_builtin(&mut unit.code, BUILTIN_STATE_LOAD),
         IrStatement::StateSave => emit_builtin(&mut unit.code, BUILTIN_STATE_SAVE),
@@ -557,7 +552,7 @@ fn compile_statement(
             if mode == StatementMode::DebugBlock {
                 let local = frame
                     .local(name)
-                    .ok_or_else(|| SqbcV2Error::new(format!("unknown debug local {name}")))?;
+                    .ok_or_else(|| SqbcError::new(format!("unknown debug local {name}")))?;
                 emit(&mut unit.code, OP_SET_LOCAL);
                 write_u16(&mut unit.code, local);
             } else {
@@ -593,7 +588,7 @@ fn compile_statement(
             emit(&mut unit.code, OP_SET_LOCAL);
             write_u16(&mut unit.code, counter);
             let start =
-                u32::try_from(unit.code.len()).map_err(|_| SqbcV2Error::new("code too large"))?;
+                u32::try_from(unit.code.len()).map_err(|_| SqbcError::new("code too large"))?;
             emit(&mut unit.code, OP_GET_LOCAL);
             write_u16(&mut unit.code, counter);
             emit(&mut unit.code, OP_PUSH_INT);
@@ -630,7 +625,7 @@ fn compile_statement(
             write_u16(&mut unit.code, function);
             write_u16(
                 &mut unit.code,
-                u16::try_from(args.len()).map_err(|_| SqbcV2Error::new("too many args"))?,
+                u16::try_from(args.len()).map_err(|_| SqbcError::new("too many args"))?,
             );
             emit(&mut unit.code, OP_POP);
         }
@@ -643,7 +638,7 @@ fn compile_statement(
                 emit(&mut unit.code, BUILTIN_DEBUG_PRINT);
                 emit(
                     &mut unit.code,
-                    u8::try_from(args.len()).map_err(|_| SqbcV2Error::new("too many args"))?,
+                    u8::try_from(args.len()).map_err(|_| SqbcError::new("too many args"))?,
                 );
             }
         }
@@ -708,7 +703,7 @@ fn compile_statement(
             emit_builtin(&mut unit.code, BUILTIN_SCREEN_REFRESH);
         }
         IrStatement::For { .. } => {
-            return Err(SqbcV2Error::new(
+            return Err(SqbcError::new(
                 "for loops are not in the reference firmware subset yet",
             ))
         }
@@ -777,7 +772,7 @@ fn emit_i32_option(
     frame: &FrameCompiler,
     options: &serde_json::Value,
     key: &str,
-) -> Result<(), SqbcV2Error> {
+) -> Result<(), SqbcError> {
     let Some(value) = options.get(key) else {
         emit(&mut unit.code, OP_PUSH_INT);
         write_i32(&mut unit.code, 0);
@@ -789,13 +784,13 @@ fn emit_i32_option(
         write_i32(
             &mut unit.code,
             i32::try_from(literal)
-                .map_err(|_| SqbcV2Error::new("display option out of i32 range"))?,
+                .map_err(|_| SqbcError::new("display option out of i32 range"))?,
         );
         return Ok(());
     }
 
     let expr = serde_json::from_value::<IrExpr>(value.clone())
-        .map_err(|_| SqbcV2Error::new("display numeric option must be an expression"))?;
+        .map_err(|_| SqbcError::new("display numeric option must be an expression"))?;
     compile_expr(unit, frame, &expr)?;
     Ok(())
 }
@@ -804,7 +799,7 @@ fn emit_string_option(
     unit: &mut CompileUnit,
     options: &serde_json::Value,
     key: &str,
-) -> Result<(), SqbcV2Error> {
+) -> Result<(), SqbcError> {
     if let Some(value) = options.get(key).and_then(expr_literal_string) {
         let id = unit.strings.intern(value)?;
         emit(&mut unit.code, OP_PUSH_STRING);
@@ -843,7 +838,7 @@ fn compile_expr(
     unit: &mut CompileUnit,
     frame: &FrameCompiler,
     expr: &IrExpr,
-) -> Result<(), SqbcV2Error> {
+) -> Result<(), SqbcError> {
     match expr {
         IrExpr::Literal { value } => compile_literal(&mut unit.code, &mut unit.strings, value),
         IrExpr::State { name } => {
@@ -869,13 +864,13 @@ fn compile_expr(
         }
         IrExpr::Unary { operator, expr } => {
             let _ = (operator, expr);
-            Err(SqbcV2Error::new(
+            Err(SqbcError::new(
                 "unary result-record expressions are not in the reference firmware subset yet",
             ))
         }
         IrExpr::Field { target, field } => {
             let _ = (target, field);
-            Err(SqbcV2Error::new(
+            Err(SqbcError::new(
                 "record field access is not in the reference firmware subset yet",
             ))
         }
@@ -906,14 +901,14 @@ fn compile_expr(
             write_u16(&mut unit.code, function);
             write_u16(
                 &mut unit.code,
-                u16::try_from(args.len()).map_err(|_| SqbcV2Error::new("too many args"))?,
+                u16::try_from(args.len()).map_err(|_| SqbcError::new("too many args"))?,
             );
             Ok(())
         }
     }
 }
 
-fn emit_string(unit: &mut CompileUnit, value: &str) -> Result<(), SqbcV2Error> {
+fn emit_string(unit: &mut CompileUnit, value: &str) -> Result<(), SqbcError> {
     let id = unit.strings.intern(value)?;
     emit(&mut unit.code, OP_PUSH_STRING);
     write_u16(&mut unit.code, id);
@@ -924,7 +919,7 @@ fn compile_literal(
     code: &mut Vec<u8>,
     strings: &mut StringTable,
     value: &serde_json::Value,
-) -> Result<(), SqbcV2Error> {
+) -> Result<(), SqbcError> {
     if value.is_null() {
         emit(code, OP_PUSH_NULL);
     } else if let Some(value) = value.as_bool() {
@@ -934,22 +929,21 @@ fn compile_literal(
         emit(code, OP_PUSH_INT);
         write_i32(
             code,
-            i32::try_from(value)
-                .map_err(|_| SqbcV2Error::new("integer literal out of i32 range"))?,
+            i32::try_from(value).map_err(|_| SqbcError::new("integer literal out of i32 range"))?,
         );
     } else if let Some(value) = value.as_str() {
         let id = strings.intern(value)?;
         emit(code, OP_PUSH_STRING);
         write_u16(code, id);
     } else {
-        return Err(SqbcV2Error::new(
+        return Err(SqbcError::new(
             "unsupported literal in reference bytecode subset",
         ));
     }
     Ok(())
 }
 
-fn opcode_for_operator(operator: &str) -> Result<u8, SqbcV2Error> {
+fn opcode_for_operator(operator: &str) -> Result<u8, SqbcError> {
     match operator {
         "+" => Ok(OP_ADD),
         "-" => Ok(OP_SUB),
@@ -959,22 +953,22 @@ fn opcode_for_operator(operator: &str) -> Result<u8, SqbcV2Error> {
         "<=" => Ok(OP_LTE),
         ">" => Ok(OP_GT),
         ">=" => Ok(OP_GTE),
-        _ => Err(SqbcV2Error::new(format!("unsupported operator {operator}"))),
+        _ => Err(SqbcError::new(format!("unsupported operator {operator}"))),
     }
 }
 
-fn state_id(unit: &CompileUnit, name: &str) -> Result<u16, SqbcV2Error> {
+fn state_id(unit: &CompileUnit, name: &str) -> Result<u16, SqbcError> {
     unit.states
         .get(name)
         .copied()
-        .ok_or_else(|| SqbcV2Error::new(format!("unknown state {name}")))
+        .ok_or_else(|| SqbcError::new(format!("unknown state {name}")))
 }
 
-fn function_id(unit: &CompileUnit, name: &str) -> Result<u16, SqbcV2Error> {
+fn function_id(unit: &CompileUnit, name: &str) -> Result<u16, SqbcError> {
     unit.functions
         .get(name)
         .copied()
-        .ok_or_else(|| SqbcV2Error::new(format!("unknown function {name}")))
+        .ok_or_else(|| SqbcError::new(format!("unknown function {name}")))
 }
 
 fn emit_builtin(code: &mut Vec<u8>, builtin: u8) {
@@ -982,11 +976,11 @@ fn emit_builtin(code: &mut Vec<u8>, builtin: u8) {
     emit(code, builtin);
 }
 
-fn encode_state_section(ir: &IrProgram, strings: &StringTable) -> Result<Vec<u8>, SqbcV2Error> {
+fn encode_state_section(ir: &IrProgram, strings: &StringTable) -> Result<Vec<u8>, SqbcError> {
     let mut out = Vec::new();
     write_u16(
         &mut out,
-        u16::try_from(ir.state.len()).map_err(|_| SqbcV2Error::new("too many state slots"))?,
+        u16::try_from(ir.state.len()).map_err(|_| SqbcError::new("too many state slots"))?,
     );
     for state in &ir.state {
         write_u16(
@@ -994,7 +988,7 @@ fn encode_state_section(ir: &IrProgram, strings: &StringTable) -> Result<Vec<u8>
             *strings
                 .ids
                 .get(&state.name)
-                .ok_or_else(|| SqbcV2Error::new("missing state name string"))?,
+                .ok_or_else(|| SqbcError::new("missing state name string"))?,
         );
         emit(&mut out, state_type_tag(&state.value_type)?);
         emit(&mut out, u8::from(state.nullable));
@@ -1003,12 +997,12 @@ fn encode_state_section(ir: &IrProgram, strings: &StringTable) -> Result<Vec<u8>
     Ok(out)
 }
 
-fn state_type_tag(value_type: &str) -> Result<u8, SqbcV2Error> {
+fn state_type_tag(value_type: &str) -> Result<u8, SqbcError> {
     match value_type {
         "int" => Ok(STATE_TYPE_INT),
         "bool" => Ok(STATE_TYPE_BOOL),
         "string" => Ok(STATE_TYPE_STRING),
-        _ => Err(SqbcV2Error::new("unsupported state type")),
+        _ => Err(SqbcError::new("unsupported state type")),
     }
 }
 
@@ -1016,7 +1010,7 @@ fn encode_value(
     out: &mut Vec<u8>,
     strings: &StringTable,
     value: &serde_json::Value,
-) -> Result<(), SqbcV2Error> {
+) -> Result<(), SqbcError> {
     if value.is_null() {
         emit(out, VALUE_NULL);
     } else if let Some(value) = value.as_bool() {
@@ -1026,7 +1020,7 @@ fn encode_value(
         emit(out, VALUE_I32);
         write_i32(
             out,
-            i32::try_from(value).map_err(|_| SqbcV2Error::new("state integer out of i32 range"))?,
+            i32::try_from(value).map_err(|_| SqbcError::new("state integer out of i32 range"))?,
         );
     } else if let Some(value) = value.as_str() {
         emit(out, VALUE_STRING);
@@ -1035,10 +1029,10 @@ fn encode_value(
             *strings
                 .ids
                 .get(value)
-                .ok_or_else(|| SqbcV2Error::new("missing string value"))?,
+                .ok_or_else(|| SqbcError::new("missing string value"))?,
         );
     } else {
-        return Err(SqbcV2Error::new("unsupported state value"));
+        return Err(SqbcError::new("unsupported state value"));
     }
     Ok(())
 }
@@ -1079,29 +1073,29 @@ fn encode_screens(screens: &[ScreenMeta]) -> Vec<u8> {
     out
 }
 
-fn encode_app_meta(ir: &IrProgram, _strings: &StringTable) -> Result<Vec<u8>, SqbcV2Error> {
+fn encode_app_meta(ir: &IrProgram, _strings: &StringTable) -> Result<Vec<u8>, SqbcError> {
     let mut out = Vec::new();
     let app_id = ir.app.id.as_bytes();
     write_u16(
         &mut out,
-        u16::try_from(app_id.len()).map_err(|_| SqbcV2Error::new("app id too long"))?,
+        u16::try_from(app_id.len()).map_err(|_| SqbcError::new("app id too long"))?,
     );
     out.extend_from_slice(app_id);
     let state_store = ir.state_store.as_bytes();
     write_u16(
         &mut out,
-        u16::try_from(state_store.len()).map_err(|_| SqbcV2Error::new("state store too long"))?,
+        u16::try_from(state_store.len()).map_err(|_| SqbcError::new("state store too long"))?,
     );
     out.extend_from_slice(state_store);
     Ok(out)
 }
 
-fn encode_device_bindings(ir: &IrProgram, strings: &StringTable) -> Result<Vec<u8>, SqbcV2Error> {
+fn encode_device_bindings(ir: &IrProgram, strings: &StringTable) -> Result<Vec<u8>, SqbcError> {
     let mut out = Vec::new();
     write_u16(
         &mut out,
         u16::try_from(ir.device_bindings.len())
-            .map_err(|_| SqbcV2Error::new("too many device bindings"))?,
+            .map_err(|_| SqbcError::new("too many device bindings"))?,
     );
     for binding in &ir.device_bindings {
         write_u16(
@@ -1109,51 +1103,50 @@ fn encode_device_bindings(ir: &IrProgram, strings: &StringTable) -> Result<Vec<u
             *strings
                 .ids
                 .get(&binding.service)
-                .ok_or_else(|| SqbcV2Error::new("missing device service string"))?,
+                .ok_or_else(|| SqbcError::new("missing device service string"))?,
         );
         write_u16(
             &mut out,
             *strings
                 .ids
                 .get(&binding.binding)
-                .ok_or_else(|| SqbcV2Error::new("missing device binding string"))?,
+                .ok_or_else(|| SqbcError::new("missing device binding string"))?,
         );
         write_u16(
             &mut out,
             *strings
                 .ids
                 .get(&binding.resource)
-                .ok_or_else(|| SqbcV2Error::new("missing device resource string"))?,
+                .ok_or_else(|| SqbcError::new("missing device resource string"))?,
         );
     }
     Ok(out)
 }
 
-fn encode_container(sections: Vec<(u16, Vec<u8>)>) -> Result<Vec<u8>, SqbcV2Error> {
+fn encode_container(sections: Vec<(u16, Vec<u8>)>) -> Result<Vec<u8>, SqbcError> {
     let section_count =
-        u32::try_from(sections.len()).map_err(|_| SqbcV2Error::new("too many sections"))?;
-    let header_len = 16usize + sections.len() * 12usize;
-    let mut offset = u32::try_from(header_len).map_err(|_| SqbcV2Error::new("header too large"))?;
+        u32::try_from(sections.len()).map_err(|_| SqbcError::new("too many sections"))?;
+    let header_len = SQBC_HEADER_LEN + sections.len() * 12usize;
+    let mut offset = u32::try_from(header_len).map_err(|_| SqbcError::new("header too large"))?;
     let mut records = Vec::new();
     for (kind, data) in &sections {
         records.push((
             *kind,
             offset,
-            u32::try_from(data.len()).map_err(|_| SqbcV2Error::new("section too large"))?,
+            u32::try_from(data.len()).map_err(|_| SqbcError::new("section too large"))?,
         ));
         offset = offset
             .checked_add(
-                u32::try_from(data.len()).map_err(|_| SqbcV2Error::new("section too large"))?,
+                u32::try_from(data.len()).map_err(|_| SqbcError::new("section too large"))?,
             )
-            .ok_or_else(|| SqbcV2Error::new("file too large"))?;
+            .ok_or_else(|| SqbcError::new("file too large"))?;
     }
 
     let mut out = Vec::with_capacity(offset as usize);
-    out.extend_from_slice(SQBC_V2_MAGIC);
-    write_u16(&mut out, SQBC_V3_VERSION);
+    out.extend_from_slice(SQBC_MAGIC);
     write_u16(
         &mut out,
-        u16::try_from(header_len).map_err(|_| SqbcV2Error::new("header too large"))?,
+        u16::try_from(header_len).map_err(|_| SqbcError::new("header too large"))?,
     );
     write_u32(&mut out, offset);
     write_u32(&mut out, section_count);
@@ -1179,8 +1172,8 @@ fn reserve_u32(out: &mut Vec<u8>) -> usize {
     offset
 }
 
-fn patch_u32(out: &mut [u8], offset: usize) -> Result<(), SqbcV2Error> {
-    let value = u32::try_from(out.len()).map_err(|_| SqbcV2Error::new("code too large"))?;
+fn patch_u32(out: &mut [u8], offset: usize) -> Result<(), SqbcError> {
+    let value = u32::try_from(out.len()).map_err(|_| SqbcError::new("code too large"))?;
     out[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
     Ok(())
 }
@@ -1197,23 +1190,23 @@ fn write_i32(out: &mut Vec<u8>, value: i32) {
     out.extend_from_slice(&value.to_le_bytes());
 }
 
-fn read_u16_at(bytes: &[u8], offset: usize) -> Result<u16, SqbcV2Error> {
+fn read_u16_at(bytes: &[u8], offset: usize) -> Result<u16, SqbcError> {
     let Some(slice) = bytes.get(offset..offset + 2) else {
-        return Err(SqbcV2Error::new("unexpected end of SQBC"));
+        return Err(SqbcError::new("unexpected end of SQBC"));
     };
     Ok(u16::from_le_bytes(slice.try_into().unwrap()))
 }
 
-fn read_u32_at(bytes: &[u8], offset: usize) -> Result<u32, SqbcV2Error> {
+fn read_u32_at(bytes: &[u8], offset: usize) -> Result<u32, SqbcError> {
     let Some(slice) = bytes.get(offset..offset + 4) else {
-        return Err(SqbcV2Error::new("unexpected end of SQBC"));
+        return Err(SqbcError::new("unexpected end of SQBC"));
     };
     Ok(u32::from_le_bytes(slice.try_into().unwrap()))
 }
 
-fn section(bytes: &[u8], section_count: usize, kind: u16) -> Result<Option<&[u8]>, SqbcV2Error> {
+fn section(bytes: &[u8], section_count: usize, kind: u16) -> Result<Option<&[u8]>, SqbcError> {
     for index in 0..section_count {
-        let record_offset = 16 + index * 12;
+        let record_offset = SQBC_HEADER_LEN + index * 12;
         if read_u16_at(bytes, record_offset)? != kind {
             continue;
         }
@@ -1221,9 +1214,9 @@ fn section(bytes: &[u8], section_count: usize, kind: u16) -> Result<Option<&[u8]
         let len = read_u32_at(bytes, record_offset + 8)? as usize;
         let end = offset
             .checked_add(len)
-            .ok_or_else(|| SqbcV2Error::new("invalid section bounds"))?;
+            .ok_or_else(|| SqbcError::new("invalid section bounds"))?;
         let Some(section) = bytes.get(offset..end) else {
-            return Err(SqbcV2Error::new("invalid section bounds"));
+            return Err(SqbcError::new("invalid section bounds"));
         };
         return Ok(Some(section));
     }

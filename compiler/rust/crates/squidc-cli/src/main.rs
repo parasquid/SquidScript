@@ -416,7 +416,7 @@ fn install_app_package(args: AppInstallArgs, human: bool) -> Result<Value, Strin
         .position(|entry| entry.path == "main.sqbc")
         .ok_or_else(|| "package is missing main.sqbc".to_string())?;
     let main = entries.remove(main_index);
-    let app_id = squidc_core::sqbc_v2::read_app_id(&main.bytes)
+    let app_id = squidc_core::sqbc::read_app_id(&main.bytes)
         .map_err(|error| error.message)?
         .ok_or_else(|| "SQBC has no app id metadata".to_string())?;
 
@@ -448,7 +448,7 @@ fn read_installable_app(
             .map_err(|error| format!("failed to read {}: {error}", input.display()))?;
         let app_id = match override_id {
             Some(app_id) => app_id.to_string(),
-            None => squidc_core::sqbc_v2::read_app_id(&bytes)
+            None => squidc_core::sqbc::read_app_id(&bytes)
                 .map_err(|error| error.message)?
                 .ok_or_else(|| "SQBC has no app id metadata; pass --as <appId>".to_string())?,
         };

@@ -16,6 +16,8 @@ use crate::{
     strings::StringTable,
 };
 
+const SQBC_HEADER_LEN: usize = 14;
+
 pub struct Program<'a> {
     pub(crate) strings: [&'a str; MAX_STRINGS],
     pub(crate) string_count: usize,
@@ -46,16 +48,13 @@ pub struct SqbcSection {
 
 impl<'a> Program<'a> {
     pub fn parse_header(bytes: &[u8]) -> Result<SqbcHeader, VmError> {
-        if bytes.len() < 16 || &bytes[0..4] != b"SQBC" {
+        if bytes.len() < SQBC_HEADER_LEN || &bytes[0..4] != b"SQBC" {
             return Err(VmError::InvalidHeader);
         }
-        if read_u16(bytes, 4)? != 3 {
-            return Err(VmError::UnsupportedVersion);
-        }
-        let header_len = read_u16(bytes, 6)? as usize;
-        let file_len = read_u32(bytes, 8)? as usize;
-        let section_count = read_u32(bytes, 12)? as usize;
-        if header_len != 16 + section_count * 12 || header_len < 16 {
+        let header_len = read_u16(bytes, 4)? as usize;
+        let file_len = read_u32(bytes, 6)? as usize;
+        let section_count = read_u32(bytes, 10)? as usize;
+        if header_len != SQBC_HEADER_LEN + section_count * 12 || header_len < SQBC_HEADER_LEN {
             return Err(VmError::InvalidHeader);
         }
         Ok(SqbcHeader {
@@ -70,7 +69,7 @@ impl<'a> Program<'a> {
         if index >= header.section_count || header_bytes.len() < header.header_len {
             return Err(VmError::InvalidSection);
         }
-        let base = 16 + index * 12;
+        let base = SQBC_HEADER_LEN + index * 12;
         let kind = read_u16(header_bytes, base)?;
         let offset = read_u32(header_bytes, base + 4)? as usize;
         let len = read_u32(header_bytes, base + 8)? as usize;
@@ -90,7 +89,7 @@ impl<'a> Program<'a> {
         let file_len = header.file_len;
         let section_count = header.section_count;
         if file_len != bytes.len()
-            || header_len != 16 + section_count * 12
+            || header_len != SQBC_HEADER_LEN + section_count * 12
             || header_len > bytes.len()
         {
             return Err(VmError::InvalidHeader);
@@ -183,7 +182,7 @@ impl ProgramIndex {
         reader: &mut impl SqbcReader,
         scratch: &mut [u8],
     ) -> Result<Self, VmError> {
-        let mut fixed_header = [0u8; 16];
+        let mut fixed_header = [0u8; SQBC_HEADER_LEN];
         reader.read_exact_at(0, &mut fixed_header)?;
         let header = Program::parse_header(&fixed_header)?;
         if header.header_len > scratch.len() {
@@ -327,7 +326,7 @@ impl StringTable for ProgramIndex {
 
 fn section<'a>(bytes: &'a [u8], section_count: usize, kind: u16) -> Result<&'a [u8], VmError> {
     for index in 0..section_count {
-        let base = 16 + index * 12;
+        let base = SQBC_HEADER_LEN + index * 12;
         let record_kind = read_u16(bytes, base)?;
         if record_kind == kind {
             let offset = read_u32(bytes, base + 4)? as usize;

@@ -38,6 +38,11 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   syntax, storage formats, examples, scripts, or behavior unless the user
   explicitly asks for that specific bridge. Removed forms should fail through
   the same ordinary unknown or unsupported path as any other invalid form.
+- SQBC is unreleased and has no compatibility contract before 1.0. Do not add
+  SQBC version fields, versioned module/function names, compatibility modes,
+  backwards readers, or "unsupported version" paths. If current bytecode does
+  not run on current compiler/runtime/firmware, treat it as a bug to fix or an
+  artifact to rebuild.
 - Before 1.0, optimize firmware and CLI workflows for development ergonomics. Do not introduce release-profile trimming, disabling of `RUN.TEMP`, or flash-writing temp runs unless the user explicitly asks to revisit that tradeoff.
 - Browser-sim IR JSON is a development artifact only. Do not treat it as a production firmware format. See `docs/browser_simulator.md` and `docs/ir_schema.md`.
 - Reference firmware exists to exercise SquidScript language semantics on constrained hardware. Do not frame it as XTEINK X4 staging firmware unless the task explicitly targets X4 behavior.

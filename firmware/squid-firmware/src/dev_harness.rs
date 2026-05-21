@@ -775,7 +775,7 @@ screen("main") {}
             BuildProfile::Dev,
         );
         assert_eq!(response.diagnostics, Vec::new());
-        squidc_core::sqbc_v2::encode_sqbc_v2(&response.ir.unwrap()).unwrap()
+        squidc_core::sqbc::encode_sqbc(&response.ir.unwrap()).unwrap()
     }
 
     #[test]

@@ -265,11 +265,11 @@ Important expected outputs:
 
 IR means intermediate representation: the compiler's normalized internal form between parsed source and final SQBC bytecode.
 
-IR JSON should be treated as an internal compiler test artifact unless an external consumer is explicitly introduced. Its schema should be versioned separately from the SQBC binary format so compiler internals can evolve without weakening bytecode compatibility.
+IR JSON should be treated as an internal compiler test artifact unless an external consumer is explicitly introduced. Its schema can change directly before 1.0.
 
-Binary fixtures should be byte-exact for a fixed source set, fixed target definition, fixed SQBC format version, and fixed compiler compatibility mode.
+Binary fixtures should be byte-exact for a fixed source set, fixed target definition, and current compiler/runtime behavior.
 
-When the SQBC binary format intentionally changes, the format version and fixture expectations must change together.
+When the SQBC binary format intentionally changes before 1.0, update the compiler, runtime, firmware, docs, and fixture expectations together. Rebuild stale bytecode artifacts instead of preserving old formats.
 
 ---
 
@@ -287,8 +287,7 @@ For each fixture, the manifest should record:
 - target definition
 - expected success or failure
 - expected output files
-- SQBC format version
-- compiler compatibility mode, if applicable
+- current SQBC layout
 
 A valid fixture should usually include:
 
@@ -659,11 +658,10 @@ Preferred behavior:
 - explicit byte writing
 - explicit endianness
 - explicit field widths
-- explicit versioning
 - explicit section offsets
 - explicit checksums if used
-- golden binary fixtures for compatibility
-- byte-exact fixture matching for fixed inputs, target definition, SQBC format version, and compiler compatibility mode
+- golden binary fixtures for current behavior
+- byte-exact fixture matching for fixed inputs, target definition, and current compiler/runtime behavior
 
 The Ruby prototype may generate early binary layouts.
 
@@ -671,7 +669,7 @@ Once accepted, the binary layout must be documented and captured in golden fixtu
 
 The Rust compiler must reproduce the documented output.
 
-When the binary format intentionally changes, the SQBC format version and fixture expectations must change together.
+When the binary format intentionally changes before 1.0, update fixture expectations and rebuild stale bytecode artifacts. Do not add backwards readers or compatibility modes.
 
 ---
 
@@ -797,7 +795,7 @@ Exit criteria:
 - valid fixtures have expected IR, binary, diagnostics, sourcemap
 - invalid fixtures have expected diagnostics
 - BinBook reader integration fixture has expected API calls, diagnostics, IR, binary, and sourcemap
-- fixture manifest documents source files, targets, expected outputs, expected success/failure, and compatibility versions
+- fixture manifest documents source files, targets, expected outputs, and expected success/failure
 - profile schema documented
 - binary format documented
 - diagnostic format documented

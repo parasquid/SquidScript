@@ -196,23 +196,14 @@ fn runs_headless_counter_fixture_from_real_bytecode() {
 }
 
 #[test]
-fn rejects_ir_json_sqbc_v1_container() {
-    let bytes = b"SQBC\x01\0\x0c\0\x0e\0\0\0\x00\0\0\0{}";
-    assert!(matches!(
-        Program::parse(bytes),
-        Err(VmError::UnsupportedVersion)
-    ));
-}
-
-#[test]
-fn runs_sqbc_v3_emitted_by_squidc_core() {
+fn runs_sqbc_emitted_by_squidc_core() {
     let source = include_str!("../../../fixtures/conformance/headless_counter.squid");
     let compiled = compile(CompileRequest {
         source: source.to_string(),
         target_id: "esp32c3-super-mini".to_string(),
     });
     assert!(compiled.ok, "{:?}", compiled.diagnostics);
-    let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
     let program = Program::parse(&bytes).unwrap();
     let mut vm = Vm::new(program);
     let mut trace = Trace::default();
@@ -319,9 +310,9 @@ screen("main") {}
 }
 
 #[test]
-fn parses_sqbc_v3_header_and_section_records_for_partial_loading() {
+fn parses_sqbc_header_and_section_records_for_partial_loading() {
     let bytes = fixture_counter_sqbc();
-    let header = Program::parse_header(&bytes[..16]).unwrap();
+    let header = Program::parse_header(&bytes[..14]).unwrap();
     let header_bytes = &bytes[..header.header_len];
 
     assert_eq!(header.file_len, bytes.len());
@@ -349,7 +340,7 @@ screen("main") {}
         target_id: PORTABLE_TARGET_ID.to_string(),
     });
     assert!(compiled.ok, "{:?}", compiled.diagnostics);
-    let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
     let program = Program::parse(&bytes).unwrap();
 
     assert_eq!(program.handler_preload("key.SELECT"), Ok(true));
@@ -435,7 +426,7 @@ screen("main") {
         target_id: PORTABLE_TARGET_ID.to_string(),
     });
     assert!(compiled.ok, "{:?}", compiled.diagnostics);
-    let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
     let mut scratch = [0u8; MAX_APP_BYTES];
     let index = ProgramIndex::parse(&bytes, &mut scratch).unwrap();
     let mut reader = CountingReader::new(&bytes);
@@ -515,7 +506,7 @@ screen("main") {}
         target_id: "esp32c3-super-mini".to_string(),
     });
     assert!(compiled.ok, "{:?}", compiled.diagnostics);
-    let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
     let program = Program::parse(&bytes).unwrap();
     let mut vm = Vm::new(program);
     let mut trace = GpioTrace::default();
@@ -607,7 +598,7 @@ screen("main") {}
         target_id: PORTABLE_TARGET_ID.to_string(),
     });
     assert!(compiled.ok, "{:?}", compiled.diagnostics);
-    let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
     let program = Program::parse(&bytes).unwrap();
     let mut vm = Vm::new(program);
     let mut trace = RuntimeTrace::default();
@@ -647,7 +638,7 @@ screen("main") {}
         target_id: PORTABLE_TARGET_ID.to_string(),
     });
     assert!(compiled.ok, "{:?}", compiled.diagnostics);
-    let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
     let program = Program::parse(&bytes).unwrap();
     let mut vm = Vm::new(program);
     let mut trace = RuntimeTrace::default();
@@ -683,7 +674,7 @@ screen("main") {}
         target_id: PORTABLE_TARGET_ID.to_string(),
     });
     assert!(compiled.ok, "{:?}", compiled.diagnostics);
-    let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
     let program = Program::parse(&bytes).unwrap();
     let mut vm = Vm::new(program);
     let mut trace = RuntimeTrace::default();
@@ -713,7 +704,7 @@ screen("main") {}
         target_id: PORTABLE_TARGET_ID.to_string(),
     });
     assert!(compiled.ok, "{:?}", compiled.diagnostics);
-    let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
     let program = Program::parse(&bytes).unwrap();
     let mut vm = Vm::new(program);
     let mut trace = Trace::default();
@@ -741,7 +732,7 @@ screen("main") {}
         target_id: PORTABLE_TARGET_ID.to_string(),
     });
     assert!(compiled.ok, "{:?}", compiled.diagnostics);
-    let bytes = squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap();
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
     let program = Program::parse(&bytes).unwrap();
     let mut vm = Vm::new(program);
     let mut trace = Trace::default();
@@ -824,7 +815,7 @@ fn compile_sqbc(source: &str) -> Vec<u8> {
         target_id: PORTABLE_TARGET_ID.to_string(),
     });
     assert!(compiled.ok, "{:?}", compiled.diagnostics);
-    squidc_core::sqbc_v2::encode_sqbc_v2(&compiled.ir.unwrap()).unwrap()
+    squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap()
 }
 
 fn mismatched_count_state_record() -> Vec<u8> {
@@ -852,11 +843,10 @@ fn encode_strings(values: &[&str]) -> Vec<u8> {
 }
 
 fn encode_container(sections: Vec<(u16, Vec<u8>)>) -> Vec<u8> {
-    let header_len = 16 + sections.len() * 12;
+    let header_len = 14 + sections.len() * 12;
     let file_len = header_len + sections.iter().map(|(_, data)| data.len()).sum::<usize>();
     let mut out = Vec::new();
     out.extend_from_slice(b"SQBC");
-    push_u16(&mut out, 3);
     push_u16(&mut out, header_len as u16);
     push_u32(&mut out, file_len as u32);
     push_u32(&mut out, sections.len() as u32);
