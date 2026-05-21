@@ -9,7 +9,9 @@ use littlefs2::{
 };
 
 use crate::{
-    dev_harness::{validate_app_id, AppName, AppStorage, AppStorageError, StoredApp},
+    dev_harness::{
+        validate_app_id, validate_package_path, AppName, AppStorage, AppStorageError, StoredApp,
+    },
     protocol::fnv1a,
 };
 use squidvm_core::limits::{MAX_APP_BYTES, MAX_SAVED_STATE_BYTES};
@@ -106,6 +108,50 @@ impl<S: driver::Storage> LittleFsAppStorage<S> {
         Self::path_in_dir(APPS_DIR, app_id, suffix)
     }
 
+    fn app_file_path(app_id: &str, package_path: &str) -> Result<PathBuf> {
+        validate_package_path(package_path).map_err(|_| Error::INVALID)?;
+        let mut bytes = [0u8; 160];
+        let mut len = 0usize;
+        for part in [APPS_DIR, "/", app_id, "/", package_path] {
+            let part_bytes = part.as_bytes();
+            if len + part_bytes.len() >= bytes.len() {
+                return Err(Error::FILENAME_TOO_LONG);
+            }
+            bytes[len..len + part_bytes.len()].copy_from_slice(part_bytes);
+            len += part_bytes.len();
+        }
+        let path = str::from_utf8(&bytes[..len]).map_err(|_| Error::INVALID)?;
+        PathBuf::try_from(path).map_err(|_| Error::FILENAME_TOO_LONG)
+    }
+
+    fn app_resource_parent_path(app_id: &str, package_path: &str, parts: usize) -> Result<PathBuf> {
+        let mut bytes = [0u8; 160];
+        let mut len = 0usize;
+        for part in [APPS_DIR, "/", app_id] {
+            let part_bytes = part.as_bytes();
+            if len + part_bytes.len() >= bytes.len() {
+                return Err(Error::FILENAME_TOO_LONG);
+            }
+            bytes[len..len + part_bytes.len()].copy_from_slice(part_bytes);
+            len += part_bytes.len();
+        }
+        for part in package_path.split('/').take(parts) {
+            let part_bytes = part.as_bytes();
+            if len + 1 + part_bytes.len() >= bytes.len() {
+                return Err(Error::FILENAME_TOO_LONG);
+            }
+            bytes[len] = b'/';
+            len += 1;
+            bytes[len..len + part_bytes.len()].copy_from_slice(part_bytes);
+            len += part_bytes.len();
+        }
+        if len == 0 {
+            return Err(Error::FILENAME_TOO_LONG);
+        }
+        let path = str::from_utf8(&bytes[..len]).map_err(|_| Error::INVALID)?;
+        PathBuf::try_from(path).map_err(|_| Error::FILENAME_TOO_LONG)
+    }
+
     fn state_path(app_id: &str, suffix: &str) -> Result<PathBuf> {
         Self::path_in_dir(STATE_DIR, app_id, suffix)
     }
@@ -169,13 +215,40 @@ impl<S: driver::Storage> AppStorage for LittleFsAppStorage<S> {
         if bytes.len() > MAX_APP_BYTES {
             return Err(AppStorageError::NoSpace);
         }
-        let tmp = Self::apps_path(app_id, ".tmp").map_err(Self::map_error)?;
-        let final_path = Self::apps_path(app_id, ".sqbc").map_err(Self::map_error)?;
+        let app_dir = Self::apps_path(app_id, "").map_err(Self::map_error)?;
+        let tmp = Self::apps_path(app_id, "/main.tmp").map_err(Self::map_error)?;
+        let final_path = Self::apps_path(app_id, "/main.sqbc").map_err(Self::map_error)?;
         self.mount(|fs| {
+            fs.create_dir_all(&app_dir)?;
             let _ = fs.remove(&tmp);
             fs.write(&tmp, bytes)?;
             let _ = fs.remove(&final_path);
             fs.rename(&tmp, &final_path)
+        })
+        .map_err(Self::map_error)
+    }
+
+    fn write_app_resource(
+        &mut self,
+        app_id: &str,
+        path: &str,
+        bytes: &[u8],
+    ) -> core::result::Result<(), AppStorageError> {
+        if bytes.len() > MAX_APP_BYTES {
+            return Err(AppStorageError::NoSpace);
+        }
+        let final_path = Self::app_file_path(app_id, path).map_err(Self::map_error)?;
+        let tmp_path = Self::app_file_path(app_id, "install.tmp").map_err(Self::map_error)?;
+        self.mount(|fs| {
+            let parent_count = path.split('/').count().saturating_sub(1);
+            for depth in 0..=parent_count {
+                let dir = Self::app_resource_parent_path(app_id, path, depth)?;
+                fs.create_dir_all(&dir)?;
+            }
+            let _ = fs.remove(&tmp_path);
+            fs.write(&tmp_path, bytes)?;
+            let _ = fs.remove(&final_path);
+            fs.rename(&tmp_path, &final_path)
         })
         .map_err(Self::map_error)
     }
@@ -185,7 +258,7 @@ impl<S: driver::Storage> AppStorage for LittleFsAppStorage<S> {
         app_id: &str,
         out: &mut [u8],
     ) -> core::result::Result<usize, AppStorageError> {
-        let path = Self::apps_path(app_id, ".sqbc").map_err(Self::map_error)?;
+        let path = Self::apps_path(app_id, "/main.sqbc").map_err(Self::map_error)?;
         self.mount(|fs| {
             fs.open_file_and_then(&path, |file| {
                 let len = file.len()? as usize;
@@ -205,7 +278,7 @@ impl<S: driver::Storage> AppStorage for LittleFsAppStorage<S> {
         offset: usize,
         out: &mut [u8],
     ) -> core::result::Result<usize, AppStorageError> {
-        let path = Self::apps_path(app_id, ".sqbc").map_err(Self::map_error)?;
+        let path = Self::apps_path(app_id, "/main.sqbc").map_err(Self::map_error)?;
         self.mount(|fs| {
             fs.open_file_and_then(&path, |file| {
                 let len = file.len()? as usize;
@@ -233,16 +306,16 @@ impl<S: driver::Storage> AppStorage for LittleFsAppStorage<S> {
             fs.read_dir_and_then(&apps_path, |dir| {
                 for entry in dir {
                     let entry = entry?;
-                    if count == out.len() || !entry.metadata().is_file() {
+                    if count == out.len() || !entry.metadata().is_dir() {
                         continue;
                     }
-                    let Some(name) = entry.file_name().as_ref().strip_suffix(".sqbc") else {
-                        continue;
-                    };
+                    let name = entry.file_name().as_ref();
                     let Ok(app_name) = AppName::new(name) else {
                         continue;
                     };
-                    let len = fs.open_file_and_then(entry.path(), |file| {
+                    let main_path =
+                        Self::apps_path(name, "/main.sqbc").map_err(|_| Error::INVALID)?;
+                    let len = fs.open_file_and_then(&main_path, |file| {
                         let len = file.len()? as usize;
                         if len > scratch.len() || len > MAX_APP_BYTES {
                             return Err(Error::NO_SPACE);

@@ -37,18 +37,17 @@ archive. Install unpacks every package entry into a read-only app directory:
 ```text
 /sd/apps/<app-id>/
   main.sqbc
-  device/
-    browser-canvas.sqdevice
-  web/
-  resources/
+  admin-ui/
+  assets/
 ```
 
 ZIP entries are package-relative paths. Installers must reject absolute paths,
 empty paths, parent traversal with `..`, duplicate normalized paths, backslash
-paths, and installer/system paths such as `sd/...` or `system/...`. The
-browser-sim importer derives `<app-id>` from executable metadata, clears any
-previous `/sd/apps/<app-id>/` contents, and writes the unpacked files below that
-directory.
+paths, dot-files or dot-directories, `.squid` source files, `source-map.json`,
+existing `.squid.zip` outputs, and installer/system paths such as `sd/...` or
+`system/...`. The browser-sim importer derives `<app-id>` from executable
+metadata, clears any previous `/sd/apps/<app-id>/` contents, and writes the
+unpacked files below that directory.
 
 Packages require `main.sqbc`. Browser-sim executes the same SQBC bytecode
 container that firmware consumes through `squidvm-core`.
@@ -60,14 +59,16 @@ top-level `device {}` activates them before `event.on("app.start")`. Mutable
 data belongs in app-scoped runtime state, upload staging, target libraries, or
 firmware-owned active device config, not inside the installed resource tree.
 
-Browser-side web assets and SquidScript runtime resources are separate
-concepts. When a future runtime service starts a static server with:
+Browser-side static assets and SquidScript runtime resources are separate
+concepts. Static asset directory names are not reserved; `web/`, `admin-ui/`,
+`static/`, and similar names are ordinary package directories. When a future
+runtime service starts a static server with:
 
 ```squid
-httpServer.start(..., { assets: "web" })
+httpServer.start(..., { assets: "admin-ui" })
 ```
 
-the server should mount `/sd/apps/<app-id>/web/` as the static asset root.
+the server should mount `/sd/apps/<app-id>/admin-ui/` as the static asset root.
 Browser JavaScript imports, CSS URLs, images, and `fetch("./data.json")` then
 resolve as normal relative HTTP paths within that root. Static serving must
 never expose files outside the selected asset root.

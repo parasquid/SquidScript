@@ -13,6 +13,7 @@ configuration, firmware build metadata, docs, and autocomplete.
 
 ```sh
 cargo run -p squidc -- build examples/blinky-supermini/main.squid --out target/blinky.sqbc
+cargo run -p squidc -- package examples/binbook-reader
 cargo run -p squidc -- run examples/blinky-supermini/main.squid
 cargo run -p squidc -- repl --script tests/repl/default-dev.session
 cargo run -p squidc -- doctor
@@ -27,15 +28,27 @@ wear flash.
 ## App Commands
 
 ```sh
+cargo run -p squidc -- package examples/binbook-reader
+cargo run -p squidc -- package examples/binbook-reader --out target/binbook-reader.squid.zip
 cargo run -p squidc -- app install examples/blinky-supermini/main.squid
+cargo run -p squidc -- app install binbook-reader.squid.zip
 cargo run -p squidc -- app install --as reader tests/hardware/c3-supermini/generic-events/reader-clock.squid
 cargo run -p squidc -- app launch reader
 cargo run -p squidc -- app list
 ```
 
-`app install` accepts `.squid` source or `.sqbc` bytecode. Source is compiled
-before upload. `.sqbc` input must include app-id metadata unless `--as` is
-provided. Use `app install` plus `app launch` for persistent apps.
+`package <app-dir>` expects `<app-dir>/main.squid`, compiles it to package
+entry `main.sqbc`, and writes `<app-id>.squid.zip` in the current directory
+unless `--out` is provided. Package output includes safe non-source runtime
+files from the app directory. It excludes `.squid` source files, dot-files,
+dot-directories, `source-map.json`, existing `.squid.zip` outputs, and generated
+`main.sqbc`.
+
+`app install` accepts `.squid` source, `.sqbc` bytecode, or `.squid.zip`
+packages. Source is compiled before upload. `.sqbc` input must include app-id
+metadata unless `--as` is provided. Package installs derive the app ID from
+`main.sqbc`; `--as` is not supported for packages. Use `app install` plus
+`app launch` for persistent apps.
 
 ## Device Commands
 

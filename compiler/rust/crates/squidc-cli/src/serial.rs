@@ -41,6 +41,20 @@ impl SerialDevice {
         )
     }
 
+    pub fn install_resource(
+        &mut self,
+        app_id: &str,
+        path: &str,
+        bytes: &[u8],
+    ) -> Result<String, String> {
+        self.write_install(
+            &format!("INSTALL.RESOURCE {app_id} {path}"),
+            "READY install.resource",
+            "OK install.resource",
+            bytes,
+        )
+    }
+
     pub fn run_temp_app(&mut self, app_id: &str, bytes: &[u8]) -> Result<String, String> {
         self.write_install(
             &format!("RUN.TEMP {app_id}"),

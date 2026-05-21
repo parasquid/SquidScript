@@ -142,6 +142,12 @@ pub trait AppStorage {
     fn ensure_ready(&mut self) -> Result<(), AppStorageError>;
     fn format(&mut self) -> Result<(), AppStorageError>;
     fn write_app(&mut self, app_id: &str, bytes: &[u8]) -> Result<(), AppStorageError>;
+    fn write_app_resource(
+        &mut self,
+        app_id: &str,
+        path: &str,
+        bytes: &[u8],
+    ) -> Result<(), AppStorageError>;
     fn read_app(&mut self, app_id: &str, out: &mut [u8]) -> Result<usize, AppStorageError>;
     fn read_app_range(
         &mut self,
@@ -331,6 +337,38 @@ pub fn validate_app_id(value: &str) -> Result<(), AppRegistryError> {
     Ok(())
 }
 
+pub fn validate_package_path(path: &str) -> Result<(), AppRegistryError> {
+    if path.is_empty()
+        || path.starts_with('/')
+        || path.contains('\\')
+        || path.as_bytes().get(1) == Some(&b':')
+    {
+        return Err(AppRegistryError::InvalidAppId);
+    }
+    let mut part_count = 0usize;
+    for part in path.split('/') {
+        if part.is_empty() || part == "." {
+            continue;
+        }
+        if part == ".." || part.starts_with('.') {
+            return Err(AppRegistryError::InvalidAppId);
+        }
+        part_count += 1;
+    }
+    if part_count == 0
+        || path == "sd"
+        || path.starts_with("sd/")
+        || path == "system"
+        || path.starts_with("system/")
+        || path.ends_with(".squid")
+        || path == "source-map.json"
+        || path.ends_with(".squid.zip")
+    {
+        return Err(AppRegistryError::InvalidAppId);
+    }
+    Ok(())
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DevTimerEvent {
     Debug,
@@ -459,6 +497,10 @@ mod tests {
         len: usize,
         hash: u32,
         bytes: [u8; MAX_APP_BYTES],
+        resource_len: usize,
+        resource_bytes: [u8; MAX_APP_BYTES],
+        resource_path: AppName,
+        resource_occupied: bool,
         state_len: usize,
         state_bytes: [u8; MAX_SAVED_STATE_BYTES],
         state_occupied: bool,
@@ -472,6 +514,10 @@ mod tests {
                 len: 0,
                 hash: 0,
                 bytes: [0; MAX_APP_BYTES],
+                resource_len: 0,
+                resource_bytes: [0; MAX_APP_BYTES],
+                resource_path: AppName::empty(),
+                resource_occupied: false,
                 state_len: 0,
                 state_bytes: [0; MAX_SAVED_STATE_BYTES],
                 state_occupied: false,
@@ -539,6 +585,27 @@ mod tests {
             file.hash = fnv1a(bytes);
             file.bytes[..bytes.len()].copy_from_slice(bytes);
             file.occupied = true;
+            Ok(())
+        }
+
+        fn write_app_resource(
+            &mut self,
+            app_id: &str,
+            path: &str,
+            bytes: &[u8],
+        ) -> Result<(), AppStorageError> {
+            self.ensure_ready()?;
+            validate_app_id(app_id).map_err(|_| AppStorageError::InvalidName)?;
+            validate_package_path(path).map_err(|_| AppStorageError::InvalidName)?;
+            if bytes.len() > MAX_APP_BYTES {
+                return Err(AppStorageError::NoSpace);
+            }
+            let index = self.find(app_id).ok_or(AppStorageError::NotFound)?;
+            let file = &mut self.files[index];
+            file.resource_path = AppName::new("resource").unwrap();
+            file.resource_bytes[..bytes.len()].copy_from_slice(bytes);
+            file.resource_len = bytes.len();
+            file.resource_occupied = true;
             Ok(())
         }
 
@@ -648,6 +715,44 @@ mod tests {
         assert_eq!(read, header.len());
         assert_eq!(&header[0..4], b"SQBC");
         assert_eq!(u16::from_le_bytes(header[4..6].try_into().unwrap()), 3);
+    }
+
+    #[test]
+    fn app_storage_accepts_safe_package_resource_paths() {
+        let mut storage = MemoryAppStorage::new();
+        let bytes = sqbc_fixture();
+        storage.write_app("main", &bytes).unwrap();
+
+        storage
+            .write_app_resource("main", "admin-ui/index.html", b"<h1>Admin</h1>")
+            .unwrap();
+
+        assert!(storage.files[0].resource_occupied);
+        assert_eq!(storage.files[0].resource_len, 14);
+    }
+
+    #[test]
+    fn app_storage_rejects_unsafe_package_resource_paths() {
+        let mut storage = MemoryAppStorage::new();
+        let bytes = sqbc_fixture();
+        storage.write_app("main", &bytes).unwrap();
+
+        for path in [
+            "/index.html",
+            "admin/../index.html",
+            ".env",
+            "lib/ui.squid",
+            "source-map.json",
+            "old.squid.zip",
+            "sd/apps/main/main.sqbc",
+            "system/state",
+        ] {
+            assert_eq!(
+                storage.write_app_resource("main", path, b"x"),
+                Err(AppStorageError::InvalidName),
+                "{path}"
+            );
+        }
     }
 
     fn sqbc_fixture() -> Vec<u8> {

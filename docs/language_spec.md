@@ -251,9 +251,9 @@ Developer tools may compile .squid source off-device and copy the resulting .sqb
 Recommended production policy:
 - `main.sqbc` is the executable app artifact
 - `.squid.zip` is the canonical app transfer container for `main.sqbc`,
-  optional `.sqdevice` files, web assets, and other read-only resources
-- source files may be included for inspection/debugging
-- source-map.json may be included for better diagnostics
+  optional static assets, `.sqdevice` files, and other read-only resources
+- v0 package tooling excludes `.squid` source files, dot-files, dot-directories,
+  `source-map.json`, and existing `.squid.zip` outputs by default
 
 ---
 
@@ -2390,7 +2390,7 @@ Example:
 ```squid
 httpServer.start("uploads", {
   port: 8080,
-  assets: "web",
+  assets: "admin-ui",
   routes: ["upload-book"],
   uploadExtension: ".binbook",
   maxUploadBytes: 16777216
@@ -2409,7 +2409,8 @@ The runtime may clamp or reject ports and upload limits according to the target 
 Static web assets:
 - this is browser-facing static file serving for a phone/computer web browser, not HTML rendering on the device display.
 - firmware does not execute JavaScript from app web assets; browser-side JavaScript runs only in the user's browser.
-- `assets` is relative to the app directory.
+- `assets` is an arbitrary safe package-relative directory inside the app
+  directory; `web` is a convention, not a reserved name.
 - paths must not be absolute and must not contain `..`.
 - firmware serves files with fixed content types based on extension.
 - firmware should prefer `index.html` for the asset root.
@@ -3021,18 +3022,19 @@ let installed = library.installUpload(upload, {
 })
 ```
 
-Uploaded `.sqbc` files are staging artifacts until the firmware app installer
-validates bytecode and target compatibility, places the artifact under the app
-ID derived from SQBC metadata, and atomically publishes the installed app where
-the filesystem permits it. A future app resource package format may extend this
-flow for bundled files such as HTML, JavaScript, images, and content assets.
+Uploaded `.sqbc` files and `.squid.zip` packages are staging artifacts until
+the firmware app installer validates bytecode and target compatibility, places
+the artifact under the app ID derived from SQBC metadata, and publishes the
+installed app where the filesystem permits it. Host tools may unpack and
+validate `.squid.zip` before streaming normalized package files to constrained
+firmware; production firmware is not required to parse ZIP archives directly.
 
 Rules:
 - firmware must sanitize names and reject path traversal
 - firmware must enforce target storage quotas and maximum file sizes
 - writes should be atomic where the backing filesystem permits it
 - app uploads should land in `apps-inbox`; actual app installation remains firmware-owned
-- app upload extensions should be `.sqbc` until a resource package format is specified
+- app upload extensions should be `.sqbc` or `.squid.zip`
 - large books should default to SD-backed `books`, not internal flash, unless the user or app explicitly selects `flash-library`
 - if a removable volume disappears during an operation, firmware should return a structured storage error and mark the volume unavailable until remount/probe succeeds
 

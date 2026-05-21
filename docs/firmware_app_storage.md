@@ -14,18 +14,28 @@ Host tooling installs a compiled SQBC payload with:
 INSTALL.APP <app-id> <len> <fnv32hex>
 ```
 
+For `.squid.zip` packages, host tooling validates and unpacks the ZIP first.
+Firmware is not required to parse ZIP archives directly. The host installs
+`main.sqbc` with `INSTALL.APP` and then streams each normalized package resource
+with:
+
+```text
+INSTALL.RESOURCE <app-id> <package-relative-path> <len> <fnv32hex>
+```
+
 Firmware validates the app id, byte count, FNV-1a hash, and SQBC structure
 before publishing the app in the registry. A successful install writes the SQBC
 payload to persistent app storage and then updates the in-memory registry
 metadata entry.
 
-On firmware startup, the registry scans persistent app storage and rebuilds
-metadata from valid `.sqbc` files. App bodies are not mirrored per registry
-slot in RAM. Startup validation reads the SQBC v3 header and section table with
-bounded storage reads. If an installed `main` app is present and valid,
-firmware boots it as the root foreground app and dispatches
-`event.on("app.start")`. If `main` is missing or invalid, firmware stays in dev
-shell mode and reports the boot status over serial.
+On firmware startup, the registry scans persistent app directories and rebuilds
+metadata from valid `main.sqbc` files. Installed package resources live beside
+`main.sqbc` under the same app directory and are read-only to apps. App bodies
+are not mirrored per registry slot in RAM. Startup validation reads the SQBC v3
+header and section table with bounded storage reads. If an installed `main` app
+is present and valid, firmware boots it as the root foreground app and
+dispatches `event.on("app.start")`. If `main` is missing or invalid, firmware
+stays in dev shell mode and reports the boot status over serial.
 
 The current ESP32-C3 reference firmware keeps `RUN.TEMP` RAM-backed. This is a
 pre-1.0 developer workflow decision: repeated `squidc run` iterations should
@@ -169,7 +179,8 @@ squidfs:     0x210000..0x3fffff
 The `squidfs` partition stores apps under:
 
 ```text
-/apps/<app-id>.sqbc
+/apps/<app-id>/main.sqbc
+/apps/<app-id>/<package-resource>
 /state/<app-id>.state
 ```
 

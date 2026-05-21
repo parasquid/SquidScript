@@ -12,6 +12,7 @@ export function normalizePackageEntryPath(path: string): string {
   for (const part of path.split("/")) {
     if (part === "" || part === ".") continue;
     if (part === "..") throw new Error(`Invalid package entry path: ${path}`);
+    if (part.startsWith(".")) throw new Error(`Invalid package entry path: ${path}`);
     parts.push(part);
   }
 
@@ -21,7 +22,10 @@ export function normalizePackageEntryPath(path: string): string {
     normalized === "sd" ||
     normalized.startsWith("sd/") ||
     normalized === "system" ||
-    normalized.startsWith("system/")
+    normalized.startsWith("system/") ||
+    normalized.endsWith(".squid") ||
+    normalized === "source-map.json" ||
+    normalized.endsWith(".squid.zip")
   ) {
     throw new Error(`Invalid package entry path: ${path}`);
   }

@@ -119,7 +119,16 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
 
 ## Git Workflow
 
+- Work on the current branch and checkout unless the user specifically asks for
+  a separate branch or worktree.
 - Git commits must run outside the Codex sandbox. Sandboxed commits cannot create `.git/index.lock` in this environment, so use escalated command execution for `git commit` instead of trying once in the sandbox.
+
+## CLI Workflow Ergonomics
+
+- Before 1.0, prefer developer-friendly CLI defaults when they are safe and
+  unambiguous. For example, package creation may write a sensible default
+  output in the current directory while still offering `--out` for explicit
+  paths.
 
 ## Command Matrix
 

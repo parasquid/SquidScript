@@ -103,8 +103,9 @@ armed timer, and key exit behavior over USB serial.
 
 The current Super Mini app store uses LittleFS on the firmware-owned `squidfs`
 flash partition. `INSTALL.APP` accepts SQBC bytes over serial, validates the
-payload, writes `/apps/<app-id>.sqbc`, and publishes the app in the registry
-cache. See `docs/firmware_app_storage.md`.
+payload, writes `/apps/<app-id>/main.sqbc`, and publishes the app in the
+registry cache. Package resources are installed under the same app directory
+with `INSTALL.RESOURCE`. See `docs/firmware_app_storage.md`.
 
 If `espflash` can list the board but cannot open the serial node on Linux,
 grant the current login temporary access to that node:

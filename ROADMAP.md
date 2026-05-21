@@ -11,8 +11,11 @@ persistent SquidScript app platform prototype.
 
 ### 1. Promote App Resource Packages Beyond Browser-Sim
 
-- Implement runtime resource/static serving APIs, including `web/` asset-root
-  enforcement and firmware install protocol support.
+- Implement firmware install protocol support for `.squid.zip` packages,
+  including host-side ZIP validation, `main.sqbc` install, and read-only
+  package resource files under arbitrary safe package-relative paths.
+- Add generic app resource APIs for packaged files such as icons, BinBook
+  samples, config files, and future `app.resource(...)` handles.
 
 ### 2. Design Portable Wi-Fi And Services Runtime
 
@@ -24,6 +27,9 @@ persistent SquidScript app platform prototype.
   or with restricted networking support.
 - Decide whether timers should use the same service model, including how a
   target chooses RTC-backed scheduling versus internal timer peripherals.
+- Implement `httpServer.*` static serving with arbitrary app-selected asset
+  roots, bounded content-type handling, upload staging, and target capability
+  checks.
 
 ### 3. Implement Device Bindings And SQDEVICE/SQDC
 
@@ -52,3 +58,9 @@ persistent SquidScript app platform prototype.
 - Evaluate a Docker or devcontainer workflow for browser simulator builds and
   Playwright checks so Rust, Node, `wasm-pack`, and system libraries are
   reproducible without making containers mandatory for local development.
+
+### 5. Consider SQBC Library Artifacts
+
+- Investigate whether reusable functionality should be packaged as SQBC library
+  artifacts that other SQBC apps can import or link against, including versioning,
+  validation, install layout, and firmware/runtime loading semantics.

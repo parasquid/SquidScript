@@ -4,7 +4,10 @@ use esp_hal::{delay::Delay, usb_serial_jtag::UsbSerialJtag};
 use squidvm_core::{error::VmError, limits::MAX_APP_BYTES, program::Program};
 
 use crate::{
-    dev_harness::{AppName, AppRegistry, AppRegistryError, AppSlot, AppStorage, AppStorageError, APP_REGISTRY_CAP},
+    dev_harness::{
+        validate_package_path, AppName, AppRegistry, AppRegistryError, AppSlot, AppStorage,
+        AppStorageError, APP_REGISTRY_CAP,
+    },
     protocol::{fnv1a, parse_install},
 };
 
@@ -34,7 +37,7 @@ pub fn handle_command(
 ) {
     trace.set_app_storage_used(registry_installed_bytes(registry));
     if command == "help" {
-        writeln!(serial, "commands: HELLO INSTALL.APP <app-id> <len> <fnv32hex> RUN.TEMP <app-id> <len> <fnv32hex> RUN.APP <app-id> RUN.EVENT <app-id> <event> KEY SELECT APP.LIST RESOURCES.GET STATE.GET STATE.IMPORT <len> <fnv32hex> TRACE.GET OUTPUT.GET DRAWLOG.GET ERRORS.GET RESET STORAGE.FORMAT").ok();
+        writeln!(serial, "commands: HELLO INSTALL.APP <app-id> <len> <fnv32hex> INSTALL.RESOURCE <app-id> <path> <len> <fnv32hex> RUN.TEMP <app-id> <len> <fnv32hex> RUN.APP <app-id> RUN.EVENT <app-id> <event> KEY SELECT APP.LIST RESOURCES.GET STATE.GET STATE.IMPORT <len> <fnv32hex> TRACE.GET OUTPUT.GET DRAWLOG.GET ERRORS.GET RESET STORAGE.FORMAT").ok();
     } else if command == "HELLO" || command == "hello" || command == "info" {
         writeln!(serial, "target=esp32c3-super-mini").ok();
         writeln!(serial, "build={BUILD_ID}").ok();
@@ -138,6 +141,75 @@ pub fn handle_command(
             _ => {
                 *last_error = Some(VmError::TooLarge);
                 writeln!(serial, "ERR install.app").ok();
+            }
+        }
+    } else if let Some(rest) = command
+        .strip_prefix("INSTALL.RESOURCE ")
+        .or_else(|| command.strip_prefix("install.resource "))
+    {
+        let Some((app_id, rest)) = rest.split_once(' ') else {
+            writeln!(serial, "ERR install.resource").ok();
+            return;
+        };
+        let Some((path, request_text)) = rest.split_once(' ') else {
+            writeln!(serial, "ERR install.resource").ok();
+            return;
+        };
+        if AppName::new(app_id).is_err() || validate_package_path(path).is_err() {
+            writeln!(serial, "ERR install.resource invalid-name").ok();
+            return;
+        }
+        match parse_install(request_text) {
+            Ok(request) if request.len <= MAX_APP_BYTES => {
+                let len = request.len;
+                writeln!(
+                    serial,
+                    "READY install.resource app={app_id} path={path} len={len}"
+                )
+                .ok();
+                let read = read_exact_timeout(
+                    serial,
+                    &mut app_load_bytes[..len],
+                    delay,
+                    INSTALL_TIMEOUT_MS,
+                );
+                if read != len {
+                    *last_error = Some(VmError::InvalidHeader);
+                    writeln!(
+                        serial,
+                        "ERR install.resource timeout read={read} expected={len}"
+                    )
+                    .ok();
+                    return;
+                }
+                let actual_hash = fnv1a(&app_load_bytes[..len]);
+                if actual_hash != request.expected_hash {
+                    *last_error = Some(VmError::InvalidHeader);
+                    writeln!(
+                        serial,
+                        "ERR install.resource hash expected={:08x} actual={actual_hash:08x}",
+                        request.expected_hash
+                    )
+                    .ok();
+                    return;
+                }
+                if let Err(error) =
+                    app_storage.write_app_resource(app_id, path, &app_load_bytes[..len])
+                {
+                    *storage_error = Some(error);
+                    writeln!(serial, "ERR install.resource storage").ok();
+                    return;
+                }
+                *storage_error = None;
+                writeln!(
+                    serial,
+                    "OK install.resource app={app_id} path={path} hash={actual_hash:08x}"
+                )
+                .ok();
+            }
+            _ => {
+                *last_error = Some(VmError::TooLarge);
+                writeln!(serial, "ERR install.resource").ok();
             }
         }
     } else if let Some(rest) = command
@@ -613,7 +685,6 @@ pub fn handle_command(
         writeln!(serial, "ERR unknown-command").ok();
     }
 }
-
 
 fn read_exact_timeout(
     serial: &mut UsbSerialJtag<'_, esp_hal::Blocking>,

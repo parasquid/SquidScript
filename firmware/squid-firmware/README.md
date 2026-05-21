@@ -103,8 +103,9 @@ session-local timer, an armed timer, and key-driven `app.exit`.
 
 The installed app registry is a six-slot runtime cache over persistent app
 storage. On the ESP32-C3 Super Mini, installed SQBC payloads are stored in
-LittleFS under `/apps/<app-id>.sqbc` on the `squidfs` flash partition and are
-loaded back into the registry at firmware startup.
+LittleFS under `/apps/<app-id>/main.sqbc` on the `squidfs` flash partition and
+are loaded back into the registry at firmware startup. Package resources are
+stored under the same app directory.
 
 `INSTALL.APP` receives raw SQBC v3 bytes, validates the payload, writes app
 storage, and then publishes the app in the registry cache. `RUN.TEMP` validates

@@ -471,7 +471,7 @@ Upload and installation rules:
 - validation happens after transfer completion and flush, not while only partial chunks are available
 - invalid staged files must be deleted or quarantined and must not be published into a library
 - BinBook uploads should be validated as BinBook content before publishing
-- SquidScript app uploads should use `.sqbc` until a resource package format is specified
+- SquidScript app uploads should use `.sqbc` or `.squid.zip` packages
 - uploaded `.sqbc` artifacts are installed only after bytecode and target compatibility validation
 - Wi-Fi HTTP, BLE upload, USB-copy, and SD-card-copy workflows should share the same post-transfer validation and install pipeline even though their transport protocols differ
 

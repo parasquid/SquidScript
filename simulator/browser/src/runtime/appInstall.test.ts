@@ -75,6 +75,25 @@ describe("SQBC app install loader", () => {
     expect(await vfs.readBytes("/sd/apps/hello-menu/resources/icon.bmp")).toEqual(icon);
   });
 
+  it("installs arbitrary static asset root names without treating web as special", async () => {
+    const vfs = new MemoryVfs();
+    const compiled = await compiledHello();
+
+    const result = await installSquidPackage(vfs, packageBytes({
+      "main.sqbc": compiled.sqbc!,
+      "admin-ui/index.html": "<h1>Admin</h1>",
+      "assets/app.js": "console.log('ok')"
+    }), { filename: "hello-menu.squid.zip" });
+
+    expect(result.files).toEqual([
+      "admin-ui/index.html",
+      "assets/app.js",
+      "main.sqbc"
+    ]);
+    expect(await vfs.read("/sd/apps/hello-menu/admin-ui/index.html")).toBe("<h1>Admin</h1>");
+    expect(await vfs.read("/sd/apps/hello-menu/assets/app.js")).toBe("console.log('ok')");
+  });
+
   it("rejects package imports without the canonical extension", async () => {
     const vfs = new MemoryVfs();
     const compiled = await compiledHello();
@@ -97,7 +116,12 @@ describe("SQBC app install loader", () => {
     ["parent traversal", "web/../main.sqbc"],
     ["installer path", "sd/apps/hello-menu/main.sqbc"],
     ["system path", "system/app-state/hello-menu/state.sqst"],
-    ["backslash path", "web\\index.html"]
+    ["backslash path", "web\\index.html"],
+    ["dotfile path", ".env"],
+    ["dot directory path", ".git/config"],
+    ["source path", "lib/ui.squid"],
+    ["source map path", "source-map.json"],
+    ["package output path", "old.squid.zip"]
   ])("rejects package entry with %s", async (_name, path) => {
     const vfs = new MemoryVfs();
 

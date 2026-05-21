@@ -1,5 +1,6 @@
 mod app_id;
 mod compile;
+mod package;
 mod serial;
 
 use std::{
@@ -13,6 +14,7 @@ use std::{
 use app_id::{generated_app_id, source_app_id, source_for_compile};
 use clap::{error::ErrorKind, Args, Parser, Subcommand, ValueEnum};
 use compile::{compile_source_to_sqbc, compile_target_id};
+use package::{package_app_dir, read_stored_zip_entries};
 use serde::Serialize;
 use serde_json::{json, Value};
 use serial::{candidate_ports, detect_port, OutputTail, SerialDevice};
@@ -77,6 +79,7 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
     Build(BuildArgs),
+    Package(PackageArgs),
     Run(DeviceSourceArgs),
     Repl(ReplArgs),
     Doctor(DoctorArgs),
@@ -98,6 +101,7 @@ impl Commands {
     fn name(&self) -> &'static str {
         match self {
             Self::Build(_) => "build",
+            Self::Package(_) => "package",
             Self::Run(_) => "run",
             Self::Repl(_) => "repl",
             Self::Doctor(_) => "doctor",
@@ -142,6 +146,19 @@ struct BuildArgs {
     check_target: bool,
     #[arg(long)]
     out: PathBuf,
+    #[arg(long, value_enum, default_value_t = ProfileArg::Dev)]
+    profile: ProfileArg,
+}
+
+#[derive(Args, Debug)]
+struct PackageArgs {
+    input: PathBuf,
+    #[arg(long)]
+    target: Option<String>,
+    #[arg(long)]
+    check_target: bool,
+    #[arg(long)]
+    out: Option<PathBuf>,
     #[arg(long, value_enum, default_value_t = ProfileArg::Dev)]
     profile: ProfileArg,
 }
@@ -256,6 +273,7 @@ impl From<ProfileArg> for BuildProfile {
 fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String> {
     match command {
         Commands::Build(args) => build(args),
+        Commands::Package(args) => package_app(args),
         Commands::Run(args) => run_app_source(args, human),
         Commands::Repl(args) => repl(args, human),
         Commands::Doctor(args) => doctor(args, human),
@@ -291,6 +309,24 @@ fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String>
             ProtocolCommands::Raw(args) => protocol_raw(args, human),
         },
     }
+}
+
+fn package_app(args: PackageArgs) -> Result<Value, String> {
+    let target = compile_target_id(args.target.as_deref(), args.check_target)?;
+    let result = package_app_dir(
+        &args.input,
+        args.out.as_deref(),
+        &target,
+        args.profile.into(),
+    )?;
+    Ok(json!({
+        "input": args.input,
+        "out": result.out,
+        "appId": result.app_id,
+        "target": target,
+        "files": result.entries,
+        "bytes": result.bytes
+    }))
 }
 
 fn build(args: BuildArgs) -> Result<Value, String> {
@@ -343,6 +379,14 @@ fn run_app_source(args: DeviceSourceArgs, human: bool) -> Result<Value, String> 
 }
 
 fn install_app(args: AppInstallArgs, human: bool) -> Result<Value, String> {
+    if args
+        .input
+        .file_name()
+        .and_then(|value| value.to_str())
+        .is_some_and(|name| name.ends_with(".squid.zip"))
+    {
+        return install_app_package(args, human);
+    }
     let (bytes, app_id) =
         read_installable_app(&args.input, args.app_id_override.as_deref(), &args.device)?;
     let port = resolve_port(&args.device.device)?;
@@ -355,6 +399,41 @@ fn install_app(args: AppInstallArgs, human: bool) -> Result<Value, String> {
         "port": port,
         "appId": app_id,
         "bytes": bytes.len(),
+        "response": response
+    }))
+}
+
+fn install_app_package(args: AppInstallArgs, human: bool) -> Result<Value, String> {
+    if args.app_id_override.is_some() {
+        return Err("--as is not supported when installing .squid.zip packages".to_string());
+    }
+    let bytes = fs::read(&args.input)
+        .map_err(|error| format!("failed to read {}: {error}", args.input.display()))?;
+    let mut entries = read_stored_zip_entries(&bytes)?;
+    entries.sort_by(|a, b| a.path.cmp(&b.path));
+    let main_index = entries
+        .iter()
+        .position(|entry| entry.path == "main.sqbc")
+        .ok_or_else(|| "package is missing main.sqbc".to_string())?;
+    let main = entries.remove(main_index);
+    let app_id = squidc_core::sqbc_v2::read_app_id(&main.bytes)
+        .map_err(|error| error.message)?
+        .ok_or_else(|| "SQBC has no app id metadata".to_string())?;
+
+    let port = resolve_port(&args.device.device)?;
+    let mut device = SerialDevice::open(&port)?;
+    let mut response = device.install_app(&app_id, &main.bytes)?;
+    for entry in &entries {
+        response.push_str(&device.install_resource(&app_id, &entry.path, &entry.bytes)?);
+    }
+    if human {
+        print!("{response}");
+    }
+    Ok(json!({
+        "port": port,
+        "appId": app_id,
+        "bytes": bytes.len(),
+        "files": entries.len() + 1,
         "response": response
     }))
 }
@@ -1351,6 +1430,72 @@ mod tests {
             args.input,
             PathBuf::from("examples/blinky-supermini/main.squid")
         );
+    }
+
+    #[test]
+    fn parses_package_command_with_default_output() {
+        let cli = Cli::try_parse_from(["squidc", "package", "examples/binbook-reader"]).unwrap();
+        let Commands::Package(args) = cli.command else {
+            panic!("expected package");
+        };
+        assert_eq!(args.input, PathBuf::from("examples/binbook-reader"));
+        assert_eq!(args.out, None);
+    }
+
+    #[test]
+    fn package_app_dir_writes_sqbc_and_runtime_files_without_source_or_dotfiles() {
+        let root = unique_test_dir("squidc-package");
+        let app_dir = root.join("app");
+        fs::create_dir_all(app_dir.join("static")).unwrap();
+        fs::create_dir_all(app_dir.join("lib")).unwrap();
+        fs::create_dir_all(app_dir.join(".git")).unwrap();
+        fs::write(
+            app_dir.join("main.squid"),
+            r#"app "package-demo"
+include "lib/ui.squid"
+state {}
+event.on("app.start") {}
+screen("main") {}
+"#,
+        )
+        .unwrap();
+        fs::write(
+            app_dir.join("lib").join("ui.squid"),
+            "function helper() {}\n",
+        )
+        .unwrap();
+        fs::write(app_dir.join("static").join("index.html"), "<h1>Demo</h1>").unwrap();
+        fs::write(app_dir.join(".env"), "SECRET=1").unwrap();
+        fs::write(app_dir.join(".git").join("HEAD"), "ref: main").unwrap();
+        fs::write(app_dir.join("old.squid.zip"), "old").unwrap();
+        let out = root.join("demo.squid.zip");
+
+        let result = package_app_dir(&app_dir, Some(&out), "portable", BuildProfile::Dev).unwrap();
+        let entries = package::read_stored_zip_entries(&fs::read(&out).unwrap())
+            .unwrap()
+            .into_iter()
+            .map(|entry| entry.path)
+            .collect::<Vec<_>>();
+
+        assert_eq!(result.app_id, "package-demo");
+        assert_eq!(entries, vec!["main.sqbc", "static/index.html"]);
+        assert!(result.entries.contains(&"main.sqbc".to_string()));
+        assert!(result.entries.contains(&"static/index.html".to_string()));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    fn unique_test_dir(prefix: &str) -> PathBuf {
+        let mut path = env::temp_dir();
+        path.push(format!(
+            "{}-{}-{}",
+            prefix,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        path
     }
 
     #[test]
