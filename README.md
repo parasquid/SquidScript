@@ -86,6 +86,14 @@ SquidScript is centered on constrained device apps: a small language, precompile
 
 Crosspoint may share nearby interests, but SquidScript's scope is the language and runtime stack for these device apps. Features belong here when they strengthen that app model, its compiler/runtime contract, or the firmware and simulator paths that execute it.
 
+## Related Xteink Firmware References
+
+These projects are useful references for Xteink X3/X4 hardware behavior, memory tradeoffs, reader workflows, and alternative firmware architecture:
+
+- [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader): mature Arduino/PlatformIO C/C++ reader firmware for Xteink X3/X4.
+- [Papyrix](https://github.com/bigbag/papyrix-reader): CrossPoint-derived Arduino/PlatformIO firmware focused on lightweight reading features and additional formats.
+- [pulp-os](https://github.com/hansmrtn/pulp-os): bare-metal `no_std` Rust Xteink X4 firmware; useful reference for Rust-first display, async, and memory-constrained architecture.
+
 ## Design Stance
 
 SquidScript is still before 1.0, so accepted design changes are reflected directly in specs, code, fixtures, examples, and docs. The repository does not preserve old APIs or syntax by default while the language is still settling.

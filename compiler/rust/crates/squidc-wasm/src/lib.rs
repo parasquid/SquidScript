@@ -5,7 +5,10 @@ use squidc_core::{
 };
 use squidvm_core::{
     error::VmError,
-    host::{DisplayLineOptions, DisplayRectOptions, DisplayTextOptions, TraceSink},
+    host::{
+        DisplayLineOptions, DisplayRectOptions, DisplayTextOptions, SimWifiBackend, TraceSink,
+        WifiActionResult, WifiApIp, WifiBackend, WifiStatus,
+    },
     limits::MAX_SAVED_STATE_BYTES,
     program::Program,
     strings::StringResolver,
@@ -106,6 +109,8 @@ struct BrowserHost {
     state_dirty: bool,
     draw_commands: Vec<serde_json::Value>,
     debug_output: Vec<String>,
+    wifi: SimWifiBackend,
+    indicator: bool,
 }
 
 impl BrowserHost {
@@ -115,6 +120,8 @@ impl BrowserHost {
             state_dirty: false,
             draw_commands: Vec::new(),
             debug_output: Vec::new(),
+            wifi: SimWifiBackend::new(),
+            indicator: false,
         }
     }
 
@@ -216,6 +223,24 @@ impl TraceSink for BrowserHost {
         }));
     }
 
+    fn service_indicator_write(&mut self, value: bool) -> Result<(), VmError> {
+        self.indicator = value;
+        Ok(())
+    }
+
+    fn service_indicator_toggle(&mut self) -> Result<(), VmError> {
+        self.indicator = !self.indicator;
+        Ok(())
+    }
+
+    fn service_indicator_breathe(&mut self) -> Result<(), VmError> {
+        Ok(())
+    }
+
+    fn service_indicator_read(&mut self) -> Result<bool, VmError> {
+        Ok(self.indicator)
+    }
+
     fn state_load(&mut self, out: &mut [u8]) -> Result<Option<usize>, VmError> {
         if self.state_bytes.is_empty() {
             return Ok(None);
@@ -242,6 +267,30 @@ impl TraceSink for BrowserHost {
         self.state_dirty = true;
         Ok(())
     }
+
+    fn service_wifi_start_ap<'a>(
+        &'a mut self,
+        ssid: &str,
+    ) -> Result<WifiActionResult<'a>, VmError> {
+        self.wifi.start_ap(ssid)
+    }
+
+    fn service_wifi_stop_ap<'a>(&'a mut self) -> Result<WifiActionResult<'a>, VmError> {
+        self.wifi.stop_ap()
+    }
+
+    fn service_wifi_status<'a>(&'a mut self) -> Result<WifiStatus<'a>, VmError> {
+        self.wifi.status()
+    }
+
+    fn service_wifi_get_ap_ip<'a>(&'a mut self) -> Result<WifiApIp<'a>, VmError> {
+        self.wifi.ap_ip()
+    }
+
+    fn service_wifi_teardown(&mut self) -> Result<(), VmError> {
+        self.wifi.teardown()?;
+        Ok(())
+    }
 }
 
 fn state_json(vm: &Vm<'_>) -> Result<serde_json::Value, JsValue> {
@@ -261,6 +310,7 @@ fn value_json(strings: &StringResolver<'_>, value: Value) -> serde_json::Value {
         Value::Bool(value) => serde_json::json!(value),
         Value::I32(value) => serde_json::json!(value),
         Value::String(_) | Value::RuntimeString(_) => serde_json::json!(value_text(strings, value)),
+        Value::Record(_) => serde_json::json!("<record>"),
     }
 }
 
@@ -272,6 +322,7 @@ fn value_text(strings: &StringResolver<'_>, value: Value) -> String {
         Value::String(_) | Value::RuntimeString(_) => {
             strings.value_str(value).unwrap_or("").to_string()
         }
+        Value::Record(_) => "<record>".to_string(),
     }
 }
 

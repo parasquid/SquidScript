@@ -24,6 +24,7 @@ const OP_GET_STATE: u8 = 10;
 const OP_SET_STATE: u8 = 11;
 const OP_GET_LOCAL: u8 = 12;
 const OP_SET_LOCAL: u8 = 13;
+const OP_GET_FIELD: u8 = 14;
 const OP_ADD: u8 = 20;
 const OP_SUB: u8 = 21;
 const OP_EQ: u8 = 22;
@@ -64,6 +65,11 @@ const BUILTIN_SYSTEM_STORAGE: u8 = 21;
 const BUILTIN_SERVICE_INDICATOR_WRITE: u8 = 27;
 const BUILTIN_SERVICE_INDICATOR_TOGGLE: u8 = 28;
 const BUILTIN_SERVICE_INDICATOR_READ: u8 = 29;
+const BUILTIN_SERVICE_INDICATOR_BREATHE: u8 = 34;
+const BUILTIN_SERVICE_WIFI_START_AP: u8 = 30;
+const BUILTIN_SERVICE_WIFI_STOP_AP: u8 = 31;
+const BUILTIN_SERVICE_WIFI_STATUS: u8 = 32;
+const BUILTIN_SERVICE_WIFI_GET_AP_IP: u8 = 33;
 
 const VALUE_NULL: u8 = 0;
 const VALUE_BOOL: u8 = 1;
@@ -425,6 +431,7 @@ fn collect_statement_strings(
                 collect_expr_strings(value, strings)?;
             }
             IrStatement::ServiceIndicatorToggle => {}
+            IrStatement::ServiceIndicatorBreathe => {}
             IrStatement::DisplayText { text, options } => {
                 collect_expr_strings(text, strings)?;
                 collect_option_strings(options, strings)?;
@@ -620,13 +627,18 @@ fn compile_statement(
             for arg in args {
                 compile_expr(unit, frame, arg)?;
             }
-            let function = function_id(unit, name)?;
-            emit(&mut unit.code, OP_CALL_FUNCTION);
-            write_u16(&mut unit.code, function);
-            write_u16(
-                &mut unit.code,
-                u16::try_from(args.len()).map_err(|_| SqbcError::new("too many args"))?,
-            );
+            if let Some(builtin) = builtin_for_call(name) {
+                validate_builtin_arg_count(name, args.len())?;
+                emit_builtin(&mut unit.code, builtin);
+            } else {
+                let function = function_id(unit, name)?;
+                emit(&mut unit.code, OP_CALL_FUNCTION);
+                write_u16(&mut unit.code, function);
+                write_u16(
+                    &mut unit.code,
+                    u16::try_from(args.len()).map_err(|_| SqbcError::new("too many args"))?,
+                );
+            }
             emit(&mut unit.code, OP_POP);
         }
         IrStatement::DebugPrint { args } => {
@@ -692,6 +704,9 @@ fn compile_statement(
         }
         IrStatement::ServiceIndicatorToggle => {
             emit_builtin(&mut unit.code, BUILTIN_SERVICE_INDICATOR_TOGGLE);
+        }
+        IrStatement::ServiceIndicatorBreathe => {
+            emit_builtin(&mut unit.code, BUILTIN_SERVICE_INDICATOR_BREATHE);
         }
         IrStatement::ScreenOpen { screen } => {
             let screen_id = unit.strings.intern(screen)?;
@@ -869,10 +884,11 @@ fn compile_expr(
             ))
         }
         IrExpr::Field { target, field } => {
-            let _ = (target, field);
-            Err(SqbcError::new(
-                "record field access is not in the reference firmware subset yet",
-            ))
+            compile_expr(unit, frame, target)?;
+            let field_id = unit.strings.intern(field)?;
+            emit(&mut unit.code, OP_GET_FIELD);
+            write_u16(&mut unit.code, field_id);
+            Ok(())
         }
         IrExpr::HardwareGpioRead { name } => {
             emit_string(unit, name)?;
@@ -896,13 +912,18 @@ fn compile_expr(
             for arg in args {
                 compile_expr(unit, frame, arg)?;
             }
-            let function = function_id(unit, name)?;
-            emit(&mut unit.code, OP_CALL_FUNCTION);
-            write_u16(&mut unit.code, function);
-            write_u16(
-                &mut unit.code,
-                u16::try_from(args.len()).map_err(|_| SqbcError::new("too many args"))?,
-            );
+            if let Some(builtin) = builtin_for_call(name) {
+                validate_builtin_arg_count(name, args.len())?;
+                emit_builtin(&mut unit.code, builtin);
+            } else {
+                let function = function_id(unit, name)?;
+                emit(&mut unit.code, OP_CALL_FUNCTION);
+                write_u16(&mut unit.code, function);
+                write_u16(
+                    &mut unit.code,
+                    u16::try_from(args.len()).map_err(|_| SqbcError::new("too many args"))?,
+                );
+            }
             Ok(())
         }
     }
@@ -974,6 +995,29 @@ fn function_id(unit: &CompileUnit, name: &str) -> Result<u16, SqbcError> {
 fn emit_builtin(code: &mut Vec<u8>, builtin: u8) {
     emit(code, OP_CALL_BUILTIN);
     emit(code, builtin);
+}
+
+fn builtin_for_call(name: &str) -> Option<u8> {
+    match name {
+        "service.wifi.startAP" => Some(BUILTIN_SERVICE_WIFI_START_AP),
+        "service.wifi.stopAP" => Some(BUILTIN_SERVICE_WIFI_STOP_AP),
+        "service.wifi.status" => Some(BUILTIN_SERVICE_WIFI_STATUS),
+        "service.wifi.getAPIP" => Some(BUILTIN_SERVICE_WIFI_GET_AP_IP),
+        _ => None,
+    }
+}
+
+fn validate_builtin_arg_count(name: &str, count: usize) -> Result<(), SqbcError> {
+    let valid = match name {
+        "service.wifi.startAP" => count == 1,
+        "service.wifi.stopAP" | "service.wifi.status" | "service.wifi.getAPIP" => count == 0,
+        _ => true,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(SqbcError::new(format!("invalid argument count for {name}")))
+    }
 }
 
 fn encode_state_section(ir: &IrProgram, strings: &StringTable) -> Result<Vec<u8>, SqbcError> {

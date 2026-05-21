@@ -7,6 +7,7 @@ pub enum Value {
     I32(i32),
     String(u16),
     RuntimeString(u8),
+    Record(u8),
 }
 
 impl Value {
@@ -15,7 +16,7 @@ impl Value {
             Value::Null => false,
             Value::Bool(value) => value,
             Value::I32(value) => value != 0,
-            Value::String(_) | Value::RuntimeString(_) => true,
+            Value::String(_) | Value::RuntimeString(_) | Value::Record(_) => true,
         }
     }
 

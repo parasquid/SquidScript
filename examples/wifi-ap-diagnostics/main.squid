@@ -1,0 +1,105 @@
+app "wifi-ap-diagnostics"
+
+state {
+  clients: int = 0
+  previousClients: int = 0
+  mode: int = 0
+  ticks: int = 0
+  led: bool = false
+}
+
+event.on("app.start") {
+  clients = 0
+  previousClients = 0
+  mode = 0
+  ticks = 0
+  led = false
+  service.indicator.breathe()
+
+  let ap = service.wifi.startAP("SquidScript")
+  let status = service.wifi.status()
+  let ip = service.wifi.getAPIP()
+
+  debug.print("wifi start", ap.ok, ap.error)
+  debug.print("wifi status", status.active, status.mode, status.ssid, status.ipAddress, status.clients, status.error)
+  debug.print("wifi ap ip", ip.ip, ip.gw, ip.netmask, ip.error)
+  debug.print("join the AP named SquidScript")
+  service.timer.every("timer.debug", 250)
+}
+
+event.on("timer.debug") {
+  let status = service.wifi.status()
+
+  previousClients = clients
+  clients = status.clients
+
+  if (clients <= 0) {
+    if (previousClients > 0) {
+      debug.print("wifi all clients disconnected")
+    }
+    mode = 0
+    ticks = 0
+    led = false
+    service.indicator.breathe()
+  }
+
+  if (clients > 0) {
+    if (previousClients == 0) {
+      mode = 1
+      ticks = 0
+      debug.print("wifi connecting", clients)
+    }
+
+    if (mode == 1) {
+      service.indicator.toggle()
+      led = service.indicator.read()
+      ticks = ticks + 1
+      if (ticks >= 8) {
+        mode = 2
+        ticks = 0
+        led = true
+        service.indicator.write(led)
+        debug.print("wifi connected", clients)
+      }
+    }
+
+    if (mode == 2) {
+      ticks = ticks + 1
+      if (ticks == 8) {
+        led = false
+        service.indicator.write(led)
+      }
+      if (ticks >= 9) {
+        led = true
+        service.indicator.write(led)
+        ticks = 0
+      }
+    }
+
+    if (clients != previousClients) {
+      debug.print("wifi clients", clients)
+    }
+  }
+}
+
+event.on("key.SELECT") {
+  let stop = service.wifi.stopAP()
+  let status = service.wifi.status()
+
+  debug.print("wifi stop", stop.ok, stop.error)
+  debug.print("wifi status", status.active, status.mode, status.ssid, status.ipAddress, status.clients, status.error)
+  clients = 0
+  previousClients = 0
+  mode = 0
+  ticks = 0
+  led = false
+  service.indicator.breathe()
+}
+
+event.on("key.BACK") {
+  service.wifi.stopAP()
+  service.indicator.breathe()
+  app.exit()
+}
+
+screen("main") {}

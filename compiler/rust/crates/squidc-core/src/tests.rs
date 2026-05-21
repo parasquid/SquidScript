@@ -1044,6 +1044,43 @@ screen("main") {
 }
 
 #[test]
+fn compiles_service_wifi_ap_records_and_wifi_sugar() {
+    let source = r#"app "wifi-ap"
+state {}
+
+event.on("app.start") {
+  let ap = service.wifi.startAP("SquidScript")
+  let status = wifi.status()
+  debug.print(ap.ok, status.active, status.ipAddress)
+  wifi.stopAP()
+}
+
+screen("main") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let ir = output.ir.unwrap();
+    let handler = ir
+        .handlers
+        .iter()
+        .find(|handler| handler.event == "app.start")
+        .unwrap();
+    assert!(matches!(
+        &handler.statements[0],
+        IrStatement::Let { expr: IrExpr::Call { name, .. }, .. } if name == "service.wifi.startAP"
+    ));
+    assert!(matches!(
+        &handler.statements[1],
+        IrStatement::Let { expr: IrExpr::Call { name, .. }, .. } if name == "service.wifi.status"
+    ));
+    sqbc::encode_sqbc(&ir).unwrap();
+}
+
+#[test]
 fn warns_when_fallible_result_is_ignored() {
     let source = r#"app "ignored-result" target "xteink-x4"
 event.on("app.start") {

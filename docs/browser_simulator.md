@@ -94,6 +94,23 @@ logical input, and app exit.
 
 Rendering uses redraw-from-state semantics. Canvas rendering preserves source order, clips to the logical display, maps to the target's 16-level grayscale palette, and chooses deterministic font heights from the target definition.
 
+### Simulated Wi-Fi And Host Network
+
+Browser-sim may simulate `service.wifi.*` state so apps can exercise AP
+lifecycle logic, status records, and teardown behavior. It does not create a
+real Wi-Fi access point, change the host machine's network, bind LAN ports from
+the web page, or prove radio behavior.
+
+When an app starts `service.wifi.startAP(...)`, browser-sim records a simulated
+foreground AP with the requested SSID and conventional development AP address
+metadata such as `192.168.4.1`. That state is for SquidScript behavior tests and
+UI previews only.
+
+Future browser-sim HTTP/static-server work should reuse the browser's existing
+origin or the local development server as a host-network transport. That
+transport may preview how an AP-hosted admin UI would behave, but it must be
+presented as a simulator transport rather than as a real SoftAP.
+
 Button outcomes are mutually exclusive:
 
 - short press fires on release

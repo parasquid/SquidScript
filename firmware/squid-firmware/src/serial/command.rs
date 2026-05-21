@@ -37,7 +37,7 @@ pub fn handle_command(
 ) {
     trace.set_app_storage_used(registry_installed_bytes(registry));
     if command == "help" {
-        writeln!(serial, "commands: HELLO INSTALL.APP <app-id> <len> <fnv32hex> INSTALL.RESOURCE <app-id> <path> <len> <fnv32hex> RUN.TEMP <app-id> <len> <fnv32hex> RUN.APP <app-id> RUN.EVENT <app-id> <event> KEY SELECT APP.LIST RESOURCES.GET STATE.GET STATE.IMPORT <len> <fnv32hex> TRACE.GET OUTPUT.GET DRAWLOG.GET ERRORS.GET RESET STORAGE.FORMAT").ok();
+        writeln!(serial, "commands: HELLO INSTALL.APP <app-id> <len> <fnv32hex> INSTALL.RESOURCE <app-id> <path> <len> <fnv32hex> RUN.TEMP <app-id> <len> <fnv32hex> RUN.APP <app-id> RUN.EVENT <app-id> <event> KEY SELECT APP.LIST RESOURCES.GET WIFI.STATUS STATE.GET STATE.IMPORT <len> <fnv32hex> TRACE.GET OUTPUT.GET DRAWLOG.GET ERRORS.GET RESET STORAGE.FORMAT").ok();
     } else if command == "HELLO" || command == "hello" || command == "info" {
         writeln!(serial, "target=esp32c3-super-mini").ok();
         writeln!(serial, "build={BUILD_ID}").ok();
@@ -58,6 +58,11 @@ pub fn handle_command(
         writeln!(serial, "OK HELLO").ok();
     } else if command == "RESOURCES.GET" || command == "resources" {
         print_resources(serial, registry, temp_app, vm.as_ref());
+    } else if command == "WIFI.STATUS" || command == "wifi.status" {
+        writeln!(serial, "BEGIN WIFI.STATUS").ok();
+        trace.print_wifi_status(serial);
+        writeln!(serial, "END WIFI.STATUS").ok();
+        writeln!(serial, "OK WIFI.STATUS").ok();
     } else if let Some(rest) = command
         .strip_prefix("INSTALL.APP ")
         .or_else(|| command.strip_prefix("install.app "))
@@ -119,6 +124,7 @@ pub fn handle_command(
                         };
                         return;
                     }
+                    let _ = trace.teardown_services();
                     *vm = None;
                     *vm_slot = None;
                     *temp_app = TempApp::empty();
@@ -262,6 +268,7 @@ pub fn handle_command(
                         return;
                     }
                 };
+                let _ = trace.teardown_services();
                 trace.clear();
                 trace.clear_timers();
                 trace.remove_app_from_stack(AppRef::Temp);
@@ -340,7 +347,9 @@ pub fn handle_command(
             writeln!(serial, "ERR no-app").ok();
             return;
         };
+        let _ = trace.teardown_services();
         trace.clear();
+        trace.clear_timers();
         trace.reset_stack();
         trace.active_app = Some(AppRef::Persistent(slot));
         *vm = None;
@@ -642,6 +651,7 @@ pub fn handle_command(
             writeln!(serial, "OK ERRORS.GET").ok();
         }
     } else if command == "reset" || command == "RESET" {
+        let _ = trace.teardown_services();
         trace.clear();
         trace.clear_timers();
         trace.reset_stack();
@@ -666,6 +676,7 @@ pub fn handle_command(
         match app_storage.format() {
             Ok(()) => {
                 registry.clear();
+                let _ = trace.teardown_services();
                 trace.clear();
                 trace.clear_timers();
                 trace.reset_stack();

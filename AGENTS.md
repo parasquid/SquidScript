@@ -26,6 +26,11 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - When making implementation plans, include documentation work explicitly.
 - Create new docs when needed, update related existing docs in the same change, and remove or revise obsolete docs so repository documentation stays aligned with the implementation and current project decisions.
 - Before finishing implementation work, check related docs for stale command examples, old API shapes, outdated storage/runtime descriptions, and obsolete compatibility notes.
+- When executing a plan, use the todo tracker for the active implementation
+  steps so progress and remaining work survive context compaction.
+- When the user asks for memory numbers without further qualification, report
+  RAM numbers by default. Treat flash/app-storage/image-size numbers as flash
+  storage and only include them when requested or clearly relevant.
 
 ## Language And Spec Discipline
 
@@ -53,6 +58,11 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   patterns, and relevant existing repositories before designing a custom
   implementation. Present viable options with tradeoffs, and explain why the
   chosen approach fits this repository's constraints.
+- Treat non-blocking firmware/runtime behavior as a critical service design
+  requirement. A SquidScript service should not monopolize the main loop, starve
+  serial input, delay timers, or hide long busy waits behind a convenient API.
+  Prefer short poll/step functions, explicit async/event progress, bounded
+  time slices, or target scheduler integration over blocking loops.
 - Before adding or moving tests, identify the owning layer: language/compiler semantics, SQBC encoding, firmware VM behavior, host CLI behavior, board-specific firmware harness, example app, docs, or simulator.
 - When making platform decisions, distinguish the public SquidScript contract from board-specific implementation details. Standardize portable concepts in docs/specs, and keep physical storage layouts, partitions, pins, and device quirks in firmware/target-specific docs and metadata.
 - For storage decisions, model logical APIs and physical volumes separately. A board may use LittleFS, flash records, SD, or another backend without changing the portable app/compiler contract.

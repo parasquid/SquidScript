@@ -27,6 +27,7 @@ OUTPUT.GET
 DRAWLOG.GET
 ERRORS.GET
 RESOURCES.GET
+WIFI.STATUS
 RESET
 STORAGE.FORMAT
 ```
@@ -72,6 +73,27 @@ ESP32-C3 reference firmware's raw runtime RAM budget, not portable heap
 introspection. `temp_app_buffer_bytes` and `temp_app_bytes` describe the
 RAM-backed `RUN.TEMP` path. `installed_code_cache_bytes` describes the
 installed-app chunk buffer/cache path.
+
+Wi-Fi diagnostics are app-independent firmware diagnostics:
+
+```text
+BEGIN WIFI.STATUS
+active=true
+mode=ap
+ssid=SquidScript
+ip=192.168.4.1
+clients=0
+error=
+ap_ip=192.168.4.1
+ap_gw=192.168.4.1
+ap_netmask=255.255.255.0
+ap_error=
+END WIFI.STATUS
+OK WIFI.STATUS
+```
+
+Use `WIFI.STATUS` when debugging radio state. It reports the firmware Wi-Fi
+backend directly and does not depend on SquidScript `debug.print` output.
 
 Installed apps are persistent in the ESP32-C3 reference firmware. On startup,
 firmware scans the app store, rebuilds the in-memory registry cache, boots

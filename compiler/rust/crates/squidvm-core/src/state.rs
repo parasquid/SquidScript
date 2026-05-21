@@ -150,6 +150,7 @@ pub(crate) fn encode_state_record_value(
             write_byte(out, cursor, VALUE_STRING)?;
             write_len_prefixed(out, cursor, strings.value_str(value)?.as_bytes())
         }
+        Value::Record(_) => Err(VmError::InvalidOperand),
     }
 }
 

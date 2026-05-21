@@ -5,12 +5,14 @@ mod log;
 mod runtime;
 mod state;
 mod vm;
+mod wifi;
 
 pub use command::handle_command;
 pub use lifecycle::{boot_main, storage_error_from_persistent};
 pub use line::{trim_ascii, LineBuffer};
-pub use runtime::RuntimeSink;
+pub use runtime::{OnboardIndicator, RuntimeSink};
 pub use vm::{ActiveVm, TempApp};
+pub use wifi::{install_wifi_event_diagnostics, FirmwareWifiBackend};
 
 pub const BUILD_ID: &str = match option_env!("SQUID_FIRMWARE_BUILD_ID") {
     Some(value) => value,

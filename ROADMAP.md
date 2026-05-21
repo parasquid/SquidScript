@@ -19,14 +19,53 @@ persistent SquidScript app platform prototype.
 
 ### 2. Design Portable Wi-Fi And Services Runtime
 
-- Define portable SquidScript Wi-Fi and service APIs that can map onto the
-  ESP32-C3 first without baking ESP-specific behavior into the language.
-- Decide where driver/service boundaries live across target metadata, firmware
-  runtime services, and app-facing APIs.
-- Specify runtime errors and target capability checks for devices without Wi-Fi
-  or with restricted networking support.
+- Replace the ESP32-C3 reference runtime's serial-log AP prototype with a real
+  esp-rs Wi-Fi radio backend for `service.wifi.startAP/stopAP/status/getAPIP`.
+- Complete ESP32-C3 SoftAP hardware validation: prove beacon visibility and
+  client joinability from a phone/laptop, and debug radio startup if host scans
+  do not show the AP despite successful firmware status records.
+- Add Wi-Fi AP connection-state diagnostics: expose real SoftAP client counts
+  through `service.wifi.status().clients`, use the diagnostics app indicator
+  to show waiting/connecting/connected/disconnected states, and document the
+  hardware verification flow.
+- Add the network stack needed for AP IP behavior, DHCP, and later HTTP serving;
+  the AP-first backend should not imply these are complete until verified.
+- Define password/security policy and `startAP` option support for AP mode;
+  v0 currently allows open developer AP defaults only.
+- Add station/client mode, scan, profile setup, hostname, and configurable IP
+  APIs only after the AP-first service boundary is validated.
+- Add target capability checks for devices without Wi-Fi or with restricted
+  networking support.
+- Evaluate a portable `squid-kernel` service runtime/scheduler abstraction
+  after ESP Wi-Fi proves the service boundary. Compare ESP esp-rs/Embassy,
+  Pico W CYW43/Embassy, and nRF52 Zephyr/nRF Connect before choosing shared
+  scheduler code.
+- Add Pico W Wi-Fi backend exploration using the same `service.wifi.*`
+  contract.
+- Add bus-attached Wi-Fi co-processor support as `WifiBackend`
+  implementations over UART/SPI/I2C where modules support those transports,
+  including ESP-AT-style ESP8266/ESP32 modules.
+- Add nRF52840 Bluetooth backend exploration as a sibling radio service rather
+  than as part of the Wi-Fi trait.
 - Decide whether timers should use the same service model, including how a
   target chooses RTC-backed scheduling versus internal timer peripherals.
+- Audit firmware/runtime services and main-loop helpers for blocking behavior,
+  especially busy waits hidden behind service APIs. Define service expectations
+  around non-blocking progress, bounded time slices, timer/serial fairness, and
+  target scheduler integration.
+- Implement PWM-capable output backends for indicators and GPIO-style outputs.
+  `service.indicator.breathe()` should be a convenience over target hardware
+  PWM where available, with shared output semantics for future dimming,
+  breathing, and smooth transitions rather than software blinking in the main
+  loop.
+- Define configurable GPIO PWM APIs and target metadata: expose supported PWM
+  pins/channels, frequency ranges, duty-cycle resolution, polarity, and
+  allocation conflicts so apps can request PWM output without assuming every
+  GPIO can provide it.
+- Add firmware diagnostic protocol commands for radio and serial debugging:
+  app-independent Wi-Fi status, AP config dump, station/client list or count,
+  last radio error details, and a serial framing/self-test command so hardware
+  checks do not depend only on SquidScript `debug.print` output.
 - Implement `httpServer.*` static serving with arbitrary app-selected asset
   roots, bounded content-type handling, upload staging, and target capability
   checks.
@@ -39,6 +78,9 @@ persistent SquidScript app platform prototype.
 - Implement `device.config.load/set/rebind/save` builtins with result records,
   transactional rebind, volatile temp-run config, and explicit
   `device.config.save("flash")` SQDC persistence.
+- Add explicit device binding unassign/release semantics so a pin claimed by an
+  indicator, display, PWM output, or other peripheral can be freed before being
+  rebound or reused as raw GPIO.
 - Move SQDEVICE/SQDC parsing and persistence into firmware-owned runtime paths
   and share bounded typed-record helpers with SQST where practical.
 - Wire the ESP32-C3 `indicator.default` binding through real SQDEVICE/SQDC
@@ -59,7 +101,14 @@ persistent SquidScript app platform prototype.
   Playwright checks so Rust, Node, `wasm-pack`, and system libraries are
   reproducible without making containers mandatory for local development.
 
-### 5. Consider SQBC Library Artifacts
+### 5. Remove Pre-1.0 Versioning Implications
+
+- Audit compiler, runtime, firmware, simulator, docs, fixtures, and file
+  formats for version fields, versioned API/module names, compatibility modes,
+  or "unsupported version" paths that imply a pre-1.0 compatibility contract;
+  remove them or replace them directly with current-format behavior.
+
+### 6. Consider SQBC Library Artifacts
 
 - Investigate whether reusable functionality should be packaged as SQBC library
   artifacts that other SQBC apps can import or link against, including

@@ -90,7 +90,7 @@ browser-sim
 native-host-sim
 ```
 
-Backend selection is a build-time concern. SquidScript apps should still target capabilities such as `service.display.draw`, `library.books.read`, `wifi.accessPoint`, or `bleTransfer.receive`.
+Backend selection is a build-time concern. SquidScript apps should still target capabilities such as `service.display.draw`, `library.books.read`, `service.wifi.accessPoint`, or `bleTransfer.receive`.
 
 ---
 
@@ -111,6 +111,12 @@ The expected stack is:
 - Embassy and `esp-hal-embassy` for async task execution
 - `esp-radio` for Wi-Fi/BLE work when the radio stack is needed
 - target-specific display, input, storage, power, and console drivers
+
+RTOS, scheduler, allocator, and radio-driver initialization are backend-owned
+implementation details. The portable SquidScript contract should stop at
+service boundaries such as `service.wifi.*`; it should not expose ESP RTOS
+handles, Embassy tasks, Zephyr objects, CYW43 driver state, or bus-attached radio
+module details.
 
 This reference firmware should use `pulp-os` as an architecture reference, not a dependency or compatibility target. Relevant ideas include a small kernel/service split, Embassy-based concurrency, shared SPI discipline, no-framebuffer or strip-buffer display rendering, static allocation bias, and a boot console that is usable before SquidScript apps are available.
 

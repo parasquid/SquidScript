@@ -21,15 +21,15 @@ fn is_fallible_builtin(name: &str) -> bool {
             | "library.installUpload"
             | "binbook.open"
             | "binbook.inspect"
-            | "wifi.connect"
-            | "wifi.disconnect"
-            | "wifi.scan"
-            | "wifi.startAP"
-            | "wifi.stopAP"
-            | "wifi.setIP"
-            | "wifi.setAPIP"
-            | "wifi.setHostname"
-            | "wifi.openSetup"
+            | "service.wifi.connect"
+            | "service.wifi.disconnect"
+            | "service.wifi.scan"
+            | "service.wifi.startAP"
+            | "service.wifi.stopAP"
+            | "service.wifi.setIP"
+            | "service.wifi.setAPIP"
+            | "service.wifi.setHostname"
+            | "service.wifi.openSetup"
             | "httpServer.start"
             | "httpServer.stop"
             | "httpServer.poll"
@@ -398,6 +398,7 @@ fn validate_debug_block_statements(
             | IrStatement::HardwareGpioToggle { .. }
             | IrStatement::ServiceIndicatorWrite { .. }
             | IrStatement::ServiceIndicatorToggle
+            | IrStatement::ServiceIndicatorBreathe
             | IrStatement::Return { .. }
             | IrStatement::DisplayClear { .. }
             | IrStatement::DisplayText { .. }
@@ -503,6 +504,7 @@ fn statement_uses_any_name(
         | IrStatement::AppDisarm { .. }
         | IrStatement::HardwareGpioToggle { .. }
         | IrStatement::ServiceIndicatorToggle
+        | IrStatement::ServiceIndicatorBreathe
         | IrStatement::DisplayClear { .. }
         | IrStatement::DisplayRect { .. }
         | IrStatement::DisplayLine { .. } => false,
@@ -583,6 +585,7 @@ fn validate_screen_statements(
             | IrStatement::HardwareGpioToggle { .. }
             | IrStatement::ServiceIndicatorWrite { .. }
             | IrStatement::ServiceIndicatorToggle
+            | IrStatement::ServiceIndicatorBreathe
             | IrStatement::Assign { .. } => {
                 diagnostics.push(error(
                     "E_RENDER_PURITY",

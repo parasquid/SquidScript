@@ -92,6 +92,39 @@ against a target definition.
 does not flash, install apps, reset the board, or run hardware tests. See
 `docs/squidc_cli.md` for the grouped `squidc` command surface.
 
+## How To Get Memory Numbers
+
+When asking for "memory", use RAM numbers by default. Flash image size,
+partition usage, and LittleFS app storage are flash storage numbers and should
+be requested or reported separately.
+
+Use these commands from the repository root when checking ESP32-C3 reference
+firmware RAM and storage usage:
+
+```sh
+scripts/c3-supermini-build.sh
+riscv64-elf-size firmware/squid-firmware/target/riscv32imc-unknown-none-elf/release/c3-supermini-serial-hello
+scripts/c3-supermini-flash.sh
+cargo run -p squidc -- device resources
+```
+
+`riscv64-elf-size` reports ELF `text`, `data`, and `bss`. For RAM-focused
+comparisons, `data` and `bss` are the relevant sections; `text` is code size.
+
+`scripts/c3-supermini-flash.sh` prints flash app-partition usage through
+`espflash`, for example `App/part. size: used/available bytes, percent`.
+
+`cargo run -p squidc -- device resources` sends `RESOURCES.GET` to the flashed
+firmware and reports runtime diagnostics such as `memory_available_bytes`, temp
+app buffer usage, installed code cache bytes, and LittleFS app-storage usage.
+`memory_available_bytes` is currently a static firmware RAM estimate, not a live
+heap measurement.
+
+The ESP radio heap is not yet exposed through `RESOURCES.GET`. To prove Wi-Fi
+heap recovery, add live `esp_alloc`/radio heap diagnostics and compare before
+`service.wifi.startAP`, after start, after `service.wifi.stopAP`, and after app
+exit.
+
 The timer armed-app hardware test uploads two SQBC apps, runs the `main` app,
 lets the firmware timer fire, then verifies `OUTPUT.GET` contains
 `main start`, `armed register`, and `armed timer`.

@@ -60,6 +60,11 @@ impl TraceSink for GpioTrace {
         Ok(())
     }
 
+    fn service_indicator_breathe(&mut self) -> Result<(), VmError> {
+        self.events.push("indicator breathe".to_string());
+        Ok(())
+    }
+
     fn service_indicator_read(&mut self) -> Result<bool, VmError> {
         self.events.push("indicator read".to_string());
         Ok(self.led)
@@ -89,6 +94,7 @@ impl TraceSink for RuntimeTrace {
                 Value::I32(value) => line.push_str(&value.to_string()),
                 Value::Bool(value) => line.push_str(&value.to_string()),
                 Value::Null => line.push_str("null"),
+                Value::Record(_) => line.push_str("<record>"),
             }
         }
         self.events.push(format!("debug {line}"));
@@ -127,6 +133,90 @@ impl TraceSink for RuntimeTrace {
 
     fn system_storage_text(&mut self, name: &str, out: &mut dyn fmt::Write) -> Result<(), VmError> {
         write!(out, "{name} 1 MiB").map_err(|_| VmError::InvalidOperand)
+    }
+}
+
+#[derive(Default)]
+struct WifiTrace {
+    events: Vec<String>,
+    active: bool,
+    ssid: String,
+    teardown_count: usize,
+}
+
+impl TraceSink for WifiTrace {
+    fn trace(&mut self, message: &str) {
+        self.events.push(message.to_string());
+    }
+
+    fn debug_print(&mut self, strings: &StringResolver<'_>, values: &[Value]) {
+        let mut line = String::new();
+        for (index, value) in values.iter().enumerate() {
+            if index > 0 {
+                line.push(' ');
+            }
+            match value {
+                Value::String(_) | Value::RuntimeString(_) => {
+                    line.push_str(strings.value_str(*value).unwrap())
+                }
+                Value::I32(value) => line.push_str(&value.to_string()),
+                Value::Bool(value) => line.push_str(&value.to_string()),
+                Value::Null => line.push_str("null"),
+                Value::Record(_) => line.push_str("<record>"),
+            }
+        }
+        self.events.push(format!("debug {line}"));
+    }
+
+    fn service_wifi_start_ap<'a>(
+        &'a mut self,
+        ssid: &str,
+    ) -> Result<WifiActionResult<'a>, VmError> {
+        self.events.push(format!("wifi.startAP {ssid}"));
+        self.active = true;
+        self.ssid = ssid.to_string();
+        Ok(WifiActionResult {
+            ok: true,
+            error: None,
+        })
+    }
+
+    fn service_wifi_stop_ap<'a>(&'a mut self) -> Result<WifiActionResult<'a>, VmError> {
+        self.events.push("wifi.stopAP".to_string());
+        self.active = false;
+        Ok(WifiActionResult {
+            ok: true,
+            error: None,
+        })
+    }
+
+    fn service_wifi_status<'a>(&'a mut self) -> Result<WifiStatus<'a>, VmError> {
+        self.events.push("wifi.status".to_string());
+        Ok(WifiStatus {
+            active: self.active,
+            mode: Some("ap"),
+            ip_address: Some("192.168.4.1"),
+            ssid: Some(&self.ssid),
+            clients: 0,
+            error: None,
+        })
+    }
+
+    fn service_wifi_get_ap_ip<'a>(&'a mut self) -> Result<WifiApIp<'a>, VmError> {
+        self.events.push("wifi.getAPIP".to_string());
+        Ok(WifiApIp {
+            ip: Some("192.168.4.1"),
+            gw: Some("192.168.4.1"),
+            netmask: Some("255.255.255.0"),
+            error: None,
+        })
+    }
+
+    fn service_wifi_teardown(&mut self) -> Result<(), VmError> {
+        self.events.push("wifi.teardown".to_string());
+        self.teardown_count += 1;
+        self.active = false;
+        Ok(())
     }
 }
 
@@ -498,6 +588,7 @@ event.on("app.start") {
   led = service.indicator.read()
   service.indicator.toggle()
   led = service.indicator.read()
+  service.indicator.breathe()
 }
 screen("main") {}
 "#;
@@ -522,6 +613,7 @@ screen("main") {}
             "indicator read",
             "indicator toggle",
             "indicator read",
+            "indicator breathe",
         ]
     );
 }
@@ -684,6 +776,90 @@ screen("main") {}
     assert_eq!(
         trace.events,
         vec!["app.start", "debug RAM 292 KiB", "debug apps 1 MiB"]
+    );
+}
+
+#[test]
+fn runs_wifi_ap_records_and_tears_down_on_exit() {
+    let source = r#"app "wifi-ap"
+state {}
+
+event.on("app.start") {
+  let ap = service.wifi.startAP("SquidScript")
+  let status = wifi.status()
+  let ip = service.wifi.getAPIP()
+  debug.print(ap.ok, status.active, status.mode, status.ipAddress, status.ssid, ip.ip)
+  app.exit()
+}
+
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = WifiTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert!(vm.exited());
+    assert!(!trace.active);
+    assert_eq!(trace.teardown_count, 1);
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "wifi.startAP SquidScript",
+            "wifi.status",
+            "wifi.getAPIP",
+            "debug true true ap 192.168.4.1 SquidScript 192.168.4.1",
+            "wifi.teardown",
+            "app.exit",
+        ]
+    );
+}
+
+#[test]
+fn tears_down_wifi_ap_on_runtime_error() {
+    let source = r#"app "wifi-crash"
+state {}
+
+event.on("app.start") {
+  service.wifi.startAP("SquidScript")
+  debug.print(wifi.status().missing)
+}
+
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = WifiTrace::default();
+
+    assert_eq!(
+        vm.dispatch("app.start", &mut trace),
+        Err(VmError::InvalidOperand)
+    );
+
+    assert!(!trace.active);
+    assert_eq!(trace.teardown_count, 1);
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "wifi.startAP SquidScript",
+            "wifi.status",
+            "wifi.teardown",
+        ]
     );
 }
 

@@ -994,7 +994,7 @@ v0.2 uses these built-in namespaces:
 - `input.*` for firmware-owned text entry dialogs
 - `state.*` for firmware-managed persistent state
 - `stateMachine.*` for generic app state/mode helpers backed by persistent state variables
-- `wifi.*` for firmware-owned Wi-Fi profile connection and status
+- `service.wifi.*` for firmware-owned Wi-Fi services; `wifi.*` is source sugar for the same calls
 - `httpServer.*` for small foreground-only firmware-owned HTTP services
 - `bluetoothHid.*` for foreground-only Bluetooth HID peripheral behavior
 - `content.*` for user-selected content files and bounded reads
@@ -1077,8 +1077,10 @@ Display bindings:
 Indicator bindings:
 
 - `indicator { ... }` binds `indicator.default`.
-- `service.indicator.write(value)`, `service.indicator.toggle()`, and
-  `service.indicator.read()` operate on `indicator.default` in v0.2.
+- `service.indicator.write(value)`, `service.indicator.toggle()`,
+  `service.indicator.read()`, and `service.indicator.breathe()` operate on
+  `indicator.default` in v0.2. `breathe()` returns the default indicator to the
+  target-defined breathing pattern after app-driven writes or toggles.
 - Named indicator bindings are deferred until a target has a real second
   app-facing indicator.
 
@@ -1829,6 +1831,11 @@ Registers a repeating firmware timer service event source. Inside
 `event.on("app.arm")`, registrations can launch the armed app later. Inside an
 active app session, registrations are session-local.
 
+`eventName` is an arbitrary app-defined event string. The timer dispatches the
+matching `event.on(eventName)` handler exactly; dotted names such as
+`"timer.clock"` or `"foo.bar"` are naming conventions only and do not create
+namespaces or bind the event to a service.
+
 Example:
 
 ```squid
@@ -1837,7 +1844,8 @@ service.timer.every("timer.clock", 60000)
 
 service.timer.after(eventName, delayMs)
 
-Registers a one-shot firmware timer service event source.
+Registers a one-shot firmware timer service event source. `eventName` follows
+the same exact string-matching rules as `service.timer.every(...)`.
 
 Example:
 
@@ -2139,230 +2147,62 @@ This validation allows misspelled states to be caught without adding enum declar
 
 ---
 
-## 31. Wi-Fi Built-ins
+## 31. Wi-Fi Service Built-ins
 
-The `wifi.*` namespace provides foreground apps with bounded access to firmware-managed Wi-Fi connectivity.
+The canonical Wi-Fi namespace is `service.wifi.*`. Source may use the shorter
+`wifi.*` sugar; the compiler normalizes it to the same IR and bytecode as
+`service.wifi.*`.
 
-Apps do not receive, store, or transmit Wi-Fi passwords. Wi-Fi credentials are owned by firmware and stored in a system-managed profile store outside app state and outside app-readable files. Apps may store a profile name or ID, but not raw credentials.
+The v0.2 implemented subset is AP-first:
 
-wifi.status()
+- `service.wifi.startAP(ssid)`
+- `service.wifi.stopAP()`
+- `service.wifi.status()`
+- `service.wifi.getAPIP()`
 
-Returns a read-only record describing current Wi-Fi state.
+`startAP` returns a result record:
+
+- `ok`: bool
+- `error`: string or null
+
+`status` returns a read-only record:
+
+- `active`: bool
+- `mode`: string or null, currently `"ap"` for an active access point
+- `ipAddress`: string or null
+- `ssid`: string or null
+- `clients`: int
+- `error`: string or null
+
+`getAPIP` returns a read-only record:
+
+- `ip`: string or null
+- `gw`: string or null
+- `netmask`: string or null
+- `error`: string or null
 
 Example:
 
 ```squid
-let info = wifi.status()
+let ap = service.wifi.startAP("SquidScript")
+let status = wifi.status()
 
-if (info.connected) {
-  service.display.text(info.ipAddress, { x: 20, y: 80, fontHeight: 24 })
+if (ap.ok && status.active) {
+  service.display.text(status.ipAddress, { x: 20, y: 80, fontHeight: 24 })
 }
 ```
 
-Suggested fields:
-- `connected`: bool
-- `mode`: string such as `"off"`, `"station"`, or `"accessPoint"`
-- `profile`: string
-- `ssid`: string
-- `ipAddress`: string
-- `hostname`: string
-- `rssi`: int
-- `error`: string
-
-wifi.connect(profileName)
-
-Requests connection to a firmware-managed Wi-Fi profile.
-
-Requires runtime support:
-
-```text
-wifi.connect
-```
-
-Example:
-
-```squid
-let result = wifi.connect("home")
-if (!result.ok) {
-  service.display.text(result.error, { x: 20, y: 60, fontHeight: 24 })
-}
-```
-
-`profileName` must be a string. If the profile is missing, disabled, or invalid, firmware must fail predictably and expose the failure through `wifi.status()`.
-
-wifi.disconnect()
-
-Requests disconnect from Wi-Fi if this app owns the foreground connection request.
-
-Requires runtime support:
-
-```text
-wifi.connect
-```
-
-wifi.scan()
-
-Requests a bounded scan for nearby access points.
-
-Requires runtime support:
-
-```text
-wifi.scan
-```
-
-Example:
-
-```squid
-let networks = wifi.scan()
-```
-
-Suggested network fields:
-- `ssid`: string
-- `authMode`: string such as `"open"`, `"wpa2"`, `"wpa"`, or `"wpa_wpa2"`
-- `rssi`: int
-- `channel`: int
-
-wifi.startAP(ssid, options)
-
-Starts a firmware-owned Wi-Fi access point for the current foreground app. This follows Espruino's `Wifi.startAP(ssid, options, callback)` shape, adapted to SquidScript's record-returning style.
-
-Requires runtime support:
-
-```text
-wifi.accessPoint
-```
-
-Example:
-
-```squid
-wifi.startAP("SquidScript-XTEINK", {
-  password: "upload-books",
-  authMode: "wpa2",
-  hostname: "squid",
-  ip: "192.168.4.1"
-})
-
-let ap = wifi.getAPIP()
-service.display.text("http://" + ap.ip + "/", { x: 20, y: 80, fontHeight: 24 })
-```
-
-Allowed options:
-- `password`: string
-- `authMode`: string such as `"open"`, `"wpa2"`, `"wpa"`, or `"wpa_wpa2"`
-- `hostname`: string
-- `ip`: string
-- `gw`: string
-- `netmask`: string
-- `channel`: int
-- `maxClients`: int
-
-`ip`, `gw`, and `netmask` are optional. If omitted, firmware should use target/runtime defaults. Static AP addressing should be treated as a target feature because some networking stacks may not support all fields. Apps should call `wifi.getAPIP()` or inspect `wifi.status().ipAddress` instead of assuming the configured address was accepted.
-
-Open access points may be allowed by target policy, but firmware should prefer password-protected APs for upload and file-management apps.
-
-wifi.stopAP()
-
-Stops an access point started by the current foreground app.
-
-Requires runtime support:
-
-```text
-wifi.accessPoint
-```
-
-wifi.getIP()
-
-Returns station interface address information, similar to Espruino's `Wifi.getIP(...)`.
-
-Suggested fields:
-- `ip`: string
-- `gw`: string
-- `netmask`: string
-- `mac`: string
-- `error`: string
-
-wifi.setIP(options)
-
-Requests station static IP configuration or DHCP.
-
-Requires runtime support:
-
-```text
-wifi.configureIp
-```
-
-Example:
-
-```squid
-wifi.setIP({ ip: "192.168.1.50", gw: "192.168.1.1", netmask: "255.255.255.0" })
-```
-
-Passing an empty record should request DHCP if the target supports switching back to DHCP.
-
-wifi.getAPIP()
-
-Returns access-point interface address information.
-
-Suggested fields:
-- `ip`: string
-- `gw`: string
-- `netmask`: string
-- `mac`: string
-- `error`: string
-
-wifi.setAPIP(options)
-
-Requests access-point interface address configuration.
-
-Requires runtime support:
-
-```text
-wifi.configureIp
-```
-
-Example:
-
-```squid
-wifi.setAPIP({ ip: "192.168.4.1", gw: "192.168.4.1", netmask: "255.255.255.0" })
-```
-
-wifi.setHostname(hostname)
-
-Requests a firmware-managed network hostname for station/AP services where supported.
-
-Requires runtime support:
-
-```text
-wifi.configureIp
-```
-
-wifi.openSetup()
-
-Opens firmware-owned Wi-Fi setup UI for scanning networks, entering credentials, saving profiles, and connecting.
-
-The Wi-Fi setup UI may use the same firmware keyboard implementation as `input.text(...)`, but passwords entered inside Wi-Fi setup are passed only to the firmware Wi-Fi profile manager. They are not returned to the app.
-
-Requires runtime support:
-
-```text
-wifi.setup
-```
-
-Example:
-
-```squid
-wifi.openSetup()
-```
+For the ESP32-C3 reference runtime prototype, AP defaults are target/runtime
+chosen: open AP, target-chosen channel, conventional AP address
+`192.168.4.1/24`, and bounded target-clamped client count. Password/security
+policy, richer `startAP` options, station/client mode, scan, profile setup,
+hostnames, and configurable IP are deferred.
 
 Rules:
-- Wi-Fi credentials must never be exposed to SquidScript source, state, records, logs, diagnostics, or source maps.
-- Firmware owns credential storage, protection, profile editing, and network scanning UI.
-- Apps may request connection by profile name or ID.
-- Apps may start an app-owned access point when the target exposes `wifi.accessPoint`.
-- Apps may show connection status, hostname, and IP address.
+- Apps may start a foreground-owned access point when the target exposes the Wi-Fi service.
 - Wi-Fi activity requested by a normal app is foreground-only in v0.2.
 - Firmware must stop or release app-owned Wi-Fi requests when the app exits, crashes, or loses foreground.
-- `wifi.status().ipAddress` must report the active station IP in station mode and the AP interface IP in access-point mode.
+- Wi-Fi credentials must never be exposed to SquidScript source, state, records, logs, diagnostics, or source maps.
 - Optional mDNS/captive-portal behavior is firmware-owned and target-dependent.
 
 ---
@@ -3482,7 +3322,8 @@ service.display.draw
 
 service.indicator
 - Allows the default logical indicator operations:
-  service.indicator.write, service.indicator.toggle, and service.indicator.read.
+  service.indicator.write, service.indicator.toggle, service.indicator.read,
+  and service.indicator.breathe.
 
 state.read
 - Allows state.load.
@@ -3505,19 +3346,21 @@ content.read
 input.text
 - Allows opening firmware-owned text entry dialogs for non-credential app input.
 
-wifi.connect
-- Allows requesting connection and disconnection for firmware-managed Wi-Fi profiles.
+service.wifi
+- Allows foreground-owned firmware Wi-Fi service calls such as
+  `service.wifi.startAP`, `service.wifi.stopAP`, `service.wifi.status`, and
+  `service.wifi.getAPIP`. Source may use `wifi.*` sugar for these calls.
 
-wifi.scan
+service.wifi.scan
 - Allows scanning for nearby Wi-Fi networks without exposing credentials.
 
-wifi.accessPoint
+service.wifi.accessPoint
 - Allows starting and stopping foreground-only firmware-owned Wi-Fi access points.
 
-wifi.configureIp
+service.wifi.configureIp
 - Allows requesting station/AP IP and hostname configuration where the target supports it.
 
-wifi.setup
+service.wifi.setup
 - Allows opening firmware-owned Wi-Fi setup UI. This does not expose Wi-Fi credentials to the app.
 
 httpServer.serve

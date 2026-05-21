@@ -478,11 +478,11 @@ Example ESP32-C3 low-RAM runtime:
     "content.pick",
     "content.read",
     "binbook.read",
-    "wifi.connect",
-    "wifi.scan",
-    "wifi.accessPoint",
-    "wifi.configureIp",
-    "wifi.setup",
+    "service.wifi.connect",
+    "service.wifi.scan",
+    "service.wifi.accessPoint",
+    "service.wifi.configureIp",
+    "service.wifi.setup",
     "httpServer.serve",
     "bleTransfer.receive",
     "bluetoothHid.advertise",
@@ -525,11 +525,11 @@ Example ESP32-S3 PSRAM runtime:
     "content.pick",
     "content.read",
     "binbook.read",
-    "wifi.connect",
-    "wifi.scan",
-    "wifi.accessPoint",
-    "wifi.configureIp",
-    "wifi.setup",
+    "service.wifi.connect",
+    "service.wifi.scan",
+    "service.wifi.accessPoint",
+    "service.wifi.configureIp",
+    "service.wifi.setup",
     "httpServer.serve",
     "bleTransfer.receive",
     "bluetoothHid.advertise",
@@ -914,8 +914,8 @@ Example:
       "state.read",
       "state.write",
       "binbook.read",
-      "wifi.connect",
-      "wifi.accessPoint",
+      "service.wifi.connect",
+      "service.wifi.accessPoint",
       "httpServer.serve"
     ]
   }
@@ -983,7 +983,7 @@ squidc build apps/simple-counter \
 - available logical keys
 - available built-ins
 - SQBC target requirements
-- foreground radio/server capabilities such as `wifi.*`, `httpServer.*`, and `bluetoothHid.*`
+- foreground radio/server capabilities such as `service.wifi.*`, `httpServer.*`, and `bluetoothHid.*`
 - bytecode size limit
 - draw command limit
 - max file read size

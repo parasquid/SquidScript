@@ -64,6 +64,7 @@ pub(super) fn write_value(
                 strings.value_str(value).unwrap_or("<bad-string>")
             )
         }
+        Value::Record(_) => write!(out, "<record>"),
     }
 }
 

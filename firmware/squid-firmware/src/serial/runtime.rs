@@ -1,9 +1,18 @@
 use core::fmt::{self, Write};
 
-use esp_hal::{delay::Delay, gpio::{Level, Output}, time::{Duration, Instant}, usb_serial_jtag::UsbSerialJtag};
+use esp_hal::{
+    delay::Delay,
+    gpio::{Level, Output},
+    ledc::{channel::Channel, channel::ChannelIFace, LowSpeed},
+    time::{Duration, Instant},
+    usb_serial_jtag::UsbSerialJtag,
+};
 use squidvm_core::{
     error::VmError,
-    host::{DisplayLineOptions, DisplayRectOptions, DisplayTextOptions, TraceSink},
+    host::{
+        DisplayLineOptions, DisplayRectOptions, DisplayTextOptions, TraceSink, WifiActionResult,
+        WifiApIp, WifiBackend, WifiStatus,
+    },
     limits::MAX_APP_BYTES,
     strings::StringResolver,
     value::Value,
@@ -18,11 +27,15 @@ use super::{
     lifecycle::{app_ref_available, run_app_event, set_runtime_error},
     log::{stable_trace, write_human_bytes, write_value, LogLine},
     vm::AppRef,
-    ActiveVm, TempApp, MEMORY_AVAILABLE_BYTES,
+    ActiveVm, FirmwareWifiBackend, TempApp, MEMORY_AVAILABLE_BYTES,
 };
 
-const BREATH_STEPS: [u32; 9] = [0, 2, 7, 16, 35, 65, 84, 96, 100];
-const PWM_PERIOD_US: u32 = 2_000;
+const BREATH_DUTIES: [u8; 65] = [
+    0, 0, 1, 2, 4, 6, 8, 11, 15, 18, 22, 26, 31, 35, 40, 45, 50, 55, 60, 65, 69, 74, 78, 82,
+    85, 89, 92, 94, 96, 98, 99, 100, 100, 100, 99, 98, 96, 94, 92, 89, 85, 82, 78, 74, 69, 65,
+    60, 55, 50, 45, 40, 35, 31, 26, 22, 18, 15, 11, 8, 6, 4, 2, 1, 0, 0,
+];
+const BREATH_SEGMENT_MS: u64 = 31;
 const TRACE_CAP: usize = 24;
 const OUTPUT_CAP: usize = 16;
 const DRAW_CAP: usize = 32;
@@ -30,10 +43,9 @@ const STACK_CAP: usize = 4;
 const TIMER_CAP: usize = 4;
 
 pub struct RuntimeSink<'d> {
-    pub(super) onboard_indicator: Output<'d>,
+    onboard_indicator: OnboardIndicator<'d>,
     pub(super) external_indicator: Output<'d>,
     pub(super) use_external_indicator: bool,
-    pub(super) breathing_enabled: bool,
     pub(super) current_app: Option<AppRef>,
     pub(super) pending_launch: Option<AppName>,
     pub(super) pending_arm: Option<AppName>,
@@ -53,15 +65,19 @@ pub struct RuntimeSink<'d> {
     pub(super) draw: [LogLine; DRAW_CAP],
     pub(super) draw_len: usize,
     pub(super) app_storage_used_bytes: usize,
+    pub(super) wifi: FirmwareWifiBackend<'d>,
 }
 
 impl<'d> RuntimeSink<'d> {
-    pub fn new(onboard_indicator: Output<'d>, external_indicator: Output<'d>) -> Self {
+    pub fn new(
+        onboard_indicator: OnboardIndicator<'d>,
+        external_indicator: Output<'d>,
+        wifi: FirmwareWifiBackend<'d>,
+    ) -> Self {
         Self {
             onboard_indicator,
             external_indicator,
             use_external_indicator: false,
-            breathing_enabled: true,
             current_app: None,
             pending_launch: None,
             pending_arm: None,
@@ -81,6 +97,7 @@ impl<'d> RuntimeSink<'d> {
             draw: [LogLine::new(); DRAW_CAP],
             draw_len: 0,
             app_storage_used_bytes: 0,
+            wifi,
         }
     }
 
@@ -88,9 +105,10 @@ impl<'d> RuntimeSink<'d> {
         self.app_storage_used_bytes = used;
     }
 
-    pub fn breathe_once(&mut self, delay: &Delay) {
-        if self.breathing_enabled {
-            breathe_once(&mut self.onboard_indicator, delay);
+    pub fn breathe_once(&mut self, _delay: &Delay) {
+        self.wifi.poll();
+        if !self.use_external_indicator {
+            self.onboard_indicator.step(Instant::now());
         }
     }
 
@@ -108,6 +126,13 @@ impl<'d> RuntimeSink<'d> {
         self.exited = false;
         self.registration_mode = false;
         self.root_restart_pending = false;
+    }
+
+    pub(super) fn teardown_services(&mut self) -> Result<(), VmError> {
+        if self.wifi.teardown()? {
+            self.trace("wifi.stopAP");
+        }
+        Ok(())
     }
 
     pub(super) fn reset_stack(&mut self) {
@@ -246,6 +271,37 @@ impl<'d> RuntimeSink<'d> {
         }
     }
 
+    pub(super) fn print_wifi_status(&mut self, serial: &mut UsbSerialJtag<'_, esp_hal::Blocking>) {
+        match self.wifi.status() {
+            Ok(status) => {
+                writeln!(serial, "active={}", status.active).ok();
+                writeln!(serial, "mode={}", status.mode.unwrap_or("none")).ok();
+                writeln!(serial, "ssid={}", status.ssid.unwrap_or("")).ok();
+                writeln!(serial, "ip={}", status.ip_address.unwrap_or("")).ok();
+                writeln!(serial, "clients={}", status.clients).ok();
+                writeln!(serial, "error={}", status.error.unwrap_or("")).ok();
+            }
+            Err(error) => {
+                writeln!(serial, "ERR WIFI.STATUS {:?}", error).ok();
+                return;
+            }
+        }
+
+        match self.wifi.ap_ip() {
+            Ok(ip) => {
+                writeln!(serial, "ap_ip={}", ip.ip.unwrap_or("")).ok();
+                writeln!(serial, "ap_gw={}", ip.gw.unwrap_or("")).ok();
+                writeln!(serial, "ap_netmask={}", ip.netmask.unwrap_or("")).ok();
+                writeln!(serial, "ap_error={}", ip.error.unwrap_or("")).ok();
+            }
+            Err(error) => {
+                writeln!(serial, "ERR WIFI.APIP {:?}", error).ok();
+            }
+        }
+
+        self.wifi.write_driver_diagnostics(serial);
+    }
+
     pub(super) fn push_output(&mut self, line: LogLine) {
         if self.output_len < self.output.len() {
             self.output[self.output_len] = line;
@@ -261,13 +317,11 @@ impl<'d> RuntimeSink<'d> {
     }
 
     fn write_indicator(&mut self, logical_value: bool) {
-        self.breathing_enabled = false;
         if self.use_external_indicator {
             self.external_indicator
                 .set_level(if logical_value { Level::High } else { Level::Low });
         } else {
-            self.onboard_indicator
-                .set_level(if logical_value { Level::Low } else { Level::High });
+            self.onboard_indicator.write_logical(logical_value);
         }
     }
 
@@ -275,7 +329,13 @@ impl<'d> RuntimeSink<'d> {
         if self.use_external_indicator {
             self.external_indicator.is_set_high()
         } else {
-            !self.onboard_indicator.is_set_high()
+            self.onboard_indicator.read_logical()
+        }
+    }
+
+    fn breathe_indicator(&mut self) {
+        if !self.use_external_indicator {
+            self.onboard_indicator.breathe();
         }
     }
 
@@ -285,11 +345,8 @@ impl<'d> RuntimeSink<'d> {
             "GPIO10" => logical_value,
             _ => return Err(VmError::InvalidOperand),
         };
-        self.breathing_enabled = false;
         match name {
-            "GPIO8" => self
-                .onboard_indicator
-                .set_level(if raw_high { Level::High } else { Level::Low }),
+            "GPIO8" => self.onboard_indicator.write_raw_high(raw_high),
             "GPIO10" => self
                 .external_indicator
                 .set_level(if raw_high { Level::High } else { Level::Low }),
@@ -300,7 +357,7 @@ impl<'d> RuntimeSink<'d> {
 
     fn read_gpio(&self, name: &str) -> Result<bool, VmError> {
         match name {
-            "GPIO8" => Ok(self.onboard_indicator.is_set_high()),
+            "GPIO8" => Ok(self.onboard_indicator.read_raw_high()),
             "GPIO10" => Ok(self.external_indicator.is_set_high()),
             _ => Err(VmError::InvalidOperand),
         }
@@ -331,6 +388,7 @@ impl<'d> RuntimeSink<'d> {
             }
         }
     }
+
 }
 
 impl TraceSink for RuntimeSink<'_> {
@@ -417,6 +475,11 @@ impl TraceSink for RuntimeSink<'_> {
         Ok(())
     }
 
+    fn service_indicator_breathe(&mut self) -> Result<(), VmError> {
+        self.breathe_indicator();
+        Ok(())
+    }
+
     fn service_indicator_read(&mut self) -> Result<bool, VmError> {
         Ok(self.read_indicator())
     }
@@ -474,6 +537,39 @@ impl TraceSink for RuntimeSink<'_> {
         Ok(())
     }
 
+    fn service_wifi_start_ap<'a>(
+        &'a mut self,
+        ssid: &str,
+    ) -> Result<WifiActionResult<'a>, VmError> {
+        let result = self.wifi.start_ap(ssid)?;
+        let ok = result.ok;
+        let error = result.error;
+        if ok {
+            self.trace("wifi.startAP");
+        }
+        Ok(WifiActionResult { ok, error })
+    }
+
+    fn service_wifi_stop_ap<'a>(&'a mut self) -> Result<WifiActionResult<'a>, VmError> {
+        let result = self.wifi.stop_ap()?;
+        let ok = result.ok;
+        let error = result.error;
+        self.trace("wifi.stopAP");
+        Ok(WifiActionResult { ok, error })
+    }
+
+    fn service_wifi_status<'a>(&'a mut self) -> Result<WifiStatus<'a>, VmError> {
+        self.wifi.status()
+    }
+
+    fn service_wifi_get_ap_ip<'a>(&'a mut self) -> Result<WifiApIp<'a>, VmError> {
+        self.wifi.ap_ip()
+    }
+
+    fn service_wifi_teardown(&mut self) -> Result<(), VmError> {
+        self.teardown_services()
+    }
+
     fn system_memory_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
         write_human_bytes(out, "RAM", MEMORY_AVAILABLE_BYTES).map_err(|_| VmError::InvalidOperand)
     }
@@ -501,26 +597,76 @@ pub(super) struct TimerRegistration {
     pub(super) next_due: Instant,
 }
 
-
-fn breathe_once(led: &mut Output<'_>, delay: &Delay) {
-    for duty in BREATH_STEPS {
-        pulse(led, delay, duty);
-    }
-    for duty in BREATH_STEPS.iter().rev().copied() {
-        pulse(led, delay, duty);
-    }
+pub struct OnboardIndicator<'d> {
+    channel: Channel<'d, LowSpeed>,
+    brightness: u8,
+    raw_high: bool,
+    breathing: bool,
+    breath_step: usize,
+    next_breath_step: Option<Instant>,
 }
 
-fn pulse(led: &mut Output<'_>, delay: &Delay, duty_percent: u32) {
-    let on_us = PWM_PERIOD_US * duty_percent / 100;
-    let off_us = PWM_PERIOD_US - on_us;
-    if on_us > 0 {
-        led.set_high();
-        delay.delay_micros(on_us);
+impl<'d> OnboardIndicator<'d> {
+    pub fn new(channel: Channel<'d, LowSpeed>) -> Self {
+        let indicator = Self {
+            channel,
+            brightness: 0,
+            raw_high: true,
+            breathing: true,
+            breath_step: 0,
+            next_breath_step: None,
+        };
+        indicator
     }
-    if off_us > 0 {
-        led.set_low();
-        delay.delay_micros(off_us);
+
+    fn write_logical(&mut self, value: bool) {
+        self.write_brightness(if value { 100 } else { 0 });
+    }
+
+    fn read_logical(&self) -> bool {
+        self.brightness > 0
+    }
+
+    fn write_raw_high(&mut self, value: bool) {
+        self.breathing = false;
+        self.raw_high = value;
+        self.brightness = if value { 0 } else { 100 };
+        let _ = self.channel.set_duty(if value { 100 } else { 0 });
+    }
+
+    fn read_raw_high(&self) -> bool {
+        self.raw_high
+    }
+
+    fn breathe(&mut self) {
+        self.breathing = true;
+        self.next_breath_step = None;
+    }
+
+    fn step(&mut self, now: Instant) {
+        if !self.breathing {
+            return;
+        }
+        if self.next_breath_step.is_some_and(|due| now < due) {
+            return;
+        }
+
+        let next_step = (self.breath_step + 1) % BREATH_DUTIES.len();
+        let next_brightness = BREATH_DUTIES[next_step];
+        let end_duty = 100 - next_brightness;
+        let _ = self.channel.set_duty(end_duty);
+        self.brightness = next_brightness;
+        self.raw_high = self.brightness == 0;
+        self.breath_step = next_step;
+        self.next_breath_step = Some(now + Duration::from_millis(BREATH_SEGMENT_MS));
+    }
+
+    fn write_brightness(&mut self, brightness: u8) {
+        self.breathing = false;
+        self.next_breath_step = None;
+        self.brightness = brightness.min(100);
+        self.raw_high = self.brightness == 0;
+        let _ = self.channel.set_duty(100 - self.brightness);
     }
 }
 

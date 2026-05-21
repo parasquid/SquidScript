@@ -663,11 +663,11 @@ Examples:
 - `adc-button-ladder`
 - `sdcard`
 - `content.read`
-- `wifi.connect`
-- `wifi.scan`
-- `wifi.accessPoint`
-- `wifi.configureIp`
-- `wifi.setup`
+- `service.wifi.connect`
+- `service.wifi.scan`
+- `service.wifi.accessPoint`
+- `service.wifi.configureIp`
+- `service.wifi.setup`
 - `httpServer.serve`
 - `bleTransfer.receive`
 - `binbook.read`

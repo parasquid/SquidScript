@@ -120,5 +120,6 @@ fn print_value(
             strings.value_str(value).unwrap_or("<bad-string>")
         )
         .ok(),
+        Value::Record(_) => write!(serial, "<record>").ok(),
     };
 }

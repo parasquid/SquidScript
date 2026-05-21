@@ -3,28 +3,40 @@
 #![allow(static_mut_refs)]
 
 use core::fmt::Write;
+use core::mem::MaybeUninit;
 
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
     delay::Delay,
-    gpio::{Level, Output, OutputConfig},
+    gpio::{DriveMode, Level, Output, OutputConfig},
+    interrupt::software::SoftwareInterruptControl,
+    ledc::{
+        channel::{self, ChannelIFace},
+        timer::{self, TimerIFace},
+        Ledc, LowSpeed, LSGlobalClkSource,
+    },
     main,
-    time::Instant,
+    timer::timg::TimerGroup,
+    time::{Instant, Rate},
     usb_serial_jtag::UsbSerialJtag,
 };
+use esp_radio::Controller as RadioController;
+use esp_rtos::CurrentThreadHandle;
 use esp_storage::FlashStorage;
 use squid_firmware::{
     dev_harness::{AppRegistry, AppSlot, AppStorageError},
     serial::{
-        boot_main, handle_command, storage_error_from_persistent, trim_ascii, ActiveVm, LineBuffer,
-        RuntimeSink, TempApp, BUILD_ID,
+        boot_main, handle_command, install_wifi_event_diagnostics, storage_error_from_persistent,
+        trim_ascii, ActiveVm, FirmwareWifiBackend, LineBuffer, OnboardIndicator, RuntimeSink,
+        TempApp, BUILD_ID,
     },
     storage::{LittleFsAppStorage, SquidFlashRegion},
 };
 use squidvm_core::{error::VmError, limits::MAX_APP_BYTES};
 
 static mut APP_LOAD_BYTES: [u8; MAX_APP_BYTES] = [0; MAX_APP_BYTES];
+static mut RADIO_CONTROLLER: MaybeUninit<RadioController<'static>> = MaybeUninit::uninit();
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -32,15 +44,40 @@ esp_bootloader_esp_idf::esp_app_desc!();
 fn main() -> ! {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
+    esp_alloc::heap_allocator!(size: 96 * 1024);
+    let timg0 = TimerGroup::new(peripherals.TIMG0);
+    let software_interrupt = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
+    esp_rtos::start(timg0.timer0, software_interrupt.software_interrupt0);
+    install_wifi_event_diagnostics();
+    let wifi = init_wifi_backend(peripherals.WIFI);
     let delay = Delay::new();
-    let led = Output::new(peripherals.GPIO8, Level::Low, OutputConfig::default());
+    let mut ledc = Ledc::new(peripherals.LEDC);
+    ledc.set_global_slow_clock(LSGlobalClkSource::APBClk);
+    let mut indicator_timer = ledc.timer::<LowSpeed>(timer::Number::Timer0);
+    indicator_timer
+        .configure(timer::config::Config {
+            duty: timer::config::Duty::Duty10Bit,
+            clock_source: timer::LSClockSource::APBClk,
+            frequency: Rate::from_khz(1),
+        })
+        .ok();
+    let mut indicator_channel =
+        ledc.channel::<LowSpeed>(channel::Number::Channel0, peripherals.GPIO8);
+    indicator_channel
+        .configure(channel::config::Config {
+            timer: &indicator_timer,
+            duty_pct: 100,
+            drive_mode: DriveMode::PushPull,
+        })
+        .ok();
+    let led = OnboardIndicator::new(indicator_channel);
     let external_indicator = Output::new(peripherals.GPIO10, Level::Low, OutputConfig::default());
     let flash = FlashStorage::new(peripherals.FLASH);
     let mut app_storage = LittleFsAppStorage::new(SquidFlashRegion::new(flash));
     let mut serial = UsbSerialJtag::new(peripherals.USB_DEVICE);
     let mut line = LineBuffer::new();
     let mut registry = AppRegistry::new();
-    let mut runtime = RuntimeSink::new(led, external_indicator);
+    let mut runtime = RuntimeSink::new(led, external_indicator, wifi);
     let mut vm: Option<ActiveVm> = None;
     let mut vm_slot: Option<AppSlot> = None;
     let mut temp_app = TempApp::empty();
@@ -121,5 +158,17 @@ fn main() -> ! {
             }
             Err(_) => {}
         }
+        CurrentThreadHandle::get().delay(esp_hal::time::Duration::from_millis(1));
     }
+}
+
+fn init_wifi_backend(wifi: esp_hal::peripherals::WIFI<'static>) -> FirmwareWifiBackend<'static> {
+    let Ok(controller) = esp_radio::init() else {
+        return FirmwareWifiBackend::Unavailable;
+    };
+    let radio = unsafe {
+        RADIO_CONTROLLER.write(controller);
+        &*RADIO_CONTROLLER.as_ptr()
+    };
+    FirmwareWifiBackend::new_esp(radio, wifi)
 }

@@ -607,7 +607,9 @@ impl Parser<'_> {
             return self.parse_display_statement(builder, &method);
         }
 
-        if first == "service" && matches!(method.as_str(), "timer" | "display" | "indicator") {
+        if first == "service"
+            && matches!(method.as_str(), "timer" | "display" | "indicator" | "wifi")
+        {
             if self.at_kind(TokenKind::Dot) {
                 self.bump(builder);
             }
@@ -621,6 +623,12 @@ impl Parser<'_> {
                 self.bump(builder);
             }
             self.consume_ws(builder);
+            if method == "wifi" {
+                return Some(IrStatement::Call {
+                    name: format!("service.wifi.{action}"),
+                    args: self.parse_call_args_after_open(builder),
+                });
+            }
             return match (method.as_str(), action.as_str()) {
                 ("timer", "every") => {
                     let event = self.consume_string(builder).unwrap_or_default();
@@ -650,6 +658,10 @@ impl Parser<'_> {
                 ("indicator", "toggle") => {
                     self.consume_call_tail(builder);
                     Some(IrStatement::ServiceIndicatorToggle)
+                }
+                ("indicator", "breathe") => {
+                    self.consume_call_tail(builder);
+                    Some(IrStatement::ServiceIndicatorBreathe)
                 }
                 _ => {
                     self.consume_call_tail(builder);
@@ -713,8 +725,13 @@ impl Parser<'_> {
             }
             _ => {
                 if has_call_args {
+                    let name = if first == "wifi" {
+                        format!("service.wifi.{method}")
+                    } else {
+                        format!("{first}.{method}")
+                    };
                     Some(IrStatement::Call {
-                        name: format!("{first}.{method}"),
+                        name,
                         args: self.parse_call_args_after_open(builder),
                     })
                 } else {
@@ -964,9 +981,23 @@ impl Parser<'_> {
                     } else {
                         IrExpr::State { name }
                     }
-                } else if self.at_kind(TokenKind::OpenParen) {
+                } else if name == "service" && namespace == "wifi" && self.at_kind(TokenKind::Dot) {
+                    self.bump(builder);
+                    self.consume_ws(builder);
+                    let action = self.consume_ident(builder).unwrap_or_default();
+                    self.consume_ws(builder);
                     IrExpr::Call {
-                        name: format!("{name}.{namespace}"),
+                        name: format!("service.wifi.{action}"),
+                        args: self.parse_call_args(builder),
+                    }
+                } else if self.at_kind(TokenKind::OpenParen) {
+                    let call_name = if name == "wifi" {
+                        format!("service.wifi.{namespace}")
+                    } else {
+                        format!("{name}.{namespace}")
+                    };
+                    IrExpr::Call {
+                        name: call_name,
                         args: self.parse_call_args(builder),
                     }
                 } else {

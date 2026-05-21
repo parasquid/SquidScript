@@ -26,6 +26,26 @@ Build the ESP32-C3 Super Mini reference firmware:
 cargo build --release --features hardware --bin c3-supermini-serial-hello
 ```
 
+When asking for "memory", use RAM numbers by default. Flash image size,
+partition usage, and LittleFS app storage are flash storage numbers and should
+be requested or reported separately.
+
+From the repository root, collect RAM and storage diagnostics with:
+
+```sh
+scripts/c3-supermini-build.sh
+riscv64-elf-size firmware/squid-firmware/target/riscv32imc-unknown-none-elf/release/c3-supermini-serial-hello
+scripts/c3-supermini-flash.sh
+cargo run -p squidc -- device resources
+```
+
+`riscv64-elf-size` gives ELF `text`, `data`, and `bss`; for RAM-focused
+comparisons, use `data` and `bss`. The flash script prints `espflash`
+app-partition usage. `device resources` reads the firmware
+`RESOURCES.GET` report for app/runtime diagnostics. Current
+`memory_available_bytes` is a static estimate; it is not live heap telemetry and
+does not yet show ESP radio heap free/used values.
+
 From the repository root, the preferred end-to-end hardware check is:
 
 ```sh
@@ -75,7 +95,9 @@ It also accepts the v4 developer protocol commands documented in
 
 The ESP32-C3 Super Mini firmware maps `service.indicator.*` to the default
 logical indicator and keeps `hardware.gpio.*` for raw GPIO names such as
-`GPIO8`. Use these repository-root checks after flashing:
+`GPIO8`. `service.indicator.breathe()` returns the default indicator to the
+firmware breathing pattern after app-driven writes or toggles. Use these
+repository-root checks after flashing:
 
 ```sh
 cargo run -p squidc -- repl --script tests/repl/hardware-gpio-indicator.session

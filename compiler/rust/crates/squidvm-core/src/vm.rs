@@ -6,20 +6,26 @@ use crate::{
         BUILTIN_APP_LAUNCH, BUILTIN_DEBUG_PRINT, BUILTIN_DISPLAY_CLEAR, BUILTIN_DISPLAY_LINE,
         BUILTIN_DISPLAY_RECT, BUILTIN_DISPLAY_TEXT, BUILTIN_HARDWARE_GPIO_READ,
         BUILTIN_HARDWARE_GPIO_TOGGLE, BUILTIN_HARDWARE_GPIO_WRITE, BUILTIN_SCREEN_OPEN,
-        BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_INDICATOR_READ, BUILTIN_SERVICE_INDICATOR_TOGGLE,
-        BUILTIN_SERVICE_INDICATOR_WRITE, BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY,
+        BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_INDICATOR_BREATHE, BUILTIN_SERVICE_INDICATOR_READ,
+        BUILTIN_SERVICE_INDICATOR_TOGGLE, BUILTIN_SERVICE_INDICATOR_WRITE,
+        BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY, BUILTIN_SERVICE_WIFI_GET_AP_IP,
+        BUILTIN_SERVICE_WIFI_START_AP, BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP,
         BUILTIN_STATE_LOAD, BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, BUILTIN_SYSTEM_MEMORY,
-        BUILTIN_SYSTEM_STORAGE, OP_ADD, OP_CALL_BUILTIN, OP_CALL_FUNCTION, OP_EQ, OP_GET_LOCAL,
-        OP_GET_STATE, OP_GT, OP_GTE, OP_HALT, OP_JUMP, OP_JUMP_IF_FALSE, OP_LT, OP_LTE, OP_NE,
-        OP_POP, OP_PUSH_BOOL, OP_PUSH_INT, OP_PUSH_NULL, OP_PUSH_STRING, OP_RETURN, OP_SET_LOCAL,
-        OP_SET_STATE, OP_SUB,
+        BUILTIN_SYSTEM_STORAGE, OP_ADD, OP_CALL_BUILTIN, OP_CALL_FUNCTION, OP_EQ, OP_GET_FIELD,
+        OP_GET_LOCAL, OP_GET_STATE, OP_GT, OP_GTE, OP_HALT, OP_JUMP, OP_JUMP_IF_FALSE, OP_LT,
+        OP_LTE, OP_NE, OP_POP, OP_PUSH_BOOL, OP_PUSH_INT, OP_PUSH_NULL, OP_PUSH_STRING, OP_RETURN,
+        OP_SET_LOCAL, OP_SET_STATE, OP_SUB,
     },
     chunk::{ChunkCache, ChunkKind, ChunkRef},
     error::VmError,
-    host::{DisplayLineOptions, DisplayRectOptions, DisplayTextOptions, TraceSink},
+    host::{
+        DisplayLineOptions, DisplayRectOptions, DisplayTextOptions, TraceSink, WifiActionResult,
+        WifiApIp, WifiStatus,
+    },
     limits::{
         MAX_CALL_DEPTH, MAX_CODE_CHUNK_BYTES, MAX_INSTRUCTIONS_PER_EVENT, MAX_LOCALS,
-        MAX_RUNTIME_STRING_BYTES, MAX_SAVED_STATE_BYTES, MAX_STACK, MAX_STATE,
+        MAX_RUNTIME_RECORDS, MAX_RUNTIME_RECORD_FIELDS, MAX_RUNTIME_STRING_BYTES,
+        MAX_SAVED_STATE_BYTES, MAX_STACK, MAX_STATE,
     },
     program::{Program, ProgramIndex},
     reader::{ChunkedVmHost, SqbcReader},
@@ -34,6 +40,7 @@ use crate::{
 pub struct Vm<'a> {
     program: Program<'a>,
     runtime_strings: RuntimeStrings,
+    runtime_records: RuntimeRecords,
     state: [Value; MAX_STATE],
     stack: [Value; MAX_STACK],
     stack_len: usize,
@@ -45,6 +52,7 @@ pub struct Vm<'a> {
 pub struct ChunkedVm {
     index: ProgramIndex,
     runtime_strings: RuntimeStrings,
+    runtime_records: RuntimeRecords,
     state: [Value; MAX_STATE],
     stack: [Value; MAX_STACK],
     stack_len: usize,
@@ -57,6 +65,75 @@ pub struct ChunkedVm {
     code_len: usize,
 }
 
+#[derive(Clone, Copy)]
+struct RuntimeRecordField {
+    name: &'static str,
+    value: Value,
+}
+
+impl RuntimeRecordField {
+    const fn new(name: &'static str, value: Value) -> Self {
+        Self { name, value }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct RuntimeRecord {
+    fields: [RuntimeRecordField; MAX_RUNTIME_RECORD_FIELDS],
+    field_count: usize,
+}
+
+impl RuntimeRecord {
+    const fn empty() -> Self {
+        Self {
+            fields: [RuntimeRecordField::new("", Value::Null); MAX_RUNTIME_RECORD_FIELDS],
+            field_count: 0,
+        }
+    }
+}
+
+struct RuntimeRecords {
+    records: [RuntimeRecord; MAX_RUNTIME_RECORDS],
+    next: usize,
+}
+
+impl RuntimeRecords {
+    const fn new() -> Self {
+        Self {
+            records: [RuntimeRecord::empty(); MAX_RUNTIME_RECORDS],
+            next: 0,
+        }
+    }
+
+    fn alloc(&mut self, fields: &[RuntimeRecordField]) -> Result<Value, VmError> {
+        if fields.len() > MAX_RUNTIME_RECORD_FIELDS {
+            return Err(VmError::InvalidOperand);
+        }
+        let id = self.next;
+        self.next = (self.next + 1) % MAX_RUNTIME_RECORDS;
+        let mut record = RuntimeRecord::empty();
+        record.field_count = fields.len();
+        for (index, field) in fields.iter().enumerate() {
+            record.fields[index] = *field;
+        }
+        self.records[id] = record;
+        Ok(Value::Record(id as u8))
+    }
+
+    fn field(&self, record_id: u8, field_name: &str) -> Result<Value, VmError> {
+        let record = self
+            .records
+            .get(record_id as usize)
+            .ok_or(VmError::InvalidOperand)?;
+        for field in record.fields.iter().take(record.field_count) {
+            if field.name == field_name {
+                return Ok(field.value);
+            }
+        }
+        Err(VmError::InvalidOperand)
+    }
+}
+
 impl ChunkedVm {
     pub fn new(index: ProgramIndex) -> Self {
         let mut state = [Value::Null; MAX_STATE];
@@ -66,6 +143,7 @@ impl ChunkedVm {
         Self {
             index,
             runtime_strings: RuntimeStrings::new(),
+            runtime_records: RuntimeRecords::new(),
             state,
             stack: [Value::Null; MAX_STACK],
             stack_len: 0,
@@ -98,6 +176,9 @@ impl ChunkedVm {
             .execute_range(host, handler.start, handler.len, &mut locals, 0)
             .map(|_| ());
         self.chunk_cache.end_execute(key).ok();
+        if result.is_err() {
+            host.service_wifi_teardown()?;
+        }
         result
     }
 
@@ -379,6 +460,16 @@ impl ChunkedVm {
                     let slot = locals.get_mut(local).ok_or(VmError::LocalOutOfBounds)?;
                     *slot = value;
                 }
+                OP_GET_FIELD => {
+                    let field_id = self.read_u16_code(ip)?;
+                    ip += 2;
+                    let Value::Record(record_id) = self.pop()? else {
+                        return Err(VmError::InvalidOperand);
+                    };
+                    let field = self.index.string(field_id)?;
+                    let value = self.runtime_records.field(record_id, field)?;
+                    self.push(value)?;
+                }
                 OP_ADD | OP_SUB | OP_EQ | OP_NE | OP_LT | OP_LTE | OP_GT | OP_GTE => {
                     self.binary(op)?
                 }
@@ -484,6 +575,7 @@ impl ChunkedVm {
                 host.trace("state.reset");
             }
             BUILTIN_APP_EXIT => {
+                host.service_wifi_teardown()?;
                 self.exited = true;
                 host.trace("app.exit");
             }
@@ -607,6 +699,9 @@ impl ChunkedVm {
             BUILTIN_SERVICE_INDICATOR_TOGGLE => {
                 host.service_indicator_toggle()?;
             }
+            BUILTIN_SERVICE_INDICATOR_BREATHE => {
+                host.service_indicator_breathe()?;
+            }
             BUILTIN_SERVICE_INDICATOR_READ => {
                 let value = host.service_indicator_read()?;
                 self.push(Value::Bool(value))?;
@@ -643,6 +738,29 @@ impl ChunkedVm {
                 };
                 host.service_timer_after(self.index.string(event_id)?, delay_ms)?;
             }
+            BUILTIN_SERVICE_WIFI_START_AP => {
+                let Value::String(ssid_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let result = host.service_wifi_start_ap(self.index.string(ssid_id)?)?;
+                let value = self.wifi_action_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_SERVICE_WIFI_STOP_AP => {
+                let result = host.service_wifi_stop_ap()?;
+                let value = self.wifi_action_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_SERVICE_WIFI_STATUS => {
+                let result = host.service_wifi_status()?;
+                let value = self.wifi_status_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_SERVICE_WIFI_GET_AP_IP => {
+                let result = host.service_wifi_get_ap_ip()?;
+                let value = self.wifi_ap_ip_record(result)?;
+                self.push(value)?;
+            }
             BUILTIN_SYSTEM_MEMORY => {
                 let mut writer = self.runtime_strings.alloc()?;
                 host.system_memory_text(&mut writer)?;
@@ -662,6 +780,53 @@ impl ChunkedVm {
             _ => return Err(VmError::InvalidOperand),
         }
         Ok(())
+    }
+
+    fn runtime_string_value(&mut self, value: Option<&str>) -> Result<Value, VmError> {
+        let Some(value) = value else {
+            return Ok(Value::Null);
+        };
+        let mut writer = self.runtime_strings.alloc()?;
+        writer
+            .write_str(value)
+            .map_err(|_| VmError::InvalidOperand)?;
+        Ok(writer.value())
+    }
+
+    fn wifi_action_record(&mut self, result: WifiActionResult<'_>) -> Result<Value, VmError> {
+        let error = self.runtime_string_value(result.error)?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
+            RuntimeRecordField::new("error", error),
+        ])
+    }
+
+    fn wifi_status_record(&mut self, result: WifiStatus<'_>) -> Result<Value, VmError> {
+        let mode = self.runtime_string_value(result.mode)?;
+        let ip_address = self.runtime_string_value(result.ip_address)?;
+        let ssid = self.runtime_string_value(result.ssid)?;
+        let error = self.runtime_string_value(result.error)?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("active", Value::Bool(result.active)),
+            RuntimeRecordField::new("mode", mode),
+            RuntimeRecordField::new("ipAddress", ip_address),
+            RuntimeRecordField::new("ssid", ssid),
+            RuntimeRecordField::new("clients", Value::I32(result.clients)),
+            RuntimeRecordField::new("error", error),
+        ])
+    }
+
+    fn wifi_ap_ip_record(&mut self, result: WifiApIp<'_>) -> Result<Value, VmError> {
+        let ip = self.runtime_string_value(result.ip)?;
+        let gw = self.runtime_string_value(result.gw)?;
+        let netmask = self.runtime_string_value(result.netmask)?;
+        let error = self.runtime_string_value(result.error)?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("ip", ip),
+            RuntimeRecordField::new("gw", gw),
+            RuntimeRecordField::new("netmask", netmask),
+            RuntimeRecordField::new("error", error),
+        ])
     }
 
     fn binary(&mut self, op: u8) -> Result<(), VmError> {
@@ -741,6 +906,7 @@ impl<'a> Vm<'a> {
         Self {
             program,
             runtime_strings: RuntimeStrings::new(),
+            runtime_records: RuntimeRecords::new(),
             state,
             stack: [Value::Null; MAX_STACK],
             stack_len: 0,
@@ -758,8 +924,13 @@ impl<'a> Vm<'a> {
         trace.trace(event);
         let mut locals = [Value::Null; MAX_LOCALS];
         self.instructions = 0;
-        self.execute_range(handler.start, handler.len, &mut locals, 0, trace)
-            .map(|_| ())
+        let result = self
+            .execute_range(handler.start, handler.len, &mut locals, 0, trace)
+            .map(|_| ());
+        if result.is_err() {
+            trace.service_wifi_teardown()?;
+        }
+        result
     }
 
     pub fn exited(&self) -> bool {
@@ -968,6 +1139,16 @@ impl<'a> Vm<'a> {
                     let slot = locals.get_mut(local).ok_or(VmError::LocalOutOfBounds)?;
                     *slot = value;
                 }
+                OP_GET_FIELD => {
+                    let field_id = read_u16(self.program.code, ip)?;
+                    ip += 2;
+                    let Value::Record(record_id) = self.pop()? else {
+                        return Err(VmError::InvalidOperand);
+                    };
+                    let field = self.program.string(field_id)?;
+                    let value = self.runtime_records.field(record_id, field)?;
+                    self.push(value)?;
+                }
                 OP_ADD | OP_SUB | OP_EQ | OP_NE | OP_LT | OP_LTE | OP_GT | OP_GTE => {
                     self.binary(op)?
                 }
@@ -1065,6 +1246,7 @@ impl<'a> Vm<'a> {
                 trace.trace("state.reset");
             }
             BUILTIN_APP_EXIT => {
+                trace.service_wifi_teardown()?;
                 self.exited = true;
                 trace.trace("app.exit");
             }
@@ -1195,6 +1377,9 @@ impl<'a> Vm<'a> {
             BUILTIN_SERVICE_INDICATOR_TOGGLE => {
                 trace.service_indicator_toggle()?;
             }
+            BUILTIN_SERVICE_INDICATOR_BREATHE => {
+                trace.service_indicator_breathe()?;
+            }
             BUILTIN_SERVICE_INDICATOR_READ => {
                 let value = trace.service_indicator_read()?;
                 self.push(Value::Bool(value))?;
@@ -1236,6 +1421,30 @@ impl<'a> Vm<'a> {
                 let event = self.program.string(event_id)?;
                 trace.service_timer_after(event, delay_ms)?;
             }
+            BUILTIN_SERVICE_WIFI_START_AP => {
+                let Value::String(ssid_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let ssid = self.program.string(ssid_id)?;
+                let result = trace.service_wifi_start_ap(ssid)?;
+                let value = self.wifi_action_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_SERVICE_WIFI_STOP_AP => {
+                let result = trace.service_wifi_stop_ap()?;
+                let value = self.wifi_action_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_SERVICE_WIFI_STATUS => {
+                let result = trace.service_wifi_status()?;
+                let value = self.wifi_status_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_SERVICE_WIFI_GET_AP_IP => {
+                let result = trace.service_wifi_get_ap_ip()?;
+                let value = self.wifi_ap_ip_record(result)?;
+                self.push(value)?;
+            }
             BUILTIN_SYSTEM_MEMORY => {
                 let mut writer = self.runtime_strings.alloc()?;
                 trace.system_memory_text(&mut writer)?;
@@ -1255,6 +1464,53 @@ impl<'a> Vm<'a> {
             _ => return Err(VmError::InvalidOperand),
         }
         Ok(())
+    }
+
+    fn runtime_string_value(&mut self, value: Option<&str>) -> Result<Value, VmError> {
+        let Some(value) = value else {
+            return Ok(Value::Null);
+        };
+        let mut writer = self.runtime_strings.alloc()?;
+        writer
+            .write_str(value)
+            .map_err(|_| VmError::InvalidOperand)?;
+        Ok(writer.value())
+    }
+
+    fn wifi_action_record(&mut self, result: WifiActionResult<'_>) -> Result<Value, VmError> {
+        let error = self.runtime_string_value(result.error)?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
+            RuntimeRecordField::new("error", error),
+        ])
+    }
+
+    fn wifi_status_record(&mut self, result: WifiStatus<'_>) -> Result<Value, VmError> {
+        let mode = self.runtime_string_value(result.mode)?;
+        let ip_address = self.runtime_string_value(result.ip_address)?;
+        let ssid = self.runtime_string_value(result.ssid)?;
+        let error = self.runtime_string_value(result.error)?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("active", Value::Bool(result.active)),
+            RuntimeRecordField::new("mode", mode),
+            RuntimeRecordField::new("ipAddress", ip_address),
+            RuntimeRecordField::new("ssid", ssid),
+            RuntimeRecordField::new("clients", Value::I32(result.clients)),
+            RuntimeRecordField::new("error", error),
+        ])
+    }
+
+    fn wifi_ap_ip_record(&mut self, result: WifiApIp<'_>) -> Result<Value, VmError> {
+        let ip = self.runtime_string_value(result.ip)?;
+        let gw = self.runtime_string_value(result.gw)?;
+        let netmask = self.runtime_string_value(result.netmask)?;
+        let error = self.runtime_string_value(result.error)?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("ip", ip),
+            RuntimeRecordField::new("gw", gw),
+            RuntimeRecordField::new("netmask", netmask),
+            RuntimeRecordField::new("error", error),
+        ])
     }
 
     fn binary(&mut self, op: u8) -> Result<(), VmError> {

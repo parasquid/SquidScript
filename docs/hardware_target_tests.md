@@ -115,6 +115,35 @@ observed `output=...` lines to the terminal. A real blinky check must observe
 both `output="blink" true` and `output="blink" false`; startup output alone is
 not enough. Use `--raw` only when literal serial bytes are needed.
 
+### Wi-Fi AP Diagnostics App
+
+```sh
+cargo run -p squidc -- app install examples/wifi-ap-diagnostics/main.squid
+cargo run -p squidc -- app launch wifi-ap-diagnostics
+cargo run -p squidc -- device output
+cargo run -p squidc -- device key SELECT
+cargo run -p squidc -- device output
+```
+
+Installs the AP diagnostics example as a persistent app after blinky checks when
+Wi-Fi behavior is under test. The app starts `service.wifi.startAP("SquidScript")`,
+prints the start result, status record, AP IP record, and periodic client-count
+changes, then waits for `SELECT` to call `service.wifi.stopAP()` and print the
+inactive status.
+
+The example owns the indicator behavior in SquidScript:
+
+- waiting for clients: `service.indicator.breathe()`
+- first observed client: fast `service.indicator.toggle()` blink burst
+- connected: mostly lit with short off blinks
+- all clients disconnected: returns to `service.indicator.breathe()`
+
+While the AP is active, verify from a phone or laptop that the `SquidScript`
+network is visible, attempt to join it, confirm serial output reports
+`status.clients > 0`, then disconnect and confirm `status.clients` returns to
+zero. The current ESP radio backend proves SoftAP radio start/stop and station
+counting; IP/DHCP and HTTP serving are separate follow-up work.
+
 ### GPIO REPL Session
 
 ```sh
@@ -122,7 +151,8 @@ cargo run -p squidc -- repl --script tests/repl/hardware-gpio-indicator.session
 ```
 
 Exercises `service.indicator.write`, `service.indicator.read`,
-`service.indicator.toggle`, and raw `GPIO8` readback.
+`service.indicator.toggle`, `service.indicator.breathe`, and raw `GPIO8`
+readback.
 
 ### Blinky REPL Session
 

@@ -224,6 +224,10 @@ impl<S: AppStorage> TraceSink for StoredAppHost<'_, '_, S> {
         self.trace.service_indicator_toggle()
     }
 
+    fn service_indicator_breathe(&mut self) -> Result<(), VmError> {
+        self.trace.service_indicator_breathe()
+    }
+
     fn service_indicator_read(&mut self) -> Result<bool, VmError> {
         self.trace.service_indicator_read()
     }
@@ -246,6 +250,33 @@ impl<S: AppStorage> TraceSink for StoredAppHost<'_, '_, S> {
 
     fn service_timer_after(&mut self, event: &str, delay_ms: i32) -> Result<(), VmError> {
         self.trace.service_timer_after(event, delay_ms)
+    }
+
+    fn service_wifi_start_ap<'b>(
+        &'b mut self,
+        ssid: &str,
+    ) -> Result<squidvm_core::host::WifiActionResult<'b>, VmError> {
+        self.trace.service_wifi_start_ap(ssid)
+    }
+
+    fn service_wifi_stop_ap<'b>(
+        &'b mut self,
+    ) -> Result<squidvm_core::host::WifiActionResult<'b>, VmError> {
+        self.trace.service_wifi_stop_ap()
+    }
+
+    fn service_wifi_status<'b>(&'b mut self) -> Result<squidvm_core::host::WifiStatus<'b>, VmError> {
+        self.trace.service_wifi_status()
+    }
+
+    fn service_wifi_get_ap_ip<'b>(
+        &'b mut self,
+    ) -> Result<squidvm_core::host::WifiApIp<'b>, VmError> {
+        self.trace.service_wifi_get_ap_ip()
+    }
+
+    fn service_wifi_teardown(&mut self) -> Result<(), VmError> {
+        self.trace.service_wifi_teardown()
     }
 
     fn system_memory_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
