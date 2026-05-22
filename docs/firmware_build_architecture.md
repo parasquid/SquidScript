@@ -96,7 +96,15 @@ Backend selection is a build-time concern. SquidScript apps should still target 
 
 ## 6. ESP32-C3 Reference Backend
 
-The initial XTEINK X4 reference firmware, provisionally named `squid-firmware`, should be Rust-first.
+The Rust ESP32-C3 backend has two current roles:
+
+- ESP32-C3 Super Mini is the `dev` reference platform for serial-first firmware
+  iteration and host/hardware regression work.
+- XTEINK X4 is the `release` and reference hardware validation platform for
+  display, storage, power, and product-shaped behavior.
+
+The XTEINK X4 reference firmware path, provisionally named `squid-firmware`,
+should remain Rust-first where the current embedded ESP ecosystem is practical.
 
 Backend ID:
 

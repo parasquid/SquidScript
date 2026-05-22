@@ -163,15 +163,38 @@ checks only.
 
 ## Implementation Order
 
-1. Correct docs/specs so they no longer describe versioned compatibility.
-1. Completed: docs/specs no longer describe versioned compatibility.
+1. Completed: docs/specs no longer describe versioned runtime or SQBC
+   compatibility as a current firmware contract.
 2. Completed: the ESP default indicator uses a bounded service model.
 3. Completed: firmware timers use a bounded actor with command and due-event
    queues, preserving active-session and armed-trigger behavior.
-4. Verify indicator breathing and timer delivery remain non-blocking while
-   serial stays responsive under hardware tests.
-5. Move serial/app lifecycle further into actors, then Wi-Fi, storage, display,
-   and HTTP as separate service actors.
+4. In progress: move serial/app lifecycle, storage, and display toward explicit
+   bounded service commands without changing SquidScript source APIs.
+5. Verify indicator breathing, timer delivery, lifecycle commands, storage
+   operations, and draw-log output remain fair while serial stays responsive
+   under hardware tests.
+6. Resume Wi-Fi, radio diagnostics, networking, and HTTP service actor work only
+   when the tabled Wi-Fi validation work is active again.
+
+## Current Non-Wi-Fi Firmware Audit
+
+This audit covers the ESP32-C3 Super Mini reference firmware. It deliberately
+excludes Wi-Fi APIs, radio backend behavior, AP diagnostics, station mode,
+network stack work, and HTTP serving.
+
+| Path | Current classification | Notes |
+| --- | --- | --- |
+| Main serial loop | Actor/step-based | The shell polls serial, timers, indicator, and Wi-Fi progress from the hardware loop. Keep this shape until an RTOS backend owns scheduling. |
+| Serial command handling | Bounded synchronous | Command parsing and dispatch run synchronously per received command. SQBC upload payload reads are bounded by protocol length and firmware buffers. |
+| App lifecycle intents | Actor/step-based | Launch, arm, disarm, root restart, exit, and app-event intent are now modeled as bounded kernel lifecycle commands. |
+| VM event dispatch | Bounded synchronous per event | Firmware returns to the kernel between app events. Individual VM handlers still run synchronously and must not hide long service waits. |
+| Timers | Actor/step-based | Timer registration commands and due events use bounded queues. |
+| Indicator | Actor/step-based | Logical writes enqueue bounded actions; breathing advances one service-owned step at a time. |
+| Installed app storage | Blocking synchronous | LittleFS reads/writes/format still run synchronously behind the current `AppStorage` trait. Kernel storage commands now name the service boundary, but the backend is not yet sliced or async. |
+| App state storage | Blocking synchronous | State record reads/writes use the same LittleFS mount/write/rename path as installed app storage. |
+| Headless display draw log | Actor/step-based | Firmware draw commands now enter a bounded display service queue before serial `DRAWLOG.GET` inspection. |
+| XTEINK X4 display bring-up | Blocking synchronous | The standalone X4 hello binary still initializes, refreshes, waits, and sleeps synchronously. This is release-platform backend work before X4 becomes routine development hardware. |
+| RAM diagnostics | Bounded synchronous | RAM text generation reads current counters and formats bounded output. |
 
 ## References
 

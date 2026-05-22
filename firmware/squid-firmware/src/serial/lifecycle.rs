@@ -4,6 +4,7 @@ use esp_hal::usb_serial_jtag::UsbSerialJtag;
 use squidvm_core::{error::VmError, limits::MAX_APP_BYTES};
 
 use crate::dev_harness::{AppRegistry, AppSlot, AppStorage, AppStorageError};
+use crate::kernel::LifecycleCommand;
 
 use super::{
     vm::{dispatch_loaded_vm, load_vm_for_app, AppRef, RuntimeError},
@@ -243,86 +244,126 @@ pub(super) fn process_pending_actions(
     last_error: &mut Option<VmError>,
     storage_error: &mut Option<AppStorageError>,
 ) {
-    while let Some(app_name) = trace.pending_disarm.take() {
-        let Some(app) = registry.find(app_name.as_str()) else {
-            *last_error = Some(VmError::InvalidOperand);
-            return;
-        };
-        trace.remove_timers_for(AppRef::Persistent(app));
-    }
-    while let Some(app_name) = trace.pending_arm.take() {
-        let Some(app) = registry.find(app_name.as_str()) else {
-            *last_error = Some(VmError::InvalidOperand);
-            return;
-        };
-        trace.registration_mode = true;
-        let result = run_app_event(
-            AppRef::Persistent(app),
-            "app.arm",
-            registry,
-            storage,
-            app_load_bytes,
-            temp_app,
-            trace,
-        );
-        trace.registration_mode = false;
-        if let Err(error) = result {
-            set_runtime_error(error, last_error, storage_error);
-            return;
-        }
-    }
-    while let Some(app_name) = trace.pending_launch.take() {
-        let Some(app) = registry.find(app_name.as_str()) else {
-            *last_error = Some(VmError::InvalidOperand);
-            return;
-        };
-        let app = AppRef::Persistent(app);
-        if let Some(AppRef::Persistent(current)) = trace.active_app {
-            trace.push_return_target(current);
-        }
-        let current = trace.active_app;
-        if let Some(current) = current {
-            *vm = None;
-            *vm_slot = None;
-            dispatch_exit_hook(
-                current,
-                trace,
-                registry,
-                storage,
-                app_load_bytes,
-                temp_app,
-                last_error,
-                storage_error,
-            );
-            trace.remove_timers_for(current);
-        }
-        trace.active_app = Some(app);
-        *vm = None;
-        *vm_slot = None;
-        if let Err(error) = run_app_event(
-            app,
-            "app.start",
-            registry,
-            storage,
-            app_load_bytes,
-            temp_app,
-            trace,
-        ) {
-            set_runtime_error(error, last_error, storage_error);
-            return;
-        }
-        if trace.exited {
-            finish_current_exit(
-                trace,
-                registry,
-                storage,
-                app_load_bytes,
-                temp_app,
-                vm,
-                vm_slot,
-                last_error,
-                storage_error,
-            );
+    while let Some(command) = trace.lifecycle_service.pop_command() {
+        match command {
+            LifecycleCommand::DisarmApp(app_name) => {
+                let Some(app) = registry.find(app_name.as_str()) else {
+                    *last_error = Some(VmError::InvalidOperand);
+                    return;
+                };
+                trace.remove_timers_for(AppRef::Persistent(app));
+            }
+            LifecycleCommand::ArmApp(app_name) => {
+                let Some(app) = registry.find(app_name.as_str()) else {
+                    *last_error = Some(VmError::InvalidOperand);
+                    return;
+                };
+                trace.registration_mode = true;
+                let result = run_app_event(
+                    AppRef::Persistent(app),
+                    "app.arm",
+                    registry,
+                    storage,
+                    app_load_bytes,
+                    temp_app,
+                    trace,
+                );
+                trace.registration_mode = false;
+                if let Err(error) = result {
+                    set_runtime_error(error, last_error, storage_error);
+                    return;
+                }
+            }
+            LifecycleCommand::LaunchApp(app_name) => {
+                let Some(app) = registry.find(app_name.as_str()) else {
+                    *last_error = Some(VmError::InvalidOperand);
+                    return;
+                };
+                let app = AppRef::Persistent(app);
+                if let Some(AppRef::Persistent(current)) = trace.active_app {
+                    trace.push_return_target(current);
+                }
+                let current = trace.active_app;
+                if let Some(current) = current {
+                    *vm = None;
+                    *vm_slot = None;
+                    dispatch_exit_hook(
+                        current,
+                        trace,
+                        registry,
+                        storage,
+                        app_load_bytes,
+                        temp_app,
+                        last_error,
+                        storage_error,
+                    );
+                    trace.remove_timers_for(current);
+                }
+                trace.active_app = Some(app);
+                *vm = None;
+                *vm_slot = None;
+                if let Err(error) = run_app_event(
+                    app,
+                    "app.start",
+                    registry,
+                    storage,
+                    app_load_bytes,
+                    temp_app,
+                    trace,
+                ) {
+                    set_runtime_error(error, last_error, storage_error);
+                    return;
+                }
+                if trace.exited {
+                    finish_current_exit(
+                        trace,
+                        registry,
+                        storage,
+                        app_load_bytes,
+                        temp_app,
+                        vm,
+                        vm_slot,
+                        last_error,
+                        storage_error,
+                    );
+                }
+            }
+            LifecycleCommand::ExitApp => {
+                trace.exited = true;
+                finish_current_exit(
+                    trace,
+                    registry,
+                    storage,
+                    app_load_bytes,
+                    temp_app,
+                    vm,
+                    vm_slot,
+                    last_error,
+                    storage_error,
+                );
+            }
+            LifecycleCommand::RootRestart => {
+                trace.lifecycle_service.root_restart().ok();
+                return;
+            }
+            LifecycleCommand::DispatchAppEvent { app, event } => {
+                let Some(app) = registry.find(app.as_str()) else {
+                    *last_error = Some(VmError::InvalidOperand);
+                    return;
+                };
+                if let Err(error) = run_app_event(
+                    AppRef::Persistent(app),
+                    event.as_str(),
+                    registry,
+                    storage,
+                    app_load_bytes,
+                    temp_app,
+                    trace,
+                ) {
+                    set_runtime_error(error, last_error, storage_error);
+                    return;
+                }
+            }
         }
     }
 }

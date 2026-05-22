@@ -17,16 +17,34 @@ persistent SquidScript app platform prototype.
 - Add generic app resource APIs for packaged files such as icons, BinBook
   samples, config files, and future `app.resource(...)` handles.
 
-### 2. Design Portable Wi-Fi And Services Runtime
+### 2. Continue Non-Wi-Fi RTOS Service Actor Migration
+
+- Verify lifecycle command queue behavior on ESP32-C3 hardware: launch, arm,
+  disarm, foreground exit, root restart, and timer-triggered app events should
+  leave serial input responsive between events.
+- Replace synchronous LittleFS installed-app, package-resource, state, and
+  format operations with bounded storage service progress steps or a documented
+  backend async path. Keep the portable SquidScript storage API unchanged.
+- Convert the Super Mini serial install paths (`INSTALL.APP`,
+  `INSTALL.RESOURCE`, `STORAGE.FORMAT`) to submit storage service commands
+  instead of calling the backend directly from command handlers.
+- Promote the headless draw-log display queue into the firmware display service
+  contract, then add a backend adapter for physical displays.
+- Replace the standalone XTEINK X4 hello display bring-up's blocking init,
+  refresh, busy wait, and sleep path with bounded/async display backend
+  progress before using X4 for routine development iteration.
+- Consider promoting `firmware/squid-firmware/src/kernel.rs` into a reusable
+  `squid-kernel` library once a second backend consumes the actor/service
+  primitives.
+- Keep firmware target profile roles explicit: ESP32-C3 Super Mini is the
+  serial-first `dev` iteration platform; XTEINK X4 is the `release` and
+  reference hardware validation platform.
+
+### 3. Design Portable Wi-Fi And Services Runtime
 
 - Wi-Fi is tabled for now. Resume only after an alternate client/phone and
   board placement or power check can confirm whether AP beacons are visible
   independently of the current host scanner.
-- Move the ESP32-C3 reference firmware toward an Embassy/async-all-the-way
-  architecture: serial, VM/app dispatch, Wi-Fi/networking, timers, indicator
-  PWM, and future HTTP should run as non-blocking tasks/actors behind firmware
-  service abstractions. Embassy is a target firmware backend detail, not a
-  SquidScript language or compiler-core concept.
 - Use the minimal Rust `wifi-ap-probe` experiment as the proof step before
   changing the SquidScript runtime: compare the blocking `esp-radio` 0.17 probe
   and the Embassy/`esp-radio` 0.18 probe, then verify beacon visibility and
@@ -55,9 +73,6 @@ persistent SquidScript app platform prototype.
   under both ESP-IDF and MicroPython against WPA APs.
 - Add target capability checks for devices without Wi-Fi or with restricted
   networking support.
-- Continue migrating services to the portable `squid-kernel` actor model:
-  serial/app lifecycle next, then Wi-Fi, storage, display, and future HTTP as
-  separate service actors.
 - Add Pico W Wi-Fi backend exploration using the same `service.wifi.*`
   contract.
 - Add bus-attached Wi-Fi co-processor support as `WifiBackend`
@@ -65,12 +80,6 @@ persistent SquidScript app platform prototype.
   including ESP-AT-style ESP8266/ESP32 modules.
 - Add nRF52840 Bluetooth backend exploration as a sibling radio service rather
   than as part of the Wi-Fi trait.
-- Define target timer-backend policy for the actor model, including how a
-  target chooses RTC-backed scheduling versus internal timer peripherals.
-- Audit firmware/runtime services and main-loop helpers for blocking behavior,
-  especially busy waits hidden behind service APIs. Define service expectations
-  around non-blocking progress, bounded time slices, timer/serial fairness, and
-  target scheduler integration.
 - Implement PWM-capable output backends for indicators and GPIO-style outputs.
   `service.indicator.breathe()` should be a convenience over target hardware
   PWM where available, with shared output semantics for future dimming,
@@ -88,7 +97,7 @@ persistent SquidScript app platform prototype.
   roots, bounded content-type handling, upload staging, and target capability
   checks.
 
-### 3. Implement Device Bindings And SQDEVICE/SQDC
+### 4. Implement Device Bindings And SQDEVICE/SQDC
 
 - Load packaged `.sqdevice` resources from SQBC device binding metadata emitted
   from top-level `device {}` declarations before `app.start`; fail launch with
@@ -113,13 +122,13 @@ persistent SquidScript app platform prototype.
 - Add example package resources that demonstrate `device {}` bindings for
   `indicator.default`, `display.default`, and browser input/display configs.
 
-### 4. Consider Reproducible Browser Build Container
+### 5. Consider Reproducible Browser Build Container
 
 - Evaluate a Docker or devcontainer workflow for browser simulator builds and
   Playwright checks so Rust, Node, `wasm-pack`, and system libraries are
   reproducible without making containers mandatory for local development.
 
-### 5. Consider SQBC Library Artifacts
+### 6. Consider SQBC Library Artifacts
 
 - Investigate whether reusable functionality should be packaged as SQBC library
   artifacts that other SQBC apps can import or link against, including

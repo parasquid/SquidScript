@@ -9,6 +9,12 @@ entrypoints. Run TDD checks from this directory:
 cargo test --target x86_64-unknown-linux-gnu
 ```
 
+The ESP32-C3 Super Mini is the `dev` firmware profile: serial-first, cheap to
+flash, rapid to iterate, and intentionally RAM-backed for `RUN.TEMP`. XTEINK X4
+is the `release` and reference hardware validation profile; keep X4 display,
+storage, power, and flash-endurance decisions separate from the Super Mini
+serial development loop.
+
 The ESP32-C3 serial binary keeps hardware boot wiring in
 `src/bin/c3_supermini_serial_hello.rs`. The serial firmware module root is
 `src/serial.rs`, with implementation split under `src/serial/`:

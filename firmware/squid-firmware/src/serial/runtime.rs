@@ -21,8 +21,9 @@ use crate::dev_harness::{
     AppName, AppRegistry, AppSlot, AppStorage, AppStorageError, DevTimerEvent as TimerEvent,
 };
 use crate::kernel::{
-    write_ram_diagnostics_text, IndicatorAction, IndicatorService, ServiceError, TimerCommand,
-    TimerRegistration, TimerService, INDICATOR_BREATH_SEGMENT_MS,
+    write_ram_diagnostics_text, DisplayCommand, DisplayService, IndicatorAction, IndicatorService,
+    LifecycleService, ServiceError, TimerCommand, TimerRegistration, TimerService,
+    INDICATOR_BREATH_SEGMENT_MS,
 };
 use crate::storage::SQUIDFS_LEN;
 
@@ -39,6 +40,7 @@ const TRACE_CAP: usize = 24;
 const OUTPUT_CAP: usize = 16;
 const DRAW_CAP: usize = 32;
 const STACK_CAP: usize = 4;
+const LIFECYCLE_COMMAND_CAP: usize = 8;
 const TIMER_CAP: usize = 4;
 const TIMER_COMMAND_CAP: usize = 8;
 const TIMER_DUE_CAP: usize = 4;
@@ -50,12 +52,9 @@ pub struct RuntimeSink<'d> {
     indicator_service: IndicatorService<INDICATOR_QUEUE_CAP>,
     next_indicator_breath_step: Option<Instant>,
     pub(super) current_app: Option<AppRef>,
-    pub(super) pending_launch: Option<AppName>,
-    pub(super) pending_arm: Option<AppName>,
-    pub(super) pending_disarm: Option<AppName>,
+    pub(super) lifecycle_service: LifecycleService<AppName, TimerEvent, LIFECYCLE_COMMAND_CAP>,
     pub(super) timer_service:
         TimerService<AppRef, TimerEvent, TIMER_CAP, TIMER_COMMAND_CAP, TIMER_DUE_CAP>,
-    pub(super) root_restart_pending: bool,
     pub(super) registration_mode: bool,
     pub(super) active_app: Option<AppRef>,
     pub(super) stack: [AppSlot; STACK_CAP],
@@ -66,8 +65,7 @@ pub struct RuntimeSink<'d> {
     pub(super) len: usize,
     pub(super) output: [LogLine; OUTPUT_CAP],
     pub(super) output_len: usize,
-    pub(super) draw: [LogLine; DRAW_CAP],
-    pub(super) draw_len: usize,
+    pub(super) display_service: DisplayService<LogLine, DRAW_CAP>,
     pub(super) app_storage_used_bytes: usize,
     pub(super) wifi: FirmwareWifiBackend<'d>,
 }
@@ -85,11 +83,8 @@ impl<'d> RuntimeSink<'d> {
             indicator_service: IndicatorService::new_breathing(),
             next_indicator_breath_step: None,
             current_app: None,
-            pending_launch: None,
-            pending_arm: None,
-            pending_disarm: None,
+            lifecycle_service: LifecycleService::new(),
             timer_service: TimerService::new(),
-            root_restart_pending: false,
             registration_mode: false,
             active_app: None,
             stack: [AppSlot(0); STACK_CAP],
@@ -100,8 +95,7 @@ impl<'d> RuntimeSink<'d> {
             len: 0,
             output: [LogLine::new(); OUTPUT_CAP],
             output_len: 0,
-            draw: [LogLine::new(); DRAW_CAP],
-            draw_len: 0,
+            display_service: DisplayService::new(),
             app_storage_used_bytes: 0,
             wifi,
         }
@@ -135,17 +129,14 @@ impl<'d> RuntimeSink<'d> {
     pub(super) fn clear(&mut self) {
         self.len = 0;
         self.output_len = 0;
-        self.draw_len = 0;
+        self.display_service.clear();
     }
 
     pub(super) fn clear_timers(&mut self) {
-        self.pending_launch = None;
-        self.pending_arm = None;
-        self.pending_disarm = None;
+        self.lifecycle_service.clear();
         self.timer_service.clear_now();
         self.exited = false;
         self.registration_mode = false;
-        self.root_restart_pending = false;
     }
 
     pub(super) fn teardown_services(&mut self) -> Result<(), VmError> {
@@ -194,13 +185,11 @@ impl<'d> RuntimeSink<'d> {
     }
 
     pub(super) fn request_root_restart(&mut self) {
-        self.root_restart_pending = true;
+        self.lifecycle_service.root_restart().ok();
     }
 
     pub fn take_root_restart(&mut self) -> bool {
-        let pending = self.root_restart_pending;
-        self.root_restart_pending = false;
-        pending
+        self.lifecycle_service.take_root_restart()
     }
 
     pub fn advance_time(
@@ -278,7 +267,10 @@ impl<'d> RuntimeSink<'d> {
     }
 
     pub(super) fn print_draw(&self, serial: &mut UsbSerialJtag<'_, esp_hal::Blocking>) {
-        for entry in self.draw.iter().take(self.draw_len) {
+        for index in 0..self.display_service.command_count() {
+            let Some(DisplayCommand::Draw(entry)) = self.display_service.command_at(index) else {
+                continue;
+            };
             writeln!(serial, "draw={}", entry.as_str()).ok();
         }
     }
@@ -322,10 +314,9 @@ impl<'d> RuntimeSink<'d> {
     }
 
     pub(super) fn push_draw(&mut self, line: LogLine) {
-        if self.draw_len < self.draw.len() {
-            self.draw[self.draw_len] = line;
-            self.draw_len += 1;
-        }
+        self.display_service
+            .enqueue(DisplayCommand::Draw(line))
+            .ok();
     }
 
     fn write_indicator(&mut self, logical_value: bool) -> Result<(), VmError> {
@@ -495,18 +486,21 @@ impl TraceSink for RuntimeSink<'_> {
     }
 
     fn app_launch(&mut self, app: &str) -> Result<(), VmError> {
-        self.pending_launch = Some(AppName::new(app).map_err(|_| VmError::InvalidOperand)?);
-        Ok(())
+        self.lifecycle_service
+            .launch_app(AppName::new(app).map_err(|_| VmError::InvalidOperand)?)
+            .map_err(service_error_to_vm_error)
     }
 
     fn app_arm(&mut self, app: &str) -> Result<(), VmError> {
-        self.pending_arm = Some(AppName::new(app).map_err(|_| VmError::InvalidOperand)?);
-        Ok(())
+        self.lifecycle_service
+            .arm_app(AppName::new(app).map_err(|_| VmError::InvalidOperand)?)
+            .map_err(service_error_to_vm_error)
     }
 
     fn app_disarm(&mut self, app: &str) -> Result<(), VmError> {
-        self.pending_disarm = Some(AppName::new(app).map_err(|_| VmError::InvalidOperand)?);
-        Ok(())
+        self.lifecycle_service
+            .disarm_app(AppName::new(app).map_err(|_| VmError::InvalidOperand)?)
+            .map_err(service_error_to_vm_error)
     }
 
     fn service_timer_every(&mut self, event: &str, interval_ms: i32) -> Result<(), VmError> {

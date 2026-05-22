@@ -5,6 +5,210 @@ pub enum ServiceError {
     QueueFull,
 }
 
+pub struct BoundedQueue<T: Copy, const CAP: usize> {
+    items: [Option<T>; CAP],
+    head: usize,
+    len: usize,
+}
+
+impl<T: Copy, const CAP: usize> BoundedQueue<T, CAP> {
+    pub const fn new() -> Self {
+        Self {
+            items: [None; CAP],
+            head: 0,
+            len: 0,
+        }
+    }
+
+    pub fn push(&mut self, item: T) -> Result<(), ServiceError> {
+        if self.len == CAP {
+            return Err(ServiceError::QueueFull);
+        }
+        let index = (self.head + self.len) % CAP;
+        self.items[index] = Some(item);
+        self.len += 1;
+        Ok(())
+    }
+
+    pub fn pop(&mut self) -> Option<T> {
+        if self.len == 0 {
+            return None;
+        }
+        let item = self.items[self.head].take();
+        self.head = (self.head + 1) % CAP;
+        self.len -= 1;
+        item
+    }
+
+    pub fn clear(&mut self) {
+        self.items = [None; CAP];
+        self.head = 0;
+        self.len = 0;
+    }
+
+    pub const fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn get(&self, offset: usize) -> Option<T> {
+        if offset >= self.len {
+            return None;
+        }
+        self.items[(self.head + offset) % CAP]
+    }
+
+    pub const fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LifecycleCommand<App, Event> {
+    LaunchApp(App),
+    ArmApp(App),
+    DisarmApp(App),
+    ExitApp,
+    RootRestart,
+    DispatchAppEvent { app: App, event: Event },
+}
+
+pub struct LifecycleService<App: Copy, Event: Copy, const CAP: usize> {
+    commands: BoundedQueue<LifecycleCommand<App, Event>, CAP>,
+}
+
+impl<App: Copy, Event: Copy, const CAP: usize> LifecycleService<App, Event, CAP> {
+    pub const fn new() -> Self {
+        Self {
+            commands: BoundedQueue::new(),
+        }
+    }
+
+    pub fn launch_app(&mut self, app: App) -> Result<(), ServiceError> {
+        self.commands.push(LifecycleCommand::LaunchApp(app))
+    }
+
+    pub fn arm_app(&mut self, app: App) -> Result<(), ServiceError> {
+        self.commands.push(LifecycleCommand::ArmApp(app))
+    }
+
+    pub fn disarm_app(&mut self, app: App) -> Result<(), ServiceError> {
+        self.commands.push(LifecycleCommand::DisarmApp(app))
+    }
+
+    pub fn exit_app(&mut self) -> Result<(), ServiceError> {
+        self.commands.push(LifecycleCommand::ExitApp)
+    }
+
+    pub fn root_restart(&mut self) -> Result<(), ServiceError> {
+        self.commands.push(LifecycleCommand::RootRestart)
+    }
+
+    pub fn dispatch_app_event(&mut self, app: App, event: Event) -> Result<(), ServiceError> {
+        self.commands
+            .push(LifecycleCommand::DispatchAppEvent { app, event })
+    }
+
+    pub fn pop_command(&mut self) -> Option<LifecycleCommand<App, Event>> {
+        self.commands.pop()
+    }
+
+    pub fn take_root_restart(&mut self) -> bool {
+        let command_count = self.commands.len();
+        let mut found = false;
+        for _ in 0..command_count {
+            let Some(command) = self.commands.pop() else {
+                break;
+            };
+            if matches!(command, LifecycleCommand::RootRestart) && !found {
+                found = true;
+                continue;
+            }
+            self.commands.push(command).ok();
+        }
+        found
+    }
+
+    pub fn clear(&mut self) {
+        self.commands.clear();
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StorageCommand<App, Resource> {
+    EnsureReady,
+    Format,
+    ReadInstalledApp { app: App },
+    ReadInstalledAppRange { app: App },
+    WriteInstalledApp { app: App },
+    WriteAppResource { app: App, resource: Resource },
+    WriteState { app: App },
+    ReadState { app: App },
+    DeleteState { app: App },
+}
+
+pub struct StorageService<App: Copy, Resource: Copy, const CAP: usize> {
+    commands: BoundedQueue<StorageCommand<App, Resource>, CAP>,
+}
+
+impl<App: Copy, Resource: Copy, const CAP: usize> StorageService<App, Resource, CAP> {
+    pub const fn new() -> Self {
+        Self {
+            commands: BoundedQueue::new(),
+        }
+    }
+
+    pub fn enqueue(&mut self, command: StorageCommand<App, Resource>) -> Result<(), ServiceError> {
+        self.commands.push(command)
+    }
+
+    pub fn pop_command(&mut self) -> Option<StorageCommand<App, Resource>> {
+        self.commands.pop()
+    }
+
+    pub fn clear(&mut self) {
+        self.commands.clear();
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DisplayCommand<Draw> {
+    Draw(Draw),
+    Flush,
+    Clear,
+}
+
+pub struct DisplayService<Draw: Copy, const CAP: usize> {
+    commands: BoundedQueue<DisplayCommand<Draw>, CAP>,
+}
+
+impl<Draw: Copy, const CAP: usize> DisplayService<Draw, CAP> {
+    pub const fn new() -> Self {
+        Self {
+            commands: BoundedQueue::new(),
+        }
+    }
+
+    pub fn enqueue(&mut self, command: DisplayCommand<Draw>) -> Result<(), ServiceError> {
+        self.commands.push(command)
+    }
+
+    pub fn pop_command(&mut self) -> Option<DisplayCommand<Draw>> {
+        self.commands.pop()
+    }
+
+    pub fn command_count(&self) -> usize {
+        self.commands.len()
+    }
+
+    pub fn command_at(&self, index: usize) -> Option<DisplayCommand<Draw>> {
+        self.commands.get(index)
+    }
+
+    pub fn clear(&mut self) {
+        self.commands.clear();
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RamDiagnostics {
     pub ram_total_bytes: usize,
@@ -477,6 +681,89 @@ mod tests {
             timers.enqueue(TimerCommand::Clear),
             Err(ServiceError::QueueFull)
         );
+    }
+
+    #[test]
+    fn bounded_queue_preserves_fifo_order_and_capacity() {
+        let mut queue = BoundedQueue::<u8, 2>::new();
+
+        queue.push(1).unwrap();
+        queue.push(2).unwrap();
+
+        assert_eq!(queue.push(3), Err(ServiceError::QueueFull));
+        assert_eq!(queue.pop(), Some(1));
+        queue.push(3).unwrap();
+        assert_eq!(queue.pop(), Some(2));
+        assert_eq!(queue.pop(), Some(3));
+        assert_eq!(queue.pop(), None);
+    }
+
+    #[test]
+    fn lifecycle_service_queues_explicit_app_intents() {
+        let mut lifecycle = LifecycleService::<u8, u8, 3>::new();
+
+        lifecycle.launch_app(1).unwrap();
+        lifecycle.arm_app(2).unwrap();
+        lifecycle.dispatch_app_event(1, 9).unwrap();
+
+        assert_eq!(
+            lifecycle.pop_command(),
+            Some(LifecycleCommand::LaunchApp(1))
+        );
+        assert_eq!(lifecycle.pop_command(), Some(LifecycleCommand::ArmApp(2)));
+        assert_eq!(
+            lifecycle.pop_command(),
+            Some(LifecycleCommand::DispatchAppEvent { app: 1, event: 9 })
+        );
+        assert_eq!(lifecycle.pop_command(), None);
+    }
+
+    #[test]
+    fn storage_service_boundary_names_storage_operations_without_backend_change() {
+        let mut storage = StorageService::<u8, u8, 3>::new();
+
+        storage
+            .enqueue(StorageCommand::ReadInstalledApp { app: 1 })
+            .unwrap();
+        storage
+            .enqueue(StorageCommand::WriteAppResource {
+                app: 1,
+                resource: 7,
+            })
+            .unwrap();
+        storage
+            .enqueue(StorageCommand::WriteState { app: 1 })
+            .unwrap();
+
+        assert_eq!(
+            storage.pop_command(),
+            Some(StorageCommand::ReadInstalledApp { app: 1 })
+        );
+        assert_eq!(
+            storage.pop_command(),
+            Some(StorageCommand::WriteAppResource {
+                app: 1,
+                resource: 7,
+            })
+        );
+        assert_eq!(
+            storage.pop_command(),
+            Some(StorageCommand::WriteState { app: 1 })
+        );
+    }
+
+    #[test]
+    fn display_service_queue_is_bounded() {
+        let mut display = DisplayService::<u8, 1>::new();
+
+        display.enqueue(DisplayCommand::Draw(7)).unwrap();
+
+        assert_eq!(
+            display.enqueue(DisplayCommand::Draw(8)),
+            Err(ServiceError::QueueFull)
+        );
+        assert_eq!(display.pop_command(), Some(DisplayCommand::Draw(7)));
+        assert_eq!(display.pop_command(), None);
     }
 
     #[test]

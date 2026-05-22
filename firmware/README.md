@@ -7,6 +7,15 @@ on real constrained hardware. The ESP32-C3 Super Mini is the first hardware
 harness because it is cheap, flashable, and already verified over USB
 Serial/JTAG. It is not a product target and it is not XTEINK X4 staging firmware.
 
+Firmware target profile roles:
+
+- `dev`: ESP32-C3 Super Mini, serial-first, rapid iteration, RAM-backed
+  `RUN.TEMP`, and host/hardware regression coverage for language/runtime
+  semantics.
+- `release`: XTEINK X4, display/storage/power validation, release-reference
+  hardware behavior, and no unnecessary flash churn during ordinary app
+  iteration.
+
 Current status:
 
 - `squid-firmware` builds a Super Mini reference firmware image with a serial
