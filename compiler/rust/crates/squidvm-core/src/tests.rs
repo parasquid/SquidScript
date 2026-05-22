@@ -997,7 +997,6 @@ fn compile_sqbc(source: &str) -> Vec<u8> {
 fn mismatched_count_state_record() -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(STATE_RECORD_MAGIC);
-    out.push(STATE_RECORD_VERSION);
     out.push(1);
     out.push(5);
     out.extend_from_slice(b"count");

@@ -14,11 +14,11 @@ use esp_hal::{
     ledc::{
         channel::{self, ChannelIFace},
         timer::{self, TimerIFace},
-        Ledc, LowSpeed, LSGlobalClkSource,
+        LSGlobalClkSource, Ledc, LowSpeed,
     },
     main,
-    timer::timg::TimerGroup,
     time::{Instant, Rate},
+    timer::timg::TimerGroup,
     usb_serial_jtag::UsbSerialJtag,
 };
 use esp_radio::Controller as RadioController;
@@ -108,7 +108,8 @@ fn main() -> ! {
     );
 
     loop {
-        runtime.breathe_once(&delay);
+        runtime.poll_wifi();
+        runtime.poll_indicator();
         runtime.advance_time(
             Instant::now(),
             &registry,

@@ -2,6 +2,7 @@
 
 pub mod bringup;
 pub mod dev_harness;
+pub mod kernel;
 pub mod protocol;
 #[cfg(feature = "hardware")]
 pub mod serial;

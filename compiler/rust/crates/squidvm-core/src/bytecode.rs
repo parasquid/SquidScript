@@ -72,7 +72,6 @@ pub(crate) const STATE_TYPE_BOOL: u8 = 2;
 pub(crate) const STATE_TYPE_STRING: u8 = 3;
 
 pub(crate) const STATE_RECORD_MAGIC: &[u8; 4] = b"SQST";
-pub(crate) const STATE_RECORD_VERSION: u8 = 1;
 
 pub(crate) fn read_value(bytes: &[u8], cursor: usize) -> Result<(Value, usize), VmError> {
     let tag = *bytes.get(cursor).ok_or(VmError::InvalidSection)?;

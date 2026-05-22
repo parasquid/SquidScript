@@ -1,7 +1,6 @@
 use core::fmt::{self, Write};
 
 use esp_hal::{
-    delay::Delay,
     gpio::{Level, Output},
     ledc::{channel::Channel, channel::ChannelIFace, LowSpeed},
     time::{Duration, Instant},
@@ -21,6 +20,7 @@ use squidvm_core::{
 use crate::dev_harness::{
     AppName, AppRegistry, AppSlot, AppStorage, AppStorageError, DevTimerEvent as TimerEvent,
 };
+use crate::kernel::{IndicatorAction, IndicatorService, ServiceError, INDICATOR_BREATH_SEGMENT_MS};
 use crate::storage::SQUIDFS_LEN;
 
 use super::{
@@ -30,12 +30,7 @@ use super::{
     ActiveVm, FirmwareWifiBackend, TempApp, MEMORY_AVAILABLE_BYTES,
 };
 
-const BREATH_DUTIES: [u8; 65] = [
-    0, 0, 1, 2, 4, 6, 8, 11, 15, 18, 22, 26, 31, 35, 40, 45, 50, 55, 60, 65, 69, 74, 78, 82,
-    85, 89, 92, 94, 96, 98, 99, 100, 100, 100, 99, 98, 96, 94, 92, 89, 85, 82, 78, 74, 69, 65,
-    60, 55, 50, 45, 40, 35, 31, 26, 22, 18, 15, 11, 8, 6, 4, 2, 1, 0, 0,
-];
-const BREATH_SEGMENT_MS: u64 = 31;
+const INDICATOR_QUEUE_CAP: usize = 8;
 const TRACE_CAP: usize = 24;
 const OUTPUT_CAP: usize = 16;
 const DRAW_CAP: usize = 32;
@@ -46,6 +41,8 @@ pub struct RuntimeSink<'d> {
     onboard_indicator: OnboardIndicator<'d>,
     pub(super) external_indicator: Output<'d>,
     pub(super) use_external_indicator: bool,
+    indicator_service: IndicatorService<INDICATOR_QUEUE_CAP>,
+    next_indicator_breath_step: Option<Instant>,
     pub(super) current_app: Option<AppRef>,
     pub(super) pending_launch: Option<AppName>,
     pub(super) pending_arm: Option<AppName>,
@@ -78,6 +75,8 @@ impl<'d> RuntimeSink<'d> {
             onboard_indicator,
             external_indicator,
             use_external_indicator: false,
+            indicator_service: IndicatorService::new_breathing(),
+            next_indicator_breath_step: None,
             current_app: None,
             pending_launch: None,
             pending_arm: None,
@@ -105,10 +104,24 @@ impl<'d> RuntimeSink<'d> {
         self.app_storage_used_bytes = used;
     }
 
-    pub fn breathe_once(&mut self, _delay: &Delay) {
+    pub fn poll_wifi(&mut self) {
         self.wifi.poll();
-        if !self.use_external_indicator {
-            self.onboard_indicator.step(Instant::now());
+    }
+
+    pub fn poll_indicator(&mut self) {
+        while let Some(action) = self.indicator_service.pop_action() {
+            self.apply_indicator_action(action);
+        }
+
+        let now = Instant::now();
+        if self.next_indicator_breath_step.is_some_and(|due| now < due) {
+            return;
+        }
+
+        if let Some(action) = self.indicator_service.next_breath_action() {
+            self.apply_indicator_action(action);
+            self.next_indicator_breath_step =
+                Some(now + Duration::from_millis(INDICATOR_BREATH_SEGMENT_MS));
         }
     }
 
@@ -316,27 +329,40 @@ impl<'d> RuntimeSink<'d> {
         }
     }
 
-    fn write_indicator(&mut self, logical_value: bool) {
+    fn write_indicator(&mut self, logical_value: bool) -> Result<(), VmError> {
+        self.indicator_service
+            .write(logical_value)
+            .map_err(service_error_to_vm_error)
+    }
+
+    fn apply_indicator_action(&mut self, action: IndicatorAction) {
+        match action {
+            IndicatorAction::SetBrightness(brightness) => {
+                self.write_indicator_brightness(brightness)
+            }
+        }
+    }
+
+    fn write_indicator_brightness(&mut self, brightness: u8) {
         if self.use_external_indicator {
-            self.external_indicator
-                .set_level(if logical_value { Level::High } else { Level::Low });
+            self.external_indicator.set_level(if brightness > 0 {
+                Level::High
+            } else {
+                Level::Low
+            });
         } else {
-            self.onboard_indicator.write_logical(logical_value);
+            self.onboard_indicator.write_brightness(brightness);
         }
     }
 
     fn read_indicator(&self) -> bool {
-        if self.use_external_indicator {
-            self.external_indicator.is_set_high()
-        } else {
-            self.onboard_indicator.read_logical()
-        }
+        self.indicator_service.read()
     }
 
-    fn breathe_indicator(&mut self) {
-        if !self.use_external_indicator {
-            self.onboard_indicator.breathe();
-        }
+    fn breathe_indicator(&mut self) -> Result<(), VmError> {
+        self.indicator_service
+            .breathe()
+            .map_err(service_error_to_vm_error)
     }
 
     fn write_gpio(&mut self, name: &str, logical_value: bool) -> Result<(), VmError> {
@@ -347,9 +373,10 @@ impl<'d> RuntimeSink<'d> {
         };
         match name {
             "GPIO8" => self.onboard_indicator.write_raw_high(raw_high),
-            "GPIO10" => self
-                .external_indicator
-                .set_level(if raw_high { Level::High } else { Level::Low }),
+            "GPIO10" => {
+                self.external_indicator
+                    .set_level(if raw_high { Level::High } else { Level::Low })
+            }
             _ => return Err(VmError::InvalidOperand),
         }
         Ok(())
@@ -363,7 +390,10 @@ impl<'d> RuntimeSink<'d> {
         }
     }
 
-    pub(super) fn register_timer(&mut self, registration: TimerRegistration) -> Result<(), VmError> {
+    pub(super) fn register_timer(
+        &mut self,
+        registration: TimerRegistration,
+    ) -> Result<(), VmError> {
         for timer in &mut self.timers {
             if timer.map(|timer| (timer.app, timer.event))
                 == Some((registration.app, registration.event))
@@ -388,7 +418,6 @@ impl<'d> RuntimeSink<'d> {
             }
         }
     }
-
 }
 
 impl TraceSink for RuntimeSink<'_> {
@@ -465,19 +494,17 @@ impl TraceSink for RuntimeSink<'_> {
     }
 
     fn service_indicator_write(&mut self, value: bool) -> Result<(), VmError> {
-        self.write_indicator(value);
-        Ok(())
+        self.write_indicator(value)
     }
 
     fn service_indicator_toggle(&mut self) -> Result<(), VmError> {
-        let value = !self.read_indicator();
-        self.write_indicator(value);
-        Ok(())
+        self.indicator_service
+            .toggle()
+            .map_err(service_error_to_vm_error)
     }
 
     fn service_indicator_breathe(&mut self) -> Result<(), VmError> {
-        self.breathe_indicator();
-        Ok(())
+        self.breathe_indicator()
     }
 
     fn service_indicator_read(&mut self) -> Result<bool, VmError> {
@@ -601,9 +628,6 @@ pub struct OnboardIndicator<'d> {
     channel: Channel<'d, LowSpeed>,
     brightness: u8,
     raw_high: bool,
-    breathing: bool,
-    breath_step: usize,
-    next_breath_step: Option<Instant>,
 }
 
 impl<'d> OnboardIndicator<'d> {
@@ -612,23 +636,11 @@ impl<'d> OnboardIndicator<'d> {
             channel,
             brightness: 0,
             raw_high: true,
-            breathing: true,
-            breath_step: 0,
-            next_breath_step: None,
         };
         indicator
     }
 
-    fn write_logical(&mut self, value: bool) {
-        self.write_brightness(if value { 100 } else { 0 });
-    }
-
-    fn read_logical(&self) -> bool {
-        self.brightness > 0
-    }
-
     fn write_raw_high(&mut self, value: bool) {
-        self.breathing = false;
         self.raw_high = value;
         self.brightness = if value { 0 } else { 100 };
         let _ = self.channel.set_duty(if value { 100 } else { 0 });
@@ -638,35 +650,16 @@ impl<'d> OnboardIndicator<'d> {
         self.raw_high
     }
 
-    fn breathe(&mut self) {
-        self.breathing = true;
-        self.next_breath_step = None;
-    }
-
-    fn step(&mut self, now: Instant) {
-        if !self.breathing {
-            return;
-        }
-        if self.next_breath_step.is_some_and(|due| now < due) {
-            return;
-        }
-
-        let next_step = (self.breath_step + 1) % BREATH_DUTIES.len();
-        let next_brightness = BREATH_DUTIES[next_step];
-        let end_duty = 100 - next_brightness;
-        let _ = self.channel.set_duty(end_duty);
-        self.brightness = next_brightness;
-        self.raw_high = self.brightness == 0;
-        self.breath_step = next_step;
-        self.next_breath_step = Some(now + Duration::from_millis(BREATH_SEGMENT_MS));
-    }
-
     fn write_brightness(&mut self, brightness: u8) {
-        self.breathing = false;
-        self.next_breath_step = None;
         self.brightness = brightness.min(100);
         self.raw_high = self.brightness == 0;
         let _ = self.channel.set_duty(100 - self.brightness);
+    }
+}
+
+fn service_error_to_vm_error(error: ServiceError) -> VmError {
+    match error {
+        ServiceError::QueueFull => VmError::InvalidOperand,
     }
 }
 

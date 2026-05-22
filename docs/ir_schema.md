@@ -1,30 +1,28 @@
 # SquidScript IR JSON Schema
 
-Status: Browser-sim v1 development artifact
+Status: Browser-sim development artifact
 
 IR JSON is the browser simulator's current executable interchange format between the Rust compiler frontend and browser runtime.
 
 It is not a production firmware format. Production firmware remains SQBC bytecode-only.
 
-## Version
+## Header
 
 Every IR document has:
 
 ```json
 {
-  "format": "squidscript-ir",
-  "version": 1
+  "format": "squidscript-ir"
 }
 ```
 
-Consumers must reject unknown `format` values and unsupported versions.
+Consumers must reject unknown `format` values.
 
 ## Shape
 
 ```json
 {
   "format": "squidscript-ir",
-  "version": 1,
   "app": {
     "id": "hello-menu",
     "name": "Hello Menu",
@@ -93,7 +91,7 @@ Consumers must reject unknown `format` values and unsupported versions.
 }
 ```
 
-## v1 Event Names
+## Event Names
 
 - `app.start`
 - `app.exit`
@@ -105,7 +103,7 @@ Consumers must reject unknown `format` values and unsupported versions.
 - `key.BACK`
 - `key.POWER`
 
-## v1 Statements
+## Statements
 
 The browser runtime currently recognizes:
 
@@ -139,7 +137,7 @@ stripped from release SQBC. `debug.block` contains a nested `statements` array;
 development SQBC encodes the nested statements, while release SQBC strips the
 entire block without evaluating contained expressions.
 
-## v1 Expressions
+## Expressions
 
 The browser-sim IR currently recognizes:
 
@@ -148,6 +146,6 @@ The browser-sim IR currently recognizes:
 - `binary` with `+`, `-`, `==`, `!=`, `<`, `<=`, `>`, and `>=`
 - `call`
 
-## v1 Validation
+## Validation
 
 The compiler currently reports diagnostics for missing app declarations, missing screens, target mismatches, duplicate screen and function names, unknown `screen.open(...)` targets, unsupported screen render policies, direct mutating statements inside screen bodies, display calls outside screen rendering, and invalid mutation or side effects inside `debug.block`.

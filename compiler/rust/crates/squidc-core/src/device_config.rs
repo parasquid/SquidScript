@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 const SQDC_MAGIC: &[u8; 4] = b"SQDC";
-const SQDC_VERSION: u16 = 1;
 const TAG_NULL: u8 = 0;
 const TAG_BOOL: u8 = 1;
 const TAG_INT: u8 = 2;
@@ -48,7 +47,7 @@ pub fn parse_sqdevice(input: &str) -> Result<DeviceConfig, DeviceConfigError> {
     let Some((_, header)) = lines.find(|(_, line)| !is_ignored_line(line)) else {
         return Err(DeviceConfigError::new("missing SQDEVICE header"));
     };
-    if header.trim() != "SQDEVICE 1" {
+    if header.trim() != "SQDEVICE" {
         return Err(DeviceConfigError::new("unsupported SQDEVICE header"));
     }
 
@@ -74,7 +73,6 @@ pub fn parse_sqdevice(input: &str) -> Result<DeviceConfig, DeviceConfigError> {
 pub fn encode_sqdc(config: &DeviceConfig) -> Result<Vec<u8>, DeviceConfigError> {
     let mut out = Vec::new();
     out.extend_from_slice(SQDC_MAGIC);
-    write_u16(&mut out, SQDC_VERSION);
     write_u16(
         &mut out,
         u16::try_from(config.records.len())
@@ -102,15 +100,11 @@ pub fn encode_sqdc(config: &DeviceConfig) -> Result<Vec<u8>, DeviceConfigError> 
 }
 
 pub fn decode_sqdc(bytes: &[u8]) -> Result<DeviceConfig, DeviceConfigError> {
-    if bytes.len() < 8 || &bytes[0..4] != SQDC_MAGIC {
+    if bytes.len() < 6 || &bytes[0..4] != SQDC_MAGIC {
         return Err(DeviceConfigError::new("invalid SQDC header"));
     }
-    let version = read_u16(bytes, 4)?;
-    if version != SQDC_VERSION {
-        return Err(DeviceConfigError::new("unsupported SQDC version"));
-    }
-    let count = read_u16(bytes, 6)? as usize;
-    let mut cursor = 8usize;
+    let count = read_u16(bytes, 4)? as usize;
+    let mut cursor = 6usize;
     let mut records = BTreeMap::new();
     for _ in 0..count {
         let key = read_string(bytes, &mut cursor)?;
@@ -256,7 +250,7 @@ mod tests {
     #[test]
     fn parses_sqdevice_records_and_comments() {
         let config = parse_sqdevice(
-            r#"SQDEVICE 1
+            r#"SQDEVICE
 # comment
 service string 17:indicator.default
 backend string 4:gpio
@@ -282,16 +276,15 @@ none null
 
     #[test]
     fn rejects_duplicate_keys_and_bad_lengths() {
-        assert!(parse_sqdevice("SQDEVICE 1\ngpio string 5:GPIO10\n").is_err());
-        assert!(parse_sqdevice("SQDEVICE 1\ngpio string 6:GPIO10\ngpio null\n").is_err());
+        assert!(parse_sqdevice("SQDEVICE\ngpio string 5:GPIO10\n").is_err());
+        assert!(parse_sqdevice("SQDEVICE\ngpio string 6:GPIO10\ngpio null\n").is_err());
     }
 
     #[test]
     fn round_trips_sqdc() {
-        let config = parse_sqdevice(
-            "SQDEVICE 1\nservice string 17:indicator.default\nactiveLow bool true\n",
-        )
-        .unwrap();
+        let config =
+            parse_sqdevice("SQDEVICE\nservice string 17:indicator.default\nactiveLow bool true\n")
+                .unwrap();
         let bytes = encode_sqdc(&config).unwrap();
         assert_eq!(decode_sqdc(&bytes).unwrap(), config);
     }

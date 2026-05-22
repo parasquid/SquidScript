@@ -2,8 +2,8 @@ use core::{fmt::Write, str};
 
 use crate::{
     bytecode::{
-        read_u16, read_value, STATE_RECORD_MAGIC, STATE_RECORD_VERSION, STATE_TYPE_BOOL,
-        STATE_TYPE_INT, STATE_TYPE_STRING, VALUE_BOOL, VALUE_I32, VALUE_NULL, VALUE_STRING,
+        read_u16, read_value, STATE_RECORD_MAGIC, STATE_TYPE_BOOL, STATE_TYPE_INT,
+        STATE_TYPE_STRING, VALUE_BOOL, VALUE_I32, VALUE_NULL, VALUE_STRING,
     },
     error::VmError,
     limits::{MAX_RUNTIME_STRING_BYTES, MAX_SAVED_STATE_BYTES, MAX_STATE},
@@ -117,7 +117,6 @@ pub(crate) fn encode_state_record(
 ) -> Result<usize, VmError> {
     let mut cursor = 0usize;
     write_bytes(out, &mut cursor, STATE_RECORD_MAGIC)?;
-    write_byte(out, &mut cursor, STATE_RECORD_VERSION)?;
     write_byte(out, &mut cursor, slots.len() as u8)?;
     let resolver = StringResolver::new(strings, runtime_strings);
     for (slot, value) in slots.iter().zip(state.iter().copied()) {
@@ -161,17 +160,14 @@ pub(crate) fn apply_state_record(
     runtime_strings: &mut RuntimeStrings,
     state: &mut [Value],
 ) -> Result<(), VmError> {
-    if bytes.len() > MAX_SAVED_STATE_BYTES || bytes.len() < 6 {
+    if bytes.len() > MAX_SAVED_STATE_BYTES || bytes.len() < 5 {
         return Err(VmError::InvalidStateRecord);
     }
     if bytes.get(0..4) != Some(&STATE_RECORD_MAGIC[..]) {
         return Err(VmError::InvalidStateRecord);
     }
-    if *bytes.get(4).ok_or(VmError::InvalidStateRecord)? != STATE_RECORD_VERSION {
-        return Err(VmError::InvalidStateRecord);
-    }
-    let count = *bytes.get(5).ok_or(VmError::InvalidStateRecord)? as usize;
-    let mut cursor = 6usize;
+    let count = *bytes.get(4).ok_or(VmError::InvalidStateRecord)? as usize;
+    let mut cursor = 5usize;
     for _ in 0..count {
         let name = read_len_prefixed(bytes, &mut cursor)?;
         let tag = read_byte(bytes, &mut cursor)?;

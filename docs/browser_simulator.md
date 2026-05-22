@@ -75,9 +75,13 @@ never expose files outside the selected asset root.
 
 ## Target and Layout
 
-The simulator imports `targets/xteink-x4.target.json` for logical display dimensions, grayscale level count, supported font heights, render policy metadata, logical buttons, storage, features, and compatibility declarations.
+The simulator imports `targets/xteink-x4.target.json` for logical display
+dimensions, grayscale level count, supported font heights, render policy
+metadata, logical buttons, storage, and features.
 
-The current target JSON has no physical simulator layout. Browser-sim therefore uses an approximate shell layout in code and marks it as placeholder. A future `squid-layout-v1` layout file should replace the approximation.
+The current target JSON has no physical simulator layout. Browser-sim therefore
+uses an approximate shell layout in code and marks it as placeholder. A future
+`squid-layout` layout file should replace the approximation.
 
 Keyboard mapping:
 
@@ -199,7 +203,8 @@ screen("main", { render: "compose" }) {
 }
 ```
 
-This subset compiles to versioned `squidscript-ir` JSON with state defaults, event handlers, screens, and display statements.
+This subset compiles to `squidscript-ir` JSON with state defaults, event
+handlers, screens, and display statements.
 
 Currently supported syntax:
 

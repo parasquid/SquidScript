@@ -1,41 +1,34 @@
 # SQBC Binary Format
 
-Status: v1 browser development container plus v2 reference bytecode
+Status: Current reference bytecode
 
 SQBC is the executable path for SquidScript firmware.
 
-## v1 Container
+## Browser Development Container
 
-```text
-offset  size  field
-0       4     magic: "SQBC"
-4       4     little-endian u32 version: 1
-8       4     little-endian u32 payload length
-12      n     payload
-```
+Older browser-sim experiments used an SQBC-looking wrapper around IR JSON. That
+wrapper is not a firmware executable and must not be described as a supported
+SQBC generation.
 
-The temporary v1 payload is versioned IR JSON. This format is a browser
-simulator development artifact only.
-
-Firmware must reject SQBC v1 IR payloads. Browser-sim IR JSON is a development
+Firmware must reject IR JSON payloads. Browser-sim IR JSON is a development
 artifact, not a production firmware executable.
 
-## v3 Reference Bytecode
-
-SQBC v3 is the current real bytecode format used by the reference firmware. It
-is intentionally small and exists to exercise the SquidScript language spec on
-constrained hardware while moving installed apps toward metadata-first loading.
+## Reference Bytecode
 
 ```text
 offset  size  field
 0       4     magic: "SQBC"
-4       2     little-endian u16 version: 3
-6       2     little-endian u16 header length
+4       2     little-endian u16 header length
+6       2     reserved, currently 0
 8       4     little-endian u32 file length
 12      4     little-endian u32 section count
 16      12*n  section records
 ...     n     section payloads
 ```
+
+This is the current real bytecode format used by the reference firmware. It is
+intentionally small and exists to exercise the SquidScript language spec on
+constrained hardware while moving installed apps toward metadata-first loading.
 
 Section record:
 
@@ -131,15 +124,15 @@ Initial built-in IDs:
 29 service.indicator.read
 ```
 
-The v3 format currently supports the headless reference VM subset. Display
-draw commands are emitted as headless draw-log records on the ESP32-C3 Super
-Mini reference firmware. GPIO builtins dispatch to target firmware hardware
-modules; unsupported names return a VM operand error. The canonical lifecycle
-surface is generic events plus `app.start`, `app.arm`, `app.disarm`, and
-`service.timer.*`. `app.launch` remains the app replacement/launch primitive.
+The current format supports the headless reference VM subset. Display draw
+commands are emitted as headless draw-log records on the ESP32-C3 Super Mini
+reference firmware. GPIO builtins dispatch to target firmware hardware modules;
+unsupported names return a VM operand error. The canonical lifecycle surface is
+generic events plus `app.start`, `app.arm`, `app.disarm`, and `service.timer.*`.
+`app.launch` remains the app replacement/launch primitive.
 
-SQBC v3 includes an explicit app metadata section so tools can read the app id
-from bytecode without guessing from the string table. `squidc app install` uses this
+SQBC includes an explicit app metadata section so tools can read the app id from
+bytecode without guessing from the string table. `squidc app install` uses this
 metadata for raw `.sqbc` files. Source installs use the `app "id"` declaration;
 if source omits it in a developer workflow, `squidc` generates a deterministic
 id from the filename and content hash.
@@ -166,7 +159,7 @@ latency-sensitive handler chunks, but app correctness must not depend on it.
 The ESP32-C3 reference firmware can install named SQBC apps, start `main`, arm
 trigger registrations, dispatch real timer events, and exercise app-stack
 behavior. It stores installed SQBC payloads in LittleFS. Startup registry
-rebuilds validate installed apps from the v3 header and section table with
+rebuilds validate installed apps from the header and section table with
 bounded reads rather than mirroring full app bodies in RAM.
 
 The device binding table is reserved for top-level `device {}` declarations.
@@ -178,9 +171,9 @@ SQDC, not embedded mutable package state.
 
 ## Chunk/Index Execution
 
-Installed-app SQBC v3 execution reads a small owned metadata/index first, then
-loads executable handler/function/screen ranges from the code section on
-demand. The execution shape is:
+Installed-app SQBC execution reads a small owned metadata/index first, then
+loads executable handler/function/screen ranges from the code section on demand.
+The execution shape is:
 
 ```text
 |-- header and section table

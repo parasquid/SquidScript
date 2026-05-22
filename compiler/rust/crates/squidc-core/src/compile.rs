@@ -84,7 +84,6 @@ pub fn compile_with_profile(request: CompileRequest, profile: BuildProfile) -> C
             .unwrap_or_else(default_state_store);
         Some(IrProgram {
             format: "squidscript-ir".to_string(),
-            version: 1,
             app: IrApp {
                 id: app.id,
                 name: app.name,

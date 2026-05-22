@@ -31,7 +31,7 @@ metadata entry.
 On firmware startup, the registry scans persistent app directories and rebuilds
 metadata from valid `main.sqbc` files. Installed package resources live beside
 `main.sqbc` under the same app directory and are read-only to apps. App bodies
-are not mirrored per registry slot in RAM. Startup validation reads the SQBC v3
+are not mirrored per registry slot in RAM. Startup validation reads the SQBC
 header and section table with bounded storage reads. If an installed `main` app
 is present and valid, firmware boots it as the root foreground app and
 dispatches `event.on("app.start")`. If `main` is missing or invalid, firmware
@@ -59,7 +59,7 @@ are intentionally small:
 `RUN.TEMP` state is volatile and RAM-backed. `state.load()`, `state.save()`,
 and `state.reset()` for temp apps must not write flash.
 
-The binary record starts with `SQST`, version `1`, and a field count. Each
+The binary record starts with `SQST` and a field count. Each
 field stores the state name, declared primitive type, nullable flag, and value.
 `state.load()` applies matching slots by name and declared type, leaves missing
 slots at their current/default values, ignores removed slots, and fails with a
@@ -95,7 +95,7 @@ resources read-only and does not activate them by itself.
 SQDEVICE text starts with:
 
 ```text
-SQDEVICE 1
+SQDEVICE
 ```
 
 Blank lines and `#` line comments are allowed. Each record is:
@@ -125,7 +125,8 @@ Duplicate keys are import errors. Unknown keys are retained so future or
 unused driver sections can round-trip. Firmware hard-fails unknown GPIO names
 and missing required fields when a binding is initialized. Duplicate or
 conflicting known pins should return a bounded warning string, not a compiler
-error. v0.2 does not define strapping-pin or electrical-hazard policy checks.
+error. The current draft does not define strapping-pin or electrical-hazard
+policy checks.
 
 SQDC uses repo-owned binary typed records rather than CBOR or JSON. It should
 share bounded typed-record parser helpers with SQST where practical:
@@ -133,9 +134,8 @@ share bounded typed-record parser helpers with SQST where practical:
 ```text
 offset  size  field
 0       4     magic: "SQDC"
-4       2     little-endian u16 version: 1
-6       2     little-endian u16 record count
-8       n     typed records
+4       2     little-endian u16 record count
+6       n     typed records
 ```
 
 Each SQDC typed record stores a key string and one typed primitive value. Exact
@@ -159,7 +159,7 @@ RESOURCES.GET temp_app_buffer_bytes=0
 RESOURCES.GET installed_code_cache_bytes=1024
 ```
 
-Installed-app SQBC v3 execution keeps LittleFS as the app storage abstraction.
+Installed-app SQBC execution keeps LittleFS as the app storage abstraction.
 Firmware reads an owned app index first, then loads executable
 handler/function/screen chunks on demand from the code section. Handler chunks
 are cache entries, not app sessions. Active chunks cannot be evicted; inactive

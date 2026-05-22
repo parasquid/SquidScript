@@ -12,7 +12,6 @@ export interface Diagnostic {
 
 export interface IrProgram {
   format: "squidscript-ir";
-  version: 1;
   app: {
     id: string;
     name: string;

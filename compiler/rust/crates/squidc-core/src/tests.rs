@@ -1,6 +1,6 @@
 use crate::{
     compile::{compile, compile_with_profile, CompileRequest},
-    ir::{encode_sqbc, IrDeviceBinding, IrExpr, IrStatement, SQBC_MAGIC, SQBC_VERSION},
+    ir::{encode_sqbc, IrDeviceBinding, IrExpr, IrStatement, SQBC_MAGIC},
     parser::parse,
     profile::{BuildProfile, PORTABLE_TARGET_ID},
     sqbc,
@@ -134,7 +134,6 @@ fn compiles_spec_hello_menu_to_screen_ir() {
     assert!(output.ok, "{:?}", output.diagnostics);
     let ir = output.ir.unwrap();
     assert_eq!(ir.format, "squidscript-ir");
-    assert_eq!(ir.version, 1);
     assert_eq!(
         ir.state
             .iter()
@@ -428,12 +427,8 @@ fn encodes_minimal_sqbc_container() {
 
     assert_eq!(&sqbc[0..4], SQBC_MAGIC);
     assert_eq!(
-        u32::from_le_bytes(sqbc[4..8].try_into().unwrap()),
-        SQBC_VERSION
-    );
-    assert_eq!(
-        u32::from_le_bytes(sqbc[8..12].try_into().unwrap()) as usize,
-        sqbc.len() - 12
+        u32::from_le_bytes(sqbc[4..8].try_into().unwrap()) as usize,
+        sqbc.len() - 8
     );
 }
 

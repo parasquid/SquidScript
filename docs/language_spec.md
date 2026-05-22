@@ -1,4 +1,4 @@
-# SquidScript Language Specification v0.2 Draft
+# SquidScript Language Specification Draft
 
 Status: Draft
 Target: ESP32-C3 low-RAM e-ink/display devices
@@ -23,11 +23,11 @@ SquidScript is not JavaScript.
 
 SquidScript uses familiar JavaScript-style syntax for authoring, but it does not implement JavaScript's object model, prototype system, closures, async model, browser APIs, Node APIs, package system, or general dynamic execution.
 
-SquidScript is an imperative, event-driven language with simple procedural functions and capability-oriented platform APIs. It is not object-oriented and not functional in v0.2.
+SquidScript is an imperative, event-driven language with simple procedural functions and capability-oriented platform APIs. It is not object-oriented and not functional in current draft.
 
 SquidScript separates the core language from the standard platform capability set. Core language features define syntax, control flow, values, handlers, screens, state, and bytecode execution semantics. Standard platform capabilities are namespaced firmware/runtime APIs such as `service.display.*`, `state.*`, `content.*`, and `binbook.*`.
 
-SquidScript v0.2 does not provide a user library or package system. Standard capabilities are built in from an app author's perspective, but they should be specified as declared, bounded, namespaced APIs known to `squidc`, `.sqbc` validation, and `squidvm`, not as special syntax.
+The current SquidScript draft does not provide a user library or package system. Standard capabilities are built in from an app author's perspective, but they should be specified as declared, bounded, namespaced APIs known to `squidc`, `.sqbc` validation, and `squidvm`, not as special syntax.
 
 Device binding declarations describe how abstract services such as display,
 input, and storage bind to concrete runtime device configurations. They are a
@@ -88,9 +88,9 @@ SquidScript should avoid:
 - direct memory access
 - raw framebuffer mutation
 - unbounded loops
-- recursion in v0.2
+- recursion in current draft
 - dynamic code evaluation
-- full JavaScript compatibility
+- full JavaScript behavior
 - arbitrary object mutation
 - undefined or target-ambiguous filesystem access
 - large runtime parser/compiler requirements on-device
@@ -206,7 +206,7 @@ app launch activates device bindings from the app's top-level `device {}`
 declaration, and explicit `device.config.*` calls may import or persist active
 device configuration through firmware-owned storage.
 
-`app.resource(...)` is deferred in v0.2. Concrete APIs consume safe
+`app.resource(...)` is deferred in current draft. Concrete APIs consume safe
 package-relative paths directly until a handle-based resource API is specified.
 
 ---
@@ -221,27 +221,26 @@ entry point is:
 ```
 
 The SQBC file contains the app metadata needed by firmware and tools, including
-the app ID, display name, runtime compatibility, state schema, target
-requirements, and builtin/API references. Firmware validates this metadata and
-the bytecode before execution.
+the app ID, display name, state schema, target requirements, and builtin/API
+references. Firmware validates this metadata and the bytecode before execution.
 
 There is no production `app.json`, `manifest.json`, or permission declaration
-file in v0.2. Capabilities are language/runtime APIs. The compiler validates
+file. Capabilities are language/runtime APIs. The compiler validates
 known APIs, firmware validates bytecode and target requirements, and runtime
 calls fail with normal runtime or target errors when the current device cannot
 perform the requested operation.
 
-There is no public launcher app kind in v0.2. A home screen, shell, or app
-picker is just a SquidScript app. If it is installed as root `main.sqbc`, it is
-the first app firmware starts.
+There is no public launcher app kind. A home screen, shell, or app picker is
+just a SquidScript app. If it is installed as root `main.sqbc`, it is the first
+app firmware starts.
 
-`.squid` source may include an optional app-level target for compatibility
-metadata, but portable SquidScript compilation does not require a board target.
-Apps should compile against the language/runtime API. Hardware names and device
-aliases are resolved by the firmware/runtime on the device. If an app uses a
-capability or alias the current device does not provide, execution must fail
-with a device/runtime error rather than requiring the host compiler to know the
-board in the normal upload path.
+`.squid` source may include optional app-level target requirements, but portable
+SquidScript compilation does not require a board target. Apps should compile
+against the language/runtime API. Hardware names and device aliases are
+resolved by the firmware/runtime on the device. If an app uses a capability or
+alias the current device does not provide, execution must fail with a
+device/runtime error rather than requiring the host compiler to know the board
+in the normal upload path.
 
 Production firmware is required to support SQBC bytecode artifacts. Firmware is
 not required to support source entry points.
@@ -252,7 +251,8 @@ Recommended production policy:
 - `main.sqbc` is the executable app artifact
 - `.squid.zip` is the canonical app transfer container for `main.sqbc`,
   optional static assets, `.sqdevice` files, and other read-only resources
-- v0 package tooling excludes `.squid` source files, dot-files, dot-directories,
+- Current package tooling excludes `.squid` source files, dot-files,
+  dot-directories,
   `source-map.json`, and existing `.squid.zip` outputs by default
 
 ---
@@ -371,7 +371,7 @@ Includes behave as source-level compilation units.
 
 They are not runtime imports.
 
-SquidScript v0.2 does not support JavaScript-style import/export.
+The current SquidScript draft does not support JavaScript-style import/export.
 
 ---
 
@@ -398,7 +398,7 @@ behavior. Evicting a handler chunk is not app lifecycle behavior and does not
 dispatch `event.on("app.exit")` or any other cleanup event.
 
 `@preload` is not valid before `function`, `screen`, `state`, `include`, or
-`app` declarations in v0.2. Script authors should mark latency-sensitive event
+`app` declarations in current draft. Script authors should mark latency-sensitive event
 handlers rather than internal helper functions.
 
 ---
@@ -505,7 +505,7 @@ A statement must end with one of:
 
 ## 11. Value Types
 
-SquidScript v0.2 supports these value types:
+The current SquidScript draft supports these value types:
 
 - int
 - bool
@@ -566,7 +566,7 @@ list:
 
 A bounded runtime-managed sequence.
 
-Lists are read-only in v0.2 and are usually returned by built-ins.
+Lists are read-only in current draft and are usually returned by built-ins.
 
 Example:
 
@@ -659,7 +659,7 @@ event.on("app.start") {
 
 State is stored by firmware, not by direct script file writes.
 
-Allowed persistent state types in v0.2:
+Allowed persistent state types in current draft:
 - int
 - bool
 - string
@@ -714,7 +714,7 @@ function loadSlide() {
 }
 ```
 
-Local variables are function-scoped inside functions and render-turn scoped inside screen blocks in v0.2.
+Local variables are function-scoped inside functions and render-turn scoped inside screen blocks in current draft.
 
 Local variables are not persisted.
 
@@ -770,7 +770,7 @@ Assignment cannot create a new variable. New local variables must use `let`.
 
 ## 15. Objects and Records
 
-SquidScript v0.2 supports read-only fixed-shape records returned by built-ins.
+The current SquidScript draft supports read-only fixed-shape records returned by built-ins.
 
 Example:
 
@@ -827,7 +827,7 @@ Option objects are not general mutable objects.
 
 ## 15.1 Result Records
 
-Recoverable failures use ordinary read-only result records. SquidScript v0.2
+Recoverable failures use ordinary read-only result records. The current SquidScript draft
 does not add exceptions, `try`, `catch`, `throw`, multiple returns, or special
 error-handling keywords.
 
@@ -840,7 +840,7 @@ Fallible APIs return a record with at least:
 On success, `ok` is `true` and `error` is `""`. On failure, `ok` is `false`
 and `error` is a stable string code such as `unsupported`, `cancelled`,
 `not-found`, `busy`, `no-space`, `invalid`, or `io-error`. `warning` is `""`
-when there is no warning. v0.2 result records use a single bounded warning
+when there is no warning. The current draft result records use a single bounded warning
 string rather than a warning list. Success payloads are additional named fields
 on the same record.
 
@@ -938,7 +938,7 @@ Function arguments are evaluated left-to-right.
 
 `&&` and `||` short-circuit left-to-right.
 
-Equality is defined only for values of the same primitive type: int, bool, string, and null. Records, lists, and handles are not comparable in v0.2 unless a specific built-in returns a primitive identifier for comparison.
+Equality is defined only for values of the same primitive type: int, bool, string, and null. Records, lists, and handles are not comparable in current draft unless a specific built-in returns a primitive identifier for comparison.
 
 ---
 
@@ -982,9 +982,9 @@ await ...
 
 Capability APIs are namespaced.
 
-These namespaces form the standard platform capability set for v0.2. They are not user-imported libraries, and they are not core language syntax. `squidc` validates calls against known capability signatures and emits builtin IDs into `.sqbc`; `squidvm` validates and dispatches those IDs to firmware/runtime modules.
+These namespaces form the standard platform capability set for the current draft. They are not user-imported libraries, and they are not core language syntax. `squidc` validates calls against known capability signatures and emits builtin IDs into `.sqbc`; `squidvm` validates and dispatches those IDs to firmware/runtime modules.
 
-v0.2 uses these built-in namespaces:
+The current draft uses these built-in namespaces:
 
 - `app.*` for app-level actions such as exit and firmware dialogs
 - `screen.*` for current-screen navigation and refresh
@@ -1050,7 +1050,7 @@ Rules:
 - `device {}` is allowed only at top level.
 - Service names are identifiers such as `indicator`, `display`, `input`, or `storage`.
 - Binding names are string literals. Omitted binding name means `default`.
-- Each binding body must contain exactly one `use` statement in v0.2.
+- Each binding body must contain exactly one `use` statement in current draft.
 - The `use` path must be a string literal package-relative path.
 - The path must end with `.sqdevice`.
 - The path must be safe: no absolute paths, empty segments, parent traversal
@@ -1079,7 +1079,7 @@ Indicator bindings:
 - `indicator { ... }` binds `indicator.default`.
 - `service.indicator.write(value)`, `service.indicator.toggle()`,
   `service.indicator.read()`, and `service.indicator.breathe()` operate on
-  `indicator.default` in v0.2. `breathe()` returns the default indicator to the
+  `indicator.default` in current draft. `breathe()` returns the default indicator to the
   target-defined breathing pattern after app-driven writes or toggles.
 - Named indicator bindings are deferred until a target has a real second
   app-facing indicator.
@@ -1386,7 +1386,7 @@ screen("name", { render: "stream" }) {
 
 If `render` is omitted, the target's default screen render policy is used.
 
-v0.2 render policy values:
+The current draft render policy values:
 
 - `compose`: normal UI composition. This is intended for app pickers, menus, settings, dialogs, dashboards, and other screens made from several draw commands.
 - `stream`: page- or image-dominant rendering. This is intended for reader pages and other screens where one large drawable should be streamed efficiently and lightweight overlays may be composed around it.
@@ -1418,7 +1418,7 @@ event.on("app.start") {
 }
 ```
 
-In v0.2, screen blocks should be render-pure.
+In current draft, screen blocks should be render-pure.
 
 Allowed in screen blocks:
 - service.display.clear(...)
@@ -1531,7 +1531,7 @@ Firmware may keep private caches such as a previous draw-command stream, dirty r
 
 This is why screen blocks must be render-pure. Changing menu selection, page number, or other visual state should happen in event handlers. The handler updates state and calls `screen.refresh()` or `screen.open(...)`; the screen block then redraws the entire desired visual state.
 
-v0.2 has no app-visible retained scene graph, layers, groups, blend modes, opacity, transforms, or direct framebuffer mutation. Firmware may internally reorder or batch work only when the visual result is equivalent to source-order composition.
+The current draft has no app-visible retained scene graph, layers, groups, blend modes, opacity, transforms, or direct framebuffer mutation. Firmware may internally reorder or batch work only when the visual result is equivalent to source-order composition.
 
 ---
 
@@ -1578,7 +1578,7 @@ Example:
 display.clear("white")
 ```
 
-Supported colors in v0.2:
+Supported colors in current draft:
 - "white"
 - "black"
 - "gray0" through "gray15"
@@ -1917,7 +1917,7 @@ app.message("Error", "Could not open file.")
 
 app.confirm(title, body)
 
-Optional v0.2 or later.
+Optional and not required by the current draft.
 
 Returns bool if supported.
 
@@ -2153,7 +2153,7 @@ The canonical Wi-Fi namespace is `service.wifi.*`. Source may use the shorter
 `wifi.*` sugar; the compiler normalizes it to the same IR and bytecode as
 `service.wifi.*`.
 
-The v0.2 implemented subset is AP-first:
+The current draft implemented subset is AP-first:
 
 - `service.wifi.startAP(ssid)`
 - `service.wifi.stopAP()`
@@ -2200,7 +2200,7 @@ hostnames, and configurable IP are deferred.
 
 Rules:
 - Apps may start a foreground-owned access point when the target exposes the Wi-Fi service.
-- Wi-Fi activity requested by a normal app is foreground-only in v0.2.
+- Wi-Fi activity requested by a normal app is foreground-only in current draft.
 - Firmware must stop or release app-owned Wi-Fi requests when the app exits, crashes, or loses foreground.
 - Wi-Fi credentials must never be exposed to SquidScript source, state, records, logs, diagnostics, or source maps.
 - Optional mDNS/captive-portal behavior is firmware-owned and target-dependent.
@@ -2256,7 +2256,7 @@ Static web assets:
 - firmware should prefer `index.html` for the asset root.
 - assets are read-only to the HTTP server.
 - firmware must not expose directory listings unless the app explicitly uses file-management APIs.
-- v0.2 should support at least `.html`, `.css`, `.js`, `.png`, `.jpg`, `.jpeg`, `.svg`, `.ico`, `.txt`, and `.json`.
+- current draft should support at least `.html`, `.css`, `.js`, `.png`, `.jpg`, `.jpeg`, `.svg`, `.ico`, `.txt`, and `.json`.
 - static asset reads must be bounded by target limits.
 
 httpServer.stop(serviceName)
@@ -2337,10 +2337,10 @@ Example:
 let upload = httpServer.upload(event, "book")
 ```
 
-Upload handles are transient firmware-owned references. Apps may pass them to APIs such as `library.installUpload(...)`, but may not inspect raw upload bytes in v0.2.
+Upload handles are transient firmware-owned references. Apps may pass them to APIs such as `library.installUpload(...)`, but may not inspect raw upload bytes in current draft.
 
 Rules:
-- HTTP server services are foreground-only in v0.2.
+- HTTP server services are foreground-only in current draft.
 - Firmware must stop all services owned by an app when that app exits, crashes, or loses foreground.
 - Uploaded files must first be written to firmware-managed staging storage.
 - Completed uploads should be exposed to apps as upload handles.
@@ -2352,7 +2352,7 @@ Rules:
 - App uploads through HTTP should hand completed SQBC artifacts or future
   resource packages to the firmware-owned app installer. Resource package
   format is intentionally left for a separate design pass.
-- Raw sockets, arbitrary outbound HTTP clients, TLS configuration, and general web frameworks are not part of v0.2.
+- Raw sockets, arbitrary outbound HTTP clients, TLS configuration, and general web frameworks are not part of the current draft.
 
 ---
 
@@ -2360,7 +2360,7 @@ Rules:
 
 The `bluetoothHid.*` namespace provides bounded Bluetooth HID peripheral behavior for apps such as presentation clickers.
 
-Generic Bluetooth scanning, arbitrary GATT services, and raw Bluetooth data transfer are not part of v0.2. Bounded BLE upload is exposed as a firmware-owned transfer service, not raw GATT access.
+Generic Bluetooth scanning, arbitrary GATT services, and raw Bluetooth data transfer are not part of the current draft. Bounded BLE upload is exposed as a firmware-owned transfer service, not raw GATT access.
 
 bluetoothHid.start(deviceName)
 
@@ -2423,17 +2423,23 @@ Suggested key names:
 - `VOLUME_DOWN`
 
 Rules:
-- Bluetooth HID is foreground-only in v0.2.
+- Bluetooth HID is foreground-only in current draft.
 - Firmware must stop advertising, disconnect, or release app-owned HID behavior when the app exits, crashes, or loses foreground.
-- Firmware owns pairing, bonding, host trust decisions, HID report descriptors, rate limiting, and platform compatibility.
+- Firmware owns pairing, bonding, host trust decisions, HID report descriptors,
+  rate limiting, and target/platform behavior.
 - Apps may request sending only allowlisted keys supported by the target profile.
-- Apps must not construct raw HID reports in v0.2.
+- Apps must not construct raw HID reports in current draft.
 
 ### Bluetooth File Transfer Built-ins
 
 The `bleTransfer.*` namespace provides small foreground-only BLE upload services for devices where Wi-Fi is unavailable, disabled, or inconvenient.
 
-BLE upload is a transport, not a separate installer. BLE, HTTP, USB-copy, and SD-card-copy workflows should all hand completed files to the same firmware-owned staging and installation pipeline. That shared pipeline validates the finished file/package, sanitizes names, selects a target library/volume, writes atomically where possible, validates SQBC bytecode and target compatibility, and then publishes the result.
+BLE upload is a transport, not a separate installer. BLE, HTTP, USB-copy, and
+SD-card-copy workflows should all hand completed files to the same
+firmware-owned staging and installation pipeline. That shared pipeline
+validates the finished file/package, sanitizes names, selects a target
+library/volume, writes atomically where possible, validates SQBC bytecode and
+target requirements, and then publishes the result.
 
 BLE is usually slower than Wi-Fi and should not be the primary large-book path unless the target and client tooling make that acceptable. It is a reasonable fallback for small scripts, small books, settings bundles, and recovery workflows.
 
@@ -2510,7 +2516,7 @@ if (event.kind == "uploadComplete") {
 ```
 
 Rules:
-- BLE upload services are foreground-only in v0.2.
+- BLE upload services are foreground-only in current draft.
 - Firmware must stop services owned by an app when that app exits, crashes, or loses foreground.
 - Firmware must stream BLE chunks to staging storage rather than app RAM.
 - Firmware should validate uploaded content only after the transfer completes and the staged file is flushed.
@@ -2863,7 +2869,7 @@ let installed = library.installUpload(upload, {
 ```
 
 Uploaded `.sqbc` files and `.squid.zip` packages are staging artifacts until
-the firmware app installer validates bytecode and target compatibility, places
+the firmware app installer validates bytecode and target requirements, places
 the artifact under the app ID derived from SQBC metadata, and publishes the
 installed app where the filesystem permits it. Host tools may unpack and
 validate `.squid.zip` before streaming normalized package files to constrained
@@ -3136,13 +3142,13 @@ state {
 
 App registry support is provided by firmware. SquidScript apps may request
 installed app summaries and start another installed app, but firmware owns
-SQBC metadata lookup, target compatibility checks, bytecode validation, lifecycle
+SQBC metadata lookup, target requirement checks, bytecode validation, lifecycle
 transitions, crash recovery, and returning to the previous installed return
 target.
 
-There is no public launcher app kind in v0.2. A home screen, shell, or app
-picker is just a SquidScript app. If it is installed as root `main.sqbc`, it is
-the first app firmware starts.
+There is no public launcher app kind. A home screen, shell, or app picker is
+just a SquidScript app. If it is installed as root `main.sqbc`, it is the first
+app firmware starts.
 
 Suggested app registry API identifiers:
 
@@ -3181,7 +3187,7 @@ Example record:
 {
   id: "binbook-reader",
   name: "BinBook Reader",
-  version: "1.0.0",
+  build: "source-or-build-id",
   description: "Read BinBook files"
 }
 ```
@@ -3296,7 +3302,7 @@ missing required fields fail.
 
 `device.config.save(destination)`
 
-Persists active device configuration. v0.2 supports:
+Persists active device configuration. The current draft supports:
 
 ```squid
 device.config.save("flash")
@@ -3422,7 +3428,7 @@ device.config.rebind
 
 device.config.save
 - Allows persisting the active device configuration to firmware-owned storage.
-  v0.2 defines `device.config.save("flash")` as binary SQDC persistence.
+  current draft defines `device.config.save("flash")` as binary SQDC persistence.
 
 API availability checks happen during source compilation, bytecode validation,
 and runtime execution. If bytecode calls an unknown built-in, firmware must
@@ -3440,7 +3446,7 @@ settings, not source-declared privileges.
 
 Initial profiles:
 
-- `dev`: default for v4 reference firmware and `squidc repl`
+- `dev`: default for reference firmware and `squidc repl`
 - `release`: strips debug output and is intended for smaller, less debuggable
   app artifacts
 
@@ -3486,7 +3492,8 @@ and the debug-block mutation rules.
 `hardware.gpio.*` is the initial target hardware namespace for reference
 firmware. It is for raw target GPIO resources, while portable app-facing
 devices such as LEDs use service APIs such as `service.indicator.*`.
-GPIO resources may also be described by target definitions for compatibility
+GPIO resources may also be described by target definitions for target
+capability
 checks, simulator configuration, documentation, and autocomplete. Raw GPIO names
 return the raw pin level.
 
@@ -3508,7 +3515,7 @@ The REPL is developer tooling, not SquidScript syntax. Event snippets are
 wrapped into generated handlers. Render snippets are wrapped into generated
 screen blocks and must obey screen render-purity rules.
 
-The v4 developer protocol is documented in `docs/developer_repl_protocol.md`.
+The developer protocol is documented in `docs/developer_repl_protocol.md`.
 
 The canonical executable format is .sqbc.
 
@@ -3553,9 +3560,8 @@ Suggested sections:
 
 ```text
 SQBC header
-|-- magic/version
-|-- target runtime version
-|-- compiler version
+|-- magic
+|-- build/source metadata
 |-- app ID hash
 |-- target requirements
 |-- source hash
@@ -3575,9 +3581,8 @@ Minimal header sketch:
 ```c
 struct SqbcHeader {
   char magic[4];              // "SQBC"
-  uint16_t bytecode_version;  // e.g. 1
-  uint16_t runtime_min;       // e.g. 2
-  uint16_t runtime_max;       // optional
+  uint16_t header_length;
+  uint16_t reserved;
   uint32_t flags;
   uint32_t file_size;
   uint32_t app_id_hash;
@@ -3605,17 +3610,12 @@ Suggested target requirements section:
 
 ```c
 struct SqbcTargetRequirementsSection {
-  uint16_t runtime_min_major;
-  uint16_t runtime_min_minor;
-  uint16_t runtime_max_major;
-  uint16_t runtime_max_minor;
   uint16_t min_display_width;
   uint16_t min_display_height;
   uint16_t required_key_count;
   uint16_t required_feature_count;
   uint16_t required_pixel_format_count;
   uint16_t compiled_target_string_id;       // 0xffff if not target-locked
-  uint16_t compatibility_profile_string_id; // 0xffff if none
   uint16_t runtime_profile_string_id;       // 0xffff if not fixed
 };
 ```
@@ -3632,8 +3632,6 @@ Firmware must validate .sqbc before execution.
 
 Validation checks:
 - magic is correct
-- bytecode version is supported
-- runtime version is compatible
 - file size matches header
 - offsets are within file bounds
 - sections do not overlap illegally
@@ -3802,7 +3800,7 @@ Example source-map.json:
 
 ```json
 {
-  "format": "squid-source-map-v1",
+  "format": "squid-source-map",
   "appId": "binbook-reader",
   "bytecodeFile": "main.sqbc",
   "bytecodeHash": "b2a4e1f9c0d3",
@@ -3929,7 +3927,7 @@ Source:
 
 ## 45. Runtime Quotas
 
-Suggested v0.2 limits:
+Suggested current draft limits:
 
 - max bytecode file size: 32 KB to 64 KB
 - max optional source size: 32 KB to 64 KB
@@ -4016,7 +4014,7 @@ registrations from `event.on("app.arm")`, then tears that VM down. When a
 registered event fires, firmware starts the armed app as the active app
 session and dispatches the event handler.
 
-No multitasking in v0.2.
+No multitasking in current draft.
 
 ---
 
@@ -4113,7 +4111,7 @@ These rules define the SquidScript runtime contract:
 - no path traversal
 - no direct hardware register access
 - no app-visible Wi-Fi credentials
-- no raw sockets in v0.2
+- no raw sockets in current draft
 - no raw display driver access
 - no unbounded execution
 - no hidden autostart without user action
@@ -4151,7 +4149,7 @@ onSlideOpen() {
 
 ## 51. Unsupported JavaScript Features
 
-SquidScript v0.2 does not support:
+The current SquidScript draft does not support:
 - var
 - const
 - class
@@ -4195,24 +4193,24 @@ Unsupported bytecode is a firmware validation error.
 
 ---
 
-## 52. Compatibility
+## 52. Current-Format Validation
 
-Runtime compatibility is encoded in SQBC metadata.
+SquidScript is pre-1.0 and has no compatibility contract. Current compiler,
+runtime, firmware, and simulator artifacts are expected to agree on the current
+format. If current bytecode does not run on the current runtime, treat that as a
+bug to fix or an artifact to rebuild.
 
-Runtime version mismatch behavior:
-- if app requires newer runtime: reject app
-- if app requires older runtime: run if compatible
-- if feature flags are later added: reject if unsupported
-
-Bytecode version mismatch behavior:
-- if bytecode version is unsupported: reject app
-- if bytecode version is supported: validate normally
+Validation behavior:
+- if the magic is wrong: reject app
+- if the current artifact is malformed: reject app
+- if required target features are unavailable: reject app or fail launch with a
+  clear target error
+- do not add unsupported-version paths, backwards readers, or compatibility
+  modes
 
 Source maps:
 - may be ignored without affecting execution
 - must match bytecode hash to be used
-
-Future versions should avoid breaking v0.2 apps where possible.
 
 ---
 

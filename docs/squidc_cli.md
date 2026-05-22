@@ -6,7 +6,7 @@ Normal SquidScript compilation and upload does not require a target definition.
 Apps compile against the portable language/runtime API. Device aliases and
 hardware capabilities are resolved by firmware/runtime on the target device.
 
-Target definitions are opt-in metadata for compatibility checks, simulator
+Target definitions are opt-in metadata for target checks, simulator
 configuration, firmware build metadata, docs, and autocomplete.
 
 ## Common Commands
@@ -145,7 +145,7 @@ Normal compile/upload:
 cargo run -p squidc -- run examples/blinky-supermini/main.squid
 ```
 
-Explicit compatibility check:
+Explicit target check:
 
 ```sh
 cargo run -p squidc -- run examples/blinky-supermini/main.squid \

@@ -118,6 +118,9 @@ service boundaries such as `service.wifi.*`; it should not expose ESP RTOS
 handles, Embassy tasks, Zephyr objects, CYW43 driver state, or bus-attached radio
 module details.
 
+The portable runtime scheduler, service actor model, and RTOS backend mapping
+are defined in `docs/portable_rtos_kernel_architecture.md`.
+
 This reference firmware should use `pulp-os` as an architecture reference, not a dependency or compatibility target. Relevant ideas include a small kernel/service split, Embassy-based concurrency, shared SPI discipline, no-framebuffer or strip-buffer display rendering, static allocation bias, and a boot console that is usable before SquidScript apps are available.
 
 The first hardware milestone is a boot console over both serial and the EPD. The console should support early diagnostics and bring-up commands before app registry storage, SD app loading, or SquidVM execution are required.
@@ -229,7 +232,7 @@ Purpose:
 
 - run SquidScript apps without device hardware
 - test app picker, reader, upload, and file-manager flows
-- exercise target compatibility checks
+- exercise target capability checks
 - preview display rendering at target resolution
 - simulate buttons, storage, Wi-Fi/AP status, BLE upload events, and file uploads
 - support browser/WASM compiler workflows
@@ -307,7 +310,7 @@ Example:
 
 ```json
 {
-  "format": "squid-layout-v1",
+  "format": "squid-layout",
   "id": "xteink-x4-layout",
   "target": "xteink-x4",
   "units": "px",
@@ -409,7 +412,7 @@ The target definition is the source of truth for:
 - power
 - runtime limits
 - app-visible features
-- compatibility strings
+- diagnostic build and target metadata
 - firmware update metadata
 
 The firmware build wrapper should never guess missing hardware values. Placeholder, guessed, or unverified values must be explicitly marked in the target definition.
@@ -544,7 +547,8 @@ UF2 should be emitted only for targets whose bootloader/update path is verified 
 
 - Should backend selection be stored directly in `targets/*.target.json`, or in a separate build-target registry?
 - What is the minimum stable subset of `esp-hal`, Embassy, and `esp-radio` required for XTEINK X4 boot-console bring-up?
-- Should browser simulator targets be exact simulated hardware targets or generic compatibility targets?
+- Should browser simulator targets be exact simulated hardware targets or
+  generic capability targets?
 - Should the browser simulator run the production Rust/WASM compiler in-browser, or consume precompiled `.sqbc` first?
 - Should simulator storage use IndexedDB, in-memory storage, local files through browser APIs, or all three?
 - Should BLE transfer simulation model throughput/timing, or only event shape and staged upload behavior?

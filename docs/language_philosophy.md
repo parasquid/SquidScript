@@ -2,7 +2,7 @@
 
 Status: Draft
 Audience: SquidScript spec authors, compiler/runtime implementers, and advanced app authors
-Scope: SquidScript core language, standard platform capabilities, and future language evolution
+Scope: SquidScript core language, standard platform capabilities, and language evolution
 
 ---
 
@@ -10,13 +10,15 @@ Scope: SquidScript core language, standard platform capabilities, and future lan
 
 This document describes the design philosophy that should guide SquidScript language and platform evolution.
 
-The language specification defines what SquidScript is. This document explains why it should stay that way, how future changes should be evaluated, and where new behavior should live.
+The language specification defines what SquidScript is. This document explains
+why it should stay that way, how changes should be evaluated, and where new
+behavior should live.
 
 SquidScript is intended for first-class device apps on low-RAM e-ink/display devices. Apps may be written in SquidScript, firmware-native C/C++, or scripts in another language; each app model needs clear platform contracts for display, storage, networking, hardware, lifecycle, and diagnostics.
 
 SquidScript should make useful device apps possible without turning the device into a general-purpose JavaScript runtime, a native plugin host, or an undefined filesystem scripting environment.
 
-Future versions may change current v0.2 details when the details do not align with these principles.
+Current draft details may change when they do not align with these principles.
 
 ---
 
@@ -24,9 +26,9 @@ Future versions may change current v0.2 details when the details do not align wi
 
 SquidScript is an imperative, event-driven DSL with simple procedural functions and capability-oriented platform APIs.
 
-It is not object-oriented in v0.2. Records are fixed-shape and read-only, handles are opaque, and the language does not provide classes, prototypes, `this`, `new`, object methods, arbitrary object mutation, or computed property assignment.
+It is not object-oriented in current draft. Records are fixed-shape and read-only, handles are opaque, and the language does not provide classes, prototypes, `this`, `new`, object methods, arbitrary object mutation, or computed property assignment.
 
-It is not functional in v0.2. Functions are named procedures, not first-class values. The language does not provide closures, anonymous functions, callbacks, higher-order functions, algebraic data types, expression-first control flow, or a general immutable data model.
+It is not functional in current draft. Functions are named procedures, not first-class values. The language does not provide closures, anonymous functions, callbacks, higher-order functions, algebraic data types, expression-first control flow, or a general immutable data model.
 
 Render-pure screen blocks are a safety and replayability rule, not a commitment to a functional programming model.
 
@@ -42,9 +44,9 @@ SquidScript is designed around:
 
 SquidScript is not designed around:
 
-- full JavaScript compatibility
-- browser compatibility
-- Node compatibility
+- full JavaScript behavior
+- browser behavior
+- Node behavior
 - dynamic package loading
 - on-device source compilation as a production requirement
 - native app binaries loaded from user storage
@@ -79,7 +81,7 @@ New syntax should have the highest admission bar.
 
 ### 3.2 Rich Standard Capabilities
 
-SquidScript has no user package or library system in early versions.
+SquidScript has no user package or library system in the current draft.
 
 Useful device behavior therefore enters the platform through standard capability namespaces known to the compiler, bytecode validator, and VM.
 
@@ -189,7 +191,7 @@ The target profile system should let a program ask for logical features such as:
 - `service.display.draw`
 - `binbook.read`
 
-Exact device targeting should be rare and reserved for cases where portable feature requirements cannot express the compatibility requirement.
+Exact device targeting should be rare and reserved for cases where portable feature requirements cannot express the target requirement.
 
 ### 3.8 App Pickers Are Ordinary Apps
 
@@ -201,7 +203,7 @@ document-first shells, kid-mode shells, kiosk shells, or other user-facing
 models.
 
 There is no public app `kind` for launcher, foreground, background, or service
-behavior in v0.2. A home screen is an ordinary app, commonly installed as root
+behavior in current draft. A home screen is an ordinary app, commonly installed as root
 `main.sqbc`. Apps can start other installed apps through the standard app
 registry/lifecycle API, while firmware owns validation, stack transitions, and
 return-to-previous-app behavior.
@@ -244,7 +246,7 @@ if (pageIndex > 0) {
 }
 ```
 
-The parser, validator, bytecode encoder, and VM must understand `if` as control flow. It cannot be omitted by a target profile. Every runtime supporting the same language version must implement it consistently.
+The parser, validator, bytecode encoder, and VM must understand `if` as control flow. It cannot be omitted by a target profile. Every runtime supporting the same language implementation must implement it consistently.
 
 ### 4.2 General Capability Example: `service.display.*`
 
@@ -407,7 +409,7 @@ target profiles, and structured runtime errors?
 
 ### 6.5 Target-Profile Test
 
-Can the feature's availability and limits be expressed through target profiles and compatibility checks?
+Can the feature's availability and limits be expressed through target profiles and target checks?
 
 ### 6.6 Diagnostics Test
 
@@ -431,7 +433,7 @@ Can the behavior be specified without relying on "whatever the firmware happens 
 
 SquidScript should evolve deliberately.
 
-Early versions may change when the language is still draft, but every accepted change should clarify:
+The current draft may change when the language is still draft, but every accepted change should clarify:
 
 - whether it changes core language semantics
 - whether it adds or changes a standard capability
@@ -439,9 +441,9 @@ Early versions may change when the language is still draft, but every accepted c
 - whether it changes target-profile requirements
 - whether old bytecode remains valid
 - whether old source remains valid
-- what diagnostics should be produced for incompatible use
+- what diagnostics should be produced for unavailable or invalid use
 
-When compatibility and improvement conflict, the spec should state the migration path explicitly.
+When implementation clarity and improvement conflict, the spec should state the update path explicitly.
 
 ---
 
@@ -449,10 +451,10 @@ When compatibility and improvement conflict, the spec should state the migration
 
 SquidScript should continue to avoid:
 
-- full JavaScript compatibility
+- full JavaScript behavior
 - JavaScript object/prototype semantics
-- closures in early versions
-- async/await in early versions
+- closures in the current draft
+- async/await in the current draft
 - dynamic evaluation
 - user package imports
 - runtime source imports
@@ -461,7 +463,7 @@ SquidScript should continue to avoid:
 - raw framebuffer mutation
 - arbitrary binary parsing in app code
 - unbounded loops
-- recursion in early versions
+- recursion in the current draft
 - broad mutable object graphs
 - hidden target-specific behavior in app code
 
@@ -489,7 +491,7 @@ Examples:
 | `binbook.pageImage(page)` | Standard domain capability | Converts document content into a composable drawable |
 | BinBook-specific syntax | Usually reject | Special syntax is not needed when capability calls compose |
 | `binbook.showPage(file, index)` | Require review | Convenient, but may bypass composition and combine too many responsibilities |
-| User package imports | Defer/reject for early versions | Adds dependency, versioning, validation, and runtime model complexity |
+| User package imports | Defer/reject for the current draft | Adds dependency, validation, and runtime model complexity |
 
 The concrete reference for capability-based platform extensibility is `capabilities/binbook.cap.json`. Future standard domain capabilities should be comparable: contract-first, namespaced, target-profile-aware, compiler-visible, VM-validatable, and implemented by firmware/runtime code outside the compiler.
 
@@ -501,7 +503,7 @@ SquidScript should be small in its language and generous in its safe platform.
 
 The device is the center of the design. It has little RAM, slow storage, a display that rewards deliberate rendering, and firmware that must remain recoverable even when user-authored apps are broken. SquidScript exists to let people extend that device without letting extension become a second firmware.
 
-That means SquidScript should not try to be JavaScript. JavaScript-like syntax is useful because it lowers the cost of reading and writing small apps. But JavaScript compatibility would bring the wrong obligations: dynamic objects, prototypes, closures, async execution, dynamic evaluation, broad libraries, and a runtime model shaped for browsers and servers rather than low-RAM e-ink firmware.
+That means SquidScript should not try to be JavaScript. JavaScript-like syntax is useful because it lowers the cost of reading and writing small apps. But JavaScript behavior would bring the wrong obligations: dynamic objects, prototypes, closures, async execution, dynamic evaluation, broad libraries, and a runtime model shaped for browsers and servers rather than low-RAM e-ink firmware.
 
 The core language should therefore remain compact. It should contain the constructs needed to describe event-driven app behavior: state, handlers, screens, functions, expressions, conditionals, and bounded iteration. Each core feature should justify itself as part of the execution model shared by every SquidScript program.
 
@@ -527,10 +529,12 @@ SquidScript is not a sandboxed JavaScript. It is a small, compiled, capability-o
 
 ## Appendix B. External Design References
 
-These references are non-normative. They are useful background for how other languages explain tradeoffs, omissions, compatibility, and design center.
+These references are non-normative. They are useful background for how other
+languages explain tradeoffs, omissions, and design center.
 
 - Go's "Language Design in the Service of Software Engineering" frames a language around the real engineering environment it serves: https://go.dev/talks/2012/splash.article
 - The Go FAQ explains feature omission in terms of fit, clarity, compilation speed, and system model complexity: https://go.dev/doc/faq
 - Ruby's philosophy discussion emphasizes human experience, reduced frustration, and the limits of abstract perfection: https://www.artima.com/articles/the-philosophy-of-ruby
-- TC39's FAQ discusses compatibility pressure, modes, and process discipline for evolving a widely deployed language: https://tc39wiki.calculist.org/about/faq/
+- TC39's FAQ discusses pressure, modes, and process discipline for evolving a
+  widely deployed language: https://tc39wiki.calculist.org/about/faq/
 - Rust's public positioning emphasizes reliability, performance, productivity, and embedded suitability: https://www.rust-lang.org/

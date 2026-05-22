@@ -1,10 +1,10 @@
 # Developer REPL Protocol
 
-Status: v4 reference protocol for ESP32-C3 Super Mini dev firmware.
+Status: Reference protocol for ESP32-C3 Super Mini dev firmware.
 
 The developer REPL protocol is a line-oriented control protocol with explicit
 binary payload phases for SQBC and state snapshot bytes. It is enabled by
-default for v4 dev firmware.
+default for dev firmware.
 
 Normal host workflows should use grouped `squidc` commands documented in
 `docs/squidc_cli.md`. Use `squidc protocol raw` only for low-level protocol
@@ -32,7 +32,7 @@ RESET
 STORAGE.FORMAT
 ```
 
-`INSTALL.APP` is followed by exactly `<len>` raw SQBC v3 bytes and stores them
+`INSTALL.APP` is followed by exactly `<len>` raw SQBC bytes and stores them
 in firmware-owned app storage under `<app-id>`. `RUN.TEMP` uses the same binary
 payload framing, but stores the SQBC in RAM only and launches it as a temporary
 foreground app. This is the pre-1.0 developer iteration path and must not write
@@ -121,8 +121,8 @@ missing=null
 
 `STATE.GET` and `STATE.IMPORT` are developer inspection tools. They preserve
 the current line-oriented shape even though installed-app persistence is
-firmware-owned and typed. Import restores matching state names with compatible
-primitive values; unknown or incompatible values are ignored by the developer
+firmware-owned and typed. Import restores matching state names with valid
+primitive values; unknown or type-invalid values are ignored by the developer
 command. In contrast, `state.load()` for installed app persistence treats a
 malformed or type-invalid saved record as a VM error.
 
@@ -133,7 +133,7 @@ compiled defaults and removes the installed app's saved record.
 
 ## Debug Console
 
-`debug.print(...)` writes to the active debug console. On the Super Mini v4
+`debug.print(...)` writes to the active debug console. On the Super Mini
 reference firmware, the active debug console is exposed through `OUTPUT.GET`.
 Output is bounded and line-oriented:
 
@@ -189,7 +189,7 @@ cargo run -p squidc -- repl examples/blinky-supermini/main.squid --script tests/
 ```
 
 Target definitions are optional in host tooling. Use them only for explicit
-compatibility checks and related metadata workflows:
+target checks and related metadata workflows:
 
 ```sh
 cargo run -p squidc -- repl --target targets/esp32c3-super-mini.target.json --check-target --script examples/blinky-supermini/main.squid

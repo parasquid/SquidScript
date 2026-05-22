@@ -349,7 +349,7 @@ The Ruby prototype should be responsible for early exploration of:
 - semantic rules
 - profile resolution
 - target alias behavior
-- display compatibility checks
+- display target checks
 - page-format validation
 - input and button mapping validation
 - IR format
@@ -375,7 +375,7 @@ The Rust implementation should be responsible for:
 - strict profile validation
 - structured diagnostics
 - sourcemap generation
-- long-term compatibility
+- current-format binary generation
 - app registry integration
 - reproducible builds
 - cross-platform distribution
@@ -468,7 +468,7 @@ Normal portable build:
 squidc build app.squid --out app.sqbc
 ```
 
-Explicit compatibility check:
+Explicit target check:
 
 ```bash
 squidc build app.squid --target targets/xteink-x4.target.json --check-target --out app.sqbc
@@ -481,9 +481,9 @@ targets/xteink-x4.target.json
 ```
 
 Integrated targets are still useful because they keep board, display, input,
-storage, power, runtime, feature, compatibility, firmware-update, simulator,
+storage, power, runtime, feature, firmware-update, simulator,
 documentation, and autocomplete metadata in one maintainable source artifact.
-They should be opt-in for explicit compatibility workflows.
+They should be opt-in for explicit target-check workflows.
 
 Split profile parts remain an optional advanced authoring mode for development-board reuse. If used, they should resolve to the same integrated target model before compiler validation.
 
@@ -647,7 +647,7 @@ Diagnostics should be usable by:
 
 ## 16. Binary Output Contract
 
-The binary output should be treated as a compatibility-critical artifact.
+The binary output should be treated as a current-format artifact.
 
 The binary format should be specified separately in SQBC_BINARY_FORMAT.md.
 
@@ -669,7 +669,9 @@ Once accepted, the binary layout must be documented and captured in golden fixtu
 
 The Rust compiler must reproduce the documented output.
 
-When the binary format intentionally changes before 1.0, update fixture expectations and rebuild stale bytecode artifacts. Do not add backwards readers or compatibility modes.
+When the binary format intentionally changes before 1.0, update fixture
+expectations and rebuild stale bytecode artifacts. Do not add backwards readers
+or alternate old-format paths.
 
 ---
 

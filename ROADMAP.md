@@ -22,6 +22,10 @@ persistent SquidScript app platform prototype.
 - Wi-Fi is tabled for now. Resume only after an alternate client/phone and
   board placement or power check can confirm whether AP beacons are visible
   independently of the current host scanner.
+- Implement the first `squid-kernel` proof from
+  `docs/portable_rtos_kernel_architecture.md`: move the ESP32-C3 default
+  indicator behind a bounded actor/service model, keep PWM breathing
+  non-blocking, and verify serial responsiveness while breathing runs.
 - Move the ESP32-C3 reference firmware toward an Embassy/async-all-the-way
   architecture: serial, VM/app dispatch, Wi-Fi/networking, timers, indicator
   PWM, and future HTTP should run as non-blocking tasks/actors behind firmware
@@ -48,17 +52,16 @@ persistent SquidScript app platform prototype.
 - Add the network stack needed for AP IP behavior, DHCP, and later HTTP serving;
   the AP-first backend should not imply these are complete until verified.
 - Define password/security policy and `startAP` option support for AP mode;
-  v0 currently allows open developer AP defaults only.
+  current developer AP defaults allow open networks only.
 - Table station/client mode for now. Revisit station mode, scan, profile setup,
   hostname, and configurable IP APIs only after AP mode is reliable in the Rust
   firmware path; current isolation shows AP TX works, while station auth fails
   under both ESP-IDF and MicroPython against WPA APs.
 - Add target capability checks for devices without Wi-Fi or with restricted
   networking support.
-- Evaluate a portable `squid-kernel` service runtime/scheduler abstraction
-  after ESP Wi-Fi proves the service boundary. Compare ESP esp-rs/Embassy,
-  Pico W CYW43/Embassy, and nRF52 Zephyr/nRF Connect before choosing shared
-  scheduler code.
+- Continue migrating services to the portable `squid-kernel` actor model:
+  timers and serial/app lifecycle first, then Wi-Fi, storage, display, and
+  future HTTP as separate service actors.
 - Add Pico W Wi-Fi backend exploration using the same `service.wifi.*`
   contract.
 - Add bus-attached Wi-Fi co-processor support as `WifiBackend`
@@ -120,14 +123,7 @@ persistent SquidScript app platform prototype.
   Playwright checks so Rust, Node, `wasm-pack`, and system libraries are
   reproducible without making containers mandatory for local development.
 
-### 5. Remove Pre-1.0 Versioning Implications
-
-- Audit compiler, runtime, firmware, simulator, docs, fixtures, and file
-  formats for version fields, versioned API/module names, compatibility modes,
-  or "unsupported version" paths that imply a pre-1.0 compatibility contract;
-  remove them or replace them directly with current-format behavior.
-
-### 6. Consider SQBC Library Artifacts
+### 5. Consider SQBC Library Artifacts
 
 - Investigate whether reusable functionality should be packaged as SQBC library
   artifacts that other SQBC apps can import or link against, including

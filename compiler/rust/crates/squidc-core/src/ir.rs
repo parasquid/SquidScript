@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IrProgram {
     pub format: String,
-    pub version: u32,
     pub app: IrApp,
     #[serde(default = "default_state_store")]
     pub state_store: String,
@@ -187,13 +186,11 @@ pub enum IrExpr {
 }
 
 pub const SQBC_MAGIC: &[u8; 4] = b"SQBC";
-pub const SQBC_VERSION: u32 = 1;
 
 pub fn encode_sqbc(ir: &IrProgram) -> Vec<u8> {
     let payload = serde_json::to_vec(ir).expect("IR must serialize for SQBC payload");
-    let mut bytes = Vec::with_capacity(12 + payload.len());
+    let mut bytes = Vec::with_capacity(8 + payload.len());
     bytes.extend_from_slice(SQBC_MAGIC);
-    bytes.extend_from_slice(&SQBC_VERSION.to_le_bytes());
     bytes.extend_from_slice(&(payload.len() as u32).to_le_bytes());
     bytes.extend_from_slice(&payload);
     bytes

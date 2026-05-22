@@ -26,7 +26,9 @@ SquidScript apps should target capabilities where possible, not specific boards.
 
 A target definition describes what one concrete firmware build target provides.
 
-For integrated production devices, the canonical v1 form is a single target JSON file with sections for board hardware, display, input, storage, power, runtime limits, features, and compatibility.
+For integrated production devices, the canonical form is a single target JSON
+file with sections for board hardware, display, input, storage, power, runtime
+limits, and features.
 
 Example:
 
@@ -46,6 +48,13 @@ Firmware build orchestration, backend selection, and simulator backend policy ar
 docs/firmware_build_architecture.md
 ```
 
+Portable runtime scheduling, service actors, and RTOS backend mapping are
+described in:
+
+```text
+docs/portable_rtos_kernel_architecture.md
+```
+
 Split component profiles are still useful for reusable development-board combinations, but they are an advanced composition mode rather than the default shape for integrated devices such as XTEINK X4.
 
 Conceptually, every target still resolves to the same categories:
@@ -61,20 +70,21 @@ Resolved target =
 + optional simulator layout metadata
 ```
 
-Every standalone target or profile JSON object must declare a `format` string and an `id`.
+Every standalone target or profile JSON object must declare a `format` string
+and an `id`.
 
-The `format` value identifies the schema family and major version. Tools must reject unknown required schema versions rather than guessing.
+The `format` value identifies the schema family. Tools must reject unknown
+schema families rather than guessing.
 
 Examples:
 
-- `squid-target-board-v1`
-- `squid-target-display-v1`
-- `squid-target-input-v1`
-- `squid-target-storage-v1`
-- `squid-target-power-v1`
-- `squid-target-runtime-v1`
-- `squid-target-v1`
-- `squid-compat-profile-v1`
+- `squid-target-board`
+- `squid-target-display`
+- `squid-target-input`
+- `squid-target-storage`
+- `squid-target-power`
+- `squid-target-runtime`
+- `squid-target`
 
 Split composition example:
 
@@ -112,7 +122,7 @@ Example board profile:
 
 ```json
 {
-  "format": "squid-target-board-v1",
+  "format": "squid-target-board",
   "id": "esp32s3-devkit",
   "mcu": "esp32s3",
   "cpu": {
@@ -175,7 +185,7 @@ This is not the canonical XTEINK X4 hardware source. Use `targets/xteink-x4.targ
 
 ```json
 {
-  "format": "squid-target-display-v1",
+  "format": "squid-target-display",
   "id": "xteink-x4-display",
   "driver": "xteink_x4_epd",
   "bus": "spi2",
@@ -230,7 +240,7 @@ Example Waveshare display profile:
 
 ```json
 {
-  "format": "squid-target-display-v1",
+  "format": "squid-target-display",
   "id": "waveshare-7in5-v2",
   "driver": "waveshare_epd_7in5_v2",
   "bus": "spi2",
@@ -287,7 +297,12 @@ If a SquidScript screen omits `render`, firmware uses the target's `rendering.de
 
 Firmware should use `policyModeMap` as a preference order. For example, `compose` may prefer `single` when enough memory is available and fall back to `strip` when equivalent output can be preserved. `stream` should prefer `strip` for large drawables and may use `single` when memory is available or when a backend cannot stream efficiently.
 
-SquidScript exposes a logical grayscale palette rather than native panel color levels. v0.2 uses 16 grayscale levels, `gray0` through `gray15`, where `gray0` is white and `gray15` is black. Firmware maps those logical values to the target display's native pixel format. If the native display has fewer levels than the logical palette, firmware may use the target's declared dithering modes to approximate intermediate grays.
+SquidScript exposes a logical grayscale palette rather than native panel color
+levels. The current language uses 16 grayscale levels, `gray0` through
+`gray15`, where `gray0` is white and `gray15` is black. Firmware maps those
+logical values to the target display's native pixel format. If the native
+display has fewer levels than the logical palette, firmware may use the
+target's declared dithering modes to approximate intermediate grays.
 
 SquidScript text uses `fontHeight` in logical pixels. Targets declare the supported font heights, the default font height used when a text call omits `fontHeight`, and whether unsupported requested heights are rejected or mapped to a supported height. The initial XTEINK X4 policy uses nearest supported height selection.
 
@@ -319,7 +334,7 @@ Example input profile:
 
 ```json
 {
-  "format": "squid-target-input-v1",
+  "format": "squid-target-input",
   "id": "dev-buttons-7key",
   "type": "gpio-buttons",
   "buttons": [
@@ -354,7 +369,8 @@ Example input profile:
 }
 ```
 
-If a target lacks a required logical key, the app may be marked incompatible.
+If a target lacks a required logical key, target validation should fail before
+the app is launched.
 
 ---
 
@@ -375,7 +391,7 @@ Example:
 
 ```json
 {
-  "format": "squid-target-storage-v1",
+  "format": "squid-target-storage",
   "id": "spi-sdcard-dev",
   "type": "sdcard",
   "bus": "spi3",
@@ -405,7 +421,7 @@ Example:
 
 ```json
 {
-  "format": "squid-target-power-v1",
+  "format": "squid-target-power",
   "id": "usb-dev-power",
   "type": "usb",
   "battery": false,
@@ -424,7 +440,7 @@ This shows the older component-profile shape. Use `targets/xteink-x4.target.json
 
 ```json
 {
-  "format": "squid-target-power-v1",
+  "format": "squid-target-power",
   "id": "xteink-x4-power",
   "type": "battery",
   "battery": true,
@@ -448,10 +464,9 @@ Example ESP32-C3 low-RAM runtime:
 
 ```json
 {
-  "format": "squid-target-runtime-v1",
+  "format": "squid-target-runtime",
   "id": "esp32c3-lowram",
   "squidscript": {
-    "version": "0.2",
     "maxBytecodeSize": 32768,
     "maxStateVariables": 64,
     "maxSerializedStateSize": 8192,
@@ -495,10 +510,9 @@ Example ESP32-S3 PSRAM runtime:
 
 ```json
 {
-  "format": "squid-target-runtime-v1",
+  "format": "squid-target-runtime",
   "id": "esp32s3-psram",
   "squidscript": {
-    "version": "0.2",
     "maxBytecodeSize": 131072,
     "maxStateVariables": 256,
     "maxSerializedStateSize": 32768,
@@ -555,7 +569,7 @@ Trimmed XTEINK X4 shape:
 
 ```json
 {
-  "format": "squid-target-v1",
+  "format": "squid-target",
   "id": "xteink-x4",
   "name": "XTEINK X4",
   "mcu": {
@@ -570,13 +584,6 @@ Trimmed XTEINK X4 shape:
   "storage": {},
   "power": {},
   "runtime": {},
-  "compatibility": [
-    "squidscript-0.2",
-    "portrait-480x800",
-    "pixel-format.GRAY1_PACKED",
-    "pixel-format.GRAY2_PACKED",
-    "binbook"
-  ],
   "features": [
     "sdcard",
     "buttons",
@@ -592,7 +599,7 @@ Example ESP32-S3 + Waveshare development target using split profile parts:
 
 ```json
 {
-  "format": "squid-target-v1",
+  "format": "squid-target",
   "id": "esp32s3-waveshare-7in5",
   "name": "ESP32-S3 DevKit + Waveshare 7.5in e-Paper",
   "board": "esp32s3-devkit",
@@ -601,13 +608,6 @@ Example ESP32-S3 + Waveshare development target using split profile parts:
   "storage": "spi-sdcard-dev",
   "power": "usb-dev-power",
   "runtime": "esp32s3-psram",
-  "compatibility": [
-    "squidscript-0.2",
-    "landscape-800x480",
-    "pixel-format.GRAY1_PACKED",
-    "binbook",
-    "debug-ui"
-  ],
   "features": [
     "sdcard",
     "buttons",
@@ -705,7 +705,10 @@ build/
 
 `firmware.uf2` is the preferred artifact for non-developer replacement flows. Users should be able to place the device in update mode, copy the UF2 file to the exposed USB mass-storage volume, and let the bootloader install it. The native `.bin` artifacts remain required for factory flashing, CI validation, recovery over serial/JTAG, and boards without UF2 support.
 
-`firmware.manifest.json` should record at least the target ID, firmware version, source revision, native image hash, UF2 image hash when present, UF2 family ID when present, build time, and compatibility strings embedded into the firmware. This manifest is a distribution and diagnostics artifact; it is not loaded by SquidScript apps.
+`firmware.manifest.json` should record at least the target ID, source revision,
+native image hash, UF2 image hash when present, UF2 family ID when present,
+build time, and diagnostic build ID. This manifest is a distribution and
+diagnostics artifact; it is not loaded by SquidScript apps.
 
 Example generated header:
 
@@ -944,9 +947,9 @@ Capability targeting is preferred.
 
 `squidc` should compile SquidScript source against the portable language/runtime
 API by default. Target profiles are optional metadata inputs for explicit
-compatibility checks, simulator configuration, firmware build metadata, docs,
-and autocomplete. Hardware aliases are resolved by firmware/runtime; if the
-current device lacks an alias or capability, execution should fail with a
+target capability checks, simulator configuration, firmware build metadata,
+docs, and autocomplete. Hardware aliases are resolved by firmware/runtime; if
+the current device lacks an alias or capability, execution should fail with a
 device/runtime error.
 
 Concrete target build:
@@ -957,7 +960,7 @@ squidc build apps/binbook-reader \
   --source-map
 ```
 
-Explicit compatibility check:
+Explicit target capability check:
 
 ```sh
 squidc build apps/binbook-reader \
@@ -965,14 +968,6 @@ squidc build apps/binbook-reader \
   --check-target \
   --out apps/binbook-reader/main.sqbc \
   --source-map
-```
-
-Compatibility profile build:
-
-```sh
-squidc build apps/simple-counter \
-  --profile lowram-portrait-480x800-gray1-gray2 \
-  --out apps/simple-counter/main.sqbc
 ```
 
 `squidc` should use the selected target/profile to check:
@@ -989,13 +984,13 @@ squidc build apps/simple-counter \
 - max file read size
 - max handle count
 - BinBook support
-- runtime version compatibility
 
 ---
 
 ## 11. SQBC Target Metadata
 
-The emitted `.sqbc` should include target or compatibility metadata in binary sections.
+The emitted `.sqbc` should include current target requirement metadata in binary
+sections when an explicit target check is requested.
 
 The metadata is conceptual at the compiler level, but the file representation must follow the `.sqbc` binary rules:
 
@@ -1008,17 +1003,12 @@ Suggested target-requirements section:
 
 ```c
 struct SqbcTargetRequirementsSection {
-  uint16_t runtime_min_major;
-  uint16_t runtime_min_minor;
-  uint16_t runtime_max_major;
-  uint16_t runtime_max_minor;
   uint16_t min_display_width;
   uint16_t min_display_height;
   uint16_t required_key_count;
   uint16_t required_feature_count;
   uint16_t required_pixel_format_count;
   uint16_t compiled_target_string_id;       // 0xffff if not target-locked
-  uint16_t compatibility_profile_string_id; // 0xffff if none
   uint16_t runtime_profile_string_id;       // 0xffff if not fixed
 };
 ```
@@ -1040,6 +1030,7 @@ required_features:
   - state.write
   - binbook.read
 display_min_width: 480
+```
 display_min_height: 800
 display_pixel_formats:
   - GRAY1_PACKED
@@ -1123,31 +1114,10 @@ Examples:
 - larger display
 - PSRAM available
 
-A concrete target can declare compatibility with one or more compatibility profiles.
-
-Example:
-
-```yaml
-xteink-x4:
-  compatible_with:
-    - lowram-portrait-480x800-gray1-gray2
-
-esp32s3-waveshare-7in5:
-  compatible_with:
-    - landscape-800x480-gray1
-    - psram-large-display
-```
-
-Apps should usually compile against compatibility profiles rather than exact devices.
-
----
-
-## 14. Runtime Compatibility Check on Device
+## 14. Runtime Target Check on Device
 
 When launching an app, firmware should check:
 
-- app requires a supported SquidScript runtime version
-- `.sqbc` bytecode version is supported
 - current target provides required features
 - current display satisfies display requirements
 - current input profile provides required keys
@@ -1156,10 +1126,11 @@ When launching an app, firmware should check:
 - required document capabilities are available
 - optional source map matches bytecode hash if source map is used
 
-If incompatible, firmware or the current app should show a clear error.
+If the target cannot satisfy the app requirements, firmware or the current app
+should show a clear error.
 
 An app picker or home screen may be implemented in SquidScript, but firmware
-still owns compatibility checks. Apps request launches through the app
+still owns target checks. Apps request launches through the app
 registry/lifecycle API; they do not directly execute `.sqbc`.
 
 Example:
@@ -1275,7 +1246,7 @@ Example:
 
 ```json
 {
-  "format": "squid-target-v1",
+  "format": "squid-target",
   "id": "esp32s3-dev-waveshare",
   "board": "esp32s3-devkit",
   "display": "waveshare-7in5-v2",
@@ -1290,7 +1261,7 @@ Another development target using the same board and display but different input:
 
 ```json
 {
-  "format": "squid-target-v1",
+  "format": "squid-target",
   "id": "esp32s3-dev-waveshare-touch",
   "board": "esp32s3-devkit",
   "display": "waveshare-7in5-v2",
@@ -1315,7 +1286,7 @@ Example:
 
 ```json
 {
-  "format": "squid-target-display-v1",
+  "format": "squid-target-display",
   "id": "waveshare-7in5-v2-rotated-dev",
   "extends": "waveshare-7in5-v2",
   "logical": {
@@ -1340,7 +1311,7 @@ Targets may also inherit from other targets:
 
 ```json
 {
-  "format": "squid-target-v1",
+  "format": "squid-target",
   "id": "esp32s3-waveshare-7in5-touch-prototype",
   "extends": "esp32s3-waveshare-7in5",
   "input": "waveshare-touch"
@@ -1355,13 +1326,14 @@ Array replacement is intentional because lists such as `features`, `buttons`, an
 
 ## 18. Target Profile Schema
 
-The canonical practical v1 schema is `squid-target-v1` and is documented in detail in `docs/target_definition_reference.md`.
+The canonical practical schema is `squid-target` and is documented in detail in
+`docs/target_definition_reference.md`.
 
 Integrated target schema shape:
 
 ```json
 {
-  "format": "squid-target-v1",
+  "format": "squid-target",
   "id": "target-id",
   "name": "Human Name",
   "mcu": {},
@@ -1374,13 +1346,6 @@ Integrated target schema shape:
   "storage": {},
   "power": {},
   "runtime": {},
-  "compatibility": [
-    "squidscript-0.2",
-    "portrait-480x800",
-    "pixel-format.GRAY1_PACKED",
-    "pixel-format.GRAY2_PACKED",
-    "binbook"
-  ],
   "features": [
     "sdcard",
     "buttons",
@@ -1394,7 +1359,7 @@ Optional split composition schema shape:
 
 ```json
 {
-  "format": "squid-target-v1",
+  "format": "squid-target",
   "id": "target-id",
   "name": "Human Name",
   "extends": "optional-base-target-id",
@@ -1404,7 +1369,6 @@ Optional split composition schema shape:
   "storage": "storage-id",
   "power": "power-id",
   "runtime": "runtime-id",
-  "compatibility": [],
   "features": []
 }
 ```
@@ -1424,13 +1388,13 @@ The firmware build system should:
 5. Resolve component profile inheritance only when split composition is used.
 6. Normalize the integrated or split source form into one resolved target model.
 7. Validate bus and GPIO bindings.
-8. Validate feature, compatibility, and pixel-format names.
+8. Validate feature and pixel-format names.
 9. Validate that target features are backed by selected profiles and drivers.
 10. Generate backend-facing target configuration such as `target_config.rs` or `target_config.h`.
 11. Compile only required drivers where practical.
 12. Register selected drivers.
 13. Set runtime limits.
-14. Embed target ID and compatibility info into firmware.
+14. Embed target ID and diagnostics info into firmware.
 15. Expose target info to app registry tooling and SquidScript runtime.
 16. Emit native flashing artifacts for the selected MCU/toolchain.
 17. Emit `firmware.uf2` when the selected board supports UF2.
@@ -1439,7 +1403,7 @@ The firmware build system should:
 Combined profile validation must check:
 
 - referenced profile IDs exist when split composition is used
-- all `format` values are known and compatible
+- all `format` values are known
 - display/input/storage bus references exist on the selected board
 - GPIO assignments are valid for the selected MCU/board
 - GPIO assignments do not conflict unless explicitly marked as shared
@@ -1451,16 +1415,15 @@ Combined profile validation must check:
 - display `defaultPixelFormat` is listed in `supportedPixelFormats`
 - display `defaultBpp` is consistent with `defaultPixelFormat`
 - target capabilities such as `binbook.read` and `squidscript.bytecode` are provided by the selected firmware/runtime modules
-- compatibility profile claims are satisfied by the resolved target
 
-Compatibility-check tooling should:
+Target-check tooling should:
 
 1. Accept `--target` or `--profile` only when an explicit check is requested.
 2. Load the target/profile.
 3. Validate app requirements.
 4. Enforce target-specific limits.
-5. Emit compatible `.sqbc`.
-6. Include compatibility metadata in `.sqbc`.
+5. Emit current-format `.sqbc`.
+6. Include target requirement metadata in `.sqbc` when requested.
 7. Optionally emit `source-map.json`.
 
 ---
@@ -1484,18 +1447,18 @@ The bootloader/update flow should preserve user storage by default. Firmware rep
 Recommended artifact naming:
 
 ```text
-squidscript-firmware-${target}-${version}.uf2
-squidscript-firmware-${target}-${version}.bin
-squidscript-firmware-${target}-${version}.manifest.json
+squidscript-firmware-${target}-${build}.uf2
+squidscript-firmware-${target}-${build}.bin
+squidscript-firmware-${target}-${build}.manifest.json
 ```
 
 The firmware manifest should mark the intended replacement mode:
 
 ```json
 {
-  "format": "squid-firmware-manifest-v1",
+  "format": "squid-firmware-manifest",
   "target": "xteink-x4",
-  "version": "0.2.0",
+  "build": "source-or-build-id",
   "replacement": {
     "preferredFormat": "uf2",
     "userReplacement": "usb-mass-storage",
@@ -1503,12 +1466,12 @@ The firmware manifest should mark the intended replacement mode:
   },
   "artifacts": [
     {
-      "path": "squidscript-firmware-xteink-x4-0.2.0.uf2",
+      "path": "squidscript-firmware-xteink-x4-source-or-build-id.uf2",
       "format": "uf2",
       "sha256": "..."
     },
     {
-      "path": "squidscript-firmware-xteink-x4-0.2.0.bin",
+      "path": "squidscript-firmware-xteink-x4-source-or-build-id.bin",
       "format": "esp-idf-bin",
       "sha256": "..."
     }
@@ -1563,10 +1526,10 @@ Do not use `#ifdef` throughout app logic, VM logic, or renderer logic unless una
 2. Use one integrated `*.target.json` file for fixed production devices.
 3. Apps should target capabilities, not boards, unless necessary.
 4. `squidc` should compile against the portable language/runtime API by default.
-   Target profiles should be explicit opt-in inputs for compatibility checks,
+   Target profiles should be explicit opt-in inputs for target checks,
    simulator configuration, firmware metadata, docs, and autocomplete.
-5. `.sqbc` should include compatibility metadata.
-6. Firmware should validate app compatibility before launch.
+5. `.sqbc` may include target requirement metadata.
+6. Firmware should validate target requirements before launch.
 7. SquidScript apps should use logical coordinates.
 8. Display rotation belongs in the target display section and display driver, not in apps.
 9. Development targets should be normal targets, not hacks.
@@ -1604,6 +1567,6 @@ This gives you:
 
 - one production-style XTEINK X4 target
 - one generous ESP32-S3 development target
-- portable app compatibility checks
+- portable app target checks
 - a cleaner compiler/runtime contract
 - less firmware target sprawl

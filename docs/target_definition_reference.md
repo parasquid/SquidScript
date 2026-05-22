@@ -1,7 +1,7 @@
 # SquidScript Target Definition Reference
 
 Status: Draft
-Purpose: Define the practical v1 target-definition format consumed by future SquidScript firmware target tooling.
+Purpose: Define the practical target-definition format consumed by future SquidScript firmware target tooling.
 
 ---
 
@@ -22,7 +22,8 @@ The firmware target compiler should read the target JSON, validate it, and gener
 - `target_config.h`
 - optional static C/C++ config structs
 - firmware manifest metadata
-- compatibility metadata embedded into the firmware
+- target requirement metadata embedded into firmware or app artifacts when
+  explicitly requested
 
 Production firmware consumes generated constants and structs, not raw JSON.
 
@@ -41,7 +42,7 @@ Target definitions must be explicit enough to prevent hidden board assumptions f
 Rules:
 
 1. A target JSON object must declare `format`, `id`, and `name`.
-2. `format` must be `squid-target-v1` for this schema.
+2. `format` must be `squid-target` for this schema.
 3. Integrated production devices should use one target file with named sections.
 4. Split board/display/input/storage/power/runtime profiles are optional advanced composition, mainly for reusable development-board combinations.
 5. GPIOs, buses, onboard devices, and logical capabilities must be described in the target file.
@@ -56,7 +57,8 @@ The source target file is the human-maintained JSON document.
 
 The resolved target is the target compiler's normalized in-memory model after validation.
 
-For v1, the source and resolved forms may be nearly identical. Future tooling may expand aliases, apply inheritance, or normalize sections.
+The source and resolved forms may be nearly identical. Tooling may expand
+aliases, apply inheritance, or normalize sections.
 
 Example flow:
 
@@ -76,7 +78,7 @@ The generated artifacts are allowed to be C/C++ specific. The source JSON should
 
 Required fields:
 
-- `format`: schema identifier. Must be `squid-target-v1`.
+- `format`: schema identifier. Must be `squid-target`.
 - `id`: stable lowercase target ID, such as `xteink-x4`.
 - `name`: human-readable device name.
 - `mcu`: MCU and memory facts.
@@ -89,7 +91,6 @@ Required fields:
 - `power`: battery, sleep, wake, and USB detection behavior.
 - `runtime`: SquidScript VM limits for this target.
 - `features`: firmware/runtime features exposed by this target.
-- `compatibility`: compatibility strings used by app and bytecode validation.
 
 Optional fields:
 
@@ -147,7 +148,7 @@ Example:
 
 Fields:
 
-- `layout`: path to a `squid-layout-v1` layout file.
+- `layout`: path to a `squid-layout` layout file.
 - `defaultBackend`: optional simulator backend hint such as `browser-sim`.
 
 The layout file is presentation metadata. It may describe device outline, screen placement, button positions, LEDs, ports, labels, and simulator hit targets.
@@ -156,7 +157,7 @@ Example layout:
 
 ```json
 {
-  "format": "squid-layout-v1",
+  "format": "squid-layout",
   "id": "xteink-x4-layout",
   "target": "xteink-x4",
   "units": "px",
@@ -472,7 +473,8 @@ Upload and installation rules:
 - invalid staged files must be deleted or quarantined and must not be published into a library
 - BinBook uploads should be validated as BinBook content before publishing
 - SquidScript app uploads should use `.sqbc` or `.squid.zip` packages
-- uploaded `.sqbc` artifacts are installed only after bytecode and target compatibility validation
+- uploaded `.sqbc` artifacts are installed only after bytecode and target
+  requirement validation
 - Wi-Fi HTTP, BLE upload, USB-copy, and SD-card-copy workflows should share the same post-transfer validation and install pipeline even though their transport protocols differ
 
 Example merged library entry:
@@ -672,17 +674,9 @@ Examples:
 - `bleTransfer.receive`
 - `binbook.read`
 
-`compatibility` lists coarse compatibility strings used by `.sqbc` metadata and target checks.
-
-Examples:
-
-- `squidscript-0.2`
-- `portrait-480x800`
-- `pixel-format.GRAY1_PACKED`
-- `pixel-format.GRAY2_PACKED`
-- `binbook`
-
-The target compiler should validate that compatibility claims are backed by concrete target fields.
+Features and target requirements should be backed by concrete target fields.
+Do not use compatibility strings as a substitute for explicit display, input,
+storage, runtime-limit, or service capability data.
 
 ---
 
@@ -702,7 +696,7 @@ The firmware target compiler should:
 10. Validate logical key names.
 11. Validate storage limits against runtime limits.
 12. Validate firmware update metadata.
-13. Validate feature and compatibility strings.
+13. Validate feature names and target requirement metadata.
 14. Generate firmware config artifacts.
 
 The target compiler must not silently guess missing values. Missing required values should be diagnostics.
