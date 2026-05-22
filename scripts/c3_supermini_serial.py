@@ -26,8 +26,22 @@ PROTOCOL_KIND_REQUEST = 1
 PROTOCOL_KIND_RESPONSE = 2
 PROTOCOL_STATUS_OK = 0
 PROTOCOL_OPCODE_HELLO = 1
+PROTOCOL_OPCODE_RESOURCE_INSTALL_BEGIN = 19
+PROTOCOL_OPCODE_RESOURCE_INSTALL_CHUNK = 20
+PROTOCOL_OPCODE_RESOURCE_INSTALL_COMMIT = 21
 PROTOCOL_OPCODE_APP_LIST = 33
+PROTOCOL_OPCODE_KEY = 48
+PROTOCOL_OPCODE_EVENT_DISPATCH = 49
 PROTOCOL_OPCODE_OUTPUT_GET = 64
+PROTOCOL_OPCODE_STATE_GET = 65
+PROTOCOL_OPCODE_DRAWLOG_GET = 66
+PROTOCOL_OPCODE_TRACE_GET = 67
+PROTOCOL_OPCODE_ERRORS_GET = 68
+PROTOCOL_OPCODE_RESOURCES_GET = 69
+PROTOCOL_OPCODE_STATE_IMPORT = 72
+PROTOCOL_OPCODE_WIFI_PROFILE_SET = 76
+PROTOCOL_OPCODE_RESET = 80
+PROTOCOL_OPCODE_STORAGE_FORMAT = 81
 PROTOCOL_HELLO_FIELD_TARGET = 1
 PROTOCOL_HELLO_FIELD_FIRMWARE = 2
 PROTOCOL_HELLO_FIELD_DIAGNOSTIC = 3
@@ -35,6 +49,9 @@ PROTOCOL_APP_LIST_FIELD_APP = 1
 PROTOCOL_APP_FIELD_ID = 1
 PROTOCOL_APP_FIELD_SQBC_LEN = 2
 PROTOCOL_OUTPUT_FIELD_LINE = 1
+PROTOCOL_STATE_FIELD_BYTES = 1
+PROTOCOL_ERROR_FIELD_CODE = 250
+PROTOCOL_ERROR_FIELD_MESSAGE = 251
 
 
 def default_port():
@@ -180,6 +197,16 @@ def encode_protocol_output_get_request(*, sequence=3):
     )
 
 
+def encode_protocol_empty_request(opcode, *, sequence):
+    return encode_protocol_frame(
+        kind=PROTOCOL_KIND_REQUEST,
+        opcode=opcode,
+        status=PROTOCOL_STATUS_OK,
+        sequence=sequence,
+        fields=[],
+    )
+
+
 def decode_protocol_hello_identity(frame):
     decoded = decode_protocol_frame(frame)
     if (
@@ -248,15 +275,95 @@ def decode_protocol_output(frame):
     return lines
 
 
+def decode_protocol_error(frame):
+    decoded = decode_protocol_frame(frame)
+    if decoded["kind"] != PROTOCOL_KIND_RESPONSE or decoded["status"] != 1:
+        return None
+    values = {"code": -1, "message": "protocol error"}
+    for tag, type_id, value in decoded["fields"]:
+        if tag == PROTOCOL_ERROR_FIELD_CODE and type_id == PROTOCOL_FIELD_TYPES["i64"]:
+            values["code"] = value
+        elif tag == PROTOCOL_ERROR_FIELD_MESSAGE and type_id == PROTOCOL_FIELD_TYPES["string"]:
+            values["message"] = value
+    return values
+
+
+def decode_protocol_string_lines(frame, opcode):
+    decoded = decode_protocol_frame(frame)
+    if (
+        decoded["kind"] != PROTOCOL_KIND_RESPONSE
+        or decoded["opcode"] != opcode
+        or decoded["status"] != PROTOCOL_STATUS_OK
+    ):
+        error = decode_protocol_error(frame)
+        if error is not None:
+            raise SmokeError(f"{error['message']} ({error['code']})")
+        raise ValueError("not a successful string-list response frame")
+    return [
+        value
+        for tag, type_id, value in decoded["fields"]
+        if tag == 1 and type_id == PROTOCOL_FIELD_TYPES["string"]
+    ]
+
+
+def decode_protocol_state(frame):
+    decoded = decode_protocol_frame(frame)
+    if (
+        decoded["kind"] != PROTOCOL_KIND_RESPONSE
+        or decoded["opcode"] != PROTOCOL_OPCODE_STATE_GET
+        or decoded["status"] != PROTOCOL_STATUS_OK
+    ):
+        error = decode_protocol_error(frame)
+        if error is not None:
+            raise SmokeError(f"{error['message']} ({error['code']})")
+        raise ValueError("not a successful state response frame")
+    for tag, type_id, value in decoded["fields"]:
+        if tag == PROTOCOL_STATE_FIELD_BYTES and type_id == PROTOCOL_FIELD_TYPES["bytes"]:
+            return value
+    return b""
+
+
+def decode_protocol_resources(frame):
+    decoded = decode_protocol_frame(frame)
+    if (
+        decoded["kind"] != PROTOCOL_KIND_RESPONSE
+        or decoded["opcode"] != PROTOCOL_OPCODE_RESOURCES_GET
+        or decoded["status"] != PROTOCOL_STATUS_OK
+    ):
+        error = decode_protocol_error(frame)
+        if error is not None:
+            raise SmokeError(f"{error['message']} ({error['code']})")
+        raise ValueError("not a successful resources response frame")
+    values = []
+    for tag, type_id, value in decoded["fields"]:
+        if tag != 1 or type_id != PROTOCOL_FIELD_TYPES["record"]:
+            continue
+        record = {}
+        for field_tag, field_type, field_value in value:
+            if field_tag == 1 and field_type == PROTOCOL_FIELD_TYPES["string"]:
+                record["key"] = field_value
+            elif field_tag == 2 and field_type == PROTOCOL_FIELD_TYPES["u64"]:
+                record["value"] = field_value
+        if "key" in record and "value" in record:
+            values.append((record["key"], record["value"]))
+    return values
+
+
 def get_protocol_hello_identity(serial, *, output=None, timeout=DEFAULT_TIMEOUT):
     serial.write_all(encode_protocol_hello_request(sequence=1))
-    response = _read_until_quiet(serial, output, timeout)
+    response = _read_protocol_frame(serial, timeout)
+    if output is not None:
+        output.write(response)
+        output.flush()
     return decode_protocol_hello_identity(response)
 
 
 def get_protocol_app_list(serial, *, output=None, timeout=DEFAULT_TIMEOUT):
     serial.write_all(encode_protocol_app_list_request(sequence=2))
-    response = _read_until_quiet(serial, output, timeout)
+    response = _read_protocol_frame(serial, timeout)
+    if output is not None:
+        output.write(response)
+        output.flush()
     return decode_protocol_app_list(response)
 
 
@@ -267,6 +374,17 @@ def get_protocol_output(serial, *, output=None, timeout=DEFAULT_TIMEOUT):
     if output is not None:
         for line in lines:
             output.write(f"output={line}\n".encode("utf-8"))
+        output.flush()
+    return lines
+
+
+def get_protocol_lines(serial, opcode, prefix, *, output=None, timeout=DEFAULT_TIMEOUT, sequence=4):
+    serial.write_all(encode_protocol_empty_request(opcode, sequence=sequence))
+    response = _read_protocol_frame(serial, timeout)
+    lines = decode_protocol_string_lines(response, opcode)
+    if output is not None:
+        for line in lines:
+            output.write(f"{prefix}={line}\n".encode("utf-8"))
         output.flush()
     return lines
 
@@ -456,6 +574,65 @@ def run_temp_app_sqbc(
     )
 
 
+def install_resource_bytes(
+    serial,
+    app_id,
+    resource_path,
+    data,
+    *,
+    chunk_size=DEFAULT_CHUNK_SIZE,
+    timeout=DEFAULT_TIMEOUT,
+):
+    sequence = 50
+    _send_protocol_request_expect_ok(
+        serial,
+        encode_protocol_frame(
+            kind=PROTOCOL_KIND_REQUEST,
+            opcode=PROTOCOL_OPCODE_RESOURCE_INSTALL_BEGIN,
+            status=PROTOCOL_STATUS_OK,
+            sequence=sequence,
+            fields=[
+                ("string", 1, app_id),
+                ("string", 2, resource_path),
+                ("u64", 3, len(data)),
+                ("u64", 4, binascii.crc32(data) & 0xFFFFFFFF),
+            ],
+        ),
+        opcode=PROTOCOL_OPCODE_RESOURCE_INSTALL_BEGIN,
+        sequence=sequence,
+        timeout=timeout,
+    )
+    sequence += 1
+    for offset in range(0, len(data), chunk_size):
+        _send_protocol_request_expect_ok(
+            serial,
+            encode_protocol_frame(
+                kind=PROTOCOL_KIND_REQUEST,
+                opcode=PROTOCOL_OPCODE_RESOURCE_INSTALL_CHUNK,
+                status=PROTOCOL_STATUS_OK,
+                sequence=sequence,
+                fields=[("u64", 1, offset), ("bytes", 2, data[offset : offset + chunk_size])],
+            ),
+            opcode=PROTOCOL_OPCODE_RESOURCE_INSTALL_CHUNK,
+            sequence=sequence,
+            timeout=timeout,
+        )
+        sequence += 1
+    _send_protocol_request_expect_ok(
+        serial,
+        encode_protocol_frame(
+            kind=PROTOCOL_KIND_REQUEST,
+            opcode=PROTOCOL_OPCODE_RESOURCE_INSTALL_COMMIT,
+            status=PROTOCOL_STATUS_OK,
+            sequence=sequence,
+            fields=[],
+        ),
+        opcode=PROTOCOL_OPCODE_RESOURCE_INSTALL_COMMIT,
+        sequence=sequence,
+        timeout=timeout,
+    )
+
+
 def provision_wifi_profile(
     serial,
     profile,
@@ -465,56 +642,35 @@ def provision_wifi_profile(
     output=sys.stdout.buffer,
     timeout=DEFAULT_TIMEOUT,
 ):
-    ssid_bytes = ssid.encode("utf-8")
-    password_bytes = password.encode("utf-8")
-    payload = ssid_bytes + password_bytes
-    hash_value = compute_fnv1a(payload)
-    _drain(serial, output)
-    serial.write_all(
-        f"WIFI.PROFILE.SET {profile} {len(ssid_bytes)} {len(password_bytes)} {hash_value:08x}\n".encode(
-            "ascii"
-        )
+    _send_protocol_request_expect_ok(
+        serial,
+        encode_protocol_frame(
+            kind=PROTOCOL_KIND_REQUEST,
+            opcode=PROTOCOL_OPCODE_WIFI_PROFILE_SET,
+            status=PROTOCOL_STATUS_OK,
+            sequence=76,
+            fields=[("string", 1, profile), ("string", 2, ssid), ("string", 3, password)],
+        ),
+        opcode=PROTOCOL_OPCODE_WIFI_PROFILE_SET,
+        sequence=76,
+        timeout=timeout,
     )
-    _wait_for(serial, b"READY WIFI.PROFILE.SET", output, timeout, InstallError)
-    serial.write_all(payload)
-    _wait_for(serial, b"OK WIFI.PROFILE.SET", output, timeout, InstallError)
-
-
-def reference_firmware_test_sequence(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
-    _send_line(serial, "RUN.EVENT main app.start", output, b"OK RUN.EVENT", timeout)
-    state = _state(serial, output, timeout)
-    _expect_state(state, {"started": "1", "count": "0", "exited": "false"})
-
-    _send_line(serial, "key SELECT", output, b"OK key SELECT", timeout)
-    _send_line(serial, "key SELECT", output, b"OK key SELECT", timeout)
-    state = _state(serial, output, timeout)
-    _expect_state(state, {"started": "1", "count": "2", "exited": "false"})
-
-    _send_line(serial, "key BACK", output, b"OK key BACK", timeout)
-    state = _state(serial, output, timeout)
-    _expect_state(state, {"started": "1", "count": "2", "exited": "true"})
-
-    serial.write_all(b"trace\n")
-    trace = _read_until_quiet(serial, output, timeout)
-    for expected in (
-        b"trace=app.start",
-        b"trace=state.load",
-        b"trace=state.save",
-        b"trace=key.SELECT",
-        b"trace=key.BACK",
-        b"trace=app.exit",
-    ):
-        if expected not in trace:
-            raise SmokeError(f"missing trace entry: {expected.decode('ascii')}")
-
-
-def send_line(serial, line, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
-    serial.write_all(f"{line}\n".encode("ascii"))
-    return _read_until_quiet(serial, output, timeout)
 
 
 def run_app_event(serial, app_id, event, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
-    _send_line(serial, f"RUN.EVENT {app_id} {event}", output, b"OK RUN.EVENT", timeout)
+    _send_protocol_request_expect_ok(
+        serial,
+        encode_protocol_frame(
+            kind=PROTOCOL_KIND_REQUEST,
+            opcode=PROTOCOL_OPCODE_EVENT_DISPATCH,
+            status=PROTOCOL_STATUS_OK,
+            sequence=49,
+            fields=[("string", 1, app_id), ("string", 2, event)],
+        ),
+        opcode=PROTOCOL_OPCODE_EVENT_DISPATCH,
+        sequence=49,
+        timeout=timeout,
+    )
 
 
 def run_app(serial, app_id, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
@@ -537,8 +693,12 @@ def run_app(serial, app_id, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT
 
 
 def get_state(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
-    serial.write_all(b"STATE.GET\n")
-    return _wait_block(serial, b"BEGIN STATE", b"END STATE", output, timeout, SmokeError)
+    serial.write_all(encode_protocol_empty_request(PROTOCOL_OPCODE_STATE_GET, sequence=7))
+    state = decode_protocol_state(_read_protocol_frame(serial, timeout))
+    if output is not None:
+        output.write(f"state={state.hex()}\n".encode("utf-8"))
+        output.flush()
+    return state
 
 
 def get_output(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
@@ -546,8 +706,14 @@ def get_output(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
 
 
 def get_drawlog(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
-    serial.write_all(b"DRAWLOG.GET\n")
-    return _wait_block(serial, b"BEGIN DRAWLOG", b"END DRAWLOG", output, timeout, SmokeError)
+    return get_protocol_lines(
+        serial,
+        PROTOCOL_OPCODE_DRAWLOG_GET,
+        "draw",
+        output=output,
+        timeout=timeout,
+        sequence=5,
+    )
 
 
 def list_apps(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
@@ -560,15 +726,29 @@ def list_apps(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
 
 
 def format_storage(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
-    _send_line(serial, "STORAGE.FORMAT", output, b"OK STORAGE.FORMAT", timeout)
+    _send_protocol_request_expect_ok(
+        serial,
+        encode_protocol_empty_request(PROTOCOL_OPCODE_STORAGE_FORMAT, sequence=81),
+        opcode=PROTOCOL_OPCODE_STORAGE_FORMAT,
+        sequence=81,
+        timeout=timeout,
+    )
 
 
 def import_state(serial, state_bytes, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
-    hash_value = compute_fnv1a(state_bytes)
-    serial.write_all(f"STATE.IMPORT {len(state_bytes)} {hash_value:08x}\n".encode("ascii"))
-    _wait_for(serial, b"READY STATE.IMPORT", output, timeout, SmokeError)
-    serial.write_all(state_bytes)
-    _wait_for(serial, b"OK STATE.IMPORT", output, timeout, SmokeError)
+    _send_protocol_request_expect_ok(
+        serial,
+        encode_protocol_frame(
+            kind=PROTOCOL_KIND_REQUEST,
+            opcode=PROTOCOL_OPCODE_STATE_IMPORT,
+            status=PROTOCOL_STATUS_OK,
+            sequence=72,
+            fields=[("bytes", 1, state_bytes)],
+        ),
+        opcode=PROTOCOL_OPCODE_STATE_IMPORT,
+        sequence=72,
+        timeout=timeout,
+    )
 
 
 def parse_state(data):
@@ -580,37 +760,6 @@ def parse_state(data):
         if name in {"started", "count", "exited"}:
             values[name] = value
     return values
-
-
-def state_payload(data):
-    lines = []
-    for raw_line in data.decode("utf-8", "replace").splitlines():
-        if raw_line.startswith("BEGIN ") or raw_line.startswith("END ") or raw_line.startswith("OK "):
-            continue
-        if raw_line.startswith("exited="):
-            continue
-        if "=" in raw_line:
-            lines.append(raw_line)
-    if not lines:
-        return b""
-    return ("\n".join(lines) + "\n").encode("utf-8")
-
-
-def _state(serial, output, timeout):
-    serial.write_all(b"state\n")
-    data = _wait_for_state(serial, output, timeout)
-    return parse_state(data)
-
-
-def _expect_state(actual, expected):
-    for name, value in expected.items():
-        if actual.get(name) != value:
-            raise SmokeError(f"expected {name}={value}, got {actual.get(name)!r}")
-
-
-def _send_line(serial, line, output, expected, timeout):
-    serial.write_all(f"{line}\n".encode("ascii"))
-    _wait_for(serial, expected, output, timeout, SmokeError)
 
 
 def _drain(serial, output):
@@ -626,6 +775,9 @@ def _send_protocol_request_expect_ok(serial, frame, *, opcode, sequence, timeout
     serial.write_all(frame)
     response = _read_protocol_frame(serial, timeout)
     decoded = decode_protocol_frame(response)
+    error = decode_protocol_error(response)
+    if error is not None:
+        raise InstallError(f"{error['message']} ({error['code']})")
     if (
         decoded["kind"] != PROTOCOL_KIND_RESPONSE
         or decoded["opcode"] != opcode
@@ -644,88 +796,15 @@ def _read_protocol_frame(serial, timeout):
         if not chunk:
             continue
         response += chunk
-        if expected_len is None and len(response) >= PROTOCOL_HEADER_LEN:
-            payload_len = int.from_bytes(response[12:16], "little")
+        start = response.find(PROTOCOL_MAGIC)
+        if start < 0:
+            continue
+        if len(response) - start >= PROTOCOL_HEADER_LEN:
+            payload_len = int.from_bytes(response[start + 12 : start + 16], "little")
             expected_len = PROTOCOL_HEADER_LEN + payload_len
-        if expected_len is not None and len(response) >= expected_len:
-            return response[:expected_len]
+        if expected_len is not None and len(response) - start >= expected_len:
+            return response[start : start + expected_len]
     raise TimeoutError("timed out waiting for protocol response frame")
-
-
-def _wait_for(serial, expected, output, timeout, error_type):
-    deadline = time.monotonic() + timeout
-    response = b""
-    while time.monotonic() < deadline:
-        chunk = serial.read_available(0.1)
-        if chunk:
-            output.write(chunk)
-            output.flush()
-            response += chunk
-            if expected in response and _line_complete(response, expected):
-                return response
-            if b"ERR " in response:
-                raise error_type(response.decode("utf-8", "replace").strip())
-    raise error_type(f"timed out waiting for {expected.decode('ascii')}")
-
-
-def _wait_for_state(serial, output, timeout):
-    deadline = time.monotonic() + timeout
-    response = b""
-    while time.monotonic() < deadline:
-        chunk = serial.read_available(0.1)
-        if chunk:
-            output.write(chunk)
-            output.flush()
-            response += chunk
-            state = parse_state(response)
-            if state.get("exited") in {"true", "false"} and _line_complete(
-                response, b"exited="
-            ):
-                return response
-            if b"ERR " in response:
-                raise SmokeError(response.decode("utf-8", "replace").strip())
-    raise SmokeError("timed out waiting for complete state")
-
-
-def _wait_block(serial, begin, end, output, timeout, error_type):
-    deadline = time.monotonic() + timeout
-    response = b""
-    while time.monotonic() < deadline:
-        chunk = serial.read_available(0.1)
-        if chunk:
-            output.write(chunk)
-            output.flush()
-            response += chunk
-            if begin in response and end in response and _line_complete(response, end):
-                return response
-            if b"ERR " in response:
-                raise error_type(response.decode("utf-8", "replace").strip())
-    raise error_type(f"timed out waiting for block {begin.decode('ascii')}")
-
-
-def _line_complete(response, token):
-    start = response.find(token)
-    if start < 0:
-        return False
-    line_end = response.find(b"\n", start)
-    return line_end >= 0
-
-
-def _read_until_quiet(serial, output, timeout):
-    deadline = time.monotonic() + timeout
-    quiet_deadline = None
-    response = b""
-    while time.monotonic() < deadline:
-        chunk = serial.read_available(0.1)
-        if chunk:
-            if output is not None:
-                output.write(chunk)
-                output.flush()
-            response += chunk
-            quiet_deadline = time.monotonic() + 0.15
-        elif quiet_deadline is not None and time.monotonic() >= quiet_deadline:
-            return response
-    return response
 
 
 def main(argv=None):
@@ -747,16 +826,12 @@ def main(argv=None):
     wifi_profile.add_argument("ssid")
     wifi_profile.add_argument("password")
 
-    subcommands.add_parser("test-reference-firmware", help="verify headless counter reference firmware behavior")
     run = subcommands.add_parser("run-event", help="run a named app event")
     run.add_argument("app_id")
     run.add_argument("event", nargs="?", default="app.start")
 
     run_app_parser = subcommands.add_parser("run-app", help="run a named installed app")
     run_app_parser.add_argument("app_id")
-
-    send = subcommands.add_parser("send", help="send a raw line and print the response")
-    send.add_argument("line")
 
     key = subcommands.add_parser("key", help="send a logical key")
     key.add_argument("key")
@@ -788,16 +863,24 @@ def main(argv=None):
                 args.password,
                 timeout=args.timeout,
             )
-        elif args.command == "test-reference-firmware":
-            reference_firmware_test_sequence(serial, timeout=args.timeout)
         elif args.command == "run-event":
             run_app_event(serial, args.app_id, args.event, timeout=args.timeout)
         elif args.command == "run-app":
             run_app(serial, args.app_id, timeout=args.timeout)
-        elif args.command == "send":
-            send_line(serial, args.line, timeout=args.timeout)
         elif args.command == "key":
-            _send_line(serial, f"KEY {args.key}", sys.stdout.buffer, b"OK key", args.timeout)
+            _send_protocol_request_expect_ok(
+                serial,
+                encode_protocol_frame(
+                    kind=PROTOCOL_KIND_REQUEST,
+                    opcode=PROTOCOL_OPCODE_KEY,
+                    status=PROTOCOL_STATUS_OK,
+                    sequence=48,
+                    fields=[("string", 1, args.key)],
+                ),
+                opcode=PROTOCOL_OPCODE_KEY,
+                sequence=48,
+                timeout=args.timeout,
+            )
         elif args.command == "state":
             get_state(serial, timeout=args.timeout)
         elif args.command == "state-import":

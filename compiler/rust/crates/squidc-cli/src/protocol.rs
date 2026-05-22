@@ -29,19 +29,26 @@ pub enum Opcode {
     AppInstallBegin = 16,
     AppInstallChunk = 17,
     AppInstallCommit = 18,
+    ResourceInstallBegin = 19,
+    ResourceInstallChunk = 20,
+    ResourceInstallCommit = 21,
     TempRunBegin = 24,
     TempRunChunk = 25,
     TempRunCommit = 26,
     AppLaunch = 32,
     AppList = 33,
     Key = 48,
+    EventDispatch = 49,
     OutputGet = 64,
     StateGet = 65,
     DrawlogGet = 66,
     TraceGet = 67,
     ErrorsGet = 68,
     ResourcesGet = 69,
+    StateImport = 72,
+    WifiProfileSet = 76,
     Reset = 80,
+    StorageFormat = 81,
 }
 
 impl Opcode {
@@ -51,19 +58,26 @@ impl Opcode {
             "appinstallbegin" => Ok(Self::AppInstallBegin),
             "appinstallchunk" => Ok(Self::AppInstallChunk),
             "appinstallcommit" => Ok(Self::AppInstallCommit),
+            "resourceinstallbegin" => Ok(Self::ResourceInstallBegin),
+            "resourceinstallchunk" => Ok(Self::ResourceInstallChunk),
+            "resourceinstallcommit" => Ok(Self::ResourceInstallCommit),
             "temprunbegin" => Ok(Self::TempRunBegin),
             "temprunchunk" => Ok(Self::TempRunChunk),
             "tempruncommit" => Ok(Self::TempRunCommit),
             "applaunch" => Ok(Self::AppLaunch),
             "applist" => Ok(Self::AppList),
             "key" => Ok(Self::Key),
+            "eventdispatch" => Ok(Self::EventDispatch),
             "outputget" => Ok(Self::OutputGet),
             "stateget" => Ok(Self::StateGet),
             "drawlogget" => Ok(Self::DrawlogGet),
             "traceget" => Ok(Self::TraceGet),
             "errorsget" => Ok(Self::ErrorsGet),
             "resourcesget" => Ok(Self::ResourcesGet),
+            "stateimport" => Ok(Self::StateImport),
+            "wifiprofileset" => Ok(Self::WifiProfileSet),
             "reset" => Ok(Self::Reset),
+            "storageformat" => Ok(Self::StorageFormat),
             _ => Err(format!("unknown protocol opcode: {name}")),
         }
     }
@@ -78,19 +92,26 @@ impl TryFrom<u8> for Opcode {
             16 => Ok(Self::AppInstallBegin),
             17 => Ok(Self::AppInstallChunk),
             18 => Ok(Self::AppInstallCommit),
+            19 => Ok(Self::ResourceInstallBegin),
+            20 => Ok(Self::ResourceInstallChunk),
+            21 => Ok(Self::ResourceInstallCommit),
             24 => Ok(Self::TempRunBegin),
             25 => Ok(Self::TempRunChunk),
             26 => Ok(Self::TempRunCommit),
             32 => Ok(Self::AppLaunch),
             33 => Ok(Self::AppList),
             48 => Ok(Self::Key),
+            49 => Ok(Self::EventDispatch),
             64 => Ok(Self::OutputGet),
             65 => Ok(Self::StateGet),
             66 => Ok(Self::DrawlogGet),
             67 => Ok(Self::TraceGet),
             68 => Ok(Self::ErrorsGet),
             69 => Ok(Self::ResourcesGet),
+            72 => Ok(Self::StateImport),
+            76 => Ok(Self::WifiProfileSet),
             80 => Ok(Self::Reset),
+            81 => Ok(Self::StorageFormat),
             _ => Err(DecodeError::UnknownOpcode(value)),
         }
     }
@@ -237,6 +258,12 @@ pub struct AppEntry {
     pub sqbc_len: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProtocolError {
+    pub code: i64,
+    pub message: String,
+}
+
 pub fn hello_request(sequence: u32) -> Frame {
     Frame::request(Opcode::Hello, sequence, Vec::new())
 }
@@ -247,6 +274,71 @@ pub fn app_list_request(sequence: u32) -> Frame {
 
 pub fn output_get_request(sequence: u32) -> Frame {
     Frame::request(Opcode::OutputGet, sequence, Vec::new())
+}
+
+pub fn trace_get_request(sequence: u32) -> Frame {
+    Frame::request(Opcode::TraceGet, sequence, Vec::new())
+}
+
+pub fn state_get_request(sequence: u32) -> Frame {
+    Frame::request(Opcode::StateGet, sequence, Vec::new())
+}
+
+pub fn drawlog_get_request(sequence: u32) -> Frame {
+    Frame::request(Opcode::DrawlogGet, sequence, Vec::new())
+}
+
+pub fn errors_get_request(sequence: u32) -> Frame {
+    Frame::request(Opcode::ErrorsGet, sequence, Vec::new())
+}
+
+pub fn resources_get_request(sequence: u32) -> Frame {
+    Frame::request(Opcode::ResourcesGet, sequence, Vec::new())
+}
+
+pub fn reset_request(sequence: u32) -> Frame {
+    Frame::request(Opcode::Reset, sequence, Vec::new())
+}
+
+pub fn storage_format_request(sequence: u32) -> Frame {
+    Frame::request(Opcode::StorageFormat, sequence, Vec::new())
+}
+
+pub fn key_request(sequence: u32, key: impl Into<String>) -> Frame {
+    Frame::request(Opcode::Key, sequence, vec![Field::string(1, key)])
+}
+
+pub fn event_dispatch_request(
+    sequence: u32,
+    app_id: impl Into<String>,
+    event: impl Into<String>,
+) -> Frame {
+    Frame::request(
+        Opcode::EventDispatch,
+        sequence,
+        vec![Field::string(1, app_id), Field::string(2, event)],
+    )
+}
+
+pub fn state_import_request(sequence: u32, bytes: Vec<u8>) -> Frame {
+    Frame::request(Opcode::StateImport, sequence, vec![Field::bytes(1, bytes)])
+}
+
+pub fn wifi_profile_set_request(
+    sequence: u32,
+    profile: impl Into<String>,
+    ssid: impl Into<String>,
+    password: impl Into<String>,
+) -> Frame {
+    Frame::request(
+        Opcode::WifiProfileSet,
+        sequence,
+        vec![
+            Field::string(1, profile),
+            Field::string(2, ssid),
+            Field::string(3, password),
+        ],
+    )
 }
 
 pub fn app_install_begin_request(
@@ -276,6 +368,37 @@ pub fn app_install_chunk_request(sequence: u32, offset: u64, bytes: Vec<u8>) -> 
 
 pub fn app_install_commit_request(sequence: u32) -> Frame {
     Frame::request(Opcode::AppInstallCommit, sequence, Vec::new())
+}
+
+pub fn resource_install_begin_request(
+    sequence: u32,
+    app_id: impl Into<String>,
+    path: impl Into<String>,
+    total_len: u64,
+    crc32: u64,
+) -> Frame {
+    Frame::request(
+        Opcode::ResourceInstallBegin,
+        sequence,
+        vec![
+            Field::string(1, app_id),
+            Field::string(2, path),
+            Field::u64(3, total_len),
+            Field::u64(4, crc32),
+        ],
+    )
+}
+
+pub fn resource_install_chunk_request(sequence: u32, offset: u64, bytes: Vec<u8>) -> Frame {
+    Frame::request(
+        Opcode::ResourceInstallChunk,
+        sequence,
+        vec![Field::u64(1, offset), Field::bytes(2, bytes)],
+    )
+}
+
+pub fn resource_install_commit_request(sequence: u32) -> Frame {
+    Frame::request(Opcode::ResourceInstallCommit, sequence, Vec::new())
 }
 
 pub fn app_launch_request(sequence: u32, app_id: impl Into<String>) -> Frame {
@@ -374,17 +497,95 @@ pub fn app_list_entries(frame: &Frame) -> Option<Vec<AppEntry>> {
 }
 
 pub fn output_lines(frame: &Frame) -> Option<Vec<String>> {
+    repeated_string_fields(frame, Opcode::OutputGet, 1)
+}
+
+pub fn trace_lines(frame: &Frame) -> Option<Vec<String>> {
+    repeated_string_fields(frame, Opcode::TraceGet, 1)
+}
+
+pub fn drawlog_lines(frame: &Frame) -> Option<Vec<String>> {
+    repeated_string_fields(frame, Opcode::DrawlogGet, 1)
+}
+
+pub fn error_lines(frame: &Frame) -> Option<Vec<String>> {
+    repeated_string_fields(frame, Opcode::ErrorsGet, 1)
+}
+
+pub fn state_bytes(frame: &Frame) -> Option<Vec<u8>> {
     if frame.kind != FrameKind::Response
-        || frame.opcode != Opcode::OutputGet
+        || frame.opcode != Opcode::StateGet
         || frame.status != Status::Ok
     {
+        return None;
+    }
+    for field in &frame.fields {
+        if let (1, FieldValue::Bytes(value)) = (field.tag, &field.value) {
+            return Some(value.clone());
+        }
+    }
+    Some(Vec::new())
+}
+
+pub fn resource_values(frame: &Frame) -> Option<Vec<(String, u64)>> {
+    if frame.kind != FrameKind::Response
+        || frame.opcode != Opcode::ResourcesGet
+        || frame.status != Status::Ok
+    {
+        return None;
+    }
+    let mut values = Vec::new();
+    for field in &frame.fields {
+        let FieldValue::Record(fields) = &field.value else {
+            continue;
+        };
+        if field.tag != 1 {
+            continue;
+        }
+        let mut key = None;
+        let mut value = None;
+        for field in fields {
+            match (field.tag, &field.value) {
+                (1, FieldValue::String(text)) => key = Some(text.clone()),
+                (2, FieldValue::U64(number)) => value = Some(*number),
+                _ => {}
+            }
+        }
+        values.push((key?, value?));
+    }
+    Some(values)
+}
+
+pub fn protocol_error(frame: &Frame) -> Option<ProtocolError> {
+    if frame.kind != FrameKind::Response || frame.status != Status::Error {
+        return None;
+    }
+    let mut code = None;
+    let mut message = None;
+    for field in &frame.fields {
+        match (field.tag, &field.value) {
+            (250, FieldValue::I64(value)) => code = Some(*value),
+            (251, FieldValue::String(value)) => message = Some(value.clone()),
+            _ => {}
+        }
+    }
+    Some(ProtocolError {
+        code: code.unwrap_or(-1),
+        message: message.unwrap_or_else(|| "protocol error".to_string()),
+    })
+}
+
+fn repeated_string_fields(frame: &Frame, opcode: Opcode, tag: u8) -> Option<Vec<String>> {
+    if frame.kind != FrameKind::Response || frame.opcode != opcode || frame.status != Status::Ok {
         return None;
     }
 
     let mut lines = Vec::new();
     for field in &frame.fields {
-        if let (1, FieldValue::String(value)) = (field.tag, &field.value) {
-            lines.push(value.clone());
+        if field.tag == tag {
+            if let FieldValue::String(value) = &field.value {
+                lines.push(value.clone());
+            }
         }
     }
     Some(lines)
@@ -442,6 +643,31 @@ pub fn decode_frame(bytes: &[u8]) -> Result<Frame, DecodeError> {
         sequence,
         fields,
     })
+}
+
+pub fn decode_frame_from_stream(bytes: &[u8]) -> Result<Frame, DecodeError> {
+    let Some(start) = bytes
+        .windows(MAGIC.len())
+        .position(|window| window == MAGIC)
+    else {
+        return Err(DecodeError::BadMagic);
+    };
+    if bytes.len() - start < HEADER_LEN {
+        return Err(DecodeError::TruncatedHeader);
+    }
+    let payload_len = u32::from_le_bytes(
+        bytes[start + 12..start + 16]
+            .try_into()
+            .expect("slice length checked"),
+    ) as usize;
+    let end = start + HEADER_LEN + payload_len;
+    if bytes.len() < end {
+        return Err(DecodeError::LengthMismatch {
+            expected: HEADER_LEN + payload_len,
+            actual: bytes.len() - start,
+        });
+    }
+    decode_frame(&bytes[start..end])
 }
 
 pub fn parse_field_arg(kind: &str, value: &str) -> Result<Field, String> {

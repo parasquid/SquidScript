@@ -50,11 +50,17 @@ int sq_app_store_begin_staged_install(const char *mount_point, const char *app_i
 int sq_app_store_begin_temp_run(const char *mount_point, char *staging_path,
 				size_t staging_path_len);
 
+int sq_app_store_begin_staged_resource(const char *mount_point, char *staging_path,
+				       size_t staging_path_len);
+
 int sq_app_store_write_staged_chunk(const char *staging_path, size_t offset,
 				    const uint8_t *bytes, size_t len);
 
 int sq_app_store_commit_staged_install(const char *mount_point, const char *app_id,
 				       const char *staging_path);
+
+int sq_app_store_commit_staged_resource(const char *mount_point, const char *app_id,
+					const char *resource_path, const char *staging_path);
 
 int sq_app_store_resource_path(const char *mount_point, const char *app_id,
 			       const char *resource_path, char *out, size_t out_len);
@@ -64,6 +70,8 @@ int sq_app_store_install_resource(const char *mount_point, const char *app_id,
 				  size_t len);
 
 int sq_app_store_scan_registry(const char *mount_point, struct sq_app_registry *registry);
+
+int sq_app_store_format_filesystem(const char *mount_point);
 
 const struct sq_app_registry_entry *sq_app_registry_find(const struct sq_app_registry *registry,
 							const char *app_id);

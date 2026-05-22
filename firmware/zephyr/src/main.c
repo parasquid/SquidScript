@@ -21,18 +21,20 @@ int main(void)
 	static struct sq_app_registry registry;
 	static struct sq_device_install_session install_session;
 	static struct sq_device_temp_session temp_session;
+	static struct sq_device_resource_session resource_session;
 	static struct sq_vm_runtime runtime;
 	static struct sq_app_store_vm_storage launch_storage;
+	static uint8_t response[1024];
 	struct sq_device_protocol_context protocol_context = {
 		.identity = &identity,
 		.registry = &registry,
 		.mutable_registry = &registry,
 		.install_session = &install_session,
 		.temp_session = &temp_session,
+		.resource_session = &resource_session,
 		.runtime = &runtime,
 		.launch_storage = &launch_storage,
 	};
-	uint8_t response[1024];
 	size_t response_len = 0;
 	uint8_t byte;
 

@@ -72,6 +72,18 @@ void sq_vm_runtime_init(struct sq_vm_runtime *runtime)
 	runtime->status = SQ_VM_RUNTIME_IDLE;
 }
 
+void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
+{
+	if (runtime == NULL) {
+		return;
+	}
+	clear_dispatch_state(runtime);
+	memset(&runtime->job_backend, 0, sizeof(runtime->job_backend));
+	memset(runtime->event, 0, sizeof(runtime->event));
+	runtime->result_code = 0;
+	runtime->status = SQ_VM_RUNTIME_IDLE;
+}
+
 int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 			   const struct sq_vm_storage_backend *backend, const char *event)
 {

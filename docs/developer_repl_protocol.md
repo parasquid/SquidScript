@@ -1,7 +1,7 @@
 # Developer Device Protocol
 
-Status: host and Zephyr codecs established; minimal framed hello implemented
-and verified on ESP32-C3 Zephyr firmware.
+Status: host and Zephyr codecs established; command, lifecycle, diagnostics,
+state, resources, and storage helpers use framed requests.
 
 The current real firmware path is Zephyr. The developer device protocol is the
 Zephyr-owned command surface used by `squidc run`, `squidc app`, `squidc repl`,
@@ -62,25 +62,34 @@ binary request frame from an opcode name plus typed TLV fields and prints hex
 request/response data.
 
 The current implemented Zephyr command handler covers framed `hello` identity,
-framed installed-app begin/chunk/commit, framed temp-run begin/chunk/commit,
-framed app launch, framed `app-list`, and framed `output-get` over the UART
-serial transport. App install and temp run begin with field tag `1` app ID
-string, tag `2` total SQBC byte length, and tag `3` CRC32 encoded as an
-unsigned 64-bit integer. Each chunk uses tag `1` byte offset and tag `2` byte
-payload. Install commit verifies byte count and CRC32 before publishing
-`/sq/apps/<app-id>/main.sqbc`; temp-run commit verifies byte count and CRC32
-before launching the temporary foreground app from `/sq/tmp/temp-run.sqbc.tmp`.
+installed-app begin/chunk/commit, resource begin/chunk/commit, temp-run
+begin/chunk/commit, app launch, app list, key dispatch, generic event dispatch,
+output, trace, draw log, state export/import, errors, resources, reset, and
+storage format over the UART serial transport. App install, temp run, and
+resource install begin with field tag `1` app ID string, tag `2` total byte
+length, and tag `3` CRC32 encoded as an unsigned 64-bit integer. Resource
+install begin also uses field tag `4` for the package-relative resource path.
+Each chunk uses tag `1` byte offset and tag `2` byte payload.
+
+Install commit verifies byte count and CRC32 before publishing
+`/sq/apps/<app-id>/main.sqbc`; resource commit publishes under
+`/sq/apps/<app-id>/<resource-path>`; temp-run commit verifies byte count and
+CRC32 before launching the temporary foreground app from
+`/sq/tmp/temp-run.sqbc.tmp`.
 
 `app-list` responses use repeated record fields: response field tag `1` is one
 app record, record field tag `1` is the app ID string, and record field tag `2`
 is the SQBC length as an unsigned 64-bit integer.
 
-`output-get` responses use repeated string fields with tag `1`, one field per
-debug output line. The current Zephyr runtime returns an empty output stream
-until the debug-output service is wired through the VM host.
+`output-get`, `trace-get`, `drawlog-get`, and `errors-get` responses use
+repeated string fields with tag `1`, one field per line. `state-get` returns
+state bytes as field tag `1`. `resources-get` returns repeated record fields:
+response field tag `1` is one resource record, record field tag `1` is the
+metric key string, and record field tag `2` is the value as an unsigned 64-bit
+integer.
 
-Key, trace, draw log, state, errors, resources, storage, and service commands
-remain migration work.
+Wi-Fi profile provisioning uses the framed opcode and returns an explicit
+unsupported error until Zephyr station profile storage is implemented.
 
 ## Diagnostics
 

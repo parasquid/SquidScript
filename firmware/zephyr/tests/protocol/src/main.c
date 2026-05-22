@@ -190,7 +190,7 @@ ZTEST(squidscript_protocol, test_encodes_header_for_existing_payload)
 
 ZTEST(squidscript_protocol, test_handles_hello_request_with_identity_response)
 {
-	uint8_t response[128];
+	uint8_t response[512];
 	size_t response_len = 0;
 	struct sq_protocol_frame frame;
 	struct sq_protocol_field field;
@@ -317,6 +317,142 @@ ZTEST(squidscript_protocol, test_handles_output_get_with_empty_framed_response)
 	zassert_equal(frame.status, SQ_STATUS_OK);
 	zassert_equal(frame.sequence, 24);
 	zassert_equal(frame.payload_len, 0);
+}
+
+ZTEST(squidscript_protocol, test_handles_trace_resources_and_wifi_error_frames)
+{
+	struct sq_device_identity identity = {
+		.target = "esp32c3-supermini",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_vm_runtime runtime = {
+		.traces = {"app.start", "state.save"},
+		.trace_count = 2,
+	};
+	struct sq_app_registry registry = {.count = 1};
+	struct sq_device_install_session install_session = {0};
+	struct sq_device_temp_session temp_session = {0};
+	struct sq_device_resource_session resource_session = {0};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.registry = &registry,
+		.install_session = &install_session,
+		.temp_session = &temp_session,
+		.resource_session = &resource_session,
+		.runtime = &runtime,
+	};
+	uint8_t request[SQ_PROTOCOL_HEADER_LEN];
+	uint8_t response[512];
+	size_t response_len = 0;
+	struct sq_protocol_frame frame;
+	struct sq_protocol_field field;
+	size_t offset = 0;
+
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_TRACE_GET,
+						      SQ_STATUS_OK, 61, NULL, 0, request,
+						      sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_device_protocol_handle_frame(request, sizeof(request), &context,
+						      response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
+	zassert_equal(frame.opcode, SQ_OPCODE_TRACE_GET);
+	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(field.tag, SQ_DEVICE_LINE_FIELD_VALUE);
+	zassert_mem_equal(field.value, "app.start", 9);
+
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_RESOURCES_GET,
+						      SQ_STATUS_OK, 62, NULL, 0, request,
+						      sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_device_protocol_handle_frame(request, sizeof(request), &context,
+						      response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
+	zassert_equal(frame.opcode, SQ_OPCODE_RESOURCES_GET);
+	zassert_true(frame.payload_len > 0);
+
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_WIFI_PROFILE_SET,
+						      SQ_STATUS_OK, 63, NULL, 0, request,
+						      sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_device_protocol_handle_frame(request, sizeof(request), &context,
+						      response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
+	zassert_equal(frame.opcode, SQ_OPCODE_WIFI_PROFILE_SET);
+	zassert_equal(frame.status, SQ_STATUS_ERROR);
+}
+
+ZTEST(squidscript_protocol, test_storage_format_clears_runtime_before_erasing_files)
+{
+	const uint8_t sqbc[] = {'s', 'q', 'b', 'c'};
+	uint8_t request[SQ_PROTOCOL_HEADER_LEN];
+	uint8_t response[128];
+	size_t response_len = 0;
+	struct sq_protocol_frame frame;
+	struct fs_dirent entry;
+	struct sq_device_identity identity = {
+		.target = "esp32c3-supermini",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_vm_runtime runtime = {
+		.status = SQ_VM_RUNTIME_COMPLETE,
+		.trace_count = 1,
+		.traces = {"state.save"},
+	};
+	struct sq_app_registry registry = {.count = 1};
+	struct sq_app_store_vm_storage launch_storage = {0};
+	struct sq_device_install_session install_session = {.active = true};
+	struct sq_device_temp_session temp_session = {.active = true};
+	struct sq_device_resource_session resource_session = {.active = true};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.registry = &registry,
+		.mutable_registry = &registry,
+		.install_session = &install_session,
+		.temp_session = &temp_session,
+		.resource_session = &resource_session,
+		.runtime = &runtime,
+		.store_mount_point = test_fs_mount.mnt_point,
+		.launch_storage = &launch_storage,
+	};
+	int handle_result;
+
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "main", sqbc, sizeof(sqbc)),
+		      0);
+	zassert_equal(sq_app_store_vm_storage_for_app(test_fs_mount.mnt_point, "main",
+						     &launch_storage),
+		      0);
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_STORAGE_FORMAT,
+						      SQ_STATUS_OK, 64, NULL, 0, request,
+						      sizeof(request)),
+		      SQ_PROTOCOL_OK);
+
+	handle_result = sq_device_protocol_handle_frame(request, sizeof(request), &context, response,
+						       sizeof(response), &response_len);
+	zassert_equal(handle_result, SQ_PROTOCOL_OK, "handle result %d", handle_result);
+	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
+	zassert_equal(frame.opcode, SQ_OPCODE_STORAGE_FORMAT);
+	zassert_equal(frame.status, SQ_STATUS_OK);
+	zassert_equal(registry.count, 0);
+	zassert_equal(runtime.status, SQ_VM_RUNTIME_IDLE);
+	zassert_false(install_session.active);
+	zassert_false(temp_session.active);
+	zassert_false(resource_session.active);
+	zassert_equal(launch_storage.sqbc_path[0], '\0');
+	zassert_equal(fs_stat("/sqtest/apps/main/main.sqbc", &entry), -ENOENT);
+	zassert_equal(fs_stat("/sqtest/apps", &entry), 0);
+	zassert_equal(fs_stat("/sqtest/state", &entry), 0);
+	zassert_equal(fs_stat("/sqtest/tmp", &entry), 0);
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }
 
 ZTEST(squidscript_protocol, test_handles_installed_app_begin_chunk_commit)

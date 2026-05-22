@@ -43,6 +43,8 @@ struct sq_vm_runtime {
 
 void sq_vm_runtime_init(struct sq_vm_runtime *runtime);
 
+void sq_vm_runtime_reset(struct sq_vm_runtime *runtime);
+
 int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 			   const struct sq_vm_storage_backend *backend, const char *event);
 

@@ -1,9 +1,12 @@
 use squidc::protocol::{
     app_install_begin_request, app_install_chunk_request, app_install_commit_request,
-    app_launch_request, app_list_entries, app_list_request, decode_frame, encode_frame,
-    hello_identity, hello_request, output_get_request, output_lines, temp_run_begin_request,
-    temp_run_chunk_request, temp_run_commit_request, AppEntry, DecodeError, Field, FieldValue,
-    Frame, FrameKind, Opcode, Status,
+    app_launch_request, app_list_entries, app_list_request, decode_frame, decode_frame_from_stream,
+    encode_frame, event_dispatch_request, hello_identity, hello_request, key_request,
+    output_get_request, output_lines, protocol_error, resource_install_begin_request,
+    resource_install_chunk_request, resource_install_commit_request, resource_values,
+    resources_get_request, state_import_request, temp_run_begin_request, temp_run_chunk_request,
+    temp_run_commit_request, trace_get_request, trace_lines, wifi_profile_set_request, AppEntry,
+    DecodeError, Field, FieldValue, Frame, FrameKind, Opcode, Status,
 };
 
 #[test]
@@ -50,6 +53,21 @@ fn decodes_frame_and_rejects_payload_crc_mismatch() {
     let last = bytes.len() - 1;
     bytes[last] ^= 0xff;
     assert_eq!(decode_frame(&bytes).unwrap_err(), DecodeError::PayloadCrc);
+}
+
+#[test]
+fn decodes_first_frame_from_serial_stream_with_extra_bytes() {
+    let frame = Frame::response(
+        Opcode::StorageFormat,
+        Status::Ok,
+        81,
+        vec![Field::string(1, "done")],
+    );
+    let mut stream = b"boot log before frame\n".to_vec();
+    stream.extend_from_slice(&encode_frame(&frame));
+    stream.extend_from_slice(b"\nboot log after frame\n");
+
+    assert_eq!(decode_frame_from_stream(&stream).unwrap(), frame);
 }
 
 #[test]
@@ -145,6 +163,98 @@ fn builds_output_get_request_and_extracts_line_fields() {
     assert_eq!(
         output_lines(&decode_frame(&encode_frame(&response)).unwrap()).unwrap(),
         vec!["ready".to_string(), "tick".to_string()]
+    );
+}
+
+#[test]
+fn builds_diagnostic_requests_and_extracts_records() {
+    assert_eq!(trace_get_request(4).opcode, Opcode::TraceGet);
+    let trace = Frame::response(
+        Opcode::TraceGet,
+        Status::Ok,
+        4,
+        vec![
+            Field::string(1, "app.start"),
+            Field::string(1, "state.save"),
+        ],
+    );
+    assert_eq!(
+        trace_lines(&decode_frame(&encode_frame(&trace)).unwrap()).unwrap(),
+        vec!["app.start".to_string(), "state.save".to_string()]
+    );
+
+    assert_eq!(resources_get_request(8).opcode, Opcode::ResourcesGet);
+    let resources = Frame::response(
+        Opcode::ResourcesGet,
+        Status::Ok,
+        8,
+        vec![Field::record(
+            1,
+            vec![Field::string(1, "ram_total_bytes"), Field::u64(2, 409600)],
+        )],
+    );
+    assert_eq!(
+        resource_values(&decode_frame(&encode_frame(&resources)).unwrap()).unwrap(),
+        vec![("ram_total_bytes".to_string(), 409600)]
+    );
+}
+
+#[test]
+fn builds_event_key_state_resource_and_wifi_requests() {
+    assert_eq!(
+        key_request(48, "SELECT").fields,
+        vec![Field::string(1, "SELECT")]
+    );
+    assert_eq!(
+        event_dispatch_request(49, "main", "app.start").fields,
+        vec![Field::string(1, "main"), Field::string(2, "app.start")]
+    );
+    assert_eq!(
+        state_import_request(72, b"SQST".to_vec()).fields,
+        vec![Field::bytes(1, b"SQST".to_vec())]
+    );
+    assert_eq!(
+        wifi_profile_set_request(76, "dev", "ssid", "secret").fields,
+        vec![
+            Field::string(1, "dev"),
+            Field::string(2, "ssid"),
+            Field::string(3, "secret"),
+        ]
+    );
+    assert_eq!(
+        resource_install_begin_request(50, "main", "icons/main.bin", 4, 0x1234).fields,
+        vec![
+            Field::string(1, "main"),
+            Field::string(2, "icons/main.bin"),
+            Field::u64(3, 4),
+            Field::u64(4, 0x1234),
+        ]
+    );
+    assert_eq!(
+        resource_install_chunk_request(51, 2, b"ab".to_vec()).fields,
+        vec![Field::u64(1, 2), Field::bytes(2, b"ab".to_vec())]
+    );
+    assert_eq!(
+        resource_install_commit_request(52).opcode,
+        Opcode::ResourceInstallCommit
+    );
+}
+
+#[test]
+fn decodes_protocol_error_response() {
+    let error = Frame::response(
+        Opcode::WifiProfileSet,
+        Status::Error,
+        76,
+        vec![Field::i64(250, -95), Field::string(251, "unsupported")],
+    );
+
+    assert_eq!(
+        protocol_error(&decode_frame(&encode_frame(&error)).unwrap()).unwrap(),
+        squidc::protocol::ProtocolError {
+            code: -95,
+            message: "unsupported".to_string(),
+        }
     );
 }
 

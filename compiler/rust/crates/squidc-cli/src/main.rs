@@ -17,7 +17,9 @@ use compile::{compile_source_to_sqbc, compile_target_id};
 use package::{package_app_dir, read_stored_zip_entries};
 use serde::Serialize;
 use serde_json::{json, Value};
-use serial::{candidate_ports, detect_port, OutputTail, SerialDevice};
+use serial::{
+    candidate_ports, detect_port, format_lines, format_state_bytes, OutputTail, SerialDevice,
+};
 use squidc::protocol;
 use squidc_core::profile::BuildProfile;
 
@@ -130,6 +132,7 @@ enum DeviceCommands {
     Trace(DeviceOnlyArgs),
     Errors(DeviceOnlyArgs),
     Resources(DeviceOnlyArgs),
+    StorageFormat(DeviceOnlyArgs),
     Monitor(MonitorArgs),
 }
 
@@ -297,23 +300,14 @@ fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String>
         },
         Commands::Device { command } => match command {
             DeviceCommands::Key(args) => key(args, human),
-            DeviceCommands::Reset(args) => {
-                device_line_command(args.device, "RESET", "reset", human)
-            }
+            DeviceCommands::Reset(args) => reset(args.device, human),
             DeviceCommands::Output(args) => device_output(args.device, human),
-            DeviceCommands::State(args) => {
-                device_block_command(args.device, "STATE.GET", "state", human)
-            }
-            DeviceCommands::Drawlog(args) => {
-                device_block_command(args.device, "DRAWLOG.GET", "drawlog", human)
-            }
-            DeviceCommands::Trace(args) => {
-                device_block_command(args.device, "TRACE.GET", "trace", human)
-            }
-            DeviceCommands::Errors(args) => {
-                device_block_command(args.device, "ERRORS.GET", "errors", human)
-            }
+            DeviceCommands::State(args) => state(args.device, human),
+            DeviceCommands::Drawlog(args) => drawlog(args.device, human),
+            DeviceCommands::Trace(args) => trace(args.device, human),
+            DeviceCommands::Errors(args) => errors(args.device, human),
             DeviceCommands::Resources(args) => resources(args, human),
+            DeviceCommands::StorageFormat(args) => storage_format(args.device, human),
             DeviceCommands::Monitor(args) => monitor(args, json_mode),
         },
         Commands::Protocol { command } => match command {
@@ -515,12 +509,9 @@ fn app_list(args: DeviceOnlyArgs, human: bool) -> Result<Value, String> {
 fn key(args: DeviceKeyArgs, human: bool) -> Result<Value, String> {
     let port = resolve_port(&args.device)?;
     let mut device = SerialDevice::open(&port)?;
-    let response = device.send_line(&format!("KEY {}", args.key))?;
+    let response = device.send_key(&args.key)?;
     if human {
         print!("{response}");
-    }
-    if !response.contains("OK key") {
-        return Err(response.trim().to_string());
     }
     Ok(json!({
         "port": port,
@@ -577,15 +568,38 @@ fn hex_string(bytes: &[u8]) -> String {
 fn resources(args: DeviceOnlyArgs, human: bool) -> Result<Value, String> {
     let port = resolve_port(&args.device)?;
     let mut device = SerialDevice::open(&port)?;
-    let response = device.send_line("RESOURCES.GET")?;
+    let resources = device.resource_values()?;
     if human {
-        print!("{response}");
+        for (key, value) in &resources {
+            println!("{key}={value}");
+        }
     }
     Ok(json!({
         "port": port,
-        "resources": parse_key_value_block(&response, "RESOURCES"),
-        "response": response
+        "resources": resources.iter().map(|(key, value)| {
+            json!({"key": key, "value": value})
+        }).collect::<Vec<_>>()
     }))
+}
+
+fn reset(options: DeviceOnlyOptions, human: bool) -> Result<Value, String> {
+    let port = resolve_port(&options)?;
+    let mut device = SerialDevice::open(&port)?;
+    let response = device.reset()?;
+    if human {
+        print!("{response}");
+    }
+    Ok(json!({"port": port, "command": "reset", "response": response}))
+}
+
+fn storage_format(options: DeviceOnlyOptions, human: bool) -> Result<Value, String> {
+    let port = resolve_port(&options)?;
+    let mut device = SerialDevice::open(&port)?;
+    let response = device.storage_format()?;
+    if human {
+        print!("{response}");
+    }
+    Ok(json!({"port": port, "command": "storage-format", "response": response}))
 }
 
 fn device_output(options: DeviceOnlyOptions, human: bool) -> Result<Value, String> {
@@ -602,6 +616,50 @@ fn device_output(options: DeviceOnlyOptions, human: bool) -> Result<Value, Strin
         "command": "output",
         "lines": lines
     }))
+}
+
+fn state(options: DeviceOnlyOptions, human: bool) -> Result<Value, String> {
+    let port = resolve_port(&options)?;
+    let mut device = SerialDevice::open(&port)?;
+    let bytes = device.state_bytes()?;
+    let response = format_state_bytes(&bytes);
+    if human {
+        print!("{response}");
+    }
+    Ok(json!({"port": port, "command": "state", "stateHex": hex_string(&bytes)}))
+}
+
+fn trace(options: DeviceOnlyOptions, human: bool) -> Result<Value, String> {
+    let port = resolve_port(&options)?;
+    let mut device = SerialDevice::open(&port)?;
+    let lines = device.trace_lines()?;
+    let response = format_lines("trace", &lines);
+    if human {
+        print!("{response}");
+    }
+    Ok(json!({"port": port, "command": "trace", "lines": lines}))
+}
+
+fn drawlog(options: DeviceOnlyOptions, human: bool) -> Result<Value, String> {
+    let port = resolve_port(&options)?;
+    let mut device = SerialDevice::open(&port)?;
+    let lines = device.drawlog_lines()?;
+    let response = format_lines("draw", &lines);
+    if human {
+        print!("{response}");
+    }
+    Ok(json!({"port": port, "command": "drawlog", "lines": lines}))
+}
+
+fn errors(options: DeviceOnlyOptions, human: bool) -> Result<Value, String> {
+    let port = resolve_port(&options)?;
+    let mut device = SerialDevice::open(&port)?;
+    let lines = device.error_lines()?;
+    let response = format_lines("error", &lines);
+    if human {
+        print!("{response}");
+    }
+    Ok(json!({"port": port, "command": "errors", "lines": lines}))
 }
 
 fn monitor(args: MonitorArgs, json_mode: bool) -> Result<Value, String> {
@@ -685,34 +743,6 @@ fn monitor_output(
         }
         std::thread::sleep(poll_interval);
     }
-}
-
-fn device_line_command(
-    options: DeviceOnlyOptions,
-    command: &str,
-    label: &str,
-    human: bool,
-) -> Result<Value, String> {
-    let port = resolve_port(&options)?;
-    let mut device = SerialDevice::open(&port)?;
-    let response = device.send_line(command)?;
-    if human {
-        print!("{response}");
-    }
-    Ok(json!({
-        "port": port,
-        "command": label,
-        "response": response
-    }))
-}
-
-fn device_block_command(
-    options: DeviceOnlyOptions,
-    command: &str,
-    label: &str,
-    human: bool,
-) -> Result<Value, String> {
-    device_line_command(options, command, label, human)
 }
 
 fn repl(args: ReplArgs, human: bool) -> Result<Value, String> {
@@ -1101,34 +1131,6 @@ fn resolve_port(options: &DeviceOnlyOptions) -> Result<String, String> {
     }
 }
 
-fn parse_key_value_block(response: &str, name: &str) -> Value {
-    let begin = format!("BEGIN {name}");
-    let end = format!("END {name}");
-    let mut in_block = false;
-    let mut values = serde_json::Map::new();
-    for line in response.lines() {
-        if line == begin {
-            in_block = true;
-            continue;
-        }
-        if line == end {
-            break;
-        }
-        if !in_block {
-            continue;
-        }
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
-        let value = value
-            .parse::<u64>()
-            .map(Value::from)
-            .unwrap_or_else(|_| Value::from(value));
-        values.insert(key.to_string(), value);
-    }
-    Value::Object(values)
-}
-
 fn write_json_success(command: &str, data: Value) {
     println!(
         "{}",
@@ -1272,7 +1274,7 @@ impl ReplSession {
             }
             ":reset" => {
                 self.flush_snippet()?;
-                self.serial_text(&["raw", "RESET"])?;
+                self.serial_text(&["reset"])?;
                 Ok(())
             }
             ":reload" => {
@@ -1394,12 +1396,16 @@ impl ReplSession {
                     fs::read(path).map_err(|error| format!("failed to read {path}: {error}"))?;
                 device.import_state(&bytes)?
             }
-            ["state"] => device.send_line("STATE.GET")?,
-            ["output"] => device.send_line("OUTPUT.GET")?,
-            ["drawlog"] => device.send_line("DRAWLOG.GET")?,
-            ["resources"] => device.send_line("RESOURCES.GET")?,
-            ["key", key] => device.send_line(&format!("KEY {key}"))?,
-            ["raw", line] => device.send_line(line)?,
+            ["state"] => format_state_bytes(&device.state_bytes()?),
+            ["output"] => format_lines("output", &device.output_lines()?),
+            ["drawlog"] => format_lines("draw", &device.drawlog_lines()?),
+            ["resources"] => device
+                .resource_values()?
+                .into_iter()
+                .map(|(key, value)| format!("{key}={value}\n"))
+                .collect::<String>(),
+            ["key", key] => device.send_key(key)?,
+            ["reset"] => device.reset()?,
             _ => return Err(format!("unsupported repl serial command: {args:?}")),
         };
         if self.echo {
@@ -1432,13 +1438,15 @@ fn extract_state_block(source: &str) -> Option<String> {
 }
 
 fn state_payload(state_output: &str) -> Vec<u8> {
+    if let Some(hex) = state_output
+        .lines()
+        .find_map(|line| line.strip_prefix("state=").map(str::trim))
+    {
+        return decode_hex_bytes(hex).unwrap_or_default();
+    }
     let mut out = String::new();
     for line in state_output.lines() {
-        if line.starts_with("BEGIN ")
-            || line.starts_with("END ")
-            || line.starts_with("OK ")
-            || line.starts_with("exited=")
-        {
+        if line.starts_with("exited=") {
             continue;
         }
         if line.contains('=') {
@@ -1447,6 +1455,17 @@ fn state_payload(state_output: &str) -> Vec<u8> {
         }
     }
     out.into_bytes()
+}
+
+fn decode_hex_bytes(hex: &str) -> Option<Vec<u8>> {
+    if hex.len() % 2 != 0 {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(hex.len() / 2);
+    for index in (0..hex.len()).step_by(2) {
+        bytes.push(u8::from_str_radix(&hex[index..index + 2], 16).ok()?);
+    }
+    Some(bytes)
 }
 
 fn state_block_with_values(state_block: &str, state_output: &str) -> String {
@@ -1637,20 +1656,24 @@ screen("main") {}
         else {
             panic!("expected device resources");
         };
-        let parsed = parse_key_value_block(
-            "BEGIN RESOURCES\nram_total_bytes=409600\nram_heap_total_bytes=98304\nram_heap_used_bytes=12288\nram_heap_available_bytes=86016\napp_storage_available_bytes=2031616\nEND RESOURCES\nOK RESOURCES.GET\n",
-            "RESOURCES",
-        );
-        assert_eq!(parsed["ram_total_bytes"], 409600u64);
-        assert_eq!(parsed["ram_heap_used_bytes"], 12288u64);
-        assert_eq!(parsed["ram_heap_available_bytes"], 86016u64);
-        assert_eq!(parsed["app_storage_available_bytes"], 2031616u64);
+    }
+
+    #[test]
+    fn parses_device_storage_format_command() {
+        let cli = Cli::try_parse_from(["squidc", "device", "storage-format"]).unwrap();
+        let Commands::Device {
+            command: DeviceCommands::StorageFormat(_),
+        } = cli.command
+        else {
+            panic!("expected device storage-format");
+        };
     }
 
     #[test]
     fn repl_state_block_uses_previous_state_values() {
         let state_block = "state {\n  count: int = 0\n  label: string = \"old\"\n}\n";
-        let state_output = "BEGIN STATE\ncount=2\nlabel=\"new\"\nexited=false\nEND STATE\n";
+        let state_output =
+            "state=636f756e743d320a6c6162656c3d226e6577220a6578697465643d66616c73650a\n";
 
         let merged = state_block_with_values(state_block, state_output);
 

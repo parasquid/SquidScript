@@ -6,12 +6,16 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::app_id::fnv1a;
 use squidc::protocol::{
     app_install_begin_request, app_install_chunk_request, app_install_commit_request,
-    app_launch_request, app_list_entries, app_list_request, decode_frame, encode_frame,
-    hello_identity, hello_request, output_get_request, output_lines, temp_run_begin_request,
-    temp_run_chunk_request, temp_run_commit_request, AppEntry, Frame, FrameKind, Status,
+    app_launch_request, app_list_entries, app_list_request, decode_frame_from_stream,
+    drawlog_get_request, drawlog_lines, encode_frame, error_lines, errors_get_request,
+    event_dispatch_request, hello_identity, hello_request, key_request, output_get_request,
+    output_lines, protocol_error, reset_request, resource_install_begin_request,
+    resource_install_chunk_request, resource_install_commit_request, resource_values,
+    resources_get_request, state_bytes, state_get_request, state_import_request,
+    storage_format_request, temp_run_begin_request, temp_run_chunk_request,
+    temp_run_commit_request, trace_get_request, trace_lines, AppEntry, Frame, FrameKind, Status,
 };
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -36,8 +40,8 @@ impl SerialDevice {
         let mut device = Self::open(port)?;
         let request = encode_frame(&hello_request(1));
         let response = device.send_bytes_until_quiet(&request)?;
-        let frame =
-            decode_frame(&response).map_err(|error| format!("invalid hello frame: {error:?}"))?;
+        let frame = decode_frame_from_stream(&response)
+            .map_err(|error| format!("invalid hello frame: {error:?}"))?;
         Ok(hello_identity(&frame).is_some())
     }
 
@@ -67,12 +71,27 @@ impl SerialDevice {
         path: &str,
         bytes: &[u8],
     ) -> Result<String, String> {
-        self.write_install(
-            &format!("INSTALL.RESOURCE {app_id} {path}"),
-            "READY install.resource",
-            "OK install.resource",
-            bytes,
-        )
+        self.send_protocol_expect_ok(&resource_install_begin_request(
+            50,
+            app_id,
+            path,
+            bytes.len() as u64,
+            crc32fast::hash(bytes) as u64,
+        ))?;
+        for (index, chunk) in bytes.chunks(CHUNK_SIZE).enumerate() {
+            self.send_protocol_expect_ok(&resource_install_chunk_request(
+                51 + index as u32,
+                (index * CHUNK_SIZE) as u64,
+                chunk.to_vec(),
+            ))?;
+        }
+        self.send_protocol_expect_ok(&resource_install_commit_request(
+            51 + bytes.chunks(CHUNK_SIZE).count() as u32,
+        ))?;
+        Ok(format!(
+            "installed resource {app_id}/{path} len={}\n",
+            bytes.len()
+        ))
     }
 
     pub fn run_temp_app(&mut self, app_id: &str, bytes: &[u8]) -> Result<String, String> {
@@ -96,12 +115,8 @@ impl SerialDevice {
     }
 
     pub fn import_state(&mut self, bytes: &[u8]) -> Result<String, String> {
-        self.write_install(
-            "STATE.IMPORT",
-            "READY STATE.IMPORT",
-            "OK STATE.IMPORT",
-            bytes,
-        )
+        self.send_protocol_expect_ok(&state_import_request(72, bytes.to_vec()))?;
+        Ok(format!("imported state len={}\n", bytes.len()))
     }
 
     pub fn run_app(&mut self, app_id: &str) -> Result<String, String> {
@@ -110,13 +125,8 @@ impl SerialDevice {
     }
 
     pub fn run_app_event(&mut self, app_id: &str, event: &str) -> Result<String, String> {
-        self.send_line(&format!("RUN.EVENT {app_id} {event}"))
-    }
-
-    pub fn send_line(&mut self, line: &str) -> Result<String, String> {
-        self.drain();
-        self.write_all(format!("{line}\n").as_bytes())?;
-        self.read_until_quiet(DEFAULT_TIMEOUT)
+        self.send_protocol_expect_ok(&event_dispatch_request(49, app_id, event))?;
+        Ok(format!("dispatched event {event} for {app_id}\n"))
     }
 
     pub fn send_bytes_until_quiet(&mut self, bytes: &[u8]) -> Result<Vec<u8>, String> {
@@ -128,7 +138,7 @@ impl SerialDevice {
     pub fn app_list(&mut self) -> Result<Vec<AppEntry>, String> {
         let request = encode_frame(&app_list_request(2));
         let response = self.send_bytes_until_quiet(&request)?;
-        let frame = decode_frame(&response)
+        let frame = decode_frame_from_stream(&response)
             .map_err(|error| format!("invalid app list response frame: {error:?}"))?;
         app_list_entries(&frame).ok_or_else(|| "not a successful app list response".to_string())
     }
@@ -136,16 +146,64 @@ impl SerialDevice {
     pub fn output_lines(&mut self) -> Result<Vec<String>, String> {
         let request = encode_frame(&output_get_request(3));
         let response = self.send_bytes_until_quiet(&request)?;
-        let frame = decode_frame(&response)
+        let frame = decode_frame_from_stream(&response)
             .map_err(|error| format!("invalid output response frame: {error:?}"))?;
         output_lines(&frame).ok_or_else(|| "not a successful output response".to_string())
     }
 
-    fn send_protocol_expect_ok(&mut self, frame: &Frame) -> Result<(), String> {
+    pub fn trace_lines(&mut self) -> Result<Vec<String>, String> {
+        let frame = self.send_protocol_request(&trace_get_request(4))?;
+        trace_lines(&frame).ok_or_else(|| "not a successful trace response".to_string())
+    }
+
+    pub fn drawlog_lines(&mut self) -> Result<Vec<String>, String> {
+        let frame = self.send_protocol_request(&drawlog_get_request(5))?;
+        drawlog_lines(&frame).ok_or_else(|| "not a successful drawlog response".to_string())
+    }
+
+    pub fn error_lines(&mut self) -> Result<Vec<String>, String> {
+        let frame = self.send_protocol_request(&errors_get_request(6))?;
+        error_lines(&frame).ok_or_else(|| "not a successful errors response".to_string())
+    }
+
+    pub fn state_bytes(&mut self) -> Result<Vec<u8>, String> {
+        let frame = self.send_protocol_request(&state_get_request(7))?;
+        state_bytes(&frame).ok_or_else(|| "not a successful state response".to_string())
+    }
+
+    pub fn resource_values(&mut self) -> Result<Vec<(String, u64)>, String> {
+        let frame = self.send_protocol_request(&resources_get_request(8))?;
+        resource_values(&frame).ok_or_else(|| "not a successful resources response".to_string())
+    }
+
+    pub fn reset(&mut self) -> Result<String, String> {
+        self.send_protocol_expect_ok(&reset_request(80))?;
+        Ok("reset\n".to_string())
+    }
+
+    pub fn storage_format(&mut self) -> Result<String, String> {
+        self.send_protocol_expect_ok(&storage_format_request(81))?;
+        Ok("storage formatted\n".to_string())
+    }
+
+    pub fn send_key(&mut self, key: &str) -> Result<String, String> {
+        self.send_protocol_expect_ok(&key_request(48, key))?;
+        Ok(format!("key {key}\n"))
+    }
+
+    pub fn send_protocol_request(&mut self, frame: &Frame) -> Result<Frame, String> {
         let request = encode_frame(frame);
         let response = self.send_bytes_until_quiet(&request)?;
-        let response_frame = decode_frame(&response)
+        let response_frame = decode_frame_from_stream(&response)
             .map_err(|error| format!("invalid protocol response frame: {error:?}"))?;
+        if let Some(error) = protocol_error(&response_frame) {
+            return Err(format!("{} ({})", error.message, error.code));
+        }
+        Ok(response_frame)
+    }
+
+    fn send_protocol_expect_ok(&mut self, frame: &Frame) -> Result<(), String> {
+        let response_frame = self.send_protocol_request(frame)?;
         if response_frame.kind != FrameKind::Response
             || response_frame.opcode != frame.opcode
             || response_frame.status != Status::Ok
@@ -166,25 +224,6 @@ impl SerialDevice {
         }
     }
 
-    fn write_install(
-        &mut self,
-        command: &str,
-        ready_token: &str,
-        ok_token: &str,
-        bytes: &[u8],
-    ) -> Result<String, String> {
-        self.drain();
-        let hash = fnv1a(bytes);
-        self.write_all(format!("{command} {} {hash:08x}\n", bytes.len()).as_bytes())?;
-        let ready = self.read_until(ready_token, DEFAULT_TIMEOUT)?;
-        for chunk in bytes.chunks(CHUNK_SIZE) {
-            self.write_all(chunk)?;
-            std::thread::sleep(Duration::from_millis(2));
-        }
-        let ok = self.read_until(ok_token, DEFAULT_TIMEOUT)?;
-        Ok(format!("{ready}{ok}"))
-    }
-
     fn drain(&mut self) {
         let mut buf = [0u8; 256];
         while let Ok(count) = self.port.read(&mut buf) {
@@ -198,37 +237,6 @@ impl SerialDevice {
         self.port
             .write_all(bytes)
             .map_err(|error| format!("serial write failed: {error}"))
-    }
-
-    fn read_until(&mut self, expected: &str, timeout: Duration) -> Result<String, String> {
-        let deadline = Instant::now() + timeout;
-        let mut response = Vec::new();
-        let mut buf = [0u8; 256];
-        while Instant::now() < deadline {
-            match self.port.read(&mut buf) {
-                Ok(count) if count > 0 => {
-                    response.extend_from_slice(&buf[..count]);
-                    let text = String::from_utf8_lossy(&response);
-                    if text.contains("ERR ") {
-                        return Err(text.into_owned());
-                    }
-                    if text.contains(expected) {
-                        return Ok(text.into_owned());
-                    }
-                }
-                Ok(_) => {}
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
-                Err(error) => return Err(format!("serial read failed: {error}")),
-            }
-        }
-        Err(format!(
-            "timed out waiting for {expected:?}; got {}",
-            String::from_utf8_lossy(&response)
-        ))
-    }
-
-    fn read_until_quiet(&mut self, timeout: Duration) -> Result<String, String> {
-        Ok(String::from_utf8_lossy(&self.read_bytes_until_quiet(timeout)?).into_owned())
     }
 
     fn read_bytes_until_quiet(&mut self, timeout: Duration) -> Result<Vec<u8>, String> {
@@ -337,6 +345,26 @@ fn configure_tty(port: &str) -> Result<(), String> {
 #[derive(Default)]
 pub struct OutputTail {
     seen: usize,
+}
+
+pub fn format_lines(prefix: &str, lines: &[String]) -> String {
+    lines
+        .iter()
+        .map(|line| format!("{prefix}={line}\n"))
+        .collect::<String>()
+}
+
+pub fn format_state_bytes(bytes: &[u8]) -> String {
+    format!("state={}\n", hex_string(bytes))
+}
+
+pub fn hex_string(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        use std::fmt::Write as _;
+        write!(&mut out, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    out
 }
 
 impl OutputTail {

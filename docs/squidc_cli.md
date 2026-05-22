@@ -61,6 +61,7 @@ cargo run -p squidc -- device trace
 cargo run -p squidc -- device errors
 cargo run -p squidc -- device resources
 cargo run -p squidc -- device reset
+cargo run -p squidc -- device storage-format
 cargo run -p squidc -- device monitor --max-lines 4
 ```
 
@@ -77,8 +78,11 @@ state from installed-app code cache and app-store usage.
 `device reset` performs a firmware soft boot. It clears the current VM, temp
 app, foreground stack, pending launches, trigger/timer registrations, and debug
 buffers, then boots installed `main` when present. It does not erase installed
-apps; use `STORAGE.FORMAT` through the protocol or the storage-format helper
-when a clean app store is needed.
+apps.
+
+`device storage-format` erases Zephyr app storage, including installed apps,
+resources, temp app staging, and app state files, then recreates the expected
+storage directories.
 
 `device monitor` polls the firmware output buffer by default. Use `--raw` only
 when literal serial bytes are needed. JSON monitor output must be bounded with
@@ -97,10 +101,8 @@ entries: `--string TAG=VALUE`, `--bytes TAG=HEX`, `--bool TAG=true|false`,
 `--u64 TAG=VALUE`, and `--i64 TAG=VALUE`. Prefer grouped `app` and `device`
 commands for normal workflows.
 
-Framed `hello` identity, `app install`, and `app list` are implemented in the
-host and Zephyr serial transport layers. Most grouped `app`, `device`, and
-`repl` workflows are still being migrated from the old text command
-implementation to framed requests.
+Framed command, app lifecycle, diagnostics, state, resources, and storage
+operations are implemented in the host and Zephyr serial transport layers.
 
 ## JSON
 

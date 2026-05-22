@@ -19,7 +19,6 @@ from c3_supermini_serial import (
     list_apps,
     parse_state,
     provision_wifi_profile,
-    reference_firmware_test_sequence,
     run_app,
     run_temp_app_sqbc,
     main,
@@ -186,6 +185,24 @@ class C3SuperMiniSerialTests(unittest.TestCase):
 
         self.assertEqual(identity["target"], "esp32c3-supermini")
         self.assertEqual(serial.writes, [encode_protocol_hello_request(sequence=1)])
+
+    def test_get_protocol_hello_identity_ignores_serial_noise(self):
+        response = encode_protocol_frame(
+            kind=2,
+            opcode=1,
+            status=0,
+            sequence=1,
+            fields=[
+                ("string", 1, "esp32c3-supermini"),
+                ("string", 2, "squidscript-zephyr"),
+                ("bool", 3, True),
+            ],
+        )
+        serial = FakeSerial([b"boot before\n" + response + b"\nboot after\n"])
+
+        identity = get_protocol_hello_identity(serial, output=io.BytesIO(), timeout=0.01)
+
+        self.assertEqual(identity["target"], "esp32c3-supermini")
 
     def test_get_protocol_hello_identity_does_not_require_output_sink(self):
         response = encode_protocol_frame(
@@ -372,70 +389,57 @@ class C3SuperMiniSerialTests(unittest.TestCase):
         )
 
     def test_format_storage_sends_storage_format_command(self):
-        serial = FakeSerial([b"OK STORAGE.FORMAT\r\n"])
+        serial = FakeSerial(
+            [encode_protocol_frame(kind=2, opcode=81, status=0, sequence=81, fields=[])]
+        )
 
         format_storage(serial, output=io.BytesIO(), timeout=0.01)
 
-        self.assertEqual(serial.writes, [b"STORAGE.FORMAT\n"])
-
-    def test_provision_wifi_profile_streams_credentials_after_header(self):
-        serial = FakeSerial([b"READY WIFI.PROFILE.SET profile=dev\r\n", b"OK WIFI.PROFILE.SET profile=dev\r\n"])
-
-        provision_wifi_profile(
-            serial,
-            "dev",
-            "ExampleSSID",
-            "secret-pass",
-            output=io.BytesIO(),
-            timeout=0.01,
+        self.assertEqual(
+            [decode_protocol_frame(write) for write in serial.writes],
+            [{"kind": 1, "opcode": 81, "status": 0, "sequence": 81, "fields": []}],
         )
 
-        payload = b"ExampleSSIDsecret-pass"
-        self.assertEqual(
-            serial.writes,
+    def test_provision_wifi_profile_uses_framed_request_and_redacted_error(self):
+        serial = FakeSerial(
             [
-                f"WIFI.PROFILE.SET dev 11 11 {compute_fnv1a(payload):08x}\n".encode("ascii"),
-                payload,
-            ],
+                encode_protocol_frame(
+                    kind=2,
+                    opcode=76,
+                    status=1,
+                    sequence=76,
+                    fields=[("i64", 250, -95), ("string", 251, "unsupported")],
+                )
+            ]
+        )
+
+        with self.assertRaises(InstallError) as raised:
+            provision_wifi_profile(
+                serial,
+                "dev",
+                "ExampleSSID",
+                "secret-pass",
+                output=io.BytesIO(),
+                timeout=0.01,
+            )
+
+        self.assertNotIn("ExampleSSID", str(raised.exception))
+        self.assertNotIn("secret-pass", str(raised.exception))
+        self.assertEqual(
+            [decode_protocol_frame(write) for write in serial.writes],
+            [{
+                "kind": 1,
+                "opcode": 76,
+                "status": 0,
+                "sequence": 76,
+                "fields": [(1, 1, "dev"), (2, 1, "ExampleSSID"), (3, 1, "secret-pass")],
+            }],
         )
 
     def test_parse_state_extracts_values(self):
         state = parse_state(b"started=1\r\ncount=2\r\nexited=true\r\n")
 
         self.assertEqual(state, {"started": "1", "count": "2", "exited": "true"})
-
-    def test_reference_firmware_sequence_verifies_counter_behavior(self):
-        serial = FakeSerial(
-            [
-                b"OK RUN.EVENT main app.start\r\n",
-                b"started=1\r\ncount=0\r\nexited=false\r\n",
-                b"OK key SELECT\r\n",
-                b"OK key SELECT\r\n",
-                b"started=1\r\ncount=2\r\nexited=false\r\n",
-                b"OK key BACK\r\n",
-                b"started=1\r\ncount=2\r\nexited=true\r\n",
-                b"trace=app.start\r\ntrace=state.load\r\ntrace=state.save\r\n"
-                b"trace=key.SELECT\r\ntrace=state.save\r\n"
-                b"trace=key.SELECT\r\ntrace=state.save\r\n"
-                b"trace=key.BACK\r\ntrace=app.exit\r\n",
-            ]
-        )
-
-        reference_firmware_test_sequence(serial, output=io.BytesIO(), timeout=0.01)
-
-        self.assertEqual(
-            serial.writes,
-            [
-                b"RUN.EVENT main app.start\n",
-                b"state\n",
-                b"key SELECT\n",
-                b"key SELECT\n",
-                b"state\n",
-                b"key BACK\n",
-                b"state\n",
-                b"trace\n",
-            ],
-        )
 
 
 if __name__ == "__main__":
