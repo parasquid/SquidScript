@@ -5,7 +5,7 @@
 //! reference firmware. The registry is an in-memory cache over firmware-owned
 //! app storage.
 
-use crate::protocol::fnv1a;
+use crate::{kernel::BoundedQueue, protocol::fnv1a};
 use squidvm_core::{error::VmError, limits::MAX_APP_BYTES, program::Program};
 
 pub const APP_REGISTRY_CAP: usize = 6;
@@ -167,6 +167,130 @@ pub trait AppStorage {
         out: &mut [u8],
     ) -> Result<Option<usize>, AppStorageError>;
     fn delete_state(&mut self, app_id: &str) -> Result<(), AppStorageError>;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AppStorageOperation {
+    EnsureReady,
+    Format,
+    WriteApp,
+    WriteAppResource,
+    ReadApp,
+    ReadAppRange,
+    ListApps,
+    WriteState,
+    ReadState,
+    DeleteState,
+}
+
+pub struct StorageActor<S, const CAP: usize> {
+    backend: S,
+    commands: BoundedQueue<AppStorageOperation, CAP>,
+    operations: [AppStorageOperation; CAP],
+    operation_len: usize,
+}
+
+impl<S, const CAP: usize> StorageActor<S, CAP> {
+    pub const fn new(backend: S) -> Self {
+        Self {
+            backend,
+            commands: BoundedQueue::new(),
+            operations: [AppStorageOperation::EnsureReady; CAP],
+            operation_len: 0,
+        }
+    }
+
+    pub fn into_inner(self) -> S {
+        self.backend
+    }
+
+    pub fn operations(&self) -> &[AppStorageOperation] {
+        &self.operations[..self.operation_len]
+    }
+
+    fn begin(&mut self, operation: AppStorageOperation) -> Result<(), AppStorageError> {
+        self.commands
+            .push(operation)
+            .map_err(|_| AppStorageError::Io)?;
+        let Some(operation) = self.commands.pop() else {
+            return Err(AppStorageError::Io);
+        };
+        if self.operation_len < self.operations.len() {
+            self.operations[self.operation_len] = operation;
+            self.operation_len += 1;
+        }
+        Ok(())
+    }
+}
+
+impl<S: AppStorage, const CAP: usize> AppStorage for StorageActor<S, CAP> {
+    fn ensure_ready(&mut self) -> Result<(), AppStorageError> {
+        self.begin(AppStorageOperation::EnsureReady)?;
+        self.backend.ensure_ready()
+    }
+
+    fn format(&mut self) -> Result<(), AppStorageError> {
+        self.begin(AppStorageOperation::Format)?;
+        self.backend.format()
+    }
+
+    fn write_app(&mut self, app_id: &str, bytes: &[u8]) -> Result<(), AppStorageError> {
+        self.begin(AppStorageOperation::WriteApp)?;
+        self.backend.write_app(app_id, bytes)
+    }
+
+    fn write_app_resource(
+        &mut self,
+        app_id: &str,
+        path: &str,
+        bytes: &[u8],
+    ) -> Result<(), AppStorageError> {
+        self.begin(AppStorageOperation::WriteAppResource)?;
+        self.backend.write_app_resource(app_id, path, bytes)
+    }
+
+    fn read_app(&mut self, app_id: &str, out: &mut [u8]) -> Result<usize, AppStorageError> {
+        self.begin(AppStorageOperation::ReadApp)?;
+        self.backend.read_app(app_id, out)
+    }
+
+    fn read_app_range(
+        &mut self,
+        app_id: &str,
+        offset: usize,
+        out: &mut [u8],
+    ) -> Result<usize, AppStorageError> {
+        self.begin(AppStorageOperation::ReadAppRange)?;
+        self.backend.read_app_range(app_id, offset, out)
+    }
+
+    fn list_apps(
+        &mut self,
+        out: &mut [StoredApp],
+        scratch: &mut [u8],
+    ) -> Result<usize, AppStorageError> {
+        self.begin(AppStorageOperation::ListApps)?;
+        self.backend.list_apps(out, scratch)
+    }
+
+    fn write_state(&mut self, app_id: &str, bytes: &[u8]) -> Result<(), AppStorageError> {
+        self.begin(AppStorageOperation::WriteState)?;
+        self.backend.write_state(app_id, bytes)
+    }
+
+    fn read_state(
+        &mut self,
+        app_id: &str,
+        out: &mut [u8],
+    ) -> Result<Option<usize>, AppStorageError> {
+        self.begin(AppStorageOperation::ReadState)?;
+        self.backend.read_state(app_id, out)
+    }
+
+    fn delete_state(&mut self, app_id: &str) -> Result<(), AppStorageError> {
+        self.begin(AppStorageOperation::DeleteState)?;
+        self.backend.delete_state(app_id)
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -864,6 +988,43 @@ screen("main") {}
                 .list_apps(&mut [StoredApp::empty(); 1], &mut [0u8; MAX_APP_BYTES])
                 .unwrap(),
             0
+        );
+    }
+
+    #[test]
+    fn storage_actor_routes_all_app_storage_methods_through_service_boundary() {
+        let bytes = sqbc_fixture();
+        let mut storage = StorageActor::<MemoryAppStorage, 16>::new(MemoryAppStorage::new());
+        storage.ensure_ready().unwrap();
+        storage.write_app("main", &bytes).unwrap();
+        storage
+            .write_app_resource("main", "admin-ui/index.html", b"<h1>Admin</h1>")
+            .unwrap();
+        let mut out = [0u8; MAX_APP_BYTES];
+        storage.read_app("main", &mut out).unwrap();
+        storage.read_app_range("main", 0, &mut out[..8]).unwrap();
+        storage
+            .list_apps(&mut [StoredApp::empty(); 1], &mut [0u8; MAX_APP_BYTES])
+            .unwrap();
+        storage.write_state("main", b"state").unwrap();
+        storage.read_state("main", &mut out).unwrap();
+        storage.delete_state("main").unwrap();
+        storage.format().unwrap();
+
+        assert_eq!(
+            storage.operations(),
+            &[
+                AppStorageOperation::EnsureReady,
+                AppStorageOperation::WriteApp,
+                AppStorageOperation::WriteAppResource,
+                AppStorageOperation::ReadApp,
+                AppStorageOperation::ReadAppRange,
+                AppStorageOperation::ListApps,
+                AppStorageOperation::WriteState,
+                AppStorageOperation::ReadState,
+                AppStorageOperation::DeleteState,
+                AppStorageOperation::Format,
+            ]
         );
     }
 

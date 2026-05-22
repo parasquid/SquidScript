@@ -19,15 +19,12 @@ persistent SquidScript app platform prototype.
 
 ### 2. Continue Non-Wi-Fi RTOS Service Actor Migration
 
-- Verify lifecycle command queue behavior on ESP32-C3 hardware: launch, arm,
-  disarm, foreground exit, root restart, and timer-triggered app events should
-  leave serial input responsive between events.
-- Replace synchronous LittleFS installed-app, package-resource, state, and
-  format operations with bounded storage service progress steps or a documented
-  backend async path. Keep the portable SquidScript storage API unchanged.
-- Convert the Super Mini serial install paths (`INSTALL.APP`,
-  `INSTALL.RESOURCE`, `STORAGE.FORMAT`) to submit storage service commands
-  instead of calling the backend directly from command handlers.
+- Split the current storage actor's LittleFS backend step into smaller async
+  filesystem/flash progress steps where the LittleFS and flash stack support
+  it. The portable SquidScript storage API should remain unchanged.
+- Extend resumable VM dispatch coverage beyond linear handlers so nested
+  functions and screen rendering can suspend around storage-backed SQBC chunk
+  reads without falling back to synchronous reads.
 - Promote the headless draw-log display queue into the firmware display service
   contract, then add a backend adapter for physical displays.
 - Replace the standalone XTEINK X4 hello display bring-up's blocking init,

@@ -1,7 +1,15 @@
-use crate::{error::VmError, host::TraceSink};
+use crate::{error::VmError, host::StorageRequest, host::TraceSink};
 
 pub trait SqbcReader {
     fn read_exact_at(&mut self, offset: usize, out: &mut [u8]) -> Result<(), VmError>;
+
+    fn storage_request_at(
+        &mut self,
+        _offset: usize,
+        _len: usize,
+    ) -> Result<Option<StorageRequest>, VmError> {
+        Ok(None)
+    }
 }
 
 pub trait ChunkedVmHost: SqbcReader + TraceSink {}

@@ -2,8 +2,11 @@ use core::fmt;
 
 use squidvm_core::{
     error::VmError,
-    host::{DisplayLineOptions, DisplayRectOptions, DisplayTextOptions, TraceSink},
-    limits::{MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES},
+    host::{
+        StorageCompletion, StorageRequest, StorageRequestKind, TraceSink, VmDispatch,
+        DisplayLineOptions, DisplayRectOptions, DisplayTextOptions,
+    },
+    limits::{MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES, MAX_SAVED_STATE_BYTES},
     program::{Program, ProgramIndex},
     reader::SqbcReader,
     strings::{StringResolver, StringTable},
@@ -354,7 +357,9 @@ pub(super) fn dispatch_loaded_vm(
     let previous = trace.current_app;
     trace.current_app = Some(app);
     let result = match (&mut *active, app) {
-        (ActiveVm::Temp(active), AppRef::Temp) => active.dispatch(event, trace),
+        (ActiveVm::Temp(active), AppRef::Temp) => {
+            active.dispatch(event, trace).map_err(RuntimeError::Vm)
+        }
         (ActiveVm::Persistent(active), AppRef::Persistent(slot)) => {
             let Some(entry) = registry.entry(slot) else {
                 return Err(RuntimeError::Storage(AppStorageError::NotFound));
@@ -364,13 +369,72 @@ pub(super) fn dispatch_loaded_vm(
                 app_id: entry.name(),
                 trace,
             };
-            active.dispatch(&mut host, event)
+            dispatch_persistent_resumable(active, &mut host, event).map_err(RuntimeError::Vm)
         }
-        _ => Err(VmError::InvalidOperand),
+        _ => Err(RuntimeError::Vm(VmError::InvalidOperand)),
     };
     if active.exited() {
         trace.exited = true;
     }
     trace.current_app = previous;
-    result.map_err(RuntimeError::Vm)
+    result
+}
+
+fn dispatch_persistent_resumable<S: AppStorage>(
+    active: &mut ChunkedVm,
+    host: &mut StoredAppHost<'_, '_, S>,
+    event: &str,
+) -> Result<(), VmError> {
+    let mut result = active.dispatch_resumable(host, event)?;
+    loop {
+        match result {
+            VmDispatch::Complete => return Ok(()),
+            VmDispatch::PendingStorage(request) => {
+                let completion = complete_storage_request(host, request)?;
+                result = active.resume_storage(host, completion)?;
+            }
+        }
+    }
+}
+
+fn complete_storage_request<S: AppStorage>(
+    host: &mut StoredAppHost<'_, '_, S>,
+    request: StorageRequest,
+) -> Result<StorageCompletion, VmError> {
+    match request.kind {
+        StorageRequestKind::SqbcRead { offset, len } => {
+            let mut bytes = [0u8; squidvm_core::host::MAX_STORAGE_TRANSFER_BYTES];
+            let read = host
+                .storage
+                .read_app_range(host.app_id, offset, &mut bytes[..len])
+                .map_err(|_| VmError::ReadFailed)?;
+            if read != len {
+                return Err(VmError::ReadFailed);
+            }
+            StorageCompletion::bytes(&bytes[..len])
+        }
+        StorageRequestKind::StateLoad => {
+            let mut bytes = [0u8; squidvm_core::host::MAX_STORAGE_TRANSFER_BYTES];
+            match host
+                .storage
+                .read_state(host.app_id, &mut bytes[..MAX_SAVED_STATE_BYTES])
+                .map_err(|_| VmError::ReadFailed)?
+            {
+                Some(len) => StorageCompletion::bytes(&bytes[..len]),
+                None => Ok(StorageCompletion::empty()),
+            }
+        }
+        StorageRequestKind::StateSave { len } => {
+            host.storage
+                .write_state(host.app_id, &request.bytes[..len])
+                .map_err(|_| VmError::ReadFailed)?;
+            Ok(StorageCompletion::empty())
+        }
+        StorageRequestKind::StateReset => {
+            host.storage
+                .delete_state(host.app_id)
+                .map_err(|_| VmError::ReadFailed)?;
+            Ok(StorageCompletion::empty())
+        }
+    }
 }

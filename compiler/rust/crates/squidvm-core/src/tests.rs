@@ -467,6 +467,95 @@ fn chunked_vm_reads_handler_code_range_from_reader() {
 }
 
 #[test]
+fn chunked_vm_resumable_dispatch_suspends_for_sqbc_chunk_read() {
+    let bytes = fixture_counter_sqbc();
+    let mut scratch = [0u8; MAX_APP_BYTES];
+    let index = ProgramIndex::parse(&bytes, &mut scratch).unwrap();
+    let mut reader = CountingReader::pending(&bytes);
+    let mut vm = ChunkedVm::new(index);
+
+    let first = vm.dispatch_resumable(&mut reader, "app.start").unwrap();
+    let VmDispatch::PendingStorage(request) = first else {
+        panic!("expected sqbc read request, got {first:?}");
+    };
+    let StorageRequestKind::SqbcRead { offset, len } = request.kind else {
+        panic!("expected sqbc read request, got {:?}", request.kind);
+    };
+    assert!(len > 0);
+    assert_eq!(reader.events, vec!["app.start"]);
+    assert_eq!(reader.pending_read_count, 1);
+
+    reader.pending_reads = false;
+    let completion = StorageCompletion::bytes(&bytes[offset..offset + len]).unwrap();
+    let second = vm.resume_storage(&mut reader, completion).unwrap();
+
+    assert!(matches!(
+        second,
+        VmDispatch::PendingStorage(StorageRequest {
+            kind: StorageRequestKind::StateLoad,
+            ..
+        })
+    ));
+    assert_eq!(reader.pending_read_count, 1);
+}
+
+#[test]
+fn chunked_vm_resumable_dispatch_suspends_state_load_without_replaying_side_effects() {
+    let source = r#"app "pending-state"
+state { count: int = 0 }
+event.on("app.start") {
+  state.load()
+  debug.print("loaded", count)
+  count = count + 1
+  state.save()
+}
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let mut scratch = [0u8; MAX_APP_BYTES];
+    let index = ProgramIndex::parse(&bytes, &mut scratch).unwrap();
+    let mut reader = CountingReader::new(&bytes);
+    let mut vm = ChunkedVm::new(index);
+
+    let first = vm.dispatch_resumable(&mut reader, "app.start").unwrap();
+
+    assert_eq!(
+        first,
+        VmDispatch::PendingStorage(StorageRequest::state_load())
+    );
+    assert_eq!(reader.events, vec!["app.start"]);
+
+    let second = vm
+        .resume_storage(&mut reader, StorageCompletion::empty())
+        .unwrap();
+
+    let VmDispatch::PendingStorage(request) = second else {
+        panic!("expected state save request, got {second:?}");
+    };
+    assert_eq!(request.kind, StorageRequestKind::StateSave { len: 18 });
+    assert_eq!(
+        reader.events,
+        vec!["app.start", "state.load", "debug loaded 0"]
+    );
+
+    assert_eq!(
+        vm.resume_storage(&mut reader, StorageCompletion::empty())
+            .unwrap(),
+        VmDispatch::Complete
+    );
+    assert_eq!(vm.state_value("count"), Ok(Value::I32(1)));
+    assert_eq!(
+        reader.events,
+        vec!["app.start", "state.load", "debug loaded 0", "state.save"]
+    );
+}
+
+#[test]
 fn chunked_vm_rejects_oversized_handler_chunk() {
     let strings = encode_strings(&["oversized", "app.start"]);
     let state = vec![0, 0];
@@ -623,6 +712,8 @@ struct CountingReader<'a> {
     reads: Vec<(usize, usize)>,
     events: Vec<String>,
     saved_state: Vec<u8>,
+    pending_reads: bool,
+    pending_read_count: usize,
 }
 
 impl<'a> CountingReader<'a> {
@@ -632,7 +723,15 @@ impl<'a> CountingReader<'a> {
             reads: Vec::new(),
             events: Vec::new(),
             saved_state: Vec::new(),
+            pending_reads: false,
+            pending_read_count: 0,
         }
+    }
+
+    fn pending(bytes: &'a [u8]) -> Self {
+        let mut reader = Self::new(bytes);
+        reader.pending_reads = true;
+        reader
     }
 }
 
@@ -646,11 +745,43 @@ impl SqbcReader for CountingReader<'_> {
         self.reads.push((offset, out.len()));
         Ok(())
     }
+
+    fn storage_request_at(
+        &mut self,
+        offset: usize,
+        len: usize,
+    ) -> Result<Option<StorageRequest>, VmError> {
+        if self.pending_reads {
+            self.pending_read_count += 1;
+            Ok(Some(StorageRequest::sqbc_read(offset, len)))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 impl TraceSink for CountingReader<'_> {
     fn trace(&mut self, message: &str) {
         self.events.push(message.to_string());
+    }
+
+    fn debug_print(&mut self, strings: &StringResolver<'_>, values: &[Value]) {
+        let mut line = String::new();
+        for (index, value) in values.iter().enumerate() {
+            if index > 0 {
+                line.push(' ');
+            }
+            match value {
+                Value::String(_) | Value::RuntimeString(_) => {
+                    line.push_str(strings.value_str(*value).unwrap())
+                }
+                Value::I32(value) => line.push_str(&value.to_string()),
+                Value::Bool(value) => line.push_str(&value.to_string()),
+                Value::Null => line.push_str("null"),
+                Value::Record(_) => line.push_str("<record>"),
+            }
+        }
+        self.events.push(format!("debug {line}"));
     }
 
     fn state_load(&mut self, out: &mut [u8]) -> Result<Option<usize>, VmError> {

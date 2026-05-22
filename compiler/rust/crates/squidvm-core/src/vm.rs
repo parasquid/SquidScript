@@ -19,8 +19,8 @@ use crate::{
     chunk::{ChunkCache, ChunkKind, ChunkRef},
     error::VmError,
     host::{
-        DisplayLineOptions, DisplayRectOptions, DisplayTextOptions, TraceSink, WifiActionResult,
-        WifiApIp, WifiStatus,
+        DisplayLineOptions, DisplayRectOptions, DisplayTextOptions, StorageCompletion,
+        StorageRequest, TraceSink, VmDispatch, WifiActionResult, WifiApIp, WifiStatus,
     },
     limits::{
         MAX_CALL_DEPTH, MAX_CODE_CHUNK_BYTES, MAX_INSTRUCTIONS_PER_EVENT, MAX_LOCALS,
@@ -63,6 +63,26 @@ pub struct ChunkedVm {
     code: [u8; MAX_CODE_CHUNK_BYTES],
     code_start: usize,
     code_len: usize,
+    resume: Option<ChunkedResume>,
+}
+
+#[derive(Clone, Copy)]
+struct ChunkedResume {
+    start: usize,
+    end: usize,
+    ip: usize,
+    locals: [Value; MAX_LOCALS],
+    depth: usize,
+    pending: PendingStorageResume,
+}
+
+#[derive(Clone, Copy)]
+enum PendingStorageResume {
+    None,
+    SqbcRead { offset: usize, len: usize },
+    StateLoad,
+    StateSave,
+    StateReset,
 }
 
 #[derive(Clone, Copy)]
@@ -154,6 +174,7 @@ impl ChunkedVm {
             code: [0; MAX_CODE_CHUNK_BYTES],
             code_start: usize::MAX,
             code_len: 0,
+            resume: None,
         }
     }
 
@@ -168,7 +189,6 @@ impl ChunkedVm {
             index: index as u16,
         };
         self.chunk_cache.insert(key, handler.preload).ok();
-        self.chunk_cache.begin_execute(key).ok();
         host.trace(event);
         let mut locals = [Value::Null; MAX_LOCALS];
         self.instructions = 0;
@@ -180,6 +200,70 @@ impl ChunkedVm {
             host.service_wifi_teardown()?;
         }
         result
+    }
+
+    pub fn dispatch_resumable(
+        &mut self,
+        host: &mut impl ChunkedVmHost,
+        event: &str,
+    ) -> Result<VmDispatch, VmError> {
+        if self.exited {
+            return Ok(VmDispatch::Complete);
+        }
+        let (index, handler) = self.index.handler(event)?;
+        let key = ChunkRef {
+            app: 0,
+            kind: ChunkKind::Handler,
+            index: index as u16,
+        };
+        self.chunk_cache.insert(key, handler.preload).ok();
+        self.chunk_cache.begin_execute(key).ok();
+        host.trace(event);
+        self.instructions = 0;
+        let locals = [Value::Null; MAX_LOCALS];
+        self.execute_range_resumable(host, handler.start, handler.len, locals, 0)
+    }
+
+    pub fn resume_storage(
+        &mut self,
+        host: &mut impl ChunkedVmHost,
+        completion: StorageCompletion,
+    ) -> Result<VmDispatch, VmError> {
+        let Some(mut resume) = self.resume.take() else {
+            return Ok(VmDispatch::Complete);
+        };
+        match resume.pending {
+            PendingStorageResume::SqbcRead { offset, len } => {
+                if offset != self.index.code_offset + resume.start {
+                    return Err(VmError::ReadFailed);
+                }
+                let relative_len = len.min(self.code.len());
+                self.code[..relative_len].copy_from_slice(&completion.bytes[..relative_len]);
+                self.code_start = resume.start;
+                self.code_len = relative_len;
+            }
+            PendingStorageResume::StateLoad => {
+                if let Some(len) = completion.len {
+                    apply_state_record(
+                        &completion.bytes[..len],
+                        &self.index,
+                        &self.index.state_slots[..self.index.state_count],
+                        &mut self.runtime_strings,
+                        &mut self.state[..self.index.state_count],
+                    )?;
+                }
+                host.trace("state.load");
+            }
+            PendingStorageResume::StateSave => {
+                host.trace("state.save");
+            }
+            PendingStorageResume::StateReset => {
+                host.trace("state.reset");
+            }
+            PendingStorageResume::None => {}
+        }
+        resume.pending = PendingStorageResume::None;
+        self.execute_resume_frame(host, resume)
     }
 
     pub fn exited(&self) -> bool {
@@ -314,6 +398,32 @@ impl ChunkedVm {
         self.code_start = start;
         self.code_len = len;
         Ok(())
+    }
+
+    fn load_chunk_resumable(
+        &mut self,
+        reader: &mut impl SqbcReader,
+        start: usize,
+        len: usize,
+    ) -> Result<Option<StorageRequest>, VmError> {
+        let end = start.checked_add(len).ok_or(VmError::InvalidJump)?;
+        if end > self.index.code_len {
+            return Err(VmError::InvalidJump);
+        }
+        if len > self.code.len() {
+            return Err(VmError::ChunkTooLarge);
+        }
+        if self.code_start == start && self.code_len == len {
+            return Ok(None);
+        }
+        let offset = self.index.code_offset + start;
+        if let Some(request) = reader.storage_request_at(offset, len)? {
+            return Ok(Some(request));
+        }
+        reader.read_exact_at(offset, &mut self.code[..len])?;
+        self.code_start = start;
+        self.code_len = len;
+        Ok(None)
     }
 
     fn render_screen(
@@ -551,6 +661,228 @@ impl ChunkedVm {
             }
         }
         Ok(None)
+    }
+
+    fn execute_range_resumable(
+        &mut self,
+        host: &mut impl ChunkedVmHost,
+        start: usize,
+        len: usize,
+        locals: [Value; MAX_LOCALS],
+        depth: usize,
+    ) -> Result<VmDispatch, VmError> {
+        if depth > MAX_CALL_DEPTH {
+            return Err(VmError::CallDepthExceeded);
+        }
+        let end = start.checked_add(len).ok_or(VmError::InvalidJump)?;
+        if end > self.index.code_len {
+            return Err(VmError::InvalidJump);
+        }
+        let mut frame = ChunkedResume {
+            start,
+            end,
+            ip: start,
+            locals,
+            depth,
+            pending: PendingStorageResume::None,
+        };
+        if let Some(request) = self.load_chunk_resumable(host, start, len)? {
+            let crate::host::StorageRequestKind::SqbcRead { offset, len } = request.kind else {
+                return Err(VmError::ReadFailed);
+            };
+            frame.pending = PendingStorageResume::SqbcRead { offset, len };
+            self.resume = Some(frame);
+            return Ok(VmDispatch::PendingStorage(request));
+        }
+        self.execute_resume_frame(host, frame)
+    }
+
+    fn execute_resume_frame(
+        &mut self,
+        host: &mut impl ChunkedVmHost,
+        mut frame: ChunkedResume,
+    ) -> Result<VmDispatch, VmError> {
+        while frame.ip < frame.end {
+            if let Some(request) =
+                self.load_chunk_resumable(host, frame.start, frame.end - frame.start)?
+            {
+                let crate::host::StorageRequestKind::SqbcRead { offset, len } = request.kind else {
+                    return Err(VmError::ReadFailed);
+                };
+                frame.pending = PendingStorageResume::SqbcRead { offset, len };
+                self.resume = Some(frame);
+                return Ok(VmDispatch::PendingStorage(request));
+            }
+            self.instructions += 1;
+            if self.instructions > MAX_INSTRUCTIONS_PER_EVENT {
+                return Err(VmError::InstructionBudgetExceeded);
+            }
+            let op = self.code_byte(frame.ip)?;
+            frame.ip += 1;
+            match op {
+                OP_PUSH_INT => {
+                    let value = self.read_i32_code(frame.ip)?;
+                    frame.ip += 4;
+                    self.push(Value::I32(value))?;
+                }
+                OP_PUSH_BOOL => {
+                    let value = self.code_byte(frame.ip)? != 0;
+                    frame.ip += 1;
+                    self.push(Value::Bool(value))?;
+                }
+                OP_PUSH_STRING => {
+                    let value = self.read_u16_code(frame.ip)?;
+                    frame.ip += 2;
+                    self.push(Value::String(value))?;
+                }
+                OP_PUSH_NULL => self.push(Value::Null)?,
+                OP_GET_STATE => {
+                    let state = self.read_u16_code(frame.ip)? as usize;
+                    frame.ip += 2;
+                    self.push(*self.state.get(state).ok_or(VmError::StateOutOfBounds)?)?;
+                }
+                OP_SET_STATE => {
+                    let state = self.read_u16_code(frame.ip)? as usize;
+                    frame.ip += 2;
+                    let value = self.pop()?;
+                    let state_slot = self
+                        .index
+                        .state_slots
+                        .get(state)
+                        .ok_or(VmError::StateOutOfBounds)?;
+                    if state >= self.index.state_count
+                        || !state_value_matches(
+                            state_slot.value_type.tag,
+                            state_slot.value_type.nullable,
+                            value,
+                        )
+                    {
+                        return Err(VmError::InvalidOperand);
+                    }
+                    let slot = self.state.get_mut(state).ok_or(VmError::StateOutOfBounds)?;
+                    *slot = value;
+                }
+                OP_GET_LOCAL => {
+                    let local = self.read_u16_code(frame.ip)? as usize;
+                    frame.ip += 2;
+                    self.push(*frame.locals.get(local).ok_or(VmError::LocalOutOfBounds)?)?;
+                }
+                OP_SET_LOCAL => {
+                    let local = self.read_u16_code(frame.ip)? as usize;
+                    frame.ip += 2;
+                    let value = self.pop()?;
+                    let slot = frame
+                        .locals
+                        .get_mut(local)
+                        .ok_or(VmError::LocalOutOfBounds)?;
+                    *slot = value;
+                }
+                OP_GET_FIELD => {
+                    let field_id = self.read_u16_code(frame.ip)?;
+                    frame.ip += 2;
+                    let Value::Record(record_id) = self.pop()? else {
+                        return Err(VmError::InvalidOperand);
+                    };
+                    let field = self.index.string(field_id)?;
+                    let value = self.runtime_records.field(record_id, field)?;
+                    self.push(value)?;
+                }
+                OP_ADD | OP_SUB | OP_EQ | OP_NE | OP_LT | OP_LTE | OP_GT | OP_GTE => {
+                    self.binary(op)?
+                }
+                OP_JUMP => {
+                    frame.ip = self.read_u32_code(frame.ip)? as usize;
+                    if frame.ip > frame.end {
+                        return Err(VmError::InvalidJump);
+                    }
+                }
+                OP_JUMP_IF_FALSE => {
+                    let target = self.read_u32_code(frame.ip)? as usize;
+                    frame.ip += 4;
+                    if !self.pop()?.truthy() {
+                        if target > frame.end {
+                            return Err(VmError::InvalidJump);
+                        }
+                        frame.ip = target;
+                    }
+                }
+                OP_CALL_BUILTIN => {
+                    let builtin = self.code_byte(frame.ip)?;
+                    frame.ip += 1;
+                    let arg_count = if builtin == BUILTIN_DEBUG_PRINT {
+                        let count = self.code_byte(frame.ip)?;
+                        frame.ip += 1;
+                        count
+                    } else {
+                        0
+                    };
+                    if let Some(request) =
+                        self.call_builtin_resumable(host, builtin, arg_count, frame.depth)?
+                    {
+                        frame.pending = match request.kind {
+                            crate::host::StorageRequestKind::StateLoad => {
+                                PendingStorageResume::StateLoad
+                            }
+                            crate::host::StorageRequestKind::StateSave { .. } => {
+                                PendingStorageResume::StateSave
+                            }
+                            crate::host::StorageRequestKind::StateReset => {
+                                PendingStorageResume::StateReset
+                            }
+                            crate::host::StorageRequestKind::SqbcRead { .. } => {
+                                PendingStorageResume::None
+                            }
+                        };
+                        self.resume = Some(frame);
+                        return Ok(VmDispatch::PendingStorage(request));
+                    }
+                }
+                OP_CALL_FUNCTION => {
+                    return Err(VmError::InvalidOperand);
+                }
+                OP_RETURN => {
+                    let _ = self.pop()?;
+                    return Ok(VmDispatch::Complete);
+                }
+                OP_HALT => return Ok(VmDispatch::Complete),
+                OP_POP => {
+                    let _ = self.pop()?;
+                }
+                _ => return Err(VmError::UnknownOpcode),
+            }
+        }
+        Ok(VmDispatch::Complete)
+    }
+
+    fn call_builtin_resumable(
+        &mut self,
+        host: &mut impl ChunkedVmHost,
+        builtin: u8,
+        arg_count: u8,
+        depth: usize,
+    ) -> Result<Option<StorageRequest>, VmError> {
+        match builtin {
+            BUILTIN_STATE_LOAD => Ok(Some(StorageRequest::state_load())),
+            BUILTIN_STATE_SAVE => {
+                let mut bytes = [0u8; MAX_SAVED_STATE_BYTES];
+                let len = encode_state_record(
+                    &self.index,
+                    &self.runtime_strings,
+                    &self.index.state_slots[..self.index.state_count],
+                    &self.state[..self.index.state_count],
+                    &mut bytes,
+                )?;
+                Ok(Some(StorageRequest::state_save(&bytes[..len])?))
+            }
+            BUILTIN_STATE_RESET => {
+                self.reset_state();
+                Ok(Some(StorageRequest::state_reset()))
+            }
+            _ => {
+                self.call_builtin(host, builtin, arg_count, depth)?;
+                Ok(None)
+            }
+        }
     }
 
     fn call_builtin(

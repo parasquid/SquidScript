@@ -1,6 +1,97 @@
 use core::fmt;
 
-use crate::{error::VmError, strings::StringResolver, value::Value};
+use crate::{
+    error::VmError,
+    limits::{MAX_CODE_CHUNK_BYTES, MAX_SAVED_STATE_BYTES},
+    strings::StringResolver,
+    value::Value,
+};
+
+pub const MAX_STORAGE_TRANSFER_BYTES: usize = if MAX_CODE_CHUNK_BYTES > MAX_SAVED_STATE_BYTES {
+    MAX_CODE_CHUNK_BYTES
+} else {
+    MAX_SAVED_STATE_BYTES
+};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StorageRequestKind {
+    SqbcRead { offset: usize, len: usize },
+    StateLoad,
+    StateSave { len: usize },
+    StateReset,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StorageRequest {
+    pub kind: StorageRequestKind,
+    pub bytes: [u8; MAX_STORAGE_TRANSFER_BYTES],
+}
+
+impl StorageRequest {
+    pub const fn sqbc_read(offset: usize, len: usize) -> Self {
+        Self {
+            kind: StorageRequestKind::SqbcRead { offset, len },
+            bytes: [0; MAX_STORAGE_TRANSFER_BYTES],
+        }
+    }
+
+    pub const fn state_load() -> Self {
+        Self {
+            kind: StorageRequestKind::StateLoad,
+            bytes: [0; MAX_STORAGE_TRANSFER_BYTES],
+        }
+    }
+
+    pub fn state_save(bytes: &[u8]) -> Result<Self, VmError> {
+        if bytes.len() > MAX_SAVED_STATE_BYTES {
+            return Err(VmError::InvalidStateRecord);
+        }
+        let mut request = Self {
+            kind: StorageRequestKind::StateSave { len: bytes.len() },
+            bytes: [0; MAX_STORAGE_TRANSFER_BYTES],
+        };
+        request.bytes[..bytes.len()].copy_from_slice(bytes);
+        Ok(request)
+    }
+
+    pub const fn state_reset() -> Self {
+        Self {
+            kind: StorageRequestKind::StateReset,
+            bytes: [0; MAX_STORAGE_TRANSFER_BYTES],
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StorageCompletion {
+    pub bytes: [u8; MAX_STORAGE_TRANSFER_BYTES],
+    pub len: Option<usize>,
+}
+
+impl StorageCompletion {
+    pub const fn empty() -> Self {
+        Self {
+            bytes: [0; MAX_STORAGE_TRANSFER_BYTES],
+            len: None,
+        }
+    }
+
+    pub fn bytes(bytes: &[u8]) -> Result<Self, VmError> {
+        if bytes.len() > MAX_STORAGE_TRANSFER_BYTES {
+            return Err(VmError::InvalidStateRecord);
+        }
+        let mut completion = Self::empty();
+        completion.bytes[..bytes.len()].copy_from_slice(bytes);
+        completion.len = Some(bytes.len());
+        Ok(completion)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VmDispatch {
+    Complete,
+    PendingStorage(StorageRequest),
+}
 
 pub trait TraceSink {
     fn trace(&mut self, message: &str);

@@ -25,7 +25,7 @@ use esp_radio::Controller as RadioController;
 use esp_rtos::CurrentThreadHandle;
 use esp_storage::FlashStorage;
 use squid_firmware::{
-    dev_harness::{AppRegistry, AppSlot, AppStorageError},
+    dev_harness::{AppRegistry, AppSlot, AppStorageError, StorageActor},
     serial::{
         boot_main, handle_command, install_wifi_event_diagnostics, storage_error_from_persistent,
         trim_ascii, ActiveVm, FirmwareWifiBackend, LineBuffer, OnboardIndicator, RuntimeSink,
@@ -73,7 +73,8 @@ fn main() -> ! {
     let led = OnboardIndicator::new(indicator_channel);
     let external_indicator = Output::new(peripherals.GPIO10, Level::Low, OutputConfig::default());
     let flash = FlashStorage::new(peripherals.FLASH);
-    let mut app_storage = LittleFsAppStorage::new(SquidFlashRegion::new(flash));
+    let mut app_storage =
+        StorageActor::<_, 32>::new(LittleFsAppStorage::new(SquidFlashRegion::new(flash)));
     let mut serial = UsbSerialJtag::new(peripherals.USB_DEVICE);
     let mut line = LineBuffer::new();
     let mut registry = AppRegistry::new();

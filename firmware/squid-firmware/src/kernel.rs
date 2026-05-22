@@ -719,6 +719,25 @@ mod tests {
     }
 
     #[test]
+    fn lifecycle_service_queues_exit_restart_disarm_and_event_intents() {
+        let mut lifecycle = LifecycleService::<u8, u8, 4>::new();
+
+        lifecycle.disarm_app(2).unwrap();
+        lifecycle.exit_app().unwrap();
+        lifecycle.root_restart().unwrap();
+        lifecycle.dispatch_app_event(3, 4).unwrap();
+
+        assert_eq!(lifecycle.pop_command(), Some(LifecycleCommand::DisarmApp(2)));
+        assert_eq!(lifecycle.pop_command(), Some(LifecycleCommand::ExitApp));
+        assert!(lifecycle.take_root_restart());
+        assert_eq!(
+            lifecycle.pop_command(),
+            Some(LifecycleCommand::DispatchAppEvent { app: 3, event: 4 })
+        );
+        assert_eq!(lifecycle.pop_command(), None);
+    }
+
+    #[test]
     fn storage_service_boundary_names_storage_operations_without_backend_change() {
         let mut storage = StorageService::<u8, u8, 3>::new();
 
