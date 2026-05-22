@@ -171,6 +171,104 @@ impl<App: Copy, Resource: Copy, const CAP: usize> StorageService<App, Resource, 
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WifiState {
+    Unavailable,
+    Idle,
+    Configuring,
+    Starting,
+    Started,
+    Stopping,
+    Stopped,
+    Error,
+}
+
+impl WifiState {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unavailable => "unavailable",
+            Self::Idle => "idle",
+            Self::Configuring => "configuring",
+            Self::Starting => "starting",
+            Self::Started => "started",
+            Self::Stopping => "stopping",
+            Self::Stopped => "stopped",
+            Self::Error => "error",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WifiCommand {
+    StartAp { ssid: usize },
+    ConnectProfile { profile: usize },
+    StopAp,
+    DisconnectStation,
+    Poll,
+    Teardown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WifiCachedStatus {
+    pub state: WifiState,
+    pub active: bool,
+    pub configured: bool,
+    pub driver_started: bool,
+    pub clients: i32,
+    pub channel: i32,
+    pub station_connected: bool,
+    pub scan_matches: i32,
+}
+
+impl WifiCachedStatus {
+    pub const fn new(state: WifiState) -> Self {
+        Self {
+            state,
+            active: false,
+            configured: false,
+            driver_started: false,
+            clients: 0,
+            channel: 0,
+            station_connected: false,
+            scan_matches: 0,
+        }
+    }
+}
+
+pub struct WifiService<const CAP: usize> {
+    commands: BoundedQueue<WifiCommand, CAP>,
+    cached_status: WifiCachedStatus,
+}
+
+impl<const CAP: usize> WifiService<CAP> {
+    pub const fn new(state: WifiState) -> Self {
+        Self {
+            commands: BoundedQueue::new(),
+            cached_status: WifiCachedStatus::new(state),
+        }
+    }
+
+    pub fn enqueue(&mut self, command: WifiCommand) -> Result<(), ServiceError> {
+        self.commands.push(command)
+    }
+
+    pub fn pop_command(&mut self) -> Option<WifiCommand> {
+        self.commands.pop()
+    }
+
+    pub fn set_cached_status(&mut self, status: WifiCachedStatus) {
+        self.cached_status = status;
+    }
+
+    pub const fn cached_status(&self) -> WifiCachedStatus {
+        self.cached_status
+    }
+
+    pub fn clear(&mut self) {
+        self.commands.clear();
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DisplayCommand<Draw> {
     Draw(Draw),
     Flush,
@@ -769,6 +867,66 @@ mod tests {
             storage.pop_command(),
             Some(StorageCommand::WriteState { app: 1 })
         );
+    }
+
+    #[test]
+    fn wifi_service_processes_bounded_commands_and_caches_state() {
+        let mut wifi = WifiService::<2>::new(WifiState::Idle);
+
+        wifi.enqueue(WifiCommand::StartAp { ssid: 3 }).unwrap();
+        wifi.enqueue(WifiCommand::Poll).unwrap();
+
+        assert_eq!(
+            wifi.enqueue(WifiCommand::StopAp),
+            Err(ServiceError::QueueFull)
+        );
+        assert_eq!(wifi.pop_command(), Some(WifiCommand::StartAp { ssid: 3 }));
+        wifi.set_cached_status(WifiCachedStatus {
+            state: WifiState::Started,
+            active: true,
+            configured: true,
+            driver_started: true,
+            clients: 0,
+            channel: 1,
+            station_connected: false,
+            scan_matches: 0,
+        });
+
+        assert_eq!(wifi.cached_status().state, WifiState::Started);
+        assert!(wifi.cached_status().active);
+        assert_eq!(wifi.pop_command(), Some(WifiCommand::Poll));
+        assert_eq!(wifi.pop_command(), None);
+    }
+
+    #[test]
+    fn wifi_service_queues_station_commands() {
+        let mut wifi = WifiService::<2>::new(WifiState::Idle);
+
+        wifi.enqueue(WifiCommand::ConnectProfile { profile: 3 })
+            .unwrap();
+        wifi.enqueue(WifiCommand::DisconnectStation).unwrap();
+
+        assert_eq!(
+            wifi.enqueue(WifiCommand::Poll),
+            Err(ServiceError::QueueFull)
+        );
+        assert_eq!(
+            wifi.pop_command(),
+            Some(WifiCommand::ConnectProfile { profile: 3 })
+        );
+        wifi.set_cached_status(WifiCachedStatus {
+            state: WifiState::Started,
+            active: true,
+            configured: true,
+            driver_started: true,
+            clients: 0,
+            channel: 11,
+            station_connected: true,
+            scan_matches: 1,
+        });
+        assert!(wifi.cached_status().station_connected);
+        assert_eq!(wifi.cached_status().scan_matches, 1);
+        assert_eq!(wifi.pop_command(), Some(WifiCommand::DisconnectStation));
     }
 
     #[test]

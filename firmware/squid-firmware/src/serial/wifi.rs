@@ -62,6 +62,10 @@ fn read_counter(counter: &'static Mutex<Cell<u32>>) -> u32 {
     critical_section::with(|cs| counter.borrow(cs).get())
 }
 
+fn read_counter_i32(counter: &'static Mutex<Cell<u32>>) -> i32 {
+    read_counter(counter).min(i32::MAX as u32) as i32
+}
+
 pub enum FirmwareWifiBackend<'d> {
     Sim(SimWifiBackend),
     Esp(EspWifiBackend<'d>),
@@ -124,6 +128,25 @@ impl WifiBackend for FirmwareWifiBackend<'_> {
         }
     }
 
+    fn connect(&mut self, profile: &str) -> Result<WifiActionResult<'static>, VmError> {
+        match self {
+            Self::Sim(backend) => backend.connect(profile),
+            Self::Esp(backend) => backend.connect(profile),
+            Self::Unavailable => Ok(error_result("radio unavailable")),
+        }
+    }
+
+    fn disconnect(&mut self) -> Result<WifiActionResult<'static>, VmError> {
+        match self {
+            Self::Sim(backend) => backend.disconnect(),
+            Self::Esp(backend) => backend.disconnect(),
+            Self::Unavailable => Ok(WifiActionResult {
+                ok: true,
+                error: None,
+            }),
+        }
+    }
+
     fn status<'a>(&'a mut self) -> Result<WifiStatus<'a>, VmError> {
         match self {
             Self::Sim(backend) => backend.status(),
@@ -135,6 +158,26 @@ impl WifiBackend for FirmwareWifiBackend<'_> {
                 ssid: None,
                 clients: 0,
                 error: Some("radio unavailable"),
+                state: "unavailable",
+                backend: "unavailable",
+                driver_started: false,
+                configured: false,
+                driver_mode: None,
+                channel: 0,
+                ap_start_events: read_counter_i32(&AP_START_EVENTS),
+                ap_stop_events: read_counter_i32(&AP_STOP_EVENTS),
+                probe_events: read_counter_i32(&AP_PROBE_EVENTS),
+                sta_connected_events: read_counter_i32(&AP_STA_CONNECTED_EVENTS),
+                sta_disconnected_events: read_counter_i32(&AP_STA_DISCONNECTED_EVENTS),
+                last_backend_code: Some("radio unavailable"),
+                profile: None,
+                connected: false,
+                scan_matches: 0,
+                rssi: 0,
+                auth: None,
+                bssid: None,
+                disconnect_reason: None,
+                disconnect_reason_code: 0,
             }),
         }
     }
@@ -168,6 +211,17 @@ pub struct EspWifiBackend<'d> {
     ssid: [u8; 32],
     ssid_len: usize,
     clients: i32,
+    configured: bool,
+    last_backend_code: Option<&'static str>,
+    station_profile: [u8; 32],
+    station_profile_len: usize,
+    station_connected: bool,
+    station_scan_matches: i32,
+    station_rssi: i32,
+    station_auth: Option<&'static str>,
+    station_bssid: Option<&'static str>,
+    station_disconnect_reason: Option<&'static str>,
+    station_disconnect_reason_code: i32,
 }
 
 impl<'d> EspWifiBackend<'d> {
@@ -179,6 +233,17 @@ impl<'d> EspWifiBackend<'d> {
             ssid: [0; 32],
             ssid_len: 0,
             clients: 0,
+            configured: false,
+            last_backend_code: None,
+            station_profile: [0; 32],
+            station_profile_len: 0,
+            station_connected: false,
+            station_scan_matches: 0,
+            station_rssi: 0,
+            station_auth: None,
+            station_bssid: None,
+            station_disconnect_reason: None,
+            station_disconnect_reason_code: 0,
         }
     }
 
@@ -186,10 +251,16 @@ impl<'d> EspWifiBackend<'d> {
         core::str::from_utf8(&self.ssid[..self.ssid_len]).map_err(|_| VmError::InvalidUtf8)
     }
 
+    fn station_profile(&self) -> Result<&str, VmError> {
+        core::str::from_utf8(&self.station_profile[..self.station_profile_len])
+            .map_err(|_| VmError::InvalidUtf8)
+    }
+
     fn clear_active_state(&mut self) {
         self.active = false;
         self.ssid_len = 0;
         self.clients = 0;
+        self.configured = false;
     }
 
     fn client_count(&mut self) -> i32 {
@@ -330,9 +401,12 @@ impl WifiBackend for EspWifiBackend<'_> {
                 .with_max_connections(4),
         );
         if self.controller.set_config(&config).is_err() {
+            self.last_backend_code = Some("radio config failed");
             return Ok(error_result("radio config failed"));
         }
+        self.configured = true;
         if self.controller.start().is_err() {
+            self.last_backend_code = Some("radio start failed");
             return Ok(error_result("radio start failed"));
         }
 
@@ -340,6 +414,7 @@ impl WifiBackend for EspWifiBackend<'_> {
         self.ssid_len = bytes.len();
         self.active = true;
         self.clients = 0;
+        self.last_backend_code = None;
         Ok(WifiActionResult {
             ok: true,
             error: None,
@@ -348,9 +423,45 @@ impl WifiBackend for EspWifiBackend<'_> {
 
     fn stop_ap(&mut self) -> Result<WifiActionResult<'static>, VmError> {
         if self.active && self.controller.stop().is_err() {
+            self.last_backend_code = Some("radio stop failed");
             return Ok(error_result("radio stop failed"));
         }
         self.clear_active_state();
+        self.last_backend_code = None;
+        Ok(WifiActionResult {
+            ok: true,
+            error: None,
+        })
+    }
+
+    fn connect(&mut self, profile: &str) -> Result<WifiActionResult<'static>, VmError> {
+        let bytes = profile.as_bytes();
+        if bytes.is_empty() || bytes.len() > self.station_profile.len() {
+            return Ok(error_result("invalid profile"));
+        }
+        self.station_profile[..bytes.len()].copy_from_slice(bytes);
+        self.station_profile_len = bytes.len();
+        self.station_connected = false;
+        self.station_scan_matches = 0;
+        self.station_rssi = 0;
+        self.station_auth = None;
+        self.station_bssid = None;
+        self.station_disconnect_reason = Some("station unavailable");
+        self.station_disconnect_reason_code = 0;
+        self.last_backend_code = Some("station unavailable");
+        Ok(error_result("station unavailable"))
+    }
+
+    fn disconnect(&mut self) -> Result<WifiActionResult<'static>, VmError> {
+        self.station_profile_len = 0;
+        self.station_connected = false;
+        self.station_scan_matches = 0;
+        self.station_rssi = 0;
+        self.station_auth = None;
+        self.station_bssid = None;
+        self.station_disconnect_reason = None;
+        self.station_disconnect_reason_code = 0;
+        self.last_backend_code = None;
         Ok(WifiActionResult {
             ok: true,
             error: None,
@@ -363,6 +474,8 @@ impl WifiBackend for EspWifiBackend<'_> {
             self.clear_active_state();
         }
         let clients = self.client_count();
+        let driver_mode = current_driver_mode_name();
+        let channel = current_ap_channel();
         Ok(WifiStatus {
             active: self.active,
             mode: if self.active { Some("ap") } else { None },
@@ -374,6 +487,36 @@ impl WifiBackend for EspWifiBackend<'_> {
             },
             clients,
             error: None,
+            state: if self.active {
+                "started"
+            } else if self.last_backend_code.is_some() {
+                "error"
+            } else {
+                "stopped"
+            },
+            backend: "esp",
+            driver_started: started,
+            configured: self.configured,
+            driver_mode,
+            channel,
+            ap_start_events: read_counter_i32(&AP_START_EVENTS),
+            ap_stop_events: read_counter_i32(&AP_STOP_EVENTS),
+            probe_events: read_counter_i32(&AP_PROBE_EVENTS),
+            sta_connected_events: read_counter_i32(&AP_STA_CONNECTED_EVENTS),
+            sta_disconnected_events: read_counter_i32(&AP_STA_DISCONNECTED_EVENTS),
+            last_backend_code: self.last_backend_code,
+            profile: if self.station_profile_len > 0 {
+                Some(self.station_profile()?)
+            } else {
+                None
+            },
+            connected: self.station_connected,
+            scan_matches: self.station_scan_matches,
+            rssi: self.station_rssi,
+            auth: self.station_auth,
+            bssid: self.station_bssid,
+            disconnect_reason: self.station_disconnect_reason,
+            disconnect_reason_code: self.station_disconnect_reason_code,
         })
     }
 
@@ -387,13 +530,38 @@ impl WifiBackend for EspWifiBackend<'_> {
     }
 
     fn teardown(&mut self) -> Result<bool, VmError> {
-        let was_active = self.active;
-        if was_active {
+        let was_active = self.active || self.station_profile_len > 0;
+        if self.active {
             let _ = self.controller.stop();
         }
         self.clear_active_state();
+        self.last_backend_code = None;
+        self.station_profile_len = 0;
+        self.station_connected = false;
         Ok(was_active)
     }
+}
+
+fn current_driver_mode_name() -> Option<&'static str> {
+    let mut mode = wifi_mode_t_WIFI_MODE_NULL;
+    let mode_result = unsafe { esp_wifi_get_mode(&mut mode) };
+    if mode_result == ESP_OK as _ {
+        Some(mode_name(mode))
+    } else {
+        None
+    }
+}
+
+fn current_ap_channel() -> i32 {
+    let mut config = MaybeUninit::<wifi_config_t>::zeroed();
+    let config_result =
+        unsafe { esp_wifi_get_config(wifi_interface_t_WIFI_IF_AP, config.as_mut_ptr()) };
+    if config_result != ESP_OK as _ {
+        return 0;
+    }
+    let config = unsafe { config.assume_init() };
+    let ap = unsafe { config.ap };
+    i32::from(ap.channel)
 }
 
 fn error_result(error: &'static str) -> WifiActionResult<'static> {

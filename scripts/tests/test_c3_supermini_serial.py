@@ -8,6 +8,7 @@ from c3_supermini_serial import (
     install_app_sqbc,
     list_apps,
     parse_state,
+    provision_wifi_profile,
     reference_firmware_test_sequence,
     run_app,
     run_temp_app_sqbc,
@@ -89,6 +90,27 @@ class C3SuperMiniSerialTests(unittest.TestCase):
         format_storage(serial, output=io.BytesIO(), timeout=0.01)
 
         self.assertEqual(serial.writes, [b"STORAGE.FORMAT\n"])
+
+    def test_provision_wifi_profile_streams_credentials_after_header(self):
+        serial = FakeSerial([b"READY WIFI.PROFILE.SET profile=dev\r\n", b"OK WIFI.PROFILE.SET profile=dev\r\n"])
+
+        provision_wifi_profile(
+            serial,
+            "dev",
+            "ExampleSSID",
+            "secret-pass",
+            output=io.BytesIO(),
+            timeout=0.01,
+        )
+
+        payload = b"ExampleSSIDsecret-pass"
+        self.assertEqual(
+            serial.writes,
+            [
+                f"WIFI.PROFILE.SET dev 11 11 {compute_fnv1a(payload):08x}\n".encode("ascii"),
+                payload,
+            ],
+        )
 
     def test_parse_state_extracts_values(self):
         state = parse_state(b"started=1\r\ncount=2\r\nexited=true\r\n")

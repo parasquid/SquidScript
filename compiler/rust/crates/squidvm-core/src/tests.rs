@@ -190,6 +190,28 @@ impl TraceSink for WifiTrace {
         })
     }
 
+    fn service_wifi_connect<'a>(
+        &'a mut self,
+        profile: &str,
+    ) -> Result<WifiActionResult<'a>, VmError> {
+        self.events.push(format!("wifi.connect {profile}"));
+        self.active = true;
+        self.ssid = profile.to_string();
+        Ok(WifiActionResult {
+            ok: true,
+            error: None,
+        })
+    }
+
+    fn service_wifi_disconnect<'a>(&'a mut self) -> Result<WifiActionResult<'a>, VmError> {
+        self.events.push("wifi.disconnect".to_string());
+        self.active = false;
+        Ok(WifiActionResult {
+            ok: true,
+            error: None,
+        })
+    }
+
     fn service_wifi_status<'a>(&'a mut self) -> Result<WifiStatus<'a>, VmError> {
         self.events.push("wifi.status".to_string());
         Ok(WifiStatus {
@@ -199,6 +221,30 @@ impl TraceSink for WifiTrace {
             ssid: Some(&self.ssid),
             clients: 0,
             error: None,
+            state: if self.active { "started" } else { "stopped" },
+            backend: "sim",
+            driver_started: self.active,
+            configured: self.active,
+            driver_mode: if self.active { Some("ap") } else { None },
+            channel: 1,
+            ap_start_events: if self.active { 1 } else { 0 },
+            ap_stop_events: 0,
+            probe_events: 0,
+            sta_connected_events: 0,
+            sta_disconnected_events: 0,
+            last_backend_code: None,
+            profile: if self.active { Some(&self.ssid) } else { None },
+            connected: self.active,
+            scan_matches: if self.active { 1 } else { 0 },
+            rssi: if self.active { -42 } else { 0 },
+            auth: if self.active { Some("wpa2") } else { None },
+            bssid: if self.active {
+                Some("00:11:22:33:44:55")
+            } else {
+                None
+            },
+            disconnect_reason: None,
+            disconnect_reason_code: 0,
         })
     }
 
@@ -948,6 +994,77 @@ screen("main") {}
             "wifi.status",
             "wifi.getAPIP",
             "debug true true ap 192.168.4.1 SquidScript 192.168.4.1",
+            "wifi.teardown",
+            "app.exit",
+        ]
+    );
+}
+
+#[test]
+fn exposes_wifi_driver_state_fields_in_status_record() {
+    let source = r#"app "wifi-status"
+state {}
+
+event.on("app.start") {
+  service.wifi.startAP("SquidScript")
+  let status = service.wifi.status()
+  debug.print(status.state, status.backend, status.driverStarted, status.configured, status.driverMode, status.channel, status.apStartEvents, status.probeEvents, status.lastBackendCode)
+  app.exit()
+}
+
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = WifiTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert!(trace
+        .events
+        .contains(&"debug started sim true true ap 1 1 0 null".to_string()));
+}
+
+#[test]
+fn runs_wifi_station_profile_records_and_disconnects_on_exit() {
+    let source = r#"app "wifi-sta"
+state {}
+
+event.on("app.start") {
+  let connect = service.wifi.connect("dev")
+  let status = wifi.status()
+  debug.print(connect.ok, status.profile, status.connected, status.scanMatches, status.rssi, status.auth, status.bssid)
+  app.exit()
+}
+
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = WifiTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert!(vm.exited());
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "wifi.connect dev",
+            "wifi.status",
+            "debug true dev true 1 -42 wpa2 00:11:22:33:44:55",
             "wifi.teardown",
             "app.exit",
         ]

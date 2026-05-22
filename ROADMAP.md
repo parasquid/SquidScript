@@ -19,9 +19,12 @@ persistent SquidScript app platform prototype.
 
 ### 2. Continue Non-Wi-Fi RTOS Service Actor Migration
 
-- Split the current storage actor's LittleFS backend step into smaller async
-  filesystem/flash progress steps where the LittleFS and flash stack support
-  it. The portable SquidScript storage API should remain unchanged.
+- Replace the current one-step LittleFS storage actor backend with a fully
+  async storage backend design: every installed-app, package-resource, state,
+  startup-scan, and format operation should progress through bounded jobs or
+  backend async waits rather than blocking the serial/runtime loop. Keep the
+  portable SquidScript storage API unchanged, and document any LittleFS/flash
+  calls that cannot be made interruptible.
 - Extend resumable VM dispatch coverage beyond linear handlers so nested
   functions and screen rendering can suspend around storage-backed SQBC chunk
   reads without falling back to synchronous reads.
@@ -39,35 +42,38 @@ persistent SquidScript app platform prototype.
 
 ### 3. Design Portable Wi-Fi And Services Runtime
 
-- Wi-Fi is tabled for now. Resume only after an alternate client/phone and
-  board placement or power check can confirm whether AP beacons are visible
-  independently of the current host scanner.
-- Use the minimal Rust `wifi-ap-probe` experiment as the proof step before
-  changing the SquidScript runtime: compare the blocking `esp-radio` 0.17 probe
-  and the Embassy/`esp-radio` 0.18 probe, then verify beacon visibility and
-  client joinability before wiring the result into firmware services.
+- Complete ESP32-C3 SoftAP hardware validation: prove beacon visibility and
+  client joinability from a phone/laptop with
+  `STRICT_PROBE=1 scripts/c3-supermini-test-wifi-state.sh`, and debug radio
+  startup if host scans do not show the AP despite successful firmware status
+  records.
 - Investigate why Rust/esp-rs AP probes report started/configured SoftAP state
   but host scans do not show the SSID on the current ESP32-C3 Super Mini, while
   MicroPython AP mode has only been intermittently visible on the same board.
   Verify with an alternate client and board placement/power checks before
   treating this as a Rust-only radio backend issue.
-- Replace the ESP32-C3 reference runtime's serial-log AP prototype with a real
-  esp-rs Wi-Fi radio backend for `service.wifi.startAP/stopAP/status/getAPIP`.
-- Complete ESP32-C3 SoftAP hardware validation: prove beacon visibility and
-  client joinability from a phone/laptop, and debug radio startup if host scans
-  do not show the AP despite successful firmware status records.
-- Add Wi-Fi AP connection-state diagnostics: expose real SoftAP client counts
-  through `service.wifi.status().clients`, use the diagnostics app indicator
-  to show waiting/connecting/connected/disconnected states, and document the
-  hardware verification flow.
+- Split the current Wi-Fi service actor's bounded start/stop wrapper into
+  smaller async progress steps if future esp-rs APIs expose non-blocking radio
+  configuration/start/stop operations.
+- Use the minimal Rust `wifi-ap-probe` experiment as the optional isolation
+  path when SquidScript firmware reports started/configured AP state but
+  external beacon visibility or client joinability is still unclear.
 - Add the network stack needed for AP IP behavior, DHCP, and later HTTP serving;
   the AP-first backend should not imply these are complete until verified.
 - Define password/security policy and `startAP` option support for AP mode;
   current developer AP defaults allow open networks only.
-- Table station/client mode for now. Revisit station mode, scan, profile setup,
-  hostname, and configurable IP APIs only after AP mode is reliable in the Rust
-  firmware path; current isolation shows AP TX works, while station auth fails
-  under both ESP-IDF and MicroPython against WPA APs.
+- Design app-managed Wi-Fi profile persistence: decide how a future Wi-Fi
+  settings app can create, update, select, and delete named station profiles;
+  where profile metadata and credentials are stored; whether credentials are
+  encrypted or hardware-protected per target; how profiles are shared across
+  apps without exposing passwords to SquidScript source, state, logs,
+  diagnostics, or source maps; and what recovery/reset flow clears saved
+  credentials.
+- Implement the ESP32-C3 Rust station backend behind the public named-profile
+  `service.wifi.connect/disconnect/status` API. The current API layer may
+  report explicit backend errors until scan/auth/DHCP are proven.
+- Add station scan listing, profile setup UI, hostnames, and configurable IP
+  APIs after named-profile station connection status is stable.
 - Add target capability checks for devices without Wi-Fi or with restricted
   networking support.
 - Add Pico W Wi-Fi backend exploration using the same `service.wifi.*`

@@ -8,7 +8,8 @@ use crate::{
         BUILTIN_HARDWARE_GPIO_TOGGLE, BUILTIN_HARDWARE_GPIO_WRITE, BUILTIN_SCREEN_OPEN,
         BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_INDICATOR_BREATHE, BUILTIN_SERVICE_INDICATOR_READ,
         BUILTIN_SERVICE_INDICATOR_TOGGLE, BUILTIN_SERVICE_INDICATOR_WRITE,
-        BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY, BUILTIN_SERVICE_WIFI_GET_AP_IP,
+        BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY, BUILTIN_SERVICE_WIFI_CONNECT,
+        BUILTIN_SERVICE_WIFI_DISCONNECT, BUILTIN_SERVICE_WIFI_GET_AP_IP,
         BUILTIN_SERVICE_WIFI_START_AP, BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP,
         BUILTIN_STATE_LOAD, BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, BUILTIN_SYSTEM_MEMORY,
         BUILTIN_SYSTEM_STORAGE, OP_ADD, OP_CALL_BUILTIN, OP_CALL_FUNCTION, OP_EQ, OP_GET_FIELD,
@@ -1083,6 +1084,19 @@ impl ChunkedVm {
                 let value = self.wifi_action_record(result)?;
                 self.push(value)?;
             }
+            BUILTIN_SERVICE_WIFI_CONNECT => {
+                let Value::String(profile_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let result = host.service_wifi_connect(self.index.string(profile_id)?)?;
+                let value = self.wifi_action_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_SERVICE_WIFI_DISCONNECT => {
+                let result = host.service_wifi_disconnect()?;
+                let value = self.wifi_action_record(result)?;
+                self.push(value)?;
+            }
             BUILTIN_SERVICE_WIFI_STATUS => {
                 let result = host.service_wifi_status()?;
                 let value = self.wifi_status_record(result)?;
@@ -1138,6 +1152,14 @@ impl ChunkedVm {
         let ip_address = self.runtime_string_value(result.ip_address)?;
         let ssid = self.runtime_string_value(result.ssid)?;
         let error = self.runtime_string_value(result.error)?;
+        let state = self.runtime_string_value(Some(result.state))?;
+        let backend = self.runtime_string_value(Some(result.backend))?;
+        let driver_mode = self.runtime_string_value(result.driver_mode)?;
+        let last_backend_code = self.runtime_string_value(result.last_backend_code)?;
+        let profile = self.runtime_string_value(result.profile)?;
+        let auth = self.runtime_string_value(result.auth)?;
+        let bssid = self.runtime_string_value(result.bssid)?;
+        let disconnect_reason = self.runtime_string_value(result.disconnect_reason)?;
         self.runtime_records.alloc(&[
             RuntimeRecordField::new("active", Value::Bool(result.active)),
             RuntimeRecordField::new("mode", mode),
@@ -1145,6 +1167,35 @@ impl ChunkedVm {
             RuntimeRecordField::new("ssid", ssid),
             RuntimeRecordField::new("clients", Value::I32(result.clients)),
             RuntimeRecordField::new("error", error),
+            RuntimeRecordField::new("state", state),
+            RuntimeRecordField::new("backend", backend),
+            RuntimeRecordField::new("driverStarted", Value::Bool(result.driver_started)),
+            RuntimeRecordField::new("configured", Value::Bool(result.configured)),
+            RuntimeRecordField::new("driverMode", driver_mode),
+            RuntimeRecordField::new("channel", Value::I32(result.channel)),
+            RuntimeRecordField::new("apStartEvents", Value::I32(result.ap_start_events)),
+            RuntimeRecordField::new("apStopEvents", Value::I32(result.ap_stop_events)),
+            RuntimeRecordField::new("probeEvents", Value::I32(result.probe_events)),
+            RuntimeRecordField::new(
+                "staConnectedEvents",
+                Value::I32(result.sta_connected_events),
+            ),
+            RuntimeRecordField::new(
+                "staDisconnectedEvents",
+                Value::I32(result.sta_disconnected_events),
+            ),
+            RuntimeRecordField::new("lastBackendCode", last_backend_code),
+            RuntimeRecordField::new("profile", profile),
+            RuntimeRecordField::new("connected", Value::Bool(result.connected)),
+            RuntimeRecordField::new("scanMatches", Value::I32(result.scan_matches)),
+            RuntimeRecordField::new("rssi", Value::I32(result.rssi)),
+            RuntimeRecordField::new("auth", auth),
+            RuntimeRecordField::new("bssid", bssid),
+            RuntimeRecordField::new("disconnectReason", disconnect_reason),
+            RuntimeRecordField::new(
+                "disconnectReasonCode",
+                Value::I32(result.disconnect_reason_code),
+            ),
         ])
     }
 
@@ -1767,6 +1818,20 @@ impl<'a> Vm<'a> {
                 let value = self.wifi_action_record(result)?;
                 self.push(value)?;
             }
+            BUILTIN_SERVICE_WIFI_CONNECT => {
+                let Value::String(profile_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let profile = self.program.string(profile_id)?;
+                let result = trace.service_wifi_connect(profile)?;
+                let value = self.wifi_action_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_SERVICE_WIFI_DISCONNECT => {
+                let result = trace.service_wifi_disconnect()?;
+                let value = self.wifi_action_record(result)?;
+                self.push(value)?;
+            }
             BUILTIN_SERVICE_WIFI_STATUS => {
                 let result = trace.service_wifi_status()?;
                 let value = self.wifi_status_record(result)?;
@@ -1822,6 +1887,14 @@ impl<'a> Vm<'a> {
         let ip_address = self.runtime_string_value(result.ip_address)?;
         let ssid = self.runtime_string_value(result.ssid)?;
         let error = self.runtime_string_value(result.error)?;
+        let state = self.runtime_string_value(Some(result.state))?;
+        let backend = self.runtime_string_value(Some(result.backend))?;
+        let driver_mode = self.runtime_string_value(result.driver_mode)?;
+        let last_backend_code = self.runtime_string_value(result.last_backend_code)?;
+        let profile = self.runtime_string_value(result.profile)?;
+        let auth = self.runtime_string_value(result.auth)?;
+        let bssid = self.runtime_string_value(result.bssid)?;
+        let disconnect_reason = self.runtime_string_value(result.disconnect_reason)?;
         self.runtime_records.alloc(&[
             RuntimeRecordField::new("active", Value::Bool(result.active)),
             RuntimeRecordField::new("mode", mode),
@@ -1829,6 +1902,35 @@ impl<'a> Vm<'a> {
             RuntimeRecordField::new("ssid", ssid),
             RuntimeRecordField::new("clients", Value::I32(result.clients)),
             RuntimeRecordField::new("error", error),
+            RuntimeRecordField::new("state", state),
+            RuntimeRecordField::new("backend", backend),
+            RuntimeRecordField::new("driverStarted", Value::Bool(result.driver_started)),
+            RuntimeRecordField::new("configured", Value::Bool(result.configured)),
+            RuntimeRecordField::new("driverMode", driver_mode),
+            RuntimeRecordField::new("channel", Value::I32(result.channel)),
+            RuntimeRecordField::new("apStartEvents", Value::I32(result.ap_start_events)),
+            RuntimeRecordField::new("apStopEvents", Value::I32(result.ap_stop_events)),
+            RuntimeRecordField::new("probeEvents", Value::I32(result.probe_events)),
+            RuntimeRecordField::new(
+                "staConnectedEvents",
+                Value::I32(result.sta_connected_events),
+            ),
+            RuntimeRecordField::new(
+                "staDisconnectedEvents",
+                Value::I32(result.sta_disconnected_events),
+            ),
+            RuntimeRecordField::new("lastBackendCode", last_backend_code),
+            RuntimeRecordField::new("profile", profile),
+            RuntimeRecordField::new("connected", Value::Bool(result.connected)),
+            RuntimeRecordField::new("scanMatches", Value::I32(result.scan_matches)),
+            RuntimeRecordField::new("rssi", Value::I32(result.rssi)),
+            RuntimeRecordField::new("auth", auth),
+            RuntimeRecordField::new("bssid", bssid),
+            RuntimeRecordField::new("disconnectReason", disconnect_reason),
+            RuntimeRecordField::new(
+                "disconnectReasonCode",
+                Value::I32(result.disconnect_reason_code),
+            ),
         ])
     }
 

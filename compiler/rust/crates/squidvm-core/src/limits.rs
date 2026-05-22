@@ -14,4 +14,4 @@ pub const MAX_SAVED_STATE_BYTES: usize = 512;
 pub const MAX_RUNTIME_STRINGS: usize = 12;
 pub const MAX_RUNTIME_STRING_BYTES: usize = 48;
 pub const MAX_RUNTIME_RECORDS: usize = 4;
-pub const MAX_RUNTIME_RECORD_FIELDS: usize = 8;
+pub const MAX_RUNTIME_RECORD_FIELDS: usize = 32;

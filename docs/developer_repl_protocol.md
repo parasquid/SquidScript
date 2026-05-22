@@ -92,6 +92,10 @@ ssid=SquidScript
 ip=192.168.4.1
 clients=0
 error=
+profile=
+connected=false
+scan_matches=0
+disconnect_reason=
 ap_ip=192.168.4.1
 ap_gw=192.168.4.1
 ap_netmask=255.255.255.0
@@ -102,6 +106,16 @@ OK WIFI.STATUS
 
 Use `WIFI.STATUS` when debugging radio state. It reports the firmware Wi-Fi
 backend directly and does not depend on SquidScript `debug.print` output.
+
+Volatile station profiles are provisioned with:
+
+```text
+WIFI.PROFILE.SET <profile> <ssid-len> <password-len> <fnv32hex>
+```
+
+The command is followed by exactly `<ssid-len> + <password-len>` raw bytes:
+first the SSID bytes, then the password bytes. Firmware prints only the profile
+name and byte lengths; it must not echo credential bytes.
 
 Installed apps are persistent in the ESP32-C3 reference firmware. On startup,
 firmware scans the app store, rebuilds the in-memory registry cache, boots

@@ -129,6 +129,30 @@ def run_temp_app_sqbc(
     _wait_for(serial, b"OK RUN.TEMP", output, timeout, InstallError)
 
 
+def provision_wifi_profile(
+    serial,
+    profile,
+    ssid,
+    password,
+    *,
+    output=sys.stdout.buffer,
+    timeout=DEFAULT_TIMEOUT,
+):
+    ssid_bytes = ssid.encode("utf-8")
+    password_bytes = password.encode("utf-8")
+    payload = ssid_bytes + password_bytes
+    hash_value = compute_fnv1a(payload)
+    _drain(serial, output)
+    serial.write_all(
+        f"WIFI.PROFILE.SET {profile} {len(ssid_bytes)} {len(password_bytes)} {hash_value:08x}\n".encode(
+            "ascii"
+        )
+    )
+    _wait_for(serial, b"READY WIFI.PROFILE.SET", output, timeout, InstallError)
+    serial.write_all(payload)
+    _wait_for(serial, b"OK WIFI.PROFILE.SET", output, timeout, InstallError)
+
+
 def reference_firmware_test_sequence(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
     _send_line(serial, "RUN.EVENT main app.start", output, b"OK RUN.EVENT", timeout)
     state = _state(serial, output, timeout)
@@ -342,6 +366,11 @@ def main(argv=None):
     run_temp.add_argument("app_id")
     run_temp.add_argument("sqbc")
 
+    wifi_profile = subcommands.add_parser("wifi-profile", help="provision volatile Wi-Fi profile")
+    wifi_profile.add_argument("profile")
+    wifi_profile.add_argument("ssid")
+    wifi_profile.add_argument("password")
+
     subcommands.add_parser("test-reference-firmware", help="verify headless counter reference firmware behavior")
     run = subcommands.add_parser("run-event", help="run a named app event")
     run.add_argument("app_id")
@@ -374,6 +403,14 @@ def main(argv=None):
         elif args.command == "run-temp":
             with open(args.sqbc, "rb") as handle:
                 run_temp_app_sqbc(serial, args.app_id, handle.read(), timeout=args.timeout)
+        elif args.command == "wifi-profile":
+            provision_wifi_profile(
+                serial,
+                args.profile,
+                args.ssid,
+                args.password,
+                timeout=args.timeout,
+            )
         elif args.command == "test-reference-firmware":
             reference_firmware_test_sequence(serial, timeout=args.timeout)
         elif args.command == "run-event":

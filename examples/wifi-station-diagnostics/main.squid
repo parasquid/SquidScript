@@ -1,0 +1,44 @@
+app "wifi-station-diagnostics"
+
+state {
+  connected: bool = false
+}
+
+event.on("app.start") {
+  let connect = service.wifi.connect("dev")
+  let status = service.wifi.status()
+
+  connected = status.connected
+  debug.print("wifi connect", connect.ok, connect.error)
+  debug.print("wifi station", status.profile, status.connected, status.scanMatches, status.rssi, status.auth, status.bssid)
+  debug.print("wifi disconnect reason", status.disconnectReason, status.disconnectReasonCode)
+  service.timer.every("timer.debug", 500)
+}
+
+event.on("timer.debug") {
+  let status = service.wifi.status()
+
+  if (status.connected != connected) {
+    connected = status.connected
+    debug.print("wifi connected", status.connected)
+  }
+
+  debug.print("wifi station", status.profile, status.connected, status.scanMatches, status.rssi, status.auth, status.bssid)
+  debug.print("wifi disconnect reason", status.disconnectReason, status.disconnectReasonCode)
+}
+
+event.on("key.SELECT") {
+  let disconnect = service.wifi.disconnect()
+  let status = service.wifi.status()
+
+  connected = false
+  debug.print("wifi disconnect", disconnect.ok, disconnect.error)
+  debug.print("wifi station", status.profile, status.connected, status.scanMatches, status.rssi, status.auth, status.bssid)
+}
+
+event.on("key.BACK") {
+  service.wifi.disconnect()
+  app.exit()
+}
+
+screen("main") {}

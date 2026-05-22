@@ -2155,14 +2155,17 @@ The canonical Wi-Fi namespace is `service.wifi.*`. Source may use the shorter
 `wifi.*` sugar; the compiler normalizes it to the same IR and bytecode as
 `service.wifi.*`.
 
-The current draft implemented subset is AP-first:
+The current draft implemented subset is AP-first with profile-based station
+requests:
 
 - `service.wifi.startAP(ssid)`
 - `service.wifi.stopAP()`
+- `service.wifi.connect(profileName)`
+- `service.wifi.disconnect()`
 - `service.wifi.status()`
 - `service.wifi.getAPIP()`
 
-`startAP` returns a result record:
+`startAP`, `stopAP`, `connect`, and `disconnect` return a result record:
 
 - `ok`: bool
 - `error`: string or null
@@ -2175,6 +2178,27 @@ The current draft implemented subset is AP-first:
 - `ssid`: string or null
 - `clients`: int
 - `error`: string or null
+- `state`: string, one of `unavailable`, `idle`, `configuring`, `starting`,
+  `started`, `stopping`, `stopped`, or `error`
+- `backend`: string, currently `esp`, `sim`, or `unavailable`
+- `driverStarted`: bool
+- `configured`: bool
+- `driverMode`: string or null
+- `channel`: int, or `0` when no AP channel is known
+- `apStartEvents`: int
+- `apStopEvents`: int
+- `probeEvents`: int
+- `staConnectedEvents`: int
+- `staDisconnectedEvents`: int
+- `lastBackendCode`: string or null
+- `profile`: string or null, the station profile name requested by the app
+- `connected`: bool
+- `scanMatches`: int
+- `rssi`: int, or `0` when no station RSSI is known
+- `auth`: string or null
+- `bssid`: string or null
+- `disconnectReason`: string or null
+- `disconnectReasonCode`: int
 
 `getAPIP` returns a read-only record:
 
@@ -2196,9 +2220,21 @@ if (ap.ok && status.active) {
 
 For the ESP32-C3 reference runtime prototype, AP defaults are target/runtime
 chosen: open AP, target-chosen channel, conventional AP address
-`192.168.4.1/24`, and bounded target-clamped client count. Password/security
-policy, richer `startAP` options, station/client mode, scan, profile setup,
+`192.168.4.1/24`, and bounded target-clamped client count. A successful
+`startAP` and `status.state == "started"` prove that the firmware backend
+accepted and reports the AP state; they do not prove that a phone or laptop can
+see, join, obtain DHCP, or reach HTTP services. Password/security
+policy, richer `startAP` options, station scan listing, profile setup UI,
 hostnames, and configurable IP are deferred.
+
+Station mode uses named profiles. SquidScript source passes only a profile name
+such as `service.wifi.connect("dev")`; credentials are provisioned by firmware,
+host tooling, or target setup outside SquidScript. Firmware must not expose
+configured station SSIDs or passwords in SquidScript source, state, records,
+logs, diagnostics, or source maps. Current ESP32-C3 development firmware
+supports volatile serial-provisioned profiles for testing and may report
+`ok == false` with a concrete `error` until station auth/DHCP is implemented
+and proven on the Rust backend.
 
 Rules:
 - Apps may start a foreground-owned access point when the target exposes the Wi-Fi service.

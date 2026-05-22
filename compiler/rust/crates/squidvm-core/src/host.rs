@@ -151,6 +151,15 @@ pub trait TraceSink {
     fn service_wifi_stop_ap<'a>(&'a mut self) -> Result<WifiActionResult<'a>, VmError> {
         Err(VmError::InvalidOperand)
     }
+    fn service_wifi_connect<'a>(
+        &'a mut self,
+        _profile: &str,
+    ) -> Result<WifiActionResult<'a>, VmError> {
+        Err(VmError::InvalidOperand)
+    }
+    fn service_wifi_disconnect<'a>(&'a mut self) -> Result<WifiActionResult<'a>, VmError> {
+        Err(VmError::InvalidOperand)
+    }
     fn service_wifi_status<'a>(&'a mut self) -> Result<WifiStatus<'a>, VmError> {
         Err(VmError::InvalidOperand)
     }
@@ -227,6 +236,26 @@ pub struct WifiStatus<'a> {
     pub ssid: Option<&'a str>,
     pub clients: i32,
     pub error: Option<&'a str>,
+    pub state: &'a str,
+    pub backend: &'a str,
+    pub driver_started: bool,
+    pub configured: bool,
+    pub driver_mode: Option<&'a str>,
+    pub channel: i32,
+    pub ap_start_events: i32,
+    pub ap_stop_events: i32,
+    pub probe_events: i32,
+    pub sta_connected_events: i32,
+    pub sta_disconnected_events: i32,
+    pub last_backend_code: Option<&'a str>,
+    pub profile: Option<&'a str>,
+    pub connected: bool,
+    pub scan_matches: i32,
+    pub rssi: i32,
+    pub auth: Option<&'a str>,
+    pub bssid: Option<&'a str>,
+    pub disconnect_reason: Option<&'a str>,
+    pub disconnect_reason_code: i32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -244,6 +273,8 @@ const SIM_WIFI_AP_NETMASK: &str = "255.255.255.0";
 pub trait WifiBackend {
     fn start_ap(&mut self, ssid: &str) -> Result<WifiActionResult<'static>, VmError>;
     fn stop_ap(&mut self) -> Result<WifiActionResult<'static>, VmError>;
+    fn connect(&mut self, profile: &str) -> Result<WifiActionResult<'static>, VmError>;
+    fn disconnect(&mut self) -> Result<WifiActionResult<'static>, VmError>;
     fn status<'a>(&'a mut self) -> Result<WifiStatus<'a>, VmError>;
     fn ap_ip<'a>(&'a mut self) -> Result<WifiApIp<'a>, VmError>;
     fn teardown(&mut self) -> Result<bool, VmError>;
@@ -254,6 +285,9 @@ pub struct SimWifiBackend {
     ssid: [u8; SIM_WIFI_SSID_CAP],
     ssid_len: usize,
     clients: i32,
+    profile: [u8; SIM_WIFI_SSID_CAP],
+    profile_len: usize,
+    connected: bool,
 }
 
 impl SimWifiBackend {
@@ -263,6 +297,9 @@ impl SimWifiBackend {
             ssid: [0; SIM_WIFI_SSID_CAP],
             ssid_len: 0,
             clients: 0,
+            profile: [0; SIM_WIFI_SSID_CAP],
+            profile_len: 0,
+            connected: false,
         }
     }
 
@@ -272,6 +309,10 @@ impl SimWifiBackend {
 
     fn ssid(&self) -> Result<&str, VmError> {
         core::str::from_utf8(&self.ssid[..self.ssid_len]).map_err(|_| VmError::InvalidUtf8)
+    }
+
+    fn profile(&self) -> Result<&str, VmError> {
+        core::str::from_utf8(&self.profile[..self.profile_len]).map_err(|_| VmError::InvalidUtf8)
     }
 }
 
@@ -309,6 +350,32 @@ impl WifiBackend for SimWifiBackend {
         })
     }
 
+    fn connect(&mut self, profile: &str) -> Result<WifiActionResult<'static>, VmError> {
+        let bytes = profile.as_bytes();
+        if bytes.is_empty() || bytes.len() > self.profile.len() {
+            return Ok(WifiActionResult {
+                ok: false,
+                error: Some("invalid profile"),
+            });
+        }
+        self.profile[..bytes.len()].copy_from_slice(bytes);
+        self.profile_len = bytes.len();
+        self.connected = true;
+        Ok(WifiActionResult {
+            ok: true,
+            error: None,
+        })
+    }
+
+    fn disconnect(&mut self) -> Result<WifiActionResult<'static>, VmError> {
+        self.connected = false;
+        self.profile_len = 0;
+        Ok(WifiActionResult {
+            ok: true,
+            error: None,
+        })
+    }
+
     fn status<'a>(&'a mut self) -> Result<WifiStatus<'a>, VmError> {
         Ok(WifiStatus {
             active: self.active,
@@ -325,6 +392,44 @@ impl WifiBackend for SimWifiBackend {
             },
             clients: self.clients,
             error: None,
+            state: if self.active || self.connected {
+                "started"
+            } else {
+                "stopped"
+            },
+            backend: "sim",
+            driver_started: self.active || self.connected,
+            configured: self.active || self.connected,
+            driver_mode: if self.active {
+                Some("ap")
+            } else if self.connected {
+                Some("sta")
+            } else {
+                None
+            },
+            channel: if self.active { 1 } else { 0 },
+            ap_start_events: if self.active { 1 } else { 0 },
+            ap_stop_events: 0,
+            probe_events: 0,
+            sta_connected_events: 0,
+            sta_disconnected_events: 0,
+            last_backend_code: None,
+            profile: if self.connected {
+                Some(self.profile()?)
+            } else {
+                None
+            },
+            connected: self.connected,
+            scan_matches: if self.connected { 1 } else { 0 },
+            rssi: if self.connected { -42 } else { 0 },
+            auth: if self.connected { Some("sim") } else { None },
+            bssid: if self.connected {
+                Some("00:00:00:00:00:00")
+            } else {
+                None
+            },
+            disconnect_reason: None,
+            disconnect_reason_code: 0,
         })
     }
 
@@ -350,10 +455,12 @@ impl WifiBackend for SimWifiBackend {
     }
 
     fn teardown(&mut self) -> Result<bool, VmError> {
-        let was_active = self.active;
+        let was_active = self.active || self.connected;
         self.active = false;
         self.ssid_len = 0;
         self.clients = 0;
+        self.connected = false;
+        self.profile_len = 0;
         Ok(was_active)
     }
 }

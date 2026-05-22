@@ -20,6 +20,9 @@ use super::{
 
 const STATE_IMPORT_CAP: usize = 512;
 static mut STATE_IMPORT_BYTES: [u8; STATE_IMPORT_CAP] = [0; STATE_IMPORT_CAP];
+const WIFI_PROFILE_PAYLOAD_CAP: usize = 96;
+static mut WIFI_PROFILE_PAYLOAD_BYTES: [u8; WIFI_PROFILE_PAYLOAD_CAP] =
+    [0; WIFI_PROFILE_PAYLOAD_CAP];
 
 pub fn handle_command(
     command: &str,
@@ -37,7 +40,7 @@ pub fn handle_command(
 ) {
     trace.set_app_storage_used(registry_installed_bytes(registry));
     if command == "help" {
-        writeln!(serial, "commands: HELLO INSTALL.APP <app-id> <len> <fnv32hex> INSTALL.RESOURCE <app-id> <path> <len> <fnv32hex> RUN.TEMP <app-id> <len> <fnv32hex> RUN.APP <app-id> RUN.EVENT <app-id> <event> KEY SELECT APP.LIST RESOURCES.GET WIFI.STATUS STATE.GET STATE.IMPORT <len> <fnv32hex> TRACE.GET OUTPUT.GET DRAWLOG.GET ERRORS.GET RESET STORAGE.FORMAT").ok();
+        writeln!(serial, "commands: HELLO INSTALL.APP <app-id> <len> <fnv32hex> INSTALL.RESOURCE <app-id> <path> <len> <fnv32hex> RUN.TEMP <app-id> <len> <fnv32hex> RUN.APP <app-id> RUN.EVENT <app-id> <event> KEY SELECT APP.LIST RESOURCES.GET WIFI.STATUS WIFI.PROFILE.SET <profile> <ssid-len> <password-len> <fnv32hex> STATE.GET STATE.IMPORT <len> <fnv32hex> TRACE.GET OUTPUT.GET DRAWLOG.GET ERRORS.GET RESET STORAGE.FORMAT").ok();
     } else if command == "HELLO" || command == "hello" || command == "info" {
         writeln!(serial, "target=esp32c3-super-mini").ok();
         writeln!(serial, "build={BUILD_ID}").ok();
@@ -63,6 +66,77 @@ pub fn handle_command(
         trace.print_wifi_status(serial);
         writeln!(serial, "END WIFI.STATUS").ok();
         writeln!(serial, "OK WIFI.STATUS").ok();
+    } else if let Some(rest) = command.strip_prefix("WIFI.PROFILE.SET ") {
+        let mut parts = rest.split_whitespace();
+        let Some(profile) = parts.next() else {
+            writeln!(serial, "ERR WIFI.PROFILE.SET").ok();
+            return;
+        };
+        let Some(ssid_len_text) = parts.next() else {
+            writeln!(serial, "ERR WIFI.PROFILE.SET").ok();
+            return;
+        };
+        let Some(password_len_text) = parts.next() else {
+            writeln!(serial, "ERR WIFI.PROFILE.SET").ok();
+            return;
+        };
+        let Some(hash_text) = parts.next() else {
+            writeln!(serial, "ERR WIFI.PROFILE.SET").ok();
+            return;
+        };
+        if parts.next().is_some() {
+            writeln!(serial, "ERR WIFI.PROFILE.SET").ok();
+            return;
+        }
+        let Ok(ssid_len) = ssid_len_text.parse::<usize>() else {
+            writeln!(serial, "ERR WIFI.PROFILE.SET").ok();
+            return;
+        };
+        let Ok(password_len) = password_len_text.parse::<usize>() else {
+            writeln!(serial, "ERR WIFI.PROFILE.SET").ok();
+            return;
+        };
+        let Ok(expected_hash) = u32::from_str_radix(hash_text, 16) else {
+            writeln!(serial, "ERR WIFI.PROFILE.SET").ok();
+            return;
+        };
+        let total_len = ssid_len.saturating_add(password_len);
+        if total_len > WIFI_PROFILE_PAYLOAD_CAP {
+            writeln!(serial, "ERR WIFI.PROFILE.SET too-large").ok();
+            return;
+        }
+        writeln!(
+            serial,
+            "READY WIFI.PROFILE.SET profile={profile} ssid_len={ssid_len} password_len={password_len}"
+        )
+        .ok();
+        let bytes = unsafe { &mut WIFI_PROFILE_PAYLOAD_BYTES[..total_len] };
+        let read = read_exact_timeout(serial, bytes, delay, INSTALL_TIMEOUT_MS);
+        if read != total_len {
+            writeln!(
+                serial,
+                "ERR WIFI.PROFILE.SET timeout read={read} expected={total_len}"
+            )
+            .ok();
+            return;
+        }
+        let actual_hash = fnv1a(bytes);
+        if actual_hash != expected_hash {
+            writeln!(serial, "ERR WIFI.PROFILE.SET hash").ok();
+            return;
+        }
+        if trace
+            .set_wifi_profile(profile, &bytes[..ssid_len], &bytes[ssid_len..])
+            .is_err()
+        {
+            writeln!(serial, "ERR WIFI.PROFILE.SET invalid").ok();
+            return;
+        }
+        writeln!(
+            serial,
+            "OK WIFI.PROFILE.SET profile={profile} ssid_len={ssid_len} password_len={password_len}"
+        )
+        .ok();
     } else if let Some(rest) = command
         .strip_prefix("INSTALL.APP ")
         .or_else(|| command.strip_prefix("install.app "))

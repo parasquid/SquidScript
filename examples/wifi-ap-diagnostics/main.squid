@@ -22,8 +22,10 @@ event.on("app.start") {
 
   debug.print("wifi start", ap.ok, ap.error)
   debug.print("wifi status", status.active, status.mode, status.ssid, status.ipAddress, status.clients, status.error)
+  debug.print("wifi state", status.state, status.backend, status.driverStarted, status.configured, status.driverMode, status.channel, status.lastBackendCode)
+  debug.print("wifi events", status.apStartEvents, status.apStopEvents, status.probeEvents, status.staConnectedEvents, status.staDisconnectedEvents)
   debug.print("wifi ap ip", ip.ip, ip.gw, ip.netmask, ip.error)
-  debug.print("join the AP named SquidScript")
+  debug.print("scan or join the AP named SquidScript to exercise optional probe and client events")
   service.timer.every("timer.debug", 250)
 }
 
@@ -76,8 +78,12 @@ event.on("timer.debug") {
       }
     }
 
-    if (clients != previousClients) {
+  if (clients != previousClients) {
       debug.print("wifi clients", clients)
+    }
+
+    if (status.probeEvents > 0) {
+      debug.print("wifi probe events", status.probeEvents)
     }
   }
 }
@@ -88,6 +94,8 @@ event.on("key.SELECT") {
 
   debug.print("wifi stop", stop.ok, stop.error)
   debug.print("wifi status", status.active, status.mode, status.ssid, status.ipAddress, status.clients, status.error)
+  debug.print("wifi state", status.state, status.backend, status.driverStarted, status.configured, status.driverMode, status.channel, status.lastBackendCode)
+  debug.print("wifi events", status.apStartEvents, status.apStopEvents, status.probeEvents, status.staConnectedEvents, status.staDisconnectedEvents)
   clients = 0
   previousClients = 0
   mode = 0

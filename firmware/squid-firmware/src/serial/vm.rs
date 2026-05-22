@@ -269,6 +269,19 @@ impl<S: AppStorage> TraceSink for StoredAppHost<'_, '_, S> {
         self.trace.service_wifi_stop_ap()
     }
 
+    fn service_wifi_connect<'b>(
+        &'b mut self,
+        profile: &str,
+    ) -> Result<squidvm_core::host::WifiActionResult<'b>, VmError> {
+        self.trace.service_wifi_connect(profile)
+    }
+
+    fn service_wifi_disconnect<'b>(
+        &'b mut self,
+    ) -> Result<squidvm_core::host::WifiActionResult<'b>, VmError> {
+        self.trace.service_wifi_disconnect()
+    }
+
     fn service_wifi_status<'b>(
         &'b mut self,
     ) -> Result<squidvm_core::host::WifiStatus<'b>, VmError> {

@@ -125,11 +125,23 @@ cargo run -p squidc -- device key SELECT
 cargo run -p squidc -- device output
 ```
 
-Installs the AP diagnostics example as a persistent app after blinky checks when
-Wi-Fi behavior is under test. The app starts `service.wifi.startAP("SquidScript")`,
-prints the start result, status record, AP IP record, and periodic client-count
-changes, then waits for `SELECT` to call `service.wifi.stopAP()` and print the
-inactive status.
+Use the separate Wi-Fi state script when Wi-Fi behavior is under test:
+
+```sh
+scripts/c3-supermini-test-wifi-state.sh
+```
+
+This script installs the AP diagnostics example as a persistent app, starts
+`service.wifi.startAP("SquidScript")`, checks firmware-reported AP state through
+`WIFI.STATUS`, then sends `SELECT` to stop the AP and checks the inactive state.
+It is intentionally not part of `scripts/c3-supermini-test-hardware.sh`, which
+keeps blinky as the final visible board-state check.
+
+The diagnostics app prints the start result, expanded status record, AP IP
+record, and periodic client-count changes. `status.state == "started"`,
+`status.driverStarted == true`, `status.configured == true`, `status.mode ==
+"ap"`, and `status.ipAddress == "192.168.4.1"` prove internal firmware/driver
+state only. They do not prove that nearby devices can see or join the AP.
 
 The example owns the indicator behavior in SquidScript:
 
@@ -138,12 +150,29 @@ The example owns the indicator behavior in SquidScript:
 - connected: mostly lit with short off blinks
 - all clients disconnected: returns to `service.indicator.breathe()`
 
-While the AP is active, verify from a phone or laptop that the `SquidScript`
-network is visible, attempt to join it, confirm serial output reports
-`status.clients > 0`, then disconnect and confirm `status.clients` returns to
-zero. Until Rust AP beacon visibility is proven on hardware, treat successful
+While the AP is active, optionally verify from a phone or laptop that the
+`SquidScript` network is visible, attempt to join it, confirm serial output
+reports `status.clients > 0`, then disconnect and confirm `status.clients`
+returns to zero. Use `STRICT_PROBE=1 scripts/c3-supermini-test-wifi-state.sh`
+only when deliberately treating probe/client events as a required hardware
+check. Until Rust AP beacon visibility is proven on hardware, treat successful
 firmware status records as internal radio-driver state only; IP/DHCP and HTTP
 serving are separate follow-up work.
+
+For public station API coverage, use:
+
+```sh
+scripts/c3-supermini-test-wifi-station-api.sh
+```
+
+The script reads `HWTEST_STA_SSID` and `HWTEST_STA_PASSWORD` from the
+environment or `HWTEST_ENV_FILE`, provisions volatile profile `dev` over serial
+without echoing credential values, installs `examples/wifi-station-diagnostics`,
+and checks `service.wifi.connect("dev")` plus `service.wifi.status()` output.
+The default pass allows the Rust backend to report a station error while the
+API layers stay stable. Use
+`STRICT_STA_CONNECT=1 scripts/c3-supermini-test-wifi-station-api.sh` only when
+deliberately requiring `connected=true`.
 
 ### ESP-IDF Wi-Fi Hardware Isolation
 

@@ -70,6 +70,8 @@ const BUILTIN_SERVICE_WIFI_START_AP: u8 = 30;
 const BUILTIN_SERVICE_WIFI_STOP_AP: u8 = 31;
 const BUILTIN_SERVICE_WIFI_STATUS: u8 = 32;
 const BUILTIN_SERVICE_WIFI_GET_AP_IP: u8 = 33;
+const BUILTIN_SERVICE_WIFI_CONNECT: u8 = 35;
+const BUILTIN_SERVICE_WIFI_DISCONNECT: u8 = 36;
 
 const VALUE_NULL: u8 = 0;
 const VALUE_BOOL: u8 = 1;
@@ -1003,14 +1005,19 @@ fn builtin_for_call(name: &str) -> Option<u8> {
         "service.wifi.stopAP" => Some(BUILTIN_SERVICE_WIFI_STOP_AP),
         "service.wifi.status" => Some(BUILTIN_SERVICE_WIFI_STATUS),
         "service.wifi.getAPIP" => Some(BUILTIN_SERVICE_WIFI_GET_AP_IP),
+        "service.wifi.connect" => Some(BUILTIN_SERVICE_WIFI_CONNECT),
+        "service.wifi.disconnect" => Some(BUILTIN_SERVICE_WIFI_DISCONNECT),
         _ => None,
     }
 }
 
 fn validate_builtin_arg_count(name: &str, count: usize) -> Result<(), SqbcError> {
     let valid = match name {
-        "service.wifi.startAP" => count == 1,
-        "service.wifi.stopAP" | "service.wifi.status" | "service.wifi.getAPIP" => count == 0,
+        "service.wifi.startAP" | "service.wifi.connect" => count == 1,
+        "service.wifi.stopAP"
+        | "service.wifi.status"
+        | "service.wifi.getAPIP"
+        | "service.wifi.disconnect" => count == 0,
         _ => true,
     };
     if valid {

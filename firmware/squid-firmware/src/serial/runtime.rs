@@ -22,8 +22,8 @@ use crate::dev_harness::{
 };
 use crate::kernel::{
     write_ram_diagnostics_text, DisplayCommand, DisplayService, IndicatorAction, IndicatorService,
-    LifecycleService, ServiceError, TimerCommand, TimerRegistration, TimerService,
-    INDICATOR_BREATH_SEGMENT_MS,
+    LifecycleService, ServiceError, TimerCommand, TimerRegistration, TimerService, WifiCachedStatus,
+    WifiCommand, WifiService, WifiState, INDICATOR_BREATH_SEGMENT_MS,
 };
 use crate::storage::SQUIDFS_LEN;
 
@@ -44,6 +44,10 @@ const LIFECYCLE_COMMAND_CAP: usize = 8;
 const TIMER_CAP: usize = 4;
 const TIMER_COMMAND_CAP: usize = 8;
 const TIMER_DUE_CAP: usize = 4;
+const WIFI_COMMAND_CAP: usize = 8;
+const WIFI_PROFILE_NAME_CAP: usize = 16;
+const WIFI_PROFILE_SSID_CAP: usize = 32;
+const WIFI_PROFILE_PASSWORD_CAP: usize = 64;
 
 pub struct RuntimeSink<'d> {
     onboard_indicator: OnboardIndicator<'d>,
@@ -67,7 +71,14 @@ pub struct RuntimeSink<'d> {
     pub(super) output_len: usize,
     pub(super) display_service: DisplayService<LogLine, DRAW_CAP>,
     pub(super) app_storage_used_bytes: usize,
+    pub(super) wifi_service: WifiService<WIFI_COMMAND_CAP>,
     pub(super) wifi: FirmwareWifiBackend<'d>,
+    wifi_profile_name: [u8; WIFI_PROFILE_NAME_CAP],
+    wifi_profile_name_len: usize,
+    wifi_profile_ssid: [u8; WIFI_PROFILE_SSID_CAP],
+    wifi_profile_ssid_len: usize,
+    wifi_profile_password: [u8; WIFI_PROFILE_PASSWORD_CAP],
+    wifi_profile_password_len: usize,
 }
 
 impl<'d> RuntimeSink<'d> {
@@ -97,7 +108,14 @@ impl<'d> RuntimeSink<'d> {
             output_len: 0,
             display_service: DisplayService::new(),
             app_storage_used_bytes: 0,
+            wifi_service: WifiService::new(WifiState::Idle),
             wifi,
+            wifi_profile_name: [0; WIFI_PROFILE_NAME_CAP],
+            wifi_profile_name_len: 0,
+            wifi_profile_ssid: [0; WIFI_PROFILE_SSID_CAP],
+            wifi_profile_ssid_len: 0,
+            wifi_profile_password: [0; WIFI_PROFILE_PASSWORD_CAP],
+            wifi_profile_password_len: 0,
         }
     }
 
@@ -106,7 +124,40 @@ impl<'d> RuntimeSink<'d> {
     }
 
     pub fn poll_wifi(&mut self) {
-        self.wifi.poll();
+        self.wifi_service.enqueue(WifiCommand::Poll).ok();
+        while let Some(command) = self.wifi_service.pop_command() {
+            if let WifiCommand::Poll = command {
+                self.wifi.poll();
+            }
+        }
+    }
+
+    pub(super) fn set_wifi_profile(
+        &mut self,
+        profile: &str,
+        ssid: &[u8],
+        password: &[u8],
+    ) -> Result<(), VmError> {
+        if !valid_wifi_profile_name(profile)
+            || ssid.is_empty()
+            || ssid.len() > WIFI_PROFILE_SSID_CAP
+            || password.len() > WIFI_PROFILE_PASSWORD_CAP
+        {
+            return Err(VmError::InvalidOperand);
+        }
+        let profile_bytes = profile.as_bytes();
+        self.wifi_profile_name[..profile_bytes.len()].copy_from_slice(profile_bytes);
+        self.wifi_profile_name_len = profile_bytes.len();
+        self.wifi_profile_ssid[..ssid.len()].copy_from_slice(ssid);
+        self.wifi_profile_ssid_len = ssid.len();
+        self.wifi_profile_password[..password.len()].copy_from_slice(password);
+        self.wifi_profile_password_len = password.len();
+        Ok(())
+    }
+
+    fn has_wifi_profile(&self, profile: &str) -> bool {
+        self.wifi_profile_name_len == profile.len()
+            && self.wifi_profile_name[..self.wifi_profile_name_len] == *profile.as_bytes()
     }
 
     pub fn poll_indicator(&mut self) {
@@ -140,9 +191,14 @@ impl<'d> RuntimeSink<'d> {
     }
 
     pub(super) fn teardown_services(&mut self) -> Result<(), VmError> {
+        self.wifi_service.enqueue(WifiCommand::Teardown).ok();
+        self.wifi_service.set_cached_status(WifiCachedStatus::new(WifiState::Stopping));
+        let _ = self.wifi_service.pop_command();
         if self.wifi.teardown()? {
             self.trace("wifi.stopAP");
         }
+        self.wifi_service
+            .set_cached_status(WifiCachedStatus::new(WifiState::Stopped));
         Ok(())
     }
 
@@ -278,12 +334,59 @@ impl<'d> RuntimeSink<'d> {
     pub(super) fn print_wifi_status(&mut self, serial: &mut UsbSerialJtag<'_, esp_hal::Blocking>) {
         match self.wifi.status() {
             Ok(status) => {
+                self.wifi_service
+                    .set_cached_status(wifi_cached_status(&status));
+                writeln!(serial, "state={}", status.state).ok();
+                writeln!(serial, "backend={}", status.backend).ok();
                 writeln!(serial, "active={}", status.active).ok();
                 writeln!(serial, "mode={}", status.mode.unwrap_or("none")).ok();
                 writeln!(serial, "ssid={}", status.ssid.unwrap_or("")).ok();
                 writeln!(serial, "ip={}", status.ip_address.unwrap_or("")).ok();
                 writeln!(serial, "clients={}", status.clients).ok();
                 writeln!(serial, "error={}", status.error.unwrap_or("")).ok();
+                writeln!(serial, "driver_started={}", status.driver_started).ok();
+                writeln!(serial, "configured={}", status.configured).ok();
+                writeln!(serial, "driver_mode={}", status.driver_mode.unwrap_or("none")).ok();
+                writeln!(serial, "channel={}", status.channel).ok();
+                writeln!(serial, "event_ap_start={}", status.ap_start_events).ok();
+                writeln!(serial, "event_ap_stop={}", status.ap_stop_events).ok();
+                writeln!(serial, "event_ap_probe={}", status.probe_events).ok();
+                writeln!(
+                    serial,
+                    "event_ap_sta_connected={}",
+                    status.sta_connected_events
+                )
+                .ok();
+                writeln!(
+                    serial,
+                    "event_ap_sta_disconnected={}",
+                    status.sta_disconnected_events
+                )
+                .ok();
+                writeln!(
+                    serial,
+                    "last_backend_code={}",
+                    status.last_backend_code.unwrap_or("")
+                )
+                .ok();
+                writeln!(serial, "profile={}", status.profile.unwrap_or("")).ok();
+                writeln!(serial, "connected={}", status.connected).ok();
+                writeln!(serial, "scan_matches={}", status.scan_matches).ok();
+                writeln!(serial, "rssi={}", status.rssi).ok();
+                writeln!(serial, "auth={}", status.auth.unwrap_or("")).ok();
+                writeln!(serial, "bssid={}", status.bssid.unwrap_or("")).ok();
+                writeln!(
+                    serial,
+                    "disconnect_reason={}",
+                    status.disconnect_reason.unwrap_or("")
+                )
+                .ok();
+                writeln!(
+                    serial,
+                    "disconnect_reason_code={}",
+                    status.disconnect_reason_code
+                )
+                .ok();
             }
             Err(error) => {
                 writeln!(serial, "ERR WIFI.STATUS {:?}", error).ok();
@@ -547,25 +650,127 @@ impl TraceSink for RuntimeSink<'_> {
         &'a mut self,
         ssid: &str,
     ) -> Result<WifiActionResult<'a>, VmError> {
+        if self
+            .wifi_service
+            .enqueue(WifiCommand::StartAp { ssid: ssid.len() })
+            .is_err()
+        {
+            return Ok(WifiActionResult {
+                ok: false,
+                error: Some("wifi command queue full"),
+            });
+        }
+        self.wifi_service
+            .set_cached_status(WifiCachedStatus::new(WifiState::Configuring));
+        let _ = self.wifi_service.pop_command();
+        self.wifi_service
+            .set_cached_status(WifiCachedStatus::new(WifiState::Starting));
         let result = self.wifi.start_ap(ssid)?;
         let ok = result.ok;
         let error = result.error;
         if ok {
             self.trace("wifi.startAP");
+            if let Ok(status) = self.wifi.status() {
+                self.wifi_service
+                    .set_cached_status(wifi_cached_status(&status));
+            }
+        } else {
+            self.wifi_service
+                .set_cached_status(WifiCachedStatus::new(WifiState::Error));
         }
         Ok(WifiActionResult { ok, error })
     }
 
     fn service_wifi_stop_ap<'a>(&'a mut self) -> Result<WifiActionResult<'a>, VmError> {
+        if self.wifi_service.enqueue(WifiCommand::StopAp).is_err() {
+            return Ok(WifiActionResult {
+                ok: false,
+                error: Some("wifi command queue full"),
+            });
+        }
+        self.wifi_service
+            .set_cached_status(WifiCachedStatus::new(WifiState::Stopping));
+        let _ = self.wifi_service.pop_command();
         let result = self.wifi.stop_ap()?;
         let ok = result.ok;
         let error = result.error;
         self.trace("wifi.stopAP");
+        self.wifi_service.set_cached_status(WifiCachedStatus::new(
+            if ok { WifiState::Stopped } else { WifiState::Error },
+        ));
+        Ok(WifiActionResult { ok, error })
+    }
+
+    fn service_wifi_connect<'a>(
+        &'a mut self,
+        profile: &str,
+    ) -> Result<WifiActionResult<'a>, VmError> {
+        if !self.has_wifi_profile(profile) {
+            return Ok(WifiActionResult {
+                ok: false,
+                error: Some("wifi profile not found"),
+            });
+        }
+        if self
+            .wifi_service
+            .enqueue(WifiCommand::ConnectProfile {
+                profile: profile.len(),
+            })
+            .is_err()
+        {
+            return Ok(WifiActionResult {
+                ok: false,
+                error: Some("wifi command queue full"),
+            });
+        }
+        self.wifi_service
+            .set_cached_status(WifiCachedStatus::new(WifiState::Starting));
+        let _ = self.wifi_service.pop_command();
+        let result = self.wifi.connect(profile)?;
+        let ok = result.ok;
+        let error = result.error;
+        if ok {
+            self.trace("wifi.connect");
+            if let Ok(status) = self.wifi.status() {
+                self.wifi_service
+                    .set_cached_status(wifi_cached_status(&status));
+            }
+        } else {
+            self.wifi_service
+                .set_cached_status(WifiCachedStatus::new(WifiState::Error));
+        }
+        Ok(WifiActionResult { ok, error })
+    }
+
+    fn service_wifi_disconnect<'a>(&'a mut self) -> Result<WifiActionResult<'a>, VmError> {
+        if self
+            .wifi_service
+            .enqueue(WifiCommand::DisconnectStation)
+            .is_err()
+        {
+            return Ok(WifiActionResult {
+                ok: false,
+                error: Some("wifi command queue full"),
+            });
+        }
+        self.wifi_service
+            .set_cached_status(WifiCachedStatus::new(WifiState::Stopping));
+        let _ = self.wifi_service.pop_command();
+        let result = self.wifi.disconnect()?;
+        let ok = result.ok;
+        let error = result.error;
+        self.trace("wifi.disconnect");
+        self.wifi_service.set_cached_status(WifiCachedStatus::new(
+            if ok { WifiState::Stopped } else { WifiState::Error },
+        ));
         Ok(WifiActionResult { ok, error })
     }
 
     fn service_wifi_status<'a>(&'a mut self) -> Result<WifiStatus<'a>, VmError> {
-        self.wifi.status()
+        let status = self.wifi.status()?;
+        self.wifi_service
+            .set_cached_status(wifi_cached_status(&status));
+        Ok(status)
     }
 
     fn service_wifi_get_ap_ip<'a>(&'a mut self) -> Result<WifiApIp<'a>, VmError> {
@@ -590,6 +795,37 @@ impl TraceSink for RuntimeSink<'_> {
             SQUIDFS_LEN.saturating_sub(self.app_storage_used_bytes),
         )
         .map_err(|_| VmError::InvalidOperand)
+    }
+}
+
+fn valid_wifi_profile_name(profile: &str) -> bool {
+    let bytes = profile.as_bytes();
+    !bytes.is_empty()
+        && bytes.len() <= WIFI_PROFILE_NAME_CAP
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
+fn wifi_cached_status(status: &WifiStatus<'_>) -> WifiCachedStatus {
+    WifiCachedStatus {
+        state: match status.state {
+            "unavailable" => WifiState::Unavailable,
+            "idle" => WifiState::Idle,
+            "configuring" => WifiState::Configuring,
+            "starting" => WifiState::Starting,
+            "started" => WifiState::Started,
+            "stopping" => WifiState::Stopping,
+            "stopped" => WifiState::Stopped,
+            _ => WifiState::Error,
+        },
+        active: status.active,
+        configured: status.configured,
+        driver_started: status.driver_started,
+        clients: status.clients,
+        channel: status.channel,
+        station_connected: status.connected,
+        scan_matches: status.scan_matches,
     }
 }
 
