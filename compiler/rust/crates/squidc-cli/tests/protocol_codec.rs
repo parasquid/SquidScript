@@ -1,9 +1,9 @@
 use squidc::protocol::{
     app_install_begin_request, app_install_chunk_request, app_install_commit_request,
     app_launch_request, app_list_entries, app_list_request, decode_frame, encode_frame,
-    hello_identity, hello_request, temp_run_begin_request, temp_run_chunk_request,
-    temp_run_commit_request, AppEntry, DecodeError, Field, FieldValue, Frame, FrameKind, Opcode,
-    Status,
+    hello_identity, hello_request, output_get_request, output_lines, temp_run_begin_request,
+    temp_run_chunk_request, temp_run_commit_request, AppEntry, DecodeError, Field, FieldValue,
+    Frame, FrameKind, Opcode, Status,
 };
 
 #[test]
@@ -124,6 +124,27 @@ fn builds_app_list_request_and_extracts_repeated_entries() {
                 sqbc_len: 6,
             },
         ]
+    );
+}
+
+#[test]
+fn builds_output_get_request_and_extracts_line_fields() {
+    let request = output_get_request(3);
+    assert_eq!(request.kind, FrameKind::Request);
+    assert_eq!(request.opcode, Opcode::OutputGet);
+    assert_eq!(request.sequence, 3);
+    assert!(request.fields.is_empty());
+
+    let response = Frame::response(
+        Opcode::OutputGet,
+        Status::Ok,
+        3,
+        vec![Field::string(1, "ready"), Field::string(1, "tick")],
+    );
+
+    assert_eq!(
+        output_lines(&decode_frame(&encode_frame(&response)).unwrap()).unwrap(),
+        vec!["ready".to_string(), "tick".to_string()]
     );
 }
 

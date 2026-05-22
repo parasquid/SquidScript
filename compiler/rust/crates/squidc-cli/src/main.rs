@@ -300,9 +300,7 @@ fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String>
             DeviceCommands::Reset(args) => {
                 device_line_command(args.device, "RESET", "reset", human)
             }
-            DeviceCommands::Output(args) => {
-                device_block_command(args.device, "OUTPUT.GET", "output", human)
-            }
+            DeviceCommands::Output(args) => device_output(args.device, human),
             DeviceCommands::State(args) => {
                 device_block_command(args.device, "STATE.GET", "state", human)
             }
@@ -590,6 +588,22 @@ fn resources(args: DeviceOnlyArgs, human: bool) -> Result<Value, String> {
     }))
 }
 
+fn device_output(options: DeviceOnlyOptions, human: bool) -> Result<Value, String> {
+    let port = resolve_port(&options)?;
+    let mut device = SerialDevice::open(&port)?;
+    let lines = device.output_lines()?;
+    if human {
+        for line in &lines {
+            println!("output={line}");
+        }
+    }
+    Ok(json!({
+        "port": port,
+        "command": "output",
+        "lines": lines
+    }))
+}
+
 fn monitor(args: MonitorArgs, json_mode: bool) -> Result<Value, String> {
     if json_mode && args.max_lines.is_none() {
         return Err("device monitor --json requires --max-lines".to_string());
@@ -653,8 +667,8 @@ fn monitor_output(
     let mut printed = 0usize;
     let mut lines = Vec::new();
     loop {
-        let response = device.send_line("OUTPUT.GET")?;
-        for line in tail.next_lines(&response) {
+        let output = device.output_lines()?;
+        for line in tail.next_lines(&output) {
             if !collect_only {
                 println!("{line}");
             }

@@ -27,12 +27,14 @@ PROTOCOL_KIND_RESPONSE = 2
 PROTOCOL_STATUS_OK = 0
 PROTOCOL_OPCODE_HELLO = 1
 PROTOCOL_OPCODE_APP_LIST = 33
+PROTOCOL_OPCODE_OUTPUT_GET = 64
 PROTOCOL_HELLO_FIELD_TARGET = 1
 PROTOCOL_HELLO_FIELD_FIRMWARE = 2
 PROTOCOL_HELLO_FIELD_DIAGNOSTIC = 3
 PROTOCOL_APP_LIST_FIELD_APP = 1
 PROTOCOL_APP_FIELD_ID = 1
 PROTOCOL_APP_FIELD_SQBC_LEN = 2
+PROTOCOL_OUTPUT_FIELD_LINE = 1
 
 
 def default_port():
@@ -168,6 +170,16 @@ def encode_protocol_app_list_request(*, sequence=2):
     )
 
 
+def encode_protocol_output_get_request(*, sequence=3):
+    return encode_protocol_frame(
+        kind=PROTOCOL_KIND_REQUEST,
+        opcode=PROTOCOL_OPCODE_OUTPUT_GET,
+        status=PROTOCOL_STATUS_OK,
+        sequence=sequence,
+        fields=[],
+    )
+
+
 def decode_protocol_hello_identity(frame):
     decoded = decode_protocol_frame(frame)
     if (
@@ -220,6 +232,22 @@ def decode_protocol_app_list(frame):
     return entries
 
 
+def decode_protocol_output(frame):
+    decoded = decode_protocol_frame(frame)
+    if (
+        decoded["kind"] != PROTOCOL_KIND_RESPONSE
+        or decoded["opcode"] != PROTOCOL_OPCODE_OUTPUT_GET
+        or decoded["status"] != PROTOCOL_STATUS_OK
+    ):
+        raise ValueError("not a successful output response frame")
+
+    lines = []
+    for tag, type_id, value in decoded["fields"]:
+        if tag == PROTOCOL_OUTPUT_FIELD_LINE and type_id == PROTOCOL_FIELD_TYPES["string"]:
+            lines.append(value)
+    return lines
+
+
 def get_protocol_hello_identity(serial, *, output=None, timeout=DEFAULT_TIMEOUT):
     serial.write_all(encode_protocol_hello_request(sequence=1))
     response = _read_until_quiet(serial, output, timeout)
@@ -230,6 +258,17 @@ def get_protocol_app_list(serial, *, output=None, timeout=DEFAULT_TIMEOUT):
     serial.write_all(encode_protocol_app_list_request(sequence=2))
     response = _read_until_quiet(serial, output, timeout)
     return decode_protocol_app_list(response)
+
+
+def get_protocol_output(serial, *, output=None, timeout=DEFAULT_TIMEOUT):
+    serial.write_all(encode_protocol_output_get_request(sequence=3))
+    response = _read_protocol_frame(serial, timeout)
+    lines = decode_protocol_output(response)
+    if output is not None:
+        for line in lines:
+            output.write(f"output={line}\n".encode("utf-8"))
+        output.flush()
+    return lines
 
 
 def _encode_protocol_fields(fields):
@@ -503,8 +542,7 @@ def get_state(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
 
 
 def get_output(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
-    serial.write_all(b"OUTPUT.GET\n")
-    return _wait_block(serial, b"BEGIN OUTPUT", b"END OUTPUT", output, timeout, SmokeError)
+    return get_protocol_output(serial, output=output, timeout=timeout)
 
 
 def get_drawlog(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):

@@ -14,6 +14,7 @@ from c3_supermini_serial import (
     format_storage,
     get_protocol_app_list,
     get_protocol_hello_identity,
+    get_output,
     install_app_sqbc,
     list_apps,
     parse_state,
@@ -346,6 +347,29 @@ class C3SuperMiniSerialTests(unittest.TestCase):
         self.assertEqual(response, [{"app_id": "main", "sqbc_len": 5}])
         self.assertEqual(output.getvalue(), b"app=main sqbc_len=5\n")
         self.assertEqual(serial.writes, [encode_protocol_app_list_request(sequence=2)])
+
+    def test_get_output_requests_framed_output_stream(self):
+        serial = FakeSerial(
+            [
+                encode_protocol_frame(
+                    kind=2,
+                    opcode=64,
+                    status=0,
+                    sequence=3,
+                    fields=[("string", 1, "ready"), ("string", 1, "tick")],
+                )
+            ]
+        )
+        output = io.BytesIO()
+
+        lines = get_output(serial, output=output, timeout=0.01)
+
+        self.assertEqual(lines, ["ready", "tick"])
+        self.assertEqual(output.getvalue(), b"output=ready\noutput=tick\n")
+        self.assertEqual(
+            [decode_protocol_frame(write) for write in serial.writes],
+            [{"kind": 1, "opcode": 64, "status": 0, "sequence": 3, "fields": []}],
+        )
 
     def test_format_storage_sends_storage_format_command(self):
         serial = FakeSerial([b"OK STORAGE.FORMAT\r\n"])

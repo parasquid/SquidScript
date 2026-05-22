@@ -62,19 +62,25 @@ binary request frame from an opcode name plus typed TLV fields and prints hex
 request/response data.
 
 The current implemented Zephyr command handler covers framed `hello` identity,
-framed installed-app begin/chunk/commit, and framed `app-list` over the UART
-serial transport. App install begins with field tag `1` app ID string, tag `2`
-total SQBC byte length, and tag `3` CRC32 encoded as an unsigned 64-bit
-integer. Each chunk uses tag `1` byte offset and tag `2` byte payload. Commit
-has an empty payload; firmware verifies byte count and CRC32 before publishing
-`/sq/apps/<app-id>/main.sqbc`.
+framed installed-app begin/chunk/commit, framed temp-run begin/chunk/commit,
+framed app launch, framed `app-list`, and framed `output-get` over the UART
+serial transport. App install and temp run begin with field tag `1` app ID
+string, tag `2` total SQBC byte length, and tag `3` CRC32 encoded as an
+unsigned 64-bit integer. Each chunk uses tag `1` byte offset and tag `2` byte
+payload. Install commit verifies byte count and CRC32 before publishing
+`/sq/apps/<app-id>/main.sqbc`; temp-run commit verifies byte count and CRC32
+before launching the temporary foreground app from `/sq/tmp/temp-run.sqbc.tmp`.
 
 `app-list` responses use repeated record fields: response field tag `1` is one
 app record, record field tag `1` is the app ID string, and record field tag `2`
 is the SQBC length as an unsigned 64-bit integer.
 
-Temp run, launch, diagnostics, storage, and service commands remain migration
-work.
+`output-get` responses use repeated string fields with tag `1`, one field per
+debug output line. The current Zephyr runtime returns an empty output stream
+until the debug-output service is wired through the VM host.
+
+Key, trace, draw log, state, errors, resources, storage, and service commands
+remain migration work.
 
 ## Diagnostics
 

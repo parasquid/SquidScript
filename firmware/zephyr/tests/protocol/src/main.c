@@ -288,6 +288,37 @@ ZTEST(squidscript_protocol, test_handles_app_list_request_with_registry_records)
 	zassert_equal(sq_protocol_read_u64_le(app_field.value), 5);
 }
 
+ZTEST(squidscript_protocol, test_handles_output_get_with_empty_framed_response)
+{
+	struct sq_device_identity identity = {
+		.target = "esp32c3-supermini",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+	};
+	uint8_t request[SQ_PROTOCOL_HEADER_LEN];
+	uint8_t response[64];
+	size_t response_len = 0;
+	struct sq_protocol_frame frame;
+
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_OUTPUT_GET,
+						      SQ_STATUS_OK, 24, NULL, 0, request,
+						      sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_device_protocol_handle_frame(request, sizeof(request), &context,
+						      response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
+	zassert_equal(frame.kind, SQ_FRAME_RESPONSE);
+	zassert_equal(frame.opcode, SQ_OPCODE_OUTPUT_GET);
+	zassert_equal(frame.status, SQ_STATUS_OK);
+	zassert_equal(frame.sequence, 24);
+	zassert_equal(frame.payload_len, 0);
+}
+
 ZTEST(squidscript_protocol, test_handles_installed_app_begin_chunk_commit)
 {
 	const uint8_t chunk_a[] = {'h', 'e', 'l'};

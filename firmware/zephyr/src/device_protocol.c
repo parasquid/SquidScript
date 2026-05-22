@@ -570,6 +570,8 @@ int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 		return commit_temp_run(&frame, context, response, response_cap, response_len);
 	case SQ_OPCODE_APP_LAUNCH:
 		return launch_app(&frame, context, response, response_cap, response_len);
+	case SQ_OPCODE_OUTPUT_GET:
+		return ok_response(&frame, response, response_cap, response_len);
 	default:
 		return SQ_PROTOCOL_ERR_BAD_MAGIC;
 	}

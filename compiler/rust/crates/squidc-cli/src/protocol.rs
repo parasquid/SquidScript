@@ -245,6 +245,10 @@ pub fn app_list_request(sequence: u32) -> Frame {
     Frame::request(Opcode::AppList, sequence, Vec::new())
 }
 
+pub fn output_get_request(sequence: u32) -> Frame {
+    Frame::request(Opcode::OutputGet, sequence, Vec::new())
+}
+
 pub fn app_install_begin_request(
     sequence: u32,
     app_id: impl Into<String>,
@@ -367,6 +371,23 @@ pub fn app_list_entries(frame: &Frame) -> Option<Vec<AppEntry>> {
     }
 
     Some(entries)
+}
+
+pub fn output_lines(frame: &Frame) -> Option<Vec<String>> {
+    if frame.kind != FrameKind::Response
+        || frame.opcode != Opcode::OutputGet
+        || frame.status != Status::Ok
+    {
+        return None;
+    }
+
+    let mut lines = Vec::new();
+    for field in &frame.fields {
+        if let (1, FieldValue::String(value)) = (field.tag, &field.value) {
+            lines.push(value.clone());
+        }
+    }
+    Some(lines)
 }
 
 pub fn encode_frame(frame: &Frame) -> Vec<u8> {

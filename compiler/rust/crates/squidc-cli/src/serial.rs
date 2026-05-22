@@ -10,8 +10,8 @@ use crate::app_id::fnv1a;
 use squidc::protocol::{
     app_install_begin_request, app_install_chunk_request, app_install_commit_request,
     app_launch_request, app_list_entries, app_list_request, decode_frame, encode_frame,
-    hello_identity, hello_request, temp_run_begin_request, temp_run_chunk_request,
-    temp_run_commit_request, AppEntry, Frame, FrameKind, Status,
+    hello_identity, hello_request, output_get_request, output_lines, temp_run_begin_request,
+    temp_run_chunk_request, temp_run_commit_request, AppEntry, Frame, FrameKind, Status,
 };
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -131,6 +131,14 @@ impl SerialDevice {
         let frame = decode_frame(&response)
             .map_err(|error| format!("invalid app list response frame: {error:?}"))?;
         app_list_entries(&frame).ok_or_else(|| "not a successful app list response".to_string())
+    }
+
+    pub fn output_lines(&mut self) -> Result<Vec<String>, String> {
+        let request = encode_frame(&output_get_request(3));
+        let response = self.send_bytes_until_quiet(&request)?;
+        let frame = decode_frame(&response)
+            .map_err(|error| format!("invalid output response frame: {error:?}"))?;
+        output_lines(&frame).ok_or_else(|| "not a successful output response".to_string())
     }
 
     fn send_protocol_expect_ok(&mut self, frame: &Frame) -> Result<(), String> {
@@ -336,16 +344,15 @@ impl OutputTail {
         Self::default()
     }
 
-    pub fn next_lines(&mut self, response: &str) -> Vec<String> {
-        let lines = response
-            .lines()
-            .filter(|line| line.starts_with("output="))
-            .map(ToOwned::to_owned)
-            .collect::<Vec<_>>();
+    pub fn next_lines(&mut self, lines: &[String]) -> Vec<String> {
         if lines.len() < self.seen {
             self.seen = 0;
         }
-        let out = lines.iter().skip(self.seen).cloned().collect::<Vec<_>>();
+        let out = lines
+            .iter()
+            .skip(self.seen)
+            .map(|line| format!("output={line}"))
+            .collect::<Vec<_>>();
         self.seen = lines.len();
         out
     }
@@ -358,26 +365,28 @@ mod tests {
     #[test]
     fn output_tail_returns_only_new_output_lines() {
         let mut tail = OutputTail::new();
-        let first =
-            "BEGIN OUTPUT\noutput=\"ready\"\noutput=\"tick\" true\nEND OUTPUT\nOK OUTPUT.GET\n";
+        let first = vec!["\"ready\"".to_string(), "\"tick\" true".to_string()];
         assert_eq!(
-            tail.next_lines(first),
+            tail.next_lines(&first),
             vec!["output=\"ready\"", "output=\"tick\" true"]
         );
 
-        let second =
-            "BEGIN OUTPUT\noutput=\"ready\"\noutput=\"tick\" true\noutput=\"tick\" false\nEND OUTPUT\n";
-        assert_eq!(tail.next_lines(second), vec!["output=\"tick\" false"]);
-        assert!(tail.next_lines(second).is_empty());
+        let second = vec![
+            "\"ready\"".to_string(),
+            "\"tick\" true".to_string(),
+            "\"tick\" false".to_string(),
+        ];
+        assert_eq!(tail.next_lines(&second), vec!["output=\"tick\" false"]);
+        assert!(tail.next_lines(&second).is_empty());
     }
 
     #[test]
     fn output_tail_resets_when_firmware_output_buffer_is_cleared() {
         let mut tail = OutputTail::new();
-        tail.next_lines("BEGIN OUTPUT\noutput=\"old\"\noutput=\"older\"\nEND OUTPUT\n");
+        tail.next_lines(&["\"old\"".to_string(), "\"older\"".to_string()]);
 
         assert_eq!(
-            tail.next_lines("BEGIN OUTPUT\noutput=\"new\"\nEND OUTPUT\n"),
+            tail.next_lines(&["\"new\"".to_string()]),
             vec!["output=\"new\""]
         );
     }

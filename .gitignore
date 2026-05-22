@@ -1,4 +1,5 @@
 target/
+build/
 target/device-discovery/
 target/device-backups/
 node_modules/
