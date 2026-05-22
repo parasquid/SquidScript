@@ -649,20 +649,18 @@ firmware/
 |   |-- storage/
 |   |-- power/
 |   `-- runtime-profiles/
-`-- crates/
-    |-- squid-firmware/      # board entrypoint and boot flow
-    |-- squid-kernel/        # scheduler, services, lifecycle, console
-    |-- squid-hal/           # target-neutral HAL traits
-    |-- squid-hal-esp32c3/   # esp-hal XTEINK X4 implementation
-    |-- squid-display/       # display services and render modes
-    |-- squidvm/             # SQBC validation and execution
-    |-- squid-binbook/       # firmware BinBook service
-    `-- squid-console/       # serial and EPD boot console
+|-- zephyr/                  # Zephyr app, CMake, Kconfig, devicetree overlays
+`-- generated/
+    |-- target_config.h      # generated target constants for firmware
+    |-- app_capabilities.h
+    `-- firmware_manifest.json
 ```
 
 Integrated production targets should prefer one complete `*.target.json` file. Optional `profile-parts/` files should be introduced only when a component is genuinely reused across several targets.
 
-The first reference implementation should be Rust-first and may use `esp-hal`, `esp-hal-embassy`, Embassy, and `esp-radio` for the ESP32-C3 XTEINK X4 target. ESP-IDF remains a candidate backend if a required XTEINK X4 function is not practical in the Rust ESP stack.
+The first real firmware implementation is Zephyr-backed. Rust remains the VM
+semantics implementation through `squidvm-ffi`; Zephyr owns the target host,
+drivers, storage, scheduler, and diagnostics.
 
 ---
 
@@ -670,16 +668,10 @@ The first reference implementation should be Rust-first and may use `esp-hal`, `
 
 The firmware build should select a concrete target.
 
-Example with the Rust ESP reference backend:
+Example with the Zephyr backend:
 
 ```sh
-cargo build -p squid-firmware --features target-xteink-x4
-```
-
-Example with ESP-IDF if that backend is selected:
-
-```sh
-idf.py -DDEVICE_TARGET=xteink-x4 build
+scripts/c3-supermini-build.sh
 ```
 
 Example wrapper:
@@ -689,7 +681,9 @@ make target=xteink-x4 build
 make target=esp32s3-waveshare-7in5 build
 ```
 
-The build system should load the target profile and generate backend-facing target constants, such as a Rust module for `esp-rust` or a C header for ESP-IDF.
+The build system should load the target profile and generate backend-facing
+target constants, such as Zephyr C headers, devicetree overlays, or Kconfig
+fragments.
 
 For production and developer handoff builds, the build should also produce a UF2 firmware image whenever the selected board profile includes `uf2` in `firmwareUpdate.formats`.
 
@@ -700,7 +694,7 @@ build/
 |-- firmware.bin          # native toolchain image or merged flash image
 |-- firmware.uf2          # user-replaceable image when supported by target
 |-- firmware.manifest.json
-`-- target_config.rs       # or target_config.h for C/C++ backends
+`-- target_config.h       # generated Zephyr-facing target constants
 ```
 
 `firmware.uf2` is the preferred artifact for non-developer replacement flows. Users should be able to place the device in update mode, copy the UF2 file to the exposed USB mass-storage volume, and let the bootloader install it. The native `.bin` artifacts remain required for factory flashing, CI validation, recovery over serial/JTAG, and boards without UF2 support.
@@ -756,7 +750,9 @@ The firmware should use interfaces and driver registration instead of device-spe
 
 The firmware should expose hardware through common interfaces.
 
-The examples below are interface sketches. The XTEINK X4 reference firmware should express these as Rust traits and concrete `esp-hal` implementations, while other backends may use equivalent C/C++ or simulator interfaces.
+The examples below are interface sketches. Zephyr firmware should express these
+as C-facing service/driver interfaces backed by Zephyr subsystems and
+target-specific devicetree/Kconfig.
 
 ### 7.1 Display Interface
 
@@ -863,19 +859,17 @@ typedef struct {
 
 ## 8. Firmware Source Organization
 
-Recommended source organization for the Rust reference firmware:
+Recommended source organization for Zephyr firmware:
 
 ```text
 firmware/
-`-- crates/
-    |-- squid-firmware/
-    |-- squid-kernel/
-    |-- squid-hal/
-    |-- squid-hal-esp32c3/
-    |-- squid-display/
-    |-- squidvm/
-    |-- squid-binbook/
-    `-- squid-console/
+`-- zephyr/
+    |-- CMakeLists.txt
+    |-- Kconfig
+    |-- prj.conf
+    |-- boards/
+    |-- src/
+    `-- include/
 ```
 
 The firmware app-lifecycle host owns app registry access, bytecode validation,
@@ -1456,7 +1450,7 @@ The firmware manifest should mark the intended replacement mode:
 
 ```json
 {
-  "format": "squid-firmware-manifest",
+  "format": "squidscript-zephyr-firmware-manifest",
   "target": "xteink-x4",
   "build": "source-or-build-id",
   "replacement": {

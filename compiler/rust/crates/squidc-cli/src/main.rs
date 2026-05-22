@@ -18,6 +18,7 @@ use package::{package_app_dir, read_stored_zip_entries};
 use serde::Serialize;
 use serde_json::{json, Value};
 use serial::{candidate_ports, detect_port, OutputTail, SerialDevice};
+use squidc::protocol;
 use squidc_core::profile::BuildProfile;
 
 fn main() {
@@ -203,7 +204,19 @@ struct DeviceOnlyArgs {
 struct ProtocolRawArgs {
     #[command(flatten)]
     device: DeviceOnlyOptions,
-    line: String,
+    opcode: String,
+    #[arg(long, default_value_t = 1)]
+    seq: u32,
+    #[arg(long = "string")]
+    string: Vec<String>,
+    #[arg(long = "bytes")]
+    bytes: Vec<String>,
+    #[arg(long = "bool")]
+    r#bool: Vec<String>,
+    #[arg(long = "u64")]
+    u64: Vec<String>,
+    #[arg(long = "i64")]
+    i64: Vec<String>,
 }
 
 #[derive(Args, Debug)]
@@ -280,7 +293,7 @@ fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String>
         Commands::App { command } => match command {
             AppCommands::Install(args) => install_app(args, human),
             AppCommands::Launch(args) => launch_app(args, human),
-            AppCommands::List(args) => device_block_command(args.device, "APP.LIST", "apps", human),
+            AppCommands::List(args) => app_list(args, human),
         },
         Commands::Device { command } => match command {
             DeviceCommands::Key(args) => key(args, human),
@@ -481,6 +494,26 @@ fn launch_app(args: AppLaunchArgs, human: bool) -> Result<Value, String> {
     }))
 }
 
+fn app_list(args: DeviceOnlyArgs, human: bool) -> Result<Value, String> {
+    let port = resolve_port(&args.device)?;
+    let mut device = SerialDevice::open(&port)?;
+    let apps = device.app_list()?;
+    if human {
+        for app in &apps {
+            println!("app={} sqbc_len={}", app.app_id, app.sqbc_len);
+        }
+    }
+    Ok(json!({
+        "port": port,
+        "apps": apps.iter().map(|app| {
+            json!({
+                "appId": app.app_id,
+                "sqbcLen": app.sqbc_len,
+            })
+        }).collect::<Vec<_>>()
+    }))
+}
+
 fn key(args: DeviceKeyArgs, human: bool) -> Result<Value, String> {
     let port = resolve_port(&args.device)?;
     let mut device = SerialDevice::open(&port)?;
@@ -499,7 +532,48 @@ fn key(args: DeviceKeyArgs, human: bool) -> Result<Value, String> {
 }
 
 fn protocol_raw(args: ProtocolRawArgs, human: bool) -> Result<Value, String> {
-    device_line_command(args.device, &args.line, "protocol.raw", human)
+    let port = resolve_port(&args.device)?;
+    let mut fields = Vec::new();
+    for value in &args.string {
+        fields.push(protocol::parse_field_arg("string", value)?);
+    }
+    for value in &args.bytes {
+        fields.push(protocol::parse_field_arg("bytes", value)?);
+    }
+    for value in &args.r#bool {
+        fields.push(protocol::parse_field_arg("bool", value)?);
+    }
+    for value in &args.u64 {
+        fields.push(protocol::parse_field_arg("u64", value)?);
+    }
+    for value in &args.i64 {
+        fields.push(protocol::parse_field_arg("i64", value)?);
+    }
+
+    let opcode = protocol::Opcode::parse(&args.opcode)?;
+    let frame = protocol::Frame::request(opcode, args.seq, fields);
+    let bytes = protocol::encode_frame(&frame);
+    let mut device = SerialDevice::open(&port)?;
+    let response = device.send_bytes_until_quiet(&bytes)?;
+    if human {
+        println!("{}", hex_string(&response));
+    }
+    Ok(json!({
+        "port": port,
+        "opcode": args.opcode,
+        "sequence": args.seq,
+        "requestHex": hex_string(&bytes),
+        "responseHex": hex_string(&response)
+    }))
+}
+
+fn hex_string(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        use std::fmt::Write as _;
+        write!(&mut out, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    out
 }
 
 fn resources(args: DeviceOnlyArgs, human: bool) -> Result<Value, String> {
@@ -1514,15 +1588,30 @@ screen("main") {}
     }
 
     #[test]
-    fn parses_protocol_raw_command() {
-        let cli = Cli::try_parse_from(["squidc", "protocol", "raw", "APP.LIST"]).unwrap();
+    fn parses_protocol_raw_framed_command() {
+        let cli = Cli::try_parse_from([
+            "squidc",
+            "protocol",
+            "raw",
+            "hello",
+            "--seq",
+            "7",
+            "--string",
+            "target=esp32c3-supermini",
+            "--bool",
+            "diagnostic=true",
+        ])
+        .unwrap();
         let Commands::Protocol {
             command: ProtocolCommands::Raw(args),
         } = cli.command
         else {
             panic!("expected protocol raw");
         };
-        assert_eq!(args.line, "APP.LIST");
+        assert_eq!(args.opcode, "hello");
+        assert_eq!(args.seq, 7);
+        assert_eq!(args.string, vec!["target=esp32c3-supermini".to_string()]);
+        assert_eq!(args.r#bool, vec!["diagnostic=true".to_string()]);
     }
 
     #[test]

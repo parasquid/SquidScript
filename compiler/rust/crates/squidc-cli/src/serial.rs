@@ -7,6 +7,12 @@ use std::{
 };
 
 use crate::app_id::fnv1a;
+use squidc::protocol::{
+    app_install_begin_request, app_install_chunk_request, app_install_commit_request,
+    app_launch_request, app_list_entries, app_list_request, decode_frame, encode_frame,
+    hello_identity, hello_request, temp_run_begin_request, temp_run_chunk_request,
+    temp_run_commit_request, AppEntry, Frame, FrameKind, Status,
+};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 const CHUNK_SIZE: usize = 64;
@@ -28,17 +34,31 @@ impl SerialDevice {
 
     pub fn probe(port: &str) -> Result<bool, String> {
         let mut device = Self::open(port)?;
-        let response = device.send_line("HELLO")?;
-        Ok(response.contains("target=") && response.contains("OK HELLO"))
+        let request = encode_frame(&hello_request(1));
+        let response = device.send_bytes_until_quiet(&request)?;
+        let frame =
+            decode_frame(&response).map_err(|error| format!("invalid hello frame: {error:?}"))?;
+        Ok(hello_identity(&frame).is_some())
     }
 
     pub fn install_app(&mut self, app_id: &str, bytes: &[u8]) -> Result<String, String> {
-        self.write_install(
-            &format!("INSTALL.APP {app_id}"),
-            "READY install.app",
-            "OK install.app",
-            bytes,
-        )
+        self.send_protocol_expect_ok(&app_install_begin_request(
+            10,
+            app_id,
+            bytes.len() as u64,
+            crc32fast::hash(bytes) as u64,
+        ))?;
+        for (index, chunk) in bytes.chunks(CHUNK_SIZE).enumerate() {
+            self.send_protocol_expect_ok(&app_install_chunk_request(
+                11 + index as u32,
+                (index * CHUNK_SIZE) as u64,
+                chunk.to_vec(),
+            ))?;
+        }
+        self.send_protocol_expect_ok(&app_install_commit_request(
+            11 + bytes.chunks(CHUNK_SIZE).count() as u32,
+        ))?;
+        Ok(format!("installed app {app_id} len={}\n", bytes.len()))
     }
 
     pub fn install_resource(
@@ -56,12 +76,23 @@ impl SerialDevice {
     }
 
     pub fn run_temp_app(&mut self, app_id: &str, bytes: &[u8]) -> Result<String, String> {
-        self.write_install(
-            &format!("RUN.TEMP {app_id}"),
-            "READY RUN.TEMP",
-            "OK RUN.TEMP",
-            bytes,
-        )
+        self.send_protocol_expect_ok(&temp_run_begin_request(
+            30,
+            app_id,
+            bytes.len() as u64,
+            crc32fast::hash(bytes) as u64,
+        ))?;
+        for (index, chunk) in bytes.chunks(CHUNK_SIZE).enumerate() {
+            self.send_protocol_expect_ok(&temp_run_chunk_request(
+                31 + index as u32,
+                (index * CHUNK_SIZE) as u64,
+                chunk.to_vec(),
+            ))?;
+        }
+        self.send_protocol_expect_ok(&temp_run_commit_request(
+            31 + bytes.chunks(CHUNK_SIZE).count() as u32,
+        ))?;
+        Ok(format!("ran temp app {app_id} len={}\n", bytes.len()))
     }
 
     pub fn import_state(&mut self, bytes: &[u8]) -> Result<String, String> {
@@ -74,11 +105,8 @@ impl SerialDevice {
     }
 
     pub fn run_app(&mut self, app_id: &str) -> Result<String, String> {
-        let response = self.send_line(&format!("RUN.APP {app_id}"))?;
-        if !response.contains("OK RUN.APP") {
-            return Err(response.trim().to_string());
-        }
-        Ok(response)
+        self.send_protocol_expect_ok(&app_launch_request(20, app_id))?;
+        Ok(format!("launched app {app_id}\n"))
     }
 
     pub fn run_app_event(&mut self, app_id: &str, event: &str) -> Result<String, String> {
@@ -89,6 +117,35 @@ impl SerialDevice {
         self.drain();
         self.write_all(format!("{line}\n").as_bytes())?;
         self.read_until_quiet(DEFAULT_TIMEOUT)
+    }
+
+    pub fn send_bytes_until_quiet(&mut self, bytes: &[u8]) -> Result<Vec<u8>, String> {
+        self.drain();
+        self.write_all(bytes)?;
+        self.read_bytes_until_quiet(DEFAULT_TIMEOUT)
+    }
+
+    pub fn app_list(&mut self) -> Result<Vec<AppEntry>, String> {
+        let request = encode_frame(&app_list_request(2));
+        let response = self.send_bytes_until_quiet(&request)?;
+        let frame = decode_frame(&response)
+            .map_err(|error| format!("invalid app list response frame: {error:?}"))?;
+        app_list_entries(&frame).ok_or_else(|| "not a successful app list response".to_string())
+    }
+
+    fn send_protocol_expect_ok(&mut self, frame: &Frame) -> Result<(), String> {
+        let request = encode_frame(frame);
+        let response = self.send_bytes_until_quiet(&request)?;
+        let response_frame = decode_frame(&response)
+            .map_err(|error| format!("invalid protocol response frame: {error:?}"))?;
+        if response_frame.kind != FrameKind::Response
+            || response_frame.opcode != frame.opcode
+            || response_frame.status != Status::Ok
+            || response_frame.sequence != frame.sequence
+        {
+            return Err(format!("unexpected protocol response: {response_frame:?}"));
+        }
+        Ok(())
     }
 
     pub fn read_available_text(&mut self) -> Result<String, String> {
@@ -163,6 +220,10 @@ impl SerialDevice {
     }
 
     fn read_until_quiet(&mut self, timeout: Duration) -> Result<String, String> {
+        Ok(String::from_utf8_lossy(&self.read_bytes_until_quiet(timeout)?).into_owned())
+    }
+
+    fn read_bytes_until_quiet(&mut self, timeout: Duration) -> Result<Vec<u8>, String> {
         let deadline = Instant::now() + timeout;
         let mut quiet_deadline = None;
         let mut response = Vec::new();
@@ -181,7 +242,7 @@ impl SerialDevice {
                 break;
             }
         }
-        Ok(String::from_utf8_lossy(&response).into_owned())
+        Ok(response)
     }
 }
 

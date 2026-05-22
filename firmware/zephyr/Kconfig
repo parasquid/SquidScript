@@ -1,0 +1,11 @@
+menu "SquidScript Zephyr firmware"
+
+config SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC
+	bool "Enable SquidScript Zephyr diagnostic banner"
+	default y
+	help
+	  Emit a minimal boot diagnostic for the initial Zephyr firmware host.
+
+endmenu
+
+source "Kconfig.zephyr"

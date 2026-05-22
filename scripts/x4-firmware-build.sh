@@ -1,15 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-FIRMWARE_DIR="${ROOT}/firmware/squid-firmware"
-RUSTC_PATH="${RUSTC:-$(rustup which rustc)}"
-BUILD_ID="${SQUID_FIRMWARE_BUILD_ID:-$(git -C "$ROOT" rev-parse --short=12 HEAD 2>/dev/null || date +%Y%m%d%H%M)}"
+cat >&2 <<'EOF'
+scripts/x4-firmware-build.sh is obsolete.
 
-cd "$FIRMWARE_DIR"
-
-SQUID_FIRMWARE_BUILD_ID="$BUILD_ID" \
-RUSTC="$RUSTC_PATH" \
-rustup run stable cargo build --release --features hardware
-
-printf '%s\n' "$FIRMWARE_DIR/target/riscv32imc-unknown-none-elf/release/x4-hello"
+Real firmware builds are Zephyr-only. Use the current Zephyr wrappers or add an
+XTEINK X4 Zephyr target before restoring an X4-specific build command.
+EOF
+exit 1

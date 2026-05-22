@@ -1,0 +1,14 @@
+/*
+ * ESP32-C3 Super Mini Zephyr overlay.
+ *
+ * The default esp32c3_devkitm board routes console traffic to UART0 pins. The
+ * Super Mini development flow uses the USB-Serial/JTAG device exposed on the
+ * host as /dev/ttyACM*.
+ */
+
+/ {
+	chosen {
+		zephyr,console = &usb_serial;
+		zephyr,shell-uart = &usb_serial;
+	};
+};

@@ -14,76 +14,59 @@ pub const MAX_STORAGE_TRANSFER_BYTES: usize = if MAX_CODE_CHUNK_BYTES > MAX_SAVE
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StorageRequestKind {
+pub enum StorageRequest {
     SqbcRead { offset: usize, len: usize },
     StateLoad,
-    StateSave { len: usize },
+    StateSave { len: usize, bytes: *const u8 },
     StateReset,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct StorageRequest {
-    pub kind: StorageRequestKind,
-    pub bytes: [u8; MAX_STORAGE_TRANSFER_BYTES],
 }
 
 impl StorageRequest {
     pub const fn sqbc_read(offset: usize, len: usize) -> Self {
-        Self {
-            kind: StorageRequestKind::SqbcRead { offset, len },
-            bytes: [0; MAX_STORAGE_TRANSFER_BYTES],
-        }
+        Self::SqbcRead { offset, len }
     }
 
     pub const fn state_load() -> Self {
-        Self {
-            kind: StorageRequestKind::StateLoad,
-            bytes: [0; MAX_STORAGE_TRANSFER_BYTES],
-        }
+        Self::StateLoad
     }
 
     pub fn state_save(bytes: &[u8]) -> Result<Self, VmError> {
         if bytes.len() > MAX_SAVED_STATE_BYTES {
             return Err(VmError::InvalidStateRecord);
         }
-        let mut request = Self {
-            kind: StorageRequestKind::StateSave { len: bytes.len() },
-            bytes: [0; MAX_STORAGE_TRANSFER_BYTES],
-        };
-        request.bytes[..bytes.len()].copy_from_slice(bytes);
-        Ok(request)
+        Ok(Self::StateSave {
+            len: bytes.len(),
+            bytes: bytes.as_ptr(),
+        })
     }
 
     pub const fn state_reset() -> Self {
-        Self {
-            kind: StorageRequestKind::StateReset,
-            bytes: [0; MAX_STORAGE_TRANSFER_BYTES],
-        }
+        Self::StateReset
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct StorageCompletion {
-    pub bytes: [u8; MAX_STORAGE_TRANSFER_BYTES],
+pub struct StorageCompletion<'a> {
+    pub bytes: &'a [u8],
     pub len: Option<usize>,
 }
 
-impl StorageCompletion {
+impl StorageCompletion<'_> {
     pub const fn empty() -> Self {
         Self {
-            bytes: [0; MAX_STORAGE_TRANSFER_BYTES],
+            bytes: &[],
             len: None,
         }
     }
 
-    pub fn bytes(bytes: &[u8]) -> Result<Self, VmError> {
+    pub fn bytes(bytes: &[u8]) -> Result<StorageCompletion<'_>, VmError> {
         if bytes.len() > MAX_STORAGE_TRANSFER_BYTES {
             return Err(VmError::InvalidStateRecord);
         }
-        let mut completion = Self::empty();
-        completion.bytes[..bytes.len()].copy_from_slice(bytes);
-        completion.len = Some(bytes.len());
-        Ok(completion)
+        Ok(StorageCompletion {
+            bytes,
+            len: Some(bytes.len()),
+        })
     }
 }
 

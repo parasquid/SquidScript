@@ -2,6 +2,7 @@
 members = [
   "compiler/rust/crates/squidc-core",
   "compiler/rust/crates/squidvm-core",
+  "compiler/rust/crates/squidvm-ffi",
   "compiler/rust/crates/squidc-cli",
   "compiler/rust/crates/squidc-wasm"
 ]

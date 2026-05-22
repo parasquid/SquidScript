@@ -1,4 +1,4 @@
-use core::{fmt::Write, str};
+use core::{fmt::Write, ptr, str};
 
 use crate::{
     bytecode::{
@@ -25,9 +25,11 @@ use crate::{
         WifiScanResult, WifiStatus,
     },
     limits::{
-        MAX_CALL_DEPTH, MAX_CODE_CHUNK_BYTES, MAX_INSTRUCTIONS_PER_EVENT, MAX_LOCALS,
-        MAX_RUNTIME_LISTS, MAX_RUNTIME_LIST_ITEMS, MAX_RUNTIME_RECORDS, MAX_RUNTIME_RECORD_FIELDS,
-        MAX_RUNTIME_STRING_BYTES, MAX_SAVED_STATE_BYTES, MAX_STACK, MAX_STATE,
+        MAX_CALL_DEPTH, MAX_CODE_CHUNK_BYTES, MAX_FUNCTIONS, MAX_HANDLERS,
+        MAX_INSTRUCTIONS_PER_EVENT, MAX_LOCALS, MAX_PROGRAM_STRING_BYTES, MAX_RUNTIME_LISTS,
+        MAX_RUNTIME_LIST_ITEMS, MAX_RUNTIME_RECORDS, MAX_RUNTIME_RECORD_FIELDS,
+        MAX_RUNTIME_STRING_BYTES, MAX_SAVED_STATE_BYTES, MAX_SCREENS, MAX_STACK, MAX_STATE,
+        MAX_STRINGS,
     },
     program::{Program, ProgramIndex},
     reader::{ChunkedVmHost, SqbcReader},
@@ -65,6 +67,7 @@ pub struct ChunkedVm {
     instructions: usize,
     chunk_cache: ChunkCache<4>,
     code: [u8; MAX_CODE_CHUNK_BYTES],
+    storage_bytes: [u8; MAX_SAVED_STATE_BYTES],
     code_start: usize,
     code_len: usize,
     resume: Option<ChunkedResume>,
@@ -242,10 +245,69 @@ impl ChunkedVm {
             instructions: 0,
             chunk_cache: ChunkCache::new(),
             code: [0; MAX_CODE_CHUNK_BYTES],
+            storage_bytes: [0; MAX_SAVED_STATE_BYTES],
             code_start: usize::MAX,
             code_len: 0,
             resume: None,
         }
+    }
+
+    /// Writes a freshly initialized VM directly into caller-owned storage.
+    ///
+    /// This avoids constructing the full VM as a transient stack temporary in
+    /// C FFI callers on small firmware stacks.
+    pub unsafe fn init_in_place(out: *mut Self, index: &ProgramIndex) {
+        init_program_index_in_place(ptr::addr_of_mut!((*out).index), index);
+        Self::init_after_index_in_place(out);
+    }
+
+    pub unsafe fn init_in_place_from_reader(
+        out: *mut Self,
+        reader: &mut impl SqbcReader,
+        scratch: &mut [u8],
+    ) -> Result<(), VmError> {
+        ProgramIndex::parse_from_reader_in_place(ptr::addr_of_mut!((*out).index), reader, scratch)?;
+        Self::init_after_index_in_place(out);
+        Ok(())
+    }
+
+    unsafe fn init_after_index_in_place(out: *mut Self) {
+        ptr::addr_of_mut!((*out).runtime_strings).write(RuntimeStrings::new());
+        init_runtime_records_in_place(ptr::addr_of_mut!((*out).runtime_records));
+        init_runtime_lists_in_place(ptr::addr_of_mut!((*out).runtime_lists));
+
+        let state = ptr::addr_of_mut!((*out).state).cast::<Value>();
+        for slot_index in 0..MAX_STATE {
+            let value = (*out)
+                .index
+                .state_slots
+                .get(slot_index)
+                .filter(|_| slot_index < (*out).index.state_count)
+                .map_or(Value::Null, |slot| slot.default);
+            state.add(slot_index).write(value);
+        }
+        let stack = ptr::addr_of_mut!((*out).stack).cast::<Value>();
+        for stack_index in 0..MAX_STACK {
+            stack.add(stack_index).write(Value::Null);
+        }
+        ptr::addr_of_mut!((*out).stack_len).write(0);
+        ptr::addr_of_mut!((*out).current_screen).write(None);
+        ptr::addr_of_mut!((*out).exited).write(false);
+        ptr::addr_of_mut!((*out).instructions).write(0);
+        ptr::addr_of_mut!((*out).chunk_cache).write(ChunkCache::new());
+        ptr::write_bytes(
+            ptr::addr_of_mut!((*out).code).cast::<u8>(),
+            0,
+            MAX_CODE_CHUNK_BYTES,
+        );
+        ptr::write_bytes(
+            ptr::addr_of_mut!((*out).storage_bytes).cast::<u8>(),
+            0,
+            MAX_SAVED_STATE_BYTES,
+        );
+        ptr::addr_of_mut!((*out).code_start).write(usize::MAX);
+        ptr::addr_of_mut!((*out).code_len).write(0);
+        ptr::addr_of_mut!((*out).resume).write(None);
     }
 
     pub fn dispatch(&mut self, host: &mut impl ChunkedVmHost, event: &str) -> Result<(), VmError> {
@@ -297,7 +359,7 @@ impl ChunkedVm {
     pub fn resume_storage(
         &mut self,
         host: &mut impl ChunkedVmHost,
-        completion: StorageCompletion,
+        completion: StorageCompletion<'_>,
     ) -> Result<VmDispatch, VmError> {
         let Some(mut resume) = self.resume.take() else {
             return Ok(VmDispatch::Complete);
@@ -487,8 +549,8 @@ impl ChunkedVm {
             return Ok(None);
         }
         let offset = self.index.code_offset + start;
-        if let Some(request) = reader.storage_request_at(offset, len)? {
-            return Ok(Some(request));
+        if reader.should_defer_read(offset, len)? {
+            return Ok(Some(StorageRequest::sqbc_read(offset, len)));
         }
         reader.read_exact_at(offset, &mut self.code[..len])?;
         self.code_start = start;
@@ -771,7 +833,7 @@ impl ChunkedVm {
             pending: PendingStorageResume::None,
         };
         if let Some(request) = self.load_chunk_resumable(host, start, len)? {
-            let crate::host::StorageRequestKind::SqbcRead { offset, len } = request.kind else {
+            let StorageRequest::SqbcRead { offset, len } = request else {
                 return Err(VmError::ReadFailed);
             };
             frame.pending = PendingStorageResume::SqbcRead { offset, len };
@@ -790,7 +852,7 @@ impl ChunkedVm {
             if let Some(request) =
                 self.load_chunk_resumable(host, frame.start, frame.end - frame.start)?
             {
-                let crate::host::StorageRequestKind::SqbcRead { offset, len } = request.kind else {
+                let StorageRequest::SqbcRead { offset, len } = request else {
                     return Err(VmError::ReadFailed);
                 };
                 frame.pending = PendingStorageResume::SqbcRead { offset, len };
@@ -917,19 +979,11 @@ impl ChunkedVm {
                     if let Some(request) =
                         self.call_builtin_resumable(host, builtin, arg_count, frame.depth)?
                     {
-                        frame.pending = match request.kind {
-                            crate::host::StorageRequestKind::StateLoad => {
-                                PendingStorageResume::StateLoad
-                            }
-                            crate::host::StorageRequestKind::StateSave { .. } => {
-                                PendingStorageResume::StateSave
-                            }
-                            crate::host::StorageRequestKind::StateReset => {
-                                PendingStorageResume::StateReset
-                            }
-                            crate::host::StorageRequestKind::SqbcRead { .. } => {
-                                PendingStorageResume::None
-                            }
+                        frame.pending = match request {
+                            StorageRequest::StateLoad => PendingStorageResume::StateLoad,
+                            StorageRequest::StateSave { .. } => PendingStorageResume::StateSave,
+                            StorageRequest::StateReset => PendingStorageResume::StateReset,
+                            StorageRequest::SqbcRead { .. } => PendingStorageResume::None,
                         };
                         self.resume = Some(frame);
                         return Ok(VmDispatch::PendingStorage(request));
@@ -962,15 +1016,16 @@ impl ChunkedVm {
         match builtin {
             BUILTIN_STATE_LOAD => Ok(Some(StorageRequest::state_load())),
             BUILTIN_STATE_SAVE => {
-                let mut bytes = [0u8; MAX_SAVED_STATE_BYTES];
                 let len = encode_state_record(
                     &self.index,
                     &self.runtime_strings,
                     &self.index.state_slots[..self.index.state_count],
                     &self.state[..self.index.state_count],
-                    &mut bytes,
+                    &mut self.storage_bytes,
                 )?;
-                Ok(Some(StorageRequest::state_save(&bytes[..len])?))
+                Ok(Some(StorageRequest::state_save(
+                    &self.storage_bytes[..len],
+                )?))
             }
             BUILTIN_STATE_RESET => {
                 self.reset_state();
@@ -1406,6 +1461,79 @@ impl ChunkedVm {
         self.stack_len -= 1;
         Ok(self.stack[self.stack_len])
     }
+}
+
+unsafe fn init_program_index_in_place(out: *mut ProgramIndex, index: &ProgramIndex) {
+    ptr::copy_nonoverlapping(
+        index.string_bytes.as_ptr(),
+        ptr::addr_of_mut!((*out).string_bytes).cast::<u8>(),
+        MAX_PROGRAM_STRING_BYTES,
+    );
+    ptr::copy_nonoverlapping(
+        index.string_offsets.as_ptr(),
+        ptr::addr_of_mut!((*out).string_offsets).cast::<u16>(),
+        MAX_STRINGS,
+    );
+    ptr::copy_nonoverlapping(
+        index.string_lens.as_ptr(),
+        ptr::addr_of_mut!((*out).string_lens).cast::<u16>(),
+        MAX_STRINGS,
+    );
+    ptr::addr_of_mut!((*out).string_count).write(index.string_count);
+    ptr::copy_nonoverlapping(
+        index.state_slots.as_ptr(),
+        ptr::addr_of_mut!((*out).state_slots).cast(),
+        MAX_STATE,
+    );
+    ptr::addr_of_mut!((*out).state_count).write(index.state_count);
+    ptr::copy_nonoverlapping(
+        index.functions.as_ptr(),
+        ptr::addr_of_mut!((*out).functions).cast(),
+        MAX_FUNCTIONS,
+    );
+    ptr::addr_of_mut!((*out).function_count).write(index.function_count);
+    ptr::copy_nonoverlapping(
+        index.handlers.as_ptr(),
+        ptr::addr_of_mut!((*out).handlers).cast(),
+        MAX_HANDLERS,
+    );
+    ptr::addr_of_mut!((*out).handler_count).write(index.handler_count);
+    ptr::copy_nonoverlapping(
+        index.screens.as_ptr(),
+        ptr::addr_of_mut!((*out).screens).cast(),
+        MAX_SCREENS,
+    );
+    ptr::addr_of_mut!((*out).screen_count).write(index.screen_count);
+    ptr::addr_of_mut!((*out).code_offset).write(index.code_offset);
+    ptr::addr_of_mut!((*out).code_len).write(index.code_len);
+}
+
+unsafe fn init_runtime_records_in_place(out: *mut RuntimeRecords) {
+    let records = ptr::addr_of_mut!((*out).records).cast::<RuntimeRecord>();
+    for record_index in 0..MAX_RUNTIME_RECORDS {
+        let record = records.add(record_index);
+        let fields = ptr::addr_of_mut!((*record).fields).cast::<RuntimeRecordField>();
+        for field_index in 0..MAX_RUNTIME_RECORD_FIELDS {
+            fields
+                .add(field_index)
+                .write(RuntimeRecordField::new("", Value::Null));
+        }
+        ptr::addr_of_mut!((*record).field_count).write(0);
+    }
+    ptr::addr_of_mut!((*out).next).write(0);
+}
+
+unsafe fn init_runtime_lists_in_place(out: *mut RuntimeLists) {
+    let lists = ptr::addr_of_mut!((*out).lists).cast::<RuntimeList>();
+    for list_index in 0..MAX_RUNTIME_LISTS {
+        let list = lists.add(list_index);
+        let items = ptr::addr_of_mut!((*list).items).cast::<Value>();
+        for item_index in 0..MAX_RUNTIME_LIST_ITEMS {
+            items.add(item_index).write(Value::Null);
+        }
+        ptr::addr_of_mut!((*list).item_count).write(0);
+    }
+    ptr::addr_of_mut!((*out).next).write(0);
 }
 
 impl<'a> Vm<'a> {

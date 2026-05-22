@@ -928,7 +928,8 @@ The browser simulator compile path emits SQBC:
 ```
 
 Browser-sim installs `main.sqbc` under simulated `/sd` and runs it through
-`squidvm-core`, the same shared VM crate used by reference firmware.
+`squidvm-core`, the same shared VM crate exposed to Zephyr firmware through
+`squidvm-ffi`.
 
 ---
 

@@ -1,4 +1,4 @@
-use core::str;
+use core::{mem::MaybeUninit, ptr, str};
 
 use crate::{
     bytecode::{
@@ -182,6 +182,18 @@ impl ProgramIndex {
         reader: &mut impl SqbcReader,
         scratch: &mut [u8],
     ) -> Result<Self, VmError> {
+        let mut out = MaybeUninit::<Self>::uninit();
+        unsafe {
+            Self::parse_from_reader_in_place(out.as_mut_ptr(), reader, scratch)?;
+            Ok(out.assume_init())
+        }
+    }
+
+    pub unsafe fn parse_from_reader_in_place(
+        out: *mut Self,
+        reader: &mut impl SqbcReader,
+        scratch: &mut [u8],
+    ) -> Result<(), VmError> {
         let mut fixed_header = [0u8; SQBC_HEADER_LEN];
         reader.read_exact_at(0, &mut fixed_header)?;
         let header = Program::parse_header(&fixed_header)?;
@@ -227,9 +239,31 @@ impl ProgramIndex {
         reader.read_exact_at(strings_section.offset, &mut scratch[..strings_section.len])?;
         let (string_bytes, string_offsets, string_lens, string_count) =
             parse_owned_strings(&scratch[..strings_section.len])?;
+        ptr::copy_nonoverlapping(
+            string_bytes.as_ptr(),
+            ptr::addr_of_mut!((*out).string_bytes).cast::<u8>(),
+            MAX_PROGRAM_STRING_BYTES,
+        );
+        ptr::copy_nonoverlapping(
+            string_offsets.as_ptr(),
+            ptr::addr_of_mut!((*out).string_offsets).cast::<u16>(),
+            MAX_STRINGS,
+        );
+        ptr::copy_nonoverlapping(
+            string_lens.as_ptr(),
+            ptr::addr_of_mut!((*out).string_lens).cast::<u16>(),
+            MAX_STRINGS,
+        );
+        ptr::addr_of_mut!((*out).string_count).write(string_count);
 
         reader.read_exact_at(state_section.offset, &mut scratch[..state_section.len])?;
         let (state_slots, state_count) = parse_state(&scratch[..state_section.len])?;
+        ptr::copy_nonoverlapping(
+            state_slots.as_ptr(),
+            ptr::addr_of_mut!((*out).state_slots).cast::<StateSlot>(),
+            MAX_STATE,
+        );
+        ptr::addr_of_mut!((*out).state_count).write(state_count);
 
         reader.read_exact_at(
             functions_section.offset,
@@ -237,6 +271,12 @@ impl ProgramIndex {
         )?;
         let (functions, function_count) =
             parse_functions(&scratch[..functions_section.len], code_section.len)?;
+        ptr::copy_nonoverlapping(
+            functions.as_ptr(),
+            ptr::addr_of_mut!((*out).functions).cast::<Function>(),
+            MAX_FUNCTIONS,
+        );
+        ptr::addr_of_mut!((*out).function_count).write(function_count);
 
         reader.read_exact_at(
             handlers_section.offset,
@@ -244,6 +284,12 @@ impl ProgramIndex {
         )?;
         let (handlers, handler_count) =
             parse_handlers(&scratch[..handlers_section.len], code_section.len)?;
+        ptr::copy_nonoverlapping(
+            handlers.as_ptr(),
+            ptr::addr_of_mut!((*out).handlers).cast::<Handler>(),
+            MAX_HANDLERS,
+        );
+        ptr::addr_of_mut!((*out).handler_count).write(handler_count);
 
         let (screens, screen_count) = if let Some(section) = screens_section {
             reader.read_exact_at(section.offset, &mut scratch[..section.len])?;
@@ -251,23 +297,16 @@ impl ProgramIndex {
         } else {
             parse_screens(None, code_section.len)?
         };
+        ptr::copy_nonoverlapping(
+            screens.as_ptr(),
+            ptr::addr_of_mut!((*out).screens).cast::<Screen>(),
+            MAX_SCREENS,
+        );
+        ptr::addr_of_mut!((*out).screen_count).write(screen_count);
+        ptr::addr_of_mut!((*out).code_offset).write(code_section.offset);
+        ptr::addr_of_mut!((*out).code_len).write(code_section.len);
 
-        Ok(Self {
-            string_bytes,
-            string_offsets,
-            string_lens,
-            string_count,
-            state_slots,
-            state_count,
-            functions,
-            function_count,
-            handlers,
-            handler_count,
-            screens,
-            screen_count,
-            code_offset: code_section.offset,
-            code_len: code_section.len,
-        })
+        Ok(())
     }
 
     pub fn parse(bytes: &[u8], scratch: &mut [u8]) -> Result<Self, VmError> {

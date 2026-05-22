@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import binascii
 import glob
 import os
 import select
@@ -11,6 +12,27 @@ import tty
 
 DEFAULT_TIMEOUT = 5.0
 DEFAULT_CHUNK_SIZE = 64
+PROTOCOL_MAGIC = b"SQDP"
+PROTOCOL_HEADER_LEN = 20
+PROTOCOL_FIELD_TYPES = {
+    "bytes": 0,
+    "string": 1,
+    "bool": 3,
+    "i64": 4,
+    "u64": 5,
+    "record": 32,
+}
+PROTOCOL_KIND_REQUEST = 1
+PROTOCOL_KIND_RESPONSE = 2
+PROTOCOL_STATUS_OK = 0
+PROTOCOL_OPCODE_HELLO = 1
+PROTOCOL_OPCODE_APP_LIST = 33
+PROTOCOL_HELLO_FIELD_TARGET = 1
+PROTOCOL_HELLO_FIELD_FIRMWARE = 2
+PROTOCOL_HELLO_FIELD_DIAGNOSTIC = 3
+PROTOCOL_APP_LIST_FIELD_APP = 1
+PROTOCOL_APP_FIELD_ID = 1
+PROTOCOL_APP_FIELD_SQBC_LEN = 2
 
 
 def default_port():
@@ -91,6 +113,191 @@ def compute_fnv1a(data):
     return value
 
 
+def encode_protocol_frame(*, kind, opcode, status, sequence, fields):
+    payload = _encode_protocol_fields(fields)
+    header = bytearray(PROTOCOL_MAGIC)
+    header.extend(bytes([kind, opcode, status, 0]))
+    header.extend(sequence.to_bytes(4, "little"))
+    header.extend(len(payload).to_bytes(4, "little"))
+    header.extend((binascii.crc32(payload) & 0xFFFFFFFF).to_bytes(4, "little"))
+    return bytes(header) + payload
+
+
+def decode_protocol_frame(frame):
+    if len(frame) < PROTOCOL_HEADER_LEN:
+        raise ValueError("truncated protocol frame header")
+    if frame[:4] != PROTOCOL_MAGIC:
+        raise ValueError("invalid protocol frame magic")
+    payload_len = int.from_bytes(frame[12:16], "little")
+    expected_len = PROTOCOL_HEADER_LEN + payload_len
+    if len(frame) != expected_len:
+        raise ValueError(
+            f"protocol frame length mismatch: expected {expected_len}, got {len(frame)}"
+        )
+    payload = frame[PROTOCOL_HEADER_LEN:]
+    payload_crc = int.from_bytes(frame[16:20], "little")
+    actual_crc = binascii.crc32(payload) & 0xFFFFFFFF
+    if payload_crc != actual_crc:
+        raise ValueError("protocol frame payload CRC mismatch")
+    return {
+        "kind": frame[4],
+        "opcode": frame[5],
+        "status": frame[6],
+        "sequence": int.from_bytes(frame[8:12], "little"),
+        "fields": _decode_protocol_fields(payload),
+    }
+
+
+def encode_protocol_hello_request(*, sequence=1):
+    return encode_protocol_frame(
+        kind=PROTOCOL_KIND_REQUEST,
+        opcode=PROTOCOL_OPCODE_HELLO,
+        status=PROTOCOL_STATUS_OK,
+        sequence=sequence,
+        fields=[],
+    )
+
+
+def encode_protocol_app_list_request(*, sequence=2):
+    return encode_protocol_frame(
+        kind=PROTOCOL_KIND_REQUEST,
+        opcode=PROTOCOL_OPCODE_APP_LIST,
+        status=PROTOCOL_STATUS_OK,
+        sequence=sequence,
+        fields=[],
+    )
+
+
+def decode_protocol_hello_identity(frame):
+    decoded = decode_protocol_frame(frame)
+    if (
+        decoded["kind"] != PROTOCOL_KIND_RESPONSE
+        or decoded["opcode"] != PROTOCOL_OPCODE_HELLO
+        or decoded["status"] != PROTOCOL_STATUS_OK
+    ):
+        raise ValueError("not a successful hello response frame")
+
+    values = {}
+    for tag, type_id, value in decoded["fields"]:
+        if tag == PROTOCOL_HELLO_FIELD_TARGET and type_id == PROTOCOL_FIELD_TYPES["string"]:
+            values["target"] = value
+        elif tag == PROTOCOL_HELLO_FIELD_FIRMWARE and type_id == PROTOCOL_FIELD_TYPES["string"]:
+            values["firmware"] = value
+        elif tag == PROTOCOL_HELLO_FIELD_DIAGNOSTIC and type_id == PROTOCOL_FIELD_TYPES["bool"]:
+            values["diagnostic"] = value
+
+    if "target" not in values or "firmware" not in values:
+        raise ValueError("hello response is missing identity fields")
+    values.setdefault("diagnostic", False)
+    return values
+
+
+def decode_protocol_app_list(frame):
+    decoded = decode_protocol_frame(frame)
+    if (
+        decoded["kind"] != PROTOCOL_KIND_RESPONSE
+        or decoded["opcode"] != PROTOCOL_OPCODE_APP_LIST
+        or decoded["status"] != PROTOCOL_STATUS_OK
+    ):
+        raise ValueError("not a successful app list response frame")
+
+    entries = []
+    for tag, type_id, value in decoded["fields"]:
+        if tag != PROTOCOL_APP_LIST_FIELD_APP or type_id != PROTOCOL_FIELD_TYPES["record"]:
+            continue
+        entry = {}
+        for field_tag, field_type_id, field_value in value:
+            if field_tag == PROTOCOL_APP_FIELD_ID and field_type_id == PROTOCOL_FIELD_TYPES["string"]:
+                entry["app_id"] = field_value
+            elif (
+                field_tag == PROTOCOL_APP_FIELD_SQBC_LEN
+                and field_type_id == PROTOCOL_FIELD_TYPES["u64"]
+            ):
+                entry["sqbc_len"] = field_value
+        if "app_id" not in entry or "sqbc_len" not in entry:
+            raise ValueError("app list entry missing required fields")
+        entries.append(entry)
+    return entries
+
+
+def get_protocol_hello_identity(serial, *, output=None, timeout=DEFAULT_TIMEOUT):
+    serial.write_all(encode_protocol_hello_request(sequence=1))
+    response = _read_until_quiet(serial, output, timeout)
+    return decode_protocol_hello_identity(response)
+
+
+def get_protocol_app_list(serial, *, output=None, timeout=DEFAULT_TIMEOUT):
+    serial.write_all(encode_protocol_app_list_request(sequence=2))
+    response = _read_until_quiet(serial, output, timeout)
+    return decode_protocol_app_list(response)
+
+
+def _encode_protocol_fields(fields):
+    payload = bytearray()
+    for field_type, tag, value in fields:
+        type_id = PROTOCOL_FIELD_TYPES[field_type]
+        if field_type == "bytes":
+            value_bytes = bytes(value)
+        elif field_type == "string":
+            value_bytes = value.encode("utf-8")
+        elif field_type == "bool":
+            value_bytes = b"\x01" if value else b"\x00"
+        elif field_type == "i64":
+            value_bytes = int(value).to_bytes(8, "little", signed=True)
+        elif field_type == "u64":
+            value_bytes = int(value).to_bytes(8, "little", signed=False)
+        elif field_type == "record":
+            value_bytes = _encode_protocol_fields(value)
+        else:
+            raise ValueError(f"unsupported protocol field type: {field_type}")
+        payload.extend(bytes([tag, type_id]))
+        payload.extend(len(value_bytes).to_bytes(2, "little"))
+        payload.extend(value_bytes)
+    return bytes(payload)
+
+
+def _decode_protocol_fields(payload):
+    fields = []
+    offset = 0
+    while offset < len(payload):
+        if len(payload) - offset < 4:
+            raise ValueError("truncated protocol field header")
+        tag = payload[offset]
+        type_id = payload[offset + 1]
+        value_len = int.from_bytes(payload[offset + 2 : offset + 4], "little")
+        offset += 4
+        value = payload[offset : offset + value_len]
+        if len(value) != value_len:
+            raise ValueError("truncated protocol field value")
+        offset += value_len
+        fields.append((tag, type_id, _decode_protocol_field_value(type_id, value)))
+    return fields
+
+
+def _decode_protocol_field_value(type_id, value):
+    if type_id == PROTOCOL_FIELD_TYPES["bytes"]:
+        return value
+    if type_id == PROTOCOL_FIELD_TYPES["string"]:
+        return value.decode("utf-8")
+    if type_id == PROTOCOL_FIELD_TYPES["bool"]:
+        if value == b"\x00":
+            return False
+        if value == b"\x01":
+            return True
+        raise ValueError("invalid protocol bool field")
+    if type_id == PROTOCOL_FIELD_TYPES["i64"]:
+        if len(value) != 8:
+            raise ValueError("invalid protocol i64 field length")
+        return int.from_bytes(value, "little", signed=True)
+    if type_id == PROTOCOL_FIELD_TYPES["u64"]:
+        if len(value) != 8:
+            raise ValueError("invalid protocol u64 field length")
+        return int.from_bytes(value, "little", signed=False)
+    if type_id == PROTOCOL_FIELD_TYPES["record"]:
+        return _decode_protocol_fields(value)
+    raise ValueError(f"unknown protocol field type: {type_id}")
+
+
 def install_app_sqbc(
     serial,
     app_id,
@@ -100,14 +307,56 @@ def install_app_sqbc(
     output=sys.stdout.buffer,
     timeout=DEFAULT_TIMEOUT,
 ):
-    hash_value = compute_fnv1a(data)
-    _drain(serial, output)
-    serial.write_all(f"INSTALL.APP {app_id} {len(data)} {hash_value:08x}\n".encode("ascii"))
-    _wait_for(serial, b"READY install.app", output, timeout, InstallError)
+    sequence = 10
+    _send_protocol_request_expect_ok(
+        serial,
+        encode_protocol_frame(
+            kind=PROTOCOL_KIND_REQUEST,
+            opcode=16,
+            status=PROTOCOL_STATUS_OK,
+            sequence=sequence,
+            fields=[
+                ("string", 1, app_id),
+                ("u64", 2, len(data)),
+                ("u64", 3, binascii.crc32(data) & 0xFFFFFFFF),
+            ],
+        ),
+        opcode=16,
+        sequence=sequence,
+        timeout=timeout,
+    )
+    sequence += 1
     for offset in range(0, len(data), chunk_size):
-        serial.write_all(data[offset : offset + chunk_size])
-        time.sleep(0.002)
-    _wait_for(serial, b"OK install.app", output, timeout, InstallError)
+        _send_protocol_request_expect_ok(
+            serial,
+            encode_protocol_frame(
+                kind=PROTOCOL_KIND_REQUEST,
+                opcode=17,
+                status=PROTOCOL_STATUS_OK,
+                sequence=sequence,
+                fields=[
+                    ("u64", 1, offset),
+                    ("bytes", 2, data[offset : offset + chunk_size]),
+                ],
+            ),
+            opcode=17,
+            sequence=sequence,
+            timeout=timeout,
+        )
+        sequence += 1
+    _send_protocol_request_expect_ok(
+        serial,
+        encode_protocol_frame(
+            kind=PROTOCOL_KIND_REQUEST,
+            opcode=18,
+            status=PROTOCOL_STATUS_OK,
+            sequence=sequence,
+            fields=[],
+        ),
+        opcode=18,
+        sequence=sequence,
+        timeout=timeout,
+    )
 
 
 def run_temp_app_sqbc(
@@ -119,14 +368,53 @@ def run_temp_app_sqbc(
     output=sys.stdout.buffer,
     timeout=DEFAULT_TIMEOUT,
 ):
-    hash_value = compute_fnv1a(data)
-    _drain(serial, output)
-    serial.write_all(f"RUN.TEMP {app_id} {len(data)} {hash_value:08x}\n".encode("ascii"))
-    _wait_for(serial, b"READY RUN.TEMP", output, timeout, InstallError)
+    sequence = 30
+    _send_protocol_request_expect_ok(
+        serial,
+        encode_protocol_frame(
+            kind=PROTOCOL_KIND_REQUEST,
+            opcode=24,
+            status=PROTOCOL_STATUS_OK,
+            sequence=sequence,
+            fields=[
+                ("string", 1, app_id),
+                ("u64", 2, len(data)),
+                ("u64", 3, binascii.crc32(data) & 0xFFFFFFFF),
+            ],
+        ),
+        opcode=24,
+        sequence=sequence,
+        timeout=timeout,
+    )
+    sequence += 1
     for offset in range(0, len(data), chunk_size):
-        serial.write_all(data[offset : offset + chunk_size])
-        time.sleep(0.002)
-    _wait_for(serial, b"OK RUN.TEMP", output, timeout, InstallError)
+        _send_protocol_request_expect_ok(
+            serial,
+            encode_protocol_frame(
+                kind=PROTOCOL_KIND_REQUEST,
+                opcode=25,
+                status=PROTOCOL_STATUS_OK,
+                sequence=sequence,
+                fields=[("u64", 1, offset), ("bytes", 2, data[offset : offset + chunk_size])],
+            ),
+            opcode=25,
+            sequence=sequence,
+            timeout=timeout,
+        )
+        sequence += 1
+    _send_protocol_request_expect_ok(
+        serial,
+        encode_protocol_frame(
+            kind=PROTOCOL_KIND_REQUEST,
+            opcode=26,
+            status=PROTOCOL_STATUS_OK,
+            sequence=sequence,
+            fields=[],
+        ),
+        opcode=26,
+        sequence=sequence,
+        timeout=timeout,
+    )
 
 
 def provision_wifi_profile(
@@ -191,7 +479,22 @@ def run_app_event(serial, app_id, event, *, output=sys.stdout.buffer, timeout=DE
 
 
 def run_app(serial, app_id, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
-    _send_line(serial, f"RUN.APP {app_id}", output, b"OK RUN.APP", timeout)
+    _send_protocol_request_expect_ok(
+        serial,
+        encode_protocol_frame(
+            kind=PROTOCOL_KIND_REQUEST,
+            opcode=32,
+            status=PROTOCOL_STATUS_OK,
+            sequence=20,
+            fields=[("string", 1, app_id)],
+        ),
+        opcode=32,
+        sequence=20,
+        timeout=timeout,
+    )
+    if output is not None:
+        output.write(f"launched app {app_id}\n".encode("utf-8"))
+        output.flush()
 
 
 def get_state(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
@@ -210,8 +513,12 @@ def get_drawlog(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
 
 
 def list_apps(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
-    serial.write_all(b"APP.LIST\n")
-    return _wait_block(serial, b"BEGIN APPS", b"END APPS", output, timeout, SmokeError)
+    entries = get_protocol_app_list(serial, output=None, timeout=timeout)
+    if output is not None:
+        for entry in entries:
+            output.write(f"app={entry['app_id']} sqbc_len={entry['sqbc_len']}\n".encode("utf-8"))
+        output.flush()
+    return entries
 
 
 def format_storage(serial, *, output=sys.stdout.buffer, timeout=DEFAULT_TIMEOUT):
@@ -275,6 +582,36 @@ def _drain(serial, output):
             return
         output.write(chunk)
         output.flush()
+
+
+def _send_protocol_request_expect_ok(serial, frame, *, opcode, sequence, timeout):
+    serial.write_all(frame)
+    response = _read_protocol_frame(serial, timeout)
+    decoded = decode_protocol_frame(response)
+    if (
+        decoded["kind"] != PROTOCOL_KIND_RESPONSE
+        or decoded["opcode"] != opcode
+        or decoded["status"] != PROTOCOL_STATUS_OK
+        or decoded["sequence"] != sequence
+    ):
+        raise InstallError(f"unexpected protocol response: {decoded}")
+
+
+def _read_protocol_frame(serial, timeout):
+    deadline = time.monotonic() + timeout
+    response = b""
+    expected_len = None
+    while time.monotonic() < deadline:
+        chunk = serial.read_available(0.1)
+        if not chunk:
+            continue
+        response += chunk
+        if expected_len is None and len(response) >= PROTOCOL_HEADER_LEN:
+            payload_len = int.from_bytes(response[12:16], "little")
+            expected_len = PROTOCOL_HEADER_LEN + payload_len
+        if expected_len is not None and len(response) >= expected_len:
+            return response[:expected_len]
+    raise TimeoutError("timed out waiting for protocol response frame")
 
 
 def _wait_for(serial, expected, output, timeout, error_type):
@@ -343,8 +680,9 @@ def _read_until_quiet(serial, output, timeout):
     while time.monotonic() < deadline:
         chunk = serial.read_available(0.1)
         if chunk:
-            output.write(chunk)
-            output.flush()
+            if output is not None:
+                output.write(chunk)
+                output.flush()
             response += chunk
             quiet_deadline = time.monotonic() + 0.15
         elif quiet_deadline is not None and time.monotonic() >= quiet_deadline:
@@ -362,7 +700,7 @@ def main(argv=None):
     install_app.add_argument("app_id")
     install_app.add_argument("sqbc")
 
-    run_temp = subcommands.add_parser("run-temp", help="run named SQBC app bytes from RAM")
+    run_temp = subcommands.add_parser("run-temp", help="run named SQBC app bytes as a temporary app")
     run_temp.add_argument("app_id")
     run_temp.add_argument("sqbc")
 
@@ -392,6 +730,7 @@ def main(argv=None):
     subcommands.add_parser("drawlog", help="print draw log")
     subcommands.add_parser("app-list", help="print installed app registry")
     subcommands.add_parser("storage-format", help="format firmware app storage")
+    subcommands.add_parser("hello", help="read framed Zephyr protocol identity")
 
     args = parser.parse_args(argv)
     if args.port is None:
@@ -434,6 +773,13 @@ def main(argv=None):
             list_apps(serial, timeout=args.timeout)
         elif args.command == "storage-format":
             format_storage(serial, timeout=args.timeout)
+        elif args.command == "hello":
+            identity = get_protocol_hello_identity(serial, timeout=args.timeout)
+            print(
+                "target={target} firmware={firmware} diagnostic={diagnostic}".format(
+                    **identity
+                )
+            )
     return 0
 
 

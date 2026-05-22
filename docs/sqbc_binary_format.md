@@ -25,7 +25,7 @@ offset  size  field
 ...     n     section payloads
 ```
 
-This is the current real bytecode format used by the reference firmware. It is
+This is the current real bytecode format used by Zephyr firmware. It is
 intentionally small and exists to exercise the SquidScript language spec on
 constrained hardware while moving installed apps toward metadata-first loading.
 
@@ -123,9 +123,9 @@ Initial built-in IDs:
 29 service.indicator.read
 ```
 
-The current format supports the headless reference VM subset. Display draw
-commands are emitted as headless draw-log records on the ESP32-C3 Super Mini
-reference firmware. GPIO builtins dispatch to target firmware hardware modules;
+The current format supports the headless VM subset. Display draw commands are
+emitted as headless draw-log records by firmware hosts that implement the
+display service. GPIO builtins dispatch to target firmware hardware modules;
 unsupported names return a VM operand error. The canonical lifecycle surface is
 generic events plus `app.start`, `app.arm`, `app.disarm`, and `service.timer.*`.
 `app.launch` remains the app replacement/launch primitive.
@@ -155,11 +155,11 @@ bit 0  preload hint from @preload
 The preload bit is advisory. Firmware may use it to load or retain
 latency-sensitive handler chunks, but app correctness must not depend on it.
 
-The ESP32-C3 reference firmware can install named SQBC apps, start `main`, arm
-trigger registrations, dispatch real timer events, and exercise app-stack
-behavior. It stores installed SQBC payloads in LittleFS. Startup registry
-rebuilds validate installed apps from the header and section table with
-bounded reads rather than mirroring full app bodies in RAM.
+Zephyr firmware must install named SQBC apps, start `main`, arm trigger
+registrations, dispatch real timer events, and exercise app-stack behavior.
+Installed SQBC payloads live in Zephyr-owned app storage. Startup registry
+rebuilds validate installed apps from the header and section table with bounded
+reads rather than mirroring full app bodies in RAM.
 
 The device binding table is reserved for top-level `device {}` declarations.
 It should encode service name, binding name, and package-relative `.sqdevice`
@@ -192,7 +192,8 @@ evicted at any time. Preloaded chunks have higher cache priority but are not
 pinned. Dropping a chunk is not app lifecycle behavior and does not dispatch
 `event.on("app.exit")`.
 
-LittleFS remains the reference firmware app storage abstraction. Installed-app
-execution uses bounded indexed reads from LittleFS rather than assuming a
-memory-mapped contiguous app image. `RUN.TEMP` remains RAM-backed before 1.0 so
-rapid `squidc run` iteration does not write flash.
+Installed-app and temp-run execution use bounded indexed reads from Zephyr-owned
+storage rather than assuming a memory-mapped contiguous app image. Use LittleFS
+where a file layout is needed and NVS or LittleFS records for app state based on
+implementation tests. `RUN.TEMP` stages bytecode as a temporary app-store file
+but keeps temp app state volatile.

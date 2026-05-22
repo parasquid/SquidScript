@@ -35,8 +35,12 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   docs, keep it in saved memory for durable cross-session context or in `/tmp`
   or another gitignored scratch file for temporary notes instead of turning
   project documentation into a diary.
-- When executing a plan, use the todo tracker for the active implementation
-  steps so progress and remaining work survive context compaction.
+- When executing a plan, create or update the todo tracker before doing any
+  implementation, investigation, or verification work from that plan. Treat
+  this as a hard gate for plan execution: every active implementation step
+  should be represented in the tracker, and item statuses should be updated as
+  work starts, completes, or becomes blocked so progress and remaining work
+  survive context compaction.
 - When the user asks for memory numbers without further qualification, report
   RAM numbers by default. Treat flash/app-storage/image-size numbers as flash
   storage and only include them when requested or clearly relevant.
@@ -107,6 +111,23 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   IPs, credentials, and other environment-identifying values unless the user
   explicitly asks for raw identifiers. Preserve technical evidence with counts,
   lengths, channels, RSSI, auth modes, and redacted placeholders instead.
+
+## Constrained Device RAM Discipline
+
+- Treat RAM as a constrained hardware resource by default in firmware,
+  firmware-facing Rust libraries, hardware harnesses, and serial tooling.
+- Prefer caller-owned buffers, streaming/file-backed staging, borrowed views,
+  and in-place construction over fixed temporary arrays, full-payload RAM
+  sessions, by-value aggregate transfers, or harness-only buffers.
+- Keep fixed buffers only when they represent intentional persistent runtime
+  state or an explicitly bounded hardware contract. Avoid stack-sized
+  aggregates in resumable VM, protocol, storage, and service paths.
+- When diagnosing constrained-device failures, test whether a buffer, callback,
+  or FFI boundary materializes hidden temporaries before increasing stack or
+  heap sizes. Larger stacks are diagnostic data, not the default fix.
+- If a temporary RAM harness is unavoidable, mark it as temporary, keep the
+  bound narrow, and add a roadmap item to replace it with a streaming,
+  file-backed, or caller-owned design.
 
 ## Browser Simulator Verification
 

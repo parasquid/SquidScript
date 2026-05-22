@@ -566,8 +566,8 @@ fn chunked_vm_resumable_dispatch_suspends_for_sqbc_chunk_read() {
     let VmDispatch::PendingStorage(request) = first else {
         panic!("expected sqbc read request, got {first:?}");
     };
-    let StorageRequestKind::SqbcRead { offset, len } = request.kind else {
-        panic!("expected sqbc read request, got {:?}", request.kind);
+    let StorageRequest::SqbcRead { offset, len } = request else {
+        panic!("expected sqbc read request, got {request:?}");
     };
     assert!(len > 0);
     assert_eq!(reader.events, vec!["app.start"]);
@@ -579,10 +579,7 @@ fn chunked_vm_resumable_dispatch_suspends_for_sqbc_chunk_read() {
 
     assert!(matches!(
         second,
-        VmDispatch::PendingStorage(StorageRequest {
-            kind: StorageRequestKind::StateLoad,
-            ..
-        })
+        VmDispatch::PendingStorage(StorageRequest::StateLoad)
     ));
     assert_eq!(reader.pending_read_count, 1);
 }
@@ -625,7 +622,7 @@ screen("main") {}
     let VmDispatch::PendingStorage(request) = second else {
         panic!("expected state save request, got {second:?}");
     };
-    assert_eq!(request.kind, StorageRequestKind::StateSave { len: 18 });
+    assert!(matches!(request, StorageRequest::StateSave { len: 18, .. }));
     assert_eq!(
         reader.events,
         vec!["app.start", "state.load", "debug loaded 0"]
@@ -834,16 +831,12 @@ impl SqbcReader for CountingReader<'_> {
         Ok(())
     }
 
-    fn storage_request_at(
-        &mut self,
-        offset: usize,
-        len: usize,
-    ) -> Result<Option<StorageRequest>, VmError> {
+    fn should_defer_read(&mut self, _offset: usize, _len: usize) -> Result<bool, VmError> {
         if self.pending_reads {
             self.pending_read_count += 1;
-            Ok(Some(StorageRequest::sqbc_read(offset, len)))
+            Ok(true)
         } else {
-            Ok(None)
+            Ok(false)
         }
     }
 }

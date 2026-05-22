@@ -1,228 +1,87 @@
-# Developer REPL Protocol
+# Developer Device Protocol
 
-Status: Reference protocol for ESP32-C3 Super Mini dev firmware.
+Status: host and Zephyr codecs established; minimal framed hello implemented
+and verified on ESP32-C3 Zephyr firmware.
 
-The developer REPL protocol is a line-oriented control protocol with explicit
-binary payload phases for SQBC and state snapshot bytes. It is enabled by
-default for dev firmware.
+The current real firmware path is Zephyr. The developer device protocol is the
+Zephyr-owned command surface used by `squidc run`, `squidc app`, `squidc repl`,
+and `squidc device`.
 
-Normal host workflows should use grouped `squidc` commands documented in
-`docs/squidc_cli.md`. Use `squidc protocol raw` only for low-level protocol
-troubleshooting.
+The old ESP32-C3 Rust firmware line protocol is obsolete reference material.
+Do not preserve its command names, response markers, or storage behavior unless
+the same shape is deliberately implemented as the current Zephyr protocol.
 
-## Commands
+## Required Commands
 
-```text
-HELLO
-INSTALL.APP <app-id> <len> <fnv32hex>
-RUN.TEMP <app-id> <len> <fnv32hex>
-RUN.APP <app-id>
-RUN.EVENT <app-id> <event>
-APP.LIST
-KEY <logical-key>
-STATE.GET
-STATE.IMPORT <len> <fnv32hex>
-TRACE.GET
-OUTPUT.GET
-DRAWLOG.GET
-ERRORS.GET
-RESOURCES.GET
-WIFI.STATUS
-RESET
-STORAGE.FORMAT
-```
+The Zephyr command surface must cover:
 
-`INSTALL.APP` is followed by exactly `<len>` raw SQBC bytes and stores them
-in firmware-owned app storage under `<app-id>`. `RUN.TEMP` uses the same binary
-payload framing, but stores the SQBC in RAM only and launches it as a temporary
-foreground app. This is the pre-1.0 developer iteration path and must not write
-flash. Temp apps are current-only and volatile: they are not installed, do not
-appear in `APP.LIST`, and cannot be return targets after launching or being
-replaced by an installed app. `STATE.IMPORT` is followed by exactly `<len>`
-state snapshot bytes. The hash is FNV-1a over the payload bytes.
+- firmware hello/identity and target diagnostics
+- app install, temp run, launch, app list, and reset
+- key and generic event dispatch
+- output, trace, draw log, state, errors, and resources
+- storage format
+- Wi-Fi status, scan, AP, station, and profile provisioning
 
-Success responses start with `OK`. Error responses start with `ERR`.
+## Frame Format
 
-Multi-line payloads use begin/end markers:
+The current protocol is binary framed. The old text-line protocol markers such
+as `INSTALL.APP`, `RUN.TEMP`, `APP.LIST`, `BEGIN`, `END`, `OK`, and `ERR` are
+not current wire compatibility requirements.
 
-```text
-BEGIN STATE
-count=1
-exited=false
-END STATE
-OK STATE.GET
-```
+Every frame starts with a 20-byte little-endian header:
 
-Resource responses are read-only diagnostics:
+| Offset | Size | Field |
+| --- | ---: | --- |
+| 0 | 4 | magic bytes `SQDP` |
+| 4 | 1 | frame kind: `1` request, `2` response, `3` event |
+| 5 | 1 | opcode |
+| 6 | 1 | status: `0` ok, `1` error, `2` pending |
+| 7 | 1 | reserved, currently `0` |
+| 8 | 4 | sequence |
+| 12 | 4 | payload length |
+| 16 | 4 | payload CRC32 |
 
-```text
-BEGIN RESOURCES
-ram_total_bytes=409600
-ram_heap_total_bytes=98304
-ram_heap_used_bytes=12288
-ram_heap_available_bytes=86016
-ram_heap_peak_used_bytes=16384
-ram_heap_total_allocated_bytes=24576
-ram_heap_total_freed_bytes=12288
-temp_app_buffer_bytes=0
-temp_app_bytes=0
-installed_code_cache_bytes=1024
-app_storage_total_bytes=2031616
-app_storage_used_bytes=0
-app_storage_available_bytes=2031616
-END RESOURCES
-OK RESOURCES.GET
-```
+The payload is a compact TLV stream. Each field uses one byte for tag, one byte
+for type, two little-endian bytes for value length, then the value bytes. Field
+types are `0` bytes, `1` UTF-8 string, `3` bool, `4` signed 64-bit integer, `5`
+unsigned 64-bit integer, and `32` nested record. Repeated records are preserved
+as repeated TLV fields with the same tag.
 
-These values are target-firmware metrics. `ram_total_bytes` is static board RAM
-context from target metadata. `ram_heap_total_bytes`, `ram_heap_used_bytes`,
-`ram_heap_available_bytes`, and the heap lifetime counters are live allocator
-telemetry from the running ESP32-C3 reference firmware. `temp_app_buffer_bytes`
-and `temp_app_bytes` describe the RAM-backed `RUN.TEMP` path.
-`installed_code_cache_bytes` describes the installed-app chunk buffer/cache
-path.
+Large writes use begin/chunk/commit opcode groups for installed apps, temp
+apps, and resources. Chunk payloads must carry explicit byte lengths and
+integrity through frame length and payload CRC32. Credential provisioning must
+report profile names and byte lengths only; it must not echo SSIDs, passwords,
+BSSIDs, MAC addresses, local IP addresses, or other environment-identifying
+values unless the user explicitly asks for raw identifiers.
 
-Wi-Fi diagnostics are app-independent firmware diagnostics:
+## Host Tooling
 
-```text
-BEGIN WIFI.STATUS
-active=true
-mode=ap
-ssid=SquidScript
-ip=192.168.4.1
-clients=0
-error=
-profile=
-connected=false
-scan_matches=0
-disconnect_reason=
-ap_ip=192.168.4.1
-ap_gw=192.168.4.1
-ap_netmask=255.255.255.0
-ap_error=
-END WIFI.STATUS
-OK WIFI.STATUS
-```
+Normal workflows should use grouped `squidc` commands. Raw protocol access is
+only for low-level protocol troubleshooting. `squidc protocol raw` builds one
+binary request frame from an opcode name plus typed TLV fields and prints hex
+request/response data.
 
-Use `WIFI.STATUS` when debugging radio state. It reports the firmware Wi-Fi
-backend directly and does not depend on SquidScript `debug.print` output.
+The current implemented Zephyr command handler covers framed `hello` identity,
+framed installed-app begin/chunk/commit, and framed `app-list` over the UART
+serial transport. App install begins with field tag `1` app ID string, tag `2`
+total SQBC byte length, and tag `3` CRC32 encoded as an unsigned 64-bit
+integer. Each chunk uses tag `1` byte offset and tag `2` byte payload. Commit
+has an empty payload; firmware verifies byte count and CRC32 before publishing
+`/sq/apps/<app-id>/main.sqbc`.
 
-Volatile station profiles are provisioned with:
+`app-list` responses use repeated record fields: response field tag `1` is one
+app record, record field tag `1` is the app ID string, and record field tag `2`
+is the SQBC length as an unsigned 64-bit integer.
 
-```text
-WIFI.PROFILE.SET <profile> <ssid-len> <password-len> <fnv32hex>
-```
+Temp run, launch, diagnostics, storage, and service commands remain migration
+work.
 
-The command is followed by exactly `<ssid-len> + <password-len>` raw bytes:
-first the SSID bytes, then the password bytes. Firmware prints only the profile
-name and byte lengths; it must not echo credential bytes.
+## Diagnostics
 
-When a station diagnostics app calls `service.wifi.connect(profile)`,
-`WIFI.STATUS` should report `driver_mode=sta`, the requested profile name,
-scan/connect diagnostics, and no SSID or password values. A disconnected result
-with a concrete scan/auth/disconnect reason can still be a truthful hardware
-result unless the test is run in strict station-connect mode.
+Resource diagnostics should report RAM numbers separately from flash storage
+numbers. When the user asks for "memory" without qualification, report RAM by
+default.
 
-Installed apps are persistent in the ESP32-C3 reference firmware. On startup,
-firmware scans the app store, rebuilds the in-memory registry cache, boots
-installed `main` when present, and dispatches `event.on("app.start")`. If
-`main` is missing or invalid, firmware remains in dev shell mode. `RESET` is a
-soft boot: it clears the current VM, temp app, foreground stack, pending
-launches, app-owned trigger/timer registrations, and debug buffers, then boots
-installed `main` if present. It does not erase installed apps.
-`STORAGE.FORMAT` formats the firmware app store, clears the registry cache, and
-leaves firmware in dev shell mode because `main` no longer exists.
-
-See `docs/firmware_app_storage.md` for the current ESP32-C3 storage layout.
-
-## State Snapshots
-
-State snapshots are newline-separated `name=value` records using the VM
-primitive value syntax:
-
-```text
-count=2
-label="Hello"
-enabled=true
-missing=null
-```
-
-`STATE.GET` and `STATE.IMPORT` are developer inspection tools. They preserve
-the current line-oriented shape even though installed-app persistence is
-firmware-owned and typed. Import restores matching state names with valid
-primitive values; unknown or type-invalid values are ignored by the developer
-command. In contrast, `state.load()` for installed app persistence treats a
-malformed or type-invalid saved record as a VM error.
-
-Installed-app persistence uses firmware-owned binary `SQST` records under the
-app-state store, not the `STATE.GET` text shape. `state.save()` writes the
-current compiled primitive slots atomically, and `state.reset()` restores
-compiled defaults and removes the installed app's saved record.
-
-## Debug Console
-
-`debug.print(...)` writes to the active debug console. On the Super Mini
-reference firmware, the active debug console is exposed through `OUTPUT.GET`.
-Output is bounded and line-oriented:
-
-```text
-BEGIN OUTPUT
-output="count" 2
-END OUTPUT
-OK OUTPUT.GET
-```
-
-## Draw Log
-
-Headless render mode records display commands rather than drawing pixels:
-
-```text
-BEGIN DRAWLOG
-draw=clear color=gray0
-draw=text text="Hello" x=10 y=20
-END DRAWLOG
-OK DRAWLOG.GET
-```
-
-This is a development observation surface for the ESP32-C3 Super Mini. It is
-not a replacement for target display drivers.
-
-## Hardware GPIO
-
-Reference firmware accepts `hardware.gpio.*` SQBC builtins through uploaded
-programs and REPL snippets. These builtins compile as part of the portable
-SquidScript runtime API. Device alias resolution happens in firmware/runtime;
-missing aliases or capabilities fail at runtime on the device.
-
-The ESP32-C3 Super Mini target currently exposes:
-
-- `service.indicator.*` as the default logical indicator. It maps to the
-  onboard LED by default and is active-low on typical Super Mini boards.
-- `GPIO8` as the raw pin name for the onboard LED line.
-
-Normal quick upload/run uses volatile `squidc run` and does not require a target:
-
-```sh
-cargo run -p squidc -- run examples/blinky-supermini/main.squid
-cargo run -p squidc -- device key SELECT
-cargo run -p squidc -- device output
-cargo run -p squidc -- device monitor --max-lines 4
-```
-
-Scripted REPL checks can still use session files:
-
-```sh
-cargo run -p squidc -- repl --script tests/repl/hardware-gpio-indicator.session
-cargo run -p squidc -- repl examples/blinky-supermini/main.squid --script tests/repl/blinky-supermini.session
-```
-
-Target definitions are optional in host tooling. Use them only for explicit
-target checks and related metadata workflows:
-
-```sh
-cargo run -p squidc -- repl --target targets/esp32c3-super-mini.target.json --check-target --script examples/blinky-supermini/main.squid
-```
-
-The first check verifies serial-observable indicator readback and raw GPIO8
-readback. The blinky example also needs physical LED observation: `SELECT`
-toggles the default indicator and `BACK` turns it off and exits.
+Wi-Fi diagnostics should distinguish internal firmware/driver state from
+external RF proof. A successful Zephyr Wi-Fi status record does not by itself
+prove that another device can see or join an AP.

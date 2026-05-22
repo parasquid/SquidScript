@@ -1,206 +1,99 @@
 # Portable RTOS Kernel Architecture
 
-Status: Draft source of truth
-Purpose: Define the new portable firmware runtime direction for SquidScript.
-
-This document replaces the current serial-harness-shaped runtime direction. It
-does not describe a compatibility layer or an alternate legacy path. Firmware
-that does not fit this architecture should be changed directly.
+Status: Current direction
+Purpose: Define the Zephyr-backed firmware runtime model for SquidScript.
 
 ## Goals
 
-- Put SquidScript app lifecycle, services, timers, diagnostics, and runtime
-  fairness behind a Squid-owned kernel boundary.
-- Keep RTOS and executor concepts out of SquidScript source, compiler core,
-  SQBC, and portable app APIs.
-- Support ESP32-C3 through Embassy/esp-rs, Pico W through Embassy/CYW43, and
-  host/browser simulation as the first portability set.
-- Keep Zephyr/nRF52 as a planned backend adapter target without making Zephyr
-  types part of the portable Squid kernel.
-- Make non-blocking service behavior a kernel rule, not a per-service
-  convention.
-- Use static bounded memory for kernel queues, service state, and message
-  buffers unless a service explicitly documents a fixed pool.
+- Make Zephyr the real firmware scheduler, driver, storage, networking, and
+  diagnostics host.
+- Keep SquidScript app lifecycle, VM dispatch, service contracts, timers, and
+  diagnostics behind a Squid-owned runtime boundary.
+- Keep RTOS concepts out of SquidScript source, compiler core, SQBC, and
+  portable app APIs.
+- Require non-blocking service behavior: no service should monopolize the main
+  loop, starve serial input, delay timers, or hide long busy waits.
+- Use bounded memory for queues, service state, transfer buffers, and resource
+  pools.
 
 ## Architecture
 
-The firmware runtime is split into three layers:
-
 ```text
-SquidScript VM and app lifecycle
+SquidScript VM semantics in Rust (`squidvm-core`)
         |
-Squid kernel: actors, bounded queues, timers, diagnostics, service registry
+C ABI/staticlib boundary (`squidvm-ffi`)
         |
-Backend adapter: Embassy, Zephyr, host/browser event loop, or board harness
+Zephyr Squid host: app lifecycle, services, command surface, diagnostics
         |
-Target HAL and device drivers
+Zephyr kernel subsystems: timers, work queues, message queues, shell/logging,
+flash-map, NVS, LittleFS, networking, Wi-Fi management, GPIO/PWM
+        |
+Target HAL and board-specific devicetree/Kconfig
 ```
 
-The Squid kernel owns portable runtime behavior:
+The Squid host owns portable runtime behavior:
 
-- app start, event dispatch, exit, and app stack policy
-- service command and event routing
-- fixed-capacity queues and backpressure behavior
-- timer registration and delivery
-- service diagnostics and memory accounting
-- fairness rules for VM, serial, timers, display, storage, radio, and HTTP
+- app install, launch, temp run, exit, app stack, and app list policy
+- key and generic event dispatch
+- output, draw log, resources, errors, reset, and diagnostics
+- service routing and result conversion
+- storage format, SQBC byte reads, app state, and package resources
+- fairness rules across VM, serial, timers, display, storage, radio, and HTTP
 
-The backend adapter owns scheduler integration:
+The current Zephyr build links `squidvm-ffi` as a Rust static library and
+tests the C-header link path through native simulator ztests. The linked ABI
+includes context allocation metadata, init, blocking dispatch, and resumable
+dispatch entry points that report pending SQBC reads and state load/save/reset
+requests through C structs. The Zephyr host layer includes a bounded storage
+adapter that completes those requests through backend callbacks. Native Zephyr
+ztests now run a real SQBC fixture through the linked Rust VM and complete its
+storage flow through that adapter. A file-backed backend now uses Zephyr
+`fs_*` APIs for SQBC byte-range reads and app-state load/save/reset paths, and
+native ztests cover it through a host-mounted filesystem. The app-store layer
+derives bounded VM storage paths from a mount point and app ID, prepares the
+top-level app/state directories, and ESP32-C3 firmware attempts to mount the
+target LittleFS `storage_partition` at `/sq` during boot. The next
+runtime-boundary work is to add installed-app registry scanning, install-time
+directory creation, package-resource lookup paths, and callbacks for service
+records, diagnostics, lifecycle, and explicit error mapping.
 
-- spawning or registering service actors
-- waking actors from interrupts, timers, serial input, or browser events
-- mapping kernel timers to target time sources
-- mapping queue waits to Embassy futures, Zephyr message queues/work items, or
-  host/browser callbacks
-- initializing RTOS, executor, allocator, radio stack, clocks, and board drivers
+Zephyr owns backend integration:
 
-The HAL owns physical devices:
-
-- GPIO, PWM, display, storage, radio, serial, input, and power drivers
-- target-specific pin mappings, peripheral allocation, and bus sharing
-- board-specific diagnostics and hardware errata
+- threads, work queues, timers, and synchronization
+- shell or dedicated serial command ownership
+- flash partitions, NVS records, and LittleFS volumes
+- GPIO, PWM, display, input, radio, networking, and power drivers
+- target-specific Kconfig/devicetree and hardware errata
 
 ## Service Model
 
-Services are actors. A service actor has fixed state, a fixed-capacity command
-queue, and an optional fixed-capacity event queue back to the kernel.
+Services are bounded actors or equivalent Zephyr-native state machines. A
+SquidScript service call may enqueue a command, read cached state, or return an
+immediate bounded error. It must not run radio loops, wait for display busy,
+poll flash until complete, delay for animation, or block serial input.
 
-Calling a SquidScript service API must only enqueue a command, read already
-available state, or return an immediate bounded error. It must not run a radio
-loop, wait for display busy, poll storage until complete, delay for animation,
-or block serial input.
+Use Zephyr timers, work queues, message queues, and subsystem event callbacks
+for progress. When a queue or pool is full, return a bounded service error or
+use a documented coalesce/drop policy.
 
-Service commands are service-local. For example, Wi-Fi commands may start or
-stop Wi-Fi, report Wi-Fi status, or emit Wi-Fi diagnostics. They must not change
-indicator state. Apps compose behavior by calling multiple services from
-SquidScript.
+## Firmware Command Surface
 
-The first proof service is the default indicator:
+The Zephyr firmware command surface is the current device protocol. Host tools
+such as `squidc run`, `squidc app`, `squidc repl`, and `squidc device` should
+speak that protocol directly as it is implemented. Do not preserve old command
+names or response shapes unless they are also the current Zephyr protocol.
 
-- `service.indicator.write(value)` sends a bounded write command.
-- `service.indicator.toggle()` sends a bounded toggle command.
-- `service.indicator.read()` returns cached logical indicator state.
-- `service.indicator.breathe()` sends a bounded breathing command.
-- On ESP32-C3, breathing is implemented by the LEDC/PWM backend and advanced by
-  service-owned timer progress, not by a VM or serial busy loop.
+## Storage Model
 
-## Backend Mapping
+Model logical app storage separately from physical volumes:
 
-### ESP32-C3 Reference Backend
+- SQBC app bytes and package resources use Zephyr flash-map plus LittleFS where
+  a file layout is needed.
+- App state uses NVS or LittleFS records, selected by implementation tests.
+- Storage migration from the old Rust firmware is not supported before 1.0.
 
-The ESP reference backend should use Rust `no_std`, `esp-hal`,
-`esp-hal-embassy`, Embassy, and `esp-radio` where those libraries satisfy the
-required behavior. Embassy is a backend detail. SquidScript APIs and compiler
-core must not expose Embassy tasks, futures, channels, or spawners.
+## Browser Simulator
 
-Embassy fits this model because its embedded executor supports async tasks
-without requiring heap allocation and uses statically allocated tasks. The Squid
-kernel should still define its own actor/message contract so later backends do
-not inherit Embassy-specific semantics.
-
-### Pico W Backend
-
-The Pico W backend should use Embassy and the CYW43 driver family as the first
-Wi-Fi portability target. CYW43 supports Pico W Wi-Fi station mode, AP mode,
-scanning, Ethernet-frame integration, and interrupt-driven device events. The
-Squid Wi-Fi service contract must stay above CYW43 driver state and bus details.
-
-### Host And Browser Simulation
-
-The host and browser backends should run the same kernel service contract on a
-simulated event loop. Simulation may fake device timing and radio visibility,
-but it must not pretend to validate hardware timing, flash endurance, power, or
-RF behavior.
-
-### Zephyr/nRF52 Backend
-
-Zephyr/nRF52 remains a planned adapter target. Zephyr has native fixed-size
-message queues and workqueues that can represent Squid actors, but Zephyr
-objects, Kconfig, devicetree, and thread handles stay behind the backend
-adapter. Bluetooth should become a sibling radio service, not a Wi-Fi extension.
-
-## Memory And Fairness
-
-Kernel-owned memory is statically bounded:
-
-- each actor declares command queue capacity
-- each event queue declares capacity
-- payloads are fixed-size values or handles into explicit pools
-- networking, storage, display, and package-resource buffers are named pools
-- RAM diagnostics report configured capacity, current use, and available RAM
-  where the backend can measure it
-
-When a queue is full, the caller receives a bounded service error or the service
-uses an explicitly documented drop/coalesce policy. A service must not hide
-unbounded retries behind a convenient API.
-
-Fairness rules:
-
-- VM dispatch must return to the kernel between app events.
-- Serial input must remain serviceable while timers, indicator PWM, Wi-Fi,
-  storage, or display work is active.
-- Display and storage drivers must use bounded slices or backend async waits
-  around long busy periods.
-- Radio services must expose progress and diagnostics without requiring app code
-  to run polling loops.
-- Shutdown tears down service-owned resources through service commands and
-  backend cleanup, not by reaching across service internals.
-
-## Documentation And Spec Discipline
-
-This architecture is a direct replacement before SquidScript 1.0. Do not add
-old/new runtime compatibility, SQBC compatibility modes, versioned function
-names, unsupported-version branches, or migration paths unless the user
-explicitly asks for a specific bridge.
-
-Build IDs, source revisions, and image hashes are diagnostics/provenance only.
-They are not compatibility contracts.
-
-Docs that mention bytecode/runtime/app versions, compatibility profiles,
-unsupported bytecode versions, or future-version compatibility should be
-removed or rewritten to describe current-format behavior and target capability
-checks only.
-
-## Implementation Order
-
-1. Completed: docs/specs no longer describe versioned runtime or SQBC
-   compatibility as a current firmware contract.
-2. Completed: the ESP default indicator uses a bounded service model.
-3. Completed: firmware timers use a bounded actor with command and due-event
-   queues, preserving active-session and armed-trigger behavior.
-4. Completed: serial/app lifecycle intents and headless draw-log output use
-   explicit bounded service commands without changing SquidScript source APIs.
-5. Completed: firmware storage access routes through a storage actor boundary,
-   and persistent VM dispatch can suspend/resume around storage requests.
-6. Replace backend-level LittleFS calls with smaller async driver progress
-   steps where the filesystem/flash stack makes that practical.
-7. Resume Wi-Fi, radio diagnostics, networking, and HTTP service actor work only
-   when the tabled Wi-Fi validation work is active again.
-
-## Current Non-Wi-Fi Firmware Audit
-
-This audit covers the ESP32-C3 Super Mini reference firmware. It deliberately
-excludes Wi-Fi APIs, radio backend behavior, AP diagnostics, station mode,
-network stack work, and HTTP serving.
-
-| Path | Current classification | Notes |
-| --- | --- | --- |
-| Main serial loop | Actor/step-based | The shell polls serial, timers, indicator, and Wi-Fi progress from the hardware loop. Keep this shape until an RTOS backend owns scheduling. |
-| Serial command handling | Bounded synchronous | Command parsing and dispatch run synchronously per received command. SQBC upload payload reads are bounded by protocol length and firmware buffers. |
-| App lifecycle intents | Actor/step-based | Launch, arm, disarm, root restart, exit, and app-event intent are now modeled as bounded kernel lifecycle commands. |
-| VM event dispatch | Actor/step-based for persistent storage | Persistent VM dispatch can suspend and resume around SQBC chunk reads and state load/save/reset requests. Temp VM dispatch remains RAM-backed and synchronous. |
-| Timers | Actor/step-based | Timer registration commands and due events use bounded queues. |
-| Indicator | Actor/step-based | Logical writes enqueue bounded actions; breathing advances one service-owned step at a time. |
-| Installed app storage | Actor boundary with synchronous backend step | Firmware routes install, resource, format, startup scan, and app byte-range reads through the storage actor. The current LittleFS backend still completes each filesystem call inside one service step. |
-| App state storage | Actor boundary with synchronous backend step | Persistent VM state load/save/reset can suspend/resume at the VM boundary and complete through the storage actor. LittleFS record I/O is still one backend step. |
-| Headless display draw log | Actor/step-based | Firmware draw commands now enter a bounded display service queue before serial `DRAWLOG.GET` inspection. |
-| XTEINK X4 display bring-up | Blocking synchronous | The standalone X4 hello binary still initializes, refreshes, waits, and sleeps synchronously. This is release-platform backend work before X4 becomes routine development hardware. |
-| RAM diagnostics | Bounded synchronous | RAM text generation reads current counters and formats bounded output. |
-
-## References
-
-- Embassy project docs: https://embassy.dev/
-- Embassy executor docs: https://docs.embassy.dev/embassy-executor/
-- Embassy CYW43 docs: https://docs.embassy.dev/cyw43
-- Zephyr message queues: https://docs.zephyrproject.org/latest/kernel/services/data_passing/message_queues.html
-- Zephyr workqueues: https://docs.zephyrproject.org/latest/kernel/services/threads/workqueue.html
+The browser simulator shares the same SquidScript service contract but remains
+a separate TypeScript/WASM host. Browser IR JSON is a development artifact, not
+a Zephyr firmware format.

@@ -1864,23 +1864,23 @@ Example:
 service.display.text(system.memory(), { x: 0, y: 0 })
 ```
 
-The exact metric is target-specific. On the ESP32-C3 Super Mini reference
-firmware it includes static board RAM context plus live `esp_alloc` heap used
-and available bytes from the running firmware. The display string is for human
-diagnostics; scripts that need raw diagnostics should use the device protocol
-or CLI resource command rather than parsing this text.
+The exact metric is target-specific. On Zephyr firmware it should include
+static board RAM context plus live allocator/heap numbers that the target can
+measure. The display string is for human diagnostics; scripts that need raw
+diagnostics should use the device protocol or CLI resource command rather than
+parsing this text.
 
 system.storage(name)
 
-Returns a display-oriented string for a firmware storage area. The current
-reference firmware supports:
+Returns a display-oriented string for a firmware storage area. Zephyr firmware
+supports:
 
 ```squid
 system.storage("apps")
 ```
 
-`"apps"` means firmware-managed writable SquidScript app storage. On the
-ESP32-C3 Super Mini this is backed by the LittleFS `squidfs` flash partition.
+`"apps"` means firmware-managed writable SquidScript app storage. The physical
+Zephyr flash-map, NVS, and LittleFS layout is target-specific firmware detail.
 
 Generic events are canonical:
 
@@ -2238,7 +2238,7 @@ if (ap.ok && status.active) {
 }
 ```
 
-For the ESP32-C3 reference runtime prototype, AP defaults are target/runtime
+For Zephyr firmware, AP defaults are target/runtime
 chosen: open AP, target-chosen channel, conventional AP address
 `192.168.4.1/24`, and bounded target-clamped client count. A successful
 `startAP` and `status.state == "started"` prove that the firmware backend
@@ -3517,7 +3517,7 @@ settings, not source-declared privileges.
 
 Initial profiles:
 
-- `dev`: default for reference firmware and `squidc repl`
+- `dev`: default for Zephyr firmware and `squidc repl`
 - `release`: strips debug output and is intended for smaller, less debuggable
   app artifacts
 

@@ -1,6 +1,6 @@
 # squidc CLI
 
-`squidc` is the host compiler and reference-firmware control CLI.
+`squidc` is the host compiler and Zephyr-firmware control CLI.
 
 Normal SquidScript compilation and upload does not require a target definition.
 Apps compile against the portable language/runtime API. Device aliases and
@@ -19,11 +19,11 @@ cargo run -p squidc -- repl --script tests/repl/default-dev.session
 cargo run -p squidc -- doctor
 ```
 
-`run` compiles the input app, uploads it with `RUN.TEMP`, and launches it as a
-temporary foreground app. It does not write flash, does not overwrite `main`,
-and is intended for quick hardware checks and rapid iteration. Before 1.0,
-`RUN.TEMP` stays RAM-backed by design so repeated `squidc run` loops do not
-wear flash.
+`run` compiles the input app, uploads it through the Zephyr temp-run command,
+and launches it as a temporary foreground app. Firmware stages the temp SQBC as
+a temporary app-store file instead of buffering the payload in RAM. It does not
+publish an installed app, does not overwrite `main`, and keeps temp app state
+volatile.
 
 ## App Commands
 
@@ -64,16 +64,15 @@ cargo run -p squidc -- device reset
 cargo run -p squidc -- device monitor --max-lines 4
 ```
 
-`device key` sends a logical key event to the reference firmware. It does not
+`device key` sends a logical key event to Zephyr firmware. It does not
 press a physical button; the firmware routes the event to the current app.
 
-`device resources` reads the firmware `RESOURCES.GET` diagnostics and reports
+`device resources` reads Zephyr firmware resource diagnostics and reports
 raw target-specific RAM and app-storage byte counts. `ram_total_bytes` is
 static board context; `ram_heap_*` fields are live allocator telemetry from the
 running firmware. With `--json`, parsed values are returned under
-`data.resources`. Firmware reports `RUN.TEMP` buffer usage separately from
-installed-app code cache usage, so comparisons can distinguish volatile
-developer runs from persistent chunk execution.
+`data.resources`. Firmware diagnostics should distinguish volatile temp-run
+state from installed-app code cache and app-store usage.
 
 `device reset` performs a firmware soft boot. It clears the current VM, temp
 app, foreground stack, pending launches, trigger/timer registrations, and debug
@@ -88,11 +87,20 @@ when literal serial bytes are needed. JSON monitor output must be bounded with
 ## Protocol Escape Hatch
 
 ```sh
-cargo run -p squidc -- protocol raw APP.LIST
+cargo run -p squidc -- protocol raw hello --seq 1 --string 1=esp32c3-supermini
+cargo run -p squidc -- protocol raw resources-get --u64 1=409600
 ```
 
-Use `protocol raw` for low-level protocol troubleshooting only. Prefer grouped
-`app` and `device` commands for normal workflows.
+Use `protocol raw` for low-level Zephyr protocol troubleshooting only. It sends
+one binary framed request, not a text command. Field options are typed TLV
+entries: `--string TAG=VALUE`, `--bytes TAG=HEX`, `--bool TAG=true|false`,
+`--u64 TAG=VALUE`, and `--i64 TAG=VALUE`. Prefer grouped `app` and `device`
+commands for normal workflows.
+
+Framed `hello` identity, `app install`, and `app list` are implemented in the
+host and Zephyr serial transport layers. Most grouped `app`, `device`, and
+`repl` workflows are still being migrated from the old text command
+implementation to framed requests.
 
 ## JSON
 
@@ -127,12 +135,11 @@ tests.
 Checks include:
 
 - `cargo`, `rustc`, and `rustup`
-- the `riscv32imc-unknown-none-elf` Rust target
-- the RISC-V ELF GCC toolchain required by the LittleFS firmware build
-- `espflash`, including `~/.cargo/bin/espflash`
+- `west` and Zephyr workspace readiness
+- Zephyr SDK/toolchain support for the selected board
 - visible serial ports
-- optional `riscv64-elf-size`
-- firmware `HELLO` when exactly one candidate device is visible or `--port` is
+- optional Zephyr image/map size tooling
+- firmware identity when exactly one candidate device is visible or `--port` is
   supplied
 - hardware target test script presence
 

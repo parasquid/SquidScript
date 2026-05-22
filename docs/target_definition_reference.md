@@ -401,7 +401,7 @@ SquidScript apps request text size through `fontHeight` in logical pixels. Firmw
 
 Screen render policy is app-visible SquidScript intent. `compose` means normal UI composition. `stream` means page- or image-dominant rendering. Display render mode is a firmware/display initialization choice. `strip` means the display service renders into bounded strips and transfers those strips to the EPD. `single` means the display service keeps one full framebuffer for composition before transfer.
 
-If a SquidScript screen omits `render`, firmware should use `rendering.defaultPolicy`. For XTEINK X4 that default is `compose`. The XTEINK X4 reference firmware should initialize the display service with `strip` as the low-RAM default mode, while allowing `single` for debug builds or workflows where the extra RAM is justified. `policyModeMap` is a firmware preference order for mapping app-visible policy to target-supported display modes.
+If a SquidScript screen omits `render`, firmware should use `rendering.defaultPolicy`. For XTEINK X4 that default is `compose`. Zephyr firmware should initialize the display service with `strip` as the low-RAM default mode, while allowing `single` for debug builds or workflows where the extra RAM is justified. `policyModeMap` is a firmware preference order for mapping app-visible policy to target-supported display modes.
 
 ---
 
@@ -705,7 +705,7 @@ The target compiler must not silently guess missing values. Missing required val
 
 ## 17. Generated Firmware Interface
 
-Initial generated firmware configuration should include constants equivalent to the following. Rust reference firmware may emit these as `target_config.rs`; C/C++ backends may emit `target_config.h`.
+Initial generated firmware configuration should include constants equivalent to the following. Zephyr firmware may emit these as C headers, devicetree overlays, or Kconfig fragments as appropriate.
 
 ```c
 #define DEVICE_TARGET_ID "xteink-x4"

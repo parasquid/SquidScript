@@ -354,6 +354,7 @@ name = "squidc"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "crc32fast",
  "serde",
  "serde_json",
  "squidc-core",
@@ -384,6 +385,14 @@ name = "squidvm-core"
 version = "0.1.0"
 dependencies = [
  "squidc-core",
+]
+
+[[package]]
+name = "squidvm-ffi"
+version = "0.1.0"
+dependencies = [
+ "squidc-core",
+ "squidvm-core",
 ]
 
 [[package]]
