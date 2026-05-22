@@ -19,10 +19,9 @@ artifact, not a production firmware executable.
 offset  size  field
 0       4     magic: "SQBC"
 4       2     little-endian u16 header length
-6       2     reserved, currently 0
-8       4     little-endian u32 file length
-12      4     little-endian u32 section count
-16      12*n  section records
+6       4     little-endian u32 file length
+10      4     little-endian u32 section count
+14      12*n  section records
 ...     n     section payloads
 ```
 

@@ -714,7 +714,16 @@ mod tests {
 
         assert_eq!(read, header.len());
         assert_eq!(&header[0..4], b"SQBC");
-        assert_eq!(u16::from_le_bytes(header[4..6].try_into().unwrap()), 3);
+        let parsed = Program::parse_header(&header[..14]).unwrap();
+        assert_eq!(parsed.file_len, bytes.len());
+        assert!(parsed.header_len > header.len());
+
+        let mut tail = [0u8; 8];
+        let offset = bytes.len() - tail.len();
+        let read = storage.read_app_range("main", offset, &mut tail).unwrap();
+
+        assert_eq!(read, tail.len());
+        assert_eq!(&tail, &bytes[offset..]);
     }
 
     #[test]
