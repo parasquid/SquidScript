@@ -3,6 +3,7 @@ use core::fmt;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ServiceError {
     QueueFull,
+    InvalidProfile,
 }
 
 pub struct BoundedQueue<T: Copy, const CAP: usize> {
@@ -266,6 +267,98 @@ impl<const CAP: usize> WifiService<CAP> {
     pub fn clear(&mut self) {
         self.commands.clear();
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WifiStationCredentials<'a> {
+    pub profile: &'a str,
+    pub ssid: &'a [u8],
+    pub password: &'a [u8],
+}
+
+pub struct WifiStationProfileStore<
+    const PROFILE_CAP: usize,
+    const SSID_CAP: usize,
+    const PASSWORD_CAP: usize,
+> {
+    profile: [u8; PROFILE_CAP],
+    profile_len: usize,
+    ssid: [u8; SSID_CAP],
+    ssid_len: usize,
+    password: [u8; PASSWORD_CAP],
+    password_len: usize,
+}
+
+impl<const PROFILE_CAP: usize, const SSID_CAP: usize, const PASSWORD_CAP: usize>
+    WifiStationProfileStore<PROFILE_CAP, SSID_CAP, PASSWORD_CAP>
+{
+    pub const fn new() -> Self {
+        Self {
+            profile: [0; PROFILE_CAP],
+            profile_len: 0,
+            ssid: [0; SSID_CAP],
+            ssid_len: 0,
+            password: [0; PASSWORD_CAP],
+            password_len: 0,
+        }
+    }
+
+    pub fn set(&mut self, profile: &str, ssid: &[u8], password: &[u8]) -> Result<(), ServiceError> {
+        let profile_bytes = profile.as_bytes();
+        if !valid_wifi_profile_name::<PROFILE_CAP>(profile)
+            || ssid.is_empty()
+            || ssid.len() > SSID_CAP
+            || password.len() > PASSWORD_CAP
+        {
+            return Err(ServiceError::InvalidProfile);
+        }
+
+        self.profile[..profile_bytes.len()].copy_from_slice(profile_bytes);
+        self.profile_len = profile_bytes.len();
+        self.ssid[..ssid.len()].copy_from_slice(ssid);
+        self.ssid_len = ssid.len();
+        self.password[..password.len()].copy_from_slice(password);
+        self.password_len = password.len();
+        Ok(())
+    }
+
+    pub fn credentials_for(&self, profile: &str) -> Option<WifiStationCredentials<'_>> {
+        if self.profile_len != profile.len()
+            || self.profile[..self.profile_len] != *profile.as_bytes()
+        {
+            return None;
+        }
+
+        let profile = core::str::from_utf8(&self.profile[..self.profile_len]).ok()?;
+        Some(WifiStationCredentials {
+            profile,
+            ssid: &self.ssid[..self.ssid_len],
+            password: &self.password[..self.password_len],
+        })
+    }
+
+    pub fn write_diagnostics(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        let profile = core::str::from_utf8(&self.profile[..self.profile_len]).unwrap_or("");
+        writeln!(out, "profile={profile}")?;
+        writeln!(out, "ssid_len={}", self.ssid_len)?;
+        writeln!(out, "password_len={}", self.password_len)
+    }
+}
+
+pub const fn valid_wifi_profile_name<const CAP: usize>(profile: &str) -> bool {
+    let bytes = profile.as_bytes();
+    if bytes.is_empty() || bytes.len() > CAP {
+        return false;
+    }
+    let mut index = 0;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if !(byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')) {
+            return false;
+        }
+        index += 1;
+    }
+    true
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -927,6 +1020,29 @@ mod tests {
         assert!(wifi.cached_status().station_connected);
         assert_eq!(wifi.cached_status().scan_matches, 1);
         assert_eq!(wifi.pop_command(), Some(WifiCommand::DisconnectStation));
+    }
+
+    #[test]
+    fn wifi_station_profile_store_routes_matching_credentials_without_leaking_secret() {
+        let mut profiles = WifiStationProfileStore::<16, 32, 64>::new();
+
+        profiles
+            .set("dev", b"LabNetwork", b"correct horse battery staple")
+            .unwrap();
+
+        let credentials = profiles.credentials_for("dev").unwrap();
+        assert_eq!(credentials.profile, "dev");
+        assert_eq!(credentials.ssid, b"LabNetwork");
+        assert_eq!(credentials.password, b"correct horse battery staple");
+        assert!(profiles.credentials_for("prod").is_none());
+
+        let mut diagnostics = std::string::String::new();
+        profiles.write_diagnostics(&mut diagnostics).unwrap();
+        assert!(!diagnostics.contains("correct horse battery staple"));
+        assert!(!diagnostics.contains("LabNetwork"));
+        assert!(diagnostics.contains("profile=dev"));
+        assert!(diagnostics.contains("ssid_len=10"));
+        assert!(diagnostics.contains("password_len=28"));
     }
 
     #[test]

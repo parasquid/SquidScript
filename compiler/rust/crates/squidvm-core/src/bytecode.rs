@@ -31,6 +31,8 @@ pub(crate) const OP_RETURN: u8 = 41;
 pub(crate) const OP_HALT: u8 = 42;
 pub(crate) const OP_CALL_BUILTIN: u8 = 50;
 pub(crate) const OP_POP: u8 = 60;
+pub(crate) const OP_LIST_LEN: u8 = 61;
+pub(crate) const OP_LIST_GET: u8 = 62;
 
 pub(crate) const BUILTIN_STATE_LOAD: u8 = 1;
 pub(crate) const BUILTIN_STATE_SAVE: u8 = 2;
@@ -63,6 +65,7 @@ pub(crate) const BUILTIN_SERVICE_WIFI_STATUS: u8 = 32;
 pub(crate) const BUILTIN_SERVICE_WIFI_GET_AP_IP: u8 = 33;
 pub(crate) const BUILTIN_SERVICE_WIFI_CONNECT: u8 = 35;
 pub(crate) const BUILTIN_SERVICE_WIFI_DISCONNECT: u8 = 36;
+pub(crate) const BUILTIN_SERVICE_WIFI_SCAN: u8 = 37;
 
 pub(crate) const VALUE_NULL: u8 = 0;
 pub(crate) const VALUE_BOOL: u8 = 1;

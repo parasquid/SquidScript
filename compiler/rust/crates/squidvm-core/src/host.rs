@@ -166,6 +166,13 @@ pub trait TraceSink {
     fn service_wifi_get_ap_ip<'a>(&'a mut self) -> Result<WifiApIp<'a>, VmError> {
         Err(VmError::InvalidOperand)
     }
+    fn service_wifi_scan<'a>(&'a mut self) -> Result<WifiScanResult<'a>, VmError> {
+        Ok(WifiScanResult {
+            ok: false,
+            error: Some("unsupported"),
+            networks: &[],
+        })
+    }
     fn service_wifi_teardown(&mut self) -> Result<(), VmError> {
         Ok(())
     }
@@ -266,6 +273,126 @@ pub struct WifiApIp<'a> {
     pub error: Option<&'a str>,
 }
 
+pub const WIFI_SCAN_SSID_CAP: usize = 32;
+pub const WIFI_SCAN_BSSID_TEXT_LEN: usize = 17;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WifiAccessPoint {
+    ssid: [u8; WIFI_SCAN_SSID_CAP],
+    ssid_len: usize,
+    bssid: [u8; WIFI_SCAN_BSSID_TEXT_LEN],
+    has_bssid: bool,
+    pub ssid_length: i32,
+    pub channel: i32,
+    pub rssi: i32,
+    pub auth: Option<&'static str>,
+    pub hidden: bool,
+}
+
+impl WifiAccessPoint {
+    pub const fn empty() -> Self {
+        Self {
+            ssid: [0; WIFI_SCAN_SSID_CAP],
+            ssid_len: 0,
+            bssid: [0; WIFI_SCAN_BSSID_TEXT_LEN],
+            has_bssid: false,
+            ssid_length: 0,
+            channel: 0,
+            rssi: 0,
+            auth: None,
+            hidden: false,
+        }
+    }
+
+    pub const fn from_fixed_parts(
+        ssid: [u8; WIFI_SCAN_SSID_CAP],
+        ssid_len: usize,
+        bssid: [u8; WIFI_SCAN_BSSID_TEXT_LEN],
+        has_bssid: bool,
+        ssid_length: i32,
+        channel: i32,
+        rssi: i32,
+        auth: Option<&'static str>,
+        hidden: bool,
+    ) -> Self {
+        Self {
+            ssid,
+            ssid_len,
+            bssid,
+            has_bssid,
+            ssid_length,
+            channel,
+            rssi,
+            auth,
+            hidden,
+        }
+    }
+
+    pub fn new(
+        ssid: &[u8],
+        bssid: Option<[u8; 6]>,
+        channel: i32,
+        rssi: i32,
+        auth: Option<&'static str>,
+        hidden: bool,
+    ) -> Result<Self, VmError> {
+        if ssid.len() > WIFI_SCAN_SSID_CAP {
+            return Err(VmError::InvalidOperand);
+        }
+        let mut ap = Self::empty();
+        ap.ssid[..ssid.len()].copy_from_slice(ssid);
+        ap.ssid_len = ssid.len();
+        ap.ssid_length = ssid.len().min(i32::MAX as usize) as i32;
+        if let Some(bssid) = bssid {
+            ap.write_bssid(bssid);
+            ap.has_bssid = true;
+        }
+        ap.channel = channel;
+        ap.rssi = rssi;
+        ap.auth = auth;
+        ap.hidden = hidden;
+        Ok(ap)
+    }
+
+    pub fn ssid(&self) -> Result<&str, VmError> {
+        core::str::from_utf8(&self.ssid[..self.ssid_len]).map_err(|_| VmError::InvalidUtf8)
+    }
+
+    pub fn bssid(&self) -> Result<Option<&str>, VmError> {
+        if self.has_bssid {
+            Ok(Some(
+                core::str::from_utf8(&self.bssid).map_err(|_| VmError::InvalidUtf8)?,
+            ))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn write_bssid(&mut self, bssid: [u8; 6]) {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        let mut write = 0usize;
+        let mut read = 0usize;
+        while read < bssid.len() {
+            if read > 0 {
+                self.bssid[write] = b':';
+                write += 1;
+            }
+            let byte = bssid[read];
+            self.bssid[write] = HEX[(byte >> 4) as usize];
+            self.bssid[write + 1] = HEX[(byte & 0x0f) as usize];
+            write += 2;
+            read += 1;
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WifiScanResult<'a> {
+    pub ok: bool,
+    pub error: Option<&'a str>,
+    pub networks: &'a [WifiAccessPoint],
+}
+
 const SIM_WIFI_SSID_CAP: usize = 32;
 const SIM_WIFI_AP_IP: &str = "192.168.4.1";
 const SIM_WIFI_AP_NETMASK: &str = "255.255.255.0";
@@ -277,6 +404,7 @@ pub trait WifiBackend {
     fn disconnect(&mut self) -> Result<WifiActionResult<'static>, VmError>;
     fn status<'a>(&'a mut self) -> Result<WifiStatus<'a>, VmError>;
     fn ap_ip<'a>(&'a mut self) -> Result<WifiApIp<'a>, VmError>;
+    fn scan<'a>(&'a mut self) -> Result<WifiScanResult<'a>, VmError>;
     fn teardown(&mut self) -> Result<bool, VmError>;
 }
 
@@ -454,6 +582,22 @@ impl WifiBackend for SimWifiBackend {
         })
     }
 
+    fn scan<'a>(&'a mut self) -> Result<WifiScanResult<'a>, VmError> {
+        if self.active || self.connected {
+            Ok(WifiScanResult {
+                ok: false,
+                error: Some("wifi busy"),
+                networks: &[],
+            })
+        } else {
+            Ok(WifiScanResult {
+                ok: false,
+                error: Some("unsupported"),
+                networks: &[],
+            })
+        }
+    }
+
     fn teardown(&mut self) -> Result<bool, VmError> {
         let was_active = self.active || self.connected;
         self.active = false;
@@ -467,7 +611,35 @@ impl WifiBackend for SimWifiBackend {
 
 #[cfg(test)]
 mod wifi_backend_tests {
-    use super::{SimWifiBackend, WifiBackend};
+    use super::{SimWifiBackend, WifiAccessPoint, WifiBackend};
+
+    #[test]
+    fn wifi_access_point_formats_bssid_and_tracks_hidden_ssid_length() {
+        let ap = WifiAccessPoint::new(
+            b"",
+            Some([0x00, 0x11, 0x22, 0xaa, 0xbb, 0xcc]),
+            11,
+            -80,
+            Some("wpa2"),
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(ap.ssid().unwrap(), "");
+        assert_eq!(ap.ssid_length, 0);
+        assert_eq!(ap.bssid().unwrap(), Some("00:11:22:aa:bb:cc"));
+        assert_eq!(ap.channel, 11);
+        assert_eq!(ap.rssi, -80);
+        assert_eq!(ap.auth, Some("wpa2"));
+        assert!(ap.hidden);
+    }
+
+    #[test]
+    fn wifi_access_point_rejects_oversized_ssid() {
+        let oversized = b"123456789012345678901234567890123";
+
+        assert!(WifiAccessPoint::new(oversized, None, 1, -42, None, false).is_err());
+    }
 
     #[test]
     fn sim_backend_tracks_ap_status_ip_and_teardown() {
@@ -524,5 +696,23 @@ mod wifi_backend_tests {
         assert!(!result.ok);
         assert_eq!(result.error, Some("invalid ssid"));
         assert!(!backend.status().unwrap().active);
+    }
+
+    #[test]
+    fn sim_backend_reports_scan_busy_while_ap_or_station_is_active() {
+        let mut backend = SimWifiBackend::new();
+
+        backend.start_ap("SquidScript").unwrap();
+        let scan = backend.scan().unwrap();
+        assert!(!scan.ok);
+        assert_eq!(scan.error, Some("wifi busy"));
+        assert!(scan.networks.is_empty());
+
+        backend.stop_ap().unwrap();
+        backend.connect("dev").unwrap();
+        let scan = backend.scan().unwrap();
+        assert!(!scan.ok);
+        assert_eq!(scan.error, Some("wifi busy"));
+        assert!(scan.networks.is_empty());
     }
 }

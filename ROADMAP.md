@@ -69,11 +69,14 @@ persistent SquidScript app platform prototype.
   apps without exposing passwords to SquidScript source, state, logs,
   diagnostics, or source maps; and what recovery/reset flow clears saved
   credentials.
-- Implement the ESP32-C3 Rust station backend behind the public named-profile
-  `service.wifi.connect/disconnect/status` API. The current API layer may
-  report explicit backend errors until scan/auth/DHCP are proven.
-- Add station scan listing, profile setup UI, hostnames, and configurable IP
-  APIs after named-profile station connection status is stable.
+- Add DHCP/IP reporting for ESP32-C3 Rust station mode once the network stack
+  runner is integrated; the station driver currently proves scan/config/start
+  and connect attempts but does not acquire or report a station IP address.
+- Add APSTA support so AP diagnostics and station mode can run concurrently;
+  the current ESP32-C3 firmware treats AP and station as mutually exclusive
+  radio modes.
+- Add profile setup UI, hostnames, and configurable IP APIs after named-profile
+  station connection status is stable.
 - Add target capability checks for devices without Wi-Fi or with restricted
   networking support.
 - Add Pico W Wi-Fi backend exploration using the same `service.wifi.*`

@@ -294,6 +294,12 @@ impl<S: AppStorage> TraceSink for StoredAppHost<'_, '_, S> {
         self.trace.service_wifi_get_ap_ip()
     }
 
+    fn service_wifi_scan<'b>(
+        &'b mut self,
+    ) -> Result<squidvm_core::host::WifiScanResult<'b>, VmError> {
+        self.trace.service_wifi_scan()
+    }
+
     fn service_wifi_teardown(&mut self) -> Result<(), VmError> {
         self.trace.service_wifi_teardown()
     }

@@ -169,10 +169,29 @@ The script reads `HWTEST_STA_SSID` and `HWTEST_STA_PASSWORD` from the
 environment or `HWTEST_ENV_FILE`, provisions volatile profile `dev` over serial
 without echoing credential values, installs `examples/wifi-station-diagnostics`,
 and checks `service.wifi.connect("dev")` plus `service.wifi.status()` output.
-The default pass allows the Rust backend to report a station error while the
-API layers stay stable. Use
-`STRICT_STA_CONNECT=1 scripts/c3-supermini-test-wifi-station-api.sh` only when
-deliberately requiring `connected=true`.
+The default pass requires the Rust backend to enter real station mode and prove
+`connected=true` with the provisioned network. Use `STRICT_STA_CONNECT=0`
+only when deliberately collecting scan, auth, or association failure
+diagnostics from a local network environment expected not to complete.
+
+For public Wi-Fi scan API coverage, use:
+
+```sh
+scripts/c3-supermini-test-wifi-scan-api.sh
+```
+
+The script installs `examples/wifi-scan-diagnostics`, launches it, and requires
+either a real AP list or a concrete driver scan failure without printing
+credential-related fields. The old ESP32-C3 `unsupported` scan stub is a
+failure.
+
+The attached ESP32-C3 Super Mini can detect nearby Wi-Fi networks. ESP-IDF
+scan-only hardware isolation reports multiple AP records on this board. If the
+Rust `esp-radio` or SquidScript firmware path reports zero scan records, treat
+that as a Rust firmware or driver-integration issue until a fresh ESP-IDF
+scan-only run says otherwise. Start debugging at the Rust Wi-Fi stack, scan
+configuration, driver lifecycle, scheduler/runtime integration, or result
+extraction.
 
 ### ESP-IDF Wi-Fi Hardware Isolation
 
@@ -209,6 +228,33 @@ experiment source and rebuilding. A reliable hardware pass means the SSID is
 visible from a phone/laptop, the device can join, and serial logs show station
 join/leave plus connected station counts.
 
+For scan-only hardware isolation, build the scan variant. It does not need or
+use Wi-Fi credentials:
+
+```sh
+cd experiments/esp32c3-supermini/firmware/esp-idf-softap-hwtest
+./build-scan.sh
+./flash-with-espflash.sh /dev/ttyACM0
+timeout 28s ~/.cargo/bin/espflash monitor --chip esp32c3 --port /dev/ttyACM0 \
+  --non-interactive --after hard-reset --monitor-baud 115200 --log-format serial
+```
+
+Representative scan-only ESP-IDF output, with network identifiers redacted:
+
+```text
+I (245) scan_hwtest: ESP32-C3 scan-only hardware test using ESP-IDF
+I (245) scan_hwtest: starting unfiltered scan
+I (2745) scan_hwtest: scan found 4 AP record(s)
+I (2745) scan_hwtest: scan[0] ssid_len:22 bssid:<redacted> channel:2 rssi:-36 auth:WPA_WPA2_PSK
+I (2745) scan_hwtest: scan[1] ssid_len:10 bssid:<redacted> channel:8 rssi:-65 auth:WPA2_PSK
+I (2745) scan_hwtest: scan[2] ssid_len:0 bssid:<redacted> channel:8 rssi:-65 auth:WPA2_PSK
+I (2745) scan_hwtest: scan[3] ssid_len:23 bssid:<redacted> channel:5 rssi:-70 auth:WPA_WPA2_PSK
+I (15245) scan_hwtest: scan found 5 AP record(s)
+```
+
+This proves the attached ESP32-C3 Super Mini can detect nearby networks with
+Espressif's ESP-IDF Wi-Fi stack.
+
 For station mode, put the target network SSID and password in an untracked env
 file such as `~/.env` as `HWTEST_STA_SSID` and `HWTEST_STA_PASSWORD`, then
 build the station variant:
@@ -230,6 +276,9 @@ Interpretation:
 - ESP-IDF AP visible and joinable: hardware/RF is probably fine; continue
   debugging the SquidScript Rust firmware, `esp-radio`, and scheduler/network
   runner architecture.
+- ESP-IDF scan-only sees AP records while SquidScript/Rust scan returns zero:
+  hardware/RF is proven capable of scanning in this environment; debug the Rust
+  `esp-radio` scan lifecycle and result handling before blaming the board.
 - ESP-IDF AP also invisible: suspect board/RF/antenna, USB power, physical
   placement, or local RF environment before blaming SquidScript.
 - AP visible only at very short range or when the board is moved/touched:

@@ -311,6 +311,7 @@ fn value_json(strings: &StringResolver<'_>, value: Value) -> serde_json::Value {
         Value::I32(value) => serde_json::json!(value),
         Value::String(_) | Value::RuntimeString(_) => serde_json::json!(value_text(strings, value)),
         Value::Record(_) => serde_json::json!("<record>"),
+        Value::List(_) => serde_json::json!("<list>"),
     }
 }
 
@@ -323,6 +324,7 @@ fn value_text(strings: &StringResolver<'_>, value: Value) -> String {
             strings.value_str(value).unwrap_or("").to_string()
         }
         Value::Record(_) => "<record>".to_string(),
+        Value::List(_) => "<list>".to_string(),
     }
 }
 

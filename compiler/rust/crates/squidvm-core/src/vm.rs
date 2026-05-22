@@ -9,24 +9,25 @@ use crate::{
         BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_INDICATOR_BREATHE, BUILTIN_SERVICE_INDICATOR_READ,
         BUILTIN_SERVICE_INDICATOR_TOGGLE, BUILTIN_SERVICE_INDICATOR_WRITE,
         BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY, BUILTIN_SERVICE_WIFI_CONNECT,
-        BUILTIN_SERVICE_WIFI_DISCONNECT, BUILTIN_SERVICE_WIFI_GET_AP_IP,
+        BUILTIN_SERVICE_WIFI_DISCONNECT, BUILTIN_SERVICE_WIFI_GET_AP_IP, BUILTIN_SERVICE_WIFI_SCAN,
         BUILTIN_SERVICE_WIFI_START_AP, BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP,
         BUILTIN_STATE_LOAD, BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, BUILTIN_SYSTEM_MEMORY,
         BUILTIN_SYSTEM_STORAGE, OP_ADD, OP_CALL_BUILTIN, OP_CALL_FUNCTION, OP_EQ, OP_GET_FIELD,
-        OP_GET_LOCAL, OP_GET_STATE, OP_GT, OP_GTE, OP_HALT, OP_JUMP, OP_JUMP_IF_FALSE, OP_LT,
-        OP_LTE, OP_NE, OP_POP, OP_PUSH_BOOL, OP_PUSH_INT, OP_PUSH_NULL, OP_PUSH_STRING, OP_RETURN,
-        OP_SET_LOCAL, OP_SET_STATE, OP_SUB,
+        OP_GET_LOCAL, OP_GET_STATE, OP_GT, OP_GTE, OP_HALT, OP_JUMP, OP_JUMP_IF_FALSE, OP_LIST_GET,
+        OP_LIST_LEN, OP_LT, OP_LTE, OP_NE, OP_POP, OP_PUSH_BOOL, OP_PUSH_INT, OP_PUSH_NULL,
+        OP_PUSH_STRING, OP_RETURN, OP_SET_LOCAL, OP_SET_STATE, OP_SUB,
     },
     chunk::{ChunkCache, ChunkKind, ChunkRef},
     error::VmError,
     host::{
         DisplayLineOptions, DisplayRectOptions, DisplayTextOptions, StorageCompletion,
-        StorageRequest, TraceSink, VmDispatch, WifiActionResult, WifiApIp, WifiStatus,
+        StorageRequest, TraceSink, VmDispatch, WifiAccessPoint, WifiActionResult, WifiApIp,
+        WifiScanResult, WifiStatus,
     },
     limits::{
         MAX_CALL_DEPTH, MAX_CODE_CHUNK_BYTES, MAX_INSTRUCTIONS_PER_EVENT, MAX_LOCALS,
-        MAX_RUNTIME_RECORDS, MAX_RUNTIME_RECORD_FIELDS, MAX_RUNTIME_STRING_BYTES,
-        MAX_SAVED_STATE_BYTES, MAX_STACK, MAX_STATE,
+        MAX_RUNTIME_LISTS, MAX_RUNTIME_LIST_ITEMS, MAX_RUNTIME_RECORDS, MAX_RUNTIME_RECORD_FIELDS,
+        MAX_RUNTIME_STRING_BYTES, MAX_SAVED_STATE_BYTES, MAX_STACK, MAX_STATE,
     },
     program::{Program, ProgramIndex},
     reader::{ChunkedVmHost, SqbcReader},
@@ -42,6 +43,7 @@ pub struct Vm<'a> {
     program: Program<'a>,
     runtime_strings: RuntimeStrings,
     runtime_records: RuntimeRecords,
+    runtime_lists: RuntimeLists,
     state: [Value; MAX_STATE],
     stack: [Value; MAX_STACK],
     stack_len: usize,
@@ -54,6 +56,7 @@ pub struct ChunkedVm {
     index: ProgramIndex,
     runtime_strings: RuntimeStrings,
     runtime_records: RuntimeRecords,
+    runtime_lists: RuntimeLists,
     state: [Value; MAX_STATE],
     stack: [Value; MAX_STACK],
     stack_len: usize,
@@ -113,6 +116,21 @@ impl RuntimeRecord {
     }
 }
 
+#[derive(Clone, Copy)]
+struct RuntimeList {
+    items: [Value; MAX_RUNTIME_LIST_ITEMS],
+    item_count: usize,
+}
+
+impl RuntimeList {
+    const fn empty() -> Self {
+        Self {
+            items: [Value::Null; MAX_RUNTIME_LIST_ITEMS],
+            item_count: 0,
+        }
+    }
+}
+
 struct RuntimeRecords {
     records: [RuntimeRecord; MAX_RUNTIME_RECORDS],
     next: usize,
@@ -155,6 +173,56 @@ impl RuntimeRecords {
     }
 }
 
+struct RuntimeLists {
+    lists: [RuntimeList; MAX_RUNTIME_LISTS],
+    next: usize,
+}
+
+impl RuntimeLists {
+    const fn new() -> Self {
+        Self {
+            lists: [RuntimeList::empty(); MAX_RUNTIME_LISTS],
+            next: 0,
+        }
+    }
+
+    fn alloc(&mut self, items: &[Value]) -> Result<Value, VmError> {
+        if items.len() > MAX_RUNTIME_LIST_ITEMS {
+            return Err(VmError::InvalidOperand);
+        }
+        let id = self.next;
+        self.next = (self.next + 1) % MAX_RUNTIME_LISTS;
+        let mut list = RuntimeList::empty();
+        list.item_count = items.len();
+        list.items[..items.len()].copy_from_slice(items);
+        self.lists[id] = list;
+        Ok(Value::List(id as u8))
+    }
+
+    fn len(&self, list_id: u8) -> Result<i32, VmError> {
+        let list = self
+            .lists
+            .get(list_id as usize)
+            .ok_or(VmError::InvalidOperand)?;
+        Ok(list.item_count.min(i32::MAX as usize) as i32)
+    }
+
+    fn get(&self, list_id: u8, index: i32) -> Result<Value, VmError> {
+        let list = self
+            .lists
+            .get(list_id as usize)
+            .ok_or(VmError::InvalidOperand)?;
+        if index < 0 {
+            return Err(VmError::InvalidOperand);
+        }
+        let index = index as usize;
+        if index >= list.item_count {
+            return Err(VmError::InvalidOperand);
+        }
+        Ok(list.items[index])
+    }
+}
+
 impl ChunkedVm {
     pub fn new(index: ProgramIndex) -> Self {
         let mut state = [Value::Null; MAX_STATE];
@@ -165,6 +233,7 @@ impl ChunkedVm {
             index,
             runtime_strings: RuntimeStrings::new(),
             runtime_records: RuntimeRecords::new(),
+            runtime_lists: RuntimeLists::new(),
             state,
             stack: [Value::Null; MAX_STACK],
             stack_len: 0,
@@ -574,15 +643,29 @@ impl ChunkedVm {
                 OP_GET_FIELD => {
                     let field_id = self.read_u16_code(ip)?;
                     ip += 2;
-                    let Value::Record(record_id) = self.pop()? else {
-                        return Err(VmError::InvalidOperand);
-                    };
+                    let target = self.pop()?;
                     let field = self.index.string(field_id)?;
-                    let value = self.runtime_records.field(record_id, field)?;
+                    let value = match target {
+                        Value::Record(record_id) => self.runtime_records.field(record_id, field)?,
+                        _ => return Err(VmError::InvalidOperand),
+                    };
                     self.push(value)?;
                 }
                 OP_ADD | OP_SUB | OP_EQ | OP_NE | OP_LT | OP_LTE | OP_GT | OP_GTE => {
                     self.binary(op)?
+                }
+                OP_LIST_LEN => {
+                    let Value::List(list_id) = self.pop()? else {
+                        return Err(VmError::InvalidOperand);
+                    };
+                    self.push(Value::I32(self.runtime_lists.len(list_id)?))?;
+                }
+                OP_LIST_GET => {
+                    let index = self.pop()?.expect_i32()?;
+                    let Value::List(list_id) = self.pop()? else {
+                        return Err(VmError::InvalidOperand);
+                    };
+                    self.push(self.runtime_lists.get(list_id, index)?)?;
                 }
                 OP_JUMP => {
                     ip = self.read_u32_code(ip)? as usize;
@@ -781,15 +864,29 @@ impl ChunkedVm {
                 OP_GET_FIELD => {
                     let field_id = self.read_u16_code(frame.ip)?;
                     frame.ip += 2;
-                    let Value::Record(record_id) = self.pop()? else {
-                        return Err(VmError::InvalidOperand);
-                    };
+                    let target = self.pop()?;
                     let field = self.index.string(field_id)?;
-                    let value = self.runtime_records.field(record_id, field)?;
+                    let value = match target {
+                        Value::Record(record_id) => self.runtime_records.field(record_id, field)?,
+                        _ => return Err(VmError::InvalidOperand),
+                    };
                     self.push(value)?;
                 }
                 OP_ADD | OP_SUB | OP_EQ | OP_NE | OP_LT | OP_LTE | OP_GT | OP_GTE => {
                     self.binary(op)?
+                }
+                OP_LIST_LEN => {
+                    let Value::List(list_id) = self.pop()? else {
+                        return Err(VmError::InvalidOperand);
+                    };
+                    self.push(Value::I32(self.runtime_lists.len(list_id)?))?;
+                }
+                OP_LIST_GET => {
+                    let index = self.pop()?.expect_i32()?;
+                    let Value::List(list_id) = self.pop()? else {
+                        return Err(VmError::InvalidOperand);
+                    };
+                    self.push(self.runtime_lists.get(list_id, index)?)?;
                 }
                 OP_JUMP => {
                     frame.ip = self.read_u32_code(frame.ip)? as usize;
@@ -1107,6 +1204,11 @@ impl ChunkedVm {
                 let value = self.wifi_ap_ip_record(result)?;
                 self.push(value)?;
             }
+            BUILTIN_SERVICE_WIFI_SCAN => {
+                let result = host.service_wifi_scan()?;
+                let value = self.wifi_scan_record(result)?;
+                self.push(value)?;
+            }
             BUILTIN_SYSTEM_MEMORY => {
                 let mut writer = self.runtime_strings.alloc()?;
                 host.system_memory_text(&mut writer)?;
@@ -1212,6 +1314,37 @@ impl ChunkedVm {
         ])
     }
 
+    fn wifi_scan_record(&mut self, result: WifiScanResult<'_>) -> Result<Value, VmError> {
+        let error = self.runtime_string_value(result.error)?;
+        let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
+        let count = result.networks.len().min(MAX_RUNTIME_LIST_ITEMS);
+        for (index, network) in result.networks.iter().take(count).enumerate() {
+            items[index] = self.wifi_access_point_record(*network)?;
+        }
+        let networks = self.runtime_lists.alloc(&items[..count])?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
+            RuntimeRecordField::new("error", error),
+            RuntimeRecordField::new("count", Value::I32(count.min(i32::MAX as usize) as i32)),
+            RuntimeRecordField::new("networks", networks),
+        ])
+    }
+
+    fn wifi_access_point_record(&mut self, network: WifiAccessPoint) -> Result<Value, VmError> {
+        let ssid = self.runtime_string_value(Some(network.ssid()?))?;
+        let bssid = self.runtime_string_value(network.bssid()?)?;
+        let auth = self.runtime_string_value(network.auth)?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("ssid", ssid),
+            RuntimeRecordField::new("ssidLength", Value::I32(network.ssid_length)),
+            RuntimeRecordField::new("bssid", bssid),
+            RuntimeRecordField::new("channel", Value::I32(network.channel)),
+            RuntimeRecordField::new("rssi", Value::I32(network.rssi)),
+            RuntimeRecordField::new("auth", auth),
+            RuntimeRecordField::new("hidden", Value::Bool(network.hidden)),
+        ])
+    }
+
     fn binary(&mut self, op: u8) -> Result<(), VmError> {
         let right = self.pop()?;
         let left = self.pop()?;
@@ -1290,6 +1423,7 @@ impl<'a> Vm<'a> {
             program,
             runtime_strings: RuntimeStrings::new(),
             runtime_records: RuntimeRecords::new(),
+            runtime_lists: RuntimeLists::new(),
             state,
             stack: [Value::Null; MAX_STACK],
             stack_len: 0,
@@ -1525,15 +1659,29 @@ impl<'a> Vm<'a> {
                 OP_GET_FIELD => {
                     let field_id = read_u16(self.program.code, ip)?;
                     ip += 2;
-                    let Value::Record(record_id) = self.pop()? else {
-                        return Err(VmError::InvalidOperand);
-                    };
+                    let target = self.pop()?;
                     let field = self.program.string(field_id)?;
-                    let value = self.runtime_records.field(record_id, field)?;
+                    let value = match target {
+                        Value::Record(record_id) => self.runtime_records.field(record_id, field)?,
+                        _ => return Err(VmError::InvalidOperand),
+                    };
                     self.push(value)?;
                 }
                 OP_ADD | OP_SUB | OP_EQ | OP_NE | OP_LT | OP_LTE | OP_GT | OP_GTE => {
                     self.binary(op)?
+                }
+                OP_LIST_LEN => {
+                    let Value::List(list_id) = self.pop()? else {
+                        return Err(VmError::InvalidOperand);
+                    };
+                    self.push(Value::I32(self.runtime_lists.len(list_id)?))?;
+                }
+                OP_LIST_GET => {
+                    let index = self.pop()?.expect_i32()?;
+                    let Value::List(list_id) = self.pop()? else {
+                        return Err(VmError::InvalidOperand);
+                    };
+                    self.push(self.runtime_lists.get(list_id, index)?)?;
                 }
                 OP_JUMP => {
                     ip = read_u32(self.program.code, ip)? as usize;
@@ -1842,6 +1990,11 @@ impl<'a> Vm<'a> {
                 let value = self.wifi_ap_ip_record(result)?;
                 self.push(value)?;
             }
+            BUILTIN_SERVICE_WIFI_SCAN => {
+                let result = trace.service_wifi_scan()?;
+                let value = self.wifi_scan_record(result)?;
+                self.push(value)?;
+            }
             BUILTIN_SYSTEM_MEMORY => {
                 let mut writer = self.runtime_strings.alloc()?;
                 trace.system_memory_text(&mut writer)?;
@@ -1944,6 +2097,37 @@ impl<'a> Vm<'a> {
             RuntimeRecordField::new("gw", gw),
             RuntimeRecordField::new("netmask", netmask),
             RuntimeRecordField::new("error", error),
+        ])
+    }
+
+    fn wifi_scan_record(&mut self, result: WifiScanResult<'_>) -> Result<Value, VmError> {
+        let error = self.runtime_string_value(result.error)?;
+        let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
+        let count = result.networks.len().min(MAX_RUNTIME_LIST_ITEMS);
+        for (index, network) in result.networks.iter().take(count).enumerate() {
+            items[index] = self.wifi_access_point_record(*network)?;
+        }
+        let networks = self.runtime_lists.alloc(&items[..count])?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
+            RuntimeRecordField::new("error", error),
+            RuntimeRecordField::new("count", Value::I32(count.min(i32::MAX as usize) as i32)),
+            RuntimeRecordField::new("networks", networks),
+        ])
+    }
+
+    fn wifi_access_point_record(&mut self, network: WifiAccessPoint) -> Result<Value, VmError> {
+        let ssid = self.runtime_string_value(Some(network.ssid()?))?;
+        let bssid = self.runtime_string_value(network.bssid()?)?;
+        let auth = self.runtime_string_value(network.auth)?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("ssid", ssid),
+            RuntimeRecordField::new("ssidLength", Value::I32(network.ssid_length)),
+            RuntimeRecordField::new("bssid", bssid),
+            RuntimeRecordField::new("channel", Value::I32(network.channel)),
+            RuntimeRecordField::new("rssi", Value::I32(network.rssi)),
+            RuntimeRecordField::new("auth", auth),
+            RuntimeRecordField::new("hidden", Value::Bool(network.hidden)),
         ])
     }
 

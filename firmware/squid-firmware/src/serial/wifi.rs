@@ -1,6 +1,6 @@
 extern crate alloc;
 
-use core::{cell::Cell, fmt, mem::MaybeUninit};
+use core::{cell::Cell, fmt, mem::MaybeUninit, time::Duration};
 
 use alloc::string::String;
 
@@ -9,7 +9,8 @@ use esp_hal::peripherals::WIFI;
 use esp_radio::{
     wifi::{
         event::{self, EventExt},
-        AccessPointConfig, Config, ModeConfig, WifiController, WifiDevice,
+        AccessPointConfig, AuthMethod, ClientConfig, Config, ModeConfig, ScanConfig,
+        WifiController, WifiDevice,
     },
     Controller,
 };
@@ -21,17 +22,29 @@ use esp_wifi_sys::include::{
 };
 use squidvm_core::{
     error::VmError,
-    host::{SimWifiBackend, WifiActionResult, WifiApIp, WifiBackend, WifiStatus},
+    host::{
+        SimWifiBackend, WifiAccessPoint, WifiActionResult, WifiApIp, WifiBackend, WifiScanResult,
+        WifiStatus,
+    },
 };
 
 const AP_IP: &str = "192.168.4.1";
 const AP_NETMASK: &str = "255.255.255.0";
+const WIFI_SCAN_RESULT_CAP: usize = 8;
 
 static AP_START_EVENTS: Mutex<Cell<u32>> = Mutex::new(Cell::new(0));
 static AP_STOP_EVENTS: Mutex<Cell<u32>> = Mutex::new(Cell::new(0));
 static AP_PROBE_EVENTS: Mutex<Cell<u32>> = Mutex::new(Cell::new(0));
 static AP_STA_CONNECTED_EVENTS: Mutex<Cell<u32>> = Mutex::new(Cell::new(0));
 static AP_STA_DISCONNECTED_EVENTS: Mutex<Cell<u32>> = Mutex::new(Cell::new(0));
+static STA_START_EVENTS: Mutex<Cell<u32>> = Mutex::new(Cell::new(0));
+static STA_STOP_EVENTS: Mutex<Cell<u32>> = Mutex::new(Cell::new(0));
+static STA_CONNECTED_EVENTS: Mutex<Cell<u32>> = Mutex::new(Cell::new(0));
+static STA_DISCONNECTED_EVENTS: Mutex<Cell<u32>> = Mutex::new(Cell::new(0));
+static STA_AUTHMODE_CHANGE_EVENTS: Mutex<Cell<u32>> = Mutex::new(Cell::new(0));
+static STA_LAST_DISCONNECT_REASON: Mutex<Cell<u32>> = Mutex::new(Cell::new(0));
+static STA_LAST_DISCONNECT_RSSI: Mutex<Cell<i32>> = Mutex::new(Cell::new(0));
+static STA_LAST_AUTHMODE: Mutex<Cell<u32>> = Mutex::new(Cell::new(0));
 
 pub fn install_wifi_event_diagnostics() {
     event::ApStart::update_handler(|_| {
@@ -48,6 +61,25 @@ pub fn install_wifi_event_diagnostics() {
     });
     event::ApStaDisconnected::update_handler(|_| {
         increment_counter(&AP_STA_DISCONNECTED_EVENTS);
+    });
+    event::StaStart::update_handler(|_| {
+        increment_counter(&STA_START_EVENTS);
+    });
+    event::StaStop::update_handler(|_| {
+        increment_counter(&STA_STOP_EVENTS);
+    });
+    event::StaConnected::update_handler(|event| {
+        increment_counter(&STA_CONNECTED_EVENTS);
+        write_cell_u32(&STA_LAST_AUTHMODE, event.authmode());
+    });
+    event::StaDisconnected::update_handler(|event| {
+        increment_counter(&STA_DISCONNECTED_EVENTS);
+        write_cell_u32(&STA_LAST_DISCONNECT_REASON, u32::from(event.reason()));
+        write_cell_i32(&STA_LAST_DISCONNECT_RSSI, i32::from(event.rssi()));
+    });
+    event::StaAuthmodeChange::update_handler(|event| {
+        increment_counter(&STA_AUTHMODE_CHANGE_EVENTS);
+        write_cell_u32(&STA_LAST_AUTHMODE, event.new_mode());
     });
 }
 
@@ -66,6 +98,22 @@ fn read_counter_i32(counter: &'static Mutex<Cell<u32>>) -> i32 {
     read_counter(counter).min(i32::MAX as u32) as i32
 }
 
+fn write_cell_u32(cell: &'static Mutex<Cell<u32>>, value: u32) {
+    critical_section::with(|cs| cell.borrow(cs).set(value));
+}
+
+fn read_cell_u32(cell: &'static Mutex<Cell<u32>>) -> u32 {
+    critical_section::with(|cs| cell.borrow(cs).get())
+}
+
+fn write_cell_i32(cell: &'static Mutex<Cell<i32>>, value: i32) {
+    critical_section::with(|cs| cell.borrow(cs).set(value));
+}
+
+fn read_cell_i32(cell: &'static Mutex<Cell<i32>>) -> i32 {
+    critical_section::with(|cs| cell.borrow(cs).get())
+}
+
 pub enum FirmwareWifiBackend<'d> {
     Sim(SimWifiBackend),
     Esp(EspWifiBackend<'d>),
@@ -75,9 +123,11 @@ pub enum FirmwareWifiBackend<'d> {
 impl<'d> FirmwareWifiBackend<'d> {
     pub fn new_esp(radio: &'d Controller<'d>, wifi: WIFI<'d>) -> Self {
         match esp_radio::wifi::new(radio, wifi, Config::default()) {
-            Ok((controller, interfaces)) => {
-                Self::Esp(EspWifiBackend::new(controller, interfaces.ap))
-            }
+            Ok((controller, interfaces)) => Self::Esp(EspWifiBackend::new(
+                controller,
+                interfaces.ap,
+                interfaces.sta,
+            )),
             Err(_) => Self::Unavailable,
         }
     }
@@ -98,6 +148,19 @@ impl<'d> FirmwareWifiBackend<'d> {
         match self {
             Self::Sim(_) | Self::Unavailable => {}
             Self::Esp(backend) => backend.poll(),
+        }
+    }
+
+    pub fn connect_profile(
+        &mut self,
+        profile: &str,
+        ssid: &[u8],
+        password: &[u8],
+    ) -> Result<WifiActionResult<'static>, VmError> {
+        match self {
+            Self::Sim(backend) => backend.connect(profile),
+            Self::Esp(backend) => backend.connect_profile(profile, ssid, password),
+            Self::Unavailable => Ok(error_result("radio unavailable")),
         }
     }
 }
@@ -195,6 +258,18 @@ impl WifiBackend for FirmwareWifiBackend<'_> {
         }
     }
 
+    fn scan<'a>(&'a mut self) -> Result<WifiScanResult<'a>, VmError> {
+        match self {
+            Self::Sim(backend) => backend.scan(),
+            Self::Esp(backend) => backend.scan(),
+            Self::Unavailable => Ok(WifiScanResult {
+                ok: false,
+                error: Some("unsupported"),
+                networks: &[],
+            }),
+        }
+    }
+
     fn teardown(&mut self) -> Result<bool, VmError> {
         match self {
             Self::Sim(backend) => backend.teardown(),
@@ -207,6 +282,7 @@ impl WifiBackend for FirmwareWifiBackend<'_> {
 pub struct EspWifiBackend<'d> {
     controller: WifiController<'d>,
     ap_device: WifiDevice<'d>,
+    sta_device: WifiDevice<'d>,
     active: bool,
     ssid: [u8; 32],
     ssid_len: usize,
@@ -219,16 +295,25 @@ pub struct EspWifiBackend<'d> {
     station_scan_matches: i32,
     station_rssi: i32,
     station_auth: Option<&'static str>,
-    station_bssid: Option<&'static str>,
+    station_bssid: [u8; 17],
+    station_has_bssid: bool,
+    station_channel: i32,
     station_disconnect_reason: Option<&'static str>,
     station_disconnect_reason_code: i32,
+    scan_networks: [WifiAccessPoint; WIFI_SCAN_RESULT_CAP],
+    scan_len: usize,
 }
 
 impl<'d> EspWifiBackend<'d> {
-    fn new(controller: WifiController<'d>, ap_device: WifiDevice<'d>) -> Self {
+    fn new(
+        controller: WifiController<'d>,
+        ap_device: WifiDevice<'d>,
+        sta_device: WifiDevice<'d>,
+    ) -> Self {
         Self {
             controller,
             ap_device,
+            sta_device,
             active: false,
             ssid: [0; 32],
             ssid_len: 0,
@@ -241,9 +326,13 @@ impl<'d> EspWifiBackend<'d> {
             station_scan_matches: 0,
             station_rssi: 0,
             station_auth: None,
-            station_bssid: None,
+            station_bssid: [0; 17],
+            station_has_bssid: false,
+            station_channel: 0,
             station_disconnect_reason: None,
             station_disconnect_reason_code: 0,
+            scan_networks: [WifiAccessPoint::empty(); WIFI_SCAN_RESULT_CAP],
+            scan_len: 0,
         }
     }
 
@@ -261,6 +350,24 @@ impl<'d> EspWifiBackend<'d> {
         self.ssid_len = 0;
         self.clients = 0;
         self.configured = false;
+    }
+
+    fn clear_station_state(&mut self) {
+        self.station_profile_len = 0;
+        self.station_connected = false;
+        self.station_scan_matches = 0;
+        self.station_rssi = 0;
+        self.station_auth = None;
+        self.station_bssid = [0; 17];
+        self.station_has_bssid = false;
+        self.station_channel = 0;
+        self.station_disconnect_reason = None;
+        self.station_disconnect_reason_code = 0;
+    }
+
+    fn clear_scan_results(&mut self) {
+        self.scan_len = 0;
+        self.scan_networks = [WifiAccessPoint::empty(); WIFI_SCAN_RESULT_CAP];
     }
 
     fn client_count(&mut self) -> i32 {
@@ -362,10 +469,176 @@ impl<'d> EspWifiBackend<'d> {
             read_counter(&AP_STA_DISCONNECTED_EVENTS)
         )
         .ok();
+        writeln!(out, "event_sta_start={}", read_counter(&STA_START_EVENTS)).ok();
+        writeln!(out, "event_sta_stop={}", read_counter(&STA_STOP_EVENTS)).ok();
+        writeln!(
+            out,
+            "event_sta_connected={}",
+            read_counter(&STA_CONNECTED_EVENTS)
+        )
+        .ok();
+        writeln!(
+            out,
+            "event_sta_disconnected={}",
+            read_counter(&STA_DISCONNECTED_EVENTS)
+        )
+        .ok();
+        writeln!(
+            out,
+            "event_sta_authmode_change={}",
+            read_counter(&STA_AUTHMODE_CHANGE_EVENTS)
+        )
+        .ok();
     }
 
     fn poll(&mut self) {
         while self.ap_device.receive().is_some() {}
+        while self.sta_device.receive().is_some() {}
+        self.poll_station_link();
+    }
+
+    fn poll_station_link(&mut self) {
+        if self.station_profile_len == 0 {
+            self.station_connected = false;
+            return;
+        }
+
+        self.station_connected = matches!(self.controller.is_connected(), Ok(true));
+        if self.station_connected {
+            if let Ok(rssi) = self.controller.rssi() {
+                self.station_rssi = rssi;
+            }
+            self.station_disconnect_reason = None;
+            self.station_disconnect_reason_code = 0;
+            self.last_backend_code = None;
+            return;
+        }
+
+        let reason = read_cell_u32(&STA_LAST_DISCONNECT_REASON);
+        if reason != 0 {
+            self.station_disconnect_reason_code = reason.min(i32::MAX as u32) as i32;
+            self.station_disconnect_reason = Some(disconnect_reason_name(reason));
+            self.last_backend_code = self.station_disconnect_reason;
+        }
+        let event_rssi = read_cell_i32(&STA_LAST_DISCONNECT_RSSI);
+        if event_rssi != 0 {
+            self.station_rssi = event_rssi;
+        }
+    }
+
+    fn connect_profile(
+        &mut self,
+        profile: &str,
+        ssid: &[u8],
+        password: &[u8],
+    ) -> Result<WifiActionResult<'static>, VmError> {
+        let profile_bytes = profile.as_bytes();
+        if profile_bytes.is_empty() || profile_bytes.len() > self.station_profile.len() {
+            return Ok(error_result("invalid profile"));
+        }
+        let ssid = match core::str::from_utf8(ssid) {
+            Ok(ssid) if !ssid.is_empty() => ssid,
+            _ => return Ok(error_result("invalid station ssid")),
+        };
+        let password = match core::str::from_utf8(password) {
+            Ok(password) => password,
+            Err(_) => return Ok(error_result("invalid station password")),
+        };
+
+        if self.active || self.station_profile_len > 0 {
+            let _ = self.controller.disconnect();
+            let _ = self.controller.stop();
+            self.clear_active_state();
+            self.clear_station_state();
+        }
+
+        let base_client = ClientConfig::default()
+            .with_ssid(String::from(ssid))
+            .with_password(String::from(password))
+            .with_auth_method(AuthMethod::WpaWpa2Personal);
+        let config = ModeConfig::Client(base_client);
+        if self.controller.set_config(&config).is_err() {
+            self.last_backend_code = Some("station config failed");
+            return Ok(error_result("station config failed"));
+        }
+        self.configured = true;
+        if self.controller.start().is_err() {
+            self.last_backend_code = Some("station start failed");
+            return Ok(error_result("station start failed"));
+        }
+
+        self.station_profile[..profile_bytes.len()].copy_from_slice(profile_bytes);
+        self.station_profile_len = profile_bytes.len();
+        self.station_connected = false;
+        self.station_scan_matches = 0;
+        self.station_rssi = 0;
+        self.station_auth = None;
+        self.station_has_bssid = false;
+        self.station_channel = 0;
+        self.station_disconnect_reason = None;
+        self.station_disconnect_reason_code = 0;
+        self.last_backend_code = Some("station connect pending");
+        write_cell_u32(&STA_LAST_DISCONNECT_REASON, 0);
+        write_cell_i32(&STA_LAST_DISCONNECT_RSSI, 0);
+        write_cell_u32(&STA_LAST_AUTHMODE, 0);
+
+        let mut best_auth = None;
+        let mut best_bssid = None;
+        let mut best_channel = None;
+        match self.controller.scan_with_config(scan_config(Some(ssid), 4)) {
+            Ok(records) => {
+                self.station_scan_matches = records.len().min(i32::MAX as usize) as i32;
+                if let Some(record) = records.iter().max_by_key(|record| record.signal_strength) {
+                    self.station_rssi = i32::from(record.signal_strength);
+                    best_auth = record.auth_method;
+                    best_bssid = Some(record.bssid);
+                    best_channel = Some(record.channel);
+                    self.station_auth = best_auth.map(auth_method_name);
+                    self.station_channel = i32::from(record.channel);
+                    write_bssid(&mut self.station_bssid, record.bssid);
+                    self.station_has_bssid = true;
+                }
+            }
+            Err(_) => {
+                self.last_backend_code = Some("station scan failed");
+            }
+        }
+
+        if matches!(
+            best_auth,
+            Some(AuthMethod::Wpa2Enterprise | AuthMethod::WapiPersonal)
+        ) {
+            let _ = self.controller.stop();
+            self.clear_station_state();
+            self.last_backend_code = Some("unsupported auth");
+            return Ok(error_result("unsupported auth"));
+        }
+
+        let mut client = ClientConfig::default()
+            .with_ssid(String::from(ssid))
+            .with_password(String::from(password))
+            .with_auth_method(best_auth.unwrap_or(AuthMethod::WpaWpa2Personal));
+        if let Some(bssid) = best_bssid {
+            client = client.with_bssid(bssid);
+        }
+        if let Some(channel) = best_channel {
+            client = client.with_channel(channel);
+        }
+        let config = ModeConfig::Client(client);
+        if self.controller.set_config(&config).is_err() {
+            self.last_backend_code = Some("station config failed");
+            return Ok(error_result("station config failed"));
+        }
+
+        if self.controller.connect().is_err() {
+            self.last_backend_code = Some("station connect failed");
+            return Ok(error_result("station connect failed"));
+        }
+        self.poll_station_link();
+        Ok(WifiActionResult {
+            ok: true,
+            error: None,
+        })
     }
 }
 
@@ -383,6 +656,56 @@ fn mode_name(mode: u32) -> &'static str {
     }
 }
 
+fn auth_method_name(auth: AuthMethod) -> &'static str {
+    match auth {
+        AuthMethod::None => "open",
+        AuthMethod::Wep => "wep",
+        AuthMethod::Wpa => "wpa",
+        AuthMethod::Wpa2Personal => "wpa2",
+        AuthMethod::WpaWpa2Personal => "wpa/wpa2",
+        AuthMethod::Wpa2Enterprise => "wpa2-enterprise",
+        AuthMethod::Wpa3Personal => "wpa3",
+        AuthMethod::Wpa2Wpa3Personal => "wpa2/wpa3",
+        AuthMethod::WapiPersonal => "wapi",
+        _ => "unknown",
+    }
+}
+
+fn disconnect_reason_name(reason: u32) -> &'static str {
+    match reason {
+        2 => "auth expire",
+        3 => "auth leave",
+        4 => "assoc expire",
+        5 => "assoc too many",
+        6 => "not authed",
+        7 => "not assoced",
+        8 => "assoc leave",
+        9 => "assoc not authed",
+        15 => "4-way handshake timeout",
+        201 => "no ap found",
+        204 => "handshake timeout",
+        205 => "connection fail",
+        _ => "station disconnected",
+    }
+}
+
+fn write_bssid(out: &mut [u8; 17], bssid: [u8; 6]) {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut write = 0usize;
+    let mut read = 0usize;
+    while read < bssid.len() {
+        if read > 0 {
+            out[write] = b':';
+            write += 1;
+        }
+        let byte = bssid[read];
+        out[write] = HEX[(byte >> 4) as usize];
+        out[write + 1] = HEX[(byte & 0x0f) as usize];
+        write += 2;
+        read += 1;
+    }
+}
+
 impl WifiBackend for EspWifiBackend<'_> {
     fn start_ap(&mut self, ssid: &str) -> Result<WifiActionResult<'static>, VmError> {
         let bytes = ssid.as_bytes();
@@ -390,9 +713,11 @@ impl WifiBackend for EspWifiBackend<'_> {
             return Ok(error_result("invalid ssid"));
         }
 
-        if self.active {
+        if self.active || self.station_profile_len > 0 {
+            let _ = self.controller.disconnect();
             let _ = self.controller.stop();
             self.clear_active_state();
+            self.clear_station_state();
         }
 
         let config = ModeConfig::AccessPoint(
@@ -435,32 +760,22 @@ impl WifiBackend for EspWifiBackend<'_> {
     }
 
     fn connect(&mut self, profile: &str) -> Result<WifiActionResult<'static>, VmError> {
-        let bytes = profile.as_bytes();
-        if bytes.is_empty() || bytes.len() > self.station_profile.len() {
-            return Ok(error_result("invalid profile"));
-        }
-        self.station_profile[..bytes.len()].copy_from_slice(bytes);
-        self.station_profile_len = bytes.len();
-        self.station_connected = false;
-        self.station_scan_matches = 0;
-        self.station_rssi = 0;
-        self.station_auth = None;
-        self.station_bssid = None;
-        self.station_disconnect_reason = Some("station unavailable");
-        self.station_disconnect_reason_code = 0;
-        self.last_backend_code = Some("station unavailable");
-        Ok(error_result("station unavailable"))
+        let _ = profile;
+        Ok(error_result("station credentials required"))
     }
 
     fn disconnect(&mut self) -> Result<WifiActionResult<'static>, VmError> {
-        self.station_profile_len = 0;
-        self.station_connected = false;
-        self.station_scan_matches = 0;
-        self.station_rssi = 0;
-        self.station_auth = None;
-        self.station_bssid = None;
-        self.station_disconnect_reason = None;
-        self.station_disconnect_reason_code = 0;
+        if self.station_profile_len > 0 {
+            let _ = self.controller.disconnect();
+        }
+        if !self.active && self.controller.stop().is_err() {
+            self.last_backend_code = Some("radio stop failed");
+            return Ok(error_result("radio stop failed"));
+        }
+        self.clear_station_state();
+        if !self.active {
+            self.configured = false;
+        }
         self.last_backend_code = None;
         Ok(WifiActionResult {
             ok: true,
@@ -469,16 +784,27 @@ impl WifiBackend for EspWifiBackend<'_> {
     }
 
     fn status<'a>(&'a mut self) -> Result<WifiStatus<'a>, VmError> {
+        self.poll_station_link();
         let started = self.controller.is_started().unwrap_or(self.active);
         if !started {
             self.clear_active_state();
         }
         let clients = self.client_count();
         let driver_mode = current_driver_mode_name();
-        let channel = current_ap_channel();
+        let channel = if self.active {
+            current_ap_channel()
+        } else {
+            self.station_channel
+        };
         Ok(WifiStatus {
             active: self.active,
-            mode: if self.active { Some("ap") } else { None },
+            mode: if self.active {
+                Some("ap")
+            } else if self.station_profile_len > 0 {
+                Some("sta")
+            } else {
+                None
+            },
             ip_address: if self.active { Some(AP_IP) } else { None },
             ssid: if self.active {
                 Some(self.ssid()?)
@@ -488,6 +814,8 @@ impl WifiBackend for EspWifiBackend<'_> {
             clients,
             error: None,
             state: if self.active {
+                "started"
+            } else if self.station_profile_len > 0 && self.last_backend_code.is_none() {
                 "started"
             } else if self.last_backend_code.is_some() {
                 "error"
@@ -514,7 +842,11 @@ impl WifiBackend for EspWifiBackend<'_> {
             scan_matches: self.station_scan_matches,
             rssi: self.station_rssi,
             auth: self.station_auth,
-            bssid: self.station_bssid,
+            bssid: if self.station_has_bssid {
+                core::str::from_utf8(&self.station_bssid).ok()
+            } else {
+                None
+            },
             disconnect_reason: self.station_disconnect_reason,
             disconnect_reason_code: self.station_disconnect_reason_code,
         })
@@ -529,6 +861,72 @@ impl WifiBackend for EspWifiBackend<'_> {
         })
     }
 
+    fn scan<'a>(&'a mut self) -> Result<WifiScanResult<'a>, VmError> {
+        if self.active || self.station_profile_len > 0 {
+            Ok(WifiScanResult {
+                ok: false,
+                error: Some("wifi busy"),
+                networks: &[],
+            })
+        } else {
+            self.clear_scan_results();
+            let started_before_scan = self.controller.is_started().unwrap_or(false);
+            if !started_before_scan {
+                let config = ModeConfig::Client(ClientConfig::default());
+                if self.controller.set_config(&config).is_err() {
+                    self.last_backend_code = Some("scan config failed");
+                    return Ok(WifiScanResult {
+                        ok: false,
+                        error: Some("scan config failed"),
+                        networks: &[],
+                    });
+                }
+                self.configured = true;
+                if self.controller.start().is_err() {
+                    self.last_backend_code = Some("scan start failed");
+                    self.configured = false;
+                    return Ok(WifiScanResult {
+                        ok: false,
+                        error: Some("scan start failed"),
+                        networks: &[],
+                    });
+                }
+            }
+
+            let scan_result = match self
+                .controller
+                .scan_with_config(scan_config(None, WIFI_SCAN_RESULT_CAP))
+            {
+                Ok(records) => {
+                    for (index, record) in records.iter().take(WIFI_SCAN_RESULT_CAP).enumerate() {
+                        self.scan_networks[index] = wifi_access_point_from_scan(record)?;
+                    }
+                    self.scan_len = records.len().min(WIFI_SCAN_RESULT_CAP);
+                    Ok(WifiScanResult {
+                        ok: true,
+                        error: None,
+                        networks: &self.scan_networks[..self.scan_len],
+                    })
+                }
+                Err(_) => {
+                    self.last_backend_code = Some("scan failed");
+                    Ok(WifiScanResult {
+                        ok: false,
+                        error: Some("scan failed"),
+                        networks: &[],
+                    })
+                }
+            };
+
+            if !started_before_scan {
+                let _ = self.controller.stop();
+                self.configured = false;
+            }
+
+            scan_result
+        }
+    }
+
     fn teardown(&mut self) -> Result<bool, VmError> {
         let was_active = self.active || self.station_profile_len > 0;
         if self.active {
@@ -536,9 +934,38 @@ impl WifiBackend for EspWifiBackend<'_> {
         }
         self.clear_active_state();
         self.last_backend_code = None;
-        self.station_profile_len = 0;
-        self.station_connected = false;
+        self.clear_station_state();
+        self.clear_scan_results();
         Ok(was_active)
+    }
+}
+
+fn wifi_access_point_from_scan(
+    record: &esp_radio::wifi::AccessPointInfo,
+) -> Result<WifiAccessPoint, VmError> {
+    let ssid = record.ssid.as_bytes();
+    WifiAccessPoint::new(
+        ssid,
+        Some(record.bssid),
+        i32::from(record.channel),
+        i32::from(record.signal_strength),
+        record.auth_method.map(auth_method_name),
+        ssid.is_empty(),
+    )
+}
+
+fn scan_config(ssid: Option<&str>, max: usize) -> ScanConfig<'_> {
+    let config = ScanConfig::default()
+        .with_show_hidden(true)
+        .with_scan_type(esp_radio::wifi::ScanTypeConfig::Active {
+            min: Duration::from_millis(100),
+            max: Duration::from_millis(300),
+        })
+        .with_max(max);
+    if let Some(ssid) = ssid {
+        config.with_ssid(ssid)
+    } else {
+        config
     }
 }
 

@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/scripts/lib/serial-port.sh"
 SKIP_FLASH=0
-STRICT_STA_CONNECT="${STRICT_STA_CONNECT:-0}"
+STRICT_STA_CONNECT="${STRICT_STA_CONNECT:-1}"
 ENV_FILE="${HWTEST_ENV_FILE:-$HOME/.env}"
 
 usage() {
@@ -16,8 +16,9 @@ provisions volatile Wi-Fi profile "dev" from HWTEST_STA_SSID and
 HWTEST_STA_PASSWORD, installs the station diagnostics app, and verifies the
 public station API path reports truthful status over USB serial.
 
-Default mode allows driver/backend connection failure. Set STRICT_STA_CONNECT=1
-to require connected=true.
+With provisioned credentials, the default requires connected=true. Set
+STRICT_STA_CONNECT=0 only when deliberately collecting driver diagnostics from
+an environment where association is expected to fail.
 EOF
 }
 
@@ -67,6 +68,15 @@ require_field() {
   fi
 }
 
+reject_field() {
+  local text="$1"
+  local rejected="$2"
+  if [[ "$text" == *"$rejected"* ]]; then
+    printf 'ERR wifi station api test: unexpected %s\n' "$rejected" >&2
+    exit 1
+  fi
+}
+
 if [[ "$SKIP_FLASH" == "0" ]]; then
   "$ROOT/scripts/c3-supermini-flash.sh"
   sleep 1
@@ -92,6 +102,8 @@ require_field "$status_started" "profile=dev"
 require_field "$status_started" "connected="
 require_field "$status_started" "scan_matches="
 require_field "$status_started" "disconnect_reason="
+require_field "$status_started" "driver_mode=sta"
+reject_field "$status_started" "station unavailable"
 if [[ "$STRICT_STA_CONNECT" == "1" ]]; then
   require_field "$status_started" "connected=true"
 fi

@@ -40,6 +40,8 @@ const OP_RETURN: u8 = 41;
 const OP_HALT: u8 = 42;
 const OP_CALL_BUILTIN: u8 = 50;
 const OP_POP: u8 = 60;
+const OP_LIST_LEN: u8 = 61;
+const OP_LIST_GET: u8 = 62;
 
 const BUILTIN_STATE_LOAD: u8 = 1;
 const BUILTIN_STATE_SAVE: u8 = 2;
@@ -72,6 +74,7 @@ const BUILTIN_SERVICE_WIFI_STATUS: u8 = 32;
 const BUILTIN_SERVICE_WIFI_GET_AP_IP: u8 = 33;
 const BUILTIN_SERVICE_WIFI_CONNECT: u8 = 35;
 const BUILTIN_SERVICE_WIFI_DISCONNECT: u8 = 36;
+const BUILTIN_SERVICE_WIFI_SCAN: u8 = 37;
 
 const VALUE_NULL: u8 = 0;
 const VALUE_BOOL: u8 = 1;
@@ -444,12 +447,23 @@ fn collect_statement_strings(
             IrStatement::DisplayRect { options, .. } | IrStatement::DisplayLine { options, .. } => {
                 collect_option_strings(options, strings)?;
             }
+            IrStatement::For {
+                list,
+                max,
+                statements,
+                ..
+            } => {
+                collect_expr_strings(list, strings)?;
+                if let Some(max) = max {
+                    collect_expr_strings(max, strings)?;
+                }
+                collect_statement_strings(statements, strings, profile)?;
+            }
             IrStatement::StateLoad
             | IrStatement::StateSave
             | IrStatement::StateReset
             | IrStatement::ScreenRefresh
-            | IrStatement::AppExit
-            | IrStatement::For { .. } => {}
+            | IrStatement::AppExit => {}
         }
     }
     Ok(())
@@ -719,10 +733,67 @@ fn compile_statement(
         IrStatement::ScreenRefresh => {
             emit_builtin(&mut unit.code, BUILTIN_SCREEN_REFRESH);
         }
-        IrStatement::For { .. } => {
-            return Err(SqbcError::new(
-                "for loops are not in the reference firmware subset yet",
-            ))
+        IrStatement::For {
+            item,
+            list,
+            max,
+            statements,
+        } => {
+            compile_expr(unit, frame, list)?;
+            let list_local = frame.define_local("__for_list")?;
+            emit(&mut unit.code, OP_SET_LOCAL);
+            write_u16(&mut unit.code, list_local);
+            emit(&mut unit.code, OP_PUSH_INT);
+            write_i32(&mut unit.code, 0);
+            let index_local = frame.define_local("__for_index")?;
+            emit(&mut unit.code, OP_SET_LOCAL);
+            write_u16(&mut unit.code, index_local);
+            if let Some(max) = max {
+                compile_expr(unit, frame, max)?;
+            } else {
+                emit(&mut unit.code, OP_PUSH_INT);
+                write_i32(&mut unit.code, i32::MAX);
+            }
+            let max_local = frame.define_local("__for_max")?;
+            emit(&mut unit.code, OP_SET_LOCAL);
+            write_u16(&mut unit.code, max_local);
+            let item_local = frame.define_local(item)?;
+            let start =
+                u32::try_from(unit.code.len()).map_err(|_| SqbcError::new("code too large"))?;
+            emit(&mut unit.code, OP_GET_LOCAL);
+            write_u16(&mut unit.code, index_local);
+            emit(&mut unit.code, OP_GET_LOCAL);
+            write_u16(&mut unit.code, list_local);
+            emit(&mut unit.code, OP_LIST_LEN);
+            emit(&mut unit.code, OP_LT);
+            emit(&mut unit.code, OP_JUMP_IF_FALSE);
+            let end_patch = reserve_u32(&mut unit.code);
+            emit(&mut unit.code, OP_GET_LOCAL);
+            write_u16(&mut unit.code, index_local);
+            emit(&mut unit.code, OP_GET_LOCAL);
+            write_u16(&mut unit.code, max_local);
+            emit(&mut unit.code, OP_LT);
+            emit(&mut unit.code, OP_JUMP_IF_FALSE);
+            let max_end_patch = reserve_u32(&mut unit.code);
+            emit(&mut unit.code, OP_GET_LOCAL);
+            write_u16(&mut unit.code, list_local);
+            emit(&mut unit.code, OP_GET_LOCAL);
+            write_u16(&mut unit.code, index_local);
+            emit(&mut unit.code, OP_LIST_GET);
+            emit(&mut unit.code, OP_SET_LOCAL);
+            write_u16(&mut unit.code, item_local);
+            compile_statements_with_mode(unit, frame, statements, profile, mode)?;
+            emit(&mut unit.code, OP_GET_LOCAL);
+            write_u16(&mut unit.code, index_local);
+            emit(&mut unit.code, OP_PUSH_INT);
+            write_i32(&mut unit.code, 1);
+            emit(&mut unit.code, OP_ADD);
+            emit(&mut unit.code, OP_SET_LOCAL);
+            write_u16(&mut unit.code, index_local);
+            emit(&mut unit.code, OP_JUMP);
+            write_u32(&mut unit.code, start);
+            patch_u32(&mut unit.code, end_patch)?;
+            patch_u32(&mut unit.code, max_end_patch)?;
         }
         IrStatement::DisplayClear { color } => {
             let color_id = unit.strings.intern(color)?;
@@ -1007,6 +1078,7 @@ fn builtin_for_call(name: &str) -> Option<u8> {
         "service.wifi.getAPIP" => Some(BUILTIN_SERVICE_WIFI_GET_AP_IP),
         "service.wifi.connect" => Some(BUILTIN_SERVICE_WIFI_CONNECT),
         "service.wifi.disconnect" => Some(BUILTIN_SERVICE_WIFI_DISCONNECT),
+        "service.wifi.scan" => Some(BUILTIN_SERVICE_WIFI_SCAN),
         _ => None,
     }
 }
@@ -1017,7 +1089,8 @@ fn validate_builtin_arg_count(name: &str, count: usize) -> Result<(), SqbcError>
         "service.wifi.stopAP"
         | "service.wifi.status"
         | "service.wifi.getAPIP"
-        | "service.wifi.disconnect" => count == 0,
+        | "service.wifi.disconnect"
+        | "service.wifi.scan" => count == 0,
         _ => true,
     };
     if valid {

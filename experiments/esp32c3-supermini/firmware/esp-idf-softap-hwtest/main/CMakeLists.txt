@@ -1,4 +1,6 @@
-if("$ENV{HWTEST_WIFI_MODE}" STREQUAL "station")
+if("$ENV{HWTEST_WIFI_MODE}" STREQUAL "scan")
+  set(hwtest_sources "scan_hwtest_main.c")
+elseif("$ENV{HWTEST_WIFI_MODE}" STREQUAL "station")
   set(hwtest_sources "station_hwtest_main.c")
 
   if("$ENV{HWTEST_STA_SSID}" STREQUAL "")

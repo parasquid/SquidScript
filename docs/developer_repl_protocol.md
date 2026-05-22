@@ -117,6 +117,12 @@ The command is followed by exactly `<ssid-len> + <password-len>` raw bytes:
 first the SSID bytes, then the password bytes. Firmware prints only the profile
 name and byte lengths; it must not echo credential bytes.
 
+When a station diagnostics app calls `service.wifi.connect(profile)`,
+`WIFI.STATUS` should report `driver_mode=sta`, the requested profile name,
+scan/connect diagnostics, and no SSID or password values. A disconnected result
+with a concrete scan/auth/disconnect reason can still be a truthful hardware
+result unless the test is run in strict station-connect mode.
+
 Installed apps are persistent in the ESP32-C3 reference firmware. On startup,
 firmware scans the app store, rebuilds the in-memory registry cache, boots
 installed `main` when present, and dispatches `event.on("app.start")`. If

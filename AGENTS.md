@@ -26,6 +26,15 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - When making implementation plans, include documentation work explicitly.
 - Create new docs when needed, update related existing docs in the same change, and remove or revise obsolete docs so repository documentation stays aligned with the implementation and current project decisions.
 - Before finishing implementation work, check related docs for stale command examples, old API shapes, outdated storage/runtime descriptions, and obsolete compatibility notes.
+- Write reference documentation as current-state facts, requirements, commands,
+  and interpretation rules, not as a chronological diary of an investigation.
+  Future readers need the stable conclusion and what to do with it; omit
+  journey framing such as dates, "we observed", or "first this failed, then
+  that proved..." unless the chronology is itself operationally relevant.
+- If an investigation log is useful but not appropriate for repo reference
+  docs, keep it in saved memory for durable cross-session context or in `/tmp`
+  or another gitignored scratch file for temporary notes instead of turning
+  project documentation into a diary.
 - When executing a plan, use the todo tracker for the active implementation
   steps so progress and remaining work survive context compaction.
 - When the user asks for memory numbers without further qualification, report
@@ -43,6 +52,20 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   syntax, storage formats, examples, scripts, or behavior unless the user
   explicitly asks for that specific bridge. Removed forms should fail through
   the same ordinary unknown or unsupported path as any other invalid form.
+- SquidScript is still early in development, so it is acceptable to break
+  incomplete or unstable internals to get requested features working. When the
+  user asks for a feature to be done, do not stop at a stub, partial slice, or
+  unsupported placeholder when a real implementation path is available. Drive
+  the requested behavior through to working code and honest verification, and
+  use follow-up roadmap items only for genuinely separate work.
+- Do not treat a plan's "spec/API slice first" wording, prior roadmap split, or
+  existing unsupported stub as a hard boundary when the user asks for a working
+  feature. If repo code or available libraries show a plausible real
+  implementation path, attempt it and verify it. Stop at `unsupported`, a stub,
+  or a roadmap-only follow-up only when there is a concrete blocker: missing
+  hardware/API support, unsafe or destructive risk, unavailable credentials,
+  failing documented toolchain, or an explicit user scope limit. State that
+  blocker with evidence.
 - SQBC is unreleased and has no compatibility contract before 1.0. Do not add
   SQBC version fields, versioned module/function names, compatibility modes,
   backwards readers, or "unsupported version" paths. If current bytecode does
@@ -79,6 +102,11 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - Clearly mark placeholder, illustrative, guessed, typical, variant-dependent, or unverified values as such.
 - This is especially important for hardware pinouts, GPIO mappings, board profiles, firmware configuration, protocol constants, and API examples.
 - Do not present guessed hardware values as sourced facts. If a value comes from clone-board conventions or community reports, say that directly and preserve the uncertainty in target metadata.
+- Do not dox the user or their environment when reporting or documenting
+  hardware/network investigations. Redact SSIDs, BSSIDs, MAC addresses, local
+  IPs, credentials, and other environment-identifying values unless the user
+  explicitly asks for raw identifiers. Preserve technical evidence with counts,
+  lengths, channels, RSSI, auth modes, and redacted placeholders instead.
 
 ## Browser Simulator Verification
 
@@ -126,6 +154,13 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
   command after the final blinky launch unless you are deliberately debugging
   the final board state.
 - Hardware target tests and serial/flashing commands must run outside the Codex sandbox. Sandboxed sessions do not reliably expose `/dev/ttyACM*`, `/dev/ttyUSB*`, or `/dev/serial/by-id`, even after host reboot. Use escalated command execution for ESP32-C3 Super Mini serial visibility checks and hardware target tests.
+- For ESP-IDF hardware-isolation experiments under
+  `experiments/esp32c3-supermini/firmware/esp-idf-softap-hwtest`, the user has
+  approved the repository's documented containerized ESP-IDF build path when no
+  local `idf.py` is installed. Do not re-ask for approval just because Podman or
+  Docker will run the official Espressif IDF image with the experiment mounted;
+  still avoid passing Wi-Fi credentials to containers unless the specific test
+  requires station credentials.
 - When troubleshooting ESP32-C3 Super Mini flashing access, check `firmware/README.md` and `firmware/squid-firmware/README.md` for the documented `/dev/ttyACM0` ACL workaround before suggesting broader sudo changes.
 - For REPL work, default app and firmware profiles are `dev`. Hardware target tests should include `tests/repl/default-dev.session`, which intentionally does not set `:profile dev`.
 - For `hardware.gpio.*` work on the ESP32-C3 Super Mini, run the serial GPIO REPL session and the blinky upload session when hardware is available; the blinky check requires both serial assertions and physical onboard LED observation.

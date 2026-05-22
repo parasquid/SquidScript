@@ -65,6 +65,7 @@ pub(super) fn write_value(
             )
         }
         Value::Record(_) => write!(out, "<record>"),
+        Value::List(_) => write!(out, "<list>"),
     }
 }
 

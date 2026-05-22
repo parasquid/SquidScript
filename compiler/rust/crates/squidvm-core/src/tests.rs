@@ -9,6 +9,37 @@ use crate::{
     value::*, vm::*,
 };
 
+const WIFI_SCAN_TEST_NETWORKS: [WifiAccessPoint; 2] = [
+    WifiAccessPoint::from_fixed_parts(
+        [
+            b'L', b'a', b'b', b'N', b'e', b't', b'w', b'o', b'r', b'k', 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ],
+        10,
+        [
+            b'0', b'0', b':', b'1', b'1', b':', b'2', b'2', b':', b'3', b'3', b':', b'4', b'4',
+            b':', b'5', b'5',
+        ],
+        true,
+        10,
+        6,
+        -42,
+        Some("wpa2"),
+        false,
+    ),
+    WifiAccessPoint::from_fixed_parts(
+        [0; WIFI_SCAN_SSID_CAP],
+        0,
+        [0; WIFI_SCAN_BSSID_TEXT_LEN],
+        false,
+        0,
+        11,
+        -80,
+        Some("unknown"),
+        true,
+    ),
+];
+
 #[derive(Default)]
 struct Trace {
     events: Vec<String>,
@@ -95,6 +126,7 @@ impl TraceSink for RuntimeTrace {
                 Value::Bool(value) => line.push_str(&value.to_string()),
                 Value::Null => line.push_str("null"),
                 Value::Record(_) => line.push_str("<record>"),
+                Value::List(_) => line.push_str("<list>"),
             }
         }
         self.events.push(format!("debug {line}"));
@@ -163,6 +195,7 @@ impl TraceSink for WifiTrace {
                 Value::Bool(value) => line.push_str(&value.to_string()),
                 Value::Null => line.push_str("null"),
                 Value::Record(_) => line.push_str("<record>"),
+                Value::List(_) => line.push_str("<list>"),
             }
         }
         self.events.push(format!("debug {line}"));
@@ -255,6 +288,15 @@ impl TraceSink for WifiTrace {
             gw: Some("192.168.4.1"),
             netmask: Some("255.255.255.0"),
             error: None,
+        })
+    }
+
+    fn service_wifi_scan<'a>(&'a mut self) -> Result<WifiScanResult<'a>, VmError> {
+        self.events.push("wifi.scan".to_string());
+        Ok(WifiScanResult {
+            ok: true,
+            error: None,
+            networks: &WIFI_SCAN_TEST_NETWORKS,
         })
     }
 
@@ -825,6 +867,7 @@ impl TraceSink for CountingReader<'_> {
                 Value::Bool(value) => line.push_str(&value.to_string()),
                 Value::Null => line.push_str("null"),
                 Value::Record(_) => line.push_str("<record>"),
+                Value::List(_) => line.push_str("<list>"),
             }
         }
         self.events.push(format!("debug {line}"));
@@ -1067,6 +1110,52 @@ screen("main") {}
             "debug true dev true 1 -42 wpa2 00:11:22:33:44:55",
             "wifi.teardown",
             "app.exit",
+        ]
+    );
+}
+
+#[test]
+fn runs_wifi_scan_record_and_bounded_network_records() {
+    let source = r#"app "wifi-scan"
+state {}
+
+event.on("app.start") {
+  let scan = wifi.scan()
+  debug.print(scan.ok, scan.error, scan.count)
+  for network in scan.networks max 1 {
+    debug.print(network.ssid, network.ssidLength, network.bssid, network.channel, network.rssi, network.auth, network.hidden)
+    debug.print(network.password)
+  }
+  debug.print(scan.password)
+  app.exit()
+}
+
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = WifiTrace::default();
+
+    assert_eq!(
+        vm.dispatch("app.start", &mut trace),
+        Err(VmError::InvalidOperand),
+        "credential fields must not exist"
+    );
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "wifi.scan",
+            "debug true null 2",
+            "debug LabNetwork 10 00:11:22:33:44:55 6 -42 wpa2 false",
+            "wifi.teardown",
         ]
     );
 }

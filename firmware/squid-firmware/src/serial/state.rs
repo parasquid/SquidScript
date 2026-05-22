@@ -148,5 +148,6 @@ fn print_value(
         )
         .ok(),
         Value::Record(_) => write!(serial, "<record>").ok(),
+        Value::List(_) => write!(serial, "<list>").ok(),
     };
 }

@@ -2162,6 +2162,7 @@ requests:
 - `service.wifi.stopAP()`
 - `service.wifi.connect(profileName)`
 - `service.wifi.disconnect()`
+- `service.wifi.scan()`
 - `service.wifi.status()`
 - `service.wifi.getAPIP()`
 
@@ -2170,10 +2171,29 @@ requests:
 - `ok`: bool
 - `error`: string or null
 
+`scan` returns a read-only snapshot record:
+
+- `ok`: bool
+- `error`: string or null
+- `count`: int, the number of AP records returned after target/runtime bounds
+- `networks`: read-only bounded list of AP records
+
+Each AP record contains:
+
+- `ssid`: string, empty for hidden or undecodable SSIDs
+- `ssidLength`: int
+- `bssid`: string or null
+- `channel`: int
+- `rssi`: int
+- `auth`: string or null; stable values include `open`, `wep`, `wpa`, `wpa2`,
+  `wpa/wpa2`, `wpa3`, `wpa2/wpa3`, and `unknown`
+- `hidden`: bool
+
 `status` returns a read-only record:
 
 - `active`: bool
-- `mode`: string or null, currently `"ap"` for an active access point
+- `mode`: string or null, currently `"ap"` for an active access point or
+  `"sta"` for a station connection attempt
 - `ipAddress`: string or null
 - `ssid`: string or null
 - `clients`: int
@@ -2184,7 +2204,7 @@ requests:
 - `driverStarted`: bool
 - `configured`: bool
 - `driverMode`: string or null
-- `channel`: int, or `0` when no AP channel is known
+- `channel`: int, or `0` when no AP/station channel is known
 - `apStartEvents`: int
 - `apStopEvents`: int
 - `probeEvents`: int
@@ -2224,20 +2244,32 @@ chosen: open AP, target-chosen channel, conventional AP address
 `startAP` and `status.state == "started"` prove that the firmware backend
 accepted and reports the AP state; they do not prove that a phone or laptop can
 see, join, obtain DHCP, or reach HTTP services. Password/security
-policy, richer `startAP` options, station scan listing, profile setup UI,
-hostnames, and configurable IP are deferred.
+policy, richer `startAP` options, profile setup UI, hostnames, and configurable
+IP are deferred.
 
 Station mode uses named profiles. SquidScript source passes only a profile name
 such as `service.wifi.connect("dev")`; credentials are provisioned by firmware,
 host tooling, or target setup outside SquidScript. Firmware must not expose
 configured station SSIDs or passwords in SquidScript source, state, records,
 logs, diagnostics, or source maps. Current ESP32-C3 development firmware
-supports volatile serial-provisioned profiles for testing and may report
-`ok == false` with a concrete `error` until station auth/DHCP is implemented
-and proven on the Rust backend.
+supports volatile serial-provisioned profiles for testing. The Rust backend
+attempts station scan/config/start/connect and reports truthful driver status;
+the hardware station API test requires `connected == true` when provisioned
+credentials are supplied. DHCP/IP reporting for station mode is not implemented
+yet.
 
 Rules:
 - Apps may start a foreground-owned access point when the target exposes the Wi-Fi service.
+- Wi-Fi scans are foreground-owned snapshots. Apps call `wifi.scan()` again to
+  refresh results.
+- If Wi-Fi AP or station mode is active, `wifi.scan()` returns
+  `{ ok: false, error: "wifi busy", count: 0, networks: [] }` instead of
+  interrupting radio state.
+- If the target has no Wi-Fi or scanning is unsupported, `wifi.scan()` returns
+  `{ ok: false, error: "unsupported", count: 0, networks: [] }`.
+- Scan results may expose nearby SSID names, BSSIDs, channels, RSSI values, auth
+  names, and hidden flags. They must not create, update, select, or reveal saved
+  station profiles or credential values.
 - Wi-Fi activity requested by a normal app is foreground-only in current draft.
 - Firmware must stop or release app-owned Wi-Fi requests when the app exits, crashes, or loses foreground.
 - Wi-Fi credentials must never be exposed to SquidScript source, state, records, logs, diagnostics, or source maps.
@@ -3392,8 +3424,9 @@ input.text
 
 service.wifi
 - Allows foreground-owned firmware Wi-Fi service calls such as
-  `service.wifi.startAP`, `service.wifi.stopAP`, `service.wifi.status`, and
-  `service.wifi.getAPIP`. Source may use `wifi.*` sugar for these calls.
+  `service.wifi.startAP`, `service.wifi.stopAP`, `service.wifi.scan`,
+  `service.wifi.status`, and `service.wifi.getAPIP`. Source may use `wifi.*`
+  sugar for these calls.
 
 service.wifi.scan
 - Allows scanning for nearby Wi-Fi networks without exposing credentials.

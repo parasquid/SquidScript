@@ -1113,6 +1113,42 @@ screen("main") {}
 }
 
 #[test]
+fn compiles_service_wifi_scan_and_wifi_sugar_to_same_builtin() {
+    let source = r#"app "wifi-scan"
+state {}
+
+event.on("app.start") {
+  let serviceScan = service.wifi.scan()
+  let sugarScan = wifi.scan()
+  debug.print(serviceScan.ok, sugarScan.count)
+}
+
+screen("main") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let ir = output.ir.unwrap();
+    let handler = ir
+        .handlers
+        .iter()
+        .find(|handler| handler.event == "app.start")
+        .unwrap();
+    assert!(matches!(
+        &handler.statements[0],
+        IrStatement::Let { expr: IrExpr::Call { name, .. }, .. } if name == "service.wifi.scan"
+    ));
+    assert!(matches!(
+        &handler.statements[1],
+        IrStatement::Let { expr: IrExpr::Call { name, .. }, .. } if name == "service.wifi.scan"
+    ));
+    sqbc::encode_sqbc(&ir).expect("wifi scan should lower to bytecode");
+}
+
+#[test]
 fn warns_when_fallible_result_is_ignored() {
     let source = r#"app "ignored-result" target "xteink-x4"
 event.on("app.start") {

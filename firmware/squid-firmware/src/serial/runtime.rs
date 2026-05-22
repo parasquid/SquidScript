@@ -10,7 +10,7 @@ use squidvm_core::{
     error::VmError,
     host::{
         DisplayLineOptions, DisplayRectOptions, DisplayTextOptions, TraceSink, WifiActionResult,
-        WifiApIp, WifiBackend, WifiStatus,
+        WifiApIp, WifiBackend, WifiScanResult, WifiStatus,
     },
     limits::MAX_APP_BYTES,
     strings::StringResolver,
@@ -23,7 +23,7 @@ use crate::dev_harness::{
 use crate::kernel::{
     write_ram_diagnostics_text, DisplayCommand, DisplayService, IndicatorAction, IndicatorService,
     LifecycleService, ServiceError, TimerCommand, TimerRegistration, TimerService, WifiCachedStatus,
-    WifiCommand, WifiService, WifiState, INDICATOR_BREATH_SEGMENT_MS,
+    WifiCommand, WifiService, WifiState, WifiStationProfileStore, INDICATOR_BREATH_SEGMENT_MS,
 };
 use crate::storage::SQUIDFS_LEN;
 
@@ -73,12 +73,8 @@ pub struct RuntimeSink<'d> {
     pub(super) app_storage_used_bytes: usize,
     pub(super) wifi_service: WifiService<WIFI_COMMAND_CAP>,
     pub(super) wifi: FirmwareWifiBackend<'d>,
-    wifi_profile_name: [u8; WIFI_PROFILE_NAME_CAP],
-    wifi_profile_name_len: usize,
-    wifi_profile_ssid: [u8; WIFI_PROFILE_SSID_CAP],
-    wifi_profile_ssid_len: usize,
-    wifi_profile_password: [u8; WIFI_PROFILE_PASSWORD_CAP],
-    wifi_profile_password_len: usize,
+    wifi_profiles:
+        WifiStationProfileStore<WIFI_PROFILE_NAME_CAP, WIFI_PROFILE_SSID_CAP, WIFI_PROFILE_PASSWORD_CAP>,
 }
 
 impl<'d> RuntimeSink<'d> {
@@ -110,12 +106,7 @@ impl<'d> RuntimeSink<'d> {
             app_storage_used_bytes: 0,
             wifi_service: WifiService::new(WifiState::Idle),
             wifi,
-            wifi_profile_name: [0; WIFI_PROFILE_NAME_CAP],
-            wifi_profile_name_len: 0,
-            wifi_profile_ssid: [0; WIFI_PROFILE_SSID_CAP],
-            wifi_profile_ssid_len: 0,
-            wifi_profile_password: [0; WIFI_PROFILE_PASSWORD_CAP],
-            wifi_profile_password_len: 0,
+            wifi_profiles: WifiStationProfileStore::new(),
         }
     }
 
@@ -138,26 +129,9 @@ impl<'d> RuntimeSink<'d> {
         ssid: &[u8],
         password: &[u8],
     ) -> Result<(), VmError> {
-        if !valid_wifi_profile_name(profile)
-            || ssid.is_empty()
-            || ssid.len() > WIFI_PROFILE_SSID_CAP
-            || password.len() > WIFI_PROFILE_PASSWORD_CAP
-        {
-            return Err(VmError::InvalidOperand);
-        }
-        let profile_bytes = profile.as_bytes();
-        self.wifi_profile_name[..profile_bytes.len()].copy_from_slice(profile_bytes);
-        self.wifi_profile_name_len = profile_bytes.len();
-        self.wifi_profile_ssid[..ssid.len()].copy_from_slice(ssid);
-        self.wifi_profile_ssid_len = ssid.len();
-        self.wifi_profile_password[..password.len()].copy_from_slice(password);
-        self.wifi_profile_password_len = password.len();
-        Ok(())
-    }
-
-    fn has_wifi_profile(&self, profile: &str) -> bool {
-        self.wifi_profile_name_len == profile.len()
-            && self.wifi_profile_name[..self.wifi_profile_name_len] == *profile.as_bytes()
+        self.wifi_profiles
+            .set(profile, ssid, password)
+            .map_err(|_| VmError::InvalidOperand)
     }
 
     pub fn poll_indicator(&mut self) {
@@ -705,12 +679,18 @@ impl TraceSink for RuntimeSink<'_> {
         &'a mut self,
         profile: &str,
     ) -> Result<WifiActionResult<'a>, VmError> {
-        if !self.has_wifi_profile(profile) {
+        let mut ssid = [0; WIFI_PROFILE_SSID_CAP];
+        let mut password = [0; WIFI_PROFILE_PASSWORD_CAP];
+        let Some(credentials) = self.wifi_profiles.credentials_for(profile) else {
             return Ok(WifiActionResult {
                 ok: false,
                 error: Some("wifi profile not found"),
             });
-        }
+        };
+        let ssid_len = credentials.ssid.len();
+        let password_len = credentials.password.len();
+        ssid[..ssid_len].copy_from_slice(credentials.ssid);
+        password[..password_len].copy_from_slice(credentials.password);
         if self
             .wifi_service
             .enqueue(WifiCommand::ConnectProfile {
@@ -726,7 +706,9 @@ impl TraceSink for RuntimeSink<'_> {
         self.wifi_service
             .set_cached_status(WifiCachedStatus::new(WifiState::Starting));
         let _ = self.wifi_service.pop_command();
-        let result = self.wifi.connect(profile)?;
+        let result = self
+            .wifi
+            .connect_profile(profile, &ssid[..ssid_len], &password[..password_len])?;
         let ok = result.ok;
         let error = result.error;
         if ok {
@@ -777,6 +759,10 @@ impl TraceSink for RuntimeSink<'_> {
         self.wifi.ap_ip()
     }
 
+    fn service_wifi_scan<'a>(&'a mut self) -> Result<WifiScanResult<'a>, VmError> {
+        self.wifi.scan()
+    }
+
     fn service_wifi_teardown(&mut self) -> Result<(), VmError> {
         self.teardown_services()
     }
@@ -796,15 +782,6 @@ impl TraceSink for RuntimeSink<'_> {
         )
         .map_err(|_| VmError::InvalidOperand)
     }
-}
-
-fn valid_wifi_profile_name(profile: &str) -> bool {
-    let bytes = profile.as_bytes();
-    !bytes.is_empty()
-        && bytes.len() <= WIFI_PROFILE_NAME_CAP
-        && bytes
-            .iter()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
 fn wifi_cached_status(status: &WifiStatus<'_>) -> WifiCachedStatus {
@@ -865,6 +842,7 @@ impl<'d> OnboardIndicator<'d> {
 fn service_error_to_vm_error(error: ServiceError) -> VmError {
     match error {
         ServiceError::QueueFull => VmError::InvalidOperand,
+        ServiceError::InvalidProfile => VmError::InvalidOperand,
     }
 }
 
