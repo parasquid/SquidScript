@@ -2,6 +2,7 @@ mod command;
 mod lifecycle;
 mod line;
 mod log;
+mod ram;
 mod runtime;
 mod state;
 mod vm;
@@ -20,4 +21,3 @@ pub const BUILD_ID: &str = match option_env!("SQUID_FIRMWARE_BUILD_ID") {
 };
 
 pub(super) const INSTALL_TIMEOUT_MS: u32 = 2_000;
-pub(super) const MEMORY_AVAILABLE_BYTES: usize = 311_416;

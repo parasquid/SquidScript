@@ -22,10 +22,6 @@ persistent SquidScript app platform prototype.
 - Wi-Fi is tabled for now. Resume only after an alternate client/phone and
   board placement or power check can confirm whether AP beacons are visible
   independently of the current host scanner.
-- Implement the first `squid-kernel` proof from
-  `docs/portable_rtos_kernel_architecture.md`: move the ESP32-C3 default
-  indicator behind a bounded actor/service model, keep PWM breathing
-  non-blocking, and verify serial responsiveness while breathing runs.
 - Move the ESP32-C3 reference firmware toward an Embassy/async-all-the-way
   architecture: serial, VM/app dispatch, Wi-Fi/networking, timers, indicator
   PWM, and future HTTP should run as non-blocking tasks/actors behind firmware
@@ -60,8 +56,8 @@ persistent SquidScript app platform prototype.
 - Add target capability checks for devices without Wi-Fi or with restricted
   networking support.
 - Continue migrating services to the portable `squid-kernel` actor model:
-  timers and serial/app lifecycle first, then Wi-Fi, storage, display, and
-  future HTTP as separate service actors.
+  serial/app lifecycle next, then Wi-Fi, storage, display, and future HTTP as
+  separate service actors.
 - Add Pico W Wi-Fi backend exploration using the same `service.wifi.*`
   contract.
 - Add bus-attached Wi-Fi co-processor support as `WifiBackend`
@@ -69,7 +65,7 @@ persistent SquidScript app platform prototype.
   including ESP-AT-style ESP8266/ESP32 modules.
 - Add nRF52840 Bluetooth backend exploration as a sibling radio service rather
   than as part of the Wi-Fi trait.
-- Decide whether timers should use the same service model, including how a
+- Define target timer-backend policy for the actor model, including how a
   target chooses RTC-backed scheduling versus internal timer peripherals.
 - Audit firmware/runtime services and main-loop helpers for blocking behavior,
   especially busy waits hidden behind service APIs. Define service expectations

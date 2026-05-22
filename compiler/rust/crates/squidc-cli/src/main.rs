@@ -1535,10 +1535,12 @@ screen("main") {}
             panic!("expected device resources");
         };
         let parsed = parse_key_value_block(
-            "BEGIN RESOURCES\nmemory_available_bytes=299136\napp_storage_available_bytes=2031616\nEND RESOURCES\nOK RESOURCES.GET\n",
+            "BEGIN RESOURCES\nram_total_bytes=409600\nram_heap_total_bytes=98304\nram_heap_used_bytes=12288\nram_heap_available_bytes=86016\napp_storage_available_bytes=2031616\nEND RESOURCES\nOK RESOURCES.GET\n",
             "RESOURCES",
         );
-        assert_eq!(parsed["memory_available_bytes"], 299136u64);
+        assert_eq!(parsed["ram_total_bytes"], 409600u64);
+        assert_eq!(parsed["ram_heap_used_bytes"], 12288u64);
+        assert_eq!(parsed["ram_heap_available_bytes"], 86016u64);
         assert_eq!(parsed["app_storage_available_bytes"], 2031616u64);
     }
 

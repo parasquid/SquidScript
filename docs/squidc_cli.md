@@ -68,10 +68,12 @@ cargo run -p squidc -- device monitor --max-lines 4
 press a physical button; the firmware routes the event to the current app.
 
 `device resources` reads the firmware `RESOURCES.GET` diagnostics and reports
-raw target-specific RAM and app-storage byte counts. With `--json`, parsed
-values are returned under `data.resources`. Firmware reports `RUN.TEMP`
-buffer usage separately from installed-app code cache usage, so comparisons can
-distinguish volatile developer runs from persistent chunk execution.
+raw target-specific RAM and app-storage byte counts. `ram_total_bytes` is
+static board context; `ram_heap_*` fields are live allocator telemetry from the
+running firmware. With `--json`, parsed values are returned under
+`data.resources`. Firmware reports `RUN.TEMP` buffer usage separately from
+installed-app code cache usage, so comparisons can distinguish volatile
+developer runs from persistent chunk execution.
 
 `device reset` performs a firmware soft boot. It clears the current VM, temp
 app, foreground stack, pending launches, trigger/timer registrations, and debug

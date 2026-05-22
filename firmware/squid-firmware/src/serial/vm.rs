@@ -11,7 +11,9 @@ use squidvm_core::{
     vm::{ChunkedVm, Vm},
 };
 
-use crate::dev_harness::{AppName, AppRegistry, AppRegistryError, AppSlot, AppStorage, AppStorageError};
+use crate::dev_harness::{
+    AppName, AppRegistry, AppRegistryError, AppSlot, AppStorage, AppStorageError,
+};
 
 use super::RuntimeSink;
 
@@ -115,7 +117,6 @@ impl ActiveVm {
         }
     }
 }
-
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum RuntimeError {
@@ -265,7 +266,9 @@ impl<S: AppStorage> TraceSink for StoredAppHost<'_, '_, S> {
         self.trace.service_wifi_stop_ap()
     }
 
-    fn service_wifi_status<'b>(&'b mut self) -> Result<squidvm_core::host::WifiStatus<'b>, VmError> {
+    fn service_wifi_status<'b>(
+        &'b mut self,
+    ) -> Result<squidvm_core::host::WifiStatus<'b>, VmError> {
         self.trace.service_wifi_status()
     }
 

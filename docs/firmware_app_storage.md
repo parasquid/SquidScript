@@ -147,14 +147,17 @@ heap-heavy generic serialization.
 `RUN.TEMP` and other temp-run workflows may import or rebind config in RAM, but
 must not persist those changes unless code explicitly saves.
 
-Measured on the ESP32-C3 Super Mini reference firmware after adding resource
-introspection and reducing `MAX_APP_BYTES` to 4 KiB:
+Example ESP32-C3 Super Mini reference firmware resource output after adding
+resource introspection and reducing `MAX_APP_BYTES` to 4 KiB:
 
 ```text
 .data  1164
 .bss   4976
 .stack 311416
-RESOURCES.GET memory_available_bytes=311416
+RESOURCES.GET ram_total_bytes=409600
+RESOURCES.GET ram_heap_total_bytes=98304
+RESOURCES.GET ram_heap_used_bytes=<live heap bytes>
+RESOURCES.GET ram_heap_available_bytes=<live heap bytes>
 RESOURCES.GET temp_app_buffer_bytes=0
 RESOURCES.GET installed_code_cache_bytes=1024
 ```
@@ -199,14 +202,15 @@ STORAGE.FORMAT
 `APP.LIST` reports the metadata cache rebuilt from storage at startup plus apps
 installed during the current session.
 
-`RESOURCES.GET` reports raw target-specific byte counts for runtime memory and
-firmware app storage. App-storage availability is currently calculated from the
-LittleFS partition size minus installed app byte sizes, so filesystem metadata
-and wear-leveling overhead are not exposed as a precise free-block count yet.
-It also reports temp app buffer usage separately from installed-app code cache
-usage so RAM comparisons distinguish volatile developer runs from persistent
-chunk execution. Total `.bss` may not drop much while `RUN.TEMP` remains
-RAM-backed.
+`RESOURCES.GET` reports raw target-specific byte counts for runtime RAM and
+firmware app storage. `ram_total_bytes` is static board context; `ram_heap_*`
+fields are live `esp_alloc` heap telemetry. App-storage availability is
+currently calculated from the LittleFS partition size minus installed app byte
+sizes, so filesystem metadata and wear-leveling overhead are not exposed as a
+precise free-block count yet. It also reports temp app buffer usage separately
+from installed-app code cache usage so RAM comparisons distinguish volatile
+developer runs from persistent chunk execution. Total `.bss` may not drop much
+while `RUN.TEMP` remains RAM-backed.
 
 `STORAGE.FORMAT` formats the firmware-owned app store, clears the registry
 cache, clears runtime traces/timers, unloads the current VM, and leaves

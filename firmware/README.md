@@ -115,13 +115,14 @@ comparisons, `data` and `bss` are the relevant sections; `text` is code size.
 `espflash`, for example `App/part. size: used/available bytes, percent`.
 
 `cargo run -p squidc -- device resources` sends `RESOURCES.GET` to the flashed
-firmware and reports runtime diagnostics such as `memory_available_bytes`, temp
-app buffer usage, installed code cache bytes, and LittleFS app-storage usage.
-`memory_available_bytes` is currently a static firmware RAM estimate, not a live
-heap measurement.
+firmware and reports runtime diagnostics such as `ram_total_bytes`,
+`ram_heap_used_bytes`, `ram_heap_available_bytes`, temp app buffer usage,
+installed code cache bytes, and LittleFS app-storage usage. `ram_total_bytes`
+is static board context; the `ram_heap_*` fields are live `esp_alloc` heap
+telemetry from the running firmware.
 
-The ESP radio heap is not yet exposed through `RESOURCES.GET`. To prove Wi-Fi
-heap recovery, add live `esp_alloc`/radio heap diagnostics and compare before
+To prove Wi-Fi heap recovery, compare `ram_heap_used_bytes` and
+`ram_heap_available_bytes` before
 `service.wifi.startAP`, after start, after `service.wifi.stopAP`, and after app
 exit.
 

@@ -6,18 +6,18 @@ use alloc::string::String;
 
 use critical_section::Mutex;
 use esp_hal::peripherals::WIFI;
-use esp_wifi_sys::include::{
-    esp_wifi_ap_get_sta_list, esp_wifi_get_config, esp_wifi_get_country,
-    esp_wifi_get_max_tx_power, esp_wifi_get_mode, wifi_config_t, wifi_country_t,
-    wifi_interface_t_WIFI_IF_AP, wifi_mode_t_WIFI_MODE_AP, wifi_mode_t_WIFI_MODE_APSTA,
-    wifi_mode_t_WIFI_MODE_NULL, wifi_mode_t_WIFI_MODE_STA, wifi_sta_list_t, ESP_OK,
-};
 use esp_radio::{
     wifi::{
         event::{self, EventExt},
         AccessPointConfig, Config, ModeConfig, WifiController, WifiDevice,
     },
     Controller,
+};
+use esp_wifi_sys::include::{
+    esp_wifi_ap_get_sta_list, esp_wifi_get_config, esp_wifi_get_country, esp_wifi_get_max_tx_power,
+    esp_wifi_get_mode, wifi_config_t, wifi_country_t, wifi_interface_t_WIFI_IF_AP,
+    wifi_mode_t_WIFI_MODE_AP, wifi_mode_t_WIFI_MODE_APSTA, wifi_mode_t_WIFI_MODE_NULL,
+    wifi_mode_t_WIFI_MODE_STA, wifi_sta_list_t, ESP_OK,
 };
 use squidvm_core::{
     error::VmError,
@@ -71,7 +71,9 @@ pub enum FirmwareWifiBackend<'d> {
 impl<'d> FirmwareWifiBackend<'d> {
     pub fn new_esp(radio: &'d Controller<'d>, wifi: WIFI<'d>) -> Self {
         match esp_radio::wifi::new(radio, wifi, Config::default()) {
-            Ok((controller, interfaces)) => Self::Esp(EspWifiBackend::new(controller, interfaces.ap)),
+            Ok((controller, interfaces)) => {
+                Self::Esp(EspWifiBackend::new(controller, interfaces.ap))
+            }
             Err(_) => Self::Unavailable,
         }
     }
@@ -274,24 +276,9 @@ impl<'d> EspWifiBackend<'d> {
         writeln!(out, "driver_ap_auth={}", ap.authmode).ok();
         writeln!(out, "driver_ap_max_connections={}", ap.max_connection).ok();
         writeln!(out, "driver_ap_beacon_interval={}", ap.beacon_interval).ok();
-        writeln!(
-            out,
-            "event_ap_start={}",
-            read_counter(&AP_START_EVENTS)
-        )
-        .ok();
-        writeln!(
-            out,
-            "event_ap_stop={}",
-            read_counter(&AP_STOP_EVENTS)
-        )
-        .ok();
-        writeln!(
-            out,
-            "event_ap_probe={}",
-            read_counter(&AP_PROBE_EVENTS)
-        )
-        .ok();
+        writeln!(out, "event_ap_start={}", read_counter(&AP_START_EVENTS)).ok();
+        writeln!(out, "event_ap_stop={}", read_counter(&AP_STOP_EVENTS)).ok();
+        writeln!(out, "event_ap_probe={}", read_counter(&AP_PROBE_EVENTS)).ok();
         writeln!(
             out,
             "event_ap_sta_connected={}",
@@ -394,11 +381,7 @@ impl WifiBackend for EspWifiBackend<'_> {
         Ok(WifiApIp {
             ip: if self.active { Some(AP_IP) } else { None },
             gw: if self.active { Some(AP_IP) } else { None },
-            netmask: if self.active {
-                Some(AP_NETMASK)
-            } else {
-                None
-            },
+            netmask: if self.active { Some(AP_NETMASK) } else { None },
             error: None,
         })
     }

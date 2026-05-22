@@ -1865,8 +1865,10 @@ service.display.text(system.memory(), { x: 0, y: 0 })
 ```
 
 The exact metric is target-specific. On the ESP32-C3 Super Mini reference
-firmware it is the raw runtime RAM budget reported by firmware, not portable
-heap introspection.
+firmware it includes static board RAM context plus live `esp_alloc` heap used
+and available bytes from the running firmware. The display string is for human
+diagnostics; scripts that need raw diagnostics should use the device protocol
+or CLI resource command rather than parsing this text.
 
 system.storage(name)
 

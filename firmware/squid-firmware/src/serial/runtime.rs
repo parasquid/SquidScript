@@ -20,14 +20,18 @@ use squidvm_core::{
 use crate::dev_harness::{
     AppName, AppRegistry, AppSlot, AppStorage, AppStorageError, DevTimerEvent as TimerEvent,
 };
-use crate::kernel::{IndicatorAction, IndicatorService, ServiceError, INDICATOR_BREATH_SEGMENT_MS};
+use crate::kernel::{
+    write_ram_diagnostics_text, IndicatorAction, IndicatorService, ServiceError, TimerCommand,
+    TimerRegistration, TimerService, INDICATOR_BREATH_SEGMENT_MS,
+};
 use crate::storage::SQUIDFS_LEN;
 
 use super::{
     lifecycle::{app_ref_available, run_app_event, set_runtime_error},
     log::{stable_trace, write_human_bytes, write_value, LogLine},
-    vm::AppRef,
-    ActiveVm, FirmwareWifiBackend, TempApp, MEMORY_AVAILABLE_BYTES,
+    ram::live_ram_diagnostics,
+    vm::{AppRef, RuntimeError},
+    ActiveVm, FirmwareWifiBackend, TempApp,
 };
 
 const INDICATOR_QUEUE_CAP: usize = 8;
@@ -36,6 +40,8 @@ const OUTPUT_CAP: usize = 16;
 const DRAW_CAP: usize = 32;
 const STACK_CAP: usize = 4;
 const TIMER_CAP: usize = 4;
+const TIMER_COMMAND_CAP: usize = 8;
+const TIMER_DUE_CAP: usize = 4;
 
 pub struct RuntimeSink<'d> {
     onboard_indicator: OnboardIndicator<'d>,
@@ -47,7 +53,8 @@ pub struct RuntimeSink<'d> {
     pub(super) pending_launch: Option<AppName>,
     pub(super) pending_arm: Option<AppName>,
     pub(super) pending_disarm: Option<AppName>,
-    pub(super) timers: [Option<TimerRegistration>; TIMER_CAP],
+    pub(super) timer_service:
+        TimerService<AppRef, TimerEvent, TIMER_CAP, TIMER_COMMAND_CAP, TIMER_DUE_CAP>,
     pub(super) root_restart_pending: bool,
     pub(super) registration_mode: bool,
     pub(super) active_app: Option<AppRef>,
@@ -81,7 +88,7 @@ impl<'d> RuntimeSink<'d> {
             pending_launch: None,
             pending_arm: None,
             pending_disarm: None,
-            timers: [None; TIMER_CAP],
+            timer_service: TimerService::new(),
             root_restart_pending: false,
             registration_mode: false,
             active_app: None,
@@ -135,7 +142,7 @@ impl<'d> RuntimeSink<'d> {
         self.pending_launch = None;
         self.pending_arm = None;
         self.pending_disarm = None;
-        self.timers = [None; TIMER_CAP];
+        self.timer_service.clear_now();
         self.exited = false;
         self.registration_mode = false;
         self.root_restart_pending = false;
@@ -208,21 +215,19 @@ impl<'d> RuntimeSink<'d> {
         last_error: &mut Option<VmError>,
         storage_error: &mut Option<AppStorageError>,
     ) {
-        for index in 0..self.timers.len() {
-            let Some(mut timer) = self.timers[index] else {
-                continue;
-            };
-            if now < timer.next_due {
-                continue;
-            }
+        let now_ms = now.duration_since_epoch().as_millis();
+        if let Err(error) = self.timer_service.step(now_ms, self.active_app) {
+            set_runtime_error(
+                RuntimeError::Vm(service_error_to_vm_error(error)),
+                last_error,
+                storage_error,
+            );
+            return;
+        }
+
+        while let Some(timer) = self.timer_service.pop_due() {
             if !app_ref_available(timer.app, registry, temp_app) {
-                continue;
-            }
-            let is_active = self.active_app == Some(timer.app);
-            if !timer.armed && !is_active {
-                continue;
-            }
-            if timer.armed && self.active_app == Some(timer.app) {
+                self.timer_service.remove_app_now(timer.app);
                 continue;
             }
             let previous_active = self.active_app;
@@ -231,12 +236,6 @@ impl<'d> RuntimeSink<'d> {
             }
             *vm = None;
             *vm_slot = None;
-            if timer.repeating {
-                timer.next_due = now + timer.interval;
-                self.timers[index] = Some(timer);
-            } else {
-                self.timers[index] = None;
-            }
             match run_app_event(
                 timer.app,
                 timer.event.as_str(),
@@ -392,31 +391,15 @@ impl<'d> RuntimeSink<'d> {
 
     pub(super) fn register_timer(
         &mut self,
-        registration: TimerRegistration,
+        registration: TimerRegistration<AppRef, TimerEvent>,
     ) -> Result<(), VmError> {
-        for timer in &mut self.timers {
-            if timer.map(|timer| (timer.app, timer.event))
-                == Some((registration.app, registration.event))
-            {
-                *timer = Some(registration);
-                return Ok(());
-            }
-        }
-        for timer in &mut self.timers {
-            if timer.is_none() {
-                *timer = Some(registration);
-                return Ok(());
-            }
-        }
-        Err(VmError::TooLarge)
+        self.timer_service
+            .enqueue(TimerCommand::Register(registration))
+            .map_err(service_error_to_vm_error)
     }
 
     pub(super) fn remove_timers_for(&mut self, app: AppRef) {
-        for timer in &mut self.timers {
-            if timer.map(|timer| timer.app) == Some(app) {
-                *timer = None;
-            }
-        }
+        self.timer_service.remove_app_now(app);
     }
 }
 
@@ -533,14 +516,15 @@ impl TraceSink for RuntimeSink<'_> {
         let Some(event) = TimerEvent::from_event(event) else {
             return Err(VmError::InvalidOperand);
         };
+        let interval_ms = interval_ms as u64;
+        let now_ms = Instant::now().duration_since_epoch().as_millis();
         self.register_timer(TimerRegistration {
             app: self.current_app.ok_or(VmError::InvalidOperand)?,
             event,
             armed: self.registration_mode,
             repeating: true,
-            interval: Duration::from_micros((interval_ms as u64).saturating_mul(1000)),
-            next_due: Instant::now()
-                + Duration::from_micros((interval_ms as u64).saturating_mul(1000)),
+            interval_ms,
+            next_due_ms: now_ms.saturating_add(interval_ms),
         })?;
         Ok(())
     }
@@ -552,14 +536,15 @@ impl TraceSink for RuntimeSink<'_> {
         let Some(event) = TimerEvent::from_event(event) else {
             return Err(VmError::InvalidOperand);
         };
+        let delay_ms = delay_ms as u64;
+        let now_ms = Instant::now().duration_since_epoch().as_millis();
         self.register_timer(TimerRegistration {
             app: self.current_app.ok_or(VmError::InvalidOperand)?,
             event,
             armed: self.registration_mode,
             repeating: false,
-            interval: Duration::from_micros((delay_ms as u64).saturating_mul(1000)),
-            next_due: Instant::now()
-                + Duration::from_micros((delay_ms as u64).saturating_mul(1000)),
+            interval_ms: delay_ms,
+            next_due_ms: now_ms.saturating_add(delay_ms),
         })?;
         Ok(())
     }
@@ -598,7 +583,7 @@ impl TraceSink for RuntimeSink<'_> {
     }
 
     fn system_memory_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
-        write_human_bytes(out, "RAM", MEMORY_AVAILABLE_BYTES).map_err(|_| VmError::InvalidOperand)
+        write_ram_diagnostics_text(out, live_ram_diagnostics()).map_err(|_| VmError::InvalidOperand)
     }
 
     fn system_storage_text(&mut self, name: &str, out: &mut dyn fmt::Write) -> Result<(), VmError> {
@@ -612,16 +597,6 @@ impl TraceSink for RuntimeSink<'_> {
         )
         .map_err(|_| VmError::InvalidOperand)
     }
-}
-
-#[derive(Clone, Copy)]
-pub(super) struct TimerRegistration {
-    pub(super) app: AppRef,
-    pub(super) event: TimerEvent,
-    pub(super) armed: bool,
-    pub(super) repeating: bool,
-    pub(super) interval: Duration,
-    pub(super) next_due: Instant,
 }
 
 pub struct OnboardIndicator<'d> {

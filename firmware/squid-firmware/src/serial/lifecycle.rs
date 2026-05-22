@@ -6,7 +6,7 @@ use squidvm_core::{error::VmError, limits::MAX_APP_BYTES};
 use crate::dev_harness::{AppRegistry, AppSlot, AppStorage, AppStorageError};
 
 use super::{
-    vm::{dispatch_loaded_vm, load_vm_for_app, RuntimeError, AppRef},
+    vm::{dispatch_loaded_vm, load_vm_for_app, AppRef, RuntimeError},
     ActiveVm, RuntimeSink, TempApp,
 };
 
@@ -103,7 +103,6 @@ pub fn boot_main(
         }
     }
 }
-
 
 pub(super) fn set_runtime_error(
     error: RuntimeError,

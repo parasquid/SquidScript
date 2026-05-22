@@ -57,7 +57,13 @@ Resource responses are read-only diagnostics:
 
 ```text
 BEGIN RESOURCES
-memory_available_bytes=299136
+ram_total_bytes=409600
+ram_heap_total_bytes=98304
+ram_heap_used_bytes=12288
+ram_heap_available_bytes=86016
+ram_heap_peak_used_bytes=16384
+ram_heap_total_allocated_bytes=24576
+ram_heap_total_freed_bytes=12288
 temp_app_buffer_bytes=0
 temp_app_bytes=0
 installed_code_cache_bytes=1024
@@ -68,11 +74,13 @@ END RESOURCES
 OK RESOURCES.GET
 ```
 
-These values are target-firmware metrics. `memory_available_bytes` is the
-ESP32-C3 reference firmware's raw runtime RAM budget, not portable heap
-introspection. `temp_app_buffer_bytes` and `temp_app_bytes` describe the
-RAM-backed `RUN.TEMP` path. `installed_code_cache_bytes` describes the
-installed-app chunk buffer/cache path.
+These values are target-firmware metrics. `ram_total_bytes` is static board RAM
+context from target metadata. `ram_heap_total_bytes`, `ram_heap_used_bytes`,
+`ram_heap_available_bytes`, and the heap lifetime counters are live allocator
+telemetry from the running ESP32-C3 reference firmware. `temp_app_buffer_bytes`
+and `temp_app_bytes` describe the RAM-backed `RUN.TEMP` path.
+`installed_code_cache_bytes` describes the installed-app chunk buffer/cache
+path.
 
 Wi-Fi diagnostics are app-independent firmware diagnostics:
 

@@ -9,7 +9,7 @@ use squidvm_core::{
 
 use crate::{dev_harness::AppRegistry, storage::SQUIDFS_LEN};
 
-use super::{ActiveVm, TempApp, MEMORY_AVAILABLE_BYTES};
+use super::{ram::live_ram_diagnostics, ActiveVm, TempApp};
 
 pub(super) fn registry_installed_bytes(registry: &AppRegistry) -> usize {
     registry.iter().map(|(_, entry)| entry.len()).sum()
@@ -37,8 +37,35 @@ pub(super) fn print_resources(
         0
     };
     let installed_code_cache_bytes = vm.map_or(0, ActiveVm::installed_code_cache_bytes);
+    let ram = live_ram_diagnostics();
     writeln!(serial, "BEGIN RESOURCES").ok();
-    writeln!(serial, "memory_available_bytes={MEMORY_AVAILABLE_BYTES}").ok();
+    writeln!(serial, "ram_total_bytes={}", ram.ram_total_bytes).ok();
+    writeln!(serial, "ram_heap_total_bytes={}", ram.heap_total_bytes).ok();
+    writeln!(serial, "ram_heap_used_bytes={}", ram.heap_used_bytes).ok();
+    writeln!(
+        serial,
+        "ram_heap_available_bytes={}",
+        ram.heap_available_bytes()
+    )
+    .ok();
+    writeln!(
+        serial,
+        "ram_heap_peak_used_bytes={}",
+        ram.heap_peak_used_bytes
+    )
+    .ok();
+    writeln!(
+        serial,
+        "ram_heap_total_allocated_bytes={}",
+        ram.heap_total_allocated_bytes
+    )
+    .ok();
+    writeln!(
+        serial,
+        "ram_heap_total_freed_bytes={}",
+        ram.heap_total_freed_bytes
+    )
+    .ok();
     writeln!(serial, "temp_app_buffer_bytes={temp_app_buffer_bytes}").ok();
     writeln!(serial, "temp_app_bytes={temp_app_bytes}").ok();
     writeln!(

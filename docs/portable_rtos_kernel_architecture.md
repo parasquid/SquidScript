@@ -164,12 +164,14 @@ checks only.
 ## Implementation Order
 
 1. Correct docs/specs so they no longer describe versioned compatibility.
-2. Add a small `squid-kernel` style service model with host-testable actor
-   queues and fake-clock tests.
-3. Move the ESP default indicator behind the new service model.
-4. Verify indicator breathing remains non-blocking and serial stays responsive.
-5. Move timers and serial/app lifecycle next, then Wi-Fi, storage, display, and
-   HTTP as separate service actors.
+1. Completed: docs/specs no longer describe versioned compatibility.
+2. Completed: the ESP default indicator uses a bounded service model.
+3. Completed: firmware timers use a bounded actor with command and due-event
+   queues, preserving active-session and armed-trigger behavior.
+4. Verify indicator breathing and timer delivery remain non-blocking while
+   serial stays responsive under hardware tests.
+5. Move serial/app lifecycle further into actors, then Wi-Fi, storage, display,
+   and HTTP as separate service actors.
 
 ## References
 

@@ -41,10 +41,11 @@ cargo run -p squidc -- device resources
 
 `riscv64-elf-size` gives ELF `text`, `data`, and `bss`; for RAM-focused
 comparisons, use `data` and `bss`. The flash script prints `espflash`
-app-partition usage. `device resources` reads the firmware
-`RESOURCES.GET` report for app/runtime diagnostics. Current
-`memory_available_bytes` is a static estimate; it is not live heap telemetry and
-does not yet show ESP radio heap free/used values.
+app-partition usage. `device resources` reads the firmware `RESOURCES.GET`
+report for app/runtime diagnostics. `ram_total_bytes` is static board context;
+`ram_heap_total_bytes`, `ram_heap_used_bytes`, and
+`ram_heap_available_bytes` are live `esp_alloc` heap telemetry from the running
+firmware.
 
 From the repository root, the preferred end-to-end hardware check is:
 
