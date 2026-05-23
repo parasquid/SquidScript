@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 elf="${1:-$repo_root/build/zephyr/c3-supermini/zephyr/zephyr.elf}"
 dram_limit="${SQUID_ZEPHYR_DRAM_LIMIT_BYTES:-160000}"
+symbol_count="${SQUID_ZEPHYR_RAM_SYMBOL_COUNT:-20}"
 
 if [[ ! -f "$elf" ]]; then
   echo "zephyr RAM audit: ELF not found: $elf" >&2
@@ -49,14 +50,33 @@ if (( dram_bytes > dram_limit )); then
   exit 1
 fi
 
-echo "largest RAM symbols:"
-"$nm_tool" --print-size --size-sort "$elf" |
+if ! [[ "$symbol_count" =~ ^[0-9]+$ ]] || (( symbol_count < 1 )); then
+  echo "zephyr RAM audit: SQUID_ZEPHYR_RAM_SYMBOL_COUNT must be a positive integer" >&2
+  exit 2
+fi
+
+echo "ram_static_top_symbols=${symbol_count}"
+symbol_rows="$(
+  "$nm_tool" --print-size --size-sort "$elf" |
   awk '
     $1 ~ /^[0-9a-fA-F]+$/ && $2 ~ /^[0-9a-fA-F]+$/ &&
     ($3 == "b" || $3 == "B" || $3 == "d" || $3 == "D") {
       addr = strtonum("0x" $1)
       size = strtonum("0x" $2)
-      if (addr >= 1070071808 && addr < 1070450448 && size < 378640) print
+      if (addr >= 1070071808 && addr < 1070450448 && size < 378640) {
+        printf "%u 0x%s %s %s\n", size, $1, $3, $4
+      }
     }
   ' |
-  tail -20
+  tail -"$symbol_count"
+)"
+
+top_total="$(awk '{ sum += $1 } END { print sum + 0 }' <<<"$symbol_rows")"
+echo "ram_static_top_bytes=${top_total}"
+awk '
+  NF >= 4 {
+    sub(/^0x/, "", $2)
+    printf "ram_symbol[%u]=size=%s addr=0x%s type=%s name=%s\n", row, $1, $2, $3, $4
+    row++
+  }
+' <<<"$symbol_rows"

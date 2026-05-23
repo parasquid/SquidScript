@@ -129,7 +129,10 @@ default.
 Zephyr builds should keep RAM usage visible with `scripts/zephyr-ram-audit.sh`.
 The default guard for the ESP32-C3 Zephyr slice is `160000` bytes in
 `dram0_0_seg`; override it only with `SQUID_ZEPHYR_DRAM_LIMIT_BYTES` when a
-change intentionally changes the measured budget.
+change intentionally changes the measured budget. The audit also emits
+structured `ram_symbol[N]=size=... addr=... type=... name=...` lines for the
+largest static DRAM symbols; adjust the count with
+`SQUID_ZEPHYR_RAM_SYMBOL_COUNT` when investigating RAM optimization candidates.
 `resources-get` reports `protocol_thread_stack_size_bytes`,
 `protocol_thread_stack_unused_bytes`, `protocol_thread_stack_used_bytes`,
 `vm_worker_stack_size_bytes`, `vm_worker_stack_unused_bytes`, and

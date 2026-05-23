@@ -74,6 +74,18 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
         self.assertIn('SQUID_ZEPHYR_DRAM_LIMIT_BYTES:-160000', audit)
 
+    def test_ram_audit_reports_structured_top_symbols(self):
+        audit = self.read("scripts/zephyr-ram-audit.sh")
+
+        self.assertIn('SQUID_ZEPHYR_RAM_SYMBOL_COUNT:-20', audit)
+        self.assertIn('ram_static_top_symbols=', audit)
+        self.assertIn('ram_static_top_bytes=', audit)
+        self.assertIn('ram_symbol[', audit)
+        self.assertIn('addr=0x', audit)
+        self.assertIn('size=', audit)
+        self.assertIn('type=', audit)
+        self.assertIn('name=', audit)
+
     def test_zephyr_main_stack_tracks_measured_protocol_work(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
 

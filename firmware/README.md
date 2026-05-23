@@ -72,3 +72,6 @@ storage numbers and should be requested or reported separately.
 RAM checks should use Zephyr build output, Zephyr map/size tooling, and the
 eventual Zephyr diagnostic command surface. The previous
 `riscv32imc-unknown-none-elf` Rust firmware ELF path is obsolete.
+`scripts/zephyr-ram-audit.sh` checks the `dram0_0_seg` guard and prints
+structured top static RAM symbols. Use `SQUID_ZEPHYR_RAM_SYMBOL_COUNT` to show
+more or fewer symbol rows during optimization work.
