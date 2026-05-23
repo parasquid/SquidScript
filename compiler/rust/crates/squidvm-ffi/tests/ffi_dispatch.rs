@@ -70,6 +70,30 @@ unsafe extern "C" fn display_text(
     ));
 }
 
+unsafe extern "C" fn display_rect(
+    user_data: *mut c_void,
+    options: *const squidvm_ffi::SqvmDisplayRectOptions,
+) {
+    let host = &mut *(user_data as *mut Host);
+    let options = *options;
+    host.drawlog.push(format!(
+        "draw=rect x={} y={} w={} h={}",
+        options.x, options.y, options.w, options.h
+    ));
+}
+
+unsafe extern "C" fn display_line(
+    user_data: *mut c_void,
+    options: *const squidvm_ffi::SqvmDisplayLineOptions,
+) {
+    let host = &mut *(user_data as *mut Host);
+    let options = *options;
+    host.drawlog.push(format!(
+        "draw=line x1={} y1={} x2={} y2={}",
+        options.x1, options.y1, options.x2, options.y2
+    ));
+}
+
 unsafe extern "C" fn indicator_write(user_data: *mut c_void, value: bool) -> i32 {
     let host = &mut *(user_data as *mut Host);
     host.indicator = value;
@@ -158,8 +182,8 @@ fn callbacks(host: &mut Host) -> SqvmCallbacks {
         debug_output: Some(debug_output),
         display_clear: Some(display_clear),
         display_text: Some(display_text),
-        display_rect: None,
-        display_line: None,
+        display_rect: Some(display_rect),
+        display_line: Some(display_line),
         indicator_write: Some(indicator_write),
         indicator_toggle: Some(indicator_toggle),
         indicator_read: Some(indicator_read),
@@ -241,6 +265,8 @@ event.on("app.start") {
 screen("main") {
   service.display.clear("gray0")
   service.display.text("Hello", { x: 10, y: 20 })
+  service.display.rect(1, 2, 3, 4, { fillColor: "gray4" })
+  service.display.line(5, 6, 7, 8, { color: "gray15" })
 }
 "#,
     )
@@ -356,7 +382,9 @@ fn dispatches_display_service_callbacks() {
         host.drawlog,
         vec![
             "draw=clear color=gray0".to_string(),
-            "draw=text text=\"Hello\" x=10 y=20".to_string()
+            "draw=text text=\"Hello\" x=10 y=20".to_string(),
+            "draw=rect x=1 y=2 w=3 h=4".to_string(),
+            "draw=line x1=5 y1=6 x2=7 y2=8".to_string()
         ]
     );
 }

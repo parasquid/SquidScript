@@ -133,7 +133,8 @@ Initial built-in IDs:
 
 The current format supports the headless VM subset. Display draw commands are
 emitted as headless draw-log records by firmware hosts that implement the
-display service. GPIO builtins dispatch to target firmware hardware modules;
+display service. The current Zephyr draw-log records cover clear, text, rect,
+and line commands. GPIO builtins dispatch to target firmware hardware modules;
 unsupported names return a VM operand error. The canonical lifecycle surface is
 generic events plus `app.start`, `app.arm`, `app.disarm`, and `service.timer.*`.
 `app.launch` remains the app replacement/launch primitive.

@@ -68,6 +68,11 @@ cargo run -p squidc -- device monitor --max-lines 4
 `device key` sends a logical key event to Zephyr firmware. It does not
 press a physical button; the firmware routes the event to the current app.
 
+`device drawlog` returns the current Zephyr headless display draw log. Records
+use the current firmware diagnostic text shape, such as
+`draw=clear color=gray0`, `draw=text text="Hello" x=10 y=20`,
+`draw=rect x=1 y=2 w=3 h=4`, and `draw=line x1=5 y1=6 x2=7 y2=8`.
+
 `device resources` reads Zephyr firmware resource diagnostics and reports
 raw target-specific RAM and app-storage byte counts. `ram_total_bytes` is
 static board context; `ram_heap_*` fields are live allocator telemetry from the

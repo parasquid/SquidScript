@@ -329,8 +329,9 @@ ZTEST(squidscript_protocol, test_handles_trace_resources_and_wifi_error_frames)
 	struct sq_vm_runtime runtime = {
 		.traces = {"app.start", "state.save"},
 		.trace_count = 2,
-		.drawlog = {"draw=clear color=gray0", "draw=text text=\"Hello\" x=10 y=20"},
-		.drawlog_count = 2,
+		.drawlog = {"draw=clear color=gray0", "draw=text text=\"Hello\" x=10 y=20",
+			    "draw=rect x=1 y=2 w=3 h=4", "draw=line x1=5 y1=6 x2=7 y2=8"},
+		.drawlog_count = 4,
 	};
 	struct sq_app_registry registry = {.count = 1};
 	struct sq_device_install_session install_session = {0};
@@ -385,6 +386,14 @@ ZTEST(squidscript_protocol, test_handles_trace_resources_and_wifi_error_frames)
 		      SQ_PROTOCOL_OK);
 	zassert_mem_equal(field.value, "draw=text text=\"Hello\" x=10 y=20",
 			  strlen("draw=text text=\"Hello\" x=10 y=20"));
+	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
+		      SQ_PROTOCOL_OK);
+	zassert_mem_equal(field.value, "draw=rect x=1 y=2 w=3 h=4",
+			  strlen("draw=rect x=1 y=2 w=3 h=4"));
+	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
+		      SQ_PROTOCOL_OK);
+	zassert_mem_equal(field.value, "draw=line x1=5 y1=6 x2=7 y2=8",
+			  strlen("draw=line x1=5 y1=6 x2=7 y2=8"));
 
 	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_RESOURCES_GET,
 						      SQ_STATUS_OK, 62, NULL, 0, request,
