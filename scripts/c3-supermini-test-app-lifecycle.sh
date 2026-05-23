@@ -39,6 +39,28 @@ assert_file_empty_command() {
   fi
 }
 
+assert_json_lifecycle() {
+  local file="$1"
+  local expected_active="$2"
+  local expected_process="$3"
+  local expected_armed="$4"
+
+  python -c '
+import json
+import sys
+
+path, expected_active, expected_process, expected_armed = sys.argv[1:5]
+with open(path, encoding="utf-8") as handle:
+    data = json.load(handle)["data"]
+process = ",".join(data["processStack"])
+armed = ",".join("{}:{}".format(entry["appId"], entry["event"]) for entry in data["armedStack"])
+if data["active"] != expected_active or process != expected_process or armed != expected_armed:
+    print(f"Expected active={expected_active} process={expected_process} armed={expected_armed}", file=sys.stderr)
+    print(json.dumps(data, indent=2), file=sys.stderr)
+    sys.exit(1)
+' "${file}" "${expected_active}" "${expected_process}" "${expected_armed}"
+}
+
 wait_for_contains() {
   local label="$1"
   local expected="$2"
@@ -77,6 +99,8 @@ lifecycle_out="$(wait_for_contains lifecycle-reader "lifecycle=active=reader-clo
   "device lifecycle" cargo run --quiet -p squidc -- device lifecycle)"
 assert_file_contains "${lifecycle_out}" "lifecycle=process_stack[0]=main"
 assert_file_contains "${lifecycle_out}" "lifecycle=armed_stack[0]=break-reminder timer.break"
+json_lifecycle_out="$(run_capture lifecycle-reader-json cargo run --quiet -p squidc -- --json device lifecycle)"
+assert_json_lifecycle "${json_lifecycle_out}" "reader-clock" "main" "break-reminder:timer.break"
 
 output_out="$(wait_for_contains output-reader "output=reader start" \
   "device output" cargo run --quiet -p squidc -- device output)"
@@ -87,6 +111,8 @@ lifecycle_out="$(wait_for_contains lifecycle-break "lifecycle=active=break-remin
   "device lifecycle" cargo run --quiet -p squidc -- device lifecycle)"
 assert_file_contains "${lifecycle_out}" "lifecycle=process_stack[0]=main"
 assert_file_contains "${lifecycle_out}" "lifecycle=process_stack[1]=reader-clock"
+json_lifecycle_out="$(run_capture lifecycle-break-json cargo run --quiet -p squidc -- --json device lifecycle)"
+assert_json_lifecycle "${json_lifecycle_out}" "break-reminder" "main,reader-clock" ""
 
 output_out="$(wait_for_contains output-break "output=break fired" \
   "device output" cargo run --quiet -p squidc -- device output)"
@@ -97,6 +123,8 @@ run_capture exit-break cargo run --quiet -p squidc -- device key SELECT >/dev/nu
 lifecycle_out="$(wait_for_contains lifecycle-return "lifecycle=active=reader-clock" \
   "device lifecycle" cargo run --quiet -p squidc -- device lifecycle)"
 assert_file_contains "${lifecycle_out}" "lifecycle=process_stack[0]=main"
+json_lifecycle_out="$(run_capture lifecycle-return-json cargo run --quiet -p squidc -- --json device lifecycle)"
+assert_json_lifecycle "${json_lifecycle_out}" "reader-clock" "main" ""
 
 output_out="$(wait_for_contains output-return "output=break exit" \
   "device output" cargo run --quiet -p squidc -- device output)"

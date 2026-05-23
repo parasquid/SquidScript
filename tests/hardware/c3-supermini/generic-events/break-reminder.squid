@@ -2,7 +2,7 @@ app "break-reminder"
 
 event.on("app.arm") {
   debug.print("break armed")
-  service.timer.after("timer.break", 1000)
+  service.timer.after("timer.break", 3000)
 }
 
 event.on("timer.break") {

@@ -650,7 +650,54 @@ fn lifecycle(options: DeviceOnlyOptions, human: bool) -> Result<Value, String> {
     if human {
         print!("{response}");
     }
-    Ok(json!({"port": port, "command": "lifecycle", "lines": lines}))
+    let details = lifecycle_details(&lines);
+    Ok(json!({
+        "port": port,
+        "command": "lifecycle",
+        "lines": lines,
+        "active": details["active"].clone(),
+        "processStack": details["processStack"].clone(),
+        "armedStack": details["armedStack"].clone()
+    }))
+}
+
+fn lifecycle_details(lines: &[String]) -> Value {
+    let mut active = None;
+    let mut process_stack = Vec::new();
+    let mut armed_stack = Vec::new();
+
+    for line in lines {
+        if let Some(value) = line.strip_prefix("active=") {
+            active = Some(value.to_string());
+            continue;
+        }
+        if let Some((_, value)) = indexed_lifecycle_value(line, "process_stack") {
+            process_stack.push(value.to_string());
+            continue;
+        }
+        if let Some((_, value)) = indexed_lifecycle_value(line, "armed_stack") {
+            if value.is_empty() {
+                continue;
+            }
+            let (app_id, event) = value.split_once(' ').unwrap_or((value, ""));
+            armed_stack.push(json!({
+                "appId": app_id,
+                "event": event
+            }));
+        }
+    }
+
+    json!({
+        "active": active,
+        "processStack": process_stack,
+        "armedStack": armed_stack
+    })
+}
+
+fn indexed_lifecycle_value<'a>(line: &'a str, prefix: &str) -> Option<(usize, &'a str)> {
+    let rest = line.strip_prefix(prefix)?.strip_prefix('[')?;
+    let (index, rest) = rest.split_once("]=")?;
+    Some((index.parse().ok()?, rest))
 }
 
 fn drawlog(options: DeviceOnlyOptions, human: bool) -> Result<Value, String> {
@@ -1689,6 +1736,27 @@ screen("main") {}
         else {
             panic!("expected device storage-format");
         };
+    }
+
+    #[test]
+    fn lifecycle_json_parses_process_and_armed_stacks() {
+        let lines = vec![
+            "active=break-reminder".to_string(),
+            "process_stack[0]=main".to_string(),
+            "process_stack[1]=reader-clock".to_string(),
+            "armed_stack[0]=break-reminder timer.break".to_string(),
+        ];
+
+        assert_eq!(
+            lifecycle_details(&lines),
+            json!({
+                "active": "break-reminder",
+                "processStack": ["main", "reader-clock"],
+                "armedStack": [
+                    {"appId": "break-reminder", "event": "timer.break"}
+                ],
+            })
+        );
     }
 
     #[test]

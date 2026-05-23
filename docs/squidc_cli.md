@@ -98,6 +98,9 @@ use the current firmware diagnostic text shape, such as
 such as `active=reader`, `process_stack[0]=launcher`, and `armed_stack=`.
 When armed timers are registered, additional lines use
 `armed_stack[0]=break-reminder timer.break`.
+With `--json`, the raw lines are preserved and the same information is also
+parsed into `data.active`, `data.processStack`, and `data.armedStack`. Armed
+stack entries are objects with `appId` and `event` fields.
 
 `device resources` reads Zephyr firmware resource diagnostics and reports
 raw target-specific RAM and app-storage byte counts. `ram_total_bytes` is

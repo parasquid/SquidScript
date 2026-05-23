@@ -86,8 +86,11 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('cargo run --quiet -p squidc -- app install', lifecycle)
         self.assertIn('cargo run --quiet -p squidc -- app launch main', lifecycle)
         self.assertIn('cargo run --quiet -p squidc -- device lifecycle', lifecycle)
+        self.assertIn('cargo run --quiet -p squidc -- --json device lifecycle', lifecycle)
         self.assertIn('process_stack[0]=main', lifecycle)
+        self.assertIn('"processStack"', lifecycle)
         self.assertIn('armed_stack[0]=break-reminder timer.break', lifecycle)
+        self.assertIn('"armedStack"', lifecycle)
         self.assertNotIn("obsolete", lifecycle.lower())
 
         diagnostic = suite.index('c3-supermini-zephyr-test-diagnostic.sh')
