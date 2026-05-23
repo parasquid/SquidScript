@@ -62,11 +62,11 @@ for compiler, SQBC tooling, and VM semantics.
 - Keep service behavior non-blocking: use Zephyr timers, work queues, message
   queues, flash-map, NVS, LittleFS, networking, and Wi-Fi management events
   instead of firmware busy waits.
-- Prioritize ESP32-C3 Zephyr RAM optimization before additional service-parity
-  slices. Identify concrete reductions for the largest static allocations,
-  especially VM runtime storage, work stacks, response/session buffers,
-  logging, LittleFS pools, and file caches. Keep the RAM audit guard meaningful
-  and record tradeoffs before lowering capability.
+- Defer ESP32-C3 Zephyr RAM optimization until after the current service-parity
+  unblock slices. When resumed, identify concrete reductions for the largest
+  static allocations, especially VM runtime storage, work stacks,
+  response/session buffers, logging, LittleFS pools, and file caches. Keep the
+  RAM audit guard meaningful and record tradeoffs before lowering capability.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.
