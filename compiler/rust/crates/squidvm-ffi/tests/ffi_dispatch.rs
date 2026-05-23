@@ -6,9 +6,10 @@ use squidc_core::{
 };
 use squidvm_ffi::{
     sqvm_context_init, sqvm_context_init_in_place, sqvm_context_prepare, sqvm_context_size,
-    sqvm_dispatch, sqvm_dispatch_resume_storage, sqvm_dispatch_start_resumable, SqvmCallbacks,
-    SqvmDispatchOutcome, SqvmDispatchResult, SqvmStatus, SqvmStorageCompletion,
-    SqvmStorageRequestKind,
+    sqvm_dispatch, sqvm_dispatch_resume_storage, sqvm_dispatch_start_resumable,
+    sqvm_trigger_timer_count, sqvm_trigger_timer_read, SqvmCallbacks, SqvmDispatchOutcome,
+    SqvmDispatchResult, SqvmStatus, SqvmStorageCompletion, SqvmStorageRequestKind,
+    SqvmTriggerTimer,
 };
 
 #[derive(Default)]
@@ -29,6 +30,15 @@ struct Host {
     wifi_ap_ip_count: usize,
     system_memory_count: usize,
     system_storage_names: Vec<String>,
+}
+
+fn trigger_event_text(timer: &SqvmTriggerTimer) -> &str {
+    let len = timer
+        .event
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(timer.event.len());
+    core::str::from_utf8(&timer.event[..len]).unwrap()
 }
 
 unsafe extern "C" fn trace(user_data: *mut c_void, message: *const u8, message_len: usize) {
@@ -476,6 +486,21 @@ event.on("app.start") {
 event.on("timer.break") {
   app.disarm("break-reminder")
   debug.print("lifecycle timer")
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_trigger_registration_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-triggers"
+app.triggers {
+  service.timer.after("timer.break", 250)
+  service.timer.every("timer.stretch", 60000)
+}
+event.on("timer.break") {
+  debug.print("break")
 }
 screen("main") {}
 "#,
@@ -974,6 +999,64 @@ fn dispatches_app_lifecycle_and_timer_after_callbacks() {
         host.output,
         vec!["lifecycle start".to_string(), "lifecycle timer".to_string()]
     );
+}
+
+#[test]
+fn reads_trigger_timer_metadata_without_dispatching_app_arm() {
+    let sqbc = compile_trigger_registration_sqbc();
+    let mut count = 0usize;
+    let status = unsafe { sqvm_trigger_timer_count(sqbc.as_ptr(), sqbc.len(), &mut count) };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(count, 2);
+
+    let mut first = SqvmTriggerTimer::default();
+    let status = unsafe {
+        sqvm_trigger_timer_read(sqbc.as_ptr(), sqbc.len(), 0, &mut first as *mut _)
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(first.interval_ms, 250);
+    assert!(!first.repeating);
+    assert_eq!(trigger_event_text(&first), "timer.break");
+
+    let mut second = SqvmTriggerTimer::default();
+    let status = unsafe {
+        sqvm_trigger_timer_read(sqbc.as_ptr(), sqbc.len(), 1, &mut second as *mut _)
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(second.interval_ms, 60000);
+    assert!(second.repeating);
+    assert_eq!(trigger_event_text(&second), "timer.stretch");
+
+    let mut host = Host {
+        sqbc,
+        ..Host::default()
+    };
+    let mut context = sqvm_context_init();
+    let mut scratch = vec![0u8; 4096];
+    assert_eq!(
+        unsafe {
+            sqvm_context_init_in_place(
+                &mut context,
+                callbacks(&mut host),
+                scratch.as_mut_ptr(),
+                scratch.len(),
+            )
+        },
+        SqvmStatus::Ok
+    );
+    assert_eq!(
+        unsafe {
+            sqvm_dispatch(
+                &mut context,
+                callbacks(&mut host),
+                b"app.arm".as_ptr(),
+                b"app.arm".len(),
+            )
+        },
+        SqvmStatus::VmError
+    );
+    assert!(host.timer_after.is_empty());
+    assert!(host.timer_every.is_empty());
 }
 
 #[test]

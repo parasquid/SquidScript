@@ -1,6 +1,9 @@
 use crate::{
     diagnostic::{error, Diagnostic},
-    ir::{default_state_store, IrApp, IrFunction, IrHandler, IrProgram, IrScreen},
+    ir::{
+        default_state_store, IrApp, IrExpr, IrFunction, IrHandler, IrProgram, IrScreen, IrStatement,
+        IrTrigger,
+    },
     parser::parse,
     profile::{BuildProfile, PORTABLE_TARGET_ID},
     semantic::validate_semantics,
@@ -59,9 +62,13 @@ pub fn compile_with_profile(request: CompileRequest, profile: BuildProfile) -> C
     let ok = parsed.diagnostics.iter().all(|d| d.severity != "error");
     let ir = if ok {
         let app = ast.app.expect("app exists after validation");
-        let mut trigger_statements = Vec::new();
+        let mut triggers = Vec::new();
         for trigger_block in ast.trigger_blocks {
-            trigger_statements.extend(trigger_block.statements);
+            for statement in trigger_block.statements {
+                if let Some(trigger) = trigger_from_statement(&statement) {
+                    triggers.push(trigger);
+                }
+            }
         }
         let handlers = ast
             .handlers
@@ -71,11 +78,6 @@ pub fn compile_with_profile(request: CompileRequest, profile: BuildProfile) -> C
                 preload: handler.preload,
                 statements: handler.statements,
             })
-            .chain((!trigger_statements.is_empty()).then_some(IrHandler {
-                event: "app.arm".to_string(),
-                preload: false,
-                statements: trigger_statements,
-            }))
             .collect();
         let functions = ast
             .functions
@@ -102,6 +104,7 @@ pub fn compile_with_profile(request: CompileRequest, profile: BuildProfile) -> C
             device_bindings: ast.device_bindings,
             state: ast.state.map(|state| state.values).unwrap_or_default(),
             functions,
+            triggers,
             handlers,
             screens: ast
                 .screens
@@ -121,5 +124,32 @@ pub fn compile_with_profile(request: CompileRequest, profile: BuildProfile) -> C
         ok,
         diagnostics: parsed.diagnostics,
         ir,
+    }
+}
+
+fn trigger_from_statement(statement: &IrStatement) -> Option<IrTrigger> {
+    match statement {
+        IrStatement::ServiceTimerEvery { event, interval_ms } => literal_i32(interval_ms).map(
+            |interval_ms| IrTrigger {
+                event: event.clone(),
+                repeating: true,
+                interval_ms,
+            },
+        ),
+        IrStatement::ServiceTimerAfter { event, delay_ms } => literal_i32(delay_ms).map(
+            |interval_ms| IrTrigger {
+                event: event.clone(),
+                repeating: false,
+                interval_ms,
+            },
+        ),
+        _ => None,
+    }
+}
+
+fn literal_i32(expr: &IrExpr) -> Option<i32> {
+    match expr {
+        IrExpr::Literal { value } => value.as_i64().and_then(|value| i32::try_from(value).ok()),
+        _ => None,
     }
 }

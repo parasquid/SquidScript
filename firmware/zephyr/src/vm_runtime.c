@@ -1596,35 +1596,9 @@ int sq_vm_runtime_register_timer(struct sq_vm_runtime *runtime, const uint8_t *e
 		return -EINVAL;
 	}
 	if (runtime->arm_registration_active) {
-		for (size_t i = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
-			struct sq_vm_runtime_armed_timer *timer = &runtime->armed_timers[i];
-			if (timer->active &&
-			    strcmp(timer->app_id, runtime->arm_registration_app) == 0 &&
-			    strncmp(timer->event, (const char *)event, event_len) == 0 &&
-			    timer->event[event_len] == '\0') {
-				timer->repeating = repeating;
-				timer->interval_ms = interval_ms;
-				timer->due_ms = k_uptime_get() + interval_ms;
-				return 0;
-			}
-		}
-		for (size_t i = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
-			struct sq_vm_runtime_armed_timer *timer = &runtime->armed_timers[i];
-			if (!timer->active) {
-				timer->active = true;
-				timer->repeating = repeating;
-				timer->interval_ms = interval_ms;
-				timer->due_ms = k_uptime_get() + interval_ms;
-				strncpy(timer->app_id, runtime->arm_registration_app,
-					sizeof(timer->app_id) - 1);
-				timer->app_id[sizeof(timer->app_id) - 1] = '\0';
-				memcpy(timer->event, event, event_len);
-				timer->event[event_len] = '\0';
-				runtime->armed_timer_count++;
-				return 0;
-			}
-		}
-		return -ENOSPC;
+		return sq_vm_runtime_register_armed_timer(runtime, runtime->arm_registration_app,
+							  event, event_len, interval_ms,
+							  repeating);
 	}
 	for (size_t i = 0; i < SQ_VM_RUNTIME_TIMER_MAX; i++) {
 		if (runtime->timers[i].active &&
@@ -1644,6 +1618,44 @@ int sq_vm_runtime_register_timer(struct sq_vm_runtime *runtime, const uint8_t *e
 			runtime->timers[i].due_ms = k_uptime_get() + interval_ms;
 			memcpy(runtime->timers[i].event, event, event_len);
 			runtime->timers[i].event[event_len] = '\0';
+			return 0;
+		}
+	}
+	return -ENOSPC;
+}
+
+int sq_vm_runtime_register_armed_timer(struct sq_vm_runtime *runtime, const char *app,
+				       const uint8_t *event, size_t event_len,
+				       int32_t interval_ms, bool repeating)
+{
+	if (runtime == NULL || app == NULL || app[0] == '\0' ||
+	    strlen(app) >= SQ_APP_STORE_APP_ID_MAX || event == NULL || event_len == 0 ||
+	    event_len >= SQ_VM_RUNTIME_EVENT_LEN || interval_ms <= 0) {
+		return -EINVAL;
+	}
+	for (size_t i = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
+		struct sq_vm_runtime_armed_timer *timer = &runtime->armed_timers[i];
+		if (timer->active && strcmp(timer->app_id, app) == 0 &&
+		    strncmp(timer->event, (const char *)event, event_len) == 0 &&
+		    timer->event[event_len] == '\0') {
+			timer->repeating = repeating;
+			timer->interval_ms = interval_ms;
+			timer->due_ms = k_uptime_get() + interval_ms;
+			return 0;
+		}
+	}
+	for (size_t i = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
+		struct sq_vm_runtime_armed_timer *timer = &runtime->armed_timers[i];
+		if (!timer->active) {
+			timer->active = true;
+			timer->repeating = repeating;
+			timer->interval_ms = interval_ms;
+			timer->due_ms = k_uptime_get() + interval_ms;
+			strncpy(timer->app_id, app, sizeof(timer->app_id) - 1);
+			timer->app_id[sizeof(timer->app_id) - 1] = '\0';
+			memcpy(timer->event, event, event_len);
+			timer->event[event_len] = '\0';
+			runtime->armed_timer_count++;
 			return 0;
 		}
 	}

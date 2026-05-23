@@ -93,10 +93,10 @@ the saved count.
 `scripts/c3-supermini-measure-stack-usage.sh` runs after the stateful app and
 app lifecycle checks in the full ESP32-C3 Super Mini suite. It records
 `device resources` output under `target/hardware-tests/stack-usage/` and
-verifies `vm_worker_stack_size_bytes`, `vm_worker_stack_used_bytes`, and
-`vm_worker_stack_unused_bytes` are internally consistent. The current firmware
-keeps the VM worker stack budget at 16 KiB while this measurement data is used
-to decide whether a later reduction is safe.
+verifies `protocol_thread_stack_*` and `vm_worker_stack_*` metrics are
+internally consistent. The current firmware keeps the protocol/main stack budget
+at 8 KiB and the VM worker stack budget at 24 KiB while this measurement data is
+used to decide whether later reductions are safe.
 
 `scripts/c3-supermini-test-system-resources.sh` runs after lifecycle coverage
 and before stack measurement. It installs

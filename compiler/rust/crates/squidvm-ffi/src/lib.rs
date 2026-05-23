@@ -18,8 +18,9 @@ use squidvm_core::{
         WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
         MAX_STORAGE_TRANSFER_BYTES,
     },
-    limits::{MAX_CODE_CHUNK_BYTES, MAX_SAVED_STATE_BYTES},
-    reader::SqbcReader,
+    limits::{MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES, MAX_SAVED_STATE_BYTES},
+    program::ProgramIndex,
+    reader::{SliceSqbcReader, SqbcReader},
     strings::StringResolver,
     value::Value,
     vm::ChunkedVm,
@@ -30,7 +31,7 @@ use squid_device_protocol::{
     encode_hello_response_into, encode_lifecycle_response_into, encode_line_response_into,
     encode_resources_response_into, encode_state_response_into, key_event_from_request_into,
     AppListEntry, DecodeError, DeviceRequest, LifecycleTimer, Opcode, ResourceMetric,
-    Status as SqdpFrameStatus, MAX_APP_BYTES,
+    Status as SqdpFrameStatus, MAX_APP_BYTES as SQDP_MAX_APP_BYTES,
 };
 
 #[repr(C)]
@@ -222,6 +223,24 @@ impl Default for SqdpEventDispatch {
             app_id_len: 0,
             event: ptr::null(),
             event_len: 0,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmTriggerTimer {
+    pub event: [u8; 32],
+    pub interval_ms: i32,
+    pub repeating: bool,
+}
+
+impl Default for SqvmTriggerTimer {
+    fn default() -> Self {
+        Self {
+            event: [0; 32],
+            interval_ms: 0,
+            repeating: false,
         }
     }
 }
@@ -594,6 +613,15 @@ impl Default for SqvmWifiApIp {
     }
 }
 
+pub type SqvmReadExactAtCallback = Option<
+    unsafe extern "C" fn(
+        user_data: *mut c_void,
+        offset: usize,
+        out: *mut u8,
+        out_len: usize,
+    ) -> i32,
+>;
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SqvmCallbacks {
@@ -601,14 +629,7 @@ pub struct SqvmCallbacks {
     pub trace: Option<
         unsafe extern "C" fn(user_data: *mut c_void, message: *const u8, message_len: usize),
     >,
-    pub read_exact_at: Option<
-        unsafe extern "C" fn(
-            user_data: *mut c_void,
-            offset: usize,
-            out: *mut u8,
-            out_len: usize,
-        ) -> i32,
-    >,
+    pub read_exact_at: SqvmReadExactAtCallback,
     pub debug_output: Option<
         unsafe extern "C" fn(user_data: *mut c_void, message: *const u8, message_len: usize),
     >,
@@ -719,6 +740,42 @@ pub struct SqvmCallbacks {
     >,
 }
 
+impl Default for SqvmCallbacks {
+    fn default() -> Self {
+        Self {
+            user_data: ptr::null_mut(),
+            trace: None,
+            read_exact_at: None,
+            debug_output: None,
+            display_clear: None,
+            display_text: None,
+            display_rect: None,
+            display_line: None,
+            indicator_write: None,
+            indicator_toggle: None,
+            indicator_read: None,
+            indicator_breathe: None,
+            hardware_gpio_write: None,
+            hardware_gpio_toggle: None,
+            hardware_gpio_read: None,
+            app_launch: None,
+            app_arm: None,
+            app_disarm: None,
+            timer_every: None,
+            timer_after: None,
+            wifi_start_ap: None,
+            wifi_stop_ap: None,
+            wifi_connect: None,
+            wifi_disconnect: None,
+            wifi_get_ap_ip: None,
+            wifi_status: None,
+            wifi_scan: None,
+            system_memory_text: None,
+            system_storage_text: None,
+        }
+    }
+}
+
 #[repr(C)]
 pub struct SqvmContext {
     initialized: bool,
@@ -809,6 +866,78 @@ pub unsafe extern "C" fn sqvm_context_init_in_place(
         }
         Err(_) => SqvmStatus::VmError,
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqvm_trigger_timer_count(
+    sqbc: *const u8,
+    sqbc_len: usize,
+    out_count: *mut usize,
+) -> SqvmStatus {
+    if sqbc.is_null() || out_count.is_null() {
+        return SqvmStatus::InvalidArgument;
+    }
+    let mut scratch = [0u8; MAX_APP_BYTES];
+    let mut reader = SliceSqbcReader::new(slice::from_raw_parts(sqbc, sqbc_len));
+    trigger_timer_count_from_reader(&mut reader, &mut scratch, out_count)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqvm_trigger_timer_read(
+    sqbc: *const u8,
+    sqbc_len: usize,
+    index: usize,
+    out_timer: *mut SqvmTriggerTimer,
+) -> SqvmStatus {
+    if sqbc.is_null() || out_timer.is_null() {
+        return SqvmStatus::InvalidArgument;
+    }
+    let mut scratch = [0u8; MAX_APP_BYTES];
+    let mut reader = SliceSqbcReader::new(slice::from_raw_parts(sqbc, sqbc_len));
+    trigger_timer_read_from_reader(&mut reader, &mut scratch, index, out_timer)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqvm_trigger_timer_count_from_reader(
+    user_data: *mut c_void,
+    read_exact_at: SqvmReadExactAtCallback,
+    scratch: *mut u8,
+    scratch_len: usize,
+    out_count: *mut usize,
+) -> SqvmStatus {
+    if read_exact_at.is_none() || scratch.is_null() || out_count.is_null() {
+        return SqvmStatus::InvalidArgument;
+    }
+    let callbacks = SqvmCallbacks {
+        user_data,
+        read_exact_at,
+        ..SqvmCallbacks::default()
+    };
+    let mut reader = FfiHost::new(callbacks, false);
+    let scratch = slice::from_raw_parts_mut(scratch, scratch_len);
+    trigger_timer_count_from_reader(&mut reader, scratch, out_count)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqvm_trigger_timer_read_from_reader(
+    user_data: *mut c_void,
+    read_exact_at: SqvmReadExactAtCallback,
+    scratch: *mut u8,
+    scratch_len: usize,
+    index: usize,
+    out_timer: *mut SqvmTriggerTimer,
+) -> SqvmStatus {
+    if read_exact_at.is_none() || scratch.is_null() || out_timer.is_null() {
+        return SqvmStatus::InvalidArgument;
+    }
+    let callbacks = SqvmCallbacks {
+        user_data,
+        read_exact_at,
+        ..SqvmCallbacks::default()
+    };
+    let mut reader = FfiHost::new(callbacks, false);
+    let scratch = slice::from_raw_parts_mut(scratch, scratch_len);
+    trigger_timer_read_from_reader(&mut reader, scratch, index, out_timer)
 }
 
 #[no_mangle]
@@ -1497,7 +1626,7 @@ pub unsafe extern "C" fn sqdp_prepare_transfer_begin(
         return SqdpStatus::InvalidArgument;
     };
     if total_len == 0
-        || total_len > MAX_APP_BYTES as u64
+        || total_len > SQDP_MAX_APP_BYTES as u64
         || total_len > usize::MAX as u64
         || expected_crc > u32::MAX as u64
     {
@@ -1668,7 +1797,7 @@ pub unsafe extern "C" fn sqdp_prepare_resource_begin(
         return SqdpStatus::InvalidArgument;
     };
     if total_len == 0
-        || total_len > MAX_APP_BYTES as u64
+        || total_len > SQDP_MAX_APP_BYTES as u64
         || total_len > usize::MAX as u64
         || expected_crc > u32::MAX as u64
     {
@@ -2259,6 +2388,47 @@ fn status_from_vm(result: Result<(), VmError>) -> SqvmStatus {
         Ok(()) => SqvmStatus::Ok,
         Err(_) => SqvmStatus::VmError,
     }
+}
+
+fn trigger_timer_count_from_reader(
+    reader: &mut impl SqbcReader,
+    scratch: &mut [u8],
+    out_count: *mut usize,
+) -> SqvmStatus {
+    let count = match ProgramIndex::trigger_timer_count_from_reader(reader, scratch) {
+        Ok(count) => count,
+        Err(_) => return SqvmStatus::VmError,
+    };
+    unsafe {
+        *out_count = count;
+    }
+    SqvmStatus::Ok
+}
+
+fn trigger_timer_read_from_reader(
+    reader: &mut impl SqbcReader,
+    scratch: &mut [u8],
+    timer_index: usize,
+    out_timer: *mut SqvmTriggerTimer,
+) -> SqvmStatus {
+    let timer = match ProgramIndex::trigger_timer_from_reader(reader, scratch, timer_index) {
+        Ok(timer) => timer,
+        Err(VmError::InvalidOperand) => return SqvmStatus::InvalidArgument,
+        Err(_) => return SqvmStatus::VmError,
+    };
+    if timer.event.len() >= 32 {
+        return SqvmStatus::VmError;
+    }
+    let mut out = SqvmTriggerTimer {
+        interval_ms: timer.interval_ms,
+        repeating: timer.repeating,
+        ..SqvmTriggerTimer::default()
+    };
+    out.event[..timer.event.len()].copy_from_slice(timer.event.as_bytes());
+    unsafe {
+        *out_timer = out;
+    }
+    SqvmStatus::Ok
 }
 
 fn callback_status(status: i32) -> Result<(), VmError> {

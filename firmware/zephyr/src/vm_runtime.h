@@ -26,7 +26,7 @@ extern "C" {
 #define SQ_VM_RUNTIME_TIMER_MAX 4
 #define SQ_VM_RUNTIME_CONTEXT_BYTES 11264
 #define SQ_VM_RUNTIME_SCRATCH_BYTES SQVM_STORAGE_TRANSFER_CAPACITY
-#define SQ_VM_RUNTIME_WORK_STACK_SIZE 16384
+#define SQ_VM_RUNTIME_WORK_STACK_SIZE 24576
 #define SQ_VM_RUNTIME_EVENT_LEN 32
 #define SQ_VM_RUNTIME_INDICATOR_BREATHE_STEPS 65
 #define SQ_VM_RUNTIME_RETURN_STACK_MAX 2
@@ -169,6 +169,9 @@ int sq_vm_runtime_register_timer(struct sq_vm_runtime *runtime, const uint8_t *e
 				 size_t event_len, int32_t interval_ms, bool repeating);
 int sq_vm_runtime_clear_armed_app(struct sq_vm_runtime *runtime, const uint8_t *app,
 				  size_t app_len);
+int sq_vm_runtime_register_armed_timer(struct sq_vm_runtime *runtime, const char *app,
+				       const uint8_t *event, size_t event_len,
+				       int32_t interval_ms, bool repeating);
 int sq_vm_runtime_next_due_armed_timer(struct sq_vm_runtime *runtime, char *app, size_t app_cap,
 				       char *event, size_t event_cap);
 int sq_vm_runtime_next_due_timer(struct sq_vm_runtime *runtime, char *event, size_t event_cap);

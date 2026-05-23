@@ -93,6 +93,12 @@ typedef struct {
 } SqdpAppLaunch;
 
 typedef struct {
+	uint8_t event[32];
+	int32_t interval_ms;
+	bool repeating;
+} SqvmTriggerTimer;
+
+typedef struct {
 	const uint8_t *app_id;
 	size_t app_id_len;
 	const uint8_t *event;
@@ -356,6 +362,28 @@ SqvmStatus sqvm_context_init_in_place(
 	SqvmCallbacks callbacks,
 	uint8_t *scratch,
 	size_t scratch_len);
+SqvmStatus sqvm_trigger_timer_count(
+	const uint8_t *sqbc,
+	size_t sqbc_len,
+	size_t *out_count);
+SqvmStatus sqvm_trigger_timer_read(
+	const uint8_t *sqbc,
+	size_t sqbc_len,
+	size_t index,
+	SqvmTriggerTimer *out_timer);
+SqvmStatus sqvm_trigger_timer_count_from_reader(
+	void *user_data,
+	SqvmReadExactAtCallback read_exact_at,
+	uint8_t *scratch,
+	size_t scratch_len,
+	size_t *out_count);
+SqvmStatus sqvm_trigger_timer_read_from_reader(
+	void *user_data,
+	SqvmReadExactAtCallback read_exact_at,
+	uint8_t *scratch,
+	size_t scratch_len,
+	size_t index,
+	SqvmTriggerTimer *out_timer);
 SqvmStatus sqvm_dispatch(
 	void *context,
 	SqvmCallbacks callbacks,

@@ -52,12 +52,8 @@ for compiler, SQBC tooling, and VM semantics.
 - Decide whether the ESP32-C3 Super Mini reference target should expose
   `bleTransfer.*`; if yes, implement and verify it through Zephyr BLE instead
   of relying on MCU radio metadata alone.
-- Design the `app.triggers` compiler/SQBC/VM contract so firmware can load only
-  the trigger registration section plus its required constants/functions, not
-  the full app, and so unsupported foreground operations in trigger
-  registration are rejected by the bytecode/runtime path as well as the current
-  compiler surface. Extend the trigger model beyond current timer declarations
-  to future logical button/input triggers while keeping `event.on(...)` as the
+- Extend the `app.triggers` model beyond current timer metadata declarations to
+  future logical button/input triggers while keeping `event.on(...)` as the
   handler for the activation event that fires later.
 - Add SQBC lazy bytecode loading for installed apps to reduce firmware RAM.
   Keep a small always-resident SQBC header/index with section, function,
@@ -91,11 +87,20 @@ for compiler, SQBC tooling, and VM semantics.
   static allocations, especially VM runtime storage, work stacks,
   response/session buffers, logging, LittleFS pools, and file caches. Keep the
   RAM audit guard meaningful and record tradeoffs before lowering capability.
+  Include a focused VM worker stack pass: current app launch paths can use
+  about 16 KiB of worker stack, so direct in-place SQBC metadata parsing and VM
+  dispatch stack reductions should be measured before lowering the 24 KiB
+  budget. Include the protocol/main stack in the same pass: app trigger
+  metadata registration currently calls Rust FFI from the protocol thread, so
+  the main stack is budgeted at 8 KiB until that path is moved off the protocol
+  stack or made lighter. After the trigger/lifecycle hardware check, measured
+  stack high-water usage was `protocol_thread_stack_used_bytes=4256` of 8192
+  and `vm_worker_stack_used_bytes=16000` of 24576.
   The default ESP32-C3 Super Mini firmware builds with Zephyr ESP32 Wi-Fi
   scan/status/AP/station support, AP DHCPv4 server support, one volatile
   station profile, and station DHCP/IP status reporting at
-  `dram0_0_seg=200416` linker bytes, with `scripts/zephyr-ram-audit.sh`
-  reporting `dram0_0_seg=200400` bytes, or 48.9% of the target definition's
+  `dram0_0_seg=212704` linker bytes, with `scripts/zephyr-ram-audit.sh`
+  expected to track the same budget class, or about 50.9% of the target definition's
   400 KiB internal SRAM, after bounding native-network packet/buffer pools and
   measured Wi-Fi socket/event, ESP timer task, and network RX stack budgets for
   current low-throughput service traffic. `device resources` now exposes live

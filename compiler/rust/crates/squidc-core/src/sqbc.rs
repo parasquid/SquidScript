@@ -15,6 +15,7 @@ const SECTION_CODE: u16 = 5;
 const SECTION_SCREENS: u16 = 6;
 const SECTION_APP_META: u16 = 7;
 const SECTION_DEVICE_BINDINGS: u16 = 8;
+const SECTION_TRIGGERS: u16 = 9;
 
 const OP_PUSH_INT: u8 = 1;
 const OP_PUSH_BOOL: u8 = 2;
@@ -289,6 +290,7 @@ pub fn encode_sqbc_with_profile(
         (SECTION_STRINGS, unit.strings.encode()?),
         (SECTION_STATE, encode_state_section(ir, &unit.strings)?),
         (SECTION_FUNCTIONS, encode_functions(&unit.function_metas)),
+        (SECTION_TRIGGERS, encode_triggers(ir, &unit.strings)?),
         (SECTION_HANDLERS, encode_handlers(&unit.handler_metas)),
         (SECTION_SCREENS, encode_screens(&unit.screen_metas)),
         (SECTION_CODE, unit.code),
@@ -338,6 +340,9 @@ fn collect_strings(
         strings.intern(&binding.service)?;
         strings.intern(&binding.binding)?;
         strings.intern(&binding.resource)?;
+    }
+    for trigger in &ir.triggers {
+        strings.intern(&trigger.event)?;
     }
     for state in &ir.state {
         strings.intern(&state.name)?;
@@ -1184,6 +1189,26 @@ fn encode_handlers(handlers: &[HandlerMeta]) -> Vec<u8> {
         write_u32(&mut out, handler.len);
     }
     out
+}
+
+fn encode_triggers(ir: &IrProgram, strings: &StringTable) -> Result<Vec<u8>, SqbcError> {
+    let mut out = Vec::new();
+    write_u16(
+        &mut out,
+        u16::try_from(ir.triggers.len()).map_err(|_| SqbcError::new("too many triggers"))?,
+    );
+    for trigger in &ir.triggers {
+        let event_id = strings
+            .ids
+            .get(&trigger.event)
+            .copied()
+            .ok_or_else(|| SqbcError::new("unknown trigger event"))?;
+        write_u16(&mut out, event_id);
+        out.push(u8::from(trigger.repeating));
+        out.push(0);
+        write_i32(&mut out, trigger.interval_ms);
+    }
+    Ok(out)
 }
 
 fn encode_screens(screens: &[ScreenMeta]) -> Vec<u8> {

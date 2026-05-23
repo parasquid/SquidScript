@@ -538,6 +538,69 @@ fn program_index_parses_metadata_without_full_app_read() {
 }
 
 #[test]
+fn program_index_parses_trigger_metadata_without_app_arm_handler() {
+    let source = r#"app "trigger-index"
+event.on("app.start") {
+  app.arm("break-reminder")
+}
+app.triggers {
+  service.timer.after("timer.break", 1500000)
+  service.timer.every("timer.stretch", 60000)
+}
+event.on("timer.break") {
+  debug.print("break")
+}
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    assert!(matches!(
+        program.handler("app.arm"),
+        Err(VmError::HandlerNotFound)
+    ));
+
+    let mut scratch = [0u8; MAX_APP_BYTES];
+    let index = ProgramIndex::parse(&bytes, &mut scratch).unwrap();
+    let triggers = index.trigger_timers().unwrap();
+    assert_eq!(
+        triggers,
+        [
+            TriggerTimer {
+                event: "timer.break",
+                interval_ms: 1500000,
+                repeating: false,
+            },
+            TriggerTimer {
+                event: "timer.stretch",
+                interval_ms: 60000,
+                repeating: true,
+            },
+        ]
+    );
+
+    let mut reader = SliceSqbcReader::new(&bytes);
+    let mut small_scratch = [0u8; 128];
+    assert_eq!(
+        ProgramIndex::trigger_timer_count_from_reader(&mut reader, &mut small_scratch).unwrap(),
+        2
+    );
+    let mut reader = SliceSqbcReader::new(&bytes);
+    assert_eq!(
+        ProgramIndex::trigger_timer_from_reader(&mut reader, &mut small_scratch, 1).unwrap(),
+        TriggerTimer {
+            event: "timer.stretch",
+            interval_ms: 60000,
+            repeating: true,
+        }
+    );
+}
+
+#[test]
 fn chunked_vm_reads_handler_code_range_from_reader() {
     let bytes = fixture_counter_sqbc();
     let mut scratch = [0u8; MAX_APP_BYTES];

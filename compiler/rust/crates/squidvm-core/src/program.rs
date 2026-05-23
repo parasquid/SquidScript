@@ -2,15 +2,15 @@ use core::{mem::MaybeUninit, ptr, str};
 
 use crate::{
     bytecode::{
-        read_u16, read_u32, SECTION_CODE, SECTION_FUNCTIONS, SECTION_HANDLERS, SECTION_SCREENS,
-        SECTION_STATE, SECTION_STRINGS,
+        read_i32, read_u16, read_u32, SECTION_CODE, SECTION_FUNCTIONS, SECTION_HANDLERS,
+        SECTION_SCREENS, SECTION_STATE, SECTION_STRINGS, SECTION_TRIGGERS,
     },
     error::VmError,
     limits::{
         MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES, MAX_FUNCTIONS, MAX_HANDLERS, MAX_PROGRAM_STRING_BYTES,
-        MAX_SCREENS, MAX_STATE, MAX_STRINGS,
+        MAX_SCREENS, MAX_STATE, MAX_STRINGS, MAX_TRIGGERS,
     },
-    model::{Function, Handler, Screen, StateSlot},
+    model::{Function, Handler, Screen, StateSlot, TriggerTimerMeta},
     reader::{SliceSqbcReader, SqbcReader},
     state::parse_state,
     strings::StringTable,
@@ -27,6 +27,8 @@ pub struct Program<'a> {
     pub(crate) function_count: usize,
     pub(crate) handlers: [Handler; MAX_HANDLERS],
     pub(crate) handler_count: usize,
+    pub(crate) trigger_timers: [TriggerTimerMeta; MAX_TRIGGERS],
+    pub(crate) trigger_timer_count: usize,
     pub(crate) screens: [Screen; MAX_SCREENS],
     pub(crate) screen_count: usize,
     pub(crate) code: &'a [u8],
@@ -99,6 +101,7 @@ impl<'a> Program<'a> {
         let state = section(bytes, section_count, SECTION_STATE)?;
         let functions = section(bytes, section_count, SECTION_FUNCTIONS)?;
         let handlers = section(bytes, section_count, SECTION_HANDLERS)?;
+        let triggers = optional_section(bytes, section_count, SECTION_TRIGGERS)?;
         let screens = optional_section(bytes, section_count, SECTION_SCREENS)?;
         let code = section(bytes, section_count, SECTION_CODE)?;
 
@@ -106,6 +109,7 @@ impl<'a> Program<'a> {
         let (state_slots, state_count) = parse_state(state)?;
         let (functions, function_count) = parse_functions(functions, code.len())?;
         let (handlers, handler_count) = parse_handlers(handlers, code.len())?;
+        let (trigger_timers, trigger_timer_count) = parse_trigger_timers(triggers)?;
         let (screens, screen_count) = parse_screens(screens, code.len())?;
 
         Ok(Self {
@@ -117,6 +121,8 @@ impl<'a> Program<'a> {
             function_count,
             handlers,
             handler_count,
+            trigger_timers,
+            trigger_timer_count,
             screens,
             screen_count,
             code,
@@ -142,6 +148,10 @@ impl<'a> Program<'a> {
 
     pub fn handler_preload(&self, event: &str) -> Result<bool, VmError> {
         Ok(self.handler(event)?.preload)
+    }
+
+    pub fn trigger_timers(&self) -> Result<TriggerTimers<'_>, VmError> {
+        TriggerTimers::new(self, &self.trigger_timers, self.trigger_timer_count)
     }
 
     pub(crate) fn screen(&self, name: &str) -> Result<Screen, VmError> {
@@ -171,6 +181,8 @@ pub struct ProgramIndex {
     pub(crate) function_count: usize,
     pub(crate) handlers: [Handler; MAX_HANDLERS],
     pub(crate) handler_count: usize,
+    pub(crate) trigger_timers: [TriggerTimerMeta; MAX_TRIGGERS],
+    pub(crate) trigger_timer_count: usize,
     pub(crate) screens: [Screen; MAX_SCREENS],
     pub(crate) screen_count: usize,
     pub(crate) code_offset: usize,
@@ -206,6 +218,7 @@ impl ProgramIndex {
         let mut state_section = None;
         let mut functions_section = None;
         let mut handlers_section = None;
+        let mut triggers_section = None;
         let mut screens_section = None;
         let mut code_section = None;
         for index in 0..header.section_count {
@@ -215,6 +228,7 @@ impl ProgramIndex {
                 SECTION_STATE => state_section = Some(record),
                 SECTION_FUNCTIONS => functions_section = Some(record),
                 SECTION_HANDLERS => handlers_section = Some(record),
+                SECTION_TRIGGERS => triggers_section = Some(record),
                 SECTION_SCREENS => screens_section = Some(record),
                 SECTION_CODE => code_section = Some(record),
                 _ => {}
@@ -231,6 +245,7 @@ impl ProgramIndex {
             || state_section.len > scratch.len()
             || functions_section.len > scratch.len()
             || handlers_section.len > scratch.len()
+            || triggers_section.is_some_and(|section| section.len > scratch.len())
             || screens_section.is_some_and(|section| section.len > scratch.len())
         {
             return Err(VmError::InvalidSection);
@@ -291,6 +306,19 @@ impl ProgramIndex {
         );
         ptr::addr_of_mut!((*out).handler_count).write(handler_count);
 
+        let (trigger_timers, trigger_timer_count) = if let Some(section) = triggers_section {
+            reader.read_exact_at(section.offset, &mut scratch[..section.len])?;
+            parse_trigger_timers(Some(&scratch[..section.len]))?
+        } else {
+            parse_trigger_timers(None)?
+        };
+        ptr::copy_nonoverlapping(
+            trigger_timers.as_ptr(),
+            ptr::addr_of_mut!((*out).trigger_timers).cast::<TriggerTimerMeta>(),
+            MAX_TRIGGERS,
+        );
+        ptr::addr_of_mut!((*out).trigger_timer_count).write(trigger_timer_count);
+
         let (screens, screen_count) = if let Some(section) = screens_section {
             reader.read_exact_at(section.offset, &mut scratch[..section.len])?;
             parse_screens(Some(&scratch[..section.len]), code_section.len)?
@@ -343,6 +371,75 @@ impl ProgramIndex {
         Ok(self.handler(event)?.1.preload)
     }
 
+    pub fn trigger_timers(&self) -> Result<TriggerTimers<'_>, VmError> {
+        TriggerTimers::new(self, &self.trigger_timers, self.trigger_timer_count)
+    }
+
+    pub fn trigger_timer_count_from_reader(
+        reader: &mut impl SqbcReader,
+        scratch: &mut [u8],
+    ) -> Result<usize, VmError> {
+        let (_, triggers_section) = trigger_reader_sections(reader, scratch)?;
+        let Some(triggers_section) = triggers_section else {
+            return Ok(0);
+        };
+        if triggers_section.len > scratch.len() {
+            return Err(VmError::InvalidSection);
+        }
+        reader.read_exact_at(triggers_section.offset, &mut scratch[..triggers_section.len])?;
+        let count = read_u16(scratch, 0)? as usize;
+        if count > MAX_TRIGGERS {
+            return Err(VmError::InvalidSection);
+        }
+        let expected_len = 2usize
+            .checked_add(count.checked_mul(8).ok_or(VmError::InvalidSection)?)
+            .ok_or(VmError::InvalidSection)?;
+        if expected_len != triggers_section.len {
+            return Err(VmError::InvalidSection);
+        }
+        Ok(count)
+    }
+
+    pub fn trigger_timer_from_reader<'a>(
+        reader: &mut impl SqbcReader,
+        scratch: &'a mut [u8],
+        timer_index: usize,
+    ) -> Result<TriggerTimer<'a>, VmError> {
+        let (strings_section, triggers_section) = trigger_reader_sections(reader, scratch)?;
+        let triggers_section = triggers_section.ok_or(VmError::InvalidOperand)?;
+        if triggers_section.len > scratch.len() || strings_section.len > scratch.len() {
+            return Err(VmError::InvalidSection);
+        }
+
+        reader.read_exact_at(triggers_section.offset, &mut scratch[..triggers_section.len])?;
+        let count = read_u16(scratch, 0)? as usize;
+        if count > MAX_TRIGGERS || timer_index >= count {
+            return Err(VmError::InvalidOperand);
+        }
+        let expected_len = 2usize
+            .checked_add(count.checked_mul(8).ok_or(VmError::InvalidSection)?)
+            .ok_or(VmError::InvalidSection)?;
+        if expected_len != triggers_section.len {
+            return Err(VmError::InvalidSection);
+        }
+        let cursor = 2 + timer_index * 8;
+        let event_id = read_u16(scratch, cursor)?;
+        let repeating = *scratch.get(cursor + 2).ok_or(VmError::InvalidSection)? != 0;
+        let reserved = *scratch.get(cursor + 3).ok_or(VmError::InvalidSection)?;
+        let interval_ms = read_i32(scratch, cursor + 4)?;
+        if reserved != 0 || interval_ms <= 0 {
+            return Err(VmError::InvalidSection);
+        }
+
+        reader.read_exact_at(strings_section.offset, &mut scratch[..strings_section.len])?;
+        let event = string_from_section(&scratch[..strings_section.len], event_id)?;
+        Ok(TriggerTimer {
+            event,
+            interval_ms,
+            repeating,
+        })
+    }
+
     pub(crate) fn screen(&self, name: &str) -> Result<(usize, Screen), VmError> {
         for (index, screen) in self.screens.iter().take(self.screen_count).enumerate() {
             if self.string(screen.name_id)? == name {
@@ -360,6 +457,67 @@ impl ProgramIndex {
 impl StringTable for ProgramIndex {
     fn string(&self, id: u16) -> Result<&str, VmError> {
         ProgramIndex::string(self, id)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TriggerTimer<'a> {
+    pub event: &'a str,
+    pub interval_ms: i32,
+    pub repeating: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TriggerTimers<'a> {
+    timers: [TriggerTimer<'a>; MAX_TRIGGERS],
+    count: usize,
+}
+
+impl<'a> TriggerTimers<'a> {
+    fn new(
+        strings: &'a impl StringTable,
+        metas: &[TriggerTimerMeta; MAX_TRIGGERS],
+        count: usize,
+    ) -> Result<Self, VmError> {
+        let mut timers = [TriggerTimer {
+            event: "",
+            interval_ms: 0,
+            repeating: false,
+        }; MAX_TRIGGERS];
+        for (index, meta) in metas.iter().take(count).enumerate() {
+            timers[index] = TriggerTimer {
+                event: strings.string(meta.event_id)?,
+                interval_ms: meta.interval_ms,
+                repeating: meta.repeating,
+            };
+        }
+        Ok(Self { timers, count })
+    }
+
+    pub const fn len(&self) -> usize {
+        self.count
+    }
+
+    pub fn get(&self, index: usize) -> Option<TriggerTimer<'a>> {
+        if index < self.count {
+            Some(self.timers[index])
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a> core::ops::Index<usize> for TriggerTimers<'a> {
+    type Output = TriggerTimer<'a>;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.timers[index]
+    }
+}
+
+impl<'a, const N: usize> PartialEq<[TriggerTimer<'a>; N]> for TriggerTimers<'a> {
+    fn eq(&self, other: &[TriggerTimer<'a>; N]) -> bool {
+        self.count == N && self.timers[..self.count] == other[..]
     }
 }
 
@@ -389,6 +547,35 @@ fn optional_section<'a>(
     }
 }
 
+fn trigger_reader_sections(
+    reader: &mut impl SqbcReader,
+    scratch: &mut [u8],
+) -> Result<(SqbcSection, Option<SqbcSection>), VmError> {
+    let mut fixed_header = [0u8; SQBC_HEADER_LEN];
+    reader.read_exact_at(0, &mut fixed_header)?;
+    let header = Program::parse_header(&fixed_header)?;
+    if header.header_len > scratch.len() {
+        return Err(VmError::InvalidHeader);
+    }
+    reader.read_exact_at(0, &mut scratch[..header.header_len])?;
+
+    let mut strings_section = None;
+    let mut triggers_section = None;
+    for index in 0..header.section_count {
+        let record = Program::parse_section_record(&scratch[..header.header_len], index)?;
+        match record.kind {
+            SECTION_STRINGS => strings_section = Some(record),
+            SECTION_TRIGGERS => triggers_section = Some(record),
+            _ => {}
+        }
+    }
+
+    Ok((
+        strings_section.ok_or(VmError::MissingSection)?,
+        triggers_section,
+    ))
+}
+
 fn parse_strings(bytes: &[u8]) -> Result<([&str; MAX_STRINGS], usize), VmError> {
     let count = read_u16(bytes, 0)? as usize;
     if count > MAX_STRINGS {
@@ -408,6 +595,25 @@ fn parse_strings(bytes: &[u8]) -> Result<([&str; MAX_STRINGS], usize), VmError> 
         return Err(VmError::InvalidSection);
     }
     Ok((strings, count))
+}
+
+fn string_from_section(bytes: &[u8], id: u16) -> Result<&str, VmError> {
+    let count = read_u16(bytes, 0)? as usize;
+    if count > MAX_STRINGS || id as usize >= count {
+        return Err(VmError::InvalidOperand);
+    }
+    let mut cursor = 2usize;
+    for index in 0..count {
+        let len = read_u16(bytes, cursor)? as usize;
+        cursor += 2;
+        let end = cursor.checked_add(len).ok_or(VmError::InvalidSection)?;
+        let raw = bytes.get(cursor..end).ok_or(VmError::InvalidSection)?;
+        if index == id as usize {
+            return str::from_utf8(raw).map_err(|_| VmError::InvalidUtf8);
+        }
+        cursor = end;
+    }
+    Err(VmError::InvalidOperand)
 }
 
 fn parse_owned_strings(
@@ -523,6 +729,50 @@ fn parse_handlers(
         return Err(VmError::InvalidSection);
     }
     Ok((handlers, count))
+}
+
+fn parse_trigger_timers(
+    bytes: Option<&[u8]>,
+) -> Result<([TriggerTimerMeta; MAX_TRIGGERS], usize), VmError> {
+    let Some(bytes) = bytes else {
+        return Ok((
+            [TriggerTimerMeta {
+                event_id: 0,
+                interval_ms: 0,
+                repeating: false,
+            }; MAX_TRIGGERS],
+            0,
+        ));
+    };
+    let count = read_u16(bytes, 0)? as usize;
+    if count > MAX_TRIGGERS {
+        return Err(VmError::InvalidSection);
+    }
+    let mut timers = [TriggerTimerMeta {
+        event_id: 0,
+        interval_ms: 0,
+        repeating: false,
+    }; MAX_TRIGGERS];
+    let mut cursor = 2usize;
+    for timer in timers.iter_mut().take(count) {
+        let event_id = read_u16(bytes, cursor)?;
+        let repeating = *bytes.get(cursor + 2).ok_or(VmError::InvalidSection)? != 0;
+        let reserved = *bytes.get(cursor + 3).ok_or(VmError::InvalidSection)?;
+        let interval_ms = read_i32(bytes, cursor + 4)?;
+        cursor += 8;
+        if reserved != 0 || interval_ms <= 0 {
+            return Err(VmError::InvalidSection);
+        }
+        *timer = TriggerTimerMeta {
+            event_id,
+            interval_ms,
+            repeating,
+        };
+    }
+    if cursor != bytes.len() {
+        return Err(VmError::InvalidSection);
+    }
+    Ok((timers, count))
 }
 
 fn parse_screens(

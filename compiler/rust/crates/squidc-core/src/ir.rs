@@ -10,6 +10,8 @@ pub struct IrProgram {
     pub device_bindings: Vec<IrDeviceBinding>,
     pub state: Vec<IrStateValue>,
     pub functions: Vec<IrFunction>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub triggers: Vec<IrTrigger>,
     pub handlers: Vec<IrHandler>,
     pub screens: Vec<IrScreen>,
 }
@@ -57,6 +59,13 @@ pub struct IrFunction {
     pub name: String,
     pub params: Vec<String>,
     pub statements: Vec<IrStatement>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct IrTrigger {
+    pub event: String,
+    pub repeating: bool,
+    pub interval_ms: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

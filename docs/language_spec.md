@@ -1817,11 +1817,11 @@ app.launch("binbook-reader")
 app.arm(appId)
 
 Arms an installed app for future trigger delivery. Firmware loads the target
-app's `app.triggers` declarations in registration mode, records any
-`service.timer.*(...)` registrations, and tears the VM down without pushing an
-active session. Trigger registration is declarative: it does not run
-foreground lifecycle behavior, debug output, display work, state mutation, or
-app launch/exit behavior.
+app's compiled trigger metadata, records any `service.timer.*(...)`
+registrations declared by `app.triggers`, and does not push an active session.
+Trigger registration is declarative: it does not run foreground lifecycle
+behavior, debug output, display work, state mutation, or app launch/exit
+behavior.
 
 Example:
 
@@ -4095,10 +4095,10 @@ suspended VMs for inactive apps. Returning to an app is a fresh `app.start`, so
 apps must save and restore their own state across app-session boundaries.
 
 Armed apps are not continuously executing background VMs. `app.arm(appId)`
-loads an app's `app.triggers` declarations in registration mode, records
-`service.timer.*(...)` registrations, then tears that VM down. When a
-registered event fires, firmware starts the armed app as the active app
-session and dispatches the event handler.
+reads an app's compiled `app.triggers` metadata and records
+`service.timer.*(...)` registrations without dispatching foreground code or
+keeping a VM resident. When a registered event fires, firmware starts the armed
+app as the active app session and dispatches the event handler.
 
 No multitasking in current draft.
 

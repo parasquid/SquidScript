@@ -6,6 +6,7 @@ pub(crate) const SECTION_FUNCTIONS: u16 = 3;
 pub(crate) const SECTION_HANDLERS: u16 = 4;
 pub(crate) const SECTION_CODE: u16 = 5;
 pub(crate) const SECTION_SCREENS: u16 = 6;
+pub(crate) const SECTION_TRIGGERS: u16 = 9;
 
 pub(crate) const OP_PUSH_INT: u8 = 1;
 pub(crate) const OP_PUSH_BOOL: u8 = 2;

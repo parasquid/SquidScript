@@ -18,6 +18,13 @@ pub(crate) struct Handler {
 }
 
 #[derive(Clone, Copy)]
+pub(crate) struct TriggerTimerMeta {
+    pub(crate) event_id: u16,
+    pub(crate) interval_ms: i32,
+    pub(crate) repeating: bool,
+}
+
+#[derive(Clone, Copy)]
 pub(crate) struct Screen {
     pub(crate) name_id: u16,
     pub(crate) start: usize,

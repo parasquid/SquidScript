@@ -453,7 +453,7 @@ fn encodes_reference_sqbc_for_headless_counter() {
         u32::from_le_bytes(sqbc[6..10].try_into().unwrap()) as usize,
         sqbc.len()
     );
-    assert_eq!(u32::from_le_bytes(sqbc[10..14].try_into().unwrap()), 8);
+    assert_eq!(u32::from_le_bytes(sqbc[10..14].try_into().unwrap()), 9);
     assert_eq!(
         sqbc::read_app_id(&sqbc).unwrap().as_deref(),
         Some("headless-counter")
@@ -640,7 +640,7 @@ screen("main") {
     });
     assert!(output.ok, "{:?}", output.diagnostics);
     let sqbc = sqbc::encode_sqbc(&output.ir.unwrap()).unwrap();
-    assert_eq!(u32::from_le_bytes(sqbc[10..14].try_into().unwrap()), 8);
+    assert_eq!(u32::from_le_bytes(sqbc[10..14].try_into().unwrap()), 9);
 }
 
 #[test]
@@ -905,7 +905,10 @@ screen("main") {}
     assert_eq!(ir.handlers[0].event, "app.start");
     assert_eq!(ir.handlers[1].event, "app.exit");
     assert_eq!(ir.handlers[2].event, "timer.break");
-    assert_eq!(ir.handlers[3].event, "app.arm");
+    assert_eq!(ir.triggers.len(), 1);
+    assert_eq!(ir.triggers[0].event, "timer.break");
+    assert_eq!(ir.triggers[0].interval_ms, 1500000);
+    assert!(!ir.triggers[0].repeating);
     assert!(matches!(
         ir.handlers[0].statements[0],
         IrStatement::AppArm { .. }
@@ -917,10 +920,6 @@ screen("main") {}
     assert!(matches!(
         ir.handlers[0].statements[2],
         IrStatement::ServiceTimerEvery { .. }
-    ));
-    assert!(matches!(
-        ir.handlers[3].statements[0],
-        IrStatement::ServiceTimerAfter { .. }
     ));
     assert!(matches!(
         ir.handlers[2].statements[1],
@@ -950,11 +949,10 @@ screen("main") {}
     let ir = output.ir.unwrap();
     assert_eq!(ir.handlers[0].event, "app.start");
     assert_eq!(ir.handlers[1].event, "timer.break");
-    assert_eq!(ir.handlers[2].event, "app.arm");
-    assert!(matches!(
-        ir.handlers[2].statements[0],
-        IrStatement::ServiceTimerAfter { .. }
-    ));
+    assert_eq!(ir.triggers.len(), 1);
+    assert_eq!(ir.triggers[0].event, "timer.break");
+    assert_eq!(ir.triggers[0].interval_ms, 1500000);
+    assert!(!ir.triggers[0].repeating);
 }
 
 #[test]

@@ -524,6 +524,71 @@ static int pop_return_app(struct sq_vm_runtime *runtime, char *out, size_t out_l
 	return 0;
 }
 
+static size_t c_array_len(const uint8_t *bytes, size_t cap)
+{
+	size_t len = 0;
+
+	while (len < cap && bytes[len] != 0) {
+		len++;
+	}
+	return len;
+}
+
+static int register_app_triggers(const struct sq_device_protocol_context *context,
+				 const char *app_id)
+{
+	struct sq_app_store_vm_storage trigger_storage;
+	struct sq_vm_storage_backend backend;
+	size_t trigger_count = 0;
+	SqvmStatus status;
+	int result;
+
+	if (context == NULL || context->runtime == NULL || context->store_mount_point == NULL ||
+	    app_id == NULL) {
+		return -EINVAL;
+	}
+	result = sq_app_store_vm_storage_for_app(context->store_mount_point, app_id,
+						&trigger_storage);
+	if (result != 0) {
+		return result;
+	}
+	backend = sq_app_store_vm_storage_backend(&trigger_storage);
+	if (backend.read_sqbc == NULL) {
+		return -ENODEV;
+	}
+
+	result = sq_vm_runtime_clear_armed_app(context->runtime, (const uint8_t *)app_id,
+					      strlen(app_id));
+	if (result != 0) {
+		return result;
+	}
+	status = sqvm_trigger_timer_count_from_reader(
+		backend.user_data, backend.read_sqbc, context->runtime->transfer.init_scratch,
+		sizeof(context->runtime->transfer.init_scratch), &trigger_count);
+	if (status != SQVM_STATUS_OK || trigger_count > SQ_VM_RUNTIME_ARMED_TIMER_MAX) {
+		return -EINVAL;
+	}
+	for (size_t i = 0; i < trigger_count; i++) {
+		SqvmTriggerTimer timer = {0};
+		size_t event_len;
+
+		status = sqvm_trigger_timer_read_from_reader(
+			backend.user_data, backend.read_sqbc, context->runtime->transfer.init_scratch,
+			sizeof(context->runtime->transfer.init_scratch), i, &timer);
+		if (status != SQVM_STATUS_OK) {
+			return -EINVAL;
+		}
+		event_len = c_array_len(timer.event, sizeof(timer.event));
+		result = sq_vm_runtime_register_armed_timer(context->runtime, app_id, timer.event,
+							   event_len, timer.interval_ms,
+							   timer.repeating);
+		if (result != 0) {
+			return result;
+		}
+	}
+	return 0;
+}
+
 int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 {
 	struct sq_vm_runtime *runtime;
@@ -579,11 +644,7 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 		target[sizeof(target) - 1] = '\0';
 		memset(runtime->pending_arm_app, 0, sizeof(runtime->pending_arm_app));
 		runtime->pending_arm_active = false;
-		strncpy(runtime->arm_registration_app, target,
-			sizeof(runtime->arm_registration_app) - 1);
-		runtime->arm_registration_app[sizeof(runtime->arm_registration_app) - 1] = '\0';
-		runtime->arm_registration_active = true;
-		return start_installed_app(context, target, "app.arm", false);
+		return register_app_triggers(context, target);
 	}
 
 	if (runtime->dispatch_exited) {

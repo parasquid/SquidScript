@@ -179,7 +179,12 @@ fn validate_trigger_statements(
 ) {
     for statement in statements {
         match statement {
-            IrStatement::ServiceTimerEvery { .. } | IrStatement::ServiceTimerAfter { .. } => {}
+            IrStatement::ServiceTimerEvery { interval_ms, .. } => {
+                validate_trigger_interval(interval_ms, start, end, diagnostics);
+            }
+            IrStatement::ServiceTimerAfter { delay_ms, .. } => {
+                validate_trigger_interval(delay_ms, start, end, diagnostics);
+            }
             _ => diagnostics.push(error(
                 "E_APP_TRIGGER_STATEMENT",
                 "app.triggers may only declare timer trigger registrations",
@@ -187,6 +192,28 @@ fn validate_trigger_statements(
                 end,
             )),
         }
+    }
+}
+
+fn validate_trigger_interval(
+    expr: &IrExpr,
+    start: usize,
+    end: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let valid = match expr {
+        IrExpr::Literal { value } => value
+            .as_i64()
+            .is_some_and(|value| value > 0 && i32::try_from(value).is_ok()),
+        _ => false,
+    };
+    if !valid {
+        diagnostics.push(error(
+            "E_APP_TRIGGER_STATEMENT",
+            "app.triggers timer intervals must be positive integer literals",
+            start,
+            end,
+        ));
     }
 }
 

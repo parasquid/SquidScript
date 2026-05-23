@@ -138,9 +138,10 @@ and line commands. GPIO builtins dispatch to target firmware hardware modules;
 unsupported names return a VM operand error. The canonical lifecycle surface is
 generic events plus `app.start`, `app.triggers`, `app.arm`, `app.disarm`, and
 `service.timer.*`. `app.triggers` is the authored trigger-registration surface;
-the current compiler normalizes it to the SQBC registration entrypoint used by
-firmware when `app.arm(appId)` arms an installed app. `app.launch` remains the
-app replacement/launch primitive.
+the compiler encodes its timer declarations in a dedicated trigger metadata
+section so firmware can arm an installed app without dispatching foreground
+code or keeping a background VM resident. `app.launch` remains the app
+replacement/launch primitive.
 
 SQBC includes an explicit app metadata section so tools can read the app id from
 bytecode without guessing from the string table. `squidc app install` uses this
@@ -166,6 +167,20 @@ bit 0  preload hint from @preload
 
 The preload bit is advisory. Firmware may use it to load or retain
 latency-sensitive handler chunks, but app correctness must not depend on it.
+
+Trigger table entries are:
+
+```text
+offset  size  field
+0       2     little-endian u16 event string id
+2       1     repeating flag, 0 for one-shot and 1 for repeating
+3       1     reserved, must be 0
+4       4     little-endian i32 interval in milliseconds
+```
+
+The trigger table contains the compiled `app.triggers` declarations for timer
+sources. Firmware reads this section during `app.arm(appId)` and records the
+timer registrations directly.
 
 Zephyr firmware must install named SQBC apps, start `main`, arm trigger
 registrations, dispatch real timer events, and exercise app-stack behavior.
