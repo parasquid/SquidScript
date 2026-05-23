@@ -70,14 +70,8 @@ static int ok_response(const struct sq_protocol_frame *request, uint8_t *respons
 static int error_response(const struct sq_protocol_frame *request, int code, uint8_t *response,
 			  size_t response_cap, size_t *response_len)
 {
-	const char *message = code == -ENOTSUP ? "unsupported" :
-			      code == -ENODEV  ? "device unavailable" :
-			      code == -EINVAL  ? "invalid request" :
-			      code == -EBUSY   ? "busy" :
-						 "command failed";
-	return sqdp_status_to_protocol_result(sqdp_encode_error_response(
-		request->opcode, request->sequence, code, (const uint8_t *)message, strlen(message),
-		response, response_cap, response_len));
+	return sqdp_status_to_protocol_result(sqdp_encode_error_response_for_code(
+		request->opcode, request->sequence, code, response, response_cap, response_len));
 }
 
 static int begin_install(const struct sq_protocol_frame *request,

@@ -1108,6 +1108,49 @@ pub unsafe extern "C" fn sqdp_encode_error_response(
     }
 }
 
+fn protocol_error_message_for_code(code: i64) -> &'static str {
+    match code {
+        -95 => "unsupported",
+        -19 => "device unavailable",
+        -22 => "invalid request",
+        -16 => "busy",
+        _ => "command failed",
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_encode_error_response_for_code(
+    opcode: u8,
+    sequence: u32,
+    code: i64,
+    out: *mut u8,
+    out_cap: usize,
+    out_len: *mut usize,
+) -> SqdpStatus {
+    if out.is_null() || out_len.is_null() {
+        return SqdpStatus::InvalidArgument;
+    }
+    *out_len = 0;
+    let Ok(opcode) = Opcode::try_from(opcode) else {
+        return SqdpStatus::InvalidArgument;
+    };
+    let out = slice::from_raw_parts_mut(out, out_cap);
+    match encode_error_response_into(
+        opcode,
+        sequence,
+        code,
+        protocol_error_message_for_code(code),
+        out,
+    ) {
+        Ok(len) => {
+            *out_len = len;
+            SqdpStatus::Ok
+        }
+        Err(DecodeError::OutputTooSmall { .. }) => SqdpStatus::BufferTooSmall,
+        Err(_) => SqdpStatus::EncodeError,
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn sqdp_encode_app_list_response(
     sequence: u32,

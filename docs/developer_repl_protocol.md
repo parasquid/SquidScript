@@ -93,13 +93,13 @@ caller-owned buffers across the C/Rust boundary. Zephyr passes the received
 frame and its fixed session storage to Rust; Rust returns a bounded action with
 borrowed byte slices or stored session strings; Zephyr performs the filesystem
 or VM operation and then calls the completion function so Rust updates progress.
-Rust also encodes `app-list`, lifecycle diagnostics, resource diagnostics, and
-state export responses directly into Zephyr's caller-owned response buffer so
-Zephyr C does not stage duplicate TLV payload arrays for those command
-responses. Repeated diagnostic line responses use the same Rust encoder path.
-App launch, generic event dispatch, state import, and Wi-Fi profile requests
-are parsed by Rust `sqdp_` FFI helpers, which return borrowed field slices to
-Zephyr C for runtime/storage actions.
+Rust also encodes `app-list`, lifecycle diagnostics, resource diagnostics,
+state export responses, and protocol error responses directly into Zephyr's
+caller-owned response buffer so Zephyr C does not stage duplicate TLV payload
+arrays for those command responses. Repeated diagnostic line responses use the
+same Rust encoder path. App launch, generic event dispatch, state import, and
+Wi-Fi profile requests are parsed by Rust `sqdp_` FFI helpers, which return
+borrowed field slices to Zephyr C for runtime/storage actions.
 
 `app-list` responses use repeated record fields: response field tag `1` is one
 app record, record field tag `1` is the app ID string, and record field tag `2`

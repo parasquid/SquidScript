@@ -427,6 +427,13 @@ SqdpStatus sqdp_encode_error_response(
 	uint8_t *out,
 	size_t out_cap,
 	size_t *out_len);
+SqdpStatus sqdp_encode_error_response_for_code(
+	uint8_t opcode,
+	uint32_t sequence,
+	int64_t code,
+	uint8_t *out,
+	size_t out_cap,
+	size_t *out_len);
 SqdpStatus sqdp_encode_app_list_response(
 	uint32_t sequence,
 	const SqdpAppListEntry *entries,

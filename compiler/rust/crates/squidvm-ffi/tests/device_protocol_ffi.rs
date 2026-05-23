@@ -1,7 +1,7 @@
 use squid_device_protocol::{
     app_install_begin_request, app_install_chunk_request, app_install_commit_request,
     app_launch_request, app_list_entries, decode_frame, encode_frame, event_dispatch_request,
-    key_request, lifecycle_lines, output_lines, resource_install_begin_request,
+    key_request, lifecycle_lines, output_lines, protocol_error, resource_install_begin_request,
     resource_install_chunk_request, resource_install_commit_request, resource_values, state_bytes,
     state_import_request, wifi_profile_set_request, FrameKind, Opcode, Status,
 };
@@ -86,6 +86,33 @@ fn ffi_encodes_error_response_into_caller_buffer() {
     assert_eq!(frame.opcode, Opcode::StorageFormat);
     assert_eq!(frame.status, Status::Error);
     assert_eq!(frame.sequence, 81);
+}
+
+#[test]
+fn ffi_encodes_protocol_error_response_from_status_code() {
+    let mut out = [0u8; 128];
+    let mut out_len = 0usize;
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_encode_error_response_for_code(
+            Opcode::AppLaunch as u8,
+            82,
+            -19,
+            out.as_mut_ptr(),
+            out.len(),
+            &mut out_len,
+        )
+    };
+
+    assert_eq!(status as i32, 0);
+    let frame = decode_frame(&out[..out_len]).unwrap();
+    let error = protocol_error(&frame).unwrap();
+    assert_eq!(frame.kind, FrameKind::Response);
+    assert_eq!(frame.opcode, Opcode::AppLaunch);
+    assert_eq!(frame.status, Status::Error);
+    assert_eq!(frame.sequence, 82);
+    assert_eq!(error.code, -19);
+    assert_eq!(error.message, "device unavailable");
 }
 
 #[test]
