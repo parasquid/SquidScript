@@ -8,6 +8,12 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/pwm.h>
+#if IS_ENABLED(CONFIG_NET_L2_WIFI_MGMT) && IS_ENABLED(CONFIG_NET_MGMT_EVENT) && \
+	IS_ENABLED(CONFIG_NET_MGMT_EVENT_INFO)
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/net_mgmt.h>
+#include <zephyr/net/wifi_mgmt.h>
+#endif
 
 #define SQ_VM_RUNTIME_BREATHE_LEVEL_MS 31
 #define SQ_SET_LITERAL_FIELD(target, field, value) \
@@ -49,6 +55,14 @@ static const struct device *const gpio0_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0))
 #define SQ_VM_RUNTIME_HAS_GPIO0 1
 #else
 #define SQ_VM_RUNTIME_HAS_GPIO0 0
+#endif
+
+#if IS_ENABLED(CONFIG_NET_L2_WIFI_MGMT) && IS_ENABLED(CONFIG_NET_MGMT_EVENT) && \
+	IS_ENABLED(CONFIG_NET_MGMT_EVENT_INFO)
+#define SQ_VM_RUNTIME_HAS_WIFI_MGMT 1
+#define SQ_VM_RUNTIME_WIFI_SCAN_TIMEOUT_MS 8000
+#else
+#define SQ_VM_RUNTIME_HAS_WIFI_MGMT 0
 #endif
 
 K_THREAD_STACK_DEFINE(sq_vm_runtime_work_stack, SQ_VM_RUNTIME_WORK_STACK_SIZE);
@@ -262,6 +276,137 @@ static int32_t runtime_timer_after(void *user_data, const uint8_t *event, size_t
 	return sq_vm_runtime_register_timer(user_data, event, event_len, delay_ms, false);
 }
 
+int sq_vm_runtime_wifi_format_bssid(const uint8_t *mac, size_t mac_len, char *out, size_t out_len)
+{
+	if (mac == NULL || out == NULL) {
+		return -EINVAL;
+	}
+	if (mac_len < 6) {
+		return -EINVAL;
+	}
+	if (out_len < SQ_VM_RUNTIME_WIFI_BSSID_LEN) {
+		return -ENOSPC;
+	}
+	int written = snprintf(out, out_len, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1],
+			       mac[2], mac[3], mac[4], mac[5]);
+	return written == SQ_VM_RUNTIME_WIFI_BSSID_LEN - 1 ? 0 : -EIO;
+}
+
+#if SQ_VM_RUNTIME_HAS_WIFI_MGMT
+static void copy_text(char *out, size_t out_len, const char *text)
+{
+	if (out == NULL || out_len == 0) {
+		return;
+	}
+	if (text == NULL) {
+		text = "";
+	}
+	size_t len = strlen(text);
+	if (len >= out_len) {
+		len = out_len - 1;
+	}
+	memcpy(out, text, len);
+	out[len] = '\0';
+}
+
+static void runtime_wifi_reset_scan(struct sq_vm_runtime *runtime)
+{
+	memset(runtime->wifi_scan_networks, 0, sizeof(runtime->wifi_scan_networks));
+	memset(runtime->wifi_scan_ssids, 0, sizeof(runtime->wifi_scan_ssids));
+	memset(runtime->wifi_scan_bssids, 0, sizeof(runtime->wifi_scan_bssids));
+	memset(runtime->wifi_scan_auth, 0, sizeof(runtime->wifi_scan_auth));
+	runtime->wifi_scan_count = 0;
+	runtime->wifi_scan_status = 0;
+}
+
+static struct net_if *runtime_wifi_iface(void)
+{
+	return net_if_get_wifi_sta();
+}
+
+static void runtime_wifi_record_scan_result(struct sq_vm_runtime *runtime,
+					    const struct wifi_scan_result *entry)
+{
+	if (runtime == NULL || entry == NULL ||
+	    runtime->wifi_scan_count >= SQVM_WIFI_SCAN_MAX_NETWORKS) {
+		return;
+	}
+
+	size_t index = runtime->wifi_scan_count;
+	SqvmWifiAccessPoint *network = &runtime->wifi_scan_networks[index];
+	size_t ssid_len = entry->ssid_length;
+	if (ssid_len >= SQ_VM_RUNTIME_WIFI_SSID_LEN) {
+		ssid_len = SQ_VM_RUNTIME_WIFI_SSID_LEN - 1;
+	}
+	memcpy(runtime->wifi_scan_ssids[index], entry->ssid, ssid_len);
+	runtime->wifi_scan_ssids[index][ssid_len] = '\0';
+	if (entry->mac_length >= 6) {
+		(void)sq_vm_runtime_wifi_format_bssid(entry->mac, entry->mac_length,
+						      runtime->wifi_scan_bssids[index],
+						      sizeof(runtime->wifi_scan_bssids[index]));
+	}
+	copy_text(runtime->wifi_scan_auth[index], sizeof(runtime->wifi_scan_auth[index]),
+		  wifi_security_txt(entry->security));
+
+	network->ssid = (const uint8_t *)runtime->wifi_scan_ssids[index];
+	network->ssid_len = strlen(runtime->wifi_scan_ssids[index]);
+	network->bssid = (const uint8_t *)runtime->wifi_scan_bssids[index];
+	network->bssid_len = strlen(runtime->wifi_scan_bssids[index]);
+	network->ssid_length = entry->ssid_length;
+	network->channel = entry->channel;
+	network->rssi = entry->rssi;
+	network->auth = (const uint8_t *)runtime->wifi_scan_auth[index];
+	network->auth_len = strlen(runtime->wifi_scan_auth[index]);
+	network->hidden = entry->ssid_length == 0;
+	runtime->wifi_scan_count++;
+}
+
+static void runtime_wifi_event_handler(struct net_mgmt_event_callback *cb, uint64_t mgmt_event,
+				       struct net_if *iface)
+{
+	ARG_UNUSED(iface);
+	struct sq_vm_runtime *runtime = CONTAINER_OF(cb, struct sq_vm_runtime, wifi_mgmt_cb);
+
+	switch (mgmt_event) {
+	case NET_EVENT_WIFI_SCAN_RESULT:
+		runtime_wifi_record_scan_result(runtime, cb->info);
+		break;
+	case NET_EVENT_WIFI_SCAN_DONE:
+		if (cb->info != NULL && cb->info_length >= sizeof(struct wifi_status)) {
+			const struct wifi_status *status = cb->info;
+			runtime->wifi_scan_status = status->status;
+		}
+		k_sem_give(&runtime->wifi_scan_done);
+		break;
+	default:
+		break;
+	}
+}
+
+static void runtime_wifi_init_events(struct sq_vm_runtime *runtime)
+{
+	if (!runtime->wifi_scan_sem_initialized) {
+		k_sem_init(&runtime->wifi_scan_done, 0, 1);
+		runtime->wifi_scan_sem_initialized = true;
+	}
+	if (!runtime->wifi_mgmt_cb_registered) {
+		net_mgmt_init_event_callback(&runtime->wifi_mgmt_cb, runtime_wifi_event_handler,
+					     NET_EVENT_WIFI_SCAN_RESULT |
+						     NET_EVENT_WIFI_SCAN_DONE);
+		net_mgmt_add_event_callback(&runtime->wifi_mgmt_cb);
+		runtime->wifi_mgmt_cb_registered = true;
+	}
+}
+
+static bool runtime_wifi_state_blocks_scan(int state)
+{
+	return state == WIFI_STATE_SCANNING || state == WIFI_STATE_AUTHENTICATING ||
+	       state == WIFI_STATE_ASSOCIATING || state == WIFI_STATE_ASSOCIATED ||
+	       state == WIFI_STATE_4WAY_HANDSHAKE || state == WIFI_STATE_GROUP_HANDSHAKE ||
+	       state == WIFI_STATE_COMPLETED;
+}
+#endif
+
 static int32_t runtime_wifi_unsupported_action(SqvmWifiActionResult *out)
 {
 	if (out == NULL) {
@@ -321,12 +466,51 @@ static int32_t runtime_wifi_get_ap_ip(void *user_data, SqvmWifiApIp *out)
 
 static int32_t runtime_wifi_status(void *user_data, SqvmWifiStatus *out)
 {
-	ARG_UNUSED(user_data);
-
 	if (out == NULL) {
 		return -EINVAL;
 	}
 	memset(out, 0, sizeof(*out));
+#if SQ_VM_RUNTIME_HAS_WIFI_MGMT
+	struct sq_vm_runtime *runtime = user_data;
+	struct net_if *iface = runtime_wifi_iface();
+	struct wifi_iface_status status = {0};
+	if (runtime != NULL) {
+		runtime_wifi_init_events(runtime);
+	}
+	SQ_SET_LITERAL_FIELD(out, backend, "zephyr");
+	if (iface == NULL) {
+		out->active = false;
+		out->driver_started = false;
+		out->configured = false;
+		SQ_SET_LITERAL_FIELD(out, state, "unavailable");
+		SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+		return 0;
+	}
+	int result = net_mgmt(NET_REQUEST_WIFI_IFACE_STATUS, iface, &status, sizeof(status));
+	if (result != 0) {
+		out->active = false;
+		out->driver_started = true;
+		out->configured = false;
+		SQ_SET_LITERAL_FIELD(out, state, "unavailable");
+		SQ_SET_LITERAL_FIELD(out, error, "status unavailable");
+		return 0;
+	}
+	out->active = status.state >= WIFI_STATE_ASSOCIATED;
+	out->connected = status.state == WIFI_STATE_COMPLETED;
+	out->driver_started = true;
+	out->configured = status.state != WIFI_STATE_UNKNOWN &&
+			  status.state != WIFI_STATE_INTERFACE_DISABLED;
+	out->state = (const uint8_t *)wifi_state_txt(status.state);
+	out->state_len = strlen(wifi_state_txt(status.state));
+	SQ_SET_LITERAL_FIELD(out, backend, "zephyr");
+	SQ_SET_LITERAL_FIELD(out, driver_mode, "station");
+	out->channel = status.channel;
+	out->rssi = status.rssi;
+	out->auth = (const uint8_t *)wifi_security_txt(status.security);
+	out->auth_len = strlen(wifi_security_txt(status.security));
+	return 0;
+#else
+	ARG_UNUSED(user_data);
 	out->active = false;
 	SQ_SET_LITERAL_FIELD(out, state, "stopped");
 	SQ_SET_LITERAL_FIELD(out, backend, "zephyr");
@@ -334,21 +518,65 @@ static int32_t runtime_wifi_status(void *user_data, SqvmWifiStatus *out)
 	out->configured = false;
 	SQ_SET_LITERAL_FIELD(out, error, "unsupported");
 	return 0;
+#endif
 }
 
 static int32_t runtime_wifi_scan(void *user_data, SqvmWifiScanResult *out)
 {
-	ARG_UNUSED(user_data);
-
 	if (out == NULL) {
 		return -EINVAL;
 	}
 	memset(out, 0, sizeof(*out));
+#if SQ_VM_RUNTIME_HAS_WIFI_MGMT
+	struct sq_vm_runtime *runtime = user_data;
+	struct net_if *iface = runtime_wifi_iface();
+	struct wifi_iface_status status = {0};
+	struct wifi_scan_params params = {0};
+
+	if (runtime == NULL || iface == NULL) {
+		out->ok = false;
+		SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+		return 0;
+	}
+	runtime_wifi_init_events(runtime);
+	int status_result = net_mgmt(NET_REQUEST_WIFI_IFACE_STATUS, iface, &status, sizeof(status));
+	if (status_result == 0 && runtime_wifi_state_blocks_scan(status.state)) {
+		out->ok = false;
+		SQ_SET_LITERAL_FIELD(out, error, "wifi busy");
+		return 0;
+	}
+
+	runtime_wifi_reset_scan(runtime);
+	k_sem_reset(&runtime->wifi_scan_done);
+	params.max_bss_cnt = SQVM_WIFI_SCAN_MAX_NETWORKS;
+	int result = net_mgmt(NET_REQUEST_WIFI_SCAN, iface, &params, sizeof(params));
+	if (result != 0) {
+		out->ok = false;
+		SQ_SET_LITERAL_FIELD(out, error, "scan request failed");
+		return 0;
+	}
+	if (k_sem_take(&runtime->wifi_scan_done, K_MSEC(SQ_VM_RUNTIME_WIFI_SCAN_TIMEOUT_MS)) != 0) {
+		out->ok = false;
+		SQ_SET_LITERAL_FIELD(out, error, "scan timeout");
+		return 0;
+	}
+	if (runtime->wifi_scan_status != 0) {
+		out->ok = false;
+		SQ_SET_LITERAL_FIELD(out, error, "scan failed");
+		return 0;
+	}
+	out->ok = true;
+	out->networks = runtime->wifi_scan_networks;
+	out->network_count = runtime->wifi_scan_count;
+	return 0;
+#else
+	ARG_UNUSED(user_data);
 	out->ok = false;
 	SQ_SET_LITERAL_FIELD(out, error, "unsupported");
 	out->networks = NULL;
 	out->network_count = 0;
 	return 0;
+#endif
 }
 
 static void clear_dispatch_state(struct sq_vm_runtime *runtime)

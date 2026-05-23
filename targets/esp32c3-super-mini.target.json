@@ -61,6 +61,23 @@
       "reason": "Generic ESP32-C3 Super Mini boards do not expose a verified UF2 bootloader by default."
     }
   },
+  "radios": {
+    "wifi": {
+      "type": "wifi",
+      "band": "2.4GHz",
+      "standard": "802.11b/g/n",
+      "status": "mcu-supported-runtime-unsupported",
+      "runtimeFeatures": [],
+      "reason": "ESP32-C3 silicon includes 2.4 GHz Wi-Fi, but the current ESP32-C3 Super Mini Zephyr firmware target does not yet expose real SquidScript Wi-Fi runtime features."
+    },
+    "ble": {
+      "type": "bluetooth-le",
+      "standard": "Bluetooth LE",
+      "status": "mcu-supported-runtime-unsupported",
+      "runtimeFeatures": [],
+      "reason": "ESP32-C3 silicon includes Bluetooth LE, but this target does not yet expose SquidScript BLE transfer runtime features."
+    }
+  },
   "pins": {
     "GPIO2": {
       "capabilities": ["gpio", "adc", "strapping"],

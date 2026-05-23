@@ -12,5 +12,6 @@ manifest:
           - hal_espressif
           - littlefs
           - mbedtls
+          - tf-psa-crypto
   self:
     path: SquidScript

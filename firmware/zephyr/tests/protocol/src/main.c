@@ -1855,6 +1855,17 @@ ZTEST(squidscript_protocol, test_vm_runtime_dispatches_wifi_action_stubs)
 			  "false unsupported false unsupported false unsupported");
 }
 
+ZTEST(squidscript_protocol, test_vm_runtime_formats_wifi_bssid_without_heap)
+{
+	const uint8_t mac[] = {0x02, 0x34, 0xab, 0xcd, 0xef, 0x10};
+	char bssid[SQ_VM_RUNTIME_WIFI_BSSID_LEN];
+
+	zassert_equal(sq_vm_runtime_wifi_format_bssid(mac, sizeof(mac), bssid, sizeof(bssid)), 0);
+	zassert_str_equal(bssid, "02:34:ab:cd:ef:10");
+	zassert_equal(sq_vm_runtime_wifi_format_bssid(mac, 5, bssid, sizeof(bssid)), -EINVAL);
+	zassert_equal(sq_vm_runtime_wifi_format_bssid(mac, sizeof(mac), bssid, 17), -ENOSPC);
+}
+
 ZTEST(squidscript_protocol, test_vm_runtime_tracks_output_indicator_and_due_timers)
 {
 	struct sq_vm_runtime runtime = {0};

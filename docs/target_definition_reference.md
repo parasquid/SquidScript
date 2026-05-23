@@ -97,6 +97,7 @@ Optional fields:
 - `status`: lifecycle marker such as `draft`, `reference`, or `production`.
 - `sourceAttribution`: list of sources used to verify hardware facts.
 - `firmwareUpdate`: firmware image and replacement metadata.
+- `radios`: Wi-Fi, BLE, or other radio hardware available on the target.
 - `simulator`: optional simulator and layout metadata.
 
 ---
@@ -675,6 +676,11 @@ The target compiler should emit these limits into firmware and compiler-facing t
 ## 15. Features and Compatibility
 
 `features` lists runtime and firmware capabilities exposed by this target.
+Radio hardware in `radios` does not automatically expose SquidScript runtime
+features. For example, an ESP32-C3 target may record MCU-supported Wi-Fi or BLE
+with `status: "mcu-supported-runtime-unsupported"` while omitting
+`service.wifi.*` or `bleTransfer.*` from `features` until the firmware backend
+implements and verifies those services.
 
 Examples:
 

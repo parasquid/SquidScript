@@ -41,6 +41,9 @@ for compiler, SQBC tooling, and VM semantics.
 - Implement GPIO, indicator, PWM, timers, app lifecycle, persistent app storage,
   app state, display/draw-log, Wi-Fi scan, AP, station, status, and profile
   provisioning through Zephyr-native subsystems.
+- Decide whether the ESP32-C3 Super Mini reference target should expose
+  `bleTransfer.*`; if yes, implement and verify it through Zephyr BLE instead
+  of relying on MCU radio metadata alone.
 - Preserve foreground VM in-memory state across app events without requiring
   every key/timer handler to call `state.load()`, while keeping app trigger
   registration from clobbering the foreground app context.
@@ -67,6 +70,10 @@ for compiler, SQBC tooling, and VM semantics.
   static allocations, especially VM runtime storage, work stacks,
   response/session buffers, logging, LittleFS pools, and file caches. Keep the
   RAM audit guard meaningful and record tradeoffs before lowering capability.
+  Real Zephyr ESP32 Wi-Fi scan/status wiring currently builds only when the
+  Wi-Fi driver is enabled, which raises `dram0_0_seg` to roughly 235 KiB; keep
+  the default firmware config at the 160 KiB guard until RAM optimization or a
+  target-specific Wi-Fi build profile is selected.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.

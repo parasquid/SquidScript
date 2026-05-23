@@ -5,6 +5,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <zephyr/kernel.h>
+#if IS_ENABLED(CONFIG_NET_MGMT_EVENT)
+#include <zephyr/net/net_mgmt.h>
+#endif
 
 #include "app_store.h"
 #include "vm_storage.h"
@@ -27,6 +30,9 @@ extern "C" {
 #define SQ_VM_RUNTIME_INDICATOR_BREATHE_STEPS 65
 #define SQ_VM_RUNTIME_RETURN_STACK_MAX 2
 #define SQ_VM_RUNTIME_ARMED_TIMER_MAX 2
+#define SQ_VM_RUNTIME_WIFI_SSID_LEN 33
+#define SQ_VM_RUNTIME_WIFI_BSSID_LEN 18
+#define SQ_VM_RUNTIME_WIFI_AUTH_LEN 24
 
 enum sq_vm_runtime_status {
 	SQ_VM_RUNTIME_IDLE = 0,
@@ -93,6 +99,18 @@ struct sq_vm_runtime {
 	uint32_t gpio_configured_mask;
 	uint32_t gpio_state_mask;
 	struct sq_vm_runtime_timer timers[SQ_VM_RUNTIME_TIMER_MAX];
+	SqvmWifiAccessPoint wifi_scan_networks[SQVM_WIFI_SCAN_MAX_NETWORKS];
+	char wifi_scan_ssids[SQVM_WIFI_SCAN_MAX_NETWORKS][SQ_VM_RUNTIME_WIFI_SSID_LEN];
+	char wifi_scan_bssids[SQVM_WIFI_SCAN_MAX_NETWORKS][SQ_VM_RUNTIME_WIFI_BSSID_LEN];
+	char wifi_scan_auth[SQVM_WIFI_SCAN_MAX_NETWORKS][SQ_VM_RUNTIME_WIFI_AUTH_LEN];
+	size_t wifi_scan_count;
+	int wifi_scan_status;
+	struct k_sem wifi_scan_done;
+	bool wifi_scan_sem_initialized;
+#if IS_ENABLED(CONFIG_NET_MGMT_EVENT)
+	struct net_mgmt_event_callback wifi_mgmt_cb;
+	bool wifi_mgmt_cb_registered;
+#endif
 };
 
 void sq_vm_runtime_init(struct sq_vm_runtime *runtime);
@@ -128,6 +146,7 @@ int sq_vm_runtime_next_due_timer(struct sq_vm_runtime *runtime, char *event, siz
 int sq_vm_runtime_poll(struct sq_vm_runtime *runtime);
 size_t sq_vm_runtime_work_stack_size(void);
 int sq_vm_runtime_work_stack_unused(size_t *unused);
+int sq_vm_runtime_wifi_format_bssid(const uint8_t *mac, size_t mac_len, char *out, size_t out_len);
 
 #ifdef __cplusplus
 }
