@@ -106,9 +106,9 @@ assert_file_contains "${lifecycle_out}" "lifecycle=armed_stack[0]=break-reminder
 json_lifecycle_out="$(run_capture lifecycle-reader-json cargo run --quiet -p squidc -- --json device lifecycle)"
 assert_json_lifecycle "${json_lifecycle_out}" "reader-clock" "main" "break-reminder:timer.break"
 
-output_out="$(wait_for_contains output-reader "output=reader start" \
+output_out="$(wait_for_contains output-reader "output=reader start 1" \
   "device output" cargo run --quiet -p squidc -- device output)"
-assert_file_contains "${output_out}" "output=main start"
+assert_file_contains "${output_out}" "output=main start 1"
 
 lifecycle_out="$(wait_for_contains lifecycle-break "lifecycle=active=break-reminder" \
   "device lifecycle" cargo run --quiet -p squidc -- device lifecycle)"
@@ -117,9 +117,9 @@ assert_file_contains "${lifecycle_out}" "lifecycle=process_stack[1]=reader-clock
 json_lifecycle_out="$(run_capture lifecycle-break-json cargo run --quiet -p squidc -- --json device lifecycle)"
 assert_json_lifecycle "${json_lifecycle_out}" "break-reminder" "main,reader-clock" ""
 
-output_out="$(wait_for_contains output-break "output=break fired" \
+output_out="$(wait_for_contains output-break "output=break fired 1" \
   "device output" cargo run --quiet -p squidc -- device output)"
-assert_file_contains "${output_out}" "output=reader start"
+assert_file_contains "${output_out}" "output=reader start 1"
 
 run_capture exit-break cargo run --quiet -p squidc -- device key SELECT >/dev/null
 
@@ -131,7 +131,7 @@ assert_json_lifecycle "${json_lifecycle_out}" "reader-clock" "main" ""
 
 output_out="$(wait_for_contains output-return "output=break exit" \
   "device output" cargo run --quiet -p squidc -- device output)"
-assert_file_contains "${output_out}" "output=reader start"
+assert_file_contains "${output_out}" "output=reader start 1"
 
 errors_out="$(run_capture errors cargo run --quiet -p squidc -- device errors)"
 assert_file_empty_command "${errors_out}"

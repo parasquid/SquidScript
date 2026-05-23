@@ -1,12 +1,19 @@
 app "reader-clock"
 
+state {
+  starts: int = 0
+  clocks: int = 0
+}
+
 event.on("app.start") {
-  debug.print("reader start")
+  starts = starts + 1
+  debug.print("reader start", starts)
   service.timer.every("timer.clock", 500)
 }
 
 event.on("timer.clock") {
-  debug.print("reader clock")
+  clocks = clocks + 1
+  debug.print("reader clock", clocks)
 }
 
 screen("main") {}

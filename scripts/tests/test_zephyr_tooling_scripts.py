@@ -452,6 +452,17 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("state.load", foreground_app)
         self.assertNotIn("state.save", foreground_app)
 
+        lifecycle = self.read("scripts/c3-supermini-test-app-lifecycle.sh")
+        lifecycle_reader = self.read("tests/hardware/c3-supermini/generic-events/reader-clock.squid")
+        lifecycle_break = self.read("tests/hardware/c3-supermini/generic-events/break-reminder.squid")
+        self.assertIn("output=reader start 1", lifecycle)
+        self.assertIn("output=break fired 1", lifecycle)
+        self.assertIn('assert_file_contains "${output_out}" "output=reader start 1"', lifecycle)
+        self.assertNotIn("state.load", lifecycle_reader)
+        self.assertNotIn("state.save", lifecycle_reader)
+        self.assertNotIn("state.load", lifecycle_break)
+        self.assertNotIn("state.save", lifecycle_break)
+
         state_check = suite.index('c3-supermini-test-app-state.sh')
         foreground_check = suite.index('c3-supermini-test-foreground-memory.sh')
         lifecycle_check = suite.index('c3-supermini-test-app-lifecycle.sh')

@@ -1,7 +1,12 @@
 app "main"
 
+state {
+  starts: int = 0
+}
+
 event.on("app.start") {
-  debug.print("main start")
+  starts = starts + 1
+  debug.print("main start", starts)
   app.arm("break-reminder")
   app.launch("reader-clock")
 }

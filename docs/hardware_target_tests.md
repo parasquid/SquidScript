@@ -81,7 +81,10 @@ fixtures under `tests/hardware/c3-supermini/generic-events`, launches `main`,
 verifies `reader-clock` starts via `app.launch`, verifies `break-reminder` is
 registered on the armed stack through `app.arm`, waits for the armed timer to
 start `break-reminder`, then sends `SELECT` so `app.exit` returns to the
-previous app on the process stack.
+previous app on the process stack. The lifecycle fixtures use volatile
+in-memory counters and intentionally avoid `state.load()` / `state.save()` so
+the check distinguishes ordinary foreground event dispatch from fresh VM
+sessions on launch, armed trigger activation, and app-exit return.
 
 The Zephyr app state check is `scripts/c3-supermini-test-app-state.sh`. It
 installs `tests/hardware/c3-supermini/state-counter/main.squid`, launches it,
