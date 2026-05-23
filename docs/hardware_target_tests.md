@@ -60,7 +60,8 @@ ESP32-C3 limits. The current no-target fallback guard is `266240` bytes. When
 the default 65% profile uses the target definition's 400 KiB internal SRAM and
 sets a 266240-byte limit. The default Zephyr firmware now enables the real
 Zephyr ESP32 Wi-Fi driver, Wi-Fi management events, scan/AP/station Wi-Fi
-usage, and station DHCP/IP status reporting without TCP or sockets. Its
+usage, AP DHCPv4 server support, and station DHCP/IP status reporting without
+TCP. Its
 measured `dram0_0_seg` must be read from the latest `scripts/zephyr-ram-audit.sh`
 output for the firmware image under test.
 
@@ -131,7 +132,9 @@ installs `tests/hardware/c3-supermini/wifi-ap-summary`, launches a summary-only
 app that calls `service.wifi.startAP("SquidScript")` and
 `service.wifi.getAPIP()`, sends `SELECT` to call `service.wifi.stopAP()`, and
 requires start, AP IP lookup, and stop to report success without printing the
-raw AP SSID, BSSIDs, MACs, or local IP patterns in captured output.
+raw AP SSID, BSSIDs, MACs, or local IP patterns in captured output. AP start
+also starts a bounded DHCPv4 server on the AP interface. This script does not
+prove that an external client associated with the AP or received a lease.
 
 For the current ESP32-C3 Super Mini Zephyr target,
 `scripts/c3-supermini-test-blinky.sh` is the final full-suite check. It

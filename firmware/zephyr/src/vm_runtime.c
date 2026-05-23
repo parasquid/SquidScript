@@ -11,6 +11,7 @@
 #if IS_ENABLED(CONFIG_NET_L2_WIFI_MGMT) && IS_ENABLED(CONFIG_NET_MGMT_EVENT) && \
 	IS_ENABLED(CONFIG_NET_MGMT_EVENT_INFO)
 #include <zephyr/net/dhcpv4.h>
+#include <zephyr/net/dhcpv4_server.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/net_ip.h>
@@ -67,6 +68,7 @@ static const struct device *const gpio0_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0))
 #define SQ_VM_RUNTIME_WIFI_DISCONNECT_TIMEOUT_MS 5000
 #define SQ_VM_RUNTIME_WIFI_AP_IP "192.168.4.1"
 #define SQ_VM_RUNTIME_WIFI_AP_NETMASK "255.255.255.0"
+#define SQ_VM_RUNTIME_WIFI_AP_DHCP_POOL_START_OFFSET 10
 #else
 #define SQ_VM_RUNTIME_HAS_WIFI_MGMT 0
 #endif
@@ -400,6 +402,28 @@ static int runtime_wifi_configure_ap_ipv4(struct net_if *iface)
 	return 0;
 }
 
+static int runtime_wifi_start_ap_dhcp(struct net_if *iface)
+{
+	struct net_in_addr pool = {0};
+
+	if (iface == NULL) {
+		return -ENODEV;
+	}
+	if (net_addr_pton(AF_INET, SQ_VM_RUNTIME_WIFI_AP_IP, &pool) != 0) {
+		return -EINVAL;
+	}
+	pool.s4_addr[3] += SQ_VM_RUNTIME_WIFI_AP_DHCP_POOL_START_OFFSET;
+	int result = net_dhcpv4_server_start(iface, &pool);
+	return result == -EALREADY ? 0 : result;
+}
+
+static int runtime_wifi_stop_ap_dhcp(struct net_if *iface)
+{
+	int result = net_dhcpv4_server_stop(iface);
+
+	return result == -ENOENT ? 0 : result;
+}
+
 static void runtime_wifi_record_station_ipv4(struct sq_vm_runtime *runtime, struct net_if *iface,
 					     SqvmWifiStatus *out)
 {
@@ -590,6 +614,14 @@ static int32_t runtime_wifi_start_ap(void *user_data, const uint8_t *ssid, size_
 		SQ_SET_LITERAL_FIELD(out, error, "ap start failed");
 		return 0;
 	}
+	result = runtime_wifi_start_ap_dhcp(iface);
+	if (result != 0) {
+		(void)net_mgmt(NET_REQUEST_WIFI_AP_DISABLE, iface, NULL, 0);
+		runtime->wifi_ap_active = false;
+		out->ok = false;
+		SQ_SET_LITERAL_FIELD(out, error, "ap dhcp failed");
+		return 0;
+	}
 	runtime->wifi_ap_active = true;
 	out->ok = true;
 	return 0;
@@ -618,7 +650,13 @@ static int32_t runtime_wifi_stop_ap(void *user_data, SqvmWifiActionResult *out)
 		return 0;
 	}
 	runtime_wifi_init_events(runtime);
-	int result = net_mgmt(NET_REQUEST_WIFI_AP_DISABLE, iface, NULL, 0);
+	int result = runtime_wifi_stop_ap_dhcp(iface);
+	if (result != 0) {
+		out->ok = false;
+		SQ_SET_LITERAL_FIELD(out, error, "ap dhcp stop failed");
+		return 0;
+	}
+	result = net_mgmt(NET_REQUEST_WIFI_AP_DISABLE, iface, NULL, 0);
 	if (result != 0) {
 		out->ok = false;
 		SQ_SET_LITERAL_FIELD(out, error, "ap stop failed");

@@ -97,6 +97,8 @@ starts. The current Zephyr Wi-Fi callbacks use Zephyr Wi-Fi management for
 status, scan, AP start/stop, AP IP reporting, station connect/disconnect, and
 station DHCP/IP status reporting. `device wifi-profile` stores one volatile
 bounded station profile in runtime memory without echoing SSIDs or passwords.
+AP start also starts Zephyr's bounded DHCPv4 server on the AP interface; an
+external-client association and lease proof remains separate hardware coverage.
 The app-store layer now derives bounded file paths for `main.sqbc` and app
 state from a mount point plus validated app ID, and ESP32-C3 firmware attempts
 to mount the `storage_partition` LittleFS volume at `/sq` during boot without

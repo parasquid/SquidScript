@@ -75,6 +75,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             "CONFIG_NET_MGMT_EVENT_INFO=y",
             "CONFIG_NET_L2_WIFI_MGMT=y",
             "CONFIG_NET_DHCPV4=y",
+            "CONFIG_NET_DHCPV4_SERVER=y",
+            "CONFIG_NET_UDP=y",
         ]:
             self.assertIn(option, prj_conf)
 
@@ -425,6 +427,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_wifi_ap_check_is_current_redacted_and_not_in_default_suite(self):
         ap = self.read("scripts/c3-supermini-test-wifi-ap-api.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
+        runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
 
         self.assertIn('tests/hardware/c3-supermini/wifi-ap-summary/main.squid', ap)
         self.assertIn('cargo run --quiet -p squidc -- app launch wifi-ap-summary', ap)
@@ -436,6 +439,9 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('assert_no_raw_network_identifiers', ap)
         self.assertNotIn("obsolete", ap.lower())
         self.assertNotIn("c3-supermini-test-wifi-ap-api.sh", suite)
+        self.assertIn("#include <zephyr/net/dhcpv4_server.h>", runtime_c)
+        self.assertIn("net_dhcpv4_server_start(iface", runtime_c)
+        self.assertIn("net_dhcpv4_server_stop(iface)", runtime_c)
 
         fixture = self.read("tests/hardware/c3-supermini/wifi-ap-summary/main.squid")
         self.assertIn('service.wifi.startAP("SquidScript")', fixture)
