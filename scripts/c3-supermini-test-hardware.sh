@@ -39,4 +39,5 @@ export ESPFLASH_PORT="$(resolve_esp_serial_port)"
 "$ROOT/scripts/c3-supermini-measure-stack-usage.sh"
 "$ROOT/scripts/c3-supermini-test-wifi-state.sh" --require-real-wifi
 "$ROOT/scripts/c3-supermini-test-wifi-scan-api.sh" --require-real-wifi
+"$ROOT/scripts/c3-supermini-test-wifi-list-api.sh" --require-real-wifi
 "$ROOT/scripts/c3-supermini-test-blinky.sh"

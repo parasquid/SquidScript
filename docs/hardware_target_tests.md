@@ -96,13 +96,22 @@ hardware suite it runs with `--require-real-wifi`, which rejects the unsupported
 fallback and requires the real Zephyr Wi-Fi backend to be active.
 
 `scripts/c3-supermini-test-wifi-scan-api.sh` runs after Wi-Fi status coverage
-and before the final visible LED check. It installs
+and before Wi-Fi list coverage. It installs
 `tests/hardware/c3-supermini/wifi-scan-summary` and launches a summary-only
 SquidScript app that calls `service.wifi.scan()` without credentials. The app
 prints only `ok`, `error`, and `count`; the script rejects raw BSSID, MAC, or
 local IP patterns in captured output. In the default full hardware suite it runs
 with `--require-real-wifi`, which rejects the unsupported fallback and requires
 a successful real Zephyr Wi-Fi scan.
+
+`scripts/c3-supermini-test-wifi-list-api.sh` runs after Wi-Fi scan coverage and
+before the final visible LED check. It installs
+`tests/hardware/c3-supermini/wifi-list-summary` and launches a SquidScript app
+that iterates `service.wifi.scan().networks`. The app prints only redacted
+per-network structure: SSID length, channel, RSSI, auth, and hidden flag. It
+does not print SSIDs or BSSIDs. The script rejects raw BSSID, MAC, or local IP
+patterns in captured output, and `--require-real-wifi` requires at least one
+redacted `wifi ap` record from the real Zephyr Wi-Fi backend.
 
 `scripts/c3-supermini-test-wifi-station-api.sh` is explicit-credentials-only
 and is not part of the default full hardware suite. It skips successfully unless

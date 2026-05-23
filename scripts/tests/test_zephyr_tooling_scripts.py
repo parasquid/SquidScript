@@ -83,11 +83,14 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
         self.assertIn('c3-supermini-test-wifi-state.sh" --require-real-wifi', suite)
         self.assertIn('c3-supermini-test-wifi-scan-api.sh" --require-real-wifi', suite)
+        self.assertIn('c3-supermini-test-wifi-list-api.sh" --require-real-wifi', suite)
         self.assertIn("c3-supermini-test-blinky.sh", suite)
+        self.assertLess(suite.index("c3-supermini-test-wifi-list-api.sh"), suite.index("c3-supermini-test-blinky.sh"))
 
     def test_wifi_checks_can_require_real_zephyr_wifi_backend(self):
         status = self.read("scripts/c3-supermini-test-wifi-state.sh")
         scan = self.read("scripts/c3-supermini-test-wifi-scan-api.sh")
+        list_check = self.read("scripts/c3-supermini-test-wifi-list-api.sh")
 
         self.assertIn("--require-real-wifi", status)
         self.assertIn("zephyr true", status)
@@ -95,6 +98,23 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("--require-real-wifi", scan)
         self.assertIn("wifi scan true", scan)
         self.assertIn("unsupported", scan)
+        self.assertIn("--require-real-wifi", list_check)
+        self.assertIn("wifi list true", list_check)
+        self.assertIn("wifi ap", list_check)
+        self.assertIn("assert_no_raw_network_identifiers", list_check)
+
+    def test_wifi_list_fixture_iterates_redacted_network_records(self):
+        source = self.read("tests/hardware/c3-supermini/wifi-list-summary/main.squid")
+
+        self.assertIn("service.wifi.scan()", source)
+        self.assertIn("for network in scan.networks max 8", source)
+        self.assertIn("network.ssidLength", source)
+        self.assertIn("network.channel", source)
+        self.assertIn("network.rssi", source)
+        self.assertIn("network.auth", source)
+        self.assertIn("network.hidden", source)
+        self.assertNotIn("network.ssid,", source)
+        self.assertNotIn("network.bssid", source)
 
     def test_docs_point_to_setup_script(self):
         firmware_readme = self.read("firmware/README.md")

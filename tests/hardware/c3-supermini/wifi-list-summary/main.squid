@@ -1,0 +1,13 @@
+app "wifi-list-summary"
+
+state {}
+
+event.on("app.start") {
+  let scan = service.wifi.scan()
+  debug.print("wifi list", scan.ok, scan.error, scan.count)
+  for network in scan.networks max 8 {
+    debug.print("wifi ap", network.ssidLength, network.channel, network.rssi, network.auth, network.hidden)
+  }
+}
+
+screen("main") {}
