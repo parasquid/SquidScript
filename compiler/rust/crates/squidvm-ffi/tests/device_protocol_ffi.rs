@@ -2,11 +2,11 @@ use squid_device_protocol::{
     app_install_begin_request, app_install_chunk_request, app_install_commit_request,
     app_list_entries, decode_frame, encode_frame, lifecycle_lines, output_lines,
     resource_install_begin_request, resource_install_chunk_request,
-    resource_install_commit_request, FrameKind, Opcode, Status,
+    resource_install_commit_request, resource_values, FrameKind, Opcode, Status,
 };
 use squidvm_ffi::{
     SqdpAction, SqdpActionKind, SqdpAppListEntry, SqdpLifecycleTimer, SqdpLineSlice,
-    SqdpResourceSession, SqdpTransferSession, SQDP_STAGING_PATH_CAP,
+    SqdpResourceMetric, SqdpResourceSession, SqdpTransferSession, SQDP_STAGING_PATH_CAP,
 };
 
 #[test]
@@ -210,6 +210,39 @@ fn ffi_encodes_lifecycle_response_from_structured_runtime_state() {
             "armed_stack=".to_string(),
             "armed_stack[0]=break-reminder timer.break".to_string(),
         ]
+    );
+}
+
+#[test]
+fn ffi_encodes_resources_response_from_c_metrics() {
+    let mut out = [0u8; 192];
+    let mut out_len = 0usize;
+    let key = b"vm_worker_stack_used_bytes";
+    let metrics = [SqdpResourceMetric {
+        key: key.as_ptr(),
+        key_len: key.len(),
+        value: 14_704,
+    }];
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_encode_resources_response(
+            93,
+            metrics.as_ptr(),
+            metrics.len(),
+            out.as_mut_ptr(),
+            out.len(),
+            &mut out_len,
+        )
+    };
+
+    assert_eq!(status as i32, 0);
+    let frame = decode_frame(&out[..out_len]).unwrap();
+    assert_eq!(frame.kind, FrameKind::Response);
+    assert_eq!(frame.opcode, Opcode::ResourcesGet);
+    assert_eq!(frame.status, Status::Ok);
+    assert_eq!(
+        resource_values(&frame).unwrap(),
+        vec![("vm_worker_stack_used_bytes".to_string(), 14_704)]
     );
 }
 

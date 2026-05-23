@@ -63,29 +63,6 @@ static int sqdp_status_to_protocol_result(SqdpStatus status)
 	}
 }
 
-static int append_u64_field(uint8_t *payload, size_t cap, size_t *len, uint8_t tag,
-			    uint64_t value)
-{
-	uint8_t encoded[8] = {
-		value & 0xffu,
-		(value >> 8) & 0xffu,
-		(value >> 16) & 0xffu,
-		(value >> 24) & 0xffu,
-		(value >> 32) & 0xffu,
-		(value >> 40) & 0xffu,
-		(value >> 48) & 0xffu,
-		(value >> 56) & 0xffu,
-	};
-
-	return append_field(payload, cap, len, tag, SQ_FIELD_U64, encoded, sizeof(encoded));
-}
-
-static int append_record_field(uint8_t *payload, size_t cap, size_t *len, uint8_t tag,
-			       const uint8_t *record, uint16_t record_len)
-{
-	return append_field(payload, cap, len, tag, SQ_FIELD_RECORD, record, record_len);
-}
-
 static int hello_response(const struct sq_protocol_frame *request,
 			  const struct sq_device_identity *identity, uint8_t *response,
 			  size_t response_cap, size_t *response_len)
@@ -851,22 +828,12 @@ static int resources_response(const struct sq_protocol_frame *request,
 			      const struct sq_device_protocol_context *context, uint8_t *response,
 			      size_t response_cap, size_t *response_len)
 {
-	uint8_t *payload;
-	size_t payload_cap;
-	size_t payload_len = 0;
-	int result;
 	size_t vm_worker_stack_unused = 0;
 	size_t vm_worker_stack_size = context->runtime == NULL ? 0 : sq_vm_runtime_work_stack_size();
 	size_t vm_worker_stack_used = 0;
 	size_t protocol_stack_size = CONFIG_MAIN_STACK_SIZE;
 	size_t protocol_stack_unused = 0;
 	size_t protocol_stack_used = 0;
-
-	if (response_cap < SQ_PROTOCOL_HEADER_LEN) {
-		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
-	}
-	payload = &response[SQ_PROTOCOL_HEADER_LEN];
-	payload_cap = response_cap - SQ_PROTOCOL_HEADER_LEN;
 
 	if (context->runtime != NULL && sq_vm_runtime_work_stack_unused(&vm_worker_stack_unused) == 0 &&
 	    vm_worker_stack_unused <= vm_worker_stack_size) {
@@ -883,56 +850,41 @@ static int resources_response(const struct sq_protocol_frame *request,
 		protocol_stack_used = 0;
 	}
 
-	struct {
-		const char *key;
-		uint64_t value;
-	} entries[] = {
-		{"ram_total_bytes", CONFIG_SRAM_SIZE * 1024u},
-		{"runtime_static_bytes", context->runtime == NULL ? 0 : sizeof(*context->runtime)},
-		{"protocol_thread_stack_size_bytes", protocol_stack_size},
-		{"protocol_thread_stack_unused_bytes", protocol_stack_unused},
-		{"protocol_thread_stack_used_bytes", protocol_stack_used},
-		{"vm_worker_stack_size_bytes", vm_worker_stack_size},
-		{"vm_worker_stack_unused_bytes", vm_worker_stack_unused},
-		{"vm_worker_stack_used_bytes", vm_worker_stack_used},
-		{"install_session_bytes",
-		 context->install_session == NULL ? 0 : sizeof(*context->install_session)},
-		{"temp_session_bytes",
-		 context->temp_session == NULL ? 0 : sizeof(*context->temp_session)},
-		{"resource_session_bytes",
-		 context->resource_session == NULL ? 0 : sizeof(*context->resource_session)},
-		{"app_count", context->registry == NULL ? 0 : context->registry->count},
+#define SQ_RESOURCE_METRIC(key_literal, metric_value) \
+	{ \
+		.key = (const uint8_t *)(key_literal), \
+		.key_len = sizeof(key_literal) - 1, \
+		.value = (metric_value), \
+	}
+	SqdpResourceMetric metrics[] = {
+		SQ_RESOURCE_METRIC("ram_total_bytes", CONFIG_SRAM_SIZE * 1024u),
+		SQ_RESOURCE_METRIC("runtime_static_bytes",
+				   context->runtime == NULL ? 0 : sizeof(*context->runtime)),
+		SQ_RESOURCE_METRIC("protocol_thread_stack_size_bytes", protocol_stack_size),
+		SQ_RESOURCE_METRIC("protocol_thread_stack_unused_bytes", protocol_stack_unused),
+		SQ_RESOURCE_METRIC("protocol_thread_stack_used_bytes", protocol_stack_used),
+		SQ_RESOURCE_METRIC("vm_worker_stack_size_bytes", vm_worker_stack_size),
+		SQ_RESOURCE_METRIC("vm_worker_stack_unused_bytes", vm_worker_stack_unused),
+		SQ_RESOURCE_METRIC("vm_worker_stack_used_bytes", vm_worker_stack_used),
+		SQ_RESOURCE_METRIC("install_session_bytes",
+				   context->install_session == NULL ?
+					   0 :
+					   sizeof(*context->install_session)),
+		SQ_RESOURCE_METRIC("temp_session_bytes",
+				   context->temp_session == NULL ? 0 :
+								     sizeof(*context->temp_session)),
+		SQ_RESOURCE_METRIC("resource_session_bytes",
+				   context->resource_session == NULL ?
+					   0 :
+					   sizeof(*context->resource_session)),
+		SQ_RESOURCE_METRIC("app_count",
+				   context->registry == NULL ? 0 : context->registry->count),
 	};
+#undef SQ_RESOURCE_METRIC
 
-	for (size_t i = 0; i < ARRAY_SIZE(entries); i++) {
-		uint8_t record[96];
-		size_t record_len = 0;
-		result = append_string_field(record, sizeof(record), &record_len,
-					     SQ_DEVICE_RECORD_FIELD_KEY, entries[i].key);
-		if (result != SQ_PROTOCOL_OK) {
-			return result;
-		}
-		result = append_u64_field(record, sizeof(record), &record_len,
-					  SQ_DEVICE_RECORD_FIELD_VALUE, entries[i].value);
-		if (result != SQ_PROTOCOL_OK) {
-			return result;
-		}
-		result = append_record_field(payload, payload_cap, &payload_len,
-					     SQ_DEVICE_RECORD_FIELD_ENTRY, record,
-					     (uint16_t)record_len);
-		if (result != SQ_PROTOCOL_OK) {
-			return result;
-		}
-	}
-
-	result = sq_protocol_encode_frame_header(SQ_FRAME_RESPONSE, request->opcode, SQ_STATUS_OK,
-						 request->sequence, payload, payload_len, response,
-						 response_cap);
-	if (result != SQ_PROTOCOL_OK) {
-		return result;
-	}
-	*response_len = SQ_PROTOCOL_HEADER_LEN + payload_len;
-	return SQ_PROTOCOL_OK;
+	return sqdp_status_to_protocol_result(sqdp_encode_resources_response(
+		request->sequence, metrics, ARRAY_SIZE(metrics), response, response_cap,
+		response_len));
 }
 
 static void clear_runtime_context(const struct sq_device_protocol_context *context)

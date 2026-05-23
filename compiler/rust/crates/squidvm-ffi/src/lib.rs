@@ -28,8 +28,8 @@ use squidvm_core::{
 use squid_device_protocol::{
     encode_app_list_response_into, encode_empty_response_into, encode_error_response_into,
     encode_hello_response_into, encode_lifecycle_response_into, encode_line_response_into,
-    AppListEntry, DecodeError, DeviceRequest, LifecycleTimer, Opcode, Status as SqdpFrameStatus,
-    MAX_APP_BYTES,
+    encode_resources_response_into, AppListEntry, DecodeError, DeviceRequest, LifecycleTimer,
+    Opcode, ResourceMetric, Status as SqdpFrameStatus, MAX_APP_BYTES,
 };
 
 #[repr(C)]
@@ -74,6 +74,14 @@ impl Default for SqdpAppListEntry {
 pub struct SqdpLineSlice {
     pub bytes: *const u8,
     pub len: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqdpResourceMetric {
+    pub key: *const u8,
+    pub key_len: usize,
+    pub value: u64,
 }
 
 #[repr(C)]
@@ -1063,6 +1071,52 @@ pub unsafe extern "C" fn sqdp_encode_lifecycle_response(
     });
     let out = slice::from_raw_parts_mut(out, out_cap);
     match encode_lifecycle_response_into(sequence, active, process_iter, armed_iter, out) {
+        Ok(len) => {
+            *out_len = len;
+            SqdpStatus::Ok
+        }
+        Err(DecodeError::OutputTooSmall { .. }) => SqdpStatus::BufferTooSmall,
+        Err(_) => SqdpStatus::EncodeError,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_encode_resources_response(
+    sequence: u32,
+    metrics: *const SqdpResourceMetric,
+    metric_count: usize,
+    out: *mut u8,
+    out_cap: usize,
+    out_len: *mut usize,
+) -> SqdpStatus {
+    if out.is_null() || out_len.is_null() || (metrics.is_null() && metric_count > 0) {
+        return SqdpStatus::InvalidArgument;
+    }
+    *out_len = 0;
+    if metric_count > 32 {
+        return SqdpStatus::InvalidArgument;
+    }
+    let metrics = if metric_count == 0 {
+        &[]
+    } else {
+        slice::from_raw_parts(metrics, metric_count)
+    };
+    for metric in metrics {
+        if metric.key.is_null()
+            || metric.key_len == 0
+            || str::from_utf8(slice::from_raw_parts(metric.key, metric.key_len)).is_err()
+        {
+            return SqdpStatus::InvalidArgument;
+        }
+    }
+
+    let metric_iter = metrics.iter().map(|metric| ResourceMetric {
+        key: str::from_utf8(slice::from_raw_parts(metric.key, metric.key_len))
+            .expect("validated resource metric key utf-8 before encoding"),
+        value: metric.value,
+    });
+    let out = slice::from_raw_parts_mut(out, out_cap);
+    match encode_resources_response_into(sequence, metric_iter, out) {
         Ok(len) => {
             *out_len = len;
             SqdpStatus::Ok

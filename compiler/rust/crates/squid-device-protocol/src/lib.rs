@@ -847,6 +847,12 @@ pub struct AppListEntry<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResourceMetric<'a> {
+    pub key: &'a str,
+    pub value: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LifecycleTimer<'a> {
     pub app_id: &'a str,
     pub event: &'a str,
@@ -1377,6 +1383,55 @@ where
         |mut payload| {
             for line in lines {
                 payload = write_string_tlv(payload, 1, line)?;
+            }
+            Ok(())
+        },
+    )
+}
+
+pub fn encode_resources_response_into<'a, I>(
+    sequence: u32,
+    metrics: I,
+    out: &mut [u8],
+) -> Result<usize, DecodeError>
+where
+    I: Clone + Iterator<Item = ResourceMetric<'a>>,
+{
+    let mut payload_len = 0usize;
+    for metric in metrics.clone() {
+        let record_len = tlv_string_len(metric.key)?
+            .checked_add(tlv_u64_len())
+            .ok_or(DecodeError::OutputTooSmall {
+                needed: usize::MAX,
+                capacity: out.len(),
+            })?;
+        payload_len = payload_len.checked_add(tlv_record_len(record_len)?).ok_or(
+            DecodeError::OutputTooSmall {
+                needed: usize::MAX,
+                capacity: out.len(),
+            },
+        )?;
+    }
+
+    encode_response_payload_into(
+        Opcode::ResourcesGet,
+        Status::Ok,
+        sequence,
+        payload_len,
+        out,
+        |mut payload| {
+            for metric in metrics {
+                let record_len = tlv_string_len(metric.key)?
+                    .checked_add(tlv_u64_len())
+                    .ok_or(DecodeError::OutputTooSmall {
+                        needed: usize::MAX,
+                        capacity: payload.len(),
+                    })?;
+                write_tlv_header(payload, 1, 32, record_len)?;
+                let (record, rest) = payload[4..].split_at_mut(record_len);
+                let record = write_string_tlv(record, 1, metric.key)?;
+                write_u64_tlv(record, 2, metric.value)?;
+                payload = rest;
             }
             Ok(())
         },

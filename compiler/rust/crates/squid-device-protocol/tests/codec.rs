@@ -3,9 +3,10 @@
 use squid_device_protocol::{
     app_list_entries, decode_frame, encode_app_list_response_into, encode_empty_response_into,
     encode_error_response_into, encode_frame, encode_frame_into, encode_hello_response_into,
-    encode_lifecycle_response_into, encode_line_response_into, hello_identity, hello_request,
-    lifecycle_lines, output_lines, AppListEntry, DecodeError, Field, FieldValue, Frame, FrameKind,
-    LifecycleTimer, Opcode, Status,
+    encode_lifecycle_response_into, encode_line_response_into, encode_resources_response_into,
+    hello_identity, hello_request, lifecycle_lines, output_lines, resource_values, AppListEntry,
+    DecodeError, Field, FieldValue, Frame, FrameKind, LifecycleTimer, Opcode, ResourceMetric,
+    Status,
 };
 
 #[test]
@@ -206,6 +207,35 @@ fn encodes_heap_free_lifecycle_response_from_structured_inputs() {
             "process_stack[0]=main".to_string(),
             "armed_stack=".to_string(),
             "armed_stack[0]=break-reminder timer.break".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn encodes_heap_free_resources_response_from_metrics() {
+    let mut out = [0u8; 192];
+    let metrics = [
+        ResourceMetric {
+            key: "ram_total_bytes",
+            value: 409_600,
+        },
+        ResourceMetric {
+            key: "protocol_thread_stack_used_bytes",
+            value: 3_928,
+        },
+    ];
+
+    let len = encode_resources_response_into(93, metrics.iter().copied(), &mut out).unwrap();
+    let decoded = decode_frame(&out[..len]).unwrap();
+
+    assert_eq!(decoded.kind, FrameKind::Response);
+    assert_eq!(decoded.opcode, Opcode::ResourcesGet);
+    assert_eq!(decoded.status, Status::Ok);
+    assert_eq!(
+        resource_values(&decoded).unwrap(),
+        vec![
+            ("ram_total_bytes".to_string(), 409_600),
+            ("protocol_thread_stack_used_bytes".to_string(), 3_928),
         ]
     );
 }

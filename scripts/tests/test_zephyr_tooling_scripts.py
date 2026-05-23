@@ -184,6 +184,16 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("uint8_t payload[256]", body)
         self.assertNotIn("append_string_field(payload", body)
 
+    def test_resources_response_uses_rust_encoder_without_c_record_staging(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        start = protocol.index("static int resources_response")
+        end = protocol.index("static void clear_runtime_context")
+        body = protocol[start:end]
+
+        self.assertIn("sqdp_encode_resources_response", body)
+        self.assertNotIn("uint8_t record[96]", body)
+        self.assertNotIn("append_record_field(payload", body)
+
     def test_hardware_suite_runs_zephyr_app_lifecycle_before_visible_checks(self):
         lifecycle = self.read("scripts/c3-supermini-test-app-lifecycle.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")

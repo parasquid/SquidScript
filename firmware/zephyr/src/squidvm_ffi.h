@@ -49,6 +49,12 @@ typedef struct {
 } SqdpLineSlice;
 
 typedef struct {
+	const uint8_t *key;
+	size_t key_len;
+	uint64_t value;
+} SqdpResourceMetric;
+
+typedef struct {
 	uint8_t app_id[48];
 	uint8_t event[32];
 } SqdpLifecycleTimer;
@@ -380,6 +386,13 @@ SqdpStatus sqdp_encode_lifecycle_response(
 	size_t process_stride,
 	const SqdpLifecycleTimer *armed_timers,
 	size_t armed_count,
+	uint8_t *out,
+	size_t out_cap,
+	size_t *out_len);
+SqdpStatus sqdp_encode_resources_response(
+	uint32_t sequence,
+	const SqdpResourceMetric *metrics,
+	size_t metric_count,
 	uint8_t *out,
 	size_t out_cap,
 	size_t *out_len);
