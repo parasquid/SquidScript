@@ -50,6 +50,10 @@ for compiler, SQBC tooling, and VM semantics.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.
+- Investigate ESP32-C3 Zephyr RAM usage and identify concrete reductions for
+  the largest static allocations, especially VM runtime storage, work stacks,
+  response/session buffers, logging, LittleFS pools, and file caches. Keep the
+  RAM audit guard meaningful and record tradeoffs before lowering capability.
 - Preserve portable SquidScript service semantics in docs/specs; keep Zephyr
   Kconfig, devicetree, pins, partitions, and driver details in firmware/target
   docs and metadata.
