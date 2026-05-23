@@ -41,6 +41,10 @@ for compiler, SQBC tooling, and VM semantics.
 - Implement GPIO, indicator, PWM, timers, app lifecycle, persistent app storage,
   app state, display/draw-log, Wi-Fi scan, AP, station, status, and profile
   provisioning through Zephyr-native subsystems.
+- Implement and test real app lifecycle orchestration: `app.launch` and
+  `app.exit` foreground stack behavior, `app.arm` and `app.disarm` armed
+  trigger side-stack behavior, timer-triggered armed app dispatch, and protocol
+  diagnostics for inspecting both stacks.
 - Add a generic PWM-capable LED-like device output model beyond
   `service.indicator`, so future target-described GPIO/PWM endpoints can expose
   smooth brightness control without board-specific app code.

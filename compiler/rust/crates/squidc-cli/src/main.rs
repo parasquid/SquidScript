@@ -1170,6 +1170,7 @@ struct ReplSession {
     last_state: String,
     last_output: String,
     last_drawlog: String,
+    last_trace: String,
     temp_dir: PathBuf,
     echo: bool,
 }
@@ -1195,6 +1196,7 @@ impl ReplSession {
             last_state: String::new(),
             last_output: String::new(),
             last_drawlog: String::new(),
+            last_trace: String::new(),
             temp_dir: PathBuf::from("target/repl"),
             echo,
         }
@@ -1266,6 +1268,11 @@ impl ReplSession {
                 self.last_drawlog = self.serial_text(&["drawlog"])?;
                 Ok(())
             }
+            ":trace" => {
+                self.flush_snippet()?;
+                self.last_trace = self.serial_text(&["trace"])?;
+                Ok(())
+            }
             ":key" => {
                 self.flush_snippet()?;
                 let key = parts.next().ok_or_else(|| "missing key".to_string())?;
@@ -1284,6 +1291,7 @@ impl ReplSession {
             ":expect-state" => self.expect_contains("state", command, &self.last_state),
             ":expect-output" => self.expect_contains("output", command, &self.last_output),
             ":expect-draw" => self.expect_contains("drawlog", command, &self.last_drawlog),
+            ":expect-trace" => self.expect_contains("trace", command, &self.last_trace),
             ":quit" => Ok(()),
             other => Err(format!("unknown repl command {other}")),
         }
@@ -1398,6 +1406,7 @@ impl ReplSession {
             }
             ["state"] => format_state_bytes(&device.state_bytes()?),
             ["output"] => format_lines("output", &device.output_lines()?),
+            ["trace"] => format_lines("trace", &device.trace_lines()?),
             ["drawlog"] => format_lines("draw", &device.drawlog_lines()?),
             ["resources"] => device
                 .resource_values()?

@@ -61,7 +61,9 @@ static void runtime_trace(void *user_data, const uint8_t *message, size_t messag
 	struct sq_vm_runtime *runtime = user_data;
 
 	if (runtime->trace_count >= SQ_VM_RUNTIME_TRACE_MAX) {
-		return;
+		memmove(runtime->traces[0], runtime->traces[1],
+			(SQ_VM_RUNTIME_TRACE_MAX - 1) * SQ_VM_RUNTIME_TRACE_LEN);
+		runtime->trace_count = SQ_VM_RUNTIME_TRACE_MAX - 1;
 	}
 
 	size_t len = message_len;
@@ -262,8 +264,6 @@ static void clear_dispatch_state(struct sq_vm_runtime *runtime)
 	memset(runtime->scratch, 0, sizeof(runtime->scratch));
 	memset(&runtime->result, 0, sizeof(runtime->result));
 	memset(&runtime->completion, 0, sizeof(runtime->completion));
-	memset(runtime->traces, 0, sizeof(runtime->traces));
-	runtime->trace_count = 0;
 	runtime->backend = NULL;
 }
 
@@ -299,6 +299,8 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	clear_dispatch_state(runtime);
 	memset(&runtime->job_backend, 0, sizeof(runtime->job_backend));
 	memset(runtime->event, 0, sizeof(runtime->event));
+	memset(runtime->traces, 0, sizeof(runtime->traces));
+	runtime->trace_count = 0;
 	memset(runtime->outputs, 0, sizeof(runtime->outputs));
 	runtime->output_count = 0;
 	memset(runtime->drawlog, 0, sizeof(runtime->drawlog));

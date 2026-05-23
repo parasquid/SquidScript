@@ -59,6 +59,41 @@ static const uint8_t headless_counter_sqbc[] = {
 	0x0b, 0x01, 0x00, 0x32, 0x02, 0x2a, 0x32, 0x03, 0x2a, 0x2a,
 };
 
+static const uint8_t lifecycle_sqbc[] = {
+	0x53, 0x51, 0x42, 0x43, 0x6e, 0x00, 0x37, 0x01, 0x00, 0x00, 0x08, 0x00,
+	0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x6e, 0x00, 0x00, 0x00, 0x14, 0x00,
+	0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x82, 0x00, 0x00, 0x00, 0x02, 0x00,
+	0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x84, 0x00, 0x00, 0x00, 0x5e, 0x00,
+	0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0xe2, 0x00, 0x00, 0x00, 0x0b, 0x00,
+	0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0xed, 0x00, 0x00, 0x00, 0x02, 0x00,
+	0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0xef, 0x00, 0x00, 0x00, 0x1a, 0x00,
+	0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x09, 0x01, 0x00, 0x00, 0x0c, 0x00,
+	0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x15, 0x01, 0x00, 0x00, 0x22, 0x00,
+	0x00, 0x00, 0x09, 0x00, 0x6c, 0x69, 0x66, 0x65, 0x63, 0x79, 0x63, 0x6c,
+	0x65, 0x07, 0x00, 0x64, 0x65, 0x66, 0x61, 0x75, 0x6c, 0x74, 0x00, 0x00,
+	0x09, 0x00, 0x09, 0x00, 0x6c, 0x69, 0x66, 0x65, 0x63, 0x79, 0x63, 0x6c,
+	0x65, 0x05, 0x00, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x09, 0x00, 0x61, 0x70,
+	0x70, 0x2e, 0x73, 0x74, 0x61, 0x72, 0x74, 0x04, 0x00, 0x72, 0x65, 0x70,
+	0x6c, 0x0e, 0x00, 0x62, 0x72, 0x65, 0x61, 0x6b, 0x2d, 0x72, 0x65, 0x6d,
+	0x69, 0x6e, 0x64, 0x65, 0x72, 0x06, 0x00, 0x72, 0x65, 0x61, 0x64, 0x65,
+	0x72, 0x0b, 0x00, 0x74, 0x69, 0x6d, 0x65, 0x72, 0x2e, 0x62, 0x72, 0x65,
+	0x61, 0x6b, 0x0c, 0x00, 0x6c, 0x69, 0x66, 0x65, 0x63, 0x79, 0x63, 0x6c,
+	0x65, 0x20, 0x6f, 0x6b, 0x04, 0x00, 0x6d, 0x61, 0x69, 0x6e, 0x01, 0x00,
+	0x01, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
+	0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+	0x00, 0x03, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00,
+	0x00, 0x01, 0x00, 0x08, 0x00, 0x21, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+	0x00, 0x2a, 0x03, 0x04, 0x00, 0x32, 0x10, 0x03, 0x05, 0x00, 0x32, 0x0d,
+	0x03, 0x04, 0x00, 0x32, 0x11, 0x03, 0x06, 0x00, 0x01, 0xfa, 0x00, 0x00,
+	0x00, 0x32, 0x13, 0x03, 0x07, 0x00, 0x32, 0x04, 0x01, 0x2a, 0x2a,
+};
+
+static bool field_string_equals(const struct sq_protocol_field *field, const char *expected)
+{
+	return field->type == SQ_FIELD_STRING && field->len == strlen(expected) &&
+	       memcmp(field->value, expected, field->len) == 0;
+}
+
 static uint8_t ffi_context_storage[65536] __aligned(8);
 static uint8_t ffi_scratch[4096];
 
@@ -636,6 +671,107 @@ ZTEST(squidscript_protocol, test_handles_app_launch_dispatches_installed_app_sta
 	zassert_str_equal(runtime.traces[0], "app.start");
 	zassert_str_equal(runtime.traces[1], "state.load");
 	zassert_str_equal(runtime.traces[2], "state.save");
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
+ZTEST(squidscript_protocol, test_event_dispatch_exposes_lifecycle_trace_records)
+{
+	uint8_t payload[80];
+	uint8_t request[128];
+	uint8_t response[512];
+	size_t payload_len = 0;
+	size_t response_len = 0;
+	struct sq_protocol_frame frame;
+	struct sq_protocol_field field;
+	size_t offset = 0;
+	struct sq_device_identity identity = {
+		.target = "esp32c3-supermini",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_vm_runtime runtime = {0};
+	struct sq_app_store_vm_storage launch_storage = {0};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.store_mount_point = test_fs_mount.mnt_point,
+		.runtime = &runtime,
+		.launch_storage = &launch_storage,
+	};
+
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "lifecycle", lifecycle_sqbc,
+					       sizeof(lifecycle_sqbc)),
+		      0);
+	zassert_equal(sq_protocol_append_string_field(payload, sizeof(payload), &payload_len, 1,
+						      "lifecycle"),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_append_string_field(payload, sizeof(payload), &payload_len, 2,
+						      "repl"),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_EVENT_DISPATCH,
+						      SQ_STATUS_OK, 41, payload, payload_len,
+						      request, sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	memcpy(&request[SQ_PROTOCOL_HEADER_LEN], payload, payload_len);
+
+	zassert_equal(sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN + payload_len,
+						      &context, response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	wait_runtime_done(&runtime);
+	zassert_equal(runtime.status, SQ_VM_RUNTIME_COMPLETE);
+	zassert_equal(runtime.result_code, 0);
+
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_TRACE_GET,
+						      SQ_STATUS_OK, 42, NULL, 0, request,
+						      sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN, &context,
+						      response, sizeof(response), &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
+	zassert_equal(frame.opcode, SQ_OPCODE_TRACE_GET);
+	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
+		      SQ_PROTOCOL_OK);
+	zassert_mem_equal(field.value, "repl", strlen("repl"));
+	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
+		      SQ_PROTOCOL_OK);
+	zassert_mem_equal(field.value, "app.arm break-reminder",
+			  strlen("app.arm break-reminder"));
+	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
+		      SQ_PROTOCOL_OK);
+	zassert_mem_equal(field.value, "app.launch reader", strlen("app.launch reader"));
+	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
+		      SQ_PROTOCOL_OK);
+	zassert_mem_equal(field.value, "app.disarm break-reminder",
+			  strlen("app.disarm break-reminder"));
+
+	k_sleep(K_MSEC(300));
+	zassert_equal(sq_vm_runtime_poll(&runtime), 0);
+	wait_runtime_done(&runtime);
+
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_TRACE_GET,
+						      SQ_STATUS_OK, 43, NULL, 0, request,
+						      sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN, &context,
+						      response, sizeof(response), &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
+	offset = 0;
+	bool saw_arm = false;
+	bool saw_launch = false;
+	bool saw_disarm = false;
+	while (sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field) ==
+	       SQ_PROTOCOL_OK) {
+		saw_arm = saw_arm || field_string_equals(&field, "app.arm break-reminder");
+		saw_launch = saw_launch || field_string_equals(&field, "app.launch reader");
+		saw_disarm = saw_disarm || field_string_equals(&field, "app.disarm break-reminder");
+	}
+	zassert_true(saw_arm);
+	zassert_true(saw_launch);
+	zassert_true(saw_disarm);
 
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }

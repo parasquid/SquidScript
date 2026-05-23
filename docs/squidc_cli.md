@@ -25,6 +25,26 @@ a temporary app-store file instead of buffering the payload in RAM. It does not
 publish an installed app, does not overwrite `main`, and keeps temp app state
 volatile.
 
+## Scripted REPL Checks
+
+`repl --script <file>` accepts SquidScript source interleaved with colon
+commands for hardware and protocol assertions. The diagnostic commands flush
+the current source snippet before reading firmware state:
+
+```text
+:output
+:expect-output lifecycle ok
+:trace
+:expect-trace app.launch reader
+:state
+:expect-state count=1
+:drawlog
+:expect-draw draw=text
+```
+
+Use `:trace` and `:expect-trace` for lifecycle and service trace assertions in
+scripted hardware checks.
+
 ## App Commands
 
 ```sh
