@@ -1,5 +1,15 @@
-const MAGIC: [u8; 4] = *b"SQDP";
-const HEADER_LEN: usize = 20;
+#![cfg_attr(not(feature = "std"), no_std)]
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
+#[cfg(feature = "alloc")]
+use alloc::{format, string::String, vec, vec::Vec};
+#[cfg(feature = "alloc")]
+use core::str;
+
+pub const MAGIC: [u8; 4] = *b"SQDP";
+pub const HEADER_LEN: usize = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -52,6 +62,7 @@ pub enum Opcode {
 }
 
 impl Opcode {
+    #[cfg(feature = "alloc")]
     pub fn parse(name: &str) -> Result<Self, String> {
         match normalize_name(name).as_str() {
             "hello" => Ok(Self::Hello),
@@ -138,6 +149,7 @@ impl TryFrom<u8> for Status {
     }
 }
 
+#[cfg(feature = "alloc")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
     pub kind: FrameKind,
@@ -147,6 +159,7 @@ pub struct Frame {
     pub fields: Vec<Field>,
 }
 
+#[cfg(feature = "alloc")]
 impl Frame {
     pub fn request(opcode: Opcode, sequence: u32, fields: Vec<Field>) -> Self {
         Self {
@@ -169,12 +182,14 @@ impl Frame {
     }
 }
 
+#[cfg(feature = "alloc")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Field {
     pub tag: u8,
     pub value: FieldValue,
 }
 
+#[cfg(feature = "alloc")]
 impl Field {
     pub fn bytes(tag: u8, value: impl Into<Vec<u8>>) -> Self {
         Self {
@@ -219,6 +234,7 @@ impl Field {
     }
 }
 
+#[cfg(feature = "alloc")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldValue {
     Bytes(Vec<u8>),
@@ -243,8 +259,10 @@ pub enum DecodeError {
     InvalidBoolLength(usize),
     InvalidIntegerLength(usize),
     InvalidUtf8,
+    OutputTooSmall { needed: usize, capacity: usize },
 }
 
+#[cfg(feature = "alloc")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HelloIdentity {
     pub target: String,
@@ -252,62 +270,76 @@ pub struct HelloIdentity {
     pub diagnostic: bool,
 }
 
+#[cfg(feature = "alloc")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppEntry {
     pub app_id: String,
     pub sqbc_len: u64,
 }
 
+#[cfg(feature = "alloc")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProtocolError {
     pub code: i64,
     pub message: String,
 }
 
+#[cfg(feature = "alloc")]
 pub fn hello_request(sequence: u32) -> Frame {
     Frame::request(Opcode::Hello, sequence, Vec::new())
 }
 
+#[cfg(feature = "alloc")]
 pub fn app_list_request(sequence: u32) -> Frame {
     Frame::request(Opcode::AppList, sequence, Vec::new())
 }
 
+#[cfg(feature = "alloc")]
 pub fn output_get_request(sequence: u32) -> Frame {
     Frame::request(Opcode::OutputGet, sequence, Vec::new())
 }
 
+#[cfg(feature = "alloc")]
 pub fn trace_get_request(sequence: u32) -> Frame {
     Frame::request(Opcode::TraceGet, sequence, Vec::new())
 }
 
+#[cfg(feature = "alloc")]
 pub fn state_get_request(sequence: u32) -> Frame {
     Frame::request(Opcode::StateGet, sequence, Vec::new())
 }
 
+#[cfg(feature = "alloc")]
 pub fn drawlog_get_request(sequence: u32) -> Frame {
     Frame::request(Opcode::DrawlogGet, sequence, Vec::new())
 }
 
+#[cfg(feature = "alloc")]
 pub fn errors_get_request(sequence: u32) -> Frame {
     Frame::request(Opcode::ErrorsGet, sequence, Vec::new())
 }
 
+#[cfg(feature = "alloc")]
 pub fn resources_get_request(sequence: u32) -> Frame {
     Frame::request(Opcode::ResourcesGet, sequence, Vec::new())
 }
 
+#[cfg(feature = "alloc")]
 pub fn reset_request(sequence: u32) -> Frame {
     Frame::request(Opcode::Reset, sequence, Vec::new())
 }
 
+#[cfg(feature = "alloc")]
 pub fn storage_format_request(sequence: u32) -> Frame {
     Frame::request(Opcode::StorageFormat, sequence, Vec::new())
 }
 
+#[cfg(feature = "alloc")]
 pub fn key_request(sequence: u32, key: impl Into<String>) -> Frame {
     Frame::request(Opcode::Key, sequence, vec![Field::string(1, key)])
 }
 
+#[cfg(feature = "alloc")]
 pub fn event_dispatch_request(
     sequence: u32,
     app_id: impl Into<String>,
@@ -320,10 +352,12 @@ pub fn event_dispatch_request(
     )
 }
 
+#[cfg(feature = "alloc")]
 pub fn state_import_request(sequence: u32, bytes: Vec<u8>) -> Frame {
     Frame::request(Opcode::StateImport, sequence, vec![Field::bytes(1, bytes)])
 }
 
+#[cfg(feature = "alloc")]
 pub fn wifi_profile_set_request(
     sequence: u32,
     profile: impl Into<String>,
@@ -341,6 +375,7 @@ pub fn wifi_profile_set_request(
     )
 }
 
+#[cfg(feature = "alloc")]
 pub fn app_install_begin_request(
     sequence: u32,
     app_id: impl Into<String>,
@@ -358,6 +393,7 @@ pub fn app_install_begin_request(
     )
 }
 
+#[cfg(feature = "alloc")]
 pub fn app_install_chunk_request(sequence: u32, offset: u64, bytes: Vec<u8>) -> Frame {
     Frame::request(
         Opcode::AppInstallChunk,
@@ -366,10 +402,12 @@ pub fn app_install_chunk_request(sequence: u32, offset: u64, bytes: Vec<u8>) -> 
     )
 }
 
+#[cfg(feature = "alloc")]
 pub fn app_install_commit_request(sequence: u32) -> Frame {
     Frame::request(Opcode::AppInstallCommit, sequence, Vec::new())
 }
 
+#[cfg(feature = "alloc")]
 pub fn resource_install_begin_request(
     sequence: u32,
     app_id: impl Into<String>,
@@ -389,6 +427,7 @@ pub fn resource_install_begin_request(
     )
 }
 
+#[cfg(feature = "alloc")]
 pub fn resource_install_chunk_request(sequence: u32, offset: u64, bytes: Vec<u8>) -> Frame {
     Frame::request(
         Opcode::ResourceInstallChunk,
@@ -397,14 +436,17 @@ pub fn resource_install_chunk_request(sequence: u32, offset: u64, bytes: Vec<u8>
     )
 }
 
+#[cfg(feature = "alloc")]
 pub fn resource_install_commit_request(sequence: u32) -> Frame {
     Frame::request(Opcode::ResourceInstallCommit, sequence, Vec::new())
 }
 
+#[cfg(feature = "alloc")]
 pub fn app_launch_request(sequence: u32, app_id: impl Into<String>) -> Frame {
     Frame::request(Opcode::AppLaunch, sequence, vec![Field::string(1, app_id)])
 }
 
+#[cfg(feature = "alloc")]
 pub fn temp_run_begin_request(
     sequence: u32,
     app_id: impl Into<String>,
@@ -422,6 +464,7 @@ pub fn temp_run_begin_request(
     )
 }
 
+#[cfg(feature = "alloc")]
 pub fn temp_run_chunk_request(sequence: u32, offset: u64, bytes: Vec<u8>) -> Frame {
     Frame::request(
         Opcode::TempRunChunk,
@@ -430,10 +473,12 @@ pub fn temp_run_chunk_request(sequence: u32, offset: u64, bytes: Vec<u8>) -> Fra
     )
 }
 
+#[cfg(feature = "alloc")]
 pub fn temp_run_commit_request(sequence: u32) -> Frame {
     Frame::request(Opcode::TempRunCommit, sequence, Vec::new())
 }
 
+#[cfg(feature = "alloc")]
 pub fn hello_identity(frame: &Frame) -> Option<HelloIdentity> {
     if frame.kind != FrameKind::Response
         || frame.opcode != Opcode::Hello
@@ -461,6 +506,7 @@ pub fn hello_identity(frame: &Frame) -> Option<HelloIdentity> {
     })
 }
 
+#[cfg(feature = "alloc")]
 pub fn app_list_entries(frame: &Frame) -> Option<Vec<AppEntry>> {
     if frame.kind != FrameKind::Response
         || frame.opcode != Opcode::AppList
@@ -496,22 +542,27 @@ pub fn app_list_entries(frame: &Frame) -> Option<Vec<AppEntry>> {
     Some(entries)
 }
 
+#[cfg(feature = "alloc")]
 pub fn output_lines(frame: &Frame) -> Option<Vec<String>> {
     repeated_string_fields(frame, Opcode::OutputGet, 1)
 }
 
+#[cfg(feature = "alloc")]
 pub fn trace_lines(frame: &Frame) -> Option<Vec<String>> {
     repeated_string_fields(frame, Opcode::TraceGet, 1)
 }
 
+#[cfg(feature = "alloc")]
 pub fn drawlog_lines(frame: &Frame) -> Option<Vec<String>> {
     repeated_string_fields(frame, Opcode::DrawlogGet, 1)
 }
 
+#[cfg(feature = "alloc")]
 pub fn error_lines(frame: &Frame) -> Option<Vec<String>> {
     repeated_string_fields(frame, Opcode::ErrorsGet, 1)
 }
 
+#[cfg(feature = "alloc")]
 pub fn state_bytes(frame: &Frame) -> Option<Vec<u8>> {
     if frame.kind != FrameKind::Response
         || frame.opcode != Opcode::StateGet
@@ -527,6 +578,7 @@ pub fn state_bytes(frame: &Frame) -> Option<Vec<u8>> {
     Some(Vec::new())
 }
 
+#[cfg(feature = "alloc")]
 pub fn resource_values(frame: &Frame) -> Option<Vec<(String, u64)>> {
     if frame.kind != FrameKind::Response
         || frame.opcode != Opcode::ResourcesGet
@@ -556,6 +608,7 @@ pub fn resource_values(frame: &Frame) -> Option<Vec<(String, u64)>> {
     Some(values)
 }
 
+#[cfg(feature = "alloc")]
 pub fn protocol_error(frame: &Frame) -> Option<ProtocolError> {
     if frame.kind != FrameKind::Response || frame.status != Status::Error {
         return None;
@@ -571,10 +624,11 @@ pub fn protocol_error(frame: &Frame) -> Option<ProtocolError> {
     }
     Some(ProtocolError {
         code: code.unwrap_or(-1),
-        message: message.unwrap_or_else(|| "protocol error".to_string()),
+        message: message.unwrap_or_else(|| "protocol error".into()),
     })
 }
 
+#[cfg(feature = "alloc")]
 fn repeated_string_fields(frame: &Frame, opcode: Opcode, tag: u8) -> Option<Vec<String>> {
     if frame.kind != FrameKind::Response || frame.opcode != opcode || frame.status != Status::Ok {
         return None;
@@ -591,23 +645,144 @@ fn repeated_string_fields(frame: &Frame, opcode: Opcode, tag: u8) -> Option<Vec<
     Some(lines)
 }
 
+#[cfg(feature = "alloc")]
 pub fn encode_frame(frame: &Frame) -> Vec<u8> {
-    let mut payload = Vec::new();
-    encode_fields(&frame.fields, &mut payload);
-
-    let mut out = Vec::with_capacity(HEADER_LEN + payload.len());
-    out.extend_from_slice(&MAGIC);
-    out.push(frame.kind as u8);
-    out.push(frame.opcode as u8);
-    out.push(frame.status as u8);
-    out.push(0);
-    out.extend_from_slice(&frame.sequence.to_le_bytes());
-    out.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-    out.extend_from_slice(&crc32fast::hash(&payload).to_le_bytes());
-    out.extend_from_slice(&payload);
+    let needed = encoded_frame_len(frame).expect("encoded frame length exceeds usize");
+    let mut out = vec![0; needed];
+    encode_frame_into(frame, &mut out).expect("pre-sized output buffer must fit");
     out
 }
 
+#[cfg(feature = "alloc")]
+pub fn encode_frame_into(frame: &Frame, out: &mut [u8]) -> Result<usize, DecodeError> {
+    let payload_len = encoded_fields_len(&frame.fields)?;
+    let needed = HEADER_LEN
+        .checked_add(payload_len)
+        .ok_or(DecodeError::OutputTooSmall {
+            needed: usize::MAX,
+            capacity: out.len(),
+        })?;
+    if out.len() < needed {
+        return Err(DecodeError::OutputTooSmall {
+            needed,
+            capacity: out.len(),
+        });
+    }
+
+    out[..4].copy_from_slice(&MAGIC);
+    out[4] = frame.kind as u8;
+    out[5] = frame.opcode as u8;
+    out[6] = frame.status as u8;
+    out[7] = 0;
+    out[8..12].copy_from_slice(&frame.sequence.to_le_bytes());
+    out[12..16].copy_from_slice(&(payload_len as u32).to_le_bytes());
+    encode_fields_into(&frame.fields, &mut out[HEADER_LEN..needed])?;
+    let crc = crc32fast::hash(&out[HEADER_LEN..needed]);
+    out[16..20].copy_from_slice(&crc.to_le_bytes());
+    Ok(needed)
+}
+
+pub fn encode_empty_response_into(
+    opcode: Opcode,
+    status: Status,
+    sequence: u32,
+    out: &mut [u8],
+) -> Result<usize, DecodeError> {
+    encode_response_payload_into(opcode, status, sequence, 0, out, |_| Ok(()))
+}
+
+pub fn encode_hello_response_into(
+    opcode: Opcode,
+    sequence: u32,
+    target: &str,
+    firmware: &str,
+    diagnostic: bool,
+    out: &mut [u8],
+) -> Result<usize, DecodeError> {
+    let payload_len = tlv_string_len(target)?
+        .checked_add(tlv_string_len(firmware)?)
+        .and_then(|len| len.checked_add(tlv_bool_len()))
+        .ok_or(DecodeError::OutputTooSmall {
+            needed: usize::MAX,
+            capacity: out.len(),
+        })?;
+    encode_response_payload_into(opcode, Status::Ok, sequence, payload_len, out, |payload| {
+        let rest = write_string_tlv(payload, 1, target)?;
+        let rest = write_string_tlv(rest, 2, firmware)?;
+        write_bool_tlv(rest, 3, diagnostic)?;
+        Ok(())
+    })
+}
+
+pub fn encode_error_response_into(
+    opcode: Opcode,
+    sequence: u32,
+    code: i64,
+    message: &str,
+    out: &mut [u8],
+) -> Result<usize, DecodeError> {
+    let payload_len =
+        tlv_i64_len()
+            .checked_add(tlv_string_len(message)?)
+            .ok_or(DecodeError::OutputTooSmall {
+                needed: usize::MAX,
+                capacity: out.len(),
+            })?;
+    encode_response_payload_into(
+        opcode,
+        Status::Error,
+        sequence,
+        payload_len,
+        out,
+        |payload| {
+            let rest = write_i64_tlv(payload, 250, code)?;
+            write_string_tlv(rest, 251, message)?;
+            Ok(())
+        },
+    )
+}
+
+fn encode_response_payload_into(
+    opcode: Opcode,
+    status: Status,
+    sequence: u32,
+    payload_len: usize,
+    out: &mut [u8],
+    write_payload: impl FnOnce(&mut [u8]) -> Result<(), DecodeError>,
+) -> Result<usize, DecodeError> {
+    if payload_len > u32::MAX as usize {
+        return Err(DecodeError::OutputTooSmall {
+            needed: payload_len,
+            capacity: u32::MAX as usize,
+        });
+    }
+    let needed = HEADER_LEN
+        .checked_add(payload_len)
+        .ok_or(DecodeError::OutputTooSmall {
+            needed: usize::MAX,
+            capacity: out.len(),
+        })?;
+    if out.len() < needed {
+        return Err(DecodeError::OutputTooSmall {
+            needed,
+            capacity: out.len(),
+        });
+    }
+
+    out[..4].copy_from_slice(&MAGIC);
+    out[4] = FrameKind::Response as u8;
+    out[5] = opcode as u8;
+    out[6] = status as u8;
+    out[7] = 0;
+    out[8..12].copy_from_slice(&sequence.to_le_bytes());
+    out[12..16].copy_from_slice(&(payload_len as u32).to_le_bytes());
+    write_payload(&mut out[HEADER_LEN..needed])?;
+    let crc = crc32fast::hash(&out[HEADER_LEN..needed]);
+    out[16..20].copy_from_slice(&crc.to_le_bytes());
+    Ok(needed)
+}
+
+#[cfg(feature = "alloc")]
 pub fn decode_frame(bytes: &[u8]) -> Result<Frame, DecodeError> {
     if bytes.len() < HEADER_LEN {
         return Err(DecodeError::TruncatedHeader);
@@ -645,6 +820,7 @@ pub fn decode_frame(bytes: &[u8]) -> Result<Frame, DecodeError> {
     })
 }
 
+#[cfg(feature = "alloc")]
 pub fn decode_frame_from_stream(bytes: &[u8]) -> Result<Frame, DecodeError> {
     let Some(start) = bytes
         .windows(MAGIC.len())
@@ -670,6 +846,65 @@ pub fn decode_frame_from_stream(bytes: &[u8]) -> Result<Frame, DecodeError> {
     decode_frame(&bytes[start..end])
 }
 
+fn tlv_string_len(value: &str) -> Result<usize, DecodeError> {
+    if value.len() > u16::MAX as usize {
+        return Err(DecodeError::OutputTooSmall {
+            needed: value.len(),
+            capacity: u16::MAX as usize,
+        });
+    }
+    Ok(4 + value.len())
+}
+
+fn tlv_bool_len() -> usize {
+    5
+}
+
+fn tlv_i64_len() -> usize {
+    12
+}
+
+fn write_string_tlv<'a>(
+    out: &'a mut [u8],
+    tag: u8,
+    value: &str,
+) -> Result<&'a mut [u8], DecodeError> {
+    write_tlv_header(out, tag, 1, value.len())?;
+    out[4..4 + value.len()].copy_from_slice(value.as_bytes());
+    Ok(&mut out[4 + value.len()..])
+}
+
+fn write_bool_tlv(out: &mut [u8], tag: u8, value: bool) -> Result<&mut [u8], DecodeError> {
+    write_tlv_header(out, tag, 3, 1)?;
+    out[4] = u8::from(value);
+    Ok(&mut out[5..])
+}
+
+fn write_i64_tlv(out: &mut [u8], tag: u8, value: i64) -> Result<&mut [u8], DecodeError> {
+    write_tlv_header(out, tag, 4, 8)?;
+    out[4..12].copy_from_slice(&value.to_le_bytes());
+    Ok(&mut out[12..])
+}
+
+fn write_tlv_header(
+    out: &mut [u8],
+    tag: u8,
+    field_type: u8,
+    value_len: usize,
+) -> Result<(), DecodeError> {
+    if value_len > u16::MAX as usize || out.len() < 4 + value_len {
+        return Err(DecodeError::OutputTooSmall {
+            needed: 4 + value_len,
+            capacity: out.len(),
+        });
+    }
+    out[0] = tag;
+    out[1] = field_type;
+    out[2..4].copy_from_slice(&(value_len as u16).to_le_bytes());
+    Ok(())
+}
+
+#[cfg(feature = "alloc")]
 pub fn parse_field_arg(kind: &str, value: &str) -> Result<Field, String> {
     let (tag, raw_value) = value
         .split_once('=')
@@ -699,27 +934,90 @@ pub fn parse_field_arg(kind: &str, value: &str) -> Result<Field, String> {
     }
 }
 
-fn encode_fields(fields: &[Field], out: &mut Vec<u8>) {
+#[cfg(feature = "alloc")]
+fn encoded_frame_len(frame: &Frame) -> Result<usize, DecodeError> {
+    HEADER_LEN
+        .checked_add(encoded_fields_len(&frame.fields)?)
+        .ok_or(DecodeError::OutputTooSmall {
+            needed: usize::MAX,
+            capacity: 0,
+        })
+}
+
+#[cfg(feature = "alloc")]
+fn encoded_fields_len(fields: &[Field]) -> Result<usize, DecodeError> {
+    let mut len = 0usize;
     for field in fields {
-        let (field_type, value) = match &field.value {
-            FieldValue::Bytes(value) => (0, value.clone()),
-            FieldValue::String(value) => (1, value.as_bytes().to_vec()),
-            FieldValue::Bool(value) => (3, vec![u8::from(*value)]),
-            FieldValue::I64(value) => (4, value.to_le_bytes().to_vec()),
-            FieldValue::U64(value) => (5, value.to_le_bytes().to_vec()),
-            FieldValue::Record(fields) => {
-                let mut value = Vec::new();
-                encode_fields(fields, &mut value);
-                (32, value)
-            }
-        };
-        out.push(field.tag);
-        out.push(field_type);
-        out.extend_from_slice(&(value.len() as u16).to_le_bytes());
-        out.extend_from_slice(&value);
+        let value_len = encoded_field_value_len(&field.value)?;
+        if value_len > u16::MAX as usize {
+            return Err(DecodeError::OutputTooSmall {
+                needed: value_len,
+                capacity: u16::MAX as usize,
+            });
+        }
+        len = len
+            .checked_add(4)
+            .and_then(|value| value.checked_add(value_len))
+            .ok_or(DecodeError::OutputTooSmall {
+                needed: usize::MAX,
+                capacity: 0,
+            })?;
+    }
+    Ok(len)
+}
+
+#[cfg(feature = "alloc")]
+fn encoded_field_value_len(value: &FieldValue) -> Result<usize, DecodeError> {
+    match value {
+        FieldValue::Bytes(value) => Ok(value.len()),
+        FieldValue::String(value) => Ok(value.len()),
+        FieldValue::Bool(_) => Ok(1),
+        FieldValue::I64(_) | FieldValue::U64(_) => Ok(8),
+        FieldValue::Record(fields) => encoded_fields_len(fields),
     }
 }
 
+#[cfg(feature = "alloc")]
+fn encode_fields_into(fields: &[Field], mut out: &mut [u8]) -> Result<(), DecodeError> {
+    for field in fields {
+        let field_type = match &field.value {
+            FieldValue::Bytes(_) => 0,
+            FieldValue::String(_) => 1,
+            FieldValue::Bool(_) => 3,
+            FieldValue::I64(_) => 4,
+            FieldValue::U64(_) => 5,
+            FieldValue::Record(_) => 32,
+        };
+        let value_len = encoded_field_value_len(&field.value)?;
+        if out.len() < 4 + value_len {
+            return Err(DecodeError::OutputTooSmall {
+                needed: 4 + value_len,
+                capacity: out.len(),
+            });
+        }
+        out[0] = field.tag;
+        out[1] = field_type;
+        out[2..4].copy_from_slice(&(value_len as u16).to_le_bytes());
+        encode_field_value_into(&field.value, &mut out[4..4 + value_len])?;
+        out = &mut out[4 + value_len..];
+    }
+    Ok(())
+}
+
+#[cfg(feature = "alloc")]
+fn encode_field_value_into(value: &FieldValue, out: &mut [u8]) -> Result<(), DecodeError> {
+    match value {
+        FieldValue::Bytes(value) => out.copy_from_slice(value),
+        FieldValue::String(value) => out.copy_from_slice(value.as_bytes()),
+        FieldValue::Bool(value) => out[0] = u8::from(*value),
+        FieldValue::I64(value) => out.copy_from_slice(&value.to_le_bytes()),
+        FieldValue::U64(value) => out.copy_from_slice(&value.to_le_bytes()),
+        FieldValue::Record(fields) => encode_fields_into(fields, out)?,
+    }
+    Ok(())
+}
+
+#[cfg(feature = "alloc")]
 fn decode_fields(mut payload: &[u8]) -> Result<Vec<Field>, DecodeError> {
     let mut fields = Vec::new();
     while !payload.is_empty() {
@@ -743,6 +1041,7 @@ fn decode_fields(mut payload: &[u8]) -> Result<Vec<Field>, DecodeError> {
     Ok(fields)
 }
 
+#[cfg(feature = "alloc")]
 fn decode_field_value(field_type: u8, value: &[u8]) -> Result<FieldValue, DecodeError> {
     match field_type {
         0 => Ok(FieldValue::Bytes(value.to_vec())),
@@ -771,6 +1070,7 @@ fn decode_field_value(field_type: u8, value: &[u8]) -> Result<FieldValue, Decode
     }
 }
 
+#[cfg(feature = "alloc")]
 fn normalize_name(name: &str) -> String {
     name.chars()
         .filter(|ch| *ch != '-' && *ch != '_' && *ch != '.')
@@ -778,22 +1078,24 @@ fn normalize_name(name: &str) -> String {
         .collect()
 }
 
+#[cfg(feature = "alloc")]
 fn parse_tag(value: &str) -> Result<u8, String> {
     value
         .parse()
         .map_err(|error| format!("invalid field tag {value:?}: {error}"))
 }
 
+#[cfg(feature = "alloc")]
 fn parse_hex_bytes(value: &str) -> Result<Vec<u8>, String> {
     let value = value.strip_prefix("0x").unwrap_or(value);
     if value.len() % 2 != 0 {
-        return Err("hex byte fields must contain an even number of digits".to_string());
+        return Err("hex byte fields must contain an even number of digits".into());
     }
     value
         .as_bytes()
         .chunks(2)
         .map(|chunk| {
-            let text = std::str::from_utf8(chunk).expect("hex chunks are ascii");
+            let text = str::from_utf8(chunk).expect("hex chunks are ascii");
             u8::from_str_radix(text, 16)
                 .map_err(|error| format!("invalid hex byte {text}: {error}"))
         })

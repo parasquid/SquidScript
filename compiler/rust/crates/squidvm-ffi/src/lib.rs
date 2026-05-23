@@ -20,12 +20,26 @@ use squidvm_core::{
     vm::ChunkedVm,
 };
 
+use squid_device_protocol::{
+    encode_empty_response_into, encode_error_response_into, encode_hello_response_into,
+    DecodeError, Opcode, Status as SqdpFrameStatus,
+};
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SqvmStatus {
     Ok = 0,
     InvalidArgument = 1,
     VmError = 2,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SqdpStatus {
+    Ok = 0,
+    InvalidArgument = 1,
+    BufferTooSmall = 2,
+    EncodeError = 3,
 }
 
 #[repr(C)]
@@ -282,6 +296,105 @@ pub unsafe extern "C" fn sqvm_dispatch_resume_storage(
         defer_sqbc_reads: true,
     };
     write_dispatch_result(out_result, vm.resume_storage(&mut host, completion))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_encode_empty_response(
+    opcode: u8,
+    status: u8,
+    sequence: u32,
+    out: *mut u8,
+    out_cap: usize,
+    out_len: *mut usize,
+) -> SqdpStatus {
+    if out.is_null() || out_len.is_null() {
+        return SqdpStatus::InvalidArgument;
+    }
+    *out_len = 0;
+    let Ok(opcode) = Opcode::try_from(opcode) else {
+        return SqdpStatus::InvalidArgument;
+    };
+    let Ok(status) = SqdpFrameStatus::try_from(status) else {
+        return SqdpStatus::InvalidArgument;
+    };
+    let out = slice::from_raw_parts_mut(out, out_cap);
+    match encode_empty_response_into(opcode, status, sequence, out) {
+        Ok(len) => {
+            *out_len = len;
+            SqdpStatus::Ok
+        }
+        Err(DecodeError::OutputTooSmall { .. }) => SqdpStatus::BufferTooSmall,
+        Err(_) => SqdpStatus::EncodeError,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_encode_hello_response(
+    opcode: u8,
+    sequence: u32,
+    target: *const u8,
+    target_len: usize,
+    firmware: *const u8,
+    firmware_len: usize,
+    diagnostic: bool,
+    out: *mut u8,
+    out_cap: usize,
+    out_len: *mut usize,
+) -> SqdpStatus {
+    if target.is_null() || firmware.is_null() || out.is_null() || out_len.is_null() {
+        return SqdpStatus::InvalidArgument;
+    }
+    *out_len = 0;
+    let Ok(opcode) = Opcode::try_from(opcode) else {
+        return SqdpStatus::InvalidArgument;
+    };
+    let Ok(target) = str::from_utf8(slice::from_raw_parts(target, target_len)) else {
+        return SqdpStatus::InvalidArgument;
+    };
+    let Ok(firmware) = str::from_utf8(slice::from_raw_parts(firmware, firmware_len)) else {
+        return SqdpStatus::InvalidArgument;
+    };
+    let out = slice::from_raw_parts_mut(out, out_cap);
+    match encode_hello_response_into(opcode, sequence, target, firmware, diagnostic, out) {
+        Ok(len) => {
+            *out_len = len;
+            SqdpStatus::Ok
+        }
+        Err(DecodeError::OutputTooSmall { .. }) => SqdpStatus::BufferTooSmall,
+        Err(_) => SqdpStatus::EncodeError,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_encode_error_response(
+    opcode: u8,
+    sequence: u32,
+    code: i64,
+    message: *const u8,
+    message_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+    out_len: *mut usize,
+) -> SqdpStatus {
+    if message.is_null() || out.is_null() || out_len.is_null() {
+        return SqdpStatus::InvalidArgument;
+    }
+    *out_len = 0;
+    let Ok(opcode) = Opcode::try_from(opcode) else {
+        return SqdpStatus::InvalidArgument;
+    };
+    let Ok(message) = str::from_utf8(slice::from_raw_parts(message, message_len)) else {
+        return SqdpStatus::InvalidArgument;
+    };
+    let out = slice::from_raw_parts_mut(out, out_cap);
+    match encode_error_response_into(opcode, sequence, code, message, out) {
+        Ok(len) => {
+            *out_len = len;
+            SqdpStatus::Ok
+        }
+        Err(DecodeError::OutputTooSmall { .. }) => SqdpStatus::BufferTooSmall,
+        Err(_) => SqdpStatus::EncodeError,
+    }
 }
 
 struct FfiHost {

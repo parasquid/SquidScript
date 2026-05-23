@@ -20,7 +20,7 @@ use serde_json::{json, Value};
 use serial::{
     candidate_ports, detect_port, format_lines, format_state_bytes, OutputTail, SerialDevice,
 };
-use squidc::protocol;
+use squid_device_protocol as protocol;
 use squidc_core::profile::BuildProfile;
 
 fn main() {

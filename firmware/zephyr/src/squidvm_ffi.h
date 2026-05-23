@@ -18,6 +18,13 @@ typedef enum {
 } SqvmStatus;
 
 typedef enum {
+	SQDP_STATUS_OK = 0,
+	SQDP_STATUS_INVALID_ARGUMENT = 1,
+	SQDP_STATUS_BUFFER_TOO_SMALL = 2,
+	SQDP_STATUS_ENCODE_ERROR = 3,
+} SqdpStatus;
+
+typedef enum {
 	SQVM_DISPATCH_COMPLETE = 0,
 	SQVM_DISPATCH_PENDING_STORAGE = 1,
 } SqvmDispatchOutcome;
@@ -87,6 +94,33 @@ SqvmStatus sqvm_dispatch_resume_storage(
 	SqvmCallbacks callbacks,
 	const SqvmStorageCompletion *completion,
 	SqvmDispatchResult *out_result);
+SqdpStatus sqdp_encode_empty_response(
+	uint8_t opcode,
+	uint8_t status,
+	uint32_t sequence,
+	uint8_t *out,
+	size_t out_cap,
+	size_t *out_len);
+SqdpStatus sqdp_encode_hello_response(
+	uint8_t opcode,
+	uint32_t sequence,
+	const uint8_t *target,
+	size_t target_len,
+	const uint8_t *firmware,
+	size_t firmware_len,
+	bool diagnostic,
+	uint8_t *out,
+	size_t out_cap,
+	size_t *out_len);
+SqdpStatus sqdp_encode_error_response(
+	uint8_t opcode,
+	uint32_t sequence,
+	int64_t code,
+	const uint8_t *message,
+	size_t message_len,
+	uint8_t *out,
+	size_t out_cap,
+	size_t *out_len);
 
 #ifdef __cplusplus
 }

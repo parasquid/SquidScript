@@ -19,6 +19,7 @@ Build and flash:
 
 ```sh
 ./scripts/c3-supermini-build.sh
+./scripts/zephyr-ram-audit.sh
 ./scripts/c3-supermini-flash.sh
 ```
 
@@ -37,6 +38,7 @@ default, not a sourced hardware fact.
 The Zephyr-only hardware suite is not complete yet. The required inventory is:
 
 - Build and flash the Zephyr diagnostic firmware.
+- Check Zephyr RAM budget output before flashing.
 - Verify the diagnostic boot banner over the serial monitor.
 - Install and launch a minimal SQBC app through the Zephyr command surface.
 - Dispatch key events and verify state/output traces.

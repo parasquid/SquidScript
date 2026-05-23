@@ -1,7 +1,7 @@
 # Developer Device Protocol
 
-Status: host and Zephyr codecs established; command, lifecycle, diagnostics,
-state, resources, and storage helpers use framed requests.
+Status: shared host/firmware codec established; command, lifecycle,
+diagnostics, state, resources, and storage helpers use framed requests.
 
 The current real firmware path is Zephyr. The developer device protocol is the
 Zephyr-owned command surface used by `squidc run`, `squidc app`, `squidc repl`,
@@ -46,6 +46,13 @@ for type, two little-endian bytes for value length, then the value bytes. Field
 types are `0` bytes, `1` UTF-8 string, `3` bool, `4` signed 64-bit integer, `5`
 unsigned 64-bit integer, and `32` nested record. Repeated records are preserved
 as repeated TLV fields with the same tag.
+
+The authoritative host codec lives in the shared Rust
+`squid-device-protocol` crate. Zephyr links that code through `squidvm-ffi`
+for heap-free response encoders exposed with the `sqdp_` C ABI. Zephyr C still
+owns UART, LittleFS, VM runtime, GPIO/Wi-Fi drivers, work queues, timers, and
+ztest glue. Protocol/TLV rules should move to the shared Rust crate when they
+can be expressed with caller-owned buffers.
 
 Large writes use begin/chunk/commit opcode groups for installed apps, temp
 apps, and resources. Chunk payloads must carry explicit byte lengths and
@@ -96,6 +103,11 @@ unsupported error until Zephyr station profile storage is implemented.
 Resource diagnostics should report RAM numbers separately from flash storage
 numbers. When the user asks for "memory" without qualification, report RAM by
 default.
+
+Zephyr builds should keep RAM usage visible with `scripts/zephyr-ram-audit.sh`.
+The default guard for the ESP32-C3 Zephyr slice is `160000` bytes in
+`dram0_0_seg`; override it only with `SQUID_ZEPHYR_DRAM_LIMIT_BYTES` when a
+change intentionally changes the measured budget.
 
 Wi-Fi diagnostics should distinguish internal firmware/driver state from
 external RF proof. A successful Zephyr Wi-Fi status record does not by itself

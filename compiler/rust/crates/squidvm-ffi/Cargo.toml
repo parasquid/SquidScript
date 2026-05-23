@@ -12,6 +12,7 @@ default = []
 zephyr = []
 
 [dependencies]
+squid-device-protocol = { path = "../squid-device-protocol", default-features = false }
 squidvm-core = { path = "../squidvm-core" }
 
 [dev-dependencies]

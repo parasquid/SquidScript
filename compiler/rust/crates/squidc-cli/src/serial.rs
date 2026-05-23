@@ -6,7 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use squidc::protocol::{
+use squid_device_protocol::{
     app_install_begin_request, app_install_chunk_request, app_install_commit_request,
     app_launch_request, app_list_entries, app_list_request, decode_frame_from_stream,
     drawlog_get_request, drawlog_lines, encode_frame, error_lines, errors_get_request,

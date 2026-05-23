@@ -17,6 +17,9 @@ for compiler, SQBC tooling, and VM semantics.
   build succeeds.
 - Add a Zephyr hardware diagnostic test that builds, flashes, boots, and reads
   the diagnostic banner over the serial monitor.
+- Install or document the missing Twister Python dependencies so
+  `firmware/zephyr/tests/protocol` can run through Twister, not only direct
+  `west build -t run`.
 
 ### 2. Expand Zephyr VM Hosting ABI
 
@@ -25,16 +28,16 @@ for compiler, SQBC tooling, and VM semantics.
 - Expand FFI equivalence tests and Zephyr ztests for storage, state, timers,
   display, GPIO, Wi-Fi service records, lifecycle callbacks, and VM errors.
 
-### 3. Port The Firmware Command Surface
+### 3. Rust-Own Firmware Protocol Logic
 
-- Implement the Zephyr command owner for app install, temp run, launch, app
-  list, key events, output, draw log, state, resources, errors, reset, and
-  storage formatting.
-- Extend the established Rust/Python/Zephyr framed serial protocol beyond hello
-  identity through `squidc` device/run/app/repl paths and hardware helper
-  scripts.
-- Remove or replace remaining old text serial protocol assumptions in host
-  tests and examples.
+- Move the remaining Zephyr C TLV parsing and install/temp/resource command
+  state machines into the shared Rust `squid-device-protocol` crate through
+  heap-free `sqdp_` FFI calls.
+- Delete each superseded C parser/state-machine path as soon as its Rust
+  replacement passes host tests, native Zephyr ztests, ESP32-C3 build, and the
+  sequential hardware command-surface check.
+- Keep `squidc`, Python helpers, and Zephyr tests on the shared codec fixtures
+  so there is one current wire implementation.
 
 ### 4. Port Runtime Services To Zephyr
 

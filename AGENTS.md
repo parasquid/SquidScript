@@ -192,6 +192,8 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
 
 - Work on the current branch and checkout unless the user specifically asks for
   a separate branch or worktree.
+- For slice-based implementation work, commit and push each completed,
+  verified slice before moving on to the next slice.
 - Git commits must run outside the Codex sandbox. Sandboxed commits cannot create `.git/index.lock` in this environment, so use escalated command execution for `git commit` instead of trying once in the sandbox.
 
 ## CLI Workflow Ergonomics

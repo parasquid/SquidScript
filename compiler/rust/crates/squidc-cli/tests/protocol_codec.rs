@@ -1,4 +1,4 @@
-use squidc::protocol::{
+use squid_device_protocol::{
     app_install_begin_request, app_install_chunk_request, app_install_commit_request,
     app_launch_request, app_list_entries, app_list_request, decode_frame, decode_frame_from_stream,
     encode_frame, event_dispatch_request, hello_identity, hello_request, key_request,
@@ -251,7 +251,7 @@ fn decodes_protocol_error_response() {
 
     assert_eq!(
         protocol_error(&decode_frame(&encode_frame(&error)).unwrap()).unwrap(),
-        squidc::protocol::ProtocolError {
+        squid_device_protocol::ProtocolError {
             code: -95,
             message: "unsupported".to_string(),
         }

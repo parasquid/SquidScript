@@ -9,6 +9,7 @@
 #include <zephyr/sys/util.h>
 
 #include "protocol.h"
+#include "squidvm_ffi.h"
 
 static int append_field(uint8_t *payload, size_t cap, size_t *len, uint8_t tag, uint8_t type,
 			const uint8_t *value, uint16_t value_len)
@@ -42,11 +43,18 @@ static int append_string_field(uint8_t *payload, size_t cap, size_t *len, uint8_
 			    (uint16_t)value_len);
 }
 
-static int append_bool_field(uint8_t *payload, size_t cap, size_t *len, uint8_t tag, bool value)
+static int sqdp_status_to_protocol_result(SqdpStatus status)
 {
-	uint8_t encoded = value ? 1u : 0u;
-
-	return append_field(payload, cap, len, tag, SQ_FIELD_BOOL, &encoded, 1u);
+	switch (status) {
+	case SQDP_STATUS_OK:
+		return SQ_PROTOCOL_OK;
+	case SQDP_STATUS_BUFFER_TOO_SMALL:
+		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
+	case SQDP_STATUS_INVALID_ARGUMENT:
+	case SQDP_STATUS_ENCODE_ERROR:
+	default:
+		return SQ_PROTOCOL_ERR_TRUNCATED_FIELD;
+	}
 }
 
 static int append_u64_field(uint8_t *payload, size_t cap, size_t *len, uint8_t tag,
@@ -64,19 +72,6 @@ static int append_u64_field(uint8_t *payload, size_t cap, size_t *len, uint8_t t
 	};
 
 	return append_field(payload, cap, len, tag, SQ_FIELD_U64, encoded, sizeof(encoded));
-}
-
-static int append_i64_field(uint8_t *payload, size_t cap, size_t *len, uint8_t tag,
-			    int64_t value)
-{
-	uint64_t raw = (uint64_t)value;
-	uint8_t encoded[8] = {
-		raw & 0xffu,	 (raw >> 8) & 0xffu,  (raw >> 16) & 0xffu,
-		(raw >> 24) & 0xffu, (raw >> 32) & 0xffu, (raw >> 40) & 0xffu,
-		(raw >> 48) & 0xffu, (raw >> 56) & 0xffu,
-	};
-
-	return append_field(payload, cap, len, tag, SQ_FIELD_I64, encoded, sizeof(encoded));
 }
 
 static uint32_t crc32_update(uint32_t crc, const uint8_t *bytes, size_t len)
@@ -101,40 +96,11 @@ static int hello_response(const struct sq_protocol_frame *request,
 			  const struct sq_device_identity *identity, uint8_t *response,
 			  size_t response_cap, size_t *response_len)
 {
-	uint8_t payload[96];
-	size_t payload_len = 0;
-	int result;
-
-	result = append_string_field(payload, sizeof(payload), &payload_len, SQ_DEVICE_FIELD_TARGET,
-				     identity->target);
-	if (result != SQ_PROTOCOL_OK) {
-		return result;
-	}
-	result = append_string_field(payload, sizeof(payload), &payload_len, SQ_DEVICE_FIELD_FIRMWARE,
-				     identity->firmware);
-	if (result != SQ_PROTOCOL_OK) {
-		return result;
-	}
-	result = append_bool_field(payload, sizeof(payload), &payload_len, SQ_DEVICE_FIELD_DIAGNOSTIC,
-				   identity->diagnostic);
-	if (result != SQ_PROTOCOL_OK) {
-		return result;
-	}
-
-	if (response_cap < SQ_PROTOCOL_HEADER_LEN + payload_len) {
-		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
-	}
-
-	result = sq_protocol_encode_frame_header(SQ_FRAME_RESPONSE, SQ_OPCODE_HELLO, SQ_STATUS_OK,
-						 request->sequence, payload, payload_len, response,
-						 response_cap);
-	if (result != SQ_PROTOCOL_OK) {
-		return result;
-	}
-	memcpy(&response[SQ_PROTOCOL_HEADER_LEN], payload, payload_len);
-	*response_len = SQ_PROTOCOL_HEADER_LEN + payload_len;
-
-	return SQ_PROTOCOL_OK;
+	return sqdp_status_to_protocol_result(sqdp_encode_hello_response(
+		SQ_OPCODE_HELLO, request->sequence, (const uint8_t *)identity->target,
+		strlen(identity->target), (const uint8_t *)identity->firmware,
+		strlen(identity->firmware), identity->diagnostic, response, response_cap,
+		response_len));
 }
 
 static int app_list_response(const struct sq_protocol_frame *request,
@@ -190,19 +156,9 @@ static int app_list_response(const struct sq_protocol_frame *request,
 static int ok_response(const struct sq_protocol_frame *request, uint8_t *response,
 		       size_t response_cap, size_t *response_len)
 {
-	int result;
-
-	if (response_cap < SQ_PROTOCOL_HEADER_LEN) {
-		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
-	}
-	result = sq_protocol_encode_frame_header(SQ_FRAME_RESPONSE, request->opcode, SQ_STATUS_OK,
-						 request->sequence, NULL, 0, response,
-						 response_cap);
-	if (result != SQ_PROTOCOL_OK) {
-		return result;
-	}
-	*response_len = SQ_PROTOCOL_HEADER_LEN;
-	return SQ_PROTOCOL_OK;
+	return sqdp_status_to_protocol_result(sqdp_encode_empty_response(
+		request->opcode, SQ_STATUS_OK, request->sequence, response, response_cap,
+		response_len));
 }
 
 static int write_response(const struct sq_protocol_frame *request, uint8_t status,
@@ -230,25 +186,14 @@ static int write_response(const struct sq_protocol_frame *request, uint8_t statu
 static int error_response(const struct sq_protocol_frame *request, int code, uint8_t *response,
 			  size_t response_cap, size_t *response_len)
 {
-	uint8_t payload[96];
-	size_t payload_len = 0;
-	int result = append_i64_field(payload, sizeof(payload), &payload_len,
-				      SQ_DEVICE_ERROR_FIELD_CODE, code);
-	if (result != SQ_PROTOCOL_OK) {
-		return result;
-	}
 	const char *message = code == -ENOTSUP ? "unsupported" :
 			      code == -ENODEV  ? "device unavailable" :
 			      code == -EINVAL  ? "invalid request" :
 			      code == -EBUSY   ? "busy" :
 						 "command failed";
-	result = append_string_field(payload, sizeof(payload), &payload_len,
-				     SQ_DEVICE_ERROR_FIELD_MESSAGE, message);
-	if (result != SQ_PROTOCOL_OK) {
-		return result;
-	}
-	return write_response(request, SQ_STATUS_ERROR, payload, payload_len, response, response_cap,
-			      response_len);
+	return sqdp_status_to_protocol_result(sqdp_encode_error_response(
+		request->opcode, request->sequence, code, (const uint8_t *)message, strlen(message),
+		response, response_cap, response_len));
 }
 
 static int begin_install(const struct sq_protocol_frame *request,
