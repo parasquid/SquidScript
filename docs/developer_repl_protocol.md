@@ -131,7 +131,7 @@ numbers. When the user asks for "memory" without qualification, report RAM by
 default.
 
 Zephyr builds should keep RAM usage visible with `scripts/zephyr-ram-audit.sh`.
-The default guard for the ESP32-C3 Zephyr slice is `160000` bytes in
+The default guard for the ESP32-C3 Zephyr slice is `266240` bytes in
 `dram0_0_seg`; override it only with `SQUID_ZEPHYR_DRAM_LIMIT_BYTES` when a
 change intentionally changes the measured budget. The audit also emits
 structured `ram_symbol[N]=size=... addr=... type=... name=...` lines for the
@@ -139,12 +139,10 @@ largest static DRAM symbols; adjust the count with
 `SQUID_ZEPHYR_RAM_SYMBOL_COUNT` when investigating RAM optimization candidates.
 When `SQUID_ZEPHYR_TARGET_JSON` is supplied, the RAM audit derives its default
 limit from target SRAM metadata and `SQUID_ZEPHYR_RAM_PROFILE_PERCENT`, which
-defaults to 40. For the ESP32-C3 Super Mini target, the metadata declares
-400 KiB internal SRAM, so the 40% profile limit is 163840 bytes. A future
-Wi-Fi-enabled profile should use its own measured percentage, initially around
-65% or 266240 bytes for this target. The audit still reports the Zephyr linker
-section bytes, because `dram0_0_seg` placement is the immediate firmware build
-constraint.
+defaults to 65. For the ESP32-C3 Super Mini target, the metadata declares
+400 KiB internal SRAM, so the 65% profile limit is 266240 bytes. The audit
+still reports the Zephyr linker section bytes, because `dram0_0_seg` placement
+is the immediate firmware build constraint.
 `resources-get` reports `protocol_thread_stack_size_bytes`,
 `protocol_thread_stack_unused_bytes`, `protocol_thread_stack_used_bytes`,
 `vm_worker_stack_size_bytes`, `vm_worker_stack_unused_bytes`, and

@@ -63,27 +63,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("DTC_OVERLAY_FILE", build)
         self.assertIn("esp32c3_supermini.overlay", build)
 
-    def test_build_wrapper_accepts_extra_conf_file_from_environment(self):
-        build = self.read("scripts/c3-supermini-zephyr-build.sh")
-
-        self.assertIn("CMAKE_ARGS", build)
-        self.assertIn("EXTRA_CONF_FILE", build)
-        self.assertIn("${ZEPHYR_EXTRA_CONF_FILE}", build)
-
-    def test_wifi_measured_build_uses_separate_build_dir_and_overlay(self):
-        build = self.read("scripts/c3-supermini-zephyr-build-wifi-measured.sh")
-
-        self.assertIn('source "${ROOT}/scripts/zephyr-env.sh"', build)
-        self.assertIn('user_build_dir="${ZEPHYR_BUILD_DIR:-}"', build)
-        self.assertIn('export ZEPHYR_BUILD_DIR="${user_build_dir:-${ROOT}/build/zephyr/c3-supermini-wifi-measured}"', build)
-        self.assertIn("c3-supermini-wifi-measured", build)
-        self.assertIn("wifi-measured.conf", build)
-        self.assertIn("EXTRA_CONF_FILE", build)
-        self.assertIn('exec "${ROOT}/scripts/c3-supermini-zephyr-build.sh"', build)
-
-    def test_wifi_measured_config_enables_real_scan_status_driver_only(self):
-        wifi_conf = self.read("firmware/zephyr/wifi-measured.conf")
-        default_conf = self.read("firmware/zephyr/prj.conf")
+    def test_default_config_enables_real_wifi_scan_status_backend(self):
+        prj_conf = self.read("firmware/zephyr/prj.conf")
 
         for option in [
             "CONFIG_NETWORKING=y",
@@ -94,9 +75,26 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             "CONFIG_NET_MGMT_EVENT_INFO=y",
             "CONFIG_NET_L2_WIFI_MGMT=y",
         ]:
-            self.assertIn(option, wifi_conf)
-            self.assertNotIn(option, default_conf)
-        self.assertNotIn("CONFIG_NET_DHCPV4=y", wifi_conf)
+            self.assertIn(option, prj_conf)
+        self.assertNotIn("CONFIG_NET_DHCPV4=y", prj_conf)
+
+    def test_hardware_suite_requires_real_zephyr_wifi_backend(self):
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn('c3-supermini-test-wifi-state.sh" --require-real-wifi', suite)
+        self.assertIn('c3-supermini-test-wifi-scan-api.sh" --require-real-wifi', suite)
+        self.assertIn("c3-supermini-test-blinky.sh", suite)
+
+    def test_wifi_checks_can_require_real_zephyr_wifi_backend(self):
+        status = self.read("scripts/c3-supermini-test-wifi-state.sh")
+        scan = self.read("scripts/c3-supermini-test-wifi-scan-api.sh")
+
+        self.assertIn("--require-real-wifi", status)
+        self.assertIn("zephyr true", status)
+        self.assertIn("unsupported", status)
+        self.assertIn("--require-real-wifi", scan)
+        self.assertIn("wifi scan true", scan)
+        self.assertIn("unsupported", scan)
 
     def test_docs_point_to_setup_script(self):
         firmware_readme = self.read("firmware/README.md")
@@ -115,7 +113,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_ram_audit_default_guard_tracks_current_esp32c3_budget(self):
         audit = self.read("scripts/zephyr-ram-audit.sh")
 
-        self.assertIn("dram_limit=160000", audit)
+        self.assertIn("dram_limit=266240", audit)
 
     def test_ram_audit_reports_structured_top_symbols(self):
         audit = self.read("scripts/zephyr-ram-audit.sh")
@@ -171,9 +169,9 @@ class ZephyrToolingScriptTests(unittest.TestCase):
                 check=True,
             )
 
-        self.assertIn("dram0_0_seg=101448 bytes limit=163840 bytes", result.stdout)
+        self.assertIn("dram0_0_seg=101448 bytes limit=266240 bytes", result.stdout)
         self.assertIn("target_ram_total_bytes=409600", result.stdout)
-        self.assertIn("target_ram_profile_percent=40", result.stdout)
+        self.assertIn("target_ram_profile_percent=65", result.stdout)
         self.assertIn("target_ram_used_percent=24.8", result.stdout)
 
     def test_zephyr_main_stack_tracks_measured_protocol_work(self):

@@ -4,8 +4,36 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK_DIR="${ROOT}/target/hardware-tests/wifi-status"
 WIFI_STATUS_APP="${ROOT}/tests/hardware/c3-supermini/wifi-status-summary/main.squid"
+REQUIRE_REAL_WIFI=0
 
 mkdir -p "${WORK_DIR}"
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/c3-supermini-test-wifi-state.sh [--require-real-wifi]
+
+Runs the Zephyr Wi-Fi status SquidScript hardware check. With
+--require-real-wifi, the output must prove the real Zephyr Wi-Fi backend is
+enabled instead of an unsupported fallback.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --require-real-wifi)
+      REQUIRE_REAL_WIFI=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
 
 run_capture() {
   local name="$1"
@@ -80,6 +108,15 @@ run_capture launch-wifi-status cargo run --quiet -p squidc -- app launch wifi-st
 output_out="$(wait_for_contains output "output=wifi status" \
   "device output" cargo run --quiet -p squidc -- device output)"
 assert_no_raw_network_identifiers "${output_out}"
+if [[ "${REQUIRE_REAL_WIFI}" == "1" ]]; then
+  assert_file_contains "${output_out}" "zephyr true"
+  if grep -Fq "unsupported" "${output_out}"; then
+    printf 'Expected %s not to contain unsupported fallback in real Wi-Fi mode\n' "${output_out}" >&2
+    printf '%s\n' "--- ${output_out} ---" >&2
+    sed -n '1,200p' "${output_out}" >&2
+    exit 1
+  fi
+fi
 
 errors_out="$(run_capture errors cargo run --quiet -p squidc -- device errors)"
 assert_file_empty_command "${errors_out}"

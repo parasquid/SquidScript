@@ -19,18 +19,9 @@ Build and flash:
 
 ```sh
 ./scripts/c3-supermini-build.sh
-./scripts/zephyr-ram-audit.sh
-./scripts/c3-supermini-flash.sh
-```
-
-Build the opt-in Wi-Fi scan/status measurement profile without changing the
-default development build:
-
-```sh
-./scripts/c3-supermini-zephyr-build-wifi-measured.sh
 SQUID_ZEPHYR_TARGET_JSON=targets/esp32c3-super-mini.target.json \
-  SQUID_ZEPHYR_RAM_PROFILE_PERCENT=65 \
-  ./scripts/zephyr-ram-audit.sh build/zephyr/c3-supermini-wifi-measured/zephyr/zephyr.elf
+  ./scripts/zephyr-ram-audit.sh
+./scripts/c3-supermini-flash.sh
 ```
 
 Monitor:
@@ -64,20 +55,14 @@ Zephyr coverage lands, keep the suite ordered so stateful reset/install tests
 run before the final visible board-state check.
 
 RAM guards should be interpreted as target-profile limits, not universal
-ESP32-C3 limits. The current no-target fallback guard is `160000` bytes. When
+ESP32-C3 limits. The current no-target fallback guard is `266240` bytes. When
 `SQUID_ZEPHYR_TARGET_JSON=targets/esp32c3-super-mini.target.json` is supplied,
-the default 40% profile uses the target definition's 400 KiB internal SRAM and
-sets a 163840-byte limit.
-
-The opt-in Wi-Fi scan/status measurement profile uses
-`firmware/zephyr/wifi-measured.conf` and
-`scripts/c3-supermini-zephyr-build-wifi-measured.sh`. It enables the real
+the default 65% profile uses the target definition's 400 KiB internal SRAM and
+sets a 266240-byte limit. The default Zephyr firmware now enables the real
 Zephyr ESP32 Wi-Fi driver, Wi-Fi management events, and scan-only Wi-Fi usage
 without AP, station, DHCP, TCP, sockets, or credentials. Its measured
 `dram0_0_seg` is 209424 bytes, which is 51.1% of the ESP32-C3 Super Mini
-target definition's 400 KiB internal SRAM. A 65% profile guard is 266240 bytes
-for this target and leaves headroom for scan/status bring-up while keeping the
-default development firmware on the smaller RAM guard.
+target definition's 400 KiB internal SRAM.
 
 The Zephyr app lifecycle check is
 `scripts/c3-supermini-test-app-lifecycle.sh`. It installs the real SquidScript
@@ -106,17 +91,18 @@ to decide whether a later reduction is safe.
 installs `tests/hardware/c3-supermini/wifi-status-summary` and launches a
 summary-only SquidScript app that calls `service.wifi.status()`. The app prints
 only `state`, `backend`, `driverStarted`, and `error`; the script rejects raw
-BSSID, MAC, or local IP patterns in captured output. The default RAM-guarded
-firmware may report the Zephyr unsupported fallback when the Zephyr Wi-Fi
-driver is not enabled.
+BSSID, MAC, or local IP patterns in captured output. In the default full
+hardware suite it runs with `--require-real-wifi`, which rejects the unsupported
+fallback and requires the real Zephyr Wi-Fi backend to be active.
 
 `scripts/c3-supermini-test-wifi-scan-api.sh` runs after Wi-Fi status coverage
 and before the final visible LED check. It installs
 `tests/hardware/c3-supermini/wifi-scan-summary` and launches a summary-only
 SquidScript app that calls `service.wifi.scan()` without credentials. The app
 prints only `ok`, `error`, and `count`; the script rejects raw BSSID, MAC, or
-local IP patterns in captured output. The default RAM-guarded firmware may
-report `unsupported` when the Zephyr Wi-Fi driver is not enabled.
+local IP patterns in captured output. In the default full hardware suite it runs
+with `--require-real-wifi`, which rejects the unsupported fallback and requires
+a successful real Zephyr Wi-Fi scan.
 
 `scripts/c3-supermini-test-wifi-station-api.sh` is explicit-credentials-only
 and is not part of the default full hardware suite. It skips successfully unless
@@ -135,8 +121,8 @@ installs `tests/hardware/c3-supermini/wifi-ap-summary`, launches a summary-only
 app that calls `service.wifi.startAP("SquidScript")` and
 `service.wifi.getAPIP()`, sends `SELECT` to call `service.wifi.stopAP()`, and
 rejects raw AP SSIDs, BSSIDs, MACs, or local IP patterns in captured output.
-The default RAM-guarded firmware may report `unsupported` for AP operations
-until a Wi-Fi-enabled build profile is selected.
+AP operations remain unsupported until their Zephyr runtime support and RAM cost
+are measured explicitly.
 
 For the current ESP32-C3 Super Mini Zephyr target,
 `scripts/c3-supermini-test-blinky.sh` is the final full-suite check. It

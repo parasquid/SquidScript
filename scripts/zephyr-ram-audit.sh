@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 elf="${1:-$repo_root/build/zephyr/c3-supermini/zephyr/zephyr.elf}"
 target_json="${SQUID_ZEPHYR_TARGET_JSON:-}"
-ram_profile_percent="${SQUID_ZEPHYR_RAM_PROFILE_PERCENT:-40}"
+ram_profile_percent="${SQUID_ZEPHYR_RAM_PROFILE_PERCENT:-65}"
 dram_limit="${SQUID_ZEPHYR_DRAM_LIMIT_BYTES:-}"
 symbol_count="${SQUID_ZEPHYR_RAM_SYMBOL_COUNT:-20}"
 
@@ -80,7 +80,7 @@ if [[ -z "$dram_limit" ]]; then
   if [[ -n "$target_ram_total" ]]; then
     dram_limit=$(( target_ram_total * ram_profile_percent / 100 ))
   else
-    dram_limit=160000
+    dram_limit=266240
   fi
 fi
 

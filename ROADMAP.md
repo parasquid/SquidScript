@@ -91,15 +91,13 @@ for compiler, SQBC tooling, and VM semantics.
   static allocations, especially VM runtime storage, work stacks,
   response/session buffers, logging, LittleFS pools, and file caches. Keep the
   RAM audit guard meaningful and record tradeoffs before lowering capability.
-  The opt-in ESP32-C3 Super Mini Wi-Fi scan/status profile builds with the real
-  Zephyr ESP32 Wi-Fi driver at `dram0_0_seg=209424` bytes, or 51.1% of the
-  target definition's 400 KiB internal SRAM. Keep the default firmware config
-  at the 160 KiB fallback / 40% target guard until RAM optimization or a
-  target-specific Wi-Fi profile is selected.
-- Flash the measured ESP32-C3 Super Mini Wi-Fi scan/status profile and run the
-  Wi-Fi status and scan hardware checks against actual RF results. Station and
-  AP behavior should stay separate from this profile until their Zephyr
-  runtime support and RAM cost are measured explicitly.
+  The default ESP32-C3 Super Mini firmware builds with the real Zephyr ESP32
+  Wi-Fi scan/status backend at `dram0_0_seg=209424` bytes, or 51.1% of the
+  target definition's 400 KiB internal SRAM.
+- Run the default ESP32-C3 Super Mini Wi-Fi scan/status hardware checks against
+  actual RF results until they pass reliably. Station and AP behavior should
+  stay separate until their Zephyr runtime support and RAM cost are measured
+  explicitly.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.
