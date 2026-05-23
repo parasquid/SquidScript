@@ -78,6 +78,8 @@ load/save/reset paths; native ztests cover it through a host-mounted filesystem.
 The Zephyr VM runtime scratch buffer is sized to the FFI storage transfer
 capacity so the firmware does not reserve a full max-app buffer when the VM
 only needs one bounded code/storage chunk for resumable dispatch.
+Temp-run volatile app state is sized to the VM saved-state capacity, not the
+larger SQBC transfer chunk capacity.
 Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi VM service
 calls now cross the Rust FFI boundary into Zephyr callbacks. Zephyr now
 performs installed-app foreground handoff for `app.launch` and `app.exit` with

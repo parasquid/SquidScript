@@ -360,7 +360,7 @@ static int commit_resource_install(const struct sq_protocol_frame *request,
 struct temp_storage_backend {
 	const char *sqbc_path;
 	size_t sqbc_len;
-	uint8_t state[SQVM_STORAGE_TRANSFER_CAPACITY];
+	uint8_t state[SQ_DEVICE_TEMP_STATE_BYTES];
 	size_t state_len;
 	bool state_present;
 };

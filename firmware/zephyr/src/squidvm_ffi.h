@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #define SQVM_STORAGE_TRANSFER_CAPACITY 1024
+#define SQVM_SAVED_STATE_CAPACITY 512
 
 #ifdef __cplusplus
 extern "C" {
@@ -287,6 +288,7 @@ typedef struct {
 size_t sqvm_context_size(void);
 size_t sqvm_context_align(void);
 size_t sqvm_storage_transfer_capacity(void);
+size_t sqvm_saved_state_capacity(void);
 SqvmStatus sqvm_context_prepare(void *context, size_t context_len);
 SqvmStatus sqvm_context_init_in_place(
 	void *context,

@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 elf="${1:-$repo_root/build/zephyr/c3-supermini/zephyr/zephyr.elf}"
-dram_limit="${SQUID_ZEPHYR_DRAM_LIMIT_BYTES:-142000}"
+dram_limit="${SQUID_ZEPHYR_DRAM_LIMIT_BYTES:-141500}"
 
 if [[ ! -f "$elf" ]]; then
   echo "zephyr RAM audit: ELF not found: $elf" >&2

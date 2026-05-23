@@ -103,5 +103,5 @@ malformed records or matching-name type/value mismatches. `state.save()` writes
 the current typed record. `state.reset()` clears the persistent state record for
 the app.
 
-`RUN.TEMP` state is volatile and RAM-backed; only the temporary SQBC bytecode
-artifact is file-backed.
+`RUN.TEMP` state is volatile and RAM-backed, bounded to the VM saved-state
+capacity. Only the temporary SQBC bytecode artifact is file-backed.

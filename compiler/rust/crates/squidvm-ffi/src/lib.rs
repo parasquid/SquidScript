@@ -18,7 +18,7 @@ use squidvm_core::{
         WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
         MAX_STORAGE_TRANSFER_BYTES,
     },
-    limits::MAX_CODE_CHUNK_BYTES,
+    limits::{MAX_CODE_CHUNK_BYTES, MAX_SAVED_STATE_BYTES},
     reader::SqbcReader,
     strings::StringResolver,
     value::Value,
@@ -614,6 +614,11 @@ pub extern "C" fn sqvm_context_align() -> usize {
 #[no_mangle]
 pub extern "C" fn sqvm_storage_transfer_capacity() -> usize {
     MAX_STORAGE_TRANSFER_BYTES
+}
+
+#[no_mangle]
+pub extern "C" fn sqvm_saved_state_capacity() -> usize {
+    MAX_SAVED_STATE_BYTES
 }
 
 pub fn sqvm_context_init() -> SqvmContext {
