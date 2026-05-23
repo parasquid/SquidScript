@@ -160,6 +160,24 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertLess(stack_check, wifi_check)
         self.assertLess(wifi_check, blinky_check)
 
+    def test_hardware_suite_runs_redacted_wifi_status_before_scan(self):
+        status = self.read("scripts/c3-supermini-test-wifi-state.sh")
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn('tests/hardware/c3-supermini/wifi-status-summary/main.squid', status)
+        self.assertIn('cargo run --quiet -p squidc -- app launch wifi-status-summary', status)
+        self.assertIn('output=wifi status', status)
+        self.assertIn('assert_no_raw_network_identifiers', status)
+        self.assertNotIn("obsolete", status.lower())
+        self.assertNotIn("wifi ap", status)
+        self.assertNotIn("app.exit()", self.read("tests/hardware/c3-supermini/wifi-status-summary/main.squid"))
+
+        stack_check = suite.index('c3-supermini-measure-stack-usage.sh')
+        status_check = suite.index('c3-supermini-test-wifi-state.sh')
+        scan_check = suite.index('c3-supermini-test-wifi-scan-api.sh')
+        self.assertLess(stack_check, status_check)
+        self.assertLess(status_check, scan_check)
+
 
 if __name__ == "__main__":
     unittest.main()
