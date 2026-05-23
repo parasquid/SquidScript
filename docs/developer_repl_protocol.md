@@ -105,6 +105,10 @@ integer.
 
 Wi-Fi profile provisioning uses the framed opcode and returns an explicit
 unsupported error until Zephyr station profile storage is implemented.
+SquidScript VM calls to `service.wifi.status()` and `service.wifi.scan()` are
+connected through the Zephyr FFI host and currently return bounded
+`unsupported` records without credentials or RF identifiers until the Zephyr
+Wi-Fi management backend is implemented.
 
 ## Diagnostics
 

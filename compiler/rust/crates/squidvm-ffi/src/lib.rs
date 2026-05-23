@@ -15,7 +15,7 @@ use squidvm_core::{
     host::{
         DisplayLineOptions, DisplayRectOptions, DisplayTextOptions,
         StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink, VmDispatch,
-        MAX_STORAGE_TRANSFER_BYTES,
+        WifiAccessPoint, WifiScanResult, WifiStatus, MAX_STORAGE_TRANSFER_BYTES,
     },
     limits::MAX_CODE_CHUNK_BYTES,
     reader::SqbcReader,
@@ -291,6 +291,133 @@ pub struct SqvmDisplayLineOptions {
     pub color_len: usize,
 }
 
+pub const SQVM_WIFI_SCAN_MAX_NETWORKS: usize = 4;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmWifiStatus {
+    pub active: bool,
+    pub mode: *const u8,
+    pub mode_len: usize,
+    pub ip_address: *const u8,
+    pub ip_address_len: usize,
+    pub ssid: *const u8,
+    pub ssid_len: usize,
+    pub clients: i32,
+    pub error: *const u8,
+    pub error_len: usize,
+    pub state: *const u8,
+    pub state_len: usize,
+    pub backend: *const u8,
+    pub backend_len: usize,
+    pub driver_started: bool,
+    pub configured: bool,
+    pub driver_mode: *const u8,
+    pub driver_mode_len: usize,
+    pub channel: i32,
+    pub ap_start_events: i32,
+    pub ap_stop_events: i32,
+    pub probe_events: i32,
+    pub sta_connected_events: i32,
+    pub sta_disconnected_events: i32,
+    pub last_backend_code: *const u8,
+    pub last_backend_code_len: usize,
+    pub profile: *const u8,
+    pub profile_len: usize,
+    pub connected: bool,
+    pub scan_matches: i32,
+    pub rssi: i32,
+    pub auth: *const u8,
+    pub auth_len: usize,
+    pub bssid: *const u8,
+    pub bssid_len: usize,
+    pub disconnect_reason: *const u8,
+    pub disconnect_reason_len: usize,
+    pub disconnect_reason_code: i32,
+}
+
+impl Default for SqvmWifiStatus {
+    fn default() -> Self {
+        Self {
+            active: false,
+            mode: ptr::null(),
+            mode_len: 0,
+            ip_address: ptr::null(),
+            ip_address_len: 0,
+            ssid: ptr::null(),
+            ssid_len: 0,
+            clients: 0,
+            error: ptr::null(),
+            error_len: 0,
+            state: b"stopped".as_ptr(),
+            state_len: b"stopped".len(),
+            backend: b"zephyr".as_ptr(),
+            backend_len: b"zephyr".len(),
+            driver_started: false,
+            configured: false,
+            driver_mode: ptr::null(),
+            driver_mode_len: 0,
+            channel: 0,
+            ap_start_events: 0,
+            ap_stop_events: 0,
+            probe_events: 0,
+            sta_connected_events: 0,
+            sta_disconnected_events: 0,
+            last_backend_code: ptr::null(),
+            last_backend_code_len: 0,
+            profile: ptr::null(),
+            profile_len: 0,
+            connected: false,
+            scan_matches: 0,
+            rssi: 0,
+            auth: ptr::null(),
+            auth_len: 0,
+            bssid: ptr::null(),
+            bssid_len: 0,
+            disconnect_reason: ptr::null(),
+            disconnect_reason_len: 0,
+            disconnect_reason_code: 0,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmWifiAccessPoint {
+    pub ssid: *const u8,
+    pub ssid_len: usize,
+    pub bssid: *const u8,
+    pub bssid_len: usize,
+    pub ssid_length: i32,
+    pub channel: i32,
+    pub rssi: i32,
+    pub auth: *const u8,
+    pub auth_len: usize,
+    pub hidden: bool,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmWifiScanResult {
+    pub ok: bool,
+    pub error: *const u8,
+    pub error_len: usize,
+    pub networks: *const SqvmWifiAccessPoint,
+    pub network_count: usize,
+}
+
+impl Default for SqvmWifiScanResult {
+    fn default() -> Self {
+        Self {
+            ok: false,
+            error: b"unsupported".as_ptr(),
+            error_len: b"unsupported".len(),
+            networks: ptr::null(),
+            network_count: 0,
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SqvmCallbacks {
@@ -364,6 +491,10 @@ pub struct SqvmCallbacks {
             delay_ms: i32,
         ) -> i32,
     >,
+    pub wifi_status:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiStatus) -> i32>,
+    pub wifi_scan:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiScanResult) -> i32>,
 }
 
 #[repr(C)]
@@ -443,10 +574,7 @@ pub unsafe extern "C" fn sqvm_context_init_in_place(
     }
 
     let scratch = slice::from_raw_parts_mut(scratch, scratch_len);
-    let mut host = FfiHost {
-        callbacks,
-        defer_sqbc_reads: false,
-    };
+    let mut host = FfiHost::new(callbacks, false);
     match ChunkedVm::init_in_place_from_reader(context.vm_ptr(), &mut host, scratch) {
         Ok(()) => {
             context.initialized = true;
@@ -474,10 +602,7 @@ pub unsafe extern "C" fn sqvm_dispatch(
         return SqvmStatus::InvalidArgument;
     };
     let vm = &mut *context.vm_ptr();
-    let mut host = FfiHost {
-        callbacks,
-        defer_sqbc_reads: false,
-    };
+    let mut host = FfiHost::new(callbacks, false);
     status_from_vm(vm.dispatch(&mut host, event))
 }
 
@@ -500,10 +625,7 @@ pub unsafe extern "C" fn sqvm_dispatch_start_resumable(
         return SqvmStatus::InvalidArgument;
     };
     let vm = &mut *context.vm_ptr();
-    let mut host = FfiHost {
-        callbacks,
-        defer_sqbc_reads: true,
-    };
+    let mut host = FfiHost::new(callbacks, true);
     write_dispatch_result(out_result, vm.dispatch_resumable(&mut host, event))
 }
 
@@ -525,10 +647,7 @@ pub unsafe extern "C" fn sqvm_dispatch_resume_storage(
         return SqvmStatus::InvalidArgument;
     };
     let vm = &mut *context.vm_ptr();
-    let mut host = FfiHost {
-        callbacks,
-        defer_sqbc_reads: true,
-    };
+    let mut host = FfiHost::new(callbacks, true);
     write_dispatch_result(out_result, vm.resume_storage(&mut host, completion))
 }
 
@@ -974,6 +1093,19 @@ pub unsafe extern "C" fn sqdp_clear_resource_session(session: *mut SqdpResourceS
 struct FfiHost {
     callbacks: SqvmCallbacks,
     defer_sqbc_reads: bool,
+    wifi_scan_networks: [WifiAccessPoint; SQVM_WIFI_SCAN_MAX_NETWORKS],
+    wifi_scan_network_count: usize,
+}
+
+impl FfiHost {
+    fn new(callbacks: SqvmCallbacks, defer_sqbc_reads: bool) -> Self {
+        Self {
+            callbacks,
+            defer_sqbc_reads,
+            wifi_scan_networks: [WifiAccessPoint::empty(); SQVM_WIFI_SCAN_MAX_NETWORKS],
+            wifi_scan_network_count: 0,
+        }
+    }
 }
 
 impl SqbcReader for FfiHost {
@@ -1218,6 +1350,44 @@ impl TraceSink for FfiHost {
         })
     }
 
+    fn service_wifi_status<'a>(&'a mut self) -> Result<WifiStatus<'a>, VmError> {
+        let Some(wifi_status) = self.callbacks.wifi_status else {
+            return Err(VmError::InvalidOperand);
+        };
+        let mut out = SqvmWifiStatus::default();
+        callback_status(unsafe { wifi_status(self.callbacks.user_data, &mut out) })?;
+        unsafe { wifi_status_from_ffi(&out) }
+    }
+
+    fn service_wifi_scan<'a>(&'a mut self) -> Result<WifiScanResult<'a>, VmError> {
+        let Some(wifi_scan) = self.callbacks.wifi_scan else {
+            return Ok(WifiScanResult {
+                ok: false,
+                error: Some("unsupported"),
+                networks: &[],
+            });
+        };
+        let mut out = SqvmWifiScanResult::default();
+        callback_status(unsafe { wifi_scan(self.callbacks.user_data, &mut out) })?;
+        self.wifi_scan_network_count = 0;
+        let count = out.network_count.min(SQVM_WIFI_SCAN_MAX_NETWORKS);
+        if count > 0 {
+            if out.networks.is_null() {
+                return Err(VmError::InvalidOperand);
+            }
+            let networks = unsafe { slice::from_raw_parts(out.networks, count) };
+            for (index, network) in networks.iter().enumerate() {
+                self.wifi_scan_networks[index] = wifi_access_point_from_ffi(network)?;
+            }
+            self.wifi_scan_network_count = count;
+        }
+        Ok(WifiScanResult {
+            ok: out.ok,
+            error: unsafe { optional_ffi_str(out.error, out.error_len)? },
+            networks: &self.wifi_scan_networks[..self.wifi_scan_network_count],
+        })
+    }
+
     fn state_load(&mut self, _out: &mut [u8]) -> Result<Option<usize>, VmError> {
         Ok(None)
     }
@@ -1239,6 +1409,125 @@ fn callback_status(status: i32) -> Result<(), VmError> {
         Ok(())
     } else {
         Err(VmError::InvalidOperand)
+    }
+}
+
+unsafe fn optional_ffi_str<'a>(ptr: *const u8, len: usize) -> Result<Option<&'a str>, VmError> {
+    if len == 0 {
+        return Ok(None);
+    }
+    if ptr.is_null() {
+        return Err(VmError::InvalidOperand);
+    }
+    str::from_utf8(slice::from_raw_parts(ptr, len))
+        .map(Some)
+        .map_err(|_| VmError::InvalidUtf8)
+}
+
+unsafe fn required_ffi_str<'a>(ptr: *const u8, len: usize) -> Result<&'a str, VmError> {
+    optional_ffi_str(ptr, len)?.ok_or(VmError::InvalidOperand)
+}
+
+unsafe fn wifi_status_from_ffi<'a>(status: &SqvmWifiStatus) -> Result<WifiStatus<'a>, VmError> {
+    Ok(WifiStatus {
+        active: status.active,
+        mode: optional_ffi_str(status.mode, status.mode_len)?,
+        ip_address: optional_ffi_str(status.ip_address, status.ip_address_len)?,
+        ssid: optional_ffi_str(status.ssid, status.ssid_len)?,
+        clients: status.clients,
+        error: optional_ffi_str(status.error, status.error_len)?,
+        state: required_ffi_str(status.state, status.state_len)?,
+        backend: required_ffi_str(status.backend, status.backend_len)?,
+        driver_started: status.driver_started,
+        configured: status.configured,
+        driver_mode: optional_ffi_str(status.driver_mode, status.driver_mode_len)?,
+        channel: status.channel,
+        ap_start_events: status.ap_start_events,
+        ap_stop_events: status.ap_stop_events,
+        probe_events: status.probe_events,
+        sta_connected_events: status.sta_connected_events,
+        sta_disconnected_events: status.sta_disconnected_events,
+        last_backend_code: optional_ffi_str(
+            status.last_backend_code,
+            status.last_backend_code_len,
+        )?,
+        profile: optional_ffi_str(status.profile, status.profile_len)?,
+        connected: status.connected,
+        scan_matches: status.scan_matches,
+        rssi: status.rssi,
+        auth: optional_ffi_str(status.auth, status.auth_len)?,
+        bssid: optional_ffi_str(status.bssid, status.bssid_len)?,
+        disconnect_reason: optional_ffi_str(
+            status.disconnect_reason,
+            status.disconnect_reason_len,
+        )?,
+        disconnect_reason_code: status.disconnect_reason_code,
+    })
+}
+
+fn wifi_access_point_from_ffi(network: &SqvmWifiAccessPoint) -> Result<WifiAccessPoint, VmError> {
+    let ssid = unsafe {
+        if network.ssid_len == 0 {
+            &[][..]
+        } else if network.ssid.is_null() {
+            return Err(VmError::InvalidOperand);
+        } else {
+            slice::from_raw_parts(network.ssid, network.ssid_len)
+        }
+    };
+    let bssid = if network.bssid_len == 0 {
+        None
+    } else {
+        Some(parse_bssid_text(unsafe {
+            required_ffi_str(network.bssid, network.bssid_len)?
+        })?)
+    };
+    WifiAccessPoint::new(
+        ssid,
+        bssid,
+        network.channel,
+        network.rssi,
+        wifi_auth_static(unsafe { optional_ffi_str(network.auth, network.auth_len)? }),
+        network.hidden,
+    )
+}
+
+fn wifi_auth_static(value: Option<&str>) -> Option<&'static str> {
+    match value {
+        Some("open") => Some("open"),
+        Some("wep") => Some("wep"),
+        Some("wpa") => Some("wpa"),
+        Some("wpa2") => Some("wpa2"),
+        Some("wpa3") => Some("wpa3"),
+        Some("unknown") => Some("unknown"),
+        _ => None,
+    }
+}
+
+fn parse_bssid_text(value: &str) -> Result<[u8; 6], VmError> {
+    let bytes = value.as_bytes();
+    if bytes.len() != 17 {
+        return Err(VmError::InvalidOperand);
+    }
+    let mut out = [0u8; 6];
+    let mut index = 0usize;
+    while index < 6 {
+        let pos = index * 3;
+        if index > 0 && bytes[pos - 1] != b':' {
+            return Err(VmError::InvalidOperand);
+        }
+        out[index] = (hex_nibble(bytes[pos])? << 4) | hex_nibble(bytes[pos + 1])?;
+        index += 1;
+    }
+    Ok(out)
+}
+
+fn hex_nibble(value: u8) -> Result<u8, VmError> {
+    match value {
+        b'0'..=b'9' => Ok(value - b'0'),
+        b'a'..=b'f' => Ok(value - b'a' + 10),
+        b'A'..=b'F' => Ok(value - b'A' + 10),
+        _ => Err(VmError::InvalidOperand),
     }
 }
 

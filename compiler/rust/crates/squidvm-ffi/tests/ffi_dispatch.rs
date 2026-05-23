@@ -21,6 +21,8 @@ struct Host {
     breathe_count: usize,
     gpio: Vec<(String, bool)>,
     timer_every: Vec<(String, i32)>,
+    wifi_status_count: usize,
+    wifi_scan_count: usize,
 }
 
 unsafe extern "C" fn trace(user_data: *mut c_void, message: *const u8, message_len: usize) {
@@ -174,6 +176,43 @@ unsafe extern "C" fn timer_every(
     0
 }
 
+unsafe extern "C" fn wifi_status(
+    user_data: *mut c_void,
+    out: *mut squidvm_ffi::SqvmWifiStatus,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.wifi_status_count += 1;
+    *out = squidvm_ffi::SqvmWifiStatus {
+        active: false,
+        state: b"stopped".as_ptr(),
+        state_len: b"stopped".len(),
+        backend: b"zephyr".as_ptr(),
+        backend_len: b"zephyr".len(),
+        driver_started: true,
+        configured: false,
+        error: b"unsupported".as_ptr(),
+        error_len: b"unsupported".len(),
+        ..squidvm_ffi::SqvmWifiStatus::default()
+    };
+    0
+}
+
+unsafe extern "C" fn wifi_scan(
+    user_data: *mut c_void,
+    out: *mut squidvm_ffi::SqvmWifiScanResult,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.wifi_scan_count += 1;
+    *out = squidvm_ffi::SqvmWifiScanResult {
+        ok: false,
+        error: b"unsupported".as_ptr(),
+        error_len: b"unsupported".len(),
+        networks: ptr::null(),
+        network_count: 0,
+    };
+    0
+}
+
 fn callbacks(host: &mut Host) -> SqvmCallbacks {
     SqvmCallbacks {
         user_data: host as *mut Host as *mut c_void,
@@ -193,6 +232,8 @@ fn callbacks(host: &mut Host) -> SqvmCallbacks {
         hardware_gpio_read: Some(hardware_gpio_read),
         timer_every: Some(timer_every),
         timer_after: None,
+        wifi_status: Some(wifi_status),
+        wifi_scan: Some(wifi_scan),
     }
 }
 
@@ -268,6 +309,20 @@ screen("main") {
   service.display.rect(1, 2, 3, 4, { fillColor: "gray4" })
   service.display.line(5, 6, 7, 8, { color: "gray15" })
 }
+"#,
+    )
+}
+
+fn compile_wifi_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-wifi"
+event.on("app.start") {
+  let status = service.wifi.status()
+  let scan = service.wifi.scan()
+  debug.print(status.state, status.backend, status.driverStarted, status.error)
+  debug.print(scan.ok, scan.error, scan.count)
+}
+screen("main") {}
 "#,
     )
 }
@@ -385,6 +440,46 @@ fn dispatches_display_service_callbacks() {
             "draw=text text=\"Hello\" x=10 y=20".to_string(),
             "draw=rect x=1 y=2 w=3 h=4".to_string(),
             "draw=line x1=5 y1=6 x2=7 y2=8".to_string()
+        ]
+    );
+}
+
+#[test]
+fn dispatches_wifi_status_and_scan_callbacks() {
+    let mut host = Host {
+        sqbc: compile_wifi_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(host.wifi_status_count, 1);
+    assert_eq!(host.wifi_scan_count, 1);
+    assert_eq!(
+        host.output,
+        vec![
+            "stopped zephyr true unsupported".to_string(),
+            "false unsupported 0".to_string()
         ]
     );
 }

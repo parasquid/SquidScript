@@ -11,6 +11,11 @@
 
 #define SQ_VM_RUNTIME_WORK_STACK_SIZE 16384
 #define SQ_VM_RUNTIME_BREATHE_LEVEL_MS 31
+#define SQ_SET_LITERAL_FIELD(target, field, value) \
+	do { \
+		(target)->field = (const uint8_t *)(value); \
+		(target)->field##_len = sizeof(value) - 1; \
+	} while (false)
 
 static const uint8_t indicator_breathe_duties[SQ_VM_RUNTIME_INDICATOR_BREATHE_STEPS] = {
 	0,  0,  1,  2,	4,  6,  8,  11, 15, 18, 22, 26, 31, 35, 40, 45, 50,
@@ -187,6 +192,38 @@ static int32_t runtime_timer_after(void *user_data, const uint8_t *event, size_t
 	return sq_vm_runtime_register_timer(user_data, event, event_len, delay_ms, false);
 }
 
+static int32_t runtime_wifi_status(void *user_data, SqvmWifiStatus *out)
+{
+	ARG_UNUSED(user_data);
+
+	if (out == NULL) {
+		return -EINVAL;
+	}
+	memset(out, 0, sizeof(*out));
+	out->active = false;
+	SQ_SET_LITERAL_FIELD(out, state, "stopped");
+	SQ_SET_LITERAL_FIELD(out, backend, "zephyr");
+	out->driver_started = false;
+	out->configured = false;
+	SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+	return 0;
+}
+
+static int32_t runtime_wifi_scan(void *user_data, SqvmWifiScanResult *out)
+{
+	ARG_UNUSED(user_data);
+
+	if (out == NULL) {
+		return -EINVAL;
+	}
+	memset(out, 0, sizeof(*out));
+	out->ok = false;
+	SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+	out->networks = NULL;
+	out->network_count = 0;
+	return 0;
+}
+
 static void clear_dispatch_state(struct sq_vm_runtime *runtime)
 {
 	memset(runtime->context_words, 0, sizeof(runtime->context_words));
@@ -278,6 +315,8 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		.hardware_gpio_read = runtime_hardware_gpio_read,
 		.timer_every = runtime_timer_every,
 		.timer_after = runtime_timer_after,
+		.wifi_status = runtime_wifi_status,
+		.wifi_scan = runtime_wifi_scan,
 	};
 
 	status = sqvm_context_prepare(runtime->context_words, sizeof(runtime->context_words));

@@ -131,6 +131,74 @@ typedef void (*SqvmDisplayTextCallback)(
 	const SqvmDisplayTextOptions *options);
 typedef void (*SqvmDisplayRectCallback)(void *user_data, const SqvmDisplayRectOptions *options);
 typedef void (*SqvmDisplayLineCallback)(void *user_data, const SqvmDisplayLineOptions *options);
+
+#define SQVM_WIFI_SCAN_MAX_NETWORKS 4
+
+typedef struct {
+	bool active;
+	const uint8_t *mode;
+	size_t mode_len;
+	const uint8_t *ip_address;
+	size_t ip_address_len;
+	const uint8_t *ssid;
+	size_t ssid_len;
+	int32_t clients;
+	const uint8_t *error;
+	size_t error_len;
+	const uint8_t *state;
+	size_t state_len;
+	const uint8_t *backend;
+	size_t backend_len;
+	bool driver_started;
+	bool configured;
+	const uint8_t *driver_mode;
+	size_t driver_mode_len;
+	int32_t channel;
+	int32_t ap_start_events;
+	int32_t ap_stop_events;
+	int32_t probe_events;
+	int32_t sta_connected_events;
+	int32_t sta_disconnected_events;
+	const uint8_t *last_backend_code;
+	size_t last_backend_code_len;
+	const uint8_t *profile;
+	size_t profile_len;
+	bool connected;
+	int32_t scan_matches;
+	int32_t rssi;
+	const uint8_t *auth;
+	size_t auth_len;
+	const uint8_t *bssid;
+	size_t bssid_len;
+	const uint8_t *disconnect_reason;
+	size_t disconnect_reason_len;
+	int32_t disconnect_reason_code;
+} SqvmWifiStatus;
+
+typedef struct {
+	const uint8_t *ssid;
+	size_t ssid_len;
+	const uint8_t *bssid;
+	size_t bssid_len;
+	int32_t ssid_length;
+	int32_t channel;
+	int32_t rssi;
+	const uint8_t *auth;
+	size_t auth_len;
+	bool hidden;
+} SqvmWifiAccessPoint;
+
+typedef struct {
+	bool ok;
+	const uint8_t *error;
+	size_t error_len;
+	const SqvmWifiAccessPoint *networks;
+	size_t network_count;
+} SqvmWifiScanResult;
+
+typedef int32_t (*SqvmWifiStatusCallback)(void *user_data, SqvmWifiStatus *out);
+typedef int32_t (*SqvmWifiScanCallback)(void *user_data, SqvmWifiScanResult *out);
+
 typedef int32_t (*SqvmIndicatorWriteCallback)(void *user_data, bool value);
 typedef int32_t (*SqvmIndicatorToggleCallback)(void *user_data);
 typedef int32_t (*SqvmIndicatorReadCallback)(void *user_data, bool *out);
@@ -178,6 +246,8 @@ typedef struct {
 	SqvmHardwareGpioReadCallback hardware_gpio_read;
 	SqvmTimerEveryCallback timer_every;
 	SqvmTimerAfterCallback timer_after;
+	SqvmWifiStatusCallback wifi_status;
+	SqvmWifiScanCallback wifi_scan;
 } SqvmCallbacks;
 
 size_t sqvm_context_size(void);
