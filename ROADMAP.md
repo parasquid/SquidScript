@@ -38,8 +38,8 @@ for compiler, SQBC tooling, and VM semantics.
 
 ### 4. Port Runtime Services To Zephyr
 
-- Implement remaining persistent app storage, app state, Wi-Fi station, and
-  Wi-Fi AP DHCP/client proof through Zephyr-native subsystems.
+- Implement remaining persistent app storage, app state, station DHCP/IP
+  reporting, and Wi-Fi AP DHCP/client proof through Zephyr-native subsystems.
 - Decide whether the ESP32-C3 Super Mini reference target should expose
   `bleTransfer.*`; if yes, implement and verify it through Zephyr BLE instead
   of relying on MCU radio metadata alone.

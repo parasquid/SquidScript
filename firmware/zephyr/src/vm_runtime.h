@@ -117,11 +117,16 @@ struct sq_vm_runtime {
 	char wifi_scan_auth[SQVM_WIFI_SCAN_MAX_NETWORKS][SQ_VM_RUNTIME_WIFI_AUTH_LEN];
 	size_t wifi_scan_count;
 	int wifi_scan_status;
+	int wifi_station_connect_status;
+	int wifi_station_disconnect_status;
 	bool wifi_ap_active;
 	int32_t wifi_ap_start_events;
 	int32_t wifi_ap_stop_events;
 	struct k_sem wifi_scan_done;
+	struct k_sem wifi_station_connect_done;
+	struct k_sem wifi_station_disconnect_done;
 	bool wifi_scan_sem_initialized;
+	bool wifi_station_sem_initialized;
 	struct net_mgmt_event_callback wifi_mgmt_cb;
 	bool wifi_mgmt_cb_registered;
 #endif

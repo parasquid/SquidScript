@@ -98,8 +98,15 @@ assert_file_contains "${apps_out}" "app=wifi-station-summary"
 
 run_capture launch-wifi-station cargo run --quiet -p squidc -- app launch wifi-station-summary >/dev/null
 
-output_out="$(wait_for_contains output "output=wifi connect" \
+output_out="$(wait_for_contains output "output=wifi connect true null" \
   "device output" cargo run --quiet -p squidc -- device output)"
+assert_file_contains "${output_out}" "output=wifi station dev true"
+if grep -Fq "unsupported" "${output_out}"; then
+  printf 'Expected %s not to contain unsupported Wi-Fi station results\n' "${output_out}" >&2
+  printf '%s\n' "--- ${output_out} ---" >&2
+  sed -n '1,200p' "${output_out}" >&2
+  exit 1
+fi
 assert_no_raw_network_identifiers "${output_out}"
 
 errors_out="$(run_capture errors cargo run --quiet -p squidc -- device errors)"

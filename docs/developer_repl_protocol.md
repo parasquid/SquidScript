@@ -113,10 +113,10 @@ on success and must not echo SSIDs or passwords.
 SquidScript VM calls to `service.wifi.status()`, `service.wifi.scan()`,
 `service.wifi.startAP(...)`, `service.wifi.stopAP()`, and
 `service.wifi.getAPIP()` are connected to Zephyr Wi-Fi management callbacks.
-`service.wifi.connect(...)` and `service.wifi.disconnect()` remain bounded
-`unsupported` records until station connection handling is implemented. Wi-Fi
-command output and hardware checks must stay redacted unless the user
-explicitly requests raw identifiers.
+`service.wifi.connect(...)` and `service.wifi.disconnect()` use the provisioned
+volatile profile and Zephyr station connect/disconnect requests. Wi-Fi command
+output and hardware checks must stay redacted unless the user explicitly
+requests raw identifiers.
 SquidScript VM calls to `app.launch`, `app.arm`, and `app.disarm` are also
 connected through the Zephyr FFI host. `app.launch` and `app.exit` drive the
 Zephyr foreground return stack for installed apps and clear foreground timers

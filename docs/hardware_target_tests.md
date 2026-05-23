@@ -121,8 +121,9 @@ variables are present, it provisions profile `dev` through
 SQUID_WIFI_STATION_PASSWORD`, installs
 `tests/hardware/c3-supermini/wifi-station-summary`, and launches a summary-only
 app that calls `service.wifi.connect("dev")` and `service.wifi.status()`. The
-script prints command names and lengths only, and rejects raw SSIDs, passwords,
-BSSIDs, MACs, or local IP patterns in captured output.
+script requires `connect.ok == true` and `status.connected == true`, prints
+command names and lengths only, and rejects raw SSIDs, passwords, BSSIDs, MACs,
+or local IP patterns in captured output.
 
 `scripts/c3-supermini-test-wifi-ap-api.sh` is also outside the default full
 hardware suite so the suite can keep final blinky as the last visible state. It

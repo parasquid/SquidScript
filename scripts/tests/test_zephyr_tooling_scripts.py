@@ -372,7 +372,9 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('--ssid-env SQUID_WIFI_STATION_SSID', station)
         self.assertIn('--password-env SQUID_WIFI_STATION_PASSWORD', station)
         self.assertIn('cargo run --quiet -p squidc -- app launch wifi-station-summary', station)
-        self.assertIn('output=wifi connect', station)
+        self.assertIn('output=wifi connect true null', station)
+        self.assertIn('output=wifi station dev true', station)
+        self.assertIn("unsupported", station)
         self.assertIn('assert_no_raw_network_identifiers', station)
         self.assertNotIn("obsolete", station.lower())
         self.assertNotIn("wifi ap", station)
@@ -391,6 +393,22 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("sq_vm_runtime_set_wifi_profile", runtime_h)
         self.assertIn("wifi_profile_set(&frame", protocol_c)
         self.assertNotIn("case SQ_OPCODE_WIFI_PROFILE_SET:\n\t\tresult = -ENOTSUP;", protocol_c)
+
+    def test_zephyr_wifi_station_uses_real_connect_disconnect_backend(self):
+        runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+
+        connect_start = runtime_c.index("static int32_t runtime_wifi_connect")
+        disconnect_start = runtime_c.index("static int32_t runtime_wifi_disconnect")
+        ap_ip_start = runtime_c.index("static int32_t runtime_wifi_get_ap_ip")
+        connect_body = runtime_c[connect_start:disconnect_start]
+        disconnect_body = runtime_c[disconnect_start:ap_ip_start]
+
+        self.assertIn("NET_REQUEST_WIFI_CONNECT", connect_body)
+        self.assertIn("NET_EVENT_WIFI_CONNECT_RESULT", runtime_c)
+        self.assertIn("NET_REQUEST_WIFI_DISCONNECT", disconnect_body)
+        self.assertIn("NET_EVENT_WIFI_DISCONNECT_RESULT", runtime_c)
+        self.assertNotIn("runtime_wifi_unsupported_action(out)", connect_body.split("#else", 1)[0])
+        self.assertNotIn("runtime_wifi_unsupported_action(out)", disconnect_body.split("#else", 1)[0])
 
     def test_wifi_ap_check_is_current_redacted_and_not_in_default_suite(self):
         ap = self.read("scripts/c3-supermini-test-wifi-ap-api.sh")
