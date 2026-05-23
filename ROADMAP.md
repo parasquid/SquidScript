@@ -96,7 +96,9 @@ for compiler, SQBC tooling, and VM semantics.
   `dram0_0_seg=207552` bytes, or 50.7% of the target definition's 400 KiB
   internal SRAM, after bounding native-network packet/buffer pools and measured
   Wi-Fi socket/event, ESP timer task, and network RX stack budgets for current
-  low-throughput service traffic.
+  low-throughput service traffic. `device resources` now exposes live Zephyr
+  heap telemetry; use `ram_heap_max_allocated_bytes` from representative
+  hardware workloads before reducing the system heap.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.

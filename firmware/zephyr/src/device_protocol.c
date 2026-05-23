@@ -7,6 +7,8 @@
 
 #include <zephyr/fs/fs.h>
 #include <zephyr/kernel.h>
+#include <zephyr/sys/mem_stats.h>
+#include <zephyr/sys/sys_heap.h>
 #include <zephyr/sys/util.h>
 
 #include "protocol.h"
@@ -799,12 +801,17 @@ static int resources_response(const struct sq_protocol_frame *request,
 			      const struct sq_device_protocol_context *context, uint8_t *response,
 			      size_t response_cap, size_t *response_len)
 {
+	struct k_heap *heaps = NULL;
 	size_t vm_worker_stack_unused = 0;
 	size_t vm_worker_stack_size = context->runtime == NULL ? 0 : sq_vm_runtime_work_stack_size();
 	size_t vm_worker_stack_used = 0;
 	size_t protocol_stack_size = CONFIG_MAIN_STACK_SIZE;
 	size_t protocol_stack_unused = 0;
 	size_t protocol_stack_used = 0;
+	size_t heap_count = 0;
+	size_t heap_free_bytes = 0;
+	size_t heap_allocated_bytes = 0;
+	size_t heap_max_allocated_bytes = 0;
 
 	if (context->runtime != NULL && sq_vm_runtime_work_stack_unused(&vm_worker_stack_unused) == 0 &&
 	    vm_worker_stack_unused <= vm_worker_stack_size) {
@@ -821,6 +828,22 @@ static int resources_response(const struct sq_protocol_frame *request,
 		protocol_stack_used = 0;
 	}
 
+#ifdef CONFIG_SYS_HEAP_RUNTIME_STATS
+	int heap_array_count = k_heap_array_get(&heaps);
+	if (heap_array_count > 0 && heaps != NULL) {
+		heap_count = (size_t)heap_array_count;
+		for (int i = 0; i < heap_array_count; i++) {
+			struct sys_memory_stats stats;
+
+			if (sys_heap_runtime_stats_get(&heaps[i].heap, &stats) == 0) {
+				heap_free_bytes += stats.free_bytes;
+				heap_allocated_bytes += stats.allocated_bytes;
+				heap_max_allocated_bytes += stats.max_allocated_bytes;
+			}
+		}
+	}
+#endif
+
 #define SQ_RESOURCE_METRIC(key_literal, metric_value) \
 	{ \
 		.key = (const uint8_t *)(key_literal), \
@@ -831,23 +854,16 @@ static int resources_response(const struct sq_protocol_frame *request,
 		SQ_RESOURCE_METRIC("ram_total_bytes", CONFIG_SRAM_SIZE * 1024u),
 		SQ_RESOURCE_METRIC("runtime_static_bytes",
 				   context->runtime == NULL ? 0 : sizeof(*context->runtime)),
+		SQ_RESOURCE_METRIC("ram_heap_count", heap_count),
+		SQ_RESOURCE_METRIC("ram_heap_free_bytes", heap_free_bytes),
+		SQ_RESOURCE_METRIC("ram_heap_allocated_bytes", heap_allocated_bytes),
+		SQ_RESOURCE_METRIC("ram_heap_max_allocated_bytes", heap_max_allocated_bytes),
 		SQ_RESOURCE_METRIC("protocol_thread_stack_size_bytes", protocol_stack_size),
 		SQ_RESOURCE_METRIC("protocol_thread_stack_unused_bytes", protocol_stack_unused),
 		SQ_RESOURCE_METRIC("protocol_thread_stack_used_bytes", protocol_stack_used),
 		SQ_RESOURCE_METRIC("vm_worker_stack_size_bytes", vm_worker_stack_size),
 		SQ_RESOURCE_METRIC("vm_worker_stack_unused_bytes", vm_worker_stack_unused),
 		SQ_RESOURCE_METRIC("vm_worker_stack_used_bytes", vm_worker_stack_used),
-		SQ_RESOURCE_METRIC("install_session_bytes",
-				   context->install_session == NULL ?
-					   0 :
-					   sizeof(*context->install_session)),
-		SQ_RESOURCE_METRIC("temp_session_bytes",
-				   context->temp_session == NULL ? 0 :
-								     sizeof(*context->temp_session)),
-		SQ_RESOURCE_METRIC("resource_session_bytes",
-				   context->resource_session == NULL ?
-					   0 :
-					   sizeof(*context->resource_session)),
 		SQ_RESOURCE_METRIC("app_count",
 				   context->registry == NULL ? 0 : context->registry->count),
 	};

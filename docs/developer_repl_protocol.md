@@ -149,7 +149,11 @@ is the immediate firmware build constraint.
 `protocol_thread_stack_unused_bytes`, `protocol_thread_stack_used_bytes`,
 `vm_worker_stack_size_bytes`, `vm_worker_stack_unused_bytes`, and
 `vm_worker_stack_used_bytes` so future stack budget reductions can be based on
-representative real-device high-water data.
+representative real-device high-water data. It also reports live Zephyr heap
+telemetry as `ram_heap_count`, `ram_heap_free_bytes`,
+`ram_heap_allocated_bytes`, and `ram_heap_max_allocated_bytes`, so system-heap
+budget reductions can be based on allocator high-water data instead of static
+map size alone.
 
 Wi-Fi diagnostics should distinguish internal firmware/driver state from
 external RF proof. A successful Zephyr Wi-Fi status record does not by itself

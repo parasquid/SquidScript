@@ -104,6 +104,23 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("CONFIG_ESP32_TIMER_TASK_STACK_SIZE=3072", prj_conf)
         self.assertIn("CONFIG_NET_RX_STACK_SIZE=1536", prj_conf)
 
+    def test_default_config_enables_live_heap_resource_telemetry(self):
+        prj_conf = self.read("firmware/zephyr/prj.conf")
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        start = protocol.index("static int resources_response")
+        end = protocol.index("static void clear_runtime_context")
+        body = protocol[start:end]
+
+        self.assertIn("CONFIG_SYS_HEAP_RUNTIME_STATS=y", prj_conf)
+        self.assertIn("sys_heap_runtime_stats_get", body)
+        self.assertIn("ram_heap_count", body)
+        self.assertIn("ram_heap_free_bytes", body)
+        self.assertIn("ram_heap_allocated_bytes", body)
+        self.assertIn("ram_heap_max_allocated_bytes", body)
+        self.assertNotIn("install_session_bytes", body)
+        self.assertNotIn("temp_session_bytes", body)
+        self.assertNotIn("resource_session_bytes", body)
+
     def test_hardware_suite_requires_real_zephyr_wifi_backend(self):
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
 
