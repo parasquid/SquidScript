@@ -1452,6 +1452,20 @@ ZTEST(squidscript_protocol, test_exposes_resumable_squidvm_ffi_abi)
 		      SQVM_STATUS_INVALID_ARGUMENT);
 }
 
+ZTEST(squidscript_protocol, test_transfer_sessions_use_internal_staging_path_capacity)
+{
+	zassert_equal(SQ_DEVICE_STAGING_PATH_BYTES, 80);
+	zassert_true(SQ_DEVICE_STAGING_PATH_BYTES < SQ_APP_STORE_PATH_MAX);
+	zassert_equal(sizeof(((struct sq_device_install_session *)0)->staging_path),
+		      SQ_DEVICE_STAGING_PATH_BYTES);
+	zassert_equal(sizeof(((struct sq_device_temp_session *)0)->staging_path),
+		      SQ_DEVICE_STAGING_PATH_BYTES);
+	zassert_equal(sizeof(((struct sq_device_resource_session *)0)->staging_path),
+		      SQ_DEVICE_STAGING_PATH_BYTES);
+	zassert_equal(sizeof(((struct sq_device_resource_session *)0)->resource_path),
+		      SQ_APP_STORE_PATH_MAX);
+}
+
 struct vm_storage_fixture {
 	const uint8_t *sqbc;
 	size_t sqbc_len;

@@ -49,6 +49,7 @@ pub enum SqdpStatus {
 
 const SQDP_APP_ID_CAP: usize = 48;
 const SQDP_PATH_CAP: usize = 128;
+pub const SQDP_STAGING_PATH_CAP: usize = 80;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -108,7 +109,7 @@ pub struct SqdpTransferSession {
     pub received: usize,
     pub expected_crc: u32,
     pub running_crc: u32,
-    pub staging_path: [u8; SQDP_PATH_CAP],
+    pub staging_path: [u8; SQDP_STAGING_PATH_CAP],
 }
 
 impl Default for SqdpTransferSession {
@@ -120,7 +121,7 @@ impl Default for SqdpTransferSession {
             received: 0,
             expected_crc: 0,
             running_crc: 0xffff_ffff,
-            staging_path: [0; SQDP_PATH_CAP],
+            staging_path: [0; SQDP_STAGING_PATH_CAP],
         }
     }
 }
@@ -145,7 +146,7 @@ pub struct SqdpResourceSession {
     pub received: usize,
     pub expected_crc: u32,
     pub running_crc: u32,
-    pub staging_path: [u8; SQDP_PATH_CAP],
+    pub staging_path: [u8; SQDP_STAGING_PATH_CAP],
 }
 
 impl Default for SqdpResourceSession {
@@ -158,7 +159,7 @@ impl Default for SqdpResourceSession {
             received: 0,
             expected_crc: 0,
             running_crc: 0xffff_ffff,
-            staging_path: [0; SQDP_PATH_CAP],
+            staging_path: [0; SQDP_STAGING_PATH_CAP],
         }
     }
 }

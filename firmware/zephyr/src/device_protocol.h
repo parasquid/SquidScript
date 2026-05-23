@@ -35,6 +35,7 @@
 #define SQ_DEVICE_TEMP_RUN_MAX_BYTES SQ_DEVICE_INSTALL_MAX_BYTES
 #define SQ_DEVICE_TEMP_STATE_BYTES SQVM_SAVED_STATE_CAPACITY
 #define SQ_DEVICE_RESPONSE_BYTES 640u
+#define SQ_DEVICE_STAGING_PATH_BYTES 80u
 
 struct sq_device_identity {
 	const char *target;
@@ -49,7 +50,7 @@ struct sq_device_install_session {
 	size_t received;
 	uint32_t expected_crc;
 	uint32_t running_crc;
-	char staging_path[SQ_APP_STORE_PATH_MAX];
+	char staging_path[SQ_DEVICE_STAGING_PATH_BYTES];
 };
 
 struct sq_device_temp_session {
@@ -59,7 +60,7 @@ struct sq_device_temp_session {
 	size_t received;
 	uint32_t expected_crc;
 	uint32_t running_crc;
-	char staging_path[SQ_APP_STORE_PATH_MAX];
+	char staging_path[SQ_DEVICE_STAGING_PATH_BYTES];
 };
 
 struct sq_device_resource_session {
@@ -70,7 +71,7 @@ struct sq_device_resource_session {
 	size_t received;
 	uint32_t expected_crc;
 	uint32_t running_crc;
-	char staging_path[SQ_APP_STORE_PATH_MAX];
+	char staging_path[SQ_DEVICE_STAGING_PATH_BYTES];
 };
 
 struct sq_device_protocol_context {

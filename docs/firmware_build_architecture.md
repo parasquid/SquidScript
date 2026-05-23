@@ -80,8 +80,11 @@ capacity so the firmware does not reserve a full max-app buffer when the VM
 only needs one bounded code/storage chunk for resumable dispatch.
 Temp-run volatile app state is sized to the VM saved-state capacity, not the
 larger SQBC transfer chunk capacity.
-The linked Rust VM context reservation is capped at 44 KiB and checked against
+The linked Rust VM context reservation is capped at 12 KiB and checked against
 the FFI-reported context size in Zephyr ztests.
+Protocol transfer sessions keep full resource-path storage for package paths
+but use smaller internal staging-path buffers for fixed firmware staging
+filenames.
 The protocol/main thread stack is currently 3.5 KiB; resource diagnostics expose
 its high-water use separately from the VM worker stack.
 Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi VM service

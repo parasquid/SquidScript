@@ -3,7 +3,10 @@ use squid_device_protocol::{
     encode_frame, resource_install_begin_request, resource_install_chunk_request,
     resource_install_commit_request, FrameKind, Opcode, Status,
 };
-use squidvm_ffi::{SqdpAction, SqdpActionKind, SqdpResourceSession, SqdpTransferSession};
+use squidvm_ffi::{
+    SqdpAction, SqdpActionKind, SqdpResourceSession, SqdpTransferSession,
+    SQDP_STAGING_PATH_CAP,
+};
 
 #[test]
 fn ffi_encodes_hello_response_into_caller_buffer() {
@@ -134,6 +137,23 @@ fn ffi_validates_install_session_progress_with_caller_owned_storage() {
     };
     assert_eq!(status as i32, 0);
     assert_eq!(action.kind, SqdpActionKind::CommitInstall);
+}
+
+#[test]
+fn ffi_transfer_staging_path_uses_internal_firmware_capacity() {
+    let mut session = SqdpTransferSession::default();
+    let max_app_id = "a".repeat(47);
+    let longest_install_staging_path = format!("/sq/apps/{max_app_id}/main.sqbc.tmp");
+
+    assert_eq!(SQDP_STAGING_PATH_CAP, 80);
+    assert_eq!(longest_install_staging_path.len(), 70);
+    assert_eq!(
+        session.set_staging_path_for_test(&longest_install_staging_path) as i32,
+        0
+    );
+
+    let too_long = "x".repeat(SQDP_STAGING_PATH_CAP);
+    assert_ne!(session.set_staging_path_for_test(&too_long) as i32, 0);
 }
 
 #[test]
