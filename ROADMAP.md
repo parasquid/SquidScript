@@ -69,6 +69,14 @@ for compiler, SQBC tooling, and VM semantics.
   the largest static allocations, especially VM runtime storage, work stacks,
   response/session buffers, logging, LittleFS pools, and file caches. Keep the
   RAM audit guard meaningful and record tradeoffs before lowering capability.
+- Investigate why the Zephyr VM worker currently needs a 16 KiB stack on real
+  ESP32-C3 hardware. Smaller 8 KiB and 12 KiB stacks passed native tests but
+  failed during hardware app launch/state flows, so treat 16 KiB as the current
+  hardware-proven floor until root cause is understood. Add stack high-water
+  diagnostics for representative temp-run, installed-launch, state,
+  lifecycle, and timer/armed-app workloads; inspect C and Rust dispatch paths
+  for large locals, formatting-heavy diagnostics, nested FFI/host callbacks,
+  and architecture-specific stack costs before changing the stack budget.
 - Preserve portable SquidScript service semantics in docs/specs; keep Zephyr
   Kconfig, devicetree, pins, partitions, and driver details in firmware/target
   docs and metadata.
