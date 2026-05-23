@@ -175,6 +175,22 @@ impl Default for SqdpWifiProfile {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct SqdpStateImport {
+    pub bytes: *const u8,
+    pub bytes_len: usize,
+}
+
+impl Default for SqdpStateImport {
+    fn default() -> Self {
+        Self {
+            bytes: ptr::null(),
+            bytes_len: 0,
+        }
+    }
+}
+
+#[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SqdpTransferSession {
     pub active: bool,
@@ -1241,6 +1257,47 @@ pub unsafe extern "C" fn sqdp_parse_wifi_profile_set_request(
         ssid_len: ssid.len(),
         password: password.as_ptr(),
         password_len: password.len(),
+    };
+    SqdpStatus::Ok
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_parse_state_import_request(
+    request: *const u8,
+    request_len: usize,
+    out_import: *mut SqdpStateImport,
+) -> SqdpStatus {
+    if request.is_null() || out_import.is_null() {
+        return SqdpStatus::InvalidArgument;
+    }
+    let request = match DeviceRequest::decode(slice::from_raw_parts(request, request_len)) {
+        Ok(request) => request,
+        Err(_) => return SqdpStatus::InvalidArgument,
+    };
+    if request.opcode != Opcode::StateImport {
+        return SqdpStatus::InvalidArgument;
+    }
+
+    let mut bytes = None;
+    let mut offset = 0usize;
+    while offset < request.payload().len() {
+        let Some((tag, field_type, value, next_offset)) = next_tlv_field(request.payload(), offset)
+        else {
+            return SqdpStatus::InvalidArgument;
+        };
+        match (tag, field_type) {
+            (1, 0) if bytes.is_none() => bytes = Some(value),
+            _ => return SqdpStatus::InvalidArgument,
+        }
+        offset = next_offset;
+    }
+
+    let Some(bytes) = bytes else {
+        return SqdpStatus::InvalidArgument;
+    };
+    *out_import = SqdpStateImport {
+        bytes: bytes.as_ptr(),
+        bytes_len: bytes.len(),
     };
     SqdpStatus::Ok
 }

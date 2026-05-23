@@ -36,8 +36,8 @@ for compiler, SQBC tooling, and VM semantics.
 - Move remaining Zephyr C response payload builders and simple request parsers
   to heap-free Rust `sqdp_` helpers where doing so reduces stack buffers or
   duplicated TLV rules without duplicating Zephyr storage/runtime ownership.
-  Wi-Fi profile request parsing now lives in a Rust `sqdp_` helper; keep moving
-  similar bounded protocol parsing there.
+  Wi-Fi profile and state import request parsing now live in Rust `sqdp_`
+  helpers; keep moving similar bounded protocol parsing there.
 - Keep `squidc`, Python helpers, Zephyr tests, and FFI tests on shared codec
   fixtures so there is one current wire implementation.
 

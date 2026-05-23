@@ -2,12 +2,12 @@ use squid_device_protocol::{
     app_install_begin_request, app_install_chunk_request, app_install_commit_request,
     app_list_entries, decode_frame, encode_frame, key_request, lifecycle_lines, output_lines,
     resource_install_begin_request, resource_install_chunk_request,
-    resource_install_commit_request, resource_values, wifi_profile_set_request, FrameKind, Opcode,
-    Status,
+    resource_install_commit_request, resource_values, state_import_request,
+    wifi_profile_set_request, FrameKind, Opcode, Status,
 };
 use squidvm_ffi::{
     SqdpAction, SqdpActionKind, SqdpAppListEntry, SqdpLifecycleTimer, SqdpLineSlice,
-    SqdpResourceMetric, SqdpResourceSession, SqdpTransferSession, SqdpWifiProfile,
+    SqdpResourceMetric, SqdpResourceSession, SqdpStateImport, SqdpTransferSession, SqdpWifiProfile,
     SQDP_STAGING_PATH_CAP,
 };
 
@@ -298,6 +298,23 @@ fn ffi_parses_wifi_profile_request_without_c_tlv_staging() {
     assert_eq!(
         unsafe { core::slice::from_raw_parts(profile.password, profile.password_len) },
         b"redacted-password"
+    );
+}
+
+#[test]
+fn ffi_parses_state_import_request_without_c_tlv_staging() {
+    let state = vec![0x53, 0x51, 0x53, 0x54, 1, 2, 3, 4];
+    let request = encode_frame(&state_import_request(72, state.clone()));
+    let mut import = SqdpStateImport::default();
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_parse_state_import_request(request.as_ptr(), request.len(), &mut import)
+    };
+
+    assert_eq!(status as i32, 0);
+    assert_eq!(
+        unsafe { core::slice::from_raw_parts(import.bytes, import.bytes_len) },
+        state.as_slice()
     );
 }
 

@@ -767,22 +767,14 @@ static int state_get_response(const struct sq_protocol_frame *request,
 }
 
 static int state_import(const struct sq_protocol_frame *request,
+			const uint8_t *request_bytes, size_t request_len,
 			const struct sq_device_protocol_context *context, uint8_t *response,
 			size_t response_cap, size_t *response_len)
 {
-	const uint8_t *bytes = NULL;
-	size_t bytes_len = 0;
-	size_t offset = 0;
-	struct sq_protocol_field field;
+	SqdpStateImport import = {0};
 
-	while (sq_protocol_next_field(request->payload, request->payload_len, &offset, &field) ==
-	       SQ_PROTOCOL_OK) {
-		if (field.tag == SQ_DEVICE_STATE_FIELD_BYTES && field.type == SQ_FIELD_BYTES) {
-			bytes = field.value;
-			bytes_len = field.len;
-		}
-	}
-	if (bytes == NULL || context->launch_storage == NULL) {
+	if (sqdp_parse_state_import_request(request_bytes, request_len, &import) != SQDP_STATUS_OK ||
+	    context->launch_storage == NULL) {
 		return -EINVAL;
 	}
 	struct sq_vm_storage_backend backend =
@@ -790,7 +782,7 @@ static int state_import(const struct sq_protocol_frame *request,
 	if (backend.save_state == NULL) {
 		return -ENODEV;
 	}
-	int result = backend.save_state(backend.user_data, bytes, bytes_len);
+	int result = backend.save_state(backend.user_data, import.bytes, import.bytes_len);
 	if (result != 0) {
 		return result;
 	}
@@ -1132,7 +1124,8 @@ int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 		result = state_get_response(&frame, context, response, response_cap, response_len);
 		break;
 	case SQ_OPCODE_STATE_IMPORT:
-		result = state_import(&frame, context, response, response_cap, response_len);
+		result = state_import(&frame, request, request_len, context, response, response_cap,
+				      response_len);
 		break;
 	case SQ_OPCODE_RESOURCES_GET:
 		result = resources_response(&frame, context, response, response_cap, response_len);

@@ -102,10 +102,11 @@ is the SQBC length as an unsigned 64-bit integer.
 
 `output-get`, `trace-get`, `drawlog-get`, `lifecycle-get`, and `errors-get` responses use
 repeated string fields with tag `1`, one field per line. `state-get` returns
-state bytes as field tag `1`. `resources-get` returns repeated record fields:
-response field tag `1` is one resource record, record field tag `1` is the
-metric key string, and record field tag `2` is the value as an unsigned 64-bit
-integer.
+state bytes as field tag `1`. `state-import` request TLV parsing is owned by
+the Rust `sqdp_` FFI helper and returns a borrowed state byte slice to Zephyr C
+for storage. `resources-get` returns repeated record fields: response field tag
+`1` is one resource record, record field tag `1` is the metric key string, and
+record field tag `2` is the value as an unsigned 64-bit integer.
 
 Wi-Fi profile provisioning uses the framed opcode to store one volatile,
 bounded station profile in Zephyr runtime memory. Rust `sqdp_` FFI code owns

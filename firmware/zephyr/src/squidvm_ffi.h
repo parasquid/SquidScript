@@ -82,6 +82,11 @@ typedef struct {
 	size_t password_len;
 } SqdpWifiProfile;
 
+typedef struct {
+	const uint8_t *bytes;
+	size_t bytes_len;
+} SqdpStateImport;
+
 typedef enum {
 	SQVM_DISPATCH_COMPLETE = 0,
 	SQVM_DISPATCH_PENDING_STORAGE = 1,
@@ -429,6 +434,10 @@ SqdpStatus sqdp_parse_wifi_profile_set_request(
 	const uint8_t *request,
 	size_t request_len,
 	SqdpWifiProfile *out_profile);
+SqdpStatus sqdp_parse_state_import_request(
+	const uint8_t *request,
+	size_t request_len,
+	SqdpStateImport *out_import);
 SqdpStatus sqdp_prepare_transfer_begin(
 	const uint8_t *request,
 	size_t request_len,

@@ -304,6 +304,19 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("uint8_t payload[256]", body)
         self.assertNotIn("append_string_field(payload", body)
 
+    def test_state_import_uses_rust_parser_without_c_tlv_loop(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
+        start = protocol.index("static int state_import")
+        end = protocol.index("static int resources_response")
+        body = protocol[start:end]
+
+        self.assertIn("SqdpStateImport", ffi_h)
+        self.assertIn("sqdp_parse_state_import_request", ffi_h)
+        self.assertIn("sqdp_parse_state_import_request", body)
+        self.assertNotIn("sq_protocol_next_field", body)
+        self.assertNotIn("struct sq_protocol_field", body)
+
     def test_resources_response_uses_rust_encoder_without_c_record_staging(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         start = protocol.index("static int resources_response")
