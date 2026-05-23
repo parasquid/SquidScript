@@ -946,7 +946,11 @@ static int dispatch_event_from_parts(const struct sq_protocol_frame *request,
 		char app_id_buffer[SQ_APP_STORE_APP_ID_MAX];
 		memcpy(app_id_buffer, app_id, app_id_len);
 		app_id_buffer[app_id_len] = '\0';
-		if (strcmp(context->runtime->current_app, app_id_buffer) != 0) {
+		if (context->runtime->current_app[0] != '\0' &&
+		    strcmp(context->runtime->current_app, app_id_buffer) != 0) {
+			return -EINVAL;
+		}
+		if (context->runtime->current_app[0] == '\0') {
 			sq_vm_runtime_reset_vm_context(context->runtime);
 		}
 		int result = sq_app_store_vm_storage_for_app(context->store_mount_point,

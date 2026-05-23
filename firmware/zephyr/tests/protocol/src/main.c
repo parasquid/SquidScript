@@ -1050,6 +1050,68 @@ ZTEST(squidscript_protocol, test_handles_app_launch_dispatches_installed_app_sta
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }
 
+ZTEST(squidscript_protocol, test_event_dispatch_rejects_non_foreground_app_target)
+{
+	uint8_t payload[80];
+	uint8_t request[128];
+	uint8_t response[256];
+	size_t payload_len = 0;
+	size_t response_len = 0;
+	struct sq_protocol_frame frame;
+	struct sq_device_identity identity = {
+		.target = "esp32c3-supermini",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_vm_runtime runtime = {0};
+	struct sq_app_store_vm_storage launch_storage = {0};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.store_mount_point = test_fs_mount.mnt_point,
+		.runtime = &runtime,
+		.launch_storage = &launch_storage,
+	};
+
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "headless-counter",
+					       headless_counter_sqbc,
+					       sizeof(headless_counter_sqbc)),
+		      0);
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "reader", reader_exit_sqbc,
+					       sizeof(reader_exit_sqbc)),
+		      0);
+
+	strncpy(runtime.current_app, "headless-counter", sizeof(runtime.current_app) - 1);
+	runtime.context_ready = true;
+	zassert_str_equal(runtime.current_app, "headless-counter");
+	zassert_true(runtime.context_ready);
+
+	payload_len = 0;
+	zassert_equal(sq_protocol_append_string_field(payload, sizeof(payload), &payload_len, 1,
+						      "reader"),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_append_string_field(payload, sizeof(payload), &payload_len, 2,
+						      "repl"),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_EVENT_DISPATCH,
+						      SQ_STATUS_OK, 402, payload, payload_len,
+						      request, sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	memcpy(&request[SQ_PROTOCOL_HEADER_LEN], payload, payload_len);
+
+	zassert_equal(sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN + payload_len,
+						      &context, response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
+	zassert_equal(frame.opcode, SQ_OPCODE_EVENT_DISPATCH);
+	zassert_equal(frame.status, SQ_STATUS_ERROR);
+	zassert_str_equal(runtime.current_app, "headless-counter");
+	zassert_true(runtime.context_ready);
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
 ZTEST(squidscript_protocol, test_event_dispatch_exposes_lifecycle_trace_records)
 {
 	uint8_t payload[80];
