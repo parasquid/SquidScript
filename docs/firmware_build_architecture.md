@@ -75,6 +75,9 @@ fixture with resumable dispatch, complete its storage requests through the
 adapter, and verify trace callback ordering. Zephyr also has a file-backed
 storage backend that uses `fs_*` APIs for SQBC byte-range reads and app-state
 load/save/reset paths; native ztests cover it through a host-mounted filesystem.
+The Zephyr VM runtime scratch buffer is sized to the FFI storage transfer
+capacity so the firmware does not reserve a full max-app buffer when the VM
+only needs one bounded code/storage chunk for resumable dispatch.
 Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi VM service
 calls now cross the Rust FFI boundary into Zephyr callbacks. Zephyr now
 performs installed-app foreground handoff for `app.launch` and `app.exit` with

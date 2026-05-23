@@ -1338,6 +1338,7 @@ ZTEST(squidscript_protocol, test_exposes_resumable_squidvm_ffi_abi)
 	zassert_equal(sqvm_storage_transfer_capacity(), SQVM_STORAGE_TRANSFER_CAPACITY);
 	zassert_equal(sizeof(result.storage.bytes), SQVM_STORAGE_TRANSFER_CAPACITY);
 	zassert_equal(sizeof(completion.bytes), SQVM_STORAGE_TRANSFER_CAPACITY);
+	zassert_equal(SQ_VM_RUNTIME_SCRATCH_BYTES, SQVM_STORAGE_TRANSFER_CAPACITY);
 
 	zassert_equal(sqvm_dispatch_start_resumable(NULL, callbacks, (const uint8_t *)"app.start",
 						    9, &result),

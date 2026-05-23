@@ -72,7 +72,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_ram_audit_default_guard_tracks_current_esp32c3_budget(self):
         audit = self.read("scripts/zephyr-ram-audit.sh")
 
-        self.assertIn('SQUID_ZEPHYR_DRAM_LIMIT_BYTES:-145000', audit)
+        self.assertIn('SQUID_ZEPHYR_DRAM_LIMIT_BYTES:-142000', audit)
 
     def test_hardware_suite_runs_zephyr_app_lifecycle_before_visible_checks(self):
         lifecycle = self.read("scripts/c3-supermini-test-app-lifecycle.sh")
