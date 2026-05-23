@@ -80,6 +80,18 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         ]:
             self.assertIn(option, prj_conf)
 
+    def test_default_config_uses_measured_low_throughput_network_pools(self):
+        prj_conf = self.read("firmware/zephyr/prj.conf")
+
+        for option in [
+            "CONFIG_NET_PKT_RX_COUNT=10",
+            "CONFIG_NET_PKT_TX_COUNT=10",
+            "CONFIG_NET_BUF_RX_COUNT=24",
+            "CONFIG_NET_BUF_TX_COUNT=24",
+            "CONFIG_NET_MGMT_EVENT_QUEUE_SIZE=8",
+        ]:
+            self.assertIn(option, prj_conf)
+
     def test_hardware_suite_requires_real_zephyr_wifi_backend(self):
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
 
