@@ -16,6 +16,7 @@ struct Host {
     sqbc: Vec<u8>,
     traces: Vec<String>,
     output: Vec<String>,
+    drawlog: Vec<String>,
     indicator: bool,
     breathe_count: usize,
     gpio: Vec<(String, bool)>,
@@ -46,6 +47,27 @@ unsafe extern "C" fn debug_output(user_data: *mut c_void, message: *const u8, me
     let host = &mut *(user_data as *mut Host);
     let message = std::str::from_utf8(std::slice::from_raw_parts(message, message_len)).unwrap();
     host.output.push(message.to_string());
+}
+
+unsafe extern "C" fn display_clear(user_data: *mut c_void, color: *const u8, color_len: usize) {
+    let host = &mut *(user_data as *mut Host);
+    let color = std::str::from_utf8(std::slice::from_raw_parts(color, color_len)).unwrap();
+    host.drawlog.push(format!("draw=clear color={color}"));
+}
+
+unsafe extern "C" fn display_text(
+    user_data: *mut c_void,
+    text: *const u8,
+    text_len: usize,
+    options: *const squidvm_ffi::SqvmDisplayTextOptions,
+) {
+    let host = &mut *(user_data as *mut Host);
+    let text = std::str::from_utf8(std::slice::from_raw_parts(text, text_len)).unwrap();
+    let options = *options;
+    host.drawlog.push(format!(
+        "draw=text text=\"{text}\" x={} y={}",
+        options.x, options.y
+    ));
 }
 
 unsafe extern "C" fn indicator_write(user_data: *mut c_void, value: bool) -> i32 {
@@ -134,6 +156,10 @@ fn callbacks(host: &mut Host) -> SqvmCallbacks {
         trace: Some(trace),
         read_exact_at: Some(read_exact_at),
         debug_output: Some(debug_output),
+        display_clear: Some(display_clear),
+        display_text: Some(display_text),
+        display_rect: None,
+        display_line: None,
         indicator_write: Some(indicator_write),
         indicator_toggle: Some(indicator_toggle),
         indicator_read: Some(indicator_read),
@@ -202,6 +228,20 @@ event.on("app.start") {
   debug.print("gpio", hardware.gpio.read("GPIO8"))
 }
 screen("main") {}
+"#,
+    )
+}
+
+fn compile_display_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-display"
+event.on("app.start") {
+  screen.open("main")
+}
+screen("main") {
+  service.display.clear("gray0")
+  service.display.text("Hello", { x: 10, y: 20 })
+}
 "#,
     )
 }
@@ -281,6 +321,44 @@ fn dispatches_debug_indicator_and_timer_service_callbacks() {
     assert_eq!(status, SqvmStatus::Ok);
     assert_eq!(host.indicator, true);
     assert_eq!(host.output, vec!["blinky ready false", "blink true"]);
+}
+
+#[test]
+fn dispatches_display_service_callbacks() {
+    let mut host = Host {
+        sqbc: compile_display_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(
+        host.drawlog,
+        vec![
+            "draw=clear color=gray0".to_string(),
+            "draw=text text=\"Hello\" x=10 y=20".to_string()
+        ]
+    );
 }
 
 #[test]

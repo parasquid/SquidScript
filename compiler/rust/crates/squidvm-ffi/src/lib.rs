@@ -13,6 +13,7 @@ use core::panic::PanicInfo;
 use squidvm_core::{
     error::VmError,
     host::{
+        DisplayLineOptions, DisplayRectOptions, DisplayTextOptions,
         StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink, VmDispatch,
         MAX_STORAGE_TRANSFER_BYTES,
     },
@@ -249,6 +250,48 @@ impl Default for SqvmDispatchResult {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmDisplayTextOptions {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+    pub font_height: i32,
+    pub text_color: *const u8,
+    pub text_color_len: usize,
+    pub background_color: *const u8,
+    pub background_color_len: usize,
+    pub align: *const u8,
+    pub align_len: usize,
+    pub valign: *const u8,
+    pub valign_len: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmDisplayRectOptions {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+    pub fill_color: *const u8,
+    pub fill_color_len: usize,
+    pub stroke_color: *const u8,
+    pub stroke_color_len: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmDisplayLineOptions {
+    pub x1: i32,
+    pub y1: i32,
+    pub x2: i32,
+    pub y2: i32,
+    pub color: *const u8,
+    pub color_len: usize,
+}
+
+#[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SqvmCallbacks {
     pub user_data: *mut c_void,
@@ -265,6 +308,22 @@ pub struct SqvmCallbacks {
     >,
     pub debug_output: Option<
         unsafe extern "C" fn(user_data: *mut c_void, message: *const u8, message_len: usize),
+    >,
+    pub display_clear:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, color: *const u8, color_len: usize)>,
+    pub display_text: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            text: *const u8,
+            text_len: usize,
+            options: *const SqvmDisplayTextOptions,
+        ),
+    >,
+    pub display_rect: Option<
+        unsafe extern "C" fn(user_data: *mut c_void, options: *const SqvmDisplayRectOptions),
+    >,
+    pub display_line: Option<
+        unsafe extern "C" fn(user_data: *mut c_void, options: *const SqvmDisplayLineOptions),
     >,
     pub indicator_write: Option<unsafe extern "C" fn(user_data: *mut c_void, value: bool) -> i32>,
     pub indicator_toggle: Option<unsafe extern "C" fn(user_data: *mut c_void) -> i32>,
@@ -987,6 +1046,86 @@ impl TraceSink for FfiHost {
         }
     }
 
+    fn draw_clear(&mut self, color: &str) {
+        if let Some(display_clear) = self.callbacks.display_clear {
+            unsafe {
+                display_clear(self.callbacks.user_data, color.as_ptr(), color.len());
+            }
+        }
+    }
+
+    fn draw_text(
+        &mut self,
+        strings: &StringResolver<'_>,
+        text: Value,
+        options: DisplayTextOptions<'_>,
+    ) {
+        let Some(display_text) = self.callbacks.display_text else {
+            return;
+        };
+        let mut rendered = FixedLine::<128>::default();
+        write_value(&mut rendered, strings, text);
+        let options = SqvmDisplayTextOptions {
+            x: options.x,
+            y: options.y,
+            w: options.w,
+            h: options.h,
+            font_height: options.font_height,
+            text_color: option_ptr(options.text_color),
+            text_color_len: option_len(options.text_color),
+            background_color: option_ptr(options.background_color),
+            background_color_len: option_len(options.background_color),
+            align: option_ptr(options.align),
+            align_len: option_len(options.align),
+            valign: option_ptr(options.valign),
+            valign_len: option_len(options.valign),
+        };
+        unsafe {
+            display_text(
+                self.callbacks.user_data,
+                rendered.as_ptr(),
+                rendered.len(),
+                &options,
+            );
+        }
+    }
+
+    fn draw_rect(&mut self, options: DisplayRectOptions<'_>) {
+        let Some(display_rect) = self.callbacks.display_rect else {
+            return;
+        };
+        let options = SqvmDisplayRectOptions {
+            x: options.x,
+            y: options.y,
+            w: options.w,
+            h: options.h,
+            fill_color: option_ptr(options.fill_color),
+            fill_color_len: option_len(options.fill_color),
+            stroke_color: option_ptr(options.stroke_color),
+            stroke_color_len: option_len(options.stroke_color),
+        };
+        unsafe {
+            display_rect(self.callbacks.user_data, &options);
+        }
+    }
+
+    fn draw_line(&mut self, options: DisplayLineOptions<'_>) {
+        let Some(display_line) = self.callbacks.display_line else {
+            return;
+        };
+        let options = SqvmDisplayLineOptions {
+            x1: options.x1,
+            y1: options.y1,
+            x2: options.x2,
+            y2: options.y2,
+            color: option_ptr(options.color),
+            color_len: option_len(options.color),
+        };
+        unsafe {
+            display_line(self.callbacks.user_data, &options);
+        }
+    }
+
     fn service_indicator_write(&mut self, value: bool) -> Result<(), VmError> {
         let Some(indicator_write) = self.callbacks.indicator_write else {
             return Err(VmError::InvalidOperand);
@@ -1100,6 +1239,42 @@ fn callback_status(status: i32) -> Result<(), VmError> {
         Ok(())
     } else {
         Err(VmError::InvalidOperand)
+    }
+}
+
+fn option_ptr(value: Option<&str>) -> *const u8 {
+    value.map(|value| value.as_ptr()).unwrap_or(ptr::null())
+}
+
+fn option_len(value: Option<&str>) -> usize {
+    value.map(|value| value.len()).unwrap_or(0)
+}
+
+fn write_value<const N: usize>(
+    line: &mut FixedLine<N>,
+    strings: &StringResolver<'_>,
+    value: Value,
+) {
+    match value {
+        Value::String(_) | Value::RuntimeString(_) => {
+            let text = strings.value_str(value).unwrap_or("<string>");
+            let _ = line.write_str(text);
+        }
+        Value::I32(value) => {
+            let _ = write!(line, "{value}");
+        }
+        Value::Bool(value) => {
+            let _ = write!(line, "{value}");
+        }
+        Value::Null => {
+            let _ = line.write_str("null");
+        }
+        Value::Record(_) => {
+            let _ = line.write_str("<record>");
+        }
+        Value::List(_) => {
+            let _ = line.write_str("<list>");
+        }
     }
 }
 

@@ -90,6 +90,47 @@ typedef int32_t (*SqvmReadExactAtCallback)(
 	uint8_t *out,
 	size_t out_len);
 typedef void (*SqvmDebugOutputCallback)(void *user_data, const uint8_t *message, size_t message_len);
+typedef struct {
+	int32_t x;
+	int32_t y;
+	int32_t w;
+	int32_t h;
+	int32_t font_height;
+	const uint8_t *text_color;
+	size_t text_color_len;
+	const uint8_t *background_color;
+	size_t background_color_len;
+	const uint8_t *align;
+	size_t align_len;
+	const uint8_t *valign;
+	size_t valign_len;
+} SqvmDisplayTextOptions;
+typedef struct {
+	int32_t x;
+	int32_t y;
+	int32_t w;
+	int32_t h;
+	const uint8_t *fill_color;
+	size_t fill_color_len;
+	const uint8_t *stroke_color;
+	size_t stroke_color_len;
+} SqvmDisplayRectOptions;
+typedef struct {
+	int32_t x1;
+	int32_t y1;
+	int32_t x2;
+	int32_t y2;
+	const uint8_t *color;
+	size_t color_len;
+} SqvmDisplayLineOptions;
+typedef void (*SqvmDisplayClearCallback)(void *user_data, const uint8_t *color, size_t color_len);
+typedef void (*SqvmDisplayTextCallback)(
+	void *user_data,
+	const uint8_t *text,
+	size_t text_len,
+	const SqvmDisplayTextOptions *options);
+typedef void (*SqvmDisplayRectCallback)(void *user_data, const SqvmDisplayRectOptions *options);
+typedef void (*SqvmDisplayLineCallback)(void *user_data, const SqvmDisplayLineOptions *options);
 typedef int32_t (*SqvmIndicatorWriteCallback)(void *user_data, bool value);
 typedef int32_t (*SqvmIndicatorToggleCallback)(void *user_data);
 typedef int32_t (*SqvmIndicatorReadCallback)(void *user_data, bool *out);
@@ -124,6 +165,10 @@ typedef struct {
 	SqvmTraceCallback trace;
 	SqvmReadExactAtCallback read_exact_at;
 	SqvmDebugOutputCallback debug_output;
+	SqvmDisplayClearCallback display_clear;
+	SqvmDisplayTextCallback display_text;
+	SqvmDisplayRectCallback display_rect;
+	SqvmDisplayLineCallback display_line;
 	SqvmIndicatorWriteCallback indicator_write;
 	SqvmIndicatorToggleCallback indicator_toggle;
 	SqvmIndicatorReadCallback indicator_read;

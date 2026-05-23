@@ -587,6 +587,16 @@ static int repeated_runtime_lines_response(const struct sq_protocol_frame *reque
 			}
 		}
 	}
+	if (runtime != NULL && request->opcode == SQ_OPCODE_DRAWLOG_GET) {
+		for (size_t i = 0; i < runtime->drawlog_count; i++) {
+			result = append_string_field(payload, sizeof(payload), &payload_len,
+						     SQ_DEVICE_LINE_FIELD_VALUE,
+						     runtime->drawlog[i]);
+			if (result != SQ_PROTOCOL_OK) {
+				return result;
+			}
+		}
+	}
 	for (size_t i = 0; i < extra_count; i++) {
 		result = append_string_field(payload, sizeof(payload), &payload_len,
 					     SQ_DEVICE_LINE_FIELD_VALUE, extra_lines[i]);

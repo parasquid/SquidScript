@@ -1,6 +1,7 @@
 #include "vm_runtime.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <string.h>
 #include <stddef.h>
 
@@ -80,6 +81,61 @@ static int32_t runtime_read_exact_at(void *user_data, size_t offset, uint8_t *ou
 static void runtime_debug_output(void *user_data, const uint8_t *message, size_t message_len)
 {
 	(void)sq_vm_runtime_record_output(user_data, message, message_len);
+}
+
+static void runtime_display_clear(void *user_data, const uint8_t *color, size_t color_len)
+{
+	char line[SQ_VM_RUNTIME_DRAWLOG_LEN];
+	int written = snprintf(line, sizeof(line), "draw=clear color=%.*s", (int)color_len,
+			       color == NULL ? (const uint8_t *)"" : color);
+
+	if (written > 0) {
+		(void)sq_vm_runtime_record_drawlog(user_data, line);
+	}
+}
+
+static void runtime_display_text(void *user_data, const uint8_t *text, size_t text_len,
+				 const SqvmDisplayTextOptions *options)
+{
+	char line[SQ_VM_RUNTIME_DRAWLOG_LEN];
+
+	if (options == NULL) {
+		return;
+	}
+	int written = snprintf(line, sizeof(line), "draw=text text=\"%.*s\" x=%d y=%d",
+			       (int)text_len, text == NULL ? (const uint8_t *)"" : text,
+			       options->x, options->y);
+	if (written > 0) {
+		(void)sq_vm_runtime_record_drawlog(user_data, line);
+	}
+}
+
+static void runtime_display_rect(void *user_data, const SqvmDisplayRectOptions *options)
+{
+	char line[SQ_VM_RUNTIME_DRAWLOG_LEN];
+
+	if (options == NULL) {
+		return;
+	}
+	int written = snprintf(line, sizeof(line), "draw=rect x=%d y=%d w=%d h=%d", options->x,
+			       options->y, options->w, options->h);
+	if (written > 0) {
+		(void)sq_vm_runtime_record_drawlog(user_data, line);
+	}
+}
+
+static void runtime_display_line(void *user_data, const SqvmDisplayLineOptions *options)
+{
+	char line[SQ_VM_RUNTIME_DRAWLOG_LEN];
+
+	if (options == NULL) {
+		return;
+	}
+	int written = snprintf(line, sizeof(line), "draw=line x1=%d y1=%d x2=%d y2=%d",
+			       options->x1, options->y1, options->x2, options->y2);
+	if (written > 0) {
+		(void)sq_vm_runtime_record_drawlog(user_data, line);
+	}
 }
 
 static int32_t runtime_indicator_write(void *user_data, bool value)
@@ -176,6 +232,8 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	memset(runtime->event, 0, sizeof(runtime->event));
 	memset(runtime->outputs, 0, sizeof(runtime->outputs));
 	runtime->output_count = 0;
+	memset(runtime->drawlog, 0, sizeof(runtime->drawlog));
+	runtime->drawlog_count = 0;
 	memset(runtime->timers, 0, sizeof(runtime->timers));
 	runtime->indicator_state = false;
 	runtime->indicator_breathe_active = false;
@@ -207,6 +265,10 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		.trace = runtime_trace,
 		.read_exact_at = runtime_read_exact_at,
 		.debug_output = runtime_debug_output,
+		.display_clear = runtime_display_clear,
+		.display_text = runtime_display_text,
+		.display_rect = runtime_display_rect,
+		.display_line = runtime_display_line,
 		.indicator_write = runtime_indicator_write,
 		.indicator_toggle = runtime_indicator_toggle,
 		.indicator_read = runtime_indicator_read,
@@ -295,6 +357,28 @@ int sq_vm_runtime_record_output(struct sq_vm_runtime *runtime, const uint8_t *me
 	memcpy(runtime->outputs[slot], message, len);
 	runtime->outputs[slot][len] = '\0';
 	runtime->output_count++;
+	return 0;
+}
+
+int sq_vm_runtime_record_drawlog(struct sq_vm_runtime *runtime, const char *line)
+{
+	if (runtime == NULL || line == NULL) {
+		return -EINVAL;
+	}
+	size_t slot = runtime->drawlog_count;
+	if (slot >= SQ_VM_RUNTIME_DRAWLOG_MAX) {
+		memmove(runtime->drawlog[0], runtime->drawlog[1],
+			(SQ_VM_RUNTIME_DRAWLOG_MAX - 1) * SQ_VM_RUNTIME_DRAWLOG_LEN);
+		slot = SQ_VM_RUNTIME_DRAWLOG_MAX - 1;
+		runtime->drawlog_count = SQ_VM_RUNTIME_DRAWLOG_MAX - 1;
+	}
+	size_t len = 0;
+	while (len < SQ_VM_RUNTIME_DRAWLOG_LEN - 1 && line[len] != '\0') {
+		len++;
+	}
+	memcpy(runtime->drawlog[slot], line, len);
+	runtime->drawlog[slot][len] = '\0';
+	runtime->drawlog_count++;
 	return 0;
 }
 
