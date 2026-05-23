@@ -617,6 +617,57 @@ ZTEST(squidscript_protocol, test_handles_trace_resources_and_wifi_error_frames)
 	zassert_equal(frame.status, SQ_STATUS_ERROR);
 }
 
+ZTEST(squidscript_protocol, test_wifi_profile_set_stores_volatile_profile_without_echoing_secret)
+{
+	uint8_t payload[96];
+	uint8_t request[SQ_PROTOCOL_HEADER_LEN + sizeof(payload)];
+	uint8_t response[128];
+	size_t payload_len = 0;
+	size_t response_len = 0;
+	struct sq_protocol_frame frame;
+	struct sq_vm_runtime runtime = {0};
+	struct sq_device_identity identity = {
+		.target = "esp32c3-supermini",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.runtime = &runtime,
+	};
+
+	sq_vm_runtime_init(&runtime);
+	zassert_equal(sq_protocol_append_string_field(payload, sizeof(payload), &payload_len, 1,
+						      "dev"),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_append_string_field(payload, sizeof(payload), &payload_len, 2,
+						      "ExampleSSID"),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_append_string_field(payload, sizeof(payload), &payload_len, 3,
+						      "secret-pass"),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_WIFI_PROFILE_SET,
+						      SQ_STATUS_OK, 76, payload, payload_len,
+						      request, sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	memcpy(&request[SQ_PROTOCOL_HEADER_LEN], payload, payload_len);
+
+	zassert_equal(sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN + payload_len,
+						      &context, response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
+	zassert_equal(frame.opcode, SQ_OPCODE_WIFI_PROFILE_SET);
+	zassert_equal(frame.status, SQ_STATUS_OK);
+	zassert_equal(frame.payload_len, 0);
+	zassert_equal(runtime.wifi_profile_len, 3);
+	zassert_equal(runtime.wifi_profile_ssid_len, 11);
+	zassert_equal(runtime.wifi_profile_password_len, 11);
+	zassert_mem_equal(runtime.wifi_profile, "dev", 3);
+	zassert_mem_equal(runtime.wifi_profile_ssid, "ExampleSSID", 11);
+	zassert_mem_equal(runtime.wifi_profile_password, "secret-pass", 11);
+}
+
 ZTEST(squidscript_protocol, test_storage_format_clears_runtime_before_erasing_files)
 {
 	const uint8_t sqbc[] = {'s', 'q', 'b', 'c'};

@@ -380,6 +380,18 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("c3-supermini-test-wifi-station-api.sh", suite)
         self.assertNotIn("app.exit()", self.read("tests/hardware/c3-supermini/wifi-station-summary/main.squid"))
 
+    def test_zephyr_wifi_profile_opcode_stores_bounded_volatile_runtime_profile(self):
+        protocol_h = self.read("firmware/zephyr/src/device_protocol.h")
+        protocol_c = self.read("firmware/zephyr/src/device_protocol.c")
+        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+
+        self.assertIn("SQ_DEVICE_WIFI_PROFILE_NAME_BYTES 16", protocol_h)
+        self.assertIn("SQ_DEVICE_WIFI_PROFILE_SSID_BYTES 32", protocol_h)
+        self.assertIn("SQ_DEVICE_WIFI_PROFILE_PASSWORD_BYTES 64", protocol_h)
+        self.assertIn("sq_vm_runtime_set_wifi_profile", runtime_h)
+        self.assertIn("wifi_profile_set(&frame", protocol_c)
+        self.assertNotIn("case SQ_OPCODE_WIFI_PROFILE_SET:\n\t\tresult = -ENOTSUP;", protocol_c)
+
     def test_wifi_ap_check_is_current_redacted_and_not_in_default_suite(self):
         ap = self.read("scripts/c3-supermini-test-wifi-ap-api.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")

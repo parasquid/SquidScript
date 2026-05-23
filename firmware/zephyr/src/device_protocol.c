@@ -16,6 +16,9 @@ BUILD_ASSERT(sizeof(struct sq_app_registry_entry) == sizeof(SqdpAppListEntry));
 BUILD_ASSERT(offsetof(struct sq_app_registry_entry, app_id) == offsetof(SqdpAppListEntry, app_id));
 BUILD_ASSERT(offsetof(struct sq_app_registry_entry, sqbc_len) ==
 	     offsetof(SqdpAppListEntry, sqbc_len));
+BUILD_ASSERT(SQ_DEVICE_WIFI_PROFILE_NAME_BYTES == SQ_VM_RUNTIME_WIFI_PROFILE_NAME_BYTES);
+BUILD_ASSERT(SQ_DEVICE_WIFI_PROFILE_SSID_BYTES == SQ_VM_RUNTIME_WIFI_PROFILE_SSID_BYTES);
+BUILD_ASSERT(SQ_DEVICE_WIFI_PROFILE_PASSWORD_BYTES == SQ_VM_RUNTIME_WIFI_PROFILE_PASSWORD_BYTES);
 
 static int sqdp_status_to_protocol_result(SqdpStatus status)
 {
@@ -995,6 +998,56 @@ static int dispatch_key(const struct sq_protocol_frame *request,
 					 response_cap, response_len);
 }
 
+static int wifi_profile_set(const struct sq_protocol_frame *request,
+			    const struct sq_device_protocol_context *context, uint8_t *response,
+			    size_t response_cap, size_t *response_len)
+{
+	const uint8_t *profile = NULL;
+	const uint8_t *ssid = NULL;
+	const uint8_t *password = NULL;
+	size_t profile_len = 0;
+	size_t ssid_len = 0;
+	size_t password_len = 0;
+	size_t offset = 0;
+	struct sq_protocol_field field;
+	int parse_result;
+
+	if (context == NULL || context->runtime == NULL) {
+		return -ENODEV;
+	}
+	while ((parse_result = sq_protocol_next_field(request->payload, request->payload_len, &offset,
+						     &field)) == SQ_PROTOCOL_OK) {
+		if (field.type != SQ_FIELD_STRING) {
+			return -EINVAL;
+		}
+		switch (field.tag) {
+		case 1:
+			profile = field.value;
+			profile_len = field.len;
+			break;
+		case 2:
+			ssid = field.value;
+			ssid_len = field.len;
+			break;
+		case 3:
+			password = field.value;
+			password_len = field.len;
+			break;
+		default:
+			return -EINVAL;
+		}
+	}
+	if (parse_result != SQ_PROTOCOL_DONE) {
+		return -EINVAL;
+	}
+	int result = sq_vm_runtime_set_wifi_profile(context->runtime, profile, profile_len, ssid,
+						    ssid_len, password, password_len);
+	if (result != 0) {
+		return result;
+	}
+	return ok_response(request, response, response_cap, response_len);
+}
+
 int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 				    const struct sq_device_protocol_context *context, uint8_t *response,
 				    size_t response_cap, size_t *response_len)
@@ -1113,7 +1166,7 @@ int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 				      response_len);
 		break;
 	case SQ_OPCODE_WIFI_PROFILE_SET:
-		result = -ENOTSUP;
+		result = wifi_profile_set(&frame, context, response, response_cap, response_len);
 		break;
 	default:
 		return SQ_PROTOCOL_ERR_BAD_MAGIC;

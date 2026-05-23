@@ -95,8 +95,9 @@ diagnostics. `app.arm` and `app.disarm` now manage bounded timer-triggered
 armed app registrations and dispatch armed timer events as foreground app
 starts. The current Zephyr Wi-Fi callbacks use Zephyr Wi-Fi management for
 status, scan, AP start/stop, and AP IP reporting. Station connect/disconnect
-still return bounded `unsupported` records until station profile storage and
-connection handling are implemented.
+still return bounded `unsupported` records until station connection handling is
+implemented. `device wifi-profile` stores one volatile bounded station profile
+in runtime memory without echoing SSIDs or passwords.
 The app-store layer now derives bounded file paths for `main.sqbc` and app
 state from a mount point plus validated app ID, and ESP32-C3 firmware attempts
 to mount the `storage_partition` LittleFS volume at `/sq` during boot without

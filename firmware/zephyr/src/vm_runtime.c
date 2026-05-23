@@ -295,6 +295,43 @@ int sq_vm_runtime_wifi_format_bssid(const uint8_t *mac, size_t mac_len, char *ou
 	return written == SQ_VM_RUNTIME_WIFI_BSSID_LEN - 1 ? 0 : -EIO;
 }
 
+static bool runtime_wifi_valid_profile_name(const uint8_t *profile, size_t profile_len)
+{
+	if (profile == NULL || profile_len == 0 ||
+	    profile_len > SQ_VM_RUNTIME_WIFI_PROFILE_NAME_BYTES) {
+		return false;
+	}
+	for (size_t i = 0; i < profile_len; i++) {
+		uint8_t ch = profile[i];
+		if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+		      (ch >= '0' && ch <= '9') || ch == '-' || ch == '_')) {
+			return false;
+		}
+	}
+	return true;
+}
+
+int sq_vm_runtime_set_wifi_profile(struct sq_vm_runtime *runtime, const uint8_t *profile,
+				   size_t profile_len, const uint8_t *ssid, size_t ssid_len,
+				   const uint8_t *password, size_t password_len)
+{
+	if (runtime == NULL || !runtime_wifi_valid_profile_name(profile, profile_len) ||
+	    ssid == NULL || ssid_len == 0 || ssid_len > SQ_VM_RUNTIME_WIFI_PROFILE_SSID_BYTES ||
+	    password == NULL || password_len > SQ_VM_RUNTIME_WIFI_PROFILE_PASSWORD_BYTES) {
+		return -EINVAL;
+	}
+	memset(runtime->wifi_profile, 0, sizeof(runtime->wifi_profile));
+	memset(runtime->wifi_profile_ssid, 0, sizeof(runtime->wifi_profile_ssid));
+	memset(runtime->wifi_profile_password, 0, sizeof(runtime->wifi_profile_password));
+	memcpy(runtime->wifi_profile, profile, profile_len);
+	runtime->wifi_profile_len = profile_len;
+	memcpy(runtime->wifi_profile_ssid, ssid, ssid_len);
+	runtime->wifi_profile_ssid_len = ssid_len;
+	memcpy(runtime->wifi_profile_password, password, password_len);
+	runtime->wifi_profile_password_len = password_len;
+	return 0;
+}
+
 #if SQ_VM_RUNTIME_HAS_WIFI_MGMT
 static void copy_text(char *out, size_t out_len, const char *text)
 {
@@ -802,6 +839,12 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->indicator_breathe_next_ms = 0;
 	runtime->gpio_configured_mask = 0;
 	runtime->gpio_state_mask = 0;
+	memset(runtime->wifi_profile, 0, sizeof(runtime->wifi_profile));
+	runtime->wifi_profile_len = 0;
+	memset(runtime->wifi_profile_ssid, 0, sizeof(runtime->wifi_profile_ssid));
+	runtime->wifi_profile_ssid_len = 0;
+	memset(runtime->wifi_profile_password, 0, sizeof(runtime->wifi_profile_password));
+	runtime->wifi_profile_password_len = 0;
 #if SQ_VM_RUNTIME_HAS_WIFI_MGMT
 	runtime->wifi_ap_active = false;
 	runtime->wifi_ap_start_events = 0;

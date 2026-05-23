@@ -34,6 +34,9 @@ extern "C" {
 #define SQ_VM_RUNTIME_WIFI_SSID_LEN 33
 #define SQ_VM_RUNTIME_WIFI_BSSID_LEN 18
 #define SQ_VM_RUNTIME_WIFI_AUTH_LEN 24
+#define SQ_VM_RUNTIME_WIFI_PROFILE_NAME_BYTES 16
+#define SQ_VM_RUNTIME_WIFI_PROFILE_SSID_BYTES 32
+#define SQ_VM_RUNTIME_WIFI_PROFILE_PASSWORD_BYTES 64
 
 enum sq_vm_runtime_status {
 	SQ_VM_RUNTIME_IDLE = 0,
@@ -100,6 +103,12 @@ struct sq_vm_runtime {
 	uint32_t gpio_configured_mask;
 	uint32_t gpio_state_mask;
 	struct sq_vm_runtime_timer timers[SQ_VM_RUNTIME_TIMER_MAX];
+	char wifi_profile[SQ_VM_RUNTIME_WIFI_PROFILE_NAME_BYTES];
+	size_t wifi_profile_len;
+	uint8_t wifi_profile_ssid[SQ_VM_RUNTIME_WIFI_PROFILE_SSID_BYTES];
+	size_t wifi_profile_ssid_len;
+	uint8_t wifi_profile_password[SQ_VM_RUNTIME_WIFI_PROFILE_PASSWORD_BYTES];
+	size_t wifi_profile_password_len;
 #if IS_ENABLED(CONFIG_NET_L2_WIFI_MGMT) && IS_ENABLED(CONFIG_NET_MGMT_EVENT) && \
 	IS_ENABLED(CONFIG_NET_MGMT_EVENT_INFO)
 	SqvmWifiAccessPoint wifi_scan_networks[SQVM_WIFI_SCAN_MAX_NETWORKS];
@@ -152,6 +161,9 @@ int sq_vm_runtime_poll(struct sq_vm_runtime *runtime);
 size_t sq_vm_runtime_work_stack_size(void);
 int sq_vm_runtime_work_stack_unused(size_t *unused);
 int sq_vm_runtime_wifi_format_bssid(const uint8_t *mac, size_t mac_len, char *out, size_t out_len);
+int sq_vm_runtime_set_wifi_profile(struct sq_vm_runtime *runtime, const uint8_t *profile,
+				   size_t profile_len, const uint8_t *ssid, size_t ssid_len,
+				   const uint8_t *password, size_t password_len);
 
 #ifdef __cplusplus
 }
