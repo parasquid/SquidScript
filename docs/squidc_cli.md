@@ -108,7 +108,8 @@ raw target-specific RAM and app-storage byte counts. `ram_total_bytes` is
 static board context; `vm_worker_stack_*` fields expose the configured VM work
 queue stack size and Zephyr stack high-water usage when stack initialization is
 enabled; `ram_heap_*` fields are live allocator telemetry from the running
-firmware. With `--json`, parsed values are returned under
+firmware; `runtime_static_bytes` is the resident VM runtime object after
+internal buffer sharing. With `--json`, parsed values are returned under
 `data.resources`. Firmware diagnostics should distinguish volatile temp-run
 state from installed-app code cache and app-store usage.
 

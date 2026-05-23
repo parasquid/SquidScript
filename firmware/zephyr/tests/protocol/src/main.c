@@ -1424,6 +1424,17 @@ ZTEST(squidscript_protocol, test_links_squidvm_ffi_context_metadata)
 	zassert_true(SQ_VM_RUNTIME_WORK_STACK_SIZE <= 16384);
 }
 
+ZTEST(squidscript_protocol, test_runtime_reuses_transfer_storage_for_init_scratch_and_completion)
+{
+	static struct sq_vm_runtime runtime;
+	size_t runtime_static = sizeof(runtime);
+
+	zassert_equal(sizeof(runtime.transfer.init_scratch), SQ_VM_RUNTIME_SCRATCH_BYTES);
+	zassert_true(sizeof(runtime.transfer) >= sizeof(runtime.transfer.init_scratch));
+	zassert_true(sizeof(runtime.transfer) >= sizeof(runtime.transfer.completion));
+	zassert_true(runtime_static <= 16640, "runtime_static=%zu", runtime_static);
+}
+
 ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 {
 	uint8_t request[SQ_PROTOCOL_HEADER_LEN];

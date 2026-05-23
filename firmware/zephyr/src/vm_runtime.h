@@ -63,13 +63,17 @@ struct sq_vm_runtime_armed_timer {
 	char event[SQ_VM_RUNTIME_EVENT_LEN];
 };
 
+union sq_vm_runtime_transfer {
+	uint8_t init_scratch[SQ_VM_RUNTIME_SCRATCH_BYTES];
+	SqvmStorageCompletion completion;
+};
+
 struct sq_vm_runtime {
 	struct k_work work;
 	bool work_initialized;
 	uint64_t context_words[SQ_VM_RUNTIME_CONTEXT_BYTES / sizeof(uint64_t)];
-	uint8_t scratch[SQ_VM_RUNTIME_SCRATCH_BYTES];
+	union sq_vm_runtime_transfer transfer;
 	SqvmDispatchResult result;
-	SqvmStorageCompletion completion;
 	const struct sq_vm_storage_backend *backend;
 	struct sq_vm_storage_backend job_backend;
 	char event[SQ_VM_RUNTIME_EVENT_LEN];

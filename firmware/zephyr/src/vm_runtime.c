@@ -962,9 +962,8 @@ static int32_t runtime_wifi_scan(void *user_data, SqvmWifiScanResult *out)
 static void clear_dispatch_state(struct sq_vm_runtime *runtime)
 {
 	memset(runtime->context_words, 0, sizeof(runtime->context_words));
-	memset(runtime->scratch, 0, sizeof(runtime->scratch));
+	memset(&runtime->transfer, 0, sizeof(runtime->transfer));
 	memset(&runtime->result, 0, sizeof(runtime->result));
-	memset(&runtime->completion, 0, sizeof(runtime->completion));
 	runtime->backend = NULL;
 }
 
@@ -1119,8 +1118,9 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 	if (status != SQVM_STATUS_OK) {
 		return -EIO;
 	}
-	status = sqvm_context_init_in_place(runtime->context_words, callbacks, runtime->scratch,
-					    sizeof(runtime->scratch));
+	status = sqvm_context_init_in_place(runtime->context_words, callbacks,
+					    runtime->transfer.init_scratch,
+					    sizeof(runtime->transfer.init_scratch));
 	if (status != SQVM_STATUS_OK) {
 		return -EIO;
 	}
@@ -1133,12 +1133,13 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 
 	while (runtime->result.outcome == SQVM_DISPATCH_PENDING_STORAGE) {
 		int storage_result = sq_vm_storage_complete_request(backend, &runtime->result.storage,
-								   &runtime->completion);
+								   &runtime->transfer.completion);
 		if (storage_result != 0) {
 			return storage_result;
 		}
 		status = sqvm_dispatch_resume_storage(runtime->context_words, callbacks,
-						      &runtime->completion, &runtime->result);
+						      &runtime->transfer.completion,
+						      &runtime->result);
 		if (status != SQVM_STATUS_OK) {
 			return -EIO;
 		}

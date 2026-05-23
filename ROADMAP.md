@@ -93,13 +93,18 @@ for compiler, SQBC tooling, and VM semantics.
   The default ESP32-C3 Super Mini firmware builds with Zephyr ESP32 Wi-Fi
   scan/status/AP/station support, AP DHCPv4 server support, one volatile
   station profile, and station DHCP/IP status reporting at
-  `dram0_0_seg=201440` bytes, or 49.2% of the target definition's 400 KiB
-  internal SRAM, after bounding native-network packet/buffer pools and measured
-  Wi-Fi socket/event, ESP timer task, and network RX stack budgets for current
-  low-throughput service traffic. `device resources` now exposes live Zephyr
-  heap telemetry; the first representative Wi-Fi/control workload measured
+  `dram0_0_seg=200416` linker bytes, with `scripts/zephyr-ram-audit.sh`
+  reporting `dram0_0_seg=200400` bytes, or 48.9% of the target definition's
+  400 KiB internal SRAM, after bounding native-network packet/buffer pools and
+  measured Wi-Fi socket/event, ESP timer task, and network RX stack budgets for
+  current low-throughput service traffic. `device resources` now exposes live
+  Zephyr heap telemetry; the first representative Wi-Fi/control workload measured
   `ram_heap_max_allocated_bytes=36764`, so the Zephyr system heap is bounded to
   49152 bytes while retaining roughly 12 KiB of observed high-water headroom.
+  The Zephyr VM runtime now reuses the VM initialization scratch transfer
+  buffer as the later storage-completion transfer buffer, reducing resident
+  runtime static RAM by 1024 bytes without changing service capacity; hardware
+  resource diagnostics report `runtime_static_bytes=16608`.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.
