@@ -38,6 +38,19 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("riscv64-zephyr-elf", setup)
         self.assertNotIn("rpm-ostree", setup)
 
+    def test_setup_script_installs_twister_protocol_test_dependencies(self):
+        setup = self.read("scripts/zephyr-setup.sh")
+        docs = self.read("docs/firmware_build_architecture.md")
+        roadmap = self.read("ROADMAP.md")
+        requirements = self.read("firmware/zephyr/requirements-twister.txt")
+
+        self.assertIn("requirements-build-test.txt", setup)
+        self.assertIn("firmware/zephyr/requirements-twister.txt", setup)
+        self.assertIn("natsort", requirements)
+        self.assertIn("tabulate", requirements)
+        self.assertIn("twister", docs.lower())
+        self.assertNotIn("missing Twister Python dependencies", roadmap)
+
     def test_env_script_exports_local_west_workspace_and_default_board(self):
         env = self.read("scripts/zephyr-env.sh")
 
@@ -52,10 +65,20 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             "scripts/c3-supermini-zephyr-build.sh",
             "scripts/c3-supermini-zephyr-flash.sh",
             "scripts/c3-supermini-zephyr-monitor.sh",
+            "scripts/zephyr-test-protocol.sh",
         ]:
             with self.subTest(script=script):
                 contents = self.read(script)
                 self.assertIn('source "${ROOT}/scripts/zephyr-env.sh"', contents)
+
+    def test_protocol_twister_wrapper_uses_64_bit_native_platform(self):
+        script = self.read("scripts/zephyr-test-protocol.sh")
+        docs = self.read("docs/firmware_build_architecture.md")
+
+        self.assertIn("west twister", script)
+        self.assertIn("firmware/zephyr/tests/protocol", script)
+        self.assertIn("native_sim/native/64", script)
+        self.assertIn("scripts/zephyr-test-protocol.sh", docs)
 
     def test_build_wrapper_applies_supermini_overlay(self):
         build = self.read("scripts/c3-supermini-zephyr-build.sh")

@@ -17,9 +17,11 @@ for compiler, SQBC tooling, and VM semantics.
   build succeeds.
 - Add a Zephyr hardware diagnostic test that builds, flashes, boots, and reads
   the diagnostic banner over the serial monitor.
-- Install or document the missing Twister Python dependencies so
-  `firmware/zephyr/tests/protocol` can run through Twister, not only direct
-  `west build -t run`.
+- Fix the remaining `scripts/zephyr-test-protocol.sh` native Twister failures.
+  The runner now reaches the ztest binary on `native_sim/native/64`; current
+  failures are test/runtime issues such as native context-size mismatch and
+  shared filesystem mount cleanup after failing tests, not missing Python
+  dependencies.
 
 ### 2. Expand Zephyr VM Hosting ABI
 

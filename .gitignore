@@ -6,6 +6,7 @@ node_modules/
 dist/
 test-results/
 playwright-report/
+twister-out*/
 .vite/
 __pycache__/
 *.py[cod]

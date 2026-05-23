@@ -135,6 +135,12 @@ if [[ -f "${WORKSPACE_DIR}/zephyr/scripts/requirements-base.txt" ]]; then
   "${VENV_DIR}/bin/python" -m pip install -r "${WORKSPACE_DIR}/zephyr/scripts/requirements-base.txt"
 fi
 
+if [[ -f "${WORKSPACE_DIR}/zephyr/scripts/requirements-build-test.txt" ]]; then
+  "${VENV_DIR}/bin/python" -m pip install -r "${WORKSPACE_DIR}/zephyr/scripts/requirements-build-test.txt"
+fi
+
+"${VENV_DIR}/bin/python" -m pip install -r "${ROOT}/firmware/zephyr/requirements-twister.txt"
+
 if [[ "$SKIP_BLOBS" != "1" ]]; then
   (cd "$WORKSPACE_DIR" && west blobs fetch hal_espressif)
 fi

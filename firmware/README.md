@@ -50,10 +50,12 @@ Zephyr setup is host-specific but repository-local by default:
 
 - `scripts/zephyr-setup.sh` installs missing generic host tools with Homebrew,
   creates `target/zephyr/venv`, installs `west` into that venv, initializes and
-  updates a Zephyr workspace under `target/zephyr/workspace`, and fetches
-  `hal_espressif` blobs. When no SDK is detected, it uses Zephyr's supported
-  `west sdk install` flow to install the RISC-V Zephyr GNU toolchain under
-  `target/zephyr/sdk`; pass `--skip-sdk` to leave SDK installation manual.
+  updates a Zephyr workspace under `target/zephyr/workspace`, installs Zephyr's
+  base/build-test Python requirements plus the repo-local Twister requirements,
+  and fetches `hal_espressif` blobs. When no SDK is detected, it uses Zephyr's
+  supported `west sdk install` flow to install the RISC-V Zephyr GNU toolchain
+  under `target/zephyr/sdk`; pass `--skip-sdk` to leave SDK installation
+  manual.
 - `scripts/zephyr-env.sh` exports the local `west` path, `ZEPHYR_BASE` when the
   workspace exists, the default `ZEPHYR_BUILD_DIR`, and the unverified default
   `ZEPHYR_BOARD`.

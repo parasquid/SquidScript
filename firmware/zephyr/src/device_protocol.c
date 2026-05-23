@@ -810,7 +810,6 @@ static int resources_response(const struct sq_protocol_frame *request,
 			      const struct sq_device_protocol_context *context, uint8_t *response,
 			      size_t response_cap, size_t *response_len)
 {
-	struct k_heap *heaps = NULL;
 	size_t vm_worker_stack_unused = 0;
 	size_t vm_worker_stack_size = context->runtime == NULL ? 0 : sq_vm_runtime_work_stack_size();
 	size_t vm_worker_stack_used = 0;
@@ -838,6 +837,7 @@ static int resources_response(const struct sq_protocol_frame *request,
 	}
 
 #ifdef CONFIG_SYS_HEAP_RUNTIME_STATS
+	struct k_heap *heaps = NULL;
 	int heap_array_count = k_heap_array_get(&heaps);
 	if (heap_array_count > 0 && heaps != NULL) {
 		heap_count = (size_t)heap_array_count;

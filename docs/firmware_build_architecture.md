@@ -26,6 +26,7 @@ From the repository root:
 
 ```sh
 scripts/zephyr-setup.sh
+scripts/zephyr-test-protocol.sh
 scripts/c3-supermini-build.sh
 scripts/c3-supermini-flash.sh
 scripts/c3-supermini-zephyr-monitor.sh
@@ -39,7 +40,8 @@ workspace in `target/zephyr/workspace`.
 `scripts/zephyr-setup.sh` prepares that local tooling area. It may install
 generic host tools with Homebrew (`cmake`, `ninja`, `dtc`, `wget`, and `xz`),
 creates the Python venv, installs `west`, initializes and updates the Zephyr
-workspace from `firmware/zephyr/west.yml`, and runs
+workspace from `firmware/zephyr/west.yml`, installs Zephyr's base/build-test
+Python requirements plus `firmware/zephyr/requirements-twister.txt`, and runs
 `west blobs fetch hal_espressif` for Espressif RF blob support. If no SDK is
 detected, it runs Zephyr's supported `west sdk install` flow for the
 `riscv64-zephyr-elf` GNU toolchain under `target/zephyr/sdk`; pass
@@ -78,6 +80,10 @@ load/save/reset paths; native ztests cover it through a host-mounted filesystem.
 The Zephyr VM runtime scratch buffer is sized to the FFI storage transfer
 capacity so the firmware does not reserve a full max-app buffer when the VM
 only needs one bounded code/storage chunk for resumable dispatch.
+The repo-local Zephyr setup installs the lightweight Twister dependencies
+needed to run `firmware/zephyr/tests/protocol` through Zephyr's test runner.
+Use `scripts/zephyr-test-protocol.sh` for that protocol suite; it selects
+`native_sim/native/64`, which avoids requiring host 32-bit libc headers.
 Temp-run volatile app state is sized to the VM saved-state capacity, not the
 larger SQBC transfer chunk capacity.
 The linked Rust VM context reservation is capped at 12 KiB and checked against
