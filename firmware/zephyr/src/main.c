@@ -24,7 +24,7 @@ int main(void)
 	static struct sq_device_resource_session resource_session;
 	static struct sq_vm_runtime runtime;
 	static struct sq_app_store_vm_storage launch_storage;
-	static uint8_t response[704];
+	static uint8_t response[SQ_DEVICE_RESPONSE_BYTES];
 	struct sq_device_protocol_context protocol_context = {
 		.identity = &identity,
 		.registry = &registry,
