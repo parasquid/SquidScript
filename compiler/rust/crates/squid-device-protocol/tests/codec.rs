@@ -4,9 +4,9 @@ use squid_device_protocol::{
     app_list_entries, decode_frame, encode_app_list_response_into, encode_empty_response_into,
     encode_error_response_into, encode_frame, encode_frame_into, encode_hello_response_into,
     encode_lifecycle_response_into, encode_line_response_into, encode_resources_response_into,
-    hello_identity, hello_request, lifecycle_lines, output_lines, resource_values, AppListEntry,
-    DecodeError, Field, FieldValue, Frame, FrameKind, LifecycleTimer, Opcode, ResourceMetric,
-    Status,
+    hello_identity, hello_request, key_event_from_request_into, key_request, lifecycle_lines,
+    output_lines, resource_values, AppListEntry, DecodeError, Field, FieldValue, Frame, FrameKind,
+    LifecycleTimer, Opcode, ResourceMetric, Status,
 };
 
 #[test]
@@ -80,6 +80,16 @@ fn preserves_frame_header_shape() {
     assert_eq!(bytes[5], Opcode::Key as u8);
     assert_eq!(bytes[6], Status::Ok as u8);
     assert_eq!(&bytes[8..12], &[4, 3, 2, 1]);
+}
+
+#[test]
+fn extracts_key_event_from_framed_request_without_allocating_payload() {
+    let request = encode_frame(&key_request(48, "SELECT"));
+    let mut event = [0u8; 16];
+
+    let len = key_event_from_request_into(&request, &mut event).unwrap();
+
+    assert_eq!(&event[..len], b"key.SELECT");
 }
 
 #[test]

@@ -1,6 +1,6 @@
 use squid_device_protocol::{
     app_install_begin_request, app_install_chunk_request, app_install_commit_request,
-    app_list_entries, decode_frame, encode_frame, lifecycle_lines, output_lines,
+    app_list_entries, decode_frame, encode_frame, key_request, lifecycle_lines, output_lines,
     resource_install_begin_request, resource_install_chunk_request,
     resource_install_commit_request, resource_values, FrameKind, Opcode, Status,
 };
@@ -244,6 +244,26 @@ fn ffi_encodes_resources_response_from_c_metrics() {
         resource_values(&frame).unwrap(),
         vec![("vm_worker_stack_used_bytes".to_string(), 14_704)]
     );
+}
+
+#[test]
+fn ffi_prepares_key_event_without_c_payload_staging() {
+    let request = encode_frame(&key_request(48, "SELECT"));
+    let mut event = [0u8; 16];
+    let mut event_len = 0usize;
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_prepare_key_event(
+            request.as_ptr(),
+            request.len(),
+            event.as_mut_ptr(),
+            event.len(),
+            &mut event_len,
+        )
+    };
+
+    assert_eq!(status as i32, 0);
+    assert_eq!(&event[..event_len], b"key.SELECT");
 }
 
 #[test]

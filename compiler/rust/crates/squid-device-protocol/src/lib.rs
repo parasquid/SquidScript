@@ -338,6 +338,60 @@ impl<'a> DeviceRequest<'a> {
     }
 }
 
+pub fn key_event_from_request_into(request: &[u8], out: &mut [u8]) -> Result<usize, DecodeError> {
+    let request = DeviceRequest::decode(request)?;
+    if request.opcode != Opcode::Key {
+        return Err(DecodeError::UnknownOpcode(request.opcode as u8));
+    }
+    let key = payload_field_bytes(request.payload(), 1, 1)?
+        .filter(|bytes| !bytes.is_empty())
+        .ok_or(DecodeError::TruncatedField)?;
+    if str::from_utf8(key).is_err() {
+        return Err(DecodeError::InvalidUtf8);
+    }
+    let needed = 4usize
+        .checked_add(key.len())
+        .ok_or(DecodeError::OutputTooSmall {
+            needed: usize::MAX,
+            capacity: out.len(),
+        })?;
+    if out.len() < needed {
+        return Err(DecodeError::OutputTooSmall {
+            needed,
+            capacity: out.len(),
+        });
+    }
+    out[..4].copy_from_slice(b"key.");
+    out[4..needed].copy_from_slice(key);
+    Ok(needed)
+}
+
+fn payload_field_bytes<'a>(
+    payload: &'a [u8],
+    expected_tag: u8,
+    expected_type: u8,
+) -> Result<Option<&'a [u8]>, DecodeError> {
+    let mut offset = 0usize;
+    while offset < payload.len() {
+        if payload.len() - offset < 4 {
+            return Err(DecodeError::TruncatedField);
+        }
+        let tag = payload[offset];
+        let field_type = payload[offset + 1];
+        let len = u16::from_le_bytes([payload[offset + 2], payload[offset + 3]]) as usize;
+        offset += 4;
+        if payload.len() - offset < len {
+            return Err(DecodeError::TruncatedField);
+        }
+        let value = &payload[offset..offset + len];
+        if tag == expected_tag && field_type == expected_type {
+            return Ok(Some(value));
+        }
+        offset += len;
+    }
+    Ok(None)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostAction<'a> {
     BeginInstall {

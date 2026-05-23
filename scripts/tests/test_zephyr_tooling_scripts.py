@@ -194,6 +194,16 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("uint8_t record[96]", body)
         self.assertNotIn("append_record_field(payload", body)
 
+    def test_key_dispatch_uses_rust_parser_without_c_payload_staging(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        start = protocol.index("static int dispatch_key")
+        end = protocol.index("int sq_device_protocol_handle_frame")
+        body = protocol[start:end]
+
+        self.assertIn("sqdp_prepare_key_event", body)
+        self.assertNotIn("uint8_t event_payload[64]", body)
+        self.assertNotIn("append_string_field(event_payload", body)
+
     def test_hardware_suite_runs_zephyr_app_lifecycle_before_visible_checks(self):
         lifecycle = self.read("scripts/c3-supermini-test-app-lifecycle.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")

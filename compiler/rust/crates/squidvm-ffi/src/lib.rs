@@ -28,8 +28,9 @@ use squidvm_core::{
 use squid_device_protocol::{
     encode_app_list_response_into, encode_empty_response_into, encode_error_response_into,
     encode_hello_response_into, encode_lifecycle_response_into, encode_line_response_into,
-    encode_resources_response_into, AppListEntry, DecodeError, DeviceRequest, LifecycleTimer,
-    Opcode, ResourceMetric, Status as SqdpFrameStatus, MAX_APP_BYTES,
+    encode_resources_response_into, key_event_from_request_into, AppListEntry, DecodeError,
+    DeviceRequest, LifecycleTimer, Opcode, ResourceMetric, Status as SqdpFrameStatus,
+    MAX_APP_BYTES,
 };
 
 #[repr(C)]
@@ -1123,6 +1124,30 @@ pub unsafe extern "C" fn sqdp_encode_resources_response(
         }
         Err(DecodeError::OutputTooSmall { .. }) => SqdpStatus::BufferTooSmall,
         Err(_) => SqdpStatus::EncodeError,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_prepare_key_event(
+    request: *const u8,
+    request_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+    out_len: *mut usize,
+) -> SqdpStatus {
+    if request.is_null() || out.is_null() || out_len.is_null() {
+        return SqdpStatus::InvalidArgument;
+    }
+    *out_len = 0;
+    let request = slice::from_raw_parts(request, request_len);
+    let out = slice::from_raw_parts_mut(out, out_cap);
+    match key_event_from_request_into(request, out) {
+        Ok(len) => {
+            *out_len = len;
+            SqdpStatus::Ok
+        }
+        Err(DecodeError::OutputTooSmall { .. }) => SqdpStatus::BufferTooSmall,
+        Err(_) => SqdpStatus::InvalidArgument,
     }
 }
 

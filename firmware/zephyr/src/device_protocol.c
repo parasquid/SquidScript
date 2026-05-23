@@ -17,38 +17,6 @@ BUILD_ASSERT(offsetof(struct sq_app_registry_entry, app_id) == offsetof(SqdpAppL
 BUILD_ASSERT(offsetof(struct sq_app_registry_entry, sqbc_len) ==
 	     offsetof(SqdpAppListEntry, sqbc_len));
 
-static int append_field(uint8_t *payload, size_t cap, size_t *len, uint8_t tag, uint8_t type,
-			const uint8_t *value, uint16_t value_len)
-{
-	size_t needed = *len + 4u + value_len;
-
-	if (needed > cap) {
-		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
-	}
-
-	payload[*len] = tag;
-	payload[*len + 1u] = type;
-	payload[*len + 2u] = value_len & 0xffu;
-	payload[*len + 3u] = (value_len >> 8) & 0xffu;
-	memcpy(&payload[*len + 4u], value, value_len);
-	*len = needed;
-
-	return SQ_PROTOCOL_OK;
-}
-
-static int append_string_field(uint8_t *payload, size_t cap, size_t *len, uint8_t tag,
-			       const char *value)
-{
-	size_t value_len = strlen(value);
-
-	if (value_len > UINT16_MAX) {
-		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
-	}
-
-	return append_field(payload, cap, len, tag, SQ_FIELD_STRING, (const uint8_t *)value,
-			    (uint16_t)value_len);
-}
-
 static int sqdp_status_to_protocol_result(SqdpStatus status)
 {
 	switch (status) {
@@ -932,34 +900,19 @@ static int storage_format(const struct sq_protocol_frame *request,
 	return ok_response(request, response, response_cap, response_len);
 }
 
-static int dispatch_event_request(const struct sq_protocol_frame *request,
-				  const struct sq_device_protocol_context *context,
-				  uint8_t *response, size_t response_cap, size_t *response_len)
+static int dispatch_event_from_parts(const struct sq_protocol_frame *request,
+				     const struct sq_device_protocol_context *context,
+				     const uint8_t *app_id, size_t app_id_len,
+				     const uint8_t *event, size_t event_len, uint8_t *response,
+				     size_t response_cap, size_t *response_len)
 {
-	const char *app_id = NULL;
-	const char *event = NULL;
-	size_t app_id_len = 0;
-	size_t event_len = 0;
-	size_t offset = 0;
-	struct sq_protocol_field field;
-
-	while (sq_protocol_next_field(request->payload, request->payload_len, &offset, &field) ==
-	       SQ_PROTOCOL_OK) {
-		if (field.tag == 1 && field.type == SQ_FIELD_STRING) {
-			app_id = (const char *)field.value;
-			app_id_len = field.len;
-		} else if (field.tag == 2 && field.type == SQ_FIELD_STRING) {
-			event = (const char *)field.value;
-			event_len = field.len;
-		}
-	}
 	if (event == NULL || event_len == 0 || event_len >= SQ_VM_RUNTIME_EVENT_LEN ||
 	    context->runtime == NULL || context->store_mount_point == NULL ||
 	    context->launch_storage == NULL) {
 		return -EINVAL;
 	}
-	if (request->opcode == SQ_OPCODE_EVENT_DISPATCH) {
-		if (app_id == NULL || app_id_len == 0 || app_id_len >= SQ_APP_STORE_APP_ID_MAX) {
+	if (app_id != NULL) {
+		if (app_id_len == 0 || app_id_len >= SQ_APP_STORE_APP_ID_MAX) {
 			return -EINVAL;
 		}
 		char app_id_buffer[SQ_APP_STORE_APP_ID_MAX];
@@ -995,40 +948,51 @@ static int dispatch_event_request(const struct sq_protocol_frame *request,
 	return ok_response(request, response, response_cap, response_len);
 }
 
-static int dispatch_key(const struct sq_protocol_frame *request,
-			const struct sq_device_protocol_context *context, uint8_t *response,
-			size_t response_cap, size_t *response_len)
+static int dispatch_event_request(const struct sq_protocol_frame *request,
+				  const struct sq_device_protocol_context *context,
+				  uint8_t *response, size_t response_cap, size_t *response_len)
 {
-	const char *key = NULL;
-	size_t key_len = 0;
+	const char *app_id = NULL;
+	const char *event = NULL;
+	size_t app_id_len = 0;
+	size_t event_len = 0;
 	size_t offset = 0;
 	struct sq_protocol_field field;
+
 	while (sq_protocol_next_field(request->payload, request->payload_len, &offset, &field) ==
 	       SQ_PROTOCOL_OK) {
 		if (field.tag == 1 && field.type == SQ_FIELD_STRING) {
-			key = (const char *)field.value;
-			key_len = field.len;
+			app_id = (const char *)field.value;
+			app_id_len = field.len;
+		} else if (field.tag == 2 && field.type == SQ_FIELD_STRING) {
+			event = (const char *)field.value;
+			event_len = field.len;
 		}
 	}
-	if (key == NULL || key_len == 0 || key_len + 4 >= SQ_VM_RUNTIME_EVENT_LEN) {
+	if (request->opcode == SQ_OPCODE_EVENT_DISPATCH) {
+		if (app_id == NULL) {
+			return -EINVAL;
+		}
+	}
+	return dispatch_event_from_parts(request, context, (const uint8_t *)app_id, app_id_len,
+					 (const uint8_t *)event, event_len, response, response_cap,
+					 response_len);
+}
+
+static int dispatch_key(const struct sq_protocol_frame *request,
+			const uint8_t *request_bytes, size_t request_len,
+			const struct sq_device_protocol_context *context, uint8_t *response,
+			size_t response_cap, size_t *response_len)
+{
+	uint8_t event[SQ_VM_RUNTIME_EVENT_LEN];
+	size_t event_len = 0;
+
+	if (sqdp_prepare_key_event(request_bytes, request_len, event, sizeof(event), &event_len) !=
+	    SQDP_STATUS_OK) {
 		return -EINVAL;
 	}
-	char event[SQ_VM_RUNTIME_EVENT_LEN];
-	memcpy(event, "key.", 4);
-	memcpy(&event[4], key, key_len);
-	event[4 + key_len] = '\0';
-	struct sq_protocol_frame event_request = *request;
-	uint8_t event_payload[64];
-	size_t event_payload_len = 0;
-	int result = append_string_field(event_payload, sizeof(event_payload), &event_payload_len, 2,
-					 event);
-	if (result != SQ_PROTOCOL_OK) {
-		return result;
-	}
-	event_request.opcode = SQ_OPCODE_KEY;
-	event_request.payload = event_payload;
-	event_request.payload_len = event_payload_len;
-	return dispatch_event_request(&event_request, context, response, response_cap, response_len);
+	return dispatch_event_from_parts(request, context, NULL, 0, event, event_len, response,
+					 response_cap, response_len);
 }
 
 int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
@@ -1145,7 +1109,8 @@ int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 						response_len);
 		break;
 	case SQ_OPCODE_KEY:
-		result = dispatch_key(&frame, context, response, response_cap, response_len);
+		result = dispatch_key(&frame, request, request_len, context, response, response_cap,
+				      response_len);
 		break;
 	case SQ_OPCODE_WIFI_PROFILE_SET:
 		result = -ENOTSUP;
