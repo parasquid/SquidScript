@@ -1150,6 +1150,17 @@ ZTEST(squidscript_protocol, test_vm_runtime_tracks_output_indicator_and_due_time
 	zassert_equal(sq_vm_runtime_indicator_read(&runtime, &value), 0);
 	zassert_false(value);
 
+	zassert_equal(sq_vm_runtime_indicator_breathe(&runtime), 0);
+	zassert_true(runtime.indicator_breathe_active);
+	uint8_t first_phase = runtime.indicator_breathe_phase;
+	runtime.indicator_breathe_next_ms = k_uptime_get() - 1;
+	zassert_equal(sq_vm_runtime_poll(&runtime), 0);
+	zassert_true(runtime.indicator_breathe_active);
+	zassert_not_equal(runtime.indicator_breathe_phase, first_phase);
+
+	zassert_equal(sq_vm_runtime_indicator_write(&runtime, true), 0);
+	zassert_false(runtime.indicator_breathe_active);
+
 	zassert_equal(sq_vm_runtime_register_timer(&runtime, (const uint8_t *)"timer.debug",
 						   strlen("timer.debug"), 1, true),
 		      0);

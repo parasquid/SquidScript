@@ -56,3 +56,8 @@ and launches `examples/blinky-supermini/main.squid`. Serial `device output`
 should show repeated `blink false` / `blink true` lines and `device errors`
 should be empty before the final visible check. After that final check starts,
 do not run another serial command unless debugging the final board state.
+
+The indicator breathe check installs and launches
+`examples/breathe-supermini/main.squid`. Serial `device output` should include
+`breathe ready`, `device errors` should be empty, and the final visible board
+state should be a repeating onboard LED breathe pattern.

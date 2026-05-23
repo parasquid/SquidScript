@@ -93,6 +93,7 @@ typedef void (*SqvmDebugOutputCallback)(void *user_data, const uint8_t *message,
 typedef int32_t (*SqvmIndicatorWriteCallback)(void *user_data, bool value);
 typedef int32_t (*SqvmIndicatorToggleCallback)(void *user_data);
 typedef int32_t (*SqvmIndicatorReadCallback)(void *user_data, bool *out);
+typedef int32_t (*SqvmIndicatorBreatheCallback)(void *user_data);
 typedef int32_t (*SqvmTimerEveryCallback)(
 	void *user_data,
 	const uint8_t *event,
@@ -112,6 +113,7 @@ typedef struct {
 	SqvmIndicatorWriteCallback indicator_write;
 	SqvmIndicatorToggleCallback indicator_toggle;
 	SqvmIndicatorReadCallback indicator_read;
+	SqvmIndicatorBreatheCallback indicator_breathe;
 	SqvmTimerEveryCallback timer_every;
 	SqvmTimerAfterCallback timer_after;
 } SqvmCallbacks;

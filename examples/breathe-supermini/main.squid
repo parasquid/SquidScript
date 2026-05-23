@@ -1,0 +1,8 @@
+app "breathe-supermini"
+
+event.on("app.start") {
+  service.indicator.breathe()
+  debug.print("breathe ready")
+}
+
+screen("main") {}

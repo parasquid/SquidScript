@@ -17,6 +17,7 @@ struct Host {
     traces: Vec<String>,
     output: Vec<String>,
     indicator: bool,
+    breathe_count: usize,
     timer_every: Vec<(String, i32)>,
 }
 
@@ -64,6 +65,12 @@ unsafe extern "C" fn indicator_read(user_data: *mut c_void, out: *mut bool) -> i
     0
 }
 
+unsafe extern "C" fn indicator_breathe(user_data: *mut c_void) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.breathe_count += 1;
+    0
+}
+
 unsafe extern "C" fn timer_every(
     user_data: *mut c_void,
     event: *const u8,
@@ -85,6 +92,7 @@ fn callbacks(host: &mut Host) -> SqvmCallbacks {
         indicator_write: Some(indicator_write),
         indicator_toggle: Some(indicator_toggle),
         indicator_read: Some(indicator_read),
+        indicator_breathe: Some(indicator_breathe),
         timer_every: Some(timer_every),
         timer_after: None,
     }
@@ -118,6 +126,18 @@ event.on("timer.debug") {
   service.indicator.toggle()
   led = service.indicator.read()
   debug.print("blink", led)
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_indicator_breathe_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-breathe"
+event.on("app.start") {
+  service.indicator.breathe()
+  debug.print("breathe ready")
 }
 screen("main") {}
 "#,
@@ -199,6 +219,38 @@ fn dispatches_debug_indicator_and_timer_service_callbacks() {
     assert_eq!(status, SqvmStatus::Ok);
     assert_eq!(host.indicator, true);
     assert_eq!(host.output, vec!["blinky ready false", "blink true"]);
+}
+
+#[test]
+fn dispatches_indicator_breathe_service_callback() {
+    let mut host = Host {
+        sqbc: compile_indicator_breathe_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(host.breathe_count, 1);
+    assert_eq!(host.output, vec!["breathe ready"]);
 }
 
 #[test]

@@ -121,6 +121,14 @@ Initial built-in IDs:
 27 service.indicator.write
 28 service.indicator.toggle
 29 service.indicator.read
+30 service.wifi.startAp
+31 service.wifi.stopAp
+32 service.wifi.status
+33 service.wifi.getApIp
+34 service.indicator.breathe
+35 service.wifi.connect
+36 service.wifi.disconnect
+37 service.wifi.scan
 ```
 
 The current format supports the headless VM subset. Display draw commands are

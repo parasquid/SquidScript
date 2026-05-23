@@ -8,6 +8,8 @@
 #include <zephyr/drivers/gpio.h>
 
 #define SQ_VM_RUNTIME_WORK_STACK_SIZE 16384
+#define SQ_VM_RUNTIME_BREATHE_LEVEL_MS 40
+#define SQ_VM_RUNTIME_BREATHE_PWM_MS 16
 
 #if IS_ENABLED(CONFIG_GPIO) && DT_NODE_HAS_STATUS(DT_ALIAS(led0), okay)
 static const struct gpio_dt_spec indicator_led = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
@@ -65,6 +67,11 @@ static int32_t runtime_indicator_toggle(void *user_data)
 static int32_t runtime_indicator_read(void *user_data, bool *out)
 {
 	return sq_vm_runtime_indicator_read(user_data, out);
+}
+
+static int32_t runtime_indicator_breathe(void *user_data)
+{
+	return sq_vm_runtime_indicator_breathe(user_data);
 }
 
 static int32_t runtime_timer_every(void *user_data, const uint8_t *event, size_t event_len,
@@ -126,6 +133,11 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->output_count = 0;
 	memset(runtime->timers, 0, sizeof(runtime->timers));
 	runtime->indicator_state = false;
+	runtime->indicator_breathe_active = false;
+	runtime->indicator_breathe_rising = false;
+	runtime->indicator_breathe_phase = 0;
+	runtime->indicator_breathe_next_ms = 0;
+	runtime->indicator_breathe_frame_ms = 0;
 	runtime->result_code = 0;
 	runtime->status = SQ_VM_RUNTIME_IDLE;
 }
@@ -153,6 +165,7 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		.indicator_write = runtime_indicator_write,
 		.indicator_toggle = runtime_indicator_toggle,
 		.indicator_read = runtime_indicator_read,
+		.indicator_breathe = runtime_indicator_breathe,
 		.timer_every = runtime_timer_every,
 		.timer_after = runtime_timer_after,
 	};
@@ -255,11 +268,8 @@ static int configure_indicator_gpio(struct sq_vm_runtime *runtime)
 	return 0;
 }
 
-int sq_vm_runtime_indicator_write(struct sq_vm_runtime *runtime, bool value)
+static int set_indicator_output(struct sq_vm_runtime *runtime, bool value)
 {
-	if (runtime == NULL) {
-		return -EINVAL;
-	}
 	runtime->indicator_state = value;
 	(void)configure_indicator_gpio(runtime);
 #if SQ_VM_RUNTIME_HAS_INDICATOR_LED
@@ -271,6 +281,15 @@ int sq_vm_runtime_indicator_write(struct sq_vm_runtime *runtime, bool value)
 	}
 #endif
 	return 0;
+}
+
+int sq_vm_runtime_indicator_write(struct sq_vm_runtime *runtime, bool value)
+{
+	if (runtime == NULL) {
+		return -EINVAL;
+	}
+	runtime->indicator_breathe_active = false;
+	return set_indicator_output(runtime, value);
 }
 
 int sq_vm_runtime_indicator_toggle(struct sq_vm_runtime *runtime)
@@ -288,6 +307,64 @@ int sq_vm_runtime_indicator_read(struct sq_vm_runtime *runtime, bool *out)
 	}
 	*out = runtime->indicator_state;
 	return 0;
+}
+
+int sq_vm_runtime_indicator_breathe(struct sq_vm_runtime *runtime)
+{
+	int64_t now;
+
+	if (runtime == NULL) {
+		return -EINVAL;
+	}
+	now = k_uptime_get();
+	runtime->indicator_breathe_active = true;
+	runtime->indicator_breathe_rising = true;
+	runtime->indicator_breathe_phase = 0;
+	runtime->indicator_breathe_next_ms = now + SQ_VM_RUNTIME_BREATHE_LEVEL_MS;
+	runtime->indicator_breathe_frame_ms = now;
+	return set_indicator_output(runtime, false);
+}
+
+static int sq_vm_runtime_poll_indicator_breathe(struct sq_vm_runtime *runtime)
+{
+	int64_t now;
+	int64_t frame_delta;
+	uint8_t on_ms;
+	bool on;
+
+	if (!runtime->indicator_breathe_active) {
+		return 0;
+	}
+	now = k_uptime_get();
+	if (now >= runtime->indicator_breathe_next_ms) {
+		runtime->indicator_breathe_next_ms = now + SQ_VM_RUNTIME_BREATHE_LEVEL_MS;
+		if (runtime->indicator_breathe_rising) {
+			if (runtime->indicator_breathe_phase >= SQ_VM_RUNTIME_INDICATOR_BREATHE_PHASES) {
+				runtime->indicator_breathe_rising = false;
+				runtime->indicator_breathe_phase--;
+			} else {
+				runtime->indicator_breathe_phase++;
+			}
+		} else if (runtime->indicator_breathe_phase == 0) {
+			runtime->indicator_breathe_rising = true;
+			runtime->indicator_breathe_phase++;
+		} else {
+			runtime->indicator_breathe_phase--;
+		}
+	}
+
+	frame_delta = now - runtime->indicator_breathe_frame_ms;
+	if (frame_delta >= SQ_VM_RUNTIME_BREATHE_PWM_MS || frame_delta < 0) {
+		int64_t periods = frame_delta / SQ_VM_RUNTIME_BREATHE_PWM_MS;
+		if (periods < 1) {
+			periods = 1;
+		}
+		runtime->indicator_breathe_frame_ms += periods * SQ_VM_RUNTIME_BREATHE_PWM_MS;
+		frame_delta = now - runtime->indicator_breathe_frame_ms;
+	}
+	on_ms = runtime->indicator_breathe_phase / 2;
+	on = on_ms > 0 && frame_delta < on_ms;
+	return set_indicator_output(runtime, on);
 }
 
 int sq_vm_runtime_register_timer(struct sq_vm_runtime *runtime, const uint8_t *event,
@@ -351,8 +428,11 @@ int sq_vm_runtime_poll(struct sq_vm_runtime *runtime)
 {
 	char event[SQ_VM_RUNTIME_EVENT_LEN];
 
-	if (runtime == NULL || runtime->status == SQ_VM_RUNTIME_RUNNING ||
-	    runtime->job_backend.read_sqbc == NULL) {
+	if (runtime == NULL) {
+		return 0;
+	}
+	(void)sq_vm_runtime_poll_indicator_breathe(runtime);
+	if (runtime->status == SQ_VM_RUNTIME_RUNNING || runtime->job_backend.read_sqbc == NULL) {
 		return 0;
 	}
 	if (sq_vm_runtime_next_due_timer(runtime, event, sizeof(event)) != 0) {

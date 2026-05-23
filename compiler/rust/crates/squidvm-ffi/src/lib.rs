@@ -270,6 +270,7 @@ pub struct SqvmCallbacks {
     pub indicator_toggle: Option<unsafe extern "C" fn(user_data: *mut c_void) -> i32>,
     pub indicator_read:
         Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut bool) -> i32>,
+    pub indicator_breathe: Option<unsafe extern "C" fn(user_data: *mut c_void) -> i32>,
     pub timer_every: Option<
         unsafe extern "C" fn(
             user_data: *mut c_void,
@@ -989,6 +990,13 @@ impl TraceSink for FfiHost {
         let mut value = false;
         callback_status(unsafe { indicator_read(self.callbacks.user_data, &mut value) })?;
         Ok(value)
+    }
+
+    fn service_indicator_breathe(&mut self) -> Result<(), VmError> {
+        let Some(indicator_breathe) = self.callbacks.indicator_breathe else {
+            return Err(VmError::InvalidOperand);
+        };
+        callback_status(unsafe { indicator_breathe(self.callbacks.user_data) })
     }
 
     fn service_timer_every(&mut self, event: &str, interval_ms: i32) -> Result<(), VmError> {

@@ -111,6 +111,12 @@ not a guarantee for every board variant. If the serial blinky test reports
 timer output but the onboard blue LED does not blink, verify the physical board
 LED mapping before changing portable SquidScript indicator semantics.
 
+`service.indicator.breathe()` uses the same `led0` binding. On this common-clone
+GPIO8 LED path, Zephyr drives a small non-blocking software breathe pattern from
+the existing runtime poll loop instead of ESP32-C3 LEDC PWM, because the local
+Zephyr ESP32-C3 pinctrl data exposes LEDC on GPIO21 rather than the onboard
+GPIO8 LED.
+
 ## Source Notes
 
 The layout above is based on these references:

@@ -20,6 +20,7 @@ extern "C" {
 #define SQ_VM_RUNTIME_CONTEXT_BYTES 65536
 #define SQ_VM_RUNTIME_SCRATCH_BYTES 4096
 #define SQ_VM_RUNTIME_EVENT_LEN 32
+#define SQ_VM_RUNTIME_INDICATOR_BREATHE_PHASES 32
 
 enum sq_vm_runtime_status {
 	SQ_VM_RUNTIME_IDLE = 0,
@@ -55,6 +56,11 @@ struct sq_vm_runtime {
 	bool indicator_state;
 	bool indicator_gpio_configured;
 	bool indicator_gpio_available;
+	bool indicator_breathe_active;
+	bool indicator_breathe_rising;
+	uint8_t indicator_breathe_phase;
+	int64_t indicator_breathe_next_ms;
+	int64_t indicator_breathe_frame_ms;
 	struct sq_vm_runtime_timer timers[SQ_VM_RUNTIME_TIMER_MAX];
 };
 
@@ -73,6 +79,7 @@ int sq_vm_runtime_record_output(struct sq_vm_runtime *runtime, const uint8_t *me
 int sq_vm_runtime_indicator_write(struct sq_vm_runtime *runtime, bool value);
 int sq_vm_runtime_indicator_toggle(struct sq_vm_runtime *runtime);
 int sq_vm_runtime_indicator_read(struct sq_vm_runtime *runtime, bool *out);
+int sq_vm_runtime_indicator_breathe(struct sq_vm_runtime *runtime);
 int sq_vm_runtime_register_timer(struct sq_vm_runtime *runtime, const uint8_t *event,
 				 size_t event_len, int32_t interval_ms, bool repeating);
 int sq_vm_runtime_next_due_timer(struct sq_vm_runtime *runtime, char *event, size_t event_cap);
