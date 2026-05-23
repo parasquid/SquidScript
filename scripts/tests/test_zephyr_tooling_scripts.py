@@ -102,6 +102,13 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertLess(guard_index, scan_index)
         self.assertLess(runtime_h.index("wifi_scan_sem_initialized"), end_index)
 
+    def test_vm_context_reserve_tracks_current_ffi_size(self):
+        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+        ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
+
+        self.assertIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 11264", runtime_h)
+        self.assertIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 11264", ztest)
+
     def test_hardware_suite_runs_zephyr_app_lifecycle_before_visible_checks(self):
         lifecycle = self.read("scripts/c3-supermini-test-app-lifecycle.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
