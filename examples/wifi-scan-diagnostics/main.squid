@@ -2,12 +2,21 @@ app "wifi-scan-diagnostics"
 state {}
 
 event.on("app.start") {
-  let scan = wifi.scan()
+  service.indicator.breathe()
+  service.timer.every("timer.wifi.scan", 30000)
+  scanAndPrint()
+}
+
+event.on("timer.wifi.scan") {
+  scanAndPrint()
+}
+
+function scanAndPrint() {
+  let scan = service.wifi.scan()
   debug.print("wifi scan", scan.ok, scan.error, scan.count)
   for network in scan.networks max 8 {
     debug.print("wifi ap", network.ssid, network.ssidLength, network.bssid, network.channel, network.rssi, network.auth, network.hidden)
   }
-  app.exit()
 }
 
 screen("main") {}
