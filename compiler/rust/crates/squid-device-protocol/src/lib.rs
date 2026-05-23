@@ -846,6 +846,12 @@ pub struct AppListEntry<'a> {
     pub sqbc_len: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LifecycleTimer<'a> {
+    pub app_id: &'a str,
+    pub event: &'a str,
+}
+
 #[cfg(feature = "alloc")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProtocolError {
@@ -1377,6 +1383,71 @@ where
     )
 }
 
+pub fn encode_lifecycle_response_into<'a, P, A>(
+    sequence: u32,
+    active_app: Option<&str>,
+    process_stack: P,
+    armed_timers: A,
+    out: &mut [u8],
+) -> Result<usize, DecodeError>
+where
+    P: Clone + Iterator<Item = &'a str>,
+    A: Clone + Iterator<Item = LifecycleTimer<'a>>,
+{
+    let active = active_app.unwrap_or("");
+    let mut payload_len = tlv_string_len_for_len("active=".len() + active.len())?;
+    for (index, app_id) in process_stack.clone().enumerate() {
+        payload_len = payload_len
+            .checked_add(tlv_string_len_for_len(
+                "process_stack[".len() + decimal_len(index) + "]=".len() + app_id.len(),
+            )?)
+            .ok_or(DecodeError::OutputTooSmall {
+                needed: usize::MAX,
+                capacity: out.len(),
+            })?;
+    }
+    payload_len = payload_len
+        .checked_add(tlv_string_len("armed_stack=")?)
+        .ok_or(DecodeError::OutputTooSmall {
+            needed: usize::MAX,
+            capacity: out.len(),
+        })?;
+    for (index, timer) in armed_timers.clone().enumerate() {
+        payload_len = payload_len
+            .checked_add(tlv_string_len_for_len(
+                "armed_stack[".len()
+                    + decimal_len(index)
+                    + "]=".len()
+                    + timer.app_id.len()
+                    + 1
+                    + timer.event.len(),
+            )?)
+            .ok_or(DecodeError::OutputTooSmall {
+                needed: usize::MAX,
+                capacity: out.len(),
+            })?;
+    }
+
+    encode_response_payload_into(
+        Opcode::LifecycleGet,
+        Status::Ok,
+        sequence,
+        payload_len,
+        out,
+        |mut payload| {
+            payload = write_active_line_tlv(payload, active)?;
+            for (index, app_id) in process_stack.enumerate() {
+                payload = write_process_line_tlv(payload, index, app_id)?;
+            }
+            payload = write_string_tlv(payload, 1, "armed_stack=")?;
+            for (index, timer) in armed_timers.enumerate() {
+                payload = write_armed_line_tlv(payload, index, timer.app_id, timer.event)?;
+            }
+            Ok(())
+        },
+    )
+}
+
 pub fn encode_error_response_into(
     opcode: Opcode,
     sequence: u32,
@@ -1510,13 +1581,17 @@ pub fn decode_frame_from_stream(bytes: &[u8]) -> Result<Frame, DecodeError> {
 }
 
 fn tlv_string_len(value: &str) -> Result<usize, DecodeError> {
-    if value.len() > u16::MAX as usize {
+    tlv_string_len_for_len(value.len())
+}
+
+fn tlv_string_len_for_len(value_len: usize) -> Result<usize, DecodeError> {
+    if value_len > u16::MAX as usize {
         return Err(DecodeError::OutputTooSmall {
-            needed: value.len(),
+            needed: value_len,
             capacity: u16::MAX as usize,
         });
     }
-    Ok(4 + value.len())
+    Ok(4 + value_len)
 }
 
 fn tlv_bool_len() -> usize {
@@ -1567,6 +1642,72 @@ fn write_u64_tlv(out: &mut [u8], tag: u8, value: u64) -> Result<&mut [u8], Decod
     write_tlv_header(out, tag, 5, 8)?;
     out[4..12].copy_from_slice(&value.to_le_bytes());
     Ok(&mut out[12..])
+}
+
+fn write_active_line_tlv<'a>(out: &'a mut [u8], active: &str) -> Result<&'a mut [u8], DecodeError> {
+    let len = "active=".len() + active.len();
+    write_tlv_header(out, 1, 1, len)?;
+    let mut offset = 4;
+    offset = write_bytes(out, offset, b"active=");
+    offset = write_bytes(out, offset, active.as_bytes());
+    Ok(&mut out[offset..])
+}
+
+fn write_process_line_tlv<'a>(
+    out: &'a mut [u8],
+    index: usize,
+    app_id: &str,
+) -> Result<&'a mut [u8], DecodeError> {
+    let len = "process_stack[".len() + decimal_len(index) + "]=".len() + app_id.len();
+    write_tlv_header(out, 1, 1, len)?;
+    let mut offset = 4;
+    offset = write_bytes(out, offset, b"process_stack[");
+    offset = write_decimal(out, offset, index);
+    offset = write_bytes(out, offset, b"]=");
+    offset = write_bytes(out, offset, app_id.as_bytes());
+    Ok(&mut out[offset..])
+}
+
+fn write_armed_line_tlv<'a>(
+    out: &'a mut [u8],
+    index: usize,
+    app_id: &str,
+    event: &str,
+) -> Result<&'a mut [u8], DecodeError> {
+    let len =
+        "armed_stack[".len() + decimal_len(index) + "]=".len() + app_id.len() + 1 + event.len();
+    write_tlv_header(out, 1, 1, len)?;
+    let mut offset = 4;
+    offset = write_bytes(out, offset, b"armed_stack[");
+    offset = write_decimal(out, offset, index);
+    offset = write_bytes(out, offset, b"]=");
+    offset = write_bytes(out, offset, app_id.as_bytes());
+    offset = write_bytes(out, offset, b" ");
+    offset = write_bytes(out, offset, event.as_bytes());
+    Ok(&mut out[offset..])
+}
+
+fn write_bytes(out: &mut [u8], offset: usize, bytes: &[u8]) -> usize {
+    out[offset..offset + bytes.len()].copy_from_slice(bytes);
+    offset + bytes.len()
+}
+
+fn write_decimal(out: &mut [u8], offset: usize, mut value: usize) -> usize {
+    let len = decimal_len(value);
+    for index in (0..len).rev() {
+        out[offset + index] = b'0' + (value % 10) as u8;
+        value /= 10;
+    }
+    offset + len
+}
+
+fn decimal_len(mut value: usize) -> usize {
+    let mut len = 1;
+    while value >= 10 {
+        value /= 10;
+        len += 1;
+    }
+    len
 }
 
 fn write_tlv_header(

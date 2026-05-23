@@ -732,71 +732,38 @@ static int lifecycle_response(const struct sq_protocol_frame *request,
 			      const struct sq_vm_runtime *runtime, uint8_t *response,
 			      size_t response_cap, size_t *response_len)
 {
-	uint8_t payload[256];
-	size_t payload_len = 0;
-	char line[80];
-	int result;
-
-	if (runtime != NULL && runtime->current_app[0] != '\0') {
-		int written = snprintf(line, sizeof(line), "active=%s", runtime->current_app);
-		if (written > 0 && (size_t)written < sizeof(line)) {
-			result = append_string_field(payload, sizeof(payload), &payload_len,
-						     SQ_DEVICE_LINE_FIELD_VALUE, line);
-			if (result != SQ_PROTOCOL_OK) {
-				return result;
-			}
-		}
-	} else {
-		result = append_string_field(payload, sizeof(payload), &payload_len,
-					     SQ_DEVICE_LINE_FIELD_VALUE, "active=");
-		if (result != SQ_PROTOCOL_OK) {
-			return result;
-		}
-	}
+	const uint8_t *active_app = NULL;
+	size_t active_app_len = 0;
+	const uint8_t *process_stack = NULL;
+	size_t process_count = 0;
+	SqdpLifecycleTimer armed_timers[SQ_VM_RUNTIME_ARMED_TIMER_MAX];
+	size_t armed_count = 0;
 
 	if (runtime != NULL) {
-		for (size_t i = 0; i < runtime->return_stack_count; i++) {
-			int written = snprintf(line, sizeof(line), "process_stack[%u]=%s",
-					       (unsigned int)i, runtime->return_stack[i]);
-			if (written > 0 && (size_t)written < sizeof(line)) {
-				result = append_string_field(payload, sizeof(payload), &payload_len,
-							     SQ_DEVICE_LINE_FIELD_VALUE,
-							     line);
-				if (result != SQ_PROTOCOL_OK) {
-					return result;
-				}
-			}
+		if (runtime->current_app[0] != '\0') {
+			active_app = (const uint8_t *)runtime->current_app;
+			active_app_len = strlen(runtime->current_app);
 		}
-	}
-
-	result = append_string_field(payload, sizeof(payload), &payload_len,
-				     SQ_DEVICE_LINE_FIELD_VALUE, "armed_stack=");
-	if (result != SQ_PROTOCOL_OK) {
-		return result;
-	}
-	if (runtime != NULL) {
-		for (size_t i = 0, line_index = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
+		process_stack = (const uint8_t *)runtime->return_stack;
+		process_count = runtime->return_stack_count;
+		memset(armed_timers, 0, sizeof(armed_timers));
+		for (size_t i = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
 			const struct sq_vm_runtime_armed_timer *timer = &runtime->armed_timers[i];
 			if (!timer->active) {
 				continue;
 			}
-			int written = snprintf(line, sizeof(line), "armed_stack[%u]=%s %s",
-					       (unsigned int)line_index, timer->app_id,
-					       timer->event);
-			line_index++;
-			if (written > 0 && (size_t)written < sizeof(line)) {
-				result = append_string_field(payload, sizeof(payload), &payload_len,
-							     SQ_DEVICE_LINE_FIELD_VALUE,
-							     line);
-				if (result != SQ_PROTOCOL_OK) {
-					return result;
-				}
-			}
+			strncpy((char *)armed_timers[armed_count].app_id, timer->app_id,
+				sizeof(armed_timers[armed_count].app_id) - 1);
+			strncpy((char *)armed_timers[armed_count].event, timer->event,
+				sizeof(armed_timers[armed_count].event) - 1);
+			armed_count++;
 		}
 	}
 
-	return write_response(request, SQ_STATUS_OK, payload, payload_len, response, response_cap,
-			      response_len);
+	return sqdp_status_to_protocol_result(sqdp_encode_lifecycle_response(
+		request->sequence, active_app, active_app_len, process_stack, process_count,
+		SQ_APP_STORE_APP_ID_MAX, armed_count == 0 ? NULL : armed_timers, armed_count,
+		response, response_cap, response_len));
 }
 
 static int state_get_response(const struct sq_protocol_frame *request,

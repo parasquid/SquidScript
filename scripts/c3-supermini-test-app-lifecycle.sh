@@ -2,6 +2,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${ROOT}/scripts/lib/serial-port.sh"
+
+export ESPFLASH_PORT="$(resolve_esp_serial_port)"
+
 WORK_DIR="${ROOT}/target/hardware-tests/app-lifecycle"
 MAIN_APP="${ROOT}/tests/hardware/c3-supermini/generic-events/main.squid"
 BREAK_APP="${ROOT}/tests/hardware/c3-supermini/generic-events/break-reminder.squid"

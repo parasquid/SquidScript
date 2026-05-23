@@ -1,11 +1,12 @@
 use squid_device_protocol::{
     app_install_begin_request, app_install_chunk_request, app_install_commit_request,
-    app_list_entries, decode_frame, encode_frame, output_lines, resource_install_begin_request,
-    resource_install_chunk_request, resource_install_commit_request, FrameKind, Opcode, Status,
+    app_list_entries, decode_frame, encode_frame, lifecycle_lines, output_lines,
+    resource_install_begin_request, resource_install_chunk_request,
+    resource_install_commit_request, FrameKind, Opcode, Status,
 };
 use squidvm_ffi::{
-    SqdpAction, SqdpActionKind, SqdpAppListEntry, SqdpLineSlice, SqdpResourceSession,
-    SqdpTransferSession, SQDP_STAGING_PATH_CAP,
+    SqdpAction, SqdpActionKind, SqdpAppListEntry, SqdpLifecycleTimer, SqdpLineSlice,
+    SqdpResourceSession, SqdpTransferSession, SQDP_STAGING_PATH_CAP,
 };
 
 #[test]
@@ -165,6 +166,49 @@ fn ffi_encodes_repeated_line_response_without_payload_staging() {
             "count 1".to_string(),
             "count 2".to_string(),
             "count 3".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn ffi_encodes_lifecycle_response_from_structured_runtime_state() {
+    let mut out = [0u8; 192];
+    let mut out_len = 0usize;
+    let active = b"reader-clock";
+    let mut process = [[0u8; 16]; 1];
+    process[0][..4].copy_from_slice(b"main");
+    let mut armed = [SqdpLifecycleTimer::default()];
+    armed[0].app_id[..14].copy_from_slice(b"break-reminder");
+    armed[0].event[..11].copy_from_slice(b"timer.break");
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_encode_lifecycle_response(
+            92,
+            active.as_ptr(),
+            active.len(),
+            process.as_ptr().cast(),
+            process.len(),
+            process[0].len(),
+            armed.as_ptr(),
+            armed.len(),
+            out.as_mut_ptr(),
+            out.len(),
+            &mut out_len,
+        )
+    };
+
+    assert_eq!(status as i32, 0);
+    let frame = decode_frame(&out[..out_len]).unwrap();
+    assert_eq!(frame.kind, FrameKind::Response);
+    assert_eq!(frame.opcode, Opcode::LifecycleGet);
+    assert_eq!(frame.status, Status::Ok);
+    assert_eq!(
+        lifecycle_lines(&frame).unwrap(),
+        vec![
+            "active=reader-clock".to_string(),
+            "process_stack[0]=main".to_string(),
+            "armed_stack=".to_string(),
+            "armed_stack[0]=break-reminder timer.break".to_string(),
         ]
     );
 }

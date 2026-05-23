@@ -27,8 +27,9 @@ use squidvm_core::{
 
 use squid_device_protocol::{
     encode_app_list_response_into, encode_empty_response_into, encode_error_response_into,
-    encode_hello_response_into, encode_line_response_into, AppListEntry, DecodeError,
-    DeviceRequest, Opcode, Status as SqdpFrameStatus, MAX_APP_BYTES,
+    encode_hello_response_into, encode_lifecycle_response_into, encode_line_response_into,
+    AppListEntry, DecodeError, DeviceRequest, LifecycleTimer, Opcode, Status as SqdpFrameStatus,
+    MAX_APP_BYTES,
 };
 
 #[repr(C)]
@@ -73,6 +74,22 @@ impl Default for SqdpAppListEntry {
 pub struct SqdpLineSlice {
     pub bytes: *const u8,
     pub len: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqdpLifecycleTimer {
+    pub app_id: [u8; SQDP_APP_ID_CAP],
+    pub event: [u8; 32],
+}
+
+impl Default for SqdpLifecycleTimer {
+    fn default() -> Self {
+        Self {
+            app_id: [0; SQDP_APP_ID_CAP],
+            event: [0; 32],
+        }
+    }
 }
 
 #[repr(C)]
@@ -967,6 +984,85 @@ pub unsafe extern "C" fn sqdp_encode_line_response(
             .expect("validated extra line utf-8 before encoding")
     });
     match encode_line_response_into(opcode, sequence, fixed_iter.chain(extra_iter), out) {
+        Ok(len) => {
+            *out_len = len;
+            SqdpStatus::Ok
+        }
+        Err(DecodeError::OutputTooSmall { .. }) => SqdpStatus::BufferTooSmall,
+        Err(_) => SqdpStatus::EncodeError,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_encode_lifecycle_response(
+    sequence: u32,
+    active_app: *const u8,
+    active_app_len: usize,
+    process_stack: *const u8,
+    process_count: usize,
+    process_stride: usize,
+    armed_timers: *const SqdpLifecycleTimer,
+    armed_count: usize,
+    out: *mut u8,
+    out_cap: usize,
+    out_len: *mut usize,
+) -> SqdpStatus {
+    if out.is_null()
+        || out_len.is_null()
+        || (active_app.is_null() && active_app_len > 0)
+        || (process_stack.is_null() && process_count > 0)
+        || (process_count > 0 && process_stride == 0)
+        || (armed_timers.is_null() && armed_count > 0)
+    {
+        return SqdpStatus::InvalidArgument;
+    }
+    *out_len = 0;
+    if process_count > 8 || armed_count > 8 {
+        return SqdpStatus::InvalidArgument;
+    }
+    let active = if active_app_len == 0 {
+        None
+    } else {
+        match str::from_utf8(slice::from_raw_parts(active_app, active_app_len)) {
+            Ok(value) => Some(value),
+            Err(_) => return SqdpStatus::InvalidArgument,
+        }
+    };
+    let process = if process_count == 0 {
+        &[]
+    } else {
+        slice::from_raw_parts(process_stack, process_count.saturating_mul(process_stride))
+    };
+    let armed = if armed_count == 0 {
+        &[]
+    } else {
+        slice::from_raw_parts(armed_timers, armed_count)
+    };
+    for index in 0..process_count {
+        if str::from_utf8(fixed_line_bytes(process, index, process_stride)).is_err() {
+            return SqdpStatus::InvalidArgument;
+        }
+    }
+    for timer in armed {
+        if str::from_utf8(c_string_bytes(&timer.app_id)).is_err()
+            || str::from_utf8(c_string_bytes(&timer.event)).is_err()
+        {
+            return SqdpStatus::InvalidArgument;
+        }
+    }
+
+    let process_iter = (0..process_count).map(|index| {
+        str::from_utf8(fixed_line_bytes(process, index, process_stride))
+            .expect("validated process stack utf-8 before encoding")
+    });
+    let armed_iter = armed.iter().map(|timer| LifecycleTimer {
+        app_id: str::from_utf8(c_string_bytes(&timer.app_id))
+            .expect("validated armed app id utf-8 before encoding"),
+        event: str::from_utf8(c_string_bytes(&timer.event))
+            .expect("validated armed event utf-8 before encoding"),
+    });
+    let out = slice::from_raw_parts_mut(out, out_cap);
+    match encode_lifecycle_response_into(sequence, active, process_iter, armed_iter, out) {
         Ok(len) => {
             *out_len = len;
             SqdpStatus::Ok

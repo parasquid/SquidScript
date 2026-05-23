@@ -144,7 +144,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_zephyr_main_stack_tracks_measured_protocol_work(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
 
-        self.assertIn("CONFIG_MAIN_STACK_SIZE=3584", prj_conf)
+        self.assertIn("CONFIG_MAIN_STACK_SIZE=4096", prj_conf)
 
     def test_default_runtime_gates_wifi_scan_buffers_from_static_ram(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
@@ -174,10 +174,24 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("uint8_t payload[512]", body)
         self.assertNotIn("append_string_field(payload", body)
 
+    def test_lifecycle_response_uses_rust_encoder_without_c_payload_staging(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        start = protocol.index("static int lifecycle_response")
+        end = protocol.index("static int state_get_response")
+        body = protocol[start:end]
+
+        self.assertIn("sqdp_encode_lifecycle_response", body)
+        self.assertNotIn("uint8_t payload[256]", body)
+        self.assertNotIn("append_string_field(payload", body)
+
     def test_hardware_suite_runs_zephyr_app_lifecycle_before_visible_checks(self):
         lifecycle = self.read("scripts/c3-supermini-test-app-lifecycle.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
 
+        self.assertIn('source "${ROOT}/scripts/lib/serial-port.sh"', suite)
+        self.assertIn('export ESPFLASH_PORT="$(resolve_esp_serial_port)"', suite)
+        self.assertIn('source "${ROOT}/scripts/lib/serial-port.sh"', lifecycle)
+        self.assertIn('export ESPFLASH_PORT="$(resolve_esp_serial_port)"', lifecycle)
         self.assertIn('cargo run --quiet -p squidc -- app install', lifecycle)
         self.assertIn('cargo run --quiet -p squidc -- app launch main', lifecycle)
         self.assertIn('cargo run --quiet -p squidc -- device lifecycle', lifecycle)

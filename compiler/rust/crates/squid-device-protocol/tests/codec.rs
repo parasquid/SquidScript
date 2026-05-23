@@ -3,8 +3,9 @@
 use squid_device_protocol::{
     app_list_entries, decode_frame, encode_app_list_response_into, encode_empty_response_into,
     encode_error_response_into, encode_frame, encode_frame_into, encode_hello_response_into,
-    encode_line_response_into, hello_identity, hello_request, output_lines, AppListEntry,
-    DecodeError, Field, FieldValue, Frame, FrameKind, Opcode, Status,
+    encode_lifecycle_response_into, encode_line_response_into, hello_identity, hello_request,
+    lifecycle_lines, output_lines, AppListEntry, DecodeError, Field, FieldValue, Frame, FrameKind,
+    LifecycleTimer, Opcode, Status,
 };
 
 #[test]
@@ -173,6 +174,39 @@ fn encodes_heap_free_repeated_line_response() {
     assert_eq!(
         output_lines(&decoded).unwrap(),
         vec!["count 1".to_string(), "count 2".to_string()]
+    );
+}
+
+#[test]
+fn encodes_heap_free_lifecycle_response_from_structured_inputs() {
+    let mut out = [0u8; 192];
+    let process = ["main"];
+    let armed = [LifecycleTimer {
+        app_id: "break-reminder",
+        event: "timer.break",
+    }];
+
+    let len = encode_lifecycle_response_into(
+        92,
+        Some("reader-clock"),
+        process.iter().copied(),
+        armed.iter().copied(),
+        &mut out,
+    )
+    .unwrap();
+    let decoded = decode_frame(&out[..len]).unwrap();
+
+    assert_eq!(decoded.kind, FrameKind::Response);
+    assert_eq!(decoded.opcode, Opcode::LifecycleGet);
+    assert_eq!(decoded.status, Status::Ok);
+    assert_eq!(
+        lifecycle_lines(&decoded).unwrap(),
+        vec![
+            "active=reader-clock".to_string(),
+            "process_stack[0]=main".to_string(),
+            "armed_stack=".to_string(),
+            "armed_stack[0]=break-reminder timer.break".to_string(),
+        ]
     );
 }
 

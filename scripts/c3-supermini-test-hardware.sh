@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${ROOT}/scripts/lib/serial-port.sh"
 
 usage() {
   cat <<'EOF'
@@ -29,6 +30,8 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+export ESPFLASH_PORT="$(resolve_esp_serial_port)"
 
 "$ROOT/scripts/c3-supermini-zephyr-test-diagnostic.sh"
 "$ROOT/scripts/c3-supermini-test-app-state.sh"
