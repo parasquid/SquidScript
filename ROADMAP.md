@@ -52,9 +52,6 @@ for compiler, SQBC tooling, and VM semantics.
 - Decide whether the ESP32-C3 Super Mini reference target should expose
   `bleTransfer.*`; if yes, implement and verify it through Zephyr BLE instead
   of relying on MCU radio metadata alone.
-- Preserve foreground VM in-memory state across app events without requiring
-  every key/timer handler to call `state.load()`, while keeping app trigger
-  registration from clobbering the foreground app context.
 - Replace `event.on("app.arm")` trigger registration with an explicit
   `app.triggers { ... }` language construct. `app.arm(appId)` should register
   the target app's trigger declarations without replacing the current

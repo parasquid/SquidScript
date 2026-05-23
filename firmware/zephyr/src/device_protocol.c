@@ -460,6 +460,9 @@ static int start_installed_app(const struct sq_device_protocol_context *context,
 	if (current_app_changed) {
 		clear_foreground_timers(context->runtime);
 	}
+	if (set_current || strcmp(context->runtime->current_app, app_id) != 0) {
+		sq_vm_runtime_reset_vm_context(context->runtime);
+	}
 
 	result = sq_app_store_vm_storage_for_app(context->store_mount_point, app_id,
 						context->launch_storage);
@@ -888,6 +891,9 @@ static int dispatch_event_from_parts(const struct sq_protocol_frame *request,
 		char app_id_buffer[SQ_APP_STORE_APP_ID_MAX];
 		memcpy(app_id_buffer, app_id, app_id_len);
 		app_id_buffer[app_id_len] = '\0';
+		if (strcmp(context->runtime->current_app, app_id_buffer) != 0) {
+			sq_vm_runtime_reset_vm_context(context->runtime);
+		}
 		int result = sq_app_store_vm_storage_for_app(context->store_mount_point,
 							     app_id_buffer,
 							     context->launch_storage);

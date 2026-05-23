@@ -135,6 +135,12 @@ Production device execution flow:
 11. When an app exits, firmware starts the previous installed return target fresh with `event.on("app.start")`.
 12. If no return target exists, firmware restarts installed `main.sqbc`.
 
+The active foreground app session preserves in-memory state across
+non-lifecycle foreground event dispatches, such as key and foreground timer
+handlers. App launch, app-exit returns, and armed trigger activations start
+fresh VM sessions; apps must use explicit persistent state when they need data
+to survive those session boundaries.
+
 Production firmware must execute .sqbc.
 
 Production firmware does not need to compile .squid.
@@ -4074,9 +4080,10 @@ Launch flow:
 14. when an app exits, firmware starts the previous installed return target fresh with `event.on("app.start")`
 15. when no return target exists, firmware restarts installed `main.sqbc`
 
-Only one app is active at a time. The runtime does not keep suspended VMs.
-Returning to an app is a fresh `app.start`, so apps must save and restore their
-own state.
+Only one app is active at a time. The active foreground app keeps in-memory
+state across non-lifecycle foreground events. The runtime does not keep
+suspended VMs for inactive apps. Returning to an app is a fresh `app.start`, so
+apps must save and restore their own state across app-session boundaries.
 
 Armed apps are not continuously executing background VMs. `app.arm(appId)`
 loads an app in registration mode, records `service.timer.*(...)`

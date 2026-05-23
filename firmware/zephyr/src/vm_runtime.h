@@ -72,6 +72,7 @@ struct sq_vm_runtime {
 	struct k_work work;
 	bool work_initialized;
 	uint64_t context_words[SQ_VM_RUNTIME_CONTEXT_BYTES / sizeof(uint64_t)];
+	bool context_ready;
 	union sq_vm_runtime_transfer transfer;
 	SqvmDispatchResult result;
 	const struct sq_vm_storage_backend *backend;
@@ -142,6 +143,7 @@ struct sq_vm_runtime {
 void sq_vm_runtime_init(struct sq_vm_runtime *runtime);
 
 void sq_vm_runtime_reset(struct sq_vm_runtime *runtime);
+void sq_vm_runtime_reset_vm_context(struct sq_vm_runtime *runtime);
 void sq_vm_runtime_set_store_mount_point(struct sq_vm_runtime *runtime, const char *mount_point);
 
 int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,

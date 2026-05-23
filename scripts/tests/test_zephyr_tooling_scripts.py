@@ -432,6 +432,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
     def test_hardware_suite_runs_state_and_key_checks_before_lifecycle(self):
         state = self.read("scripts/c3-supermini-test-app-state.sh")
+        foreground = self.read("scripts/c3-supermini-test-foreground-memory.sh")
+        foreground_app = self.read("tests/hardware/c3-supermini/foreground-memory/main.squid")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
 
         self.assertIn('cargo run --quiet -p squidc -- app install', state)
@@ -442,8 +444,19 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('output=count 2', state)
         self.assertNotIn("obsolete", state.lower())
 
+        self.assertIn('cargo run --quiet -p squidc -- app launch foreground-memory', foreground)
+        self.assertIn('cargo run --quiet -p squidc -- device key SELECT', foreground)
+        self.assertIn("output=memory start 1", foreground)
+        self.assertIn("output=memory select 2", foreground)
+        self.assertIn("output=memory select 3", foreground)
+        self.assertNotIn("state.load", foreground_app)
+        self.assertNotIn("state.save", foreground_app)
+
         state_check = suite.index('c3-supermini-test-app-state.sh')
+        foreground_check = suite.index('c3-supermini-test-foreground-memory.sh')
         lifecycle_check = suite.index('c3-supermini-test-app-lifecycle.sh')
+        self.assertLess(state_check, foreground_check)
+        self.assertLess(foreground_check, lifecycle_check)
         self.assertLess(state_check, lifecycle_check)
 
     def test_hardware_suite_measures_stack_after_stateful_workloads(self):
@@ -570,6 +583,32 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn(".system_memory_text = runtime_system_memory_text", runtime_c)
         self.assertIn(".system_storage_text = runtime_system_storage_text", runtime_c)
         self.assertIn("sq_vm_runtime_set_store_mount_point", runtime_h)
+
+    def test_zephyr_runtime_preserves_foreground_vm_context_between_non_lifecycle_events(self):
+        runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+        protocol_c = self.read("firmware/zephyr/src/device_protocol.c")
+
+        dispatch_body = runtime_c[
+            runtime_c.index("int sq_vm_runtime_dispatch") : runtime_c.index(
+                "int sq_vm_runtime_start"
+            )
+        ]
+        start_definition = protocol_c.index(
+            "static int start_installed_app(const struct sq_device_protocol_context *context,",
+            protocol_c.index("static int launch_app"),
+        )
+        start_body = protocol_c[
+            start_definition : protocol_c.index("static void clear_foreground_timers", start_definition)
+        ]
+
+        self.assertIn("bool context_ready", runtime_h)
+        self.assertIn("void sq_vm_runtime_reset_vm_context", runtime_h)
+        self.assertIn("if (!runtime->context_ready)", dispatch_body)
+        self.assertIn("sqvm_context_init_in_place", dispatch_body)
+        self.assertNotIn("clear_dispatch_state(runtime);", dispatch_body)
+        self.assertIn("sq_vm_runtime_reset_vm_context(context->runtime)", start_body)
+        self.assertIn("set_current || strcmp(context->runtime->current_app, app_id) != 0", start_body)
 
     def test_zephyr_wifi_station_uses_real_connect_disconnect_backend(self):
         runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")

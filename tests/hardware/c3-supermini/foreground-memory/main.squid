@@ -1,0 +1,17 @@
+app "foreground-memory"
+
+state {
+  count: int = 0
+}
+
+event.on("app.start") {
+  count = count + 1
+  debug.print("memory start", count)
+}
+
+event.on("key.SELECT") {
+  count = count + 1
+  debug.print("memory select", count)
+}
+
+screen("main") {}

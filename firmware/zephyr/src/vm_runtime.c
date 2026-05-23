@@ -1042,9 +1042,8 @@ static int32_t runtime_wifi_scan(void *user_data, SqvmWifiScanResult *out)
 #endif
 }
 
-static void clear_dispatch_state(struct sq_vm_runtime *runtime)
+static void clear_dispatch_transfer(struct sq_vm_runtime *runtime)
 {
-	memset(runtime->context_words, 0, sizeof(runtime->context_words));
 	memset(&runtime->transfer, 0, sizeof(runtime->transfer));
 	memset(&runtime->result, 0, sizeof(runtime->result));
 	runtime->backend = NULL;
@@ -1104,7 +1103,7 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	if (runtime == NULL) {
 		return;
 	}
-	clear_dispatch_state(runtime);
+	sq_vm_runtime_reset_vm_context(runtime);
 	memset(&runtime->job_backend, 0, sizeof(runtime->job_backend));
 	memset(runtime->event, 0, sizeof(runtime->event));
 	memset(runtime->traces, 0, sizeof(runtime->traces));
@@ -1152,6 +1151,16 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->status = SQ_VM_RUNTIME_IDLE;
 }
 
+void sq_vm_runtime_reset_vm_context(struct sq_vm_runtime *runtime)
+{
+	if (runtime == NULL) {
+		return;
+	}
+	clear_dispatch_transfer(runtime);
+	memset(runtime->context_words, 0, sizeof(runtime->context_words));
+	runtime->context_ready = false;
+}
+
 void sq_vm_runtime_set_store_mount_point(struct sq_vm_runtime *runtime, const char *mount_point)
 {
 	if (runtime != NULL) {
@@ -1172,7 +1181,7 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		return -ENOMEM;
 	}
 
-	clear_dispatch_state(runtime);
+	clear_dispatch_transfer(runtime);
 	runtime->backend = backend;
 	callbacks = (SqvmCallbacks){
 		.user_data = runtime,
@@ -1206,15 +1215,18 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		.system_storage_text = runtime_system_storage_text,
 	};
 
-	status = sqvm_context_prepare(runtime->context_words, sizeof(runtime->context_words));
-	if (status != SQVM_STATUS_OK) {
-		return -EIO;
-	}
-	status = sqvm_context_init_in_place(runtime->context_words, callbacks,
-					    runtime->transfer.init_scratch,
-					    sizeof(runtime->transfer.init_scratch));
-	if (status != SQVM_STATUS_OK) {
-		return -EIO;
+	if (!runtime->context_ready) {
+		status = sqvm_context_prepare(runtime->context_words, sizeof(runtime->context_words));
+		if (status != SQVM_STATUS_OK) {
+			return -EIO;
+		}
+		status = sqvm_context_init_in_place(runtime->context_words, callbacks,
+						    runtime->transfer.init_scratch,
+						    sizeof(runtime->transfer.init_scratch));
+		if (status != SQVM_STATUS_OK) {
+			return -EIO;
+		}
+		runtime->context_ready = true;
 	}
 	status = sqvm_dispatch_start_resumable(runtime->context_words, callbacks,
 					       (const uint8_t *)event, strlen(event),

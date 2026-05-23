@@ -35,6 +35,7 @@ export ESPFLASH_PORT="$(resolve_esp_serial_port)"
 
 "$ROOT/scripts/c3-supermini-zephyr-test-diagnostic.sh"
 "$ROOT/scripts/c3-supermini-test-app-state.sh"
+"$ROOT/scripts/c3-supermini-test-foreground-memory.sh"
 "$ROOT/scripts/c3-supermini-test-app-lifecycle.sh"
 "$ROOT/scripts/c3-supermini-test-system-resources.sh"
 "$ROOT/scripts/c3-supermini-measure-stack-usage.sh"
