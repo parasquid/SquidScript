@@ -13,37 +13,24 @@ for compiler, SQBC tooling, and VM semantics.
 
 - Confirm the correct Zephyr board target for the ESP32-C3 Super Mini and
   replace the unverified `esp32c3_devkitm/esp32c3` wrapper default if needed.
-- Confirm the Zephyr SDK version for this project after the first hardware
-  build succeeds.
-- Add a Zephyr hardware diagnostic test that builds, flashes, boots, and reads
-  the diagnostic banner over the serial monitor.
+- Finish `scripts/c3-supermini-zephyr-test-diagnostic.sh` by automating the
+  post-flash serial boot-banner check. The script already builds/flashes; the
+  remaining gap is reading and asserting the diagnostic banner without leaving a
+  long-running monitor attached.
 
 ### 2. Expand Zephyr VM Hosting ABI
 
 - Extend the C ABI beyond resumable dispatch to cover state inspection,
-  diagnostics, service result conversion, and explicit error mapping.
+  diagnostics, and service result conversion for remaining runtime services.
 - Expand FFI equivalence tests and Zephyr ztests for storage, state, timers,
-  display, GPIO, Wi-Fi service records, lifecycle callbacks, and VM errors.
+  display, GPIO, Wi-Fi service records, lifecycle callbacks, and remaining VM
+  error cases.
   `system.memory()` and `system.storage("apps")` now have Zephyr FFI host
   callbacks and hardware coverage; keep future service additions on the same
-  caller-owned-buffer pattern.
+  caller-owned-buffer pattern. Explicit Zephyr VM FFI status-to-errno mapping
+  and `device errors` status labels are implemented.
 
-### 3. Rust-Own Firmware Protocol Logic
-
-- Move remaining Zephyr C response payload builders and simple request parsers
-  to heap-free Rust `sqdp_` helpers where doing so reduces stack buffers or
-  duplicated TLV rules without duplicating Zephyr storage/runtime ownership.
-  App launch, generic event dispatch, Wi-Fi profile, and state import request
-  parsing now live in Rust `sqdp_` helpers; state export response encoding and
-  protocol error response mapping use the same Rust-owned framing path.
-  Production Zephyr C now keeps only frame decode and payload CRC validation
-  locally; C TLV builders/readers are test-local harness helpers. Keep moving
-  similar bounded protocol
-  parsing/encoding there.
-- Keep `squidc`, Python helpers, Zephyr tests, and FFI tests on shared codec
-  fixtures so there is one current wire implementation.
-
-### 4. Port Runtime Services To Zephyr
+### 3. Port Runtime Services To Zephyr
 
 - Design app-entry versus import-only source semantics before adding no-screen
   app sugar. The likely direction is: only an app entry file can become an app,
@@ -88,52 +75,20 @@ for compiler, SQBC tooling, and VM semantics.
   metadata, preserve `service.indicator.*` as the runtime API, and have
   compiler/SQBC/Zephyr normalize inline and `.sqdevice` bindings into the same
   device-binding model.
-- Keep service behavior non-blocking: use Zephyr timers, work queues, message
-  queues, flash-map, NVS, LittleFS, networking, and Wi-Fi management events
-  instead of firmware busy waits.
-- Defer ESP32-C3 Zephyr RAM optimization until after the current service-parity
-  unblock slices. When resumed, identify concrete reductions for the largest
-  static allocations, especially VM runtime storage, work stacks,
-  response/session buffers, logging, LittleFS pools, and file caches. Keep the
-  RAM audit guard meaningful and record tradeoffs before lowering capability.
-  Include a focused VM worker stack pass: current app launch paths can use
-  about 16 KiB of worker stack, so direct in-place SQBC metadata parsing and VM
-  dispatch stack reductions should be measured before lowering the 24 KiB
-  budget. Include the protocol/main stack in the same pass: app trigger
-  metadata registration currently calls Rust FFI from the protocol thread, so
-  the main stack is budgeted at 8 KiB until that path is moved off the protocol
-  stack or made lighter. After the trigger/lifecycle hardware check, measured
-  stack high-water usage was `protocol_thread_stack_used_bytes=4256` of 8192
-  and `vm_worker_stack_used_bytes=16000` of 24576.
-  The default ESP32-C3 Super Mini firmware builds with Zephyr ESP32 Wi-Fi
-  scan/status/AP/station support, AP DHCPv4 server support, one volatile
-  station profile, and station DHCP/IP status reporting at
-  `dram0_0_seg=212704` linker bytes, with `scripts/zephyr-ram-audit.sh`
-  expected to track the same budget class, or about 50.9% of the target definition's
-  400 KiB internal SRAM, after bounding native-network packet/buffer pools and
-  measured Wi-Fi socket/event, ESP timer task, and network RX stack budgets for
-  current low-throughput service traffic. `device resources` now exposes live
-  Zephyr heap telemetry; the first representative Wi-Fi/control workload measured
-  `ram_heap_max_allocated_bytes=36764`, so the Zephyr system heap is bounded to
-  49152 bytes while retaining roughly 12 KiB of observed high-water headroom.
-  The Zephyr VM runtime now reuses the VM initialization scratch transfer
-  buffer as the later storage-completion transfer buffer, reducing resident
-  runtime static RAM by 1024 bytes without changing service capacity; hardware
-  resource diagnostics report `runtime_static_bytes=16608`.
+- Reduce ESP32-C3 Zephyr RAM after service parity. Identify concrete reductions
+  for the largest static allocations, especially VM runtime storage, work
+  stacks, response/session buffers, logging, LittleFS pools, and file caches.
+  Use `device resources` worker-stack and protocol-stack high-water diagnostics
+  before lowering stack budgets; recent hardware measurements were
+  `protocol_thread_stack_used_bytes=4256` of 8192 and
+  `vm_worker_stack_used_bytes=16000` of 24576. The current Wi-Fi-enabled build
+  is under the RAM guard at `dram0_0_seg=212704` linker bytes, so this is not a
+  feature-parity blocker.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.
-- Use `device resources` VM worker stack high-water diagnostics to reduce stack
-  RAM only when representative ESP32-C3 hardware workloads prove headroom.
-  Current state/lifecycle flows use most of the 16 KiB worker stack, so inspect
-  C and Rust dispatch paths for large locals, formatting-heavy diagnostics,
-  nested FFI/host callbacks, and architecture-specific stack costs before
-  changing the stack budget.
-- Preserve portable SquidScript service semantics in docs/specs; keep Zephyr
-  Kconfig, devicetree, pins, partitions, and driver details in firmware/target
-  docs and metadata.
 
-### 5. Remove Obsolete Rust Firmware
+### 4. Remove Obsolete Rust Firmware
 
 - Delete `firmware/squid-firmware` after the Zephyr command surface, storage,
   lifecycle, and hardware tests cover the current required behavior.
