@@ -1817,9 +1817,11 @@ app.launch("binbook-reader")
 app.arm(appId)
 
 Arms an installed app for future trigger delivery. Firmware loads the target
-app, dispatches `event.on("app.arm")` in registration mode, records any
-`service.timer.*(...)` registrations, and tears the VM down without pushing an active
-session.
+app's `app.triggers` declarations in registration mode, records any
+`service.timer.*(...)` registrations, and tears the VM down without pushing an
+active session. Trigger registration is declarative: it does not run
+foreground lifecycle behavior, debug output, display work, state mutation, or
+app launch/exit behavior.
 
 Example:
 
@@ -1834,8 +1836,8 @@ Removes armed trigger registrations for an app.
 service.timer.every(eventName, intervalMs)
 
 Registers a repeating firmware timer service event source. Inside
-`event.on("app.arm")`, registrations can launch the armed app later. Inside an
-active app session, registrations are session-local.
+`app.triggers`, registrations can launch the armed app later. Inside an active
+app session, registrations are session-local.
 
 `eventName` is an arbitrary app-defined event string. The timer dispatches the
 matching `event.on(eventName)` handler exactly; dotted names such as
@@ -1892,11 +1894,18 @@ Generic events are canonical:
 
 ```squid
 event.on("app.start") {}
-event.on("app.arm") {}
 event.on("key.SELECT") {}
 event.on("key.POWER.doubleTap") {}
 event.on("timer.clock") {}
 event.on("service.pageTurn.forward") {}
+```
+
+`app.triggers` declares armed-app trigger registrations:
+
+```squid
+app.triggers {
+  service.timer.after("timer.break", 1500000)
+}
 ```
 
 Break reminder example:
@@ -1904,7 +1913,7 @@ Break reminder example:
 ```squid
 app "break-reminder"
 
-event.on("app.arm") {
+app.triggers {
   service.timer.after("timer.break", 1500000)
 }
 
@@ -4086,8 +4095,8 @@ suspended VMs for inactive apps. Returning to an app is a fresh `app.start`, so
 apps must save and restore their own state across app-session boundaries.
 
 Armed apps are not continuously executing background VMs. `app.arm(appId)`
-loads an app in registration mode, records `service.timer.*(...)`
-registrations from `event.on("app.arm")`, then tears that VM down. When a
+loads an app's `app.triggers` declarations in registration mode, records
+`service.timer.*(...)` registrations, then tears that VM down. When a
 registered event fires, firmware starts the armed app as the active app
 session and dispatches the event handler.
 

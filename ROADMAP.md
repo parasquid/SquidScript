@@ -52,18 +52,13 @@ for compiler, SQBC tooling, and VM semantics.
 - Decide whether the ESP32-C3 Super Mini reference target should expose
   `bleTransfer.*`; if yes, implement and verify it through Zephyr BLE instead
   of relying on MCU radio metadata alone.
-- Replace `event.on("app.arm")` trigger registration with an explicit
-  `app.triggers { ... }` language construct. `app.arm(appId)` should register
-  the target app's trigger declarations without replacing the current
-  foreground app or keeping a background VM resident. The construct should
-  support multiple bounded registrations per app, including different timer
-  intervals and future logical button/input triggers, while `event.on(...)`
-  remains the handler for the activation event that fires later.
 - Design the `app.triggers` compiler/SQBC/VM contract so firmware can load only
   the trigger registration section plus its required constants/functions, not
   the full app, and so unsupported foreground operations in trigger
-  registration are rejected. Update lifecycle diagnostics to expose both the
-  process return stack and armed trigger stack with enough detail for tests.
+  registration are rejected by the bytecode/runtime path as well as the current
+  compiler surface. Extend the trigger model beyond current timer declarations
+  to future logical button/input triggers while keeping `event.on(...)` as the
+  handler for the activation event that fires later.
 - Add SQBC lazy bytecode loading for installed apps to reduce firmware RAM.
   Keep a small always-resident SQBC header/index with section, function,
   trigger, constant, and entrypoint metadata; load function bodies or bounded

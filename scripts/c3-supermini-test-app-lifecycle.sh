@@ -109,7 +109,6 @@ assert_json_lifecycle "${json_lifecycle_out}" "reader-clock" "main" "break-remin
 output_out="$(wait_for_contains output-reader "output=reader start" \
   "device output" cargo run --quiet -p squidc -- device output)"
 assert_file_contains "${output_out}" "output=main start"
-assert_file_contains "${output_out}" "output=break armed"
 
 lifecycle_out="$(wait_for_contains lifecycle-break "lifecycle=active=break-reminder" \
   "device lifecycle" cargo run --quiet -p squidc -- device lifecycle)"

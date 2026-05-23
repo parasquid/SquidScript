@@ -5,17 +5,16 @@ state {
   ticks: int = 0
 }
 
-event.on("app.arm") {
+app.triggers {
+  service.timer.every("timer.debug", 1000)
+}
+
+event.on("timer.debug") {
   state.load()
   if (stateVersion != 1) {
     state.reset()
     stateVersion = 1
   }
-  debug.print("armed register")
-  service.timer.every("timer.debug", 1000)
-}
-
-event.on("timer.debug") {
   ticks = ticks + 1
   debug.print("armed timer", ticks)
   state.save()

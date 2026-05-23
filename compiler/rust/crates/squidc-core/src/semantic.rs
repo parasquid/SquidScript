@@ -108,6 +108,14 @@ pub(crate) fn validate_semantics(
     }
 
     for handler in &ast.handlers {
+        if handler.event == "app.arm" {
+            diagnostics.push(error(
+                "E_APP_ARM_HANDLER",
+                "use app.triggers for trigger registration; event.on(\"app.arm\") is not supported",
+                handler.span.start,
+                handler.span.end,
+            ));
+        }
         validate_ignored_fallible_results(
             &handler.statements,
             handler.span.start,
@@ -127,6 +135,14 @@ pub(crate) fn validate_semantics(
             &[],
             handler.span.start,
             handler.span.end,
+            diagnostics,
+        );
+    }
+    for trigger_block in &ast.trigger_blocks {
+        validate_trigger_statements(
+            &trigger_block.statements,
+            trigger_block.span.start,
+            trigger_block.span.end,
             diagnostics,
         );
     }
@@ -152,6 +168,25 @@ pub(crate) fn validate_semantics(
             function.span.end,
             diagnostics,
         );
+    }
+}
+
+fn validate_trigger_statements(
+    statements: &[IrStatement],
+    start: usize,
+    end: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for statement in statements {
+        match statement {
+            IrStatement::ServiceTimerEvery { .. } | IrStatement::ServiceTimerAfter { .. } => {}
+            _ => diagnostics.push(error(
+                "E_APP_TRIGGER_STATEMENT",
+                "app.triggers may only declare timer trigger registrations",
+                start,
+                end,
+            )),
+        }
     }
 }
 

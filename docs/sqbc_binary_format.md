@@ -136,8 +136,11 @@ emitted as headless draw-log records by firmware hosts that implement the
 display service. The current Zephyr draw-log records cover clear, text, rect,
 and line commands. GPIO builtins dispatch to target firmware hardware modules;
 unsupported names return a VM operand error. The canonical lifecycle surface is
-generic events plus `app.start`, `app.arm`, `app.disarm`, and `service.timer.*`.
-`app.launch` remains the app replacement/launch primitive.
+generic events plus `app.start`, `app.triggers`, `app.arm`, `app.disarm`, and
+`service.timer.*`. `app.triggers` is the authored trigger-registration surface;
+the current compiler normalizes it to the SQBC registration entrypoint used by
+firmware when `app.arm(appId)` arms an installed app. `app.launch` remains the
+app replacement/launch primitive.
 
 SQBC includes an explicit app metadata section so tools can read the app id from
 bytecode without guessing from the string table. `squidc app install` uses this

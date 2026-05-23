@@ -142,11 +142,12 @@ across non-lifecycle foreground event dispatches, such as key and foreground
 timer handlers, so apps do not need to call `state.load()` for every event.
 App launch, app-exit returns, and armed trigger activations start fresh VM
 sessions and must use explicit persistent state when they need continuity.
-`app.arm` runs the target app's `event.on("app.arm")` handler in registration
+`app.arm` loads the target app's `app.triggers` declarations in registration
 mode, records bounded timer registrations, and exposes them through
-`lifecycle-get`. When an armed timer fires, Zephyr starts the armed app as
-foreground and dispatches the registered event. `app.disarm` removes that
-app's armed timer registrations.
+`lifecycle-get`. Trigger registration does not keep a background VM resident
+and does not run foreground lifecycle or debug behavior. When an armed timer
+fires, Zephyr starts the armed app as foreground and dispatches the registered
+event. `app.disarm` removes that app's armed timer registrations.
 
 ## Diagnostics
 

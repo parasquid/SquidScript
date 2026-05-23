@@ -8,6 +8,7 @@ pub struct AstRoot {
     pub app: Option<AstAppDecl>,
     pub state: Option<AstStateBlock>,
     pub device_bindings: Vec<IrDeviceBinding>,
+    pub trigger_blocks: Vec<AstTriggerBlock>,
     pub functions: Vec<AstFunction>,
     pub handlers: Vec<AstHandler>,
     pub screens: Vec<AstScreen>,
@@ -41,6 +42,12 @@ pub struct AstScreen {
 pub struct AstHandler {
     pub event: String,
     pub preload: bool,
+    pub statements: Vec<IrStatement>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AstTriggerBlock {
     pub statements: Vec<IrStatement>,
     pub span: SourceSpan,
 }

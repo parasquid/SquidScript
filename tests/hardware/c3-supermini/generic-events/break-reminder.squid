@@ -1,7 +1,6 @@
 app "break-reminder"
 
-event.on("app.arm") {
-  debug.print("break armed")
+app.triggers {
   service.timer.after("timer.break", 3000)
 }
 

@@ -884,7 +884,7 @@ event.on("app.start") {
   app.launch("reader")
   service.timer.every("timer.clock", 60000)
 }
-event.on("app.arm") {
+app.triggers {
   service.timer.after("timer.break", 1500000)
 }
 event.on("app.exit") {
@@ -903,9 +903,9 @@ screen("main") {}
     assert!(output.ok, "{:?}", output.diagnostics);
     let ir = output.ir.unwrap();
     assert_eq!(ir.handlers[0].event, "app.start");
-    assert_eq!(ir.handlers[1].event, "app.arm");
-    assert_eq!(ir.handlers[2].event, "app.exit");
-    assert_eq!(ir.handlers[3].event, "timer.break");
+    assert_eq!(ir.handlers[1].event, "app.exit");
+    assert_eq!(ir.handlers[2].event, "timer.break");
+    assert_eq!(ir.handlers[3].event, "app.arm");
     assert!(matches!(
         ir.handlers[0].statements[0],
         IrStatement::AppArm { .. }
@@ -919,13 +919,78 @@ screen("main") {}
         IrStatement::ServiceTimerEvery { .. }
     ));
     assert!(matches!(
-        ir.handlers[1].statements[0],
+        ir.handlers[3].statements[0],
         IrStatement::ServiceTimerAfter { .. }
     ));
     assert!(matches!(
-        ir.handlers[3].statements[1],
+        ir.handlers[2].statements[1],
         IrStatement::AppDisarm { .. }
     ));
+}
+
+#[test]
+fn parses_app_triggers_as_registration_declarations() {
+    let source = r#"app "trigger-demo"
+event.on("app.start") {
+  app.arm("reminder")
+}
+app.triggers {
+  service.timer.after("timer.break", 1500000)
+}
+event.on("timer.break") {
+  debug.print("break")
+}
+screen("main") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let ir = output.ir.unwrap();
+    assert_eq!(ir.handlers[0].event, "app.start");
+    assert_eq!(ir.handlers[1].event, "timer.break");
+    assert_eq!(ir.handlers[2].event, "app.arm");
+    assert!(matches!(
+        ir.handlers[2].statements[0],
+        IrStatement::ServiceTimerAfter { .. }
+    ));
+}
+
+#[test]
+fn rejects_authored_app_arm_handlers_and_foreground_trigger_statements() {
+    let old_handler = r#"app "old-arm"
+event.on("app.arm") {
+  service.timer.after("timer.break", 1500000)
+}
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: old_handler.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(!compiled.ok);
+    assert!(compiled
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "E_APP_ARM_HANDLER"));
+
+    let foreground_statement = r#"app "bad-trigger"
+app.triggers {
+  app.launch("reader")
+}
+event.on("app.start") {}
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: foreground_statement.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(!compiled.ok);
+    assert!(compiled
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "E_APP_TRIGGER_STATEMENT"));
 }
 
 #[test]

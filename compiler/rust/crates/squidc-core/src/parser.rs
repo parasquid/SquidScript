@@ -1,5 +1,7 @@
 use crate::{
-    ast::{AstAppDecl, AstFunction, AstHandler, AstRoot, AstScreen, AstStateBlock},
+    ast::{
+        AstAppDecl, AstFunction, AstHandler, AstRoot, AstScreen, AstStateBlock, AstTriggerBlock,
+    },
     device_config,
     diagnostic::{error, Diagnostic, SourceSpan},
     ir::{default_state_store, IrDeviceBinding, IrExpr, IrStateValue, IrStatement},
@@ -68,7 +70,10 @@ impl Parser<'_> {
                 continue;
             }
 
-            if self.at_ident("app") {
+            if self.at_qualified_ident("app", "triggers") {
+                self.reject_pending_attribute();
+                self.parse_app_triggers(builder);
+            } else if self.at_ident("app") {
                 self.reject_pending_attribute();
                 self.parse_app(builder);
             } else if self.at_ident("state") {
@@ -445,6 +450,29 @@ impl Parser<'_> {
         self.ast.handlers.push(AstHandler {
             event,
             preload,
+            statements,
+            span: SourceSpan { start, end },
+        });
+    }
+
+    fn parse_app_triggers(&mut self, builder: &mut GreenNodeBuilder) {
+        builder.start_node(SquidLang::kind_to_raw(SquidKind::Token));
+        let start = self.peek().map(|token| token.span.start).unwrap_or(0);
+        self.bump(builder); // app
+        self.consume_ws(builder);
+        if self.at_kind(TokenKind::Dot) {
+            self.bump(builder);
+        }
+        self.consume_ws(builder);
+        let _method = self.consume_ident(builder);
+        self.consume_ws(builder);
+        if self.at_kind(TokenKind::OpenBrace) {
+            self.bump(builder);
+        }
+        let statements = self.parse_statements_until_close(builder);
+        let end = self.previous_end().unwrap_or(start);
+        builder.finish_node();
+        self.ast.trigger_blocks.push(AstTriggerBlock {
             statements,
             span: SourceSpan { start, end },
         });
@@ -1317,6 +1345,10 @@ impl Parser<'_> {
     }
 
     fn at_event_method(&self, method: &str) -> bool {
+        self.at_qualified_ident("event", method)
+    }
+
+    fn at_qualified_ident(&self, namespace: &str, method: &str) -> bool {
         let mut index = self.cursor;
         while self
             .tokens
@@ -1347,7 +1379,7 @@ impl Parser<'_> {
                     text: method_text,
                     ..
                 })
-            ) if text == "event" && method_text == method
+            ) if text == namespace && method_text == method
         )
     }
 

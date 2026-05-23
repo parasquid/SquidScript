@@ -59,6 +59,10 @@ pub fn compile_with_profile(request: CompileRequest, profile: BuildProfile) -> C
     let ok = parsed.diagnostics.iter().all(|d| d.severity != "error");
     let ir = if ok {
         let app = ast.app.expect("app exists after validation");
+        let mut trigger_statements = Vec::new();
+        for trigger_block in ast.trigger_blocks {
+            trigger_statements.extend(trigger_block.statements);
+        }
         let handlers = ast
             .handlers
             .into_iter()
@@ -67,6 +71,11 @@ pub fn compile_with_profile(request: CompileRequest, profile: BuildProfile) -> C
                 preload: handler.preload,
                 statements: handler.statements,
             })
+            .chain((!trigger_statements.is_empty()).then_some(IrHandler {
+                event: "app.arm".to_string(),
+                preload: false,
+                statements: trigger_statements,
+            }))
             .collect();
         let functions = ast
             .functions
