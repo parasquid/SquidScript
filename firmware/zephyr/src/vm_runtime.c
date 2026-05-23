@@ -9,7 +9,6 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/pwm.h>
 
-#define SQ_VM_RUNTIME_WORK_STACK_SIZE 16384
 #define SQ_VM_RUNTIME_BREATHE_LEVEL_MS 31
 #define SQ_SET_LITERAL_FIELD(target, field, value) \
 	do { \

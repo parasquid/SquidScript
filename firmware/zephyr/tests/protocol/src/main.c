@@ -1188,6 +1188,9 @@ ZTEST(squidscript_protocol, test_links_squidvm_ffi_context_metadata)
 {
 	zassert_true(sqvm_context_size() > 0);
 	zassert_true(sqvm_context_align() > 0);
+	zassert_true(sqvm_context_size() <= SQ_VM_RUNTIME_CONTEXT_BYTES);
+	zassert_true(SQ_VM_RUNTIME_CONTEXT_BYTES <= 49152);
+	zassert_true(SQ_VM_RUNTIME_WORK_STACK_SIZE <= 16384);
 }
 
 ZTEST(squidscript_protocol, test_exposes_resumable_squidvm_ffi_abi)

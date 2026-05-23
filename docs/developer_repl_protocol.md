@@ -124,7 +124,7 @@ numbers. When the user asks for "memory" without qualification, report RAM by
 default.
 
 Zephyr builds should keep RAM usage visible with `scripts/zephyr-ram-audit.sh`.
-The default guard for the ESP32-C3 Zephyr slice is `160000` bytes in
+The default guard for the ESP32-C3 Zephyr slice is `145000` bytes in
 `dram0_0_seg`; override it only with `SQUID_ZEPHYR_DRAM_LIMIT_BYTES` when a
 change intentionally changes the measured budget.
 
