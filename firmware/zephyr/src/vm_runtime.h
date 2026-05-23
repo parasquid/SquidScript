@@ -20,7 +20,7 @@ extern "C" {
 #define SQ_VM_RUNTIME_CONTEXT_BYTES 65536
 #define SQ_VM_RUNTIME_SCRATCH_BYTES 4096
 #define SQ_VM_RUNTIME_EVENT_LEN 32
-#define SQ_VM_RUNTIME_INDICATOR_BREATHE_PHASES 32
+#define SQ_VM_RUNTIME_INDICATOR_BREATHE_STEPS 65
 
 enum sq_vm_runtime_status {
 	SQ_VM_RUNTIME_IDLE = 0,
@@ -57,10 +57,8 @@ struct sq_vm_runtime {
 	bool indicator_gpio_configured;
 	bool indicator_gpio_available;
 	bool indicator_breathe_active;
-	bool indicator_breathe_rising;
-	uint8_t indicator_breathe_phase;
+	uint8_t indicator_breathe_step;
 	int64_t indicator_breathe_next_ms;
-	int64_t indicator_breathe_frame_ms;
 	uint32_t gpio_configured_mask;
 	uint32_t gpio_state_mask;
 	struct sq_vm_runtime_timer timers[SQ_VM_RUNTIME_TIMER_MAX];

@@ -60,4 +60,7 @@ do not run another serial command unless debugging the final board state.
 The indicator breathe check installs and launches
 `examples/breathe-supermini/main.squid`. Serial `device output` should include
 `breathe ready`, `device errors` should be empty, and the final visible board
-state should be a repeating onboard LED breathe pattern.
+state should be a smooth repeating onboard LED breathe pattern. For the current
+ESP32-C3 Super Mini target, that visible check exercises the logical
+`indicator0` device, which the Zephyr overlay maps to the common-clone GPIO8
+onboard LED through ESP32-C3 LEDC PWM.

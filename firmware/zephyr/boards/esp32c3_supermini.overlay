@@ -6,6 +6,8 @@
  * host as /dev/ttyACM*.
  */
 
+#include <zephyr/dt-bindings/pwm/pwm.h>
+
 / {
 	chosen {
 		zephyr,console = &usb_serial;
@@ -13,7 +15,10 @@
 	};
 
 	aliases {
+		indicator0 = &pwm_indicator;
 		led0 = &blue_led;
+		pwm-0 = &ledc0;
+		pwm-led0 = &pwm_indicator;
 	};
 
 	leds {
@@ -22,5 +27,35 @@
 			gpios = <&gpio0 8 GPIO_ACTIVE_LOW>;
 			label = "ESP32-C3 Super Mini common clone onboard LED";
 		};
+	};
+
+	pwmleds {
+		compatible = "pwm-leds";
+		pwm_indicator: pwm_led_0 {
+			pwms = <&ledc0 0 1000000 PWM_POLARITY_NORMAL>;
+			label = "ESP32-C3 Super Mini common clone onboard LED PWM";
+		};
+	};
+};
+
+&pinctrl {
+	ledc0_default: ledc0_default {
+		group1 {
+			pinmux = <LEDC_CH0_GPIO8>;
+			output-enable;
+		};
+	};
+};
+
+&ledc0 {
+	pinctrl-0 = <&ledc0_default>;
+	pinctrl-names = "default";
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	channel0@0 {
+		reg = <0x0>;
+		timer = <0>;
 	};
 };

@@ -41,10 +41,9 @@ for compiler, SQBC tooling, and VM semantics.
 - Implement GPIO, indicator, PWM, timers, app lifecycle, persistent app storage,
   app state, display/draw-log, Wi-Fi scan, AP, station, status, and profile
   provisioning through Zephyr-native subsystems.
-- Restore smooth `service.indicator.breathe()` parity with the previous Rust
-  firmware by investigating ESP32-C3 LEDC/PWM ownership for the onboard GPIO8
-  LED or a documented equivalent target binding; the current software breathe
-  fallback is visibly choppy and not feature-parity complete.
+- Add a generic PWM-capable LED-like device output model beyond
+  `service.indicator`, so future target-described GPIO/PWM endpoints can expose
+  smooth brightness control without board-specific app code.
 - Keep service behavior non-blocking: use Zephyr timers, work queues, message
   queues, flash-map, NVS, LittleFS, networking, and Wi-Fi management events
   instead of firmware busy waits.

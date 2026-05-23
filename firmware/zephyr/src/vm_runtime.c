@@ -6,16 +6,37 @@
 
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/pwm.h>
 
 #define SQ_VM_RUNTIME_WORK_STACK_SIZE 16384
-#define SQ_VM_RUNTIME_BREATHE_LEVEL_MS 40
-#define SQ_VM_RUNTIME_BREATHE_PWM_MS 16
+#define SQ_VM_RUNTIME_BREATHE_LEVEL_MS 31
 
-#if IS_ENABLED(CONFIG_GPIO) && DT_NODE_HAS_STATUS(DT_ALIAS(led0), okay)
-static const struct gpio_dt_spec indicator_led = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
-#define SQ_VM_RUNTIME_HAS_INDICATOR_LED 1
+static const uint8_t indicator_breathe_duties[SQ_VM_RUNTIME_INDICATOR_BREATHE_STEPS] = {
+	0,  0,  1,  2,	4,  6,  8,  11, 15, 18, 22, 26, 31, 35, 40, 45, 50,
+	55, 60, 65, 69, 74, 78, 82, 85, 89, 92, 94, 96, 98, 99, 100, 100, 100,
+	99, 98, 96, 94, 92, 89, 85, 82, 78, 74, 69, 65, 60, 55, 50, 45, 40,
+	35, 31, 26, 22, 18, 15, 11, 8,  6,  4,  2,	1,  0,  0,
+};
+
+#if IS_ENABLED(CONFIG_PWM) && DT_NODE_HAS_PROP(DT_ALIAS(indicator0), pwms)
+static const struct pwm_dt_spec indicator_pwm = PWM_DT_SPEC_GET(DT_ALIAS(indicator0));
+#define SQ_VM_RUNTIME_HAS_INDICATOR_PWM 1
 #else
-#define SQ_VM_RUNTIME_HAS_INDICATOR_LED 0
+#define SQ_VM_RUNTIME_HAS_INDICATOR_PWM 0
+#endif
+
+#if IS_ENABLED(CONFIG_GPIO) && DT_NODE_HAS_PROP(DT_ALIAS(indicator0), gpios)
+#define SQ_VM_RUNTIME_INDICATOR_GPIO_NODE DT_ALIAS(indicator0)
+#elif IS_ENABLED(CONFIG_GPIO) && DT_NODE_HAS_PROP(DT_ALIAS(led0), gpios)
+#define SQ_VM_RUNTIME_INDICATOR_GPIO_NODE DT_ALIAS(led0)
+#endif
+
+#ifdef SQ_VM_RUNTIME_INDICATOR_GPIO_NODE
+static const struct gpio_dt_spec indicator_gpio =
+	GPIO_DT_SPEC_GET(SQ_VM_RUNTIME_INDICATOR_GPIO_NODE, gpios);
+#define SQ_VM_RUNTIME_HAS_INDICATOR_GPIO 1
+#else
+#define SQ_VM_RUNTIME_HAS_INDICATOR_GPIO 0
 #endif
 
 #if IS_ENABLED(CONFIG_GPIO) && DT_NODE_HAS_STATUS(DT_NODELABEL(gpio0), okay)
@@ -158,10 +179,8 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	memset(runtime->timers, 0, sizeof(runtime->timers));
 	runtime->indicator_state = false;
 	runtime->indicator_breathe_active = false;
-	runtime->indicator_breathe_rising = false;
-	runtime->indicator_breathe_phase = 0;
+	runtime->indicator_breathe_step = 0;
 	runtime->indicator_breathe_next_ms = 0;
-	runtime->indicator_breathe_frame_ms = 0;
 	runtime->gpio_configured_mask = 0;
 	runtime->gpio_state_mask = 0;
 	runtime->result_code = 0;
@@ -285,11 +304,11 @@ static int configure_indicator_gpio(struct sq_vm_runtime *runtime)
 		return 0;
 	}
 	runtime->indicator_gpio_configured = true;
-#if SQ_VM_RUNTIME_HAS_INDICATOR_LED
-	if (!gpio_is_ready_dt(&indicator_led)) {
+#if SQ_VM_RUNTIME_HAS_INDICATOR_GPIO
+	if (!gpio_is_ready_dt(&indicator_gpio)) {
 		return 0;
 	}
-	if (gpio_pin_configure_dt(&indicator_led, GPIO_OUTPUT_INACTIVE) != 0) {
+	if (gpio_pin_configure_dt(&indicator_gpio, GPIO_OUTPUT_INACTIVE) != 0) {
 		return 0;
 	}
 	runtime->indicator_gpio_available = true;
@@ -297,13 +316,62 @@ static int configure_indicator_gpio(struct sq_vm_runtime *runtime)
 	return 0;
 }
 
-static int set_indicator_output(struct sq_vm_runtime *runtime, bool value)
+static bool indicator_is_active_low(void)
 {
-	runtime->indicator_state = value;
+#if SQ_VM_RUNTIME_HAS_INDICATOR_GPIO
+	return (indicator_gpio.dt_flags & GPIO_ACTIVE_LOW) != 0;
+#else
+	return false;
+#endif
+}
+
+static bool indicator_uses_raw_gpio(uint8_t pin)
+{
+#if SQ_VM_RUNTIME_HAS_INDICATOR_GPIO
+	return indicator_gpio.pin == pin;
+#else
+	return false;
+#endif
+}
+
+static int set_indicator_raw_output(struct sq_vm_runtime *runtime, bool raw_high)
+{
+#if SQ_VM_RUNTIME_HAS_INDICATOR_PWM
+	if (pwm_is_ready_dt(&indicator_pwm)) {
+		uint32_t pulse = raw_high ? indicator_pwm.period : 0U;
+		return pwm_set_dt(&indicator_pwm, indicator_pwm.period, pulse);
+	}
+#endif
 	(void)configure_indicator_gpio(runtime);
-#if SQ_VM_RUNTIME_HAS_INDICATOR_LED
+#if SQ_VM_RUNTIME_HAS_INDICATOR_GPIO
 	if (runtime->indicator_gpio_available) {
-		int result = gpio_pin_set_dt(&indicator_led, value ? 1 : 0);
+		int result = gpio_pin_set_raw(indicator_gpio.port, indicator_gpio.pin, raw_high ? 1 : 0);
+		if (result != 0) {
+			return result;
+		}
+	}
+#endif
+	return 0;
+}
+
+static int set_indicator_brightness(struct sq_vm_runtime *runtime, uint8_t brightness)
+{
+	uint8_t clamped = brightness > 100U ? 100U : brightness;
+#if SQ_VM_RUNTIME_HAS_INDICATOR_PWM
+	uint8_t raw_high_percent = indicator_is_active_low() ? (uint8_t)(100U - clamped) : clamped;
+#endif
+
+	runtime->indicator_state = clamped > 0U;
+#if SQ_VM_RUNTIME_HAS_INDICATOR_PWM
+	if (pwm_is_ready_dt(&indicator_pwm)) {
+		uint32_t pulse = (indicator_pwm.period * (uint32_t)raw_high_percent) / 100U;
+		return pwm_set_dt(&indicator_pwm, indicator_pwm.period, pulse);
+	}
+#endif
+	(void)configure_indicator_gpio(runtime);
+#if SQ_VM_RUNTIME_HAS_INDICATOR_GPIO
+	if (runtime->indicator_gpio_available) {
+		int result = gpio_pin_set_dt(&indicator_gpio, clamped > 0U ? 1 : 0);
 		if (result != 0) {
 			return result;
 		}
@@ -318,7 +386,7 @@ int sq_vm_runtime_indicator_write(struct sq_vm_runtime *runtime, bool value)
 		return -EINVAL;
 	}
 	runtime->indicator_breathe_active = false;
-	return set_indicator_output(runtime, value);
+	return set_indicator_brightness(runtime, value ? 100U : 0U);
 }
 
 int sq_vm_runtime_indicator_toggle(struct sq_vm_runtime *runtime)
@@ -347,11 +415,9 @@ int sq_vm_runtime_indicator_breathe(struct sq_vm_runtime *runtime)
 	}
 	now = k_uptime_get();
 	runtime->indicator_breathe_active = true;
-	runtime->indicator_breathe_rising = true;
-	runtime->indicator_breathe_phase = 0;
-	runtime->indicator_breathe_next_ms = now + SQ_VM_RUNTIME_BREATHE_LEVEL_MS;
-	runtime->indicator_breathe_frame_ms = now;
-	return set_indicator_output(runtime, false);
+	runtime->indicator_breathe_step = 0;
+	runtime->indicator_breathe_next_ms = now;
+	return set_indicator_brightness(runtime, 0U);
 }
 
 static int parse_gpio_name(const uint8_t *name, size_t name_len, uint8_t *pin)
@@ -403,6 +469,18 @@ int sq_vm_runtime_hardware_gpio_write(struct sq_vm_runtime *runtime, const uint8
 
 	if (runtime == NULL || parse_gpio_name(name, name_len, &pin) != 0) {
 		return -EINVAL;
+	}
+	if (indicator_uses_raw_gpio(pin)) {
+		runtime->indicator_breathe_active = false;
+		runtime->indicator_state = indicator_is_active_low() ? !value : value;
+		bit = BIT(pin);
+		runtime->gpio_configured_mask |= bit;
+		if (value) {
+			runtime->gpio_state_mask |= bit;
+		} else {
+			runtime->gpio_state_mask &= ~bit;
+		}
+		return set_indicator_raw_output(runtime, value);
 	}
 	result = configure_raw_gpio(runtime, pin);
 	if (result != 0) {
@@ -465,43 +543,22 @@ int sq_vm_runtime_hardware_gpio_read(struct sq_vm_runtime *runtime, const uint8_
 static int sq_vm_runtime_poll_indicator_breathe(struct sq_vm_runtime *runtime)
 {
 	int64_t now;
-	int64_t frame_delta;
-	uint8_t on_ms;
-	bool on;
+	uint8_t brightness;
 
 	if (!runtime->indicator_breathe_active) {
 		return 0;
 	}
 	now = k_uptime_get();
-	if (now >= runtime->indicator_breathe_next_ms) {
-		runtime->indicator_breathe_next_ms = now + SQ_VM_RUNTIME_BREATHE_LEVEL_MS;
-		if (runtime->indicator_breathe_rising) {
-			if (runtime->indicator_breathe_phase >= SQ_VM_RUNTIME_INDICATOR_BREATHE_PHASES) {
-				runtime->indicator_breathe_rising = false;
-				runtime->indicator_breathe_phase--;
-			} else {
-				runtime->indicator_breathe_phase++;
-			}
-		} else if (runtime->indicator_breathe_phase == 0) {
-			runtime->indicator_breathe_rising = true;
-			runtime->indicator_breathe_phase++;
-		} else {
-			runtime->indicator_breathe_phase--;
-		}
+	if (now < runtime->indicator_breathe_next_ms) {
+		return 0;
 	}
 
-	frame_delta = now - runtime->indicator_breathe_frame_ms;
-	if (frame_delta >= SQ_VM_RUNTIME_BREATHE_PWM_MS || frame_delta < 0) {
-		int64_t periods = frame_delta / SQ_VM_RUNTIME_BREATHE_PWM_MS;
-		if (periods < 1) {
-			periods = 1;
-		}
-		runtime->indicator_breathe_frame_ms += periods * SQ_VM_RUNTIME_BREATHE_PWM_MS;
-		frame_delta = now - runtime->indicator_breathe_frame_ms;
-	}
-	on_ms = runtime->indicator_breathe_phase / 2;
-	on = on_ms > 0 && frame_delta < on_ms;
-	return set_indicator_output(runtime, on);
+	brightness = indicator_breathe_duties[runtime->indicator_breathe_step];
+	runtime->indicator_breathe_step =
+		(uint8_t)((runtime->indicator_breathe_step + 1U) %
+			  SQ_VM_RUNTIME_INDICATOR_BREATHE_STEPS);
+	runtime->indicator_breathe_next_ms = now + SQ_VM_RUNTIME_BREATHE_LEVEL_MS;
+	return set_indicator_brightness(runtime, brightness);
 }
 
 int sq_vm_runtime_register_timer(struct sq_vm_runtime *runtime, const uint8_t *event,

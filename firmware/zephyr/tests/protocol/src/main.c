@@ -1152,15 +1152,17 @@ ZTEST(squidscript_protocol, test_vm_runtime_tracks_output_indicator_and_due_time
 
 	zassert_equal(sq_vm_runtime_indicator_breathe(&runtime), 0);
 	zassert_true(runtime.indicator_breathe_active);
-	uint8_t first_phase = runtime.indicator_breathe_phase;
+	uint8_t first_step = runtime.indicator_breathe_step;
 	runtime.indicator_breathe_next_ms = k_uptime_get() - 1;
 	zassert_equal(sq_vm_runtime_poll(&runtime), 0);
 	zassert_true(runtime.indicator_breathe_active);
-	zassert_not_equal(runtime.indicator_breathe_phase, first_phase);
+	zassert_not_equal(runtime.indicator_breathe_step, first_step);
 
 	zassert_equal(sq_vm_runtime_indicator_write(&runtime, true), 0);
 	zassert_false(runtime.indicator_breathe_active);
 
+	zassert_equal(sq_vm_runtime_indicator_breathe(&runtime), 0);
+	zassert_true(runtime.indicator_breathe_active);
 	zassert_equal(sq_vm_runtime_hardware_gpio_write(&runtime, (const uint8_t *)"GPIO8",
 							strlen("GPIO8"), true),
 		      0);
@@ -1168,6 +1170,8 @@ ZTEST(squidscript_protocol, test_vm_runtime_tracks_output_indicator_and_due_time
 						       strlen("GPIO8"), &value),
 		      0);
 	zassert_true(value);
+	zassert_equal(sq_vm_runtime_indicator_breathe(&runtime), 0);
+	zassert_true(runtime.indicator_breathe_active);
 	zassert_equal(sq_vm_runtime_hardware_gpio_toggle(&runtime, (const uint8_t *)"GPIO8",
 							 strlen("GPIO8")),
 		      0);

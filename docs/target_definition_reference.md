@@ -325,6 +325,26 @@ Examples:
 
 The `devices` section describes wiring. Behavior-specific sections such as `display`, `storage`, `input`, and `power` describe how firmware should use that wiring.
 
+LED-like logical devices may describe both the raw GPIO endpoint and the
+preferred drive mechanism. For example, an indicator can be a PWM-capable LED
+while still naming the GPIO used by raw hardware diagnostics:
+
+```json
+{
+  "indicator.default": {
+    "type": "pwm-led",
+    "gpio": "GPIO8",
+    "activeLow": true,
+    "pwm": {
+      "controller": "ledc0",
+      "channel": 0,
+      "timer": 0,
+      "frequencyHz": 1000
+    }
+  }
+}
+```
+
 ---
 
 ## 10. Display Section

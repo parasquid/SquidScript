@@ -92,6 +92,11 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   time slices, or target scheduler integration over blocking loops.
 - Before adding or moving tests, identify the owning layer: language/compiler semantics, SQBC encoding, firmware VM behavior, host CLI behavior, board-specific firmware harness, example app, docs, or simulator.
 - When making platform decisions, distinguish the public SquidScript contract from board-specific implementation details. Standardize portable concepts in docs/specs, and keep physical storage layouts, partitions, pins, and device quirks in firmware/target-specific docs and metadata.
+- For every architecture or implementation decision, consider cross-platform
+  portability before choosing a board-specific path. Keep generic concepts
+  generic, isolate target-specific bindings behind target metadata or firmware
+  integration layers, and ask the user when portability concerns or ambiguity
+  affect the tradeoff.
 - For storage decisions, model logical APIs and physical volumes separately. A board may use LittleFS, flash records, SD, or another backend without changing the portable app/compiler contract.
 - Do not make lower-level crates depend on repo-level examples or board-specific examples. In particular, `squidc-core` tests must not `include_str!` files from `examples/`; put reusable language fixtures under compiler fixtures, and test example apps through CLI/example or hardware target checks.
 - Keep board-specific aliases, fixed GPIO mappings, serial protocols, and physical LED assertions out of compiler core. Compiler core may validate portable syntax and emit portable IR/SQBC; firmware/runtime layers resolve device capabilities and aliases.

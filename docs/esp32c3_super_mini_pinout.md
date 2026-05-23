@@ -105,17 +105,17 @@ bring-up notes because it avoids a boot strapping pin.
 
 ## Current Zephyr Indicator Binding
 
-The ESP32-C3 Super Mini Zephyr overlay binds `led0` to `GPIO8` active-low for
-`service.indicator.*`. This is the repository's current common-clone default,
-not a guarantee for every board variant. If the serial blinky test reports
-timer output but the onboard blue LED does not blink, verify the physical board
-LED mapping before changing portable SquidScript indicator semantics.
+The ESP32-C3 Super Mini Zephyr overlay binds the logical `indicator0` device to
+the common-clone GPIO8 active-low onboard LED. The runtime consumes that logical
+indicator binding for `service.indicator.*`; GPIO8 is board metadata, not a
+portable SquidScript indicator rule.
 
-`service.indicator.breathe()` uses the same `led0` binding. On this common-clone
-GPIO8 LED path, Zephyr drives a small non-blocking software breathe pattern from
-the existing runtime poll loop instead of ESP32-C3 LEDC PWM, because the local
-Zephyr ESP32-C3 pinctrl data exposes LEDC on GPIO21 rather than the onboard
-GPIO8 LED.
+`service.indicator.breathe()` drives `indicator0` through ESP32-C3 LEDC PWM on
+channel 0 with a 1 kHz period. The overlay keeps `led0` as GPIO metadata for the
+same physical LED so raw `hardware.gpio.*` checks can identify when GPIO8 is the
+indicator endpoint. If the serial blinky or breathe checks report output but the
+onboard blue LED does not change, verify the physical board LED mapping before
+changing portable SquidScript indicator semantics.
 
 ## Source Notes
 
