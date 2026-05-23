@@ -75,6 +75,7 @@ struct sq_vm_runtime {
 	union sq_vm_runtime_transfer transfer;
 	SqvmDispatchResult result;
 	const struct sq_vm_storage_backend *backend;
+	const char *store_mount_point;
 	struct sq_vm_storage_backend job_backend;
 	char event[SQ_VM_RUNTIME_EVENT_LEN];
 	enum sq_vm_runtime_status status;
@@ -141,6 +142,7 @@ struct sq_vm_runtime {
 void sq_vm_runtime_init(struct sq_vm_runtime *runtime);
 
 void sq_vm_runtime_reset(struct sq_vm_runtime *runtime);
+void sq_vm_runtime_set_store_mount_point(struct sq_vm_runtime *runtime, const char *mount_point);
 
 int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 			   const struct sq_vm_storage_backend *backend, const char *event);

@@ -623,6 +623,24 @@ pub struct SqvmCallbacks {
         Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiStatus) -> i32>,
     pub wifi_scan:
         Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiScanResult) -> i32>,
+    pub system_memory_text: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            out: *mut u8,
+            out_cap: usize,
+            out_len: *mut usize,
+        ) -> i32,
+    >,
+    pub system_storage_text: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            name: *const u8,
+            name_len: usize,
+            out: *mut u8,
+            out_cap: usize,
+            out_len: *mut usize,
+        ) -> i32,
+    >,
 }
 
 #[repr(C)]
@@ -1892,6 +1910,46 @@ impl TraceSink for FfiHost {
         })
     }
 
+    fn system_memory_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
+        let Some(system_memory_text) = self.callbacks.system_memory_text else {
+            return Err(VmError::InvalidOperand);
+        };
+        let mut line = FixedLine::<96>::default();
+        let mut line_len = 0usize;
+        callback_status(unsafe {
+            system_memory_text(
+                self.callbacks.user_data,
+                line.as_mut_ptr(),
+                line.cap(),
+                &mut line_len,
+            )
+        })?;
+        line.set_len(line_len)?;
+        out.write_str(line.as_str()?)
+            .map_err(|_| VmError::InvalidOperand)
+    }
+
+    fn system_storage_text(&mut self, name: &str, out: &mut dyn fmt::Write) -> Result<(), VmError> {
+        let Some(system_storage_text) = self.callbacks.system_storage_text else {
+            return Err(VmError::InvalidOperand);
+        };
+        let mut line = FixedLine::<96>::default();
+        let mut line_len = 0usize;
+        callback_status(unsafe {
+            system_storage_text(
+                self.callbacks.user_data,
+                name.as_ptr(),
+                name.len(),
+                line.as_mut_ptr(),
+                line.cap(),
+                &mut line_len,
+            )
+        })?;
+        line.set_len(line_len)?;
+        out.write_str(line.as_str()?)
+            .map_err(|_| VmError::InvalidOperand)
+    }
+
     fn state_load(&mut self, _out: &mut [u8]) -> Result<Option<usize>, VmError> {
         Ok(None)
     }
@@ -2108,8 +2166,28 @@ impl<const N: usize> FixedLine<N> {
         self.bytes.as_ptr()
     }
 
+    fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.bytes.as_mut_ptr()
+    }
+
     fn len(&self) -> usize {
         self.len
+    }
+
+    fn cap(&self) -> usize {
+        N
+    }
+
+    fn set_len(&mut self, len: usize) -> Result<(), VmError> {
+        if len > N {
+            return Err(VmError::InvalidOperand);
+        }
+        self.len = len;
+        Ok(())
+    }
+
+    fn as_str(&self) -> Result<&str, VmError> {
+        str::from_utf8(&self.bytes[..self.len]).map_err(|_| VmError::InvalidUtf8)
     }
 }
 

@@ -51,6 +51,7 @@ int main(void)
 	if (storage_result == 0) {
 		LOG_INF("Mounted SquidScript app store at %s", sq_app_store_mount_point());
 		protocol_context.store_mount_point = sq_app_store_mount_point();
+		sq_vm_runtime_set_store_mount_point(&runtime, sq_app_store_mount_point());
 		int registry_result = sq_app_store_scan_registry(sq_app_store_mount_point(), &registry);
 		if (registry_result != 0) {
 			LOG_WRN("SquidScript app registry unavailable: %d", registry_result);

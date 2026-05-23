@@ -8,6 +8,8 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/pwm.h>
+#include <zephyr/fs/fs.h>
+#include <zephyr/sys/sys_heap.h>
 #if IS_ENABLED(CONFIG_NET_L2_WIFI_MGMT) && IS_ENABLED(CONFIG_NET_MGMT_EVENT) && \
 	IS_ENABLED(CONFIG_NET_MGMT_EVENT_INFO)
 #include <zephyr/net/dhcpv4.h>
@@ -282,6 +284,87 @@ static int32_t runtime_timer_after(void *user_data, const uint8_t *event, size_t
 				  int32_t delay_ms)
 {
 	return sq_vm_runtime_register_timer(user_data, event, event_len, delay_ms, false);
+}
+
+static int32_t runtime_system_memory_text(void *user_data, uint8_t *out, size_t out_cap,
+					  size_t *out_len)
+{
+	ARG_UNUSED(user_data);
+	size_t heap_free_bytes = 0;
+	size_t heap_allocated_bytes = 0;
+
+	if (out == NULL || out_len == NULL || out_cap == 0) {
+		return -EINVAL;
+	}
+
+#ifdef CONFIG_SYS_HEAP_RUNTIME_STATS
+	struct k_heap *heaps = NULL;
+	int heap_array_count = k_heap_array_get(&heaps);
+	if (heap_array_count > 0 && heaps != NULL) {
+		for (int i = 0; i < heap_array_count; i++) {
+			struct sys_memory_stats stats;
+
+			if (sys_heap_runtime_stats_get(&heaps[i].heap, &stats) == 0) {
+				heap_free_bytes += stats.free_bytes;
+				heap_allocated_bytes += stats.allocated_bytes;
+			}
+		}
+	}
+#endif
+
+	int written = snprintf((char *)out, out_cap, "RAM %u KiB heap %zu B used %zu B free",
+			       (unsigned int)CONFIG_SRAM_SIZE, heap_allocated_bytes,
+			       heap_free_bytes);
+	if (written <= 0 || (size_t)written >= out_cap) {
+		return -ENOSPC;
+	}
+	*out_len = (size_t)written;
+	return 0;
+}
+
+static int write_human_bytes(uint8_t *out, size_t out_cap, size_t *out_len, const char *label,
+			     uint64_t bytes)
+{
+	int written;
+
+	if (bytes >= 1024u * 1024u) {
+		written = snprintf((char *)out, out_cap, "%s %llu MiB", label,
+				   (unsigned long long)(bytes / (1024u * 1024u)));
+	} else if (bytes >= 1024u) {
+		written = snprintf((char *)out, out_cap, "%s %llu KiB", label,
+				   (unsigned long long)(bytes / 1024u));
+	} else {
+		written = snprintf((char *)out, out_cap, "%s %llu B", label,
+				   (unsigned long long)bytes);
+	}
+	if (written <= 0 || (size_t)written >= out_cap) {
+		return -ENOSPC;
+	}
+	*out_len = (size_t)written;
+	return 0;
+}
+
+static int32_t runtime_system_storage_text(void *user_data, const uint8_t *name, size_t name_len,
+					   uint8_t *out, size_t out_cap, size_t *out_len)
+{
+	struct sq_vm_runtime *runtime = user_data;
+	struct fs_statvfs stat;
+	uint64_t free_bytes;
+
+	if (runtime == NULL || name == NULL || out == NULL || out_len == NULL || out_cap == 0) {
+		return -EINVAL;
+	}
+	if (name_len != 4 || memcmp(name, "apps", 4) != 0) {
+		return -EINVAL;
+	}
+	if (runtime->store_mount_point == NULL) {
+		return -ENODEV;
+	}
+	if (fs_statvfs(runtime->store_mount_point, &stat) != 0) {
+		return -EIO;
+	}
+	free_bytes = (uint64_t)stat.f_bfree * (uint64_t)stat.f_frsize;
+	return write_human_bytes(out, out_cap, out_len, "Apps", free_bytes);
 }
 
 int sq_vm_runtime_wifi_format_bssid(const uint8_t *mac, size_t mac_len, char *out, size_t out_len)
@@ -1069,6 +1152,13 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->status = SQ_VM_RUNTIME_IDLE;
 }
 
+void sq_vm_runtime_set_store_mount_point(struct sq_vm_runtime *runtime, const char *mount_point)
+{
+	if (runtime != NULL) {
+		runtime->store_mount_point = mount_point;
+	}
+}
+
 int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 			   const struct sq_vm_storage_backend *backend, const char *event)
 {
@@ -1112,6 +1202,8 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		.wifi_get_ap_ip = runtime_wifi_get_ap_ip,
 		.wifi_status = runtime_wifi_status,
 		.wifi_scan = runtime_wifi_scan,
+		.system_memory_text = runtime_system_memory_text,
+		.system_storage_text = runtime_system_storage_text,
 	};
 
 	status = sqvm_context_prepare(runtime->context_words, sizeof(runtime->context_words));

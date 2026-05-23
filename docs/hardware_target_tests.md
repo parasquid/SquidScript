@@ -46,6 +46,8 @@ The Zephyr-only hardware suite is not complete yet. The required inventory is:
   and `device lifecycle` process/armed stack diagnostics.
 - Dispatch key events and verify state/output traces.
 - Verify persistent app storage and app state through Zephyr storage.
+- Verify `system.memory()` and `system.storage("apps")` through the Zephyr VM
+  FFI host.
 - Verify GPIO/indicator behavior, including a final visible board-state check.
 - Verify Wi-Fi scan without credentials.
 - Verify Wi-Fi station behavior only when credentials are explicitly provided.
@@ -95,6 +97,13 @@ verifies `vm_worker_stack_size_bytes`, `vm_worker_stack_used_bytes`, and
 `vm_worker_stack_unused_bytes` are internally consistent. The current firmware
 keeps the VM worker stack budget at 16 KiB while this measurement data is used
 to decide whether a later reduction is safe.
+
+`scripts/c3-supermini-test-system-resources.sh` runs after lifecycle coverage
+and before stack measurement. It installs
+`tests/hardware/c3-supermini/system-resources`, launches it, and verifies that
+`system.memory()` returns a Zephyr RAM/heap diagnostic string and
+`system.storage("apps")` returns an app-storage string through the real VM FFI
+host callbacks.
 
 `scripts/c3-supermini-test-wifi-state.sh` runs before Wi-Fi scan coverage. It
 installs `tests/hardware/c3-supermini/wifi-status-summary` and launches a

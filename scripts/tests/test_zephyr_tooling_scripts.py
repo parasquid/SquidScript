@@ -346,6 +346,23 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         lifecycle_check = suite.index('c3-supermini-test-app-lifecycle.sh')
         self.assertLess(diagnostic, lifecycle_check)
 
+    def test_hardware_suite_runs_system_resource_script_before_stack_measurement(self):
+        script = self.read("scripts/c3-supermini-test-system-resources.sh")
+        app = self.read("tests/hardware/c3-supermini/system-resources/main.squid")
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn("system.memory()", app)
+        self.assertIn('system.storage("apps")', app)
+        self.assertIn('cargo run --quiet -p squidc -- app install "${SYSTEM_APP}"', script)
+        self.assertIn('cargo run --quiet -p squidc -- app launch system-resources', script)
+        self.assertIn("output=system memory RAM", script)
+        self.assertIn("output=system apps Apps", script)
+        self.assertIn("assert_file_empty_command", script)
+        self.assertLess(
+            suite.index("c3-supermini-test-system-resources.sh"),
+            suite.index("c3-supermini-measure-stack-usage.sh"),
+        )
+
     def test_hardware_suite_runs_state_and_key_checks_before_lifecycle(self):
         state = self.read("scripts/c3-supermini-test-app-state.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
@@ -374,7 +391,9 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
         lifecycle_check = suite.index('c3-supermini-test-app-lifecycle.sh')
         stack_check = suite.index('c3-supermini-measure-stack-usage.sh')
-        self.assertLess(lifecycle_check, stack_check)
+        system_check = suite.index('c3-supermini-test-system-resources.sh')
+        self.assertLess(lifecycle_check, system_check)
+        self.assertLess(system_check, stack_check)
 
     def test_hardware_suite_leaves_blinky_visible_check_last(self):
         blinky = self.read("scripts/c3-supermini-test-blinky.sh")
@@ -460,6 +479,19 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("sq_vm_runtime_set_wifi_profile", runtime_h)
         self.assertIn("wifi_profile_set(&frame", protocol_c)
         self.assertNotIn("case SQ_OPCODE_WIFI_PROFILE_SET:\n\t\tresult = -ENOTSUP;", protocol_c)
+
+    def test_zephyr_vm_runtime_wires_system_resource_callbacks(self):
+        ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
+        runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+
+        self.assertIn("SqvmSystemMemoryTextCallback system_memory_text", ffi_h)
+        self.assertIn("SqvmSystemStorageTextCallback system_storage_text", ffi_h)
+        self.assertIn("runtime_system_memory_text", runtime_c)
+        self.assertIn("runtime_system_storage_text", runtime_c)
+        self.assertIn(".system_memory_text = runtime_system_memory_text", runtime_c)
+        self.assertIn(".system_storage_text = runtime_system_storage_text", runtime_c)
+        self.assertIn("sq_vm_runtime_set_store_mount_point", runtime_h)
 
     def test_zephyr_wifi_station_uses_real_connect_disconnect_backend(self):
         runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")

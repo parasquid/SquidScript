@@ -27,6 +27,9 @@ for compiler, SQBC tooling, and VM semantics.
   diagnostics, service result conversion, and explicit error mapping.
 - Expand FFI equivalence tests and Zephyr ztests for storage, state, timers,
   display, GPIO, Wi-Fi service records, lifecycle callbacks, and VM errors.
+  `system.memory()` and `system.storage("apps")` now have Zephyr FFI host
+  callbacks and hardware coverage; keep future service additions on the same
+  caller-owned-buffer pattern.
 
 ### 3. Rust-Own Firmware Protocol Logic
 

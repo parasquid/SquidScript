@@ -275,6 +275,18 @@ typedef int32_t (*SqvmTimerAfterCallback)(
 	const uint8_t *event,
 	size_t event_len,
 	int32_t delay_ms);
+typedef int32_t (*SqvmSystemMemoryTextCallback)(
+	void *user_data,
+	uint8_t *out,
+	size_t out_cap,
+	size_t *out_len);
+typedef int32_t (*SqvmSystemStorageTextCallback)(
+	void *user_data,
+	const uint8_t *name,
+	size_t name_len,
+	uint8_t *out,
+	size_t out_cap,
+	size_t *out_len);
 
 typedef struct {
 	void *user_data;
@@ -304,6 +316,8 @@ typedef struct {
 	SqvmWifiGetApIpCallback wifi_get_ap_ip;
 	SqvmWifiStatusCallback wifi_status;
 	SqvmWifiScanCallback wifi_scan;
+	SqvmSystemMemoryTextCallback system_memory_text;
+	SqvmSystemStorageTextCallback system_storage_text;
 } SqvmCallbacks;
 
 size_t sqvm_context_size(void);

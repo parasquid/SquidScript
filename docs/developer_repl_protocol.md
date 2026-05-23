@@ -117,6 +117,10 @@ SquidScript VM calls to `service.wifi.status()`, `service.wifi.scan()`,
 volatile profile and Zephyr station connect/disconnect requests. Wi-Fi command
 output and hardware checks must stay redacted unless the user explicitly
 requests raw identifiers.
+`system.memory()` and `system.storage("apps")` are connected through the same
+Zephyr VM FFI host boundary as other runtime services. `system.memory()` returns
+a display-oriented RAM/heap diagnostic string. `system.storage("apps")` returns
+a display-oriented free-space string for the mounted SquidScript app store.
 SquidScript VM calls to `app.launch`, `app.arm`, and `app.disarm` are also
 connected through the Zephyr FFI host. `app.launch` and `app.exit` drive the
 Zephyr foreground return stack for installed apps and clear foreground timers

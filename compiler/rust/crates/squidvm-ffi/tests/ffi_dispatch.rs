@@ -27,6 +27,8 @@ struct Host {
     wifi_status_count: usize,
     wifi_scan_count: usize,
     wifi_ap_ip_count: usize,
+    system_memory_count: usize,
+    system_storage_names: Vec<String>,
 }
 
 unsafe extern "C" fn trace(user_data: *mut c_void, message: *const u8, message_len: usize) {
@@ -331,6 +333,43 @@ unsafe extern "C" fn wifi_scan(
     0
 }
 
+unsafe extern "C" fn system_memory_text(
+    user_data: *mut c_void,
+    out: *mut u8,
+    out_cap: usize,
+    out_len: *mut usize,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.system_memory_count += 1;
+    let bytes = b"RAM 320 KiB heap 32 KiB used 48 KiB free";
+    if out.is_null() || out_len.is_null() || out_cap < bytes.len() {
+        return -1;
+    }
+    ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len());
+    *out_len = bytes.len();
+    0
+}
+
+unsafe extern "C" fn system_storage_text(
+    user_data: *mut c_void,
+    name: *const u8,
+    name_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+    out_len: *mut usize,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let name = std::str::from_utf8(std::slice::from_raw_parts(name, name_len)).unwrap();
+    host.system_storage_names.push(name.to_string());
+    let bytes = b"Apps 128 KiB";
+    if out.is_null() || out_len.is_null() || out_cap < bytes.len() {
+        return -1;
+    }
+    ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len());
+    *out_len = bytes.len();
+    0
+}
+
 fn callbacks(host: &mut Host) -> SqvmCallbacks {
     SqvmCallbacks {
         user_data: host as *mut Host as *mut c_void,
@@ -360,6 +399,8 @@ fn callbacks(host: &mut Host) -> SqvmCallbacks {
         wifi_get_ap_ip: Some(wifi_get_ap_ip),
         wifi_status: Some(wifi_status),
         wifi_scan: Some(wifi_scan),
+        system_memory_text: Some(system_memory_text),
+        system_storage_text: Some(system_storage_text),
     }
 }
 
@@ -493,6 +534,18 @@ event.on("app.start") {
   let connected = service.wifi.connect("dev")
   let disconnected = service.wifi.disconnect()
   debug.print(ap.ok, ip.ip, stop.ok, connected.ok, disconnected.ok)
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_system_resources_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-system"
+event.on("app.start") {
+  debug.print(system.memory())
+  debug.print(system.storage("apps"))
 }
 screen("main") {}
 "#,
@@ -788,6 +841,46 @@ fn dispatches_wifi_action_service_callbacks() {
     );
     assert_eq!(host.wifi_ap_ip_count, 1);
     assert_eq!(host.output, vec!["true 192.168.4.1 true true true"]);
+}
+
+#[test]
+fn dispatches_system_resource_text_callbacks() {
+    let mut host = Host {
+        sqbc: compile_system_resources_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(host.system_memory_count, 1);
+    assert_eq!(host.system_storage_names, vec!["apps".to_string()]);
+    assert_eq!(
+        host.output,
+        vec![
+            "RAM 320 KiB heap 32 KiB used 48 KiB free".to_string(),
+            "Apps 128 KiB".to_string()
+        ]
+    );
 }
 
 #[test]
