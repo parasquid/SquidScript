@@ -22,7 +22,7 @@ use squidvm_core::{
 
 use squid_device_protocol::{
     encode_empty_response_into, encode_error_response_into, encode_hello_response_into,
-    DecodeError, Opcode, Status as SqdpFrameStatus,
+    DecodeError, DeviceRequest, Opcode, Status as SqdpFrameStatus, MAX_APP_BYTES,
 };
 
 #[repr(C)]
@@ -40,6 +40,136 @@ pub enum SqdpStatus {
     InvalidArgument = 1,
     BufferTooSmall = 2,
     EncodeError = 3,
+}
+
+const SQDP_APP_ID_CAP: usize = 48;
+const SQDP_PATH_CAP: usize = 128;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SqdpActionKind {
+    None = 0,
+    BeginInstall = 1,
+    WriteInstallChunk = 2,
+    CommitInstall = 3,
+    BeginTempRun = 4,
+    WriteTempRunChunk = 5,
+    CommitTempRun = 6,
+    BeginResourceInstall = 7,
+    WriteResourceChunk = 8,
+    CommitResourceInstall = 9,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct SqdpAction {
+    pub kind: SqdpActionKind,
+    pub app_id: *const u8,
+    pub app_id_len: usize,
+    pub resource_path: *const u8,
+    pub resource_path_len: usize,
+    pub staging_path: *const u8,
+    pub staging_path_len: usize,
+    pub offset: usize,
+    pub bytes: *const u8,
+    pub bytes_len: usize,
+    pub total_len: usize,
+}
+
+impl Default for SqdpAction {
+    fn default() -> Self {
+        Self {
+            kind: SqdpActionKind::None,
+            app_id: ptr::null(),
+            app_id_len: 0,
+            resource_path: ptr::null(),
+            resource_path_len: 0,
+            staging_path: ptr::null(),
+            staging_path_len: 0,
+            offset: 0,
+            bytes: ptr::null(),
+            bytes_len: 0,
+            total_len: 0,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SqdpTransferSession {
+    pub active: bool,
+    pub app_id: [u8; SQDP_APP_ID_CAP],
+    pub total_len: usize,
+    pub received: usize,
+    pub expected_crc: u32,
+    pub running_crc: u32,
+    pub staging_path: [u8; SQDP_PATH_CAP],
+}
+
+impl Default for SqdpTransferSession {
+    fn default() -> Self {
+        Self {
+            active: false,
+            app_id: [0; SQDP_APP_ID_CAP],
+            total_len: 0,
+            received: 0,
+            expected_crc: 0,
+            running_crc: 0xffff_ffff,
+            staging_path: [0; SQDP_PATH_CAP],
+        }
+    }
+}
+
+impl SqdpTransferSession {
+    pub fn app_id_string(&self) -> &str {
+        str::from_utf8(c_string_bytes(&self.app_id)).unwrap_or("")
+    }
+
+    pub fn set_staging_path_for_test(&mut self, path: &str) -> SqdpStatus {
+        set_c_string(&mut self.staging_path, path.as_bytes())
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SqdpResourceSession {
+    pub active: bool,
+    pub app_id: [u8; SQDP_APP_ID_CAP],
+    pub resource_path: [u8; SQDP_PATH_CAP],
+    pub total_len: usize,
+    pub received: usize,
+    pub expected_crc: u32,
+    pub running_crc: u32,
+    pub staging_path: [u8; SQDP_PATH_CAP],
+}
+
+impl Default for SqdpResourceSession {
+    fn default() -> Self {
+        Self {
+            active: false,
+            app_id: [0; SQDP_APP_ID_CAP],
+            resource_path: [0; SQDP_PATH_CAP],
+            total_len: 0,
+            received: 0,
+            expected_crc: 0,
+            running_crc: 0xffff_ffff,
+            staging_path: [0; SQDP_PATH_CAP],
+        }
+    }
+}
+
+impl SqdpResourceSession {
+    pub fn app_id_string(&self) -> &str {
+        str::from_utf8(c_string_bytes(&self.app_id)).unwrap_or("")
+    }
+
+    pub fn resource_path_string(&self) -> &str {
+        str::from_utf8(c_string_bytes(&self.resource_path)).unwrap_or("")
+    }
+
+    pub fn set_staging_path_for_test(&mut self, path: &str) -> SqdpStatus {
+        set_c_string(&mut self.staging_path, path.as_bytes())
+    }
 }
 
 #[repr(C)]
@@ -397,6 +527,346 @@ pub unsafe extern "C" fn sqdp_encode_error_response(
     }
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_prepare_transfer_begin(
+    request: *const u8,
+    request_len: usize,
+    session: *mut SqdpTransferSession,
+    out_action: *mut SqdpAction,
+) -> SqdpStatus {
+    if request.is_null() || session.is_null() || out_action.is_null() {
+        return SqdpStatus::InvalidArgument;
+    }
+    let request = match DeviceRequest::decode(slice::from_raw_parts(request, request_len)) {
+        Ok(request) => request,
+        Err(_) => return SqdpStatus::InvalidArgument,
+    };
+    let kind = match request.opcode {
+        Opcode::AppInstallBegin => SqdpActionKind::BeginInstall,
+        Opcode::TempRunBegin => SqdpActionKind::BeginTempRun,
+        _ => return SqdpStatus::InvalidArgument,
+    };
+    let app_id = match field_bytes(request.payload(), 1, 1) {
+        Some(bytes) if !bytes.is_empty() && bytes.len() < SQDP_APP_ID_CAP => bytes,
+        _ => return SqdpStatus::InvalidArgument,
+    };
+    if str::from_utf8(app_id).is_err() {
+        return SqdpStatus::InvalidArgument;
+    }
+    let Some(total_len) = field_u64(request.payload(), 2) else {
+        return SqdpStatus::InvalidArgument;
+    };
+    let Some(expected_crc) = field_u64(request.payload(), 3) else {
+        return SqdpStatus::InvalidArgument;
+    };
+    if total_len == 0
+        || total_len > MAX_APP_BYTES as u64
+        || total_len > usize::MAX as u64
+        || expected_crc > u32::MAX as u64
+    {
+        return SqdpStatus::InvalidArgument;
+    }
+
+    let session = &mut *session;
+    *session = SqdpTransferSession::default();
+    if set_c_string(&mut session.app_id, app_id) != SqdpStatus::Ok {
+        return SqdpStatus::InvalidArgument;
+    }
+    session.total_len = total_len as usize;
+    session.expected_crc = expected_crc as u32;
+    session.running_crc = 0xffff_ffff;
+    *out_action = SqdpAction {
+        kind,
+        app_id: session.app_id.as_ptr(),
+        app_id_len: c_string_bytes(&session.app_id).len(),
+        total_len: session.total_len,
+        ..SqdpAction::default()
+    };
+    SqdpStatus::Ok
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_prepare_transfer_chunk(
+    request: *const u8,
+    request_len: usize,
+    session: *const SqdpTransferSession,
+    out_action: *mut SqdpAction,
+) -> SqdpStatus {
+    if request.is_null() || session.is_null() || out_action.is_null() {
+        return SqdpStatus::InvalidArgument;
+    }
+    let request = match DeviceRequest::decode(slice::from_raw_parts(request, request_len)) {
+        Ok(request) => request,
+        Err(_) => return SqdpStatus::InvalidArgument,
+    };
+    let kind = match request.opcode {
+        Opcode::AppInstallChunk => SqdpActionKind::WriteInstallChunk,
+        Opcode::TempRunChunk => SqdpActionKind::WriteTempRunChunk,
+        Opcode::ResourceInstallChunk => SqdpActionKind::WriteResourceChunk,
+        _ => return SqdpStatus::InvalidArgument,
+    };
+    let session = &*session;
+    let Some(offset) = field_u64(request.payload(), 1) else {
+        return SqdpStatus::InvalidArgument;
+    };
+    let Some(bytes) = field_bytes(request.payload(), 2, 0) else {
+        return SqdpStatus::InvalidArgument;
+    };
+    if offset > usize::MAX as u64 {
+        return SqdpStatus::InvalidArgument;
+    }
+    let offset = offset as usize;
+    if !session.active
+        || offset != session.received
+        || bytes.len() > session.total_len.saturating_sub(session.received)
+    {
+        return SqdpStatus::InvalidArgument;
+    }
+    *out_action = SqdpAction {
+        kind,
+        staging_path: session.staging_path.as_ptr(),
+        staging_path_len: c_string_bytes(&session.staging_path).len(),
+        offset,
+        bytes: bytes.as_ptr(),
+        bytes_len: bytes.len(),
+        ..SqdpAction::default()
+    };
+    SqdpStatus::Ok
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_complete_transfer_chunk(
+    session: *mut SqdpTransferSession,
+    bytes: *const u8,
+    bytes_len: usize,
+) -> SqdpStatus {
+    if session.is_null() || (bytes.is_null() && bytes_len > 0) {
+        return SqdpStatus::InvalidArgument;
+    }
+    let session = &mut *session;
+    let bytes = slice::from_raw_parts(bytes, bytes_len);
+    if !session.active || bytes.len() > session.total_len.saturating_sub(session.received) {
+        return SqdpStatus::InvalidArgument;
+    }
+    session.running_crc = sqdp_crc32_update(session.running_crc, bytes);
+    session.received += bytes.len();
+    SqdpStatus::Ok
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_prepare_transfer_commit(
+    request: *const u8,
+    request_len: usize,
+    session: *const SqdpTransferSession,
+    out_action: *mut SqdpAction,
+) -> SqdpStatus {
+    if request.is_null() || session.is_null() || out_action.is_null() {
+        return SqdpStatus::InvalidArgument;
+    }
+    let request = match DeviceRequest::decode(slice::from_raw_parts(request, request_len)) {
+        Ok(request) => request,
+        Err(_) => return SqdpStatus::InvalidArgument,
+    };
+    let kind = match request.opcode {
+        Opcode::AppInstallCommit => SqdpActionKind::CommitInstall,
+        Opcode::TempRunCommit => SqdpActionKind::CommitTempRun,
+        Opcode::ResourceInstallCommit => SqdpActionKind::CommitResourceInstall,
+        _ => return SqdpStatus::InvalidArgument,
+    };
+    let session = &*session;
+    if !session.active || session.received != session.total_len || !session_crc_matches(session) {
+        return SqdpStatus::InvalidArgument;
+    }
+    *out_action = SqdpAction {
+        kind,
+        app_id: session.app_id.as_ptr(),
+        app_id_len: c_string_bytes(&session.app_id).len(),
+        staging_path: session.staging_path.as_ptr(),
+        staging_path_len: c_string_bytes(&session.staging_path).len(),
+        total_len: session.total_len,
+        ..SqdpAction::default()
+    };
+    SqdpStatus::Ok
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_clear_transfer_session(session: *mut SqdpTransferSession) {
+    if !session.is_null() {
+        *session = SqdpTransferSession::default();
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_prepare_resource_begin(
+    request: *const u8,
+    request_len: usize,
+    session: *mut SqdpResourceSession,
+    out_action: *mut SqdpAction,
+) -> SqdpStatus {
+    if request.is_null() || session.is_null() || out_action.is_null() {
+        return SqdpStatus::InvalidArgument;
+    }
+    let request = match DeviceRequest::decode(slice::from_raw_parts(request, request_len)) {
+        Ok(request) => request,
+        Err(_) => return SqdpStatus::InvalidArgument,
+    };
+    if request.opcode != Opcode::ResourceInstallBegin {
+        return SqdpStatus::InvalidArgument;
+    }
+    let app_id = match field_bytes(request.payload(), 1, 1) {
+        Some(bytes) if !bytes.is_empty() && bytes.len() < SQDP_APP_ID_CAP => bytes,
+        _ => return SqdpStatus::InvalidArgument,
+    };
+    let resource_path = match field_bytes(request.payload(), 2, 1) {
+        Some(bytes) if !bytes.is_empty() && bytes.len() < SQDP_PATH_CAP => bytes,
+        _ => return SqdpStatus::InvalidArgument,
+    };
+    if str::from_utf8(app_id).is_err() || str::from_utf8(resource_path).is_err() {
+        return SqdpStatus::InvalidArgument;
+    }
+    let Some(total_len) = field_u64(request.payload(), 3) else {
+        return SqdpStatus::InvalidArgument;
+    };
+    let Some(expected_crc) = field_u64(request.payload(), 4) else {
+        return SqdpStatus::InvalidArgument;
+    };
+    if total_len == 0
+        || total_len > MAX_APP_BYTES as u64
+        || total_len > usize::MAX as u64
+        || expected_crc > u32::MAX as u64
+    {
+        return SqdpStatus::InvalidArgument;
+    }
+
+    let session = &mut *session;
+    *session = SqdpResourceSession::default();
+    if set_c_string(&mut session.app_id, app_id) != SqdpStatus::Ok
+        || set_c_string(&mut session.resource_path, resource_path) != SqdpStatus::Ok
+    {
+        return SqdpStatus::InvalidArgument;
+    }
+    session.total_len = total_len as usize;
+    session.expected_crc = expected_crc as u32;
+    session.running_crc = 0xffff_ffff;
+    *out_action = SqdpAction {
+        kind: SqdpActionKind::BeginResourceInstall,
+        app_id: session.app_id.as_ptr(),
+        app_id_len: c_string_bytes(&session.app_id).len(),
+        resource_path: session.resource_path.as_ptr(),
+        resource_path_len: c_string_bytes(&session.resource_path).len(),
+        total_len: session.total_len,
+        ..SqdpAction::default()
+    };
+    SqdpStatus::Ok
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_prepare_resource_chunk(
+    request: *const u8,
+    request_len: usize,
+    session: *const SqdpResourceSession,
+    out_action: *mut SqdpAction,
+) -> SqdpStatus {
+    if request.is_null() || session.is_null() || out_action.is_null() {
+        return SqdpStatus::InvalidArgument;
+    }
+    let request = match DeviceRequest::decode(slice::from_raw_parts(request, request_len)) {
+        Ok(request) => request,
+        Err(_) => return SqdpStatus::InvalidArgument,
+    };
+    if request.opcode != Opcode::ResourceInstallChunk {
+        return SqdpStatus::InvalidArgument;
+    }
+    let session = &*session;
+    let Some(offset) = field_u64(request.payload(), 1) else {
+        return SqdpStatus::InvalidArgument;
+    };
+    let Some(bytes) = field_bytes(request.payload(), 2, 0) else {
+        return SqdpStatus::InvalidArgument;
+    };
+    if offset > usize::MAX as u64 {
+        return SqdpStatus::InvalidArgument;
+    }
+    let offset = offset as usize;
+    if !session.active
+        || offset != session.received
+        || bytes.len() > session.total_len.saturating_sub(session.received)
+    {
+        return SqdpStatus::InvalidArgument;
+    }
+    *out_action = SqdpAction {
+        kind: SqdpActionKind::WriteResourceChunk,
+        staging_path: session.staging_path.as_ptr(),
+        staging_path_len: c_string_bytes(&session.staging_path).len(),
+        offset,
+        bytes: bytes.as_ptr(),
+        bytes_len: bytes.len(),
+        ..SqdpAction::default()
+    };
+    SqdpStatus::Ok
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_complete_resource_chunk(
+    session: *mut SqdpResourceSession,
+    bytes: *const u8,
+    bytes_len: usize,
+) -> SqdpStatus {
+    if session.is_null() || (bytes.is_null() && bytes_len > 0) {
+        return SqdpStatus::InvalidArgument;
+    }
+    let session = &mut *session;
+    let bytes = slice::from_raw_parts(bytes, bytes_len);
+    if !session.active || bytes.len() > session.total_len.saturating_sub(session.received) {
+        return SqdpStatus::InvalidArgument;
+    }
+    session.running_crc = sqdp_crc32_update(session.running_crc, bytes);
+    session.received += bytes.len();
+    SqdpStatus::Ok
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_prepare_resource_commit(
+    request: *const u8,
+    request_len: usize,
+    session: *const SqdpResourceSession,
+    out_action: *mut SqdpAction,
+) -> SqdpStatus {
+    if request.is_null() || session.is_null() || out_action.is_null() {
+        return SqdpStatus::InvalidArgument;
+    }
+    let request = match DeviceRequest::decode(slice::from_raw_parts(request, request_len)) {
+        Ok(request) => request,
+        Err(_) => return SqdpStatus::InvalidArgument,
+    };
+    if request.opcode != Opcode::ResourceInstallCommit {
+        return SqdpStatus::InvalidArgument;
+    }
+    let session = &*session;
+    if !session.active || session.received != session.total_len || !resource_crc_matches(session) {
+        return SqdpStatus::InvalidArgument;
+    }
+    *out_action = SqdpAction {
+        kind: SqdpActionKind::CommitResourceInstall,
+        app_id: session.app_id.as_ptr(),
+        app_id_len: c_string_bytes(&session.app_id).len(),
+        resource_path: session.resource_path.as_ptr(),
+        resource_path_len: c_string_bytes(&session.resource_path).len(),
+        staging_path: session.staging_path.as_ptr(),
+        staging_path_len: c_string_bytes(&session.staging_path).len(),
+        total_len: session.total_len,
+        ..SqdpAction::default()
+    };
+    SqdpStatus::Ok
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_clear_resource_session(session: *mut SqdpResourceSession) {
+    if !session.is_null() {
+        *session = SqdpResourceSession::default();
+    }
+}
+
 struct FfiHost {
     callbacks: SqvmCallbacks,
     defer_sqbc_reads: bool,
@@ -517,6 +987,70 @@ fn storage_request_from_core(request: StorageRequest) -> SqvmStorageRequest {
         }
     }
     out
+}
+
+fn set_c_string<const N: usize>(out: &mut [u8; N], bytes: &[u8]) -> SqdpStatus {
+    if bytes.is_empty() || bytes.len() >= N {
+        return SqdpStatus::InvalidArgument;
+    }
+    *out = [0; N];
+    out[..bytes.len()].copy_from_slice(bytes);
+    SqdpStatus::Ok
+}
+
+fn c_string_bytes(bytes: &[u8]) -> &[u8] {
+    let len = bytes.iter().position(|byte| *byte == 0).unwrap_or(bytes.len());
+    &bytes[..len]
+}
+
+fn session_crc_matches(session: &SqdpTransferSession) -> bool {
+    !session.running_crc == session.expected_crc
+}
+
+fn resource_crc_matches(session: &SqdpResourceSession) -> bool {
+    !session.running_crc == session.expected_crc
+}
+
+fn field_bytes(payload: &[u8], tag: u8, field_type: u8) -> Option<&[u8]> {
+    let mut offset = 0usize;
+    while offset < payload.len() {
+        if payload.len().saturating_sub(offset) < 4 {
+            return None;
+        }
+        let current_tag = payload[offset];
+        let current_type = payload[offset + 1];
+        let len = u16::from_le_bytes([payload[offset + 2], payload[offset + 3]]) as usize;
+        let value_start = offset + 4;
+        let value_end = value_start.checked_add(len)?;
+        if value_end > payload.len() {
+            return None;
+        }
+        if current_tag == tag && current_type == field_type {
+            return Some(&payload[value_start..value_end]);
+        }
+        offset = value_end;
+    }
+    None
+}
+
+fn field_u64(payload: &[u8], tag: u8) -> Option<u64> {
+    let bytes = field_bytes(payload, tag, 5)?;
+    if bytes.len() != 8 {
+        return None;
+    }
+    Some(u64::from_le_bytes(bytes.try_into().ok()?))
+}
+
+fn sqdp_crc32_update(crc: u32, bytes: &[u8]) -> u32 {
+    let mut crc = crc;
+    for byte in bytes {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            let mask = 0u32.wrapping_sub(crc & 1);
+            crc = (crc >> 1) ^ (0xedb8_8320 & mask);
+        }
+    }
+    crc
 }
 
 #[cfg(feature = "zephyr")]

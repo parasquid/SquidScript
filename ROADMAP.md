@@ -30,14 +30,11 @@ for compiler, SQBC tooling, and VM semantics.
 
 ### 3. Rust-Own Firmware Protocol Logic
 
-- Move the remaining Zephyr C TLV parsing and install/temp/resource command
-  state machines into the shared Rust `squid-device-protocol` crate through
-  heap-free `sqdp_` FFI calls.
-- Delete each superseded C parser/state-machine path as soon as its Rust
-  replacement passes host tests, native Zephyr ztests, ESP32-C3 build, and the
-  sequential hardware command-surface check.
-- Keep `squidc`, Python helpers, and Zephyr tests on the shared codec fixtures
-  so there is one current wire implementation.
+- Move remaining Zephyr C response payload builders and simple request parsers
+  to heap-free Rust `sqdp_` helpers where doing so reduces stack buffers or
+  duplicated TLV rules without duplicating Zephyr storage/runtime ownership.
+- Keep `squidc`, Python helpers, Zephyr tests, and FFI tests on shared codec
+  fixtures so there is one current wire implementation.
 
 ### 4. Port Runtime Services To Zephyr
 

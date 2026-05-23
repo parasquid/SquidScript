@@ -1,4 +1,9 @@
-use squid_device_protocol::{decode_frame, FrameKind, Opcode, Status};
+use squid_device_protocol::{
+    app_install_begin_request, app_install_chunk_request, app_install_commit_request, decode_frame,
+    encode_frame, resource_install_begin_request, resource_install_chunk_request,
+    resource_install_commit_request, FrameKind, Opcode, Status,
+};
+use squidvm_ffi::{SqdpAction, SqdpActionKind, SqdpResourceSession, SqdpTransferSession};
 
 #[test]
 fn ffi_encodes_hello_response_into_caller_buffer() {
@@ -75,4 +80,122 @@ fn ffi_encodes_error_response_into_caller_buffer() {
     assert_eq!(frame.opcode, Opcode::StorageFormat);
     assert_eq!(frame.status, Status::Error);
     assert_eq!(frame.sequence, 81);
+}
+
+#[test]
+fn ffi_validates_install_session_progress_with_caller_owned_storage() {
+    let bytes = b"hello";
+    let crc = crc32fast::hash(bytes);
+    let begin = encode_frame(&app_install_begin_request(1, "ffi-app", bytes.len() as u64, crc as u64));
+    let chunk = encode_frame(&app_install_chunk_request(2, 0, bytes.to_vec()));
+    let commit = encode_frame(&app_install_commit_request(3));
+    let mut session = SqdpTransferSession::default();
+    let mut action = SqdpAction::default();
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_prepare_transfer_begin(
+            begin.as_ptr(),
+            begin.len(),
+            &mut session,
+            &mut action,
+        )
+    };
+    assert_eq!(status as i32, 0);
+    assert_eq!(action.kind, SqdpActionKind::BeginInstall);
+    assert_eq!(session.app_id_string(), "ffi-app");
+    assert!(!session.active, "storage begin should activate the session after it succeeds");
+
+    assert_eq!(session.set_staging_path_for_test("/tmp/ffi-app.staged") as i32, 0);
+    session.active = true;
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_prepare_transfer_chunk(
+            chunk.as_ptr(),
+            chunk.len(),
+            &mut session,
+            &mut action,
+        )
+    };
+    assert_eq!(status as i32, 0);
+    assert_eq!(action.kind, SqdpActionKind::WriteInstallChunk);
+    assert_eq!(action.offset, 0);
+    assert_eq!(unsafe { core::slice::from_raw_parts(action.bytes, action.bytes_len) }, bytes);
+
+    let status = unsafe { squidvm_ffi::sqdp_complete_transfer_chunk(&mut session, action.bytes, action.bytes_len) };
+    assert_eq!(status as i32, 0);
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_prepare_transfer_commit(
+            commit.as_ptr(),
+            commit.len(),
+            &mut session,
+            &mut action,
+        )
+    };
+    assert_eq!(status as i32, 0);
+    assert_eq!(action.kind, SqdpActionKind::CommitInstall);
+}
+
+#[test]
+fn ffi_validates_resource_session_progress_with_caller_owned_storage() {
+    let bytes = b"resource";
+    let crc = crc32fast::hash(bytes);
+    let begin = encode_frame(&resource_install_begin_request(
+        1,
+        "ffi-app",
+        "assets/main.bin",
+        bytes.len() as u64,
+        crc as u64,
+    ));
+    let chunk = encode_frame(&resource_install_chunk_request(2, 0, bytes.to_vec()));
+    let commit = encode_frame(&resource_install_commit_request(3));
+    let mut session = SqdpResourceSession::default();
+    let mut action = SqdpAction::default();
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_prepare_resource_begin(
+            begin.as_ptr(),
+            begin.len(),
+            &mut session,
+            &mut action,
+        )
+    };
+    assert_eq!(status as i32, 0);
+    assert_eq!(action.kind, SqdpActionKind::BeginResourceInstall);
+    assert_eq!(session.app_id_string(), "ffi-app");
+    assert_eq!(session.resource_path_string(), "assets/main.bin");
+
+    assert_eq!(
+        session.set_staging_path_for_test("/tmp/resource.staged") as i32,
+        0
+    );
+    session.active = true;
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_prepare_resource_chunk(
+            chunk.as_ptr(),
+            chunk.len(),
+            &mut session,
+            &mut action,
+        )
+    };
+    assert_eq!(status as i32, 0);
+    assert_eq!(action.kind, SqdpActionKind::WriteResourceChunk);
+    assert_eq!(unsafe { core::slice::from_raw_parts(action.bytes, action.bytes_len) }, bytes);
+    assert_eq!(
+        unsafe { squidvm_ffi::sqdp_complete_resource_chunk(&mut session, action.bytes, action.bytes_len) }
+            as i32,
+        0
+    );
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_prepare_resource_commit(
+            commit.as_ptr(),
+            commit.len(),
+            &mut session,
+            &mut action,
+        )
+    };
+    assert_eq!(status as i32, 0);
+    assert_eq!(action.kind, SqdpActionKind::CommitResourceInstall);
 }

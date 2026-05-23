@@ -399,6 +399,7 @@ dependencies = [
 name = "squidvm-ffi"
 version = "0.1.0"
 dependencies = [
+ "crc32fast",
  "squid-device-protocol",
  "squidc-core",
  "squidvm-core",

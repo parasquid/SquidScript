@@ -49,10 +49,12 @@ as repeated TLV fields with the same tag.
 
 The authoritative host codec lives in the shared Rust
 `squid-device-protocol` crate. Zephyr links that code through `squidvm-ffi`
-for heap-free response encoders exposed with the `sqdp_` C ABI. Zephyr C still
-owns UART, LittleFS, VM runtime, GPIO/Wi-Fi drivers, work queues, timers, and
-ztest glue. Protocol/TLV rules should move to the shared Rust crate when they
-can be expressed with caller-owned buffers.
+for heap-free response encoders and install/temp/resource session validators
+exposed with the `sqdp_` C ABI. Rust owns TLV field extraction, byte-count
+limits, chunk offset checks, incremental CRC32 progress, and commit readiness
+for large writes. Zephyr C still owns UART, LittleFS, VM runtime, GPIO/Wi-Fi
+drivers, work queues, timers, and ztest glue, and only advances a Rust-validated
+session after the corresponding Zephyr storage operation succeeds.
 
 Large writes use begin/chunk/commit opcode groups for installed apps, temp
 apps, and resources. Chunk payloads must carry explicit byte lengths and
@@ -83,6 +85,12 @@ Install commit verifies byte count and CRC32 before publishing
 `/sq/apps/<app-id>/<resource-path>`; temp-run commit verifies byte count and
 CRC32 before launching the temporary foreground app from
 `/sq/tmp/temp-run.sqbc.tmp`.
+
+Installed-app, temp-run, and resource begin/chunk/commit commands use
+caller-owned buffers across the C/Rust boundary. Zephyr passes the received
+frame and its fixed session storage to Rust; Rust returns a bounded action with
+borrowed byte slices or stored session strings; Zephyr performs the filesystem
+or VM operation and then calls the completion function so Rust updates progress.
 
 `app-list` responses use repeated record fields: response field tag `1` is one
 app record, record field tag `1` is the app ID string, and record field tag `2`

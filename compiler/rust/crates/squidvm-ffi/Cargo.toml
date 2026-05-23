@@ -16,4 +16,6 @@ squid-device-protocol = { path = "../squid-device-protocol", default-features = 
 squidvm-core = { path = "../squidvm-core" }
 
 [dev-dependencies]
+squid-device-protocol = { path = "../squid-device-protocol", features = ["alloc"] }
 squidc-core = { path = "../squidc-core" }
+crc32fast = "1"

@@ -74,18 +74,6 @@ static int append_u64_field(uint8_t *payload, size_t cap, size_t *len, uint8_t t
 	return append_field(payload, cap, len, tag, SQ_FIELD_U64, encoded, sizeof(encoded));
 }
 
-static uint32_t crc32_update(uint32_t crc, const uint8_t *bytes, size_t len)
-{
-	for (size_t i = 0; i < len; i++) {
-		crc ^= bytes[i];
-		for (int bit = 0; bit < 8; bit++) {
-			uint32_t mask = 0u - (crc & 1u);
-			crc = (crc >> 1) ^ (0xedb88320u & mask);
-		}
-	}
-	return crc;
-}
-
 static int append_record_field(uint8_t *payload, size_t cap, size_t *len, uint8_t tag,
 			       const uint8_t *record, uint16_t record_len)
 {
@@ -197,33 +185,11 @@ static int error_response(const struct sq_protocol_frame *request, int code, uin
 }
 
 static int begin_install(const struct sq_protocol_frame *request,
+			 const uint8_t *request_bytes, size_t request_len,
 			 const struct sq_device_protocol_context *context, uint8_t *response,
 			 size_t response_cap, size_t *response_len)
 {
-	const char *app_id = NULL;
-	size_t app_id_len = 0;
-	uint64_t total_len = 0;
-	uint64_t crc32 = 0;
-	size_t offset = 0;
-	struct sq_protocol_field field;
-
-	while (sq_protocol_next_field(request->payload, request->payload_len, &offset, &field) ==
-	       SQ_PROTOCOL_OK) {
-		if (field.tag == SQ_DEVICE_INSTALL_FIELD_APP_ID && field.type == SQ_FIELD_STRING) {
-			app_id = (const char *)field.value;
-			app_id_len = field.len;
-		} else if (field.tag == SQ_DEVICE_INSTALL_FIELD_TOTAL_LEN &&
-			   field.type == SQ_FIELD_U64 && field.len == 8) {
-			total_len = sq_protocol_read_u64_le(field.value);
-		} else if (field.tag == SQ_DEVICE_INSTALL_FIELD_CRC32 && field.type == SQ_FIELD_U64 &&
-			   field.len == 8) {
-			crc32 = sq_protocol_read_u64_le(field.value);
-		}
-	}
-
-	if (app_id == NULL || app_id_len == 0 || crc32 > UINT32_MAX) {
-		return -EINVAL;
-	}
+	SqdpAction action = {0};
 
 	if (request->opcode == SQ_OPCODE_TEMP_RUN_BEGIN) {
 		struct sq_device_temp_session *session = context->temp_session;
@@ -231,18 +197,10 @@ static int begin_install(const struct sq_protocol_frame *request,
 		if (session == NULL || context->store_mount_point == NULL) {
 			return -ENODEV;
 		}
-		if (app_id_len >= sizeof(session->app_id) || total_len == 0 ||
-		    total_len > SQ_DEVICE_TEMP_RUN_MAX_BYTES) {
+		if (sqdp_prepare_transfer_begin(request_bytes, request_len, session, &action) !=
+		    SQDP_STATUS_OK) {
 			return -EINVAL;
 		}
-
-		memset(session, 0, sizeof(*session));
-		memcpy(session->app_id, app_id, app_id_len);
-		session->app_id[app_id_len] = '\0';
-		session->active = true;
-		session->total_len = (size_t)total_len;
-		session->expected_crc = (uint32_t)crc32;
-		session->running_crc = 0xffffffffu;
 		int result = sq_app_store_begin_temp_run(context->store_mount_point,
 							 session->staging_path,
 							 sizeof(session->staging_path));
@@ -250,6 +208,7 @@ static int begin_install(const struct sq_protocol_frame *request,
 			memset(session, 0, sizeof(*session));
 			return result;
 		}
+		session->active = true;
 		return ok_response(request, response, response_cap, response_len);
 	}
 
@@ -258,17 +217,10 @@ static int begin_install(const struct sq_protocol_frame *request,
 	if (session == NULL || context->store_mount_point == NULL) {
 		return -ENODEV;
 	}
-	if (app_id_len >= sizeof(session->app_id) || total_len == 0 ||
-	    total_len > SQ_DEVICE_INSTALL_MAX_BYTES) {
+	if (sqdp_prepare_transfer_begin(request_bytes, request_len, session, &action) !=
+	    SQDP_STATUS_OK) {
 		return -EINVAL;
 	}
-
-	memset(session, 0, sizeof(*session));
-	memcpy(session->app_id, app_id, app_id_len);
-	session->app_id[app_id_len] = '\0';
-	session->total_len = (size_t)total_len;
-	session->expected_crc = (uint32_t)crc32;
-	session->running_crc = 0xffffffffu;
 
 	int result = sq_app_store_begin_staged_install(context->store_mount_point, session->app_id,
 						      session->staging_path,
@@ -283,114 +235,67 @@ static int begin_install(const struct sq_protocol_frame *request,
 }
 
 static int append_install_chunk(const struct sq_protocol_frame *request,
+				const uint8_t *request_bytes, size_t request_len,
 				const struct sq_device_protocol_context *context,
 				uint8_t *response, size_t response_cap, size_t *response_len)
 {
-	const uint8_t *bytes = NULL;
-	size_t bytes_len = 0;
-	uint64_t chunk_offset = UINT64_MAX;
-	size_t offset = 0;
-	struct sq_protocol_field field;
-
-	while (sq_protocol_next_field(request->payload, request->payload_len, &offset, &field) ==
-	       SQ_PROTOCOL_OK) {
-		if (field.tag == SQ_DEVICE_CHUNK_FIELD_OFFSET && field.type == SQ_FIELD_U64 &&
-		    field.len == 8) {
-			chunk_offset = sq_protocol_read_u64_le(field.value);
-		} else if (field.tag == SQ_DEVICE_CHUNK_FIELD_BYTES && field.type == SQ_FIELD_BYTES) {
-			bytes = field.value;
-			bytes_len = field.len;
-		}
-	}
+	SqdpAction action = {0};
 
 	if (request->opcode == SQ_OPCODE_TEMP_RUN_CHUNK) {
 		struct sq_device_temp_session *session = context->temp_session;
 
-		if (session == NULL || !session->active || bytes == NULL ||
-		    chunk_offset != session->received ||
-		    session->received + bytes_len > session->total_len) {
+		if (session == NULL ||
+		    sqdp_prepare_transfer_chunk(request_bytes, request_len, session, &action) !=
+			    SQDP_STATUS_OK) {
 			return -EINVAL;
 		}
 
-		int result = sq_app_store_write_staged_chunk(session->staging_path,
-							     session->received, bytes,
-							     bytes_len);
+		int result = sq_app_store_write_staged_chunk(session->staging_path, action.offset,
+							     action.bytes, action.bytes_len);
 		if (result != 0) {
 			return result;
 		}
-		session->running_crc = crc32_update(session->running_crc, bytes, bytes_len);
-		session->received += bytes_len;
+		if (sqdp_complete_transfer_chunk(session, action.bytes, action.bytes_len) !=
+		    SQDP_STATUS_OK) {
+			return -EINVAL;
+		}
 		return ok_response(request, response, response_cap, response_len);
 	}
 
 	struct sq_device_install_session *session = context->install_session;
 
-	if (session == NULL || !session->active || bytes == NULL ||
-	    chunk_offset != session->received || session->received + bytes_len > session->total_len) {
+	if (session == NULL ||
+	    sqdp_prepare_transfer_chunk(request_bytes, request_len, session, &action) !=
+		    SQDP_STATUS_OK) {
 		return -EINVAL;
 	}
 
-	int result = sq_app_store_write_staged_chunk(session->staging_path, session->received, bytes,
-						    bytes_len);
+	int result = sq_app_store_write_staged_chunk(session->staging_path, action.offset,
+						    action.bytes, action.bytes_len);
 	if (result != 0) {
 		return result;
 	}
-	session->running_crc = crc32_update(session->running_crc, bytes, bytes_len);
-	session->received += bytes_len;
+	if (sqdp_complete_transfer_chunk(session, action.bytes, action.bytes_len) != SQDP_STATUS_OK) {
+		return -EINVAL;
+	}
 
 	return ok_response(request, response, response_cap, response_len);
 }
 
 static int begin_resource_install(const struct sq_protocol_frame *request,
+				  const uint8_t *request_bytes, size_t request_len,
 				  const struct sq_device_protocol_context *context,
 				  uint8_t *response, size_t response_cap, size_t *response_len)
 {
-	const char *app_id = NULL;
-	const char *resource_path = NULL;
-	size_t app_id_len = 0;
-	size_t resource_path_len = 0;
-	uint64_t total_len = 0;
-	uint64_t crc32 = 0;
-	size_t offset = 0;
-	struct sq_protocol_field field;
-
-	while (sq_protocol_next_field(request->payload, request->payload_len, &offset, &field) ==
-	       SQ_PROTOCOL_OK) {
-		if (field.tag == SQ_DEVICE_RESOURCE_FIELD_APP_ID && field.type == SQ_FIELD_STRING) {
-			app_id = (const char *)field.value;
-			app_id_len = field.len;
-		} else if (field.tag == SQ_DEVICE_RESOURCE_FIELD_PATH &&
-			   field.type == SQ_FIELD_STRING) {
-			resource_path = (const char *)field.value;
-			resource_path_len = field.len;
-		} else if (field.tag == SQ_DEVICE_RESOURCE_FIELD_TOTAL_LEN &&
-			   field.type == SQ_FIELD_U64 && field.len == 8) {
-			total_len = sq_protocol_read_u64_le(field.value);
-		} else if (field.tag == SQ_DEVICE_RESOURCE_FIELD_CRC32 &&
-			   field.type == SQ_FIELD_U64 && field.len == 8) {
-			crc32 = sq_protocol_read_u64_le(field.value);
-		}
-	}
-
 	struct sq_device_resource_session *session = context->resource_session;
+	SqdpAction action = {0};
 	if (session == NULL || context->store_mount_point == NULL) {
 		return -ENODEV;
 	}
-	if (app_id == NULL || resource_path == NULL || app_id_len == 0 ||
-	    app_id_len >= sizeof(session->app_id) || resource_path_len == 0 ||
-	    resource_path_len >= sizeof(session->resource_path) || total_len == 0 ||
-	    total_len > SQ_DEVICE_INSTALL_MAX_BYTES || crc32 > UINT32_MAX) {
+	if (sqdp_prepare_resource_begin(request_bytes, request_len, session, &action) !=
+	    SQDP_STATUS_OK) {
 		return -EINVAL;
 	}
-
-	memset(session, 0, sizeof(*session));
-	memcpy(session->app_id, app_id, app_id_len);
-	session->app_id[app_id_len] = '\0';
-	memcpy(session->resource_path, resource_path, resource_path_len);
-	session->resource_path[resource_path_len] = '\0';
-	session->total_len = (size_t)total_len;
-	session->expected_crc = (uint32_t)crc32;
-	session->running_crc = 0xffffffffu;
 
 	int result = sq_app_store_begin_staged_resource(context->store_mount_point,
 						       session->staging_path,
@@ -404,50 +309,40 @@ static int begin_resource_install(const struct sq_protocol_frame *request,
 }
 
 static int append_resource_chunk(const struct sq_protocol_frame *request,
+				 const uint8_t *request_bytes, size_t request_len,
 				 const struct sq_device_protocol_context *context,
 				 uint8_t *response, size_t response_cap, size_t *response_len)
 {
-	const uint8_t *bytes = NULL;
-	size_t bytes_len = 0;
-	uint64_t chunk_offset = UINT64_MAX;
-	size_t offset = 0;
-	struct sq_protocol_field field;
-
-	while (sq_protocol_next_field(request->payload, request->payload_len, &offset, &field) ==
-	       SQ_PROTOCOL_OK) {
-		if (field.tag == SQ_DEVICE_CHUNK_FIELD_OFFSET && field.type == SQ_FIELD_U64 &&
-		    field.len == 8) {
-			chunk_offset = sq_protocol_read_u64_le(field.value);
-		} else if (field.tag == SQ_DEVICE_CHUNK_FIELD_BYTES && field.type == SQ_FIELD_BYTES) {
-			bytes = field.value;
-			bytes_len = field.len;
-		}
-	}
-
 	struct sq_device_resource_session *session = context->resource_session;
-	if (session == NULL || !session->active || bytes == NULL ||
-	    chunk_offset != session->received || session->received + bytes_len > session->total_len) {
+	SqdpAction action = {0};
+	if (session == NULL ||
+	    sqdp_prepare_resource_chunk(request_bytes, request_len, session, &action) !=
+		    SQDP_STATUS_OK) {
 		return -EINVAL;
 	}
 
-	int result = sq_app_store_write_staged_chunk(session->staging_path, session->received, bytes,
-						    bytes_len);
+	int result = sq_app_store_write_staged_chunk(session->staging_path, action.offset,
+						    action.bytes, action.bytes_len);
 	if (result != 0) {
 		return result;
 	}
-	session->running_crc = crc32_update(session->running_crc, bytes, bytes_len);
-	session->received += bytes_len;
+	if (sqdp_complete_resource_chunk(session, action.bytes, action.bytes_len) !=
+	    SQDP_STATUS_OK) {
+		return -EINVAL;
+	}
 	return ok_response(request, response, response_cap, response_len);
 }
 
 static int commit_resource_install(const struct sq_protocol_frame *request,
+				   const uint8_t *request_bytes, size_t request_len,
 				   const struct sq_device_protocol_context *context,
 				   uint8_t *response, size_t response_cap, size_t *response_len)
 {
 	struct sq_device_resource_session *session = context->resource_session;
-	if (session == NULL || !session->active || context->store_mount_point == NULL ||
-	    session->received != session->total_len ||
-	    ~session->running_crc != session->expected_crc) {
+	SqdpAction action = {0};
+	if (session == NULL || context->store_mount_point == NULL ||
+	    sqdp_prepare_resource_commit(request_bytes, request_len, session, &action) !=
+		    SQDP_STATUS_OK) {
 		return -EINVAL;
 	}
 
@@ -458,7 +353,7 @@ static int commit_resource_install(const struct sq_protocol_frame *request,
 	if (result != 0) {
 		return result;
 	}
-	memset(session, 0, sizeof(*session));
+	sqdp_clear_resource_session(session);
 	return ok_response(request, response, response_cap, response_len);
 }
 
@@ -551,23 +446,25 @@ static int temp_reset_state(void *user_data)
 }
 
 static int commit_temp_run(const struct sq_protocol_frame *request,
+			   const uint8_t *request_bytes, size_t request_len,
 			   const struct sq_device_protocol_context *context, uint8_t *response,
 			   size_t response_cap, size_t *response_len)
 {
 	struct sq_device_temp_session *session = context->temp_session;
 	static struct temp_storage_backend temp_storage;
 	struct sq_vm_storage_backend backend;
+	SqdpAction action = {0};
 	int result;
 
-	if (session == NULL || !session->active || context->runtime == NULL ||
-	    session->received != session->total_len ||
-	    ~session->running_crc != session->expected_crc) {
+	if (session == NULL || context->runtime == NULL ||
+	    sqdp_prepare_transfer_commit(request_bytes, request_len, session, &action) !=
+		    SQDP_STATUS_OK) {
 		return -EINVAL;
 	}
 
 	memset(&temp_storage, 0, sizeof(temp_storage));
 	temp_storage.sqbc_path = session->staging_path;
-	temp_storage.sqbc_len = session->total_len;
+	temp_storage.sqbc_len = action.total_len;
 	backend = (struct sq_vm_storage_backend){
 		.user_data = &temp_storage,
 		.read_sqbc = temp_read_sqbc,
@@ -584,15 +481,17 @@ static int commit_temp_run(const struct sq_protocol_frame *request,
 }
 
 static int commit_install(const struct sq_protocol_frame *request,
+			  const uint8_t *request_bytes, size_t request_len,
 			  const struct sq_device_protocol_context *context, uint8_t *response,
 			  size_t response_cap, size_t *response_len)
 {
 	struct sq_device_install_session *session = context->install_session;
+	SqdpAction action = {0};
 	int result;
 
-	if (session == NULL || !session->active || context->store_mount_point == NULL ||
-	    session->received != session->total_len ||
-	    ~session->running_crc != session->expected_crc) {
+	if (session == NULL || context->store_mount_point == NULL ||
+	    sqdp_prepare_transfer_commit(request_bytes, request_len, session, &action) !=
+		    SQDP_STATUS_OK) {
 		return -EINVAL;
 	}
 
@@ -609,7 +508,7 @@ static int commit_install(const struct sq_protocol_frame *request,
 		}
 	}
 
-	memset(session, 0, sizeof(*session));
+	sqdp_clear_transfer_session(session);
 	return ok_response(request, response, response_cap, response_len);
 }
 
@@ -985,29 +884,33 @@ int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 		break;
 	case SQ_OPCODE_APP_INSTALL_BEGIN:
 	case SQ_OPCODE_TEMP_RUN_BEGIN:
-		result = begin_install(&frame, context, response, response_cap, response_len);
+		result = begin_install(&frame, request, request_len, context, response, response_cap,
+				       response_len);
 		break;
 	case SQ_OPCODE_APP_INSTALL_CHUNK:
 	case SQ_OPCODE_TEMP_RUN_CHUNK:
-		result = append_install_chunk(&frame, context, response, response_cap, response_len);
+		result = append_install_chunk(&frame, request, request_len, context, response,
+					      response_cap, response_len);
 		break;
 	case SQ_OPCODE_APP_INSTALL_COMMIT:
-		result = commit_install(&frame, context, response, response_cap, response_len);
+		result = commit_install(&frame, request, request_len, context, response, response_cap,
+					response_len);
 		break;
 	case SQ_OPCODE_RESOURCE_INSTALL_BEGIN:
-		result = begin_resource_install(&frame, context, response, response_cap,
-						response_len);
+		result = begin_resource_install(&frame, request, request_len, context, response,
+						response_cap, response_len);
 		break;
 	case SQ_OPCODE_RESOURCE_INSTALL_CHUNK:
-		result = append_resource_chunk(&frame, context, response, response_cap,
-					       response_len);
+		result = append_resource_chunk(&frame, request, request_len, context, response,
+					       response_cap, response_len);
 		break;
 	case SQ_OPCODE_RESOURCE_INSTALL_COMMIT:
-		result = commit_resource_install(&frame, context, response, response_cap,
-						 response_len);
+		result = commit_resource_install(&frame, request, request_len, context, response,
+						 response_cap, response_len);
 		break;
 	case SQ_OPCODE_TEMP_RUN_COMMIT:
-		result = commit_temp_run(&frame, context, response, response_cap, response_len);
+		result = commit_temp_run(&frame, request, request_len, context, response,
+					 response_cap, response_len);
 		break;
 	case SQ_OPCODE_APP_LAUNCH:
 		result = launch_app(&frame, context, response, response_cap, response_len);

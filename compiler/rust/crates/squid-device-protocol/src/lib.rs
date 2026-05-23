@@ -5,11 +5,13 @@ extern crate alloc;
 
 #[cfg(feature = "alloc")]
 use alloc::{format, string::String, vec, vec::Vec};
-#[cfg(feature = "alloc")]
 use core::str;
 
 pub const MAGIC: [u8; 4] = *b"SQDP";
 pub const HEADER_LEN: usize = 20;
+pub const MAX_APP_ID_LEN: usize = 48;
+pub const MAX_PATH_LEN: usize = 128;
+pub const MAX_APP_BYTES: usize = 65_536;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -260,6 +262,561 @@ pub enum DecodeError {
     InvalidIntegerLength(usize),
     InvalidUtf8,
     OutputTooSmall { needed: usize, capacity: usize },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SessionError {
+    Decode(DecodeError),
+    InvalidRequest,
+    MissingField,
+    InvalidUtf8,
+    AppIdTooLong,
+    PathTooLong,
+    TooLarge,
+    Inactive,
+    Offset,
+    Bounds,
+    Crc,
+}
+
+impl From<DecodeError> for SessionError {
+    fn from(value: DecodeError) -> Self {
+        Self::Decode(value)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeviceRequest<'a> {
+    pub opcode: Opcode,
+    pub sequence: u32,
+    payload: &'a [u8],
+}
+
+impl<'a> DeviceRequest<'a> {
+    pub fn decode(bytes: &'a [u8]) -> Result<Self, DecodeError> {
+        if bytes.len() < HEADER_LEN {
+            return Err(DecodeError::TruncatedHeader);
+        }
+        if bytes[..4] != MAGIC {
+            return Err(DecodeError::BadMagic);
+        }
+
+        let kind = FrameKind::try_from(bytes[4])?;
+        if kind != FrameKind::Request {
+            return Err(DecodeError::BadMagic);
+        }
+        let opcode = Opcode::try_from(bytes[5])?;
+        let _status = Status::try_from(bytes[6])?;
+        let sequence = u32::from_le_bytes(bytes[8..12].try_into().expect("slice length checked"));
+        let payload_len =
+            u32::from_le_bytes(bytes[12..16].try_into().expect("slice length checked")) as usize;
+        let payload_crc =
+            u32::from_le_bytes(bytes[16..20].try_into().expect("slice length checked"));
+        let expected = HEADER_LEN + payload_len;
+        if bytes.len() != expected {
+            return Err(DecodeError::LengthMismatch {
+                expected,
+                actual: bytes.len(),
+            });
+        }
+        let payload = &bytes[HEADER_LEN..];
+        if crc32fast::hash(payload) != payload_crc {
+            return Err(DecodeError::PayloadCrc);
+        }
+        Ok(Self {
+            opcode,
+            sequence,
+            payload,
+        })
+    }
+
+    pub fn payload(&self) -> &'a [u8] {
+        self.payload
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostAction<'a> {
+    BeginInstall {
+        app_id: &'a str,
+        total_len: usize,
+    },
+    WriteInstallChunk {
+        staging_path: &'a str,
+        offset: usize,
+        bytes: &'a [u8],
+    },
+    CommitInstall {
+        app_id: &'a str,
+        staging_path: &'a str,
+    },
+    BeginTempRun {
+        app_id: &'a str,
+        total_len: usize,
+    },
+    WriteTempRunChunk {
+        staging_path: &'a str,
+        offset: usize,
+        bytes: &'a [u8],
+    },
+    CommitTempRun {
+        app_id: &'a str,
+        staging_path: &'a str,
+        total_len: usize,
+    },
+    BeginResourceInstall {
+        app_id: &'a str,
+        resource_path: &'a str,
+        total_len: usize,
+    },
+    WriteResourceChunk {
+        staging_path: &'a str,
+        offset: usize,
+        bytes: &'a [u8],
+    },
+    CommitResourceInstall {
+        app_id: &'a str,
+        resource_path: &'a str,
+        staging_path: &'a str,
+    },
+}
+
+#[derive(Clone, Copy)]
+struct FixedStr<const N: usize> {
+    bytes: [u8; N],
+    len: usize,
+}
+
+impl<const N: usize> Default for FixedStr<N> {
+    fn default() -> Self {
+        Self {
+            bytes: [0; N],
+            len: 0,
+        }
+    }
+}
+
+impl<const N: usize> FixedStr<N> {
+    fn set(&mut self, value: &str) -> Result<(), SessionError> {
+        if value.is_empty() || value.len() >= N {
+            return Err(if N == MAX_APP_ID_LEN {
+                SessionError::AppIdTooLong
+            } else {
+                SessionError::PathTooLong
+            });
+        }
+        self.bytes = [0; N];
+        self.bytes[..value.len()].copy_from_slice(value.as_bytes());
+        self.len = value.len();
+        Ok(())
+    }
+
+    fn as_str(&self) -> &str {
+        str::from_utf8(&self.bytes[..self.len]).expect("FixedStr only stores utf8")
+    }
+
+    fn clear(&mut self) {
+        self.bytes = [0; N];
+        self.len = 0;
+    }
+}
+
+#[derive(Clone, Copy)]
+struct TransferSession {
+    active: bool,
+    app_id: FixedStr<MAX_APP_ID_LEN>,
+    total_len: usize,
+    received: usize,
+    expected_crc: u32,
+    running_crc: u32,
+    staging_path: FixedStr<MAX_PATH_LEN>,
+}
+
+impl Default for TransferSession {
+    fn default() -> Self {
+        Self {
+            active: false,
+            app_id: FixedStr::default(),
+            total_len: 0,
+            received: 0,
+            expected_crc: 0,
+            running_crc: 0xffff_ffff,
+            staging_path: FixedStr::default(),
+        }
+    }
+}
+
+impl TransferSession {
+    fn begin(&mut self, app_id: &str, total_len: usize, expected_crc: u32) -> Result<(), SessionError> {
+        validate_transfer_len(total_len)?;
+        self.clear();
+        self.app_id.set(app_id)?;
+        self.total_len = total_len;
+        self.expected_crc = expected_crc;
+        self.running_crc = 0xffff_ffff;
+        self.active = true;
+        Ok(())
+    }
+
+    fn complete_begin(&mut self, staging_path: &str) -> Result<(), SessionError> {
+        if !self.active {
+            return Err(SessionError::Inactive);
+        }
+        self.staging_path.set(staging_path)
+    }
+
+    fn validate_chunk(&self, offset: usize, bytes: &[u8]) -> Result<(), SessionError> {
+        if !self.active {
+            return Err(SessionError::Inactive);
+        }
+        if offset != self.received {
+            return Err(SessionError::Offset);
+        }
+        if bytes.len() > self.total_len.saturating_sub(self.received) {
+            return Err(SessionError::Bounds);
+        }
+        Ok(())
+    }
+
+    fn complete_chunk(&mut self, bytes: &[u8]) -> Result<(), SessionError> {
+        self.validate_chunk(self.received, bytes)?;
+        self.running_crc = crc32_update(self.running_crc, bytes);
+        self.received += bytes.len();
+        Ok(())
+    }
+
+    fn validate_commit(&self) -> Result<(), SessionError> {
+        if !self.active {
+            return Err(SessionError::Inactive);
+        }
+        if self.received != self.total_len {
+            return Err(SessionError::Bounds);
+        }
+        if !self.crc_matches() {
+            return Err(SessionError::Crc);
+        }
+        Ok(())
+    }
+
+    fn crc_matches(&self) -> bool {
+        !self.running_crc == self.expected_crc
+    }
+
+    fn clear(&mut self) {
+        *self = Self::default();
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+struct ResourceSession {
+    transfer: TransferSession,
+    resource_path: FixedStr<MAX_PATH_LEN>,
+}
+
+impl ResourceSession {
+    fn begin(
+        &mut self,
+        app_id: &str,
+        resource_path: &str,
+        total_len: usize,
+        expected_crc: u32,
+    ) -> Result<(), SessionError> {
+        self.clear();
+        self.transfer.begin(app_id, total_len, expected_crc)?;
+        self.resource_path.set(resource_path)?;
+        Ok(())
+    }
+
+    fn clear(&mut self) {
+        self.transfer.clear();
+        self.resource_path.clear();
+    }
+}
+
+#[derive(Default)]
+pub struct ProtocolSessions {
+    install: TransferSession,
+    temp_run: TransferSession,
+    resource: ResourceSession,
+}
+
+impl ProtocolSessions {
+    pub fn next_action<'a>(
+        &'a mut self,
+        request: &'a DeviceRequest<'a>,
+    ) -> Result<HostAction<'a>, SessionError> {
+        match request.opcode {
+            Opcode::AppInstallBegin => self.begin_install(request, false),
+            Opcode::TempRunBegin => self.begin_install(request, true),
+            Opcode::AppInstallChunk => self.install_chunk(request, false),
+            Opcode::TempRunChunk => self.install_chunk(request, true),
+            Opcode::AppInstallCommit => self.commit_install(),
+            Opcode::TempRunCommit => self.commit_temp_run(),
+            Opcode::ResourceInstallBegin => self.begin_resource(request),
+            Opcode::ResourceInstallChunk => self.resource_chunk(request),
+            Opcode::ResourceInstallCommit => self.commit_resource(),
+            _ => Err(SessionError::InvalidRequest),
+        }
+    }
+
+    pub fn complete_begin_install(&mut self, staging_path: &str) -> Result<(), SessionError> {
+        self.install.complete_begin(staging_path)
+    }
+
+    pub fn complete_install_chunk(&mut self, bytes: &[u8]) -> Result<(), SessionError> {
+        self.install.complete_chunk(bytes)
+    }
+
+    pub fn complete_install_commit(&mut self) {
+        self.install.clear();
+    }
+
+    pub fn complete_begin_temp_run(&mut self, staging_path: &str) -> Result<(), SessionError> {
+        self.temp_run.complete_begin(staging_path)
+    }
+
+    pub fn complete_temp_run_chunk(&mut self, bytes: &[u8]) -> Result<(), SessionError> {
+        self.temp_run.complete_chunk(bytes)
+    }
+
+    pub fn complete_temp_run_commit(&mut self) {
+        self.temp_run.clear();
+    }
+
+    pub fn complete_begin_resource_install(
+        &mut self,
+        staging_path: &str,
+    ) -> Result<(), SessionError> {
+        self.resource.transfer.complete_begin(staging_path)
+    }
+
+    pub fn complete_resource_chunk(&mut self, bytes: &[u8]) -> Result<(), SessionError> {
+        self.resource.transfer.complete_chunk(bytes)
+    }
+
+    pub fn complete_resource_commit(&mut self) {
+        self.resource.clear();
+    }
+
+    fn begin_install<'a>(
+        &'a mut self,
+        request: &'a DeviceRequest<'a>,
+        temp_run: bool,
+    ) -> Result<HostAction<'a>, SessionError> {
+        let app_id = string_field(request.payload, 1)?.ok_or(SessionError::MissingField)?;
+        let total_len = u64_field(request.payload, 2)?.ok_or(SessionError::MissingField)?;
+        let crc32 = u64_field(request.payload, 3)?.ok_or(SessionError::MissingField)?;
+        if crc32 > u32::MAX as u64 {
+            return Err(SessionError::InvalidRequest);
+        }
+        let total_len = usize::try_from(total_len).map_err(|_| SessionError::TooLarge)?;
+        if temp_run {
+            self.temp_run.begin(app_id, total_len, crc32 as u32)?;
+            Ok(HostAction::BeginTempRun { app_id, total_len })
+        } else {
+            self.install.begin(app_id, total_len, crc32 as u32)?;
+            Ok(HostAction::BeginInstall { app_id, total_len })
+        }
+    }
+
+    fn install_chunk<'a>(
+        &'a self,
+        request: &'a DeviceRequest<'a>,
+        temp_run: bool,
+    ) -> Result<HostAction<'a>, SessionError> {
+        let offset = chunk_offset(request.payload)?;
+        let bytes = bytes_field(request.payload, 2)?.ok_or(SessionError::MissingField)?;
+        let session = if temp_run {
+            &self.temp_run
+        } else {
+            &self.install
+        };
+        session.validate_chunk(offset, bytes)?;
+        if temp_run {
+            Ok(HostAction::WriteTempRunChunk {
+                staging_path: session.staging_path.as_str(),
+                offset,
+                bytes,
+            })
+        } else {
+            Ok(HostAction::WriteInstallChunk {
+                staging_path: session.staging_path.as_str(),
+                offset,
+                bytes,
+            })
+        }
+    }
+
+    fn commit_install(&self) -> Result<HostAction<'_>, SessionError> {
+        self.install.validate_commit()?;
+        Ok(HostAction::CommitInstall {
+            app_id: self.install.app_id.as_str(),
+            staging_path: self.install.staging_path.as_str(),
+        })
+    }
+
+    fn commit_temp_run(&self) -> Result<HostAction<'_>, SessionError> {
+        self.temp_run.validate_commit()?;
+        Ok(HostAction::CommitTempRun {
+            app_id: self.temp_run.app_id.as_str(),
+            staging_path: self.temp_run.staging_path.as_str(),
+            total_len: self.temp_run.total_len,
+        })
+    }
+
+    fn begin_resource<'a>(
+        &'a mut self,
+        request: &'a DeviceRequest<'a>,
+    ) -> Result<HostAction<'a>, SessionError> {
+        let app_id = string_field(request.payload, 1)?.ok_or(SessionError::MissingField)?;
+        let resource_path = string_field(request.payload, 2)?.ok_or(SessionError::MissingField)?;
+        let total_len = u64_field(request.payload, 3)?.ok_or(SessionError::MissingField)?;
+        let crc32 = u64_field(request.payload, 4)?.ok_or(SessionError::MissingField)?;
+        if crc32 > u32::MAX as u64 {
+            return Err(SessionError::InvalidRequest);
+        }
+        let total_len = usize::try_from(total_len).map_err(|_| SessionError::TooLarge)?;
+        self.resource
+            .begin(app_id, resource_path, total_len, crc32 as u32)?;
+        Ok(HostAction::BeginResourceInstall {
+            app_id,
+            resource_path,
+            total_len,
+        })
+    }
+
+    fn resource_chunk<'a>(
+        &'a self,
+        request: &'a DeviceRequest<'a>,
+    ) -> Result<HostAction<'a>, SessionError> {
+        let offset = chunk_offset(request.payload)?;
+        let bytes = bytes_field(request.payload, 2)?.ok_or(SessionError::MissingField)?;
+        self.resource.transfer.validate_chunk(offset, bytes)?;
+        Ok(HostAction::WriteResourceChunk {
+            staging_path: self.resource.transfer.staging_path.as_str(),
+            offset,
+            bytes,
+        })
+    }
+
+    fn commit_resource(&self) -> Result<HostAction<'_>, SessionError> {
+        self.resource.transfer.validate_commit()?;
+        Ok(HostAction::CommitResourceInstall {
+            app_id: self.resource.transfer.app_id.as_str(),
+            resource_path: self.resource.resource_path.as_str(),
+            staging_path: self.resource.transfer.staging_path.as_str(),
+        })
+    }
+}
+
+fn validate_transfer_len(total_len: usize) -> Result<(), SessionError> {
+    if total_len == 0 {
+        return Err(SessionError::InvalidRequest);
+    }
+    if total_len > MAX_APP_BYTES {
+        return Err(SessionError::TooLarge);
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct RawField<'a> {
+    tag: u8,
+    field_type: u8,
+    value: &'a [u8],
+}
+
+struct RawFields<'a> {
+    payload: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> Iterator for RawFields<'a> {
+    type Item = Result<RawField<'a>, DecodeError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.offset == self.payload.len() {
+            return None;
+        }
+        if self.payload.len().saturating_sub(self.offset) < 4 {
+            return Some(Err(DecodeError::TruncatedField));
+        }
+        let tag = self.payload[self.offset];
+        let field_type = self.payload[self.offset + 1];
+        let len = u16::from_le_bytes([
+            self.payload[self.offset + 2],
+            self.payload[self.offset + 3],
+        ]) as usize;
+        let value_start = self.offset + 4;
+        let value_end = value_start + len;
+        if value_end > self.payload.len() {
+            return Some(Err(DecodeError::TruncatedField));
+        }
+        self.offset = value_end;
+        Some(Ok(RawField {
+            tag,
+            field_type,
+            value: &self.payload[value_start..value_end],
+        }))
+    }
+}
+
+fn fields(payload: &[u8]) -> RawFields<'_> {
+    RawFields { payload, offset: 0 }
+}
+
+fn string_field(payload: &[u8], tag: u8) -> Result<Option<&str>, SessionError> {
+    for field in fields(payload) {
+        let field = field?;
+        if field.tag == tag && field.field_type == 1 {
+            return str::from_utf8(field.value)
+                .map(Some)
+                .map_err(|_| SessionError::InvalidUtf8);
+        }
+    }
+    Ok(None)
+}
+
+fn bytes_field(payload: &[u8], tag: u8) -> Result<Option<&[u8]>, SessionError> {
+    for field in fields(payload) {
+        let field = field?;
+        if field.tag == tag && field.field_type == 0 {
+            return Ok(Some(field.value));
+        }
+    }
+    Ok(None)
+}
+
+fn u64_field(payload: &[u8], tag: u8) -> Result<Option<u64>, SessionError> {
+    for field in fields(payload) {
+        let field = field?;
+        if field.tag == tag && field.field_type == 5 {
+            if field.value.len() != 8 {
+                return Err(SessionError::InvalidRequest);
+            }
+            return Ok(Some(u64::from_le_bytes(
+                field.value.try_into().expect("length checked"),
+            )));
+        }
+    }
+    Ok(None)
+}
+
+fn chunk_offset(payload: &[u8]) -> Result<usize, SessionError> {
+    let offset = u64_field(payload, 1)?.ok_or(SessionError::MissingField)?;
+    usize::try_from(offset).map_err(|_| SessionError::Bounds)
+}
+
+fn crc32_update(crc: u32, bytes: &[u8]) -> u32 {
+    let mut crc = crc;
+    for byte in bytes {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            let mask = 0u32.wrapping_sub(crc & 1);
+            crc = (crc >> 1) ^ (0xedb8_8320 & mask);
+        }
+    }
+    crc
 }
 
 #[cfg(feature = "alloc")]

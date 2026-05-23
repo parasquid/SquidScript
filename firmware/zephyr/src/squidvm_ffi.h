@@ -25,6 +25,33 @@ typedef enum {
 } SqdpStatus;
 
 typedef enum {
+	SQDP_ACTION_NONE = 0,
+	SQDP_ACTION_BEGIN_INSTALL = 1,
+	SQDP_ACTION_WRITE_INSTALL_CHUNK = 2,
+	SQDP_ACTION_COMMIT_INSTALL = 3,
+	SQDP_ACTION_BEGIN_TEMP_RUN = 4,
+	SQDP_ACTION_WRITE_TEMP_RUN_CHUNK = 5,
+	SQDP_ACTION_COMMIT_TEMP_RUN = 6,
+	SQDP_ACTION_BEGIN_RESOURCE_INSTALL = 7,
+	SQDP_ACTION_WRITE_RESOURCE_CHUNK = 8,
+	SQDP_ACTION_COMMIT_RESOURCE_INSTALL = 9,
+} SqdpActionKind;
+
+typedef struct {
+	SqdpActionKind kind;
+	const uint8_t *app_id;
+	size_t app_id_len;
+	const uint8_t *resource_path;
+	size_t resource_path_len;
+	const uint8_t *staging_path;
+	size_t staging_path_len;
+	size_t offset;
+	const uint8_t *bytes;
+	size_t bytes_len;
+	size_t total_len;
+} SqdpAction;
+
+typedef enum {
 	SQVM_DISPATCH_COMPLETE = 0,
 	SQVM_DISPATCH_PENDING_STORAGE = 1,
 } SqvmDispatchOutcome;
@@ -121,6 +148,46 @@ SqdpStatus sqdp_encode_error_response(
 	uint8_t *out,
 	size_t out_cap,
 	size_t *out_len);
+SqdpStatus sqdp_prepare_transfer_begin(
+	const uint8_t *request,
+	size_t request_len,
+	void *session,
+	SqdpAction *out_action);
+SqdpStatus sqdp_prepare_transfer_chunk(
+	const uint8_t *request,
+	size_t request_len,
+	const void *session,
+	SqdpAction *out_action);
+SqdpStatus sqdp_complete_transfer_chunk(
+	void *session,
+	const uint8_t *bytes,
+	size_t bytes_len);
+SqdpStatus sqdp_prepare_transfer_commit(
+	const uint8_t *request,
+	size_t request_len,
+	const void *session,
+	SqdpAction *out_action);
+void sqdp_clear_transfer_session(void *session);
+SqdpStatus sqdp_prepare_resource_begin(
+	const uint8_t *request,
+	size_t request_len,
+	void *session,
+	SqdpAction *out_action);
+SqdpStatus sqdp_prepare_resource_chunk(
+	const uint8_t *request,
+	size_t request_len,
+	const void *session,
+	SqdpAction *out_action);
+SqdpStatus sqdp_complete_resource_chunk(
+	void *session,
+	const uint8_t *bytes,
+	size_t bytes_len);
+SqdpStatus sqdp_prepare_resource_commit(
+	const uint8_t *request,
+	size_t request_len,
+	const void *session,
+	SqdpAction *out_action);
+void sqdp_clear_resource_session(void *session);
 
 #ifdef __cplusplus
 }

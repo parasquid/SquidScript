@@ -68,9 +68,13 @@ transport. The app store can create per-app directories during install, write
 size metadata, and registry lookup.
 
 Temp runs use `/sq/tmp/temp-run.sqbc.tmp` as their staging artifact. Firmware
-writes chunks directly to that file, validates the incremental CRC on commit,
-and lets the VM read SQBC byte ranges back through the same storage callback
-shape used by installed apps.
+writes chunks directly to that file and lets the VM read SQBC byte ranges back
+through the same storage callback shape used by installed apps. The
+begin/chunk/commit session validation for installed apps, temp runs, and
+resources is implemented in the Rust `sqdp_` FFI layer with caller-owned
+buffers; Zephyr C performs the LittleFS writes and commits, then reports
+successful chunks back to Rust so byte counts and CRC32 progress advance only
+after storage succeeds.
 
 Package resources are stored below the app directory using package-relative
 paths:
@@ -84,8 +88,8 @@ Absolute paths, empty segments, `.` segments, and `..` traversal are rejected.
 Installing resources requires the app's `main.sqbc` to exist first, which keeps
 resources tied to a published app directory. Native Zephyr ztests cover nested
 resource directory creation, lookup-path derivation, file size metadata, and
-path traversal rejection. The remaining app-store work is to expose install,
-registry, and resource behavior through framed device commands.
+path traversal rejection. Framed device commands expose install, registry, and
+resource behavior through the Zephyr command surface.
 
 ## App State
 
