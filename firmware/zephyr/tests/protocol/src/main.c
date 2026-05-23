@@ -1161,6 +1161,21 @@ ZTEST(squidscript_protocol, test_vm_runtime_tracks_output_indicator_and_due_time
 	zassert_equal(sq_vm_runtime_indicator_write(&runtime, true), 0);
 	zassert_false(runtime.indicator_breathe_active);
 
+	zassert_equal(sq_vm_runtime_hardware_gpio_write(&runtime, (const uint8_t *)"GPIO8",
+							strlen("GPIO8"), true),
+		      0);
+	zassert_equal(sq_vm_runtime_hardware_gpio_read(&runtime, (const uint8_t *)"GPIO8",
+						       strlen("GPIO8"), &value),
+		      0);
+	zassert_true(value);
+	zassert_equal(sq_vm_runtime_hardware_gpio_toggle(&runtime, (const uint8_t *)"GPIO8",
+							 strlen("GPIO8")),
+		      0);
+	zassert_equal(sq_vm_runtime_hardware_gpio_read(&runtime, (const uint8_t *)"GPIO8",
+						       strlen("GPIO8"), &value),
+		      0);
+	zassert_false(value);
+
 	zassert_equal(sq_vm_runtime_register_timer(&runtime, (const uint8_t *)"timer.debug",
 						   strlen("timer.debug"), 1, true),
 		      0);

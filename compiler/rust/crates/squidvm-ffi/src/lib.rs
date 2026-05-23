@@ -268,9 +268,27 @@ pub struct SqvmCallbacks {
     >,
     pub indicator_write: Option<unsafe extern "C" fn(user_data: *mut c_void, value: bool) -> i32>,
     pub indicator_toggle: Option<unsafe extern "C" fn(user_data: *mut c_void) -> i32>,
-    pub indicator_read:
-        Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut bool) -> i32>,
+    pub indicator_read: Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut bool) -> i32>,
     pub indicator_breathe: Option<unsafe extern "C" fn(user_data: *mut c_void) -> i32>,
+    pub hardware_gpio_write: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            name: *const u8,
+            name_len: usize,
+            value: bool,
+        ) -> i32,
+    >,
+    pub hardware_gpio_toggle: Option<
+        unsafe extern "C" fn(user_data: *mut c_void, name: *const u8, name_len: usize) -> i32,
+    >,
+    pub hardware_gpio_read: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            name: *const u8,
+            name_len: usize,
+            out: *mut bool,
+        ) -> i32,
+    >,
     pub timer_every: Option<
         unsafe extern "C" fn(
             user_data: *mut c_void,
@@ -999,6 +1017,40 @@ impl TraceSink for FfiHost {
         callback_status(unsafe { indicator_breathe(self.callbacks.user_data) })
     }
 
+    fn hardware_gpio_write(&mut self, name: &str, value: bool) -> Result<(), VmError> {
+        let Some(hardware_gpio_write) = self.callbacks.hardware_gpio_write else {
+            return Err(VmError::InvalidOperand);
+        };
+        callback_status(unsafe {
+            hardware_gpio_write(self.callbacks.user_data, name.as_ptr(), name.len(), value)
+        })
+    }
+
+    fn hardware_gpio_toggle(&mut self, name: &str) -> Result<(), VmError> {
+        let Some(hardware_gpio_toggle) = self.callbacks.hardware_gpio_toggle else {
+            return Err(VmError::InvalidOperand);
+        };
+        callback_status(unsafe {
+            hardware_gpio_toggle(self.callbacks.user_data, name.as_ptr(), name.len())
+        })
+    }
+
+    fn hardware_gpio_read(&mut self, name: &str) -> Result<bool, VmError> {
+        let Some(hardware_gpio_read) = self.callbacks.hardware_gpio_read else {
+            return Err(VmError::InvalidOperand);
+        };
+        let mut value = false;
+        callback_status(unsafe {
+            hardware_gpio_read(
+                self.callbacks.user_data,
+                name.as_ptr(),
+                name.len(),
+                &mut value,
+            )
+        })?;
+        Ok(value)
+    }
+
     fn service_timer_every(&mut self, event: &str, interval_ms: i32) -> Result<(), VmError> {
         let Some(timer_every) = self.callbacks.timer_every else {
             return Err(VmError::InvalidOperand);
@@ -1165,7 +1217,10 @@ fn set_c_string<const N: usize>(out: &mut [u8; N], bytes: &[u8]) -> SqdpStatus {
 }
 
 fn c_string_bytes(bytes: &[u8]) -> &[u8] {
-    let len = bytes.iter().position(|byte| *byte == 0).unwrap_or(bytes.len());
+    let len = bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(bytes.len());
     &bytes[..len]
 }
 

@@ -61,6 +61,8 @@ struct sq_vm_runtime {
 	uint8_t indicator_breathe_phase;
 	int64_t indicator_breathe_next_ms;
 	int64_t indicator_breathe_frame_ms;
+	uint32_t gpio_configured_mask;
+	uint32_t gpio_state_mask;
 	struct sq_vm_runtime_timer timers[SQ_VM_RUNTIME_TIMER_MAX];
 };
 
@@ -80,6 +82,12 @@ int sq_vm_runtime_indicator_write(struct sq_vm_runtime *runtime, bool value);
 int sq_vm_runtime_indicator_toggle(struct sq_vm_runtime *runtime);
 int sq_vm_runtime_indicator_read(struct sq_vm_runtime *runtime, bool *out);
 int sq_vm_runtime_indicator_breathe(struct sq_vm_runtime *runtime);
+int sq_vm_runtime_hardware_gpio_write(struct sq_vm_runtime *runtime, const uint8_t *name,
+				      size_t name_len, bool value);
+int sq_vm_runtime_hardware_gpio_toggle(struct sq_vm_runtime *runtime, const uint8_t *name,
+				       size_t name_len);
+int sq_vm_runtime_hardware_gpio_read(struct sq_vm_runtime *runtime, const uint8_t *name,
+				     size_t name_len, bool *out);
 int sq_vm_runtime_register_timer(struct sq_vm_runtime *runtime, const uint8_t *event,
 				 size_t event_len, int32_t interval_ms, bool repeating);
 int sq_vm_runtime_next_due_timer(struct sq_vm_runtime *runtime, char *event, size_t event_cap);

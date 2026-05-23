@@ -18,6 +18,13 @@ static const struct gpio_dt_spec indicator_led = GPIO_DT_SPEC_GET(DT_ALIAS(led0)
 #define SQ_VM_RUNTIME_HAS_INDICATOR_LED 0
 #endif
 
+#if IS_ENABLED(CONFIG_GPIO) && DT_NODE_HAS_STATUS(DT_NODELABEL(gpio0), okay)
+static const struct device *const gpio0_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0));
+#define SQ_VM_RUNTIME_HAS_GPIO0 1
+#else
+#define SQ_VM_RUNTIME_HAS_GPIO0 0
+#endif
+
 K_THREAD_STACK_DEFINE(sq_vm_runtime_work_stack, SQ_VM_RUNTIME_WORK_STACK_SIZE);
 static struct k_work_q sq_vm_runtime_work_q;
 static bool sq_vm_runtime_work_q_started;
@@ -72,6 +79,23 @@ static int32_t runtime_indicator_read(void *user_data, bool *out)
 static int32_t runtime_indicator_breathe(void *user_data)
 {
 	return sq_vm_runtime_indicator_breathe(user_data);
+}
+
+static int32_t runtime_hardware_gpio_write(void *user_data, const uint8_t *name, size_t name_len,
+					   bool value)
+{
+	return sq_vm_runtime_hardware_gpio_write(user_data, name, name_len, value);
+}
+
+static int32_t runtime_hardware_gpio_toggle(void *user_data, const uint8_t *name, size_t name_len)
+{
+	return sq_vm_runtime_hardware_gpio_toggle(user_data, name, name_len);
+}
+
+static int32_t runtime_hardware_gpio_read(void *user_data, const uint8_t *name, size_t name_len,
+					  bool *out)
+{
+	return sq_vm_runtime_hardware_gpio_read(user_data, name, name_len, out);
 }
 
 static int32_t runtime_timer_every(void *user_data, const uint8_t *event, size_t event_len,
@@ -138,6 +162,8 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->indicator_breathe_phase = 0;
 	runtime->indicator_breathe_next_ms = 0;
 	runtime->indicator_breathe_frame_ms = 0;
+	runtime->gpio_configured_mask = 0;
+	runtime->gpio_state_mask = 0;
 	runtime->result_code = 0;
 	runtime->status = SQ_VM_RUNTIME_IDLE;
 }
@@ -166,6 +192,9 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		.indicator_toggle = runtime_indicator_toggle,
 		.indicator_read = runtime_indicator_read,
 		.indicator_breathe = runtime_indicator_breathe,
+		.hardware_gpio_write = runtime_hardware_gpio_write,
+		.hardware_gpio_toggle = runtime_hardware_gpio_toggle,
+		.hardware_gpio_read = runtime_hardware_gpio_read,
 		.timer_every = runtime_timer_every,
 		.timer_after = runtime_timer_after,
 	};
@@ -323,6 +352,114 @@ int sq_vm_runtime_indicator_breathe(struct sq_vm_runtime *runtime)
 	runtime->indicator_breathe_next_ms = now + SQ_VM_RUNTIME_BREATHE_LEVEL_MS;
 	runtime->indicator_breathe_frame_ms = now;
 	return set_indicator_output(runtime, false);
+}
+
+static int parse_gpio_name(const uint8_t *name, size_t name_len, uint8_t *pin)
+{
+	uint32_t value = 0;
+
+	if (name == NULL || pin == NULL || name_len < 5 || name_len > 6 ||
+	    memcmp(name, "GPIO", 4) != 0) {
+		return -EINVAL;
+	}
+	for (size_t i = 4; i < name_len; i++) {
+		if (name[i] < '0' || name[i] > '9') {
+			return -EINVAL;
+		}
+		value = (value * 10U) + (uint32_t)(name[i] - '0');
+	}
+	if (value > 25U) {
+		return -EINVAL;
+	}
+	*pin = (uint8_t)value;
+	return 0;
+}
+
+static int configure_raw_gpio(struct sq_vm_runtime *runtime, uint8_t pin)
+{
+	uint32_t bit = BIT(pin);
+
+	if ((runtime->gpio_configured_mask & bit) != 0) {
+		return 0;
+	}
+#if SQ_VM_RUNTIME_HAS_GPIO0
+	if (device_is_ready(gpio0_dev)) {
+		int result = gpio_pin_configure(gpio0_dev, pin, GPIO_OUTPUT);
+		if (result != 0) {
+			return result;
+		}
+	}
+#endif
+	runtime->gpio_configured_mask |= bit;
+	return 0;
+}
+
+int sq_vm_runtime_hardware_gpio_write(struct sq_vm_runtime *runtime, const uint8_t *name,
+				      size_t name_len, bool value)
+{
+	uint8_t pin;
+	uint32_t bit;
+	int result;
+
+	if (runtime == NULL || parse_gpio_name(name, name_len, &pin) != 0) {
+		return -EINVAL;
+	}
+	result = configure_raw_gpio(runtime, pin);
+	if (result != 0) {
+		return result;
+	}
+	bit = BIT(pin);
+	if (value) {
+		runtime->gpio_state_mask |= bit;
+	} else {
+		runtime->gpio_state_mask &= ~bit;
+	}
+#if SQ_VM_RUNTIME_HAS_GPIO0
+	if (device_is_ready(gpio0_dev)) {
+		return gpio_pin_set_raw(gpio0_dev, pin, value ? 1 : 0);
+	}
+#endif
+	return 0;
+}
+
+int sq_vm_runtime_hardware_gpio_toggle(struct sq_vm_runtime *runtime, const uint8_t *name,
+				       size_t name_len)
+{
+	bool value;
+	int result = sq_vm_runtime_hardware_gpio_read(runtime, name, name_len, &value);
+
+	if (result != 0) {
+		return result;
+	}
+	return sq_vm_runtime_hardware_gpio_write(runtime, name, name_len, !value);
+}
+
+int sq_vm_runtime_hardware_gpio_read(struct sq_vm_runtime *runtime, const uint8_t *name,
+				     size_t name_len, bool *out)
+{
+	uint8_t pin;
+	uint32_t bit;
+
+	if (runtime == NULL || out == NULL || parse_gpio_name(name, name_len, &pin) != 0) {
+		return -EINVAL;
+	}
+	bit = BIT(pin);
+	if ((runtime->gpio_configured_mask & bit) != 0) {
+		*out = (runtime->gpio_state_mask & bit) != 0;
+		return 0;
+	}
+#if SQ_VM_RUNTIME_HAS_GPIO0
+	if (device_is_ready(gpio0_dev)) {
+		int value = gpio_pin_get_raw(gpio0_dev, pin);
+		if (value < 0) {
+			return value;
+		}
+		*out = value != 0;
+		return 0;
+	}
+#endif
+	*out = (runtime->gpio_state_mask & bit) != 0;
+	return 0;
 }
 
 static int sq_vm_runtime_poll_indicator_breathe(struct sq_vm_runtime *runtime)

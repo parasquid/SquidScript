@@ -9,6 +9,6 @@ hardware.gpio.write("GPIO8", true)
 debug.print("raw", hardware.gpio.read("GPIO8"))
 service.indicator.breathe()
 :output
-:expect-output output="led" false
-:expect-output output="led" true
-:expect-output output="raw" true
+:expect-output output=led false
+:expect-output output=led true
+:expect-output output=raw true

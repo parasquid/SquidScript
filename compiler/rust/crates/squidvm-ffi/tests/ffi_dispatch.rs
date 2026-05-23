@@ -18,6 +18,7 @@ struct Host {
     output: Vec<String>,
     indicator: bool,
     breathe_count: usize,
+    gpio: Vec<(String, bool)>,
     timer_every: Vec<(String, i32)>,
 }
 
@@ -71,6 +72,50 @@ unsafe extern "C" fn indicator_breathe(user_data: *mut c_void) -> i32 {
     0
 }
 
+fn gpio_slot<'a>(host: &'a mut Host, name: &str) -> &'a mut bool {
+    if let Some(index) = host.gpio.iter().position(|(stored, _)| stored == name) {
+        return &mut host.gpio[index].1;
+    }
+    host.gpio.push((name.to_string(), false));
+    &mut host.gpio.last_mut().unwrap().1
+}
+
+unsafe extern "C" fn hardware_gpio_write(
+    user_data: *mut c_void,
+    name: *const u8,
+    name_len: usize,
+    value: bool,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let name = std::str::from_utf8(std::slice::from_raw_parts(name, name_len)).unwrap();
+    *gpio_slot(host, name) = value;
+    0
+}
+
+unsafe extern "C" fn hardware_gpio_toggle(
+    user_data: *mut c_void,
+    name: *const u8,
+    name_len: usize,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let name = std::str::from_utf8(std::slice::from_raw_parts(name, name_len)).unwrap();
+    let value = gpio_slot(host, name);
+    *value = !*value;
+    0
+}
+
+unsafe extern "C" fn hardware_gpio_read(
+    user_data: *mut c_void,
+    name: *const u8,
+    name_len: usize,
+    out: *mut bool,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let name = std::str::from_utf8(std::slice::from_raw_parts(name, name_len)).unwrap();
+    *out = *gpio_slot(host, name);
+    0
+}
+
 unsafe extern "C" fn timer_every(
     user_data: *mut c_void,
     event: *const u8,
@@ -93,6 +138,9 @@ fn callbacks(host: &mut Host) -> SqvmCallbacks {
         indicator_toggle: Some(indicator_toggle),
         indicator_read: Some(indicator_read),
         indicator_breathe: Some(indicator_breathe),
+        hardware_gpio_write: Some(hardware_gpio_write),
+        hardware_gpio_toggle: Some(hardware_gpio_toggle),
+        hardware_gpio_read: Some(hardware_gpio_read),
         timer_every: Some(timer_every),
         timer_after: None,
     }
@@ -138,6 +186,20 @@ fn compile_indicator_breathe_sqbc() -> Vec<u8> {
 event.on("app.start") {
   service.indicator.breathe()
   debug.print("breathe ready")
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_hardware_gpio_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-gpio"
+event.on("app.start") {
+  hardware.gpio.write("GPIO8", true)
+  debug.print("gpio", hardware.gpio.read("GPIO8"))
+  hardware.gpio.toggle("GPIO8")
+  debug.print("gpio", hardware.gpio.read("GPIO8"))
 }
 screen("main") {}
 "#,
@@ -251,6 +313,38 @@ fn dispatches_indicator_breathe_service_callback() {
     assert_eq!(status, SqvmStatus::Ok);
     assert_eq!(host.breathe_count, 1);
     assert_eq!(host.output, vec!["breathe ready"]);
+}
+
+#[test]
+fn dispatches_hardware_gpio_service_callbacks() {
+    let mut host = Host {
+        sqbc: compile_hardware_gpio_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(host.gpio, vec![("GPIO8".to_string(), false)]);
+    assert_eq!(host.output, vec!["gpio true", "gpio false"]);
 }
 
 #[test]

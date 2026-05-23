@@ -94,6 +94,20 @@ typedef int32_t (*SqvmIndicatorWriteCallback)(void *user_data, bool value);
 typedef int32_t (*SqvmIndicatorToggleCallback)(void *user_data);
 typedef int32_t (*SqvmIndicatorReadCallback)(void *user_data, bool *out);
 typedef int32_t (*SqvmIndicatorBreatheCallback)(void *user_data);
+typedef int32_t (*SqvmHardwareGpioWriteCallback)(
+	void *user_data,
+	const uint8_t *name,
+	size_t name_len,
+	bool value);
+typedef int32_t (*SqvmHardwareGpioToggleCallback)(
+	void *user_data,
+	const uint8_t *name,
+	size_t name_len);
+typedef int32_t (*SqvmHardwareGpioReadCallback)(
+	void *user_data,
+	const uint8_t *name,
+	size_t name_len,
+	bool *out);
 typedef int32_t (*SqvmTimerEveryCallback)(
 	void *user_data,
 	const uint8_t *event,
@@ -114,6 +128,9 @@ typedef struct {
 	SqvmIndicatorToggleCallback indicator_toggle;
 	SqvmIndicatorReadCallback indicator_read;
 	SqvmIndicatorBreatheCallback indicator_breathe;
+	SqvmHardwareGpioWriteCallback hardware_gpio_write;
+	SqvmHardwareGpioToggleCallback hardware_gpio_toggle;
+	SqvmHardwareGpioReadCallback hardware_gpio_read;
 	SqvmTimerEveryCallback timer_every;
 	SqvmTimerAfterCallback timer_after;
 } SqvmCallbacks;
