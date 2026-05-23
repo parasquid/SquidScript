@@ -54,7 +54,9 @@ exposed with the `sqdp_` C ABI. Rust owns TLV field extraction, byte-count
 limits, chunk offset checks, incremental CRC32 progress, and commit readiness
 for large writes. Zephyr C still owns UART, LittleFS, VM runtime, GPIO/Wi-Fi
 drivers, work queues, timers, and ztest glue, and only advances a Rust-validated
-session after the corresponding Zephyr storage operation succeeds.
+session after the corresponding Zephyr storage operation succeeds. Production
+Zephyr C keeps only frame decode and payload CRC validation in its local
+protocol module; C TLV builders/readers are test-local harness helpers.
 
 Large writes use begin/chunk/commit opcode groups for installed apps, temp
 apps, and resources. Chunk payloads must carry explicit byte lengths and

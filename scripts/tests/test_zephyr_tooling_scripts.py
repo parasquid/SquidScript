@@ -377,6 +377,20 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("sq_protocol_next_field", body)
         self.assertNotIn("struct sq_protocol_field", body)
 
+    def test_production_protocol_exposes_only_decode_and_crc_helpers(self):
+        protocol_c = self.read("firmware/zephyr/src/protocol.c")
+        protocol_h = self.read("firmware/zephyr/src/protocol.h")
+        production = protocol_c + "\n" + protocol_h
+
+        self.assertIn("sq_protocol_crc32", production)
+        self.assertIn("sq_protocol_decode_frame", production)
+        self.assertNotIn("sq_protocol_next_field", production)
+        self.assertNotIn("sq_protocol_read_u64_le", production)
+        self.assertNotIn("sq_protocol_append_bytes_field", production)
+        self.assertNotIn("sq_protocol_append_string_field", production)
+        self.assertNotIn("sq_protocol_append_u64_field", production)
+        self.assertNotIn("sq_protocol_encode_frame_header", production)
+
     def test_hardware_suite_runs_zephyr_app_lifecycle_before_visible_checks(self):
         lifecycle = self.read("scripts/c3-supermini-test-app-lifecycle.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")

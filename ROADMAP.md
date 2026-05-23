@@ -38,8 +38,10 @@ for compiler, SQBC tooling, and VM semantics.
   duplicated TLV rules without duplicating Zephyr storage/runtime ownership.
   App launch, generic event dispatch, Wi-Fi profile, and state import request
   parsing now live in Rust `sqdp_` helpers, and state export response encoding
-  now uses the same Rust-owned framing path. Keep moving similar bounded
-  protocol parsing/encoding there.
+  now uses the same Rust-owned framing path. Production Zephyr C now keeps only
+  frame decode and payload CRC validation locally; C TLV builders/readers are
+  test-local harness helpers. Keep moving similar bounded protocol
+  parsing/encoding there.
 - Keep `squidc`, Python helpers, Zephyr tests, and FFI tests on shared codec
   fixtures so there is one current wire implementation.
 
