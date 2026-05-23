@@ -59,9 +59,30 @@ for compiler, SQBC tooling, and VM semantics.
   the full app, and so unsupported foreground operations in trigger
   registration are rejected. Update lifecycle diagnostics to expose both the
   process return stack and armed trigger stack with enough detail for tests.
+- Add SQBC lazy bytecode loading for installed apps to reduce firmware RAM.
+  Keep a small always-resident SQBC header/index with section, function,
+  trigger, constant, and entrypoint metadata; load function bodies or bounded
+  bytecode chunks from LittleFS only when the VM enters code that is not
+  resident. Model this as a resumable VM storage request through the existing
+  Zephyr host boundary with caller-owned fixed buffers, so app arm/trigger
+  registration can inspect only the trigger section and later activation can
+  load the target function/chunk without keeping a background VM resident.
+  Preserve current SQBC semantics; do not add compatibility versioning for
+  old bytecode.
 - Add a generic PWM-capable LED-like device output model beyond
   `service.indicator`, so future target-described GPIO/PWM endpoints can expose
   smooth brightness control without board-specific app code.
+- Extend top-level `device {}` bindings so apps can rebind logical devices
+  such as `indicator` at app/package level. Keep the current `.sqdevice`
+  package resource form for rich persisted bindings, and add a simple inline
+  GPIO form such as `indicator { use "gpio:GPIO10" }` for one-pin external LED
+  cases such as Seeed XIAO ESP32C3. Omitted binding names should continue to
+  mean `"default"`; support multiple `use` entries for one logical indicator
+  when the app intentionally wants `service.indicator.write(...)` to drive more
+  than one physical output. Validate inline GPIO bindings against target
+  metadata, preserve `service.indicator.*` as the runtime API, and have
+  compiler/SQBC/Zephyr normalize inline and `.sqdevice` bindings into the same
+  device-binding model.
 - Keep service behavior non-blocking: use Zephyr timers, work queues, message
   queues, flash-map, NVS, LittleFS, networking, and Wi-Fi management events
   instead of firmware busy waits.
