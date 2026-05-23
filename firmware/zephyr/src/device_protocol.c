@@ -1119,8 +1119,12 @@ int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 		size_t line_count = 0;
 		char error_line[48];
 		if (context->runtime != NULL && context->runtime->status == SQ_VM_RUNTIME_ERROR) {
-			int written = snprintf(error_line, sizeof(error_line), "runtime=%d",
-					       context->runtime->result_code);
+			const char *status_name =
+				context->runtime->result.status == SQVM_STATUS_OK ?
+					"host_error" :
+					sq_vm_runtime_status_name(context->runtime->result.status);
+			int written = snprintf(error_line, sizeof(error_line), "runtime=%s code=%d",
+					       status_name, context->runtime->result_code);
 			if (written > 0 && (size_t)written < sizeof(error_line)) {
 				lines[line_count++] = error_line;
 			}

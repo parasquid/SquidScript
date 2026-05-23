@@ -812,6 +812,46 @@ ZTEST(squidscript_protocol, test_handles_trace_resources_and_wifi_error_frames)
 	zassert_equal(frame.status, SQ_STATUS_ERROR);
 }
 
+ZTEST(squidscript_protocol, test_errors_get_reports_vm_status_label_and_errno)
+{
+	struct sq_device_identity identity = {
+		.target = "esp32c3-supermini",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_vm_runtime runtime = {
+		.status = SQ_VM_RUNTIME_ERROR,
+		.result_code = -EINVAL,
+		.result = {
+			.status = SQVM_STATUS_INVALID_ARGUMENT,
+		},
+	};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.runtime = &runtime,
+	};
+	uint8_t request[SQ_PROTOCOL_HEADER_LEN];
+	uint8_t response[128];
+	size_t response_len = 0;
+	struct sq_protocol_frame frame;
+	struct sq_protocol_field field;
+	size_t offset = 0;
+
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_ERRORS_GET,
+						      SQ_STATUS_OK, 65, NULL, 0, request,
+						      sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_device_protocol_handle_frame(request, sizeof(request), &context,
+						      response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
+	zassert_equal(frame.opcode, SQ_OPCODE_ERRORS_GET);
+	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
+		      SQ_PROTOCOL_OK);
+	zassert_true(field_string_equals(&field, "runtime=invalid_argument code=-22"));
+}
+
 ZTEST(squidscript_protocol, test_wifi_profile_set_stores_volatile_profile_without_echoing_secret)
 {
 	uint8_t payload[96];
@@ -1863,6 +1903,11 @@ ZTEST(squidscript_protocol, test_exposes_resumable_squidvm_ffi_abi)
 		      SQVM_STATUS_INVALID_ARGUMENT);
 	zassert_equal(sqvm_dispatch_resume_storage(NULL, callbacks, &completion, &result),
 		      SQVM_STATUS_INVALID_ARGUMENT);
+	zassert_str_equal(sq_vm_runtime_status_name(SQVM_STATUS_INVALID_ARGUMENT),
+			  "invalid_argument");
+	zassert_equal(sq_vm_runtime_status_to_errno(SQVM_STATUS_INVALID_ARGUMENT), -EINVAL);
+	zassert_str_equal(sq_vm_runtime_status_name(SQVM_STATUS_VM_ERROR), "vm_error");
+	zassert_equal(sq_vm_runtime_status_to_errno(SQVM_STATUS_VM_ERROR), -EIO);
 }
 
 ZTEST(squidscript_protocol, test_transfer_sessions_use_internal_staging_path_capacity)

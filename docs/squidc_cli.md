@@ -103,6 +103,11 @@ With `--json`, the raw lines are preserved and the same information is also
 parsed into `data.active`, `data.processStack`, and `data.armedStack`. Armed
 stack entries are objects with `appId` and `event` fields.
 
+`device errors` is empty when no firmware runtime error is active. If a VM
+dispatch fails, Zephyr reports a line such as
+`runtime=vm_error code=-5` or `runtime=invalid_argument code=-22`, preserving
+both the FFI status class and the mapped errno.
+
 `device resources` reads Zephyr firmware resource diagnostics and reports
 raw target-specific RAM and app-storage byte counts. `ram_total_bytes` is
 static board context; `vm_worker_stack_*` fields expose the configured VM work

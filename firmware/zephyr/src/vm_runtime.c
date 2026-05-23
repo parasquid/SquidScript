@@ -1168,6 +1168,34 @@ void sq_vm_runtime_set_store_mount_point(struct sq_vm_runtime *runtime, const ch
 	}
 }
 
+const char *sq_vm_runtime_status_name(SqvmStatus status)
+{
+	switch (status) {
+	case SQVM_STATUS_OK:
+		return "ok";
+	case SQVM_STATUS_INVALID_ARGUMENT:
+		return "invalid_argument";
+	case SQVM_STATUS_VM_ERROR:
+		return "vm_error";
+	default:
+		return "unknown";
+	}
+}
+
+int sq_vm_runtime_status_to_errno(SqvmStatus status)
+{
+	switch (status) {
+	case SQVM_STATUS_OK:
+		return 0;
+	case SQVM_STATUS_INVALID_ARGUMENT:
+		return -EINVAL;
+	case SQVM_STATUS_VM_ERROR:
+		return -EIO;
+	default:
+		return -EIO;
+	}
+}
+
 int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 			   const struct sq_vm_storage_backend *backend, const char *event)
 {
@@ -1218,13 +1246,13 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 	if (!runtime->context_ready) {
 		status = sqvm_context_prepare(runtime->context_words, sizeof(runtime->context_words));
 		if (status != SQVM_STATUS_OK) {
-			return -EIO;
+			return sq_vm_runtime_status_to_errno(status);
 		}
 		status = sqvm_context_init_in_place(runtime->context_words, callbacks,
 						    runtime->transfer.init_scratch,
 						    sizeof(runtime->transfer.init_scratch));
 		if (status != SQVM_STATUS_OK) {
-			return -EIO;
+			return sq_vm_runtime_status_to_errno(status);
 		}
 		runtime->context_ready = true;
 	}
@@ -1232,7 +1260,7 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 					       (const uint8_t *)event, strlen(event),
 					       &runtime->result);
 	if (status != SQVM_STATUS_OK) {
-		return -EIO;
+		return sq_vm_runtime_status_to_errno(status);
 	}
 
 	while (runtime->result.outcome == SQVM_DISPATCH_PENDING_STORAGE) {
@@ -1245,7 +1273,7 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 						      &runtime->transfer.completion,
 						      &runtime->result);
 		if (status != SQVM_STATUS_OK) {
-			return -EIO;
+			return sq_vm_runtime_status_to_errno(status);
 		}
 	}
 

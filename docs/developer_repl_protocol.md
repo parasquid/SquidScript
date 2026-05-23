@@ -109,6 +109,9 @@ is the SQBC length as an unsigned 64-bit integer.
 repeated string fields with tag `1`, one field per line. `state-get` returns
 state bytes as field tag `1`; Rust owns the response encoder while Zephyr owns
 the storage load and supplies the caller-owned state byte buffer.
+Runtime error lines include the mapped VM FFI status label and errno, for
+example `runtime=vm_error code=-5` or
+`runtime=invalid_argument code=-22`.
 `state-import` request TLV parsing is owned by the Rust `sqdp_` FFI helper and
 returns a borrowed state byte slice to Zephyr C for storage. `resources-get`
 returns repeated record fields: response field tag `1` is one resource record,
