@@ -113,15 +113,7 @@ for compiler, SQBC tooling, and VM semantics.
   Kconfig, devicetree, pins, partitions, and driver details in firmware/target
   docs and metadata.
 
-### 5. Replace Hardware Tests
-
-- Convert ESP32-C3 hardware tests to Zephyr-only scripts and run them
-  sequentially on the single serial device.
-- Include Wi-Fi scan tests without credentials and station tests only when
-  credentials are explicitly provided.
-- Keep the final visible board-state check last in the hardware suite.
-
-### 6. Remove Obsolete Rust Firmware
+### 5. Remove Obsolete Rust Firmware
 
 - Delete `firmware/squid-firmware` after the Zephyr command surface, storage,
   lifecycle, and hardware tests cover the current required behavior.
