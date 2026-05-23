@@ -153,7 +153,10 @@ representative real-device high-water data. It also reports live Zephyr heap
 telemetry as `ram_heap_count`, `ram_heap_free_bytes`,
 `ram_heap_allocated_bytes`, and `ram_heap_max_allocated_bytes`, so system-heap
 budget reductions can be based on allocator high-water data instead of static
-map size alone.
+map size alone. The current ESP32-C3 reference configuration keeps Zephyr's
+system heap at 49152 bytes because representative Wi-Fi status, scan, list, and
+AP workloads measured `ram_heap_max_allocated_bytes=36764`; remeasure before
+adding TCP, AP client throughput, BLE coexistence, or larger Wi-Fi workloads.
 
 Wi-Fi diagnostics should distinguish internal firmware/driver state from
 external RF proof. A successful Zephyr Wi-Fi status record does not by itself

@@ -68,7 +68,10 @@ uses bounded native-network packet and buffer pools sized for current
 low-throughput control-plane Wi-Fi behavior and measured socket-service,
 network-management event, ESP timer task, and network RX stack budgets; TCP,
 HTTP, AP client throughput, or other bulk traffic must be remeasured before
-increasing service scope.
+increasing service scope. The Zephyr system heap is also measured from live
+`device resources` heap high-water data after representative Wi-Fi status,
+scan, list, and AP workloads; remeasure it before adding larger radio or
+networking workloads.
 
 The Zephyr app lifecycle check is
 `scripts/c3-supermini-test-app-lifecycle.sh`. It installs the real SquidScript

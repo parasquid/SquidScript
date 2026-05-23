@@ -121,6 +121,13 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("temp_session_bytes", body)
         self.assertNotIn("resource_session_bytes", body)
 
+    def test_default_config_uses_measured_system_heap_budget(self):
+        prj_conf = self.read("firmware/zephyr/prj.conf")
+
+        self.assertIn("CONFIG_HEAP_MEM_POOL_SIZE=49152", prj_conf)
+        self.assertIn("CONFIG_HEAP_MEM_POOL_IGNORE_MIN=y", prj_conf)
+        self.assertNotIn("CONFIG_HEAP_MEM_POOL_ADD_SIZE_ESP_WIFI=", prj_conf)
+
     def test_hardware_suite_requires_real_zephyr_wifi_backend(self):
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
 
