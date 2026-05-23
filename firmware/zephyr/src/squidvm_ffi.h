@@ -80,6 +80,7 @@ typedef struct {
 typedef struct {
 	SqvmStatus status;
 	SqvmDispatchOutcome outcome;
+	bool exited;
 	SqvmStorageRequest storage;
 } SqvmDispatchResult;
 

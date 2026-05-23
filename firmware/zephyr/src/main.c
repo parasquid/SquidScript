@@ -24,7 +24,7 @@ int main(void)
 	static struct sq_device_resource_session resource_session;
 	static struct sq_vm_runtime runtime;
 	static struct sq_app_store_vm_storage launch_storage;
-	static uint8_t response[1024];
+	static uint8_t response[768];
 	struct sq_device_protocol_context protocol_context = {
 		.identity = &identity,
 		.registry = &registry,
@@ -80,7 +80,7 @@ int main(void)
 			}
 		}
 
-		(void)sq_vm_runtime_poll(&runtime);
+		(void)sq_device_protocol_poll(&protocol_context);
 
 		if (!consumed) {
 			k_sleep(K_MSEC(1));

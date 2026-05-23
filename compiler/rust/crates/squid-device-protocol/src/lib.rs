@@ -57,6 +57,7 @@ pub enum Opcode {
     TraceGet = 67,
     ErrorsGet = 68,
     ResourcesGet = 69,
+    LifecycleGet = 70,
     StateImport = 72,
     WifiProfileSet = 76,
     Reset = 80,
@@ -87,6 +88,7 @@ impl Opcode {
             "traceget" => Ok(Self::TraceGet),
             "errorsget" => Ok(Self::ErrorsGet),
             "resourcesget" => Ok(Self::ResourcesGet),
+            "lifecycleget" => Ok(Self::LifecycleGet),
             "stateimport" => Ok(Self::StateImport),
             "wifiprofileset" => Ok(Self::WifiProfileSet),
             "reset" => Ok(Self::Reset),
@@ -121,6 +123,7 @@ impl TryFrom<u8> for Opcode {
             67 => Ok(Self::TraceGet),
             68 => Ok(Self::ErrorsGet),
             69 => Ok(Self::ResourcesGet),
+            70 => Ok(Self::LifecycleGet),
             72 => Ok(Self::StateImport),
             76 => Ok(Self::WifiProfileSet),
             80 => Ok(Self::Reset),
@@ -882,6 +885,11 @@ pub fn resources_get_request(sequence: u32) -> Frame {
 }
 
 #[cfg(feature = "alloc")]
+pub fn lifecycle_get_request(sequence: u32) -> Frame {
+    Frame::request(Opcode::LifecycleGet, sequence, Vec::new())
+}
+
+#[cfg(feature = "alloc")]
 pub fn reset_request(sequence: u32) -> Frame {
     Frame::request(Opcode::Reset, sequence, Vec::new())
 }
@@ -1107,6 +1115,11 @@ pub fn output_lines(frame: &Frame) -> Option<Vec<String>> {
 #[cfg(feature = "alloc")]
 pub fn trace_lines(frame: &Frame) -> Option<Vec<String>> {
     repeated_string_fields(frame, Opcode::TraceGet, 1)
+}
+
+#[cfg(feature = "alloc")]
+pub fn lifecycle_lines(frame: &Frame) -> Option<Vec<String>> {
+    repeated_string_fields(frame, Opcode::LifecycleGet, 1)
 }
 
 #[cfg(feature = "alloc")]

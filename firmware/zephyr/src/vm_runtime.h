@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <zephyr/kernel.h>
 
+#include "app_store.h"
 #include "vm_storage.h"
 
 #ifdef __cplusplus
@@ -23,6 +24,7 @@ extern "C" {
 #define SQ_VM_RUNTIME_SCRATCH_BYTES 4096
 #define SQ_VM_RUNTIME_EVENT_LEN 32
 #define SQ_VM_RUNTIME_INDICATOR_BREATHE_STEPS 65
+#define SQ_VM_RUNTIME_RETURN_STACK_MAX 2
 
 enum sq_vm_runtime_status {
 	SQ_VM_RUNTIME_IDLE = 0,
@@ -51,6 +53,14 @@ struct sq_vm_runtime {
 	char event[SQ_VM_RUNTIME_EVENT_LEN];
 	enum sq_vm_runtime_status status;
 	int result_code;
+	bool dispatch_exited;
+	char current_app[SQ_APP_STORE_APP_ID_MAX];
+	char pending_launch_app[SQ_APP_STORE_APP_ID_MAX];
+	bool pending_launch_active;
+	char lifecycle_target_app[SQ_APP_STORE_APP_ID_MAX];
+	bool lifecycle_launch_after_exit;
+	char return_stack[SQ_VM_RUNTIME_RETURN_STACK_MAX][SQ_APP_STORE_APP_ID_MAX];
+	size_t return_stack_count;
 	char traces[SQ_VM_RUNTIME_TRACE_MAX][SQ_VM_RUNTIME_TRACE_LEN];
 	size_t trace_count;
 	char outputs[SQ_VM_RUNTIME_OUTPUT_MAX][SQ_VM_RUNTIME_OUTPUT_LEN];

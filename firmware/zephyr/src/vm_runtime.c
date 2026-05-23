@@ -201,7 +201,20 @@ static int32_t runtime_app_lifecycle(void *user_data, const char *action, const 
 
 static int32_t runtime_app_launch(void *user_data, const uint8_t *app, size_t app_len)
 {
-	return runtime_app_lifecycle(user_data, "launch", app, app_len);
+	struct sq_vm_runtime *runtime = user_data;
+	int result = runtime_app_lifecycle(user_data, "launch", app, app_len);
+
+	if (result != 0) {
+		return result;
+	}
+	if (runtime == NULL || app == NULL || app_len == 0 ||
+	    app_len >= sizeof(runtime->pending_launch_app)) {
+		return -EINVAL;
+	}
+	memcpy(runtime->pending_launch_app, app, app_len);
+	runtime->pending_launch_app[app_len] = '\0';
+	runtime->pending_launch_active = true;
+	return 0;
 }
 
 static int32_t runtime_app_arm(void *user_data, const uint8_t *app, size_t app_len)
@@ -273,6 +286,7 @@ static void runtime_work_handler(struct k_work *work)
 	int result = sq_vm_runtime_dispatch(runtime, &runtime->job_backend, runtime->event);
 
 	runtime->result_code = result;
+	runtime->dispatch_exited = result == 0 && runtime->result.exited;
 	runtime->status = result == 0 ? SQ_VM_RUNTIME_COMPLETE : SQ_VM_RUNTIME_ERROR;
 }
 
@@ -301,6 +315,13 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	memset(runtime->event, 0, sizeof(runtime->event));
 	memset(runtime->traces, 0, sizeof(runtime->traces));
 	runtime->trace_count = 0;
+	memset(runtime->current_app, 0, sizeof(runtime->current_app));
+	memset(runtime->pending_launch_app, 0, sizeof(runtime->pending_launch_app));
+	runtime->pending_launch_active = false;
+	memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
+	runtime->lifecycle_launch_after_exit = false;
+	memset(runtime->return_stack, 0, sizeof(runtime->return_stack));
+	runtime->return_stack_count = 0;
 	memset(runtime->outputs, 0, sizeof(runtime->outputs));
 	runtime->output_count = 0;
 	memset(runtime->drawlog, 0, sizeof(runtime->drawlog));
@@ -312,6 +333,7 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->indicator_breathe_next_ms = 0;
 	runtime->gpio_configured_mask = 0;
 	runtime->gpio_state_mask = 0;
+	runtime->dispatch_exited = false;
 	runtime->result_code = 0;
 	runtime->status = SQ_VM_RUNTIME_IDLE;
 }
@@ -385,6 +407,8 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		}
 	}
 
+	runtime->dispatch_exited = runtime->result.outcome == SQVM_DISPATCH_COMPLETE &&
+				   runtime->result.exited;
 	return runtime->result.outcome == SQVM_DISPATCH_COMPLETE ? 0 : -EIO;
 }
 
@@ -408,6 +432,7 @@ int sq_vm_runtime_start(struct sq_vm_runtime *runtime,
 	runtime->job_backend = *backend;
 	memcpy(runtime->event, event, event_len + 1);
 	runtime->result_code = 0;
+	runtime->dispatch_exited = false;
 	runtime->status = SQ_VM_RUNTIME_RUNNING;
 	k_work_submit_to_queue(&sq_vm_runtime_work_q, &runtime->work);
 	return 0;

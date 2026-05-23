@@ -353,6 +353,18 @@ screen("main") {}
     )
 }
 
+fn compile_exit_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-exit"
+event.on("app.start") {
+  debug.print("before exit")
+  app.exit()
+}
+screen("main") {}
+"#,
+    )
+}
+
 fn compile_display_sqbc() -> Vec<u8> {
     compile_sqbc(
         r#"app "ffi-display"
@@ -381,6 +393,67 @@ event.on("app.start") {
 screen("main") {}
 "#,
     )
+}
+
+#[test]
+fn resumable_dispatch_reports_app_exit() {
+    let mut host = Host {
+        sqbc: compile_exit_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let mut result = SqvmDispatchResult::default();
+    let status = unsafe {
+        sqvm_dispatch_start_resumable(
+            &mut context,
+            callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+            &mut result,
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    while result.outcome == SqvmDispatchOutcome::PendingStorage {
+        let mut completion = SqvmStorageCompletion::default();
+        match result.storage.kind {
+            SqvmStorageRequestKind::SqbcRead => {
+                completion.has_len = true;
+                completion.len = result.storage.len;
+                let start = result.storage.offset;
+                let end = start + result.storage.len;
+                completion.bytes[..result.storage.len].copy_from_slice(&host.sqbc[start..end]);
+            }
+            SqvmStorageRequestKind::StateLoad => {}
+            SqvmStorageRequestKind::StateSave | SqvmStorageRequestKind::StateReset => {}
+            SqvmStorageRequestKind::None => panic!("pending storage without request"),
+        }
+        let status = unsafe {
+            sqvm_dispatch_resume_storage(
+                &mut context,
+                callbacks(&mut host),
+                &completion,
+                &mut result,
+            )
+        };
+        assert_eq!(status, SqvmStatus::Ok);
+    }
+
+    assert_eq!(result.outcome, SqvmDispatchOutcome::Complete);
+    assert!(result.exited);
+    assert_eq!(host.output, vec!["before exit"]);
+    assert_eq!(host.traces, vec!["app.start", "app.exit"]);
 }
 
 #[test]

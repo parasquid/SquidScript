@@ -2,7 +2,8 @@ use squid_device_protocol::{
     app_install_begin_request, app_install_chunk_request, app_install_commit_request,
     app_launch_request, app_list_entries, app_list_request, decode_frame, decode_frame_from_stream,
     encode_frame, event_dispatch_request, hello_identity, hello_request, key_request,
-    output_get_request, output_lines, protocol_error, resource_install_begin_request,
+    lifecycle_get_request, lifecycle_lines, output_get_request, output_lines, protocol_error,
+    resource_install_begin_request,
     resource_install_chunk_request, resource_install_commit_request, resource_values,
     resources_get_request, state_import_request, temp_run_begin_request, temp_run_chunk_request,
     temp_run_commit_request, trace_get_request, trace_lines, wifi_profile_set_request, AppEntry,
@@ -169,6 +170,25 @@ fn builds_output_get_request_and_extracts_line_fields() {
 #[test]
 fn builds_diagnostic_requests_and_extracts_records() {
     assert_eq!(trace_get_request(4).opcode, Opcode::TraceGet);
+    assert_eq!(lifecycle_get_request(9).opcode, Opcode::LifecycleGet);
+    let lifecycle = Frame::response(
+        Opcode::LifecycleGet,
+        Status::Ok,
+        9,
+        vec![
+            Field::string(1, "active=reader"),
+            Field::string(1, "process_stack[0]=lifecycle"),
+            Field::string(1, "armed_stack="),
+        ],
+    );
+    assert_eq!(
+        lifecycle_lines(&decode_frame(&encode_frame(&lifecycle)).unwrap()).unwrap(),
+        vec![
+            "active=reader".to_string(),
+            "process_stack[0]=lifecycle".to_string(),
+            "armed_stack=".to_string()
+        ]
+    );
     let trace = Frame::response(
         Opcode::TraceGet,
         Status::Ok,

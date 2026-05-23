@@ -96,7 +96,7 @@ or VM operation and then calls the completion function so Rust updates progress.
 app record, record field tag `1` is the app ID string, and record field tag `2`
 is the SQBC length as an unsigned 64-bit integer.
 
-`output-get`, `trace-get`, `drawlog-get`, and `errors-get` responses use
+`output-get`, `trace-get`, `drawlog-get`, `lifecycle-get`, and `errors-get` responses use
 repeated string fields with tag `1`, one field per line. `state-get` returns
 state bytes as field tag `1`. `resources-get` returns repeated record fields:
 response field tag `1` is one resource record, record field tag `1` is the
@@ -110,9 +110,10 @@ connected through the Zephyr FFI host and currently return bounded
 `unsupported` records without credentials or RF identifiers until the Zephyr
 Wi-Fi management backend is implemented.
 SquidScript VM calls to `app.launch`, `app.arm`, and `app.disarm` are also
-connected through the Zephyr FFI host and currently emit bounded trace records.
-Actual foreground handoff and armed-app registry behavior are separate Zephyr
-runtime-service work.
+connected through the Zephyr FFI host. `app.launch` and `app.exit` drive the
+Zephyr foreground return stack for installed apps. `app.arm` and `app.disarm`
+currently emit bounded trace records; armed-app trigger registration and
+dispatch remain separate runtime-service work.
 
 ## Diagnostics
 

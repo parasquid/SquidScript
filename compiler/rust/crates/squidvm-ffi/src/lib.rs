@@ -236,6 +236,7 @@ impl Default for SqvmStorageCompletion {
 pub struct SqvmDispatchResult {
     pub status: SqvmStatus,
     pub outcome: SqvmDispatchOutcome,
+    pub exited: bool,
     pub storage: SqvmStorageRequest,
 }
 
@@ -244,6 +245,7 @@ impl Default for SqvmDispatchResult {
         Self {
             status: SqvmStatus::Ok,
             outcome: SqvmDispatchOutcome::Complete,
+            exited: false,
             storage: SqvmStorageRequest::default(),
         }
     }
@@ -632,7 +634,8 @@ pub unsafe extern "C" fn sqvm_dispatch_start_resumable(
     };
     let vm = &mut *context.vm_ptr();
     let mut host = FfiHost::new(callbacks, true);
-    write_dispatch_result(out_result, vm.dispatch_resumable(&mut host, event))
+    let result = vm.dispatch_resumable(&mut host, event);
+    write_dispatch_result(out_result, vm.exited(), result)
 }
 
 #[no_mangle]
@@ -654,7 +657,8 @@ pub unsafe extern "C" fn sqvm_dispatch_resume_storage(
     };
     let vm = &mut *context.vm_ptr();
     let mut host = FfiHost::new(callbacks, true);
-    write_dispatch_result(out_result, vm.resume_storage(&mut host, completion))
+    let result = vm.resume_storage(&mut host, completion);
+    write_dispatch_result(out_result, vm.exited(), result)
 }
 
 #[no_mangle]
@@ -1647,18 +1651,23 @@ fn core_storage_completion(
 
 unsafe fn write_dispatch_result(
     out_result: *mut SqvmDispatchResult,
+    exited: bool,
     result: Result<VmDispatch, VmError>,
 ) -> SqvmStatus {
     let out = &mut *out_result;
     match result {
         Ok(VmDispatch::Complete) => {
-            *out = SqvmDispatchResult::default();
+            *out = SqvmDispatchResult {
+                exited,
+                ..SqvmDispatchResult::default()
+            };
             SqvmStatus::Ok
         }
         Ok(VmDispatch::PendingStorage(request)) => {
             *out = SqvmDispatchResult {
                 status: SqvmStatus::Ok,
                 outcome: SqvmDispatchOutcome::PendingStorage,
+                exited,
                 storage: storage_request_from_core(request),
             };
             SqvmStatus::Ok
@@ -1667,6 +1676,7 @@ unsafe fn write_dispatch_result(
             *out = SqvmDispatchResult {
                 status: SqvmStatus::VmError,
                 outcome: SqvmDispatchOutcome::Complete,
+                exited,
                 storage: SqvmStorageRequest::default(),
             };
             SqvmStatus::VmError

@@ -76,10 +76,10 @@ adapter, and verify trace callback ordering. Zephyr also has a file-backed
 storage backend that uses `fs_*` APIs for SQBC byte-range reads and app-state
 load/save/reset paths; native ztests cover it through a host-mounted filesystem.
 Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi status/scan
-VM service calls now cross the Rust FFI boundary into Zephyr callbacks. The
-current Zephyr app lifecycle callbacks record bounded trace diagnostics for
-`app.launch`, `app.arm`, and `app.disarm`; foreground app handoff and armed-app
-registry orchestration remain runtime-service tasks. The current Zephyr Wi-Fi
+VM service calls now cross the Rust FFI boundary into Zephyr callbacks. Zephyr
+now performs installed-app foreground handoff for `app.launch` and `app.exit`
+with a bounded return stack and `device lifecycle` diagnostics. Armed-app
+registry orchestration remains a runtime-service task. The current Zephyr Wi-Fi
 status/scan callbacks are truthful fallback records that report `unsupported`
 without credentials or RF scan data; real Zephyr Wi-Fi management scan/AP/station
 work remains a runtime-service task.

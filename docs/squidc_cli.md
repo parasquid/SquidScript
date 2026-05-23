@@ -78,6 +78,7 @@ cargo run -p squidc -- device output
 cargo run -p squidc -- device state
 cargo run -p squidc -- device drawlog
 cargo run -p squidc -- device trace
+cargo run -p squidc -- device lifecycle
 cargo run -p squidc -- device errors
 cargo run -p squidc -- device resources
 cargo run -p squidc -- device reset
@@ -92,6 +93,10 @@ press a physical button; the firmware routes the event to the current app.
 use the current firmware diagnostic text shape, such as
 `draw=clear color=gray0`, `draw=text text="Hello" x=10 y=20`,
 `draw=rect x=1 y=2 w=3 h=4`, and `draw=line x1=5 y1=6 x2=7 y2=8`.
+
+`device lifecycle` returns current Zephyr app lifecycle diagnostics as lines
+such as `active=reader`, `process_stack[0]=launcher`, and `armed_stack=`.
+The armed stack line is empty until armed-app trigger registration is wired.
 
 `device resources` reads Zephyr firmware resource diagnostics and reports
 raw target-specific RAM and app-storage byte counts. `ram_total_bytes` is

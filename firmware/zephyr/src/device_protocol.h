@@ -87,4 +87,6 @@ int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 				    const struct sq_device_protocol_context *context, uint8_t *response,
 				    size_t response_cap, size_t *response_len);
 
+int sq_device_protocol_poll(const struct sq_device_protocol_context *context);
+
 #endif

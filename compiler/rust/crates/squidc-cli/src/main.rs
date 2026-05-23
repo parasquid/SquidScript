@@ -130,6 +130,7 @@ enum DeviceCommands {
     State(DeviceOnlyArgs),
     Drawlog(DeviceOnlyArgs),
     Trace(DeviceOnlyArgs),
+    Lifecycle(DeviceOnlyArgs),
     Errors(DeviceOnlyArgs),
     Resources(DeviceOnlyArgs),
     StorageFormat(DeviceOnlyArgs),
@@ -305,6 +306,7 @@ fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String>
             DeviceCommands::State(args) => state(args.device, human),
             DeviceCommands::Drawlog(args) => drawlog(args.device, human),
             DeviceCommands::Trace(args) => trace(args.device, human),
+            DeviceCommands::Lifecycle(args) => lifecycle(args.device, human),
             DeviceCommands::Errors(args) => errors(args.device, human),
             DeviceCommands::Resources(args) => resources(args, human),
             DeviceCommands::StorageFormat(args) => storage_format(args.device, human),
@@ -638,6 +640,17 @@ fn trace(options: DeviceOnlyOptions, human: bool) -> Result<Value, String> {
         print!("{response}");
     }
     Ok(json!({"port": port, "command": "trace", "lines": lines}))
+}
+
+fn lifecycle(options: DeviceOnlyOptions, human: bool) -> Result<Value, String> {
+    let port = resolve_port(&options)?;
+    let mut device = SerialDevice::open(&port)?;
+    let lines = device.lifecycle_lines()?;
+    let response = format_lines("lifecycle", &lines);
+    if human {
+        print!("{response}");
+    }
+    Ok(json!({"port": port, "command": "lifecycle", "lines": lines}))
 }
 
 fn drawlog(options: DeviceOnlyOptions, human: bool) -> Result<Value, String> {
