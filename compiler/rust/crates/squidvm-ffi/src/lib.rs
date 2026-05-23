@@ -26,8 +26,9 @@ use squidvm_core::{
 };
 
 use squid_device_protocol::{
-    encode_empty_response_into, encode_error_response_into, encode_hello_response_into,
-    DecodeError, DeviceRequest, Opcode, Status as SqdpFrameStatus, MAX_APP_BYTES,
+    encode_app_list_response_into, encode_empty_response_into, encode_error_response_into,
+    encode_hello_response_into, AppListEntry, DecodeError, DeviceRequest, Opcode,
+    Status as SqdpFrameStatus, MAX_APP_BYTES,
 };
 
 #[repr(C)]
@@ -50,6 +51,22 @@ pub enum SqdpStatus {
 const SQDP_APP_ID_CAP: usize = 48;
 const SQDP_PATH_CAP: usize = 128;
 pub const SQDP_STAGING_PATH_CAP: usize = 80;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqdpAppListEntry {
+    pub app_id: [u8; SQDP_APP_ID_CAP],
+    pub sqbc_len: usize,
+}
+
+impl Default for SqdpAppListEntry {
+    fn default() -> Self {
+        Self {
+            app_id: [0; SQDP_APP_ID_CAP],
+            sqbc_len: 0,
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -826,6 +843,52 @@ pub unsafe extern "C" fn sqdp_encode_error_response(
     };
     let out = slice::from_raw_parts_mut(out, out_cap);
     match encode_error_response_into(opcode, sequence, code, message, out) {
+        Ok(len) => {
+            *out_len = len;
+            SqdpStatus::Ok
+        }
+        Err(DecodeError::OutputTooSmall { .. }) => SqdpStatus::BufferTooSmall,
+        Err(_) => SqdpStatus::EncodeError,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_encode_app_list_response(
+    sequence: u32,
+    entries: *const SqdpAppListEntry,
+    entry_count: usize,
+    out: *mut u8,
+    out_cap: usize,
+    out_len: *mut usize,
+) -> SqdpStatus {
+    if out.is_null() || out_len.is_null() || (entries.is_null() && entry_count > 0) {
+        return SqdpStatus::InvalidArgument;
+    }
+    *out_len = 0;
+    let raw_entries = if entry_count == 0 {
+        &[]
+    } else {
+        slice::from_raw_parts(entries, entry_count)
+    };
+    if raw_entries.len() > 16 {
+        return SqdpStatus::InvalidArgument;
+    }
+    for entry in raw_entries {
+        if str::from_utf8(c_string_bytes(&entry.app_id)).is_err() {
+            return SqdpStatus::InvalidArgument;
+        }
+    }
+
+    let out = slice::from_raw_parts_mut(out, out_cap);
+    match encode_app_list_response_into(
+        sequence,
+        raw_entries.iter().map(|entry| AppListEntry {
+            app_id: str::from_utf8(c_string_bytes(&entry.app_id))
+                .expect("validated app id utf-8 before encoding"),
+            sqbc_len: entry.sqbc_len as u64,
+        }),
+        out,
+    ) {
         Ok(len) => {
             *out_len = len;
             SqdpStatus::Ok

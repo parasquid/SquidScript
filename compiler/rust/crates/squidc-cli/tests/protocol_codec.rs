@@ -3,11 +3,11 @@ use squid_device_protocol::{
     app_launch_request, app_list_entries, app_list_request, decode_frame, decode_frame_from_stream,
     encode_frame, event_dispatch_request, hello_identity, hello_request, key_request,
     lifecycle_get_request, lifecycle_lines, output_get_request, output_lines, protocol_error,
-    resource_install_begin_request,
-    resource_install_chunk_request, resource_install_commit_request, resource_values,
-    resources_get_request, state_import_request, temp_run_begin_request, temp_run_chunk_request,
-    temp_run_commit_request, trace_get_request, trace_lines, wifi_profile_set_request, AppEntry,
-    DecodeError, Field, FieldValue, Frame, FrameKind, Opcode, Status,
+    resource_install_begin_request, resource_install_chunk_request,
+    resource_install_commit_request, resource_values, resources_get_request, state_import_request,
+    temp_run_begin_request, temp_run_chunk_request, temp_run_commit_request, trace_get_request,
+    trace_lines, wifi_profile_set_request, AppEntry, DecodeError, Field, FieldValue, Frame,
+    FrameKind, Opcode, Status,
 };
 
 #[test]

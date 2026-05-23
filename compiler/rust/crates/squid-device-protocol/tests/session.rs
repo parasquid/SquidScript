@@ -121,7 +121,12 @@ fn rust_session_engine_covers_temp_run_and_resource_sessions() {
     let bytes = b"sqbc";
     let crc = crc32fast::hash(bytes);
 
-    let begin = encode_frame(&temp_run_begin_request(10, "temp-app", bytes.len() as u64, crc as u64));
+    let begin = encode_frame(&temp_run_begin_request(
+        10,
+        "temp-app",
+        bytes.len() as u64,
+        crc as u64,
+    ));
     let request = DeviceRequest::decode(&begin).unwrap();
     assert_eq!(
         sessions.next_action(&request).unwrap(),
@@ -130,7 +135,9 @@ fn rust_session_engine_covers_temp_run_and_resource_sessions() {
             total_len: bytes.len()
         }
     );
-    sessions.complete_begin_temp_run("/sqtest/tmp/temp.sqbc").unwrap();
+    sessions
+        .complete_begin_temp_run("/sqtest/tmp/temp.sqbc")
+        .unwrap();
     let chunk = encode_frame(&temp_run_chunk_request(11, 0, bytes.to_vec()));
     let request = DeviceRequest::decode(&chunk).unwrap();
     assert_eq!(

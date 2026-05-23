@@ -1,9 +1,10 @@
 #![cfg(feature = "alloc")]
 
 use squid_device_protocol::{
-    decode_frame, encode_empty_response_into, encode_error_response_into, encode_frame,
-    encode_frame_into, encode_hello_response_into, hello_identity, hello_request, DecodeError,
-    Field, FieldValue, Frame, FrameKind, Opcode, Status,
+    app_list_entries, decode_frame, encode_app_list_response_into, encode_empty_response_into,
+    encode_error_response_into, encode_frame, encode_frame_into, encode_hello_response_into,
+    hello_identity, hello_request, AppListEntry, DecodeError, Field, FieldValue, Frame, FrameKind,
+    Opcode, Status,
 };
 
 #[test]
@@ -118,6 +119,42 @@ fn encodes_heap_free_empty_response() {
     assert_eq!(decoded.opcode, Opcode::Reset);
     assert_eq!(decoded.status, Status::Ok);
     assert!(decoded.fields.is_empty());
+}
+
+#[test]
+fn encodes_heap_free_app_list_response() {
+    let mut out = [0u8; 160];
+    let entries = [
+        AppListEntry {
+            app_id: "main",
+            sqbc_len: 123,
+        },
+        AppListEntry {
+            app_id: "reader-clock",
+            sqbc_len: 456,
+        },
+    ];
+
+    let len = encode_app_list_response_into(90, entries.iter().copied(), &mut out).unwrap();
+    let decoded = decode_frame(&out[..len]).unwrap();
+
+    assert_eq!(decoded.kind, FrameKind::Response);
+    assert_eq!(decoded.opcode, Opcode::AppList);
+    assert_eq!(decoded.status, Status::Ok);
+    assert_eq!(decoded.sequence, 90);
+    assert_eq!(
+        app_list_entries(&decoded).unwrap(),
+        vec![
+            squid_device_protocol::AppEntry {
+                app_id: "main".to_string(),
+                sqbc_len: 123,
+            },
+            squid_device_protocol::AppEntry {
+                app_id: "reader-clock".to_string(),
+                sqbc_len: 456,
+            },
+        ]
+    );
 }
 
 #[test]

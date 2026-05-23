@@ -450,7 +450,12 @@ impl Default for TransferSession {
 }
 
 impl TransferSession {
-    fn begin(&mut self, app_id: &str, total_len: usize, expected_crc: u32) -> Result<(), SessionError> {
+    fn begin(
+        &mut self,
+        app_id: &str,
+        total_len: usize,
+        expected_crc: u32,
+    ) -> Result<(), SessionError> {
         validate_transfer_len(total_len)?;
         self.clear();
         self.app_id.set(app_id)?;
@@ -746,10 +751,8 @@ impl<'a> Iterator for RawFields<'a> {
         }
         let tag = self.payload[self.offset];
         let field_type = self.payload[self.offset + 1];
-        let len = u16::from_le_bytes([
-            self.payload[self.offset + 2],
-            self.payload[self.offset + 3],
-        ]) as usize;
+        let len = u16::from_le_bytes([self.payload[self.offset + 2], self.payload[self.offset + 3]])
+            as usize;
         let value_start = self.offset + 4;
         let value_end = value_start + len;
         if value_end > self.payload.len() {
@@ -834,6 +837,12 @@ pub struct HelloIdentity {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppEntry {
     pub app_id: String,
+    pub sqbc_len: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AppListEntry<'a> {
+    pub app_id: &'a str,
     pub sqbc_len: u64,
 }
 
@@ -1284,6 +1293,55 @@ pub fn encode_hello_response_into(
     })
 }
 
+pub fn encode_app_list_response_into<'a, I>(
+    sequence: u32,
+    entries: I,
+    out: &mut [u8],
+) -> Result<usize, DecodeError>
+where
+    I: Clone + Iterator<Item = AppListEntry<'a>>,
+{
+    let mut payload_len = 0usize;
+    for entry in entries.clone() {
+        let record_len = tlv_string_len(entry.app_id)?
+            .checked_add(tlv_u64_len())
+            .ok_or(DecodeError::OutputTooSmall {
+                needed: usize::MAX,
+                capacity: out.len(),
+            })?;
+        payload_len = payload_len.checked_add(tlv_record_len(record_len)?).ok_or(
+            DecodeError::OutputTooSmall {
+                needed: usize::MAX,
+                capacity: out.len(),
+            },
+        )?;
+    }
+
+    encode_response_payload_into(
+        Opcode::AppList,
+        Status::Ok,
+        sequence,
+        payload_len,
+        out,
+        |mut payload| {
+            for entry in entries {
+                let record_len = tlv_string_len(entry.app_id)?
+                    .checked_add(tlv_u64_len())
+                    .ok_or(DecodeError::OutputTooSmall {
+                        needed: usize::MAX,
+                        capacity: payload.len(),
+                    })?;
+                write_tlv_header(payload, 1, 32, record_len)?;
+                let (record, rest) = payload[4..].split_at_mut(record_len);
+                let rest_record = write_string_tlv(record, 1, entry.app_id)?;
+                write_u64_tlv(rest_record, 2, entry.sqbc_len)?;
+                payload = rest;
+            }
+            Ok(())
+        },
+    )
+}
+
 pub fn encode_error_response_into(
     opcode: Opcode,
     sequence: u32,
@@ -1434,6 +1492,20 @@ fn tlv_i64_len() -> usize {
     12
 }
 
+fn tlv_u64_len() -> usize {
+    12
+}
+
+fn tlv_record_len(value_len: usize) -> Result<usize, DecodeError> {
+    if value_len > u16::MAX as usize {
+        return Err(DecodeError::OutputTooSmall {
+            needed: value_len,
+            capacity: u16::MAX as usize,
+        });
+    }
+    Ok(4 + value_len)
+}
+
 fn write_string_tlv<'a>(
     out: &'a mut [u8],
     tag: u8,
@@ -1452,6 +1524,12 @@ fn write_bool_tlv(out: &mut [u8], tag: u8, value: bool) -> Result<&mut [u8], Dec
 
 fn write_i64_tlv(out: &mut [u8], tag: u8, value: i64) -> Result<&mut [u8], DecodeError> {
     write_tlv_header(out, tag, 4, 8)?;
+    out[4..12].copy_from_slice(&value.to_le_bytes());
+    Ok(&mut out[12..])
+}
+
+fn write_u64_tlv(out: &mut [u8], tag: u8, value: u64) -> Result<&mut [u8], DecodeError> {
+    write_tlv_header(out, tag, 5, 8)?;
     out[4..12].copy_from_slice(&value.to_le_bytes());
     Ok(&mut out[12..])
 }

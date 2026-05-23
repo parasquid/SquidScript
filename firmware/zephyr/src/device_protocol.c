@@ -1,6 +1,7 @@
 #include "device_protocol.h"
 
 #include <errno.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -10,6 +11,11 @@
 
 #include "protocol.h"
 #include "squidvm_ffi.h"
+
+BUILD_ASSERT(sizeof(struct sq_app_registry_entry) == sizeof(SqdpAppListEntry));
+BUILD_ASSERT(offsetof(struct sq_app_registry_entry, app_id) == offsetof(SqdpAppListEntry, app_id));
+BUILD_ASSERT(offsetof(struct sq_app_registry_entry, sqbc_len) ==
+	     offsetof(SqdpAppListEntry, sqbc_len));
 
 static int append_field(uint8_t *payload, size_t cap, size_t *len, uint8_t tag, uint8_t type,
 			const uint8_t *value, uint16_t value_len)
@@ -95,50 +101,12 @@ static int app_list_response(const struct sq_protocol_frame *request,
 			     const struct sq_app_registry *registry, uint8_t *response,
 			     size_t response_cap, size_t *response_len)
 {
-	uint8_t payload[512];
-	size_t payload_len = 0;
-	int result;
+	const SqdpAppListEntry *entries =
+		registry == NULL ? NULL : (const SqdpAppListEntry *)registry->apps;
+	size_t entry_count = registry == NULL ? 0 : registry->count;
 
-	if (registry != NULL) {
-		for (size_t i = 0; i < registry->count; i++) {
-			uint8_t record[96];
-			size_t record_len = 0;
-
-			result = append_string_field(record, sizeof(record), &record_len,
-						     SQ_DEVICE_APP_FIELD_ID,
-						     registry->apps[i].app_id);
-			if (result != SQ_PROTOCOL_OK) {
-				return result;
-			}
-			result = append_u64_field(record, sizeof(record), &record_len,
-						  SQ_DEVICE_APP_FIELD_SQBC_LEN,
-						  registry->apps[i].sqbc_len);
-			if (result != SQ_PROTOCOL_OK) {
-				return result;
-			}
-			result = append_record_field(payload, sizeof(payload), &payload_len,
-						     SQ_DEVICE_APP_LIST_FIELD_APP, record,
-						     (uint16_t)record_len);
-			if (result != SQ_PROTOCOL_OK) {
-				return result;
-			}
-		}
-	}
-
-	if (response_cap < SQ_PROTOCOL_HEADER_LEN + payload_len) {
-		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
-	}
-
-	result = sq_protocol_encode_frame_header(SQ_FRAME_RESPONSE, SQ_OPCODE_APP_LIST,
-						 SQ_STATUS_OK, request->sequence, payload,
-						 payload_len, response, response_cap);
-	if (result != SQ_PROTOCOL_OK) {
-		return result;
-	}
-	memcpy(&response[SQ_PROTOCOL_HEADER_LEN], payload, payload_len);
-	*response_len = SQ_PROTOCOL_HEADER_LEN + payload_len;
-
-	return SQ_PROTOCOL_OK;
+	return sqdp_status_to_protocol_result(sqdp_encode_app_list_response(
+		request->sequence, entries, entry_count, response, response_cap, response_len));
 }
 
 static int ok_response(const struct sq_protocol_frame *request, uint8_t *response,

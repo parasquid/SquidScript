@@ -53,6 +53,13 @@ The obsolete Rust firmware scripts are not current hardware target tests. As
 Zephyr coverage lands, keep the suite ordered so stateful reset/install tests
 run before the final visible board-state check.
 
+RAM guards should be interpreted as target-profile limits, not universal
+ESP32-C3 limits. The current default ESP32-C3 Super Mini Zephyr build uses a
+160 KiB `dram0_0_seg` guard, which corresponds to 40% of the target definition's
+400 KiB internal SRAM. A future Wi-Fi-enabled Zephyr profile should use its own
+measured percentage guard, initially around 65% or 260 KiB for this target,
+while still reporting the raw Zephyr linker-section byte count.
+
 The Zephyr app lifecycle check is
 `scripts/c3-supermini-test-app-lifecycle.sh`. It installs the real SquidScript
 fixtures under `tests/hardware/c3-supermini/generic-events`, launches `main`,

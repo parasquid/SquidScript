@@ -133,6 +133,12 @@ change intentionally changes the measured budget. The audit also emits
 structured `ram_symbol[N]=size=... addr=... type=... name=...` lines for the
 largest static DRAM symbols; adjust the count with
 `SQUID_ZEPHYR_RAM_SYMBOL_COUNT` when investigating RAM optimization candidates.
+The next target-aware RAM audit should derive profile limits from target
+metadata when a target definition is supplied. For the ESP32-C3 Super Mini
+target, the metadata declares 400 KiB internal SRAM, so a 40% default profile
+is 160 KiB and a 65% Wi-Fi-enabled profile is 260 KiB. The audit should still
+report the Zephyr linker section bytes, because `dram0_0_seg` placement is the
+immediate firmware build constraint.
 `resources-get` reports `protocol_thread_stack_size_bytes`,
 `protocol_thread_stack_unused_bytes`, `protocol_thread_stack_used_bytes`,
 `vm_worker_stack_size_bytes`, `vm_worker_stack_unused_bytes`, and

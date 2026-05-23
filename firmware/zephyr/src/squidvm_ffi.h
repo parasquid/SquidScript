@@ -39,6 +39,11 @@ typedef enum {
 } SqdpActionKind;
 
 typedef struct {
+	uint8_t app_id[48];
+	size_t sqbc_len;
+} SqdpAppListEntry;
+
+typedef struct {
 	SqdpActionKind kind;
 	const uint8_t *app_id;
 	size_t app_id_len;
@@ -335,6 +340,13 @@ SqdpStatus sqdp_encode_error_response(
 	int64_t code,
 	const uint8_t *message,
 	size_t message_len,
+	uint8_t *out,
+	size_t out_cap,
+	size_t *out_len);
+SqdpStatus sqdp_encode_app_list_response(
+	uint32_t sequence,
+	const SqdpAppListEntry *entries,
+	size_t entry_count,
 	uint8_t *out,
 	size_t out_cap,
 	size_t *out_len);

@@ -12,12 +12,11 @@ use squid_device_protocol::{
     drawlog_get_request, drawlog_lines, encode_frame, error_lines, errors_get_request,
     event_dispatch_request, hello_identity, hello_request, key_request, lifecycle_get_request,
     lifecycle_lines, output_get_request, output_lines, protocol_error, reset_request,
-    resource_install_begin_request,
-    resource_install_chunk_request, resource_install_commit_request, resource_values,
-    resources_get_request, state_bytes, state_get_request, state_import_request,
-    storage_format_request, temp_run_begin_request, temp_run_chunk_request,
-    temp_run_commit_request, trace_get_request, trace_lines, AppEntry, Frame, FrameKind, Status,
-    wifi_profile_set_request,
+    resource_install_begin_request, resource_install_chunk_request,
+    resource_install_commit_request, resource_values, resources_get_request, state_bytes,
+    state_get_request, state_import_request, storage_format_request, temp_run_begin_request,
+    temp_run_chunk_request, temp_run_commit_request, trace_get_request, trace_lines,
+    wifi_profile_set_request, AppEntry, Frame, FrameKind, Status,
 };
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);

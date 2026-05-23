@@ -1,10 +1,10 @@
 use squid_device_protocol::{
-    app_install_begin_request, app_install_chunk_request, app_install_commit_request, decode_frame,
-    encode_frame, resource_install_begin_request, resource_install_chunk_request,
-    resource_install_commit_request, FrameKind, Opcode, Status,
+    app_install_begin_request, app_install_chunk_request, app_install_commit_request,
+    app_list_entries, decode_frame, encode_frame, resource_install_begin_request,
+    resource_install_chunk_request, resource_install_commit_request, FrameKind, Opcode, Status,
 };
 use squidvm_ffi::{
-    SqdpAction, SqdpActionKind, SqdpResourceSession, SqdpTransferSession,
+    SqdpAction, SqdpActionKind, SqdpAppListEntry, SqdpResourceSession, SqdpTransferSession,
     SQDP_STAGING_PATH_CAP,
 };
 
@@ -86,10 +86,56 @@ fn ffi_encodes_error_response_into_caller_buffer() {
 }
 
 #[test]
+fn ffi_encodes_app_list_response_from_c_registry_entries() {
+    let mut out = [0u8; 160];
+    let mut out_len = 0usize;
+    let mut entries = [SqdpAppListEntry::default(), SqdpAppListEntry::default()];
+    entries[0].app_id[..4].copy_from_slice(b"main");
+    entries[0].sqbc_len = 123;
+    entries[1].app_id[..12].copy_from_slice(b"reader-clock");
+    entries[1].sqbc_len = 456;
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_encode_app_list_response(
+            90,
+            entries.as_ptr(),
+            entries.len(),
+            out.as_mut_ptr(),
+            out.len(),
+            &mut out_len,
+        )
+    };
+
+    assert_eq!(status as i32, 0);
+    let frame = decode_frame(&out[..out_len]).unwrap();
+    assert_eq!(frame.kind, FrameKind::Response);
+    assert_eq!(frame.opcode, Opcode::AppList);
+    assert_eq!(frame.status, Status::Ok);
+    assert_eq!(
+        app_list_entries(&frame).unwrap(),
+        vec![
+            squid_device_protocol::AppEntry {
+                app_id: "main".to_string(),
+                sqbc_len: 123,
+            },
+            squid_device_protocol::AppEntry {
+                app_id: "reader-clock".to_string(),
+                sqbc_len: 456,
+            },
+        ]
+    );
+}
+
+#[test]
 fn ffi_validates_install_session_progress_with_caller_owned_storage() {
     let bytes = b"hello";
     let crc = crc32fast::hash(bytes);
-    let begin = encode_frame(&app_install_begin_request(1, "ffi-app", bytes.len() as u64, crc as u64));
+    let begin = encode_frame(&app_install_begin_request(
+        1,
+        "ffi-app",
+        bytes.len() as u64,
+        crc as u64,
+    ));
     let chunk = encode_frame(&app_install_chunk_request(2, 0, bytes.to_vec()));
     let commit = encode_frame(&app_install_commit_request(3));
     let mut session = SqdpTransferSession::default();
@@ -106,9 +152,15 @@ fn ffi_validates_install_session_progress_with_caller_owned_storage() {
     assert_eq!(status as i32, 0);
     assert_eq!(action.kind, SqdpActionKind::BeginInstall);
     assert_eq!(session.app_id_string(), "ffi-app");
-    assert!(!session.active, "storage begin should activate the session after it succeeds");
+    assert!(
+        !session.active,
+        "storage begin should activate the session after it succeeds"
+    );
 
-    assert_eq!(session.set_staging_path_for_test("/tmp/ffi-app.staged") as i32, 0);
+    assert_eq!(
+        session.set_staging_path_for_test("/tmp/ffi-app.staged") as i32,
+        0
+    );
     session.active = true;
 
     let status = unsafe {
@@ -122,9 +174,14 @@ fn ffi_validates_install_session_progress_with_caller_owned_storage() {
     assert_eq!(status as i32, 0);
     assert_eq!(action.kind, SqdpActionKind::WriteInstallChunk);
     assert_eq!(action.offset, 0);
-    assert_eq!(unsafe { core::slice::from_raw_parts(action.bytes, action.bytes_len) }, bytes);
+    assert_eq!(
+        unsafe { core::slice::from_raw_parts(action.bytes, action.bytes_len) },
+        bytes
+    );
 
-    let status = unsafe { squidvm_ffi::sqdp_complete_transfer_chunk(&mut session, action.bytes, action.bytes_len) };
+    let status = unsafe {
+        squidvm_ffi::sqdp_complete_transfer_chunk(&mut session, action.bytes, action.bytes_len)
+    };
     assert_eq!(status as i32, 0);
 
     let status = unsafe {
@@ -201,10 +258,14 @@ fn ffi_validates_resource_session_progress_with_caller_owned_storage() {
     };
     assert_eq!(status as i32, 0);
     assert_eq!(action.kind, SqdpActionKind::WriteResourceChunk);
-    assert_eq!(unsafe { core::slice::from_raw_parts(action.bytes, action.bytes_len) }, bytes);
     assert_eq!(
-        unsafe { squidvm_ffi::sqdp_complete_resource_chunk(&mut session, action.bytes, action.bytes_len) }
-            as i32,
+        unsafe { core::slice::from_raw_parts(action.bytes, action.bytes_len) },
+        bytes
+    );
+    assert_eq!(
+        unsafe {
+            squidvm_ffi::sqdp_complete_resource_chunk(&mut session, action.bytes, action.bytes_len)
+        } as i32,
         0
     );
 
