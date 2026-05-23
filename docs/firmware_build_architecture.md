@@ -102,8 +102,9 @@ external-client association and lease proof remains separate hardware coverage.
 The ESP32-C3 reference configuration intentionally uses smaller native
 networking packet/buffer pools than Zephyr's Ethernet-oriented defaults because
 current firmware networking is low-throughput control-plane traffic, not a TCP
-or bulk-transfer workload. It also uses measured socket-service and
-network-management event stack budgets for the same current scope.
+or bulk-transfer workload. It also uses measured socket-service,
+network-management event, ESP timer task, and network RX stack budgets for the
+same current scope.
 The app-store layer now derives bounded file paths for `main.sqbc` and app
 state from a mount point plus validated app ID, and ESP32-C3 firmware attempts
 to mount the `storage_partition` LittleFS volume at `/sq` during boot without

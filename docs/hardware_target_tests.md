@@ -65,9 +65,10 @@ TCP. Its
 measured `dram0_0_seg` must be read from the latest `scripts/zephyr-ram-audit.sh`
 output for the firmware image under test. The ESP32-C3 reference configuration
 uses bounded native-network packet and buffer pools sized for current
-low-throughput control-plane Wi-Fi behavior and measured socket-service and
-network-management event stack budgets; TCP, HTTP, AP client throughput, or
-other bulk traffic must be remeasured before increasing service scope.
+low-throughput control-plane Wi-Fi behavior and measured socket-service,
+network-management event, ESP timer task, and network RX stack budgets; TCP,
+HTTP, AP client throughput, or other bulk traffic must be remeasured before
+increasing service scope.
 
 The Zephyr app lifecycle check is
 `scripts/c3-supermini-test-app-lifecycle.sh`. It installs the real SquidScript

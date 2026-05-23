@@ -93,9 +93,10 @@ for compiler, SQBC tooling, and VM semantics.
   The default ESP32-C3 Super Mini firmware builds with Zephyr ESP32 Wi-Fi
   scan/status/AP/station support, AP DHCPv4 server support, one volatile
   station profile, and station DHCP/IP status reporting at
-  `dram0_0_seg=209064` bytes, or 51.0% of the target definition's 400 KiB
+  `dram0_0_seg=207552` bytes, or 50.7% of the target definition's 400 KiB
   internal SRAM, after bounding native-network packet/buffer pools and measured
-  Wi-Fi socket/event stack budgets for current low-throughput service traffic.
+  Wi-Fi socket/event, ESP timer task, and network RX stack budgets for current
+  low-throughput service traffic.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.

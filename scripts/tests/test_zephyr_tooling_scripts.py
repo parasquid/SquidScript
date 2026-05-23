@@ -98,6 +98,12 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("CONFIG_NET_SOCKETS_SERVICE_STACK_SIZE=1600", prj_conf)
         self.assertIn("CONFIG_NET_MGMT_EVENT_STACK_SIZE=1536", prj_conf)
 
+    def test_default_config_uses_measured_timer_and_rx_stack_budgets(self):
+        prj_conf = self.read("firmware/zephyr/prj.conf")
+
+        self.assertIn("CONFIG_ESP32_TIMER_TASK_STACK_SIZE=3072", prj_conf)
+        self.assertIn("CONFIG_NET_RX_STACK_SIZE=1536", prj_conf)
+
     def test_hardware_suite_requires_real_zephyr_wifi_backend(self):
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
 
