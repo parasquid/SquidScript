@@ -52,10 +52,10 @@ storage flow through that adapter. A file-backed backend now uses Zephyr
 native ztests cover it through a host-mounted filesystem. The app-store layer
 derives bounded VM storage paths from a mount point and app ID, prepares the
 top-level app/state directories, and ESP32-C3 firmware attempts to mount the
-target LittleFS `storage_partition` at `/sq` during boot. The next
-runtime-boundary work is to add installed-app registry scanning, install-time
-directory creation, package-resource lookup paths, and callbacks for service
-records, diagnostics, lifecycle, and explicit error mapping.
+target LittleFS `storage_partition` at `/sq` during boot. Installed-app
+registry scanning, install-time directory creation, package-resource lookup
+paths, service records, diagnostics, and lifecycle callbacks are connected
+through the current Zephyr runtime boundary.
 
 Zephyr owns backend integration:
 

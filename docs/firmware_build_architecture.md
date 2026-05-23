@@ -100,11 +100,10 @@ bounded station profile in runtime memory without echoing SSIDs or passwords.
 The app-store layer now derives bounded file paths for `main.sqbc` and app
 state from a mount point plus validated app ID, and ESP32-C3 firmware attempts
 to mount the `storage_partition` LittleFS volume at `/sq` during boot without
-blocking framed serial command transport if storage is unavailable. The next
-storage step is to add install-time app directory creation, boot-time registry
-scanning, and package-resource lookup paths, then expand callbacks for
-diagnostics, resources, real app lifecycle orchestration, real Wi-Fi service
-records, and explicit error mapping.
+blocking framed serial command transport if storage is unavailable. Install-time
+app directory creation, boot-time registry scanning, package-resource lookup
+paths, diagnostics, resources, app lifecycle orchestration, and Wi-Fi service
+records are connected through the current Zephyr command and VM host surface.
 
 ## Target Definitions
 
