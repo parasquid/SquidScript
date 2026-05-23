@@ -127,6 +127,21 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         stack_check = suite.index('c3-supermini-measure-stack-usage.sh')
         self.assertLess(lifecycle_check, stack_check)
 
+    def test_hardware_suite_leaves_blinky_visible_check_last(self):
+        blinky = self.read("scripts/c3-supermini-test-blinky.sh")
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn('examples/blinky-supermini/main.squid', blinky)
+        self.assertIn('cargo run --quiet -p squidc -- app launch blinky-supermini', blinky)
+        self.assertIn('output=blink true', blinky)
+        self.assertIn('output=blink false', blinky)
+        self.assertIn('device errors', blinky)
+
+        stack_check = suite.index('c3-supermini-measure-stack-usage.sh')
+        blinky_check = suite.index('c3-supermini-test-blinky.sh')
+        self.assertLess(stack_check, blinky_check)
+        self.assertEqual(suite.strip().splitlines()[-1], '"$ROOT/scripts/c3-supermini-test-blinky.sh"')
+
 
 if __name__ == "__main__":
     unittest.main()

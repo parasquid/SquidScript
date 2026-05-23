@@ -76,11 +76,13 @@ verifies `vm_worker_stack_size_bytes`, `vm_worker_stack_used_bytes`, and
 keeps the VM worker stack budget at 16 KiB while this measurement data is used
 to decide whether a later reduction is safe.
 
-For the current ESP32-C3 Super Mini Zephyr target, the blinky check installs
-and launches `examples/blinky-supermini/main.squid`. Serial `device output`
-should show repeated `blink false` / `blink true` lines and `device errors`
-should be empty before the final visible check. After that final check starts,
-do not run another serial command unless debugging the final board state.
+For the current ESP32-C3 Super Mini Zephyr target,
+`scripts/c3-supermini-test-blinky.sh` is the final full-suite check. It
+installs and launches `examples/blinky-supermini/main.squid`. Serial
+`device output` should show repeated `blink false` / `blink true` lines and
+`device errors` should be empty before the final visible check. After that
+final check starts, do not run another serial command unless debugging the
+final board state.
 
 The indicator breathe check installs and launches
 `examples/breathe-supermini/main.squid`. Serial `device output` should include
