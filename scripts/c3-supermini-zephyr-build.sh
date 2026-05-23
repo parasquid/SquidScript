@@ -6,6 +6,11 @@ source "${ROOT}/scripts/zephyr-env.sh"
 APP_DIR="${ROOT}/firmware/zephyr"
 SUPERMINI_OVERLAY="${APP_DIR}/boards/esp32c3_supermini.overlay"
 EXTRA_ARGS=("$@")
+CMAKE_ARGS=(-DDTC_OVERLAY_FILE="$SUPERMINI_OVERLAY")
+
+if [[ -n "${ZEPHYR_EXTRA_CONF_FILE:-}" ]]; then
+  CMAKE_ARGS+=(-DEXTRA_CONF_FILE="${ZEPHYR_EXTRA_CONF_FILE}")
+fi
 
 if ! command -v west >/dev/null 2>&1; then
   printf 'west is required for Zephyr firmware builds. Install Zephyr SDK/tools and run west init/update first.\n' >&2
@@ -20,6 +25,6 @@ west build \
   "$APP_DIR" \
   "${EXTRA_ARGS[@]}" \
   -- \
-  -DDTC_OVERLAY_FILE="$SUPERMINI_OVERLAY"
+  "${CMAKE_ARGS[@]}"
 
 printf '%s\n' "$ZEPHYR_BUILD_DIR"

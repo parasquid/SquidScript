@@ -23,6 +23,16 @@ Build and flash:
 ./scripts/c3-supermini-flash.sh
 ```
 
+Build the opt-in Wi-Fi scan/status measurement profile without changing the
+default development build:
+
+```sh
+./scripts/c3-supermini-zephyr-build-wifi-measured.sh
+SQUID_ZEPHYR_TARGET_JSON=targets/esp32c3-super-mini.target.json \
+  SQUID_ZEPHYR_RAM_PROFILE_PERCENT=65 \
+  ./scripts/zephyr-ram-audit.sh build/zephyr/c3-supermini-wifi-measured/zephyr/zephyr.elf
+```
+
 Monitor:
 
 ```sh
@@ -57,9 +67,17 @@ RAM guards should be interpreted as target-profile limits, not universal
 ESP32-C3 limits. The current no-target fallback guard is `160000` bytes. When
 `SQUID_ZEPHYR_TARGET_JSON=targets/esp32c3-super-mini.target.json` is supplied,
 the default 40% profile uses the target definition's 400 KiB internal SRAM and
-sets a 163840-byte limit. A future Wi-Fi-enabled Zephyr profile should use its
-own measured percentage guard, initially around 65% or 266240 bytes for this
-target, while still reporting the raw Zephyr linker-section byte count.
+sets a 163840-byte limit.
+
+The opt-in Wi-Fi scan/status measurement profile uses
+`firmware/zephyr/wifi-measured.conf` and
+`scripts/c3-supermini-zephyr-build-wifi-measured.sh`. It enables the real
+Zephyr ESP32 Wi-Fi driver, Wi-Fi management events, and scan-only Wi-Fi usage
+without AP, station, DHCP, TCP, sockets, or credentials. Its measured
+`dram0_0_seg` is 209424 bytes, which is 51.1% of the ESP32-C3 Super Mini
+target definition's 400 KiB internal SRAM. A 65% profile guard is 266240 bytes
+for this target and leaves headroom for scan/status bring-up while keeping the
+default development firmware on the smaller RAM guard.
 
 The Zephyr app lifecycle check is
 `scripts/c3-supermini-test-app-lifecycle.sh`. It installs the real SquidScript

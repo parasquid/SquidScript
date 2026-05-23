@@ -63,6 +63,41 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("DTC_OVERLAY_FILE", build)
         self.assertIn("esp32c3_supermini.overlay", build)
 
+    def test_build_wrapper_accepts_extra_conf_file_from_environment(self):
+        build = self.read("scripts/c3-supermini-zephyr-build.sh")
+
+        self.assertIn("CMAKE_ARGS", build)
+        self.assertIn("EXTRA_CONF_FILE", build)
+        self.assertIn("${ZEPHYR_EXTRA_CONF_FILE}", build)
+
+    def test_wifi_measured_build_uses_separate_build_dir_and_overlay(self):
+        build = self.read("scripts/c3-supermini-zephyr-build-wifi-measured.sh")
+
+        self.assertIn('source "${ROOT}/scripts/zephyr-env.sh"', build)
+        self.assertIn('user_build_dir="${ZEPHYR_BUILD_DIR:-}"', build)
+        self.assertIn('export ZEPHYR_BUILD_DIR="${user_build_dir:-${ROOT}/build/zephyr/c3-supermini-wifi-measured}"', build)
+        self.assertIn("c3-supermini-wifi-measured", build)
+        self.assertIn("wifi-measured.conf", build)
+        self.assertIn("EXTRA_CONF_FILE", build)
+        self.assertIn('exec "${ROOT}/scripts/c3-supermini-zephyr-build.sh"', build)
+
+    def test_wifi_measured_config_enables_real_scan_status_driver_only(self):
+        wifi_conf = self.read("firmware/zephyr/wifi-measured.conf")
+        default_conf = self.read("firmware/zephyr/prj.conf")
+
+        for option in [
+            "CONFIG_NETWORKING=y",
+            "CONFIG_WIFI=y",
+            "CONFIG_WIFI_USAGE_MODE_SCAN_ONLY=y",
+            "CONFIG_NET_MGMT=y",
+            "CONFIG_NET_MGMT_EVENT=y",
+            "CONFIG_NET_MGMT_EVENT_INFO=y",
+            "CONFIG_NET_L2_WIFI_MGMT=y",
+        ]:
+            self.assertIn(option, wifi_conf)
+            self.assertNotIn(option, default_conf)
+        self.assertNotIn("CONFIG_NET_DHCPV4=y", wifi_conf)
+
     def test_docs_point_to_setup_script(self):
         firmware_readme = self.read("firmware/README.md")
         build_architecture = self.read("docs/firmware_build_architecture.md")
