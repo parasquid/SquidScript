@@ -350,6 +350,19 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("sq_protocol_next_field", body)
         self.assertNotIn("struct sq_protocol_field", body)
 
+    def test_event_dispatch_uses_rust_parser_without_c_tlv_loop(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
+        start = protocol.index("static int dispatch_event_request")
+        end = protocol.index("static int dispatch_key")
+        body = protocol[start:end]
+
+        self.assertIn("SqdpEventDispatch", ffi_h)
+        self.assertIn("sqdp_parse_event_dispatch_request", ffi_h)
+        self.assertIn("sqdp_parse_event_dispatch_request", body)
+        self.assertNotIn("sq_protocol_next_field", body)
+        self.assertNotIn("struct sq_protocol_field", body)
+
     def test_hardware_suite_runs_zephyr_app_lifecycle_before_visible_checks(self):
         lifecycle = self.read("scripts/c3-supermini-test-app-lifecycle.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")

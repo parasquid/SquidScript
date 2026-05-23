@@ -952,33 +952,17 @@ static int dispatch_event_from_parts(const struct sq_protocol_frame *request,
 }
 
 static int dispatch_event_request(const struct sq_protocol_frame *request,
+				  const uint8_t *request_bytes, size_t request_len,
 				  const struct sq_device_protocol_context *context,
 				  uint8_t *response, size_t response_cap, size_t *response_len)
 {
-	const char *app_id = NULL;
-	const char *event = NULL;
-	size_t app_id_len = 0;
-	size_t event_len = 0;
-	size_t offset = 0;
-	struct sq_protocol_field field;
+	SqdpEventDispatch event = {0};
 
-	while (sq_protocol_next_field(request->payload, request->payload_len, &offset, &field) ==
-	       SQ_PROTOCOL_OK) {
-		if (field.tag == 1 && field.type == SQ_FIELD_STRING) {
-			app_id = (const char *)field.value;
-			app_id_len = field.len;
-		} else if (field.tag == 2 && field.type == SQ_FIELD_STRING) {
-			event = (const char *)field.value;
-			event_len = field.len;
-		}
+	if (sqdp_parse_event_dispatch_request(request_bytes, request_len, &event) != SQDP_STATUS_OK) {
+		return -EINVAL;
 	}
-	if (request->opcode == SQ_OPCODE_EVENT_DISPATCH) {
-		if (app_id == NULL) {
-			return -EINVAL;
-		}
-	}
-	return dispatch_event_from_parts(request, context, (const uint8_t *)app_id, app_id_len,
-					 (const uint8_t *)event, event_len, response, response_cap,
+	return dispatch_event_from_parts(request, context, event.app_id, event.app_id_len,
+					 event.event, event.event_len, response, response_cap,
 					 response_len);
 }
 
@@ -1134,7 +1118,7 @@ int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 		result = storage_format(&frame, context, response, response_cap, response_len);
 		break;
 	case SQ_OPCODE_EVENT_DISPATCH:
-		result = dispatch_event_request(&frame, context, response, response_cap,
+		result = dispatch_event_request(&frame, request, request_len, context, response, response_cap,
 						response_len);
 		break;
 	case SQ_OPCODE_KEY:

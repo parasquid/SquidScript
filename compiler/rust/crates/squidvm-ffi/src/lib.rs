@@ -207,6 +207,26 @@ impl Default for SqdpAppLaunch {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct SqdpEventDispatch {
+    pub app_id: *const u8,
+    pub app_id_len: usize,
+    pub event: *const u8,
+    pub event_len: usize,
+}
+
+impl Default for SqdpEventDispatch {
+    fn default() -> Self {
+        Self {
+            app_id: ptr::null(),
+            app_id_len: 0,
+            event: ptr::null(),
+            event_len: 0,
+        }
+    }
+}
+
+#[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SqdpTransferSession {
     pub active: bool,
@@ -1358,6 +1378,59 @@ pub unsafe extern "C" fn sqdp_parse_app_launch_request(
     *out_launch = SqdpAppLaunch {
         app_id: app_id.as_ptr(),
         app_id_len: app_id.len(),
+    };
+    SqdpStatus::Ok
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_parse_event_dispatch_request(
+    request: *const u8,
+    request_len: usize,
+    out_event: *mut SqdpEventDispatch,
+) -> SqdpStatus {
+    if request.is_null() || out_event.is_null() {
+        return SqdpStatus::InvalidArgument;
+    }
+    let request = match DeviceRequest::decode(slice::from_raw_parts(request, request_len)) {
+        Ok(request) => request,
+        Err(_) => return SqdpStatus::InvalidArgument,
+    };
+    if request.opcode != Opcode::EventDispatch {
+        return SqdpStatus::InvalidArgument;
+    }
+
+    let mut app_id = None;
+    let mut event = None;
+    let mut offset = 0usize;
+    while offset < request.payload().len() {
+        let Some((tag, field_type, value, next_offset)) = next_tlv_field(request.payload(), offset)
+        else {
+            return SqdpStatus::InvalidArgument;
+        };
+        match (tag, field_type) {
+            (1, 1) if app_id.is_none() => app_id = Some(value),
+            (2, 1) if event.is_none() => event = Some(value),
+            _ => return SqdpStatus::InvalidArgument,
+        }
+        offset = next_offset;
+    }
+
+    let (Some(app_id), Some(event)) = (app_id, event) else {
+        return SqdpStatus::InvalidArgument;
+    };
+    if app_id.is_empty()
+        || app_id.len() >= SQDP_APP_ID_CAP
+        || event.is_empty()
+        || str::from_utf8(app_id).is_err()
+        || str::from_utf8(event).is_err()
+    {
+        return SqdpStatus::InvalidArgument;
+    }
+    *out_event = SqdpEventDispatch {
+        app_id: app_id.as_ptr(),
+        app_id_len: app_id.len(),
+        event: event.as_ptr(),
+        event_len: event.len(),
     };
     SqdpStatus::Ok
 }

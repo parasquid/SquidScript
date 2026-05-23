@@ -1,14 +1,14 @@
 use squid_device_protocol::{
     app_install_begin_request, app_install_chunk_request, app_install_commit_request,
-    app_launch_request, app_list_entries, decode_frame, encode_frame, key_request, lifecycle_lines,
-    output_lines, resource_install_begin_request, resource_install_chunk_request,
-    resource_install_commit_request, resource_values, state_import_request,
-    wifi_profile_set_request, FrameKind, Opcode, Status,
+    app_launch_request, app_list_entries, decode_frame, encode_frame, event_dispatch_request,
+    key_request, lifecycle_lines, output_lines, resource_install_begin_request,
+    resource_install_chunk_request, resource_install_commit_request, resource_values,
+    state_import_request, wifi_profile_set_request, FrameKind, Opcode, Status,
 };
 use squidvm_ffi::{
-    SqdpAction, SqdpActionKind, SqdpAppLaunch, SqdpAppListEntry, SqdpLifecycleTimer, SqdpLineSlice,
-    SqdpResourceMetric, SqdpResourceSession, SqdpStateImport, SqdpTransferSession, SqdpWifiProfile,
-    SQDP_STAGING_PATH_CAP,
+    SqdpAction, SqdpActionKind, SqdpAppLaunch, SqdpAppListEntry, SqdpEventDispatch,
+    SqdpLifecycleTimer, SqdpLineSlice, SqdpResourceMetric, SqdpResourceSession, SqdpStateImport,
+    SqdpTransferSession, SqdpWifiProfile, SQDP_STAGING_PATH_CAP,
 };
 
 #[test]
@@ -331,6 +331,26 @@ fn ffi_parses_app_launch_request_without_c_tlv_staging() {
     assert_eq!(
         unsafe { core::slice::from_raw_parts(launch.app_id, launch.app_id_len) },
         b"reader-clock"
+    );
+}
+
+#[test]
+fn ffi_parses_event_dispatch_request_without_c_tlv_staging() {
+    let request = encode_frame(&event_dispatch_request(49, "reader-clock", "timer.clock"));
+    let mut event = SqdpEventDispatch::default();
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_parse_event_dispatch_request(request.as_ptr(), request.len(), &mut event)
+    };
+
+    assert_eq!(status as i32, 0);
+    assert_eq!(
+        unsafe { core::slice::from_raw_parts(event.app_id, event.app_id_len) },
+        b"reader-clock"
+    );
+    assert_eq!(
+        unsafe { core::slice::from_raw_parts(event.event, event.event_len) },
+        b"timer.clock"
     );
 }
 

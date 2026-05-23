@@ -94,7 +94,9 @@ or VM operation and then calls the completion function so Rust updates progress.
 Rust also encodes `app-list`, lifecycle diagnostics, resource diagnostics, and
 repeated diagnostic line responses directly into Zephyr's caller-owned response
 buffer so Zephyr C does not stage duplicate TLV payload arrays for those command
-responses.
+responses. App launch, generic event dispatch, state import, and Wi-Fi profile
+requests are parsed by Rust `sqdp_` FFI helpers, which return borrowed field
+slices to Zephyr C for runtime/storage actions.
 
 `app-list` responses use repeated record fields: response field tag `1` is one
 app record, record field tag `1` is the app ID string, and record field tag `2`
@@ -125,8 +127,9 @@ Zephyr VM FFI host boundary as other runtime services. `system.memory()` returns
 a display-oriented RAM/heap diagnostic string. `system.storage("apps")` returns
 a display-oriented free-space string for the mounted SquidScript app store.
 SquidScript VM calls to `app.launch`, `app.arm`, and `app.disarm` are also
-connected through the Zephyr FFI host. The `app-launch` command request is
-parsed by a Rust `sqdp_` FFI helper before Zephyr starts the installed app.
+connected through the Zephyr FFI host. The `app-launch` and generic
+`event-dispatch` command requests are parsed by Rust `sqdp_` FFI helpers before
+Zephyr starts or dispatches the installed app.
 `app.launch` and `app.exit` drive the Zephyr foreground return stack for
 installed apps and clear foreground timers when a different installed app
 becomes active. `app.arm` runs the target app's
