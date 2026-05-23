@@ -1,4 +1,8 @@
 from pathlib import Path
+import os
+import stat
+import subprocess
+import tempfile
 import unittest
 
 
@@ -8,6 +12,10 @@ ROOT = Path(__file__).resolve().parents[2]
 class ZephyrToolingScriptTests(unittest.TestCase):
     def read(self, relative_path):
         return (ROOT / relative_path).read_text(encoding="utf-8")
+
+    def write_executable(self, path, contents):
+        path.write_text(contents, encoding="utf-8")
+        path.chmod(path.stat().st_mode | stat.S_IXUSR)
 
     def test_setup_script_uses_project_local_west_and_homebrew_tools(self):
         setup = self.read("scripts/zephyr-setup.sh")
@@ -72,7 +80,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_ram_audit_default_guard_tracks_current_esp32c3_budget(self):
         audit = self.read("scripts/zephyr-ram-audit.sh")
 
-        self.assertIn('SQUID_ZEPHYR_DRAM_LIMIT_BYTES:-160000', audit)
+        self.assertIn("dram_limit=160000", audit)
 
     def test_ram_audit_reports_structured_top_symbols(self):
         audit = self.read("scripts/zephyr-ram-audit.sh")
@@ -85,6 +93,53 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('size=', audit)
         self.assertIn('type=', audit)
         self.assertIn('name=', audit)
+
+    def test_ram_audit_derives_default_guard_from_target_sram_percentage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            elf = tmp_path / "zephyr.elf"
+            elf.write_bytes(b"fake")
+            size_tool = tmp_path / "fake-size"
+            nm_tool = tmp_path / "fake-nm"
+            self.write_executable(
+                size_tool,
+                "#!/usr/bin/env bash\n"
+                "cat <<'EOF'\n"
+                "section size addr\n"
+                "dram0_0_seg 101448 1070071808\n"
+                "EOF\n",
+            )
+            self.write_executable(
+                nm_tool,
+                "#!/usr/bin/env bash\n"
+                "cat <<'EOF'\n"
+                "3fc90000 00000200 b z_idle_stacks\n"
+                "EOF\n",
+            )
+
+            env = os.environ.copy()
+            env.update(
+                {
+                    "SIZE": str(size_tool),
+                    "NM": str(nm_tool),
+                    "SQUID_ZEPHYR_TARGET_JSON": str(ROOT / "targets/esp32c3-super-mini.target.json"),
+                }
+            )
+            env.pop("SQUID_ZEPHYR_DRAM_LIMIT_BYTES", None)
+
+            result = subprocess.run(
+                [str(ROOT / "scripts/zephyr-ram-audit.sh"), str(elf)],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+        self.assertIn("dram0_0_seg=101448 bytes limit=163840 bytes", result.stdout)
+        self.assertIn("target_ram_total_bytes=409600", result.stdout)
+        self.assertIn("target_ram_profile_percent=40", result.stdout)
+        self.assertIn("target_ram_used_percent=24.8", result.stdout)
 
     def test_zephyr_main_stack_tracks_measured_protocol_work(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")

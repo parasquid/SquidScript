@@ -3,7 +3,9 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 elf="${1:-$repo_root/build/zephyr/c3-supermini/zephyr/zephyr.elf}"
-dram_limit="${SQUID_ZEPHYR_DRAM_LIMIT_BYTES:-160000}"
+target_json="${SQUID_ZEPHYR_TARGET_JSON:-}"
+ram_profile_percent="${SQUID_ZEPHYR_RAM_PROFILE_PERCENT:-40}"
+dram_limit="${SQUID_ZEPHYR_DRAM_LIMIT_BYTES:-}"
 symbol_count="${SQUID_ZEPHYR_RAM_SYMBOL_COUNT:-20}"
 
 if [[ ! -f "$elf" ]]; then
@@ -44,7 +46,56 @@ if [[ -z "$dram_bytes" ]]; then
   exit 2
 fi
 
+target_ram_total=""
+if [[ -n "$target_json" ]]; then
+  if [[ ! -f "$target_json" ]]; then
+    echo "zephyr RAM audit: target JSON not found: $target_json" >&2
+    exit 2
+  fi
+  if ! [[ "$ram_profile_percent" =~ ^[0-9]+$ ]] || (( ram_profile_percent < 1 || ram_profile_percent > 100 )); then
+    echo "zephyr RAM audit: SQUID_ZEPHYR_RAM_PROFILE_PERCENT must be 1..100" >&2
+    exit 2
+  fi
+  target_ram_total="$(
+    python3 - "$target_json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    target = json.load(handle)
+
+try:
+    print(int(target["mcu"]["memory"]["internalSramKB"]) * 1024)
+except (KeyError, TypeError, ValueError):
+    sys.exit(2)
+PY
+  )"
+  if [[ -z "$target_ram_total" ]]; then
+    echo "zephyr RAM audit: target JSON missing mcu.memory.internalSramKB" >&2
+    exit 2
+  fi
+fi
+
+if [[ -z "$dram_limit" ]]; then
+  if [[ -n "$target_ram_total" ]]; then
+    dram_limit=$(( target_ram_total * ram_profile_percent / 100 ))
+  else
+    dram_limit=160000
+  fi
+fi
+
+if ! [[ "$dram_limit" =~ ^[0-9]+$ ]] || (( dram_limit < 1 )); then
+  echo "zephyr RAM audit: SQUID_ZEPHYR_DRAM_LIMIT_BYTES must be a positive integer" >&2
+  exit 2
+fi
+
 echo "dram0_0_seg=${dram_bytes} bytes limit=${dram_limit} bytes"
+if [[ -n "$target_ram_total" ]]; then
+  echo "target_ram_total_bytes=${target_ram_total}"
+  echo "target_ram_profile_percent=${ram_profile_percent}"
+  awk -v used="$dram_bytes" -v total="$target_ram_total" \
+    'BEGIN { printf "target_ram_used_percent=%.1f\n", (used * 100.0) / total }'
+fi
 if (( dram_bytes > dram_limit )); then
   echo "zephyr RAM audit: DRAM budget exceeded" >&2
   exit 1

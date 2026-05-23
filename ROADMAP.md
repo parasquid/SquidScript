@@ -79,10 +79,6 @@ for compiler, SQBC tooling, and VM semantics.
   Zephyr Wi-Fi driver, run the Wi-Fi scan/status hardware checks against actual
   RF results, and keep the default development firmware on the smaller RAM
   guard unless the Wi-Fi profile becomes the selected target.
-- Make the Zephyr RAM audit target-aware: read target SRAM metadata when a
-  target definition is provided, report `dram0_0_seg` as a percentage of target
-  SRAM, and support profile defaults such as 40% for normal ESP32-C3 firmware
-  and a separate measured percentage for Wi-Fi-enabled builds.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.
