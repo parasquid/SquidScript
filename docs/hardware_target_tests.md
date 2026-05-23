@@ -68,6 +68,14 @@ debug output and non-empty `device state` bytes, resets the runtime without
 formatting storage, relaunches the app, and verifies `state.load()` restores
 the saved count.
 
+`scripts/c3-supermini-measure-stack-usage.sh` runs after the stateful app and
+app lifecycle checks in the full ESP32-C3 Super Mini suite. It records
+`device resources` output under `target/hardware-tests/stack-usage/` and
+verifies `vm_worker_stack_size_bytes`, `vm_worker_stack_used_bytes`, and
+`vm_worker_stack_unused_bytes` are internally consistent. The current firmware
+keeps the VM worker stack budget at 16 KiB while this measurement data is used
+to decide whether a later reduction is safe.
+
 For the current ESP32-C3 Super Mini Zephyr target, the blinky check installs
 and launches `examples/blinky-supermini/main.squid`. Serial `device output`
 should show repeated `blink false` / `blink true` lines and `device errors`

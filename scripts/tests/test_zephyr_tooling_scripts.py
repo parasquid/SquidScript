@@ -113,6 +113,20 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         lifecycle_check = suite.index('c3-supermini-test-app-lifecycle.sh')
         self.assertLess(state_check, lifecycle_check)
 
+    def test_hardware_suite_measures_stack_after_stateful_workloads(self):
+        stack = self.read("scripts/c3-supermini-measure-stack-usage.sh")
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn('cargo run --quiet -p squidc -- device resources', stack)
+        self.assertIn('vm_worker_stack_size_bytes', stack)
+        self.assertIn('vm_worker_stack_used_bytes', stack)
+        self.assertIn('vm_worker_stack_unused_bytes', stack)
+        self.assertIn('stack_used + stack_unused != stack_size', stack)
+
+        lifecycle_check = suite.index('c3-supermini-test-app-lifecycle.sh')
+        stack_check = suite.index('c3-supermini-measure-stack-usage.sh')
+        self.assertLess(lifecycle_check, stack_check)
+
 
 if __name__ == "__main__":
     unittest.main()

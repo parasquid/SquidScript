@@ -33,3 +33,4 @@ done
 "$ROOT/scripts/c3-supermini-zephyr-test-diagnostic.sh"
 "$ROOT/scripts/c3-supermini-test-app-state.sh"
 "$ROOT/scripts/c3-supermini-test-app-lifecycle.sh"
+"$ROOT/scripts/c3-supermini-measure-stack-usage.sh"
