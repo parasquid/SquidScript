@@ -108,8 +108,10 @@ metric key string, and record field tag `2` is the value as an unsigned 64-bit
 integer.
 
 Wi-Fi profile provisioning uses the framed opcode to store one volatile,
-bounded station profile in Zephyr runtime memory. The command response is empty
-on success and must not echo SSIDs or passwords.
+bounded station profile in Zephyr runtime memory. Rust `sqdp_` FFI code owns
+the request TLV parsing and returns borrowed field slices to Zephyr C, which
+only applies the validated profile to the runtime. The command response is
+empty on success and must not echo SSIDs or passwords.
 SquidScript VM calls to `service.wifi.status()`, `service.wifi.scan()`,
 `service.wifi.startAP(...)`, `service.wifi.stopAP()`, and
 `service.wifi.getAPIP()` are connected to Zephyr Wi-Fi management callbacks.

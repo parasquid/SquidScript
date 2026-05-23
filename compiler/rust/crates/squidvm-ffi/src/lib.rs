@@ -151,6 +151,30 @@ impl Default for SqdpAction {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct SqdpWifiProfile {
+    pub profile: *const u8,
+    pub profile_len: usize,
+    pub ssid: *const u8,
+    pub ssid_len: usize,
+    pub password: *const u8,
+    pub password_len: usize,
+}
+
+impl Default for SqdpWifiProfile {
+    fn default() -> Self {
+        Self {
+            profile: ptr::null(),
+            profile_len: 0,
+            ssid: ptr::null(),
+            ssid_len: 0,
+            password: ptr::null(),
+            password_len: 0,
+        }
+    }
+}
+
+#[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SqdpTransferSession {
     pub active: bool,
@@ -1167,6 +1191,58 @@ pub unsafe extern "C" fn sqdp_prepare_key_event(
         Err(DecodeError::OutputTooSmall { .. }) => SqdpStatus::BufferTooSmall,
         Err(_) => SqdpStatus::InvalidArgument,
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_parse_wifi_profile_set_request(
+    request: *const u8,
+    request_len: usize,
+    out_profile: *mut SqdpWifiProfile,
+) -> SqdpStatus {
+    if request.is_null() || out_profile.is_null() {
+        return SqdpStatus::InvalidArgument;
+    }
+    let request = match DeviceRequest::decode(slice::from_raw_parts(request, request_len)) {
+        Ok(request) => request,
+        Err(_) => return SqdpStatus::InvalidArgument,
+    };
+    if request.opcode != Opcode::WifiProfileSet {
+        return SqdpStatus::InvalidArgument;
+    }
+
+    let mut profile = None;
+    let mut ssid = None;
+    let mut password = None;
+    let mut offset = 0usize;
+    while offset < request.payload().len() {
+        let Some((tag, field_type, value, next_offset)) = next_tlv_field(request.payload(), offset)
+        else {
+            return SqdpStatus::InvalidArgument;
+        };
+        if field_type != 1 {
+            return SqdpStatus::InvalidArgument;
+        }
+        match tag {
+            1 if profile.is_none() => profile = Some(value),
+            2 if ssid.is_none() => ssid = Some(value),
+            3 if password.is_none() => password = Some(value),
+            _ => return SqdpStatus::InvalidArgument,
+        }
+        offset = next_offset;
+    }
+
+    let (Some(profile), Some(ssid), Some(password)) = (profile, ssid, password) else {
+        return SqdpStatus::InvalidArgument;
+    };
+    *out_profile = SqdpWifiProfile {
+        profile: profile.as_ptr(),
+        profile_len: profile.len(),
+        ssid: ssid.as_ptr(),
+        ssid_len: ssid.len(),
+        password: password.as_ptr(),
+        password_len: password.len(),
+    };
+    SqdpStatus::Ok
 }
 
 #[no_mangle]
@@ -2327,6 +2403,21 @@ fn field_bytes(payload: &[u8], tag: u8, field_type: u8) -> Option<&[u8]> {
         offset = value_end;
     }
     None
+}
+
+fn next_tlv_field(payload: &[u8], offset: usize) -> Option<(u8, u8, &[u8], usize)> {
+    if payload.len().saturating_sub(offset) < 4 {
+        return None;
+    }
+    let tag = payload[offset];
+    let field_type = payload[offset + 1];
+    let len = u16::from_le_bytes([payload[offset + 2], payload[offset + 3]]) as usize;
+    let value_start = offset.checked_add(4)?;
+    let value_end = value_start.checked_add(len)?;
+    if value_end > payload.len() {
+        return None;
+    }
+    Some((tag, field_type, &payload[value_start..value_end], value_end))
 }
 
 fn field_u64(payload: &[u8], tag: u8) -> Option<u64> {

@@ -471,13 +471,24 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_zephyr_wifi_profile_opcode_stores_bounded_volatile_runtime_profile(self):
         protocol_h = self.read("firmware/zephyr/src/device_protocol.h")
         protocol_c = self.read("firmware/zephyr/src/device_protocol.c")
+        ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
 
         self.assertIn("SQ_DEVICE_WIFI_PROFILE_NAME_BYTES 16", protocol_h)
         self.assertIn("SQ_DEVICE_WIFI_PROFILE_SSID_BYTES 32", protocol_h)
         self.assertIn("SQ_DEVICE_WIFI_PROFILE_PASSWORD_BYTES 64", protocol_h)
+        self.assertIn("SqdpWifiProfile", ffi_h)
+        self.assertIn("sqdp_parse_wifi_profile_set_request", ffi_h)
+        self.assertIn("sqdp_parse_wifi_profile_set_request", protocol_c)
         self.assertIn("sq_vm_runtime_set_wifi_profile", runtime_h)
-        self.assertIn("wifi_profile_set(&frame", protocol_c)
+        self.assertIn("wifi_profile_set(&frame, request, request_len", protocol_c)
+        wifi_profile_body = protocol_c[
+            protocol_c.index("static int wifi_profile_set") : protocol_c.index(
+                "int sq_device_protocol_handle_frame"
+            )
+        ]
+        self.assertNotIn("sq_protocol_next_field", wifi_profile_body)
+        self.assertNotIn("struct sq_protocol_field", wifi_profile_body)
         self.assertNotIn("case SQ_OPCODE_WIFI_PROFILE_SET:\n\t\tresult = -ENOTSUP;", protocol_c)
 
     def test_zephyr_vm_runtime_wires_system_resource_callbacks(self):

@@ -2,11 +2,13 @@ use squid_device_protocol::{
     app_install_begin_request, app_install_chunk_request, app_install_commit_request,
     app_list_entries, decode_frame, encode_frame, key_request, lifecycle_lines, output_lines,
     resource_install_begin_request, resource_install_chunk_request,
-    resource_install_commit_request, resource_values, FrameKind, Opcode, Status,
+    resource_install_commit_request, resource_values, wifi_profile_set_request, FrameKind, Opcode,
+    Status,
 };
 use squidvm_ffi::{
     SqdpAction, SqdpActionKind, SqdpAppListEntry, SqdpLifecycleTimer, SqdpLineSlice,
-    SqdpResourceMetric, SqdpResourceSession, SqdpTransferSession, SQDP_STAGING_PATH_CAP,
+    SqdpResourceMetric, SqdpResourceSession, SqdpTransferSession, SqdpWifiProfile,
+    SQDP_STAGING_PATH_CAP,
 };
 
 #[test]
@@ -264,6 +266,39 @@ fn ffi_prepares_key_event_without_c_payload_staging() {
 
     assert_eq!(status as i32, 0);
     assert_eq!(&event[..event_len], b"key.SELECT");
+}
+
+#[test]
+fn ffi_parses_wifi_profile_request_without_c_tlv_staging() {
+    let request = encode_frame(&wifi_profile_set_request(
+        76,
+        "dev",
+        "redacted-network",
+        "redacted-password",
+    ));
+    let mut profile = SqdpWifiProfile::default();
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_parse_wifi_profile_set_request(
+            request.as_ptr(),
+            request.len(),
+            &mut profile,
+        )
+    };
+
+    assert_eq!(status as i32, 0);
+    assert_eq!(
+        unsafe { core::slice::from_raw_parts(profile.profile, profile.profile_len) },
+        b"dev"
+    );
+    assert_eq!(
+        unsafe { core::slice::from_raw_parts(profile.ssid, profile.ssid_len) },
+        b"redacted-network"
+    );
+    assert_eq!(
+        unsafe { core::slice::from_raw_parts(profile.password, profile.password_len) },
+        b"redacted-password"
+    );
 }
 
 #[test]

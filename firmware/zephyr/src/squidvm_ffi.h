@@ -73,6 +73,15 @@ typedef struct {
 	size_t total_len;
 } SqdpAction;
 
+typedef struct {
+	const uint8_t *profile;
+	size_t profile_len;
+	const uint8_t *ssid;
+	size_t ssid_len;
+	const uint8_t *password;
+	size_t password_len;
+} SqdpWifiProfile;
+
 typedef enum {
 	SQVM_DISPATCH_COMPLETE = 0,
 	SQVM_DISPATCH_PENDING_STORAGE = 1,
@@ -416,6 +425,10 @@ SqdpStatus sqdp_prepare_key_event(
 	uint8_t *out,
 	size_t out_cap,
 	size_t *out_len);
+SqdpStatus sqdp_parse_wifi_profile_set_request(
+	const uint8_t *request,
+	size_t request_len,
+	SqdpWifiProfile *out_profile);
 SqdpStatus sqdp_prepare_transfer_begin(
 	const uint8_t *request,
 	size_t request_len,
