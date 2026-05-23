@@ -328,6 +328,30 @@ void sq_vm_runtime_init(struct sq_vm_runtime *runtime)
 	runtime->status = SQ_VM_RUNTIME_IDLE;
 }
 
+size_t sq_vm_runtime_work_stack_size(void)
+{
+	return K_THREAD_STACK_SIZEOF(sq_vm_runtime_work_stack);
+}
+
+int sq_vm_runtime_work_stack_unused(size_t *unused)
+{
+	if (unused == NULL) {
+		return -EINVAL;
+	}
+
+#if defined(CONFIG_INIT_STACKS) && defined(CONFIG_THREAD_STACK_INFO)
+	if (!sq_vm_runtime_work_q_started) {
+		*unused = sq_vm_runtime_work_stack_size();
+		return 0;
+	}
+
+	return k_thread_stack_space_get(k_work_queue_thread_get(&sq_vm_runtime_work_q), unused);
+#else
+	*unused = 0;
+	return -ENOTSUP;
+#endif
+}
+
 void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 {
 	if (runtime == NULL) {

@@ -126,6 +126,8 @@ int sq_vm_runtime_next_due_armed_timer(struct sq_vm_runtime *runtime, char *app,
 				       char *event, size_t event_cap);
 int sq_vm_runtime_next_due_timer(struct sq_vm_runtime *runtime, char *event, size_t event_cap);
 int sq_vm_runtime_poll(struct sq_vm_runtime *runtime);
+size_t sq_vm_runtime_work_stack_size(void);
+int sq_vm_runtime_work_stack_unused(size_t *unused);
 
 #ifdef __cplusplus
 }

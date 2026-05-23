@@ -218,6 +218,55 @@ static int unlink_test_file_if_exists(const char *path)
 	return fs_unlink(path);
 }
 
+static bool resource_value_for_key(const struct sq_protocol_frame *frame, const char *key,
+				   uint64_t *out)
+{
+	size_t offset = 0;
+	struct sq_protocol_field entry;
+
+	while (sq_protocol_next_field(frame->payload, frame->payload_len, &offset, &entry) ==
+	       SQ_PROTOCOL_OK) {
+		size_t record_offset = 0;
+		struct sq_protocol_field field;
+		const char *record_key = NULL;
+		size_t record_key_len = 0;
+		uint64_t record_value = 0;
+		bool has_value = false;
+
+		if (entry.tag != SQ_DEVICE_RECORD_FIELD_ENTRY || entry.type != SQ_FIELD_RECORD) {
+			continue;
+		}
+
+		while (sq_protocol_next_field(entry.value, entry.len, &record_offset, &field) ==
+		       SQ_PROTOCOL_OK) {
+			if (field.tag == SQ_DEVICE_RECORD_FIELD_KEY && field.type == SQ_FIELD_STRING) {
+				record_key = (const char *)field.value;
+				record_key_len = field.len;
+			} else if (field.tag == SQ_DEVICE_RECORD_FIELD_VALUE &&
+				   field.type == SQ_FIELD_U64 && field.len == 8) {
+				record_value = sq_protocol_read_u64_le(field.value);
+				has_value = true;
+			}
+		}
+
+		if (record_key != NULL && has_value && strlen(key) == record_key_len &&
+		    memcmp(record_key, key, record_key_len) == 0) {
+			*out = record_value;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static bool resource_value_equals(const struct sq_protocol_frame *frame, const char *key,
+				  uint64_t expected)
+{
+	uint64_t actual = 0;
+
+	return resource_value_for_key(frame, key, &actual) && actual == expected;
+}
+
 static int mount_test_fs(void)
 {
 	int result = fs_mount(&test_fs_mount);
@@ -1191,6 +1240,50 @@ ZTEST(squidscript_protocol, test_links_squidvm_ffi_context_metadata)
 	zassert_true(sqvm_context_size() <= SQ_VM_RUNTIME_CONTEXT_BYTES);
 	zassert_true(SQ_VM_RUNTIME_CONTEXT_BYTES <= 49152);
 	zassert_true(SQ_VM_RUNTIME_WORK_STACK_SIZE <= 16384);
+}
+
+ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
+{
+	uint8_t request[SQ_PROTOCOL_HEADER_LEN];
+	uint8_t response[704];
+	size_t response_len = 0;
+	struct sq_protocol_frame frame;
+	static struct sq_vm_runtime runtime;
+	struct sq_device_identity identity = {
+		.target = "native-test",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.runtime = &runtime,
+	};
+	uint64_t stack_unused = 0;
+	uint64_t stack_used = 0;
+	int result;
+
+	memset(&runtime, 0, sizeof(runtime));
+	sq_vm_runtime_init(&runtime);
+
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_RESOURCES_GET,
+						      SQ_STATUS_OK, 73, NULL, 0, request,
+						      sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_decode_frame(request, sizeof(request), &frame), SQ_PROTOCOL_OK,
+		      "request decode result before handle");
+	result = sq_device_protocol_handle_frame(request, sizeof(request), &context, response,
+						 sizeof(response), &response_len);
+	zassert_equal(result, SQ_PROTOCOL_OK, "resources result %d", result);
+	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
+
+	zassert_true(resource_value_equals(&frame, "vm_worker_stack_size_bytes",
+					   SQ_VM_RUNTIME_WORK_STACK_SIZE));
+	zassert_true(resource_value_for_key(&frame, "vm_worker_stack_unused_bytes", &stack_unused));
+	zassert_true(resource_value_for_key(&frame, "vm_worker_stack_used_bytes", &stack_used));
+	zassert_true(stack_unused <= SQ_VM_RUNTIME_WORK_STACK_SIZE);
+	zassert_true(stack_used <= SQ_VM_RUNTIME_WORK_STACK_SIZE);
+	zassert_equal(stack_unused + stack_used, SQ_VM_RUNTIME_WORK_STACK_SIZE,
+		      "unused=%llu used=%llu", stack_unused, stack_used);
 }
 
 ZTEST(squidscript_protocol, test_exposes_resumable_squidvm_ffi_abi)

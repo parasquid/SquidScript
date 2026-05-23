@@ -911,15 +911,37 @@ static int resources_response(const struct sq_protocol_frame *request,
 			      const struct sq_device_protocol_context *context, uint8_t *response,
 			      size_t response_cap, size_t *response_len)
 {
-	uint8_t payload[384];
+	uint8_t *payload;
+	size_t payload_cap;
 	size_t payload_len = 0;
 	int result;
+	size_t vm_worker_stack_unused = 0;
+	size_t vm_worker_stack_size = context->runtime == NULL ? 0 : sq_vm_runtime_work_stack_size();
+	size_t vm_worker_stack_used = 0;
+
+	if (response_cap < SQ_PROTOCOL_HEADER_LEN) {
+		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
+	}
+	payload = &response[SQ_PROTOCOL_HEADER_LEN];
+	payload_cap = response_cap - SQ_PROTOCOL_HEADER_LEN;
+
+	if (context->runtime != NULL && sq_vm_runtime_work_stack_unused(&vm_worker_stack_unused) == 0 &&
+	    vm_worker_stack_unused <= vm_worker_stack_size) {
+		vm_worker_stack_used = vm_worker_stack_size - vm_worker_stack_unused;
+	} else {
+		vm_worker_stack_unused = 0;
+		vm_worker_stack_used = 0;
+	}
+
 	struct {
 		const char *key;
 		uint64_t value;
 	} entries[] = {
 		{"ram_total_bytes", CONFIG_SRAM_SIZE * 1024u},
 		{"runtime_static_bytes", context->runtime == NULL ? 0 : sizeof(*context->runtime)},
+		{"vm_worker_stack_size_bytes", vm_worker_stack_size},
+		{"vm_worker_stack_unused_bytes", vm_worker_stack_unused},
+		{"vm_worker_stack_used_bytes", vm_worker_stack_used},
 		{"install_session_bytes",
 		 context->install_session == NULL ? 0 : sizeof(*context->install_session)},
 		{"temp_session_bytes",
@@ -942,15 +964,22 @@ static int resources_response(const struct sq_protocol_frame *request,
 		if (result != SQ_PROTOCOL_OK) {
 			return result;
 		}
-		result = append_record_field(payload, sizeof(payload), &payload_len,
+		result = append_record_field(payload, payload_cap, &payload_len,
 					     SQ_DEVICE_RECORD_FIELD_ENTRY, record,
 					     (uint16_t)record_len);
 		if (result != SQ_PROTOCOL_OK) {
 			return result;
 		}
 	}
-	return write_response(request, SQ_STATUS_OK, payload, payload_len, response, response_cap,
-			      response_len);
+
+	result = sq_protocol_encode_frame_header(SQ_FRAME_RESPONSE, request->opcode, SQ_STATUS_OK,
+						 request->sequence, payload, payload_len, response,
+						 response_cap);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	*response_len = SQ_PROTOCOL_HEADER_LEN + payload_len;
+	return SQ_PROTOCOL_OK;
 }
 
 static void clear_runtime_context(const struct sq_device_protocol_context *context)
