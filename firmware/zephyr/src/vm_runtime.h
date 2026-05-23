@@ -5,7 +5,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <zephyr/kernel.h>
-#if IS_ENABLED(CONFIG_NET_MGMT_EVENT)
+#if IS_ENABLED(CONFIG_NET_L2_WIFI_MGMT) && IS_ENABLED(CONFIG_NET_MGMT_EVENT) && \
+	IS_ENABLED(CONFIG_NET_MGMT_EVENT_INFO)
 #include <zephyr/net/net_mgmt.h>
 #endif
 
@@ -99,6 +100,8 @@ struct sq_vm_runtime {
 	uint32_t gpio_configured_mask;
 	uint32_t gpio_state_mask;
 	struct sq_vm_runtime_timer timers[SQ_VM_RUNTIME_TIMER_MAX];
+#if IS_ENABLED(CONFIG_NET_L2_WIFI_MGMT) && IS_ENABLED(CONFIG_NET_MGMT_EVENT) && \
+	IS_ENABLED(CONFIG_NET_MGMT_EVENT_INFO)
 	SqvmWifiAccessPoint wifi_scan_networks[SQVM_WIFI_SCAN_MAX_NETWORKS];
 	char wifi_scan_ssids[SQVM_WIFI_SCAN_MAX_NETWORKS][SQ_VM_RUNTIME_WIFI_SSID_LEN];
 	char wifi_scan_bssids[SQVM_WIFI_SCAN_MAX_NETWORKS][SQ_VM_RUNTIME_WIFI_BSSID_LEN];
@@ -107,7 +110,6 @@ struct sq_vm_runtime {
 	int wifi_scan_status;
 	struct k_sem wifi_scan_done;
 	bool wifi_scan_sem_initialized;
-#if IS_ENABLED(CONFIG_NET_MGMT_EVENT)
 	struct net_mgmt_event_callback wifi_mgmt_cb;
 	bool wifi_mgmt_cb_registered;
 #endif

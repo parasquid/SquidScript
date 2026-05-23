@@ -91,6 +91,17 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
         self.assertIn("CONFIG_MAIN_STACK_SIZE=3584", prj_conf)
 
+    def test_default_runtime_gates_wifi_scan_buffers_from_static_ram(self):
+        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+
+        guard = "#if IS_ENABLED(CONFIG_NET_L2_WIFI_MGMT) && IS_ENABLED(CONFIG_NET_MGMT_EVENT) &&"
+        self.assertIn(guard, runtime_h)
+        guard_index = runtime_h.index(guard, runtime_h.index("struct sq_vm_runtime"))
+        scan_index = runtime_h.index("wifi_scan_networks")
+        end_index = runtime_h.index("#endif", scan_index)
+        self.assertLess(guard_index, scan_index)
+        self.assertLess(runtime_h.index("wifi_scan_sem_initialized"), end_index)
+
     def test_hardware_suite_runs_zephyr_app_lifecycle_before_visible_checks(self):
         lifecycle = self.read("scripts/c3-supermini-test-app-lifecycle.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
