@@ -131,7 +131,13 @@ assert_json_lifecycle "${json_lifecycle_out}" "reader-clock" "main" ""
 
 output_out="$(wait_for_contains output-return "output=break exit" \
   "device output" cargo run --quiet -p squidc -- device output)"
-assert_file_contains "${output_out}" "output=reader start 1"
+reader_start_count="$(grep -F "output=reader start 1" "${output_out}" | wc -l)"
+if (( reader_start_count < 2 )); then
+  printf 'Expected app-exit return to start a fresh reader VM session\n' >&2
+  printf '%s\n' "--- ${output_out} ---" >&2
+  sed -n '1,200p' "${output_out}" >&2
+  exit 1
+fi
 
 errors_out="$(run_capture errors cargo run --quiet -p squidc -- device errors)"
 assert_file_empty_command "${errors_out}"
