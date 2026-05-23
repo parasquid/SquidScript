@@ -125,9 +125,11 @@ Zephyr VM FFI host boundary as other runtime services. `system.memory()` returns
 a display-oriented RAM/heap diagnostic string. `system.storage("apps")` returns
 a display-oriented free-space string for the mounted SquidScript app store.
 SquidScript VM calls to `app.launch`, `app.arm`, and `app.disarm` are also
-connected through the Zephyr FFI host. `app.launch` and `app.exit` drive the
-Zephyr foreground return stack for installed apps and clear foreground timers
-when a different installed app becomes active. `app.arm` runs the target app's
+connected through the Zephyr FFI host. The `app-launch` command request is
+parsed by a Rust `sqdp_` FFI helper before Zephyr starts the installed app.
+`app.launch` and `app.exit` drive the Zephyr foreground return stack for
+installed apps and clear foreground timers when a different installed app
+becomes active. `app.arm` runs the target app's
 `event.on("app.arm")` handler in registration mode, records bounded timer
 registrations, and exposes them through `lifecycle-get`. When an armed timer
 fires, Zephyr starts the armed app as foreground and dispatches the registered

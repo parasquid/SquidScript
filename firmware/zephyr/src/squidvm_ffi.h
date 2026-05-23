@@ -87,6 +87,11 @@ typedef struct {
 	size_t bytes_len;
 } SqdpStateImport;
 
+typedef struct {
+	const uint8_t *app_id;
+	size_t app_id_len;
+} SqdpAppLaunch;
+
 typedef enum {
 	SQVM_DISPATCH_COMPLETE = 0,
 	SQVM_DISPATCH_PENDING_STORAGE = 1,
@@ -438,6 +443,10 @@ SqdpStatus sqdp_parse_state_import_request(
 	const uint8_t *request,
 	size_t request_len,
 	SqdpStateImport *out_import);
+SqdpStatus sqdp_parse_app_launch_request(
+	const uint8_t *request,
+	size_t request_len,
+	SqdpAppLaunch *out_launch);
 SqdpStatus sqdp_prepare_transfer_begin(
 	const uint8_t *request,
 	size_t request_len,

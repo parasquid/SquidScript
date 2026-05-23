@@ -337,6 +337,19 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("uint8_t event_payload[64]", body)
         self.assertNotIn("append_string_field(event_payload", body)
 
+    def test_app_launch_uses_rust_parser_without_c_tlv_loop(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
+        start = protocol.index("static int launch_app")
+        end = protocol.index("static int start_installed_app", start)
+        body = protocol[start:end]
+
+        self.assertIn("SqdpAppLaunch", ffi_h)
+        self.assertIn("sqdp_parse_app_launch_request", ffi_h)
+        self.assertIn("sqdp_parse_app_launch_request", body)
+        self.assertNotIn("sq_protocol_next_field", body)
+        self.assertNotIn("struct sq_protocol_field", body)
+
     def test_hardware_suite_runs_zephyr_app_lifecycle_before_visible_checks(self):
         lifecycle = self.read("scripts/c3-supermini-test-app-lifecycle.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")

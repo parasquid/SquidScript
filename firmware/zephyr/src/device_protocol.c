@@ -435,13 +435,11 @@ static int start_installed_app(const struct sq_device_protocol_context *context,
 static void clear_foreground_timers(struct sq_vm_runtime *runtime);
 
 static int launch_app(const struct sq_protocol_frame *request,
+		      const uint8_t *request_bytes, size_t request_len,
 		      const struct sq_device_protocol_context *context, uint8_t *response,
 		      size_t response_cap, size_t *response_len)
 {
-	const char *app_id = NULL;
-	size_t app_id_len = 0;
-	size_t offset = 0;
-	struct sq_protocol_field field;
+	SqdpAppLaunch launch = {0};
 	int result;
 
 	if (context->runtime == NULL || context->store_mount_point == NULL ||
@@ -449,20 +447,14 @@ static int launch_app(const struct sq_protocol_frame *request,
 		return -ENODEV;
 	}
 
-	while (sq_protocol_next_field(request->payload, request->payload_len, &offset, &field) ==
-	       SQ_PROTOCOL_OK) {
-		if (field.tag == 1 && field.type == SQ_FIELD_STRING) {
-			app_id = (const char *)field.value;
-			app_id_len = field.len;
-		}
-	}
-	if (app_id == NULL || app_id_len == 0 || app_id_len >= SQ_APP_STORE_APP_ID_MAX) {
+	if (sqdp_parse_app_launch_request(request_bytes, request_len, &launch) != SQDP_STATUS_OK ||
+	    launch.app_id_len >= SQ_APP_STORE_APP_ID_MAX) {
 		return -EINVAL;
 	}
 
 	char app_id_buffer[SQ_APP_STORE_APP_ID_MAX];
-	memcpy(app_id_buffer, app_id, app_id_len);
-	app_id_buffer[app_id_len] = '\0';
+	memcpy(app_id_buffer, launch.app_id, launch.app_id_len);
+	app_id_buffer[launch.app_id_len] = '\0';
 
 	result = start_installed_app(context, app_id_buffer, "app.start", true);
 	if (result != 0) {
@@ -1091,7 +1083,8 @@ int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 					 response_cap, response_len);
 		break;
 	case SQ_OPCODE_APP_LAUNCH:
-		result = launch_app(&frame, context, response, response_cap, response_len);
+		result = launch_app(&frame, request, request_len, context, response, response_cap,
+				    response_len);
 		break;
 	case SQ_OPCODE_OUTPUT_GET:
 		result = repeated_runtime_lines_response(&frame, context->runtime, NULL, 0,

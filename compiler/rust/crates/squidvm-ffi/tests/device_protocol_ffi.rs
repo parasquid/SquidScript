@@ -1,12 +1,12 @@
 use squid_device_protocol::{
     app_install_begin_request, app_install_chunk_request, app_install_commit_request,
-    app_list_entries, decode_frame, encode_frame, key_request, lifecycle_lines, output_lines,
-    resource_install_begin_request, resource_install_chunk_request,
+    app_launch_request, app_list_entries, decode_frame, encode_frame, key_request, lifecycle_lines,
+    output_lines, resource_install_begin_request, resource_install_chunk_request,
     resource_install_commit_request, resource_values, state_import_request,
     wifi_profile_set_request, FrameKind, Opcode, Status,
 };
 use squidvm_ffi::{
-    SqdpAction, SqdpActionKind, SqdpAppListEntry, SqdpLifecycleTimer, SqdpLineSlice,
+    SqdpAction, SqdpActionKind, SqdpAppLaunch, SqdpAppListEntry, SqdpLifecycleTimer, SqdpLineSlice,
     SqdpResourceMetric, SqdpResourceSession, SqdpStateImport, SqdpTransferSession, SqdpWifiProfile,
     SQDP_STAGING_PATH_CAP,
 };
@@ -315,6 +315,22 @@ fn ffi_parses_state_import_request_without_c_tlv_staging() {
     assert_eq!(
         unsafe { core::slice::from_raw_parts(import.bytes, import.bytes_len) },
         state.as_slice()
+    );
+}
+
+#[test]
+fn ffi_parses_app_launch_request_without_c_tlv_staging() {
+    let request = encode_frame(&app_launch_request(32, "reader-clock"));
+    let mut launch = SqdpAppLaunch::default();
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_parse_app_launch_request(request.as_ptr(), request.len(), &mut launch)
+    };
+
+    assert_eq!(status as i32, 0);
+    assert_eq!(
+        unsafe { core::slice::from_raw_parts(launch.app_id, launch.app_id_len) },
+        b"reader-clock"
     );
 }
 
