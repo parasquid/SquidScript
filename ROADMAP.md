@@ -94,10 +94,6 @@ for compiler, SQBC tooling, and VM semantics.
   The default ESP32-C3 Super Mini firmware builds with the real Zephyr ESP32
   Wi-Fi scan/status backend at `dram0_0_seg=209424` bytes, or 51.1% of the
   target definition's 400 KiB internal SRAM.
-- Run the default ESP32-C3 Super Mini Wi-Fi scan/status/list hardware checks
-  against actual RF results until they pass reliably. Station and AP behavior
-  should stay separate until their Zephyr runtime support and RAM cost are
-  measured explicitly.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.
