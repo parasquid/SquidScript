@@ -17,6 +17,7 @@ use squid_device_protocol::{
     resources_get_request, state_bytes, state_get_request, state_import_request,
     storage_format_request, temp_run_begin_request, temp_run_chunk_request,
     temp_run_commit_request, trace_get_request, trace_lines, AppEntry, Frame, FrameKind, Status,
+    wifi_profile_set_request,
 };
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -195,6 +196,15 @@ impl SerialDevice {
     pub fn send_key(&mut self, key: &str) -> Result<String, String> {
         self.send_protocol_expect_ok(&key_request(48, key))?;
         Ok(format!("key {key}\n"))
+    }
+
+    pub fn set_wifi_profile(
+        &mut self,
+        profile: &str,
+        ssid: &str,
+        password: &str,
+    ) -> Result<(), String> {
+        self.send_protocol_expect_ok(&wifi_profile_set_request(76, profile, ssid, password))
     }
 
     pub fn send_protocol_request(&mut self, frame: &Frame) -> Result<Frame, String> {

@@ -1,0 +1,12 @@
+app "wifi-station-summary"
+
+state {}
+
+event.on("app.start") {
+  let connect = service.wifi.connect("dev")
+  let status = service.wifi.status()
+  debug.print("wifi connect", connect.ok, connect.error)
+  debug.print("wifi station", status.profile, status.connected, status.state, status.error)
+}
+
+screen("main") {}

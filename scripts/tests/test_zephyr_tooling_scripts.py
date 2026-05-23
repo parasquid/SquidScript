@@ -178,6 +178,26 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertLess(stack_check, status_check)
         self.assertLess(status_check, scan_check)
 
+    def test_wifi_station_check_is_explicit_credentials_only_and_redacted(self):
+        station = self.read("scripts/c3-supermini-test-wifi-station-api.sh")
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn('tests/hardware/c3-supermini/wifi-station-summary/main.squid', station)
+        self.assertIn("SQUID_WIFI_STATION_SSID", station)
+        self.assertIn("SQUID_WIFI_STATION_PASSWORD", station)
+        self.assertIn("credentials not provided; skipping", station)
+        self.assertIn('cargo run --quiet -p squidc -- device wifi-profile', station)
+        self.assertIn('--ssid-env SQUID_WIFI_STATION_SSID', station)
+        self.assertIn('--password-env SQUID_WIFI_STATION_PASSWORD', station)
+        self.assertIn('cargo run --quiet -p squidc -- app launch wifi-station-summary', station)
+        self.assertIn('output=wifi connect', station)
+        self.assertIn('assert_no_raw_network_identifiers', station)
+        self.assertNotIn("obsolete", station.lower())
+        self.assertNotIn("wifi ap", station)
+        self.assertNotIn("SQUID_WIFI_STATION_PASSWORD}", station)
+        self.assertNotIn("c3-supermini-test-wifi-station-api.sh", suite)
+        self.assertNotIn("app.exit()", self.read("tests/hardware/c3-supermini/wifi-station-summary/main.squid"))
+
 
 if __name__ == "__main__":
     unittest.main()

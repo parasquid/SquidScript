@@ -92,6 +92,17 @@ prints only `ok`, `error`, and `count`; the script rejects raw BSSID, MAC, or
 local IP patterns in captured output. The default RAM-guarded firmware may
 report `unsupported` when the Zephyr Wi-Fi driver is not enabled.
 
+`scripts/c3-supermini-test-wifi-station-api.sh` is explicit-credentials-only
+and is not part of the default full hardware suite. It skips successfully unless
+`SQUID_WIFI_STATION_SSID` and `SQUID_WIFI_STATION_PASSWORD` are set. When those
+variables are present, it provisions profile `dev` through
+`squidc device wifi-profile --ssid-env SQUID_WIFI_STATION_SSID --password-env
+SQUID_WIFI_STATION_PASSWORD`, installs
+`tests/hardware/c3-supermini/wifi-station-summary`, and launches a summary-only
+app that calls `service.wifi.connect("dev")` and `service.wifi.status()`. The
+script prints command names and lengths only, and rejects raw SSIDs, passwords,
+BSSIDs, MACs, or local IP patterns in captured output.
+
 For the current ESP32-C3 Super Mini Zephyr target,
 `scripts/c3-supermini-test-blinky.sh` is the final full-suite check. It
 installs and launches `examples/blinky-supermini/main.squid`. Serial

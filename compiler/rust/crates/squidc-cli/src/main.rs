@@ -125,6 +125,7 @@ enum AppCommands {
 #[derive(Subcommand, Debug)]
 enum DeviceCommands {
     Key(DeviceKeyArgs),
+    WifiProfile(DeviceWifiProfileArgs),
     Reset(DeviceOnlyArgs),
     Output(DeviceOnlyArgs),
     State(DeviceOnlyArgs),
@@ -196,6 +197,17 @@ struct DeviceKeyArgs {
     #[command(flatten)]
     device: DeviceOnlyOptions,
     key: String,
+}
+
+#[derive(Args, Debug)]
+struct DeviceWifiProfileArgs {
+    #[command(flatten)]
+    device: DeviceOnlyOptions,
+    profile: String,
+    #[arg(long)]
+    ssid_env: String,
+    #[arg(long)]
+    password_env: String,
 }
 
 #[derive(Args, Debug)]
@@ -301,6 +313,7 @@ fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String>
         },
         Commands::Device { command } => match command {
             DeviceCommands::Key(args) => key(args, human),
+            DeviceCommands::WifiProfile(args) => wifi_profile(args, human),
             DeviceCommands::Reset(args) => reset(args.device, human),
             DeviceCommands::Output(args) => device_output(args.device, human),
             DeviceCommands::State(args) => state(args.device, human),
@@ -519,6 +532,34 @@ fn key(args: DeviceKeyArgs, human: bool) -> Result<Value, String> {
         "port": port,
         "key": args.key,
         "response": response
+    }))
+}
+
+fn wifi_profile(args: DeviceWifiProfileArgs, human: bool) -> Result<Value, String> {
+    let ssid = env::var(&args.ssid_env)
+        .map_err(|_| format!("missing Wi-Fi SSID environment variable {}", args.ssid_env))?;
+    let password = env::var(&args.password_env).map_err(|_| {
+        format!(
+            "missing Wi-Fi password environment variable {}",
+            args.password_env
+        )
+    })?;
+    let port = resolve_port(&args.device)?;
+    let mut device = SerialDevice::open(&port)?;
+    device.set_wifi_profile(&args.profile, &ssid, &password)?;
+    if human {
+        println!(
+            "wifi-profile profile={} ssid_len={} password_len={}",
+            args.profile,
+            ssid.len(),
+            password.len()
+        );
+    }
+    Ok(json!({
+        "port": port,
+        "profile": args.profile,
+        "ssidLen": ssid.len(),
+        "passwordLen": password.len(),
     }))
 }
 
@@ -1736,6 +1777,30 @@ screen("main") {}
         else {
             panic!("expected device storage-format");
         };
+    }
+
+    #[test]
+    fn parses_device_wifi_profile_env_command_without_secret_values() {
+        let cli = Cli::try_parse_from([
+            "squidc",
+            "device",
+            "wifi-profile",
+            "dev",
+            "--ssid-env",
+            "SQUID_WIFI_STATION_SSID",
+            "--password-env",
+            "SQUID_WIFI_STATION_PASSWORD",
+        ])
+        .unwrap();
+        let Commands::Device {
+            command: DeviceCommands::WifiProfile(args),
+        } = cli.command
+        else {
+            panic!("expected device wifi-profile");
+        };
+        assert_eq!(args.profile, "dev");
+        assert_eq!(args.ssid_env, "SQUID_WIFI_STATION_SSID");
+        assert_eq!(args.password_env, "SQUID_WIFI_STATION_PASSWORD");
     }
 
     #[test]

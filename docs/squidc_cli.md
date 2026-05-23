@@ -83,6 +83,7 @@ cargo run -p squidc -- device errors
 cargo run -p squidc -- device resources
 cargo run -p squidc -- device reset
 cargo run -p squidc -- device storage-format
+cargo run -p squidc -- device wifi-profile dev --ssid-env SQUID_WIFI_STATION_SSID --password-env SQUID_WIFI_STATION_PASSWORD
 cargo run -p squidc -- device monitor --max-lines 4
 ```
 
@@ -119,6 +120,13 @@ apps.
 `device storage-format` erases Zephyr app storage, including installed apps,
 resources, temp app staging, and app state files, then recreates the expected
 storage directories.
+
+`device wifi-profile` provisions a volatile Wi-Fi station profile through the
+current framed Zephyr command surface. It reads the SSID and password from
+environment variable names passed with `--ssid-env` and `--password-env` so
+normal command output can report only the profile name and byte lengths. Do not
+use `protocol raw` for credentials unless raw request hex is explicitly needed
+and safe for the current environment.
 
 `device monitor` polls the firmware output buffer by default. Use `--raw` only
 when literal serial bytes are needed. JSON monitor output must be bounded with
