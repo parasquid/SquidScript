@@ -648,6 +648,12 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 		return start_installed_app(context, target, "app.start", true);
 	}
 
+	if (runtime->arm_registration_active) {
+		runtime->arm_registration_active = false;
+		memset(runtime->arm_registration_app, 0, sizeof(runtime->arm_registration_app));
+		return 0;
+	}
+
 	if (runtime->pending_launch_active) {
 		strncpy(runtime->lifecycle_target_app, runtime->pending_launch_app,
 			sizeof(runtime->lifecycle_target_app) - 1);
@@ -664,6 +670,18 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 		return start_installed_app(context, runtime->current_app, "app.exit", false);
 	}
 
+	if (runtime->pending_arm_active) {
+		strncpy(target, runtime->pending_arm_app, sizeof(target) - 1);
+		target[sizeof(target) - 1] = '\0';
+		memset(runtime->pending_arm_app, 0, sizeof(runtime->pending_arm_app));
+		runtime->pending_arm_active = false;
+		strncpy(runtime->arm_registration_app, target,
+			sizeof(runtime->arm_registration_app) - 1);
+		runtime->arm_registration_app[sizeof(runtime->arm_registration_app) - 1] = '\0';
+		runtime->arm_registration_active = true;
+		return start_installed_app(context, target, "app.arm", false);
+	}
+
 	if (runtime->dispatch_exited) {
 		runtime->dispatch_exited = false;
 		result = pop_return_app(runtime, target, sizeof(target));
@@ -671,6 +689,16 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 			return result;
 		}
 		return start_installed_app(context, target, "app.start", true);
+	}
+
+	char armed_event[SQ_VM_RUNTIME_EVENT_LEN];
+	if (sq_vm_runtime_next_due_armed_timer(runtime, target, sizeof(target), armed_event,
+					       sizeof(armed_event)) == 0) {
+		result = push_return_app(runtime, runtime->current_app);
+		if (result != 0) {
+			return result;
+		}
+		return start_installed_app(context, target, armed_event, true);
 	}
 
 	return 0;
@@ -772,6 +800,26 @@ static int lifecycle_response(const struct sq_protocol_frame *request,
 				     SQ_DEVICE_LINE_FIELD_VALUE, "armed_stack=");
 	if (result != SQ_PROTOCOL_OK) {
 		return result;
+	}
+	if (runtime != NULL) {
+		for (size_t i = 0, line_index = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
+			const struct sq_vm_runtime_armed_timer *timer = &runtime->armed_timers[i];
+			if (!timer->active) {
+				continue;
+			}
+			int written = snprintf(line, sizeof(line), "armed_stack[%u]=%s %s",
+					       (unsigned int)line_index, timer->app_id,
+					       timer->event);
+			line_index++;
+			if (written > 0 && (size_t)written < sizeof(line)) {
+				result = append_string_field(payload, sizeof(payload), &payload_len,
+							     SQ_DEVICE_LINE_FIELD_VALUE,
+							     line);
+				if (result != SQ_PROTOCOL_OK) {
+					return result;
+				}
+			}
+		}
 	}
 
 	return write_response(request, SQ_STATUS_OK, payload, payload_len, response, response_cap,
@@ -985,6 +1033,13 @@ static int dispatch_event_request(const struct sq_protocol_frame *request,
 		app_id_buffer[app_id_len] = '\0';
 		int result = sq_app_store_vm_storage_for_app(context->store_mount_point,
 							     app_id_buffer,
+							     context->launch_storage);
+		if (result != 0) {
+			return result;
+		}
+	} else if (context->runtime->current_app[0] != '\0') {
+		int result = sq_app_store_vm_storage_for_app(context->store_mount_point,
+							     context->runtime->current_app,
 							     context->launch_storage);
 		if (result != 0) {
 			return result;

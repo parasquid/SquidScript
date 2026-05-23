@@ -8,8 +8,8 @@ usage() {
 Usage: scripts/c3-supermini-test-hardware.sh [--skip-flash]
 
 Runs the current Zephyr-backed ESP32-C3 Super Mini hardware checks
-sequentially. The Zephyr command-surface suite is still being ported; this
-wrapper currently runs the Zephyr diagnostic check only.
+sequentially. Stateful install/lifecycle checks run before any final visible
+board-state checks.
 EOF
 }
 
@@ -31,3 +31,4 @@ while [[ $# -gt 0 ]]; do
 done
 
 "$ROOT/scripts/c3-supermini-zephyr-test-diagnostic.sh"
+"$ROOT/scripts/c3-supermini-test-app-lifecycle.sh"

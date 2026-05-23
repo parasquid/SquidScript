@@ -69,6 +69,21 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
         self.assertIn('source "Kconfig.zephyr"', kconfig)
 
+    def test_hardware_suite_runs_zephyr_app_lifecycle_before_visible_checks(self):
+        lifecycle = self.read("scripts/c3-supermini-test-app-lifecycle.sh")
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn('cargo run --quiet -p squidc -- app install', lifecycle)
+        self.assertIn('cargo run --quiet -p squidc -- app launch main', lifecycle)
+        self.assertIn('cargo run --quiet -p squidc -- device lifecycle', lifecycle)
+        self.assertIn('process_stack[0]=main', lifecycle)
+        self.assertIn('armed_stack[0]=break-reminder timer.break', lifecycle)
+        self.assertNotIn("obsolete", lifecycle.lower())
+
+        diagnostic = suite.index('c3-supermini-zephyr-test-diagnostic.sh')
+        lifecycle_check = suite.index('c3-supermini-test-app-lifecycle.sh')
+        self.assertLess(diagnostic, lifecycle_check)
+
 
 if __name__ == "__main__":
     unittest.main()

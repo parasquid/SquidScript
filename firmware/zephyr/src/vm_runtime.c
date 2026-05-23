@@ -219,12 +219,36 @@ static int32_t runtime_app_launch(void *user_data, const uint8_t *app, size_t ap
 
 static int32_t runtime_app_arm(void *user_data, const uint8_t *app, size_t app_len)
 {
-	return runtime_app_lifecycle(user_data, "arm", app, app_len);
+	struct sq_vm_runtime *runtime = user_data;
+	int result = runtime_app_lifecycle(user_data, "arm", app, app_len);
+
+	if (result != 0) {
+		return result;
+	}
+	if (runtime == NULL || app == NULL || app_len == 0 ||
+	    app_len >= sizeof(runtime->pending_arm_app)) {
+		return -EINVAL;
+	}
+	memcpy(runtime->pending_arm_app, app, app_len);
+	runtime->pending_arm_app[app_len] = '\0';
+	runtime->pending_arm_active = true;
+	return 0;
 }
 
 static int32_t runtime_app_disarm(void *user_data, const uint8_t *app, size_t app_len)
 {
-	return runtime_app_lifecycle(user_data, "disarm", app, app_len);
+	int result = runtime_app_lifecycle(user_data, "disarm", app, app_len);
+
+	if (result != 0) {
+		return result;
+	}
+	struct sq_vm_runtime *runtime = user_data;
+	if (runtime != NULL && app != NULL && strlen(runtime->pending_arm_app) == app_len &&
+	    memcmp(runtime->pending_arm_app, app, app_len) == 0) {
+		memset(runtime->pending_arm_app, 0, sizeof(runtime->pending_arm_app));
+		runtime->pending_arm_active = false;
+	}
+	return sq_vm_runtime_clear_armed_app(user_data, app, app_len);
 }
 
 static int32_t runtime_timer_every(void *user_data, const uint8_t *event, size_t event_len,
@@ -318,10 +342,16 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	memset(runtime->current_app, 0, sizeof(runtime->current_app));
 	memset(runtime->pending_launch_app, 0, sizeof(runtime->pending_launch_app));
 	runtime->pending_launch_active = false;
+	memset(runtime->pending_arm_app, 0, sizeof(runtime->pending_arm_app));
+	runtime->pending_arm_active = false;
+	runtime->arm_registration_active = false;
+	memset(runtime->arm_registration_app, 0, sizeof(runtime->arm_registration_app));
 	memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
 	runtime->lifecycle_launch_after_exit = false;
 	memset(runtime->return_stack, 0, sizeof(runtime->return_stack));
 	runtime->return_stack_count = 0;
+	memset(runtime->armed_timers, 0, sizeof(runtime->armed_timers));
+	runtime->armed_timer_count = 0;
 	memset(runtime->outputs, 0, sizeof(runtime->outputs));
 	runtime->output_count = 0;
 	memset(runtime->drawlog, 0, sizeof(runtime->drawlog));
@@ -753,6 +783,37 @@ int sq_vm_runtime_register_timer(struct sq_vm_runtime *runtime, const uint8_t *e
 	    event_len >= SQ_VM_RUNTIME_EVENT_LEN || interval_ms <= 0) {
 		return -EINVAL;
 	}
+	if (runtime->arm_registration_active) {
+		for (size_t i = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
+			struct sq_vm_runtime_armed_timer *timer = &runtime->armed_timers[i];
+			if (timer->active &&
+			    strcmp(timer->app_id, runtime->arm_registration_app) == 0 &&
+			    strncmp(timer->event, (const char *)event, event_len) == 0 &&
+			    timer->event[event_len] == '\0') {
+				timer->repeating = repeating;
+				timer->interval_ms = interval_ms;
+				timer->due_ms = k_uptime_get() + interval_ms;
+				return 0;
+			}
+		}
+		for (size_t i = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
+			struct sq_vm_runtime_armed_timer *timer = &runtime->armed_timers[i];
+			if (!timer->active) {
+				timer->active = true;
+				timer->repeating = repeating;
+				timer->interval_ms = interval_ms;
+				timer->due_ms = k_uptime_get() + interval_ms;
+				strncpy(timer->app_id, runtime->arm_registration_app,
+					sizeof(timer->app_id) - 1);
+				timer->app_id[sizeof(timer->app_id) - 1] = '\0';
+				memcpy(timer->event, event, event_len);
+				timer->event[event_len] = '\0';
+				runtime->armed_timer_count++;
+				return 0;
+			}
+		}
+		return -ENOSPC;
+	}
 	for (size_t i = 0; i < SQ_VM_RUNTIME_TIMER_MAX; i++) {
 		if (runtime->timers[i].active &&
 		    strncmp(runtime->timers[i].event, (const char *)event, event_len) == 0 &&
@@ -775,6 +836,59 @@ int sq_vm_runtime_register_timer(struct sq_vm_runtime *runtime, const uint8_t *e
 		}
 	}
 	return -ENOSPC;
+}
+
+int sq_vm_runtime_clear_armed_app(struct sq_vm_runtime *runtime, const uint8_t *app,
+				  size_t app_len)
+{
+	if (runtime == NULL || app == NULL || app_len == 0 ||
+	    app_len >= SQ_APP_STORE_APP_ID_MAX) {
+		return -EINVAL;
+	}
+	for (size_t i = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
+		struct sq_vm_runtime_armed_timer *timer = &runtime->armed_timers[i];
+		if (timer->active && strlen(timer->app_id) == app_len &&
+		    memcmp(timer->app_id, app, app_len) == 0) {
+			memset(timer, 0, sizeof(*timer));
+		}
+	}
+	runtime->armed_timer_count = 0;
+	for (size_t i = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
+		if (runtime->armed_timers[i].active) {
+			runtime->armed_timer_count++;
+		}
+	}
+	return 0;
+}
+
+int sq_vm_runtime_next_due_armed_timer(struct sq_vm_runtime *runtime, char *app, size_t app_cap,
+				       char *event, size_t event_cap)
+{
+	if (runtime == NULL || app == NULL || app_cap == 0 || event == NULL || event_cap == 0) {
+		return -EINVAL;
+	}
+	int64_t now = k_uptime_get();
+	for (size_t i = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
+		struct sq_vm_runtime_armed_timer *timer = &runtime->armed_timers[i];
+		if (!timer->active || timer->due_ms > now) {
+			continue;
+		}
+		size_t app_len = strlen(timer->app_id);
+		size_t event_len = strlen(timer->event);
+		if (app_len == 0 || app_len >= app_cap || event_len == 0 || event_len >= event_cap) {
+			return -ENOSPC;
+		}
+		memcpy(app, timer->app_id, app_len + 1);
+		memcpy(event, timer->event, event_len + 1);
+		if (timer->repeating) {
+			timer->due_ms = now + timer->interval_ms;
+		} else {
+			memset(timer, 0, sizeof(*timer));
+			runtime->armed_timer_count--;
+		}
+		return 0;
+	}
+	return -ENOENT;
 }
 
 int sq_vm_runtime_next_due_timer(struct sq_vm_runtime *runtime, char *event, size_t event_cap)

@@ -25,6 +25,7 @@ extern "C" {
 #define SQ_VM_RUNTIME_EVENT_LEN 32
 #define SQ_VM_RUNTIME_INDICATOR_BREATHE_STEPS 65
 #define SQ_VM_RUNTIME_RETURN_STACK_MAX 2
+#define SQ_VM_RUNTIME_ARMED_TIMER_MAX 2
 
 enum sq_vm_runtime_status {
 	SQ_VM_RUNTIME_IDLE = 0,
@@ -38,6 +39,15 @@ struct sq_vm_runtime_timer {
 	bool repeating;
 	int32_t interval_ms;
 	int64_t due_ms;
+	char event[SQ_VM_RUNTIME_EVENT_LEN];
+};
+
+struct sq_vm_runtime_armed_timer {
+	bool active;
+	bool repeating;
+	int32_t interval_ms;
+	int64_t due_ms;
+	char app_id[SQ_APP_STORE_APP_ID_MAX];
 	char event[SQ_VM_RUNTIME_EVENT_LEN];
 };
 
@@ -57,10 +67,16 @@ struct sq_vm_runtime {
 	char current_app[SQ_APP_STORE_APP_ID_MAX];
 	char pending_launch_app[SQ_APP_STORE_APP_ID_MAX];
 	bool pending_launch_active;
+	char pending_arm_app[SQ_APP_STORE_APP_ID_MAX];
+	bool pending_arm_active;
+	bool arm_registration_active;
+	char arm_registration_app[SQ_APP_STORE_APP_ID_MAX];
 	char lifecycle_target_app[SQ_APP_STORE_APP_ID_MAX];
 	bool lifecycle_launch_after_exit;
 	char return_stack[SQ_VM_RUNTIME_RETURN_STACK_MAX][SQ_APP_STORE_APP_ID_MAX];
 	size_t return_stack_count;
+	struct sq_vm_runtime_armed_timer armed_timers[SQ_VM_RUNTIME_ARMED_TIMER_MAX];
+	size_t armed_timer_count;
 	char traces[SQ_VM_RUNTIME_TRACE_MAX][SQ_VM_RUNTIME_TRACE_LEN];
 	size_t trace_count;
 	char outputs[SQ_VM_RUNTIME_OUTPUT_MAX][SQ_VM_RUNTIME_OUTPUT_LEN];
@@ -103,6 +119,10 @@ int sq_vm_runtime_hardware_gpio_read(struct sq_vm_runtime *runtime, const uint8_
 				     size_t name_len, bool *out);
 int sq_vm_runtime_register_timer(struct sq_vm_runtime *runtime, const uint8_t *event,
 				 size_t event_len, int32_t interval_ms, bool repeating);
+int sq_vm_runtime_clear_armed_app(struct sq_vm_runtime *runtime, const uint8_t *app,
+				  size_t app_len);
+int sq_vm_runtime_next_due_armed_timer(struct sq_vm_runtime *runtime, char *app, size_t app_cap,
+				       char *event, size_t event_cap);
 int sq_vm_runtime_next_due_timer(struct sq_vm_runtime *runtime, char *event, size_t event_cap);
 int sq_vm_runtime_poll(struct sq_vm_runtime *runtime);
 

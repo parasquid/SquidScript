@@ -111,9 +111,11 @@ connected through the Zephyr FFI host and currently return bounded
 Wi-Fi management backend is implemented.
 SquidScript VM calls to `app.launch`, `app.arm`, and `app.disarm` are also
 connected through the Zephyr FFI host. `app.launch` and `app.exit` drive the
-Zephyr foreground return stack for installed apps. `app.arm` and `app.disarm`
-currently emit bounded trace records; armed-app trigger registration and
-dispatch remain separate runtime-service work.
+Zephyr foreground return stack for installed apps. `app.arm` runs the target
+app's `event.on("app.arm")` handler in registration mode, records bounded
+timer registrations, and exposes them through `lifecycle-get`. When an armed
+timer fires, Zephyr starts the armed app as foreground and dispatches the
+registered event. `app.disarm` removes that app's armed timer registrations.
 
 ## Diagnostics
 

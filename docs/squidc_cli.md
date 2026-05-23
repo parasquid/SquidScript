@@ -96,7 +96,8 @@ use the current firmware diagnostic text shape, such as
 
 `device lifecycle` returns current Zephyr app lifecycle diagnostics as lines
 such as `active=reader`, `process_stack[0]=launcher`, and `armed_stack=`.
-The armed stack line is empty until armed-app trigger registration is wired.
+When armed timers are registered, additional lines use
+`armed_stack[0]=break-reminder timer.break`.
 
 `device resources` reads Zephyr firmware resource diagnostics and reports
 raw target-specific RAM and app-storage byte counts. `ram_total_bytes` is

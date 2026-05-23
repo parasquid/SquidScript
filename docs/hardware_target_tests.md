@@ -40,7 +40,9 @@ The Zephyr-only hardware suite is not complete yet. The required inventory is:
 - Build and flash the Zephyr diagnostic firmware.
 - Check Zephyr RAM budget output before flashing.
 - Verify the diagnostic boot banner over the serial monitor.
-- Install and launch a minimal SQBC app through the Zephyr command surface.
+- Install and launch real SquidScript apps through the Zephyr command surface.
+- Verify `app.launch`, `app.exit`, `app.arm`, timer-triggered armed dispatch,
+  and `device lifecycle` process/armed stack diagnostics.
 - Dispatch key events and verify state/output traces.
 - Verify persistent app storage and app state through Zephyr storage.
 - Verify GPIO/indicator behavior, including a final visible board-state check.
@@ -50,6 +52,14 @@ The Zephyr-only hardware suite is not complete yet. The required inventory is:
 The obsolete Rust firmware scripts are not current hardware target tests. As
 Zephyr coverage lands, keep the suite ordered so stateful reset/install tests
 run before the final visible board-state check.
+
+The Zephyr app lifecycle check is
+`scripts/c3-supermini-test-app-lifecycle.sh`. It installs the real SquidScript
+fixtures under `tests/hardware/c3-supermini/generic-events`, launches `main`,
+verifies `reader-clock` starts via `app.launch`, verifies `break-reminder` is
+registered on the armed stack through `app.arm`, waits for the armed timer to
+start `break-reminder`, then sends `SELECT` so `app.exit` returns to the
+previous app on the process stack.
 
 For the current ESP32-C3 Super Mini Zephyr target, the blinky check installs
 and launches `examples/blinky-supermini/main.squid`. Serial `device output`
