@@ -1,0 +1,16 @@
+app "break-reminder"
+
+state {
+  fires: int = 0
+}
+
+app.triggers {
+  service.timer.after("timer.break", 1)
+}
+
+event.on("timer.break") {
+  fires = fires + 1
+  debug.print("break fired", fires)
+}
+
+screen("main") {}

@@ -17,11 +17,6 @@ for compiler, SQBC tooling, and VM semantics.
   build succeeds.
 - Add a Zephyr hardware diagnostic test that builds, flashes, boots, and reads
   the diagnostic banner over the serial monitor.
-- Fix the remaining `scripts/zephyr-test-protocol.sh` native Twister failures.
-  The runner now reaches the ztest binary on `native_sim/native/64`; current
-  failures are test/runtime issues such as native context-size mismatch and
-  shared filesystem mount cleanup after failing tests, not missing Python
-  dependencies.
 
 ### 2. Expand Zephyr VM Hosting ABI
 
@@ -50,6 +45,17 @@ for compiler, SQBC tooling, and VM semantics.
 
 ### 4. Port Runtime Services To Zephyr
 
+- Design app-entry versus import-only source semantics before adding no-screen
+  app sugar. The likely direction is: only an app entry file can become an app,
+  include/import files are reusable declarations and never synthesize screens by
+  themselves, and after whole-app include expansion an app with no explicit
+  `screen(...)` declarations gets compiler-synthesized `screen("main") {}`.
+  Keep rejecting unknown `screen.open(...)` targets, document the sugar, and add
+  compiler/SQBC tests proving no-screen apps compile to one empty `main` screen.
+  Use the same design pass to settle related module questions such as symbol
+  namespacing, declaration override rules, package/import versioning, duplicate
+  declarations across files, and what app-lifecycle declarations are legal in
+  import-only files.
 - Add external Wi-Fi AP client association/DHCP lease proof through
   Zephyr-native subsystems.
 - Decide whether the ESP32-C3 Super Mini reference target should expose
