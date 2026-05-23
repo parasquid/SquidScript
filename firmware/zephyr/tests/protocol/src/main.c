@@ -1157,6 +1157,94 @@ ZTEST(squidscript_protocol, test_app_arm_registers_timer_and_dispatches_armed_ap
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }
 
+ZTEST(squidscript_protocol, test_app_exit_return_takes_priority_over_due_foreground_timer)
+{
+	struct sq_device_identity identity = {
+		.target = "esp32c3-supermini",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_vm_runtime runtime = {0};
+	struct sq_app_store_vm_storage launch_storage = {0};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.store_mount_point = test_fs_mount.mnt_point,
+		.runtime = &runtime,
+		.launch_storage = &launch_storage,
+	};
+
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "reader", reader_exit_sqbc,
+					       sizeof(reader_exit_sqbc)),
+		      0);
+
+	sq_vm_runtime_init(&runtime);
+	strncpy(runtime.current_app, "break-reminder", sizeof(runtime.current_app) - 1);
+	strncpy(runtime.return_stack[0], "reader", sizeof(runtime.return_stack[0]) - 1);
+	runtime.return_stack_count = 1;
+	runtime.dispatch_exited = true;
+	runtime.status = SQ_VM_RUNTIME_COMPLETE;
+	runtime.job_backend = sq_app_store_vm_storage_backend(&launch_storage);
+	runtime.timers[0].active = true;
+	runtime.timers[0].repeating = true;
+	runtime.timers[0].interval_ms = 500;
+	runtime.timers[0].due_ms = k_uptime_get() - 1;
+	strncpy(runtime.timers[0].event, "timer.clock", sizeof(runtime.timers[0].event) - 1);
+
+	zassert_equal(sq_device_protocol_poll(&context), 0);
+	zassert_str_equal(runtime.current_app, "reader");
+	zassert_equal(runtime.return_stack_count, 0);
+	wait_runtime_done(&runtime);
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
+ZTEST(squidscript_protocol, test_foreground_timers_clear_when_armed_app_takes_foreground)
+{
+	struct sq_device_identity identity = {
+		.target = "esp32c3-supermini",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_vm_runtime runtime = {0};
+	struct sq_app_store_vm_storage launch_storage = {0};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.store_mount_point = test_fs_mount.mnt_point,
+		.runtime = &runtime,
+		.launch_storage = &launch_storage,
+	};
+
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "break-reminder",
+					       break_reminder_sqbc, sizeof(break_reminder_sqbc)),
+		      0);
+
+	sq_vm_runtime_init(&runtime);
+	strncpy(runtime.current_app, "reader", sizeof(runtime.current_app) - 1);
+	runtime.status = SQ_VM_RUNTIME_COMPLETE;
+	runtime.timers[0].active = true;
+	runtime.timers[0].repeating = true;
+	runtime.timers[0].interval_ms = 500;
+	runtime.timers[0].due_ms = k_uptime_get() - 1;
+	strncpy(runtime.timers[0].event, "timer.clock", sizeof(runtime.timers[0].event) - 1);
+	runtime.armed_timers[0].active = true;
+	runtime.armed_timers[0].repeating = false;
+	runtime.armed_timers[0].interval_ms = 1000;
+	runtime.armed_timers[0].due_ms = k_uptime_get() - 1;
+	strncpy(runtime.armed_timers[0].app_id, "break-reminder",
+		sizeof(runtime.armed_timers[0].app_id) - 1);
+	strncpy(runtime.armed_timers[0].event, "timer.break",
+		sizeof(runtime.armed_timers[0].event) - 1);
+
+	zassert_equal(sq_device_protocol_poll(&context), 0);
+	zassert_str_equal(runtime.current_app, "break-reminder");
+	zassert_false(runtime.timers[0].active);
+	wait_runtime_done(&runtime);
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
 ZTEST(squidscript_protocol, test_handles_temp_run_commit_dispatches_file_staged_app_start)
 {
 	uint8_t begin_payload[64];
@@ -1303,6 +1391,8 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 	};
 	uint64_t stack_unused = 0;
 	uint64_t stack_used = 0;
+	uint64_t protocol_stack_unused = 0;
+	uint64_t protocol_stack_used = 0;
 	int result;
 
 	memset(&runtime, 0, sizeof(runtime));
@@ -1321,6 +1411,18 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 
 	zassert_true(resource_value_equals(&frame, "vm_worker_stack_size_bytes",
 					   SQ_VM_RUNTIME_WORK_STACK_SIZE));
+	zassert_true(resource_value_equals(&frame, "protocol_thread_stack_size_bytes",
+					   CONFIG_MAIN_STACK_SIZE));
+	zassert_true(resource_value_for_key(&frame, "protocol_thread_stack_unused_bytes",
+					    &protocol_stack_unused));
+	zassert_true(resource_value_for_key(&frame, "protocol_thread_stack_used_bytes",
+					    &protocol_stack_used));
+	zassert_true(protocol_stack_unused <= CONFIG_MAIN_STACK_SIZE);
+	zassert_true(protocol_stack_used <= CONFIG_MAIN_STACK_SIZE);
+	if (protocol_stack_unused != 0 || protocol_stack_used != 0) {
+		zassert_equal(protocol_stack_unused + protocol_stack_used, CONFIG_MAIN_STACK_SIZE,
+			      "unused=%llu used=%llu", protocol_stack_unused, protocol_stack_used);
+	}
 	zassert_true(resource_value_for_key(&frame, "vm_worker_stack_unused_bytes", &stack_unused));
 	zassert_true(resource_value_for_key(&frame, "vm_worker_stack_used_bytes", &stack_used));
 	zassert_true(stack_unused <= SQ_VM_RUNTIME_WORK_STACK_SIZE);

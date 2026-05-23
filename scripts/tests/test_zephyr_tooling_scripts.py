@@ -72,7 +72,12 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_ram_audit_default_guard_tracks_current_esp32c3_budget(self):
         audit = self.read("scripts/zephyr-ram-audit.sh")
 
-        self.assertIn('SQUID_ZEPHYR_DRAM_LIMIT_BYTES:-141500', audit)
+        self.assertIn('SQUID_ZEPHYR_DRAM_LIMIT_BYTES:-141000', audit)
+
+    def test_zephyr_main_stack_tracks_measured_protocol_work(self):
+        prj_conf = self.read("firmware/zephyr/prj.conf")
+
+        self.assertIn("CONFIG_MAIN_STACK_SIZE=3584", prj_conf)
 
     def test_hardware_suite_runs_zephyr_app_lifecycle_before_visible_checks(self):
         lifecycle = self.read("scripts/c3-supermini-test-app-lifecycle.sh")

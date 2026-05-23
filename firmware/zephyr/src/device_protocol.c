@@ -514,6 +514,7 @@ static int commit_install(const struct sq_protocol_frame *request,
 
 static int start_installed_app(const struct sq_device_protocol_context *context,
 			       const char *app_id, const char *event, bool set_current);
+static void clear_foreground_timers(struct sq_vm_runtime *runtime);
 
 static int launch_app(const struct sq_protocol_frame *request,
 		      const struct sq_device_protocol_context *context, uint8_t *response,
@@ -558,6 +559,7 @@ static int start_installed_app(const struct sq_device_protocol_context *context,
 {
 	struct sq_vm_storage_backend backend;
 	int result;
+	bool current_app_changed;
 
 	if (context == NULL || context->runtime == NULL || context->store_mount_point == NULL ||
 	    context->launch_storage == NULL || app_id == NULL || event == NULL) {
@@ -565,6 +567,10 @@ static int start_installed_app(const struct sq_device_protocol_context *context,
 	}
 	if (strlen(app_id) >= SQ_APP_STORE_APP_ID_MAX) {
 		return -EINVAL;
+	}
+	current_app_changed = set_current && strcmp(context->runtime->current_app, app_id) != 0;
+	if (current_app_changed) {
+		clear_foreground_timers(context->runtime);
 	}
 
 	result = sq_app_store_vm_storage_for_app(context->store_mount_point, app_id,
@@ -583,6 +589,14 @@ static int start_installed_app(const struct sq_device_protocol_context *context,
 		context->runtime->current_app[sizeof(context->runtime->current_app) - 1] = '\0';
 	}
 	return 0;
+}
+
+static void clear_foreground_timers(struct sq_vm_runtime *runtime)
+{
+	if (runtime == NULL) {
+		return;
+	}
+	memset(runtime->timers, 0, sizeof(runtime->timers));
 }
 
 static int push_return_app(struct sq_vm_runtime *runtime, const char *app_id)
@@ -630,9 +644,8 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 	}
 	runtime = context->runtime;
 
-	result = sq_vm_runtime_poll(runtime);
-	if (result != 0 || runtime->status == SQ_VM_RUNTIME_RUNNING) {
-		return result;
+	if (runtime->status == SQ_VM_RUNTIME_RUNNING) {
+		return 0;
 	}
 
 	if (runtime->lifecycle_launch_after_exit) {
@@ -701,7 +714,7 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 		return start_installed_app(context, target, armed_event, true);
 	}
 
-	return 0;
+	return sq_vm_runtime_poll(runtime);
 }
 
 static int repeated_runtime_lines_response(const struct sq_protocol_frame *request,
@@ -918,6 +931,9 @@ static int resources_response(const struct sq_protocol_frame *request,
 	size_t vm_worker_stack_unused = 0;
 	size_t vm_worker_stack_size = context->runtime == NULL ? 0 : sq_vm_runtime_work_stack_size();
 	size_t vm_worker_stack_used = 0;
+	size_t protocol_stack_size = CONFIG_MAIN_STACK_SIZE;
+	size_t protocol_stack_unused = 0;
+	size_t protocol_stack_used = 0;
 
 	if (response_cap < SQ_PROTOCOL_HEADER_LEN) {
 		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
@@ -932,6 +948,13 @@ static int resources_response(const struct sq_protocol_frame *request,
 		vm_worker_stack_unused = 0;
 		vm_worker_stack_used = 0;
 	}
+	if (k_thread_stack_space_get(k_current_get(), &protocol_stack_unused) == 0 &&
+	    protocol_stack_unused <= protocol_stack_size) {
+		protocol_stack_used = protocol_stack_size - protocol_stack_unused;
+	} else {
+		protocol_stack_unused = 0;
+		protocol_stack_used = 0;
+	}
 
 	struct {
 		const char *key;
@@ -939,6 +962,9 @@ static int resources_response(const struct sq_protocol_frame *request,
 	} entries[] = {
 		{"ram_total_bytes", CONFIG_SRAM_SIZE * 1024u},
 		{"runtime_static_bytes", context->runtime == NULL ? 0 : sizeof(*context->runtime)},
+		{"protocol_thread_stack_size_bytes", protocol_stack_size},
+		{"protocol_thread_stack_unused_bytes", protocol_stack_unused},
+		{"protocol_thread_stack_used_bytes", protocol_stack_used},
 		{"vm_worker_stack_size_bytes", vm_worker_stack_size},
 		{"vm_worker_stack_unused_bytes", vm_worker_stack_unused},
 		{"vm_worker_stack_used_bytes", vm_worker_stack_used},

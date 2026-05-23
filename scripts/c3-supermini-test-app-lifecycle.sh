@@ -23,7 +23,7 @@ assert_file_contains() {
   local expected="$2"
   if ! grep -Fq "${expected}" "${file}"; then
     printf 'Expected %s to contain: %s\n' "${file}" "${expected}" >&2
-    printf '--- %s ---\n' "${file}" >&2
+    printf '%s\n' "--- ${file} ---" >&2
     sed -n '1,200p' "${file}" >&2
     exit 1
   fi
@@ -33,7 +33,7 @@ assert_file_empty_command() {
   local file="$1"
   if [[ -s "${file}" ]]; then
     printf 'Expected %s to be empty\n' "${file}" >&2
-    printf '--- %s ---\n' "${file}" >&2
+    printf '%s\n' "--- ${file} ---" >&2
     sed -n '1,200p' "${file}" >&2
     exit 1
   fi
@@ -56,7 +56,7 @@ wait_for_contains() {
   done
 
   printf 'Timed out waiting for %s in %s\n' "${expected}" "${command_name}" >&2
-  printf '--- %s ---\n' "${out}" >&2
+  printf '%s\n' "--- ${out} ---" >&2
   sed -n '1,200p' "${out}" >&2
   exit 1
 }

@@ -113,11 +113,12 @@ currently return bounded `unsupported` records without credentials or RF
 identifiers until the Zephyr Wi-Fi management backend is implemented.
 SquidScript VM calls to `app.launch`, `app.arm`, and `app.disarm` are also
 connected through the Zephyr FFI host. `app.launch` and `app.exit` drive the
-Zephyr foreground return stack for installed apps. `app.arm` runs the target
-app's `event.on("app.arm")` handler in registration mode, records bounded
-timer registrations, and exposes them through `lifecycle-get`. When an armed
-timer fires, Zephyr starts the armed app as foreground and dispatches the
-registered event. `app.disarm` removes that app's armed timer registrations.
+Zephyr foreground return stack for installed apps and clear foreground timers
+when a different installed app becomes active. `app.arm` runs the target app's
+`event.on("app.arm")` handler in registration mode, records bounded timer
+registrations, and exposes them through `lifecycle-get`. When an armed timer
+fires, Zephyr starts the armed app as foreground and dispatches the registered
+event. `app.disarm` removes that app's armed timer registrations.
 
 ## Diagnostics
 
@@ -126,12 +127,14 @@ numbers. When the user asks for "memory" without qualification, report RAM by
 default.
 
 Zephyr builds should keep RAM usage visible with `scripts/zephyr-ram-audit.sh`.
-The default guard for the ESP32-C3 Zephyr slice is `141500` bytes in
+The default guard for the ESP32-C3 Zephyr slice is `141000` bytes in
 `dram0_0_seg`; override it only with `SQUID_ZEPHYR_DRAM_LIMIT_BYTES` when a
 change intentionally changes the measured budget.
-`resources-get` reports `vm_worker_stack_size_bytes`,
-`vm_worker_stack_unused_bytes`, and `vm_worker_stack_used_bytes` so future stack
-budget reductions can be based on representative real-device high-water data.
+`resources-get` reports `protocol_thread_stack_size_bytes`,
+`protocol_thread_stack_unused_bytes`, `protocol_thread_stack_used_bytes`,
+`vm_worker_stack_size_bytes`, `vm_worker_stack_unused_bytes`, and
+`vm_worker_stack_used_bytes` so future stack budget reductions can be based on
+representative real-device high-water data.
 
 Wi-Fi diagnostics should distinguish internal firmware/driver state from
 external RF proof. A successful Zephyr Wi-Fi status record does not by itself

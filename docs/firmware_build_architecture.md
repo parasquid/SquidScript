@@ -80,12 +80,15 @@ capacity so the firmware does not reserve a full max-app buffer when the VM
 only needs one bounded code/storage chunk for resumable dispatch.
 Temp-run volatile app state is sized to the VM saved-state capacity, not the
 larger SQBC transfer chunk capacity.
+The protocol/main thread stack is currently 3.5 KiB; resource diagnostics expose
+its high-water use separately from the VM worker stack.
 Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi VM service
 calls now cross the Rust FFI boundary into Zephyr callbacks. Zephyr now
 performs installed-app foreground handoff for `app.launch` and `app.exit` with
-a bounded return stack and `device lifecycle` diagnostics. `app.arm` and
-`app.disarm` now manage bounded timer-triggered armed app registrations and
-dispatch armed timer events as foreground app starts. The current Zephyr Wi-Fi
+a bounded return stack, foreground timer cleanup, and `device lifecycle`
+diagnostics. `app.arm` and `app.disarm` now manage bounded timer-triggered
+armed app registrations and dispatch armed timer events as foreground app
+starts. The current Zephyr Wi-Fi
 callbacks for status, scan, AP start/stop, station connect/disconnect, and AP
 IP return truthful fallback records that report `unsupported` without
 credentials or RF scan data; real Zephyr Wi-Fi management scan/AP/station work
