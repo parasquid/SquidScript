@@ -180,6 +180,38 @@ static int32_t runtime_hardware_gpio_read(void *user_data, const uint8_t *name, 
 	return sq_vm_runtime_hardware_gpio_read(user_data, name, name_len, out);
 }
 
+static int32_t runtime_app_lifecycle(void *user_data, const char *action, const uint8_t *app,
+				     size_t app_len)
+{
+	struct sq_vm_runtime *runtime = user_data;
+	char line[SQ_VM_RUNTIME_TRACE_LEN];
+
+	if (runtime == NULL || action == NULL || (app == NULL && app_len > 0)) {
+		return -EINVAL;
+	}
+	int written = snprintf(line, sizeof(line), "app.%s %.*s", action, (int)app_len,
+			       app == NULL ? (const uint8_t *)"" : app);
+	if (written > 0) {
+		runtime_trace(runtime, (const uint8_t *)line, strlen(line));
+	}
+	return 0;
+}
+
+static int32_t runtime_app_launch(void *user_data, const uint8_t *app, size_t app_len)
+{
+	return runtime_app_lifecycle(user_data, "launch", app, app_len);
+}
+
+static int32_t runtime_app_arm(void *user_data, const uint8_t *app, size_t app_len)
+{
+	return runtime_app_lifecycle(user_data, "arm", app, app_len);
+}
+
+static int32_t runtime_app_disarm(void *user_data, const uint8_t *app, size_t app_len)
+{
+	return runtime_app_lifecycle(user_data, "disarm", app, app_len);
+}
+
 static int32_t runtime_timer_every(void *user_data, const uint8_t *event, size_t event_len,
 				   int32_t interval_ms)
 {
@@ -313,6 +345,9 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		.hardware_gpio_write = runtime_hardware_gpio_write,
 		.hardware_gpio_toggle = runtime_hardware_gpio_toggle,
 		.hardware_gpio_read = runtime_hardware_gpio_read,
+		.app_launch = runtime_app_launch,
+		.app_arm = runtime_app_arm,
+		.app_disarm = runtime_app_disarm,
 		.timer_every = runtime_timer_every,
 		.timer_after = runtime_timer_after,
 		.wifi_status = runtime_wifi_status,

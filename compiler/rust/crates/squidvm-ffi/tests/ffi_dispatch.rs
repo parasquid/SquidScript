@@ -20,7 +20,9 @@ struct Host {
     indicator: bool,
     breathe_count: usize,
     gpio: Vec<(String, bool)>,
+    lifecycle: Vec<String>,
     timer_every: Vec<(String, i32)>,
+    timer_after: Vec<(String, i32)>,
     wifi_status_count: usize,
     wifi_scan_count: usize,
 }
@@ -176,6 +178,39 @@ unsafe extern "C" fn timer_every(
     0
 }
 
+unsafe extern "C" fn timer_after(
+    user_data: *mut c_void,
+    event: *const u8,
+    event_len: usize,
+    delay_ms: i32,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let event = std::str::from_utf8(std::slice::from_raw_parts(event, event_len)).unwrap();
+    host.timer_after.push((event.to_string(), delay_ms));
+    0
+}
+
+unsafe extern "C" fn app_launch(user_data: *mut c_void, app: *const u8, app_len: usize) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let app = std::str::from_utf8(std::slice::from_raw_parts(app, app_len)).unwrap();
+    host.lifecycle.push(format!("launch {app}"));
+    0
+}
+
+unsafe extern "C" fn app_arm(user_data: *mut c_void, app: *const u8, app_len: usize) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let app = std::str::from_utf8(std::slice::from_raw_parts(app, app_len)).unwrap();
+    host.lifecycle.push(format!("arm {app}"));
+    0
+}
+
+unsafe extern "C" fn app_disarm(user_data: *mut c_void, app: *const u8, app_len: usize) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let app = std::str::from_utf8(std::slice::from_raw_parts(app, app_len)).unwrap();
+    host.lifecycle.push(format!("disarm {app}"));
+    0
+}
+
 unsafe extern "C" fn wifi_status(
     user_data: *mut c_void,
     out: *mut squidvm_ffi::SqvmWifiStatus,
@@ -230,8 +265,11 @@ fn callbacks(host: &mut Host) -> SqvmCallbacks {
         hardware_gpio_write: Some(hardware_gpio_write),
         hardware_gpio_toggle: Some(hardware_gpio_toggle),
         hardware_gpio_read: Some(hardware_gpio_read),
+        app_launch: Some(app_launch),
+        app_arm: Some(app_arm),
+        app_disarm: Some(app_disarm),
         timer_every: Some(timer_every),
-        timer_after: None,
+        timer_after: Some(timer_after),
         wifi_status: Some(wifi_status),
         wifi_scan: Some(wifi_scan),
     }
@@ -291,6 +329,24 @@ event.on("app.start") {
   debug.print("gpio", hardware.gpio.read("GPIO8"))
   hardware.gpio.toggle("GPIO8")
   debug.print("gpio", hardware.gpio.read("GPIO8"))
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_lifecycle_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-lifecycle"
+event.on("app.start") {
+  app.arm("break-reminder")
+  app.launch("reader")
+  service.timer.after("timer.break", 250)
+  debug.print("lifecycle start")
+}
+event.on("timer.break") {
+  app.disarm("break-reminder")
+  debug.print("lifecycle timer")
 }
 screen("main") {}
 "#,
@@ -546,6 +602,67 @@ fn dispatches_hardware_gpio_service_callbacks() {
     assert_eq!(status, SqvmStatus::Ok);
     assert_eq!(host.gpio, vec![("GPIO8".to_string(), false)]);
     assert_eq!(host.output, vec!["gpio true", "gpio false"]);
+}
+
+#[test]
+fn dispatches_app_lifecycle_and_timer_after_callbacks() {
+    let mut host = Host {
+        sqbc: compile_lifecycle_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(
+        host.lifecycle,
+        vec![
+            "arm break-reminder".to_string(),
+            "launch reader".to_string()
+        ]
+    );
+    assert_eq!(host.timer_after, vec![("timer.break".to_string(), 250)]);
+    assert_eq!(host.output, vec!["lifecycle start"]);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callbacks(&mut host),
+            b"timer.break".as_ptr(),
+            b"timer.break".len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(
+        host.lifecycle,
+        vec![
+            "arm break-reminder".to_string(),
+            "launch reader".to_string(),
+            "disarm break-reminder".to_string()
+        ]
+    );
+    assert_eq!(
+        host.output,
+        vec!["lifecycle start".to_string(), "lifecycle timer".to_string()]
+    );
 }
 
 #[test]

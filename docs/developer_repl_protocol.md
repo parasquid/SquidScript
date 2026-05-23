@@ -109,6 +109,10 @@ SquidScript VM calls to `service.wifi.status()` and `service.wifi.scan()` are
 connected through the Zephyr FFI host and currently return bounded
 `unsupported` records without credentials or RF identifiers until the Zephyr
 Wi-Fi management backend is implemented.
+SquidScript VM calls to `app.launch`, `app.arm`, and `app.disarm` are also
+connected through the Zephyr FFI host and currently emit bounded trace records.
+Actual foreground handoff and armed-app registry behavior are separate Zephyr
+runtime-service work.
 
 ## Diagnostics
 

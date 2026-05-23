@@ -1,0 +1,13 @@
+:reset
+
+state {
+  count: int = 0
+}
+
+app.arm("break-reminder")
+app.launch("reader")
+app.disarm("break-reminder")
+service.timer.after("timer.break", 250)
+debug.print("lifecycle ok")
+:output
+:expect-output lifecycle ok

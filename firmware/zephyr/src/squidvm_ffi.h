@@ -217,6 +217,7 @@ typedef int32_t (*SqvmHardwareGpioReadCallback)(
 	const uint8_t *name,
 	size_t name_len,
 	bool *out);
+typedef int32_t (*SqvmAppLifecycleCallback)(void *user_data, const uint8_t *app, size_t app_len);
 typedef int32_t (*SqvmTimerEveryCallback)(
 	void *user_data,
 	const uint8_t *event,
@@ -244,6 +245,9 @@ typedef struct {
 	SqvmHardwareGpioWriteCallback hardware_gpio_write;
 	SqvmHardwareGpioToggleCallback hardware_gpio_toggle;
 	SqvmHardwareGpioReadCallback hardware_gpio_read;
+	SqvmAppLifecycleCallback app_launch;
+	SqvmAppLifecycleCallback app_arm;
+	SqvmAppLifecycleCallback app_disarm;
 	SqvmTimerEveryCallback timer_every;
 	SqvmTimerAfterCallback timer_after;
 	SqvmWifiStatusCallback wifi_status;

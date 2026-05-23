@@ -475,6 +475,12 @@ pub struct SqvmCallbacks {
             out: *mut bool,
         ) -> i32,
     >,
+    pub app_launch:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, app: *const u8, app_len: usize) -> i32>,
+    pub app_arm:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, app: *const u8, app_len: usize) -> i32>,
+    pub app_disarm:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, app: *const u8, app_len: usize) -> i32>,
     pub timer_every: Option<
         unsafe extern "C" fn(
             user_data: *mut c_void,
@@ -1320,6 +1326,27 @@ impl TraceSink for FfiHost {
             )
         })?;
         Ok(value)
+    }
+
+    fn app_launch(&mut self, app: &str) -> Result<(), VmError> {
+        let Some(app_launch) = self.callbacks.app_launch else {
+            return Err(VmError::InvalidOperand);
+        };
+        callback_status(unsafe { app_launch(self.callbacks.user_data, app.as_ptr(), app.len()) })
+    }
+
+    fn app_arm(&mut self, app: &str) -> Result<(), VmError> {
+        let Some(app_arm) = self.callbacks.app_arm else {
+            return Err(VmError::InvalidOperand);
+        };
+        callback_status(unsafe { app_arm(self.callbacks.user_data, app.as_ptr(), app.len()) })
+    }
+
+    fn app_disarm(&mut self, app: &str) -> Result<(), VmError> {
+        let Some(app_disarm) = self.callbacks.app_disarm else {
+            return Err(VmError::InvalidOperand);
+        };
+        callback_status(unsafe { app_disarm(self.callbacks.user_data, app.as_ptr(), app.len()) })
     }
 
     fn service_timer_every(&mut self, event: &str, interval_ms: i32) -> Result<(), VmError> {
