@@ -164,6 +164,16 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 11264", runtime_h)
         self.assertIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 11264", ztest)
 
+    def test_repeated_line_responses_use_rust_encoder_without_c_payload_staging(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        start = protocol.index("static int repeated_runtime_lines_response")
+        end = protocol.index("static int lifecycle_response")
+        body = protocol[start:end]
+
+        self.assertIn("sqdp_encode_line_response", body)
+        self.assertNotIn("uint8_t payload[512]", body)
+        self.assertNotIn("append_string_field(payload", body)
+
     def test_hardware_suite_runs_zephyr_app_lifecycle_before_visible_checks(self):
         lifecycle = self.read("scripts/c3-supermini-test-app-lifecycle.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")

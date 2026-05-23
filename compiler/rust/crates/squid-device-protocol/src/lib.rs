@@ -1342,6 +1342,41 @@ where
     )
 }
 
+pub fn encode_line_response_into<'a, I>(
+    opcode: Opcode,
+    sequence: u32,
+    lines: I,
+    out: &mut [u8],
+) -> Result<usize, DecodeError>
+where
+    I: Clone + Iterator<Item = &'a str>,
+{
+    let mut payload_len = 0usize;
+    for line in lines.clone() {
+        payload_len =
+            payload_len
+                .checked_add(tlv_string_len(line)?)
+                .ok_or(DecodeError::OutputTooSmall {
+                    needed: usize::MAX,
+                    capacity: out.len(),
+                })?;
+    }
+
+    encode_response_payload_into(
+        opcode,
+        Status::Ok,
+        sequence,
+        payload_len,
+        out,
+        |mut payload| {
+            for line in lines {
+                payload = write_string_tlv(payload, 1, line)?;
+            }
+            Ok(())
+        },
+    )
+}
+
 pub fn encode_error_response_into(
     opcode: Opcode,
     sequence: u32,

@@ -3,8 +3,8 @@
 use squid_device_protocol::{
     app_list_entries, decode_frame, encode_app_list_response_into, encode_empty_response_into,
     encode_error_response_into, encode_frame, encode_frame_into, encode_hello_response_into,
-    hello_identity, hello_request, AppListEntry, DecodeError, Field, FieldValue, Frame, FrameKind,
-    Opcode, Status,
+    encode_line_response_into, hello_identity, hello_request, output_lines, AppListEntry,
+    DecodeError, Field, FieldValue, Frame, FrameKind, Opcode, Status,
 };
 
 #[test]
@@ -154,6 +154,25 @@ fn encodes_heap_free_app_list_response() {
                 sqbc_len: 456,
             },
         ]
+    );
+}
+
+#[test]
+fn encodes_heap_free_repeated_line_response() {
+    let mut out = [0u8; 128];
+    let lines = ["count 1", "count 2"];
+
+    let len =
+        encode_line_response_into(Opcode::OutputGet, 91, lines.iter().copied(), &mut out).unwrap();
+    let decoded = decode_frame(&out[..len]).unwrap();
+
+    assert_eq!(decoded.kind, FrameKind::Response);
+    assert_eq!(decoded.opcode, Opcode::OutputGet);
+    assert_eq!(decoded.status, Status::Ok);
+    assert_eq!(decoded.sequence, 91);
+    assert_eq!(
+        output_lines(&decoded).unwrap(),
+        vec!["count 1".to_string(), "count 2".to_string()]
     );
 }
 

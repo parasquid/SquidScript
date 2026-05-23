@@ -44,6 +44,11 @@ typedef struct {
 } SqdpAppListEntry;
 
 typedef struct {
+	const uint8_t *bytes;
+	size_t len;
+} SqdpLineSlice;
+
+typedef struct {
 	SqdpActionKind kind;
 	const uint8_t *app_id;
 	size_t app_id_len;
@@ -347,6 +352,17 @@ SqdpStatus sqdp_encode_app_list_response(
 	uint32_t sequence,
 	const SqdpAppListEntry *entries,
 	size_t entry_count,
+	uint8_t *out,
+	size_t out_cap,
+	size_t *out_len);
+SqdpStatus sqdp_encode_line_response(
+	uint8_t opcode,
+	uint32_t sequence,
+	const uint8_t *fixed_lines,
+	size_t fixed_count,
+	size_t fixed_stride,
+	const SqdpLineSlice *extra_lines,
+	size_t extra_count,
 	uint8_t *out,
 	size_t out_cap,
 	size_t *out_len);

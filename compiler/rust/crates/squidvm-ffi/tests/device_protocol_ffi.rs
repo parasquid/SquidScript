@@ -1,11 +1,11 @@
 use squid_device_protocol::{
     app_install_begin_request, app_install_chunk_request, app_install_commit_request,
-    app_list_entries, decode_frame, encode_frame, resource_install_begin_request,
+    app_list_entries, decode_frame, encode_frame, output_lines, resource_install_begin_request,
     resource_install_chunk_request, resource_install_commit_request, FrameKind, Opcode, Status,
 };
 use squidvm_ffi::{
-    SqdpAction, SqdpActionKind, SqdpAppListEntry, SqdpResourceSession, SqdpTransferSession,
-    SQDP_STAGING_PATH_CAP,
+    SqdpAction, SqdpActionKind, SqdpAppListEntry, SqdpLineSlice, SqdpResourceSession,
+    SqdpTransferSession, SQDP_STAGING_PATH_CAP,
 };
 
 #[test]
@@ -122,6 +122,49 @@ fn ffi_encodes_app_list_response_from_c_registry_entries() {
                 app_id: "reader-clock".to_string(),
                 sqbc_len: 456,
             },
+        ]
+    );
+}
+
+#[test]
+fn ffi_encodes_repeated_line_response_without_payload_staging() {
+    let mut out = [0u8; 160];
+    let mut out_len = 0usize;
+    let mut fixed_lines = [[0u8; 16]; 2];
+    fixed_lines[0][..7].copy_from_slice(b"count 1");
+    fixed_lines[1][..7].copy_from_slice(b"count 2");
+    let extra = b"count 3";
+    let extra_lines = [SqdpLineSlice {
+        bytes: extra.as_ptr(),
+        len: extra.len(),
+    }];
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_encode_line_response(
+            Opcode::OutputGet as u8,
+            91,
+            fixed_lines.as_ptr().cast(),
+            fixed_lines.len(),
+            fixed_lines[0].len(),
+            extra_lines.as_ptr(),
+            extra_lines.len(),
+            out.as_mut_ptr(),
+            out.len(),
+            &mut out_len,
+        )
+    };
+
+    assert_eq!(status as i32, 0);
+    let frame = decode_frame(&out[..out_len]).unwrap();
+    assert_eq!(frame.kind, FrameKind::Response);
+    assert_eq!(frame.opcode, Opcode::OutputGet);
+    assert_eq!(frame.status, Status::Ok);
+    assert_eq!(
+        output_lines(&frame).unwrap(),
+        vec![
+            "count 1".to_string(),
+            "count 2".to_string(),
+            "count 3".to_string(),
         ]
     );
 }

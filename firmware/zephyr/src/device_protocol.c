@@ -691,49 +691,41 @@ static int repeated_runtime_lines_response(const struct sq_protocol_frame *reque
 					   uint8_t *response, size_t response_cap,
 					   size_t *response_len)
 {
-	uint8_t payload[512];
-	size_t payload_len = 0;
-	int result;
+	const uint8_t *fixed_lines = NULL;
+	size_t fixed_count = 0;
+	size_t fixed_stride = 0;
+	SqdpLineSlice extra_slices[1];
+	size_t extra_slice_count = 0;
 
 	if (runtime != NULL && request->opcode == SQ_OPCODE_TRACE_GET) {
-		for (size_t i = 0; i < runtime->trace_count; i++) {
-			result = append_string_field(payload, sizeof(payload), &payload_len,
-						     SQ_DEVICE_LINE_FIELD_VALUE,
-						     runtime->traces[i]);
-			if (result != SQ_PROTOCOL_OK) {
-				return result;
-			}
-		}
+		fixed_lines = (const uint8_t *)runtime->traces;
+		fixed_count = runtime->trace_count;
+		fixed_stride = SQ_VM_RUNTIME_TRACE_LEN;
 	}
 	if (runtime != NULL && request->opcode == SQ_OPCODE_OUTPUT_GET) {
-		for (size_t i = 0; i < runtime->output_count; i++) {
-			result = append_string_field(payload, sizeof(payload), &payload_len,
-						     SQ_DEVICE_LINE_FIELD_VALUE,
-						     runtime->outputs[i]);
-			if (result != SQ_PROTOCOL_OK) {
-				return result;
-			}
-		}
+		fixed_lines = (const uint8_t *)runtime->outputs;
+		fixed_count = runtime->output_count;
+		fixed_stride = SQ_VM_RUNTIME_OUTPUT_LEN;
 	}
 	if (runtime != NULL && request->opcode == SQ_OPCODE_DRAWLOG_GET) {
-		for (size_t i = 0; i < runtime->drawlog_count; i++) {
-			result = append_string_field(payload, sizeof(payload), &payload_len,
-						     SQ_DEVICE_LINE_FIELD_VALUE,
-						     runtime->drawlog[i]);
-			if (result != SQ_PROTOCOL_OK) {
-				return result;
-			}
-		}
+		fixed_lines = (const uint8_t *)runtime->drawlog;
+		fixed_count = runtime->drawlog_count;
+		fixed_stride = SQ_VM_RUNTIME_DRAWLOG_LEN;
+	}
+	if (extra_count > ARRAY_SIZE(extra_slices)) {
+		return -EINVAL;
 	}
 	for (size_t i = 0; i < extra_count; i++) {
-		result = append_string_field(payload, sizeof(payload), &payload_len,
-					     SQ_DEVICE_LINE_FIELD_VALUE, extra_lines[i]);
-		if (result != SQ_PROTOCOL_OK) {
-			return result;
-		}
+		extra_slices[i] = (SqdpLineSlice){
+			.bytes = (const uint8_t *)extra_lines[i],
+			.len = strlen(extra_lines[i]),
+		};
+		extra_slice_count++;
 	}
-	return write_response(request, SQ_STATUS_OK, payload, payload_len, response, response_cap,
-			      response_len);
+	return sqdp_status_to_protocol_result(sqdp_encode_line_response(
+		request->opcode, request->sequence, fixed_lines, fixed_count, fixed_stride,
+		extra_slice_count == 0 ? NULL : extra_slices, extra_slice_count, response,
+		response_cap, response_len));
 }
 
 static int lifecycle_response(const struct sq_protocol_frame *request,

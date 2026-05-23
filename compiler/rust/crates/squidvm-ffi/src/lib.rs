@@ -27,8 +27,8 @@ use squidvm_core::{
 
 use squid_device_protocol::{
     encode_app_list_response_into, encode_empty_response_into, encode_error_response_into,
-    encode_hello_response_into, AppListEntry, DecodeError, DeviceRequest, Opcode,
-    Status as SqdpFrameStatus, MAX_APP_BYTES,
+    encode_hello_response_into, encode_line_response_into, AppListEntry, DecodeError,
+    DeviceRequest, Opcode, Status as SqdpFrameStatus, MAX_APP_BYTES,
 };
 
 #[repr(C)]
@@ -66,6 +66,13 @@ impl Default for SqdpAppListEntry {
             sqbc_len: 0,
         }
     }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqdpLineSlice {
+    pub bytes: *const u8,
+    pub len: usize,
 }
 
 #[repr(C)]
@@ -889,6 +896,77 @@ pub unsafe extern "C" fn sqdp_encode_app_list_response(
         }),
         out,
     ) {
+        Ok(len) => {
+            *out_len = len;
+            SqdpStatus::Ok
+        }
+        Err(DecodeError::OutputTooSmall { .. }) => SqdpStatus::BufferTooSmall,
+        Err(_) => SqdpStatus::EncodeError,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_encode_line_response(
+    opcode: u8,
+    sequence: u32,
+    fixed_lines: *const u8,
+    fixed_count: usize,
+    fixed_stride: usize,
+    extra_lines: *const SqdpLineSlice,
+    extra_count: usize,
+    out: *mut u8,
+    out_cap: usize,
+    out_len: *mut usize,
+) -> SqdpStatus {
+    if out.is_null()
+        || out_len.is_null()
+        || (fixed_lines.is_null() && fixed_count > 0)
+        || (extra_lines.is_null() && extra_count > 0)
+        || (fixed_count > 0 && fixed_stride == 0)
+    {
+        return SqdpStatus::InvalidArgument;
+    }
+    *out_len = 0;
+    let Ok(opcode) = Opcode::try_from(opcode) else {
+        return SqdpStatus::InvalidArgument;
+    };
+    if fixed_count > 32 || extra_count > 8 {
+        return SqdpStatus::InvalidArgument;
+    }
+    let fixed = if fixed_count == 0 {
+        &[]
+    } else {
+        slice::from_raw_parts(fixed_lines, fixed_count.saturating_mul(fixed_stride))
+    };
+    let extra = if extra_count == 0 {
+        &[]
+    } else {
+        slice::from_raw_parts(extra_lines, extra_count)
+    };
+    for index in 0..fixed_count {
+        let line = fixed_line_bytes(fixed, index, fixed_stride);
+        if str::from_utf8(line).is_err() {
+            return SqdpStatus::InvalidArgument;
+        }
+    }
+    for line in extra {
+        if line.bytes.is_null()
+            || str::from_utf8(slice::from_raw_parts(line.bytes, line.len)).is_err()
+        {
+            return SqdpStatus::InvalidArgument;
+        }
+    }
+
+    let out = slice::from_raw_parts_mut(out, out_cap);
+    let fixed_iter = (0..fixed_count).map(|index| {
+        str::from_utf8(fixed_line_bytes(fixed, index, fixed_stride))
+            .expect("validated fixed line utf-8 before encoding")
+    });
+    let extra_iter = extra.iter().map(|line| {
+        str::from_utf8(slice::from_raw_parts(line.bytes, line.len))
+            .expect("validated extra line utf-8 before encoding")
+    });
+    match encode_line_response_into(opcode, sequence, fixed_iter.chain(extra_iter), out) {
         Ok(len) => {
             *out_len = len;
             SqdpStatus::Ok
@@ -1961,6 +2039,11 @@ fn c_string_bytes(bytes: &[u8]) -> &[u8] {
         .position(|byte| *byte == 0)
         .unwrap_or(bytes.len());
     &bytes[..len]
+}
+
+fn fixed_line_bytes(bytes: &[u8], index: usize, stride: usize) -> &[u8] {
+    let start = index * stride;
+    c_string_bytes(&bytes[start..start + stride])
 }
 
 fn session_crc_matches(session: &SqdpTransferSession) -> bool {
