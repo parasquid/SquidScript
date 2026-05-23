@@ -41,6 +41,21 @@ for compiler, SQBC tooling, and VM semantics.
 - Implement GPIO, indicator, PWM, timers, app lifecycle, persistent app storage,
   app state, display/draw-log, Wi-Fi scan, AP, station, status, and profile
   provisioning through Zephyr-native subsystems.
+- Preserve foreground VM in-memory state across app events without requiring
+  every key/timer handler to call `state.load()`, while keeping app trigger
+  registration from clobbering the foreground app context.
+- Replace `event.on("app.arm")` trigger registration with an explicit
+  `app.triggers { ... }` language construct. `app.arm(appId)` should register
+  the target app's trigger declarations without replacing the current
+  foreground app or keeping a background VM resident. The construct should
+  support multiple bounded registrations per app, including different timer
+  intervals and future logical button/input triggers, while `event.on(...)`
+  remains the handler for the activation event that fires later.
+- Design the `app.triggers` compiler/SQBC/VM contract so firmware can load only
+  the trigger registration section plus its required constants/functions, not
+  the full app, and so unsupported foreground operations in trigger
+  registration are rejected. Update lifecycle diagnostics to expose both the
+  process return stack and armed trigger stack with enough detail for tests.
 - Add a generic PWM-capable LED-like device output model beyond
   `service.indicator`, so future target-described GPIO/PWM endpoints can expose
   smooth brightness control without board-specific app code.

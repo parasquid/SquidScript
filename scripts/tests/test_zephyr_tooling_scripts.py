@@ -84,6 +84,22 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         lifecycle_check = suite.index('c3-supermini-test-app-lifecycle.sh')
         self.assertLess(diagnostic, lifecycle_check)
 
+    def test_hardware_suite_runs_state_and_key_checks_before_lifecycle(self):
+        state = self.read("scripts/c3-supermini-test-app-state.sh")
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn('cargo run --quiet -p squidc -- app install', state)
+        self.assertIn('cargo run --quiet -p squidc -- app launch state-counter', state)
+        self.assertIn('cargo run --quiet -p squidc -- device key SELECT', state)
+        self.assertIn('cargo run --quiet -p squidc -- device state', state)
+        self.assertIn('cargo run --quiet -p squidc -- device reset', state)
+        self.assertIn('output=count 2', state)
+        self.assertNotIn("obsolete", state.lower())
+
+        state_check = suite.index('c3-supermini-test-app-state.sh')
+        lifecycle_check = suite.index('c3-supermini-test-app-lifecycle.sh')
+        self.assertLess(state_check, lifecycle_check)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,19 @@
+app "state-counter"
+
+state {
+  count: int = 0
+}
+
+event.on("app.start") {
+  state.load()
+  debug.print("count", count)
+}
+
+event.on("key.SELECT") {
+  state.load()
+  count = count + 1
+  state.save()
+  debug.print("count", count)
+}
+
+screen("main") {}

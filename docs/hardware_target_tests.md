@@ -61,6 +61,13 @@ registered on the armed stack through `app.arm`, waits for the armed timer to
 start `break-reminder`, then sends `SELECT` so `app.exit` returns to the
 previous app on the process stack.
 
+The Zephyr app state check is `scripts/c3-supermini-test-app-state.sh`. It
+installs `tests/hardware/c3-supermini/state-counter/main.squid`, launches it,
+sends `SELECT` key events, verifies explicit `state.load()` / `state.save()`
+debug output and non-empty `device state` bytes, resets the runtime without
+formatting storage, relaunches the app, and verifies `state.load()` restores
+the saved count.
+
 For the current ESP32-C3 Super Mini Zephyr target, the blinky check installs
 and launches `examples/blinky-supermini/main.squid`. Serial `device output`
 should show repeated `blink false` / `blink true` lines and `device errors`

@@ -31,4 +31,5 @@ while [[ $# -gt 0 ]]; do
 done
 
 "$ROOT/scripts/c3-supermini-zephyr-test-diagnostic.sh"
+"$ROOT/scripts/c3-supermini-test-app-state.sh"
 "$ROOT/scripts/c3-supermini-test-app-lifecycle.sh"
