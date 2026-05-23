@@ -34,6 +34,7 @@ extern "C" {
 #define SQ_VM_RUNTIME_WIFI_SSID_LEN 33
 #define SQ_VM_RUNTIME_WIFI_BSSID_LEN 18
 #define SQ_VM_RUNTIME_WIFI_AUTH_LEN 24
+#define SQ_VM_RUNTIME_WIFI_IPV4_LEN 16
 #define SQ_VM_RUNTIME_WIFI_PROFILE_NAME_BYTES 16
 #define SQ_VM_RUNTIME_WIFI_PROFILE_SSID_BYTES 32
 #define SQ_VM_RUNTIME_WIFI_PROFILE_PASSWORD_BYTES 64
@@ -115,6 +116,7 @@ struct sq_vm_runtime {
 	char wifi_scan_ssids[SQVM_WIFI_SCAN_MAX_NETWORKS][SQ_VM_RUNTIME_WIFI_SSID_LEN];
 	char wifi_scan_bssids[SQVM_WIFI_SCAN_MAX_NETWORKS][SQ_VM_RUNTIME_WIFI_BSSID_LEN];
 	char wifi_scan_auth[SQVM_WIFI_SCAN_MAX_NETWORKS][SQ_VM_RUNTIME_WIFI_AUTH_LEN];
+	char wifi_station_ip[SQ_VM_RUNTIME_WIFI_IPV4_LEN];
 	size_t wifi_scan_count;
 	int wifi_scan_status;
 	int wifi_station_connect_status;

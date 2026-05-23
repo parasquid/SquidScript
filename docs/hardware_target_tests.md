@@ -59,10 +59,10 @@ ESP32-C3 limits. The current no-target fallback guard is `266240` bytes. When
 `SQUID_ZEPHYR_TARGET_JSON=targets/esp32c3-super-mini.target.json` is supplied,
 the default 65% profile uses the target definition's 400 KiB internal SRAM and
 sets a 266240-byte limit. The default Zephyr firmware now enables the real
-Zephyr ESP32 Wi-Fi driver, Wi-Fi management events, and scan-only Wi-Fi usage
-without AP, station, DHCP, TCP, sockets, or credentials. Its measured
-`dram0_0_seg` is 209424 bytes, which is 51.1% of the ESP32-C3 Super Mini
-target definition's 400 KiB internal SRAM.
+Zephyr ESP32 Wi-Fi driver, Wi-Fi management events, scan/AP/station Wi-Fi
+usage, and station DHCP/IP status reporting without TCP or sockets. Its
+measured `dram0_0_seg` must be read from the latest `scripts/zephyr-ram-audit.sh`
+output for the firmware image under test.
 
 The Zephyr app lifecycle check is
 `scripts/c3-supermini-test-app-lifecycle.sh`. It installs the real SquidScript

@@ -74,9 +74,9 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             "CONFIG_NET_MGMT_EVENT=y",
             "CONFIG_NET_MGMT_EVENT_INFO=y",
             "CONFIG_NET_L2_WIFI_MGMT=y",
+            "CONFIG_NET_DHCPV4=y",
         ]:
             self.assertIn(option, prj_conf)
-        self.assertNotIn("CONFIG_NET_DHCPV4=y", prj_conf)
 
     def test_hardware_suite_requires_real_zephyr_wifi_backend(self):
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
@@ -409,6 +409,18 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("NET_EVENT_WIFI_DISCONNECT_RESULT", runtime_c)
         self.assertNotIn("runtime_wifi_unsupported_action(out)", connect_body.split("#else", 1)[0])
         self.assertNotIn("runtime_wifi_unsupported_action(out)", disconnect_body.split("#else", 1)[0])
+
+    def test_zephyr_wifi_status_reports_station_dhcp_ip_without_fixture_leak(self):
+        runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+        station_fixture = self.read("tests/hardware/c3-supermini/wifi-station-summary/main.squid")
+
+        self.assertIn("#include <zephyr/net/dhcpv4.h>", runtime_c)
+        self.assertIn("net_dhcpv4_start(iface)", runtime_c)
+        self.assertIn("net_if_ipv4_get_global_addr(iface, NET_ADDR_PREFERRED)", runtime_c)
+        self.assertIn("net_addr_ntop(NET_AF_INET", runtime_c)
+        self.assertIn("wifi_station_ip", runtime_h)
+        self.assertNotIn("status.ipAddress", station_fixture)
 
     def test_wifi_ap_check_is_current_redacted_and_not_in_default_suite(self):
         ap = self.read("scripts/c3-supermini-test-wifi-ap-api.sh")

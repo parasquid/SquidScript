@@ -2253,8 +2253,8 @@ host tooling, or target setup outside SquidScript. Firmware must not expose
 configured station SSIDs or passwords in SquidScript source, state, records,
 logs, diagnostics, or source maps. Current ESP32-C3 development firmware
 supports Wi-Fi status, scan, AP start/stop, volatile station profiles, and
-station connect/disconnect through Zephyr. Station DHCP/IP reporting is not
-implemented yet.
+station connect/disconnect through Zephyr. When the station interface has a
+preferred DHCP IPv4 address, `service.wifi.status().ipAddress` reports it.
 
 Rules:
 - Apps may start a foreground-owned access point when the target exposes the Wi-Fi service.

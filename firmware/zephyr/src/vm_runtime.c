@@ -10,6 +10,7 @@
 #include <zephyr/drivers/pwm.h>
 #if IS_ENABLED(CONFIG_NET_L2_WIFI_MGMT) && IS_ENABLED(CONFIG_NET_MGMT_EVENT) && \
 	IS_ENABLED(CONFIG_NET_MGMT_EVENT_INFO)
+#include <zephyr/net/dhcpv4.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/net_ip.h>
@@ -399,6 +400,27 @@ static int runtime_wifi_configure_ap_ipv4(struct net_if *iface)
 	return 0;
 }
 
+static void runtime_wifi_record_station_ipv4(struct sq_vm_runtime *runtime, struct net_if *iface,
+					     SqvmWifiStatus *out)
+{
+	struct net_in_addr *addr;
+
+	if (runtime == NULL || iface == NULL || out == NULL) {
+		return;
+	}
+	memset(runtime->wifi_station_ip, 0, sizeof(runtime->wifi_station_ip));
+	addr = net_if_ipv4_get_global_addr(iface, NET_ADDR_PREFERRED);
+	if (addr == NULL) {
+		return;
+	}
+	if (net_addr_ntop(NET_AF_INET, addr, runtime->wifi_station_ip,
+			  sizeof(runtime->wifi_station_ip)) == NULL) {
+		return;
+	}
+	out->ip_address = (const uint8_t *)runtime->wifi_station_ip;
+	out->ip_address_len = strlen(runtime->wifi_station_ip);
+}
+
 static void runtime_wifi_record_scan_result(struct sq_vm_runtime *runtime,
 					    const struct wifi_scan_result *entry)
 {
@@ -682,6 +704,7 @@ static int32_t runtime_wifi_connect(void *user_data, const uint8_t *profile, siz
 		SQ_SET_LITERAL_FIELD(out, error, "connect pending");
 		return 0;
 	}
+	net_dhcpv4_start(iface);
 	out->ok = true;
 	return 0;
 #else
@@ -730,6 +753,7 @@ static int32_t runtime_wifi_disconnect(void *user_data, SqvmWifiActionResult *ou
 		SQ_SET_LITERAL_FIELD(out, error, "disconnect failed");
 		return 0;
 	}
+	net_dhcpv4_stop(iface);
 	out->ok = true;
 	return 0;
 #else
@@ -823,6 +847,9 @@ static int32_t runtime_wifi_status(void *user_data, SqvmWifiStatus *out)
 	out->rssi = status.rssi;
 	out->auth = (const uint8_t *)wifi_security_txt(status.security);
 	out->auth_len = strlen(wifi_security_txt(status.security));
+	if (out->connected) {
+		runtime_wifi_record_station_ipv4(runtime, iface, out);
+	}
 	return 0;
 #else
 	ARG_UNUSED(user_data);
@@ -993,6 +1020,7 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	memset(runtime->wifi_profile_password, 0, sizeof(runtime->wifi_profile_password));
 	runtime->wifi_profile_password_len = 0;
 #if SQ_VM_RUNTIME_HAS_WIFI_MGMT
+	memset(runtime->wifi_station_ip, 0, sizeof(runtime->wifi_station_ip));
 	runtime->wifi_station_connect_status = 0;
 	runtime->wifi_station_disconnect_status = 0;
 	runtime->wifi_ap_active = false;
