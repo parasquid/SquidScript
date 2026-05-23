@@ -197,6 +197,30 @@ typedef struct {
 	size_t network_count;
 } SqvmWifiScanResult;
 
+typedef struct {
+	bool ok;
+	const uint8_t *error;
+	size_t error_len;
+} SqvmWifiActionResult;
+
+typedef struct {
+	const uint8_t *ip;
+	size_t ip_len;
+	const uint8_t *gw;
+	size_t gw_len;
+	const uint8_t *netmask;
+	size_t netmask_len;
+	const uint8_t *error;
+	size_t error_len;
+} SqvmWifiApIp;
+
+typedef int32_t (*SqvmWifiStartApCallback)(void *user_data, const uint8_t *ssid,
+					   size_t ssid_len, SqvmWifiActionResult *out);
+typedef int32_t (*SqvmWifiStopApCallback)(void *user_data, SqvmWifiActionResult *out);
+typedef int32_t (*SqvmWifiConnectCallback)(void *user_data, const uint8_t *profile,
+					   size_t profile_len, SqvmWifiActionResult *out);
+typedef int32_t (*SqvmWifiDisconnectCallback)(void *user_data, SqvmWifiActionResult *out);
+typedef int32_t (*SqvmWifiGetApIpCallback)(void *user_data, SqvmWifiApIp *out);
 typedef int32_t (*SqvmWifiStatusCallback)(void *user_data, SqvmWifiStatus *out);
 typedef int32_t (*SqvmWifiScanCallback)(void *user_data, SqvmWifiScanResult *out);
 
@@ -251,6 +275,11 @@ typedef struct {
 	SqvmAppLifecycleCallback app_disarm;
 	SqvmTimerEveryCallback timer_every;
 	SqvmTimerAfterCallback timer_after;
+	SqvmWifiStartApCallback wifi_start_ap;
+	SqvmWifiStopApCallback wifi_stop_ap;
+	SqvmWifiConnectCallback wifi_connect;
+	SqvmWifiDisconnectCallback wifi_disconnect;
+	SqvmWifiGetApIpCallback wifi_get_ap_ip;
 	SqvmWifiStatusCallback wifi_status;
 	SqvmWifiScanCallback wifi_scan;
 } SqvmCallbacks;

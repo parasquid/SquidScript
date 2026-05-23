@@ -15,7 +15,8 @@ use squidvm_core::{
     host::{
         DisplayLineOptions, DisplayRectOptions, DisplayTextOptions,
         StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink, VmDispatch,
-        WifiAccessPoint, WifiScanResult, WifiStatus, MAX_STORAGE_TRANSFER_BYTES,
+        WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
+        MAX_STORAGE_TRANSFER_BYTES,
     },
     limits::MAX_CODE_CHUNK_BYTES,
     reader::SqbcReader,
@@ -421,6 +422,52 @@ impl Default for SqvmWifiScanResult {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmWifiActionResult {
+    pub ok: bool,
+    pub error: *const u8,
+    pub error_len: usize,
+}
+
+impl Default for SqvmWifiActionResult {
+    fn default() -> Self {
+        Self {
+            ok: false,
+            error: b"unsupported".as_ptr(),
+            error_len: b"unsupported".len(),
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmWifiApIp {
+    pub ip: *const u8,
+    pub ip_len: usize,
+    pub gw: *const u8,
+    pub gw_len: usize,
+    pub netmask: *const u8,
+    pub netmask_len: usize,
+    pub error: *const u8,
+    pub error_len: usize,
+}
+
+impl Default for SqvmWifiApIp {
+    fn default() -> Self {
+        Self {
+            ip: ptr::null(),
+            ip_len: 0,
+            gw: ptr::null(),
+            gw_len: 0,
+            netmask: ptr::null(),
+            netmask_len: 0,
+            error: b"unsupported".as_ptr(),
+            error_len: b"unsupported".len(),
+        }
+    }
+}
+
+#[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SqvmCallbacks {
     pub user_data: *mut c_void,
@@ -499,6 +546,28 @@ pub struct SqvmCallbacks {
             delay_ms: i32,
         ) -> i32,
     >,
+    pub wifi_start_ap: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            ssid: *const u8,
+            ssid_len: usize,
+            out: *mut SqvmWifiActionResult,
+        ) -> i32,
+    >,
+    pub wifi_stop_ap:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiActionResult) -> i32>,
+    pub wifi_connect: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            profile: *const u8,
+            profile_len: usize,
+            out: *mut SqvmWifiActionResult,
+        ) -> i32,
+    >,
+    pub wifi_disconnect:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiActionResult) -> i32>,
+    pub wifi_get_ap_ip:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiApIp) -> i32>,
     pub wifi_status:
         Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiStatus) -> i32>,
     pub wifi_scan:
@@ -1381,6 +1450,74 @@ impl TraceSink for FfiHost {
         })
     }
 
+    fn service_wifi_start_ap<'a>(
+        &'a mut self,
+        ssid: &str,
+    ) -> Result<WifiActionResult<'a>, VmError> {
+        let Some(wifi_start_ap) = self.callbacks.wifi_start_ap else {
+            return Ok(WifiActionResult {
+                ok: false,
+                error: Some("unsupported"),
+            });
+        };
+        let mut out = SqvmWifiActionResult::default();
+        callback_status(unsafe {
+            wifi_start_ap(
+                self.callbacks.user_data,
+                ssid.as_ptr(),
+                ssid.len(),
+                &mut out,
+            )
+        })?;
+        unsafe { wifi_action_result_from_ffi(&out) }
+    }
+
+    fn service_wifi_stop_ap<'a>(&'a mut self) -> Result<WifiActionResult<'a>, VmError> {
+        let Some(wifi_stop_ap) = self.callbacks.wifi_stop_ap else {
+            return Ok(WifiActionResult {
+                ok: false,
+                error: Some("unsupported"),
+            });
+        };
+        let mut out = SqvmWifiActionResult::default();
+        callback_status(unsafe { wifi_stop_ap(self.callbacks.user_data, &mut out) })?;
+        unsafe { wifi_action_result_from_ffi(&out) }
+    }
+
+    fn service_wifi_connect<'a>(
+        &'a mut self,
+        profile: &str,
+    ) -> Result<WifiActionResult<'a>, VmError> {
+        let Some(wifi_connect) = self.callbacks.wifi_connect else {
+            return Ok(WifiActionResult {
+                ok: false,
+                error: Some("unsupported"),
+            });
+        };
+        let mut out = SqvmWifiActionResult::default();
+        callback_status(unsafe {
+            wifi_connect(
+                self.callbacks.user_data,
+                profile.as_ptr(),
+                profile.len(),
+                &mut out,
+            )
+        })?;
+        unsafe { wifi_action_result_from_ffi(&out) }
+    }
+
+    fn service_wifi_disconnect<'a>(&'a mut self) -> Result<WifiActionResult<'a>, VmError> {
+        let Some(wifi_disconnect) = self.callbacks.wifi_disconnect else {
+            return Ok(WifiActionResult {
+                ok: false,
+                error: Some("unsupported"),
+            });
+        };
+        let mut out = SqvmWifiActionResult::default();
+        callback_status(unsafe { wifi_disconnect(self.callbacks.user_data, &mut out) })?;
+        unsafe { wifi_action_result_from_ffi(&out) }
+    }
+
     fn service_wifi_status<'a>(&'a mut self) -> Result<WifiStatus<'a>, VmError> {
         let Some(wifi_status) = self.callbacks.wifi_status else {
             return Err(VmError::InvalidOperand);
@@ -1388,6 +1525,20 @@ impl TraceSink for FfiHost {
         let mut out = SqvmWifiStatus::default();
         callback_status(unsafe { wifi_status(self.callbacks.user_data, &mut out) })?;
         unsafe { wifi_status_from_ffi(&out) }
+    }
+
+    fn service_wifi_get_ap_ip<'a>(&'a mut self) -> Result<WifiApIp<'a>, VmError> {
+        let Some(wifi_get_ap_ip) = self.callbacks.wifi_get_ap_ip else {
+            return Ok(WifiApIp {
+                ip: None,
+                gw: None,
+                netmask: None,
+                error: Some("unsupported"),
+            });
+        };
+        let mut out = SqvmWifiApIp::default();
+        callback_status(unsafe { wifi_get_ap_ip(self.callbacks.user_data, &mut out) })?;
+        unsafe { wifi_ap_ip_from_ffi(&out) }
     }
 
     fn service_wifi_scan<'a>(&'a mut self) -> Result<WifiScanResult<'a>, VmError> {
@@ -1493,6 +1644,24 @@ unsafe fn wifi_status_from_ffi<'a>(status: &SqvmWifiStatus) -> Result<WifiStatus
             status.disconnect_reason_len,
         )?,
         disconnect_reason_code: status.disconnect_reason_code,
+    })
+}
+
+unsafe fn wifi_action_result_from_ffi<'a>(
+    result: &SqvmWifiActionResult,
+) -> Result<WifiActionResult<'a>, VmError> {
+    Ok(WifiActionResult {
+        ok: result.ok,
+        error: optional_ffi_str(result.error, result.error_len)?,
+    })
+}
+
+unsafe fn wifi_ap_ip_from_ffi<'a>(result: &SqvmWifiApIp) -> Result<WifiApIp<'a>, VmError> {
+    Ok(WifiApIp {
+        ip: optional_ffi_str(result.ip, result.ip_len)?,
+        gw: optional_ffi_str(result.gw, result.gw_len)?,
+        netmask: optional_ffi_str(result.netmask, result.netmask_len)?,
+        error: optional_ffi_str(result.error, result.error_len)?,
     })
 }
 

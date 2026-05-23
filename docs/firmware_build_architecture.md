@@ -75,15 +75,16 @@ fixture with resumable dispatch, complete its storage requests through the
 adapter, and verify trace callback ordering. Zephyr also has a file-backed
 storage backend that uses `fs_*` APIs for SQBC byte-range reads and app-state
 load/save/reset paths; native ztests cover it through a host-mounted filesystem.
-Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi status/scan
-VM service calls now cross the Rust FFI boundary into Zephyr callbacks. Zephyr
-now performs installed-app foreground handoff for `app.launch` and `app.exit`
-with a bounded return stack and `device lifecycle` diagnostics. `app.arm` and
+Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi VM service
+calls now cross the Rust FFI boundary into Zephyr callbacks. Zephyr now
+performs installed-app foreground handoff for `app.launch` and `app.exit` with
+a bounded return stack and `device lifecycle` diagnostics. `app.arm` and
 `app.disarm` now manage bounded timer-triggered armed app registrations and
 dispatch armed timer events as foreground app starts. The current Zephyr Wi-Fi
-status/scan callbacks are truthful fallback records that report `unsupported`
-without credentials or RF scan data; real Zephyr Wi-Fi management scan/AP/station
-work remains a runtime-service task.
+callbacks for status, scan, AP start/stop, station connect/disconnect, and AP
+IP return truthful fallback records that report `unsupported` without
+credentials or RF scan data; real Zephyr Wi-Fi management scan/AP/station work
+remains a runtime-service task.
 The app-store layer now derives bounded file paths for `main.sqbc` and app
 state from a mount point plus validated app ID, and ESP32-C3 firmware attempts
 to mount the `storage_partition` LittleFS volume at `/sq` during boot without

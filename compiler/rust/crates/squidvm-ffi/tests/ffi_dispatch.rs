@@ -23,8 +23,10 @@ struct Host {
     lifecycle: Vec<String>,
     timer_every: Vec<(String, i32)>,
     timer_after: Vec<(String, i32)>,
+    wifi_actions: Vec<String>,
     wifi_status_count: usize,
     wifi_scan_count: usize,
+    wifi_ap_ip_count: usize,
 }
 
 unsafe extern "C" fn trace(user_data: *mut c_void, message: *const u8, message_len: usize) {
@@ -211,6 +213,87 @@ unsafe extern "C" fn app_disarm(user_data: *mut c_void, app: *const u8, app_len:
     0
 }
 
+unsafe extern "C" fn wifi_start_ap(
+    user_data: *mut c_void,
+    ssid: *const u8,
+    ssid_len: usize,
+    out: *mut squidvm_ffi::SqvmWifiActionResult,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let ssid = std::str::from_utf8(std::slice::from_raw_parts(ssid, ssid_len)).unwrap();
+    host.wifi_actions.push(format!("startAP {ssid}"));
+    *out = squidvm_ffi::SqvmWifiActionResult {
+        ok: true,
+        error: ptr::null(),
+        error_len: 0,
+    };
+    0
+}
+
+unsafe extern "C" fn wifi_stop_ap(
+    user_data: *mut c_void,
+    out: *mut squidvm_ffi::SqvmWifiActionResult,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.wifi_actions.push("stopAP".to_string());
+    *out = squidvm_ffi::SqvmWifiActionResult {
+        ok: true,
+        error: ptr::null(),
+        error_len: 0,
+    };
+    0
+}
+
+unsafe extern "C" fn wifi_connect(
+    user_data: *mut c_void,
+    profile: *const u8,
+    profile_len: usize,
+    out: *mut squidvm_ffi::SqvmWifiActionResult,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let profile = std::str::from_utf8(std::slice::from_raw_parts(profile, profile_len)).unwrap();
+    host.wifi_actions.push(format!("connect {profile}"));
+    *out = squidvm_ffi::SqvmWifiActionResult {
+        ok: true,
+        error: ptr::null(),
+        error_len: 0,
+    };
+    0
+}
+
+unsafe extern "C" fn wifi_disconnect(
+    user_data: *mut c_void,
+    out: *mut squidvm_ffi::SqvmWifiActionResult,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.wifi_actions.push("disconnect".to_string());
+    *out = squidvm_ffi::SqvmWifiActionResult {
+        ok: true,
+        error: ptr::null(),
+        error_len: 0,
+    };
+    0
+}
+
+unsafe extern "C" fn wifi_get_ap_ip(
+    user_data: *mut c_void,
+    out: *mut squidvm_ffi::SqvmWifiApIp,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.wifi_ap_ip_count += 1;
+    *out = squidvm_ffi::SqvmWifiApIp {
+        ip: b"192.168.4.1".as_ptr(),
+        ip_len: b"192.168.4.1".len(),
+        gw: b"192.168.4.1".as_ptr(),
+        gw_len: b"192.168.4.1".len(),
+        netmask: b"255.255.255.0".as_ptr(),
+        netmask_len: b"255.255.255.0".len(),
+        error: ptr::null(),
+        error_len: 0,
+    };
+    0
+}
+
 unsafe extern "C" fn wifi_status(
     user_data: *mut c_void,
     out: *mut squidvm_ffi::SqvmWifiStatus,
@@ -270,6 +353,11 @@ fn callbacks(host: &mut Host) -> SqvmCallbacks {
         app_disarm: Some(app_disarm),
         timer_every: Some(timer_every),
         timer_after: Some(timer_after),
+        wifi_start_ap: Some(wifi_start_ap),
+        wifi_stop_ap: Some(wifi_stop_ap),
+        wifi_connect: Some(wifi_connect),
+        wifi_disconnect: Some(wifi_disconnect),
+        wifi_get_ap_ip: Some(wifi_get_ap_ip),
         wifi_status: Some(wifi_status),
         wifi_scan: Some(wifi_scan),
     }
@@ -389,6 +477,22 @@ event.on("app.start") {
   let scan = service.wifi.scan()
   debug.print(status.state, status.backend, status.driverStarted, status.error)
   debug.print(scan.ok, scan.error, scan.count)
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_wifi_actions_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-wifi-actions"
+event.on("app.start") {
+  let ap = service.wifi.startAP("SquidScript")
+  let ip = service.wifi.getAPIP()
+  let stop = service.wifi.stopAP()
+  let connected = service.wifi.connect("dev")
+  let disconnected = service.wifi.disconnect()
+  debug.print(ap.ok, ip.ip, stop.ok, connected.ok, disconnected.ok)
 }
 screen("main") {}
 "#,
@@ -643,6 +747,47 @@ fn dispatches_indicator_breathe_service_callback() {
     assert_eq!(status, SqvmStatus::Ok);
     assert_eq!(host.breathe_count, 1);
     assert_eq!(host.output, vec!["breathe ready"]);
+}
+
+#[test]
+fn dispatches_wifi_action_service_callbacks() {
+    let mut host = Host {
+        sqbc: compile_wifi_actions_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(
+        host.wifi_actions,
+        vec![
+            "startAP SquidScript".to_string(),
+            "stopAP".to_string(),
+            "connect dev".to_string(),
+            "disconnect".to_string()
+        ]
+    );
+    assert_eq!(host.wifi_ap_ip_count, 1);
+    assert_eq!(host.output, vec!["true 192.168.4.1 true true true"]);
 }
 
 #[test]

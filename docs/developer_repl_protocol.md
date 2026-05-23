@@ -105,10 +105,12 @@ integer.
 
 Wi-Fi profile provisioning uses the framed opcode and returns an explicit
 unsupported error until Zephyr station profile storage is implemented.
-SquidScript VM calls to `service.wifi.status()` and `service.wifi.scan()` are
-connected through the Zephyr FFI host and currently return bounded
-`unsupported` records without credentials or RF identifiers until the Zephyr
-Wi-Fi management backend is implemented.
+SquidScript VM calls to `service.wifi.status()`, `service.wifi.scan()`,
+`service.wifi.startAP(...)`, `service.wifi.stopAP()`,
+`service.wifi.connect(...)`, `service.wifi.disconnect()`, and
+`service.wifi.getAPIP()` are connected through the Zephyr FFI host and
+currently return bounded `unsupported` records without credentials or RF
+identifiers until the Zephyr Wi-Fi management backend is implemented.
 SquidScript VM calls to `app.launch`, `app.arm`, and `app.disarm` are also
 connected through the Zephyr FFI host. `app.launch` and `app.exit` drive the
 Zephyr foreground return stack for installed apps. `app.arm` runs the target

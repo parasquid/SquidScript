@@ -262,6 +262,63 @@ static int32_t runtime_timer_after(void *user_data, const uint8_t *event, size_t
 	return sq_vm_runtime_register_timer(user_data, event, event_len, delay_ms, false);
 }
 
+static int32_t runtime_wifi_unsupported_action(SqvmWifiActionResult *out)
+{
+	if (out == NULL) {
+		return -EINVAL;
+	}
+	memset(out, 0, sizeof(*out));
+	out->ok = false;
+	SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+	return 0;
+}
+
+static int32_t runtime_wifi_start_ap(void *user_data, const uint8_t *ssid, size_t ssid_len,
+				     SqvmWifiActionResult *out)
+{
+	ARG_UNUSED(user_data);
+	ARG_UNUSED(ssid);
+	ARG_UNUSED(ssid_len);
+
+	return runtime_wifi_unsupported_action(out);
+}
+
+static int32_t runtime_wifi_stop_ap(void *user_data, SqvmWifiActionResult *out)
+{
+	ARG_UNUSED(user_data);
+
+	return runtime_wifi_unsupported_action(out);
+}
+
+static int32_t runtime_wifi_connect(void *user_data, const uint8_t *profile, size_t profile_len,
+				    SqvmWifiActionResult *out)
+{
+	ARG_UNUSED(user_data);
+	ARG_UNUSED(profile);
+	ARG_UNUSED(profile_len);
+
+	return runtime_wifi_unsupported_action(out);
+}
+
+static int32_t runtime_wifi_disconnect(void *user_data, SqvmWifiActionResult *out)
+{
+	ARG_UNUSED(user_data);
+
+	return runtime_wifi_unsupported_action(out);
+}
+
+static int32_t runtime_wifi_get_ap_ip(void *user_data, SqvmWifiApIp *out)
+{
+	ARG_UNUSED(user_data);
+
+	if (out == NULL) {
+		return -EINVAL;
+	}
+	memset(out, 0, sizeof(*out));
+	SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+	return 0;
+}
+
 static int32_t runtime_wifi_status(void *user_data, SqvmWifiStatus *out)
 {
 	ARG_UNUSED(user_data);
@@ -427,6 +484,11 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		.app_disarm = runtime_app_disarm,
 		.timer_every = runtime_timer_every,
 		.timer_after = runtime_timer_after,
+		.wifi_start_ap = runtime_wifi_start_ap,
+		.wifi_stop_ap = runtime_wifi_stop_ap,
+		.wifi_connect = runtime_wifi_connect,
+		.wifi_disconnect = runtime_wifi_disconnect,
+		.wifi_get_ap_ip = runtime_wifi_get_ap_ip,
 		.wifi_status = runtime_wifi_status,
 		.wifi_scan = runtime_wifi_scan,
 	};
