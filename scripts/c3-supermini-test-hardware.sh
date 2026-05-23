@@ -34,4 +34,5 @@ done
 "$ROOT/scripts/c3-supermini-test-app-state.sh"
 "$ROOT/scripts/c3-supermini-test-app-lifecycle.sh"
 "$ROOT/scripts/c3-supermini-measure-stack-usage.sh"
+"$ROOT/scripts/c3-supermini-test-wifi-scan-api.sh"
 "$ROOT/scripts/c3-supermini-test-blinky.sh"

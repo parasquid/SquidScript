@@ -76,6 +76,14 @@ verifies `vm_worker_stack_size_bytes`, `vm_worker_stack_used_bytes`, and
 keeps the VM worker stack budget at 16 KiB while this measurement data is used
 to decide whether a later reduction is safe.
 
+`scripts/c3-supermini-test-wifi-scan-api.sh` runs before the final visible
+LED check. It installs `tests/hardware/c3-supermini/wifi-scan-summary` and
+launches a summary-only SquidScript app that calls `service.wifi.scan()`
+without credentials. The app prints only `ok`, `error`, and `count`; the script
+rejects raw BSSID, MAC, or local IP patterns in captured output. The default
+RAM-guarded firmware may report `unsupported` when the Zephyr Wi-Fi driver is
+not enabled.
+
 For the current ESP32-C3 Super Mini Zephyr target,
 `scripts/c3-supermini-test-blinky.sh` is the final full-suite check. It
 installs and launches `examples/blinky-supermini/main.squid`. Serial

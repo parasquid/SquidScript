@@ -1,0 +1,10 @@
+app "wifi-scan-summary"
+
+state {}
+
+event.on("app.start") {
+  let scan = service.wifi.scan()
+  debug.print("wifi scan", scan.ok, scan.error, scan.count)
+}
+
+screen("main") {}
