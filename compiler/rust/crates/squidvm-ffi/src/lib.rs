@@ -2,6 +2,7 @@
 
 use core::{
     ffi::c_void,
+    fmt::{self, Write},
     mem::{align_of, size_of, MaybeUninit},
     ptr, slice, str,
 };
@@ -17,6 +18,8 @@ use squidvm_core::{
     },
     limits::MAX_CODE_CHUNK_BYTES,
     reader::SqbcReader,
+    strings::StringResolver,
+    value::Value,
     vm::ChunkedVm,
 };
 
@@ -258,6 +261,29 @@ pub struct SqvmCallbacks {
             offset: usize,
             out: *mut u8,
             out_len: usize,
+        ) -> i32,
+    >,
+    pub debug_output: Option<
+        unsafe extern "C" fn(user_data: *mut c_void, message: *const u8, message_len: usize),
+    >,
+    pub indicator_write: Option<unsafe extern "C" fn(user_data: *mut c_void, value: bool) -> i32>,
+    pub indicator_toggle: Option<unsafe extern "C" fn(user_data: *mut c_void) -> i32>,
+    pub indicator_read:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut bool) -> i32>,
+    pub timer_every: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            event: *const u8,
+            event_len: usize,
+            interval_ms: i32,
+        ) -> i32,
+    >,
+    pub timer_after: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            event: *const u8,
+            event_len: usize,
+            delay_ms: i32,
         ) -> i32,
     >,
 }
@@ -906,6 +932,93 @@ impl TraceSink for FfiHost {
         }
     }
 
+    fn debug_print(&mut self, strings: &StringResolver<'_>, values: &[Value]) {
+        let Some(debug_output) = self.callbacks.debug_output else {
+            return;
+        };
+        let mut line = FixedLine::<128>::default();
+        for (index, value) in values.iter().enumerate() {
+            if index > 0 {
+                let _ = line.write_str(" ");
+            }
+            match value {
+                Value::String(_) | Value::RuntimeString(_) => {
+                    let text = strings.value_str(*value).unwrap_or("<string>");
+                    let _ = line.write_str(text);
+                }
+                Value::I32(value) => {
+                    let _ = write!(line, "{value}");
+                }
+                Value::Bool(value) => {
+                    let _ = write!(line, "{value}");
+                }
+                Value::Null => {
+                    let _ = line.write_str("null");
+                }
+                Value::Record(_) => {
+                    let _ = line.write_str("<record>");
+                }
+                Value::List(_) => {
+                    let _ = line.write_str("<list>");
+                }
+            }
+        }
+        unsafe {
+            debug_output(self.callbacks.user_data, line.as_ptr(), line.len());
+        }
+    }
+
+    fn service_indicator_write(&mut self, value: bool) -> Result<(), VmError> {
+        let Some(indicator_write) = self.callbacks.indicator_write else {
+            return Err(VmError::InvalidOperand);
+        };
+        callback_status(unsafe { indicator_write(self.callbacks.user_data, value) })
+    }
+
+    fn service_indicator_toggle(&mut self) -> Result<(), VmError> {
+        let Some(indicator_toggle) = self.callbacks.indicator_toggle else {
+            return Err(VmError::InvalidOperand);
+        };
+        callback_status(unsafe { indicator_toggle(self.callbacks.user_data) })
+    }
+
+    fn service_indicator_read(&mut self) -> Result<bool, VmError> {
+        let Some(indicator_read) = self.callbacks.indicator_read else {
+            return Err(VmError::InvalidOperand);
+        };
+        let mut value = false;
+        callback_status(unsafe { indicator_read(self.callbacks.user_data, &mut value) })?;
+        Ok(value)
+    }
+
+    fn service_timer_every(&mut self, event: &str, interval_ms: i32) -> Result<(), VmError> {
+        let Some(timer_every) = self.callbacks.timer_every else {
+            return Err(VmError::InvalidOperand);
+        };
+        callback_status(unsafe {
+            timer_every(
+                self.callbacks.user_data,
+                event.as_ptr(),
+                event.len(),
+                interval_ms,
+            )
+        })
+    }
+
+    fn service_timer_after(&mut self, event: &str, delay_ms: i32) -> Result<(), VmError> {
+        let Some(timer_after) = self.callbacks.timer_after else {
+            return Err(VmError::InvalidOperand);
+        };
+        callback_status(unsafe {
+            timer_after(
+                self.callbacks.user_data,
+                event.as_ptr(),
+                event.len(),
+                delay_ms,
+            )
+        })
+    }
+
     fn state_load(&mut self, _out: &mut [u8]) -> Result<Option<usize>, VmError> {
         Ok(None)
     }
@@ -919,6 +1032,51 @@ fn status_from_vm(result: Result<(), VmError>) -> SqvmStatus {
     match result {
         Ok(()) => SqvmStatus::Ok,
         Err(_) => SqvmStatus::VmError,
+    }
+}
+
+fn callback_status(status: i32) -> Result<(), VmError> {
+    if status == 0 {
+        Ok(())
+    } else {
+        Err(VmError::InvalidOperand)
+    }
+}
+
+struct FixedLine<const N: usize> {
+    bytes: [u8; N],
+    len: usize,
+}
+
+impl<const N: usize> Default for FixedLine<N> {
+    fn default() -> Self {
+        Self {
+            bytes: [0; N],
+            len: 0,
+        }
+    }
+}
+
+impl<const N: usize> FixedLine<N> {
+    fn as_ptr(&self) -> *const u8 {
+        self.bytes.as_ptr()
+    }
+
+    fn len(&self) -> usize {
+        self.len
+    }
+}
+
+impl<const N: usize> Write for FixedLine<N> {
+    fn write_str(&mut self, value: &str) -> fmt::Result {
+        let remaining = N.saturating_sub(self.len);
+        if remaining == 0 {
+            return Ok(());
+        }
+        let copy_len = core::cmp::min(remaining, value.len());
+        self.bytes[self.len..self.len + copy_len].copy_from_slice(&value.as_bytes()[..copy_len]);
+        self.len += copy_len;
+        Ok(())
     }
 }
 

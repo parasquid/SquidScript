@@ -1130,3 +1130,31 @@ ZTEST(squidscript_protocol, test_vm_runtime_dispatches_app_start_and_records_tra
 	zassert_str_equal(runtime.traces[1], "state.load");
 	zassert_str_equal(runtime.traces[2], "state.save");
 }
+
+ZTEST(squidscript_protocol, test_vm_runtime_tracks_output_indicator_and_due_timers)
+{
+	struct sq_vm_runtime runtime = {0};
+	char event[SQ_VM_RUNTIME_EVENT_LEN];
+
+	sq_vm_runtime_init(&runtime);
+
+	zassert_equal(sq_vm_runtime_record_output(&runtime, (const uint8_t *)"hello", 5), 0);
+	zassert_equal(runtime.output_count, 1);
+	zassert_str_equal(runtime.outputs[0], "hello");
+
+	zassert_equal(sq_vm_runtime_indicator_write(&runtime, true), 0);
+	bool value = false;
+	zassert_equal(sq_vm_runtime_indicator_read(&runtime, &value), 0);
+	zassert_true(value);
+	zassert_equal(sq_vm_runtime_indicator_toggle(&runtime), 0);
+	zassert_equal(sq_vm_runtime_indicator_read(&runtime, &value), 0);
+	zassert_false(value);
+
+	zassert_equal(sq_vm_runtime_register_timer(&runtime, (const uint8_t *)"timer.debug",
+						   strlen("timer.debug"), 1, true),
+		      0);
+	k_sleep(K_MSEC(2));
+	zassert_equal(sq_vm_runtime_next_due_timer(&runtime, event, sizeof(event)), 0);
+	zassert_str_equal(event, "timer.debug");
+	zassert_not_equal(sq_vm_runtime_next_due_timer(&runtime, event, sizeof(event)), 0);
+}

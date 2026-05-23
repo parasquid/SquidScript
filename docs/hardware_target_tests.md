@@ -50,3 +50,9 @@ The Zephyr-only hardware suite is not complete yet. The required inventory is:
 The obsolete Rust firmware scripts are not current hardware target tests. As
 Zephyr coverage lands, keep the suite ordered so stateful reset/install tests
 run before the final visible board-state check.
+
+For the current ESP32-C3 Super Mini Zephyr target, the blinky check installs
+and launches `examples/blinky-supermini/main.squid`. Serial `device output`
+should show repeated `blink false` / `blink true` lines and `device errors`
+should be empty before the final visible check. After that final check starts,
+do not run another serial command unless debugging the final board state.

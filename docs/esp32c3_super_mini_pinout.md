@@ -103,6 +103,14 @@ Some public examples wire e-paper reset to `GPIO2`. That can work on a specific
 board, but `GPIO10` is the preferred reset pin for this repo's Super Mini
 bring-up notes because it avoids a boot strapping pin.
 
+## Current Zephyr Indicator Binding
+
+The ESP32-C3 Super Mini Zephyr overlay binds `led0` to `GPIO8` active-low for
+`service.indicator.*`. This is the repository's current common-clone default,
+not a guarantee for every board variant. If the serial blinky test reports
+timer output but the onboard blue LED does not blink, verify the physical board
+LED mapping before changing portable SquidScript indicator semantics.
+
 ## Source Notes
 
 The layout above is based on these references:

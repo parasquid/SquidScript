@@ -80,6 +80,8 @@ int main(void)
 			}
 		}
 
+		(void)sq_vm_runtime_poll(&runtime);
+
 		if (!consumed) {
 			k_sleep(K_MSEC(1));
 		}

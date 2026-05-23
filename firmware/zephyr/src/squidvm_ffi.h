@@ -89,11 +89,31 @@ typedef int32_t (*SqvmReadExactAtCallback)(
 	size_t offset,
 	uint8_t *out,
 	size_t out_len);
+typedef void (*SqvmDebugOutputCallback)(void *user_data, const uint8_t *message, size_t message_len);
+typedef int32_t (*SqvmIndicatorWriteCallback)(void *user_data, bool value);
+typedef int32_t (*SqvmIndicatorToggleCallback)(void *user_data);
+typedef int32_t (*SqvmIndicatorReadCallback)(void *user_data, bool *out);
+typedef int32_t (*SqvmTimerEveryCallback)(
+	void *user_data,
+	const uint8_t *event,
+	size_t event_len,
+	int32_t interval_ms);
+typedef int32_t (*SqvmTimerAfterCallback)(
+	void *user_data,
+	const uint8_t *event,
+	size_t event_len,
+	int32_t delay_ms);
 
 typedef struct {
 	void *user_data;
 	SqvmTraceCallback trace;
 	SqvmReadExactAtCallback read_exact_at;
+	SqvmDebugOutputCallback debug_output;
+	SqvmIndicatorWriteCallback indicator_write;
+	SqvmIndicatorToggleCallback indicator_toggle;
+	SqvmIndicatorReadCallback indicator_read;
+	SqvmTimerEveryCallback timer_every;
+	SqvmTimerAfterCallback timer_after;
 } SqvmCallbacks;
 
 size_t sqvm_context_size(void);
