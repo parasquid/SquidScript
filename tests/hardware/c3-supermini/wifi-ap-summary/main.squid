@@ -1,0 +1,17 @@
+app "wifi-ap-summary"
+
+state {}
+
+event.on("app.start") {
+  let ap = service.wifi.startAP("SquidScript")
+  let ip = service.wifi.getAPIP()
+  debug.print("wifi start", ap.ok, ap.error)
+  debug.print("wifi ap ip", ip.error)
+}
+
+event.on("key.SELECT") {
+  let stop = service.wifi.stopAP()
+  debug.print("wifi stop", stop.ok, stop.error)
+}
+
+screen("main") {}

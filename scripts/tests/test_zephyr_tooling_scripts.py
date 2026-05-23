@@ -198,6 +198,30 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("c3-supermini-test-wifi-station-api.sh", suite)
         self.assertNotIn("app.exit()", self.read("tests/hardware/c3-supermini/wifi-station-summary/main.squid"))
 
+    def test_wifi_ap_check_is_current_redacted_and_not_in_default_suite(self):
+        ap = self.read("scripts/c3-supermini-test-wifi-ap-api.sh")
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn('tests/hardware/c3-supermini/wifi-ap-summary/main.squid', ap)
+        self.assertIn('cargo run --quiet -p squidc -- app launch wifi-ap-summary', ap)
+        self.assertIn('cargo run --quiet -p squidc -- device key SELECT', ap)
+        self.assertIn('output=wifi start', ap)
+        self.assertIn('output=wifi ap ip', ap)
+        self.assertIn('output=wifi stop', ap)
+        self.assertIn('assert_no_raw_network_identifiers', ap)
+        self.assertNotIn("obsolete", ap.lower())
+        self.assertNotIn("c3-supermini-test-wifi-ap-api.sh", suite)
+
+        fixture = self.read("tests/hardware/c3-supermini/wifi-ap-summary/main.squid")
+        self.assertIn('service.wifi.startAP("SquidScript")', fixture)
+        self.assertIn("service.wifi.getAPIP()", fixture)
+        self.assertIn("service.wifi.stopAP()", fixture)
+        self.assertNotIn("ip.ip", fixture)
+        self.assertNotIn("ip.gw", fixture)
+        self.assertNotIn("ip.netmask", fixture)
+        self.assertNotIn("status.ssid", fixture)
+        self.assertNotIn("app.exit()", fixture)
+
 
 if __name__ == "__main__":
     unittest.main()

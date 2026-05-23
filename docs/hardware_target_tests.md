@@ -103,6 +103,15 @@ app that calls `service.wifi.connect("dev")` and `service.wifi.status()`. The
 script prints command names and lengths only, and rejects raw SSIDs, passwords,
 BSSIDs, MACs, or local IP patterns in captured output.
 
+`scripts/c3-supermini-test-wifi-ap-api.sh` is also outside the default full
+hardware suite so the suite can keep final blinky as the last visible state. It
+installs `tests/hardware/c3-supermini/wifi-ap-summary`, launches a summary-only
+app that calls `service.wifi.startAP("SquidScript")` and
+`service.wifi.getAPIP()`, sends `SELECT` to call `service.wifi.stopAP()`, and
+rejects raw AP SSIDs, BSSIDs, MACs, or local IP patterns in captured output.
+The default RAM-guarded firmware may report `unsupported` for AP operations
+until a Wi-Fi-enabled build profile is selected.
+
 For the current ESP32-C3 Super Mini Zephyr target,
 `scripts/c3-supermini-test-blinky.sh` is the final full-suite check. It
 installs and launches `examples/blinky-supermini/main.squid`. Serial
