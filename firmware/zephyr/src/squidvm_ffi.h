@@ -436,6 +436,13 @@ SqdpStatus sqdp_encode_resources_response(
 	uint8_t *out,
 	size_t out_cap,
 	size_t *out_len);
+SqdpStatus sqdp_encode_state_response(
+	uint32_t sequence,
+	const uint8_t *bytes,
+	size_t bytes_len,
+	uint8_t *out,
+	size_t out_cap,
+	size_t *out_len);
 SqdpStatus sqdp_prepare_key_event(
 	const uint8_t *request,
 	size_t request_len,

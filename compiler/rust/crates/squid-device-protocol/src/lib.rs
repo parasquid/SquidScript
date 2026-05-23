@@ -1492,6 +1492,25 @@ where
     )
 }
 
+pub fn encode_state_response_into(
+    sequence: u32,
+    bytes: &[u8],
+    out: &mut [u8],
+) -> Result<usize, DecodeError> {
+    let payload_len = tlv_bytes_len(bytes)?;
+    encode_response_payload_into(
+        Opcode::StateGet,
+        Status::Ok,
+        sequence,
+        payload_len,
+        out,
+        |payload| {
+            write_bytes_tlv(payload, 1, bytes)?;
+            Ok(())
+        },
+    )
+}
+
 pub fn encode_lifecycle_response_into<'a, P, A>(
     sequence: u32,
     active_app: Option<&str>,
@@ -1703,6 +1722,16 @@ fn tlv_string_len_for_len(value_len: usize) -> Result<usize, DecodeError> {
     Ok(4 + value_len)
 }
 
+fn tlv_bytes_len(value: &[u8]) -> Result<usize, DecodeError> {
+    if value.len() > u16::MAX as usize {
+        return Err(DecodeError::OutputTooSmall {
+            needed: value.len(),
+            capacity: u16::MAX as usize,
+        });
+    }
+    Ok(4 + value.len())
+}
+
 fn tlv_bool_len() -> usize {
     5
 }
@@ -1732,6 +1761,16 @@ fn write_string_tlv<'a>(
 ) -> Result<&'a mut [u8], DecodeError> {
     write_tlv_header(out, tag, 1, value.len())?;
     out[4..4 + value.len()].copy_from_slice(value.as_bytes());
+    Ok(&mut out[4 + value.len()..])
+}
+
+fn write_bytes_tlv<'a>(
+    out: &'a mut [u8],
+    tag: u8,
+    value: &[u8],
+) -> Result<&'a mut [u8], DecodeError> {
+    write_tlv_header(out, tag, 0, value.len())?;
+    out[4..4 + value.len()].copy_from_slice(value);
     Ok(&mut out[4 + value.len()..])
 }
 

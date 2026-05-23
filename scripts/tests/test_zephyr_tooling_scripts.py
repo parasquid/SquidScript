@@ -317,6 +317,20 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("sq_protocol_next_field", body)
         self.assertNotIn("struct sq_protocol_field", body)
 
+    def test_state_get_response_uses_rust_encoder_without_c_payload_staging(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
+        start = protocol.index("static int state_get_response")
+        end = protocol.index("static int state_import")
+        body = protocol[start:end]
+
+        self.assertIn("sqdp_encode_state_response", ffi_h)
+        self.assertIn("sqdp_encode_state_response", body)
+        self.assertIn("runtime->transfer.completion.bytes", body)
+        self.assertNotIn("payload[0]", body)
+        self.assertNotIn("SQ_DEVICE_STATE_FIELD_BYTES", body)
+        self.assertNotIn("sq_protocol_encode_frame_header", body)
+
     def test_resources_response_uses_rust_encoder_without_c_record_staging(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         start = protocol.index("static int resources_response")

@@ -2,7 +2,7 @@ use squid_device_protocol::{
     app_install_begin_request, app_install_chunk_request, app_install_commit_request,
     app_launch_request, app_list_entries, decode_frame, encode_frame, event_dispatch_request,
     key_request, lifecycle_lines, output_lines, resource_install_begin_request,
-    resource_install_chunk_request, resource_install_commit_request, resource_values,
+    resource_install_chunk_request, resource_install_commit_request, resource_values, state_bytes,
     state_import_request, wifi_profile_set_request, FrameKind, Opcode, Status,
 };
 use squidvm_ffi::{
@@ -246,6 +246,32 @@ fn ffi_encodes_resources_response_from_c_metrics() {
         resource_values(&frame).unwrap(),
         vec![("vm_worker_stack_used_bytes".to_string(), 14_704)]
     );
+}
+
+#[test]
+fn ffi_encodes_state_response_from_caller_owned_bytes() {
+    let mut out = [0u8; 96];
+    let mut out_len = 0usize;
+    let state = b"SQST\x01\x02\x03\x04";
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_encode_state_response(
+            65,
+            state.as_ptr(),
+            state.len(),
+            out.as_mut_ptr(),
+            out.len(),
+            &mut out_len,
+        )
+    };
+
+    assert_eq!(status as i32, 0);
+    let frame = decode_frame(&out[..out_len]).unwrap();
+    assert_eq!(frame.kind, FrameKind::Response);
+    assert_eq!(frame.opcode, Opcode::StateGet);
+    assert_eq!(frame.status, Status::Ok);
+    assert_eq!(frame.sequence, 65);
+    assert_eq!(state_bytes(&frame).unwrap(), state);
 }
 
 #[test]

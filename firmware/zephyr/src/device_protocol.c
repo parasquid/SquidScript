@@ -67,28 +67,6 @@ static int ok_response(const struct sq_protocol_frame *request, uint8_t *respons
 		response_len));
 }
 
-static int write_response(const struct sq_protocol_frame *request, uint8_t status,
-			  const uint8_t *payload, size_t payload_len, uint8_t *response,
-			  size_t response_cap, size_t *response_len)
-{
-	int result;
-
-	if (response_cap < SQ_PROTOCOL_HEADER_LEN + payload_len) {
-		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
-	}
-	result = sq_protocol_encode_frame_header(SQ_FRAME_RESPONSE, request->opcode, status,
-						 request->sequence, payload, payload_len,
-						 response, response_cap);
-	if (result != SQ_PROTOCOL_OK) {
-		return result;
-	}
-	if (payload_len > 0) {
-		memcpy(&response[SQ_PROTOCOL_HEADER_LEN], payload, payload_len);
-	}
-	*response_len = SQ_PROTOCOL_HEADER_LEN + payload_len;
-	return SQ_PROTOCOL_OK;
-}
-
 static int error_response(const struct sq_protocol_frame *request, int code, uint8_t *response,
 			  size_t response_cap, size_t *response_len)
 {
@@ -713,16 +691,16 @@ static int state_get_response(const struct sq_protocol_frame *request,
 			      size_t response_cap, size_t *response_len)
 {
 	size_t bytes_len = 0;
-	size_t payload_cap;
-	uint8_t *payload;
+	uint8_t *state_bytes;
+	size_t state_cap;
 	int result;
 
 	if (context->launch_storage == NULL) {
-		return write_response(request, SQ_STATUS_OK, NULL, 0, response, response_cap,
-				      response_len);
+		return sqdp_status_to_protocol_result(sqdp_encode_state_response(
+			request->sequence, NULL, 0, response, response_cap, response_len));
 	}
-	if (response_cap < SQ_PROTOCOL_HEADER_LEN + 4) {
-		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
+	if (context->runtime == NULL) {
+		return -ENODEV;
 	}
 
 	struct sq_vm_storage_backend backend =
@@ -731,31 +709,20 @@ static int state_get_response(const struct sq_protocol_frame *request,
 		return -ENODEV;
 	}
 
-	payload = &response[SQ_PROTOCOL_HEADER_LEN];
-	payload_cap = MIN(response_cap - SQ_PROTOCOL_HEADER_LEN - 4,
-			  (size_t)SQVM_STORAGE_TRANSFER_CAPACITY);
-	result = backend.load_state(backend.user_data, &payload[4], payload_cap, &bytes_len);
+	state_bytes = context->runtime->transfer.completion.bytes;
+	state_cap = sizeof(context->runtime->transfer.completion.bytes);
+	result = backend.load_state(backend.user_data, state_bytes, state_cap, &bytes_len);
 	if (result != 0 && result != -ENOENT) {
 		return result;
 	}
 	if (result == -ENOENT) {
 		bytes_len = 0;
 	}
-	if (bytes_len > payload_cap || bytes_len > UINT16_MAX) {
+	if (bytes_len > state_cap) {
 		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
 	}
-	payload[0] = SQ_DEVICE_STATE_FIELD_BYTES;
-	payload[1] = SQ_FIELD_BYTES;
-	payload[2] = (uint8_t)(bytes_len & 0xffu);
-	payload[3] = (uint8_t)((bytes_len >> 8) & 0xffu);
-	result = sq_protocol_encode_frame_header(SQ_FRAME_RESPONSE, request->opcode, SQ_STATUS_OK,
-						 request->sequence, payload, bytes_len + 4,
-						 response, response_cap);
-	if (result != SQ_PROTOCOL_OK) {
-		return result;
-	}
-	*response_len = SQ_PROTOCOL_HEADER_LEN + bytes_len + 4;
-	return SQ_PROTOCOL_OK;
+	return sqdp_status_to_protocol_result(sqdp_encode_state_response(
+		request->sequence, state_bytes, bytes_len, response, response_cap, response_len));
 }
 
 static int state_import(const struct sq_protocol_frame *request,

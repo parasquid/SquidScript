@@ -28,9 +28,9 @@ use squidvm_core::{
 use squid_device_protocol::{
     encode_app_list_response_into, encode_empty_response_into, encode_error_response_into,
     encode_hello_response_into, encode_lifecycle_response_into, encode_line_response_into,
-    encode_resources_response_into, key_event_from_request_into, AppListEntry, DecodeError,
-    DeviceRequest, LifecycleTimer, Opcode, ResourceMetric, Status as SqdpFrameStatus,
-    MAX_APP_BYTES,
+    encode_resources_response_into, encode_state_response_into, key_event_from_request_into,
+    AppListEntry, DecodeError, DeviceRequest, LifecycleTimer, Opcode, ResourceMetric,
+    Status as SqdpFrameStatus, MAX_APP_BYTES,
 };
 
 #[repr(C)]
@@ -1212,6 +1212,35 @@ pub unsafe extern "C" fn sqdp_encode_resources_response(
     });
     let out = slice::from_raw_parts_mut(out, out_cap);
     match encode_resources_response_into(sequence, metric_iter, out) {
+        Ok(len) => {
+            *out_len = len;
+            SqdpStatus::Ok
+        }
+        Err(DecodeError::OutputTooSmall { .. }) => SqdpStatus::BufferTooSmall,
+        Err(_) => SqdpStatus::EncodeError,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_encode_state_response(
+    sequence: u32,
+    bytes: *const u8,
+    bytes_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+    out_len: *mut usize,
+) -> SqdpStatus {
+    if out.is_null() || out_len.is_null() || (bytes.is_null() && bytes_len > 0) {
+        return SqdpStatus::InvalidArgument;
+    }
+    *out_len = 0;
+    let bytes = if bytes_len == 0 {
+        &[]
+    } else {
+        slice::from_raw_parts(bytes, bytes_len)
+    };
+    let out = slice::from_raw_parts_mut(out, out_cap);
+    match encode_state_response_into(sequence, bytes, out) {
         Ok(len) => {
             *out_len = len;
             SqdpStatus::Ok

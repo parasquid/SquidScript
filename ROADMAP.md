@@ -37,8 +37,9 @@ for compiler, SQBC tooling, and VM semantics.
   to heap-free Rust `sqdp_` helpers where doing so reduces stack buffers or
   duplicated TLV rules without duplicating Zephyr storage/runtime ownership.
   App launch, generic event dispatch, Wi-Fi profile, and state import request
-  parsing now live in Rust `sqdp_` helpers; keep moving similar bounded
-  protocol parsing there.
+  parsing now live in Rust `sqdp_` helpers, and state export response encoding
+  now uses the same Rust-owned framing path. Keep moving similar bounded
+  protocol parsing/encoding there.
 - Keep `squidc`, Python helpers, Zephyr tests, and FFI tests on shared codec
   fixtures so there is one current wire implementation.
 

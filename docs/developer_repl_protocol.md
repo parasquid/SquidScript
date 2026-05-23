@@ -92,11 +92,12 @@ frame and its fixed session storage to Rust; Rust returns a bounded action with
 borrowed byte slices or stored session strings; Zephyr performs the filesystem
 or VM operation and then calls the completion function so Rust updates progress.
 Rust also encodes `app-list`, lifecycle diagnostics, resource diagnostics, and
-repeated diagnostic line responses directly into Zephyr's caller-owned response
-buffer so Zephyr C does not stage duplicate TLV payload arrays for those command
-responses. App launch, generic event dispatch, state import, and Wi-Fi profile
-requests are parsed by Rust `sqdp_` FFI helpers, which return borrowed field
-slices to Zephyr C for runtime/storage actions.
+state export responses directly into Zephyr's caller-owned response buffer so
+Zephyr C does not stage duplicate TLV payload arrays for those command
+responses. Repeated diagnostic line responses use the same Rust encoder path.
+App launch, generic event dispatch, state import, and Wi-Fi profile requests
+are parsed by Rust `sqdp_` FFI helpers, which return borrowed field slices to
+Zephyr C for runtime/storage actions.
 
 `app-list` responses use repeated record fields: response field tag `1` is one
 app record, record field tag `1` is the app ID string, and record field tag `2`
@@ -104,11 +105,13 @@ is the SQBC length as an unsigned 64-bit integer.
 
 `output-get`, `trace-get`, `drawlog-get`, `lifecycle-get`, and `errors-get` responses use
 repeated string fields with tag `1`, one field per line. `state-get` returns
-state bytes as field tag `1`. `state-import` request TLV parsing is owned by
-the Rust `sqdp_` FFI helper and returns a borrowed state byte slice to Zephyr C
-for storage. `resources-get` returns repeated record fields: response field tag
-`1` is one resource record, record field tag `1` is the metric key string, and
-record field tag `2` is the value as an unsigned 64-bit integer.
+state bytes as field tag `1`; Rust owns the response encoder while Zephyr owns
+the storage load and supplies the caller-owned state byte buffer.
+`state-import` request TLV parsing is owned by the Rust `sqdp_` FFI helper and
+returns a borrowed state byte slice to Zephyr C for storage. `resources-get`
+returns repeated record fields: response field tag `1` is one resource record,
+record field tag `1` is the metric key string, and record field tag `2` is the
+value as an unsigned 64-bit integer.
 
 Wi-Fi profile provisioning uses the framed opcode to store one volatile,
 bounded station profile in Zephyr runtime memory. Rust `sqdp_` FFI code owns
