@@ -85,12 +85,26 @@ run_capture launch-wifi-ap cargo run --quiet -p squidc -- app launch wifi-ap-sum
 
 output_out="$(wait_for_contains output-start "output=wifi start" \
   "device output" cargo run --quiet -p squidc -- device output)"
-assert_file_contains "${output_out}" "output=wifi ap ip"
+assert_file_contains "${output_out}" "output=wifi start true null"
+assert_file_contains "${output_out}" "output=wifi ap ip null"
+if grep -Fq "unsupported" "${output_out}"; then
+  printf 'Expected %s not to contain unsupported fallback\n' "${output_out}" >&2
+  printf '%s\n' "--- ${output_out} ---" >&2
+  sed -n '1,200p' "${output_out}" >&2
+  exit 1
+fi
 assert_no_raw_network_identifiers "${output_out}"
 
 run_capture stop-wifi-ap-key cargo run --quiet -p squidc -- device key SELECT >/dev/null
 output_out="$(wait_for_contains output-stop "output=wifi stop" \
   "device output" cargo run --quiet -p squidc -- device output)"
+assert_file_contains "${output_out}" "output=wifi stop true null"
+if grep -Fq "unsupported" "${output_out}"; then
+  printf 'Expected %s not to contain unsupported fallback\n' "${output_out}" >&2
+  printf '%s\n' "--- ${output_out} ---" >&2
+  sed -n '1,200p' "${output_out}" >&2
+  exit 1
+fi
 assert_no_raw_network_identifiers "${output_out}"
 
 errors_out="$(run_capture errors cargo run --quiet -p squidc -- device errors)"

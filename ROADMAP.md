@@ -38,9 +38,9 @@ for compiler, SQBC tooling, and VM semantics.
 
 ### 4. Port Runtime Services To Zephyr
 
-- Implement GPIO, indicator, PWM, timers, app lifecycle, persistent app storage,
-  app state, display/draw-log, Wi-Fi scan, AP, station, status, and profile
-  provisioning through Zephyr-native subsystems.
+- Implement remaining persistent app storage, app state, Wi-Fi station,
+  station profile provisioning, and Wi-Fi AP DHCP/client proof through
+  Zephyr-native subsystems.
 - Decide whether the ESP32-C3 Super Mini reference target should expose
   `bleTransfer.*`; if yes, implement and verify it through Zephyr BLE instead
   of relying on MCU radio metadata alone.
@@ -91,9 +91,9 @@ for compiler, SQBC tooling, and VM semantics.
   static allocations, especially VM runtime storage, work stacks,
   response/session buffers, logging, LittleFS pools, and file caches. Keep the
   RAM audit guard meaningful and record tradeoffs before lowering capability.
-  The default ESP32-C3 Super Mini firmware builds with the real Zephyr ESP32
-  Wi-Fi scan/status backend at `dram0_0_seg=209424` bytes, or 51.1% of the
-  target definition's 400 KiB internal SRAM.
+  The default ESP32-C3 Super Mini firmware builds with Zephyr ESP32 Wi-Fi
+  scan/status/AP support at `dram0_0_seg=209440` bytes, or 51.1% of the target
+  definition's 400 KiB internal SRAM.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.

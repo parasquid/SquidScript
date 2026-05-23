@@ -12,6 +12,7 @@
 	IS_ENABLED(CONFIG_NET_MGMT_EVENT_INFO)
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_mgmt.h>
+#include <zephyr/net/net_ip.h>
 #include <zephyr/net/wifi_mgmt.h>
 #endif
 
@@ -61,6 +62,8 @@ static const struct device *const gpio0_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0))
 	IS_ENABLED(CONFIG_NET_MGMT_EVENT_INFO)
 #define SQ_VM_RUNTIME_HAS_WIFI_MGMT 1
 #define SQ_VM_RUNTIME_WIFI_SCAN_TIMEOUT_MS 8000
+#define SQ_VM_RUNTIME_WIFI_AP_IP "192.168.4.1"
+#define SQ_VM_RUNTIME_WIFI_AP_NETMASK "255.255.255.0"
 #else
 #define SQ_VM_RUNTIME_HAS_WIFI_MGMT 0
 #endif
@@ -324,6 +327,31 @@ static struct net_if *runtime_wifi_iface(void)
 	return net_if_get_wifi_sta();
 }
 
+static struct net_if *runtime_wifi_ap_iface(void)
+{
+	return net_if_get_wifi_sap();
+}
+
+static int runtime_wifi_configure_ap_ipv4(struct net_if *iface)
+{
+	struct in_addr addr = {0};
+	struct in_addr netmask = {0};
+
+	if (iface == NULL) {
+		return -ENODEV;
+	}
+	if (net_addr_pton(AF_INET, SQ_VM_RUNTIME_WIFI_AP_IP, &addr) != 0 ||
+	    net_addr_pton(AF_INET, SQ_VM_RUNTIME_WIFI_AP_NETMASK, &netmask) != 0) {
+		return -EINVAL;
+	}
+	net_if_ipv4_set_gw(iface, &addr);
+	(void)net_if_ipv4_addr_add(iface, &addr, NET_ADDR_MANUAL, 0);
+	if (!net_if_ipv4_set_netmask_by_addr(iface, &addr, &netmask)) {
+		return -EIO;
+	}
+	return 0;
+}
+
 static void runtime_wifi_record_scan_result(struct sq_vm_runtime *runtime,
 					    const struct wifi_scan_result *entry)
 {
@@ -378,6 +406,14 @@ static void runtime_wifi_event_handler(struct net_mgmt_event_callback *cb, uint6
 		}
 		k_sem_give(&runtime->wifi_scan_done);
 		break;
+	case NET_EVENT_WIFI_AP_ENABLE_RESULT:
+		runtime->wifi_ap_active = true;
+		runtime->wifi_ap_start_events++;
+		break;
+	case NET_EVENT_WIFI_AP_DISABLE_RESULT:
+		runtime->wifi_ap_active = false;
+		runtime->wifi_ap_stop_events++;
+		break;
 	default:
 		break;
 	}
@@ -392,7 +428,9 @@ static void runtime_wifi_init_events(struct sq_vm_runtime *runtime)
 	if (!runtime->wifi_mgmt_cb_registered) {
 		net_mgmt_init_event_callback(&runtime->wifi_mgmt_cb, runtime_wifi_event_handler,
 					     NET_EVENT_WIFI_SCAN_RESULT |
-						     NET_EVENT_WIFI_SCAN_DONE);
+						     NET_EVENT_WIFI_SCAN_DONE |
+						     NET_EVENT_WIFI_AP_ENABLE_RESULT |
+						     NET_EVENT_WIFI_AP_DISABLE_RESULT);
 		net_mgmt_add_event_callback(&runtime->wifi_mgmt_cb);
 		runtime->wifi_mgmt_cb_registered = true;
 	}
@@ -421,18 +459,87 @@ static int32_t runtime_wifi_unsupported_action(SqvmWifiActionResult *out)
 static int32_t runtime_wifi_start_ap(void *user_data, const uint8_t *ssid, size_t ssid_len,
 				     SqvmWifiActionResult *out)
 {
+	if (out == NULL) {
+		return -EINVAL;
+	}
+	memset(out, 0, sizeof(*out));
+#if SQ_VM_RUNTIME_HAS_WIFI_MGMT
+	struct sq_vm_runtime *runtime = user_data;
+	struct net_if *iface = runtime_wifi_ap_iface();
+	struct wifi_connect_req_params params = {0};
+
+	if (runtime == NULL || iface == NULL) {
+		out->ok = false;
+		SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+		return 0;
+	}
+	if (ssid == NULL || ssid_len == 0 || ssid_len > SQ_VM_RUNTIME_WIFI_SSID_LEN - 1) {
+		out->ok = false;
+		SQ_SET_LITERAL_FIELD(out, error, "invalid ssid");
+		return 0;
+	}
+	runtime_wifi_init_events(runtime);
+	int ip_result = runtime_wifi_configure_ap_ipv4(iface);
+	if (ip_result != 0) {
+		out->ok = false;
+		SQ_SET_LITERAL_FIELD(out, error, "ap ip failed");
+		return 0;
+	}
+
+	params.ssid = ssid;
+	params.ssid_length = (uint8_t)ssid_len;
+	params.security = WIFI_SECURITY_TYPE_NONE;
+	params.channel = WIFI_CHANNEL_ANY;
+	params.band = WIFI_FREQ_BAND_2_4_GHZ;
+
+	int result = net_mgmt(NET_REQUEST_WIFI_AP_ENABLE, iface, &params, sizeof(params));
+	if (result != 0) {
+		out->ok = false;
+		SQ_SET_LITERAL_FIELD(out, error, "ap start failed");
+		return 0;
+	}
+	runtime->wifi_ap_active = true;
+	out->ok = true;
+	return 0;
+#else
 	ARG_UNUSED(user_data);
 	ARG_UNUSED(ssid);
 	ARG_UNUSED(ssid_len);
 
 	return runtime_wifi_unsupported_action(out);
+#endif
 }
 
 static int32_t runtime_wifi_stop_ap(void *user_data, SqvmWifiActionResult *out)
 {
+	if (out == NULL) {
+		return -EINVAL;
+	}
+	memset(out, 0, sizeof(*out));
+#if SQ_VM_RUNTIME_HAS_WIFI_MGMT
+	struct sq_vm_runtime *runtime = user_data;
+	struct net_if *iface = runtime_wifi_ap_iface();
+
+	if (runtime == NULL || iface == NULL) {
+		out->ok = false;
+		SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+		return 0;
+	}
+	runtime_wifi_init_events(runtime);
+	int result = net_mgmt(NET_REQUEST_WIFI_AP_DISABLE, iface, NULL, 0);
+	if (result != 0) {
+		out->ok = false;
+		SQ_SET_LITERAL_FIELD(out, error, "ap stop failed");
+		return 0;
+	}
+	runtime->wifi_ap_active = false;
+	out->ok = true;
+	return 0;
+#else
 	ARG_UNUSED(user_data);
 
 	return runtime_wifi_unsupported_action(out);
+#endif
 }
 
 static int32_t runtime_wifi_connect(void *user_data, const uint8_t *profile, size_t profile_len,
@@ -454,14 +561,25 @@ static int32_t runtime_wifi_disconnect(void *user_data, SqvmWifiActionResult *ou
 
 static int32_t runtime_wifi_get_ap_ip(void *user_data, SqvmWifiApIp *out)
 {
-	ARG_UNUSED(user_data);
-
 	if (out == NULL) {
 		return -EINVAL;
 	}
 	memset(out, 0, sizeof(*out));
+#if SQ_VM_RUNTIME_HAS_WIFI_MGMT
+	struct sq_vm_runtime *runtime = user_data;
+	if (runtime == NULL || !runtime->wifi_ap_active) {
+		SQ_SET_LITERAL_FIELD(out, error, "stopped");
+		return 0;
+	}
+	SQ_SET_LITERAL_FIELD(out, ip, SQ_VM_RUNTIME_WIFI_AP_IP);
+	SQ_SET_LITERAL_FIELD(out, gw, SQ_VM_RUNTIME_WIFI_AP_IP);
+	SQ_SET_LITERAL_FIELD(out, netmask, SQ_VM_RUNTIME_WIFI_AP_NETMASK);
+	return 0;
+#else
+	ARG_UNUSED(user_data);
 	SQ_SET_LITERAL_FIELD(out, error, "unsupported");
 	return 0;
+#endif
 }
 
 static int32_t runtime_wifi_status(void *user_data, SqvmWifiStatus *out)
@@ -478,6 +596,19 @@ static int32_t runtime_wifi_status(void *user_data, SqvmWifiStatus *out)
 		runtime_wifi_init_events(runtime);
 	}
 	SQ_SET_LITERAL_FIELD(out, backend, "zephyr");
+	if (runtime != NULL && runtime->wifi_ap_active) {
+		out->active = true;
+		out->configured = true;
+		out->driver_started = true;
+		out->mode = (const uint8_t *)"ap";
+		out->mode_len = 2;
+		SQ_SET_LITERAL_FIELD(out, state, "started");
+		SQ_SET_LITERAL_FIELD(out, driver_mode, "ap");
+		SQ_SET_LITERAL_FIELD(out, ip_address, SQ_VM_RUNTIME_WIFI_AP_IP);
+		out->ap_start_events = runtime->wifi_ap_start_events;
+		out->ap_stop_events = runtime->wifi_ap_stop_events;
+		return 0;
+	}
 	if (iface == NULL) {
 		out->active = false;
 		out->driver_started = false;
@@ -671,6 +802,11 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->indicator_breathe_next_ms = 0;
 	runtime->gpio_configured_mask = 0;
 	runtime->gpio_state_mask = 0;
+#if SQ_VM_RUNTIME_HAS_WIFI_MGMT
+	runtime->wifi_ap_active = false;
+	runtime->wifi_ap_start_events = 0;
+	runtime->wifi_ap_stop_events = 0;
+#endif
 	runtime->dispatch_exited = false;
 	runtime->result_code = 0;
 	runtime->status = SQ_VM_RUNTIME_IDLE;

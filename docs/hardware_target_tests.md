@@ -129,9 +129,8 @@ hardware suite so the suite can keep final blinky as the last visible state. It
 installs `tests/hardware/c3-supermini/wifi-ap-summary`, launches a summary-only
 app that calls `service.wifi.startAP("SquidScript")` and
 `service.wifi.getAPIP()`, sends `SELECT` to call `service.wifi.stopAP()`, and
-rejects raw AP SSIDs, BSSIDs, MACs, or local IP patterns in captured output.
-AP operations remain unsupported until their Zephyr runtime support and RAM cost
-are measured explicitly.
+requires start, AP IP lookup, and stop to report success without printing the
+raw AP SSID, BSSIDs, MACs, or local IP patterns in captured output.
 
 For the current ESP32-C3 Super Mini Zephyr target,
 `scripts/c3-supermini-test-blinky.sh` is the final full-suite check. It

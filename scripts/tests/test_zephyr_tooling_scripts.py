@@ -69,7 +69,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         for option in [
             "CONFIG_NETWORKING=y",
             "CONFIG_WIFI=y",
-            "CONFIG_WIFI_USAGE_MODE_SCAN_ONLY=y",
+            "CONFIG_WIFI_USAGE_MODE_STA_AP=y",
             "CONFIG_NET_MGMT=y",
             "CONFIG_NET_MGMT_EVENT=y",
             "CONFIG_NET_MGMT_EVENT_INFO=y",
@@ -387,9 +387,10 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('tests/hardware/c3-supermini/wifi-ap-summary/main.squid', ap)
         self.assertIn('cargo run --quiet -p squidc -- app launch wifi-ap-summary', ap)
         self.assertIn('cargo run --quiet -p squidc -- device key SELECT', ap)
-        self.assertIn('output=wifi start', ap)
-        self.assertIn('output=wifi ap ip', ap)
-        self.assertIn('output=wifi stop', ap)
+        self.assertIn('output=wifi start true null', ap)
+        self.assertIn('output=wifi ap ip null', ap)
+        self.assertIn('output=wifi stop true null', ap)
+        self.assertIn("unsupported", ap)
         self.assertIn('assert_no_raw_network_identifiers', ap)
         self.assertNotIn("obsolete", ap.lower())
         self.assertNotIn("c3-supermini-test-wifi-ap-api.sh", suite)

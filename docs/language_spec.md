@@ -2252,11 +2252,9 @@ such as `service.wifi.connect("dev")`; credentials are provisioned by firmware,
 host tooling, or target setup outside SquidScript. Firmware must not expose
 configured station SSIDs or passwords in SquidScript source, state, records,
 logs, diagnostics, or source maps. Current ESP32-C3 development firmware
-supports volatile serial-provisioned profiles for testing. The Rust backend
-attempts station scan/config/start/connect and reports truthful driver status;
-the hardware station API test requires `connected == true` when provisioned
-credentials are supplied. DHCP/IP reporting for station mode is not implemented
-yet.
+supports Wi-Fi status, scan, and AP start/stop through Zephyr. Volatile station
+profiles, station connect/disconnect, and station DHCP/IP reporting are not
+implemented yet.
 
 Rules:
 - Apps may start a foreground-owned access point when the target exposes the Wi-Fi service.
