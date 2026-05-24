@@ -53,6 +53,8 @@ The default Zephyr-only hardware suite covers the current required inventory:
   FFI host.
 - Verify app-facing installed-app inspection through `app.registry()` and
   `app.registry.get(...)`.
+- Verify app-facing indicator state reads and toggles through
+  `service.indicator.read()` and `service.indicator.toggle()`.
 - Verify `device.config.load`, `device.config.set`, `device.config.rebind`,
   and `device.config.save` reach the Zephyr VM FFI host and save active SQDC
   config through Zephyr storage.
@@ -133,7 +135,10 @@ app lifecycle checks in the full ESP32-C3 Super Mini suite. It records
 verifies `protocol_thread_stack_*` and `vm_worker_stack_*` metrics are
 internally consistent. The current firmware keeps the protocol/main stack budget
 at 8 KiB and the VM worker stack budget at 24 KiB while this measurement data is
-used to decide whether later reductions are safe.
+used to decide whether later reductions are safe. The latest full Zephyr parity
+suite measured `protocol_thread_stack_used_bytes=8164` of 8192 and
+`vm_worker_stack_used_bytes=24448` of 24576, so stack optimization should first
+identify which command path drives the high-water mark.
 
 `scripts/c3-supermini-test-system-resources.sh` runs after lifecycle coverage
 and before stack measurement. It installs
@@ -141,6 +146,13 @@ and before stack measurement. It installs
 `system.memory()` returns a Zephyr RAM/heap diagnostic string and
 `system.storage("apps")` returns an app-storage string through the real VM FFI
 host callbacks.
+
+`scripts/c3-supermini-test-indicator-state.sh` runs after system resource and
+app registry coverage and before binding-specific indicator checks. It installs
+`tests/hardware/c3-supermini/indicator-state-summary`, launches it, and
+verifies serial output from `service.indicator.write(false)`,
+`service.indicator.read()`, and `service.indicator.toggle()` so indicator state
+semantics are proven without relying on visible LED observation.
 
 `scripts/c3-supermini-test-device-config.sh` runs after system resource coverage
 and before stack measurement. It installs

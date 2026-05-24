@@ -101,11 +101,13 @@ for compiler, SQBC tooling, and VM semantics.
   for the largest static allocations, especially VM runtime storage, work
   stacks, response/session buffers, logging, LittleFS pools, and file caches.
   Use `device resources` worker-stack and protocol-stack high-water diagnostics
-  before lowering stack budgets; recent hardware measurements were
-  `protocol_thread_stack_used_bytes=4256` of 8192 and
-  `vm_worker_stack_used_bytes=22976` of 24576. The current Wi-Fi-enabled build
-  is under the RAM guard at `dram0_0_seg=212480` linker bytes, so this is not a
-  feature-parity blocker.
+  before lowering stack budgets. The latest full Zephyr parity suite measured
+  `protocol_thread_stack_used_bytes=8164` of 8192 and
+  `vm_worker_stack_used_bytes=24448` of 24576, so stack reduction should start
+  by identifying the high-water command path instead of lowering budgets first.
+  The current Wi-Fi-enabled build is under the RAM guard at
+  `dram0_0_seg=212480` linker bytes, so RAM reduction is post-parity
+  optimization rather than a feature-parity blocker.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.

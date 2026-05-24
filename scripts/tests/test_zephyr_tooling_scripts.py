@@ -753,6 +753,42 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             suite.index("c3-supermini-test-blinky.sh"),
         )
 
+    def test_hardware_suite_runs_indicator_state_script(self):
+        script = self.read("scripts/c3-supermini-test-indicator-state.sh")
+        app = self.read("tests/hardware/c3-supermini/indicator-state-summary/main.squid")
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn("service.indicator.write(false)", app)
+        self.assertIn("service.indicator.read()", app)
+        self.assertIn("service.indicator.toggle()", app)
+        self.assertIn('source "${ROOT}/scripts/lib/serial-port.sh"', script)
+        self.assertIn('export ESPFLASH_PORT="$(resolve_esp_serial_port)"', script)
+        self.assertIn(
+            'cargo run --quiet -p squidc -- app install "${INDICATOR_STATE_APP}"',
+            script,
+        )
+        self.assertIn(
+            "cargo run --quiet -p squidc -- app launch indicator-state-summary",
+            script,
+        )
+        self.assertIn("output=indicator read off false", script)
+        self.assertIn("output=indicator read on true", script)
+        self.assertIn("output=indicator read off again false", script)
+        self.assertIn("assert_file_empty_command", script)
+        self.assertIn("c3-supermini-test-indicator-state.sh", suite)
+        self.assertLess(
+            suite.index("c3-supermini-test-app-registry-api.sh"),
+            suite.index("c3-supermini-test-indicator-state.sh"),
+        )
+        self.assertLess(
+            suite.index("c3-supermini-test-indicator-state.sh"),
+            suite.index("c3-supermini-test-device-binding.sh"),
+        )
+        self.assertLess(
+            suite.index("c3-supermini-test-indicator-state.sh"),
+            suite.index("c3-supermini-test-blinky.sh"),
+        )
+
     def test_hardware_suite_runs_inline_gpio_device_binding_script(self):
         script = self.read("scripts/c3-supermini-test-inline-gpio-binding.sh")
         app = self.read(
