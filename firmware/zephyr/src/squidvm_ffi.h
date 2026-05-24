@@ -67,6 +67,20 @@ typedef struct {
 } SqdcConfig;
 
 typedef enum {
+	SQDC_DEVICE_BINDING_RESOURCE_UNSUPPORTED = 0,
+	SQDC_DEVICE_BINDING_RESOURCE_PACKAGE_SQDEVICE = 1,
+	SQDC_DEVICE_BINDING_RESOURCE_INLINE_GPIO = 2,
+} SqdcDeviceBindingResourceKind;
+
+typedef struct {
+	SqdcDeviceBindingResourceKind kind;
+	uint8_t alias[SQVM_DEVICE_BINDING_NAME_CAP];
+	size_t alias_len;
+	uint8_t resource[SQVM_DEVICE_BINDING_RESOURCE_CAP];
+	size_t resource_len;
+} SqdcDeviceBindingPlan;
+
+typedef enum {
 	SQDP_ACTION_NONE = 0,
 	SQDP_ACTION_BEGIN_INSTALL = 1,
 	SQDP_ACTION_WRITE_INSTALL_CHUNK = 2,
@@ -531,6 +545,11 @@ SqdcStatus sqdc_config_set_string(SqdcConfig *config, const uint8_t *key, size_t
 SqdcStatus sqdc_encode_sqdc(const SqdcConfig *config, uint8_t *out, size_t out_cap,
 			    size_t *out_len);
 SqdcStatus sqdc_decode_sqdc(const uint8_t *input, size_t input_len, SqdcConfig *out);
+SqdcStatus sqdc_plan_device_binding(const uint8_t *service, size_t service_len,
+				    const uint8_t *binding, size_t binding_len,
+				    const uint8_t *resource, size_t resource_len,
+				    SqdcDeviceBindingPlan *out,
+				    SqdcConfig *out_inline_config);
 SqvmStatus sqvm_context_prepare(void *context, size_t context_len);
 SqvmStatus sqvm_context_init_in_place(
 	void *context,

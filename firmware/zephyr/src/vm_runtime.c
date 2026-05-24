@@ -1650,88 +1650,6 @@ static size_t runtime_fixed_text_len(const uint8_t *bytes, size_t cap)
 	return len;
 }
 
-static bool runtime_fixed_text_equals(const uint8_t *bytes, size_t cap, const char *expected)
-{
-	size_t len;
-
-	if (bytes == NULL || expected == NULL) {
-		return false;
-	}
-	len = runtime_fixed_text_len(bytes, cap);
-	return len == strlen(expected) && memcmp(bytes, expected, len) == 0;
-}
-
-static bool runtime_device_binding_resource_has_prefix(const uint8_t *resource,
-						       size_t resource_len,
-						       const char *prefix)
-{
-	size_t prefix_len;
-
-	if (resource == NULL || prefix == NULL) {
-		return false;
-	}
-	prefix_len = strlen(prefix);
-	return resource_len > prefix_len && memcmp(resource, prefix, prefix_len) == 0;
-}
-
-static int sq_vm_runtime_apply_inline_gpio_indicator_binding(struct sq_vm_runtime *runtime,
-							     const uint8_t *resource,
-							     size_t resource_len,
-							     SqvmDeviceConfigResult *out)
-{
-	static const char gpio_prefix[] = "gpio:";
-	static const uint8_t service_key[] = "service";
-	static const uint8_t mode_key[] = "mode";
-	static const uint8_t pin_name_key[] = "pinName";
-	static const uint8_t active_low_key[] = "activeLow";
-	static const uint8_t service_value[] = "indicator.default";
-	static const uint8_t mode_value[] = "gpio";
-	const uint8_t *pin_name;
-	size_t pin_name_len;
-	uint8_t pin;
-	SqdcStatus status;
-
-	if (runtime == NULL || resource == NULL || out == NULL ||
-	    !runtime_device_binding_resource_has_prefix(resource, resource_len, gpio_prefix)) {
-		return -EINVAL;
-	}
-
-	pin_name = resource + strlen(gpio_prefix);
-	pin_name_len = resource_len - strlen(gpio_prefix);
-	if (parse_gpio_name(pin_name, pin_name_len, &pin) != 0) {
-		return runtime_device_config_error(out, "invalid binding");
-	}
-
-	status = sqdc_config_clear(&runtime->device_config_draft);
-	if (status == SQDC_STATUS_OK) {
-		status = sqdc_config_set_string(&runtime->device_config_draft, service_key,
-						strlen((const char *)service_key), service_value,
-						strlen((const char *)service_value));
-	}
-	if (status == SQDC_STATUS_OK) {
-		status = sqdc_config_set_string(&runtime->device_config_draft, mode_key,
-						strlen((const char *)mode_key), mode_value,
-						strlen((const char *)mode_value));
-	}
-	if (status == SQDC_STATUS_OK) {
-		status = sqdc_config_set_string(&runtime->device_config_draft, pin_name_key,
-						strlen((const char *)pin_name_key), pin_name,
-						pin_name_len);
-	}
-	if (status == SQDC_STATUS_OK) {
-		status = sqdc_config_set_bool(&runtime->device_config_draft, active_low_key,
-					      strlen((const char *)active_low_key), false);
-	}
-	if (status != SQDC_STATUS_OK) {
-		const char *error = runtime_device_config_status_error(status);
-		return runtime_device_config_error(out, error != NULL ? error : "invalid binding");
-	}
-
-	runtime->device_config_draft_loaded = true;
-	return sq_vm_runtime_device_config_rebind(runtime, (const uint8_t *)"indicator.default",
-						  strlen("indicator.default"), out);
-}
-
 static int sq_vm_runtime_apply_saved_device_config(struct sq_vm_runtime *runtime)
 {
 	char path[SQ_APP_STORE_PATH_MAX];
@@ -1792,8 +1710,11 @@ static int sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *runtime)
 
 	for (size_t index = 0; index < count; index++) {
 		SqvmDeviceBinding binding = {0};
+		SqdcDeviceBindingPlan plan = {0};
 		SqvmDeviceConfigResult result = {0};
 		size_t resource_len;
+		size_t service_len;
+		size_t binding_len;
 
 		status = sqvm_device_binding_read_from_reader(runtime, runtime_read_exact_at,
 							      runtime->transfer.init_scratch,
@@ -1802,35 +1723,47 @@ static int sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *runtime)
 		if (status != SQVM_STATUS_OK) {
 			return sq_vm_runtime_status_to_errno(status);
 		}
-		if (!runtime_fixed_text_equals(binding.service, sizeof(binding.service), "indicator") ||
-		    !runtime_fixed_text_equals(binding.binding, sizeof(binding.binding), "default")) {
+
+		service_len = runtime_fixed_text_len(binding.service, sizeof(binding.service));
+		binding_len = runtime_fixed_text_len(binding.binding, sizeof(binding.binding));
+		resource_len = runtime_fixed_text_len(binding.resource, sizeof(binding.resource));
+		if (service_len == 0 || service_len >= sizeof(binding.service) ||
+		    binding_len == 0 || binding_len >= sizeof(binding.binding) ||
+		    resource_len == 0 || resource_len >= sizeof(binding.resource)) {
+			return -EINVAL;
+		}
+
+		if (sqdc_plan_device_binding(binding.service, service_len, binding.binding,
+					     binding_len, binding.resource, resource_len,
+					     &plan, &runtime->device_config_draft) !=
+		    SQDC_STATUS_OK) {
 			return -ENOTSUP;
 		}
 
-		resource_len = runtime_fixed_text_len(binding.resource, sizeof(binding.resource));
-		if (resource_len == 0 || resource_len >= sizeof(binding.resource)) {
-			return -EINVAL;
-		}
-		if (runtime_device_binding_resource_has_prefix(binding.resource, resource_len,
-							       "gpio:")) {
-			if (sq_vm_runtime_apply_inline_gpio_indicator_binding(
-				    runtime, binding.resource, resource_len, &result) != 0 ||
+		switch (plan.kind) {
+		case SQDC_DEVICE_BINDING_RESOURCE_INLINE_GPIO:
+			runtime->device_config_draft_loaded = true;
+			if (sq_vm_runtime_device_config_rebind(runtime, plan.alias, plan.alias_len,
+							       &result) != 0 ||
 			    !result.ok) {
 				return -EINVAL;
 			}
-		} else {
-			if (sq_vm_runtime_device_config_load_resource(runtime, binding.resource,
-								      resource_len, &result) != 0 ||
+			break;
+		case SQDC_DEVICE_BINDING_RESOURCE_PACKAGE_SQDEVICE:
+			if (sq_vm_runtime_device_config_load_resource(runtime, plan.resource,
+								      plan.resource_len, &result) != 0 ||
 			    !result.ok) {
 				return -EINVAL;
 			}
 			memset(&result, 0, sizeof(result));
-			if (sq_vm_runtime_device_config_rebind(
-				    runtime, (const uint8_t *)"indicator.default",
-				    strlen("indicator.default"), &result) != 0 ||
+			if (sq_vm_runtime_device_config_rebind(runtime, plan.alias, plan.alias_len,
+							       &result) != 0 ||
 			    !result.ok) {
 				return -EINVAL;
 			}
+			break;
+		default:
+			return -ENOTSUP;
 		}
 	}
 	return 0;

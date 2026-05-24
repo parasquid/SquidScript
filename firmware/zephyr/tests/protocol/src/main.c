@@ -2832,6 +2832,47 @@ ZTEST(squidscript_protocol, test_sqdc_ffi_parses_and_encodes_device_config)
 		      SQDC_STATUS_INVALID_ARGUMENT);
 }
 
+ZTEST(squidscript_protocol, test_sqdc_ffi_plans_device_binding_resources)
+{
+	SqdcDeviceBindingPlan plan = {0};
+	SqdcConfig inline_config = {0};
+
+	zassert_equal(sqdc_plan_device_binding((const uint8_t *)"indicator",
+					       strlen("indicator"), (const uint8_t *)"default",
+					       strlen("default"), (const uint8_t *)"gpio:GPIO8",
+					       strlen("gpio:GPIO8"), &plan, &inline_config),
+		      SQDC_STATUS_OK);
+	zassert_equal(plan.kind, SQDC_DEVICE_BINDING_RESOURCE_INLINE_GPIO);
+	zassert_equal(plan.alias_len, strlen("indicator.default"));
+	zassert_mem_equal(plan.alias, "indicator.default", strlen("indicator.default"));
+	zassert_equal(inline_config.count, 4);
+	zassert_equal(inline_config.records[2].value.kind, SQDC_VALUE_STRING);
+	zassert_mem_equal(inline_config.records[2].value.string, "GPIO8", strlen("GPIO8"));
+	zassert_false(inline_config.records[3].value.bool_value);
+
+	memset(&plan, 0, sizeof(plan));
+	memset(&inline_config, 0, sizeof(inline_config));
+	zassert_equal(sqdc_plan_device_binding((const uint8_t *)"indicator",
+					       strlen("indicator"), (const uint8_t *)"default",
+					       strlen("default"),
+					       (const uint8_t *)"device/indicator.sqdevice",
+					       strlen("device/indicator.sqdevice"), &plan,
+					       &inline_config),
+		      SQDC_STATUS_OK);
+	zassert_equal(plan.kind, SQDC_DEVICE_BINDING_RESOURCE_PACKAGE_SQDEVICE);
+	zassert_equal(plan.resource_len, strlen("device/indicator.sqdevice"));
+	zassert_mem_equal(plan.resource, "device/indicator.sqdevice",
+			  strlen("device/indicator.sqdevice"));
+	zassert_equal(inline_config.count, 0);
+
+	zassert_equal(sqdc_plan_device_binding((const uint8_t *)"display", strlen("display"),
+					       (const uint8_t *)"default", strlen("default"),
+					       (const uint8_t *)"device/display.sqdevice",
+					       strlen("device/display.sqdevice"), &plan,
+					       &inline_config),
+		      SQDC_STATUS_INVALID_ARGUMENT);
+}
+
 ZTEST(squidscript_protocol, test_vm_runtime_tracks_output_indicator_and_due_timers)
 {
 	struct sq_vm_runtime runtime = {0};

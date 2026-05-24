@@ -148,6 +148,36 @@ impl Default for SqdcConfig {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SqdcDeviceBindingResourceKind {
+    Unsupported = 0,
+    PackageSqdevice = 1,
+    InlineGpio = 2,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqdcDeviceBindingPlan {
+    pub kind: SqdcDeviceBindingResourceKind,
+    pub alias: [u8; SQVM_DEVICE_BINDING_NAME_CAP],
+    pub alias_len: usize,
+    pub resource: [u8; SQVM_DEVICE_BINDING_RESOURCE_CAP],
+    pub resource_len: usize,
+}
+
+impl Default for SqdcDeviceBindingPlan {
+    fn default() -> Self {
+        Self {
+            kind: SqdcDeviceBindingResourceKind::Unsupported,
+            alias: [0; SQVM_DEVICE_BINDING_NAME_CAP],
+            alias_len: 0,
+            resource: [0; SQVM_DEVICE_BINDING_RESOURCE_CAP],
+            resource_len: 0,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SqdpAppListEntry {
     pub app_id: [u8; SQDP_APP_ID_CAP],
     pub sqbc_len: usize,
@@ -1356,6 +1386,43 @@ pub unsafe extern "C" fn sqdc_decode_sqdc(
         }
         status => status,
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdc_plan_device_binding(
+    service: *const u8,
+    service_len: usize,
+    binding: *const u8,
+    binding_len: usize,
+    resource: *const u8,
+    resource_len: usize,
+    out: *mut SqdcDeviceBindingPlan,
+    out_inline_config: *mut SqdcConfig,
+) -> SqdcStatus {
+    let Some(service) = ffi_bytes(service, service_len) else {
+        return SqdcStatus::InvalidArgument;
+    };
+    let Some(binding) = ffi_bytes(binding, binding_len) else {
+        return SqdcStatus::InvalidArgument;
+    };
+    let Some(resource) = ffi_bytes(resource, resource_len) else {
+        return SqdcStatus::InvalidArgument;
+    };
+    if out.is_null() {
+        return SqdcStatus::InvalidArgument;
+    }
+
+    let mut plan = SqdcDeviceBindingPlan::default();
+    let inline_config = if out_inline_config.is_null() {
+        None
+    } else {
+        Some(&mut *out_inline_config)
+    };
+    let status = plan_device_binding_bytes(service, binding, resource, &mut plan, inline_config);
+    if status == SqdcStatus::Ok {
+        *out = plan;
+    }
+    status
 }
 
 #[repr(C)]
@@ -3594,6 +3661,102 @@ fn valid_sqdc_key(key: &[u8]) -> bool {
         && key
             .iter()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(*byte, b'.' | b'_' | b'-'))
+}
+
+fn plan_device_binding_bytes(
+    service: &[u8],
+    binding: &[u8],
+    resource: &[u8],
+    out: &mut SqdcDeviceBindingPlan,
+    out_inline_config: Option<&mut SqdcConfig>,
+) -> SqdcStatus {
+    if service != b"indicator" || binding != b"default" {
+        return SqdcStatus::InvalidArgument;
+    }
+    if resource.is_empty() || resource.len() >= SQVM_DEVICE_BINDING_RESOURCE_CAP {
+        return SqdcStatus::InvalidArgument;
+    }
+
+    *out = SqdcDeviceBindingPlan::default();
+    let alias = b"indicator.default";
+    out.alias[..alias.len()].copy_from_slice(alias);
+    out.alias_len = alias.len();
+    out.resource[..resource.len()].copy_from_slice(resource);
+    out.resource_len = resource.len();
+
+    if let Some(pin_name) = parse_inline_gpio_resource(resource) {
+        let Some(out_inline_config) = out_inline_config else {
+            *out = SqdcDeviceBindingPlan::default();
+            return SqdcStatus::InvalidArgument;
+        };
+        out.kind = SqdcDeviceBindingResourceKind::InlineGpio;
+        let status = build_inline_gpio_config(alias, pin_name, out_inline_config);
+        if status != SqdcStatus::Ok {
+            *out = SqdcDeviceBindingPlan::default();
+            *out_inline_config = SqdcConfig::default();
+        }
+        return status;
+    }
+
+    if is_safe_sqdevice_path_bytes(resource) {
+        if let Some(out_inline_config) = out_inline_config {
+            *out_inline_config = SqdcConfig::default();
+        }
+        out.kind = SqdcDeviceBindingResourceKind::PackageSqdevice;
+        return SqdcStatus::Ok;
+    }
+
+    *out = SqdcDeviceBindingPlan::default();
+    SqdcStatus::InvalidArgument
+}
+
+fn parse_inline_gpio_resource(resource: &[u8]) -> Option<&[u8]> {
+    let pin_name = resource.strip_prefix(b"gpio:")?;
+    let digits = pin_name.strip_prefix(b"GPIO")?;
+    if digits.is_empty() || digits.len() > 2 || !digits.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    Some(pin_name)
+}
+
+fn build_inline_gpio_config(alias: &[u8], pin_name: &[u8], out: &mut SqdcConfig) -> SqdcStatus {
+    *out = SqdcConfig::default();
+    for (key, value) in [
+        (b"service".as_slice(), alias),
+        (b"mode".as_slice(), b"gpio".as_slice()),
+        (b"pinName".as_slice(), pin_name),
+    ] {
+        let value = match sqdc_string_value(value) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let status = config_set_value(out, key, value);
+        if status != SqdcStatus::Ok {
+            return status;
+        }
+    }
+    config_set_value(
+        out,
+        b"activeLow",
+        SqdcValue {
+            kind: SqdcValueKind::Bool,
+            bool_value: false,
+            ..SqdcValue::default()
+        },
+    )
+}
+
+fn sqdc_string_value(value: &[u8]) -> Result<SqdcValue, SqdcStatus> {
+    if value.len() > SQDC_CONFIG_STRING_CAP || str::from_utf8(value).is_err() {
+        return Err(SqdcStatus::InvalidArgument);
+    }
+    let mut stored = SqdcValue {
+        kind: SqdcValueKind::String,
+        string_len: value.len(),
+        ..SqdcValue::default()
+    };
+    stored.string[..value.len()].copy_from_slice(value);
+    Ok(stored)
 }
 
 fn encode_sqdc_bytes(config: &SqdcConfig, out: &mut [u8], out_len: &mut usize) -> SqdcStatus {

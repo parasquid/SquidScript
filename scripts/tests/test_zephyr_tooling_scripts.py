@@ -705,6 +705,20 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             suite.index("c3-supermini-test-blinky.sh"),
         )
 
+    def test_device_binding_planning_stays_in_rust_ffi(self):
+        ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
+        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+        ffi_rs = self.read("compiler/rust/crates/squidvm-ffi/src/lib.rs")
+        ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
+
+        self.assertIn("SqdcDeviceBindingPlan", ffi_h)
+        self.assertIn("sqdc_plan_device_binding", ffi_h)
+        self.assertIn("sqdc_plan_device_binding", runtime)
+        self.assertIn("plan_device_binding_bytes", ffi_rs)
+        self.assertIn("test_sqdc_ffi_plans_device_binding_resources", ztest)
+        self.assertNotIn("inline_config;", ffi_h)
+        self.assertNotIn("sq_vm_runtime_apply_inline_gpio_indicator_binding", runtime)
+
     def test_breathe_check_is_explicit_visible_indicator_parity_script(self):
         script = self.read("scripts/c3-supermini-test-breathe.sh")
         app = self.read("examples/breathe-supermini/main.squid")

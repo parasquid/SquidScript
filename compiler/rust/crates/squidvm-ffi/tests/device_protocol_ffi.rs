@@ -6,10 +6,10 @@ use squid_device_protocol::{
     state_import_request, wifi_profile_set_request, FrameKind, Opcode, Status,
 };
 use squidvm_ffi::{
-    SqdcConfig, SqdcStatus, SqdcValueKind, SqdpAction, SqdpActionKind, SqdpAppLaunch,
-    SqdpAppListEntry, SqdpEventDispatch, SqdpLifecycleTimer, SqdpLineSlice, SqdpResourceMetric,
-    SqdpResourceSession, SqdpStateImport, SqdpTransferSession, SqdpWifiProfile,
-    SQDP_STAGING_PATH_CAP,
+    SqdcConfig, SqdcDeviceBindingPlan, SqdcDeviceBindingResourceKind, SqdcStatus, SqdcValueKind,
+    SqdpAction, SqdpActionKind, SqdpAppLaunch, SqdpAppListEntry, SqdpEventDispatch,
+    SqdpLifecycleTimer, SqdpLineSlice, SqdpResourceMetric, SqdpResourceSession, SqdpStateImport,
+    SqdpTransferSession, SqdpWifiProfile, SQDP_STAGING_PATH_CAP,
 };
 
 fn sqdc_record<'a>(config: &'a SqdcConfig, key: &str) -> &'a squidvm_ffi::SqdcRecord {
@@ -21,6 +21,10 @@ fn sqdc_record<'a>(config: &'a SqdcConfig, key: &str) -> &'a squidvm_ffi::SqdcRe
             record.present && std::str::from_utf8(&record.key[..record.key_len]).unwrap() == key
         })
         .unwrap()
+}
+
+fn fixed_text(bytes: &[u8], len: usize) -> &str {
+    std::str::from_utf8(&bytes[..len]).unwrap()
 }
 
 #[test]
@@ -147,6 +151,102 @@ fn ffi_rejects_invalid_sqdevice_draft_inputs_without_allocating() {
         squidvm_ffi::sqdc_is_safe_sqdevice_path(b"device/indicator.sqdevice".as_ptr(), 25)
     };
     assert_eq!(status, SqdcStatus::Ok);
+}
+
+#[test]
+fn ffi_plans_supported_device_binding_resources_without_c_state_machine_logic() {
+    let mut plan = SqdcDeviceBindingPlan::default();
+    let mut inline_config = SqdcConfig::default();
+    let status = unsafe {
+        squidvm_ffi::sqdc_plan_device_binding(
+            b"indicator".as_ptr(),
+            b"indicator".len(),
+            b"default".as_ptr(),
+            b"default".len(),
+            b"gpio:GPIO8".as_ptr(),
+            b"gpio:GPIO8".len(),
+            &mut plan,
+            &mut inline_config,
+        )
+    };
+
+    assert_eq!(status, SqdcStatus::Ok);
+    assert_eq!(plan.kind, SqdcDeviceBindingResourceKind::InlineGpio);
+    assert_eq!(fixed_text(&plan.alias, plan.alias_len), "indicator.default");
+    assert_eq!(fixed_text(&plan.resource, plan.resource_len), "gpio:GPIO8");
+    assert_eq!(
+        sqdc_record(&inline_config, "service").value.kind,
+        SqdcValueKind::String
+    );
+    assert_eq!(
+        &sqdc_record(&inline_config, "pinName").value.string
+            [..sqdc_record(&inline_config, "pinName").value.string_len],
+        b"GPIO8"
+    );
+    assert!(!sqdc_record(&inline_config, "activeLow").value.bool_value);
+
+    let mut package_plan = SqdcDeviceBindingPlan::default();
+    let mut package_inline_config = SqdcConfig::default();
+    let status = unsafe {
+        squidvm_ffi::sqdc_plan_device_binding(
+            b"indicator".as_ptr(),
+            b"indicator".len(),
+            b"default".as_ptr(),
+            b"default".len(),
+            b"device/indicator.sqdevice".as_ptr(),
+            b"device/indicator.sqdevice".len(),
+            &mut package_plan,
+            &mut package_inline_config,
+        )
+    };
+
+    assert_eq!(status, SqdcStatus::Ok);
+    assert_eq!(
+        package_plan.kind,
+        SqdcDeviceBindingResourceKind::PackageSqdevice
+    );
+    assert_eq!(
+        fixed_text(&package_plan.alias, package_plan.alias_len),
+        "indicator.default"
+    );
+    assert_eq!(
+        fixed_text(&package_plan.resource, package_plan.resource_len),
+        "device/indicator.sqdevice"
+    );
+    assert_eq!(package_inline_config.count, 0);
+}
+
+#[test]
+fn ffi_rejects_unsupported_device_bindings_and_bad_inline_gpio_resources() {
+    let mut plan = SqdcDeviceBindingPlan::default();
+    let mut inline_config = SqdcConfig::default();
+    let status = unsafe {
+        squidvm_ffi::sqdc_plan_device_binding(
+            b"display".as_ptr(),
+            b"display".len(),
+            b"default".as_ptr(),
+            b"default".len(),
+            b"device/display.sqdevice".as_ptr(),
+            b"device/display.sqdevice".len(),
+            &mut plan,
+            &mut inline_config,
+        )
+    };
+    assert_eq!(status, SqdcStatus::InvalidArgument);
+
+    let status = unsafe {
+        squidvm_ffi::sqdc_plan_device_binding(
+            b"indicator".as_ptr(),
+            b"indicator".len(),
+            b"default".as_ptr(),
+            b"default".len(),
+            b"gpio:GPIO100".as_ptr(),
+            b"gpio:GPIO100".len(),
+            &mut plan,
+            &mut inline_config,
+        )
+    };
+    assert_eq!(status, SqdcStatus::InvalidArgument);
 }
 
 #[test]

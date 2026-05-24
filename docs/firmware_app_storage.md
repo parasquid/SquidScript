@@ -103,6 +103,10 @@ read-only package resources for the foreground app and wires
 `device.config.set(...)` to the runtime draft config. The runtime can validate
 and activate the current `indicator.default` GPIO binding with
 `device.config.rebind(...)`, and `service.indicator.*` uses the active binding.
+Rust FFI also plans top-level app `device {}` declarations: it classifies
+supported package `.sqdevice` resources versus inline `gpio:GPIO<n>` resources
+and produces the normalized SQDC draft for inline GPIO. Zephyr C remains
+responsible for LittleFS reads and hardware activation.
 On targets with a firmware-defined default indicator, runtime initialization
 loads that target default into the same in-memory SQDC draft/rebind path before
 app code runs. Installed app launch also reads current SQBC top-level

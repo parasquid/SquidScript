@@ -36,7 +36,9 @@ for compiler, SQBC tooling, and VM semantics.
   `device.config.save("flash")` persists binary SQDC to firmware-owned storage.
   Saved global SQDC defaults are loaded during app-start binding initialization
   before app-local `device {}` bindings. Remaining work is to generalize
-  binding validation/application beyond the current indicator path.
+  binding validation/application beyond the current indicator path. Top-level
+  app `device {}` binding classification and inline GPIO SQDC normalization now
+  live in Rust FFI; keep future binding planners on that side of the boundary.
 - Finish moving `service.indicator.*` ownership to the resolved logical
   `indicator.default` binding. The Zephyr runtime now tracks an active
   indicator binding and routes indicator output through it, including package
