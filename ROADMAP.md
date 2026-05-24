@@ -98,13 +98,3 @@ for compiler, SQBC tooling, and VM semantics.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.
-
-### 4. Remove Obsolete Rust Firmware
-
-- Delete `firmware/squid-firmware` after the Zephyr command surface, storage,
-  lifecycle, and hardware tests cover the current required behavior.
-- Remove old Rust firmware build/flash/test scripts once their Zephyr
-  replacements exist.
-- Keep only concise obsolete-reference notes when they help explain removed
-  behavior; do not carry old APIs, protocols, storage formats, or compatibility
-  paths.

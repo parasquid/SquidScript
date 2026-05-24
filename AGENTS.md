@@ -149,17 +149,14 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
 ## Script And Firmware Tooling Discipline
 
 - Firmware source for the ESP32-C3 reference firmware lives under
-  `firmware/squid-firmware`; there is no top-level `crates/` workspace layout.
+  `firmware/zephyr`; the old Rust ESP32-C3 firmware tree has been removed.
 - Before reporting that firmware build, flashing, serial, or hardware checks do
   not work in this environment, check the relevant repository docs and wrapper
   scripts first. Prefer the documented wrapper command over ad hoc direct tool
   invocations, and only call something blocked after the documented path fails.
 - Use `scripts/c3-supermini-build.sh` to build or type-check the ESP32-C3
-  reference firmware binary. The wrapper sets the RISC-V C compiler and
-  freestanding flags that direct `cargo check --features hardware` misses:
-  `CC_riscv32imc_unknown_none_elf`, `CFLAGS_riscv32imc_unknown_none_elf`,
-  `-march=rv32imc`, `-mabi=ilp32`, firmware freestanding C headers, the stable
-  Rust toolchain, and `SQUID_FIRMWARE_BUILD_ID`.
+  reference firmware binary. The wrapper delegates to the Zephyr build wrapper
+  and sources the repository Zephyr environment.
 - Dry-run new scripts before calling them ready: run `bash -n`, verify required tools and Rust targets, check wrapped command help where practical, and confirm wrapper scripts forward user-supplied arguments.
 - For firmware flashing scripts, avoid auto-monitoring by default when USB reset or re-enumeration can break the serial session. Prefer `squidc device monitor` for ESP32-C3 Super Mini SquidScript output, and use explicit opt-in monitoring such as `MONITOR_AFTER_FLASH=1` only when needed.
 - Do not filter or suppress flashing tool stderr in firmware scripts. Surface warnings and errors directly, and document known harmless tool warnings instead of hiding them.
@@ -187,7 +184,9 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
   Docker will run the official Espressif IDF image with the experiment mounted;
   still avoid passing Wi-Fi credentials to containers unless the specific test
   requires station credentials.
-- When troubleshooting ESP32-C3 Super Mini flashing access, check `firmware/README.md` and `firmware/squid-firmware/README.md` for the documented `/dev/ttyACM0` ACL workaround before suggesting broader sudo changes.
+- When troubleshooting ESP32-C3 Super Mini flashing access, check
+  `firmware/README.md` and the Zephyr wrapper scripts before suggesting broader
+  sudo changes.
 - For REPL work, default app and firmware profiles are `dev`. Hardware target tests should include `tests/repl/default-dev.session`, which intentionally does not set `:profile dev`.
 - For `hardware.gpio.*` work on the ESP32-C3 Super Mini, run the serial GPIO REPL session and the blinky upload session when hardware is available; the blinky check requires both serial assertions and physical onboard LED observation.
 - Do not require `--target` for normal `squidc repl` upload/run flows. SquidScript apps compile against the portable language/runtime API; target definitions are opt-in for explicit target checks, simulator config, firmware metadata, docs, and autocomplete.

@@ -35,7 +35,7 @@ target. Set `ZEPHYR_BOARD` when testing a different ESP32-C3 board variant.
 
 ## Test Inventory
 
-The Zephyr-only hardware suite is not complete yet. The required inventory is:
+The default Zephyr-only hardware suite covers the current required inventory:
 
 - Build and flash the Zephyr diagnostic firmware.
 - Check Zephyr RAM budget output before flashing.
@@ -53,11 +53,11 @@ The Zephyr-only hardware suite is not complete yet. The required inventory is:
   FFI host.
 - Verify GPIO/indicator behavior, including a final visible board-state check.
 - Verify Wi-Fi scan without credentials.
-- Verify Wi-Fi station behavior only when credentials are explicitly provided.
+- Verify Wi-Fi station behavior only when credentials are explicitly provided
+  through the separate station script.
 
-The obsolete Rust firmware scripts are not current hardware target tests. As
-Zephyr coverage lands, keep the suite ordered so stateful reset/install tests
-run before the final visible board-state check.
+Keep the suite ordered so stateful reset/install tests run before the final
+visible board-state check.
 
 `scripts/c3-supermini-zephyr-test-diagnostic.sh` builds and flashes the Zephyr
 diagnostic image, then runs a bounded serial monitor check for the diagnostic

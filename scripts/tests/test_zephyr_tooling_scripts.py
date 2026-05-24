@@ -17,6 +17,34 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         path.write_text(contents, encoding="utf-8")
         path.chmod(path.stat().st_mode | stat.S_IXUSR)
 
+    def test_obsolete_rust_firmware_tree_and_scripts_are_removed(self):
+        obsolete_paths = [
+            "firmware/squid-firmware",
+            "scripts/c3-supermini-test-reference-firmware.sh",
+            "scripts/c3-supermini-test-generic-triggered-apps.sh",
+            "scripts/c3-supermini-test-persistent-app-registry.sh",
+            "scripts/c3-supermini-test-timer-armed-app.sh",
+            "experiments/esp32c3-supermini/firmware/wifi-ap-probe",
+            "experiments/esp32c3-supermini/firmware/embassy-wifi-ap-probe",
+        ]
+
+        for relative_path in obsolete_paths:
+            with self.subTest(path=relative_path):
+                self.assertFalse((ROOT / relative_path).exists())
+
+        for relative_path in [
+            "AGENTS.md",
+            "ROADMAP.md",
+            "README.md",
+            "firmware/README.md",
+            "docs/firmware_build_architecture.md",
+            "docs/hardware_target_tests.md",
+        ]:
+            with self.subTest(path=relative_path):
+                contents = self.read(relative_path)
+                self.assertNotIn("firmware/squid-firmware", contents)
+                self.assertNotIn("Rust firmware scripts", contents)
+
     def test_setup_script_uses_project_local_west_and_homebrew_tools(self):
         setup = self.read("scripts/zephyr-setup.sh")
 

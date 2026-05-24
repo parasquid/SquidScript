@@ -9,19 +9,14 @@ Real firmware hosts call the Rust VM through the `squidvm-ffi` C ABI, while
 Zephyr owns platform services such as GPIO, timers, storage, serial/shell,
 logging, Wi-Fi, networking, power, and hardware diagnostics.
 
-The old `firmware/squid-firmware` Rust ESP32-C3 tree is obsolete reference
-material. Do not add new firmware behavior, scripts, tests, or documentation to
-that tree.
+## Current Zephyr Firmware
 
-## Current Zephyr Skeleton
-
-The initial Zephyr app builds a diagnostic image and reserves the host/runtime
-shape for the full migration:
+The Zephyr app is the current real-firmware implementation:
 
 - `firmware/zephyr/CMakeLists.txt`: Zephyr app entrypoint.
 - `firmware/zephyr/prj.conf`: serial, shell, logging, flash-map, NVS, and
   LittleFS configuration for the host runtime.
-- `firmware/zephyr/src/main.c`: diagnostic boot image.
+- `firmware/zephyr/src/main.c`: Zephyr boot and runtime entrypoint.
 - `firmware/zephyr/src/squidvm_ffi.h`: C header for the Rust VM FFI.
 - `compiler/rust/crates/squidvm-ffi`: Rust staticlib/rlib exposing the VM C
   ABI.
@@ -73,8 +68,7 @@ flash partition usage, LittleFS usage, and installed app storage are flash
 storage numbers and should be requested or reported separately.
 
 RAM checks should use Zephyr build output, Zephyr map/size tooling, and the
-eventual Zephyr diagnostic command surface. The previous
-`riscv32imc-unknown-none-elf` Rust firmware ELF path is obsolete.
+Zephyr diagnostic command surface.
 `scripts/zephyr-ram-audit.sh` checks the `dram0_0_seg` guard and prints
 structured top static RAM symbols. Use `SQUID_ZEPHYR_RAM_SYMBOL_COUNT` to show
 more or fewer symbol rows during optimization work.
