@@ -2433,6 +2433,62 @@ ZTEST(squidscript_protocol, test_vm_runtime_saves_device_config_draft_to_flash_s
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }
 
+ZTEST(squidscript_protocol, test_vm_runtime_applies_saved_device_config_before_app_start)
+{
+	const uint8_t sqdevice[] = "SQDEVICE\n"
+				   "service string 17:indicator.default\n"
+				   "mode string 4:gpio\n"
+				   "pinName string 5:GPIO8\n"
+				   "activeLow bool true\n";
+	struct sq_vm_runtime save_runtime = {0};
+	struct sq_vm_runtime launch_runtime = {0};
+	struct sq_app_store_vm_storage storage = {0};
+	struct sq_vm_storage_backend backend;
+	SqvmDeviceConfigResult result = {0};
+
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "saved-default-app",
+					       headless_counter_sqbc,
+					       sizeof(headless_counter_sqbc)),
+		      0);
+	zassert_equal(sq_app_store_install_resource(test_fs_mount.mnt_point, "saved-default-app",
+						    "device/indicator.sqdevice", sqdevice,
+						    sizeof(sqdevice) - 1),
+		      0);
+	zassert_equal(sq_app_store_vm_storage_for_app(test_fs_mount.mnt_point,
+						      "saved-default-app", &storage),
+		      0);
+	backend = sq_app_store_vm_storage_backend(&storage);
+
+	sq_vm_runtime_init(&save_runtime);
+	sq_vm_runtime_set_store_mount_point(&save_runtime, test_fs_mount.mnt_point);
+	strncpy(save_runtime.current_app, "saved-default-app", sizeof(save_runtime.current_app) - 1);
+	zassert_equal(sq_vm_runtime_device_config_load(
+			      &save_runtime, (const uint8_t *)"package:device/indicator.sqdevice",
+			      strlen("package:device/indicator.sqdevice"), &result),
+		      0);
+	zassert_true(result.ok);
+	memset(&result, 0, sizeof(result));
+	zassert_equal(sq_vm_runtime_device_config_save(&save_runtime, (const uint8_t *)"flash",
+						       strlen("flash"), &result),
+		      0);
+	zassert_true(result.ok);
+
+	sq_vm_runtime_init(&launch_runtime);
+	sq_vm_runtime_set_store_mount_point(&launch_runtime, test_fs_mount.mnt_point);
+	strncpy(launch_runtime.current_app, "saved-default-app",
+		sizeof(launch_runtime.current_app) - 1);
+	zassert_equal(sq_vm_runtime_start(&launch_runtime, &backend, "app.start"), 0);
+	wait_runtime_done(&launch_runtime);
+	zassert_equal(launch_runtime.status, SQ_VM_RUNTIME_COMPLETE);
+	zassert_equal(launch_runtime.result_code, 0);
+	zassert_true(launch_runtime.indicator_binding_active);
+	zassert_equal(launch_runtime.indicator_binding_pin, 8);
+	zassert_true(launch_runtime.indicator_binding_active_low);
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
 ZTEST(squidscript_protocol, test_vm_runtime_applies_packaged_device_binding_before_app_start)
 {
 	const uint8_t sqdevice[] = "SQDEVICE\n"

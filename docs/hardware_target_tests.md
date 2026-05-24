@@ -137,7 +137,8 @@ that `device.config.load`, `device.config.set`, `device.config.rebind`, and
 host. The app is installed as a package with a `.sqdevice` resource; the
 current reference firmware returns `ok=true` for package resource load and
 draft set, `ok=true` for `indicator.default` rebind, then `ok=true` for SQDC
-flash save.
+flash save. Native Zephyr ztests additionally verify that the saved SQDC is
+loaded on later app starts before app-local `device {}` bindings.
 
 `scripts/c3-supermini-test-device-binding.sh` runs after system resource
 coverage and before the explicit device config API check. It packages

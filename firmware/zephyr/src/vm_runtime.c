@@ -1630,6 +1630,46 @@ static int sq_vm_runtime_apply_inline_gpio_indicator_binding(struct sq_vm_runtim
 						  strlen("indicator.default"), out);
 }
 
+static int sq_vm_runtime_apply_saved_device_config(struct sq_vm_runtime *runtime)
+{
+	char path[SQ_APP_STORE_PATH_MAX];
+	size_t bytes_len = 0;
+	SqvmDeviceConfigResult result = {0};
+	SqdcStatus status;
+	int fs_result;
+
+	if (runtime == NULL || runtime->store_mount_point == NULL) {
+		return 0;
+	}
+
+	fs_result = sq_app_store_device_config_path(runtime->store_mount_point, path, sizeof(path));
+	if (fs_result != 0) {
+		return fs_result;
+	}
+	fs_result = runtime_device_config_read_file(path, runtime->transfer.completion.bytes,
+						    sizeof(runtime->transfer.completion.bytes),
+						    &bytes_len);
+	if (fs_result == -ENOENT) {
+		return 0;
+	}
+	if (fs_result != 0) {
+		return fs_result;
+	}
+
+	status = sqdc_decode_sqdc(runtime->transfer.completion.bytes, bytes_len,
+				  &runtime->device_config_draft);
+	if (status != SQDC_STATUS_OK) {
+		return -EINVAL;
+	}
+	runtime->device_config_draft_loaded = true;
+	if (sq_vm_runtime_device_config_rebind(runtime, (const uint8_t *)"indicator.default",
+					       strlen("indicator.default"), &result) != 0 ||
+	    !result.ok) {
+		return -EINVAL;
+	}
+	return 0;
+}
+
 static int sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *runtime)
 {
 	size_t count = 0;
@@ -2060,6 +2100,10 @@ int sq_vm_runtime_start(struct sq_vm_runtime *runtime,
 	runtime->job_backend = *backend;
 	runtime->backend = &runtime->job_backend;
 	if (strcmp(event, "app.start") == 0) {
+		result = sq_vm_runtime_apply_saved_device_config(runtime);
+		if (result != 0) {
+			return result;
+		}
 		result = sq_vm_runtime_apply_device_bindings(runtime);
 		if (result != 0) {
 			return result;

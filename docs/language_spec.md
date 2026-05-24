@@ -3448,9 +3448,10 @@ table. The current Zephyr runtime supports package resource
 `device.config.load("package:...")` into a bounded draft and
 `device.config.set(...)` edits on that draft. It also validates and activates
 the current `indicator.default` GPIO binding through
-`device.config.rebind(...)`, and applies installed app top-level
+`device.config.rebind(...)`, applies saved global SQDC defaults before
+`app.start`, and then applies installed app top-level
 `device { indicator { use ... } }` package `.sqdevice` and inline
-`gpio:GPIO<n>` bindings before `app.start`.
+`gpio:GPIO<n>` bindings so app-local declarations override saved defaults.
 `device.config.save("flash")` writes firmware-owned binary SQDC to the current
 target's active device-config storage.
 
