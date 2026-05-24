@@ -166,7 +166,8 @@ binding coverage and before the explicit device config API check. It installs
 `tests/hardware/c3-supermini/inline-gpio-binding-summary`, launches it, and
 verifies that a top-level `device { indicator { use "gpio:GPIO8" } }` binding
 can be normalized and applied before `event.on("app.start")` without a package
-`.sqdevice` resource. `GPIO8` is the ESP32-C3 Super Mini fixture value; use
+`.sqdevice` resource. `GPIO8` is the ESP32-C3 Super Mini fixture value and is
+accepted because the generated Zephyr target header marks it GPIO-capable; use
 target metadata or a `.sqdevice` resource for other boards and polarity needs.
 
 `scripts/c3-supermini-test-blink.sh` is an explicit visible indicator parity

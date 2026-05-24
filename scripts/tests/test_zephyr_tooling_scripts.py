@@ -323,6 +323,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("#define SQ_TARGET_INDICATOR_DEFAULT_GPIO_PIN 8", header)
         self.assertIn("#define SQ_TARGET_INDICATOR_DEFAULT_ACTIVE_LOW 1", header)
         self.assertIn("#define SQ_TARGET_INDICATOR_DEFAULT_PWM_FREQUENCY_HZ 1000", header)
+        self.assertIn("#define SQ_TARGET_GPIO_CAPABLE_MASK 0x000000000000030cULL", header)
 
     def test_zephyr_target_defaults_generator_validates_indicator_overlay(self):
         with tempfile.TemporaryDirectory() as tmp:

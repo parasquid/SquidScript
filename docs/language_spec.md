@@ -1067,7 +1067,8 @@ Rules:
 - An inline GPIO target has the form `gpio:GPIO<n>`. Current compiler
   validation accepts only the literal `GPIO` prefix plus one or two decimal
   digits; target-specific availability and pin safety remain runtime/target
-  responsibilities.
+  responsibilities. Firmware must reject inline GPIO bindings whose pin is not
+  present as GPIO-capable in the selected target metadata.
 
 Runtime applies top-level device bindings before `event.on("app.start")`.
 Failure to load, validate, or initialize a binding stops app launch with a

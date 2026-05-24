@@ -40,6 +40,7 @@ static size_t bounded_strlen(const char *value, size_t cap)
 }
 
 static int parse_gpio_name(const uint8_t *name, size_t name_len, uint8_t *pin);
+static bool target_gpio_pin_supported(uint8_t pin);
 static int configure_raw_gpio(struct sq_vm_runtime *runtime, uint8_t pin);
 
 static const uint8_t indicator_breathe_duties[SQ_VM_RUNTIME_INDICATOR_BREATHE_STEPS] = {
@@ -1583,6 +1584,9 @@ int sq_vm_runtime_device_config_rebind(struct sq_vm_runtime *runtime, const uint
 					    &active_low) != 0) {
 		return runtime_device_config_error(out, "invalid binding");
 	}
+	if (!target_gpio_pin_supported(pin)) {
+		return runtime_device_config_error(out, "unsupported target gpio");
+	}
 
 	runtime->indicator_breathe_active = false;
 	runtime->indicator_blink_active = false;
@@ -2450,6 +2454,14 @@ static int parse_gpio_name(const uint8_t *name, size_t name_len, uint8_t *pin)
 	}
 	*pin = (uint8_t)value;
 	return 0;
+}
+
+static bool target_gpio_pin_supported(uint8_t pin)
+{
+	if (pin >= 64U) {
+		return false;
+	}
+	return (SQ_TARGET_GPIO_CAPABLE_MASK & (1ULL << pin)) != 0ULL;
 }
 
 static int configure_raw_gpio(struct sq_vm_runtime *runtime, uint8_t pin)

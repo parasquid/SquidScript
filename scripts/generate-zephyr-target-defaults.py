@@ -66,6 +66,32 @@ def validate_overlay(overlay_path, gpio_pin, active_low, pwm_frequency_hz):
         )
 
 
+def gpio_pin_from_name(name, context):
+    match = re.fullmatch(r"GPIO([0-9]{1,3})", name)
+    if match is None:
+        raise ValueError(f"{context} must use GPIO<n> form")
+    pin = int(match.group(1))
+    if pin > 63:
+        raise ValueError(f"{context} pin must fit in target GPIO mask")
+    return pin
+
+
+def gpio_capable_mask(target):
+    pins = target.get("pins")
+    if not isinstance(pins, dict):
+        return 0
+    mask = 0
+    for name, metadata in pins.items():
+        if not isinstance(name, str) or not isinstance(metadata, dict):
+            continue
+        capabilities = metadata.get("capabilities")
+        if not isinstance(capabilities, list) or "gpio" not in capabilities:
+            continue
+        pin = gpio_pin_from_name(name, f"pins.{name}")
+        mask |= 1 << pin
+    return mask
+
+
 def main(argv):
     try:
         target_path, out_path, overlay_path = parse_args(argv)
@@ -88,14 +114,20 @@ def main(argv):
     gpio_pin = 0
     active_low = False
     pwm_frequency_hz = 0
+    gpio_mask = 0
+
+    try:
+        gpio_mask = gpio_capable_mask(target)
+    except ValueError as exc:
+        return fail(str(exc))
 
     if isinstance(indicator, dict):
         gpio = indicator.get("gpio")
         if isinstance(gpio, str):
-            match = re.fullmatch(r"GPIO([0-9]{1,3})", gpio)
-            if match is None:
-                return fail("indicator.default gpio must use GPIO<n> form")
-            gpio_pin = int(match.group(1))
+            try:
+                gpio_pin = gpio_pin_from_name(gpio, "indicator.default gpio")
+            except ValueError as exc:
+                return fail(str(exc))
             if gpio_pin > 255:
                 return fail("indicator.default gpio pin must fit in uint8_t")
             has_gpio = True
@@ -124,6 +156,7 @@ def main(argv):
                 f"#define SQ_TARGET_INDICATOR_DEFAULT_GPIO_PIN {gpio_pin}",
                 f"#define SQ_TARGET_INDICATOR_DEFAULT_ACTIVE_LOW {c_bool(active_low)}",
                 f"#define SQ_TARGET_INDICATOR_DEFAULT_PWM_FREQUENCY_HZ {pwm_frequency_hz}",
+                f"#define SQ_TARGET_GPIO_CAPABLE_MASK 0x{gpio_mask:016x}ULL",
                 "",
                 "#endif",
                 "",

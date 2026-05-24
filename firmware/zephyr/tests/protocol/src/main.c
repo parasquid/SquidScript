@@ -2445,6 +2445,48 @@ ZTEST(squidscript_protocol, test_vm_runtime_loads_package_sqdevice_resource_into
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }
 
+ZTEST(squidscript_protocol, test_vm_runtime_rejects_target_unknown_gpio_binding)
+{
+	struct sq_vm_runtime runtime = {0};
+	SqvmDeviceConfigResult result = {0};
+	SqvmDeviceConfigValue value = {
+		.kind = SQVM_DEVICE_CONFIG_VALUE_STRING,
+		.string = (const uint8_t *)"GPIO10",
+		.string_len = strlen("GPIO10"),
+	};
+
+	sq_vm_runtime_init(&runtime);
+	zassert_equal(sqdc_config_clear(&runtime.device_config_draft), SQDC_STATUS_OK);
+	runtime.device_config_draft_loaded = true;
+	zassert_equal(sqdc_config_set_string(&runtime.device_config_draft, (const uint8_t *)"service",
+					     strlen("service"),
+					     (const uint8_t *)"indicator.default",
+					     strlen("indicator.default")),
+		      SQDC_STATUS_OK);
+	zassert_equal(sqdc_config_set_string(&runtime.device_config_draft, (const uint8_t *)"mode",
+					     strlen("mode"), (const uint8_t *)"gpio",
+					     strlen("gpio")),
+		      SQDC_STATUS_OK);
+	zassert_equal(sq_vm_runtime_device_config_set(&runtime, (const uint8_t *)"pinName",
+						      strlen("pinName"), value, &result),
+		      0);
+	zassert_true(result.ok);
+	memset(&result, 0, sizeof(result));
+	zassert_equal(sqdc_config_set_bool(&runtime.device_config_draft,
+					   (const uint8_t *)"activeLow", strlen("activeLow"),
+					   false),
+		      SQDC_STATUS_OK);
+
+	zassert_equal(sq_vm_runtime_device_config_rebind(
+			      &runtime, (const uint8_t *)"indicator.default",
+			      strlen("indicator.default"), &result),
+		      0);
+	zassert_false(result.ok);
+	zassert_mem_equal(result.error, "unsupported target gpio",
+			  strlen("unsupported target gpio"));
+	zassert_false(runtime.indicator_binding_active);
+}
+
 ZTEST(squidscript_protocol, test_vm_runtime_resets_target_indicator_default_as_device_config)
 {
 	struct sq_vm_runtime runtime = {0};

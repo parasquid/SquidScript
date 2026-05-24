@@ -91,11 +91,11 @@ for compiler, SQBC tooling, and VM semantics.
 - Extend top-level `device {}` bindings beyond the current
   `indicator.default` implementation. The compiler, SQBC metadata, and Zephyr
   runtime now support packaged `.sqdevice` resources and simple inline GPIO
-  resources such as `indicator { use "gpio:GPIO10" }` for one-pin external LED
-  cases. Remaining work is to support multiple `use` entries for one logical
-  indicator when the app intentionally wants `service.indicator.write(...)` to
-  drive more than one physical output, validate inline GPIO bindings against
-  target metadata, and generalize the normalized binding model beyond
+  resources such as `indicator { use "gpio:GPIO8" }` for one-pin LED cases
+  when the selected target metadata marks that pin GPIO-capable. Remaining work
+  is to support multiple `use` entries for one logical indicator when the app
+  intentionally wants `service.indicator.write(...)` to drive more than one
+  physical output, and generalize the normalized binding model beyond
   `indicator.default`.
 - Reduce ESP32-C3 Zephyr RAM after service parity. Identify concrete reductions
   for the largest static allocations, especially VM runtime storage, work

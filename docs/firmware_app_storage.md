@@ -106,7 +106,9 @@ and activate the current `indicator.default` GPIO binding with
 Rust FFI also plans top-level app `device {}` declarations: it classifies
 supported package `.sqdevice` resources versus inline `gpio:GPIO<n>` resources
 and produces the normalized SQDC draft for inline GPIO. Zephyr C remains
-responsible for LittleFS reads and hardware activation.
+responsible for LittleFS reads, generated target-metadata checks, and hardware
+activation. Inline GPIO and `.sqdevice` GPIO bindings must name a GPIO-capable
+pin from the selected target metadata before Zephyr activates them.
 On targets with a firmware-defined default indicator, runtime initialization
 loads that target default into the same in-memory SQDC draft/rebind path before
 app code runs. Installed app launch also reads current SQBC top-level
