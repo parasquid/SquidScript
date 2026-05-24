@@ -758,6 +758,38 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             suite.index("c3-supermini-test-blinky.sh"),
         )
 
+    def test_hardware_suite_runs_inline_gpio10_binding_script(self):
+        script = self.read("scripts/c3-supermini-test-inline-gpio10-binding.sh")
+        app = self.read(
+            "tests/hardware/c3-supermini/inline-gpio10-binding-summary/main.squid"
+        )
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn('indicator { use "gpio:GPIO10" }', app)
+        self.assertIn(
+            'cargo run --quiet -p squidc -- app install "${INLINE_GPIO10_APP}"',
+            script,
+        )
+        self.assertIn(
+            "cargo run --quiet -p squidc -- app launch inline-gpio10-binding-summary",
+            script,
+        )
+        self.assertIn("output=inline gpio10 binding ready", script)
+        self.assertIn("assert_file_empty_command", script)
+        self.assertIn("c3-supermini-test-inline-gpio10-binding.sh", suite)
+        self.assertLess(
+            suite.index("c3-supermini-test-inline-gpio-binding.sh"),
+            suite.index("c3-supermini-test-inline-gpio10-binding.sh"),
+        )
+        self.assertLess(
+            suite.index("c3-supermini-test-inline-gpio10-binding.sh"),
+            suite.index("c3-supermini-test-unsupported-inline-gpio-binding.sh"),
+        )
+        self.assertLess(
+            suite.index("c3-supermini-test-inline-gpio10-binding.sh"),
+            suite.index("c3-supermini-test-blinky.sh"),
+        )
+
     def test_hardware_suite_runs_unsupported_inline_gpio_binding_script(self):
         script = self.read("scripts/c3-supermini-test-unsupported-inline-gpio-binding.sh")
         app = self.read(

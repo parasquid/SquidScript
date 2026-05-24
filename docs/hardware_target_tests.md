@@ -170,6 +170,14 @@ can be normalized and applied before `event.on("app.start")` without a package
 accepted because the generated Zephyr target header marks it GPIO-capable; use
 target metadata or a `.sqdevice` resource for other boards and polarity needs.
 
+`scripts/c3-supermini-test-inline-gpio10-binding.sh` runs after the GPIO8
+inline binding check and before the reserved-pin rejection check. It installs
+`tests/hardware/c3-supermini/inline-gpio10-binding-summary`, launches it, and
+verifies that the Super Mini target metadata accepts
+`device { indicator { use "gpio:GPIO10" } }` through the same Zephyr binding
+path. The check proves target validation and app-start behavior only; it does
+not claim a visible indicator is connected to GPIO10.
+
 `scripts/c3-supermini-test-unsupported-inline-gpio-binding.sh` runs after the
 supported inline binding check and before the explicit device config API check.
 It installs `tests/hardware/c3-supermini/unsupported-inline-gpio-binding`,
