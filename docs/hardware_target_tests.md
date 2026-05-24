@@ -90,7 +90,8 @@ networking workloads.
 `targets/esp32c3-super-mini.target.json` should describe these verified Zephyr
 runtime services and defaults, not only the ESP32-C3 silicon radio capability.
 The Zephyr build generates SquidScript-facing defaults such as
-`indicator.default` from `SQUID_ZEPHYR_TARGET_JSON`, while devicetree remains
+`indicator.default` from `SQUID_ZEPHYR_TARGET_JSON` and validates those
+defaults against `SQUID_ZEPHYR_TARGET_OVERLAY`, while devicetree remains
 responsible for board driver nodes. Wi-Fi status, scan, redacted network
 listing, AP start/stop/IP lookup, and volatile-profile station
 connect/disconnect are exposed through the reference firmware. Station connect

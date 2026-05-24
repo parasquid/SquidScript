@@ -14,12 +14,64 @@ def c_bool(value):
     return "1" if value else "0"
 
 
-def main(argv):
-    if len(argv) != 3:
-        return fail("usage: generate-zephyr-target-defaults.py <target.json> <out.h>")
+def parse_args(argv):
+    if len(argv) not in (3, 5):
+        raise ValueError(
+            "usage: generate-zephyr-target-defaults.py <target.json> <out.h> "
+            "[--zephyr-overlay <overlay>]"
+        )
+    overlay_path = None
+    if len(argv) == 5:
+        if argv[3] != "--zephyr-overlay":
+            raise ValueError(f"unknown argument: {argv[3]}")
+        overlay_path = Path(argv[4])
+    return Path(argv[1]), Path(argv[2]), overlay_path
 
-    target_path = Path(argv[1])
-    out_path = Path(argv[2])
+
+def validate_overlay(overlay_path, gpio_pin, active_low, pwm_frequency_hz):
+    try:
+        overlay = overlay_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"cannot read Zephyr overlay: {exc}") from exc
+
+    gpio_match = re.search(r"gpios\s*=\s*<\s*&gpio0\s+([0-9]+)\s+(GPIO_ACTIVE_LOW|GPIO_ACTIVE_HIGH)\s*>", overlay)
+    if gpio_match is None:
+        raise ValueError("Zephyr overlay missing indicator gpio-led gpios entry")
+    overlay_gpio_pin = int(gpio_match.group(1))
+    overlay_active_low = gpio_match.group(2) == "GPIO_ACTIVE_LOW"
+    if overlay_gpio_pin != gpio_pin:
+        raise ValueError(
+            f"indicator.default gpio GPIO{gpio_pin} does not match Zephyr overlay GPIO{overlay_gpio_pin}"
+        )
+    if overlay_active_low != active_low:
+        raise ValueError("indicator.default activeLow does not match Zephyr overlay gpios polarity")
+
+    pinmux_match = re.search(r"LEDC_CH[0-9]+_GPIO([0-9]+)", overlay)
+    if pinmux_match is None:
+        raise ValueError("Zephyr overlay missing LEDC pinmux for indicator PWM")
+    overlay_pwm_pin = int(pinmux_match.group(1))
+    if overlay_pwm_pin != gpio_pin:
+        raise ValueError(
+            f"indicator.default gpio GPIO{gpio_pin} does not match Zephyr overlay PWM GPIO{overlay_pwm_pin}"
+        )
+
+    pwm_match = re.search(r"pwms\s*=\s*<\s*&ledc0\s+[0-9]+\s+([0-9]+)\s+PWM_POLARITY_NORMAL\s*>", overlay)
+    if pwm_match is None:
+        raise ValueError("Zephyr overlay missing indicator PWM entry")
+    period_ns = int(pwm_match.group(1))
+    overlay_frequency_hz = 0 if period_ns == 0 else 1_000_000_000 // period_ns
+    if overlay_frequency_hz != pwm_frequency_hz:
+        raise ValueError(
+            f"indicator.default PWM frequency {pwm_frequency_hz} does not match Zephyr overlay {overlay_frequency_hz}"
+        )
+
+
+def main(argv):
+    try:
+        target_path, out_path, overlay_path = parse_args(argv)
+    except ValueError as exc:
+        return fail(str(exc))
+
     try:
         target = json.loads(target_path.read_text(encoding="utf-8"))
     except OSError as exc:
@@ -53,6 +105,12 @@ def main(argv):
             frequency = pwm.get("frequencyHz", 0)
             if isinstance(frequency, int) and frequency >= 0:
                 pwm_frequency_hz = frequency
+
+    if overlay_path is not None and has_gpio:
+        try:
+            validate_overlay(overlay_path, gpio_pin, active_low, pwm_frequency_hz)
+        except ValueError as exc:
+            return fail(str(exc))
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(

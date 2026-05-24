@@ -324,6 +324,47 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("#define SQ_TARGET_INDICATOR_DEFAULT_ACTIVE_LOW 1", header)
         self.assertIn("#define SQ_TARGET_INDICATOR_DEFAULT_PWM_FREQUENCY_HZ 1000", header)
 
+    def test_zephyr_target_defaults_generator_validates_indicator_overlay(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            out = tmp_path / "squidscript_target_defaults.h"
+            bad_overlay = tmp_path / "bad.overlay"
+            bad_overlay.write_text(
+                self.read("firmware/zephyr/boards/esp32c3_supermini.overlay").replace(
+                    "LEDC_CH0_GPIO8", "LEDC_CH0_GPIO10"
+                ),
+                encoding="utf-8",
+            )
+
+            subprocess.run(
+                [
+                    str(ROOT / "scripts/generate-zephyr-target-defaults.py"),
+                    str(ROOT / "targets/esp32c3-super-mini.target.json"),
+                    str(out),
+                    "--zephyr-overlay",
+                    str(ROOT / "firmware/zephyr/boards/esp32c3_supermini.overlay"),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            failed = subprocess.run(
+                [
+                    str(ROOT / "scripts/generate-zephyr-target-defaults.py"),
+                    str(ROOT / "targets/esp32c3-super-mini.target.json"),
+                    str(out),
+                    "--zephyr-overlay",
+                    str(bad_overlay),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertIn("indicator.default gpio GPIO8 does not match", failed.stderr)
+
     def test_zephyr_builds_generate_target_defaults_from_target_json(self):
         app_cmake = self.read("firmware/zephyr/CMakeLists.txt")
         test_cmake = self.read("firmware/zephyr/tests/protocol/CMakeLists.txt")
@@ -333,6 +374,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             self.assertIn("SQUID_ZEPHYR_TARGET_JSON", cmake)
             self.assertIn("generate-zephyr-target-defaults.py", cmake)
             self.assertIn("squidscript_target_defaults.h", cmake)
+            self.assertIn("--zephyr-overlay", cmake)
 
         self.assertIn('#include "squidscript_target_defaults.h"', runtime)
         self.assertIn("SQ_TARGET_INDICATOR_DEFAULT_GPIO_PIN", runtime)

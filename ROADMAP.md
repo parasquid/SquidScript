@@ -45,9 +45,7 @@ for compiler, SQBC tooling, and VM semantics.
   default indicator bindings now initialize through the same SQDC draft/rebind
   path from generated target metadata instead of direct runtime field
   assignment. The current ESP32-C3 Super Mini behavior should remain GPIO8 LEDC
-  PWM by default. Remaining work is to validate generated target defaults
-  against the Zephyr devicetree overlay so target JSON and driver wiring cannot
-  silently drift.
+  PWM by default.
 - Decide service priority and target support for currently spec-recognized but
   not SQBC-backed APIs: `httpServer.*`, `bleTransfer.*`, and any remaining
   `content.*` APIs beyond the current file pick/read family. Defer
