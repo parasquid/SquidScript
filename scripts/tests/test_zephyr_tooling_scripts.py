@@ -628,6 +628,35 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             suite.index("c3-supermini-measure-stack-usage.sh"),
         )
 
+    def test_hardware_suite_runs_app_registry_api_script_before_stack_measurement(self):
+        script = self.read("scripts/c3-supermini-test-app-registry-api.sh")
+        app = self.read("tests/hardware/c3-supermini/app-registry-summary/main.squid")
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn("app.registry()", app)
+        self.assertIn("app.registry.get(apps, 0)", app)
+        self.assertIn('source "${ROOT}/scripts/lib/serial-port.sh"', script)
+        self.assertIn('export ESPFLASH_PORT="$(resolve_esp_serial_port)"', script)
+        self.assertIn(
+            'cargo run --quiet -p squidc -- app install "${REGISTRY_APP}"',
+            script,
+        )
+        self.assertIn(
+            "cargo run --quiet -p squidc -- app launch app-registry-summary",
+            script,
+        )
+        self.assertIn("output=registry app app-registry-summary", script)
+        self.assertIn("output=registry selected app-registry-summary app-registry-summary", script)
+        self.assertIn("assert_file_empty_command", script)
+        self.assertLess(
+            suite.index("c3-supermini-test-app-registry-api.sh"),
+            suite.index("c3-supermini-measure-stack-usage.sh"),
+        )
+        self.assertLess(
+            suite.index("c3-supermini-test-app-registry-api.sh"),
+            suite.index("c3-supermini-test-blinky.sh"),
+        )
+
     def test_hardware_suite_runs_device_config_script_before_stack_measurement(self):
         script = self.read("scripts/c3-supermini-test-device-config.sh")
         app = self.read("tests/hardware/c3-supermini/device-config-summary/main.squid")

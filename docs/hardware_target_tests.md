@@ -51,6 +51,8 @@ The default Zephyr-only hardware suite covers the current required inventory:
 - Verify persistent app storage and app state through Zephyr storage.
 - Verify `system.memory()` and `system.storage("apps")` through the Zephyr VM
   FFI host.
+- Verify app-facing installed-app inspection through `app.registry()` and
+  `app.registry.get(...)`.
 - Verify `device.config.load`, `device.config.set`, `device.config.rebind`,
   and `device.config.save` reach the Zephyr VM FFI host and save active SQDC
   config through Zephyr storage.
@@ -110,6 +112,13 @@ inspection through `app.processStack()`, `app.armedStack()`, and
 in-memory counters and intentionally avoid `state.load()` / `state.save()` so
 the check distinguishes ordinary foreground event dispatch from fresh VM
 sessions on launch, armed trigger activation, and app-exit return.
+
+The Zephyr app registry API check is
+`scripts/c3-supermini-test-app-registry-api.sh`. It formats app storage,
+installs `tests/hardware/c3-supermini/app-registry-summary/main.squid`, verifies
+the host app registry contains the installed app, launches it, and verifies the
+app can inspect the same installed-app registry through `app.registry()` and
+`app.registry.get(...)`.
 
 The Zephyr app state check is `scripts/c3-supermini-test-app-state.sh`. It
 installs `tests/hardware/c3-supermini/state-counter/main.squid`, launches it,

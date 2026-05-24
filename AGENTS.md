@@ -110,7 +110,16 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 
 - Clearly mark placeholder, illustrative, guessed, typical, variant-dependent, or unverified values as such.
 - This is especially important for hardware pinouts, GPIO mappings, board profiles, firmware configuration, protocol constants, and API examples.
-- Do not present guessed hardware values as sourced facts. If a value comes from clone-board conventions or community reports, say that directly and preserve the uncertainty in target metadata.
+- Be critical before encoding hardware metadata. Distinguish measured facts,
+  datasheet facts, target-owner decisions, common clone-board conventions, and
+  guesses. Do not present guessed hardware values as sourced facts. If a value
+  comes from clone-board conventions or community reports, say that directly
+  and preserve the uncertainty in target metadata.
+- If a target metadata decision needs user judgment, cannot be verified from
+  local evidence, or would require choosing between plausible board-specific
+  tradeoffs, do not silently choose a value just to make progress. Ask for
+  guidance when the choice blocks the current task; otherwise add a concise
+  `ROADMAP.md` item and keep the target metadata conservative.
 - Target JSON files are the canonical target descriptions. Human-readable
   target pin/device tables must be generated from target JSON, such as with
   `scripts/generate-target-markdown.py`. Do not hand-edit generated target Markdown tables
