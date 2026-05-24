@@ -178,6 +178,16 @@ typedef struct {
 	const uint8_t *color;
 	size_t color_len;
 } SqvmDisplayLineOptions;
+typedef struct {
+	const uint8_t *id;
+	size_t id_len;
+	const uint8_t *name;
+	size_t name_len;
+	const uint8_t *build;
+	size_t build_len;
+	const uint8_t *description;
+	size_t description_len;
+} SqvmAppRegistryEntry;
 typedef void (*SqvmDisplayClearCallback)(void *user_data, const uint8_t *color, size_t color_len);
 typedef void (*SqvmDisplayTextCallback)(
 	void *user_data,
@@ -297,6 +307,10 @@ typedef int32_t (*SqvmHardwareGpioReadCallback)(
 	size_t name_len,
 	bool *out);
 typedef int32_t (*SqvmAppLifecycleCallback)(void *user_data, const uint8_t *app, size_t app_len);
+typedef int32_t (*SqvmAppRegistryListCallback)(void *user_data, SqvmAppRegistryEntry *out,
+					       size_t out_cap, size_t *out_count);
+typedef int32_t (*SqvmAppRegistryGetCallback)(void *user_data, const uint8_t *app,
+					      size_t app_len, SqvmAppRegistryEntry *out);
 typedef int32_t (*SqvmTimerEveryCallback)(
 	void *user_data,
 	const uint8_t *event,
@@ -339,6 +353,8 @@ typedef struct {
 	SqvmAppLifecycleCallback app_launch;
 	SqvmAppLifecycleCallback app_arm;
 	SqvmAppLifecycleCallback app_disarm;
+	SqvmAppRegistryListCallback app_registry_list;
+	SqvmAppRegistryGetCallback app_registry_get;
 	SqvmTimerEveryCallback timer_every;
 	SqvmTimerAfterCallback timer_after;
 	SqvmWifiStartApCallback wifi_start_ap;

@@ -67,6 +67,8 @@ pub(crate) const BUILTIN_SERVICE_WIFI_GET_AP_IP: u8 = 33;
 pub(crate) const BUILTIN_SERVICE_WIFI_CONNECT: u8 = 35;
 pub(crate) const BUILTIN_SERVICE_WIFI_DISCONNECT: u8 = 36;
 pub(crate) const BUILTIN_SERVICE_WIFI_SCAN: u8 = 37;
+pub(crate) const BUILTIN_APP_REGISTRY_LIST: u8 = 38;
+pub(crate) const BUILTIN_APP_REGISTRY_GET: u8 = 39;
 
 pub(crate) const VALUE_NULL: u8 = 0;
 pub(crate) const VALUE_BOOL: u8 = 1;

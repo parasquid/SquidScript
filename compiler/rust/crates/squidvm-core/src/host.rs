@@ -119,6 +119,12 @@ pub trait TraceSink {
     fn app_disarm(&mut self, _app: &str) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
     }
+    fn app_registry_list<'a>(&'a mut self) -> Result<AppRegistryList<'a>, VmError> {
+        Err(VmError::InvalidOperand)
+    }
+    fn app_registry_get<'a>(&'a mut self, _app_id: &str) -> Result<AppRegistryEntry<'a>, VmError> {
+        Err(VmError::InvalidOperand)
+    }
     fn service_timer_every(&mut self, _event: &str, _interval_ms: i32) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
     }
@@ -178,6 +184,19 @@ pub trait TraceSink {
     fn state_reset_persistent(&mut self) -> Result<(), VmError> {
         Ok(())
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AppRegistryEntry<'a> {
+    pub id: &'a str,
+    pub name: &'a str,
+    pub build: &'a str,
+    pub description: &'a str,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AppRegistryList<'a> {
+    pub apps: &'a [AppRegistryEntry<'a>],
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

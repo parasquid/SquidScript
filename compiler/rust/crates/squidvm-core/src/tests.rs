@@ -169,6 +169,68 @@ impl TraceSink for RuntimeTrace {
 }
 
 #[derive(Default)]
+struct RegistryTrace {
+    events: Vec<String>,
+}
+
+const REGISTRY_TEST_APPS: [AppRegistryEntry; 2] = [
+    AppRegistryEntry {
+        id: "main",
+        name: "Main",
+        build: "dev-main",
+        description: "Root app",
+    },
+    AppRegistryEntry {
+        id: "reader",
+        name: "Reader",
+        build: "dev-reader",
+        description: "Read documents",
+    },
+];
+
+impl TraceSink for RegistryTrace {
+    fn trace(&mut self, message: &str) {
+        self.events.push(message.to_string());
+    }
+
+    fn debug_print(&mut self, strings: &StringResolver<'_>, values: &[Value]) {
+        let mut line = String::new();
+        for (index, value) in values.iter().enumerate() {
+            if index > 0 {
+                line.push(' ');
+            }
+            match value {
+                Value::String(_) | Value::RuntimeString(_) => {
+                    line.push_str(strings.value_str(*value).unwrap())
+                }
+                Value::I32(value) => line.push_str(&value.to_string()),
+                Value::Bool(value) => line.push_str(&value.to_string()),
+                Value::Null => line.push_str("null"),
+                Value::Record(_) => line.push_str("<record>"),
+                Value::List(_) => line.push_str("<list>"),
+            }
+        }
+        self.events.push(format!("debug {line}"));
+    }
+
+    fn app_registry_list<'a>(&'a mut self) -> Result<AppRegistryList<'a>, VmError> {
+        self.events.push("registry.list".to_string());
+        Ok(AppRegistryList {
+            apps: &REGISTRY_TEST_APPS,
+        })
+    }
+
+    fn app_registry_get<'a>(&'a mut self, app_id: &str) -> Result<AppRegistryEntry<'a>, VmError> {
+        self.events.push(format!("registry.get {app_id}"));
+        REGISTRY_TEST_APPS
+            .iter()
+            .copied()
+            .find(|app| app.id == app_id)
+            .ok_or(VmError::InvalidOperand)
+    }
+}
+
+#[derive(Default)]
 struct WifiTrace {
     events: Vec<String>,
     active: bool,
@@ -1052,6 +1114,44 @@ screen("main") {}
     assert_eq!(
         trace.events,
         vec!["app.start", "debug RAM 292 KiB", "debug apps 1 MiB"]
+    );
+}
+
+#[test]
+fn runs_app_registry_list_and_get_from_real_bytecode() {
+    let source = r#"app "launcher"
+event.on("app.start") {
+  let apps = app.registry()
+  for appId in apps max 2 {
+    debug.print(appId)
+  }
+  let selected = app.registry.get(apps, 1)
+  debug.print(selected.id, selected.name, selected.build, selected.description)
+}
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = RegistryTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "registry.list",
+            "debug main",
+            "debug reader",
+            "registry.get reader",
+            "debug reader Reader dev-reader Read documents",
+        ]
     );
 }
 

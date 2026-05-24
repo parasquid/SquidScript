@@ -76,6 +76,8 @@ const BUILTIN_SERVICE_WIFI_GET_AP_IP: u8 = 33;
 const BUILTIN_SERVICE_WIFI_CONNECT: u8 = 35;
 const BUILTIN_SERVICE_WIFI_DISCONNECT: u8 = 36;
 const BUILTIN_SERVICE_WIFI_SCAN: u8 = 37;
+const BUILTIN_APP_REGISTRY_LIST: u8 = 38;
+const BUILTIN_APP_REGISTRY_GET: u8 = 39;
 
 const VALUE_NULL: u8 = 0;
 const VALUE_BOOL: u8 = 1;
@@ -1084,6 +1086,8 @@ fn builtin_for_call(name: &str) -> Option<u8> {
         "service.wifi.connect" => Some(BUILTIN_SERVICE_WIFI_CONNECT),
         "service.wifi.disconnect" => Some(BUILTIN_SERVICE_WIFI_DISCONNECT),
         "service.wifi.scan" => Some(BUILTIN_SERVICE_WIFI_SCAN),
+        "app.registry" => Some(BUILTIN_APP_REGISTRY_LIST),
+        "app.registry.get" => Some(BUILTIN_APP_REGISTRY_GET),
         _ => None,
     }
 }
@@ -1095,7 +1099,9 @@ fn validate_builtin_arg_count(name: &str, count: usize) -> Result<(), SqbcError>
         | "service.wifi.status"
         | "service.wifi.getAPIP"
         | "service.wifi.disconnect"
-        | "service.wifi.scan" => count == 0,
+        | "service.wifi.scan"
+        | "app.registry" => count == 0,
+        "app.registry.get" => count == 2,
         _ => true,
     };
     if valid {

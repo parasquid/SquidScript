@@ -3253,7 +3253,8 @@ app.launch(appId)
 `app.registry()`
 
 Returns a bounded list handle or list-like firmware-owned value containing
-installed apps.
+installed app IDs. The runtime keeps this list compact; full summary records are
+materialized one app at a time through `app.registry.get(apps, index)`.
 
 Requires runtime support:
 

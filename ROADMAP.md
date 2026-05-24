@@ -35,12 +35,11 @@ for compiler, SQBC tooling, and VM semantics.
 
 ### 3. Port Runtime Services To Zephyr
 
-- Add app-facing registry and lifecycle inspection APIs in a scoped slice,
-  rather than adding Zephyr-only protocol helpers. Reuse the existing installed
-  app registry, foreground stack, and armed timer state; define the portable
-  SquidScript contract first, then add compiler/SQBC/VM/FFI/Zephyr support and
-  hardware coverage for listing installed apps and inspecting foreground and
-  armed-app state.
+- Extend app-facing lifecycle inspection beyond the implemented low-RAM
+  `app.registry()` and `app.registry.get(apps, index)` installed-app listing.
+  Reuse the existing foreground stack and armed timer state; define the
+  portable SquidScript contract first, then add compiler/SQBC/VM/FFI/Zephyr
+  support and hardware coverage for inspecting foreground and armed-app state.
 - Promote planned display APIs through the real runtime stack:
   `service.display.select`, `service.display.image`, and
   `service.display.draw`. Keep resource/drawable ownership explicit and avoid

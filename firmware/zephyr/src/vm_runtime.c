@@ -274,6 +274,67 @@ static int32_t runtime_app_disarm(void *user_data, const uint8_t *app, size_t ap
 	return sq_vm_runtime_clear_armed_app(user_data, app, app_len);
 }
 
+static void runtime_app_registry_entry_from_store(const struct sq_app_registry_entry *source,
+						  SqvmAppRegistryEntry *out)
+{
+	size_t len;
+
+	if (out == NULL) {
+		return;
+	}
+	memset(out, 0, sizeof(*out));
+	if (source == NULL) {
+		return;
+	}
+	len = strnlen(source->app_id, sizeof(source->app_id));
+	out->id = (const uint8_t *)source->app_id;
+	out->id_len = len;
+	out->name = (const uint8_t *)source->app_id;
+	out->name_len = len;
+}
+
+static int32_t runtime_app_registry_list(void *user_data, SqvmAppRegistryEntry *out,
+					 size_t out_cap, size_t *out_count)
+{
+	struct sq_vm_runtime *runtime = user_data;
+	size_t count;
+
+	if (runtime == NULL || runtime->registry == NULL || out_count == NULL ||
+	    (out == NULL && out_cap > 0)) {
+		return -EINVAL;
+	}
+	count = runtime->registry->count;
+	if (count > out_cap) {
+		count = out_cap;
+	}
+	for (size_t i = 0; i < count; i++) {
+		runtime_app_registry_entry_from_store(&runtime->registry->apps[i], &out[i]);
+	}
+	*out_count = count;
+	return 0;
+}
+
+static int32_t runtime_app_registry_get(void *user_data, const uint8_t *app, size_t app_len,
+					SqvmAppRegistryEntry *out)
+{
+	struct sq_vm_runtime *runtime = user_data;
+	char app_id[SQ_APP_STORE_APP_ID_MAX];
+	const struct sq_app_registry_entry *entry;
+
+	if (runtime == NULL || runtime->registry == NULL || out == NULL || app == NULL ||
+	    app_len == 0 || app_len >= sizeof(app_id)) {
+		return -EINVAL;
+	}
+	memcpy(app_id, app, app_len);
+	app_id[app_len] = '\0';
+	entry = sq_app_registry_find(runtime->registry, app_id);
+	if (entry == NULL) {
+		return -ENOENT;
+	}
+	runtime_app_registry_entry_from_store(entry, out);
+	return 0;
+}
+
 static int32_t runtime_timer_every(void *user_data, const uint8_t *event, size_t event_len,
 				   int32_t interval_ms)
 {
@@ -1168,6 +1229,13 @@ void sq_vm_runtime_set_store_mount_point(struct sq_vm_runtime *runtime, const ch
 	}
 }
 
+void sq_vm_runtime_set_registry(struct sq_vm_runtime *runtime, const struct sq_app_registry *registry)
+{
+	if (runtime != NULL) {
+		runtime->registry = registry;
+	}
+}
+
 const char *sq_vm_runtime_status_name(SqvmStatus status)
 {
 	switch (status) {
@@ -1230,6 +1298,8 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		.app_launch = runtime_app_launch,
 		.app_arm = runtime_app_arm,
 		.app_disarm = runtime_app_disarm,
+		.app_registry_list = runtime_app_registry_list,
+		.app_registry_get = runtime_app_registry_get,
 		.timer_every = runtime_timer_every,
 		.timer_after = runtime_timer_after,
 		.wifi_start_ap = runtime_wifi_start_ap,

@@ -7,9 +7,9 @@ use squidc_core::{
 use squidvm_ffi::{
     sqvm_context_init, sqvm_context_init_in_place, sqvm_context_prepare, sqvm_context_size,
     sqvm_dispatch, sqvm_dispatch_resume_storage, sqvm_dispatch_start_resumable,
-    sqvm_trigger_timer_count, sqvm_trigger_timer_read, SqvmCallbacks, SqvmDispatchOutcome,
-    SqvmDispatchResult, SqvmStatus, SqvmStorageCompletion, SqvmStorageRequestKind,
-    SqvmTriggerTimer,
+    sqvm_trigger_timer_count, sqvm_trigger_timer_read, SqvmAppRegistryEntry, SqvmCallbacks,
+    SqvmDispatchOutcome, SqvmDispatchResult, SqvmStatus, SqvmStorageCompletion,
+    SqvmStorageRequestKind, SqvmTriggerTimer,
 };
 
 #[derive(Default)]
@@ -30,6 +30,7 @@ struct Host {
     wifi_ap_ip_count: usize,
     system_memory_count: usize,
     system_storage_names: Vec<String>,
+    registry_gets: Vec<String>,
 }
 
 fn trigger_event_text(timer: &SqvmTriggerTimer) -> &str {
@@ -380,6 +381,66 @@ unsafe extern "C" fn system_storage_text(
     0
 }
 
+unsafe extern "C" fn app_registry_list(
+    user_data: *mut c_void,
+    out: *mut SqvmAppRegistryEntry,
+    out_cap: usize,
+    out_count: *mut usize,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.traces.push("registry.list".to_string());
+    if out.is_null() || out_count.is_null() || out_cap < 2 {
+        return -1;
+    }
+    *out.add(0) = SqvmAppRegistryEntry {
+        id: b"main".as_ptr(),
+        id_len: b"main".len(),
+        name: b"Main".as_ptr(),
+        name_len: b"Main".len(),
+        build: b"ffi-main".as_ptr(),
+        build_len: b"ffi-main".len(),
+        description: b"Root app".as_ptr(),
+        description_len: b"Root app".len(),
+    };
+    *out.add(1) = SqvmAppRegistryEntry {
+        id: b"reader".as_ptr(),
+        id_len: b"reader".len(),
+        name: b"Reader".as_ptr(),
+        name_len: b"Reader".len(),
+        build: b"ffi-reader".as_ptr(),
+        build_len: b"ffi-reader".len(),
+        description: b"Read documents".as_ptr(),
+        description_len: b"Read documents".len(),
+    };
+    *out_count = 2;
+    0
+}
+
+unsafe extern "C" fn app_registry_get(
+    user_data: *mut c_void,
+    app: *const u8,
+    app_len: usize,
+    out: *mut SqvmAppRegistryEntry,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let app = std::str::from_utf8(std::slice::from_raw_parts(app, app_len)).unwrap();
+    host.registry_gets.push(app.to_string());
+    if out.is_null() || app != "reader" {
+        return -1;
+    }
+    *out = SqvmAppRegistryEntry {
+        id: b"reader".as_ptr(),
+        id_len: b"reader".len(),
+        name: b"Reader".as_ptr(),
+        name_len: b"Reader".len(),
+        build: b"ffi-reader".as_ptr(),
+        build_len: b"ffi-reader".len(),
+        description: b"Read documents".as_ptr(),
+        description_len: b"Read documents".len(),
+    };
+    0
+}
+
 fn callbacks(host: &mut Host) -> SqvmCallbacks {
     SqvmCallbacks {
         user_data: host as *mut Host as *mut c_void,
@@ -400,6 +461,8 @@ fn callbacks(host: &mut Host) -> SqvmCallbacks {
         app_launch: Some(app_launch),
         app_arm: Some(app_arm),
         app_disarm: Some(app_disarm),
+        app_registry_list: Some(app_registry_list),
+        app_registry_get: Some(app_registry_get),
         timer_every: Some(timer_every),
         timer_after: Some(timer_after),
         wifi_start_ap: Some(wifi_start_ap),
@@ -571,6 +634,22 @@ fn compile_system_resources_sqbc() -> Vec<u8> {
 event.on("app.start") {
   debug.print(system.memory())
   debug.print(system.storage("apps"))
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_app_registry_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-registry"
+event.on("app.start") {
+  let apps = app.registry()
+  for appId in apps max 2 {
+    debug.print(appId)
+  }
+  let selected = app.registry.get(apps, 1)
+  debug.print(selected.id, selected.name, selected.build, selected.description)
 }
 screen("main") {}
 "#,
@@ -987,6 +1066,46 @@ fn dispatches_system_resource_text_callbacks() {
 }
 
 #[test]
+fn dispatches_app_registry_callbacks() {
+    let mut host = Host {
+        sqbc: compile_app_registry_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(host.registry_gets, vec!["reader"]);
+    assert_eq!(
+        host.output,
+        vec![
+            "main".to_string(),
+            "reader".to_string(),
+            "reader Reader ffi-reader Read documents".to_string(),
+        ]
+    );
+}
+
+#[test]
 fn dispatches_hardware_gpio_service_callbacks() {
     let mut host = Host {
         sqbc: compile_hardware_gpio_sqbc(),
@@ -1088,18 +1207,16 @@ fn reads_trigger_timer_metadata_without_dispatching_app_arm() {
     assert_eq!(count, 2);
 
     let mut first = SqvmTriggerTimer::default();
-    let status = unsafe {
-        sqvm_trigger_timer_read(sqbc.as_ptr(), sqbc.len(), 0, &mut first as *mut _)
-    };
+    let status =
+        unsafe { sqvm_trigger_timer_read(sqbc.as_ptr(), sqbc.len(), 0, &mut first as *mut _) };
     assert_eq!(status, SqvmStatus::Ok);
     assert_eq!(first.interval_ms, 250);
     assert!(!first.repeating);
     assert_eq!(trigger_event_text(&first), "timer.break");
 
     let mut second = SqvmTriggerTimer::default();
-    let status = unsafe {
-        sqvm_trigger_timer_read(sqbc.as_ptr(), sqbc.len(), 1, &mut second as *mut _)
-    };
+    let status =
+        unsafe { sqvm_trigger_timer_read(sqbc.as_ptr(), sqbc.len(), 1, &mut second as *mut _) };
     assert_eq!(status, SqvmStatus::Ok);
     assert_eq!(second.interval_ms, 60000);
     assert!(second.repeating);

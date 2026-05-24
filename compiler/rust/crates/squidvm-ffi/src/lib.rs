@@ -13,9 +13,9 @@ use core::panic::PanicInfo;
 use squidvm_core::{
     error::VmError,
     host::{
-        DisplayLineOptions, DisplayRectOptions, DisplayTextOptions,
-        StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink, VmDispatch,
-        WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
+        AppRegistryEntry, AppRegistryList, DisplayLineOptions, DisplayRectOptions,
+        DisplayTextOptions, StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink,
+        VmDispatch, WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
         MAX_STORAGE_TRANSFER_BYTES,
     },
     limits::{MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES, MAX_SAVED_STATE_BYTES},
@@ -440,6 +440,34 @@ pub struct SqvmDisplayLineOptions {
     pub color_len: usize,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmAppRegistryEntry {
+    pub id: *const u8,
+    pub id_len: usize,
+    pub name: *const u8,
+    pub name_len: usize,
+    pub build: *const u8,
+    pub build_len: usize,
+    pub description: *const u8,
+    pub description_len: usize,
+}
+
+impl Default for SqvmAppRegistryEntry {
+    fn default() -> Self {
+        Self {
+            id: ptr::null(),
+            id_len: 0,
+            name: ptr::null(),
+            name_len: 0,
+            build: ptr::null(),
+            build_len: 0,
+            description: ptr::null(),
+            description_len: 0,
+        }
+    }
+}
+
 pub const SQVM_WIFI_SCAN_MAX_NETWORKS: usize = 4;
 
 #[repr(C)]
@@ -678,6 +706,22 @@ pub struct SqvmCallbacks {
         Option<unsafe extern "C" fn(user_data: *mut c_void, app: *const u8, app_len: usize) -> i32>,
     pub app_disarm:
         Option<unsafe extern "C" fn(user_data: *mut c_void, app: *const u8, app_len: usize) -> i32>,
+    pub app_registry_list: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            out: *mut SqvmAppRegistryEntry,
+            out_cap: usize,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
+    pub app_registry_get: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            app: *const u8,
+            app_len: usize,
+            out: *mut SqvmAppRegistryEntry,
+        ) -> i32,
+    >,
     pub timer_every: Option<
         unsafe extern "C" fn(
             user_data: *mut c_void,
@@ -761,6 +805,8 @@ impl Default for SqvmCallbacks {
             app_launch: None,
             app_arm: None,
             app_disarm: None,
+            app_registry_list: None,
+            app_registry_get: None,
             timer_every: None,
             timer_after: None,
             wifi_start_ap: None,
@@ -1979,6 +2025,9 @@ pub unsafe extern "C" fn sqdp_clear_resource_session(session: *mut SqdpResourceS
 struct FfiHost {
     callbacks: SqvmCallbacks,
     defer_sqbc_reads: bool,
+    app_registry_entries: [SqvmAppRegistryEntry; 8],
+    app_registry_core_entries: [AppRegistryEntry<'static>; 8],
+    app_registry_count: usize,
     wifi_scan_networks: [WifiAccessPoint; SQVM_WIFI_SCAN_MAX_NETWORKS],
     wifi_scan_network_count: usize,
 }
@@ -1988,6 +2037,14 @@ impl FfiHost {
         Self {
             callbacks,
             defer_sqbc_reads,
+            app_registry_entries: [SqvmAppRegistryEntry::default(); 8],
+            app_registry_core_entries: [AppRegistryEntry {
+                id: "",
+                name: "",
+                build: "",
+                description: "",
+            }; 8],
+            app_registry_count: 0,
             wifi_scan_networks: [WifiAccessPoint::empty(); SQVM_WIFI_SCAN_MAX_NETWORKS],
             wifi_scan_network_count: 0,
         }
@@ -2227,6 +2284,41 @@ impl TraceSink for FfiHost {
             return Err(VmError::InvalidOperand);
         };
         callback_status(unsafe { app_disarm(self.callbacks.user_data, app.as_ptr(), app.len()) })
+    }
+
+    fn app_registry_list<'a>(&'a mut self) -> Result<AppRegistryList<'a>, VmError> {
+        let Some(app_registry_list) = self.callbacks.app_registry_list else {
+            return Err(VmError::InvalidOperand);
+        };
+        let mut count = 0usize;
+        self.app_registry_entries = [SqvmAppRegistryEntry::default(); 8];
+        callback_status(unsafe {
+            app_registry_list(
+                self.callbacks.user_data,
+                self.app_registry_entries.as_mut_ptr(),
+                self.app_registry_entries.len(),
+                &mut count,
+            )
+        })?;
+        self.app_registry_count = count.min(self.app_registry_entries.len());
+        for index in 0..self.app_registry_count {
+            self.app_registry_core_entries[index] =
+                unsafe { app_registry_entry_from_ffi(&self.app_registry_entries[index])? };
+        }
+        Ok(AppRegistryList {
+            apps: &self.app_registry_core_entries[..self.app_registry_count],
+        })
+    }
+
+    fn app_registry_get<'a>(&'a mut self, app: &str) -> Result<AppRegistryEntry<'a>, VmError> {
+        let Some(app_registry_get) = self.callbacks.app_registry_get else {
+            return Err(VmError::InvalidOperand);
+        };
+        let mut out = SqvmAppRegistryEntry::default();
+        callback_status(unsafe {
+            app_registry_get(self.callbacks.user_data, app.as_ptr(), app.len(), &mut out)
+        })?;
+        unsafe { app_registry_entry_from_ffi(&out) }
     }
 
     fn service_timer_every(&mut self, event: &str, interval_ms: i32) -> Result<(), VmError> {
@@ -2496,6 +2588,17 @@ unsafe fn optional_ffi_str<'a>(ptr: *const u8, len: usize) -> Result<Option<&'a 
 
 unsafe fn required_ffi_str<'a>(ptr: *const u8, len: usize) -> Result<&'a str, VmError> {
     optional_ffi_str(ptr, len)?.ok_or(VmError::InvalidOperand)
+}
+
+unsafe fn app_registry_entry_from_ffi<'a>(
+    entry: &SqvmAppRegistryEntry,
+) -> Result<AppRegistryEntry<'a>, VmError> {
+    Ok(AppRegistryEntry {
+        id: required_ffi_str(entry.id, entry.id_len)?,
+        name: optional_ffi_str(entry.name, entry.name_len)?.unwrap_or(""),
+        build: optional_ffi_str(entry.build, entry.build_len)?.unwrap_or(""),
+        description: optional_ffi_str(entry.description, entry.description_len)?.unwrap_or(""),
+    })
 }
 
 unsafe fn wifi_status_from_ffi<'a>(status: &SqvmWifiStatus) -> Result<WifiStatus<'a>, VmError> {

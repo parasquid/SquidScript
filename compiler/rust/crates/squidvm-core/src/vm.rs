@@ -3,10 +3,11 @@ use core::{fmt::Write, ptr, str};
 use crate::{
     bytecode::{
         read_i32, read_u16, read_u32, BUILTIN_APP_ARM, BUILTIN_APP_DISARM, BUILTIN_APP_EXIT,
-        BUILTIN_APP_LAUNCH, BUILTIN_DEBUG_PRINT, BUILTIN_DISPLAY_CLEAR, BUILTIN_DISPLAY_LINE,
-        BUILTIN_DISPLAY_RECT, BUILTIN_DISPLAY_TEXT, BUILTIN_HARDWARE_GPIO_READ,
-        BUILTIN_HARDWARE_GPIO_TOGGLE, BUILTIN_HARDWARE_GPIO_WRITE, BUILTIN_SCREEN_OPEN,
-        BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_INDICATOR_BREATHE, BUILTIN_SERVICE_INDICATOR_READ,
+        BUILTIN_APP_LAUNCH, BUILTIN_APP_REGISTRY_GET, BUILTIN_APP_REGISTRY_LIST,
+        BUILTIN_DEBUG_PRINT, BUILTIN_DISPLAY_CLEAR, BUILTIN_DISPLAY_LINE, BUILTIN_DISPLAY_RECT,
+        BUILTIN_DISPLAY_TEXT, BUILTIN_HARDWARE_GPIO_READ, BUILTIN_HARDWARE_GPIO_TOGGLE,
+        BUILTIN_HARDWARE_GPIO_WRITE, BUILTIN_SCREEN_OPEN, BUILTIN_SCREEN_REFRESH,
+        BUILTIN_SERVICE_INDICATOR_BREATHE, BUILTIN_SERVICE_INDICATOR_READ,
         BUILTIN_SERVICE_INDICATOR_TOGGLE, BUILTIN_SERVICE_INDICATOR_WRITE,
         BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY, BUILTIN_SERVICE_WIFI_CONNECT,
         BUILTIN_SERVICE_WIFI_DISCONNECT, BUILTIN_SERVICE_WIFI_GET_AP_IP, BUILTIN_SERVICE_WIFI_SCAN,
@@ -20,9 +21,9 @@ use crate::{
     chunk::{ChunkCache, ChunkKind, ChunkRef},
     error::VmError,
     host::{
-        DisplayLineOptions, DisplayRectOptions, DisplayTextOptions, StorageCompletion,
-        StorageRequest, TraceSink, VmDispatch, WifiAccessPoint, WifiActionResult, WifiApIp,
-        WifiScanResult, WifiStatus,
+        AppRegistryEntry, DisplayLineOptions, DisplayRectOptions, DisplayTextOptions,
+        StorageCompletion, StorageRequest, TraceSink, VmDispatch, WifiAccessPoint,
+        WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
     },
     limits::{
         MAX_CALL_DEPTH, MAX_CODE_CHUNK_BYTES, MAX_FUNCTIONS, MAX_HANDLERS,
@@ -1246,6 +1247,28 @@ impl ChunkedVm {
                 };
                 host.app_disarm(self.index.string(app_id)?)?;
             }
+            BUILTIN_APP_REGISTRY_LIST => {
+                let registry = host.app_registry_list()?;
+                let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
+                let count = registry.apps.len().min(MAX_RUNTIME_LIST_ITEMS);
+                for (index, app) in registry.apps.iter().take(count).enumerate() {
+                    items[index] = self.runtime_string_value(Some(app.id))?;
+                }
+                let value = self.runtime_lists.alloc(&items[..count])?;
+                self.push(value)?;
+            }
+            BUILTIN_APP_REGISTRY_GET => {
+                let index = self.pop()?.expect_i32()?;
+                let Value::List(list_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let app_id = self.runtime_lists.get(list_id, index)?;
+                let strings = StringResolver::new(&self.index, &self.runtime_strings);
+                let app_id = strings.value_str(app_id)?;
+                let entry = host.app_registry_get(app_id)?;
+                let value = self.app_registry_record(entry)?;
+                self.push(value)?;
+            }
             BUILTIN_SERVICE_TIMER_EVERY => {
                 let interval_ms = self.pop()?.expect_i32()?;
                 let Value::String(event_id) = self.pop()? else {
@@ -1338,6 +1361,19 @@ impl ChunkedVm {
         self.runtime_records.alloc(&[
             RuntimeRecordField::new("ok", Value::Bool(result.ok)),
             RuntimeRecordField::new("error", error),
+        ])
+    }
+
+    fn app_registry_record(&mut self, entry: AppRegistryEntry<'_>) -> Result<Value, VmError> {
+        let id = self.runtime_string_value(Some(entry.id))?;
+        let name = self.runtime_string_value(Some(entry.name))?;
+        let build = self.runtime_string_value(Some(entry.build))?;
+        let description = self.runtime_string_value(Some(entry.description))?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("id", id),
+            RuntimeRecordField::new("name", name),
+            RuntimeRecordField::new("build", build),
+            RuntimeRecordField::new("description", description),
         ])
     }
 
@@ -2101,6 +2137,28 @@ impl<'a> Vm<'a> {
                 let app = self.program.string(app_id)?;
                 trace.app_disarm(app)?;
             }
+            BUILTIN_APP_REGISTRY_LIST => {
+                let registry = trace.app_registry_list()?;
+                let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
+                let count = registry.apps.len().min(MAX_RUNTIME_LIST_ITEMS);
+                for (index, app) in registry.apps.iter().take(count).enumerate() {
+                    items[index] = self.runtime_string_value(Some(app.id))?;
+                }
+                let value = self.runtime_lists.alloc(&items[..count])?;
+                self.push(value)?;
+            }
+            BUILTIN_APP_REGISTRY_GET => {
+                let index = self.pop()?.expect_i32()?;
+                let Value::List(list_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let app_id = self.runtime_lists.get(list_id, index)?;
+                let strings = StringResolver::new(&self.program, &self.runtime_strings);
+                let app_id = strings.value_str(app_id)?;
+                let entry = trace.app_registry_get(app_id)?;
+                let value = self.app_registry_record(entry)?;
+                self.push(value)?;
+            }
             BUILTIN_SERVICE_TIMER_EVERY => {
                 let interval_ms = self.pop()?.expect_i32()?;
                 let Value::String(event_id) = self.pop()? else {
@@ -2197,6 +2255,19 @@ impl<'a> Vm<'a> {
         self.runtime_records.alloc(&[
             RuntimeRecordField::new("ok", Value::Bool(result.ok)),
             RuntimeRecordField::new("error", error),
+        ])
+    }
+
+    fn app_registry_record(&mut self, entry: AppRegistryEntry<'_>) -> Result<Value, VmError> {
+        let id = self.runtime_string_value(Some(entry.id))?;
+        let name = self.runtime_string_value(Some(entry.name))?;
+        let build = self.runtime_string_value(Some(entry.build))?;
+        let description = self.runtime_string_value(Some(entry.description))?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("id", id),
+            RuntimeRecordField::new("name", name),
+            RuntimeRecordField::new("build", build),
+            RuntimeRecordField::new("description", description),
         ])
     }
 

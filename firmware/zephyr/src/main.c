@@ -62,6 +62,7 @@ int main(void)
 
 	sq_serial_transport_init(&transport);
 	sq_vm_runtime_init(&runtime);
+	sq_vm_runtime_set_registry(&runtime, &registry);
 
 	while (true) {
 		bool consumed = false;

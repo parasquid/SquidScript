@@ -129,6 +129,8 @@ Initial built-in IDs:
 35 service.wifi.connect
 36 service.wifi.disconnect
 37 service.wifi.scan
+38 app.registry
+39 app.registry.get
 ```
 
 The current format supports the headless VM subset. Display draw commands are
