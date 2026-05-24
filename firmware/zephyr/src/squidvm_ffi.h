@@ -7,6 +7,8 @@
 
 #define SQVM_STORAGE_TRANSFER_CAPACITY 1024
 #define SQVM_SAVED_STATE_CAPACITY 512
+#define SQVM_DEVICE_BINDING_NAME_CAP 32
+#define SQVM_DEVICE_BINDING_RESOURCE_CAP 128
 
 #ifdef __cplusplus
 extern "C" {
@@ -136,6 +138,12 @@ typedef struct {
 	int32_t interval_ms;
 	bool repeating;
 } SqvmTriggerTimer;
+
+typedef struct {
+	uint8_t service[SQVM_DEVICE_BINDING_NAME_CAP];
+	uint8_t binding[SQVM_DEVICE_BINDING_NAME_CAP];
+	uint8_t resource[SQVM_DEVICE_BINDING_RESOURCE_CAP];
+} SqvmDeviceBinding;
 
 typedef struct {
 	const uint8_t *app_id;
@@ -518,6 +526,19 @@ SqvmStatus sqvm_trigger_timer_read_from_reader(
 	size_t scratch_len,
 	size_t index,
 	SqvmTriggerTimer *out_timer);
+SqvmStatus sqvm_device_binding_count_from_reader(
+	void *user_data,
+	SqvmReadExactAtCallback read_exact_at,
+	uint8_t *scratch,
+	size_t scratch_len,
+	size_t *out_count);
+SqvmStatus sqvm_device_binding_read_from_reader(
+	void *user_data,
+	SqvmReadExactAtCallback read_exact_at,
+	uint8_t *scratch,
+	size_t scratch_len,
+	size_t index,
+	SqvmDeviceBinding *out_binding);
 SqvmStatus sqvm_dispatch(
 	void *context,
 	SqvmCallbacks callbacks,

@@ -140,6 +140,13 @@ draft set, `ok=true` for `indicator.default` rebind, then `ok=false`,
 `error=unsupported`, and `warning=null` for save until SQDC flash persistence is
 implemented.
 
+`scripts/c3-supermini-test-device-binding.sh` runs after system resource
+coverage and before the explicit device config API check. It packages
+`tests/hardware/c3-supermini/device-binding-summary`, installs it with its
+`.sqdevice` resource, launches it, and verifies that a top-level
+`device { indicator { use ... } }` binding can be applied before
+`event.on("app.start")` without explicit app-side `device.config.*` calls.
+
 `scripts/c3-supermini-test-blink.sh` is an explicit visible indicator parity
 check. It installs `examples/blink-supermini`, launches it, verifies
 `output=blink ready`, checks that `device errors` is empty, and leaves the

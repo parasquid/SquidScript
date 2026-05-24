@@ -103,6 +103,9 @@ read-only package resources for the foreground app and wires
 `device.config.set(...)` to the runtime draft config. The runtime can validate
 and activate the current `indicator.default` GPIO binding with
 `device.config.rebind(...)`, and `service.indicator.*` uses the active binding.
+Installed app launch also reads current SQBC top-level `device {}` metadata and
+applies packaged `indicator.default` `.sqdevice` bindings before
+`event.on("app.start")`.
 Active config persistence through `device.config.save(...)` still returns an
 honest `unsupported` result.
 

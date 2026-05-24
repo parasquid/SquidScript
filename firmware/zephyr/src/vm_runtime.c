@@ -1303,30 +1303,24 @@ static int runtime_device_config_read_file(const char *path, uint8_t *buffer, si
 	return result;
 }
 
-int sq_vm_runtime_device_config_load(struct sq_vm_runtime *runtime, const uint8_t *source,
-				     size_t source_len, SqvmDeviceConfigResult *out)
+static int sq_vm_runtime_device_config_load_resource(struct sq_vm_runtime *runtime,
+						     const uint8_t *resource_bytes,
+						     size_t resource_len,
+						     SqvmDeviceConfigResult *out)
 {
-	static const char package_prefix[] = "package:";
 	char resource[SQ_APP_STORE_PATH_MAX];
 	char path[SQ_APP_STORE_PATH_MAX];
-	const uint8_t *resource_bytes;
-	size_t resource_len;
 	size_t bytes_len;
 	SqdcStatus status;
+	int result;
 
-	if (runtime == NULL || source == NULL || out == NULL) {
+	if (runtime == NULL || resource_bytes == NULL || out == NULL) {
 		return -EINVAL;
-	}
-	if (source_len <= sizeof(package_prefix) - 1 ||
-	    memcmp(source, package_prefix, sizeof(package_prefix) - 1) != 0) {
-		return runtime_device_config_error(out, "unsupported source");
 	}
 	if (runtime->store_mount_point == NULL || runtime->current_app[0] == '\0') {
 		return runtime_device_config_error(out, "no current app");
 	}
 
-	resource_bytes = source + sizeof(package_prefix) - 1;
-	resource_len = source_len - (sizeof(package_prefix) - 1);
 	status = sqdc_is_safe_sqdevice_path(resource_bytes, resource_len);
 	if (status != SQDC_STATUS_OK) {
 		return runtime_device_config_error(out, "invalid resource path");
@@ -1337,8 +1331,8 @@ int sq_vm_runtime_device_config_load(struct sq_vm_runtime *runtime, const uint8_
 	memcpy(resource, resource_bytes, resource_len);
 	resource[resource_len] = '\0';
 
-	int result = sq_app_store_resource_path(runtime->store_mount_point, runtime->current_app,
-						resource, path, sizeof(path));
+	result = sq_app_store_resource_path(runtime->store_mount_point, runtime->current_app,
+					    resource, path, sizeof(path));
 	if (result != 0) {
 		return runtime_device_config_error(out, "resource path failed");
 	}
@@ -1360,6 +1354,29 @@ int sq_vm_runtime_device_config_load(struct sq_vm_runtime *runtime, const uint8_
 	}
 	runtime->device_config_draft_loaded = true;
 	return runtime_device_config_ok(out);
+}
+
+int sq_vm_runtime_device_config_load(struct sq_vm_runtime *runtime, const uint8_t *source,
+				     size_t source_len, SqvmDeviceConfigResult *out)
+{
+	static const char package_prefix[] = "package:";
+	const uint8_t *resource_bytes;
+	size_t resource_len;
+
+	if (runtime == NULL || source == NULL || out == NULL) {
+		return -EINVAL;
+	}
+	if (source_len <= sizeof(package_prefix) - 1 ||
+	    memcmp(source, package_prefix, sizeof(package_prefix) - 1) != 0) {
+		return runtime_device_config_error(out, "unsupported source");
+	}
+	if (runtime->store_mount_point == NULL || runtime->current_app[0] == '\0') {
+		return runtime_device_config_error(out, "no current app");
+	}
+
+	resource_bytes = source + sizeof(package_prefix) - 1;
+	resource_len = source_len - (sizeof(package_prefix) - 1);
+	return sq_vm_runtime_device_config_load_resource(runtime, resource_bytes, resource_len, out);
 }
 
 int sq_vm_runtime_device_config_set(struct sq_vm_runtime *runtime, const uint8_t *key,
@@ -1493,6 +1510,82 @@ int sq_vm_runtime_device_config_rebind(struct sq_vm_runtime *runtime, const uint
 	runtime->indicator_binding_pin = pin;
 	runtime->indicator_binding_active_low = active_low;
 	return runtime_device_config_ok(out);
+}
+
+static size_t runtime_fixed_text_len(const uint8_t *bytes, size_t cap)
+{
+	size_t len = 0;
+
+	while (len < cap && bytes[len] != 0) {
+		len++;
+	}
+	return len;
+}
+
+static bool runtime_fixed_text_equals(const uint8_t *bytes, size_t cap, const char *expected)
+{
+	size_t len;
+
+	if (bytes == NULL || expected == NULL) {
+		return false;
+	}
+	len = runtime_fixed_text_len(bytes, cap);
+	return len == strlen(expected) && memcmp(bytes, expected, len) == 0;
+}
+
+static int sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *runtime)
+{
+	size_t count = 0;
+	SqvmStatus status;
+
+	if (runtime == NULL || runtime->backend == NULL || runtime->backend->read_sqbc == NULL ||
+	    runtime->store_mount_point == NULL || runtime->current_app[0] == '\0') {
+		return 0;
+	}
+
+	status = sqvm_device_binding_count_from_reader(runtime, runtime_read_exact_at,
+						       runtime->transfer.init_scratch,
+						       sizeof(runtime->transfer.init_scratch),
+						       &count);
+	if (status != SQVM_STATUS_OK) {
+		return sq_vm_runtime_status_to_errno(status);
+	}
+
+	for (size_t index = 0; index < count; index++) {
+		SqvmDeviceBinding binding = {0};
+		SqvmDeviceConfigResult result = {0};
+		size_t resource_len;
+
+		status = sqvm_device_binding_read_from_reader(runtime, runtime_read_exact_at,
+							      runtime->transfer.init_scratch,
+							      sizeof(runtime->transfer.init_scratch),
+							      index, &binding);
+		if (status != SQVM_STATUS_OK) {
+			return sq_vm_runtime_status_to_errno(status);
+		}
+		if (!runtime_fixed_text_equals(binding.service, sizeof(binding.service), "indicator") ||
+		    !runtime_fixed_text_equals(binding.binding, sizeof(binding.binding), "default")) {
+			return -ENOTSUP;
+		}
+
+		resource_len = runtime_fixed_text_len(binding.resource, sizeof(binding.resource));
+		if (resource_len == 0 || resource_len >= sizeof(binding.resource)) {
+			return -EINVAL;
+		}
+		if (sq_vm_runtime_device_config_load_resource(runtime, binding.resource, resource_len,
+							      &result) != 0 ||
+		    !result.ok) {
+			return -EINVAL;
+		}
+		memset(&result, 0, sizeof(result));
+		if (sq_vm_runtime_device_config_rebind(
+			    runtime, (const uint8_t *)"indicator.default",
+			    strlen("indicator.default"), &result) != 0 ||
+		    !result.ok) {
+			return -EINVAL;
+		}
+	}
+	return 0;
 }
 
 static int32_t runtime_device_config_load(void *user_data, const uint8_t *source,
@@ -1803,6 +1896,7 @@ int sq_vm_runtime_start(struct sq_vm_runtime *runtime,
 			const struct sq_vm_storage_backend *backend, const char *event)
 {
 	size_t event_len;
+	int result;
 
 	if (runtime == NULL || backend == NULL || event == NULL) {
 		return -EINVAL;
@@ -1817,6 +1911,13 @@ int sq_vm_runtime_start(struct sq_vm_runtime *runtime,
 	}
 
 	runtime->job_backend = *backend;
+	runtime->backend = &runtime->job_backend;
+	if (strcmp(event, "app.start") == 0) {
+		result = sq_vm_runtime_apply_device_bindings(runtime);
+		if (result != 0) {
+			return result;
+		}
+	}
 	memcpy(runtime->event, event, event_len + 1);
 	runtime->result_code = 0;
 	runtime->dispatch_exited = false;

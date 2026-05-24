@@ -3437,9 +3437,10 @@ table. The current Zephyr runtime supports package resource
 `device.config.load("package:...")` into a bounded draft and
 `device.config.set(...)` edits on that draft. It also validates and activates
 the current `indicator.default` GPIO binding through
-`device.config.rebind(...)`. `device.config.save("flash")` persistence still
-returns a result record with `ok: false`, `error: "unsupported"`, and
-`warning: null`.
+`device.config.rebind(...)`, and applies installed app top-level
+`device { indicator { use ... } }` package bindings before `app.start`.
+`device.config.save("flash")` persistence still returns a result record with
+`ok: false`, `error: "unsupported"`, and `warning: null`.
 
 ---
 

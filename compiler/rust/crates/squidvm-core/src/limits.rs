@@ -3,6 +3,7 @@ pub const MAX_STATE: usize = 16;
 pub const MAX_FUNCTIONS: usize = 16;
 pub const MAX_HANDLERS: usize = 16;
 pub const MAX_TRIGGERS: usize = 16;
+pub const MAX_DEVICE_BINDINGS: usize = 8;
 pub const MAX_SCREENS: usize = 16;
 pub const MAX_LOCALS: usize = 16;
 pub const MAX_STACK: usize = 32;

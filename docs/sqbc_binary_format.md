@@ -49,7 +49,7 @@ Initial section kinds:
 5  bytecode instruction stream
 6  screen table
 7  app metadata
-8  device binding table (planned)
+8  device binding table
 ```
 
 Initial value tags:
@@ -200,12 +200,13 @@ For a headless app entry source with no authored `screen(...)` declarations,
 the compiler emits one empty synthesized `main` screen. This keeps runtime
 screen metadata uniform without adding display side effects.
 
-The device binding table is reserved for top-level `device {}` declarations.
-It should encode service name, binding name, and package-relative `.sqdevice`
-resource path metadata so firmware and browser runtimes can apply bindings
-before `event.on("app.start")`. Package installers store `.sqdevice` resources
-as ordinary read-only package files; active resolved config is firmware-owned
-SQDC, not embedded mutable package state.
+The device binding table encodes top-level `device {}` declarations as a count
+followed by service string id, binding-name string id, and package-relative
+`.sqdevice` resource path string id for each binding. Firmware and browser
+runtimes use this metadata to apply bindings before `event.on("app.start")`.
+Package installers store `.sqdevice` resources as ordinary read-only package
+files; active resolved config is firmware-owned SQDC, not embedded mutable
+package state.
 
 ## Chunk/Index Execution
 

@@ -54,6 +54,8 @@ pub enum SqdpStatus {
 
 const SQDP_APP_ID_CAP: usize = 48;
 const SQDP_PATH_CAP: usize = 128;
+pub const SQVM_DEVICE_BINDING_NAME_CAP: usize = 32;
+pub const SQVM_DEVICE_BINDING_RESOURCE_CAP: usize = 128;
 pub const SQDP_STAGING_PATH_CAP: usize = 80;
 pub const SQDC_CONFIG_MAX_RECORDS: usize = 8;
 pub const SQDC_CONFIG_KEY_CAP: usize = 32;
@@ -796,6 +798,24 @@ pub struct SqvmWifiApIp {
     pub error_len: usize,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmDeviceBinding {
+    pub service: [u8; SQVM_DEVICE_BINDING_NAME_CAP],
+    pub binding: [u8; SQVM_DEVICE_BINDING_NAME_CAP],
+    pub resource: [u8; SQVM_DEVICE_BINDING_RESOURCE_CAP],
+}
+
+impl Default for SqvmDeviceBinding {
+    fn default() -> Self {
+        Self {
+            service: [0; SQVM_DEVICE_BINDING_NAME_CAP],
+            binding: [0; SQVM_DEVICE_BINDING_NAME_CAP],
+            resource: [0; SQVM_DEVICE_BINDING_RESOURCE_CAP],
+        }
+    }
+}
+
 impl Default for SqvmWifiApIp {
     fn default() -> Self {
         Self {
@@ -1409,6 +1429,49 @@ pub unsafe extern "C" fn sqvm_trigger_timer_read_from_reader(
     let mut reader = FfiHost::new(callbacks, false);
     let scratch = slice::from_raw_parts_mut(scratch, scratch_len);
     trigger_timer_read_from_reader(&mut reader, scratch, index, out_timer)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqvm_device_binding_count_from_reader(
+    user_data: *mut c_void,
+    read_exact_at: SqvmReadExactAtCallback,
+    scratch: *mut u8,
+    scratch_len: usize,
+    out_count: *mut usize,
+) -> SqvmStatus {
+    if read_exact_at.is_none() || scratch.is_null() || out_count.is_null() {
+        return SqvmStatus::InvalidArgument;
+    }
+    let callbacks = SqvmCallbacks {
+        user_data,
+        read_exact_at,
+        ..SqvmCallbacks::default()
+    };
+    let mut reader = FfiHost::new(callbacks, false);
+    let scratch = slice::from_raw_parts_mut(scratch, scratch_len);
+    device_binding_count_from_reader(&mut reader, scratch, out_count)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqvm_device_binding_read_from_reader(
+    user_data: *mut c_void,
+    read_exact_at: SqvmReadExactAtCallback,
+    scratch: *mut u8,
+    scratch_len: usize,
+    index: usize,
+    out_binding: *mut SqvmDeviceBinding,
+) -> SqvmStatus {
+    if read_exact_at.is_none() || scratch.is_null() || out_binding.is_null() {
+        return SqvmStatus::InvalidArgument;
+    }
+    let callbacks = SqvmCallbacks {
+        user_data,
+        read_exact_at,
+        ..SqvmCallbacks::default()
+    };
+    let mut reader = FfiHost::new(callbacks, false);
+    let scratch = slice::from_raw_parts_mut(scratch, scratch_len);
+    device_binding_read_from_reader(&mut reader, scratch, index, out_binding)
 }
 
 #[no_mangle]
@@ -3193,6 +3256,48 @@ fn trigger_timer_read_from_reader(
     out.event[..timer.event.len()].copy_from_slice(timer.event.as_bytes());
     unsafe {
         *out_timer = out;
+    }
+    SqvmStatus::Ok
+}
+
+fn device_binding_count_from_reader(
+    reader: &mut impl SqbcReader,
+    scratch: &mut [u8],
+    out_count: *mut usize,
+) -> SqvmStatus {
+    let count = match ProgramIndex::device_binding_count_from_reader(reader, scratch) {
+        Ok(count) => count,
+        Err(_) => return SqvmStatus::VmError,
+    };
+    unsafe {
+        *out_count = count;
+    }
+    SqvmStatus::Ok
+}
+
+fn device_binding_read_from_reader(
+    reader: &mut impl SqbcReader,
+    scratch: &mut [u8],
+    binding_index: usize,
+    out_binding: *mut SqvmDeviceBinding,
+) -> SqvmStatus {
+    let binding = match ProgramIndex::device_binding_from_reader(reader, scratch, binding_index) {
+        Ok(binding) => binding,
+        Err(VmError::InvalidOperand) => return SqvmStatus::InvalidArgument,
+        Err(_) => return SqvmStatus::VmError,
+    };
+    if binding.service.len() >= SQVM_DEVICE_BINDING_NAME_CAP
+        || binding.binding.len() >= SQVM_DEVICE_BINDING_NAME_CAP
+        || binding.resource.len() >= SQVM_DEVICE_BINDING_RESOURCE_CAP
+    {
+        return SqvmStatus::VmError;
+    }
+    let mut out = SqvmDeviceBinding::default();
+    out.service[..binding.service.len()].copy_from_slice(binding.service.as_bytes());
+    out.binding[..binding.binding.len()].copy_from_slice(binding.binding.as_bytes());
+    out.resource[..binding.resource.len()].copy_from_slice(binding.resource.as_bytes());
+    unsafe {
+        *out_binding = out;
     }
     SqvmStatus::Ok
 }

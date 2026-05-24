@@ -531,6 +531,36 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             suite.index("c3-supermini-test-blinky.sh"),
         )
 
+    def test_hardware_suite_runs_top_level_device_binding_script(self):
+        script = self.read("scripts/c3-supermini-test-device-binding.sh")
+        app = self.read("tests/hardware/c3-supermini/device-binding-summary/main.squid")
+        resource = self.read(
+            "tests/hardware/c3-supermini/device-binding-summary/device/indicator.sqdevice"
+        )
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn('device {', app)
+        self.assertIn('indicator { use "device/indicator.sqdevice" }', app)
+        self.assertIn("service.indicator.write(true)", app)
+        self.assertIn("indicator.default", resource)
+        self.assertIn("pinName string 5:GPIO8", resource)
+        self.assertIn('cargo run --quiet -p squidc -- package "${DEVICE_BINDING_APP}"', script)
+        self.assertIn(
+            "cargo run --quiet -p squidc -- app launch device-binding-summary",
+            script,
+        )
+        self.assertIn("output=device binding ready", script)
+        self.assertIn("assert_file_empty_command", script)
+        self.assertIn("c3-supermini-test-device-binding.sh", suite)
+        self.assertLess(
+            suite.index("c3-supermini-test-system-resources.sh"),
+            suite.index("c3-supermini-test-device-binding.sh"),
+        )
+        self.assertLess(
+            suite.index("c3-supermini-test-device-binding.sh"),
+            suite.index("c3-supermini-test-blinky.sh"),
+        )
+
     def test_breathe_check_is_explicit_visible_indicator_parity_script(self):
         script = self.read("scripts/c3-supermini-test-breathe.sh")
         app = self.read("examples/breathe-supermini/main.squid")

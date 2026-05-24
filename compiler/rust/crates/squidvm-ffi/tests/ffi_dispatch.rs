@@ -6,9 +6,10 @@ use squidc_core::{
 };
 use squidvm_ffi::{
     sqvm_context_init, sqvm_context_init_in_place, sqvm_context_prepare, sqvm_context_size,
-    sqvm_dispatch, sqvm_dispatch_resume_storage, sqvm_dispatch_start_resumable,
-    sqvm_trigger_timer_count, sqvm_trigger_timer_read, SqvmAppRegistryEntry, SqvmAppStackEntry,
-    SqvmCallbacks, SqvmDeviceConfigResult, SqvmDeviceConfigValue, SqvmDeviceConfigValueKind,
+    sqvm_device_binding_count_from_reader, sqvm_device_binding_read_from_reader, sqvm_dispatch,
+    sqvm_dispatch_resume_storage, sqvm_dispatch_start_resumable, sqvm_trigger_timer_count,
+    sqvm_trigger_timer_read, SqvmAppRegistryEntry, SqvmAppStackEntry, SqvmCallbacks,
+    SqvmDeviceBinding, SqvmDeviceConfigResult, SqvmDeviceConfigValue, SqvmDeviceConfigValueKind,
     SqvmDispatchOutcome, SqvmDispatchResult, SqvmStatus, SqvmStorageCompletion,
     SqvmStorageRequestKind, SqvmTriggerTimer,
 };
@@ -43,6 +44,14 @@ fn trigger_event_text(timer: &SqvmTriggerTimer) -> &str {
         .position(|byte| *byte == 0)
         .unwrap_or(timer.event.len());
     core::str::from_utf8(&timer.event[..len]).unwrap()
+}
+
+fn fixed_text(bytes: &[u8]) -> &str {
+    let len = bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(bytes.len());
+    core::str::from_utf8(&bytes[..len]).unwrap()
 }
 
 unsafe extern "C" fn trace(user_data: *mut c_void, message: *const u8, message_len: usize) {
@@ -1709,6 +1718,54 @@ fn resumable_dispatch_reports_sqbc_and_state_storage_requests() {
     assert_eq!(result.outcome, SqvmDispatchOutcome::Complete);
     assert_eq!(result.storage.kind, SqvmStorageRequestKind::None);
     assert_eq!(host.traces, vec!["app.start", "state.load", "state.save"]);
+}
+
+#[test]
+fn reads_device_binding_metadata_without_dispatching_app() {
+    let mut host = Host {
+        sqbc: compile_sqbc(
+            r#"app "ffi-device-binding"
+device {
+  indicator { use "device/indicator.sqdevice" }
+}
+event.on("app.start") {
+  debug.print("started")
+}
+screen("main") {}
+"#,
+        ),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut count = 0usize;
+
+    let status = unsafe {
+        sqvm_device_binding_count_from_reader(
+            &mut host as *mut Host as *mut c_void,
+            Some(read_exact_at),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+            &mut count,
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(count, 1);
+
+    let mut binding = SqvmDeviceBinding::default();
+    let status = unsafe {
+        sqvm_device_binding_read_from_reader(
+            &mut host as *mut Host as *mut c_void,
+            Some(read_exact_at),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+            0,
+            &mut binding,
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(fixed_text(&binding.service), "indicator");
+    assert_eq!(fixed_text(&binding.binding), "default");
+    assert_eq!(fixed_text(&binding.resource), "device/indicator.sqdevice");
 }
 
 #[test]

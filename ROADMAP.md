@@ -12,7 +12,7 @@ for compiler, SQBC tooling, and VM semantics.
 ### 1. Expand Zephyr VM Hosting ABI
 
 - Keep the Zephyr VM ABI aligned with implemented SQBC builtins. Current
-  builtins `1..44` have Rust VM host callbacks plus Zephyr FFI and runtime
+  builtins `1..45` have Rust VM host callbacks plus Zephyr FFI and runtime
   connections for state, app lifecycle, display draw-log, GPIO, indicator,
   timers, Wi-Fi, app inspection, system diagnostics, and device configuration
   result records. Future service work should promote a spec/API slice through
@@ -38,11 +38,11 @@ for compiler, SQBC tooling, and VM semantics.
 - Finish moving `service.indicator.*` ownership to the resolved logical
   `indicator.default` binding. The Zephyr runtime now tracks an active
   indicator binding and routes indicator output through it, including package
-  SQDEVICE `device.config.rebind(...)`; remaining work is to make target
-  default bindings and app-authored `device {}` bindings feed that same path
-  without silently synthesizing default device blocks from target metadata.
-  The current ESP32-C3 Super Mini behavior should remain GPIO8 LEDC PWM by
-  default.
+  SQDEVICE `device.config.rebind(...)` and installed app top-level
+  `device { indicator { use ... } }` activation before `app.start`. Remaining
+  work is to formalize target default bindings through the same device-binding
+  model instead of Zephyr devicetree-only defaults. The current ESP32-C3 Super
+  Mini behavior should remain GPIO8 LEDC PWM by default.
 - Decide service priority and target support for currently spec-recognized but
   not SQBC-backed APIs: `httpServer.*`, `bleTransfer.*`, `content.*`, and
   `binbook.*`. Add each only as a real compiler/SQBC/VM/Zephyr slice with

@@ -2,13 +2,13 @@ use core::{mem::MaybeUninit, ptr, str};
 
 use crate::{
     bytecode::{
-        read_i32, read_u16, read_u32, SECTION_CODE, SECTION_FUNCTIONS, SECTION_HANDLERS,
-        SECTION_SCREENS, SECTION_STATE, SECTION_STRINGS, SECTION_TRIGGERS,
+        read_i32, read_u16, read_u32, SECTION_CODE, SECTION_DEVICE_BINDINGS, SECTION_FUNCTIONS,
+        SECTION_HANDLERS, SECTION_SCREENS, SECTION_STATE, SECTION_STRINGS, SECTION_TRIGGERS,
     },
     error::VmError,
     limits::{
-        MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES, MAX_FUNCTIONS, MAX_HANDLERS, MAX_PROGRAM_STRING_BYTES,
-        MAX_SCREENS, MAX_STATE, MAX_STRINGS, MAX_TRIGGERS,
+        MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES, MAX_DEVICE_BINDINGS, MAX_FUNCTIONS, MAX_HANDLERS,
+        MAX_PROGRAM_STRING_BYTES, MAX_SCREENS, MAX_STATE, MAX_STRINGS, MAX_TRIGGERS,
     },
     model::{Function, Handler, Screen, StateSlot, TriggerTimerMeta},
     reader::{SliceSqbcReader, SqbcReader},
@@ -440,6 +440,72 @@ impl ProgramIndex {
         })
     }
 
+    pub fn device_binding_count_from_reader(
+        reader: &mut impl SqbcReader,
+        scratch: &mut [u8],
+    ) -> Result<usize, VmError> {
+        let (_, bindings_section) = device_binding_reader_sections(reader, scratch)?;
+        let Some(bindings_section) = bindings_section else {
+            return Ok(0);
+        };
+        if bindings_section.len > scratch.len() {
+            return Err(VmError::InvalidSection);
+        }
+        reader.read_exact_at(
+            bindings_section.offset,
+            &mut scratch[..bindings_section.len],
+        )?;
+        let count = read_u16(scratch, 0)? as usize;
+        if count > MAX_DEVICE_BINDINGS {
+            return Err(VmError::InvalidSection);
+        }
+        let expected_len = 2usize
+            .checked_add(count.checked_mul(6).ok_or(VmError::InvalidSection)?)
+            .ok_or(VmError::InvalidSection)?;
+        if expected_len != bindings_section.len {
+            return Err(VmError::InvalidSection);
+        }
+        Ok(count)
+    }
+
+    pub fn device_binding_from_reader<'a>(
+        reader: &mut impl SqbcReader,
+        scratch: &'a mut [u8],
+        binding_index: usize,
+    ) -> Result<DeviceBinding<'a>, VmError> {
+        let (strings_section, bindings_section) = device_binding_reader_sections(reader, scratch)?;
+        let bindings_section = bindings_section.ok_or(VmError::InvalidOperand)?;
+        if bindings_section.len > scratch.len() || strings_section.len > scratch.len() {
+            return Err(VmError::InvalidSection);
+        }
+
+        reader.read_exact_at(
+            bindings_section.offset,
+            &mut scratch[..bindings_section.len],
+        )?;
+        let count = read_u16(scratch, 0)? as usize;
+        if count > MAX_DEVICE_BINDINGS || binding_index >= count {
+            return Err(VmError::InvalidOperand);
+        }
+        let expected_len = 2usize
+            .checked_add(count.checked_mul(6).ok_or(VmError::InvalidSection)?)
+            .ok_or(VmError::InvalidSection)?;
+        if expected_len != bindings_section.len {
+            return Err(VmError::InvalidSection);
+        }
+        let cursor = 2 + binding_index * 6;
+        let service_id = read_u16(scratch, cursor)?;
+        let binding_id = read_u16(scratch, cursor + 2)?;
+        let resource_id = read_u16(scratch, cursor + 4)?;
+
+        reader.read_exact_at(strings_section.offset, &mut scratch[..strings_section.len])?;
+        Ok(DeviceBinding {
+            service: string_from_section(&scratch[..strings_section.len], service_id)?,
+            binding: string_from_section(&scratch[..strings_section.len], binding_id)?,
+            resource: string_from_section(&scratch[..strings_section.len], resource_id)?,
+        })
+    }
+
     pub(crate) fn screen(&self, name: &str) -> Result<(usize, Screen), VmError> {
         for (index, screen) in self.screens.iter().take(self.screen_count).enumerate() {
             if self.string(screen.name_id)? == name {
@@ -465,6 +531,13 @@ pub struct TriggerTimer<'a> {
     pub event: &'a str,
     pub interval_ms: i32,
     pub repeating: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DeviceBinding<'a> {
+    pub service: &'a str,
+    pub binding: &'a str,
+    pub resource: &'a str,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -573,6 +646,35 @@ fn trigger_reader_sections(
     Ok((
         strings_section.ok_or(VmError::MissingSection)?,
         triggers_section,
+    ))
+}
+
+fn device_binding_reader_sections(
+    reader: &mut impl SqbcReader,
+    scratch: &mut [u8],
+) -> Result<(SqbcSection, Option<SqbcSection>), VmError> {
+    let mut fixed_header = [0u8; SQBC_HEADER_LEN];
+    reader.read_exact_at(0, &mut fixed_header)?;
+    let header = Program::parse_header(&fixed_header)?;
+    if header.header_len > scratch.len() {
+        return Err(VmError::InvalidHeader);
+    }
+    reader.read_exact_at(0, &mut scratch[..header.header_len])?;
+
+    let mut strings_section = None;
+    let mut bindings_section = None;
+    for index in 0..header.section_count {
+        let record = Program::parse_section_record(&scratch[..header.header_len], index)?;
+        match record.kind {
+            SECTION_STRINGS => strings_section = Some(record),
+            SECTION_DEVICE_BINDINGS => bindings_section = Some(record),
+            _ => {}
+        }
+    }
+
+    Ok((
+        strings_section.ok_or(VmError::MissingSection)?,
+        bindings_section,
     ))
 }
 
