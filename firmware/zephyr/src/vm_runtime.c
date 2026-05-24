@@ -1206,6 +1206,59 @@ static int32_t runtime_wifi_scan(void *user_data, SqvmWifiScanResult *out)
 #endif
 }
 
+static int32_t runtime_device_config_unsupported(SqvmDeviceConfigResult *out)
+{
+	if (out == NULL) {
+		return -EINVAL;
+	}
+	memset(out, 0, sizeof(*out));
+	out->ok = false;
+	SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+	return 0;
+}
+
+static int32_t runtime_device_config_load(void *user_data, const uint8_t *source,
+					  size_t source_len, SqvmDeviceConfigResult *out)
+{
+	ARG_UNUSED(user_data);
+	ARG_UNUSED(source);
+	ARG_UNUSED(source_len);
+
+	return runtime_device_config_unsupported(out);
+}
+
+static int32_t runtime_device_config_set(void *user_data, const uint8_t *key,
+					 size_t key_len, SqvmDeviceConfigValue value,
+					 SqvmDeviceConfigResult *out)
+{
+	ARG_UNUSED(user_data);
+	ARG_UNUSED(key);
+	ARG_UNUSED(key_len);
+	ARG_UNUSED(value);
+
+	return runtime_device_config_unsupported(out);
+}
+
+static int32_t runtime_device_config_rebind(void *user_data, const uint8_t *alias,
+					    size_t alias_len, SqvmDeviceConfigResult *out)
+{
+	ARG_UNUSED(user_data);
+	ARG_UNUSED(alias);
+	ARG_UNUSED(alias_len);
+
+	return runtime_device_config_unsupported(out);
+}
+
+static int32_t runtime_device_config_save(void *user_data, const uint8_t *destination,
+					  size_t destination_len, SqvmDeviceConfigResult *out)
+{
+	ARG_UNUSED(user_data);
+	ARG_UNUSED(destination);
+	ARG_UNUSED(destination_len);
+
+	return runtime_device_config_unsupported(out);
+}
+
 static void clear_dispatch_transfer(struct sq_vm_runtime *runtime)
 {
 	memset(&runtime->transfer, 0, sizeof(runtime->transfer));
@@ -1417,6 +1470,10 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		.wifi_get_ap_ip = runtime_wifi_get_ap_ip,
 		.wifi_status = runtime_wifi_status,
 		.wifi_scan = runtime_wifi_scan,
+		.device_config_load = runtime_device_config_load,
+		.device_config_set = runtime_device_config_set,
+		.device_config_rebind = runtime_device_config_rebind,
+		.device_config_save = runtime_device_config_save,
 		.system_memory_text = runtime_system_memory_text,
 		.system_storage_text = runtime_system_storage_text,
 	};

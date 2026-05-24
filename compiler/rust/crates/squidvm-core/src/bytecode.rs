@@ -59,6 +59,8 @@ pub(crate) const BUILTIN_SYSTEM_STORAGE: u8 = 21;
 pub(crate) const BUILTIN_DISPLAY_SELECT: u8 = 22;
 pub(crate) const BUILTIN_DISPLAY_IMAGE: u8 = 23;
 pub(crate) const BUILTIN_DISPLAY_DRAW: u8 = 24;
+pub(crate) const BUILTIN_DEVICE_CONFIG_LOAD: u8 = 25;
+pub(crate) const BUILTIN_DEVICE_CONFIG_SET: u8 = 26;
 pub(crate) const BUILTIN_SERVICE_INDICATOR_WRITE: u8 = 27;
 pub(crate) const BUILTIN_SERVICE_INDICATOR_TOGGLE: u8 = 28;
 pub(crate) const BUILTIN_SERVICE_INDICATOR_READ: u8 = 29;
@@ -75,6 +77,8 @@ pub(crate) const BUILTIN_APP_REGISTRY_GET: u8 = 39;
 pub(crate) const BUILTIN_APP_PROCESS_STACK: u8 = 40;
 pub(crate) const BUILTIN_APP_ARMED_STACK: u8 = 41;
 pub(crate) const BUILTIN_APP_ARMED_STACK_GET: u8 = 42;
+pub(crate) const BUILTIN_DEVICE_CONFIG_REBIND: u8 = 43;
+pub(crate) const BUILTIN_DEVICE_CONFIG_SAVE: u8 = 44;
 
 pub(crate) const VALUE_NULL: u8 = 0;
 pub(crate) const VALUE_BOOL: u8 = 1;

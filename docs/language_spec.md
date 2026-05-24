@@ -3428,6 +3428,12 @@ device.config.save("flash")
 This writes firmware-owned binary SQDC as the global active config. Active
 config is not app-scoped, and installed app resources are not modified.
 
+The current Zephyr reference firmware exposes these calls through compiler
+lowering, SQBC builtins, the Rust VM host, FFI, and the Zephyr runtime callback
+table. Until the physical SQDEVICE/SQDC backend is implemented, the Zephyr
+callbacks return result records with `ok: false`, `error: "unsupported"`, and
+`warning: null`.
+
 ---
 
 ## 37. Runtime APIs And Target Support

@@ -68,6 +68,8 @@ const BUILTIN_SYSTEM_STORAGE: u8 = 21;
 const BUILTIN_DISPLAY_SELECT: u8 = 22;
 const BUILTIN_DISPLAY_IMAGE: u8 = 23;
 const BUILTIN_DISPLAY_DRAW: u8 = 24;
+const BUILTIN_DEVICE_CONFIG_LOAD: u8 = 25;
+const BUILTIN_DEVICE_CONFIG_SET: u8 = 26;
 const BUILTIN_SERVICE_INDICATOR_WRITE: u8 = 27;
 const BUILTIN_SERVICE_INDICATOR_TOGGLE: u8 = 28;
 const BUILTIN_SERVICE_INDICATOR_READ: u8 = 29;
@@ -84,6 +86,8 @@ const BUILTIN_APP_REGISTRY_GET: u8 = 39;
 const BUILTIN_APP_PROCESS_STACK: u8 = 40;
 const BUILTIN_APP_ARMED_STACK: u8 = 41;
 const BUILTIN_APP_ARMED_STACK_GET: u8 = 42;
+const BUILTIN_DEVICE_CONFIG_REBIND: u8 = 43;
+const BUILTIN_DEVICE_CONFIG_SAVE: u8 = 44;
 
 const VALUE_NULL: u8 = 0;
 const VALUE_BOOL: u8 = 1;
@@ -1132,6 +1136,10 @@ fn builtin_for_call(name: &str) -> Option<u8> {
         "app.processStack" => Some(BUILTIN_APP_PROCESS_STACK),
         "app.armedStack" => Some(BUILTIN_APP_ARMED_STACK),
         "app.armedStack.get" => Some(BUILTIN_APP_ARMED_STACK_GET),
+        "device.config.load" => Some(BUILTIN_DEVICE_CONFIG_LOAD),
+        "device.config.set" => Some(BUILTIN_DEVICE_CONFIG_SET),
+        "device.config.rebind" => Some(BUILTIN_DEVICE_CONFIG_REBIND),
+        "device.config.save" => Some(BUILTIN_DEVICE_CONFIG_SAVE),
         _ => None,
     }
 }
@@ -1148,6 +1156,8 @@ fn validate_builtin_arg_count(name: &str, count: usize) -> Result<(), SqbcError>
         | "app.processStack"
         | "app.armedStack" => count == 0,
         "app.registry.get" | "app.armedStack.get" => count == 2,
+        "device.config.load" | "device.config.rebind" | "device.config.save" => count == 1,
+        "device.config.set" => count == 2,
         _ => true,
     };
     if valid {

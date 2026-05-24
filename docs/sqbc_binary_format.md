@@ -116,8 +116,8 @@ Initial built-in IDs:
 22 service.display.select
 23 service.display.image
 24 service.display.draw
-25 device.config.load (planned)
-26 device.config.set (planned)
+25 device.config.load
+26 device.config.set
 27 service.indicator.write
 28 service.indicator.toggle
 29 service.indicator.read
@@ -134,8 +134,8 @@ Initial built-in IDs:
 40 app.processStack
 41 app.armedStack
 42 app.armedStack.get
-43 device.config.rebind (planned)
-44 device.config.save (planned)
+43 device.config.rebind
+44 device.config.save
 ```
 
 The current format supports the headless VM subset. Display draw commands are

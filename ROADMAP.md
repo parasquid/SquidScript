@@ -20,11 +20,12 @@ for compiler, SQBC tooling, and VM semantics.
 ### 2. Expand Zephyr VM Hosting ABI
 
 - Keep the Zephyr VM ABI aligned with implemented SQBC builtins. Current
-  builtins `1..24` and `27..42` have Rust VM host callbacks plus Zephyr FFI and
-  runtime connections for state, app lifecycle, display draw-log, GPIO,
-  indicator, timers, Wi-Fi, app inspection, and system diagnostics. Future service work should
-  promote a spec/API slice through compiler lowering, SQBC builtin IDs, VM host
-  callbacks, FFI, Zephyr runtime wiring, docs, and tests together.
+  builtins `1..44` have Rust VM host callbacks plus Zephyr FFI and runtime
+  connections for state, app lifecycle, display draw-log, GPIO, indicator,
+  timers, Wi-Fi, app inspection, system diagnostics, and device configuration
+  result records. Future service work should promote a spec/API slice through
+  compiler lowering, SQBC builtin IDs, VM host callbacks, FFI, Zephyr runtime
+  wiring, docs, and tests together.
 - Expand FFI equivalence tests and Zephyr ztests for remaining edge cases in
   storage, state, timers, display, GPIO, Wi-Fi service records, lifecycle
   callbacks, and VM error conversion.
@@ -35,10 +36,13 @@ for compiler, SQBC tooling, and VM semantics.
 
 ### 3. Port Runtime Services To Zephyr
 
-- Promote planned device configuration APIs through the real runtime stack:
-  `device.config.load`, `device.config.set`, `device.config.rebind`, and
-  `device.config.save`. Align these with `.sqdevice` package resources and the
-  future top-level `device {}` binding model.
+- Implement the physical SQDEVICE/SQDC backend for current device
+  configuration APIs. `device.config.load`, `device.config.set`,
+  `device.config.rebind`, and `device.config.save` now compile and reach
+  Zephyr through VM/FFI result records, but the reference firmware still
+  returns honest `unsupported` results until package `.sqdevice` resources,
+  active draft storage, binding validation, and flash SQDC persistence are
+  implemented.
 - Decide service priority and target support for currently spec-recognized but
   not SQBC-backed APIs: `httpServer.*`, `bleTransfer.*`, `content.*`, and
   `binbook.*`. Add each only as a real compiler/SQBC/VM/Zephyr slice with
@@ -88,8 +92,8 @@ for compiler, SQBC tooling, and VM semantics.
   Use `device resources` worker-stack and protocol-stack high-water diagnostics
   before lowering stack budgets; recent hardware measurements were
   `protocol_thread_stack_used_bytes=4256` of 8192 and
-  `vm_worker_stack_used_bytes=16000` of 24576. The current Wi-Fi-enabled build
-  is under the RAM guard at `dram0_0_seg=212704` linker bytes, so this is not a
+  `vm_worker_stack_used_bytes=22976` of 24576. The current Wi-Fi-enabled build
+  is under the RAM guard at `dram0_0_seg=212480` linker bytes, so this is not a
   feature-parity blocker.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,

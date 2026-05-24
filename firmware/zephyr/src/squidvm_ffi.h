@@ -287,6 +287,29 @@ typedef struct {
 	size_t error_len;
 } SqvmWifiActionResult;
 
+typedef enum {
+	SQVM_DEVICE_CONFIG_VALUE_NULL = 0,
+	SQVM_DEVICE_CONFIG_VALUE_BOOL = 1,
+	SQVM_DEVICE_CONFIG_VALUE_I32 = 2,
+	SQVM_DEVICE_CONFIG_VALUE_STRING = 3,
+} SqvmDeviceConfigValueKind;
+
+typedef struct {
+	SqvmDeviceConfigValueKind kind;
+	bool bool_value;
+	int32_t i32_value;
+	const uint8_t *string;
+	size_t string_len;
+} SqvmDeviceConfigValue;
+
+typedef struct {
+	bool ok;
+	const uint8_t *error;
+	size_t error_len;
+	const uint8_t *warning;
+	size_t warning_len;
+} SqvmDeviceConfigResult;
+
 typedef struct {
 	const uint8_t *ip;
 	size_t ip_len;
@@ -307,6 +330,16 @@ typedef int32_t (*SqvmWifiDisconnectCallback)(void *user_data, SqvmWifiActionRes
 typedef int32_t (*SqvmWifiGetApIpCallback)(void *user_data, SqvmWifiApIp *out);
 typedef int32_t (*SqvmWifiStatusCallback)(void *user_data, SqvmWifiStatus *out);
 typedef int32_t (*SqvmWifiScanCallback)(void *user_data, SqvmWifiScanResult *out);
+typedef int32_t (*SqvmDeviceConfigLoadCallback)(void *user_data, const uint8_t *source,
+						size_t source_len, SqvmDeviceConfigResult *out);
+typedef int32_t (*SqvmDeviceConfigSetCallback)(void *user_data, const uint8_t *key,
+					       size_t key_len, SqvmDeviceConfigValue value,
+					       SqvmDeviceConfigResult *out);
+typedef int32_t (*SqvmDeviceConfigRebindCallback)(void *user_data, const uint8_t *alias,
+						  size_t alias_len, SqvmDeviceConfigResult *out);
+typedef int32_t (*SqvmDeviceConfigSaveCallback)(void *user_data, const uint8_t *destination,
+						size_t destination_len,
+						SqvmDeviceConfigResult *out);
 
 typedef int32_t (*SqvmIndicatorWriteCallback)(void *user_data, bool value);
 typedef int32_t (*SqvmIndicatorToggleCallback)(void *user_data);
@@ -391,6 +424,10 @@ typedef struct {
 	SqvmWifiGetApIpCallback wifi_get_ap_ip;
 	SqvmWifiStatusCallback wifi_status;
 	SqvmWifiScanCallback wifi_scan;
+	SqvmDeviceConfigLoadCallback device_config_load;
+	SqvmDeviceConfigSetCallback device_config_set;
+	SqvmDeviceConfigRebindCallback device_config_rebind;
+	SqvmDeviceConfigSaveCallback device_config_save;
 	SqvmSystemMemoryTextCallback system_memory_text;
 	SqvmSystemStorageTextCallback system_storage_text;
 } SqvmCallbacks;

@@ -5,27 +5,29 @@ use crate::{
         read_i32, read_u16, read_u32, BUILTIN_APP_ARM, BUILTIN_APP_ARMED_STACK,
         BUILTIN_APP_ARMED_STACK_GET, BUILTIN_APP_DISARM, BUILTIN_APP_EXIT, BUILTIN_APP_LAUNCH,
         BUILTIN_APP_PROCESS_STACK, BUILTIN_APP_REGISTRY_GET, BUILTIN_APP_REGISTRY_LIST,
-        BUILTIN_DEBUG_PRINT, BUILTIN_DISPLAY_CLEAR, BUILTIN_DISPLAY_DRAW, BUILTIN_DISPLAY_IMAGE,
-        BUILTIN_DISPLAY_LINE, BUILTIN_DISPLAY_RECT, BUILTIN_DISPLAY_SELECT, BUILTIN_DISPLAY_TEXT,
-        BUILTIN_HARDWARE_GPIO_READ, BUILTIN_HARDWARE_GPIO_TOGGLE, BUILTIN_HARDWARE_GPIO_WRITE,
-        BUILTIN_SCREEN_OPEN, BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_INDICATOR_BREATHE,
-        BUILTIN_SERVICE_INDICATOR_READ, BUILTIN_SERVICE_INDICATOR_TOGGLE,
-        BUILTIN_SERVICE_INDICATOR_WRITE, BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY,
-        BUILTIN_SERVICE_WIFI_CONNECT, BUILTIN_SERVICE_WIFI_DISCONNECT,
-        BUILTIN_SERVICE_WIFI_GET_AP_IP, BUILTIN_SERVICE_WIFI_SCAN, BUILTIN_SERVICE_WIFI_START_AP,
-        BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP, BUILTIN_STATE_LOAD,
-        BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, BUILTIN_SYSTEM_MEMORY, BUILTIN_SYSTEM_STORAGE,
-        OP_ADD, OP_CALL_BUILTIN, OP_CALL_FUNCTION, OP_EQ, OP_GET_FIELD, OP_GET_LOCAL, OP_GET_STATE,
-        OP_GT, OP_GTE, OP_HALT, OP_JUMP, OP_JUMP_IF_FALSE, OP_LIST_GET, OP_LIST_LEN, OP_LT, OP_LTE,
-        OP_NE, OP_POP, OP_PUSH_BOOL, OP_PUSH_INT, OP_PUSH_NULL, OP_PUSH_STRING, OP_RETURN,
-        OP_SET_LOCAL, OP_SET_STATE, OP_SUB,
+        BUILTIN_DEBUG_PRINT, BUILTIN_DEVICE_CONFIG_LOAD, BUILTIN_DEVICE_CONFIG_REBIND,
+        BUILTIN_DEVICE_CONFIG_SAVE, BUILTIN_DEVICE_CONFIG_SET, BUILTIN_DISPLAY_CLEAR,
+        BUILTIN_DISPLAY_DRAW, BUILTIN_DISPLAY_IMAGE, BUILTIN_DISPLAY_LINE, BUILTIN_DISPLAY_RECT,
+        BUILTIN_DISPLAY_SELECT, BUILTIN_DISPLAY_TEXT, BUILTIN_HARDWARE_GPIO_READ,
+        BUILTIN_HARDWARE_GPIO_TOGGLE, BUILTIN_HARDWARE_GPIO_WRITE, BUILTIN_SCREEN_OPEN,
+        BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_INDICATOR_BREATHE, BUILTIN_SERVICE_INDICATOR_READ,
+        BUILTIN_SERVICE_INDICATOR_TOGGLE, BUILTIN_SERVICE_INDICATOR_WRITE,
+        BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY, BUILTIN_SERVICE_WIFI_CONNECT,
+        BUILTIN_SERVICE_WIFI_DISCONNECT, BUILTIN_SERVICE_WIFI_GET_AP_IP, BUILTIN_SERVICE_WIFI_SCAN,
+        BUILTIN_SERVICE_WIFI_START_AP, BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP,
+        BUILTIN_STATE_LOAD, BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, BUILTIN_SYSTEM_MEMORY,
+        BUILTIN_SYSTEM_STORAGE, OP_ADD, OP_CALL_BUILTIN, OP_CALL_FUNCTION, OP_EQ, OP_GET_FIELD,
+        OP_GET_LOCAL, OP_GET_STATE, OP_GT, OP_GTE, OP_HALT, OP_JUMP, OP_JUMP_IF_FALSE, OP_LIST_GET,
+        OP_LIST_LEN, OP_LT, OP_LTE, OP_NE, OP_POP, OP_PUSH_BOOL, OP_PUSH_INT, OP_PUSH_NULL,
+        OP_PUSH_STRING, OP_RETURN, OP_SET_LOCAL, OP_SET_STATE, OP_SUB,
     },
     chunk::{ChunkCache, ChunkKind, ChunkRef},
     error::VmError,
     host::{
-        AppArmedStackEntry, AppRegistryEntry, DisplayLineOptions, DisplayRectOptions,
-        DisplayResourceOptions, DisplayTextOptions, StorageCompletion, StorageRequest, TraceSink,
-        VmDispatch, WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
+        AppArmedStackEntry, AppRegistryEntry, DeviceConfigResult, DisplayLineOptions,
+        DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions, StorageCompletion,
+        StorageRequest, TraceSink, VmDispatch, WifiAccessPoint, WifiActionResult, WifiApIp,
+        WifiScanResult, WifiStatus,
     },
     limits::{
         MAX_CALL_DEPTH, MAX_CODE_CHUNK_BYTES, MAX_FUNCTIONS, MAX_HANDLERS,
@@ -1381,6 +1383,40 @@ impl ChunkedVm {
                 let value = self.wifi_scan_record(result)?;
                 self.push(value)?;
             }
+            BUILTIN_DEVICE_CONFIG_LOAD => {
+                let Value::String(source_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let result = host.device_config_load(self.index.string(source_id)?)?;
+                let value = self.device_config_result_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_DEVICE_CONFIG_SET => {
+                let value = self.pop()?;
+                let Value::String(key_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let strings = StringResolver::new(&self.index, &self.runtime_strings);
+                let result = host.device_config_set(self.index.string(key_id)?, value, &strings)?;
+                let value = self.device_config_result_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_DEVICE_CONFIG_REBIND => {
+                let Value::String(binding_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let result = host.device_config_rebind(self.index.string(binding_id)?)?;
+                let value = self.device_config_result_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_DEVICE_CONFIG_SAVE => {
+                let Value::String(destination_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let result = host.device_config_save(self.index.string(destination_id)?)?;
+                let value = self.device_config_result_record(result)?;
+                self.push(value)?;
+            }
             BUILTIN_SYSTEM_MEMORY => {
                 let mut writer = self.runtime_strings.alloc()?;
                 host.system_memory_text(&mut writer)?;
@@ -1418,6 +1454,19 @@ impl ChunkedVm {
         self.runtime_records.alloc(&[
             RuntimeRecordField::new("ok", Value::Bool(result.ok)),
             RuntimeRecordField::new("error", error),
+        ])
+    }
+
+    fn device_config_result_record(
+        &mut self,
+        result: DeviceConfigResult<'_>,
+    ) -> Result<Value, VmError> {
+        let error = self.runtime_string_value(result.error)?;
+        let warning = self.runtime_string_value(result.warning)?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
+            RuntimeRecordField::new("error", error),
+            RuntimeRecordField::new("warning", warning),
         ])
     }
 
@@ -2339,6 +2388,41 @@ impl<'a> Vm<'a> {
                 let value = self.wifi_scan_record(result)?;
                 self.push(value)?;
             }
+            BUILTIN_DEVICE_CONFIG_LOAD => {
+                let Value::String(source_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let result = trace.device_config_load(self.program.string(source_id)?)?;
+                let value = self.device_config_result_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_DEVICE_CONFIG_SET => {
+                let value = self.pop()?;
+                let Value::String(key_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let strings = StringResolver::new(&self.program, &self.runtime_strings);
+                let result =
+                    trace.device_config_set(self.program.string(key_id)?, value, &strings)?;
+                let value = self.device_config_result_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_DEVICE_CONFIG_REBIND => {
+                let Value::String(binding_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let result = trace.device_config_rebind(self.program.string(binding_id)?)?;
+                let value = self.device_config_result_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_DEVICE_CONFIG_SAVE => {
+                let Value::String(destination_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let result = trace.device_config_save(self.program.string(destination_id)?)?;
+                let value = self.device_config_result_record(result)?;
+                self.push(value)?;
+            }
             BUILTIN_SYSTEM_MEMORY => {
                 let mut writer = self.runtime_strings.alloc()?;
                 trace.system_memory_text(&mut writer)?;
@@ -2376,6 +2460,19 @@ impl<'a> Vm<'a> {
         self.runtime_records.alloc(&[
             RuntimeRecordField::new("ok", Value::Bool(result.ok)),
             RuntimeRecordField::new("error", error),
+        ])
+    }
+
+    fn device_config_result_record(
+        &mut self,
+        result: DeviceConfigResult<'_>,
+    ) -> Result<Value, VmError> {
+        let error = self.runtime_string_value(result.error)?;
+        let warning = self.runtime_string_value(result.warning)?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
+            RuntimeRecordField::new("error", error),
+            RuntimeRecordField::new("warning", warning),
         ])
     }
 

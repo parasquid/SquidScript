@@ -494,6 +494,34 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             suite.index("c3-supermini-measure-stack-usage.sh"),
         )
 
+    def test_hardware_suite_runs_device_config_script_before_stack_measurement(self):
+        script = self.read("scripts/c3-supermini-test-device-config.sh")
+        app = self.read("tests/hardware/c3-supermini/device-config-summary/main.squid")
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn("device.config.load", app)
+        self.assertIn("device.config.set", app)
+        self.assertIn("device.config.rebind", app)
+        self.assertIn("device.config.save", app)
+        self.assertIn('cargo run --quiet -p squidc -- app install "${DEVICE_CONFIG_APP}"', script)
+        self.assertIn(
+            "cargo run --quiet -p squidc -- app launch device-config-summary",
+            script,
+        )
+        self.assertIn("output=device load false unsupported null", script)
+        self.assertIn("output=device set false unsupported null", script)
+        self.assertIn("output=device rebind false unsupported null", script)
+        self.assertIn("output=device save false unsupported null", script)
+        self.assertIn("assert_file_empty_command", script)
+        self.assertLess(
+            suite.index("c3-supermini-test-device-config.sh"),
+            suite.index("c3-supermini-measure-stack-usage.sh"),
+        )
+        self.assertLess(
+            suite.index("c3-supermini-test-device-config.sh"),
+            suite.index("c3-supermini-test-blinky.sh"),
+        )
+
     def test_hardware_suite_runs_display_drawlog_script(self):
         script = self.read("scripts/c3-supermini-test-display-drawlog.sh")
         app = self.read("tests/hardware/c3-supermini/display-drawlog/main.squid")

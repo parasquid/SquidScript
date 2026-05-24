@@ -51,6 +51,9 @@ The default Zephyr-only hardware suite covers the current required inventory:
 - Verify persistent app storage and app state through Zephyr storage.
 - Verify `system.memory()` and `system.storage("apps")` through the Zephyr VM
   FFI host.
+- Verify `device.config.load`, `device.config.set`, `device.config.rebind`,
+  and `device.config.save` reach the Zephyr VM FFI host and currently return
+  honest unsupported result records.
 - Verify GPIO/indicator behavior, including a final visible board-state check.
 - Verify Wi-Fi scan without credentials.
 - Verify Wi-Fi station behavior only when credentials are explicitly provided
@@ -125,6 +128,15 @@ and before stack measurement. It installs
 `system.memory()` returns a Zephyr RAM/heap diagnostic string and
 `system.storage("apps")` returns an app-storage string through the real VM FFI
 host callbacks.
+
+`scripts/c3-supermini-test-device-config.sh` runs after system resource coverage
+and before stack measurement. It installs
+`tests/hardware/c3-supermini/device-config-summary`, launches it, and verifies
+that `device.config.load`, `device.config.set`, `device.config.rebind`, and
+`device.config.save` all return result records through the real Zephyr VM FFI
+host. The current reference firmware returns `ok=false`, `error=unsupported`,
+and `warning=null` for each call until the physical SQDEVICE/SQDC rebinding
+backend is implemented.
 
 `scripts/c3-supermini-test-display-drawlog.sh` runs after lifecycle coverage
 and before system resource coverage. It installs

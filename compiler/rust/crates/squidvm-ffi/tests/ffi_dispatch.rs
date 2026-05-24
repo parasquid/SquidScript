@@ -8,7 +8,8 @@ use squidvm_ffi::{
     sqvm_context_init, sqvm_context_init_in_place, sqvm_context_prepare, sqvm_context_size,
     sqvm_dispatch, sqvm_dispatch_resume_storage, sqvm_dispatch_start_resumable,
     sqvm_trigger_timer_count, sqvm_trigger_timer_read, SqvmAppRegistryEntry, SqvmAppStackEntry,
-    SqvmCallbacks, SqvmDispatchOutcome, SqvmDispatchResult, SqvmStatus, SqvmStorageCompletion,
+    SqvmCallbacks, SqvmDeviceConfigResult, SqvmDeviceConfigValue, SqvmDeviceConfigValueKind,
+    SqvmDispatchOutcome, SqvmDispatchResult, SqvmStatus, SqvmStorageCompletion,
     SqvmStorageRequestKind, SqvmTriggerTimer,
 };
 
@@ -28,6 +29,7 @@ struct Host {
     wifi_status_count: usize,
     wifi_scan_count: usize,
     wifi_ap_ip_count: usize,
+    device_config_actions: Vec<String>,
     system_memory_count: usize,
     system_storage_names: Vec<String>,
     registry_gets: Vec<String>,
@@ -385,6 +387,97 @@ unsafe extern "C" fn wifi_scan(
     0
 }
 
+unsafe extern "C" fn device_config_load(
+    user_data: *mut c_void,
+    source: *const u8,
+    source_len: usize,
+    out: *mut SqvmDeviceConfigResult,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let source = std::str::from_utf8(std::slice::from_raw_parts(source, source_len)).unwrap();
+    host.device_config_actions.push(format!("load {source}"));
+    *out = SqvmDeviceConfigResult {
+        ok: true,
+        error: ptr::null(),
+        error_len: 0,
+        warning: b"loaded".as_ptr(),
+        warning_len: b"loaded".len(),
+    };
+    0
+}
+
+unsafe extern "C" fn device_config_set(
+    user_data: *mut c_void,
+    key: *const u8,
+    key_len: usize,
+    value: SqvmDeviceConfigValue,
+    out: *mut SqvmDeviceConfigResult,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let key = std::str::from_utf8(std::slice::from_raw_parts(key, key_len)).unwrap();
+    let value = match value.kind {
+        SqvmDeviceConfigValueKind::Null => "null".to_string(),
+        SqvmDeviceConfigValueKind::Bool => format!("bool:{}", value.bool_value),
+        SqvmDeviceConfigValueKind::I32 => format!("i32:{}", value.i32_value),
+        SqvmDeviceConfigValueKind::String => {
+            let text =
+                std::str::from_utf8(std::slice::from_raw_parts(value.string, value.string_len))
+                    .unwrap();
+            format!("string:{text}")
+        }
+    };
+    host.device_config_actions
+        .push(format!("set {key} {value}"));
+    *out = SqvmDeviceConfigResult {
+        ok: true,
+        error: ptr::null(),
+        error_len: 0,
+        warning: ptr::null(),
+        warning_len: 0,
+    };
+    0
+}
+
+unsafe extern "C" fn device_config_rebind(
+    user_data: *mut c_void,
+    alias: *const u8,
+    alias_len: usize,
+    out: *mut SqvmDeviceConfigResult,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let alias = std::str::from_utf8(std::slice::from_raw_parts(alias, alias_len)).unwrap();
+    host.device_config_actions.push(format!("rebind {alias}"));
+    *out = SqvmDeviceConfigResult {
+        ok: true,
+        error: ptr::null(),
+        error_len: 0,
+        warning: b"rebound".as_ptr(),
+        warning_len: b"rebound".len(),
+    };
+    0
+}
+
+unsafe extern "C" fn device_config_save(
+    user_data: *mut c_void,
+    destination: *const u8,
+    destination_len: usize,
+    out: *mut SqvmDeviceConfigResult,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let destination =
+        std::str::from_utf8(std::slice::from_raw_parts(destination, destination_len)).unwrap();
+    host.device_config_actions
+        .push(format!("save {destination}"));
+    *out = SqvmDeviceConfigResult {
+        ok: true,
+        error: ptr::null(),
+        error_len: 0,
+        warning: ptr::null(),
+        warning_len: 0,
+    };
+    0
+}
+
 unsafe extern "C" fn system_memory_text(
     user_data: *mut c_void,
     out: *mut u8,
@@ -572,6 +665,10 @@ fn callbacks(host: &mut Host) -> SqvmCallbacks {
         wifi_get_ap_ip: Some(wifi_get_ap_ip),
         wifi_status: Some(wifi_status),
         wifi_scan: Some(wifi_scan),
+        device_config_load: Some(device_config_load),
+        device_config_set: Some(device_config_set),
+        device_config_rebind: Some(device_config_rebind),
+        device_config_save: Some(device_config_save),
         system_memory_text: Some(system_memory_text),
         system_storage_text: Some(system_storage_text),
     }
@@ -737,6 +834,22 @@ fn compile_system_resources_sqbc() -> Vec<u8> {
 event.on("app.start") {
   debug.print(system.memory())
   debug.print(system.storage("apps"))
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_device_config_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-device-config"
+event.on("app.start") {
+  let loaded = device.config.load("package:device/indicator.sqdevice")
+  let set = device.config.set("mode", "gpio")
+  let rebound = device.config.rebind("indicator.default")
+  let saved = device.config.save("flash")
+  debug.print(loaded.ok, loaded.error, loaded.warning)
+  debug.print(set.ok, set.error, rebound.ok, rebound.warning, saved.ok)
 }
 screen("main") {}
 "#,
@@ -1149,6 +1262,52 @@ fn dispatches_wifi_action_service_callbacks() {
     );
     assert_eq!(host.wifi_ap_ip_count, 1);
     assert_eq!(host.output, vec!["true 192.168.4.1 true true true"]);
+}
+
+#[test]
+fn dispatches_device_config_callbacks() {
+    let mut host = Host {
+        sqbc: compile_device_config_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(
+        host.device_config_actions,
+        vec![
+            "load package:device/indicator.sqdevice".to_string(),
+            "set mode string:gpio".to_string(),
+            "rebind indicator.default".to_string(),
+            "save flash".to_string()
+        ]
+    );
+    assert_eq!(
+        host.output,
+        vec![
+            "true null loaded".to_string(),
+            "true null true rebound true".to_string()
+        ]
+    );
 }
 
 #[test]

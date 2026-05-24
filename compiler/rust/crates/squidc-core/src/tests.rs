@@ -793,6 +793,27 @@ screen("main") {}
 }
 
 #[test]
+fn compiles_device_config_result_calls_to_sqbc() {
+    let source = r#"app "device-config"
+
+event.on("app.start") {
+  let loaded = device.config.load("package:device/indicator.sqdevice")
+  let set = device.config.set("mode", "gpio")
+  let rebound = device.config.rebind("indicator.default")
+  let saved = device.config.save("flash")
+  debug.print(loaded.ok, loaded.error, set.ok, rebound.warning, saved.ok)
+}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+
+    assert!(output.ok, "{:?}", output.diagnostics);
+    sqbc::encode_sqbc(&output.ir.unwrap()).expect("device config calls should encode");
+}
+
+#[test]
 fn parses_hardware_gpio_calls() {
     let source = r#"app "gpio"
 state { led: bool = false }
