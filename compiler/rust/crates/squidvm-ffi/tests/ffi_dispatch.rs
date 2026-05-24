@@ -113,6 +113,47 @@ unsafe extern "C" fn display_line(
     ));
 }
 
+unsafe extern "C" fn display_select(
+    user_data: *mut c_void,
+    name: *const u8,
+    name_len: usize,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let name = std::str::from_utf8(std::slice::from_raw_parts(name, name_len)).unwrap();
+    host.drawlog.push(format!("draw=select name={name}"));
+    0
+}
+
+unsafe extern "C" fn display_image(
+    user_data: *mut c_void,
+    path: *const u8,
+    path_len: usize,
+    options: *const squidvm_ffi::SqvmDisplayResourceOptions,
+) {
+    let host = &mut *(user_data as *mut Host);
+    let path = std::str::from_utf8(std::slice::from_raw_parts(path, path_len)).unwrap();
+    let options = *options;
+    host.drawlog.push(format!(
+        "draw=image path=\"{path}\" x={} y={}",
+        options.x, options.y
+    ));
+}
+
+unsafe extern "C" fn display_draw(
+    user_data: *mut c_void,
+    drawable: *const u8,
+    drawable_len: usize,
+    options: *const squidvm_ffi::SqvmDisplayResourceOptions,
+) {
+    let host = &mut *(user_data as *mut Host);
+    let drawable = std::str::from_utf8(std::slice::from_raw_parts(drawable, drawable_len)).unwrap();
+    let options = *options;
+    host.drawlog.push(format!(
+        "draw=resource drawable=\"{drawable}\" x={} y={}",
+        options.x, options.y
+    ));
+}
+
 unsafe extern "C" fn indicator_write(user_data: *mut c_void, value: bool) -> i32 {
     let host = &mut *(user_data as *mut Host);
     host.indicator = value;
@@ -505,6 +546,9 @@ fn callbacks(host: &mut Host) -> SqvmCallbacks {
         display_text: Some(display_text),
         display_rect: Some(display_rect),
         display_line: Some(display_line),
+        display_select: Some(display_select),
+        display_image: Some(display_image),
+        display_draw: Some(display_draw),
         indicator_write: Some(indicator_write),
         indicator_toggle: Some(indicator_toggle),
         indicator_read: Some(indicator_read),
@@ -649,6 +693,9 @@ screen("main") {
   service.display.text("Hello", { x: 10, y: 20 })
   service.display.rect(1, 2, 3, 4, { fillColor: "gray4" })
   service.display.line(5, 6, 7, 8, { color: "gray15" })
+  service.display.select("status")
+  service.display.image("data/icon.bmp", { x: 20, y: 24 })
+  service.display.draw("drawable/page", { x: 0, y: 0 })
 }
 "#,
     )
@@ -983,7 +1030,10 @@ fn dispatches_display_service_callbacks() {
             "draw=clear color=gray0".to_string(),
             "draw=text text=\"Hello\" x=10 y=20".to_string(),
             "draw=rect x=1 y=2 w=3 h=4".to_string(),
-            "draw=line x1=5 y1=6 x2=7 y2=8".to_string()
+            "draw=line x1=5 y1=6 x2=7 y2=8".to_string(),
+            "draw=select name=status".to_string(),
+            "draw=image path=\"data/icon.bmp\" x=20 y=24".to_string(),
+            "draw=resource drawable=\"drawable/page\" x=0 y=0".to_string()
         ]
     );
 }

@@ -14,7 +14,7 @@ use squidvm_core::{
     error::VmError,
     host::{
         AppArmedStack, AppArmedStackEntry, AppProcessStack, AppRegistryEntry, AppRegistryList,
-        DisplayLineOptions, DisplayRectOptions, DisplayTextOptions,
+        DisplayLineOptions, DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions,
         StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink, VmDispatch,
         WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
         MAX_STORAGE_TRANSFER_BYTES,
@@ -443,6 +443,15 @@ pub struct SqvmDisplayLineOptions {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmDisplayResourceOptions {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SqvmAppRegistryEntry {
     pub id: *const u8,
     pub id_len: usize,
@@ -698,6 +707,25 @@ pub struct SqvmCallbacks {
     pub display_line: Option<
         unsafe extern "C" fn(user_data: *mut c_void, options: *const SqvmDisplayLineOptions),
     >,
+    pub display_select: Option<
+        unsafe extern "C" fn(user_data: *mut c_void, name: *const u8, name_len: usize) -> i32,
+    >,
+    pub display_image: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            path: *const u8,
+            path_len: usize,
+            options: *const SqvmDisplayResourceOptions,
+        ),
+    >,
+    pub display_draw: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            drawable: *const u8,
+            drawable_len: usize,
+            options: *const SqvmDisplayResourceOptions,
+        ),
+    >,
     pub indicator_write: Option<unsafe extern "C" fn(user_data: *mut c_void, value: bool) -> i32>,
     pub indicator_toggle: Option<unsafe extern "C" fn(user_data: *mut c_void) -> i32>,
     pub indicator_read: Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut bool) -> i32>,
@@ -832,6 +860,9 @@ impl Default for SqvmCallbacks {
             display_text: None,
             display_rect: None,
             display_line: None,
+            display_select: None,
+            display_image: None,
+            display_draw: None,
             indicator_write: None,
             indicator_toggle: None,
             indicator_read: None,
@@ -2248,6 +2279,62 @@ impl TraceSink for FfiHost {
         };
         unsafe {
             display_line(self.callbacks.user_data, &options);
+        }
+    }
+
+    fn draw_select(&mut self, name: &str) -> Result<(), VmError> {
+        let Some(display_select) = self.callbacks.display_select else {
+            return Err(VmError::InvalidOperand);
+        };
+        callback_status(unsafe {
+            display_select(self.callbacks.user_data, name.as_ptr(), name.len())
+        })
+    }
+
+    fn draw_image(&mut self, path: &str, options: DisplayResourceOptions) {
+        let Some(display_image) = self.callbacks.display_image else {
+            return;
+        };
+        let options = SqvmDisplayResourceOptions {
+            x: options.x,
+            y: options.y,
+            w: options.w,
+            h: options.h,
+        };
+        unsafe {
+            display_image(
+                self.callbacks.user_data,
+                path.as_ptr(),
+                path.len(),
+                &options,
+            );
+        }
+    }
+
+    fn draw_resource(
+        &mut self,
+        strings: &StringResolver<'_>,
+        drawable: Value,
+        options: DisplayResourceOptions,
+    ) {
+        let Some(display_draw) = self.callbacks.display_draw else {
+            return;
+        };
+        let mut rendered = FixedLine::<128>::default();
+        write_value(&mut rendered, strings, drawable);
+        let options = SqvmDisplayResourceOptions {
+            x: options.x,
+            y: options.y,
+            w: options.w,
+            h: options.h,
+        };
+        unsafe {
+            display_draw(
+                self.callbacks.user_data,
+                rendered.as_ptr(),
+                rendered.len(),
+                &options,
+            );
         }
     }
 

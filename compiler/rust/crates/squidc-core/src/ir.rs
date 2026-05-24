@@ -163,6 +163,18 @@ pub enum IrStatement {
         y2: i64,
         options: serde_json::Value,
     },
+    #[serde(rename = "service.display.select")]
+    DisplaySelect { name: String },
+    #[serde(rename = "service.display.image")]
+    DisplayImage {
+        path: String,
+        options: serde_json::Value,
+    },
+    #[serde(rename = "service.display.draw")]
+    DisplayDraw {
+        drawable: IrExpr,
+        options: serde_json::Value,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -5,26 +5,27 @@ use crate::{
         read_i32, read_u16, read_u32, BUILTIN_APP_ARM, BUILTIN_APP_ARMED_STACK,
         BUILTIN_APP_ARMED_STACK_GET, BUILTIN_APP_DISARM, BUILTIN_APP_EXIT, BUILTIN_APP_LAUNCH,
         BUILTIN_APP_PROCESS_STACK, BUILTIN_APP_REGISTRY_GET, BUILTIN_APP_REGISTRY_LIST,
-        BUILTIN_DEBUG_PRINT, BUILTIN_DISPLAY_CLEAR, BUILTIN_DISPLAY_LINE, BUILTIN_DISPLAY_RECT,
-        BUILTIN_DISPLAY_TEXT, BUILTIN_HARDWARE_GPIO_READ, BUILTIN_HARDWARE_GPIO_TOGGLE,
-        BUILTIN_HARDWARE_GPIO_WRITE, BUILTIN_SCREEN_OPEN, BUILTIN_SCREEN_REFRESH,
-        BUILTIN_SERVICE_INDICATOR_BREATHE, BUILTIN_SERVICE_INDICATOR_READ,
-        BUILTIN_SERVICE_INDICATOR_TOGGLE, BUILTIN_SERVICE_INDICATOR_WRITE,
-        BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY, BUILTIN_SERVICE_WIFI_CONNECT,
-        BUILTIN_SERVICE_WIFI_DISCONNECT, BUILTIN_SERVICE_WIFI_GET_AP_IP, BUILTIN_SERVICE_WIFI_SCAN,
-        BUILTIN_SERVICE_WIFI_START_AP, BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP,
-        BUILTIN_STATE_LOAD, BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, BUILTIN_SYSTEM_MEMORY,
-        BUILTIN_SYSTEM_STORAGE, OP_ADD, OP_CALL_BUILTIN, OP_CALL_FUNCTION, OP_EQ, OP_GET_FIELD,
-        OP_GET_LOCAL, OP_GET_STATE, OP_GT, OP_GTE, OP_HALT, OP_JUMP, OP_JUMP_IF_FALSE, OP_LIST_GET,
-        OP_LIST_LEN, OP_LT, OP_LTE, OP_NE, OP_POP, OP_PUSH_BOOL, OP_PUSH_INT, OP_PUSH_NULL,
-        OP_PUSH_STRING, OP_RETURN, OP_SET_LOCAL, OP_SET_STATE, OP_SUB,
+        BUILTIN_DEBUG_PRINT, BUILTIN_DISPLAY_CLEAR, BUILTIN_DISPLAY_DRAW, BUILTIN_DISPLAY_IMAGE,
+        BUILTIN_DISPLAY_LINE, BUILTIN_DISPLAY_RECT, BUILTIN_DISPLAY_SELECT, BUILTIN_DISPLAY_TEXT,
+        BUILTIN_HARDWARE_GPIO_READ, BUILTIN_HARDWARE_GPIO_TOGGLE, BUILTIN_HARDWARE_GPIO_WRITE,
+        BUILTIN_SCREEN_OPEN, BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_INDICATOR_BREATHE,
+        BUILTIN_SERVICE_INDICATOR_READ, BUILTIN_SERVICE_INDICATOR_TOGGLE,
+        BUILTIN_SERVICE_INDICATOR_WRITE, BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY,
+        BUILTIN_SERVICE_WIFI_CONNECT, BUILTIN_SERVICE_WIFI_DISCONNECT,
+        BUILTIN_SERVICE_WIFI_GET_AP_IP, BUILTIN_SERVICE_WIFI_SCAN, BUILTIN_SERVICE_WIFI_START_AP,
+        BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP, BUILTIN_STATE_LOAD,
+        BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, BUILTIN_SYSTEM_MEMORY, BUILTIN_SYSTEM_STORAGE,
+        OP_ADD, OP_CALL_BUILTIN, OP_CALL_FUNCTION, OP_EQ, OP_GET_FIELD, OP_GET_LOCAL, OP_GET_STATE,
+        OP_GT, OP_GTE, OP_HALT, OP_JUMP, OP_JUMP_IF_FALSE, OP_LIST_GET, OP_LIST_LEN, OP_LT, OP_LTE,
+        OP_NE, OP_POP, OP_PUSH_BOOL, OP_PUSH_INT, OP_PUSH_NULL, OP_PUSH_STRING, OP_RETURN,
+        OP_SET_LOCAL, OP_SET_STATE, OP_SUB,
     },
     chunk::{ChunkCache, ChunkKind, ChunkRef},
     error::VmError,
     host::{
         AppArmedStackEntry, AppRegistryEntry, DisplayLineOptions, DisplayRectOptions,
-        DisplayTextOptions, StorageCompletion, StorageRequest, TraceSink, VmDispatch,
-        WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
+        DisplayResourceOptions, DisplayTextOptions, StorageCompletion, StorageRequest, TraceSink,
+        VmDispatch, WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
     },
     limits::{
         MAX_CALL_DEPTH, MAX_CODE_CHUNK_BYTES, MAX_FUNCTIONS, MAX_HANDLERS,
@@ -1192,6 +1193,34 @@ impl ChunkedVm {
                     color: color_id.map(|id| self.index.string(id)).transpose()?,
                 });
             }
+            BUILTIN_DISPLAY_SELECT => {
+                let Value::String(name_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                host.draw_select(self.index.string(name_id)?)?;
+            }
+            BUILTIN_DISPLAY_IMAGE => {
+                let h = self.pop()?.expect_i32()?;
+                let w = self.pop()?.expect_i32()?;
+                let y = self.pop()?.expect_i32()?;
+                let x = self.pop()?.expect_i32()?;
+                let Value::String(path_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                host.draw_image(
+                    self.index.string(path_id)?,
+                    DisplayResourceOptions { x, y, w, h },
+                );
+            }
+            BUILTIN_DISPLAY_DRAW => {
+                let h = self.pop()?.expect_i32()?;
+                let w = self.pop()?.expect_i32()?;
+                let y = self.pop()?.expect_i32()?;
+                let x = self.pop()?.expect_i32()?;
+                let drawable = self.pop()?;
+                let strings = StringResolver::new(&self.index, &self.runtime_strings);
+                host.draw_resource(&strings, drawable, DisplayResourceOptions { x, y, w, h });
+            }
             BUILTIN_HARDWARE_GPIO_WRITE => {
                 let Value::String(name_id) = self.pop()? else {
                     return Err(VmError::InvalidOperand);
@@ -2111,6 +2140,34 @@ impl<'a> Vm<'a> {
                     y2,
                     color: color_id.map(|id| self.program.string(id)).transpose()?,
                 });
+            }
+            BUILTIN_DISPLAY_SELECT => {
+                let Value::String(name_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                trace.draw_select(self.program.string(name_id)?)?;
+            }
+            BUILTIN_DISPLAY_IMAGE => {
+                let h = self.pop()?.expect_i32()?;
+                let w = self.pop()?.expect_i32()?;
+                let y = self.pop()?.expect_i32()?;
+                let x = self.pop()?.expect_i32()?;
+                let Value::String(path_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                trace.draw_image(
+                    self.program.string(path_id)?,
+                    DisplayResourceOptions { x, y, w, h },
+                );
+            }
+            BUILTIN_DISPLAY_DRAW => {
+                let h = self.pop()?.expect_i32()?;
+                let w = self.pop()?.expect_i32()?;
+                let y = self.pop()?.expect_i32()?;
+                let x = self.pop()?.expect_i32()?;
+                let drawable = self.pop()?;
+                let strings = StringResolver::new(&self.program, &self.runtime_strings);
+                trace.draw_resource(&strings, drawable, DisplayResourceOptions { x, y, w, h });
             }
             BUILTIN_HARDWARE_GPIO_WRITE => {
                 let Value::String(name_id) = self.pop()? else {

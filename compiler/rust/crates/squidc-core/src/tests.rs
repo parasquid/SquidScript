@@ -651,6 +651,9 @@ screen("main") {
   display.text("Hello", { x: 10, y: 20 })
   display.rect(0, 0, 100, 40, { fillColor: "gray4" })
   display.line(0, 40, 100, 40, { color: "black" })
+  service.display.select("status")
+  service.display.image("data/icon.bmp", { x: 20, y: 24 })
+  service.display.draw("drawable/page", { x: 0, y: 0 })
 }
 "#;
     let output = compile(CompileRequest {
@@ -679,6 +682,18 @@ screen("main") {
     assert!(matches!(
         screen.statements[3],
         IrStatement::DisplayLine { .. }
+    ));
+    assert!(matches!(
+        screen.statements[4],
+        IrStatement::DisplaySelect { ref name } if name == "status"
+    ));
+    assert!(matches!(
+        screen.statements[5],
+        IrStatement::DisplayImage { ref path, .. } if path == "data/icon.bmp"
+    ));
+    assert!(matches!(
+        screen.statements[6],
+        IrStatement::DisplayDraw { .. }
     ));
     sqbc::encode_sqbc(&ir).expect("display sugar should lower to display bytecode");
 }

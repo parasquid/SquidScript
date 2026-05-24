@@ -125,6 +125,9 @@ The browser runtime currently recognizes:
 - `service.display.text`
 - `service.display.rect`
 - `service.display.line`
+- `service.display.select`
+- `service.display.image`
+- `service.display.draw`
 
 `handlers[].preload` is optional and defaults to `false`. It comes from the
 source-level `@preload` hint before `event.on(...)` and remains advisory for

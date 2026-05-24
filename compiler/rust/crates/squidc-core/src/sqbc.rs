@@ -65,6 +65,9 @@ const BUILTIN_SERVICE_TIMER_EVERY: u8 = 18;
 const BUILTIN_SERVICE_TIMER_AFTER: u8 = 19;
 const BUILTIN_SYSTEM_MEMORY: u8 = 20;
 const BUILTIN_SYSTEM_STORAGE: u8 = 21;
+const BUILTIN_DISPLAY_SELECT: u8 = 22;
+const BUILTIN_DISPLAY_IMAGE: u8 = 23;
+const BUILTIN_DISPLAY_DRAW: u8 = 24;
 const BUILTIN_SERVICE_INDICATOR_WRITE: u8 = 27;
 const BUILTIN_SERVICE_INDICATOR_TOGGLE: u8 = 28;
 const BUILTIN_SERVICE_INDICATOR_READ: u8 = 29;
@@ -455,6 +458,17 @@ fn collect_statement_strings(
                 strings.intern(color)?;
             }
             IrStatement::DisplayRect { options, .. } | IrStatement::DisplayLine { options, .. } => {
+                collect_option_strings(options, strings)?;
+            }
+            IrStatement::DisplaySelect { name } => {
+                strings.intern(name)?;
+            }
+            IrStatement::DisplayImage { path, options } => {
+                strings.intern(path)?;
+                collect_option_strings(options, strings)?;
+            }
+            IrStatement::DisplayDraw { drawable, options } => {
+                collect_expr_strings(drawable, strings)?;
                 collect_option_strings(options, strings)?;
             }
             IrStatement::For {
@@ -860,6 +874,30 @@ fn compile_statement(
             write_i32(&mut unit.code, *y2 as i32);
             emit_string_option(unit, options, "color")?;
             emit_builtin(&mut unit.code, BUILTIN_DISPLAY_LINE);
+        }
+        IrStatement::DisplaySelect { name } => {
+            let name_id = unit.strings.intern(name)?;
+            emit(&mut unit.code, OP_PUSH_STRING);
+            write_u16(&mut unit.code, name_id);
+            emit_builtin(&mut unit.code, BUILTIN_DISPLAY_SELECT);
+        }
+        IrStatement::DisplayImage { path, options } => {
+            let path_id = unit.strings.intern(path)?;
+            emit(&mut unit.code, OP_PUSH_STRING);
+            write_u16(&mut unit.code, path_id);
+            emit_i32_option(unit, frame, options, "x")?;
+            emit_i32_option(unit, frame, options, "y")?;
+            emit_i32_option(unit, frame, options, "w")?;
+            emit_i32_option(unit, frame, options, "h")?;
+            emit_builtin(&mut unit.code, BUILTIN_DISPLAY_IMAGE);
+        }
+        IrStatement::DisplayDraw { drawable, options } => {
+            compile_expr(unit, frame, drawable)?;
+            emit_i32_option(unit, frame, options, "x")?;
+            emit_i32_option(unit, frame, options, "y")?;
+            emit_i32_option(unit, frame, options, "w")?;
+            emit_i32_option(unit, frame, options, "h")?;
+            emit_builtin(&mut unit.code, BUILTIN_DISPLAY_DRAW);
         }
     }
     Ok(())

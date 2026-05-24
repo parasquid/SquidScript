@@ -20,7 +20,7 @@ for compiler, SQBC tooling, and VM semantics.
 ### 2. Expand Zephyr VM Hosting ABI
 
 - Keep the Zephyr VM ABI aligned with implemented SQBC builtins. Current
-  builtins `1..21` and `27..42` have Rust VM host callbacks plus Zephyr FFI and
+  builtins `1..24` and `27..42` have Rust VM host callbacks plus Zephyr FFI and
   runtime connections for state, app lifecycle, display draw-log, GPIO,
   indicator, timers, Wi-Fi, app inspection, and system diagnostics. Future service work should
   promote a spec/API slice through compiler lowering, SQBC builtin IDs, VM host
@@ -35,10 +35,6 @@ for compiler, SQBC tooling, and VM semantics.
 
 ### 3. Port Runtime Services To Zephyr
 
-- Promote planned display APIs through the real runtime stack:
-  `service.display.select`, `service.display.image`, and
-  `service.display.draw`. Keep resource/drawable ownership explicit and avoid
-  inventing simulator-only syntax.
 - Promote planned device configuration APIs through the real runtime stack:
   `device.config.load`, `device.config.set`, `device.config.rebind`, and
   `device.config.save`. Align these with `.sqdevice` package resources and the

@@ -45,6 +45,9 @@ The Zephyr-only hardware suite is not complete yet. The required inventory is:
   `app.processStack()`, `app.armedStack()`, `app.armedStack.get(...)`, and
   `device lifecycle` process/armed stack diagnostics.
 - Dispatch key events and verify state/output traces.
+- Verify headless display draw-log records for `service.display.clear`,
+  `service.display.select`, `service.display.image`, and
+  `service.display.draw`.
 - Verify persistent app storage and app state through Zephyr storage.
 - Verify `system.memory()` and `system.storage("apps")` through the Zephyr VM
   FFI host.
@@ -122,6 +125,13 @@ and before stack measurement. It installs
 `system.memory()` returns a Zephyr RAM/heap diagnostic string and
 `system.storage("apps")` returns an app-storage string through the real VM FFI
 host callbacks.
+
+`scripts/c3-supermini-test-display-drawlog.sh` runs after lifecycle coverage
+and before system resource coverage. It installs
+`tests/hardware/c3-supermini/display-drawlog`, launches it, and verifies that
+the Zephyr VM host records `service.display.select`, `service.display.image`,
+and `service.display.draw` in the same headless `device drawlog` surface as
+the older clear/text/rect/line display commands.
 
 `scripts/c3-supermini-test-wifi-state.sh` runs before Wi-Fi scan coverage. It
 installs `tests/hardware/c3-supermini/wifi-status-summary` and launches a

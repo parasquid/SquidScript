@@ -465,7 +465,10 @@ fn validate_debug_block_statements(
             | IrStatement::DisplayClear { .. }
             | IrStatement::DisplayText { .. }
             | IrStatement::DisplayRect { .. }
-            | IrStatement::DisplayLine { .. } => diagnostics.push(error(
+            | IrStatement::DisplayLine { .. }
+            | IrStatement::DisplaySelect { .. }
+            | IrStatement::DisplayImage { .. }
+            | IrStatement::DisplayDraw { .. } => diagnostics.push(error(
                 "E_DEBUG_BLOCK",
                 "debug blocks may only contain debug-local setup, read-only expressions, bounded control flow, and debug.print",
                 start,
@@ -554,6 +557,7 @@ fn statement_uses_any_name(
         IrStatement::HardwareGpioWrite { value, .. } => expr_uses_any_name(value, names),
         IrStatement::ServiceIndicatorWrite { value } => expr_uses_any_name(value, names),
         IrStatement::DisplayText { text, .. } => expr_uses_any_name(text, names),
+        IrStatement::DisplayDraw { drawable, .. } => expr_uses_any_name(drawable, names),
         IrStatement::DebugBlock { .. }
         | IrStatement::StateLoad
         | IrStatement::StateSave
@@ -569,7 +573,9 @@ fn statement_uses_any_name(
         | IrStatement::ServiceIndicatorBreathe
         | IrStatement::DisplayClear { .. }
         | IrStatement::DisplayRect { .. }
-        | IrStatement::DisplayLine { .. } => false,
+        | IrStatement::DisplayLine { .. }
+        | IrStatement::DisplaySelect { .. }
+        | IrStatement::DisplayImage { .. } => false,
     }
 }
 
@@ -695,7 +701,10 @@ fn validate_handler_statements(
             IrStatement::DisplayClear { .. }
             | IrStatement::DisplayText { .. }
             | IrStatement::DisplayRect { .. }
-            | IrStatement::DisplayLine { .. } => {
+            | IrStatement::DisplayLine { .. }
+            | IrStatement::DisplaySelect { .. }
+            | IrStatement::DisplayImage { .. }
+            | IrStatement::DisplayDraw { .. } => {
                 diagnostics.push(error(
                     "E_DISPLAY_OUTSIDE_SCREEN",
                     "display calls are only valid while rendering a screen",

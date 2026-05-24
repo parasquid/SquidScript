@@ -369,6 +369,10 @@ pub fn format_lines(prefix: &str, lines: &[String]) -> String {
         .collect::<String>()
 }
 
+pub fn format_raw_lines(lines: &[String]) -> String {
+    lines.iter().map(|line| format!("{line}\n")).collect()
+}
+
 pub fn format_state_bytes(bytes: &[u8]) -> String {
     format!("state={}\n", hex_string(bytes))
 }
@@ -403,7 +407,30 @@ impl OutputTail {
 
 #[cfg(test)]
 mod tests {
-    use super::OutputTail;
+    use super::{format_lines, format_raw_lines, OutputTail};
+
+    #[test]
+    fn formats_drawlog_lines_without_adding_a_second_draw_prefix() {
+        let lines = vec![
+            "draw=clear color=gray0".to_string(),
+            "draw=text text=\"Hello\" x=10 y=20".to_string(),
+        ];
+
+        assert_eq!(
+            format_raw_lines(&lines),
+            "draw=clear color=gray0\ndraw=text text=\"Hello\" x=10 y=20\n"
+        );
+    }
+
+    #[test]
+    fn formats_other_line_responses_with_command_prefix() {
+        let lines = vec!["ready".to_string(), "tick".to_string()];
+
+        assert_eq!(
+            format_lines("output", &lines),
+            "output=ready\noutput=tick\n"
+        );
+    }
 
     #[test]
     fn output_tail_returns_only_new_output_lines() {

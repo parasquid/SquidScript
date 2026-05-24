@@ -179,6 +179,12 @@ typedef struct {
 	size_t color_len;
 } SqvmDisplayLineOptions;
 typedef struct {
+	int32_t x;
+	int32_t y;
+	int32_t w;
+	int32_t h;
+} SqvmDisplayResourceOptions;
+typedef struct {
 	const uint8_t *id;
 	size_t id_len;
 	const uint8_t *name;
@@ -202,6 +208,14 @@ typedef void (*SqvmDisplayTextCallback)(
 	const SqvmDisplayTextOptions *options);
 typedef void (*SqvmDisplayRectCallback)(void *user_data, const SqvmDisplayRectOptions *options);
 typedef void (*SqvmDisplayLineCallback)(void *user_data, const SqvmDisplayLineOptions *options);
+typedef int32_t (*SqvmDisplaySelectCallback)(void *user_data, const uint8_t *name,
+					     size_t name_len);
+typedef void (*SqvmDisplayImageCallback)(void *user_data, const uint8_t *path,
+					 size_t path_len,
+					 const SqvmDisplayResourceOptions *options);
+typedef void (*SqvmDisplayDrawCallback)(void *user_data, const uint8_t *drawable,
+					size_t drawable_len,
+					const SqvmDisplayResourceOptions *options);
 
 #define SQVM_WIFI_SCAN_MAX_NETWORKS 4
 
@@ -351,6 +365,9 @@ typedef struct {
 	SqvmDisplayTextCallback display_text;
 	SqvmDisplayRectCallback display_rect;
 	SqvmDisplayLineCallback display_line;
+	SqvmDisplaySelectCallback display_select;
+	SqvmDisplayImageCallback display_image;
+	SqvmDisplayDrawCallback display_draw;
 	SqvmIndicatorWriteCallback indicator_write;
 	SqvmIndicatorToggleCallback indicator_toggle;
 	SqvmIndicatorReadCallback indicator_read;

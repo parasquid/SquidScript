@@ -178,6 +178,51 @@ static void runtime_display_line(void *user_data, const SqvmDisplayLineOptions *
 	}
 }
 
+static int32_t runtime_display_select(void *user_data, const uint8_t *name, size_t name_len)
+{
+	char line[SQ_VM_RUNTIME_DRAWLOG_LEN];
+	int written = snprintf(line, sizeof(line), "draw=select name=%.*s", (int)name_len,
+			       name == NULL ? (const uint8_t *)"" : name);
+
+	if (written > 0) {
+		(void)sq_vm_runtime_record_drawlog(user_data, line);
+	}
+	return 0;
+}
+
+static void runtime_display_image(void *user_data, const uint8_t *path, size_t path_len,
+				  const SqvmDisplayResourceOptions *options)
+{
+	char line[SQ_VM_RUNTIME_DRAWLOG_LEN];
+
+	if (options == NULL) {
+		return;
+	}
+	int written = snprintf(line, sizeof(line), "draw=image path=\"%.*s\" x=%d y=%d",
+			       (int)path_len, path == NULL ? (const uint8_t *)"" : path,
+			       options->x, options->y);
+	if (written > 0) {
+		(void)sq_vm_runtime_record_drawlog(user_data, line);
+	}
+}
+
+static void runtime_display_draw(void *user_data, const uint8_t *drawable, size_t drawable_len,
+				 const SqvmDisplayResourceOptions *options)
+{
+	char line[SQ_VM_RUNTIME_DRAWLOG_LEN];
+
+	if (options == NULL) {
+		return;
+	}
+	int written = snprintf(line, sizeof(line), "draw=resource drawable=\"%.*s\" x=%d y=%d",
+			       (int)drawable_len,
+			       drawable == NULL ? (const uint8_t *)"" : drawable, options->x,
+			       options->y);
+	if (written > 0) {
+		(void)sq_vm_runtime_record_drawlog(user_data, line);
+	}
+}
+
 static int32_t runtime_indicator_write(void *user_data, bool value)
 {
 	return sq_vm_runtime_indicator_write(user_data, value);
@@ -1346,6 +1391,9 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		.display_text = runtime_display_text,
 		.display_rect = runtime_display_rect,
 		.display_line = runtime_display_line,
+		.display_select = runtime_display_select,
+		.display_image = runtime_display_image,
+		.display_draw = runtime_display_draw,
 		.indicator_write = runtime_indicator_write,
 		.indicator_toggle = runtime_indicator_toggle,
 		.indicator_read = runtime_indicator_read,

@@ -455,6 +455,30 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             suite.index("c3-supermini-measure-stack-usage.sh"),
         )
 
+    def test_hardware_suite_runs_display_drawlog_script(self):
+        script = self.read("scripts/c3-supermini-test-display-drawlog.sh")
+        app = self.read("tests/hardware/c3-supermini/display-drawlog/main.squid")
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn('cargo run --quiet -p squidc -- app install "${DISPLAY_APP}"', script)
+        self.assertIn('cargo run --quiet -p squidc -- app launch display-drawlog', script)
+        self.assertIn('cargo run --quiet -p squidc -- device drawlog', script)
+        self.assertIn("draw=clear color=gray0", script)
+        self.assertIn("draw=select name=status", script)
+        self.assertIn('draw=image path="data/icon.bmp" x=20 y=24', script)
+        self.assertIn('draw=resource drawable="drawable/page" x=0 y=0', script)
+        self.assertIn('service.display.select("status")', app)
+        self.assertIn('service.display.image("data/icon.bmp"', app)
+        self.assertIn('service.display.draw("drawable/page"', app)
+        self.assertLess(
+            suite.index("c3-supermini-test-app-lifecycle.sh"),
+            suite.index("c3-supermini-test-display-drawlog.sh"),
+        )
+        self.assertLess(
+            suite.index("c3-supermini-test-display-drawlog.sh"),
+            suite.index("c3-supermini-test-system-resources.sh"),
+        )
+
     def test_hardware_suite_runs_state_and_key_checks_before_lifecycle(self):
         state = self.read("scripts/c3-supermini-test-app-state.sh")
         foreground = self.read("scripts/c3-supermini-test-foreground-memory.sh")

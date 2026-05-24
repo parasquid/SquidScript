@@ -18,7 +18,8 @@ use package::{package_app_dir, read_stored_zip_entries};
 use serde::Serialize;
 use serde_json::{json, Value};
 use serial::{
-    candidate_ports, detect_port, format_lines, format_state_bytes, OutputTail, SerialDevice,
+    candidate_ports, detect_port, format_lines, format_raw_lines, format_state_bytes, OutputTail,
+    SerialDevice,
 };
 use squid_device_protocol as protocol;
 use squidc_core::profile::BuildProfile;
@@ -745,7 +746,7 @@ fn drawlog(options: DeviceOnlyOptions, human: bool) -> Result<Value, String> {
     let port = resolve_port(&options)?;
     let mut device = SerialDevice::open(&port)?;
     let lines = device.drawlog_lines()?;
-    let response = format_lines("draw", &lines);
+    let response = format_raw_lines(&lines);
     if human {
         print!("{response}");
     }
@@ -1508,7 +1509,7 @@ impl ReplSession {
             ["state"] => format_state_bytes(&device.state_bytes()?),
             ["output"] => format_lines("output", &device.output_lines()?),
             ["trace"] => format_lines("trace", &device.trace_lines()?),
-            ["drawlog"] => format_lines("draw", &device.drawlog_lines()?),
+            ["drawlog"] => format_raw_lines(&device.drawlog_lines()?),
             ["resources"] => device
                 .resource_values()?
                 .into_iter()

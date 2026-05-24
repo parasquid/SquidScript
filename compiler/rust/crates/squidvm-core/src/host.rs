@@ -89,6 +89,17 @@ pub trait TraceSink {
     }
     fn draw_rect(&mut self, _options: DisplayRectOptions<'_>) {}
     fn draw_line(&mut self, _options: DisplayLineOptions<'_>) {}
+    fn draw_select(&mut self, _name: &str) -> Result<(), VmError> {
+        Err(VmError::InvalidOperand)
+    }
+    fn draw_image(&mut self, _path: &str, _options: DisplayResourceOptions) {}
+    fn draw_resource(
+        &mut self,
+        _strings: &StringResolver<'_>,
+        _drawable: Value,
+        _options: DisplayResourceOptions,
+    ) {
+    }
     fn hardware_gpio_write(&mut self, _name: &str, _value: bool) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
     }
@@ -251,6 +262,14 @@ pub struct DisplayLineOptions<'a> {
     pub x2: i32,
     pub y2: i32,
     pub color: Option<&'a str>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DisplayResourceOptions {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -838,6 +838,37 @@ impl Parser<'_> {
                     options,
                 })
             }
+            "select" => {
+                let name = self
+                    .consume_string(builder)
+                    .unwrap_or_else(|| "default".to_string());
+                self.consume_call_tail(builder);
+                Some(IrStatement::DisplaySelect { name })
+            }
+            "image" => {
+                let path = self.consume_string(builder).unwrap_or_default();
+                self.consume_ws(builder);
+                if self.at_kind(TokenKind::Comma) {
+                    self.bump(builder);
+                }
+                self.consume_ws(builder);
+                let options = self.parse_options_object(builder);
+                self.consume_call_tail(builder);
+                Some(IrStatement::DisplayImage { path, options })
+            }
+            "draw" => {
+                let drawable = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
+                    value: serde_json::json!(null),
+                });
+                self.consume_ws(builder);
+                if self.at_kind(TokenKind::Comma) {
+                    self.bump(builder);
+                }
+                self.consume_ws(builder);
+                let options = self.parse_options_object(builder);
+                self.consume_call_tail(builder);
+                Some(IrStatement::DisplayDraw { drawable, options })
+            }
             _ => {
                 self.consume_call_tail(builder);
                 None
