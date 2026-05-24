@@ -143,9 +143,12 @@ loaded on later app starts before app-local `device {}` bindings.
 `scripts/c3-supermini-test-content-pick.sh` runs after device config coverage
 and before stack measurement. It installs
 `tests/hardware/c3-supermini/content-pick-summary`, launches it, and verifies
-that `content.pickFile(".binbook")` flows through compiler lowering, SQBC, Rust
-VM hosting, FFI, and the Zephyr runtime callback as the current unsupported
-result record: `ok=false`, `error="unsupported"`, and `path=null`.
+that `content.pickFile(".binbook")`, `content.readText("notes.txt")`, and
+`content.readLines("notes.txt", 4)` flow through compiler lowering, SQBC, Rust
+VM hosting, FFI, and Zephyr runtime callbacks as current unsupported result
+records. The Zephyr reference firmware returns `ok=false`,
+`error="unsupported"`, `path=null`, `text=null`, and an empty `lines` list until
+real external content picking and reads are implemented.
 
 `scripts/c3-supermini-test-device-binding.sh` runs after system resource
 coverage and before the explicit device config API check. It packages

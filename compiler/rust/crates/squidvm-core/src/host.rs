@@ -227,6 +227,19 @@ pub trait TraceSink {
     ) -> Result<ContentPickFileResult<'a>, VmError> {
         Ok(ContentPickFileResult::unsupported())
     }
+    fn content_read_text<'a>(
+        &'a mut self,
+        _path: &str,
+    ) -> Result<ContentReadTextResult<'a>, VmError> {
+        Ok(ContentReadTextResult::unsupported())
+    }
+    fn content_read_lines<'a>(
+        &'a mut self,
+        _path: &str,
+        _max_lines: i32,
+    ) -> Result<ContentReadLinesResult<'a>, VmError> {
+        Ok(ContentReadLinesResult::unsupported())
+    }
     fn state_load(&mut self, _out: &mut [u8]) -> Result<Option<usize>, VmError> {
         Ok(None)
     }
@@ -268,6 +281,40 @@ impl ContentPickFileResult<'_> {
             ok: false,
             error: Some("unsupported"),
             path: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ContentReadTextResult<'a> {
+    pub ok: bool,
+    pub error: Option<&'a str>,
+    pub text: Option<&'a str>,
+}
+
+impl ContentReadTextResult<'_> {
+    pub const fn unsupported() -> Self {
+        Self {
+            ok: false,
+            error: Some("unsupported"),
+            text: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ContentReadLinesResult<'a> {
+    pub ok: bool,
+    pub error: Option<&'a str>,
+    pub lines: &'a [&'a str],
+}
+
+impl ContentReadLinesResult<'_> {
+    pub const fn unsupported() -> Self {
+        Self {
+            ok: false,
+            error: Some("unsupported"),
+            lines: &[],
         }
     }
 }

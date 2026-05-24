@@ -70,6 +70,8 @@ run_capture launch-content-pick cargo run --quiet -p squidc -- app launch conten
 output_out="$(wait_for_contains output-content-pick "output=content pick false unsupported null" \
   "device output" cargo run --quiet -p squidc -- device output)"
 assert_file_contains "${output_out}" "output=content pick false unsupported null"
+assert_file_contains "${output_out}" "output=content text false unsupported null"
+assert_file_contains "${output_out}" "output=content lines false unsupported <list>"
 
 errors_out="$(run_capture errors cargo run --quiet -p squidc -- device errors)"
 assert_file_empty_command "${errors_out}"

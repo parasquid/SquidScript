@@ -2728,6 +2728,13 @@ if (result.ok) {
 }
 ```
 
+On runtimes without bounded external content reads, including the current
+ESP32-C3 Zephyr reference firmware, this API returns:
+
+```text
+{ ok: false, error: "unsupported", text: null }
+```
+
 content.readLines(path, maxLines)
 
 Reads bounded lines from a text file.
@@ -2739,6 +2746,13 @@ let result = content.readLines("data/notes.txt", 100)
 if (result.ok) {
   lines = result.lines
 }
+```
+
+On runtimes without bounded external content reads, including the current
+ESP32-C3 Zephyr reference firmware, this API returns:
+
+```text
+{ ok: false, error: "unsupported", lines: [] }
 ```
 
 data.read(path)

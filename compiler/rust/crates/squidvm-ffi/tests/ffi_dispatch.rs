@@ -9,9 +9,10 @@ use squidvm_ffi::{
     sqvm_device_binding_count_from_reader, sqvm_device_binding_read_from_reader, sqvm_dispatch,
     sqvm_dispatch_resume_storage, sqvm_dispatch_start_resumable, sqvm_trigger_timer_count,
     sqvm_trigger_timer_read, SqvmAppRegistryEntry, SqvmAppStackEntry, SqvmCallbacks,
-    SqvmContentPickFileResult, SqvmDeviceBinding, SqvmDeviceConfigResult, SqvmDeviceConfigValue,
-    SqvmDeviceConfigValueKind, SqvmDispatchOutcome, SqvmDispatchResult, SqvmStatus,
-    SqvmStorageCompletion, SqvmStorageRequestKind, SqvmTriggerTimer,
+    SqvmContentPickFileResult, SqvmContentReadLinesResult, SqvmContentReadTextResult,
+    SqvmDeviceBinding, SqvmDeviceConfigResult, SqvmDeviceConfigValue, SqvmDeviceConfigValueKind,
+    SqvmDispatchOutcome, SqvmDispatchResult, SqvmStatus, SqvmStorageCompletion,
+    SqvmStorageRequestKind, SqvmTriggerTimer,
 };
 
 #[derive(Default)]
@@ -33,6 +34,8 @@ struct Host {
     wifi_ap_ip_count: usize,
     device_config_actions: Vec<String>,
     content_pick_files: Vec<String>,
+    content_read_texts: Vec<String>,
+    content_read_lines: Vec<(String, i32)>,
     system_memory_count: usize,
     system_storage_names: Vec<String>,
     registry_gets: Vec<String>,
@@ -516,6 +519,45 @@ unsafe extern "C" fn content_pick_file(
     0
 }
 
+unsafe extern "C" fn content_read_text(
+    user_data: *mut c_void,
+    path: *const u8,
+    path_len: usize,
+    out: *mut SqvmContentReadTextResult,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let path = std::str::from_utf8(std::slice::from_raw_parts(path, path_len)).unwrap();
+    host.content_read_texts.push(path.to_string());
+    if out.is_null() {
+        return -1;
+    }
+    (*out).ok = false;
+    (*out).error = b"unsupported".as_ptr();
+    (*out).error_len = b"unsupported".len();
+    (*out).text = ptr::null();
+    (*out).text_len = 0;
+    0
+}
+
+unsafe extern "C" fn content_read_lines(
+    user_data: *mut c_void,
+    path: *const u8,
+    path_len: usize,
+    max_lines: i32,
+    out: *mut SqvmContentReadLinesResult,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let path = std::str::from_utf8(std::slice::from_raw_parts(path, path_len)).unwrap();
+    host.content_read_lines.push((path.to_string(), max_lines));
+    if out.is_null() {
+        return -1;
+    }
+    (*out).ok = false;
+    (*out).error = b"unsupported".as_ptr();
+    (*out).error_len = b"unsupported".len();
+    0
+}
+
 unsafe extern "C" fn system_memory_text(
     user_data: *mut c_void,
     out: *mut u8,
@@ -709,6 +751,8 @@ fn callbacks(host: &mut Host) -> SqvmCallbacks {
         device_config_rebind: Some(device_config_rebind),
         device_config_save: Some(device_config_save),
         content_pick_file: Some(content_pick_file),
+        content_read_text: Some(content_read_text),
+        content_read_lines: Some(content_read_lines),
         system_memory_text: Some(system_memory_text),
         system_storage_text: Some(system_storage_text),
     }
@@ -915,6 +959,20 @@ fn compile_content_pick_file_sqbc() -> Vec<u8> {
 event.on("app.start") {
   let picked = content.pickFile(".binbook")
   debug.print(picked.ok, picked.error, picked.path)
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_content_read_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-content-read"
+event.on("app.start") {
+  let text = content.readText("notes.txt")
+  let lines = content.readLines("notes.txt", 4)
+  debug.print(text.ok, text.error, text.text)
+  debug.print(lines.ok, lines.error, lines.lines)
 }
 screen("main") {}
 "#,
@@ -1437,6 +1495,45 @@ fn dispatches_content_pick_file_callback() {
     assert_eq!(status, SqvmStatus::Ok);
     assert_eq!(host.content_pick_files, vec![".binbook".to_string()]);
     assert_eq!(host.output, vec!["false unsupported null".to_string()]);
+}
+
+#[test]
+fn dispatches_content_read_callbacks() {
+    let mut host = Host {
+        sqbc: compile_content_read_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(host.content_read_texts, vec!["notes.txt".to_string()]);
+    assert_eq!(host.content_read_lines, vec![("notes.txt".to_string(), 4)]);
+    assert_eq!(
+        host.output,
+        vec![
+            "false unsupported null".to_string(),
+            "false unsupported <list>".to_string()
+        ]
+    );
 }
 
 #[test]

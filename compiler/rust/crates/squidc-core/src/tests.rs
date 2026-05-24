@@ -875,6 +875,25 @@ event.on("app.start") {
 }
 
 #[test]
+fn compiles_content_read_result_calls_to_sqbc() {
+    let source = r#"app "content-read"
+
+event.on("app.start") {
+  let text = content.readText("notes.txt")
+  let lines = content.readLines("notes.txt", 4)
+  debug.print(text.ok, text.error, text.text, lines.ok, lines.error, lines.lines)
+}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+
+    assert!(output.ok, "{:?}", output.diagnostics);
+    sqbc::encode_sqbc(&output.ir.unwrap()).expect("content read calls should encode");
+}
+
+#[test]
 fn parses_hardware_gpio_calls() {
     let source = r#"app "gpio"
 state { led: bool = false }

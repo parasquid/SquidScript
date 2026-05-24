@@ -234,6 +234,24 @@ impl TraceSink for RuntimeTrace {
         self.events.push(format!("content.pickFile {extension}"));
         Ok(ContentPickFileResult::unsupported())
     }
+
+    fn content_read_text<'a>(
+        &'a mut self,
+        path: &str,
+    ) -> Result<ContentReadTextResult<'a>, VmError> {
+        self.events.push(format!("content.readText {path}"));
+        Ok(ContentReadTextResult::unsupported())
+    }
+
+    fn content_read_lines<'a>(
+        &'a mut self,
+        path: &str,
+        max_lines: i32,
+    ) -> Result<ContentReadLinesResult<'a>, VmError> {
+        self.events
+            .push(format!("content.readLines {path} {max_lines}"));
+        Ok(ContentReadLinesResult::unsupported())
+    }
 }
 
 #[derive(Default)]
@@ -1279,6 +1297,40 @@ event.on("app.start") {
             "app.start",
             "content.pickFile .binbook",
             "debug false unsupported null",
+        ]
+    );
+}
+
+#[test]
+fn runs_content_read_unsupported_results_from_real_bytecode() {
+    let source = r#"app "content-read"
+event.on("app.start") {
+  let text = content.readText("notes.txt")
+  let lines = content.readLines("notes.txt", 4)
+  debug.print(text.ok, text.error, text.text)
+  debug.print(lines.ok, lines.error, lines.lines)
+}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = RuntimeTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "content.readText notes.txt",
+            "content.readLines notes.txt 4",
+            "debug false unsupported null",
+            "debug false unsupported <list>",
         ]
     );
 }

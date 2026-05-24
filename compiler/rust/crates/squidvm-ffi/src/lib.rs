@@ -14,10 +14,11 @@ use squidvm_core::{
     error::VmError,
     host::{
         AppArmedStack, AppArmedStackEntry, AppProcessStack, AppRegistryEntry, AppRegistryList,
-        ContentPickFileResult, DeviceConfigResult, DisplayLineOptions, DisplayRectOptions,
-        DisplayResourceOptions, DisplayTextOptions, StorageCompletion as CoreStorageCompletion,
-        StorageRequest, TraceSink, VmDispatch, WifiAccessPoint, WifiActionResult, WifiApIp,
-        WifiScanResult, WifiStatus, MAX_STORAGE_TRANSFER_BYTES,
+        ContentPickFileResult, ContentReadLinesResult, ContentReadTextResult, DeviceConfigResult,
+        DisplayLineOptions, DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions,
+        StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink, VmDispatch,
+        WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
+        MAX_STORAGE_TRANSFER_BYTES,
     },
     limits::{MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES, MAX_SAVED_STATE_BYTES},
     program::ProgramIndex,
@@ -809,6 +810,46 @@ impl Default for SqvmContentPickFileResult {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmContentReadTextResult {
+    pub ok: bool,
+    pub error: *const u8,
+    pub error_len: usize,
+    pub text: *const u8,
+    pub text_len: usize,
+}
+
+impl Default for SqvmContentReadTextResult {
+    fn default() -> Self {
+        Self {
+            ok: false,
+            error: b"unsupported".as_ptr(),
+            error_len: b"unsupported".len(),
+            text: ptr::null(),
+            text_len: 0,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmContentReadLinesResult {
+    pub ok: bool,
+    pub error: *const u8,
+    pub error_len: usize,
+}
+
+impl Default for SqvmContentReadLinesResult {
+    fn default() -> Self {
+        Self {
+            ok: false,
+            error: b"unsupported".as_ptr(),
+            error_len: b"unsupported".len(),
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SqvmWifiApIp {
     pub ip: *const u8,
     pub ip_len: usize,
@@ -1054,6 +1095,23 @@ pub struct SqvmCallbacks {
             out: *mut SqvmContentPickFileResult,
         ) -> i32,
     >,
+    pub content_read_text: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            path: *const u8,
+            path_len: usize,
+            out: *mut SqvmContentReadTextResult,
+        ) -> i32,
+    >,
+    pub content_read_lines: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            path: *const u8,
+            path_len: usize,
+            max_lines: i32,
+            out: *mut SqvmContentReadLinesResult,
+        ) -> i32,
+    >,
     pub system_memory_text: Option<
         unsafe extern "C" fn(
             user_data: *mut c_void,
@@ -1117,6 +1175,8 @@ impl Default for SqvmCallbacks {
             device_config_rebind: None,
             device_config_save: None,
             content_pick_file: None,
+            content_read_text: None,
+            content_read_lines: None,
             system_memory_text: None,
             system_storage_text: None,
         }
@@ -3213,6 +3273,46 @@ impl TraceSink for FfiHost {
         unsafe { content_pick_file_result_from_ffi(&out) }
     }
 
+    fn content_read_text<'a>(
+        &'a mut self,
+        path: &str,
+    ) -> Result<ContentReadTextResult<'a>, VmError> {
+        let Some(content_read_text) = self.callbacks.content_read_text else {
+            return Ok(ContentReadTextResult::unsupported());
+        };
+        let mut out = SqvmContentReadTextResult::default();
+        callback_status(unsafe {
+            content_read_text(
+                self.callbacks.user_data,
+                path.as_ptr(),
+                path.len(),
+                &mut out,
+            )
+        })?;
+        unsafe { content_read_text_result_from_ffi(&out) }
+    }
+
+    fn content_read_lines<'a>(
+        &'a mut self,
+        path: &str,
+        max_lines: i32,
+    ) -> Result<ContentReadLinesResult<'a>, VmError> {
+        let Some(content_read_lines) = self.callbacks.content_read_lines else {
+            return Ok(ContentReadLinesResult::unsupported());
+        };
+        let mut out = SqvmContentReadLinesResult::default();
+        callback_status(unsafe {
+            content_read_lines(
+                self.callbacks.user_data,
+                path.as_ptr(),
+                path.len(),
+                max_lines,
+                &mut out,
+            )
+        })?;
+        unsafe { content_read_lines_result_from_ffi(&out) }
+    }
+
     fn system_memory_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
         let Some(system_memory_text) = self.callbacks.system_memory_text else {
             return Err(VmError::InvalidOperand);
@@ -3851,6 +3951,26 @@ unsafe fn content_pick_file_result_from_ffi<'a>(
         ok: result.ok,
         error: optional_ffi_str(result.error, result.error_len)?,
         path: optional_ffi_str(result.path, result.path_len)?,
+    })
+}
+
+unsafe fn content_read_text_result_from_ffi<'a>(
+    result: &SqvmContentReadTextResult,
+) -> Result<ContentReadTextResult<'a>, VmError> {
+    Ok(ContentReadTextResult {
+        ok: result.ok,
+        error: optional_ffi_str(result.error, result.error_len)?,
+        text: optional_ffi_str(result.text, result.text_len)?,
+    })
+}
+
+unsafe fn content_read_lines_result_from_ffi<'a>(
+    result: &SqvmContentReadLinesResult,
+) -> Result<ContentReadLinesResult<'a>, VmError> {
+    Ok(ContentReadLinesResult {
+        ok: result.ok,
+        error: optional_ffi_str(result.error, result.error_len)?,
+        lines: &[],
     })
 }
 

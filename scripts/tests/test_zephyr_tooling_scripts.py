@@ -537,6 +537,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
 
         self.assertIn('content.pickFile(".binbook")', app)
+        self.assertIn('content.readText("notes.txt")', app)
+        self.assertIn('content.readLines("notes.txt", 4)', app)
         self.assertIn(
             'cargo run --quiet -p squidc -- app install "${CONTENT_APP}"',
             script,
@@ -546,6 +548,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             script,
         )
         self.assertIn("output=content pick false unsupported null", script)
+        self.assertIn("output=content text false unsupported null", script)
+        self.assertIn("output=content lines false unsupported <list>", script)
         self.assertIn("assert_file_empty_command", script)
         self.assertLess(
             suite.index("c3-supermini-test-content-pick.sh"),

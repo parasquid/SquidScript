@@ -1822,6 +1822,41 @@ static int32_t runtime_content_pick_file(void *user_data, const uint8_t *extensi
 	return 0;
 }
 
+static int32_t runtime_content_read_text(void *user_data, const uint8_t *path, size_t path_len,
+					 SqvmContentReadTextResult *out)
+{
+	ARG_UNUSED(user_data);
+	ARG_UNUSED(path);
+	ARG_UNUSED(path_len);
+
+	if (out == NULL) {
+		return -EINVAL;
+	}
+	out->ok = false;
+	out->error = (const uint8_t *)"unsupported";
+	out->error_len = strlen("unsupported");
+	out->text = NULL;
+	out->text_len = 0;
+	return 0;
+}
+
+static int32_t runtime_content_read_lines(void *user_data, const uint8_t *path, size_t path_len,
+					  int32_t max_lines, SqvmContentReadLinesResult *out)
+{
+	ARG_UNUSED(user_data);
+	ARG_UNUSED(path);
+	ARG_UNUSED(path_len);
+	ARG_UNUSED(max_lines);
+
+	if (out == NULL) {
+		return -EINVAL;
+	}
+	out->ok = false;
+	out->error = (const uint8_t *)"unsupported";
+	out->error_len = strlen("unsupported");
+	return 0;
+}
+
 static void clear_dispatch_transfer(struct sq_vm_runtime *runtime)
 {
 	memset(&runtime->transfer, 0, sizeof(runtime->transfer));
@@ -2055,6 +2090,8 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		.device_config_rebind = runtime_device_config_rebind,
 		.device_config_save = runtime_device_config_save,
 		.content_pick_file = runtime_content_pick_file,
+		.content_read_text = runtime_content_read_text,
+		.content_read_lines = runtime_content_read_lines,
 		.system_memory_text = runtime_system_memory_text,
 		.system_storage_text = runtime_system_storage_text,
 	};

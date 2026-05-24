@@ -3,4 +3,8 @@ app "content-pick-summary"
 event.on("app.start") {
   let picked = content.pickFile(".binbook")
   debug.print("content pick", picked.ok, picked.error, picked.path)
+  let text = content.readText("notes.txt")
+  debug.print("content text", text.ok, text.error, text.text)
+  let lines = content.readLines("notes.txt", 4)
+  debug.print("content lines", lines.ok, lines.error, lines.lines)
 }

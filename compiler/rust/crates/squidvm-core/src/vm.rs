@@ -25,10 +25,10 @@ use crate::{
     chunk::{ChunkCache, ChunkKind, ChunkRef},
     error::VmError,
     host::{
-        AppArmedStackEntry, AppRegistryEntry, ContentPickFileResult, DeviceConfigResult,
-        DisplayLineOptions, DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions,
-        StorageCompletion, StorageRequest, TraceSink, VmDispatch, WifiAccessPoint,
-        WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
+        AppArmedStackEntry, AppRegistryEntry, ContentPickFileResult, ContentReadLinesResult,
+        ContentReadTextResult, DeviceConfigResult, DisplayLineOptions, DisplayRectOptions,
+        DisplayResourceOptions, DisplayTextOptions, StorageCompletion, StorageRequest, TraceSink,
+        VmDispatch, WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
     },
     limits::{
         MAX_CALL_DEPTH, MAX_CODE_CHUNK_BYTES, MAX_FUNCTIONS, MAX_HANDLERS,
@@ -1435,6 +1435,23 @@ impl ChunkedVm {
                 let value = self.content_pick_file_result_record(result)?;
                 self.push(value)?;
             }
+            crate::bytecode::BUILTIN_CONTENT_READ_TEXT => {
+                let Value::String(path_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let result = host.content_read_text(self.index.string(path_id)?)?;
+                let value = self.content_read_text_result_record(result)?;
+                self.push(value)?;
+            }
+            crate::bytecode::BUILTIN_CONTENT_READ_LINES => {
+                let max_lines = self.pop()?.expect_i32()?;
+                let Value::String(path_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let result = host.content_read_lines(self.index.string(path_id)?, max_lines)?;
+                let value = self.content_read_lines_result_record(result)?;
+                self.push(value)?;
+            }
             BUILTIN_SYSTEM_MEMORY => {
                 let mut writer = self.runtime_strings.alloc()?;
                 host.system_memory_text(&mut writer)?;
@@ -1498,6 +1515,37 @@ impl ChunkedVm {
             RuntimeRecordField::new("ok", Value::Bool(result.ok)),
             RuntimeRecordField::new("error", error),
             RuntimeRecordField::new("path", path),
+        ])
+    }
+
+    fn content_read_text_result_record(
+        &mut self,
+        result: ContentReadTextResult<'_>,
+    ) -> Result<Value, VmError> {
+        let error = self.runtime_string_value(result.error)?;
+        let text = self.runtime_string_value(result.text)?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
+            RuntimeRecordField::new("error", error),
+            RuntimeRecordField::new("text", text),
+        ])
+    }
+
+    fn content_read_lines_result_record(
+        &mut self,
+        result: ContentReadLinesResult<'_>,
+    ) -> Result<Value, VmError> {
+        let error = self.runtime_string_value(result.error)?;
+        let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
+        let count = result.lines.len().min(MAX_RUNTIME_LIST_ITEMS);
+        for (index, line) in result.lines.iter().take(count).enumerate() {
+            items[index] = self.runtime_string_value(Some(line))?;
+        }
+        let lines = self.runtime_lists.alloc(&items[..count])?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
+            RuntimeRecordField::new("error", error),
+            RuntimeRecordField::new("lines", lines),
         ])
     }
 
@@ -2471,6 +2519,23 @@ impl<'a> Vm<'a> {
                 let value = self.content_pick_file_result_record(result)?;
                 self.push(value)?;
             }
+            crate::bytecode::BUILTIN_CONTENT_READ_TEXT => {
+                let Value::String(path_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let result = trace.content_read_text(self.program.string(path_id)?)?;
+                let value = self.content_read_text_result_record(result)?;
+                self.push(value)?;
+            }
+            crate::bytecode::BUILTIN_CONTENT_READ_LINES => {
+                let max_lines = self.pop()?.expect_i32()?;
+                let Value::String(path_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let result = trace.content_read_lines(self.program.string(path_id)?, max_lines)?;
+                let value = self.content_read_lines_result_record(result)?;
+                self.push(value)?;
+            }
             BUILTIN_SYSTEM_MEMORY => {
                 let mut writer = self.runtime_strings.alloc()?;
                 trace.system_memory_text(&mut writer)?;
@@ -2534,6 +2599,37 @@ impl<'a> Vm<'a> {
             RuntimeRecordField::new("ok", Value::Bool(result.ok)),
             RuntimeRecordField::new("error", error),
             RuntimeRecordField::new("path", path),
+        ])
+    }
+
+    fn content_read_text_result_record(
+        &mut self,
+        result: ContentReadTextResult<'_>,
+    ) -> Result<Value, VmError> {
+        let error = self.runtime_string_value(result.error)?;
+        let text = self.runtime_string_value(result.text)?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
+            RuntimeRecordField::new("error", error),
+            RuntimeRecordField::new("text", text),
+        ])
+    }
+
+    fn content_read_lines_result_record(
+        &mut self,
+        result: ContentReadLinesResult<'_>,
+    ) -> Result<Value, VmError> {
+        let error = self.runtime_string_value(result.error)?;
+        let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
+        let count = result.lines.len().min(MAX_RUNTIME_LIST_ITEMS);
+        for (index, line) in result.lines.iter().take(count).enumerate() {
+            items[index] = self.runtime_string_value(Some(line))?;
+        }
+        let lines = self.runtime_lists.alloc(&items[..count])?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
+            RuntimeRecordField::new("error", error),
+            RuntimeRecordField::new("lines", lines),
         ])
     }
 

@@ -82,6 +82,8 @@ pub(crate) const BUILTIN_DEVICE_CONFIG_REBIND: u8 = 43;
 pub(crate) const BUILTIN_DEVICE_CONFIG_SAVE: u8 = 44;
 pub(crate) const BUILTIN_SERVICE_INDICATOR_BLINK: u8 = 45;
 pub(crate) const BUILTIN_CONTENT_PICK_FILE: u8 = 46;
+pub(crate) const BUILTIN_CONTENT_READ_TEXT: u8 = 47;
+pub(crate) const BUILTIN_CONTENT_READ_LINES: u8 = 48;
 
 pub(crate) const VALUE_NULL: u8 = 0;
 pub(crate) const VALUE_BOOL: u8 = 1;
