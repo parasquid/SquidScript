@@ -203,8 +203,11 @@ final board state.
 
 The indicator breathe check installs and launches
 `examples/breathe-supermini/main.squid`. Serial `device output` should include
-`breathe ready`, `device errors` should be empty, and the final visible board
-state should be a smooth repeating onboard LED breathe pattern. For the current
-ESP32-C3 Super Mini target, that visible check exercises the logical
-`indicator0` device, which the Zephyr overlay maps to the common-clone GPIO8
-onboard LED through ESP32-C3 LEDC PWM.
+`breathe ready`, `breathe peak marker`, and `breathe resume`, `device errors`
+should be empty, and the final visible board state should be a smooth repeating
+onboard LED breathe pattern. The example briefly double-blinks near every third
+peak, then resumes the smooth breathe cycle so the visible check can confirm
+both the marker and the PWM smoothness. For the current ESP32-C3 Super Mini
+target, that visible check exercises the logical `indicator0` device, which
+the Zephyr overlay maps to the common-clone GPIO8 onboard LED through ESP32-C3
+LEDC PWM.

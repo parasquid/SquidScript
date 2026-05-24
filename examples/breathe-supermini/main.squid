@@ -3,4 +3,32 @@ app "breathe-supermini"
 event.on("app.start") {
   service.indicator.breathe()
   debug.print("breathe ready")
+  service.timer.after("timer.breathe.marker", 4991)
+}
+
+event.on("timer.breathe.marker") {
+  debug.print("breathe peak marker")
+  service.indicator.write(false)
+  service.timer.after("timer.breathe.on1", 80)
+}
+
+event.on("timer.breathe.on1") {
+  service.indicator.write(true)
+  service.timer.after("timer.breathe.off2", 80)
+}
+
+event.on("timer.breathe.off2") {
+  service.indicator.write(false)
+  service.timer.after("timer.breathe.on2", 80)
+}
+
+event.on("timer.breathe.on2") {
+  service.indicator.write(true)
+  service.timer.after("timer.breathe.resume", 80)
+}
+
+event.on("timer.breathe.resume") {
+  service.indicator.breathe()
+  debug.print("breathe resume")
+  service.timer.after("timer.breathe.marker", 4991)
 }

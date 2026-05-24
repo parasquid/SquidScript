@@ -522,6 +522,27 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             suite.index("c3-supermini-test-blinky.sh"),
         )
 
+    def test_breathe_check_is_explicit_visible_indicator_parity_script(self):
+        script = self.read("scripts/c3-supermini-test-breathe.sh")
+        app = self.read("examples/breathe-supermini/main.squid")
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn("service.indicator.breathe()", app)
+        self.assertIn('service.timer.after("timer.breathe.marker"', app)
+        self.assertIn('event.on("timer.breathe.marker")', app)
+        self.assertIn("service.indicator.write(false)", app)
+        self.assertIn("service.indicator.write(true)", app)
+        self.assertIn("breathe peak marker", app)
+        self.assertIn("breathe resume", app)
+        self.assertIn('cargo run --quiet -p squidc -- app install "${BREATHE_APP}"', script)
+        self.assertIn('cargo run --quiet -p squidc -- app launch breathe-supermini', script)
+        self.assertIn("output=breathe ready", script)
+        self.assertIn("output=breathe peak marker", script)
+        self.assertIn("output=breathe resume", script)
+        self.assertIn("assert_file_empty_command", script)
+        self.assertIn("breathe app left running", script)
+        self.assertNotIn("c3-supermini-test-breathe.sh", suite)
+
     def test_hardware_suite_runs_display_drawlog_script(self):
         script = self.read("scripts/c3-supermini-test-display-drawlog.sh")
         app = self.read("tests/hardware/c3-supermini/display-drawlog/main.squid")
