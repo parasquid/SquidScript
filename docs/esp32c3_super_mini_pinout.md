@@ -5,6 +5,11 @@ SquidScript firmware bring-up. ESP32-C3 Super Mini boards are clone-heavy, so
 verify against the silkscreen on the physical board before wiring power,
 displays, sensors, or straps.
 
+The canonical target metadata is `targets/esp32c3-super-mini.target.json`.
+Generated pin and logical-device tables live in
+`docs/targets/esp32c3-super-mini.md`; update the target JSON and regenerate that
+file rather than hand-editing a second copy of the table.
+
 ## Top-Side Hardware Layout
 
 Orientation: USB-C connector at the top, component side facing up. This is the

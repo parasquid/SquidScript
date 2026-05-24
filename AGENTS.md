@@ -111,6 +111,10 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - Clearly mark placeholder, illustrative, guessed, typical, variant-dependent, or unverified values as such.
 - This is especially important for hardware pinouts, GPIO mappings, board profiles, firmware configuration, protocol constants, and API examples.
 - Do not present guessed hardware values as sourced facts. If a value comes from clone-board conventions or community reports, say that directly and preserve the uncertainty in target metadata.
+- Target JSON files are the canonical target descriptions. Human-readable
+  target pin/device tables must be generated from target JSON, such as with
+  `scripts/generate-target-markdown.py`. Do not hand-edit generated target Markdown tables
+  or let them become a second source of truth.
 - Do not dox the user or their environment when reporting or documenting
   hardware/network investigations. Redact SSIDs, BSSIDs, MAC addresses, local
   IPs, credentials, and other environment-identifying values unless the user

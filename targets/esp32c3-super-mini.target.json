@@ -87,6 +87,20 @@
     }
   },
   "pins": {
+    "GPIO0": {
+      "capabilities": ["gpio", "adc"],
+      "voltage": "3v3",
+      "usedBy": [],
+      "status": "free-to-use",
+      "reason": "Commonly exposed on ESP32-C3 Super Mini headers as a general GPIO and ADC-capable pin."
+    },
+    "GPIO1": {
+      "capabilities": ["gpio", "adc"],
+      "voltage": "3v3",
+      "usedBy": [],
+      "status": "free-to-use",
+      "reason": "Commonly exposed on ESP32-C3 Super Mini headers as a general GPIO and ADC-capable pin."
+    },
     "GPIO2": {
       "capabilities": ["gpio", "adc", "strapping"],
       "voltage": "3v3",
@@ -101,41 +115,131 @@
       "status": "available-with-boot-caution",
       "reason": "Commonly broken out on ESP32-C3 Super Mini boards, but participates in ESP32-C3 boot-mode strapping."
     },
+    "GPIO4": {
+      "capabilities": ["gpio", "adc", "spi_sck"],
+      "voltage": "3v3",
+      "usedBy": [],
+      "status": "free-to-use",
+      "reason": "Commonly exposed as a general GPIO and often labeled as the conventional external SPI clock pin; ESP32-C3 firmware still assigns the peripheral route at runtime."
+    },
+    "GPIO5": {
+      "capabilities": ["gpio", "adc", "spi_miso"],
+      "voltage": "3v3",
+      "usedBy": [],
+      "status": "free-to-use",
+      "reason": "Commonly exposed as a general GPIO and often labeled as the conventional external SPI MISO pin; ESP32-C3 firmware still assigns the peripheral route at runtime."
+    },
+    "GPIO6": {
+      "capabilities": ["gpio", "spi_mosi"],
+      "voltage": "3v3",
+      "usedBy": [],
+      "status": "free-to-use",
+      "reason": "Commonly exposed as a general GPIO and often labeled as the conventional external SPI MOSI pin; ESP32-C3 firmware still assigns the peripheral route at runtime."
+    },
+    "GPIO7": {
+      "capabilities": ["gpio", "spi_cs"],
+      "voltage": "3v3",
+      "usedBy": [],
+      "status": "free-to-use",
+      "reason": "Commonly exposed as a general GPIO and often labeled as the conventional external SPI CS/SS pin; ESP32-C3 firmware still assigns the peripheral route at runtime."
+    },
     "GPIO8": {
       "capabilities": ["gpio", "strapping"],
       "voltage": "3v3",
       "usedBy": ["indicator.default"],
-      "status": "typical",
+      "status": "available-with-boot-caution",
       "reason": "Common clone-board LED pin; variants may use GPIO2, GPIO7, GPIO9, or omit a controllable user LED."
     },
     "GPIO9": {
       "capabilities": ["gpio", "strapping"],
       "voltage": "3v3",
       "usedBy": ["input.boot_button"],
-      "status": "typical",
+      "status": "available-with-boot-caution",
       "reason": "Common clone-board BOOT button pin. Holding this low during reset enters download mode on typical ESP32-C3 Super Mini boards."
+    },
+    "GPIO10": {
+      "capabilities": ["gpio"],
+      "voltage": "3v3",
+      "usedBy": [],
+      "status": "free-to-use",
+      "reason": "Commonly exposed on ESP32-C3 Super Mini headers as a general GPIO and used by this repository's e-paper bring-up notes as a reset output candidate."
+    },
+    "GPIO11": {
+      "capabilities": [],
+      "voltage": "3v3",
+      "usedBy": [],
+      "status": "not-exposed",
+      "reason": "Not present in the common ESP32-C3 Super Mini header layout documented for this target."
+    },
+    "GPIO12": {
+      "capabilities": ["flash"],
+      "voltage": "3v3",
+      "usedBy": ["spi_flash"],
+      "status": "reserved",
+      "reason": "Reserved for ESP32-C3 SPI flash or internal flash-related signals; not available for app GPIO."
+    },
+    "GPIO13": {
+      "capabilities": ["flash"],
+      "voltage": "3v3",
+      "usedBy": ["spi_flash"],
+      "status": "reserved",
+      "reason": "Reserved for ESP32-C3 SPI flash or internal flash-related signals; not available for app GPIO."
+    },
+    "GPIO14": {
+      "capabilities": ["flash"],
+      "voltage": "3v3",
+      "usedBy": ["spi_flash"],
+      "status": "reserved",
+      "reason": "Reserved for ESP32-C3 SPI flash or internal flash-related signals; not available for app GPIO."
+    },
+    "GPIO15": {
+      "capabilities": ["flash"],
+      "voltage": "3v3",
+      "usedBy": ["spi_flash"],
+      "status": "reserved",
+      "reason": "Reserved for ESP32-C3 SPI flash or internal flash-related signals; not available for app GPIO."
+    },
+    "GPIO16": {
+      "capabilities": ["flash"],
+      "voltage": "3v3",
+      "usedBy": ["spi_flash"],
+      "status": "reserved",
+      "reason": "Reserved for ESP32-C3 SPI flash or internal flash-related signals; not available for app GPIO."
+    },
+    "GPIO17": {
+      "capabilities": ["flash"],
+      "voltage": "3v3",
+      "usedBy": ["spi_flash"],
+      "status": "reserved",
+      "reason": "Reserved for ESP32-C3 SPI flash or internal flash-related signals; not available for app GPIO."
     },
     "GPIO18": {
       "capabilities": ["usb_d-"],
       "voltage": "3v3",
-      "usedBy": ["usb.native"]
+      "usedBy": ["usb.native"],
+      "status": "reserved",
+      "reason": "Native USB Serial/JTAG D- for this reference target; app GPIO use can break USB access."
     },
     "GPIO19": {
       "capabilities": ["usb_d+"],
       "voltage": "3v3",
-      "usedBy": ["usb.native"]
+      "usedBy": ["usb.native"],
+      "status": "reserved",
+      "reason": "Native USB Serial/JTAG D+ for this reference target; app GPIO use can break USB access."
     },
     "GPIO20": {
-      "capabilities": ["uart_rx"],
+      "capabilities": ["gpio", "uart_rx"],
       "voltage": "3v3",
       "usedBy": ["console.uart0_rx"],
-      "status": "available-if-board-uses-uart-bridge"
+      "status": "available-with-uart-caution",
+      "reason": "Commonly exposed as UART RX on some variants; use as GPIO only when UART bridge/debug access is not needed."
     },
     "GPIO21": {
-      "capabilities": ["uart_tx"],
+      "capabilities": ["gpio", "uart_tx"],
       "voltage": "3v3",
       "usedBy": ["console.uart0_tx"],
-      "status": "available-if-board-uses-uart-bridge"
+      "status": "available-with-uart-caution",
+      "reason": "Commonly exposed as UART TX on some variants; use as GPIO only when UART bridge/debug access is not needed."
     }
   },
   "buses": {},

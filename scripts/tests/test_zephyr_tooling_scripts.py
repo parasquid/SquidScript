@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import os
 import stat
 import subprocess
@@ -323,7 +324,58 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("#define SQ_TARGET_INDICATOR_DEFAULT_GPIO_PIN 8", header)
         self.assertIn("#define SQ_TARGET_INDICATOR_DEFAULT_ACTIVE_LOW 1", header)
         self.assertIn("#define SQ_TARGET_INDICATOR_DEFAULT_PWM_FREQUENCY_HZ 1000", header)
-        self.assertIn("#define SQ_TARGET_GPIO_CAPABLE_MASK 0x000000000000030cULL", header)
+        self.assertIn("#define SQ_TARGET_GPIO_CAPABLE_MASK 0x00000000003007ffULL", header)
+
+    def test_supermini_target_json_is_canonical_for_pin_availability(self):
+        target = json.loads(self.read("targets/esp32c3-super-mini.target.json"))
+        pins = target["pins"]
+
+        for pin in ["GPIO0", "GPIO1", "GPIO4", "GPIO5", "GPIO6", "GPIO7", "GPIO10"]:
+            with self.subTest(pin=pin):
+                self.assertIn("gpio", pins[pin]["capabilities"])
+                self.assertEqual(pins[pin]["status"], "free-to-use")
+
+        for pin in ["GPIO2", "GPIO3", "GPIO8", "GPIO9", "GPIO20", "GPIO21"]:
+            with self.subTest(pin=pin):
+                self.assertIn("gpio", pins[pin]["capabilities"])
+                self.assertTrue(pins[pin]["status"].startswith("available-with"))
+
+        for pin in ["GPIO11", "GPIO12", "GPIO13", "GPIO14", "GPIO15", "GPIO16", "GPIO17", "GPIO18", "GPIO19"]:
+            with self.subTest(pin=pin):
+                self.assertNotIn("gpio", pins[pin].get("capabilities", []))
+                self.assertIn(pins[pin]["status"], ["not-exposed", "reserved"])
+
+    def test_target_markdown_is_generated_from_target_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "esp32c3-super-mini.md"
+
+            subprocess.run(
+                [
+                    str(ROOT / "scripts/generate-target-markdown.py"),
+                    str(ROOT / "targets/esp32c3-super-mini.target.json"),
+                    str(out),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            generated = out.read_text(encoding="utf-8")
+
+        checked_in = self.read("docs/targets/esp32c3-super-mini.md")
+        self.assertEqual(generated, checked_in)
+        self.assertIn("Generated from `targets/esp32c3-super-mini.target.json`", checked_in)
+        self.assertIn("| `GPIO10` | Free to use | `gpio` |", checked_in)
+        self.assertIn("| `GPIO18` | Truly unavailable | `usb_d-` |", checked_in)
+        self.assertIn("| `indicator.default` | pwm-led | `GPIO8` | typical |", checked_in)
+
+    def test_agent_guidance_keeps_target_json_canonical(self):
+        agents = self.read("AGENTS.md")
+
+        self.assertIn("Target JSON files are the canonical target descriptions", agents)
+        self.assertIn("generate-target-markdown.py", agents)
+        self.assertIn("Do not hand-edit generated target Markdown tables", agents)
 
     def test_zephyr_target_defaults_generator_validates_indicator_overlay(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -713,7 +765,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         )
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
 
-        self.assertIn('indicator { use "gpio:GPIO10" }', app)
+        self.assertIn('indicator { use "gpio:GPIO18" }', app)
         self.assertIn(
             'cargo run --quiet -p squidc -- app install "${UNSUPPORTED_INLINE_GPIO_APP}"',
             script,
