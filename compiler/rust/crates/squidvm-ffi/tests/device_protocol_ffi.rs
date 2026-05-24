@@ -6,10 +6,22 @@ use squid_device_protocol::{
     state_import_request, wifi_profile_set_request, FrameKind, Opcode, Status,
 };
 use squidvm_ffi::{
-    SqdpAction, SqdpActionKind, SqdpAppLaunch, SqdpAppListEntry, SqdpEventDispatch,
-    SqdpLifecycleTimer, SqdpLineSlice, SqdpResourceMetric, SqdpResourceSession, SqdpStateImport,
-    SqdpTransferSession, SqdpWifiProfile, SQDP_STAGING_PATH_CAP,
+    SqdcConfig, SqdcStatus, SqdcValueKind, SqdpAction, SqdpActionKind, SqdpAppLaunch,
+    SqdpAppListEntry, SqdpEventDispatch, SqdpLifecycleTimer, SqdpLineSlice, SqdpResourceMetric,
+    SqdpResourceSession, SqdpStateImport, SqdpTransferSession, SqdpWifiProfile,
+    SQDP_STAGING_PATH_CAP,
 };
+
+fn sqdc_record<'a>(config: &'a SqdcConfig, key: &str) -> &'a squidvm_ffi::SqdcRecord {
+    config
+        .records
+        .iter()
+        .take(config.count)
+        .find(|record| {
+            record.present && std::str::from_utf8(&record.key[..record.key_len]).unwrap() == key
+        })
+        .unwrap()
+}
 
 #[test]
 fn ffi_encodes_hello_response_into_caller_buffer() {
@@ -39,6 +51,102 @@ fn ffi_encodes_hello_response_into_caller_buffer() {
     assert_eq!(frame.opcode, Opcode::Hello);
     assert_eq!(frame.status, Status::Ok);
     assert_eq!(frame.sequence, 42);
+}
+
+#[test]
+fn ffi_parses_edits_and_round_trips_sqdevice_draft_config() {
+    let source = b"SQDEVICE\nservice string 17:indicator.default\nbackend string 4:gpio\nactiveLow bool false\npin int 8\nunused null\n";
+    let mut config = SqdcConfig::default();
+
+    let status =
+        unsafe { squidvm_ffi::sqdc_parse_sqdevice(source.as_ptr(), source.len(), &mut config) };
+    assert_eq!(status, SqdcStatus::Ok);
+    assert_eq!(config.count, 5);
+    assert_eq!(
+        sqdc_record(&config, "backend").value.kind,
+        SqdcValueKind::String
+    );
+    assert_eq!(
+        &sqdc_record(&config, "backend").value.string
+            [..sqdc_record(&config, "backend").value.string_len],
+        b"gpio"
+    );
+    assert!(!sqdc_record(&config, "activeLow").value.bool_value);
+    assert_eq!(sqdc_record(&config, "pin").value.i32_value, 8);
+    assert_eq!(
+        sqdc_record(&config, "unused").value.kind,
+        SqdcValueKind::Null
+    );
+
+    let status = unsafe {
+        squidvm_ffi::sqdc_config_set_string(
+            &mut config,
+            b"pinName".as_ptr(),
+            b"pinName".len(),
+            b"GPIO8".as_ptr(),
+            b"GPIO8".len(),
+        )
+    };
+    assert_eq!(status, SqdcStatus::Ok);
+
+    let status =
+        unsafe { squidvm_ffi::sqdc_config_set_bool(&mut config, b"activeLow".as_ptr(), 9, true) };
+    assert_eq!(status, SqdcStatus::Ok);
+    assert!(sqdc_record(&config, "activeLow").value.bool_value);
+
+    let mut encoded = [0u8; 512];
+    let mut encoded_len = 0usize;
+    let status = unsafe {
+        squidvm_ffi::sqdc_encode_sqdc(
+            &config,
+            encoded.as_mut_ptr(),
+            encoded.len(),
+            &mut encoded_len,
+        )
+    };
+    assert_eq!(status, SqdcStatus::Ok);
+    assert_eq!(&encoded[..4], b"SQDC");
+
+    let mut decoded = SqdcConfig::default();
+    let status =
+        unsafe { squidvm_ffi::sqdc_decode_sqdc(encoded.as_ptr(), encoded_len, &mut decoded) };
+    assert_eq!(status, SqdcStatus::Ok);
+    assert_eq!(decoded.count, config.count);
+    assert_eq!(
+        &sqdc_record(&decoded, "pinName").value.string
+            [..sqdc_record(&decoded, "pinName").value.string_len],
+        b"GPIO8"
+    );
+    assert!(sqdc_record(&decoded, "activeLow").value.bool_value);
+}
+
+#[test]
+fn ffi_rejects_invalid_sqdevice_draft_inputs_without_allocating() {
+    let mut config = SqdcConfig::default();
+    let duplicate = b"SQDEVICE\nbackend string 4:gpio\nbackend null\n";
+    let status = unsafe {
+        squidvm_ffi::sqdc_parse_sqdevice(duplicate.as_ptr(), duplicate.len(), &mut config)
+    };
+    assert_eq!(status, SqdcStatus::ParseError);
+
+    let status = unsafe {
+        squidvm_ffi::sqdc_config_set_string(
+            &mut config,
+            b"oversized-value".as_ptr(),
+            b"oversized-value".len(),
+            [b'x'; 80].as_ptr(),
+            80,
+        )
+    };
+    assert_eq!(status, SqdcStatus::BufferTooSmall);
+
+    let status =
+        unsafe { squidvm_ffi::sqdc_is_safe_sqdevice_path(b"../bad.sqdevice".as_ptr(), 15) };
+    assert_eq!(status, SqdcStatus::InvalidArgument);
+    let status = unsafe {
+        squidvm_ffi::sqdc_is_safe_sqdevice_path(b"device/indicator.sqdevice".as_ptr(), 25)
+    };
+    assert_eq!(status, SqdcStatus::Ok);
 }
 
 #[test]

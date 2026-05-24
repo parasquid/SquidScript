@@ -55,6 +55,93 @@ pub enum SqdpStatus {
 const SQDP_APP_ID_CAP: usize = 48;
 const SQDP_PATH_CAP: usize = 128;
 pub const SQDP_STAGING_PATH_CAP: usize = 80;
+pub const SQDC_CONFIG_MAX_RECORDS: usize = 8;
+pub const SQDC_CONFIG_KEY_CAP: usize = 32;
+pub const SQDC_CONFIG_STRING_CAP: usize = 64;
+
+const SQDC_MAGIC: &[u8; 4] = b"SQDC";
+const SQDEVICE_HEADER: &[u8] = b"SQDEVICE";
+const SQDC_TAG_NULL: u8 = 0;
+const SQDC_TAG_BOOL: u8 = 1;
+const SQDC_TAG_I32: u8 = 2;
+const SQDC_TAG_STRING: u8 = 3;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SqdcStatus {
+    Ok = 0,
+    InvalidArgument = 1,
+    BufferTooSmall = 2,
+    ParseError = 3,
+    TooManyRecords = 4,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SqdcValueKind {
+    Null = 0,
+    Bool = 1,
+    I32 = 2,
+    String = 3,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqdcValue {
+    pub kind: SqdcValueKind,
+    pub bool_value: bool,
+    pub i32_value: i32,
+    pub string: [u8; SQDC_CONFIG_STRING_CAP],
+    pub string_len: usize,
+}
+
+impl Default for SqdcValue {
+    fn default() -> Self {
+        Self {
+            kind: SqdcValueKind::Null,
+            bool_value: false,
+            i32_value: 0,
+            string: [0; SQDC_CONFIG_STRING_CAP],
+            string_len: 0,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqdcRecord {
+    pub present: bool,
+    pub key: [u8; SQDC_CONFIG_KEY_CAP],
+    pub key_len: usize,
+    pub value: SqdcValue,
+}
+
+impl Default for SqdcRecord {
+    fn default() -> Self {
+        Self {
+            present: false,
+            key: [0; SQDC_CONFIG_KEY_CAP],
+            key_len: 0,
+            value: SqdcValue::default(),
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqdcConfig {
+    pub records: [SqdcRecord; SQDC_CONFIG_MAX_RECORDS],
+    pub count: usize,
+}
+
+impl Default for SqdcConfig {
+    fn default() -> Self {
+        Self {
+            records: [SqdcRecord::default(); SQDC_CONFIG_MAX_RECORDS],
+            count: 0,
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -979,6 +1066,181 @@ impl Default for SqvmCallbacks {
             system_memory_text: None,
             system_storage_text: None,
         }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdc_config_clear(config: *mut SqdcConfig) -> SqdcStatus {
+    if config.is_null() {
+        return SqdcStatus::InvalidArgument;
+    }
+    *config = SqdcConfig::default();
+    SqdcStatus::Ok
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdc_is_safe_sqdevice_path(
+    path: *const u8,
+    path_len: usize,
+) -> SqdcStatus {
+    let Some(path) = ffi_bytes(path, path_len) else {
+        return SqdcStatus::InvalidArgument;
+    };
+    if is_safe_sqdevice_path_bytes(path) {
+        SqdcStatus::Ok
+    } else {
+        SqdcStatus::InvalidArgument
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdc_parse_sqdevice(
+    input: *const u8,
+    input_len: usize,
+    out: *mut SqdcConfig,
+) -> SqdcStatus {
+    let Some(input) = ffi_bytes(input, input_len) else {
+        return SqdcStatus::InvalidArgument;
+    };
+    if out.is_null() {
+        return SqdcStatus::InvalidArgument;
+    }
+    let mut parsed = SqdcConfig::default();
+    match parse_sqdevice_bytes(input, &mut parsed) {
+        SqdcStatus::Ok => {
+            *out = parsed;
+            SqdcStatus::Ok
+        }
+        status => status,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdc_config_set_null(
+    config: *mut SqdcConfig,
+    key: *const u8,
+    key_len: usize,
+) -> SqdcStatus {
+    let Some(key) = ffi_bytes(key, key_len) else {
+        return SqdcStatus::InvalidArgument;
+    };
+    if config.is_null() {
+        return SqdcStatus::InvalidArgument;
+    }
+    config_set_value(&mut *config, key, SqdcValue::default())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdc_config_set_bool(
+    config: *mut SqdcConfig,
+    key: *const u8,
+    key_len: usize,
+    value: bool,
+) -> SqdcStatus {
+    let Some(key) = ffi_bytes(key, key_len) else {
+        return SqdcStatus::InvalidArgument;
+    };
+    if config.is_null() {
+        return SqdcStatus::InvalidArgument;
+    }
+    config_set_value(
+        &mut *config,
+        key,
+        SqdcValue {
+            kind: SqdcValueKind::Bool,
+            bool_value: value,
+            ..SqdcValue::default()
+        },
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdc_config_set_i32(
+    config: *mut SqdcConfig,
+    key: *const u8,
+    key_len: usize,
+    value: i32,
+) -> SqdcStatus {
+    let Some(key) = ffi_bytes(key, key_len) else {
+        return SqdcStatus::InvalidArgument;
+    };
+    if config.is_null() {
+        return SqdcStatus::InvalidArgument;
+    }
+    config_set_value(
+        &mut *config,
+        key,
+        SqdcValue {
+            kind: SqdcValueKind::I32,
+            i32_value: value,
+            ..SqdcValue::default()
+        },
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdc_config_set_string(
+    config: *mut SqdcConfig,
+    key: *const u8,
+    key_len: usize,
+    value: *const u8,
+    value_len: usize,
+) -> SqdcStatus {
+    let Some(key) = ffi_bytes(key, key_len) else {
+        return SqdcStatus::InvalidArgument;
+    };
+    let Some(value) = ffi_bytes(value, value_len) else {
+        return SqdcStatus::InvalidArgument;
+    };
+    if config.is_null() {
+        return SqdcStatus::InvalidArgument;
+    }
+    if value.len() > SQDC_CONFIG_STRING_CAP || str::from_utf8(value).is_err() {
+        return SqdcStatus::BufferTooSmall;
+    }
+    let mut stored = SqdcValue {
+        kind: SqdcValueKind::String,
+        string_len: value.len(),
+        ..SqdcValue::default()
+    };
+    stored.string[..value.len()].copy_from_slice(value);
+    config_set_value(&mut *config, key, stored)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdc_encode_sqdc(
+    config: *const SqdcConfig,
+    out: *mut u8,
+    out_cap: usize,
+    out_len: *mut usize,
+) -> SqdcStatus {
+    if config.is_null() || out_len.is_null() || out.is_null() {
+        return SqdcStatus::InvalidArgument;
+    }
+    *out_len = 0;
+    let out = slice::from_raw_parts_mut(out, out_cap);
+    encode_sqdc_bytes(&*config, out, &mut *out_len)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqdc_decode_sqdc(
+    input: *const u8,
+    input_len: usize,
+    out: *mut SqdcConfig,
+) -> SqdcStatus {
+    let Some(input) = ffi_bytes(input, input_len) else {
+        return SqdcStatus::InvalidArgument;
+    };
+    if out.is_null() {
+        return SqdcStatus::InvalidArgument;
+    }
+    let mut decoded = SqdcConfig::default();
+    match decode_sqdc_bytes(input, &mut decoded) {
+        SqdcStatus::Ok => {
+            *out = decoded;
+            SqdcStatus::Ok
+        }
+        status => status,
     }
 }
 
@@ -2923,6 +3185,398 @@ fn trigger_timer_read_from_reader(
         *out_timer = out;
     }
     SqvmStatus::Ok
+}
+
+unsafe fn ffi_bytes<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8]> {
+    if len == 0 {
+        return Some(&[]);
+    }
+    if ptr.is_null() {
+        return None;
+    }
+    Some(slice::from_raw_parts(ptr, len))
+}
+
+fn parse_sqdevice_bytes(input: &[u8], out: &mut SqdcConfig) -> SqdcStatus {
+    *out = SqdcConfig::default();
+    let mut saw_header = false;
+    for raw_line in input.split(|byte| *byte == b'\n') {
+        let line = trim_ascii(raw_line);
+        if line.is_empty() || line[0] == b'#' {
+            continue;
+        }
+        if !saw_header {
+            if line != SQDEVICE_HEADER {
+                return SqdcStatus::ParseError;
+            }
+            saw_header = true;
+            continue;
+        }
+        let Some((key, rest)) = split_ascii_word(line) else {
+            return SqdcStatus::ParseError;
+        };
+        let (value_type, value_text) = split_ascii_word(rest).unwrap_or((trim_ascii(rest), &[]));
+        let value = match parse_sqdevice_value(value_type, value_text) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let status = config_set_new_value(out, key, value);
+        if status != SqdcStatus::Ok {
+            return status;
+        }
+    }
+    if saw_header {
+        SqdcStatus::Ok
+    } else {
+        SqdcStatus::ParseError
+    }
+}
+
+fn parse_sqdevice_value(value_type: &[u8], value_text: &[u8]) -> Result<SqdcValue, SqdcStatus> {
+    match value_type {
+        b"null" if value_text.is_empty() => Ok(SqdcValue::default()),
+        b"null" => Err(SqdcStatus::ParseError),
+        b"bool" => match value_text {
+            b"true" => Ok(SqdcValue {
+                kind: SqdcValueKind::Bool,
+                bool_value: true,
+                ..SqdcValue::default()
+            }),
+            b"false" => Ok(SqdcValue {
+                kind: SqdcValueKind::Bool,
+                bool_value: false,
+                ..SqdcValue::default()
+            }),
+            _ => Err(SqdcStatus::ParseError),
+        },
+        b"int" => {
+            let value = parse_i32_ascii(value_text)?;
+            Ok(SqdcValue {
+                kind: SqdcValueKind::I32,
+                i32_value: value,
+                ..SqdcValue::default()
+            })
+        }
+        b"string" => {
+            let Some(colon) = value_text.iter().position(|byte| *byte == b':') else {
+                return Err(SqdcStatus::ParseError);
+            };
+            let len = parse_usize_ascii(&value_text[..colon])?;
+            let value = &value_text[colon + 1..];
+            if value.len() != len || value.len() > SQDC_CONFIG_STRING_CAP {
+                return Err(SqdcStatus::ParseError);
+            }
+            if str::from_utf8(value).is_err() {
+                return Err(SqdcStatus::ParseError);
+            }
+            let mut stored = SqdcValue {
+                kind: SqdcValueKind::String,
+                string_len: value.len(),
+                ..SqdcValue::default()
+            };
+            stored.string[..value.len()].copy_from_slice(value);
+            Ok(stored)
+        }
+        _ => Err(SqdcStatus::ParseError),
+    }
+}
+
+fn config_set_value(config: &mut SqdcConfig, key: &[u8], value: SqdcValue) -> SqdcStatus {
+    if !valid_sqdc_key(key) {
+        return SqdcStatus::InvalidArgument;
+    }
+    if let Some(index) = config_record_index(config, key) {
+        config.records[index].value = value;
+        return SqdcStatus::Ok;
+    }
+    append_config_record(config, key, value)
+}
+
+fn config_set_new_value(config: &mut SqdcConfig, key: &[u8], value: SqdcValue) -> SqdcStatus {
+    if config_record_index(config, key).is_some() {
+        return SqdcStatus::ParseError;
+    }
+    append_config_record(config, key, value)
+}
+
+fn append_config_record(config: &mut SqdcConfig, key: &[u8], value: SqdcValue) -> SqdcStatus {
+    if !valid_sqdc_key(key) {
+        return SqdcStatus::InvalidArgument;
+    }
+    if config.count >= SQDC_CONFIG_MAX_RECORDS {
+        return SqdcStatus::TooManyRecords;
+    }
+    let record = &mut config.records[config.count];
+    *record = SqdcRecord::default();
+    record.present = true;
+    record.key_len = key.len();
+    record.key[..key.len()].copy_from_slice(key);
+    record.value = value;
+    config.count += 1;
+    SqdcStatus::Ok
+}
+
+fn config_record_index(config: &SqdcConfig, key: &[u8]) -> Option<usize> {
+    config.records[..config.count]
+        .iter()
+        .position(|record| record.present && &record.key[..record.key_len] == key)
+}
+
+fn valid_sqdc_key(key: &[u8]) -> bool {
+    !key.is_empty()
+        && key.len() <= SQDC_CONFIG_KEY_CAP
+        && str::from_utf8(key).is_ok()
+        && key
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(*byte, b'.' | b'_' | b'-'))
+}
+
+fn encode_sqdc_bytes(config: &SqdcConfig, out: &mut [u8], out_len: &mut usize) -> SqdcStatus {
+    let mut cursor = 0usize;
+    if write_bytes(out, &mut cursor, SQDC_MAGIC) != SqdcStatus::Ok
+        || write_u16_bytes(out, &mut cursor, config.count as u16) != SqdcStatus::Ok
+    {
+        return SqdcStatus::BufferTooSmall;
+    }
+    for record in &config.records[..config.count] {
+        if !record.present || !valid_sqdc_key(&record.key[..record.key_len]) {
+            return SqdcStatus::InvalidArgument;
+        }
+        if write_len_bytes(out, &mut cursor, &record.key[..record.key_len]) != SqdcStatus::Ok {
+            return SqdcStatus::BufferTooSmall;
+        }
+        let status = match record.value.kind {
+            SqdcValueKind::Null => write_u8(out, &mut cursor, SQDC_TAG_NULL),
+            SqdcValueKind::Bool => {
+                let status = write_u8(out, &mut cursor, SQDC_TAG_BOOL);
+                if status == SqdcStatus::Ok {
+                    write_u8(out, &mut cursor, u8::from(record.value.bool_value))
+                } else {
+                    status
+                }
+            }
+            SqdcValueKind::I32 => {
+                let status = write_u8(out, &mut cursor, SQDC_TAG_I32);
+                if status == SqdcStatus::Ok {
+                    write_bytes(out, &mut cursor, &record.value.i32_value.to_le_bytes())
+                } else {
+                    status
+                }
+            }
+            SqdcValueKind::String => {
+                if record.value.string_len > SQDC_CONFIG_STRING_CAP {
+                    return SqdcStatus::InvalidArgument;
+                }
+                let status = write_u8(out, &mut cursor, SQDC_TAG_STRING);
+                if status == SqdcStatus::Ok {
+                    write_len_bytes(
+                        out,
+                        &mut cursor,
+                        &record.value.string[..record.value.string_len],
+                    )
+                } else {
+                    status
+                }
+            }
+        };
+        if status != SqdcStatus::Ok {
+            return status;
+        }
+    }
+    *out_len = cursor;
+    SqdcStatus::Ok
+}
+
+fn decode_sqdc_bytes(input: &[u8], out: &mut SqdcConfig) -> SqdcStatus {
+    *out = SqdcConfig::default();
+    if input.len() < 6 || &input[..4] != SQDC_MAGIC {
+        return SqdcStatus::ParseError;
+    }
+    let Some(count) = read_u16_bytes(input, 4) else {
+        return SqdcStatus::ParseError;
+    };
+    let mut cursor = 6usize;
+    for _ in 0..count {
+        let Some(key) = read_len_bytes(input, &mut cursor) else {
+            return SqdcStatus::ParseError;
+        };
+        let Some(tag) = input.get(cursor).copied() else {
+            return SqdcStatus::ParseError;
+        };
+        cursor += 1;
+        let value = match tag {
+            SQDC_TAG_NULL => SqdcValue::default(),
+            SQDC_TAG_BOOL => {
+                let Some(value) = input.get(cursor).copied() else {
+                    return SqdcStatus::ParseError;
+                };
+                cursor += 1;
+                SqdcValue {
+                    kind: SqdcValueKind::Bool,
+                    bool_value: value != 0,
+                    ..SqdcValue::default()
+                }
+            }
+            SQDC_TAG_I32 => {
+                let Some(bytes) = input.get(cursor..cursor + 4) else {
+                    return SqdcStatus::ParseError;
+                };
+                cursor += 4;
+                SqdcValue {
+                    kind: SqdcValueKind::I32,
+                    i32_value: i32::from_le_bytes(bytes.try_into().unwrap()),
+                    ..SqdcValue::default()
+                }
+            }
+            SQDC_TAG_STRING => {
+                let Some(value) = read_len_bytes(input, &mut cursor) else {
+                    return SqdcStatus::ParseError;
+                };
+                if value.len() > SQDC_CONFIG_STRING_CAP || str::from_utf8(value).is_err() {
+                    return SqdcStatus::ParseError;
+                }
+                let mut stored = SqdcValue {
+                    kind: SqdcValueKind::String,
+                    string_len: value.len(),
+                    ..SqdcValue::default()
+                };
+                stored.string[..value.len()].copy_from_slice(value);
+                stored
+            }
+            _ => return SqdcStatus::ParseError,
+        };
+        let status = config_set_new_value(out, key, value);
+        if status != SqdcStatus::Ok {
+            return status;
+        }
+    }
+    if cursor == input.len() {
+        SqdcStatus::Ok
+    } else {
+        SqdcStatus::ParseError
+    }
+}
+
+fn is_safe_sqdevice_path_bytes(path: &[u8]) -> bool {
+    if path.is_empty()
+        || path.starts_with(b"/")
+        || path.starts_with(b"sd/")
+        || path.starts_with(b"system/")
+        || path.iter().any(|byte| *byte == b'\\')
+        || !path.ends_with(b".sqdevice")
+    {
+        return false;
+    }
+    path.split(|byte| *byte == b'/')
+        .all(|part| !part.is_empty() && part != b"." && part != b"..")
+}
+
+fn trim_ascii(mut input: &[u8]) -> &[u8] {
+    if input.ends_with(b"\r") {
+        input = &input[..input.len() - 1];
+    }
+    while matches!(input.first(), Some(b' ' | b'\t')) {
+        input = &input[1..];
+    }
+    while matches!(input.last(), Some(b' ' | b'\t')) {
+        input = &input[..input.len() - 1];
+    }
+    input
+}
+
+fn split_ascii_word(input: &[u8]) -> Option<(&[u8], &[u8])> {
+    let input = trim_ascii(input);
+    let split = input.iter().position(|byte| byte.is_ascii_whitespace())?;
+    Some((&input[..split], trim_ascii(&input[split..])))
+}
+
+fn parse_i32_ascii(input: &[u8]) -> Result<i32, SqdcStatus> {
+    if input.is_empty() {
+        return Err(SqdcStatus::ParseError);
+    }
+    let negative = input[0] == b'-';
+    let digits = if negative { &input[1..] } else { input };
+    if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+        return Err(SqdcStatus::ParseError);
+    }
+    let mut value: i64 = 0;
+    for digit in digits {
+        value = value
+            .checked_mul(10)
+            .and_then(|value| value.checked_add((digit - b'0') as i64))
+            .ok_or(SqdcStatus::ParseError)?;
+    }
+    if negative {
+        let value = value.checked_neg().ok_or(SqdcStatus::ParseError)?;
+        i32::try_from(value).map_err(|_| SqdcStatus::ParseError)
+    } else {
+        i32::try_from(value).map_err(|_| SqdcStatus::ParseError)
+    }
+}
+
+fn parse_usize_ascii(input: &[u8]) -> Result<usize, SqdcStatus> {
+    if input.is_empty() || !input.iter().all(u8::is_ascii_digit) {
+        return Err(SqdcStatus::ParseError);
+    }
+    let mut value = 0usize;
+    for digit in input {
+        value = value
+            .checked_mul(10)
+            .and_then(|value| value.checked_add((digit - b'0') as usize))
+            .ok_or(SqdcStatus::ParseError)?;
+    }
+    Ok(value)
+}
+
+fn write_u8(out: &mut [u8], cursor: &mut usize, value: u8) -> SqdcStatus {
+    if *cursor >= out.len() {
+        return SqdcStatus::BufferTooSmall;
+    }
+    out[*cursor] = value;
+    *cursor += 1;
+    SqdcStatus::Ok
+}
+
+fn write_u16_bytes(out: &mut [u8], cursor: &mut usize, value: u16) -> SqdcStatus {
+    write_bytes(out, cursor, &value.to_le_bytes())
+}
+
+fn write_len_bytes(out: &mut [u8], cursor: &mut usize, value: &[u8]) -> SqdcStatus {
+    let Ok(len) = u16::try_from(value.len()) else {
+        return SqdcStatus::BufferTooSmall;
+    };
+    let status = write_u16_bytes(out, cursor, len);
+    if status == SqdcStatus::Ok {
+        write_bytes(out, cursor, value)
+    } else {
+        status
+    }
+}
+
+fn write_bytes(out: &mut [u8], cursor: &mut usize, bytes: &[u8]) -> SqdcStatus {
+    let Some(end) = cursor.checked_add(bytes.len()) else {
+        return SqdcStatus::BufferTooSmall;
+    };
+    let Some(dest) = out.get_mut(*cursor..end) else {
+        return SqdcStatus::BufferTooSmall;
+    };
+    dest.copy_from_slice(bytes);
+    *cursor = end;
+    SqdcStatus::Ok
+}
+
+fn read_u16_bytes(input: &[u8], offset: usize) -> Option<u16> {
+    let bytes = input.get(offset..offset + 2)?;
+    Some(u16::from_le_bytes(bytes.try_into().ok()?))
+}
+
+fn read_len_bytes<'a>(input: &'a [u8], cursor: &mut usize) -> Option<&'a [u8]> {
+    let len = read_u16_bytes(input, *cursor)? as usize;
+    *cursor = (*cursor).checked_add(2)?;
+    let end = (*cursor).checked_add(len)?;
+    let bytes = input.get(*cursor..end)?;
+    *cursor = end;
+    Some(bytes)
 }
 
 fn callback_status(status: i32) -> Result<(), VmError> {

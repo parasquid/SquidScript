@@ -40,9 +40,11 @@ for compiler, SQBC tooling, and VM semantics.
   configuration APIs. `device.config.load`, `device.config.set`,
   `device.config.rebind`, and `device.config.save` now compile and reach
   Zephyr through VM/FFI result records, but the reference firmware still
-  returns honest `unsupported` results until package `.sqdevice` resources,
-  active draft storage, binding validation, and flash SQDC persistence are
-  implemented.
+  returns honest `unsupported` results. A bounded no-alloc Rust FFI core now
+  parses SQDEVICE text, edits caller-owned draft records, validates safe
+  `.sqdevice` paths, and encodes/decodes SQDC. Remaining work is to connect
+  Zephyr package-resource file reads, active draft storage, binding validation,
+  physical rebind application, and flash SQDC persistence to that core.
 - Decide service priority and target support for currently spec-recognized but
   not SQBC-backed APIs: `httpServer.*`, `bleTransfer.*`, `content.*`, and
   `binbook.*`. Add each only as a real compiler/SQBC/VM/Zephyr slice with

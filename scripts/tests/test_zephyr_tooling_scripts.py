@@ -724,6 +724,20 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn(".system_storage_text = runtime_system_storage_text", runtime_c)
         self.assertIn("sq_vm_runtime_set_store_mount_point", runtime_h)
 
+    def test_zephyr_header_exposes_bounded_rust_device_config_core(self):
+        ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
+        ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
+
+        self.assertIn("#define SQDC_CONFIG_MAX_RECORDS 8", ffi_h)
+        self.assertIn("#define SQDC_CONFIG_KEY_CAP 32", ffi_h)
+        self.assertIn("#define SQDC_CONFIG_STRING_CAP 64", ffi_h)
+        self.assertIn("typedef struct {\n\tSqdcRecord records[SQDC_CONFIG_MAX_RECORDS];", ffi_h)
+        self.assertIn("sqdc_parse_sqdevice", ffi_h)
+        self.assertIn("sqdc_config_set_string", ffi_h)
+        self.assertIn("sqdc_encode_sqdc", ffi_h)
+        self.assertIn("sqdc_decode_sqdc", ffi_h)
+        self.assertIn("test_sqdc_ffi_parses_and_encodes_device_config", ztest)
+
     def test_zephyr_runtime_preserves_foreground_vm_context_between_non_lifecycle_events(self):
         runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")

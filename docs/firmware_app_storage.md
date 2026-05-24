@@ -93,6 +93,15 @@ resource directory creation, lookup-path derivation, file size metadata, and
 path traversal rejection. Framed device commands expose install, registry, and
 resource behavior through the Zephyr command surface.
 
+Device configuration parsing and SQDC encoding for firmware use a bounded
+Rust FFI core in `squidvm-ffi`, not ad hoc C parsing. The core operates on
+caller-owned fixed `SqdcConfig` records, validates safe package-relative
+`.sqdevice` paths, parses SQDEVICE text resources, applies primitive draft
+updates, and encodes/decodes binary SQDC without heap allocation. The current
+Zephyr runtime still returns honest `unsupported` results from
+`device.config.*` until package-resource reads, draft lifetime, physical
+binding application, and active config persistence are wired to that core.
+
 ## App State
 
 App state is separate from installed app bytecode. Scripts declare typed state

@@ -2340,6 +2340,42 @@ ZTEST(squidscript_protocol, test_vm_runtime_formats_wifi_bssid_without_heap)
 	zassert_equal(sq_vm_runtime_wifi_format_bssid(mac, sizeof(mac), bssid, 17), -ENOSPC);
 }
 
+ZTEST(squidscript_protocol, test_sqdc_ffi_parses_and_encodes_device_config)
+{
+	const uint8_t source[] =
+		"SQDEVICE\n"
+		"service string 17:indicator.default\n"
+		"backend string 4:gpio\n"
+		"activeLow bool false\n"
+		"pin int 8\n";
+	SqdcConfig config = {0};
+	SqdcConfig decoded = {0};
+	uint8_t encoded[256];
+	size_t encoded_len = 0;
+
+	zassert_equal(sqdc_parse_sqdevice(source, strlen((const char *)source), &config),
+		      SQDC_STATUS_OK);
+	zassert_equal(config.count, 4);
+	zassert_equal(sqdc_config_set_string(&config, (const uint8_t *)"pinName",
+					     strlen("pinName"), (const uint8_t *)"GPIO8",
+					     strlen("GPIO8")),
+		      SQDC_STATUS_OK);
+	zassert_equal(sqdc_config_set_bool(&config, (const uint8_t *)"activeLow",
+					   strlen("activeLow"), true),
+		      SQDC_STATUS_OK);
+	zassert_equal(sqdc_encode_sqdc(&config, encoded, sizeof(encoded), &encoded_len),
+		      SQDC_STATUS_OK);
+	zassert_mem_equal(encoded, "SQDC", 4);
+	zassert_equal(sqdc_decode_sqdc(encoded, encoded_len, &decoded), SQDC_STATUS_OK);
+	zassert_equal(decoded.count, config.count);
+	zassert_equal(sqdc_is_safe_sqdevice_path((const uint8_t *)"device/indicator.sqdevice",
+						 strlen("device/indicator.sqdevice")),
+		      SQDC_STATUS_OK);
+	zassert_equal(sqdc_is_safe_sqdevice_path((const uint8_t *)"../indicator.sqdevice",
+						 strlen("../indicator.sqdevice")),
+		      SQDC_STATUS_INVALID_ARGUMENT);
+}
+
 ZTEST(squidscript_protocol, test_vm_runtime_tracks_output_indicator_and_due_timers)
 {
 	struct sq_vm_runtime runtime = {0};

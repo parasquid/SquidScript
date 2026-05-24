@@ -25,6 +25,45 @@ typedef enum {
 	SQDP_STATUS_ENCODE_ERROR = 3,
 } SqdpStatus;
 
+#define SQDC_CONFIG_MAX_RECORDS 8
+#define SQDC_CONFIG_KEY_CAP 32
+#define SQDC_CONFIG_STRING_CAP 64
+
+typedef enum {
+	SQDC_STATUS_OK = 0,
+	SQDC_STATUS_INVALID_ARGUMENT = 1,
+	SQDC_STATUS_BUFFER_TOO_SMALL = 2,
+	SQDC_STATUS_PARSE_ERROR = 3,
+	SQDC_STATUS_TOO_MANY_RECORDS = 4,
+} SqdcStatus;
+
+typedef enum {
+	SQDC_VALUE_NULL = 0,
+	SQDC_VALUE_BOOL = 1,
+	SQDC_VALUE_I32 = 2,
+	SQDC_VALUE_STRING = 3,
+} SqdcValueKind;
+
+typedef struct {
+	SqdcValueKind kind;
+	bool bool_value;
+	int32_t i32_value;
+	uint8_t string[SQDC_CONFIG_STRING_CAP];
+	size_t string_len;
+} SqdcValue;
+
+typedef struct {
+	bool present;
+	uint8_t key[SQDC_CONFIG_KEY_CAP];
+	size_t key_len;
+	SqdcValue value;
+} SqdcRecord;
+
+typedef struct {
+	SqdcRecord records[SQDC_CONFIG_MAX_RECORDS];
+	size_t count;
+} SqdcConfig;
+
 typedef enum {
 	SQDP_ACTION_NONE = 0,
 	SQDP_ACTION_BEGIN_INSTALL = 1,
@@ -436,6 +475,19 @@ size_t sqvm_context_size(void);
 size_t sqvm_context_align(void);
 size_t sqvm_storage_transfer_capacity(void);
 size_t sqvm_saved_state_capacity(void);
+SqdcStatus sqdc_config_clear(SqdcConfig *config);
+SqdcStatus sqdc_is_safe_sqdevice_path(const uint8_t *path, size_t path_len);
+SqdcStatus sqdc_parse_sqdevice(const uint8_t *input, size_t input_len, SqdcConfig *out);
+SqdcStatus sqdc_config_set_null(SqdcConfig *config, const uint8_t *key, size_t key_len);
+SqdcStatus sqdc_config_set_bool(SqdcConfig *config, const uint8_t *key, size_t key_len,
+				bool value);
+SqdcStatus sqdc_config_set_i32(SqdcConfig *config, const uint8_t *key, size_t key_len,
+			       int32_t value);
+SqdcStatus sqdc_config_set_string(SqdcConfig *config, const uint8_t *key, size_t key_len,
+				  const uint8_t *value, size_t value_len);
+SqdcStatus sqdc_encode_sqdc(const SqdcConfig *config, uint8_t *out, size_t out_cap,
+			    size_t *out_len);
+SqdcStatus sqdc_decode_sqdc(const uint8_t *input, size_t input_len, SqdcConfig *out);
 SqvmStatus sqvm_context_prepare(void *context, size_t context_len);
 SqvmStatus sqvm_context_init_in_place(
 	void *context,
