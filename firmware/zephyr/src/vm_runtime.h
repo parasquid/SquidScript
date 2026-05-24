@@ -186,6 +186,8 @@ int sq_vm_runtime_device_config_set(struct sq_vm_runtime *runtime, const uint8_t
 				    SqvmDeviceConfigResult *out);
 int sq_vm_runtime_device_config_rebind(struct sq_vm_runtime *runtime, const uint8_t *alias,
 				       size_t alias_len, SqvmDeviceConfigResult *out);
+int sq_vm_runtime_device_config_save(struct sq_vm_runtime *runtime, const uint8_t *destination,
+				     size_t destination_len, SqvmDeviceConfigResult *out);
 int sq_vm_runtime_hardware_gpio_write(struct sq_vm_runtime *runtime, const uint8_t *name,
 				      size_t name_len, bool value);
 int sq_vm_runtime_hardware_gpio_toggle(struct sq_vm_runtime *runtime, const uint8_t *name,

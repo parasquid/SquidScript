@@ -52,8 +52,8 @@ The default Zephyr-only hardware suite covers the current required inventory:
 - Verify `system.memory()` and `system.storage("apps")` through the Zephyr VM
   FFI host.
 - Verify `device.config.load`, `device.config.set`, `device.config.rebind`,
-  and `device.config.save` reach the Zephyr VM FFI host and currently return
-  honest unsupported result records.
+  and `device.config.save` reach the Zephyr VM FFI host and save active SQDC
+  config through Zephyr storage.
 - Verify GPIO/indicator behavior, including a final visible board-state check.
 - Verify Wi-Fi scan without credentials.
 - Verify Wi-Fi station behavior only when credentials are explicitly provided
@@ -136,9 +136,8 @@ that `device.config.load`, `device.config.set`, `device.config.rebind`, and
 `device.config.save` all return result records through the real Zephyr VM FFI
 host. The app is installed as a package with a `.sqdevice` resource; the
 current reference firmware returns `ok=true` for package resource load and
-draft set, `ok=true` for `indicator.default` rebind, then `ok=false`,
-`error=unsupported`, and `warning=null` for save until SQDC flash persistence is
-implemented.
+draft set, `ok=true` for `indicator.default` rebind, then `ok=true` for SQDC
+flash save.
 
 `scripts/c3-supermini-test-device-binding.sh` runs after system resource
 coverage and before the explicit device config API check. It packages

@@ -108,8 +108,9 @@ applies packaged `indicator.default` `.sqdevice` bindings and inline
 `gpio:GPIO<n>` indicator bindings before `event.on("app.start")`. Inline GPIO
 bindings are normalized into the same in-memory SQDC draft/rebind path as
 packaged resources and do not install a package resource.
-Active config persistence through `device.config.save(...)` still returns an
-honest `unsupported` result.
+Active config persistence through `device.config.save("flash")` writes
+firmware-owned binary SQDC at `/sq/system/device-config.sqdc` on the ESP32-C3
+reference target.
 
 ## App State
 

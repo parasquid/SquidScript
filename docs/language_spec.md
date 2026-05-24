@@ -3451,8 +3451,8 @@ the current `indicator.default` GPIO binding through
 `device.config.rebind(...)`, and applies installed app top-level
 `device { indicator { use ... } }` package `.sqdevice` and inline
 `gpio:GPIO<n>` bindings before `app.start`.
-`device.config.save("flash")` persistence still returns a result record with
-`ok: false`, `error: "unsupported"`, and `warning: null`.
+`device.config.save("flash")` writes firmware-owned binary SQDC to the current
+target's active device-config storage.
 
 ---
 

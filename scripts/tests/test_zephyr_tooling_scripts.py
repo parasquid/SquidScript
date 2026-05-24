@@ -520,7 +520,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("output=device load true null null", script)
         self.assertIn("output=device set true null null", script)
         self.assertIn("output=device rebind true null null", script)
-        self.assertIn("output=device save false unsupported null", script)
+        self.assertIn("output=device save true null null", script)
         self.assertIn("assert_file_empty_command", script)
         self.assertLess(
             suite.index("c3-supermini-test-device-config.sh"),

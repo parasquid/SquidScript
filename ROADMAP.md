@@ -32,9 +32,11 @@ for compiler, SQBC tooling, and VM semantics.
   APIs. `device.config.load("package:...")` now reads installed foreground app
   package resources into a bounded runtime draft, and `device.config.set(...)`
   edits that draft through the no-alloc Rust FFI core. `device.config.rebind`
-  now validates and activates `indicator.default` GPIO bindings. Remaining work
-  is to generalize binding validation/application beyond the current indicator
-  path and add flash SQDC persistence for `device.config.save("flash")`.
+  now validates and activates `indicator.default` GPIO bindings, and
+  `device.config.save("flash")` persists binary SQDC to firmware-owned storage.
+  Remaining work is to generalize binding validation/application beyond the
+  current indicator path and load saved global SQDC defaults during boot or
+  runtime initialization where target policy requires it.
 - Finish moving `service.indicator.*` ownership to the resolved logical
   `indicator.default` binding. The Zephyr runtime now tracks an active
   indicator binding and routes indicator output through it, including package

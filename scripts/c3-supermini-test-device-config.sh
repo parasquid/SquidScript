@@ -69,12 +69,12 @@ assert_file_contains "${apps_out}" "app=device-config-summary"
 
 run_capture launch-device-config cargo run --quiet -p squidc -- app launch device-config-summary >/dev/null
 
-output_out="$(wait_for_contains output-device-save "output=device save false unsupported null" \
+output_out="$(wait_for_contains output-device-save "output=device save true null null" \
   "device output" cargo run --quiet -p squidc -- device output)"
 assert_file_contains "${output_out}" "output=device load true null null"
 assert_file_contains "${output_out}" "output=device set true null null"
 assert_file_contains "${output_out}" "output=device rebind true null null"
-assert_file_contains "${output_out}" "output=device save false unsupported null"
+assert_file_contains "${output_out}" "output=device save true null null"
 
 errors_out="$(run_capture errors cargo run --quiet -p squidc -- device errors)"
 assert_file_empty_command "${errors_out}"

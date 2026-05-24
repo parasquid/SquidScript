@@ -255,6 +255,15 @@ int sq_app_store_prepare_filesystem(const char *mount_point)
 	if (result != 0) {
 		return result;
 	}
+	result = ensure_directory(path);
+	if (result != 0) {
+		return result;
+	}
+
+	result = join_path2(path, sizeof(path), mount_point, "system");
+	if (result != 0) {
+		return result;
+	}
 	return ensure_directory(path);
 }
 
@@ -541,6 +550,21 @@ int sq_app_store_resource_path(const char *mount_point, const char *app_id,
 	}
 
 	return format_resource_path(out, out_len, mount_point, app_id, resource_path);
+}
+
+int sq_app_store_device_config_path(const char *mount_point, char *out, size_t out_len)
+{
+	char system_dir[SQ_APP_STORE_PATH_MAX];
+	int result;
+
+	if (mount_point == NULL || out == NULL) {
+		return -EINVAL;
+	}
+	result = join_path2(system_dir, sizeof(system_dir), mount_point, "system");
+	if (result != 0) {
+		return result;
+	}
+	return join_path2(out, out_len, system_dir, "device-config.sqdc");
 }
 
 int sq_app_store_install_resource(const char *mount_point, const char *app_id,

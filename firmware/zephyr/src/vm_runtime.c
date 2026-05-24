@@ -1303,6 +1303,32 @@ static int runtime_device_config_read_file(const char *path, uint8_t *buffer, si
 	return result;
 }
 
+static int runtime_device_config_write_file(const char *path, const uint8_t *bytes, size_t len)
+{
+	struct fs_file_t file;
+	int result;
+	ssize_t written;
+
+	if (path == NULL || bytes == NULL || len == 0) {
+		return -EINVAL;
+	}
+
+	fs_file_t_init(&file);
+	result = fs_open(&file, path, FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC);
+	if (result != 0) {
+		return result;
+	}
+	written = fs_write(&file, bytes, len);
+	result = fs_close(&file);
+	if (written < 0) {
+		return (int)written;
+	}
+	if ((size_t)written != len) {
+		return -EIO;
+	}
+	return result;
+}
+
 static int sq_vm_runtime_device_config_load_resource(struct sq_vm_runtime *runtime,
 						     const uint8_t *resource_bytes,
 						     size_t resource_len,
@@ -1687,14 +1713,55 @@ static int32_t runtime_device_config_rebind(void *user_data, const uint8_t *alia
 	return sq_vm_runtime_device_config_rebind(user_data, alias, alias_len, out);
 }
 
+int sq_vm_runtime_device_config_save(struct sq_vm_runtime *runtime, const uint8_t *destination,
+				     size_t destination_len, SqvmDeviceConfigResult *out)
+{
+	char path[SQ_APP_STORE_PATH_MAX];
+	size_t encoded_len = 0;
+	SqdcStatus status;
+	int result;
+
+	if (runtime == NULL || destination == NULL || out == NULL) {
+		return -EINVAL;
+	}
+	if (destination_len != strlen("flash") || memcmp(destination, "flash", destination_len) != 0) {
+		return runtime_device_config_unsupported(out);
+	}
+	if (runtime->store_mount_point == NULL) {
+		return runtime_device_config_error(out, "no store");
+	}
+	if (!runtime->device_config_draft_loaded) {
+		return runtime_device_config_error(out, "no draft");
+	}
+
+	result = sq_app_store_prepare_filesystem(runtime->store_mount_point);
+	if (result != 0) {
+		return runtime_device_config_error(out, "storage prepare failed");
+	}
+	result = sq_app_store_device_config_path(runtime->store_mount_point, path, sizeof(path));
+	if (result != 0) {
+		return runtime_device_config_error(out, "config path failed");
+	}
+
+	status = sqdc_encode_sqdc(&runtime->device_config_draft,
+				  runtime->transfer.completion.bytes,
+				  sizeof(runtime->transfer.completion.bytes), &encoded_len);
+	if (status != SQDC_STATUS_OK) {
+		const char *error = runtime_device_config_status_error(status);
+		return runtime_device_config_error(out, error != NULL ? error : "encode error");
+	}
+	result = runtime_device_config_write_file(path, runtime->transfer.completion.bytes,
+						  encoded_len);
+	if (result != 0) {
+		return runtime_device_config_error(out, "config write failed");
+	}
+	return runtime_device_config_ok(out);
+}
+
 static int32_t runtime_device_config_save(void *user_data, const uint8_t *destination,
 					  size_t destination_len, SqvmDeviceConfigResult *out)
 {
-	ARG_UNUSED(user_data);
-	ARG_UNUSED(destination);
-	ARG_UNUSED(destination_len);
-
-	return runtime_device_config_unsupported(out);
+	return sq_vm_runtime_device_config_save(user_data, destination, destination_len, out);
 }
 
 static void clear_dispatch_transfer(struct sq_vm_runtime *runtime)

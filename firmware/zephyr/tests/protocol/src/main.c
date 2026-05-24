@@ -500,6 +500,41 @@ static int write_test_file(const char *path, const uint8_t *bytes, size_t len)
 	return result;
 }
 
+static int read_test_file(const char *path, uint8_t *bytes, size_t cap, size_t *out_len)
+{
+	struct fs_dirent entry;
+	struct fs_file_t file;
+	int result;
+
+	if (bytes == NULL || out_len == NULL) {
+		return -EINVAL;
+	}
+	*out_len = 0;
+	result = fs_stat(path, &entry);
+	if (result != 0) {
+		return result;
+	}
+	if (entry.type != FS_DIR_ENTRY_FILE || entry.size > cap) {
+		return -EINVAL;
+	}
+
+	fs_file_t_init(&file);
+	result = fs_open(&file, path, FS_O_READ);
+	if (result != 0) {
+		return result;
+	}
+	ssize_t read = fs_read(&file, bytes, entry.size);
+	result = fs_close(&file);
+	if (read < 0) {
+		return (int)read;
+	}
+	if ((size_t)read != entry.size) {
+		return -EIO;
+	}
+	*out_len = (size_t)read;
+	return result;
+}
+
 static int unlink_test_file_if_exists(const char *path)
 {
 	struct fs_dirent entry;
@@ -2344,6 +2379,56 @@ ZTEST(squidscript_protocol, test_vm_runtime_loads_package_sqdevice_resource_into
 	zassert_true(runtime.indicator_binding_active);
 	zassert_equal(runtime.indicator_binding_pin, 8);
 	zassert_true(runtime.indicator_binding_active_low);
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
+ZTEST(squidscript_protocol, test_vm_runtime_saves_device_config_draft_to_flash_sqdc)
+{
+	const uint8_t sqbc[] = {0x53, 0x51, 0x42, 0x43};
+	const uint8_t sqdevice[] = "SQDEVICE\n"
+				   "service string 17:indicator.default\n"
+				   "mode string 4:gpio\n"
+				   "pinName string 5:GPIO8\n"
+				   "activeLow bool true\n";
+	struct sq_vm_runtime runtime = {0};
+	SqvmDeviceConfigResult result = {0};
+	uint8_t saved[256];
+	size_t saved_len = 0;
+	SqdcConfig decoded = {0};
+	char path[SQ_APP_STORE_PATH_MAX];
+
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "device-save-app", sqbc,
+					       sizeof(sqbc)),
+		      0);
+	zassert_equal(sq_app_store_install_resource(test_fs_mount.mnt_point, "device-save-app",
+						    "device/indicator.sqdevice", sqdevice,
+						    sizeof(sqdevice) - 1),
+		      0);
+
+	sq_vm_runtime_init(&runtime);
+	sq_vm_runtime_set_store_mount_point(&runtime, test_fs_mount.mnt_point);
+	strncpy(runtime.current_app, "device-save-app", sizeof(runtime.current_app) - 1);
+
+	zassert_equal(sq_vm_runtime_device_config_load(
+			      &runtime, (const uint8_t *)"package:device/indicator.sqdevice",
+			      strlen("package:device/indicator.sqdevice"), &result),
+		      0);
+	zassert_true(result.ok);
+
+	memset(&result, 0, sizeof(result));
+	zassert_equal(sq_vm_runtime_device_config_save(&runtime, (const uint8_t *)"flash",
+						       strlen("flash"), &result),
+		      0);
+	zassert_true(result.ok);
+
+	zassert_equal(sq_app_store_device_config_path(test_fs_mount.mnt_point, path, sizeof(path)),
+		      0);
+	zassert_equal(read_test_file(path, saved, sizeof(saved), &saved_len), 0);
+	zassert_true(saved_len > 0);
+	zassert_equal(sqdc_decode_sqdc(saved, saved_len, &decoded), SQDC_STATUS_OK);
+	zassert_equal(decoded.count, 4);
 
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }
