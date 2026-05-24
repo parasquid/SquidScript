@@ -786,6 +786,7 @@ fn parses_device_bindings_and_rejects_unsafe_paths() {
     let source = r#"app "device-test"
 device {
   indicator { use "device/indicator.sqdevice" }
+  indicator "external" { use "gpio:GPIO10" }
   display "status" { use "device/status-display.sqdevice" }
 }
 screen("main") {
@@ -805,6 +806,11 @@ screen("main") {
                 service: "indicator".to_string(),
                 binding: "default".to_string(),
                 resource: "device/indicator.sqdevice".to_string(),
+            },
+            IrDeviceBinding {
+                service: "indicator".to_string(),
+                binding: "external".to_string(),
+                resource: "gpio:GPIO10".to_string(),
             },
             IrDeviceBinding {
                 service: "display".to_string(),

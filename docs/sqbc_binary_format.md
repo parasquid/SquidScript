@@ -201,12 +201,14 @@ the compiler emits one empty synthesized `main` screen. This keeps runtime
 screen metadata uniform without adding display side effects.
 
 The device binding table encodes top-level `device {}` declarations as a count
-followed by service string id, binding-name string id, and package-relative
-`.sqdevice` resource path string id for each binding. Firmware and browser
-runtimes use this metadata to apply bindings before `event.on("app.start")`.
-Package installers store `.sqdevice` resources as ordinary read-only package
-files; active resolved config is firmware-owned SQDC, not embedded mutable
-package state.
+followed by service string id, binding-name string id, and resource string id
+for each binding. The resource string is either a safe package-relative
+`.sqdevice` path or a simple inline GPIO endpoint such as `gpio:GPIO8`.
+Firmware and browser runtimes use this metadata to apply bindings before
+`event.on("app.start")`. Package installers store `.sqdevice` resources as
+ordinary read-only package files; active resolved config is firmware-owned SQDC,
+not embedded mutable package state. Inline GPIO resources normalize to the same
+active binding model without installing a package resource.
 
 ## Chunk/Index Execution
 

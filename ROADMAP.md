@@ -75,17 +75,15 @@ for compiler, SQBC tooling, and VM semantics.
 - Add a generic PWM-capable LED-like device output model beyond
   `service.indicator`, so future target-described GPIO/PWM endpoints can expose
   smooth brightness control without board-specific app code.
-- Extend top-level `device {}` bindings so apps can rebind logical devices
-  such as `indicator` at app/package level. Keep the current `.sqdevice`
-  package resource form for rich persisted bindings, and add a simple inline
-  GPIO form such as `indicator { use "gpio:GPIO10" }` for one-pin external LED
-  cases such as Seeed XIAO ESP32C3. Omitted binding names should continue to
-  mean `"default"`; support multiple `use` entries for one logical indicator
-  when the app intentionally wants `service.indicator.write(...)` to drive more
-  than one physical output. Validate inline GPIO bindings against target
-  metadata, preserve `service.indicator.*` as the runtime API, and have
-  compiler/SQBC/Zephyr normalize inline and `.sqdevice` bindings into the same
-  device-binding model.
+- Extend top-level `device {}` bindings beyond the current
+  `indicator.default` implementation. The compiler, SQBC metadata, and Zephyr
+  runtime now support packaged `.sqdevice` resources and simple inline GPIO
+  resources such as `indicator { use "gpio:GPIO10" }` for one-pin external LED
+  cases. Remaining work is to support multiple `use` entries for one logical
+  indicator when the app intentionally wants `service.indicator.write(...)` to
+  drive more than one physical output, validate inline GPIO bindings against
+  target metadata, and generalize the normalized binding model beyond
+  `indicator.default`.
 - Reduce ESP32-C3 Zephyr RAM after service parity. Identify concrete reductions
   for the largest static allocations, especially VM runtime storage, work
   stacks, response/session buffers, logging, LittleFS pools, and file caches.

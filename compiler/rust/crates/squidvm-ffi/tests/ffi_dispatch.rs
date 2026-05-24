@@ -1769,6 +1769,41 @@ screen("main") {}
 }
 
 #[test]
+fn reads_inline_gpio_device_binding_metadata_without_dispatching_app() {
+    let mut host = Host {
+        sqbc: compile_sqbc(
+            r#"app "ffi-inline-device-binding"
+device {
+  indicator { use "gpio:GPIO8" }
+}
+event.on("app.start") {
+  debug.print("started")
+}
+screen("main") {}
+"#,
+        ),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut binding = SqvmDeviceBinding::default();
+
+    let status = unsafe {
+        sqvm_device_binding_read_from_reader(
+            &mut host as *mut Host as *mut c_void,
+            Some(read_exact_at),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+            0,
+            &mut binding,
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(fixed_text(&binding.service), "indicator");
+    assert_eq!(fixed_text(&binding.binding), "default");
+    assert_eq!(fixed_text(&binding.resource), "gpio:GPIO8");
+}
+
+#[test]
 fn reports_context_size_for_zephyr_static_allocation() {
     assert!(sqvm_context_size() >= core::mem::size_of_val(&sqvm_context_init()));
 }

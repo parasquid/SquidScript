@@ -1533,6 +1533,77 @@ static bool runtime_fixed_text_equals(const uint8_t *bytes, size_t cap, const ch
 	return len == strlen(expected) && memcmp(bytes, expected, len) == 0;
 }
 
+static bool runtime_device_binding_resource_has_prefix(const uint8_t *resource,
+						       size_t resource_len,
+						       const char *prefix)
+{
+	size_t prefix_len;
+
+	if (resource == NULL || prefix == NULL) {
+		return false;
+	}
+	prefix_len = strlen(prefix);
+	return resource_len > prefix_len && memcmp(resource, prefix, prefix_len) == 0;
+}
+
+static int sq_vm_runtime_apply_inline_gpio_indicator_binding(struct sq_vm_runtime *runtime,
+							     const uint8_t *resource,
+							     size_t resource_len,
+							     SqvmDeviceConfigResult *out)
+{
+	static const char gpio_prefix[] = "gpio:";
+	static const uint8_t service_key[] = "service";
+	static const uint8_t mode_key[] = "mode";
+	static const uint8_t pin_name_key[] = "pinName";
+	static const uint8_t active_low_key[] = "activeLow";
+	static const uint8_t service_value[] = "indicator.default";
+	static const uint8_t mode_value[] = "gpio";
+	const uint8_t *pin_name;
+	size_t pin_name_len;
+	uint8_t pin;
+	SqdcStatus status;
+
+	if (runtime == NULL || resource == NULL || out == NULL ||
+	    !runtime_device_binding_resource_has_prefix(resource, resource_len, gpio_prefix)) {
+		return -EINVAL;
+	}
+
+	pin_name = resource + strlen(gpio_prefix);
+	pin_name_len = resource_len - strlen(gpio_prefix);
+	if (parse_gpio_name(pin_name, pin_name_len, &pin) != 0) {
+		return runtime_device_config_error(out, "invalid binding");
+	}
+
+	status = sqdc_config_clear(&runtime->device_config_draft);
+	if (status == SQDC_STATUS_OK) {
+		status = sqdc_config_set_string(&runtime->device_config_draft, service_key,
+						strlen((const char *)service_key), service_value,
+						strlen((const char *)service_value));
+	}
+	if (status == SQDC_STATUS_OK) {
+		status = sqdc_config_set_string(&runtime->device_config_draft, mode_key,
+						strlen((const char *)mode_key), mode_value,
+						strlen((const char *)mode_value));
+	}
+	if (status == SQDC_STATUS_OK) {
+		status = sqdc_config_set_string(&runtime->device_config_draft, pin_name_key,
+						strlen((const char *)pin_name_key), pin_name,
+						pin_name_len);
+	}
+	if (status == SQDC_STATUS_OK) {
+		status = sqdc_config_set_bool(&runtime->device_config_draft, active_low_key,
+					      strlen((const char *)active_low_key), false);
+	}
+	if (status != SQDC_STATUS_OK) {
+		const char *error = runtime_device_config_status_error(status);
+		return runtime_device_config_error(out, error != NULL ? error : "invalid binding");
+	}
+
+	runtime->device_config_draft_loaded = true;
+	return sq_vm_runtime_device_config_rebind(runtime, (const uint8_t *)"indicator.default",
+						  strlen("indicator.default"), out);
+}
+
 static int sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *runtime)
 {
 	size_t count = 0;
@@ -1572,17 +1643,26 @@ static int sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *runtime)
 		if (resource_len == 0 || resource_len >= sizeof(binding.resource)) {
 			return -EINVAL;
 		}
-		if (sq_vm_runtime_device_config_load_resource(runtime, binding.resource, resource_len,
-							      &result) != 0 ||
-		    !result.ok) {
-			return -EINVAL;
-		}
-		memset(&result, 0, sizeof(result));
-		if (sq_vm_runtime_device_config_rebind(
-			    runtime, (const uint8_t *)"indicator.default",
-			    strlen("indicator.default"), &result) != 0 ||
-		    !result.ok) {
-			return -EINVAL;
+		if (runtime_device_binding_resource_has_prefix(binding.resource, resource_len,
+							       "gpio:")) {
+			if (sq_vm_runtime_apply_inline_gpio_indicator_binding(
+				    runtime, binding.resource, resource_len, &result) != 0 ||
+			    !result.ok) {
+				return -EINVAL;
+			}
+		} else {
+			if (sq_vm_runtime_device_config_load_resource(runtime, binding.resource,
+								      resource_len, &result) != 0 ||
+			    !result.ok) {
+				return -EINVAL;
+			}
+			memset(&result, 0, sizeof(result));
+			if (sq_vm_runtime_device_config_rebind(
+				    runtime, (const uint8_t *)"indicator.default",
+				    strlen("indicator.default"), &result) != 0 ||
+			    !result.ok) {
+				return -EINVAL;
+			}
 		}
 	}
 	return 0;

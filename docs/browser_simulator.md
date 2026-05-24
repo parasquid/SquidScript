@@ -55,9 +55,10 @@ container that firmware consumes through `squidvm-core`.
 Bundled package resources are read-only app resources. `.sqdevice` resources
 may live at any safe package-relative path ending `.sqdevice`; package install
 stores them but does not activate them. App launch/runtime binding from
-top-level `device {}` activates them before `event.on("app.start")`. Mutable
-data belongs in app-scoped runtime state, upload staging, target libraries, or
-firmware-owned active device config, not inside the installed resource tree.
+top-level `device {}` activates package `.sqdevice` resources or inline
+binding metadata before `event.on("app.start")`. Mutable data belongs in
+app-scoped runtime state, upload staging, target libraries, or firmware-owned
+active device config, not inside the installed resource tree.
 
 Browser-side static assets and SquidScript runtime resources are separate
 concepts. Static asset directory names are not reserved; `web/`, `admin-ui/`,

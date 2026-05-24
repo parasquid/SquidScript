@@ -1019,14 +1019,15 @@ New device or document behavior should normally be added as a namespaced capabil
 ## 17.2 Device Binding Blocks
 
 `device {}` is a top-level service binding declaration. It binds abstract
-runtime services such as display, indicator, input, and storage to concrete SQDEVICE
-resources packaged with the app.
+runtime services such as display, indicator, input, and storage to concrete
+device resources.
 
 Example:
 
 ```squid
 device {
   indicator { use "device/indicator.sqdevice" }
+  indicator "external" { use "gpio:GPIO10" }
   display { use "device/browser-canvas.sqdevice" }
   display "status" { use "device/status-display.sqdevice" }
   input { use "device/browser-keyboard.sqdevice" }
@@ -1048,6 +1049,7 @@ The grammar shape is:
 device {
   serviceName { use "path.sqdevice" }
   serviceName "bindingName" { use "path.sqdevice" }
+  indicator { use "gpio:GPIO8" }
 }
 ```
 
@@ -1057,16 +1059,21 @@ Rules:
 - Service names are identifiers such as `indicator`, `display`, `input`, or `storage`.
 - Binding names are string literals. Omitted binding name means `default`.
 - Each binding body must contain exactly one `use` statement in current draft.
-- The `use` path must be a string literal package-relative path.
-- The path must end with `.sqdevice`.
-- The path must be safe: no absolute paths, empty segments, parent traversal
+- The `use` target must be a string literal.
+- A `.sqdevice` target is a package-relative path. It must end with
+  `.sqdevice` and be safe: no absolute paths, empty segments, parent traversal
   with `..`, backslash separators, or installer/system roots such as `sd/...`
   or `system/...`.
+- An inline GPIO target has the form `gpio:GPIO<n>`. Current compiler
+  validation accepts only the literal `GPIO` prefix plus one or two decimal
+  digits; target-specific availability and pin safety remain runtime/target
+  responsibilities.
 
 Runtime applies top-level device bindings before `event.on("app.start")`.
 Failure to load, validate, or initialize a binding stops app launch with a
 structured runtime error. Package install stores `.sqdevice` resources but does
-not activate them by itself.
+not activate them by itself. Inline GPIO bindings do not require a package
+resource.
 
 Active bindings are global until changed or reboot. A temp run may edit or
 rebind configuration in RAM, but those changes remain volatile unless app code
@@ -1090,6 +1097,10 @@ Indicator bindings:
   breathing pattern. `blink(...)` starts a non-blocking blink pattern; omitted
   durations default to 500 ms on and 500 ms off. App-driven writes/toggles and
   automatic patterns replace each other.
+- `indicator { use "gpio:GPIO<n>" }` normalizes to the same
+  `indicator.default` device-binding model as a package `.sqdevice` resource.
+  The simple inline form is active-high; use `.sqdevice` / SQDC when a binding
+  needs explicit polarity or richer electrical configuration.
 - Named indicator bindings are deferred until a target has a real second
   app-facing indicator.
 
@@ -3438,7 +3449,8 @@ table. The current Zephyr runtime supports package resource
 `device.config.set(...)` edits on that draft. It also validates and activates
 the current `indicator.default` GPIO binding through
 `device.config.rebind(...)`, and applies installed app top-level
-`device { indicator { use ... } }` package bindings before `app.start`.
+`device { indicator { use ... } }` package `.sqdevice` and inline
+`gpio:GPIO<n>` bindings before `app.start`.
 `device.config.save("flash")` persistence still returns a result record with
 `ok: false`, `error: "unsupported"`, and `warning: null`.
 

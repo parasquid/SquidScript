@@ -353,10 +353,10 @@ impl Parser<'_> {
                 }
                 self.bump(builder);
             }
-            if !device_config::is_safe_sqdevice_path(&resource) {
+            if !device_config::is_safe_device_binding_resource(&resource) {
                 self.diagnostics.push(error(
                     "E_DEVICE_PATH",
-                    "device binding must use a safe package-relative .sqdevice path",
+                    "device binding must use a safe package-relative .sqdevice path or gpio:GPIO pin",
                     start,
                     self.previous_end().unwrap_or(start),
                 ));

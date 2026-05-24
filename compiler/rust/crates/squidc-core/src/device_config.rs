@@ -159,6 +159,17 @@ pub fn is_safe_sqdevice_path(path: &str) -> bool {
         .all(|part| !part.is_empty() && part != "." && part != "..")
 }
 
+pub fn is_safe_device_binding_resource(path: &str) -> bool {
+    is_safe_sqdevice_path(path) || is_safe_gpio_binding_resource(path)
+}
+
+fn is_safe_gpio_binding_resource(path: &str) -> bool {
+    let Some(pin) = path.strip_prefix("gpio:GPIO") else {
+        return false;
+    };
+    !pin.is_empty() && pin.len() <= 2 && pin.bytes().all(|byte| byte.is_ascii_digit())
+}
+
 fn is_ignored_line(line: &str) -> bool {
     let trimmed = line.trim();
     trimmed.is_empty() || trimmed.starts_with('#')
@@ -297,5 +308,15 @@ none null
         assert!(!is_safe_sqdevice_path("device\\indicator.sqdevice"));
         assert!(!is_safe_sqdevice_path("device/indicator.txt"));
         assert!(!is_safe_sqdevice_path("sd/apps/indicator.sqdevice"));
+    }
+
+    #[test]
+    fn validates_inline_gpio_binding_resources() {
+        assert!(is_safe_device_binding_resource("gpio:GPIO8"));
+        assert!(is_safe_device_binding_resource("gpio:GPIO10"));
+        assert!(!is_safe_device_binding_resource("gpio:"));
+        assert!(!is_safe_device_binding_resource("gpio:PIN8"));
+        assert!(!is_safe_device_binding_resource("gpio:GPIO100"));
+        assert!(!is_safe_device_binding_resource("gpio:GPIO8/../x"));
     }
 }

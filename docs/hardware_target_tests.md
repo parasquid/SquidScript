@@ -147,6 +147,14 @@ coverage and before the explicit device config API check. It packages
 `device { indicator { use ... } }` binding can be applied before
 `event.on("app.start")` without explicit app-side `device.config.*` calls.
 
+`scripts/c3-supermini-test-inline-gpio-binding.sh` runs after packaged device
+binding coverage and before the explicit device config API check. It installs
+`tests/hardware/c3-supermini/inline-gpio-binding-summary`, launches it, and
+verifies that a top-level `device { indicator { use "gpio:GPIO8" } }` binding
+can be normalized and applied before `event.on("app.start")` without a package
+`.sqdevice` resource. `GPIO8` is the ESP32-C3 Super Mini fixture value; use
+target metadata or a `.sqdevice` resource for other boards and polarity needs.
+
 `scripts/c3-supermini-test-blink.sh` is an explicit visible indicator parity
 check. It installs `examples/blink-supermini`, launches it, verifies
 `output=blink ready`, checks that `device errors` is empty, and leaves the

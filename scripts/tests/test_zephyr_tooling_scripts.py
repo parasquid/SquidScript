@@ -561,6 +561,40 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             suite.index("c3-supermini-test-blinky.sh"),
         )
 
+    def test_hardware_suite_runs_inline_gpio_device_binding_script(self):
+        script = self.read("scripts/c3-supermini-test-inline-gpio-binding.sh")
+        app = self.read(
+            "tests/hardware/c3-supermini/inline-gpio-binding-summary/main.squid"
+        )
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn("device {", app)
+        self.assertIn('indicator { use "gpio:GPIO8" }', app)
+        self.assertIn("service.indicator.write(true)", app)
+        self.assertIn(
+            'cargo run --quiet -p squidc -- app install "${INLINE_GPIO_APP}"',
+            script,
+        )
+        self.assertIn(
+            "cargo run --quiet -p squidc -- app launch inline-gpio-binding-summary",
+            script,
+        )
+        self.assertIn("output=inline gpio binding ready", script)
+        self.assertIn("assert_file_empty_command", script)
+        self.assertIn("c3-supermini-test-inline-gpio-binding.sh", suite)
+        self.assertLess(
+            suite.index("c3-supermini-test-device-binding.sh"),
+            suite.index("c3-supermini-test-inline-gpio-binding.sh"),
+        )
+        self.assertLess(
+            suite.index("c3-supermini-test-inline-gpio-binding.sh"),
+            suite.index("c3-supermini-test-device-config.sh"),
+        )
+        self.assertLess(
+            suite.index("c3-supermini-test-inline-gpio-binding.sh"),
+            suite.index("c3-supermini-test-blinky.sh"),
+        )
+
     def test_breathe_check_is_explicit_visible_indicator_parity_script(self):
         script = self.read("scripts/c3-supermini-test-breathe.sh")
         app = self.read("examples/breathe-supermini/main.squid")
