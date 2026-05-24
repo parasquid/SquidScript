@@ -159,8 +159,11 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('c3-supermini-test-wifi-state.sh" --require-real-wifi', suite)
         self.assertIn('c3-supermini-test-wifi-scan-api.sh" --require-real-wifi', suite)
         self.assertIn('c3-supermini-test-wifi-list-api.sh" --require-real-wifi', suite)
+        self.assertIn("c3-supermini-test-wifi-ap-api.sh", suite)
         self.assertIn("c3-supermini-test-blinky.sh", suite)
         self.assertLess(suite.index("c3-supermini-test-wifi-list-api.sh"), suite.index("c3-supermini-test-blinky.sh"))
+        self.assertLess(suite.index("c3-supermini-test-wifi-list-api.sh"), suite.index("c3-supermini-test-wifi-ap-api.sh"))
+        self.assertLess(suite.index("c3-supermini-test-wifi-ap-api.sh"), suite.index("c3-supermini-test-blinky.sh"))
 
     def test_wifi_checks_can_require_real_zephyr_wifi_backend(self):
         status = self.read("scripts/c3-supermini-test-wifi-state.sh")
@@ -273,6 +276,14 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         prj_conf = self.read("firmware/zephyr/prj.conf")
 
         self.assertIn("CONFIG_MAIN_STACK_SIZE=8192", prj_conf)
+
+    def test_stack_usage_harness_tracks_current_vm_worker_budget(self):
+        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+        stack_script = self.read("scripts/c3-supermini-measure-stack-usage.sh")
+
+        self.assertIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 24576", runtime_h)
+        self.assertIn('Expected vm_worker_stack_size_bytes=24576', stack_script)
+        self.assertNotIn('Expected vm_worker_stack_size_bytes=16384', stack_script)
 
     def test_default_runtime_gates_wifi_scan_buffers_from_static_ram(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
@@ -711,7 +722,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("wifi_station_ip", runtime_h)
         self.assertNotIn("status.ipAddress", station_fixture)
 
-    def test_wifi_ap_check_is_current_redacted_and_not_in_default_suite(self):
+    def test_wifi_ap_check_is_current_redacted_and_in_default_suite(self):
         ap = self.read("scripts/c3-supermini-test-wifi-ap-api.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
         runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
@@ -725,7 +736,9 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("unsupported", ap)
         self.assertIn('assert_no_raw_network_identifiers', ap)
         self.assertNotIn("obsolete", ap.lower())
-        self.assertNotIn("c3-supermini-test-wifi-ap-api.sh", suite)
+        self.assertIn("c3-supermini-test-wifi-ap-api.sh", suite)
+        self.assertLess(suite.index("c3-supermini-test-wifi-list-api.sh"), suite.index("c3-supermini-test-wifi-ap-api.sh"))
+        self.assertLess(suite.index("c3-supermini-test-wifi-ap-api.sh"), suite.index("c3-supermini-test-blinky.sh"))
         self.assertIn("#include <zephyr/net/dhcpv4_server.h>", runtime_c)
         self.assertIn("net_dhcpv4_server_start(iface", runtime_c)
         self.assertIn("net_dhcpv4_server_stop(iface)", runtime_c)

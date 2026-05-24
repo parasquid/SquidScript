@@ -151,7 +151,7 @@ with `--require-real-wifi`, which rejects the unsupported fallback and requires
 a successful real Zephyr Wi-Fi scan.
 
 `scripts/c3-supermini-test-wifi-list-api.sh` runs after Wi-Fi scan coverage and
-before the final visible LED check. It installs
+before Wi-Fi AP coverage. It installs
 `tests/hardware/c3-supermini/wifi-list-summary` and launches a SquidScript app
 that iterates `service.wifi.scan().networks`. The app prints only redacted
 per-network structure: SSID length, channel, RSSI, auth, and hidden flag. It
@@ -171,8 +171,8 @@ script requires `connect.ok == true` and `status.connected == true`, prints
 command names and lengths only, and rejects raw SSIDs, passwords, BSSIDs, MACs,
 or local IP patterns in captured output.
 
-`scripts/c3-supermini-test-wifi-ap-api.sh` is also outside the default full
-hardware suite so the suite can keep final blinky as the last visible state. It
+`scripts/c3-supermini-test-wifi-ap-api.sh` runs after Wi-Fi list coverage and
+before the final visible LED check in the default full hardware suite. It
 installs `tests/hardware/c3-supermini/wifi-ap-summary`, launches a summary-only
 app that calls `service.wifi.startAP("SquidScript")` and
 `service.wifi.getAPIP()`, sends `SELECT` to call `service.wifi.stopAP()`, and
