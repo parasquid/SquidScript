@@ -963,6 +963,7 @@ ZTEST(squidscript_protocol, test_storage_format_clears_runtime_before_erasing_fi
 	zassert_false(resource_session.active);
 	zassert_equal(launch_storage.sqbc_path[0], '\0');
 	zassert_equal(fs_stat("/sqtest/apps/main/main.sqbc", &entry), -ENOENT);
+	zassert_equal(fs_stat("/sqtest/apps/main", &entry), -ENOENT);
 	zassert_equal(fs_stat("/sqtest/apps", &entry), 0);
 	zassert_equal(fs_stat("/sqtest/state", &entry), 0);
 	zassert_equal(fs_stat("/sqtest/tmp", &entry), 0);

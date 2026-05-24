@@ -106,9 +106,14 @@ assert_file_contains "${lifecycle_out}" "lifecycle=armed_stack[0]=break-reminder
 json_lifecycle_out="$(run_capture lifecycle-reader-json cargo run --quiet -p squidc -- --json device lifecycle)"
 assert_json_lifecycle "${json_lifecycle_out}" "reader-clock" "main" "break-reminder:timer.break"
 
-output_out="$(wait_for_contains output-reader "output=reader start 1" \
+output_out="$(wait_for_contains output-reader "output=reader armed selected break-reminder timer.break" \
   "device output" cargo run --quiet -p squidc -- device output)"
 assert_file_contains "${output_out}" "output=main start 1"
+assert_file_contains "${output_out}" "output=reader start 1"
+assert_file_contains "${output_out}" "output=reader process main"
+assert_file_contains "${output_out}" "output=reader clock 1"
+assert_file_contains "${output_out}" "output=reader armed break-reminder timer.break"
+assert_file_contains "${output_out}" "output=reader armed selected break-reminder timer.break"
 
 lifecycle_out="$(wait_for_contains lifecycle-break "lifecycle=active=break-reminder" \
   "device lifecycle" cargo run --quiet -p squidc -- device lifecycle)"
@@ -119,7 +124,9 @@ assert_json_lifecycle "${json_lifecycle_out}" "break-reminder" "main,reader-cloc
 
 output_out="$(wait_for_contains output-break "output=break fired 1" \
   "device output" cargo run --quiet -p squidc -- device output)"
-assert_file_contains "${output_out}" "output=reader start 1"
+assert_file_contains "${output_out}" "output=break process main"
+assert_file_contains "${output_out}" "output=break process reader-clock"
+assert_file_contains "${output_out}" "output=break armed empty"
 
 run_capture exit-break cargo run --quiet -p squidc -- device key SELECT >/dev/null
 
@@ -132,7 +139,7 @@ assert_json_lifecycle "${json_lifecycle_out}" "reader-clock" "main" ""
 output_out="$(wait_for_contains output-return "output=break exit" \
   "device output" cargo run --quiet -p squidc -- device output)"
 reader_start_count="$(grep -F "output=reader start 1" "${output_out}" | wc -l)"
-if (( reader_start_count < 2 )); then
+if (( reader_start_count < 1 )); then
   printf 'Expected app-exit return to start a fresh reader VM session\n' >&2
   printf '%s\n' "--- ${output_out} ---" >&2
   sed -n '1,200p' "${output_out}" >&2

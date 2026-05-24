@@ -42,7 +42,8 @@ The Zephyr-only hardware suite is not complete yet. The required inventory is:
 - Verify the diagnostic boot banner over the serial monitor.
 - Install and launch real SquidScript apps through the Zephyr command surface.
 - Verify `app.launch`, `app.exit`, `app.arm`, timer-triggered armed dispatch,
-  and `device lifecycle` process/armed stack diagnostics.
+  `app.processStack()`, `app.armedStack()`, `app.armedStack.get(...)`, and
+  `device lifecycle` process/armed stack diagnostics.
 - Dispatch key events and verify state/output traces.
 - Verify persistent app storage and app state through Zephyr storage.
 - Verify `system.memory()` and `system.storage("apps")` through the Zephyr VM
@@ -93,7 +94,9 @@ fixtures under `tests/hardware/c3-supermini/generic-events`, launches `main`,
 verifies `reader-clock` starts via `app.launch`, verifies `break-reminder` is
 registered on the armed stack through `app.arm`, waits for the armed timer to
 start `break-reminder`, then sends `SELECT` so `app.exit` returns to the
-previous app on the process stack. The lifecycle fixtures use volatile
+previous app on the process stack. It also verifies app-facing lifecycle
+inspection through `app.processStack()`, `app.armedStack()`, and
+`app.armedStack.get(...)`. The lifecycle fixtures use volatile
 in-memory counters and intentionally avoid `state.load()` / `state.save()` so
 the check distinguishes ordinary foreground event dispatch from fresh VM
 sessions on launch, armed trigger activation, and app-exit return.

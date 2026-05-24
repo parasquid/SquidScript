@@ -703,6 +703,15 @@ static int delete_files_under(const char *path, bool *deleted_any)
 				(void)fs_closedir(&dir);
 				return result;
 			}
+			result = fs_unlink(child);
+			if (result == -ENOENT) {
+				continue;
+			}
+			if (result != 0) {
+				(void)fs_closedir(&dir);
+				return result;
+			}
+			*deleted_any = true;
 		}
 	}
 	return fs_closedir(&dir);

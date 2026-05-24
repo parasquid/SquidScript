@@ -51,7 +51,9 @@ Zephyr's filesystem layer.
 
 `firmware/zephyr/src/app_store` owns the current app-store layout boundary. It
 prepares `/apps`, `/state`, and `/tmp` under the mounted store, validates app
-IDs for path construction, and derives VM storage paths:
+IDs for path construction, formats the store by deleting stale files and
+per-app/per-resource directories below those roots, and derives VM storage
+paths:
 
 ```text
 /sq/apps/<app-id>/main.sqbc

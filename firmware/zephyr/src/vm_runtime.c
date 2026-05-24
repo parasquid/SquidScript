@@ -27,6 +27,16 @@
 		(target)->field##_len = sizeof(value) - 1; \
 	} while (false)
 
+static size_t bounded_strlen(const char *value, size_t cap)
+{
+	size_t len = 0;
+
+	while (len < cap && value[len] != '\0') {
+		len++;
+	}
+	return len;
+}
+
 static const uint8_t indicator_breathe_duties[SQ_VM_RUNTIME_INDICATOR_BREATHE_STEPS] = {
 	0,  0,  1,  2,	4,  6,  8,  11, 15, 18, 22, 26, 31, 35, 40, 45, 50,
 	55, 60, 65, 69, 74, 78, 82, 85, 89, 92, 94, 96, 98, 99, 100, 100, 100,
@@ -286,7 +296,7 @@ static void runtime_app_registry_entry_from_store(const struct sq_app_registry_e
 	if (source == NULL) {
 		return;
 	}
-	len = strnlen(source->app_id, sizeof(source->app_id));
+	len = bounded_strlen(source->app_id, sizeof(source->app_id));
 	out->id = (const uint8_t *)source->app_id;
 	out->id_len = len;
 	out->name = (const uint8_t *)source->app_id;
@@ -349,7 +359,7 @@ static int32_t runtime_app_process_stack(void *user_data, SqvmAppStackEntry *out
 		count = out_cap;
 	}
 	for (size_t i = 0; i < count; i++) {
-		size_t len = strnlen(runtime->return_stack[i], SQ_APP_STORE_APP_ID_MAX);
+		size_t len = bounded_strlen(runtime->return_stack[i], SQ_APP_STORE_APP_ID_MAX);
 		out[i].app_id = (const uint8_t *)runtime->return_stack[i];
 		out[i].app_id_len = len;
 		out[i].event = NULL;
@@ -374,9 +384,9 @@ static int32_t runtime_app_armed_stack(void *user_data, SqvmAppStackEntry *out, 
 			continue;
 		}
 		out[count].app_id = (const uint8_t *)timer->app_id;
-		out[count].app_id_len = strnlen(timer->app_id, sizeof(timer->app_id));
+		out[count].app_id_len = bounded_strlen(timer->app_id, sizeof(timer->app_id));
 		out[count].event = (const uint8_t *)timer->event;
-		out[count].event_len = strnlen(timer->event, sizeof(timer->event));
+		out[count].event_len = bounded_strlen(timer->event, sizeof(timer->event));
 		count++;
 	}
 	*out_count = count;

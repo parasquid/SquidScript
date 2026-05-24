@@ -35,11 +35,6 @@ for compiler, SQBC tooling, and VM semantics.
 
 ### 3. Port Runtime Services To Zephyr
 
-- Add hardware coverage for app-facing lifecycle inspection. The low-RAM VM
-  APIs `app.registry()`, `app.registry.get(apps, index)`, `app.processStack()`,
-  `app.armedStack()`, and `app.armedStack.get(armedApps, index)` now exist;
-  add a real ESP32-C3 lifecycle script that exercises these APIs alongside
-  `app.launch`, `app.exit`, `app.arm`, and timer-triggered armed activation.
 - Promote planned display APIs through the real runtime stack:
   `service.display.select`, `service.display.image`, and
   `service.display.draw`. Keep resource/drawable ownership explicit and avoid
