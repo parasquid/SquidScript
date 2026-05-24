@@ -12,6 +12,7 @@ export SQUID_ZEPHYR_HOME
 
 export ZEPHYR_BOARD="${ZEPHYR_BOARD:-esp32c3_supermini}"
 export ZEPHYR_BUILD_DIR="${ZEPHYR_BUILD_DIR:-${ROOT}/build/zephyr/c3-supermini}"
+export SQUID_ZEPHYR_TARGET_JSON="${SQUID_ZEPHYR_TARGET_JSON:-${ROOT}/targets/esp32c3-super-mini.target.json}"
 
 PATH="${SQUID_ZEPHYR_HOME}/venv/bin:${PATH}"
 export PATH

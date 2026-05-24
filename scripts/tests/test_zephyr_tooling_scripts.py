@@ -85,6 +85,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('SQUID_ZEPHYR_HOME="${SQUID_ZEPHYR_HOME:-${ROOT}/target/zephyr}"', env)
         self.assertIn('export ZEPHYR_BOARD="${ZEPHYR_BOARD:-esp32c3_supermini}"', env)
         self.assertIn('export ZEPHYR_BUILD_DIR="${ZEPHYR_BUILD_DIR:-${ROOT}/build/zephyr/c3-supermini}"', env)
+        self.assertIn('export SQUID_ZEPHYR_TARGET_JSON="${SQUID_ZEPHYR_TARGET_JSON:-${ROOT}/targets/esp32c3-super-mini.target.json}"', env)
         self.assertIn('PATH="${SQUID_ZEPHYR_HOME}/venv/bin:${PATH}"', env)
         self.assertIn('ZEPHYR_BASE="${SQUID_ZEPHYR_HOME}/workspace/zephyr"', env)
 
@@ -299,6 +300,44 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("target_ram_total_bytes=409600", result.stdout)
         self.assertIn("target_ram_profile_percent=65", result.stdout)
         self.assertIn("target_ram_used_percent=24.8", result.stdout)
+
+    def test_zephyr_target_defaults_generator_emits_indicator_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "squidscript_target_defaults.h"
+
+            subprocess.run(
+                [
+                    str(ROOT / "scripts/generate-zephyr-target-defaults.py"),
+                    str(ROOT / "targets/esp32c3-super-mini.target.json"),
+                    str(out),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            header = out.read_text(encoding="utf-8")
+
+        self.assertIn("#define SQ_TARGET_INDICATOR_DEFAULT_HAS_GPIO 1", header)
+        self.assertIn("#define SQ_TARGET_INDICATOR_DEFAULT_GPIO_PIN 8", header)
+        self.assertIn("#define SQ_TARGET_INDICATOR_DEFAULT_ACTIVE_LOW 1", header)
+        self.assertIn("#define SQ_TARGET_INDICATOR_DEFAULT_PWM_FREQUENCY_HZ 1000", header)
+
+    def test_zephyr_builds_generate_target_defaults_from_target_json(self):
+        app_cmake = self.read("firmware/zephyr/CMakeLists.txt")
+        test_cmake = self.read("firmware/zephyr/tests/protocol/CMakeLists.txt")
+        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+
+        for cmake in [app_cmake, test_cmake]:
+            self.assertIn("SQUID_ZEPHYR_TARGET_JSON", cmake)
+            self.assertIn("generate-zephyr-target-defaults.py", cmake)
+            self.assertIn("squidscript_target_defaults.h", cmake)
+
+        self.assertIn('#include "squidscript_target_defaults.h"', runtime)
+        self.assertIn("SQ_TARGET_INDICATOR_DEFAULT_GPIO_PIN", runtime)
+        self.assertIn("SQ_TARGET_INDICATOR_DEFAULT_ACTIVE_LOW", runtime)
+        self.assertNotIn("indicator_gpio.pin;\n\truntime->indicator_binding_active_low", runtime)
 
     def test_zephyr_main_stack_tracks_measured_protocol_work(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")

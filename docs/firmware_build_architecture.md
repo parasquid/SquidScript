@@ -137,6 +137,12 @@ Backend-specific generated artifacts may include:
 - Firmware manifest/provenance data.
 - Generated app capability tables.
 
+The Zephyr build generates `squidscript_target_defaults.h` from
+`SQUID_ZEPHYR_TARGET_JSON`. The ESP32-C3 Super Mini wrappers default that
+variable to `targets/esp32c3-super-mini.target.json`. The generated header is
+used for SquidScript-facing target defaults such as `indicator.default`; Zephyr
+devicetree still owns driver nodes, PWM channels, and pinctrl setup.
+
 ## Runtime Boundary
 
 The Zephyr host calls the Rust VM through C ABI functions for:

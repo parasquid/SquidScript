@@ -5,7 +5,20 @@ project(squidscript_protocol_tests)
 
 include(../../cmake/squidvm_ffi.cmake)
 
-target_include_directories(app PRIVATE ../../src)
+set(SQUID_ZEPHYR_TARGET_JSON "$ENV{SQUID_ZEPHYR_TARGET_JSON}" CACHE FILEPATH "SquidScript target metadata JSON")
+if(SQUID_ZEPHYR_TARGET_JSON STREQUAL "")
+  set(SQUID_ZEPHYR_TARGET_JSON "${CMAKE_CURRENT_LIST_DIR}/../../../../targets/esp32c3-super-mini.target.json")
+endif()
+set(SQUID_ZEPHYR_TARGET_DEFAULTS_H "${CMAKE_CURRENT_BINARY_DIR}/generated/squidscript_target_defaults.h")
+execute_process(
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/../../../../scripts/generate-zephyr-target-defaults.py" "${SQUID_ZEPHYR_TARGET_JSON}" "${SQUID_ZEPHYR_TARGET_DEFAULTS_H}"
+  RESULT_VARIABLE SQUID_ZEPHYR_TARGET_DEFAULTS_RESULT
+)
+if(NOT SQUID_ZEPHYR_TARGET_DEFAULTS_RESULT EQUAL 0)
+  message(FATAL_ERROR "Failed to generate SquidScript Zephyr target defaults")
+endif()
+
+target_include_directories(app PRIVATE ../../src "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_sources(app PRIVATE
   ../../src/app_store.c
   ../../src/device_protocol.c

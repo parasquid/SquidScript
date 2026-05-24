@@ -3,13 +3,13 @@
 #include <string.h>
 
 #include <zephyr/fs/fs.h>
-#include <zephyr/devicetree.h>
 #include <zephyr/ztest.h>
 
 #include "app_store.h"
 #include "device_protocol.h"
 #include "protocol.h"
 #include "serial_transport.h"
+#include "squidscript_target_defaults.h"
 #include "vm_runtime.h"
 #include "vm_fs_storage.h"
 #include "squidvm_ffi.h"
@@ -2445,16 +2445,20 @@ ZTEST(squidscript_protocol, test_vm_runtime_loads_package_sqdevice_resource_into
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }
 
-ZTEST(squidscript_protocol, test_vm_runtime_initializes_target_indicator_default_as_device_config)
+ZTEST(squidscript_protocol, test_vm_runtime_resets_target_indicator_default_as_device_config)
 {
 	struct sq_vm_runtime runtime = {0};
 
 	sq_vm_runtime_init(&runtime);
+	sq_vm_runtime_reset(&runtime);
 
-#if IS_ENABLED(CONFIG_GPIO) && DT_NODE_HAS_PROP(DT_ALIAS(indicator0), gpios)
+#if SQ_TARGET_INDICATOR_DEFAULT_HAS_GPIO
 	zassert_true(runtime.device_config_draft_loaded);
 	zassert_equal(runtime.device_config_draft.count, 4);
 	zassert_true(runtime.indicator_binding_active);
+	zassert_equal(runtime.indicator_binding_pin, SQ_TARGET_INDICATOR_DEFAULT_GPIO_PIN);
+	zassert_equal(runtime.indicator_binding_active_low,
+		      SQ_TARGET_INDICATOR_DEFAULT_ACTIVE_LOW != 0);
 #else
 	zassert_false(runtime.device_config_draft_loaded);
 	zassert_false(runtime.indicator_binding_active);

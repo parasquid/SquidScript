@@ -88,11 +88,14 @@ scan, list, and AP workloads; remeasure it before adding larger radio or
 networking workloads.
 
 `targets/esp32c3-super-mini.target.json` should describe these verified Zephyr
-runtime services, not only the ESP32-C3 silicon radio capability. Wi-Fi status,
-scan, redacted network listing, AP start/stop/IP lookup, and volatile-profile
-station connect/disconnect are exposed through the reference firmware. Station
-connect proof remains explicit-credentials-only, and AP client association/DHCP
-lease proof is separate future work.
+runtime services and defaults, not only the ESP32-C3 silicon radio capability.
+The Zephyr build generates SquidScript-facing defaults such as
+`indicator.default` from `SQUID_ZEPHYR_TARGET_JSON`, while devicetree remains
+responsible for board driver nodes. Wi-Fi status, scan, redacted network
+listing, AP start/stop/IP lookup, and volatile-profile station
+connect/disconnect are exposed through the reference firmware. Station connect
+proof remains explicit-credentials-only, and AP client association/DHCP lease
+proof is separate future work.
 
 The Zephyr app lifecycle check is
 `scripts/c3-supermini-test-app-lifecycle.sh`. It installs the real SquidScript

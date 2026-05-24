@@ -1,5 +1,7 @@
 #include "vm_runtime.h"
 
+#include "squidscript_target_defaults.h"
+
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -1405,6 +1407,58 @@ int sq_vm_runtime_device_config_load(struct sq_vm_runtime *runtime, const uint8_
 	return sq_vm_runtime_device_config_load_resource(runtime, resource_bytes, resource_len, out);
 }
 
+static int runtime_device_config_append_string(SqdcConfig *config, const char *key,
+					       const char *value)
+{
+	SqdcRecord *record;
+	size_t key_len;
+	size_t value_len;
+
+	if (config == NULL || key == NULL || value == NULL ||
+	    config->count >= SQDC_CONFIG_MAX_RECORDS) {
+		return -EINVAL;
+	}
+	key_len = strlen(key);
+	value_len = strlen(value);
+	if (key_len == 0 || key_len > SQDC_CONFIG_KEY_CAP ||
+	    value_len > SQDC_CONFIG_STRING_CAP) {
+		return -EINVAL;
+	}
+	record = &config->records[config->count];
+	memset(record, 0, sizeof(*record));
+	record->present = true;
+	memcpy(record->key, key, key_len);
+	record->key_len = key_len;
+	record->value.kind = SQDC_VALUE_STRING;
+	memcpy(record->value.string, value, value_len);
+	record->value.string_len = value_len;
+	config->count++;
+	return 0;
+}
+
+static int runtime_device_config_append_bool(SqdcConfig *config, const char *key, bool value)
+{
+	SqdcRecord *record;
+	size_t key_len;
+
+	if (config == NULL || key == NULL || config->count >= SQDC_CONFIG_MAX_RECORDS) {
+		return -EINVAL;
+	}
+	key_len = strlen(key);
+	if (key_len == 0 || key_len > SQDC_CONFIG_KEY_CAP) {
+		return -EINVAL;
+	}
+	record = &config->records[config->count];
+	memset(record, 0, sizeof(*record));
+	record->present = true;
+	memcpy(record->key, key, key_len);
+	record->key_len = key_len;
+	record->value.kind = SQDC_VALUE_BOOL;
+	record->value.bool_value = value;
+	config->count++;
+	return 0;
+}
+
 int sq_vm_runtime_device_config_set(struct sq_vm_runtime *runtime, const uint8_t *key,
 				    size_t key_len, SqvmDeviceConfigValue value,
 				    SqvmDeviceConfigResult *out)
@@ -1540,50 +1594,30 @@ int sq_vm_runtime_device_config_rebind(struct sq_vm_runtime *runtime, const uint
 
 static int sq_vm_runtime_apply_target_default_indicator_binding(struct sq_vm_runtime *runtime)
 {
-#if SQ_VM_RUNTIME_HAS_INDICATOR_GPIO
-	static const uint8_t service_key[] = "service";
-	static const uint8_t mode_key[] = "mode";
-	static const uint8_t pin_name_key[] = "pinName";
-	static const uint8_t active_low_key[] = "activeLow";
-	static const uint8_t service_value[] = "indicator.default";
-	static const uint8_t mode_value[] = "gpio";
+#if SQ_TARGET_INDICATOR_DEFAULT_HAS_GPIO
 	char pin_name[sizeof("GPIO255")];
 	SqvmDeviceConfigResult result = {0};
-	SqdcStatus status;
 	int written;
 
 	if (runtime == NULL) {
 		return -EINVAL;
 	}
 
-	written = snprintf(pin_name, sizeof(pin_name), "GPIO%u", indicator_gpio.pin);
+	written = snprintf(pin_name, sizeof(pin_name), "GPIO%u",
+			   SQ_TARGET_INDICATOR_DEFAULT_GPIO_PIN);
 	if (written <= 0 || (size_t)written >= sizeof(pin_name)) {
 		return -EINVAL;
 	}
 
-	status = sqdc_config_clear(&runtime->device_config_draft);
-	if (status == SQDC_STATUS_OK) {
-		status = sqdc_config_set_string(&runtime->device_config_draft, service_key,
-						strlen((const char *)service_key), service_value,
-						strlen((const char *)service_value));
-	}
-	if (status == SQDC_STATUS_OK) {
-		status = sqdc_config_set_string(&runtime->device_config_draft, mode_key,
-						strlen((const char *)mode_key), mode_value,
-						strlen((const char *)mode_value));
-	}
-	if (status == SQDC_STATUS_OK) {
-		status = sqdc_config_set_string(&runtime->device_config_draft, pin_name_key,
-						strlen((const char *)pin_name_key),
-						(const uint8_t *)pin_name, strlen(pin_name));
-	}
-	if (status == SQDC_STATUS_OK) {
-		status = sqdc_config_set_bool(
-			&runtime->device_config_draft, active_low_key,
-			strlen((const char *)active_low_key),
-			(indicator_gpio.dt_flags & GPIO_ACTIVE_LOW) != 0);
-	}
-	if (status != SQDC_STATUS_OK) {
+	memset(&runtime->device_config_draft, 0, sizeof(runtime->device_config_draft));
+	if (runtime_device_config_append_string(&runtime->device_config_draft, "service",
+						"indicator.default") != 0 ||
+	    runtime_device_config_append_string(&runtime->device_config_draft, "mode",
+						"gpio") != 0 ||
+	    runtime_device_config_append_string(&runtime->device_config_draft, "pinName",
+						pin_name) != 0 ||
+	    runtime_device_config_append_bool(&runtime->device_config_draft, "activeLow",
+					      SQ_TARGET_INDICATOR_DEFAULT_ACTIVE_LOW != 0) != 0) {
 		return -EINVAL;
 	}
 
@@ -1955,7 +1989,6 @@ void sq_vm_runtime_init(struct sq_vm_runtime *runtime)
 	k_work_init(&runtime->work, runtime_work_handler);
 	runtime->work_initialized = true;
 	runtime->status = SQ_VM_RUNTIME_IDLE;
-	(void)sq_vm_runtime_apply_target_default_indicator_binding(runtime);
 }
 
 size_t sq_vm_runtime_work_stack_size(void)
