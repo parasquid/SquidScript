@@ -13,15 +13,21 @@ for compiler, SQBC tooling, and VM semantics.
 
 - When physical board observation is available, re-run the Zephyr
   `breathe-supermini` visible LED check and verify whether the current
-  LEDC PWM polarity is correct before changing the overlay.
+  LEDC PWM polarity is correct before changing the overlay. This is not a
+  current blocker; the physical observation can wait until the user is back at
+  the board.
 
 ### 2. Expand Zephyr VM Hosting ABI
 
-- Extend the C ABI beyond resumable dispatch to cover state inspection,
-  diagnostics, and service result conversion for remaining runtime services.
-- Expand FFI equivalence tests and Zephyr ztests for storage, state, timers,
-  display, GPIO, Wi-Fi service records, lifecycle callbacks, and remaining VM
-  error cases.
+- Keep the Zephyr VM ABI aligned with implemented SQBC builtins. Current
+  builtins `1..21` and `27..37` have Rust VM host callbacks plus Zephyr FFI and
+  runtime connections for state, app lifecycle, display draw-log, GPIO,
+  indicator, timers, Wi-Fi, and system diagnostics. Future service work should
+  promote a spec/API slice through compiler lowering, SQBC builtin IDs, VM host
+  callbacks, FFI, Zephyr runtime wiring, docs, and tests together.
+- Expand FFI equivalence tests and Zephyr ztests for remaining edge cases in
+  storage, state, timers, display, GPIO, Wi-Fi service records, lifecycle
+  callbacks, and VM error conversion.
   `system.memory()` and `system.storage("apps")` now have Zephyr FFI host
   callbacks and hardware coverage; keep future service additions on the same
   caller-owned-buffer pattern. Explicit Zephyr VM FFI status-to-errno mapping
@@ -29,6 +35,24 @@ for compiler, SQBC tooling, and VM semantics.
 
 ### 3. Port Runtime Services To Zephyr
 
+- Add app-facing registry and lifecycle inspection APIs in a scoped slice,
+  rather than adding Zephyr-only protocol helpers. Reuse the existing installed
+  app registry, foreground stack, and armed timer state; define the portable
+  SquidScript contract first, then add compiler/SQBC/VM/FFI/Zephyr support and
+  hardware coverage for listing installed apps and inspecting foreground and
+  armed-app state.
+- Promote planned display APIs through the real runtime stack:
+  `service.display.select`, `service.display.image`, and
+  `service.display.draw`. Keep resource/drawable ownership explicit and avoid
+  inventing simulator-only syntax.
+- Promote planned device configuration APIs through the real runtime stack:
+  `device.config.load`, `device.config.set`, `device.config.rebind`, and
+  `device.config.save`. Align these with `.sqdevice` package resources and the
+  future top-level `device {}` binding model.
+- Decide service priority and target support for currently spec-recognized but
+  not SQBC-backed APIs: `httpServer.*`, `bleTransfer.*`, `content.*`, and
+  `binbook.*`. Add each only as a real compiler/SQBC/VM/Zephyr slice with
+  honest unsupported behavior until then.
 - Design app-entry versus import-only source semantics before adding no-screen
   app sugar. The likely direction is: only an app entry file can become an app,
   include/import files are reusable declarations and never synthesize screens by
