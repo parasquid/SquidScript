@@ -7,6 +7,7 @@ APP_DIR="${ROOT}/firmware/zephyr"
 SUPERMINI_OVERLAY="${APP_DIR}/boards/esp32c3_supermini.overlay"
 EXTRA_ARGS=("$@")
 CMAKE_ARGS=(-DDTC_OVERLAY_FILE="$SUPERMINI_OVERLAY")
+ZEPHYR_PRISTINE="${ZEPHYR_PRISTINE:-auto}"
 
 if [[ -n "${ZEPHYR_EXTRA_CONF_FILE:-}" ]]; then
   CMAKE_ARGS+=(-DEXTRA_CONF_FILE="${ZEPHYR_EXTRA_CONF_FILE}")
@@ -17,11 +18,12 @@ if ! command -v west >/dev/null 2>&1; then
   exit 1
 fi
 
-printf 'Using Zephyr board %s (unverified default for ESP32-C3 Super Mini; override with ZEPHYR_BOARD).\n' "$ZEPHYR_BOARD" >&2
+printf 'Using Zephyr board %s for ESP32-C3 Super Mini; override with ZEPHYR_BOARD.\n' "$ZEPHYR_BOARD" >&2
 
 west build \
   --build-dir "$ZEPHYR_BUILD_DIR" \
   --board "$ZEPHYR_BOARD" \
+  --pristine "$ZEPHYR_PRISTINE" \
   "$APP_DIR" \
   "${EXTRA_ARGS[@]}" \
   -- \

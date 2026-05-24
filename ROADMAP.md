@@ -11,9 +11,7 @@ for compiler, SQBC tooling, and VM semantics.
 
 ### 1. Complete Zephyr Toolchain Bring-Up
 
-- Confirm the correct Zephyr board target for the ESP32-C3 Super Mini and
-  replace the unverified `esp32c3_devkitm/esp32c3` wrapper default if needed.
-  When physical board observation is available, re-run the Zephyr
+- When physical board observation is available, re-run the Zephyr
   `breathe-supermini` visible LED check and verify whether the current
   LEDC PWM polarity is correct before changing the overlay.
 

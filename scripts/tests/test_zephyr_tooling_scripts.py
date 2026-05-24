@@ -55,7 +55,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         env = self.read("scripts/zephyr-env.sh")
 
         self.assertIn('SQUID_ZEPHYR_HOME="${SQUID_ZEPHYR_HOME:-${ROOT}/target/zephyr}"', env)
-        self.assertIn('export ZEPHYR_BOARD="${ZEPHYR_BOARD:-esp32c3_devkitm/esp32c3}"', env)
+        self.assertIn('export ZEPHYR_BOARD="${ZEPHYR_BOARD:-esp32c3_supermini}"', env)
         self.assertIn('export ZEPHYR_BUILD_DIR="${ZEPHYR_BUILD_DIR:-${ROOT}/build/zephyr/c3-supermini}"', env)
         self.assertIn('PATH="${SQUID_ZEPHYR_HOME}/venv/bin:${PATH}"', env)
         self.assertIn('ZEPHYR_BASE="${SQUID_ZEPHYR_HOME}/workspace/zephyr"', env)
@@ -85,6 +85,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
         self.assertIn("DTC_OVERLAY_FILE", build)
         self.assertIn("esp32c3_supermini.overlay", build)
+        self.assertIn("ZEPHYR_PRISTINE", build)
+        self.assertNotIn("unverified default", build)
 
     def test_default_config_enables_real_wifi_scan_status_backend(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")

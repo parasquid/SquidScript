@@ -30,9 +30,8 @@ Monitor:
 ./scripts/c3-supermini-zephyr-monitor.sh
 ```
 
-Set `ZEPHYR_BOARD` when the default board identifier is not correct for the
-attached ESP32-C3 board. The repository default is an unverified clone-board
-default, not a sourced hardware fact.
+The ESP32-C3 Super Mini wrappers default to Zephyr's `esp32c3_supermini` board
+target. Set `ZEPHYR_BOARD` when testing a different ESP32-C3 board variant.
 
 ## Test Inventory
 

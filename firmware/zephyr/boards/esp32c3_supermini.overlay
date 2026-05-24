@@ -1,9 +1,9 @@
 /*
  * ESP32-C3 Super Mini Zephyr overlay.
  *
- * The default esp32c3_devkitm board routes console traffic to UART0 pins. The
- * Super Mini development flow uses the USB-Serial/JTAG device exposed on the
- * host as /dev/ttyACM*.
+ * The upstream esp32c3_supermini board already selects USB Serial/JTAG console
+ * and the common GPIO8 LED. This overlay adds SquidScript's logical
+ * indicator0 PWM binding for smooth indicator output.
  */
 
 #include <zephyr/dt-bindings/pwm/pwm.h>

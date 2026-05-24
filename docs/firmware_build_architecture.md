@@ -48,9 +48,9 @@ detected, it runs Zephyr's supported `west sdk install` flow for the
 `--skip-sdk` to leave SDK installation manual. The setup path does not use
 `rpm-ostree`.
 
-`ZEPHYR_BOARD` selects the board. The default wrapper value is an unverified
-ESP32-C3 Super Mini clone-board default and must be corrected when hardware
-bring-up identifies the exact Zephyr board target.
+`ZEPHYR_BOARD` selects the board. The ESP32-C3 Super Mini wrappers default to
+Zephyr's `esp32c3_supermini` board target. Override `ZEPHYR_BOARD` when testing
+a different ESP32-C3 board variant.
 
 ## Rust VM Static Library
 

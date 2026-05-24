@@ -26,10 +26,11 @@ shape for the full migration:
 - `compiler/rust/crates/squidvm-ffi`: Rust staticlib/rlib exposing the VM C
   ABI.
 
-The ESP32-C3 Super Mini board identifier defaults to
-`esp32c3_devkitm/esp32c3` in the wrapper scripts. That default is an unverified
-Zephyr board identifier for this clone-board class; override it with
-`ZEPHYR_BOARD` when a specific Zephyr board target is confirmed.
+The ESP32-C3 Super Mini board identifier defaults to Zephyr's
+`esp32c3_supermini` board in the wrapper scripts. The repository overlay adds
+the SquidScript `indicator0` PWM binding while keeping USB Serial/JTAG console
+selection explicit for the reference hardware flow. Override `ZEPHYR_BOARD`
+when testing a different ESP32-C3 board variant.
 
 ## Commands
 
@@ -57,8 +58,8 @@ Zephyr setup is host-specific but repository-local by default:
   under `target/zephyr/sdk`; pass `--skip-sdk` to leave SDK installation
   manual.
 - `scripts/zephyr-env.sh` exports the local `west` path, `ZEPHYR_BASE` when the
-  workspace exists, the default `ZEPHYR_BUILD_DIR`, and the unverified default
-  `ZEPHYR_BOARD`.
+  workspace exists, the default `ZEPHYR_BUILD_DIR`, and the ESP32-C3 Super Mini
+  default `ZEPHYR_BOARD`.
 - `SQUID_ZEPHYR_HOME` overrides the default `target/zephyr` tool/workspace
   root.
 
