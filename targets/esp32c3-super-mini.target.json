@@ -66,9 +66,17 @@
       "type": "wifi",
       "band": "2.4GHz",
       "standard": "802.11b/g/n",
-      "status": "mcu-supported-runtime-unsupported",
-      "runtimeFeatures": [],
-      "reason": "ESP32-C3 silicon includes 2.4 GHz Wi-Fi, but the current ESP32-C3 Super Mini Zephyr firmware target does not yet expose real SquidScript Wi-Fi runtime features."
+      "status": "runtime-supported-reference",
+      "runtimeFeatures": [
+        "service.wifi.status",
+        "service.wifi.scan",
+        "service.wifi.startAP",
+        "service.wifi.stopAP",
+        "service.wifi.getAPIP",
+        "service.wifi.connect",
+        "service.wifi.disconnect"
+      ],
+      "reason": "The ESP32-C3 Super Mini Zephyr reference firmware exposes real ESP32 Wi-Fi management callbacks for SquidScript status, scan, AP start/stop/IP, and volatile-profile station connect/disconnect. Hardware coverage verifies status, scan, redacted network listing, and AP start/stop; station connect tests require explicit credentials."
     },
     "ble": {
       "type": "bluetooth-le",
@@ -238,10 +246,10 @@
     "squidscript": {
       "status": "reference-subset",
       "bytecode": "sqbc-v2",
-      "statePersistence": "ram-only",
+      "statePersistence": "littlefs-explicit",
       "appPersistence": "littlefs",
       "entry": "persistent-app-registry",
-      "reason": "This target exercises the initial headless SquidScript VM subset for language-spec conformance."
+      "reason": "This target exercises the initial headless SquidScript VM subset for language-spec conformance. Installed apps and explicit app state load/save/reset use the firmware-owned LittleFS app store."
     }
   },
   "compatibility": [
@@ -254,9 +262,16 @@
     "firmware.flash-test",
     "squidscript.bytecode.v2.reference",
     "squidscript.apps.persistent",
-    "squidscript.state.ram",
+    "squidscript.state.persistent",
     "squidscript.serial-install",
     "button.boot.typical",
-    "indicator.led.typical"
+    "indicator.led.typical",
+    "service.wifi.status",
+    "service.wifi.scan",
+    "service.wifi.startAP",
+    "service.wifi.stopAP",
+    "service.wifi.getAPIP",
+    "service.wifi.connect",
+    "service.wifi.disconnect"
   ]
 }
