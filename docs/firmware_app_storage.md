@@ -103,13 +103,16 @@ read-only package resources for the foreground app and wires
 `device.config.set(...)` to the runtime draft config. The runtime can validate
 and activate the current `indicator.default` GPIO binding with
 `device.config.rebind(...)`, and `service.indicator.*` uses the active binding.
-Installed app launch also reads current SQBC top-level `device {}` metadata and
-applies saved global SQDC defaults, packaged `indicator.default` `.sqdevice`
-bindings, and inline `gpio:GPIO<n>` indicator bindings before
-`event.on("app.start")`. App-local top-level `device {}` bindings run after
-saved global defaults, so app package bindings can override global defaults.
-Inline GPIO bindings are normalized into the same in-memory SQDC draft/rebind
-path as packaged resources and do not install a package resource.
+On targets with a firmware-defined default indicator, runtime initialization
+loads that target default into the same in-memory SQDC draft/rebind path before
+app code runs. Installed app launch also reads current SQBC top-level
+`device {}` metadata and applies saved global SQDC defaults, packaged
+`indicator.default` `.sqdevice` bindings, and inline `gpio:GPIO<n>` indicator
+bindings before `event.on("app.start")`. App-local top-level `device {}`
+bindings run after target and saved global defaults, so app package bindings
+can override them. Inline GPIO bindings are normalized into the same in-memory
+SQDC draft/rebind path as packaged resources and do not install a package
+resource.
 Active config persistence through `device.config.save("flash")` writes
 firmware-owned binary SQDC at `/sq/system/device-config.sqdc` on the ESP32-C3
 reference target.

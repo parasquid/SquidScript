@@ -1538,6 +1538,74 @@ int sq_vm_runtime_device_config_rebind(struct sq_vm_runtime *runtime, const uint
 	return runtime_device_config_ok(out);
 }
 
+static int sq_vm_runtime_apply_target_default_indicator_binding(struct sq_vm_runtime *runtime)
+{
+#if SQ_VM_RUNTIME_HAS_INDICATOR_GPIO
+	static const uint8_t service_key[] = "service";
+	static const uint8_t mode_key[] = "mode";
+	static const uint8_t pin_name_key[] = "pinName";
+	static const uint8_t active_low_key[] = "activeLow";
+	static const uint8_t service_value[] = "indicator.default";
+	static const uint8_t mode_value[] = "gpio";
+	char pin_name[sizeof("GPIO255")];
+	SqvmDeviceConfigResult result = {0};
+	SqdcStatus status;
+	int written;
+
+	if (runtime == NULL) {
+		return -EINVAL;
+	}
+
+	written = snprintf(pin_name, sizeof(pin_name), "GPIO%u", indicator_gpio.pin);
+	if (written <= 0 || (size_t)written >= sizeof(pin_name)) {
+		return -EINVAL;
+	}
+
+	status = sqdc_config_clear(&runtime->device_config_draft);
+	if (status == SQDC_STATUS_OK) {
+		status = sqdc_config_set_string(&runtime->device_config_draft, service_key,
+						strlen((const char *)service_key), service_value,
+						strlen((const char *)service_value));
+	}
+	if (status == SQDC_STATUS_OK) {
+		status = sqdc_config_set_string(&runtime->device_config_draft, mode_key,
+						strlen((const char *)mode_key), mode_value,
+						strlen((const char *)mode_value));
+	}
+	if (status == SQDC_STATUS_OK) {
+		status = sqdc_config_set_string(&runtime->device_config_draft, pin_name_key,
+						strlen((const char *)pin_name_key),
+						(const uint8_t *)pin_name, strlen(pin_name));
+	}
+	if (status == SQDC_STATUS_OK) {
+		status = sqdc_config_set_bool(
+			&runtime->device_config_draft, active_low_key,
+			strlen((const char *)active_low_key),
+			(indicator_gpio.dt_flags & GPIO_ACTIVE_LOW) != 0);
+	}
+	if (status != SQDC_STATUS_OK) {
+		return -EINVAL;
+	}
+
+	runtime->device_config_draft_loaded = true;
+	if (sq_vm_runtime_device_config_rebind(runtime, (const uint8_t *)"indicator.default",
+					       strlen("indicator.default"), &result) != 0 ||
+	    !result.ok) {
+		return -EINVAL;
+	}
+	return 0;
+#else
+	if (runtime == NULL) {
+		return -EINVAL;
+	}
+	runtime->indicator_binding_active = false;
+	runtime->indicator_binding_pin = 0;
+	runtime->indicator_binding_active_low = false;
+	runtime->device_config_draft_loaded = false;
+	return 0;
+#endif
+}
+
 static size_t runtime_fixed_text_len(const uint8_t *bytes, size_t cap)
 {
 	size_t len = 0;
@@ -1887,6 +1955,7 @@ void sq_vm_runtime_init(struct sq_vm_runtime *runtime)
 	k_work_init(&runtime->work, runtime_work_handler);
 	runtime->work_initialized = true;
 	runtime->status = SQ_VM_RUNTIME_IDLE;
+	(void)sq_vm_runtime_apply_target_default_indicator_binding(runtime);
 }
 
 size_t sq_vm_runtime_work_stack_size(void)
@@ -1950,17 +2019,12 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->indicator_blink_on_ms = 0;
 	runtime->indicator_blink_off_ms = 0;
 	runtime->indicator_blink_next_ms = 0;
-#if SQ_VM_RUNTIME_HAS_INDICATOR_GPIO
-	runtime->indicator_binding_active = true;
-	runtime->indicator_binding_pin = indicator_gpio.pin;
-	runtime->indicator_binding_active_low = (indicator_gpio.dt_flags & GPIO_ACTIVE_LOW) != 0;
-#else
 	runtime->indicator_binding_active = false;
 	runtime->indicator_binding_pin = 0;
 	runtime->indicator_binding_active_low = false;
-#endif
 	memset(&runtime->device_config_draft, 0, sizeof(runtime->device_config_draft));
 	runtime->device_config_draft_loaded = false;
+	(void)sq_vm_runtime_apply_target_default_indicator_binding(runtime);
 	runtime->gpio_configured_mask = 0;
 	runtime->gpio_state_mask = 0;
 	memset(runtime->wifi_profile, 0, sizeof(runtime->wifi_profile));

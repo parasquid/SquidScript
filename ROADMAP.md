@@ -41,10 +41,12 @@ for compiler, SQBC tooling, and VM semantics.
   `indicator.default` binding. The Zephyr runtime now tracks an active
   indicator binding and routes indicator output through it, including package
   SQDEVICE `device.config.rebind(...)` and installed app top-level
-  `device { indicator { use ... } }` activation before `app.start`. Remaining
-  work is to formalize target default bindings through the same device-binding
-  model instead of Zephyr devicetree-only defaults. The current ESP32-C3 Super
-  Mini behavior should remain GPIO8 LEDC PWM by default.
+  `device { indicator { use ... } }` activation before `app.start`. Target
+  default indicator bindings now initialize through the same SQDC draft/rebind
+  path instead of direct runtime field assignment. The current ESP32-C3 Super
+  Mini behavior should remain GPIO8 LEDC PWM by default. Remaining work is to
+  source those defaults from target metadata instead of Zephyr devicetree
+  aliases alone.
 - Decide service priority and target support for currently spec-recognized but
   not SQBC-backed APIs: `httpServer.*`, `bleTransfer.*`, and any remaining
   `content.*` APIs beyond the current file pick/read family. Defer

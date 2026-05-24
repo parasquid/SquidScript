@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include <zephyr/fs/fs.h>
+#include <zephyr/devicetree.h>
 #include <zephyr/ztest.h>
 
 #include "app_store.h"
@@ -2442,6 +2443,22 @@ ZTEST(squidscript_protocol, test_vm_runtime_loads_package_sqdevice_resource_into
 	zassert_true(runtime.indicator_binding_active_low);
 
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
+ZTEST(squidscript_protocol, test_vm_runtime_initializes_target_indicator_default_as_device_config)
+{
+	struct sq_vm_runtime runtime = {0};
+
+	sq_vm_runtime_init(&runtime);
+
+#if IS_ENABLED(CONFIG_GPIO) && DT_NODE_HAS_PROP(DT_ALIAS(indicator0), gpios)
+	zassert_true(runtime.device_config_draft_loaded);
+	zassert_equal(runtime.device_config_draft.count, 4);
+	zassert_true(runtime.indicator_binding_active);
+#else
+	zassert_false(runtime.device_config_draft_loaded);
+	zassert_false(runtime.indicator_binding_active);
+#endif
 }
 
 ZTEST(squidscript_protocol, test_vm_runtime_saves_device_config_draft_to_flash_sqdc)

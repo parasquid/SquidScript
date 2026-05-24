@@ -1075,9 +1075,10 @@ structured runtime error. Package install stores `.sqdevice` resources but does
 not activate them by itself. Inline GPIO bindings do not require a package
 resource.
 
-Active bindings are global until changed or reboot. A temp run may edit or
-rebind configuration in RAM, but those changes remain volatile unless app code
-explicitly calls `device.config.save("flash")`.
+Target-defined default bindings are initialized through the same active binding
+model before app code runs. Active bindings are global until changed or reboot.
+A temp run may edit or rebind configuration in RAM, but those changes remain
+volatile unless app code explicitly calls `device.config.save("flash")`.
 
 Display bindings:
 
@@ -3470,8 +3471,9 @@ table. The current Zephyr runtime supports package resource
 `device.config.load("package:...")` into a bounded draft and
 `device.config.set(...)` edits on that draft. It also validates and activates
 the current `indicator.default` GPIO binding through
-`device.config.rebind(...)`, applies saved global SQDC defaults before
-`app.start`, and then applies installed app top-level
+`device.config.rebind(...)`, initializes firmware-defined target defaults
+through the same SQDC draft/rebind path, applies saved global SQDC defaults
+before `app.start`, and then applies installed app top-level
 `device { indicator { use ... } }` package `.sqdevice` and inline
 `gpio:GPIO<n>` bindings so app-local declarations override saved defaults.
 `device.config.save("flash")` writes firmware-owned binary SQDC to the current
