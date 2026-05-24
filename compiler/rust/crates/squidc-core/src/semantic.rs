@@ -461,6 +461,7 @@ fn validate_debug_block_statements(
             | IrStatement::ServiceIndicatorWrite { .. }
             | IrStatement::ServiceIndicatorToggle
             | IrStatement::ServiceIndicatorBreathe
+            | IrStatement::ServiceIndicatorBlink { .. }
             | IrStatement::Return { .. }
             | IrStatement::DisplayClear { .. }
             | IrStatement::DisplayText { .. }
@@ -556,6 +557,9 @@ fn statement_uses_any_name(
         IrStatement::ServiceTimerAfter { delay_ms, .. } => expr_uses_any_name(delay_ms, names),
         IrStatement::HardwareGpioWrite { value, .. } => expr_uses_any_name(value, names),
         IrStatement::ServiceIndicatorWrite { value } => expr_uses_any_name(value, names),
+        IrStatement::ServiceIndicatorBlink { on_ms, off_ms } => {
+            expr_uses_any_name(on_ms, names) || expr_uses_any_name(off_ms, names)
+        }
         IrStatement::DisplayText { text, .. } => expr_uses_any_name(text, names),
         IrStatement::DisplayDraw { drawable, .. } => expr_uses_any_name(drawable, names),
         IrStatement::DebugBlock { .. }
@@ -654,6 +658,7 @@ fn validate_screen_statements(
             | IrStatement::ServiceIndicatorWrite { .. }
             | IrStatement::ServiceIndicatorToggle
             | IrStatement::ServiceIndicatorBreathe
+            | IrStatement::ServiceIndicatorBlink { .. }
             | IrStatement::Assign { .. } => {
                 diagnostics.push(error(
                     "E_RENDER_PURITY",

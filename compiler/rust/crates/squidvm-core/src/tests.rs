@@ -96,6 +96,12 @@ impl TraceSink for GpioTrace {
         Ok(())
     }
 
+    fn service_indicator_blink(&mut self, on_ms: i32, off_ms: i32) -> Result<(), VmError> {
+        self.events
+            .push(format!("indicator blink {on_ms}/{off_ms}"));
+        Ok(())
+    }
+
     fn service_indicator_read(&mut self) -> Result<bool, VmError> {
         self.events.push("indicator read".to_string());
         Ok(self.led)
@@ -968,6 +974,8 @@ event.on("app.start") {
   service.indicator.toggle()
   led = service.indicator.read()
   service.indicator.breathe()
+  service.indicator.blink()
+  service.indicator.blink(120, 80)
 }
 screen("main") {}
 "#;
@@ -993,6 +1001,8 @@ screen("main") {}
             "indicator toggle",
             "indicator read",
             "indicator breathe",
+            "indicator blink 500/500",
+            "indicator blink 120/80",
         ]
     );
 }

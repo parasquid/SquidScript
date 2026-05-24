@@ -88,6 +88,7 @@ const BUILTIN_APP_ARMED_STACK: u8 = 41;
 const BUILTIN_APP_ARMED_STACK_GET: u8 = 42;
 const BUILTIN_DEVICE_CONFIG_REBIND: u8 = 43;
 const BUILTIN_DEVICE_CONFIG_SAVE: u8 = 44;
+const BUILTIN_SERVICE_INDICATOR_BLINK: u8 = 45;
 
 const VALUE_NULL: u8 = 0;
 const VALUE_BOOL: u8 = 1;
@@ -454,6 +455,10 @@ fn collect_statement_strings(
             }
             IrStatement::ServiceIndicatorToggle => {}
             IrStatement::ServiceIndicatorBreathe => {}
+            IrStatement::ServiceIndicatorBlink { on_ms, off_ms } => {
+                collect_expr_strings(on_ms, strings)?;
+                collect_expr_strings(off_ms, strings)?;
+            }
             IrStatement::DisplayText { text, options } => {
                 collect_expr_strings(text, strings)?;
                 collect_option_strings(options, strings)?;
@@ -751,6 +756,11 @@ fn compile_statement(
         }
         IrStatement::ServiceIndicatorBreathe => {
             emit_builtin(&mut unit.code, BUILTIN_SERVICE_INDICATOR_BREATHE);
+        }
+        IrStatement::ServiceIndicatorBlink { on_ms, off_ms } => {
+            compile_expr(unit, frame, on_ms)?;
+            compile_expr(unit, frame, off_ms)?;
+            emit_builtin(&mut unit.code, BUILTIN_SERVICE_INDICATOR_BLINK);
         }
         IrStatement::ScreenOpen { screen } => {
             let screen_id = unit.strings.intern(screen)?;

@@ -136,6 +136,7 @@ Initial built-in IDs:
 42 app.armedStack.get
 43 device.config.rebind
 44 device.config.save
+45 service.indicator.blink
 ```
 
 The current format supports the headless VM subset. Display draw commands are

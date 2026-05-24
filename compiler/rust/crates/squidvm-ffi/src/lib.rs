@@ -870,6 +870,8 @@ pub struct SqvmCallbacks {
     pub indicator_toggle: Option<unsafe extern "C" fn(user_data: *mut c_void) -> i32>,
     pub indicator_read: Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut bool) -> i32>,
     pub indicator_breathe: Option<unsafe extern "C" fn(user_data: *mut c_void) -> i32>,
+    pub indicator_blink:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, on_ms: i32, off_ms: i32) -> i32>,
     pub hardware_gpio_write: Option<
         unsafe extern "C" fn(
             user_data: *mut c_void,
@@ -1040,6 +1042,7 @@ impl Default for SqvmCallbacks {
             indicator_toggle: None,
             indicator_read: None,
             indicator_breathe: None,
+            indicator_blink: None,
             hardware_gpio_write: None,
             hardware_gpio_toggle: None,
             hardware_gpio_read: None,
@@ -2718,6 +2721,13 @@ impl TraceSink for FfiHost {
             return Err(VmError::InvalidOperand);
         };
         callback_status(unsafe { indicator_breathe(self.callbacks.user_data) })
+    }
+
+    fn service_indicator_blink(&mut self, on_ms: i32, off_ms: i32) -> Result<(), VmError> {
+        let Some(indicator_blink) = self.callbacks.indicator_blink else {
+            return Err(VmError::InvalidOperand);
+        };
+        callback_status(unsafe { indicator_blink(self.callbacks.user_data, on_ms, off_ms) })
     }
 
     fn hardware_gpio_write(&mut self, name: &str, value: bool) -> Result<(), VmError> {

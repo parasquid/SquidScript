@@ -10,16 +10,17 @@ use crate::{
         BUILTIN_DISPLAY_DRAW, BUILTIN_DISPLAY_IMAGE, BUILTIN_DISPLAY_LINE, BUILTIN_DISPLAY_RECT,
         BUILTIN_DISPLAY_SELECT, BUILTIN_DISPLAY_TEXT, BUILTIN_HARDWARE_GPIO_READ,
         BUILTIN_HARDWARE_GPIO_TOGGLE, BUILTIN_HARDWARE_GPIO_WRITE, BUILTIN_SCREEN_OPEN,
-        BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_INDICATOR_BREATHE, BUILTIN_SERVICE_INDICATOR_READ,
-        BUILTIN_SERVICE_INDICATOR_TOGGLE, BUILTIN_SERVICE_INDICATOR_WRITE,
-        BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY, BUILTIN_SERVICE_WIFI_CONNECT,
-        BUILTIN_SERVICE_WIFI_DISCONNECT, BUILTIN_SERVICE_WIFI_GET_AP_IP, BUILTIN_SERVICE_WIFI_SCAN,
-        BUILTIN_SERVICE_WIFI_START_AP, BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP,
-        BUILTIN_STATE_LOAD, BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, BUILTIN_SYSTEM_MEMORY,
-        BUILTIN_SYSTEM_STORAGE, OP_ADD, OP_CALL_BUILTIN, OP_CALL_FUNCTION, OP_EQ, OP_GET_FIELD,
-        OP_GET_LOCAL, OP_GET_STATE, OP_GT, OP_GTE, OP_HALT, OP_JUMP, OP_JUMP_IF_FALSE, OP_LIST_GET,
-        OP_LIST_LEN, OP_LT, OP_LTE, OP_NE, OP_POP, OP_PUSH_BOOL, OP_PUSH_INT, OP_PUSH_NULL,
-        OP_PUSH_STRING, OP_RETURN, OP_SET_LOCAL, OP_SET_STATE, OP_SUB,
+        BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_INDICATOR_BLINK, BUILTIN_SERVICE_INDICATOR_BREATHE,
+        BUILTIN_SERVICE_INDICATOR_READ, BUILTIN_SERVICE_INDICATOR_TOGGLE,
+        BUILTIN_SERVICE_INDICATOR_WRITE, BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY,
+        BUILTIN_SERVICE_WIFI_CONNECT, BUILTIN_SERVICE_WIFI_DISCONNECT,
+        BUILTIN_SERVICE_WIFI_GET_AP_IP, BUILTIN_SERVICE_WIFI_SCAN, BUILTIN_SERVICE_WIFI_START_AP,
+        BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP, BUILTIN_STATE_LOAD,
+        BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, BUILTIN_SYSTEM_MEMORY, BUILTIN_SYSTEM_STORAGE,
+        OP_ADD, OP_CALL_BUILTIN, OP_CALL_FUNCTION, OP_EQ, OP_GET_FIELD, OP_GET_LOCAL, OP_GET_STATE,
+        OP_GT, OP_GTE, OP_HALT, OP_JUMP, OP_JUMP_IF_FALSE, OP_LIST_GET, OP_LIST_LEN, OP_LT, OP_LTE,
+        OP_NE, OP_POP, OP_PUSH_BOOL, OP_PUSH_INT, OP_PUSH_NULL, OP_PUSH_STRING, OP_RETURN,
+        OP_SET_LOCAL, OP_SET_STATE, OP_SUB,
     },
     chunk::{ChunkCache, ChunkKind, ChunkRef},
     error::VmError,
@@ -1257,6 +1258,15 @@ impl ChunkedVm {
             BUILTIN_SERVICE_INDICATOR_BREATHE => {
                 host.service_indicator_breathe()?;
             }
+            BUILTIN_SERVICE_INDICATOR_BLINK => {
+                let Value::I32(off_ms) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let Value::I32(on_ms) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                host.service_indicator_blink(on_ms, off_ms)?;
+            }
             BUILTIN_SERVICE_INDICATOR_READ => {
                 let value = host.service_indicator_read()?;
                 self.push(Value::Bool(value))?;
@@ -2254,6 +2264,15 @@ impl<'a> Vm<'a> {
             }
             BUILTIN_SERVICE_INDICATOR_BREATHE => {
                 trace.service_indicator_breathe()?;
+            }
+            BUILTIN_SERVICE_INDICATOR_BLINK => {
+                let Value::I32(off_ms) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let Value::I32(on_ms) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                trace.service_indicator_blink(on_ms, off_ms)?;
             }
             BUILTIN_SERVICE_INDICATOR_READ => {
                 let value = trace.service_indicator_read()?;

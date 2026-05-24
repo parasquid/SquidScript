@@ -21,6 +21,7 @@ struct Host {
     drawlog: Vec<String>,
     indicator: bool,
     breathe_count: usize,
+    blink_requests: Vec<(i32, i32)>,
     gpio: Vec<(String, bool)>,
     lifecycle: Vec<String>,
     timer_every: Vec<(String, i32)>,
@@ -177,6 +178,12 @@ unsafe extern "C" fn indicator_read(user_data: *mut c_void, out: *mut bool) -> i
 unsafe extern "C" fn indicator_breathe(user_data: *mut c_void) -> i32 {
     let host = &mut *(user_data as *mut Host);
     host.breathe_count += 1;
+    0
+}
+
+unsafe extern "C" fn indicator_blink(user_data: *mut c_void, on_ms: i32, off_ms: i32) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.blink_requests.push((on_ms, off_ms));
     0
 }
 
@@ -646,6 +653,7 @@ fn callbacks(host: &mut Host) -> SqvmCallbacks {
         indicator_toggle: Some(indicator_toggle),
         indicator_read: Some(indicator_read),
         indicator_breathe: Some(indicator_breathe),
+        indicator_blink: Some(indicator_blink),
         hardware_gpio_write: Some(hardware_gpio_write),
         hardware_gpio_toggle: Some(hardware_gpio_toggle),
         hardware_gpio_read: Some(hardware_gpio_read),
@@ -714,6 +722,19 @@ fn compile_indicator_breathe_sqbc() -> Vec<u8> {
 event.on("app.start") {
   service.indicator.breathe()
   debug.print("breathe ready")
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_indicator_blink_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-blink"
+event.on("app.start") {
+  service.indicator.blink()
+  service.indicator.blink(120, 80)
+  debug.print("blink ready")
 }
 screen("main") {}
 "#,
@@ -1221,6 +1242,38 @@ fn dispatches_indicator_breathe_service_callback() {
     assert_eq!(status, SqvmStatus::Ok);
     assert_eq!(host.breathe_count, 1);
     assert_eq!(host.output, vec!["breathe ready"]);
+}
+
+#[test]
+fn dispatches_indicator_blink_service_callback() {
+    let mut host = Host {
+        sqbc: compile_indicator_blink_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(host.blink_requests, vec![(500, 500), (120, 80)]);
+    assert_eq!(host.output, vec!["blink ready"]);
 }
 
 #[test]

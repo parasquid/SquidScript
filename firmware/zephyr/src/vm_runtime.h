@@ -115,6 +115,11 @@ struct sq_vm_runtime {
 	bool indicator_breathe_active;
 	uint8_t indicator_breathe_step;
 	int64_t indicator_breathe_next_ms;
+	bool indicator_blink_active;
+	bool indicator_blink_on;
+	int32_t indicator_blink_on_ms;
+	int32_t indicator_blink_off_ms;
+	int64_t indicator_blink_next_ms;
 	SqdcConfig device_config_draft;
 	bool device_config_draft_loaded;
 	uint32_t gpio_configured_mask;
@@ -173,6 +178,7 @@ int sq_vm_runtime_indicator_write(struct sq_vm_runtime *runtime, bool value);
 int sq_vm_runtime_indicator_toggle(struct sq_vm_runtime *runtime);
 int sq_vm_runtime_indicator_read(struct sq_vm_runtime *runtime, bool *out);
 int sq_vm_runtime_indicator_breathe(struct sq_vm_runtime *runtime);
+int sq_vm_runtime_indicator_blink(struct sq_vm_runtime *runtime, int32_t on_ms, int32_t off_ms);
 int sq_vm_runtime_device_config_load(struct sq_vm_runtime *runtime, const uint8_t *source,
 				     size_t source_len, SqvmDeviceConfigResult *out);
 int sq_vm_runtime_device_config_set(struct sq_vm_runtime *runtime, const uint8_t *key,

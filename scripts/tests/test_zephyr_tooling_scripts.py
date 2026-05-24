@@ -552,6 +552,20 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("breathe app left running", script)
         self.assertNotIn("c3-supermini-test-breathe.sh", suite)
 
+    def test_blink_check_is_explicit_visible_indicator_parity_script(self):
+        script = self.read("scripts/c3-supermini-test-blink.sh")
+        app = self.read("examples/blink-supermini/main.squid")
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn("service.indicator.blink(120, 80)", app)
+        self.assertIn('debug.print("blink ready")', app)
+        self.assertIn('cargo run --quiet -p squidc -- app install "${BLINK_APP}"', script)
+        self.assertIn('cargo run --quiet -p squidc -- app launch blink-supermini', script)
+        self.assertIn("output=blink ready", script)
+        self.assertIn("assert_file_empty_command", script)
+        self.assertIn("blink app left running", script)
+        self.assertNotIn("c3-supermini-test-blink.sh", suite)
+
     def test_hardware_suite_runs_display_drawlog_script(self):
         script = self.read("scripts/c3-supermini-test-display-drawlog.sh")
         app = self.read("tests/hardware/c3-supermini/display-drawlog/main.squid")

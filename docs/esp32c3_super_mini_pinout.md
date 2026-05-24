@@ -111,11 +111,13 @@ indicator binding for `service.indicator.*`; GPIO8 is board metadata, not a
 portable SquidScript indicator rule.
 
 `service.indicator.breathe()` drives `indicator0` through ESP32-C3 LEDC PWM on
-channel 0 with a 1 kHz period. The overlay keeps `led0` as GPIO metadata for the
-same physical LED so raw `hardware.gpio.*` checks can identify when GPIO8 is the
-indicator endpoint. If the serial blinky or breathe checks report output but the
-onboard blue LED does not change, verify the physical board LED mapping before
-changing portable SquidScript indicator semantics.
+channel 0 with a 1 kHz period. `service.indicator.blink(...)` uses the same
+logical indicator binding and non-blocking runtime polling. The overlay keeps
+`led0` as GPIO metadata for the same physical LED so raw `hardware.gpio.*`
+checks can identify when GPIO8 is the indicator endpoint. If the serial blinky,
+breathe, or blink checks report output but the onboard blue LED does not change,
+verify the physical board LED mapping before changing portable SquidScript
+indicator semantics.
 
 ## Source Notes
 

@@ -610,6 +610,43 @@ screen("main") {}
 }
 
 #[test]
+fn parses_indicator_blink_with_default_and_explicit_durations() {
+    let source = r#"app "indicator-blink"
+event.on("app.start") {
+  service.indicator.blink()
+  service.indicator.blink(120)
+  service.indicator.blink(120, 80)
+}
+screen("main") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let ir = output.ir.unwrap();
+    assert_eq!(ir.handlers[0].statements.len(), 3);
+    assert!(matches!(
+        &ir.handlers[0].statements[0],
+        IrStatement::ServiceIndicatorBlink { on_ms, off_ms }
+            if matches!(on_ms, IrExpr::Literal { value } if value == &serde_json::json!(500))
+                && matches!(off_ms, IrExpr::Literal { value } if value == &serde_json::json!(500))
+    ));
+    assert!(matches!(
+        &ir.handlers[0].statements[1],
+        IrStatement::ServiceIndicatorBlink { on_ms, off_ms }
+            if matches!(on_ms, IrExpr::Literal { value } if value == &serde_json::json!(120))
+                && matches!(off_ms, IrExpr::Literal { value } if value == &serde_json::json!(500))
+    ));
+    assert!(matches!(
+        &ir.handlers[0].statements[2],
+        IrStatement::ServiceIndicatorBlink { on_ms, off_ms }
+            if matches!(on_ms, IrExpr::Literal { value } if value == &serde_json::json!(120))
+                && matches!(off_ms, IrExpr::Literal { value } if value == &serde_json::json!(80))
+    ));
+}
+
+#[test]
 fn rejects_debug_block_mutations_and_escaping_locals() {
     let source = r#"app "bad-debug"
 state { count: int = 1 }

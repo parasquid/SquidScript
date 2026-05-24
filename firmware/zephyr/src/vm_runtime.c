@@ -246,6 +246,11 @@ static int32_t runtime_indicator_breathe(void *user_data)
 	return sq_vm_runtime_indicator_breathe(user_data);
 }
 
+static int32_t runtime_indicator_blink(void *user_data, int32_t on_ms, int32_t off_ms)
+{
+	return sq_vm_runtime_indicator_blink(user_data, on_ms, off_ms);
+}
+
 static int32_t runtime_hardware_gpio_write(void *user_data, const uint8_t *name, size_t name_len,
 					   bool value)
 {
@@ -1483,6 +1488,7 @@ int sq_vm_runtime_device_config_rebind(struct sq_vm_runtime *runtime, const uint
 	}
 
 	runtime->indicator_breathe_active = false;
+	runtime->indicator_blink_active = false;
 	runtime->indicator_binding_active = true;
 	runtime->indicator_binding_pin = pin;
 	runtime->indicator_binding_active_low = active_low;
@@ -1606,6 +1612,11 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->indicator_breathe_active = false;
 	runtime->indicator_breathe_step = 0;
 	runtime->indicator_breathe_next_ms = 0;
+	runtime->indicator_blink_active = false;
+	runtime->indicator_blink_on = false;
+	runtime->indicator_blink_on_ms = 0;
+	runtime->indicator_blink_off_ms = 0;
+	runtime->indicator_blink_next_ms = 0;
 #if SQ_VM_RUNTIME_HAS_INDICATOR_GPIO
 	runtime->indicator_binding_active = true;
 	runtime->indicator_binding_pin = indicator_gpio.pin;
@@ -1721,6 +1732,7 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		.indicator_toggle = runtime_indicator_toggle,
 		.indicator_read = runtime_indicator_read,
 		.indicator_breathe = runtime_indicator_breathe,
+		.indicator_blink = runtime_indicator_blink,
 		.hardware_gpio_write = runtime_hardware_gpio_write,
 		.hardware_gpio_toggle = runtime_hardware_gpio_toggle,
 		.hardware_gpio_read = runtime_hardware_gpio_read,
@@ -1988,6 +2000,7 @@ int sq_vm_runtime_indicator_write(struct sq_vm_runtime *runtime, bool value)
 		return -EINVAL;
 	}
 	runtime->indicator_breathe_active = false;
+	runtime->indicator_blink_active = false;
 	return set_indicator_brightness(runtime, value ? 100U : 0U);
 }
 
@@ -2017,9 +2030,27 @@ int sq_vm_runtime_indicator_breathe(struct sq_vm_runtime *runtime)
 	}
 	now = k_uptime_get();
 	runtime->indicator_breathe_active = true;
+	runtime->indicator_blink_active = false;
 	runtime->indicator_breathe_step = 0;
 	runtime->indicator_breathe_next_ms = now;
 	return set_indicator_brightness(runtime, 0U);
+}
+
+int sq_vm_runtime_indicator_blink(struct sq_vm_runtime *runtime, int32_t on_ms, int32_t off_ms)
+{
+	int64_t now;
+
+	if (runtime == NULL || on_ms <= 0 || off_ms <= 0) {
+		return -EINVAL;
+	}
+	now = k_uptime_get();
+	runtime->indicator_breathe_active = false;
+	runtime->indicator_blink_active = true;
+	runtime->indicator_blink_on = true;
+	runtime->indicator_blink_on_ms = on_ms;
+	runtime->indicator_blink_off_ms = off_ms;
+	runtime->indicator_blink_next_ms = now + on_ms;
+	return set_indicator_brightness(runtime, 100U);
 }
 
 static int parse_gpio_name(const uint8_t *name, size_t name_len, uint8_t *pin)
@@ -2074,6 +2105,7 @@ int sq_vm_runtime_hardware_gpio_write(struct sq_vm_runtime *runtime, const uint8
 	}
 	if (indicator_uses_raw_gpio(pin)) {
 		runtime->indicator_breathe_active = false;
+		runtime->indicator_blink_active = false;
 		runtime->indicator_state = indicator_is_active_low() ? !value : value;
 		bit = BIT(pin);
 		runtime->gpio_configured_mask |= bit;
@@ -2161,6 +2193,25 @@ static int sq_vm_runtime_poll_indicator_breathe(struct sq_vm_runtime *runtime)
 			  SQ_VM_RUNTIME_INDICATOR_BREATHE_STEPS);
 	runtime->indicator_breathe_next_ms = now + SQ_VM_RUNTIME_BREATHE_LEVEL_MS;
 	return set_indicator_brightness(runtime, brightness);
+}
+
+static int sq_vm_runtime_poll_indicator_blink(struct sq_vm_runtime *runtime)
+{
+	int64_t now;
+
+	if (!runtime->indicator_blink_active) {
+		return 0;
+	}
+	now = k_uptime_get();
+	if (now < runtime->indicator_blink_next_ms) {
+		return 0;
+	}
+
+	runtime->indicator_blink_on = !runtime->indicator_blink_on;
+	runtime->indicator_blink_next_ms =
+		now + (runtime->indicator_blink_on ? runtime->indicator_blink_on_ms :
+						   runtime->indicator_blink_off_ms);
+	return set_indicator_brightness(runtime, runtime->indicator_blink_on ? 100U : 0U);
 }
 
 int sq_vm_runtime_register_timer(struct sq_vm_runtime *runtime, const uint8_t *event,
@@ -2323,6 +2374,7 @@ int sq_vm_runtime_poll(struct sq_vm_runtime *runtime)
 	if (runtime == NULL) {
 		return 0;
 	}
+	(void)sq_vm_runtime_poll_indicator_blink(runtime);
 	(void)sq_vm_runtime_poll_indicator_breathe(runtime);
 	if (runtime->status == SQ_VM_RUNTIME_RUNNING || runtime->job_backend.read_sqbc == NULL) {
 		return 0;

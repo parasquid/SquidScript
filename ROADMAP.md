@@ -43,13 +43,6 @@ for compiler, SQBC tooling, and VM semantics.
   without silently synthesizing default device blocks from target metadata.
   The current ESP32-C3 Super Mini behavior should remain GPIO8 LEDC PWM by
   default.
-- Add `service.indicator.blink(onMs?, offMs?)` as a standard indicator
-  pattern API. The first optional argument is the on duration in milliseconds,
-  and the second optional argument is the off duration in milliseconds; omitted
-  arguments default to 500 ms on and 500 ms off. Define compiler/SQBC builtin
-  shape, VM host callbacks, Zephyr non-blocking timer behavior, and hardware
-  coverage alongside the existing `write`, `toggle`, `read`, and `breathe`
-  indicator APIs.
 - Decide service priority and target support for currently spec-recognized but
   not SQBC-backed APIs: `httpServer.*`, `bleTransfer.*`, `content.*`, and
   `binbook.*`. Add each only as a real compiler/SQBC/VM/Zephyr slice with

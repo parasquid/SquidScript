@@ -691,6 +691,16 @@ impl Parser<'_> {
                     self.consume_call_tail(builder);
                     Some(IrStatement::ServiceIndicatorBreathe)
                 }
+                ("indicator", "blink") => {
+                    let default_ms = || IrExpr::Literal {
+                        value: serde_json::json!(500),
+                    };
+                    let on_ms = self.parse_expr(builder).unwrap_or_else(default_ms);
+                    self.consume_comma(builder);
+                    let off_ms = self.parse_expr(builder).unwrap_or_else(default_ms);
+                    self.consume_call_tail(builder);
+                    Some(IrStatement::ServiceIndicatorBlink { on_ms, off_ms })
+                }
                 _ => {
                     self.consume_call_tail(builder);
                     None

@@ -140,6 +140,8 @@ pub enum IrStatement {
     ServiceIndicatorToggle,
     #[serde(rename = "service.indicator.breathe")]
     ServiceIndicatorBreathe,
+    #[serde(rename = "service.indicator.blink")]
+    ServiceIndicatorBlink { on_ms: IrExpr, off_ms: IrExpr },
     #[serde(rename = "service.display.clear")]
     DisplayClear { color: String },
     #[serde(rename = "service.display.text")]

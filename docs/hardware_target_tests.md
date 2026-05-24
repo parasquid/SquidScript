@@ -140,6 +140,13 @@ draft set, `ok=true` for `indicator.default` rebind, then `ok=false`,
 `error=unsupported`, and `warning=null` for save until SQDC flash persistence is
 implemented.
 
+`scripts/c3-supermini-test-blink.sh` is an explicit visible indicator parity
+check. It installs `examples/blink-supermini`, launches it, verifies
+`output=blink ready`, checks that `device errors` is empty, and leaves the
+non-blocking `service.indicator.blink(120, 80)` pattern running for physical LED
+confirmation. It is not part of the full hardware suite because the suite keeps
+the blinky app as the final visible board-state check.
+
 `scripts/c3-supermini-test-display-drawlog.sh` runs after lifecycle coverage
 and before system resource coverage. It installs
 `tests/hardware/c3-supermini/display-drawlog`, launches it, and verifies that

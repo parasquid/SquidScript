@@ -79,6 +79,7 @@ pub(crate) const BUILTIN_APP_ARMED_STACK: u8 = 41;
 pub(crate) const BUILTIN_APP_ARMED_STACK_GET: u8 = 42;
 pub(crate) const BUILTIN_DEVICE_CONFIG_REBIND: u8 = 43;
 pub(crate) const BUILTIN_DEVICE_CONFIG_SAVE: u8 = 44;
+pub(crate) const BUILTIN_SERVICE_INDICATOR_BLINK: u8 = 45;
 
 pub(crate) const VALUE_NULL: u8 = 0;
 pub(crate) const VALUE_BOOL: u8 = 1;

@@ -1084,9 +1084,12 @@ Indicator bindings:
 
 - `indicator { ... }` binds `indicator.default`.
 - `service.indicator.write(value)`, `service.indicator.toggle()`,
-  `service.indicator.read()`, and `service.indicator.breathe()` operate on
-  `indicator.default` in current draft. `breathe()` returns the default indicator to the
-  target-defined breathing pattern after app-driven writes or toggles.
+  `service.indicator.read()`, `service.indicator.breathe()`, and
+  `service.indicator.blink(onMs?, offMs?)` operate on `indicator.default` in
+  current draft. `breathe()` returns the default indicator to the target-defined
+  breathing pattern. `blink(...)` starts a non-blocking blink pattern; omitted
+  durations default to 500 ms on and 500 ms off. App-driven writes/toggles and
+  automatic patterns replace each other.
 - Named indicator bindings are deferred until a target has a real second
   app-facing indicator.
 
@@ -3456,7 +3459,7 @@ service.display.draw
 service.indicator
 - Allows the default logical indicator operations:
   service.indicator.write, service.indicator.toggle, service.indicator.read,
-  and service.indicator.breathe.
+  service.indicator.breathe, and service.indicator.blink.
 
 state.read
 - Allows state.load.

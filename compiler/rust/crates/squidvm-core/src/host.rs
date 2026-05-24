@@ -118,6 +118,9 @@ pub trait TraceSink {
     fn service_indicator_breathe(&mut self) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
     }
+    fn service_indicator_blink(&mut self, _on_ms: i32, _off_ms: i32) -> Result<(), VmError> {
+        Err(VmError::InvalidOperand)
+    }
     fn service_indicator_read(&mut self) -> Result<bool, VmError> {
         Err(VmError::InvalidOperand)
     }
