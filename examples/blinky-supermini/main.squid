@@ -28,5 +28,3 @@ event.on("key.BACK") {
   service.indicator.write(led)
   app.exit()
 }
-
-screen("main") {}

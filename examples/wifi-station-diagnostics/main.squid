@@ -40,5 +40,3 @@ event.on("key.BACK") {
   service.wifi.disconnect()
   app.exit()
 }
-
-screen("main") {}

@@ -20,5 +20,3 @@ event.on("timer.debug") {
   state.save()
   app.exit()
 }
-
-screen("main") {}

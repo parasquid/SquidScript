@@ -416,6 +416,52 @@ fn compiles_browser_sim_binbook_reader_fixture() {
 }
 
 #[test]
+fn compiles_app_entry_without_screen_to_empty_main_screen() {
+    let source = r#"app "headless"
+
+event.on("app.start") {
+  debug.print("hi")
+}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let ir = output.ir.unwrap();
+    assert_eq!(ir.screens.len(), 1);
+    assert_eq!(ir.screens[0].name, "main");
+    assert_eq!(ir.screens[0].render, "compose");
+    assert!(ir.screens[0].statements.is_empty());
+    sqbc::encode_sqbc(&ir).expect("synthetic empty main screen should encode");
+}
+
+#[test]
+fn no_screen_app_still_rejects_unknown_screen_open() {
+    let source = r#"app "headless"
+
+event.on("app.start") {
+  screen.open("missing")
+}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+
+    assert!(!output.ok);
+    assert!(output
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "E_UNKNOWN_SCREEN"));
+    assert!(output
+        .diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic.code != "E_SCREEN_REQUIRED"));
+}
+
+#[test]
 fn encodes_minimal_sqbc_container() {
     let source = read_repo_fixture(&["compiler", "fixtures", "valid", "hello_menu.squid"]);
     let output = compile(CompileRequest {

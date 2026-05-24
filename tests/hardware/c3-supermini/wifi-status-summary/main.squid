@@ -6,5 +6,3 @@ event.on("app.start") {
   let status = service.wifi.status()
   debug.print("wifi status", status.state, status.backend, status.driverStarted, status.error)
 }
-
-screen("main") {}

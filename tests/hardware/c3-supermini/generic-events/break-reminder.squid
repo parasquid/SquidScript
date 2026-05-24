@@ -31,5 +31,3 @@ event.on("key.SELECT") {
   debug.print("break exit")
   app.exit()
 }
-
-screen("main") {}

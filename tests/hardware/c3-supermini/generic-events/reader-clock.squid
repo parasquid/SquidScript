@@ -30,5 +30,3 @@ event.on("timer.clock") {
     debug.print("reader armed selected", selected.appId, selected.event)
   }
 }
-
-screen("main") {}

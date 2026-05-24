@@ -8,5 +8,3 @@ event.on("app.start") {
   debug.print("wifi connect", connect.ok, connect.error)
   debug.print("wifi station", status.profile, status.connected, status.state, status.error)
 }
-
-screen("main") {}

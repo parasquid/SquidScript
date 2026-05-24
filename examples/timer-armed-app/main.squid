@@ -16,5 +16,3 @@ event.on("app.start") {
   app.arm("timer-armed-app")
   state.save()
 }
-
-screen("main") {}

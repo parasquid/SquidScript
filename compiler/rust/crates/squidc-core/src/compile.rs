@@ -1,4 +1,5 @@
 use crate::{
+    ast::AstScreen,
     diagnostic::{error, Diagnostic},
     ir::{
         default_state_store, IrApp, IrExpr, IrFunction, IrHandler, IrProgram, IrScreen, IrStatement,
@@ -29,7 +30,7 @@ pub fn compile(request: CompileRequest) -> CompileResponse {
 
 pub fn compile_with_profile(request: CompileRequest, profile: BuildProfile) -> CompileResponse {
     let mut parsed = parse(&request.source);
-    let ast = parsed.ast.clone();
+    let mut ast = parsed.ast.clone();
 
     if ast.app.is_none() {
         parsed.diagnostics.push(error(
@@ -39,13 +40,14 @@ pub fn compile_with_profile(request: CompileRequest, profile: BuildProfile) -> C
             request.source.len().min(1),
         ));
     }
-    if ast.screens.is_empty() {
-        parsed.diagnostics.push(error(
-            "E_SCREEN_REQUIRED",
-            "expected at least one screen declaration",
-            0,
-            request.source.len().min(1),
-        ));
+    if ast.app.is_some() && ast.screens.is_empty() {
+        let span = ast.app.as_ref().expect("app checked").span.clone();
+        ast.screens.push(AstScreen {
+            name: "main".to_string(),
+            render: "compose".to_string(),
+            statements: Vec::new(),
+            span,
+        });
     }
     if let Some(target) = ast.app.as_ref().and_then(|app| app.target.as_ref()) {
         if request.target_id != PORTABLE_TARGET_ID && target != &request.target_id {

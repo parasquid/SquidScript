@@ -18,5 +18,3 @@ function scanAndPrint() {
     debug.print("wifi ap", network.ssidLength, network.channel, network.rssi, network.auth, network.hidden)
   }
 }
-
-screen("main") {}

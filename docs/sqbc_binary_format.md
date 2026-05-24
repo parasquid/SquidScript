@@ -195,6 +195,10 @@ Installed SQBC payloads live in Zephyr-owned app storage. Startup registry
 rebuilds validate installed apps from the header and section table with bounded
 reads rather than mirroring full app bodies in RAM.
 
+For a headless app entry source with no authored `screen(...)` declarations,
+the compiler emits one empty synthesized `main` screen. This keeps runtime
+screen metadata uniform without adding display side effects.
+
 The device binding table is reserved for top-level `device {}` declarations.
 It should encode service name, binding name, and package-relative `.sqdevice`
 resource path metadata so firmware and browser runtimes can apply bindings

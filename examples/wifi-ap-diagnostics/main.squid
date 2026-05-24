@@ -109,5 +109,3 @@ event.on("key.BACK") {
   service.indicator.breathe()
   app.exit()
 }
-
-screen("main") {}

@@ -43,17 +43,13 @@ for compiler, SQBC tooling, and VM semantics.
   not SQBC-backed APIs: `httpServer.*`, `bleTransfer.*`, `content.*`, and
   `binbook.*`. Add each only as a real compiler/SQBC/VM/Zephyr slice with
   honest unsupported behavior until then.
-- Design app-entry versus import-only source semantics before adding no-screen
-  app sugar. The likely direction is: only an app entry file can become an app,
-  include/import files are reusable declarations and never synthesize screens by
-  themselves, and after whole-app include expansion an app with no explicit
-  `screen(...)` declarations gets compiler-synthesized `screen("main") {}`.
-  Keep rejecting unknown `screen.open(...)` targets, document the sugar, and add
-  compiler/SQBC tests proving no-screen apps compile to one empty `main` screen.
-  Use the same design pass to settle related module questions such as symbol
-  namespacing, declaration override rules, package/import versioning, duplicate
-  declarations across files, and what app-lifecycle declarations are legal in
-  import-only files.
+- Design app-entry versus import-only source semantics before adding real
+  include/import expansion. Only an app entry file should become an app;
+  include/import files should be reusable declarations and should not synthesize
+  screens by themselves. Use that design pass to settle related module
+  questions such as symbol namespacing, declaration override rules,
+  package/import versioning, duplicate declarations across files, and what
+  app-lifecycle declarations are legal in import-only files.
 - Add external Wi-Fi AP client association/DHCP lease proof through
   Zephyr-native subsystems.
 - Decide whether the ESP32-C3 Super Mini reference target should expose

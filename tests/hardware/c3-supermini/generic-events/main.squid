@@ -10,5 +10,3 @@ event.on("app.start") {
   app.arm("break-reminder")
   app.launch("reader-clock")
 }
-
-screen("main") {}

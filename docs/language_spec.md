@@ -302,7 +302,7 @@ Allowed top-level declarations:
 - device { ... }
 - @preload before `event.on(...)`
 - event.on("event.name") { ... }
-- screen("name") { ... }
+- screen("name") { ... } unless the app is intentionally headless
 - function name(...) { ... }
 
 Top-level executable statements are not allowed.
@@ -1351,6 +1351,12 @@ This lets long `POWER` sleep remain reliable even if `POWER` participates in app
 ## 23. Screens
 
 Screens define renderable views.
+
+An app entry source with no explicit `screen(...)` declarations is a headless
+app. The compiler synthesizes an empty `screen("main") {}` for the app so the
+SQBC screen table remains well formed. This does not make unknown screen names
+valid: `screen.open("missing")` is still rejected unless a real or synthesized
+screen with that name exists.
 
 The `screen.*` namespace controls app-level view selection and refresh.
 

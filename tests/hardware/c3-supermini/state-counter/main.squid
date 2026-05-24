@@ -15,5 +15,3 @@ event.on("key.SELECT") {
   state.save()
   debug.print("count", count)
 }
-
-screen("main") {}
