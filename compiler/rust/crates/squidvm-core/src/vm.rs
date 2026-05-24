@@ -990,7 +990,44 @@ impl ChunkedVm {
                     }
                 }
                 OP_CALL_FUNCTION => {
-                    return Err(VmError::InvalidOperand);
+                    let function_id = self.read_u16_code(frame.ip)? as usize;
+                    frame.ip += 2;
+                    let arg_count = self.read_u16_code(frame.ip)? as usize;
+                    frame.ip += 2;
+                    let function = *self
+                        .index
+                        .functions
+                        .get(function_id)
+                        .ok_or(VmError::FunctionOutOfBounds)?;
+                    if function_id >= self.index.function_count
+                        || arg_count != function.param_count as usize
+                    {
+                        return Err(VmError::FunctionOutOfBounds);
+                    }
+                    let mut child_locals = [Value::Null; MAX_LOCALS];
+                    if function.local_count as usize > MAX_LOCALS {
+                        return Err(VmError::LocalOutOfBounds);
+                    }
+                    for index in (0..arg_count).rev() {
+                        child_locals[index] = self.pop()?;
+                    }
+                    let key = ChunkRef {
+                        app: 0,
+                        kind: ChunkKind::Function,
+                        index: function_id as u16,
+                    };
+                    self.chunk_cache.insert(key, false).ok();
+                    self.chunk_cache.begin_execute(key).ok();
+                    let result = self.execute_range(
+                        host,
+                        function.start,
+                        function.len,
+                        &mut child_locals,
+                        frame.depth + 1,
+                    );
+                    self.chunk_cache.end_execute(key).ok();
+                    let value = result?.unwrap_or(Value::Null);
+                    self.push(value)?;
                 }
                 OP_RETURN => {
                     let _ = self.pop()?;

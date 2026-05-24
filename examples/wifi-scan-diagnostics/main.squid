@@ -4,14 +4,14 @@ state {}
 event.on("app.start") {
   service.indicator.breathe()
   service.timer.every("timer.wifi.scan", 30000)
-  let scan = service.wifi.scan()
-  debug.print("wifi scan", scan.ok, scan.error, scan.count)
-  for network in scan.networks max 8 {
-    debug.print("wifi ap", network.ssidLength, network.channel, network.rssi, network.auth, network.hidden)
-  }
+  scanAndPrint()
 }
 
 event.on("timer.wifi.scan") {
+  scanAndPrint()
+}
+
+function scanAndPrint() {
   let scan = service.wifi.scan()
   debug.print("wifi scan", scan.ok, scan.error, scan.count)
   for network in scan.networks max 8 {

@@ -577,6 +577,58 @@ screen("main") {}
     )
 }
 
+fn compile_helper_function_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-helper"
+function report() {
+  debug.print("from helper")
+}
+event.on("app.start") {
+  report()
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn dispatch_resumable_to_completion(
+    context: &mut squidvm_ffi::SqvmContext,
+    host: &mut Host,
+    event: &[u8],
+) -> SqvmDispatchResult {
+    let mut result = SqvmDispatchResult::default();
+    let status = unsafe {
+        sqvm_dispatch_start_resumable(
+            context,
+            callbacks(host),
+            event.as_ptr(),
+            event.len(),
+            &mut result,
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    while result.outcome == SqvmDispatchOutcome::PendingStorage {
+        let mut completion = SqvmStorageCompletion::default();
+        match result.storage.kind {
+            SqvmStorageRequestKind::SqbcRead => {
+                completion.has_len = true;
+                completion.len = result.storage.len;
+                let start = result.storage.offset;
+                let end = start + result.storage.len;
+                completion.bytes[..result.storage.len].copy_from_slice(&host.sqbc[start..end]);
+            }
+            SqvmStorageRequestKind::StateLoad => {}
+            SqvmStorageRequestKind::StateSave | SqvmStorageRequestKind::StateReset => {}
+            SqvmStorageRequestKind::None => panic!("pending storage without request"),
+        }
+        let status = unsafe {
+            sqvm_dispatch_resume_storage(context, callbacks(host), &completion, &mut result)
+        };
+        assert_eq!(status, SqvmStatus::Ok);
+    }
+    result
+}
+
 #[test]
 fn resumable_dispatch_reports_app_exit() {
     let mut host = Host {
@@ -636,6 +688,32 @@ fn resumable_dispatch_reports_app_exit() {
     assert!(result.exited);
     assert_eq!(host.output, vec!["before exit"]);
     assert_eq!(host.traces, vec!["app.start", "app.exit"]);
+}
+
+#[test]
+fn resumable_dispatch_supports_user_function_calls() {
+    let mut host = Host {
+        sqbc: compile_helper_function_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let result = dispatch_resumable_to_completion(&mut context, &mut host, b"app.start");
+
+    assert_eq!(result.outcome, SqvmDispatchOutcome::Complete);
+    assert_eq!(host.output, vec!["from helper"]);
+    assert_eq!(host.traces, vec!["app.start"]);
 }
 
 #[test]
