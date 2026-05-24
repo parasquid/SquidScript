@@ -20,9 +20,9 @@ for compiler, SQBC tooling, and VM semantics.
 ### 2. Expand Zephyr VM Hosting ABI
 
 - Keep the Zephyr VM ABI aligned with implemented SQBC builtins. Current
-  builtins `1..21` and `27..37` have Rust VM host callbacks plus Zephyr FFI and
+  builtins `1..21` and `27..42` have Rust VM host callbacks plus Zephyr FFI and
   runtime connections for state, app lifecycle, display draw-log, GPIO,
-  indicator, timers, Wi-Fi, and system diagnostics. Future service work should
+  indicator, timers, Wi-Fi, app inspection, and system diagnostics. Future service work should
   promote a spec/API slice through compiler lowering, SQBC builtin IDs, VM host
   callbacks, FFI, Zephyr runtime wiring, docs, and tests together.
 - Expand FFI equivalence tests and Zephyr ztests for remaining edge cases in
@@ -35,11 +35,11 @@ for compiler, SQBC tooling, and VM semantics.
 
 ### 3. Port Runtime Services To Zephyr
 
-- Extend app-facing lifecycle inspection beyond the implemented low-RAM
-  `app.registry()` and `app.registry.get(apps, index)` installed-app listing.
-  Reuse the existing foreground stack and armed timer state; define the
-  portable SquidScript contract first, then add compiler/SQBC/VM/FFI/Zephyr
-  support and hardware coverage for inspecting foreground and armed-app state.
+- Add hardware coverage for app-facing lifecycle inspection. The low-RAM VM
+  APIs `app.registry()`, `app.registry.get(apps, index)`, `app.processStack()`,
+  `app.armedStack()`, and `app.armedStack.get(armedApps, index)` now exist;
+  add a real ESP32-C3 lifecycle script that exercises these APIs alongside
+  `app.launch`, `app.exit`, `app.arm`, and timer-triggered armed activation.
 - Promote planned display APIs through the real runtime stack:
   `service.display.select`, `service.display.image`, and
   `service.display.draw`. Keep resource/drawable ownership explicit and avoid

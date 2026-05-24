@@ -188,6 +188,18 @@ const REGISTRY_TEST_APPS: [AppRegistryEntry; 2] = [
     },
 ];
 
+const LIFECYCLE_PROCESS_STACK: [&str; 2] = ["main", "reader"];
+const LIFECYCLE_ARMED_STACK: [AppArmedStackEntry; 2] = [
+    AppArmedStackEntry {
+        app_id: "break-reminder",
+        event: "timer.break",
+    },
+    AppArmedStackEntry {
+        app_id: "weather-sync",
+        event: "timer.sync",
+    },
+];
+
 impl TraceSink for RegistryTrace {
     fn trace(&mut self, message: &str) {
         self.events.push(message.to_string());
@@ -227,6 +239,20 @@ impl TraceSink for RegistryTrace {
             .copied()
             .find(|app| app.id == app_id)
             .ok_or(VmError::InvalidOperand)
+    }
+
+    fn app_process_stack<'a>(&'a mut self) -> Result<AppProcessStack<'a>, VmError> {
+        self.events.push("process.stack".to_string());
+        Ok(AppProcessStack {
+            apps: &LIFECYCLE_PROCESS_STACK,
+        })
+    }
+
+    fn app_armed_stack<'a>(&'a mut self) -> Result<AppArmedStack<'a>, VmError> {
+        self.events.push("armed.stack".to_string());
+        Ok(AppArmedStack {
+            entries: &LIFECYCLE_ARMED_STACK,
+        })
     }
 }
 
@@ -1151,6 +1177,50 @@ screen("main") {}
             "debug reader",
             "registry.get reader",
             "debug reader Reader dev-reader Read documents",
+        ]
+    );
+}
+
+#[test]
+fn runs_app_lifecycle_stack_inspection_from_real_bytecode() {
+    let source = r#"app "launcher"
+event.on("app.start") {
+  let process = app.processStack()
+  for appId in process max 2 {
+    debug.print(appId)
+  }
+  let armed = app.armedStack()
+  for armedApp in armed max 2 {
+    debug.print(armedApp.appId)
+  }
+  let selected = app.armedStack.get(armed, 1)
+  debug.print(selected.appId, selected.event)
+}
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = RegistryTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "process.stack",
+            "debug main",
+            "debug reader",
+            "armed.stack",
+            "debug break-reminder",
+            "debug weather-sync",
+            "debug weather-sync timer.sync",
         ]
     );
 }

@@ -125,6 +125,12 @@ pub trait TraceSink {
     fn app_registry_get<'a>(&'a mut self, _app_id: &str) -> Result<AppRegistryEntry<'a>, VmError> {
         Err(VmError::InvalidOperand)
     }
+    fn app_process_stack<'a>(&'a mut self) -> Result<AppProcessStack<'a>, VmError> {
+        Err(VmError::InvalidOperand)
+    }
+    fn app_armed_stack<'a>(&'a mut self) -> Result<AppArmedStack<'a>, VmError> {
+        Err(VmError::InvalidOperand)
+    }
     fn service_timer_every(&mut self, _event: &str, _interval_ms: i32) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
     }
@@ -197,6 +203,22 @@ pub struct AppRegistryEntry<'a> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AppRegistryList<'a> {
     pub apps: &'a [AppRegistryEntry<'a>],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AppProcessStack<'a> {
+    pub apps: &'a [&'a str],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AppArmedStackEntry<'a> {
+    pub app_id: &'a str,
+    pub event: &'a str,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AppArmedStack<'a> {
+    pub entries: &'a [AppArmedStackEntry<'a>],
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

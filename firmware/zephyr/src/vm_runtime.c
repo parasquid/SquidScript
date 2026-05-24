@@ -335,6 +335,54 @@ static int32_t runtime_app_registry_get(void *user_data, const uint8_t *app, siz
 	return 0;
 }
 
+static int32_t runtime_app_process_stack(void *user_data, SqvmAppStackEntry *out, size_t out_cap,
+					 size_t *out_count)
+{
+	struct sq_vm_runtime *runtime = user_data;
+	size_t count;
+
+	if (runtime == NULL || out_count == NULL || (out == NULL && out_cap > 0)) {
+		return -EINVAL;
+	}
+	count = runtime->return_stack_count;
+	if (count > out_cap) {
+		count = out_cap;
+	}
+	for (size_t i = 0; i < count; i++) {
+		size_t len = strnlen(runtime->return_stack[i], SQ_APP_STORE_APP_ID_MAX);
+		out[i].app_id = (const uint8_t *)runtime->return_stack[i];
+		out[i].app_id_len = len;
+		out[i].event = NULL;
+		out[i].event_len = 0;
+	}
+	*out_count = count;
+	return 0;
+}
+
+static int32_t runtime_app_armed_stack(void *user_data, SqvmAppStackEntry *out, size_t out_cap,
+				       size_t *out_count)
+{
+	struct sq_vm_runtime *runtime = user_data;
+	size_t count = 0;
+
+	if (runtime == NULL || out_count == NULL || (out == NULL && out_cap > 0)) {
+		return -EINVAL;
+	}
+	for (size_t i = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX && count < out_cap; i++) {
+		const struct sq_vm_runtime_armed_timer *timer = &runtime->armed_timers[i];
+		if (!timer->active) {
+			continue;
+		}
+		out[count].app_id = (const uint8_t *)timer->app_id;
+		out[count].app_id_len = strnlen(timer->app_id, sizeof(timer->app_id));
+		out[count].event = (const uint8_t *)timer->event;
+		out[count].event_len = strnlen(timer->event, sizeof(timer->event));
+		count++;
+	}
+	*out_count = count;
+	return 0;
+}
+
 static int32_t runtime_timer_every(void *user_data, const uint8_t *event, size_t event_len,
 				   int32_t interval_ms)
 {
@@ -1300,6 +1348,8 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		.app_disarm = runtime_app_disarm,
 		.app_registry_list = runtime_app_registry_list,
 		.app_registry_get = runtime_app_registry_get,
+		.app_process_stack = runtime_app_process_stack,
+		.app_armed_stack = runtime_app_armed_stack,
 		.timer_every = runtime_timer_every,
 		.timer_after = runtime_timer_after,
 		.wifi_start_ap = runtime_wifi_start_ap,

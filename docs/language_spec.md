@@ -3248,6 +3248,9 @@ Minimum app registry capability shape:
 app.registry()
 app.registry.get(apps, index)
 app.launch(appId)
+app.processStack()
+app.armedStack()
+app.armedStack.get(armedApps, index)
 ```
 
 `app.registry()`
@@ -3282,6 +3285,29 @@ Requires runtime support:
 ```text
 app.registry.inspect
 ```
+
+`app.processStack()`
+
+Returns a bounded list-like firmware-owned value containing installed app IDs
+that are waiting for the active foreground app to exit. The active app itself is
+not included; use firmware lifecycle diagnostics for host-side full active app
+reporting.
+
+`app.armedStack()`
+
+Returns a bounded list-like firmware-owned value containing records for armed
+app trigger registrations. Each record has:
+
+```text
+{
+  appId: "break-reminder",
+  event: "timer.break"
+}
+```
+
+`app.armedStack.get(armedApps, index)`
+
+Returns the armed stack record at `index`.
 
 `app.launch(appId)`
 
@@ -3494,6 +3520,10 @@ app.registry.list
 
 app.registry.inspect
 - Allows an app to read safe summaries for installed apps.
+
+app.lifecycle.inspect
+- Allows an app to inspect its foreground return stack and armed trigger
+  registrations.
 
 app.launch
 - Allows an app to request that firmware launch another installed app.

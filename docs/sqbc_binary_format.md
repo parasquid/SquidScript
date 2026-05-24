@@ -131,6 +131,9 @@ Initial built-in IDs:
 37 service.wifi.scan
 38 app.registry
 39 app.registry.get
+40 app.processStack
+41 app.armedStack
+42 app.armedStack.get
 ```
 
 The current format supports the headless VM subset. Display draw commands are

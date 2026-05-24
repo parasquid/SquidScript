@@ -2,8 +2,9 @@ use core::{fmt::Write, ptr, str};
 
 use crate::{
     bytecode::{
-        read_i32, read_u16, read_u32, BUILTIN_APP_ARM, BUILTIN_APP_DISARM, BUILTIN_APP_EXIT,
-        BUILTIN_APP_LAUNCH, BUILTIN_APP_REGISTRY_GET, BUILTIN_APP_REGISTRY_LIST,
+        read_i32, read_u16, read_u32, BUILTIN_APP_ARM, BUILTIN_APP_ARMED_STACK,
+        BUILTIN_APP_ARMED_STACK_GET, BUILTIN_APP_DISARM, BUILTIN_APP_EXIT, BUILTIN_APP_LAUNCH,
+        BUILTIN_APP_PROCESS_STACK, BUILTIN_APP_REGISTRY_GET, BUILTIN_APP_REGISTRY_LIST,
         BUILTIN_DEBUG_PRINT, BUILTIN_DISPLAY_CLEAR, BUILTIN_DISPLAY_LINE, BUILTIN_DISPLAY_RECT,
         BUILTIN_DISPLAY_TEXT, BUILTIN_HARDWARE_GPIO_READ, BUILTIN_HARDWARE_GPIO_TOGGLE,
         BUILTIN_HARDWARE_GPIO_WRITE, BUILTIN_SCREEN_OPEN, BUILTIN_SCREEN_REFRESH,
@@ -21,9 +22,9 @@ use crate::{
     chunk::{ChunkCache, ChunkKind, ChunkRef},
     error::VmError,
     host::{
-        AppRegistryEntry, DisplayLineOptions, DisplayRectOptions, DisplayTextOptions,
-        StorageCompletion, StorageRequest, TraceSink, VmDispatch, WifiAccessPoint,
-        WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
+        AppArmedStackEntry, AppRegistryEntry, DisplayLineOptions, DisplayRectOptions,
+        DisplayTextOptions, StorageCompletion, StorageRequest, TraceSink, VmDispatch,
+        WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
     },
     limits::{
         MAX_CALL_DEPTH, MAX_CODE_CHUNK_BYTES, MAX_FUNCTIONS, MAX_HANDLERS,
@@ -1269,6 +1270,33 @@ impl ChunkedVm {
                 let value = self.app_registry_record(entry)?;
                 self.push(value)?;
             }
+            BUILTIN_APP_PROCESS_STACK => {
+                let process = host.app_process_stack()?;
+                let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
+                let count = process.apps.len().min(MAX_RUNTIME_LIST_ITEMS);
+                for (index, app_id) in process.apps.iter().take(count).enumerate() {
+                    items[index] = self.runtime_string_value(Some(app_id))?;
+                }
+                let value = self.runtime_lists.alloc(&items[..count])?;
+                self.push(value)?;
+            }
+            BUILTIN_APP_ARMED_STACK => {
+                let armed = host.app_armed_stack()?;
+                let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
+                let count = armed.entries.len().min(MAX_RUNTIME_LIST_ITEMS);
+                for (index, entry) in armed.entries.iter().take(count).enumerate() {
+                    items[index] = self.app_armed_stack_record(*entry)?;
+                }
+                let value = self.runtime_lists.alloc(&items[..count])?;
+                self.push(value)?;
+            }
+            BUILTIN_APP_ARMED_STACK_GET => {
+                let index = self.pop()?.expect_i32()?;
+                let Value::List(list_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                self.push(self.runtime_lists.get(list_id, index)?)?;
+            }
             BUILTIN_SERVICE_TIMER_EVERY => {
                 let interval_ms = self.pop()?.expect_i32()?;
                 let Value::String(event_id) = self.pop()? else {
@@ -1374,6 +1402,15 @@ impl ChunkedVm {
             RuntimeRecordField::new("name", name),
             RuntimeRecordField::new("build", build),
             RuntimeRecordField::new("description", description),
+        ])
+    }
+
+    fn app_armed_stack_record(&mut self, entry: AppArmedStackEntry<'_>) -> Result<Value, VmError> {
+        let app_id = self.runtime_string_value(Some(entry.app_id))?;
+        let event = self.runtime_string_value(Some(entry.event))?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("appId", app_id),
+            RuntimeRecordField::new("event", event),
         ])
     }
 
@@ -2159,6 +2196,33 @@ impl<'a> Vm<'a> {
                 let value = self.app_registry_record(entry)?;
                 self.push(value)?;
             }
+            BUILTIN_APP_PROCESS_STACK => {
+                let process = trace.app_process_stack()?;
+                let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
+                let count = process.apps.len().min(MAX_RUNTIME_LIST_ITEMS);
+                for (index, app_id) in process.apps.iter().take(count).enumerate() {
+                    items[index] = self.runtime_string_value(Some(app_id))?;
+                }
+                let value = self.runtime_lists.alloc(&items[..count])?;
+                self.push(value)?;
+            }
+            BUILTIN_APP_ARMED_STACK => {
+                let armed = trace.app_armed_stack()?;
+                let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
+                let count = armed.entries.len().min(MAX_RUNTIME_LIST_ITEMS);
+                for (index, entry) in armed.entries.iter().take(count).enumerate() {
+                    items[index] = self.app_armed_stack_record(*entry)?;
+                }
+                let value = self.runtime_lists.alloc(&items[..count])?;
+                self.push(value)?;
+            }
+            BUILTIN_APP_ARMED_STACK_GET => {
+                let index = self.pop()?.expect_i32()?;
+                let Value::List(list_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                self.push(self.runtime_lists.get(list_id, index)?)?;
+            }
             BUILTIN_SERVICE_TIMER_EVERY => {
                 let interval_ms = self.pop()?.expect_i32()?;
                 let Value::String(event_id) = self.pop()? else {
@@ -2268,6 +2332,15 @@ impl<'a> Vm<'a> {
             RuntimeRecordField::new("name", name),
             RuntimeRecordField::new("build", build),
             RuntimeRecordField::new("description", description),
+        ])
+    }
+
+    fn app_armed_stack_record(&mut self, entry: AppArmedStackEntry<'_>) -> Result<Value, VmError> {
+        let app_id = self.runtime_string_value(Some(entry.app_id))?;
+        let event = self.runtime_string_value(Some(entry.event))?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("appId", app_id),
+            RuntimeRecordField::new("event", event),
         ])
     }
 

@@ -7,8 +7,8 @@ use squidc_core::{
 use squidvm_ffi::{
     sqvm_context_init, sqvm_context_init_in_place, sqvm_context_prepare, sqvm_context_size,
     sqvm_dispatch, sqvm_dispatch_resume_storage, sqvm_dispatch_start_resumable,
-    sqvm_trigger_timer_count, sqvm_trigger_timer_read, SqvmAppRegistryEntry, SqvmCallbacks,
-    SqvmDispatchOutcome, SqvmDispatchResult, SqvmStatus, SqvmStorageCompletion,
+    sqvm_trigger_timer_count, sqvm_trigger_timer_read, SqvmAppRegistryEntry, SqvmAppStackEntry,
+    SqvmCallbacks, SqvmDispatchOutcome, SqvmDispatchResult, SqvmStatus, SqvmStorageCompletion,
     SqvmStorageRequestKind, SqvmTriggerTimer,
 };
 
@@ -441,6 +441,60 @@ unsafe extern "C" fn app_registry_get(
     0
 }
 
+unsafe extern "C" fn app_process_stack(
+    user_data: *mut c_void,
+    out: *mut SqvmAppStackEntry,
+    out_cap: usize,
+    out_count: *mut usize,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.traces.push("process.stack".to_string());
+    if out.is_null() || out_count.is_null() || out_cap < 2 {
+        return -1;
+    }
+    *out.add(0) = SqvmAppStackEntry {
+        app_id: b"main".as_ptr(),
+        app_id_len: b"main".len(),
+        event: ptr::null(),
+        event_len: 0,
+    };
+    *out.add(1) = SqvmAppStackEntry {
+        app_id: b"reader".as_ptr(),
+        app_id_len: b"reader".len(),
+        event: ptr::null(),
+        event_len: 0,
+    };
+    *out_count = 2;
+    0
+}
+
+unsafe extern "C" fn app_armed_stack(
+    user_data: *mut c_void,
+    out: *mut SqvmAppStackEntry,
+    out_cap: usize,
+    out_count: *mut usize,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.traces.push("armed.stack".to_string());
+    if out.is_null() || out_count.is_null() || out_cap < 2 {
+        return -1;
+    }
+    *out.add(0) = SqvmAppStackEntry {
+        app_id: b"break-reminder".as_ptr(),
+        app_id_len: b"break-reminder".len(),
+        event: b"timer.break".as_ptr(),
+        event_len: b"timer.break".len(),
+    };
+    *out.add(1) = SqvmAppStackEntry {
+        app_id: b"weather-sync".as_ptr(),
+        app_id_len: b"weather-sync".len(),
+        event: b"timer.sync".as_ptr(),
+        event_len: b"timer.sync".len(),
+    };
+    *out_count = 2;
+    0
+}
+
 fn callbacks(host: &mut Host) -> SqvmCallbacks {
     SqvmCallbacks {
         user_data: host as *mut Host as *mut c_void,
@@ -463,6 +517,8 @@ fn callbacks(host: &mut Host) -> SqvmCallbacks {
         app_disarm: Some(app_disarm),
         app_registry_list: Some(app_registry_list),
         app_registry_get: Some(app_registry_get),
+        app_process_stack: Some(app_process_stack),
+        app_armed_stack: Some(app_armed_stack),
         timer_every: Some(timer_every),
         timer_after: Some(timer_after),
         wifi_start_ap: Some(wifi_start_ap),
@@ -650,6 +706,26 @@ event.on("app.start") {
   }
   let selected = app.registry.get(apps, 1)
   debug.print(selected.id, selected.name, selected.build, selected.description)
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_app_lifecycle_inspection_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-lifecycle-inspect"
+event.on("app.start") {
+  let process = app.processStack()
+  for appId in process max 2 {
+    debug.print(appId)
+  }
+  let armed = app.armedStack()
+  for armedApp in armed max 2 {
+    debug.print(armedApp.appId)
+  }
+  let selected = app.armedStack.get(armed, 1)
+  debug.print(selected.appId, selected.event)
 }
 screen("main") {}
 "#,
@@ -1101,6 +1177,47 @@ fn dispatches_app_registry_callbacks() {
             "main".to_string(),
             "reader".to_string(),
             "reader Reader ffi-reader Read documents".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn dispatches_app_lifecycle_inspection_callbacks() {
+    let mut host = Host {
+        sqbc: compile_app_lifecycle_inspection_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(
+        host.output,
+        vec![
+            "main".to_string(),
+            "reader".to_string(),
+            "break-reminder".to_string(),
+            "weather-sync".to_string(),
+            "weather-sync timer.sync".to_string(),
         ]
     );
 }

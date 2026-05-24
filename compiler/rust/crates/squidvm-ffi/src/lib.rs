@@ -13,9 +13,10 @@ use core::panic::PanicInfo;
 use squidvm_core::{
     error::VmError,
     host::{
-        AppRegistryEntry, AppRegistryList, DisplayLineOptions, DisplayRectOptions,
-        DisplayTextOptions, StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink,
-        VmDispatch, WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
+        AppArmedStack, AppArmedStackEntry, AppProcessStack, AppRegistryEntry, AppRegistryList,
+        DisplayLineOptions, DisplayRectOptions, DisplayTextOptions,
+        StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink, VmDispatch,
+        WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
         MAX_STORAGE_TRANSFER_BYTES,
     },
     limits::{MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES, MAX_SAVED_STATE_BYTES},
@@ -468,6 +469,26 @@ impl Default for SqvmAppRegistryEntry {
     }
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmAppStackEntry {
+    pub app_id: *const u8,
+    pub app_id_len: usize,
+    pub event: *const u8,
+    pub event_len: usize,
+}
+
+impl Default for SqvmAppStackEntry {
+    fn default() -> Self {
+        Self {
+            app_id: ptr::null(),
+            app_id_len: 0,
+            event: ptr::null(),
+            event_len: 0,
+        }
+    }
+}
+
 pub const SQVM_WIFI_SCAN_MAX_NETWORKS: usize = 4;
 
 #[repr(C)]
@@ -722,6 +743,22 @@ pub struct SqvmCallbacks {
             out: *mut SqvmAppRegistryEntry,
         ) -> i32,
     >,
+    pub app_process_stack: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            out: *mut SqvmAppStackEntry,
+            out_cap: usize,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
+    pub app_armed_stack: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            out: *mut SqvmAppStackEntry,
+            out_cap: usize,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
     pub timer_every: Option<
         unsafe extern "C" fn(
             user_data: *mut c_void,
@@ -807,6 +844,8 @@ impl Default for SqvmCallbacks {
             app_disarm: None,
             app_registry_list: None,
             app_registry_get: None,
+            app_process_stack: None,
+            app_armed_stack: None,
             timer_every: None,
             timer_after: None,
             wifi_start_ap: None,
@@ -2028,6 +2067,10 @@ struct FfiHost {
     app_registry_entries: [SqvmAppRegistryEntry; 8],
     app_registry_core_entries: [AppRegistryEntry<'static>; 8],
     app_registry_count: usize,
+    app_stack_entries: [SqvmAppStackEntry; 8],
+    app_process_stack_apps: [&'static str; 8],
+    app_armed_stack_entries: [AppArmedStackEntry<'static>; 8],
+    app_stack_count: usize,
     wifi_scan_networks: [WifiAccessPoint; SQVM_WIFI_SCAN_MAX_NETWORKS],
     wifi_scan_network_count: usize,
 }
@@ -2045,6 +2088,13 @@ impl FfiHost {
                 description: "",
             }; 8],
             app_registry_count: 0,
+            app_stack_entries: [SqvmAppStackEntry::default(); 8],
+            app_process_stack_apps: [""; 8],
+            app_armed_stack_entries: [AppArmedStackEntry {
+                app_id: "",
+                event: "",
+            }; 8],
+            app_stack_count: 0,
             wifi_scan_networks: [WifiAccessPoint::empty(); SQVM_WIFI_SCAN_MAX_NETWORKS],
             wifi_scan_network_count: 0,
         }
@@ -2319,6 +2369,58 @@ impl TraceSink for FfiHost {
             app_registry_get(self.callbacks.user_data, app.as_ptr(), app.len(), &mut out)
         })?;
         unsafe { app_registry_entry_from_ffi(&out) }
+    }
+
+    fn app_process_stack<'a>(&'a mut self) -> Result<AppProcessStack<'a>, VmError> {
+        let Some(app_process_stack) = self.callbacks.app_process_stack else {
+            return Err(VmError::InvalidOperand);
+        };
+        let mut count = 0usize;
+        self.app_stack_entries = [SqvmAppStackEntry::default(); 8];
+        callback_status(unsafe {
+            app_process_stack(
+                self.callbacks.user_data,
+                self.app_stack_entries.as_mut_ptr(),
+                self.app_stack_entries.len(),
+                &mut count,
+            )
+        })?;
+        self.app_stack_count = count.min(self.app_stack_entries.len());
+        for index in 0..self.app_stack_count {
+            self.app_process_stack_apps[index] = unsafe {
+                required_ffi_str(
+                    self.app_stack_entries[index].app_id,
+                    self.app_stack_entries[index].app_id_len,
+                )?
+            };
+        }
+        Ok(AppProcessStack {
+            apps: &self.app_process_stack_apps[..self.app_stack_count],
+        })
+    }
+
+    fn app_armed_stack<'a>(&'a mut self) -> Result<AppArmedStack<'a>, VmError> {
+        let Some(app_armed_stack) = self.callbacks.app_armed_stack else {
+            return Err(VmError::InvalidOperand);
+        };
+        let mut count = 0usize;
+        self.app_stack_entries = [SqvmAppStackEntry::default(); 8];
+        callback_status(unsafe {
+            app_armed_stack(
+                self.callbacks.user_data,
+                self.app_stack_entries.as_mut_ptr(),
+                self.app_stack_entries.len(),
+                &mut count,
+            )
+        })?;
+        self.app_stack_count = count.min(self.app_stack_entries.len());
+        for index in 0..self.app_stack_count {
+            self.app_armed_stack_entries[index] =
+                unsafe { app_armed_stack_entry_from_ffi(&self.app_stack_entries[index])? };
+        }
+        Ok(AppArmedStack {
+            entries: &self.app_armed_stack_entries[..self.app_stack_count],
+        })
     }
 
     fn service_timer_every(&mut self, event: &str, interval_ms: i32) -> Result<(), VmError> {
@@ -2598,6 +2700,15 @@ unsafe fn app_registry_entry_from_ffi<'a>(
         name: optional_ffi_str(entry.name, entry.name_len)?.unwrap_or(""),
         build: optional_ffi_str(entry.build, entry.build_len)?.unwrap_or(""),
         description: optional_ffi_str(entry.description, entry.description_len)?.unwrap_or(""),
+    })
+}
+
+unsafe fn app_armed_stack_entry_from_ffi<'a>(
+    entry: &SqvmAppStackEntry,
+) -> Result<AppArmedStackEntry<'a>, VmError> {
+    Ok(AppArmedStackEntry {
+        app_id: required_ffi_str(entry.app_id, entry.app_id_len)?,
+        event: required_ffi_str(entry.event, entry.event_len)?,
     })
 }
 

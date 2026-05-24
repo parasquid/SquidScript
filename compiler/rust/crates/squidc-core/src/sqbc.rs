@@ -78,6 +78,9 @@ const BUILTIN_SERVICE_WIFI_DISCONNECT: u8 = 36;
 const BUILTIN_SERVICE_WIFI_SCAN: u8 = 37;
 const BUILTIN_APP_REGISTRY_LIST: u8 = 38;
 const BUILTIN_APP_REGISTRY_GET: u8 = 39;
+const BUILTIN_APP_PROCESS_STACK: u8 = 40;
+const BUILTIN_APP_ARMED_STACK: u8 = 41;
+const BUILTIN_APP_ARMED_STACK_GET: u8 = 42;
 
 const VALUE_NULL: u8 = 0;
 const VALUE_BOOL: u8 = 1;
@@ -1088,6 +1091,9 @@ fn builtin_for_call(name: &str) -> Option<u8> {
         "service.wifi.scan" => Some(BUILTIN_SERVICE_WIFI_SCAN),
         "app.registry" => Some(BUILTIN_APP_REGISTRY_LIST),
         "app.registry.get" => Some(BUILTIN_APP_REGISTRY_GET),
+        "app.processStack" => Some(BUILTIN_APP_PROCESS_STACK),
+        "app.armedStack" => Some(BUILTIN_APP_ARMED_STACK),
+        "app.armedStack.get" => Some(BUILTIN_APP_ARMED_STACK_GET),
         _ => None,
     }
 }
@@ -1100,8 +1106,10 @@ fn validate_builtin_arg_count(name: &str, count: usize) -> Result<(), SqbcError>
         | "service.wifi.getAPIP"
         | "service.wifi.disconnect"
         | "service.wifi.scan"
-        | "app.registry" => count == 0,
-        "app.registry.get" => count == 2,
+        | "app.registry"
+        | "app.processStack"
+        | "app.armedStack" => count == 0,
+        "app.registry.get" | "app.armedStack.get" => count == 2,
         _ => true,
     };
     if valid {

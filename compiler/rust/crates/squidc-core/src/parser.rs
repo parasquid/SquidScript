@@ -1018,13 +1018,16 @@ impl Parser<'_> {
                         name: format!("service.wifi.{action}"),
                         args: self.parse_call_args(builder),
                     }
-                } else if name == "app" && namespace == "registry" && self.at_kind(TokenKind::Dot) {
+                } else if name == "app"
+                    && matches!(namespace.as_str(), "registry" | "armedStack")
+                    && self.at_kind(TokenKind::Dot)
+                {
                     self.bump(builder);
                     self.consume_ws(builder);
                     let action = self.consume_ident(builder).unwrap_or_default();
                     self.consume_ws(builder);
                     IrExpr::Call {
-                        name: format!("app.registry.{action}"),
+                        name: format!("app.{namespace}.{action}"),
                         args: self.parse_call_args(builder),
                     }
                 } else if self.at_kind(TokenKind::OpenParen) {
