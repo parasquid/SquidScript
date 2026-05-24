@@ -100,9 +100,11 @@ caller-owned fixed `SqdcConfig` records, validates safe package-relative
 updates, and encodes/decodes binary SQDC without heap allocation. The current
 Zephyr runtime wires `device.config.load("package:...")` to installed
 read-only package resources for the foreground app and wires
-`device.config.set(...)` to the runtime draft config. Physical binding
-application through `device.config.rebind(...)` and active config persistence
-through `device.config.save(...)` still return honest `unsupported` results.
+`device.config.set(...)` to the runtime draft config. The runtime can validate
+and activate the current `indicator.default` GPIO binding with
+`device.config.rebind(...)`, and `service.indicator.*` uses the active binding.
+Active config persistence through `device.config.save(...)` still returns an
+honest `unsupported` result.
 
 ## App State
 

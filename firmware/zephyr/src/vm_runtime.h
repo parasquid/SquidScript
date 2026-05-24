@@ -109,6 +109,9 @@ struct sq_vm_runtime {
 	bool indicator_state;
 	bool indicator_gpio_configured;
 	bool indicator_gpio_available;
+	bool indicator_binding_active;
+	uint8_t indicator_binding_pin;
+	bool indicator_binding_active_low;
 	bool indicator_breathe_active;
 	uint8_t indicator_breathe_step;
 	int64_t indicator_breathe_next_ms;
@@ -175,6 +178,8 @@ int sq_vm_runtime_device_config_load(struct sq_vm_runtime *runtime, const uint8_
 int sq_vm_runtime_device_config_set(struct sq_vm_runtime *runtime, const uint8_t *key,
 				    size_t key_len, SqvmDeviceConfigValue value,
 				    SqvmDeviceConfigResult *out);
+int sq_vm_runtime_device_config_rebind(struct sq_vm_runtime *runtime, const uint8_t *alias,
+				       size_t alias_len, SqvmDeviceConfigResult *out);
 int sq_vm_runtime_hardware_gpio_write(struct sq_vm_runtime *runtime, const uint8_t *name,
 				      size_t name_len, bool value);
 int sq_vm_runtime_hardware_gpio_toggle(struct sq_vm_runtime *runtime, const uint8_t *name,

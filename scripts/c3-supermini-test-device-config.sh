@@ -73,7 +73,7 @@ output_out="$(wait_for_contains output-device-save "output=device save false uns
   "device output" cargo run --quiet -p squidc -- device output)"
 assert_file_contains "${output_out}" "output=device load true null null"
 assert_file_contains "${output_out}" "output=device set true null null"
-assert_file_contains "${output_out}" "output=device rebind false unsupported null"
+assert_file_contains "${output_out}" "output=device rebind true null null"
 assert_file_contains "${output_out}" "output=device save false unsupported null"
 
 errors_out="$(run_capture errors cargo run --quiet -p squidc -- device errors)"

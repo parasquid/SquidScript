@@ -136,8 +136,8 @@ that `device.config.load`, `device.config.set`, `device.config.rebind`, and
 `device.config.save` all return result records through the real Zephyr VM FFI
 host. The app is installed as a package with a `.sqdevice` resource; the
 current reference firmware returns `ok=true` for package resource load and
-draft set, then `ok=false`, `error=unsupported`, and `warning=null` for rebind
-and save until physical SQDEVICE/SQDC binding application and persistence are
+draft set, `ok=true` for `indicator.default` rebind, then `ok=false`,
+`error=unsupported`, and `warning=null` for save until SQDC flash persistence is
 implemented.
 
 `scripts/c3-supermini-test-display-drawlog.sh` runs after lifecycle coverage

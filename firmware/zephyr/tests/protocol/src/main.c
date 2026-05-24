@@ -2244,8 +2244,8 @@ ZTEST(squidscript_protocol, test_vm_runtime_loads_package_sqdevice_resource_into
 	SqvmDeviceConfigResult result = {0};
 	SqvmDeviceConfigValue value = {
 		.kind = SQVM_DEVICE_CONFIG_VALUE_STRING,
-		.string = (const uint8_t *)"pwm",
-		.string_len = 3,
+		.string = (const uint8_t *)"GPIO8",
+		.string_len = 5,
 	};
 
 	zassert_equal(mount_test_fs(), 0, "mount failed");
@@ -2270,12 +2270,22 @@ ZTEST(squidscript_protocol, test_vm_runtime_loads_package_sqdevice_resource_into
 	zassert_equal(runtime.device_config_draft.count, 3);
 
 	memset(&result, 0, sizeof(result));
-	zassert_equal(sq_vm_runtime_device_config_set(&runtime, (const uint8_t *)"mode",
-						      strlen("mode"), value, &result),
+	zassert_equal(sq_vm_runtime_device_config_set(&runtime, (const uint8_t *)"pinName",
+						      strlen("pinName"), value, &result),
 		      0);
 	zassert_true(result.ok);
-	zassert_equal(runtime.device_config_draft.records[1].value.kind, SQDC_VALUE_STRING);
-	zassert_mem_equal(runtime.device_config_draft.records[1].value.string, "pwm", 3);
+	zassert_equal(runtime.device_config_draft.records[3].value.kind, SQDC_VALUE_STRING);
+	zassert_mem_equal(runtime.device_config_draft.records[3].value.string, "GPIO8", 5);
+
+	memset(&result, 0, sizeof(result));
+	zassert_equal(sq_vm_runtime_device_config_rebind(
+			      &runtime, (const uint8_t *)"indicator.default",
+			      strlen("indicator.default"), &result),
+		      0);
+	zassert_true(result.ok);
+	zassert_true(runtime.indicator_binding_active);
+	zassert_equal(runtime.indicator_binding_pin, 8);
+	zassert_true(runtime.indicator_binding_active_low);
 
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }

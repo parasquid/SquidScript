@@ -37,6 +37,9 @@ static size_t bounded_strlen(const char *value, size_t cap)
 	return len;
 }
 
+static int parse_gpio_name(const uint8_t *name, size_t name_len, uint8_t *pin);
+static int configure_raw_gpio(struct sq_vm_runtime *runtime, uint8_t pin);
+
 static const uint8_t indicator_breathe_duties[SQ_VM_RUNTIME_INDICATOR_BREATHE_STEPS] = {
 	0,  0,  1,  2,	4,  6,  8,  11, 15, 18, 22, 26, 31, 35, 40, 45, 50,
 	55, 60, 65, 69, 74, 78, 82, 85, 89, 92, 94, 96, 98, 99, 100, 100, 100,
@@ -1394,6 +1397,98 @@ int sq_vm_runtime_device_config_set(struct sq_vm_runtime *runtime, const uint8_t
 	return runtime_device_config_ok(out);
 }
 
+static const SqdcRecord *runtime_device_config_find(const SqdcConfig *config, const char *key)
+{
+	size_t key_len;
+
+	if (config == NULL || key == NULL) {
+		return NULL;
+	}
+	key_len = strlen(key);
+	for (size_t i = 0; i < config->count; i++) {
+		const SqdcRecord *record = &config->records[i];
+		if (record->present && record->key_len == key_len &&
+		    memcmp(record->key, key, key_len) == 0) {
+			return record;
+		}
+	}
+	return NULL;
+}
+
+static bool runtime_device_config_string_equals(const SqdcConfig *config, const char *key,
+						const char *expected)
+{
+	const SqdcRecord *record = runtime_device_config_find(config, key);
+	size_t expected_len = strlen(expected);
+
+	return record != NULL && record->value.kind == SQDC_VALUE_STRING &&
+	       record->value.string_len == expected_len &&
+	       memcmp(record->value.string, expected, expected_len) == 0;
+}
+
+static int runtime_device_config_read_string(const SqdcConfig *config, const char *key,
+					     const uint8_t **out, size_t *out_len)
+{
+	const SqdcRecord *record = runtime_device_config_find(config, key);
+
+	if (record == NULL || out == NULL || out_len == NULL ||
+	    record->value.kind != SQDC_VALUE_STRING) {
+		return -EINVAL;
+	}
+	*out = record->value.string;
+	*out_len = record->value.string_len;
+	return 0;
+}
+
+static int runtime_device_config_read_bool(const SqdcConfig *config, const char *key, bool *out)
+{
+	const SqdcRecord *record = runtime_device_config_find(config, key);
+
+	if (record == NULL || out == NULL || record->value.kind != SQDC_VALUE_BOOL) {
+		return -EINVAL;
+	}
+	*out = record->value.bool_value;
+	return 0;
+}
+
+int sq_vm_runtime_device_config_rebind(struct sq_vm_runtime *runtime, const uint8_t *alias,
+				       size_t alias_len, SqvmDeviceConfigResult *out)
+{
+	const uint8_t *pin_name;
+	size_t pin_name_len;
+	uint8_t pin;
+	bool active_low;
+
+	if (runtime == NULL || alias == NULL || out == NULL) {
+		return -EINVAL;
+	}
+	if (alias_len != strlen("indicator.default") ||
+	    memcmp(alias, "indicator.default", alias_len) != 0) {
+		return runtime_device_config_error(out, "unsupported binding");
+	}
+	if (!runtime->device_config_draft_loaded) {
+		return runtime_device_config_error(out, "no draft");
+	}
+	if (!runtime_device_config_string_equals(&runtime->device_config_draft, "service",
+						 "indicator.default") ||
+	    !runtime_device_config_string_equals(&runtime->device_config_draft, "mode", "gpio")) {
+		return runtime_device_config_error(out, "invalid binding");
+	}
+	if (runtime_device_config_read_string(&runtime->device_config_draft, "pinName", &pin_name,
+					      &pin_name_len) != 0 ||
+	    parse_gpio_name(pin_name, pin_name_len, &pin) != 0 ||
+	    runtime_device_config_read_bool(&runtime->device_config_draft, "activeLow",
+					    &active_low) != 0) {
+		return runtime_device_config_error(out, "invalid binding");
+	}
+
+	runtime->indicator_breathe_active = false;
+	runtime->indicator_binding_active = true;
+	runtime->indicator_binding_pin = pin;
+	runtime->indicator_binding_active_low = active_low;
+	return runtime_device_config_ok(out);
+}
+
 static int32_t runtime_device_config_load(void *user_data, const uint8_t *source,
 					  size_t source_len, SqvmDeviceConfigResult *out)
 {
@@ -1410,11 +1505,7 @@ static int32_t runtime_device_config_set(void *user_data, const uint8_t *key,
 static int32_t runtime_device_config_rebind(void *user_data, const uint8_t *alias,
 					    size_t alias_len, SqvmDeviceConfigResult *out)
 {
-	ARG_UNUSED(user_data);
-	ARG_UNUSED(alias);
-	ARG_UNUSED(alias_len);
-
-	return runtime_device_config_unsupported(out);
+	return sq_vm_runtime_device_config_rebind(user_data, alias, alias_len, out);
 }
 
 static int32_t runtime_device_config_save(void *user_data, const uint8_t *destination,
@@ -1515,6 +1606,15 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->indicator_breathe_active = false;
 	runtime->indicator_breathe_step = 0;
 	runtime->indicator_breathe_next_ms = 0;
+#if SQ_VM_RUNTIME_HAS_INDICATOR_GPIO
+	runtime->indicator_binding_active = true;
+	runtime->indicator_binding_pin = indicator_gpio.pin;
+	runtime->indicator_binding_active_low = (indicator_gpio.dt_flags & GPIO_ACTIVE_LOW) != 0;
+#else
+	runtime->indicator_binding_active = false;
+	runtime->indicator_binding_pin = 0;
+	runtime->indicator_binding_active_low = false;
+#endif
 	memset(&runtime->device_config_draft, 0, sizeof(runtime->device_config_draft));
 	runtime->device_config_draft_loaded = false;
 	runtime->gpio_configured_mask = 0;
@@ -1785,13 +1885,39 @@ static bool indicator_is_active_low(void)
 #endif
 }
 
-static bool indicator_uses_raw_gpio(uint8_t pin)
+static bool runtime_indicator_active_low(const struct sq_vm_runtime *runtime)
+{
+	if (runtime != NULL && runtime->indicator_binding_active) {
+		return runtime->indicator_binding_active_low;
+	}
+	return indicator_is_active_low();
+}
+
+static bool indicator_uses_dt_gpio_pin(uint8_t pin)
 {
 #if SQ_VM_RUNTIME_HAS_INDICATOR_GPIO
 	return indicator_gpio.pin == pin;
 #else
+	ARG_UNUSED(pin);
 	return false;
 #endif
+}
+
+static uint8_t runtime_indicator_pin(const struct sq_vm_runtime *runtime)
+{
+	if (runtime != NULL && runtime->indicator_binding_active) {
+		return runtime->indicator_binding_pin;
+	}
+#if SQ_VM_RUNTIME_HAS_INDICATOR_GPIO
+	return indicator_gpio.pin;
+#else
+	return 0;
+#endif
+}
+
+static bool indicator_uses_raw_gpio(uint8_t pin)
+{
+	return indicator_uses_dt_gpio_pin(pin);
 }
 
 static int set_indicator_raw_output(struct sq_vm_runtime *runtime, bool raw_high)
@@ -1817,17 +1943,33 @@ static int set_indicator_raw_output(struct sq_vm_runtime *runtime, bool raw_high
 static int set_indicator_brightness(struct sq_vm_runtime *runtime, uint8_t brightness)
 {
 	uint8_t clamped = brightness > 100U ? 100U : brightness;
+	uint8_t pin = runtime_indicator_pin(runtime);
+	bool active_low = runtime_indicator_active_low(runtime);
+	ARG_UNUSED(active_low);
 #if SQ_VM_RUNTIME_HAS_INDICATOR_PWM
-	uint8_t raw_high_percent = indicator_is_active_low() ? (uint8_t)(100U - clamped) : clamped;
+	uint8_t raw_high_percent = active_low ? (uint8_t)(100U - clamped) : clamped;
 #endif
 
 	runtime->indicator_state = clamped > 0U;
 #if SQ_VM_RUNTIME_HAS_INDICATOR_PWM
-	if (pwm_is_ready_dt(&indicator_pwm)) {
+	if (indicator_uses_dt_gpio_pin(pin) && pwm_is_ready_dt(&indicator_pwm)) {
 		uint32_t pulse = (indicator_pwm.period * (uint32_t)raw_high_percent) / 100U;
 		return pwm_set_dt(&indicator_pwm, indicator_pwm.period, pulse);
 	}
 #endif
+	if (!indicator_uses_dt_gpio_pin(pin)) {
+		int result = configure_raw_gpio(runtime, pin);
+		if (result != 0) {
+			return result;
+		}
+#if SQ_VM_RUNTIME_HAS_GPIO0
+		bool raw_high = active_low ? clamped == 0U : clamped > 0U;
+		if (device_is_ready(gpio0_dev)) {
+			return gpio_pin_set_raw(gpio0_dev, pin, raw_high ? 1 : 0);
+		}
+#endif
+		return 0;
+	}
 	(void)configure_indicator_gpio(runtime);
 #if SQ_VM_RUNTIME_HAS_INDICATOR_GPIO
 	if (runtime->indicator_gpio_available) {

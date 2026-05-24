@@ -31,18 +31,25 @@ for compiler, SQBC tooling, and VM semantics.
 - Complete the physical SQDEVICE/SQDC backend for current device configuration
   APIs. `device.config.load("package:...")` now reads installed foreground app
   package resources into a bounded runtime draft, and `device.config.set(...)`
-  edits that draft through the no-alloc Rust FFI core. Remaining work is to
-  add binding validation, physical `device.config.rebind(...)` application,
-  and flash SQDC persistence for `device.config.save("flash")`.
-- Route `service.indicator.*` through the resolved logical
-  `indicator.default` binding instead of directly through Zephyr hardcoded
-  devicetree aliases. Keep the app-facing API unchanged: target/firmware
-  should provide the default active binding, app-authored `device {}` should
-  be an explicit override, and `squidc` should validate authored bindings
+  edits that draft through the no-alloc Rust FFI core. `device.config.rebind`
+  now validates and activates `indicator.default` GPIO bindings. Remaining work
+  is to generalize binding validation/application beyond the current indicator
+  path and add flash SQDC persistence for `device.config.save("flash")`.
+- Finish moving `service.indicator.*` ownership to the resolved logical
+  `indicator.default` binding. The Zephyr runtime now tracks an active
+  indicator binding and routes indicator output through it, including package
+  SQDEVICE `device.config.rebind(...)`; remaining work is to make target
+  default bindings and app-authored `device {}` bindings feed that same path
   without silently synthesizing default device blocks from target metadata.
   The current ESP32-C3 Super Mini behavior should remain GPIO8 LEDC PWM by
-  default, but owned by the SQDEVICE/SQDC binding path rather than bespoke
-  indicator runtime code.
+  default.
+- Add `service.indicator.blink(onMs?, offMs?)` as a standard indicator
+  pattern API. The first optional argument is the on duration in milliseconds,
+  and the second optional argument is the off duration in milliseconds; omitted
+  arguments default to 500 ms on and 500 ms off. Define compiler/SQBC builtin
+  shape, VM host callbacks, Zephyr non-blocking timer behavior, and hardware
+  coverage alongside the existing `write`, `toggle`, `read`, and `breathe`
+  indicator APIs.
 - Decide service priority and target support for currently spec-recognized but
   not SQBC-backed APIs: `httpServer.*`, `bleTransfer.*`, `content.*`, and
   `binbook.*`. Add each only as a real compiler/SQBC/VM/Zephyr slice with

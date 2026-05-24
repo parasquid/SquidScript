@@ -3432,10 +3432,11 @@ The current Zephyr reference firmware exposes these calls through compiler
 lowering, SQBC builtins, the Rust VM host, FFI, and the Zephyr runtime callback
 table. The current Zephyr runtime supports package resource
 `device.config.load("package:...")` into a bounded draft and
-`device.config.set(...)` edits on that draft. Physical
-`device.config.rebind(...)` application and `device.config.save("flash")`
-persistence still return result records with `ok: false`,
-`error: "unsupported"`, and `warning: null`.
+`device.config.set(...)` edits on that draft. It also validates and activates
+the current `indicator.default` GPIO binding through
+`device.config.rebind(...)`. `device.config.save("flash")` persistence still
+returns a result record with `ok: false`, `error: "unsupported"`, and
+`warning: null`.
 
 ---
 
