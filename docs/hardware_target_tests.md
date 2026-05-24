@@ -170,6 +170,15 @@ can be normalized and applied before `event.on("app.start")` without a package
 accepted because the generated Zephyr target header marks it GPIO-capable; use
 target metadata or a `.sqdevice` resource for other boards and polarity needs.
 
+`scripts/c3-supermini-test-unsupported-inline-gpio-binding.sh` runs after the
+supported inline binding check and before the explicit device config API check.
+It installs `tests/hardware/c3-supermini/unsupported-inline-gpio-binding`,
+whose top-level `device { indicator { use "gpio:GPIO10" } }` binding is
+syntactically valid but not GPIO-capable in the ESP32-C3 Super Mini target
+metadata. `app launch` must fail with `unsupported (-95)`, `device output`
+remains empty, and `device errors` remains empty, proving target validation
+rejects the binding before VM start while the protocol remains responsive.
+
 `scripts/c3-supermini-test-blink.sh` is an explicit visible indicator parity
 check. It installs `examples/blink-supermini`, launches it, verifies
 `output=blink ready`, checks that `device errors` is empty, and leaves the

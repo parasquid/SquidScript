@@ -2688,6 +2688,48 @@ ZTEST(squidscript_protocol, test_vm_runtime_applies_inline_gpio_device_binding_b
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }
 
+ZTEST(squidscript_protocol, test_vm_runtime_rejects_unsupported_inline_gpio_as_unsupported)
+{
+	uint8_t sqbc[sizeof(inline_gpio_binding_app_sqbc)];
+	bool patched = false;
+	struct sq_vm_runtime runtime = {0};
+	struct sq_app_store_vm_storage storage = {0};
+	struct sq_vm_storage_backend backend;
+
+	memcpy(sqbc, inline_gpio_binding_app_sqbc, sizeof(sqbc));
+	for (size_t i = 0; i < sizeof(sqbc) - strlen("gpio:GPIO8"); i++) {
+		if (memcmp(&sqbc[i], "gpio:GPIO8", strlen("gpio:GPIO8")) == 0) {
+			sqbc[i + strlen("gpio:GPIO")] = '7';
+			patched = true;
+			break;
+		}
+	}
+	zassert_true(patched);
+
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point,
+					       "unsupported-inline-gpio-binding-app", sqbc,
+					       sizeof(sqbc)),
+		      0);
+	zassert_equal(sq_app_store_vm_storage_for_app(test_fs_mount.mnt_point,
+						      "unsupported-inline-gpio-binding-app",
+						      &storage),
+		      0);
+	backend = sq_app_store_vm_storage_backend(&storage);
+
+	sq_vm_runtime_init(&runtime);
+	sq_vm_runtime_set_store_mount_point(&runtime, test_fs_mount.mnt_point);
+	strncpy(runtime.current_app, "unsupported-inline-gpio-binding-app",
+		sizeof(runtime.current_app) - 1);
+
+	zassert_equal(sq_vm_runtime_start(&runtime, &backend, "app.start"), -ENOTSUP);
+	zassert_true(runtime.indicator_binding_active);
+	zassert_equal(runtime.indicator_binding_pin, 8);
+	zassert_equal(runtime.output_count, 0);
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
 ZTEST(squidscript_protocol, test_zephyr_calls_squidvm_ffi_with_storage_adapter)
 {
 	struct ffi_vm_fixture fixture = {

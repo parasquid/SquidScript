@@ -1240,6 +1240,20 @@ static int32_t runtime_device_config_error(SqvmDeviceConfigResult *out, const ch
 	return 0;
 }
 
+static int runtime_device_config_result_errno(const SqvmDeviceConfigResult *result)
+{
+	static const char unsupported_target_gpio[] = "unsupported target gpio";
+
+	if (result == NULL || result->ok) {
+		return 0;
+	}
+	if (result->error != NULL && result->error_len == strlen(unsupported_target_gpio) &&
+	    memcmp(result->error, unsupported_target_gpio, strlen(unsupported_target_gpio)) == 0) {
+		return -ENOTSUP;
+	}
+	return -EINVAL;
+}
+
 static int32_t runtime_device_config_ok(SqvmDeviceConfigResult *out)
 {
 	if (out == NULL) {
@@ -1748,9 +1762,11 @@ static int sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *runtime)
 		case SQDC_DEVICE_BINDING_RESOURCE_INLINE_GPIO:
 			runtime->device_config_draft_loaded = true;
 			if (sq_vm_runtime_device_config_rebind(runtime, plan.alias, plan.alias_len,
-							       &result) != 0 ||
-			    !result.ok) {
+							       &result) != 0) {
 				return -EINVAL;
+			}
+			if (!result.ok) {
+				return runtime_device_config_result_errno(&result);
 			}
 			break;
 		case SQDC_DEVICE_BINDING_RESOURCE_PACKAGE_SQDEVICE:
@@ -1761,9 +1777,11 @@ static int sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *runtime)
 			}
 			memset(&result, 0, sizeof(result));
 			if (sq_vm_runtime_device_config_rebind(runtime, plan.alias, plan.alias_len,
-							       &result) != 0 ||
-			    !result.ok) {
+							       &result) != 0) {
 				return -EINVAL;
+			}
+			if (!result.ok) {
+				return runtime_device_config_result_errno(&result);
 			}
 			break;
 		default:

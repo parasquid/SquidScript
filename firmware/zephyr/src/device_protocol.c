@@ -70,6 +70,9 @@ static int ok_response(const struct sq_protocol_frame *request, uint8_t *respons
 static int error_response(const struct sq_protocol_frame *request, int code, uint8_t *response,
 			  size_t response_cap, size_t *response_len)
 {
+	if (code == -ENOTSUP) {
+		code = -95;
+	}
 	return sqdp_status_to_protocol_result(sqdp_encode_error_response_for_code(
 		request->opcode, request->sequence, code, response, response_cap, response_len));
 }
