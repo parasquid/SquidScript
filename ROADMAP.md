@@ -13,10 +13,6 @@ for compiler, SQBC tooling, and VM semantics.
 
 - Confirm the correct Zephyr board target for the ESP32-C3 Super Mini and
   replace the unverified `esp32c3_devkitm/esp32c3` wrapper default if needed.
-- Finish `scripts/c3-supermini-zephyr-test-diagnostic.sh` by automating the
-  post-flash serial boot-banner check. The script already builds/flashes; the
-  remaining gap is reading and asserting the diagnostic banner without leaving a
-  long-running monitor attached.
 
 ### 2. Expand Zephyr VM Hosting ABI
 

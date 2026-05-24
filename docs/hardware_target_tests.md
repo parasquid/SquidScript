@@ -56,6 +56,12 @@ The obsolete Rust firmware scripts are not current hardware target tests. As
 Zephyr coverage lands, keep the suite ordered so stateful reset/install tests
 run before the final visible board-state check.
 
+`scripts/c3-supermini-zephyr-test-diagnostic.sh` builds and flashes the Zephyr
+diagnostic image, then runs a bounded serial monitor check for the diagnostic
+boot banner. It writes the captured monitor output to
+`target/hardware-tests/diagnostic/boot-banner.log` and exits after the bounded
+check instead of leaving a monitor attached.
+
 RAM guards should be interpreted as target-profile limits, not universal
 ESP32-C3 limits. The current no-target fallback guard is `266240` bytes. When
 `SQUID_ZEPHYR_TARGET_JSON=targets/esp32c3-super-mini.target.json` is supplied,

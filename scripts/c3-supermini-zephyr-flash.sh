@@ -15,5 +15,5 @@ fi
 west flash --build-dir "$ZEPHYR_BUILD_DIR" "${EXTRA_ARGS[@]}"
 
 if [[ "$MONITOR_AFTER_FLASH" == "1" ]]; then
-  west espressif monitor --build-dir "$ZEPHYR_BUILD_DIR"
+  "$ROOT/scripts/c3-supermini-zephyr-monitor.sh"
 fi
