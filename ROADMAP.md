@@ -46,8 +46,11 @@ for compiler, SQBC tooling, and VM semantics.
   model instead of Zephyr devicetree-only defaults. The current ESP32-C3 Super
   Mini behavior should remain GPIO8 LEDC PWM by default.
 - Decide service priority and target support for currently spec-recognized but
-  not SQBC-backed APIs: `httpServer.*`, `bleTransfer.*`, `binbook.*`, and any
-  remaining `content.*` APIs beyond the current file pick/read family.
+  not SQBC-backed APIs: `httpServer.*`, `bleTransfer.*`, and any remaining
+  `content.*` APIs beyond the current file pick/read family. Defer
+  `binbook.*` firmware/compiler/FFI work until the e-paper display is available
+  and the BinBook spec has settled enough to avoid optimizing around rough
+  draft behavior.
   `content.pickFile(extension)`, `content.readText(path)`, and
   `content.readLines(path, maxLines)` now have compiler/SQBC lowering plus Rust
   VM, FFI, Zephyr callback, ztest, and hardware-script coverage that returns
