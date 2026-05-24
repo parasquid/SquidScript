@@ -98,9 +98,11 @@ Rust FFI core in `squidvm-ffi`, not ad hoc C parsing. The core operates on
 caller-owned fixed `SqdcConfig` records, validates safe package-relative
 `.sqdevice` paths, parses SQDEVICE text resources, applies primitive draft
 updates, and encodes/decodes binary SQDC without heap allocation. The current
-Zephyr runtime still returns honest `unsupported` results from
-`device.config.*` until package-resource reads, draft lifetime, physical
-binding application, and active config persistence are wired to that core.
+Zephyr runtime wires `device.config.load("package:...")` to installed
+read-only package resources for the foreground app and wires
+`device.config.set(...)` to the runtime draft config. Physical binding
+application through `device.config.rebind(...)` and active config persistence
+through `device.config.save(...)` still return honest `unsupported` results.
 
 ## App State
 

@@ -112,6 +112,8 @@ struct sq_vm_runtime {
 	bool indicator_breathe_active;
 	uint8_t indicator_breathe_step;
 	int64_t indicator_breathe_next_ms;
+	SqdcConfig device_config_draft;
+	bool device_config_draft_loaded;
 	uint32_t gpio_configured_mask;
 	uint32_t gpio_state_mask;
 	struct sq_vm_runtime_timer timers[SQ_VM_RUNTIME_TIMER_MAX];
@@ -168,6 +170,11 @@ int sq_vm_runtime_indicator_write(struct sq_vm_runtime *runtime, bool value);
 int sq_vm_runtime_indicator_toggle(struct sq_vm_runtime *runtime);
 int sq_vm_runtime_indicator_read(struct sq_vm_runtime *runtime, bool *out);
 int sq_vm_runtime_indicator_breathe(struct sq_vm_runtime *runtime);
+int sq_vm_runtime_device_config_load(struct sq_vm_runtime *runtime, const uint8_t *source,
+				     size_t source_len, SqvmDeviceConfigResult *out);
+int sq_vm_runtime_device_config_set(struct sq_vm_runtime *runtime, const uint8_t *key,
+				    size_t key_len, SqvmDeviceConfigValue value,
+				    SqvmDeviceConfigResult *out);
 int sq_vm_runtime_hardware_gpio_write(struct sq_vm_runtime *runtime, const uint8_t *name,
 				      size_t name_len, bool value);
 int sq_vm_runtime_hardware_gpio_toggle(struct sq_vm_runtime *runtime, const uint8_t *name,

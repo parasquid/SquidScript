@@ -3,7 +3,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK_DIR="${ROOT}/target/hardware-tests/device-config"
-DEVICE_CONFIG_APP="${ROOT}/tests/hardware/c3-supermini/device-config-summary/main.squid"
+DEVICE_CONFIG_APP="${ROOT}/tests/hardware/c3-supermini/device-config-summary"
+DEVICE_CONFIG_PACKAGE="${WORK_DIR}/device-config-summary.squid.zip"
 
 mkdir -p "${WORK_DIR}"
 
@@ -59,8 +60,9 @@ wait_for_contains() {
   exit 1
 }
 
+run_capture package-device-config cargo run --quiet -p squidc -- package "${DEVICE_CONFIG_APP}" --out "${DEVICE_CONFIG_PACKAGE}" >/dev/null
 run_capture storage-format cargo run --quiet -p squidc -- device storage-format >/dev/null
-run_capture install-device-config cargo run --quiet -p squidc -- app install "${DEVICE_CONFIG_APP}" >/dev/null
+run_capture install-device-config cargo run --quiet -p squidc -- app install "${DEVICE_CONFIG_PACKAGE}" >/dev/null
 
 apps_out="$(run_capture app-list cargo run --quiet -p squidc -- app list)"
 assert_file_contains "${apps_out}" "app=device-config-summary"
@@ -69,8 +71,8 @@ run_capture launch-device-config cargo run --quiet -p squidc -- app launch devic
 
 output_out="$(wait_for_contains output-device-save "output=device save false unsupported null" \
   "device output" cargo run --quiet -p squidc -- device output)"
-assert_file_contains "${output_out}" "output=device load false unsupported null"
-assert_file_contains "${output_out}" "output=device set false unsupported null"
+assert_file_contains "${output_out}" "output=device load true null null"
+assert_file_contains "${output_out}" "output=device set true null null"
 assert_file_contains "${output_out}" "output=device rebind false unsupported null"
 assert_file_contains "${output_out}" "output=device save false unsupported null"
 

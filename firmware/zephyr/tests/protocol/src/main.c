@@ -2233,6 +2233,53 @@ ZTEST(squidscript_protocol, test_app_store_installs_and_resolves_package_resourc
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }
 
+ZTEST(squidscript_protocol, test_vm_runtime_loads_package_sqdevice_resource_into_draft)
+{
+	const uint8_t sqbc[] = {0x53, 0x51, 0x42, 0x43};
+	const uint8_t sqdevice[] = "SQDEVICE\n"
+				   "service string 17:indicator.default\n"
+				   "mode string 4:gpio\n"
+				   "activeLow bool true\n";
+	struct sq_vm_runtime runtime = {0};
+	SqvmDeviceConfigResult result = {0};
+	SqvmDeviceConfigValue value = {
+		.kind = SQVM_DEVICE_CONFIG_VALUE_STRING,
+		.string = (const uint8_t *)"pwm",
+		.string_len = 3,
+	};
+
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "device-config-app", sqbc,
+					       sizeof(sqbc)),
+		      0);
+	zassert_equal(sq_app_store_install_resource(test_fs_mount.mnt_point, "device-config-app",
+						    "device/indicator.sqdevice", sqdevice,
+						    sizeof(sqdevice) - 1),
+		      0);
+
+	sq_vm_runtime_init(&runtime);
+	sq_vm_runtime_set_store_mount_point(&runtime, test_fs_mount.mnt_point);
+	strncpy(runtime.current_app, "device-config-app", sizeof(runtime.current_app) - 1);
+
+	zassert_equal(sq_vm_runtime_device_config_load(
+			      &runtime, (const uint8_t *)"package:device/indicator.sqdevice",
+			      strlen("package:device/indicator.sqdevice"), &result),
+		      0);
+	zassert_true(result.ok);
+	zassert_true(runtime.device_config_draft_loaded);
+	zassert_equal(runtime.device_config_draft.count, 3);
+
+	memset(&result, 0, sizeof(result));
+	zassert_equal(sq_vm_runtime_device_config_set(&runtime, (const uint8_t *)"mode",
+						      strlen("mode"), value, &result),
+		      0);
+	zassert_true(result.ok);
+	zassert_equal(runtime.device_config_draft.records[1].value.kind, SQDC_VALUE_STRING);
+	zassert_mem_equal(runtime.device_config_draft.records[1].value.string, "pwm", 3);
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
 ZTEST(squidscript_protocol, test_zephyr_calls_squidvm_ffi_with_storage_adapter)
 {
 	struct ffi_vm_fixture fixture = {

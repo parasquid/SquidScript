@@ -1,0 +1,5 @@
+SQDEVICE
+service string 17:indicator.default
+mode string 4:gpio
+pinName string 5:GPIO8
+activeLow bool true

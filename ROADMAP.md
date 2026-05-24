@@ -28,15 +28,21 @@ for compiler, SQBC tooling, and VM semantics.
 
 ### 2. Port Runtime Services To Zephyr
 
-- Implement the physical SQDEVICE/SQDC backend for current device
-  configuration APIs. `device.config.load`, `device.config.set`,
-  `device.config.rebind`, and `device.config.save` now compile and reach
-  Zephyr through VM/FFI result records, but the reference firmware still
-  returns honest `unsupported` results. A bounded no-alloc Rust FFI core now
-  parses SQDEVICE text, edits caller-owned draft records, validates safe
-  `.sqdevice` paths, and encodes/decodes SQDC. Remaining work is to connect
-  Zephyr package-resource file reads, active draft storage, binding validation,
-  physical rebind application, and flash SQDC persistence to that core.
+- Complete the physical SQDEVICE/SQDC backend for current device configuration
+  APIs. `device.config.load("package:...")` now reads installed foreground app
+  package resources into a bounded runtime draft, and `device.config.set(...)`
+  edits that draft through the no-alloc Rust FFI core. Remaining work is to
+  add binding validation, physical `device.config.rebind(...)` application,
+  and flash SQDC persistence for `device.config.save("flash")`.
+- Route `service.indicator.*` through the resolved logical
+  `indicator.default` binding instead of directly through Zephyr hardcoded
+  devicetree aliases. Keep the app-facing API unchanged: target/firmware
+  should provide the default active binding, app-authored `device {}` should
+  be an explicit override, and `squidc` should validate authored bindings
+  without silently synthesizing default device blocks from target metadata.
+  The current ESP32-C3 Super Mini behavior should remain GPIO8 LEDC PWM by
+  default, but owned by the SQDEVICE/SQDC binding path rather than bespoke
+  indicator runtime code.
 - Decide service priority and target support for currently spec-recognized but
   not SQBC-backed APIs: `httpServer.*`, `bleTransfer.*`, `content.*`, and
   `binbook.*`. Add each only as a real compiler/SQBC/VM/Zephyr slice with

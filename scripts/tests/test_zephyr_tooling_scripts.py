@@ -497,19 +497,28 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_hardware_suite_runs_device_config_script_before_stack_measurement(self):
         script = self.read("scripts/c3-supermini-test-device-config.sh")
         app = self.read("tests/hardware/c3-supermini/device-config-summary/main.squid")
+        resource = self.read(
+            "tests/hardware/c3-supermini/device-config-summary/device/indicator.sqdevice"
+        )
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
 
         self.assertIn("device.config.load", app)
         self.assertIn("device.config.set", app)
         self.assertIn("device.config.rebind", app)
         self.assertIn("device.config.save", app)
-        self.assertIn('cargo run --quiet -p squidc -- app install "${DEVICE_CONFIG_APP}"', script)
+        self.assertIn("SQDEVICE", resource)
+        self.assertIn("indicator.default", resource)
+        self.assertIn('cargo run --quiet -p squidc -- package "${DEVICE_CONFIG_APP}"', script)
+        self.assertIn(
+            'cargo run --quiet -p squidc -- app install "${DEVICE_CONFIG_PACKAGE}"',
+            script,
+        )
         self.assertIn(
             "cargo run --quiet -p squidc -- app launch device-config-summary",
             script,
         )
-        self.assertIn("output=device load false unsupported null", script)
-        self.assertIn("output=device set false unsupported null", script)
+        self.assertIn("output=device load true null null", script)
+        self.assertIn("output=device set true null null", script)
         self.assertIn("output=device rebind false unsupported null", script)
         self.assertIn("output=device save false unsupported null", script)
         self.assertIn("assert_file_empty_command", script)

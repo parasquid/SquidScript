@@ -134,9 +134,11 @@ and before stack measurement. It installs
 `tests/hardware/c3-supermini/device-config-summary`, launches it, and verifies
 that `device.config.load`, `device.config.set`, `device.config.rebind`, and
 `device.config.save` all return result records through the real Zephyr VM FFI
-host. The current reference firmware returns `ok=false`, `error=unsupported`,
-and `warning=null` for each call until the physical SQDEVICE/SQDC rebinding
-backend is implemented.
+host. The app is installed as a package with a `.sqdevice` resource; the
+current reference firmware returns `ok=true` for package resource load and
+draft set, then `ok=false`, `error=unsupported`, and `warning=null` for rebind
+and save until physical SQDEVICE/SQDC binding application and persistence are
+implemented.
 
 `scripts/c3-supermini-test-display-drawlog.sh` runs after lifecycle coverage
 and before system resource coverage. It installs

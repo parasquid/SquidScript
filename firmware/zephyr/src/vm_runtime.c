@@ -1217,26 +1217,194 @@ static int32_t runtime_device_config_unsupported(SqvmDeviceConfigResult *out)
 	return 0;
 }
 
+static int32_t runtime_device_config_error(SqvmDeviceConfigResult *out, const char *error)
+{
+	if (out == NULL || error == NULL) {
+		return -EINVAL;
+	}
+	memset(out, 0, sizeof(*out));
+	out->ok = false;
+	out->error = (const uint8_t *)error;
+	out->error_len = strlen(error);
+	return 0;
+}
+
+static int32_t runtime_device_config_ok(SqvmDeviceConfigResult *out)
+{
+	if (out == NULL) {
+		return -EINVAL;
+	}
+	memset(out, 0, sizeof(*out));
+	out->ok = true;
+	return 0;
+}
+
+static const char *runtime_device_config_status_error(SqdcStatus status)
+{
+	switch (status) {
+	case SQDC_STATUS_OK:
+		return NULL;
+	case SQDC_STATUS_BUFFER_TOO_SMALL:
+		return "buffer too small";
+	case SQDC_STATUS_PARSE_ERROR:
+		return "parse error";
+	case SQDC_STATUS_TOO_MANY_RECORDS:
+		return "too many records";
+	case SQDC_STATUS_INVALID_ARGUMENT:
+	default:
+		return "invalid argument";
+	}
+}
+
+static int runtime_device_config_read_file(const char *path, uint8_t *buffer, size_t buffer_len,
+					   size_t *out_len)
+{
+	struct fs_dirent entry;
+	struct fs_file_t file;
+	int result;
+
+	if (path == NULL || buffer == NULL || out_len == NULL) {
+		return -EINVAL;
+	}
+	*out_len = 0;
+	result = fs_stat(path, &entry);
+	if (result != 0) {
+		return result;
+	}
+	if (entry.type != FS_DIR_ENTRY_FILE) {
+		return -ENOENT;
+	}
+	if (entry.size > buffer_len) {
+		return -ENOSPC;
+	}
+
+	fs_file_t_init(&file);
+	result = fs_open(&file, path, FS_O_READ);
+	if (result != 0) {
+		return result;
+	}
+	ssize_t read = fs_read(&file, buffer, entry.size);
+	result = fs_close(&file);
+	if (read < 0) {
+		return (int)read;
+	}
+	if ((size_t)read != entry.size) {
+		return -EIO;
+	}
+	*out_len = (size_t)read;
+	return result;
+}
+
+int sq_vm_runtime_device_config_load(struct sq_vm_runtime *runtime, const uint8_t *source,
+				     size_t source_len, SqvmDeviceConfigResult *out)
+{
+	static const char package_prefix[] = "package:";
+	char resource[SQ_APP_STORE_PATH_MAX];
+	char path[SQ_APP_STORE_PATH_MAX];
+	const uint8_t *resource_bytes;
+	size_t resource_len;
+	size_t bytes_len;
+	SqdcStatus status;
+
+	if (runtime == NULL || source == NULL || out == NULL) {
+		return -EINVAL;
+	}
+	if (source_len <= sizeof(package_prefix) - 1 ||
+	    memcmp(source, package_prefix, sizeof(package_prefix) - 1) != 0) {
+		return runtime_device_config_error(out, "unsupported source");
+	}
+	if (runtime->store_mount_point == NULL || runtime->current_app[0] == '\0') {
+		return runtime_device_config_error(out, "no current app");
+	}
+
+	resource_bytes = source + sizeof(package_prefix) - 1;
+	resource_len = source_len - (sizeof(package_prefix) - 1);
+	status = sqdc_is_safe_sqdevice_path(resource_bytes, resource_len);
+	if (status != SQDC_STATUS_OK) {
+		return runtime_device_config_error(out, "invalid resource path");
+	}
+	if (resource_len >= sizeof(resource)) {
+		return runtime_device_config_error(out, "resource path too long");
+	}
+	memcpy(resource, resource_bytes, resource_len);
+	resource[resource_len] = '\0';
+
+	int result = sq_app_store_resource_path(runtime->store_mount_point, runtime->current_app,
+						resource, path, sizeof(path));
+	if (result != 0) {
+		return runtime_device_config_error(out, "resource path failed");
+	}
+	result = runtime_device_config_read_file(path, runtime->transfer.completion.bytes,
+						 sizeof(runtime->transfer.completion.bytes),
+						 &bytes_len);
+	if (result == -ENOSPC) {
+		return runtime_device_config_error(out, "resource too large");
+	}
+	if (result != 0) {
+		return runtime_device_config_error(out, "resource read failed");
+	}
+
+	status = sqdc_parse_sqdevice(runtime->transfer.completion.bytes, bytes_len,
+				     &runtime->device_config_draft);
+	if (status != SQDC_STATUS_OK) {
+		const char *error = runtime_device_config_status_error(status);
+		return runtime_device_config_error(out, error != NULL ? error : "parse error");
+	}
+	runtime->device_config_draft_loaded = true;
+	return runtime_device_config_ok(out);
+}
+
+int sq_vm_runtime_device_config_set(struct sq_vm_runtime *runtime, const uint8_t *key,
+				    size_t key_len, SqvmDeviceConfigValue value,
+				    SqvmDeviceConfigResult *out)
+{
+	SqdcStatus status;
+
+	if (runtime == NULL || key == NULL || out == NULL) {
+		return -EINVAL;
+	}
+	if (!runtime->device_config_draft_loaded) {
+		return runtime_device_config_error(out, "no draft");
+	}
+
+	switch (value.kind) {
+	case SQVM_DEVICE_CONFIG_VALUE_NULL:
+		status = sqdc_config_set_null(&runtime->device_config_draft, key, key_len);
+		break;
+	case SQVM_DEVICE_CONFIG_VALUE_BOOL:
+		status = sqdc_config_set_bool(&runtime->device_config_draft, key, key_len,
+					      value.bool_value);
+		break;
+	case SQVM_DEVICE_CONFIG_VALUE_I32:
+		status = sqdc_config_set_i32(&runtime->device_config_draft, key, key_len,
+					     value.i32_value);
+		break;
+	case SQVM_DEVICE_CONFIG_VALUE_STRING:
+		status = sqdc_config_set_string(&runtime->device_config_draft, key, key_len,
+						value.string, value.string_len);
+		break;
+	default:
+		status = SQDC_STATUS_INVALID_ARGUMENT;
+		break;
+	}
+	if (status != SQDC_STATUS_OK) {
+		const char *error = runtime_device_config_status_error(status);
+		return runtime_device_config_error(out, error != NULL ? error : "invalid argument");
+	}
+	return runtime_device_config_ok(out);
+}
+
 static int32_t runtime_device_config_load(void *user_data, const uint8_t *source,
 					  size_t source_len, SqvmDeviceConfigResult *out)
 {
-	ARG_UNUSED(user_data);
-	ARG_UNUSED(source);
-	ARG_UNUSED(source_len);
-
-	return runtime_device_config_unsupported(out);
+	return sq_vm_runtime_device_config_load(user_data, source, source_len, out);
 }
 
 static int32_t runtime_device_config_set(void *user_data, const uint8_t *key,
 					 size_t key_len, SqvmDeviceConfigValue value,
 					 SqvmDeviceConfigResult *out)
 {
-	ARG_UNUSED(user_data);
-	ARG_UNUSED(key);
-	ARG_UNUSED(key_len);
-	ARG_UNUSED(value);
-
-	return runtime_device_config_unsupported(out);
+	return sq_vm_runtime_device_config_set(user_data, key, key_len, value, out);
 }
 
 static int32_t runtime_device_config_rebind(void *user_data, const uint8_t *alias,
@@ -1347,6 +1515,8 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->indicator_breathe_active = false;
 	runtime->indicator_breathe_step = 0;
 	runtime->indicator_breathe_next_ms = 0;
+	memset(&runtime->device_config_draft, 0, sizeof(runtime->device_config_draft));
+	runtime->device_config_draft_loaded = false;
 	runtime->gpio_configured_mask = 0;
 	runtime->gpio_state_mask = 0;
 	memset(runtime->wifi_profile, 0, sizeof(runtime->wifi_profile));
