@@ -857,6 +857,24 @@ event.on("app.start") {
 }
 
 #[test]
+fn compiles_content_pick_file_result_call_to_sqbc() {
+    let source = r#"app "content-picker"
+
+event.on("app.start") {
+  let picked = content.pickFile(".binbook")
+  debug.print(picked.ok, picked.error, picked.path)
+}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+
+    assert!(output.ok, "{:?}", output.diagnostics);
+    sqbc::encode_sqbc(&output.ir.unwrap()).expect("content pickFile should encode");
+}
+
+#[test]
 fn parses_hardware_gpio_calls() {
     let source = r#"app "gpio"
 state { led: bool = false }

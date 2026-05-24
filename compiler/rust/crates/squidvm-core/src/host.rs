@@ -221,6 +221,12 @@ pub trait TraceSink {
     ) -> Result<DeviceConfigResult<'a>, VmError> {
         Ok(DeviceConfigResult::unsupported())
     }
+    fn content_pick_file<'a>(
+        &'a mut self,
+        _extension: &str,
+    ) -> Result<ContentPickFileResult<'a>, VmError> {
+        Ok(ContentPickFileResult::unsupported())
+    }
     fn state_load(&mut self, _out: &mut [u8]) -> Result<Option<usize>, VmError> {
         Ok(None)
     }
@@ -245,6 +251,23 @@ impl DeviceConfigResult<'_> {
             ok: false,
             error: Some("unsupported"),
             warning: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ContentPickFileResult<'a> {
+    pub ok: bool,
+    pub error: Option<&'a str>,
+    pub path: Option<&'a str>,
+}
+
+impl ContentPickFileResult<'_> {
+    pub const fn unsupported() -> Self {
+        Self {
+            ok: false,
+            error: Some("unsupported"),
+            path: None,
         }
     }
 }

@@ -358,6 +358,14 @@ typedef struct {
 } SqvmDeviceConfigResult;
 
 typedef struct {
+	bool ok;
+	const uint8_t *error;
+	size_t error_len;
+	const uint8_t *path;
+	size_t path_len;
+} SqvmContentPickFileResult;
+
+typedef struct {
 	const uint8_t *ip;
 	size_t ip_len;
 	const uint8_t *gw;
@@ -387,6 +395,9 @@ typedef int32_t (*SqvmDeviceConfigRebindCallback)(void *user_data, const uint8_t
 typedef int32_t (*SqvmDeviceConfigSaveCallback)(void *user_data, const uint8_t *destination,
 						size_t destination_len,
 						SqvmDeviceConfigResult *out);
+typedef int32_t (*SqvmContentPickFileCallback)(void *user_data, const uint8_t *extension,
+					       size_t extension_len,
+					       SqvmContentPickFileResult *out);
 
 typedef int32_t (*SqvmIndicatorWriteCallback)(void *user_data, bool value);
 typedef int32_t (*SqvmIndicatorToggleCallback)(void *user_data);
@@ -477,6 +488,7 @@ typedef struct {
 	SqvmDeviceConfigSetCallback device_config_set;
 	SqvmDeviceConfigRebindCallback device_config_rebind;
 	SqvmDeviceConfigSaveCallback device_config_save;
+	SqvmContentPickFileCallback content_pick_file;
 	SqvmSystemMemoryTextCallback system_memory_text;
 	SqvmSystemStorageTextCallback system_storage_text;
 } SqvmCallbacks;

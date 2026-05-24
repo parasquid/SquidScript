@@ -226,6 +226,14 @@ impl TraceSink for RuntimeTrace {
             warning: None,
         })
     }
+
+    fn content_pick_file<'a>(
+        &'a mut self,
+        extension: &str,
+    ) -> Result<ContentPickFileResult<'a>, VmError> {
+        self.events.push(format!("content.pickFile {extension}"));
+        Ok(ContentPickFileResult::unsupported())
+    }
 }
 
 #[derive(Default)]
@@ -1241,6 +1249,36 @@ event.on("app.start") {
             "device.config.save flash",
             "debug true null loaded",
             "debug true null true rebound true",
+        ]
+    );
+}
+
+#[test]
+fn runs_content_pick_file_unsupported_result_from_real_bytecode() {
+    let source = r#"app "content-picker"
+event.on("app.start") {
+  let picked = content.pickFile(".binbook")
+  debug.print(picked.ok, picked.error, picked.path)
+}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = RuntimeTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "content.pickFile .binbook",
+            "debug false unsupported null",
         ]
     );
 }

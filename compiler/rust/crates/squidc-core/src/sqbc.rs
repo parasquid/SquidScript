@@ -89,6 +89,7 @@ const BUILTIN_APP_ARMED_STACK_GET: u8 = 42;
 const BUILTIN_DEVICE_CONFIG_REBIND: u8 = 43;
 const BUILTIN_DEVICE_CONFIG_SAVE: u8 = 44;
 const BUILTIN_SERVICE_INDICATOR_BLINK: u8 = 45;
+const BUILTIN_CONTENT_PICK_FILE: u8 = 46;
 
 const VALUE_NULL: u8 = 0;
 const VALUE_BOOL: u8 = 1;
@@ -1150,6 +1151,7 @@ fn builtin_for_call(name: &str) -> Option<u8> {
         "device.config.set" => Some(BUILTIN_DEVICE_CONFIG_SET),
         "device.config.rebind" => Some(BUILTIN_DEVICE_CONFIG_REBIND),
         "device.config.save" => Some(BUILTIN_DEVICE_CONFIG_SAVE),
+        "content.pickFile" => Some(BUILTIN_CONTENT_PICK_FILE),
         _ => None,
     }
 }
@@ -1168,6 +1170,7 @@ fn validate_builtin_arg_count(name: &str, count: usize) -> Result<(), SqbcError>
         "app.registry.get" | "app.armedStack.get" => count == 2,
         "device.config.load" | "device.config.rebind" | "device.config.save" => count == 1,
         "device.config.set" => count == 2,
+        "content.pickFile" => count == 1,
         _ => true,
     };
     if valid {

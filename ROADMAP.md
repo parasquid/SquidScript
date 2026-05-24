@@ -46,8 +46,12 @@ for compiler, SQBC tooling, and VM semantics.
   model instead of Zephyr devicetree-only defaults. The current ESP32-C3 Super
   Mini behavior should remain GPIO8 LEDC PWM by default.
 - Decide service priority and target support for currently spec-recognized but
-  not SQBC-backed APIs: `httpServer.*`, `bleTransfer.*`, `content.*`, and
-  `binbook.*`. Add each only as a real compiler/SQBC/VM/Zephyr slice with
+  not SQBC-backed APIs: `httpServer.*`, `bleTransfer.*`, remaining
+  `content.*`, and `binbook.*`. `content.pickFile(extension)` now has
+  compiler/SQBC lowering plus Rust VM, FFI, Zephyr callback, ztest, and
+  hardware-script coverage that returns the honest unsupported result
+  `{ ok=false, error="unsupported", path=null }` until a real picker exists.
+  Add each remaining API only as a real compiler/SQBC/VM/Zephyr slice with
   honest unsupported behavior until then.
 - Design app-entry versus import-only source semantics before adding real
   include/import expansion. Only an app entry file should become an app;

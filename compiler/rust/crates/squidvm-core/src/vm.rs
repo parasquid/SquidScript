@@ -25,10 +25,10 @@ use crate::{
     chunk::{ChunkCache, ChunkKind, ChunkRef},
     error::VmError,
     host::{
-        AppArmedStackEntry, AppRegistryEntry, DeviceConfigResult, DisplayLineOptions,
-        DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions, StorageCompletion,
-        StorageRequest, TraceSink, VmDispatch, WifiAccessPoint, WifiActionResult, WifiApIp,
-        WifiScanResult, WifiStatus,
+        AppArmedStackEntry, AppRegistryEntry, ContentPickFileResult, DeviceConfigResult,
+        DisplayLineOptions, DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions,
+        StorageCompletion, StorageRequest, TraceSink, VmDispatch, WifiAccessPoint,
+        WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
     },
     limits::{
         MAX_CALL_DEPTH, MAX_CODE_CHUNK_BYTES, MAX_FUNCTIONS, MAX_HANDLERS,
@@ -1427,6 +1427,14 @@ impl ChunkedVm {
                 let value = self.device_config_result_record(result)?;
                 self.push(value)?;
             }
+            crate::bytecode::BUILTIN_CONTENT_PICK_FILE => {
+                let Value::String(extension_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let result = host.content_pick_file(self.index.string(extension_id)?)?;
+                let value = self.content_pick_file_result_record(result)?;
+                self.push(value)?;
+            }
             BUILTIN_SYSTEM_MEMORY => {
                 let mut writer = self.runtime_strings.alloc()?;
                 host.system_memory_text(&mut writer)?;
@@ -1477,6 +1485,19 @@ impl ChunkedVm {
             RuntimeRecordField::new("ok", Value::Bool(result.ok)),
             RuntimeRecordField::new("error", error),
             RuntimeRecordField::new("warning", warning),
+        ])
+    }
+
+    fn content_pick_file_result_record(
+        &mut self,
+        result: ContentPickFileResult<'_>,
+    ) -> Result<Value, VmError> {
+        let error = self.runtime_string_value(result.error)?;
+        let path = self.runtime_string_value(result.path)?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
+            RuntimeRecordField::new("error", error),
+            RuntimeRecordField::new("path", path),
         ])
     }
 
@@ -2442,6 +2463,14 @@ impl<'a> Vm<'a> {
                 let value = self.device_config_result_record(result)?;
                 self.push(value)?;
             }
+            crate::bytecode::BUILTIN_CONTENT_PICK_FILE => {
+                let Value::String(extension_id) = self.pop()? else {
+                    return Err(VmError::InvalidOperand);
+                };
+                let result = trace.content_pick_file(self.program.string(extension_id)?)?;
+                let value = self.content_pick_file_result_record(result)?;
+                self.push(value)?;
+            }
             BUILTIN_SYSTEM_MEMORY => {
                 let mut writer = self.runtime_strings.alloc()?;
                 trace.system_memory_text(&mut writer)?;
@@ -2492,6 +2521,19 @@ impl<'a> Vm<'a> {
             RuntimeRecordField::new("ok", Value::Bool(result.ok)),
             RuntimeRecordField::new("error", error),
             RuntimeRecordField::new("warning", warning),
+        ])
+    }
+
+    fn content_pick_file_result_record(
+        &mut self,
+        result: ContentPickFileResult<'_>,
+    ) -> Result<Value, VmError> {
+        let error = self.runtime_string_value(result.error)?;
+        let path = self.runtime_string_value(result.path)?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
+            RuntimeRecordField::new("error", error),
+            RuntimeRecordField::new("path", path),
         ])
     }
 

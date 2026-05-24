@@ -531,6 +531,31 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             suite.index("c3-supermini-test-blinky.sh"),
         )
 
+    def test_hardware_suite_runs_content_pick_script_before_stack_measurement(self):
+        script = self.read("scripts/c3-supermini-test-content-pick.sh")
+        app = self.read("tests/hardware/c3-supermini/content-pick-summary/main.squid")
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn('content.pickFile(".binbook")', app)
+        self.assertIn(
+            'cargo run --quiet -p squidc -- app install "${CONTENT_APP}"',
+            script,
+        )
+        self.assertIn(
+            "cargo run --quiet -p squidc -- app launch content-pick-summary",
+            script,
+        )
+        self.assertIn("output=content pick false unsupported null", script)
+        self.assertIn("assert_file_empty_command", script)
+        self.assertLess(
+            suite.index("c3-supermini-test-content-pick.sh"),
+            suite.index("c3-supermini-measure-stack-usage.sh"),
+        )
+        self.assertLess(
+            suite.index("c3-supermini-test-content-pick.sh"),
+            suite.index("c3-supermini-test-blinky.sh"),
+        )
+
     def test_hardware_suite_runs_top_level_device_binding_script(self):
         script = self.read("scripts/c3-supermini-test-device-binding.sh")
         app = self.read("tests/hardware/c3-supermini/device-binding-summary/main.squid")

@@ -1,0 +1,6 @@
+app "content-pick-summary"
+
+event.on("app.start") {
+  let picked = content.pickFile(".binbook")
+  debug.print("content pick", picked.ok, picked.error, picked.path)
+}

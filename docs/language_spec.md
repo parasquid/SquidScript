@@ -2701,6 +2701,14 @@ if (picked.ok) {
 }
 ```
 
+On runtimes without a firmware-controlled picker, including the current
+ESP32-C3 Zephyr reference firmware, this API returns a result record rather than
+crashing the app:
+
+```text
+{ ok: false, error: "unsupported", path: null }
+```
+
 content.readText(path)
 
 Reads a bounded text file.

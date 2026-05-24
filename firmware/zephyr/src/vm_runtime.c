@@ -1804,6 +1804,24 @@ static int32_t runtime_device_config_save(void *user_data, const uint8_t *destin
 	return sq_vm_runtime_device_config_save(user_data, destination, destination_len, out);
 }
 
+static int32_t runtime_content_pick_file(void *user_data, const uint8_t *extension,
+					 size_t extension_len, SqvmContentPickFileResult *out)
+{
+	ARG_UNUSED(user_data);
+	ARG_UNUSED(extension);
+	ARG_UNUSED(extension_len);
+
+	if (out == NULL) {
+		return -EINVAL;
+	}
+	out->ok = false;
+	out->error = (const uint8_t *)"unsupported";
+	out->error_len = strlen("unsupported");
+	out->path = NULL;
+	out->path_len = 0;
+	return 0;
+}
+
 static void clear_dispatch_transfer(struct sq_vm_runtime *runtime)
 {
 	memset(&runtime->transfer, 0, sizeof(runtime->transfer));
@@ -2036,6 +2054,7 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		.device_config_set = runtime_device_config_set,
 		.device_config_rebind = runtime_device_config_rebind,
 		.device_config_save = runtime_device_config_save,
+		.content_pick_file = runtime_content_pick_file,
 		.system_memory_text = runtime_system_memory_text,
 		.system_storage_text = runtime_system_storage_text,
 	};

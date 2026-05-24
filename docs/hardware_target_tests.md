@@ -140,6 +140,13 @@ draft set, `ok=true` for `indicator.default` rebind, then `ok=true` for SQDC
 flash save. Native Zephyr ztests additionally verify that the saved SQDC is
 loaded on later app starts before app-local `device {}` bindings.
 
+`scripts/c3-supermini-test-content-pick.sh` runs after device config coverage
+and before stack measurement. It installs
+`tests/hardware/c3-supermini/content-pick-summary`, launches it, and verifies
+that `content.pickFile(".binbook")` flows through compiler lowering, SQBC, Rust
+VM hosting, FFI, and the Zephyr runtime callback as the current unsupported
+result record: `ok=false`, `error="unsupported"`, and `path=null`.
+
 `scripts/c3-supermini-test-device-binding.sh` runs after system resource
 coverage and before the explicit device config API check. It packages
 `tests/hardware/c3-supermini/device-binding-summary`, installs it with its

@@ -42,6 +42,7 @@ export ESPFLASH_PORT="$(resolve_esp_serial_port)"
 "$ROOT/scripts/c3-supermini-test-device-binding.sh"
 "$ROOT/scripts/c3-supermini-test-inline-gpio-binding.sh"
 "$ROOT/scripts/c3-supermini-test-device-config.sh"
+"$ROOT/scripts/c3-supermini-test-content-pick.sh"
 "$ROOT/scripts/c3-supermini-measure-stack-usage.sh"
 "$ROOT/scripts/c3-supermini-test-wifi-state.sh" --require-real-wifi
 "$ROOT/scripts/c3-supermini-test-wifi-scan-api.sh" --require-real-wifi

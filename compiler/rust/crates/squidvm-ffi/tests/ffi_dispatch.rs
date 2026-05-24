@@ -9,9 +9,9 @@ use squidvm_ffi::{
     sqvm_device_binding_count_from_reader, sqvm_device_binding_read_from_reader, sqvm_dispatch,
     sqvm_dispatch_resume_storage, sqvm_dispatch_start_resumable, sqvm_trigger_timer_count,
     sqvm_trigger_timer_read, SqvmAppRegistryEntry, SqvmAppStackEntry, SqvmCallbacks,
-    SqvmDeviceBinding, SqvmDeviceConfigResult, SqvmDeviceConfigValue, SqvmDeviceConfigValueKind,
-    SqvmDispatchOutcome, SqvmDispatchResult, SqvmStatus, SqvmStorageCompletion,
-    SqvmStorageRequestKind, SqvmTriggerTimer,
+    SqvmContentPickFileResult, SqvmDeviceBinding, SqvmDeviceConfigResult, SqvmDeviceConfigValue,
+    SqvmDeviceConfigValueKind, SqvmDispatchOutcome, SqvmDispatchResult, SqvmStatus,
+    SqvmStorageCompletion, SqvmStorageRequestKind, SqvmTriggerTimer,
 };
 
 #[derive(Default)]
@@ -32,6 +32,7 @@ struct Host {
     wifi_scan_count: usize,
     wifi_ap_ip_count: usize,
     device_config_actions: Vec<String>,
+    content_pick_files: Vec<String>,
     system_memory_count: usize,
     system_storage_names: Vec<String>,
     registry_gets: Vec<String>,
@@ -494,6 +495,27 @@ unsafe extern "C" fn device_config_save(
     0
 }
 
+unsafe extern "C" fn content_pick_file(
+    user_data: *mut c_void,
+    extension: *const u8,
+    extension_len: usize,
+    out: *mut SqvmContentPickFileResult,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let extension =
+        std::str::from_utf8(std::slice::from_raw_parts(extension, extension_len)).unwrap();
+    host.content_pick_files.push(extension.to_string());
+    if out.is_null() {
+        return -1;
+    }
+    (*out).ok = false;
+    (*out).error = b"unsupported".as_ptr();
+    (*out).error_len = b"unsupported".len();
+    (*out).path = ptr::null();
+    (*out).path_len = 0;
+    0
+}
+
 unsafe extern "C" fn system_memory_text(
     user_data: *mut c_void,
     out: *mut u8,
@@ -686,6 +708,7 @@ fn callbacks(host: &mut Host) -> SqvmCallbacks {
         device_config_set: Some(device_config_set),
         device_config_rebind: Some(device_config_rebind),
         device_config_save: Some(device_config_save),
+        content_pick_file: Some(content_pick_file),
         system_memory_text: Some(system_memory_text),
         system_storage_text: Some(system_storage_text),
     }
@@ -880,6 +903,18 @@ event.on("app.start") {
   let saved = device.config.save("flash")
   debug.print(loaded.ok, loaded.error, loaded.warning)
   debug.print(set.ok, set.error, rebound.ok, rebound.warning, saved.ok)
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_content_pick_file_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-content"
+event.on("app.start") {
+  let picked = content.pickFile(".binbook")
+  debug.print(picked.ok, picked.error, picked.path)
 }
 screen("main") {}
 "#,
@@ -1370,6 +1405,38 @@ fn dispatches_device_config_callbacks() {
             "true null true rebound true".to_string()
         ]
     );
+}
+
+#[test]
+fn dispatches_content_pick_file_callback() {
+    let mut host = Host {
+        sqbc: compile_content_pick_file_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(host.content_pick_files, vec![".binbook".to_string()]);
+    assert_eq!(host.output, vec!["false unsupported null".to_string()]);
 }
 
 #[test]

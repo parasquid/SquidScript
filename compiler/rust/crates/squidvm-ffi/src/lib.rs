@@ -14,10 +14,10 @@ use squidvm_core::{
     error::VmError,
     host::{
         AppArmedStack, AppArmedStackEntry, AppProcessStack, AppRegistryEntry, AppRegistryList,
-        DeviceConfigResult, DisplayLineOptions, DisplayRectOptions, DisplayResourceOptions,
-        DisplayTextOptions, StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink,
-        VmDispatch, WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
-        MAX_STORAGE_TRANSFER_BYTES,
+        ContentPickFileResult, DeviceConfigResult, DisplayLineOptions, DisplayRectOptions,
+        DisplayResourceOptions, DisplayTextOptions, StorageCompletion as CoreStorageCompletion,
+        StorageRequest, TraceSink, VmDispatch, WifiAccessPoint, WifiActionResult, WifiApIp,
+        WifiScanResult, WifiStatus, MAX_STORAGE_TRANSFER_BYTES,
     },
     limits::{MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES, MAX_SAVED_STATE_BYTES},
     program::ProgramIndex,
@@ -787,6 +787,28 @@ impl Default for SqvmDeviceConfigResult {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmContentPickFileResult {
+    pub ok: bool,
+    pub error: *const u8,
+    pub error_len: usize,
+    pub path: *const u8,
+    pub path_len: usize,
+}
+
+impl Default for SqvmContentPickFileResult {
+    fn default() -> Self {
+        Self {
+            ok: false,
+            error: b"unsupported".as_ptr(),
+            error_len: b"unsupported".len(),
+            path: ptr::null(),
+            path_len: 0,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SqvmWifiApIp {
     pub ip: *const u8,
     pub ip_len: usize,
@@ -1024,6 +1046,14 @@ pub struct SqvmCallbacks {
             out: *mut SqvmDeviceConfigResult,
         ) -> i32,
     >,
+    pub content_pick_file: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            extension: *const u8,
+            extension_len: usize,
+            out: *mut SqvmContentPickFileResult,
+        ) -> i32,
+    >,
     pub system_memory_text: Option<
         unsafe extern "C" fn(
             user_data: *mut c_void,
@@ -1086,6 +1116,7 @@ impl Default for SqvmCallbacks {
             device_config_set: None,
             device_config_rebind: None,
             device_config_save: None,
+            content_pick_file: None,
             system_memory_text: None,
             system_storage_text: None,
         }
@@ -3163,6 +3194,25 @@ impl TraceSink for FfiHost {
         unsafe { device_config_result_from_ffi(&out) }
     }
 
+    fn content_pick_file<'a>(
+        &'a mut self,
+        extension: &str,
+    ) -> Result<ContentPickFileResult<'a>, VmError> {
+        let Some(content_pick_file) = self.callbacks.content_pick_file else {
+            return Ok(ContentPickFileResult::unsupported());
+        };
+        let mut out = SqvmContentPickFileResult::default();
+        callback_status(unsafe {
+            content_pick_file(
+                self.callbacks.user_data,
+                extension.as_ptr(),
+                extension.len(),
+                &mut out,
+            )
+        })?;
+        unsafe { content_pick_file_result_from_ffi(&out) }
+    }
+
     fn system_memory_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
         let Some(system_memory_text) = self.callbacks.system_memory_text else {
             return Err(VmError::InvalidOperand);
@@ -3791,6 +3841,16 @@ unsafe fn device_config_result_from_ffi<'a>(
         ok: result.ok,
         error: optional_ffi_str(result.error, result.error_len)?,
         warning: optional_ffi_str(result.warning, result.warning_len)?,
+    })
+}
+
+unsafe fn content_pick_file_result_from_ffi<'a>(
+    result: &SqvmContentPickFileResult,
+) -> Result<ContentPickFileResult<'a>, VmError> {
+    Ok(ContentPickFileResult {
+        ok: result.ok,
+        error: optional_ffi_str(result.error, result.error_len)?,
+        path: optional_ffi_str(result.path, result.path_len)?,
     })
 }
 
