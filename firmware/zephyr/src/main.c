@@ -12,8 +12,8 @@ LOG_MODULE_REGISTER(squidscript, LOG_LEVEL_INF);
 int main(void)
 {
 	const struct device *uart = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
-	struct sq_serial_transport transport;
-	const struct sq_device_identity identity = {
+	static struct sq_serial_transport transport;
+	static const struct sq_device_identity identity = {
 		.target = CONFIG_BOARD,
 		.firmware = "squidscript-zephyr",
 		.diagnostic = IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC),
@@ -25,16 +25,7 @@ int main(void)
 	static struct sq_vm_runtime runtime;
 	static struct sq_app_store_vm_storage launch_storage;
 	static uint8_t response[SQ_DEVICE_RESPONSE_BYTES];
-	struct sq_device_protocol_context protocol_context = {
-		.identity = &identity,
-		.registry = &registry,
-		.mutable_registry = &registry,
-		.install_session = &install_session,
-		.temp_session = &temp_session,
-		.resource_session = &resource_session,
-		.runtime = &runtime,
-		.launch_storage = &launch_storage,
-	};
+	static struct sq_device_protocol_context protocol_context;
 	size_t response_len = 0;
 	uint8_t byte;
 
@@ -46,6 +37,17 @@ int main(void)
 		LOG_ERR("Zephyr console UART is not ready");
 		return 1;
 	}
+
+	protocol_context = (struct sq_device_protocol_context){
+		.identity = &identity,
+		.registry = &registry,
+		.mutable_registry = &registry,
+		.install_session = &install_session,
+		.temp_session = &temp_session,
+		.resource_session = &resource_session,
+		.runtime = &runtime,
+		.launch_storage = &launch_storage,
+	};
 
 	int storage_result = sq_app_store_mount_target_filesystem();
 	if (storage_result == 0) {

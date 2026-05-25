@@ -2,8 +2,8 @@ use crate::{
     ast::AstScreen,
     diagnostic::{error, Diagnostic},
     ir::{
-        default_state_store, IrApp, IrExpr, IrFunction, IrHandler, IrProgram, IrScreen, IrStatement,
-        IrTrigger,
+        default_state_store, IrApp, IrExpr, IrFunction, IrHandler, IrProgram, IrScreen,
+        IrStatement, IrTrigger,
     },
     parser::parse,
     profile::{BuildProfile, PORTABLE_TARGET_ID},
@@ -131,20 +131,20 @@ pub fn compile_with_profile(request: CompileRequest, profile: BuildProfile) -> C
 
 fn trigger_from_statement(statement: &IrStatement) -> Option<IrTrigger> {
     match statement {
-        IrStatement::ServiceTimerEvery { event, interval_ms } => literal_i32(interval_ms).map(
-            |interval_ms| IrTrigger {
+        IrStatement::ServiceTimerEvery { event, interval_ms } => {
+            literal_i32(interval_ms).map(|interval_ms| IrTrigger {
                 event: event.clone(),
                 repeating: true,
                 interval_ms,
-            },
-        ),
-        IrStatement::ServiceTimerAfter { event, delay_ms } => literal_i32(delay_ms).map(
-            |interval_ms| IrTrigger {
+            })
+        }
+        IrStatement::ServiceTimerAfter { event, delay_ms } => {
+            literal_i32(delay_ms).map(|interval_ms| IrTrigger {
                 event: event.clone(),
                 repeating: false,
                 interval_ms,
-            },
-        ),
+            })
+        }
         _ => None,
     }
 }

@@ -225,7 +225,6 @@ The execution shape is:
 |-- handler index with preload flags
 |-- screen index
 |-- executable chunks
-`-- checksum
 ```
 
 Firmware loads handler/function/screen chunks from app storage as needed.
@@ -239,3 +238,10 @@ storage rather than assuming a memory-mapped contiguous app image. Use LittleFS
 where a file layout is needed and NVS or LittleFS records for app state based on
 implementation tests. `RUN.TEMP` stages bytecode as a temporary app-store file
 but keeps temp app state volatile.
+
+The current Zephyr implementation stores installed `main.sqbc` files in
+LittleFS and dispatches them through the `SqvmStorageRequest::SqbcRead`
+boundary. The resident runtime holds the parsed metadata/index, VM state, and
+one bounded SQBC code/read window; it does not need to keep the full installed
+file in RAM. App trigger registration reads only trigger metadata from the same
+reader path so an armed app does not need a background VM instance.

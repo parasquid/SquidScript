@@ -47,7 +47,26 @@ of that callback boundary. It uses Zephyr `fs_*` APIs to read byte ranges from
 an SQBC path and to load, save, and reset an app-state path. Native Zephyr
 ztests mount a host-backed filesystem through `FS_NATIVE_MOUNT` and verify the
 backend through `vm_storage`, so the behavior is covered without bypassing
-Zephyr's filesystem layer.
+Zephyr's filesystem layer. The backend records SQBC read count, maximum read
+length, and total read length for tests and diagnostics-facing assertions.
+Installed app launch/dispatch uses these file-backed reads through the
+`sq_app_store_vm_storage` backend; native Zephyr ztests install padded
+`main.sqbc` files larger than one storage transfer and verify dispatch reads
+only bounded SQBC byte ranges instead of reading the full installed payload.
+The armed-app lifecycle test also installs a trigger app larger than the legacy
+full-app limit and verifies arm registration still reads trigger metadata
+through the reader path.
+
+Installed app execution keeps a bounded VM context and one SQBC code transfer
+window resident. VM initialization reads the SQBC header, section table, string
+pool, state table, function table, handler table, optional trigger table, and
+optional screen table through caller-owned scratch. Handler/function/screen
+code ranges are then requested on demand as `SQVM_STORAGE_REQUEST_SQBC_READ`
+records and completed from LittleFS through the same storage adapter. App arm
+registration reads trigger metadata through the reader API and does not
+dispatch or keep a background VM resident. The `device resources` response
+reports `runtime_static_bytes` for the resident runtime object and
+`vm_sqbc_chunk_bytes` for the maximum SQBC code/read transfer window.
 
 `firmware/zephyr/src/app_store` owns the current app-store layout boundary. It
 prepares `/apps`, `/state`, and `/tmp` under the mounted store, validates app

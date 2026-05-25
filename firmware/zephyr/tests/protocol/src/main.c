@@ -1873,6 +1873,8 @@ ZTEST(squidscript_protocol, test_app_launch_and_exit_update_foreground_stack)
 
 ZTEST(squidscript_protocol, test_app_arm_registers_timer_and_dispatches_armed_app)
 {
+	enum { PADDED_TRIGGER_SQBC_LEN = 4096 + SQVM_STORAGE_TRANSFER_CAPACITY };
+	static uint8_t padded_break_reminder_sqbc[PADDED_TRIGGER_SQBC_LEN];
 	uint8_t payload[80];
 	uint8_t request[128];
 	uint8_t response[512];
@@ -1892,13 +1894,21 @@ ZTEST(squidscript_protocol, test_app_arm_registers_timer_and_dispatches_armed_ap
 		.launch_storage = &launch_storage,
 	};
 
+	memcpy(padded_break_reminder_sqbc, break_reminder_sqbc, sizeof(break_reminder_sqbc));
+	memset(&padded_break_reminder_sqbc[sizeof(break_reminder_sqbc)], 0xa5,
+	       sizeof(padded_break_reminder_sqbc) - sizeof(break_reminder_sqbc));
+	padded_break_reminder_sqbc[6] = PADDED_TRIGGER_SQBC_LEN & 0xff;
+	padded_break_reminder_sqbc[7] = (PADDED_TRIGGER_SQBC_LEN >> 8) & 0xff;
+	padded_break_reminder_sqbc[8] = (PADDED_TRIGGER_SQBC_LEN >> 16) & 0xff;
+	padded_break_reminder_sqbc[9] = (PADDED_TRIGGER_SQBC_LEN >> 24) & 0xff;
+
 	zassert_equal(mount_test_fs(), 0, "mount failed");
 	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "armer", armer_sqbc,
 					       sizeof(armer_sqbc)),
 		      0);
 	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "break-reminder",
-					       break_reminder_sqbc,
-					       sizeof(break_reminder_sqbc)),
+					       padded_break_reminder_sqbc,
+					       sizeof(padded_break_reminder_sqbc)),
 		      0);
 
 	zassert_equal(sq_protocol_append_string_field(payload, sizeof(payload), &payload_len, 1,
@@ -2214,6 +2224,7 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 	uint64_t stack_used = 0;
 	uint64_t protocol_stack_unused = 0;
 	uint64_t protocol_stack_used = 0;
+	uint64_t vm_sqbc_chunk = 0;
 	int result;
 
 	memset(&runtime, 0, sizeof(runtime));
@@ -2235,6 +2246,8 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 					   SQ_VM_RUNTIME_WORK_STACK_SIZE));
 	zassert_true(resource_value_equals(&frame, "protocol_thread_stack_size_bytes",
 					   CONFIG_MAIN_STACK_SIZE));
+	zassert_true(resource_value_for_key(&frame, "vm_sqbc_chunk_bytes", &vm_sqbc_chunk));
+	zassert_equal(vm_sqbc_chunk, SQVM_STORAGE_TRANSFER_CAPACITY);
 	zassert_true(resource_value_for_key(&frame, "protocol_thread_stack_unused_bytes",
 					    &protocol_stack_unused));
 	zassert_true(resource_value_for_key(&frame, "protocol_thread_stack_used_bytes",
@@ -2565,6 +2578,43 @@ ZTEST(squidscript_protocol, test_app_store_derives_vm_storage_paths_from_mount)
 	zassert_equal(sq_app_store_vm_storage_for_app(test_fs_mount.mnt_point,
 						      "../bad", &app_storage),
 		      -EINVAL);
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
+ZTEST(squidscript_protocol, test_installed_app_launch_reads_sqbc_in_bounded_file_chunks)
+{
+	enum { PADDED_SQBC_LEN = sizeof(headless_counter_sqbc) + SQVM_STORAGE_TRANSFER_CAPACITY };
+	uint8_t padded_sqbc[PADDED_SQBC_LEN];
+	struct sq_app_store_vm_storage launch_storage = {0};
+	struct sq_vm_storage_backend backend;
+	static struct sq_vm_runtime runtime;
+
+	memcpy(padded_sqbc, headless_counter_sqbc, sizeof(headless_counter_sqbc));
+	memset(&padded_sqbc[sizeof(headless_counter_sqbc)], 0xa5,
+	       sizeof(padded_sqbc) - sizeof(headless_counter_sqbc));
+	padded_sqbc[6] = PADDED_SQBC_LEN & 0xff;
+	padded_sqbc[7] = (PADDED_SQBC_LEN >> 8) & 0xff;
+	padded_sqbc[8] = (PADDED_SQBC_LEN >> 16) & 0xff;
+	padded_sqbc[9] = (PADDED_SQBC_LEN >> 24) & 0xff;
+
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(sq_app_store_prepare_filesystem(test_fs_mount.mnt_point), 0);
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "padded", padded_sqbc,
+					       sizeof(padded_sqbc)),
+		      0);
+	zassert_equal(sq_app_store_vm_storage_for_app(test_fs_mount.mnt_point, "padded",
+						      &launch_storage),
+		      0);
+	backend = sq_app_store_vm_storage_backend(&launch_storage);
+
+	memset(&runtime, 0, sizeof(runtime));
+	zassert_equal(sq_vm_runtime_dispatch(&runtime, &backend, "app.start"), 0);
+	zassert_equal(runtime.result_code, 0);
+	zassert_equal(runtime.trace_count, 3);
+	zassert_true(launch_storage.fs_storage.sqbc_read_count > 0);
+	zassert_true(launch_storage.fs_storage.sqbc_max_read_len <= SQVM_STORAGE_TRANSFER_CAPACITY);
+	zassert_true(launch_storage.fs_storage.sqbc_total_read_len < sizeof(padded_sqbc));
 
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }

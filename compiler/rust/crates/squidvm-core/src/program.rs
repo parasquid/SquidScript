@@ -386,7 +386,10 @@ impl ProgramIndex {
         if triggers_section.len > scratch.len() {
             return Err(VmError::InvalidSection);
         }
-        reader.read_exact_at(triggers_section.offset, &mut scratch[..triggers_section.len])?;
+        reader.read_exact_at(
+            triggers_section.offset,
+            &mut scratch[..triggers_section.len],
+        )?;
         let count = read_u16(scratch, 0)? as usize;
         if count > MAX_TRIGGERS {
             return Err(VmError::InvalidSection);
@@ -411,7 +414,10 @@ impl ProgramIndex {
             return Err(VmError::InvalidSection);
         }
 
-        reader.read_exact_at(triggers_section.offset, &mut scratch[..triggers_section.len])?;
+        reader.read_exact_at(
+            triggers_section.offset,
+            &mut scratch[..triggers_section.len],
+        )?;
         let count = read_u16(scratch, 0)? as usize;
         if count > MAX_TRIGGERS || timer_index >= count {
             return Err(VmError::InvalidOperand);

@@ -10,6 +10,9 @@ extern "C" {
 struct sq_vm_fs_storage {
 	const char *sqbc_path;
 	const char *state_path;
+	size_t sqbc_read_count;
+	size_t sqbc_max_read_len;
+	size_t sqbc_total_read_len;
 };
 
 struct sq_vm_storage_backend sq_vm_fs_storage_backend(struct sq_vm_fs_storage *storage);

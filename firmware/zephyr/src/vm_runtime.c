@@ -1789,61 +1789,64 @@ static int sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *runtime)
 	}
 
 	for (size_t index = 0; index < count; index++) {
-		SqvmDeviceBinding binding = {0};
-		SqdcDeviceBindingPlan plan = {0};
-		SqvmDeviceConfigResult result = {0};
+		SqvmDeviceBinding *binding = &runtime->device_binding_scratch;
+		SqdcDeviceBindingPlan *plan = &runtime->device_binding_plan;
+		SqvmDeviceConfigResult *result = &runtime->device_config_result;
 		size_t resource_len;
 		size_t service_len;
 		size_t binding_len;
 
+		memset(binding, 0, sizeof(*binding));
+		memset(plan, 0, sizeof(*plan));
+		memset(result, 0, sizeof(*result));
 		status = sqvm_device_binding_read_from_reader(runtime, runtime_read_exact_at,
 							      runtime->transfer.init_scratch,
 							      sizeof(runtime->transfer.init_scratch),
-							      index, &binding);
+							      index, binding);
 		if (status != SQVM_STATUS_OK) {
 			return sq_vm_runtime_status_to_errno(status);
 		}
 
-		service_len = runtime_fixed_text_len(binding.service, sizeof(binding.service));
-		binding_len = runtime_fixed_text_len(binding.binding, sizeof(binding.binding));
-		resource_len = runtime_fixed_text_len(binding.resource, sizeof(binding.resource));
-		if (service_len == 0 || service_len >= sizeof(binding.service) ||
-		    binding_len == 0 || binding_len >= sizeof(binding.binding) ||
-		    resource_len == 0 || resource_len >= sizeof(binding.resource)) {
+		service_len = runtime_fixed_text_len(binding->service, sizeof(binding->service));
+		binding_len = runtime_fixed_text_len(binding->binding, sizeof(binding->binding));
+		resource_len = runtime_fixed_text_len(binding->resource, sizeof(binding->resource));
+		if (service_len == 0 || service_len >= sizeof(binding->service) ||
+		    binding_len == 0 || binding_len >= sizeof(binding->binding) ||
+		    resource_len == 0 || resource_len >= sizeof(binding->resource)) {
 			return -EINVAL;
 		}
 
-		if (sqdc_plan_device_binding(binding.service, service_len, binding.binding,
-					     binding_len, binding.resource, resource_len,
-					     &plan, &runtime->device_config_draft) !=
+		if (sqdc_plan_device_binding(binding->service, service_len, binding->binding,
+					     binding_len, binding->resource, resource_len,
+					     plan, &runtime->device_config_draft) !=
 		    SQDC_STATUS_OK) {
 			return -ENOTSUP;
 		}
 
-		switch (plan.kind) {
+		switch (plan->kind) {
 		case SQDC_DEVICE_BINDING_RESOURCE_INLINE_GPIO:
 			runtime->device_config_draft_loaded = true;
-			if (sq_vm_runtime_device_config_rebind(runtime, plan.alias, plan.alias_len,
-							       &result) != 0) {
+			if (sq_vm_runtime_device_config_rebind(runtime, plan->alias,
+							       plan->alias_len, result) != 0) {
 				return -EINVAL;
 			}
-			if (!result.ok) {
-				return runtime_device_config_result_errno(&result);
+			if (!result->ok) {
+				return runtime_device_config_result_errno(result);
 			}
 			break;
 		case SQDC_DEVICE_BINDING_RESOURCE_PACKAGE_SQDEVICE:
-			if (sq_vm_runtime_device_config_load_resource(runtime, plan.resource,
-								      plan.resource_len, &result) != 0 ||
-			    !result.ok) {
+			if (sq_vm_runtime_device_config_load_resource(runtime, plan->resource,
+								      plan->resource_len, result) != 0 ||
+			    !result->ok) {
 				return -EINVAL;
 			}
-			memset(&result, 0, sizeof(result));
-			if (sq_vm_runtime_device_config_rebind(runtime, plan.alias, plan.alias_len,
-							       &result) != 0) {
+			memset(result, 0, sizeof(*result));
+			if (sq_vm_runtime_device_config_rebind(runtime, plan->alias,
+							       plan->alias_len, result) != 0) {
 				return -EINVAL;
 			}
-			if (!result.ok) {
-				return runtime_device_config_result_errno(&result);
+			if (!result->ok) {
+				return runtime_device_config_result_errno(result);
 			}
 			break;
 		default:
@@ -2074,6 +2077,9 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->indicator_binding_active = false;
 	runtime->indicator_binding_pin = 0;
 	runtime->indicator_binding_active_low = false;
+	memset(&runtime->device_binding_scratch, 0, sizeof(runtime->device_binding_scratch));
+	memset(&runtime->device_binding_plan, 0, sizeof(runtime->device_binding_plan));
+	memset(&runtime->device_config_result, 0, sizeof(runtime->device_config_result));
 	memset(&runtime->device_config_draft, 0, sizeof(runtime->device_config_draft));
 	runtime->device_config_draft_loaded = false;
 	(void)sq_vm_runtime_apply_target_default_indicator_binding(runtime);

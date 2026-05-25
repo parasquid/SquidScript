@@ -1907,7 +1907,7 @@ pub fn parse_field_arg(kind: &str, value: &str) -> Result<Field, String> {
 }
 
 #[cfg(feature = "alloc")]
-fn encoded_frame_len(frame: &Frame) -> Result<usize, DecodeError> {
+pub fn encoded_frame_len(frame: &Frame) -> Result<usize, DecodeError> {
     HEADER_LEN
         .checked_add(encoded_fields_len(&frame.fields)?)
         .ok_or(DecodeError::OutputTooSmall {

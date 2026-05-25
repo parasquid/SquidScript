@@ -93,6 +93,9 @@ caller-owned buffers across the C/Rust boundary. Zephyr passes the received
 frame and its fixed session storage to Rust; Rust returns a bounded action with
 borrowed byte slices or stored session strings; Zephyr performs the filesystem
 or VM operation and then calls the completion function so Rust updates progress.
+Host tooling derives upload chunk payload size from the encoded protocol frame
+budget so install, resource, and temp-run chunk frames fit the firmware's
+fixed serial receive buffer without increasing firmware RAM.
 Rust also encodes `app-list`, lifecycle diagnostics, resource diagnostics,
 state export responses, and protocol error responses directly into Zephyr's
 caller-owned response buffer so Zephyr C does not stage duplicate TLV payload
@@ -182,12 +185,14 @@ budget reductions can be based on allocator high-water data instead of static
 map size alone. `runtime_static_bytes` includes the Zephyr VM runtime object;
 the runtime shares its VM initialization scratch buffer with later storage
 completion transfer storage because those buffers are not live at the same
-time; the ESP32-C3 Super Mini hardware suite currently reports
-`runtime_static_bytes=16608`. The current ESP32-C3 reference configuration
-keeps Zephyr's system heap at 49152 bytes because representative Wi-Fi status,
-scan, list, and AP workloads measured `ram_heap_max_allocated_bytes=36764`;
-remeasure before adding TCP, AP client throughput, BLE coexistence, or larger
-Wi-Fi workloads.
+time. `vm_sqbc_chunk_bytes` reports the bounded SQBC code/read transfer window
+used for file-backed installed app dispatch; the full installed `main.sqbc`
+payload is not resident in that window. The ESP32-C3 Super Mini hardware suite
+currently reports `runtime_static_bytes=16608`. The current ESP32-C3 reference
+configuration keeps Zephyr's system heap at 49152 bytes because representative
+Wi-Fi status, scan, list, and AP workloads measured
+`ram_heap_max_allocated_bytes=36764`; remeasure before adding TCP, AP client
+throughput, BLE coexistence, or larger Wi-Fi workloads.
 
 Wi-Fi diagnostics should distinguish internal firmware/driver state from
 external RF proof. A successful Zephyr Wi-Fi status record does not by itself

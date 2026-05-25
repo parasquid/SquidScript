@@ -128,6 +128,9 @@ struct sq_vm_runtime {
 	int32_t indicator_blink_on_ms;
 	int32_t indicator_blink_off_ms;
 	int64_t indicator_blink_next_ms;
+	SqvmDeviceBinding device_binding_scratch;
+	SqdcDeviceBindingPlan device_binding_plan;
+	SqvmDeviceConfigResult device_config_result;
 	SqdcConfig device_config_draft;
 	bool device_config_draft_loaded;
 	uint32_t gpio_configured_mask;

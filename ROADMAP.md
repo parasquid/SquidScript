@@ -76,16 +76,6 @@ for compiler, SQBC tooling, and VM semantics.
 - Extend the `app.triggers` model beyond current timer metadata declarations to
   future logical button/input triggers while keeping `event.on(...)` as the
   handler for the activation event that fires later.
-- Add SQBC lazy bytecode loading for installed apps to reduce firmware RAM.
-  Keep a small always-resident SQBC header/index with section, function,
-  trigger, constant, and entrypoint metadata; load function bodies or bounded
-  bytecode chunks from LittleFS only when the VM enters code that is not
-  resident. Model this as a resumable VM storage request through the existing
-  Zephyr host boundary with caller-owned fixed buffers, so app arm/trigger
-  registration can inspect only the trigger section and later activation can
-  load the target function/chunk without keeping a background VM resident.
-  Preserve current SQBC semantics; do not add compatibility versioning for
-  old bytecode.
 - Add a generic PWM-capable LED-like device output model beyond
   `service.indicator`, so future target-described GPIO/PWM endpoints can expose
   smooth brightness control without board-specific app code.
@@ -105,10 +95,12 @@ for compiler, SQBC tooling, and VM semantics.
   for the largest static allocations, especially VM runtime storage, work
   stacks, response/session buffers, logging, LittleFS pools, and file caches.
   Use `device resources` worker-stack and protocol-stack high-water diagnostics
-  before lowering stack budgets. The latest full Zephyr parity suite measured
-  `protocol_thread_stack_used_bytes=8164` of 8192 and
-  `vm_worker_stack_used_bytes=24448` of 24576, so stack reduction should start
-  by identifying the high-water command path instead of lowering budgets first.
+  before lowering stack budgets. A targeted inline device-binding launch check
+  measured `protocol_thread_stack_used_bytes=7604` of 8192 and
+  `vm_worker_stack_used_bytes=17056` of 24576 after moving launch scratch
+  storage out of the protocol stack. The latest full ESP32-C3 suite measured
+  `vm_worker_stack_used_bytes=24448` of 24576, so worker-stack reduction should
+  be investigated before lowering that budget.
   The current Wi-Fi-enabled build is under the RAM guard at
   `dram0_0_seg=212480` linker bytes, so RAM reduction is post-parity
   optimization rather than a feature-parity blocker.

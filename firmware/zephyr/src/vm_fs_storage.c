@@ -105,7 +105,15 @@ static int fs_storage_read_sqbc(void *user_data, size_t offset, uint8_t *out, si
 	if (storage == NULL) {
 		return -EINVAL;
 	}
-	return read_exact(storage->sqbc_path, offset, out, len);
+	int result = read_exact(storage->sqbc_path, offset, out, len);
+	if (result == 0) {
+		storage->sqbc_read_count++;
+		if (len > storage->sqbc_max_read_len) {
+			storage->sqbc_max_read_len = len;
+		}
+		storage->sqbc_total_read_len += len;
+	}
+	return result;
 }
 
 static int fs_storage_load_state(void *user_data, uint8_t *out, size_t out_len, size_t *len)
