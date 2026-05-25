@@ -132,9 +132,10 @@ generated target-metadata checks, and hardware activation. Inline GPIO and
 `.sqdevice` GPIO bindings that drive physical GPIO must name a GPIO-capable pin
 from the selected target metadata before Zephyr activates them.
 On targets with a firmware-defined default indicator, runtime initialization
-loads that target default into the same in-memory SQDC draft/rebind path before
-app code runs. Installed app launch also reads current SQBC top-level
-`device {}` metadata and applies saved global SQDC defaults, packaged
+and installed app start load that target default into the same in-memory SQDC
+draft/rebind path before app code runs. Installed app launch clears and
+rebuilds active logical bindings, applies saved global SQDC defaults, then
+reads current SQBC top-level `device {}` metadata and applies packaged
 `indicator.default` `.sqdevice` bindings, packaged display `.sqdevice`
 bindings, and inline `gpio:GPIO<n>` indicator bindings before
 `event.on("app.start")`. App-local top-level `device {}` bindings run after

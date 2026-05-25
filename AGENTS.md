@@ -170,6 +170,10 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
 - Use `scripts/c3-supermini-build.sh` to build or type-check the ESP32-C3
   reference firmware binary. The wrapper delegates to the Zephyr build wrapper
   and sources the repository Zephyr environment.
+- Run ESP32-C3 Super Mini Zephyr build wrappers outside the Codex sandbox in
+  this environment. Zephyr/ccache may write host cache files outside the
+  workspace, so sandboxed firmware builds can fail with read-only filesystem
+  errors unrelated to the source.
 - Dry-run new scripts before calling them ready: run `bash -n`, verify required tools and Rust targets, check wrapped command help where practical, and confirm wrapper scripts forward user-supplied arguments.
 - For firmware flashing scripts, avoid auto-monitoring by default when USB reset or re-enumeration can break the serial session. Prefer `squidc device monitor` for ESP32-C3 Super Mini SquidScript output, and use explicit opt-in monitoring such as `MONITOR_AFTER_FLASH=1` only when needed.
 - Do not filter or suppress flashing tool stderr in firmware scripts. Surface warnings and errors directly, and document known harmless tool warnings instead of hiding them.

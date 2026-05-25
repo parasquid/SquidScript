@@ -40,15 +40,6 @@ for compiler, SQBC tooling, and VM semantics.
   in Rust FFI; keep future binding planners on that side of the boundary.
   Remaining work is to generalize binding validation/application for additional
   services beyond the current indicator and display paths.
-- Finish moving `service.indicator.*` ownership to the resolved logical
-  `indicator.default` binding. The Zephyr runtime now tracks an active
-  indicator binding and routes indicator output through it, including package
-  SQDEVICE `device.config.rebind(...)` and installed app top-level
-  `device { indicator { use ... } }` activation before `app.start`. Target
-  default indicator bindings now initialize through the same SQDC draft/rebind
-  path from generated target metadata instead of direct runtime field
-  assignment. The current ESP32-C3 Super Mini behavior should remain GPIO8 LEDC
-  PWM by default.
 - Decide service priority and target support for currently spec-recognized but
   not SQBC-backed APIs: `httpServer.*`, `bleTransfer.*`, and any remaining
   `content.*` APIs beyond the current file pick/read family. Defer

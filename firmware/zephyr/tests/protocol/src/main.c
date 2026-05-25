@@ -33,6 +33,20 @@ struct sq_protocol_field {
 	uint16_t len;
 };
 
+static bool runtime_has_active_binding(const struct sq_vm_runtime *runtime, const char *alias)
+{
+	if (runtime == NULL || alias == NULL) {
+		return false;
+	}
+	for (size_t i = 0; i < runtime->active_binding_count; i++) {
+		if (runtime->active_bindings[i].active &&
+		    strcmp(runtime->active_bindings[i].alias, alias) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static void write_u32_le(uint8_t *bytes, uint32_t value)
 {
 	bytes[0] = value & 0xff;
@@ -2307,6 +2321,7 @@ ZTEST(squidscript_protocol, test_vm_runtime_callback_boundary_statuses)
 	zassert_equal(sq_vm_runtime_indicator_read(NULL, &indicator), -EINVAL);
 	zassert_equal(sq_vm_runtime_indicator_read(&runtime, NULL), -EINVAL);
 	zassert_equal(sq_vm_runtime_indicator_blink(&runtime, 0, 80), -EINVAL);
+	zassert_equal(sq_vm_runtime_indicator_write(&runtime, true), -ENODEV);
 	zassert_equal(sq_vm_runtime_hardware_gpio_write(NULL, (const uint8_t *)"GPIO8", 5, true),
 		      -EINVAL);
 	zassert_equal(sq_vm_runtime_hardware_gpio_write(&runtime, NULL, 0, true), -EINVAL);
@@ -2847,6 +2862,46 @@ ZTEST(squidscript_protocol, test_vm_runtime_resets_target_indicator_default_as_d
 #endif
 }
 
+ZTEST(squidscript_protocol, test_vm_runtime_rebuilds_indicator_default_on_app_start)
+{
+	struct sq_vm_runtime runtime = {0};
+	struct sq_app_store_vm_storage storage = {0};
+	struct sq_vm_storage_backend backend;
+
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "default-indicator-app",
+					       headless_counter_sqbc,
+					       sizeof(headless_counter_sqbc)),
+		      0);
+	zassert_equal(sq_app_store_vm_storage_for_app(test_fs_mount.mnt_point,
+						      "default-indicator-app", &storage),
+		      0);
+	backend = sq_app_store_vm_storage_backend(&storage);
+
+	sq_vm_runtime_init(&runtime);
+	sq_vm_runtime_set_store_mount_point(&runtime, test_fs_mount.mnt_point);
+	strncpy(runtime.current_app, "default-indicator-app", sizeof(runtime.current_app) - 1);
+	runtime.indicator_binding_active = true;
+	runtime.indicator_binding_pin = 10;
+	runtime.indicator_binding_active_low = false;
+
+	zassert_equal(sq_vm_runtime_start(&runtime, &backend, "app.start"), 0);
+	wait_runtime_done(&runtime);
+	zassert_equal(runtime.status, SQ_VM_RUNTIME_COMPLETE);
+	zassert_equal(runtime.result_code, 0);
+
+#if SQ_TARGET_INDICATOR_DEFAULT_HAS_GPIO
+	zassert_true(runtime.indicator_binding_active);
+	zassert_equal(runtime.indicator_binding_pin, SQ_TARGET_INDICATOR_DEFAULT_GPIO_PIN);
+	zassert_equal(runtime.indicator_binding_active_low,
+		      SQ_TARGET_INDICATOR_DEFAULT_ACTIVE_LOW != 0);
+#else
+	zassert_false(runtime.indicator_binding_active);
+#endif
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
 ZTEST(squidscript_protocol, test_vm_runtime_saves_device_config_draft_to_flash_sqdc)
 {
 	const uint8_t sqbc[] = {0x53, 0x51, 0x42, 0x43};
@@ -3026,8 +3081,8 @@ ZTEST(squidscript_protocol, test_vm_runtime_applies_packaged_display_binding_bef
 	wait_runtime_done(&runtime);
 	zassert_equal(runtime.status, SQ_VM_RUNTIME_COMPLETE);
 	zassert_equal(runtime.result_code, 0);
-	zassert_equal(runtime.active_binding_count, 1);
-	zassert_str_equal(runtime.active_bindings[0].alias, "display.status");
+	zassert_true(runtime_has_active_binding(&runtime, "indicator.default"));
+	zassert_true(runtime_has_active_binding(&runtime, "display.status"));
 	zassert_equal(runtime.output_count, 1);
 	zassert_str_equal(runtime.outputs[0], "display binding ready");
 	zassert_equal(runtime.drawlog_count, 1);
@@ -3501,6 +3556,7 @@ ZTEST(squidscript_protocol, test_vm_runtime_tracks_output_indicator_and_due_time
 	char event[SQ_VM_RUNTIME_EVENT_LEN];
 
 	sq_vm_runtime_init(&runtime);
+	sq_vm_runtime_reset(&runtime);
 
 	zassert_equal(sq_vm_runtime_record_output(&runtime, (const uint8_t *)"hello", 5), 0);
 	zassert_equal(runtime.output_count, 1);

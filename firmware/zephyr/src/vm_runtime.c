@@ -42,6 +42,7 @@ static size_t bounded_strlen(const char *value, size_t cap)
 static int parse_gpio_name(const uint8_t *name, size_t name_len, uint8_t *pin);
 static bool target_gpio_pin_supported(uint8_t pin);
 static int configure_raw_gpio(struct sq_vm_runtime *runtime, uint8_t pin);
+static void runtime_clear_active_bindings(struct sq_vm_runtime *runtime);
 
 static const uint8_t indicator_breathe_duties[SQ_VM_RUNTIME_INDICATOR_BREATHE_STEPS] = {
 	0,  0,  1,  2,	4,  6,  8,  11, 15, 18, 22, 26, 31, 35, 40, 45, 50,
@@ -1720,6 +1721,22 @@ static int sq_vm_runtime_apply_target_default_indicator_binding(struct sq_vm_run
 #endif
 }
 
+static void runtime_clear_active_bindings(struct sq_vm_runtime *runtime)
+{
+	if (runtime == NULL) {
+		return;
+	}
+	memset(runtime->active_bindings, 0, sizeof(runtime->active_bindings));
+	runtime->active_binding_count = 0;
+	runtime->indicator_breathe_active = false;
+	runtime->indicator_blink_active = false;
+	runtime->indicator_binding_active = false;
+	runtime->indicator_binding_pin = 0;
+	runtime->indicator_binding_active_low = false;
+	memset(&runtime->device_config_draft, 0, sizeof(runtime->device_config_draft));
+	runtime->device_config_draft_loaded = false;
+}
+
 static size_t runtime_fixed_text_len(const uint8_t *bytes, size_t cap)
 {
 	size_t len = 0;
@@ -2058,8 +2075,7 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->return_stack_count = 0;
 	memset(runtime->armed_timers, 0, sizeof(runtime->armed_timers));
 	runtime->armed_timer_count = 0;
-	memset(runtime->active_bindings, 0, sizeof(runtime->active_bindings));
-	runtime->active_binding_count = 0;
+	runtime_clear_active_bindings(runtime);
 	memset(runtime->outputs, 0, sizeof(runtime->outputs));
 	runtime->output_count = 0;
 	memset(runtime->drawlog, 0, sizeof(runtime->drawlog));
@@ -2074,14 +2090,9 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->indicator_blink_on_ms = 0;
 	runtime->indicator_blink_off_ms = 0;
 	runtime->indicator_blink_next_ms = 0;
-	runtime->indicator_binding_active = false;
-	runtime->indicator_binding_pin = 0;
-	runtime->indicator_binding_active_low = false;
 	memset(&runtime->device_binding_scratch, 0, sizeof(runtime->device_binding_scratch));
 	memset(&runtime->device_binding_plan, 0, sizeof(runtime->device_binding_plan));
 	memset(&runtime->device_config_result, 0, sizeof(runtime->device_config_result));
-	memset(&runtime->device_config_draft, 0, sizeof(runtime->device_config_draft));
-	runtime->device_config_draft_loaded = false;
 	(void)sq_vm_runtime_apply_target_default_indicator_binding(runtime);
 	runtime->gpio_configured_mask = 0;
 	runtime->gpio_state_mask = 0;
@@ -2278,6 +2289,11 @@ int sq_vm_runtime_start(struct sq_vm_runtime *runtime,
 	runtime->job_backend = *backend;
 	runtime->backend = &runtime->job_backend;
 	if (strcmp(event, "app.start") == 0) {
+		runtime_clear_active_bindings(runtime);
+		result = sq_vm_runtime_apply_target_default_indicator_binding(runtime);
+		if (result != 0) {
+			return result;
+		}
 		result = sq_vm_runtime_apply_saved_device_config(runtime);
 		if (result != 0) {
 			return result;
@@ -2358,21 +2374,10 @@ static int configure_indicator_gpio(struct sq_vm_runtime *runtime)
 	return 0;
 }
 
-static bool indicator_is_active_low(void)
-{
-#if SQ_VM_RUNTIME_HAS_INDICATOR_GPIO
-	return (indicator_gpio.dt_flags & GPIO_ACTIVE_LOW) != 0;
-#else
-	return false;
-#endif
-}
-
 static bool runtime_indicator_active_low(const struct sq_vm_runtime *runtime)
 {
-	if (runtime != NULL && runtime->indicator_binding_active) {
-		return runtime->indicator_binding_active_low;
-	}
-	return indicator_is_active_low();
+	return runtime != NULL && runtime->indicator_binding_active &&
+	       runtime->indicator_binding_active_low;
 }
 
 static bool indicator_uses_dt_gpio_pin(uint8_t pin)
@@ -2390,16 +2395,13 @@ static uint8_t runtime_indicator_pin(const struct sq_vm_runtime *runtime)
 	if (runtime != NULL && runtime->indicator_binding_active) {
 		return runtime->indicator_binding_pin;
 	}
-#if SQ_VM_RUNTIME_HAS_INDICATOR_GPIO
-	return indicator_gpio.pin;
-#else
 	return 0;
-#endif
 }
 
-static bool indicator_uses_raw_gpio(uint8_t pin)
+static bool runtime_indicator_uses_pin(const struct sq_vm_runtime *runtime, uint8_t pin)
 {
-	return indicator_uses_dt_gpio_pin(pin);
+	return runtime != NULL && runtime->indicator_binding_active &&
+	       runtime->indicator_binding_pin == pin;
 }
 
 static int set_indicator_raw_output(struct sq_vm_runtime *runtime, bool raw_high)
@@ -2428,6 +2430,10 @@ static int set_indicator_brightness(struct sq_vm_runtime *runtime, uint8_t brigh
 	uint8_t pin = runtime_indicator_pin(runtime);
 	bool active_low = runtime_indicator_active_low(runtime);
 	ARG_UNUSED(active_low);
+
+	if (runtime == NULL || !runtime->indicator_binding_active) {
+		return -ENODEV;
+	}
 #if SQ_VM_RUNTIME_HAS_INDICATOR_PWM
 	uint8_t raw_high_percent = active_low ? (uint8_t)(100U - clamped) : clamped;
 #endif
@@ -2581,10 +2587,11 @@ int sq_vm_runtime_hardware_gpio_write(struct sq_vm_runtime *runtime, const uint8
 	if (runtime == NULL || parse_gpio_name(name, name_len, &pin) != 0) {
 		return -EINVAL;
 	}
-	if (indicator_uses_raw_gpio(pin)) {
+	if (runtime_indicator_uses_pin(runtime, pin)) {
 		runtime->indicator_breathe_active = false;
 		runtime->indicator_blink_active = false;
-		runtime->indicator_state = indicator_is_active_low() ? !value : value;
+		runtime->indicator_state =
+			runtime_indicator_active_low(runtime) ? !value : value;
 		bit = BIT(pin);
 		runtime->gpio_configured_mask |= bit;
 		if (value) {
