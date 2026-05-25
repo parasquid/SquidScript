@@ -9,7 +9,7 @@ it from this file in the same change or in the next cleanup commit.
 Goal: make Zephyr the only real-firmware runtime while keeping Rust authoritative
 for compiler, SQBC tooling, and VM semantics.
 
-### 1. Expand Zephyr VM Hosting ABI
+### 1. Keep Future Zephyr VM Hosting ABI Additions Covered
 
 - Keep the Zephyr VM ABI aligned with implemented SQBC builtins. Current
   builtins `1..45` have Rust VM host callbacks plus Zephyr FFI and runtime
@@ -18,13 +18,12 @@ for compiler, SQBC tooling, and VM semantics.
   result records. Future service work should promote a spec/API slice through
   compiler lowering, SQBC builtin IDs, VM host callbacks, FFI, Zephyr runtime
   wiring, docs, and tests together.
-- Expand FFI equivalence tests and Zephyr ztests for remaining edge cases in
-  storage, state, timers, display, GPIO, Wi-Fi service records, lifecycle
-  callbacks, and VM error conversion.
-  `system.memory()` and `system.storage("apps")` now have Zephyr FFI host
-  callbacks and hardware coverage; keep future service additions on the same
-  caller-owned-buffer pattern. Explicit Zephyr VM FFI status-to-errno mapping
-  and `device errors` status labels are implemented.
+- The currently implemented Zephyr VM host callbacks have Rust FFI equivalence
+  tests and Zephyr ztests for their success, boundary, unsupported, and
+  error/status behavior where those states apply. Keep
+  `docs/zephyr_vm_host_abi_coverage.md` current when future callbacks are
+  added, and keep future service additions on the same caller-owned-buffer
+  pattern used by `system.memory()` and `system.storage("apps")`.
 
 ### 2. Port Runtime Services To Zephyr
 
@@ -32,13 +31,15 @@ for compiler, SQBC tooling, and VM semantics.
   APIs. `device.config.load("package:...")` now reads installed foreground app
   package resources into a bounded runtime draft, and `device.config.set(...)`
   edits that draft through the no-alloc Rust FFI core. `device.config.rebind`
-  now validates and activates `indicator.default` GPIO bindings, and
-  `device.config.save("flash")` persists binary SQDC to firmware-owned storage.
-  Saved global SQDC defaults are loaded during app-start binding initialization
-  before app-local `device {}` bindings. Remaining work is to generalize
-  binding validation/application beyond the current indicator path. Top-level
-  app `device {}` binding classification and inline GPIO SQDC normalization now
-  live in Rust FFI; keep future binding planners on that side of the boundary.
+  now validates and activates `indicator.default` GPIO bindings plus package
+  display bindings such as `display.status`, and `device.config.save("flash")`
+  persists binary SQDC to firmware-owned storage. Saved global SQDC defaults
+  are loaded during app-start binding initialization before app-local
+  `device {}` bindings. Top-level app `device {}` binding classification,
+  package display binding planning, and inline GPIO SQDC normalization now live
+  in Rust FFI; keep future binding planners on that side of the boundary.
+  Remaining work is to generalize binding validation/application for additional
+  services beyond the current indicator and display paths.
 - Finish moving `service.indicator.*` ownership to the resolved logical
   `indicator.default` binding. The Zephyr runtime now tracks an active
   indicator binding and routes indicator output through it, including package
@@ -92,11 +93,14 @@ for compiler, SQBC tooling, and VM semantics.
   `indicator.default` implementation. The compiler, SQBC metadata, and Zephyr
   runtime now support packaged `.sqdevice` resources and simple inline GPIO
   resources such as `indicator { use "gpio:GPIO8" }` for one-pin LED cases
-  when the selected target metadata marks that pin GPIO-capable. Remaining work
-  is to support multiple `use` entries for one logical indicator when the app
-  intentionally wants `service.indicator.write(...)` to drive more than one
-  physical output, and generalize the normalized binding model beyond
-  `indicator.default`.
+  when the selected target metadata marks that pin GPIO-capable. Zephyr also
+  applies packaged display bindings such as
+  `display "status" { use "device/status-display.sqdevice" }` into the runtime
+  active-binding table before app start. Remaining work is to support multiple
+  `use` entries for one logical indicator when the app intentionally wants
+  `service.indicator.write(...)` to drive more than one physical output, and
+  extend the normalized binding model to additional services beyond indicator
+  and display.
 - Reduce ESP32-C3 Zephyr RAM after service parity. Identify concrete reductions
   for the largest static allocations, especially VM runtime storage, work
   stacks, response/session buffers, logging, LittleFS pools, and file caches.

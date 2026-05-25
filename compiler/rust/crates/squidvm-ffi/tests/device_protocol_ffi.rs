@@ -214,6 +214,36 @@ fn ffi_plans_supported_device_binding_resources_without_c_state_machine_logic() 
         "device/indicator.sqdevice"
     );
     assert_eq!(package_inline_config.count, 0);
+
+    let mut display_plan = SqdcDeviceBindingPlan::default();
+    let mut display_inline_config = SqdcConfig::default();
+    let status = unsafe {
+        squidvm_ffi::sqdc_plan_device_binding(
+            b"display".as_ptr(),
+            b"display".len(),
+            b"status".as_ptr(),
+            b"status".len(),
+            b"device/status-display.sqdevice".as_ptr(),
+            b"device/status-display.sqdevice".len(),
+            &mut display_plan,
+            &mut display_inline_config,
+        )
+    };
+
+    assert_eq!(status, SqdcStatus::Ok);
+    assert_eq!(
+        display_plan.kind,
+        SqdcDeviceBindingResourceKind::PackageSqdevice
+    );
+    assert_eq!(
+        fixed_text(&display_plan.alias, display_plan.alias_len),
+        "display.status"
+    );
+    assert_eq!(
+        fixed_text(&display_plan.resource, display_plan.resource_len),
+        "device/status-display.sqdevice"
+    );
+    assert_eq!(display_inline_config.count, 0);
 }
 
 #[test]
@@ -222,12 +252,12 @@ fn ffi_rejects_unsupported_device_bindings_and_bad_inline_gpio_resources() {
     let mut inline_config = SqdcConfig::default();
     let status = unsafe {
         squidvm_ffi::sqdc_plan_device_binding(
-            b"display".as_ptr(),
-            b"display".len(),
+            b"sensor".as_ptr(),
+            b"sensor".len(),
             b"default".as_ptr(),
             b"default".len(),
-            b"device/display.sqdevice".as_ptr(),
-            b"device/display.sqdevice".len(),
+            b"device/sensor.sqdevice".as_ptr(),
+            b"device/sensor.sqdevice".len(),
             &mut plan,
             &mut inline_config,
         )

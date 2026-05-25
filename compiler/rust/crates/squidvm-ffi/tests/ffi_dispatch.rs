@@ -595,6 +595,284 @@ unsafe extern "C" fn system_storage_text(
     0
 }
 
+unsafe extern "C" fn failing_indicator_write(_user_data: *mut c_void, _value: bool) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_indicator_toggle(_user_data: *mut c_void) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_indicator_read(_user_data: *mut c_void, _out: *mut bool) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_indicator_breathe(_user_data: *mut c_void) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_indicator_blink(
+    _user_data: *mut c_void,
+    _on_ms: i32,
+    _off_ms: i32,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_hardware_gpio_write(
+    _user_data: *mut c_void,
+    _name: *const u8,
+    _name_len: usize,
+    _value: bool,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_hardware_gpio_toggle(
+    _user_data: *mut c_void,
+    _name: *const u8,
+    _name_len: usize,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_hardware_gpio_read(
+    _user_data: *mut c_void,
+    _name: *const u8,
+    _name_len: usize,
+    _out: *mut bool,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_display_select(
+    _user_data: *mut c_void,
+    _name: *const u8,
+    _name_len: usize,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_system_memory_text(
+    _user_data: *mut c_void,
+    _out: *mut u8,
+    _out_cap: usize,
+    _out_len: *mut usize,
+) -> i32 {
+    -28
+}
+
+unsafe extern "C" fn failing_app_arm(
+    _user_data: *mut c_void,
+    _app: *const u8,
+    _app_len: usize,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_app_disarm(
+    _user_data: *mut c_void,
+    _app: *const u8,
+    _app_len: usize,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_app_launch(
+    _user_data: *mut c_void,
+    _app: *const u8,
+    _app_len: usize,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_timer_after(
+    _user_data: *mut c_void,
+    _event: *const u8,
+    _event_len: usize,
+    _delay_ms: i32,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_timer_every(
+    _user_data: *mut c_void,
+    _event: *const u8,
+    _event_len: usize,
+    _interval_ms: i32,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_wifi_start_ap(
+    _user_data: *mut c_void,
+    _ssid: *const u8,
+    _ssid_len: usize,
+    _out: *mut squidvm_ffi::SqvmWifiActionResult,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_wifi_stop_ap(
+    _user_data: *mut c_void,
+    _out: *mut squidvm_ffi::SqvmWifiActionResult,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_wifi_connect(
+    _user_data: *mut c_void,
+    _profile: *const u8,
+    _profile_len: usize,
+    _out: *mut squidvm_ffi::SqvmWifiActionResult,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_wifi_disconnect(
+    _user_data: *mut c_void,
+    _out: *mut squidvm_ffi::SqvmWifiActionResult,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_wifi_get_ap_ip(
+    _user_data: *mut c_void,
+    _out: *mut squidvm_ffi::SqvmWifiApIp,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_wifi_status(
+    _user_data: *mut c_void,
+    _out: *mut squidvm_ffi::SqvmWifiStatus,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_wifi_scan(
+    _user_data: *mut c_void,
+    _out: *mut squidvm_ffi::SqvmWifiScanResult,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_device_config_load(
+    _user_data: *mut c_void,
+    _source: *const u8,
+    _source_len: usize,
+    _out: *mut SqvmDeviceConfigResult,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_device_config_set(
+    _user_data: *mut c_void,
+    _key: *const u8,
+    _key_len: usize,
+    _value: SqvmDeviceConfigValue,
+    _out: *mut SqvmDeviceConfigResult,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_device_config_rebind(
+    _user_data: *mut c_void,
+    _alias: *const u8,
+    _alias_len: usize,
+    _out: *mut SqvmDeviceConfigResult,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_device_config_save(
+    _user_data: *mut c_void,
+    _destination: *const u8,
+    _destination_len: usize,
+    _out: *mut SqvmDeviceConfigResult,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_content_pick_file(
+    _user_data: *mut c_void,
+    _extension: *const u8,
+    _extension_len: usize,
+    _out: *mut SqvmContentPickFileResult,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_content_read_text(
+    _user_data: *mut c_void,
+    _path: *const u8,
+    _path_len: usize,
+    _out: *mut SqvmContentReadTextResult,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_content_read_lines(
+    _user_data: *mut c_void,
+    _path: *const u8,
+    _path_len: usize,
+    _max_lines: i32,
+    _out: *mut SqvmContentReadLinesResult,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_app_registry_list(
+    _user_data: *mut c_void,
+    _out: *mut SqvmAppRegistryEntry,
+    _out_cap: usize,
+    _out_count: *mut usize,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_app_registry_get(
+    _user_data: *mut c_void,
+    _app: *const u8,
+    _app_len: usize,
+    _out: *mut SqvmAppRegistryEntry,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_app_process_stack(
+    _user_data: *mut c_void,
+    _out: *mut SqvmAppStackEntry,
+    _out_cap: usize,
+    _out_count: *mut usize,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_app_armed_stack(
+    _user_data: *mut c_void,
+    _out: *mut SqvmAppStackEntry,
+    _out_cap: usize,
+    _out_count: *mut usize,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn malformed_wifi_status(
+    _user_data: *mut c_void,
+    out: *mut squidvm_ffi::SqvmWifiStatus,
+) -> i32 {
+    *out = squidvm_ffi::SqvmWifiStatus {
+        active: false,
+        state: ptr::null(),
+        state_len: 7,
+        backend: b"zephyr".as_ptr(),
+        backend_len: b"zephyr".len(),
+        ..squidvm_ffi::SqvmWifiStatus::default()
+    };
+    0
+}
+
 unsafe extern "C" fn app_registry_list(
     user_data: *mut c_void,
     out: *mut SqvmAppRegistryEntry,
@@ -817,6 +1095,18 @@ screen("main") {}
     )
 }
 
+fn compile_indicator_toggle_read_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-indicator-toggle-read"
+event.on("app.start") {
+  service.indicator.toggle()
+  debug.print("indicator", service.indicator.read())
+}
+screen("main") {}
+"#,
+    )
+}
+
 fn compile_hardware_gpio_sqbc() -> Vec<u8> {
     compile_sqbc(
         r#"app "ffi-gpio"
@@ -843,6 +1133,17 @@ event.on("app.start") {
 event.on("timer.break") {
   app.disarm("break-reminder")
   debug.print("lifecycle timer")
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_app_disarm_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-disarm"
+event.on("app.start") {
+  app.disarm("break-reminder")
 }
 screen("main") {}
 "#,
@@ -1748,6 +2049,627 @@ fn dispatches_app_lifecycle_and_timer_after_callbacks() {
         host.output,
         vec!["lifecycle start".to_string(), "lifecycle timer".to_string()]
     );
+}
+
+#[test]
+fn callback_errors_surface_as_vm_error_status() {
+    let cases: &[(&str, Vec<u8>, fn(&mut SqvmCallbacks))] = &[
+        (
+            "indicator write",
+            compile_blinky_service_sqbc(),
+            |callbacks| callbacks.indicator_write = Some(failing_indicator_write),
+        ),
+        (
+            "indicator toggle",
+            compile_indicator_toggle_read_sqbc(),
+            |callbacks| callbacks.indicator_toggle = Some(failing_indicator_toggle),
+        ),
+        (
+            "indicator read",
+            compile_indicator_toggle_read_sqbc(),
+            |callbacks| callbacks.indicator_read = Some(failing_indicator_read),
+        ),
+        (
+            "indicator breathe",
+            compile_indicator_breathe_sqbc(),
+            |callbacks| callbacks.indicator_breathe = Some(failing_indicator_breathe),
+        ),
+        (
+            "indicator blink",
+            compile_indicator_blink_sqbc(),
+            |callbacks| callbacks.indicator_blink = Some(failing_indicator_blink),
+        ),
+        (
+            "display select",
+            compile_display_sqbc(),
+            |callbacks| callbacks.display_select = Some(failing_display_select),
+        ),
+        (
+            "hardware gpio write",
+            compile_hardware_gpio_sqbc(),
+            |callbacks| callbacks.hardware_gpio_write = Some(failing_hardware_gpio_write),
+        ),
+        (
+            "hardware gpio read",
+            compile_hardware_gpio_sqbc(),
+            |callbacks| callbacks.hardware_gpio_read = Some(failing_hardware_gpio_read),
+        ),
+        (
+            "hardware gpio toggle",
+            compile_hardware_gpio_sqbc(),
+            |callbacks| callbacks.hardware_gpio_toggle = Some(failing_hardware_gpio_toggle),
+        ),
+        (
+            "app arm",
+            compile_lifecycle_sqbc(),
+            |callbacks| callbacks.app_arm = Some(failing_app_arm),
+        ),
+        (
+            "app launch",
+            compile_lifecycle_sqbc(),
+            |callbacks| callbacks.app_launch = Some(failing_app_launch),
+        ),
+        (
+            "app disarm",
+            compile_app_disarm_sqbc(),
+            |callbacks| callbacks.app_disarm = Some(failing_app_disarm),
+        ),
+        (
+            "app registry list",
+            compile_app_registry_sqbc(),
+            |callbacks| callbacks.app_registry_list = Some(failing_app_registry_list),
+        ),
+        (
+            "app registry get",
+            compile_app_registry_sqbc(),
+            |callbacks| callbacks.app_registry_get = Some(failing_app_registry_get),
+        ),
+        (
+            "app process stack",
+            compile_app_lifecycle_inspection_sqbc(),
+            |callbacks| callbacks.app_process_stack = Some(failing_app_process_stack),
+        ),
+        (
+            "app armed stack",
+            compile_app_lifecycle_inspection_sqbc(),
+            |callbacks| callbacks.app_armed_stack = Some(failing_app_armed_stack),
+        ),
+        (
+            "timer after",
+            compile_lifecycle_sqbc(),
+            |callbacks| callbacks.timer_after = Some(failing_timer_after),
+        ),
+        (
+            "timer every",
+            compile_blinky_service_sqbc(),
+            |callbacks| callbacks.timer_every = Some(failing_timer_every),
+        ),
+        (
+            "wifi start ap",
+            compile_wifi_actions_sqbc(),
+            |callbacks| callbacks.wifi_start_ap = Some(failing_wifi_start_ap),
+        ),
+        (
+            "wifi get ap ip",
+            compile_wifi_actions_sqbc(),
+            |callbacks| callbacks.wifi_get_ap_ip = Some(failing_wifi_get_ap_ip),
+        ),
+        (
+            "wifi stop ap",
+            compile_wifi_actions_sqbc(),
+            |callbacks| callbacks.wifi_stop_ap = Some(failing_wifi_stop_ap),
+        ),
+        (
+            "wifi connect",
+            compile_wifi_actions_sqbc(),
+            |callbacks| callbacks.wifi_connect = Some(failing_wifi_connect),
+        ),
+        (
+            "wifi disconnect",
+            compile_wifi_actions_sqbc(),
+            |callbacks| callbacks.wifi_disconnect = Some(failing_wifi_disconnect),
+        ),
+        (
+            "wifi status",
+            compile_wifi_sqbc(),
+            |callbacks| callbacks.wifi_status = Some(failing_wifi_status),
+        ),
+        (
+            "wifi scan",
+            compile_wifi_sqbc(),
+            |callbacks| callbacks.wifi_scan = Some(failing_wifi_scan),
+        ),
+        (
+            "device config load",
+            compile_device_config_sqbc(),
+            |callbacks| callbacks.device_config_load = Some(failing_device_config_load),
+        ),
+        (
+            "device config set",
+            compile_device_config_sqbc(),
+            |callbacks| callbacks.device_config_set = Some(failing_device_config_set),
+        ),
+        (
+            "device config rebind",
+            compile_device_config_sqbc(),
+            |callbacks| callbacks.device_config_rebind = Some(failing_device_config_rebind),
+        ),
+        (
+            "device config save",
+            compile_device_config_sqbc(),
+            |callbacks| callbacks.device_config_save = Some(failing_device_config_save),
+        ),
+        (
+            "content pick file",
+            compile_content_pick_file_sqbc(),
+            |callbacks| callbacks.content_pick_file = Some(failing_content_pick_file),
+        ),
+        (
+            "content read text",
+            compile_content_read_sqbc(),
+            |callbacks| callbacks.content_read_text = Some(failing_content_read_text),
+        ),
+        (
+            "content read lines",
+            compile_content_read_sqbc(),
+            |callbacks| callbacks.content_read_lines = Some(failing_content_read_lines),
+        ),
+        (
+            "system memory",
+            compile_system_resources_sqbc(),
+            |callbacks| callbacks.system_memory_text = Some(failing_system_memory_text),
+        ),
+    ];
+
+    for (name, sqbc, break_callback) in cases {
+        let mut host = Host {
+            sqbc: sqbc.clone(),
+            ..Host::default()
+        };
+        let mut scratch = vec![0u8; 4096];
+        let mut context = sqvm_context_init();
+        let mut host_callbacks = callbacks(&mut host);
+        break_callback(&mut host_callbacks);
+
+        let status = unsafe {
+            sqvm_context_init_in_place(
+                &mut context,
+                host_callbacks,
+                scratch.as_mut_ptr(),
+                scratch.len(),
+            )
+        };
+        assert_eq!(status, SqvmStatus::Ok, "{name}");
+
+        let status = unsafe {
+            sqvm_dispatch(
+                &mut context,
+                host_callbacks,
+                b"app.start".as_ptr(),
+                b"app.start".len(),
+            )
+        };
+
+        assert_eq!(status, SqvmStatus::VmError, "{name}");
+    }
+}
+
+#[test]
+fn callback_result_records_reject_invalid_required_strings() {
+    let mut host = Host {
+        sqbc: compile_wifi_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+    let mut host_callbacks = callbacks(&mut host);
+    host_callbacks.wifi_status = Some(malformed_wifi_status);
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            host_callbacks,
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            host_callbacks,
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+
+    assert_eq!(status, SqvmStatus::VmError);
+}
+
+#[test]
+fn missing_optional_service_callbacks_return_unsupported_records() {
+    let mut host = Host {
+        sqbc: compile_wifi_actions_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+    let mut host_callbacks = callbacks(&mut host);
+    host_callbacks.wifi_start_ap = None;
+    host_callbacks.wifi_get_ap_ip = None;
+    host_callbacks.wifi_stop_ap = None;
+    host_callbacks.wifi_connect = None;
+    host_callbacks.wifi_disconnect = None;
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            host_callbacks,
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            host_callbacks,
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(host.output, vec!["false null false false false"]);
+
+    host = Host {
+        sqbc: compile_wifi_sqbc(),
+        ..Host::default()
+    };
+    scratch = vec![0u8; 4096];
+    context = sqvm_context_init();
+    host_callbacks = callbacks(&mut host);
+    host_callbacks.wifi_scan = None;
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            host_callbacks,
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            host_callbacks,
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(
+        host.output,
+        vec![
+            "stopped zephyr true unsupported".to_string(),
+            "false unsupported 0".to_string()
+        ]
+    );
+}
+
+#[test]
+fn missing_device_config_callbacks_return_unsupported_records() {
+    let mut host = Host {
+        sqbc: compile_device_config_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+    let mut host_callbacks = callbacks(&mut host);
+    host_callbacks.device_config_load = None;
+    host_callbacks.device_config_set = None;
+    host_callbacks.device_config_rebind = None;
+    host_callbacks.device_config_save = None;
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            host_callbacks,
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            host_callbacks,
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(
+        host.output,
+        vec![
+            "false unsupported null".to_string(),
+            "false unsupported false null false".to_string()
+        ]
+    );
+}
+
+#[test]
+fn missing_content_callbacks_return_unsupported_records() {
+    let mut pick_host = Host {
+        sqbc: compile_content_pick_file_sqbc(),
+        ..Host::default()
+    };
+    let mut read_host = Host {
+        sqbc: compile_content_read_sqbc(),
+        ..Host::default()
+    };
+
+    for host in [&mut pick_host, &mut read_host] {
+        let mut scratch = vec![0u8; 4096];
+        let mut context = sqvm_context_init();
+        let mut host_callbacks = callbacks(host);
+        host_callbacks.content_pick_file = None;
+        host_callbacks.content_read_text = None;
+        host_callbacks.content_read_lines = None;
+
+        let status = unsafe {
+            sqvm_context_init_in_place(
+                &mut context,
+                host_callbacks,
+                scratch.as_mut_ptr(),
+                scratch.len(),
+            )
+        };
+        assert_eq!(status, SqvmStatus::Ok);
+
+        let status = unsafe {
+            sqvm_dispatch(
+                &mut context,
+                host_callbacks,
+                b"app.start".as_ptr(),
+                b"app.start".len(),
+            )
+        };
+
+        assert_eq!(status, SqvmStatus::Ok);
+    }
+
+    assert_eq!(pick_host.output, vec!["false unsupported null".to_string()]);
+    assert_eq!(
+        read_host.output,
+        vec![
+            "false unsupported null".to_string(),
+            "false unsupported <list>".to_string()
+        ]
+    );
+}
+
+#[test]
+fn missing_noop_callbacks_remain_optional() {
+    let cases: &[(&str, Vec<u8>, fn(&mut SqvmCallbacks))] = &[
+        (
+            "debug output",
+            compile_blinky_service_sqbc(),
+            |callbacks| callbacks.debug_output = None,
+        ),
+        (
+            "display clear",
+            compile_display_sqbc(),
+            |callbacks| callbacks.display_clear = None,
+        ),
+        (
+            "display text",
+            compile_display_sqbc(),
+            |callbacks| callbacks.display_text = None,
+        ),
+        (
+            "display rect",
+            compile_display_sqbc(),
+            |callbacks| callbacks.display_rect = None,
+        ),
+        (
+            "display line",
+            compile_display_sqbc(),
+            |callbacks| callbacks.display_line = None,
+        ),
+        (
+            "display image",
+            compile_display_sqbc(),
+            |callbacks| callbacks.display_image = None,
+        ),
+        (
+            "display draw",
+            compile_display_sqbc(),
+            |callbacks| callbacks.display_draw = None,
+        ),
+    ];
+
+    for (name, sqbc, remove_callback) in cases {
+        let mut host = Host {
+            sqbc: sqbc.clone(),
+            ..Host::default()
+        };
+        let mut scratch = vec![0u8; 4096];
+        let mut context = sqvm_context_init();
+        let mut host_callbacks = callbacks(&mut host);
+        remove_callback(&mut host_callbacks);
+
+        let status = unsafe {
+            sqvm_context_init_in_place(
+                &mut context,
+                host_callbacks,
+                scratch.as_mut_ptr(),
+                scratch.len(),
+            )
+        };
+        assert_eq!(status, SqvmStatus::Ok, "{name}");
+
+        let status = unsafe {
+            sqvm_dispatch(
+                &mut context,
+                host_callbacks,
+                b"app.start".as_ptr(),
+                b"app.start".len(),
+            )
+        };
+
+        assert_eq!(status, SqvmStatus::Ok, "{name}");
+    }
+}
+
+#[test]
+fn missing_required_callbacks_surface_as_vm_error_status() {
+    let cases: &[(&str, Vec<u8>, fn(&mut SqvmCallbacks))] = &[
+        (
+            "display select",
+            compile_display_sqbc(),
+            |callbacks| callbacks.display_select = None,
+        ),
+        (
+            "indicator write",
+            compile_blinky_service_sqbc(),
+            |callbacks| callbacks.indicator_write = None,
+        ),
+        (
+            "indicator toggle",
+            compile_indicator_toggle_read_sqbc(),
+            |callbacks| callbacks.indicator_toggle = None,
+        ),
+        (
+            "indicator read",
+            compile_indicator_toggle_read_sqbc(),
+            |callbacks| callbacks.indicator_read = None,
+        ),
+        (
+            "indicator breathe",
+            compile_indicator_breathe_sqbc(),
+            |callbacks| callbacks.indicator_breathe = None,
+        ),
+        (
+            "indicator blink",
+            compile_indicator_blink_sqbc(),
+            |callbacks| callbacks.indicator_blink = None,
+        ),
+        (
+            "hardware gpio write",
+            compile_hardware_gpio_sqbc(),
+            |callbacks| callbacks.hardware_gpio_write = None,
+        ),
+        (
+            "hardware gpio read",
+            compile_hardware_gpio_sqbc(),
+            |callbacks| callbacks.hardware_gpio_read = None,
+        ),
+        (
+            "hardware gpio toggle",
+            compile_hardware_gpio_sqbc(),
+            |callbacks| callbacks.hardware_gpio_toggle = None,
+        ),
+        (
+            "app arm",
+            compile_lifecycle_sqbc(),
+            |callbacks| callbacks.app_arm = None,
+        ),
+        (
+            "app launch",
+            compile_lifecycle_sqbc(),
+            |callbacks| callbacks.app_launch = None,
+        ),
+        (
+            "app disarm",
+            compile_app_disarm_sqbc(),
+            |callbacks| callbacks.app_disarm = None,
+        ),
+        (
+            "timer every",
+            compile_blinky_service_sqbc(),
+            |callbacks| callbacks.timer_every = None,
+        ),
+        (
+            "timer after",
+            compile_lifecycle_sqbc(),
+            |callbacks| callbacks.timer_after = None,
+        ),
+        (
+            "wifi status",
+            compile_wifi_sqbc(),
+            |callbacks| callbacks.wifi_status = None,
+        ),
+        (
+            "app registry list",
+            compile_app_registry_sqbc(),
+            |callbacks| callbacks.app_registry_list = None,
+        ),
+        (
+            "app registry get",
+            compile_app_registry_sqbc(),
+            |callbacks| callbacks.app_registry_get = None,
+        ),
+        (
+            "app process stack",
+            compile_app_lifecycle_inspection_sqbc(),
+            |callbacks| callbacks.app_process_stack = None,
+        ),
+        (
+            "app armed stack",
+            compile_app_lifecycle_inspection_sqbc(),
+            |callbacks| callbacks.app_armed_stack = None,
+        ),
+        (
+            "system memory",
+            compile_system_resources_sqbc(),
+            |callbacks| callbacks.system_memory_text = None,
+        ),
+        (
+            "system storage",
+            compile_system_resources_sqbc(),
+            |callbacks| callbacks.system_storage_text = None,
+        ),
+    ];
+
+    for (name, sqbc, remove_callback) in cases {
+        let mut host = Host {
+            sqbc: sqbc.clone(),
+            ..Host::default()
+        };
+        let mut scratch = vec![0u8; 4096];
+        let mut context = sqvm_context_init();
+        let mut host_callbacks = callbacks(&mut host);
+        remove_callback(&mut host_callbacks);
+
+        let status = unsafe {
+            sqvm_context_init_in_place(
+                &mut context,
+                host_callbacks,
+                scratch.as_mut_ptr(),
+                scratch.len(),
+            )
+        };
+        assert_eq!(status, SqvmStatus::Ok, "{name}");
+
+        let status = unsafe {
+            sqvm_dispatch(
+                &mut context,
+                host_callbacks,
+                b"app.start".as_ptr(),
+                b"app.start".len(),
+            )
+        };
+
+        assert_eq!(status, SqvmStatus::VmError, "{name}");
+    }
 }
 
 #[test]

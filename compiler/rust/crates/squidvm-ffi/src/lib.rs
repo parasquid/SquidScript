@@ -3670,7 +3670,7 @@ fn plan_device_binding_bytes(
     out: &mut SqdcDeviceBindingPlan,
     out_inline_config: Option<&mut SqdcConfig>,
 ) -> SqdcStatus {
-    if service != b"indicator" || binding != b"default" {
+    if !valid_device_binding_name(service) || !valid_device_binding_name(binding) {
         return SqdcStatus::InvalidArgument;
     }
     if resource.is_empty() || resource.len() >= SQVM_DEVICE_BINDING_RESOURCE_CAP {
@@ -3678,13 +3678,21 @@ fn plan_device_binding_bytes(
     }
 
     *out = SqdcDeviceBindingPlan::default();
-    let alias = b"indicator.default";
+    let mut alias = [0u8; SQVM_DEVICE_BINDING_NAME_CAP];
+    let Some(alias_len) = build_device_binding_alias(service, binding, &mut alias) else {
+        return SqdcStatus::InvalidArgument;
+    };
+    let alias = &alias[..alias_len];
     out.alias[..alias.len()].copy_from_slice(alias);
     out.alias_len = alias.len();
     out.resource[..resource.len()].copy_from_slice(resource);
     out.resource_len = resource.len();
 
     if let Some(pin_name) = parse_inline_gpio_resource(resource) {
+        if service != b"indicator" || binding != b"default" {
+            *out = SqdcDeviceBindingPlan::default();
+            return SqdcStatus::InvalidArgument;
+        }
         let Some(out_inline_config) = out_inline_config else {
             *out = SqdcDeviceBindingPlan::default();
             return SqdcStatus::InvalidArgument;
@@ -3699,6 +3707,10 @@ fn plan_device_binding_bytes(
     }
 
     if is_safe_sqdevice_path_bytes(resource) {
+        if !supports_package_device_binding(service, binding) {
+            *out = SqdcDeviceBindingPlan::default();
+            return SqdcStatus::InvalidArgument;
+        }
         if let Some(out_inline_config) = out_inline_config {
             *out_inline_config = SqdcConfig::default();
         }
@@ -3708,6 +3720,34 @@ fn plan_device_binding_bytes(
 
     *out = SqdcDeviceBindingPlan::default();
     SqdcStatus::InvalidArgument
+}
+
+fn valid_device_binding_name(value: &[u8]) -> bool {
+    !value.is_empty()
+        && value.len() < SQVM_DEVICE_BINDING_NAME_CAP
+        && str::from_utf8(value).is_ok()
+        && value
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(*byte, b'_' | b'-'))
+}
+
+fn build_device_binding_alias(
+    service: &[u8],
+    binding: &[u8],
+    out: &mut [u8; SQVM_DEVICE_BINDING_NAME_CAP],
+) -> Option<usize> {
+    let len = service.len().checked_add(1)?.checked_add(binding.len())?;
+    if len >= out.len() {
+        return None;
+    }
+    out[..service.len()].copy_from_slice(service);
+    out[service.len()] = b'.';
+    out[service.len() + 1..len].copy_from_slice(binding);
+    Some(len)
+}
+
+fn supports_package_device_binding(service: &[u8], binding: &[u8]) -> bool {
+    matches!((service, binding), (b"indicator", b"default")) || service == b"display"
 }
 
 fn parse_inline_gpio_resource(resource: &[u8]) -> Option<&[u8]> {

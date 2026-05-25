@@ -103,22 +103,25 @@ read-only package resources for the foreground app and wires
 `device.config.set(...)` to the runtime draft config. The runtime can validate
 and activate the current `indicator.default` GPIO binding with
 `device.config.rebind(...)`, and `service.indicator.*` uses the active binding.
-Rust FFI also plans top-level app `device {}` declarations: it classifies
-supported package `.sqdevice` resources versus inline `gpio:GPIO<n>` resources
-and produces the normalized SQDC draft for inline GPIO. Zephyr C remains
-responsible for LittleFS reads, generated target-metadata checks, and hardware
-activation. Inline GPIO and `.sqdevice` GPIO bindings must name a GPIO-capable
-pin from the selected target metadata before Zephyr activates them.
+The runtime also tracks non-indicator active bindings whose SQDEVICE draft
+declares a matching `service` alias, such as `display.status`, so package
+display bindings can be applied before app start. Rust FFI plans top-level app
+`device {}` declarations: it classifies supported package `.sqdevice`
+resources versus inline `gpio:GPIO<n>` resources and produces the normalized
+SQDC draft for inline GPIO. Zephyr C remains responsible for LittleFS reads,
+generated target-metadata checks, and hardware activation. Inline GPIO and
+`.sqdevice` GPIO bindings that drive physical GPIO must name a GPIO-capable pin
+from the selected target metadata before Zephyr activates them.
 On targets with a firmware-defined default indicator, runtime initialization
 loads that target default into the same in-memory SQDC draft/rebind path before
 app code runs. Installed app launch also reads current SQBC top-level
 `device {}` metadata and applies saved global SQDC defaults, packaged
-`indicator.default` `.sqdevice` bindings, and inline `gpio:GPIO<n>` indicator
-bindings before `event.on("app.start")`. App-local top-level `device {}`
-bindings run after target and saved global defaults, so app package bindings
-can override them. Inline GPIO bindings are normalized into the same in-memory
-SQDC draft/rebind path as packaged resources and do not install a package
-resource.
+`indicator.default` `.sqdevice` bindings, packaged display `.sqdevice`
+bindings, and inline `gpio:GPIO<n>` indicator bindings before
+`event.on("app.start")`. App-local top-level `device {}` bindings run after
+target and saved global defaults, so app package bindings can override them.
+Inline GPIO bindings are normalized into the same in-memory SQDC draft/rebind
+path as packaged resources and do not install a package resource.
 Active config persistence through `device.config.save("flash")` writes
 firmware-owned binary SQDC at `/sq/system/device-config.sqdc` on the ESP32-C3
 reference target.

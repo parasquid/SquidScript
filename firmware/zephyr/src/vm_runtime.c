@@ -1543,6 +1543,17 @@ static bool runtime_device_config_string_equals(const SqdcConfig *config, const 
 	       memcmp(record->value.string, expected, expected_len) == 0;
 }
 
+static bool runtime_device_config_string_equals_bytes(const SqdcConfig *config, const char *key,
+						      const uint8_t *expected,
+						      size_t expected_len)
+{
+	const SqdcRecord *record = runtime_device_config_find(config, key);
+
+	return record != NULL && expected != NULL && record->value.kind == SQDC_VALUE_STRING &&
+	       record->value.string_len == expected_len &&
+	       memcmp(record->value.string, expected, expected_len) == 0;
+}
+
 static int runtime_device_config_read_string(const SqdcConfig *config, const char *key,
 					     const uint8_t **out, size_t *out_len)
 {
@@ -1568,6 +1579,47 @@ static int runtime_device_config_read_bool(const SqdcConfig *config, const char 
 	return 0;
 }
 
+static bool runtime_active_binding_matches(const struct sq_vm_runtime_active_binding *binding,
+					   const uint8_t *alias, size_t alias_len)
+{
+	size_t stored_len;
+
+	if (binding == NULL || !binding->active || alias == NULL || alias_len == 0 ||
+	    alias_len >= sizeof(binding->alias)) {
+		return false;
+	}
+	stored_len = bounded_strlen(binding->alias, sizeof(binding->alias));
+	return stored_len == alias_len && memcmp(binding->alias, alias, alias_len) == 0;
+}
+
+static int runtime_activate_binding(struct sq_vm_runtime *runtime, const uint8_t *alias,
+				    size_t alias_len)
+{
+	struct sq_vm_runtime_active_binding *slot = NULL;
+
+	if (runtime == NULL || alias == NULL || alias_len == 0 ||
+	    alias_len >= SQVM_DEVICE_BINDING_NAME_CAP) {
+		return -EINVAL;
+	}
+	for (size_t i = 0; i < SQ_VM_RUNTIME_ACTIVE_BINDING_MAX; i++) {
+		if (runtime_active_binding_matches(&runtime->active_bindings[i], alias, alias_len)) {
+			return 0;
+		}
+		if (slot == NULL && !runtime->active_bindings[i].active) {
+			slot = &runtime->active_bindings[i];
+		}
+	}
+	if (slot == NULL) {
+		return -ENOSPC;
+	}
+	memset(slot, 0, sizeof(*slot));
+	slot->active = true;
+	memcpy(slot->alias, alias, alias_len);
+	slot->alias[alias_len] = '\0';
+	runtime->active_binding_count++;
+	return 0;
+}
+
 int sq_vm_runtime_device_config_rebind(struct sq_vm_runtime *runtime, const uint8_t *alias,
 				       size_t alias_len, SqvmDeviceConfigResult *out)
 {
@@ -1579,12 +1631,19 @@ int sq_vm_runtime_device_config_rebind(struct sq_vm_runtime *runtime, const uint
 	if (runtime == NULL || alias == NULL || out == NULL) {
 		return -EINVAL;
 	}
-	if (alias_len != strlen("indicator.default") ||
-	    memcmp(alias, "indicator.default", alias_len) != 0) {
-		return runtime_device_config_error(out, "unsupported binding");
-	}
 	if (!runtime->device_config_draft_loaded) {
 		return runtime_device_config_error(out, "no draft");
+	}
+	if (alias_len != strlen("indicator.default") ||
+	    memcmp(alias, "indicator.default", alias_len) != 0) {
+		if (!runtime_device_config_string_equals_bytes(&runtime->device_config_draft,
+							       "service", alias, alias_len)) {
+			return runtime_device_config_error(out, "invalid binding");
+		}
+		if (runtime_activate_binding(runtime, alias, alias_len) != 0) {
+			return runtime_device_config_error(out, "too many bindings");
+		}
+		return runtime_device_config_ok(out);
 	}
 	if (!runtime_device_config_string_equals(&runtime->device_config_draft, "service",
 						 "indicator.default") ||
@@ -1607,6 +1666,9 @@ int sq_vm_runtime_device_config_rebind(struct sq_vm_runtime *runtime, const uint
 	runtime->indicator_binding_active = true;
 	runtime->indicator_binding_pin = pin;
 	runtime->indicator_binding_active_low = active_low;
+	if (runtime_activate_binding(runtime, alias, alias_len) != 0) {
+		return runtime_device_config_error(out, "too many bindings");
+	}
 	return runtime_device_config_ok(out);
 }
 
@@ -1993,6 +2055,8 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->return_stack_count = 0;
 	memset(runtime->armed_timers, 0, sizeof(runtime->armed_timers));
 	runtime->armed_timer_count = 0;
+	memset(runtime->active_bindings, 0, sizeof(runtime->active_bindings));
+	runtime->active_binding_count = 0;
 	memset(runtime->outputs, 0, sizeof(runtime->outputs));
 	runtime->output_count = 0;
 	memset(runtime->drawlog, 0, sizeof(runtime->drawlog));
