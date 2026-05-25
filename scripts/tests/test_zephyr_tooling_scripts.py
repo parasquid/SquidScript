@@ -179,7 +179,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_default_config_uses_measured_system_heap_budget(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
 
-        self.assertIn("CONFIG_HEAP_MEM_POOL_SIZE=49152", prj_conf)
+        self.assertIn("CONFIG_HEAP_MEM_POOL_SIZE=40960", prj_conf)
         self.assertIn("CONFIG_HEAP_MEM_POOL_IGNORE_MIN=y", prj_conf)
         self.assertNotIn("CONFIG_HEAP_MEM_POOL_ADD_SIZE_ESP_WIFI=", prj_conf)
 

@@ -86,10 +86,10 @@ uses bounded native-network packet and buffer pools sized for current
 low-throughput control-plane Wi-Fi behavior and measured socket-service,
 network-management event, ESP timer task, and network RX stack budgets; TCP,
 HTTP, AP client throughput, or other bulk traffic must be remeasured before
-increasing service scope. The Zephyr system heap is also measured from live
-`device resources` heap high-water data after representative Wi-Fi status,
-scan, list, and AP workloads; remeasure it before adding larger radio or
-networking workloads.
+increasing service scope. The Zephyr system heap is sized at 40960 bytes from
+live `device resources` heap high-water data after representative app, display,
+device binding, content, Wi-Fi status, scan, list, and AP workloads; remeasure
+it before adding larger radio or networking workloads.
 
 `targets/esp32c3-super-mini.target.json` should describe these verified Zephyr
 runtime services and defaults, not only the ESP32-C3 silicon radio capability.
@@ -140,8 +140,11 @@ device-binding launch check measured `protocol_thread_stack_used_bytes=7604`
 of 8192 and `vm_worker_stack_used_bytes=17056` of 24576 after moving
 launch-time binding scratch storage out of the protocol stack. The full
 ESP32-C3 suite can still drive the VM worker stack much higher; current full
-suite coverage measured `vm_worker_stack_used_bytes=24448` of 24576, so reduce
-worker-stack use before lowering that budget.
+suite coverage measured `vm_worker_stack_used_bytes=24448` of 24576. A
+display-only isolation run showed that `screen.open(...)` into a screen with
+only `service.display.clear("gray0")` raised worker-stack use to 24020 bytes,
+so reduce the nested screen-render interpreter path before lowering that
+budget.
 
 `scripts/c3-supermini-test-system-resources.sh` runs after lifecycle coverage
 and before stack measurement. It installs

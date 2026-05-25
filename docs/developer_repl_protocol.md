@@ -188,11 +188,11 @@ completion transfer storage because those buffers are not live at the same
 time. `vm_sqbc_chunk_bytes` reports the bounded SQBC code/read transfer window
 used for file-backed installed app dispatch; the full installed `main.sqbc`
 payload is not resident in that window. The ESP32-C3 Super Mini hardware suite
-currently reports `runtime_static_bytes=16608`. The current ESP32-C3 reference
-configuration keeps Zephyr's system heap at 49152 bytes because representative
-Wi-Fi status, scan, list, and AP workloads measured
-`ram_heap_max_allocated_bytes=36764`; remeasure before adding TCP, AP client
-throughput, BLE coexistence, or larger Wi-Fi workloads.
+currently reports `runtime_static_bytes=18128`. The current ESP32-C3 reference
+configuration keeps Zephyr's system heap at 40960 bytes; representative app,
+display, device binding, content, Wi-Fi status, scan, list, and AP workloads
+measured `ram_heap_max_allocated_bytes=32912`. Remeasure before adding TCP, AP
+client throughput, BLE coexistence, or larger Wi-Fi workloads.
 
 Wi-Fi diagnostics should distinguish internal firmware/driver state from
 external RF proof. A successful Zephyr Wi-Fi status record does not by itself

@@ -90,11 +90,13 @@ for compiler, SQBC tooling, and VM semantics.
   measured `protocol_thread_stack_used_bytes=7604` of 8192 and
   `vm_worker_stack_used_bytes=17056` of 24576 after moving launch scratch
   storage out of the protocol stack. The latest full ESP32-C3 suite measured
-  `vm_worker_stack_used_bytes=24448` of 24576, so worker-stack reduction should
-  be investigated before lowering that budget.
-  The current Wi-Fi-enabled build is under the RAM guard at
-  `dram0_0_seg=212480` linker bytes, so RAM reduction is post-parity
-  optimization rather than a feature-parity blocker.
+  `vm_worker_stack_used_bytes=24448` of 24576, and display isolation showed
+  that `screen.open(...)` into a screen with only `service.display.clear`
+  reaches `vm_worker_stack_used_bytes=24020`, so reduce the nested screen-render
+  interpreter path before lowering that budget. The current Wi-Fi-enabled build
+  is under the RAM guard at `dram0_0_seg=206360` linker bytes with the
+  hardware-verified 40960-byte Zephyr system heap, so remaining RAM reduction
+  is post-parity optimization rather than a feature-parity blocker.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.
