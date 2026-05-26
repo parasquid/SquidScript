@@ -1173,6 +1173,72 @@ screen("main") {
 }
 
 #[test]
+fn in_memory_vm_preserves_stack_when_function_call_underflows() {
+    let strings = encode_strings(&["underflow", "fail", "drain", "helper", "drained"]);
+    let state = vec![0, 0];
+    let mut functions = Vec::new();
+    let mut code = Vec::new();
+    let helper = code.len();
+    code.push(OP_RETURN);
+    let fail = code.len();
+    code.push(OP_PUSH_INT);
+    push_i32(&mut code, 7);
+    code.push(OP_CALL_FUNCTION);
+    push_u16(&mut code, 0);
+    push_u16(&mut code, 3);
+    code.push(OP_HALT);
+    let drain = code.len();
+    code.push(OP_POP);
+    code.push(OP_PUSH_STRING);
+    push_u16(&mut code, 4);
+    code.extend_from_slice(&[OP_CALL_BUILTIN, BUILTIN_DEBUG_PRINT, 1, OP_HALT]);
+
+    push_u16(&mut functions, 1);
+    push_u16(&mut functions, 3);
+    push_u16(&mut functions, 3);
+    push_u16(&mut functions, 3);
+    push_u32(&mut functions, helper as u32);
+    push_u32(&mut functions, (fail - helper) as u32);
+
+    let mut handlers = Vec::new();
+    push_u16(&mut handlers, 2);
+    push_u16(&mut handlers, 1);
+    push_u16(&mut handlers, 0);
+    push_u32(&mut handlers, fail as u32);
+    push_u32(&mut handlers, (drain - fail) as u32);
+    push_u16(&mut handlers, 2);
+    push_u16(&mut handlers, 0);
+    push_u32(&mut handlers, drain as u32);
+    push_u32(&mut handlers, (code.len() - drain) as u32);
+
+    let bytes = encode_container(vec![
+        (SECTION_STRINGS, strings),
+        (SECTION_STATE, state),
+        (SECTION_FUNCTIONS, functions),
+        (SECTION_HANDLERS, handlers),
+        (SECTION_CODE, code),
+    ]);
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = RuntimeTrace::default();
+
+    assert_eq!(
+        vm.dispatch("fail", &mut trace),
+        Err(VmError::StackUnderflow)
+    );
+    vm.dispatch("drain", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "fail".to_string(),
+            "drain".to_string(),
+            "debug drained".to_string(),
+        ]
+    );
+}
+
+#[test]
 fn chunk_cache_prefers_evicting_cold_unhinted_chunks() {
     let hot = ChunkRef {
         app: 1,

@@ -105,6 +105,7 @@ impl<'a> Program<'a> {
         let screens = optional_section(bytes, section_count, SECTION_SCREENS)?;
         let code = section(bytes, section_count, SECTION_CODE)?;
 
+        parse_owned_strings(strings)?;
         let (strings, string_count) = parse_strings(strings)?;
         let (state_slots, state_count) = parse_state(state)?;
         let (functions, function_count) = parse_functions(functions, code.len())?;
@@ -154,6 +155,7 @@ impl<'a> Program<'a> {
         TriggerTimers::new(self, &self.trigger_timers, self.trigger_timer_count)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn screen(&self, name: &str) -> Result<Screen, VmError> {
         for screen in self.screens.iter().take(self.screen_count) {
             if self.string(screen.name_id)? == name {
@@ -190,6 +192,50 @@ pub struct ProgramIndex {
 }
 
 impl ProgramIndex {
+    pub(crate) fn from_program(program: &Program<'_>) -> Result<Self, VmError> {
+        let mut string_bytes = [0u8; MAX_PROGRAM_STRING_BYTES];
+        let mut string_offsets = [0u16; MAX_STRINGS];
+        let mut string_lens = [0u16; MAX_STRINGS];
+        let mut pool_len = 0usize;
+        for (index, value) in program
+            .strings
+            .iter()
+            .take(program.string_count)
+            .enumerate()
+        {
+            let raw = value.as_bytes();
+            let pool_end = pool_len
+                .checked_add(raw.len())
+                .ok_or(VmError::InvalidSection)?;
+            if pool_end > string_bytes.len() || raw.len() > u16::MAX as usize {
+                return Err(VmError::TooManyStrings);
+            }
+            string_offsets[index] = pool_len as u16;
+            string_lens[index] = raw.len() as u16;
+            string_bytes[pool_len..pool_end].copy_from_slice(raw);
+            pool_len = pool_end;
+        }
+
+        Ok(Self {
+            string_bytes,
+            string_offsets,
+            string_lens,
+            string_count: program.string_count,
+            state_slots: program.state_slots,
+            state_count: program.state_count,
+            functions: program.functions,
+            function_count: program.function_count,
+            handlers: program.handlers,
+            handler_count: program.handler_count,
+            trigger_timers: program.trigger_timers,
+            trigger_timer_count: program.trigger_timer_count,
+            screens: program.screens,
+            screen_count: program.screen_count,
+            code_offset: 0,
+            code_len: program.code.len(),
+        })
+    }
+
     pub fn parse_from_reader(
         reader: &mut impl SqbcReader,
         scratch: &mut [u8],

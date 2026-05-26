@@ -2,40 +2,40 @@ use core::{fmt::Write, ptr, slice, str};
 
 use crate::{
     bytecode::{
-        read_i32, read_u16, read_u32, BUILTIN_APP_ARM, BUILTIN_APP_ARMED_STACK,
-        BUILTIN_APP_ARMED_STACK_GET, BUILTIN_APP_DISARM, BUILTIN_APP_EXIT, BUILTIN_APP_LAUNCH,
-        BUILTIN_APP_PROCESS_STACK, BUILTIN_APP_REGISTRY_GET, BUILTIN_APP_REGISTRY_LIST,
-        BUILTIN_DEBUG_PRINT, BUILTIN_DEVICE_CONFIG_LOAD, BUILTIN_DEVICE_CONFIG_REBIND,
-        BUILTIN_DEVICE_CONFIG_SAVE, BUILTIN_DEVICE_CONFIG_SET, BUILTIN_DISPLAY_CLEAR,
-        BUILTIN_DISPLAY_DRAW, BUILTIN_DISPLAY_IMAGE, BUILTIN_DISPLAY_LINE, BUILTIN_DISPLAY_RECT,
-        BUILTIN_DISPLAY_SELECT, BUILTIN_DISPLAY_TEXT, BUILTIN_HARDWARE_GPIO_READ,
-        BUILTIN_HARDWARE_GPIO_TOGGLE, BUILTIN_HARDWARE_GPIO_WRITE, BUILTIN_SCREEN_OPEN,
-        BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_INDICATOR_BLINK, BUILTIN_SERVICE_INDICATOR_BREATHE,
-        BUILTIN_SERVICE_INDICATOR_READ, BUILTIN_SERVICE_INDICATOR_TOGGLE,
-        BUILTIN_SERVICE_INDICATOR_WRITE, BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY,
-        BUILTIN_SERVICE_WIFI_CONNECT, BUILTIN_SERVICE_WIFI_DISCONNECT,
-        BUILTIN_SERVICE_WIFI_GET_AP_IP, BUILTIN_SERVICE_WIFI_SCAN, BUILTIN_SERVICE_WIFI_START_AP,
-        BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP, BUILTIN_STATE_LOAD,
-        BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, BUILTIN_SYSTEM_MEMORY, BUILTIN_SYSTEM_STORAGE,
-        OP_ADD, OP_CALL_BUILTIN, OP_CALL_FUNCTION, OP_EQ, OP_GET_FIELD, OP_GET_LOCAL, OP_GET_STATE,
-        OP_GT, OP_GTE, OP_HALT, OP_JUMP, OP_JUMP_IF_FALSE, OP_LIST_GET, OP_LIST_LEN, OP_LT, OP_LTE,
-        OP_NE, OP_POP, OP_PUSH_BOOL, OP_PUSH_INT, OP_PUSH_NULL, OP_PUSH_STRING, OP_RETURN,
-        OP_SET_LOCAL, OP_SET_STATE, OP_SUB,
+        BUILTIN_APP_ARM, BUILTIN_APP_ARMED_STACK, BUILTIN_APP_ARMED_STACK_GET, BUILTIN_APP_DISARM,
+        BUILTIN_APP_EXIT, BUILTIN_APP_LAUNCH, BUILTIN_APP_PROCESS_STACK, BUILTIN_APP_REGISTRY_GET,
+        BUILTIN_APP_REGISTRY_LIST, BUILTIN_DEBUG_PRINT, BUILTIN_DEVICE_CONFIG_LOAD,
+        BUILTIN_DEVICE_CONFIG_REBIND, BUILTIN_DEVICE_CONFIG_SAVE, BUILTIN_DEVICE_CONFIG_SET,
+        BUILTIN_DISPLAY_CLEAR, BUILTIN_DISPLAY_DRAW, BUILTIN_DISPLAY_IMAGE, BUILTIN_DISPLAY_LINE,
+        BUILTIN_DISPLAY_RECT, BUILTIN_DISPLAY_SELECT, BUILTIN_DISPLAY_TEXT,
+        BUILTIN_HARDWARE_GPIO_READ, BUILTIN_HARDWARE_GPIO_TOGGLE, BUILTIN_HARDWARE_GPIO_WRITE,
+        BUILTIN_SCREEN_OPEN, BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_INDICATOR_BLINK,
+        BUILTIN_SERVICE_INDICATOR_BREATHE, BUILTIN_SERVICE_INDICATOR_READ,
+        BUILTIN_SERVICE_INDICATOR_TOGGLE, BUILTIN_SERVICE_INDICATOR_WRITE,
+        BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY, BUILTIN_SERVICE_WIFI_CONNECT,
+        BUILTIN_SERVICE_WIFI_DISCONNECT, BUILTIN_SERVICE_WIFI_GET_AP_IP, BUILTIN_SERVICE_WIFI_SCAN,
+        BUILTIN_SERVICE_WIFI_START_AP, BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP,
+        BUILTIN_STATE_LOAD, BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, BUILTIN_SYSTEM_MEMORY,
+        BUILTIN_SYSTEM_STORAGE, OP_ADD, OP_CALL_BUILTIN, OP_CALL_FUNCTION, OP_EQ, OP_GET_FIELD,
+        OP_GET_LOCAL, OP_GET_STATE, OP_GT, OP_GTE, OP_HALT, OP_JUMP, OP_JUMP_IF_FALSE, OP_LIST_GET,
+        OP_LIST_LEN, OP_LT, OP_LTE, OP_NE, OP_POP, OP_PUSH_BOOL, OP_PUSH_INT, OP_PUSH_NULL,
+        OP_PUSH_STRING, OP_RETURN, OP_SET_LOCAL, OP_SET_STATE, OP_SUB,
     },
     chunk::{ChunkCache, ChunkKind, ChunkRef},
     error::VmError,
     host::{
-        AppArmedStackEntry, AppRegistryEntry, ContentPickFileResult, ContentReadLinesResult,
-        ContentReadTextResult, DeviceConfigResult, DisplayLineOptions, DisplayRectOptions,
-        DisplayResourceOptions, DisplayTextOptions, StorageCompletion, StorageRequest, TraceSink,
-        VmDispatch, WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
+        AppArmedStack, AppArmedStackEntry, AppProcessStack, AppRegistryEntry, AppRegistryList,
+        ContentPickFileResult, ContentReadLinesResult, ContentReadTextResult, DeviceConfigResult,
+        DisplayLineOptions, DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions,
+        StorageCompletion, StorageRequest, TraceSink, VmDispatch, WifiAccessPoint,
+        WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
     },
     limits::{
         MAX_CALL_DEPTH, MAX_CODE_CHUNK_BYTES, MAX_FUNCTIONS, MAX_HANDLERS,
         MAX_INSTRUCTIONS_PER_EVENT, MAX_LOCALS, MAX_PROGRAM_STRING_BYTES, MAX_RUNTIME_LISTS,
         MAX_RUNTIME_LIST_ITEMS, MAX_RUNTIME_RECORDS, MAX_RUNTIME_RECORD_FIELDS,
         MAX_RUNTIME_STRING_BYTES, MAX_SAVED_STATE_BYTES, MAX_SCREENS, MAX_STACK, MAX_STATE,
-        MAX_STRINGS,
+        MAX_STRINGS, MAX_TRIGGERS,
     },
     program::{Program, ProgramIndex},
     reader::{ChunkedVmHost, SqbcReader},
@@ -49,15 +49,7 @@ use crate::{
 
 pub struct Vm<'a> {
     program: Program<'a>,
-    runtime_strings: RuntimeStrings,
-    runtime_records: RuntimeRecords,
-    runtime_lists: RuntimeLists,
-    state: [Value; MAX_STATE],
-    stack: [Value; MAX_STACK],
-    stack_len: usize,
-    current_screen: Option<u16>,
-    exited: bool,
-    instructions: usize,
+    inner: ChunkedVm,
 }
 
 pub struct ChunkedVm {
@@ -1626,6 +1618,303 @@ impl ChunkedVm {
     }
 }
 
+impl<'a> Vm<'a> {
+    pub fn new(program: Program<'a>) -> Self {
+        let index = ProgramIndex::from_program(&program)
+            .expect("Program parsed for Vm must fit ProgramIndex limits");
+        Self {
+            program,
+            inner: ChunkedVm::new(index),
+        }
+    }
+
+    pub fn dispatch<T: TraceSink>(&mut self, event: &str, trace: &mut T) -> Result<(), VmError> {
+        let mut host = InMemoryVmHost {
+            code: self.program.code,
+            trace,
+        };
+        self.inner.dispatch(&mut host, event)
+    }
+
+    pub fn exited(&self) -> bool {
+        self.inner.exited()
+    }
+
+    pub fn current_screen(&self) -> Result<Option<&str>, VmError> {
+        self.inner.current_screen()
+    }
+
+    pub fn state_value(&self, name: &str) -> Result<Value, VmError> {
+        self.inner.state_value(name)
+    }
+
+    pub fn program(&self) -> &Program<'a> {
+        &self.program
+    }
+
+    pub fn string_resolver(&self) -> StringResolver<'_> {
+        self.inner.string_resolver()
+    }
+
+    pub fn state_count(&self) -> usize {
+        self.inner.state_count()
+    }
+
+    pub fn state_name(&self, index: usize) -> Result<&str, VmError> {
+        self.inner.state_name(index)
+    }
+
+    pub fn state_at(&self, index: usize) -> Result<Value, VmError> {
+        self.inner.state_at(index)
+    }
+
+    pub fn set_state_value(&mut self, name: &str, value: Value) -> Result<(), VmError> {
+        self.inner.set_state_value(name, value)
+    }
+}
+
+struct InMemoryVmHost<'a, T: TraceSink> {
+    code: &'a [u8],
+    trace: &'a mut T,
+}
+
+impl<T: TraceSink> SqbcReader for InMemoryVmHost<'_, T> {
+    fn read_exact_at(&mut self, offset: usize, out: &mut [u8]) -> Result<(), VmError> {
+        let end = offset
+            .checked_add(out.len())
+            .ok_or(VmError::InvalidSection)?;
+        let bytes = self.code.get(offset..end).ok_or(VmError::InvalidSection)?;
+        out.copy_from_slice(bytes);
+        Ok(())
+    }
+}
+
+impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
+    fn trace(&mut self, message: &str) {
+        self.trace.trace(message);
+    }
+
+    fn debug_print(&mut self, strings: &StringResolver<'_>, values: &[Value]) {
+        self.trace.debug_print(strings, values);
+    }
+
+    fn draw_clear(&mut self, color: &str) {
+        self.trace.draw_clear(color);
+    }
+
+    fn draw_text(
+        &mut self,
+        strings: &StringResolver<'_>,
+        text: Value,
+        options: DisplayTextOptions<'_>,
+    ) {
+        self.trace.draw_text(strings, text, options);
+    }
+
+    fn draw_rect(&mut self, options: DisplayRectOptions<'_>) {
+        self.trace.draw_rect(options);
+    }
+
+    fn draw_line(&mut self, options: DisplayLineOptions<'_>) {
+        self.trace.draw_line(options);
+    }
+
+    fn draw_select(&mut self, name: &str) -> Result<(), VmError> {
+        self.trace.draw_select(name)
+    }
+
+    fn draw_image(&mut self, path: &str, options: DisplayResourceOptions) {
+        self.trace.draw_image(path, options);
+    }
+
+    fn draw_resource(
+        &mut self,
+        strings: &StringResolver<'_>,
+        drawable: Value,
+        options: DisplayResourceOptions,
+    ) {
+        self.trace.draw_resource(strings, drawable, options);
+    }
+
+    fn hardware_gpio_write(&mut self, name: &str, value: bool) -> Result<(), VmError> {
+        self.trace.hardware_gpio_write(name, value)
+    }
+
+    fn hardware_gpio_toggle(&mut self, name: &str) -> Result<(), VmError> {
+        self.trace.hardware_gpio_toggle(name)
+    }
+
+    fn hardware_gpio_read(&mut self, name: &str) -> Result<bool, VmError> {
+        self.trace.hardware_gpio_read(name)
+    }
+
+    fn service_indicator_write(&mut self, value: bool) -> Result<(), VmError> {
+        self.trace.service_indicator_write(value)
+    }
+
+    fn service_indicator_toggle(&mut self) -> Result<(), VmError> {
+        self.trace.service_indicator_toggle()
+    }
+
+    fn service_indicator_breathe(&mut self) -> Result<(), VmError> {
+        self.trace.service_indicator_breathe()
+    }
+
+    fn service_indicator_blink(&mut self, on_ms: i32, off_ms: i32) -> Result<(), VmError> {
+        self.trace.service_indicator_blink(on_ms, off_ms)
+    }
+
+    fn service_indicator_read(&mut self) -> Result<bool, VmError> {
+        self.trace.service_indicator_read()
+    }
+
+    fn app_launch(&mut self, app: &str) -> Result<(), VmError> {
+        self.trace.app_launch(app)
+    }
+
+    fn app_arm(&mut self, app: &str) -> Result<(), VmError> {
+        self.trace.app_arm(app)
+    }
+
+    fn app_disarm(&mut self, app: &str) -> Result<(), VmError> {
+        self.trace.app_disarm(app)
+    }
+
+    fn app_registry_list<'b>(&'b mut self) -> Result<AppRegistryList<'b>, VmError> {
+        self.trace.app_registry_list()
+    }
+
+    fn app_registry_get<'b>(&'b mut self, app_id: &str) -> Result<AppRegistryEntry<'b>, VmError> {
+        self.trace.app_registry_get(app_id)
+    }
+
+    fn app_process_stack<'b>(&'b mut self) -> Result<AppProcessStack<'b>, VmError> {
+        self.trace.app_process_stack()
+    }
+
+    fn app_armed_stack<'b>(&'b mut self) -> Result<AppArmedStack<'b>, VmError> {
+        self.trace.app_armed_stack()
+    }
+
+    fn service_timer_every(&mut self, event: &str, interval_ms: i32) -> Result<(), VmError> {
+        self.trace.service_timer_every(event, interval_ms)
+    }
+
+    fn service_timer_after(&mut self, event: &str, delay_ms: i32) -> Result<(), VmError> {
+        self.trace.service_timer_after(event, delay_ms)
+    }
+
+    fn service_wifi_start_ap<'b>(
+        &'b mut self,
+        ssid: &str,
+    ) -> Result<WifiActionResult<'b>, VmError> {
+        self.trace.service_wifi_start_ap(ssid)
+    }
+
+    fn service_wifi_stop_ap<'b>(&'b mut self) -> Result<WifiActionResult<'b>, VmError> {
+        self.trace.service_wifi_stop_ap()
+    }
+
+    fn service_wifi_connect<'b>(
+        &'b mut self,
+        profile: &str,
+    ) -> Result<WifiActionResult<'b>, VmError> {
+        self.trace.service_wifi_connect(profile)
+    }
+
+    fn service_wifi_disconnect<'b>(&'b mut self) -> Result<WifiActionResult<'b>, VmError> {
+        self.trace.service_wifi_disconnect()
+    }
+
+    fn service_wifi_status<'b>(&'b mut self) -> Result<WifiStatus<'b>, VmError> {
+        self.trace.service_wifi_status()
+    }
+
+    fn service_wifi_get_ap_ip<'b>(&'b mut self) -> Result<WifiApIp<'b>, VmError> {
+        self.trace.service_wifi_get_ap_ip()
+    }
+
+    fn service_wifi_scan<'b>(&'b mut self) -> Result<WifiScanResult<'b>, VmError> {
+        self.trace.service_wifi_scan()
+    }
+
+    fn service_wifi_teardown(&mut self) -> Result<(), VmError> {
+        self.trace.service_wifi_teardown()
+    }
+
+    fn system_memory_text(&mut self, out: &mut dyn Write) -> Result<(), VmError> {
+        self.trace.system_memory_text(out)
+    }
+
+    fn system_storage_text(&mut self, name: &str, out: &mut dyn Write) -> Result<(), VmError> {
+        self.trace.system_storage_text(name, out)
+    }
+
+    fn device_config_load<'b>(
+        &'b mut self,
+        source: &str,
+    ) -> Result<DeviceConfigResult<'b>, VmError> {
+        self.trace.device_config_load(source)
+    }
+
+    fn device_config_set<'b>(
+        &'b mut self,
+        key: &str,
+        value: Value,
+        strings: &StringResolver<'_>,
+    ) -> Result<DeviceConfigResult<'b>, VmError> {
+        self.trace.device_config_set(key, value, strings)
+    }
+
+    fn device_config_rebind<'b>(
+        &'b mut self,
+        binding: &str,
+    ) -> Result<DeviceConfigResult<'b>, VmError> {
+        self.trace.device_config_rebind(binding)
+    }
+
+    fn device_config_save<'b>(
+        &'b mut self,
+        destination: &str,
+    ) -> Result<DeviceConfigResult<'b>, VmError> {
+        self.trace.device_config_save(destination)
+    }
+
+    fn content_pick_file<'b>(
+        &'b mut self,
+        extension: &str,
+    ) -> Result<ContentPickFileResult<'b>, VmError> {
+        self.trace.content_pick_file(extension)
+    }
+
+    fn content_read_text<'b>(
+        &'b mut self,
+        path: &str,
+    ) -> Result<ContentReadTextResult<'b>, VmError> {
+        self.trace.content_read_text(path)
+    }
+
+    fn content_read_lines<'b>(
+        &'b mut self,
+        path: &str,
+        max_lines: i32,
+    ) -> Result<ContentReadLinesResult<'b>, VmError> {
+        self.trace.content_read_lines(path, max_lines)
+    }
+
+    fn state_load(&mut self, out: &mut [u8]) -> Result<Option<usize>, VmError> {
+        self.trace.state_load(out)
+    }
+
+    fn state_save(&mut self, bytes: &[u8]) -> Result<(), VmError> {
+        self.trace.state_save(bytes)
+    }
+
+    fn state_reset_persistent(&mut self) -> Result<(), VmError> {
+        self.trace.state_reset_persistent()
+    }
+}
+
 unsafe fn init_program_index_in_place(out: *mut ProgramIndex, index: &ProgramIndex) {
     ptr::copy_nonoverlapping(
         index.string_bytes.as_ptr(),
@@ -1662,6 +1951,12 @@ unsafe fn init_program_index_in_place(out: *mut ProgramIndex, index: &ProgramInd
     );
     ptr::addr_of_mut!((*out).handler_count).write(index.handler_count);
     ptr::copy_nonoverlapping(
+        index.trigger_timers.as_ptr(),
+        ptr::addr_of_mut!((*out).trigger_timers).cast(),
+        MAX_TRIGGERS,
+    );
+    ptr::addr_of_mut!((*out).trigger_timer_count).write(index.trigger_timer_count);
+    ptr::copy_nonoverlapping(
         index.screens.as_ptr(),
         ptr::addr_of_mut!((*out).screens).cast(),
         MAX_SCREENS,
@@ -1697,1020 +1992,4 @@ unsafe fn init_runtime_lists_in_place(out: *mut RuntimeLists) {
         ptr::addr_of_mut!((*list).item_count).write(0);
     }
     ptr::addr_of_mut!((*out).next).write(0);
-}
-
-impl<'a> Vm<'a> {
-    pub fn new(program: Program<'a>) -> Self {
-        let mut state = [Value::Null; MAX_STATE];
-        for (index, slot) in program
-            .state_slots
-            .iter()
-            .take(program.state_count)
-            .enumerate()
-        {
-            state[index] = slot.default;
-        }
-        Self {
-            program,
-            runtime_strings: RuntimeStrings::new(),
-            runtime_records: RuntimeRecords::new(),
-            runtime_lists: RuntimeLists::new(),
-            state,
-            stack: [Value::Null; MAX_STACK],
-            stack_len: 0,
-            current_screen: None,
-            exited: false,
-            instructions: 0,
-        }
-    }
-
-    pub fn dispatch<T: TraceSink>(&mut self, event: &str, trace: &mut T) -> Result<(), VmError> {
-        if self.exited {
-            return Ok(());
-        }
-        let handler = self.program.handler(event)?;
-        trace.trace(event);
-        let mut locals = [Value::Null; MAX_LOCALS];
-        self.instructions = 0;
-        let result = self
-            .execute_range(handler.start, handler.len, &mut locals, 0, trace)
-            .map(|_| ());
-        if result.is_err() {
-            trace.service_wifi_teardown()?;
-        }
-        result
-    }
-
-    pub fn exited(&self) -> bool {
-        self.exited
-    }
-
-    pub fn current_screen(&self) -> Result<Option<&str>, VmError> {
-        self.current_screen
-            .map(|id| self.program.string(id))
-            .transpose()
-    }
-
-    pub fn state_value(&self, name: &str) -> Result<Value, VmError> {
-        for (index, slot) in self
-            .program
-            .state_slots
-            .iter()
-            .take(self.program.state_count)
-            .enumerate()
-        {
-            if self.program.string(slot.name_id)? == name {
-                return Ok(self.state[index]);
-            }
-        }
-        Err(VmError::StateOutOfBounds)
-    }
-
-    pub fn program(&self) -> &Program<'a> {
-        &self.program
-    }
-
-    pub fn string_resolver(&self) -> StringResolver<'_> {
-        StringResolver::new(&self.program, &self.runtime_strings)
-    }
-
-    pub fn state_count(&self) -> usize {
-        self.program.state_count
-    }
-
-    pub fn state_name(&self, index: usize) -> Result<&str, VmError> {
-        if index >= self.program.state_count {
-            return Err(VmError::StateOutOfBounds);
-        }
-        self.program.string(self.program.state_slots[index].name_id)
-    }
-
-    pub fn state_at(&self, index: usize) -> Result<Value, VmError> {
-        if index >= self.program.state_count {
-            return Err(VmError::StateOutOfBounds);
-        }
-        Ok(self.state[index])
-    }
-
-    pub fn set_state_value(&mut self, name: &str, value: Value) -> Result<(), VmError> {
-        for (index, slot) in self
-            .program
-            .state_slots
-            .iter()
-            .take(self.program.state_count)
-            .enumerate()
-        {
-            if self.program.string(slot.name_id)? == name {
-                if !state_value_matches(slot.value_type.tag, slot.value_type.nullable, value) {
-                    return Err(VmError::InvalidOperand);
-                }
-                self.state[index] = value;
-                return Ok(());
-            }
-        }
-        Err(VmError::StateOutOfBounds)
-    }
-
-    fn reset_state(&mut self) {
-        for (slot_index, slot) in self
-            .program
-            .state_slots
-            .iter()
-            .take(self.program.state_count)
-            .enumerate()
-        {
-            self.state[slot_index] = slot.default;
-        }
-    }
-
-    fn load_state_from_host(&mut self, trace: &mut impl TraceSink) -> Result<(), VmError> {
-        let mut bytes = [0u8; MAX_SAVED_STATE_BYTES];
-        if let Some(len) = trace.state_load(&mut bytes)? {
-            apply_state_record(
-                &bytes[..len],
-                &self.program,
-                &self.program.state_slots[..self.program.state_count],
-                &mut self.runtime_strings,
-                &mut self.state[..self.program.state_count],
-            )?;
-        }
-        Ok(())
-    }
-
-    fn render_screen<T: TraceSink>(
-        &mut self,
-        screen_id: u16,
-        depth: usize,
-        trace: &mut T,
-    ) -> Result<(), VmError> {
-        let screen = self.program.screen(self.program.string(screen_id)?)?;
-        let mut locals = [Value::Null; MAX_LOCALS];
-        self.execute_range(screen.start, screen.len, &mut locals, depth + 1, trace)?;
-        Ok(())
-    }
-
-    fn pop_optional_string(&mut self) -> Result<Option<u16>, VmError> {
-        match self.pop()? {
-            Value::Null => Ok(None),
-            Value::String(id) => Ok(Some(id)),
-            _ => Err(VmError::InvalidOperand),
-        }
-    }
-
-    fn save_state_to_host(&self, trace: &mut impl TraceSink) -> Result<(), VmError> {
-        let mut bytes = [0u8; MAX_SAVED_STATE_BYTES];
-        let len = encode_state_record(
-            &self.program,
-            &self.runtime_strings,
-            &self.program.state_slots[..self.program.state_count],
-            &self.state[..self.program.state_count],
-            &mut bytes,
-        )?;
-        trace.state_save(&bytes[..len])
-    }
-
-    fn execute_range<T: TraceSink>(
-        &mut self,
-        start: usize,
-        len: usize,
-        locals: &mut [Value; MAX_LOCALS],
-        depth: usize,
-        trace: &mut T,
-    ) -> Result<Option<Value>, VmError> {
-        if depth > MAX_CALL_DEPTH {
-            return Err(VmError::CallDepthExceeded);
-        }
-        let end = start.checked_add(len).ok_or(VmError::InvalidJump)?;
-        if end > self.program.code.len() {
-            return Err(VmError::InvalidJump);
-        }
-        let mut ip = start;
-        while ip < end {
-            self.instructions += 1;
-            if self.instructions > MAX_INSTRUCTIONS_PER_EVENT {
-                return Err(VmError::InstructionBudgetExceeded);
-            }
-            let op = self.program.code[ip];
-            ip += 1;
-            match op {
-                OP_PUSH_INT => {
-                    let value = read_i32(self.program.code, ip)?;
-                    ip += 4;
-                    self.push(Value::I32(value))?;
-                }
-                OP_PUSH_BOOL => {
-                    let value = *self.program.code.get(ip).ok_or(VmError::InvalidOperand)? != 0;
-                    ip += 1;
-                    self.push(Value::Bool(value))?;
-                }
-                OP_PUSH_STRING => {
-                    let value = read_u16(self.program.code, ip)?;
-                    ip += 2;
-                    self.push(Value::String(value))?;
-                }
-                OP_PUSH_NULL => self.push(Value::Null)?,
-                OP_GET_STATE => {
-                    let state = read_u16(self.program.code, ip)? as usize;
-                    ip += 2;
-                    self.push(*self.state.get(state).ok_or(VmError::StateOutOfBounds)?)?;
-                }
-                OP_SET_STATE => {
-                    let state = read_u16(self.program.code, ip)? as usize;
-                    ip += 2;
-                    let value = self.pop()?;
-                    let state_slot = self
-                        .program
-                        .state_slots
-                        .get(state)
-                        .ok_or(VmError::StateOutOfBounds)?;
-                    if state >= self.program.state_count
-                        || !state_value_matches(
-                            state_slot.value_type.tag,
-                            state_slot.value_type.nullable,
-                            value,
-                        )
-                    {
-                        return Err(VmError::InvalidOperand);
-                    }
-                    let slot = self.state.get_mut(state).ok_or(VmError::StateOutOfBounds)?;
-                    *slot = value;
-                }
-                OP_GET_LOCAL => {
-                    let local = read_u16(self.program.code, ip)? as usize;
-                    ip += 2;
-                    self.push(*locals.get(local).ok_or(VmError::LocalOutOfBounds)?)?;
-                }
-                OP_SET_LOCAL => {
-                    let local = read_u16(self.program.code, ip)? as usize;
-                    ip += 2;
-                    let value = self.pop()?;
-                    let slot = locals.get_mut(local).ok_or(VmError::LocalOutOfBounds)?;
-                    *slot = value;
-                }
-                OP_GET_FIELD => {
-                    let field_id = read_u16(self.program.code, ip)?;
-                    ip += 2;
-                    let target = self.pop()?;
-                    let field = self.program.string(field_id)?;
-                    let value = match target {
-                        Value::Record(record_id) => self.runtime_records.field(record_id, field)?,
-                        _ => return Err(VmError::InvalidOperand),
-                    };
-                    self.push(value)?;
-                }
-                OP_ADD | OP_SUB | OP_EQ | OP_NE | OP_LT | OP_LTE | OP_GT | OP_GTE => {
-                    self.binary(op)?
-                }
-                OP_LIST_LEN => {
-                    let Value::List(list_id) = self.pop()? else {
-                        return Err(VmError::InvalidOperand);
-                    };
-                    self.push(Value::I32(self.runtime_lists.len(list_id)?))?;
-                }
-                OP_LIST_GET => {
-                    let index = self.pop()?.expect_i32()?;
-                    let Value::List(list_id) = self.pop()? else {
-                        return Err(VmError::InvalidOperand);
-                    };
-                    self.push(self.runtime_lists.get(list_id, index)?)?;
-                }
-                OP_JUMP => {
-                    ip = read_u32(self.program.code, ip)? as usize;
-                    if ip > end {
-                        return Err(VmError::InvalidJump);
-                    }
-                }
-                OP_JUMP_IF_FALSE => {
-                    let target = read_u32(self.program.code, ip)? as usize;
-                    ip += 4;
-                    if !self.pop()?.truthy() {
-                        if target > end {
-                            return Err(VmError::InvalidJump);
-                        }
-                        ip = target;
-                    }
-                }
-                OP_CALL_FUNCTION => {
-                    let function_id = read_u16(self.program.code, ip)? as usize;
-                    ip += 2;
-                    let arg_count = read_u16(self.program.code, ip)? as usize;
-                    ip += 2;
-                    let function = *self
-                        .program
-                        .functions
-                        .get(function_id)
-                        .ok_or(VmError::FunctionOutOfBounds)?;
-                    if function_id >= self.program.function_count
-                        || arg_count != function.param_count as usize
-                    {
-                        return Err(VmError::FunctionOutOfBounds);
-                    }
-                    let mut child_locals = [Value::Null; MAX_LOCALS];
-                    if function.local_count as usize > MAX_LOCALS {
-                        return Err(VmError::LocalOutOfBounds);
-                    }
-                    for index in (0..arg_count).rev() {
-                        child_locals[index] = self.pop()?;
-                    }
-                    let value = self
-                        .execute_range(
-                            function.start,
-                            function.len,
-                            &mut child_locals,
-                            depth + 1,
-                            trace,
-                        )?
-                        .unwrap_or(Value::Null);
-                    self.push(value)?;
-                }
-                OP_RETURN => return Ok(Some(self.pop()?)),
-                OP_HALT => return Ok(None),
-                OP_CALL_BUILTIN => {
-                    let builtin = *self.program.code.get(ip).ok_or(VmError::InvalidOperand)?;
-                    ip += 1;
-                    let arg_count = if builtin == BUILTIN_DEBUG_PRINT {
-                        let count = *self.program.code.get(ip).ok_or(VmError::InvalidOperand)?;
-                        ip += 1;
-                        count
-                    } else {
-                        0
-                    };
-                    self.call_builtin(builtin, arg_count, depth, trace)?;
-                }
-                OP_POP => {
-                    let _ = self.pop()?;
-                }
-                _ => return Err(VmError::UnknownOpcode),
-            }
-        }
-        Ok(None)
-    }
-
-    fn call_builtin<T: TraceSink>(
-        &mut self,
-        builtin: u8,
-        arg_count: u8,
-        depth: usize,
-        trace: &mut T,
-    ) -> Result<(), VmError> {
-        match builtin {
-            BUILTIN_STATE_LOAD => {
-                self.load_state_from_host(trace)?;
-                trace.trace("state.load");
-            }
-            BUILTIN_STATE_SAVE => {
-                self.save_state_to_host(trace)?;
-                trace.trace("state.save");
-            }
-            BUILTIN_STATE_RESET => {
-                self.reset_state();
-                trace.state_reset_persistent()?;
-                trace.trace("state.reset");
-            }
-            BUILTIN_APP_EXIT => {
-                trace.service_wifi_teardown()?;
-                self.exited = true;
-                trace.trace("app.exit");
-            }
-            BUILTIN_DEBUG_PRINT => {
-                let count = arg_count as usize;
-                if count > self.stack_len {
-                    return Err(VmError::StackUnderflow);
-                }
-                let start = self.stack_len - count;
-                let strings = StringResolver::new(&self.program, &self.runtime_strings);
-                trace.debug_print(&strings, &self.stack[start..self.stack_len]);
-                self.stack_len = start;
-            }
-            BUILTIN_SCREEN_OPEN => {
-                let Value::String(name_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                self.current_screen = Some(name_id);
-                self.render_screen(name_id, depth, trace)?;
-            }
-            BUILTIN_SCREEN_REFRESH => {
-                let screen_id = self.current_screen.ok_or(VmError::InvalidOperand)?;
-                self.render_screen(screen_id, depth, trace)?;
-            }
-            BUILTIN_DISPLAY_CLEAR => {
-                let Value::String(color_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                trace.draw_clear(self.program.string(color_id)?);
-            }
-            BUILTIN_DISPLAY_TEXT => {
-                let valign_id = self.pop_optional_string()?;
-                let align_id = self.pop_optional_string()?;
-                let background_color_id = self.pop_optional_string()?;
-                let text_color_id = self.pop_optional_string()?;
-                let font_height = self.pop()?.expect_i32()?;
-                let h = self.pop()?.expect_i32()?;
-                let w = self.pop()?.expect_i32()?;
-                let y = self.pop()?.expect_i32()?;
-                let x = self.pop()?.expect_i32()?;
-                let text = self.pop()?;
-                let strings = StringResolver::new(&self.program, &self.runtime_strings);
-                trace.draw_text(
-                    &strings,
-                    text,
-                    DisplayTextOptions {
-                        x,
-                        y,
-                        w,
-                        h,
-                        font_height,
-                        text_color: text_color_id
-                            .map(|id| self.program.string(id))
-                            .transpose()?,
-                        background_color: background_color_id
-                            .map(|id| self.program.string(id))
-                            .transpose()?,
-                        align: align_id.map(|id| self.program.string(id)).transpose()?,
-                        valign: valign_id.map(|id| self.program.string(id)).transpose()?,
-                    },
-                );
-            }
-            BUILTIN_DISPLAY_RECT => {
-                let stroke_color_id = self.pop_optional_string()?;
-                let fill_color_id = self.pop_optional_string()?;
-                let h = self.pop()?.expect_i32()?;
-                let w = self.pop()?.expect_i32()?;
-                let y = self.pop()?.expect_i32()?;
-                let x = self.pop()?.expect_i32()?;
-                trace.draw_rect(DisplayRectOptions {
-                    x,
-                    y,
-                    w,
-                    h,
-                    fill_color: fill_color_id
-                        .map(|id| self.program.string(id))
-                        .transpose()?,
-                    stroke_color: stroke_color_id
-                        .map(|id| self.program.string(id))
-                        .transpose()?,
-                });
-            }
-            BUILTIN_DISPLAY_LINE => {
-                let color_id = self.pop_optional_string()?;
-                let y2 = self.pop()?.expect_i32()?;
-                let x2 = self.pop()?.expect_i32()?;
-                let y1 = self.pop()?.expect_i32()?;
-                let x1 = self.pop()?.expect_i32()?;
-                trace.draw_line(DisplayLineOptions {
-                    x1,
-                    y1,
-                    x2,
-                    y2,
-                    color: color_id.map(|id| self.program.string(id)).transpose()?,
-                });
-            }
-            BUILTIN_DISPLAY_SELECT => {
-                let Value::String(name_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                trace.draw_select(self.program.string(name_id)?)?;
-            }
-            BUILTIN_DISPLAY_IMAGE => {
-                let h = self.pop()?.expect_i32()?;
-                let w = self.pop()?.expect_i32()?;
-                let y = self.pop()?.expect_i32()?;
-                let x = self.pop()?.expect_i32()?;
-                let Value::String(path_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                trace.draw_image(
-                    self.program.string(path_id)?,
-                    DisplayResourceOptions { x, y, w, h },
-                );
-            }
-            BUILTIN_DISPLAY_DRAW => {
-                let h = self.pop()?.expect_i32()?;
-                let w = self.pop()?.expect_i32()?;
-                let y = self.pop()?.expect_i32()?;
-                let x = self.pop()?.expect_i32()?;
-                let drawable = self.pop()?;
-                let strings = StringResolver::new(&self.program, &self.runtime_strings);
-                trace.draw_resource(&strings, drawable, DisplayResourceOptions { x, y, w, h });
-            }
-            BUILTIN_HARDWARE_GPIO_WRITE => {
-                let Value::String(name_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let Value::Bool(value) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let name = self.program.string(name_id)?;
-                trace.hardware_gpio_write(name, value)?;
-            }
-            BUILTIN_HARDWARE_GPIO_TOGGLE => {
-                let Value::String(name_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let name = self.program.string(name_id)?;
-                trace.hardware_gpio_toggle(name)?;
-            }
-            BUILTIN_HARDWARE_GPIO_READ => {
-                let Value::String(name_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let name = self.program.string(name_id)?;
-                let value = trace.hardware_gpio_read(name)?;
-                self.push(Value::Bool(value))?;
-            }
-            BUILTIN_SERVICE_INDICATOR_WRITE => {
-                let Value::Bool(value) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                trace.service_indicator_write(value)?;
-            }
-            BUILTIN_SERVICE_INDICATOR_TOGGLE => {
-                trace.service_indicator_toggle()?;
-            }
-            BUILTIN_SERVICE_INDICATOR_BREATHE => {
-                trace.service_indicator_breathe()?;
-            }
-            BUILTIN_SERVICE_INDICATOR_BLINK => {
-                let Value::I32(off_ms) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let Value::I32(on_ms) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                trace.service_indicator_blink(on_ms, off_ms)?;
-            }
-            BUILTIN_SERVICE_INDICATOR_READ => {
-                let value = trace.service_indicator_read()?;
-                self.push(Value::Bool(value))?;
-            }
-            BUILTIN_APP_LAUNCH => {
-                let Value::String(app_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let app = self.program.string(app_id)?;
-                trace.app_launch(app)?;
-            }
-            BUILTIN_APP_ARM => {
-                let Value::String(app_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let app = self.program.string(app_id)?;
-                trace.app_arm(app)?;
-            }
-            BUILTIN_APP_DISARM => {
-                let Value::String(app_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let app = self.program.string(app_id)?;
-                trace.app_disarm(app)?;
-            }
-            BUILTIN_APP_REGISTRY_LIST => {
-                let registry = trace.app_registry_list()?;
-                let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
-                let count = registry.apps.len().min(MAX_RUNTIME_LIST_ITEMS);
-                for (index, app) in registry.apps.iter().take(count).enumerate() {
-                    items[index] = self.runtime_string_value(Some(app.id))?;
-                }
-                let value = self.runtime_lists.alloc(&items[..count])?;
-                self.push(value)?;
-            }
-            BUILTIN_APP_REGISTRY_GET => {
-                let index = self.pop()?.expect_i32()?;
-                let Value::List(list_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let app_id = self.runtime_lists.get(list_id, index)?;
-                let strings = StringResolver::new(&self.program, &self.runtime_strings);
-                let app_id = strings.value_str(app_id)?;
-                let entry = trace.app_registry_get(app_id)?;
-                let value = self.app_registry_record(entry)?;
-                self.push(value)?;
-            }
-            BUILTIN_APP_PROCESS_STACK => {
-                let process = trace.app_process_stack()?;
-                let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
-                let count = process.apps.len().min(MAX_RUNTIME_LIST_ITEMS);
-                for (index, app_id) in process.apps.iter().take(count).enumerate() {
-                    items[index] = self.runtime_string_value(Some(app_id))?;
-                }
-                let value = self.runtime_lists.alloc(&items[..count])?;
-                self.push(value)?;
-            }
-            BUILTIN_APP_ARMED_STACK => {
-                let armed = trace.app_armed_stack()?;
-                let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
-                let count = armed.entries.len().min(MAX_RUNTIME_LIST_ITEMS);
-                for (index, entry) in armed.entries.iter().take(count).enumerate() {
-                    items[index] = self.app_armed_stack_record(*entry)?;
-                }
-                let value = self.runtime_lists.alloc(&items[..count])?;
-                self.push(value)?;
-            }
-            BUILTIN_APP_ARMED_STACK_GET => {
-                let index = self.pop()?.expect_i32()?;
-                let Value::List(list_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                self.push(self.runtime_lists.get(list_id, index)?)?;
-            }
-            BUILTIN_SERVICE_TIMER_EVERY => {
-                let interval_ms = self.pop()?.expect_i32()?;
-                let Value::String(event_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let event = self.program.string(event_id)?;
-                trace.service_timer_every(event, interval_ms)?;
-            }
-            BUILTIN_SERVICE_TIMER_AFTER => {
-                let delay_ms = self.pop()?.expect_i32()?;
-                let Value::String(event_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let event = self.program.string(event_id)?;
-                trace.service_timer_after(event, delay_ms)?;
-            }
-            BUILTIN_SERVICE_WIFI_START_AP => {
-                let Value::String(ssid_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let ssid = self.program.string(ssid_id)?;
-                let result = trace.service_wifi_start_ap(ssid)?;
-                let value = self.wifi_action_record(result)?;
-                self.push(value)?;
-            }
-            BUILTIN_SERVICE_WIFI_STOP_AP => {
-                let result = trace.service_wifi_stop_ap()?;
-                let value = self.wifi_action_record(result)?;
-                self.push(value)?;
-            }
-            BUILTIN_SERVICE_WIFI_CONNECT => {
-                let Value::String(profile_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let profile = self.program.string(profile_id)?;
-                let result = trace.service_wifi_connect(profile)?;
-                let value = self.wifi_action_record(result)?;
-                self.push(value)?;
-            }
-            BUILTIN_SERVICE_WIFI_DISCONNECT => {
-                let result = trace.service_wifi_disconnect()?;
-                let value = self.wifi_action_record(result)?;
-                self.push(value)?;
-            }
-            BUILTIN_SERVICE_WIFI_STATUS => {
-                let result = trace.service_wifi_status()?;
-                let value = self.wifi_status_record(result)?;
-                self.push(value)?;
-            }
-            BUILTIN_SERVICE_WIFI_GET_AP_IP => {
-                let result = trace.service_wifi_get_ap_ip()?;
-                let value = self.wifi_ap_ip_record(result)?;
-                self.push(value)?;
-            }
-            BUILTIN_SERVICE_WIFI_SCAN => {
-                let result = trace.service_wifi_scan()?;
-                let value = self.wifi_scan_record(result)?;
-                self.push(value)?;
-            }
-            BUILTIN_DEVICE_CONFIG_LOAD => {
-                let Value::String(source_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let result = trace.device_config_load(self.program.string(source_id)?)?;
-                let value = self.device_config_result_record(result)?;
-                self.push(value)?;
-            }
-            BUILTIN_DEVICE_CONFIG_SET => {
-                let value = self.pop()?;
-                let Value::String(key_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let strings = StringResolver::new(&self.program, &self.runtime_strings);
-                let result =
-                    trace.device_config_set(self.program.string(key_id)?, value, &strings)?;
-                let value = self.device_config_result_record(result)?;
-                self.push(value)?;
-            }
-            BUILTIN_DEVICE_CONFIG_REBIND => {
-                let Value::String(binding_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let result = trace.device_config_rebind(self.program.string(binding_id)?)?;
-                let value = self.device_config_result_record(result)?;
-                self.push(value)?;
-            }
-            BUILTIN_DEVICE_CONFIG_SAVE => {
-                let Value::String(destination_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let result = trace.device_config_save(self.program.string(destination_id)?)?;
-                let value = self.device_config_result_record(result)?;
-                self.push(value)?;
-            }
-            crate::bytecode::BUILTIN_CONTENT_PICK_FILE => {
-                let Value::String(extension_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let result = trace.content_pick_file(self.program.string(extension_id)?)?;
-                let value = self.content_pick_file_result_record(result)?;
-                self.push(value)?;
-            }
-            crate::bytecode::BUILTIN_CONTENT_READ_TEXT => {
-                let Value::String(path_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let result = trace.content_read_text(self.program.string(path_id)?)?;
-                let value = self.content_read_text_result_record(result)?;
-                self.push(value)?;
-            }
-            crate::bytecode::BUILTIN_CONTENT_READ_LINES => {
-                let max_lines = self.pop()?.expect_i32()?;
-                let Value::String(path_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let result = trace.content_read_lines(self.program.string(path_id)?, max_lines)?;
-                let value = self.content_read_lines_result_record(result)?;
-                self.push(value)?;
-            }
-            BUILTIN_SYSTEM_MEMORY => {
-                let mut writer = self.runtime_strings.alloc()?;
-                trace.system_memory_text(&mut writer)?;
-                let value = writer.value();
-                self.push(value)?;
-            }
-            BUILTIN_SYSTEM_STORAGE => {
-                let Value::String(name_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                let name = self.program.string(name_id)?;
-                let mut writer = self.runtime_strings.alloc()?;
-                trace.system_storage_text(name, &mut writer)?;
-                let value = writer.value();
-                self.push(value)?;
-            }
-            _ => return Err(VmError::InvalidOperand),
-        }
-        Ok(())
-    }
-
-    fn runtime_string_value(&mut self, value: Option<&str>) -> Result<Value, VmError> {
-        let Some(value) = value else {
-            return Ok(Value::Null);
-        };
-        let mut writer = self.runtime_strings.alloc()?;
-        writer
-            .write_str(value)
-            .map_err(|_| VmError::InvalidOperand)?;
-        Ok(writer.value())
-    }
-
-    fn wifi_action_record(&mut self, result: WifiActionResult<'_>) -> Result<Value, VmError> {
-        let error = self.runtime_string_value(result.error)?;
-        self.runtime_records.alloc(&[
-            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
-            RuntimeRecordField::new("error", error),
-        ])
-    }
-
-    fn device_config_result_record(
-        &mut self,
-        result: DeviceConfigResult<'_>,
-    ) -> Result<Value, VmError> {
-        let error = self.runtime_string_value(result.error)?;
-        let warning = self.runtime_string_value(result.warning)?;
-        self.runtime_records.alloc(&[
-            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
-            RuntimeRecordField::new("error", error),
-            RuntimeRecordField::new("warning", warning),
-        ])
-    }
-
-    fn content_pick_file_result_record(
-        &mut self,
-        result: ContentPickFileResult<'_>,
-    ) -> Result<Value, VmError> {
-        let error = self.runtime_string_value(result.error)?;
-        let path = self.runtime_string_value(result.path)?;
-        self.runtime_records.alloc(&[
-            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
-            RuntimeRecordField::new("error", error),
-            RuntimeRecordField::new("path", path),
-        ])
-    }
-
-    fn content_read_text_result_record(
-        &mut self,
-        result: ContentReadTextResult<'_>,
-    ) -> Result<Value, VmError> {
-        let error = self.runtime_string_value(result.error)?;
-        let text = self.runtime_string_value(result.text)?;
-        self.runtime_records.alloc(&[
-            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
-            RuntimeRecordField::new("error", error),
-            RuntimeRecordField::new("text", text),
-        ])
-    }
-
-    fn content_read_lines_result_record(
-        &mut self,
-        result: ContentReadLinesResult<'_>,
-    ) -> Result<Value, VmError> {
-        let error = self.runtime_string_value(result.error)?;
-        let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
-        let count = result.lines.len().min(MAX_RUNTIME_LIST_ITEMS);
-        for (index, line) in result.lines.iter().take(count).enumerate() {
-            items[index] = self.runtime_string_value(Some(line))?;
-        }
-        let lines = self.runtime_lists.alloc(&items[..count])?;
-        self.runtime_records.alloc(&[
-            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
-            RuntimeRecordField::new("error", error),
-            RuntimeRecordField::new("lines", lines),
-        ])
-    }
-
-    fn app_registry_record(&mut self, entry: AppRegistryEntry<'_>) -> Result<Value, VmError> {
-        let id = self.runtime_string_value(Some(entry.id))?;
-        let name = self.runtime_string_value(Some(entry.name))?;
-        let build = self.runtime_string_value(Some(entry.build))?;
-        let description = self.runtime_string_value(Some(entry.description))?;
-        self.runtime_records.alloc(&[
-            RuntimeRecordField::new("id", id),
-            RuntimeRecordField::new("name", name),
-            RuntimeRecordField::new("build", build),
-            RuntimeRecordField::new("description", description),
-        ])
-    }
-
-    fn app_armed_stack_record(&mut self, entry: AppArmedStackEntry<'_>) -> Result<Value, VmError> {
-        let app_id = self.runtime_string_value(Some(entry.app_id))?;
-        let event = self.runtime_string_value(Some(entry.event))?;
-        self.runtime_records.alloc(&[
-            RuntimeRecordField::new("appId", app_id),
-            RuntimeRecordField::new("event", event),
-        ])
-    }
-
-    fn wifi_status_record(&mut self, result: WifiStatus<'_>) -> Result<Value, VmError> {
-        let mode = self.runtime_string_value(result.mode)?;
-        let ip_address = self.runtime_string_value(result.ip_address)?;
-        let ssid = self.runtime_string_value(result.ssid)?;
-        let error = self.runtime_string_value(result.error)?;
-        let state = self.runtime_string_value(Some(result.state))?;
-        let backend = self.runtime_string_value(Some(result.backend))?;
-        let driver_mode = self.runtime_string_value(result.driver_mode)?;
-        let last_backend_code = self.runtime_string_value(result.last_backend_code)?;
-        let profile = self.runtime_string_value(result.profile)?;
-        let auth = self.runtime_string_value(result.auth)?;
-        let bssid = self.runtime_string_value(result.bssid)?;
-        let disconnect_reason = self.runtime_string_value(result.disconnect_reason)?;
-        self.runtime_records.alloc(&[
-            RuntimeRecordField::new("active", Value::Bool(result.active)),
-            RuntimeRecordField::new("mode", mode),
-            RuntimeRecordField::new("ipAddress", ip_address),
-            RuntimeRecordField::new("ssid", ssid),
-            RuntimeRecordField::new("clients", Value::I32(result.clients)),
-            RuntimeRecordField::new("error", error),
-            RuntimeRecordField::new("state", state),
-            RuntimeRecordField::new("backend", backend),
-            RuntimeRecordField::new("driverStarted", Value::Bool(result.driver_started)),
-            RuntimeRecordField::new("configured", Value::Bool(result.configured)),
-            RuntimeRecordField::new("driverMode", driver_mode),
-            RuntimeRecordField::new("channel", Value::I32(result.channel)),
-            RuntimeRecordField::new("apStartEvents", Value::I32(result.ap_start_events)),
-            RuntimeRecordField::new("apStopEvents", Value::I32(result.ap_stop_events)),
-            RuntimeRecordField::new("probeEvents", Value::I32(result.probe_events)),
-            RuntimeRecordField::new(
-                "staConnectedEvents",
-                Value::I32(result.sta_connected_events),
-            ),
-            RuntimeRecordField::new(
-                "staDisconnectedEvents",
-                Value::I32(result.sta_disconnected_events),
-            ),
-            RuntimeRecordField::new("lastBackendCode", last_backend_code),
-            RuntimeRecordField::new("profile", profile),
-            RuntimeRecordField::new("connected", Value::Bool(result.connected)),
-            RuntimeRecordField::new("scanMatches", Value::I32(result.scan_matches)),
-            RuntimeRecordField::new("rssi", Value::I32(result.rssi)),
-            RuntimeRecordField::new("auth", auth),
-            RuntimeRecordField::new("bssid", bssid),
-            RuntimeRecordField::new("disconnectReason", disconnect_reason),
-            RuntimeRecordField::new(
-                "disconnectReasonCode",
-                Value::I32(result.disconnect_reason_code),
-            ),
-        ])
-    }
-
-    fn wifi_ap_ip_record(&mut self, result: WifiApIp<'_>) -> Result<Value, VmError> {
-        let ip = self.runtime_string_value(result.ip)?;
-        let gw = self.runtime_string_value(result.gw)?;
-        let netmask = self.runtime_string_value(result.netmask)?;
-        let error = self.runtime_string_value(result.error)?;
-        self.runtime_records.alloc(&[
-            RuntimeRecordField::new("ip", ip),
-            RuntimeRecordField::new("gw", gw),
-            RuntimeRecordField::new("netmask", netmask),
-            RuntimeRecordField::new("error", error),
-        ])
-    }
-
-    fn wifi_scan_record(&mut self, result: WifiScanResult<'_>) -> Result<Value, VmError> {
-        let error = self.runtime_string_value(result.error)?;
-        let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
-        let count = result.networks.len().min(MAX_RUNTIME_LIST_ITEMS);
-        for (index, network) in result.networks.iter().take(count).enumerate() {
-            items[index] = self.wifi_access_point_record(*network)?;
-        }
-        let networks = self.runtime_lists.alloc(&items[..count])?;
-        self.runtime_records.alloc(&[
-            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
-            RuntimeRecordField::new("error", error),
-            RuntimeRecordField::new("count", Value::I32(count.min(i32::MAX as usize) as i32)),
-            RuntimeRecordField::new("networks", networks),
-        ])
-    }
-
-    fn wifi_access_point_record(&mut self, network: WifiAccessPoint) -> Result<Value, VmError> {
-        let ssid = self.runtime_string_value(Some(network.ssid()?))?;
-        let bssid = self.runtime_string_value(network.bssid()?)?;
-        let auth = self.runtime_string_value(network.auth)?;
-        self.runtime_records.alloc(&[
-            RuntimeRecordField::new("ssid", ssid),
-            RuntimeRecordField::new("ssidLength", Value::I32(network.ssid_length)),
-            RuntimeRecordField::new("bssid", bssid),
-            RuntimeRecordField::new("channel", Value::I32(network.channel)),
-            RuntimeRecordField::new("rssi", Value::I32(network.rssi)),
-            RuntimeRecordField::new("auth", auth),
-            RuntimeRecordField::new("hidden", Value::Bool(network.hidden)),
-        ])
-    }
-
-    fn binary(&mut self, op: u8) -> Result<(), VmError> {
-        let right = self.pop()?;
-        let left = self.pop()?;
-        let value = match op {
-            OP_ADD => self.add_values(left, right)?,
-            OP_SUB => Value::I32(left.expect_i32()? - right.expect_i32()?),
-            OP_EQ => Value::Bool(values_equal(
-                &self.program,
-                &self.runtime_strings,
-                left,
-                right,
-            )?),
-            OP_NE => Value::Bool(!values_equal(
-                &self.program,
-                &self.runtime_strings,
-                left,
-                right,
-            )?),
-            OP_LT => Value::Bool(left.expect_i32()? < right.expect_i32()?),
-            OP_LTE => Value::Bool(left.expect_i32()? <= right.expect_i32()?),
-            OP_GT => Value::Bool(left.expect_i32()? > right.expect_i32()?),
-            OP_GTE => Value::Bool(left.expect_i32()? >= right.expect_i32()?),
-            _ => return Err(VmError::UnknownOpcode),
-        };
-        self.push(value)
-    }
-
-    fn add_values(&mut self, left: Value, right: Value) -> Result<Value, VmError> {
-        if let (Value::I32(left), Value::I32(right)) = (left, right) {
-            return Ok(Value::I32(left + right));
-        }
-        if left.is_string() && right.is_string() {
-            let mut bytes = [0u8; MAX_RUNTIME_STRING_BYTES];
-            let len = concat_value_strings(
-                &self.program,
-                &self.runtime_strings,
-                left,
-                right,
-                &mut bytes,
-            )?;
-            let text = str::from_utf8(&bytes[..len]).map_err(|_| VmError::InvalidUtf8)?;
-            let mut writer = self.runtime_strings.alloc()?;
-            writer
-                .write_str(text)
-                .map_err(|_| VmError::InvalidOperand)?;
-            return Ok(writer.value());
-        }
-        Err(VmError::InvalidOperand)
-    }
-
-    fn push(&mut self, value: Value) -> Result<(), VmError> {
-        if self.stack_len == MAX_STACK {
-            return Err(VmError::StackOverflow);
-        }
-        self.stack[self.stack_len] = value;
-        self.stack_len += 1;
-        Ok(())
-    }
-
-    fn pop(&mut self) -> Result<Value, VmError> {
-        if self.stack_len == 0 {
-            return Err(VmError::StackUnderflow);
-        }
-        self.stack_len -= 1;
-        Ok(self.stack[self.stack_len])
-    }
 }
