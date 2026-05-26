@@ -462,8 +462,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
 
-        self.assertIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 11264", runtime_h)
-        self.assertIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 11264", ztest)
+        self.assertIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 12288", runtime_h)
+        self.assertIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 12288", ztest)
 
     def test_runtime_reuses_transfer_storage_for_init_scratch_and_completion(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")

@@ -46,6 +46,11 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   reductions for the largest static allocations, especially VM runtime storage,
   work stacks, response/session buffers, logging, LittleFS pools, and file
   caches.
+- Improve network heap attribution before expanding Wi-Fi scope. Current AP
+  start/stop hardware coverage drives `ram_heap_max_allocated_bytes` close to
+  the 36 KiB system heap budget; add clearer per-workload heap reset or
+  attribution before TCP, AP client throughput, BLE coexistence, or larger
+  network workloads.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.
