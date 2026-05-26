@@ -1806,16 +1806,16 @@ static int sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *runtime)
 	}
 
 	for (size_t index = 0; index < count; index++) {
-		SqvmDeviceBinding *binding = &runtime->device_binding_scratch;
-		SqdcDeviceBindingPlan *plan = &runtime->device_binding_plan;
-		SqvmDeviceConfigResult *result = &runtime->device_config_result;
+		SqvmDeviceBinding binding_storage = {0};
+		SqdcDeviceBindingPlan plan_storage = {0};
+		SqvmDeviceConfigResult result_storage = {0};
+		SqvmDeviceBinding *binding = &binding_storage;
+		SqdcDeviceBindingPlan *plan = &plan_storage;
+		SqvmDeviceConfigResult *result = &result_storage;
 		size_t resource_len;
 		size_t service_len;
 		size_t binding_len;
 
-		memset(binding, 0, sizeof(*binding));
-		memset(plan, 0, sizeof(*plan));
-		memset(result, 0, sizeof(*result));
 		status = sqvm_device_binding_read_from_reader(runtime, runtime_read_exact_at,
 							      runtime->transfer.init_scratch,
 							      sizeof(runtime->transfer.init_scratch),
@@ -2090,9 +2090,6 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->indicator_blink_on_ms = 0;
 	runtime->indicator_blink_off_ms = 0;
 	runtime->indicator_blink_next_ms = 0;
-	memset(&runtime->device_binding_scratch, 0, sizeof(runtime->device_binding_scratch));
-	memset(&runtime->device_binding_plan, 0, sizeof(runtime->device_binding_plan));
-	memset(&runtime->device_config_result, 0, sizeof(runtime->device_config_result));
 	(void)sq_vm_runtime_apply_target_default_indicator_binding(runtime);
 	runtime->gpio_configured_mask = 0;
 	runtime->gpio_state_mask = 0;

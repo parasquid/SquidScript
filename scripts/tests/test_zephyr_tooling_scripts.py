@@ -482,6 +482,19 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("sizeof(runtime.transfer.init_scratch)", ztest)
         self.assertIn("runtime_static <= 16640", ztest)
 
+    def test_runtime_does_not_keep_launch_binding_scratch_resident(self):
+        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+        runtime_body = runtime_h[
+            runtime_h.index("struct sq_vm_runtime {") : runtime_h.index(
+                "void sq_vm_runtime_init", runtime_h.index("struct sq_vm_runtime {")
+            )
+        ]
+
+        self.assertNotIn("SqvmDeviceBinding device_binding_scratch;", runtime_body)
+        self.assertNotIn("SqdcDeviceBindingPlan device_binding_plan;", runtime_body)
+        self.assertNotIn("SqvmDeviceConfigResult device_config_result;", runtime_body)
+        self.assertIn("SqdcConfig device_config_draft;", runtime_body)
+
     def test_runtime_keeps_bounded_diagnostic_history(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
 
