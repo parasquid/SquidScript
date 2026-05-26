@@ -67,11 +67,13 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   low byte is configured input count and the next byte is currently pressed
   count, so timeout runs can prove whether the physical binding was installed
   and whether the firmware saw the line pressed. Current hardware evidence has
-  `input_button_state=257` at launch and after release timeout, meaning the
-  firmware sees GPIO9 as already pressed and never observes release. Resolve
-  that physical input-state issue, complete an observed physical press row,
-  explain any press-time peak, then validate whether the 8 KiB protocol/main
-  stack or 19 KiB worker stack can be reduced after full-suite coverage.
+  `input_button_state=1` at launch, after release, and after press timeout,
+  meaning the GPIO9 binding is installed and the line now reads released after
+  devicetree pull-up configuration. The input isolation script now asks for a
+  held press and separates electrical press timeout from dispatch/output
+  timeout. Complete an observed physical press row, explain any press-time peak,
+  then validate whether the 8 KiB protocol/main stack or 19 KiB worker stack can
+  be reduced after full-suite coverage.
 - Improve network heap attribution before expanding Wi-Fi scope. Current AP
   start/stop hardware coverage drives `ram_heap_max_allocated_bytes` close to
   the 36 KiB system heap budget; add clearer per-workload heap reset or

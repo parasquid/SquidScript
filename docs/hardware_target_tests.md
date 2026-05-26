@@ -160,7 +160,8 @@ the full hardware suite before lowering the configured main stack budget again.
 Use `scripts/c3-supermini-measure-input-stack-isolation.sh` when the input path
 needs clean high-water attribution. It builds/flashes by default, verifies the
 diagnostic boot banner, then records `after-boot`, `after-format`,
-`after-install`, `after-launch`, and `after-press` resource rows under
+`after-install`, `after-launch`, `after-release`, `after-press-observed`, and
+`after-press` resource rows under
 `target/hardware-tests/input-stack-isolation/summary.tsv`. Pass `--skip-flash`
 only when preserving the current firmware session is more important than a
 fresh high-water baseline. The current clean-boot input isolation launch row
@@ -168,12 +169,13 @@ measured protocol/main stack flat at 2476 bytes and VM worker stack use at
 17056 bytes, with 2400 bytes free and `input_button_state=1`. The low byte
 confirms one physical GPIO9 binding was installed; the next byte reports zero
 currently pressed inputs after the BOOT/GPIO9 pull-up is configured through
-devicetree. The script waits for release before asking for a press and writes
-`after-release-timeout` diagnostics if the line never reads released. A run
-with no observed physical press writes `after-press-timeout` diagnostics with
-the same stack high-water rows and `input_button_state=1`. The physical
-BOOT/GPIO9 press row still needs a completed observed-button run before
-reducing stack budgets further.
+devicetree. The script waits for release before asking for a held press and
+writes `after-release-timeout` diagnostics if the line never reads released. If
+the held press is not observed electrically, it writes `after-press-timeout`
+diagnostics; if the press is observed but `output=count 1` is not produced, it
+writes `after-dispatch-timeout` diagnostics. The physical BOOT/GPIO9 press row
+still needs a completed observed-button run before reducing stack budgets
+further.
 After flattening the resumable screen-render interpreter path, a headless
 draw-log isolation run showed that `screen.open(...)` into a screen with only
 `service.display.clear("gray0")` uses `vm_worker_stack_used_bytes=17056` of

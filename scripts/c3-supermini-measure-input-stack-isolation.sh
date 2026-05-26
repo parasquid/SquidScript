@@ -22,7 +22,8 @@ app path. By default the script builds/flashes and verifies a fresh diagnostic
 boot before the first resources snapshot so stack high-water rows are not
 inherited from earlier workloads in the same firmware boot.
 
-This script requires a physical BOOT/GPIO9 button press for the final
+This script requires holding the physical BOOT/GPIO9 button until the script
+observes the pressed state, then releasing it when prompted for the final
 after-press snapshot.
 
 Use --skip-flash only when an already-running firmware image is acceptable.
@@ -144,6 +145,28 @@ wait_for_input_released() {
   return 1
 }
 
+wait_for_input_pressed() {
+  local out="${WORK_DIR}/resources-press-poll.out"
+  local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS))
+
+  while (( SECONDS < deadline )); do
+    printf 'c3-supermini-measure-input-stack-isolation.sh: %s\n' \
+      'cargo run --quiet -p squidc -- device resources' >&2
+    if timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" \
+      cargo run --quiet -p squidc -- device resources >"${out}" 2>&1; then
+      if (( "$(input_pressed_count "${out}")" > 0 )); then
+        return 0
+      fi
+    fi
+    sleep 0.2
+  done
+
+  printf 'Timed out waiting for BOOT/GPIO9 pressed state\n' >&2
+  printf '%s\n' "--- ${out} ---" >&2
+  sed -n '1,200p' "${out}" >&2
+  return 1
+}
+
 snapshot_resources() {
   local label="$1"
   local file
@@ -206,11 +229,28 @@ if ! wait_for_input_released; then
 fi
 snapshot_resources after-release
 
-printf '%s\n' 'Press and release the ESP32-C3 Super Mini BOOT/GPIO9 button now.' >&2
-if ! wait_for_contains_or_timeout input-output-press "output=count 1" \
-  "device output" cargo run --quiet -p squidc -- device output >/dev/null; then
+printf '%s\n' \
+  'Press and hold the ESP32-C3 Super Mini BOOT/GPIO9 button until this script asks you to release it.' >&2
+if ! wait_for_input_pressed; then
   snapshot_resources after-press-timeout
   run_capture errors-after-press-timeout \
+    cargo run --quiet -p squidc -- device errors >/dev/null
+  exit 1
+fi
+snapshot_resources after-press-observed
+
+if ! wait_for_contains_or_timeout input-output-press "output=count 1" \
+  "device output" cargo run --quiet -p squidc -- device output >/dev/null; then
+  snapshot_resources after-dispatch-timeout
+  run_capture errors-after-dispatch-timeout \
+    cargo run --quiet -p squidc -- device errors >/dev/null
+  exit 1
+fi
+
+printf '%s\n' 'Release the ESP32-C3 Super Mini BOOT/GPIO9 button now.' >&2
+if ! wait_for_input_released; then
+  snapshot_resources after-final-release-timeout
+  run_capture errors-after-final-release-timeout \
     cargo run --quiet -p squidc -- device errors >/dev/null
   exit 1
 fi
