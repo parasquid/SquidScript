@@ -2786,7 +2786,10 @@ static int configure_input_button_gpio(uint8_t pin, bool active_low, bool *press
 #if SQ_VM_RUNTIME_HAS_SW0_GPIO
 	if (pin == input_sw0_gpio.pin) {
 		if (device_is_ready(input_sw0_gpio.port)) {
-			/* GPIO9 is the board BOOT strap and is already declared as sw0. */
+			int result = gpio_pin_configure_dt(&input_sw0_gpio, GPIO_INPUT);
+			if (result != 0) {
+				return result;
+			}
 			return read_input_button_gpio(pin, active_low, pressed);
 		}
 		*pressed = false;
@@ -2815,11 +2818,11 @@ static int read_input_button_gpio(uint8_t pin, bool active_low, bool *pressed)
 #if SQ_VM_RUNTIME_HAS_SW0_GPIO
 	if (pin == input_sw0_gpio.pin) {
 		if (device_is_ready(input_sw0_gpio.port)) {
-			int value = gpio_pin_get_dt(&input_sw0_gpio);
-			if (value < 0) {
-				return value;
+			int raw = gpio_pin_get_raw(input_sw0_gpio.port, input_sw0_gpio.pin);
+			if (raw < 0) {
+				return raw;
 			}
-			*pressed = value != 0;
+			*pressed = active_low ? raw == 0 : raw != 0;
 			return 0;
 		}
 		*pressed = false;

@@ -1025,6 +1025,22 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             suite.index("c3-supermini-test-blinky.sh"),
         )
 
+    def test_sw0_gpio_button_path_configures_pullup_and_uses_binding_polarity(self):
+        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+        configure_start = runtime.rindex("static int configure_input_button_gpio")
+        read_start = runtime.rindex("static int read_input_button_gpio")
+        configure_body = runtime[configure_start:read_start]
+        read_end = runtime.index("int sq_vm_runtime_hardware_gpio_write")
+        read_body = runtime[read_start:read_end]
+
+        self.assertIn("gpio_pin_configure_dt(&input_sw0_gpio, GPIO_INPUT)", configure_body)
+        self.assertIn(
+            "int raw = gpio_pin_get_raw(input_sw0_gpio.port, input_sw0_gpio.pin)",
+            read_body,
+        )
+        self.assertIn("*pressed = active_low ? raw == 0 : raw != 0", read_body)
+        self.assertNotIn("gpio_pin_get_dt(&input_sw0_gpio)", read_body)
+
     def test_hardware_suite_runs_unsupported_inline_gpio_binding_script(self):
         script = self.read("scripts/c3-supermini-test-unsupported-inline-gpio-binding.sh")
         app = self.read(
