@@ -142,15 +142,17 @@ app lifecycle checks in the full ESP32-C3 Super Mini suite. It records
 `device resources` output under `target/hardware-tests/stack-usage/` and
 verifies `protocol_thread_stack_*` and `vm_worker_stack_*` metrics are
 internally consistent. The current firmware keeps the protocol/main stack budget
-at 12 KiB and the VM worker stack budget at 20 KiB based on measured high-water
-data. GPIO-button device-binding launch coverage previously measured
+at 8 KiB and the VM worker stack budget at 20 KiB based on measured high-water
+data. The harness uses a command-level timeout for its `device resources`
+request so serial stalls fail with captured output instead of hanging the full
+suite. GPIO-button device-binding launch coverage previously measured
 protocol/main stack use above the prior 8 KiB budget. Launch-time binding setup
 now runs on the VM worker stack and preserves synchronous launch setup errors,
 so a clean-boot GPIO9 input summary run measured protocol/main stack use flat at
 2476 bytes across format, install, launch, and serial `SELECT`. Remeasure with
-the full hardware suite before lowering the configured main stack budget. After
-flattening the resumable screen-render interpreter path, a headless draw-log
-isolation run showed that `screen.open(...)` into a screen with only
+the full hardware suite before lowering the configured main stack budget again.
+After flattening the resumable screen-render interpreter path, a headless
+draw-log isolation run showed that `screen.open(...)` into a screen with only
 `service.display.clear("gray0")` uses `vm_worker_stack_used_bytes=17056` of
 the prior 24576-byte budget, down from the previous 24020-byte display-only
 spike. After moving

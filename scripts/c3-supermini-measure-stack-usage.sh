@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK_DIR="${ROOT}/target/hardware-tests/stack-usage"
+COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-20}"
 
 mkdir -p "${WORK_DIR}"
 
@@ -10,7 +11,8 @@ resources_out="${WORK_DIR}/resources-after-workloads.out"
 summary_out="${WORK_DIR}/summary.out"
 
 printf 'hardware stack usage: cargo run --quiet -p squidc -- device resources\n' >&2
-cargo run --quiet -p squidc -- device resources >"${resources_out}" 2>&1
+timeout "${COMMAND_TIMEOUT_SECONDS}s" \
+  cargo run --quiet -p squidc -- device resources >"${resources_out}" 2>&1
 
 resource_value() {
   local key="$1"
@@ -22,6 +24,45 @@ resource_value() {
 stack_size="$(resource_value vm_worker_stack_size_bytes)"
 stack_unused="$(resource_value vm_worker_stack_unused_bytes)"
 stack_used="$(resource_value vm_worker_stack_used_bytes)"
+protocol_stack_size="$(resource_value protocol_thread_stack_size_bytes)"
+protocol_stack_unused="$(resource_value protocol_thread_stack_unused_bytes)"
+protocol_stack_used="$(resource_value protocol_thread_stack_used_bytes)"
+protocol_stack_pre_resources_unused="$(
+  resource_value protocol_thread_stack_pre_resources_unused_bytes
+)"
+protocol_stack_pre_resources_used="$(
+  resource_value protocol_thread_stack_pre_resources_used_bytes
+)"
+
+if [[ "$protocol_stack_size" != "8192" ]]; then
+  printf 'Expected protocol_thread_stack_size_bytes=8192, got %s\n' \
+    "$protocol_stack_size" >&2
+  printf '%s\n' "--- ${resources_out} ---" >&2
+  sed -n '1,200p' "${resources_out}" >&2
+  exit 1
+fi
+
+if (( protocol_stack_used < 0 ||
+      protocol_stack_unused < 0 ||
+      protocol_stack_used + protocol_stack_unused != protocol_stack_size )); then
+  printf 'Invalid protocol stack accounting: size=%s used=%s unused=%s\n' \
+    "$protocol_stack_size" "$protocol_stack_used" "$protocol_stack_unused" >&2
+  printf '%s\n' "--- ${resources_out} ---" >&2
+  sed -n '1,200p' "${resources_out}" >&2
+  exit 1
+fi
+
+if (( protocol_stack_pre_resources_used < 0 ||
+      protocol_stack_pre_resources_unused < 0 ||
+      protocol_stack_pre_resources_used + protocol_stack_pre_resources_unused !=
+        protocol_stack_size )); then
+  printf 'Invalid pre-resources protocol stack accounting: size=%s used=%s unused=%s\n' \
+    "$protocol_stack_size" "$protocol_stack_pre_resources_used" \
+    "$protocol_stack_pre_resources_unused" >&2
+  printf '%s\n' "--- ${resources_out} ---" >&2
+  sed -n '1,200p' "${resources_out}" >&2
+  exit 1
+fi
 
 if [[ "$stack_size" != "20480" ]]; then
   printf 'Expected vm_worker_stack_size_bytes=20480, got %s\n' "$stack_size" >&2
@@ -39,10 +80,18 @@ if (( stack_used < 0 || stack_unused < 0 || stack_used + stack_unused != stack_s
 fi
 
 {
+  printf 'protocol_thread_stack_size_bytes=%s\n' "$protocol_stack_size"
+  printf 'protocol_thread_stack_used_bytes=%s\n' "$protocol_stack_used"
+  printf 'protocol_thread_stack_unused_bytes=%s\n' "$protocol_stack_unused"
+  printf 'protocol_thread_stack_pre_resources_used_bytes=%s\n' \
+    "$protocol_stack_pre_resources_used"
+  printf 'protocol_thread_stack_pre_resources_unused_bytes=%s\n' \
+    "$protocol_stack_pre_resources_unused"
   printf 'vm_worker_stack_size_bytes=%s\n' "$stack_size"
   printf 'vm_worker_stack_used_bytes=%s\n' "$stack_used"
   printf 'vm_worker_stack_unused_bytes=%s\n' "$stack_unused"
 } >"${summary_out}"
 
-printf 'OK Zephyr VM worker stack usage measured: size=%s used=%s unused=%s\n' \
+printf 'OK Zephyr stack usage measured: protocol size=%s used=%s unused=%s; worker size=%s used=%s unused=%s\n' \
+  "$protocol_stack_size" "$protocol_stack_used" "$protocol_stack_unused" \
   "$stack_size" "$stack_used" "$stack_unused"

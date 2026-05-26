@@ -67,9 +67,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   high-water at 2476 bytes while the VM worker peaked at 17296 bytes with
   3184 bytes free. Extend the harness across storage and network workloads, add
   reset-per-scenario or equivalent high-water isolation for stack attribution,
-  explain peaks and outliers, validate whether the configured 12 KiB
-  protocol/main stack can be reduced after full-suite coverage, and split
-  remaining reductions into concrete implementation tasks.
+  explain peaks and outliers, validate whether the reduced 8 KiB protocol/main
+  stack can be reduced further after full-suite coverage, and split remaining
+  reductions into concrete implementation tasks.
 - Improve network heap attribution before expanding Wi-Fi scope. Current AP
   start/stop hardware coverage drives `ram_heap_max_allocated_bytes` close to
   the 36 KiB system heap budget; add clearer per-workload heap reset or

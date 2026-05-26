@@ -492,7 +492,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_zephyr_main_stack_tracks_measured_protocol_work(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
 
-        self.assertIn("CONFIG_MAIN_STACK_SIZE=12288", prj_conf)
+        self.assertIn("CONFIG_MAIN_STACK_SIZE=8192", prj_conf)
 
     def test_stack_usage_harness_tracks_current_vm_worker_budget(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
@@ -501,6 +501,11 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 20480", runtime_h)
         self.assertIn('Expected vm_worker_stack_size_bytes=20480', stack_script)
         self.assertNotIn('Expected vm_worker_stack_size_bytes=16384', stack_script)
+        self.assertIn("protocol_thread_stack_size_bytes", stack_script)
+        self.assertIn('Expected protocol_thread_stack_size_bytes=8192', stack_script)
+        self.assertIn("protocol_thread_stack_pre_resources_used_bytes", stack_script)
+        self.assertIn('COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-20}"', stack_script)
+        self.assertIn('timeout "${COMMAND_TIMEOUT_SECONDS}s"', stack_script)
 
     def test_default_runtime_gates_wifi_scan_buffers_from_static_ram(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
