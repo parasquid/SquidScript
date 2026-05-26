@@ -51,6 +51,17 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   reductions for the largest static allocations, especially VM runtime storage,
   work stacks, response/session buffers, logging, LittleFS pools, and file
   caches.
+- Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
+  succeeds but serial commands stall, app launch hangs, or input dispatch stops
+  responding, check stack exhaustion early with `device resources`, compare
+  protocol/main and VM worker stack used/unused values, and inspect recent FFI,
+  metadata parsing, storage, and service paths for hidden stack temporaries
+  before treating GPIO, flashing, or serial as the primary failure.
+- Complete a broader ESP32-C3 RAM improvement investigation. Build a measured
+  map of stack, heap, static, filesystem, logging, protocol/session, VM runtime,
+  and service-specific memory use across boot, app install, app launch, input
+  dispatch, storage, and network workloads; explain peaks and outliers, then
+  split reductions into concrete implementation tasks.
 - Improve network heap attribution before expanding Wi-Fi scope. Current AP
   start/stop hardware coverage drives `ram_heap_max_allocated_bytes` close to
   the 36 KiB system heap budget; add clearer per-workload heap reset or
