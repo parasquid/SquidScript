@@ -51,6 +51,12 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   the 36 KiB system heap budget; add clearer per-workload heap reset or
   attribution before TCP, AP client throughput, BLE coexistence, or larger
   network workloads.
+- Add a hardware VM lazy-load screen transition benchmark. Install an app with
+  about 10 small screens, repeatedly switch screen-to-screen from LittleFS, and
+  report VM-only transition timing from event dispatch through lazy SQBC
+  read/resume and draw-log callback completion, excluding host serial latency
+  and physical display refresh. Include SQBC read count/bytes and
+  min/median/p95/max timing over repeated transitions.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.
