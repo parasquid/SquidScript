@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <zephyr/kernel.h>
+#include <zephyr/drivers/gpio.h>
 #if IS_ENABLED(CONFIG_NET_L2_WIFI_MGMT) && IS_ENABLED(CONFIG_NET_MGMT_EVENT) && \
 	IS_ENABLED(CONFIG_NET_MGMT_EVENT_INFO)
 #include <zephyr/net/net_mgmt.h>
@@ -25,6 +26,9 @@ extern "C" {
 #define SQ_VM_RUNTIME_DRAWLOG_LEN 96
 #define SQ_VM_RUNTIME_TIMER_MAX 4
 #define SQ_VM_RUNTIME_ACTIVE_BINDING_MAX 4
+#define SQ_VM_RUNTIME_INPUT_BUTTON_MAX 4
+#define SQ_VM_RUNTIME_INPUT_POLL_MS 20
+#define SQ_VM_RUNTIME_INPUT_DEBOUNCE_MS 30
 #if defined(CONFIG_BOARD_NATIVE_SIM)
 #define SQ_VM_RUNTIME_CONTEXT_BYTES 65536
 #else
@@ -73,6 +77,16 @@ struct sq_vm_runtime_active_binding {
 	char alias[SQVM_DEVICE_BINDING_NAME_CAP];
 };
 
+struct sq_vm_runtime_input_button {
+	bool active;
+	uint8_t pin;
+	bool active_low;
+	bool pressed;
+	int64_t next_poll_ms;
+	int64_t debounce_until_ms;
+	char event[SQ_VM_RUNTIME_EVENT_LEN];
+};
+
 union sq_vm_runtime_transfer {
 	uint8_t init_scratch[SQ_VM_RUNTIME_SCRATCH_BYTES];
 	SqvmStorageCompletion completion;
@@ -115,6 +129,8 @@ struct sq_vm_runtime {
 	size_t armed_timer_count;
 	struct sq_vm_runtime_active_binding active_bindings[SQ_VM_RUNTIME_ACTIVE_BINDING_MAX];
 	size_t active_binding_count;
+	struct sq_vm_runtime_input_button input_buttons[SQ_VM_RUNTIME_INPUT_BUTTON_MAX];
+	size_t input_button_count;
 	char traces[SQ_VM_RUNTIME_TRACE_MAX][SQ_VM_RUNTIME_TRACE_LEN];
 	size_t trace_count;
 	char outputs[SQ_VM_RUNTIME_OUTPUT_MAX][SQ_VM_RUNTIME_OUTPUT_LEN];

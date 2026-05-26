@@ -90,6 +90,11 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   serial input, delay timers, or hide long busy waits behind a convenient API.
   Prefer short poll/step functions, explicit async/event progress, bounded
   time slices, or target scheduler integration over blocking loops.
+- For physical device input work, keep serial and runtime polling responsive.
+  Do not add unbounded or raw GPIO reads to the firmware main-loop path just to
+  detect a button press. Prefer target-supported interrupts or another bounded
+  nonblocking mechanism that records a pending logical input event for the
+  runtime to dispatch.
 - Before adding or moving tests, identify the owning layer: language/compiler semantics, SQBC encoding, firmware VM behavior, host CLI behavior, board-specific firmware harness, example app, docs, or simulator.
 - When making platform decisions, distinguish the public SquidScript contract from board-specific implementation details. Standardize portable concepts in docs/specs, and keep physical storage layouts, partitions, pins, and device quirks in firmware/target-specific docs and metadata.
 - For every architecture or implementation decision, consider cross-platform

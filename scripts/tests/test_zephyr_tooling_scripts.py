@@ -487,7 +487,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_zephyr_main_stack_tracks_measured_protocol_work(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
 
-        self.assertIn("CONFIG_MAIN_STACK_SIZE=8192", prj_conf)
+        self.assertIn("CONFIG_MAIN_STACK_SIZE=12288", prj_conf)
 
     def test_stack_usage_harness_tracks_current_vm_worker_budget(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
@@ -922,6 +922,39 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         )
         self.assertLess(
             suite.index("c3-supermini-test-inline-gpio10-binding.sh"),
+            suite.index("c3-supermini-test-blinky.sh"),
+        )
+
+    def test_hardware_suite_runs_input_button_script(self):
+        script = self.read("scripts/c3-supermini-test-input-button.sh")
+        app = self.read("tests/hardware/c3-supermini/input-button-summary/main.squid")
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn('input { use "gpio-button:GPIO9:key.SELECT:activeLow" }', app)
+        self.assertIn('event.on("key.SELECT")', app)
+        self.assertIn("service.indicator.blink(120, 80)", app)
+        self.assertIn(
+            'cargo run --quiet -p squidc -- app install "${INPUT_BUTTON_APP}"',
+            script,
+        )
+        self.assertIn(
+            "cargo run --quiet -p squidc -- app launch input-button-summary",
+            script,
+        )
+        self.assertIn("Press and release the ESP32-C3 Super Mini BOOT/GPIO9 button now.", script)
+        self.assertIn("output=count 1", script)
+        self.assertIn("assert_file_empty_command", script)
+        self.assertIn("c3-supermini-test-input-button.sh", suite)
+        self.assertLess(
+            suite.index("c3-supermini-test-inline-gpio10-binding.sh"),
+            suite.index("c3-supermini-test-input-button.sh"),
+        )
+        self.assertLess(
+            suite.index("c3-supermini-test-input-button.sh"),
+            suite.index("c3-supermini-test-unsupported-inline-gpio-binding.sh"),
+        )
+        self.assertLess(
+            suite.index("c3-supermini-test-input-button.sh"),
             suite.index("c3-supermini-test-blinky.sh"),
         )
 

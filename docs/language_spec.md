@@ -1136,9 +1136,9 @@ Input bindings:
   runtime code, not in compiler core.
 - Inline GPIO-button input bindings normalize into SQDC metadata with
   `mode = "gpio-button"`, a `pinName`, an `event` such as `key.SELECT`, and an
-  `activeLow` polarity flag. They are metadata/planner-supported, but physical
-  GPIO button polling and hardware proof are deferred until a physical button
-  can be tested.
+  `activeLow` polarity flag. Firmware activates them as physical GPIO inputs
+  and dispatches the configured logical key event when it observes a pressed
+  edge.
 
 ---
 

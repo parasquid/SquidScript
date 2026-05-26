@@ -3148,6 +3148,87 @@ ZTEST(squidscript_protocol, test_vm_runtime_applies_inline_gpio_device_binding_b
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }
 
+ZTEST(squidscript_protocol, test_vm_runtime_rebinds_inline_gpio_button_input)
+{
+	struct sq_vm_runtime runtime = {0};
+	SqvmDeviceConfigResult result = {0};
+
+	sq_vm_runtime_init(&runtime);
+	zassert_equal(sqdc_config_clear(&runtime.device_config_draft), SQDC_STATUS_OK);
+	runtime.device_config_draft_loaded = true;
+	zassert_equal(sqdc_config_set_string(&runtime.device_config_draft, (const uint8_t *)"service",
+					     strlen("service"), (const uint8_t *)"input.default",
+					     strlen("input.default")),
+		      SQDC_STATUS_OK);
+	zassert_equal(sqdc_config_set_string(&runtime.device_config_draft, (const uint8_t *)"mode",
+					     strlen("mode"), (const uint8_t *)"gpio-button",
+					     strlen("gpio-button")),
+		      SQDC_STATUS_OK);
+	zassert_equal(sqdc_config_set_string(&runtime.device_config_draft, (const uint8_t *)"pinName",
+					     strlen("pinName"), (const uint8_t *)"GPIO9",
+					     strlen("GPIO9")),
+		      SQDC_STATUS_OK);
+	zassert_equal(sqdc_config_set_string(&runtime.device_config_draft, (const uint8_t *)"event",
+					     strlen("event"), (const uint8_t *)"key.SELECT",
+					     strlen("key.SELECT")),
+		      SQDC_STATUS_OK);
+	zassert_equal(sqdc_config_set_bool(&runtime.device_config_draft,
+					   (const uint8_t *)"activeLow", strlen("activeLow"),
+					   true),
+		      SQDC_STATUS_OK);
+
+	zassert_equal(sq_vm_runtime_device_config_rebind(
+			      &runtime, (const uint8_t *)"input.default",
+			      strlen("input.default"), &result),
+		      0);
+	zassert_true(result.ok);
+	zassert_true(runtime_has_active_binding(&runtime, "input.default"));
+	zassert_equal(runtime.input_button_count, 1);
+	zassert_true(runtime.input_buttons[0].active);
+	zassert_equal(runtime.input_buttons[0].pin, 9);
+	zassert_true(runtime.input_buttons[0].active_low);
+	zassert_str_equal(runtime.input_buttons[0].event, "key.SELECT");
+}
+
+ZTEST(squidscript_protocol, test_vm_runtime_rejects_invalid_gpio_button_input_binding)
+{
+	struct sq_vm_runtime runtime = {0};
+	SqvmDeviceConfigResult result = {0};
+
+	sq_vm_runtime_init(&runtime);
+	zassert_equal(sqdc_config_clear(&runtime.device_config_draft), SQDC_STATUS_OK);
+	runtime.device_config_draft_loaded = true;
+	zassert_equal(sqdc_config_set_string(&runtime.device_config_draft, (const uint8_t *)"service",
+					     strlen("service"), (const uint8_t *)"input.default",
+					     strlen("input.default")),
+		      SQDC_STATUS_OK);
+	zassert_equal(sqdc_config_set_string(&runtime.device_config_draft, (const uint8_t *)"mode",
+					     strlen("mode"), (const uint8_t *)"gpio-button",
+					     strlen("gpio-button")),
+		      SQDC_STATUS_OK);
+	zassert_equal(sqdc_config_set_string(&runtime.device_config_draft, (const uint8_t *)"pinName",
+					     strlen("pinName"), (const uint8_t *)"GPIO18",
+					     strlen("GPIO18")),
+		      SQDC_STATUS_OK);
+	zassert_equal(sqdc_config_set_string(&runtime.device_config_draft, (const uint8_t *)"event",
+					     strlen("event"), (const uint8_t *)"key.SELECT",
+					     strlen("key.SELECT")),
+		      SQDC_STATUS_OK);
+	zassert_equal(sqdc_config_set_bool(&runtime.device_config_draft,
+					   (const uint8_t *)"activeLow", strlen("activeLow"),
+					   true),
+		      SQDC_STATUS_OK);
+
+	zassert_equal(sq_vm_runtime_device_config_rebind(
+			      &runtime, (const uint8_t *)"input.default",
+			      strlen("input.default"), &result),
+		      0);
+	zassert_false(result.ok);
+	zassert_mem_equal(result.error, "unsupported target gpio",
+			  strlen("unsupported target gpio"));
+	zassert_equal(runtime.input_button_count, 0);
+}
+
 ZTEST(squidscript_protocol, test_vm_runtime_rejects_unsupported_packaged_gpio_as_unsupported)
 {
 	const uint8_t sqdevice[] = "SQDEVICE\n"

@@ -129,6 +129,14 @@ debug output and non-empty `device state` bytes, resets the runtime without
 formatting storage, relaunches the app, and verifies `state.load()` restores
 the saved count.
 
+The Zephyr GPIO input button check is
+`scripts/c3-supermini-test-input-button.sh`. It installs
+`tests/hardware/c3-supermini/input-button-summary/main.squid`, whose top-level
+`device { input { use "gpio-button:GPIO9:key.SELECT:activeLow" } }` binding maps
+the ESP32-C3 Super Mini BOOT/GPIO9 button to `key.SELECT`. The script verifies
+launch output, waits for a physical BOOT/GPIO9 press to increment app state, and
+the app starts a visible indicator blink when the press is handled.
+
 `scripts/c3-supermini-measure-stack-usage.sh` runs after the stateful app and
 app lifecycle checks in the full ESP32-C3 Super Mini suite. It records
 `device resources` output under `target/hardware-tests/stack-usage/` and

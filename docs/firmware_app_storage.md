@@ -132,9 +132,9 @@ planner normalizes inline resources to SQDC draft records. Zephyr C remains
 responsible for LittleFS reads, generated target-metadata checks, and hardware
 activation. Inline GPIO and `.sqdevice` GPIO bindings that drive physical GPIO
 must name a GPIO-capable pin from the selected target metadata before Zephyr
-activates them. Inline GPIO-button input bindings currently stop at planner and
-metadata validation; physical button polling and ESP32-C3 hardware proof remain
-deferred until the physical button can be tested.
+activates them. Inline GPIO-button input bindings activate as polled GPIO
+inputs; a pressed edge dispatches the configured logical key event to the
+foreground app.
 On targets with a firmware-defined default indicator, runtime initialization
 and installed app start load that target default into the same in-memory SQDC
 draft/rebind path before app code runs. Installed app launch clears and
@@ -142,8 +142,9 @@ rebuilds active logical bindings, applies saved global SQDC defaults, then
 reads current SQBC top-level `device {}` metadata and applies packaged
 `indicator.default` `.sqdevice` bindings, packaged display `.sqdevice`
 bindings, and inline `gpio:GPIO<n>` indicator bindings before
-`event.on("app.start")`. Input `gpio-button` bindings are planned and validated
-as metadata but are not activated as physical input yet. App-local top-level
+`event.on("app.start")`. Input `gpio-button` bindings are also activated
+before `event.on("app.start")`, so a physical button can dispatch the mapped
+logical key event after launch. App-local top-level
 `device {}` bindings run after target and saved global defaults, so app package
 bindings can override them. Inline GPIO bindings are normalized into the same
 in-memory SQDC draft/rebind path as packaged resources and do not install a

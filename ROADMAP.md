@@ -11,9 +11,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ### 1. Extend Canonical Zephyr Runtime Services
 
-- Activate GPIO-button input bindings in Zephyr and prove `key.SELECT`
-  dispatch from the ESP32-C3 BOOT/GPIO9 button when physical button testing is
-  possible.
 - Decide service priority and target support for currently spec-recognized but
   not SQBC-backed APIs: `httpServer.*`, `bleTransfer.*`, and any remaining
   `content.*` APIs beyond the current file pick/read family. Defer
@@ -36,6 +33,14 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 - Extend the `app.triggers` model beyond current timer metadata declarations to
   future logical button/input triggers while keeping `event.on(...)` as the
   handler for the activation event that fires later.
+- Design and implement richer logical input events for press and release
+  phases, long press, double tap, and chords. Specify naming, target policy,
+  precedence, debounce/timing windows, and whether recognized long/chord/double
+  gestures suppress component short press/release events. Include a way for app
+  or device input configuration to set long-press duration thresholds, likely
+  through `device { input ... }` binding metadata or a related input config
+  block, while preserving target defaults and target-owned system actions such
+  as long `POWER` sleep.
 - Add a generic PWM-capable LED-like device output model beyond
   `service.indicator`, so future target-described GPIO/PWM endpoints can expose
   smooth brightness control without board-specific app code.
@@ -51,6 +56,33 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   the 36 KiB system heap budget; add clearer per-workload heap reset or
   attribution before TCP, AP client throughput, BLE coexistence, or larger
   network workloads.
+- Bound every hardware-test serial command, not only the outer polling loop.
+  During GPIO9 input-button testing, `scripts/c3-supermini-test-input-button.sh`
+  launched successfully but hung inside a `device output` command before its
+  `wait_for_contains` retry loop could time out. Move hardware scripts to a
+  shared helper that wraps each `squidc device/app` command with a command-level
+  timeout and captures enough context to diagnose protocol stalls without
+  wedging the whole script.
+- Reduce main/protocol stack pressure from top-level device binding planning.
+  GPIO-button testing showed device binding metadata planning can use almost
+  10 KiB of main stack on ESP32-C3, so the current firmware raises
+  `CONFIG_MAIN_STACK_SIZE` to 12288. Move that work to a slimmer parser path,
+  caller-owned scratch, or the VM worker path so the main serial loop can return
+  to a smaller measured budget.
+- Convert blocking Wi-Fi VM callbacks to nonblocking runtime progress. Current
+  Zephyr `wifi.connect`, `wifi.disconnect`, and `wifi.scan` callbacks wait on
+  semaphores for up to 15s, 5s, and 8s respectively. They run in the VM worker
+  rather than the serial main loop, but they still block app/runtime progress
+  and conflict with the firmware rule that services should use short steps,
+  async progress, or target scheduler integration.
+- Convert remaining synchronous firmware storage and app-store maintenance
+  paths to bounded progress where they can run during interactive use. The
+  event-driven audit found Zephyr storage requests are resumable at the
+  VM/FFI boundary but are completed with synchronous filesystem calls in the
+  firmware backend, while registry scans, recursive deletes, and storage format
+  loops can run as blocking administrative operations. Keep startup/admin-only
+  work explicitly scoped, and move any user-visible or runtime-reachable work
+  toward chunked, callback-driven, or scheduler-integrated progress.
 - Make runtime string allocation fail instead of silently overwriting or
   truncating. `RuntimeStrings` currently uses a fixed ring of slots and
   silently truncates writes at `MAX_RUNTIME_STRING_BYTES`; this is predictable

@@ -42,6 +42,8 @@ static size_t bounded_strlen(const char *value, size_t cap)
 static int parse_gpio_name(const uint8_t *name, size_t name_len, uint8_t *pin);
 static bool target_gpio_pin_supported(uint8_t pin);
 static int configure_raw_gpio(struct sq_vm_runtime *runtime, uint8_t pin);
+static int configure_input_button_gpio(uint8_t pin, bool active_low, bool *pressed);
+static int read_input_button_gpio(uint8_t pin, bool active_low, bool *pressed);
 static void runtime_clear_active_bindings(struct sq_vm_runtime *runtime);
 
 static const uint8_t indicator_breathe_duties[SQ_VM_RUNTIME_INDICATOR_BREATHE_STEPS] = {
@@ -77,6 +79,14 @@ static const struct device *const gpio0_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0))
 #define SQ_VM_RUNTIME_HAS_GPIO0 1
 #else
 #define SQ_VM_RUNTIME_HAS_GPIO0 0
+#endif
+
+#if IS_ENABLED(CONFIG_GPIO) && DT_NODE_EXISTS(DT_ALIAS(sw0)) && \
+	DT_NODE_HAS_PROP(DT_ALIAS(sw0), gpios)
+static const struct gpio_dt_spec input_sw0_gpio = GPIO_DT_SPEC_GET(DT_ALIAS(sw0), gpios);
+#define SQ_VM_RUNTIME_HAS_SW0_GPIO 1
+#else
+#define SQ_VM_RUNTIME_HAS_SW0_GPIO 0
 #endif
 
 #if IS_ENABLED(CONFIG_NET_L2_WIFI_MGMT) && IS_ENABLED(CONFIG_NET_MGMT_EVENT) && \
@@ -1647,11 +1657,60 @@ static int runtime_activate_binding(struct sq_vm_runtime *runtime, const uint8_t
 	return 0;
 }
 
+static int runtime_activate_input_button(struct sq_vm_runtime *runtime, uint8_t pin,
+					 const uint8_t *event, size_t event_len,
+					 bool active_low)
+{
+	struct sq_vm_runtime_input_button *slot = NULL;
+	bool pressed = false;
+	int result;
+
+	if (runtime == NULL || event == NULL || event_len == 0 ||
+	    event_len >= SQ_VM_RUNTIME_EVENT_LEN) {
+		return -EINVAL;
+	}
+	for (size_t i = 0; i < SQ_VM_RUNTIME_INPUT_BUTTON_MAX; i++) {
+		if (runtime->input_buttons[i].active && runtime->input_buttons[i].pin == pin) {
+			slot = &runtime->input_buttons[i];
+			break;
+		}
+		if (slot == NULL && !runtime->input_buttons[i].active) {
+			slot = &runtime->input_buttons[i];
+		}
+	}
+	if (slot == NULL) {
+		return -ENOSPC;
+	}
+
+	if (!slot->active) {
+		runtime->input_button_count++;
+	}
+	memset(slot, 0, sizeof(*slot));
+	slot->active = true;
+	slot->pin = pin;
+	slot->active_low = active_low;
+	slot->pressed = pressed;
+	slot->next_poll_ms = k_uptime_get() + SQ_VM_RUNTIME_INPUT_POLL_MS;
+	slot->debounce_until_ms = k_uptime_get() + SQ_VM_RUNTIME_INPUT_DEBOUNCE_MS;
+	memcpy(slot->event, event, event_len);
+	slot->event[event_len] = '\0';
+	result = configure_input_button_gpio(pin, active_low, &pressed);
+	if (result != 0) {
+		memset(slot, 0, sizeof(*slot));
+		runtime->input_button_count--;
+		return result;
+	}
+	slot->pressed = pressed;
+	return 0;
+}
+
 int sq_vm_runtime_device_config_rebind(struct sq_vm_runtime *runtime, const uint8_t *alias,
 				       size_t alias_len, SqvmDeviceConfigResult *out)
 {
 	const uint8_t *pin_name;
 	size_t pin_name_len;
+	const uint8_t *event;
+	size_t event_len;
 	uint8_t pin;
 	bool active_low;
 
@@ -1660,6 +1719,31 @@ int sq_vm_runtime_device_config_rebind(struct sq_vm_runtime *runtime, const uint
 	}
 	if (!runtime->device_config_draft_loaded) {
 		return runtime_device_config_error(out, "no draft");
+	}
+	if (runtime_device_config_string_equals(&runtime->device_config_draft, "mode",
+						"gpio-button")) {
+		if (!runtime_device_config_string_equals_bytes(&runtime->device_config_draft,
+							       "service", alias, alias_len)) {
+			return runtime_device_config_error(out, "invalid binding");
+		}
+		if (runtime_device_config_read_string(&runtime->device_config_draft, "pinName",
+						      &pin_name, &pin_name_len) != 0 ||
+		    parse_gpio_name(pin_name, pin_name_len, &pin) != 0 ||
+		    runtime_device_config_read_string(&runtime->device_config_draft, "event",
+						      &event, &event_len) != 0 ||
+		    event_len >= SQ_VM_RUNTIME_EVENT_LEN ||
+		    runtime_device_config_read_bool(&runtime->device_config_draft, "activeLow",
+						    &active_low) != 0) {
+			return runtime_device_config_error(out, "invalid binding");
+		}
+		if (!target_gpio_pin_supported(pin)) {
+			return runtime_device_config_error(out, "unsupported target gpio");
+		}
+		if (runtime_activate_binding(runtime, alias, alias_len) != 0 ||
+		    runtime_activate_input_button(runtime, pin, event, event_len, active_low) != 0) {
+			return runtime_device_config_error(out, "too many bindings");
+		}
+		return runtime_device_config_ok(out);
 	}
 	if (alias_len != strlen("indicator.default") ||
 	    memcmp(alias, "indicator.default", alias_len) != 0) {
@@ -1759,6 +1843,8 @@ static void runtime_clear_active_bindings(struct sq_vm_runtime *runtime)
 	runtime->indicator_binding_active = false;
 	runtime->indicator_binding_pin = 0;
 	runtime->indicator_binding_active_low = false;
+	memset(runtime->input_buttons, 0, sizeof(runtime->input_buttons));
+	runtime->input_button_count = 0;
 	memset(&runtime->device_config_draft, 0, sizeof(runtime->device_config_draft));
 	runtime->device_config_draft_loaded = false;
 }
@@ -1868,6 +1954,7 @@ static int sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *runtime)
 
 		switch (plan->kind) {
 		case SQDC_DEVICE_BINDING_RESOURCE_INLINE_GPIO:
+		case SQDC_DEVICE_BINDING_RESOURCE_INLINE_GPIO_BUTTON:
 			runtime->device_config_draft_loaded = true;
 			if (sq_vm_runtime_device_config_rebind(runtime, plan->alias,
 							       plan->alias_len, result) != 0) {
@@ -2619,6 +2706,68 @@ static int configure_raw_gpio(struct sq_vm_runtime *runtime, uint8_t pin)
 	return 0;
 }
 
+static int configure_input_button_gpio(uint8_t pin, bool active_low, bool *pressed)
+{
+	if (pressed == NULL || !target_gpio_pin_supported(pin)) {
+		return -EINVAL;
+	}
+#if SQ_VM_RUNTIME_HAS_SW0_GPIO
+	if (pin == input_sw0_gpio.pin) {
+		if (device_is_ready(input_sw0_gpio.port)) {
+			/* GPIO9 is the board BOOT strap and is already declared as sw0. */
+			return read_input_button_gpio(pin, active_low, pressed);
+		}
+		*pressed = false;
+		return 0;
+	}
+#endif
+#if SQ_VM_RUNTIME_HAS_GPIO0
+	if (device_is_ready(gpio0_dev)) {
+		int flags = GPIO_INPUT | (active_low ? GPIO_PULL_UP : GPIO_PULL_DOWN);
+		int result = gpio_pin_configure(gpio0_dev, pin, flags);
+		if (result != 0) {
+			return result;
+		}
+		return read_input_button_gpio(pin, active_low, pressed);
+	}
+#endif
+	*pressed = false;
+	return 0;
+}
+
+static int read_input_button_gpio(uint8_t pin, bool active_low, bool *pressed)
+{
+	if (pressed == NULL || !target_gpio_pin_supported(pin)) {
+		return -EINVAL;
+	}
+#if SQ_VM_RUNTIME_HAS_SW0_GPIO
+	if (pin == input_sw0_gpio.pin) {
+		if (device_is_ready(input_sw0_gpio.port)) {
+			int value = gpio_pin_get_dt(&input_sw0_gpio);
+			if (value < 0) {
+				return value;
+			}
+			*pressed = value != 0;
+			return 0;
+		}
+		*pressed = false;
+		return 0;
+	}
+#endif
+#if SQ_VM_RUNTIME_HAS_GPIO0
+	if (device_is_ready(gpio0_dev)) {
+		int raw = gpio_pin_get_raw(gpio0_dev, pin);
+		if (raw < 0) {
+			return raw;
+		}
+		*pressed = active_low ? raw == 0 : raw != 0;
+		return 0;
+	}
+#endif
+	*pressed = false;
+	return 0;
+}
+
 int sq_vm_runtime_hardware_gpio_write(struct sq_vm_runtime *runtime, const uint8_t *name,
 				      size_t name_len, bool value)
 {
@@ -2739,6 +2888,42 @@ static int sq_vm_runtime_poll_indicator_blink(struct sq_vm_runtime *runtime)
 		now + (runtime->indicator_blink_on ? runtime->indicator_blink_on_ms :
 						   runtime->indicator_blink_off_ms);
 	return set_indicator_brightness(runtime, runtime->indicator_blink_on ? 100U : 0U);
+}
+
+static int sq_vm_runtime_poll_input_buttons(struct sq_vm_runtime *runtime)
+{
+	int64_t now;
+
+	if (runtime == NULL || runtime->input_button_count == 0 ||
+	    runtime->status == SQ_VM_RUNTIME_RUNNING || runtime->job_backend.read_sqbc == NULL) {
+		return 0;
+	}
+	now = k_uptime_get();
+	for (size_t i = 0; i < SQ_VM_RUNTIME_INPUT_BUTTON_MAX; i++) {
+		struct sq_vm_runtime_input_button *button = &runtime->input_buttons[i];
+
+		if (!button->active) {
+			continue;
+		}
+		if (now < button->next_poll_ms) {
+			continue;
+		}
+		button->next_poll_ms = now + SQ_VM_RUNTIME_INPUT_POLL_MS;
+		bool pressed = false;
+		int result = read_input_button_gpio(button->pin, button->active_low, &pressed);
+		if (result != 0) {
+			return result;
+		}
+		if (pressed == button->pressed || now < button->debounce_until_ms) {
+			continue;
+		}
+		button->pressed = pressed;
+		button->debounce_until_ms = now + SQ_VM_RUNTIME_INPUT_DEBOUNCE_MS;
+		if (pressed) {
+			return sq_vm_runtime_start(runtime, &runtime->job_backend, button->event);
+		}
+	}
+	return 0;
 }
 
 int sq_vm_runtime_register_timer(struct sq_vm_runtime *runtime, const uint8_t *event,
@@ -2903,6 +3088,9 @@ int sq_vm_runtime_poll(struct sq_vm_runtime *runtime)
 	}
 	(void)sq_vm_runtime_poll_indicator_blink(runtime);
 	(void)sq_vm_runtime_poll_indicator_breathe(runtime);
+	if (sq_vm_runtime_poll_input_buttons(runtime) != 0) {
+		return -EIO;
+	}
 	if (runtime->status == SQ_VM_RUNTIME_RUNNING || runtime->job_backend.read_sqbc == NULL) {
 		return 0;
 	}
