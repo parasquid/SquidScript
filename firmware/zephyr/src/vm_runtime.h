@@ -93,6 +93,13 @@ struct sq_vm_runtime {
 	enum sq_vm_runtime_status status;
 	int result_code;
 	bool dispatch_exited;
+	uint64_t dispatch_sequence;
+	uint64_t last_dispatch_sequence;
+	uint64_t last_dispatch_elapsed_us;
+	uint32_t last_dispatch_sqbc_read_count;
+	uint32_t last_dispatch_sqbc_read_bytes;
+	uint32_t dispatch_sqbc_read_count;
+	uint32_t dispatch_sqbc_read_bytes;
 	char current_app[SQ_APP_STORE_APP_ID_MAX];
 	char pending_launch_app[SQ_APP_STORE_APP_ID_MAX];
 	bool pending_launch_active;

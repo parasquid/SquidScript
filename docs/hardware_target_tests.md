@@ -184,6 +184,16 @@ records. The Zephyr canonical firmware returns `ok=false`,
 `error="unsupported"`, `path=null`, `text=null`, and an empty `lines` list until
 real external content picking and reads are implemented.
 
+`scripts/c3-supermini-benchmark-lazy-load-screen.sh` is a benchmark runner, not
+a required pass/fail hardware suite check. It installs
+`tests/hardware/c3-supermini/lazy-load-screen-benchmark` by default or
+`tests/hardware/c3-supermini/lazy-load-screen-worst-case` with `MODE=worst`,
+launches a timer-driven 10-screen app from LittleFS, waits for firmware
+dispatch sequence increments, and reports the portable fields defined in
+`docs/hardware_benchmarks.md`. The timing values come from firmware
+`device resources` metrics for the most recent VM dispatch, so host serial
+latency and physical display refresh are outside the measured window.
+
 `scripts/c3-supermini-test-device-binding.sh` runs after system resource
 coverage and before the explicit device config API check. It packages
 `tests/hardware/c3-supermini/device-binding-summary`, installs it with its

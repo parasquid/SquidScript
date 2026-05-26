@@ -880,6 +880,20 @@ static int resources_response(const struct sq_protocol_frame *request,
 		SQ_RESOURCE_METRIC("ram_heap_free_bytes", heap_free_bytes),
 		SQ_RESOURCE_METRIC("ram_heap_allocated_bytes", heap_allocated_bytes),
 		SQ_RESOURCE_METRIC("ram_heap_max_allocated_bytes", heap_max_allocated_bytes),
+		SQ_RESOURCE_METRIC("last_dispatch_elapsed_us",
+				   context->runtime == NULL ? 0 :
+							      context->runtime->last_dispatch_elapsed_us),
+		SQ_RESOURCE_METRIC("last_dispatch_sequence",
+				   context->runtime == NULL ? 0 :
+							      context->runtime->last_dispatch_sequence),
+		SQ_RESOURCE_METRIC("last_dispatch_sqbc_read_count",
+				   context->runtime == NULL ?
+					   0 :
+					   context->runtime->last_dispatch_sqbc_read_count),
+		SQ_RESOURCE_METRIC("last_dispatch_sqbc_read_bytes",
+				   context->runtime == NULL ?
+					   0 :
+					   context->runtime->last_dispatch_sqbc_read_bytes),
 		SQ_RESOURCE_METRIC("protocol_thread_stack_size_bytes", protocol_stack_size),
 		SQ_RESOURCE_METRIC("protocol_thread_stack_unused_bytes", protocol_stack_unused),
 		SQ_RESOURCE_METRIC("protocol_thread_stack_used_bytes", protocol_stack_used),

@@ -176,6 +176,25 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("temp_session_bytes", body)
         self.assertNotIn("resource_session_bytes", body)
 
+    def test_resources_include_last_dispatch_lazy_load_metrics(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+
+        for metric in [
+            "last_dispatch_sequence",
+            "last_dispatch_elapsed_us",
+            "last_dispatch_sqbc_read_count",
+            "last_dispatch_sqbc_read_bytes",
+        ]:
+            self.assertIn(metric, protocol)
+            self.assertIn(metric, runtime_h)
+        self.assertIn("k_cycle_get_64", runtime_c)
+        self.assertIn("k_cyc_to_us_floor64", runtime_c)
+        self.assertIn("dispatch_sqbc_read_count++", runtime_c)
+        self.assertIn("dispatch_sqbc_read_bytes += out_len", runtime_c)
+        self.assertIn("dispatch_sequence++", runtime_c)
+
     def test_default_config_uses_measured_system_heap_budget(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
 
@@ -194,6 +213,37 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertLess(suite.index("c3-supermini-test-wifi-list-api.sh"), suite.index("c3-supermini-test-blinky.sh"))
         self.assertLess(suite.index("c3-supermini-test-wifi-list-api.sh"), suite.index("c3-supermini-test-wifi-ap-api.sh"))
         self.assertLess(suite.index("c3-supermini-test-wifi-ap-api.sh"), suite.index("c3-supermini-test-blinky.sh"))
+
+    def test_lazy_load_screen_benchmark_has_portable_contract(self):
+        docs = self.read("docs/hardware_benchmarks.md")
+        script = self.read("scripts/c3-supermini-benchmark-lazy-load-screen.sh")
+        source = self.read("tests/hardware/c3-supermini/lazy-load-screen-benchmark/main.squid")
+        worst_source = self.read("tests/hardware/c3-supermini/lazy-load-screen-worst-case/main.squid")
+
+        self.assertIn("Lazy-Load Screen Transition", docs)
+        for target in ["ESP32-C3 Super Mini", "nRF52", "RP2350"]:
+            self.assertIn(target, docs)
+        for metric in [
+            "transition_count",
+            "dispatch_elapsed_us_min",
+            "dispatch_elapsed_us_median",
+            "dispatch_elapsed_us_p95",
+            "dispatch_elapsed_us_max",
+            "sqbc_read_count_total",
+            "sqbc_read_bytes_total",
+        ]:
+            self.assertIn(metric, docs)
+            self.assertIn(metric, script)
+        self.assertIn("lazy-load-screen-benchmark", script)
+        self.assertIn("lazy-load-screen-worst-case", script)
+        self.assertIn("MODE", script)
+        self.assertIn("device resources", script)
+        self.assertIn("last_dispatch_sequence", script)
+        self.assertNotIn("device key SELECT", script)
+        self.assertIn('service.timer.every("timer.transition"', source)
+        self.assertIn('service.timer.every("timer.transition"', worst_source)
+        self.assertGreaterEqual(source.count('screen("s'), 10)
+        self.assertGreaterEqual(worst_source.count('screen("s'), 10)
 
     def test_wifi_checks_can_require_real_zephyr_wifi_backend(self):
         status = self.read("scripts/c3-supermini-test-wifi-state.sh")

@@ -190,6 +190,11 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
   or leave hardware in a misleading state. Run hardware commands sequentially,
   wait for each command to exit, and do not start a second monitor or helper
   while another command owns the port.
+- Do not put any hardware-owning command in `multi_tool_use.parallel`. This
+  includes `squidc device ...`, `squidc app ...` when it talks to attached
+  hardware, `cargo run ... -- device ...`, `cargo run ... -- app ...`,
+  firmware flash scripts, monitor scripts, hardware test scripts, and hardware
+  benchmark scripts. Use one standalone tool call per hardware command.
 - Hardware target tests are listed in `docs/hardware_target_tests.md`; use that inventory to identify real-device tests before running them.
 - When firmware work changes behavior that has hardware coverage and an ESP32-C3 Super Mini is attached or reasonably available, run the relevant hardware target tests. Sandbox isolation is not a reason to skip them; use escalated command execution for serial visibility checks and the hardware test command, and report the result.
 - When running the ESP32-C3 Super Mini hardware target suite, use

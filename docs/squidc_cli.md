@@ -115,8 +115,12 @@ queue stack size and Zephyr stack high-water usage when stack initialization is
 enabled; `ram_heap_*` fields are live allocator telemetry from the running
 firmware; `runtime_static_bytes` is the resident VM runtime object after
 internal buffer sharing; `vm_sqbc_chunk_bytes` is the bounded SQBC read/code
-window used for file-backed installed app dispatch. With `--json`, parsed
-values are returned under `data.resources`. Firmware diagnostics should
+window used for file-backed installed app dispatch.
+`last_dispatch_sequence`, `last_dispatch_elapsed_us`,
+`last_dispatch_sqbc_read_count`, and `last_dispatch_sqbc_read_bytes` report
+firmware-owned metrics for the most recent VM dispatch and are intended for
+hardware benchmarks that must exclude host serial latency. With `--json`,
+parsed values are returned under `data.resources`. Firmware diagnostics should
 distinguish volatile temp-run state from installed-app code cache and app-store
 usage.
 

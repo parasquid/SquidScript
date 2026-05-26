@@ -2239,10 +2239,18 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 	uint64_t protocol_stack_unused = 0;
 	uint64_t protocol_stack_used = 0;
 	uint64_t vm_sqbc_chunk = 0;
+	uint64_t last_dispatch_sequence = 99;
+	uint64_t last_dispatch_elapsed_us = 99;
+	uint64_t last_dispatch_sqbc_read_count = 99;
+	uint64_t last_dispatch_sqbc_read_bytes = 99;
 	int result;
 
 	memset(&runtime, 0, sizeof(runtime));
 	sq_vm_runtime_init(&runtime);
+	runtime.last_dispatch_sequence = 7;
+	runtime.last_dispatch_elapsed_us = 1234;
+	runtime.last_dispatch_sqbc_read_count = 2;
+	runtime.last_dispatch_sqbc_read_bytes = 2048;
 
 	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_RESOURCES_GET,
 						      SQ_STATUS_OK, 73, NULL, 0, request,
@@ -2262,6 +2270,18 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 					   CONFIG_MAIN_STACK_SIZE));
 	zassert_true(resource_value_for_key(&frame, "vm_sqbc_chunk_bytes", &vm_sqbc_chunk));
 	zassert_equal(vm_sqbc_chunk, SQVM_STORAGE_TRANSFER_CAPACITY);
+	zassert_true(resource_value_for_key(&frame, "last_dispatch_elapsed_us",
+					    &last_dispatch_elapsed_us));
+	zassert_equal(last_dispatch_elapsed_us, 1234);
+	zassert_true(resource_value_for_key(&frame, "last_dispatch_sequence",
+					    &last_dispatch_sequence));
+	zassert_equal(last_dispatch_sequence, 7);
+	zassert_true(resource_value_for_key(&frame, "last_dispatch_sqbc_read_count",
+					    &last_dispatch_sqbc_read_count));
+	zassert_equal(last_dispatch_sqbc_read_count, 2);
+	zassert_true(resource_value_for_key(&frame, "last_dispatch_sqbc_read_bytes",
+					    &last_dispatch_sqbc_read_bytes));
+	zassert_equal(last_dispatch_sqbc_read_bytes, 2048);
 	zassert_true(resource_value_for_key(&frame, "protocol_thread_stack_unused_bytes",
 					    &protocol_stack_unused));
 	zassert_true(resource_value_for_key(&frame, "protocol_thread_stack_used_bytes",
@@ -2630,6 +2650,10 @@ ZTEST(squidscript_protocol, test_installed_app_launch_reads_sqbc_in_bounded_file
 	zassert_true(launch_storage.fs_storage.sqbc_read_count > 0);
 	zassert_true(launch_storage.fs_storage.sqbc_max_read_len <= SQVM_STORAGE_TRANSFER_CAPACITY);
 	zassert_true(launch_storage.fs_storage.sqbc_total_read_len < sizeof(padded_sqbc));
+	zassert_equal(runtime.last_dispatch_sqbc_read_count,
+		      launch_storage.fs_storage.sqbc_read_count);
+	zassert_equal(runtime.last_dispatch_sqbc_read_bytes,
+		      launch_storage.fs_storage.sqbc_total_read_len);
 
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }

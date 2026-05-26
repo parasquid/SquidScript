@@ -119,10 +119,36 @@ static int32_t runtime_read_exact_at(void *user_data, size_t offset, uint8_t *ou
 {
 	struct sq_vm_runtime *runtime = user_data;
 
-	if (runtime->backend == NULL || runtime->backend->read_sqbc == NULL) {
+	if (runtime == NULL || runtime->backend == NULL || runtime->backend->read_sqbc == NULL ||
+	    out == NULL) {
 		return -EINVAL;
 	}
+	runtime->dispatch_sqbc_read_count++;
+	runtime->dispatch_sqbc_read_bytes += out_len;
 	return runtime->backend->read_sqbc(runtime->backend->user_data, offset, out, out_len);
+}
+
+static void runtime_record_pending_sqbc_read(struct sq_vm_runtime *runtime,
+					     const SqvmStorageRequest *request,
+					     const SqvmStorageCompletion *completion)
+{
+	if (runtime == NULL || request == NULL || completion == NULL ||
+	    request->kind != SQVM_STORAGE_REQUEST_SQBC_READ || !completion->has_len) {
+		return;
+	}
+	runtime->dispatch_sqbc_read_count++;
+	runtime->dispatch_sqbc_read_bytes += completion->len;
+}
+
+static void runtime_finish_dispatch_metrics(struct sq_vm_runtime *runtime, uint64_t start_cycles)
+{
+	uint64_t elapsed_cycles = k_cycle_get_64() - start_cycles;
+
+	runtime->dispatch_sequence++;
+	runtime->last_dispatch_sequence = runtime->dispatch_sequence;
+	runtime->last_dispatch_elapsed_us = k_cyc_to_us_floor64(elapsed_cycles);
+	runtime->last_dispatch_sqbc_read_count = runtime->dispatch_sqbc_read_count;
+	runtime->last_dispatch_sqbc_read_bytes = runtime->dispatch_sqbc_read_bytes;
 }
 
 static void runtime_debug_output(void *user_data, const uint8_t *message, size_t message_len)
@@ -2108,6 +2134,13 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->wifi_ap_stop_events = 0;
 #endif
 	runtime->dispatch_exited = false;
+	runtime->dispatch_sequence = 0;
+	runtime->last_dispatch_sequence = 0;
+	runtime->last_dispatch_elapsed_us = 0;
+	runtime->last_dispatch_sqbc_read_count = 0;
+	runtime->last_dispatch_sqbc_read_bytes = 0;
+	runtime->dispatch_sqbc_read_count = 0;
+	runtime->dispatch_sqbc_read_bytes = 0;
 	runtime->result_code = 0;
 	runtime->status = SQ_VM_RUNTIME_IDLE;
 }
@@ -2169,6 +2202,7 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 {
 	SqvmCallbacks callbacks;
 	SqvmStatus status;
+	uint64_t dispatch_start_cycles;
 
 	if (runtime == NULL || backend == NULL || event == NULL) {
 		return -EINVAL;
@@ -2177,6 +2211,9 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		return -ENOMEM;
 	}
 
+	runtime->dispatch_sqbc_read_count = 0;
+	runtime->dispatch_sqbc_read_bytes = 0;
+	dispatch_start_cycles = k_cycle_get_64();
 	clear_dispatch_transfer(runtime);
 	runtime->backend = backend;
 	callbacks = (SqvmCallbacks){
@@ -2229,12 +2266,14 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 	if (!runtime->context_ready) {
 		status = sqvm_context_prepare(runtime->context_words, sizeof(runtime->context_words));
 		if (status != SQVM_STATUS_OK) {
+			runtime_finish_dispatch_metrics(runtime, dispatch_start_cycles);
 			return sq_vm_runtime_status_to_errno(status);
 		}
 		status = sqvm_context_init_in_place(runtime->context_words, callbacks,
 						    runtime->transfer.init_scratch,
 						    sizeof(runtime->transfer.init_scratch));
 		if (status != SQVM_STATUS_OK) {
+			runtime_finish_dispatch_metrics(runtime, dispatch_start_cycles);
 			return sq_vm_runtime_status_to_errno(status);
 		}
 		runtime->context_ready = true;
@@ -2243,6 +2282,7 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 					       (const uint8_t *)event, strlen(event),
 					       &runtime->result);
 	if (status != SQVM_STATUS_OK) {
+		runtime_finish_dispatch_metrics(runtime, dispatch_start_cycles);
 		return sq_vm_runtime_status_to_errno(status);
 	}
 
@@ -2250,18 +2290,23 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		int storage_result = sq_vm_storage_complete_request(backend, &runtime->result.storage,
 								   &runtime->transfer.completion);
 		if (storage_result != 0) {
+			runtime_finish_dispatch_metrics(runtime, dispatch_start_cycles);
 			return storage_result;
 		}
+		runtime_record_pending_sqbc_read(runtime, &runtime->result.storage,
+						 &runtime->transfer.completion);
 		status = sqvm_dispatch_resume_storage(runtime->context_words, callbacks,
 						      &runtime->transfer.completion,
 						      &runtime->result);
 		if (status != SQVM_STATUS_OK) {
+			runtime_finish_dispatch_metrics(runtime, dispatch_start_cycles);
 			return sq_vm_runtime_status_to_errno(status);
 		}
 	}
 
 	runtime->dispatch_exited = runtime->result.outcome == SQVM_DISPATCH_COMPLETE &&
 				   runtime->result.exited;
+	runtime_finish_dispatch_metrics(runtime, dispatch_start_cycles);
 	return runtime->result.outcome == SQVM_DISPATCH_COMPLETE ? 0 : -EIO;
 }
 
