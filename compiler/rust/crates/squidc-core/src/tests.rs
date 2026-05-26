@@ -339,9 +339,15 @@ screen("main") {}
 #[test]
 fn state_field_can_share_state_builtin_name_when_not_called() {
     let source = r#"app "state-load-field"
-state { load: int = 0 }
+state {
+  load: int = 0
+  save: int = 0
+  reset: int = 0
+}
 event.on("key.SELECT") {
   state.load = state.load + 1
+  state.save = state.save + 1
+  state.reset = state.reset + 1
   state.load()
   state.save()
   state.reset()
@@ -354,13 +360,23 @@ screen("main") {}
     });
 
     assert!(output.ok, "{:?}", output.diagnostics);
+    assert_eq!(
+        output
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "W_STATE_BUILTIN_SHADOW")
+            .count(),
+        3,
+        "{:?}",
+        output.diagnostics
+    );
     assert!(matches!(
         &output.ir.as_ref().unwrap().handlers[0].statements[0],
         IrStatement::StateAssign { name, expr: IrExpr::Binary { left, .. } }
             if name == "load" && matches!(left.as_ref(), IrExpr::State { name } if name == "load")
     ));
     assert!(matches!(
-        output.ir.as_ref().unwrap().handlers[0].statements[1],
+        output.ir.as_ref().unwrap().handlers[0].statements[3],
         IrStatement::StateLoad
     ));
 }

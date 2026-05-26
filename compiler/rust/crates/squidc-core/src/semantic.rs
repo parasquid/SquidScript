@@ -57,6 +57,7 @@ pub(crate) fn validate_semantics(
                 .collect::<BTreeSet<_>>()
         })
         .unwrap_or_default();
+    validate_state_builtin_shadowing(ast, diagnostics);
     let function_map = ast
         .functions
         .iter()
@@ -185,6 +186,22 @@ pub(crate) fn validate_semantics(
     }
 
     validate_names(ast, &state_names, diagnostics);
+}
+
+fn validate_state_builtin_shadowing(ast: &AstRoot, diagnostics: &mut Vec<Diagnostic>) {
+    let Some(state) = ast.state.as_ref() else {
+        return;
+    };
+    for value in &state.values {
+        if matches!(value.name.as_str(), "load" | "save" | "reset") {
+            diagnostics.push(warning(
+                "W_STATE_BUILTIN_SHADOW",
+                "state field shares a name with a state service method; state.<field> reads the field and state.<field>() calls the service method",
+                state.span.start,
+                state.span.end,
+            ));
+        }
+    }
 }
 
 fn validate_trigger_statements(
