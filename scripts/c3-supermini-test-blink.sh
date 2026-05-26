@@ -2,19 +2,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${ROOT}/scripts/lib/hardware-command.sh"
 WORK_DIR="${ROOT}/target/hardware-tests/blink"
 BLINK_APP="${ROOT}/examples/blink-supermini/main.squid"
 
 mkdir -p "${WORK_DIR}"
 
-run_capture() {
-  local name="$1"
-  shift
-  local out="${WORK_DIR}/${name}.out"
-  printf 'hardware blink: %s\n' "$*" >&2
-  "$@" >"${out}" 2>&1
-  printf '%s\n' "${out}"
-}
 
 assert_file_contains() {
   local file="$1"
@@ -45,7 +38,7 @@ wait_for_contains() {
   local out="${WORK_DIR}/${label}.out"
 
   for _ in $(seq 1 120); do
-    "$@" >"${out}" 2>&1
+    timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" "$@" >"${out}" 2>&1
     if grep -Fq "${expected}" "${out}"; then
       printf '%s\n' "${out}"
       return 0

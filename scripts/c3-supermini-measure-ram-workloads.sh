@@ -2,20 +2,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${ROOT}/scripts/lib/hardware-command.sh"
 WORK_DIR="${ROOT}/target/hardware-tests/ram-workloads"
 INPUT_BUTTON_APP="${ROOT}/tests/hardware/c3-supermini/input-button-summary/main.squid"
 COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-12}"
 
 mkdir -p "${WORK_DIR}"
 
-run_capture() {
-  local name="$1"
-  shift
-  local out="${WORK_DIR}/${name}.out"
-  printf 'hardware RAM workload: %s\n' "$*" >&2
-  timeout "${COMMAND_TIMEOUT_SECONDS}s" "$@" >"${out}" 2>&1
-  printf '%s\n' "${out}"
-}
 
 resource_value() {
   local file="$1"

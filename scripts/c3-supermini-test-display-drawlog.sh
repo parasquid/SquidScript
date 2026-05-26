@@ -2,19 +2,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${ROOT}/scripts/lib/hardware-command.sh"
 WORK_DIR="${ROOT}/target/hardware-tests/display-drawlog"
 DISPLAY_APP="${ROOT}/tests/hardware/c3-supermini/display-drawlog/main.squid"
 
 mkdir -p "${WORK_DIR}"
 
-run_capture() {
-  local name="$1"
-  shift
-  local out="${WORK_DIR}/${name}.out"
-  printf 'hardware display drawlog: %s\n' "$*" >&2
-  "$@" >"${out}" 2>&1
-  printf '%s\n' "${out}"
-}
 
 assert_file_contains() {
   local file="$1"

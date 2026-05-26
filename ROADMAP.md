@@ -76,14 +76,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   the 36 KiB system heap budget; add clearer per-workload heap reset or
   attribution before TCP, AP client throughput, BLE coexistence, or larger
   network workloads.
-- Bound every hardware-test serial command, not only the outer polling loop.
-  During GPIO9 input-button testing, `scripts/c3-supermini-test-input-button.sh`
-  launched successfully but hung inside a `device output` command before its
-  `wait_for_contains` retry loop could time out. The input-button script now has
-  command-level and overall wait timeouts; move the remaining hardware scripts
-  to a shared helper that wraps each `squidc device/app` command with a
-  command-level timeout and captures enough context to diagnose protocol stalls
-  without wedging the whole script.
 - Convert blocking Wi-Fi VM callbacks to nonblocking runtime progress. Current
   Zephyr `wifi.connect`, `wifi.disconnect`, and `wifi.scan` callbacks wait on
   semaphores for up to 15s, 5s, and 8s respectively. They run in the VM worker

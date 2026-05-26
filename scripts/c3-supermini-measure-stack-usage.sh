@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${ROOT}/scripts/lib/hardware-command.sh"
 WORK_DIR="${ROOT}/target/hardware-tests/stack-usage"
 COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-20}"
 
@@ -11,7 +12,7 @@ resources_out="${WORK_DIR}/resources-after-workloads.out"
 summary_out="${WORK_DIR}/summary.out"
 
 printf 'hardware stack usage: cargo run --quiet -p squidc -- device resources\n' >&2
-timeout "${COMMAND_TIMEOUT_SECONDS}s" \
+timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" \
   cargo run --quiet -p squidc -- device resources >"${resources_out}" 2>&1
 
 resource_value() {

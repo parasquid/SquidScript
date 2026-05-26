@@ -2,39 +2,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${ROOT}/scripts/lib/hardware-command.sh"
 WORK_DIR="${ROOT}/target/hardware-tests/unsupported-inline-gpio-binding"
 UNSUPPORTED_INLINE_GPIO_APP="${ROOT}/tests/hardware/c3-supermini/unsupported-inline-gpio-binding/main.squid"
 
 mkdir -p "${WORK_DIR}"
 
-run_capture() {
-  local name="$1"
-  shift
-  local out="${WORK_DIR}/${name}.out"
-  printf 'hardware unsupported inline gpio binding: %s\n' "$*" >&2
-  "$@" >"${out}" 2>&1
-  printf '%s\n' "${out}"
-}
 
-assert_command_fails_contains() {
-  local name="$1"
-  local expected="$2"
-  shift 2
-  local out="${WORK_DIR}/${name}.out"
-  printf 'hardware unsupported inline gpio binding: %s\n' "$*" >&2
-  if "$@" >"${out}" 2>&1; then
-    printf 'Expected command to fail: %s\n' "$*" >&2
-    printf '%s\n' "--- ${out} ---" >&2
-    sed -n '1,200p' "${out}" >&2
-    exit 1
-  fi
-  if ! grep -Fq "${expected}" "${out}"; then
-    printf 'Expected %s to contain: %s\n' "${out}" "${expected}" >&2
-    printf '%s\n' "--- ${out} ---" >&2
-    sed -n '1,200p' "${out}" >&2
-    exit 1
-  fi
-}
 
 assert_file_contains() {
   local file="$1"

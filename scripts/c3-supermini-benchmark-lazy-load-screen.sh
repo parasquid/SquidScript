@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${ROOT}/scripts/lib/hardware-command.sh"
 MODE="${MODE:-representative}"
 WORK_DIR="${ROOT}/target/hardware-benchmarks/lazy-load-screen-${MODE}"
 case "${MODE}" in
@@ -22,14 +23,6 @@ TRANSITIONS="${TRANSITIONS:-30}"
 
 mkdir -p "${WORK_DIR}"
 
-run_capture() {
-  local name="$1"
-  shift
-  local out="${WORK_DIR}/${name}.out"
-  printf 'hardware lazy-load screen benchmark: %s\n' "$*" >&2
-  "$@" >"${out}" 2>&1
-  printf '%s\n' "${out}"
-}
 
 assert_file_contains() {
   local file="$1"
@@ -65,7 +58,7 @@ wait_for_dispatch_after() {
   local sequence
 
   for _ in $(seq 1 120); do
-    cargo run --quiet -p squidc -- device resources >"${out}" 2>&1
+    timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" cargo run --quiet -p squidc -- device resources >"${out}" 2>&1
     sequence="$(resource_value "${out}" "last_dispatch_sequence")"
     if ((sequence > previous)); then
       printf '%s\n' "${out}"

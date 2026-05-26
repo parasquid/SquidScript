@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${ROOT}/scripts/lib/hardware-command.sh"
 WORK_DIR="${ROOT}/target/hardware-tests/input-button"
 INPUT_BUTTON_APP="${ROOT}/tests/hardware/c3-supermini/input-button-summary/main.squid"
 COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-12}"
@@ -9,14 +10,6 @@ WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-60}"
 
 mkdir -p "${WORK_DIR}"
 
-run_capture() {
-  local name="$1"
-  shift
-  local out="${WORK_DIR}/${name}.out"
-  printf 'hardware input button: %s\n' "$*" >&2
-  timeout "${COMMAND_TIMEOUT_SECONDS}s" "$@" >"${out}" 2>&1
-  printf '%s\n' "${out}"
-}
 
 assert_file_contains() {
   local file="$1"
@@ -48,7 +41,7 @@ wait_for_contains() {
   local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS))
 
   while (( SECONDS < deadline )); do
-    if timeout "${COMMAND_TIMEOUT_SECONDS}s" "$@" >"${out}" 2>&1 &&
+    if timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" "$@" >"${out}" 2>&1 &&
       grep -Fq "${expected}" "${out}"; then
       printf '%s\n' "${out}"
       return 0

@@ -10,6 +10,12 @@ Hardware target tests and serial/flashing commands must run outside the Codex
 sandbox. Sandboxed sessions do not reliably expose `/dev/ttyACM*`,
 `/dev/ttyUSB*`, or `/dev/serial/by-id`.
 
+Scripts that invoke `squidc device ...` or `squidc app ...` source
+`scripts/lib/hardware-command.sh` so each hardware-owning command is captured
+under `target/hardware-tests/` or `target/hardware-benchmarks/` with a
+command-level timeout. If a protocol command stalls, the script should fail with
+the captured command output instead of hanging the full suite.
+
 ## Current Target
 
 The current real firmware target is Zephyr-backed ESP32-C3 work under

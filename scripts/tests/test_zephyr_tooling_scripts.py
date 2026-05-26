@@ -505,8 +505,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("protocol_thread_stack_size_bytes", stack_script)
         self.assertIn('Expected protocol_thread_stack_size_bytes=8192', stack_script)
         self.assertIn("protocol_thread_stack_pre_resources_used_bytes", stack_script)
-        self.assertIn('COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-20}"', stack_script)
-        self.assertIn('timeout "${COMMAND_TIMEOUT_SECONDS}s"', stack_script)
+        self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', stack_script)
+        self.assertIn('timeout "${COMMAND_TIMEOUT_SECONDS:-20}s"', stack_script)
 
     def test_default_runtime_gates_wifi_scan_buffers_from_static_ram(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
@@ -995,7 +995,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-12}"', script)
         self.assertIn('WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-60}"', script)
         self.assertIn("while (( SECONDS < deadline )); do", script)
-        self.assertIn('timeout "${COMMAND_TIMEOUT_SECONDS}s" "$@"', script)
+        self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', script)
+        self.assertIn('timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" "$@"', script)
         self.assertIn("c3-supermini-test-input-button.sh", suite)
         self.assertLess(
             suite.index("c3-supermini-test-inline-gpio10-binding.sh"),
@@ -1207,7 +1208,31 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('ram_heap_allocated_bytes', stack)
         self.assertIn('ram_heap_max_allocated_bytes', stack)
         self.assertIn('summary.tsv', stack)
-        self.assertIn('timeout "${COMMAND_TIMEOUT_SECONDS}s" "$@"', stack)
+        self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', stack)
+
+    def test_hardware_scripts_use_shared_bounded_command_helper(self):
+        scripts_dir = ROOT / "scripts"
+        helper = self.read("scripts/lib/hardware-command.sh")
+        self.assertIn('timeout "${timeout_seconds}s"', helper)
+        self.assertIn('COMMAND_TIMEOUT_SECONDS:-20', helper)
+
+        for script_path in sorted(scripts_dir.glob("c3-supermini-*.sh")):
+            contents = script_path.read_text(encoding="utf-8")
+            if "cargo run --quiet -p squidc -- device" not in contents and (
+                "cargo run --quiet -p squidc -- app" not in contents
+            ):
+                continue
+
+            with self.subTest(script=script_path.name):
+                self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', contents)
+                self.assertNotIn("\nrun_capture() {\n", contents)
+
+    def test_hardware_output_helper_bounds_device_output_command(self):
+        helper = self.read("scripts/lib/hardware-output.sh")
+
+        self.assertIn('timeout "${timeout_seconds}s"', helper)
+        self.assertIn('COMMAND_TIMEOUT_SECONDS:-20', helper)
+        self.assertIn('cargo run -p squidc -- device output --port "$port"', helper)
 
     def test_hardware_suite_leaves_blinky_visible_check_last(self):
         blinky = self.read("scripts/c3-supermini-test-blinky.sh")
