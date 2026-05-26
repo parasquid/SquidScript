@@ -155,6 +155,15 @@ being hidden by the first launch result. Use it to separate raw pin visibility
 from input event dispatch when the input stack isolation harness times out
 before `after-press-observed`.
 
+`scripts/c3-supermini-probe-boot-button-pins.sh` is a broader physical BOOT
+button diagnostic, also outside the full suite. It installs
+`tests/hardware/c3-supermini/boot-button-pin-scan/main.squid`, captures a
+released baseline for GPIO0 through GPIO10, then repeatedly re-launches the
+probe while the BOOT button is held and waits for any sampled GPIO value to
+change. It writes timeout diagnostics under
+`target/hardware-tests/boot-button-pin-scan/` and captures `device errors` as
+`errors-after-timeout` if no pin changes.
+
 `scripts/c3-supermini-measure-stack-usage.sh` runs after the stateful app and
 app lifecycle checks in the full ESP32-C3 Super Mini suite. It records
 `device resources` output under `target/hardware-tests/stack-usage/` and

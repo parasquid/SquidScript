@@ -1,0 +1,19 @@
+app "boot-button-pin-scan"
+
+device {
+  input { use "gpio-button:GPIO9:key.SELECT:activeLow" }
+}
+
+event.on("app.start") {
+  debug.print("pin", "GPIO0", hardware.gpio.read("GPIO0"))
+  debug.print("pin", "GPIO1", hardware.gpio.read("GPIO1"))
+  debug.print("pin", "GPIO2", hardware.gpio.read("GPIO2"))
+  debug.print("pin", "GPIO3", hardware.gpio.read("GPIO3"))
+  debug.print("pin", "GPIO4", hardware.gpio.read("GPIO4"))
+  debug.print("pin", "GPIO5", hardware.gpio.read("GPIO5"))
+  debug.print("pin", "GPIO6", hardware.gpio.read("GPIO6"))
+  debug.print("pin", "GPIO7", hardware.gpio.read("GPIO7"))
+  debug.print("pin", "GPIO8", hardware.gpio.read("GPIO8"))
+  debug.print("pin", "GPIO9", hardware.gpio.read("GPIO9"))
+  debug.print("pin", "GPIO10", hardware.gpio.read("GPIO10"))
+}

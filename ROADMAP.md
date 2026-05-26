@@ -77,10 +77,15 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   current raw probe clears stale output, repeatedly relaunches the probe while
   waiting for the held state, saw released `output=gpio9 true`, and still timed
   out waiting for held `output=gpio9 false`; every held-phase sample remained
-  `output=gpio9 true`. Resolve that raw GPIO9 press visibility issue or confirm
-  the physical button path, complete an observed physical press row, explain any
-  press-time peak, then validate whether the 8 KiB protocol/main stack or
-  19 KiB worker stack can be reduced after full-suite coverage.
+  `output=gpio9 true`. The broader BOOT-button pin scan now samples GPIO0
+  through GPIO10 and, in the current run, saw no changed GPIO values while
+  waiting for a held BOOT button; the released baseline was GPIO0 false,
+  GPIO1 false, GPIO2 true, GPIO3 false, GPIO4 false, GPIO5 false, GPIO6 true,
+  GPIO7 false, GPIO8 false, GPIO9 true, GPIO10 false. Resolve that physical
+  button visibility issue or confirm the button path externally, complete an
+  observed physical press row, explain any press-time peak, then validate
+  whether the 8 KiB protocol/main stack or 19 KiB worker stack can be reduced
+  after full-suite coverage.
 - Improve network heap attribution before expanding Wi-Fi scope. Current AP
   start/stop hardware coverage drives `ram_heap_max_allocated_bytes` close to
   the 36 KiB system heap budget; add clearer per-workload heap reset or
