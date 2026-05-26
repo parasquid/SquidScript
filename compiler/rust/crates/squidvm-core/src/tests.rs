@@ -953,6 +953,164 @@ screen("main") {
 }
 
 #[test]
+fn chunked_vm_resumable_function_call_suspends_for_function_chunk_read() {
+    let source = r#"app "pending-function"
+function helper(value) {
+  debug.print("helper", value)
+  return value + 1
+}
+event.on("app.start") {
+  debug.print("before")
+  debug.print("after", helper(41))
+}
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let mut scratch = [0u8; MAX_APP_BYTES];
+    let index = ProgramIndex::parse(&bytes, &mut scratch).unwrap();
+    let mut reader = CountingReader::pending(&bytes);
+    let mut vm = ChunkedVm::new(index);
+
+    let first = vm.dispatch_resumable(&mut reader, "app.start").unwrap();
+    let VmDispatch::PendingStorage(StorageRequest::SqbcRead {
+        offset: handler_offset,
+        len: handler_len,
+    }) = first
+    else {
+        panic!("expected handler sqbc read request, got {first:?}");
+    };
+
+    let second = vm
+        .resume_storage(
+            &mut reader,
+            StorageCompletion::bytes(&bytes[handler_offset..handler_offset + handler_len]).unwrap(),
+        )
+        .unwrap();
+    let VmDispatch::PendingStorage(StorageRequest::SqbcRead {
+        offset: function_offset,
+        len: function_len,
+    }) = second
+    else {
+        panic!("expected function sqbc read request, got {second:?}");
+    };
+    assert_ne!(
+        function_offset, handler_offset,
+        "function calls must suspend for the function chunk instead of entering recursive dispatch"
+    );
+    assert_eq!(
+        reader.events,
+        vec!["app.start".to_string(), "debug before".to_string()],
+        "callee side effects must not run before the function chunk request is completed"
+    );
+
+    reader.pending_reads = false;
+    assert_eq!(
+        vm.resume_storage(
+            &mut reader,
+            StorageCompletion::bytes(&bytes[function_offset..function_offset + function_len])
+                .unwrap(),
+        )
+        .unwrap(),
+        VmDispatch::Complete
+    );
+    assert_eq!(
+        reader.events,
+        vec![
+            "app.start".to_string(),
+            "debug before".to_string(),
+            "debug helper 41".to_string(),
+            "debug after 42".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn chunked_vm_resumable_function_storage_suspend_resumes_callee_then_caller() {
+    let source = r#"app "pending-function-state"
+state { count: int = 0 }
+function helper() {
+  state.load()
+  debug.print("helper", count)
+  return count + 1
+}
+event.on("app.start") {
+  debug.print("before")
+  debug.print("after", helper())
+}
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let mut scratch = [0u8; MAX_APP_BYTES];
+    let index = ProgramIndex::parse(&bytes, &mut scratch).unwrap();
+    let mut reader = CountingReader::pending(&bytes);
+    let mut vm = ChunkedVm::new(index);
+
+    let first = vm.dispatch_resumable(&mut reader, "app.start").unwrap();
+    let VmDispatch::PendingStorage(StorageRequest::SqbcRead {
+        offset: handler_offset,
+        len: handler_len,
+    }) = first
+    else {
+        panic!("expected handler sqbc read request, got {first:?}");
+    };
+
+    let second = vm
+        .resume_storage(
+            &mut reader,
+            StorageCompletion::bytes(&bytes[handler_offset..handler_offset + handler_len]).unwrap(),
+        )
+        .unwrap();
+    let VmDispatch::PendingStorage(StorageRequest::SqbcRead {
+        offset: function_offset,
+        len: function_len,
+    }) = second
+    else {
+        panic!("expected function sqbc read request, got {second:?}");
+    };
+
+    reader.pending_reads = false;
+    assert_eq!(
+        vm.resume_storage(
+            &mut reader,
+            StorageCompletion::bytes(&bytes[function_offset..function_offset + function_len])
+                .unwrap(),
+        )
+        .unwrap(),
+        VmDispatch::PendingStorage(StorageRequest::state_load())
+    );
+    assert_eq!(
+        reader.events,
+        vec!["app.start".to_string(), "debug before".to_string()]
+    );
+
+    assert_eq!(
+        vm.resume_storage(&mut reader, StorageCompletion::empty())
+            .unwrap(),
+        VmDispatch::Complete
+    );
+    assert_eq!(
+        reader.events,
+        vec![
+            "app.start".to_string(),
+            "debug before".to_string(),
+            "state.load".to_string(),
+            "debug helper 0".to_string(),
+            "debug after 1".to_string(),
+        ]
+    );
+}
+
+#[test]
 fn chunked_vm_rejects_oversized_handler_chunk() {
     let strings = encode_strings(&["oversized", "app.start"]);
     let state = vec![0, 0];

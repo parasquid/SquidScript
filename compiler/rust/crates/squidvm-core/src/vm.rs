@@ -1,4 +1,4 @@
-use core::{fmt::Write, ptr, str};
+use core::{fmt::Write, ptr, slice, str};
 
 use crate::{
     bytecode::{
@@ -76,18 +76,62 @@ pub struct ChunkedVm {
     storage_bytes: [u8; MAX_SAVED_STATE_BYTES],
     code_start: usize,
     code_len: usize,
-    resume: Option<ChunkedResume>,
-    resume_parent: Option<ChunkedResume>,
+    frames: [ChunkedResume; MAX_CALL_DEPTH + 1],
+    frame_count: usize,
 }
 
 #[derive(Clone, Copy)]
 struct ChunkedResume {
+    kind: ChunkedFrameKind,
     start: usize,
     end: usize,
     ip: usize,
     locals: [Value; MAX_LOCALS],
     depth: usize,
     pending: PendingStorageResume,
+}
+
+impl ChunkedResume {
+    const fn empty() -> Self {
+        Self {
+            kind: ChunkedFrameKind::Handler(0),
+            start: 0,
+            end: 0,
+            ip: 0,
+            locals: [Value::Null; MAX_LOCALS],
+            depth: 0,
+            pending: PendingStorageResume::None,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ChunkedFrameKind {
+    Handler(u16),
+    Function(u16),
+    Screen(u16),
+}
+
+impl ChunkedFrameKind {
+    const fn chunk_ref(self) -> ChunkRef {
+        match self {
+            Self::Handler(index) => ChunkRef {
+                app: 0,
+                kind: ChunkKind::Handler,
+                index,
+            },
+            Self::Function(index) => ChunkRef {
+                app: 0,
+                kind: ChunkKind::Function,
+                index,
+            },
+            Self::Screen(index) => ChunkRef {
+                app: 0,
+                kind: ChunkKind::Screen,
+                index,
+            },
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -255,8 +299,8 @@ impl ChunkedVm {
             storage_bytes: [0; MAX_SAVED_STATE_BYTES],
             code_start: usize::MAX,
             code_len: 0,
-            resume: None,
-            resume_parent: None,
+            frames: [ChunkedResume::empty(); MAX_CALL_DEPTH + 1],
+            frame_count: 0,
         }
     }
 
@@ -315,28 +359,25 @@ impl ChunkedVm {
         );
         ptr::addr_of_mut!((*out).code_start).write(usize::MAX);
         ptr::addr_of_mut!((*out).code_len).write(0);
-        ptr::addr_of_mut!((*out).resume).write(None);
-        ptr::addr_of_mut!((*out).resume_parent).write(None);
+        let frames = ptr::addr_of_mut!((*out).frames).cast::<ChunkedResume>();
+        for frame_index in 0..(MAX_CALL_DEPTH + 1) {
+            frames.add(frame_index).write(ChunkedResume::empty());
+        }
+        ptr::addr_of_mut!((*out).frame_count).write(0);
     }
 
     pub fn dispatch(&mut self, host: &mut impl ChunkedVmHost, event: &str) -> Result<(), VmError> {
-        if self.exited {
-            return Ok(());
-        }
-        let (index, handler) = self.index.handler(event)?;
-        let key = ChunkRef {
-            app: 0,
-            kind: ChunkKind::Handler,
-            index: index as u16,
-        };
-        self.chunk_cache.insert(key, handler.preload).ok();
-        host.trace(event);
-        let mut locals = [Value::Null; MAX_LOCALS];
-        self.instructions = 0;
-        let result = self
-            .execute_range(host, handler.start, handler.len, &mut locals, 0)
-            .map(|_| ());
-        self.chunk_cache.end_execute(key).ok();
+        let result = (|| {
+            let mut dispatch = self.dispatch_resumable(host, event)?;
+            loop {
+                match dispatch {
+                    VmDispatch::Complete => return Ok(()),
+                    VmDispatch::PendingStorage(request) => {
+                        dispatch = self.resume_immediate_storage(host, request)?;
+                    }
+                }
+            }
+        })();
         if result.is_err() {
             host.service_wifi_teardown()?;
         }
@@ -361,9 +402,14 @@ impl ChunkedVm {
         self.chunk_cache.begin_execute(key).ok();
         host.trace(event);
         self.instructions = 0;
-        self.resume_parent = None;
-        let locals = [Value::Null; MAX_LOCALS];
-        self.execute_range_resumable(host, handler.start, handler.len, locals, 0)
+        self.frame_count = 0;
+        self.push_resume_frame(
+            ChunkedFrameKind::Handler(index as u16),
+            handler.start,
+            handler.len,
+            0,
+        )?;
+        self.execute_resume_frames(host)
     }
 
     pub fn resume_storage(
@@ -371,17 +417,19 @@ impl ChunkedVm {
         host: &mut impl ChunkedVmHost,
         completion: StorageCompletion<'_>,
     ) -> Result<VmDispatch, VmError> {
-        let Some(mut resume) = self.resume.take() else {
+        if self.frame_count == 0 {
             return Ok(VmDispatch::Complete);
         };
-        match resume.pending {
+        let frame_index = self.frame_count - 1;
+        let pending = self.frames[frame_index].pending;
+        match pending {
             PendingStorageResume::SqbcRead { offset, len } => {
-                if offset != self.index.code_offset + resume.start {
+                if offset != self.index.code_offset + self.frames[frame_index].start {
                     return Err(VmError::ReadFailed);
                 }
                 let relative_len = len.min(self.code.len());
                 self.code[..relative_len].copy_from_slice(&completion.bytes[..relative_len]);
-                self.code_start = resume.start;
+                self.code_start = self.frames[frame_index].start;
                 self.code_len = relative_len;
             }
             PendingStorageResume::StateLoad => {
@@ -404,8 +452,55 @@ impl ChunkedVm {
             }
             PendingStorageResume::None => {}
         }
-        resume.pending = PendingStorageResume::None;
-        self.execute_resume_frame(host, resume)
+        self.frames[frame_index].pending = PendingStorageResume::None;
+        self.execute_resume_frames(host)
+    }
+
+    fn resume_immediate_storage(
+        &mut self,
+        host: &mut impl ChunkedVmHost,
+        request: StorageRequest,
+    ) -> Result<VmDispatch, VmError> {
+        if self.frame_count == 0 {
+            return Ok(VmDispatch::Complete);
+        }
+        let frame_index = self.frame_count - 1;
+        match request {
+            StorageRequest::SqbcRead { offset, len } => {
+                if offset != self.index.code_offset + self.frames[frame_index].start
+                    || len > self.code.len()
+                {
+                    return Err(VmError::ReadFailed);
+                }
+                host.read_exact_at(offset, &mut self.code[..len])?;
+                self.code_start = self.frames[frame_index].start;
+                self.code_len = len;
+            }
+            StorageRequest::StateLoad => {
+                if let Some(len) = host.state_load(&mut self.storage_bytes)? {
+                    apply_state_record(
+                        &self.storage_bytes[..len],
+                        &self.index,
+                        &self.index.state_slots[..self.index.state_count],
+                        &mut self.runtime_strings,
+                        &mut self.state[..self.index.state_count],
+                    )?;
+                }
+                host.trace("state.load");
+            }
+            StorageRequest::StateSave { len, bytes } => {
+                let bytes = unsafe { slice::from_raw_parts(bytes, len) };
+                host.state_save(bytes)?;
+                host.trace("state.save");
+            }
+            StorageRequest::StateReset => {
+                self.reset_state();
+                host.state_reset_persistent()?;
+                host.trace("state.reset");
+            }
+        }
+        self.frames[frame_index].pending = PendingStorageResume::None;
+        self.execute_resume_frames(host)
     }
 
     pub fn exited(&self) -> bool {
@@ -494,54 +589,6 @@ impl ChunkedVm {
         }
     }
 
-    fn load_state_from_host(&mut self, host: &mut impl TraceSink) -> Result<(), VmError> {
-        let mut bytes = [0u8; MAX_SAVED_STATE_BYTES];
-        if let Some(len) = host.state_load(&mut bytes)? {
-            apply_state_record(
-                &bytes[..len],
-                &self.index,
-                &self.index.state_slots[..self.index.state_count],
-                &mut self.runtime_strings,
-                &mut self.state[..self.index.state_count],
-            )?;
-        }
-        Ok(())
-    }
-
-    fn save_state_to_host(&self, host: &mut impl TraceSink) -> Result<(), VmError> {
-        let mut bytes = [0u8; MAX_SAVED_STATE_BYTES];
-        let len = encode_state_record(
-            &self.index,
-            &self.runtime_strings,
-            &self.index.state_slots[..self.index.state_count],
-            &self.state[..self.index.state_count],
-            &mut bytes,
-        )?;
-        host.state_save(&bytes[..len])
-    }
-
-    fn load_chunk(
-        &mut self,
-        reader: &mut impl SqbcReader,
-        start: usize,
-        len: usize,
-    ) -> Result<(), VmError> {
-        let end = start.checked_add(len).ok_or(VmError::InvalidJump)?;
-        if end > self.index.code_len {
-            return Err(VmError::InvalidJump);
-        }
-        if len > self.code.len() {
-            return Err(VmError::ChunkTooLarge);
-        }
-        if self.code_start == start && self.code_len == len {
-            return Ok(());
-        }
-        reader.read_exact_at(self.index.code_offset + start, &mut self.code[..len])?;
-        self.code_start = start;
-        self.code_len = len;
-        Ok(())
-    }
-
     fn load_chunk_resumable(
         &mut self,
         reader: &mut impl SqbcReader,
@@ -566,26 +613,6 @@ impl ChunkedVm {
         self.code_start = start;
         self.code_len = len;
         Ok(None)
-    }
-
-    fn render_screen(
-        &mut self,
-        host: &mut impl ChunkedVmHost,
-        screen_id: u16,
-        depth: usize,
-    ) -> Result<(), VmError> {
-        let (screen_index, screen) = self.index.screen(self.index.string(screen_id)?)?;
-        let mut locals = [Value::Null; MAX_LOCALS];
-        let key = ChunkRef {
-            app: 0,
-            kind: ChunkKind::Screen,
-            index: screen_index as u16,
-        };
-        self.chunk_cache.insert(key, false).ok();
-        self.chunk_cache.begin_execute(key).ok();
-        let result = self.execute_range(host, screen.start, screen.len, &mut locals, depth + 1);
-        self.chunk_cache.end_execute(key).ok();
-        result.map(|_| ())
     }
 
     fn pop_optional_string(&mut self) -> Result<Option<u16>, VmError> {
@@ -632,235 +659,38 @@ impl ChunkedVm {
         ]))
     }
 
-    fn execute_range(
+    fn push_resume_frame(
         &mut self,
-        host: &mut impl ChunkedVmHost,
+        kind: ChunkedFrameKind,
         start: usize,
         len: usize,
-        locals: &mut [Value; MAX_LOCALS],
         depth: usize,
-    ) -> Result<Option<Value>, VmError> {
+    ) -> Result<usize, VmError> {
         if depth > MAX_CALL_DEPTH {
+            return Err(VmError::CallDepthExceeded);
+        }
+        if self.frame_count >= self.frames.len() {
             return Err(VmError::CallDepthExceeded);
         }
         let end = start.checked_add(len).ok_or(VmError::InvalidJump)?;
         if end > self.index.code_len {
             return Err(VmError::InvalidJump);
         }
-        self.load_chunk(host, start, len)?;
-        let mut ip = start;
-        while ip < end {
-            self.load_chunk(host, start, len)?;
-            self.instructions += 1;
-            if self.instructions > MAX_INSTRUCTIONS_PER_EVENT {
-                return Err(VmError::InstructionBudgetExceeded);
-            }
-            let op = self.code_byte(ip)?;
-            ip += 1;
-            match op {
-                OP_PUSH_INT => {
-                    let value = self.read_i32_code(ip)?;
-                    ip += 4;
-                    self.push(Value::I32(value))?;
-                }
-                OP_PUSH_BOOL => {
-                    let value = self.code_byte(ip)? != 0;
-                    ip += 1;
-                    self.push(Value::Bool(value))?;
-                }
-                OP_PUSH_STRING => {
-                    let value = self.read_u16_code(ip)?;
-                    ip += 2;
-                    self.push(Value::String(value))?;
-                }
-                OP_PUSH_NULL => self.push(Value::Null)?,
-                OP_GET_STATE => {
-                    let state = self.read_u16_code(ip)? as usize;
-                    ip += 2;
-                    self.push(*self.state.get(state).ok_or(VmError::StateOutOfBounds)?)?;
-                }
-                OP_SET_STATE => {
-                    let state = self.read_u16_code(ip)? as usize;
-                    ip += 2;
-                    let value = self.pop()?;
-                    let state_slot = self
-                        .index
-                        .state_slots
-                        .get(state)
-                        .ok_or(VmError::StateOutOfBounds)?;
-                    if state >= self.index.state_count
-                        || !state_value_matches(
-                            state_slot.value_type.tag,
-                            state_slot.value_type.nullable,
-                            value,
-                        )
-                    {
-                        return Err(VmError::InvalidOperand);
-                    }
-                    let slot = self.state.get_mut(state).ok_or(VmError::StateOutOfBounds)?;
-                    *slot = value;
-                }
-                OP_GET_LOCAL => {
-                    let local = self.read_u16_code(ip)? as usize;
-                    ip += 2;
-                    self.push(*locals.get(local).ok_or(VmError::LocalOutOfBounds)?)?;
-                }
-                OP_SET_LOCAL => {
-                    let local = self.read_u16_code(ip)? as usize;
-                    ip += 2;
-                    let value = self.pop()?;
-                    let slot = locals.get_mut(local).ok_or(VmError::LocalOutOfBounds)?;
-                    *slot = value;
-                }
-                OP_GET_FIELD => {
-                    let field_id = self.read_u16_code(ip)?;
-                    ip += 2;
-                    let target = self.pop()?;
-                    let field = self.index.string(field_id)?;
-                    let value = match target {
-                        Value::Record(record_id) => self.runtime_records.field(record_id, field)?,
-                        _ => return Err(VmError::InvalidOperand),
-                    };
-                    self.push(value)?;
-                }
-                OP_ADD | OP_SUB | OP_EQ | OP_NE | OP_LT | OP_LTE | OP_GT | OP_GTE => {
-                    self.binary(op)?
-                }
-                OP_LIST_LEN => {
-                    let Value::List(list_id) = self.pop()? else {
-                        return Err(VmError::InvalidOperand);
-                    };
-                    self.push(Value::I32(self.runtime_lists.len(list_id)?))?;
-                }
-                OP_LIST_GET => {
-                    let index = self.pop()?.expect_i32()?;
-                    let Value::List(list_id) = self.pop()? else {
-                        return Err(VmError::InvalidOperand);
-                    };
-                    self.push(self.runtime_lists.get(list_id, index)?)?;
-                }
-                OP_JUMP => {
-                    ip = self.read_u32_code(ip)? as usize;
-                    if ip > end {
-                        return Err(VmError::InvalidJump);
-                    }
-                }
-                OP_JUMP_IF_FALSE => {
-                    let target = self.read_u32_code(ip)? as usize;
-                    ip += 4;
-                    if !self.pop()?.truthy() {
-                        if target > end {
-                            return Err(VmError::InvalidJump);
-                        }
-                        ip = target;
-                    }
-                }
-                OP_CALL_FUNCTION => {
-                    let function_id = self.read_u16_code(ip)? as usize;
-                    ip += 2;
-                    let arg_count = self.read_u16_code(ip)? as usize;
-                    ip += 2;
-                    let function = *self
-                        .index
-                        .functions
-                        .get(function_id)
-                        .ok_or(VmError::FunctionOutOfBounds)?;
-                    if function_id >= self.index.function_count
-                        || arg_count != function.param_count as usize
-                    {
-                        return Err(VmError::FunctionOutOfBounds);
-                    }
-                    let mut child_locals = [Value::Null; MAX_LOCALS];
-                    if function.local_count as usize > MAX_LOCALS {
-                        return Err(VmError::LocalOutOfBounds);
-                    }
-                    for index in (0..arg_count).rev() {
-                        child_locals[index] = self.pop()?;
-                    }
-                    let key = ChunkRef {
-                        app: 0,
-                        kind: ChunkKind::Function,
-                        index: function_id as u16,
-                    };
-                    self.chunk_cache.insert(key, false).ok();
-                    self.chunk_cache.begin_execute(key).ok();
-                    let value = self
-                        .execute_range(
-                            host,
-                            function.start,
-                            function.len,
-                            &mut child_locals,
-                            depth + 1,
-                        )?
-                        .unwrap_or(Value::Null);
-                    self.chunk_cache.end_execute(key).ok();
-                    self.push(value)?;
-                }
-                OP_RETURN => return Ok(Some(self.pop()?)),
-                OP_HALT => return Ok(None),
-                OP_CALL_BUILTIN => {
-                    let builtin = self.code_byte(ip)?;
-                    ip += 1;
-                    let arg_count = if builtin == BUILTIN_DEBUG_PRINT {
-                        let count = self.code_byte(ip)?;
-                        ip += 1;
-                        count
-                    } else {
-                        0
-                    };
-                    self.call_builtin(host, builtin, arg_count, depth)?;
-                }
-                OP_POP => {
-                    let _ = self.pop()?;
-                }
-                _ => return Err(VmError::UnknownOpcode),
-            }
-        }
-        Ok(None)
-    }
-
-    fn execute_range_resumable(
-        &mut self,
-        host: &mut impl ChunkedVmHost,
-        start: usize,
-        len: usize,
-        locals: [Value; MAX_LOCALS],
-        depth: usize,
-    ) -> Result<VmDispatch, VmError> {
-        if depth > MAX_CALL_DEPTH {
-            return Err(VmError::CallDepthExceeded);
-        }
-        let end = start.checked_add(len).ok_or(VmError::InvalidJump)?;
-        if end > self.index.code_len {
-            return Err(VmError::InvalidJump);
-        }
-        let mut frame = ChunkedResume {
+        let frame_index = self.frame_count;
+        self.frames[frame_index] = ChunkedResume {
+            kind,
             start,
             end,
             ip: start,
-            locals,
+            locals: [Value::Null; MAX_LOCALS],
             depth,
             pending: PendingStorageResume::None,
         };
-        if let Some(request) = self.load_chunk_resumable(host, start, len)? {
-            let StorageRequest::SqbcRead { offset, len } = request else {
-                return Err(VmError::ReadFailed);
-            };
-            frame.pending = PendingStorageResume::SqbcRead { offset, len };
-            self.resume = Some(frame);
-            return Ok(VmDispatch::PendingStorage(request));
-        }
-        self.execute_resume_frame(host, frame)
+        self.frame_count += 1;
+        Ok(frame_index)
     }
 
-    fn screen_resume_frame(
-        &mut self,
-        screen_id: u16,
-        depth: usize,
-    ) -> Result<ChunkedResume, VmError> {
-        if depth > MAX_CALL_DEPTH {
-            return Err(VmError::CallDepthExceeded);
-        }
+    fn push_screen_resume_frame(&mut self, screen_id: u16, depth: usize) -> Result<(), VmError> {
         let (screen_index, screen) = self.index.screen(self.index.string(screen_id)?)?;
         let key = ChunkRef {
             app: 0,
@@ -869,89 +699,90 @@ impl ChunkedVm {
         };
         self.chunk_cache.insert(key, false).ok();
         self.chunk_cache.begin_execute(key).ok();
-        let end = screen
-            .start
-            .checked_add(screen.len)
-            .ok_or(VmError::InvalidJump)?;
-        if end > self.index.code_len {
-            return Err(VmError::InvalidJump);
-        }
-        Ok(ChunkedResume {
-            start: screen.start,
-            end,
-            ip: screen.start,
-            locals: [Value::Null; MAX_LOCALS],
+        self.push_resume_frame(
+            ChunkedFrameKind::Screen(screen_index as u16),
+            screen.start,
+            screen.len,
             depth,
-            pending: PendingStorageResume::None,
-        })
-    }
-
-    fn push_resume_parent(&mut self, frame: ChunkedResume) -> Result<(), VmError> {
-        if self.resume_parent.is_some() {
-            return Err(VmError::CallDepthExceeded);
-        }
-        self.resume_parent = Some(frame);
+        )?;
         Ok(())
     }
 
-    fn pop_resume_parent(&mut self) -> Option<ChunkedResume> {
-        self.resume_parent.take()
+    fn complete_resume_frame(&mut self, return_value: Option<Value>) -> Result<(), VmError> {
+        if self.frame_count == 0 {
+            return Ok(());
+        }
+        let frame_index = self.frame_count - 1;
+        let kind = self.frames[frame_index].kind;
+        self.chunk_cache.end_execute(kind.chunk_ref()).ok();
+        self.frames[frame_index] = ChunkedResume::empty();
+        self.frame_count -= 1;
+        if self.frame_count > 0 && matches!(kind, ChunkedFrameKind::Function(_)) {
+            self.push(return_value.unwrap_or(Value::Null))?;
+        }
+        Ok(())
     }
 
-    fn execute_resume_frame(
+    fn execute_resume_frames(
         &mut self,
         host: &mut impl ChunkedVmHost,
-        mut frame: ChunkedResume,
     ) -> Result<VmDispatch, VmError> {
         loop {
-            if frame.ip >= frame.end {
-                if let Some(parent) = self.pop_resume_parent() {
-                    frame = parent;
+            if self.frame_count == 0 {
+                return Ok(VmDispatch::Complete);
+            }
+            let frame_index = self.frame_count - 1;
+            let frame_start = self.frames[frame_index].start;
+            let frame_end = self.frames[frame_index].end;
+            if self.frames[frame_index].ip >= frame_end {
+                self.complete_resume_frame(None)?;
+                if self.frame_count > 0 {
                     continue;
                 }
                 return Ok(VmDispatch::Complete);
             }
             if let Some(request) =
-                self.load_chunk_resumable(host, frame.start, frame.end - frame.start)?
+                self.load_chunk_resumable(host, frame_start, frame_end - frame_start)?
             {
                 let StorageRequest::SqbcRead { offset, len } = request else {
                     return Err(VmError::ReadFailed);
                 };
-                frame.pending = PendingStorageResume::SqbcRead { offset, len };
-                self.resume = Some(frame);
+                self.frames[frame_index].pending = PendingStorageResume::SqbcRead { offset, len };
                 return Ok(VmDispatch::PendingStorage(request));
             }
             self.instructions += 1;
             if self.instructions > MAX_INSTRUCTIONS_PER_EVENT {
                 return Err(VmError::InstructionBudgetExceeded);
             }
-            let op = self.code_byte(frame.ip)?;
-            frame.ip += 1;
+            let mut ip = self.frames[frame_index].ip;
+            let op = self.code_byte(ip)?;
+            ip += 1;
+            self.frames[frame_index].ip = ip;
             match op {
                 OP_PUSH_INT => {
-                    let value = self.read_i32_code(frame.ip)?;
-                    frame.ip += 4;
+                    let value = self.read_i32_code(self.frames[frame_index].ip)?;
+                    self.frames[frame_index].ip += 4;
                     self.push(Value::I32(value))?;
                 }
                 OP_PUSH_BOOL => {
-                    let value = self.code_byte(frame.ip)? != 0;
-                    frame.ip += 1;
+                    let value = self.code_byte(self.frames[frame_index].ip)? != 0;
+                    self.frames[frame_index].ip += 1;
                     self.push(Value::Bool(value))?;
                 }
                 OP_PUSH_STRING => {
-                    let value = self.read_u16_code(frame.ip)?;
-                    frame.ip += 2;
+                    let value = self.read_u16_code(self.frames[frame_index].ip)?;
+                    self.frames[frame_index].ip += 2;
                     self.push(Value::String(value))?;
                 }
                 OP_PUSH_NULL => self.push(Value::Null)?,
                 OP_GET_STATE => {
-                    let state = self.read_u16_code(frame.ip)? as usize;
-                    frame.ip += 2;
+                    let state = self.read_u16_code(self.frames[frame_index].ip)? as usize;
+                    self.frames[frame_index].ip += 2;
                     self.push(*self.state.get(state).ok_or(VmError::StateOutOfBounds)?)?;
                 }
                 OP_SET_STATE => {
-                    let state = self.read_u16_code(frame.ip)? as usize;
-                    frame.ip += 2;
+                    let state = self.read_u16_code(self.frames[frame_index].ip)? as usize;
+                    self.frames[frame_index].ip += 2;
                     let value = self.pop()?;
                     let state_slot = self
                         .index
@@ -971,23 +802,27 @@ impl ChunkedVm {
                     *slot = value;
                 }
                 OP_GET_LOCAL => {
-                    let local = self.read_u16_code(frame.ip)? as usize;
-                    frame.ip += 2;
-                    self.push(*frame.locals.get(local).ok_or(VmError::LocalOutOfBounds)?)?;
+                    let local = self.read_u16_code(self.frames[frame_index].ip)? as usize;
+                    self.frames[frame_index].ip += 2;
+                    let value = *self.frames[frame_index]
+                        .locals
+                        .get(local)
+                        .ok_or(VmError::LocalOutOfBounds)?;
+                    self.push(value)?;
                 }
                 OP_SET_LOCAL => {
-                    let local = self.read_u16_code(frame.ip)? as usize;
-                    frame.ip += 2;
+                    let local = self.read_u16_code(self.frames[frame_index].ip)? as usize;
+                    self.frames[frame_index].ip += 2;
                     let value = self.pop()?;
-                    let slot = frame
+                    let slot = self.frames[frame_index]
                         .locals
                         .get_mut(local)
                         .ok_or(VmError::LocalOutOfBounds)?;
                     *slot = value;
                 }
                 OP_GET_FIELD => {
-                    let field_id = self.read_u16_code(frame.ip)?;
-                    frame.ip += 2;
+                    let field_id = self.read_u16_code(self.frames[frame_index].ip)?;
+                    self.frames[frame_index].ip += 2;
                     let target = self.pop()?;
                     let field = self.index.string(field_id)?;
                     let value = match target {
@@ -1013,27 +848,28 @@ impl ChunkedVm {
                     self.push(self.runtime_lists.get(list_id, index)?)?;
                 }
                 OP_JUMP => {
-                    frame.ip = self.read_u32_code(frame.ip)? as usize;
-                    if frame.ip > frame.end {
+                    let target = self.read_u32_code(self.frames[frame_index].ip)? as usize;
+                    if target > self.frames[frame_index].end {
                         return Err(VmError::InvalidJump);
                     }
+                    self.frames[frame_index].ip = target;
                 }
                 OP_JUMP_IF_FALSE => {
-                    let target = self.read_u32_code(frame.ip)? as usize;
-                    frame.ip += 4;
+                    let target = self.read_u32_code(self.frames[frame_index].ip)? as usize;
+                    self.frames[frame_index].ip += 4;
                     if !self.pop()?.truthy() {
-                        if target > frame.end {
+                        if target > self.frames[frame_index].end {
                             return Err(VmError::InvalidJump);
                         }
-                        frame.ip = target;
+                        self.frames[frame_index].ip = target;
                     }
                 }
                 OP_CALL_BUILTIN => {
-                    let builtin = self.code_byte(frame.ip)?;
-                    frame.ip += 1;
+                    let builtin = self.code_byte(self.frames[frame_index].ip)?;
+                    self.frames[frame_index].ip += 1;
                     let arg_count = if builtin == BUILTIN_DEBUG_PRINT {
-                        let count = self.code_byte(frame.ip)?;
-                        frame.ip += 1;
+                        let count = self.code_byte(self.frames[frame_index].ip)?;
+                        self.frames[frame_index].ip += 1;
                         count
                     } else {
                         0
@@ -1043,36 +879,34 @@ impl ChunkedVm {
                             return Err(VmError::InvalidOperand);
                         };
                         self.current_screen = Some(name_id);
-                        let screen_frame = self.screen_resume_frame(name_id, frame.depth + 1)?;
-                        self.push_resume_parent(frame)?;
-                        frame = screen_frame;
+                        let depth = self.frames[frame_index].depth;
+                        self.push_screen_resume_frame(name_id, depth + 1)?;
                         continue;
                     }
                     if builtin == BUILTIN_SCREEN_REFRESH {
                         let screen_id = self.current_screen.ok_or(VmError::InvalidOperand)?;
-                        let screen_frame = self.screen_resume_frame(screen_id, frame.depth + 1)?;
-                        self.push_resume_parent(frame)?;
-                        frame = screen_frame;
+                        let depth = self.frames[frame_index].depth;
+                        self.push_screen_resume_frame(screen_id, depth + 1)?;
                         continue;
                     }
+                    let depth = self.frames[frame_index].depth;
                     if let Some(request) =
-                        self.call_builtin_resumable(host, builtin, arg_count, frame.depth)?
+                        self.call_builtin_resumable(host, builtin, arg_count, depth)?
                     {
-                        frame.pending = match request {
+                        self.frames[frame_index].pending = match request {
                             StorageRequest::StateLoad => PendingStorageResume::StateLoad,
                             StorageRequest::StateSave { .. } => PendingStorageResume::StateSave,
                             StorageRequest::StateReset => PendingStorageResume::StateReset,
                             StorageRequest::SqbcRead { .. } => PendingStorageResume::None,
                         };
-                        self.resume = Some(frame);
                         return Ok(VmDispatch::PendingStorage(request));
                     }
                 }
                 OP_CALL_FUNCTION => {
-                    let function_id = self.read_u16_code(frame.ip)? as usize;
-                    frame.ip += 2;
-                    let arg_count = self.read_u16_code(frame.ip)? as usize;
-                    frame.ip += 2;
+                    let function_id = self.read_u16_code(self.frames[frame_index].ip)? as usize;
+                    self.frames[frame_index].ip += 2;
+                    let arg_count = self.read_u16_code(self.frames[frame_index].ip)? as usize;
+                    self.frames[frame_index].ip += 2;
                     let function = *self
                         .index
                         .functions
@@ -1083,12 +917,11 @@ impl ChunkedVm {
                     {
                         return Err(VmError::FunctionOutOfBounds);
                     }
-                    let mut child_locals = [Value::Null; MAX_LOCALS];
                     if function.local_count as usize > MAX_LOCALS {
                         return Err(VmError::LocalOutOfBounds);
                     }
-                    for index in (0..arg_count).rev() {
-                        child_locals[index] = self.pop()?;
+                    if arg_count > self.stack_len {
+                        return Err(VmError::StackUnderflow);
                     }
                     let key = ChunkRef {
                         app: 0,
@@ -1097,28 +930,28 @@ impl ChunkedVm {
                     };
                     self.chunk_cache.insert(key, false).ok();
                     self.chunk_cache.begin_execute(key).ok();
-                    let result = self.execute_range(
-                        host,
+                    let child_frame_index = self.push_resume_frame(
+                        ChunkedFrameKind::Function(function_id as u16),
                         function.start,
                         function.len,
-                        &mut child_locals,
-                        frame.depth + 1,
-                    );
-                    self.chunk_cache.end_execute(key).ok();
-                    let value = result?.unwrap_or(Value::Null);
-                    self.push(value)?;
+                        self.frames[frame_index].depth + 1,
+                    )?;
+                    for index in (0..arg_count).rev() {
+                        let value = self.pop()?;
+                        self.frames[child_frame_index].locals[index] = value;
+                    }
                 }
                 OP_RETURN => {
-                    let _ = self.pop()?;
-                    if let Some(parent) = self.pop_resume_parent() {
-                        frame = parent;
+                    let value = self.pop()?;
+                    self.complete_resume_frame(Some(value))?;
+                    if self.frame_count > 0 {
                         continue;
                     }
                     return Ok(VmDispatch::Complete);
                 }
                 OP_HALT => {
-                    if let Some(parent) = self.pop_resume_parent() {
-                        frame = parent;
+                    self.complete_resume_frame(None)?;
+                    if self.frame_count > 0 {
                         continue;
                     }
                     return Ok(VmDispatch::Complete);
@@ -1168,22 +1001,14 @@ impl ChunkedVm {
         host: &mut impl ChunkedVmHost,
         builtin: u8,
         arg_count: u8,
-        depth: usize,
+        _depth: usize,
     ) -> Result<(), VmError> {
         match builtin {
-            BUILTIN_STATE_LOAD => {
-                self.load_state_from_host(host)?;
-                host.trace("state.load");
-            }
-            BUILTIN_STATE_SAVE => {
-                self.save_state_to_host(host)?;
-                host.trace("state.save");
-            }
-            BUILTIN_STATE_RESET => {
-                self.reset_state();
-                host.state_reset_persistent()?;
-                host.trace("state.reset");
-            }
+            BUILTIN_STATE_LOAD
+            | BUILTIN_STATE_SAVE
+            | BUILTIN_STATE_RESET
+            | BUILTIN_SCREEN_OPEN
+            | BUILTIN_SCREEN_REFRESH => return Err(VmError::InvalidOperand),
             BUILTIN_APP_EXIT => {
                 host.service_wifi_teardown()?;
                 self.exited = true;
@@ -1198,17 +1023,6 @@ impl ChunkedVm {
                 let strings = StringResolver::new(&self.index, &self.runtime_strings);
                 host.debug_print(&strings, &self.stack[start..self.stack_len]);
                 self.stack_len = start;
-            }
-            BUILTIN_SCREEN_OPEN => {
-                let Value::String(name_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
-                self.current_screen = Some(name_id);
-                self.render_screen(host, name_id, depth)?;
-            }
-            BUILTIN_SCREEN_REFRESH => {
-                let screen_id = self.current_screen.ok_or(VmError::InvalidOperand)?;
-                self.render_screen(host, screen_id, depth)?;
             }
             BUILTIN_DISPLAY_CLEAR => {
                 let Value::String(color_id) = self.pop()? else {
