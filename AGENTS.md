@@ -216,6 +216,12 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
   sudo changes.
 - For REPL work, default app and firmware profiles are `dev`. Hardware target tests should include `tests/repl/default-dev.session`, which intentionally does not set `:profile dev`.
 - For `hardware.gpio.*` work on the ESP32-C3 Super Mini, run the serial GPIO REPL session and the blinky upload session when hardware is available; the blinky check requires both serial assertions and physical onboard LED observation.
+- When analyzing hardware benchmark results, inspect the full distribution and
+  explain outliers before summarizing. Do not assume convenient causes such as
+  caching, timing noise, or hardware quirks when a pattern aligns with app
+  logic, wraparound boundaries, state changes, or event counts. Correlate
+  anomalous rows with trace, drawlog, state, resource metrics, or fixture
+  source before calling the benchmark valid.
 - Do not require `--target` for normal `squidc repl` upload/run flows. SquidScript apps compile against the portable language/runtime API; target definitions are opt-in for explicit target checks, simulator config, firmware metadata, docs, and autocomplete.
 - When changing the `squidc` CLI surface, update `docs/squidc_cli.md`, scripts, and command examples in docs in the same change.
 
