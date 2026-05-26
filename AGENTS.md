@@ -105,6 +105,11 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - Avoid large cross-layer patches when a narrow change would answer the request. If a change touches compiler, SQBC, firmware, CLI, examples, and docs together, explicitly list why each layer is necessary before editing.
 - Prefer library-quality seams over one-off firmware harness slots. Fixed app-id storage like `timer-armed-app`, `reader-clock`, or `break-reminder` belongs only in temporary harness code and must be documented as such until replaced by a real app registry/storage model.
 - Example app tests should verify the example at its natural boundary: compile/run with `squidc`, simulator tests, or hardware target tests. They should not become compiler-core unit tests unless the example has been promoted into a compiler fixture with a language-semantics purpose.
+- Future Zephyr VM host ABI additions should move as one implemented slice:
+  compiler lowering, SQBC builtin IDs, Rust VM callbacks, FFI, Zephyr runtime
+  wiring, docs, Rust FFI equivalence tests, and Zephyr ztests. Keep
+  `docs/zephyr_vm_host_abi_coverage.md` current when callbacks are added, and
+  prefer caller-owned buffers over hidden allocation across the FFI boundary.
 
 ## Hardware And Placeholder Discipline
 

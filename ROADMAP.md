@@ -9,23 +9,7 @@ it from this file in the same change or in the next cleanup commit.
 Goal: make Zephyr the only real-firmware runtime while keeping Rust authoritative
 for compiler, SQBC tooling, and VM semantics.
 
-### 1. Keep Future Zephyr VM Hosting ABI Additions Covered
-
-- Keep the Zephyr VM ABI aligned with implemented SQBC builtins. Current
-  builtins `1..45` have Rust VM host callbacks plus Zephyr FFI and runtime
-  connections for state, app lifecycle, display draw-log, GPIO, indicator,
-  timers, Wi-Fi, app inspection, system diagnostics, and device configuration
-  result records. Future service work should promote a spec/API slice through
-  compiler lowering, SQBC builtin IDs, VM host callbacks, FFI, Zephyr runtime
-  wiring, docs, and tests together.
-- The currently implemented Zephyr VM host callbacks have Rust FFI equivalence
-  tests and Zephyr ztests for their success, boundary, unsupported, and
-  error/status behavior where those states apply. Keep
-  `docs/zephyr_vm_host_abi_coverage.md` current when future callbacks are
-  added, and keep future service additions on the same caller-owned-buffer
-  pattern used by `system.memory()` and `system.storage("apps")`.
-
-### 2. Port Runtime Services To Zephyr
+### 1. Port Runtime Services To Zephyr
 
 - Complete the physical SQDEVICE/SQDC backend for current device configuration
   APIs. `device.config.load("package:...")` now reads installed foreground app

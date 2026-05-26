@@ -61,3 +61,6 @@ unsupported, and error/status behavior where those states apply.
 - No current gap is known for the implemented Zephyr VM host callback set. When
   new SQBC builtins or host callbacks are added, add Rust FFI equivalence tests
   and Zephyr ztests in the same slice.
+- Future callbacks should keep the same caller-owned-buffer pattern used by
+  `system.memory()` and `system.storage("apps")` unless a documented API
+  requirement makes another ownership model necessary.
