@@ -657,6 +657,18 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("uint8_t record[96]", body)
         self.assertNotIn("append_record_field(payload", body)
 
+    def test_resources_response_reports_input_binding_state(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        header = self.read("firmware/zephyr/src/device_protocol.h")
+        stack = self.read("scripts/c3-supermini-measure-input-stack-isolation.sh")
+
+        self.assertIn("#define SQ_DEVICE_RESOURCE_METRIC_MAX 21", header)
+        self.assertNotIn('SQ_RESOURCE_METRIC("active_binding_count"', protocol)
+        self.assertIn('SQ_RESOURCE_METRIC("input_button_count"', protocol)
+        self.assertNotIn('SQ_RESOURCE_METRIC("input_button_pressed_count"', protocol)
+        self.assertIn("input_button_count", stack)
+        self.assertNotIn("input_button_pressed_count", stack)
+
     def test_key_dispatch_uses_rust_parser_without_c_payload_staging(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         start = protocol.index("static int dispatch_key")

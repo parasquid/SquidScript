@@ -922,6 +922,8 @@ static int resources_response(const struct sq_protocol_frame *request,
 	SQ_RESOURCE_METRIC("vm_worker_stack_unused_bytes", vm_worker_stack_unused);
 	SQ_RESOURCE_METRIC("vm_worker_stack_used_bytes", vm_worker_stack_used);
 	SQ_RESOURCE_METRIC("app_count", context->registry == NULL ? 0 : context->registry->count);
+	SQ_RESOURCE_METRIC("input_button_count",
+			   context->runtime == NULL ? 0 : context->runtime->input_button_count);
 #undef SQ_RESOURCE_METRIC
 
 	return sqdp_status_to_protocol_result(sqdp_encode_resources_response(
