@@ -39,6 +39,7 @@
 #define SQ_DEVICE_WIFI_PROFILE_NAME_BYTES 16
 #define SQ_DEVICE_WIFI_PROFILE_SSID_BYTES 32
 #define SQ_DEVICE_WIFI_PROFILE_PASSWORD_BYTES 64
+#define SQ_DEVICE_RESOURCE_METRIC_MAX 20
 
 struct sq_device_identity {
 	const char *target;
@@ -86,6 +87,8 @@ struct sq_device_protocol_context {
 	struct sq_device_resource_session *resource_session;
 	struct sq_vm_runtime *runtime;
 	struct sq_app_store_vm_storage *launch_storage;
+	SqdpResourceMetric *resource_metrics;
+	size_t resource_metric_cap;
 	const char *store_mount_point;
 };
 

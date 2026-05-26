@@ -1110,6 +1110,7 @@ ZTEST(squidscript_protocol, test_handles_trace_resources_and_wifi_error_frames)
 	struct sq_device_install_session install_session = {0};
 	struct sq_device_temp_session temp_session = {0};
 	struct sq_device_resource_session resource_session = {0};
+	static SqdpResourceMetric resource_metrics[SQ_DEVICE_RESOURCE_METRIC_MAX];
 	struct sq_device_protocol_context context = {
 		.identity = &identity,
 		.registry = &registry,
@@ -1117,6 +1118,8 @@ ZTEST(squidscript_protocol, test_handles_trace_resources_and_wifi_error_frames)
 		.temp_session = &temp_session,
 		.resource_session = &resource_session,
 		.runtime = &runtime,
+		.resource_metrics = resource_metrics,
+		.resource_metric_cap = ARRAY_SIZE(resource_metrics),
 	};
 	uint8_t request[SQ_PROTOCOL_HEADER_LEN];
 	uint8_t response[512];
@@ -2234,10 +2237,13 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 		.identity = &identity,
 		.runtime = &runtime,
 	};
+	static SqdpResourceMetric resource_metrics[SQ_DEVICE_RESOURCE_METRIC_MAX];
 	uint64_t stack_unused = 0;
 	uint64_t stack_used = 0;
 	uint64_t protocol_stack_unused = 0;
 	uint64_t protocol_stack_used = 0;
+	uint64_t protocol_stack_pre_resources_unused = 0;
+	uint64_t protocol_stack_pre_resources_used = 0;
 	uint64_t vm_sqbc_chunk = 0;
 	uint64_t last_dispatch_sequence = 99;
 	uint64_t last_dispatch_elapsed_us = 99;
@@ -2247,6 +2253,8 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 
 	memset(&runtime, 0, sizeof(runtime));
 	sq_vm_runtime_init(&runtime);
+	context.resource_metrics = resource_metrics;
+	context.resource_metric_cap = ARRAY_SIZE(resource_metrics);
 	runtime.last_dispatch_sequence = 7;
 	runtime.last_dispatch_elapsed_us = 1234;
 	runtime.last_dispatch_sqbc_read_count = 2;
@@ -2286,11 +2294,25 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 					    &protocol_stack_unused));
 	zassert_true(resource_value_for_key(&frame, "protocol_thread_stack_used_bytes",
 					    &protocol_stack_used));
+	zassert_true(resource_value_for_key(&frame,
+					    "protocol_thread_stack_pre_resources_unused_bytes",
+					    &protocol_stack_pre_resources_unused));
+	zassert_true(resource_value_for_key(&frame,
+					    "protocol_thread_stack_pre_resources_used_bytes",
+					    &protocol_stack_pre_resources_used));
 	zassert_true(protocol_stack_unused <= CONFIG_MAIN_STACK_SIZE);
 	zassert_true(protocol_stack_used <= CONFIG_MAIN_STACK_SIZE);
+	zassert_true(protocol_stack_pre_resources_unused <= CONFIG_MAIN_STACK_SIZE);
+	zassert_true(protocol_stack_pre_resources_used <= CONFIG_MAIN_STACK_SIZE);
 	if (protocol_stack_unused != 0 || protocol_stack_used != 0) {
 		zassert_equal(protocol_stack_unused + protocol_stack_used, CONFIG_MAIN_STACK_SIZE,
 			      "unused=%llu used=%llu", protocol_stack_unused, protocol_stack_used);
+	}
+	if (protocol_stack_pre_resources_unused != 0 || protocol_stack_pre_resources_used != 0) {
+		zassert_equal(protocol_stack_pre_resources_unused + protocol_stack_pre_resources_used,
+			      CONFIG_MAIN_STACK_SIZE, "unused=%llu used=%llu",
+			      protocol_stack_pre_resources_unused,
+			      protocol_stack_pre_resources_used);
 	}
 	zassert_true(resource_value_for_key(&frame, "vm_worker_stack_unused_bytes", &stack_unused));
 	zassert_true(resource_value_for_key(&frame, "vm_worker_stack_used_bytes", &stack_used));

@@ -162,11 +162,18 @@ attribution harness. It formats app storage, installs the GPIO9 input summary
 app, launches it, dispatches a serial `SELECT`, and records `device resources`
 snapshots after format, install, launch, and dispatch under
 `target/hardware-tests/ram-workloads/summary.tsv`. Use it before reducing stack
-budgets so changes can be tied to a specific workload boundary. Stack values are
-Zephyr high-water readings for the current boot, so unchanged stack values across
-rows mean the peak happened before or during the earliest matching snapshot, not
-that every workload used the same stack depth. It is separate from the full
-hardware suite because it intentionally resets app storage.
+budgets so changes can be tied to a specific workload boundary. The resources
+response also reports `protocol_thread_stack_pre_resources_*` so the harness can
+distinguish stack already consumed before resource-response encoding from stack
+pressure caused by the diagnostic command itself. Stack values are Zephyr
+high-water readings for the current boot, so unchanged stack values across rows
+mean the peak happened before or during the earliest matching snapshot, not that
+every workload used the same stack depth. It is separate from the full hardware
+suite because it intentionally resets app storage. A representative GPIO9 input
+summary run measured the protocol/main stack rising from 2476 bytes after
+format/install to 8852 bytes after launch, while the VM worker stack rose from
+264 bytes to 17088 bytes; the serial `SELECT` dispatch did not increase those
+high-water marks.
 
 `scripts/c3-supermini-test-system-resources.sh` runs after lifecycle coverage
 and before stack measurement. It installs

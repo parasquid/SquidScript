@@ -44,8 +44,9 @@ snapshot_resources() {
   file="$(run_capture "resources-${label}" cargo run --quiet -p squidc -- device resources)"
   assert_stack_accounting "$file" protocol_thread
   assert_stack_accounting "$file" vm_worker
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$label" \
+    "$(resource_value "$file" protocol_thread_stack_pre_resources_used_bytes)" \
     "$(resource_value "$file" protocol_thread_stack_used_bytes)" \
     "$(resource_value "$file" protocol_thread_stack_unused_bytes)" \
     "$(resource_value "$file" vm_worker_stack_used_bytes)" \
@@ -60,7 +61,8 @@ snapshot_resources() {
 
 summary_out="${WORK_DIR}/summary.tsv"
 {
-  printf 'workload\tprotocol_thread_stack_used_bytes\t'
+  printf 'workload\tprotocol_thread_stack_pre_resources_used_bytes\t'
+  printf 'protocol_thread_stack_used_bytes\t'
   printf 'protocol_thread_stack_unused_bytes\t'
   printf 'vm_worker_stack_used_bytes\tvm_worker_stack_unused_bytes\t'
   printf 'ram_heap_allocated_bytes\tram_heap_max_allocated_bytes\t'

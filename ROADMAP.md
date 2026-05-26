@@ -83,10 +83,13 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   GPIO-button testing showed device binding metadata planning could use almost
   10 KiB of main stack on ESP32-C3. Caller-owned FFI planning output and runtime
   transfer-scratch reuse reduced the measured GPIO-button launch/dispatch path
-  to `protocol_thread_stack_used_bytes=8948`, but that still exceeds the prior
+  to `protocol_thread_stack_used_bytes=8852`, but that still exceeds the prior
   8 KiB budget, so the current firmware keeps `CONFIG_MAIN_STACK_SIZE=12288`.
-  Continue moving parser, metadata, and launch work to slimmer paths or the VM
-  worker so the main serial loop can return to a smaller measured budget.
+  Workload attribution now shows the protocol/main peak is introduced by app
+  launch rather than format, install, resource diagnostics, or serial `SELECT`;
+  continue moving launch-time parser, metadata, and binding work to slimmer
+  paths or the VM worker so the main serial loop can return to a smaller
+  measured budget.
 - Convert blocking Wi-Fi VM callbacks to nonblocking runtime progress. Current
   Zephyr `wifi.connect`, `wifi.disconnect`, and `wifi.scan` callbacks wait on
   semaphores for up to 15s, 5s, and 8s respectively. They run in the VM worker
