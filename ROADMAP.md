@@ -60,8 +60,12 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 - Complete a broader ESP32-C3 RAM improvement investigation. Build a measured
   map of stack, heap, static, filesystem, logging, protocol/session, VM runtime,
   and service-specific memory use across boot, app install, app launch, input
-  dispatch, storage, and network workloads; explain peaks and outliers, then
-  split reductions into concrete implementation tasks.
+  dispatch, storage, and network workloads. The targeted
+  `scripts/c3-supermini-measure-ram-workloads.sh` harness now records format,
+  install, launch, and dispatch snapshots; extend it across storage and network
+  workloads, add reset-per-scenario or equivalent high-water isolation for stack
+  attribution, explain peaks and outliers, then split reductions into concrete
+  implementation tasks.
 - Improve network heap attribution before expanding Wi-Fi scope. Current AP
   start/stop hardware coverage drives `ram_heap_max_allocated_bytes` close to
   the 36 KiB system heap budget; add clearer per-workload heap reset or

@@ -1159,6 +1159,23 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertLess(lifecycle_check, system_check)
         self.assertLess(system_check, stack_check)
 
+    def test_hardware_workload_ram_measurement_captures_attributed_snapshots(self):
+        stack = self.read("scripts/c3-supermini-measure-ram-workloads.sh")
+
+        self.assertIn('COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-12}"', stack)
+        self.assertIn("target/hardware-tests/ram-workloads", stack)
+        self.assertIn('snapshot_resources after-format', stack)
+        self.assertIn('snapshot_resources after-install', stack)
+        self.assertIn('snapshot_resources after-launch', stack)
+        self.assertIn('snapshot_resources after-select', stack)
+        self.assertIn('cargo run --quiet -p squidc -- device key SELECT', stack)
+        self.assertIn('protocol_thread_stack_used_bytes', stack)
+        self.assertIn('vm_worker_stack_used_bytes', stack)
+        self.assertIn('ram_heap_allocated_bytes', stack)
+        self.assertIn('ram_heap_max_allocated_bytes', stack)
+        self.assertIn('summary.tsv', stack)
+        self.assertIn('timeout "${COMMAND_TIMEOUT_SECONDS}s" "$@"', stack)
+
     def test_hardware_suite_leaves_blinky_visible_check_last(self):
         blinky = self.read("scripts/c3-supermini-test-blinky.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")

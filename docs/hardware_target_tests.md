@@ -157,6 +157,17 @@ function calls onto the same VM-owned continuation stack, current full suite
 coverage measured `vm_worker_stack_used_bytes=17620` before lowering the worker
 stack to 20480. Remeasure before lowering that budget again.
 
+`scripts/c3-supermini-measure-ram-workloads.sh` is the targeted RAM and stack
+attribution harness. It formats app storage, installs the GPIO9 input summary
+app, launches it, dispatches a serial `SELECT`, and records `device resources`
+snapshots after format, install, launch, and dispatch under
+`target/hardware-tests/ram-workloads/summary.tsv`. Use it before reducing stack
+budgets so changes can be tied to a specific workload boundary. Stack values are
+Zephyr high-water readings for the current boot, so unchanged stack values across
+rows mean the peak happened before or during the earliest matching snapshot, not
+that every workload used the same stack depth. It is separate from the full
+hardware suite because it intentionally resets app storage.
+
 `scripts/c3-supermini-test-system-resources.sh` runs after lifecycle coverage
 and before stack measurement. It installs
 `tests/hardware/c3-supermini/system-resources`, launches it, and verifies that
