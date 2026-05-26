@@ -74,13 +74,13 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   timeout. The raw GPIO9 probe checks whether `hardware.gpio.read("GPIO9")`
   sees released as `true` and held as `false` with the same pull-up
   configuration, separating physical pin visibility from event dispatch. The
-  current raw probe run cleared stale output, saw released `output=gpio9 true`,
-  and still timed out waiting for held `output=gpio9 false`; the held-phase
-  output remained `output=gpio9 true`. Resolve that raw GPIO9 press visibility
-  issue or confirm the physical button path, complete an observed physical
-  press row, explain any press-time peak, then validate whether the 8 KiB
-  protocol/main stack or 19 KiB worker stack can be reduced after full-suite
-  coverage.
+  current raw probe clears stale output, repeatedly relaunches the probe while
+  waiting for the held state, saw released `output=gpio9 true`, and still timed
+  out waiting for held `output=gpio9 false`; every held-phase sample remained
+  `output=gpio9 true`. Resolve that raw GPIO9 press visibility issue or confirm
+  the physical button path, complete an observed physical press row, explain any
+  press-time peak, then validate whether the 8 KiB protocol/main stack or
+  19 KiB worker stack can be reduced after full-suite coverage.
 - Improve network heap attribution before expanding Wi-Fi scope. Current AP
   start/stop hardware coverage drives `ram_heap_max_allocated_bytes` close to
   the 36 KiB system heap budget; add clearer per-workload heap reset or

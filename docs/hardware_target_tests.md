@@ -149,9 +149,11 @@ diagnostic, not part of the full suite. It installs
 GPIO9 input binding to configure the pull-up and then prints
 `hardware.gpio.read("GPIO9")` at `app.start`. The released BOOT/GPIO9 state
 should print `output=gpio9 true`; the held BOOT/GPIO9 state should print
-`output=gpio9 false`. Use it to separate raw pin visibility from input event
-dispatch when the input stack isolation harness times out before
-`after-press-observed`.
+`output=gpio9 false`. The script repeatedly relaunches the tiny probe while
+waiting for the held state, so a delayed human press gets re-sampled instead of
+being hidden by the first launch result. Use it to separate raw pin visibility
+from input event dispatch when the input stack isolation harness times out
+before `after-press-observed`.
 
 `scripts/c3-supermini-measure-stack-usage.sh` runs after the stateful app and
 app lifecycle checks in the full ESP32-C3 Super Mini suite. It records
