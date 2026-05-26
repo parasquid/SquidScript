@@ -1243,6 +1243,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('snapshot_resources after-install', stack)
         self.assertIn('snapshot_resources after-launch', stack)
         self.assertIn('snapshot_resources after-press', stack)
+        self.assertIn('snapshot_resources after-press-timeout', stack)
+        self.assertIn('errors-after-press-timeout', stack)
         self.assertIn('tests/hardware/c3-supermini/input-button-summary/main.squid', stack)
         self.assertIn('Press and release the ESP32-C3 Super Mini BOOT/GPIO9 button now.', stack)
         self.assertNotIn('cargo run --quiet -p squidc -- device key SELECT', stack)

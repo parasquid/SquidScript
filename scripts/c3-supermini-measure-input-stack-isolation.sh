@@ -92,6 +92,29 @@ wait_for_contains() {
   exit 1
 }
 
+wait_for_contains_or_timeout() {
+  local label="$1"
+  local expected="$2"
+  local command_name="$3"
+  shift 3
+  local out="${WORK_DIR}/${label}.out"
+  local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS))
+
+  while (( SECONDS < deadline )); do
+    if timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" "$@" >"${out}" 2>&1 &&
+      grep -Fq "${expected}" "${out}"; then
+      printf '%s\n' "${out}"
+      return 0
+    fi
+    sleep 0.1
+  done
+
+  printf 'Timed out waiting for %s in %s\n' "${expected}" "${command_name}" >&2
+  printf '%s\n' "--- ${out} ---" >&2
+  sed -n '1,200p' "${out}" >&2
+  return 1
+}
+
 snapshot_resources() {
   local label="$1"
   local file
@@ -146,8 +169,13 @@ wait_for_contains input-output-start "output=count 0" \
 snapshot_resources after-launch
 
 printf '%s\n' 'Press and release the ESP32-C3 Super Mini BOOT/GPIO9 button now.' >&2
-wait_for_contains input-output-press "output=count 1" \
-  "device output" cargo run --quiet -p squidc -- device output >/dev/null
+if ! wait_for_contains_or_timeout input-output-press "output=count 1" \
+  "device output" cargo run --quiet -p squidc -- device output >/dev/null; then
+  snapshot_resources after-press-timeout
+  run_capture errors-after-press-timeout \
+    cargo run --quiet -p squidc -- device errors >/dev/null
+  exit 1
+fi
 snapshot_resources after-press
 
 printf 'OK ESP32-C3 input stack isolation resources captured: %s\n' "${summary_out}"
