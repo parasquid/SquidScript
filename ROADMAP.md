@@ -62,11 +62,11 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   and service-specific memory use across boot, app install, app launch, input
   dispatch, storage, and network workloads. The targeted
   `scripts/c3-supermini-measure-ram-workloads.sh` harness now records format,
-  install, launch, and dispatch snapshots. Moving app-start device-binding
+  input-button install/launch/dispatch, display drawlog, system resources, and
+  Wi-Fi AP start/stop snapshots. Moving app-start device-binding
   setup to the VM worker flattened the GPIO9 input summary protocol/main stack
   high-water at 2476 bytes while the VM worker peaked at 17296 bytes with
-  2160 bytes free after reducing the worker stack to 19 KiB. Extend the harness
-  across storage and network workloads, add
+  2160 bytes free after reducing the worker stack to 19 KiB. Add
   reset-per-scenario or equivalent high-water isolation for stack attribution,
   explain peaks and outliers, validate whether the reduced 8 KiB protocol/main
   stack can be reduced further after full-suite coverage, and split remaining

@@ -5,6 +5,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${ROOT}/scripts/lib/hardware-command.sh"
 WORK_DIR="${ROOT}/target/hardware-tests/ram-workloads"
 INPUT_BUTTON_APP="${ROOT}/tests/hardware/c3-supermini/input-button-summary/main.squid"
+DISPLAY_APP="${ROOT}/tests/hardware/c3-supermini/display-drawlog/main.squid"
+SYSTEM_APP="${ROOT}/tests/hardware/c3-supermini/system-resources/main.squid"
+WIFI_AP_APP="${ROOT}/tests/hardware/c3-supermini/wifi-ap-summary/main.squid"
 COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-12}"
 
 mkdir -p "${WORK_DIR}"
@@ -29,6 +32,28 @@ assert_stack_accounting() {
     sed -n '1,200p' "$file" >&2
     exit 1
   fi
+}
+
+wait_for_contains() {
+  local label="$1"
+  local expected="$2"
+  local command_name="$3"
+  shift 3
+  local out="${WORK_DIR}/${label}.out"
+
+  for _ in $(seq 1 80); do
+    if timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" "$@" >"${out}" 2>&1 &&
+      grep -Fq "${expected}" "${out}"; then
+      printf '%s\n' "${out}"
+      return 0
+    fi
+    sleep 0.1
+  done
+
+  printf 'Timed out waiting for %s in %s\n' "${expected}" "${command_name}" >&2
+  printf '%s\n' "--- ${out} ---" >&2
+  sed -n '1,200p' "${out}" >&2
+  exit 1
 }
 
 snapshot_resources() {
@@ -66,12 +91,39 @@ run_capture storage-format cargo run --quiet -p squidc -- device storage-format 
 snapshot_resources after-format
 
 run_capture install-input-button cargo run --quiet -p squidc -- app install "${INPUT_BUTTON_APP}" >/dev/null
-snapshot_resources after-install
+snapshot_resources input-after-install
 
 run_capture launch-input-button cargo run --quiet -p squidc -- app launch input-button-summary >/dev/null
-snapshot_resources after-launch
+wait_for_contains input-output-start "output=count 0" \
+  "device output" cargo run --quiet -p squidc -- device output >/dev/null
+snapshot_resources input-after-launch
 
 run_capture key-select cargo run --quiet -p squidc -- device key SELECT >/dev/null
-snapshot_resources after-select
+wait_for_contains input-output-select "output=count 1" \
+  "device output" cargo run --quiet -p squidc -- device output >/dev/null
+snapshot_resources input-after-select
+
+run_capture install-display-drawlog cargo run --quiet -p squidc -- app install "${DISPLAY_APP}" >/dev/null
+run_capture launch-display-drawlog cargo run --quiet -p squidc -- app launch display-drawlog >/dev/null
+wait_for_contains display-drawlog 'draw=resource drawable="drawable/page" x=0 y=0' \
+  "device drawlog" cargo run --quiet -p squidc -- device drawlog >/dev/null
+snapshot_resources display-after-launch
+
+run_capture install-system-resources cargo run --quiet -p squidc -- app install "${SYSTEM_APP}" >/dev/null
+run_capture launch-system-resources cargo run --quiet -p squidc -- app launch system-resources >/dev/null
+wait_for_contains system-output "output=system memory RAM" \
+  "device output" cargo run --quiet -p squidc -- device output >/dev/null
+snapshot_resources system-after-launch
+
+run_capture install-wifi-ap cargo run --quiet -p squidc -- app install "${WIFI_AP_APP}" >/dev/null
+run_capture launch-wifi-ap cargo run --quiet -p squidc -- app launch wifi-ap-summary >/dev/null
+wait_for_contains wifi-ap-output-start "output=wifi start true null" \
+  "device output" cargo run --quiet -p squidc -- device output >/dev/null
+snapshot_resources wifi-ap-after-start
+
+run_capture stop-wifi-ap-key cargo run --quiet -p squidc -- device key SELECT >/dev/null
+wait_for_contains wifi-ap-output-stop "output=wifi stop true null" \
+  "device output" cargo run --quiet -p squidc -- device output >/dev/null
+snapshot_resources wifi-ap-after-stop
 
 printf 'OK ESP32-C3 RAM workload resources captured: %s\n' "${summary_out}"
