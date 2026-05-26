@@ -9,11 +9,11 @@ state {
 }
 
 event.on("app.start") {
-  clients = 0
-  previousClients = 0
-  mode = 0
-  ticks = 0
-  led = false
+  state.clients = 0
+  state.previousClients = 0
+  state.mode = 0
+  state.ticks = 0
+  state.led = false
   service.indicator.breathe()
 
   let ap = service.wifi.startAP("SquidScript")
@@ -32,54 +32,54 @@ event.on("app.start") {
 event.on("timer.debug") {
   let status = service.wifi.status()
 
-  previousClients = clients
-  clients = status.clients
+  state.previousClients = state.clients
+  state.clients = status.clients
 
-  if (clients <= 0) {
-    if (previousClients > 0) {
+  if (state.clients <= 0) {
+    if (state.previousClients > 0) {
       debug.print("wifi all clients disconnected")
     }
-    mode = 0
-    ticks = 0
-    led = false
+    state.mode = 0
+    state.ticks = 0
+    state.led = false
     service.indicator.breathe()
   }
 
-  if (clients > 0) {
-    if (previousClients == 0) {
-      mode = 1
-      ticks = 0
-      debug.print("wifi connecting", clients)
+  if (state.clients > 0) {
+    if (state.previousClients == 0) {
+      state.mode = 1
+      state.ticks = 0
+      debug.print("wifi connecting", state.clients)
     }
 
-    if (mode == 1) {
+    if (state.mode == 1) {
       service.indicator.toggle()
-      led = service.indicator.read()
-      ticks = ticks + 1
-      if (ticks >= 8) {
-        mode = 2
-        ticks = 0
-        led = true
-        service.indicator.write(led)
-        debug.print("wifi connected", clients)
+      state.led = service.indicator.read()
+      state.ticks = state.ticks + 1
+      if (state.ticks >= 8) {
+        state.mode = 2
+        state.ticks = 0
+        state.led = true
+        service.indicator.write(state.led)
+        debug.print("wifi connected", state.clients)
       }
     }
 
-    if (mode == 2) {
-      ticks = ticks + 1
-      if (ticks == 8) {
-        led = false
-        service.indicator.write(led)
+    if (state.mode == 2) {
+      state.ticks = state.ticks + 1
+      if (state.ticks == 8) {
+        state.led = false
+        service.indicator.write(state.led)
       }
-      if (ticks >= 9) {
-        led = true
-        service.indicator.write(led)
-        ticks = 0
+      if (state.ticks >= 9) {
+        state.led = true
+        service.indicator.write(state.led)
+        state.ticks = 0
       }
     }
 
-  if (clients != previousClients) {
-      debug.print("wifi clients", clients)
+  if (state.clients != state.previousClients) {
+      debug.print("wifi clients", state.clients)
     }
 
     if (status.probeEvents > 0) {
@@ -96,11 +96,11 @@ event.on("key.SELECT") {
   debug.print("wifi status", status.active, status.mode, status.ssid, status.ipAddress, status.clients, status.error)
   debug.print("wifi state", status.state, status.backend, status.driverStarted, status.configured, status.driverMode, status.channel, status.lastBackendCode)
   debug.print("wifi events", status.apStartEvents, status.apStopEvents, status.probeEvents, status.staConnectedEvents, status.staDisconnectedEvents)
-  clients = 0
-  previousClients = 0
-  mode = 0
-  ticks = 0
-  led = false
+  state.clients = 0
+  state.previousClients = 0
+  state.mode = 0
+  state.ticks = 0
+  state.led = false
   service.indicator.breathe()
 }
 

@@ -241,8 +241,8 @@ SquidScript should distinguish core language constructs from standard platform c
 `if` is core language.
 
 ```squid
-if (pageIndex > 0) {
-  pageIndex = pageIndex - 1
+if (state.pageIndex > 0) {
+  state.pageIndex = state.pageIndex - 1
 }
 ```
 
@@ -264,8 +264,8 @@ The parser sees namespaced calls. The compiler validates the calls against known
 `binbook.*` is a standard domain capability.
 
 ```squid
-let book = binbook.open(file)
-let page = binbook.page(book, pageIndex)
+let book = binbook.open(state.file)
+let page = binbook.page(book, state.pageIndex)
 let image = binbook.pageImage(page)
 service.display.draw(image, { x: 0, y: 0 })
 ```
@@ -275,7 +275,7 @@ The BinBook capability owns document parsing, validation, page lookup, decoding,
 For recoverable failures, capability APIs return result records:
 
 ```squid
-let opened = binbook.open(file)
+let opened = binbook.open(state.file)
 if (!opened.ok) {
   service.display.text(opened.error, { x: 20, y: 60 })
 }
@@ -315,7 +315,7 @@ Prefer capability APIs that return composable SquidScript values:
 Good:
 
 ```squid
-let page = binbook.page(book, pageIndex)
+let page = binbook.page(book, state.pageIndex)
 let image = binbook.pageImage(page)
 service.display.draw(image, { x: 0, y: 0 })
 ```
@@ -323,7 +323,7 @@ service.display.draw(image, { x: 0, y: 0 })
 Riskier:
 
 ```squid
-binbook.showPage(file, pageIndex)
+binbook.showPage(state.file, state.pageIndex)
 ```
 
 The second form may be convenient, but it combines file handling, document validation, page selection, rendering, layout, clipping, and display composition into one special path. It should be added only if the lower-level composition cannot express the behavior safely or efficiently.
@@ -369,7 +369,7 @@ Global built-ins should be avoided when a capability namespace is available.
 Prefer:
 
 ```squid
-string.format("{}/{}", pageIndex + 1, pageCount)
+string.format("{}/{}", state.pageIndex + 1, state.pageCount)
 screen.refresh()
 state.save()
 ```

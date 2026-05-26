@@ -570,8 +570,8 @@ The contract defines the compiler-visible interface: names, signatures, return t
 The preferred source API shape is:
 
 ```squid
-let book = binbook.open(file)
-let page = binbook.page(book, pageIndex)
+let book = binbook.open(state.file)
+let page = binbook.page(book, state.pageIndex)
 let image = binbook.pageImage(page)
 
 service.display.draw(image, { x: 0, y: 0 })

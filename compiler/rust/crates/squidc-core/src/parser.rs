@@ -522,6 +522,20 @@ impl Parser<'_> {
     }
 
     fn parse_statement(&mut self, builder: &mut GreenNodeBuilder) -> Option<IrStatement> {
+        if self.at_kind(TokenKind::At) {
+            self.bump(builder);
+            self.consume_ws(builder);
+            let name = self.consume_ident(builder)?;
+            self.consume_ws(builder);
+            if self.at_kind(TokenKind::Equals) {
+                self.bump(builder);
+                self.consume_ws(builder);
+                let expr = self.parse_expr(builder)?;
+                return Some(IrStatement::StateAssign { name, expr });
+            }
+            return None;
+        }
+
         if !self.at_kind(TokenKind::Ident) {
             return None;
         }
@@ -597,6 +611,13 @@ impl Parser<'_> {
             .clone();
         self.bump(builder);
         self.consume_ws(builder);
+
+        if first == "state" && self.at_kind(TokenKind::Equals) {
+            self.bump(builder);
+            self.consume_ws(builder);
+            let expr = self.parse_expr(builder)?;
+            return Some(IrStatement::StateAssign { name: method, expr });
+        }
 
         if first == "hardware" && method == "gpio" {
             if self.at_kind(TokenKind::Dot) {
@@ -718,14 +739,23 @@ impl Parser<'_> {
 
         match (first.as_str(), method.as_str()) {
             ("state", "load") => {
+                if !has_call_args {
+                    return None;
+                }
                 self.consume_call_tail(builder);
                 Some(IrStatement::StateLoad)
             }
             ("state", "save") => {
+                if !has_call_args {
+                    return None;
+                }
                 self.consume_call_tail(builder);
                 Some(IrStatement::StateSave)
             }
             ("state", "reset") => {
+                if !has_call_args {
+                    return None;
+                }
                 self.consume_call_tail(builder);
                 Some(IrStatement::StateReset)
             }
@@ -984,6 +1014,12 @@ impl Parser<'_> {
             IrExpr::Literal {
                 value: serde_json::json!(self.consume_string(builder)?),
             }
+        } else if self.at_kind(TokenKind::At) {
+            self.bump(builder);
+            self.consume_ws(builder);
+            IrExpr::State {
+                name: self.consume_ident(builder)?,
+            }
         } else if self.at_kind(TokenKind::Ident) {
             let name = self.peek()?.text.clone();
             self.bump(builder);
@@ -1081,6 +1117,15 @@ impl Parser<'_> {
                         name: format!("app.{namespace}.{action}"),
                         args: self.parse_call_args(builder),
                     }
+                } else if name == "state" {
+                    if self.at_kind(TokenKind::OpenParen) {
+                        IrExpr::Call {
+                            name: format!("state.{namespace}"),
+                            args: self.parse_call_args(builder),
+                        }
+                    } else {
+                        IrExpr::State { name: namespace }
+                    }
                 } else if self.at_kind(TokenKind::OpenParen) {
                     let call_name = if name == "wifi" {
                         format!("service.wifi.{namespace}")
@@ -1093,7 +1138,7 @@ impl Parser<'_> {
                     }
                 } else {
                     IrExpr::Field {
-                        target: Box::new(IrExpr::State { name }),
+                        target: Box::new(IrExpr::Variable { name }),
                         field: namespace,
                     }
                 }
@@ -1103,7 +1148,7 @@ impl Parser<'_> {
                     args: self.parse_call_args(builder),
                 }
             } else {
-                IrExpr::State { name }
+                IrExpr::Variable { name }
             }
         } else {
             return None;

@@ -1056,14 +1056,14 @@ fn compile_blinky_service_sqbc() -> Vec<u8> {
         r#"app "ffi-blinky"
 state { led: bool = false }
 event.on("app.start") {
-  service.indicator.write(led)
+  service.indicator.write(state.led)
   service.timer.every("timer.debug", 500)
-  debug.print("blinky ready", led)
+  debug.print("blinky ready", state.led)
 }
 event.on("timer.debug") {
   service.indicator.toggle()
-  led = service.indicator.read()
-  debug.print("blink", led)
+  state.led = service.indicator.read()
+  debug.print("blink", state.led)
 }
 screen("main") {}
 "#,

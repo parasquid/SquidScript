@@ -4,6 +4,7 @@ use crate::{
     ir::{IrExpr, IrStatement},
     profile::BuildProfile,
 };
+use std::collections::{BTreeMap, BTreeSet};
 
 fn is_fallible_builtin(name: &str) -> bool {
     matches!(
@@ -44,7 +45,7 @@ pub(crate) fn validate_semantics(
     _profile: BuildProfile,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    let mut screen_names = std::collections::BTreeSet::new();
+    let mut screen_names = BTreeSet::new();
     let state_names = ast
         .state
         .as_ref()
@@ -53,9 +54,33 @@ pub(crate) fn validate_semantics(
                 .values
                 .iter()
                 .map(|value| value.name.clone())
-                .collect::<std::collections::BTreeSet<_>>()
+                .collect::<BTreeSet<_>>()
         })
         .unwrap_or_default();
+    let function_map = ast
+        .functions
+        .iter()
+        .map(|function| (function.name.clone(), function.statements.as_slice()))
+        .collect::<BTreeMap<_, _>>();
+    let impure_functions = collect_render_impure_functions(&function_map);
+    let mut function_names = BTreeSet::new();
+    for function in &ast.functions {
+        if !function_names.insert(function.name.clone()) {
+            diagnostics.push(error(
+                "E_DUPLICATE_FUNCTION",
+                "function names must be unique",
+                function.span.start,
+                function.span.end,
+            ));
+        }
+        validate_shadowing(
+            &function.params,
+            &state_names,
+            function.span.start,
+            function.span.end,
+            diagnostics,
+        );
+    }
     for screen in &ast.screens {
         if !screen_names.insert(screen.name.clone()) {
             diagnostics.push(error(
@@ -77,6 +102,7 @@ pub(crate) fn validate_semantics(
             &screen.statements,
             screen.span.start,
             screen.span.end,
+            &impure_functions,
             diagnostics,
         );
         validate_ignored_fallible_results(
@@ -93,18 +119,6 @@ pub(crate) fn validate_semantics(
             screen.span.end,
             diagnostics,
         );
-    }
-
-    let mut function_names = std::collections::BTreeSet::new();
-    for function in &ast.functions {
-        if !function_names.insert(function.name.clone()) {
-            diagnostics.push(error(
-                "E_DUPLICATE_FUNCTION",
-                "function names must be unique",
-                function.span.start,
-                function.span.end,
-            ));
-        }
     }
 
     for handler in &ast.handlers {
@@ -169,6 +183,8 @@ pub(crate) fn validate_semantics(
             diagnostics,
         );
     }
+
+    validate_names(ast, &state_names, diagnostics);
 }
 
 fn validate_trigger_statements(
@@ -215,6 +231,301 @@ fn validate_trigger_interval(
             end,
         ));
     }
+}
+
+fn validate_names(
+    ast: &AstRoot,
+    state_names: &BTreeSet<String>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for handler in &ast.handlers {
+        let mut visible = BTreeSet::new();
+        validate_statement_names(
+            &handler.statements,
+            state_names,
+            &mut visible,
+            handler.span.start,
+            handler.span.end,
+            diagnostics,
+        );
+    }
+    for trigger_block in &ast.trigger_blocks {
+        let mut visible = BTreeSet::new();
+        validate_statement_names(
+            &trigger_block.statements,
+            state_names,
+            &mut visible,
+            trigger_block.span.start,
+            trigger_block.span.end,
+            diagnostics,
+        );
+    }
+    for function in &ast.functions {
+        let mut visible = function.params.iter().cloned().collect::<BTreeSet<_>>();
+        validate_statement_names(
+            &function.statements,
+            state_names,
+            &mut visible,
+            function.span.start,
+            function.span.end,
+            diagnostics,
+        );
+    }
+    for screen in &ast.screens {
+        let mut visible = BTreeSet::new();
+        validate_statement_names(
+            &screen.statements,
+            state_names,
+            &mut visible,
+            screen.span.start,
+            screen.span.end,
+            diagnostics,
+        );
+    }
+}
+
+fn validate_shadowing(
+    names: &[String],
+    state_names: &BTreeSet<String>,
+    start: usize,
+    end: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for name in names {
+        warn_if_state_shadow(name, state_names, start, end, diagnostics);
+    }
+}
+
+fn warn_if_state_shadow(
+    name: &str,
+    state_names: &BTreeSet<String>,
+    start: usize,
+    end: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if state_names.contains(name) {
+        diagnostics.push(warning(
+            "W_STATE_SHADOW",
+            "local, parameter, or loop variable shadows a state field; use state.<field> or @field for persistent state",
+            start,
+            end,
+        ));
+    }
+}
+
+fn validate_statement_names(
+    statements: &[IrStatement],
+    state_names: &BTreeSet<String>,
+    visible: &mut BTreeSet<String>,
+    start: usize,
+    end: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for statement in statements {
+        match statement {
+            IrStatement::Let { name, expr } => {
+                validate_expr_names(expr, state_names, visible, start, end, diagnostics);
+                warn_if_state_shadow(name, state_names, start, end, diagnostics);
+                visible.insert(name.clone());
+            }
+            IrStatement::Assign { name, expr } => {
+                validate_expr_names(expr, state_names, visible, start, end, diagnostics);
+                if !visible.contains(name) {
+                    diagnostics.push(undeclared_variable(name, state_names, start, end));
+                }
+            }
+            IrStatement::StateAssign { name, expr } => {
+                validate_expr_names(expr, state_names, visible, start, end, diagnostics);
+                if !state_names.contains(name) {
+                    diagnostics.push(missing_state_field(name, start, end));
+                }
+            }
+            IrStatement::If {
+                condition,
+                then_statements,
+                else_statements,
+            } => {
+                validate_expr_names(condition, state_names, visible, start, end, diagnostics);
+                let mut then_visible = visible.clone();
+                validate_statement_names(
+                    then_statements,
+                    state_names,
+                    &mut then_visible,
+                    start,
+                    end,
+                    diagnostics,
+                );
+                let mut else_visible = visible.clone();
+                validate_statement_names(
+                    else_statements,
+                    state_names,
+                    &mut else_visible,
+                    start,
+                    end,
+                    diagnostics,
+                );
+            }
+            IrStatement::Repeat { count, statements } => {
+                validate_expr_names(count, state_names, visible, start, end, diagnostics);
+                let mut nested_visible = visible.clone();
+                validate_statement_names(
+                    statements,
+                    state_names,
+                    &mut nested_visible,
+                    start,
+                    end,
+                    diagnostics,
+                );
+            }
+            IrStatement::For {
+                item,
+                list,
+                max,
+                statements,
+            } => {
+                validate_expr_names(list, state_names, visible, start, end, diagnostics);
+                if let Some(max) = max {
+                    validate_expr_names(max, state_names, visible, start, end, diagnostics);
+                }
+                warn_if_state_shadow(item, state_names, start, end, diagnostics);
+                let mut nested_visible = visible.clone();
+                nested_visible.insert(item.clone());
+                validate_statement_names(
+                    statements,
+                    state_names,
+                    &mut nested_visible,
+                    start,
+                    end,
+                    diagnostics,
+                );
+            }
+            IrStatement::Return { expr } => {
+                if let Some(expr) = expr {
+                    validate_expr_names(expr, state_names, visible, start, end, diagnostics);
+                }
+            }
+            IrStatement::Call { args, .. } | IrStatement::DebugPrint { args } => {
+                for arg in args {
+                    validate_expr_names(arg, state_names, visible, start, end, diagnostics);
+                }
+            }
+            IrStatement::DebugBlock { statements } => {
+                let mut nested_visible = visible.clone();
+                validate_statement_names(
+                    statements,
+                    state_names,
+                    &mut nested_visible,
+                    start,
+                    end,
+                    diagnostics,
+                );
+            }
+            IrStatement::ServiceTimerEvery { interval_ms, .. } => {
+                validate_expr_names(interval_ms, state_names, visible, start, end, diagnostics);
+            }
+            IrStatement::ServiceTimerAfter { delay_ms, .. } => {
+                validate_expr_names(delay_ms, state_names, visible, start, end, diagnostics);
+            }
+            IrStatement::HardwareGpioWrite { value, .. } => {
+                validate_expr_names(value, state_names, visible, start, end, diagnostics);
+            }
+            IrStatement::ServiceIndicatorWrite { value } => {
+                validate_expr_names(value, state_names, visible, start, end, diagnostics);
+            }
+            IrStatement::ServiceIndicatorBlink { on_ms, off_ms } => {
+                validate_expr_names(on_ms, state_names, visible, start, end, diagnostics);
+                validate_expr_names(off_ms, state_names, visible, start, end, diagnostics);
+            }
+            IrStatement::DisplayText { text, .. } => {
+                validate_expr_names(text, state_names, visible, start, end, diagnostics);
+            }
+            IrStatement::DisplayDraw { drawable, .. } => {
+                validate_expr_names(drawable, state_names, visible, start, end, diagnostics);
+            }
+            IrStatement::StateLoad
+            | IrStatement::StateSave
+            | IrStatement::StateReset
+            | IrStatement::ScreenOpen { .. }
+            | IrStatement::ScreenRefresh
+            | IrStatement::AppExit
+            | IrStatement::AppLaunch { .. }
+            | IrStatement::AppArm { .. }
+            | IrStatement::AppDisarm { .. }
+            | IrStatement::HardwareGpioToggle { .. }
+            | IrStatement::ServiceIndicatorToggle
+            | IrStatement::ServiceIndicatorBreathe
+            | IrStatement::DisplayClear { .. }
+            | IrStatement::DisplayRect { .. }
+            | IrStatement::DisplayLine { .. }
+            | IrStatement::DisplaySelect { .. }
+            | IrStatement::DisplayImage { .. } => {}
+        }
+    }
+}
+
+fn validate_expr_names(
+    expr: &IrExpr,
+    state_names: &BTreeSet<String>,
+    visible: &BTreeSet<String>,
+    start: usize,
+    end: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    match expr {
+        IrExpr::Literal { .. }
+        | IrExpr::HardwareGpioRead { .. }
+        | IrExpr::ServiceIndicatorRead
+        | IrExpr::SystemMemory
+        | IrExpr::SystemStorage { .. } => {}
+        IrExpr::State { name } => {
+            if !state_names.contains(name) {
+                diagnostics.push(missing_state_field(name, start, end));
+            }
+        }
+        IrExpr::Variable { name } => {
+            if !visible.contains(name) {
+                diagnostics.push(undeclared_variable(name, state_names, start, end));
+            }
+        }
+        IrExpr::Binary { left, right, .. } => {
+            validate_expr_names(left, state_names, visible, start, end, diagnostics);
+            validate_expr_names(right, state_names, visible, start, end, diagnostics);
+        }
+        IrExpr::Unary { expr, .. } => {
+            validate_expr_names(expr, state_names, visible, start, end, diagnostics);
+        }
+        IrExpr::Field { target, .. } => {
+            validate_expr_names(target, state_names, visible, start, end, diagnostics);
+        }
+        IrExpr::Call { args, .. } => {
+            for arg in args {
+                validate_expr_names(arg, state_names, visible, start, end, diagnostics);
+            }
+        }
+    }
+}
+
+fn undeclared_variable(
+    name: &str,
+    state_names: &BTreeSet<String>,
+    start: usize,
+    end: usize,
+) -> Diagnostic {
+    let message = if state_names.contains(name) {
+        format!("undeclared local variable {name}; persistent state must be accessed as state.{name} or @{name}")
+    } else {
+        format!("undeclared local variable {name}; declare it with let before assignment or use")
+    };
+    error("E_UNDECLARED_VARIABLE", message, start, end)
+}
+
+fn missing_state_field(name: &str, start: usize, end: usize) -> Diagnostic {
+    error(
+        "E_MISSING_STATE_FIELD",
+        format!("state field {name} is not declared in the state block"),
+        start,
+        end,
+    )
 }
 
 fn validate_debug_blocks(
@@ -300,6 +611,86 @@ fn validate_debug_blocks(
     }
 }
 
+fn collect_render_impure_functions(
+    function_map: &BTreeMap<String, &[IrStatement]>,
+) -> BTreeSet<String> {
+    let mut impure = BTreeSet::new();
+    loop {
+        let before = impure.len();
+        for (name, statements) in function_map {
+            if statements_are_render_impure(statements, &impure) {
+                impure.insert(name.clone());
+            }
+        }
+        if impure.len() == before {
+            break;
+        }
+    }
+    impure
+}
+
+fn statements_are_render_impure(
+    statements: &[IrStatement],
+    impure_functions: &BTreeSet<String>,
+) -> bool {
+    statements
+        .iter()
+        .any(|statement| statement_is_render_impure(statement, impure_functions))
+}
+
+fn statement_is_render_impure(
+    statement: &IrStatement,
+    impure_functions: &BTreeSet<String>,
+) -> bool {
+    match statement {
+        IrStatement::StateLoad
+        | IrStatement::StateSave
+        | IrStatement::StateReset
+        | IrStatement::ScreenOpen { .. }
+        | IrStatement::ScreenRefresh
+        | IrStatement::AppExit
+        | IrStatement::AppLaunch { .. }
+        | IrStatement::AppArm { .. }
+        | IrStatement::AppDisarm { .. }
+        | IrStatement::ServiceTimerEvery { .. }
+        | IrStatement::ServiceTimerAfter { .. }
+        | IrStatement::HardwareGpioWrite { .. }
+        | IrStatement::HardwareGpioToggle { .. }
+        | IrStatement::ServiceIndicatorWrite { .. }
+        | IrStatement::ServiceIndicatorToggle
+        | IrStatement::ServiceIndicatorBreathe
+        | IrStatement::ServiceIndicatorBlink { .. }
+        | IrStatement::StateAssign { .. } => true,
+        IrStatement::Call { name, .. } => {
+            is_fallible_builtin(name) || impure_functions.contains(name)
+        }
+        IrStatement::If {
+            then_statements,
+            else_statements,
+            ..
+        } => {
+            statements_are_render_impure(then_statements, impure_functions)
+                || statements_are_render_impure(else_statements, impure_functions)
+        }
+        IrStatement::Repeat { statements, .. }
+        | IrStatement::For { statements, .. }
+        | IrStatement::DebugBlock { statements } => {
+            statements_are_render_impure(statements, impure_functions)
+        }
+        IrStatement::Assign { .. }
+        | IrStatement::Let { .. }
+        | IrStatement::Return { .. }
+        | IrStatement::DebugPrint { .. }
+        | IrStatement::DisplayClear { .. }
+        | IrStatement::DisplayText { .. }
+        | IrStatement::DisplayRect { .. }
+        | IrStatement::DisplayLine { .. }
+        | IrStatement::DisplaySelect { .. }
+        | IrStatement::DisplayImage { .. }
+        | IrStatement::DisplayDraw { .. } => false,
+    }
+}
+
 fn collect_debug_local_names(
     statements: &[IrStatement],
     debug_locals: &mut std::collections::BTreeSet<String>,
@@ -360,6 +751,15 @@ fn validate_debug_block_statements(
                     };
                     diagnostics.push(error("E_DEBUG_BLOCK", message, start, end));
                 }
+            }
+            IrStatement::StateAssign { expr, .. } => {
+                validate_debug_expr(expr, start, end, diagnostics);
+                diagnostics.push(error(
+                    "E_DEBUG_BLOCK",
+                    "debug blocks must not assign to state",
+                    start,
+                    end,
+                ));
             }
             IrStatement::DebugPrint { args } => {
                 for arg in args {
@@ -483,6 +883,7 @@ fn validate_debug_expr(expr: &IrExpr, start: usize, end: usize, diagnostics: &mu
     match expr {
         IrExpr::Literal { .. }
         | IrExpr::State { .. }
+        | IrExpr::Variable { .. }
         | IrExpr::HardwareGpioRead { .. }
         | IrExpr::ServiceIndicatorRead
         | IrExpr::SystemMemory
@@ -512,7 +913,9 @@ fn statement_uses_any_name(
     names: &std::collections::BTreeSet<String>,
 ) -> bool {
     match statement {
-        IrStatement::Assign { name, expr } | IrStatement::Let { name, expr } => {
+        IrStatement::Assign { name, expr }
+        | IrStatement::StateAssign { name, expr }
+        | IrStatement::Let { name, expr } => {
             names.contains(name) || expr_uses_any_name(expr, names)
         }
         IrStatement::If {
@@ -585,7 +988,7 @@ fn statement_uses_any_name(
 
 fn expr_uses_any_name(expr: &IrExpr, names: &std::collections::BTreeSet<String>) -> bool {
     match expr {
-        IrExpr::State { name } => names.contains(name),
+        IrExpr::State { name } | IrExpr::Variable { name } => names.contains(name),
         IrExpr::Binary { left, right, .. } => {
             expr_uses_any_name(left, names) || expr_uses_any_name(right, names)
         }
@@ -639,6 +1042,7 @@ fn validate_screen_statements(
     statements: &[IrStatement],
     start: usize,
     end: usize,
+    impure_functions: &BTreeSet<String>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     for statement in statements {
@@ -659,7 +1063,7 @@ fn validate_screen_statements(
             | IrStatement::ServiceIndicatorToggle
             | IrStatement::ServiceIndicatorBreathe
             | IrStatement::ServiceIndicatorBlink { .. }
-            | IrStatement::Assign { .. } => {
+            | IrStatement::StateAssign { .. } => {
                 diagnostics.push(error(
                     "E_RENDER_PURITY",
                     "screen bodies must not directly mutate state or app lifecycle",
@@ -675,19 +1079,39 @@ fn validate_screen_statements(
                     end,
                 ));
             }
+            IrStatement::Call { name, .. } if impure_functions.contains(name) => {
+                diagnostics.push(error(
+                    "E_RENDER_PURITY",
+                    "screen bodies must not call functions that mutate state or app lifecycle",
+                    start,
+                    end,
+                ));
+            }
             IrStatement::If {
                 then_statements,
                 else_statements,
                 ..
             } => {
-                validate_screen_statements(then_statements, start, end, diagnostics);
-                validate_screen_statements(else_statements, start, end, diagnostics);
+                validate_screen_statements(
+                    then_statements,
+                    start,
+                    end,
+                    impure_functions,
+                    diagnostics,
+                );
+                validate_screen_statements(
+                    else_statements,
+                    start,
+                    end,
+                    impure_functions,
+                    diagnostics,
+                );
             }
             IrStatement::Repeat { statements, .. } | IrStatement::For { statements, .. } => {
-                validate_screen_statements(statements, start, end, diagnostics);
+                validate_screen_statements(statements, start, end, impure_functions, diagnostics);
             }
             IrStatement::DebugBlock { statements } => {
-                validate_screen_statements(statements, start, end, diagnostics);
+                validate_screen_statements(statements, start, end, impure_functions, diagnostics);
             }
             _ => {}
         }

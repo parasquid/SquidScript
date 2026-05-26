@@ -2,20 +2,20 @@ screen("browser") {
   service.display.clear("white")
   drawTopBar("BinBook Reader")
 
-  if (browserIndex == 0) {
+  if (state.browserIndex == 0) {
     service.display.rect(20, 120, 440, 72, { fillColor: "gray4" })
   }
 
   service.display.text("Browse for BinBook", { x: 36, y: 142, w: 408, h: 32, fontHeight: 24 })
 
-  if (file != "") {
-    if (browserIndex == 1) {
+  if (state.file != "") {
+    if (state.browserIndex == 1) {
       service.display.rect(20, 220, 440, 112, { fillColor: "gray4" })
     }
 
     service.display.text("Resume", { x: 36, y: 238, w: 408, h: 32, fontHeight: 24 })
-    service.display.text(title, { x: 36, y: 278, w: 320, h: 28, fontHeight: 18 })
-    service.display.text(string.format("{}/{}", pageIndex + 1, pageCount), {
+    service.display.text(state.title, { x: 36, y: 278, w: 320, h: 28, fontHeight: 18 })
+    service.display.text(string.format("{}/{}", state.pageIndex + 1, state.pageCount), {
       x: 360,
       y: 278,
       w: 84,

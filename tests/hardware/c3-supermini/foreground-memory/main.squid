@@ -5,11 +5,11 @@ state {
 }
 
 event.on("app.start") {
-  count = count + 1
-  debug.print("memory start", count)
+  state.count = state.count + 1
+  debug.print("memory start", state.count)
 }
 
 event.on("key.SELECT") {
-  count = count + 1
-  debug.print("memory select", count)
+  state.count = state.count + 1
+  debug.print("memory select", state.count)
 }

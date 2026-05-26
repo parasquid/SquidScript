@@ -193,7 +193,7 @@ event.on("app.start") {
 }
 
 event.on("key.DOWN") {
-  selected = selected + 1
+  state.selected = state.selected + 1
   state.save()
   screen.refresh()
 }

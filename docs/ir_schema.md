@@ -108,6 +108,7 @@ Consumers must reject unknown `format` values.
 The browser runtime currently recognizes:
 
 - `assign`
+- `state.assign`
 - `let`
 - `if`
 - `repeat`
@@ -146,9 +147,11 @@ The browser-sim IR currently recognizes:
 
 - `literal`
 - `state`
+- `variable`
 - `binary` with `+`, `-`, `==`, `!=`, `<`, `<=`, `>`, and `>=`
+- `field`
 - `call`
 
 ## Validation
 
-The compiler currently reports diagnostics for missing app declarations, missing screens, target mismatches, duplicate screen and function names, unknown `screen.open(...)` targets, unsupported screen render policies, direct mutating statements inside screen bodies, display calls outside screen rendering, and invalid mutation or side effects inside `debug.block`.
+The compiler currently reports diagnostics for missing app declarations, missing screens, target mismatches, duplicate screen and function names, unknown `screen.open(...)` targets, unsupported screen render policies, undeclared local variables, missing explicit state fields, state shadowing warnings, direct or transitive state mutation from screen rendering, display calls outside screen rendering, and invalid mutation or side effects inside `debug.block`.

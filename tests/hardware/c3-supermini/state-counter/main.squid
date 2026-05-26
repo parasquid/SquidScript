@@ -6,12 +6,12 @@ state {
 
 event.on("app.start") {
   state.load()
-  debug.print("count", count)
+  debug.print("count", state.count)
 }
 
 event.on("key.SELECT") {
   state.load()
-  count = count + 1
+  state.count = state.count + 1
   state.save()
-  debug.print("count", count)
+  debug.print("count", state.count)
 }

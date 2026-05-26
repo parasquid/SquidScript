@@ -102,6 +102,8 @@ pub enum IrStatement {
     ServiceTimerAfter { event: String, delay_ms: IrExpr },
     #[serde(rename = "assign")]
     Assign { name: String, expr: IrExpr },
+    #[serde(rename = "state.assign")]
+    StateAssign { name: String, expr: IrExpr },
     #[serde(rename = "let")]
     Let { name: String, expr: IrExpr },
     #[serde(rename = "if")]
@@ -186,6 +188,8 @@ pub enum IrExpr {
     Literal { value: serde_json::Value },
     #[serde(rename = "state")]
     State { name: String },
+    #[serde(rename = "variable")]
+    Variable { name: String },
     #[serde(rename = "binary")]
     Binary {
         left: Box<IrExpr>,

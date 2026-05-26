@@ -5,8 +5,8 @@ state {
 }
 
 event.on("app.start") {
-  starts = starts + 1
-  debug.print("main start", starts)
+  state.starts = state.starts + 1
+  debug.print("main start", state.starts)
   app.arm("break-reminder")
   app.launch("reader-clock")
 }

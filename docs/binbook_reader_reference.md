@@ -102,11 +102,11 @@ function browseForBook() {
   let picked = content.pickFile(".binbook")
 
   if (picked != "") {
-    file = picked
-    pageIndex = 0
-    tocIndex = 0
-    tocTop = 0
-    jumpPage = 1
+    state.file = picked
+    state.pageIndex = 0
+    state.tocIndex = 0
+    state.tocTop = 0
+    state.jumpPage = 1
     loadBookInfo()
     state.save()
     openReader()
@@ -114,7 +114,7 @@ function browseForBook() {
 }
 
 function resumeBook() {
-  if (file != "") {
+  if (state.file != "") {
     loadBookInfo()
     state.save()
     openReader()
@@ -128,7 +128,7 @@ This keeps resume behavior inside the BinBook reader's own app state.
 
 ## Navigation Model
 
-`uiState` is a persisted string used by `stateMachine.*` to route input. The state machine is backed by that normal app state variable, so direct assignments to `uiState` and calls to `stateMachine.enter("uiState", "...")` affect the same source of truth.
+`uiState` is a persisted string used by `stateMachine.*` to route input. The state machine is backed by that normal app state variable, so explicit assignments to `state.uiState` and calls to `stateMachine.enter("uiState", "...")` affect the same source of truth.
 
 ```squid
 event.on("key.SELECT") {
@@ -173,13 +173,13 @@ The reader screen composes BinBook page rendering through `service.display.draw`
 screen("reader", { render: "stream" }) {
   service.display.clear("white")
 
-  let book = binbook.open(file)
-  let page = binbook.page(book, pageIndex)
+  let book = binbook.open(state.file)
+  let page = binbook.page(book, state.pageIndex)
   let image = binbook.pageImage(page)
 
   service.display.draw(image, { x: 0, y: 0 })
 
-  drawBottomBar(string.format("{}/{}", pageIndex + 1, pageCount))
+  drawBottomBar(string.format("{}/{}", state.pageIndex + 1, state.pageCount))
 }
 ```
 
@@ -200,11 +200,11 @@ The reference implementation uses a bounded chapter scan:
 
 ```squid
 repeat (32) {
-  if (scan < navCount) {
+  if (scan < state.navCount) {
     let entry = binbook.navEntry(book, scan)
 
-    if (entry.renderedPageNumber > pageIndex) {
-      tocIndex = scan
+    if (entry.renderedPageNumber > state.pageIndex) {
+      state.tocIndex = scan
       setPage(entry.renderedPageNumber)
       return
     }

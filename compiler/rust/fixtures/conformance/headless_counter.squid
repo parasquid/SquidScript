@@ -8,16 +8,16 @@ state {
 
 event.on("app.start") {
   state.load()
-  if (stateVersion != 1) {
+  if (state.stateVersion != 1) {
     state.reset()
-    stateVersion = 1
+    state.stateVersion = 1
   }
-  started = 1
+  state.started = 1
   state.save()
 }
 
 event.on("key.SELECT") {
-  count = count + 1
+  state.count = state.count + 1
   state.save()
 }
 

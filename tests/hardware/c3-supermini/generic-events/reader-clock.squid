@@ -7,8 +7,8 @@ state {
 }
 
 event.on("app.start") {
-  starts = starts + 1
-  debug.print("reader start", starts)
+  state.starts = state.starts + 1
+  debug.print("reader start", state.starts)
   let process = app.processStack()
   for appId in process max 2 {
     debug.print("reader process", appId)
@@ -17,15 +17,15 @@ event.on("app.start") {
 }
 
 event.on("timer.clock") {
-  clocks = clocks + 1
-  debug.print("reader clock", clocks)
-  armedSeen = 0
+  state.clocks = state.clocks + 1
+  debug.print("reader clock", state.clocks)
+  state.armedSeen = 0
   let armed = app.armedStack()
   for armedApp in armed max 2 {
-    armedSeen = armedSeen + 1
+    state.armedSeen = state.armedSeen + 1
     debug.print("reader armed", armedApp.appId, armedApp.event)
   }
-  if (armedSeen > 0) {
+  if (state.armedSeen > 0) {
     let selected = app.armedStack.get(armed, 0)
     debug.print("reader armed selected", selected.appId, selected.event)
   }

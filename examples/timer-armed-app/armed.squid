@@ -11,12 +11,12 @@ app.triggers {
 
 event.on("timer.debug") {
   state.load()
-  if (stateVersion != 1) {
+  if (state.stateVersion != 1) {
     state.reset()
-    stateVersion = 1
+    state.stateVersion = 1
   }
-  ticks = ticks + 1
-  debug.print("armed timer", ticks)
+  state.ticks = state.ticks + 1
+  debug.print("armed timer", state.ticks)
   state.save()
   app.exit()
 }

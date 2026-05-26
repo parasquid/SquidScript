@@ -196,7 +196,7 @@ event.on("app.start") {
   screen.open("main")
 }
 event.on("key.DOWN") {
-  selected = selected + 1
+  state.selected = state.selected + 1
   screen.refresh()
 }
 screen("main") {
@@ -215,6 +215,243 @@ screen("main") {
 }
 
 #[test]
+fn explicit_state_access_and_at_sugar_compile_to_state_ir() {
+    let canonical = r#"app "explicit-state"
+state { index: int = 0 }
+event.on("key.DOWN") {
+  state.index = state.index + 1
+}
+screen("main") {}
+"#;
+    let sugar = r#"app "explicit-state"
+state { index: int = 0 }
+event.on("key.DOWN") {
+  @index = @index + 1
+}
+screen("main") {}
+"#;
+
+    let canonical = compile(CompileRequest {
+        source: canonical.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    let sugar = compile(CompileRequest {
+        source: sugar.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+
+    assert!(canonical.ok, "{:?}", canonical.diagnostics);
+    assert!(sugar.ok, "{:?}", sugar.diagnostics);
+    assert_eq!(
+        canonical.ir.as_ref().unwrap().handlers[0].statements,
+        sugar.ir.as_ref().unwrap().handlers[0].statements
+    );
+    assert!(matches!(
+        &canonical.ir.as_ref().unwrap().handlers[0].statements[0],
+        IrStatement::StateAssign { name, expr: IrExpr::Binary { left, .. } }
+            if name == "index" && matches!(left.as_ref(), IrExpr::State { name } if name == "index")
+    ));
+    sqbc::encode_sqbc(canonical.ir.as_ref().unwrap()).expect("state get/set should encode");
+}
+
+#[test]
+fn local_assignment_requires_declared_local_and_lowers_to_local_ir() {
+    let source = r#"app "local-assign"
+state { next: int = 0 }
+function bump(value) {
+  let next = value
+  next = next + 1
+  return next
+}
+event.on("key.SELECT") {
+  debug.print(bump(1))
+}
+screen("main") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let function = &output.ir.as_ref().unwrap().functions[0];
+    assert!(matches!(
+        &function.statements[1],
+        IrStatement::Assign { name, expr: IrExpr::Binary { left, .. } }
+            if name == "next" && matches!(left.as_ref(), IrExpr::Variable { name } if name == "next")
+    ));
+    sqbc::encode_sqbc(output.ir.as_ref().unwrap()).expect("local get/set should encode");
+}
+
+#[test]
+fn bare_state_name_read_and_assignment_are_undeclared_with_state_suggestion() {
+    let source = r#"app "bare-state"
+state { index: int = 0 }
+event.on("key.DOWN") {
+  index = index + 1
+}
+screen("main") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+
+    assert!(!output.ok);
+    assert!(output.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "E_UNDECLARED_VARIABLE"
+            && diagnostic.message.contains("state.index")
+            && diagnostic.message.contains("@index")
+    }));
+}
+
+#[test]
+fn missing_explicit_state_field_is_rejected() {
+    for source in [
+        r#"app "missing-state"
+state { count: int = 0 }
+event.on("key.SELECT") {
+  state.missing = 1
+}
+screen("main") {}
+"#,
+        r#"app "missing-state"
+state { count: int = 0 }
+event.on("key.SELECT") {
+  debug.print(@missing)
+}
+screen("main") {}
+"#,
+    ] {
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: PORTABLE_TARGET_ID.to_string(),
+        });
+
+        assert!(!output.ok);
+        assert!(output
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "E_MISSING_STATE_FIELD"));
+    }
+}
+
+#[test]
+fn state_field_can_share_state_builtin_name_when_not_called() {
+    let source = r#"app "state-load-field"
+state { load: int = 0 }
+event.on("key.SELECT") {
+  state.load = state.load + 1
+  state.load()
+  state.save()
+  state.reset()
+}
+screen("main") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+
+    assert!(output.ok, "{:?}", output.diagnostics);
+    assert!(matches!(
+        &output.ir.as_ref().unwrap().handlers[0].statements[0],
+        IrStatement::StateAssign { name, expr: IrExpr::Binary { left, .. } }
+            if name == "load" && matches!(left.as_ref(), IrExpr::State { name } if name == "load")
+    ));
+    assert!(matches!(
+        output.ir.as_ref().unwrap().handlers[0].statements[1],
+        IrStatement::StateLoad
+    ));
+}
+
+#[test]
+fn state_shadowing_by_local_param_and_for_item_warns_but_compiles() {
+    let source = r#"app "shadowing"
+state { count: int = 0 }
+function render(count) {
+  let value = count
+  for count in rows() max 3 {
+    debug.print(count)
+  }
+  return value
+}
+event.on("key.SELECT") {
+  let count = 1
+  debug.print(render(count))
+}
+screen("main") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+
+    assert!(output.ok, "{:?}", output.diagnostics);
+    assert!(output
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "W_STATE_SHADOW"));
+}
+
+#[test]
+fn state_assignment_is_rejected_in_screens_and_screen_reachable_functions() {
+    let direct = r#"app "render-purity-direct"
+state { count: int = 0 }
+screen("main") {
+  @count = @count + 1
+}
+"#;
+    let transitive = r#"app "render-purity-call"
+state { count: int = 0 }
+function mutate() {
+  @count = @count + 1
+}
+event.on("key.SELECT") {
+  mutate()
+}
+screen("main") {
+  mutate()
+}
+"#;
+
+    for source in [direct, transitive] {
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: PORTABLE_TARGET_ID.to_string(),
+        });
+
+        assert!(!output.ok);
+        assert!(output
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "E_RENDER_PURITY"));
+    }
+}
+
+#[test]
+fn local_assignment_is_allowed_in_screen_reachable_code() {
+    let source = r#"app "render-local"
+function label(value) {
+  let current = value
+  current = current + 1
+  return current
+}
+screen("main") {
+  let count = 1
+  count = count + 1
+  service.display.text(label(count), { x: 1, y: 1 })
+}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+
+    assert!(output.ok, "{:?}", output.diagnostics);
+}
+
+#[test]
 fn parses_and_lowers_functions_locals_conditionals_and_returns() {
     let source = r#"app "control-flow" target "xteink-x4"
 state { selected: int = 0 }
@@ -228,7 +465,7 @@ return "detail"
 }
 
 event.on("key.SELECT") {
-  if (selected == 0) {
+  if (state.selected == 0) {
 screen.open("detail")
   } else {
 app.exit()
@@ -277,7 +514,7 @@ fn parses_and_lowers_bounded_loops() {
 state { selected: int = 0 }
 event.on("app.start") {
   repeat (3) {
-selected = selected + 1
+state.selected = state.selected + 1
   }
   screen.open("main")
 }
@@ -306,8 +543,8 @@ fn parses_typed_locals_and_comparison_precedence() {
     let source = r#"app "precedence" target "xteink-x4"
 state { count: int = 0 }
 event.on("key.SELECT") {
-  let next: int = count + 1
-  if (count + 1 < 10) {
+  let next: int = state.count + 1
+  if (state.count + 1 < 10) {
 screen.open("main")
   }
 }
@@ -511,7 +748,7 @@ fn parses_debug_print_and_release_sqbc_strips_it() {
     let source = r#"app "debug-counter"
 state { count: int = 1 }
 event.on("app.start") {
-  debug.print("count", count)
+  debug.print("count", state.count)
 }
 screen("main") {}
 "#;
@@ -548,12 +785,12 @@ debug.print("fn", x)
 event.on("app.start") {
   debug {
 let led = service.indicator.read()
-debug.print("event", count, led)
+debug.print("event", state.count, led)
   }
 }
 screen("main") {
   debug {
-let x = count
+let x = state.count
 debug.print("screen", x)
   }
   service.display.clear("gray0")
@@ -585,10 +822,10 @@ fn release_sqbc_strips_debug_block_without_evaluating_expressions() {
 state { count: int = 1 }
 event.on("app.start") {
   debug {
-let x = releaseOnly
+let x = !false
 debug.print("hidden", x)
   }
-  count = count + 1
+  state.count = state.count + 1
 }
 screen("main") {}
 "#;
@@ -654,7 +891,7 @@ function inspect(value) {
   let outer = 1
   debug {
 let x = 2
-count = 3
+state.count = 3
 outer = 4
 value = 5
 screen.open("main")
@@ -685,7 +922,7 @@ fn allows_assignment_to_debug_local_only() {
 state { count: int = 1 }
 event.on("app.start") {
   debug {
-let x = count
+let x = state.count
 x = x + 1
 debug.print("x", x)
   }
@@ -905,7 +1142,7 @@ fn parses_hardware_gpio_calls() {
 state { led: bool = false }
 event.on("app.start") {
   hardware.gpio.write("GPIO8", true)
-  led = hardware.gpio.read("GPIO8")
+  state.led = hardware.gpio.read("GPIO8")
   hardware.gpio.toggle("GPIO10")
 }
 screen("main") {}
@@ -923,7 +1160,7 @@ screen("main") {}
     ));
     assert!(matches!(
         ir.handlers[0].statements[1],
-        IrStatement::Assign {
+        IrStatement::StateAssign {
             expr: IrExpr::HardwareGpioRead { .. },
             ..
         }
@@ -1022,7 +1259,7 @@ event.on("app.start") {
   service.timer.every("timer.debug", 1000)
 }
 event.on("timer.debug") {
-  debug.print("tick", count)
+  debug.print("tick", state.count)
 }
 screen("main") {}
 "#;
@@ -1059,7 +1296,7 @@ event.on("app.exit") {
   state.save()
 }
 event.on("timer.break") {
-  ticks = ticks + 1
+  state.ticks = state.ticks + 1
   app.disarm("reminder")
 }
 screen("main") {}
@@ -1201,7 +1438,7 @@ event.on("app.start") {
   service.display.clear("gray0")
 }
 screen("main", { render: "invalid" }) {
-  selected = selected + 1
+  state.selected = state.selected + 1
 }
 screen("main") {
   service.display.clear("gray0")
@@ -1235,7 +1472,7 @@ state { failed: bool = false }
 event.on("app.start") {
   let result = library.mkdir("books", "/manuals")
   if (!result.ok) {
-failed = true
+state.failed = true
 debug.print(result.error)
   }
   screen.open("main")

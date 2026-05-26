@@ -8,7 +8,7 @@ event.on("app.start") {
   let connect = service.wifi.connect("dev")
   let status = service.wifi.status()
 
-  connected = status.connected
+  state.connected = status.connected
   debug.print("wifi connect", connect.ok, connect.error)
   debug.print("wifi station", status.profile, status.connected, status.scanMatches, status.rssi, status.auth, status.bssid)
   debug.print("wifi disconnect reason", status.disconnectReason, status.disconnectReasonCode)
@@ -18,8 +18,8 @@ event.on("app.start") {
 event.on("timer.debug") {
   let status = service.wifi.status()
 
-  if (status.connected != connected) {
-    connected = status.connected
+  if (status.connected != state.connected) {
+    state.connected = status.connected
     debug.print("wifi connected", status.connected)
   }
 
@@ -31,7 +31,7 @@ event.on("key.SELECT") {
   let disconnect = service.wifi.disconnect()
   let status = service.wifi.status()
 
-  connected = false
+  state.connected = false
   debug.print("wifi disconnect", disconnect.ok, disconnect.error)
   debug.print("wifi station", status.profile, status.connected, status.scanMatches, status.rssi, status.auth, status.bssid)
 }

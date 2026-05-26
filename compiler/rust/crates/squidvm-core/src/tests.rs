@@ -590,10 +590,10 @@ event.on("app.start") {
   state.load()
 }
 event.on("key.SELECT") {
-  count = count + 7
-  enabled = true
-  label = label + "-hot"
-  retryAt = 42
+  state.count = state.count + 7
+  state.enabled = true
+  state.label = state.label + "-hot"
+  state.retryAt = 42
   state.save()
 }
 event.on("key.BACK") {
@@ -827,8 +827,8 @@ fn chunked_vm_resumable_dispatch_suspends_state_load_without_replaying_side_effe
 state { count: int = 0 }
 event.on("app.start") {
   state.load()
-  debug.print("loaded", count)
-  count = count + 1
+  debug.print("loaded", state.count)
+  state.count = state.count + 1
   state.save()
 }
 screen("main") {}
@@ -1035,8 +1035,8 @@ fn chunked_vm_resumable_function_storage_suspend_resumes_callee_then_caller() {
 state { count: int = 0 }
 function helper() {
   state.load()
-  debug.print("helper", count)
-  return count + 1
+  debug.print("helper", state.count)
+  return state.count + 1
 }
 event.on("app.start") {
   debug.print("before")
@@ -1145,14 +1145,19 @@ fn chunked_vm_dispatches_functions_and_screens_on_demand() {
     let source = r#"app "chunk-demo"
 state { count: int = 0 }
 function bump() {
-  count = count + 1
+  state.count = state.count + 1
+}
+function screenValue(value) {
+  let next = value
+  next = next + 1
+  return next
 }
 event.on("app.start") {
   bump()
   screen.open("main")
 }
 screen("main") {
-  bump()
+  debug.print("screen", screenValue(state.count))
 }
 "#;
     let compiled = compile(CompileRequest {
@@ -1168,8 +1173,8 @@ screen("main") {
 
     vm.dispatch(&mut reader, "app.start").unwrap();
 
-    assert_eq!(vm.state_value("count"), Ok(Value::I32(2)));
-    assert_eq!(reader.events, vec!["app.start"]);
+    assert_eq!(vm.state_value("count"), Ok(Value::I32(1)));
+    assert_eq!(reader.events, vec!["app.start", "debug screen 2"]);
 }
 
 #[test]
@@ -1295,9 +1300,9 @@ fn runs_service_indicator_builtins_from_real_bytecode() {
 state { led: bool = false }
 event.on("app.start") {
   service.indicator.write(true)
-  led = service.indicator.read()
+  state.led = service.indicator.read()
   service.indicator.toggle()
-  led = service.indicator.read()
+  state.led = service.indicator.read()
   service.indicator.breathe()
   service.indicator.blink()
   service.indicator.blink(120, 80)
@@ -1438,7 +1443,7 @@ event.on("app.start") {
   service.timer.every("timer.debug", 1000)
 }
 event.on("timer.debug") {
-  debug.print("timer", count)
+  debug.print("timer", state.count)
 }
 screen("main") {}
 "#;
@@ -1477,7 +1482,7 @@ event.on("app.start") {
   service.timer.every("timer.clock", 60000)
 }
 event.on("timer.clock") {
-  count = count + 1
+  state.count = state.count + 1
   app.disarm("break-reminder")
 }
 screen("main") {}
@@ -1928,7 +1933,7 @@ state {
   count: int = 4
 }
 event.on("app.start") {
-  count = count + 1
+  state.count = state.count + 1
   state.reset()
 }
 screen("main") {}
@@ -1957,7 +1962,7 @@ state {
   label: string = "count"
 }
 event.on("app.start") {
-  count = label + 1
+  state.count = state.label + 1
 }
 screen("main") {}
 "#;

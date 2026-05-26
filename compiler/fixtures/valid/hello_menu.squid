@@ -7,14 +7,14 @@ state {
 
 event.on("app.start") {
   state.load()
-  view = "menu"
+  state.view = "menu"
   screen.open("menu")
 }
 
 event.on("key.DOWN") {
-  if (view == "menu") {
-    if (selected < 2) {
-      selected = selected + 1
+  if (state.view == "menu") {
+    if (state.selected < 2) {
+      state.selected = state.selected + 1
       state.save()
       screen.refresh()
     }
@@ -22,9 +22,9 @@ event.on("key.DOWN") {
 }
 
 event.on("key.UP") {
-  if (view == "menu") {
-    if (selected > 0) {
-      selected = selected - 1
+  if (state.view == "menu") {
+    if (state.selected > 0) {
+      state.selected = state.selected - 1
       state.save()
       screen.refresh()
     }
@@ -32,12 +32,12 @@ event.on("key.UP") {
 }
 
 event.on("key.SELECT") {
-  if (selected == 0) {
-    view = "hello"
+  if (state.selected == 0) {
+    state.view = "hello"
     screen.open("hello")
   } else {
-    if (selected == 1) {
-      view = "about"
+    if (state.selected == 1) {
+      state.view = "about"
       screen.open("about")
     } else {
       app.exit()
@@ -46,8 +46,8 @@ event.on("key.SELECT") {
 }
 
 event.on("key.BACK") {
-  if (view != "menu") {
-    view = "menu"
+  if (state.view != "menu") {
+    state.view = "menu"
     state.save()
     screen.open("menu")
   } else {
@@ -57,7 +57,7 @@ event.on("key.BACK") {
 }
 
 function drawMenuRow(index, label, y) {
-  if (selected == index) {
+  if (state.selected == index) {
     service.display.text(label, {
       x: 32,
       y: y,

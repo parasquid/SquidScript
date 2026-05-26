@@ -5,44 +5,44 @@ state {
 }
 
 event.on("app.start") {
-  index = 0
+  state.index = 0
   service.timer.every("timer.transition", 1000)
   screen.open("s0")
 }
 
 event.on("timer.transition") {
-  index = index + 1
-  if (index >= 10) {
-    index = 0
+  state.index = state.index + 1
+  if (state.index >= 10) {
+    state.index = 0
   }
-  if (index == 0) {
+  if (state.index == 0) {
     screen.open("s0")
   }
-  if (index == 1) {
+  if (state.index == 1) {
     screen.open("s1")
   }
-  if (index == 2) {
+  if (state.index == 2) {
     screen.open("s2")
   }
-  if (index == 3) {
+  if (state.index == 3) {
     screen.open("s3")
   }
-  if (index == 4) {
+  if (state.index == 4) {
     screen.open("s4")
   }
-  if (index == 5) {
+  if (state.index == 5) {
     screen.open("s5")
   }
-  if (index == 6) {
+  if (state.index == 6) {
     screen.open("s6")
   }
-  if (index == 7) {
+  if (state.index == 7) {
     screen.open("s7")
   }
-  if (index == 8) {
+  if (state.index == 8) {
     screen.open("s8")
   }
-  if (index == 9) {
+  if (state.index == 9) {
     screen.open("s9")
   }
 }

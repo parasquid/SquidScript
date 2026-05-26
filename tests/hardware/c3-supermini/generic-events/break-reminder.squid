@@ -10,19 +10,19 @@ app.triggers {
 }
 
 event.on("timer.break") {
-  fires = fires + 1
-  debug.print("break fired", fires)
+  state.fires = state.fires + 1
+  debug.print("break fired", state.fires)
   let process = app.processStack()
   for appId in process max 2 {
     debug.print("break process", appId)
   }
-  armedSeen = 0
+  state.armedSeen = 0
   let armed = app.armedStack()
   for armedApp in armed max 2 {
-    armedSeen = armedSeen + 1
+    state.armedSeen = state.armedSeen + 1
     debug.print("break armed", armedApp.appId, armedApp.event)
   }
-  if (armedSeen == 0) {
+  if (state.armedSeen == 0) {
     debug.print("break armed empty")
   }
 }

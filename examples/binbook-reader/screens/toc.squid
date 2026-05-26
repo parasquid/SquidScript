@@ -1,10 +1,10 @@
 function drawTocRow(row, navIndex) {
-  if (navIndex < navCount) {
-    let book = binbook.open(file)
+  if (navIndex < state.navCount) {
+    let book = binbook.open(state.file)
     let entry = binbook.navEntry(book, navIndex)
     let y = 64 + row * 72
 
-    if (navIndex == tocIndex) {
+    if (navIndex == state.tocIndex) {
       service.display.rect(0, y - 8, 480, 60, { fillColor: "gray4" })
     }
 
@@ -24,17 +24,17 @@ screen("toc") {
   service.display.clear("white")
   drawTopBar("Table of Contents")
 
-  if (navCount == 0) {
+  if (state.navCount == 0) {
     service.display.text("No table of contents", { x: 24, y: 120, w: 432, h: 40, fontHeight: 24 })
   } else {
-    drawTocRow(0, tocTop)
-    drawTocRow(1, tocTop + 1)
-    drawTocRow(2, tocTop + 2)
-    drawTocRow(3, tocTop + 3)
-    drawTocRow(4, tocTop + 4)
-    drawTocRow(5, tocTop + 5)
-    drawTocRow(6, tocTop + 6)
-    drawTocRow(7, tocTop + 7)
+    drawTocRow(0, state.tocTop)
+    drawTocRow(1, state.tocTop + 1)
+    drawTocRow(2, state.tocTop + 2)
+    drawTocRow(3, state.tocTop + 3)
+    drawTocRow(4, state.tocTop + 4)
+    drawTocRow(5, state.tocTop + 5)
+    drawTocRow(6, state.tocTop + 6)
+    drawTocRow(7, state.tocTop + 7)
   }
 
   drawBottomBar("UP/DOWN select  SELECT open  BACK reader")

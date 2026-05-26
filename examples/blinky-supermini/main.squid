@@ -5,26 +5,26 @@ state {
 }
 
 event.on("app.start") {
-  service.indicator.write(led)
+  service.indicator.write(state.led)
   service.timer.every("timer.debug", 500)
-  debug.print("blinky ready", led)
+  debug.print("blinky ready", state.led)
 }
 
 event.on("timer.debug") {
   service.indicator.toggle()
-  led = service.indicator.read()
-  debug.print("blink", led)
+  state.led = service.indicator.read()
+  debug.print("blink", state.led)
 }
 
 @preload
 event.on("key.SELECT") {
   service.indicator.toggle()
-  led = service.indicator.read()
-  debug.print("led", led)
+  state.led = service.indicator.read()
+  debug.print("led", state.led)
 }
 
 event.on("key.BACK") {
-  led = false
-  service.indicator.write(led)
+  state.led = false
+  service.indicator.write(state.led)
   app.exit()
 }

@@ -392,7 +392,9 @@ fn collect_statement_strings(
             IrStatement::ScreenOpen { screen } => {
                 strings.intern(screen)?;
             }
-            IrStatement::Assign { name, expr } | IrStatement::Let { name, expr } => {
+            IrStatement::Assign { name, expr }
+            | IrStatement::StateAssign { name, expr }
+            | IrStatement::Let { name, expr } => {
                 strings.intern(name)?;
                 collect_expr_strings(expr, strings)?;
             }
@@ -532,6 +534,7 @@ fn collect_expr_strings(expr: &IrExpr, strings: &mut StringTable) -> Result<(), 
     match expr {
         IrExpr::Literal { value } => collect_json_value(value, strings),
         IrExpr::State { name } => strings.intern(name).map(|_| ()),
+        IrExpr::Variable { .. } => Ok(()),
         IrExpr::Binary { left, right, .. } => {
             collect_expr_strings(left, strings)?;
             collect_expr_strings(right, strings)
@@ -608,17 +611,17 @@ fn compile_statement(
         IrStatement::AppExit => emit_builtin(&mut unit.code, BUILTIN_APP_EXIT),
         IrStatement::Assign { name, expr } => {
             compile_expr(unit, frame, expr)?;
-            if mode == StatementMode::DebugBlock {
-                let local = frame
-                    .local(name)
-                    .ok_or_else(|| SqbcError::new(format!("unknown debug local {name}")))?;
-                emit(&mut unit.code, OP_SET_LOCAL);
-                write_u16(&mut unit.code, local);
-            } else {
-                let state = state_id(unit, name)?;
-                emit(&mut unit.code, OP_SET_STATE);
-                write_u16(&mut unit.code, state);
-            }
+            let local = frame
+                .local(name)
+                .ok_or_else(|| SqbcError::new(format!("unknown local {name}")))?;
+            emit(&mut unit.code, OP_SET_LOCAL);
+            write_u16(&mut unit.code, local);
+        }
+        IrStatement::StateAssign { name, expr } => {
+            compile_expr(unit, frame, expr)?;
+            let state = state_id(unit, name)?;
+            emit(&mut unit.code, OP_SET_STATE);
+            write_u16(&mut unit.code, state);
         }
         IrStatement::Let { name, expr } => {
             compile_expr(unit, frame, expr)?;
@@ -995,14 +998,17 @@ fn compile_expr(
     match expr {
         IrExpr::Literal { value } => compile_literal(&mut unit.code, &mut unit.strings, value),
         IrExpr::State { name } => {
-            if let Some(local) = frame.local(name) {
-                emit(&mut unit.code, OP_GET_LOCAL);
-                write_u16(&mut unit.code, local);
-            } else {
-                let state = state_id(unit, name)?;
-                emit(&mut unit.code, OP_GET_STATE);
-                write_u16(&mut unit.code, state);
-            }
+            let state = state_id(unit, name)?;
+            emit(&mut unit.code, OP_GET_STATE);
+            write_u16(&mut unit.code, state);
+            Ok(())
+        }
+        IrExpr::Variable { name } => {
+            let local = frame
+                .local(name)
+                .ok_or_else(|| SqbcError::new(format!("unknown local {name}")))?;
+            emit(&mut unit.code, OP_GET_LOCAL);
+            write_u16(&mut unit.code, local);
             Ok(())
         }
         IrExpr::Binary {

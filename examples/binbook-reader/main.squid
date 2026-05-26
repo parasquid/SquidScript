@@ -20,9 +20,9 @@ state {
 
 event.on("app.start") {
   state.load()
-  if (stateVersion != 1) {
+  if (state.stateVersion != 1) {
     state.reset()
-    stateVersion = 1
+    state.stateVersion = 1
     state.save()
   }
   openBrowser()

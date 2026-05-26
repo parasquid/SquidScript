@@ -310,7 +310,7 @@ Top-level executable statements are not allowed.
 Invalid:
 
 ```squid
-count = count + 1
+state.count = state.count + 1
 screen.refresh()
 ```
 
@@ -318,7 +318,7 @@ Valid:
 
 ```squid
 event.on("key.RIGHT") {
-  count = count + 1
+  state.count = state.count + 1
   screen.refresh()
 }
 ```
@@ -491,12 +491,12 @@ Semicolons are optional if statements are separated by newlines.
 These are equivalent:
 
 ```squid
-count = count + 1
+state.count = state.count + 1
 screen.refresh()
 ```
 
 ```squid
-count = count + 1;
+state.count = state.count + 1;
 screen.refresh();
 ```
 
@@ -599,9 +599,9 @@ An opaque firmware-owned reference.
 Examples:
 
 ```squid
-let book = binbook.open(file)
-let page = binbook.page(book, pageIndex)
-let doc = data.read(file)
+let book = binbook.open(state.file)
+let page = binbook.page(book, state.pageIndex)
+let doc = data.read(state.file)
 ```
 
 Handles are not pointers.
@@ -714,9 +714,9 @@ Example:
 
 ```squid
 function loadSlide() {
-  let doc = data.read(file)
+  let doc = data.read(state.file)
   let s = data.section(doc, "slide", current)
-  title = data.field(s, "title")
+  state.title = data.field(s, "title")
 }
 ```
 
@@ -724,7 +724,7 @@ Local variables are function-scoped inside functions and render-turn scoped insi
 
 Local variables are not persisted.
 
-Local variables must not shadow state variables, function parameters, other locals in the same function, built-in namespaces, or function names.
+Local variables, parameters, and for-loop variables may share names with state fields because state access is explicit. squidc should warn on this shadowing. Local names must not shadow other locals in the same function, built-in namespaces, or function names.
 
 Local variables may hold:
 - int
@@ -742,8 +742,11 @@ Local variables may hold:
 Assignment to state variables:
 
 ```squid
-count = count + 1
+state.count = state.count + 1
+@count = @count + 1
 ```
+
+`state.<field>` is the canonical persistent state form. `@field` is source sugar for the same state field read or write.
 
 Assignment to local variables:
 
@@ -771,6 +774,8 @@ obj[key] = value
 Only existing state variables and local variables can be assigned.
 
 Assignment cannot create a new variable. New local variables must use `let`.
+
+Bare identifiers resolve only initialized locals, parameters, and for-loop variables. Persistent state must be read or written through `state.<field>` or `@field`. If a bare name matches a declared state field, squidc should report an undeclared-variable error with a suggestion to use the explicit state form.
 
 ---
 
@@ -882,6 +887,8 @@ true
 false
 null
 
+state.count
+@count
 count
 count + 1
 count - 1
@@ -904,6 +911,15 @@ namespace.functionCall(...)
 record.field
 ```
 
+Parentheses determine invocation everywhere:
+
+```squid
+foo.bar     // field or reference expression
+foo.bar()   // call expression or call statement
+```
+
+This also applies to `state`: `state.load` is a state field read if `load` is declared in the app state block, while `state.load()` calls the state service method.
+
 Operator precedence:
 
 1. !
@@ -918,7 +934,7 @@ Parentheses may be used:
 
 ```squid
 if ((count + 1) < maxCount) {
-  count = count + 1
+  state.count = state.count + 1
 }
 ```
 
@@ -935,7 +951,7 @@ title = "Page " + suffix
 Recommended formatting uses string.format():
 
 ```squid
-service.display.text(string.format("{}/{}", pageIndex + 1, pageCount), { x: 360, y: 760 })
+service.display.text(string.format("{}/{}", state.pageIndex + 1, state.pageCount), { x: 360, y: 760 })
 ```
 
 To combine strings and non-string values, use string.format().
@@ -1132,7 +1148,7 @@ Example:
 
 ```squid
 if (count > 0) {
-  count = count - 1
+  state.count = state.count - 1
   state.save()
   screen.refresh()
 }
@@ -1141,8 +1157,8 @@ if (count > 0) {
 With else:
 
 ```squid
-if (pageIndex < pageCount - 1) {
-  pageIndex = pageIndex + 1
+if (state.pageIndex < state.pageCount - 1) {
+  state.pageIndex = state.pageIndex + 1
 } else {
   app.message("End", "This is the last page.")
 }
@@ -1178,7 +1194,7 @@ repeat:
 
 ```squid
 repeat (10) {
-  count = count + 1
+  state.count = state.count + 1
 }
 ```
 
@@ -1209,11 +1225,11 @@ Unsupported:
 
 ```squid
 while (true) {
-  count = count + 1
+  state.count = state.count + 1
 }
 
 for (;;) {
-  count = count + 1
+  state.count = state.count + 1
 }
 ```
 
@@ -1229,8 +1245,8 @@ Example:
 
 ```squid
 function loadSlide() {
-  let doc = data.read(file)
-  let s = data.section(doc, "slide", pageIndex)
+  let doc = data.read(state.file)
+  let s = data.section(doc, "slide", state.pageIndex)
 
   title = data.field(s, "title")
   body = string.join(data.fields(s, "body"), "\n")
@@ -1326,7 +1342,7 @@ Example:
 
 ```squid
 event.on("key.RIGHT") {
-  count = count + 1
+  state.count = state.count + 1
   state.save()
   screen.refresh()
 }
@@ -1437,12 +1453,12 @@ Example BinBook reader screen:
 
 ```squid
 screen("reader", { render: "stream" }) {
-  let book = binbook.open(file)
-  let page = binbook.page(book, pageIndex)
+  let book = binbook.open(state.file)
+  let page = binbook.page(book, state.pageIndex)
   let image = binbook.pageImage(page)
 
   service.display.draw(image, { x: 0, y: 0 })
-  drawBottomBar(string.format("{}/{}", pageIndex + 1, pageCount))
+  drawBottomBar(string.format("{}/{}", state.pageIndex + 1, state.pageCount))
 }
 ```
 
@@ -1492,7 +1508,7 @@ Invalid:
 
 ```squid
 screen("main") {
-  count = count + 1
+  @count = @count + 1
 }
 ```
 
@@ -1507,6 +1523,19 @@ Handles created during screen rendering are transient and must be released autom
 If a screen block calls a user-defined function, that function must also be render-pure.
 
 squidc should reject calls from screen blocks to functions that perform state writes, app navigation, file writes, app exit, or other non-render-safe operations.
+
+State changes should happen in event handlers, followed by a screen refresh or navigation. Screen bodies should render from current state:
+
+```squid
+event.on("key.SELECT") {
+  @count = @count + 1
+  screen.refresh()
+}
+
+screen("main") {
+  service.display.text(@count, { x: 4, y: 8 })
+}
+```
 
 ---
 
@@ -1985,7 +2014,7 @@ Returns a string by replacing `{}` placeholders in `template` with the remaining
 Example:
 
 ```squid
-let label = string.format("{}/{}", pageIndex + 1, pageCount)
+let label = string.format("{}/{}", state.pageIndex + 1, state.pageCount)
 ```
 
 Rules:
@@ -2084,7 +2113,7 @@ state.write
 Example:
 
 ```squid
-count = count + 1
+state.count = state.count + 1
 state.save()
 ```
 
@@ -2120,7 +2149,7 @@ Recommended write strategy:
 
 The `stateMachine.*` namespace provides generic helpers for app modes and small finite-state workflows.
 
-State machines are not new syntax and they do not store hidden runtime state. A state machine is backed by an existing string variable declared in the app's `state { ... }` block. The backing variable remains the source of truth: direct assignments to that variable immediately change the state observed by `stateMachine.current(...)` and `stateMachine.is(...)`.
+State machines are not new syntax and they do not store hidden runtime state. A state machine is backed by an existing string variable declared in the app's `state { ... }` block. The backing variable remains the source of truth: explicit assignments to `state.<field>` or `@field` immediately change the state observed by `stateMachine.current(...)` and `stateMachine.is(...)`.
 
 Example:
 
@@ -2191,7 +2220,7 @@ squidc should validate state machine use per backing variable:
 - every referenced backing variable exists and is string-typed
 - every entered state is a non-empty string literal
 - every literal state tested with `stateMachine.is(...)` is either the backing variable's default value or appears in a `stateMachine.enter(...)` call for the same backing variable
-- direct assignments to a backing variable are allowed, but assigned string literals must be in the same validated state set
+- direct assignments to a backing variable use `state.<field>` or `@field`; assigned string literals must be in the same validated state set
 - squidc should reject non-literal assignments to a backing variable unless it can prove the assigned value is one of the validated states
 
 This validation allows misspelled states to be caught without adding enum declarations or new state-machine syntax.
@@ -2711,7 +2740,7 @@ Example:
 ```squid
 let picked = content.pickFile(".binbook")
 if (picked.ok) {
-  file = picked.path
+  state.file = picked.path
 }
 ```
 
@@ -2736,7 +2765,7 @@ content.read or appdata.read, depending on path.
 Example:
 
 ```squid
-let result = content.readText(file)
+let result = content.readText(state.file)
 if (result.ok) {
   text = result.text
 }
@@ -2776,7 +2805,7 @@ Reads and parses a generic structured data file.
 Example:
 
 ```squid
-let loaded = data.read(file)
+let loaded = data.read(state.file)
 if (loaded.ok) {
   doc = loaded.doc
 }
@@ -3109,10 +3138,10 @@ binbook.read
 Typical usage:
 
 ```squid
-let opened = binbook.open(file)
+let opened = binbook.open(state.file)
 if (opened.ok) {
   let info = binbook.info(opened.book)
-  let page = binbook.page(opened.book, pageIndex)
+  let page = binbook.page(opened.book, state.pageIndex)
   let image = binbook.pageImage(page)
   service.display.draw(image, { x: 0, y: 0 })
 }
@@ -3128,7 +3157,7 @@ binbook.inspect(uploadHandle)
 binbook.info(book)
 binbook.pageCount(book)
 binbook.pageInfo(book, pageIndex)
-binbook.page(book, pageIndex)
+binbook.page(book, state.pageIndex)
 binbook.pageImage(page)
 binbook.navCount(book)
 binbook.navEntry(book, navIndex)
@@ -3142,7 +3171,7 @@ Minimum API:
 binbook.open(path)
 binbook.inspect(uploadHandle)
 binbook.info(book)
-binbook.page(book, pageIndex)
+binbook.page(book, state.pageIndex)
 binbook.pageImage(page)
 service.display.draw(drawable, options)
 ```
@@ -3154,7 +3183,7 @@ Opens and validates a BinBook file.
 Example:
 
 ```squid
-let book = binbook.open(file)
+let book = binbook.open(state.file)
 ```
 
 Returns:
@@ -3218,14 +3247,14 @@ title = info.title
 pageCount = info.pageCount
 ```
 
-binbook.page(book, pageIndex)
+binbook.page(book, state.pageIndex)
 
 Returns an opaque page handle.
 
 Example:
 
 ```squid
-let page = binbook.page(book, pageIndex)
+let page = binbook.page(book, state.pageIndex)
 ```
 
 binbook.pageImage(page)
@@ -3639,7 +3668,7 @@ Initial profiles:
 Source may contain `debug.print(...)` calls freely:
 
 ```squid
-debug.print("count", count)
+debug.print("count", state.count)
 ```
 
 In `dev`, `debug.print(expr, ...)` evaluates its arguments left-to-right and
@@ -4457,14 +4486,14 @@ state {
 
 event.on("app.start") {
   state.load()
-  view = "menu"
+  state.view = "menu"
   screen.open("menu")
 }
 
 event.on("key.DOWN") {
-  if (view == "menu") {
-    if (selected < 2) {
-      selected = selected + 1
+  if (state.view == "menu") {
+    if (state.selected < 2) {
+      state.selected = state.selected + 1
       state.save()
       screen.refresh()
     }
@@ -4472,9 +4501,9 @@ event.on("key.DOWN") {
 }
 
 event.on("key.UP") {
-  if (view == "menu") {
-    if (selected > 0) {
-      selected = selected - 1
+  if (state.view == "menu") {
+    if (state.selected > 0) {
+      state.selected = state.selected - 1
       state.save()
       screen.refresh()
     }
@@ -4482,12 +4511,12 @@ event.on("key.UP") {
 }
 
 event.on("key.SELECT") {
-  if (selected == 0) {
-    view = "hello"
+  if (state.selected == 0) {
+    state.view = "hello"
     screen.open("hello")
   } else {
-    if (selected == 1) {
-      view = "about"
+    if (state.selected == 1) {
+      state.view = "about"
       screen.open("about")
     } else {
       app.exit()
@@ -4496,8 +4525,8 @@ event.on("key.SELECT") {
 }
 
 event.on("key.BACK") {
-  if (view != "menu") {
-    view = "menu"
+  if (state.view != "menu") {
+    state.view = "menu"
     state.save()
     screen.open("menu")
   } else {
@@ -4507,7 +4536,7 @@ event.on("key.BACK") {
 }
 
 function drawMenuRow(index, label, y) {
-  if (selected == index) {
+  if (state.selected == index) {
     service.display.text(label, {
       x: 32,
       y: y,

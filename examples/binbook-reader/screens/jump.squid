@@ -2,7 +2,7 @@ screen("jump") {
   service.display.clear("white")
   drawTopBar("Jump to Page")
 
-  service.display.text(string.format("{}", jumpPage), {
+  service.display.text(string.format("{}", state.jumpPage), {
     x: 0,
     y: 260,
     w: 480,
@@ -11,7 +11,7 @@ screen("jump") {
     align: "center"
   })
 
-  service.display.text(string.format("of {}", pageCount), {
+  service.display.text(string.format("of {}", state.pageCount), {
     x: 0,
     y: 350,
     w: 480,
