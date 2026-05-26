@@ -2,7 +2,6 @@ app "lazy-load-screen-worst-case"
 
 state {
   index: int = 0
-  next: int = 0
 }
 
 event.on("app.start") {
@@ -12,11 +11,10 @@ event.on("app.start") {
 }
 
 event.on("timer.transition") {
-  let next = index + 1
-  if (next >= 10) {
-    next = 0
+  index = index + 1
+  if (index >= 10) {
+    index = 0
   }
-  index = next
   if (index == 0) {
     screen.open("s0")
   }
