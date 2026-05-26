@@ -63,11 +63,15 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   observed BOOT/GPIO9 press. Current launch evidence shows protocol/main stack
   flat at 2476 bytes and VM worker stack reduced from 17296 to 17056 bytes by
   narrowing FFI app process/armed stack scratch to the firmware's two-entry
-  limit. The launch row now includes `input_button_count=1`, so timeout runs can
-  prove whether the physical binding was installed before waiting for a press.
-  Complete an observed physical press row, explain any press-time peak, then
-  validate whether the 8 KiB protocol/main stack or 19 KiB worker stack can be
-  reduced after full-suite coverage.
+  limit. The launch and timeout rows now include `input_button_state`, where the
+  low byte is configured input count and the next byte is currently pressed
+  count, so timeout runs can prove whether the physical binding was installed
+  and whether the firmware saw the line pressed. Current hardware evidence has
+  `input_button_state=257` at launch and after release timeout, meaning the
+  firmware sees GPIO9 as already pressed and never observes release. Resolve
+  that physical input-state issue, complete an observed physical press row,
+  explain any press-time peak, then validate whether the 8 KiB protocol/main
+  stack or 19 KiB worker stack can be reduced after full-suite coverage.
 - Improve network heap attribution before expanding Wi-Fi scope. Current AP
   start/stop hardware coverage drives `ram_heap_max_allocated_bytes` close to
   the 36 KiB system heap budget; add clearer per-workload heap reset or

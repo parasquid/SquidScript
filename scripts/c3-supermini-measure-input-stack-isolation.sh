@@ -115,6 +115,35 @@ wait_for_contains_or_timeout() {
   return 1
 }
 
+input_pressed_count() {
+  local file="$1"
+  local state
+  state="$(resource_value "$file" input_button_state)"
+  printf '%s\n' $(((state >> 8) & 255))
+}
+
+wait_for_input_released() {
+  local out="${WORK_DIR}/resources-release-poll.out"
+  local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS))
+
+  while (( SECONDS < deadline )); do
+    printf 'c3-supermini-measure-input-stack-isolation.sh: %s\n' \
+      'cargo run --quiet -p squidc -- device resources' >&2
+    if timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" \
+      cargo run --quiet -p squidc -- device resources >"${out}" 2>&1; then
+      if (( "$(input_pressed_count "${out}")" == 0 )); then
+        return 0
+      fi
+    fi
+    sleep 0.2
+  done
+
+  printf 'Timed out waiting for BOOT/GPIO9 release before press check\n' >&2
+  printf '%s\n' "--- ${out} ---" >&2
+  sed -n '1,200p' "${out}" >&2
+  return 1
+}
+
 snapshot_resources() {
   local label="$1"
   local file
@@ -133,7 +162,7 @@ snapshot_resources() {
     "$(resource_value "$file" runtime_static_bytes)" \
     "$(resource_value "$file" last_dispatch_sequence)" \
     "$(resource_value "$file" last_dispatch_elapsed_us)" \
-    "$(resource_value "$file" input_button_count)" \
+    "$(resource_value "$file" input_button_state)" \
     >>"${summary_out}"
 }
 
@@ -145,7 +174,7 @@ summary_out="${WORK_DIR}/summary.tsv"
   printf 'vm_worker_stack_used_bytes\tvm_worker_stack_unused_bytes\t'
   printf 'ram_heap_allocated_bytes\tram_heap_max_allocated_bytes\t'
   printf 'runtime_static_bytes\tlast_dispatch_sequence\tlast_dispatch_elapsed_us\t'
-  printf 'input_button_count\n'
+  printf 'input_button_state\n'
 } >"${summary_out}"
 
 if [[ "$SKIP_FLASH" != "1" ]]; then
@@ -167,6 +196,15 @@ run_capture launch-input-button cargo run --quiet -p squidc -- app launch input-
 wait_for_contains input-output-start "output=count 0" \
   "device output" cargo run --quiet -p squidc -- device output >/dev/null
 snapshot_resources after-launch
+
+printf '%s\n' 'Release the ESP32-C3 Super Mini BOOT/GPIO9 button now.' >&2
+if ! wait_for_input_released; then
+  snapshot_resources after-release-timeout
+  run_capture errors-after-release-timeout \
+    cargo run --quiet -p squidc -- device errors >/dev/null
+  exit 1
+fi
+snapshot_resources after-release
 
 printf '%s\n' 'Press and release the ESP32-C3 Super Mini BOOT/GPIO9 button now.' >&2
 if ! wait_for_contains_or_timeout input-output-press "output=count 1" \

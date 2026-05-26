@@ -165,9 +165,12 @@ diagnostic boot banner, then records `after-boot`, `after-format`,
 only when preserving the current firmware session is more important than a
 fresh high-water baseline. The current clean-boot input isolation launch row
 measured protocol/main stack flat at 2476 bytes and VM worker stack use at
-17056 bytes, with 2400 bytes free and `input_button_count=1`, confirming the
-physical GPIO9 binding was installed. The physical BOOT/GPIO9 press row still
-needs a completed observed-button run before reducing stack budgets further.
+17056 bytes, with 2400 bytes free and `input_button_state=257`. The low byte
+confirms one physical GPIO9 binding was installed; the next byte reports one
+currently pressed input. In that state the script waits for release before
+asking for a press and writes `after-release-timeout` diagnostics if the line
+never reads released. The physical BOOT/GPIO9 press row still needs a completed
+observed-button run before reducing stack budgets further.
 After flattening the resumable screen-render interpreter path, a headless
 draw-log isolation run showed that `screen.open(...)` into a screen with only
 `service.display.clear("gray0")` uses `vm_worker_stack_used_bytes=17056` of

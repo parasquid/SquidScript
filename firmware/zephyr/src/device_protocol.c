@@ -836,6 +836,8 @@ static int resources_response(const struct sq_protocol_frame *request,
 	size_t heap_free_bytes = 0;
 	size_t heap_allocated_bytes = 0;
 	size_t heap_max_allocated_bytes = 0;
+	size_t input_button_pressed_count = 0;
+	size_t input_button_state = 0;
 
 	if (metrics == NULL || context->resource_metric_cap < SQ_DEVICE_RESOURCE_METRIC_MAX) {
 		return -ENOSPC;
@@ -882,6 +884,17 @@ static int resources_response(const struct sq_protocol_frame *request,
 	}
 #endif
 
+	if (context->runtime != NULL) {
+		for (size_t i = 0; i < SQ_VM_RUNTIME_INPUT_BUTTON_MAX; i++) {
+			if (context->runtime->input_buttons[i].active &&
+			    context->runtime->input_buttons[i].pressed) {
+				input_button_pressed_count++;
+			}
+		}
+		input_button_state = context->runtime->input_button_count |
+				     (input_button_pressed_count << 8);
+	}
+
 #define SQ_RESOURCE_METRIC(key_literal, metric_value) \
 	do { \
 		if (metric_count >= context->resource_metric_cap) { \
@@ -922,8 +935,7 @@ static int resources_response(const struct sq_protocol_frame *request,
 	SQ_RESOURCE_METRIC("vm_worker_stack_unused_bytes", vm_worker_stack_unused);
 	SQ_RESOURCE_METRIC("vm_worker_stack_used_bytes", vm_worker_stack_used);
 	SQ_RESOURCE_METRIC("app_count", context->registry == NULL ? 0 : context->registry->count);
-	SQ_RESOURCE_METRIC("input_button_count",
-			   context->runtime == NULL ? 0 : context->runtime->input_button_count);
+	SQ_RESOURCE_METRIC("input_button_state", input_button_state);
 #undef SQ_RESOURCE_METRIC
 
 	return sqdp_status_to_protocol_result(sqdp_encode_resources_response(

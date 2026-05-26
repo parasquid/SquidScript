@@ -664,9 +664,11 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
         self.assertIn("#define SQ_DEVICE_RESOURCE_METRIC_MAX 21", header)
         self.assertNotIn('SQ_RESOURCE_METRIC("active_binding_count"', protocol)
-        self.assertIn('SQ_RESOURCE_METRIC("input_button_count"', protocol)
+        self.assertIn("input_button_state", protocol)
+        self.assertNotIn('SQ_RESOURCE_METRIC("input_button_count"', protocol)
         self.assertNotIn('SQ_RESOURCE_METRIC("input_button_pressed_count"', protocol)
-        self.assertIn("input_button_count", stack)
+        self.assertIn("input_button_state", stack)
+        self.assertNotIn("input_button_count", stack)
         self.assertNotIn("input_button_pressed_count", stack)
 
     def test_key_dispatch_uses_rust_parser_without_c_payload_staging(self):
@@ -1242,8 +1244,12 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('snapshot_resources after-format', stack)
         self.assertIn('snapshot_resources after-install', stack)
         self.assertIn('snapshot_resources after-launch', stack)
+        self.assertIn('wait_for_input_released', stack)
+        self.assertIn('snapshot_resources after-release', stack)
+        self.assertIn('snapshot_resources after-release-timeout', stack)
         self.assertIn('snapshot_resources after-press', stack)
         self.assertIn('snapshot_resources after-press-timeout', stack)
+        self.assertIn('errors-after-release-timeout', stack)
         self.assertIn('errors-after-press-timeout', stack)
         self.assertIn('tests/hardware/c3-supermini/input-button-summary/main.squid', stack)
         self.assertIn('Press and release the ESP32-C3 Super Mini BOOT/GPIO9 button now.', stack)
