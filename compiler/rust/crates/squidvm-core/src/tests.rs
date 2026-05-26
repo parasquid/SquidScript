@@ -878,6 +878,81 @@ screen("main") {}
 }
 
 #[test]
+fn chunked_vm_resumable_screen_render_suspends_for_screen_chunk_read() {
+    let source = r#"app "pending-screen"
+event.on("app.start") {
+  screen.open("main")
+  debug.print("after")
+}
+screen("main") {
+  service.display.clear("gray0")
+}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let mut scratch = [0u8; MAX_APP_BYTES];
+    let index = ProgramIndex::parse(&bytes, &mut scratch).unwrap();
+    let mut reader = CountingReader::pending(&bytes);
+    let mut vm = ChunkedVm::new(index);
+
+    let first = vm.dispatch_resumable(&mut reader, "app.start").unwrap();
+    let VmDispatch::PendingStorage(StorageRequest::SqbcRead {
+        offset: handler_offset,
+        len: handler_len,
+    }) = first
+    else {
+        panic!("expected handler sqbc read request, got {first:?}");
+    };
+    assert_eq!(reader.pending_read_count, 1);
+
+    let second = vm
+        .resume_storage(
+            &mut reader,
+            StorageCompletion::bytes(&bytes[handler_offset..handler_offset + handler_len]).unwrap(),
+        )
+        .unwrap();
+    let VmDispatch::PendingStorage(StorageRequest::SqbcRead {
+        offset: screen_offset,
+        len: screen_len,
+    }) = second
+    else {
+        panic!("expected screen sqbc read request, got {second:?}");
+    };
+    assert_ne!(
+        screen_offset, handler_offset,
+        "screen rendering must suspend for the screen chunk before reloading the handler"
+    );
+    assert_eq!(reader.pending_read_count, 2);
+    assert_eq!(
+        reader.events,
+        vec!["app.start".to_string()],
+        "screen draw callbacks must not run before the screen chunk request is completed"
+    );
+
+    reader.pending_reads = false;
+    assert_eq!(
+        vm.resume_storage(
+            &mut reader,
+            StorageCompletion::bytes(&bytes[screen_offset..screen_offset + screen_len]).unwrap(),
+        )
+        .unwrap(),
+        VmDispatch::Complete
+    );
+    assert_eq!(
+        reader.events,
+        vec![
+            "app.start".to_string(),
+            "draw clear gray0".to_string(),
+            "debug after".to_string(),
+        ]
+    );
+}
+
+#[test]
 fn chunked_vm_rejects_oversized_handler_chunk() {
     let strings = encode_strings(&["oversized", "app.start"]);
     let state = vec![0, 0];
@@ -1123,6 +1198,10 @@ impl TraceSink for CountingReader<'_> {
     fn state_reset_persistent(&mut self) -> Result<(), VmError> {
         self.saved_state.clear();
         Ok(())
+    }
+
+    fn draw_clear(&mut self, color: &str) {
+        self.events.push(format!("draw clear {color}"));
     }
 }
 

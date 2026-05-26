@@ -77,6 +77,7 @@ pub struct ChunkedVm {
     code_start: usize,
     code_len: usize,
     resume: Option<ChunkedResume>,
+    resume_parent: Option<ChunkedResume>,
 }
 
 #[derive(Clone, Copy)]
@@ -255,6 +256,7 @@ impl ChunkedVm {
             code_start: usize::MAX,
             code_len: 0,
             resume: None,
+            resume_parent: None,
         }
     }
 
@@ -314,6 +316,7 @@ impl ChunkedVm {
         ptr::addr_of_mut!((*out).code_start).write(usize::MAX);
         ptr::addr_of_mut!((*out).code_len).write(0);
         ptr::addr_of_mut!((*out).resume).write(None);
+        ptr::addr_of_mut!((*out).resume_parent).write(None);
     }
 
     pub fn dispatch(&mut self, host: &mut impl ChunkedVmHost, event: &str) -> Result<(), VmError> {
@@ -358,6 +361,7 @@ impl ChunkedVm {
         self.chunk_cache.begin_execute(key).ok();
         host.trace(event);
         self.instructions = 0;
+        self.resume_parent = None;
         let locals = [Value::Null; MAX_LOCALS];
         self.execute_range_resumable(host, handler.start, handler.len, locals, 0)
     }
@@ -849,12 +853,64 @@ impl ChunkedVm {
         self.execute_resume_frame(host, frame)
     }
 
+    fn screen_resume_frame(
+        &mut self,
+        screen_id: u16,
+        depth: usize,
+    ) -> Result<ChunkedResume, VmError> {
+        if depth > MAX_CALL_DEPTH {
+            return Err(VmError::CallDepthExceeded);
+        }
+        let (screen_index, screen) = self.index.screen(self.index.string(screen_id)?)?;
+        let key = ChunkRef {
+            app: 0,
+            kind: ChunkKind::Screen,
+            index: screen_index as u16,
+        };
+        self.chunk_cache.insert(key, false).ok();
+        self.chunk_cache.begin_execute(key).ok();
+        let end = screen
+            .start
+            .checked_add(screen.len)
+            .ok_or(VmError::InvalidJump)?;
+        if end > self.index.code_len {
+            return Err(VmError::InvalidJump);
+        }
+        Ok(ChunkedResume {
+            start: screen.start,
+            end,
+            ip: screen.start,
+            locals: [Value::Null; MAX_LOCALS],
+            depth,
+            pending: PendingStorageResume::None,
+        })
+    }
+
+    fn push_resume_parent(&mut self, frame: ChunkedResume) -> Result<(), VmError> {
+        if self.resume_parent.is_some() {
+            return Err(VmError::CallDepthExceeded);
+        }
+        self.resume_parent = Some(frame);
+        Ok(())
+    }
+
+    fn pop_resume_parent(&mut self) -> Option<ChunkedResume> {
+        self.resume_parent.take()
+    }
+
     fn execute_resume_frame(
         &mut self,
         host: &mut impl ChunkedVmHost,
         mut frame: ChunkedResume,
     ) -> Result<VmDispatch, VmError> {
-        while frame.ip < frame.end {
+        loop {
+            if frame.ip >= frame.end {
+                if let Some(parent) = self.pop_resume_parent() {
+                    frame = parent;
+                    continue;
+                }
+                return Ok(VmDispatch::Complete);
+            }
             if let Some(request) =
                 self.load_chunk_resumable(host, frame.start, frame.end - frame.start)?
             {
@@ -982,6 +1038,23 @@ impl ChunkedVm {
                     } else {
                         0
                     };
+                    if builtin == BUILTIN_SCREEN_OPEN {
+                        let Value::String(name_id) = self.pop()? else {
+                            return Err(VmError::InvalidOperand);
+                        };
+                        self.current_screen = Some(name_id);
+                        let screen_frame = self.screen_resume_frame(name_id, frame.depth + 1)?;
+                        self.push_resume_parent(frame)?;
+                        frame = screen_frame;
+                        continue;
+                    }
+                    if builtin == BUILTIN_SCREEN_REFRESH {
+                        let screen_id = self.current_screen.ok_or(VmError::InvalidOperand)?;
+                        let screen_frame = self.screen_resume_frame(screen_id, frame.depth + 1)?;
+                        self.push_resume_parent(frame)?;
+                        frame = screen_frame;
+                        continue;
+                    }
                     if let Some(request) =
                         self.call_builtin_resumable(host, builtin, arg_count, frame.depth)?
                     {
@@ -1037,16 +1110,25 @@ impl ChunkedVm {
                 }
                 OP_RETURN => {
                     let _ = self.pop()?;
+                    if let Some(parent) = self.pop_resume_parent() {
+                        frame = parent;
+                        continue;
+                    }
                     return Ok(VmDispatch::Complete);
                 }
-                OP_HALT => return Ok(VmDispatch::Complete),
+                OP_HALT => {
+                    if let Some(parent) = self.pop_resume_parent() {
+                        frame = parent;
+                        continue;
+                    }
+                    return Ok(VmDispatch::Complete);
+                }
                 OP_POP => {
                     let _ = self.pop()?;
                 }
                 _ => return Err(VmError::UnknownOpcode),
             }
         }
-        Ok(VmDispatch::Complete)
     }
 
     fn call_builtin_resumable(

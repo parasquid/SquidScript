@@ -138,13 +138,14 @@ at 8 KiB and the VM worker stack budget at 24 KiB while this measurement data is
 used to decide whether later reductions are safe. A targeted inline
 device-binding launch check measured `protocol_thread_stack_used_bytes=7604`
 of 8192 and `vm_worker_stack_used_bytes=17056` of 24576 after moving
-launch-time binding scratch storage out of the protocol stack. The full
-ESP32-C3 suite can still drive the VM worker stack much higher; current full
-suite coverage measured `vm_worker_stack_used_bytes=24448` of 24576. A
-display-only isolation run showed that `screen.open(...)` into a screen with
-only `service.display.clear("gray0")` raised worker-stack use to 24020 bytes,
-so reduce the nested screen-render interpreter path before lowering that
-budget.
+launch-time binding scratch storage out of the protocol stack. After flattening
+the resumable screen-render interpreter path, a headless draw-log isolation run
+showed that `screen.open(...)` into a screen with only
+`service.display.clear("gray0")` uses `vm_worker_stack_used_bytes=17056` of
+24576, down from the previous 24020-byte display-only spike. The full ESP32-C3
+suite can still drive the VM worker stack higher; current full suite coverage
+measured `vm_worker_stack_used_bytes=21140` of 24576. Remeasure before lowering
+that budget.
 
 `scripts/c3-supermini-test-system-resources.sh` runs after lifecycle coverage
 and before stack measurement. It installs
