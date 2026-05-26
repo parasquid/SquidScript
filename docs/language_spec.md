@@ -2716,7 +2716,7 @@ if (picked.ok) {
 ```
 
 On runtimes without a firmware-controlled picker, including the current
-ESP32-C3 Zephyr reference firmware, this API returns a result record rather than
+ESP32-C3 Zephyr canonical firmware, this API returns a result record rather than
 crashing the app:
 
 ```text
@@ -2743,7 +2743,7 @@ if (result.ok) {
 ```
 
 On runtimes without bounded external content reads, including the current
-ESP32-C3 Zephyr reference firmware, this API returns:
+ESP32-C3 Zephyr canonical firmware, this API returns:
 
 ```text
 { ok: false, error: "unsupported", text: null }
@@ -2763,7 +2763,7 @@ if (result.ok) {
 ```
 
 On runtimes without bounded external content reads, including the current
-ESP32-C3 Zephyr reference firmware, this API returns:
+ESP32-C3 Zephyr canonical firmware, this API returns:
 
 ```text
 { ok: false, error: "unsupported", lines: [] }
@@ -3478,7 +3478,7 @@ device.config.save("flash")
 This writes firmware-owned binary SQDC as the global active config. Active
 config is not app-scoped, and installed app resources are not modified.
 
-The current Zephyr reference firmware exposes these calls through compiler
+The current Zephyr canonical firmware exposes these calls through compiler
 lowering, SQBC builtins, the Rust VM host, FFI, and the Zephyr runtime callback
 table. The current Zephyr runtime supports package resource
 `device.config.load("package:...")` into a bounded draft and

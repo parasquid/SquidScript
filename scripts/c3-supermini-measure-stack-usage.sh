@@ -23,8 +23,8 @@ stack_size="$(resource_value vm_worker_stack_size_bytes)"
 stack_unused="$(resource_value vm_worker_stack_unused_bytes)"
 stack_used="$(resource_value vm_worker_stack_used_bytes)"
 
-if [[ "$stack_size" != "24576" ]]; then
-  printf 'Expected vm_worker_stack_size_bytes=24576, got %s\n' "$stack_size" >&2
+if [[ "$stack_size" != "20480" ]]; then
+  printf 'Expected vm_worker_stack_size_bytes=20480, got %s\n' "$stack_size" >&2
   printf '%s\n' "--- ${resources_out} ---" >&2
   sed -n '1,200p' "${resources_out}" >&2
   exit 1

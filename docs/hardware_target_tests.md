@@ -86,7 +86,7 @@ uses bounded native-network packet and buffer pools sized for current
 low-throughput control-plane Wi-Fi behavior and measured socket-service,
 network-management event, ESP timer task, and network RX stack budgets; TCP,
 HTTP, AP client throughput, or other bulk traffic must be remeasured before
-increasing service scope. The Zephyr system heap is sized at 40960 bytes from
+increasing service scope. The Zephyr system heap is sized at 36864 bytes from
 live `device resources` heap high-water data after representative app, display,
 device binding, content, Wi-Fi status, scan, list, and AP workloads; remeasure
 it before adding larger radio or networking workloads.
@@ -98,7 +98,7 @@ The Zephyr build generates SquidScript-facing defaults such as
 defaults against `SQUID_ZEPHYR_TARGET_OVERLAY`, while devicetree remains
 responsible for board driver nodes. Wi-Fi status, scan, redacted network
 listing, AP start/stop/IP lookup, and volatile-profile station
-connect/disconnect are exposed through the reference firmware. Station connect
+connect/disconnect are exposed through the canonical firmware. Station connect
 proof remains explicit-credentials-only, and AP client association/DHCP lease
 proof is separate future work.
 
@@ -134,18 +134,20 @@ app lifecycle checks in the full ESP32-C3 Super Mini suite. It records
 `device resources` output under `target/hardware-tests/stack-usage/` and
 verifies `protocol_thread_stack_*` and `vm_worker_stack_*` metrics are
 internally consistent. The current firmware keeps the protocol/main stack budget
-at 8 KiB and the VM worker stack budget at 24 KiB while this measurement data is
-used to decide whether later reductions are safe. A targeted inline
+at 8 KiB and the VM worker stack budget at 20 KiB based on measured high-water
+data. A targeted inline
 device-binding launch check measured `protocol_thread_stack_used_bytes=7604`
-of 8192 and `vm_worker_stack_used_bytes=17056` of 24576 after moving
-launch-time binding scratch storage out of the protocol stack. After flattening
+of 8192 and `vm_worker_stack_used_bytes=17056` before the worker stack moved to
+20480, after launch-time binding scratch storage moved out of the protocol
+stack. After flattening
 the resumable screen-render interpreter path, a headless draw-log isolation run
 showed that `screen.open(...)` into a screen with only
 `service.display.clear("gray0")` uses `vm_worker_stack_used_bytes=17056` of
-24576, down from the previous 24020-byte display-only spike. After moving
+the prior 24576-byte budget, down from the previous 24020-byte display-only
+spike. After moving
 function calls onto the same VM-owned continuation stack, current full suite
-coverage measured `vm_worker_stack_used_bytes=17620` of 24576. Remeasure before
-lowering that budget.
+coverage measured `vm_worker_stack_used_bytes=17620` before lowering the worker
+stack to 20480. Remeasure before lowering that budget again.
 
 `scripts/c3-supermini-test-system-resources.sh` runs after lifecycle coverage
 and before stack measurement. It installs
@@ -167,7 +169,7 @@ and before stack measurement. It installs
 that `device.config.load`, `device.config.set`, `device.config.rebind`, and
 `device.config.save` all return result records through the real Zephyr VM FFI
 host. The app is installed as a package with a `.sqdevice` resource; the
-current reference firmware returns `ok=true` for package resource load and
+current canonical firmware returns `ok=true` for package resource load and
 draft set, `ok=true` for `indicator.default` rebind, then `ok=true` for SQDC
 flash save. Native Zephyr ztests additionally verify that the saved SQDC is
 loaded on later app starts before app-local `device {}` bindings.
@@ -178,7 +180,7 @@ and before stack measurement. It installs
 that `content.pickFile(".binbook")`, `content.readText("notes.txt")`, and
 `content.readLines("notes.txt", 4)` flow through compiler lowering, SQBC, Rust
 VM hosting, FFI, and Zephyr runtime callbacks as current unsupported result
-records. The Zephyr reference firmware returns `ok=false`,
+records. The Zephyr canonical firmware returns `ok=false`,
 `error="unsupported"`, `path=null`, `text=null`, and an empty `lines` list until
 real external content picking and reads are implemented.
 
@@ -215,8 +217,8 @@ target metadata. `app launch` must fail with `unsupported (-95)`, `device output
 remains empty, and `device errors` remains empty, proving target validation
 rejects the binding before VM start while the protocol remains responsive.
 
-`scripts/c3-supermini-test-blink.sh` is an explicit visible indicator parity
-check. It installs `examples/blink-supermini`, launches it, verifies
+`scripts/c3-supermini-test-blink.sh` is an explicit visible indicator check. It
+installs `examples/blink-supermini`, launches it, verifies
 `output=blink ready`, checks that `device errors` is empty, and leaves the
 non-blocking `service.indicator.blink(120, 80)` pattern running for physical LED
 confirmation. It is not part of the full hardware suite because the suite keeps

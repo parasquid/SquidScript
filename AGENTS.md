@@ -166,14 +166,14 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
 
 ## Script And Firmware Tooling Discipline
 
-- Firmware source for the ESP32-C3 reference firmware lives under
+- Firmware source for the canonical ESP32-C3 firmware lives under
   `firmware/zephyr`; the old Rust ESP32-C3 firmware tree has been removed.
 - Before reporting that firmware build, flashing, serial, or hardware checks do
   not work in this environment, check the relevant repository docs and wrapper
   scripts first. Prefer the documented wrapper command over ad hoc direct tool
   invocations, and only call something blocked after the documented path fails.
 - Use `scripts/c3-supermini-build.sh` to build or type-check the ESP32-C3
-  reference firmware binary. The wrapper delegates to the Zephyr build wrapper
+  canonical firmware binary. The wrapper delegates to the Zephyr build wrapper
   and sources the repository Zephyr environment.
 - Run ESP32-C3 Super Mini Zephyr build wrappers outside the Codex sandbox in
   this environment. Zephyr/ccache may write host cache files outside the

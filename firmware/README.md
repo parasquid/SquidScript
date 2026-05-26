@@ -11,7 +11,7 @@ logging, Wi-Fi, networking, power, and hardware diagnostics.
 
 ## Current Zephyr Firmware
 
-The Zephyr app is the current real-firmware implementation:
+The Zephyr app is the canonical firmware implementation:
 
 - `firmware/zephyr/CMakeLists.txt`: Zephyr app entrypoint.
 - `firmware/zephyr/prj.conf`: serial, shell, logging, flash-map, NVS, and

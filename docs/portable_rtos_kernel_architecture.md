@@ -90,7 +90,7 @@ Model logical app storage separately from physical volumes:
 - SQBC app bytes and package resources use Zephyr flash-map plus LittleFS where
   a file layout is needed.
 - App state uses NVS or LittleFS records, selected by implementation tests.
-- Storage migration from the old Rust firmware is not supported before 1.0.
+- Compatibility with old Rust firmware storage is not supported before 1.0.
 
 ## Browser Simulator
 

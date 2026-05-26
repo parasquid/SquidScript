@@ -94,8 +94,8 @@ budget.
 Protocol transfer sessions keep full resource-path storage for package paths
 but use smaller internal staging-path buffers for fixed firmware staging
 filenames.
-The protocol/main thread stack is currently 3.5 KiB; resource diagnostics expose
-its high-water use separately from the VM worker stack.
+The protocol/main thread stack is currently 8 KiB; resource diagnostics expose
+its high-water use separately from the 20 KiB VM worker stack.
 Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi VM service
 calls now cross the Rust FFI boundary into Zephyr callbacks. Zephyr now
 performs installed-app foreground handoff for `app.launch` and `app.exit` with

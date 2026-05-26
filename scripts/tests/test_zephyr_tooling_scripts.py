@@ -179,7 +179,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_default_config_uses_measured_system_heap_budget(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
 
-        self.assertIn("CONFIG_HEAP_MEM_POOL_SIZE=40960", prj_conf)
+        self.assertIn("CONFIG_HEAP_MEM_POOL_SIZE=36864", prj_conf)
         self.assertIn("CONFIG_HEAP_MEM_POOL_IGNORE_MIN=y", prj_conf)
         self.assertNotIn("CONFIG_HEAP_MEM_POOL_ADD_SIZE_ESP_WIFI=", prj_conf)
 
@@ -443,8 +443,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         stack_script = self.read("scripts/c3-supermini-measure-stack-usage.sh")
 
-        self.assertIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 24576", runtime_h)
-        self.assertIn('Expected vm_worker_stack_size_bytes=24576', stack_script)
+        self.assertIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 20480", runtime_h)
+        self.assertIn('Expected vm_worker_stack_size_bytes=20480', stack_script)
         self.assertNotIn('Expected vm_worker_stack_size_bytes=16384', stack_script)
 
     def test_default_runtime_gates_wifi_scan_buffers_from_static_ram(self):
@@ -462,8 +462,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
 
-        self.assertIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 11264", runtime_h)
-        self.assertIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 11264", ztest)
+        self.assertIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 11840", runtime_h)
+        self.assertIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 11840", ztest)
 
     def test_runtime_reuses_transfer_storage_for_init_scratch_and_completion(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
@@ -898,7 +898,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("inline_config;", ffi_h)
         self.assertNotIn("sq_vm_runtime_apply_inline_gpio_indicator_binding", runtime)
 
-    def test_breathe_check_is_explicit_visible_indicator_parity_script(self):
+    def test_breathe_check_is_explicit_visible_indicator_script(self):
         script = self.read("scripts/c3-supermini-test-breathe.sh")
         app = self.read("examples/breathe-supermini/main.squid")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
@@ -919,7 +919,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("breathe app left running", script)
         self.assertNotIn("c3-supermini-test-breathe.sh", suite)
 
-    def test_blink_check_is_explicit_visible_indicator_parity_script(self):
+    def test_blink_check_is_explicit_visible_indicator_script(self):
         script = self.read("scripts/c3-supermini-test-blink.sh")
         app = self.read("examples/blink-supermini/main.squid")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")

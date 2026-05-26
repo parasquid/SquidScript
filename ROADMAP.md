@@ -4,12 +4,12 @@ This file is the repository issue tracker for agent-visible project work.
 Keep entries concise and actionable. When a roadmap item is completed, remove
 it from this file in the same change or in the next cleanup commit.
 
-## Current Track: Zephyr-Only Firmware Migration
+## Current Track: Canonical Zephyr Firmware
 
-Goal: make Zephyr the only real-firmware runtime while keeping Rust authoritative
-for compiler, SQBC tooling, and VM semantics.
+Goal: keep Zephyr as the canonical firmware architecture while Rust remains
+authoritative for compiler, SQBC tooling, and VM semantics.
 
-### 1. Port Runtime Services To Zephyr
+### 1. Extend Canonical Zephyr Runtime Services
 
 - Complete the physical SQDEVICE/SQDC backend for current device configuration
   APIs. `device.config.load("package:...")` now reads installed foreground app
@@ -67,23 +67,23 @@ for compiler, SQBC tooling, and VM semantics.
   `service.indicator.write(...)` to drive more than one physical output, and
   extend the normalized binding model to additional services beyond indicator
   and display.
-- Reduce ESP32-C3 Zephyr RAM after service parity. Identify concrete reductions
-  for the largest static allocations, especially VM runtime storage, work
+- Reduce ESP32-C3 Zephyr RAM as canonical firmware hardening. Identify concrete
+  reductions for the largest static allocations, especially VM runtime storage, work
   stacks, response/session buffers, logging, LittleFS pools, and file caches.
   Use `device resources` worker-stack and protocol-stack high-water diagnostics
   before lowering stack budgets. A targeted inline device-binding launch check
   measured `protocol_thread_stack_used_bytes=7604` of 8192 and
-  `vm_worker_stack_used_bytes=17056` of 24576 after moving launch scratch
-  storage out of the protocol stack. After flattening the resumable
+  `vm_worker_stack_used_bytes=17056` before the worker stack moved to 20480,
+  after launch scratch storage moved out of the protocol stack. After flattening the resumable
   screen-render interpreter path, the headless draw-log isolation app using
   `screen.open(...)` into a screen with only `service.display.clear("gray0")`
-  measured `vm_worker_stack_used_bytes=17056` of 24576, down from the previous
+  measured `vm_worker_stack_used_bytes=17056`, down from the previous
   24020-byte display-only spike. The latest full ESP32-C3 suite measured
-  `vm_worker_stack_used_bytes=17620` of 24576. The current Wi-Fi-enabled build
-  is under the RAM guard at `dram0_0_seg=206936` audit bytes with
-  `runtime_static_bytes=18704` and the hardware-verified 40960-byte Zephyr
-  system heap, so remaining RAM reduction is post-parity optimization rather
-  than a feature-parity blocker.
+  `vm_worker_stack_used_bytes=17620` before the worker stack moved to 20480.
+  The current Wi-Fi-enabled build is under the RAM guard at `dram0_0_seg=198744` audit bytes with
+  `runtime_static_bytes=18704` and the hardware-verified 36864-byte Zephyr
+  system heap, so remaining RAM reduction is hardening work rather than a
+  service blocker.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.
