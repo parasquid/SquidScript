@@ -1025,6 +1025,28 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             suite.index("c3-supermini-test-blinky.sh"),
         )
 
+    def test_gpio9_raw_probe_is_bounded_and_physical_input_only(self):
+        script = self.read("scripts/c3-supermini-probe-gpio9-raw.sh")
+        app = self.read("tests/hardware/c3-supermini/gpio9-raw-probe/main.squid")
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+
+        self.assertIn('COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-12}"', script)
+        self.assertIn('WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-20}"', script)
+        self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', script)
+        self.assertIn("target/hardware-tests/gpio9-raw-probe", script)
+        self.assertIn('cargo run --quiet -p squidc -- app install "${GPIO9_RAW_APP}"', script)
+        self.assertIn("cargo run --quiet -p squidc -- device reset", script)
+        self.assertIn("cargo run --quiet -p squidc -- app launch gpio9-raw-probe", script)
+        self.assertIn("Press and hold the ESP32-C3 Super Mini BOOT/GPIO9 button", script)
+        self.assertIn("output=gpio9 true", script)
+        self.assertIn("output=gpio9 false", script)
+        self.assertIn("assert_file_empty_command", script)
+        self.assertIn('hardware.gpio.read("GPIO9")', app)
+        self.assertIn('debug.print("gpio9", hardware.gpio.read("GPIO9"))', app)
+        self.assertNotIn("wifi", script.lower())
+        self.assertNotIn("ble", script.lower())
+        self.assertNotIn("c3-supermini-probe-gpio9-raw.sh", suite)
+
     def test_sw0_gpio_button_path_configures_pullup_and_uses_binding_polarity(self):
         runtime = self.read("firmware/zephyr/src/vm_runtime.c")
         configure_start = runtime.rindex("static int configure_input_button_gpio")

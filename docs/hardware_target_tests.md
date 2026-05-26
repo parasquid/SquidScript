@@ -143,6 +143,16 @@ the ESP32-C3 Super Mini BOOT/GPIO9 button to `key.SELECT`. The script verifies
 launch output, waits for a physical BOOT/GPIO9 press to increment app state, and
 the app starts a visible indicator blink when the press is handled.
 
+`scripts/c3-supermini-probe-gpio9-raw.sh` is a targeted GPIO9 electrical
+diagnostic, not part of the full suite. It installs
+`tests/hardware/c3-supermini/gpio9-raw-probe/main.squid`, which applies the same
+GPIO9 input binding to configure the pull-up and then prints
+`hardware.gpio.read("GPIO9")` at `app.start`. The released BOOT/GPIO9 state
+should print `output=gpio9 true`; the held BOOT/GPIO9 state should print
+`output=gpio9 false`. Use it to separate raw pin visibility from input event
+dispatch when the input stack isolation harness times out before
+`after-press-observed`.
+
 `scripts/c3-supermini-measure-stack-usage.sh` runs after the stateful app and
 app lifecycle checks in the full ESP32-C3 Super Mini suite. It records
 `device resources` output under `target/hardware-tests/stack-usage/` and
