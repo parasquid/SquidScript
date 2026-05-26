@@ -185,18 +185,23 @@ diagnostic boot banner, then records `after-boot`, `after-format`,
 `after-press` resource rows under
 `target/hardware-tests/input-stack-isolation/summary.tsv`. Pass `--skip-flash`
 only when preserving the current firmware session is more important than a
-fresh high-water baseline. The current clean-boot input isolation launch row
-measured protocol/main stack flat at 2476 bytes and VM worker stack use at
-17056 bytes, with 2400 bytes free and `input_button_state=1`. The low byte
-confirms one physical GPIO9 binding was installed; the next byte reports zero
-currently pressed inputs after the BOOT/GPIO9 pull-up is configured through
-devicetree. The script waits for release before asking for a held press and
-writes `after-release-timeout` diagnostics if the line never reads released. If
-the held press is not observed electrically, it writes `after-press-timeout`
-diagnostics; if the press is observed but `output=count 1` is not produced, it
-writes `after-dispatch-timeout` diagnostics. The physical BOOT/GPIO9 press row
-still needs a completed observed-button run before reducing stack budgets
-further.
+fresh high-water baseline. Override `INPUT_BUTTON_APP`, `INPUT_BUTTON_APP_ID`,
+and `INPUT_BUTTON_LABEL` to run the same attribution flow against a candidate
+binding such as `tests/hardware/c3-supermini/input-button-gpio5-summary`.
+The current clean-boot GPIO9 input isolation launch row measured protocol/main
+stack flat at 2476 bytes and VM worker stack use at 17056 bytes, with 2400
+bytes free and `input_button_state=1`. The low byte confirms one physical GPIO9
+binding was installed; the next byte reports zero currently pressed inputs
+after the BOOT/GPIO9 pull-up is configured through devicetree. The script waits
+for release before asking for a held press and writes `after-release-timeout`
+diagnostics if the line never reads released. If the held press is not observed
+electrically, it writes `after-press-timeout` diagnostics; if the press is
+observed but `output=count 1` is not produced, it writes
+`after-dispatch-timeout` diagnostics. A GPIO5 active-high candidate run also
+timed out before `after-press-observed`, with `input_button_state=1`,
+protocol/main stack flat at 2476 bytes, and VM worker stack use at 17136 bytes.
+The physical press row still needs a completed observed-button run before
+reducing stack budgets further.
 After flattening the resumable screen-render interpreter path, a headless
 draw-log isolation run showed that `screen.open(...)` into a screen with only
 `service.display.clear("gray0")` uses `vm_worker_stack_used_bytes=17056` of

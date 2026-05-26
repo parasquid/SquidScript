@@ -1,0 +1,22 @@
+app "input-button-gpio5-summary"
+
+device {
+  input { use "gpio-button:GPIO5:key.SELECT:activeHigh" }
+}
+
+state {
+  count: int = 0
+}
+
+event.on("app.start") {
+  state.load()
+  debug.print("count", state.count)
+}
+
+event.on("key.SELECT") {
+  state.load()
+  state.count = state.count + 1
+  state.save()
+  service.indicator.blink(120, 80)
+  debug.print("count", state.count)
+}

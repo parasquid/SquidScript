@@ -1300,6 +1300,9 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
         self.assertIn('COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-12}"', stack)
         self.assertIn('WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-60}"', stack)
+        self.assertIn('INPUT_BUTTON_APP="${INPUT_BUTTON_APP:-', stack)
+        self.assertIn('INPUT_BUTTON_APP_ID="${INPUT_BUTTON_APP_ID:-input-button-summary}"', stack)
+        self.assertIn('INPUT_BUTTON_LABEL="${INPUT_BUTTON_LABEL:-ESP32-C3 Super Mini BOOT/GPIO9 button}"', stack)
         self.assertIn("target/hardware-tests/input-stack-isolation", stack)
         self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', stack)
         self.assertIn('source "${ROOT}/scripts/lib/serial-port.sh"', stack)
@@ -1322,11 +1325,12 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('errors-after-dispatch-timeout', stack)
         self.assertIn('errors-after-final-release-timeout', stack)
         self.assertIn('tests/hardware/c3-supermini/input-button-summary/main.squid', stack)
+        self.assertIn('tests/hardware/c3-supermini/input-button-gpio5-summary/main.squid', stack)
         self.assertIn(
-            'Press and hold the ESP32-C3 Super Mini BOOT/GPIO9 button until this script asks you to release it.',
+            'Press and hold ${INPUT_BUTTON_LABEL} until this script asks you to release it.',
             stack,
         )
-        self.assertIn('Release the ESP32-C3 Super Mini BOOT/GPIO9 button now.', stack)
+        self.assertIn('Release %s now.', stack)
         self.assertNotIn('cargo run --quiet -p squidc -- device key SELECT', stack)
         self.assertIn('protocol_thread_stack_pre_resources_used_bytes', stack)
         self.assertIn('vm_worker_stack_used_bytes', stack)

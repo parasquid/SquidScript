@@ -6,7 +6,9 @@ source "${ROOT}/scripts/lib/hardware-command.sh"
 source "${ROOT}/scripts/lib/serial-port.sh"
 
 WORK_DIR="${ROOT}/target/hardware-tests/input-stack-isolation"
-INPUT_BUTTON_APP="${ROOT}/tests/hardware/c3-supermini/input-button-summary/main.squid"
+INPUT_BUTTON_APP="${INPUT_BUTTON_APP:-${ROOT}/tests/hardware/c3-supermini/input-button-summary/main.squid}"
+INPUT_BUTTON_APP_ID="${INPUT_BUTTON_APP_ID:-input-button-summary}"
+INPUT_BUTTON_LABEL="${INPUT_BUTTON_LABEL:-ESP32-C3 Super Mini BOOT/GPIO9 button}"
 COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-12}"
 WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-60}"
 SKIP_FLASH="${SKIP_FLASH:-0}"
@@ -17,14 +19,16 @@ usage() {
   cat <<'EOF'
 Usage: scripts/c3-supermini-measure-input-stack-isolation.sh [--skip-flash]
 
-Measures ESP32-C3 stack and RAM high-water data for the GPIO9 input-button
-app path. By default the script builds/flashes and verifies a fresh diagnostic
+Measures ESP32-C3 stack and RAM high-water data for an input-button app path.
+By default the script builds/flashes and verifies a fresh diagnostic
 boot before the first resources snapshot so stack high-water rows are not
 inherited from earlier workloads in the same firmware boot.
 
-This script requires holding the physical BOOT/GPIO9 button until the script
+This script requires holding the configured physical input until the script
 observes the pressed state, then releasing it when prompted for the final
-after-press snapshot.
+after-press snapshot. Override INPUT_BUTTON_APP, INPUT_BUTTON_APP_ID, and
+INPUT_BUTTON_LABEL to probe a candidate input binding such as
+tests/hardware/c3-supermini/input-button-gpio5-summary/main.squid.
 
 Use --skip-flash only when an already-running firmware image is acceptable.
 EOF
@@ -139,7 +143,7 @@ wait_for_input_released() {
     sleep 0.2
   done
 
-  printf 'Timed out waiting for BOOT/GPIO9 release before press check\n' >&2
+  printf 'Timed out waiting for %s release before press check\n' "${INPUT_BUTTON_LABEL}" >&2
   printf '%s\n' "--- ${out} ---" >&2
   sed -n '1,200p' "${out}" >&2
   return 1
@@ -161,7 +165,7 @@ wait_for_input_pressed() {
     sleep 0.2
   done
 
-  printf 'Timed out waiting for BOOT/GPIO9 pressed state\n' >&2
+  printf 'Timed out waiting for %s pressed state\n' "${INPUT_BUTTON_LABEL}" >&2
   printf '%s\n' "--- ${out} ---" >&2
   sed -n '1,200p' "${out}" >&2
   return 1
@@ -215,12 +219,12 @@ snapshot_resources after-format
 run_capture install-input-button cargo run --quiet -p squidc -- app install "${INPUT_BUTTON_APP}" >/dev/null
 snapshot_resources after-install
 
-run_capture launch-input-button cargo run --quiet -p squidc -- app launch input-button-summary >/dev/null
+run_capture launch-input-button cargo run --quiet -p squidc -- app launch "${INPUT_BUTTON_APP_ID}" >/dev/null
 wait_for_contains input-output-start "output=count 0" \
   "device output" cargo run --quiet -p squidc -- device output >/dev/null
 snapshot_resources after-launch
 
-printf '%s\n' 'Release the ESP32-C3 Super Mini BOOT/GPIO9 button now.' >&2
+printf 'Release %s now.\n' "${INPUT_BUTTON_LABEL}" >&2
 if ! wait_for_input_released; then
   snapshot_resources after-release-timeout
   run_capture errors-after-release-timeout \
@@ -230,7 +234,7 @@ fi
 snapshot_resources after-release
 
 printf '%s\n' \
-  'Press and hold the ESP32-C3 Super Mini BOOT/GPIO9 button until this script asks you to release it.' >&2
+  "Press and hold ${INPUT_BUTTON_LABEL} until this script asks you to release it." >&2
 if ! wait_for_input_pressed; then
   snapshot_resources after-press-timeout
   run_capture errors-after-press-timeout \
@@ -247,7 +251,7 @@ if ! wait_for_contains_or_timeout input-output-press "output=count 1" \
   exit 1
 fi
 
-printf '%s\n' 'Release the ESP32-C3 Super Mini BOOT/GPIO9 button now.' >&2
+printf 'Release %s now.\n' "${INPUT_BUTTON_LABEL}" >&2
 if ! wait_for_input_released; then
   snapshot_resources after-final-release-timeout
   run_capture errors-after-final-release-timeout \

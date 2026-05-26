@@ -81,11 +81,14 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   through GPIO10 and, in the current run, saw no changed GPIO values while
   waiting for a held BOOT button; the released baseline was GPIO0 false,
   GPIO1 false, GPIO2 true, GPIO3 false, GPIO4 false, GPIO5 false, GPIO6 true,
-  GPIO7 false, GPIO8 false, GPIO9 true, GPIO10 false. Resolve that physical
-  button visibility issue or confirm the button path externally, complete an
-  observed physical press row, explain any press-time peak, then validate
-  whether the 8 KiB protocol/main stack or 19 KiB worker stack can be reduced
-  after full-suite coverage.
+  GPIO7 false, GPIO8 false, GPIO9 true, GPIO10 false. A configurable
+  input-stack run against a GPIO5 active-high candidate also timed out before
+  `after-press-observed`, with `input_button_state=1`, protocol/main stack
+  still flat at 2476 bytes, and VM worker stack at 17136 bytes for that launch.
+  Resolve that physical button visibility issue or confirm the button path
+  externally, complete an observed physical press row, explain any press-time
+  peak, then validate whether the 8 KiB protocol/main stack or 19 KiB worker
+  stack can be reduced after full-suite coverage.
 - Improve network heap attribution before expanding Wi-Fi scope. Current AP
   start/stop hardware coverage drives `ram_heap_max_allocated_bytes` close to
   the 36 KiB system heap budget; add clearer per-workload heap reset or
