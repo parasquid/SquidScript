@@ -157,6 +157,16 @@ now runs on the VM worker stack and preserves synchronous launch setup errors,
 so a clean-boot GPIO9 input summary run measured protocol/main stack use flat at
 2476 bytes across format, install, launch, and serial `SELECT`. Remeasure with
 the full hardware suite before lowering the configured main stack budget again.
+Use `scripts/c3-supermini-measure-input-stack-isolation.sh` when the input path
+needs clean high-water attribution. It builds/flashes by default, verifies the
+diagnostic boot banner, then records `after-boot`, `after-format`,
+`after-install`, `after-launch`, and `after-press` resource rows under
+`target/hardware-tests/input-stack-isolation/summary.tsv`. Pass `--skip-flash`
+only when preserving the current firmware session is more important than a
+fresh high-water baseline. The current clean-boot input isolation launch row
+measured protocol/main stack flat at 2476 bytes and VM worker stack use at
+17056 bytes, with 2400 bytes free. The physical BOOT/GPIO9 press row still
+needs a completed observed-button run before reducing stack budgets further.
 After flattening the resumable screen-render interpreter path, a headless
 draw-log isolation run showed that `screen.open(...)` into a screen with only
 `service.display.clear("gray0")` uses `vm_worker_stack_used_bytes=17056` of
@@ -165,8 +175,10 @@ spike. After moving
 function calls onto the same VM-owned continuation stack, full suite coverage
 measured `vm_worker_stack_used_bytes=17620` before lowering the worker stack to
 20480. Targeted GPIO9 input summary coverage after app-start binding setup moved
-to the VM worker measured `vm_worker_stack_used_bytes=17296`; the worker stack
-is now 19456 bytes. Remeasure before lowering that budget again.
+to the VM worker measured `vm_worker_stack_used_bytes=17296`, and narrowing the
+FFI app process/armed stack scratch reduced the input launch row to 17056; the
+worker stack is now 19456 bytes. Remeasure the physical press row and full
+hardware suite before lowering that budget again.
 
 `scripts/c3-supermini-measure-ram-workloads.sh` is the targeted RAM and stack
 attribution harness. It formats app storage, installs the GPIO9 input summary

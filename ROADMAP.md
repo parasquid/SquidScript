@@ -57,20 +57,15 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   protocol/main and VM worker stack used/unused values, and inspect recent FFI,
   metadata parsing, storage, and service paths for hidden stack temporaries
   before treating GPIO, flashing, or serial as the primary failure.
-- Complete a broader ESP32-C3 RAM improvement investigation. Build a measured
-  map of stack, heap, static, filesystem, logging, protocol/session, VM runtime,
-  and service-specific memory use across boot, app install, app launch, input
-  dispatch, storage, and network workloads. The targeted
-  `scripts/c3-supermini-measure-ram-workloads.sh` harness now records format,
-  input-button install/launch/dispatch, display drawlog, system resources, and
-  Wi-Fi AP start/stop snapshots. Moving app-start device-binding
-  setup to the VM worker flattened the GPIO9 input summary protocol/main stack
-  high-water at 2476 bytes while the VM worker peaked at 17296 bytes with
-  2160 bytes free after reducing the worker stack to 19 KiB. Add
-  reset-per-scenario or equivalent high-water isolation for stack attribution,
-  explain peaks and outliers, validate whether the reduced 8 KiB protocol/main
-  stack can be reduced further after full-suite coverage, and split remaining
-  reductions into concrete implementation tasks.
+- Complete physical GPIO9 input stack attribution and budget reduction.
+  `scripts/c3-supermini-measure-input-stack-isolation.sh` now records a
+  fresh-boot physical input path baseline through format, install, launch, and
+  observed BOOT/GPIO9 press. Current launch evidence shows protocol/main stack
+  flat at 2476 bytes and VM worker stack reduced from 17296 to 17056 bytes by
+  narrowing FFI app process/armed stack scratch to the firmware's two-entry
+  limit. Complete an observed physical press row, explain any press-time peak,
+  then validate whether the 8 KiB protocol/main stack or 19 KiB worker stack can
+  be reduced after full-suite coverage.
 - Improve network heap attribution before expanding Wi-Fi scope. Current AP
   start/stop hardware coverage drives `ram_heap_max_allocated_bytes` close to
   the 36 KiB system heap budget; add clearer per-workload heap reset or

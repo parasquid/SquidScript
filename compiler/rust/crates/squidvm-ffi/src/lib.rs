@@ -2664,15 +2664,18 @@ pub unsafe extern "C" fn sqdp_clear_resource_session(session: *mut SqdpResourceS
     }
 }
 
+// Mirrors the current Zephyr runtime return-stack and armed-timer capacities.
+const SQVM_FFI_APP_STACK_CAP: usize = 2;
+
 struct FfiHost {
     callbacks: SqvmCallbacks,
     defer_sqbc_reads: bool,
     app_registry_entries: [SqvmAppRegistryEntry; 8],
     app_registry_core_entries: [AppRegistryEntry<'static>; 8],
     app_registry_count: usize,
-    app_stack_entries: [SqvmAppStackEntry; 8],
-    app_process_stack_apps: [&'static str; 8],
-    app_armed_stack_entries: [AppArmedStackEntry<'static>; 8],
+    app_stack_entries: [SqvmAppStackEntry; SQVM_FFI_APP_STACK_CAP],
+    app_process_stack_apps: [&'static str; SQVM_FFI_APP_STACK_CAP],
+    app_armed_stack_entries: [AppArmedStackEntry<'static>; SQVM_FFI_APP_STACK_CAP],
     app_stack_count: usize,
     wifi_scan_networks: [WifiAccessPoint; SQVM_WIFI_SCAN_MAX_NETWORKS],
     wifi_scan_network_count: usize,
@@ -2691,12 +2694,12 @@ impl FfiHost {
                 description: "",
             }; 8],
             app_registry_count: 0,
-            app_stack_entries: [SqvmAppStackEntry::default(); 8],
-            app_process_stack_apps: [""; 8],
+            app_stack_entries: [SqvmAppStackEntry::default(); SQVM_FFI_APP_STACK_CAP],
+            app_process_stack_apps: [""; SQVM_FFI_APP_STACK_CAP],
             app_armed_stack_entries: [AppArmedStackEntry {
                 app_id: "",
                 event: "",
-            }; 8],
+            }; SQVM_FFI_APP_STACK_CAP],
             app_stack_count: 0,
             wifi_scan_networks: [WifiAccessPoint::empty(); SQVM_WIFI_SCAN_MAX_NETWORKS],
             wifi_scan_network_count: 0,
@@ -3042,7 +3045,7 @@ impl TraceSink for FfiHost {
             return Err(VmError::InvalidOperand);
         };
         let mut count = 0usize;
-        self.app_stack_entries = [SqvmAppStackEntry::default(); 8];
+        self.app_stack_entries = [SqvmAppStackEntry::default(); SQVM_FFI_APP_STACK_CAP];
         callback_status(unsafe {
             app_process_stack(
                 self.callbacks.user_data,
@@ -3070,7 +3073,7 @@ impl TraceSink for FfiHost {
             return Err(VmError::InvalidOperand);
         };
         let mut count = 0usize;
-        self.app_stack_entries = [SqvmAppStackEntry::default(); 8];
+        self.app_stack_entries = [SqvmAppStackEntry::default(); SQVM_FFI_APP_STACK_CAP];
         callback_status(unsafe {
             app_armed_stack(
                 self.callbacks.user_data,
@@ -4292,6 +4295,31 @@ fn device_config_value_to_ffi(
             })
         }
         Value::Record(_) | Value::List(_) => Err(VmError::InvalidOperand),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ffi_dispatch_host_keeps_input_dispatch_stack_scratch_bounded() {
+        assert!(
+            size_of::<FfiHost>() <= 2048,
+            "FfiHost is {} bytes and is placed on the VM worker stack for input app dispatch",
+            size_of::<FfiHost>()
+        );
+    }
+
+    #[test]
+    #[cfg(target_pointer_width = "32")]
+    fn sqvm_context_still_fits_zephyr_runtime_context_buffer() {
+        const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 12_288;
+        assert!(
+            sqvm_context_size() <= ZEPHYR_RUNTIME_CONTEXT_BYTES,
+            "SqvmContext is {} bytes and must fit firmware/zephyr/src/vm_runtime.h context_words",
+            sqvm_context_size()
+        );
     }
 }
 

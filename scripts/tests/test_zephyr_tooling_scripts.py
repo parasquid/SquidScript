@@ -1217,6 +1217,29 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('summary.tsv', stack)
         self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', stack)
 
+    def test_input_stack_isolation_measurement_is_bounded_and_input_only(self):
+        stack = self.read("scripts/c3-supermini-measure-input-stack-isolation.sh")
+
+        self.assertIn('COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-12}"', stack)
+        self.assertIn('WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-60}"', stack)
+        self.assertIn("target/hardware-tests/input-stack-isolation", stack)
+        self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', stack)
+        self.assertIn('source "${ROOT}/scripts/lib/serial-port.sh"', stack)
+        self.assertIn('c3-supermini-zephyr-test-diagnostic.sh', stack)
+        self.assertIn('snapshot_resources after-boot', stack)
+        self.assertIn('snapshot_resources after-format', stack)
+        self.assertIn('snapshot_resources after-install', stack)
+        self.assertIn('snapshot_resources after-launch', stack)
+        self.assertIn('snapshot_resources after-press', stack)
+        self.assertIn('tests/hardware/c3-supermini/input-button-summary/main.squid', stack)
+        self.assertIn('Press and release the ESP32-C3 Super Mini BOOT/GPIO9 button now.', stack)
+        self.assertNotIn('cargo run --quiet -p squidc -- device key SELECT', stack)
+        self.assertIn('protocol_thread_stack_pre_resources_used_bytes', stack)
+        self.assertIn('vm_worker_stack_used_bytes', stack)
+        self.assertIn('ram_heap_allocated_bytes', stack)
+        self.assertIn('summary.tsv', stack)
+        self.assertNotIn("wifi", stack.lower())
+
     def test_hardware_scripts_use_shared_bounded_command_helper(self):
         scripts_dir = ROOT / "scripts"
         helper = self.read("scripts/lib/hardware-command.sh")
