@@ -1413,17 +1413,12 @@ pub unsafe extern "C" fn sqdc_plan_device_binding(
         return SqdcStatus::InvalidArgument;
     }
 
-    let mut plan = SqdcDeviceBindingPlan::default();
     let inline_config = if out_inline_config.is_null() {
         None
     } else {
         Some(&mut *out_inline_config)
     };
-    let status = plan_device_binding_bytes(service, binding, resource, &mut plan, inline_config);
-    if status == SqdcStatus::Ok {
-        *out = plan;
-    }
-    status
+    plan_device_binding_bytes(service, binding, resource, &mut *out, inline_config)
 }
 
 #[repr(C)]
@@ -3679,13 +3674,10 @@ fn plan_device_binding_bytes(
     }
 
     *out = SqdcDeviceBindingPlan::default();
-    let mut alias = [0u8; SQVM_DEVICE_BINDING_NAME_CAP];
-    let Some(alias_len) = build_device_binding_alias(service, binding, &mut alias) else {
+    let Some(alias_len) = build_device_binding_alias(service, binding, &mut out.alias) else {
         return SqdcStatus::InvalidArgument;
     };
-    let alias = &alias[..alias_len];
-    out.alias[..alias.len()].copy_from_slice(alias);
-    out.alias_len = alias.len();
+    out.alias_len = alias_len;
     out.resource[..resource.len()].copy_from_slice(resource);
     out.resource_len = resource.len();
 
@@ -3699,7 +3691,8 @@ fn plan_device_binding_bytes(
             return SqdcStatus::InvalidArgument;
         };
         out.kind = SqdcDeviceBindingResourceKind::InlineGpio;
-        let status = build_inline_gpio_config(alias, pin_name, out_inline_config);
+        let status =
+            build_inline_gpio_config(&out.alias[..out.alias_len], pin_name, out_inline_config);
         if status != SqdcStatus::Ok {
             *out = SqdcDeviceBindingPlan::default();
             *out_inline_config = SqdcConfig::default();
@@ -3717,8 +3710,13 @@ fn plan_device_binding_bytes(
             return SqdcStatus::InvalidArgument;
         };
         out.kind = SqdcDeviceBindingResourceKind::InlineGpioButton;
-        let status =
-            build_inline_gpio_button_config(alias, pin_name, event, active_low, out_inline_config);
+        let status = build_inline_gpio_button_config(
+            &out.alias[..out.alias_len],
+            pin_name,
+            event,
+            active_low,
+            out_inline_config,
+        );
         if status != SqdcStatus::Ok {
             *out = SqdcDeviceBindingPlan::default();
             *out_inline_config = SqdcConfig::default();

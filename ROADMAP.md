@@ -70,16 +70,19 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 - Bound every hardware-test serial command, not only the outer polling loop.
   During GPIO9 input-button testing, `scripts/c3-supermini-test-input-button.sh`
   launched successfully but hung inside a `device output` command before its
-  `wait_for_contains` retry loop could time out. Move hardware scripts to a
-  shared helper that wraps each `squidc device/app` command with a command-level
-  timeout and captures enough context to diagnose protocol stalls without
-  wedging the whole script.
+  `wait_for_contains` retry loop could time out. The input-button script now has
+  command-level and overall wait timeouts; move the remaining hardware scripts
+  to a shared helper that wraps each `squidc device/app` command with a
+  command-level timeout and captures enough context to diagnose protocol stalls
+  without wedging the whole script.
 - Reduce main/protocol stack pressure from top-level device binding planning.
-  GPIO-button testing showed device binding metadata planning can use almost
-  10 KiB of main stack on ESP32-C3, so the current firmware raises
-  `CONFIG_MAIN_STACK_SIZE` to 12288. Move that work to a slimmer parser path,
-  caller-owned scratch, or the VM worker path so the main serial loop can return
-  to a smaller measured budget.
+  GPIO-button testing showed device binding metadata planning could use almost
+  10 KiB of main stack on ESP32-C3. Caller-owned FFI planning output and runtime
+  transfer-scratch reuse reduced the measured GPIO-button launch/dispatch path
+  to `protocol_thread_stack_used_bytes=8948`, but that still exceeds the prior
+  8 KiB budget, so the current firmware keeps `CONFIG_MAIN_STACK_SIZE=12288`.
+  Continue moving parser, metadata, and launch work to slimmer paths or the VM
+  worker so the main serial loop can return to a smaller measured budget.
 - Convert blocking Wi-Fi VM callbacks to nonblocking runtime progress. Current
   Zephyr `wifi.connect`, `wifi.disconnect`, and `wifi.scan` callbacks wait on
   semaphores for up to 15s, 5s, and 8s respectively. They run in the VM worker

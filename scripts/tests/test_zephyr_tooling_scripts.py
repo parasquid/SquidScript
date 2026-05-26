@@ -544,6 +544,22 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("SqdcDeviceBindingPlan device_binding_plan;", runtime_body)
         self.assertNotIn("SqvmDeviceConfigResult device_config_result;", runtime_body)
         self.assertIn("SqdcConfig device_config_draft;", runtime_body)
+        runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        apply_body = runtime_c[
+            runtime_c.index("static int sq_vm_runtime_apply_device_bindings")
+            : runtime_c.index(
+                "static int32_t runtime_device_config_load",
+                runtime_c.index("static int sq_vm_runtime_apply_device_bindings"),
+            )
+        ]
+        self.assertIn("struct sq_vm_runtime_binding_scratch", runtime_c)
+        self.assertIn("sizeof(*scratch) <= sizeof(runtime->transfer.init_scratch)", apply_body)
+        self.assertIn(
+            "struct sq_vm_runtime_binding_scratch *scratch =",
+            apply_body,
+        )
+        self.assertNotIn("SqvmDeviceBinding binding_storage", apply_body)
+        self.assertNotIn("SqdcDeviceBindingPlan plan_storage", apply_body)
 
     def test_runtime_keeps_bounded_diagnostic_history(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
@@ -944,6 +960,10 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("Press and release the ESP32-C3 Super Mini BOOT/GPIO9 button now.", script)
         self.assertIn("output=count 1", script)
         self.assertIn("assert_file_empty_command", script)
+        self.assertIn('COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-12}"', script)
+        self.assertIn('WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-60}"', script)
+        self.assertIn("while (( SECONDS < deadline )); do", script)
+        self.assertIn('timeout "${COMMAND_TIMEOUT_SECONDS}s" "$@"', script)
         self.assertIn("c3-supermini-test-input-button.sh", suite)
         self.assertLess(
             suite.index("c3-supermini-test-inline-gpio10-binding.sh"),
@@ -1000,6 +1020,16 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("test_sqdc_ffi_plans_device_binding_resources", ztest)
         self.assertNotIn("inline_config;", ffi_h)
         self.assertNotIn("sq_vm_runtime_apply_inline_gpio_indicator_binding", runtime)
+        ffi_wrapper = ffi_rs[
+            ffi_rs.index("pub unsafe extern \"C\" fn sqdc_plan_device_binding")
+            : ffi_rs.index("#[repr(C)]\npub struct SqvmContext")
+        ]
+        planner = ffi_rs[
+            ffi_rs.index("fn plan_device_binding_bytes")
+            : ffi_rs.index("fn valid_device_binding_name")
+        ]
+        self.assertNotIn("let mut plan = SqdcDeviceBindingPlan::default();", ffi_wrapper)
+        self.assertNotIn("let mut alias = [0u8; SQVM_DEVICE_BINDING_NAME_CAP];", planner)
 
     def test_breathe_check_is_explicit_visible_indicator_script(self):
         script = self.read("scripts/c3-supermini-test-breathe.sh")

@@ -142,12 +142,12 @@ app lifecycle checks in the full ESP32-C3 Super Mini suite. It records
 `device resources` output under `target/hardware-tests/stack-usage/` and
 verifies `protocol_thread_stack_*` and `vm_worker_stack_*` metrics are
 internally consistent. The current firmware keeps the protocol/main stack budget
-at 8 KiB and the VM worker stack budget at 20 KiB based on measured high-water
-data. A targeted inline
-device-binding launch check measured `protocol_thread_stack_used_bytes=7604`
-of 8192 and `vm_worker_stack_used_bytes=17056` before the worker stack moved to
-20480, after launch-time binding scratch storage moved out of the protocol
-stack. After flattening
+at 12 KiB and the VM worker stack budget at 20 KiB based on measured high-water
+data. GPIO-button device-binding launch coverage measured protocol/main stack
+use above the prior 8 KiB budget before launch-time binding planning started
+using caller-owned FFI outputs and the runtime transfer scratch instead of
+additional stack locals. Remeasure before lowering that budget again. After
+flattening
 the resumable screen-render interpreter path, a headless draw-log isolation run
 showed that `screen.open(...)` into a screen with only
 `service.display.clear("gray0")` uses `vm_worker_stack_used_bytes=17056` of

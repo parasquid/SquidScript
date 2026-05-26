@@ -53,6 +53,11 @@ static const uint8_t indicator_breathe_duties[SQ_VM_RUNTIME_INDICATOR_BREATHE_ST
 	35, 31, 26, 22, 18, 15, 11, 8,  6,  4,  2,	1,  0,  0,
 };
 
+struct sq_vm_runtime_binding_scratch {
+	SqvmDeviceBinding binding;
+	SqdcDeviceBindingPlan plan;
+};
+
 #if IS_ENABLED(CONFIG_PWM) && DT_NODE_HAS_PROP(DT_ALIAS(indicator0), pwms)
 static const struct pwm_dt_spec indicator_pwm = PWM_DT_SPEC_GET(DT_ALIAS(indicator0));
 #define SQ_VM_RUNTIME_HAS_INDICATOR_PWM 1
@@ -1918,16 +1923,18 @@ static int sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *runtime)
 	}
 
 	for (size_t index = 0; index < count; index++) {
-		SqvmDeviceBinding binding_storage = {0};
-		SqdcDeviceBindingPlan plan_storage = {0};
 		SqvmDeviceConfigResult result_storage = {0};
-		SqvmDeviceBinding *binding = &binding_storage;
-		SqdcDeviceBindingPlan *plan = &plan_storage;
+		struct sq_vm_runtime_binding_scratch *scratch =
+			(struct sq_vm_runtime_binding_scratch *)runtime->transfer.init_scratch;
+		BUILD_ASSERT(sizeof(*scratch) <= sizeof(runtime->transfer.init_scratch));
+		SqvmDeviceBinding *binding = &scratch->binding;
+		SqdcDeviceBindingPlan *plan = &scratch->plan;
 		SqvmDeviceConfigResult *result = &result_storage;
 		size_t resource_len;
 		size_t service_len;
 		size_t binding_len;
 
+		memset(scratch, 0, sizeof(*scratch));
 		status = sqvm_device_binding_read_from_reader(runtime, runtime_read_exact_at,
 							      runtime->transfer.init_scratch,
 							      sizeof(runtime->transfer.init_scratch),
@@ -1965,20 +1972,28 @@ static int sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *runtime)
 			}
 			break;
 		case SQDC_DEVICE_BINDING_RESOURCE_PACKAGE_SQDEVICE:
+		{
+			uint8_t alias[SQVM_DEVICE_BINDING_NAME_CAP];
+			size_t alias_len = plan->alias_len;
+			if (alias_len == 0 || alias_len >= sizeof(alias)) {
+				return -EINVAL;
+			}
+			memcpy(alias, plan->alias, alias_len);
 			if (sq_vm_runtime_device_config_load_resource(runtime, plan->resource,
 								      plan->resource_len, result) != 0 ||
 			    !result->ok) {
 				return -EINVAL;
 			}
 			memset(result, 0, sizeof(*result));
-			if (sq_vm_runtime_device_config_rebind(runtime, plan->alias,
-							       plan->alias_len, result) != 0) {
+			if (sq_vm_runtime_device_config_rebind(runtime, alias, alias_len, result) !=
+			    0) {
 				return -EINVAL;
 			}
 			if (!result->ok) {
 				return runtime_device_config_result_errno(result);
 			}
 			break;
+		}
 		default:
 			return -ENOTSUP;
 		}

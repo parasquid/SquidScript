@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK_DIR="${ROOT}/target/hardware-tests/input-button"
 INPUT_BUTTON_APP="${ROOT}/tests/hardware/c3-supermini/input-button-summary/main.squid"
+COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-12}"
+WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-60}"
 
 mkdir -p "${WORK_DIR}"
 
@@ -12,7 +14,7 @@ run_capture() {
   shift
   local out="${WORK_DIR}/${name}.out"
   printf 'hardware input button: %s\n' "$*" >&2
-  "$@" >"${out}" 2>&1
+  timeout "${COMMAND_TIMEOUT_SECONDS}s" "$@" >"${out}" 2>&1
   printf '%s\n' "${out}"
 }
 
@@ -43,10 +45,11 @@ wait_for_contains() {
   local command_name="$3"
   shift 3
   local out="${WORK_DIR}/${label}.out"
+  local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS))
 
-  for _ in $(seq 1 200); do
-    "$@" >"${out}" 2>&1
-    if grep -Fq "${expected}" "${out}"; then
+  while (( SECONDS < deadline )); do
+    if timeout "${COMMAND_TIMEOUT_SECONDS}s" "$@" >"${out}" 2>&1 &&
+      grep -Fq "${expected}" "${out}"; then
       printf '%s\n' "${out}"
       return 0
     fi
