@@ -65,7 +65,8 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   install, launch, and dispatch snapshots. Moving app-start device-binding
   setup to the VM worker flattened the GPIO9 input summary protocol/main stack
   high-water at 2476 bytes while the VM worker peaked at 17296 bytes with
-  3184 bytes free. Extend the harness across storage and network workloads, add
+  2160 bytes free after reducing the worker stack to 19 KiB. Extend the harness
+  across storage and network workloads, add
   reset-per-scenario or equivalent high-water isolation for stack attribution,
   explain peaks and outliers, validate whether the reduced 8 KiB protocol/main
   stack can be reduced further after full-suite coverage, and split remaining

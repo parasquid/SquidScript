@@ -142,7 +142,7 @@ app lifecycle checks in the full ESP32-C3 Super Mini suite. It records
 `device resources` output under `target/hardware-tests/stack-usage/` and
 verifies `protocol_thread_stack_*` and `vm_worker_stack_*` metrics are
 internally consistent. The current firmware keeps the protocol/main stack budget
-at 8 KiB and the VM worker stack budget at 20 KiB based on measured high-water
+at 8 KiB and the VM worker stack budget at 19 KiB based on measured high-water
 data. The harness uses a command-level timeout for its `device resources`
 request so serial stalls fail with captured output instead of hanging the full
 suite. GPIO-button device-binding launch coverage previously measured
@@ -156,9 +156,11 @@ draw-log isolation run showed that `screen.open(...)` into a screen with only
 `service.display.clear("gray0")` uses `vm_worker_stack_used_bytes=17056` of
 the prior 24576-byte budget, down from the previous 24020-byte display-only
 spike. After moving
-function calls onto the same VM-owned continuation stack, current full suite
-coverage measured `vm_worker_stack_used_bytes=17620` before lowering the worker
-stack to 20480. Remeasure before lowering that budget again.
+function calls onto the same VM-owned continuation stack, full suite coverage
+measured `vm_worker_stack_used_bytes=17620` before lowering the worker stack to
+20480. Targeted GPIO9 input summary coverage after app-start binding setup moved
+to the VM worker measured `vm_worker_stack_used_bytes=17296`; the worker stack
+is now 19456 bytes. Remeasure before lowering that budget again.
 
 `scripts/c3-supermini-measure-ram-workloads.sh` is the targeted RAM and stack
 attribution harness. It formats app storage, installs the GPIO9 input summary
@@ -175,7 +177,7 @@ every workload used the same stack depth. It is separate from the full hardware
 suite because it intentionally resets app storage. A representative GPIO9 input
 summary run after moving app-start binding setup to the VM worker stack measured
 the protocol/main stack flat at 2476 bytes, while the VM worker stack rose from
-264 bytes to 17296 bytes during launch and kept 3184 bytes free; the serial
+264 bytes to 17296 bytes during launch and kept 2160 bytes free; the serial
 `SELECT` dispatch did not increase those high-water marks.
 
 `scripts/c3-supermini-test-system-resources.sh` runs after lifecycle coverage
