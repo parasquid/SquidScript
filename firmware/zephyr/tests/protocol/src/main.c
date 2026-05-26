@@ -3542,6 +3542,34 @@ ZTEST(squidscript_protocol, test_sqdc_ffi_plans_device_binding_resources)
 	zassert_mem_equal(plan.alias, "display.status", strlen("display.status"));
 	zassert_equal(inline_config.count, 0);
 
+	memset(&plan, 0, sizeof(plan));
+	memset(&inline_config, 0, sizeof(inline_config));
+	zassert_equal(sqdc_plan_device_binding((const uint8_t *)"input", strlen("input"),
+					       (const uint8_t *)"default", strlen("default"),
+					       (const uint8_t *)"gpio-button:GPIO9:key.SELECT:activeLow",
+					       strlen("gpio-button:GPIO9:key.SELECT:activeLow"),
+					       &plan, &inline_config),
+		      SQDC_STATUS_OK);
+	zassert_equal(plan.kind, SQDC_DEVICE_BINDING_RESOURCE_INLINE_GPIO_BUTTON);
+	zassert_equal(plan.alias_len, strlen("input.default"));
+	zassert_mem_equal(plan.alias, "input.default", strlen("input.default"));
+	zassert_equal(inline_config.count, 5);
+	zassert_equal(inline_config.records[2].value.kind, SQDC_VALUE_STRING);
+	zassert_mem_equal(inline_config.records[2].value.string, "GPIO9", strlen("GPIO9"));
+	zassert_equal(inline_config.records[3].value.kind, SQDC_VALUE_STRING);
+	zassert_mem_equal(inline_config.records[3].value.string, "key.SELECT", strlen("key.SELECT"));
+	zassert_true(inline_config.records[4].value.bool_value);
+	zassert_true((SQ_TARGET_GPIO_CAPABLE_MASK & (1ULL << 9)) != 0ULL);
+
+	memset(&plan, 0, sizeof(plan));
+	memset(&inline_config, 0, sizeof(inline_config));
+	zassert_equal(sqdc_plan_device_binding((const uint8_t *)"input", strlen("input"),
+					       (const uint8_t *)"default", strlen("default"),
+					       (const uint8_t *)"gpio-button:GPIO9:key.BOOT:activeLow",
+					       strlen("gpio-button:GPIO9:key.BOOT:activeLow"),
+					       &plan, &inline_config),
+		      SQDC_STATUS_INVALID_ARGUMENT);
+
 	zassert_equal(sqdc_plan_device_binding((const uint8_t *)"sensor", strlen("sensor"),
 					       (const uint8_t *)"default", strlen("default"),
 					       (const uint8_t *)"device/sensor.sqdevice",

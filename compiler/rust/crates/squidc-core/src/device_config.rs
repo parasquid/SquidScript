@@ -160,7 +160,9 @@ pub fn is_safe_sqdevice_path(path: &str) -> bool {
 }
 
 pub fn is_safe_device_binding_resource(path: &str) -> bool {
-    is_safe_sqdevice_path(path) || is_safe_gpio_binding_resource(path)
+    is_safe_sqdevice_path(path)
+        || is_safe_gpio_binding_resource(path)
+        || is_safe_gpio_button_binding_resource(path)
 }
 
 fn is_safe_gpio_binding_resource(path: &str) -> bool {
@@ -168,6 +170,33 @@ fn is_safe_gpio_binding_resource(path: &str) -> bool {
         return false;
     };
     !pin.is_empty() && pin.len() <= 2 && pin.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn is_safe_gpio_button_binding_resource(path: &str) -> bool {
+    let Some(rest) = path.strip_prefix("gpio-button:GPIO") else {
+        return false;
+    };
+    let Some((pin, rest)) = rest.split_once(':') else {
+        return false;
+    };
+    let Some((event, polarity)) = rest.split_once(':') else {
+        return false;
+    };
+    !pin.is_empty()
+        && pin.len() <= 2
+        && pin.bytes().all(|byte| byte.is_ascii_digit())
+        && is_valid_key_event(event)
+        && matches!(polarity, "activeLow" | "activeHigh")
+}
+
+fn is_valid_key_event(event: &str) -> bool {
+    let Some(key) = event.strip_prefix("key.") else {
+        return false;
+    };
+    matches!(
+        key,
+        "UP" | "DOWN" | "LEFT" | "RIGHT" | "SELECT" | "BACK" | "MENU" | "HOME" | "POWER"
+    )
 }
 
 fn is_ignored_line(line: &str) -> bool {
@@ -314,9 +343,21 @@ none null
     fn validates_inline_gpio_binding_resources() {
         assert!(is_safe_device_binding_resource("gpio:GPIO8"));
         assert!(is_safe_device_binding_resource("gpio:GPIO10"));
+        assert!(is_safe_device_binding_resource(
+            "gpio-button:GPIO9:key.SELECT:activeLow"
+        ));
         assert!(!is_safe_device_binding_resource("gpio:"));
         assert!(!is_safe_device_binding_resource("gpio:PIN8"));
         assert!(!is_safe_device_binding_resource("gpio:GPIO100"));
         assert!(!is_safe_device_binding_resource("gpio:GPIO8/../x"));
+        assert!(!is_safe_device_binding_resource(
+            "gpio-button:GPIO9:key.BOOT:activeLow"
+        ));
+        assert!(!is_safe_device_binding_resource(
+            "gpio-button:GPIO9:SELECT:activeLow"
+        ));
+        assert!(!is_safe_device_binding_resource(
+            "gpio-button:GPIO9:key.SELECT:inverted"
+        ));
     }
 }

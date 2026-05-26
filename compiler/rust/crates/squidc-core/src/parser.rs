@@ -356,7 +356,7 @@ impl Parser<'_> {
             if !device_config::is_safe_device_binding_resource(&resource) {
                 self.diagnostics.push(error(
                     "E_DEVICE_PATH",
-                    "device binding must use a safe package-relative .sqdevice path or gpio:GPIO pin",
+                    "device binding must use a safe package-relative .sqdevice path, gpio:GPIO pin, or gpio-button binding",
                     start,
                     self.previous_end().unwrap_or(start),
                 ));

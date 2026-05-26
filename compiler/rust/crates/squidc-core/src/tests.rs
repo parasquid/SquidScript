@@ -788,6 +788,7 @@ device {
   indicator { use "device/indicator.sqdevice" }
   indicator "external" { use "gpio:GPIO10" }
   display "status" { use "device/status-display.sqdevice" }
+  input { use "gpio-button:GPIO9:key.SELECT:activeLow" }
 }
 screen("main") {
   service.display.clear("gray0")
@@ -816,6 +817,11 @@ screen("main") {
                 service: "display".to_string(),
                 binding: "status".to_string(),
                 resource: "device/status-display.sqdevice".to_string(),
+            },
+            IrDeviceBinding {
+                service: "input".to_string(),
+                binding: "default".to_string(),
+                resource: "gpio-button:GPIO9:key.SELECT:activeLow".to_string(),
             },
         ]
     );

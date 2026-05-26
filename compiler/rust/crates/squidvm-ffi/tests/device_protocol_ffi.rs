@@ -244,6 +244,50 @@ fn ffi_plans_supported_device_binding_resources_without_c_state_machine_logic() 
         "device/status-display.sqdevice"
     );
     assert_eq!(display_inline_config.count, 0);
+
+    let mut input_plan = SqdcDeviceBindingPlan::default();
+    let mut input_inline_config = SqdcConfig::default();
+    let status = unsafe {
+        squidvm_ffi::sqdc_plan_device_binding(
+            b"input".as_ptr(),
+            b"input".len(),
+            b"default".as_ptr(),
+            b"default".len(),
+            b"gpio-button:GPIO9:key.SELECT:activeLow".as_ptr(),
+            b"gpio-button:GPIO9:key.SELECT:activeLow".len(),
+            &mut input_plan,
+            &mut input_inline_config,
+        )
+    };
+
+    assert_eq!(status, SqdcStatus::Ok);
+    assert_eq!(
+        input_plan.kind,
+        SqdcDeviceBindingResourceKind::InlineGpioButton
+    );
+    assert_eq!(
+        fixed_text(&input_plan.alias, input_plan.alias_len),
+        "input.default"
+    );
+    assert_eq!(
+        &sqdc_record(&input_inline_config, "pinName").value.string[..sqdc_record(
+            &input_inline_config,
+            "pinName"
+        )
+        .value
+        .string_len],
+        b"GPIO9"
+    );
+    assert_eq!(
+        &sqdc_record(&input_inline_config, "event").value.string
+            [..sqdc_record(&input_inline_config, "event").value.string_len],
+        b"key.SELECT"
+    );
+    assert!(
+        sqdc_record(&input_inline_config, "activeLow")
+            .value
+            .bool_value
+    );
 }
 
 #[test]
@@ -272,6 +316,20 @@ fn ffi_rejects_unsupported_device_bindings_and_bad_inline_gpio_resources() {
             b"default".len(),
             b"gpio:GPIO100".as_ptr(),
             b"gpio:GPIO100".len(),
+            &mut plan,
+            &mut inline_config,
+        )
+    };
+    assert_eq!(status, SqdcStatus::InvalidArgument);
+
+    let status = unsafe {
+        squidvm_ffi::sqdc_plan_device_binding(
+            b"input".as_ptr(),
+            b"input".len(),
+            b"default".as_ptr(),
+            b"default".len(),
+            b"gpio-button:GPIO9:key.BOOT:activeLow".as_ptr(),
+            b"gpio-button:GPIO9:key.BOOT:activeLow".len(),
             &mut plan,
             &mut inline_config,
         )

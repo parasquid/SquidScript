@@ -36,10 +36,11 @@ for compiler, SQBC tooling, and VM semantics.
   persists binary SQDC to firmware-owned storage. Saved global SQDC defaults
   are loaded during app-start binding initialization before app-local
   `device {}` bindings. Top-level app `device {}` binding classification,
-  package display binding planning, and inline GPIO SQDC normalization now live
-  in Rust FFI; keep future binding planners on that side of the boundary.
-  Remaining work is to generalize binding validation/application for additional
-  services beyond the current indicator and display paths.
+  package display binding planning, inline GPIO indicator SQDC normalization,
+  and inline GPIO-button input metadata planning now live in Rust FFI; keep
+  future binding planners on that side of the boundary. Remaining work is to
+  activate GPIO-button input bindings in Zephyr and prove `key.SELECT` dispatch
+  from the ESP32-C3 BOOT/GPIO9 button when physical button testing is possible.
 - Decide service priority and target support for currently spec-recognized but
   not SQBC-backed APIs: `httpServer.*`, `bleTransfer.*`, and any remaining
   `content.*` APIs beyond the current file pick/read family. Defer

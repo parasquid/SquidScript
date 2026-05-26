@@ -1050,6 +1050,7 @@ device {
   serviceName { use "path.sqdevice" }
   serviceName "bindingName" { use "path.sqdevice" }
   indicator { use "gpio:GPIO8" }
+  input { use "gpio-button:GPIO9:key.SELECT:activeLow" }
 }
 ```
 
@@ -1064,11 +1065,17 @@ Rules:
   `.sqdevice` and be safe: no absolute paths, empty segments, parent traversal
   with `..`, backslash separators, or installer/system roots such as `sd/...`
   or `system/...`.
-- An inline GPIO target has the form `gpio:GPIO<n>`. Current compiler
+- An inline indicator GPIO target has the form `gpio:GPIO<n>`. Current compiler
   validation accepts only the literal `GPIO` prefix plus one or two decimal
-  digits; target-specific availability and pin safety remain runtime/target
-  responsibilities. Firmware must reject inline GPIO bindings whose pin is not
-  present as GPIO-capable in the selected target metadata.
+  digits.
+- An inline GPIO-button input target has the form
+  `gpio-button:GPIO<n>:key.<KEY>:activeLow` or
+  `gpio-button:GPIO<n>:key.<KEY>:activeHigh`. `<KEY>` must be one of the
+  standard logical short-key names: `UP`, `DOWN`, `LEFT`, `RIGHT`, `SELECT`,
+  `BACK`, `MENU`, `HOME`, or `POWER`.
+- Target-specific pin availability and pin safety remain runtime/target
+  responsibilities. Firmware must reject inline GPIO and GPIO-button bindings
+  whose pin is not present as GPIO-capable in the selected target metadata.
 
 Runtime applies top-level device bindings before `event.on("app.start")`.
 Failure to load, validate, or initialize a binding stops app launch with a
@@ -1111,6 +1118,11 @@ Input bindings:
 - Multiple input bindings may feed the same logical key event stream.
 - Binding-specific electrical details remain in SQDEVICE/SQDC and firmware
   runtime code, not in compiler core.
+- Inline GPIO-button input bindings normalize into SQDC metadata with
+  `mode = "gpio-button"`, a `pinName`, an `event` such as `key.SELECT`, and an
+  `activeLow` polarity flag. They are metadata/planner-supported, but physical
+  GPIO button polling and hardware proof are deferred until a physical button
+  can be tested.
 
 ---
 

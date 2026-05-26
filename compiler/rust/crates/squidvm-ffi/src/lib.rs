@@ -152,6 +152,7 @@ pub enum SqdcDeviceBindingResourceKind {
     Unsupported = 0,
     PackageSqdevice = 1,
     InlineGpio = 2,
+    InlineGpioButton = 3,
 }
 
 #[repr(C)]
@@ -3706,6 +3707,25 @@ fn plan_device_binding_bytes(
         return status;
     }
 
+    if let Some((pin_name, event, active_low)) = parse_inline_gpio_button_resource(resource) {
+        if service != b"input" {
+            *out = SqdcDeviceBindingPlan::default();
+            return SqdcStatus::InvalidArgument;
+        }
+        let Some(out_inline_config) = out_inline_config else {
+            *out = SqdcDeviceBindingPlan::default();
+            return SqdcStatus::InvalidArgument;
+        };
+        out.kind = SqdcDeviceBindingResourceKind::InlineGpioButton;
+        let status =
+            build_inline_gpio_button_config(alias, pin_name, event, active_low, out_inline_config);
+        if status != SqdcStatus::Ok {
+            *out = SqdcDeviceBindingPlan::default();
+            *out_inline_config = SqdcConfig::default();
+        }
+        return status;
+    }
+
     if is_safe_sqdevice_path_bytes(resource) {
         if !supports_package_device_binding(service, binding) {
             *out = SqdcDeviceBindingPlan::default();
@@ -3759,6 +3779,40 @@ fn parse_inline_gpio_resource(resource: &[u8]) -> Option<&[u8]> {
     Some(pin_name)
 }
 
+fn parse_inline_gpio_button_resource(resource: &[u8]) -> Option<(&[u8], &[u8], bool)> {
+    let rest = resource.strip_prefix(b"gpio-button:")?;
+    let (pin_name, rest) = split_once_byte(rest, b':')?;
+    let (event, polarity) = split_once_byte(rest, b':')?;
+    let digits = pin_name.strip_prefix(b"GPIO")?;
+    if digits.is_empty() || digits.len() > 2 || !digits.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    if !valid_logical_key_event(event) {
+        return None;
+    }
+    let active_low = match polarity {
+        b"activeLow" => true,
+        b"activeHigh" => false,
+        _ => return None,
+    };
+    Some((pin_name, event, active_low))
+}
+
+fn split_once_byte(input: &[u8], delimiter: u8) -> Option<(&[u8], &[u8])> {
+    let index = input.iter().position(|byte| *byte == delimiter)?;
+    Some((&input[..index], &input[index + 1..]))
+}
+
+fn valid_logical_key_event(event: &[u8]) -> bool {
+    let Some(key) = event.strip_prefix(b"key.") else {
+        return false;
+    };
+    matches!(
+        key,
+        b"UP" | b"DOWN" | b"LEFT" | b"RIGHT" | b"SELECT" | b"BACK" | b"MENU" | b"HOME" | b"POWER"
+    )
+}
+
 fn build_inline_gpio_config(alias: &[u8], pin_name: &[u8], out: &mut SqdcConfig) -> SqdcStatus {
     *out = SqdcConfig::default();
     for (key, value) in [
@@ -3781,6 +3835,40 @@ fn build_inline_gpio_config(alias: &[u8], pin_name: &[u8], out: &mut SqdcConfig)
         SqdcValue {
             kind: SqdcValueKind::Bool,
             bool_value: false,
+            ..SqdcValue::default()
+        },
+    )
+}
+
+fn build_inline_gpio_button_config(
+    alias: &[u8],
+    pin_name: &[u8],
+    event: &[u8],
+    active_low: bool,
+    out: &mut SqdcConfig,
+) -> SqdcStatus {
+    *out = SqdcConfig::default();
+    for (key, value) in [
+        (b"service".as_slice(), alias),
+        (b"mode".as_slice(), b"gpio-button".as_slice()),
+        (b"pinName".as_slice(), pin_name),
+        (b"event".as_slice(), event),
+    ] {
+        let value = match sqdc_string_value(value) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let status = config_set_value(out, key, value);
+        if status != SqdcStatus::Ok {
+            return status;
+        }
+    }
+    config_set_value(
+        out,
+        b"activeLow",
+        SqdcValue {
+            kind: SqdcValueKind::Bool,
+            bool_value: active_low,
             ..SqdcValue::default()
         },
     )
