@@ -62,10 +62,14 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   and service-specific memory use across boot, app install, app launch, input
   dispatch, storage, and network workloads. The targeted
   `scripts/c3-supermini-measure-ram-workloads.sh` harness now records format,
-  install, launch, and dispatch snapshots; extend it across storage and network
-  workloads, add reset-per-scenario or equivalent high-water isolation for stack
-  attribution, explain peaks and outliers, then split reductions into concrete
-  implementation tasks.
+  install, launch, and dispatch snapshots. Moving app-start device-binding
+  setup to the VM worker flattened the GPIO9 input summary protocol/main stack
+  high-water at 2476 bytes while the VM worker peaked at 17296 bytes with
+  3184 bytes free. Extend the harness across storage and network workloads, add
+  reset-per-scenario or equivalent high-water isolation for stack attribution,
+  explain peaks and outliers, validate whether the configured 12 KiB
+  protocol/main stack can be reduced after full-suite coverage, and split
+  remaining reductions into concrete implementation tasks.
 - Improve network heap attribution before expanding Wi-Fi scope. Current AP
   start/stop hardware coverage drives `ram_heap_max_allocated_bytes` close to
   the 36 KiB system heap budget; add clearer per-workload heap reset or
@@ -79,17 +83,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   to a shared helper that wraps each `squidc device/app` command with a
   command-level timeout and captures enough context to diagnose protocol stalls
   without wedging the whole script.
-- Reduce main/protocol stack pressure from top-level device binding planning.
-  GPIO-button testing showed device binding metadata planning could use almost
-  10 KiB of main stack on ESP32-C3. Caller-owned FFI planning output and runtime
-  transfer-scratch reuse reduced the measured GPIO-button launch/dispatch path
-  to `protocol_thread_stack_used_bytes=8852`, but that still exceeds the prior
-  8 KiB budget, so the current firmware keeps `CONFIG_MAIN_STACK_SIZE=12288`.
-  Workload attribution now shows the protocol/main peak is introduced by app
-  launch rather than format, install, resource diagnostics, or serial `SELECT`;
-  continue moving launch-time parser, metadata, and binding work to slimmer
-  paths or the VM worker so the main serial loop can return to a smaller
-  measured budget.
 - Convert blocking Wi-Fi VM callbacks to nonblocking runtime progress. Current
   Zephyr `wifi.connect`, `wifi.disconnect`, and `wifi.scan` callbacks wait on
   semaphores for up to 15s, 5s, and 8s respectively. They run in the VM worker

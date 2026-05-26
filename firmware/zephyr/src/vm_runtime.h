@@ -103,6 +103,9 @@ struct sq_vm_runtime {
 	const char *store_mount_point;
 	const struct sq_app_registry *registry;
 	struct sq_vm_storage_backend job_backend;
+	bool start_apply_bindings;
+	struct k_sem *start_setup_done;
+	int start_setup_result;
 	char event[SQ_VM_RUNTIME_EVENT_LEN];
 	enum sq_vm_runtime_status status;
 	int result_code;

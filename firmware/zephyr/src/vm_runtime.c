@@ -2001,6 +2001,25 @@ static int sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *runtime)
 	return 0;
 }
 
+static int sq_vm_runtime_prepare_app_start(struct sq_vm_runtime *runtime)
+{
+	int result;
+
+	if (runtime == NULL) {
+		return -EINVAL;
+	}
+	runtime_clear_active_bindings(runtime);
+	result = sq_vm_runtime_apply_target_default_indicator_binding(runtime);
+	if (result != 0) {
+		return result;
+	}
+	result = sq_vm_runtime_apply_saved_device_config(runtime);
+	if (result != 0) {
+		return result;
+	}
+	return sq_vm_runtime_apply_device_bindings(runtime);
+}
+
 static int32_t runtime_device_config_load(void *user_data, const uint8_t *source,
 					  size_t source_len, SqvmDeviceConfigResult *out)
 {
@@ -2131,10 +2150,36 @@ static void clear_dispatch_transfer(struct sq_vm_runtime *runtime)
 	runtime->backend = NULL;
 }
 
+static void runtime_signal_start_setup(struct sq_vm_runtime *runtime, int result)
+{
+	struct k_sem *done = runtime->start_setup_done;
+
+	runtime->start_setup_result = result;
+	runtime->start_setup_done = NULL;
+	if (done != NULL) {
+		k_sem_give(done);
+	}
+}
+
 static void runtime_work_handler(struct k_work *work)
 {
 	struct sq_vm_runtime *runtime = CONTAINER_OF(work, struct sq_vm_runtime, work);
-	int result = sq_vm_runtime_dispatch(runtime, &runtime->job_backend, runtime->event);
+	int result = 0;
+
+	if (runtime->start_apply_bindings) {
+		result = sq_vm_runtime_prepare_app_start(runtime);
+		runtime->start_apply_bindings = false;
+	}
+	if (result != 0) {
+		runtime->result_code = result;
+		runtime->dispatch_exited = false;
+		runtime->status = SQ_VM_RUNTIME_IDLE;
+		runtime_signal_start_setup(runtime, result);
+		return;
+	}
+	runtime_signal_start_setup(runtime, result);
+
+	result = sq_vm_runtime_dispatch(runtime, &runtime->job_backend, runtime->event);
 
 	runtime->result_code = result;
 	runtime->dispatch_exited = result == 0 && runtime->result.exited;
@@ -2193,6 +2238,9 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	memset(runtime->current_app, 0, sizeof(runtime->current_app));
 	memset(runtime->pending_launch_app, 0, sizeof(runtime->pending_launch_app));
 	runtime->pending_launch_active = false;
+	runtime->start_apply_bindings = false;
+	runtime->start_setup_done = NULL;
+	runtime->start_setup_result = 0;
 	memset(runtime->pending_arm_app, 0, sizeof(runtime->pending_arm_app));
 	runtime->pending_arm_active = false;
 	runtime->arm_registration_active = false;
@@ -2415,7 +2463,9 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 int sq_vm_runtime_start(struct sq_vm_runtime *runtime,
 			const struct sq_vm_storage_backend *backend, const char *event)
 {
+	struct k_sem setup_done;
 	size_t event_len;
+	bool wait_for_setup;
 	int result;
 
 	if (runtime == NULL || backend == NULL || event == NULL) {
@@ -2432,26 +2482,33 @@ int sq_vm_runtime_start(struct sq_vm_runtime *runtime,
 
 	runtime->job_backend = *backend;
 	runtime->backend = &runtime->job_backend;
-	if (strcmp(event, "app.start") == 0) {
-		runtime_clear_active_bindings(runtime);
-		result = sq_vm_runtime_apply_target_default_indicator_binding(runtime);
-		if (result != 0) {
-			return result;
-		}
-		result = sq_vm_runtime_apply_saved_device_config(runtime);
-		if (result != 0) {
-			return result;
-		}
-		result = sq_vm_runtime_apply_device_bindings(runtime);
-		if (result != 0) {
-			return result;
-		}
+	wait_for_setup = strcmp(event, "app.start") == 0;
+	runtime->start_apply_bindings = wait_for_setup;
+	runtime->start_setup_result = 0;
+	if (wait_for_setup) {
+		k_sem_init(&setup_done, 0, 1);
+		runtime->start_setup_done = &setup_done;
+	} else {
+		runtime->start_setup_done = NULL;
 	}
 	memcpy(runtime->event, event, event_len + 1);
 	runtime->result_code = 0;
 	runtime->dispatch_exited = false;
 	runtime->status = SQ_VM_RUNTIME_RUNNING;
-	k_work_submit_to_queue(&sq_vm_runtime_work_q, &runtime->work);
+	result = k_work_submit_to_queue(&sq_vm_runtime_work_q, &runtime->work);
+	if (result < 0) {
+		runtime->start_apply_bindings = false;
+		runtime->start_setup_done = NULL;
+		runtime->status = SQ_VM_RUNTIME_ERROR;
+		runtime->result_code = result;
+		return result;
+	}
+	if (wait_for_setup) {
+		k_sem_take(&setup_done, K_FOREVER);
+		if (runtime->start_setup_result != 0) {
+			return runtime->start_setup_result;
+		}
+	}
 	return 0;
 }
 

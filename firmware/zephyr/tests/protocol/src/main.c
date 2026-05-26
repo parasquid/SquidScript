@@ -3282,6 +3282,7 @@ ZTEST(squidscript_protocol, test_vm_runtime_rejects_unsupported_packaged_gpio_as
 	strncpy(runtime.current_app, "unsupported-gpio-binding-app", sizeof(runtime.current_app) - 1);
 
 	zassert_equal(sq_vm_runtime_start(&runtime, &backend, "app.start"), -ENOTSUP);
+	zassert_equal(runtime.status, SQ_VM_RUNTIME_IDLE);
 	zassert_true(runtime.indicator_binding_active);
 	zassert_equal(runtime.indicator_binding_pin, 8);
 	zassert_equal(runtime.output_count, 0);

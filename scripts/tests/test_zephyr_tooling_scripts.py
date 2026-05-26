@@ -566,6 +566,27 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("SqvmDeviceBinding binding_storage", apply_body)
         self.assertNotIn("SqdcDeviceBindingPlan plan_storage", apply_body)
 
+    def test_app_start_binding_setup_runs_on_worker_stack(self):
+        runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        start_body = runtime_c[
+            runtime_c.index("int sq_vm_runtime_start")
+            : runtime_c.index(
+                "int sq_vm_runtime_record_output",
+                runtime_c.index("int sq_vm_runtime_start"),
+            )
+        ]
+        work_body = runtime_c[
+            runtime_c.index("static void runtime_work_handler")
+            : runtime_c.index("void sq_vm_runtime_init", runtime_c.index("static void runtime_work_handler"))
+        ]
+
+        self.assertIn("sq_vm_runtime_prepare_app_start", runtime_c)
+        self.assertIn("sq_vm_runtime_prepare_app_start(runtime)", work_body)
+        self.assertIn("runtime->start_setup_done", start_body)
+        self.assertNotIn("sq_vm_runtime_apply_device_bindings(runtime)", start_body)
+        self.assertNotIn("sq_vm_runtime_apply_saved_device_config(runtime)", start_body)
+        self.assertNotIn("sq_vm_runtime_apply_target_default_indicator_binding(runtime)", start_body)
+
     def test_runtime_keeps_bounded_diagnostic_history(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
 
