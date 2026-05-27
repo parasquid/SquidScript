@@ -181,6 +181,10 @@ The VM worker callback keeps app-start binding preparation in an out-of-line
 helper, so steady event dispatch no longer carries that setup frame:
 `runtime_work_handler` now emits 16 bytes instead of 224 bytes, while
 `sq_vm_runtime_prepare_app_start` is attributed separately at 224 bytes.
+File-backed state and device-config reads detect oversized files with a
+one-byte overflow read instead of staging a `struct fs_dirent` for a size
+probe, so `fs_storage_load_state` now emits 48 bytes instead of 192 bytes and
+`runtime_device_config_read_file` now emits 32 bytes instead of 192 bytes.
 Protocol polling reuses runtime app-id/event scratch for lifecycle and armed
 timer transitions. App-arm trigger discovery uses a SQBC-only filesystem
 backend instead of a full app storage object with state paths, and trigger

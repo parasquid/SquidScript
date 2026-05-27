@@ -1774,6 +1774,28 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("sq_app_store_resource_path(mount_point, app_id, resource_path, path,", install_body)
         self.assertIn("write_file(path, bytes, len)", install_body)
 
+    def test_file_backed_state_and_config_reads_avoid_dirent_size_probe(self):
+        storage = self.read("firmware/zephyr/src/vm_fs_storage.c")
+        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+
+        storage_start = storage.index("static int read_optional_file")
+        storage_end = storage.index("static int write_file")
+        storage_body = storage[storage_start:storage_end]
+        self.assertIn("struct fs_file_t file;", storage_body)
+        self.assertNotIn("struct fs_dirent entry;", storage_body)
+        self.assertNotIn("fs_stat(path, &entry)", storage_body)
+        self.assertIn("uint8_t overflow;", storage_body)
+        self.assertIn("fs_read(&file, &overflow, sizeof(overflow))", storage_body)
+
+        runtime_start = runtime.index("static int runtime_device_config_read_file")
+        runtime_end = runtime.index("static int runtime_device_config_write_file")
+        runtime_body = runtime[runtime_start:runtime_end]
+        self.assertIn("struct fs_file_t file;", runtime_body)
+        self.assertNotIn("struct fs_dirent entry;", runtime_body)
+        self.assertNotIn("fs_stat(path, &entry)", runtime_body)
+        self.assertIn("uint8_t overflow;", runtime_body)
+        self.assertIn("fs_read(&file, &overflow, sizeof(overflow))", runtime_body)
+
     def test_app_install_paths_reuse_scratch_and_unlink_without_stat_probe(self):
         app_store = self.read("firmware/zephyr/src/app_store.c")
 

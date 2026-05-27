@@ -1326,37 +1326,37 @@ static const char *runtime_device_config_status_error(SqdcStatus status)
 static int runtime_device_config_read_file(const char *path, uint8_t *buffer, size_t buffer_len,
 					   size_t *out_len)
 {
-	struct fs_dirent entry;
 	struct fs_file_t file;
 	int result;
+	uint8_t overflow;
+	ssize_t read;
+	ssize_t extra = 0;
 
 	if (path == NULL || buffer == NULL || out_len == NULL) {
 		return -EINVAL;
 	}
 	*out_len = 0;
-	result = fs_stat(path, &entry);
-	if (result != 0) {
-		return result;
-	}
-	if (entry.type != FS_DIR_ENTRY_FILE) {
-		return -ENOENT;
-	}
-	if (entry.size > buffer_len) {
-		return -ENOSPC;
-	}
-
 	fs_file_t_init(&file);
 	result = fs_open(&file, path, FS_O_READ);
 	if (result != 0) {
+		if (result == -EISDIR) {
+			return -ENOENT;
+		}
 		return result;
 	}
-	ssize_t read = fs_read(&file, buffer, entry.size);
+	read = fs_read(&file, buffer, buffer_len);
+	if (read >= 0 && (size_t)read == buffer_len) {
+		extra = fs_read(&file, &overflow, sizeof(overflow));
+	}
 	result = fs_close(&file);
 	if (read < 0) {
 		return (int)read;
 	}
-	if ((size_t)read != entry.size) {
-		return -EIO;
+	if (extra < 0) {
+		return (int)extra;
+	}
+	if (extra > 0) {
+		return -ENOSPC;
 	}
 	*out_len = (size_t)read;
 	return result;

@@ -128,6 +128,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   worker callback frame, reducing `runtime_work_handler` from 224 bytes to 16
   bytes for steady event dispatch while attributing app-start setup separately
   to `sq_vm_runtime_prepare_app_start` at 224 bytes.
+  File-backed state and device-config reads now detect oversized files with a
+  one-byte overflow read instead of a `struct fs_dirent` size probe, reducing
+  `fs_storage_load_state` from 192 bytes to 48 bytes and
+  `runtime_device_config_read_file` from 192 bytes to 32 bytes.
   Protocol polling now reuses runtime app-id/event scratch for lifecycle and
   armed timer transitions, app-arm trigger discovery uses SQBC-only storage, and
   trigger registration uses the shared app-file path scratch; the emitted C

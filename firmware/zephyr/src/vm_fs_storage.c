@@ -38,15 +38,18 @@ static int read_exact(const char *path, size_t offset, uint8_t *out, size_t len)
 static int read_optional_file(const char *path, uint8_t *out, size_t out_len, size_t *len)
 {
 	struct fs_file_t file;
-	struct fs_dirent entry;
 	int result;
+	uint8_t overflow;
+	ssize_t read;
+	ssize_t extra = 0;
 
 	if (path == NULL || out == NULL || len == NULL) {
 		return -EINVAL;
 	}
 
 	*len = 0;
-	result = fs_stat(path, &entry);
+	fs_file_t_init(&file);
+	result = fs_open(&file, path, FS_O_READ);
 	if (result == -ENOENT) {
 		return 0;
 	}
@@ -54,18 +57,18 @@ static int read_optional_file(const char *path, uint8_t *out, size_t out_len, si
 		return result;
 	}
 
-	fs_file_t_init(&file);
-	result = fs_open(&file, path, FS_O_READ);
-	if (result != 0) {
-		return result;
+	read = fs_read(&file, out, out_len);
+	if (read >= 0 && (size_t)read == out_len) {
+		extra = fs_read(&file, &overflow, sizeof(overflow));
 	}
-
-	ssize_t read = fs_read(&file, out, out_len);
 	result = fs_close(&file);
 	if (read < 0) {
 		return (int)read;
 	}
-	if ((size_t)read == out_len) {
+	if (extra < 0) {
+		return (int)extra;
+	}
+	if (extra > 0) {
 		return -ENOSPC;
 	}
 	*len = (size_t)read;
