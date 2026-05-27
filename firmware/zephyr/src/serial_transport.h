@@ -7,7 +7,7 @@
 #include "device_protocol.h"
 #include "protocol.h"
 
-#define SQ_SERIAL_MAX_FRAME_LEN 512u
+#define SQ_SERIAL_MAX_FRAME_LEN 384u
 
 struct sq_serial_transport {
 	uint8_t request[SQ_SERIAL_MAX_FRAME_LEN];

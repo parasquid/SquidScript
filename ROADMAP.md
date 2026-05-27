@@ -64,9 +64,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   18,288 bytes after capping retained VM output history at eight lines and
   trimming the ESP32-C3 VM context reserve to 12,032 bytes. The resident app
   registry now holds twelve installed-app entries to keep the reference firmware
-  RAM-bound explicit; next reductions should investigate full-suite
-  worker-stack high-water headroom after the 18 KiB stack reduction and any
-  remaining accidental static buffers.
+  RAM-bound explicit, and the serial receive frame budget is 384 bytes with host
+  upload chunking derived from that limit; next reductions should investigate
+  full-suite worker-stack high-water headroom after the 18 KiB stack reduction
+  and any remaining accidental static buffers.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
   succeeds but serial commands stall, app launch hangs, or input dispatch stops
   responding, check stack exhaustion early with `device resources`, compare

@@ -20,7 +20,7 @@ use squid_device_protocol::{
 };
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
-const FIRMWARE_SERIAL_FRAME_BUDGET: usize = 512;
+const FIRMWARE_SERIAL_FRAME_BUDGET: usize = 384;
 
 pub struct SerialDevice {
     port: File,
@@ -494,6 +494,7 @@ mod tests {
 
     #[test]
     fn transfer_chunk_size_uses_current_firmware_frame_budget() {
+        assert_eq!(FIRMWARE_SERIAL_FRAME_BUDGET, 384);
         let chunk_size = max_transfer_chunk_size();
 
         assert!(chunk_size > 64);

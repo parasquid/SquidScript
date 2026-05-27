@@ -684,6 +684,15 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("#define SQ_APP_STORE_MAX_APPS 12", app_store_h)
         self.assertNotIn("#define SQ_APP_STORE_MAX_APPS 16", app_store_h)
 
+    def test_serial_transport_uses_reduced_frame_budget(self):
+        serial_h = self.read("firmware/zephyr/src/serial_transport.h")
+        cli_serial = self.read("compiler/rust/crates/squidc-cli/src/serial.rs")
+
+        self.assertIn("#define SQ_SERIAL_MAX_FRAME_LEN 384u", serial_h)
+        self.assertIn("const FIRMWARE_SERIAL_FRAME_BUDGET: usize = 384;", cli_serial)
+        self.assertNotIn("#define SQ_SERIAL_MAX_FRAME_LEN 512u", serial_h)
+        self.assertNotIn("const FIRMWARE_SERIAL_FRAME_BUDGET: usize = 512;", cli_serial)
+
     def test_key_dispatch_uses_rust_parser_without_c_payload_staging(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         start = protocol.index("static int dispatch_key")
