@@ -29,7 +29,7 @@ typedef enum {
 
 #define SQDC_CONFIG_MAX_RECORDS 6
 #define SQDC_CONFIG_KEY_CAP 32
-#define SQDC_CONFIG_STRING_CAP 64
+#define SQDC_CONFIG_STRING_CAP 48
 
 typedef enum {
 	SQDC_STATUS_OK = 0,
