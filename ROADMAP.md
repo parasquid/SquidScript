@@ -18,6 +18,11 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   and the BinBook spec has settled enough to avoid optimizing around rough
   draft behavior. Add each remaining API only as a real compiler/SQBC/VM/Zephyr
   slice with honest unsupported behavior until then.
+- Implement an SSD1677/GDEQ0426T82 SquidScript display backend when the display
+  breakout is available. Evaluate `ssd1677-driver` first, compare `ssd1677` if
+  needed, and adopt a dependency only after proving bounded strip/window
+  writes, caller-owned buffers, and bounded/nonblocking BUSY handling for
+  constrained firmware RAM.
 - Design app-entry versus import-only source semantics before adding real
   include/import expansion. Only an app entry file should become an app;
   include/import files should be reusable declarations and should not synthesize

@@ -78,6 +78,13 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - Before 1.0, optimize firmware and CLI workflows for development ergonomics. Do not introduce release-profile trimming, disabling of `RUN.TEMP`, or flash-writing temp runs unless the user explicitly asks to revisit that tradeoff.
 - Browser-sim IR JSON is a development artifact only. Do not treat it as a production firmware format. See `docs/browser_simulator.md` and `docs/ir_schema.md`.
 - Reference firmware exists to exercise SquidScript language semantics on constrained hardware. Do not frame it as XTEINK X4 staging firmware unless the task explicitly targets X4 behavior.
+- Firmware, display, storage, input, and hardware work in this repository must
+  serve SquidScript. Do not create standalone Rust firmware, board demos, or
+  device bring-up projects as ends in themselves unless the user explicitly
+  asks for that scope. Standalone harnesses are acceptable only as supporting
+  tests, diagnostics, or temporary bring-up steps for a SquidScript compiler,
+  runtime, firmware, target, simulator, or service implementation, and must be
+  labeled that way.
 
 ## Architecture Boundary Discipline
 
