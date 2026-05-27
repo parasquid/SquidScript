@@ -184,6 +184,12 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   before treating GPIO, flashing, or serial as the primary failure. Hardware
   scripts now use the shared bounded command helper, which prints captured
   command output when a command fails or times out.
+- Investigate the ESP32-C3 app-registry hardware check returning an empty host
+  `app list` after `app install` reports success. This reproduces on clean
+  firmware with no `device errors` output after restoring the app-store
+  directory check to `fs_stat`, so do not use
+  `scripts/c3-supermini-test-app-registry-api.sh` as evidence for stack changes
+  until the registry/listing path is diagnosed.
 - Complete physical GPIO9 input stack attribution and budget reduction.
   `scripts/c3-supermini-measure-input-stack-isolation.sh` now records a
   fresh-boot physical input path baseline through format, install, launch, and
