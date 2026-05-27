@@ -83,6 +83,10 @@ int sq_app_store_install_resource(const char *mount_point, const char *app_id,
 
 int sq_app_store_scan_registry(const char *mount_point, struct sq_app_registry *registry);
 
+int sq_app_store_scan_registry_with_path(const char *mount_point,
+					 struct sq_app_registry *registry, char *path,
+					 size_t path_cap);
+
 int sq_app_store_format_filesystem(const char *mount_point);
 
 const struct sq_app_registry_entry *sq_app_registry_find(const struct sq_app_registry *registry,

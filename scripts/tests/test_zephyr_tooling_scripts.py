@@ -1900,24 +1900,40 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
     def test_app_registry_scan_uses_narrow_path_scratch_after_opening_directory(self):
         app_store = self.read("firmware/zephyr/src/app_store.c")
         app_store_h = self.read("firmware/zephyr/src/app_store.h")
-        start = app_store.index("int sq_app_store_scan_registry")
+        start = app_store.index("int sq_app_store_scan_registry_with_path")
         end = app_store.index("static int delete_files_under")
         body = app_store[start:end]
+        public_start = app_store.index("int sq_app_store_scan_registry(")
+        public_end = app_store.index("int sq_app_store_scan_registry_with_path")
+        public_body = app_store[public_start:public_end]
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        commit_start = protocol.index("static int __noinline commit_install")
+        commit_end = protocol.index("static int start_installed_app", commit_start)
+        commit_body = protocol[commit_start:commit_end]
 
         self.assertIn("#define SQ_APP_STORE_APP_FILE_PATH_MAX 64", app_store_h)
         self.assertNotIn("#define SQ_APP_STORE_APP_FILE_PATH_MAX 72", app_store_h)
-        self.assertIn("char path[SQ_APP_STORE_APP_FILE_PATH_MAX];", body)
+        self.assertIn("int sq_app_store_scan_registry_with_path", app_store_h)
+        self.assertIn("char *path, size_t path_cap", body)
+        self.assertNotIn("char path[SQ_APP_STORE_APP_FILE_PATH_MAX];", body)
         self.assertNotIn("char path[SQ_APP_STORE_PATH_MAX];", body)
         self.assertNotIn("char apps_path[SQ_APP_STORE_PATH_MAX];", body)
         self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", body)
         self.assertNotIn("struct fs_dirent sqbc_entry", body)
-        self.assertIn('join_path2(path, sizeof(path), mount_point, "apps")', body)
+        self.assertIn('join_path2(path, path_cap, mount_point, "apps")', body)
         self.assertIn("fs_opendir(&dir, path)", body)
-        self.assertIn('format_app_path(path, sizeof(path), mount_point, entry.name,', body)
+        self.assertIn('format_app_path(path, path_cap, mount_point, entry.name,', body)
         self.assertIn("fs_stat(path, &entry)", body)
         self.assertIn("struct sq_app_registry_entry *record = NULL;", body)
         self.assertIn("record = &registry->apps[registry->count];", body)
         self.assertIn("registry->count++", body)
+        self.assertIn("char path[SQ_APP_STORE_APP_FILE_PATH_MAX];", public_body)
+        self.assertIn("sq_app_store_scan_registry_with_path(mount_point, registry, path,",
+                      public_body)
+        self.assertIn("sq_app_store_scan_registry_with_path(context->store_mount_point,",
+                      commit_body)
+        self.assertIn("session->staging_path", commit_body)
+        self.assertIn("sizeof(session->staging_path)", commit_body)
 
     def test_app_store_vm_storage_uses_narrow_installed_app_path_buffers(self):
         app_store_h = self.read("firmware/zephyr/src/app_store.h")

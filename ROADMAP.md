@@ -196,7 +196,14 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   48 bytes and the cumulative `begin_install` path from 272 bytes to 208
   bytes. The top source-known main/protocol path remains 464 bytes, now through
   `commit_install -> sq_app_store_scan_registry -> join_path2`; investigate
-  the registry scan path next. VM
+  the registry scan path next. Registry scanning now has a caller-scratch entry
+  point. The public `sq_app_store_scan_registry` wrapper still owns a narrow
+  64-byte path buffer, while protocol app-install commit reuses the install
+  session's 72-byte `staging_path` buffer after the staged file is renamed.
+  That reduces the protocol `commit_install` path from 272 bytes to 224 bytes.
+  The top source-known main/protocol path remains 464 bytes through app
+  launch; investigate the remaining 272-byte protocol handler paths and shared
+  protocol/main frame next. VM
   dispatch now uses a
   static callback table plus an explicit `user_data` pointer across the FFI
   boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes

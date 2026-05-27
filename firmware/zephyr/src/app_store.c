@@ -711,17 +711,24 @@ int sq_app_store_install_resource(const char *mount_point, const char *app_id,
 int sq_app_store_scan_registry(const char *mount_point, struct sq_app_registry *registry)
 {
 	char path[SQ_APP_STORE_APP_FILE_PATH_MAX];
+
+	return sq_app_store_scan_registry_with_path(mount_point, registry, path, sizeof(path));
+}
+
+int sq_app_store_scan_registry_with_path(const char *mount_point, struct sq_app_registry *registry,
+					 char *path, size_t path_cap)
+{
 	struct fs_dir_t dir;
 	struct fs_dirent entry;
 	int result;
 
-	if (mount_point == NULL || registry == NULL) {
+	if (mount_point == NULL || registry == NULL || path == NULL) {
 		return -EINVAL;
 	}
 
 	memset(registry, 0, sizeof(*registry));
 
-	result = join_path2(path, sizeof(path), mount_point, "apps");
+	result = join_path2(path, path_cap, mount_point, "apps");
 	if (result != 0) {
 		return result;
 	}
@@ -752,8 +759,7 @@ int sq_app_store_scan_registry(const char *mount_point, struct sq_app_registry *
 			strncpy(record->app_id, entry.name, sizeof(record->app_id) - 1u);
 			record->app_id[sizeof(record->app_id) - 1u] = '\0';
 		}
-		result = format_app_path(path, sizeof(path), mount_point, entry.name,
-					 "main.sqbc");
+		result = format_app_path(path, path_cap, mount_point, entry.name, "main.sqbc");
 		if (result != 0) {
 			(void)fs_closedir(&dir);
 			return result;

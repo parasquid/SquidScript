@@ -261,6 +261,13 @@ cumulative `begin_install` path from 272 bytes to 208 bytes. The top
 source-known main/protocol path remains 464 bytes, now through
 `commit_install -> sq_app_store_scan_registry -> join_path2`. Linker DRAM
 remains 185,024 bytes and the RAM audit remains 185,008 bytes.
+Registry scanning now has a caller-scratch entry point. The public
+`sq_app_store_scan_registry` wrapper still owns a narrow 64-byte path buffer,
+while protocol app-install commit reuses the install session's 72-byte
+`staging_path` buffer after the staged file is renamed. That reduces the
+protocol `commit_install` path from 272 bytes to 224 bytes. The top
+source-known main/protocol path remains 464 bytes through app launch, while
+linker DRAM remains 185,024 bytes and the RAM audit remains 185,008 bytes.
 Protocol dispatch decodes only the request opcode and sequence into the live
 dispatch header because opcode handlers parse payloads from the original
 request bytes, so `sq_device_protocol_handle_frame` now emits 80 bytes instead
