@@ -852,8 +852,10 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         serial_h = self.read("firmware/zephyr/src/serial_transport.h")
         cli_serial = self.read("compiler/rust/crates/squidc-cli/src/serial.rs")
 
-        self.assertIn("#define SQ_SERIAL_MAX_FRAME_LEN 320u", serial_h)
-        self.assertIn("const FIRMWARE_SERIAL_FRAME_BUDGET: usize = 320;", cli_serial)
+        self.assertIn("#define SQ_SERIAL_MAX_FRAME_LEN 256u", serial_h)
+        self.assertIn("const FIRMWARE_SERIAL_FRAME_BUDGET: usize = 256;", cli_serial)
+        self.assertNotIn("#define SQ_SERIAL_MAX_FRAME_LEN 320u", serial_h)
+        self.assertNotIn("const FIRMWARE_SERIAL_FRAME_BUDGET: usize = 320;", cli_serial)
         self.assertNotIn("#define SQ_SERIAL_MAX_FRAME_LEN 384u", serial_h)
         self.assertNotIn("const FIRMWARE_SERIAL_FRAME_BUDGET: usize = 384;", cli_serial)
         self.assertNotIn("#define SQ_SERIAL_MAX_FRAME_LEN 512u", serial_h)

@@ -100,9 +100,11 @@ caller-owned buffers across the C/Rust boundary. Zephyr passes the received
 frame and its fixed session storage to Rust; Rust returns a bounded action with
 borrowed byte slices or stored session strings; Zephyr performs the filesystem
 or VM operation and then calls the completion function so Rust updates progress.
-Host tooling derives upload chunk payload size from the 320-byte encoded
+Host tooling derives upload chunk payload size from the 256-byte encoded
 protocol frame budget so install, resource, and temp-run chunk frames fit the
-firmware's fixed serial receive buffer without increasing firmware RAM.
+firmware's fixed serial receive buffer without increasing firmware RAM. The
+current transfer chunk frame has 36 bytes of protocol overhead, leaving a
+220-byte upload payload per chunk.
 Rust also encodes `app-list`, lifecycle diagnostics, state export responses,
 and protocol error responses directly into Zephyr's caller-owned response
 buffer so Zephyr C does not stage duplicate TLV payload arrays for those command

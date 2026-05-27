@@ -193,6 +193,11 @@ The resident protocol response buffer is 834 bytes, matching the current
 resources-response ceiling: 814 bytes of metric payload plus the 20-byte frame
 header. This trims the previous 848-byte buffer without changing the response
 set.
+The resident serial receive buffer is 256 bytes, with host upload chunking
+derived from the same encoded frame budget. Transfer chunk requests use
+36 bytes of protocol overhead, so current host tooling sends 220-byte upload
+chunks, and the maximum app-id plus resource-path transfer-begin request remains
+within the same fixed receive buffer.
 Protocol polling reuses runtime app-id/event scratch for lifecycle and armed
 timer transitions. App-arm trigger discovery uses a SQBC-only filesystem
 backend instead of a full app storage object with state paths, and trigger

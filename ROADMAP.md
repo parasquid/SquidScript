@@ -75,10 +75,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   `timer.breathe.marker` without retaining the previous 32-byte slots. The resident app
   registry now holds eight installed-app entries with 40-byte app-id storage
   slots for current measured app workloads, and the serial
-  receive frame budget is 320 bytes with host upload chunking derived from that
+  receive frame budget is 256 bytes with host upload chunking derived from that
   limit, protocol transfer sessions use 72-byte staging path slots and 80-byte
   resource path slots, and resource diagnostics encode directly into the
-  848-byte response buffer without a resident metric staging array. Runtime
+  834-byte response buffer without a resident metric staging array. Runtime
   physical input state is bounded to two GPIO button slots for the confirmed
   BOOT/GPIO9 path plus one targeted diagnostic slot, foreground runtime timers
   are bounded to two slots for current one-shot/repeating workloads, and active
@@ -91,7 +91,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   remain at the Zephyr default for recursive format/delete walks. The
   protocol/main stack is now 3264 bytes, leaving 788 bytes over the last
   measured 2476-byte protocol peak, and the VM worker stack is now 18016 bytes.
-  The latest target build reports 185,248 bytes
+  The latest target build reports 185,184 bytes
   of DRAM use; next
   reductions should physically revalidate the 3264-byte protocol/main stack
   with the bounded stack harness. The stack harness now fails with captured

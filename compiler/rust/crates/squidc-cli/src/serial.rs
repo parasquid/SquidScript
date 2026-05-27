@@ -20,7 +20,7 @@ use squid_device_protocol::{
 };
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
-const FIRMWARE_SERIAL_FRAME_BUDGET: usize = 320;
+const FIRMWARE_SERIAL_FRAME_BUDGET: usize = 256;
 
 pub struct SerialDevice {
     port: File,
@@ -436,8 +436,9 @@ mod tests {
         max_transfer_chunk_size_for_frame_budget, OutputTail, FIRMWARE_SERIAL_FRAME_BUDGET,
     };
     use squid_device_protocol::{
-        app_install_chunk_request, encoded_frame_len, resource_install_chunk_request,
-        temp_run_chunk_request,
+        app_install_begin_request, app_install_chunk_request, encoded_frame_len,
+        resource_install_begin_request, resource_install_chunk_request, temp_run_chunk_request,
+        MAX_APP_ID_LEN, MAX_PATH_LEN,
     };
 
     #[test]
@@ -494,7 +495,7 @@ mod tests {
 
     #[test]
     fn transfer_chunk_size_uses_current_firmware_frame_budget() {
-        assert_eq!(FIRMWARE_SERIAL_FRAME_BUDGET, 320);
+        assert_eq!(FIRMWARE_SERIAL_FRAME_BUDGET, 256);
         let chunk_size = max_transfer_chunk_size();
 
         assert!(chunk_size > 64);
@@ -507,6 +508,24 @@ mod tests {
 
         let too_large = app_install_chunk_request(11, 0, vec![0; chunk_size + 1]);
         assert!(encoded_frame_len(&too_large).unwrap() > FIRMWARE_SERIAL_FRAME_BUDGET);
+    }
+
+    #[test]
+    fn current_firmware_frame_budget_fits_largest_transfer_begin_requests() {
+        let max_app_id = "a".repeat(MAX_APP_ID_LEN);
+        let max_resource_path = "r".repeat(MAX_PATH_LEN);
+
+        let app_begin = app_install_begin_request(10, max_app_id.as_str(), u64::MAX, u64::MAX);
+        assert!(encoded_frame_len(&app_begin).unwrap() <= FIRMWARE_SERIAL_FRAME_BUDGET);
+
+        let resource_begin = resource_install_begin_request(
+            50,
+            max_app_id.as_str(),
+            max_resource_path.as_str(),
+            u64::MAX,
+            u64::MAX,
+        );
+        assert!(encoded_frame_len(&resource_begin).unwrap() <= FIRMWARE_SERIAL_FRAME_BUDGET);
     }
 
     #[test]
