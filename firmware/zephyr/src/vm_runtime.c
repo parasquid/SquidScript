@@ -1858,7 +1858,7 @@ static size_t runtime_fixed_text_len(const uint8_t *bytes, size_t cap)
 	return len;
 }
 
-static int sq_vm_runtime_apply_saved_device_config(struct sq_vm_runtime *runtime)
+static int __noinline sq_vm_runtime_apply_saved_device_config(struct sq_vm_runtime *runtime)
 {
 	char path[SQ_APP_STORE_PATH_MAX];
 	size_t bytes_len = 0;
@@ -1898,7 +1898,7 @@ static int sq_vm_runtime_apply_saved_device_config(struct sq_vm_runtime *runtime
 	return 0;
 }
 
-static int sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *runtime)
+static int __noinline sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *runtime)
 {
 	size_t count = 0;
 	SqvmStatus status;

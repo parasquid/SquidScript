@@ -645,12 +645,9 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("SqvmDeviceConfigResult device_config_result;", runtime_body)
         self.assertIn("SqdcConfig device_config_draft;", runtime_body)
         runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        apply_start = runtime_c.index("static int __noinline sq_vm_runtime_apply_device_bindings")
         apply_body = runtime_c[
-            runtime_c.index("static int sq_vm_runtime_apply_device_bindings")
-            : runtime_c.index(
-                "static int32_t runtime_device_config_load",
-                runtime_c.index("static int sq_vm_runtime_apply_device_bindings"),
-            )
+            apply_start : runtime_c.index("static int32_t runtime_device_config_load", apply_start)
         ]
         self.assertIn("struct sq_vm_runtime_binding_scratch", runtime_c)
         self.assertIn("sizeof(*scratch) <= sizeof(runtime->transfer.init_scratch)", apply_body)
@@ -711,6 +708,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
         self.assertIn("sq_vm_runtime_prepare_app_start", runtime_c)
         self.assertIn("static int __noinline sq_vm_runtime_prepare_app_start", runtime_c)
+        self.assertIn("static int __noinline sq_vm_runtime_apply_saved_device_config", runtime_c)
+        self.assertIn("static int __noinline sq_vm_runtime_apply_device_bindings", runtime_c)
         self.assertIn("sq_vm_runtime_prepare_app_start(runtime)", work_body)
         self.assertIn("runtime->start_setup_done", start_body)
         self.assertNotIn("sq_vm_runtime_apply_device_bindings(runtime)", start_body)

@@ -131,8 +131,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   on the C stack, reducing `lifecycle_response` from 224 bytes to 96 bytes.
   VM worker dispatch setup now keeps app-start binding preparation out of the
   worker callback frame, reducing `runtime_work_handler` from 224 bytes to 16
-  bytes for steady event dispatch while attributing app-start setup separately
-  to `sq_vm_runtime_prepare_app_start` at 224 bytes.
+  bytes for steady event dispatch. App-start setup is split into separately
+  attributed phases: `sq_vm_runtime_prepare_app_start` is now 16 bytes,
+  saved-device-config setup is 176 bytes, and app device-binding setup is
+  128 bytes, instead of retaining the combined 224-byte prepare frame.
   File-backed state and device-config reads now detect oversized files with a
   one-byte overflow read instead of a `struct fs_dirent` size probe, reducing
   `fs_storage_load_state` from 192 bytes to 48 bytes and
