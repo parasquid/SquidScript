@@ -36,6 +36,7 @@
 #define SQ_DEVICE_TEMP_STATE_BYTES SQVM_SAVED_STATE_CAPACITY
 #define SQ_DEVICE_RESPONSE_BYTES 992u
 #define SQ_DEVICE_STAGING_PATH_BYTES 72u
+#define SQ_DEVICE_RESOURCE_PATH_BYTES 80u
 #define SQ_DEVICE_WIFI_PROFILE_NAME_BYTES 16
 #define SQ_DEVICE_WIFI_PROFILE_SSID_BYTES 32
 #define SQ_DEVICE_WIFI_PROFILE_PASSWORD_BYTES 64
@@ -69,7 +70,7 @@ struct sq_device_temp_session {
 struct sq_device_resource_session {
 	bool active;
 	char app_id[SQ_APP_STORE_APP_ID_MAX];
-	char resource_path[SQ_APP_STORE_PATH_MAX];
+	char resource_path[SQ_DEVICE_RESOURCE_PATH_BYTES];
 	size_t total_len;
 	size_t received;
 	uint32_t expected_crc;

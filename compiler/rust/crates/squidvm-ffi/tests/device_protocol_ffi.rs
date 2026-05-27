@@ -857,3 +857,48 @@ fn ffi_validates_resource_session_progress_with_caller_owned_storage() {
     assert_eq!(status as i32, 0);
     assert_eq!(action.kind, SqdpActionKind::CommitResourceInstall);
 }
+
+#[test]
+fn ffi_bounds_resource_session_path_to_protocol_staging_capacity() {
+    let accepted_path = "r".repeat(79);
+    let rejected_path = "r".repeat(80);
+    let bytes = b"resource";
+    let crc = crc32fast::hash(bytes);
+    let accepted = encode_frame(&resource_install_begin_request(
+        1,
+        "ffi-app",
+        &accepted_path,
+        bytes.len() as u64,
+        crc as u64,
+    ));
+    let rejected = encode_frame(&resource_install_begin_request(
+        1,
+        "ffi-app",
+        &rejected_path,
+        bytes.len() as u64,
+        crc as u64,
+    ));
+    let mut session = SqdpResourceSession::default();
+    let mut action = SqdpAction::default();
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_prepare_resource_begin(
+            accepted.as_ptr(),
+            accepted.len(),
+            &mut session,
+            &mut action,
+        )
+    };
+    assert_eq!(status as i32, 0);
+    assert_eq!(session.resource_path_string(), accepted_path);
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_prepare_resource_begin(
+            rejected.as_ptr(),
+            rejected.len(),
+            &mut session,
+            &mut action,
+        )
+    };
+    assert_ne!(status as i32, 0);
+}

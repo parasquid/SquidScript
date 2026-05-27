@@ -72,9 +72,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   registry now holds twelve installed-app entries with 40-byte app-id storage
   slots to keep the reference firmware RAM-bound explicit, and the serial
   receive frame budget is 320 bytes with host upload chunking derived from that
-  limit, protocol transfer sessions use 72-byte staging path slots, and
-  resource diagnostics encode directly into the 992-byte response buffer without
-  a resident metric staging array. The latest target build reports 191,600 bytes
+  limit, protocol transfer sessions use 72-byte staging path slots and 80-byte
+  resource path slots, and resource diagnostics encode directly into the
+  992-byte response buffer without a resident metric staging array. The latest
+  target build reports 191,552 bytes
   of DRAM use; next
   reductions should investigate full-suite worker-stack high-water headroom
   after the 18 KiB stack reduction and any remaining accidental static buffers.

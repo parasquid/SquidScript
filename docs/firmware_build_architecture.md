@@ -91,9 +91,11 @@ checked against the FFI-reported context size in Zephyr ztests. Native simulator
 ztests use a larger host-only context reservation because the host Rust ABI has
 larger pointer-sized VM structures; this does not change the ESP32-C3 runtime
 RAM budget.
-Protocol transfer sessions keep full resource-path storage for package paths
-but use smaller internal staging-path buffers for fixed firmware staging
-filenames.
+Protocol transfer sessions use explicit firmware-side bounds: 72-byte internal
+staging-path buffers for fixed staging filenames and 80-byte resource-path
+buffers for package-relative resource paths. The app-store path cap remains
+larger because it formats full filesystem paths that include the mount point,
+app ID, resource directory, and package-relative resource path.
 Resource diagnostics are encoded directly into the caller-owned 992-byte
 protocol response buffer and do not keep a resident metric staging array.
 The protocol/main thread stack is currently 5 KiB and the VM worker stack is

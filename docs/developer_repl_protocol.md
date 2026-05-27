@@ -76,10 +76,13 @@ The current implemented Zephyr command handler covers framed `hello` identity,
 installed-app begin/chunk/commit, resource begin/chunk/commit, temp-run
 begin/chunk/commit, app launch, app list, key dispatch, generic event dispatch,
 output, trace, draw log, state export/import, errors, resources, reset, and
-storage format over the UART serial transport. App install, temp run, and
-resource install begin with field tag `1` app ID string, tag `2` total byte
-length, and tag `3` CRC32 encoded as an unsigned 64-bit integer. Resource
-install begin also uses field tag `4` for the package-relative resource path.
+storage format over the UART serial transport. App install and temp run begin
+with field tag `1` app ID string, tag `2` total byte length, and tag `3` CRC32
+encoded as an unsigned 64-bit integer. Resource install begin uses tag `1` for
+the app ID, tag `2` for the package-relative resource path, tag `3` for total
+byte length, and tag `4` for CRC32. The firmware-side resource path staging
+capacity is 80 bytes including the terminating NUL, so package-relative
+resource paths must be at most 79 bytes in this reference firmware.
 Each chunk uses tag `1` byte offset and tag `2` byte payload.
 
 The ESP32-C3 Zephyr reference firmware accepts app IDs up to 39 bytes. The
