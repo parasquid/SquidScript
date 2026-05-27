@@ -173,7 +173,7 @@ app lifecycle checks in the full ESP32-C3 Super Mini suite. It records
 `device resources` output under `target/hardware-tests/stack-usage/` and
 verifies `protocol_thread_stack_*` and `vm_worker_stack_*` metrics are
 internally consistent. The current firmware keeps the protocol/main stack budget
-at 4 KiB and the VM worker stack budget at 18,048 bytes based on measured
+at 3,264 bytes and the VM worker stack budget at 18,048 bytes based on measured
 high-water data. The harness uses a command-level timeout for its
 `device resources`
 request so serial stalls fail with captured output instead of hanging the full
@@ -181,8 +181,8 @@ suite. GPIO-button device-binding launch coverage previously measured
 protocol/main stack use above the old 8 KiB budget before launch-time binding
 setup moved to the VM worker stack. Current targeted clean-boot and skip-flash
 GPIO9 input rows measure protocol/main stack use flat at 2476 bytes across
-format, install, launch, release, and timeout rows. The 4 KiB budget keeps more
-than 1.5 KiB headroom over that measured protocol peak; remeasure with the full
+format, install, launch, release, and timeout rows. The 3,264-byte budget keeps
+788 bytes of headroom over that measured protocol peak; remeasure with the full
 hardware suite before lowering the configured main stack budget again.
 Use `scripts/c3-supermini-measure-input-stack-isolation.sh` when the input path
 needs clean high-water attribution. It builds/flashes by default, verifies the
@@ -240,7 +240,7 @@ measured `vm_worker_stack_used_bytes=17620` before lowering the worker stack to
 20480. Targeted GPIO9 input summary coverage after app-start binding setup moved
 to the VM worker measured `vm_worker_stack_used_bytes=17296`, and narrowing the
 FFI app process/armed stack scratch reduced the input launch row to 17056. The
-worker stack is now 18048 bytes. This keeps 428 bytes of headroom above the
+worker stack is now 18,048 bytes. This keeps 428 bytes of headroom above the
 highest saved full-suite `vm_worker_stack_used_bytes=17620` peak and 752 bytes
 above the saved GPIO9 input summary peak. Remeasure the physical press row and
 full hardware suite before lowering that budget again. The stack harness fails
