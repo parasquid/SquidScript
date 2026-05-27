@@ -125,7 +125,7 @@ indicator, display/input, and targeted diagnostic binding workloads.
 Runtime device-config drafts are bounded to five records with 48-byte string
 values, which fits the current inline GPIO button binding shape and package
 `.sqdevice` edit/rebind path without retaining an extra unused draft slot.
-Installed-app VM launch storage uses 72-byte SQBC path storage and 64-byte
+Installed-app VM launch storage uses 64-byte SQBC path storage and 60-byte
 state path storage for the fixed `/apps/<app>/main.sqbc` and
 `/state/<app>.state` shapes instead of retaining two general 128-byte app-store
 path buffers.

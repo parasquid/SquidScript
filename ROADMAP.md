@@ -75,8 +75,8 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   paths without retaining unused slots. Runtime event-name slots are now
   24 bytes, enough for the current measured examples and tests such as
   `timer.breathe.marker` without retaining the previous 32-byte slots. The
-  resident installed-app VM launch storage now uses 72-byte SQBC path storage
-  and 64-byte state path storage for the fixed installed-app path shapes instead
+  resident installed-app VM launch storage now uses 64-byte SQBC path storage
+  and 60-byte state path storage for the fixed installed-app path shapes instead
   of two general 128-byte app-store path buffers. The resident app registry now
   holds eight installed-app entries with 40-byte app-id storage slots for
   current measured app workloads, and the serial
@@ -143,7 +143,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   Runtime field ordering and byte-sized fixed-array counters now reduce the
   static runtime block further to 14,720 bytes.
   Installed-app VM launch storage path buffers now reduce `launch_storage`
-  from 276 bytes to 156 bytes.
+  from 276 bytes to 144 bytes.
   The resident protocol response buffer now tracks the calculated current
   resources-response ceiling, reducing `response.0` from 848 bytes to 826 bytes.
   Protocol polling now reuses runtime app-id/event scratch for lifecycle and

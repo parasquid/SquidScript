@@ -1792,7 +1792,8 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         end = app_store.index("static int delete_files_under")
         body = app_store[start:end]
 
-        self.assertIn("#define SQ_APP_STORE_APP_FILE_PATH_MAX 72", app_store_h)
+        self.assertIn("#define SQ_APP_STORE_APP_FILE_PATH_MAX 64", app_store_h)
+        self.assertNotIn("#define SQ_APP_STORE_APP_FILE_PATH_MAX 72", app_store_h)
         self.assertIn("char path[SQ_APP_STORE_APP_FILE_PATH_MAX];", body)
         self.assertNotIn("char path[SQ_APP_STORE_PATH_MAX];", body)
         self.assertNotIn("char apps_path[SQ_APP_STORE_PATH_MAX];", body)
@@ -1810,8 +1811,10 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         app_store_h = self.read("firmware/zephyr/src/app_store.h")
         app_store_c = self.read("firmware/zephyr/src/app_store.c")
 
-        self.assertIn("#define SQ_APP_STORE_APP_FILE_PATH_MAX 72", app_store_h)
-        self.assertIn("#define SQ_APP_STORE_APP_STATE_PATH_MAX 64", app_store_h)
+        self.assertIn("#define SQ_APP_STORE_APP_FILE_PATH_MAX 64", app_store_h)
+        self.assertNotIn("#define SQ_APP_STORE_APP_FILE_PATH_MAX 72", app_store_h)
+        self.assertIn("#define SQ_APP_STORE_APP_STATE_PATH_MAX 60", app_store_h)
+        self.assertNotIn("#define SQ_APP_STORE_APP_STATE_PATH_MAX 64", app_store_h)
         self.assertIn("char sqbc_path[SQ_APP_STORE_APP_FILE_PATH_MAX];", app_store_h)
         self.assertIn("char state_path[SQ_APP_STORE_APP_STATE_PATH_MAX];", app_store_h)
         self.assertIn("format_app_path(storage->sqbc_path, sizeof(storage->sqbc_path)", app_store_c)
@@ -1826,7 +1829,8 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         end = protocol.index("int sq_device_protocol_poll")
         body = protocol[start:end]
 
-        self.assertIn("#define SQ_APP_STORE_APP_FILE_PATH_MAX 72", app_store_h)
+        self.assertIn("#define SQ_APP_STORE_APP_FILE_PATH_MAX 64", app_store_h)
+        self.assertNotIn("#define SQ_APP_STORE_APP_FILE_PATH_MAX 72", app_store_h)
         self.assertIn("char sqbc_path[SQ_APP_STORE_APP_FILE_PATH_MAX];", body)
         self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", body)
 
