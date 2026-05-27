@@ -195,6 +195,14 @@ instead of 432 bytes without adding resident runtime RAM.
 Protocol frame dispatch keeps opcode-specific request parsing and response
 formatting out of the top-level switch, so `sq_device_protocol_handle_frame`
 now emits a 96-byte C stack estimate instead of 352 bytes.
+Protocol transfer begin and commit validation pass a null action output through
+the Rust FFI boundary when the C handler only needs session validation and not
+the decoded action record. That keeps unused `SqdpAction` staging out of
+`begin_install`, `begin_resource_install`, `commit_install`, and
+`commit_resource_install`, each of which now emits 32 bytes instead of 96
+bytes; `commit_temp_run` now emits 112 bytes instead of 144 bytes. Chunk
+handlers still keep a real action record because they need decoded offsets and
+payload byte slices.
 Lifecycle diagnostics encode armed timers directly from the runtime timer array
 by pointer, stride, and field offsets instead of copying timer records into a
 C stack staging array, so `lifecycle_response` now emits a 96-byte C stack

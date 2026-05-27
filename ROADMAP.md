@@ -129,7 +129,13 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   without adding resident runtime RAM. Protocol frame dispatch now keeps
   opcode-specific request parsing/formatting out of the top-level switch,
   reducing `sq_device_protocol_handle_frame` from 352 bytes to 96 bytes in
-  the emitted C stack report. Lifecycle diagnostics now encode armed timers
+  the emitted C stack report. Protocol transfer begin and commit validation
+  now passes a null action output when the C handler only needs session
+  validation, reducing `begin_install`, `begin_resource_install`,
+  `commit_install`, and `commit_resource_install` from 96 bytes each to 32
+  bytes each, and `commit_temp_run` from 144 bytes to 112 bytes; chunk handlers
+  still keep a decoded action record for offsets and payload byte slices.
+  Lifecycle diagnostics now encode armed timers
   directly from the runtime timer array instead of staging copied timer records
   on the C stack, reducing `lifecycle_response` from 224 bytes to 96 bytes.
   VM worker dispatch setup now keeps app-start binding preparation out of the

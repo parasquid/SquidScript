@@ -811,6 +811,19 @@ fn ffi_validates_install_session_progress_with_caller_owned_storage() {
             begin.as_ptr(),
             begin.len(),
             &mut session,
+            core::ptr::null_mut(),
+        )
+    };
+    assert_eq!(status as i32, 0);
+    assert_eq!(session.app_id_string(), "ffi-app");
+
+    session = SqdpTransferSession::default();
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_prepare_transfer_begin(
+            begin.as_ptr(),
+            begin.len(),
+            &mut session,
             &mut action,
         )
     };
@@ -846,6 +859,16 @@ fn ffi_validates_install_session_progress_with_caller_owned_storage() {
 
     let status = unsafe {
         squidvm_ffi::sqdp_complete_transfer_chunk(&mut session, action.bytes, action.bytes_len)
+    };
+    assert_eq!(status as i32, 0);
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_prepare_transfer_commit(
+            commit.as_ptr(),
+            commit.len(),
+            &mut session,
+            core::ptr::null_mut(),
+        )
     };
     assert_eq!(status as i32, 0);
 
@@ -899,6 +922,20 @@ fn ffi_validates_resource_session_progress_with_caller_owned_storage() {
             begin.as_ptr(),
             begin.len(),
             &mut session,
+            core::ptr::null_mut(),
+        )
+    };
+    assert_eq!(status as i32, 0);
+    assert_eq!(session.app_id_string(), "ffi-app");
+    assert_eq!(session.resource_path_string(), "assets/main.bin");
+
+    session = SqdpResourceSession::default();
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_prepare_resource_begin(
+            begin.as_ptr(),
+            begin.len(),
+            &mut session,
             &mut action,
         )
     };
@@ -933,6 +970,16 @@ fn ffi_validates_resource_session_progress_with_caller_owned_storage() {
         } as i32,
         0
     );
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_prepare_resource_commit(
+            commit.as_ptr(),
+            commit.len(),
+            &mut session,
+            core::ptr::null_mut(),
+        )
+    };
+    assert_eq!(status as i32, 0);
 
     let status = unsafe {
         squidvm_ffi::sqdp_prepare_resource_commit(

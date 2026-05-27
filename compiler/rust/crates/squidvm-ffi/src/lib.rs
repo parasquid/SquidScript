@@ -2480,7 +2480,7 @@ pub unsafe extern "C" fn sqdp_prepare_transfer_begin(
     session: *mut SqdpTransferSession,
     out_action: *mut SqdpAction,
 ) -> SqdpStatus {
-    if request.is_null() || session.is_null() || out_action.is_null() {
+    if request.is_null() || session.is_null() {
         return SqdpStatus::InvalidArgument;
     }
     let request = match DeviceRequest::decode(slice::from_raw_parts(request, request_len)) {
@@ -2521,13 +2521,15 @@ pub unsafe extern "C" fn sqdp_prepare_transfer_begin(
     session.total_len = total_len as usize;
     session.expected_crc = expected_crc as u32;
     session.running_crc = 0xffff_ffff;
-    *out_action = SqdpAction {
-        kind,
-        app_id: session.app_id.as_ptr(),
-        app_id_len: c_string_bytes(&session.app_id).len(),
-        total_len: session.total_len,
-        ..SqdpAction::default()
-    };
+    if !out_action.is_null() {
+        *out_action = SqdpAction {
+            kind,
+            app_id: session.app_id.as_ptr(),
+            app_id_len: c_string_bytes(&session.app_id).len(),
+            total_len: session.total_len,
+            ..SqdpAction::default()
+        };
+    }
     SqdpStatus::Ok
 }
 
@@ -2606,7 +2608,7 @@ pub unsafe extern "C" fn sqdp_prepare_transfer_commit(
     session: *const SqdpTransferSession,
     out_action: *mut SqdpAction,
 ) -> SqdpStatus {
-    if request.is_null() || session.is_null() || out_action.is_null() {
+    if request.is_null() || session.is_null() {
         return SqdpStatus::InvalidArgument;
     }
     let request = match DeviceRequest::decode(slice::from_raw_parts(request, request_len)) {
@@ -2623,15 +2625,17 @@ pub unsafe extern "C" fn sqdp_prepare_transfer_commit(
     if !session.active || session.received != session.total_len || !session_crc_matches(session) {
         return SqdpStatus::InvalidArgument;
     }
-    *out_action = SqdpAction {
-        kind,
-        app_id: session.app_id.as_ptr(),
-        app_id_len: c_string_bytes(&session.app_id).len(),
-        staging_path: session.staging_path.as_ptr(),
-        staging_path_len: c_string_bytes(&session.staging_path).len(),
-        total_len: session.total_len,
-        ..SqdpAction::default()
-    };
+    if !out_action.is_null() {
+        *out_action = SqdpAction {
+            kind,
+            app_id: session.app_id.as_ptr(),
+            app_id_len: c_string_bytes(&session.app_id).len(),
+            staging_path: session.staging_path.as_ptr(),
+            staging_path_len: c_string_bytes(&session.staging_path).len(),
+            total_len: session.total_len,
+            ..SqdpAction::default()
+        };
+    }
     SqdpStatus::Ok
 }
 
@@ -2649,7 +2653,7 @@ pub unsafe extern "C" fn sqdp_prepare_resource_begin(
     session: *mut SqdpResourceSession,
     out_action: *mut SqdpAction,
 ) -> SqdpStatus {
-    if request.is_null() || session.is_null() || out_action.is_null() {
+    if request.is_null() || session.is_null() {
         return SqdpStatus::InvalidArgument;
     }
     let request = match DeviceRequest::decode(slice::from_raw_parts(request, request_len)) {
@@ -2694,15 +2698,17 @@ pub unsafe extern "C" fn sqdp_prepare_resource_begin(
     session.total_len = total_len as usize;
     session.expected_crc = expected_crc as u32;
     session.running_crc = 0xffff_ffff;
-    *out_action = SqdpAction {
-        kind: SqdpActionKind::BeginResourceInstall,
-        app_id: session.app_id.as_ptr(),
-        app_id_len: c_string_bytes(&session.app_id).len(),
-        resource_path: session.resource_path.as_ptr(),
-        resource_path_len: c_string_bytes(&session.resource_path).len(),
-        total_len: session.total_len,
-        ..SqdpAction::default()
-    };
+    if !out_action.is_null() {
+        *out_action = SqdpAction {
+            kind: SqdpActionKind::BeginResourceInstall,
+            app_id: session.app_id.as_ptr(),
+            app_id_len: c_string_bytes(&session.app_id).len(),
+            resource_path: session.resource_path.as_ptr(),
+            resource_path_len: c_string_bytes(&session.resource_path).len(),
+            total_len: session.total_len,
+            ..SqdpAction::default()
+        };
+    }
     SqdpStatus::Ok
 }
 
@@ -2778,7 +2784,7 @@ pub unsafe extern "C" fn sqdp_prepare_resource_commit(
     session: *const SqdpResourceSession,
     out_action: *mut SqdpAction,
 ) -> SqdpStatus {
-    if request.is_null() || session.is_null() || out_action.is_null() {
+    if request.is_null() || session.is_null() {
         return SqdpStatus::InvalidArgument;
     }
     let request = match DeviceRequest::decode(slice::from_raw_parts(request, request_len)) {
@@ -2792,17 +2798,19 @@ pub unsafe extern "C" fn sqdp_prepare_resource_commit(
     if !session.active || session.received != session.total_len || !resource_crc_matches(session) {
         return SqdpStatus::InvalidArgument;
     }
-    *out_action = SqdpAction {
-        kind: SqdpActionKind::CommitResourceInstall,
-        app_id: session.app_id.as_ptr(),
-        app_id_len: c_string_bytes(&session.app_id).len(),
-        resource_path: session.resource_path.as_ptr(),
-        resource_path_len: c_string_bytes(&session.resource_path).len(),
-        staging_path: session.staging_path.as_ptr(),
-        staging_path_len: c_string_bytes(&session.staging_path).len(),
-        total_len: session.total_len,
-        ..SqdpAction::default()
-    };
+    if !out_action.is_null() {
+        *out_action = SqdpAction {
+            kind: SqdpActionKind::CommitResourceInstall,
+            app_id: session.app_id.as_ptr(),
+            app_id_len: c_string_bytes(&session.app_id).len(),
+            resource_path: session.resource_path.as_ptr(),
+            resource_path_len: c_string_bytes(&session.resource_path).len(),
+            staging_path: session.staging_path.as_ptr(),
+            staging_path_len: c_string_bytes(&session.staging_path).len(),
+            total_len: session.total_len,
+            ..SqdpAction::default()
+        };
+    }
     SqdpStatus::Ok
 }
 

@@ -1876,6 +1876,26 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("char sqbc_path[SQ_APP_STORE_APP_FILE_PATH_MAX];", body)
         self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", body)
 
+    def test_protocol_begin_and_commit_validation_avoid_unused_action_stack(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        ffi_rs = self.read("compiler/rust/crates/squidvm-ffi/src/lib.rs")
+
+        for start_marker, end_marker in [
+            ("static int __noinline begin_install", "static int __noinline append_install_chunk"),
+            ("static int __noinline begin_resource_install", "static int __noinline append_resource_chunk"),
+            ("static int __noinline commit_resource_install", "struct temp_storage_backend"),
+            ("static int __noinline commit_temp_run", "static int __noinline commit_install"),
+            ("static int __noinline commit_install", "static int start_installed_app"),
+        ]:
+            with self.subTest(handler=start_marker):
+                start = protocol.index(start_marker)
+                end = protocol.index(end_marker)
+                body = protocol[start:end]
+                self.assertNotIn("SqdpAction action", body)
+                self.assertIn("NULL", body)
+
+        self.assertIn("if !out_action.is_null() {", ffi_rs)
+
     def test_resource_install_paths_reuse_single_path_scratch(self):
         app_store = self.read("firmware/zephyr/src/app_store.c")
 

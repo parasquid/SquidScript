@@ -168,15 +168,13 @@ static int __noinline begin_install(const struct sq_protocol_frame *request,
 			 const struct sq_device_protocol_context *context, uint8_t *response,
 			 size_t response_cap, size_t *response_len)
 {
-	SqdpAction action = {0};
-
 	if (request->opcode == SQ_OPCODE_TEMP_RUN_BEGIN) {
 		struct sq_device_temp_session *session = context->temp_session;
 
 		if (session == NULL || context->store_mount_point == NULL) {
 			return -ENODEV;
 		}
-		if (sqdp_prepare_transfer_begin(request_bytes, request_len, session, &action) !=
+		if (sqdp_prepare_transfer_begin(request_bytes, request_len, session, NULL) !=
 		    SQDP_STATUS_OK) {
 			return -EINVAL;
 		}
@@ -196,7 +194,7 @@ static int __noinline begin_install(const struct sq_protocol_frame *request,
 	if (session == NULL || context->store_mount_point == NULL) {
 		return -ENODEV;
 	}
-	if (sqdp_prepare_transfer_begin(request_bytes, request_len, session, &action) !=
+	if (sqdp_prepare_transfer_begin(request_bytes, request_len, session, NULL) !=
 	    SQDP_STATUS_OK) {
 		return -EINVAL;
 	}
@@ -267,11 +265,10 @@ static int __noinline begin_resource_install(const struct sq_protocol_frame *req
 				  uint8_t *response, size_t response_cap, size_t *response_len)
 {
 	struct sq_device_resource_session *session = context->resource_session;
-	SqdpAction action = {0};
 	if (session == NULL || context->store_mount_point == NULL) {
 		return -ENODEV;
 	}
-	if (sqdp_prepare_resource_begin(request_bytes, request_len, session, &action) !=
+	if (sqdp_prepare_resource_begin(request_bytes, request_len, session, NULL) !=
 	    SQDP_STATUS_OK) {
 		return -EINVAL;
 	}
@@ -318,9 +315,8 @@ static int __noinline commit_resource_install(const struct sq_protocol_frame *re
 				   uint8_t *response, size_t response_cap, size_t *response_len)
 {
 	struct sq_device_resource_session *session = context->resource_session;
-	SqdpAction action = {0};
 	if (session == NULL || context->store_mount_point == NULL ||
-	    sqdp_prepare_resource_commit(request_bytes, request_len, session, &action) !=
+	    sqdp_prepare_resource_commit(request_bytes, request_len, session, NULL) !=
 		    SQDP_STATUS_OK) {
 		return -EINVAL;
 	}
@@ -363,11 +359,10 @@ static int __noinline commit_temp_run(const struct sq_protocol_frame *request,
 	struct sq_device_temp_session *session = context->temp_session;
 	static struct temp_storage_backend temp_storage;
 	struct sq_vm_storage_backend backend;
-	SqdpAction action = {0};
 	int result;
 
 	if (session == NULL || context->runtime == NULL || context->store_mount_point == NULL ||
-	    sqdp_prepare_transfer_commit(request_bytes, request_len, session, &action) !=
+	    sqdp_prepare_transfer_commit(request_bytes, request_len, session, NULL) !=
 		    SQDP_STATUS_OK) {
 		return -EINVAL;
 	}
@@ -399,11 +394,10 @@ static int __noinline commit_install(const struct sq_protocol_frame *request,
 			  size_t response_cap, size_t *response_len)
 {
 	struct sq_device_install_session *session = context->install_session;
-	SqdpAction action = {0};
 	int result;
 
 	if (session == NULL || context->store_mount_point == NULL ||
-	    sqdp_prepare_transfer_commit(request_bytes, request_len, session, &action) !=
+	    sqdp_prepare_transfer_commit(request_bytes, request_len, session, NULL) !=
 		    SQDP_STATUS_OK) {
 		return -EINVAL;
 	}
