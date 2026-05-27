@@ -599,7 +599,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
 
         self.assertIn("#define SQ_VM_RUNTIME_TRACE_MAX 8", runtime_h)
-        self.assertIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 12", runtime_h)
+        self.assertIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 8", runtime_h)
+        self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 12", runtime_h)
         self.assertIn("#define SQ_VM_RUNTIME_DRAWLOG_MAX 4", runtime_h)
 
     def test_repeated_line_responses_use_rust_encoder_without_c_payload_staging(self):

@@ -60,7 +60,11 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 - Reduce ESP32-C3 Zephyr RAM as canonical firmware hardening. Identify concrete
   reductions for the largest static allocations, especially VM runtime storage,
   work stacks, response/session buffers, logging, LittleFS pools, and file
-  caches.
+  caches. Current C3 build map evidence sizes the resident runtime object at
+  18,544 bytes after capping retained VM output history at eight lines; next
+  reductions should investigate the VM context reserve, worker-stack high-water
+  headroom after representative workloads, and any remaining accidental static
+  buffers.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
   succeeds but serial commands stall, app launch hangs, or input dispatch stops
   responding, check stack exhaustion early with `device resources`, compare

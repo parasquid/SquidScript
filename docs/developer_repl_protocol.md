@@ -187,9 +187,10 @@ the runtime shares its VM initialization scratch buffer with later storage
 completion transfer storage because those buffers are not live at the same
 time. `vm_sqbc_chunk_bytes` reports the bounded SQBC code/read transfer window
 used for file-backed installed app dispatch; the full installed `main.sqbc`
-payload is not resident in that window. The ESP32-C3 Super Mini RAM audit
-currently reports `runtime_static_bytes=18552`. The current ESP32-C3 canonical
-configuration keeps Zephyr's system heap at 36864 bytes; representative app,
+payload is not resident in that window. The ESP32-C3 Super Mini build map
+currently sizes the resident runtime object at 18,544 bytes. The current
+ESP32-C3 canonical configuration keeps Zephyr's system heap at 36864 bytes;
+representative app,
 display, device binding, content, Wi-Fi status, scan, list, and AP workloads
 measured `ram_heap_max_allocated_bytes=36376`, leaving roughly 0.5 KiB headroom.
 Remeasure before adding TCP, AP client throughput, BLE coexistence, or larger
