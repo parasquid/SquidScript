@@ -26,8 +26,10 @@ inherited from earlier workloads in the same firmware boot.
 
 This script requires holding the configured physical input until the script
 observes the pressed state, then releasing it when prompted for the final
-after-press snapshot. Override INPUT_BUTTON_APP, INPUT_BUTTON_APP_ID, and
-INPUT_BUTTON_LABEL to probe a candidate input binding such as
+after-press snapshot. For the default ESP32-C3 Super Mini GPIO9 active-low
+path, short GPIO9 to GND if the tiny BOOT button cannot be held reliably.
+Override INPUT_BUTTON_APP, INPUT_BUTTON_APP_ID, and INPUT_BUTTON_LABEL to probe
+a candidate input binding such as
 tests/hardware/c3-supermini/input-button-gpio5-summary/main.squid.
 
 Use --skip-flash only when an already-running firmware image is acceptable.
@@ -234,7 +236,7 @@ fi
 snapshot_resources after-release
 
 printf '%s\n' \
-  "Press and hold ${INPUT_BUTTON_LABEL} until this script asks you to release it." >&2
+  "Press and hold ${INPUT_BUTTON_LABEL}, or short GPIO9 to GND, until this script asks you to release it." >&2
 if ! wait_for_input_pressed; then
   snapshot_resources after-press-timeout
   run_capture errors-after-press-timeout \

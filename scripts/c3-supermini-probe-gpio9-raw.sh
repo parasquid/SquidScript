@@ -69,7 +69,8 @@ assert_file_contains "${released_out}" "output=gpio9 true"
 
 printf '%s\n' 'Keep the ESP32-C3 Super Mini BOOT/GPIO9 button released for reset.' >&2
 run_capture reset-before-held cargo run --quiet -p squidc -- device reset >/dev/null
-printf '%s\n' 'Press and hold the ESP32-C3 Super Mini BOOT/GPIO9 button now.' >&2
+printf '%s\n' \
+  'Press and hold the ESP32-C3 Super Mini BOOT/GPIO9 button now, or short GPIO9 to GND.' >&2
 held_out="$(wait_for_gpio9_raw output-gpio9-held "output=gpio9 false")"
 assert_file_contains "${held_out}" "output=gpio9 false"
 

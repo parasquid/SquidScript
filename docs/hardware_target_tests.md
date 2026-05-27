@@ -151,9 +151,11 @@ GPIO9 input binding to configure the pull-up and then prints
 should print `output=gpio9 true`; the held BOOT/GPIO9 state should print
 `output=gpio9 false`. The script repeatedly relaunches the tiny probe while
 waiting for the held state, so a delayed human press gets re-sampled instead of
-being hidden by the first launch result. Use it to separate raw pin visibility
-from input event dispatch when the input stack isolation harness times out
-before `after-press-observed`.
+being hidden by the first launch result. If the tiny BOOT button cannot be held
+reliably, short the GPIO9 header pin to GND during the held phase to force the
+same active-low electrical condition. Use it to separate raw pin visibility from
+input event dispatch when the input stack isolation harness times out before
+`after-press-observed`.
 
 `scripts/c3-supermini-probe-boot-button-pins.sh` is a broader physical BOOT
 button diagnostic, also outside the full suite. It installs
@@ -188,6 +190,8 @@ only when preserving the current firmware session is more important than a
 fresh high-water baseline. Override `INPUT_BUTTON_APP`, `INPUT_BUTTON_APP_ID`,
 and `INPUT_BUTTON_LABEL` to run the same attribution flow against a candidate
 binding such as `tests/hardware/c3-supermini/input-button-gpio5-summary`.
+For the default ESP32-C3 Super Mini GPIO9 active-low path, short GPIO9 to GND
+during the held phase if the tiny BOOT button cannot be held reliably.
 The current clean-boot GPIO9 input isolation launch row measured protocol/main
 stack flat at 2476 bytes and VM worker stack use at 17056 bytes, with 2400
 bytes free and `input_button_state=1`. The low byte confirms one physical GPIO9

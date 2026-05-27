@@ -1041,6 +1041,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('run_capture "${label}-launch-${attempt}"', script)
         self.assertIn('run_capture "${label}-output-${attempt}"', script)
         self.assertIn("Press and hold the ESP32-C3 Super Mini BOOT/GPIO9 button", script)
+        self.assertIn("short GPIO9 to GND", script)
         self.assertIn("output=gpio9 true", script)
         self.assertIn("output=gpio9 false", script)
         self.assertIn("assert_file_empty_command", script)
@@ -1331,9 +1332,10 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('tests/hardware/c3-supermini/input-button-summary/main.squid', stack)
         self.assertIn('tests/hardware/c3-supermini/input-button-gpio5-summary/main.squid', stack)
         self.assertIn(
-            'Press and hold ${INPUT_BUTTON_LABEL} until this script asks you to release it.',
+            'Press and hold ${INPUT_BUTTON_LABEL}, or short GPIO9 to GND, until this script asks you to release it.',
             stack,
         )
+        self.assertIn('or short GPIO9 to GND', stack)
         self.assertIn('Release %s now.', stack)
         self.assertNotIn('cargo run --quiet -p squidc -- device key SELECT', stack)
         self.assertIn('protocol_thread_stack_pre_resources_used_bytes', stack)
