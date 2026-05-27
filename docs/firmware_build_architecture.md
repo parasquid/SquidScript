@@ -109,6 +109,10 @@ available without retaining unbounded VM text in RAM.
 Runtime physical input state is bounded to two GPIO button slots; the ESP32-C3
 Super Mini reference path only needs the confirmed BOOT/GPIO9 binding plus one
 additional slot for targeted diagnostics.
+Runtime event-name storage is bounded to 24-byte slots, which preserves the
+current measured event workload, including the 20-byte `timer.breathe.marker`
+fixture, while avoiding the previous 32-byte slot size across timers, armed
+timers, input bindings, and dispatch state.
 Runtime active device bindings are bounded to three entries for the current
 indicator, display/input, and targeted diagnostic binding workloads.
 Runtime device-config drafts are bounded to five records with 48-byte string

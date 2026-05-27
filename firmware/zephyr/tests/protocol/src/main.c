@@ -2214,7 +2214,7 @@ ZTEST(squidscript_protocol, test_runtime_reuses_transfer_storage_for_init_scratc
 	zassert_true(sizeof(runtime.transfer) >= sizeof(runtime.transfer.completion));
 #if !defined(CONFIG_BOARD_NATIVE_SIM)
 	size_t runtime_static = sizeof(runtime);
-	zassert_true(runtime_static <= 16312, "runtime_static=%zu", runtime_static);
+	zassert_true(runtime_static <= 16240, "runtime_static=%zu", runtime_static);
 #endif
 }
 
@@ -2356,6 +2356,7 @@ ZTEST(squidscript_protocol, test_vm_runtime_callback_boundary_statuses)
 	bool indicator = false;
 
 	zassert_true(ARRAY_SIZE(timer_events) >= SQ_VM_RUNTIME_TIMER_MAX);
+	zassert_true(strlen("timer.breathe.marker") < SQ_VM_RUNTIME_EVENT_LEN);
 	sq_vm_runtime_init(&runtime);
 
 	zassert_equal(sq_vm_runtime_indicator_read(NULL, &indicator), -EINVAL);

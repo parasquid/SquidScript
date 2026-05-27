@@ -589,7 +589,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("SqvmStorageCompletion completion;", runtime_body)
         self.assertIn("sizeof(runtime.transfer.init_scratch)", ztest)
         self.assertIn("SQVM_STORAGE_TRANSFER_CAPACITY <= 768", ztest)
-        self.assertIn("runtime_static <= 16312", ztest)
+        self.assertIn("runtime_static <= 16240", ztest)
+        self.assertNotIn("runtime_static <= 16312", ztest)
         self.assertNotIn("runtime_static <= 16320", ztest)
         self.assertNotIn("runtime_static <= 16344", ztest)
         self.assertNotIn("runtime_static <= 16408", ztest)
@@ -671,11 +672,15 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
     def test_runtime_keeps_physical_input_slots_bounded(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+        ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
 
         self.assertIn("#define SQ_VM_RUNTIME_ACTIVE_BINDING_MAX 3", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_ACTIVE_BINDING_MAX 4", runtime_h)
         self.assertIn("#define SQ_VM_RUNTIME_INPUT_BUTTON_MAX 2", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_INPUT_BUTTON_MAX 4", runtime_h)
+        self.assertIn("#define SQ_VM_RUNTIME_EVENT_LEN 24", runtime_h)
+        self.assertNotIn("#define SQ_VM_RUNTIME_EVENT_LEN 32", runtime_h)
+        self.assertIn('strlen("timer.breathe.marker") < SQ_VM_RUNTIME_EVENT_LEN', ztest)
 
     def test_repeated_line_responses_use_rust_encoder_without_c_payload_staging(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")

@@ -61,14 +61,16 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   reductions for the largest static allocations, especially VM runtime storage,
   work stacks, response/session buffers, logging, LittleFS pools, and file
   caches. Current C3 build map evidence sizes the resident runtime object at
-  16,280 bytes after capping retained VM output history at five lines,
+  16,208 bytes after capping retained VM output history at five lines,
   retained VM trace history at four lines,
   narrowing output and drawlog diagnostic line storage, trimming the ESP32-C3
   VM context reserve to 11,776 bytes, reducing app-id slots to 40 bytes, and
   lowering the SQBC code/read transfer window to 768 bytes. Runtime device
   config drafts now hold five records with 48-byte string values, enough for the
   five-record GPIO button binding shape and current package `.sqdevice` resource
-  paths without retaining unused slots. The resident app
+  paths without retaining unused slots. Runtime event-name slots are now
+  24 bytes, enough for the current measured examples and tests such as
+  `timer.breathe.marker` without retaining the previous 32-byte slots. The resident app
   registry now holds twelve installed-app entries with 40-byte app-id storage
   slots to keep the reference firmware RAM-bound explicit, and the serial
   receive frame budget is 320 bytes with host upload chunking derived from that
@@ -86,7 +88,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   remain at the Zephyr default for recursive format/delete walks. The
   protocol/main stack is now 3328 bytes, leaving 852 bytes over the last
   measured 2476-byte protocol peak, and the VM worker stack is now 18048 bytes.
-  The latest target build reports 187,200 bytes
+  The latest target build reports 187,136 bytes
   of DRAM use; next
   reductions should physically revalidate the 3328-byte protocol/main stack
   with the bounded stack harness. The stack harness now fails with captured
