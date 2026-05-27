@@ -5,7 +5,7 @@ use squid_device_protocol::{
     resource_install_begin_request, resource_install_chunk_request,
     resource_install_commit_request, temp_run_begin_request, temp_run_chunk_request,
     temp_run_commit_request, DeviceRequest, HostAction, ProtocolSessions, SessionError,
-    MAX_APP_BYTES,
+    MAX_APP_BYTES, MAX_APP_ID_LEN,
 };
 
 #[test]
@@ -216,4 +216,38 @@ fn rust_session_engine_rejects_oversized_install_before_zephyr_storage_work() {
     let request = DeviceRequest::decode(&begin).unwrap();
 
     assert_eq!(sessions.next_action(&request), Err(SessionError::TooLarge));
+}
+
+#[test]
+fn rust_session_engine_bounds_app_ids_for_firmware_ram() {
+    let mut sessions = ProtocolSessions::default();
+    let accepted = "a".repeat(MAX_APP_ID_LEN - 1);
+    let rejected = "a".repeat(MAX_APP_ID_LEN);
+    let bytes = b"sqbc";
+    let crc = crc32fast::hash(bytes);
+
+    let begin = encode_frame(&app_install_begin_request(
+        1,
+        accepted,
+        bytes.len() as u64,
+        crc as u64,
+    ));
+    let request = DeviceRequest::decode(&begin).unwrap();
+    assert!(matches!(
+        sessions.next_action(&request).unwrap(),
+        HostAction::BeginInstall { .. }
+    ));
+
+    let begin = encode_frame(&app_install_begin_request(
+        2,
+        rejected,
+        bytes.len() as u64,
+        crc as u64,
+    ));
+    let request = DeviceRequest::decode(&begin).unwrap();
+    assert_eq!(
+        sessions.next_action(&request),
+        Err(SessionError::AppIdTooLong)
+    );
+    assert_eq!(MAX_APP_ID_LEN, 40);
 }

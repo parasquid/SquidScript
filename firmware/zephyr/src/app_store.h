@@ -11,7 +11,7 @@ extern "C" {
 #endif
 
 #define SQ_APP_STORE_PATH_MAX 128
-#define SQ_APP_STORE_APP_ID_MAX 48
+#define SQ_APP_STORE_APP_ID_MAX 40
 #define SQ_APP_STORE_MAX_APPS 12
 
 struct fs_mount_t;

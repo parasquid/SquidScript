@@ -684,6 +684,21 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("#define SQ_APP_STORE_MAX_APPS 12", app_store_h)
         self.assertNotIn("#define SQ_APP_STORE_MAX_APPS 16", app_store_h)
 
+    def test_app_id_capacity_is_bounded_across_firmware_protocol_and_ffi(self):
+        app_store_h = self.read("firmware/zephyr/src/app_store.h")
+        ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
+        ffi_rs = self.read("compiler/rust/crates/squidvm-ffi/src/lib.rs")
+        protocol_rs = self.read("compiler/rust/crates/squid-device-protocol/src/lib.rs")
+
+        self.assertIn("#define SQ_APP_STORE_APP_ID_MAX 40", app_store_h)
+        self.assertIn("uint8_t app_id[40];", ffi_h)
+        self.assertIn("const SQDP_APP_ID_CAP: usize = 40;", ffi_rs)
+        self.assertIn("pub const MAX_APP_ID_LEN: usize = 40;", protocol_rs)
+        self.assertNotIn("#define SQ_APP_STORE_APP_ID_MAX 48", app_store_h)
+        self.assertNotIn("uint8_t app_id[48];", ffi_h)
+        self.assertNotIn("const SQDP_APP_ID_CAP: usize = 48;", ffi_rs)
+        self.assertNotIn("pub const MAX_APP_ID_LEN: usize = 48;", protocol_rs)
+
     def test_serial_transport_uses_reduced_frame_budget(self):
         serial_h = self.read("firmware/zephyr/src/serial_transport.h")
         cli_serial = self.read("compiler/rust/crates/squidc-cli/src/serial.rs")

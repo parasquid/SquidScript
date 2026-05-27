@@ -776,11 +776,11 @@ fn ffi_validates_install_session_progress_with_caller_owned_storage() {
 #[test]
 fn ffi_transfer_staging_path_uses_internal_firmware_capacity() {
     let mut session = SqdpTransferSession::default();
-    let max_app_id = "a".repeat(47);
+    let max_app_id = "a".repeat(39);
     let longest_install_staging_path = format!("/sq/apps/{max_app_id}/main.sqbc.tmp");
 
     assert_eq!(SQDP_STAGING_PATH_CAP, 80);
-    assert_eq!(longest_install_staging_path.len(), 70);
+    assert_eq!(longest_install_staging_path.len(), 62);
     assert_eq!(
         session.set_staging_path_for_test(&longest_install_staging_path) as i32,
         0

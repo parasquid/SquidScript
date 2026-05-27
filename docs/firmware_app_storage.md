@@ -84,6 +84,12 @@ paths:
 /sq/state/<app-id>.state
 ```
 
+The ESP32-C3 Zephyr reference firmware stores app IDs in bounded resident
+buffers and accepts app IDs up to 39 bytes, with one byte reserved for the C
+string terminator. Host serial tooling and the Rust `sqdp_` FFI use the same
+limit so oversized IDs fail before firmware path construction or registry
+storage.
+
 On ESP32-C3 Zephyr builds, firmware attempts to mount the `storage_partition`
 LittleFS volume at `/sq` during boot and then prepares those directories. If
 the store is unavailable, the serial protocol stays available and reports the

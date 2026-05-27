@@ -95,7 +95,7 @@ typedef enum {
 } SqdpActionKind;
 
 typedef struct {
-	uint8_t app_id[48];
+	uint8_t app_id[40];
 	size_t sqbc_len;
 } SqdpAppListEntry;
 
@@ -111,7 +111,7 @@ typedef struct {
 } SqdpResourceMetric;
 
 typedef struct {
-	uint8_t app_id[48];
+	uint8_t app_id[40];
 	uint8_t event[32];
 } SqdpLifecycleTimer;
 

@@ -82,6 +82,10 @@ length, and tag `3` CRC32 encoded as an unsigned 64-bit integer. Resource
 install begin also uses field tag `4` for the package-relative resource path.
 Each chunk uses tag `1` byte offset and tag `2` byte payload.
 
+The ESP32-C3 Zephyr reference firmware accepts app IDs up to 39 bytes. The
+shared Rust host protocol, Rust FFI validator, and Zephyr app-store buffers use
+the same 40-byte storage capacity including the terminating NUL byte.
+
 Install commit verifies byte count and CRC32 before publishing
 `/sq/apps/<app-id>/main.sqbc`; resource commit publishes under
 `/sq/apps/<app-id>/<resource-path>`; temp-run commit verifies byte count and
