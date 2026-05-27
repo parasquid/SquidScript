@@ -656,10 +656,10 @@ static void copy_text(char *out, size_t out_len, const char *text)
 
 static void runtime_wifi_reset_scan(struct sq_vm_runtime *runtime)
 {
-	memset(runtime->wifi_scan_networks, 0, sizeof(runtime->wifi_scan_networks));
-	memset(runtime->wifi_scan_ssids, 0, sizeof(runtime->wifi_scan_ssids));
-	memset(runtime->wifi_scan_bssids, 0, sizeof(runtime->wifi_scan_bssids));
-	memset(runtime->wifi_scan_auth, 0, sizeof(runtime->wifi_scan_auth));
+	struct sq_vm_runtime_wifi_scan_scratch *scan = &runtime->transfer.wifi_scan;
+
+	BUILD_ASSERT(sizeof(runtime->transfer.wifi_scan) <= sizeof(runtime->transfer.init_scratch));
+	memset(scan, 0, sizeof(*scan));
 	runtime->wifi_scan_count = 0;
 	runtime->wifi_scan_status = 0;
 }
@@ -754,30 +754,30 @@ static void runtime_wifi_record_scan_result(struct sq_vm_runtime *runtime,
 	}
 
 	size_t index = runtime->wifi_scan_count;
-	SqvmWifiAccessPoint *network = &runtime->wifi_scan_networks[index];
+	struct sq_vm_runtime_wifi_scan_scratch *scan = &runtime->transfer.wifi_scan;
+	SqvmWifiAccessPoint *network = &scan->networks[index];
 	size_t ssid_len = entry->ssid_length;
 	if (ssid_len >= SQ_VM_RUNTIME_WIFI_SSID_LEN) {
 		ssid_len = SQ_VM_RUNTIME_WIFI_SSID_LEN - 1;
 	}
-	memcpy(runtime->wifi_scan_ssids[index], entry->ssid, ssid_len);
-	runtime->wifi_scan_ssids[index][ssid_len] = '\0';
+	memcpy(scan->ssids[index], entry->ssid, ssid_len);
+	scan->ssids[index][ssid_len] = '\0';
 	if (entry->mac_length >= 6) {
 		(void)sq_vm_runtime_wifi_format_bssid(entry->mac, entry->mac_length,
-						      runtime->wifi_scan_bssids[index],
-						      sizeof(runtime->wifi_scan_bssids[index]));
+						      scan->bssids[index],
+						      sizeof(scan->bssids[index]));
 	}
-	copy_text(runtime->wifi_scan_auth[index], sizeof(runtime->wifi_scan_auth[index]),
-		  wifi_security_txt(entry->security));
+	copy_text(scan->auth[index], sizeof(scan->auth[index]), wifi_security_txt(entry->security));
 
-	network->ssid = (const uint8_t *)runtime->wifi_scan_ssids[index];
-	network->ssid_len = strlen(runtime->wifi_scan_ssids[index]);
-	network->bssid = (const uint8_t *)runtime->wifi_scan_bssids[index];
-	network->bssid_len = strlen(runtime->wifi_scan_bssids[index]);
+	network->ssid = (const uint8_t *)scan->ssids[index];
+	network->ssid_len = strlen(scan->ssids[index]);
+	network->bssid = (const uint8_t *)scan->bssids[index];
+	network->bssid_len = strlen(scan->bssids[index]);
 	network->ssid_length = entry->ssid_length;
 	network->channel = entry->channel;
 	network->rssi = entry->rssi;
-	network->auth = (const uint8_t *)runtime->wifi_scan_auth[index];
-	network->auth_len = strlen(runtime->wifi_scan_auth[index]);
+	network->auth = (const uint8_t *)scan->auth[index];
+	network->auth_len = strlen(scan->auth[index]);
 	network->hidden = entry->ssid_length == 0;
 	runtime->wifi_scan_count++;
 }
@@ -1246,7 +1246,7 @@ static int32_t runtime_wifi_scan(void *user_data, SqvmWifiScanResult *out)
 		return 0;
 	}
 	out->ok = true;
-	out->networks = runtime->wifi_scan_networks;
+	out->networks = runtime->transfer.wifi_scan.networks;
 	out->network_count = runtime->wifi_scan_count;
 	return 0;
 #else

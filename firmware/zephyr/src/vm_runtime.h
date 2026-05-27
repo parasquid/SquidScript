@@ -87,9 +87,17 @@ struct sq_vm_runtime_input_button {
 	char event[SQ_VM_RUNTIME_EVENT_LEN];
 };
 
+struct sq_vm_runtime_wifi_scan_scratch {
+	SqvmWifiAccessPoint networks[SQVM_WIFI_SCAN_MAX_NETWORKS];
+	char ssids[SQVM_WIFI_SCAN_MAX_NETWORKS][SQ_VM_RUNTIME_WIFI_SSID_LEN];
+	char bssids[SQVM_WIFI_SCAN_MAX_NETWORKS][SQ_VM_RUNTIME_WIFI_BSSID_LEN];
+	char auth[SQVM_WIFI_SCAN_MAX_NETWORKS][SQ_VM_RUNTIME_WIFI_AUTH_LEN];
+};
+
 union sq_vm_runtime_transfer {
 	uint8_t init_scratch[SQ_VM_RUNTIME_SCRATCH_BYTES];
 	SqvmStorageCompletion completion;
+	struct sq_vm_runtime_wifi_scan_scratch wifi_scan;
 };
 
 struct sq_vm_runtime {
@@ -167,10 +175,6 @@ struct sq_vm_runtime {
 	size_t wifi_profile_password_len;
 #if IS_ENABLED(CONFIG_NET_L2_WIFI_MGMT) && IS_ENABLED(CONFIG_NET_MGMT_EVENT) && \
 	IS_ENABLED(CONFIG_NET_MGMT_EVENT_INFO)
-	SqvmWifiAccessPoint wifi_scan_networks[SQVM_WIFI_SCAN_MAX_NETWORKS];
-	char wifi_scan_ssids[SQVM_WIFI_SCAN_MAX_NETWORKS][SQ_VM_RUNTIME_WIFI_SSID_LEN];
-	char wifi_scan_bssids[SQVM_WIFI_SCAN_MAX_NETWORKS][SQ_VM_RUNTIME_WIFI_BSSID_LEN];
-	char wifi_scan_auth[SQVM_WIFI_SCAN_MAX_NETWORKS][SQ_VM_RUNTIME_WIFI_AUTH_LEN];
 	char wifi_station_ip[SQ_VM_RUNTIME_WIFI_IPV4_LEN];
 	size_t wifi_scan_count;
 	int wifi_scan_status;

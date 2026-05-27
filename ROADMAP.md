@@ -61,7 +61,8 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   reductions for the largest static allocations, especially VM runtime storage,
   work stacks, response/session buffers, logging, LittleFS pools, and file
   caches. Current C3 build map evidence sizes the resident runtime object at
-  14,720 bytes after capping foreground runtime timers to two slots,
+  14,264 bytes after moving Wi-Fi scan result backing into runtime transfer
+  scratch, capping foreground runtime timers to two slots,
   capping retained VM output history at five lines,
   retained VM trace history at four lines,
   narrowing output and drawlog diagnostic line storage, bounding transient VM
@@ -96,8 +97,8 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   remain at the Zephyr default for recursive format/delete walks. The
   protocol/main stack is now 3264 bytes, leaving 788 bytes over the last
   measured 2476-byte protocol peak, and the VM worker stack is now 18016 bytes.
-  The latest target build reports 185,024 bytes
-  of linker DRAM use and 185,008 bytes through the RAM audit; next
+  The latest target build reports 184,560 bytes
+  of linker DRAM use and 184,544 bytes through the RAM audit; next
   reductions should physically revalidate the 3264-byte protocol/main stack
   with the bounded stack harness. The stack harness now fails with captured
   resources if protocol/main unused stack drops below 768 bytes or VM worker
@@ -269,10 +270,12 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   `commit_temp_run` from 112 bytes to 80 bytes and its source-known cumulative
   path from 208 bytes to 176 bytes. The top source-known main/protocol path is
   now 384 bytes through `errors_response -> repeated_runtime_lines_response`.
-  Linker DRAM remains 185,024 bytes and RAM audit DRAM remains 185,008 bytes;
-  remaining resident RAM reductions should come from workload-attributed
-  worker stack, system heap, or runtime-object cuts rather than these
-  stack-only path cleanups. VM
+  Wi-Fi scan result backing now reuses runtime transfer scratch because the
+  Rust FFI copies scan results out of the C callback before returning to the
+  VM; this drops `runtime.3` from 14,720 bytes to 14,264 bytes and the current
+  build to 184,560 bytes linker DRAM / 184,544 bytes RAM-audit DRAM. Remaining
+  resident RAM reductions should come from workload-attributed worker stack,
+  system heap, or runtime-object cuts rather than stack-only path cleanups. VM
   dispatch now uses a
   static callback table plus an explicit `user_data` pointer across the FFI
   boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes

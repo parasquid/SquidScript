@@ -398,6 +398,12 @@ the static `runtime.3` block from 15,232 bytes to 14,752 bytes.
 Runtime field ordering and byte-sized fixed-array counters further reduce
 `runtime.3` from 14,752 bytes to 14,720 bytes without changing runtime
 capacity.
+Wi-Fi scan result backing uses the runtime transfer scratch because the Rust
+FFI copies scan results out of the callback before returning to the VM. This
+keeps scan SSID/BSSID/auth/network arrays out of the resident runtime object
+and reduces `runtime.3` from 14,720 bytes to 14,264 bytes. The current
+ESP32-C3 target build reports 184,560 bytes of linker DRAM and 184,544 bytes
+through the RAM audit.
 The resident protocol response buffer is 826 bytes, matching the current
 resources-response ceiling: 806 bytes of metric payload plus the 20-byte frame
 header. This trims the previous 848-byte buffer without changing the response

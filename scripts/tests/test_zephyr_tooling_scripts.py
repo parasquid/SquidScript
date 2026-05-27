@@ -592,16 +592,38 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             stack_script,
         )
 
-    def test_default_runtime_gates_wifi_scan_buffers_from_static_ram(self):
+    def test_default_runtime_keeps_wifi_event_state_gated(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
 
         guard = "#if IS_ENABLED(CONFIG_NET_L2_WIFI_MGMT) && IS_ENABLED(CONFIG_NET_MGMT_EVENT) &&"
         self.assertIn(guard, runtime_h)
         guard_index = runtime_h.index(guard, runtime_h.index("struct sq_vm_runtime"))
-        scan_index = runtime_h.index("wifi_scan_networks")
-        end_index = runtime_h.index("#endif", scan_index)
-        self.assertLess(guard_index, scan_index)
+        scan_sem_index = runtime_h.index("wifi_scan_sem_initialized")
+        end_index = runtime_h.index("#endif", scan_sem_index)
+        self.assertLess(guard_index, scan_sem_index)
         self.assertLess(runtime_h.index("wifi_scan_sem_initialized"), end_index)
+
+    def test_wifi_scan_results_use_transfer_scratch_not_resident_runtime_buffers(self):
+        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+        runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
+        runtime_body = runtime_h[
+            runtime_h.index("struct sq_vm_runtime {") : runtime_h.index(
+                "void sq_vm_runtime_init", runtime_h.index("struct sq_vm_runtime {")
+            )
+        ]
+
+        self.assertIn("struct sq_vm_runtime_wifi_scan_scratch", runtime_h)
+        self.assertIn("struct sq_vm_runtime_wifi_scan_scratch wifi_scan", runtime_h)
+        self.assertIn("BUILD_ASSERT(sizeof(runtime->transfer.wifi_scan) <=", runtime_c)
+        self.assertNotIn("SqvmWifiAccessPoint wifi_scan_networks", runtime_body)
+        self.assertNotIn("char wifi_scan_ssids", runtime_body)
+        self.assertNotIn("char wifi_scan_bssids", runtime_body)
+        self.assertNotIn("char wifi_scan_auth", runtime_body)
+        self.assertIn("struct sq_vm_runtime_wifi_scan_scratch *scan =", runtime_c)
+        self.assertIn("out->networks = runtime->transfer.wifi_scan.networks", runtime_c)
+        self.assertIn("runtime_static <= 14304", ztest)
+        self.assertNotIn("runtime_static <= 14720", ztest)
 
     def test_vm_context_reserve_tracks_current_ffi_size(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
@@ -646,7 +668,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("SqvmStorageCompletion completion;", runtime_body)
         self.assertIn("sizeof(runtime.transfer.init_scratch)", ztest)
         self.assertIn("SQVM_STORAGE_TRANSFER_CAPACITY <= 768", ztest)
-        self.assertIn("runtime_static <= 14720", ztest)
+        self.assertIn("runtime_static <= 14304", ztest)
+        self.assertNotIn("runtime_static <= 14720", ztest)
         self.assertNotIn("runtime_static <= 14736", ztest)
         self.assertNotIn("runtime_static <= 15264", ztest)
         self.assertNotIn("runtime_static <= 16160", ztest)
