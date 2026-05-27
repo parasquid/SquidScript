@@ -59,13 +59,13 @@ fn ffi_encodes_hello_response_into_caller_buffer() {
 
 #[test]
 fn ffi_parses_edits_and_round_trips_sqdevice_draft_config() {
-    let source = b"SQDEVICE\nservice string 17:indicator.default\nbackend string 4:gpio\nactiveLow bool false\npin int 8\nunused null\n";
+    let source = b"SQDEVICE\nservice string 17:indicator.default\nbackend string 4:gpio\nactiveLow bool false\nunused null\n";
     let mut config = SqdcConfig::default();
 
     let status =
         unsafe { squidvm_ffi::sqdc_parse_sqdevice(source.as_ptr(), source.len(), &mut config) };
     assert_eq!(status, SqdcStatus::Ok);
-    assert_eq!(config.count, 5);
+    assert_eq!(config.count, 4);
     assert_eq!(
         sqdc_record(&config, "backend").value.kind,
         SqdcValueKind::String
@@ -76,7 +76,6 @@ fn ffi_parses_edits_and_round_trips_sqdevice_draft_config() {
         b"gpio"
     );
     assert!(!sqdc_record(&config, "activeLow").value.bool_value);
-    assert_eq!(sqdc_record(&config, "pin").value.i32_value, 8);
     assert_eq!(
         sqdc_record(&config, "unused").value.kind,
         SqdcValueKind::Null
@@ -92,6 +91,7 @@ fn ffi_parses_edits_and_round_trips_sqdevice_draft_config() {
         )
     };
     assert_eq!(status, SqdcStatus::Ok);
+    assert_eq!(config.count, 5);
 
     let status =
         unsafe { squidvm_ffi::sqdc_config_set_bool(&mut config, b"activeLow".as_ptr(), 9, true) };
@@ -132,6 +132,17 @@ fn ffi_rejects_invalid_sqdevice_draft_inputs_without_allocating() {
         squidvm_ffi::sqdc_parse_sqdevice(duplicate.as_ptr(), duplicate.len(), &mut config)
     };
     assert_eq!(status, SqdcStatus::ParseError);
+
+    let too_many_records =
+        b"SQDEVICE\none null\ntwo null\nthree null\nfour null\nfive null\nsix null\n";
+    let status = unsafe {
+        squidvm_ffi::sqdc_parse_sqdevice(
+            too_many_records.as_ptr(),
+            too_many_records.len(),
+            &mut config,
+        )
+    };
+    assert_eq!(status, SqdcStatus::TooManyRecords);
 
     let status = unsafe {
         squidvm_ffi::sqdc_config_set_string(

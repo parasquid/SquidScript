@@ -2214,7 +2214,7 @@ ZTEST(squidscript_protocol, test_runtime_reuses_transfer_storage_for_init_scratc
 	zassert_true(sizeof(runtime.transfer) >= sizeof(runtime.transfer.completion));
 #if !defined(CONFIG_BOARD_NATIVE_SIM)
 	size_t runtime_static = sizeof(runtime);
-	zassert_true(runtime_static <= 16512, "runtime_static=%zu", runtime_static);
+	zassert_true(runtime_static <= 16408, "runtime_static=%zu", runtime_static);
 #endif
 }
 

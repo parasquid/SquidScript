@@ -589,7 +589,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("SqvmStorageCompletion completion;", runtime_body)
         self.assertIn("sizeof(runtime.transfer.init_scratch)", ztest)
         self.assertIn("SQVM_STORAGE_TRANSFER_CAPACITY <= 768", ztest)
-        self.assertIn("runtime_static <= 16512", ztest)
+        self.assertIn("runtime_static <= 16408", ztest)
+        self.assertNotIn("runtime_static <= 16512", ztest)
 
     def test_runtime_does_not_keep_launch_binding_scratch_resident(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
@@ -1637,10 +1638,14 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
 
     def test_zephyr_header_exposes_bounded_rust_device_config_core(self):
         ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
+        ffi_rs = self.read("compiler/rust/crates/squidvm-ffi/src/lib.rs")
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
 
-        self.assertIn("#define SQDC_CONFIG_MAX_RECORDS 6", ffi_h)
+        self.assertIn("#define SQDC_CONFIG_MAX_RECORDS 5", ffi_h)
+        self.assertNotIn("#define SQDC_CONFIG_MAX_RECORDS 6", ffi_h)
         self.assertNotIn("#define SQDC_CONFIG_MAX_RECORDS 8", ffi_h)
+        self.assertIn("pub const SQDC_CONFIG_MAX_RECORDS: usize = 5;", ffi_rs)
+        self.assertNotIn("pub const SQDC_CONFIG_MAX_RECORDS: usize = 6;", ffi_rs)
         self.assertIn("#define SQDC_CONFIG_KEY_CAP 32", ffi_h)
         self.assertIn("#define SQDC_CONFIG_STRING_CAP 48", ffi_h)
         self.assertNotIn("#define SQDC_CONFIG_STRING_CAP 64", ffi_h)

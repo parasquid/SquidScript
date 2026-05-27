@@ -111,6 +111,9 @@ Super Mini reference path only needs the confirmed BOOT/GPIO9 binding plus one
 additional slot for targeted diagnostics.
 Runtime active device bindings are bounded to three entries for the current
 indicator, display/input, and targeted diagnostic binding workloads.
+Runtime device-config drafts are bounded to five records with 48-byte string
+values, which fits the current inline GPIO button binding shape and package
+`.sqdevice` edit/rebind path without retaining an extra unused draft slot.
 Zephyr's deferred logger buffer and process-thread stack are explicitly
 bounded at 512 bytes each; app-visible diagnostics use protocol output, trace,
 draw-log, lifecycle, and resources responses instead of relying on a large
