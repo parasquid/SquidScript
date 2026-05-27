@@ -41,6 +41,13 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   through `device { input ... }` binding metadata or a related input config
   block, while preserving target defaults and target-owned system actions such
   as long `POWER` sleep.
+- Add a SquidScript GPIO input configuration affordance for raw hardware
+  diagnostics and target-specific local inputs. It should let code or device
+  binding metadata request input bias such as pull-up, pull-down, or floating
+  where the target supports it, while keeping portable service APIs separate
+  from board-specific GPIO names. Use it to make ESP32-C3 Super Mini diagnostic
+  scans less noisy without changing the confirmed GPIO9 BOOT binding from
+  active-low pull-up behavior.
 - Add a generic PWM-capable LED-like device output model beyond
   `service.indicator`, so future target-described GPIO/PWM endpoints can expose
   smooth brightness control without board-specific app code.

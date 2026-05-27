@@ -213,11 +213,15 @@ and local hardware evidence confirms GPIO9 reads released as `true`, held as
 `false`, and dispatches the configured `key.SELECT` input event. The
 BOOT-button pin scan is diagnostic only: it samples GPIO0 through GPIO10 and
 now requires repeated stable changed samples, but floating or unconfigured pins
-can still move with a pen-held tiny button. Do not treat GPIO3, GPIO4, GPIO7,
-GPIO10, or GPIO5 scan changes as ESP32-C3 Super Mini buttons without a targeted
-raw probe and input-stack run. GPIO3 is also part of ESP32-C3 boot strapping,
-while GPIO4 and GPIO7 have alternate JTAG/FSPI-related functions, so broad
-unconfigured scans are not authoritative for button mapping.
+can still move with a pen-held tiny button. ESP32-C3 GPIOs can be configured
+with weak internal pull-up or pull-down bias in software, so future diagnostic
+scans can reduce floating-pin noise by applying a known pull before sampling
+candidate pins. Keep the confirmed Super Mini BOOT path active-low with pull-up
+bias on GPIO9; do not switch the BOOT binding to pull-down. Do not treat GPIO3,
+GPIO4, GPIO7, GPIO10, or GPIO5 scan changes as ESP32-C3 Super Mini buttons
+without a targeted raw probe and input-stack run. GPIO3 is also part of
+ESP32-C3 boot strapping, while GPIO4 and GPIO7 have alternate JTAG/FSPI-related
+functions, so broad unconfigured scans are not authoritative for button mapping.
 After flattening the resumable screen-render interpreter path, a headless
 draw-log isolation run showed that `screen.open(...)` into a screen with only
 `service.display.clear("gray0")` uses `vm_worker_stack_used_bytes=17056` of

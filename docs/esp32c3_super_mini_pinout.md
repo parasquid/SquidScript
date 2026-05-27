@@ -78,6 +78,12 @@ still at the top, the header order appears mirrored:
 - Peripheral labels such as `SDA`, `SCL`, `MISO`, `MOSI`, `SS`, `RX`, and `TX`
   are conventional defaults. The ESP32-C3 GPIO matrix can route many peripheral
   functions to other pins, subject to firmware and board constraints.
+- ESP32-C3 GPIOs can be software-configured with weak internal pull-up or
+  pull-down bias. Use that for diagnostics or simple local inputs when an
+  external resistor is not present, but treat it as a weak bias rather than a
+  robust substitute for a board-level resistor in noisy wiring. For the Super
+  Mini BOOT button path, keep GPIO9 modeled as active-low with pull-up bias;
+  do not switch the confirmed BOOT binding to pull-down.
 
 ## Suggested E-Paper Wiring
 
