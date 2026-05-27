@@ -103,7 +103,7 @@ Directory slots remain at the Zephyr default because recursive format/delete
 walks can hold nested directories open.
 Resource diagnostics are encoded directly into the caller-owned 984-byte
 protocol response buffer and do not keep a resident metric staging array.
-Runtime diagnostic history is bounded to four trace lines, six output lines,
+Runtime diagnostic history is bounded to four trace lines, five output lines,
 and four draw-log lines so recent debugging data remains available without
 retaining unbounded VM text in RAM.
 Runtime physical input state is bounded to two GPIO button slots; the ESP32-C3
