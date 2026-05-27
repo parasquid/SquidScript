@@ -78,8 +78,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   state now uses the file-backed VM storage backend with a cleared temp state
   path instead of a resident saved-state-capacity RAM buffer, and Zephyr's
   deferred logger buffer and process-thread stack are explicitly bounded at 512
-  bytes each. The VM worker stack is now 18048 bytes. The latest target build
-  reports 188,752 bytes
+  bytes each. LittleFS open-file slots are bounded at two while directory slots
+  remain at the Zephyr default for recursive format/delete walks. The VM worker
+  stack is now 18048 bytes. The latest target build reports 188,368 bytes
   of DRAM use; next
   reductions should investigate full-suite worker-stack high-water headroom
   after the 18048-byte stack reduction and any remaining accidental static

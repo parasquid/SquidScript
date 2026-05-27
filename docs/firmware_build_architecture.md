@@ -97,6 +97,10 @@ staging-path buffers for fixed staging filenames and 80-byte resource-path
 buffers for package-relative resource paths. The app-store path cap remains
 larger because it formats full filesystem paths that include the mount point,
 app ID, resource directory, and package-relative resource path.
+LittleFS open-file slots are bounded at two because firmware storage paths
+open and close one file per app-store, VM storage, or device-config operation.
+Directory slots remain at the Zephyr default because recursive format/delete
+walks can hold nested directories open.
 Resource diagnostics are encoded directly into the caller-owned 984-byte
 protocol response buffer and do not keep a resident metric staging array.
 Runtime diagnostic history is bounded to four trace lines, six output lines,

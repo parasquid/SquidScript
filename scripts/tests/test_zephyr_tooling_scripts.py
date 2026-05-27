@@ -171,6 +171,13 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("CONFIG_LOG_PROCESS_THREAD_STACK_SIZE=512", prj_conf)
         self.assertNotIn("CONFIG_LOG_PROCESS_THREAD_STACK_SIZE=768", prj_conf)
 
+    def test_default_config_uses_bounded_littlefs_file_pool(self):
+        prj_conf = self.read("firmware/zephyr/prj.conf")
+
+        self.assertIn("CONFIG_FS_LITTLEFS_NUM_FILES=2", prj_conf)
+        self.assertNotIn("CONFIG_FS_LITTLEFS_NUM_FILES=4", prj_conf)
+        self.assertNotIn("CONFIG_FS_LITTLEFS_NUM_DIRS=2", prj_conf)
+
     def test_default_config_enables_live_heap_resource_telemetry(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
