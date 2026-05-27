@@ -74,7 +74,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   receive frame budget is 320 bytes with host upload chunking derived from that
   limit, protocol transfer sessions use 72-byte staging path slots and 80-byte
   resource path slots, and resource diagnostics encode directly into the
-  984-byte response buffer without a resident metric staging array. Temp-run
+  984-byte response buffer without a resident metric staging array. Runtime
+  physical input state is bounded to two GPIO button slots for the confirmed
+  BOOT/GPIO9 path plus one targeted diagnostic slot. Temp-run
   state now uses the file-backed VM storage backend with a cleared temp state
   path instead of a resident saved-state-capacity RAM buffer, and Zephyr's
   deferred logger buffer and process-thread stack are explicitly bounded at 512
@@ -82,7 +84,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   remain at the Zephyr default for recursive format/delete walks. The
   protocol/main stack is now 3328 bytes, leaving 852 bytes over the last
   measured 2476-byte protocol peak, and the VM worker stack is now 18048 bytes.
-  The latest target build reports 187,600 bytes
+  The latest target build reports 187,488 bytes
   of DRAM use; next
   reductions should physically revalidate the 3328-byte protocol/main stack
   with the bounded stack harness. The stack harness now fails with captured

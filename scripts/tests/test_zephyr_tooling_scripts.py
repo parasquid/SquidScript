@@ -656,6 +656,12 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("#define SQ_VM_RUNTIME_DRAWLOG_LEN 64", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_DRAWLOG_LEN 96", runtime_h)
 
+    def test_runtime_keeps_physical_input_slots_bounded(self):
+        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+
+        self.assertIn("#define SQ_VM_RUNTIME_INPUT_BUTTON_MAX 2", runtime_h)
+        self.assertNotIn("#define SQ_VM_RUNTIME_INPUT_BUTTON_MAX 4", runtime_h)
+
     def test_repeated_line_responses_use_rust_encoder_without_c_payload_staging(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         start = protocol.index("static int repeated_runtime_lines_response")

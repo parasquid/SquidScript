@@ -106,6 +106,9 @@ protocol response buffer and do not keep a resident metric staging array.
 Runtime diagnostic history is bounded to four trace lines, six output lines,
 and four draw-log lines so recent debugging data remains available without
 retaining unbounded VM text in RAM.
+Runtime physical input state is bounded to two GPIO button slots; the ESP32-C3
+Super Mini reference path only needs the confirmed BOOT/GPIO9 binding plus one
+additional slot for targeted diagnostics.
 Zephyr's deferred logger buffer and process-thread stack are explicitly
 bounded at 512 bytes each; app-visible diagnostics use protocol output, trace,
 draw-log, lifecycle, and resources responses instead of relying on a large
