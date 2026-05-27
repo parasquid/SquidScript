@@ -147,6 +147,9 @@ This reports Zephyr app C source stack estimates only. It does not measure Rust
 VM stack use, interrupt stack use, callee effects hidden behind library calls,
 or real runtime high-water marks; keep using `device resources` and the hardware
 stack harness for final stack-budget validation.
+The app registry scan currently reuses its path scratch buffer after opening
+the app directory, so its emitted C stack estimate is 448 bytes instead of
+retaining separate app-directory and SQBC-path buffers.
 Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi VM service
 calls now cross the Rust FFI boundary into Zephyr callbacks. Zephyr now
 performs installed-app foreground handoff for `app.launch` and `app.exit` with

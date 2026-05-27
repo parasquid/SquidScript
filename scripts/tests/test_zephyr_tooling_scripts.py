@@ -1672,6 +1672,20 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertTrue(lines[1].startswith("10000\tfunction_9999\t"))
         self.assertTrue(lines[5].startswith("9996\tfunction_9995\t"))
 
+    def test_app_registry_scan_reuses_path_scratch_after_opening_directory(self):
+        app_store = self.read("firmware/zephyr/src/app_store.c")
+        start = app_store.index("int sq_app_store_scan_registry")
+        end = app_store.index("static int delete_files_under")
+        body = app_store[start:end]
+
+        self.assertIn("char path[SQ_APP_STORE_PATH_MAX];", body)
+        self.assertNotIn("char apps_path[SQ_APP_STORE_PATH_MAX];", body)
+        self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", body)
+        self.assertIn('join_path2(path, sizeof(path), mount_point, "apps")', body)
+        self.assertIn("fs_opendir(&dir, path)", body)
+        self.assertIn('format_app_path(path, sizeof(path), mount_point, entry.name,', body)
+        self.assertIn("fs_stat(path, &sqbc_entry)", body)
+
     def test_hardware_suite_leaves_blinky_visible_check_last(self):
         blinky = self.read("scripts/c3-supermini-test-blinky.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")

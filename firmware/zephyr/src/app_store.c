@@ -610,8 +610,7 @@ int sq_app_store_install_resource(const char *mount_point, const char *app_id,
 
 int sq_app_store_scan_registry(const char *mount_point, struct sq_app_registry *registry)
 {
-	char apps_path[SQ_APP_STORE_PATH_MAX];
-	char sqbc_path[SQ_APP_STORE_PATH_MAX];
+	char path[SQ_APP_STORE_PATH_MAX];
 	struct fs_dir_t dir;
 	struct fs_dirent entry;
 	int result;
@@ -622,13 +621,13 @@ int sq_app_store_scan_registry(const char *mount_point, struct sq_app_registry *
 
 	memset(registry, 0, sizeof(*registry));
 
-	result = join_path2(apps_path, sizeof(apps_path), mount_point, "apps");
+	result = join_path2(path, sizeof(path), mount_point, "apps");
 	if (result != 0) {
 		return result;
 	}
 
 	fs_dir_t_init(&dir);
-	result = fs_opendir(&dir, apps_path);
+	result = fs_opendir(&dir, path);
 	if (result != 0) {
 		return result;
 	}
@@ -647,13 +646,13 @@ int sq_app_store_scan_registry(const char *mount_point, struct sq_app_registry *
 		}
 
 		struct fs_dirent sqbc_entry;
-		result = format_app_path(sqbc_path, sizeof(sqbc_path), mount_point, entry.name,
+		result = format_app_path(path, sizeof(path), mount_point, entry.name,
 					 "main.sqbc");
 		if (result != 0) {
 			(void)fs_closedir(&dir);
 			return result;
 		}
-		result = fs_stat(sqbc_path, &sqbc_entry);
+		result = fs_stat(path, &sqbc_entry);
 		if (result == -ENOENT) {
 			continue;
 		}

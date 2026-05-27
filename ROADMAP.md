@@ -101,7 +101,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   inspect any remaining accidental static buffers. For host-side attribution
   before physical confirmation, build with `SQUID_ZEPHYR_STACK_USAGE=1` and run
   `scripts/c3-supermini-stack-usage-report.sh` to sort generated Zephyr app C
-  `.su` stack-usage records.
+  `.su` stack-usage records. Current host attribution has reduced
+  `sq_app_store_scan_registry` from 576 bytes to 448 bytes by reusing its path
+  scratch buffer after opening the app directory.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
   succeeds but serial commands stall, app launch hangs, or input dispatch stops
   responding, check stack exhaustion early with `device resources`, compare
