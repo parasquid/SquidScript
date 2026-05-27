@@ -728,7 +728,7 @@ int sq_app_store_scan_registry(const char *mount_point, struct sq_app_registry *
 	return fs_closedir(&dir);
 }
 
-static int delete_files_under(const char *path, bool *deleted_any)
+static int delete_files_under(char *path, size_t path_cap, bool *deleted_any)
 {
 	struct fs_dirent entry;
 	struct fs_dir_t dir;
@@ -755,36 +755,46 @@ static int delete_files_under(const char *path, bool *deleted_any)
 			continue;
 		}
 
-		char child[SQ_APP_STORE_PATH_MAX];
-		int written = snprintf(child, sizeof(child), "%s/%s", path, entry.name);
-		if (written < 0 || (size_t)written >= sizeof(child)) {
+		size_t path_len = strlen(path);
+		size_t name_len = strlen(entry.name);
+		if (path_len + 1u + name_len >= path_cap) {
 			(void)fs_closedir(&dir);
 			return -ENAMETOOLONG;
 		}
+		path[path_len] = '/';
+		memcpy(&path[path_len + 1u], entry.name, name_len + 1u);
+
 		if (entry.type == FS_DIR_ENTRY_FILE) {
-			result = fs_unlink(child);
+			result = fs_unlink(path);
 			if (result == -ENOENT) {
+				path[path_len] = '\0';
 				continue;
 			}
 			if (result != 0) {
+				path[path_len] = '\0';
 				(void)fs_closedir(&dir);
 				return result;
 			}
+			path[path_len] = '\0';
 			*deleted_any = true;
 		} else {
-			result = delete_files_under(child, deleted_any);
+			result = delete_files_under(path, path_cap, deleted_any);
 			if (result != 0) {
+				path[path_len] = '\0';
 				(void)fs_closedir(&dir);
 				return result;
 			}
-			result = fs_unlink(child);
+			result = fs_unlink(path);
 			if (result == -ENOENT) {
+				path[path_len] = '\0';
 				continue;
 			}
 			if (result != 0) {
+				path[path_len] = '\0';
 				(void)fs_closedir(&dir);
 				return result;
 			}
+			path[path_len] = '\0';
 			*deleted_any = true;
 		}
 	}
@@ -807,7 +817,7 @@ int sq_app_store_format_filesystem(const char *mount_point)
 		}
 		do {
 			bool deleted_any = false;
-			result = delete_files_under(path, &deleted_any);
+			result = delete_files_under(path, sizeof(path), &deleted_any);
 			if (result != 0) {
 				return result;
 			}

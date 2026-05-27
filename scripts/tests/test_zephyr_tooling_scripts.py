@@ -1741,6 +1741,24 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("if (result != 0 && result != -ENOENT)", commit_body)
         self.assertIn("return fs_rename(staging_path, final_path);", commit_body)
 
+    def test_format_delete_walk_reuses_caller_path_buffer_for_recursion(self):
+        app_store = self.read("firmware/zephyr/src/app_store.c")
+        start = app_store.index("static int delete_files_under")
+        end = app_store.index("int sq_app_store_format_filesystem")
+        body = app_store[start:end]
+
+        self.assertIn("static int delete_files_under(char *path, size_t path_cap,", body)
+        self.assertNotIn("char child[SQ_APP_STORE_PATH_MAX];", body)
+        self.assertIn("size_t path_len = strlen(path);", body)
+        self.assertIn("path[path_len] = '/';", body)
+        self.assertIn("path[path_len] = '\\0';", body)
+        self.assertIn("result = delete_files_under(path, path_cap, deleted_any);", body)
+        self.assertIn("result = fs_unlink(path);", body)
+
+        format_start = app_store.index("int sq_app_store_format_filesystem")
+        format_body = app_store[format_start:]
+        self.assertIn("delete_files_under(path, sizeof(path), &deleted_any)", format_body)
+
     def test_protocol_poll_uses_runtime_scratch_instead_of_stack_arrays(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         runtime = self.read("firmware/zephyr/src/vm_runtime.c")
