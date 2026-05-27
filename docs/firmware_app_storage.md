@@ -102,6 +102,12 @@ transport. The app store can create per-app directories during install, write
 `main.sqbc`, and rebuild a bounded in-memory registry by scanning
 `/sq/apps/*/main.sqbc`; native Zephyr ztests cover directory creation, file
 size metadata, and registry lookup.
+The current ESP32-C3 Super Mini Zephyr 4 MB flash layout reserves
+`storage_partition` at offset `0x3b0000` with size `0x30000` bytes, so the
+LittleFS app store is 192 KiB. Firmware is built for the `image-0` slot; the
+default Zephyr partition table also includes `image-1`, `image-scratch`, and
+`coredump` partitions, but SquidScript does not currently expose a user-facing
+A/B or OTA firmware update flow.
 
 Temp runs use `/sq/tmp/temp-run.sqbc.tmp` as their staging artifact. Firmware
 writes chunks directly to that file and lets the VM read SQBC byte ranges back
