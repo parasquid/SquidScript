@@ -86,7 +86,7 @@ Use `scripts/zephyr-test-protocol.sh` for that protocol suite; it selects
 `native_sim/native/64`, which avoids requiring host 32-bit libc headers.
 Temp-run volatile app state is sized to the VM saved-state capacity, not the
 larger SQBC transfer chunk capacity.
-The ESP32-C3 linked Rust VM context reservation is capped at 12,032 bytes and
+The ESP32-C3 linked Rust VM context reservation is capped at 11,776 bytes and
 checked against the FFI-reported context size in Zephyr ztests. Native simulator
 ztests use a larger host-only context reservation because the host Rust ABI has
 larger pointer-sized VM structures; this does not change the ESP32-C3 runtime

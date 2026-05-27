@@ -43,9 +43,9 @@ replace-directly.
 The current Zephyr VM host storage boundary is `firmware/zephyr/src/vm_storage`.
 It translates `squidvm-ffi` resumable storage requests into backend callbacks:
 SQBC byte-range read, app state load, app state save, and app state reset. The
-adapter is bounded by the FFI transfer capacity and is tested with an in-memory
-backend, including a native Zephyr ztest that runs real SQBC through the linked
-Rust VM and completes its state load/save flow through the adapter.
+adapter is bounded by the 768-byte FFI transfer capacity and is tested with an
+in-memory backend, including a native Zephyr ztest that runs real SQBC through
+the linked Rust VM and completes its state load/save flow through the adapter.
 
 `firmware/zephyr/src/vm_fs_storage` is the current file-backed implementation
 of that callback boundary. It uses Zephyr `fs_*` APIs to read byte ranges from

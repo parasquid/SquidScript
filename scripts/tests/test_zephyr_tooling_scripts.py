@@ -527,13 +527,17 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
 
-        self.assertIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 12032", runtime_h)
-        self.assertIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 12032", ztest)
+        self.assertIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 11776", runtime_h)
+        self.assertIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 11776", ztest)
+        self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 12032", runtime_h)
+        self.assertNotIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 12032", ztest)
         self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 12288", runtime_h)
         self.assertNotIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 12288", ztest)
 
     def test_runtime_reuses_transfer_storage_for_init_scratch_and_completion(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+        ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
+        limits_rs = self.read("compiler/rust/crates/squidvm-core/src/limits.rs")
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
         runtime_body = runtime_h[
             runtime_h.index("struct sq_vm_runtime {") : runtime_h.index(
@@ -541,12 +545,17 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             )
         ]
 
+        self.assertIn("#define SQVM_STORAGE_TRANSFER_CAPACITY 768", ffi_h)
+        self.assertIn("pub const MAX_CODE_CHUNK_BYTES: usize = 768;", limits_rs)
+        self.assertNotIn("#define SQVM_STORAGE_TRANSFER_CAPACITY 1024", ffi_h)
+        self.assertNotIn("pub const MAX_CODE_CHUNK_BYTES: usize = 1024;", limits_rs)
         self.assertIn("union sq_vm_runtime_transfer", runtime_h)
         self.assertIn("uint8_t init_scratch[SQ_VM_RUNTIME_SCRATCH_BYTES]", runtime_h)
         self.assertIn("SqvmStorageCompletion completion", runtime_h)
         self.assertNotIn("uint8_t scratch[SQ_VM_RUNTIME_SCRATCH_BYTES];", runtime_body)
         self.assertNotIn("SqvmStorageCompletion completion;", runtime_body)
         self.assertIn("sizeof(runtime.transfer.init_scratch)", ztest)
+        self.assertIn("SQVM_STORAGE_TRANSFER_CAPACITY <= 768", ztest)
         self.assertIn("runtime_static <= 16640", ztest)
 
     def test_runtime_does_not_keep_launch_binding_scratch_resident(self):
