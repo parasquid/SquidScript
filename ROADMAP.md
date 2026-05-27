@@ -169,7 +169,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   separate 400-byte trigger-registration frame. Protocol event dispatch now
   passes event bytes directly into `sq_vm_runtime_start_event` instead of
   staging a NUL-terminated event buffer, reducing `dispatch_event_from_parts`
-  from 112 bytes to 96 bytes.
+  from 112 bytes to 96 bytes. Installed-app foreground handoff now reuses the
+  runtime-owned pending-launch app-id slot as temporary rollback storage,
+  reducing `start_installed_app` from 128 bytes to 96 bytes.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
   succeeds but serial commands stall, app launch hangs, or input dispatch stops
   responding, check stack exhaustion early with `device resources`, compare

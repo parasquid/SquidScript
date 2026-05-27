@@ -2260,6 +2260,9 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertNotIn("clear_dispatch_state(runtime);", dispatch_body)
         self.assertIn("sq_vm_runtime_reset_vm_context(context->runtime)", start_body)
         self.assertIn("set_current || strcmp(context->runtime->current_app, app_id) != 0", start_body)
+        self.assertNotIn("char previous_app[SQ_APP_STORE_APP_ID_MAX];", start_body)
+        self.assertIn("context->runtime->pending_launch_app", start_body)
+        self.assertIn("memset(context->runtime->pending_launch_app, 0,", start_body)
 
     def test_zephyr_wifi_station_uses_real_connect_disconnect_backend(self):
         runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")

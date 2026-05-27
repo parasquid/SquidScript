@@ -457,7 +457,6 @@ static int start_installed_app(const struct sq_device_protocol_context *context,
 			       const char *app_id, const char *event, bool set_current)
 {
 	struct sq_vm_storage_backend backend;
-	char previous_app[SQ_APP_STORE_APP_ID_MAX];
 	int result;
 	bool current_app_changed;
 
@@ -483,8 +482,10 @@ static int start_installed_app(const struct sq_device_protocol_context *context,
 	}
 	backend = sq_app_store_vm_storage_backend(context->launch_storage);
 	if (set_current) {
-		strncpy(previous_app, context->runtime->current_app, sizeof(previous_app) - 1);
-		previous_app[sizeof(previous_app) - 1] = '\0';
+		strncpy(context->runtime->pending_launch_app, context->runtime->current_app,
+			sizeof(context->runtime->pending_launch_app) - 1);
+		context->runtime->pending_launch_app[sizeof(context->runtime->pending_launch_app) -
+						    1] = '\0';
 		strncpy(context->runtime->current_app, app_id,
 			sizeof(context->runtime->current_app) - 1);
 		context->runtime->current_app[sizeof(context->runtime->current_app) - 1] = '\0';
@@ -492,12 +493,18 @@ static int start_installed_app(const struct sq_device_protocol_context *context,
 	result = sq_vm_runtime_start(context->runtime, &backend, event);
 	if (result != 0) {
 		if (set_current) {
-			strncpy(context->runtime->current_app, previous_app,
+			strncpy(context->runtime->current_app, context->runtime->pending_launch_app,
 				sizeof(context->runtime->current_app) - 1);
 			context->runtime->current_app[sizeof(context->runtime->current_app) - 1] =
 				'\0';
+			memset(context->runtime->pending_launch_app, 0,
+			       sizeof(context->runtime->pending_launch_app));
 		}
 		return result;
+	}
+	if (set_current) {
+		memset(context->runtime->pending_launch_app, 0,
+		       sizeof(context->runtime->pending_launch_app));
 	}
 	return 0;
 }

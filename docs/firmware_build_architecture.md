@@ -248,6 +248,11 @@ Protocol event dispatch passes event bytes directly into
 the protocol stack, reducing `dispatch_event_from_parts` from 112 bytes to 96
 bytes. The existing string-based `sq_vm_runtime_start` remains as a wrapper for
 callers that already own NUL-terminated event names.
+Installed-app foreground handoff reuses the runtime-owned pending-launch app-id
+slot as temporary rollback storage while switching `current_app`, instead of
+allocating a protocol-stack previous-app buffer. That reduces
+`start_installed_app` from 128 bytes to 96 bytes and clears the scratch before
+returning.
 Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi VM service
 calls now cross the Rust FFI boundary into Zephyr callbacks. Zephyr now
 performs installed-app foreground handoff for `app.launch` and `app.exit` with
