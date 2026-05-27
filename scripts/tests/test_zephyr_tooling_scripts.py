@@ -611,7 +611,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_runtime_keeps_bounded_diagnostic_history(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
 
-        self.assertIn("#define SQ_VM_RUNTIME_TRACE_MAX 8", runtime_h)
+        self.assertIn("#define SQ_VM_RUNTIME_TRACE_MAX 6", runtime_h)
+        self.assertNotIn("#define SQ_VM_RUNTIME_TRACE_MAX 8", runtime_h)
         self.assertIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 8", runtime_h)
         self.assertIn("#define SQ_VM_RUNTIME_OUTPUT_LEN 56", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 12", runtime_h)
