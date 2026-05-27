@@ -74,11 +74,12 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   receive frame budget is 320 bytes with host upload chunking derived from that
   limit, protocol transfer sessions use 72-byte staging path slots and 80-byte
   resource path slots, and resource diagnostics encode directly into the
-  992-byte response buffer without a resident metric staging array. The latest
-  target build reports 191,552 bytes
+  992-byte response buffer without a resident metric staging array. The VM
+  worker stack is now 18048 bytes. The latest target build reports 191,168 bytes
   of DRAM use; next
   reductions should investigate full-suite worker-stack high-water headroom
-  after the 18 KiB stack reduction and any remaining accidental static buffers.
+  after the 18048-byte stack reduction and any remaining accidental static
+  buffers.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
   succeeds but serial commands stall, app launch hangs, or input dispatch stops
   responding, check stack exhaustion early with `device resources`, compare
@@ -117,9 +118,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   without targeted confirmation. The protocol/main stack budget has been
   reduced from 8 KiB to 5 KiB based on repeated 2476-byte measured peaks, while
   keeping more than 2.5 KiB of headroom. The worker stack has been reduced from
-  19 KiB to 18 KiB based on the saved 17296-byte workload peak, leaving 1136
-  bytes of measured headroom before hardware revalidation. Next, validate the
-  5 KiB protocol/main stack and 18 KiB worker stack with the hardware suite.
+  19 KiB to 18048 bytes based on saved workload peaks, leaving 428 bytes above
+  the highest saved 17620-byte full-suite peak before hardware revalidation.
+  Next, validate the 5 KiB protocol/main stack and 18048-byte worker stack with
+  the hardware suite.
 - Improve network heap attribution before expanding Wi-Fi scope. Current AP
   start/stop hardware coverage drives `ram_heap_max_allocated_bytes` close to
   the 36 KiB system heap budget; add clearer per-workload heap reset or

@@ -500,8 +500,10 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         stack_script = self.read("scripts/c3-supermini-measure-stack-usage.sh")
 
-        self.assertIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 18432", runtime_h)
-        self.assertIn('Expected vm_worker_stack_size_bytes=18432', stack_script)
+        self.assertIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 18048", runtime_h)
+        self.assertIn('Expected vm_worker_stack_size_bytes=18048', stack_script)
+        self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 18432", runtime_h)
+        self.assertNotIn('Expected vm_worker_stack_size_bytes=18432', stack_script)
         self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 19456", runtime_h)
         self.assertNotIn('Expected vm_worker_stack_size_bytes=19456', stack_script)
         self.assertNotIn('Expected vm_worker_stack_size_bytes=20480', stack_script)

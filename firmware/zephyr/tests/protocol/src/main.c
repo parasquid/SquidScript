@@ -2202,7 +2202,7 @@ ZTEST(squidscript_protocol, test_links_squidvm_ffi_context_metadata)
 #if !defined(CONFIG_BOARD_NATIVE_SIM)
 	zassert_true(SQ_VM_RUNTIME_CONTEXT_BYTES <= 11776);
 #endif
-	zassert_true(SQ_VM_RUNTIME_WORK_STACK_SIZE <= 18432);
+	zassert_true(SQ_VM_RUNTIME_WORK_STACK_SIZE <= 18048);
 }
 
 ZTEST(squidscript_protocol, test_runtime_reuses_transfer_storage_for_init_scratch_and_completion)

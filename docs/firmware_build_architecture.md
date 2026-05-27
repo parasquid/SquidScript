@@ -99,9 +99,9 @@ app ID, resource directory, and package-relative resource path.
 Resource diagnostics are encoded directly into the caller-owned 992-byte
 protocol response buffer and do not keep a resident metric staging array.
 The protocol/main thread stack is currently 5 KiB and the VM worker stack is
-18 KiB. Resource diagnostics expose each stack's high-water use separately so
-budget reductions can be tied to measured workloads instead of inferred from
-static allocation alone.
+18,048 bytes. Resource diagnostics expose each stack's high-water use
+separately so budget reductions can be tied to measured workloads instead of
+inferred from static allocation alone.
 Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi VM service
 calls now cross the Rust FFI boundary into Zephyr callbacks. Zephyr now
 performs installed-app foreground handoff for `app.launch` and `app.exit` with
