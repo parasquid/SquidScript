@@ -61,8 +61,8 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   reductions for the largest static allocations, especially VM runtime storage,
   work stacks, response/session buffers, logging, LittleFS pools, and file
   caches. Current C3 build map evidence sizes the resident runtime object at
-  16,856 bytes after capping retained VM output history at eight lines,
-  retained VM trace history at six lines,
+  16,680 bytes after capping retained VM output history at six lines,
+  retained VM trace history at four lines,
   narrowing output and drawlog diagnostic line storage, trimming the ESP32-C3
   VM context reserve to 11,776 bytes, reducing app-id slots to 40 bytes, and
   lowering the SQBC code/read transfer window to 768 bytes. Runtime device
@@ -75,7 +75,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   limit, protocol transfer sessions use 72-byte staging path slots and 80-byte
   resource path slots, and resource diagnostics encode directly into the
   992-byte response buffer without a resident metric staging array. The VM
-  worker stack is now 18048 bytes. The latest target build reports 190,144 bytes
+  worker stack is now 18048 bytes. The latest target build reports 189,968 bytes
   of DRAM use; next
   reductions should investigate full-suite worker-stack high-water headroom
   after the 18048-byte stack reduction and any remaining accidental static

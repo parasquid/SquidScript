@@ -3477,6 +3477,7 @@ ZTEST(squidscript_protocol, test_vm_runtime_dispatches_stack_inspection_callback
 
 	zassert_equal(sq_vm_runtime_dispatch(&runtime, &backend, "app.start"), 0);
 	zassert_equal(runtime.output_count, 5);
+	zassert_true(SQ_VM_RUNTIME_OUTPUT_MAX >= 6);
 	zassert_str_equal(runtime.outputs[0], "process launcher");
 	zassert_str_equal(runtime.outputs[1], "process parent");
 	zassert_str_equal(runtime.outputs[2], "armed break-reminder timer.break");
