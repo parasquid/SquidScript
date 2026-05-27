@@ -154,7 +154,14 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   bytes; after the resource parent directory change, the top source-known
   main/protocol path remains 544 bytes and is dominated by
   `storage_format -> sq_app_store_format_filesystem -> delete_files_under`.
-  VM dispatch now uses a
+  ESP32-C3 target storage format now unmounts the target LittleFS app-store
+  partition, erases the flash area, remounts it so LittleFS formats the blank
+  partition, and recreates the top-level app-store directories. The recursive
+  delete walk remains as the non-target fallback, but the target
+  `storage_format` path now emits 272 bytes and the top source-known
+  main/protocol path is 528 bytes through transfer-begin filesystem
+  preparation, with linker DRAM still at 185,024 bytes and RAM audit DRAM at
+  185,008 bytes. VM dispatch now uses a
   static callback table plus an explicit `user_data` pointer across the FFI
   boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes
   without adding resident runtime RAM. Protocol frame dispatch now keeps

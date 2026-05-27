@@ -2110,9 +2110,40 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("result = delete_files_under(path, path_cap, deleted_any);", body)
         self.assertIn("result = fs_unlink(path);", body)
 
+        fallback_start = app_store.index("static int format_filesystem_by_delete_walk")
+        fallback_end = app_store.index("#if defined(CONFIG_FILE_SYSTEM_LITTLEFS)", fallback_start)
+        fallback_body = app_store[fallback_start:fallback_end]
+        self.assertIn("delete_files_under(path, sizeof(path), &deleted_any)", fallback_body)
+
         format_start = app_store.index("int sq_app_store_format_filesystem")
         format_body = app_store[format_start:]
-        self.assertIn("delete_files_under(path, sizeof(path), &deleted_any)", format_body)
+        self.assertIn("format_filesystem_by_delete_walk(mount_point)", format_body)
+
+    def test_target_storage_format_erases_partition_without_delete_walk(self):
+        prj_conf = self.read("firmware/zephyr/prj.conf")
+        app_store = self.read("firmware/zephyr/src/app_store.c")
+
+        self.assertNotIn("CONFIG_FILE_SYSTEM_MKFS=y", prj_conf)
+        self.assertIn("static int format_target_filesystem(", app_store)
+
+        target_start = app_store.index("static int format_target_filesystem(")
+        target_end = app_store.index("#endif", target_start)
+        target_body = app_store[target_start:target_end]
+        self.assertIn("fs_unmount(&sq_app_store_target_mount)", target_body)
+        self.assertIn("flash_area_open(PARTITION_ID(storage_partition), &area)", target_body)
+        self.assertIn("flash_area_erase(area, 0, area->fa_size)", target_body)
+        self.assertIn("flash_area_close(area)", target_body)
+        self.assertIn("fs_mount(&sq_app_store_target_mount)", target_body)
+        self.assertNotIn("fs_mkfs", target_body)
+        self.assertNotIn("delete_files_under", target_body)
+        self.assertNotIn("char path[SQ_APP_STORE_PATH_MAX];", target_body)
+
+        public_start = app_store.index("int sq_app_store_format_filesystem")
+        public_end = app_store.index("const struct sq_app_registry_entry")
+        public_body = app_store[public_start:public_end]
+        self.assertIn("format_target_filesystem(mount_point)", public_body)
+        self.assertNotIn("char path[SQ_APP_STORE_PATH_MAX];", public_body)
+        self.assertNotIn("delete_files_under(path", public_body)
 
     def test_format_prepare_reuses_format_path_scratch(self):
         app_store = self.read("firmware/zephyr/src/app_store.c")
@@ -2131,9 +2162,14 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("join_path2(path, sizeof(path), mount_point,", public_body)
         self.assertNotIn("prepare_filesystem_with_path(path, sizeof(path), mount_point)", public_body)
 
+        fallback_start = app_store.index("static int format_filesystem_by_delete_walk")
+        fallback_end = app_store.index("#if defined(CONFIG_FILE_SYSTEM_LITTLEFS)", fallback_start)
+        fallback_body = app_store[fallback_start:fallback_end]
+        self.assertIn("prepare_filesystem_with_path(path, sizeof(path), mount_point)", fallback_body)
+
         format_start = app_store.index("int sq_app_store_format_filesystem")
         format_body = app_store[format_start:]
-        self.assertIn("prepare_filesystem_with_path(path, sizeof(path), mount_point)", format_body)
+        self.assertIn("format_filesystem_by_delete_walk(mount_point)", format_body)
         self.assertNotIn("return sq_app_store_prepare_filesystem(mount_point);", format_body)
 
     def test_staged_install_begin_reuses_app_dir_scratch_for_prepare(self):

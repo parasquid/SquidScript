@@ -859,7 +859,7 @@ static int delete_files_under(char *path, size_t path_cap, bool *deleted_any)
 	return fs_closedir(&dir);
 }
 
-int sq_app_store_format_filesystem(const char *mount_point)
+static int format_filesystem_by_delete_walk(const char *mount_point)
 {
 	char path[SQ_APP_STORE_PATH_MAX];
 	int result;
@@ -885,6 +885,46 @@ int sq_app_store_format_filesystem(const char *mount_point)
 		} while (true);
 	}
 	return prepare_filesystem_with_path(path, sizeof(path), mount_point);
+}
+
+#if defined(CONFIG_FILE_SYSTEM_LITTLEFS) && DT_NODE_EXISTS(DT_NODELABEL(storage_partition))
+static int format_target_filesystem(const char *mount_point)
+{
+	if (mount_point == NULL || strcmp(mount_point, sq_app_store_target_mount.mnt_point) != 0) {
+		return -ENOTSUP;
+	}
+
+	int result = fs_unmount(&sq_app_store_target_mount);
+	if (result != 0) {
+		return result;
+	}
+
+	const struct flash_area *area;
+	result = flash_area_open(PARTITION_ID(storage_partition), &area);
+	if (result == 0) {
+		result = flash_area_erase(area, 0, area->fa_size);
+		flash_area_close(area);
+	}
+	int mount_result = fs_mount(&sq_app_store_target_mount);
+	if (result != 0) {
+		return result;
+	}
+	if (mount_result != 0) {
+		return mount_result;
+	}
+	return sq_app_store_prepare_filesystem(mount_point);
+}
+#endif
+
+int sq_app_store_format_filesystem(const char *mount_point)
+{
+#if defined(CONFIG_FILE_SYSTEM_LITTLEFS) && DT_NODE_EXISTS(DT_NODELABEL(storage_partition))
+	int result = format_target_filesystem(mount_point);
+	if (result != -ENOTSUP) {
+		return result;
+	}
+#endif
+	return format_filesystem_by_delete_walk(mount_point);
 }
 
 const struct sq_app_registry_entry *sq_app_registry_find(const struct sq_app_registry *registry,

@@ -217,6 +217,15 @@ calling `fs_mkdir` and accepting `-EEXIST` for existing parents. That keeps
 `commit_resource_install` path from 352 bytes to 304 bytes; the top
 source-known main/protocol path remains 544 bytes and is now dominated by
 `storage_format -> sq_app_store_format_filesystem -> delete_files_under`.
+On the ESP32-C3 target, storage format now uses the target LittleFS mount
+directly: it unmounts the app-store partition, erases the flash area, remounts
+it so LittleFS formats the blank partition, then recreates the top-level
+app-store directories. The recursive delete walk remains as the fallback for
+non-target mounts, but the target `storage_format` path no longer carries it;
+the source-known storage-format path now emits 272 bytes and the top
+source-known main/protocol path is 528 bytes through transfer-begin filesystem
+preparation. This keeps linker DRAM at 185,024 bytes and the RAM audit at
+185,008 bytes.
 Protocol dispatch decodes only the request opcode and sequence into the live
 dispatch header because opcode handlers parse payloads from the original
 request bytes, so `sq_device_protocol_handle_frame` now emits 80 bytes instead
