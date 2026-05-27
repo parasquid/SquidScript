@@ -8,6 +8,7 @@ source "${ROOT}/scripts/lib/serial-port.sh"
 export ESPFLASH_PORT="$(resolve_esp_serial_port)"
 
 WORK_DIR="${ROOT}/target/hardware-tests/app-lifecycle"
+WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-60}"
 MAIN_APP="${ROOT}/tests/hardware/c3-supermini/generic-events/main.squid"
 BREAK_APP="${ROOT}/tests/hardware/c3-supermini/generic-events/break-reminder.squid"
 READER_APP="${ROOT}/tests/hardware/c3-supermini/generic-events/reader-clock.squid"
@@ -65,7 +66,8 @@ wait_for_contains() {
   shift 3
   local out="${WORK_DIR}/${label}.out"
 
-  for _ in $(seq 1 40); do
+  local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS))
+  while (( SECONDS < deadline )); do
     timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" "$@" >"${out}" 2>&1
     if grep -Fq "${expected}" "${out}"; then
       printf '%s\n' "${out}"

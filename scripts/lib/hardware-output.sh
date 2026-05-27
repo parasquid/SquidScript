@@ -18,13 +18,13 @@ wait_for_device_output() {
   local label="$2"
   shift 2
 
-  local attempts="${HARDWARE_TEST_OUTPUT_ATTEMPTS:-50}"
   local interval="${HARDWARE_TEST_OUTPUT_POLL_INTERVAL:-0.2}"
   local timeout_seconds="${COMMAND_TIMEOUT_SECONDS:-20}"
+  local wait_seconds="${HARDWARE_TEST_OUTPUT_WAIT_SECONDS:-20}"
+  local deadline=$((SECONDS + wait_seconds))
   local output=""
-  local attempt
 
-  for ((attempt = 1; attempt <= attempts; attempt += 1)); do
+  while (( SECONDS < deadline )); do
     if ! output="$(timeout "${timeout_seconds}s" cargo run -p squidc -- device output --port "$port" 2>&1)"; then
       printf '%s\n' "$output"
       printf 'ERR hardware test %s: device output command failed or timed out\n' "$label" >&2

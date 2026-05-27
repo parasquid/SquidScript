@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${ROOT}/scripts/lib/hardware-command.sh"
 WORK_DIR="${ROOT}/target/hardware-tests/breathe"
+WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-60}"
 BREATHE_APP="${ROOT}/examples/breathe-supermini/main.squid"
 
 mkdir -p "${WORK_DIR}"
@@ -37,7 +38,8 @@ wait_for_contains() {
   shift 3
   local out="${WORK_DIR}/${label}.out"
 
-  for _ in $(seq 1 120); do
+  local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS))
+  while (( SECONDS < deadline )); do
     timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" "$@" >"${out}" 2>&1
     if grep -Fq "${expected}" "${out}"; then
       printf '%s\n' "${out}"

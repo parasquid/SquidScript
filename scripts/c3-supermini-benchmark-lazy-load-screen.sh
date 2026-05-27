@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${ROOT}/scripts/lib/hardware-command.sh"
 MODE="${MODE:-representative}"
 WORK_DIR="${ROOT}/target/hardware-benchmarks/lazy-load-screen-${MODE}"
+WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-60}"
 case "${MODE}" in
   representative)
     APP="${ROOT}/tests/hardware/c3-supermini/lazy-load-screen-benchmark/main.squid"
@@ -56,13 +57,16 @@ wait_for_dispatch_after() {
   local previous="$2"
   local out="${WORK_DIR}/${label}.out"
   local sequence
+  local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS))
 
-  for _ in $(seq 1 120); do
-    timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" cargo run --quiet -p squidc -- device resources >"${out}" 2>&1
-    sequence="$(resource_value "${out}" "last_dispatch_seq")"
-    if ((sequence > previous)); then
-      printf '%s\n' "${out}"
-      return 0
+  while (( SECONDS < deadline )); do
+    if timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" \
+      cargo run --quiet -p squidc -- device resources >"${out}" 2>&1; then
+      sequence="$(resource_value "${out}" "last_dispatch_seq")"
+      if ((sequence > previous)); then
+        printf '%s\n' "${out}"
+        return 0
+      fi
     fi
     sleep 0.05
   done

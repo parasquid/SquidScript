@@ -1546,6 +1546,22 @@ class ZephyrToolingScriptTests(unittest.TestCase):
                 self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', contents)
                 self.assertNotIn("\nrun_capture() {\n", contents)
 
+    def test_hardware_scripts_use_deadline_based_polling(self):
+        scripts_dir = ROOT / "scripts"
+
+        for script_path in sorted(scripts_dir.glob("c3-supermini-*.sh")):
+            contents = script_path.read_text(encoding="utf-8")
+            if "cargo run --quiet -p squidc -- device" not in contents and (
+                "cargo run --quiet -p squidc -- app" not in contents
+            ):
+                continue
+
+            with self.subTest(script=script_path.name):
+                self.assertNotIn("for _ in $(seq", contents)
+                self.assertNotIn("for ((attempt =", contents)
+                if "wait_for_" in contents and "while (( SECONDS < deadline )); do" in contents:
+                    self.assertIn('WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-', contents)
+
     def test_hardware_command_helper_reports_captured_output_on_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -1579,6 +1595,11 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
 
         self.assertIn('timeout "${timeout_seconds}s"', helper)
         self.assertIn('COMMAND_TIMEOUT_SECONDS:-20', helper)
+        self.assertIn('HARDWARE_TEST_OUTPUT_WAIT_SECONDS:-20', helper)
+        self.assertIn('local deadline=$((SECONDS + wait_seconds))', helper)
+        self.assertIn("while (( SECONDS < deadline )); do", helper)
+        self.assertNotIn('HARDWARE_TEST_OUTPUT_ATTEMPTS', helper)
+        self.assertNotIn("for ((attempt =", helper)
         self.assertIn('cargo run -p squidc -- device output --port "$port"', helper)
 
     def test_hardware_suite_leaves_blinky_visible_check_last(self):

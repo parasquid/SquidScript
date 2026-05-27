@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${ROOT}/scripts/lib/hardware-command.sh"
 WORK_DIR="${ROOT}/target/hardware-tests/wifi-status"
+WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-60}"
 WIFI_STATUS_APP="${ROOT}/tests/hardware/c3-supermini/wifi-status-summary/main.squid"
 REQUIRE_REAL_WIFI=0
 
@@ -75,7 +76,8 @@ wait_for_contains() {
   shift 3
   local out="${WORK_DIR}/${label}.out"
 
-  for _ in $(seq 1 80); do
+  local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS))
+  while (( SECONDS < deadline )); do
     timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" "$@" >"${out}" 2>&1
     if grep -Fq "${expected}" "${out}"; then
       printf '%s\n' "${out}"
