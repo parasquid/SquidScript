@@ -126,7 +126,9 @@ The Zephyr app registry API check is
 installs `tests/hardware/c3-supermini/app-registry-summary/main.squid`, verifies
 the host app registry contains the installed app, launches it, and verifies the
 app can inspect the same installed-app registry through `app.registry()` and
-`app.registry.get(...)`.
+`app.registry.get(...)`. The ESP32-C3 Zephyr reference firmware keeps twelve
+installed-app registry entries resident in RAM; this check exercises registry
+visibility, not full-capacity filling.
 
 The Zephyr app state check is `scripts/c3-supermini-test-app-state.sh`. It
 installs `tests/hardware/c3-supermini/state-counter/main.squid`, launches it,

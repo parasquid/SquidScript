@@ -678,6 +678,12 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("input_button_count", stack)
         self.assertNotIn("input_button_pressed_count", stack)
 
+    def test_app_registry_keeps_constrained_firmware_capacity_bounded(self):
+        app_store_h = self.read("firmware/zephyr/src/app_store.h")
+
+        self.assertIn("#define SQ_APP_STORE_MAX_APPS 12", app_store_h)
+        self.assertNotIn("#define SQ_APP_STORE_MAX_APPS 16", app_store_h)
+
     def test_key_dispatch_uses_rust_parser_without_c_payload_staging(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         start = protocol.index("static int dispatch_key")

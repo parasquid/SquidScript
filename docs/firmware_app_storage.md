@@ -24,6 +24,11 @@ missing or invalid, firmware remains in device-command mode.
 buffered in RAM. It is not published into the installed app registry and does
 not overwrite `main`.
 
+The ESP32-C3 Zephyr reference firmware keeps twelve installed-app registry
+entries resident in RAM. If more valid app directories are present, registry
+rebuild returns `ENOSPC` so the limit is visible instead of silently truncating
+the app list.
+
 ## Physical Storage
 
 The portable app/compiler contract does not expose physical storage layout.
