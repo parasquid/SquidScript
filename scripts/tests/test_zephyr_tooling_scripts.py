@@ -1034,7 +1034,25 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("sq_app_store_vm_storage_for_app_bytes", app_store_h)
         self.assertNotIn("char app_id_buffer[SQ_APP_STORE_APP_ID_MAX];", body)
         self.assertNotIn("memcpy(app_id_buffer, launch.app_id, launch.app_id_len);", body)
-        self.assertIn("start_installed_app_bytes(context, launch.app_id, launch.app_id_len,", body)
+        self.assertIn("start_foreground_app_bytes(context, launch.app_id, launch.app_id_len,",
+                      body)
+
+    def test_app_launch_uses_foreground_byte_start_without_set_current_branch(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        launch_start = protocol.index("static int __noinline launch_app")
+        launch_end = protocol.index("static int start_installed_app", launch_start)
+        launch_body = protocol[launch_start:launch_end]
+        self.assertIn("static int start_foreground_app_bytes", protocol)
+        helper_start = protocol.index("static int start_foreground_app_bytes")
+        helper_end = protocol.index("static int start_installed_app(")
+        helper_body = protocol[helper_start:helper_end]
+
+        self.assertIn("start_foreground_app_bytes(context, launch.app_id, launch.app_id_len,",
+                      launch_body)
+        self.assertNotIn("start_installed_app_bytes(context, launch.app_id", launch_body)
+        self.assertNotIn("bool set_current", helper_body)
+        self.assertNotIn("if (set_current)", helper_body)
+        self.assertNotIn("set_current ||", helper_body)
 
     def test_event_dispatch_uses_rust_parser_without_c_tlv_loop(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")

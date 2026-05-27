@@ -250,8 +250,14 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   rescanning the full app directory, reducing the cumulative `commit_install`
   path from 224 bytes to 208 bytes. The top source-known main/protocol path
   remains 416 bytes through `launch_app -> start_installed_app_bytes ->
-  sq_vm_runtime_start_event -> sq_vm_runtime_init`; investigate installed-app
-  start next. VM
+  sq_vm_runtime_start_event -> sq_vm_runtime_init`. Foreground app launch now
+  uses a byte-slice helper dedicated to setting the current app instead of
+  routing through the generic `set_current` installed-app start path. The
+  launch chain drops out of the top source-known paths, the remaining
+  `launch_app` path is 112 bytes through `ok_response`, and the top
+  source-known main/protocol path is 400 bytes through
+  `begin_install -> sq_app_store_begin_temp_run -> prepare_filesystem_with_path -> ensure_directory`;
+  investigate transfer-begin filesystem preparation next. VM
   dispatch now uses a
   static callback table plus an explicit `user_data` pointer across the FFI
   boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes
