@@ -80,11 +80,11 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   deferred logger buffer and process-thread stack are explicitly bounded at 512
   bytes each. LittleFS open-file slots are bounded at two while directory slots
   remain at the Zephyr default for recursive format/delete walks. The
-  protocol/main stack is now 3584 bytes, leaving about 1 KiB over the last
+  protocol/main stack is now 3328 bytes, leaving 852 bytes over the last
   measured 2476-byte protocol peak, and the VM worker stack is now 18048 bytes.
-  The latest target build reports 187,856 bytes
+  The latest target build reports 187,600 bytes
   of DRAM use; next
-  reductions should physically revalidate the 3584-byte protocol/main stack
+  reductions should physically revalidate the 3328-byte protocol/main stack
   with the bounded stack harness. The stack harness now fails with captured
   resources if protocol/main unused stack drops below 768 bytes or VM worker
   unused stack drops below 384 bytes. After that, investigate full-suite

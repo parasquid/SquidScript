@@ -511,7 +511,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_zephyr_main_stack_tracks_measured_protocol_work(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
 
-        self.assertIn("CONFIG_MAIN_STACK_SIZE=3584", prj_conf)
+        self.assertIn("CONFIG_MAIN_STACK_SIZE=3328", prj_conf)
+        self.assertNotIn("CONFIG_MAIN_STACK_SIZE=3584", prj_conf)
         self.assertNotIn("CONFIG_MAIN_STACK_SIZE=4096", prj_conf)
         self.assertNotIn("CONFIG_MAIN_STACK_SIZE=5120", prj_conf)
         self.assertNotIn("CONFIG_MAIN_STACK_SIZE=6144", prj_conf)
@@ -530,7 +531,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn('Expected vm_worker_stack_size_bytes=20480', stack_script)
         self.assertNotIn('Expected vm_worker_stack_size_bytes=16384', stack_script)
         self.assertIn("protocol_thread_stack_size_bytes", stack_script)
-        self.assertIn('Expected protocol_thread_stack_size_bytes=3584', stack_script)
+        self.assertIn('Expected protocol_thread_stack_size_bytes=3328', stack_script)
+        self.assertNotIn('Expected protocol_thread_stack_size_bytes=3584', stack_script)
         self.assertNotIn('Expected protocol_thread_stack_size_bytes=4096', stack_script)
         self.assertNotIn('Expected protocol_thread_stack_size_bytes=5120', stack_script)
         self.assertNotIn('Expected protocol_thread_stack_size_bytes=6144', stack_script)
