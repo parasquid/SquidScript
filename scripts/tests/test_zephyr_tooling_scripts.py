@@ -862,12 +862,16 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
 
         self.assertIn("#define SQ_APP_STORE_MAX_APPS 8", app_store_h)
+        self.assertIn("uint8_t count;", app_store_h)
+        self.assertIn("uint32_t sqbc_len;", app_store_h)
+        self.assertNotIn("size_t sqbc_len;", app_store_h)
         self.assertIn("format_test_app_store()", ztest)
         self.assertNotIn("#define SQ_APP_STORE_MAX_APPS 4", app_store_h)
         self.assertNotIn("#define SQ_APP_STORE_MAX_APPS 10", app_store_h)
         self.assertNotIn("#define SQ_APP_STORE_MAX_APPS 11", app_store_h)
         self.assertNotIn("#define SQ_APP_STORE_MAX_APPS 12", app_store_h)
         self.assertNotIn("#define SQ_APP_STORE_MAX_APPS 16", app_store_h)
+        self.assertNotIn("size_t count;", app_store_h)
 
     def test_app_id_capacity_is_bounded_across_firmware_protocol_and_ffi(self):
         app_store_h = self.read("firmware/zephyr/src/app_store.h")
@@ -883,6 +887,20 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("uint8_t app_id[48];", ffi_h)
         self.assertNotIn("const SQDP_APP_ID_CAP: usize = 48;", ffi_rs)
         self.assertNotIn("pub const MAX_APP_ID_LEN: usize = 48;", protocol_rs)
+
+    def test_app_list_entry_uses_32_bit_sqbc_length_across_firmware_and_ffi(self):
+        app_store_h = self.read("firmware/zephyr/src/app_store.h")
+        ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
+        ffi_rs = self.read("compiler/rust/crates/squidvm-ffi/src/lib.rs")
+        protocol_c = self.read("firmware/zephyr/src/device_protocol.c")
+
+        self.assertIn("uint32_t sqbc_len;", app_store_h)
+        self.assertIn("uint32_t sqbc_len;", ffi_h)
+        self.assertIn("pub sqbc_len: u32,", ffi_rs)
+        self.assertIn("BUILD_ASSERT(sizeof(struct sq_app_registry_entry) == sizeof(SqdpAppListEntry));", protocol_c)
+        self.assertNotIn("size_t sqbc_len;", app_store_h)
+        self.assertNotIn("size_t sqbc_len;", ffi_h)
+        self.assertNotIn("pub sqbc_len: usize,", ffi_rs)
 
     def test_serial_transport_uses_reduced_frame_budget(self):
         serial_h = self.read("firmware/zephyr/src/serial_transport.h")
@@ -1775,6 +1793,19 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("struct sq_app_registry_entry *record = NULL;", body)
         self.assertIn("record = &registry->apps[registry->count];", body)
         self.assertIn("registry->count++", body)
+
+    def test_app_store_vm_storage_uses_narrow_installed_app_path_buffers(self):
+        app_store_h = self.read("firmware/zephyr/src/app_store.h")
+        app_store_c = self.read("firmware/zephyr/src/app_store.c")
+
+        self.assertIn("#define SQ_APP_STORE_APP_FILE_PATH_MAX 72", app_store_h)
+        self.assertIn("#define SQ_APP_STORE_APP_STATE_PATH_MAX 64", app_store_h)
+        self.assertIn("char sqbc_path[SQ_APP_STORE_APP_FILE_PATH_MAX];", app_store_h)
+        self.assertIn("char state_path[SQ_APP_STORE_APP_STATE_PATH_MAX];", app_store_h)
+        self.assertIn("format_app_path(storage->sqbc_path, sizeof(storage->sqbc_path)", app_store_c)
+        self.assertIn("format_state_path(storage->state_path, sizeof(storage->state_path)", app_store_c)
+        self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", app_store_h)
+        self.assertNotIn("char state_path[SQ_APP_STORE_PATH_MAX];", app_store_h)
 
     def test_trigger_registration_uses_narrow_app_sqbc_path_scratch(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")

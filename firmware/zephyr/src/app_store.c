@@ -717,12 +717,16 @@ int sq_app_store_scan_registry(const char *mount_point, struct sq_app_registry *
 		if (entry.type != FS_DIR_ENTRY_FILE) {
 			continue;
 		}
+		if (entry.size > UINT32_MAX) {
+			(void)fs_closedir(&dir);
+			return -EOVERFLOW;
+		}
 		if (record == NULL) {
 			(void)fs_closedir(&dir);
 			return -ENOSPC;
 		}
 
-		record->sqbc_len = entry.size;
+		record->sqbc_len = (uint32_t)entry.size;
 		registry->count++;
 	}
 

@@ -62,6 +62,9 @@ only bounded SQBC byte ranges instead of reading the full installed payload.
 The armed-app lifecycle test also installs a trigger app larger than the legacy
 full-app limit and verifies arm registration still reads trigger metadata
 through the reader path.
+The resident installed-app VM storage keeps separate bounded path buffers for
+the fixed app bytecode and state-file path shapes: 72 bytes for
+`/apps/<app-id>/main.sqbc` and 64 bytes for `/state/<app-id>.state`.
 
 Installed app execution keeps a bounded VM context and one SQBC code transfer
 window resident. VM initialization reads the SQBC header, section table, string

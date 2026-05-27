@@ -96,7 +96,7 @@ typedef enum {
 
 typedef struct {
 	uint8_t app_id[40];
-	size_t sqbc_len;
+	uint32_t sqbc_len;
 } SqdpAppListEntry;
 
 typedef struct {

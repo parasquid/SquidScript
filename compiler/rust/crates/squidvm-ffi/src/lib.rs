@@ -181,7 +181,7 @@ impl Default for SqdcDeviceBindingPlan {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SqdpAppListEntry {
     pub app_id: [u8; SQDP_APP_ID_CAP],
-    pub sqbc_len: usize,
+    pub sqbc_len: u32,
 }
 
 impl Default for SqdpAppListEntry {

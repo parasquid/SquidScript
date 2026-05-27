@@ -12,6 +12,7 @@ extern "C" {
 
 #define SQ_APP_STORE_PATH_MAX 128
 #define SQ_APP_STORE_APP_FILE_PATH_MAX 72
+#define SQ_APP_STORE_APP_STATE_PATH_MAX 64
 #define SQ_APP_STORE_APP_ID_MAX 40
 #define SQ_APP_STORE_MAX_APPS 8
 
@@ -19,18 +20,18 @@ struct fs_mount_t;
 
 struct sq_app_registry_entry {
 	char app_id[SQ_APP_STORE_APP_ID_MAX];
-	size_t sqbc_len;
+	uint32_t sqbc_len;
 };
 
 struct sq_app_registry {
-	size_t count;
+	uint8_t count;
 	struct sq_app_registry_entry apps[SQ_APP_STORE_MAX_APPS];
 };
 
 struct sq_app_store_vm_storage {
 	struct sq_vm_fs_storage fs_storage;
-	char sqbc_path[SQ_APP_STORE_PATH_MAX];
-	char state_path[SQ_APP_STORE_PATH_MAX];
+	char sqbc_path[SQ_APP_STORE_APP_FILE_PATH_MAX];
+	char state_path[SQ_APP_STORE_APP_STATE_PATH_MAX];
 };
 
 int sq_app_store_prepare_filesystem(const char *mount_point);
