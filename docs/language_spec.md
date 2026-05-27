@@ -1099,6 +1099,12 @@ structured runtime error. Package install stores `.sqdevice` resources but does
 not activate them by itself. Inline GPIO bindings do not require a package
 resource.
 
+Use `device {}` for static app-owned bindings. This is the default authoring
+model for an app that always needs the same indicator, display, input, or other
+service binding: firmware applies the binding before app code runs, and the app
+does not need to manually load, edit, or rebind device configuration in
+`event.on("app.start")`.
+
 Target-defined default bindings are initialized through the same active binding
 model before app code runs. Active bindings are global until changed or reboot.
 A temp run may edit or rebind configuration in RAM, but those changes remain
@@ -3525,6 +3531,17 @@ applies installed app top-level `device { indicator { use ... } }` package
 override saved defaults.
 `device.config.save("flash")` writes firmware-owned binary SQDC to the current
 target's active device-config storage.
+
+For normal static app bindings, prefer a top-level `device { ... }`
+declaration instead of explicit `device.config.load(...)` calls. Use
+`device.config.load(...)` when app code intentionally needs runtime device
+configuration control: conditional loading, editing values with
+`device.config.set(...)`, rebinding a service during execution, persisting a
+device-level hardware configuration with `device.config.save("flash")`, or
+running diagnostics that need to exercise the runtime configuration API.
+`device.config.save("flash")` persists active device configuration, not app
+state; use `state.save()` for app-owned counters, preferences, and other
+per-app data.
 
 ---
 

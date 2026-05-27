@@ -175,9 +175,19 @@ App-local top-level `device {}` bindings run after target and saved global
 defaults, so app package bindings can override them. Inline GPIO bindings are
 normalized into the same in-memory SQDC draft/rebind path as packaged
 resources and do not install a package resource.
+
+For app authors, `device {}` is the default path for static app-owned
+bindings. It declares what the app needs, lets firmware activate the binding
+before `app.start`, and avoids manual runtime config calls in startup code.
+Use `device.config.load("package:...")` when the app deliberately controls
+device configuration at runtime, such as loading one of several package
+resources, editing the draft with `device.config.set(...)`, rebinding an
+active service, saving a device-level hardware choice, or running diagnostics
+against the device-config service path.
 Active config persistence through `device.config.save("flash")` writes
 firmware-owned binary SQDC at `/sq/system/device-config.sqdc` on the ESP32-C3
-reference target.
+reference target. This storage is for active hardware/service bindings, not
+app state; app data should use the normal `state.save()` path.
 
 ## App State
 
