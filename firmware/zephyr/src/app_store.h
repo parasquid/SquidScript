@@ -11,7 +11,7 @@ extern "C" {
 #endif
 
 #define SQ_APP_STORE_PATH_MAX 128
-#define SQ_APP_STORE_SCAN_PATH_MAX 72
+#define SQ_APP_STORE_APP_FILE_PATH_MAX 72
 #define SQ_APP_STORE_APP_ID_MAX 40
 #define SQ_APP_STORE_MAX_APPS 8
 

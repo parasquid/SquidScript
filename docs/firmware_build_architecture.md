@@ -149,7 +149,7 @@ or real runtime high-water marks; keep using `device resources` and the hardware
 stack harness for final stack-budget validation.
 The app registry scan currently reuses its path scratch buffer after opening
 the app directory, reuses its directory entry for `main.sqbc` stats, and uses a
-narrow scan-only path buffer for the fixed `/apps/<app>/main.sqbc` shape. Its
+narrow app-file path buffer for the fixed `/apps/<app>/main.sqbc` shape. Its
 emitted C stack estimate is 272 bytes instead of retaining separate
 app-directory/SQBC-path buffers, a second directory entry, and the general
 128-byte path buffer.
@@ -175,9 +175,10 @@ formatting out of the top-level switch, so `sq_device_protocol_handle_frame`
 now emits a 96-byte C stack estimate instead of 352 bytes.
 Protocol polling reuses runtime app-id/event scratch for lifecycle and armed
 timer transitions. App-arm trigger discovery uses a SQBC-only filesystem
-backend instead of a full app storage object with state paths; the emitted C
-stack report now attributes that path to `sq_device_protocol_poll` at 272 bytes
-instead of a separate 400-byte trigger-registration frame.
+backend instead of a full app storage object with state paths, and trigger
+registration uses the same narrow app-file path buffer as registry scanning.
+The emitted C stack report now attributes that path to `sq_device_protocol_poll`
+at 208 bytes instead of a separate 400-byte trigger-registration frame.
 Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi VM service
 calls now cross the Rust FFI boundary into Zephyr callbacks. Zephyr now
 performs installed-app foreground handoff for `app.launch` and `app.exit` with

@@ -1716,8 +1716,8 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         end = app_store.index("static int delete_files_under")
         body = app_store[start:end]
 
-        self.assertIn("#define SQ_APP_STORE_SCAN_PATH_MAX 72", app_store_h)
-        self.assertIn("char path[SQ_APP_STORE_SCAN_PATH_MAX];", body)
+        self.assertIn("#define SQ_APP_STORE_APP_FILE_PATH_MAX 72", app_store_h)
+        self.assertIn("char path[SQ_APP_STORE_APP_FILE_PATH_MAX];", body)
         self.assertNotIn("char path[SQ_APP_STORE_PATH_MAX];", body)
         self.assertNotIn("char apps_path[SQ_APP_STORE_PATH_MAX];", body)
         self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", body)
@@ -1729,6 +1729,17 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("struct sq_app_registry_entry *record = NULL;", body)
         self.assertIn("record = &registry->apps[registry->count];", body)
         self.assertIn("registry->count++", body)
+
+    def test_trigger_registration_uses_narrow_app_sqbc_path_scratch(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        app_store_h = self.read("firmware/zephyr/src/app_store.h")
+        start = protocol.index("static int register_app_triggers")
+        end = protocol.index("int sq_device_protocol_poll")
+        body = protocol[start:end]
+
+        self.assertIn("#define SQ_APP_STORE_APP_FILE_PATH_MAX 72", app_store_h)
+        self.assertIn("char sqbc_path[SQ_APP_STORE_APP_FILE_PATH_MAX];", body)
+        self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", body)
 
     def test_resource_install_paths_reuse_single_path_scratch(self):
         app_store = self.read("firmware/zephyr/src/app_store.c")
@@ -1828,7 +1839,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("sq_app_store_sqbc_path", app_store_h)
         self.assertIn("int sq_app_store_sqbc_path", app_store_c)
         self.assertNotIn("struct sq_app_store_vm_storage trigger_storage", body)
-        self.assertIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", body)
+        self.assertIn("char sqbc_path[SQ_APP_STORE_APP_FILE_PATH_MAX];", body)
         self.assertIn("struct sq_vm_fs_storage trigger_storage", body)
         self.assertIn("sq_app_store_sqbc_path(context->store_mount_point, app_id,", body)
         self.assertIn(".sqbc_path = sqbc_path", body)

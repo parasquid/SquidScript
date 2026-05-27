@@ -658,7 +658,7 @@ int sq_app_store_install_resource(const char *mount_point, const char *app_id,
 
 int sq_app_store_scan_registry(const char *mount_point, struct sq_app_registry *registry)
 {
-	char path[SQ_APP_STORE_SCAN_PATH_MAX];
+	char path[SQ_APP_STORE_APP_FILE_PATH_MAX];
 	struct fs_dir_t dir;
 	struct fs_dirent entry;
 	int result;
