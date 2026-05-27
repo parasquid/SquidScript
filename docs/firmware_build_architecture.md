@@ -94,8 +94,8 @@ budget.
 Protocol transfer sessions keep full resource-path storage for package paths
 but use smaller internal staging-path buffers for fixed firmware staging
 filenames.
-The protocol/main thread stack is currently 8 KiB and the VM worker stack is
-19 KiB. Resource diagnostics expose each stack's high-water use separately so
+The protocol/main thread stack is currently 6 KiB and the VM worker stack is
+18 KiB. Resource diagnostics expose each stack's high-water use separately so
 budget reductions can be tied to measured workloads instead of inferred from
 static allocation alone.
 Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi VM service

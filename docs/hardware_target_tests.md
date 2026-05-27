@@ -171,7 +171,7 @@ app lifecycle checks in the full ESP32-C3 Super Mini suite. It records
 `device resources` output under `target/hardware-tests/stack-usage/` and
 verifies `protocol_thread_stack_*` and `vm_worker_stack_*` metrics are
 internally consistent. The current firmware keeps the protocol/main stack budget
-at 6 KiB and the VM worker stack budget at 19 KiB based on measured high-water
+at 6 KiB and the VM worker stack budget at 18 KiB based on measured high-water
 data. The harness uses a command-level timeout for its `device resources`
 request so serial stalls fail with captured output instead of hanging the full
 suite. GPIO-button device-binding launch coverage previously measured
@@ -237,8 +237,9 @@ measured `vm_worker_stack_used_bytes=17620` before lowering the worker stack to
 20480. Targeted GPIO9 input summary coverage after app-start binding setup moved
 to the VM worker measured `vm_worker_stack_used_bytes=17296`, and narrowing the
 FFI app process/armed stack scratch reduced the input launch row to 17056; the
-worker stack is now 19456 bytes. Remeasure the physical press row and full
-hardware suite before lowering that budget again.
+worker stack is now 18432 bytes. This keeps 1136 bytes of headroom above the
+highest saved 17296-byte workload peak. Remeasure the physical press row and
+full hardware suite before lowering that budget again.
 
 `scripts/c3-supermini-measure-ram-workloads.sh` is the targeted RAM and stack
 attribution harness. It formats app storage, installs the GPIO9 input summary

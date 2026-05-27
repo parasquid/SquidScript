@@ -65,8 +65,8 @@ if (( protocol_stack_pre_resources_used < 0 ||
   exit 1
 fi
 
-if [[ "$stack_size" != "19456" ]]; then
-  printf 'Expected vm_worker_stack_size_bytes=19456, got %s\n' "$stack_size" >&2
+if [[ "$stack_size" != "18432" ]]; then
+  printf 'Expected vm_worker_stack_size_bytes=18432, got %s\n' "$stack_size" >&2
   printf '%s\n' "--- ${resources_out} ---" >&2
   sed -n '1,200p' "${resources_out}" >&2
   exit 1

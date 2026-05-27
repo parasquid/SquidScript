@@ -62,9 +62,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   work stacks, response/session buffers, logging, LittleFS pools, and file
   caches. Current C3 build map evidence sizes the resident runtime object at
   18,544 bytes after capping retained VM output history at eight lines; next
-  reductions should investigate the VM context reserve, worker-stack high-water
-  headroom after representative workloads, and any remaining accidental static
-  buffers.
+  reductions should investigate the VM context reserve, full-suite worker-stack
+  high-water headroom after the 18 KiB stack reduction, and any remaining
+  accidental static buffers.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
   succeeds but serial commands stall, app launch hangs, or input dispatch stops
   responding, check stack exhaustion early with `device resources`, compare
@@ -100,9 +100,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   not treat GPIO3, GPIO4, GPIO7, GPIO10, or GPIO5 scan changes as real buttons
   without targeted confirmation. The protocol/main stack budget has been
   reduced from 8 KiB to 6 KiB based on repeated 2476-byte measured peaks, while
-  keeping more than 3.5 KiB of headroom. Next, validate the 6 KiB protocol/main
-  stack and whether the 19 KiB worker stack can be reduced after full-suite
-  coverage.
+  keeping more than 3.5 KiB of headroom. The worker stack has been reduced from
+  19 KiB to 18 KiB based on the saved 17296-byte workload peak, leaving 1136
+  bytes of measured headroom before hardware revalidation. Next, validate the
+  6 KiB protocol/main stack and 18 KiB worker stack with the hardware suite.
 - Improve network heap attribution before expanding Wi-Fi scope. Current AP
   start/stop hardware coverage drives `ram_heap_max_allocated_bytes` close to
   the 36 KiB system heap budget; add clearer per-workload heap reset or
