@@ -1458,6 +1458,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         stack = self.read("scripts/c3-supermini-measure-ram-workloads.sh")
 
         self.assertIn('COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-12}"', stack)
+        self.assertIn('WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-60}"', stack)
         self.assertIn("target/hardware-tests/ram-workloads", stack)
         self.assertIn('snapshot_resources after-format', stack)
         self.assertIn('snapshot_resources input-after-install', stack)
@@ -1478,6 +1479,9 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('heap_max_alloc_bytes', stack)
         self.assertIn('summary.tsv', stack)
         self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', stack)
+        self.assertIn('local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS))', stack)
+        self.assertIn("while (( SECONDS < deadline )); do", stack)
+        self.assertNotIn("for _ in $(seq 1 80)", stack)
 
     def test_input_stack_isolation_measurement_is_bounded_and_input_only(self):
         stack = self.read("scripts/c3-supermini-measure-input-stack-isolation.sh")

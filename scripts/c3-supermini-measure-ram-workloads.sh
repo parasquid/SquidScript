@@ -9,6 +9,7 @@ DISPLAY_APP="${ROOT}/tests/hardware/c3-supermini/display-drawlog/main.squid"
 SYSTEM_APP="${ROOT}/tests/hardware/c3-supermini/system-resources/main.squid"
 WIFI_AP_APP="${ROOT}/tests/hardware/c3-supermini/wifi-ap-summary/main.squid"
 COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-12}"
+WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-60}"
 
 mkdir -p "${WORK_DIR}"
 
@@ -40,8 +41,9 @@ wait_for_contains() {
   local command_name="$3"
   shift 3
   local out="${WORK_DIR}/${label}.out"
+  local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS))
 
-  for _ in $(seq 1 80); do
+  while (( SECONDS < deadline )); do
     if timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" "$@" >"${out}" 2>&1 &&
       grep -Fq "${expected}" "${out}"; then
       printf '%s\n' "${out}"
