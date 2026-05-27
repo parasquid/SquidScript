@@ -893,6 +893,11 @@ static int mount_test_fs(void)
 	return result == -EALREADY ? 0 : result;
 }
 
+static int format_test_app_store(void)
+{
+	return sq_app_store_format_filesystem(test_fs_mount.mnt_point);
+}
+
 ZTEST(squidscript_protocol, test_decodes_rust_golden_hello_frame)
 {
 	struct sq_protocol_frame frame;
@@ -1376,7 +1381,7 @@ ZTEST(squidscript_protocol, test_handles_installed_app_begin_chunk_commit)
 	};
 
 	zassert_equal(mount_test_fs(), 0, "mount failed");
-	zassert_equal(sq_app_store_prepare_filesystem(test_fs_mount.mnt_point), 0);
+	zassert_equal(format_test_app_store(), 0);
 	zassert_true(sizeof(install_session) < 512,
 		     "installed app write session must not reserve full SQBC payload RAM");
 
@@ -2098,7 +2103,7 @@ ZTEST(squidscript_protocol, test_handles_temp_run_commit_dispatches_file_staged_
 	};
 
 	zassert_equal(mount_test_fs(), 0, "mount failed");
-	zassert_equal(sq_app_store_prepare_filesystem(test_fs_mount.mnt_point), 0);
+	zassert_equal(format_test_app_store(), 0);
 	zassert_true(sizeof(temp_session) < 512,
 		     "temp-run session must not reserve full SQBC payload RAM");
 
@@ -2627,7 +2632,7 @@ ZTEST(squidscript_protocol, test_app_store_derives_vm_storage_paths_from_mount)
 	struct fs_dirent entry;
 
 	zassert_equal(mount_test_fs(), 0, "mount failed");
-	zassert_equal(sq_app_store_prepare_filesystem(test_fs_mount.mnt_point), 0);
+	zassert_equal(format_test_app_store(), 0);
 
 	zassert_equal(fs_stat("/sqtest/apps", &entry), 0);
 	zassert_equal(entry.type, FS_DIR_ENTRY_DIR);
@@ -2669,7 +2674,7 @@ ZTEST(squidscript_protocol, test_installed_app_launch_reads_sqbc_in_bounded_file
 	padded_sqbc[9] = (PADDED_SQBC_LEN >> 24) & 0xff;
 
 	zassert_equal(mount_test_fs(), 0, "mount failed");
-	zassert_equal(sq_app_store_prepare_filesystem(test_fs_mount.mnt_point), 0);
+	zassert_equal(format_test_app_store(), 0);
 	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "padded", padded_sqbc,
 					       sizeof(padded_sqbc)),
 		      0);
@@ -2702,7 +2707,7 @@ ZTEST(squidscript_protocol, test_app_store_installs_app_and_rebuilds_registry)
 	const struct sq_app_registry_entry *installed;
 
 	zassert_equal(mount_test_fs(), 0, "mount failed");
-	zassert_equal(sq_app_store_prepare_filesystem(test_fs_mount.mnt_point), 0);
+	zassert_equal(format_test_app_store(), 0);
 
 	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "alpha", sqbc_a,
 					       sizeof(sqbc_a)),
@@ -3399,7 +3404,7 @@ ZTEST(squidscript_protocol, test_vm_runtime_dispatches_system_resource_callbacks
 
 	memset(&runtime, 0, sizeof(runtime));
 	zassert_equal(mount_test_fs(), 0, "mount failed");
-	zassert_equal(sq_app_store_prepare_filesystem(test_fs_mount.mnt_point), 0);
+	zassert_equal(format_test_app_store(), 0);
 	sq_vm_runtime_set_store_mount_point(&runtime, test_fs_mount.mnt_point);
 	zassert_equal(sq_vm_runtime_dispatch(&runtime, &backend, "app.start"), 0);
 	zassert_equal(runtime.output_count, 2);
