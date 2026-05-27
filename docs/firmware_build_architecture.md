@@ -278,6 +278,16 @@ sq_vm_runtime_apply_target_default_indicator_binding ->
 sq_vm_runtime_device_config_rebind -> runtime_device_config_string_equals ->
 runtime_device_config_find`. Linker DRAM remains 185,024 bytes and the RAM
 audit remains 185,008 bytes.
+Target default indicator binding still materializes the generated target
+default into the in-memory SQDC draft, but now applies that generated default
+directly instead of routing it through the general dynamic
+`sq_vm_runtime_device_config_rebind` path. That reduces the cumulative
+`reset_runtime` path from 272 bytes to 176 bytes and removes reset/default
+indicator rebinding from the top source-known main/protocol path. The current
+top source-known main/protocol path remains 464 bytes through
+`dispatch_event_request -> dispatch_event_from_parts ->
+sq_vm_runtime_start_event -> sq_vm_runtime_init`. Linker DRAM remains
+185,024 bytes and the RAM audit remains 185,008 bytes.
 Protocol dispatch decodes only the request opcode and sequence into the live
 dispatch header because opcode handlers parse payloads from the original
 request bytes, so `sq_device_protocol_handle_frame` now emits 80 bytes instead

@@ -209,8 +209,16 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   `reset_runtime -> clear_runtime_context -> sq_vm_runtime_reset ->
   sq_vm_runtime_apply_target_default_indicator_binding ->
   sq_vm_runtime_device_config_rebind -> runtime_device_config_string_equals ->
-  runtime_device_config_find`; investigate reset/default-indicator rebind and
-  the shared protocol/main frame next. VM
+  runtime_device_config_find`. Target default indicator binding still
+  materializes the generated target default into the in-memory SQDC draft, but
+  now applies that generated default directly instead of routing it through
+  the general dynamic `sq_vm_runtime_device_config_rebind` path. That reduces
+  the cumulative `reset_runtime` path from 272 bytes to 176 bytes and removes
+  reset/default-indicator rebinding from the top source-known main/protocol
+  path. The top source-known main/protocol path remains 464 bytes through
+  `dispatch_event_request -> dispatch_event_from_parts ->
+  sq_vm_runtime_start_event -> sq_vm_runtime_init`; investigate event dispatch
+  and the shared protocol/main frame next. VM
   dispatch now uses a
   static callback table plus an explicit `user_data` pointer across the FFI
   boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes

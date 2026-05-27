@@ -1656,6 +1656,20 @@ static int runtime_activate_binding(struct sq_vm_runtime *runtime, const uint8_t
 	return 0;
 }
 
+static int runtime_apply_indicator_gpio_binding(struct sq_vm_runtime *runtime, const uint8_t *alias,
+						size_t alias_len, uint8_t pin, bool active_low)
+{
+	if (runtime == NULL || alias == NULL || alias_len == 0) {
+		return -EINVAL;
+	}
+	runtime->indicator_breathe_active = false;
+	runtime->indicator_blink_active = false;
+	runtime->indicator_binding_active = true;
+	runtime->indicator_binding_pin = pin;
+	runtime->indicator_binding_active_low = active_low;
+	return runtime_activate_binding(runtime, alias, alias_len);
+}
+
 static int runtime_activate_input_button(struct sq_vm_runtime *runtime, uint8_t pin,
 					 const uint8_t *event, size_t event_len,
 					 bool active_low)
@@ -1771,12 +1785,7 @@ int sq_vm_runtime_device_config_rebind(struct sq_vm_runtime *runtime, const uint
 		return runtime_device_config_error(out, "unsupported target gpio");
 	}
 
-	runtime->indicator_breathe_active = false;
-	runtime->indicator_blink_active = false;
-	runtime->indicator_binding_active = true;
-	runtime->indicator_binding_pin = pin;
-	runtime->indicator_binding_active_low = active_low;
-	if (runtime_activate_binding(runtime, alias, alias_len) != 0) {
+	if (runtime_apply_indicator_gpio_binding(runtime, alias, alias_len, pin, active_low) != 0) {
 		return runtime_device_config_error(out, "too many bindings");
 	}
 	return runtime_device_config_ok(out);
@@ -1786,7 +1795,6 @@ static int sq_vm_runtime_apply_target_default_indicator_binding(struct sq_vm_run
 {
 #if SQ_TARGET_INDICATOR_DEFAULT_HAS_GPIO
 	char pin_name[sizeof("GPIO255")];
-	SqvmDeviceConfigResult result = {0};
 	int written;
 
 	if (runtime == NULL) {
@@ -1812,9 +1820,10 @@ static int sq_vm_runtime_apply_target_default_indicator_binding(struct sq_vm_run
 	}
 
 	runtime->device_config_draft_loaded = true;
-	if (sq_vm_runtime_device_config_rebind(runtime, (const uint8_t *)"indicator.default",
-					       strlen("indicator.default"), &result) != 0 ||
-	    !result.ok) {
+	if (runtime_apply_indicator_gpio_binding(runtime, (const uint8_t *)"indicator.default",
+						 strlen("indicator.default"),
+						 SQ_TARGET_INDICATOR_DEFAULT_GPIO_PIN,
+						 SQ_TARGET_INDICATOR_DEFAULT_ACTIVE_LOW != 0) != 0) {
 		return -EINVAL;
 	}
 	return 0;

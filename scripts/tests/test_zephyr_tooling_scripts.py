@@ -528,6 +528,21 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("SQ_TARGET_INDICATOR_DEFAULT_ACTIVE_LOW", runtime)
         self.assertNotIn("indicator_gpio.pin;\n\truntime->indicator_binding_active_low", runtime)
 
+    def test_target_default_indicator_binding_does_not_rebind_generated_sqdc(self):
+        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+        default_start = runtime.index(
+            "static int sq_vm_runtime_apply_target_default_indicator_binding"
+        )
+        default_body = runtime[
+            default_start : runtime.index("static void runtime_clear_active_bindings", default_start)
+        ]
+
+        self.assertIn("runtime_apply_indicator_gpio_binding", runtime)
+        self.assertIn("runtime_device_config_append_string", default_body)
+        self.assertIn("runtime_apply_indicator_gpio_binding(runtime,", default_body)
+        self.assertNotIn("sq_vm_runtime_device_config_rebind", default_body)
+        self.assertNotIn("SqvmDeviceConfigResult result", default_body)
+
     def test_zephyr_main_stack_tracks_measured_protocol_work(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
 
