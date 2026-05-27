@@ -73,7 +73,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   slots to keep the reference firmware RAM-bound explicit, and the serial
   receive frame budget is 320 bytes with host upload chunking derived from that
   limit, and protocol transfer sessions use 72-byte staging path slots. The
-  latest target build reports 192,992 bytes of DRAM use; next
+  latest target build reports 191,968 bytes of DRAM use; next
   reductions should investigate full-suite worker-stack high-water headroom
   after the 18 KiB stack reduction and any remaining accidental static buffers.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
@@ -112,11 +112,11 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   Mini reference board, treat GPIO9 as the confirmed physical input path; do
   not treat GPIO3, GPIO4, GPIO7, GPIO10, or GPIO5 scan changes as real buttons
   without targeted confirmation. The protocol/main stack budget has been
-  reduced from 8 KiB to 6 KiB based on repeated 2476-byte measured peaks, while
-  keeping more than 3.5 KiB of headroom. The worker stack has been reduced from
+  reduced from 8 KiB to 5 KiB based on repeated 2476-byte measured peaks, while
+  keeping more than 2.5 KiB of headroom. The worker stack has been reduced from
   19 KiB to 18 KiB based on the saved 17296-byte workload peak, leaving 1136
   bytes of measured headroom before hardware revalidation. Next, validate the
-  6 KiB protocol/main stack and 18 KiB worker stack with the hardware suite.
+  5 KiB protocol/main stack and 18 KiB worker stack with the hardware suite.
 - Improve network heap attribution before expanding Wi-Fi scope. Current AP
   start/stop hardware coverage drives `ram_heap_max_allocated_bytes` close to
   the 36 KiB system heap budget; add clearer per-workload heap reset or

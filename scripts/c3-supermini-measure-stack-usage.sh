@@ -35,8 +35,8 @@ protocol_stack_pre_resources_used="$(
   resource_value protocol_thread_stack_pre_resources_used_bytes
 )"
 
-if [[ "$protocol_stack_size" != "6144" ]]; then
-  printf 'Expected protocol_thread_stack_size_bytes=6144, got %s\n' \
+if [[ "$protocol_stack_size" != "5120" ]]; then
+  printf 'Expected protocol_thread_stack_size_bytes=5120, got %s\n' \
     "$protocol_stack_size" >&2
   printf '%s\n' "--- ${resources_out} ---" >&2
   sed -n '1,200p' "${resources_out}" >&2
