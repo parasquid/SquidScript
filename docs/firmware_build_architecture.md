@@ -316,6 +316,14 @@ top source-known main/protocol path to 432 bytes through
 `launch_app -> start_installed_app -> sq_vm_runtime_start_event ->
 sq_vm_runtime_init`. Linker DRAM remains 185,024 bytes and the RAM audit
 remains 185,008 bytes.
+App launch now passes the parsed app-id byte slice into a byte-slice installed
+start helper instead of materializing a NUL-terminated
+`SQ_APP_STORE_APP_ID_MAX` buffer on the protocol stack. That reduces
+`launch_app` from 80 bytes to 48 bytes, reduces its cumulative path from
+240 bytes to 224 bytes, and moves the top source-known main/protocol path from
+432 bytes to 416 bytes through
+`commit_install -> sq_app_store_scan_registry_with_path -> join_path2`.
+Linker DRAM remains 185,024 bytes and the RAM audit remains 185,008 bytes.
 Protocol dispatch decodes only the request opcode and sequence into the live
 dispatch header because opcode handlers parse payloads from the original
 request bytes, so `sq_device_protocol_handle_frame` now emits 80 bytes instead

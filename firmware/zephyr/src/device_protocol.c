@@ -424,6 +424,9 @@ static int __noinline commit_install(const struct sq_protocol_request *request,
 static int start_installed_app(const struct sq_device_protocol_context *context,
 			       const char *app_id, const uint8_t *event, size_t event_len,
 			       bool set_current);
+static int start_installed_app_bytes(const struct sq_device_protocol_context *context,
+				     const uint8_t *app_id, size_t app_id_len,
+				     const uint8_t *event, size_t event_len, bool set_current);
 static void clear_foreground_timers(struct sq_vm_runtime *runtime);
 
 static int __noinline launch_app(const struct sq_protocol_request *request,
@@ -444,12 +447,9 @@ static int __noinline launch_app(const struct sq_protocol_request *request,
 		return -EINVAL;
 	}
 
-	char app_id_buffer[SQ_APP_STORE_APP_ID_MAX];
-	memcpy(app_id_buffer, launch.app_id, launch.app_id_len);
-	app_id_buffer[launch.app_id_len] = '\0';
-
-	result = start_installed_app(context, app_id_buffer, (const uint8_t *)"app.start",
-				     sizeof("app.start") - 1, true);
+	result = start_installed_app_bytes(context, launch.app_id, launch.app_id_len,
+					   (const uint8_t *)"app.start",
+					   sizeof("app.start") - 1, true);
 	if (result != 0) {
 		return result;
 	}
@@ -461,6 +461,17 @@ static int start_installed_app(const struct sq_device_protocol_context *context,
 			       const char *app_id, const uint8_t *event, size_t event_len,
 			       bool set_current)
 {
+	if (app_id == NULL) {
+		return -EINVAL;
+	}
+	return start_installed_app_bytes(context, (const uint8_t *)app_id, strlen(app_id), event,
+					 event_len, set_current);
+}
+
+static int start_installed_app_bytes(const struct sq_device_protocol_context *context,
+				     const uint8_t *app_id, size_t app_id_len,
+				     const uint8_t *event, size_t event_len, bool set_current)
+{
 	int result;
 	bool current_app_changed;
 
@@ -468,19 +479,22 @@ static int start_installed_app(const struct sq_device_protocol_context *context,
 	    context->launch_storage == NULL || app_id == NULL || event == NULL) {
 		return -EINVAL;
 	}
-	if (strlen(app_id) >= SQ_APP_STORE_APP_ID_MAX) {
+	if (app_id_len >= SQ_APP_STORE_APP_ID_MAX) {
 		return -EINVAL;
 	}
-	current_app_changed = set_current && strcmp(context->runtime->current_app, app_id) != 0;
+	current_app_changed = set_current &&
+			      (strlen(context->runtime->current_app) != app_id_len ||
+			       memcmp(context->runtime->current_app, app_id, app_id_len) != 0);
 	if (current_app_changed) {
 		clear_foreground_timers(context->runtime);
 	}
-	if (set_current || strcmp(context->runtime->current_app, app_id) != 0) {
+	if (set_current || strlen(context->runtime->current_app) != app_id_len ||
+	    memcmp(context->runtime->current_app, app_id, app_id_len) != 0) {
 		sq_vm_runtime_reset_vm_context(context->runtime);
 	}
 
-	result = sq_app_store_vm_storage_for_app(context->store_mount_point, app_id,
-						context->launch_storage);
+	result = sq_app_store_vm_storage_for_app_bytes(context->store_mount_point, app_id,
+						       app_id_len, context->launch_storage);
 	if (result != 0) {
 		return result;
 	}
@@ -490,9 +504,8 @@ static int start_installed_app(const struct sq_device_protocol_context *context,
 			sizeof(context->runtime->pending_launch_app) - 1);
 		context->runtime->pending_launch_app[sizeof(context->runtime->pending_launch_app) -
 						    1] = '\0';
-		strncpy(context->runtime->current_app, app_id,
-			sizeof(context->runtime->current_app) - 1);
-		context->runtime->current_app[sizeof(context->runtime->current_app) - 1] = '\0';
+		memcpy(context->runtime->current_app, app_id, app_id_len);
+		context->runtime->current_app[app_id_len] = '\0';
 	}
 	result = sq_vm_runtime_start_event(context->runtime, &context->runtime->job_backend, event,
 					   event_len);

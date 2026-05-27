@@ -238,7 +238,14 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   `sq_vm_runtime_start_event` directly, reducing its cumulative path from
   240 bytes to 208 bytes and moving the top source-known main/protocol path to
   432 bytes through `launch_app -> start_installed_app ->
-  sq_vm_runtime_start_event -> sq_vm_runtime_init`; investigate launch next. VM
+  sq_vm_runtime_start_event -> sq_vm_runtime_init`. App launch now passes the
+  parsed app-id byte slice into a byte-slice installed-start helper instead of
+  materializing a NUL-terminated `SQ_APP_STORE_APP_ID_MAX` protocol-stack
+  buffer, reducing `launch_app` from 80 bytes to 48 bytes, its cumulative path
+  from 240 bytes to 224 bytes, and the top source-known main/protocol path
+  from 432 bytes to 416 bytes through
+  `commit_install -> sq_app_store_scan_registry_with_path -> join_path2`;
+  investigate install-commit registry scanning next. VM
   dispatch now uses a
   static callback table plus an explicit `user_data` pointer across the FFI
   boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes
