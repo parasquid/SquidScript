@@ -246,6 +246,13 @@ path is now 480 bytes through
 `dispatch_key -> dispatch_event_from_parts -> sq_vm_runtime_start_event ->
 sq_vm_runtime_init`. Linker DRAM remains 185,024 bytes and the RAM audit
 remains 185,008 bytes.
+Key dispatch now decodes key events into the runtime-owned event scratch
+instead of keeping a separate `SQ_VM_RUNTIME_EVENT_LEN` stack buffer. That
+reduces `dispatch_key` from 96 bytes to 80 bytes, reduces its cumulative path
+to 272 bytes, and moves the top source-known main/protocol path to 464 bytes
+through `begin_install -> sq_app_store_begin_staged_install ->
+prepare_filesystem_with_path -> ensure_directory`. Linker DRAM remains
+185,024 bytes and the RAM audit remains 185,008 bytes.
 Protocol dispatch decodes only the request opcode and sequence into the live
 dispatch header because opcode handlers parse payloads from the original
 request bytes, so `sq_device_protocol_handle_frame` now emits 80 bytes instead

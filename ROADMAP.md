@@ -182,7 +182,14 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   remains 185,008 bytes. The top source-known main/protocol path is now
   480 bytes through
   `dispatch_key -> dispatch_event_from_parts -> sq_vm_runtime_start_event ->
-  sq_vm_runtime_init`; investigate the key/event dispatch path next. VM
+  sq_vm_runtime_init`; investigate the key/event dispatch path next. Key
+  dispatch now decodes key events into the runtime-owned event scratch instead
+  of retaining a separate `SQ_VM_RUNTIME_EVENT_LEN` stack buffer, reducing
+  `dispatch_key` from 96 bytes to 80 bytes and its cumulative path to
+  272 bytes. The top source-known main/protocol path is now 464 bytes through
+  `begin_install -> sq_app_store_begin_staged_install ->
+  prepare_filesystem_with_path -> ensure_directory`; investigate the install
+  begin path next. VM
   dispatch now uses a
   static callback table plus an explicit `user_data` pointer across the FFI
   boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes

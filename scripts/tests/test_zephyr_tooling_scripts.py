@@ -2247,6 +2247,19 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertNotIn("memcpy(event_buffer, event, event_len);", body)
         self.assertIn("sq_vm_runtime_start_event(context->runtime, &backend, event, event_len)", body)
 
+    def test_key_dispatch_uses_runtime_event_scratch(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        start = protocol.index("static int __noinline dispatch_key")
+        end = protocol.index("static int __noinline wifi_profile_set", start)
+        body = protocol[start:end]
+
+        self.assertNotIn("uint8_t event[SQ_VM_RUNTIME_EVENT_LEN];", body)
+        self.assertIn("context->runtime == NULL", body)
+        self.assertIn("uint8_t *event = (uint8_t *)context->runtime->event;", body)
+        self.assertIn("sqdp_prepare_key_event(request_bytes, request_len, event,",
+                      body)
+        self.assertIn("sizeof(context->runtime->event)", body)
+
     def test_trigger_registration_reuses_launch_storage_path_buffers(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         app_store_h = self.read("firmware/zephyr/src/app_store.h")

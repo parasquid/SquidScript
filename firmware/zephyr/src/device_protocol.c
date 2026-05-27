@@ -1099,10 +1099,14 @@ static int __noinline dispatch_key(const struct sq_protocol_request *request,
 			const struct sq_device_protocol_context *context, uint8_t *response,
 			size_t response_cap, size_t *response_len)
 {
-	uint8_t event[SQ_VM_RUNTIME_EVENT_LEN];
 	size_t event_len = 0;
 
-	if (sqdp_prepare_key_event(request_bytes, request_len, event, sizeof(event), &event_len) !=
+	if (context == NULL || context->runtime == NULL) {
+		return -EINVAL;
+	}
+	uint8_t *event = (uint8_t *)context->runtime->event;
+	if (sqdp_prepare_key_event(request_bytes, request_len, event,
+				   sizeof(context->runtime->event), &event_len) !=
 	    SQDP_STATUS_OK) {
 		return -EINVAL;
 	}
