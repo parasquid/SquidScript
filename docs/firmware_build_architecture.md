@@ -189,6 +189,10 @@ The Zephyr VM context reserve follows the measured 32-bit Rust FFI context
 size: `sqvm_context_size()` currently emits 10,392 bytes in the ESP32-C3 build,
 so the C runtime reserves 10,400 bytes instead of 10,880 bytes. That reduces
 the static `runtime.3` block from 15,232 bytes to 14,752 bytes.
+The resident protocol response buffer is 834 bytes, matching the current
+resources-response ceiling: 814 bytes of metric payload plus the 20-byte frame
+header. This trims the previous 848-byte buffer without changing the response
+set.
 Protocol polling reuses runtime app-id/event scratch for lifecycle and armed
 timer transitions. App-arm trigger discovery uses a SQBC-only filesystem
 backend instead of a full app storage object with state paths, and trigger

@@ -91,7 +91,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   remain at the Zephyr default for recursive format/delete walks. The
   protocol/main stack is now 3264 bytes, leaving 788 bytes over the last
   measured 2476-byte protocol peak, and the VM worker stack is now 18016 bytes.
-  The latest target build reports 185,264 bytes
+  The latest target build reports 185,248 bytes
   of DRAM use; next
   reductions should physically revalidate the 3264-byte protocol/main stack
   with the bounded stack harness. The stack harness now fails with captured
@@ -135,6 +135,8 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   The Zephyr VM context reserve now tracks the measured 32-bit FFI context size
   of 10,392 bytes with a 10,400-byte C reserve, reducing the static runtime
   block from 15,232 bytes to 14,752 bytes.
+  The resident protocol response buffer now tracks the calculated current
+  resources-response ceiling, reducing `response.0` from 848 bytes to 834 bytes.
   Protocol polling now reuses runtime app-id/event scratch for lifecycle and
   armed timer transitions, app-arm trigger discovery uses SQBC-only storage, and
   trigger registration uses the shared app-file path scratch; the emitted C
