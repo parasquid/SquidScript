@@ -2459,8 +2459,17 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 int sq_vm_runtime_start(struct sq_vm_runtime *runtime,
 			const struct sq_vm_storage_backend *backend, const char *event)
 {
+	if (event == NULL) {
+		return -EINVAL;
+	}
+	return sq_vm_runtime_start_event(runtime, backend, (const uint8_t *)event, strlen(event));
+}
+
+int sq_vm_runtime_start_event(struct sq_vm_runtime *runtime,
+			      const struct sq_vm_storage_backend *backend,
+			      const uint8_t *event, size_t event_len)
+{
 	struct k_sem setup_done;
-	size_t event_len;
 	bool wait_for_setup;
 	int result;
 
@@ -2471,14 +2480,13 @@ int sq_vm_runtime_start(struct sq_vm_runtime *runtime,
 	if (runtime->status == SQ_VM_RUNTIME_RUNNING) {
 		return -EBUSY;
 	}
-	event_len = strlen(event);
 	if (event_len == 0 || event_len >= sizeof(runtime->event)) {
 		return -EINVAL;
 	}
 
 	runtime->job_backend = *backend;
 	runtime->backend = &runtime->job_backend;
-	wait_for_setup = strcmp(event, "app.start") == 0;
+	wait_for_setup = event_len == 9u && memcmp(event, "app.start", 9u) == 0;
 	runtime->start_apply_bindings = wait_for_setup;
 	runtime->start_setup_result = 0;
 	if (wait_for_setup) {
@@ -2487,7 +2495,8 @@ int sq_vm_runtime_start(struct sq_vm_runtime *runtime,
 	} else {
 		runtime->start_setup_done = NULL;
 	}
-	memmove(runtime->event, event, event_len + 1);
+	memmove(runtime->event, event, event_len);
+	runtime->event[event_len] = '\0';
 	runtime->result_code = 0;
 	runtime->dispatch_exited = false;
 	runtime->status = SQ_VM_RUNTIME_RUNNING;

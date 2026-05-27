@@ -204,6 +204,9 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 
 int sq_vm_runtime_start(struct sq_vm_runtime *runtime,
 			const struct sq_vm_storage_backend *backend, const char *event);
+int sq_vm_runtime_start_event(struct sq_vm_runtime *runtime,
+			      const struct sq_vm_storage_backend *backend,
+			      const uint8_t *event, size_t event_len);
 
 int sq_vm_runtime_record_output(struct sq_vm_runtime *runtime, const uint8_t *message,
 				size_t message_len);

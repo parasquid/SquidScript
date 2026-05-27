@@ -166,7 +166,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   path buffers. The trigger registration path is now attributed separately at
   64 bytes, with per-trigger timer decode/register attributed to a 96-byte
   helper, instead of retaining that scratch in `sq_device_protocol_poll` or a
-  separate 400-byte trigger-registration frame.
+  separate 400-byte trigger-registration frame. Protocol event dispatch now
+  passes event bytes directly into `sq_vm_runtime_start_event` instead of
+  staging a NUL-terminated event buffer, reducing `dispatch_event_from_parts`
+  from 112 bytes to 96 bytes.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
   succeeds but serial commands stall, app launch hangs, or input dispatch stops
   responding, check stack exhaustion early with `device resources`, compare

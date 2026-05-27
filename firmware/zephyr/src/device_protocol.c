@@ -1054,12 +1054,9 @@ static int dispatch_event_from_parts(const struct sq_protocol_frame *request,
 		return -ENODEV;
 	}
 
-	char event_buffer[SQ_VM_RUNTIME_EVENT_LEN];
-	memcpy(event_buffer, event, event_len);
-	event_buffer[event_len] = '\0';
 	struct sq_vm_storage_backend backend =
 		sq_app_store_vm_storage_backend(context->launch_storage);
-	int result = sq_vm_runtime_start(context->runtime, &backend, event_buffer);
+	int result = sq_vm_runtime_start_event(context->runtime, &backend, event, event_len);
 	if (result != 0) {
 		return result;
 	}

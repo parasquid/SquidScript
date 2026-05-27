@@ -243,6 +243,11 @@ allocating a per-call SQBC path and filesystem storage wrapper. The emitted C
 stack report now attributes `sq_device_protocol_poll` at 32 bytes,
 `register_app_triggers` at 64 bytes, and per-trigger timer decode/register at
 96 bytes, down from the earlier combined 400-byte trigger-registration frame.
+Protocol event dispatch passes event bytes directly into
+`sq_vm_runtime_start_event` instead of staging a NUL-terminated event buffer on
+the protocol stack, reducing `dispatch_event_from_parts` from 112 bytes to 96
+bytes. The existing string-based `sq_vm_runtime_start` remains as a wrapper for
+callers that already own NUL-terminated event names.
 Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi VM service
 calls now cross the Rust FFI boundary into Zephyr callbacks. Zephyr now
 performs installed-app foreground handoff for `app.launch` and `app.exit` with

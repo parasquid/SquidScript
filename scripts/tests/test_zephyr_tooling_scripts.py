@@ -2007,7 +2007,23 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         )
         self.assertIn("runtime->event, sizeof(runtime->event)", body)
         self.assertIn("runtime->event, true);", body)
-        self.assertIn("memmove(runtime->event, event, event_len + 1);", runtime)
+        self.assertIn("memmove(runtime->event, event, event_len);", runtime)
+        self.assertIn("runtime->event[event_len] = '\\0';", runtime)
+
+    def test_protocol_event_dispatch_uses_byte_slice_runtime_start(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+        start = protocol.index("static int dispatch_event_from_parts")
+        end = protocol.index("static int __noinline dispatch_event_request", start)
+        body = protocol[start:end]
+
+        self.assertIn("sq_vm_runtime_start_event", runtime_h)
+        self.assertIn("int sq_vm_runtime_start_event(struct sq_vm_runtime *runtime,", runtime_c)
+        self.assertIn("return sq_vm_runtime_start_event(runtime, backend,", runtime_c)
+        self.assertNotIn("char event_buffer[SQ_VM_RUNTIME_EVENT_LEN];", body)
+        self.assertNotIn("memcpy(event_buffer, event, event_len);", body)
+        self.assertIn("sq_vm_runtime_start_event(context->runtime, &backend, event, event_len)", body)
 
     def test_trigger_registration_reuses_launch_storage_path_buffers(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
