@@ -79,12 +79,15 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   path instead of a resident saved-state-capacity RAM buffer, and Zephyr's
   deferred logger buffer and process-thread stack are explicitly bounded at 512
   bytes each. LittleFS open-file slots are bounded at two while directory slots
-  remain at the Zephyr default for recursive format/delete walks. The VM worker
-  stack is now 18048 bytes. The latest target build reports 188,368 bytes
+  remain at the Zephyr default for recursive format/delete walks. The
+  protocol/main stack is now 3584 bytes, leaving about 1 KiB over the last
+  measured 2476-byte protocol peak, and the VM worker stack is now 18048 bytes.
+  The latest target build reports 187,856 bytes
   of DRAM use; next
-  reductions should investigate full-suite worker-stack high-water headroom
-  after the 18048-byte stack reduction and any remaining accidental static
-  buffers.
+  reductions should physically revalidate the 3584-byte protocol/main stack
+  with the bounded stack harness, investigate full-suite worker-stack high-water
+  headroom after the 18048-byte stack reduction, and inspect any remaining
+  accidental static buffers.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
   succeeds but serial commands stall, app launch hangs, or input dispatch stops
   responding, check stack exhaustion early with `device resources`, compare

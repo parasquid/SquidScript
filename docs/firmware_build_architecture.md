@@ -110,10 +110,12 @@ Zephyr's deferred logger buffer and process-thread stack are explicitly
 bounded at 512 bytes each; app-visible diagnostics use protocol output, trace,
 draw-log, lifecycle, and resources responses instead of relying on a large
 firmware log ring.
-The protocol/main thread stack is currently 4 KiB and the VM worker stack is
-18,048 bytes. Resource diagnostics expose each stack's high-water use
+The protocol/main thread stack is currently 3,584 bytes and the VM worker stack
+is 18,048 bytes. Resource diagnostics expose each stack's high-water use
 separately so budget reductions can be tied to measured workloads instead of
-inferred from static allocation alone.
+inferred from static allocation alone. The 3,584-byte protocol stack keeps
+roughly 1 KiB of headroom over the last measured 2,476-byte protocol peak and
+needs physical revalidation with the hardware stack harness.
 Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi VM service
 calls now cross the Rust FFI boundary into Zephyr callbacks. Zephyr now
 performs installed-app foreground handoff for `app.launch` and `app.exit` with
