@@ -67,8 +67,8 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   lowering the SQBC code/read transfer window to 768 bytes. The resident app
   registry now holds twelve installed-app entries with 40-byte app-id storage
   slots to keep the reference firmware RAM-bound explicit, and the serial
-  receive frame budget is 384 bytes with host upload chunking derived from that
-  limit. The latest target build reports 193,488 bytes of DRAM use; next
+  receive frame budget is 320 bytes with host upload chunking derived from that
+  limit. The latest target build reports 193,424 bytes of DRAM use; next
   reductions should investigate full-suite worker-stack high-water headroom
   after the 18 KiB stack reduction and any remaining accidental static buffers.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
