@@ -379,7 +379,8 @@ static int __noinline commit_temp_run(const struct sq_protocol_request *request,
 	if (result != 0) {
 		return result;
 	}
-	result = sq_vm_runtime_start(context->runtime, &backend, "app.start");
+	result = sq_vm_runtime_start_event(context->runtime, &backend, (const uint8_t *)"app.start",
+					   sizeof("app.start") - 1);
 	if (result != 0) {
 		return result;
 	}

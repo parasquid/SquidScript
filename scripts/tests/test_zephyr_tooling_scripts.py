@@ -2002,6 +2002,17 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
 
         self.assertIn("if !out_action.is_null() {", ffi_rs)
 
+    def test_temp_run_commit_uses_direct_event_start(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        start = protocol.index("static int __noinline commit_temp_run")
+        end = protocol.index("static int __noinline commit_install")
+        body = protocol[start:end]
+
+        self.assertIn("sq_vm_runtime_start_event(context->runtime, &backend,", body)
+        self.assertIn('(const uint8_t *)"app.start"', body)
+        self.assertIn('sizeof("app.start") - 1', body)
+        self.assertNotIn("sq_vm_runtime_start(context->runtime, &backend,", body)
+
     def test_resource_install_paths_reuse_single_path_scratch(self):
         app_store = self.read("firmware/zephyr/src/app_store.c")
         app_store_h = self.read("firmware/zephyr/src/app_store.h")

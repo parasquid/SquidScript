@@ -234,7 +234,11 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   `commit_resource_install` from 240 bytes to 112 bytes and moving the top
   source-known main/protocol path to 432 bytes through
   `commit_temp_run -> sq_vm_runtime_start -> sq_vm_runtime_start_event ->
-  sq_vm_runtime_init`; investigate temp-run startup next. VM
+  sq_vm_runtime_init`. Temp-run commit now starts `app.start` through
+  `sq_vm_runtime_start_event` directly, reducing its cumulative path from
+  240 bytes to 208 bytes and moving the top source-known main/protocol path to
+  432 bytes through `launch_app -> start_installed_app ->
+  sq_vm_runtime_start_event -> sq_vm_runtime_init`; investigate launch next. VM
   dispatch now uses a
   static callback table plus an explicit `user_data` pointer across the FFI
   boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes

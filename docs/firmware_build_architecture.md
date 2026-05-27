@@ -309,6 +309,13 @@ moves the top source-known main/protocol path to 432 bytes through
 `commit_temp_run -> sq_vm_runtime_start -> sq_vm_runtime_start_event ->
 sq_vm_runtime_init`. Linker DRAM remains 185,024 bytes and the RAM audit
 remains 185,008 bytes.
+Temp-run commit now starts `app.start` through `sq_vm_runtime_start_event`
+directly instead of the NUL-terminated string wrapper. That reduces the
+cumulative `commit_temp_run` path from 240 bytes to 208 bytes and moves the
+top source-known main/protocol path to 432 bytes through
+`launch_app -> start_installed_app -> sq_vm_runtime_start_event ->
+sq_vm_runtime_init`. Linker DRAM remains 185,024 bytes and the RAM audit
+remains 185,008 bytes.
 Protocol dispatch decodes only the request opcode and sequence into the live
 dispatch header because opcode handlers parse payloads from the original
 request bytes, so `sq_device_protocol_handle_frame` now emits 80 bytes instead
