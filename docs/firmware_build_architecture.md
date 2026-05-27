@@ -339,6 +339,22 @@ remaining `launch_app` path emits 112 bytes through `ok_response`, and the top
 source-known main/protocol path is now 400 bytes through
 `begin_install -> sq_app_store_begin_temp_run -> prepare_filesystem_with_path -> ensure_directory`.
 Linker DRAM remains 185,024 bytes and the RAM audit remains 185,008 bytes.
+Transfer begin paths now prepare only the directories they need. Temp runs and
+staged resources create `/tmp` directly with the caller-owned staging path
+scratch, reducing their source-known app-store begin paths from 176 bytes to
+80 bytes. Staged install begin creates `/apps` and the target app directory
+directly before formatting `main.sqbc.tmp`, removing the full filesystem
+preparation helper from the install-begin path. Registry entry updates now
+open `main.sqbc` and use `fs_seek`/`fs_tell` for the size instead of carrying
+Zephyr's large `fs_dirent` stat buffer, reducing
+`sq_app_store_update_registry_entry_with_path` from 144 bytes to 80 bytes and
+the source-known `commit_install` path to 160 bytes. Temp-run commit now stores
+the file-backed backend in the runtime-owned job backend instead of keeping a
+protocol-stack backend temporary, reducing `commit_temp_run` from 112 bytes to
+80 bytes and its source-known cumulative path from 208 bytes to 176 bytes. The
+top source-known main/protocol path is now 384 bytes through
+`errors_response -> repeated_runtime_lines_response`. Linker DRAM remains
+185,024 bytes and the RAM audit remains 185,008 bytes.
 Protocol dispatch decodes only the request opcode and sequence into the live
 dispatch header because opcode handlers parse payloads from the original
 request bytes, so `sq_device_protocol_handle_frame` now emits 80 bytes instead

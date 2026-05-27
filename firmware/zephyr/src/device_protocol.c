@@ -357,7 +357,6 @@ static int __noinline commit_temp_run(const struct sq_protocol_request *request,
 {
 	struct sq_device_temp_session *session = context->temp_session;
 	static struct temp_storage_backend temp_storage;
-	struct sq_vm_storage_backend backend;
 	int result;
 
 	if (session == NULL || context->runtime == NULL || context->store_mount_point == NULL ||
@@ -374,13 +373,13 @@ static int __noinline commit_temp_run(const struct sq_protocol_request *request,
 	}
 	temp_storage.fs_storage.sqbc_path = session->staging_path;
 	temp_storage.fs_storage.state_path = temp_storage.state_path;
-	backend = sq_vm_fs_storage_backend(&temp_storage.fs_storage);
-	result = backend.reset_state(backend.user_data);
+	context->runtime->job_backend = sq_vm_fs_storage_backend(&temp_storage.fs_storage);
+	result = context->runtime->job_backend.reset_state(context->runtime->job_backend.user_data);
 	if (result != 0) {
 		return result;
 	}
-	result = sq_vm_runtime_start_event(context->runtime, &backend, (const uint8_t *)"app.start",
-					   sizeof("app.start") - 1);
+	result = sq_vm_runtime_start_event(context->runtime, &context->runtime->job_backend,
+					   (const uint8_t *)"app.start", sizeof("app.start") - 1);
 	if (result != 0) {
 		return result;
 	}

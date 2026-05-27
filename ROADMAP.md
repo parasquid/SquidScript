@@ -257,7 +257,22 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   `launch_app` path is 112 bytes through `ok_response`, and the top
   source-known main/protocol path is 400 bytes through
   `begin_install -> sq_app_store_begin_temp_run -> prepare_filesystem_with_path -> ensure_directory`;
-  investigate transfer-begin filesystem preparation next. VM
+  transfer-begin filesystem preparation now creates only the needed target
+  directory for temp runs, staged resources, and staged installs. Temp/resource
+  begin paths now emit 80-byte source-known app-store paths, staged install
+  begin no longer carries full filesystem preparation, and registry entry
+  updates now open `main.sqbc` and use `fs_seek`/`fs_tell` for file size
+  instead of carrying Zephyr's large `fs_dirent` stat buffer. That reduces
+  `sq_app_store_update_registry_entry_with_path` from 144 bytes to 80 bytes
+  and the source-known `commit_install` path to 160 bytes. Temp-run commit now
+  stores its file-backed backend in the runtime-owned job backend, reducing
+  `commit_temp_run` from 112 bytes to 80 bytes and its source-known cumulative
+  path from 208 bytes to 176 bytes. The top source-known main/protocol path is
+  now 384 bytes through `errors_response -> repeated_runtime_lines_response`.
+  Linker DRAM remains 185,024 bytes and RAM audit DRAM remains 185,008 bytes;
+  remaining resident RAM reductions should come from workload-attributed
+  worker stack, system heap, or runtime-object cuts rather than these
+  stack-only path cleanups. VM
   dispatch now uses a
   static callback table plus an explicit `user_data` pointer across the FFI
   boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes

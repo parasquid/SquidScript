@@ -381,6 +381,55 @@ static inline int prepare_filesystem_with_path(char *path, size_t path_cap,
 	return ensure_directory(path);
 }
 
+static inline int prepare_tmp_staging_path(char *path, size_t path_cap,
+					   const char *mount_point, const char *filename)
+{
+	int result;
+	int written;
+
+	result = join_path2(path, path_cap, mount_point, "tmp");
+	if (result != 0) {
+		return result;
+	}
+	result = fs_mkdir(path);
+	if (result != 0 && result != -EEXIST) {
+		return result;
+	}
+
+	written = snprintf(path, path_cap, "%s/tmp/%s", mount_point, filename);
+	if (written < 0 || (size_t)written >= path_cap) {
+		return -ENAMETOOLONG;
+	}
+	return 0;
+}
+
+static inline int prepare_staged_app_path(char *path, size_t path_cap,
+					  const char *mount_point, const char *app_id,
+					  const char *suffix)
+{
+	int result;
+
+	result = join_path2(path, path_cap, mount_point, "apps");
+	if (result != 0) {
+		return result;
+	}
+	result = fs_mkdir(path);
+	if (result != 0 && result != -EEXIST) {
+		return result;
+	}
+
+	result = format_app_dir(path, path_cap, mount_point, app_id);
+	if (result != 0) {
+		return result;
+	}
+	result = fs_mkdir(path);
+	if (result != 0 && result != -EEXIST) {
+		return result;
+	}
+
+	return format_app_path(path, path_cap, mount_point, app_id, suffix);
+}
+
 int sq_app_store_prepare_filesystem(const char *mount_point)
 {
 	char path[SQ_APP_STORE_PATH_MAX];
@@ -546,20 +595,8 @@ int sq_app_store_begin_staged_install(const char *mount_point, const char *app_i
 		return -EINVAL;
 	}
 
-	result = prepare_filesystem_with_path(staging_path, staging_path_len, mount_point);
-	if (result != 0) {
-		return result;
-	}
-	result = format_app_dir(staging_path, staging_path_len, mount_point, app_id);
-	if (result != 0) {
-		return result;
-	}
-	result = ensure_directory(staging_path);
-	if (result != 0) {
-		return result;
-	}
-	result = format_app_path(staging_path, staging_path_len, mount_point, app_id,
-				 "main.sqbc.tmp");
+	result = prepare_staged_app_path(staging_path, staging_path_len, mount_point, app_id,
+					 "main.sqbc.tmp");
 	if (result != 0) {
 		return result;
 	}
@@ -582,12 +619,8 @@ int sq_app_store_begin_temp_run(const char *mount_point, char *staging_path,
 		return -EINVAL;
 	}
 
-	result = prepare_filesystem_with_path(staging_path, staging_path_len, mount_point);
-	if (result != 0) {
-		return result;
-	}
-
-	result = join_path2(staging_path, staging_path_len, mount_point, "tmp/temp-run.sqbc.tmp");
+	result = prepare_tmp_staging_path(staging_path, staging_path_len, mount_point,
+					  "temp-run.sqbc.tmp");
 	if (result != 0) {
 		return result;
 	}
@@ -610,11 +643,8 @@ int sq_app_store_begin_staged_resource(const char *mount_point, char *staging_pa
 		return -EINVAL;
 	}
 
-	result = prepare_filesystem_with_path(staging_path, staging_path_len, mount_point);
-	if (result != 0) {
-		return result;
-	}
-	result = join_path2(staging_path, staging_path_len, mount_point, "tmp/resource.tmp");
+	result = prepare_tmp_staging_path(staging_path, staging_path_len, mount_point,
+					  "resource.tmp");
 	if (result != 0) {
 		return result;
 	}
@@ -881,8 +911,9 @@ int sq_app_store_update_registry_entry_with_path(const char *mount_point,
 						 const char *app_id, char *path,
 						 size_t path_cap)
 {
-	struct fs_dirent entry;
+	struct fs_file_t main_sqbc;
 	struct sq_app_registry_entry *record = NULL;
+	off_t sqbc_size;
 	int result;
 
 	if (mount_point == NULL || registry == NULL || !is_safe_app_id(app_id) || path == NULL) {
@@ -893,14 +924,25 @@ int sq_app_store_update_registry_entry_with_path(const char *mount_point,
 	if (result != 0) {
 		return result;
 	}
-	result = fs_stat(path, &entry);
+	fs_file_t_init(&main_sqbc);
+	result = fs_open(&main_sqbc, path, FS_O_READ);
+	if (result != 0) {
+		return result == -EISDIR ? -ENOENT : result;
+	}
+	result = fs_seek(&main_sqbc, 0, FS_SEEK_END);
+	if (result != 0) {
+		(void)fs_close(&main_sqbc);
+		return result;
+	}
+	sqbc_size = fs_tell(&main_sqbc);
+	result = fs_close(&main_sqbc);
+	if (sqbc_size < 0) {
+		return (int)sqbc_size;
+	}
 	if (result != 0) {
 		return result;
 	}
-	if (entry.type != FS_DIR_ENTRY_FILE) {
-		return -ENOENT;
-	}
-	if (entry.size > UINT32_MAX) {
+	if ((uint64_t)sqbc_size > UINT32_MAX) {
 		return -EOVERFLOW;
 	}
 
@@ -920,7 +962,7 @@ int sq_app_store_update_registry_entry_with_path(const char *mount_point,
 
 	strncpy(record->app_id, app_id, sizeof(record->app_id) - 1u);
 	record->app_id[sizeof(record->app_id) - 1u] = '\0';
-	record->sqbc_len = (uint32_t)entry.size;
+	record->sqbc_len = (uint32_t)sqbc_size;
 	return 0;
 }
 
