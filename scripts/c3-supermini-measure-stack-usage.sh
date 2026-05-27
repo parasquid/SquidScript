@@ -28,10 +28,10 @@ protocol_stack_size="$(resource_value proto_stack_size_bytes)"
 protocol_stack_unused="$(resource_value proto_stack_unused_bytes)"
 protocol_stack_used="$(resource_value proto_stack_used_bytes)"
 protocol_stack_pre_resources_unused="$(
-  resource_value proto_stack_pre_res_unused_bytes
+  resource_value proto_stack_pre_unused_bytes
 )"
 protocol_stack_pre_resources_used="$(
-  resource_value proto_stack_pre_res_used_bytes
+  resource_value proto_stack_pre_used_bytes
 )"
 
 if [[ "$protocol_stack_size" != "3264" ]]; then
@@ -101,9 +101,9 @@ fi
   printf 'proto_stack_size_bytes=%s\n' "$protocol_stack_size"
   printf 'proto_stack_used_bytes=%s\n' "$protocol_stack_used"
   printf 'proto_stack_unused_bytes=%s\n' "$protocol_stack_unused"
-  printf 'proto_stack_pre_res_used_bytes=%s\n' \
+  printf 'proto_stack_pre_used_bytes=%s\n' \
     "$protocol_stack_pre_resources_used"
-  printf 'proto_stack_pre_res_unused_bytes=%s\n' \
+  printf 'proto_stack_pre_unused_bytes=%s\n' \
     "$protocol_stack_pre_resources_unused"
   printf 'vm_stack_size_bytes=%s\n' "$stack_size"
   printf 'vm_stack_used_bytes=%s\n' "$stack_used"

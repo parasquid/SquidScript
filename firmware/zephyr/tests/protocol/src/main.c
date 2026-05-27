@@ -2268,7 +2268,7 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 	result = sq_device_protocol_handle_frame(request, sizeof(request), &context, response,
 						 sizeof(response), &response_len);
 	zassert_equal(result, SQ_PROTOCOL_OK, "resources result %d", result);
-	zassert_true(response_len <= 834, "resources response_len=%zu", response_len);
+	zassert_true(response_len <= 826, "resources response_len=%zu", response_len);
 	zassert_true(response_len <= SQ_DEVICE_RESPONSE_BYTES);
 	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
 	zassert_equal(frame.opcode, SQ_OPCODE_RESOURCES_GET);
@@ -2297,10 +2297,10 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 	zassert_true(resource_value_for_key(&frame, "proto_stack_used_bytes",
 					    &protocol_stack_used));
 	zassert_true(resource_value_for_key(&frame,
-					    "proto_stack_pre_res_unused_bytes",
+					    "proto_stack_pre_unused_bytes",
 					    &protocol_stack_pre_resources_unused));
 	zassert_true(resource_value_for_key(&frame,
-					    "proto_stack_pre_res_used_bytes",
+					    "proto_stack_pre_used_bytes",
 					    &protocol_stack_pre_resources_used));
 	zassert_true(protocol_stack_unused <= CONFIG_MAIN_STACK_SIZE);
 	zassert_true(protocol_stack_used <= CONFIG_MAIN_STACK_SIZE);

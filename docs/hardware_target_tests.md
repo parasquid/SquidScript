@@ -253,7 +253,7 @@ app, launches it, dispatches a serial `SELECT`, and records `device resources`
 snapshots after format, install, launch, and dispatch under
 `target/hardware-tests/ram-workloads/summary.tsv`. Use it before reducing stack
 budgets so changes can be tied to a specific workload boundary. The resources
-response also reports `proto_stack_pre_res_*` so the harness can
+response also reports `proto_stack_pre_*` so the harness can
 distinguish stack already consumed before resource-response encoding from stack
 pressure caused by the diagnostic command itself. Stack values are Zephyr
 high-water readings for the current boot, so unchanged stack values across rows

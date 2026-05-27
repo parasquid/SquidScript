@@ -181,7 +181,7 @@ snapshot_resources() {
   assert_stack_accounting "$file" vm
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$label" \
-    "$(resource_value "$file" proto_stack_pre_res_used_bytes)" \
+    "$(resource_value "$file" proto_stack_pre_used_bytes)" \
     "$(resource_value "$file" proto_stack_used_bytes)" \
     "$(resource_value "$file" proto_stack_unused_bytes)" \
     "$(resource_value "$file" vm_stack_used_bytes)" \
@@ -197,7 +197,7 @@ snapshot_resources() {
 
 summary_out="${WORK_DIR}/summary.tsv"
 {
-  printf 'workload\tproto_stack_pre_res_used_bytes\t'
+  printf 'workload\tproto_stack_pre_used_bytes\t'
   printf 'proto_stack_used_bytes\t'
   printf 'proto_stack_unused_bytes\t'
   printf 'vm_stack_used_bytes\tvm_stack_unused_bytes\t'

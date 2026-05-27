@@ -101,7 +101,7 @@ LittleFS open-file slots are bounded at two because firmware storage paths
 open and close one file per app-store, VM storage, or device-config operation.
 Directory slots remain at the Zephyr default because recursive format/delete
 walks can hold nested directories open.
-Resource diagnostics are encoded directly into the caller-owned 834-byte
+Resource diagnostics are encoded directly into the caller-owned 826-byte
 protocol response buffer and do not keep a resident metric staging array.
 Runtime diagnostic history is bounded to four 26-byte trace lines, five 54-byte
 output lines, and four 48-byte draw-log lines so recent debugging data remains
@@ -203,8 +203,8 @@ the static `runtime.3` block from 15,232 bytes to 14,752 bytes.
 Runtime field ordering and byte-sized fixed-array counters further reduce
 `runtime.3` from 14,752 bytes to 14,720 bytes without changing runtime
 capacity.
-The resident protocol response buffer is 834 bytes, matching the current
-resources-response ceiling: 814 bytes of metric payload plus the 20-byte frame
+The resident protocol response buffer is 826 bytes, matching the current
+resources-response ceiling: 806 bytes of metric payload plus the 20-byte frame
 header. This trims the previous 848-byte buffer without changing the response
 set.
 The resident serial receive buffer is 256 bytes, with host upload chunking

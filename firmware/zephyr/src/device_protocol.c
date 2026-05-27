@@ -949,9 +949,9 @@ static int __noinline resources_response(const struct sq_protocol_frame *request
 			   context->runtime == NULL ? 0 :
 						      context->runtime->last_dispatch_sqbc_read_bytes);
 	SQ_RESOURCE_METRIC("proto_stack_size_bytes", protocol_stack_size);
-	SQ_RESOURCE_METRIC("proto_stack_pre_res_unused_bytes",
+	SQ_RESOURCE_METRIC("proto_stack_pre_unused_bytes",
 			   protocol_stack_pre_resources_unused);
-	SQ_RESOURCE_METRIC("proto_stack_pre_res_used_bytes",
+	SQ_RESOURCE_METRIC("proto_stack_pre_used_bytes",
 			   protocol_stack_pre_resources_used);
 	SQ_RESOURCE_METRIC("proto_stack_unused_bytes", protocol_stack_unused);
 	SQ_RESOURCE_METRIC("proto_stack_used_bytes", protocol_stack_used);

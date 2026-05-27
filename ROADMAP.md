@@ -83,7 +83,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   receive frame budget is 256 bytes with host upload chunking derived from that
   limit, protocol transfer sessions use 72-byte staging path slots and 80-byte
   resource path slots, and resource diagnostics encode directly into the
-  834-byte response buffer without a resident metric staging array. Runtime
+  826-byte response buffer without a resident metric staging array. Runtime
   physical input state is bounded to two GPIO button slots for the confirmed
   BOOT/GPIO9 path plus one targeted diagnostic slot, foreground runtime timers
   are bounded to two slots for current one-shot/repeating workloads, and active
@@ -96,8 +96,8 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   remain at the Zephyr default for recursive format/delete walks. The
   protocol/main stack is now 3264 bytes, leaving 788 bytes over the last
   measured 2476-byte protocol peak, and the VM worker stack is now 18016 bytes.
-  The latest target build reports 185,040 bytes
-  of linker DRAM use and 185,024 bytes through the RAM audit; next
+  The latest target build reports 185,024 bytes
+  of linker DRAM use and 185,008 bytes through the RAM audit; next
   reductions should physically revalidate the 3264-byte protocol/main stack
   with the bounded stack harness. The stack harness now fails with captured
   resources if protocol/main unused stack drops below 768 bytes or VM worker
@@ -145,7 +145,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   Installed-app VM launch storage path buffers now reduce `launch_storage`
   from 276 bytes to 156 bytes.
   The resident protocol response buffer now tracks the calculated current
-  resources-response ceiling, reducing `response.0` from 848 bytes to 834 bytes.
+  resources-response ceiling, reducing `response.0` from 848 bytes to 826 bytes.
   Protocol polling now reuses runtime app-id/event scratch for lifecycle and
   armed timer transitions, app-arm trigger discovery uses SQBC-only storage, and
   trigger registration uses the shared app-file path scratch; the emitted C

@@ -8,7 +8,9 @@
 #include <zephyr/fs/fs.h>
 #include <zephyr/sys/util.h>
 
+#if defined(CONFIG_SOC_ESP32C3)
 BUILD_ASSERT(sizeof(size_t) == sizeof(uint32_t));
+#endif
 
 #if defined(CONFIG_FILE_SYSTEM_LITTLEFS) && DT_NODE_EXISTS(DT_NODELABEL(storage_partition))
 #include <zephyr/fs/littlefs.h>
