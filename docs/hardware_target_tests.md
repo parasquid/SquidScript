@@ -171,7 +171,7 @@ change. It writes timeout diagnostics under
 `scripts/c3-supermini-measure-stack-usage.sh` runs after the stateful app and
 app lifecycle checks in the full ESP32-C3 Super Mini suite. It records
 `device resources` output under `target/hardware-tests/stack-usage/` and
-verifies `protocol_thread_stack_*` and `vm_worker_stack_*` metrics are
+verifies `proto_stack_*` and `vm_stack_*` metrics are
 internally consistent. The current firmware keeps the protocol/main stack budget
 at 3,264 bytes and the VM worker stack budget at 18,016 bytes based on measured
 high-water data. The harness uses a command-level timeout for its
@@ -232,16 +232,16 @@ ESP32-C3 boot strapping, while GPIO4 and GPIO7 have alternate JTAG/FSPI-related
 functions, so broad unconfigured scans are not authoritative for button mapping.
 After flattening the resumable screen-render interpreter path, a headless
 draw-log isolation run showed that `screen.open(...)` into a screen with only
-`service.display.clear("gray0")` uses `vm_worker_stack_used_bytes=17056` of
+`service.display.clear("gray0")` uses `vm_stack_used_bytes=17056` of
 the prior 24576-byte budget, down from the previous 24020-byte display-only
 spike. After moving
 function calls onto the same VM-owned continuation stack, full suite coverage
-measured `vm_worker_stack_used_bytes=17620` before lowering the worker stack to
+measured `vm_stack_used_bytes=17620` before lowering the worker stack to
 20480. Targeted GPIO9 input summary coverage after app-start binding setup moved
-to the VM worker measured `vm_worker_stack_used_bytes=17296`, and narrowing the
+to the VM worker measured `vm_stack_used_bytes=17296`, and narrowing the
 FFI app process/armed stack scratch reduced the input launch row to 17056. The
 worker stack is now 18,016 bytes. This keeps 396 bytes of headroom above the
-highest saved full-suite `vm_worker_stack_used_bytes=17620` peak and 752 bytes
+highest saved full-suite `vm_stack_used_bytes=17620` peak and 752 bytes
 above the saved GPIO9 input summary peak. Remeasure the physical press row and
 full hardware suite before lowering that budget again. The stack harness fails
 with the captured resource frame when protocol/main unused stack drops below
@@ -253,7 +253,7 @@ app, launches it, dispatches a serial `SELECT`, and records `device resources`
 snapshots after format, install, launch, and dispatch under
 `target/hardware-tests/ram-workloads/summary.tsv`. Use it before reducing stack
 budgets so changes can be tied to a specific workload boundary. The resources
-response also reports `protocol_thread_stack_pre_resources_*` so the harness can
+response also reports `proto_stack_pre_res_*` so the harness can
 distinguish stack already consumed before resource-response encoding from stack
 pressure caused by the diagnostic command itself. Stack values are Zephyr
 high-water readings for the current boot, so unchanged stack values across rows

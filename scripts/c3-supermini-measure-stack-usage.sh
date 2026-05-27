@@ -24,21 +24,21 @@ resource_value() {
   printf '%s\n' "$value"
 }
 
-stack_size="$(resource_value vm_worker_stack_size_bytes)"
-stack_unused="$(resource_value vm_worker_stack_unused_bytes)"
-stack_used="$(resource_value vm_worker_stack_used_bytes)"
-protocol_stack_size="$(resource_value protocol_thread_stack_size_bytes)"
-protocol_stack_unused="$(resource_value protocol_thread_stack_unused_bytes)"
-protocol_stack_used="$(resource_value protocol_thread_stack_used_bytes)"
+stack_size="$(resource_value vm_stack_size_bytes)"
+stack_unused="$(resource_value vm_stack_unused_bytes)"
+stack_used="$(resource_value vm_stack_used_bytes)"
+protocol_stack_size="$(resource_value proto_stack_size_bytes)"
+protocol_stack_unused="$(resource_value proto_stack_unused_bytes)"
+protocol_stack_used="$(resource_value proto_stack_used_bytes)"
 protocol_stack_pre_resources_unused="$(
-  resource_value protocol_thread_stack_pre_resources_unused_bytes
+  resource_value proto_stack_pre_res_unused_bytes
 )"
 protocol_stack_pre_resources_used="$(
-  resource_value protocol_thread_stack_pre_resources_used_bytes
+  resource_value proto_stack_pre_res_used_bytes
 )"
 
 if [[ "$protocol_stack_size" != "3264" ]]; then
-  printf 'Expected protocol_thread_stack_size_bytes=3264, got %s\n' \
+  printf 'Expected proto_stack_size_bytes=3264, got %s\n' \
     "$protocol_stack_size" >&2
   printf '%s\n' "--- ${resources_out} ---" >&2
   sed -n '1,200p' "${resources_out}" >&2
@@ -78,7 +78,7 @@ if (( protocol_stack_unused < PROTOCOL_STACK_MIN_UNUSED_BYTES ||
 fi
 
 if [[ "$stack_size" != "18016" ]]; then
-  printf 'Expected vm_worker_stack_size_bytes=18016, got %s\n' "$stack_size" >&2
+  printf 'Expected vm_stack_size_bytes=18016, got %s\n' "$stack_size" >&2
   printf '%s\n' "--- ${resources_out} ---" >&2
   sed -n '1,200p' "${resources_out}" >&2
   exit 1
@@ -101,16 +101,16 @@ if (( stack_unused < WORKER_STACK_MIN_UNUSED_BYTES )); then
 fi
 
 {
-  printf 'protocol_thread_stack_size_bytes=%s\n' "$protocol_stack_size"
-  printf 'protocol_thread_stack_used_bytes=%s\n' "$protocol_stack_used"
-  printf 'protocol_thread_stack_unused_bytes=%s\n' "$protocol_stack_unused"
-  printf 'protocol_thread_stack_pre_resources_used_bytes=%s\n' \
+  printf 'proto_stack_size_bytes=%s\n' "$protocol_stack_size"
+  printf 'proto_stack_used_bytes=%s\n' "$protocol_stack_used"
+  printf 'proto_stack_unused_bytes=%s\n' "$protocol_stack_unused"
+  printf 'proto_stack_pre_res_used_bytes=%s\n' \
     "$protocol_stack_pre_resources_used"
-  printf 'protocol_thread_stack_pre_resources_unused_bytes=%s\n' \
+  printf 'proto_stack_pre_res_unused_bytes=%s\n' \
     "$protocol_stack_pre_resources_unused"
-  printf 'vm_worker_stack_size_bytes=%s\n' "$stack_size"
-  printf 'vm_worker_stack_used_bytes=%s\n' "$stack_used"
-  printf 'vm_worker_stack_unused_bytes=%s\n' "$stack_unused"
+  printf 'vm_stack_size_bytes=%s\n' "$stack_size"
+  printf 'vm_stack_used_bytes=%s\n' "$stack_used"
+  printf 'vm_stack_unused_bytes=%s\n' "$stack_unused"
 } >"${summary_out}"
 
 printf 'OK Zephyr stack usage measured: protocol size=%s used=%s unused=%s; worker size=%s used=%s unused=%s\n' \

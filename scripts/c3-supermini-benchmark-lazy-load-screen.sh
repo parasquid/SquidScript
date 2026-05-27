@@ -59,7 +59,7 @@ wait_for_dispatch_after() {
 
   for _ in $(seq 1 120); do
     timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" cargo run --quiet -p squidc -- device resources >"${out}" 2>&1
-    sequence="$(resource_value "${out}" "last_dispatch_sequence")"
+    sequence="$(resource_value "${out}" "last_dispatch_seq")"
     if ((sequence > previous)); then
       printf '%s\n' "${out}"
       return 0
@@ -83,7 +83,7 @@ run_capture launch-benchmark cargo run --quiet -p squidc -- app launch "${APP_ID
 post_launch_errors_out="$(run_capture post-launch-errors cargo run --quiet -p squidc -- device errors)"
 assert_file_empty_command "${post_launch_errors_out}"
 baseline_out="$(run_capture baseline-resources cargo run --quiet -p squidc -- device resources)"
-last_sequence="$(resource_value "${baseline_out}" "last_dispatch_sequence")"
+last_sequence="$(resource_value "${baseline_out}" "last_dispatch_seq")"
 
 elapsed_values=()
 read_count_total=0
@@ -91,10 +91,10 @@ read_bytes_total=0
 
 for i in $(seq 1 "${TRANSITIONS}"); do
   resources_out="$(wait_for_dispatch_after "resources-${i}" "${last_sequence}")"
-  last_sequence="$(resource_value "${resources_out}" "last_dispatch_sequence")"
-  elapsed="$(resource_value "${resources_out}" "last_dispatch_elapsed_us")"
-  reads="$(resource_value "${resources_out}" "last_dispatch_sqbc_read_count")"
-  bytes="$(resource_value "${resources_out}" "last_dispatch_sqbc_read_bytes")"
+  last_sequence="$(resource_value "${resources_out}" "last_dispatch_seq")"
+  elapsed="$(resource_value "${resources_out}" "last_dispatch_us")"
+  reads="$(resource_value "${resources_out}" "last_sqbc_reads")"
+  bytes="$(resource_value "${resources_out}" "last_sqbc_bytes")"
   elapsed_values+=("${elapsed}")
   read_count_total=$((read_count_total + reads))
   read_bytes_total=$((read_bytes_total + bytes))

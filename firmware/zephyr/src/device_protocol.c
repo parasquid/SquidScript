@@ -931,30 +931,30 @@ static int resources_response(const struct sq_protocol_frame *request,
 	SQ_RESOURCE_METRIC("runtime_static_bytes",
 			   context->runtime == NULL ? 0 : sizeof(*context->runtime));
 	SQ_RESOURCE_METRIC("vm_sqbc_chunk_bytes", SQVM_STORAGE_TRANSFER_CAPACITY);
-	SQ_RESOURCE_METRIC("ram_heap_count", heap_count);
-	SQ_RESOURCE_METRIC("ram_heap_free_bytes", heap_free_bytes);
-	SQ_RESOURCE_METRIC("ram_heap_allocated_bytes", heap_allocated_bytes);
-	SQ_RESOURCE_METRIC("ram_heap_max_allocated_bytes", heap_max_allocated_bytes);
-	SQ_RESOURCE_METRIC("last_dispatch_elapsed_us",
+	SQ_RESOURCE_METRIC("heap_count", heap_count);
+	SQ_RESOURCE_METRIC("heap_free_bytes", heap_free_bytes);
+	SQ_RESOURCE_METRIC("heap_alloc_bytes", heap_allocated_bytes);
+	SQ_RESOURCE_METRIC("heap_max_alloc_bytes", heap_max_allocated_bytes);
+	SQ_RESOURCE_METRIC("last_dispatch_us",
 			   context->runtime == NULL ? 0 : context->runtime->last_dispatch_elapsed_us);
-	SQ_RESOURCE_METRIC("last_dispatch_sequence",
+	SQ_RESOURCE_METRIC("last_dispatch_seq",
 			   context->runtime == NULL ? 0 : context->runtime->last_dispatch_sequence);
-	SQ_RESOURCE_METRIC("last_dispatch_sqbc_read_count",
+	SQ_RESOURCE_METRIC("last_sqbc_reads",
 			   context->runtime == NULL ? 0 :
 						      context->runtime->last_dispatch_sqbc_read_count);
-	SQ_RESOURCE_METRIC("last_dispatch_sqbc_read_bytes",
+	SQ_RESOURCE_METRIC("last_sqbc_bytes",
 			   context->runtime == NULL ? 0 :
 						      context->runtime->last_dispatch_sqbc_read_bytes);
-	SQ_RESOURCE_METRIC("protocol_thread_stack_size_bytes", protocol_stack_size);
-	SQ_RESOURCE_METRIC("protocol_thread_stack_pre_resources_unused_bytes",
+	SQ_RESOURCE_METRIC("proto_stack_size_bytes", protocol_stack_size);
+	SQ_RESOURCE_METRIC("proto_stack_pre_res_unused_bytes",
 			   protocol_stack_pre_resources_unused);
-	SQ_RESOURCE_METRIC("protocol_thread_stack_pre_resources_used_bytes",
+	SQ_RESOURCE_METRIC("proto_stack_pre_res_used_bytes",
 			   protocol_stack_pre_resources_used);
-	SQ_RESOURCE_METRIC("protocol_thread_stack_unused_bytes", protocol_stack_unused);
-	SQ_RESOURCE_METRIC("protocol_thread_stack_used_bytes", protocol_stack_used);
-	SQ_RESOURCE_METRIC("vm_worker_stack_size_bytes", vm_worker_stack_size);
-	SQ_RESOURCE_METRIC("vm_worker_stack_unused_bytes", vm_worker_stack_unused);
-	SQ_RESOURCE_METRIC("vm_worker_stack_used_bytes", vm_worker_stack_used);
+	SQ_RESOURCE_METRIC("proto_stack_unused_bytes", protocol_stack_unused);
+	SQ_RESOURCE_METRIC("proto_stack_used_bytes", protocol_stack_used);
+	SQ_RESOURCE_METRIC("vm_stack_size_bytes", vm_worker_stack_size);
+	SQ_RESOURCE_METRIC("vm_stack_unused_bytes", vm_worker_stack_unused);
+	SQ_RESOURCE_METRIC("vm_stack_used_bytes", vm_worker_stack_used);
 	SQ_RESOURCE_METRIC("app_count", context->registry == NULL ? 0 : context->registry->count);
 	SQ_RESOURCE_METRIC("input_button_state", input_button_state);
 #undef SQ_RESOURCE_METRIC

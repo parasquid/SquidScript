@@ -553,7 +553,7 @@ fn ffi_encodes_lifecycle_response_from_structured_runtime_state() {
 fn ffi_encodes_resources_response_from_c_metrics() {
     let mut out = [0u8; 192];
     let mut out_len = 0usize;
-    let key = b"vm_worker_stack_used_bytes";
+    let key = b"vm_stack_used_bytes";
     let metrics = [SqdpResourceMetric {
         key: key.as_ptr(),
         key_len: key.len(),
@@ -578,7 +578,7 @@ fn ffi_encodes_resources_response_from_c_metrics() {
     assert_eq!(frame.status, Status::Ok);
     assert_eq!(
         resource_values(&frame).unwrap(),
-        vec![("vm_worker_stack_used_bytes".to_string(), 14_704)]
+        vec![("vm_stack_used_bytes".to_string(), 14_704)]
     );
 }
 

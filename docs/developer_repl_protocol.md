@@ -184,13 +184,13 @@ defaults to 65. For the ESP32-C3 Super Mini target, the metadata declares
 400 KiB internal SRAM, so the 65% profile limit is 266240 bytes. The audit
 still reports the Zephyr linker section bytes, because `dram0_0_seg` placement
 is the immediate firmware build constraint.
-`resources-get` reports `protocol_thread_stack_size_bytes`,
-`protocol_thread_stack_unused_bytes`, `protocol_thread_stack_used_bytes`,
-`vm_worker_stack_size_bytes`, `vm_worker_stack_unused_bytes`, and
-`vm_worker_stack_used_bytes` so future stack budget reductions can be based on
+`resources-get` reports `proto_stack_size_bytes`,
+`proto_stack_unused_bytes`, `proto_stack_used_bytes`,
+`vm_stack_size_bytes`, `vm_stack_unused_bytes`, and
+`vm_stack_used_bytes` so future stack budget reductions can be based on
 representative real-device high-water data. It also reports live Zephyr heap
-telemetry as `ram_heap_count`, `ram_heap_free_bytes`,
-`ram_heap_allocated_bytes`, and `ram_heap_max_allocated_bytes`, so system-heap
+telemetry as `heap_count`, `heap_free_bytes`,
+`heap_alloc_bytes`, and `heap_max_alloc_bytes`, so system-heap
 budget reductions can be based on allocator high-water data instead of static
 map size alone. `runtime_static_bytes` includes the Zephyr VM runtime object;
 the runtime shares its VM initialization scratch buffer with later storage
@@ -198,10 +198,10 @@ completion transfer storage because those buffers are not live at the same
 time. `vm_sqbc_chunk_bytes` reports the bounded 768-byte SQBC code/read
 transfer window used for file-backed installed app dispatch; the full installed
 `main.sqbc` payload is not resident in that window. The ESP32-C3 Super Mini
-build map currently sizes the resident runtime object at 17,256 bytes. The
+build map currently sizes the resident runtime object at 16,128 bytes. The
 current ESP32-C3 canonical configuration keeps Zephyr's system heap at 36,864
 bytes; representative app, display, device binding, content, Wi-Fi status,
-scan, list, and AP workloads measured `ram_heap_max_allocated_bytes=36376`,
+scan, list, and AP workloads measured `heap_max_alloc_bytes=36376`,
 leaving roughly 0.5 KiB headroom.
 Remeasure before adding TCP, AP client throughput, BLE coexistence, or larger
 Wi-Fi workloads.

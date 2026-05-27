@@ -110,14 +110,14 @@ both the FFI status class and the mapped errno.
 
 `device resources` reads Zephyr firmware resource diagnostics and reports
 raw target-specific RAM and app-storage byte counts. `ram_total_bytes` is
-static board context; `vm_worker_stack_*` fields expose the configured VM work
+static board context; `vm_stack_*` fields expose the configured VM work
 queue stack size and Zephyr stack high-water usage when stack initialization is
-enabled; `ram_heap_*` fields are live allocator telemetry from the running
+enabled; `heap_*` fields are live allocator telemetry from the running
 firmware; `runtime_static_bytes` is the resident VM runtime object after
 internal buffer sharing; `vm_sqbc_chunk_bytes` is the bounded SQBC read/code
 window used for file-backed installed app dispatch.
-`last_dispatch_sequence`, `last_dispatch_elapsed_us`,
-`last_dispatch_sqbc_read_count`, and `last_dispatch_sqbc_read_bytes` report
+`last_dispatch_seq`, `last_dispatch_us`,
+`last_sqbc_reads`, and `last_sqbc_bytes` report
 firmware-owned metrics for the most recent VM dispatch and are intended for
 hardware benchmarks that must exclude host serial latency. With `--json`,
 parsed values are returned under `data.resources`. Firmware diagnostics should

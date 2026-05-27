@@ -2268,39 +2268,39 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 	result = sq_device_protocol_handle_frame(request, sizeof(request), &context, response,
 						 sizeof(response), &response_len);
 	zassert_equal(result, SQ_PROTOCOL_OK, "resources result %d", result);
-	zassert_true(response_len <= 984, "resources response_len=%zu", response_len);
+	zassert_true(response_len <= 848, "resources response_len=%zu", response_len);
 	zassert_true(response_len <= SQ_DEVICE_RESPONSE_BYTES);
 	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
 	zassert_equal(frame.opcode, SQ_OPCODE_RESOURCES_GET);
 	zassert_equal(frame.status, SQ_STATUS_OK);
 
-	zassert_true(resource_value_equals(&frame, "vm_worker_stack_size_bytes",
+	zassert_true(resource_value_equals(&frame, "vm_stack_size_bytes",
 					   SQ_VM_RUNTIME_WORK_STACK_SIZE));
-	zassert_true(resource_value_equals(&frame, "protocol_thread_stack_size_bytes",
+	zassert_true(resource_value_equals(&frame, "proto_stack_size_bytes",
 					   CONFIG_MAIN_STACK_SIZE));
 	zassert_true(resource_value_for_key(&frame, "vm_sqbc_chunk_bytes", &vm_sqbc_chunk));
 	zassert_equal(vm_sqbc_chunk, SQVM_STORAGE_TRANSFER_CAPACITY);
-	zassert_true(resource_value_for_key(&frame, "last_dispatch_elapsed_us",
+	zassert_true(resource_value_for_key(&frame, "last_dispatch_us",
 					    &last_dispatch_elapsed_us));
 	zassert_equal(last_dispatch_elapsed_us, 1234);
-	zassert_true(resource_value_for_key(&frame, "last_dispatch_sequence",
+	zassert_true(resource_value_for_key(&frame, "last_dispatch_seq",
 					    &last_dispatch_sequence));
 	zassert_equal(last_dispatch_sequence, 7);
-	zassert_true(resource_value_for_key(&frame, "last_dispatch_sqbc_read_count",
+	zassert_true(resource_value_for_key(&frame, "last_sqbc_reads",
 					    &last_dispatch_sqbc_read_count));
 	zassert_equal(last_dispatch_sqbc_read_count, 2);
-	zassert_true(resource_value_for_key(&frame, "last_dispatch_sqbc_read_bytes",
+	zassert_true(resource_value_for_key(&frame, "last_sqbc_bytes",
 					    &last_dispatch_sqbc_read_bytes));
 	zassert_equal(last_dispatch_sqbc_read_bytes, 2048);
-	zassert_true(resource_value_for_key(&frame, "protocol_thread_stack_unused_bytes",
+	zassert_true(resource_value_for_key(&frame, "proto_stack_unused_bytes",
 					    &protocol_stack_unused));
-	zassert_true(resource_value_for_key(&frame, "protocol_thread_stack_used_bytes",
+	zassert_true(resource_value_for_key(&frame, "proto_stack_used_bytes",
 					    &protocol_stack_used));
 	zassert_true(resource_value_for_key(&frame,
-					    "protocol_thread_stack_pre_resources_unused_bytes",
+					    "proto_stack_pre_res_unused_bytes",
 					    &protocol_stack_pre_resources_unused));
 	zassert_true(resource_value_for_key(&frame,
-					    "protocol_thread_stack_pre_resources_used_bytes",
+					    "proto_stack_pre_res_used_bytes",
 					    &protocol_stack_pre_resources_used));
 	zassert_true(protocol_stack_unused <= CONFIG_MAIN_STACK_SIZE);
 	zassert_true(protocol_stack_used <= CONFIG_MAIN_STACK_SIZE);
@@ -2316,8 +2316,8 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 			      protocol_stack_pre_resources_unused,
 			      protocol_stack_pre_resources_used);
 	}
-	zassert_true(resource_value_for_key(&frame, "vm_worker_stack_unused_bytes", &stack_unused));
-	zassert_true(resource_value_for_key(&frame, "vm_worker_stack_used_bytes", &stack_used));
+	zassert_true(resource_value_for_key(&frame, "vm_stack_unused_bytes", &stack_unused));
+	zassert_true(resource_value_for_key(&frame, "vm_stack_used_bytes", &stack_used));
 	zassert_true(stack_unused <= SQ_VM_RUNTIME_WORK_STACK_SIZE);
 	zassert_true(stack_used <= SQ_VM_RUNTIME_WORK_STACK_SIZE);
 	zassert_equal(stack_unused + stack_used, SQ_VM_RUNTIME_WORK_STACK_SIZE,

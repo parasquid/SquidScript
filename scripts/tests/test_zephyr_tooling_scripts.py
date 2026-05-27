@@ -187,12 +187,14 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
         self.assertIn("CONFIG_SYS_HEAP_RUNTIME_STATS=y", prj_conf)
         self.assertIn("sys_heap_runtime_stats_get", body)
-        self.assertIn("ram_heap_count", body)
-        self.assertIn("ram_heap_free_bytes", body)
-        self.assertIn("ram_heap_allocated_bytes", body)
-        self.assertIn("ram_heap_max_allocated_bytes", body)
-        self.assertIn("protocol_thread_stack_pre_resources_unused_bytes", body)
-        self.assertIn("protocol_thread_stack_pre_resources_used_bytes", body)
+        self.assertIn("heap_count", body)
+        self.assertIn("heap_free_bytes", body)
+        self.assertIn("heap_alloc_bytes", body)
+        self.assertIn("heap_max_alloc_bytes", body)
+        self.assertIn("proto_stack_pre_res_unused_bytes", body)
+        self.assertIn("proto_stack_pre_res_used_bytes", body)
+        self.assertNotIn("ram_heap_allocated_bytes", body)
+        self.assertNotIn("protocol_thread_stack_pre_resources_unused_bytes", body)
         self.assertNotIn("context->resource_metrics", body)
         self.assertNotIn("context->resource_metric_cap", body)
         self.assertNotIn("SqdpResourceMetric metrics[]", body)
@@ -206,13 +208,19 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
 
         for metric in [
+            "last_dispatch_seq",
+            "last_dispatch_us",
+            "last_sqbc_reads",
+            "last_sqbc_bytes",
+        ]:
+            self.assertIn(metric, protocol)
+        for field in [
             "last_dispatch_sequence",
             "last_dispatch_elapsed_us",
             "last_dispatch_sqbc_read_count",
             "last_dispatch_sqbc_read_bytes",
         ]:
-            self.assertIn(metric, protocol)
-            self.assertIn(metric, runtime_h)
+            self.assertIn(field, runtime_h)
         self.assertIn("k_cycle_get_64", runtime_c)
         self.assertIn("k_cyc_to_us_floor64", runtime_c)
         self.assertIn("dispatch_sqbc_read_count++", runtime_c)
@@ -262,7 +270,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("lazy-load-screen-worst-case", script)
         self.assertIn("MODE", script)
         self.assertIn("device resources", script)
-        self.assertIn("last_dispatch_sequence", script)
+        self.assertIn("last_dispatch_seq", script)
         self.assertNotIn("device key SELECT", script)
         self.assertIn('service.timer.every("timer.transition"', source)
         self.assertIn('service.timer.every("timer.transition"', worst_source)
@@ -524,7 +532,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         stack_script = self.read("scripts/c3-supermini-measure-stack-usage.sh")
 
         self.assertIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 18016", runtime_h)
-        self.assertIn('Expected vm_worker_stack_size_bytes=18016', stack_script)
+        self.assertIn('Expected vm_stack_size_bytes=18016', stack_script)
         self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 18048", runtime_h)
         self.assertNotIn('Expected vm_worker_stack_size_bytes=18048', stack_script)
         self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 18432", runtime_h)
@@ -533,15 +541,15 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn('Expected vm_worker_stack_size_bytes=19456', stack_script)
         self.assertNotIn('Expected vm_worker_stack_size_bytes=20480', stack_script)
         self.assertNotIn('Expected vm_worker_stack_size_bytes=16384', stack_script)
-        self.assertIn("protocol_thread_stack_size_bytes", stack_script)
-        self.assertIn('Expected protocol_thread_stack_size_bytes=3264', stack_script)
+        self.assertIn("proto_stack_size_bytes", stack_script)
+        self.assertIn('Expected proto_stack_size_bytes=3264', stack_script)
         self.assertNotIn('Expected protocol_thread_stack_size_bytes=3328', stack_script)
         self.assertNotIn('Expected protocol_thread_stack_size_bytes=3584', stack_script)
         self.assertNotIn('Expected protocol_thread_stack_size_bytes=4096', stack_script)
         self.assertNotIn('Expected protocol_thread_stack_size_bytes=5120', stack_script)
         self.assertNotIn('Expected protocol_thread_stack_size_bytes=6144', stack_script)
         self.assertNotIn('Expected protocol_thread_stack_size_bytes=8192', stack_script)
-        self.assertIn("protocol_thread_stack_pre_resources_used_bytes", stack_script)
+        self.assertIn("proto_stack_pre_res_used_bytes", stack_script)
         self.assertIn('PROTOCOL_STACK_MIN_UNUSED_BYTES="${PROTOCOL_STACK_MIN_UNUSED_BYTES:-768}"', stack_script)
         self.assertIn('WORKER_STACK_MIN_UNUSED_BYTES="${WORKER_STACK_MIN_UNUSED_BYTES:-384}"', stack_script)
         self.assertIn("Protocol stack headroom below", stack_script)
@@ -768,10 +776,11 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         stack = self.read("scripts/c3-supermini-measure-input-stack-isolation.sh")
         ffi_rs = self.read("compiler/rust/crates/squidvm-ffi/src/lib.rs")
 
-        self.assertIn("#define SQ_DEVICE_RESPONSE_BYTES 984u", header)
+        self.assertIn("#define SQ_DEVICE_RESPONSE_BYTES 848u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 960u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 976u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 928u", header)
+        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 984u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 992u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 1024u", header)
         self.assertIn("#define SQ_DEVICE_RESOURCE_PATH_BYTES 80u", header)
@@ -1419,9 +1428,9 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
 
         self.assertIn('cargo run --quiet -p squidc -- device resources', stack)
-        self.assertIn('vm_worker_stack_size_bytes', stack)
-        self.assertIn('vm_worker_stack_used_bytes', stack)
-        self.assertIn('vm_worker_stack_unused_bytes', stack)
+        self.assertIn('vm_stack_size_bytes', stack)
+        self.assertIn('vm_stack_used_bytes', stack)
+        self.assertIn('vm_stack_unused_bytes', stack)
         self.assertIn('stack_used + stack_unused != stack_size', stack)
 
         lifecycle_check = suite.index('c3-supermini-test-app-lifecycle.sh')
@@ -1447,11 +1456,11 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('tests/hardware/c3-supermini/display-drawlog/main.squid', stack)
         self.assertIn('tests/hardware/c3-supermini/system-resources/main.squid', stack)
         self.assertIn('tests/hardware/c3-supermini/wifi-ap-summary/main.squid', stack)
-        self.assertIn('protocol_thread_stack_used_bytes', stack)
-        self.assertIn('protocol_thread_stack_pre_resources_used_bytes', stack)
-        self.assertIn('vm_worker_stack_used_bytes', stack)
-        self.assertIn('ram_heap_allocated_bytes', stack)
-        self.assertIn('ram_heap_max_allocated_bytes', stack)
+        self.assertIn('proto_stack_used_bytes', stack)
+        self.assertIn('proto_stack_pre_res_used_bytes', stack)
+        self.assertIn('vm_stack_used_bytes', stack)
+        self.assertIn('heap_alloc_bytes', stack)
+        self.assertIn('heap_max_alloc_bytes', stack)
         self.assertIn('summary.tsv', stack)
         self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', stack)
 
@@ -1493,9 +1502,9 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('or short GPIO9 to GND', stack)
         self.assertIn('Release %s now.', stack)
         self.assertNotIn('cargo run --quiet -p squidc -- device key SELECT', stack)
-        self.assertIn('protocol_thread_stack_pre_resources_used_bytes', stack)
-        self.assertIn('vm_worker_stack_used_bytes', stack)
-        self.assertIn('ram_heap_allocated_bytes', stack)
+        self.assertIn('proto_stack_pre_res_used_bytes', stack)
+        self.assertIn('vm_stack_used_bytes', stack)
+        self.assertIn('heap_alloc_bytes', stack)
         self.assertIn('summary.tsv', stack)
         self.assertNotIn("wifi", stack.lower())
 

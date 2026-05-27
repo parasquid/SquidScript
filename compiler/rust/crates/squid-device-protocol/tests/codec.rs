@@ -230,7 +230,7 @@ fn encodes_heap_free_resources_response_from_metrics() {
             value: 409_600,
         },
         ResourceMetric {
-            key: "protocol_thread_stack_used_bytes",
+            key: "proto_stack_used_bytes",
             value: 3_928,
         },
     ];
@@ -245,7 +245,7 @@ fn encodes_heap_free_resources_response_from_metrics() {
         resource_values(&decoded).unwrap(),
         vec![
             ("ram_total_bytes".to_string(), 409_600),
-            ("protocol_thread_stack_used_bytes".to_string(), 3_928),
+            ("proto_stack_used_bytes".to_string(), 3_928),
         ]
     );
 }

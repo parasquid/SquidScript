@@ -60,31 +60,31 @@ snapshot_resources() {
   local label="$1"
   local file
   file="$(run_capture "resources-${label}" cargo run --quiet -p squidc -- device resources)"
-  assert_stack_accounting "$file" protocol_thread
-  assert_stack_accounting "$file" vm_worker
+  assert_stack_accounting "$file" proto
+  assert_stack_accounting "$file" vm
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$label" \
-    "$(resource_value "$file" protocol_thread_stack_pre_resources_used_bytes)" \
-    "$(resource_value "$file" protocol_thread_stack_used_bytes)" \
-    "$(resource_value "$file" protocol_thread_stack_unused_bytes)" \
-    "$(resource_value "$file" vm_worker_stack_used_bytes)" \
-    "$(resource_value "$file" vm_worker_stack_unused_bytes)" \
-    "$(resource_value "$file" ram_heap_allocated_bytes)" \
-    "$(resource_value "$file" ram_heap_max_allocated_bytes)" \
+    "$(resource_value "$file" proto_stack_pre_res_used_bytes)" \
+    "$(resource_value "$file" proto_stack_used_bytes)" \
+    "$(resource_value "$file" proto_stack_unused_bytes)" \
+    "$(resource_value "$file" vm_stack_used_bytes)" \
+    "$(resource_value "$file" vm_stack_unused_bytes)" \
+    "$(resource_value "$file" heap_alloc_bytes)" \
+    "$(resource_value "$file" heap_max_alloc_bytes)" \
     "$(resource_value "$file" runtime_static_bytes)" \
-    "$(resource_value "$file" last_dispatch_sequence)" \
-    "$(resource_value "$file" last_dispatch_elapsed_us)" \
+    "$(resource_value "$file" last_dispatch_seq)" \
+    "$(resource_value "$file" last_dispatch_us)" \
     >>"${summary_out}"
 }
 
 summary_out="${WORK_DIR}/summary.tsv"
 {
-  printf 'workload\tprotocol_thread_stack_pre_resources_used_bytes\t'
-  printf 'protocol_thread_stack_used_bytes\t'
-  printf 'protocol_thread_stack_unused_bytes\t'
-  printf 'vm_worker_stack_used_bytes\tvm_worker_stack_unused_bytes\t'
-  printf 'ram_heap_allocated_bytes\tram_heap_max_allocated_bytes\t'
-  printf 'runtime_static_bytes\tlast_dispatch_sequence\tlast_dispatch_elapsed_us\n'
+  printf 'workload\tproto_stack_pre_res_used_bytes\t'
+  printf 'proto_stack_used_bytes\t'
+  printf 'proto_stack_unused_bytes\t'
+  printf 'vm_stack_used_bytes\tvm_stack_unused_bytes\t'
+  printf 'heap_alloc_bytes\theap_max_alloc_bytes\t'
+  printf 'runtime_static_bytes\tlast_dispatch_seq\tlast_dispatch_us\n'
 } >"${summary_out}"
 
 run_capture storage-format cargo run --quiet -p squidc -- device storage-format >/dev/null

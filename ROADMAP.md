@@ -77,7 +77,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   receive frame budget is 320 bytes with host upload chunking derived from that
   limit, protocol transfer sessions use 72-byte staging path slots and 80-byte
   resource path slots, and resource diagnostics encode directly into the
-  984-byte response buffer without a resident metric staging array. Runtime
+  848-byte response buffer without a resident metric staging array. Runtime
   physical input state is bounded to two GPIO button slots for the confirmed
   BOOT/GPIO9 path plus one targeted diagnostic slot, foreground runtime timers
   are bounded to two slots for current one-shot/repeating workloads, and active
@@ -90,7 +90,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   remain at the Zephyr default for recursive format/delete walks. The
   protocol/main stack is now 3264 bytes, leaving 788 bytes over the last
   measured 2476-byte protocol peak, and the VM worker stack is now 18016 bytes.
-  The latest target build reports 186,784 bytes
+  The latest target build reports 186,640 bytes
   of DRAM use; next
   reductions should physically revalidate the 3264-byte protocol/main stack
   with the bounded stack harness. The stack harness now fails with captured
@@ -141,7 +141,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   Next, validate the 3264-byte protocol/main stack and 18016-byte worker stack with
   the hardware suite.
 - Improve network heap attribution before expanding Wi-Fi scope. Current AP
-  start/stop hardware coverage drives `ram_heap_max_allocated_bytes` close to
+  start/stop hardware coverage drives `heap_max_alloc_bytes` close to
   the 36 KiB system heap budget; add clearer per-workload heap reset or
   attribution before TCP, AP client throughput, BLE coexistence, or larger
   network workloads.
