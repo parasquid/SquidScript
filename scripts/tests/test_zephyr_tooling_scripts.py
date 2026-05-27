@@ -1825,7 +1825,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
     def test_trigger_registration_uses_narrow_app_sqbc_path_scratch(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         app_store_h = self.read("firmware/zephyr/src/app_store.h")
-        start = protocol.index("static int register_app_triggers")
+        start = protocol.index("static int __noinline register_app_triggers")
         end = protocol.index("int sq_device_protocol_poll")
         body = protocol[start:end]
 
@@ -1947,7 +1947,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         app_store_h = self.read("firmware/zephyr/src/app_store.h")
         app_store_c = self.read("firmware/zephyr/src/app_store.c")
-        start = protocol.index("static int register_app_triggers")
+        start = protocol.index("static int __noinline register_app_triggers")
         end = protocol.index("int sq_device_protocol_poll")
         body = protocol[start:end]
 
@@ -1959,6 +1959,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("sq_app_store_sqbc_path(context->store_mount_point, app_id,", body)
         self.assertIn(".sqbc_path = sqbc_path", body)
         self.assertIn("sq_vm_fs_storage_backend(&trigger_storage)", body)
+        self.assertIn("static int __noinline register_app_triggers", protocol)
 
     def test_device_config_package_load_formats_resource_path_from_bytes(self):
         runtime = self.read("firmware/zephyr/src/vm_runtime.c")

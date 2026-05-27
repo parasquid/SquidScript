@@ -560,8 +560,8 @@ static size_t c_array_len(const uint8_t *bytes, size_t cap)
 	return len;
 }
 
-static int register_app_triggers(const struct sq_device_protocol_context *context,
-				 const char *app_id)
+static int __noinline register_app_triggers(const struct sq_device_protocol_context *context,
+					    const char *app_id)
 {
 	char sqbc_path[SQ_APP_STORE_APP_FILE_PATH_MAX];
 	struct sq_vm_fs_storage trigger_storage = {
