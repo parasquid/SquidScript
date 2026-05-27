@@ -74,8 +74,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   receive frame budget is 320 bytes with host upload chunking derived from that
   limit, protocol transfer sessions use 72-byte staging path slots and 80-byte
   resource path slots, and resource diagnostics encode directly into the
-  984-byte response buffer without a resident metric staging array. The VM
-  worker stack is now 18048 bytes. The latest target build reports 189,952 bytes
+  984-byte response buffer without a resident metric staging array. Temp-run
+  state now uses the file-backed VM storage backend with a cleared temp state
+  path instead of a resident saved-state-capacity RAM buffer. The VM worker
+  stack is now 18048 bytes. The latest target build reports 189,520 bytes
   of DRAM use; next
   reductions should investigate full-suite worker-stack high-water headroom
   after the 18048-byte stack reduction and any remaining accidental static

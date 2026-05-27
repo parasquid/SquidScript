@@ -84,8 +84,9 @@ The repo-local Zephyr setup installs the lightweight Twister dependencies
 needed to run `firmware/zephyr/tests/protocol` through Zephyr's test runner.
 Use `scripts/zephyr-test-protocol.sh` for that protocol suite; it selects
 `native_sim/native/64`, which avoids requiring host 32-bit libc headers.
-Temp-run volatile app state is sized to the VM saved-state capacity, not the
-larger SQBC transfer chunk capacity.
+Temp-run state uses the same file-backed VM storage backend as installed apps,
+with a bounded temp state path cleared before each temp launch, so the firmware
+does not reserve a resident saved-state-capacity RAM buffer for temp runs.
 The ESP32-C3 linked Rust VM context reservation is capped at 11,776 bytes and
 checked against the FFI-reported context size in Zephyr ztests. Native simulator
 ztests use a larger host-only context reservation because the host Rust ABI has

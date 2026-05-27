@@ -337,90 +337,21 @@ static int commit_resource_install(const struct sq_protocol_frame *request,
 }
 
 struct temp_storage_backend {
-	const char *sqbc_path;
-	size_t sqbc_len;
-	uint8_t state[SQ_DEVICE_TEMP_STATE_BYTES];
-	size_t state_len;
-	bool state_present;
+	struct sq_vm_fs_storage fs_storage;
+	char state_path[SQ_DEVICE_STAGING_PATH_BYTES];
 };
 
-static int temp_read_file_exact(const char *path, size_t offset, uint8_t *out, size_t len)
+static int temp_state_path_for_mount(const char *mount_point, char *out, size_t out_len)
 {
-	struct fs_file_t file;
-	int result;
+	int written;
 
-	if (path == NULL || out == NULL) {
+	if (mount_point == NULL || out == NULL) {
 		return -EINVAL;
 	}
-
-	fs_file_t_init(&file);
-	result = fs_open(&file, path, FS_O_READ);
-	if (result != 0) {
-		return result;
+	written = snprintf(out, out_len, "%s/tmp/temp-run.state.tmp", mount_point);
+	if (written < 0 || (size_t)written >= out_len) {
+		return -ENAMETOOLONG;
 	}
-
-	result = fs_seek(&file, (off_t)offset, FS_SEEK_SET);
-	if (result != 0) {
-		(void)fs_close(&file);
-		return result;
-	}
-
-	ssize_t read = fs_read(&file, out, len);
-	result = fs_close(&file);
-	if (read < 0) {
-		return (int)read;
-	}
-	if ((size_t)read != len) {
-		return -EIO;
-	}
-	return result;
-}
-
-static int temp_read_sqbc(void *user_data, size_t offset, uint8_t *out, size_t len)
-{
-	struct temp_storage_backend *storage = user_data;
-
-	if (storage == NULL || offset > storage->sqbc_len || len > storage->sqbc_len - offset) {
-		return -EINVAL;
-	}
-	return temp_read_file_exact(storage->sqbc_path, offset, out, len);
-}
-
-static int temp_load_state(void *user_data, uint8_t *out, size_t out_len, size_t *len)
-{
-	struct temp_storage_backend *storage = user_data;
-
-	if (!storage->state_present) {
-		*len = 0;
-		return 0;
-	}
-	if (storage->state_len > out_len) {
-		return -ENOSPC;
-	}
-	memcpy(out, storage->state, storage->state_len);
-	*len = storage->state_len;
-	return 0;
-}
-
-static int temp_save_state(void *user_data, const uint8_t *bytes, size_t len)
-{
-	struct temp_storage_backend *storage = user_data;
-
-	if (len > sizeof(storage->state)) {
-		return -ENOSPC;
-	}
-	memcpy(storage->state, bytes, len);
-	storage->state_len = len;
-	storage->state_present = true;
-	return 0;
-}
-
-static int temp_reset_state(void *user_data)
-{
-	struct temp_storage_backend *storage = user_data;
-
-	storage->state_len = 0;
-	storage->state_present = false;
 	return 0;
 }
 
@@ -435,22 +366,25 @@ static int commit_temp_run(const struct sq_protocol_frame *request,
 	SqdpAction action = {0};
 	int result;
 
-	if (session == NULL || context->runtime == NULL ||
+	if (session == NULL || context->runtime == NULL || context->store_mount_point == NULL ||
 	    sqdp_prepare_transfer_commit(request_bytes, request_len, session, &action) !=
 		    SQDP_STATUS_OK) {
 		return -EINVAL;
 	}
 
 	memset(&temp_storage, 0, sizeof(temp_storage));
-	temp_storage.sqbc_path = session->staging_path;
-	temp_storage.sqbc_len = action.total_len;
-	backend = (struct sq_vm_storage_backend){
-		.user_data = &temp_storage,
-		.read_sqbc = temp_read_sqbc,
-		.load_state = temp_load_state,
-		.save_state = temp_save_state,
-		.reset_state = temp_reset_state,
-	};
+	result = temp_state_path_for_mount(context->store_mount_point, temp_storage.state_path,
+					   sizeof(temp_storage.state_path));
+	if (result != 0) {
+		return result;
+	}
+	temp_storage.fs_storage.sqbc_path = session->staging_path;
+	temp_storage.fs_storage.state_path = temp_storage.state_path;
+	backend = sq_vm_fs_storage_backend(&temp_storage.fs_storage);
+	result = backend.reset_state(backend.user_data);
+	if (result != 0) {
+		return result;
+	}
 	result = sq_vm_runtime_start(context->runtime, &backend, "app.start");
 	if (result != 0) {
 		return result;

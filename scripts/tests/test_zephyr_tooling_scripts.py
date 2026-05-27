@@ -676,6 +676,20 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("SQ_DEVICE_STATE_FIELD_BYTES", body)
         self.assertNotIn("sq_protocol_encode_frame_header", body)
 
+    def test_temp_run_state_uses_file_backed_storage_without_resident_state_buffer(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        start = protocol.index("struct temp_storage_backend")
+        end = protocol.index("static int commit_install")
+        body = protocol[start:end]
+
+        self.assertIn("struct sq_vm_fs_storage fs_storage;", body)
+        self.assertIn("sq_vm_fs_storage_backend", body)
+        self.assertIn("temp-run.state.tmp", body)
+        self.assertNotIn("uint8_t state[SQ_DEVICE_TEMP_STATE_BYTES]", body)
+        self.assertNotIn("temp_load_state", body)
+        self.assertNotIn("temp_save_state", body)
+        self.assertNotIn("temp_reset_state", body)
+
     def test_resources_response_encodes_without_resident_metric_staging(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         start = protocol.index("static int resources_response")
