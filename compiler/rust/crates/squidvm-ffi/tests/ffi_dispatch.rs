@@ -987,9 +987,12 @@ unsafe extern "C" fn app_armed_stack(
     0
 }
 
-fn callbacks(host: &mut Host) -> SqvmCallbacks {
+fn callback_user_data(host: &mut Host) -> *mut c_void {
+    host as *mut Host as *mut c_void
+}
+
+fn callbacks(_host: &mut Host) -> SqvmCallbacks {
     SqvmCallbacks {
-        user_data: host as *mut Host as *mut c_void,
         trace: Some(trace),
         read_exact_at: Some(read_exact_at),
         debug_output: Some(debug_output),
@@ -1339,7 +1342,8 @@ fn dispatch_resumable_to_completion(
     let status = unsafe {
         sqvm_dispatch_start_resumable(
             context,
-            callbacks(host),
+            callback_user_data(host),
+            &callbacks(host),
             event.as_ptr(),
             event.len(),
             &mut result,
@@ -1361,7 +1365,13 @@ fn dispatch_resumable_to_completion(
             SqvmStorageRequestKind::None => panic!("pending storage without request"),
         }
         let status = unsafe {
-            sqvm_dispatch_resume_storage(context, callbacks(host), &completion, &mut result)
+            sqvm_dispatch_resume_storage(
+                context,
+                callback_user_data(host),
+                &callbacks(host),
+                &completion,
+                &mut result,
+            )
         };
         assert_eq!(status, SqvmStatus::Ok);
     }
@@ -1380,7 +1390,8 @@ fn resumable_dispatch_reports_app_exit() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -1391,7 +1402,8 @@ fn resumable_dispatch_reports_app_exit() {
     let status = unsafe {
         sqvm_dispatch_start_resumable(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             b"app.start".as_ptr(),
             b"app.start".len(),
             &mut result,
@@ -1415,7 +1427,8 @@ fn resumable_dispatch_reports_app_exit() {
         let status = unsafe {
             sqvm_dispatch_resume_storage(
                 &mut context,
-                callbacks(&mut host),
+                callback_user_data(&mut host),
+                &callbacks(&mut host),
                 &completion,
                 &mut result,
             )
@@ -1441,7 +1454,8 @@ fn resumable_dispatch_supports_user_function_calls() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -1467,7 +1481,8 @@ fn dispatches_sqbc_through_c_abi_callbacks() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -1477,7 +1492,8 @@ fn dispatches_sqbc_through_c_abi_callbacks() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             b"app.start".as_ptr(),
             b"app.start".len(),
         )
@@ -1499,7 +1515,8 @@ fn dispatches_debug_indicator_and_timer_service_callbacks() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -1509,7 +1526,8 @@ fn dispatches_debug_indicator_and_timer_service_callbacks() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             b"app.start".as_ptr(),
             b"app.start".len(),
         )
@@ -1522,7 +1540,8 @@ fn dispatches_debug_indicator_and_timer_service_callbacks() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             b"timer.debug".as_ptr(),
             b"timer.debug".len(),
         )
@@ -1544,7 +1563,8 @@ fn dispatches_display_service_callbacks() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -1554,7 +1574,8 @@ fn dispatches_display_service_callbacks() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             b"app.start".as_ptr(),
             b"app.start".len(),
         )
@@ -1587,7 +1608,8 @@ fn dispatches_wifi_status_and_scan_callbacks() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -1597,7 +1619,8 @@ fn dispatches_wifi_status_and_scan_callbacks() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             b"app.start".as_ptr(),
             b"app.start".len(),
         )
@@ -1627,7 +1650,8 @@ fn dispatches_indicator_breathe_service_callback() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -1637,7 +1661,8 @@ fn dispatches_indicator_breathe_service_callback() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             b"app.start".as_ptr(),
             b"app.start".len(),
         )
@@ -1659,7 +1684,8 @@ fn dispatches_indicator_blink_service_callback() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -1669,7 +1695,8 @@ fn dispatches_indicator_blink_service_callback() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             b"app.start".as_ptr(),
             b"app.start".len(),
         )
@@ -1691,7 +1718,8 @@ fn dispatches_wifi_action_service_callbacks() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -1701,7 +1729,8 @@ fn dispatches_wifi_action_service_callbacks() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             b"app.start".as_ptr(),
             b"app.start".len(),
         )
@@ -1732,7 +1761,8 @@ fn dispatches_device_config_callbacks() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -1742,7 +1772,8 @@ fn dispatches_device_config_callbacks() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             b"app.start".as_ptr(),
             b"app.start".len(),
         )
@@ -1778,7 +1809,8 @@ fn dispatches_content_pick_file_callback() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -1788,7 +1820,8 @@ fn dispatches_content_pick_file_callback() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             b"app.start".as_ptr(),
             b"app.start".len(),
         )
@@ -1810,7 +1843,8 @@ fn dispatches_content_read_callbacks() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -1820,7 +1854,8 @@ fn dispatches_content_read_callbacks() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             b"app.start".as_ptr(),
             b"app.start".len(),
         )
@@ -1849,7 +1884,8 @@ fn dispatches_system_resource_text_callbacks() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -1859,7 +1895,8 @@ fn dispatches_system_resource_text_callbacks() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             b"app.start".as_ptr(),
             b"app.start".len(),
         )
@@ -1889,7 +1926,8 @@ fn dispatches_app_registry_callbacks() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -1899,7 +1937,8 @@ fn dispatches_app_registry_callbacks() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             b"app.start".as_ptr(),
             b"app.start".len(),
         )
@@ -1929,7 +1968,8 @@ fn dispatches_app_lifecycle_inspection_callbacks() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -1939,7 +1979,8 @@ fn dispatches_app_lifecycle_inspection_callbacks() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             b"app.start".as_ptr(),
             b"app.start".len(),
         )
@@ -1970,7 +2011,8 @@ fn dispatches_hardware_gpio_service_callbacks() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -1980,7 +2022,8 @@ fn dispatches_hardware_gpio_service_callbacks() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             b"app.start".as_ptr(),
             b"app.start".len(),
         )
@@ -2002,7 +2045,8 @@ fn dispatches_app_lifecycle_and_timer_after_callbacks() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -2012,7 +2056,8 @@ fn dispatches_app_lifecycle_and_timer_after_callbacks() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             b"app.start".as_ptr(),
             b"app.start".len(),
         )
@@ -2031,7 +2076,8 @@ fn dispatches_app_lifecycle_and_timer_after_callbacks() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             b"timer.break".as_ptr(),
             b"timer.break".len(),
         )
@@ -2205,12 +2251,14 @@ fn callback_errors_surface_as_vm_error_status() {
         let mut scratch = vec![0u8; 4096];
         let mut context = sqvm_context_init();
         let mut host_callbacks = callbacks(&mut host);
+        let host_user_data = callback_user_data(&mut host);
         break_callback(&mut host_callbacks);
 
         let status = unsafe {
             sqvm_context_init_in_place(
                 &mut context,
-                host_callbacks,
+                host_user_data,
+                &host_callbacks,
                 scratch.as_mut_ptr(),
                 scratch.len(),
             )
@@ -2220,7 +2268,8 @@ fn callback_errors_surface_as_vm_error_status() {
         let status = unsafe {
             sqvm_dispatch(
                 &mut context,
-                host_callbacks,
+                host_user_data,
+                &host_callbacks,
                 b"app.start".as_ptr(),
                 b"app.start".len(),
             )
@@ -2239,12 +2288,14 @@ fn callback_result_records_reject_invalid_required_strings() {
     let mut scratch = vec![0u8; 4096];
     let mut context = sqvm_context_init();
     let mut host_callbacks = callbacks(&mut host);
+    let host_user_data = callback_user_data(&mut host);
     host_callbacks.wifi_status = Some(malformed_wifi_status);
 
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            host_callbacks,
+            host_user_data,
+            &host_callbacks,
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -2254,7 +2305,8 @@ fn callback_result_records_reject_invalid_required_strings() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            host_callbacks,
+            host_user_data,
+            &host_callbacks,
             b"app.start".as_ptr(),
             b"app.start".len(),
         )
@@ -2272,6 +2324,7 @@ fn missing_optional_service_callbacks_return_unsupported_records() {
     let mut scratch = vec![0u8; 4096];
     let mut context = sqvm_context_init();
     let mut host_callbacks = callbacks(&mut host);
+    let host_user_data = callback_user_data(&mut host);
     host_callbacks.wifi_start_ap = None;
     host_callbacks.wifi_get_ap_ip = None;
     host_callbacks.wifi_stop_ap = None;
@@ -2281,7 +2334,8 @@ fn missing_optional_service_callbacks_return_unsupported_records() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            host_callbacks,
+            host_user_data,
+            &host_callbacks,
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -2291,7 +2345,8 @@ fn missing_optional_service_callbacks_return_unsupported_records() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            host_callbacks,
+            host_user_data,
+            &host_callbacks,
             b"app.start".as_ptr(),
             b"app.start".len(),
         )
@@ -2312,7 +2367,8 @@ fn missing_optional_service_callbacks_return_unsupported_records() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            host_callbacks,
+            host_user_data,
+            &host_callbacks,
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -2322,7 +2378,8 @@ fn missing_optional_service_callbacks_return_unsupported_records() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            host_callbacks,
+            host_user_data,
+            &host_callbacks,
             b"app.start".as_ptr(),
             b"app.start".len(),
         )
@@ -2347,6 +2404,7 @@ fn missing_device_config_callbacks_return_unsupported_records() {
     let mut scratch = vec![0u8; 4096];
     let mut context = sqvm_context_init();
     let mut host_callbacks = callbacks(&mut host);
+    let host_user_data = callback_user_data(&mut host);
     host_callbacks.device_config_load = None;
     host_callbacks.device_config_set = None;
     host_callbacks.device_config_rebind = None;
@@ -2355,7 +2413,8 @@ fn missing_device_config_callbacks_return_unsupported_records() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            host_callbacks,
+            host_user_data,
+            &host_callbacks,
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -2365,7 +2424,8 @@ fn missing_device_config_callbacks_return_unsupported_records() {
     let status = unsafe {
         sqvm_dispatch(
             &mut context,
-            host_callbacks,
+            host_user_data,
+            &host_callbacks,
             b"app.start".as_ptr(),
             b"app.start".len(),
         )
@@ -2396,6 +2456,7 @@ fn missing_content_callbacks_return_unsupported_records() {
         let mut scratch = vec![0u8; 4096];
         let mut context = sqvm_context_init();
         let mut host_callbacks = callbacks(host);
+        let host_user_data = callback_user_data(host);
         host_callbacks.content_pick_file = None;
         host_callbacks.content_read_text = None;
         host_callbacks.content_read_lines = None;
@@ -2403,7 +2464,8 @@ fn missing_content_callbacks_return_unsupported_records() {
         let status = unsafe {
             sqvm_context_init_in_place(
                 &mut context,
-                host_callbacks,
+                host_user_data,
+                &host_callbacks,
                 scratch.as_mut_ptr(),
                 scratch.len(),
             )
@@ -2413,7 +2475,8 @@ fn missing_content_callbacks_return_unsupported_records() {
         let status = unsafe {
             sqvm_dispatch(
                 &mut context,
-                host_callbacks,
+                host_user_data,
+                &host_callbacks,
                 b"app.start".as_ptr(),
                 b"app.start".len(),
             )
@@ -2466,12 +2529,14 @@ fn missing_noop_callbacks_remain_optional() {
         let mut scratch = vec![0u8; 4096];
         let mut context = sqvm_context_init();
         let mut host_callbacks = callbacks(&mut host);
+        let host_user_data = callback_user_data(&mut host);
         remove_callback(&mut host_callbacks);
 
         let status = unsafe {
             sqvm_context_init_in_place(
                 &mut context,
-                host_callbacks,
+                host_user_data,
+                &host_callbacks,
                 scratch.as_mut_ptr(),
                 scratch.len(),
             )
@@ -2481,7 +2546,8 @@ fn missing_noop_callbacks_remain_optional() {
         let status = unsafe {
             sqvm_dispatch(
                 &mut context,
-                host_callbacks,
+                host_user_data,
+                &host_callbacks,
                 b"app.start".as_ptr(),
                 b"app.start".len(),
             )
@@ -2595,12 +2661,14 @@ fn missing_required_callbacks_surface_as_vm_error_status() {
         let mut scratch = vec![0u8; 4096];
         let mut context = sqvm_context_init();
         let mut host_callbacks = callbacks(&mut host);
+        let host_user_data = callback_user_data(&mut host);
         remove_callback(&mut host_callbacks);
 
         let status = unsafe {
             sqvm_context_init_in_place(
                 &mut context,
-                host_callbacks,
+                host_user_data,
+                &host_callbacks,
                 scratch.as_mut_ptr(),
                 scratch.len(),
             )
@@ -2610,7 +2678,8 @@ fn missing_required_callbacks_surface_as_vm_error_status() {
         let status = unsafe {
             sqvm_dispatch(
                 &mut context,
-                host_callbacks,
+                host_user_data,
+                &host_callbacks,
                 b"app.start".as_ptr(),
                 b"app.start".len(),
             )
@@ -2654,7 +2723,8 @@ fn reads_trigger_timer_metadata_without_dispatching_app_arm() {
         unsafe {
             sqvm_context_init_in_place(
                 &mut context,
-                callbacks(&mut host),
+                callback_user_data(&mut host),
+                &callbacks(&mut host),
                 scratch.as_mut_ptr(),
                 scratch.len(),
             )
@@ -2665,7 +2735,8 @@ fn reads_trigger_timer_metadata_without_dispatching_app_arm() {
         unsafe {
             sqvm_dispatch(
                 &mut context,
-                callbacks(&mut host),
+                callback_user_data(&mut host),
+                &callbacks(&mut host),
                 b"app.arm".as_ptr(),
                 b"app.arm".len(),
             )
@@ -2688,7 +2759,8 @@ fn resumable_dispatch_reports_sqbc_and_state_storage_requests() {
     let status = unsafe {
         sqvm_context_init_in_place(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             scratch.as_mut_ptr(),
             scratch.len(),
         )
@@ -2699,7 +2771,8 @@ fn resumable_dispatch_reports_sqbc_and_state_storage_requests() {
     let status = unsafe {
         sqvm_dispatch_start_resumable(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             b"app.start".as_ptr(),
             b"app.start".len(),
             &mut result,
@@ -2720,7 +2793,13 @@ fn resumable_dispatch_reports_sqbc_and_state_storage_requests() {
     completion.bytes[..len].copy_from_slice(&host.sqbc[offset..offset + len]);
 
     let status = unsafe {
-        sqvm_dispatch_resume_storage(&mut context, callbacks(&mut host), &completion, &mut result)
+        sqvm_dispatch_resume_storage(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            &completion,
+            &mut result,
+        )
     };
     assert_eq!(status, SqvmStatus::Ok);
     assert_eq!(result.outcome, SqvmDispatchOutcome::PendingStorage);
@@ -2729,7 +2808,8 @@ fn resumable_dispatch_reports_sqbc_and_state_storage_requests() {
     let status = unsafe {
         sqvm_dispatch_resume_storage(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             &SqvmStorageCompletion::default(),
             &mut result,
         )
@@ -2743,7 +2823,8 @@ fn resumable_dispatch_reports_sqbc_and_state_storage_requests() {
     let status = unsafe {
         sqvm_dispatch_resume_storage(
             &mut context,
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             &SqvmStorageCompletion::default(),
             &mut result,
         )
@@ -2857,7 +2938,8 @@ fn prepares_raw_context_storage_for_c_callers() {
     let status = unsafe {
         sqvm_context_init_in_place(
             raw_context.as_mut_ptr().cast(),
-            callbacks(&mut host),
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
             scratch.as_mut_ptr(),
             scratch.len(),
         )

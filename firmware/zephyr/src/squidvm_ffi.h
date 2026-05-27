@@ -483,7 +483,6 @@ typedef int32_t (*SqvmSystemStorageTextCallback)(
 	size_t *out_len);
 
 typedef struct {
-	void *user_data;
 	SqvmTraceCallback trace;
 	SqvmReadExactAtCallback read_exact_at;
 	SqvmDebugOutputCallback debug_output;
@@ -554,7 +553,8 @@ SqdcStatus sqdc_plan_device_binding(const uint8_t *service, size_t service_len,
 SqvmStatus sqvm_context_prepare(void *context, size_t context_len);
 SqvmStatus sqvm_context_init_in_place(
 	void *context,
-	SqvmCallbacks callbacks,
+	void *user_data,
+	const SqvmCallbacks *callbacks,
 	uint8_t *scratch,
 	size_t scratch_len);
 SqvmStatus sqvm_trigger_timer_count(
@@ -594,18 +594,21 @@ SqvmStatus sqvm_device_binding_read_from_reader(
 	SqvmDeviceBinding *out_binding);
 SqvmStatus sqvm_dispatch(
 	void *context,
-	SqvmCallbacks callbacks,
+	void *user_data,
+	const SqvmCallbacks *callbacks,
 	const uint8_t *event,
 	size_t event_len);
 SqvmStatus sqvm_dispatch_start_resumable(
 	void *context,
-	SqvmCallbacks callbacks,
+	void *user_data,
+	const SqvmCallbacks *callbacks,
 	const uint8_t *event,
 	size_t event_len,
 	SqvmDispatchResult *out_result);
 SqvmStatus sqvm_dispatch_resume_storage(
 	void *context,
-	SqvmCallbacks callbacks,
+	void *user_data,
+	const SqvmCallbacks *callbacks,
 	const SqvmStorageCompletion *completion,
 	SqvmDispatchResult *out_result);
 SqdpStatus sqdp_encode_empty_response(

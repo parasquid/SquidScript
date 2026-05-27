@@ -164,6 +164,10 @@ resource bytes, so `sq_vm_runtime_device_config_load_resource` now emits a
 Recursive app-store format/delete walks reuse the caller-owned path buffer
 instead of allocating a full child path per recursion, so `delete_files_under`
 now emits a 208-byte C stack estimate instead of 320 bytes.
+VM dispatch uses a static callback table plus an explicit `user_data` pointer
+across the FFI boundary instead of materializing the callback table on the C
+stack, so `sq_vm_runtime_dispatch` now emits an 80-byte C stack estimate
+instead of 432 bytes without adding resident runtime RAM.
 Protocol polling reuses runtime app-id/event scratch for lifecycle and armed
 timer transitions. App-arm trigger discovery uses a SQBC-only filesystem
 backend instead of a full app storage object with state paths; the emitted C

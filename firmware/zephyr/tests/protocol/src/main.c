@@ -2338,10 +2338,10 @@ ZTEST(squidscript_protocol, test_exposes_resumable_squidvm_ffi_abi)
 	zassert_equal(SQ_VM_RUNTIME_SCRATCH_BYTES, SQVM_STORAGE_TRANSFER_CAPACITY);
 	zassert_equal(SQ_DEVICE_TEMP_STATE_BYTES, SQVM_SAVED_STATE_CAPACITY);
 
-	zassert_equal(sqvm_dispatch_start_resumable(NULL, callbacks, (const uint8_t *)"app.start",
-						    9, &result),
+	zassert_equal(sqvm_dispatch_start_resumable(NULL, NULL, &callbacks,
+						    (const uint8_t *)"app.start", 9, &result),
 		      SQVM_STATUS_INVALID_ARGUMENT);
-	zassert_equal(sqvm_dispatch_resume_storage(NULL, callbacks, &completion, &result),
+	zassert_equal(sqvm_dispatch_resume_storage(NULL, NULL, &callbacks, &completion, &result),
 		      SQVM_STATUS_INVALID_ARGUMENT);
 	zassert_str_equal(sq_vm_runtime_status_name(SQVM_STATUS_INVALID_ARGUMENT),
 			  "invalid_argument");
@@ -3324,7 +3324,6 @@ ZTEST(squidscript_protocol, test_zephyr_calls_squidvm_ffi_with_storage_adapter)
 		.reset_state = fixture_reset_state,
 	};
 	SqvmCallbacks callbacks = {
-		.user_data = &fixture,
 		.trace = ffi_trace,
 		.read_exact_at = ffi_read_exact_at,
 	};
@@ -3333,18 +3332,18 @@ ZTEST(squidscript_protocol, test_zephyr_calls_squidvm_ffi_with_storage_adapter)
 	zassert_true(sqvm_context_size() <= sizeof(ffi_context_storage));
 	zassert_equal(sqvm_context_prepare(ffi_context_storage, sizeof(ffi_context_storage)),
 		      SQVM_STATUS_OK);
-	zassert_equal(sqvm_context_init_in_place(ffi_context_storage, callbacks, ffi_scratch,
+	zassert_equal(sqvm_context_init_in_place(ffi_context_storage, &fixture, &callbacks, ffi_scratch,
 						 sizeof(ffi_scratch)),
 		      SQVM_STATUS_OK);
 
-	zassert_equal(sqvm_dispatch_start_resumable(ffi_context_storage, callbacks,
+	zassert_equal(sqvm_dispatch_start_resumable(ffi_context_storage, &fixture, &callbacks,
 						    (const uint8_t *)"app.start", 9, &result),
 		      SQVM_STATUS_OK);
 
 	while (result.outcome == SQVM_DISPATCH_PENDING_STORAGE) {
 		zassert_equal(sq_vm_storage_complete_request(&backend, &result.storage, &completion),
 			      0);
-		zassert_equal(sqvm_dispatch_resume_storage(ffi_context_storage, callbacks,
+		zassert_equal(sqvm_dispatch_resume_storage(ffi_context_storage, &fixture, &callbacks,
 							   &completion, &result),
 			      SQVM_STATUS_OK);
 	}

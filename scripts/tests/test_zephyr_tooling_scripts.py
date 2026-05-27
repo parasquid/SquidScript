@@ -1811,6 +1811,27 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("sizeof(path)", body)
         self.assertNotIn("memcpy(resource, resource_bytes, resource_len);", body)
 
+    def test_vm_dispatch_uses_static_callbacks_and_separate_user_data(self):
+        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+        ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
+        ffi_rs = self.read("compiler/rust/crates/squidvm-ffi/src/lib.rs")
+        start = runtime.index("int sq_vm_runtime_dispatch")
+        end = runtime.index("int sq_vm_runtime_start")
+        body = runtime[start:end]
+
+        self.assertIn("static const SqvmCallbacks runtime_callbacks", runtime)
+        self.assertNotIn("SqvmCallbacks callbacks;", body)
+        self.assertNotIn("callbacks = (SqvmCallbacks)", body)
+        self.assertIn("sqvm_context_init_in_place(runtime->context_words, runtime,", body)
+        self.assertIn("&runtime_callbacks", body)
+        self.assertIn(
+            "SqvmStatus sqvm_dispatch_start_resumable(\n\tvoid *context,\n\tvoid *user_data,\n\tconst SqvmCallbacks *callbacks,",
+            ffi_h,
+        )
+        self.assertIn("callbacks: *const SqvmCallbacks", ffi_rs)
+        self.assertIn("user_data: *mut c_void", ffi_rs)
+        self.assertIn("FfiHost::new(user_data, callbacks, true)", ffi_rs)
+
     def test_hardware_suite_leaves_blinky_visible_check_last(self):
         blinky = self.read("scripts/c3-supermini-test-blinky.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")

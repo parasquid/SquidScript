@@ -937,7 +937,6 @@ pub type SqvmReadExactAtCallback = Option<
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SqvmCallbacks {
-    pub user_data: *mut c_void,
     pub trace: Option<
         unsafe extern "C" fn(user_data: *mut c_void, message: *const u8, message_len: usize),
     >,
@@ -1166,7 +1165,6 @@ pub struct SqvmCallbacks {
 impl Default for SqvmCallbacks {
     fn default() -> Self {
         Self {
-            user_data: ptr::null_mut(),
             trace: None,
             read_exact_at: None,
             debug_output: None,
@@ -1488,11 +1486,16 @@ pub unsafe extern "C" fn sqvm_context_prepare(context: *mut u8, context_len: usi
 #[no_mangle]
 pub unsafe extern "C" fn sqvm_context_init_in_place(
     context: *mut SqvmContext,
-    callbacks: SqvmCallbacks,
+    user_data: *mut c_void,
+    callbacks: *const SqvmCallbacks,
     scratch: *mut u8,
     scratch_len: usize,
 ) -> SqvmStatus {
-    if context.is_null() || scratch.is_null() || scratch_len < MAX_CODE_CHUNK_BYTES {
+    if context.is_null()
+        || callbacks.is_null()
+        || scratch.is_null()
+        || scratch_len < MAX_CODE_CHUNK_BYTES
+    {
         return SqvmStatus::InvalidArgument;
     }
 
@@ -1502,8 +1505,9 @@ pub unsafe extern "C" fn sqvm_context_init_in_place(
         context.initialized = false;
     }
 
+    let callbacks = &*callbacks;
     let scratch = slice::from_raw_parts_mut(scratch, scratch_len);
-    let mut host = FfiHost::new(callbacks, false);
+    let mut host = FfiHost::new(user_data, callbacks, false);
     match ChunkedVm::init_in_place_from_reader(context.vm_ptr(), &mut host, scratch) {
         Ok(()) => {
             context.initialized = true;
@@ -1554,11 +1558,10 @@ pub unsafe extern "C" fn sqvm_trigger_timer_count_from_reader(
         return SqvmStatus::InvalidArgument;
     }
     let callbacks = SqvmCallbacks {
-        user_data,
         read_exact_at,
         ..SqvmCallbacks::default()
     };
-    let mut reader = FfiHost::new(callbacks, false);
+    let mut reader = FfiHost::new(user_data, &callbacks, false);
     let scratch = slice::from_raw_parts_mut(scratch, scratch_len);
     trigger_timer_count_from_reader(&mut reader, scratch, out_count)
 }
@@ -1576,11 +1579,10 @@ pub unsafe extern "C" fn sqvm_trigger_timer_read_from_reader(
         return SqvmStatus::InvalidArgument;
     }
     let callbacks = SqvmCallbacks {
-        user_data,
         read_exact_at,
         ..SqvmCallbacks::default()
     };
-    let mut reader = FfiHost::new(callbacks, false);
+    let mut reader = FfiHost::new(user_data, &callbacks, false);
     let scratch = slice::from_raw_parts_mut(scratch, scratch_len);
     trigger_timer_read_from_reader(&mut reader, scratch, index, out_timer)
 }
@@ -1597,11 +1599,10 @@ pub unsafe extern "C" fn sqvm_device_binding_count_from_reader(
         return SqvmStatus::InvalidArgument;
     }
     let callbacks = SqvmCallbacks {
-        user_data,
         read_exact_at,
         ..SqvmCallbacks::default()
     };
-    let mut reader = FfiHost::new(callbacks, false);
+    let mut reader = FfiHost::new(user_data, &callbacks, false);
     let scratch = slice::from_raw_parts_mut(scratch, scratch_len);
     device_binding_count_from_reader(&mut reader, scratch, out_count)
 }
@@ -1619,11 +1620,10 @@ pub unsafe extern "C" fn sqvm_device_binding_read_from_reader(
         return SqvmStatus::InvalidArgument;
     }
     let callbacks = SqvmCallbacks {
-        user_data,
         read_exact_at,
         ..SqvmCallbacks::default()
     };
-    let mut reader = FfiHost::new(callbacks, false);
+    let mut reader = FfiHost::new(user_data, &callbacks, false);
     let scratch = slice::from_raw_parts_mut(scratch, scratch_len);
     device_binding_read_from_reader(&mut reader, scratch, index, out_binding)
 }
@@ -1631,11 +1631,12 @@ pub unsafe extern "C" fn sqvm_device_binding_read_from_reader(
 #[no_mangle]
 pub unsafe extern "C" fn sqvm_dispatch(
     context: *mut SqvmContext,
-    callbacks: SqvmCallbacks,
+    user_data: *mut c_void,
+    callbacks: *const SqvmCallbacks,
     event: *const u8,
     event_len: usize,
 ) -> SqvmStatus {
-    if context.is_null() || event.is_null() {
+    if context.is_null() || callbacks.is_null() || event.is_null() {
         return SqvmStatus::InvalidArgument;
     }
     let context = &mut *context;
@@ -1645,20 +1646,22 @@ pub unsafe extern "C" fn sqvm_dispatch(
     let Ok(event) = str::from_utf8(slice::from_raw_parts(event, event_len)) else {
         return SqvmStatus::InvalidArgument;
     };
+    let callbacks = &*callbacks;
     let vm = &mut *context.vm_ptr();
-    let mut host = FfiHost::new(callbacks, false);
+    let mut host = FfiHost::new(user_data, callbacks, false);
     status_from_vm(vm.dispatch(&mut host, event))
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn sqvm_dispatch_start_resumable(
     context: *mut SqvmContext,
-    callbacks: SqvmCallbacks,
+    user_data: *mut c_void,
+    callbacks: *const SqvmCallbacks,
     event: *const u8,
     event_len: usize,
     out_result: *mut SqvmDispatchResult,
 ) -> SqvmStatus {
-    if context.is_null() || event.is_null() || out_result.is_null() {
+    if context.is_null() || callbacks.is_null() || event.is_null() || out_result.is_null() {
         return SqvmStatus::InvalidArgument;
     }
     let context = &mut *context;
@@ -1668,8 +1671,9 @@ pub unsafe extern "C" fn sqvm_dispatch_start_resumable(
     let Ok(event) = str::from_utf8(slice::from_raw_parts(event, event_len)) else {
         return SqvmStatus::InvalidArgument;
     };
+    let callbacks = &*callbacks;
     let vm = &mut *context.vm_ptr();
-    let mut host = FfiHost::new(callbacks, true);
+    let mut host = FfiHost::new(user_data, callbacks, true);
     let result = vm.dispatch_resumable(&mut host, event);
     write_dispatch_result(out_result, vm.exited(), result)
 }
@@ -1677,11 +1681,12 @@ pub unsafe extern "C" fn sqvm_dispatch_start_resumable(
 #[no_mangle]
 pub unsafe extern "C" fn sqvm_dispatch_resume_storage(
     context: *mut SqvmContext,
-    callbacks: SqvmCallbacks,
+    user_data: *mut c_void,
+    callbacks: *const SqvmCallbacks,
     completion: *const SqvmStorageCompletion,
     out_result: *mut SqvmDispatchResult,
 ) -> SqvmStatus {
-    if context.is_null() || completion.is_null() || out_result.is_null() {
+    if context.is_null() || callbacks.is_null() || completion.is_null() || out_result.is_null() {
         return SqvmStatus::InvalidArgument;
     }
     let context = &mut *context;
@@ -1691,8 +1696,9 @@ pub unsafe extern "C" fn sqvm_dispatch_resume_storage(
     let Ok(completion) = core_storage_completion(&*completion) else {
         return SqvmStatus::InvalidArgument;
     };
+    let callbacks = &*callbacks;
     let vm = &mut *context.vm_ptr();
-    let mut host = FfiHost::new(callbacks, true);
+    let mut host = FfiHost::new(user_data, callbacks, true);
     let result = vm.resume_storage(&mut host, completion);
     write_dispatch_result(out_result, vm.exited(), result)
 }
@@ -2667,8 +2673,9 @@ pub unsafe extern "C" fn sqdp_clear_resource_session(session: *mut SqdpResourceS
 // Mirrors the current Zephyr runtime return-stack and armed-timer capacities.
 const SQVM_FFI_APP_STACK_CAP: usize = 2;
 
-struct FfiHost {
-    callbacks: SqvmCallbacks,
+struct FfiHost<'a> {
+    user_data: *mut c_void,
+    callbacks: &'a SqvmCallbacks,
     defer_sqbc_reads: bool,
     app_registry_entries: [SqvmAppRegistryEntry; 8],
     app_registry_core_entries: [AppRegistryEntry<'static>; 8],
@@ -2681,9 +2688,10 @@ struct FfiHost {
     wifi_scan_network_count: usize,
 }
 
-impl FfiHost {
-    fn new(callbacks: SqvmCallbacks, defer_sqbc_reads: bool) -> Self {
+impl<'a> FfiHost<'a> {
+    fn new(user_data: *mut c_void, callbacks: &'a SqvmCallbacks, defer_sqbc_reads: bool) -> Self {
         Self {
+            user_data,
             callbacks,
             defer_sqbc_reads,
             app_registry_entries: [SqvmAppRegistryEntry::default(); 8],
@@ -2707,19 +2715,12 @@ impl FfiHost {
     }
 }
 
-impl SqbcReader for FfiHost {
+impl SqbcReader for FfiHost<'_> {
     fn read_exact_at(&mut self, offset: usize, out: &mut [u8]) -> Result<(), VmError> {
         let Some(read_exact_at) = self.callbacks.read_exact_at else {
             return Err(VmError::ReadFailed);
         };
-        let status = unsafe {
-            read_exact_at(
-                self.callbacks.user_data,
-                offset,
-                out.as_mut_ptr(),
-                out.len(),
-            )
-        };
+        let status = unsafe { read_exact_at(self.user_data, offset, out.as_mut_ptr(), out.len()) };
         if status == 0 {
             Ok(())
         } else {
@@ -2732,11 +2733,11 @@ impl SqbcReader for FfiHost {
     }
 }
 
-impl TraceSink for FfiHost {
+impl TraceSink for FfiHost<'_> {
     fn trace(&mut self, message: &str) {
         if let Some(trace) = self.callbacks.trace {
             unsafe {
-                trace(self.callbacks.user_data, message.as_ptr(), message.len());
+                trace(self.user_data, message.as_ptr(), message.len());
             }
         }
     }
@@ -2773,14 +2774,14 @@ impl TraceSink for FfiHost {
             }
         }
         unsafe {
-            debug_output(self.callbacks.user_data, line.as_ptr(), line.len());
+            debug_output(self.user_data, line.as_ptr(), line.len());
         }
     }
 
     fn draw_clear(&mut self, color: &str) {
         if let Some(display_clear) = self.callbacks.display_clear {
             unsafe {
-                display_clear(self.callbacks.user_data, color.as_ptr(), color.len());
+                display_clear(self.user_data, color.as_ptr(), color.len());
             }
         }
     }
@@ -2812,12 +2813,7 @@ impl TraceSink for FfiHost {
             valign_len: option_len(options.valign),
         };
         unsafe {
-            display_text(
-                self.callbacks.user_data,
-                rendered.as_ptr(),
-                rendered.len(),
-                &options,
-            );
+            display_text(self.user_data, rendered.as_ptr(), rendered.len(), &options);
         }
     }
 
@@ -2836,7 +2832,7 @@ impl TraceSink for FfiHost {
             stroke_color_len: option_len(options.stroke_color),
         };
         unsafe {
-            display_rect(self.callbacks.user_data, &options);
+            display_rect(self.user_data, &options);
         }
     }
 
@@ -2853,7 +2849,7 @@ impl TraceSink for FfiHost {
             color_len: option_len(options.color),
         };
         unsafe {
-            display_line(self.callbacks.user_data, &options);
+            display_line(self.user_data, &options);
         }
     }
 
@@ -2861,9 +2857,7 @@ impl TraceSink for FfiHost {
         let Some(display_select) = self.callbacks.display_select else {
             return Err(VmError::InvalidOperand);
         };
-        callback_status(unsafe {
-            display_select(self.callbacks.user_data, name.as_ptr(), name.len())
-        })
+        callback_status(unsafe { display_select(self.user_data, name.as_ptr(), name.len()) })
     }
 
     fn draw_image(&mut self, path: &str, options: DisplayResourceOptions) {
@@ -2877,12 +2871,7 @@ impl TraceSink for FfiHost {
             h: options.h,
         };
         unsafe {
-            display_image(
-                self.callbacks.user_data,
-                path.as_ptr(),
-                path.len(),
-                &options,
-            );
+            display_image(self.user_data, path.as_ptr(), path.len(), &options);
         }
     }
 
@@ -2904,12 +2893,7 @@ impl TraceSink for FfiHost {
             h: options.h,
         };
         unsafe {
-            display_draw(
-                self.callbacks.user_data,
-                rendered.as_ptr(),
-                rendered.len(),
-                &options,
-            );
+            display_draw(self.user_data, rendered.as_ptr(), rendered.len(), &options);
         }
     }
 
@@ -2917,14 +2901,14 @@ impl TraceSink for FfiHost {
         let Some(indicator_write) = self.callbacks.indicator_write else {
             return Err(VmError::InvalidOperand);
         };
-        callback_status(unsafe { indicator_write(self.callbacks.user_data, value) })
+        callback_status(unsafe { indicator_write(self.user_data, value) })
     }
 
     fn service_indicator_toggle(&mut self) -> Result<(), VmError> {
         let Some(indicator_toggle) = self.callbacks.indicator_toggle else {
             return Err(VmError::InvalidOperand);
         };
-        callback_status(unsafe { indicator_toggle(self.callbacks.user_data) })
+        callback_status(unsafe { indicator_toggle(self.user_data) })
     }
 
     fn service_indicator_read(&mut self) -> Result<bool, VmError> {
@@ -2932,7 +2916,7 @@ impl TraceSink for FfiHost {
             return Err(VmError::InvalidOperand);
         };
         let mut value = false;
-        callback_status(unsafe { indicator_read(self.callbacks.user_data, &mut value) })?;
+        callback_status(unsafe { indicator_read(self.user_data, &mut value) })?;
         Ok(value)
     }
 
@@ -2940,14 +2924,14 @@ impl TraceSink for FfiHost {
         let Some(indicator_breathe) = self.callbacks.indicator_breathe else {
             return Err(VmError::InvalidOperand);
         };
-        callback_status(unsafe { indicator_breathe(self.callbacks.user_data) })
+        callback_status(unsafe { indicator_breathe(self.user_data) })
     }
 
     fn service_indicator_blink(&mut self, on_ms: i32, off_ms: i32) -> Result<(), VmError> {
         let Some(indicator_blink) = self.callbacks.indicator_blink else {
             return Err(VmError::InvalidOperand);
         };
-        callback_status(unsafe { indicator_blink(self.callbacks.user_data, on_ms, off_ms) })
+        callback_status(unsafe { indicator_blink(self.user_data, on_ms, off_ms) })
     }
 
     fn hardware_gpio_write(&mut self, name: &str, value: bool) -> Result<(), VmError> {
@@ -2955,7 +2939,7 @@ impl TraceSink for FfiHost {
             return Err(VmError::InvalidOperand);
         };
         callback_status(unsafe {
-            hardware_gpio_write(self.callbacks.user_data, name.as_ptr(), name.len(), value)
+            hardware_gpio_write(self.user_data, name.as_ptr(), name.len(), value)
         })
     }
 
@@ -2963,9 +2947,7 @@ impl TraceSink for FfiHost {
         let Some(hardware_gpio_toggle) = self.callbacks.hardware_gpio_toggle else {
             return Err(VmError::InvalidOperand);
         };
-        callback_status(unsafe {
-            hardware_gpio_toggle(self.callbacks.user_data, name.as_ptr(), name.len())
-        })
+        callback_status(unsafe { hardware_gpio_toggle(self.user_data, name.as_ptr(), name.len()) })
     }
 
     fn hardware_gpio_read(&mut self, name: &str) -> Result<bool, VmError> {
@@ -2974,12 +2956,7 @@ impl TraceSink for FfiHost {
         };
         let mut value = false;
         callback_status(unsafe {
-            hardware_gpio_read(
-                self.callbacks.user_data,
-                name.as_ptr(),
-                name.len(),
-                &mut value,
-            )
+            hardware_gpio_read(self.user_data, name.as_ptr(), name.len(), &mut value)
         })?;
         Ok(value)
     }
@@ -2988,21 +2965,21 @@ impl TraceSink for FfiHost {
         let Some(app_launch) = self.callbacks.app_launch else {
             return Err(VmError::InvalidOperand);
         };
-        callback_status(unsafe { app_launch(self.callbacks.user_data, app.as_ptr(), app.len()) })
+        callback_status(unsafe { app_launch(self.user_data, app.as_ptr(), app.len()) })
     }
 
     fn app_arm(&mut self, app: &str) -> Result<(), VmError> {
         let Some(app_arm) = self.callbacks.app_arm else {
             return Err(VmError::InvalidOperand);
         };
-        callback_status(unsafe { app_arm(self.callbacks.user_data, app.as_ptr(), app.len()) })
+        callback_status(unsafe { app_arm(self.user_data, app.as_ptr(), app.len()) })
     }
 
     fn app_disarm(&mut self, app: &str) -> Result<(), VmError> {
         let Some(app_disarm) = self.callbacks.app_disarm else {
             return Err(VmError::InvalidOperand);
         };
-        callback_status(unsafe { app_disarm(self.callbacks.user_data, app.as_ptr(), app.len()) })
+        callback_status(unsafe { app_disarm(self.user_data, app.as_ptr(), app.len()) })
     }
 
     fn app_registry_list<'a>(&'a mut self) -> Result<AppRegistryList<'a>, VmError> {
@@ -3013,7 +2990,7 @@ impl TraceSink for FfiHost {
         self.app_registry_entries = [SqvmAppRegistryEntry::default(); 8];
         callback_status(unsafe {
             app_registry_list(
-                self.callbacks.user_data,
+                self.user_data,
                 self.app_registry_entries.as_mut_ptr(),
                 self.app_registry_entries.len(),
                 &mut count,
@@ -3035,7 +3012,7 @@ impl TraceSink for FfiHost {
         };
         let mut out = SqvmAppRegistryEntry::default();
         callback_status(unsafe {
-            app_registry_get(self.callbacks.user_data, app.as_ptr(), app.len(), &mut out)
+            app_registry_get(self.user_data, app.as_ptr(), app.len(), &mut out)
         })?;
         unsafe { app_registry_entry_from_ffi(&out) }
     }
@@ -3048,7 +3025,7 @@ impl TraceSink for FfiHost {
         self.app_stack_entries = [SqvmAppStackEntry::default(); SQVM_FFI_APP_STACK_CAP];
         callback_status(unsafe {
             app_process_stack(
-                self.callbacks.user_data,
+                self.user_data,
                 self.app_stack_entries.as_mut_ptr(),
                 self.app_stack_entries.len(),
                 &mut count,
@@ -3076,7 +3053,7 @@ impl TraceSink for FfiHost {
         self.app_stack_entries = [SqvmAppStackEntry::default(); SQVM_FFI_APP_STACK_CAP];
         callback_status(unsafe {
             app_armed_stack(
-                self.callbacks.user_data,
+                self.user_data,
                 self.app_stack_entries.as_mut_ptr(),
                 self.app_stack_entries.len(),
                 &mut count,
@@ -3097,12 +3074,7 @@ impl TraceSink for FfiHost {
             return Err(VmError::InvalidOperand);
         };
         callback_status(unsafe {
-            timer_every(
-                self.callbacks.user_data,
-                event.as_ptr(),
-                event.len(),
-                interval_ms,
-            )
+            timer_every(self.user_data, event.as_ptr(), event.len(), interval_ms)
         })
     }
 
@@ -3111,12 +3083,7 @@ impl TraceSink for FfiHost {
             return Err(VmError::InvalidOperand);
         };
         callback_status(unsafe {
-            timer_after(
-                self.callbacks.user_data,
-                event.as_ptr(),
-                event.len(),
-                delay_ms,
-            )
+            timer_after(self.user_data, event.as_ptr(), event.len(), delay_ms)
         })
     }
 
@@ -3132,12 +3099,7 @@ impl TraceSink for FfiHost {
         };
         let mut out = SqvmWifiActionResult::default();
         callback_status(unsafe {
-            wifi_start_ap(
-                self.callbacks.user_data,
-                ssid.as_ptr(),
-                ssid.len(),
-                &mut out,
-            )
+            wifi_start_ap(self.user_data, ssid.as_ptr(), ssid.len(), &mut out)
         })?;
         unsafe { wifi_action_result_from_ffi(&out) }
     }
@@ -3150,7 +3112,7 @@ impl TraceSink for FfiHost {
             });
         };
         let mut out = SqvmWifiActionResult::default();
-        callback_status(unsafe { wifi_stop_ap(self.callbacks.user_data, &mut out) })?;
+        callback_status(unsafe { wifi_stop_ap(self.user_data, &mut out) })?;
         unsafe { wifi_action_result_from_ffi(&out) }
     }
 
@@ -3166,12 +3128,7 @@ impl TraceSink for FfiHost {
         };
         let mut out = SqvmWifiActionResult::default();
         callback_status(unsafe {
-            wifi_connect(
-                self.callbacks.user_data,
-                profile.as_ptr(),
-                profile.len(),
-                &mut out,
-            )
+            wifi_connect(self.user_data, profile.as_ptr(), profile.len(), &mut out)
         })?;
         unsafe { wifi_action_result_from_ffi(&out) }
     }
@@ -3184,7 +3141,7 @@ impl TraceSink for FfiHost {
             });
         };
         let mut out = SqvmWifiActionResult::default();
-        callback_status(unsafe { wifi_disconnect(self.callbacks.user_data, &mut out) })?;
+        callback_status(unsafe { wifi_disconnect(self.user_data, &mut out) })?;
         unsafe { wifi_action_result_from_ffi(&out) }
     }
 
@@ -3193,7 +3150,7 @@ impl TraceSink for FfiHost {
             return Err(VmError::InvalidOperand);
         };
         let mut out = SqvmWifiStatus::default();
-        callback_status(unsafe { wifi_status(self.callbacks.user_data, &mut out) })?;
+        callback_status(unsafe { wifi_status(self.user_data, &mut out) })?;
         unsafe { wifi_status_from_ffi(&out) }
     }
 
@@ -3207,7 +3164,7 @@ impl TraceSink for FfiHost {
             });
         };
         let mut out = SqvmWifiApIp::default();
-        callback_status(unsafe { wifi_get_ap_ip(self.callbacks.user_data, &mut out) })?;
+        callback_status(unsafe { wifi_get_ap_ip(self.user_data, &mut out) })?;
         unsafe { wifi_ap_ip_from_ffi(&out) }
     }
 
@@ -3220,7 +3177,7 @@ impl TraceSink for FfiHost {
             });
         };
         let mut out = SqvmWifiScanResult::default();
-        callback_status(unsafe { wifi_scan(self.callbacks.user_data, &mut out) })?;
+        callback_status(unsafe { wifi_scan(self.user_data, &mut out) })?;
         self.wifi_scan_network_count = 0;
         let count = out.network_count.min(SQVM_WIFI_SCAN_MAX_NETWORKS);
         if count > 0 {
@@ -3249,12 +3206,7 @@ impl TraceSink for FfiHost {
         };
         let mut out = SqvmDeviceConfigResult::default();
         callback_status(unsafe {
-            device_config_load(
-                self.callbacks.user_data,
-                source.as_ptr(),
-                source.len(),
-                &mut out,
-            )
+            device_config_load(self.user_data, source.as_ptr(), source.len(), &mut out)
         })?;
         unsafe { device_config_result_from_ffi(&out) }
     }
@@ -3271,13 +3223,7 @@ impl TraceSink for FfiHost {
         let value = device_config_value_to_ffi(value, strings)?;
         let mut out = SqvmDeviceConfigResult::default();
         callback_status(unsafe {
-            device_config_set(
-                self.callbacks.user_data,
-                key.as_ptr(),
-                key.len(),
-                value,
-                &mut out,
-            )
+            device_config_set(self.user_data, key.as_ptr(), key.len(), value, &mut out)
         })?;
         unsafe { device_config_result_from_ffi(&out) }
     }
@@ -3291,12 +3237,7 @@ impl TraceSink for FfiHost {
         };
         let mut out = SqvmDeviceConfigResult::default();
         callback_status(unsafe {
-            device_config_rebind(
-                self.callbacks.user_data,
-                alias.as_ptr(),
-                alias.len(),
-                &mut out,
-            )
+            device_config_rebind(self.user_data, alias.as_ptr(), alias.len(), &mut out)
         })?;
         unsafe { device_config_result_from_ffi(&out) }
     }
@@ -3311,7 +3252,7 @@ impl TraceSink for FfiHost {
         let mut out = SqvmDeviceConfigResult::default();
         callback_status(unsafe {
             device_config_save(
-                self.callbacks.user_data,
+                self.user_data,
                 destination.as_ptr(),
                 destination.len(),
                 &mut out,
@@ -3330,7 +3271,7 @@ impl TraceSink for FfiHost {
         let mut out = SqvmContentPickFileResult::default();
         callback_status(unsafe {
             content_pick_file(
-                self.callbacks.user_data,
+                self.user_data,
                 extension.as_ptr(),
                 extension.len(),
                 &mut out,
@@ -3348,12 +3289,7 @@ impl TraceSink for FfiHost {
         };
         let mut out = SqvmContentReadTextResult::default();
         callback_status(unsafe {
-            content_read_text(
-                self.callbacks.user_data,
-                path.as_ptr(),
-                path.len(),
-                &mut out,
-            )
+            content_read_text(self.user_data, path.as_ptr(), path.len(), &mut out)
         })?;
         unsafe { content_read_text_result_from_ffi(&out) }
     }
@@ -3369,7 +3305,7 @@ impl TraceSink for FfiHost {
         let mut out = SqvmContentReadLinesResult::default();
         callback_status(unsafe {
             content_read_lines(
-                self.callbacks.user_data,
+                self.user_data,
                 path.as_ptr(),
                 path.len(),
                 max_lines,
@@ -3386,12 +3322,7 @@ impl TraceSink for FfiHost {
         let mut line = FixedLine::<96>::default();
         let mut line_len = 0usize;
         callback_status(unsafe {
-            system_memory_text(
-                self.callbacks.user_data,
-                line.as_mut_ptr(),
-                line.cap(),
-                &mut line_len,
-            )
+            system_memory_text(self.user_data, line.as_mut_ptr(), line.cap(), &mut line_len)
         })?;
         line.set_len(line_len)?;
         out.write_str(line.as_str()?)
@@ -3406,7 +3337,7 @@ impl TraceSink for FfiHost {
         let mut line_len = 0usize;
         callback_status(unsafe {
             system_storage_text(
-                self.callbacks.user_data,
+                self.user_data,
                 name.as_ptr(),
                 name.len(),
                 line.as_mut_ptr(),

@@ -2341,10 +2341,55 @@ int sq_vm_runtime_status_to_errno(SqvmStatus status)
 	}
 }
 
+static const SqvmCallbacks runtime_callbacks = {
+	.trace = runtime_trace,
+	.read_exact_at = runtime_read_exact_at,
+	.debug_output = runtime_debug_output,
+	.display_clear = runtime_display_clear,
+	.display_text = runtime_display_text,
+	.display_rect = runtime_display_rect,
+	.display_line = runtime_display_line,
+	.display_select = runtime_display_select,
+	.display_image = runtime_display_image,
+	.display_draw = runtime_display_draw,
+	.indicator_write = runtime_indicator_write,
+	.indicator_toggle = runtime_indicator_toggle,
+	.indicator_read = runtime_indicator_read,
+	.indicator_breathe = runtime_indicator_breathe,
+	.indicator_blink = runtime_indicator_blink,
+	.hardware_gpio_write = runtime_hardware_gpio_write,
+	.hardware_gpio_toggle = runtime_hardware_gpio_toggle,
+	.hardware_gpio_read = runtime_hardware_gpio_read,
+	.app_launch = runtime_app_launch,
+	.app_arm = runtime_app_arm,
+	.app_disarm = runtime_app_disarm,
+	.app_registry_list = runtime_app_registry_list,
+	.app_registry_get = runtime_app_registry_get,
+	.app_process_stack = runtime_app_process_stack,
+	.app_armed_stack = runtime_app_armed_stack,
+	.timer_every = runtime_timer_every,
+	.timer_after = runtime_timer_after,
+	.wifi_start_ap = runtime_wifi_start_ap,
+	.wifi_stop_ap = runtime_wifi_stop_ap,
+	.wifi_connect = runtime_wifi_connect,
+	.wifi_disconnect = runtime_wifi_disconnect,
+	.wifi_get_ap_ip = runtime_wifi_get_ap_ip,
+	.wifi_status = runtime_wifi_status,
+	.wifi_scan = runtime_wifi_scan,
+	.device_config_load = runtime_device_config_load,
+	.device_config_set = runtime_device_config_set,
+	.device_config_rebind = runtime_device_config_rebind,
+	.device_config_save = runtime_device_config_save,
+	.content_pick_file = runtime_content_pick_file,
+	.content_read_text = runtime_content_read_text,
+	.content_read_lines = runtime_content_read_lines,
+	.system_memory_text = runtime_system_memory_text,
+	.system_storage_text = runtime_system_storage_text,
+};
+
 int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 			   const struct sq_vm_storage_backend *backend, const char *event)
 {
-	SqvmCallbacks callbacks;
 	SqvmStatus status;
 	uint64_t dispatch_start_cycles;
 
@@ -2360,52 +2405,6 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 	dispatch_start_cycles = k_cycle_get_64();
 	clear_dispatch_transfer(runtime);
 	runtime->backend = backend;
-	callbacks = (SqvmCallbacks){
-		.user_data = runtime,
-		.trace = runtime_trace,
-		.read_exact_at = runtime_read_exact_at,
-		.debug_output = runtime_debug_output,
-		.display_clear = runtime_display_clear,
-		.display_text = runtime_display_text,
-		.display_rect = runtime_display_rect,
-		.display_line = runtime_display_line,
-		.display_select = runtime_display_select,
-		.display_image = runtime_display_image,
-		.display_draw = runtime_display_draw,
-		.indicator_write = runtime_indicator_write,
-		.indicator_toggle = runtime_indicator_toggle,
-		.indicator_read = runtime_indicator_read,
-		.indicator_breathe = runtime_indicator_breathe,
-		.indicator_blink = runtime_indicator_blink,
-		.hardware_gpio_write = runtime_hardware_gpio_write,
-		.hardware_gpio_toggle = runtime_hardware_gpio_toggle,
-		.hardware_gpio_read = runtime_hardware_gpio_read,
-		.app_launch = runtime_app_launch,
-		.app_arm = runtime_app_arm,
-		.app_disarm = runtime_app_disarm,
-		.app_registry_list = runtime_app_registry_list,
-		.app_registry_get = runtime_app_registry_get,
-		.app_process_stack = runtime_app_process_stack,
-		.app_armed_stack = runtime_app_armed_stack,
-		.timer_every = runtime_timer_every,
-		.timer_after = runtime_timer_after,
-		.wifi_start_ap = runtime_wifi_start_ap,
-		.wifi_stop_ap = runtime_wifi_stop_ap,
-		.wifi_connect = runtime_wifi_connect,
-		.wifi_disconnect = runtime_wifi_disconnect,
-		.wifi_get_ap_ip = runtime_wifi_get_ap_ip,
-		.wifi_status = runtime_wifi_status,
-		.wifi_scan = runtime_wifi_scan,
-		.device_config_load = runtime_device_config_load,
-		.device_config_set = runtime_device_config_set,
-		.device_config_rebind = runtime_device_config_rebind,
-		.device_config_save = runtime_device_config_save,
-		.content_pick_file = runtime_content_pick_file,
-		.content_read_text = runtime_content_read_text,
-		.content_read_lines = runtime_content_read_lines,
-		.system_memory_text = runtime_system_memory_text,
-		.system_storage_text = runtime_system_storage_text,
-	};
 
 	if (!runtime->context_ready) {
 		status = sqvm_context_prepare(runtime->context_words, sizeof(runtime->context_words));
@@ -2413,7 +2412,8 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 			runtime_finish_dispatch_metrics(runtime, dispatch_start_cycles);
 			return sq_vm_runtime_status_to_errno(status);
 		}
-		status = sqvm_context_init_in_place(runtime->context_words, callbacks,
+		status = sqvm_context_init_in_place(runtime->context_words, runtime,
+						    &runtime_callbacks,
 						    runtime->transfer.init_scratch,
 						    sizeof(runtime->transfer.init_scratch));
 		if (status != SQVM_STATUS_OK) {
@@ -2422,7 +2422,8 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		}
 		runtime->context_ready = true;
 	}
-	status = sqvm_dispatch_start_resumable(runtime->context_words, callbacks,
+	status = sqvm_dispatch_start_resumable(runtime->context_words, runtime,
+					       &runtime_callbacks,
 					       (const uint8_t *)event, strlen(event),
 					       &runtime->result);
 	if (status != SQVM_STATUS_OK) {
@@ -2439,7 +2440,8 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 		}
 		runtime_record_pending_sqbc_read(runtime, &runtime->result.storage,
 						 &runtime->transfer.completion);
-		status = sqvm_dispatch_resume_storage(runtime->context_words, callbacks,
+		status = sqvm_dispatch_resume_storage(runtime->context_words, runtime,
+						      &runtime_callbacks,
 						      &runtime->transfer.completion,
 						      &runtime->result);
 		if (status != SQVM_STATUS_OK) {

@@ -114,7 +114,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   reducing `sq_vm_runtime_device_config_load_resource` from 304 bytes to 176
   bytes. Recursive app-store format/delete walks now reuse the caller-owned
   path buffer instead of allocating a full child path per recursion, reducing
-  `delete_files_under` from 320 bytes to 208 bytes. Protocol polling now reuses runtime
+  `delete_files_under` from 320 bytes to 208 bytes. VM dispatch now uses a
+  static callback table plus an explicit `user_data` pointer across the FFI
+  boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes
+  without adding resident runtime RAM. Protocol polling now reuses runtime
   app-id/event scratch for lifecycle and armed timer transitions, and app-arm
   trigger discovery uses SQBC-only storage; the emitted C stack report now
   attributes that path to `sq_device_protocol_poll` at 272 bytes instead of a
