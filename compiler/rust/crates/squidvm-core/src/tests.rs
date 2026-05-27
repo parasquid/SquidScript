@@ -9,6 +9,11 @@ use crate::{
     value::*, vm::*,
 };
 
+#[test]
+fn runtime_record_field_limit_matches_largest_service_record() {
+    assert_eq!(MAX_RUNTIME_RECORD_FIELDS, 26);
+}
+
 const WIFI_SCAN_TEST_NETWORKS: [WifiAccessPoint; 2] = [
     WifiAccessPoint::from_fixed_parts(
         [

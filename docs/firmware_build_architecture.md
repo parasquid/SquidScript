@@ -87,7 +87,7 @@ Use `scripts/zephyr-test-protocol.sh` for that protocol suite; it selects
 Temp-run state uses the same file-backed VM storage backend as installed apps,
 with a bounded temp state path cleared before each temp launch, so the firmware
 does not reserve a resident saved-state-capacity RAM buffer for temp runs.
-The ESP32-C3 linked Rust VM context reservation is capped at 11,776 bytes and
+The ESP32-C3 linked Rust VM context reservation is capped at 10,880 bytes and
 checked against the FFI-reported context size in Zephyr ztests. Native simulator
 ztests use a larger host-only context reservation because the host Rust ABI has
 larger pointer-sized VM structures; this does not change the ESP32-C3 runtime
@@ -105,7 +105,9 @@ Resource diagnostics are encoded directly into the caller-owned 848-byte
 protocol response buffer and do not keep a resident metric staging array.
 Runtime diagnostic history is bounded to four 26-byte trace lines, five 54-byte
 output lines, and four 48-byte draw-log lines so recent debugging data remains
-available without retaining unbounded VM text in RAM.
+available without retaining unbounded VM text in RAM. Transient VM result
+records are bounded to 26 fields, matching the largest current service result
+shape and avoiding unused per-record field slots in the resident VM context.
 Runtime physical input state is bounded to two GPIO button slots; the ESP32-C3
 Super Mini reference path only needs the confirmed BOOT/GPIO9 binding plus one
 additional slot for targeted diagnostics.

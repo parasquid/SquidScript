@@ -570,10 +570,18 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
     def test_vm_context_reserve_tracks_current_ffi_size(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+        limits_rs = self.read("compiler/rust/crates/squidvm-core/src/limits.rs")
+        ffi_rs = self.read("compiler/rust/crates/squidvm-ffi/src/lib.rs")
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
 
-        self.assertIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 11776", runtime_h)
-        self.assertIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 11776", ztest)
+        self.assertIn("pub const MAX_RUNTIME_RECORD_FIELDS: usize = 26;", limits_rs)
+        self.assertNotIn("pub const MAX_RUNTIME_RECORD_FIELDS: usize = 32;", limits_rs)
+        self.assertIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 10_880;", ffi_rs)
+        self.assertNotIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 12_032;", ffi_rs)
+        self.assertIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 10880", runtime_h)
+        self.assertIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 10880", ztest)
+        self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 11776", runtime_h)
+        self.assertNotIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 11776", ztest)
         self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 12032", runtime_h)
         self.assertNotIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 12032", ztest)
         self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 12288", runtime_h)
