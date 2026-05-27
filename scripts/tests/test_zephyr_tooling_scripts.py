@@ -2180,16 +2180,21 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("format_filesystem_by_delete_walk(mount_point)", format_body)
         self.assertNotIn("return sq_app_store_prepare_filesystem(mount_point);", format_body)
 
-    def test_staged_install_begin_reuses_app_dir_scratch_for_prepare(self):
+    def test_staged_install_begin_reuses_staging_path_for_prepare_and_app_dir(self):
         app_store = self.read("firmware/zephyr/src/app_store.c")
         start = app_store.index("int sq_app_store_begin_staged_install")
         end = app_store.index("int sq_app_store_begin_temp_run")
         body = app_store[start:end]
 
-        self.assertIn("char app_dir[SQ_APP_STORE_APP_FILE_PATH_MAX];", body)
-        self.assertIn("prepare_filesystem_with_path(app_dir, sizeof(app_dir), mount_point)", body)
+        self.assertNotIn("char app_dir[SQ_APP_STORE_APP_FILE_PATH_MAX];", body)
+        self.assertIn("prepare_filesystem_with_path(staging_path, staging_path_len, mount_point)",
+                      body)
         self.assertNotIn("sq_app_store_prepare_filesystem(mount_point)", body)
-        self.assertIn("format_app_dir(app_dir, sizeof(app_dir), mount_point, app_id)", body)
+        self.assertIn("format_app_dir(staging_path, staging_path_len, mount_point, app_id)",
+                      body)
+        self.assertIn("ensure_directory(staging_path)", body)
+        self.assertIn('format_app_path(staging_path, staging_path_len, mount_point, app_id,',
+                      body)
 
     def test_transfer_begin_reuses_staging_path_for_prepare(self):
         app_store = self.read("firmware/zephyr/src/app_store.c")

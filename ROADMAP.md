@@ -189,7 +189,14 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   272 bytes. The top source-known main/protocol path is now 464 bytes through
   `begin_install -> sq_app_store_begin_staged_install ->
   prepare_filesystem_with_path -> ensure_directory`; investigate the install
-  begin path next. VM
+  begin path next. Staged install begin now reuses the protocol transfer
+  session's 72-byte `staging_path` buffer for filesystem preparation and
+  app-directory creation before formatting the final temp `main.sqbc.tmp`
+  path. That reduces `sq_app_store_begin_staged_install` from 112 bytes to
+  48 bytes and the cumulative `begin_install` path from 272 bytes to 208
+  bytes. The top source-known main/protocol path remains 464 bytes, now through
+  `commit_install -> sq_app_store_scan_registry -> join_path2`; investigate
+  the registry scan path next. VM
   dispatch now uses a
   static callback table plus an explicit `user_data` pointer across the FFI
   boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes

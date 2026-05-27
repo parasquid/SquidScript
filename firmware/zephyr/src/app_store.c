@@ -462,7 +462,6 @@ int sq_app_store_install_app(const char *mount_point, const char *app_id, const 
 int sq_app_store_begin_staged_install(const char *mount_point, const char *app_id,
 				      char *staging_path, size_t staging_path_len)
 {
-	char app_dir[SQ_APP_STORE_APP_FILE_PATH_MAX];
 	struct fs_file_t file;
 	int result;
 
@@ -470,15 +469,15 @@ int sq_app_store_begin_staged_install(const char *mount_point, const char *app_i
 		return -EINVAL;
 	}
 
-	result = prepare_filesystem_with_path(app_dir, sizeof(app_dir), mount_point);
+	result = prepare_filesystem_with_path(staging_path, staging_path_len, mount_point);
 	if (result != 0) {
 		return result;
 	}
-	result = format_app_dir(app_dir, sizeof(app_dir), mount_point, app_id);
+	result = format_app_dir(staging_path, staging_path_len, mount_point, app_id);
 	if (result != 0) {
 		return result;
 	}
-	result = ensure_directory(app_dir);
+	result = ensure_directory(staging_path);
 	if (result != 0) {
 		return result;
 	}

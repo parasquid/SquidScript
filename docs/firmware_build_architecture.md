@@ -253,6 +253,14 @@ to 272 bytes, and moves the top source-known main/protocol path to 464 bytes
 through `begin_install -> sq_app_store_begin_staged_install ->
 prepare_filesystem_with_path -> ensure_directory`. Linker DRAM remains
 185,024 bytes and the RAM audit remains 185,008 bytes.
+Staged install begin now reuses the protocol transfer session's 72-byte
+`staging_path` buffer for filesystem preparation and app-directory creation
+before formatting the final temp `main.sqbc.tmp` path. That reduces
+`sq_app_store_begin_staged_install` from 112 bytes to 48 bytes and reduces the
+cumulative `begin_install` path from 272 bytes to 208 bytes. The top
+source-known main/protocol path remains 464 bytes, now through
+`commit_install -> sq_app_store_scan_registry -> join_path2`. Linker DRAM
+remains 185,024 bytes and the RAM audit remains 185,008 bytes.
 Protocol dispatch decodes only the request opcode and sequence into the live
 dispatch header because opcode handlers parse payloads from the original
 request bytes, so `sq_device_protocol_handle_frame` now emits 80 bytes instead
