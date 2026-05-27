@@ -125,7 +125,7 @@ bounded at 512 bytes each; app-visible diagnostics use protocol output, trace,
 draw-log, lifecycle, and resources responses instead of relying on a large
 firmware log ring.
 The protocol/main thread stack is currently 3,264 bytes and the VM worker stack
-is 18,048 bytes. Resource diagnostics expose each stack's high-water use
+is 18,016 bytes. Resource diagnostics expose each stack's high-water use
 separately so budget reductions can be tied to measured workloads instead of
 inferred from static allocation alone. The 3,264-byte protocol stack keeps
 788 bytes of headroom over the last measured 2,476-byte protocol peak and

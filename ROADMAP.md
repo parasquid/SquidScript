@@ -89,14 +89,14 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   bytes each. LittleFS open-file slots are bounded at two while directory slots
   remain at the Zephyr default for recursive format/delete walks. The
   protocol/main stack is now 3264 bytes, leaving 788 bytes over the last
-  measured 2476-byte protocol peak, and the VM worker stack is now 18048 bytes.
-  The latest target build reports 186,992 bytes
+  measured 2476-byte protocol peak, and the VM worker stack is now 18016 bytes.
+  The latest target build reports 186,960 bytes
   of DRAM use; next
   reductions should physically revalidate the 3264-byte protocol/main stack
   with the bounded stack harness. The stack harness now fails with captured
   resources if protocol/main unused stack drops below 768 bytes or VM worker
   unused stack drops below 384 bytes. After that, investigate full-suite
-  worker-stack high-water headroom after the 18048-byte stack reduction and
+  worker-stack high-water headroom after the 18016-byte stack reduction and
   inspect any remaining accidental static buffers.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
   succeeds but serial commands stall, app launch hangs, or input dispatch stops
@@ -136,9 +136,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   without targeted confirmation. The protocol/main stack budget has been
   reduced from 8 KiB to 3264 bytes based on repeated 2476-byte measured peaks,
   while keeping 788 bytes of headroom. The worker stack has been reduced from
-  19 KiB to 18048 bytes based on saved workload peaks, leaving 428 bytes above
+  19 KiB to 18016 bytes based on saved workload peaks, leaving 396 bytes above
   the highest saved 17620-byte full-suite peak before hardware revalidation.
-  Next, validate the 3264-byte protocol/main stack and 18048-byte worker stack with
+  Next, validate the 3264-byte protocol/main stack and 18016-byte worker stack with
   the hardware suite.
 - Improve network heap attribution before expanding Wi-Fi scope. Current AP
   start/stop hardware coverage drives `ram_heap_max_allocated_bytes` close to
