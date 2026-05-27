@@ -1681,10 +1681,14 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("char path[SQ_APP_STORE_PATH_MAX];", body)
         self.assertNotIn("char apps_path[SQ_APP_STORE_PATH_MAX];", body)
         self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", body)
+        self.assertNotIn("struct fs_dirent sqbc_entry", body)
         self.assertIn('join_path2(path, sizeof(path), mount_point, "apps")', body)
         self.assertIn("fs_opendir(&dir, path)", body)
         self.assertIn('format_app_path(path, sizeof(path), mount_point, entry.name,', body)
-        self.assertIn("fs_stat(path, &sqbc_entry)", body)
+        self.assertIn("fs_stat(path, &entry)", body)
+        self.assertIn("struct sq_app_registry_entry *record = NULL;", body)
+        self.assertIn("record = &registry->apps[registry->count];", body)
+        self.assertIn("registry->count++", body)
 
     def test_resource_install_paths_reuse_single_path_scratch(self):
         app_store = self.read("firmware/zephyr/src/app_store.c")

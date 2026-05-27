@@ -148,8 +148,9 @@ VM stack use, interrupt stack use, callee effects hidden behind library calls,
 or real runtime high-water marks; keep using `device resources` and the hardware
 stack harness for final stack-budget validation.
 The app registry scan currently reuses its path scratch buffer after opening
-the app directory, so its emitted C stack estimate is 448 bytes instead of
-retaining separate app-directory and SQBC-path buffers.
+the app directory and reuses its directory entry for `main.sqbc` stats, so its
+emitted C stack estimate is 336 bytes instead of retaining separate
+app-directory/SQBC-path buffers and a second directory entry.
 Package resource install and staged-resource commit paths likewise reuse one
 path scratch buffer after validating the app's `main.sqbc`, so each currently
 emits a 304-byte C stack estimate instead of 432 bytes.
