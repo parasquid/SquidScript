@@ -61,13 +61,15 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   reductions for the largest static allocations, especially VM runtime storage,
   work stacks, response/session buffers, logging, LittleFS pools, and file
   caches. Current C3 build map evidence sizes the resident runtime object at
-  14,752 bytes after capping foreground runtime timers to two slots,
+  14,720 bytes after capping foreground runtime timers to two slots,
   capping retained VM output history at five lines,
   retained VM trace history at four lines,
   narrowing output and drawlog diagnostic line storage, bounding transient VM
   result records to 26 fields, trimming the ESP32-C3 VM context reserve to
   10,400 bytes, reducing app-id slots to 40 bytes, and
-  lowering the SQBC code/read transfer window to 768 bytes. Runtime device
+  lowering the SQBC code/read transfer window to 768 bytes. The runtime layout
+  keeps small flags out of 32-bit alignment gaps and stores fixed-array counts
+  as bytes where the backing arrays are capped below 255. Runtime device
   config drafts now hold five records with 48-byte string values, enough for the
   five-record GPIO button binding shape and current package `.sqdevice` resource
   paths without retaining unused slots. Runtime event-name slots are now
@@ -91,7 +93,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   remain at the Zephyr default for recursive format/delete walks. The
   protocol/main stack is now 3264 bytes, leaving 788 bytes over the last
   measured 2476-byte protocol peak, and the VM worker stack is now 18016 bytes.
-  The latest target build reports 185,184 bytes
+  The latest target build reports 185,152 bytes
   of DRAM use; next
   reductions should physically revalidate the 3264-byte protocol/main stack
   with the bounded stack harness. The stack harness now fails with captured
@@ -135,6 +137,8 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   The Zephyr VM context reserve now tracks the measured 32-bit FFI context size
   of 10,392 bytes with a 10,400-byte C reserve, reducing the static runtime
   block from 15,232 bytes to 14,752 bytes.
+  Runtime field ordering and byte-sized fixed-array counters now reduce the
+  static runtime block further to 14,720 bytes.
   The resident protocol response buffer now tracks the calculated current
   resources-response ceiling, reducing `response.0` from 848 bytes to 834 bytes.
   Protocol polling now reuses runtime app-id/event scratch for lifecycle and

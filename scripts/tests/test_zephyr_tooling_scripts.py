@@ -618,7 +618,9 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("SqvmStorageCompletion completion;", runtime_body)
         self.assertIn("sizeof(runtime.transfer.init_scratch)", ztest)
         self.assertIn("SQVM_STORAGE_TRANSFER_CAPACITY <= 768", ztest)
-        self.assertIn("runtime_static <= 15264", ztest)
+        self.assertIn("runtime_static <= 14720", ztest)
+        self.assertNotIn("runtime_static <= 14736", ztest)
+        self.assertNotIn("runtime_static <= 15264", ztest)
         self.assertNotIn("runtime_static <= 16160", ztest)
         self.assertNotIn("runtime_static <= 16240", ztest)
         self.assertNotIn("runtime_static <= 16312", ztest)
@@ -655,6 +657,40 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         )
         self.assertNotIn("SqvmDeviceBinding binding_storage", apply_body)
         self.assertNotIn("SqdcDeviceBindingPlan plan_storage", apply_body)
+
+    def test_vm_runtime_layout_keeps_small_flags_out_of_alignment_gaps(self):
+        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+        body = runtime_h[
+            runtime_h.index("struct sq_vm_runtime {") : runtime_h.index(
+                "void sq_vm_runtime_init", runtime_h.index("struct sq_vm_runtime {")
+            )
+        ]
+
+        self.assertLess(body.index("context_words"), body.index("work_initialized"))
+        self.assertLess(body.index("work_initialized"), body.index("context_ready"))
+        self.assertLess(body.index("context_ready"), body.index("transfer"))
+        self.assertLess(body.index("dispatch_sequence"), body.index("dispatch_exited"))
+        self.assertLess(body.index("dispatch_exited"), body.index("current_app"))
+
+    def test_vm_runtime_uses_byte_sized_counts_for_small_fixed_arrays(self):
+        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+        body = runtime_h[
+            runtime_h.index("struct sq_vm_runtime {") : runtime_h.index(
+                "void sq_vm_runtime_init", runtime_h.index("struct sq_vm_runtime {")
+            )
+        ]
+
+        for count_field in (
+            "return_stack_count",
+            "armed_timer_count",
+            "active_binding_count",
+            "input_button_count",
+            "trace_count",
+            "output_count",
+            "drawlog_count",
+        ):
+            self.assertIn(f"uint8_t {count_field};", body)
+            self.assertNotIn(f"size_t {count_field};", body)
 
     def test_app_start_binding_setup_runs_on_worker_stack(self):
         runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")

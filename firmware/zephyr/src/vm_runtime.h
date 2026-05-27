@@ -94,8 +94,8 @@ union sq_vm_runtime_transfer {
 
 struct sq_vm_runtime {
 	struct k_work work;
-	bool work_initialized;
 	uint64_t context_words[SQ_VM_RUNTIME_CONTEXT_BYTES / sizeof(uint64_t)];
+	bool work_initialized;
 	bool context_ready;
 	union sq_vm_runtime_transfer transfer;
 	SqvmDispatchResult result;
@@ -109,7 +109,6 @@ struct sq_vm_runtime {
 	char event[SQ_VM_RUNTIME_EVENT_LEN];
 	enum sq_vm_runtime_status status;
 	int result_code;
-	bool dispatch_exited;
 	uint64_t dispatch_sequence;
 	uint64_t last_dispatch_sequence;
 	uint64_t last_dispatch_elapsed_us;
@@ -117,6 +116,7 @@ struct sq_vm_runtime {
 	uint32_t last_dispatch_sqbc_read_bytes;
 	uint32_t dispatch_sqbc_read_count;
 	uint32_t dispatch_sqbc_read_bytes;
+	bool dispatch_exited;
 	char current_app[SQ_APP_STORE_APP_ID_MAX];
 	char pending_launch_app[SQ_APP_STORE_APP_ID_MAX];
 	bool pending_launch_active;
@@ -127,19 +127,19 @@ struct sq_vm_runtime {
 	char lifecycle_target_app[SQ_APP_STORE_APP_ID_MAX];
 	bool lifecycle_launch_after_exit;
 	char return_stack[SQ_VM_RUNTIME_RETURN_STACK_MAX][SQ_APP_STORE_APP_ID_MAX];
-	size_t return_stack_count;
+	uint8_t return_stack_count;
 	struct sq_vm_runtime_armed_timer armed_timers[SQ_VM_RUNTIME_ARMED_TIMER_MAX];
-	size_t armed_timer_count;
+	uint8_t armed_timer_count;
 	struct sq_vm_runtime_active_binding active_bindings[SQ_VM_RUNTIME_ACTIVE_BINDING_MAX];
-	size_t active_binding_count;
+	uint8_t active_binding_count;
 	struct sq_vm_runtime_input_button input_buttons[SQ_VM_RUNTIME_INPUT_BUTTON_MAX];
-	size_t input_button_count;
+	uint8_t input_button_count;
 	char traces[SQ_VM_RUNTIME_TRACE_MAX][SQ_VM_RUNTIME_TRACE_LEN];
-	size_t trace_count;
+	uint8_t trace_count;
 	char outputs[SQ_VM_RUNTIME_OUTPUT_MAX][SQ_VM_RUNTIME_OUTPUT_LEN];
-	size_t output_count;
+	uint8_t output_count;
 	char drawlog[SQ_VM_RUNTIME_DRAWLOG_MAX][SQ_VM_RUNTIME_DRAWLOG_LEN];
-	size_t drawlog_count;
+	uint8_t drawlog_count;
 	bool indicator_state;
 	bool indicator_gpio_configured;
 	bool indicator_gpio_available;
