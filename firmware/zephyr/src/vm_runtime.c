@@ -1995,7 +1995,7 @@ static int sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *runtime)
 	return 0;
 }
 
-static int sq_vm_runtime_prepare_app_start(struct sq_vm_runtime *runtime)
+static int __noinline sq_vm_runtime_prepare_app_start(struct sq_vm_runtime *runtime)
 {
 	int result;
 

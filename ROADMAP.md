@@ -124,6 +124,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   the emitted C stack report. Lifecycle diagnostics now encode armed timers
   directly from the runtime timer array instead of staging copied timer records
   on the C stack, reducing `lifecycle_response` from 224 bytes to 96 bytes.
+  VM worker dispatch setup now keeps app-start binding preparation out of the
+  worker callback frame, reducing `runtime_work_handler` from 224 bytes to 16
+  bytes for steady event dispatch while attributing app-start setup separately
+  to `sq_vm_runtime_prepare_app_start` at 224 bytes.
   Protocol polling now reuses runtime app-id/event scratch for lifecycle and
   armed timer transitions, app-arm trigger discovery uses SQBC-only storage, and
   trigger registration uses the shared app-file path scratch; the emitted C

@@ -177,6 +177,10 @@ Lifecycle diagnostics encode armed timers directly from the runtime timer array
 by pointer, stride, and field offsets instead of copying timer records into a
 C stack staging array, so `lifecycle_response` now emits a 96-byte C stack
 estimate instead of 224 bytes.
+The VM worker callback keeps app-start binding preparation in an out-of-line
+helper, so steady event dispatch no longer carries that setup frame:
+`runtime_work_handler` now emits 16 bytes instead of 224 bytes, while
+`sq_vm_runtime_prepare_app_start` is attributed separately at 224 bytes.
 Protocol polling reuses runtime app-id/event scratch for lifecycle and armed
 timer transitions. App-arm trigger discovery uses a SQBC-only filesystem
 backend instead of a full app storage object with state paths, and trigger

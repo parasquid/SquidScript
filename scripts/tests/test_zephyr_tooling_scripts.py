@@ -669,6 +669,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         ]
 
         self.assertIn("sq_vm_runtime_prepare_app_start", runtime_c)
+        self.assertIn("static int __noinline sq_vm_runtime_prepare_app_start", runtime_c)
         self.assertIn("sq_vm_runtime_prepare_app_start(runtime)", work_body)
         self.assertIn("runtime->start_setup_done", start_body)
         self.assertNotIn("sq_vm_runtime_apply_device_bindings(runtime)", start_body)
