@@ -222,13 +222,13 @@ static int write_file(const char *path, const uint8_t *bytes, size_t len)
 	return result;
 }
 
-static int validate_app_main_sqbc(const char *mount_point, const char *app_id)
+static int validate_app_main_sqbc_with_path(char *path, size_t path_cap,
+					    const char *mount_point, const char *app_id)
 {
-	char path[SQ_APP_STORE_APP_FILE_PATH_MAX];
 	struct fs_file_t main_sqbc;
 	int result;
 
-	result = format_app_path(path, sizeof(path), mount_point, app_id, "main.sqbc");
+	result = format_app_path(path, path_cap, mount_point, app_id, "main.sqbc");
 	if (result != 0) {
 		return result;
 	}
@@ -506,7 +506,7 @@ int sq_app_store_begin_temp_run(const char *mount_point, char *staging_path,
 		return -EINVAL;
 	}
 
-	result = sq_app_store_prepare_filesystem(mount_point);
+	result = prepare_filesystem_with_path(staging_path, staging_path_len, mount_point);
 	if (result != 0) {
 		return result;
 	}
@@ -534,7 +534,7 @@ int sq_app_store_begin_staged_resource(const char *mount_point, char *staging_pa
 		return -EINVAL;
 	}
 
-	result = sq_app_store_prepare_filesystem(mount_point);
+	result = prepare_filesystem_with_path(staging_path, staging_path_len, mount_point);
 	if (result != 0) {
 		return result;
 	}
@@ -616,7 +616,7 @@ int sq_app_store_commit_staged_resource(const char *mount_point, const char *app
 		return -EINVAL;
 	}
 
-	result = validate_app_main_sqbc(mount_point, app_id);
+	result = validate_app_main_sqbc_with_path(path, sizeof(path), mount_point, app_id);
 	if (result != 0) {
 		return result;
 	}
@@ -687,7 +687,7 @@ int sq_app_store_install_resource(const char *mount_point, const char *app_id,
 		return -EINVAL;
 	}
 
-	result = validate_app_main_sqbc(mount_point, app_id);
+	result = validate_app_main_sqbc_with_path(path, sizeof(path), mount_point, app_id);
 	if (result != 0) {
 		return result;
 	}

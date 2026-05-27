@@ -161,7 +161,21 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   `storage_format` path now emits 272 bytes and the top source-known
   main/protocol path is 528 bytes through transfer-begin filesystem
   preparation, with linker DRAM still at 185,024 bytes and RAM audit DRAM at
-  185,008 bytes. VM dispatch now uses a
+  185,008 bytes. Transfer-begin filesystem preparation now reuses the
+  caller-owned staging path scratch for temp runs and staged resources,
+  reducing `sq_app_store_begin_temp_run` and
+  `sq_app_store_begin_staged_resource` source-known paths from 304 bytes to
+  176 bytes, `begin_resource_install` to 208 bytes, and the staged
+  `begin_install` path to 272 bytes. Resource install and staged-resource
+  commit validation now pass the caller-owned path scratch into
+  `validate_app_main_sqbc_with_path`, whose emitted C stack estimate is
+  32 bytes; `commit_resource_install` is now 240 bytes and
+  `sq_app_store_commit_staged_resource` is now 208 bytes. Linker DRAM remains
+  185,024 bytes and RAM audit DRAM remains 185,008 bytes. The top source-known
+  main/protocol path is now 496 bytes through
+  `launch_app -> start_installed_app -> sq_vm_runtime_start ->
+  sq_vm_runtime_start_event -> sq_vm_runtime_init`; investigate that launch
+  path next. VM dispatch now uses a
   static callback table plus an explicit `user_data` pointer across the FFI
   boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes
   without adding resident runtime RAM. Protocol frame dispatch now keeps

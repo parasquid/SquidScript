@@ -1983,7 +1983,8 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         commit_end = app_store.index("int sq_app_store_resource_path")
         commit_body = app_store[commit_start:commit_end]
         self.assertIn("char path[SQ_APP_STORE_PATH_MAX];", commit_body)
-        self.assertIn("validate_app_main_sqbc(mount_point, app_id)", commit_body)
+        self.assertIn("validate_app_main_sqbc_with_path(path, sizeof(path), mount_point, app_id)",
+                      commit_body)
         self.assertNotIn("struct fs_file_t main_sqbc;", commit_body)
         self.assertNotIn("struct fs_dirent entry;", commit_body)
         self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", commit_body)
@@ -1996,7 +1997,8 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         install_end = app_store.index("int sq_app_store_scan_registry")
         install_body = app_store[install_start:install_end]
         self.assertIn("char path[SQ_APP_STORE_PATH_MAX];", install_body)
-        self.assertIn("validate_app_main_sqbc(mount_point, app_id)", install_body)
+        self.assertIn("validate_app_main_sqbc_with_path(path, sizeof(path), mount_point, app_id)",
+                      install_body)
         self.assertNotIn("struct fs_file_t main_sqbc;", install_body)
         self.assertNotIn("struct fs_dirent entry;", install_body)
         self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", install_body)
@@ -2004,29 +2006,35 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("sq_app_store_resource_path(mount_point, app_id, resource_path, path,", install_body)
         self.assertIn("write_file(path, bytes, len)", install_body)
 
-    def test_resource_install_validates_main_sqbc_with_narrow_helper(self):
+    def test_resource_install_validates_main_sqbc_with_caller_path_scratch(self):
         app_store = self.read("firmware/zephyr/src/app_store.c")
 
-        self.assertIn("static int validate_app_main_sqbc", app_store)
-        helper_start = app_store.index("static int validate_app_main_sqbc")
-        helper_end = app_store.index("static int ensure_resource_parent_dirs")
+        self.assertIn("static int validate_app_main_sqbc_with_path", app_store)
+        helper_start = app_store.index("static int validate_app_main_sqbc_with_path")
+        helper_end = app_store.index("static int ensure_resource_parent_dir")
         helper_body = app_store[helper_start:helper_end]
-        self.assertIn("char path[SQ_APP_STORE_APP_FILE_PATH_MAX];", helper_body)
-        self.assertIn('format_app_path(path, sizeof(path), mount_point, app_id, "main.sqbc")', helper_body)
+        self.assertIn("char *path, size_t path_cap", helper_body)
+        self.assertNotIn("char path[SQ_APP_STORE_APP_FILE_PATH_MAX];", helper_body)
+        self.assertIn('format_app_path(path, path_cap, mount_point, app_id, "main.sqbc")', helper_body)
         self.assertIn("fs_open(&main_sqbc, path, FS_O_READ)", helper_body)
+        self.assertNotIn("static int validate_app_main_sqbc(", app_store)
 
         commit_start = app_store.index("int sq_app_store_commit_staged_resource")
         commit_end = app_store.index("int sq_app_store_resource_path")
         commit_body = app_store[commit_start:commit_end]
         self.assertIn("char path[SQ_APP_STORE_PATH_MAX];", commit_body)
-        self.assertIn("validate_app_main_sqbc(mount_point, app_id)", commit_body)
+        self.assertIn("validate_app_main_sqbc_with_path(path, sizeof(path), mount_point, app_id)",
+                      commit_body)
+        self.assertNotIn("validate_app_main_sqbc(mount_point, app_id)", commit_body)
         self.assertNotIn("struct fs_file_t main_sqbc;", commit_body)
 
         install_start = app_store.index("int sq_app_store_install_resource")
         install_end = app_store.index("int sq_app_store_scan_registry")
         install_body = app_store[install_start:install_end]
         self.assertIn("char path[SQ_APP_STORE_PATH_MAX];", install_body)
-        self.assertIn("validate_app_main_sqbc(mount_point, app_id)", install_body)
+        self.assertIn("validate_app_main_sqbc_with_path(path, sizeof(path), mount_point, app_id)",
+                      install_body)
+        self.assertNotIn("validate_app_main_sqbc(mount_point, app_id)", install_body)
         self.assertNotIn("struct fs_file_t main_sqbc;", install_body)
 
     def test_resource_parent_dirs_avoid_dirent_stat_probe(self):
@@ -2182,6 +2190,27 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("prepare_filesystem_with_path(app_dir, sizeof(app_dir), mount_point)", body)
         self.assertNotIn("sq_app_store_prepare_filesystem(mount_point)", body)
         self.assertIn("format_app_dir(app_dir, sizeof(app_dir), mount_point, app_id)", body)
+
+    def test_transfer_begin_reuses_staging_path_for_prepare(self):
+        app_store = self.read("firmware/zephyr/src/app_store.c")
+
+        temp_start = app_store.index("int sq_app_store_begin_temp_run")
+        temp_end = app_store.index("int sq_app_store_begin_staged_resource")
+        temp_body = app_store[temp_start:temp_end]
+        self.assertIn("prepare_filesystem_with_path(staging_path, staging_path_len, mount_point)",
+                      temp_body)
+        self.assertNotIn("sq_app_store_prepare_filesystem(mount_point)", temp_body)
+        self.assertIn('join_path2(staging_path, staging_path_len, mount_point, "tmp/temp-run.sqbc.tmp")',
+                      temp_body)
+
+        resource_start = app_store.index("int sq_app_store_begin_staged_resource")
+        resource_end = app_store.index("int sq_app_store_write_staged_chunk")
+        resource_body = app_store[resource_start:resource_end]
+        self.assertIn("prepare_filesystem_with_path(staging_path, staging_path_len, mount_point)",
+                      resource_body)
+        self.assertNotIn("sq_app_store_prepare_filesystem(mount_point)", resource_body)
+        self.assertIn('join_path2(staging_path, staging_path_len, mount_point, "tmp/resource.tmp")',
+                      resource_body)
 
     def test_protocol_poll_uses_runtime_scratch_instead_of_stack_arrays(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")

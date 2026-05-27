@@ -182,9 +182,12 @@ uses the caller-owned path scratch and calls `fs_mkdir` directly, accepting
 `-EEXIST` for already-created resource parent directories instead of probing
 with `fs_stat`, so `ensure_resource_parent_dirs` now emits 48 bytes instead of
 176 bytes and the source-known `commit_resource_install` path drops from
-496 bytes to 304 bytes. The current cumulative
-`sq_app_store_commit_staged_resource` path is 272 bytes via
-`validate_app_main_sqbc` and `format_app_path`.
+496 bytes to 304 bytes. Resource install and commit validation now pass their
+caller-owned path scratch into `validate_app_main_sqbc_with_path`, so the
+validation helper emits 32 bytes and the current cumulative
+`commit_resource_install` path is 240 bytes. The current cumulative
+`sq_app_store_commit_staged_resource` path is 208 bytes via
+`validate_app_main_sqbc_with_path` and `format_app_path`.
 Direct app install and staged-install commit paths use the fixed
 `/apps/<app>/main.sqbc` path scratch; their emitted C stack estimates are now
 96 bytes each instead of 288 and 304 bytes respectively. Staged-install begin
@@ -226,6 +229,15 @@ the source-known storage-format path now emits 272 bytes and the top
 source-known main/protocol path is 528 bytes through transfer-begin filesystem
 preparation. This keeps linker DRAM at 185,024 bytes and the RAM audit at
 185,008 bytes.
+Transfer-begin filesystem preparation now also reuses the caller-owned staging
+path scratch for temp runs and staged resources. The source-known
+`sq_app_store_begin_temp_run` and `sq_app_store_begin_staged_resource` paths
+now emit 176 bytes, `begin_resource_install` emits 208 bytes, and
+`begin_install` emits 272 bytes through the staged-install path. The top
+source-known main/protocol path is now 496 bytes and has moved to app launch:
+`launch_app -> start_installed_app -> sq_vm_runtime_start ->
+sq_vm_runtime_start_event -> sq_vm_runtime_init`. Linker DRAM remains
+185,024 bytes and the RAM audit remains 185,008 bytes.
 Protocol dispatch decodes only the request opcode and sequence into the live
 dispatch header because opcode handlers parse payloads from the original
 request bytes, so `sq_device_protocol_handle_frame` now emits 80 bytes instead
