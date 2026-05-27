@@ -589,7 +589,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("SqvmStorageCompletion completion;", runtime_body)
         self.assertIn("sizeof(runtime.transfer.init_scratch)", ztest)
         self.assertIn("SQVM_STORAGE_TRANSFER_CAPACITY <= 768", ztest)
-        self.assertIn("runtime_static <= 16408", ztest)
+        self.assertIn("runtime_static <= 16344", ztest)
+        self.assertNotIn("runtime_static <= 16408", ztest)
         self.assertNotIn("runtime_static <= 16512", ztest)
 
     def test_runtime_does_not_keep_launch_binding_scratch_resident(self):
@@ -658,7 +659,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 12", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_LEN 64", runtime_h)
         self.assertIn("#define SQ_VM_RUNTIME_DRAWLOG_MAX 4", runtime_h)
-        self.assertIn("#define SQ_VM_RUNTIME_DRAWLOG_LEN 64", runtime_h)
+        self.assertIn("#define SQ_VM_RUNTIME_DRAWLOG_LEN 48", runtime_h)
+        self.assertNotIn("#define SQ_VM_RUNTIME_DRAWLOG_LEN 64", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_DRAWLOG_LEN 96", runtime_h)
 
     def test_runtime_keeps_physical_input_slots_bounded(self):

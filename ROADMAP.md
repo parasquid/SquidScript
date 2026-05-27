@@ -61,7 +61,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   reductions for the largest static allocations, especially VM runtime storage,
   work stacks, response/session buffers, logging, LittleFS pools, and file
   caches. Current C3 build map evidence sizes the resident runtime object at
-  16,376 bytes after capping retained VM output history at five lines,
+  16,312 bytes after capping retained VM output history at five lines,
   retained VM trace history at four lines,
   narrowing output and drawlog diagnostic line storage, trimming the ESP32-C3
   VM context reserve to 11,776 bytes, reducing app-id slots to 40 bytes, and
@@ -86,7 +86,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   remain at the Zephyr default for recursive format/delete walks. The
   protocol/main stack is now 3328 bytes, leaving 852 bytes over the last
   measured 2476-byte protocol peak, and the VM worker stack is now 18048 bytes.
-  The latest target build reports 187,296 bytes
+  The latest target build reports 187,232 bytes
   of DRAM use; next
   reductions should physically revalidate the 3328-byte protocol/main stack
   with the bounded stack harness. The stack harness now fails with captured
