@@ -207,6 +207,10 @@ resource path-scratch frame, so each function now emits 160 bytes instead of
 176 bytes, the source-known `commit_resource_install` path emits 352 bytes
 instead of 368 bytes, and the top source-known main/protocol path is now 560
 bytes.
+Protocol dispatch decodes only the request opcode and sequence into the live
+dispatch header because opcode handlers parse payloads from the original
+request bytes, so `sq_device_protocol_handle_frame` now emits 80 bytes instead
+of 96 bytes, and the top source-known main/protocol path is now 544 bytes.
 VM dispatch uses a static callback table plus an explicit `user_data` pointer
 across the FFI boundary instead of materializing the callback table on the C
 stack, so `sq_vm_runtime_dispatch` now emits an 80-byte C stack estimate

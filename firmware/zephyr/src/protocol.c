@@ -58,3 +58,34 @@ int sq_protocol_decode_frame(const uint8_t *bytes, size_t len, struct sq_protoco
 
 	return SQ_PROTOCOL_OK;
 }
+
+int sq_protocol_decode_request(const uint8_t *bytes, size_t len, struct sq_protocol_request *out)
+{
+	if (len < SQ_PROTOCOL_HEADER_LEN) {
+		return SQ_PROTOCOL_ERR_TRUNCATED_HEADER;
+	}
+	if (memcmp(bytes, SQ_PROTOCOL_MAGIC, sizeof(SQ_PROTOCOL_MAGIC)) != 0) {
+		return SQ_PROTOCOL_ERR_BAD_MAGIC;
+	}
+	if (bytes[4] != SQ_FRAME_REQUEST) {
+		return SQ_PROTOCOL_ERR_BAD_MAGIC;
+	}
+
+	uint32_t payload_len = read_u32_le(&bytes[12]);
+	size_t expected_len = SQ_PROTOCOL_HEADER_LEN + (size_t)payload_len;
+
+	if (len != expected_len) {
+		return SQ_PROTOCOL_ERR_LENGTH_MISMATCH;
+	}
+
+	const uint8_t *payload = &bytes[SQ_PROTOCOL_HEADER_LEN];
+	uint32_t payload_crc = read_u32_le(&bytes[16]);
+
+	if (sq_protocol_crc32(payload, payload_len) != payload_crc) {
+		return SQ_PROTOCOL_ERR_PAYLOAD_CRC;
+	}
+
+	out->opcode = bytes[5];
+	out->sequence = read_u32_le(&bytes[8]);
+	return SQ_PROTOCOL_OK;
+}

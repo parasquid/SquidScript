@@ -142,7 +142,12 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   and staged-resource commit now validate the app's `main.sqbc` with a narrow
   app-file-path helper, reducing each function from 176 bytes to 160 bytes,
   the source-known `commit_resource_install` path from 368 bytes to 352 bytes,
-  and the top source-known main/protocol path from 576 bytes to 560 bytes. VM dispatch now uses a
+  and the top source-known main/protocol path from 576 bytes to 560 bytes.
+  Protocol dispatch now decodes only the opcode and sequence into its live
+  request header because opcode handlers parse payloads from the original
+  request bytes, reducing `sq_device_protocol_handle_frame` from 96 bytes to
+  80 bytes and the top source-known main/protocol path from 560 bytes to 544
+  bytes. VM dispatch now uses a
   static callback table plus an explicit `user_data` pointer across the FFI
   boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes
   without adding resident runtime RAM. Protocol frame dispatch now keeps

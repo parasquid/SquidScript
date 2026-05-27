@@ -66,7 +66,14 @@ struct sq_protocol_frame {
 	uint32_t payload_crc;
 };
 
+struct sq_protocol_request {
+	uint8_t opcode;
+	uint32_t sequence;
+};
+
 uint32_t sq_protocol_crc32(const uint8_t *data, size_t len);
 int sq_protocol_decode_frame(const uint8_t *bytes, size_t len, struct sq_protocol_frame *out);
+int sq_protocol_decode_request(const uint8_t *bytes, size_t len,
+			       struct sq_protocol_request *out);
 
 #endif

@@ -954,6 +954,21 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("char error_line[48]", body)
         self.assertNotIn("const char *lines[1]", body)
 
+    def test_protocol_dispatch_uses_narrow_request_header(self):
+        protocol = self.read("firmware/zephyr/src/protocol.h")
+        protocol_c = self.read("firmware/zephyr/src/protocol.c")
+        device_protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        start = device_protocol.index("int sq_device_protocol_handle_frame")
+        body = device_protocol[start:]
+
+        self.assertIn("struct sq_protocol_request", protocol)
+        self.assertIn("int sq_protocol_decode_request", protocol)
+        self.assertIn("sq_protocol_decode_request", protocol_c)
+        self.assertIn("struct sq_protocol_request frame;", body)
+        self.assertIn("sq_protocol_decode_request(request, request_len, &frame)", body)
+        self.assertNotIn("struct sq_protocol_frame frame;", body)
+        self.assertNotIn("sq_protocol_decode_frame(request, request_len, &frame)", body)
+
     def test_protocol_opcode_handlers_are_out_of_line_to_bound_dispatch_stack(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         handlers = [
