@@ -402,8 +402,14 @@ Wi-Fi scan result backing uses the runtime transfer scratch because the Rust
 FFI copies scan results out of the callback before returning to the VM. This
 keeps scan SSID/BSSID/auth/network arrays out of the resident runtime object
 and reduces `runtime.3` from 14,720 bytes to 14,264 bytes. The current
-ESP32-C3 target build reports 184,560 bytes of linker DRAM and 184,544 bytes
-through the RAM audit.
+diagnostic firmware keeps a transfer-owner marker for this shared scratch so
+scratch, storage-completion, and Wi-Fi-scan users fail on overlap instead of
+silently aliasing the same bytes. The marker raises `runtime.3` to
+14,272 bytes; the current ESP32-C3 target build reports 184,576 bytes of
+linker DRAM and 184,560 bytes through the RAM audit. The owner marker guards
+C-side scratch construction and service callback phases; the Wi-Fi scan result
+still relies on the Rust FFI copying result records before returning to VM
+execution.
 The resident protocol response buffer is 826 bytes, matching the current
 resources-response ceiling: 806 bytes of metric payload plus the 20-byte frame
 header. This trims the previous 848-byte buffer without changing the response

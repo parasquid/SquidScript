@@ -640,9 +640,19 @@ static int __noinline register_app_trigger_timer(struct sq_vm_runtime *runtime,
 	if (runtime == NULL || backend == NULL || backend->read_sqbc == NULL || app_id == NULL) {
 		return -EINVAL;
 	}
+	int transfer_result =
+		sq_vm_runtime_transfer_acquire(runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH);
+	if (transfer_result != 0) {
+		return transfer_result;
+	}
 	status = sqvm_trigger_timer_read_from_reader(
 		backend->user_data, backend->read_sqbc, runtime->transfer.init_scratch,
 		sizeof(runtime->transfer.init_scratch), index, &timer);
+	transfer_result =
+		sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH);
+	if (transfer_result != 0) {
+		return transfer_result;
+	}
 	if (status != SQVM_STATUS_OK) {
 		return -EINVAL;
 	}
@@ -678,9 +688,17 @@ static int __noinline register_app_triggers(const struct sq_device_protocol_cont
 	if (result != 0) {
 		return result;
 	}
+	result = sq_vm_runtime_transfer_acquire(context->runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH);
+	if (result != 0) {
+		return result;
+	}
 	status = sqvm_trigger_timer_count_from_reader(
 		backend.user_data, backend.read_sqbc, context->runtime->transfer.init_scratch,
 		sizeof(context->runtime->transfer.init_scratch), &trigger_count);
+	result = sq_vm_runtime_transfer_release(context->runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH);
+	if (result != 0) {
+		return result;
+	}
 	if (status != SQVM_STATUS_OK || trigger_count > SQ_VM_RUNTIME_ARMED_TIMER_MAX) {
 		return -EINVAL;
 	}
@@ -883,20 +901,31 @@ static int __noinline state_get_response(const struct sq_protocol_request *reque
 		return -ENODEV;
 	}
 
+	result = sq_vm_runtime_transfer_acquire(context->runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION);
+	if (result != 0) {
+		return result;
+	}
 	state_bytes = context->runtime->transfer.completion.bytes;
 	state_cap = sizeof(context->runtime->transfer.completion.bytes);
 	result = backend.load_state(backend.user_data, state_bytes, state_cap, &bytes_len);
 	if (result != 0 && result != -ENOENT) {
+		(void)sq_vm_runtime_transfer_release(context->runtime,
+						     SQ_VM_RUNTIME_TRANSFER_COMPLETION);
 		return result;
 	}
 	if (result == -ENOENT) {
 		bytes_len = 0;
 	}
 	if (bytes_len > state_cap) {
+		(void)sq_vm_runtime_transfer_release(context->runtime,
+						     SQ_VM_RUNTIME_TRANSFER_COMPLETION);
 		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
 	}
-	return sqdp_status_to_protocol_result(sqdp_encode_state_response(
+	result = sqdp_status_to_protocol_result(sqdp_encode_state_response(
 		request->sequence, state_bytes, bytes_len, response, response_cap, response_len));
+	int release_result = sq_vm_runtime_transfer_release(context->runtime,
+							    SQ_VM_RUNTIME_TRANSFER_COMPLETION);
+	return result != 0 ? result : release_result;
 }
 
 static int __noinline state_import(const struct sq_protocol_request *request,

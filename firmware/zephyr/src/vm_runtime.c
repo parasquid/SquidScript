@@ -1212,6 +1212,7 @@ static int32_t runtime_wifi_scan(void *user_data, SqvmWifiScanResult *out)
 	struct net_if *iface = runtime_wifi_iface();
 	struct wifi_iface_status status = {0};
 	struct wifi_scan_params params = {0};
+	int transfer_result;
 
 	if (runtime == NULL || iface == NULL) {
 		out->ok = false;
@@ -1226,21 +1227,30 @@ static int32_t runtime_wifi_scan(void *user_data, SqvmWifiScanResult *out)
 		return 0;
 	}
 
+	transfer_result = sq_vm_runtime_transfer_acquire(runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN);
+	if (transfer_result != 0) {
+		out->ok = false;
+		SQ_SET_LITERAL_FIELD(out, error, "transfer busy");
+		return 0;
+	}
 	runtime_wifi_reset_scan(runtime);
 	k_sem_reset(&runtime->wifi_scan_done);
 	params.max_bss_cnt = SQVM_WIFI_SCAN_MAX_NETWORKS;
 	int result = net_mgmt(NET_REQUEST_WIFI_SCAN, iface, &params, sizeof(params));
 	if (result != 0) {
+		(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN);
 		out->ok = false;
 		SQ_SET_LITERAL_FIELD(out, error, "scan request failed");
 		return 0;
 	}
 	if (k_sem_take(&runtime->wifi_scan_done, K_MSEC(SQ_VM_RUNTIME_WIFI_SCAN_TIMEOUT_MS)) != 0) {
+		(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN);
 		out->ok = false;
 		SQ_SET_LITERAL_FIELD(out, error, "scan timeout");
 		return 0;
 	}
 	if (runtime->wifi_scan_status != 0) {
+		(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN);
 		out->ok = false;
 		SQ_SET_LITERAL_FIELD(out, error, "scan failed");
 		return 0;
@@ -1248,6 +1258,7 @@ static int32_t runtime_wifi_scan(void *user_data, SqvmWifiScanResult *out)
 	out->ok = true;
 	out->networks = runtime->transfer.wifi_scan.networks;
 	out->network_count = runtime->wifi_scan_count;
+	(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN);
 	return 0;
 #else
 	ARG_UNUSED(user_data);
@@ -1415,18 +1426,28 @@ static int sq_vm_runtime_device_config_load_resource(struct sq_vm_runtime *runti
 	if (result != 0) {
 		return runtime_device_config_error(out, "resource path failed");
 	}
+	result = sq_vm_runtime_transfer_acquire(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION);
+	if (result != 0) {
+		return runtime_device_config_error(out, "transfer busy");
+	}
 	result = runtime_device_config_read_file(path, runtime->transfer.completion.bytes,
 						 sizeof(runtime->transfer.completion.bytes),
 						 &bytes_len);
 	if (result == -ENOSPC) {
+		(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION);
 		return runtime_device_config_error(out, "resource too large");
 	}
 	if (result != 0) {
+		(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION);
 		return runtime_device_config_error(out, "resource read failed");
 	}
 
 	status = sqdc_parse_sqdevice(runtime->transfer.completion.bytes, bytes_len,
 				     &runtime->device_config_draft);
+	result = sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION);
+	if (result != 0) {
+		return runtime_device_config_error(out, "transfer release failed");
+	}
 	if (status != SQDC_STATUS_OK) {
 		const char *error = runtime_device_config_status_error(status);
 		return runtime_device_config_error(out, error != NULL ? error : "parse error");
@@ -1883,18 +1904,28 @@ static int __noinline sq_vm_runtime_apply_saved_device_config(struct sq_vm_runti
 	if (fs_result != 0) {
 		return fs_result;
 	}
+	fs_result = sq_vm_runtime_transfer_acquire(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION);
+	if (fs_result != 0) {
+		return fs_result;
+	}
 	fs_result = runtime_device_config_read_file(path, runtime->transfer.completion.bytes,
 						    sizeof(runtime->transfer.completion.bytes),
 						    &bytes_len);
 	if (fs_result == -ENOENT) {
+		(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION);
 		return 0;
 	}
 	if (fs_result != 0) {
+		(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION);
 		return fs_result;
 	}
 
 	status = sqdc_decode_sqdc(runtime->transfer.completion.bytes, bytes_len,
 				  &runtime->device_config_draft);
+	fs_result = sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION);
+	if (fs_result != 0) {
+		return fs_result;
+	}
 	if (status != SQDC_STATUS_OK) {
 		return -EINVAL;
 	}
@@ -1911,16 +1942,24 @@ static int __noinline sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *
 {
 	size_t count = 0;
 	SqvmStatus status;
+	int transfer_result;
 
 	if (runtime == NULL || runtime->backend == NULL || runtime->backend->read_sqbc == NULL ||
 	    runtime->store_mount_point == NULL || runtime->current_app[0] == '\0') {
 		return 0;
 	}
 
+	transfer_result = sq_vm_runtime_transfer_acquire(runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH);
+	if (transfer_result != 0) {
+		return transfer_result;
+	}
 	status = sqvm_device_binding_count_from_reader(runtime, runtime_read_exact_at,
 						       runtime->transfer.init_scratch,
 						       sizeof(runtime->transfer.init_scratch),
 						       &count);
+	if (sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH) != 0) {
+		return -EBUSY;
+	}
 	if (status != SQVM_STATUS_OK) {
 		return sq_vm_runtime_status_to_errno(status);
 	}
@@ -1937,12 +1976,18 @@ static int __noinline sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *
 		size_t service_len;
 		size_t binding_len;
 
+		transfer_result =
+			sq_vm_runtime_transfer_acquire(runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH);
+		if (transfer_result != 0) {
+			return transfer_result;
+		}
 		memset(scratch, 0, sizeof(*scratch));
 		status = sqvm_device_binding_read_from_reader(runtime, runtime_read_exact_at,
 							      runtime->transfer.init_scratch,
 							      sizeof(runtime->transfer.init_scratch),
 							      index, binding);
 		if (status != SQVM_STATUS_OK) {
+			(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH);
 			return sq_vm_runtime_status_to_errno(status);
 		}
 
@@ -1952,6 +1997,7 @@ static int __noinline sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *
 		if (service_len == 0 || service_len >= sizeof(binding->service) ||
 		    binding_len == 0 || binding_len >= sizeof(binding->binding) ||
 		    resource_len == 0 || resource_len >= sizeof(binding->resource)) {
+			(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH);
 			return -EINVAL;
 		}
 
@@ -1959,6 +2005,7 @@ static int __noinline sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *
 					     binding_len, binding->resource, resource_len,
 					     plan, &runtime->device_config_draft) !=
 		    SQDC_STATUS_OK) {
+			(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH);
 			return -ENOTSUP;
 		}
 
@@ -1968,7 +2015,13 @@ static int __noinline sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *
 			runtime->device_config_draft_loaded = true;
 			if (sq_vm_runtime_device_config_rebind(runtime, plan->alias,
 							       plan->alias_len, result) != 0) {
+				(void)sq_vm_runtime_transfer_release(runtime,
+								     SQ_VM_RUNTIME_TRANSFER_SCRATCH);
 				return -EINVAL;
+			}
+			if (sq_vm_runtime_transfer_release(runtime,
+							   SQ_VM_RUNTIME_TRANSFER_SCRATCH) != 0) {
+				return -EBUSY;
 			}
 			if (!result->ok) {
 				return runtime_device_config_result_errno(result);
@@ -1978,12 +2031,25 @@ static int __noinline sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *
 		{
 			uint8_t alias[SQVM_DEVICE_BINDING_NAME_CAP];
 			size_t alias_len = plan->alias_len;
+			size_t package_resource_len = plan->resource_len;
 			if (alias_len == 0 || alias_len >= sizeof(alias)) {
+				(void)sq_vm_runtime_transfer_release(runtime,
+								     SQ_VM_RUNTIME_TRANSFER_SCRATCH);
+				return -EINVAL;
+			}
+			if (package_resource_len == 0 ||
+			    package_resource_len >= SQVM_DEVICE_BINDING_RESOURCE_CAP) {
+				(void)sq_vm_runtime_transfer_release(runtime,
+								     SQ_VM_RUNTIME_TRANSFER_SCRATCH);
 				return -EINVAL;
 			}
 			memcpy(alias, plan->alias, alias_len);
+			if (sq_vm_runtime_transfer_release(runtime,
+							   SQ_VM_RUNTIME_TRANSFER_SCRATCH) != 0) {
+				return -EBUSY;
+			}
 			if (sq_vm_runtime_device_config_load_resource(runtime, plan->resource,
-								      plan->resource_len, result) != 0 ||
+								      package_resource_len, result) != 0 ||
 			    !result->ok) {
 				return -EINVAL;
 			}
@@ -1998,6 +2064,7 @@ static int __noinline sq_vm_runtime_apply_device_bindings(struct sq_vm_runtime *
 			break;
 		}
 		default:
+			(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH);
 			return -ENOTSUP;
 		}
 	}
@@ -2072,15 +2139,23 @@ int sq_vm_runtime_device_config_save(struct sq_vm_runtime *runtime, const uint8_
 		return runtime_device_config_error(out, "config path failed");
 	}
 
+	result = sq_vm_runtime_transfer_acquire(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION);
+	if (result != 0) {
+		return runtime_device_config_error(out, "transfer busy");
+	}
 	status = sqdc_encode_sqdc(&runtime->device_config_draft,
 				  runtime->transfer.completion.bytes,
 				  sizeof(runtime->transfer.completion.bytes), &encoded_len);
 	if (status != SQDC_STATUS_OK) {
 		const char *error = runtime_device_config_status_error(status);
+		(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION);
 		return runtime_device_config_error(out, error != NULL ? error : "encode error");
 	}
 	result = runtime_device_config_write_file(path, runtime->transfer.completion.bytes,
 						  encoded_len);
+	if (sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION) != 0) {
+		return runtime_device_config_error(out, "transfer release failed");
+	}
 	if (result != 0) {
 		return runtime_device_config_error(out, "config write failed");
 	}
@@ -2149,6 +2224,9 @@ static int32_t runtime_content_read_lines(void *user_data, const uint8_t *path, 
 static void clear_dispatch_transfer(struct sq_vm_runtime *runtime)
 {
 	memset(&runtime->transfer, 0, sizeof(runtime->transfer));
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
+	runtime->transfer_owner = SQ_VM_RUNTIME_TRANSFER_FREE;
+#endif
 	memset(&runtime->result, 0, sizeof(runtime->result));
 	runtime->backend = NULL;
 }
@@ -2421,10 +2499,22 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 			runtime_finish_dispatch_metrics(runtime, dispatch_start_cycles);
 			return sq_vm_runtime_status_to_errno(status);
 		}
+		int transfer_result =
+			sq_vm_runtime_transfer_acquire(runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH);
+		if (transfer_result != 0) {
+			runtime_finish_dispatch_metrics(runtime, dispatch_start_cycles);
+			return transfer_result;
+		}
 		status = sqvm_context_init_in_place(runtime->context_words, runtime,
 						    &runtime_callbacks,
 						    runtime->transfer.init_scratch,
 						    sizeof(runtime->transfer.init_scratch));
+		transfer_result =
+			sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH);
+		if (transfer_result != 0) {
+			runtime_finish_dispatch_metrics(runtime, dispatch_start_cycles);
+			return transfer_result;
+		}
 		if (status != SQVM_STATUS_OK) {
 			runtime_finish_dispatch_metrics(runtime, dispatch_start_cycles);
 			return sq_vm_runtime_status_to_errno(status);
@@ -2441,8 +2531,20 @@ int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 	}
 
 	while (runtime->result.outcome == SQVM_DISPATCH_PENDING_STORAGE) {
+		int transfer_result =
+			sq_vm_runtime_transfer_acquire(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION);
+		if (transfer_result != 0) {
+			runtime_finish_dispatch_metrics(runtime, dispatch_start_cycles);
+			return transfer_result;
+		}
 		int storage_result = sq_vm_storage_complete_request(backend, &runtime->result.storage,
 								   &runtime->transfer.completion);
+		transfer_result = sq_vm_runtime_transfer_release(runtime,
+								 SQ_VM_RUNTIME_TRANSFER_COMPLETION);
+		if (transfer_result != 0) {
+			runtime_finish_dispatch_metrics(runtime, dispatch_start_cycles);
+			return transfer_result;
+		}
 		if (storage_result != 0) {
 			runtime_finish_dispatch_metrics(runtime, dispatch_start_cycles);
 			return storage_result;

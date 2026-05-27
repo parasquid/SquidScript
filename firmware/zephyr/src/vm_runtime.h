@@ -1,6 +1,7 @@
 #ifndef SQUIDSCRIPT_VM_RUNTIME_H
 #define SQUIDSCRIPT_VM_RUNTIME_H
 
+#include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -55,6 +56,13 @@ enum sq_vm_runtime_status {
 	SQ_VM_RUNTIME_ERROR = 3,
 };
 
+enum sq_vm_runtime_transfer_owner {
+	SQ_VM_RUNTIME_TRANSFER_FREE = 0,
+	SQ_VM_RUNTIME_TRANSFER_SCRATCH = 1,
+	SQ_VM_RUNTIME_TRANSFER_COMPLETION = 2,
+	SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN = 3,
+};
+
 struct sq_vm_runtime_timer {
 	bool active;
 	bool repeating;
@@ -106,6 +114,9 @@ struct sq_vm_runtime {
 	bool work_initialized;
 	bool context_ready;
 	union sq_vm_runtime_transfer transfer;
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
+	enum sq_vm_runtime_transfer_owner transfer_owner;
+#endif
 	SqvmDispatchResult result;
 	const struct sq_vm_storage_backend *backend;
 	const char *store_mount_point;
@@ -192,6 +203,40 @@ struct sq_vm_runtime {
 	bool wifi_mgmt_cb_registered;
 #endif
 };
+
+static inline int sq_vm_runtime_transfer_acquire(struct sq_vm_runtime *runtime,
+						 enum sq_vm_runtime_transfer_owner owner)
+{
+	if (runtime == NULL || owner == SQ_VM_RUNTIME_TRANSFER_FREE) {
+		return -EINVAL;
+	}
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
+	if (runtime->transfer_owner != SQ_VM_RUNTIME_TRANSFER_FREE) {
+		return -EBUSY;
+	}
+	runtime->transfer_owner = owner;
+#else
+	ARG_UNUSED(owner);
+#endif
+	return 0;
+}
+
+static inline int sq_vm_runtime_transfer_release(struct sq_vm_runtime *runtime,
+						 enum sq_vm_runtime_transfer_owner owner)
+{
+	if (runtime == NULL || owner == SQ_VM_RUNTIME_TRANSFER_FREE) {
+		return -EINVAL;
+	}
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
+	if (runtime->transfer_owner != owner) {
+		return -EBUSY;
+	}
+	runtime->transfer_owner = SQ_VM_RUNTIME_TRANSFER_FREE;
+#else
+	ARG_UNUSED(owner);
+#endif
+	return 0;
+}
 
 void sq_vm_runtime_init(struct sq_vm_runtime *runtime);
 

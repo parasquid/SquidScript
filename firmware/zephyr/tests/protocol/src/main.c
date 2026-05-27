@@ -2223,6 +2223,25 @@ ZTEST(squidscript_protocol, test_runtime_reuses_transfer_storage_for_init_scratc
 #endif
 }
 
+ZTEST(squidscript_protocol, test_runtime_transfer_owner_rejects_overlap)
+{
+	static struct sq_vm_runtime runtime;
+
+	memset(&runtime, 0, sizeof(runtime));
+	zassert_equal(sq_vm_runtime_transfer_acquire(&runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH), 0);
+	zassert_equal(sq_vm_runtime_transfer_acquire(&runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION),
+		      -EBUSY);
+	zassert_equal(sq_vm_runtime_transfer_release(&runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION),
+		      -EBUSY);
+	zassert_equal(sq_vm_runtime_transfer_release(&runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH), 0);
+	zassert_equal(sq_vm_runtime_transfer_acquire(&runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION),
+		      0);
+	zassert_equal(sq_vm_runtime_transfer_release(&runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION),
+		      0);
+	zassert_equal(sq_vm_runtime_transfer_acquire(&runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN), 0);
+	zassert_equal(sq_vm_runtime_transfer_release(&runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN), 0);
+}
+
 ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 {
 	uint8_t request[SQ_PROTOCOL_HEADER_LEN];

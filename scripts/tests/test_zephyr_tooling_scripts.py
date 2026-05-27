@@ -625,6 +625,73 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("runtime_static <= 14304", ztest)
         self.assertNotIn("runtime_static <= 14720", ztest)
 
+    def test_runtime_transfer_scratch_has_diagnostic_owner_checks(self):
+        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+        runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        protocol_c = self.read("firmware/zephyr/src/device_protocol.c")
+        ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
+        ztest_kconfig = self.read("firmware/zephyr/tests/protocol/Kconfig")
+        ztest_conf = self.read("firmware/zephyr/tests/protocol/prj.conf")
+
+        self.assertIn("enum sq_vm_runtime_transfer_owner", runtime_h)
+        self.assertIn("SQ_VM_RUNTIME_TRANSFER_SCRATCH", runtime_h)
+        self.assertIn("SQ_VM_RUNTIME_TRANSFER_COMPLETION", runtime_h)
+        self.assertIn("SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN", runtime_h)
+        self.assertIn("enum sq_vm_runtime_transfer_owner transfer_owner", runtime_h)
+        self.assertIn("sq_vm_runtime_transfer_acquire", runtime_h)
+        self.assertIn("sq_vm_runtime_transfer_release", runtime_h)
+        self.assertIn("CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC", runtime_h)
+        self.assertIn("return -EBUSY", runtime_h)
+
+        self.assertIn(
+            "sq_vm_runtime_transfer_acquire(runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN)",
+            runtime_c,
+        )
+        self.assertIn(
+            "sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN)",
+            runtime_c,
+        )
+        self.assertIn(
+            "sq_vm_runtime_transfer_acquire(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION)",
+            runtime_c,
+        )
+        self.assertIn(
+            "sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION)",
+            runtime_c,
+        )
+        self.assertIn(
+            "sq_vm_runtime_transfer_acquire(runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH)",
+            runtime_c,
+        )
+        self.assertIn(
+            "sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH)",
+            runtime_c,
+        )
+        self.assertIn(
+            "sq_vm_runtime_transfer_acquire(context->runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH)",
+            protocol_c,
+        )
+        self.assertIn(
+            "sq_vm_runtime_transfer_acquire(context->runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION)",
+            protocol_c,
+        )
+        self.assertIn("test_runtime_transfer_owner_rejects_overlap", ztest)
+        self.assertIn("config SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC", ztest_kconfig)
+        self.assertIn("CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC=y", ztest_conf)
+
+    def test_transfer_owner_exercise_fixture_uses_state_config_and_wifi_scan(self):
+        app = self.read("tests/hardware/c3-supermini/transfer-owner-summary/main.squid")
+        device = self.read(
+            "tests/hardware/c3-supermini/transfer-owner-summary/device/indicator.sqdevice"
+        )
+
+        self.assertIn("state {", app)
+        self.assertIn("@runs = @runs + 1", app)
+        self.assertIn('device.config.load("package:device/indicator.sqdevice")', app)
+        self.assertIn("service.wifi.scan()", app)
+        self.assertIn("debug.print", app)
+        self.assertIn("mode string 4:gpio", device)
+
     def test_vm_context_reserve_tracks_current_ffi_size(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         limits_rs = self.read("compiler/rust/crates/squidvm-core/src/limits.rs")
