@@ -61,16 +61,18 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   reductions for the largest static allocations, especially VM runtime storage,
   work stacks, response/session buffers, logging, LittleFS pools, and file
   caches. Current C3 build map evidence sizes the resident runtime object at
-  17,192 bytes after capping retained VM output history at eight lines,
+  16,952 bytes after capping retained VM output history at eight lines,
   retained VM trace history at six lines,
   narrowing output and drawlog diagnostic line storage, trimming the ESP32-C3
   VM context reserve to 11,776 bytes, reducing app-id slots to 40 bytes, and
-  lowering the SQBC code/read transfer window to 768 bytes. The resident app
+  lowering the SQBC code/read transfer window to 768 bytes. Runtime device
+  config drafts now hold six records, enough for the five-record GPIO button
+  binding shape without retaining unused slots. The resident app
   registry now holds twelve installed-app entries with 40-byte app-id storage
   slots to keep the reference firmware RAM-bound explicit, and the serial
   receive frame budget is 320 bytes with host upload chunking derived from that
   limit, and protocol transfer sessions use 72-byte staging path slots. The
-  latest target build reports 193,328 bytes of DRAM use; next
+  latest target build reports 193,088 bytes of DRAM use; next
   reductions should investigate full-suite worker-stack high-water headroom
   after the 18 KiB stack reduction and any remaining accidental static buffers.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing

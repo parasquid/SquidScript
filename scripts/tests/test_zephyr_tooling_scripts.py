@@ -1564,7 +1564,8 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
 
-        self.assertIn("#define SQDC_CONFIG_MAX_RECORDS 8", ffi_h)
+        self.assertIn("#define SQDC_CONFIG_MAX_RECORDS 6", ffi_h)
+        self.assertNotIn("#define SQDC_CONFIG_MAX_RECORDS 8", ffi_h)
         self.assertIn("#define SQDC_CONFIG_KEY_CAP 32", ffi_h)
         self.assertIn("#define SQDC_CONFIG_STRING_CAP 64", ffi_h)
         self.assertIn("typedef struct {\n\tSqdcRecord records[SQDC_CONFIG_MAX_RECORDS];", ffi_h)

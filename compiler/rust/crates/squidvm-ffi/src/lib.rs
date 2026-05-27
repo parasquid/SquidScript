@@ -58,7 +58,7 @@ const SQDP_PATH_CAP: usize = 128;
 pub const SQVM_DEVICE_BINDING_NAME_CAP: usize = 32;
 pub const SQVM_DEVICE_BINDING_RESOURCE_CAP: usize = 128;
 pub const SQDP_STAGING_PATH_CAP: usize = 80;
-pub const SQDC_CONFIG_MAX_RECORDS: usize = 8;
+pub const SQDC_CONFIG_MAX_RECORDS: usize = 6;
 pub const SQDC_CONFIG_KEY_CAP: usize = 32;
 pub const SQDC_CONFIG_STRING_CAP: usize = 64;
 
