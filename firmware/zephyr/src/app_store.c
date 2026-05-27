@@ -537,7 +537,7 @@ int sq_app_store_commit_staged_resource(const char *mount_point, const char *app
 					const char *resource_path, const char *staging_path)
 {
 	char path[SQ_APP_STORE_PATH_MAX];
-	struct fs_dirent entry;
+	struct fs_file_t main_sqbc;
 	int result;
 
 	if (mount_point == NULL || !is_safe_app_id(app_id) ||
@@ -549,12 +549,14 @@ int sq_app_store_commit_staged_resource(const char *mount_point, const char *app
 	if (result != 0) {
 		return result;
 	}
-	result = fs_stat(path, &entry);
+	fs_file_t_init(&main_sqbc);
+	result = fs_open(&main_sqbc, path, FS_O_READ);
+	if (result != 0) {
+		return result == -EISDIR ? -ENOENT : result;
+	}
+	result = fs_close(&main_sqbc);
 	if (result != 0) {
 		return result;
-	}
-	if (entry.type != FS_DIR_ENTRY_FILE) {
-		return -ENOENT;
 	}
 
 	result = ensure_resource_parent_dirs(mount_point, app_id, resource_path);
@@ -566,11 +568,9 @@ int sq_app_store_commit_staged_resource(const char *mount_point, const char *app
 	if (result != 0) {
 		return result;
 	}
-	if (fs_stat(path, &entry) == 0) {
-		result = fs_unlink(path);
-		if (result != 0) {
-			return result;
-		}
+	result = fs_unlink(path);
+	if (result != 0 && result != -ENOENT) {
+		return result;
 	}
 	return fs_rename(staging_path, path);
 }
@@ -618,7 +618,7 @@ int sq_app_store_install_resource(const char *mount_point, const char *app_id,
 				  const char *resource_path, const uint8_t *bytes, size_t len)
 {
 	char path[SQ_APP_STORE_PATH_MAX];
-	struct fs_dirent entry;
+	struct fs_file_t main_sqbc;
 	int result;
 
 	if (mount_point == NULL || !is_safe_app_id(app_id) ||
@@ -630,12 +630,14 @@ int sq_app_store_install_resource(const char *mount_point, const char *app_id,
 	if (result != 0) {
 		return result;
 	}
-	result = fs_stat(path, &entry);
+	fs_file_t_init(&main_sqbc);
+	result = fs_open(&main_sqbc, path, FS_O_READ);
+	if (result != 0) {
+		return result == -EISDIR ? -ENOENT : result;
+	}
+	result = fs_close(&main_sqbc);
 	if (result != 0) {
 		return result;
-	}
-	if (entry.type != FS_DIR_ENTRY_FILE) {
-		return -ENOENT;
 	}
 
 	result = sq_app_store_prepare_filesystem(mount_point);

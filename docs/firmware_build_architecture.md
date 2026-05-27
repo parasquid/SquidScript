@@ -152,8 +152,9 @@ the app directory and reuses its directory entry for `main.sqbc` stats, so its
 emitted C stack estimate is 336 bytes instead of retaining separate
 app-directory/SQBC-path buffers and a second directory entry.
 Package resource install and staged-resource commit paths likewise reuse one
-path scratch buffer after validating the app's `main.sqbc`, so each currently
-emits a 304-byte C stack estimate instead of 432 bytes.
+path scratch buffer after validating the app's `main.sqbc` with an open/close
+check instead of a directory-entry stat, so each currently emits a 176-byte C
+stack estimate instead of 432 bytes.
 Direct app install and staged-install commit paths also use one path scratch;
 their emitted C stack estimates are now 160 bytes each instead of 288 and
 304 bytes respectively.
