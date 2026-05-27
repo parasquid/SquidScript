@@ -2401,7 +2401,10 @@ ZTEST(squidscript_protocol, test_vm_runtime_callback_boundary_statuses)
 
 ZTEST(squidscript_protocol, test_transfer_sessions_use_internal_staging_path_capacity)
 {
-	zassert_equal(SQ_DEVICE_STAGING_PATH_BYTES, 80);
+	char max_app_id[SQ_APP_STORE_APP_ID_MAX];
+	char staging_path[SQ_DEVICE_STAGING_PATH_BYTES];
+
+	zassert_equal(SQ_DEVICE_STAGING_PATH_BYTES, 72);
 	zassert_true(SQ_DEVICE_STAGING_PATH_BYTES < SQ_APP_STORE_PATH_MAX);
 	zassert_equal(sizeof(((struct sq_device_install_session *)0)->staging_path),
 		      SQ_DEVICE_STAGING_PATH_BYTES);
@@ -2411,6 +2414,15 @@ ZTEST(squidscript_protocol, test_transfer_sessions_use_internal_staging_path_cap
 		      SQ_DEVICE_STAGING_PATH_BYTES);
 	zassert_equal(sizeof(((struct sq_device_resource_session *)0)->resource_path),
 		      SQ_APP_STORE_PATH_MAX);
+
+	memset(max_app_id, 'a', sizeof(max_app_id) - 1);
+	max_app_id[sizeof(max_app_id) - 1] = '\0';
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(sq_app_store_begin_staged_install(test_fs_mount.mnt_point, max_app_id,
+							staging_path, sizeof(staging_path)),
+		      0);
+	zassert_true(strlen(staging_path) < sizeof(staging_path));
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }
 
 struct vm_storage_fixture {
