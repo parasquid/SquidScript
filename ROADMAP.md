@@ -61,10 +61,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   reductions for the largest static allocations, especially VM runtime storage,
   work stacks, response/session buffers, logging, LittleFS pools, and file
   caches. Current C3 build map evidence sizes the resident runtime object at
-  18,544 bytes after capping retained VM output history at eight lines; next
-  reductions should investigate the VM context reserve, full-suite worker-stack
-  high-water headroom after the 18 KiB stack reduction, and any remaining
-  accidental static buffers.
+  18,288 bytes after capping retained VM output history at eight lines and
+  trimming the ESP32-C3 VM context reserve to 12,032 bytes; next reductions
+  should investigate full-suite worker-stack high-water headroom after the
+  18 KiB stack reduction and any remaining accidental static buffers.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
   succeeds but serial commands stall, app launch hangs, or input dispatch stops
   responding, check stack exhaustion early with `device resources`, compare

@@ -4314,7 +4314,7 @@ mod tests {
     #[test]
     #[cfg(target_pointer_width = "32")]
     fn sqvm_context_still_fits_zephyr_runtime_context_buffer() {
-        const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 12_288;
+        const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 12_032;
         assert!(
             sqvm_context_size() <= ZEPHYR_RUNTIME_CONTEXT_BYTES,
             "SqvmContext is {} bytes and must fit firmware/zephyr/src/vm_runtime.h context_words",

@@ -188,7 +188,7 @@ completion transfer storage because those buffers are not live at the same
 time. `vm_sqbc_chunk_bytes` reports the bounded SQBC code/read transfer window
 used for file-backed installed app dispatch; the full installed `main.sqbc`
 payload is not resident in that window. The ESP32-C3 Super Mini build map
-currently sizes the resident runtime object at 18,544 bytes. The current
+currently sizes the resident runtime object at 18,288 bytes. The current
 ESP32-C3 canonical configuration keeps Zephyr's system heap at 36864 bytes;
 representative app,
 display, device binding, content, Wi-Fi status, scan, list, and AP workloads
