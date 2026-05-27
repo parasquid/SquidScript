@@ -102,6 +102,9 @@ protocol response buffer and do not keep a resident metric staging array.
 Runtime diagnostic history is bounded to four trace lines, six output lines,
 and four draw-log lines so recent debugging data remains available without
 retaining unbounded VM text in RAM.
+Zephyr's deferred logger buffer is explicitly bounded at 512 bytes; app-visible
+diagnostics use protocol output, trace, draw-log, lifecycle, and resources
+responses instead of relying on a large firmware log ring.
 The protocol/main thread stack is currently 4 KiB and the VM worker stack is
 18,048 bytes. Resource diagnostics expose each stack's high-water use
 separately so budget reductions can be tied to measured workloads instead of

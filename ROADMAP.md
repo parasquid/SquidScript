@@ -76,8 +76,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   resource path slots, and resource diagnostics encode directly into the
   984-byte response buffer without a resident metric staging array. Temp-run
   state now uses the file-backed VM storage backend with a cleared temp state
-  path instead of a resident saved-state-capacity RAM buffer. The VM worker
-  stack is now 18048 bytes. The latest target build reports 189,520 bytes
+  path instead of a resident saved-state-capacity RAM buffer, and Zephyr's
+  deferred logger buffer is explicitly bounded at 512 bytes. The VM worker
+  stack is now 18048 bytes. The latest target build reports 189,008 bytes
   of DRAM use; next
   reductions should investigate full-suite worker-stack high-water headroom
   after the 18048-byte stack reduction and any remaining accidental static
