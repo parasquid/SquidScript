@@ -579,25 +579,21 @@ static int __noinline register_app_trigger_timer(struct sq_vm_runtime *runtime,
 static int __noinline register_app_triggers(const struct sq_device_protocol_context *context,
 					    const char *app_id)
 {
-	char sqbc_path[SQ_APP_STORE_APP_FILE_PATH_MAX];
-	struct sq_vm_fs_storage trigger_storage = {
-		.sqbc_path = sqbc_path,
-	};
 	struct sq_vm_storage_backend backend;
 	size_t trigger_count = 0;
 	SqvmStatus status;
 	int result;
 
 	if (context == NULL || context->runtime == NULL || context->store_mount_point == NULL ||
-	    app_id == NULL) {
+	    context->launch_storage == NULL || app_id == NULL) {
 		return -EINVAL;
 	}
-	result = sq_app_store_sqbc_path(context->store_mount_point, app_id, sqbc_path,
-					sizeof(sqbc_path));
+	result = sq_app_store_vm_storage_for_app(context->store_mount_point, app_id,
+						 context->launch_storage);
 	if (result != 0) {
 		return result;
 	}
-	backend = sq_vm_fs_storage_backend(&trigger_storage);
+	backend = sq_app_store_vm_storage_backend(context->launch_storage);
 	if (backend.read_sqbc == NULL) {
 		return -ENODEV;
 	}

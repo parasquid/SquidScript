@@ -161,12 +161,12 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   The resident protocol response buffer now tracks the calculated current
   resources-response ceiling, reducing `response.0` from 848 bytes to 826 bytes.
   Protocol polling now reuses runtime app-id/event scratch for lifecycle and
-  armed timer transitions, app-arm trigger discovery uses SQBC-only storage, and
-  trigger registration uses the shared app-file path scratch. The trigger
-  registration path is split out of the steady protocol poll frame and is now
-  attributed separately at 144 bytes, with per-trigger timer decode/register
-  attributed to a 96-byte helper, instead of retaining that scratch in
-  `sq_device_protocol_poll` or a separate 400-byte trigger-registration frame.
+  armed timer transitions, app-arm trigger discovery is split out of the steady
+  poll frame, and trigger registration reuses the caller-owned launch storage
+  path buffers. The trigger registration path is now attributed separately at
+  64 bytes, with per-trigger timer decode/register attributed to a 96-byte
+  helper, instead of retaining that scratch in `sq_device_protocol_poll` or a
+  separate 400-byte trigger-registration frame.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
   succeeds but serial commands stall, app launch hangs, or input dispatch stops
   responding, check stack exhaustion early with `device resources`, compare

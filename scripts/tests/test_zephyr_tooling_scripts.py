@@ -1864,7 +1864,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", app_store_h)
         self.assertNotIn("char state_path[SQ_APP_STORE_PATH_MAX];", app_store_h)
 
-    def test_trigger_registration_uses_narrow_app_sqbc_path_scratch(self):
+    def test_trigger_registration_avoids_local_sqbc_path_scratch(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         app_store_h = self.read("firmware/zephyr/src/app_store.h")
         start = protocol.index("static int __noinline register_app_triggers")
@@ -1873,8 +1873,10 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
 
         self.assertIn("#define SQ_APP_STORE_APP_FILE_PATH_MAX 64", app_store_h)
         self.assertNotIn("#define SQ_APP_STORE_APP_FILE_PATH_MAX 72", app_store_h)
-        self.assertIn("char sqbc_path[SQ_APP_STORE_APP_FILE_PATH_MAX];", body)
+        self.assertNotIn("char sqbc_path[SQ_APP_STORE_APP_FILE_PATH_MAX];", body)
         self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", body)
+        self.assertIn("sq_app_store_vm_storage_for_app(context->store_mount_point, app_id,", body)
+        self.assertIn("context->launch_storage);", body)
 
     def test_protocol_begin_and_commit_validation_avoid_unused_action_stack(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
@@ -2007,7 +2009,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("runtime->event, true);", body)
         self.assertIn("memmove(runtime->event, event, event_len + 1);", runtime)
 
-    def test_trigger_registration_uses_sqbc_only_storage(self):
+    def test_trigger_registration_reuses_launch_storage_path_buffers(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         app_store_h = self.read("firmware/zephyr/src/app_store.h")
         app_store_c = self.read("firmware/zephyr/src/app_store.c")
@@ -2018,11 +2020,12 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("sq_app_store_sqbc_path", app_store_h)
         self.assertIn("int sq_app_store_sqbc_path", app_store_c)
         self.assertNotIn("struct sq_app_store_vm_storage trigger_storage", body)
-        self.assertIn("char sqbc_path[SQ_APP_STORE_APP_FILE_PATH_MAX];", body)
-        self.assertIn("struct sq_vm_fs_storage trigger_storage", body)
-        self.assertIn("sq_app_store_sqbc_path(context->store_mount_point, app_id,", body)
-        self.assertIn(".sqbc_path = sqbc_path", body)
-        self.assertIn("sq_vm_fs_storage_backend(&trigger_storage)", body)
+        self.assertNotIn("char sqbc_path[SQ_APP_STORE_APP_FILE_PATH_MAX];", body)
+        self.assertNotIn("struct sq_vm_fs_storage trigger_storage", body)
+        self.assertIn("context->launch_storage == NULL", body)
+        self.assertIn("sq_app_store_vm_storage_for_app(context->store_mount_point, app_id,", body)
+        self.assertIn("context->launch_storage);", body)
+        self.assertIn("sq_app_store_vm_storage_backend(context->launch_storage)", body)
         self.assertIn("static int __noinline register_app_triggers", protocol)
         self.assertIn("static int __noinline register_app_trigger_timer", protocol)
         self.assertNotIn("SqvmTriggerTimer timer = {0};", body)

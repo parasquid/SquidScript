@@ -237,11 +237,12 @@ derived from the same encoded frame budget. Transfer chunk requests use
 chunks, and the maximum app-id plus resource-path transfer-begin request remains
 within the same fixed receive buffer.
 Protocol polling reuses runtime app-id/event scratch for lifecycle and armed
-timer transitions. App-arm trigger discovery uses a SQBC-only filesystem
-backend instead of a full app storage object with state paths, and trigger
-registration uses the same narrow app-file path buffer as registry scanning.
-The emitted C stack report now attributes that path to `sq_device_protocol_poll`
-at 208 bytes instead of a separate 400-byte trigger-registration frame.
+timer transitions. App-arm trigger discovery is split out of the steady poll
+frame and reuses the caller-owned launch storage path buffers instead of
+allocating a per-call SQBC path and filesystem storage wrapper. The emitted C
+stack report now attributes `sq_device_protocol_poll` at 32 bytes,
+`register_app_triggers` at 64 bytes, and per-trigger timer decode/register at
+96 bytes, down from the earlier combined 400-byte trigger-registration frame.
 Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi VM service
 calls now cross the Rust FFI boundary into Zephyr callbacks. Zephyr now
 performs installed-app foreground handoff for `app.launch` and `app.exit` with
