@@ -420,7 +420,8 @@ static int __noinline commit_install(const struct sq_protocol_request *request,
 }
 
 static int start_installed_app(const struct sq_device_protocol_context *context,
-			       const char *app_id, const char *event, bool set_current);
+			       const char *app_id, const uint8_t *event, size_t event_len,
+			       bool set_current);
 static void clear_foreground_timers(struct sq_vm_runtime *runtime);
 
 static int __noinline launch_app(const struct sq_protocol_request *request,
@@ -445,7 +446,8 @@ static int __noinline launch_app(const struct sq_protocol_request *request,
 	memcpy(app_id_buffer, launch.app_id, launch.app_id_len);
 	app_id_buffer[launch.app_id_len] = '\0';
 
-	result = start_installed_app(context, app_id_buffer, "app.start", true);
+	result = start_installed_app(context, app_id_buffer, (const uint8_t *)"app.start",
+				     sizeof("app.start") - 1, true);
 	if (result != 0) {
 		return result;
 	}
@@ -454,7 +456,8 @@ static int __noinline launch_app(const struct sq_protocol_request *request,
 }
 
 static int start_installed_app(const struct sq_device_protocol_context *context,
-			       const char *app_id, const char *event, bool set_current)
+			       const char *app_id, const uint8_t *event, size_t event_len,
+			       bool set_current)
 {
 	struct sq_vm_storage_backend backend;
 	int result;
@@ -490,7 +493,7 @@ static int start_installed_app(const struct sq_device_protocol_context *context,
 			sizeof(context->runtime->current_app) - 1);
 		context->runtime->current_app[sizeof(context->runtime->current_app) - 1] = '\0';
 	}
-	result = sq_vm_runtime_start(context->runtime, &backend, event);
+	result = sq_vm_runtime_start_event(context->runtime, &backend, event, event_len);
 	if (result != 0) {
 		if (set_current) {
 			strncpy(context->runtime->current_app, context->runtime->pending_launch_app,
@@ -645,8 +648,9 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 		if (result != 0) {
 			return result;
 		}
-		result = start_installed_app(context, runtime->lifecycle_target_app, "app.start",
-					     true);
+		result = start_installed_app(context, runtime->lifecycle_target_app,
+					     (const uint8_t *)"app.start",
+					     sizeof("app.start") - 1, true);
 		memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
 		runtime->dispatch_exited = false;
 		return result;
@@ -666,12 +670,15 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 		runtime->pending_launch_active = false;
 
 		if (runtime->current_app[0] == '\0') {
-			return start_installed_app(context, runtime->lifecycle_target_app, "app.start",
-						   true);
+			return start_installed_app(context, runtime->lifecycle_target_app,
+						   (const uint8_t *)"app.start",
+						   sizeof("app.start") - 1, true);
 		}
 		runtime->lifecycle_launch_after_exit = true;
 		runtime->dispatch_exited = false;
-		return start_installed_app(context, runtime->current_app, "app.exit", false);
+		return start_installed_app(context, runtime->current_app,
+					   (const uint8_t *)"app.exit",
+					   sizeof("app.exit") - 1, false);
 	}
 
 	if (runtime->pending_arm_active) {
@@ -688,8 +695,9 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 		if (result != 0) {
 			return result;
 		}
-		result = start_installed_app(context, runtime->lifecycle_target_app, "app.start",
-					     true);
+		result = start_installed_app(context, runtime->lifecycle_target_app,
+					     (const uint8_t *)"app.start",
+					     sizeof("app.start") - 1, true);
 		memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
 		return result;
 	}
@@ -702,7 +710,8 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 			return result;
 		}
 		result = start_installed_app(context, runtime->lifecycle_target_app,
-					     runtime->event, true);
+					     (const uint8_t *)runtime->event,
+					     strlen(runtime->event), true);
 		memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
 		return result;
 	}

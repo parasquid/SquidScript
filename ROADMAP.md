@@ -175,7 +175,15 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   main/protocol path is now 496 bytes through
   `launch_app -> start_installed_app -> sq_vm_runtime_start ->
   sq_vm_runtime_start_event -> sq_vm_runtime_init`; investigate that launch
-  path next. VM dispatch now uses a
+  path next. Installed-app launch now passes event bytes and length directly
+  into `sq_vm_runtime_start_event`, removing the string wrapper from the launch
+  path. The cumulative launch path is now 272 bytes and `start_installed_app`
+  is now 192 bytes. Linker DRAM remains 185,024 bytes and RAM audit DRAM
+  remains 185,008 bytes. The top source-known main/protocol path is now
+  480 bytes through
+  `dispatch_key -> dispatch_event_from_parts -> sq_vm_runtime_start_event ->
+  sq_vm_runtime_init`; investigate the key/event dispatch path next. VM
+  dispatch now uses a
   static callback table plus an explicit `user_data` pointer across the FFI
   boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes
   without adding resident runtime RAM. Protocol frame dispatch now keeps

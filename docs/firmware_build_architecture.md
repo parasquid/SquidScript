@@ -238,6 +238,14 @@ source-known main/protocol path is now 496 bytes and has moved to app launch:
 `launch_app -> start_installed_app -> sq_vm_runtime_start ->
 sq_vm_runtime_start_event -> sq_vm_runtime_init`. Linker DRAM remains
 185,024 bytes and the RAM audit remains 185,008 bytes.
+Installed-app launch now passes event bytes and length directly into
+`sq_vm_runtime_start_event`, so launch no longer carries the string-based
+`sq_vm_runtime_start` wrapper. The cumulative launch path now emits 272 bytes
+and `start_installed_app` emits 192 bytes. The top source-known main/protocol
+path is now 480 bytes through
+`dispatch_key -> dispatch_event_from_parts -> sq_vm_runtime_start_event ->
+sq_vm_runtime_init`. Linker DRAM remains 185,024 bytes and the RAM audit
+remains 185,008 bytes.
 Protocol dispatch decodes only the request opcode and sequence into the live
 dispatch header because opcode handlers parse payloads from the original
 request bytes, so `sq_device_protocol_handle_frame` now emits 80 bytes instead

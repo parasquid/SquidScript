@@ -2227,7 +2227,8 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
             body,
         )
         self.assertIn("runtime->event, sizeof(runtime->event)", body)
-        self.assertIn("runtime->event, true);", body)
+        self.assertIn("(const uint8_t *)runtime->event", body)
+        self.assertIn("strlen(runtime->event), true);", body)
         self.assertIn("memmove(runtime->event, event, event_len);", runtime)
         self.assertIn("runtime->event[event_len] = '\\0';", runtime)
 
@@ -2484,6 +2485,25 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertNotIn("char previous_app[SQ_APP_STORE_APP_ID_MAX];", start_body)
         self.assertIn("context->runtime->pending_launch_app", start_body)
         self.assertIn("memset(context->runtime->pending_launch_app, 0,", start_body)
+
+    def test_installed_app_start_uses_byte_slice_runtime_start(self):
+        protocol_c = self.read("firmware/zephyr/src/device_protocol.c")
+        start_definition = protocol_c.index(
+            "static int start_installed_app(const struct sq_device_protocol_context *context,",
+            protocol_c.index("static int __noinline launch_app"),
+        )
+        start_body = protocol_c[
+            start_definition : protocol_c.index("static void clear_foreground_timers", start_definition)
+        ]
+
+        self.assertIn("const uint8_t *event, size_t event_len", start_body)
+        self.assertIn("sq_vm_runtime_start_event(context->runtime, &backend, event, event_len)",
+                      start_body)
+        self.assertNotIn("sq_vm_runtime_start(context->runtime, &backend, event)", start_body)
+        self.assertIn('(const uint8_t *)"app.start"', protocol_c)
+        self.assertIn('sizeof("app.start") - 1, true', protocol_c)
+        self.assertIn('(const uint8_t *)"app.exit"', protocol_c)
+        self.assertIn('sizeof("app.exit") - 1, false', protocol_c)
 
     def test_zephyr_wifi_station_uses_real_connect_disconnect_backend(self):
         runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
