@@ -196,6 +196,11 @@ buffer cap reduction. Storage format also reuses its format path scratch when
 recreating top-level app-store directories, so the source-known
 `storage_format` path now emits 352 bytes instead of 448 bytes, and the top
 source-known main/protocol path is now 608 bytes instead of 656 bytes.
+Direct app install and staged-install begin also reuse their existing
+app-file/app-directory scratch when preparing top-level app-store directories,
+so the source-known direct app install path now emits 224 bytes instead of 352
+bytes, staged-install begin emits 240 bytes instead of 368 bytes, and the top
+source-known main/protocol path is now 576 bytes.
 VM dispatch uses a static callback table plus an explicit `user_data` pointer
 across the FFI boundary instead of materializing the callback table on the C
 stack, so `sq_vm_runtime_dispatch` now emits an 80-byte C stack estimate

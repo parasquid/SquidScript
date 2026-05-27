@@ -134,7 +134,11 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   reuses its format path scratch when recreating top-level app-store
   directories, reducing the source-known `storage_format` path from 448 bytes
   to 352 bytes and the top source-known main/protocol path from 656 bytes to
-  608 bytes. VM dispatch now uses a
+  608 bytes. Direct app install and staged-install begin now reuse their
+  existing app-file/app-directory scratch when preparing top-level app-store
+  directories, reducing the source-known direct app install path from 352 bytes
+  to 224 bytes, staged-install begin from 368 bytes to 240 bytes, and the top
+  source-known main/protocol path from 608 bytes to 576 bytes. VM dispatch now uses a
   static callback table plus an explicit `user_data` pointer across the FFI
   boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes
   without adding resident runtime RAM. Protocol frame dispatch now keeps

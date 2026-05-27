@@ -2023,6 +2023,8 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertNotIn("char path[SQ_APP_STORE_PATH_MAX];", install_body)
         self.assertNotIn("char app_dir[SQ_APP_STORE_PATH_MAX];", install_body)
         self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", install_body)
+        self.assertIn("prepare_filesystem_with_path(path, sizeof(path), mount_point)", install_body)
+        self.assertNotIn("sq_app_store_prepare_filesystem(mount_point)", install_body)
         self.assertIn("format_app_dir(path, sizeof(path), mount_point, app_id)", install_body)
         self.assertIn("ensure_directory(path)", install_body)
         self.assertIn('format_app_path(path, sizeof(path), mount_point, app_id, "main.sqbc")', install_body)
@@ -2077,6 +2079,17 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         format_body = app_store[format_start:]
         self.assertIn("prepare_filesystem_with_path(path, sizeof(path), mount_point)", format_body)
         self.assertNotIn("return sq_app_store_prepare_filesystem(mount_point);", format_body)
+
+    def test_staged_install_begin_reuses_app_dir_scratch_for_prepare(self):
+        app_store = self.read("firmware/zephyr/src/app_store.c")
+        start = app_store.index("int sq_app_store_begin_staged_install")
+        end = app_store.index("int sq_app_store_begin_temp_run")
+        body = app_store[start:end]
+
+        self.assertIn("char app_dir[SQ_APP_STORE_APP_FILE_PATH_MAX];", body)
+        self.assertIn("prepare_filesystem_with_path(app_dir, sizeof(app_dir), mount_point)", body)
+        self.assertNotIn("sq_app_store_prepare_filesystem(mount_point)", body)
+        self.assertIn("format_app_dir(app_dir, sizeof(app_dir), mount_point, app_id)", body)
 
     def test_protocol_poll_uses_runtime_scratch_instead_of_stack_arrays(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")

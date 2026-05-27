@@ -409,7 +409,7 @@ int sq_app_store_install_app(const char *mount_point, const char *app_id, const 
 		return -EINVAL;
 	}
 
-	result = sq_app_store_prepare_filesystem(mount_point);
+	result = prepare_filesystem_with_path(path, sizeof(path), mount_point);
 	if (result != 0) {
 		return result;
 	}
@@ -441,7 +441,7 @@ int sq_app_store_begin_staged_install(const char *mount_point, const char *app_i
 		return -EINVAL;
 	}
 
-	result = sq_app_store_prepare_filesystem(mount_point);
+	result = prepare_filesystem_with_path(app_dir, sizeof(app_dir), mount_point);
 	if (result != 0) {
 		return result;
 	}
