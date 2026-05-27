@@ -549,6 +549,83 @@ fn ffi_encodes_lifecycle_response_from_structured_runtime_state() {
     );
 }
 
+#[repr(C)]
+struct RuntimeTimerForLifecycleTest {
+    active: bool,
+    repeating: bool,
+    interval_ms: i32,
+    due_ms: i64,
+    app_id: [u8; 40],
+    event: [u8; 24],
+}
+
+#[test]
+fn ffi_encodes_lifecycle_response_from_runtime_timer_layout_without_staging_records() {
+    let mut out = [0u8; 192];
+    let mut out_len = 0usize;
+    let active = b"reader-clock";
+    let mut process = [[0u8; 16]; 1];
+    process[0][..4].copy_from_slice(b"main");
+    let mut timers = [
+        RuntimeTimerForLifecycleTest {
+            active: false,
+            repeating: false,
+            interval_ms: 0,
+            due_ms: 0,
+            app_id: [0; 40],
+            event: [0; 24],
+        },
+        RuntimeTimerForLifecycleTest {
+            active: true,
+            repeating: false,
+            interval_ms: 1000,
+            due_ms: 42,
+            app_id: [0; 40],
+            event: [0; 24],
+        },
+    ];
+    timers[1].app_id[..14].copy_from_slice(b"break-reminder");
+    timers[1].event[..11].copy_from_slice(b"timer.break");
+
+    let base = timers.as_ptr() as *const u8;
+    let active_offset = core::mem::offset_of!(RuntimeTimerForLifecycleTest, active);
+    let app_id_offset = core::mem::offset_of!(RuntimeTimerForLifecycleTest, app_id);
+    let event_offset = core::mem::offset_of!(RuntimeTimerForLifecycleTest, event);
+    let status = unsafe {
+        squidvm_ffi::sqdp_encode_lifecycle_response_from_runtime_timers(
+            92,
+            active.as_ptr(),
+            active.len(),
+            process.as_ptr().cast(),
+            process.len(),
+            process[0].len(),
+            base,
+            timers.len(),
+            core::mem::size_of::<RuntimeTimerForLifecycleTest>(),
+            active_offset,
+            app_id_offset,
+            40,
+            event_offset,
+            24,
+            out.as_mut_ptr(),
+            out.len(),
+            &mut out_len,
+        )
+    };
+
+    assert_eq!(status as i32, 0);
+    let frame = decode_frame(&out[..out_len]).unwrap();
+    assert_eq!(
+        lifecycle_lines(&frame).unwrap(),
+        vec![
+            "active=reader-clock".to_string(),
+            "process_stack[0]=main".to_string(),
+            "armed_stack=".to_string(),
+            "armed_stack[0]=break-reminder timer.break".to_string(),
+        ]
+    );
+}
+
 #[test]
 fn ffi_encodes_resources_response_from_c_metrics() {
     let mut out = [0u8; 192];

@@ -121,12 +121,14 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   without adding resident runtime RAM. Protocol frame dispatch now keeps
   opcode-specific request parsing/formatting out of the top-level switch,
   reducing `sq_device_protocol_handle_frame` from 352 bytes to 96 bytes in
-  the emitted C stack report. Protocol polling now reuses runtime app-id/event
-  scratch for lifecycle and armed timer transitions, app-arm trigger discovery
-  uses SQBC-only storage, and trigger registration uses the shared app-file
-  path scratch; the emitted C stack report now attributes that path to
-  `sq_device_protocol_poll` at 208 bytes instead of a separate 400-byte
-  trigger-registration frame.
+  the emitted C stack report. Lifecycle diagnostics now encode armed timers
+  directly from the runtime timer array instead of staging copied timer records
+  on the C stack, reducing `lifecycle_response` from 224 bytes to 96 bytes.
+  Protocol polling now reuses runtime app-id/event scratch for lifecycle and
+  armed timer transitions, app-arm trigger discovery uses SQBC-only storage, and
+  trigger registration uses the shared app-file path scratch; the emitted C
+  stack report now attributes that path to `sq_device_protocol_poll` at 208
+  bytes instead of a separate 400-byte trigger-registration frame.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
   succeeds but serial commands stall, app launch hangs, or input dispatch stops
   responding, check stack exhaustion early with `device resources`, compare

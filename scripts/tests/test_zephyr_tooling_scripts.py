@@ -730,6 +730,10 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         body = protocol[start:end]
 
         self.assertIn("sqdp_encode_lifecycle_response", body)
+        self.assertIn("offsetof(struct sq_vm_runtime_armed_timer, active)", body)
+        self.assertIn("offsetof(struct sq_vm_runtime_armed_timer, app_id)", body)
+        self.assertIn("offsetof(struct sq_vm_runtime_armed_timer, event)", body)
+        self.assertNotIn("SqdpLifecycleTimer armed_timers[SQ_VM_RUNTIME_ARMED_TIMER_MAX];", body)
         self.assertNotIn("uint8_t payload[256]", body)
         self.assertNotIn("append_string_field(payload", body)
 

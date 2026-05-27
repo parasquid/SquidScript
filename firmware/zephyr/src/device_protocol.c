@@ -754,8 +754,8 @@ static int __noinline lifecycle_response(const struct sq_protocol_frame *request
 	size_t active_app_len = 0;
 	const uint8_t *process_stack = NULL;
 	size_t process_count = 0;
-	SqdpLifecycleTimer armed_timers[SQ_VM_RUNTIME_ARMED_TIMER_MAX];
-	size_t armed_count = 0;
+	const uint8_t *armed_timer_base = NULL;
+	size_t armed_timer_count = 0;
 
 	if (runtime != NULL) {
 		if (runtime->current_app[0] != '\0') {
@@ -764,24 +764,19 @@ static int __noinline lifecycle_response(const struct sq_protocol_frame *request
 		}
 		process_stack = (const uint8_t *)runtime->return_stack;
 		process_count = runtime->return_stack_count;
-		memset(armed_timers, 0, sizeof(armed_timers));
-		for (size_t i = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
-			const struct sq_vm_runtime_armed_timer *timer = &runtime->armed_timers[i];
-			if (!timer->active) {
-				continue;
-			}
-			strncpy((char *)armed_timers[armed_count].app_id, timer->app_id,
-				sizeof(armed_timers[armed_count].app_id) - 1);
-			strncpy((char *)armed_timers[armed_count].event, timer->event,
-				sizeof(armed_timers[armed_count].event) - 1);
-			armed_count++;
-		}
+		armed_timer_base = (const uint8_t *)runtime->armed_timers;
+		armed_timer_count = SQ_VM_RUNTIME_ARMED_TIMER_MAX;
 	}
 
-	return sqdp_status_to_protocol_result(sqdp_encode_lifecycle_response(
+	return sqdp_status_to_protocol_result(sqdp_encode_lifecycle_response_from_runtime_timers(
 		request->sequence, active_app, active_app_len, process_stack, process_count,
-		SQ_APP_STORE_APP_ID_MAX, armed_count == 0 ? NULL : armed_timers, armed_count,
-		response, response_cap, response_len));
+		SQ_APP_STORE_APP_ID_MAX, armed_timer_base, armed_timer_count,
+		sizeof(runtime->armed_timers[0]),
+		offsetof(struct sq_vm_runtime_armed_timer, active),
+		offsetof(struct sq_vm_runtime_armed_timer, app_id),
+		sizeof(runtime->armed_timers[0].app_id),
+		offsetof(struct sq_vm_runtime_armed_timer, event),
+		sizeof(runtime->armed_timers[0].event), response, response_cap, response_len));
 }
 
 static int __noinline state_get_response(const struct sq_protocol_frame *request,

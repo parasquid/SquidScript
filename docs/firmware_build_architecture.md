@@ -173,6 +173,10 @@ instead of 432 bytes without adding resident runtime RAM.
 Protocol frame dispatch keeps opcode-specific request parsing and response
 formatting out of the top-level switch, so `sq_device_protocol_handle_frame`
 now emits a 96-byte C stack estimate instead of 352 bytes.
+Lifecycle diagnostics encode armed timers directly from the runtime timer array
+by pointer, stride, and field offsets instead of copying timer records into a
+C stack staging array, so `lifecycle_response` now emits a 96-byte C stack
+estimate instead of 224 bytes.
 Protocol polling reuses runtime app-id/event scratch for lifecycle and armed
 timer transitions. App-arm trigger discovery uses a SQBC-only filesystem
 backend instead of a full app storage object with state paths, and trigger

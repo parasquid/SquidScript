@@ -224,6 +224,45 @@ impl Default for SqdpLifecycleTimer {
     }
 }
 
+#[derive(Clone, Copy)]
+struct RuntimeLifecycleTimerIter {
+    base: *const u8,
+    count: usize,
+    stride: usize,
+    active_offset: usize,
+    app_id_offset: usize,
+    app_id_cap: usize,
+    event_offset: usize,
+    event_cap: usize,
+    index: usize,
+}
+
+impl Iterator for RuntimeLifecycleTimerIter {
+    type Item = LifecycleTimer<'static>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.index < self.count {
+            let index = self.index;
+            self.index += 1;
+            unsafe {
+                let slot = self.base.add(index.saturating_mul(self.stride));
+                if ptr::read(slot.add(self.active_offset)) == 0 {
+                    continue;
+                }
+                let app_id = slice::from_raw_parts(slot.add(self.app_id_offset), self.app_id_cap);
+                let event = slice::from_raw_parts(slot.add(self.event_offset), self.event_cap);
+                return Some(LifecycleTimer {
+                    app_id: str::from_utf8(c_string_bytes(app_id))
+                        .expect("validated runtime timer app id utf-8 before encoding"),
+                    event: str::from_utf8(c_string_bytes(event))
+                        .expect("validated runtime timer event utf-8 before encoding"),
+                });
+            }
+        }
+        None
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SqdpActionKind {
@@ -2030,6 +2069,110 @@ pub unsafe extern "C" fn sqdp_encode_lifecycle_response(
         event: str::from_utf8(c_string_bytes(&timer.event))
             .expect("validated armed event utf-8 before encoding"),
     });
+    let out = slice::from_raw_parts_mut(out, out_cap);
+    match encode_lifecycle_response_into(sequence, active, process_iter, armed_iter, out) {
+        Ok(len) => {
+            *out_len = len;
+            SqdpStatus::Ok
+        }
+        Err(DecodeError::OutputTooSmall { .. }) => SqdpStatus::BufferTooSmall,
+        Err(_) => SqdpStatus::EncodeError,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+#[no_mangle]
+pub unsafe extern "C" fn sqdp_encode_lifecycle_response_from_runtime_timers(
+    sequence: u32,
+    active_app: *const u8,
+    active_app_len: usize,
+    process_stack: *const u8,
+    process_count: usize,
+    process_stride: usize,
+    armed_timer_base: *const u8,
+    armed_timer_count: usize,
+    armed_timer_stride: usize,
+    armed_timer_active_offset: usize,
+    armed_timer_app_id_offset: usize,
+    armed_timer_app_id_cap: usize,
+    armed_timer_event_offset: usize,
+    armed_timer_event_cap: usize,
+    out: *mut u8,
+    out_cap: usize,
+    out_len: *mut usize,
+) -> SqdpStatus {
+    if out.is_null()
+        || out_len.is_null()
+        || (active_app.is_null() && active_app_len > 0)
+        || (process_stack.is_null() && process_count > 0)
+        || (process_count > 0 && process_stride == 0)
+        || (armed_timer_base.is_null() && armed_timer_count > 0)
+        || (armed_timer_count > 0 && armed_timer_stride == 0)
+        || armed_timer_active_offset >= armed_timer_stride
+        || armed_timer_app_id_cap == 0
+        || armed_timer_event_cap == 0
+        || armed_timer_app_id_offset
+            .checked_add(armed_timer_app_id_cap)
+            .is_none_or(|end| end > armed_timer_stride)
+        || armed_timer_event_offset
+            .checked_add(armed_timer_event_cap)
+            .is_none_or(|end| end > armed_timer_stride)
+    {
+        return SqdpStatus::InvalidArgument;
+    }
+    *out_len = 0;
+    if process_count > 8 || armed_timer_count > 8 {
+        return SqdpStatus::InvalidArgument;
+    }
+    let active = if active_app_len == 0 {
+        None
+    } else {
+        match str::from_utf8(slice::from_raw_parts(active_app, active_app_len)) {
+            Ok(value) => Some(value),
+            Err(_) => return SqdpStatus::InvalidArgument,
+        }
+    };
+    let process = if process_count == 0 {
+        &[]
+    } else {
+        slice::from_raw_parts(process_stack, process_count.saturating_mul(process_stride))
+    };
+    for index in 0..process_count {
+        if str::from_utf8(fixed_line_bytes(process, index, process_stride)).is_err() {
+            return SqdpStatus::InvalidArgument;
+        }
+    }
+    for index in 0..armed_timer_count {
+        let slot = armed_timer_base.add(index.saturating_mul(armed_timer_stride));
+        if ptr::read(slot.add(armed_timer_active_offset)) == 0 {
+            continue;
+        }
+        let app_id =
+            slice::from_raw_parts(slot.add(armed_timer_app_id_offset), armed_timer_app_id_cap);
+        let event =
+            slice::from_raw_parts(slot.add(armed_timer_event_offset), armed_timer_event_cap);
+        if str::from_utf8(c_string_bytes(app_id)).is_err()
+            || str::from_utf8(c_string_bytes(event)).is_err()
+        {
+            return SqdpStatus::InvalidArgument;
+        }
+    }
+
+    let process_iter = (0..process_count).map(|index| {
+        str::from_utf8(fixed_line_bytes(process, index, process_stride))
+            .expect("validated process stack utf-8 before encoding")
+    });
+    let armed_iter = RuntimeLifecycleTimerIter {
+        base: armed_timer_base,
+        count: armed_timer_count,
+        stride: armed_timer_stride,
+        active_offset: armed_timer_active_offset,
+        app_id_offset: armed_timer_app_id_offset,
+        app_id_cap: armed_timer_app_id_cap,
+        event_offset: armed_timer_event_offset,
+        event_cap: armed_timer_event_cap,
+        index: 0,
+    };
     let out = slice::from_raw_parts_mut(out, out_cap);
     match encode_lifecycle_response_into(sequence, active, process_iter, armed_iter, out) {
         Ok(len) => {

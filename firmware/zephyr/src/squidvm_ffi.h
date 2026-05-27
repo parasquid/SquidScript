@@ -675,6 +675,24 @@ SqdpStatus sqdp_encode_lifecycle_response(
 	uint8_t *out,
 	size_t out_cap,
 	size_t *out_len);
+SqdpStatus sqdp_encode_lifecycle_response_from_runtime_timers(
+	uint32_t sequence,
+	const uint8_t *active_app,
+	size_t active_app_len,
+	const uint8_t *process_stack,
+	size_t process_count,
+	size_t process_stride,
+	const uint8_t *armed_timer_base,
+	size_t armed_timer_count,
+	size_t armed_timer_stride,
+	size_t armed_timer_active_offset,
+	size_t armed_timer_app_id_offset,
+	size_t armed_timer_app_id_cap,
+	size_t armed_timer_event_offset,
+	size_t armed_timer_event_cap,
+	uint8_t *out,
+	size_t out_cap,
+	size_t *out_len);
 SqdpStatus sqdp_encode_resources_response(
 	uint32_t sequence,
 	const SqdpResourceMetric *metrics,
