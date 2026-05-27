@@ -2531,9 +2531,19 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         ]
 
         self.assertIn("const uint8_t *event, size_t event_len", start_body)
-        self.assertIn("sq_vm_runtime_start_event(context->runtime, &backend, event, event_len)",
-                      start_body)
+        self.assertNotIn("struct sq_vm_storage_backend backend;", start_body)
+        self.assertIn(
+            "context->runtime->job_backend = sq_app_store_vm_storage_backend(context->launch_storage)",
+            start_body,
+        )
+        start_body_flat = " ".join(start_body.split())
+        self.assertIn(
+            "sq_vm_runtime_start_event(context->runtime, &context->runtime->job_backend, "
+            "event, event_len)",
+            start_body_flat,
+        )
         self.assertNotIn("sq_vm_runtime_start(context->runtime, &backend, event)", start_body)
+        self.assertNotIn("&backend", start_body)
         self.assertIn('(const uint8_t *)"app.start"', protocol_c)
         self.assertIn('sizeof("app.start") - 1, true', protocol_c)
         self.assertIn('(const uint8_t *)"app.exit"', protocol_c)

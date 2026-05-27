@@ -268,6 +268,16 @@ while protocol app-install commit reuses the install session's 72-byte
 protocol `commit_install` path from 272 bytes to 224 bytes. The top
 source-known main/protocol path remains 464 bytes through app launch, while
 linker DRAM remains 185,024 bytes and the RAM audit remains 185,008 bytes.
+Installed-app launch now stores the file-backed VM storage backend directly in
+the runtime-owned job backend instead of keeping a protocol-stack backend
+temporary. That reduces `start_installed_app` from 96 bytes to 64 bytes and
+the cumulative launch path from 272 bytes to 240 bytes. The top source-known
+main/protocol path is now 464 bytes through
+`reset_runtime -> clear_runtime_context -> sq_vm_runtime_reset ->
+sq_vm_runtime_apply_target_default_indicator_binding ->
+sq_vm_runtime_device_config_rebind -> runtime_device_config_string_equals ->
+runtime_device_config_find`. Linker DRAM remains 185,024 bytes and the RAM
+audit remains 185,008 bytes.
 Protocol dispatch decodes only the request opcode and sequence into the live
 dispatch header because opcode handlers parse payloads from the original
 request bytes, so `sq_device_protocol_handle_frame` now emits 80 bytes instead
