@@ -133,8 +133,11 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   worker callback frame, reducing `runtime_work_handler` from 224 bytes to 16
   bytes for steady event dispatch. App-start setup is split into separately
   attributed phases: `sq_vm_runtime_prepare_app_start` is now 16 bytes,
-  saved-device-config setup is 176 bytes, and app device-binding setup is
+  saved-device-config setup is 80 bytes, and app device-binding setup is
   128 bytes, instead of retaining the combined 224-byte prepare frame.
+  The fixed `/system/device-config.sqdc` path now uses a 40-byte path slot and
+  direct formatting, reducing `sq_app_store_device_config_path` from 144 bytes
+  to 16 bytes and `sq_vm_runtime_device_config_save` from 160 bytes to 80 bytes.
   File-backed state and device-config reads now detect oversized files with a
   one-byte overflow read instead of a `struct fs_dirent` size probe, reducing
   `fs_storage_load_state` from 192 bytes to 48 bytes and

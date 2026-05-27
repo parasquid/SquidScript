@@ -1860,7 +1860,7 @@ static size_t runtime_fixed_text_len(const uint8_t *bytes, size_t cap)
 
 static int __noinline sq_vm_runtime_apply_saved_device_config(struct sq_vm_runtime *runtime)
 {
-	char path[SQ_APP_STORE_PATH_MAX];
+	char path[SQ_APP_STORE_DEVICE_CONFIG_PATH_MAX];
 	size_t bytes_len = 0;
 	SqvmDeviceConfigResult result = {0};
 	SqdcStatus status;
@@ -2036,7 +2036,7 @@ static int32_t runtime_device_config_rebind(void *user_data, const uint8_t *alia
 int sq_vm_runtime_device_config_save(struct sq_vm_runtime *runtime, const uint8_t *destination,
 				     size_t destination_len, SqvmDeviceConfigResult *out)
 {
-	char path[SQ_APP_STORE_PATH_MAX];
+	char path[SQ_APP_STORE_DEVICE_CONFIG_PATH_MAX];
 	size_t encoded_len = 0;
 	SqdcStatus status;
 	int result;

@@ -1979,6 +1979,28 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("sizeof(path)", body)
         self.assertNotIn("memcpy(resource, resource_bytes, resource_len);", body)
 
+    def test_device_config_flash_path_uses_fixed_path_bound_without_temp_dir(self):
+        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+        app_store_h = self.read("firmware/zephyr/src/app_store.h")
+        app_store_c = self.read("firmware/zephyr/src/app_store.c")
+        path_start = app_store_c.index("int sq_app_store_device_config_path")
+        path_end = app_store_c.index("int sq_app_store_install_resource")
+        path_body = app_store_c[path_start:path_end]
+        load_start = runtime.index("static int __noinline sq_vm_runtime_apply_saved_device_config")
+        load_end = runtime.index("static int __noinline sq_vm_runtime_apply_device_bindings")
+        load_body = runtime[load_start:load_end]
+        save_start = runtime.index("int sq_vm_runtime_device_config_save")
+        save_end = runtime.index("void sq_vm_runtime_reset_vm_context")
+        save_body = runtime[save_start:save_end]
+
+        self.assertIn("#define SQ_APP_STORE_DEVICE_CONFIG_PATH_MAX 40", app_store_h)
+        self.assertNotIn("char system_dir[SQ_APP_STORE_PATH_MAX];", path_body)
+        self.assertIn('"%s/system/device-config.sqdc"', path_body)
+        self.assertIn("char path[SQ_APP_STORE_DEVICE_CONFIG_PATH_MAX];", load_body)
+        self.assertIn("char path[SQ_APP_STORE_DEVICE_CONFIG_PATH_MAX];", save_body)
+        self.assertNotIn("char path[SQ_APP_STORE_PATH_MAX];", load_body)
+        self.assertNotIn("char path[SQ_APP_STORE_PATH_MAX];", save_body)
+
     def test_vm_dispatch_uses_static_callbacks_and_separate_user_data(self):
         runtime = self.read("firmware/zephyr/src/vm_runtime.c")
         ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")

@@ -191,7 +191,12 @@ estimate instead of 224 bytes.
 The VM worker callback keeps app-start binding preparation in an out-of-line
 helper, so steady event dispatch no longer carries that setup frame:
 `runtime_work_handler` now emits 16 bytes instead of 224 bytes, while
-`sq_vm_runtime_prepare_app_start` is attributed separately at 224 bytes.
+`sq_vm_runtime_prepare_app_start` is attributed separately at 16 bytes. Saved
+device-config setup is attributed separately at 80 bytes, and app
+device-binding setup is attributed at 128 bytes.
+The fixed `/system/device-config.sqdc` path uses a 40-byte path slot and direct
+formatting. That keeps `sq_app_store_device_config_path` at 16 bytes and
+`sq_vm_runtime_device_config_save` at 80 bytes in the ESP32-C3 stack report.
 File-backed state and device-config reads detect oversized files with a
 one-byte overflow read instead of staging a `struct fs_dirent` for a size
 probe, so `fs_storage_load_state` now emits 48 bytes instead of 192 bytes and

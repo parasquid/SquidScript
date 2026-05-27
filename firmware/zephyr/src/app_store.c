@@ -606,17 +606,16 @@ int sq_app_store_resource_path_bytes(const char *mount_point, const char *app_id
 
 int sq_app_store_device_config_path(const char *mount_point, char *out, size_t out_len)
 {
-	char system_dir[SQ_APP_STORE_PATH_MAX];
-	int result;
+	int written;
 
 	if (mount_point == NULL || out == NULL) {
 		return -EINVAL;
 	}
-	result = join_path2(system_dir, sizeof(system_dir), mount_point, "system");
-	if (result != 0) {
-		return result;
+	written = snprintf(out, out_len, "%s/system/device-config.sqdc", mount_point);
+	if (written < 0 || (size_t)written >= out_len) {
+		return -ENAMETOOLONG;
 	}
-	return join_path2(out, out_len, system_dir, "device-config.sqdc");
+	return 0;
 }
 
 int sq_app_store_install_resource(const char *mount_point, const char *app_id,
