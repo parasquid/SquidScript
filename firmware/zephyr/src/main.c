@@ -24,7 +24,6 @@ int main(void)
 	static struct sq_device_resource_session resource_session;
 	static struct sq_vm_runtime runtime;
 	static struct sq_app_store_vm_storage launch_storage;
-	static SqdpResourceMetric resource_metrics[SQ_DEVICE_RESOURCE_METRIC_MAX];
 	static uint8_t response[SQ_DEVICE_RESPONSE_BYTES];
 	static struct sq_device_protocol_context protocol_context;
 	size_t response_len = 0;
@@ -48,8 +47,6 @@ int main(void)
 		.resource_session = &resource_session,
 		.runtime = &runtime,
 		.launch_storage = &launch_storage,
-		.resource_metrics = resource_metrics,
-		.resource_metric_cap = ARRAY_SIZE(resource_metrics),
 	};
 
 	int storage_result = sq_app_store_mount_target_filesystem();

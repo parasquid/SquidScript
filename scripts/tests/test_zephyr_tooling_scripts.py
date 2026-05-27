@@ -174,8 +174,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("ram_heap_max_allocated_bytes", body)
         self.assertIn("protocol_thread_stack_pre_resources_unused_bytes", body)
         self.assertIn("protocol_thread_stack_pre_resources_used_bytes", body)
-        self.assertIn("context->resource_metrics", body)
-        self.assertIn("context->resource_metric_cap", body)
+        self.assertNotIn("context->resource_metrics", body)
+        self.assertNotIn("context->resource_metric_cap", body)
         self.assertNotIn("SqdpResourceMetric metrics[]", body)
         self.assertNotIn("install_session_bytes", body)
         self.assertNotIn("temp_session_bytes", body)
@@ -670,22 +670,25 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("SQ_DEVICE_STATE_FIELD_BYTES", body)
         self.assertNotIn("sq_protocol_encode_frame_header", body)
 
-    def test_resources_response_uses_rust_encoder_without_c_record_staging(self):
+    def test_resources_response_encodes_without_resident_metric_staging(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         start = protocol.index("static int resources_response")
         end = protocol.index("static void clear_runtime_context")
         body = protocol[start:end]
 
-        self.assertIn("sqdp_encode_resources_response", body)
+        self.assertIn("append_resource_metric", body)
+        self.assertIn("encode_resource_metrics_header", body)
+        self.assertNotIn("sqdp_encode_resources_response", body)
         self.assertNotIn("uint8_t record[96]", body)
-        self.assertNotIn("append_record_field(payload", body)
+        self.assertNotIn("SqdpResourceMetric", body)
 
     def test_resources_response_reports_input_binding_state(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         header = self.read("firmware/zephyr/src/device_protocol.h")
         stack = self.read("scripts/c3-supermini-measure-input-stack-isolation.sh")
 
-        self.assertIn("#define SQ_DEVICE_RESOURCE_METRIC_MAX 21", header)
+        self.assertNotIn("SQ_DEVICE_RESOURCE_METRIC_MAX", header)
+        self.assertNotIn("SqdpResourceMetric *resource_metrics", header)
         self.assertNotIn('SQ_RESOURCE_METRIC("active_binding_count"', protocol)
         self.assertIn("input_button_state", protocol)
         self.assertNotIn('SQ_RESOURCE_METRIC("input_button_count"', protocol)

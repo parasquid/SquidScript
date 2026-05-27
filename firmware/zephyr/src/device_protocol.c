@@ -22,6 +22,12 @@ BUILD_ASSERT(SQ_DEVICE_WIFI_PROFILE_NAME_BYTES == SQ_VM_RUNTIME_WIFI_PROFILE_NAM
 BUILD_ASSERT(SQ_DEVICE_WIFI_PROFILE_SSID_BYTES == SQ_VM_RUNTIME_WIFI_PROFILE_SSID_BYTES);
 BUILD_ASSERT(SQ_DEVICE_WIFI_PROFILE_PASSWORD_BYTES == SQ_VM_RUNTIME_WIFI_PROFILE_PASSWORD_BYTES);
 
+enum sq_device_field_type {
+	SQ_DEVICE_FIELD_TYPE_STRING = 1,
+	SQ_DEVICE_FIELD_TYPE_U64 = 5,
+	SQ_DEVICE_FIELD_TYPE_RECORD = 32,
+};
+
 static int sqdp_status_to_protocol_result(SqdpStatus status)
 {
 	switch (status) {
@@ -75,6 +81,86 @@ static int error_response(const struct sq_protocol_frame *request, int code, uin
 	}
 	return sqdp_status_to_protocol_result(sqdp_encode_error_response_for_code(
 		request->opcode, request->sequence, code, response, response_cap, response_len));
+}
+
+static void write_u32_le_device(uint8_t *out, uint32_t value)
+{
+	out[0] = value & 0xffu;
+	out[1] = (value >> 8) & 0xffu;
+	out[2] = (value >> 16) & 0xffu;
+	out[3] = (value >> 24) & 0xffu;
+}
+
+static int append_resource_metric(uint8_t *payload, size_t payload_cap, size_t *payload_len,
+				  const char *key, uint64_t value)
+{
+	size_t key_len;
+	size_t record_len;
+	size_t needed;
+	uint8_t *record;
+	uint8_t *value_field;
+
+	if (payload == NULL || payload_len == NULL || key == NULL) {
+		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
+	}
+
+	key_len = strlen(key);
+	if (key_len > UINT16_MAX || key_len > UINT16_MAX - 16u) {
+		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
+	}
+	record_len = 16u + key_len;
+	needed = *payload_len + 4u + record_len;
+	if (needed > payload_cap) {
+		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
+	}
+
+	payload[*payload_len] = SQ_DEVICE_RECORD_FIELD_ENTRY;
+	payload[*payload_len + 1u] = SQ_DEVICE_FIELD_TYPE_RECORD;
+	payload[*payload_len + 2u] = record_len & 0xffu;
+	payload[*payload_len + 3u] = (record_len >> 8) & 0xffu;
+
+	record = &payload[*payload_len + 4u];
+	record[0] = SQ_DEVICE_RECORD_FIELD_KEY;
+	record[1] = SQ_DEVICE_FIELD_TYPE_STRING;
+	record[2] = key_len & 0xffu;
+	record[3] = (key_len >> 8) & 0xffu;
+	memcpy(&record[4], key, key_len);
+
+	value_field = &record[4u + key_len];
+	value_field[0] = SQ_DEVICE_RECORD_FIELD_VALUE;
+	value_field[1] = SQ_DEVICE_FIELD_TYPE_U64;
+	value_field[2] = 8u;
+	value_field[3] = 0u;
+	for (size_t i = 0; i < 8u; i++) {
+		value_field[4u + i] = (value >> (i * 8u)) & 0xffu;
+	}
+
+	*payload_len = needed;
+	return SQ_PROTOCOL_OK;
+}
+
+static int encode_resource_metrics_header(uint32_t sequence, uint8_t *response,
+					  size_t response_cap, size_t payload_len,
+					  size_t *response_len)
+{
+	uint8_t *payload;
+
+	if (response == NULL || response_len == NULL || response_cap < SQ_PROTOCOL_HEADER_LEN ||
+	    payload_len > response_cap - SQ_PROTOCOL_HEADER_LEN || payload_len > UINT32_MAX) {
+		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
+	}
+
+	payload = &response[SQ_PROTOCOL_HEADER_LEN];
+	memcpy(response, "SQDP", 4);
+	response[4] = SQ_FRAME_RESPONSE;
+	response[5] = SQ_OPCODE_RESOURCES_GET;
+	response[6] = SQ_STATUS_OK;
+	response[7] = 0;
+	write_u32_le_device(&response[8], sequence);
+	write_u32_le_device(&response[12], (uint32_t)payload_len);
+	write_u32_le_device(&response[16], sq_protocol_crc32(payload, payload_len));
+	*response_len = SQ_PROTOCOL_HEADER_LEN + payload_len;
+	return SQ_PROTOCOL_OK;
 }
 
 static int begin_install(const struct sq_protocol_frame *request,
@@ -822,8 +908,9 @@ static int resources_response(const struct sq_protocol_frame *request,
 			      const struct sq_device_protocol_context *context, uint8_t *response,
 			      size_t response_cap, size_t *response_len)
 {
-	SqdpResourceMetric *metrics = context->resource_metrics;
-	size_t metric_count = 0;
+	uint8_t *payload;
+	size_t payload_cap;
+	size_t payload_len = 0;
 	size_t vm_worker_stack_unused = 0;
 	size_t vm_worker_stack_size = context->runtime == NULL ? 0 : sq_vm_runtime_work_stack_size();
 	size_t vm_worker_stack_used = 0;
@@ -839,9 +926,12 @@ static int resources_response(const struct sq_protocol_frame *request,
 	size_t input_button_pressed_count = 0;
 	size_t input_button_state = 0;
 
-	if (metrics == NULL || context->resource_metric_cap < SQ_DEVICE_RESOURCE_METRIC_MAX) {
-		return -ENOSPC;
+	if (response == NULL || response_len == NULL || response_cap < SQ_PROTOCOL_HEADER_LEN) {
+		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
 	}
+	*response_len = 0;
+	payload = &response[SQ_PROTOCOL_HEADER_LEN];
+	payload_cap = response_cap - SQ_PROTOCOL_HEADER_LEN;
 
 	if (k_thread_stack_space_get(k_current_get(), &protocol_stack_pre_resources_unused) == 0 &&
 	    protocol_stack_pre_resources_unused <= protocol_stack_size) {
@@ -897,14 +987,11 @@ static int resources_response(const struct sq_protocol_frame *request,
 
 #define SQ_RESOURCE_METRIC(key_literal, metric_value) \
 	do { \
-		if (metric_count >= context->resource_metric_cap) { \
-			return -ENOSPC; \
+		int metric_result = append_resource_metric(payload, payload_cap, &payload_len, \
+							   (key_literal), (metric_value)); \
+		if (metric_result != SQ_PROTOCOL_OK) { \
+			return metric_result; \
 		} \
-		metrics[metric_count++] = (SqdpResourceMetric){ \
-			.key = (const uint8_t *)(key_literal), \
-			.key_len = sizeof(key_literal) - 1, \
-			.value = (metric_value), \
-		}; \
 	} while (false)
 	SQ_RESOURCE_METRIC("ram_total_bytes", CONFIG_SRAM_SIZE * 1024u);
 	SQ_RESOURCE_METRIC("runtime_static_bytes",
@@ -938,9 +1025,8 @@ static int resources_response(const struct sq_protocol_frame *request,
 	SQ_RESOURCE_METRIC("input_button_state", input_button_state);
 #undef SQ_RESOURCE_METRIC
 
-	return sqdp_status_to_protocol_result(sqdp_encode_resources_response(
-		request->sequence, metrics, metric_count, response, response_cap,
-		response_len));
+	return encode_resource_metrics_header(request->sequence, response, response_cap,
+					      payload_len, response_len);
 }
 
 static void clear_runtime_context(const struct sq_device_protocol_context *context)

@@ -1110,7 +1110,6 @@ ZTEST(squidscript_protocol, test_handles_trace_resources_and_wifi_error_frames)
 	struct sq_device_install_session install_session = {0};
 	struct sq_device_temp_session temp_session = {0};
 	struct sq_device_resource_session resource_session = {0};
-	static SqdpResourceMetric resource_metrics[SQ_DEVICE_RESOURCE_METRIC_MAX];
 	struct sq_device_protocol_context context = {
 		.identity = &identity,
 		.registry = &registry,
@@ -1118,8 +1117,6 @@ ZTEST(squidscript_protocol, test_handles_trace_resources_and_wifi_error_frames)
 		.temp_session = &temp_session,
 		.resource_session = &resource_session,
 		.runtime = &runtime,
-		.resource_metrics = resource_metrics,
-		.resource_metric_cap = ARRAY_SIZE(resource_metrics),
 	};
 	uint8_t request[SQ_PROTOCOL_HEADER_LEN];
 	uint8_t response[512];
@@ -2237,7 +2234,6 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 		.identity = &identity,
 		.runtime = &runtime,
 	};
-	static SqdpResourceMetric resource_metrics[SQ_DEVICE_RESOURCE_METRIC_MAX];
 	uint64_t stack_unused = 0;
 	uint64_t stack_used = 0;
 	uint64_t protocol_stack_unused = 0;
@@ -2253,8 +2249,6 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 
 	memset(&runtime, 0, sizeof(runtime));
 	sq_vm_runtime_init(&runtime);
-	context.resource_metrics = resource_metrics;
-	context.resource_metric_cap = ARRAY_SIZE(resource_metrics);
 	runtime.last_dispatch_sequence = 7;
 	runtime.last_dispatch_elapsed_us = 1234;
 	runtime.last_dispatch_sqbc_read_count = 2;

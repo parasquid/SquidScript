@@ -94,6 +94,8 @@ RAM budget.
 Protocol transfer sessions keep full resource-path storage for package paths
 but use smaller internal staging-path buffers for fixed firmware staging
 filenames.
+Resource diagnostics are encoded directly into the caller-owned protocol
+response buffer and do not keep a resident metric staging array.
 The protocol/main thread stack is currently 5 KiB and the VM worker stack is
 18 KiB. Resource diagnostics expose each stack's high-water use separately so
 budget reductions can be tied to measured workloads instead of inferred from

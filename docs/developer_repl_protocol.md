@@ -100,13 +100,16 @@ or VM operation and then calls the completion function so Rust updates progress.
 Host tooling derives upload chunk payload size from the 320-byte encoded
 protocol frame budget so install, resource, and temp-run chunk frames fit the
 firmware's fixed serial receive buffer without increasing firmware RAM.
-Rust also encodes `app-list`, lifecycle diagnostics, resource diagnostics,
-state export responses, and protocol error responses directly into Zephyr's
-caller-owned response buffer so Zephyr C does not stage duplicate TLV payload
-arrays for those command responses. Repeated diagnostic line responses use the
-same Rust encoder path. App launch, generic event dispatch, state import, and
-Wi-Fi profile requests are parsed by Rust `sqdp_` FFI helpers, which return
-borrowed field slices to Zephyr C for runtime/storage actions.
+Rust also encodes `app-list`, lifecycle diagnostics, state export responses,
+and protocol error responses directly into Zephyr's caller-owned response
+buffer so Zephyr C does not stage duplicate TLV payload arrays for those command
+responses. Repeated diagnostic line responses use the same Rust encoder path.
+Zephyr C directly encodes resource diagnostics into the same caller-owned
+response buffer because those values are already native runtime measurements;
+it does not keep a resident metric staging array. App launch, generic event
+dispatch, state import, and Wi-Fi profile requests are parsed by Rust `sqdp_`
+FFI helpers, which return borrowed field slices to Zephyr C for runtime/storage
+actions.
 
 `app-list` responses use repeated record fields: response field tag `1` is one
 app record, record field tag `1` is the app ID string, and record field tag `2`
