@@ -6,6 +6,9 @@
 #include <string.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/fs/fs.h>
+#include <zephyr/sys/util.h>
+
+BUILD_ASSERT(sizeof(size_t) == sizeof(uint32_t));
 
 #if defined(CONFIG_FILE_SYSTEM_LITTLEFS) && DT_NODE_EXISTS(DT_NODELABEL(storage_partition))
 #include <zephyr/fs/littlefs.h>

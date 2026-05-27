@@ -890,14 +890,18 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
     def test_app_list_entry_uses_32_bit_sqbc_length_across_firmware_and_ffi(self):
         app_store_h = self.read("firmware/zephyr/src/app_store.h")
+        app_store_c = self.read("firmware/zephyr/src/app_store.c")
         ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
         ffi_rs = self.read("compiler/rust/crates/squidvm-ffi/src/lib.rs")
         protocol_c = self.read("firmware/zephyr/src/device_protocol.c")
+        build_doc = self.read("docs/firmware_build_architecture.md")
 
         self.assertIn("uint32_t sqbc_len;", app_store_h)
         self.assertIn("uint32_t sqbc_len;", ffi_h)
         self.assertIn("pub sqbc_len: u32,", ffi_rs)
+        self.assertIn("BUILD_ASSERT(sizeof(size_t) == sizeof(uint32_t));", app_store_c)
         self.assertIn("BUILD_ASSERT(sizeof(struct sq_app_registry_entry) == sizeof(SqdpAppListEntry));", protocol_c)
+        self.assertIn("ESP32-C3 firmware target uses a 32-bit `size_t`", build_doc)
         self.assertNotIn("size_t sqbc_len;", app_store_h)
         self.assertNotIn("size_t sqbc_len;", ffi_h)
         self.assertNotIn("pub sqbc_len: usize,", ffi_rs)
