@@ -73,8 +73,8 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   slots to keep the reference firmware RAM-bound explicit, and the serial
   receive frame budget is 320 bytes with host upload chunking derived from that
   limit, protocol transfer sessions use 72-byte staging path slots, and
-  resource diagnostics encode directly into the response buffer without a
-  resident metric staging array. The latest target build reports 191,632 bytes
+  resource diagnostics encode directly into the 992-byte response buffer without
+  a resident metric staging array. The latest target build reports 191,600 bytes
   of DRAM use; next
   reductions should investigate full-suite worker-stack high-water headroom
   after the 18 KiB stack reduction and any remaining accidental static buffers.

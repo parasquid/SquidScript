@@ -687,6 +687,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         header = self.read("firmware/zephyr/src/device_protocol.h")
         stack = self.read("scripts/c3-supermini-measure-input-stack-isolation.sh")
 
+        self.assertIn("#define SQ_DEVICE_RESPONSE_BYTES 992u", header)
+        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 1024u", header)
         self.assertNotIn("SQ_DEVICE_RESOURCE_METRIC_MAX", header)
         self.assertNotIn("SqdpResourceMetric *resource_metrics", header)
         self.assertNotIn('SQ_RESOURCE_METRIC("active_binding_count"', protocol)
