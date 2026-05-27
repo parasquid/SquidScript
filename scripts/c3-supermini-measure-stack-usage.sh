@@ -10,12 +10,9 @@ WORKER_STACK_MIN_UNUSED_BYTES="${WORKER_STACK_MIN_UNUSED_BYTES:-384}"
 
 mkdir -p "${WORK_DIR}"
 
-resources_out="${WORK_DIR}/resources-after-workloads.out"
 summary_out="${WORK_DIR}/summary.out"
 
-printf 'hardware stack usage: cargo run --quiet -p squidc -- device resources\n' >&2
-timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" \
-  cargo run --quiet -p squidc -- device resources >"${resources_out}" 2>&1
+resources_out="$(run_capture resources-after-workloads cargo run --quiet -p squidc -- device resources)"
 
 resource_value() {
   local key="$1"

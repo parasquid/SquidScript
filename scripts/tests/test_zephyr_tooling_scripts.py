@@ -555,7 +555,14 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("Protocol stack headroom below", stack_script)
         self.assertIn("VM worker stack headroom below", stack_script)
         self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', stack_script)
-        self.assertIn('timeout "${COMMAND_TIMEOUT_SECONDS:-20}s"', stack_script)
+        self.assertIn(
+            'resources_out="$(run_capture resources-after-workloads cargo run --quiet -p squidc -- device resources)"',
+            stack_script,
+        )
+        self.assertNotIn(
+            'timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" \\\n  cargo run --quiet -p squidc -- device resources',
+            stack_script,
+        )
 
     def test_default_runtime_gates_wifi_scan_buffers_from_static_ram(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
