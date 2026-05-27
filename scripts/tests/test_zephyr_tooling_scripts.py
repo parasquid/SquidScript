@@ -1603,6 +1603,75 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertNotIn("for ((attempt =", helper)
         self.assertIn('cargo run -p squidc -- device output --port "$port"', helper)
 
+    def test_c3_stack_usage_attribution_is_opt_in_and_reportable(self):
+        build = self.read("scripts/c3-supermini-zephyr-build.sh")
+        cmake = self.read("firmware/zephyr/CMakeLists.txt")
+        docs = self.read("docs/firmware_build_architecture.md")
+        report = ROOT / "scripts/c3-supermini-stack-usage-report.sh"
+
+        self.assertTrue(report.exists())
+        self.assertIn("SQUID_ZEPHYR_STACK_USAGE", build)
+        self.assertIn("-DSQUID_ZEPHYR_STACK_USAGE=ON", build)
+        self.assertIn("SQUID_ZEPHYR_STACK_USAGE", cmake)
+        self.assertIn("-fstack-usage", cmake)
+        self.assertIn("scripts/c3-supermini-stack-usage-report.sh", docs)
+        self.assertIn("SQUID_ZEPHYR_STACK_USAGE=1 scripts/c3-supermini-build.sh", docs)
+
+    def test_c3_stack_usage_report_sorts_largest_functions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "small.su").write_text(
+                "src/main.c:10:1:small\t32\tstatic\n",
+                encoding="utf-8",
+            )
+            (tmp_path / "large.su").write_text(
+                "src/device_protocol.c:20:1:large\t160\tstatic\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    str(ROOT / "scripts/c3-supermini-stack-usage-report.sh"),
+                    str(tmp_path),
+                    "2",
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lines = [line for line in result.stdout.splitlines() if line.strip()]
+        self.assertEqual(lines[0], "bytes\tfunction\tlocation\tmode")
+        self.assertTrue(lines[1].startswith("160\tlarge\tsrc/device_protocol.c:20:1\tstatic"))
+        self.assertTrue(lines[2].startswith("32\tsmall\tsrc/main.c:10:1\tstatic"))
+
+    def test_c3_stack_usage_report_limit_does_not_trip_pipefail(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            lines = [
+                f"src/file.c:{index}:1:function_{index}\t{index + 1}\tstatic\n"
+                for index in range(10000)
+            ]
+            (tmp_path / "many.su").write_text("".join(lines), encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    str(ROOT / "scripts/c3-supermini-stack-usage-report.sh"),
+                    str(tmp_path),
+                    "5",
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lines = [line for line in result.stdout.splitlines() if line.strip()]
+        self.assertEqual(len(lines), 6)
+        self.assertTrue(lines[1].startswith("10000\tfunction_9999\t"))
+        self.assertTrue(lines[5].startswith("9996\tfunction_9995\t"))
+
     def test_hardware_suite_leaves_blinky_visible_check_last(self):
         blinky = self.read("scripts/c3-supermini-test-blinky.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")

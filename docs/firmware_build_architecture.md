@@ -135,6 +135,18 @@ needs physical revalidation with the hardware stack harness. The stack harness
 also enforces minimum unused-stack floors of 768 bytes for protocol/main and
 384 bytes for the VM worker, printing the captured resource frame if either
 floor is crossed.
+For C stack attribution without hardware, build with GCC stack-usage emission
+enabled and summarize the generated `.su` files:
+
+```sh
+SQUID_ZEPHYR_STACK_USAGE=1 scripts/c3-supermini-build.sh
+scripts/c3-supermini-stack-usage-report.sh
+```
+
+This reports Zephyr app C source stack estimates only. It does not measure Rust
+VM stack use, interrupt stack use, callee effects hidden behind library calls,
+or real runtime high-water marks; keep using `device resources` and the hardware
+stack harness for final stack-budget validation.
 Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi VM service
 calls now cross the Rust FFI boundary into Zephyr callbacks. Zephyr now
 performs installed-app foreground handoff for `app.launch` and `app.exit` with

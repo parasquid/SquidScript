@@ -35,4 +35,9 @@ target_sources(app PRIVATE
   src/vm_storage.c
 )
 
+option(SQUID_ZEPHYR_STACK_USAGE "Emit GCC .su stack-usage files for Zephyr app C sources" OFF)
+if(SQUID_ZEPHYR_STACK_USAGE)
+  target_compile_options(app PRIVATE $<$<COMPILE_LANGUAGE:C>:-fstack-usage>)
+endif()
+
 squidscript_link_squidvm_ffi(app)

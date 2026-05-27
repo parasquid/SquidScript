@@ -13,6 +13,10 @@ if [[ -n "${ZEPHYR_EXTRA_CONF_FILE:-}" ]]; then
   CMAKE_ARGS+=(-DEXTRA_CONF_FILE="${ZEPHYR_EXTRA_CONF_FILE}")
 fi
 
+if [[ "${SQUID_ZEPHYR_STACK_USAGE:-0}" == "1" ]]; then
+  CMAKE_ARGS+=(-DSQUID_ZEPHYR_STACK_USAGE=ON)
+fi
+
 if ! command -v west >/dev/null 2>&1; then
   printf 'west is required for Zephyr firmware builds. Install Zephyr SDK/tools and run west init/update first.\n' >&2
   exit 1

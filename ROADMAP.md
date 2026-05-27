@@ -98,7 +98,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   resources if protocol/main unused stack drops below 768 bytes or VM worker
   unused stack drops below 384 bytes. After that, investigate full-suite
   worker-stack high-water headroom after the 18016-byte stack reduction and
-  inspect any remaining accidental static buffers.
+  inspect any remaining accidental static buffers. For host-side attribution
+  before physical confirmation, build with `SQUID_ZEPHYR_STACK_USAGE=1` and run
+  `scripts/c3-supermini-stack-usage-report.sh` to sort generated Zephyr app C
+  `.su` stack-usage records.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
   succeeds but serial commands stall, app launch hangs, or input dispatch stops
   responding, check stack exhaustion early with `device resources`, compare
