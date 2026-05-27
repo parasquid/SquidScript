@@ -1889,7 +1889,8 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         install_start = app_store.index("int sq_app_store_install_app")
         install_end = app_store.index("int sq_app_store_begin_staged_install")
         install_body = app_store[install_start:install_end]
-        self.assertIn("char path[SQ_APP_STORE_PATH_MAX];", install_body)
+        self.assertIn("char path[SQ_APP_STORE_APP_FILE_PATH_MAX];", install_body)
+        self.assertNotIn("char path[SQ_APP_STORE_PATH_MAX];", install_body)
         self.assertNotIn("char app_dir[SQ_APP_STORE_PATH_MAX];", install_body)
         self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", install_body)
         self.assertIn("format_app_dir(path, sizeof(path), mount_point, app_id)", install_body)
@@ -1900,7 +1901,8 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         commit_start = app_store.index("int sq_app_store_commit_staged_install")
         commit_end = app_store.index("int sq_app_store_commit_staged_resource")
         commit_body = app_store[commit_start:commit_end]
-        self.assertIn("char final_path[SQ_APP_STORE_PATH_MAX];", commit_body)
+        self.assertIn("char final_path[SQ_APP_STORE_APP_FILE_PATH_MAX];", commit_body)
+        self.assertNotIn("char final_path[SQ_APP_STORE_PATH_MAX];", commit_body)
         self.assertNotIn("struct fs_dirent existing", commit_body)
         self.assertIn("result = fs_unlink(final_path);", commit_body)
         self.assertIn("if (result != 0 && result != -ENOENT)", commit_body)

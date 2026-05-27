@@ -364,7 +364,7 @@ int sq_app_store_sqbc_path(const char *mount_point, const char *app_id, char *ou
 int sq_app_store_install_app(const char *mount_point, const char *app_id, const uint8_t *sqbc,
 			     size_t sqbc_len)
 {
-	char path[SQ_APP_STORE_PATH_MAX];
+	char path[SQ_APP_STORE_APP_FILE_PATH_MAX];
 	int result;
 
 	if (mount_point == NULL || !is_safe_app_id(app_id) || sqbc == NULL || sqbc_len == 0) {
@@ -395,7 +395,7 @@ int sq_app_store_install_app(const char *mount_point, const char *app_id, const 
 int sq_app_store_begin_staged_install(const char *mount_point, const char *app_id,
 				      char *staging_path, size_t staging_path_len)
 {
-	char app_dir[SQ_APP_STORE_PATH_MAX];
+	char app_dir[SQ_APP_STORE_APP_FILE_PATH_MAX];
 	struct fs_file_t file;
 	int result;
 
@@ -519,7 +519,7 @@ int sq_app_store_write_staged_chunk(const char *staging_path, size_t offset,
 int sq_app_store_commit_staged_install(const char *mount_point, const char *app_id,
 				       const char *staging_path)
 {
-	char final_path[SQ_APP_STORE_PATH_MAX];
+	char final_path[SQ_APP_STORE_APP_FILE_PATH_MAX];
 	int result;
 
 	if (mount_point == NULL || !is_safe_app_id(app_id) || staging_path == NULL) {
