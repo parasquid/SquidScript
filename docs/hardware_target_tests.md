@@ -200,8 +200,24 @@ observed but `output=count 1` is not produced, it writes
 `after-dispatch-timeout` diagnostics. A GPIO5 active-high candidate run also
 timed out before `after-press-observed`, with `input_button_state=1`,
 protocol/main stack flat at 2476 bytes, and VM worker stack use at 17136 bytes.
-The physical press row still needs a completed observed-button run before
-reducing stack budgets further.
+The completed physical GPIO9 input isolation run observed
+`after-press-observed` with `input_button_state=257`, proving one configured
+input and one currently pressed input, and `device output` changed from
+`output=count 0` to `output=count 1`. The current skip-flash press row kept
+protocol/main stack flat at 2476 bytes and VM worker stack use at 17136 bytes,
+with 2320 bytes free.
+
+For the ESP32-C3 Super Mini reference board, treat GPIO9 as the confirmed BOOT
+button input path. Board pinout references identify GPIO9 as the BOOT button,
+and local hardware evidence confirms GPIO9 reads released as `true`, held as
+`false`, and dispatches the configured `key.SELECT` input event. The
+BOOT-button pin scan is diagnostic only: it samples GPIO0 through GPIO10 and
+now requires repeated stable changed samples, but floating or unconfigured pins
+can still move with a pen-held tiny button. Do not treat GPIO3, GPIO4, GPIO7,
+GPIO10, or GPIO5 scan changes as ESP32-C3 Super Mini buttons without a targeted
+raw probe and input-stack run. GPIO3 is also part of ESP32-C3 boot strapping,
+while GPIO4 and GPIO7 have alternate JTAG/FSPI-related functions, so broad
+unconfigured scans are not authoritative for button mapping.
 After flattening the resumable screen-render interpreter path, a headless
 draw-log isolation run showed that `screen.open(...)` into a screen with only
 `service.display.clear("gray0")` uses `vm_worker_stack_used_bytes=17056` of

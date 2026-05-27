@@ -7,7 +7,8 @@ source "${ROOT}/scripts/lib/hardware-command.sh"
 WORK_DIR="${ROOT}/target/hardware-tests/boot-button-pin-scan"
 PIN_SCAN_APP="${ROOT}/tests/hardware/c3-supermini/boot-button-pin-scan/main.squid"
 COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-12}"
-WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-30}"
+WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-60}"
+STABLE_SAMPLE_COUNT="${STABLE_SAMPLE_COUNT:-3}"
 
 mkdir -p "${WORK_DIR}"
 
@@ -40,20 +41,36 @@ wait_for_changed_sample() {
   local out sample
   local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS))
   local attempt=0
+  local stable_count=0
+  local last_changed_sample=""
 
   while (( SECONDS < deadline )); do
     attempt=$((attempt + 1))
     out="$(capture_sample "held-${attempt}")"
     sample="$(latest_pin_sample "${out}")"
     if [[ "${sample}" != "${baseline}" ]]; then
-      printf '%s\n' "${sample}"
-      return 0
+      if [[ "${sample}" == "${last_changed_sample}" ]]; then
+        stable_count=$((stable_count + 1))
+      else
+        last_changed_sample="${sample}"
+        stable_count=1
+      fi
+      if (( stable_count >= STABLE_SAMPLE_COUNT )); then
+        printf '%s\n' "${sample}"
+        return 0
+      fi
+    else
+      stable_count=0
+      last_changed_sample=""
     fi
     sleep 0.1
   done
 
-  printf 'Timed out waiting for a BOOT-button pin change from baseline:\n%s\n' \
-    "${baseline}" >&2
+  printf 'Timed out waiting for %s stable BOOT-button pin samples changed from baseline:\n%s\n' \
+    "${STABLE_SAMPLE_COUNT}" "${baseline}" >&2
+  if [[ -n "${last_changed_sample}" ]]; then
+    printf 'Last unstable changed sample:\n%s\n' "${last_changed_sample}" >&2
+  fi
   if [[ -n "${out:-}" ]]; then
     printf '%s\n' "--- ${out} ---" >&2
     sed -n '1,200p' "${out}" >&2

@@ -67,28 +67,26 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   low byte is configured input count and the next byte is currently pressed
   count, so timeout runs can prove whether the physical binding was installed
   and whether the firmware saw the line pressed. Current hardware evidence has
-  `input_button_state=1` at launch, after release, and after press timeout,
-  meaning the GPIO9 binding is installed and the line now reads released after
-  devicetree pull-up configuration. The input isolation script now asks for a
-  held press and separates electrical press timeout from dispatch/output
-  timeout. The raw GPIO9 probe checks whether `hardware.gpio.read("GPIO9")`
-  sees released as `true` and held as `false` with the same pull-up
-  configuration, separating physical pin visibility from event dispatch. The
-  current raw probe clears stale output, repeatedly relaunches the probe while
-  waiting for the held state, saw released `output=gpio9 true`, and still timed
-  out waiting for held `output=gpio9 false`; every held-phase sample remained
-  `output=gpio9 true`. The broader BOOT-button pin scan now samples GPIO0
-  through GPIO10 and, in the current run, saw no changed GPIO values while
-  waiting for a held BOOT button; the released baseline was GPIO0 false,
-  GPIO1 false, GPIO2 true, GPIO3 false, GPIO4 false, GPIO5 false, GPIO6 true,
-  GPIO7 false, GPIO8 false, GPIO9 true, GPIO10 false. A configurable
-  input-stack run against a GPIO5 active-high candidate also timed out before
-  `after-press-observed`, with `input_button_state=1`, protocol/main stack
-  still flat at 2476 bytes, and VM worker stack at 17136 bytes for that launch.
-  Resolve that physical button visibility issue or confirm the button path
-  externally, complete an observed physical press row, explain any press-time
-  peak, then validate whether the 8 KiB protocol/main stack or 19 KiB worker
-  stack can be reduced after full-suite coverage.
+  `input_button_state=1` at launch and after release, meaning the GPIO9 binding
+  is installed and the line now reads released after devicetree pull-up
+  configuration. The input isolation script now asks for a held press and
+  separates electrical press timeout from dispatch/output timeout. The raw GPIO9
+  probe confirms `hardware.gpio.read("GPIO9")` sees released as `true` and held
+  as `false` with the same pull-up configuration, separating physical pin
+  visibility from event dispatch. A completed physical GPIO9 input-stack run
+  observed `after-press-observed` with `input_button_state=257`, proving one
+  configured input and one currently pressed input; app output changed from
+  `output=count 0` to `output=count 1`. The press row kept protocol/main stack
+  flat at 2476 bytes and VM worker stack at 17136 bytes with 2320 bytes free in
+  the current skip-flash run. The broader BOOT-button pin scan samples GPIO0
+  through GPIO10 and now requires repeated stable changed samples before
+  accepting a result because a pen-held tiny button can slip and floating or
+  unconfigured pins can produce one-off changed samples. For the ESP32-C3 Super
+  Mini reference board, treat GPIO9 as the confirmed physical input path; do
+  not treat GPIO3, GPIO4, GPIO7, GPIO10, or GPIO5 scan changes as real buttons
+  without targeted confirmation. Next, explain any press-time peak, then
+  validate whether the 8 KiB protocol/main stack or 19 KiB worker stack can be
+  reduced after full-suite coverage.
 - Improve network heap attribution before expanding Wi-Fi scope. Current AP
   start/stop hardware coverage drives `ram_heap_max_allocated_bytes` close to
   the 36 KiB system heap budget; add clearer per-workload heap reset or
