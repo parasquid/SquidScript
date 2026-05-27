@@ -1968,12 +1968,11 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         commit_end = app_store.index("int sq_app_store_resource_path")
         commit_body = app_store[commit_start:commit_end]
         self.assertIn("char path[SQ_APP_STORE_PATH_MAX];", commit_body)
-        self.assertIn("struct fs_file_t main_sqbc;", commit_body)
+        self.assertIn("validate_app_main_sqbc(mount_point, app_id)", commit_body)
+        self.assertNotIn("struct fs_file_t main_sqbc;", commit_body)
         self.assertNotIn("struct fs_dirent entry;", commit_body)
         self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", commit_body)
         self.assertNotIn("char final_path[SQ_APP_STORE_PATH_MAX];", commit_body)
-        self.assertIn('format_app_path(path, sizeof(path), mount_point, app_id, "main.sqbc")', commit_body)
-        self.assertIn("fs_open(&main_sqbc, path, FS_O_READ)", commit_body)
         self.assertIn("ensure_resource_parent_dirs(path, sizeof(path), mount_point, app_id,", commit_body)
         self.assertIn("sq_app_store_resource_path(mount_point, app_id, resource_path, path,", commit_body)
         self.assertIn("fs_rename(staging_path, path)", commit_body)
@@ -1982,14 +1981,38 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         install_end = app_store.index("int sq_app_store_scan_registry")
         install_body = app_store[install_start:install_end]
         self.assertIn("char path[SQ_APP_STORE_PATH_MAX];", install_body)
-        self.assertIn("struct fs_file_t main_sqbc;", install_body)
+        self.assertIn("validate_app_main_sqbc(mount_point, app_id)", install_body)
+        self.assertNotIn("struct fs_file_t main_sqbc;", install_body)
         self.assertNotIn("struct fs_dirent entry;", install_body)
         self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", install_body)
-        self.assertIn('format_app_path(path, sizeof(path), mount_point, app_id, "main.sqbc")', install_body)
-        self.assertIn("fs_open(&main_sqbc, path, FS_O_READ)", install_body)
         self.assertIn("ensure_resource_parent_dirs(path, sizeof(path), mount_point, app_id,", install_body)
         self.assertIn("sq_app_store_resource_path(mount_point, app_id, resource_path, path,", install_body)
         self.assertIn("write_file(path, bytes, len)", install_body)
+
+    def test_resource_install_validates_main_sqbc_with_narrow_helper(self):
+        app_store = self.read("firmware/zephyr/src/app_store.c")
+
+        self.assertIn("static int validate_app_main_sqbc", app_store)
+        helper_start = app_store.index("static int validate_app_main_sqbc")
+        helper_end = app_store.index("static int ensure_resource_parent_dirs")
+        helper_body = app_store[helper_start:helper_end]
+        self.assertIn("char path[SQ_APP_STORE_APP_FILE_PATH_MAX];", helper_body)
+        self.assertIn('format_app_path(path, sizeof(path), mount_point, app_id, "main.sqbc")', helper_body)
+        self.assertIn("fs_open(&main_sqbc, path, FS_O_READ)", helper_body)
+
+        commit_start = app_store.index("int sq_app_store_commit_staged_resource")
+        commit_end = app_store.index("int sq_app_store_resource_path")
+        commit_body = app_store[commit_start:commit_end]
+        self.assertIn("char path[SQ_APP_STORE_PATH_MAX];", commit_body)
+        self.assertIn("validate_app_main_sqbc(mount_point, app_id)", commit_body)
+        self.assertNotIn("struct fs_file_t main_sqbc;", commit_body)
+
+        install_start = app_store.index("int sq_app_store_install_resource")
+        install_end = app_store.index("int sq_app_store_scan_registry")
+        install_body = app_store[install_start:install_end]
+        self.assertIn("char path[SQ_APP_STORE_PATH_MAX];", install_body)
+        self.assertIn("validate_app_main_sqbc(mount_point, app_id)", install_body)
+        self.assertNotIn("struct fs_file_t main_sqbc;", install_body)
 
     def test_file_backed_state_and_config_reads_avoid_dirent_size_probe(self):
         storage = self.read("firmware/zephyr/src/vm_fs_storage.c")

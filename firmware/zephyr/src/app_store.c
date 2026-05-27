@@ -222,6 +222,28 @@ static int write_file(const char *path, const uint8_t *bytes, size_t len)
 	return result;
 }
 
+static int validate_app_main_sqbc(const char *mount_point, const char *app_id)
+{
+	char path[SQ_APP_STORE_APP_FILE_PATH_MAX];
+	struct fs_file_t main_sqbc;
+	int result;
+
+	result = format_app_path(path, sizeof(path), mount_point, app_id, "main.sqbc");
+	if (result != 0) {
+		return result;
+	}
+	fs_file_t_init(&main_sqbc);
+	result = fs_open(&main_sqbc, path, FS_O_READ);
+	if (result != 0) {
+		return result == -EISDIR ? -ENOENT : result;
+	}
+	result = fs_close(&main_sqbc);
+	if (result != 0) {
+		return result;
+	}
+	return 0;
+}
+
 static int ensure_resource_parent_dirs(char *dir, size_t dir_cap, const char *mount_point,
 				       const char *app_id, const char *resource_path)
 {
@@ -580,7 +602,6 @@ int sq_app_store_commit_staged_resource(const char *mount_point, const char *app
 					const char *resource_path, const char *staging_path)
 {
 	char path[SQ_APP_STORE_PATH_MAX];
-	struct fs_file_t main_sqbc;
 	int result;
 
 	if (mount_point == NULL || !is_safe_app_id(app_id) ||
@@ -588,16 +609,7 @@ int sq_app_store_commit_staged_resource(const char *mount_point, const char *app
 		return -EINVAL;
 	}
 
-	result = format_app_path(path, sizeof(path), mount_point, app_id, "main.sqbc");
-	if (result != 0) {
-		return result;
-	}
-	fs_file_t_init(&main_sqbc);
-	result = fs_open(&main_sqbc, path, FS_O_READ);
-	if (result != 0) {
-		return result == -EISDIR ? -ENOENT : result;
-	}
-	result = fs_close(&main_sqbc);
+	result = validate_app_main_sqbc(mount_point, app_id);
 	if (result != 0) {
 		return result;
 	}
@@ -661,7 +673,6 @@ int sq_app_store_install_resource(const char *mount_point, const char *app_id,
 				  const char *resource_path, const uint8_t *bytes, size_t len)
 {
 	char path[SQ_APP_STORE_PATH_MAX];
-	struct fs_file_t main_sqbc;
 	int result;
 
 	if (mount_point == NULL || !is_safe_app_id(app_id) ||
@@ -669,16 +680,7 @@ int sq_app_store_install_resource(const char *mount_point, const char *app_id,
 		return -EINVAL;
 	}
 
-	result = format_app_path(path, sizeof(path), mount_point, app_id, "main.sqbc");
-	if (result != 0) {
-		return result;
-	}
-	fs_file_t_init(&main_sqbc);
-	result = fs_open(&main_sqbc, path, FS_O_READ);
-	if (result != 0) {
-		return result == -EISDIR ? -ENOENT : result;
-	}
-	result = fs_close(&main_sqbc);
+	result = validate_app_main_sqbc(mount_point, app_id);
 	if (result != 0) {
 		return result;
 	}

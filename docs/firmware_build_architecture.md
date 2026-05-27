@@ -201,6 +201,12 @@ app-file/app-directory scratch when preparing top-level app-store directories,
 so the source-known direct app install path now emits 224 bytes instead of 352
 bytes, staged-install begin emits 240 bytes instead of 368 bytes, and the top
 source-known main/protocol path is now 576 bytes.
+Resource install and staged-resource commit validate the app's `main.sqbc`
+with a narrow app-file-path helper instead of keeping `fs_file_t` in the full
+resource path-scratch frame, so each function now emits 160 bytes instead of
+176 bytes, the source-known `commit_resource_install` path emits 352 bytes
+instead of 368 bytes, and the top source-known main/protocol path is now 560
+bytes.
 VM dispatch uses a static callback table plus an explicit `user_data` pointer
 across the FFI boundary instead of materializing the callback table on the C
 stack, so `sq_vm_runtime_dispatch` now emits an 80-byte C stack estimate
