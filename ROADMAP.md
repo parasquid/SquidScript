@@ -61,7 +61,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   reductions for the largest static allocations, especially VM runtime storage,
   work stacks, response/session buffers, logging, LittleFS pools, and file
   caches. Current C3 build map evidence sizes the resident runtime object at
-  16,512 bytes after capping retained VM output history at five lines,
+  16,480 bytes after capping retained VM output history at five lines,
   retained VM trace history at four lines,
   narrowing output and drawlog diagnostic line storage, trimming the ESP32-C3
   VM context reserve to 11,776 bytes, reducing app-id slots to 40 bytes, and
@@ -76,7 +76,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   resource path slots, and resource diagnostics encode directly into the
   984-byte response buffer without a resident metric staging array. Runtime
   physical input state is bounded to two GPIO button slots for the confirmed
-  BOOT/GPIO9 path plus one targeted diagnostic slot. Temp-run
+  BOOT/GPIO9 path plus one targeted diagnostic slot, and active device bindings
+  are bounded to three entries for the current indicator, display/input, and
+  targeted diagnostic binding workloads. Temp-run
   state now uses the file-backed VM storage backend with a cleared temp state
   path instead of a resident saved-state-capacity RAM buffer, and Zephyr's
   deferred logger buffer and process-thread stack are explicitly bounded at 512
@@ -84,7 +86,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   remain at the Zephyr default for recursive format/delete walks. The
   protocol/main stack is now 3328 bytes, leaving 852 bytes over the last
   measured 2476-byte protocol peak, and the VM worker stack is now 18048 bytes.
-  The latest target build reports 187,440 bytes
+  The latest target build reports 187,408 bytes
   of DRAM use; next
   reductions should physically revalidate the 3328-byte protocol/main stack
   with the bounded stack harness. The stack harness now fails with captured

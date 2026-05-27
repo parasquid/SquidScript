@@ -663,6 +663,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_runtime_keeps_physical_input_slots_bounded(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
 
+        self.assertIn("#define SQ_VM_RUNTIME_ACTIVE_BINDING_MAX 3", runtime_h)
+        self.assertNotIn("#define SQ_VM_RUNTIME_ACTIVE_BINDING_MAX 4", runtime_h)
         self.assertIn("#define SQ_VM_RUNTIME_INPUT_BUTTON_MAX 2", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_INPUT_BUTTON_MAX 4", runtime_h)
 
@@ -746,6 +748,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         ffi_rs = self.read("compiler/rust/crates/squidvm-ffi/src/lib.rs")
 
         self.assertIn("#define SQ_DEVICE_RESPONSE_BYTES 984u", header)
+        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 960u", header)
+        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 976u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 928u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 992u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 1024u", header)
