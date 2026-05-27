@@ -162,8 +162,10 @@ scripts/c3-supermini-stack-usage-report.sh
 This reports Zephyr app C source stack estimates only. It does not measure Rust
 VM stack use, interrupt stack use, callee effects hidden behind library calls,
 or real runtime high-water marks. The report also rolls the displayed top rows
-up by source file so attribution work can distinguish isolated large frames
-from clusters of medium frames in one subsystem. Keep using `device resources`
+up by source file and includes source-known cumulative call paths between
+functions that have `.su` rows. Use cumulative rows before splitting helpers:
+a lower per-function row can still increase the active caller-plus-callee path
+if the helper remains live under the caller. Keep using `device resources`
 and the hardware stack harness for final stack-budget validation.
 The app registry scan currently reuses its path scratch buffer after opening
 the app directory, reuses its directory entry for `main.sqbc` stats, and uses a

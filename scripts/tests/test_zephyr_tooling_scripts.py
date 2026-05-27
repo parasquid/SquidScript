@@ -1800,6 +1800,70 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("2\t160\t256\tsrc/device_protocol.c", result.stdout)
         self.assertIn("1\t112\t112\tsrc/app_store.c", result.stdout)
 
+    def test_c3_stack_usage_report_shows_cumulative_source_known_call_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            source = tmp_path / "device_protocol.c"
+            source.write_text(
+                "\n".join(
+                    [
+                        "static int caller(void)",
+                        "{",
+                        "\treturn helper();",
+                        "}",
+                        "",
+                        "static int helper(void)",
+                        "{",
+                        "\treturn leaf();",
+                        "}",
+                        "",
+                        "static int leaf(void)",
+                        "{",
+                        "\treturn 0;",
+                        "}",
+                        "",
+                        "static int independent(void)",
+                        "{",
+                        "\treturn 0;",
+                        "}",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (tmp_path / "stack.su").write_text(
+                "\n".join(
+                    [
+                        f"{source}:1:12:caller\t80\tstatic",
+                        f"{source}:6:12:helper\t120\tstatic",
+                        f"{source}:11:12:leaf\t64\tstatic",
+                        f"{source}:16:12:independent\t160\tstatic",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    str(ROOT / "scripts/c3-supermini-stack-usage-report.sh"),
+                    str(tmp_path),
+                    "4",
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "cumulative_bytes\tself_bytes\tcallee_path\tfunction\tlocation",
+            result.stdout,
+        )
+        self.assertIn("264\t80\tcaller -> helper -> leaf\tcaller\t", result.stdout)
+        self.assertIn("184\t120\thelper -> leaf\thelper\t", result.stdout)
+        self.assertIn("160\t160\tindependent\tindependent\t", result.stdout)
+
     def test_c3_stack_usage_report_limit_does_not_trip_pipefail(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

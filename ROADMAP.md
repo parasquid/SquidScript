@@ -106,10 +106,11 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   inspect any remaining accidental static buffers. For host-side attribution
   before physical confirmation, build with `SQUID_ZEPHYR_STACK_USAGE=1` and run
   `scripts/c3-supermini-stack-usage-report.sh` to sort generated Zephyr app C
-  `.su` stack-usage records. Add cumulative call-chain attribution before
-  splitting more app-store or protocol helpers; per-function `.su` reductions
-  can increase real stack high-water use when a larger callee remains active
-  under the caller. Current host attribution has reduced
+  `.su` stack-usage records. The report includes source-known cumulative call
+  paths; check those before splitting more app-store or protocol helpers
+  because per-function `.su` reductions can increase real stack high-water use
+  when a larger callee remains active under the caller. Current host
+  attribution has reduced
   `sq_app_store_scan_registry` from 576 bytes to 224 bytes by reusing its path
   scratch buffer after opening the app directory, reusing its directory entry
   for `main.sqbc` stats, and narrowing the shared app-file path scratch to
