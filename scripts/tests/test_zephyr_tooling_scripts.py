@@ -694,7 +694,9 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         stack = self.read("scripts/c3-supermini-measure-input-stack-isolation.sh")
         ffi_rs = self.read("compiler/rust/crates/squidvm-ffi/src/lib.rs")
 
-        self.assertIn("#define SQ_DEVICE_RESPONSE_BYTES 992u", header)
+        self.assertIn("#define SQ_DEVICE_RESPONSE_BYTES 984u", header)
+        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 928u", header)
+        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 992u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 1024u", header)
         self.assertIn("#define SQ_DEVICE_RESOURCE_PATH_BYTES 80u", header)
         self.assertNotIn("char resource_path[SQ_APP_STORE_PATH_MAX];", header)

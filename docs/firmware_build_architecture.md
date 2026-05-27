@@ -96,7 +96,7 @@ staging-path buffers for fixed staging filenames and 80-byte resource-path
 buffers for package-relative resource paths. The app-store path cap remains
 larger because it formats full filesystem paths that include the mount point,
 app ID, resource directory, and package-relative resource path.
-Resource diagnostics are encoded directly into the caller-owned 992-byte
+Resource diagnostics are encoded directly into the caller-owned 984-byte
 protocol response buffer and do not keep a resident metric staging array.
 Runtime diagnostic history is bounded to four trace lines, six output lines,
 and four draw-log lines so recent debugging data remains available without
