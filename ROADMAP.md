@@ -47,7 +47,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   where the target supports it, while keeping portable service APIs separate
   from board-specific GPIO names. Use it to make ESP32-C3 Super Mini diagnostic
   scans less noisy without changing the confirmed GPIO9 BOOT binding from
-  active-low pull-up behavior.
+  active-low pull-up behavior. Use Espruino's split between pin mode
+  (`input_pullup`/`input_pulldown`) and watches (`edge: rising/falling/both`,
+  `debounce`) as design inspiration, but adapt it to SquidScript's explicit
+  device/input binding model instead of adding global auto-mode side effects.
 - Add a generic PWM-capable LED-like device output model beyond
   `service.indicator`, so future target-described GPIO/PWM endpoints can expose
   smooth brightness control without board-specific app code.
