@@ -178,9 +178,13 @@ Package resource install and staged-resource commit paths likewise reuse one
 path scratch buffer after validating the app's `main.sqbc` with an open/close
 check instead of a directory-entry stat, so each currently emits a 176-byte C
 stack estimate instead of 432 bytes. Their parent-directory creation helper
-uses the caller-owned path scratch instead of its own 128-byte path buffer, so
-`ensure_resource_parent_dirs` now emits 48 bytes instead of 176 bytes and the
-source-known `commit_resource_install` path drops from 496 bytes to 368 bytes.
+uses the caller-owned path scratch and calls `fs_mkdir` directly, accepting
+`-EEXIST` for already-created resource parent directories instead of probing
+with `fs_stat`, so `ensure_resource_parent_dirs` now emits 48 bytes instead of
+176 bytes and the source-known `commit_resource_install` path drops from
+496 bytes to 304 bytes. The current cumulative
+`sq_app_store_commit_staged_resource` path is 272 bytes via
+`validate_app_main_sqbc` and `format_app_path`.
 Direct app install and staged-install commit paths use the fixed
 `/apps/<app>/main.sqbc` path scratch; their emitted C stack estimates are now
 96 bytes each instead of 288 and 304 bytes respectively. Staged-install begin
@@ -207,6 +211,12 @@ resource path-scratch frame, so each function now emits 160 bytes instead of
 176 bytes, the source-known `commit_resource_install` path emits 352 bytes
 instead of 368 bytes, and the top source-known main/protocol path is now 560
 bytes.
+Resource parent directory creation now skips the directory-entry stat probe by
+calling `fs_mkdir` and accepting `-EEXIST` for existing parents. That keeps
+`ensure_resource_parent_dirs` at 48 bytes and reduces the source-known
+`commit_resource_install` path from 352 bytes to 304 bytes; the top
+source-known main/protocol path remains 544 bytes and is now dominated by
+`storage_format -> sq_app_store_format_filesystem -> delete_files_under`.
 Protocol dispatch decodes only the request opcode and sequence into the live
 dispatch header because opcode handlers parse payloads from the original
 request bytes, so `sq_device_protocol_handle_frame` now emits 80 bytes instead

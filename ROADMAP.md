@@ -121,9 +121,13 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   from 432 bytes each to 176 bytes each by reusing path scratch and validating
   the app's `main.sqbc` with an open/close check instead of a directory-entry
   stat. Their parent-directory creation now reuses the caller-owned path
-  scratch, reducing `ensure_resource_parent_dirs` from 176 bytes to 48 bytes
-  and the source-known `commit_resource_install` path from 496 bytes to 368
-  bytes. Direct app install and staged-install commit paths now use the fixed
+  scratch and calls `fs_mkdir` directly, accepting `-EEXIST` instead of probing
+  existing parents with `fs_stat`, reducing `ensure_resource_parent_dirs` from
+  176 bytes to 48 bytes and the source-known `commit_resource_install` path
+  from 496 bytes to 304 bytes. The current cumulative
+  `sq_app_store_commit_staged_resource` path is 272 bytes via
+  `validate_app_main_sqbc` and `format_app_path`. Direct app install and
+  staged-install commit paths now use the fixed
   app-file path scratch and emit 96-byte C stack estimates, down from 288 and
   304 bytes respectively; staged-install begin now emits 112 bytes. Package
   `.sqdevice` loads now format resource paths directly from validated bytes,
@@ -147,7 +151,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   request header because opcode handlers parse payloads from the original
   request bytes, reducing `sq_device_protocol_handle_frame` from 96 bytes to
   80 bytes and the top source-known main/protocol path from 560 bytes to 544
-  bytes. VM dispatch now uses a
+  bytes; after the resource parent directory change, the top source-known
+  main/protocol path remains 544 bytes and is dominated by
+  `storage_format -> sq_app_store_format_filesystem -> delete_files_under`.
+  VM dispatch now uses a
   static callback table plus an explicit `user_data` pointer across the FFI
   boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes
   without adding resident runtime RAM. Protocol frame dispatch now keeps

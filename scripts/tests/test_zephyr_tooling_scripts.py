@@ -2029,6 +2029,24 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("validate_app_main_sqbc(mount_point, app_id)", install_body)
         self.assertNotIn("struct fs_file_t main_sqbc;", install_body)
 
+    def test_resource_parent_dirs_avoid_dirent_stat_probe(self):
+        app_store = self.read("firmware/zephyr/src/app_store.c")
+
+        self.assertIn("static int ensure_resource_parent_dir(", app_store)
+        helper_start = app_store.index("static int ensure_resource_parent_dir(")
+        helper_end = app_store.index("static int ensure_resource_parent_dirs")
+        helper_body = app_store[helper_start:helper_end]
+        self.assertIn("fs_mkdir(path)", helper_body)
+        self.assertIn("result == 0 || result == -EEXIST", helper_body)
+        self.assertNotIn("struct fs_dirent", helper_body)
+        self.assertNotIn("fs_stat", helper_body)
+
+        parent_start = app_store.index("static int ensure_resource_parent_dirs")
+        parent_end = app_store.index("static inline int prepare_filesystem_with_path")
+        parent_body = app_store[parent_start:parent_end]
+        self.assertIn("ensure_resource_parent_dir(dir)", parent_body)
+        self.assertNotIn("ensure_directory(dir)", parent_body)
+
     def test_file_backed_state_and_config_reads_avoid_dirent_size_probe(self):
         storage = self.read("firmware/zephyr/src/vm_fs_storage.c")
         runtime = self.read("firmware/zephyr/src/vm_runtime.c")

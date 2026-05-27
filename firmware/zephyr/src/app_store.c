@@ -244,6 +244,13 @@ static int validate_app_main_sqbc(const char *mount_point, const char *app_id)
 	return 0;
 }
 
+static int ensure_resource_parent_dir(const char *path)
+{
+	int result = fs_mkdir(path);
+
+	return result == 0 || result == -EEXIST ? 0 : result;
+}
+
 static int ensure_resource_parent_dirs(char *dir, size_t dir_cap, const char *mount_point,
 				       const char *app_id, const char *resource_path)
 {
@@ -253,7 +260,7 @@ static int ensure_resource_parent_dirs(char *dir, size_t dir_cap, const char *mo
 		return -ENAMETOOLONG;
 	}
 
-	int result = ensure_directory(dir);
+	int result = ensure_resource_parent_dir(dir);
 	if (result != 0) {
 		return result;
 	}
@@ -272,7 +279,7 @@ static int ensure_resource_parent_dirs(char *dir, size_t dir_cap, const char *mo
 		memcpy(&dir[dir_len + 1], segment, segment_len);
 		dir[dir_len + 1 + segment_len] = '\0';
 
-		result = ensure_directory(dir);
+		result = ensure_resource_parent_dir(dir);
 		if (result != 0) {
 			return result;
 		}
