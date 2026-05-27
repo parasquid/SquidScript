@@ -78,13 +78,35 @@ The compiler, bytecode validation, VM behavior, SQBC encoding, and host tooling 
 
 Rust also gives the CLI a practical cross-platform distribution path while keeping correctness-sensitive code in one implementation family instead of scattering language semantics across unrelated tools.
 
-## SquidScript And Crosspoint
+## SquidScript And CrossPoint
 
-SquidScript and Crosspoint are adjacent projects, not competing names for the same thing.
+SquidScript and CrossPoint are adjacent projects, not competing names for the same thing.
 
 SquidScript is centered on constrained device apps: a small language, precompiled bytecode, runtime services, firmware-owned resources, and target-aware execution. Its design questions are about what a portable app can ask of a device, how firmware validates that request, and how bounded app behavior can survive on microcontroller-class hardware.
 
-Crosspoint may share nearby interests, but SquidScript's scope is the language and runtime stack for these device apps. Features belong here when they strengthen that app model, its compiler/runtime contract, or the firmware and simulator paths that execute it.
+CrossPoint may share nearby interests, but SquidScript's scope is the language and runtime stack for these device apps. Features belong here when they strengthen that app model, its compiler/runtime contract, or the firmware and simulator paths that execute it.
+
+## SquidScript And General Embedded Scripting
+
+SquidScript, [Espruino](https://www.espruino.com/), and
+[MicroPython](https://micropython.org/) all make small-device programming more
+approachable, but they choose different runtime contracts.
+
+Espruino is a mature JavaScript runtime and ecosystem for microcontrollers. It
+is a strong fit when you want a general programming language on the device,
+broad JavaScript familiarity, interactive hardware exploration, and an
+established app/module ecosystem. MicroPython is another strong fit for users
+who want a mature Python implementation for microcontrollers and its embedded
+ecosystem.
+
+SquidScript is intentionally narrower. It is an off-device compiled app
+language for constrained display devices: apps become prevalidated bytecode,
+run through firmware-owned services, use explicit target capabilities, handle
+declared events deterministically, and keep screen rendering replayable.
+Espruino has inspired some of SquidScript's hardware-facing design questions,
+especially around clear input configuration and edge-triggered device behavior,
+but SquidScript adapts those ideas into a bounded app model instead of becoming
+a general embedded programming language.
 
 ## Related Xteink Firmware References
 

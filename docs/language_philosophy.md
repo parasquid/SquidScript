@@ -55,6 +55,33 @@ SquidScript is not designed around:
 
 The language should be useful because its device contracts are explicit, not because it is a second-class app model.
 
+### 2.1 Learning From Embedded Scripting Projects
+
+SquidScript should learn from mature embedded scripting projects such as
+Espruino and MicroPython without adopting their full runtime contracts.
+
+Useful concepts include clear hardware affordances, explicit input
+configuration, edge-triggered device behavior, debounce controls, timers,
+interactive hardware exploration, and fast developer feedback. These ideas
+should be evaluated through SquidScript's app model rather than copied
+directly.
+
+The constraint is deliberate: SquidScript is not trying to be a general
+programming language. SquidScript apps are compiled off-device, validated before
+execution, bounded by bytecode/runtime limits, and run through firmware-owned
+capabilities. Event handlers are named declarations, not arbitrary JavaScript
+callbacks or closures. Input should flow through device declarations, target
+metadata, and logical events. Screens should stay render-pure so firmware can
+redraw, recover, or refresh without changing app state.
+
+For users who want a mature general-purpose programming language on a
+microcontroller, Espruino is often a better fit when they want JavaScript,
+interactive hardware exploration, and its app/module ecosystem. MicroPython is
+often a better fit when they want Python on microcontrollers and its embedded
+ecosystem. SquidScript is for installable constrained-device apps where the
+app/runtime contract, target validation, display behavior, and firmware
+ownership boundaries matter more than general language flexibility.
+
 ---
 
 ## 3. Core Commitments
