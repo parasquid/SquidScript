@@ -94,9 +94,11 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   unconfigured pins can produce one-off changed samples. For the ESP32-C3 Super
   Mini reference board, treat GPIO9 as the confirmed physical input path; do
   not treat GPIO3, GPIO4, GPIO7, GPIO10, or GPIO5 scan changes as real buttons
-  without targeted confirmation. Next, explain any press-time peak, then
-  validate whether the 8 KiB protocol/main stack or 19 KiB worker stack can be
-  reduced after full-suite coverage.
+  without targeted confirmation. The protocol/main stack budget has been
+  reduced from 8 KiB to 6 KiB based on repeated 2476-byte measured peaks, while
+  keeping more than 3.5 KiB of headroom. Next, validate the 6 KiB protocol/main
+  stack and whether the 19 KiB worker stack can be reduced after full-suite
+  coverage.
 - Improve network heap attribution before expanding Wi-Fi scope. Current AP
   start/stop hardware coverage drives `ram_heap_max_allocated_bytes` close to
   the 36 KiB system heap budget; add clearer per-workload heap reset or
