@@ -1401,6 +1401,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         helper = self.read("scripts/lib/hardware-command.sh")
         self.assertIn('timeout "${timeout_seconds}s"', helper)
         self.assertIn('COMMAND_TIMEOUT_SECONDS:-20', helper)
+        self.assertIn('Command failed or timed out', helper)
+        self.assertIn('sed -n \'1,200p\' "${out}" >&2', helper)
 
         for script_path in sorted(scripts_dir.glob("c3-supermini-*.sh")):
             contents = script_path.read_text(encoding="utf-8")
@@ -1412,6 +1414,34 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             with self.subTest(script=script_path.name):
                 self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', contents)
                 self.assertNotIn("\nrun_capture() {\n", contents)
+
+    def test_hardware_command_helper_reports_captured_output_on_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            script = tmp_path / "probe.sh"
+            script.write_text(
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+ROOT={ROOT}
+WORK_DIR={tmp_path}
+source "${{ROOT}}/scripts/lib/hardware-command.sh"
+run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
+""",
+                encoding="utf-8",
+            )
+            script.chmod(script.stat().st_mode | stat.S_IXUSR)
+
+            result = subprocess.run(
+                [str(script)],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertEqual(result.returncode, 7)
+        self.assertIn("Command failed or timed out", result.stderr)
+        self.assertIn("--- ", result.stderr)
+        self.assertIn("diagnostic-line", result.stderr)
 
     def test_hardware_output_helper_bounds_device_output_command(self):
         helper = self.read("scripts/lib/hardware-output.sh")

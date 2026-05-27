@@ -9,8 +9,15 @@ run_capture() {
   local timeout_seconds="${COMMAND_TIMEOUT_SECONDS:-20}"
 
   printf '%s: %s\n' "${HARDWARE_COMMAND_LABEL}" "$*" >&2
-  timeout "${timeout_seconds}s" "$@" >"${out}" 2>&1
-  printf '%s\n' "${out}"
+  if timeout "${timeout_seconds}s" "$@" >"${out}" 2>&1; then
+    printf '%s\n' "${out}"
+  else
+    local status="$?"
+    printf 'Command failed or timed out after %ss: %s\n' "${timeout_seconds}" "$*" >&2
+    printf '%s\n' "--- ${out} ---" >&2
+    sed -n '1,200p' "${out}" >&2
+    return "${status}"
+  fi
 }
 
 assert_command_fails_contains() {

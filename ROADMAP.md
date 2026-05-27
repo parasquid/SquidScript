@@ -77,7 +77,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   responding, check stack exhaustion early with `device resources`, compare
   protocol/main and VM worker stack used/unused values, and inspect recent FFI,
   metadata parsing, storage, and service paths for hidden stack temporaries
-  before treating GPIO, flashing, or serial as the primary failure.
+  before treating GPIO, flashing, or serial as the primary failure. Hardware
+  scripts now use the shared bounded command helper, which prints captured
+  command output when a command fails or times out.
 - Complete physical GPIO9 input stack attribution and budget reduction.
   `scripts/c3-supermini-measure-input-stack-isolation.sh` now records a
   fresh-boot physical input path baseline through format, install, launch, and
