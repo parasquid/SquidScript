@@ -791,7 +791,11 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_app_registry_keeps_constrained_firmware_capacity_bounded(self):
         app_store_h = self.read("firmware/zephyr/src/app_store.h")
 
-        self.assertIn("#define SQ_APP_STORE_MAX_APPS 12", app_store_h)
+        self.assertIn("#define SQ_APP_STORE_MAX_APPS 11", app_store_h)
+        self.assertNotIn("#define SQ_APP_STORE_MAX_APPS 4", app_store_h)
+        self.assertNotIn("#define SQ_APP_STORE_MAX_APPS 8", app_store_h)
+        self.assertNotIn("#define SQ_APP_STORE_MAX_APPS 10", app_store_h)
+        self.assertNotIn("#define SQ_APP_STORE_MAX_APPS 12", app_store_h)
         self.assertNotIn("#define SQ_APP_STORE_MAX_APPS 16", app_store_h)
 
     def test_app_id_capacity_is_bounded_across_firmware_protocol_and_ffi(self):
