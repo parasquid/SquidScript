@@ -1393,7 +1393,6 @@ static int sq_vm_runtime_device_config_load_resource(struct sq_vm_runtime *runti
 						     size_t resource_len,
 						     SqvmDeviceConfigResult *out)
 {
-	char resource[SQ_APP_STORE_PATH_MAX];
 	char path[SQ_APP_STORE_PATH_MAX];
 	size_t bytes_len;
 	SqdcStatus status;
@@ -1410,14 +1409,9 @@ static int sq_vm_runtime_device_config_load_resource(struct sq_vm_runtime *runti
 	if (status != SQDC_STATUS_OK) {
 		return runtime_device_config_error(out, "invalid resource path");
 	}
-	if (resource_len >= sizeof(resource)) {
-		return runtime_device_config_error(out, "resource path too long");
-	}
-	memcpy(resource, resource_bytes, resource_len);
-	resource[resource_len] = '\0';
-
-	result = sq_app_store_resource_path(runtime->store_mount_point, runtime->current_app,
-					    resource, path, sizeof(path));
+	result = sq_app_store_resource_path_bytes(runtime->store_mount_point, runtime->current_app,
+						  resource_bytes, resource_len, path,
+						  sizeof(path));
 	if (result != 0) {
 		return runtime_device_config_error(out, "resource path failed");
 	}

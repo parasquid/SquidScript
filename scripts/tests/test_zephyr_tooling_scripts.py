@@ -1772,6 +1772,23 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn(".sqbc_path = sqbc_path", body)
         self.assertIn("sq_vm_fs_storage_backend(&trigger_storage)", body)
 
+    def test_device_config_package_load_formats_resource_path_from_bytes(self):
+        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+        app_store_h = self.read("firmware/zephyr/src/app_store.h")
+        app_store_c = self.read("firmware/zephyr/src/app_store.c")
+        start = runtime.index("static int sq_vm_runtime_device_config_load_resource")
+        end = runtime.index("int sq_vm_runtime_device_config_load(")
+        body = runtime[start:end]
+
+        self.assertIn("sq_app_store_resource_path_bytes", app_store_h)
+        self.assertIn("int sq_app_store_resource_path_bytes", app_store_c)
+        self.assertNotIn("char resource[SQ_APP_STORE_PATH_MAX];", body)
+        self.assertIn("char path[SQ_APP_STORE_PATH_MAX];", body)
+        self.assertIn("sq_app_store_resource_path_bytes(runtime->store_mount_point", body)
+        self.assertIn("resource_bytes, resource_len, path,", body)
+        self.assertIn("sizeof(path)", body)
+        self.assertNotIn("memcpy(resource, resource_bytes, resource_len);", body)
+
     def test_hardware_suite_leaves_blinky_visible_check_last(self):
         blinky = self.read("scripts/c3-supermini-test-blinky.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")

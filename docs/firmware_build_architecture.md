@@ -157,6 +157,9 @@ emits a 304-byte C stack estimate instead of 432 bytes.
 Direct app install and staged-install commit paths also use one path scratch;
 their emitted C stack estimates are now 160 bytes each instead of 288 and
 304 bytes respectively.
+Package `.sqdevice` loads format the resource path directly from validated
+resource bytes, so `sq_vm_runtime_device_config_load_resource` now emits a
+176-byte C stack estimate instead of 304 bytes.
 Protocol polling reuses runtime app-id/event scratch for lifecycle and armed
 timer transitions. App-arm trigger discovery uses a SQBC-only filesystem
 backend instead of a full app storage object with state paths; the emitted C

@@ -45,30 +45,31 @@ static bool is_safe_resource_char(char ch)
 	       (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '.';
 }
 
-static bool is_safe_resource_path(const char *resource_path)
+static bool is_safe_resource_path_bytes(const uint8_t *resource_path, size_t resource_path_len)
 {
-	if (resource_path == NULL || resource_path[0] == '\0' || resource_path[0] == '/') {
+	if (resource_path == NULL || resource_path_len == 0 || resource_path[0] == '/') {
 		return false;
 	}
 
-	const char *segment = resource_path;
-	for (const char *cursor = resource_path;; cursor++) {
-		char ch = *cursor;
+	size_t segment_start = 0;
+	for (size_t cursor = 0;; cursor++) {
+		char ch = cursor < resource_path_len ? (char)resource_path[cursor] : '\0';
 
 		if (ch == '/' || ch == '\0') {
-			size_t len = (size_t)(cursor - segment);
+			size_t len = cursor - segment_start;
 
 			if (len == 0) {
 				return false;
 			}
-			if ((len == 1 && segment[0] == '.') ||
-			    (len == 2 && segment[0] == '.' && segment[1] == '.')) {
+			if ((len == 1 && resource_path[segment_start] == '.') ||
+			    (len == 2 && resource_path[segment_start] == '.' &&
+			     resource_path[segment_start + 1] == '.')) {
 				return false;
 			}
-			if (ch == '\0') {
+			if (cursor == resource_path_len) {
 				return true;
 			}
-			segment = cursor + 1;
+			segment_start = cursor + 1;
 			continue;
 		}
 
@@ -76,6 +77,14 @@ static bool is_safe_resource_path(const char *resource_path)
 			return false;
 		}
 	}
+}
+
+static bool is_safe_resource_path(const char *resource_path)
+{
+	if (resource_path == NULL) {
+		return false;
+	}
+	return is_safe_resource_path_bytes((const uint8_t *)resource_path, strlen(resource_path));
 }
 
 static int ensure_directory(const char *path)
@@ -131,6 +140,27 @@ static int format_resource_path(char *out, size_t out_len, const char *mount_poi
 	if (written < 0 || (size_t)written >= out_len) {
 		return -ENAMETOOLONG;
 	}
+	return 0;
+}
+
+static int format_resource_path_bytes(char *out, size_t out_len, const char *mount_point,
+				      const char *app_id, const uint8_t *resource_path,
+				      size_t resource_path_len)
+{
+	if (out == NULL || mount_point == NULL || app_id == NULL || resource_path == NULL) {
+		return -EINVAL;
+	}
+
+	int written = snprintf(out, out_len, "%s/apps/%s/resources/", mount_point, app_id);
+	if (written < 0 || (size_t)written >= out_len) {
+		return -ENAMETOOLONG;
+	}
+	size_t prefix_len = (size_t)written;
+	if (resource_path_len >= out_len - prefix_len) {
+		return -ENAMETOOLONG;
+	}
+	memcpy(&out[prefix_len], resource_path, resource_path_len);
+	out[prefix_len + resource_path_len] = '\0';
 	return 0;
 }
 
@@ -554,6 +584,19 @@ int sq_app_store_resource_path(const char *mount_point, const char *app_id,
 	}
 
 	return format_resource_path(out, out_len, mount_point, app_id, resource_path);
+}
+
+int sq_app_store_resource_path_bytes(const char *mount_point, const char *app_id,
+				     const uint8_t *resource_path, size_t resource_path_len,
+				     char *out, size_t out_len)
+{
+	if (mount_point == NULL || !is_safe_app_id(app_id) ||
+	    !is_safe_resource_path_bytes(resource_path, resource_path_len)) {
+		return -EINVAL;
+	}
+
+	return format_resource_path_bytes(out, out_len, mount_point, app_id, resource_path,
+					  resource_path_len);
 }
 
 int sq_app_store_device_config_path(const char *mount_point, char *out, size_t out_len)
