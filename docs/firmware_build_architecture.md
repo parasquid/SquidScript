@@ -168,6 +168,9 @@ VM dispatch uses a static callback table plus an explicit `user_data` pointer
 across the FFI boundary instead of materializing the callback table on the C
 stack, so `sq_vm_runtime_dispatch` now emits an 80-byte C stack estimate
 instead of 432 bytes without adding resident runtime RAM.
+Protocol frame dispatch keeps opcode-specific request parsing and response
+formatting out of the top-level switch, so `sq_device_protocol_handle_frame`
+now emits a 96-byte C stack estimate instead of 352 bytes.
 Protocol polling reuses runtime app-id/event scratch for lifecycle and armed
 timer transitions. App-arm trigger discovery uses a SQBC-only filesystem
 backend instead of a full app storage object with state paths; the emitted C

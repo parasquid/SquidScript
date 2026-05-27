@@ -181,7 +181,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_default_config_enables_live_heap_resource_telemetry(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
-        start = protocol.index("static int resources_response")
+        start = protocol.index("static int __noinline resources_response")
         end = protocol.index("static void clear_runtime_context")
         body = protocol[start:end]
 
@@ -716,7 +716,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_repeated_line_responses_use_rust_encoder_without_c_payload_staging(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         start = protocol.index("static int repeated_runtime_lines_response")
-        end = protocol.index("static int lifecycle_response")
+        end = protocol.index("static int __noinline lifecycle_response")
         body = protocol[start:end]
 
         self.assertIn("sqdp_encode_line_response", body)
@@ -725,8 +725,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
     def test_lifecycle_response_uses_rust_encoder_without_c_payload_staging(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
-        start = protocol.index("static int lifecycle_response")
-        end = protocol.index("static int state_get_response")
+        start = protocol.index("static int __noinline lifecycle_response")
+        end = protocol.index("static int __noinline state_get_response")
         body = protocol[start:end]
 
         self.assertIn("sqdp_encode_lifecycle_response", body)
@@ -736,8 +736,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_state_import_uses_rust_parser_without_c_tlv_loop(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
-        start = protocol.index("static int state_import")
-        end = protocol.index("static int resources_response")
+        start = protocol.index("static int __noinline state_import")
+        end = protocol.index("static int __noinline resources_response")
         body = protocol[start:end]
 
         self.assertIn("SqdpStateImport", ffi_h)
@@ -749,8 +749,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_state_get_response_uses_rust_encoder_without_c_payload_staging(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
-        start = protocol.index("static int state_get_response")
-        end = protocol.index("static int state_import")
+        start = protocol.index("static int __noinline state_get_response")
+        end = protocol.index("static int __noinline state_import")
         body = protocol[start:end]
 
         self.assertIn("sqdp_encode_state_response", ffi_h)
@@ -763,7 +763,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_temp_run_state_uses_file_backed_storage_without_resident_state_buffer(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         start = protocol.index("struct temp_storage_backend")
-        end = protocol.index("static int commit_install")
+        end = protocol.index("static int __noinline commit_install")
         body = protocol[start:end]
 
         self.assertIn("struct sq_vm_fs_storage fs_storage;", body)
@@ -776,7 +776,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
     def test_resources_response_encodes_without_resident_metric_staging(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
-        start = protocol.index("static int resources_response")
+        start = protocol.index("static int __noinline resources_response")
         end = protocol.index("static void clear_runtime_context")
         body = protocol[start:end]
 
@@ -853,7 +853,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
     def test_key_dispatch_uses_rust_parser_without_c_payload_staging(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
-        start = protocol.index("static int dispatch_key")
+        start = protocol.index("static int __noinline dispatch_key")
         end = protocol.index("int sq_device_protocol_handle_frame")
         body = protocol[start:end]
 
@@ -861,10 +861,47 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("uint8_t event_payload[64]", body)
         self.assertNotIn("append_string_field(event_payload", body)
 
+    def test_protocol_frame_handler_keeps_error_formatting_out_of_dispatch_frame(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        start = protocol.index("int sq_device_protocol_handle_frame")
+        body = protocol[start:]
+
+        self.assertIn("static int __noinline errors_response", protocol)
+        self.assertIn("errors_response(&frame, context->runtime", body)
+        self.assertNotIn("char error_line[48]", body)
+        self.assertNotIn("const char *lines[1]", body)
+
+    def test_protocol_opcode_handlers_are_out_of_line_to_bound_dispatch_stack(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        handlers = [
+            "begin_install",
+            "append_install_chunk",
+            "commit_install",
+            "begin_resource_install",
+            "append_resource_chunk",
+            "commit_resource_install",
+            "commit_temp_run",
+            "launch_app",
+            "state_get_response",
+            "state_import",
+            "resources_response",
+            "lifecycle_response",
+            "reset_runtime",
+            "storage_format",
+            "dispatch_event_request",
+            "dispatch_key",
+            "wifi_profile_set",
+            "errors_response",
+        ]
+
+        for handler in handlers:
+            with self.subTest(handler=handler):
+                self.assertIn(f"static int __noinline {handler}", protocol)
+
     def test_app_launch_uses_rust_parser_without_c_tlv_loop(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
-        start = protocol.index("static int launch_app")
+        start = protocol.index("static int __noinline launch_app")
         end = protocol.index("static int start_installed_app", start)
         body = protocol[start:end]
 
@@ -877,8 +914,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_event_dispatch_uses_rust_parser_without_c_tlv_loop(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
-        start = protocol.index("static int dispatch_event_request")
-        end = protocol.index("static int dispatch_key")
+        start = protocol.index("static int __noinline dispatch_event_request")
+        end = protocol.index("static int __noinline dispatch_key")
         body = protocol[start:end]
 
         self.assertIn("SqdpEventDispatch", ffi_h)
@@ -1920,7 +1957,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("sq_vm_runtime_set_wifi_profile", runtime_h)
         self.assertIn("wifi_profile_set(&frame, request, request_len", protocol_c)
         wifi_profile_body = protocol_c[
-            protocol_c.index("static int wifi_profile_set") : protocol_c.index(
+            protocol_c.index("static int __noinline wifi_profile_set") : protocol_c.index(
                 "int sq_device_protocol_handle_frame"
             )
         ]
@@ -1973,7 +2010,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         ]
         start_definition = protocol_c.index(
             "static int start_installed_app(const struct sq_device_protocol_context *context,",
-            protocol_c.index("static int launch_app"),
+            protocol_c.index("static int __noinline launch_app"),
         )
         start_body = protocol_c[
             start_definition : protocol_c.index("static void clear_foreground_timers", start_definition)

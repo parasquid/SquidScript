@@ -163,7 +163,7 @@ static int encode_resource_metrics_header(uint32_t sequence, uint8_t *response,
 	return SQ_PROTOCOL_OK;
 }
 
-static int begin_install(const struct sq_protocol_frame *request,
+static int __noinline begin_install(const struct sq_protocol_frame *request,
 			 const uint8_t *request_bytes, size_t request_len,
 			 const struct sq_device_protocol_context *context, uint8_t *response,
 			 size_t response_cap, size_t *response_len)
@@ -213,7 +213,7 @@ static int begin_install(const struct sq_protocol_frame *request,
 	return ok_response(request, response, response_cap, response_len);
 }
 
-static int append_install_chunk(const struct sq_protocol_frame *request,
+static int __noinline append_install_chunk(const struct sq_protocol_frame *request,
 				const uint8_t *request_bytes, size_t request_len,
 				const struct sq_device_protocol_context *context,
 				uint8_t *response, size_t response_cap, size_t *response_len)
@@ -261,7 +261,7 @@ static int append_install_chunk(const struct sq_protocol_frame *request,
 	return ok_response(request, response, response_cap, response_len);
 }
 
-static int begin_resource_install(const struct sq_protocol_frame *request,
+static int __noinline begin_resource_install(const struct sq_protocol_frame *request,
 				  const uint8_t *request_bytes, size_t request_len,
 				  const struct sq_device_protocol_context *context,
 				  uint8_t *response, size_t response_cap, size_t *response_len)
@@ -287,7 +287,7 @@ static int begin_resource_install(const struct sq_protocol_frame *request,
 	return ok_response(request, response, response_cap, response_len);
 }
 
-static int append_resource_chunk(const struct sq_protocol_frame *request,
+static int __noinline append_resource_chunk(const struct sq_protocol_frame *request,
 				 const uint8_t *request_bytes, size_t request_len,
 				 const struct sq_device_protocol_context *context,
 				 uint8_t *response, size_t response_cap, size_t *response_len)
@@ -312,7 +312,7 @@ static int append_resource_chunk(const struct sq_protocol_frame *request,
 	return ok_response(request, response, response_cap, response_len);
 }
 
-static int commit_resource_install(const struct sq_protocol_frame *request,
+static int __noinline commit_resource_install(const struct sq_protocol_frame *request,
 				   const uint8_t *request_bytes, size_t request_len,
 				   const struct sq_device_protocol_context *context,
 				   uint8_t *response, size_t response_cap, size_t *response_len)
@@ -355,7 +355,7 @@ static int temp_state_path_for_mount(const char *mount_point, char *out, size_t 
 	return 0;
 }
 
-static int commit_temp_run(const struct sq_protocol_frame *request,
+static int __noinline commit_temp_run(const struct sq_protocol_frame *request,
 			   const uint8_t *request_bytes, size_t request_len,
 			   const struct sq_device_protocol_context *context, uint8_t *response,
 			   size_t response_cap, size_t *response_len)
@@ -393,7 +393,7 @@ static int commit_temp_run(const struct sq_protocol_frame *request,
 	return ok_response(request, response, response_cap, response_len);
 }
 
-static int commit_install(const struct sq_protocol_frame *request,
+static int __noinline commit_install(const struct sq_protocol_frame *request,
 			  const uint8_t *request_bytes, size_t request_len,
 			  const struct sq_device_protocol_context *context, uint8_t *response,
 			  size_t response_cap, size_t *response_len)
@@ -429,7 +429,7 @@ static int start_installed_app(const struct sq_device_protocol_context *context,
 			       const char *app_id, const char *event, bool set_current);
 static void clear_foreground_timers(struct sq_vm_runtime *runtime);
 
-static int launch_app(const struct sq_protocol_frame *request,
+static int __noinline launch_app(const struct sq_protocol_frame *request,
 		      const uint8_t *request_bytes, size_t request_len,
 		      const struct sq_device_protocol_context *context, uint8_t *response,
 		      size_t response_cap, size_t *response_len)
@@ -746,7 +746,7 @@ static int repeated_runtime_lines_response(const struct sq_protocol_frame *reque
 		response_cap, response_len));
 }
 
-static int lifecycle_response(const struct sq_protocol_frame *request,
+static int __noinline lifecycle_response(const struct sq_protocol_frame *request,
 			      const struct sq_vm_runtime *runtime, uint8_t *response,
 			      size_t response_cap, size_t *response_len)
 {
@@ -784,7 +784,7 @@ static int lifecycle_response(const struct sq_protocol_frame *request,
 		response, response_cap, response_len));
 }
 
-static int state_get_response(const struct sq_protocol_frame *request,
+static int __noinline state_get_response(const struct sq_protocol_frame *request,
 			      const struct sq_device_protocol_context *context, uint8_t *response,
 			      size_t response_cap, size_t *response_len)
 {
@@ -823,7 +823,7 @@ static int state_get_response(const struct sq_protocol_frame *request,
 		request->sequence, state_bytes, bytes_len, response, response_cap, response_len));
 }
 
-static int state_import(const struct sq_protocol_frame *request,
+static int __noinline state_import(const struct sq_protocol_frame *request,
 			const uint8_t *request_bytes, size_t request_len,
 			const struct sq_device_protocol_context *context, uint8_t *response,
 			size_t response_cap, size_t *response_len)
@@ -846,7 +846,7 @@ static int state_import(const struct sq_protocol_frame *request,
 	return ok_response(request, response, response_cap, response_len);
 }
 
-static int resources_response(const struct sq_protocol_frame *request,
+static int __noinline resources_response(const struct sq_protocol_frame *request,
 			      const struct sq_device_protocol_context *context, uint8_t *response,
 			      size_t response_cap, size_t *response_len)
 {
@@ -990,7 +990,7 @@ static void clear_runtime_context(const struct sq_device_protocol_context *conte
 	}
 }
 
-static int reset_runtime(const struct sq_protocol_frame *request,
+static int __noinline reset_runtime(const struct sq_protocol_frame *request,
 			 const struct sq_device_protocol_context *context, uint8_t *response,
 			 size_t response_cap, size_t *response_len)
 {
@@ -998,7 +998,7 @@ static int reset_runtime(const struct sq_protocol_frame *request,
 	return ok_response(request, response, response_cap, response_len);
 }
 
-static int storage_format(const struct sq_protocol_frame *request,
+static int __noinline storage_format(const struct sq_protocol_frame *request,
 			  const struct sq_device_protocol_context *context, uint8_t *response,
 			  size_t response_cap, size_t *response_len)
 {
@@ -1071,7 +1071,7 @@ static int dispatch_event_from_parts(const struct sq_protocol_frame *request,
 	return ok_response(request, response, response_cap, response_len);
 }
 
-static int dispatch_event_request(const struct sq_protocol_frame *request,
+static int __noinline dispatch_event_request(const struct sq_protocol_frame *request,
 				  const uint8_t *request_bytes, size_t request_len,
 				  const struct sq_device_protocol_context *context,
 				  uint8_t *response, size_t response_cap, size_t *response_len)
@@ -1086,7 +1086,7 @@ static int dispatch_event_request(const struct sq_protocol_frame *request,
 					 response_len);
 }
 
-static int dispatch_key(const struct sq_protocol_frame *request,
+static int __noinline dispatch_key(const struct sq_protocol_frame *request,
 			const uint8_t *request_bytes, size_t request_len,
 			const struct sq_device_protocol_context *context, uint8_t *response,
 			size_t response_cap, size_t *response_len)
@@ -1102,7 +1102,7 @@ static int dispatch_key(const struct sq_protocol_frame *request,
 					 response_cap, response_len);
 }
 
-static int wifi_profile_set(const struct sq_protocol_frame *request,
+static int __noinline wifi_profile_set(const struct sq_protocol_frame *request,
 			    const uint8_t *request_bytes, size_t request_len,
 			    const struct sq_device_protocol_context *context, uint8_t *response,
 			    size_t response_cap, size_t *response_len)
@@ -1124,6 +1124,28 @@ static int wifi_profile_set(const struct sq_protocol_frame *request,
 		return result;
 	}
 	return ok_response(request, response, response_cap, response_len);
+}
+
+static int __noinline errors_response(const struct sq_protocol_frame *request,
+				      const struct sq_vm_runtime *runtime, uint8_t *response,
+				      size_t response_cap, size_t *response_len)
+{
+	const char *lines[1];
+	size_t line_count = 0;
+	char error_line[48];
+
+	if (runtime != NULL && runtime->status == SQ_VM_RUNTIME_ERROR) {
+		const char *status_name = runtime->result.status == SQVM_STATUS_OK ?
+						  "host_error" :
+						  sq_vm_runtime_status_name(runtime->result.status);
+		int written = snprintf(error_line, sizeof(error_line), "runtime=%s code=%d",
+				       status_name, runtime->result_code);
+		if (written > 0 && (size_t)written < sizeof(error_line)) {
+			lines[line_count++] = error_line;
+		}
+	}
+	return repeated_runtime_lines_response(request, runtime, lines, line_count, response,
+					      response_cap, response_len);
 }
 
 int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
@@ -1202,25 +1224,10 @@ int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 		result = repeated_runtime_lines_response(&frame, context->runtime, NULL, 0,
 							 response, response_cap, response_len);
 		break;
-	case SQ_OPCODE_ERRORS_GET: {
-		const char *lines[1];
-		size_t line_count = 0;
-		char error_line[48];
-		if (context->runtime != NULL && context->runtime->status == SQ_VM_RUNTIME_ERROR) {
-			const char *status_name =
-				context->runtime->result.status == SQVM_STATUS_OK ?
-					"host_error" :
-					sq_vm_runtime_status_name(context->runtime->result.status);
-			int written = snprintf(error_line, sizeof(error_line), "runtime=%s code=%d",
-					       status_name, context->runtime->result_code);
-			if (written > 0 && (size_t)written < sizeof(error_line)) {
-				lines[line_count++] = error_line;
-			}
-		}
-		result = repeated_runtime_lines_response(&frame, context->runtime, lines, line_count,
-							 response, response_cap, response_len);
+	case SQ_OPCODE_ERRORS_GET:
+		result = errors_response(&frame, context->runtime, response, response_cap,
+					 response_len);
 		break;
-	}
 	case SQ_OPCODE_STATE_GET:
 		result = state_get_response(&frame, context, response, response_cap, response_len);
 		break;

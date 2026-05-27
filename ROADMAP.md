@@ -112,16 +112,19 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   stack estimates, down from 288 and 304 bytes respectively. Package
   `.sqdevice` loads now format resource paths directly from validated bytes,
   reducing `sq_vm_runtime_device_config_load_resource` from 304 bytes to 176
-  bytes. Recursive app-store format/delete walks now reuse the caller-owned
-  path buffer instead of allocating a full child path per recursion, reducing
-  `delete_files_under` from 320 bytes to 208 bytes. VM dispatch now uses a
-  static callback table plus an explicit `user_data` pointer across the FFI
-  boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes
-  without adding resident runtime RAM. Protocol polling now reuses runtime
-  app-id/event scratch for lifecycle and armed timer transitions, and app-arm
-  trigger discovery uses SQBC-only storage; the emitted C stack report now
-  attributes that path to `sq_device_protocol_poll` at 272 bytes instead of a
-  separate 400-byte trigger-registration frame.
+	  bytes. Recursive app-store format/delete walks now reuse the caller-owned
+	  path buffer instead of allocating a full child path per recursion, reducing
+	  `delete_files_under` from 320 bytes to 208 bytes. VM dispatch now uses a
+	  static callback table plus an explicit `user_data` pointer across the FFI
+	  boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes
+	  without adding resident runtime RAM. Protocol frame dispatch now keeps
+	  opcode-specific request parsing/formatting out of the top-level switch,
+	  reducing `sq_device_protocol_handle_frame` from 352 bytes to 96 bytes in
+	  the emitted C stack report. Protocol polling now reuses runtime app-id/event
+	  scratch for lifecycle and armed timer transitions, and app-arm trigger
+	  discovery uses SQBC-only storage; the emitted C stack report now attributes
+	  that path to `sq_device_protocol_poll` at 272 bytes instead of a separate
+	  400-byte trigger-registration frame.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
   succeeds but serial commands stall, app launch hangs, or input dispatch stops
   responding, check stack exhaustion early with `device resources`, compare
