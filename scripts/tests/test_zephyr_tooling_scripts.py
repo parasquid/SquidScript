@@ -906,7 +906,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("BUILD_ASSERT(sizeof(size_t) == sizeof(uint32_t));", app_store_c)
         self.assertIn("#endif", app_store_c)
         self.assertIn("BUILD_ASSERT(sizeof(struct sq_app_registry_entry) == sizeof(SqdpAppListEntry));", protocol_c)
-        self.assertIn("ESP32-C3 firmware target uses a 32-bit `size_t`", build_doc)
+        self.assertIn("ESP32-C3 firmware target uses a 32-bit, 4-byte `size_t`", build_doc)
         self.assertNotIn("size_t sqbc_len;", app_store_h)
         self.assertNotIn("size_t sqbc_len;", ffi_h)
         self.assertNotIn("pub sqbc_len: usize,", ffi_rs)

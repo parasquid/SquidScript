@@ -129,10 +129,12 @@ Installed-app VM launch storage uses 64-byte SQBC path storage and 60-byte
 state path storage for the fixed `/apps/<app>/main.sqbc` and
 `/state/<app>.state` shapes instead of retaining two general 128-byte app-store
 path buffers.
-The ESP32-C3 firmware target uses a 32-bit `size_t`; a firmware build-time
-assertion verifies that width. Replacing `size_t` with `uint32_t` is useful for
-FFI clarity or cross-target bounds, but it should not be counted as an
-ESP32-C3 RAM reduction unless a measured symbol or linker segment also shrinks.
+The ESP32-C3 firmware target uses a 32-bit, 4-byte `size_t`; the Zephyr build
+uses the RV32 ILP32 ABI for ESP32-C3, and `app_store.c` keeps a
+`BUILD_ASSERT(sizeof(size_t) == sizeof(uint32_t))` guard for that assumption.
+Replacing `size_t` with `uint32_t` is useful for FFI clarity or cross-target
+bounds, but it should not be counted as an ESP32-C3 RAM reduction unless a
+measured symbol or linker segment also shrinks.
 Zephyr's deferred logger buffer and process-thread stack are explicitly
 bounded at 512 bytes each; app-visible diagnostics use protocol output, trace,
 draw-log, lifecycle, and resources responses instead of relying on a large
