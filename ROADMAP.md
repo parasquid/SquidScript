@@ -101,12 +101,13 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   inspect any remaining accidental static buffers. For host-side attribution
   before physical confirmation, build with `SQUID_ZEPHYR_STACK_USAGE=1` and run
   `scripts/c3-supermini-stack-usage-report.sh` to sort generated Zephyr app C
-  `.su` stack-usage records. Current host attribution has reduced
-  `sq_app_store_scan_registry` from 576 bytes to 336 bytes by reusing its path
-  scratch buffer after opening the app directory and reusing its directory
-  entry for `main.sqbc` stats, and reduced
-  `sq_app_store_install_resource` plus `sq_app_store_commit_staged_resource`
-  from 432 bytes each to 176 bytes each by reusing path scratch and validating
+	  `.su` stack-usage records. Current host attribution has reduced
+	  `sq_app_store_scan_registry` from 576 bytes to 272 bytes by reusing its path
+	  scratch buffer after opening the app directory, reusing its directory entry
+	  for `main.sqbc` stats, and narrowing that scan-only path scratch to the
+	  fixed app registry path shape. It has also reduced
+	  `sq_app_store_install_resource` plus `sq_app_store_commit_staged_resource`
+	  from 432 bytes each to 176 bytes each by reusing path scratch and validating
   the app's `main.sqbc` with an open/close check instead of a directory-entry
   stat. Direct app install and staged-install commit paths now emit 160-byte C
   stack estimates, down from 288 and 304 bytes respectively. Package
