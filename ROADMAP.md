@@ -61,12 +61,12 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   reductions for the largest static allocations, especially VM runtime storage,
   work stacks, response/session buffers, logging, LittleFS pools, and file
   caches. Current C3 build map evidence sizes the resident runtime object at
-  15,232 bytes after capping foreground runtime timers to two slots,
+  14,752 bytes after capping foreground runtime timers to two slots,
   capping retained VM output history at five lines,
   retained VM trace history at four lines,
   narrowing output and drawlog diagnostic line storage, bounding transient VM
   result records to 26 fields, trimming the ESP32-C3 VM context reserve to
-  10,880 bytes, reducing app-id slots to 40 bytes, and
+  10,400 bytes, reducing app-id slots to 40 bytes, and
   lowering the SQBC code/read transfer window to 768 bytes. Runtime device
   config drafts now hold five records with 48-byte string values, enough for the
   five-record GPIO button binding shape and current package `.sqdevice` resource
@@ -91,7 +91,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   remain at the Zephyr default for recursive format/delete walks. The
   protocol/main stack is now 3264 bytes, leaving 788 bytes over the last
   measured 2476-byte protocol peak, and the VM worker stack is now 18016 bytes.
-  The latest target build reports 185,744 bytes
+  The latest target build reports 185,264 bytes
   of DRAM use; next
   reductions should physically revalidate the 3264-byte protocol/main stack
   with the bounded stack harness. The stack harness now fails with captured
@@ -132,6 +132,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   one-byte overflow read instead of a `struct fs_dirent` size probe, reducing
   `fs_storage_load_state` from 192 bytes to 48 bytes and
   `runtime_device_config_read_file` from 192 bytes to 32 bytes.
+  The Zephyr VM context reserve now tracks the measured 32-bit FFI context size
+  of 10,392 bytes with a 10,400-byte C reserve, reducing the static runtime
+  block from 15,232 bytes to 14,752 bytes.
   Protocol polling now reuses runtime app-id/event scratch for lifecycle and
   armed timer transitions, app-arm trigger discovery uses SQBC-only storage, and
   trigger registration uses the shared app-file path scratch; the emitted C

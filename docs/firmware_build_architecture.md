@@ -87,7 +87,7 @@ Use `scripts/zephyr-test-protocol.sh` for that protocol suite; it selects
 Temp-run state uses the same file-backed VM storage backend as installed apps,
 with a bounded temp state path cleared before each temp launch, so the firmware
 does not reserve a resident saved-state-capacity RAM buffer for temp runs.
-The ESP32-C3 linked Rust VM context reservation is capped at 10,880 bytes and
+The ESP32-C3 linked Rust VM context reservation is capped at 10,400 bytes and
 checked against the FFI-reported context size in Zephyr ztests. Native simulator
 ztests use a larger host-only context reservation because the host Rust ABI has
 larger pointer-sized VM structures; this does not change the ESP32-C3 runtime
@@ -185,6 +185,10 @@ File-backed state and device-config reads detect oversized files with a
 one-byte overflow read instead of staging a `struct fs_dirent` for a size
 probe, so `fs_storage_load_state` now emits 48 bytes instead of 192 bytes and
 `runtime_device_config_read_file` now emits 32 bytes instead of 192 bytes.
+The Zephyr VM context reserve follows the measured 32-bit Rust FFI context
+size: `sqvm_context_size()` currently emits 10,392 bytes in the ESP32-C3 build,
+so the C runtime reserves 10,400 bytes instead of 10,880 bytes. That reduces
+the static `runtime.3` block from 15,232 bytes to 14,752 bytes.
 Protocol polling reuses runtime app-id/event scratch for lifecycle and armed
 timer transitions. App-arm trigger discovery uses a SQBC-only filesystem
 backend instead of a full app storage object with state paths, and trigger
