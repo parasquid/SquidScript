@@ -107,10 +107,12 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   before physical confirmation, build with `SQUID_ZEPHYR_STACK_USAGE=1` and run
   `scripts/c3-supermini-stack-usage-report.sh` to sort generated Zephyr app C
   `.su` stack-usage records. Current host attribution has reduced
-  `sq_app_store_scan_registry` from 576 bytes to 272 bytes by reusing its path
+  `sq_app_store_scan_registry` from 576 bytes to 224 bytes by reusing its path
   scratch buffer after opening the app directory, reusing its directory entry
   for `main.sqbc` stats, and narrowing the shared app-file path scratch to
-  the fixed `/apps/<app>/main.sqbc` shape. It has also reduced
+  the fixed `/apps/<app>/main.sqbc` shape. The Zephyr filesystem filename
+  buffer is now capped at 80 bytes to match the protocol resource-path cap
+  instead of keeping 128-byte `fs_dirent` name slots. It has also reduced
   `sq_app_store_install_resource` plus `sq_app_store_commit_staged_resource`
   from 432 bytes each to 176 bytes each by reusing path scratch and validating
   the app's `main.sqbc` with an open/close check instead of a directory-entry
@@ -121,7 +123,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   reducing `sq_vm_runtime_device_config_load_resource` from 304 bytes to 176
   bytes. Recursive app-store format/delete walks now reuse the caller-owned
   path buffer instead of allocating a full child path per recursion, reducing
-  `delete_files_under` from 320 bytes to 208 bytes. VM dispatch now uses a
+  `delete_files_under` from 320 bytes to 160 bytes. VM dispatch now uses a
   static callback table plus an explicit `user_data` pointer across the FFI
   boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes
   without adding resident runtime RAM. Protocol frame dispatch now keeps

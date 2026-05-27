@@ -178,6 +178,16 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("CONFIG_FS_LITTLEFS_NUM_FILES=4", prj_conf)
         self.assertNotIn("CONFIG_FS_LITTLEFS_NUM_DIRS=2", prj_conf)
 
+    def test_default_config_uses_bounded_filesystem_name_buffer(self):
+        prj_conf = self.read("firmware/zephyr/prj.conf")
+        protocol_h = self.read("firmware/zephyr/src/device_protocol.h")
+        build_doc = self.read("docs/firmware_build_architecture.md")
+
+        self.assertIn("CONFIG_FILE_SYSTEM_MAX_FILE_NAME=80", prj_conf)
+        self.assertIn("#define SQ_DEVICE_RESOURCE_PATH_BYTES 80u", protocol_h)
+        self.assertIn("Zephyr filesystem filename buffer is capped at 80 bytes", build_doc)
+        self.assertNotIn("CONFIG_FILE_SYSTEM_MAX_FILE_NAME=128", prj_conf)
+
     def test_default_config_enables_live_heap_resource_telemetry(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
         protocol = self.read("firmware/zephyr/src/device_protocol.c")

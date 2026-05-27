@@ -101,6 +101,9 @@ LittleFS open-file slots are bounded at two because firmware storage paths
 open and close one file per app-store, VM storage, or device-config operation.
 Directory slots remain at the Zephyr default because recursive format/delete
 walks can hold nested directories open.
+Zephyr filesystem filename buffer is capped at 80 bytes, matching the current
+package-relative resource-path protocol bound and avoiding 128-byte `fs_dirent`
+name slots in every directory/stat stack frame.
 Resource diagnostics are encoded directly into the caller-owned 826-byte
 protocol response buffer and do not keep a resident metric staging array.
 Runtime diagnostic history is bounded to four 26-byte trace lines, five 54-byte
@@ -165,9 +168,10 @@ and the hardware stack harness for final stack-budget validation.
 The app registry scan currently reuses its path scratch buffer after opening
 the app directory, reuses its directory entry for `main.sqbc` stats, and uses a
 narrow app-file path buffer for the fixed `/apps/<app>/main.sqbc` shape. Its
-emitted C stack estimate is 272 bytes instead of retaining separate
+emitted C stack estimate is 224 bytes instead of retaining separate
 app-directory/SQBC-path buffers, a second directory entry, and the general
-128-byte path buffer.
+128-byte path buffer; the current 80-byte Zephyr filename buffer trims the
+remaining `fs_dirent` name slot.
 Package resource install and staged-resource commit paths likewise reuse one
 path scratch buffer after validating the app's `main.sqbc` with an open/close
 check instead of a directory-entry stat, so each currently emits a 176-byte C
@@ -182,7 +186,8 @@ resource bytes, so `sq_vm_runtime_device_config_load_resource` now emits a
 176-byte C stack estimate instead of 304 bytes.
 Recursive app-store format/delete walks reuse the caller-owned path buffer
 instead of allocating a full child path per recursion, so `delete_files_under`
-now emits a 208-byte C stack estimate instead of 320 bytes.
+now emits a 160-byte C stack estimate instead of 320 bytes after the filename
+buffer cap reduction.
 VM dispatch uses a static callback table plus an explicit `user_data` pointer
 across the FFI boundary instead of materializing the callback table on the C
 stack, so `sq_vm_runtime_dispatch` now emits an 80-byte C stack estimate
