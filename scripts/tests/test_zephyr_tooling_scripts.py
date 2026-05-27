@@ -1757,6 +1757,38 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertEqual(lines[0], "bytes\tfunction\tlocation\tmode")
         self.assertTrue(lines[1].startswith("160\tlarge\tsrc/device_protocol.c:20:1\tstatic"))
         self.assertTrue(lines[2].startswith("32\tsmall\tsrc/main.c:10:1\tstatic"))
+        self.assertIn("note: .su rows are per-function static estimates, not cumulative call-chain peaks.", result.stderr)
+
+    def test_c3_stack_usage_report_summarizes_top_rows_by_source_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "stack.su").write_text(
+                "\n".join(
+                    [
+                        "src/device_protocol.c:20:1:large\t160\tstatic",
+                        "src/device_protocol.c:30:1:medium\t96\tstatic",
+                        "src/app_store.c:40:1:storage\t112\tstatic",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    str(ROOT / "scripts/c3-supermini-stack-usage-report.sh"),
+                    str(tmp_path),
+                    "3",
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("top_rows\tmax_bytes\tsum_bytes\tsource_file", result.stdout)
+        self.assertIn("2\t160\t256\tsrc/device_protocol.c", result.stdout)
+        self.assertIn("1\t112\t112\tsrc/app_store.c", result.stdout)
 
     def test_c3_stack_usage_report_limit_does_not_trip_pipefail(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1780,9 +1812,10 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
 
         self.assertEqual(result.returncode, 0, result.stderr)
         lines = [line for line in result.stdout.splitlines() if line.strip()]
-        self.assertEqual(len(lines), 6)
+        self.assertEqual(lines[0], "bytes\tfunction\tlocation\tmode")
         self.assertTrue(lines[1].startswith("10000\tfunction_9999\t"))
         self.assertTrue(lines[5].startswith("9996\tfunction_9995\t"))
+        self.assertIn("top_rows\tmax_bytes\tsum_bytes\tsource_file", lines)
 
     def test_app_registry_scan_uses_narrow_path_scratch_after_opening_directory(self):
         app_store = self.read("firmware/zephyr/src/app_store.c")

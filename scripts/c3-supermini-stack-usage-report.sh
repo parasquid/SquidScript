@@ -19,9 +19,11 @@ fi
 
 REPORT="$(mktemp)"
 SORTED_REPORT="$(mktemp)"
-trap 'rm -f "$REPORT" "$SORTED_REPORT"' EXIT
+TOP_REPORT="$(mktemp)"
+trap 'rm -f "$REPORT" "$SORTED_REPORT" "$TOP_REPORT"' EXIT
 
 printf 'bytes\tfunction\tlocation\tmode\n'
+printf 'note: .su rows are per-function static estimates, not cumulative call-chain peaks.\n' >&2
 awk -F '\t' '
   NF >= 3 && $2 ~ /^[0-9]+$/ {
     location = $1
@@ -32,4 +34,24 @@ awk -F '\t' '
   }
 ' "${STACK_FILES[@]}" >"$REPORT"
 sort -nr -k1,1 "$REPORT" >"$SORTED_REPORT"
-sed -n "1,${LIMIT}p" "$SORTED_REPORT"
+sed -n "1,${LIMIT}p" "$SORTED_REPORT" >"$TOP_REPORT"
+cat "$TOP_REPORT"
+
+printf '\n'
+printf 'top_rows\tmax_bytes\tsum_bytes\tsource_file\n'
+awk -F '\t' '
+  NF >= 4 {
+    file = $3
+    sub(/:[0-9]+:[0-9]+$/, "", file)
+    count[file] += 1
+    sum[file] += $1
+    if ($1 > max[file]) {
+      max[file] = $1
+    }
+  }
+  END {
+    for (file in count) {
+      printf "%d\t%d\t%d\t%s\n", count[file], max[file], sum[file], file
+    }
+  }
+' "$TOP_REPORT" | sort -nr -k3,3 -k2,2
