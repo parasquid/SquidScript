@@ -563,7 +563,10 @@ static size_t c_array_len(const uint8_t *bytes, size_t cap)
 static int register_app_triggers(const struct sq_device_protocol_context *context,
 				 const char *app_id)
 {
-	struct sq_app_store_vm_storage trigger_storage;
+	char sqbc_path[SQ_APP_STORE_PATH_MAX];
+	struct sq_vm_fs_storage trigger_storage = {
+		.sqbc_path = sqbc_path,
+	};
 	struct sq_vm_storage_backend backend;
 	size_t trigger_count = 0;
 	SqvmStatus status;
@@ -573,12 +576,12 @@ static int register_app_triggers(const struct sq_device_protocol_context *contex
 	    app_id == NULL) {
 		return -EINVAL;
 	}
-	result = sq_app_store_vm_storage_for_app(context->store_mount_point, app_id,
-						&trigger_storage);
+	result = sq_app_store_sqbc_path(context->store_mount_point, app_id, sqbc_path,
+					sizeof(sqbc_path));
 	if (result != 0) {
 		return result;
 	}
-	backend = sq_app_store_vm_storage_backend(&trigger_storage);
+	backend = sq_vm_fs_storage_backend(&trigger_storage);
 	if (backend.read_sqbc == NULL) {
 		return -ENODEV;
 	}
@@ -618,7 +621,6 @@ static int register_app_triggers(const struct sq_device_protocol_context *contex
 int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 {
 	struct sq_vm_runtime *runtime;
-	char target[SQ_APP_STORE_APP_ID_MAX];
 	int result;
 
 	if (context == NULL || context->runtime == NULL) {
@@ -636,11 +638,11 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 		if (result != 0) {
 			return result;
 		}
-		strncpy(target, runtime->lifecycle_target_app, sizeof(target) - 1);
-		target[sizeof(target) - 1] = '\0';
+		result = start_installed_app(context, runtime->lifecycle_target_app, "app.start",
+					     true);
 		memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
 		runtime->dispatch_exited = false;
-		return start_installed_app(context, target, "app.start", true);
+		return result;
 	}
 
 	if (runtime->arm_registration_active) {
@@ -666,30 +668,36 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 	}
 
 	if (runtime->pending_arm_active) {
-		strncpy(target, runtime->pending_arm_app, sizeof(target) - 1);
-		target[sizeof(target) - 1] = '\0';
+		result = register_app_triggers(context, runtime->pending_arm_app);
 		memset(runtime->pending_arm_app, 0, sizeof(runtime->pending_arm_app));
 		runtime->pending_arm_active = false;
-		return register_app_triggers(context, target);
+		return result;
 	}
 
 	if (runtime->dispatch_exited) {
 		runtime->dispatch_exited = false;
-		result = pop_return_app(runtime, target, sizeof(target));
+		result = pop_return_app(runtime, runtime->lifecycle_target_app,
+					sizeof(runtime->lifecycle_target_app));
 		if (result != 0) {
 			return result;
 		}
-		return start_installed_app(context, target, "app.start", true);
+		result = start_installed_app(context, runtime->lifecycle_target_app, "app.start",
+					     true);
+		memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
+		return result;
 	}
 
-	char armed_event[SQ_VM_RUNTIME_EVENT_LEN];
-	if (sq_vm_runtime_next_due_armed_timer(runtime, target, sizeof(target), armed_event,
-					       sizeof(armed_event)) == 0) {
+	if (sq_vm_runtime_next_due_armed_timer(runtime, runtime->lifecycle_target_app,
+					       sizeof(runtime->lifecycle_target_app),
+					       runtime->event, sizeof(runtime->event)) == 0) {
 		result = push_return_app(runtime, runtime->current_app);
 		if (result != 0) {
 			return result;
 		}
-		return start_installed_app(context, target, armed_event, true);
+		result = start_installed_app(context, runtime->lifecycle_target_app,
+					     runtime->event, true);
+		memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
+		return result;
 	}
 
 	return sq_vm_runtime_poll(runtime);

@@ -154,6 +154,11 @@ app-directory/SQBC-path buffers and a second directory entry.
 Package resource install and staged-resource commit paths likewise reuse one
 path scratch buffer after validating the app's `main.sqbc`, so each currently
 emits a 304-byte C stack estimate instead of 432 bytes.
+Protocol polling reuses runtime app-id/event scratch for lifecycle and armed
+timer transitions. App-arm trigger discovery uses a SQBC-only filesystem
+backend instead of a full app storage object with state paths; the emitted C
+stack report now attributes that path to `sq_device_protocol_poll` at 272 bytes
+instead of a separate 400-byte trigger-registration frame.
 Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi VM service
 calls now cross the Rust FFI boundary into Zephyr callbacks. Zephyr now
 performs installed-app foreground handoff for `app.launch` and `app.exit` with

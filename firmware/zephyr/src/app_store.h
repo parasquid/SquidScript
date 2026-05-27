@@ -41,6 +41,9 @@ const char *sq_app_store_mount_point(void);
 int sq_app_store_vm_storage_for_app(const char *mount_point, const char *app_id,
 				    struct sq_app_store_vm_storage *storage);
 
+int sq_app_store_sqbc_path(const char *mount_point, const char *app_id, char *out,
+			   size_t out_len);
+
 int sq_app_store_install_app(const char *mount_point, const char *app_id, const uint8_t *sqbc,
 			     size_t sqbc_len);
 

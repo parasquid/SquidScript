@@ -1714,6 +1714,41 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("sq_app_store_resource_path(mount_point, app_id, resource_path, path,", install_body)
         self.assertIn("write_file(path, bytes, len)", install_body)
 
+    def test_protocol_poll_uses_runtime_scratch_instead_of_stack_arrays(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+        start = protocol.index("int sq_device_protocol_poll")
+        end = protocol.index("static int repeated_runtime_lines_response")
+        body = protocol[start:end]
+
+        self.assertNotIn("char target[SQ_APP_STORE_APP_ID_MAX];", body)
+        self.assertNotIn("char armed_event[SQ_VM_RUNTIME_EVENT_LEN];", body)
+        self.assertIn("pop_return_app(runtime, runtime->lifecycle_target_app,", body)
+        self.assertIn(
+            "sq_vm_runtime_next_due_armed_timer(runtime, runtime->lifecycle_target_app,",
+            body,
+        )
+        self.assertIn("runtime->event, sizeof(runtime->event)", body)
+        self.assertIn("runtime->event, true);", body)
+        self.assertIn("memmove(runtime->event, event, event_len + 1);", runtime)
+
+    def test_trigger_registration_uses_sqbc_only_storage(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        app_store_h = self.read("firmware/zephyr/src/app_store.h")
+        app_store_c = self.read("firmware/zephyr/src/app_store.c")
+        start = protocol.index("static int register_app_triggers")
+        end = protocol.index("int sq_device_protocol_poll")
+        body = protocol[start:end]
+
+        self.assertIn("sq_app_store_sqbc_path", app_store_h)
+        self.assertIn("int sq_app_store_sqbc_path", app_store_c)
+        self.assertNotIn("struct sq_app_store_vm_storage trigger_storage", body)
+        self.assertIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", body)
+        self.assertIn("struct sq_vm_fs_storage trigger_storage", body)
+        self.assertIn("sq_app_store_sqbc_path(context->store_mount_point, app_id,", body)
+        self.assertIn(".sqbc_path = sqbc_path", body)
+        self.assertIn("sq_vm_fs_storage_backend(&trigger_storage)", body)
+
     def test_hardware_suite_leaves_blinky_visible_check_last(self):
         blinky = self.read("scripts/c3-supermini-test-blinky.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")

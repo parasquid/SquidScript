@@ -107,7 +107,11 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   entry for `main.sqbc` stats, and reduced
   `sq_app_store_install_resource` plus `sq_app_store_commit_staged_resource`
   from 432 bytes each to 304 bytes each by reusing path scratch after
-  validating the app's `main.sqbc`.
+  validating the app's `main.sqbc`. Protocol polling now reuses runtime
+  app-id/event scratch for lifecycle and armed timer transitions, and app-arm
+  trigger discovery uses SQBC-only storage; the emitted C stack report now
+  attributes that path to `sq_device_protocol_poll` at 272 bytes instead of a
+  separate 400-byte trigger-registration frame.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
   succeeds but serial commands stall, app launch hangs, or input dispatch stops
   responding, check stack exhaustion early with `device resources`, compare

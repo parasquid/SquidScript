@@ -2491,7 +2491,7 @@ int sq_vm_runtime_start(struct sq_vm_runtime *runtime,
 	} else {
 		runtime->start_setup_done = NULL;
 	}
-	memcpy(runtime->event, event, event_len + 1);
+	memmove(runtime->event, event, event_len + 1);
 	runtime->result_code = 0;
 	runtime->dispatch_exited = false;
 	runtime->status = SQ_VM_RUNTIME_RUNNING;

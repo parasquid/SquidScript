@@ -317,6 +317,15 @@ int sq_app_store_vm_storage_for_app(const char *mount_point, const char *app_id,
 	return 0;
 }
 
+int sq_app_store_sqbc_path(const char *mount_point, const char *app_id, char *out,
+			   size_t out_len)
+{
+	if (mount_point == NULL || !is_safe_app_id(app_id)) {
+		return -EINVAL;
+	}
+	return format_app_path(out, out_len, mount_point, app_id, "main.sqbc");
+}
+
 int sq_app_store_install_app(const char *mount_point, const char *app_id, const uint8_t *sqbc,
 			     size_t sqbc_len)
 {
