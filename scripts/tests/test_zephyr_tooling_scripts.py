@@ -1936,10 +1936,6 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         public_start = app_store.index("int sq_app_store_scan_registry(")
         public_end = app_store.index("int sq_app_store_scan_registry_with_path")
         public_body = app_store[public_start:public_end]
-        protocol = self.read("firmware/zephyr/src/device_protocol.c")
-        commit_start = protocol.index("static int __noinline commit_install")
-        commit_end = protocol.index("static int start_installed_app", commit_start)
-        commit_body = protocol[commit_start:commit_end]
 
         self.assertIn("#define SQ_APP_STORE_APP_FILE_PATH_MAX 64", app_store_h)
         self.assertNotIn("#define SQ_APP_STORE_APP_FILE_PATH_MAX 72", app_store_h)
@@ -1960,10 +1956,27 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("char path[SQ_APP_STORE_APP_FILE_PATH_MAX];", public_body)
         self.assertIn("sq_app_store_scan_registry_with_path(mount_point, registry, path,",
                       public_body)
-        self.assertIn("sq_app_store_scan_registry_with_path(context->store_mount_point,",
-                      commit_body)
+
+    def test_commit_install_updates_registry_without_full_scan(self):
+        app_store = self.read("firmware/zephyr/src/app_store.c")
+        app_store_h = self.read("firmware/zephyr/src/app_store.h")
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        commit_start = protocol.index("static int __noinline commit_install")
+        commit_end = protocol.index("static int start_installed_app", commit_start)
+        commit_body = protocol[commit_start:commit_end]
+        commit_body_flat = " ".join(commit_body.split())
+
+        self.assertIn("int sq_app_store_update_registry_entry_with_path", app_store_h)
+        self.assertIn("int sq_app_store_update_registry_entry_with_path", app_store)
+        self.assertIn(
+            "sq_app_store_update_registry_entry_with_path( context->store_mount_point, "
+            "context->mutable_registry, session->app_id,",
+            commit_body_flat,
+        )
         self.assertIn("session->staging_path", commit_body)
         self.assertIn("sizeof(session->staging_path)", commit_body)
+        self.assertNotIn("sq_app_store_scan_registry_with_path(context->store_mount_point,",
+                         commit_body)
 
     def test_app_store_vm_storage_uses_narrow_installed_app_path_buffers(self):
         app_store_h = self.read("firmware/zephyr/src/app_store.h")

@@ -876,6 +876,54 @@ int sq_app_store_scan_registry_with_path(const char *mount_point, struct sq_app_
 	return fs_closedir(&dir);
 }
 
+int sq_app_store_update_registry_entry_with_path(const char *mount_point,
+						 struct sq_app_registry *registry,
+						 const char *app_id, char *path,
+						 size_t path_cap)
+{
+	struct fs_dirent entry;
+	struct sq_app_registry_entry *record = NULL;
+	int result;
+
+	if (mount_point == NULL || registry == NULL || !is_safe_app_id(app_id) || path == NULL) {
+		return -EINVAL;
+	}
+
+	result = format_app_path(path, path_cap, mount_point, app_id, "main.sqbc");
+	if (result != 0) {
+		return result;
+	}
+	result = fs_stat(path, &entry);
+	if (result != 0) {
+		return result;
+	}
+	if (entry.type != FS_DIR_ENTRY_FILE) {
+		return -ENOENT;
+	}
+	if (entry.size > UINT32_MAX) {
+		return -EOVERFLOW;
+	}
+
+	for (uint8_t i = 0; i < registry->count; i++) {
+		if (strcmp(registry->apps[i].app_id, app_id) == 0) {
+			record = &registry->apps[i];
+			break;
+		}
+	}
+	if (record == NULL) {
+		if (registry->count >= SQ_APP_STORE_MAX_APPS) {
+			return -ENOSPC;
+		}
+		record = &registry->apps[registry->count];
+		registry->count++;
+	}
+
+	strncpy(record->app_id, app_id, sizeof(record->app_id) - 1u);
+	record->app_id[sizeof(record->app_id) - 1u] = '\0';
+	record->sqbc_len = (uint32_t)entry.size;
+	return 0;
+}
+
 static int delete_files_under(char *path, size_t path_cap, bool *deleted_any)
 {
 	struct fs_dirent entry;

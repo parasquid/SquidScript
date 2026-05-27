@@ -95,6 +95,11 @@ int sq_app_store_scan_registry_with_path(const char *mount_point,
 					 struct sq_app_registry *registry, char *path,
 					 size_t path_cap);
 
+int sq_app_store_update_registry_entry_with_path(const char *mount_point,
+						 struct sq_app_registry *registry,
+						 const char *app_id, char *path,
+						 size_t path_cap);
+
 int sq_app_store_format_filesystem(const char *mount_point);
 
 const struct sq_app_registry_entry *sq_app_registry_find(const struct sq_app_registry *registry,

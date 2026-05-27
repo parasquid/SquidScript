@@ -408,10 +408,9 @@ static int __noinline commit_install(const struct sq_protocol_request *request,
 		return result;
 	}
 	if (context->mutable_registry != NULL) {
-		result = sq_app_store_scan_registry_with_path(context->store_mount_point,
-							      context->mutable_registry,
-							      session->staging_path,
-							      sizeof(session->staging_path));
+		result = sq_app_store_update_registry_entry_with_path(
+			context->store_mount_point, context->mutable_registry, session->app_id,
+			session->staging_path, sizeof(session->staging_path));
 		if (result != 0) {
 			return result;
 		}

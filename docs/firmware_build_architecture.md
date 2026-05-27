@@ -324,6 +324,14 @@ start helper instead of materializing a NUL-terminated
 432 bytes to 416 bytes through
 `commit_install -> sq_app_store_scan_registry_with_path -> join_path2`.
 Linker DRAM remains 185,024 bytes and the RAM audit remains 185,008 bytes.
+Install commit now updates or inserts the committed app's mutable registry
+entry with `sq_app_store_update_registry_entry_with_path` instead of scanning
+the full app directory after every install. That reduces the cumulative
+`commit_install` path from 224 bytes to 208 bytes. The top source-known
+main/protocol path remains 416 bytes and moves back to
+`launch_app -> start_installed_app_bytes -> sq_vm_runtime_start_event ->
+sq_vm_runtime_init`. Linker DRAM remains 185,024 bytes and the RAM audit
+remains 185,008 bytes.
 Protocol dispatch decodes only the request opcode and sequence into the live
 dispatch header because opcode handlers parse payloads from the original
 request bytes, so `sq_device_protocol_handle_frame` now emits 80 bytes instead
