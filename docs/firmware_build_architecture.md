@@ -150,6 +150,9 @@ stack harness for final stack-budget validation.
 The app registry scan currently reuses its path scratch buffer after opening
 the app directory, so its emitted C stack estimate is 448 bytes instead of
 retaining separate app-directory and SQBC-path buffers.
+Package resource install and staged-resource commit paths likewise reuse one
+path scratch buffer after validating the app's `main.sqbc`, so each currently
+emits a 304-byte C stack estimate instead of 432 bytes.
 Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi VM service
 calls now cross the Rust FFI boundary into Zephyr callbacks. Zephyr now
 performs installed-app foreground handoff for `app.launch` and `app.exit` with

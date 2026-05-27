@@ -1686,6 +1686,30 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn('format_app_path(path, sizeof(path), mount_point, entry.name,', body)
         self.assertIn("fs_stat(path, &sqbc_entry)", body)
 
+    def test_resource_install_paths_reuse_single_path_scratch(self):
+        app_store = self.read("firmware/zephyr/src/app_store.c")
+
+        commit_start = app_store.index("int sq_app_store_commit_staged_resource")
+        commit_end = app_store.index("int sq_app_store_resource_path")
+        commit_body = app_store[commit_start:commit_end]
+        self.assertIn("char path[SQ_APP_STORE_PATH_MAX];", commit_body)
+        self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", commit_body)
+        self.assertNotIn("char final_path[SQ_APP_STORE_PATH_MAX];", commit_body)
+        self.assertIn('format_app_path(path, sizeof(path), mount_point, app_id, "main.sqbc")', commit_body)
+        self.assertIn("fs_stat(path, &entry)", commit_body)
+        self.assertIn("sq_app_store_resource_path(mount_point, app_id, resource_path, path,", commit_body)
+        self.assertIn("fs_rename(staging_path, path)", commit_body)
+
+        install_start = app_store.index("int sq_app_store_install_resource")
+        install_end = app_store.index("int sq_app_store_scan_registry")
+        install_body = app_store[install_start:install_end]
+        self.assertIn("char path[SQ_APP_STORE_PATH_MAX];", install_body)
+        self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", install_body)
+        self.assertIn('format_app_path(path, sizeof(path), mount_point, app_id, "main.sqbc")', install_body)
+        self.assertIn("fs_stat(path, &entry)", install_body)
+        self.assertIn("sq_app_store_resource_path(mount_point, app_id, resource_path, path,", install_body)
+        self.assertIn("write_file(path, bytes, len)", install_body)
+
     def test_hardware_suite_leaves_blinky_visible_check_last(self):
         blinky = self.read("scripts/c3-supermini-test-blinky.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")

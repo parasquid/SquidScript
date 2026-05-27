@@ -501,8 +501,7 @@ int sq_app_store_commit_staged_install(const char *mount_point, const char *app_
 int sq_app_store_commit_staged_resource(const char *mount_point, const char *app_id,
 					const char *resource_path, const char *staging_path)
 {
-	char sqbc_path[SQ_APP_STORE_PATH_MAX];
-	char final_path[SQ_APP_STORE_PATH_MAX];
+	char path[SQ_APP_STORE_PATH_MAX];
 	struct fs_dirent entry;
 	int result;
 
@@ -511,11 +510,11 @@ int sq_app_store_commit_staged_resource(const char *mount_point, const char *app
 		return -EINVAL;
 	}
 
-	result = format_app_path(sqbc_path, sizeof(sqbc_path), mount_point, app_id, "main.sqbc");
+	result = format_app_path(path, sizeof(path), mount_point, app_id, "main.sqbc");
 	if (result != 0) {
 		return result;
 	}
-	result = fs_stat(sqbc_path, &entry);
+	result = fs_stat(path, &entry);
 	if (result != 0) {
 		return result;
 	}
@@ -527,18 +526,18 @@ int sq_app_store_commit_staged_resource(const char *mount_point, const char *app
 	if (result != 0) {
 		return result;
 	}
-	result = sq_app_store_resource_path(mount_point, app_id, resource_path, final_path,
-					    sizeof(final_path));
+	result = sq_app_store_resource_path(mount_point, app_id, resource_path, path,
+					    sizeof(path));
 	if (result != 0) {
 		return result;
 	}
-	if (fs_stat(final_path, &entry) == 0) {
-		result = fs_unlink(final_path);
+	if (fs_stat(path, &entry) == 0) {
+		result = fs_unlink(path);
 		if (result != 0) {
 			return result;
 		}
 	}
-	return fs_rename(staging_path, final_path);
+	return fs_rename(staging_path, path);
 }
 
 int sq_app_store_resource_path(const char *mount_point, const char *app_id,
@@ -570,7 +569,6 @@ int sq_app_store_device_config_path(const char *mount_point, char *out, size_t o
 int sq_app_store_install_resource(const char *mount_point, const char *app_id,
 				  const char *resource_path, const uint8_t *bytes, size_t len)
 {
-	char sqbc_path[SQ_APP_STORE_PATH_MAX];
 	char path[SQ_APP_STORE_PATH_MAX];
 	struct fs_dirent entry;
 	int result;
@@ -580,11 +578,11 @@ int sq_app_store_install_resource(const char *mount_point, const char *app_id,
 		return -EINVAL;
 	}
 
-	result = format_app_path(sqbc_path, sizeof(sqbc_path), mount_point, app_id, "main.sqbc");
+	result = format_app_path(path, sizeof(path), mount_point, app_id, "main.sqbc");
 	if (result != 0) {
 		return result;
 	}
-	result = fs_stat(sqbc_path, &entry);
+	result = fs_stat(path, &entry);
 	if (result != 0) {
 		return result;
 	}
