@@ -329,8 +329,7 @@ int sq_app_store_sqbc_path(const char *mount_point, const char *app_id, char *ou
 int sq_app_store_install_app(const char *mount_point, const char *app_id, const uint8_t *sqbc,
 			     size_t sqbc_len)
 {
-	char app_dir[SQ_APP_STORE_PATH_MAX];
-	char sqbc_path[SQ_APP_STORE_PATH_MAX];
+	char path[SQ_APP_STORE_PATH_MAX];
 	int result;
 
 	if (mount_point == NULL || !is_safe_app_id(app_id) || sqbc == NULL || sqbc_len == 0) {
@@ -342,20 +341,20 @@ int sq_app_store_install_app(const char *mount_point, const char *app_id, const 
 		return result;
 	}
 
-	result = format_app_dir(app_dir, sizeof(app_dir), mount_point, app_id);
+	result = format_app_dir(path, sizeof(path), mount_point, app_id);
 	if (result != 0) {
 		return result;
 	}
-	result = ensure_directory(app_dir);
+	result = ensure_directory(path);
 	if (result != 0) {
 		return result;
 	}
 
-	result = format_app_path(sqbc_path, sizeof(sqbc_path), mount_point, app_id, "main.sqbc");
+	result = format_app_path(path, sizeof(path), mount_point, app_id, "main.sqbc");
 	if (result != 0) {
 		return result;
 	}
-	return write_file(sqbc_path, sqbc, sqbc_len);
+	return write_file(path, sqbc, sqbc_len);
 }
 
 int sq_app_store_begin_staged_install(const char *mount_point, const char *app_id,
@@ -486,7 +485,6 @@ int sq_app_store_commit_staged_install(const char *mount_point, const char *app_
 				       const char *staging_path)
 {
 	char final_path[SQ_APP_STORE_PATH_MAX];
-	struct fs_dirent existing;
 	int result;
 
 	if (mount_point == NULL || !is_safe_app_id(app_id) || staging_path == NULL) {
@@ -498,11 +496,9 @@ int sq_app_store_commit_staged_install(const char *mount_point, const char *app_
 		return result;
 	}
 
-	if (fs_stat(final_path, &existing) == 0) {
-		result = fs_unlink(final_path);
-		if (result != 0) {
-			return result;
-		}
+	result = fs_unlink(final_path);
+	if (result != 0 && result != -ENOENT) {
+		return result;
 	}
 	return fs_rename(staging_path, final_path);
 }

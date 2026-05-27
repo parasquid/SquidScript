@@ -1714,6 +1714,29 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("sq_app_store_resource_path(mount_point, app_id, resource_path, path,", install_body)
         self.assertIn("write_file(path, bytes, len)", install_body)
 
+    def test_app_install_paths_reuse_scratch_and_unlink_without_stat_probe(self):
+        app_store = self.read("firmware/zephyr/src/app_store.c")
+
+        install_start = app_store.index("int sq_app_store_install_app")
+        install_end = app_store.index("int sq_app_store_begin_staged_install")
+        install_body = app_store[install_start:install_end]
+        self.assertIn("char path[SQ_APP_STORE_PATH_MAX];", install_body)
+        self.assertNotIn("char app_dir[SQ_APP_STORE_PATH_MAX];", install_body)
+        self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", install_body)
+        self.assertIn("format_app_dir(path, sizeof(path), mount_point, app_id)", install_body)
+        self.assertIn("ensure_directory(path)", install_body)
+        self.assertIn('format_app_path(path, sizeof(path), mount_point, app_id, "main.sqbc")', install_body)
+        self.assertIn("write_file(path, sqbc, sqbc_len)", install_body)
+
+        commit_start = app_store.index("int sq_app_store_commit_staged_install")
+        commit_end = app_store.index("int sq_app_store_commit_staged_resource")
+        commit_body = app_store[commit_start:commit_end]
+        self.assertIn("char final_path[SQ_APP_STORE_PATH_MAX];", commit_body)
+        self.assertNotIn("struct fs_dirent existing", commit_body)
+        self.assertIn("result = fs_unlink(final_path);", commit_body)
+        self.assertIn("if (result != 0 && result != -ENOENT)", commit_body)
+        self.assertIn("return fs_rename(staging_path, final_path);", commit_body)
+
     def test_protocol_poll_uses_runtime_scratch_instead_of_stack_arrays(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         runtime = self.read("firmware/zephyr/src/vm_runtime.c")
