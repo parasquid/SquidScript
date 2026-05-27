@@ -217,8 +217,12 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   reset/default-indicator rebinding from the top source-known main/protocol
   path. The top source-known main/protocol path remains 464 bytes through
   `dispatch_event_request -> dispatch_event_from_parts ->
-  sq_vm_runtime_start_event -> sq_vm_runtime_init`; investigate event dispatch
-  and the shared protocol/main frame next. VM
+  sq_vm_runtime_start_event -> sq_vm_runtime_init`. Event dispatch now keeps
+  parsed app IDs as borrowed byte slices through app storage path formatting
+  instead of copying them into a protocol-stack app-id buffer. That reduces
+  `dispatch_event_from_parts` from 96 bytes to 80 bytes and the top
+  source-known main/protocol path from 464 bytes to 448 bytes; investigate
+  event request parsing and the shared protocol/main frame next. VM
   dispatch now uses a
   static callback table plus an explicit `user_data` pointer across the FFI
   boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes

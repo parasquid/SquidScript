@@ -1044,19 +1044,18 @@ static int dispatch_event_from_parts(const struct sq_protocol_request *request,
 		if (app_id_len == 0 || app_id_len >= SQ_APP_STORE_APP_ID_MAX) {
 			return -EINVAL;
 		}
-		char app_id_buffer[SQ_APP_STORE_APP_ID_MAX];
-		memcpy(app_id_buffer, app_id, app_id_len);
-		app_id_buffer[app_id_len] = '\0';
-		if (context->runtime->current_app[0] != '\0' &&
-		    strcmp(context->runtime->current_app, app_id_buffer) != 0) {
-			return -EINVAL;
-		}
-		if (context->runtime->current_app[0] == '\0') {
+		if (context->runtime->current_app[0] != '\0') {
+			size_t current_app_len = strlen(context->runtime->current_app);
+			if (current_app_len != app_id_len ||
+			    memcmp(context->runtime->current_app, app_id, app_id_len) != 0) {
+				return -EINVAL;
+			}
+		} else {
 			sq_vm_runtime_reset_vm_context(context->runtime);
 		}
-		int result = sq_app_store_vm_storage_for_app(context->store_mount_point,
-							     app_id_buffer,
-							     context->launch_storage);
+		int result = sq_app_store_vm_storage_for_app_bytes(context->store_mount_point,
+								   app_id, app_id_len,
+								   context->launch_storage);
 		if (result != 0) {
 			return result;
 		}

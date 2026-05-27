@@ -2270,6 +2270,8 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
 
     def test_protocol_event_dispatch_uses_byte_slice_runtime_start(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        app_store_h = self.read("firmware/zephyr/src/app_store.h")
+        app_store_c = self.read("firmware/zephyr/src/app_store.c")
         runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         start = protocol.index("static int dispatch_event_from_parts")
@@ -2281,6 +2283,11 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("return sq_vm_runtime_start_event(runtime, backend,", runtime_c)
         self.assertNotIn("char event_buffer[SQ_VM_RUNTIME_EVENT_LEN];", body)
         self.assertNotIn("memcpy(event_buffer, event, event_len);", body)
+        self.assertNotIn("char app_id_buffer[SQ_APP_STORE_APP_ID_MAX];", body)
+        self.assertNotIn("memcpy(app_id_buffer, app_id, app_id_len);", body)
+        self.assertIn("sq_app_store_vm_storage_for_app_bytes", app_store_h)
+        self.assertIn("sq_app_store_vm_storage_for_app_bytes", app_store_c)
+        self.assertIn("sq_app_store_vm_storage_for_app_bytes(context->store_mount_point,", body)
         self.assertIn("sq_vm_runtime_start_event(context->runtime, &backend, event, event_len)", body)
 
     def test_key_dispatch_uses_runtime_event_scratch(self):

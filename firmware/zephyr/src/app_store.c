@@ -1,6 +1,7 @@
 #include "app_store.h"
 
 #include <errno.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -34,6 +35,24 @@ static bool is_safe_app_id(const char *app_id)
 
 	for (const char *cursor = app_id; *cursor != '\0'; cursor++) {
 		char ch = *cursor;
+
+		if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+		    (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+
+static bool is_safe_app_id_bytes(const uint8_t *app_id, size_t app_id_len)
+{
+	if (app_id == NULL || app_id_len == 0 || app_id_len >= SQ_APP_STORE_APP_ID_MAX) {
+		return false;
+	}
+
+	for (size_t i = 0; i < app_id_len; i++) {
+		uint8_t ch = app_id[i];
 
 		if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
 		    (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
@@ -133,6 +152,23 @@ static int format_app_path(char *out, size_t out_len, const char *mount_point,
 	return 0;
 }
 
+static int format_app_path_bytes(char *out, size_t out_len, const char *mount_point,
+				 const uint8_t *app_id, size_t app_id_len,
+				 const char *suffix)
+{
+	if (out == NULL || mount_point == NULL || app_id == NULL || suffix == NULL ||
+	    app_id_len >= INT_MAX) {
+		return -EINVAL;
+	}
+
+	int written = snprintf(out, out_len, "%s/apps/%.*s/%s", mount_point, (int)app_id_len,
+			       (const char *)app_id, suffix);
+	if (written < 0 || (size_t)written >= out_len) {
+		return -ENAMETOOLONG;
+	}
+	return 0;
+}
+
 static int format_resource_path(char *out, size_t out_len, const char *mount_point,
 				const char *app_id, const char *resource_path)
 {
@@ -190,6 +226,21 @@ static int format_state_path(char *out, size_t out_len, const char *mount_point,
 	}
 
 	int written = snprintf(out, out_len, "%s/state/%s.state", mount_point, app_id);
+	if (written < 0 || (size_t)written >= out_len) {
+		return -ENAMETOOLONG;
+	}
+	return 0;
+}
+
+static int format_state_path_bytes(char *out, size_t out_len, const char *mount_point,
+				   const uint8_t *app_id, size_t app_id_len)
+{
+	if (out == NULL || mount_point == NULL || app_id == NULL || app_id_len >= INT_MAX) {
+		return -EINVAL;
+	}
+
+	int written = snprintf(out, out_len, "%s/state/%.*s.state", mount_point,
+			       (int)app_id_len, (const char *)app_id);
 	if (written < 0 || (size_t)written >= out_len) {
 		return -ENAMETOOLONG;
 	}
@@ -410,6 +461,32 @@ int sq_app_store_vm_storage_for_app(const char *mount_point, const char *app_id,
 	}
 	result = format_state_path(storage->state_path, sizeof(storage->state_path), mount_point,
 				   app_id);
+	if (result != 0) {
+		return result;
+	}
+
+	storage->fs_storage.sqbc_path = storage->sqbc_path;
+	storage->fs_storage.state_path = storage->state_path;
+	return 0;
+}
+
+int sq_app_store_vm_storage_for_app_bytes(const char *mount_point, const uint8_t *app_id,
+					  size_t app_id_len,
+					  struct sq_app_store_vm_storage *storage)
+{
+	if (storage == NULL || mount_point == NULL || !is_safe_app_id_bytes(app_id, app_id_len)) {
+		return -EINVAL;
+	}
+
+	memset(storage, 0, sizeof(*storage));
+
+	int result = format_app_path_bytes(storage->sqbc_path, sizeof(storage->sqbc_path),
+					   mount_point, app_id, app_id_len, "main.sqbc");
+	if (result != 0) {
+		return result;
+	}
+	result = format_state_path_bytes(storage->state_path, sizeof(storage->state_path),
+					 mount_point, app_id, app_id_len);
 	if (result != 0) {
 		return result;
 	}

@@ -288,6 +288,11 @@ top source-known main/protocol path remains 464 bytes through
 `dispatch_event_request -> dispatch_event_from_parts ->
 sq_vm_runtime_start_event -> sq_vm_runtime_init`. Linker DRAM remains
 185,024 bytes and the RAM audit remains 185,008 bytes.
+Event dispatch now keeps parsed app IDs as borrowed byte slices through app
+storage path formatting instead of copying them into a protocol-stack app-id
+buffer. `dispatch_event_from_parts` now emits 80 bytes instead of 96 bytes,
+reducing the top source-known main/protocol path from 464 bytes to 448 bytes.
+Linker DRAM remains 185,024 bytes and the RAM audit remains 185,008 bytes.
 Protocol dispatch decodes only the request opcode and sequence into the live
 dispatch header because opcode handlers parse payloads from the original
 request bytes, so `sq_device_protocol_handle_frame` now emits 80 bytes instead
