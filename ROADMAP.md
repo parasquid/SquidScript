@@ -120,7 +120,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   `sq_app_store_install_resource` plus `sq_app_store_commit_staged_resource`
   from 432 bytes each to 176 bytes each by reusing path scratch and validating
   the app's `main.sqbc` with an open/close check instead of a directory-entry
-  stat. Direct app install and staged-install commit paths now use the fixed
+  stat. Their parent-directory creation now reuses the caller-owned path
+  scratch, reducing `ensure_resource_parent_dirs` from 176 bytes to 48 bytes
+  and the source-known `commit_resource_install` path from 496 bytes to 368
+  bytes. Direct app install and staged-install commit paths now use the fixed
   app-file path scratch and emit 96-byte C stack estimates, down from 288 and
   304 bytes respectively; staged-install begin now emits 112 bytes. Package
   `.sqdevice` loads now format resource paths directly from validated bytes,

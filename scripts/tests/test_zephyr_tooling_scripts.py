@@ -1956,6 +1956,14 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
     def test_resource_install_paths_reuse_single_path_scratch(self):
         app_store = self.read("firmware/zephyr/src/app_store.c")
 
+        parent_start = app_store.index("static int ensure_resource_parent_dirs")
+        parent_end = app_store.index("int sq_app_store_prepare_filesystem")
+        parent_body = app_store[parent_start:parent_end]
+        self.assertIn("char *dir, size_t dir_cap", parent_body)
+        self.assertNotIn("char dir[SQ_APP_STORE_PATH_MAX];", parent_body)
+        self.assertIn("snprintf(dir, dir_cap,", parent_body)
+        self.assertIn("dir_len + 1 + segment_len >= dir_cap", parent_body)
+
         commit_start = app_store.index("int sq_app_store_commit_staged_resource")
         commit_end = app_store.index("int sq_app_store_resource_path")
         commit_body = app_store[commit_start:commit_end]
@@ -1966,6 +1974,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertNotIn("char final_path[SQ_APP_STORE_PATH_MAX];", commit_body)
         self.assertIn('format_app_path(path, sizeof(path), mount_point, app_id, "main.sqbc")', commit_body)
         self.assertIn("fs_open(&main_sqbc, path, FS_O_READ)", commit_body)
+        self.assertIn("ensure_resource_parent_dirs(path, sizeof(path), mount_point, app_id,", commit_body)
         self.assertIn("sq_app_store_resource_path(mount_point, app_id, resource_path, path,", commit_body)
         self.assertIn("fs_rename(staging_path, path)", commit_body)
 
@@ -1978,6 +1987,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", install_body)
         self.assertIn('format_app_path(path, sizeof(path), mount_point, app_id, "main.sqbc")', install_body)
         self.assertIn("fs_open(&main_sqbc, path, FS_O_READ)", install_body)
+        self.assertIn("ensure_resource_parent_dirs(path, sizeof(path), mount_point, app_id,", install_body)
         self.assertIn("sq_app_store_resource_path(mount_point, app_id, resource_path, path,", install_body)
         self.assertIn("write_file(path, bytes, len)", install_body)
 

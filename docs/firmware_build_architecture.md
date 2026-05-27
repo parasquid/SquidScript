@@ -177,7 +177,10 @@ remaining `fs_dirent` name slot.
 Package resource install and staged-resource commit paths likewise reuse one
 path scratch buffer after validating the app's `main.sqbc` with an open/close
 check instead of a directory-entry stat, so each currently emits a 176-byte C
-stack estimate instead of 432 bytes.
+stack estimate instead of 432 bytes. Their parent-directory creation helper
+uses the caller-owned path scratch instead of its own 128-byte path buffer, so
+`ensure_resource_parent_dirs` now emits 48 bytes instead of 176 bytes and the
+source-known `commit_resource_install` path drops from 496 bytes to 368 bytes.
 Direct app install and staged-install commit paths use the fixed
 `/apps/<app>/main.sqbc` path scratch; their emitted C stack estimates are now
 96 bytes each instead of 288 and 304 bytes respectively. Staged-install begin

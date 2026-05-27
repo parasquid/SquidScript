@@ -222,13 +222,12 @@ static int write_file(const char *path, const uint8_t *bytes, size_t len)
 	return result;
 }
 
-static int ensure_resource_parent_dirs(const char *mount_point, const char *app_id,
-				       const char *resource_path)
+static int ensure_resource_parent_dirs(char *dir, size_t dir_cap, const char *mount_point,
+				       const char *app_id, const char *resource_path)
 {
-	char dir[SQ_APP_STORE_PATH_MAX];
-	int written = snprintf(dir, sizeof(dir), "%s/apps/%s/resources", mount_point, app_id);
+	int written = snprintf(dir, dir_cap, "%s/apps/%s/resources", mount_point, app_id);
 
-	if (written < 0 || (size_t)written >= sizeof(dir)) {
+	if (written < 0 || (size_t)written >= dir_cap) {
 		return -ENAMETOOLONG;
 	}
 
@@ -243,7 +242,7 @@ static int ensure_resource_parent_dirs(const char *mount_point, const char *app_
 		size_t segment_len = (size_t)(slash - segment);
 		size_t dir_len = strlen(dir);
 
-		if (dir_len + 1 + segment_len >= sizeof(dir)) {
+		if (dir_len + 1 + segment_len >= dir_cap) {
 			return -ENAMETOOLONG;
 		}
 
@@ -564,7 +563,8 @@ int sq_app_store_commit_staged_resource(const char *mount_point, const char *app
 		return result;
 	}
 
-	result = ensure_resource_parent_dirs(mount_point, app_id, resource_path);
+	result = ensure_resource_parent_dirs(path, sizeof(path), mount_point, app_id,
+					     resource_path);
 	if (result != 0) {
 		return result;
 	}
@@ -648,7 +648,8 @@ int sq_app_store_install_resource(const char *mount_point, const char *app_id,
 	if (result != 0) {
 		return result;
 	}
-	result = ensure_resource_parent_dirs(mount_point, app_id, resource_path);
+	result = ensure_resource_parent_dirs(path, sizeof(path), mount_point, app_id,
+					     resource_path);
 	if (result != 0) {
 		return result;
 	}
