@@ -243,7 +243,9 @@ FFI app process/armed stack scratch reduced the input launch row to 17056. The
 worker stack is now 18048 bytes. This keeps 428 bytes of headroom above the
 highest saved full-suite `vm_worker_stack_used_bytes=17620` peak and 752 bytes
 above the saved GPIO9 input summary peak. Remeasure the physical press row and
-full hardware suite before lowering that budget again.
+full hardware suite before lowering that budget again. The stack harness fails
+with the captured resource frame when protocol/main unused stack drops below
+768 bytes or VM worker unused stack drops below 384 bytes.
 
 `scripts/c3-supermini-measure-ram-workloads.sh` is the targeted RAM and stack
 attribution harness. It formats app storage, installs the GPIO9 input summary

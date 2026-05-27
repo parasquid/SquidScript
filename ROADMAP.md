@@ -85,9 +85,11 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   The latest target build reports 187,856 bytes
   of DRAM use; next
   reductions should physically revalidate the 3584-byte protocol/main stack
-  with the bounded stack harness, investigate full-suite worker-stack high-water
-  headroom after the 18048-byte stack reduction, and inspect any remaining
-  accidental static buffers.
+  with the bounded stack harness. The stack harness now fails with captured
+  resources if protocol/main unused stack drops below 768 bytes or VM worker
+  unused stack drops below 384 bytes. After that, investigate full-suite
+  worker-stack high-water headroom after the 18048-byte stack reduction and
+  inspect any remaining accidental static buffers.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
   succeeds but serial commands stall, app launch hangs, or input dispatch stops
   responding, check stack exhaustion early with `device resources`, compare

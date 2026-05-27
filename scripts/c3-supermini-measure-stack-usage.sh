@@ -5,6 +5,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${ROOT}/scripts/lib/hardware-command.sh"
 WORK_DIR="${ROOT}/target/hardware-tests/stack-usage"
 COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-20}"
+PROTOCOL_STACK_MIN_UNUSED_BYTES="${PROTOCOL_STACK_MIN_UNUSED_BYTES:-768}"
+WORKER_STACK_MIN_UNUSED_BYTES="${WORKER_STACK_MIN_UNUSED_BYTES:-384}"
 
 mkdir -p "${WORK_DIR}"
 
@@ -65,6 +67,16 @@ if (( protocol_stack_pre_resources_used < 0 ||
   exit 1
 fi
 
+if (( protocol_stack_unused < PROTOCOL_STACK_MIN_UNUSED_BYTES ||
+      protocol_stack_pre_resources_unused < PROTOCOL_STACK_MIN_UNUSED_BYTES )); then
+  printf 'Protocol stack headroom below %s bytes: unused=%s pre_resources_unused=%s\n' \
+    "$PROTOCOL_STACK_MIN_UNUSED_BYTES" "$protocol_stack_unused" \
+    "$protocol_stack_pre_resources_unused" >&2
+  printf '%s\n' "--- ${resources_out} ---" >&2
+  sed -n '1,200p' "${resources_out}" >&2
+  exit 1
+fi
+
 if [[ "$stack_size" != "18048" ]]; then
   printf 'Expected vm_worker_stack_size_bytes=18048, got %s\n' "$stack_size" >&2
   printf '%s\n' "--- ${resources_out} ---" >&2
@@ -75,6 +87,14 @@ fi
 if (( stack_used < 0 || stack_unused < 0 || stack_used + stack_unused != stack_size )); then
   printf 'Invalid worker stack accounting: size=%s used=%s unused=%s\n' \
     "$stack_size" "$stack_used" "$stack_unused" >&2
+  printf '%s\n' "--- ${resources_out} ---" >&2
+  sed -n '1,200p' "${resources_out}" >&2
+  exit 1
+fi
+
+if (( stack_unused < WORKER_STACK_MIN_UNUSED_BYTES )); then
+  printf 'VM worker stack headroom below %s bytes: unused=%s\n' \
+    "$WORKER_STACK_MIN_UNUSED_BYTES" "$stack_unused" >&2
   printf '%s\n' "--- ${resources_out} ---" >&2
   sed -n '1,200p' "${resources_out}" >&2
   exit 1

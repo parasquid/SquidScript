@@ -115,7 +115,10 @@ is 18,048 bytes. Resource diagnostics expose each stack's high-water use
 separately so budget reductions can be tied to measured workloads instead of
 inferred from static allocation alone. The 3,584-byte protocol stack keeps
 roughly 1 KiB of headroom over the last measured 2,476-byte protocol peak and
-needs physical revalidation with the hardware stack harness.
+needs physical revalidation with the hardware stack harness. The stack harness
+also enforces minimum unused-stack floors of 768 bytes for protocol/main and
+384 bytes for the VM worker, printing the captured resource frame if either
+floor is crossed.
 Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi VM service
 calls now cross the Rust FFI boundary into Zephyr callbacks. Zephyr now
 performs installed-app foreground handoff for `app.launch` and `app.exit` with

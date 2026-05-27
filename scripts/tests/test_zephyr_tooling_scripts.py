@@ -536,6 +536,10 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn('Expected protocol_thread_stack_size_bytes=6144', stack_script)
         self.assertNotIn('Expected protocol_thread_stack_size_bytes=8192', stack_script)
         self.assertIn("protocol_thread_stack_pre_resources_used_bytes", stack_script)
+        self.assertIn('PROTOCOL_STACK_MIN_UNUSED_BYTES="${PROTOCOL_STACK_MIN_UNUSED_BYTES:-768}"', stack_script)
+        self.assertIn('WORKER_STACK_MIN_UNUSED_BYTES="${WORKER_STACK_MIN_UNUSED_BYTES:-384}"', stack_script)
+        self.assertIn("Protocol stack headroom below", stack_script)
+        self.assertIn("VM worker stack headroom below", stack_script)
         self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', stack_script)
         self.assertIn('timeout "${COMMAND_TIMEOUT_SECONDS:-20}s"', stack_script)
 
