@@ -75,7 +75,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   limit, protocol transfer sessions use 72-byte staging path slots and 80-byte
   resource path slots, and resource diagnostics encode directly into the
   992-byte response buffer without a resident metric staging array. The VM
-  worker stack is now 18048 bytes. The latest target build reports 191,168 bytes
+  worker stack is now 18048 bytes. The latest target build reports 190,144 bytes
   of DRAM use; next
   reductions should investigate full-suite worker-stack high-water headroom
   after the 18048-byte stack reduction and any remaining accidental static
@@ -116,11 +116,11 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   Mini reference board, treat GPIO9 as the confirmed physical input path; do
   not treat GPIO3, GPIO4, GPIO7, GPIO10, or GPIO5 scan changes as real buttons
   without targeted confirmation. The protocol/main stack budget has been
-  reduced from 8 KiB to 5 KiB based on repeated 2476-byte measured peaks, while
-  keeping more than 2.5 KiB of headroom. The worker stack has been reduced from
+  reduced from 8 KiB to 4 KiB based on repeated 2476-byte measured peaks, while
+  keeping more than 1.5 KiB of headroom. The worker stack has been reduced from
   19 KiB to 18048 bytes based on saved workload peaks, leaving 428 bytes above
   the highest saved 17620-byte full-suite peak before hardware revalidation.
-  Next, validate the 5 KiB protocol/main stack and 18048-byte worker stack with
+  Next, validate the 4 KiB protocol/main stack and 18048-byte worker stack with
   the hardware suite.
 - Improve network heap attribution before expanding Wi-Fi scope. Current AP
   start/stop hardware coverage drives `ram_heap_max_allocated_bytes` close to

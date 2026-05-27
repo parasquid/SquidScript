@@ -98,7 +98,7 @@ larger because it formats full filesystem paths that include the mount point,
 app ID, resource directory, and package-relative resource path.
 Resource diagnostics are encoded directly into the caller-owned 992-byte
 protocol response buffer and do not keep a resident metric staging array.
-The protocol/main thread stack is currently 5 KiB and the VM worker stack is
+The protocol/main thread stack is currently 4 KiB and the VM worker stack is
 18,048 bytes. Resource diagnostics expose each stack's high-water use
 separately so budget reductions can be tied to measured workloads instead of
 inferred from static allocation alone.
