@@ -152,7 +152,8 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   armed timer transitions, app-arm trigger discovery uses SQBC-only storage, and
   trigger registration uses the shared app-file path scratch. The trigger
   registration path is split out of the steady protocol poll frame and is now
-  attributed separately at 208 bytes instead of retaining that scratch in
+  attributed separately at 144 bytes, with per-trigger timer decode/register
+  attributed to a 96-byte helper, instead of retaining that scratch in
   `sq_device_protocol_poll` or a separate 400-byte trigger-registration frame.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
   succeeds but serial commands stall, app launch hangs, or input dispatch stops

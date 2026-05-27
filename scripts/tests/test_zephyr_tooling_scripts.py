@@ -1959,6 +1959,8 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn(".sqbc_path = sqbc_path", body)
         self.assertIn("sq_vm_fs_storage_backend(&trigger_storage)", body)
         self.assertIn("static int __noinline register_app_triggers", protocol)
+        self.assertIn("static int __noinline register_app_trigger_timer", protocol)
+        self.assertNotIn("SqvmTriggerTimer timer = {0};", body)
 
     def test_device_config_package_load_formats_resource_path_from_bytes(self):
         runtime = self.read("firmware/zephyr/src/vm_runtime.c")

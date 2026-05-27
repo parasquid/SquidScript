@@ -560,6 +560,28 @@ static size_t c_array_len(const uint8_t *bytes, size_t cap)
 	return len;
 }
 
+static int __noinline register_app_trigger_timer(struct sq_vm_runtime *runtime,
+						 const struct sq_vm_storage_backend *backend,
+						 const char *app_id, size_t index)
+{
+	SqvmTriggerTimer timer = {0};
+	SqvmStatus status;
+	size_t event_len;
+
+	if (runtime == NULL || backend == NULL || backend->read_sqbc == NULL || app_id == NULL) {
+		return -EINVAL;
+	}
+	status = sqvm_trigger_timer_read_from_reader(
+		backend->user_data, backend->read_sqbc, runtime->transfer.init_scratch,
+		sizeof(runtime->transfer.init_scratch), index, &timer);
+	if (status != SQVM_STATUS_OK) {
+		return -EINVAL;
+	}
+	event_len = c_array_len(timer.event, sizeof(timer.event));
+	return sq_vm_runtime_register_armed_timer(runtime, app_id, timer.event, event_len,
+						  timer.interval_ms, timer.repeating);
+}
+
 static int __noinline register_app_triggers(const struct sq_device_protocol_context *context,
 					    const char *app_id)
 {
@@ -598,19 +620,7 @@ static int __noinline register_app_triggers(const struct sq_device_protocol_cont
 		return -EINVAL;
 	}
 	for (size_t i = 0; i < trigger_count; i++) {
-		SqvmTriggerTimer timer = {0};
-		size_t event_len;
-
-		status = sqvm_trigger_timer_read_from_reader(
-			backend.user_data, backend.read_sqbc, context->runtime->transfer.init_scratch,
-			sizeof(context->runtime->transfer.init_scratch), i, &timer);
-		if (status != SQVM_STATUS_OK) {
-			return -EINVAL;
-		}
-		event_len = c_array_len(timer.event, sizeof(timer.event));
-		result = sq_vm_runtime_register_armed_timer(context->runtime, app_id, timer.event,
-							   event_len, timer.interval_ms,
-							   timer.repeating);
+		result = register_app_trigger_timer(context->runtime, &backend, app_id, i);
 		if (result != 0) {
 			return result;
 		}
