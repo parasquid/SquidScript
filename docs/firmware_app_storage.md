@@ -156,20 +156,25 @@ must name a GPIO-capable pin from the selected target metadata before Zephyr
 activates them. Inline GPIO-button input bindings activate as polled GPIO
 inputs; a pressed edge dispatches the configured logical key event to the
 foreground app.
-On targets with a firmware-defined default indicator, runtime initialization
-and installed app start load that target default into the same in-memory SQDC
-draft/rebind path before app code runs. Installed app launch clears and
-rebuilds active logical bindings, applies saved global SQDC defaults, then
-reads current SQBC top-level `device {}` metadata and applies packaged
-`indicator.default` `.sqdevice` bindings, packaged display `.sqdevice`
-bindings, and inline `gpio:GPIO<n>` indicator bindings before
-`event.on("app.start")`. Input `gpio-button` bindings are also activated
-before `event.on("app.start")`, so a physical button can dispatch the mapped
-logical key event after launch. App-local top-level
-`device {}` bindings run after target and saved global defaults, so app package
-bindings can override them. Inline GPIO bindings are normalized into the same
-in-memory SQDC draft/rebind path as packaged resources and do not install a
-package resource.
+On targets with firmware-defined defaults, runtime initialization and installed
+app start expose those defaults through the same in-memory SQDC draft shape
+that author/device config uses. Firmware may apply trusted generated defaults
+through a direct target-specific path instead of routing them through
+`device.config.rebind(...)`, provided the generated metadata has already been
+validated against the target definition and hardware overlay and the resulting
+active binding is equivalent. Author-provided, package-provided, and saved
+global device config still use the normal draft/rebind path.
+Installed app launch clears and rebuilds active logical bindings, applies
+target defaults, applies saved global SQDC defaults, then reads current SQBC
+top-level `device {}` metadata and applies packaged `indicator.default`
+`.sqdevice` bindings, packaged display `.sqdevice` bindings, and inline
+`gpio:GPIO<n>` indicator bindings before `event.on("app.start")`. Input
+`gpio-button` bindings are also activated before `event.on("app.start")`, so a
+physical button can dispatch the mapped logical key event after launch.
+App-local top-level `device {}` bindings run after target and saved global
+defaults, so app package bindings can override them. Inline GPIO bindings are
+normalized into the same in-memory SQDC draft/rebind path as packaged
+resources and do not install a package resource.
 Active config persistence through `device.config.save("flash")` writes
 firmware-owned binary SQDC at `/sq/system/device-config.sqdc` on the ESP32-C3
 reference target.

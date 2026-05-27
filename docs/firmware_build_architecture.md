@@ -413,6 +413,18 @@ target JSON indicator GPIO, polarity, and PWM frequency cannot silently drift
 from the Zephyr overlay. Zephyr devicetree still owns driver nodes, PWM
 channels, and pinctrl setup.
 
+Generated target defaults are trusted firmware metadata, not author/package
+input. Firmware should keep them visible through the documented runtime
+configuration view when that view exists, but it may apply them through a
+direct target-specific path instead of the general draft/rebind machinery when
+that avoids measured stack or RAM pressure. The direct path must produce the
+same active binding state as the generated default and must not change the
+ordering rule: target defaults apply before saved global config and app-local
+`device {}` bindings, so authors can still override them through normal
+package, saved, or runtime `device.config.rebind(...)` flows. Defaults whose
+metadata is not generated and validated by the target build remain ordinary
+device config and should use the normal rebind path.
+
 ## Runtime Boundary
 
 The Zephyr host calls the Rust VM through C ABI functions for:
