@@ -321,10 +321,9 @@ static int __noinline commit_resource_install(const struct sq_protocol_request *
 		return -EINVAL;
 	}
 
-	int result = sq_app_store_commit_staged_resource(context->store_mount_point,
-							session->app_id,
-							session->resource_path,
-							session->staging_path);
+	int result = sq_app_store_commit_staged_resource_with_path(
+		context->store_mount_point, session->app_id, session->resource_path,
+		session->staging_path, (char *)response, response_cap);
 	if (result != 0) {
 		return result;
 	}

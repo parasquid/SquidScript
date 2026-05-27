@@ -2004,6 +2004,8 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
 
     def test_resource_install_paths_reuse_single_path_scratch(self):
         app_store = self.read("firmware/zephyr/src/app_store.c")
+        app_store_h = self.read("firmware/zephyr/src/app_store.h")
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
 
         parent_start = app_store.index("static int ensure_resource_parent_dirs")
         parent_end = app_store.index("int sq_app_store_prepare_filesystem")
@@ -2017,15 +2019,26 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         commit_end = app_store.index("int sq_app_store_resource_path")
         commit_body = app_store[commit_start:commit_end]
         self.assertIn("char path[SQ_APP_STORE_PATH_MAX];", commit_body)
-        self.assertIn("validate_app_main_sqbc_with_path(path, sizeof(path), mount_point, app_id)",
+        self.assertIn("validate_app_main_sqbc_with_path(path, path_len, mount_point, app_id)",
                       commit_body)
         self.assertNotIn("struct fs_file_t main_sqbc;", commit_body)
         self.assertNotIn("struct fs_dirent entry;", commit_body)
         self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", commit_body)
         self.assertNotIn("char final_path[SQ_APP_STORE_PATH_MAX];", commit_body)
-        self.assertIn("ensure_resource_parent_dirs(path, sizeof(path), mount_point, app_id,", commit_body)
-        self.assertIn("sq_app_store_resource_path(mount_point, app_id, resource_path, path,", commit_body)
+        self.assertIn("ensure_resource_parent_dirs(path, path_len, mount_point, app_id,", commit_body)
+        self.assertIn("sq_app_store_resource_path(mount_point, app_id, resource_path, path, path_len)",
+                      commit_body)
         self.assertIn("fs_rename(staging_path, path)", commit_body)
+        self.assertIn("path, sizeof(path)", commit_body)
+        self.assertIn("sq_app_store_commit_staged_resource_with_path", app_store_h)
+
+        protocol_commit_start = protocol.index("static int __noinline commit_resource_install")
+        protocol_commit_end = protocol.index("struct temp_storage_backend", protocol_commit_start)
+        protocol_commit_body = protocol[protocol_commit_start:protocol_commit_end]
+        self.assertIn("sq_app_store_commit_staged_resource_with_path(", protocol_commit_body)
+        self.assertIn("(char *)response, response_cap", protocol_commit_body)
+        self.assertNotIn("sq_app_store_commit_staged_resource(context->store_mount_point",
+                         protocol_commit_body)
 
         install_start = app_store.index("int sq_app_store_install_resource")
         install_end = app_store.index("int sq_app_store_scan_registry")
@@ -2057,8 +2070,9 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         commit_end = app_store.index("int sq_app_store_resource_path")
         commit_body = app_store[commit_start:commit_end]
         self.assertIn("char path[SQ_APP_STORE_PATH_MAX];", commit_body)
-        self.assertIn("validate_app_main_sqbc_with_path(path, sizeof(path), mount_point, app_id)",
+        self.assertIn("validate_app_main_sqbc_with_path(path, path_len, mount_point, app_id)",
                       commit_body)
+        self.assertIn("path, sizeof(path)", commit_body)
         self.assertNotIn("validate_app_main_sqbc(mount_point, app_id)", commit_body)
         self.assertNotIn("struct fs_file_t main_sqbc;", commit_body)
 

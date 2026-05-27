@@ -681,29 +681,28 @@ int sq_app_store_commit_staged_install(const char *mount_point, const char *app_
 	return fs_rename(staging_path, final_path);
 }
 
-int sq_app_store_commit_staged_resource(const char *mount_point, const char *app_id,
-					const char *resource_path, const char *staging_path)
+int sq_app_store_commit_staged_resource_with_path(const char *mount_point, const char *app_id,
+						  const char *resource_path,
+						  const char *staging_path, char *path,
+						  size_t path_len)
 {
-	char path[SQ_APP_STORE_PATH_MAX];
 	int result;
 
 	if (mount_point == NULL || !is_safe_app_id(app_id) ||
-	    !is_safe_resource_path(resource_path) || staging_path == NULL) {
+	    !is_safe_resource_path(resource_path) || staging_path == NULL || path == NULL) {
 		return -EINVAL;
 	}
 
-	result = validate_app_main_sqbc_with_path(path, sizeof(path), mount_point, app_id);
+	result = validate_app_main_sqbc_with_path(path, path_len, mount_point, app_id);
 	if (result != 0) {
 		return result;
 	}
 
-	result = ensure_resource_parent_dirs(path, sizeof(path), mount_point, app_id,
-					     resource_path);
+	result = ensure_resource_parent_dirs(path, path_len, mount_point, app_id, resource_path);
 	if (result != 0) {
 		return result;
 	}
-	result = sq_app_store_resource_path(mount_point, app_id, resource_path, path,
-					    sizeof(path));
+	result = sq_app_store_resource_path(mount_point, app_id, resource_path, path, path_len);
 	if (result != 0) {
 		return result;
 	}
@@ -712,6 +711,15 @@ int sq_app_store_commit_staged_resource(const char *mount_point, const char *app
 		return result;
 	}
 	return fs_rename(staging_path, path);
+}
+
+int sq_app_store_commit_staged_resource(const char *mount_point, const char *app_id,
+					const char *resource_path, const char *staging_path)
+{
+	char path[SQ_APP_STORE_PATH_MAX];
+
+	return sq_app_store_commit_staged_resource_with_path(
+		mount_point, app_id, resource_path, staging_path, path, sizeof(path));
 }
 
 int sq_app_store_resource_path(const char *mount_point, const char *app_id,

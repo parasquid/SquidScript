@@ -301,6 +301,14 @@ path to 432 bytes through
 `commit_resource_install -> sq_app_store_commit_staged_resource ->
 validate_app_main_sqbc_with_path -> format_app_path`. Linker DRAM remains
 185,024 bytes and the RAM audit remains 185,008 bytes.
+Protocol resource commit now passes the caller-owned response buffer as path
+scratch to `sq_app_store_commit_staged_resource_with_path`; the response is
+overwritten after commit by the ordinary empty OK frame. That reduces the
+source-known `commit_resource_install` path from 240 bytes to 112 bytes and
+moves the top source-known main/protocol path to 432 bytes through
+`commit_temp_run -> sq_vm_runtime_start -> sq_vm_runtime_start_event ->
+sq_vm_runtime_init`. Linker DRAM remains 185,024 bytes and the RAM audit
+remains 185,008 bytes.
 Protocol dispatch decodes only the request opcode and sequence into the live
 dispatch header because opcode handlers parse payloads from the original
 request bytes, so `sq_device_protocol_handle_frame` now emits 80 bytes instead

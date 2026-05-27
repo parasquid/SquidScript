@@ -228,8 +228,13 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   cumulative path to 192 bytes, and moves the top source-known main/protocol
   path to 432 bytes through
   `commit_resource_install -> sq_app_store_commit_staged_resource ->
-  validate_app_main_sqbc_with_path -> format_app_path`; investigate resource
-  commit validation next. VM
+  validate_app_main_sqbc_with_path -> format_app_path`. Protocol resource
+  commit now passes the caller-owned response buffer as path scratch to
+  `sq_app_store_commit_staged_resource_with_path`, reducing
+  `commit_resource_install` from 240 bytes to 112 bytes and moving the top
+  source-known main/protocol path to 432 bytes through
+  `commit_temp_run -> sq_vm_runtime_start -> sq_vm_runtime_start_event ->
+  sq_vm_runtime_init`; investigate temp-run startup next. VM
   dispatch now uses a
   static callback table plus an explicit `user_data` pointer across the FFI
   boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes

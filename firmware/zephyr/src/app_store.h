@@ -71,6 +71,11 @@ int sq_app_store_commit_staged_install(const char *mount_point, const char *app_
 int sq_app_store_commit_staged_resource(const char *mount_point, const char *app_id,
 					const char *resource_path, const char *staging_path);
 
+int sq_app_store_commit_staged_resource_with_path(const char *mount_point, const char *app_id,
+						  const char *resource_path,
+						  const char *staging_path, char *path,
+						  size_t path_len);
+
 int sq_app_store_resource_path(const char *mount_point, const char *app_id,
 			       const char *resource_path, char *out, size_t out_len);
 
