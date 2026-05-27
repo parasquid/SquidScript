@@ -113,6 +113,8 @@ Runtime event-name storage is bounded to 24-byte slots, which preserves the
 current measured event workload, including the 20-byte `timer.breathe.marker`
 fixture, while avoiding the previous 32-byte slot size across timers, armed
 timers, input bindings, and dispatch state.
+Foreground runtime timers are bounded to two slots for current one-shot and
+repeating timer workloads; armed app timers use a separate two-slot table.
 Runtime active device bindings are bounded to three entries for the current
 indicator, display/input, and targeted diagnostic binding workloads.
 Runtime device-config drafts are bounded to five records with 48-byte string

@@ -589,7 +589,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("SqvmStorageCompletion completion;", runtime_body)
         self.assertIn("sizeof(runtime.transfer.init_scratch)", ztest)
         self.assertIn("SQVM_STORAGE_TRANSFER_CAPACITY <= 768", ztest)
-        self.assertIn("runtime_static <= 16240", ztest)
+        self.assertIn("runtime_static <= 16160", ztest)
+        self.assertNotIn("runtime_static <= 16240", ztest)
         self.assertNotIn("runtime_static <= 16312", ztest)
         self.assertNotIn("runtime_static <= 16320", ztest)
         self.assertNotIn("runtime_static <= 16344", ztest)
@@ -681,6 +682,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("#define SQ_VM_RUNTIME_EVENT_LEN 24", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_EVENT_LEN 32", runtime_h)
         self.assertIn('strlen("timer.breathe.marker") < SQ_VM_RUNTIME_EVENT_LEN', ztest)
+        self.assertIn("#define SQ_VM_RUNTIME_TIMER_MAX 2", runtime_h)
+        self.assertNotIn("#define SQ_VM_RUNTIME_TIMER_MAX 4", runtime_h)
 
     def test_repeated_line_responses_use_rust_encoder_without_c_payload_staging(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
