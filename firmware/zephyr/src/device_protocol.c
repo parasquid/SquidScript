@@ -1086,13 +1086,45 @@ static int __noinline dispatch_event_request(const struct sq_protocol_request *r
 				  uint8_t *response, size_t response_cap, size_t *response_len)
 {
 	SqdpEventDispatch event = {0};
+	int result;
 
 	if (sqdp_parse_event_dispatch_request(request_bytes, request_len, &event) != SQDP_STATUS_OK) {
 		return -EINVAL;
 	}
-	return dispatch_event_from_parts(request, context, event.app_id, event.app_id_len,
-					 event.event, event.event_len, response, response_cap,
-					 response_len);
+	if (event.event == NULL || event.event_len == 0 ||
+	    event.event_len >= SQ_VM_RUNTIME_EVENT_LEN || event.app_id == NULL ||
+	    event.app_id_len == 0 || event.app_id_len >= SQ_APP_STORE_APP_ID_MAX ||
+	    context->runtime == NULL || context->store_mount_point == NULL ||
+	    context->launch_storage == NULL) {
+		return -EINVAL;
+	}
+	if (context->runtime->current_app[0] != '\0') {
+		size_t current_app_len = strlen(context->runtime->current_app);
+		if (current_app_len != event.app_id_len ||
+		    memcmp(context->runtime->current_app, event.app_id, event.app_id_len) != 0) {
+			return -EINVAL;
+		}
+	} else {
+		sq_vm_runtime_reset_vm_context(context->runtime);
+	}
+	result = sq_app_store_vm_storage_for_app_bytes(context->store_mount_point,
+						       event.app_id, event.app_id_len,
+						       context->launch_storage);
+	if (result != 0) {
+		return result;
+	}
+	if (context->launch_storage->fs_storage.sqbc_path == NULL) {
+		return -ENODEV;
+	}
+
+	struct sq_vm_storage_backend backend =
+		sq_app_store_vm_storage_backend(context->launch_storage);
+	result = sq_vm_runtime_start_event(context->runtime, &backend, event.event,
+					   event.event_len);
+	if (result != 0) {
+		return result;
+	}
+	return ok_response(request, response, response_cap, response_len);
 }
 
 static int __noinline dispatch_key(const struct sq_protocol_request *request,

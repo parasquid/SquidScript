@@ -1036,6 +1036,9 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("sqdp_parse_event_dispatch_request", body)
         self.assertNotIn("sq_protocol_next_field", body)
         self.assertNotIn("struct sq_protocol_field", body)
+        self.assertNotIn("dispatch_event_from_parts", body)
+        self.assertIn("sq_app_store_vm_storage_for_app_bytes", body)
+        self.assertIn("sq_vm_runtime_start_event(context->runtime, &backend,", body)
 
     def test_production_protocol_exposes_only_decode_and_crc_helpers(self):
         protocol_c = self.read("firmware/zephyr/src/protocol.c")

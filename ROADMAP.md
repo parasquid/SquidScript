@@ -221,8 +221,15 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   parsed app IDs as borrowed byte slices through app storage path formatting
   instead of copying them into a protocol-stack app-id buffer. That reduces
   `dispatch_event_from_parts` from 96 bytes to 80 bytes and the top
-  source-known main/protocol path from 464 bytes to 448 bytes; investigate
-  event request parsing and the shared protocol/main frame next. VM
+  source-known main/protocol path from 464 bytes to 448 bytes. Event-dispatch
+  protocol requests now handle their parsed app and event slices directly
+  instead of adding the shared key-dispatch helper frame. That leaves key
+  dispatch on `dispatch_event_from_parts`, reduces the event-dispatch
+  cumulative path to 192 bytes, and moves the top source-known main/protocol
+  path to 432 bytes through
+  `commit_resource_install -> sq_app_store_commit_staged_resource ->
+  validate_app_main_sqbc_with_path -> format_app_path`; investigate resource
+  commit validation next. VM
   dispatch now uses a
   static callback table plus an explicit `user_data` pointer across the FFI
   boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes
