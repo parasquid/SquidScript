@@ -192,7 +192,10 @@ resource bytes, so `sq_vm_runtime_device_config_load_resource` now emits a
 Recursive app-store format/delete walks reuse the caller-owned path buffer
 instead of allocating a full child path per recursion, so `delete_files_under`
 now emits a 160-byte C stack estimate instead of 320 bytes after the filename
-buffer cap reduction.
+buffer cap reduction. Storage format also reuses its format path scratch when
+recreating top-level app-store directories, so the source-known
+`storage_format` path now emits 352 bytes instead of 448 bytes, and the top
+source-known main/protocol path is now 608 bytes instead of 656 bytes.
 VM dispatch uses a static callback table plus an explicit `user_data` pointer
 across the FFI boundary instead of materializing the callback table on the C
 stack, so `sq_vm_runtime_dispatch` now emits an 80-byte C stack estimate

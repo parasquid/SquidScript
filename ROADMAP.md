@@ -130,7 +130,11 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   reducing `sq_vm_runtime_device_config_load_resource` from 304 bytes to 176
   bytes. Recursive app-store format/delete walks now reuse the caller-owned
   path buffer instead of allocating a full child path per recursion, reducing
-  `delete_files_under` from 320 bytes to 160 bytes. VM dispatch now uses a
+  `delete_files_under` from 320 bytes to 160 bytes. The storage-format path now
+  reuses its format path scratch when recreating top-level app-store
+  directories, reducing the source-known `storage_format` path from 448 bytes
+  to 352 bytes and the top source-known main/protocol path from 656 bytes to
+  608 bytes. VM dispatch now uses a
   static callback table plus an explicit `user_data` pointer across the FFI
   boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes
   without adding resident runtime RAM. Protocol frame dispatch now keeps

@@ -2056,6 +2056,28 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         format_body = app_store[format_start:]
         self.assertIn("delete_files_under(path, sizeof(path), &deleted_any)", format_body)
 
+    def test_format_prepare_reuses_format_path_scratch(self):
+        app_store = self.read("firmware/zephyr/src/app_store.c")
+        self.assertIn("prepare_filesystem_with_path", app_store)
+        prepare_start = app_store.index("prepare_filesystem_with_path")
+        prepare_end = app_store.index("int sq_app_store_prepare_filesystem")
+        prepare_body = app_store[prepare_start:prepare_end]
+        self.assertIn("char *path, size_t path_cap", prepare_body)
+        self.assertNotIn("char path[SQ_APP_STORE_PATH_MAX];", prepare_body)
+        self.assertIn("join_path2(path, path_cap, mount_point,", prepare_body)
+
+        public_start = app_store.index("int sq_app_store_prepare_filesystem")
+        public_end = app_store.index("int sq_app_store_mount_target_filesystem")
+        public_body = app_store[public_start:public_end]
+        self.assertIn("char path[SQ_APP_STORE_PATH_MAX];", public_body)
+        self.assertIn("join_path2(path, sizeof(path), mount_point,", public_body)
+        self.assertNotIn("prepare_filesystem_with_path(path, sizeof(path), mount_point)", public_body)
+
+        format_start = app_store.index("int sq_app_store_format_filesystem")
+        format_body = app_store[format_start:]
+        self.assertIn("prepare_filesystem_with_path(path, sizeof(path), mount_point)", format_body)
+        self.assertNotIn("return sq_app_store_prepare_filesystem(mount_point);", format_body)
+
     def test_protocol_poll_uses_runtime_scratch_instead_of_stack_arrays(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         runtime = self.read("firmware/zephyr/src/vm_runtime.c")

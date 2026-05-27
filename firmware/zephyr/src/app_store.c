@@ -262,6 +262,45 @@ static int ensure_resource_parent_dirs(char *dir, size_t dir_cap, const char *mo
 	return 0;
 }
 
+static inline int prepare_filesystem_with_path(char *path, size_t path_cap,
+					       const char *mount_point)
+{
+	int result;
+
+	result = join_path2(path, path_cap, mount_point, "apps");
+	if (result != 0) {
+		return result;
+	}
+	result = ensure_directory(path);
+	if (result != 0) {
+		return result;
+	}
+
+	result = join_path2(path, path_cap, mount_point, "state");
+	if (result != 0) {
+		return result;
+	}
+	result = ensure_directory(path);
+	if (result != 0) {
+		return result;
+	}
+
+	result = join_path2(path, path_cap, mount_point, "tmp");
+	if (result != 0) {
+		return result;
+	}
+	result = ensure_directory(path);
+	if (result != 0) {
+		return result;
+	}
+
+	result = join_path2(path, path_cap, mount_point, "system");
+	if (result != 0) {
+		return result;
+	}
+	return ensure_directory(path);
+}
+
 int sq_app_store_prepare_filesystem(const char *mount_point)
 {
 	char path[SQ_APP_STORE_PATH_MAX];
@@ -836,7 +875,7 @@ int sq_app_store_format_filesystem(const char *mount_point)
 			}
 		} while (true);
 	}
-	return sq_app_store_prepare_filesystem(mount_point);
+	return prepare_filesystem_with_path(path, sizeof(path), mount_point);
 }
 
 const struct sq_app_registry_entry *sq_app_registry_find(const struct sq_app_registry *registry,
