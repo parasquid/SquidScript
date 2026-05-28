@@ -148,16 +148,25 @@ be refreshed as capability boundaries become clearer.
 0x72 device.config.rebind
 0x73 device.config.save
 
-0x80 content.pickFile
-0x81 content.readText
-0x82 content.readLines
+0x80 reserved for binbook
+
+0x90 content.pickFile
+0x91 content.readText
+0x92 content.readLines
+
+0xa0 reserved for service.storage
+0xb0 reserved for service.input
+0xc0 reserved for service.power
+0xd0 reserved for service.time
 ```
 
 Reserved ranges do not imply implemented language APIs. They keep likely future
 service families from forcing unrelated renumbering while SQBC is still
-pre-1.0. Candidate future families include Bluetooth/BLE around `0x60` and
-binbook/content-library operations near the content range once their portable
-SquidScript contracts are specified.
+pre-1.0. Candidate future families include Bluetooth/BLE around `0x60`,
+top-level `binbook.*` around `0x80`, expanded content operations around `0x90`,
+portable storage operations around `0xa0`, input-device operations around
+`0xb0`, power and battery operations around `0xc0`, and time/clock operations
+around `0xd0` once their portable SquidScript contracts are specified.
 
 The current format supports the headless VM subset. Display draw commands are
 emitted as headless draw-log records by firmware hosts that implement the
