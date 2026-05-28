@@ -1156,11 +1156,11 @@ event.on("app.start") {
 }
 
 #[test]
-fn compiles_content_pick_file_result_call_to_sqbc() {
-    let source = r#"app "content-picker"
+fn compiles_file_pick_file_result_call_to_sqbc() {
+    let source = r#"app "file-picker"
 
 event.on("app.start") {
-  let picked = content.pickFile(".binbook")
+  let picked = file.pickFile(".binbook")
   debug.print(picked.ok, picked.error, picked.path)
 }
 "#;
@@ -1170,16 +1170,16 @@ event.on("app.start") {
     });
 
     assert!(output.ok, "{:?}", output.diagnostics);
-    sqbc::encode_sqbc(&output.ir.unwrap()).expect("content pickFile should encode");
+    sqbc::encode_sqbc(&output.ir.unwrap()).expect("file pickFile should encode");
 }
 
 #[test]
-fn compiles_content_read_result_calls_to_sqbc() {
-    let source = r#"app "content-read"
+fn compiles_file_read_result_calls_to_sqbc() {
+    let source = r#"app "file-read"
 
 event.on("app.start") {
-  let text = content.readText("notes.txt")
-  let lines = content.readLines("notes.txt", 4)
+  let text = file.readText("notes.txt")
+  let lines = file.readLines("notes.txt", 4)
   debug.print(text.ok, text.error, text.text, lines.ok, lines.error, lines.lines)
 }
 "#;
@@ -1189,7 +1189,30 @@ event.on("app.start") {
     });
 
     assert!(output.ok, "{:?}", output.diagnostics);
-    sqbc::encode_sqbc(&output.ir.unwrap()).expect("content read calls should encode");
+    sqbc::encode_sqbc(&output.ir.unwrap()).expect("file read calls should encode");
+}
+
+#[test]
+fn rejects_removed_content_file_namespace() {
+    let source = r#"app "content-removed"
+
+event.on("app.start") {
+  let picked = content.pickFile(".binbook")
+  debug.print(picked.ok)
+}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let err = sqbc::encode_sqbc(&output.ir.unwrap()).expect_err("removed content namespace fails");
+    let message = err.message;
+    assert!(
+        message.contains("unknown function content.pickFile"),
+        "{message:?}"
+    );
 }
 
 #[test]

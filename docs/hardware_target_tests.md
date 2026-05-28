@@ -96,7 +96,7 @@ network-management event, ESP timer task, and network RX stack budgets; TCP,
 HTTP, AP client throughput, or other bulk traffic must be remeasured before
 increasing service scope. The Zephyr system heap is sized at 36864 bytes from
 live `device resources` heap high-water data after representative app, display,
-device binding, content, Wi-Fi status, scan, list, and AP workloads; remeasure
+device binding, file, Wi-Fi status, scan, list, and AP workloads; remeasure
 it before adding larger radio or networking workloads.
 
 `targets/esp32c3-super-mini.target.json` should describe these verified Zephyr
@@ -295,15 +295,15 @@ draft set, `ok=true` for `indicator.default` rebind, then `ok=true` for SQDC
 flash save. Native Zephyr ztests additionally verify that the saved SQDC is
 loaded on later app starts before app-local `device {}` bindings.
 
-`scripts/c3-supermini-test-content-pick.sh` runs after device config coverage
+`scripts/c3-supermini-test-file-pick.sh` runs after device config coverage
 and before stack measurement. It installs
-`tests/hardware/c3-supermini/content-pick-summary`, launches it, and verifies
-that `content.pickFile(".binbook")`, `content.readText("notes.txt")`, and
-`content.readLines("notes.txt", 4)` flow through compiler lowering, SQBC, Rust
+`tests/hardware/c3-supermini/file-pick-summary`, launches it, and verifies
+that `file.pickFile(".binbook")`, `file.readText("notes.txt")`, and
+`file.readLines("notes.txt", 4)` flow through compiler lowering, SQBC, Rust
 VM hosting, FFI, and Zephyr runtime callbacks as current unsupported result
 records. The Zephyr canonical firmware returns `ok=false`,
 `error="unsupported"`, `path=null`, `text=null`, and an empty `lines` list until
-real external content picking and reads are implemented.
+real external file picking and reads are implemented.
 
 `scripts/c3-supermini-benchmark-lazy-load-screen.sh` is a benchmark runner, not
 a required pass/fail hardware suite check. It installs

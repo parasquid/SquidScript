@@ -466,7 +466,7 @@ Example:
     "requiresUnmountForRemoval": true
   },
   "supportsApps": true,
-  "supportsContent": true,
+  "supportsFile": true,
   "maxFileReadSize": 65536
 }
 ```
@@ -705,7 +705,7 @@ Examples:
 - `buttons`
 - `adc-button-ladder`
 - `sdcard`
-- `content.read`
+- `file.read`
 - `service.wifi.connect`
 - `service.wifi.scan`
 - `service.wifi.accessPoint`

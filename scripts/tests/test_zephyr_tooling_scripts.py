@@ -1274,32 +1274,32 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             suite.index("c3-supermini-test-blinky.sh"),
         )
 
-    def test_hardware_suite_runs_content_pick_script_before_stack_measurement(self):
-        script = self.read("scripts/c3-supermini-test-content-pick.sh")
-        app = self.read("tests/hardware/c3-supermini/content-pick-summary/main.squid")
+    def test_hardware_suite_runs_file_pick_script_before_stack_measurement(self):
+        script = self.read("scripts/c3-supermini-test-file-pick.sh")
+        app = self.read("tests/hardware/c3-supermini/file-pick-summary/main.squid")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
 
-        self.assertIn('content.pickFile(".binbook")', app)
-        self.assertIn('content.readText("notes.txt")', app)
-        self.assertIn('content.readLines("notes.txt", 4)', app)
+        self.assertIn('file.pickFile(".binbook")', app)
+        self.assertIn('file.readText("notes.txt")', app)
+        self.assertIn('file.readLines("notes.txt", 4)', app)
         self.assertIn(
-            'cargo run --quiet -p squidc -- app install "${CONTENT_APP}"',
+            'cargo run --quiet -p squidc -- app install "${FILE_APP}"',
             script,
         )
         self.assertIn(
-            "cargo run --quiet -p squidc -- app launch content-pick-summary",
+            "cargo run --quiet -p squidc -- app launch file-pick-summary",
             script,
         )
-        self.assertIn("output=content pick false unsupported null", script)
-        self.assertIn("output=content text false unsupported null", script)
-        self.assertIn("output=content lines false unsupported <list>", script)
+        self.assertIn("output=file pick false unsupported null", script)
+        self.assertIn("output=file text false unsupported null", script)
+        self.assertIn("output=file lines false unsupported <list>", script)
         self.assertIn("assert_file_empty_command", script)
         self.assertLess(
-            suite.index("c3-supermini-test-content-pick.sh"),
+            suite.index("c3-supermini-test-file-pick.sh"),
             suite.index("c3-supermini-measure-stack-usage.sh"),
         )
         self.assertLess(
-            suite.index("c3-supermini-test-content-pick.sh"),
+            suite.index("c3-supermini-test-file-pick.sh"),
             suite.index("c3-supermini-test-blinky.sh"),
         )
 

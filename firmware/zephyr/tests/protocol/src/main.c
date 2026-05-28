@@ -355,7 +355,7 @@ static const uint8_t foreground_memory_sqbc[] = {
 	0x00, 0x03, 0x05, 0x00, 0x0a, 0x00, 0x00, 0x32, 0x04, 0x02, 0x2a, 0x2a,
 };
 
-static const uint8_t content_pick_file_sqbc[] = {
+static const uint8_t file_pick_file_sqbc[] = {
 	0x53, 0x51, 0x42, 0x43, 0x7a, 0x00, 0x2c, 0x01, 0x00, 0x00, 0x09, 0x00,
 	0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x7a, 0x00, 0x00, 0x00, 0x19, 0x00,
 	0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x93, 0x00, 0x00, 0x00, 0x02, 0x00,
@@ -383,7 +383,7 @@ static const uint8_t content_pick_file_sqbc[] = {
 	0x00, 0x0c, 0x00, 0x00, 0x0e, 0x07, 0x00, 0x32, 0x04, 0x03, 0x2a, 0x2a,
 };
 
-static const uint8_t content_read_sqbc[] = {
+static const uint8_t file_read_sqbc[] = {
 	0x53, 0x51, 0x42, 0x43, 0x7a, 0x00, 0x5d, 0x01, 0x00, 0x00, 0x09, 0x00,
 	0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x7a, 0x00, 0x00, 0x00, 0x17, 0x00,
 	0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x91, 0x00, 0x00, 0x00, 0x02, 0x00,
@@ -3571,11 +3571,11 @@ ZTEST(squidscript_protocol, test_vm_runtime_dispatches_wifi_action_stubs)
 			  "false unsupported false unsupported false unsupported");
 }
 
-ZTEST(squidscript_protocol, test_vm_runtime_dispatches_content_pick_file_unsupported_result)
+ZTEST(squidscript_protocol, test_vm_runtime_dispatches_file_pick_file_unsupported_result)
 {
 	struct vm_storage_fixture fixture = {
-		.sqbc = content_pick_file_sqbc,
-		.sqbc_len = sizeof(content_pick_file_sqbc),
+		.sqbc = file_pick_file_sqbc,
+		.sqbc_len = sizeof(file_pick_file_sqbc),
 	};
 	struct sq_vm_storage_backend backend = {
 		.user_data = &fixture,
@@ -3592,11 +3592,11 @@ ZTEST(squidscript_protocol, test_vm_runtime_dispatches_content_pick_file_unsuppo
 	zassert_str_equal(runtime.outputs[0], "false unsupported null");
 }
 
-ZTEST(squidscript_protocol, test_vm_runtime_dispatches_content_read_unsupported_results)
+ZTEST(squidscript_protocol, test_vm_runtime_dispatches_file_read_unsupported_results)
 {
 	struct vm_storage_fixture fixture = {
-		.sqbc = content_read_sqbc,
-		.sqbc_len = sizeof(content_read_sqbc),
+		.sqbc = file_read_sqbc,
+		.sqbc_len = sizeof(file_read_sqbc),
 	};
 	struct sq_vm_storage_backend backend = {
 		.user_data = &fixture,

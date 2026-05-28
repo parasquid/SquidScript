@@ -2203,8 +2203,8 @@ static int32_t runtime_device_config_save(void *user_data, const uint8_t *destin
 	return sq_vm_runtime_device_config_save(user_data, destination, destination_len, out);
 }
 
-static int32_t runtime_content_pick_file(void *user_data, const uint8_t *extension,
-					 size_t extension_len, SqvmContentPickFileResult *out)
+static int32_t runtime_file_pick_file(void *user_data, const uint8_t *extension,
+					 size_t extension_len, SqvmFilePickFileResult *out)
 {
 	ARG_UNUSED(user_data);
 	ARG_UNUSED(extension);
@@ -2221,8 +2221,8 @@ static int32_t runtime_content_pick_file(void *user_data, const uint8_t *extensi
 	return 0;
 }
 
-static int32_t runtime_content_read_text(void *user_data, const uint8_t *path, size_t path_len,
-					 SqvmContentReadTextResult *out)
+static int32_t runtime_file_read_text(void *user_data, const uint8_t *path, size_t path_len,
+					 SqvmFileReadTextResult *out)
 {
 	ARG_UNUSED(user_data);
 	ARG_UNUSED(path);
@@ -2239,8 +2239,8 @@ static int32_t runtime_content_read_text(void *user_data, const uint8_t *path, s
 	return 0;
 }
 
-static int32_t runtime_content_read_lines(void *user_data, const uint8_t *path, size_t path_len,
-					  int32_t max_lines, SqvmContentReadLinesResult *out)
+static int32_t runtime_file_read_lines(void *user_data, const uint8_t *path, size_t path_len,
+					  int32_t max_lines, SqvmFileReadLinesResult *out)
 {
 	ARG_UNUSED(user_data);
 	ARG_UNUSED(path);
@@ -2503,9 +2503,9 @@ static const SqvmCallbacks runtime_callbacks = {
 	.device_config_set = runtime_device_config_set,
 	.device_config_rebind = runtime_device_config_rebind,
 	.device_config_save = runtime_device_config_save,
-	.content_pick_file = runtime_content_pick_file,
-	.content_read_text = runtime_content_read_text,
-	.content_read_lines = runtime_content_read_lines,
+	.file_pick_file = runtime_file_pick_file,
+	.file_read_text = runtime_file_read_text,
+	.file_read_lines = runtime_file_read_lines,
 	.system_memory_text = runtime_system_memory_text,
 	.system_storage_text = runtime_system_storage_text,
 };

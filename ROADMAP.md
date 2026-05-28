@@ -13,7 +13,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 - Decide service priority and target support for currently spec-recognized but
   not SQBC-backed APIs: `httpServer.*`, `bleTransfer.*`, and any remaining
-  `content.*` APIs beyond the current file pick/read family. Defer
+  `file.*` APIs beyond the current file pick/read family. Defer
   `binbook.*` firmware/compiler/FFI work until the e-paper display is available
   and the BinBook spec has settled enough to avoid optimizing around rough
   draft behavior. Add each remaining API only as a real compiler/SQBC/VM/Zephyr

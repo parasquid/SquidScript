@@ -14,9 +14,9 @@ use squidvm_core::{
     error::VmError,
     host::{
         AppArmedStack, AppArmedStackEntry, AppProcessStack, AppRegistryEntry, AppRegistryList,
-        ContentPickFileResult, ContentReadLinesResult, ContentReadTextResult, DeviceConfigResult,
-        DisplayInfo, DisplayLineOptions, DisplayRectOptions, DisplayResourceOptions,
-        DisplayTextOptions, StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink,
+        DeviceConfigResult, DisplayInfo, DisplayLineOptions, DisplayRectOptions,
+        DisplayResourceOptions, DisplayTextOptions, FilePickFileResult, FileReadLinesResult,
+        FileReadTextResult, StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink,
         VmDispatch, WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
         MAX_STORAGE_TRANSFER_BYTES,
     },
@@ -926,7 +926,7 @@ impl Default for SqvmDeviceConfigResult {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SqvmContentPickFileResult {
+pub struct SqvmFilePickFileResult {
     pub ok: bool,
     pub error: *const u8,
     pub error_len: usize,
@@ -934,7 +934,7 @@ pub struct SqvmContentPickFileResult {
     pub path_len: usize,
 }
 
-impl Default for SqvmContentPickFileResult {
+impl Default for SqvmFilePickFileResult {
     fn default() -> Self {
         Self {
             ok: false,
@@ -948,7 +948,7 @@ impl Default for SqvmContentPickFileResult {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SqvmContentReadTextResult {
+pub struct SqvmFileReadTextResult {
     pub ok: bool,
     pub error: *const u8,
     pub error_len: usize,
@@ -956,7 +956,7 @@ pub struct SqvmContentReadTextResult {
     pub text_len: usize,
 }
 
-impl Default for SqvmContentReadTextResult {
+impl Default for SqvmFileReadTextResult {
     fn default() -> Self {
         Self {
             ok: false,
@@ -970,13 +970,13 @@ impl Default for SqvmContentReadTextResult {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SqvmContentReadLinesResult {
+pub struct SqvmFileReadLinesResult {
     pub ok: bool,
     pub error: *const u8,
     pub error_len: usize,
 }
 
-impl Default for SqvmContentReadLinesResult {
+impl Default for SqvmFileReadLinesResult {
     fn default() -> Self {
         Self {
             ok: false,
@@ -1226,29 +1226,29 @@ pub struct SqvmCallbacks {
             out: *mut SqvmDeviceConfigResult,
         ) -> i32,
     >,
-    pub content_pick_file: Option<
+    pub file_pick_file: Option<
         unsafe extern "C" fn(
             user_data: *mut c_void,
             extension: *const u8,
             extension_len: usize,
-            out: *mut SqvmContentPickFileResult,
+            out: *mut SqvmFilePickFileResult,
         ) -> i32,
     >,
-    pub content_read_text: Option<
+    pub file_read_text: Option<
         unsafe extern "C" fn(
             user_data: *mut c_void,
             path: *const u8,
             path_len: usize,
-            out: *mut SqvmContentReadTextResult,
+            out: *mut SqvmFileReadTextResult,
         ) -> i32,
     >,
-    pub content_read_lines: Option<
+    pub file_read_lines: Option<
         unsafe extern "C" fn(
             user_data: *mut c_void,
             path: *const u8,
             path_len: usize,
             max_lines: i32,
-            out: *mut SqvmContentReadLinesResult,
+            out: *mut SqvmFileReadLinesResult,
         ) -> i32,
     >,
     pub system_memory_text: Option<
@@ -1313,9 +1313,9 @@ impl Default for SqvmCallbacks {
             device_config_set: None,
             device_config_rebind: None,
             device_config_save: None,
-            content_pick_file: None,
-            content_read_text: None,
-            content_read_lines: None,
+            file_pick_file: None,
+            file_read_text: None,
+            file_read_lines: None,
             system_memory_text: None,
             system_storage_text: None,
         }
@@ -3492,50 +3492,47 @@ impl TraceSink for FfiHost<'_> {
         unsafe { device_config_result_from_ffi(&out) }
     }
 
-    fn content_pick_file<'a>(
+    fn file_pick_file<'a>(
         &'a mut self,
         extension: &str,
-    ) -> Result<ContentPickFileResult<'a>, VmError> {
-        let Some(content_pick_file) = self.callbacks.content_pick_file else {
-            return Ok(ContentPickFileResult::unsupported());
+    ) -> Result<FilePickFileResult<'a>, VmError> {
+        let Some(file_pick_file) = self.callbacks.file_pick_file else {
+            return Ok(FilePickFileResult::unsupported());
         };
-        let mut out = SqvmContentPickFileResult::default();
+        let mut out = SqvmFilePickFileResult::default();
         callback_status(unsafe {
-            content_pick_file(
+            file_pick_file(
                 self.user_data,
                 extension.as_ptr(),
                 extension.len(),
                 &mut out,
             )
         })?;
-        unsafe { content_pick_file_result_from_ffi(&out) }
+        unsafe { file_pick_file_result_from_ffi(&out) }
     }
 
-    fn content_read_text<'a>(
-        &'a mut self,
-        path: &str,
-    ) -> Result<ContentReadTextResult<'a>, VmError> {
-        let Some(content_read_text) = self.callbacks.content_read_text else {
-            return Ok(ContentReadTextResult::unsupported());
+    fn file_read_text<'a>(&'a mut self, path: &str) -> Result<FileReadTextResult<'a>, VmError> {
+        let Some(file_read_text) = self.callbacks.file_read_text else {
+            return Ok(FileReadTextResult::unsupported());
         };
-        let mut out = SqvmContentReadTextResult::default();
+        let mut out = SqvmFileReadTextResult::default();
         callback_status(unsafe {
-            content_read_text(self.user_data, path.as_ptr(), path.len(), &mut out)
+            file_read_text(self.user_data, path.as_ptr(), path.len(), &mut out)
         })?;
-        unsafe { content_read_text_result_from_ffi(&out) }
+        unsafe { file_read_text_result_from_ffi(&out) }
     }
 
-    fn content_read_lines<'a>(
+    fn file_read_lines<'a>(
         &'a mut self,
         path: &str,
         max_lines: i32,
-    ) -> Result<ContentReadLinesResult<'a>, VmError> {
-        let Some(content_read_lines) = self.callbacks.content_read_lines else {
-            return Ok(ContentReadLinesResult::unsupported());
+    ) -> Result<FileReadLinesResult<'a>, VmError> {
+        let Some(file_read_lines) = self.callbacks.file_read_lines else {
+            return Ok(FileReadLinesResult::unsupported());
         };
-        let mut out = SqvmContentReadLinesResult::default();
+        let mut out = SqvmFileReadLinesResult::default();
         callback_status(unsafe {
-            content_read_lines(
+            file_read_lines(
                 self.user_data,
                 path.as_ptr(),
                 path.len(),
@@ -3543,7 +3540,7 @@ impl TraceSink for FfiHost<'_> {
                 &mut out,
             )
         })?;
-        unsafe { content_read_lines_result_from_ffi(&out) }
+        unsafe { file_read_lines_result_from_ffi(&out) }
     }
 
     fn system_memory_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
@@ -4427,30 +4424,30 @@ unsafe fn display_info_from_ffi<'a>(result: &SqvmDisplayInfo) -> Result<DisplayI
     })
 }
 
-unsafe fn content_pick_file_result_from_ffi<'a>(
-    result: &SqvmContentPickFileResult,
-) -> Result<ContentPickFileResult<'a>, VmError> {
-    Ok(ContentPickFileResult {
+unsafe fn file_pick_file_result_from_ffi<'a>(
+    result: &SqvmFilePickFileResult,
+) -> Result<FilePickFileResult<'a>, VmError> {
+    Ok(FilePickFileResult {
         ok: result.ok,
         error: optional_ffi_str(result.error, result.error_len)?,
         path: optional_ffi_str(result.path, result.path_len)?,
     })
 }
 
-unsafe fn content_read_text_result_from_ffi<'a>(
-    result: &SqvmContentReadTextResult,
-) -> Result<ContentReadTextResult<'a>, VmError> {
-    Ok(ContentReadTextResult {
+unsafe fn file_read_text_result_from_ffi<'a>(
+    result: &SqvmFileReadTextResult,
+) -> Result<FileReadTextResult<'a>, VmError> {
+    Ok(FileReadTextResult {
         ok: result.ok,
         error: optional_ffi_str(result.error, result.error_len)?,
         text: optional_ffi_str(result.text, result.text_len)?,
     })
 }
 
-unsafe fn content_read_lines_result_from_ffi<'a>(
-    result: &SqvmContentReadLinesResult,
-) -> Result<ContentReadLinesResult<'a>, VmError> {
-    Ok(ContentReadLinesResult {
+unsafe fn file_read_lines_result_from_ffi<'a>(
+    result: &SqvmFileReadLinesResult,
+) -> Result<FileReadLinesResult<'a>, VmError> {
+    Ok(FileReadLinesResult {
         ok: result.ok,
         error: optional_ffi_str(result.error, result.error_len)?,
         lines: &[],

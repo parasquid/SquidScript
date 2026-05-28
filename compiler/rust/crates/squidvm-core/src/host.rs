@@ -224,24 +224,21 @@ pub trait TraceSink {
     ) -> Result<DeviceConfigResult<'a>, VmError> {
         Ok(DeviceConfigResult::unsupported())
     }
-    fn content_pick_file<'a>(
+    fn file_pick_file<'a>(
         &'a mut self,
         _extension: &str,
-    ) -> Result<ContentPickFileResult<'a>, VmError> {
-        Ok(ContentPickFileResult::unsupported())
+    ) -> Result<FilePickFileResult<'a>, VmError> {
+        Ok(FilePickFileResult::unsupported())
     }
-    fn content_read_text<'a>(
-        &'a mut self,
-        _path: &str,
-    ) -> Result<ContentReadTextResult<'a>, VmError> {
-        Ok(ContentReadTextResult::unsupported())
+    fn file_read_text<'a>(&'a mut self, _path: &str) -> Result<FileReadTextResult<'a>, VmError> {
+        Ok(FileReadTextResult::unsupported())
     }
-    fn content_read_lines<'a>(
+    fn file_read_lines<'a>(
         &'a mut self,
         _path: &str,
         _max_lines: i32,
-    ) -> Result<ContentReadLinesResult<'a>, VmError> {
-        Ok(ContentReadLinesResult::unsupported())
+    ) -> Result<FileReadLinesResult<'a>, VmError> {
+        Ok(FileReadLinesResult::unsupported())
     }
     fn state_load(&mut self, _out: &mut [u8]) -> Result<Option<usize>, VmError> {
         Ok(None)
@@ -272,13 +269,13 @@ impl DeviceConfigResult<'_> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ContentPickFileResult<'a> {
+pub struct FilePickFileResult<'a> {
     pub ok: bool,
     pub error: Option<&'a str>,
     pub path: Option<&'a str>,
 }
 
-impl ContentPickFileResult<'_> {
+impl FilePickFileResult<'_> {
     pub const fn unsupported() -> Self {
         Self {
             ok: false,
@@ -289,13 +286,13 @@ impl ContentPickFileResult<'_> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ContentReadTextResult<'a> {
+pub struct FileReadTextResult<'a> {
     pub ok: bool,
     pub error: Option<&'a str>,
     pub text: Option<&'a str>,
 }
 
-impl ContentReadTextResult<'_> {
+impl FileReadTextResult<'_> {
     pub const fn unsupported() -> Self {
         Self {
             ok: false,
@@ -306,13 +303,13 @@ impl ContentReadTextResult<'_> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ContentReadLinesResult<'a> {
+pub struct FileReadLinesResult<'a> {
     pub ok: bool,
     pub error: Option<&'a str>,
     pub lines: &'a [&'a str],
 }
 
-impl ContentReadLinesResult<'_> {
+impl FileReadLinesResult<'_> {
     pub const fn unsupported() -> Self {
         Self {
             ok: false,

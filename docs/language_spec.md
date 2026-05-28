@@ -25,7 +25,7 @@ SquidScript uses familiar JavaScript-style syntax for authoring, but it does not
 
 SquidScript is an imperative, event-driven language with simple procedural functions and capability-oriented platform APIs. It is not object-oriented and not functional in current draft.
 
-SquidScript separates the core language from the standard platform capability set. Core language features define syntax, control flow, values, handlers, screens, state, and bytecode execution semantics. Standard platform capabilities are namespaced firmware/runtime APIs such as `service.display.*`, `state.*`, `content.*`, and `binbook.*`.
+SquidScript separates the core language from the standard platform capability set. Core language features define syntax, control flow, values, handlers, screens, state, and bytecode execution semantics. Standard platform capabilities are namespaced firmware/runtime APIs such as `service.display.*`, `state.*`, `file.*`, and `binbook.*`.
 
 The current SquidScript draft does not provide a user library or package system. Standard capabilities are built in from an app author's perspective, but they should be specified as declared, bounded, namespaced APIs known to `squidc`, `.sqbc` validation, and `squidvm`, not as special syntax.
 
@@ -202,7 +202,8 @@ System-managed files:
 Apps may read their own app directory and data directory through the normal
 language/runtime storage APIs.
 
-Apps may read external content files only through explicit user selection or firmware/app-registry-provided file association.
+Apps may read external files only through explicit user selection or
+firmware/app-registry-provided file association.
 
 Apps may not directly write to /sd/system.
 
@@ -364,7 +365,7 @@ Invalid:
 ```squid
 include "../other-app/main.squid"
 include "/sd/system/secret.squid"
-include content.pickFile(".squid")
+include file.pickFile(".squid")
 ```
 
 Recommended include limits:
@@ -1019,7 +1020,7 @@ The current draft uses these built-in namespaces:
 - `service.wifi.*` for firmware-owned Wi-Fi services; `wifi.*` is source sugar for the same calls
 - `httpServer.*` for small foreground-only firmware-owned HTTP services
 - `bluetoothHid.*` for foreground-only Bluetooth HID peripheral behavior
-- `content.*` for user-selected content files and bounded reads
+- `file.*` for user-selected files and bounded reads
 - `data.*` for parsed declarative app data
 - `string.*` for deterministic string utilities
 - `binbook.*` for BinBook document handles and drawable page resources
@@ -2734,11 +2735,17 @@ Rules:
 
 ## 34. File and Data Built-ins
 
+`file.*` is the app-facing API for user/device-visible files. File references
+abstract over the backing location: a picked or associated file may live on SD,
+internal flash, simulator storage, USB mass storage, or another target-defined
+backend. Normal app code should pass the returned file reference back to
+`file.*` calls rather than constructing physical volume paths.
+
 SquidScript file management should use target-defined libraries rather than raw device paths.
 
 Libraries are named storage roots exposed by firmware. A target may provide libraries such as:
 
-- `books`: user book/content library, normally on SD
+- `books`: user book/file library, normally on SD
 - `apps-inbox`: uploaded app packages awaiting firmware/app-installer validation
 - `appdata`: current app's private data area
 - `flash-library`: internal flash-backed user library when the target defines an explicit writable flash partition
@@ -2759,6 +2766,11 @@ Physical volumes:
 - sd
 - flash
 ```
+
+Portable apps may inspect file metadata when the target exposes such an API,
+but storage location remains metadata, not part of the default read contract.
+Use `service.storage.*` for volume capacity, mount status, and backend
+capabilities. Use `file.*` for opening and reading app-visible files.
 
 `library.list("books", { volume: "all" })` may return a merged view across SD and flash when both volumes provide book storage. Each entry should still identify its backing volume so file-manager apps can show whether a file lives on removable SD or internal flash.
 
@@ -2781,20 +2793,20 @@ Common storage error codes:
 - `unsupported`
 - `io-error`
 
-content.pickFile(extension)
+file.pickFile(extension)
 
 Opens a firmware-controlled file picker.
 
 Requires runtime support:
 
 ```text
-content.pick
+file.pick
 ```
 
 Example:
 
 ```squid
-let picked = content.pickFile(".binbook")
+let picked = file.pickFile(".binbook")
 if (picked.ok) {
   state.file = picked.path
 }
@@ -2808,46 +2820,46 @@ crashing the app:
 { ok: false, error: "unsupported", path: null }
 ```
 
-content.readText(path)
+file.readText(path)
 
 Reads a bounded text file.
 
 Requires runtime support:
 
 ```text
-content.read or appdata.read, depending on path.
+file.read or appdata.read, depending on path.
 ```
 
 Example:
 
 ```squid
-let result = content.readText(state.file)
+let result = file.readText(state.file)
 if (result.ok) {
   text = result.text
 }
 ```
 
-On runtimes without bounded external content reads, including the current
+On runtimes without bounded external file reads, including the current
 ESP32-C3 Zephyr canonical firmware, this API returns:
 
 ```text
 { ok: false, error: "unsupported", text: null }
 ```
 
-content.readLines(path, maxLines)
+file.readLines(path, maxLines)
 
 Reads bounded lines from a text file.
 
 Example:
 
 ```squid
-let result = content.readLines("data/notes.txt", 100)
+let result = file.readLines("data/notes.txt", 100)
 if (result.ok) {
   lines = result.lines
 }
 ```
 
-On runtimes without bounded external content reads, including the current
+On runtimes without bounded external file reads, including the current
 ESP32-C3 Zephyr canonical firmware, this API returns:
 
 ```text
@@ -2911,7 +2923,7 @@ Path restrictions:
 - apps may read and write target-defined libraries through standard capability APIs
 - apps may read own app data if `appdata.read` is declared
 - apps may write own app data if `appdata.write` is declared
-- apps may read user-selected content if `content.read` is declared
+- apps may read user-selected file if `file.read` is declared
 - paths are library-relative unless a capability explicitly returns a firmware-owned path
 - paths must not contain `..`
 
@@ -3653,11 +3665,11 @@ appdata.read
 appdata.write
 - Allows writing files under the app's own data directory.
 
-content.pick
-- Allows content.pickFile.
+file.pick
+- Allows file.pickFile.
 
-content.read
-- Allows reading a user-selected external content file.
+file.read
+- Allows reading a user-selected external file.
 
 input.text
 - Allows opening firmware-owned text entry dialogs for non-credential app input.
@@ -4805,7 +4817,7 @@ Firmware:
 - service.display.draw
 - state.load
 - state.save
-- content.pickFile
+- file.pickFile
 - BinBook minimum capability:
   - binbook.open
   - binbook.info

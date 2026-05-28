@@ -82,9 +82,9 @@ pub(crate) const BUILTIN_DEVICE_CONFIG_LOAD: u8 = 0x70;
 pub(crate) const BUILTIN_DEVICE_CONFIG_SET: u8 = 0x71;
 pub(crate) const BUILTIN_DEVICE_CONFIG_REBIND: u8 = 0x72;
 pub(crate) const BUILTIN_DEVICE_CONFIG_SAVE: u8 = 0x73;
-pub(crate) const BUILTIN_CONTENT_PICK_FILE: u8 = 0x90;
-pub(crate) const BUILTIN_CONTENT_READ_TEXT: u8 = 0x91;
-pub(crate) const BUILTIN_CONTENT_READ_LINES: u8 = 0x92;
+pub(crate) const BUILTIN_FILE_PICK_FILE: u8 = 0x90;
+pub(crate) const BUILTIN_FILE_READ_TEXT: u8 = 0x91;
+pub(crate) const BUILTIN_FILE_READ_LINES: u8 = 0x92;
 
 pub(crate) const VALUE_NULL: u8 = 0;
 pub(crate) const VALUE_BOOL: u8 = 1;

@@ -9,9 +9,9 @@ use std::collections::{BTreeMap, BTreeSet};
 fn is_fallible_builtin(name: &str) -> bool {
     matches!(
         name,
-        "content.pickFile"
-            | "content.readText"
-            | "content.readLines"
+        "file.pickFile"
+            | "file.readText"
+            | "file.readLines"
             | "data.read"
             | "library.list"
             | "library.volumes"

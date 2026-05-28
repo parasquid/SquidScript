@@ -9,9 +9,9 @@ use squidvm_ffi::{
     sqvm_device_binding_count_from_reader, sqvm_device_binding_read_from_reader, sqvm_dispatch,
     sqvm_dispatch_resume_storage, sqvm_dispatch_start_resumable, sqvm_trigger_timer_count,
     sqvm_trigger_timer_read, SqvmAppRegistryEntry, SqvmAppStackEntry, SqvmCallbacks,
-    SqvmContentPickFileResult, SqvmContentReadLinesResult, SqvmContentReadTextResult,
     SqvmDeviceBinding, SqvmDeviceConfigResult, SqvmDeviceConfigValue, SqvmDeviceConfigValueKind,
-    SqvmDispatchOutcome, SqvmDispatchResult, SqvmDisplayInfo, SqvmStatus, SqvmStorageCompletion,
+    SqvmDispatchOutcome, SqvmDispatchResult, SqvmDisplayInfo, SqvmFilePickFileResult,
+    SqvmFileReadLinesResult, SqvmFileReadTextResult, SqvmStatus, SqvmStorageCompletion,
     SqvmStorageRequestKind, SqvmTriggerTimer,
 };
 
@@ -33,9 +33,9 @@ struct Host {
     wifi_scan_count: usize,
     wifi_ap_ip_count: usize,
     device_config_actions: Vec<String>,
-    content_pick_files: Vec<String>,
-    content_read_texts: Vec<String>,
-    content_read_lines: Vec<(String, i32)>,
+    file_pick_files: Vec<String>,
+    file_read_texts: Vec<String>,
+    file_read_lines: Vec<(String, i32)>,
     system_memory_count: usize,
     system_storage_names: Vec<String>,
     registry_gets: Vec<String>,
@@ -535,16 +535,16 @@ unsafe extern "C" fn device_config_save(
     0
 }
 
-unsafe extern "C" fn content_pick_file(
+unsafe extern "C" fn file_pick_file(
     user_data: *mut c_void,
     extension: *const u8,
     extension_len: usize,
-    out: *mut SqvmContentPickFileResult,
+    out: *mut SqvmFilePickFileResult,
 ) -> i32 {
     let host = &mut *(user_data as *mut Host);
     let extension =
         std::str::from_utf8(std::slice::from_raw_parts(extension, extension_len)).unwrap();
-    host.content_pick_files.push(extension.to_string());
+    host.file_pick_files.push(extension.to_string());
     if out.is_null() {
         return -1;
     }
@@ -556,15 +556,15 @@ unsafe extern "C" fn content_pick_file(
     0
 }
 
-unsafe extern "C" fn content_read_text(
+unsafe extern "C" fn file_read_text(
     user_data: *mut c_void,
     path: *const u8,
     path_len: usize,
-    out: *mut SqvmContentReadTextResult,
+    out: *mut SqvmFileReadTextResult,
 ) -> i32 {
     let host = &mut *(user_data as *mut Host);
     let path = std::str::from_utf8(std::slice::from_raw_parts(path, path_len)).unwrap();
-    host.content_read_texts.push(path.to_string());
+    host.file_read_texts.push(path.to_string());
     if out.is_null() {
         return -1;
     }
@@ -576,16 +576,16 @@ unsafe extern "C" fn content_read_text(
     0
 }
 
-unsafe extern "C" fn content_read_lines(
+unsafe extern "C" fn file_read_lines(
     user_data: *mut c_void,
     path: *const u8,
     path_len: usize,
     max_lines: i32,
-    out: *mut SqvmContentReadLinesResult,
+    out: *mut SqvmFileReadLinesResult,
 ) -> i32 {
     let host = &mut *(user_data as *mut Host);
     let path = std::str::from_utf8(std::slice::from_raw_parts(path, path_len)).unwrap();
-    host.content_read_lines.push((path.to_string(), max_lines));
+    host.file_read_lines.push((path.to_string(), max_lines));
     if out.is_null() {
         return -1;
     }
@@ -831,30 +831,30 @@ unsafe extern "C" fn failing_device_config_save(
     -22
 }
 
-unsafe extern "C" fn failing_content_pick_file(
+unsafe extern "C" fn failing_file_pick_file(
     _user_data: *mut c_void,
     _extension: *const u8,
     _extension_len: usize,
-    _out: *mut SqvmContentPickFileResult,
+    _out: *mut SqvmFilePickFileResult,
 ) -> i32 {
     -22
 }
 
-unsafe extern "C" fn failing_content_read_text(
+unsafe extern "C" fn failing_file_read_text(
     _user_data: *mut c_void,
     _path: *const u8,
     _path_len: usize,
-    _out: *mut SqvmContentReadTextResult,
+    _out: *mut SqvmFileReadTextResult,
 ) -> i32 {
     -22
 }
 
-unsafe extern "C" fn failing_content_read_lines(
+unsafe extern "C" fn failing_file_read_lines(
     _user_data: *mut c_void,
     _path: *const u8,
     _path_len: usize,
     _max_lines: i32,
-    _out: *mut SqvmContentReadLinesResult,
+    _out: *mut SqvmFileReadLinesResult,
 ) -> i32 {
     -22
 }
@@ -1069,9 +1069,9 @@ fn callbacks(_host: &mut Host) -> SqvmCallbacks {
         device_config_set: Some(device_config_set),
         device_config_rebind: Some(device_config_rebind),
         device_config_save: Some(device_config_save),
-        content_pick_file: Some(content_pick_file),
-        content_read_text: Some(content_read_text),
-        content_read_lines: Some(content_read_lines),
+        file_pick_file: Some(file_pick_file),
+        file_read_text: Some(file_read_text),
+        file_read_lines: Some(file_read_lines),
         system_memory_text: Some(system_memory_text),
         system_storage_text: Some(system_storage_text),
     }
@@ -1297,11 +1297,11 @@ screen("main") {}
     )
 }
 
-fn compile_content_pick_file_sqbc() -> Vec<u8> {
+fn compile_file_pick_file_sqbc() -> Vec<u8> {
     compile_sqbc(
         r#"app "ffi-content"
 event.on("app.start") {
-  let picked = content.pickFile(".binbook")
+  let picked = file.pickFile(".binbook")
   debug.print(picked.ok, picked.error, picked.path)
 }
 screen("main") {}
@@ -1309,12 +1309,12 @@ screen("main") {}
     )
 }
 
-fn compile_content_read_sqbc() -> Vec<u8> {
+fn compile_file_read_sqbc() -> Vec<u8> {
     compile_sqbc(
         r#"app "ffi-content-read"
 event.on("app.start") {
-  let text = content.readText("notes.txt")
-  let lines = content.readLines("notes.txt", 4)
+  let text = file.readText("notes.txt")
+  let lines = file.readLines("notes.txt", 4)
   debug.print(text.ok, text.error, text.text)
   debug.print(lines.ok, lines.error, lines.lines)
 }
@@ -1839,9 +1839,9 @@ fn dispatches_device_config_callbacks() {
 }
 
 #[test]
-fn dispatches_content_pick_file_callback() {
+fn dispatches_file_pick_file_callback() {
     let mut host = Host {
-        sqbc: compile_content_pick_file_sqbc(),
+        sqbc: compile_file_pick_file_sqbc(),
         ..Host::default()
     };
     let mut scratch = vec![0u8; 4096];
@@ -1868,14 +1868,14 @@ fn dispatches_content_pick_file_callback() {
         )
     };
     assert_eq!(status, SqvmStatus::Ok);
-    assert_eq!(host.content_pick_files, vec![".binbook".to_string()]);
+    assert_eq!(host.file_pick_files, vec![".binbook".to_string()]);
     assert_eq!(host.output, vec!["false unsupported null".to_string()]);
 }
 
 #[test]
-fn dispatches_content_read_callbacks() {
+fn dispatches_file_read_callbacks() {
     let mut host = Host {
-        sqbc: compile_content_read_sqbc(),
+        sqbc: compile_file_read_sqbc(),
         ..Host::default()
     };
     let mut scratch = vec![0u8; 4096];
@@ -1902,8 +1902,8 @@ fn dispatches_content_read_callbacks() {
         )
     };
     assert_eq!(status, SqvmStatus::Ok);
-    assert_eq!(host.content_read_texts, vec!["notes.txt".to_string()]);
-    assert_eq!(host.content_read_lines, vec![("notes.txt".to_string(), 4)]);
+    assert_eq!(host.file_read_texts, vec!["notes.txt".to_string()]);
+    assert_eq!(host.file_read_lines, vec![("notes.txt".to_string(), 4)]);
     assert_eq!(
         host.output,
         vec![
@@ -2263,20 +2263,16 @@ fn callback_errors_surface_as_vm_error_status() {
             |callbacks| callbacks.device_config_save = Some(failing_device_config_save),
         ),
         (
-            "content pick file",
-            compile_content_pick_file_sqbc(),
-            |callbacks| callbacks.content_pick_file = Some(failing_content_pick_file),
+            "file pick file",
+            compile_file_pick_file_sqbc(),
+            |callbacks| callbacks.file_pick_file = Some(failing_file_pick_file),
         ),
-        (
-            "content read text",
-            compile_content_read_sqbc(),
-            |callbacks| callbacks.content_read_text = Some(failing_content_read_text),
-        ),
-        (
-            "content read lines",
-            compile_content_read_sqbc(),
-            |callbacks| callbacks.content_read_lines = Some(failing_content_read_lines),
-        ),
+        ("file read text", compile_file_read_sqbc(), |callbacks| {
+            callbacks.file_read_text = Some(failing_file_read_text)
+        }),
+        ("file read lines", compile_file_read_sqbc(), |callbacks| {
+            callbacks.file_read_lines = Some(failing_file_read_lines)
+        }),
         (
             "system memory",
             compile_system_resources_sqbc(),
@@ -2483,13 +2479,13 @@ fn missing_device_config_callbacks_return_unsupported_records() {
 }
 
 #[test]
-fn missing_content_callbacks_return_unsupported_records() {
+fn missing_file_callbacks_return_unsupported_records() {
     let mut pick_host = Host {
-        sqbc: compile_content_pick_file_sqbc(),
+        sqbc: compile_file_pick_file_sqbc(),
         ..Host::default()
     };
     let mut read_host = Host {
-        sqbc: compile_content_read_sqbc(),
+        sqbc: compile_file_read_sqbc(),
         ..Host::default()
     };
 
@@ -2498,9 +2494,9 @@ fn missing_content_callbacks_return_unsupported_records() {
         let mut context = sqvm_context_init();
         let mut host_callbacks = callbacks(host);
         let host_user_data = callback_user_data(host);
-        host_callbacks.content_pick_file = None;
-        host_callbacks.content_read_text = None;
-        host_callbacks.content_read_lines = None;
+        host_callbacks.file_pick_file = None;
+        host_callbacks.file_read_text = None;
+        host_callbacks.file_read_lines = None;
 
         let status = unsafe {
             sqvm_context_init_in_place(

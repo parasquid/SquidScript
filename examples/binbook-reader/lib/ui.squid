@@ -55,7 +55,7 @@ function openSelectedBrowserItem() {
 }
 
 function browseForBook() {
-  let picked = content.pickFile(".binbook")
+  let picked = file.pickFile(".binbook")
 
   if (picked != "") {
     state.file = picked

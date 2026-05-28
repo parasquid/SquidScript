@@ -258,30 +258,27 @@ impl TraceSink for RuntimeTrace {
         })
     }
 
-    fn content_pick_file<'a>(
+    fn file_pick_file<'a>(
         &'a mut self,
         extension: &str,
-    ) -> Result<ContentPickFileResult<'a>, VmError> {
-        self.events.push(format!("content.pickFile {extension}"));
-        Ok(ContentPickFileResult::unsupported())
+    ) -> Result<FilePickFileResult<'a>, VmError> {
+        self.events.push(format!("file.pickFile {extension}"));
+        Ok(FilePickFileResult::unsupported())
     }
 
-    fn content_read_text<'a>(
-        &'a mut self,
-        path: &str,
-    ) -> Result<ContentReadTextResult<'a>, VmError> {
-        self.events.push(format!("content.readText {path}"));
-        Ok(ContentReadTextResult::unsupported())
+    fn file_read_text<'a>(&'a mut self, path: &str) -> Result<FileReadTextResult<'a>, VmError> {
+        self.events.push(format!("file.readText {path}"));
+        Ok(FileReadTextResult::unsupported())
     }
 
-    fn content_read_lines<'a>(
+    fn file_read_lines<'a>(
         &'a mut self,
         path: &str,
         max_lines: i32,
-    ) -> Result<ContentReadLinesResult<'a>, VmError> {
+    ) -> Result<FileReadLinesResult<'a>, VmError> {
         self.events
-            .push(format!("content.readLines {path} {max_lines}"));
-        Ok(ContentReadLinesResult::unsupported())
+            .push(format!("file.readLines {path} {max_lines}"));
+        Ok(FileReadLinesResult::unsupported())
     }
 }
 
@@ -1643,10 +1640,10 @@ event.on("app.start") {
 }
 
 #[test]
-fn runs_content_pick_file_unsupported_result_from_real_bytecode() {
-    let source = r#"app "content-picker"
+fn runs_file_pick_file_unsupported_result_from_real_bytecode() {
+    let source = r#"app "file-picker"
 event.on("app.start") {
-  let picked = content.pickFile(".binbook")
+  let picked = file.pickFile(".binbook")
   debug.print(picked.ok, picked.error, picked.path)
 }
 "#;
@@ -1666,18 +1663,18 @@ event.on("app.start") {
         trace.events,
         vec![
             "app.start",
-            "content.pickFile .binbook",
+            "file.pickFile .binbook",
             "debug false unsupported null",
         ]
     );
 }
 
 #[test]
-fn runs_content_read_unsupported_results_from_real_bytecode() {
-    let source = r#"app "content-read"
+fn runs_file_read_unsupported_results_from_real_bytecode() {
+    let source = r#"app "file-read"
 event.on("app.start") {
-  let text = content.readText("notes.txt")
-  let lines = content.readLines("notes.txt", 4)
+  let text = file.readText("notes.txt")
+  let lines = file.readLines("notes.txt", 4)
   debug.print(text.ok, text.error, text.text)
   debug.print(lines.ok, lines.error, lines.lines)
 }
@@ -1698,8 +1695,8 @@ event.on("app.start") {
         trace.events,
         vec![
             "app.start",
-            "content.readText notes.txt",
-            "content.readLines notes.txt 4",
+            "file.readText notes.txt",
+            "file.readLines notes.txt 4",
             "debug false unsupported null",
             "debug false unsupported <list>",
         ]

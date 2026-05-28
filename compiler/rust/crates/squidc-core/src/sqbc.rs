@@ -90,9 +90,9 @@ const BUILTIN_DEVICE_CONFIG_LOAD: u8 = 0x70;
 const BUILTIN_DEVICE_CONFIG_SET: u8 = 0x71;
 const BUILTIN_DEVICE_CONFIG_REBIND: u8 = 0x72;
 const BUILTIN_DEVICE_CONFIG_SAVE: u8 = 0x73;
-const BUILTIN_CONTENT_PICK_FILE: u8 = 0x90;
-const BUILTIN_CONTENT_READ_TEXT: u8 = 0x91;
-const BUILTIN_CONTENT_READ_LINES: u8 = 0x92;
+const BUILTIN_FILE_PICK_FILE: u8 = 0x90;
+const BUILTIN_FILE_READ_TEXT: u8 = 0x91;
+const BUILTIN_FILE_READ_LINES: u8 = 0x92;
 
 const VALUE_NULL: u8 = 0;
 const VALUE_BOOL: u8 = 1;
@@ -1160,9 +1160,9 @@ fn builtin_for_call(name: &str) -> Option<u8> {
         "device.config.set" => Some(BUILTIN_DEVICE_CONFIG_SET),
         "device.config.rebind" => Some(BUILTIN_DEVICE_CONFIG_REBIND),
         "device.config.save" => Some(BUILTIN_DEVICE_CONFIG_SAVE),
-        "content.pickFile" => Some(BUILTIN_CONTENT_PICK_FILE),
-        "content.readText" => Some(BUILTIN_CONTENT_READ_TEXT),
-        "content.readLines" => Some(BUILTIN_CONTENT_READ_LINES),
+        "file.pickFile" => Some(BUILTIN_FILE_PICK_FILE),
+        "file.readText" => Some(BUILTIN_FILE_READ_TEXT),
+        "file.readLines" => Some(BUILTIN_FILE_READ_LINES),
         "service.display.info" => Some(BUILTIN_DISPLAY_INFO),
         _ => None,
     }
@@ -1182,9 +1182,9 @@ fn validate_builtin_arg_count(name: &str, count: usize) -> Result<(), SqbcError>
         "app.registry.get" | "app.armedStack.get" => count == 2,
         "device.config.load" | "device.config.rebind" | "device.config.save" => count == 1,
         "device.config.set" => count == 2,
-        "content.pickFile" => count == 1,
-        "content.readText" => count == 1,
-        "content.readLines" => count == 2,
+        "file.pickFile" => count == 1,
+        "file.readText" => count == 1,
+        "file.readLines" => count == 2,
         "service.display.info" => count == 0,
         _ => true,
     };

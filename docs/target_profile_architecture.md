@@ -397,7 +397,7 @@ Example:
   "bus": "spi3",
   "mount": "/sd",
   "supportsApps": true,
-  "supportsContent": true,
+  "supportsFile": true,
   "maxFileReadSize": 65536
 }
 ```
@@ -490,8 +490,8 @@ Example ESP32-C3 low-RAM runtime:
     "state.read",
     "state.write",
     "stateMachine",
-    "content.pick",
-    "content.read",
+    "file.pick",
+    "file.read",
     "binbook.read",
     "service.wifi.connect",
     "service.wifi.scan",
@@ -536,8 +536,8 @@ Example ESP32-S3 PSRAM runtime:
     "state.read",
     "state.write",
     "stateMachine",
-    "content.pick",
-    "content.read",
+    "file.pick",
+    "file.read",
     "binbook.read",
     "service.wifi.connect",
     "service.wifi.scan",

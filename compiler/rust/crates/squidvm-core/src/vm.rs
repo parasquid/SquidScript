@@ -25,9 +25,9 @@ use crate::{
     error::VmError,
     host::{
         AppArmedStack, AppArmedStackEntry, AppProcessStack, AppRegistryEntry, AppRegistryList,
-        ContentPickFileResult, ContentReadLinesResult, ContentReadTextResult, DeviceConfigResult,
-        DisplayInfo, DisplayLineOptions, DisplayRectOptions, DisplayResourceOptions,
-        DisplayTextOptions, StorageCompletion, StorageRequest, TraceSink, VmDispatch,
+        DeviceConfigResult, DisplayInfo, DisplayLineOptions, DisplayRectOptions,
+        DisplayResourceOptions, DisplayTextOptions, FilePickFileResult, FileReadLinesResult,
+        FileReadTextResult, StorageCompletion, StorageRequest, TraceSink, VmDispatch,
         WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
     },
     limits::{
@@ -1320,29 +1320,29 @@ impl ChunkedVm {
                 let value = self.device_config_result_record(result)?;
                 self.push(value)?;
             }
-            crate::bytecode::BUILTIN_CONTENT_PICK_FILE => {
+            crate::bytecode::BUILTIN_FILE_PICK_FILE => {
                 let Value::String(extension_id) = self.pop()? else {
                     return Err(VmError::InvalidOperand);
                 };
-                let result = host.content_pick_file(self.index.string(extension_id)?)?;
-                let value = self.content_pick_file_result_record(result)?;
+                let result = host.file_pick_file(self.index.string(extension_id)?)?;
+                let value = self.file_pick_file_result_record(result)?;
                 self.push(value)?;
             }
-            crate::bytecode::BUILTIN_CONTENT_READ_TEXT => {
+            crate::bytecode::BUILTIN_FILE_READ_TEXT => {
                 let Value::String(path_id) = self.pop()? else {
                     return Err(VmError::InvalidOperand);
                 };
-                let result = host.content_read_text(self.index.string(path_id)?)?;
-                let value = self.content_read_text_result_record(result)?;
+                let result = host.file_read_text(self.index.string(path_id)?)?;
+                let value = self.file_read_text_result_record(result)?;
                 self.push(value)?;
             }
-            crate::bytecode::BUILTIN_CONTENT_READ_LINES => {
+            crate::bytecode::BUILTIN_FILE_READ_LINES => {
                 let max_lines = self.pop()?.expect_i32()?;
                 let Value::String(path_id) = self.pop()? else {
                     return Err(VmError::InvalidOperand);
                 };
-                let result = host.content_read_lines(self.index.string(path_id)?, max_lines)?;
-                let value = self.content_read_lines_result_record(result)?;
+                let result = host.file_read_lines(self.index.string(path_id)?, max_lines)?;
+                let value = self.file_read_lines_result_record(result)?;
                 self.push(value)?;
             }
             BUILTIN_SYSTEM_MEMORY => {
@@ -1398,9 +1398,9 @@ impl ChunkedVm {
         ])
     }
 
-    fn content_pick_file_result_record(
+    fn file_pick_file_result_record(
         &mut self,
-        result: ContentPickFileResult<'_>,
+        result: FilePickFileResult<'_>,
     ) -> Result<Value, VmError> {
         let error = self.runtime_string_value(result.error)?;
         let path = self.runtime_string_value(result.path)?;
@@ -1411,9 +1411,9 @@ impl ChunkedVm {
         ])
     }
 
-    fn content_read_text_result_record(
+    fn file_read_text_result_record(
         &mut self,
-        result: ContentReadTextResult<'_>,
+        result: FileReadTextResult<'_>,
     ) -> Result<Value, VmError> {
         let error = self.runtime_string_value(result.error)?;
         let text = self.runtime_string_value(result.text)?;
@@ -1424,9 +1424,9 @@ impl ChunkedVm {
         ])
     }
 
-    fn content_read_lines_result_record(
+    fn file_read_lines_result_record(
         &mut self,
-        result: ContentReadLinesResult<'_>,
+        result: FileReadLinesResult<'_>,
     ) -> Result<Value, VmError> {
         let error = self.runtime_string_value(result.error)?;
         let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
@@ -1928,26 +1928,23 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
         self.trace.device_config_save(destination)
     }
 
-    fn content_pick_file<'b>(
+    fn file_pick_file<'b>(
         &'b mut self,
         extension: &str,
-    ) -> Result<ContentPickFileResult<'b>, VmError> {
-        self.trace.content_pick_file(extension)
+    ) -> Result<FilePickFileResult<'b>, VmError> {
+        self.trace.file_pick_file(extension)
     }
 
-    fn content_read_text<'b>(
-        &'b mut self,
-        path: &str,
-    ) -> Result<ContentReadTextResult<'b>, VmError> {
-        self.trace.content_read_text(path)
+    fn file_read_text<'b>(&'b mut self, path: &str) -> Result<FileReadTextResult<'b>, VmError> {
+        self.trace.file_read_text(path)
     }
 
-    fn content_read_lines<'b>(
+    fn file_read_lines<'b>(
         &'b mut self,
         path: &str,
         max_lines: i32,
-    ) -> Result<ContentReadLinesResult<'b>, VmError> {
-        self.trace.content_read_lines(path, max_lines)
+    ) -> Result<FileReadLinesResult<'b>, VmError> {
+        self.trace.file_read_lines(path, max_lines)
     }
 
     fn state_load(&mut self, out: &mut [u8]) -> Result<Option<usize>, VmError> {

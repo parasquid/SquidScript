@@ -409,7 +409,7 @@ typedef struct {
 	size_t error_len;
 	const uint8_t *path;
 	size_t path_len;
-} SqvmContentPickFileResult;
+} SqvmFilePickFileResult;
 
 typedef struct {
 	bool ok;
@@ -417,13 +417,13 @@ typedef struct {
 	size_t error_len;
 	const uint8_t *text;
 	size_t text_len;
-} SqvmContentReadTextResult;
+} SqvmFileReadTextResult;
 
 typedef struct {
 	bool ok;
 	const uint8_t *error;
 	size_t error_len;
-} SqvmContentReadLinesResult;
+} SqvmFileReadLinesResult;
 
 typedef struct {
 	const uint8_t *ip;
@@ -455,14 +455,14 @@ typedef int32_t (*SqvmDeviceConfigRebindCallback)(void *user_data, const uint8_t
 typedef int32_t (*SqvmDeviceConfigSaveCallback)(void *user_data, const uint8_t *destination,
 						size_t destination_len,
 						SqvmDeviceConfigResult *out);
-typedef int32_t (*SqvmContentPickFileCallback)(void *user_data, const uint8_t *extension,
+typedef int32_t (*SqvmFilePickFileCallback)(void *user_data, const uint8_t *extension,
 					       size_t extension_len,
-					       SqvmContentPickFileResult *out);
-typedef int32_t (*SqvmContentReadTextCallback)(void *user_data, const uint8_t *path,
-					       size_t path_len, SqvmContentReadTextResult *out);
-typedef int32_t (*SqvmContentReadLinesCallback)(void *user_data, const uint8_t *path,
+					       SqvmFilePickFileResult *out);
+typedef int32_t (*SqvmFileReadTextCallback)(void *user_data, const uint8_t *path,
+					       size_t path_len, SqvmFileReadTextResult *out);
+typedef int32_t (*SqvmFileReadLinesCallback)(void *user_data, const uint8_t *path,
 						size_t path_len, int32_t max_lines,
-						SqvmContentReadLinesResult *out);
+						SqvmFileReadLinesResult *out);
 
 typedef int32_t (*SqvmIndicatorWriteCallback)(void *user_data, bool value);
 typedef int32_t (*SqvmIndicatorToggleCallback)(void *user_data);
@@ -553,9 +553,9 @@ typedef struct {
 	SqvmDeviceConfigSetCallback device_config_set;
 	SqvmDeviceConfigRebindCallback device_config_rebind;
 	SqvmDeviceConfigSaveCallback device_config_save;
-	SqvmContentPickFileCallback content_pick_file;
-	SqvmContentReadTextCallback content_read_text;
-	SqvmContentReadLinesCallback content_read_lines;
+	SqvmFilePickFileCallback file_pick_file;
+	SqvmFileReadTextCallback file_read_text;
+	SqvmFileReadLinesCallback file_read_lines;
 	SqvmSystemMemoryTextCallback system_memory_text;
 	SqvmSystemStorageTextCallback system_storage_text;
 } SqvmCallbacks;

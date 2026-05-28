@@ -118,7 +118,7 @@ Examples:
 - `screen.*`
 - `input.*`
 - `state.*`
-- `content.*`
+- `file.*`
 - `data.*`
 - `string.*`
 - `wifi.*`

@@ -318,14 +318,14 @@
   "storage": {
     "type": "littlefs-reference",
     "supportsApps": true,
-    "supportsContent": false,
+    "supportsFile": false,
     "partition": {
       "name": "storage",
       "offset": "0x3b0000",
       "size": "0x30000",
       "filesystem": "littlefs"
     },
-    "reason": "The ESP32-C3 Super Mini reference firmware stores installed SQBC apps in Zephyr's default 4 MB `storage_partition`, mounted as LittleFS at `/sq`. The partition is 192 KiB at offset 0x3b0000 in the current Zephyr `partitions_0x0_default_4M.dtsi` layout. Content/library storage is not implemented yet."
+    "reason": "The ESP32-C3 Super Mini reference firmware stores installed SQBC apps in Zephyr's default 4 MB `storage_partition`, mounted as LittleFS at `/sq`. The partition is 192 KiB at offset 0x3b0000 in the current Zephyr `partitions_0x0_default_4M.dtsi` layout. File/library storage is not implemented yet."
   },
   "input": {
     "type": "board-control-only",

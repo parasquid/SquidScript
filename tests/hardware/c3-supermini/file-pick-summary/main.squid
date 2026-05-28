@@ -1,0 +1,10 @@
+app "file-pick-summary"
+
+event.on("app.start") {
+  let picked = file.pickFile(".binbook")
+  debug.print("file pick", picked.ok, picked.error, picked.path)
+  let text = file.readText("notes.txt")
+  debug.print("file text", text.ok, text.error, text.text)
+  let lines = file.readLines("notes.txt", 4)
+  debug.print("file lines", lines.ok, lines.error, lines.lines)
+}

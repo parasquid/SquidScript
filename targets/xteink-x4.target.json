@@ -264,7 +264,7 @@
       }
     ],
     "supportsApps": true,
-    "supportsContent": true,
+    "supportsFile": true,
     "maxFileReadSize": 65536
   },
   "input": {
@@ -415,8 +415,8 @@
     "squidscript.bytecode",
     "state.read",
     "state.write",
-    "content.pick",
-    "content.read",
+    "file.pick",
+    "file.read",
     "input.text",
     "stateMachine",
     "library.books.read",

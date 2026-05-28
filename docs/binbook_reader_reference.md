@@ -99,7 +99,7 @@ The browser is app-owned UI. It uses the firmware file picker only when the user
 
 ```squid
 function browseForBook() {
-  let picked = content.pickFile(".binbook")
+  let picked = file.pickFile(".binbook")
 
   if (picked != "") {
     state.file = picked
@@ -238,7 +238,7 @@ These files are the reference source for this example. The snippets above explai
 This example intentionally pressures a few current draft design choices:
 
 - It uses app-owned persistent state for resume instead of a separate library/recent-books capability.
-- It uses `content.pickFile(".binbook")` as the browse action because the
+- It uses `file.pickFile(".binbook")` as the browse action because the
   current draft does not expose direct directory enumeration.
 - It uses `stateMachine.*` backed by a `uiState` string to route key handlers without requiring a `screen.current()` built-in or hidden state-machine storage.
 - It uses `binbook.navCount(book)` and `binbook.navEntry(book, index)` from the draft capability contract.

@@ -748,7 +748,7 @@ CODEGEN_RULES.md should include rules such as:
 - All diagnostics require stable diagnostic codes.
 - All new validation rules require invalid fixtures.
 - Fixture tests should be declared in `fixtures/manifest.toml`.
-- Capability APIs should be namespaced, such as `service.display.draw`, `state.load`, `content.pickFile`, and `binbook.open`.
+- Capability APIs should be namespaced, such as `service.display.draw`, `state.load`, `file.pickFile`, and `binbook.open`.
 - Do not introduce implicit truthiness, implicit local creation, unchecked arithmetic, mutable records, mutable lists, or unspecified evaluation order.
 - Invalid source should produce diagnostics; invalid dynamic behavior should produce structured runtime errors, not undefined behavior.
 - Keep modules small and explicit.

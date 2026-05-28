@@ -150,9 +150,9 @@ be refreshed as capability boundaries become clearer.
 
 0x80 reserved for binbook
 
-0x90 content.pickFile
-0x91 content.readText
-0x92 content.readLines
+0x90 file.pickFile
+0x91 file.readText
+0x92 file.readLines
 
 0xa0 reserved for service.storage
 0xb0 reserved for service.input
@@ -163,7 +163,7 @@ be refreshed as capability boundaries become clearer.
 Reserved ranges do not imply implemented language APIs. They keep likely future
 service families from forcing unrelated renumbering while SQBC is still
 pre-1.0. Candidate future families include Bluetooth/BLE around `0x60`,
-top-level `binbook.*` around `0x80`, expanded content operations around `0x90`,
+top-level `binbook.*` around `0x80`, expanded file operations around `0x90`,
 portable storage operations around `0xa0`, input-device operations around
 `0xb0`, power and battery operations around `0xc0`, and time/clock operations
 around `0xd0` once their portable SquidScript contracts are specified.
