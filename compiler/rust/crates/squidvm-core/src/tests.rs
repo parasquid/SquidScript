@@ -178,6 +178,32 @@ impl TraceSink for RuntimeTrace {
         write!(out, "{name} 1 MiB").map_err(|_| VmError::InvalidOperand)
     }
 
+    fn display_info<'a>(&'a mut self) -> Result<DisplayInfo<'a>, VmError> {
+        self.events.push("display.info".to_string());
+        Ok(DisplayInfo {
+            ok: true,
+            error: None,
+            warning: None,
+            available: true,
+            status: "ready",
+            binding: "display.default",
+            driver: "ssd1306",
+            transport: "i2c",
+            width: 78,
+            height: 40,
+            physical_width: 78,
+            physical_height: 40,
+            rotation: 0,
+            color_model: "mono",
+            logical_gray_levels: 2,
+            native_bpp: 1,
+            native_pixel_format: "MONO1_PACKED",
+            default_font_height: 8,
+            supports_partial_refresh: false,
+            supports_fast_refresh: true,
+        })
+    }
+
     fn device_config_load<'a>(
         &'a mut self,
         source: &str,
@@ -1580,6 +1606,38 @@ event.on("app.start") {
             "device.config.save flash",
             "debug true null loaded",
             "debug true null true rebound true",
+        ]
+    );
+}
+
+#[test]
+fn runs_display_info_record_builtin_from_real_bytecode() {
+    let source = r#"app "display-info"
+event.on("app.start") {
+  let info = display.info()
+  debug.print(info.ok, info.available, info.status, info.binding, info.driver, info.transport)
+  debug.print(info.width, info.height, info.colorModel, info.nativePixelFormat, info.defaultFontHeight)
+}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = RuntimeTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "display.info",
+            "debug true true ready display.default ssd1306 i2c",
+            "debug 78 40 mono MONO1_PACKED 8",
         ]
     );
 }

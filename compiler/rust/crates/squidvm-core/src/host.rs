@@ -100,6 +100,9 @@ pub trait TraceSink {
         _options: DisplayResourceOptions,
     ) {
     }
+    fn display_info<'a>(&'a mut self) -> Result<DisplayInfo<'a>, VmError> {
+        Ok(DisplayInfo::unsupported())
+    }
     fn hardware_gpio_write(&mut self, _name: &str, _value: bool) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
     }
@@ -386,6 +389,57 @@ pub struct DisplayResourceOptions {
     pub y: i32,
     pub w: i32,
     pub h: i32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DisplayInfo<'a> {
+    pub ok: bool,
+    pub error: Option<&'a str>,
+    pub warning: Option<&'a str>,
+    pub available: bool,
+    pub status: &'a str,
+    pub binding: &'a str,
+    pub driver: &'a str,
+    pub transport: &'a str,
+    pub width: i32,
+    pub height: i32,
+    pub physical_width: i32,
+    pub physical_height: i32,
+    pub rotation: i32,
+    pub color_model: &'a str,
+    pub logical_gray_levels: i32,
+    pub native_bpp: i32,
+    pub native_pixel_format: &'a str,
+    pub default_font_height: i32,
+    pub supports_partial_refresh: bool,
+    pub supports_fast_refresh: bool,
+}
+
+impl DisplayInfo<'_> {
+    pub const fn unsupported() -> Self {
+        Self {
+            ok: false,
+            error: Some("unsupported"),
+            warning: None,
+            available: false,
+            status: "unsupported",
+            binding: "display.default",
+            driver: "",
+            transport: "",
+            width: 0,
+            height: 0,
+            physical_width: 0,
+            physical_height: 0,
+            rotation: 0,
+            color_model: "",
+            logical_gray_levels: 0,
+            native_bpp: 0,
+            native_pixel_format: "",
+            default_font_height: 0,
+            supports_partial_refresh: false,
+            supports_fast_refresh: false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -271,6 +271,41 @@ static void runtime_display_draw(void *user_data, const uint8_t *drawable, size_
 	}
 }
 
+static void runtime_display_info_text(const char *text, const uint8_t **out, size_t *out_len)
+{
+	*out = (const uint8_t *)text;
+	*out_len = strlen(text);
+}
+
+static int32_t runtime_display_info(void *user_data, SqvmDisplayInfo *out)
+{
+	ARG_UNUSED(user_data);
+	if (out == NULL) {
+		return -EINVAL;
+	}
+	memset(out, 0, sizeof(*out));
+	out->ok = true;
+	out->available = false;
+	runtime_display_info_text("drawlog", &out->status, &out->status_len);
+	runtime_display_info_text("display.default", &out->binding, &out->binding_len);
+	runtime_display_info_text("drawlog", &out->driver, &out->driver_len);
+	runtime_display_info_text("memory", &out->transport, &out->transport_len);
+	out->width = 0;
+	out->height = 0;
+	out->physical_width = 0;
+	out->physical_height = 0;
+	out->rotation = 0;
+	runtime_display_info_text("grayscale", &out->color_model, &out->color_model_len);
+	out->logical_gray_levels = 16;
+	out->native_bpp = 0;
+	runtime_display_info_text("DRAWLOG", &out->native_pixel_format,
+				  &out->native_pixel_format_len);
+	out->default_font_height = 0;
+	out->supports_partial_refresh = false;
+	out->supports_fast_refresh = false;
+	return 0;
+}
+
 static int32_t runtime_indicator_write(void *user_data, bool value)
 {
 	return sq_vm_runtime_indicator_write(user_data, value);
@@ -2439,6 +2474,7 @@ static const SqvmCallbacks runtime_callbacks = {
 	.display_select = runtime_display_select,
 	.display_image = runtime_display_image,
 	.display_draw = runtime_display_draw,
+	.display_info = runtime_display_info,
 	.indicator_write = runtime_indicator_write,
 	.indicator_toggle = runtime_indicator_toggle,
 	.indicator_read = runtime_indicator_read,

@@ -1414,11 +1414,13 @@ The `service.display.*` namespace draws into the current render pass using the t
 
 The `service.display.*` namespace is canonical. Source may use the shorter
 `display.*` form as sugar for the same calls. `display.clear(...)`,
-`display.text(...)`, `display.line(...)`, and `display.rect(...)` compile to the
+`display.text(...)`, `display.line(...)`, `display.rect(...)`, and
+`display.info()` compile to the
 same IR and bytecode operations as `service.display.clear(...)`,
 `service.display.text(...)`, `service.display.line(...)`, and
-`service.display.rect(...)`. The shorter form does not create a separate
-runtime capability or a different display binding model.
+`service.display.rect(...)`, and `service.display.info()`. The shorter form
+does not create a separate runtime capability or a different display binding
+model.
 
 In other words, `screen.open(...)` and `screen.refresh()` decide which view is active and when it is re-rendered; `service.display.clear(...)`, `service.display.text(...)`, and `service.display.draw(...)` describe what appears during that render. The sugar form may be used when writing source:
 
@@ -1489,14 +1491,15 @@ Allowed in screen blocks:
 - service.display.rect(...)
 - service.display.image(...)
 - service.display.draw(...)
+- service.display.info()
 - local let bindings for display-only calculations
 - string.format(...)
 - safe read-only value access
 - render-safe handle creation for drawing APIs
 
 The equivalent `display.clear(...)`, `display.text(...)`,
-`display.line(...)`, and `display.rect(...)` sugar forms are also allowed in
-screen blocks.
+`display.line(...)`, `display.rect(...)`, and `display.info()` sugar forms are
+also allowed in screen blocks.
 
 Disallowed in screen blocks:
 - persistent state mutation
@@ -1665,6 +1668,53 @@ Named aliases:
 - "black" is equivalent to "gray15"
 
 The exact native gray support depends on display capabilities. Firmware should map requested grayscale values to the nearest supported display level. If the selected target and render mode support dithering, firmware may dither intermediate grays when the physical display has fewer native levels than SquidScript's 16-level logical grayscale.
+
+service.display.info()
+
+Source sugar:
+
+```squid
+display.info()
+```
+
+Returns a read-only result record describing the active `display.default`
+binding. This is a portable service query, not a `hardware.*` API. The record is
+a cached firmware/runtime snapshot and must be safe to call from render-pure
+screen code.
+
+Fields:
+
+- `ok`: bool
+- `error`: string or null
+- `warning`: string or null
+- `available`: bool
+- `status`: string
+- `binding`: string
+- `driver`: string
+- `transport`: string
+- `width`: int
+- `height`: int
+- `physicalWidth`: int
+- `physicalHeight`: int
+- `rotation`: int
+- `colorModel`: string
+- `logicalGrayLevels`: int
+- `nativeBpp`: int
+- `nativePixelFormat`: string
+- `defaultFontHeight`: int
+- `supportsPartialRefresh`: bool
+- `supportsFastRefresh`: bool
+
+`width` and `height` are logical drawing dimensions. Firmware owns physical
+rotation, packed-pixel conversion, bus access, and driver execution. Apps should
+use `display.info()` when they need to adapt layout to the installed firmware's
+active display binding.
+
+`device.config.rebind("display.default")` is the explicit operation that
+validates, initializes, probes, and refreshes the active display binding after a
+display SQDEVICE draft changes. A valid binding may still report
+`available: false` when the configured physical display is absent or not
+responding.
 
 service.display.text(value, options)
 
@@ -3499,8 +3549,36 @@ device.config.rebind("display.status")
 ```
 
 If initialization fails, firmware keeps the old active binding. Known pin
-conflicts may return a warning while still succeeding. Unknown GPIO names or
-missing required fields fail.
+conflicts may return a warning while still succeeding. Unknown GPIO names,
+unknown display drivers, unsafe bus/pin choices, or missing required fields
+fail.
+
+For `display.default`, SQDEVICE may describe the active display binding with a
+firmware-supported driver name, a transport such as `spi` or `i2c`, transport
+fields such as bus/address/pins, logical and physical dimensions, rotation,
+color model, native pixel format, and text defaults. The executable display
+driver must already be present in the firmware image. SQDEVICE can select and
+describe a display binding; it does not load new driver code.
+
+Example display SQDEVICE:
+
+```text
+SQDEVICE
+service string 15:display.default
+driver string 7:ssd1306
+transport string 3:i2c
+i2c.bus string 4:i2c0
+i2c.address int 60
+width int 78
+height int 40
+physicalWidth int 78
+physicalHeight int 40
+rotation int 0
+colorModel string 4:mono
+nativeBpp int 1
+nativePixelFormat string 12:MONO1_PACKED
+defaultFontHeight int 8
+```
 
 `device.config.save(destination)`
 

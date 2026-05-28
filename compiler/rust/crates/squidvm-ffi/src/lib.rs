@@ -15,9 +15,9 @@ use squidvm_core::{
     host::{
         AppArmedStack, AppArmedStackEntry, AppProcessStack, AppRegistryEntry, AppRegistryList,
         ContentPickFileResult, ContentReadLinesResult, ContentReadTextResult, DeviceConfigResult,
-        DisplayLineOptions, DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions,
-        StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink, VmDispatch,
-        WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
+        DisplayInfo, DisplayLineOptions, DisplayRectOptions, DisplayResourceOptions,
+        DisplayTextOptions, StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink,
+        VmDispatch, WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
         MAX_STORAGE_TRANSFER_BYTES,
     },
     limits::{MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES, MAX_SAVED_STATE_BYTES},
@@ -612,6 +612,74 @@ pub struct SqvmDisplayResourceOptions {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmDisplayInfo {
+    pub ok: bool,
+    pub error: *const u8,
+    pub error_len: usize,
+    pub warning: *const u8,
+    pub warning_len: usize,
+    pub available: bool,
+    pub status: *const u8,
+    pub status_len: usize,
+    pub binding: *const u8,
+    pub binding_len: usize,
+    pub driver: *const u8,
+    pub driver_len: usize,
+    pub transport: *const u8,
+    pub transport_len: usize,
+    pub width: i32,
+    pub height: i32,
+    pub physical_width: i32,
+    pub physical_height: i32,
+    pub rotation: i32,
+    pub color_model: *const u8,
+    pub color_model_len: usize,
+    pub logical_gray_levels: i32,
+    pub native_bpp: i32,
+    pub native_pixel_format: *const u8,
+    pub native_pixel_format_len: usize,
+    pub default_font_height: i32,
+    pub supports_partial_refresh: bool,
+    pub supports_fast_refresh: bool,
+}
+
+impl Default for SqvmDisplayInfo {
+    fn default() -> Self {
+        Self {
+            ok: false,
+            error: b"unsupported".as_ptr(),
+            error_len: b"unsupported".len(),
+            warning: ptr::null(),
+            warning_len: 0,
+            available: false,
+            status: b"unsupported".as_ptr(),
+            status_len: b"unsupported".len(),
+            binding: b"display.default".as_ptr(),
+            binding_len: b"display.default".len(),
+            driver: ptr::null(),
+            driver_len: 0,
+            transport: ptr::null(),
+            transport_len: 0,
+            width: 0,
+            height: 0,
+            physical_width: 0,
+            physical_height: 0,
+            rotation: 0,
+            color_model: ptr::null(),
+            color_model_len: 0,
+            logical_gray_levels: 0,
+            native_bpp: 0,
+            native_pixel_format: ptr::null(),
+            native_pixel_format_len: 0,
+            default_font_height: 0,
+            supports_partial_refresh: false,
+            supports_fast_refresh: false,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SqvmAppRegistryEntry {
     pub id: *const u8,
     pub id_len: usize,
@@ -1018,6 +1086,8 @@ pub struct SqvmCallbacks {
             options: *const SqvmDisplayResourceOptions,
         ),
     >,
+    pub display_info:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmDisplayInfo) -> i32>,
     pub indicator_write: Option<unsafe extern "C" fn(user_data: *mut c_void, value: bool) -> i32>,
     pub indicator_toggle: Option<unsafe extern "C" fn(user_data: *mut c_void) -> i32>,
     pub indicator_read: Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut bool) -> i32>,
@@ -1214,6 +1284,7 @@ impl Default for SqvmCallbacks {
             display_select: None,
             display_image: None,
             display_draw: None,
+            display_info: None,
             indicator_write: None,
             indicator_toggle: None,
             indicator_read: None,
@@ -3048,6 +3119,15 @@ impl TraceSink for FfiHost<'_> {
         }
     }
 
+    fn display_info<'a>(&'a mut self) -> Result<DisplayInfo<'a>, VmError> {
+        let Some(display_info) = self.callbacks.display_info else {
+            return Ok(DisplayInfo::unsupported());
+        };
+        let mut out = SqvmDisplayInfo::default();
+        callback_status(unsafe { display_info(self.user_data, &mut out) })?;
+        unsafe { display_info_from_ffi(&out) }
+    }
+
     fn service_indicator_write(&mut self, value: bool) -> Result<(), VmError> {
         let Some(indicator_write) = self.callbacks.indicator_write else {
             return Err(VmError::InvalidOperand);
@@ -4315,6 +4395,35 @@ unsafe fn device_config_result_from_ffi<'a>(
         ok: result.ok,
         error: optional_ffi_str(result.error, result.error_len)?,
         warning: optional_ffi_str(result.warning, result.warning_len)?,
+    })
+}
+
+unsafe fn display_info_from_ffi<'a>(result: &SqvmDisplayInfo) -> Result<DisplayInfo<'a>, VmError> {
+    Ok(DisplayInfo {
+        ok: result.ok,
+        error: optional_ffi_str(result.error, result.error_len)?,
+        warning: optional_ffi_str(result.warning, result.warning_len)?,
+        available: result.available,
+        status: required_ffi_str(result.status, result.status_len)?,
+        binding: required_ffi_str(result.binding, result.binding_len)?,
+        driver: optional_ffi_str(result.driver, result.driver_len)?.unwrap_or(""),
+        transport: optional_ffi_str(result.transport, result.transport_len)?.unwrap_or(""),
+        width: result.width,
+        height: result.height,
+        physical_width: result.physical_width,
+        physical_height: result.physical_height,
+        rotation: result.rotation,
+        color_model: optional_ffi_str(result.color_model, result.color_model_len)?.unwrap_or(""),
+        logical_gray_levels: result.logical_gray_levels,
+        native_bpp: result.native_bpp,
+        native_pixel_format: optional_ffi_str(
+            result.native_pixel_format,
+            result.native_pixel_format_len,
+        )?
+        .unwrap_or(""),
+        default_font_height: result.default_font_height,
+        supports_partial_refresh: result.supports_partial_refresh,
+        supports_fast_refresh: result.supports_fast_refresh,
     })
 }
 

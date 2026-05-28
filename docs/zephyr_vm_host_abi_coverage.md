@@ -40,7 +40,9 @@ unsupported, and error/status behavior where those states apply.
 - Zephyr ztests cover VM-dispatch success behavior for display draw-log
   callbacks, including `service.display.clear`, `text`, `rect`, `line`,
   `select`, `image`, and `draw`; protocol ztests also cover draw-log response
-  serialization for records already captured by the runtime.
+  serialization for records already captured by the runtime. The display info
+  callback exposes the active display service descriptor for
+  `service.display.info()` / `display.info()`.
 - Zephyr ztests cover unsupported content result records and Wi-Fi action
   stubs through VM dispatch.
 - Zephyr ztests cover storage adapter behavior for SQBC reads and state

@@ -1035,6 +1035,46 @@ screen("main") {
 }
 
 #[test]
+fn parses_display_info_as_display_service_sugar() {
+    let source = r#"app "display-info"
+event.on("app.start") {
+  let info = display.info()
+  debug.print(info.ok, info.available, info.width, info.height, info.colorModel)
+}
+screen("main") {
+  let info = service.display.info()
+  display.text(info.height, { x: 0, y: 0 })
+}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let ir = output.ir.unwrap();
+    let handler = ir
+        .handlers
+        .iter()
+        .find(|handler| handler.event == "app.start")
+        .unwrap();
+    assert!(matches!(
+        handler.statements[0],
+        IrStatement::Let { ref expr, .. }
+            if matches!(expr, IrExpr::Call { name, args } if name == "service.display.info" && args.is_empty())
+    ));
+    let screen = ir
+        .screens
+        .iter()
+        .find(|screen| screen.name == "main")
+        .unwrap();
+    assert!(matches!(
+        screen.statements[0],
+        IrStatement::Let { ref expr, .. }
+            if matches!(expr, IrExpr::Call { name, args } if name == "service.display.info" && args.is_empty())
+    ));
+}
+
+#[test]
 fn parses_device_bindings_and_rejects_unsafe_paths() {
     let source = r#"app "device-test"
 device {

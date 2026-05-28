@@ -1086,6 +1086,18 @@ impl Parser<'_> {
                     } else {
                         IrExpr::State { name }
                     }
+                } else if name == "service"
+                    && namespace == "display"
+                    && self.at_kind(TokenKind::Dot)
+                {
+                    self.bump(builder);
+                    self.consume_ws(builder);
+                    let action = self.consume_ident(builder).unwrap_or_default();
+                    self.consume_ws(builder);
+                    IrExpr::Call {
+                        name: format!("service.display.{action}"),
+                        args: self.parse_call_args(builder),
+                    }
                 } else if name == "service" && namespace == "wifi" && self.at_kind(TokenKind::Dot) {
                     self.bump(builder);
                     self.consume_ws(builder);
@@ -1129,6 +1141,8 @@ impl Parser<'_> {
                 } else if self.at_kind(TokenKind::OpenParen) {
                     let call_name = if name == "wifi" {
                         format!("service.wifi.{namespace}")
+                    } else if name == "display" {
+                        format!("service.display.{namespace}")
                     } else {
                         format!("{name}.{namespace}")
                     };

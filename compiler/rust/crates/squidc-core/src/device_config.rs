@@ -315,6 +315,43 @@ none null
     }
 
     #[test]
+    fn parses_display_sqdevice_descriptor_records() {
+        let config = parse_sqdevice(
+            r#"SQDEVICE
+service string 15:display.default
+driver string 7:ssd1306
+transport string 3:i2c
+i2c.bus string 4:i2c0
+i2c.address int 60
+width int 78
+height int 40
+physicalWidth int 78
+physicalHeight int 40
+rotation int 0
+colorModel string 4:mono
+nativeBpp int 1
+nativePixelFormat string 12:MONO1_PACKED
+defaultFontHeight int 8
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.get("service"),
+            Some(&DeviceConfigValue::String("display.default".to_string()))
+        );
+        assert_eq!(
+            config.get("transport"),
+            Some(&DeviceConfigValue::String("i2c".to_string()))
+        );
+        assert_eq!(config.get("width"), Some(&DeviceConfigValue::Int(78)));
+        assert_eq!(
+            config.get("nativePixelFormat"),
+            Some(&DeviceConfigValue::String("MONO1_PACKED".to_string()))
+        );
+    }
+
+    #[test]
     fn rejects_duplicate_keys_and_bad_lengths() {
         assert!(parse_sqdevice("SQDEVICE\ngpio string 5:GPIO10\n").is_err());
         assert!(parse_sqdevice("SQDEVICE\ngpio string 6:GPIO10\ngpio null\n").is_err());

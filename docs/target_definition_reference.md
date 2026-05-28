@@ -416,6 +416,21 @@ The target compiler should generate display constants for dimensions, rotation, 
 
 SquidScript apps should use logical coordinates. Firmware owns physical panel rotation and packed-pixel conversion.
 
+Runtime apps inspect the active display through `service.display.info()` or the
+`display.info()` sugar form. That query returns a cached service record for the
+active display binding, including logical dimensions, physical dimensions,
+driver, transport, color model, native pixel format, font default, refresh
+flags, and current availability. The display capability remains a portable
+service API; raw bus and GPIO details stay in target metadata, SQDEVICE records,
+and firmware backend code rather than `hardware.*` rendering APIs.
+
+Display SQDEVICE records may select a firmware-supported driver and provide or
+override descriptor fields such as `driver`, `transport`, bus/address/pins,
+`width`, `height`, `physicalWidth`, `physicalHeight`, `rotation`, `colorModel`,
+`nativeBpp`, `nativePixelFormat`, and `defaultFontHeight`. Rebinding
+`display.default` validates and probes the descriptor. The firmware image must
+already include the selected driver.
+
 SquidScript apps should use logical grayscale colors such as `gray0`, `gray4`, `gray8`, and `gray15`. Firmware maps these values to the selected display pixel format. On displays with fewer native levels than the logical palette, firmware should either map to the nearest native gray or apply a target-supported dithering strategy.
 
 SquidScript apps request text size through `fontHeight` in logical pixels. Firmware maps requested font heights through `service.display.text.fontHeights.selection`. For XTEINK X4, unsupported requested heights are mapped to the nearest supported height.

@@ -11,7 +11,7 @@ use squidvm_ffi::{
     sqvm_trigger_timer_read, SqvmAppRegistryEntry, SqvmAppStackEntry, SqvmCallbacks,
     SqvmContentPickFileResult, SqvmContentReadLinesResult, SqvmContentReadTextResult,
     SqvmDeviceBinding, SqvmDeviceConfigResult, SqvmDeviceConfigValue, SqvmDeviceConfigValueKind,
-    SqvmDispatchOutcome, SqvmDispatchResult, SqvmStatus, SqvmStorageCompletion,
+    SqvmDispatchOutcome, SqvmDispatchResult, SqvmDisplayInfo, SqvmStatus, SqvmStorageCompletion,
     SqvmStorageRequestKind, SqvmTriggerTimer,
 };
 
@@ -168,6 +168,43 @@ unsafe extern "C" fn display_draw(
         "draw=resource drawable=\"{drawable}\" x={} y={}",
         options.x, options.y
     ));
+}
+
+unsafe extern "C" fn display_info(_user_data: *mut c_void, out: *mut SqvmDisplayInfo) -> i32 {
+    if out.is_null() {
+        return -1;
+    }
+    *out = SqvmDisplayInfo {
+        ok: true,
+        error: ptr::null(),
+        error_len: 0,
+        warning: ptr::null(),
+        warning_len: 0,
+        available: true,
+        status: b"ready".as_ptr(),
+        status_len: b"ready".len(),
+        binding: b"display.default".as_ptr(),
+        binding_len: b"display.default".len(),
+        driver: b"ssd1306".as_ptr(),
+        driver_len: b"ssd1306".len(),
+        transport: b"i2c".as_ptr(),
+        transport_len: b"i2c".len(),
+        width: 78,
+        height: 40,
+        physical_width: 78,
+        physical_height: 40,
+        rotation: 0,
+        color_model: b"mono".as_ptr(),
+        color_model_len: b"mono".len(),
+        logical_gray_levels: 2,
+        native_bpp: 1,
+        native_pixel_format: b"MONO1_PACKED".as_ptr(),
+        native_pixel_format_len: b"MONO1_PACKED".len(),
+        default_font_height: 8,
+        supports_partial_refresh: false,
+        supports_fast_refresh: true,
+    };
+    0
 }
 
 unsafe extern "C" fn indicator_write(user_data: *mut c_void, value: bool) -> i32 {
@@ -1003,6 +1040,7 @@ fn callbacks(_host: &mut Host) -> SqvmCallbacks {
         display_select: Some(display_select),
         display_image: Some(display_image),
         display_draw: Some(display_draw),
+        display_info: Some(display_info),
         indicator_write: Some(indicator_write),
         indicator_toggle: Some(indicator_toggle),
         indicator_read: Some(indicator_read),
@@ -1184,6 +1222,8 @@ fn compile_display_sqbc() -> Vec<u8> {
     compile_sqbc(
         r#"app "ffi-display"
 event.on("app.start") {
+  let info = display.info()
+  debug.print(info.width, info.height, info.colorModel, info.nativePixelFormat)
   screen.open("main")
 }
 screen("main") {
@@ -1582,6 +1622,7 @@ fn dispatches_display_service_callbacks() {
     };
 
     assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(host.output, vec!["78 40 mono MONO1_PACKED"]);
     assert_eq!(
         host.drawlog,
         vec![

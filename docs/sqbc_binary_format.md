@@ -89,60 +89,73 @@ Initial opcode subset:
 60  POP
 ```
 
-Initial built-in IDs:
+Built-in IDs are grouped by service family. SQBC is pre-1.0, so this table may
+be refreshed as capability boundaries become clearer.
 
 ```text
-1  state.load
-2  state.save
-3  app.exit
-4  debug.print
-5  screen.open
-6  service.display.clear
-7  service.display.text
-8  service.display.rect
-9  service.display.line
-10 hardware.gpio.write
-11 hardware.gpio.toggle
-12 hardware.gpio.read
-13 app.launch
-14 state.reset
-15 screen.refresh
-16 app.arm
-17 app.disarm
-18 service.timer.every
-19 service.timer.after
-20 system.memory
-21 system.storage
-22 service.display.select
-23 service.display.image
-24 service.display.draw
-25 device.config.load
-26 device.config.set
-27 service.indicator.write
-28 service.indicator.toggle
-29 service.indicator.read
-30 service.wifi.startAp
-31 service.wifi.stopAp
-32 service.wifi.status
-33 service.wifi.getApIp
-34 service.indicator.breathe
-35 service.wifi.connect
-36 service.wifi.disconnect
-37 service.wifi.scan
-38 app.registry
-39 app.registry.get
-40 app.processStack
-41 app.armedStack
-42 app.armedStack.get
-43 device.config.rebind
-44 device.config.save
-45 service.indicator.blink
+0x01 state.load
+0x02 state.save
+0x03 state.reset
+0x04 debug.print
+0x05 system.memory
+0x06 system.storage
+
+0x10 app.exit
+0x11 app.launch
+0x12 app.arm
+0x13 app.disarm
+0x14 app.registry
+0x15 app.registry.get
+0x16 app.processStack
+0x17 app.armedStack
+0x18 app.armedStack.get
+
+0x20 screen.open
+0x21 screen.refresh
+0x22 service.timer.every
+0x23 service.timer.after
+
+0x30 service.display.clear
+0x31 service.display.text
+0x32 service.display.rect
+0x33 service.display.line
+0x34 service.display.select
+0x35 service.display.image
+0x36 service.display.draw
+0x37 service.display.info
+
+0x40 hardware.gpio.write
+0x41 hardware.gpio.toggle
+0x42 hardware.gpio.read
+0x48 service.indicator.write
+0x49 service.indicator.toggle
+0x4a service.indicator.read
+0x4b service.indicator.breathe
+0x4c service.indicator.blink
+
+0x50 service.wifi.startAp
+0x51 service.wifi.stopAp
+0x52 service.wifi.status
+0x53 service.wifi.getApIp
+0x54 service.wifi.connect
+0x55 service.wifi.disconnect
+0x56 service.wifi.scan
+
+0x60 device.config.load
+0x61 device.config.set
+0x62 device.config.rebind
+0x63 device.config.save
+
+0x70 content.pickFile
+0x71 content.readText
+0x72 content.readLines
 ```
 
 The current format supports the headless VM subset. Display draw commands are
 emitted as headless draw-log records by firmware hosts that implement the
 display service. The current Zephyr draw-log records cover clear, text, rect,
-line, select, image, and draw commands. GPIO builtins dispatch to target firmware hardware modules;
+line, select, image, and draw commands. `service.display.info` returns the
+active display service descriptor as a read-only result record. GPIO builtins dispatch to target firmware hardware modules;
 unsupported names return a VM operand error. The canonical lifecycle surface is
 generic events plus `app.start`, `app.triggers`, `app.arm`, `app.disarm`, and
 `service.timer.*`. `app.triggers` is the authored trigger-registration surface;

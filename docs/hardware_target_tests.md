@@ -54,6 +54,8 @@ The default Zephyr-only hardware suite covers the current required inventory:
 - Verify headless display draw-log records for `service.display.clear`,
   `service.display.select`, `service.display.image`, and
   `service.display.draw`.
+- Verify `service.display.info()` / `display.info()` returns the active display
+  service descriptor without using `hardware.*` display APIs.
 - Verify persistent app storage and app state through Zephyr storage.
 - Verify `system.memory()` and `system.storage("apps")` through the Zephyr VM
   FFI host.

@@ -6,8 +6,8 @@ use crate::{
         BUILTIN_APP_EXIT, BUILTIN_APP_LAUNCH, BUILTIN_APP_PROCESS_STACK, BUILTIN_APP_REGISTRY_GET,
         BUILTIN_APP_REGISTRY_LIST, BUILTIN_DEBUG_PRINT, BUILTIN_DEVICE_CONFIG_LOAD,
         BUILTIN_DEVICE_CONFIG_REBIND, BUILTIN_DEVICE_CONFIG_SAVE, BUILTIN_DEVICE_CONFIG_SET,
-        BUILTIN_DISPLAY_CLEAR, BUILTIN_DISPLAY_DRAW, BUILTIN_DISPLAY_IMAGE, BUILTIN_DISPLAY_LINE,
-        BUILTIN_DISPLAY_RECT, BUILTIN_DISPLAY_SELECT, BUILTIN_DISPLAY_TEXT,
+        BUILTIN_DISPLAY_CLEAR, BUILTIN_DISPLAY_DRAW, BUILTIN_DISPLAY_IMAGE, BUILTIN_DISPLAY_INFO,
+        BUILTIN_DISPLAY_LINE, BUILTIN_DISPLAY_RECT, BUILTIN_DISPLAY_SELECT, BUILTIN_DISPLAY_TEXT,
         BUILTIN_HARDWARE_GPIO_READ, BUILTIN_HARDWARE_GPIO_TOGGLE, BUILTIN_HARDWARE_GPIO_WRITE,
         BUILTIN_SCREEN_OPEN, BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_INDICATOR_BLINK,
         BUILTIN_SERVICE_INDICATOR_BREATHE, BUILTIN_SERVICE_INDICATOR_READ,
@@ -26,9 +26,9 @@ use crate::{
     host::{
         AppArmedStack, AppArmedStackEntry, AppProcessStack, AppRegistryEntry, AppRegistryList,
         ContentPickFileResult, ContentReadLinesResult, ContentReadTextResult, DeviceConfigResult,
-        DisplayLineOptions, DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions,
-        StorageCompletion, StorageRequest, TraceSink, VmDispatch, WifiAccessPoint,
-        WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
+        DisplayInfo, DisplayLineOptions, DisplayRectOptions, DisplayResourceOptions,
+        DisplayTextOptions, StorageCompletion, StorageRequest, TraceSink, VmDispatch,
+        WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
     },
     limits::{
         MAX_CALL_DEPTH, MAX_CODE_CHUNK_BYTES, MAX_FUNCTIONS, MAX_HANDLERS,
@@ -1112,6 +1112,11 @@ impl ChunkedVm {
                 let strings = StringResolver::new(&self.index, &self.runtime_strings);
                 host.draw_resource(&strings, drawable, DisplayResourceOptions { x, y, w, h });
             }
+            BUILTIN_DISPLAY_INFO => {
+                let result = host.display_info()?;
+                let record = self.display_info_record(result)?;
+                self.push(record)?;
+            }
             BUILTIN_HARDWARE_GPIO_WRITE => {
                 let Value::String(name_id) = self.pop()? else {
                     return Err(VmError::InvalidOperand);
@@ -1437,6 +1442,45 @@ impl ChunkedVm {
         ])
     }
 
+    fn display_info_record(&mut self, result: DisplayInfo<'_>) -> Result<Value, VmError> {
+        let error = self.runtime_string_value(result.error)?;
+        let warning = self.runtime_string_value(result.warning)?;
+        let status = self.runtime_string_value(Some(result.status))?;
+        let binding = self.runtime_string_value(Some(result.binding))?;
+        let driver = self.runtime_string_value(Some(result.driver))?;
+        let transport = self.runtime_string_value(Some(result.transport))?;
+        let color_model = self.runtime_string_value(Some(result.color_model))?;
+        let native_pixel_format = self.runtime_string_value(Some(result.native_pixel_format))?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
+            RuntimeRecordField::new("error", error),
+            RuntimeRecordField::new("warning", warning),
+            RuntimeRecordField::new("available", Value::Bool(result.available)),
+            RuntimeRecordField::new("status", status),
+            RuntimeRecordField::new("binding", binding),
+            RuntimeRecordField::new("driver", driver),
+            RuntimeRecordField::new("transport", transport),
+            RuntimeRecordField::new("width", Value::I32(result.width)),
+            RuntimeRecordField::new("height", Value::I32(result.height)),
+            RuntimeRecordField::new("physicalWidth", Value::I32(result.physical_width)),
+            RuntimeRecordField::new("physicalHeight", Value::I32(result.physical_height)),
+            RuntimeRecordField::new("rotation", Value::I32(result.rotation)),
+            RuntimeRecordField::new("colorModel", color_model),
+            RuntimeRecordField::new("logicalGrayLevels", Value::I32(result.logical_gray_levels)),
+            RuntimeRecordField::new("nativeBpp", Value::I32(result.native_bpp)),
+            RuntimeRecordField::new("nativePixelFormat", native_pixel_format),
+            RuntimeRecordField::new("defaultFontHeight", Value::I32(result.default_font_height)),
+            RuntimeRecordField::new(
+                "supportsPartialRefresh",
+                Value::Bool(result.supports_partial_refresh),
+            ),
+            RuntimeRecordField::new(
+                "supportsFastRefresh",
+                Value::Bool(result.supports_fast_refresh),
+            ),
+        ])
+    }
+
     fn app_registry_record(&mut self, entry: AppRegistryEntry<'_>) -> Result<Value, VmError> {
         let id = self.runtime_string_value(Some(entry.id))?;
         let name = self.runtime_string_value(Some(entry.name))?;
@@ -1734,6 +1778,10 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
         options: DisplayResourceOptions,
     ) {
         self.trace.draw_resource(strings, drawable, options);
+    }
+
+    fn display_info<'b>(&'b mut self) -> Result<DisplayInfo<'b>, VmError> {
+        self.trace.display_info()
     }
 
     fn hardware_gpio_write(&mut self, name: &str, value: bool) -> Result<(), VmError> {
