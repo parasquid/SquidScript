@@ -141,15 +141,23 @@ be refreshed as capability boundaries become clearer.
 0x55 service.wifi.disconnect
 0x56 service.wifi.scan
 
-0x60 device.config.load
-0x61 device.config.set
-0x62 device.config.rebind
-0x63 device.config.save
+0x60 reserved for service.ble/service.bluetooth
 
-0x70 content.pickFile
-0x71 content.readText
-0x72 content.readLines
+0x70 device.config.load
+0x71 device.config.set
+0x72 device.config.rebind
+0x73 device.config.save
+
+0x80 content.pickFile
+0x81 content.readText
+0x82 content.readLines
 ```
+
+Reserved ranges do not imply implemented language APIs. They keep likely future
+service families from forcing unrelated renumbering while SQBC is still
+pre-1.0. Candidate future families include Bluetooth/BLE around `0x60` and
+binbook/content-library operations near the content range once their portable
+SquidScript contracts are specified.
 
 The current format supports the headless VM subset. Display draw commands are
 emitted as headless draw-log records by firmware hosts that implement the
