@@ -399,12 +399,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   loops can run as blocking administrative operations. Keep startup/admin-only
   work explicitly scoped, and move any user-visible or runtime-reachable work
   toward chunked, callback-driven, or scheduler-integrated progress.
-- Make runtime string allocation fail instead of silently overwriting or
-  truncating. `RuntimeStrings` currently uses a fixed ring of slots and
-  silently truncates writes at `MAX_RUNTIME_STRING_BYTES`; this is predictable
-  but can corrupt still-live `Value::RuntimeString` references or hide data
-  loss. Add explicit overflow/truncation errors while preserving bounded,
-  heap-free firmware behavior.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.

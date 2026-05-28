@@ -1,4 +1,4 @@
-use core::fmt;
+use core::fmt::{self, Write};
 use squidc_core::{
     compile::{compile, CompileRequest},
     profile::PORTABLE_TARGET_ID,
@@ -12,6 +12,39 @@ use crate::{
 #[test]
 fn runtime_record_field_limit_matches_largest_service_record() {
     assert_eq!(MAX_RUNTIME_RECORD_FIELDS, 26);
+}
+
+#[test]
+fn runtime_string_writer_rejects_oversized_writes_without_truncating() {
+    let mut strings = RuntimeStrings::new();
+    let mut writer = strings.alloc().unwrap();
+    let original = "ok";
+    writer.write_str(original).unwrap();
+
+    let oversized = "x".repeat(MAX_RUNTIME_STRING_BYTES);
+    assert!(writer.write_str(&oversized).is_err());
+
+    let value = writer.value();
+    drop(writer);
+    let Value::RuntimeString(id) = value else {
+        panic!("expected runtime string");
+    };
+    assert_eq!(strings.get(id).unwrap(), original);
+}
+
+#[test]
+fn runtime_strings_fail_when_slots_are_exhausted_instead_of_wrapping() {
+    let mut strings = RuntimeStrings::new();
+
+    for _ in 0..MAX_RUNTIME_STRINGS {
+        let writer = strings.alloc().unwrap();
+        drop(writer);
+    }
+
+    match strings.alloc() {
+        Err(err) => assert_eq!(err, VmError::TooManyStrings),
+        Ok(_) => panic!("expected runtime string allocation failure"),
+    }
 }
 
 const WIFI_SCAN_TEST_NETWORKS: [WifiAccessPoint; 2] = [

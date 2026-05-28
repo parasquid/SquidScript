@@ -48,8 +48,11 @@ impl RuntimeStrings {
     }
 
     pub(crate) fn alloc(&mut self) -> Result<RuntimeStringWriter<'_>, VmError> {
+        if self.next >= MAX_RUNTIME_STRINGS {
+            return Err(VmError::TooManyStrings);
+        }
         let id = self.next;
-        self.next = (self.next + 1) % MAX_RUNTIME_STRINGS;
+        self.next += 1;
         self.lens[id] = 0;
         Ok(RuntimeStringWriter { strings: self, id })
     }
@@ -77,11 +80,13 @@ impl RuntimeStringWriter<'_> {
 impl fmt::Write for RuntimeStringWriter<'_> {
     fn write_str(&mut self, input: &str) -> fmt::Result {
         let len = self.strings.lens[self.id];
-        let remaining = MAX_RUNTIME_STRING_BYTES.saturating_sub(len);
         let bytes = input.as_bytes();
-        let copy_len = remaining.min(bytes.len());
-        self.strings.bytes[self.id][len..len + copy_len].copy_from_slice(&bytes[..copy_len]);
-        self.strings.lens[self.id] += copy_len;
+        let new_len = len.checked_add(bytes.len()).ok_or(fmt::Error)?;
+        if new_len > MAX_RUNTIME_STRING_BYTES {
+            return Err(fmt::Error);
+        }
+        self.strings.bytes[self.id][len..new_len].copy_from_slice(bytes);
+        self.strings.lens[self.id] = new_len;
         Ok(())
     }
 }
