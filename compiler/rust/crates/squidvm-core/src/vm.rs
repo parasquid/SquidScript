@@ -217,6 +217,10 @@ impl RuntimeRecords {
         }
         Err(VmError::InvalidOperand)
     }
+
+    fn reset(&mut self) {
+        self.next = 0;
+    }
 }
 
 struct RuntimeLists {
@@ -266,6 +270,10 @@ impl RuntimeLists {
             return Err(VmError::InvalidOperand);
         }
         Ok(list.items[index])
+    }
+
+    fn reset(&mut self) {
+        self.next = 0;
     }
 }
 
@@ -385,6 +393,10 @@ impl ChunkedVm {
             return Ok(VmDispatch::Complete);
         }
         let (index, handler) = self.index.handler(event)?;
+        self.runtime_strings
+            .retain_state_values(&mut self.state[..self.index.state_count])?;
+        self.runtime_records.reset();
+        self.runtime_lists.reset();
         let key = ChunkRef {
             app: 0,
             kind: ChunkKind::Handler,

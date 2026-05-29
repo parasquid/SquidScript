@@ -313,6 +313,13 @@ impl TraceSink for RuntimeTrace {
             .push(format!("file.readLines {path} {max_lines}"));
         Ok(FileReadLinesResult::unsupported())
     }
+
+    fn app_armed_stack<'a>(&'a mut self) -> Result<AppArmedStack<'a>, VmError> {
+        self.events.push("armed.stack".to_string());
+        Ok(AppArmedStack {
+            entries: &LIFECYCLE_ARMED_STACK,
+        })
+    }
 }
 
 #[derive(Default)]
@@ -1816,6 +1823,88 @@ screen("main") {}
             "debug weather-sync timer.sync",
         ]
     );
+}
+
+#[test]
+fn repeated_armed_stack_inspection_from_timer_does_not_exhaust_runtime_strings() {
+    let source = r#"app "reader"
+event.on("timer.clock") {
+  let armed = app.armedStack()
+  for armedApp in armed max 2 {
+    debug.print("armed", armedApp.appId, armedApp.event)
+  }
+  let selected = app.armedStack.get(armed, 0)
+  debug.print("selected", selected.appId, selected.event)
+}
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = RegistryTrace::default();
+
+    for tick in 0..10 {
+        vm.dispatch("timer.clock", &mut trace)
+            .unwrap_or_else(|err| panic!("timer.clock tick {tick} failed: {err:?}"));
+    }
+
+    assert_eq!(
+        trace
+            .events
+            .iter()
+            .filter(|event| event.as_str() == "armed.stack")
+            .count(),
+        10
+    );
+    assert!(trace.events.iter().any(|event| {
+        event.as_str() == "debug selected break-reminder timer.break"
+    }));
+}
+
+#[test]
+fn event_runtime_string_cleanup_preserves_string_state_values() {
+    let source = r#"app "stateful"
+state {
+  label: string = ""
+}
+event.on("app.start") {
+  state.label = system.memory()
+  debug.print("saved", state.label)
+}
+event.on("timer.clock") {
+  let armed = app.armedStack()
+  for armedApp in armed max 2 {
+    debug.print("armed", armedApp.appId, armedApp.event)
+  }
+  debug.print("state", state.label)
+}
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = RuntimeTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+    for tick in 0..10 {
+        vm.dispatch("timer.clock", &mut trace)
+            .unwrap_or_else(|err| panic!("timer.clock tick {tick} failed: {err:?}"));
+    }
+
+    assert!(trace
+        .events
+        .iter()
+        .any(|event| event.as_str() == "debug state RAM 292 KiB"));
 }
 
 #[test]

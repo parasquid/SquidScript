@@ -64,6 +64,53 @@ impl RuntimeStrings {
         }
         str::from_utf8(&self.bytes[index][..self.lens[index]]).map_err(|_| VmError::InvalidUtf8)
     }
+
+    pub(crate) fn retain_state_values(&mut self, state: &mut [Value]) -> Result<(), VmError> {
+        let old_bytes = self.bytes;
+        let old_lens = self.lens;
+        let mut new_bytes = [[0; MAX_RUNTIME_STRING_BYTES]; MAX_RUNTIME_STRINGS];
+        let mut new_lens = [0; MAX_RUNTIME_STRINGS];
+        let mut new_next = 0usize;
+
+        for value in state {
+            let Value::RuntimeString(id) = value else {
+                continue;
+            };
+            let old_index = *id as usize;
+            if old_index >= MAX_RUNTIME_STRINGS {
+                return Err(VmError::InvalidOperand);
+            }
+            let mut existing = None;
+            for candidate in 0..new_next {
+                if old_lens[old_index] == new_lens[candidate]
+                    && old_bytes[old_index][..old_lens[old_index]]
+                        == new_bytes[candidate][..new_lens[candidate]]
+                {
+                    existing = Some(candidate);
+                    break;
+                }
+            }
+            let new_index = if let Some(existing) = existing {
+                existing
+            } else {
+                if new_next >= MAX_RUNTIME_STRINGS {
+                    return Err(VmError::TooManyStrings);
+                }
+                let len = old_lens[old_index];
+                new_bytes[new_next][..len].copy_from_slice(&old_bytes[old_index][..len]);
+                new_lens[new_next] = len;
+                let allocated = new_next;
+                new_next += 1;
+                allocated
+            };
+            *id = new_index as u8;
+        }
+
+        self.bytes = new_bytes;
+        self.lens = new_lens;
+        self.next = new_next;
+        Ok(())
+    }
 }
 
 pub struct RuntimeStringWriter<'a> {

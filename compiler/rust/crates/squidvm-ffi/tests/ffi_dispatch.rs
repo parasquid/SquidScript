@@ -1359,6 +1359,22 @@ screen("main") {}
     )
 }
 
+fn compile_repeated_armed_stack_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-repeated-armed-stack"
+event.on("timer.clock") {
+  let armed = app.armedStack()
+  for armedApp in armed max 2 {
+    debug.print("armed", armedApp.appId, armedApp.event)
+  }
+  let selected = app.armedStack.get(armed, 0)
+  debug.print("selected", selected.appId, selected.event)
+}
+screen("main") {}
+"#,
+    )
+}
+
 fn compile_helper_function_sqbc() -> Vec<u8> {
     compile_sqbc(
         r#"app "ffi-helper"
@@ -2038,6 +2054,52 @@ fn dispatches_app_lifecycle_inspection_callbacks() {
             "weather-sync timer.sync".to_string(),
         ]
     );
+}
+
+#[test]
+fn repeated_armed_stack_inspection_does_not_exhaust_ffi_runtime_strings() {
+    let mut host = Host {
+        sqbc: compile_repeated_armed_stack_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    for tick in 0..10 {
+        let status = unsafe {
+            sqvm_dispatch(
+                &mut context,
+                callback_user_data(&mut host),
+                &callbacks(&mut host),
+                b"timer.clock".as_ptr(),
+                b"timer.clock".len(),
+            )
+        };
+        assert_eq!(status, SqvmStatus::Ok, "timer.clock tick {tick}");
+    }
+
+    assert_eq!(
+        host.traces
+            .iter()
+            .filter(|trace| trace.as_str() == "armed.stack")
+            .count(),
+        10
+    );
+    assert!(host
+        .output
+        .iter()
+        .any(|line| line == "selected break-reminder timer.break"));
 }
 
 #[test]
