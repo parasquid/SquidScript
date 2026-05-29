@@ -512,6 +512,12 @@ typedef int32_t (*SqvmSystemStorageTextCallback)(
 	uint8_t *out,
 	size_t out_cap,
 	size_t *out_len);
+typedef int32_t (*SqvmSystemStartReasonTextCallback)(
+	void *user_data,
+	uint8_t *out,
+	size_t out_cap,
+	size_t *out_len);
+typedef int32_t (*SqvmPowerSleepCallback)(void *user_data, int32_t wake_after_ms);
 
 typedef struct {
 	SqvmTraceCallback trace;
@@ -558,6 +564,8 @@ typedef struct {
 	SqvmFileReadLinesCallback file_read_lines;
 	SqvmSystemMemoryTextCallback system_memory_text;
 	SqvmSystemStorageTextCallback system_storage_text;
+	SqvmSystemStartReasonTextCallback system_start_reason_text;
+	SqvmPowerSleepCallback power_sleep;
 } SqvmCallbacks;
 
 size_t sqvm_context_size(void);

@@ -99,6 +99,7 @@ be refreshed as capability boundaries become clearer.
 0x04 debug.print
 0x05 system.memory
 0x06 system.storage
+0x07 system.startReason
 
 0x10 app.exit
 0x11 app.launch
@@ -156,7 +157,7 @@ be refreshed as capability boundaries become clearer.
 
 0xa0 reserved for service.storage
 0xb0 reserved for service.input
-0xc0 reserved for service.power
+0xc0 service.power.sleep
 0xd0 reserved for service.time
 ```
 

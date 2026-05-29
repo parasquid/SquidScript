@@ -1998,6 +1998,22 @@ measure. The display string is for human diagnostics; scripts that need raw
 diagnostics should use the device protocol or CLI resource command rather than
 parsing this text.
 
+system.startReason()
+
+Returns a short string describing why the current foreground app's `app.start`
+handler is running:
+
+- `"boot"`: ordinary root app startup after firmware boot.
+- `"wake"`: planned sleep resume restored this foreground app.
+- `"launch"`: this foreground app was launched through app lifecycle handoff.
+- `"return"`: this foreground app was restarted after another foreground app
+  exited through `app.exit()`.
+
+`system.startReason()` is a startup/lifecycle hint, not persistent app data.
+Apps that need to reopen content, restore page position, or redraw a prior UI
+after sleep should store that data explicitly with `state.save()` before sleep
+and reload it from `app.start`.
+
 system.storage(name)
 
 Returns a display-oriented string for a firmware storage area. Zephyr firmware
@@ -2009,6 +2025,41 @@ system.storage("apps")
 
 `"apps"` means firmware-managed writable SquidScript app storage. The physical
 Zephyr flash-map, NVS, and LittleFS layout is target-specific firmware detail.
+
+service.power.sleep({ wakeAfterMs })
+
+Requests planned firmware sleep after the current VM event completes.
+`wakeAfterMs` is a positive duration in milliseconds. Firmware then dispatches
+`event.on("power.sleep")` to the current foreground app so the app can perform
+bounded cleanup, such as `state.save()`. If the sleep-prep handler and firmware
+checkpoint succeed, firmware stores lifecycle routing metadata, configures the
+target wake source, and enters sleep. If sleep prep, checkpointing, or wake
+configuration fails, firmware remains awake and reports diagnostics.
+
+Planned sleep persists lifecycle routing only: the active foreground app id,
+the foreground return stack app ids, and armed app ids. It does not snapshot the
+VM stack, current screen, foreground timers, or service handles. On timer wake,
+firmware restores the foreground app by dispatching `app.start` with
+`system.startReason() == "wake"`, re-registers armed app triggers from current
+installed app metadata, and preserves app-exit return behavior through the
+restored return stack.
+
+```squid
+event.on("key.POWER") {
+  service.power.sleep({ wakeAfterMs: 60000 })
+}
+
+event.on("power.sleep") {
+  state.save()
+}
+
+event.on("app.start") {
+  state.load()
+  if system.startReason() == "wake" {
+    debug.print("resumed")
+  }
+}
+```
 
 Generic events are canonical:
 

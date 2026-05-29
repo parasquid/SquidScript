@@ -450,7 +450,12 @@ performs installed-app foreground handoff for `app.launch` and `app.exit` with
 a bounded return stack, foreground timer cleanup, and `device lifecycle`
 diagnostics. `app.arm` and `app.disarm` now manage bounded timer-triggered
 armed app registrations and dispatch armed timer events as foreground app
-starts. The current Zephyr Wi-Fi callbacks use Zephyr Wi-Fi management for
+starts. Planned sleep writes a firmware-owned lifecycle record under
+`/sq/system/planned-resume.sqpr`, preserving the active foreground app id,
+foreground return stack app ids, and armed app ids across ESP32-C3 timer
+wake. It does not persist VM frames, current screen, or foreground timers;
+apps persist their own content state through `state.save()` and `state.load()`.
+The current Zephyr Wi-Fi callbacks use Zephyr Wi-Fi management for
 status, scan, AP start/stop, AP IP reporting, station connect/disconnect, and
 station DHCP/IP status reporting. `device wifi-profile` stores one volatile
 bounded station profile in runtime memory without echoing SSIDs or passwords.

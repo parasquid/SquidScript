@@ -203,12 +203,22 @@ impl TraceSink for RuntimeTrace {
         Ok(())
     }
 
+    fn service_power_sleep(&mut self, wake_after_ms: i32) -> Result<(), VmError> {
+        self.events
+            .push(format!("service.power.sleep {wake_after_ms}"));
+        Ok(())
+    }
+
     fn system_memory_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
         write!(out, "RAM 292 KiB").map_err(|_| VmError::InvalidOperand)
     }
 
     fn system_storage_text(&mut self, name: &str, out: &mut dyn fmt::Write) -> Result<(), VmError> {
         write!(out, "{name} 1 MiB").map_err(|_| VmError::InvalidOperand)
+    }
+
+    fn system_start_reason_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
+        write!(out, "wake").map_err(|_| VmError::InvalidOperand)
     }
 
     fn display_info<'a>(&'a mut self) -> Result<DisplayInfo<'a>, VmError> {
@@ -1610,6 +1620,43 @@ screen("main") {}
 }
 
 #[test]
+fn runs_power_sleep_and_start_reason_builtins_from_real_bytecode() {
+    let source = r#"app "power"
+event.on("app.start") {
+  debug.print(system.startReason())
+  service.power.sleep({ wakeAfterMs: 30000 })
+}
+event.on("power.sleep") {
+  debug.print("prep")
+}
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = RuntimeTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+    vm.dispatch("power.sleep", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "debug wake",
+            "service.power.sleep 30000",
+            "power.sleep",
+            "debug prep",
+        ]
+    );
+}
+
+#[test]
 fn runs_device_config_result_builtins_from_real_bytecode() {
     let source = r#"app "device-config"
 event.on("app.start") {
@@ -1861,9 +1908,10 @@ screen("main") {}
             .count(),
         10
     );
-    assert!(trace.events.iter().any(|event| {
-        event.as_str() == "debug selected break-reminder timer.break"
-    }));
+    assert!(trace
+        .events
+        .iter()
+        .any(|event| { event.as_str() == "debug selected break-reminder timer.break" }));
 }
 
 #[test]

@@ -218,7 +218,7 @@ app state; app data should use the normal `state.save()` path.
 
 App state is separate from installed app bytecode. Scripts declare typed state
 slots in SQBC metadata. Firmware persists declared primitive values, not the VM
-stack, current screen, timers, armed triggers, or handles.
+stack, current screen, foreground timers, or handles.
 
 `state.load()` applies matching slots by name and declared type, leaves missing
 slots at defaults, ignores removed slots, and fails with a VM error for
@@ -228,3 +228,24 @@ the app.
 
 `RUN.TEMP` state is volatile and RAM-backed, bounded to the VM saved-state
 capacity. Only the temporary SQBC bytecode artifact is file-backed.
+
+## Planned Sleep Lifecycle Checkpoint
+
+Planned sleep uses separate firmware-owned lifecycle storage at
+`/sq/system/planned-resume.sqpr` on the ESP32-C3 reference target. This record
+is not app state and is consumed by boot policy only after a supported wake
+source resumes the MCU.
+
+The planned-resume record contains only lifecycle routing metadata:
+
+- active foreground app id
+- foreground return stack app ids
+- armed app ids
+
+It does not contain VM stack frames, local variables, current screen,
+foreground timers, trigger event rows, or app content state. On wake, firmware
+restarts the restored foreground app with `app.start` and
+`system.startReason() == "wake"`, re-registers armed app triggers by reading
+current installed app metadata, and preserves return-stack behavior for
+`app.exit()`. Apps remain responsible for saving and loading their own content
+state with `state.save()` and `state.load()`.

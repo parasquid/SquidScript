@@ -143,6 +143,11 @@ struct sq_vm_runtime {
 	char arm_registration_app[SQ_APP_STORE_APP_ID_MAX];
 	char lifecycle_target_app[SQ_APP_STORE_APP_ID_MAX];
 	bool lifecycle_launch_after_exit;
+	bool planned_sleep_requested;
+	bool planned_sleep_preparing;
+	bool planned_sleep_ready;
+	int32_t planned_sleep_wake_after_ms;
+	char start_reason[16];
 	char return_stack[SQ_VM_RUNTIME_RETURN_STACK_MAX][SQ_APP_STORE_APP_ID_MAX];
 	uint8_t return_stack_count;
 	struct sq_vm_runtime_armed_timer armed_timers[SQ_VM_RUNTIME_ARMED_TIMER_MAX];
@@ -258,6 +263,8 @@ int sq_vm_runtime_start_event(struct sq_vm_runtime *runtime,
 
 int sq_vm_runtime_record_output(struct sq_vm_runtime *runtime, const uint8_t *message,
 				size_t message_len);
+int sq_vm_runtime_record_trace(struct sq_vm_runtime *runtime, const uint8_t *message,
+			       size_t message_len);
 int sq_vm_runtime_record_drawlog(struct sq_vm_runtime *runtime, const char *line);
 int sq_vm_runtime_indicator_write(struct sq_vm_runtime *runtime, bool value);
 int sq_vm_runtime_indicator_toggle(struct sq_vm_runtime *runtime);

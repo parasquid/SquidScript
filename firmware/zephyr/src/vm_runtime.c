@@ -141,6 +141,16 @@ static void runtime_trace(void *user_data, const uint8_t *message, size_t messag
 	runtime->trace_count++;
 }
 
+int sq_vm_runtime_record_trace(struct sq_vm_runtime *runtime, const uint8_t *message,
+			       size_t message_len)
+{
+	if (runtime == NULL || (message == NULL && message_len > 0)) {
+		return -EINVAL;
+	}
+	runtime_trace(runtime, message, message_len);
+	return 0;
+}
+
 static int32_t runtime_read_exact_at(void *user_data, size_t offset, uint8_t *out, size_t out_len)
 {
 	struct sq_vm_runtime *runtime = user_data;
@@ -549,6 +559,19 @@ static int32_t runtime_timer_after(void *user_data, const uint8_t *event, size_t
 	return sq_vm_runtime_register_timer(user_data, event, event_len, delay_ms, false);
 }
 
+static int32_t runtime_power_sleep(void *user_data, int32_t wake_after_ms)
+{
+	struct sq_vm_runtime *runtime = user_data;
+
+	if (runtime == NULL || wake_after_ms <= 0) {
+		return -EINVAL;
+	}
+	runtime_trace(runtime, (const uint8_t *)"service.power.sleep", sizeof("service.power.sleep") - 1);
+	runtime->planned_sleep_requested = true;
+	runtime->planned_sleep_wake_after_ms = wake_after_ms;
+	return 0;
+}
+
 static int32_t runtime_system_memory_text(void *user_data, uint8_t *out, size_t out_cap,
 					  size_t *out_len)
 {
@@ -628,6 +651,26 @@ static int32_t runtime_system_storage_text(void *user_data, const uint8_t *name,
 	}
 	free_bytes = (uint64_t)stat.f_bfree * (uint64_t)stat.f_frsize;
 	return write_human_bytes(out, out_cap, out_len, "Apps", free_bytes);
+}
+
+static int32_t runtime_system_start_reason_text(void *user_data, uint8_t *out, size_t out_cap,
+						size_t *out_len)
+{
+	struct sq_vm_runtime *runtime = user_data;
+	const char *reason;
+	size_t reason_len;
+
+	if (runtime == NULL || out == NULL || out_len == NULL || out_cap == 0) {
+		return -EINVAL;
+	}
+	reason = runtime->start_reason[0] == '\0' ? "boot" : runtime->start_reason;
+	reason_len = strlen(reason);
+	if (reason_len >= out_cap) {
+		return -ENOSPC;
+	}
+	memcpy(out, reason, reason_len);
+	*out_len = reason_len;
+	return 0;
 }
 
 int sq_vm_runtime_wifi_format_bssid(const uint8_t *mac, size_t mac_len, char *out, size_t out_len)
@@ -2404,6 +2447,12 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	memset(runtime->arm_registration_app, 0, sizeof(runtime->arm_registration_app));
 	memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
 	runtime->lifecycle_launch_after_exit = false;
+	runtime->planned_sleep_requested = false;
+	runtime->planned_sleep_preparing = false;
+	runtime->planned_sleep_ready = false;
+	runtime->planned_sleep_wake_after_ms = 0;
+	strncpy(runtime->start_reason, "boot", sizeof(runtime->start_reason) - 1);
+	runtime->start_reason[sizeof(runtime->start_reason) - 1] = '\0';
 	memset(runtime->return_stack, 0, sizeof(runtime->return_stack));
 	runtime->return_stack_count = 0;
 	memset(runtime->armed_timers, 0, sizeof(runtime->armed_timers));
@@ -2533,6 +2582,7 @@ static const SqvmCallbacks runtime_callbacks = {
 	.app_armed_stack = runtime_app_armed_stack,
 	.timer_every = runtime_timer_every,
 	.timer_after = runtime_timer_after,
+	.power_sleep = runtime_power_sleep,
 	.wifi_start_ap = runtime_wifi_start_ap,
 	.wifi_stop_ap = runtime_wifi_stop_ap,
 	.wifi_connect = runtime_wifi_connect,
@@ -2549,6 +2599,7 @@ static const SqvmCallbacks runtime_callbacks = {
 	.file_read_lines = runtime_file_read_lines,
 	.system_memory_text = runtime_system_memory_text,
 	.system_storage_text = runtime_system_storage_text,
+	.system_start_reason_text = runtime_system_start_reason_text,
 };
 
 int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,

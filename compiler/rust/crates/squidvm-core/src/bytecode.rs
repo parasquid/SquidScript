@@ -42,6 +42,7 @@ pub(crate) const BUILTIN_STATE_RESET: u8 = 0x03;
 pub(crate) const BUILTIN_DEBUG_PRINT: u8 = 0x04;
 pub(crate) const BUILTIN_SYSTEM_MEMORY: u8 = 0x05;
 pub(crate) const BUILTIN_SYSTEM_STORAGE: u8 = 0x06;
+pub(crate) const BUILTIN_SYSTEM_START_REASON: u8 = 0x07;
 pub(crate) const BUILTIN_APP_EXIT: u8 = 0x10;
 pub(crate) const BUILTIN_APP_LAUNCH: u8 = 0x11;
 pub(crate) const BUILTIN_APP_ARM: u8 = 0x12;
@@ -85,6 +86,7 @@ pub(crate) const BUILTIN_DEVICE_CONFIG_SAVE: u8 = 0x73;
 pub(crate) const BUILTIN_FILE_PICK_FILE: u8 = 0x90;
 pub(crate) const BUILTIN_FILE_READ_TEXT: u8 = 0x91;
 pub(crate) const BUILTIN_FILE_READ_LINES: u8 = 0x92;
+pub(crate) const BUILTIN_SERVICE_POWER_SLEEP: u8 = 0xc0;
 
 pub(crate) const VALUE_NULL: u8 = 0;
 pub(crate) const VALUE_BOOL: u8 = 1;

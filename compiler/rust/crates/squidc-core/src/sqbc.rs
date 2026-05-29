@@ -50,6 +50,7 @@ const BUILTIN_STATE_RESET: u8 = 0x03;
 const BUILTIN_DEBUG_PRINT: u8 = 0x04;
 const BUILTIN_SYSTEM_MEMORY: u8 = 0x05;
 const BUILTIN_SYSTEM_STORAGE: u8 = 0x06;
+const BUILTIN_SYSTEM_START_REASON: u8 = 0x07;
 const BUILTIN_APP_EXIT: u8 = 0x10;
 const BUILTIN_APP_LAUNCH: u8 = 0x11;
 const BUILTIN_APP_ARM: u8 = 0x12;
@@ -93,6 +94,7 @@ const BUILTIN_DEVICE_CONFIG_SAVE: u8 = 0x73;
 const BUILTIN_FILE_PICK_FILE: u8 = 0x90;
 const BUILTIN_FILE_READ_TEXT: u8 = 0x91;
 const BUILTIN_FILE_READ_LINES: u8 = 0x92;
+const BUILTIN_SERVICE_POWER_SLEEP: u8 = 0xc0;
 
 const VALUE_NULL: u8 = 0;
 const VALUE_BOOL: u8 = 1;
@@ -449,6 +451,9 @@ fn collect_statement_strings(
                 strings.intern(event)?;
                 collect_expr_strings(delay_ms, strings)?;
             }
+            IrStatement::ServicePowerSleep { wake_after_ms } => {
+                collect_expr_strings(wake_after_ms, strings)?;
+            }
             IrStatement::HardwareGpioWrite { name, value } => {
                 strings.intern(name)?;
                 collect_expr_strings(value, strings)?;
@@ -549,7 +554,7 @@ fn collect_expr_strings(expr: &IrExpr, strings: &mut StringTable) -> Result<(), 
             strings.intern(name).map(|_| ())
         }
         IrExpr::ServiceIndicatorRead => Ok(()),
-        IrExpr::SystemMemory => Ok(()),
+        IrExpr::SystemMemory | IrExpr::SystemStartReason => Ok(()),
         IrExpr::Call { name, args } => {
             strings.intern(name)?;
             for arg in args {
@@ -744,6 +749,10 @@ fn compile_statement(
             emit_string(unit, event)?;
             compile_expr(unit, frame, delay_ms)?;
             emit_builtin(&mut unit.code, BUILTIN_SERVICE_TIMER_AFTER);
+        }
+        IrStatement::ServicePowerSleep { wake_after_ms } => {
+            compile_expr(unit, frame, wake_after_ms)?;
+            emit_builtin(&mut unit.code, BUILTIN_SERVICE_POWER_SLEEP);
         }
         IrStatement::HardwareGpioWrite { name, value } => {
             compile_expr(unit, frame, value)?;
@@ -1051,6 +1060,10 @@ fn compile_expr(
         IrExpr::SystemStorage { name } => {
             emit_string(unit, name)?;
             emit_builtin(&mut unit.code, BUILTIN_SYSTEM_STORAGE);
+            Ok(())
+        }
+        IrExpr::SystemStartReason => {
+            emit_builtin(&mut unit.code, BUILTIN_SYSTEM_START_REASON);
             Ok(())
         }
         IrExpr::Call { name, args } => {

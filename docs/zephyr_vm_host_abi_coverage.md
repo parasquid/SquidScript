@@ -14,8 +14,9 @@ unsupported, and error/status behavior where those states apply.
 
 - Rust FFI dispatch tests cover success paths for debug output, display draw
   log, indicator, GPIO, app lifecycle, app registry, process and armed stacks,
-  timers, Wi-Fi records, device configuration records, content result records,
-  system resource strings, state storage, and resumable SQBC reads.
+  timers, power sleep, Wi-Fi records, device configuration records, content
+  result records, system resource/start-reason strings, state storage, and
+  resumable SQBC reads.
 - Rust FFI dispatch tests cover callback error conversion to
   `SqvmStatus::VmError` for all status-returning callback families that are
   reachable through current SQBC fixtures.
@@ -31,7 +32,7 @@ unsupported, and error/status behavior where those states apply.
   timer helper paths, including invalid arguments and timer-capacity exhaustion.
 - Zephyr ztests cover VM-dispatch success and error behavior for system
   resource callbacks, including `system.memory()` and
-  `system.storage("apps")`.
+  `system.storage("apps")`; Rust FFI tests cover `system.startReason()`.
 - Zephyr ztests cover VM-dispatch success and error behavior for app registry
   callbacks, including `app.registry()` and `app.registry.get(...)`.
 - Zephyr ztests cover VM-dispatch success behavior for process stack and armed

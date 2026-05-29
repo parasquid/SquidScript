@@ -177,6 +177,20 @@ resident and does not dispatch a synthetic foreground event. When an armed
 timer fires, Zephyr starts the armed app as foreground and dispatches the
 registered event. `app.disarm` removes that app's armed timer registrations.
 
+Planned sleep is requested from SquidScript with
+`service.power.sleep({ wakeAfterMs })`. Zephyr waits until the current VM event
+returns, dispatches `power.sleep` to the current foreground app, writes the
+planned-resume lifecycle record, configures the target wake source, and then
+enters sleep. On ESP32-C3 the first supported wake source is timer wake from
+`wakeAfterMs`.
+
+The planned-resume record restores only foreground lifecycle routing: active
+foreground app id, foreground return stack app ids, and armed app ids. Firmware
+does not persist foreground timers or VM execution frames. On wake restore the
+foreground app receives `app.start` and `system.startReason()` returns `"wake"`;
+if it later calls `app.exit()`, the restored return stack restarts the previous
+app with start reason `"return"`.
+
 ## Diagnostics
 
 Resource diagnostics should report RAM numbers separately from flash storage

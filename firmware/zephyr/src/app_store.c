@@ -790,6 +790,34 @@ int sq_app_store_device_config_path(const char *mount_point, char *out, size_t o
 	return 0;
 }
 
+int sq_app_store_planned_resume_path(const char *mount_point, char *out, size_t out_len)
+{
+	int written;
+
+	if (mount_point == NULL || out == NULL) {
+		return -EINVAL;
+	}
+	written = snprintf(out, out_len, "%s/system/planned-resume.sqpr", mount_point);
+	if (written < 0 || (size_t)written >= out_len) {
+		return -ENAMETOOLONG;
+	}
+	return 0;
+}
+
+int sq_app_store_planned_resume_temp_path(const char *mount_point, char *out, size_t out_len)
+{
+	int written;
+
+	if (mount_point == NULL || out == NULL) {
+		return -EINVAL;
+	}
+	written = snprintf(out, out_len, "%s/tmp/planned-resume.sqpr.tmp", mount_point);
+	if (written < 0 || (size_t)written >= out_len) {
+		return -ENAMETOOLONG;
+	}
+	return 0;
+}
+
 int sq_app_store_install_resource(const char *mount_point, const char *app_id,
 				  const char *resource_path, const uint8_t *bytes, size_t len)
 {

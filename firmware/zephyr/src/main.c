@@ -2,6 +2,13 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/fs/fs.h>
+#include <zephyr/sys/util.h>
+#include <errno.h>
+#if defined(CONFIG_SOC_ESP32C3)
+#include <zephyr/sys/poweroff.h>
+#include <esp_sleep.h>
+#endif
 
 #include "app_store.h"
 #include "device_protocol.h"
@@ -9,6 +16,40 @@
 #include "squidscript_fallback_app.h"
 
 LOG_MODULE_REGISTER(squidscript, LOG_LEVEL_INF);
+
+#if defined(CONFIG_SOC_ESP32C3)
+int sq_device_protocol_enter_planned_sleep(int32_t wake_after_ms)
+{
+	if (wake_after_ms <= 0) {
+		return -EINVAL;
+	}
+	esp_sleep_enable_timer_wakeup((uint64_t)wake_after_ms * 1000ULL);
+	LOG_INF("planned sleep entering deep sleep for %d ms", wake_after_ms);
+	sys_poweroff();
+	return 0;
+}
+
+static bool planned_resume_wake_cause(void)
+{
+	return (esp_sleep_get_wakeup_causes() & BIT(ESP_SLEEP_WAKEUP_TIMER)) != 0;
+}
+#else
+static bool planned_resume_wake_cause(void)
+{
+	return false;
+}
+#endif
+
+static void clear_stale_planned_resume(const char *mount_point)
+{
+	char path[SQ_APP_STORE_PLANNED_RESUME_PATH_MAX];
+
+	if (mount_point == NULL ||
+	    sq_app_store_planned_resume_path(mount_point, path, sizeof(path)) != 0) {
+		return;
+	}
+	(void)fs_unlink(path);
+}
 
 int main(void)
 {
@@ -73,7 +114,20 @@ int main(void)
 	sq_vm_runtime_init(&runtime);
 	sq_vm_runtime_set_registry(&runtime, &registry);
 	if (registry_ready) {
-		int root_result = sq_device_protocol_start_root(&protocol_context);
+		int root_result;
+
+		if (planned_resume_wake_cause()) {
+			root_result = sq_device_protocol_restore_planned_resume(&protocol_context);
+			if (root_result == 0) {
+				LOG_INF("planned resume restored foreground app");
+			} else {
+				LOG_WRN("planned resume restore failed: %d", root_result);
+				root_result = sq_device_protocol_start_root(&protocol_context);
+			}
+		} else {
+			clear_stale_planned_resume(protocol_context.store_mount_point);
+			root_result = sq_device_protocol_start_root(&protocol_context);
+		}
 		if (root_result != 0) {
 			LOG_WRN("SquidScript root app launch failed: %d", root_result);
 		}

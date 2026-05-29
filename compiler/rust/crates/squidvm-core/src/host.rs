@@ -188,6 +188,9 @@ pub trait TraceSink {
     fn service_wifi_teardown(&mut self) -> Result<(), VmError> {
         Ok(())
     }
+    fn service_power_sleep(&mut self, _wake_after_ms: i32) -> Result<(), VmError> {
+        Err(VmError::InvalidOperand)
+    }
     fn system_memory_text(&mut self, _out: &mut dyn fmt::Write) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
     }
@@ -197,6 +200,9 @@ pub trait TraceSink {
         _out: &mut dyn fmt::Write,
     ) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
+    }
+    fn system_start_reason_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
+        out.write_str("boot").map_err(|_| VmError::InvalidOperand)
     }
     fn device_config_load<'a>(
         &'a mut self,

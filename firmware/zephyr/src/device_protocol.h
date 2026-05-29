@@ -93,6 +93,22 @@ struct sq_device_protocol_context {
 	const char *store_mount_point;
 };
 
+struct sq_device_planned_resume_record {
+	char current_app[SQ_APP_STORE_APP_ID_MAX];
+	uint8_t return_stack_count;
+	char return_stack[SQ_VM_RUNTIME_RETURN_STACK_MAX][SQ_APP_STORE_APP_ID_MAX];
+	uint8_t armed_app_count;
+	char armed_apps[SQ_VM_RUNTIME_ARMED_TIMER_MAX][SQ_APP_STORE_APP_ID_MAX];
+};
+
+int sq_device_protocol_encode_planned_resume(
+	const struct sq_device_planned_resume_record *record, uint8_t *out, size_t out_cap,
+	size_t *out_len);
+int sq_device_protocol_decode_planned_resume(const uint8_t *bytes, size_t len,
+					     struct sq_device_planned_resume_record *out);
+int sq_device_protocol_planned_resume_from_runtime(
+	const struct sq_vm_runtime *runtime, struct sq_device_planned_resume_record *out);
+
 int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 				    const struct sq_device_protocol_context *context, uint8_t *response,
 				    size_t response_cap, size_t *response_len);
@@ -100,5 +116,7 @@ int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 int sq_device_protocol_poll(const struct sq_device_protocol_context *context);
 
 int sq_device_protocol_start_root(const struct sq_device_protocol_context *context);
+
+int sq_device_protocol_restore_planned_resume(const struct sq_device_protocol_context *context);
 
 #endif

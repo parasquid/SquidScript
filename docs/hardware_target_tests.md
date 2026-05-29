@@ -285,6 +285,16 @@ and before stack measurement. It installs
 `system.storage("apps")` returns an app-storage string through the real VM FFI
 host callbacks.
 
+`scripts/c3-supermini-test-planned-sleep.sh` installs
+`tests/hardware/c3-supermini/planned-sleep`, launches it, verifies
+`system.startReason() == "launch"`, dispatches `key.SELECT` to request
+`service.power.sleep({ wakeAfterMs: 1500 })`, waits for ESP32-C3 timer wake,
+and verifies that the restored foreground app starts with
+`system.startReason() == "wake"` and app state restored from `state.save()`.
+This test owns the serial target across a USB reset/re-enumeration window, so
+run it as a standalone hardware check rather than in parallel with monitors or
+other hardware scripts.
+
 `scripts/c3-supermini-test-indicator-state.sh` runs after system resource and
 app registry coverage and before binding-specific indicator checks. It installs
 `tests/hardware/c3-supermini/indicator-state-summary`, launches it, and

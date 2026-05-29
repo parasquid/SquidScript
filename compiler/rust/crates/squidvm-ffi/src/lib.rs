@@ -1269,6 +1269,16 @@ pub struct SqvmCallbacks {
             out_len: *mut usize,
         ) -> i32,
     >,
+    pub system_start_reason_text: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            out: *mut u8,
+            out_cap: usize,
+            out_len: *mut usize,
+        ) -> i32,
+    >,
+    pub power_sleep:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, wake_after_ms: i32) -> i32>,
 }
 
 impl Default for SqvmCallbacks {
@@ -1318,6 +1328,8 @@ impl Default for SqvmCallbacks {
             file_read_lines: None,
             system_memory_text: None,
             system_storage_text: None,
+            system_start_reason_text: None,
+            power_sleep: None,
         }
     }
 }
@@ -3628,6 +3640,27 @@ impl TraceSink for FfiHost<'_> {
         line.set_len(line_len)?;
         out.write_str(line.as_str()?)
             .map_err(|_| VmError::InvalidOperand)
+    }
+
+    fn system_start_reason_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
+        let Some(system_start_reason_text) = self.callbacks.system_start_reason_text else {
+            return Err(VmError::InvalidOperand);
+        };
+        let mut line = FixedLine::<32>::default();
+        let mut line_len = 0usize;
+        callback_status(unsafe {
+            system_start_reason_text(self.user_data, line.as_mut_ptr(), line.cap(), &mut line_len)
+        })?;
+        line.set_len(line_len)?;
+        out.write_str(line.as_str()?)
+            .map_err(|_| VmError::InvalidOperand)
+    }
+
+    fn service_power_sleep(&mut self, wake_after_ms: i32) -> Result<(), VmError> {
+        let Some(power_sleep) = self.callbacks.power_sleep else {
+            return Err(VmError::InvalidOperand);
+        };
+        callback_status(unsafe { power_sleep(self.user_data, wake_after_ms) })
     }
 
     fn state_load(&mut self, _out: &mut [u8]) -> Result<Option<usize>, VmError> {

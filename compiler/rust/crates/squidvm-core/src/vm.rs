@@ -12,14 +12,16 @@ use crate::{
         BUILTIN_SCREEN_OPEN, BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_INDICATOR_BLINK,
         BUILTIN_SERVICE_INDICATOR_BREATHE, BUILTIN_SERVICE_INDICATOR_READ,
         BUILTIN_SERVICE_INDICATOR_TOGGLE, BUILTIN_SERVICE_INDICATOR_WRITE,
-        BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY, BUILTIN_SERVICE_WIFI_CONNECT,
-        BUILTIN_SERVICE_WIFI_DISCONNECT, BUILTIN_SERVICE_WIFI_GET_AP_IP, BUILTIN_SERVICE_WIFI_SCAN,
-        BUILTIN_SERVICE_WIFI_START_AP, BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP,
-        BUILTIN_STATE_LOAD, BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, BUILTIN_SYSTEM_MEMORY,
-        BUILTIN_SYSTEM_STORAGE, OP_ADD, OP_CALL_BUILTIN, OP_CALL_FUNCTION, OP_EQ, OP_GET_FIELD,
-        OP_GET_LOCAL, OP_GET_STATE, OP_GT, OP_GTE, OP_HALT, OP_JUMP, OP_JUMP_IF_FALSE, OP_LIST_GET,
-        OP_LIST_LEN, OP_LT, OP_LTE, OP_NE, OP_POP, OP_PUSH_BOOL, OP_PUSH_INT, OP_PUSH_NULL,
-        OP_PUSH_STRING, OP_RETURN, OP_SET_LOCAL, OP_SET_STATE, OP_SUB,
+        BUILTIN_SERVICE_POWER_SLEEP, BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY,
+        BUILTIN_SERVICE_WIFI_CONNECT, BUILTIN_SERVICE_WIFI_DISCONNECT,
+        BUILTIN_SERVICE_WIFI_GET_AP_IP, BUILTIN_SERVICE_WIFI_SCAN, BUILTIN_SERVICE_WIFI_START_AP,
+        BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP, BUILTIN_STATE_LOAD,
+        BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, BUILTIN_SYSTEM_MEMORY,
+        BUILTIN_SYSTEM_START_REASON, BUILTIN_SYSTEM_STORAGE, OP_ADD, OP_CALL_BUILTIN,
+        OP_CALL_FUNCTION, OP_EQ, OP_GET_FIELD, OP_GET_LOCAL, OP_GET_STATE, OP_GT, OP_GTE, OP_HALT,
+        OP_JUMP, OP_JUMP_IF_FALSE, OP_LIST_GET, OP_LIST_LEN, OP_LT, OP_LTE, OP_NE, OP_POP,
+        OP_PUSH_BOOL, OP_PUSH_INT, OP_PUSH_NULL, OP_PUSH_STRING, OP_RETURN, OP_SET_LOCAL,
+        OP_SET_STATE, OP_SUB,
     },
     chunk::{ChunkCache, ChunkKind, ChunkRef},
     error::VmError,
@@ -1257,6 +1259,10 @@ impl ChunkedVm {
                 };
                 host.service_timer_after(self.index.string(event_id)?, delay_ms)?;
             }
+            BUILTIN_SERVICE_POWER_SLEEP => {
+                let wake_after_ms = self.pop()?.expect_i32()?;
+                host.service_power_sleep(wake_after_ms)?;
+            }
             BUILTIN_SERVICE_WIFI_START_AP => {
                 let Value::String(ssid_id) = self.pop()? else {
                     return Err(VmError::InvalidOperand);
@@ -1370,6 +1376,12 @@ impl ChunkedVm {
                 let name = self.index.string(name_id)?;
                 let mut writer = self.runtime_strings.alloc()?;
                 host.system_storage_text(name, &mut writer)?;
+                let value = writer.value();
+                self.push(value)?;
+            }
+            BUILTIN_SYSTEM_START_REASON => {
+                let mut writer = self.runtime_strings.alloc()?;
+                host.system_start_reason_text(&mut writer)?;
                 let value = writer.value();
                 self.push(value)?;
             }
@@ -1902,12 +1914,20 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
         self.trace.service_wifi_teardown()
     }
 
+    fn service_power_sleep(&mut self, wake_after_ms: i32) -> Result<(), VmError> {
+        self.trace.service_power_sleep(wake_after_ms)
+    }
+
     fn system_memory_text(&mut self, out: &mut dyn Write) -> Result<(), VmError> {
         self.trace.system_memory_text(out)
     }
 
     fn system_storage_text(&mut self, name: &str, out: &mut dyn Write) -> Result<(), VmError> {
         self.trace.system_storage_text(name, out)
+    }
+
+    fn system_start_reason_text(&mut self, out: &mut dyn Write) -> Result<(), VmError> {
+        self.trace.system_start_reason_text(out)
     }
 
     fn device_config_load<'b>(

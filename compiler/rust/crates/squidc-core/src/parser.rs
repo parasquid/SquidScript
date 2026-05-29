@@ -657,7 +657,10 @@ impl Parser<'_> {
         }
 
         if first == "service"
-            && matches!(method.as_str(), "timer" | "display" | "indicator" | "wifi")
+            && matches!(
+                method.as_str(),
+                "timer" | "display" | "indicator" | "wifi" | "power"
+            )
         {
             if self.at_kind(TokenKind::Dot) {
                 self.bump(builder);
@@ -677,6 +680,25 @@ impl Parser<'_> {
                     name: format!("service.wifi.{action}"),
                     args: self.parse_call_args_after_open(builder),
                 });
+            }
+            if method == "power" {
+                return match action.as_str() {
+                    "sleep" => {
+                        let options = self.parse_options_object(builder);
+                        let wake_after_ms = options
+                            .get("wakeAfterMs")
+                            .and_then(|value| serde_json::from_value(value.clone()).ok())
+                            .unwrap_or(IrExpr::Literal {
+                                value: serde_json::json!(0),
+                            });
+                        self.consume_call_tail(builder);
+                        Some(IrStatement::ServicePowerSleep { wake_after_ms })
+                    }
+                    _ => {
+                        self.consume_call_tail(builder);
+                        None
+                    }
+                };
             }
             return match (method.as_str(), action.as_str()) {
                 ("timer", "every") => {
@@ -1053,6 +1075,9 @@ impl Parser<'_> {
                         })
                         .unwrap_or_default();
                     IrExpr::SystemStorage { name }
+                } else if name == "system" && namespace == "startReason" {
+                    self.parse_call_args(builder);
+                    IrExpr::SystemStartReason
                 } else if name == "hardware" && namespace == "gpio" && self.at_kind(TokenKind::Dot)
                 {
                     self.bump(builder);

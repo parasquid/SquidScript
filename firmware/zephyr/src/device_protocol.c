@@ -31,11 +31,251 @@ BUILD_ASSERT(SQ_DEVICE_WIFI_PROFILE_NAME_BYTES == SQ_VM_RUNTIME_WIFI_PROFILE_NAM
 BUILD_ASSERT(SQ_DEVICE_WIFI_PROFILE_SSID_BYTES == SQ_VM_RUNTIME_WIFI_PROFILE_SSID_BYTES);
 BUILD_ASSERT(SQ_DEVICE_WIFI_PROFILE_PASSWORD_BYTES == SQ_VM_RUNTIME_WIFI_PROFILE_PASSWORD_BYTES);
 
+#define SQ_DEVICE_PLANNED_RESUME_MAGIC "SQPR"
+#define SQ_DEVICE_PLANNED_RESUME_VERSION 1u
+#define SQ_DEVICE_PLANNED_RESUME_LEN                                                   \
+	(4u + 1u + SQ_APP_STORE_APP_ID_MAX + 1u +                                      \
+	 (SQ_VM_RUNTIME_RETURN_STACK_MAX * SQ_APP_STORE_APP_ID_MAX) + 1u +             \
+	 (SQ_VM_RUNTIME_ARMED_TIMER_MAX * SQ_APP_STORE_APP_ID_MAX))
+
 enum sq_device_field_type {
 	SQ_DEVICE_FIELD_TYPE_STRING = 1,
 	SQ_DEVICE_FIELD_TYPE_U64 = 5,
 	SQ_DEVICE_FIELD_TYPE_RECORD = 32,
 };
+
+static int copy_app_id(char *out, size_t out_cap, const char *app_id)
+{
+	size_t len = 0;
+
+	if (out == NULL || out_cap == 0 || app_id == NULL) {
+		return -EINVAL;
+	}
+	while (len < out_cap && app_id[len] != '\0') {
+		len++;
+	}
+	if (len == 0 || len >= out_cap) {
+		return -EINVAL;
+	}
+	memset(out, 0, out_cap);
+	memcpy(out, app_id, len);
+	return 0;
+}
+
+static int append_fixed_app_id(uint8_t *out, size_t out_cap, size_t *offset, const char *app_id)
+{
+	if (out == NULL || offset == NULL || app_id == NULL || *offset > out_cap ||
+	    out_cap - *offset < SQ_APP_STORE_APP_ID_MAX) {
+		return -ENOSPC;
+	}
+	memcpy(&out[*offset], app_id, SQ_APP_STORE_APP_ID_MAX);
+	*offset += SQ_APP_STORE_APP_ID_MAX;
+	return 0;
+}
+
+static int read_fixed_app_id(const uint8_t *bytes, size_t len, size_t *offset, char *out,
+			     size_t out_cap)
+{
+	if (bytes == NULL || offset == NULL || out == NULL || out_cap != SQ_APP_STORE_APP_ID_MAX ||
+	    *offset > len || len - *offset < SQ_APP_STORE_APP_ID_MAX) {
+		return -EINVAL;
+	}
+	memcpy(out, &bytes[*offset], SQ_APP_STORE_APP_ID_MAX);
+	out[out_cap - 1] = '\0';
+	*offset += SQ_APP_STORE_APP_ID_MAX;
+	return 0;
+}
+
+int sq_device_protocol_encode_planned_resume(
+	const struct sq_device_planned_resume_record *record, uint8_t *out, size_t out_cap,
+	size_t *out_len)
+{
+	size_t offset = 0;
+
+	if (record == NULL || out == NULL || out_len == NULL) {
+		return -EINVAL;
+	}
+	if (out_cap < SQ_DEVICE_PLANNED_RESUME_LEN ||
+	    record->return_stack_count > SQ_VM_RUNTIME_RETURN_STACK_MAX ||
+	    record->armed_app_count > SQ_VM_RUNTIME_ARMED_TIMER_MAX ||
+	    record->current_app[0] == '\0') {
+		return -EINVAL;
+	}
+	memcpy(out, SQ_DEVICE_PLANNED_RESUME_MAGIC, 4);
+	offset += 4;
+	out[offset++] = SQ_DEVICE_PLANNED_RESUME_VERSION;
+	if (append_fixed_app_id(out, out_cap, &offset, record->current_app) != 0) {
+		return -EINVAL;
+	}
+	out[offset++] = record->return_stack_count;
+	for (size_t i = 0; i < SQ_VM_RUNTIME_RETURN_STACK_MAX; i++) {
+		if (append_fixed_app_id(out, out_cap, &offset, record->return_stack[i]) != 0) {
+			return -EINVAL;
+		}
+	}
+	out[offset++] = record->armed_app_count;
+	for (size_t i = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
+		if (append_fixed_app_id(out, out_cap, &offset, record->armed_apps[i]) != 0) {
+			return -EINVAL;
+		}
+	}
+	*out_len = offset;
+	return 0;
+}
+
+int sq_device_protocol_decode_planned_resume(const uint8_t *bytes, size_t len,
+					     struct sq_device_planned_resume_record *out)
+{
+	size_t offset = 0;
+
+	if (bytes == NULL || out == NULL || len != SQ_DEVICE_PLANNED_RESUME_LEN) {
+		return -EINVAL;
+	}
+	if (memcmp(bytes, SQ_DEVICE_PLANNED_RESUME_MAGIC, 4) != 0 ||
+	    bytes[4] != SQ_DEVICE_PLANNED_RESUME_VERSION) {
+		return -EINVAL;
+	}
+	memset(out, 0, sizeof(*out));
+	offset = 5;
+	if (read_fixed_app_id(bytes, len, &offset, out->current_app, sizeof(out->current_app)) !=
+	    0 ||
+	    out->current_app[0] == '\0') {
+		return -EINVAL;
+	}
+	out->return_stack_count = bytes[offset++];
+	if (out->return_stack_count > SQ_VM_RUNTIME_RETURN_STACK_MAX) {
+		return -EINVAL;
+	}
+	for (size_t i = 0; i < SQ_VM_RUNTIME_RETURN_STACK_MAX; i++) {
+		if (read_fixed_app_id(bytes, len, &offset, out->return_stack[i],
+				      sizeof(out->return_stack[i])) != 0) {
+			return -EINVAL;
+		}
+		if (i < out->return_stack_count && out->return_stack[i][0] == '\0') {
+			return -EINVAL;
+		}
+	}
+	out->armed_app_count = bytes[offset++];
+	if (out->armed_app_count > SQ_VM_RUNTIME_ARMED_TIMER_MAX) {
+		return -EINVAL;
+	}
+	for (size_t i = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
+		if (read_fixed_app_id(bytes, len, &offset, out->armed_apps[i],
+				      sizeof(out->armed_apps[i])) != 0) {
+			return -EINVAL;
+		}
+		if (i < out->armed_app_count && out->armed_apps[i][0] == '\0') {
+			return -EINVAL;
+		}
+	}
+	return offset == len ? 0 : -EINVAL;
+}
+
+int sq_device_protocol_planned_resume_from_runtime(
+	const struct sq_vm_runtime *runtime, struct sq_device_planned_resume_record *out)
+{
+	if (runtime == NULL || out == NULL || runtime->current_app[0] == '\0') {
+		return -EINVAL;
+	}
+	memset(out, 0, sizeof(*out));
+	if (copy_app_id(out->current_app, sizeof(out->current_app), runtime->current_app) != 0) {
+		return -EINVAL;
+	}
+	out->return_stack_count = runtime->return_stack_count;
+	for (size_t i = 0; i < runtime->return_stack_count; i++) {
+		if (copy_app_id(out->return_stack[i], sizeof(out->return_stack[i]),
+				runtime->return_stack[i]) != 0) {
+			return -EINVAL;
+		}
+	}
+	for (size_t i = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
+		const struct sq_vm_runtime_armed_timer *timer = &runtime->armed_timers[i];
+		bool duplicate = false;
+
+		if (!timer->active || timer->app_id[0] == '\0') {
+			continue;
+		}
+		for (size_t j = 0; j < out->armed_app_count; j++) {
+			if (strncmp(out->armed_apps[j], timer->app_id, SQ_APP_STORE_APP_ID_MAX) ==
+			    0) {
+				duplicate = true;
+				break;
+			}
+		}
+		if (duplicate) {
+			continue;
+		}
+		if (out->armed_app_count >= SQ_VM_RUNTIME_ARMED_TIMER_MAX ||
+		    copy_app_id(out->armed_apps[out->armed_app_count],
+				sizeof(out->armed_apps[out->armed_app_count]), timer->app_id) !=
+			    0) {
+			return -EINVAL;
+		}
+		out->armed_app_count++;
+	}
+	return 0;
+}
+
+__weak int sq_device_protocol_enter_planned_sleep(int32_t wake_after_ms)
+{
+	ARG_UNUSED(wake_after_ms);
+	return 0;
+}
+
+static int write_planned_resume_file(const struct sq_device_protocol_context *context)
+{
+	struct sq_device_planned_resume_record record = {0};
+	uint8_t bytes[SQ_DEVICE_PLANNED_RESUME_LEN];
+	size_t len = 0;
+	char temp_path[SQ_APP_STORE_PLANNED_RESUME_PATH_MAX];
+	char final_path[SQ_APP_STORE_PLANNED_RESUME_PATH_MAX];
+	struct fs_file_t file;
+	ssize_t written;
+	int result;
+
+	if (context == NULL || context->runtime == NULL || context->store_mount_point == NULL) {
+		return -EINVAL;
+	}
+	result = sq_device_protocol_planned_resume_from_runtime(context->runtime, &record);
+	if (result != 0) {
+		return result;
+	}
+	result = sq_device_protocol_encode_planned_resume(&record, bytes, sizeof(bytes), &len);
+	if (result != 0) {
+		return result;
+	}
+	result = sq_app_store_planned_resume_temp_path(context->store_mount_point, temp_path,
+						       sizeof(temp_path));
+	if (result != 0) {
+		return result;
+	}
+	result = sq_app_store_planned_resume_path(context->store_mount_point, final_path,
+						  sizeof(final_path));
+	if (result != 0) {
+		return result;
+	}
+	fs_file_t_init(&file);
+	result = fs_open(&file, temp_path, FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC);
+	if (result != 0) {
+		return result;
+	}
+	written = fs_write(&file, bytes, len);
+	result = fs_close(&file);
+	if (written < 0) {
+		return (int)written;
+	}
+	if (result != 0) {
+		return result;
+	}
+	if ((size_t)written != len) {
+		return -EIO;
+	}
+	result = fs_unlink(final_path);
+	if (result != 0 && result != -ENOENT) {
+		return result;
+	}
+	return fs_rename(temp_path, final_path);
+}
 
 static int sqdp_status_to_protocol_result(SqdpStatus status)
 {
@@ -851,6 +1091,75 @@ int sq_device_protocol_start_root(const struct sq_device_protocol_context *conte
 				  sizeof("app.start") - 1, true);
 }
 
+int sq_device_protocol_restore_planned_resume(const struct sq_device_protocol_context *context)
+{
+	struct sq_device_planned_resume_record record = {0};
+	uint8_t bytes[SQ_DEVICE_PLANNED_RESUME_LEN];
+	char path[SQ_APP_STORE_PLANNED_RESUME_PATH_MAX];
+	struct fs_file_t file;
+	ssize_t read_len;
+	int result;
+
+	if (context == NULL || context->runtime == NULL || context->store_mount_point == NULL) {
+		return -EINVAL;
+	}
+	result = sq_app_store_planned_resume_path(context->store_mount_point, path, sizeof(path));
+	if (result != 0) {
+		return result;
+	}
+	fs_file_t_init(&file);
+	result = fs_open(&file, path, FS_O_READ);
+	if (result == -ENOENT) {
+		return -ENOENT;
+	}
+	if (result != 0) {
+		return result;
+	}
+	read_len = fs_read(&file, bytes, sizeof(bytes));
+	result = fs_close(&file);
+	if (read_len < 0) {
+		return (int)read_len;
+	}
+	if (result != 0) {
+		return result;
+	}
+	result = sq_device_protocol_decode_planned_resume(bytes, (size_t)read_len, &record);
+	if (result != 0) {
+		(void)fs_unlink(path);
+		return result;
+	}
+	(void)fs_unlink(path);
+	memset(context->runtime->return_stack, 0, sizeof(context->runtime->return_stack));
+	context->runtime->return_stack_count = record.return_stack_count;
+	for (size_t i = 0; i < record.return_stack_count; i++) {
+		strncpy(context->runtime->return_stack[i], record.return_stack[i],
+			sizeof(context->runtime->return_stack[i]) - 1);
+	}
+	memset(context->runtime->start_reason, 0, sizeof(context->runtime->start_reason));
+	strncpy(context->runtime->start_reason, "wake", sizeof(context->runtime->start_reason) - 1);
+	for (size_t i = 0; i < record.armed_app_count; i++) {
+		result = register_app_triggers(context, record.armed_apps[i]);
+		if (result != 0) {
+			sq_vm_runtime_record_trace(
+				context->runtime,
+				(const uint8_t *)"planned resume armed app restore failed",
+				sizeof("planned resume armed app restore failed") - 1);
+		}
+	}
+	result = start_resolved_app(context, record.current_app, (const uint8_t *)"app.start",
+				    sizeof("app.start") - 1, true);
+	if (result != 0) {
+		sq_vm_runtime_record_trace(context->runtime,
+					   (const uint8_t *)"planned resume app missing",
+					   sizeof("planned resume app missing") - 1);
+		memset(context->runtime->start_reason, 0, sizeof(context->runtime->start_reason));
+		strncpy(context->runtime->start_reason, "boot",
+			sizeof(context->runtime->start_reason) - 1);
+		return result;
+	}
+	return 0;
+}
+
 int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 {
 	struct sq_vm_runtime *runtime;
@@ -865,12 +1174,45 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 		return 0;
 	}
 
+	if (runtime->planned_sleep_preparing) {
+		runtime->planned_sleep_preparing = false;
+		result = write_planned_resume_file(context);
+		if (result != 0) {
+			sq_vm_runtime_record_trace(
+				runtime, (const uint8_t *)"planned sleep checkpoint failed",
+				sizeof("planned sleep checkpoint failed") - 1);
+			return result;
+		}
+		runtime->planned_sleep_ready = true;
+		sq_vm_runtime_record_trace(runtime,
+					   (const uint8_t *)"planned sleep checkpoint saved",
+					   sizeof("planned sleep checkpoint saved") - 1);
+		result = sq_device_protocol_enter_planned_sleep(runtime->planned_sleep_wake_after_ms);
+		if (result != 0) {
+			sq_vm_runtime_record_trace(runtime,
+						   (const uint8_t *)"planned sleep enter failed",
+						   sizeof("planned sleep enter failed") - 1);
+			return result;
+		}
+		return 0;
+	}
+
+	if (runtime->planned_sleep_requested) {
+		runtime->planned_sleep_requested = false;
+		runtime->planned_sleep_preparing = true;
+		return start_resolved_app(context, runtime->current_app,
+					  (const uint8_t *)"power.sleep",
+					  sizeof("power.sleep") - 1, false);
+	}
+
 	if (runtime->lifecycle_launch_after_exit) {
 		runtime->lifecycle_launch_after_exit = false;
 		result = push_return_app(runtime, runtime->current_app);
 		if (result != 0) {
 			return result;
 		}
+		memset(runtime->start_reason, 0, sizeof(runtime->start_reason));
+		strncpy(runtime->start_reason, "launch", sizeof(runtime->start_reason) - 1);
 		result = start_resolved_app(context, runtime->lifecycle_target_app,
 					    (const uint8_t *)"app.start",
 					    sizeof("app.start") - 1, true);
@@ -903,6 +1245,9 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 					return result;
 				}
 			}
+			memset(runtime->start_reason, 0, sizeof(runtime->start_reason));
+			strncpy(runtime->start_reason, "launch",
+				sizeof(runtime->start_reason) - 1);
 			result = start_resolved_app(context, runtime->lifecycle_target_app,
 						    (const uint8_t *)"app.start",
 						    sizeof("app.start") - 1, true);
@@ -943,6 +1288,8 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 		if (result != 0) {
 			return result;
 		}
+		memset(runtime->start_reason, 0, sizeof(runtime->start_reason));
+		strncpy(runtime->start_reason, "return", sizeof(runtime->start_reason) - 1);
 		result = start_resolved_app(context, runtime->lifecycle_target_app,
 					    (const uint8_t *)"app.start",
 					    sizeof("app.start") - 1, true);
@@ -957,6 +1304,8 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 		if (result != 0) {
 			return result;
 		}
+		memset(runtime->start_reason, 0, sizeof(runtime->start_reason));
+		strncpy(runtime->start_reason, "launch", sizeof(runtime->start_reason) - 1);
 		result = start_installed_app(context, runtime->lifecycle_target_app,
 					     (const uint8_t *)runtime->event,
 					     strlen(runtime->event), true);

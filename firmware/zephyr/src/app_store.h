@@ -14,6 +14,7 @@ extern "C" {
 #define SQ_APP_STORE_APP_FILE_PATH_MAX 64
 #define SQ_APP_STORE_APP_STATE_PATH_MAX 60
 #define SQ_APP_STORE_DEVICE_CONFIG_PATH_MAX 40
+#define SQ_APP_STORE_PLANNED_RESUME_PATH_MAX 48
 #define SQ_APP_STORE_APP_ID_MAX 40
 #define SQ_APP_STORE_MAX_APPS 8
 
@@ -84,6 +85,8 @@ int sq_app_store_resource_path_bytes(const char *mount_point, const char *app_id
 				     char *out, size_t out_len);
 
 int sq_app_store_device_config_path(const char *mount_point, char *out, size_t out_len);
+int sq_app_store_planned_resume_path(const char *mount_point, char *out, size_t out_len);
+int sq_app_store_planned_resume_temp_path(const char *mount_point, char *out, size_t out_len);
 
 int sq_app_store_install_resource(const char *mount_point, const char *app_id,
 				  const char *resource_path, const uint8_t *bytes,

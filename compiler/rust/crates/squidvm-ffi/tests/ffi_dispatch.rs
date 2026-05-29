@@ -38,6 +38,8 @@ struct Host {
     file_read_lines: Vec<(String, i32)>,
     system_memory_count: usize,
     system_storage_names: Vec<String>,
+    system_start_reason_count: usize,
+    power_sleep_requests: Vec<i32>,
     registry_gets: Vec<String>,
 }
 
@@ -632,6 +634,29 @@ unsafe extern "C" fn system_storage_text(
     0
 }
 
+unsafe extern "C" fn system_start_reason_text(
+    user_data: *mut c_void,
+    out: *mut u8,
+    out_cap: usize,
+    out_len: *mut usize,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.system_start_reason_count += 1;
+    let bytes = b"wake";
+    if out.is_null() || out_len.is_null() || out_cap < bytes.len() {
+        return -1;
+    }
+    ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len());
+    *out_len = bytes.len();
+    0
+}
+
+unsafe extern "C" fn power_sleep(user_data: *mut c_void, wake_after_ms: i32) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.power_sleep_requests.push(wake_after_ms);
+    0
+}
+
 unsafe extern "C" fn failing_indicator_write(_user_data: *mut c_void, _value: bool) -> i32 {
     -22
 }
@@ -1074,6 +1099,8 @@ fn callbacks(_host: &mut Host) -> SqvmCallbacks {
         file_read_lines: Some(file_read_lines),
         system_memory_text: Some(system_memory_text),
         system_storage_text: Some(system_storage_text),
+        system_start_reason_text: Some(system_start_reason_text),
+        power_sleep: Some(power_sleep),
     }
 }
 
@@ -1275,6 +1302,18 @@ fn compile_system_resources_sqbc() -> Vec<u8> {
 event.on("app.start") {
   debug.print(system.memory())
   debug.print(system.storage("apps"))
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_power_lifecycle_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-power"
+event.on("app.start") {
+  debug.print(system.startReason())
+  service.power.sleep({ wakeAfterMs: 30000 })
 }
 screen("main") {}
 "#,
@@ -1969,6 +2008,42 @@ fn dispatches_system_resource_text_callbacks() {
             "Apps 128 KiB".to_string()
         ]
     );
+}
+
+#[test]
+fn dispatches_power_sleep_and_start_reason_callbacks() {
+    let mut host = Host {
+        sqbc: compile_power_lifecycle_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(host.system_start_reason_count, 1);
+    assert_eq!(host.power_sleep_requests, vec![30000]);
+    assert_eq!(host.output, vec!["wake".to_string()]);
 }
 
 #[test]

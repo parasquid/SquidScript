@@ -443,6 +443,9 @@ fn validate_statement_names(
             IrStatement::ServiceTimerAfter { delay_ms, .. } => {
                 validate_expr_names(delay_ms, state_names, visible, start, end, diagnostics);
             }
+            IrStatement::ServicePowerSleep { wake_after_ms } => {
+                validate_expr_names(wake_after_ms, state_names, visible, start, end, diagnostics);
+            }
             IrStatement::HardwareGpioWrite { value, .. } => {
                 validate_expr_names(value, state_names, visible, start, end, diagnostics);
             }
@@ -493,6 +496,7 @@ fn validate_expr_names(
         | IrExpr::HardwareGpioRead { .. }
         | IrExpr::ServiceIndicatorRead
         | IrExpr::SystemMemory
+        | IrExpr::SystemStartReason
         | IrExpr::SystemStorage { .. } => {}
         IrExpr::State { name } => {
             if !state_names.contains(name) {
@@ -671,6 +675,7 @@ fn statement_is_render_impure(
         | IrStatement::AppDisarm { .. }
         | IrStatement::ServiceTimerEvery { .. }
         | IrStatement::ServiceTimerAfter { .. }
+        | IrStatement::ServicePowerSleep { .. }
         | IrStatement::HardwareGpioWrite { .. }
         | IrStatement::HardwareGpioToggle { .. }
         | IrStatement::ServiceIndicatorWrite { .. }
@@ -873,6 +878,7 @@ fn validate_debug_block_statements(
             | IrStatement::AppDisarm { .. }
             | IrStatement::ServiceTimerEvery { .. }
             | IrStatement::ServiceTimerAfter { .. }
+            | IrStatement::ServicePowerSleep { .. }
             | IrStatement::HardwareGpioWrite { .. }
             | IrStatement::HardwareGpioToggle { .. }
             | IrStatement::ServiceIndicatorWrite { .. }
@@ -904,6 +910,7 @@ fn validate_debug_expr(expr: &IrExpr, start: usize, end: usize, diagnostics: &mu
         | IrExpr::HardwareGpioRead { .. }
         | IrExpr::ServiceIndicatorRead
         | IrExpr::SystemMemory
+        | IrExpr::SystemStartReason
         | IrExpr::SystemStorage { .. } => {}
         IrExpr::Binary { left, right, .. } => {
             validate_debug_expr(left, start, end, diagnostics);
@@ -975,6 +982,9 @@ fn statement_uses_any_name(
             expr_uses_any_name(interval_ms, names)
         }
         IrStatement::ServiceTimerAfter { delay_ms, .. } => expr_uses_any_name(delay_ms, names),
+        IrStatement::ServicePowerSleep { wake_after_ms } => {
+            expr_uses_any_name(wake_after_ms, names)
+        }
         IrStatement::HardwareGpioWrite { value, .. } => expr_uses_any_name(value, names),
         IrStatement::ServiceIndicatorWrite { value } => expr_uses_any_name(value, names),
         IrStatement::ServiceIndicatorBlink { on_ms, off_ms } => {
@@ -1016,6 +1026,7 @@ fn expr_uses_any_name(expr: &IrExpr, names: &std::collections::BTreeSet<String>)
         | IrExpr::HardwareGpioRead { .. }
         | IrExpr::ServiceIndicatorRead
         | IrExpr::SystemMemory
+        | IrExpr::SystemStartReason
         | IrExpr::SystemStorage { .. } => false,
     }
 }
@@ -1074,6 +1085,7 @@ fn validate_screen_statements(
             | IrStatement::AppDisarm { .. }
             | IrStatement::ServiceTimerEvery { .. }
             | IrStatement::ServiceTimerAfter { .. }
+            | IrStatement::ServicePowerSleep { .. }
             | IrStatement::HardwareGpioWrite { .. }
             | IrStatement::HardwareGpioToggle { .. }
             | IrStatement::ServiceIndicatorWrite { .. }

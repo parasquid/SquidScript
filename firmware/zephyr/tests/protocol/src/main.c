@@ -806,6 +806,75 @@ static struct fs_mount_t test_fs_mount = {
 
 ZTEST_SUITE(squidscript_protocol, NULL, NULL, NULL, NULL, NULL);
 
+ZTEST(squidscript_protocol, test_planned_resume_record_round_trips)
+{
+	struct sq_device_planned_resume_record record = {0};
+	struct sq_device_planned_resume_record decoded = {0};
+	uint8_t bytes[256];
+	size_t len = 0;
+
+	strcpy(record.current_app, "reader");
+	record.return_stack_count = 2;
+	strcpy(record.return_stack[0], "main");
+	strcpy(record.return_stack[1], "library");
+	record.armed_app_count = 2;
+	strcpy(record.armed_apps[0], "break-reminder");
+	strcpy(record.armed_apps[1], "clock");
+
+	zassert_equal(sq_device_protocol_encode_planned_resume(&record, bytes, sizeof(bytes), &len),
+		      0);
+	zassert_true(len > 0);
+	zassert_equal(sq_device_protocol_decode_planned_resume(bytes, len, &decoded), 0);
+	zassert_str_equal(decoded.current_app, "reader");
+	zassert_equal(decoded.return_stack_count, 2);
+	zassert_str_equal(decoded.return_stack[0], "main");
+	zassert_str_equal(decoded.return_stack[1], "library");
+	zassert_equal(decoded.armed_app_count, 2);
+	zassert_str_equal(decoded.armed_apps[0], "break-reminder");
+	zassert_str_equal(decoded.armed_apps[1], "clock");
+}
+
+ZTEST(squidscript_protocol, test_planned_resume_record_rejects_bad_magic)
+{
+	struct sq_device_planned_resume_record record = {0};
+	struct sq_device_planned_resume_record decoded = {0};
+	uint8_t bytes[256];
+	size_t len = 0;
+
+	strcpy(record.current_app, "reader");
+	zassert_equal(sq_device_protocol_encode_planned_resume(&record, bytes, sizeof(bytes), &len),
+		      0);
+	bytes[0] = 'X';
+	zassert_not_equal(sq_device_protocol_decode_planned_resume(bytes, len, &decoded), 0);
+}
+
+ZTEST(squidscript_protocol, test_planned_resume_record_deduplicates_armed_app_ids)
+{
+	struct sq_vm_runtime runtime = {0};
+	struct sq_device_planned_resume_record record = {0};
+
+	sq_vm_runtime_init(&runtime);
+	sq_vm_runtime_reset(&runtime);
+	strcpy(runtime.current_app, "reader");
+	runtime.return_stack_count = 1;
+	strcpy(runtime.return_stack[0], "main");
+	zassert_equal(sq_vm_runtime_register_armed_timer(&runtime, "break-reminder",
+							 "timer.break", strlen("timer.break"),
+							 30000, true),
+		      0);
+	zassert_equal(sq_vm_runtime_register_armed_timer(&runtime, "break-reminder",
+							 "timer.stretch", strlen("timer.stretch"),
+							 60000, true),
+		      0);
+
+	zassert_equal(sq_device_protocol_planned_resume_from_runtime(&runtime, &record), 0);
+	zassert_str_equal(record.current_app, "reader");
+	zassert_equal(record.return_stack_count, 1);
+	zassert_str_equal(record.return_stack[0], "main");
+	zassert_equal(record.armed_app_count, 1);
+	zassert_str_equal(record.armed_apps[0], "break-reminder");
+}
+
 static void wait_runtime_done(struct sq_vm_runtime *runtime)
 {
 	(void)sq_vm_runtime_wait_idle(runtime, 1000);

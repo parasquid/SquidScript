@@ -1156,6 +1156,41 @@ event.on("app.start") {
 }
 
 #[test]
+fn compiles_power_sleep_and_start_reason_to_sqbc() {
+    let source = r#"app "planned-sleep"
+
+event.on("app.start") {
+  debug.print(system.startReason())
+  service.power.sleep({ wakeAfterMs: 30000 })
+}
+
+event.on("power.sleep") {
+  state.save()
+}
+
+screen("main") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let ir = output.ir.as_ref().unwrap();
+    assert!(matches!(
+        &ir.handlers[0].statements[0],
+        IrStatement::DebugPrint { args }
+            if matches!(args.first(), Some(IrExpr::SystemStartReason))
+    ));
+    assert!(matches!(
+        &ir.handlers[0].statements[1],
+        IrStatement::ServicePowerSleep { wake_after_ms }
+            if matches!(wake_after_ms, IrExpr::Literal { value } if value.as_i64() == Some(30000))
+    ));
+    sqbc::encode_sqbc(ir).expect("power sleep and start reason should encode");
+}
+
+#[test]
 fn compiles_file_pick_file_result_call_to_sqbc() {
     let source = r#"app "file-picker"
 

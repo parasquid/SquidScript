@@ -100,6 +100,8 @@ pub enum IrStatement {
     ServiceTimerEvery { event: String, interval_ms: IrExpr },
     #[serde(rename = "service.timer.after")]
     ServiceTimerAfter { event: String, delay_ms: IrExpr },
+    #[serde(rename = "service.power.sleep")]
+    ServicePowerSleep { wake_after_ms: IrExpr },
     #[serde(rename = "assign")]
     Assign { name: String, expr: IrExpr },
     #[serde(rename = "state.assign")]
@@ -208,6 +210,8 @@ pub enum IrExpr {
     SystemMemory,
     #[serde(rename = "system.storage")]
     SystemStorage { name: String },
+    #[serde(rename = "system.startReason")]
+    SystemStartReason,
     #[serde(rename = "call")]
     Call { name: String, args: Vec<IrExpr> },
 }

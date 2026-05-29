@@ -38,12 +38,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 - Extend the `app.triggers` model beyond current timer metadata declarations to
   future logical button/input triggers while keeping `event.on(...)` as the
   handler for the activation event that fires later.
-- Persist the foreground app launch/return stack across MCU reboot and relaunch
-  the top app on startup while preserving the rest of the chain for later
-  returns. Treat the persisted chain as firmware/runtime state, keep app launch
-  failures visible instead of falling through silently, and preserve the
-  built-in fallback `main` behavior only when no installed/persisted foreground
-  app can be selected.
+- Extend planned-sleep wake sources beyond the current ESP32-C3 timer-wake
+  slice. Investigate safe GPIO wake for physical inputs without using BOOT/GPIO9
+  as the default wake source, and keep wake trigger metadata derived from
+  installed app trigger declarations rather than persisted VM state.
 - Replace Zephyr protocol ztest static SQBC byte arrays with generated fixtures
   built from checked-in `.squid` sources, so builtin ID regrouping cannot leave
   protocol tests executing stale bytecode.
@@ -422,3 +420,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   can still consume most or all 12 runtime string slots inside one handler.
   Add focused tests and decide whether to document this as a per-event budget
   or change materialization to be lazier/reclaimable within a handler.
+- Design a cursor-style Wi-Fi scan API so targets can expose more scan results
+  without materializing every AP record and string into one VM event. Compare
+  options such as `wifi.scan()` returning a snapshot handle with
+  `wifi.scan.get(scan, index)`, paged scan reads, or an iterator-like cursor,
+  and keep SSID/BSSID/auth strings backed by host/runtime storage until the app
+  asks for a specific network.
