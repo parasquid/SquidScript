@@ -415,3 +415,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.
+- Add VM/runtime budget coverage for single-event runtime string
+  materializers. Cross-event runtime string cleanup now preserves only current
+  state strings, but service records such as `wifi.scan()`, app registry
+  inspection, display info, file line reads, and repeated string concatenation
+  can still consume most or all 12 runtime string slots inside one handler.
+  Add focused tests and decide whether to document this as a per-event budget
+  or change materialization to be lazier/reclaimable within a handler.
