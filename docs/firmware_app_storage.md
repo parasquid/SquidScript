@@ -16,9 +16,19 @@ For `.squid.zip` packages, host tooling validates and unpacks the ZIP first.
 Firmware is not required to parse ZIP archives directly. The host installs
 `main.sqbc` and streams normalized package resources as read-only app files.
 
-On firmware startup, Zephyr scans the app store, rebuilds the registry from
-valid installed apps, and boots installed `main` when present. If `main` is
-missing or invalid, firmware remains in device-command mode.
+On firmware startup, Zephyr scans the app store and rebuilds the registry from
+valid installed apps. If installed `main` is present, firmware launches it as
+the root foreground app. If no installed foreground root is available, firmware
+launches its target-specific built-in fallback app as logical `main`.
+
+The fallback app is authored as SquidScript, compiled to SQBC by the firmware
+build, and executed through the same VM, SQBC reader, runtime callbacks, and
+foreground lifecycle path as installed apps. It is not published into the
+installed app registry and does not change authored-app entry rules: projects
+still need an explicit app entry point. Firmware selects the fallback only
+after app-store mount and registry scan succeed and no installed `main` exists,
+so app-store failures and broken installed apps remain visible diagnostics
+rather than silently falling through to fallback behavior.
 
 `RUN.TEMP` bytecode is staged as a temporary app-store file instead of being
 buffered in RAM. It is not published into the installed app registry and does
@@ -72,10 +82,18 @@ pool, state table, function table, handler table, optional trigger table, and
 optional screen table through caller-owned scratch. Handler/function/screen
 code ranges are then requested on demand as `SQVM_STORAGE_REQUEST_SQBC_READ`
 records and completed from LittleFS through the same storage adapter. App arm
-registration reads trigger metadata through the reader API and does not
-dispatch or keep a background VM resident. The `device resources` response
+registration reads trigger metadata through the reader API using a separate
+resident app-store VM storage backend from the foreground launch backend. This
+keeps trigger metadata discovery from overwriting the file-backed SQBC/state
+paths currently owned by the active foreground app. Trigger registration does
+not dispatch or keep a background VM resident. The `device resources` response
 reports `runtime_static_bytes` for the resident runtime object and
 `vm_sqbc_chunk_bytes` for the maximum SQBC code/read transfer window.
+
+The built-in fallback app uses a read-only in-memory SQBC storage backend. Its
+state load returns no saved state and its state save/reset callbacks are no-ops,
+so the fallback can exercise normal VM service paths without creating app-store
+state records.
 
 `firmware/zephyr/src/app_store` owns the current app-store layout boundary. It
 prepares `/apps`, `/state`, and `/tmp` under the mounted store, validates app
@@ -108,6 +126,13 @@ LittleFS app store is 192 KiB. Firmware is built for the `image-0` slot; the
 default Zephyr partition table also includes `image-1`, `image-scratch`, and
 `coredump` partitions, but SquidScript does not currently expose a user-facing
 A/B or OTA firmware update flow.
+Flashing a new firmware image does not erase the LittleFS app store partition.
+If a persisted pre-fix app prevents boot or serial command processing during
+development, erase only the app-store partition before retrying:
+
+```sh
+esptool --port /dev/ttyACM0 erase-region 0x3b0000 0x30000
+```
 
 Temp runs use `/sq/tmp/temp-run.sqbc.tmp` as their staging artifact. Firmware
 writes chunks directly to that file and lets the VM read SQBC byte ranges back

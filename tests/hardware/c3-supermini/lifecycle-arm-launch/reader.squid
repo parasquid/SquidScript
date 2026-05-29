@@ -1,0 +1,9 @@
+app "reader"
+
+event.on("app.start") {
+  debug.print("arm-launch reader")
+  let armed = app.armedStack()
+  for armedApp in armed max 2 {
+    debug.print("arm-launch armed", armedApp.appId, armedApp.event)
+  }
+}

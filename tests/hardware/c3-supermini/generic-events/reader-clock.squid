@@ -19,14 +19,17 @@ event.on("app.start") {
 event.on("timer.clock") {
   state.clocks = state.clocks + 1
   debug.print("reader clock", state.clocks)
-  state.armedSeen = 0
-  let armed = app.armedStack()
-  for armedApp in armed max 2 {
-    state.armedSeen = state.armedSeen + 1
-    debug.print("reader armed", armedApp.appId, armedApp.event)
-  }
-  if (state.armedSeen > 0) {
-    let selected = app.armedStack.get(armed, 0)
-    debug.print("reader armed selected", selected.appId, selected.event)
+  if (state.clocks == 1) {
+    let armedThisTick = 0
+    let armed = app.armedStack()
+    for armedApp in armed max 2 {
+      armedThisTick = armedThisTick + 1
+      debug.print("reader armed", armedApp.appId, armedApp.event)
+    }
+    if (armedThisTick > 0) {
+      let selected = app.armedStack.get(armed, 0)
+      debug.print("reader armed selected", selected.appId, selected.event)
+      state.armedSeen = armedThisTick
+    }
   }
 }

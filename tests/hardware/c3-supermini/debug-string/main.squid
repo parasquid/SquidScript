@@ -1,0 +1,5 @@
+app "debug-string"
+
+event.on("app.start") {
+  debug.print("ready")
+}

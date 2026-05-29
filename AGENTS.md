@@ -21,6 +21,15 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - If an AI agent identifies a concrete future task or follow-up while working, add it to `ROADMAP.md` rather than leaving it only in chat.
 - Keep roadmap entries concise, actionable, and scoped to repository work.
 
+## Test Safety Net
+
+- Keep the relevant automated tests green as much as practical, even when
+  pursuing a different implementation goal. Failing tests weaken the safety net
+  and can hide newly introduced bugs; treat broken tests as active project risk,
+  distinguish pre-existing failures from regressions, and restore the test
+  baseline before continuing unless the user explicitly narrows the scope or a
+  concrete blocker makes that impossible.
+
 ## Documentation Planning
 
 - When making implementation plans, include documentation work explicitly.
@@ -187,6 +196,10 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
 - Use `scripts/c3-supermini-build.sh` to build or type-check the ESP32-C3
   canonical firmware binary. The wrapper delegates to the Zephyr build wrapper
   and sources the repository Zephyr environment.
+- Use `scripts/zephyr-test-protocol.sh` for the Zephyr native protocol ztests
+  instead of invoking `west twister` directly. The wrapper sources
+  `scripts/zephyr-env.sh`, which adds the repo-local `target/zephyr/venv/bin`
+  `west` to `PATH` and sets the expected Zephyr environment.
 - Run ESP32-C3 Super Mini Zephyr build wrappers outside the Codex sandbox in
   this environment. Zephyr/ccache may write host cache files outside the
   workspace, so sandboxed firmware builds can fail with read-only filesystem

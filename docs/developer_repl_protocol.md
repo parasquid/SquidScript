@@ -153,19 +153,29 @@ SquidScript VM calls to `app.launch`, `app.arm`, and `app.disarm` are also
 connected through the Zephyr FFI host. The `app-launch` and generic
 `event-dispatch` command requests are parsed by Rust `sqdp_` FFI helpers before
 Zephyr starts or dispatches the installed app.
-`app.launch` and `app.exit` drive the Zephyr foreground return stack for
-installed apps and clear foreground timers when a different installed app
-becomes active. Zephyr preserves the active foreground VM's in-memory state
-across non-lifecycle foreground event dispatches, such as key and foreground
-timer handlers, so apps do not need to call `state.load()` for every event.
-App launch, app-exit returns, and armed trigger activations start fresh VM
-sessions and must use explicit persistent state when they need continuity.
+`app.launch`, host `app-launch`, and `app.exit` drive the Zephyr foreground
+return stack for installed apps and clear foreground timers when a different
+foreground app becomes active. Host `app-launch` follows the same lifecycle
+chain as an in-app `app.launch`: if there is no current foreground app, firmware
+starts the logical root first; then the current foreground app receives
+`app.exit`, its app id remains on the return stack, and the requested app starts
+as foreground. If the logical root is needed and installed `main` is absent,
+firmware uses the target-specific built-in fallback app as logical `main`.
+The command response is delayed until that bounded lifecycle chain drains, so a
+successful host launch means the target app has been selected through the same
+foreground handoff path used by app-driven launch.
+Zephyr preserves the active foreground VM's in-memory state across
+non-lifecycle foreground event dispatches, such as key and foreground timer
+handlers, so apps do not need to call `state.load()` for every event. App
+launch, app-exit returns, and armed trigger activations start fresh VM sessions
+and must use explicit persistent state when they need continuity.
 `app.arm` reads the target app's SQBC trigger metadata, records bounded timer
 registrations, and exposes them through `lifecycle-get`. Trigger registration
-does not keep a background VM resident and does not dispatch a synthetic
-foreground event. When an armed timer fires, Zephyr starts the armed app as
-foreground and dispatches the registered event. `app.disarm` removes that
-app's armed timer registrations.
+uses a dedicated installed-app VM storage backend so metadata reads cannot
+overwrite the active foreground app backend. It does not keep a background VM
+resident and does not dispatch a synthetic foreground event. When an armed
+timer fires, Zephyr starts the armed app as foreground and dispatches the
+registered event. `app.disarm` removes that app's armed timer registrations.
 
 ## Diagnostics
 

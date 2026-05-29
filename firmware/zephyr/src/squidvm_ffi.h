@@ -583,6 +583,7 @@ SqdcStatus sqdc_plan_device_binding(const uint8_t *service, size_t service_len,
 				    SqdcDeviceBindingPlan *out,
 				    SqdcConfig *out_inline_config);
 SqvmStatus sqvm_context_prepare(void *context, size_t context_len);
+SqvmStatus sqvm_context_reset_in_place(void *context, size_t context_len);
 SqvmStatus sqvm_context_init_in_place(
 	void *context,
 	void *user_data,
@@ -617,6 +618,14 @@ SqvmStatus sqvm_device_binding_count_from_reader(
 	uint8_t *scratch,
 	size_t scratch_len,
 	size_t *out_count);
+SqvmStatus sqvm_event_handler_exists_from_reader(
+	void *user_data,
+	SqvmReadExactAtCallback read_exact_at,
+	uint8_t *scratch,
+	size_t scratch_len,
+	const uint8_t *event,
+	size_t event_len,
+	bool *out_exists);
 SqvmStatus sqvm_device_binding_read_from_reader(
 	void *user_data,
 	SqvmReadExactAtCallback read_exact_at,
@@ -643,6 +652,7 @@ SqvmStatus sqvm_dispatch_resume_storage(
 	const SqvmCallbacks *callbacks,
 	const SqvmStorageCompletion *completion,
 	SqvmDispatchResult *out_result);
+void sqvm_ffi_panic_abort(void);
 SqdpStatus sqdp_encode_empty_response(
 	uint8_t opcode,
 	uint8_t status,

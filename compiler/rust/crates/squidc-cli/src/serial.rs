@@ -16,7 +16,7 @@ use squid_device_protocol::{
     resource_install_commit_request, resource_values, resources_get_request, state_bytes,
     state_get_request, state_import_request, storage_format_request, temp_run_begin_request,
     temp_run_chunk_request, temp_run_commit_request, trace_get_request, trace_lines,
-    wifi_profile_set_request, AppEntry, Frame, FrameKind, Status,
+    wifi_profile_set_request, AppEntry, DecodeError, Frame, FrameKind, Status,
 };
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -28,6 +28,12 @@ pub struct SerialDevice {
 
 impl SerialDevice {
     pub fn open(port: &str) -> Result<Self, String> {
+        let mut device = Self::open_raw(port)?;
+        device.wait_until_ready()?;
+        Ok(device)
+    }
+
+    fn open_raw(port: &str) -> Result<Self, String> {
         configure_tty(port)?;
         let port = OpenOptions::new()
             .read(true)
@@ -38,7 +44,7 @@ impl SerialDevice {
     }
 
     pub fn probe(port: &str) -> Result<bool, String> {
-        let mut device = Self::open(port)?;
+        let mut device = Self::open_raw(port)?;
         let request = encode_frame(&hello_request(1));
         let response = device.send_bytes_until_quiet(&request)?;
         let frame = decode_frame_from_stream(&response)
@@ -140,18 +146,12 @@ impl SerialDevice {
     }
 
     pub fn app_list(&mut self) -> Result<Vec<AppEntry>, String> {
-        let request = encode_frame(&app_list_request(2));
-        let response = self.send_bytes_until_quiet(&request)?;
-        let frame = decode_frame_from_stream(&response)
-            .map_err(|error| format!("invalid app list response frame: {error:?}"))?;
+        let frame = self.send_protocol_request(&app_list_request(2))?;
         app_list_entries(&frame).ok_or_else(|| "not a successful app list response".to_string())
     }
 
     pub fn output_lines(&mut self) -> Result<Vec<String>, String> {
-        let request = encode_frame(&output_get_request(3));
-        let response = self.send_bytes_until_quiet(&request)?;
-        let frame = decode_frame_from_stream(&response)
-            .map_err(|error| format!("invalid output response frame: {error:?}"))?;
+        let frame = self.send_protocol_request(&output_get_request(3))?;
         output_lines(&frame).ok_or_else(|| "not a successful output response".to_string())
     }
 
@@ -211,13 +211,38 @@ impl SerialDevice {
 
     pub fn send_protocol_request(&mut self, frame: &Frame) -> Result<Frame, String> {
         let request = encode_frame(frame);
-        let response = self.send_bytes_until_quiet(&request)?;
-        let response_frame = decode_frame_from_stream(&response)
-            .map_err(|error| format!("invalid protocol response frame: {error:?}"))?;
+        let response_frame = self.send_protocol_request_bytes(&request)?;
         if let Some(error) = protocol_error(&response_frame) {
             return Err(format!("{} ({})", error.message, error.code));
         }
         Ok(response_frame)
+    }
+
+    fn send_protocol_request_bytes(&mut self, request: &[u8]) -> Result<Frame, String> {
+        let response = self.send_bytes_until_quiet(request)?;
+        decode_frame_from_stream(&response)
+            .map_err(|error| format!("invalid protocol response frame: {error:?}"))
+    }
+
+    fn wait_until_ready(&mut self) -> Result<(), String> {
+        let request = encode_frame(&hello_request(1));
+        let mut last_error = None;
+        for _ in 0..10 {
+            let response = self.send_bytes_until_quiet(&request)?;
+            match decode_frame_from_stream(&response) {
+                Ok(frame) if hello_identity(&frame).is_some() => return Ok(()),
+                Ok(_) => last_error = Some("unexpected hello response".to_string()),
+                Err(error) if retryable_protocol_decode_error(&error) => {
+                    last_error = Some(format!("{error:?}"));
+                }
+                Err(error) => return Err(format!("invalid hello frame: {error:?}")),
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        Err(format!(
+            "firmware did not become ready for protocol commands: {}",
+            last_error.unwrap_or_else(|| "no response".to_string())
+        ))
     }
 
     fn send_protocol_expect_ok(&mut self, frame: &Frame) -> Result<(), String> {
@@ -371,7 +396,8 @@ pub fn candidate_ports() -> Vec<String> {
 
 fn configure_tty(port: &str) -> Result<(), String> {
     let status = Command::new("stty")
-        .args(["-F", port, "raw", "-echo", "min", "0", "time", "1"])
+        .args(["-F", port])
+        .args(configure_tty_args())
         .status()
         .map_err(|error| format!("failed to run stty for {port}: {error}"))?;
     if status.success() {
@@ -379,6 +405,17 @@ fn configure_tty(port: &str) -> Result<(), String> {
     } else {
         Err(format!("failed to configure {port} with stty"))
     }
+}
+
+fn configure_tty_args() -> [&'static str; 8] {
+    ["raw", "-echo", "min", "0", "time", "1", "-hupcl", "clocal"]
+}
+
+fn retryable_protocol_decode_error(error: &DecodeError) -> bool {
+    matches!(
+        error,
+        DecodeError::BadMagic | DecodeError::TruncatedHeader | DecodeError::LengthMismatch { .. }
+    )
 }
 
 #[derive(Default)]
@@ -432,13 +469,14 @@ impl OutputTail {
 #[cfg(test)]
 mod tests {
     use super::{
-        format_lines, format_raw_lines, max_transfer_chunk_size,
-        max_transfer_chunk_size_for_frame_budget, OutputTail, FIRMWARE_SERIAL_FRAME_BUDGET,
+        configure_tty_args, format_lines, format_raw_lines, max_transfer_chunk_size,
+        max_transfer_chunk_size_for_frame_budget, retryable_protocol_decode_error, OutputTail,
+        FIRMWARE_SERIAL_FRAME_BUDGET,
     };
     use squid_device_protocol::{
         app_install_begin_request, app_install_chunk_request, encoded_frame_len,
         resource_install_begin_request, resource_install_chunk_request, temp_run_chunk_request,
-        MAX_APP_ID_LEN, MAX_PATH_LEN,
+        DecodeError, MAX_APP_ID_LEN, MAX_PATH_LEN,
     };
 
     #[test]
@@ -526,6 +564,29 @@ mod tests {
             u64::MAX,
         );
         assert!(encoded_frame_len(&resource_begin).unwrap() <= FIRMWARE_SERIAL_FRAME_BUDGET);
+    }
+
+    #[test]
+    fn tty_configuration_prevents_hangup_reset_between_protocol_commands() {
+        let args = configure_tty_args();
+
+        assert!(args.contains(&"-hupcl"));
+        assert!(args.contains(&"clocal"));
+    }
+
+    #[test]
+    fn retries_when_serial_response_contains_no_protocol_frame() {
+        assert!(retryable_protocol_decode_error(&DecodeError::BadMagic));
+        assert!(retryable_protocol_decode_error(
+            &DecodeError::LengthMismatch {
+                expected: 32,
+                actual: 12,
+            }
+        ));
+        assert!(retryable_protocol_decode_error(
+            &DecodeError::TruncatedHeader
+        ));
+        assert!(!retryable_protocol_decode_error(&DecodeError::PayloadCrc));
     }
 
     #[test]

@@ -1594,6 +1594,23 @@ pub unsafe extern "C" fn sqvm_context_prepare(context: *mut u8, context_len: usi
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn sqvm_context_reset_in_place(
+    context: *mut u8,
+    context_len: usize,
+) -> SqvmStatus {
+    if context.is_null() || context_len < size_of::<SqvmContext>() {
+        return SqvmStatus::InvalidArgument;
+    }
+
+    let context = &mut *context.cast::<SqvmContext>();
+    if context.initialized {
+        context.vm_ptr().drop_in_place();
+        context.initialized = false;
+    }
+    SqvmStatus::Ok
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn sqvm_context_init_in_place(
     context: *mut SqvmContext,
     user_data: *mut c_void,
@@ -1715,6 +1732,41 @@ pub unsafe extern "C" fn sqvm_device_binding_count_from_reader(
     let mut reader = FfiHost::new(user_data, &callbacks, false);
     let scratch = slice::from_raw_parts_mut(scratch, scratch_len);
     device_binding_count_from_reader(&mut reader, scratch, out_count)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqvm_event_handler_exists_from_reader(
+    user_data: *mut c_void,
+    read_exact_at: SqvmReadExactAtCallback,
+    scratch: *mut u8,
+    scratch_len: usize,
+    event: *const u8,
+    event_len: usize,
+    out_exists: *mut bool,
+) -> SqvmStatus {
+    if read_exact_at.is_none() || scratch.is_null() || event.is_null() || out_exists.is_null() {
+        return SqvmStatus::InvalidArgument;
+    }
+    let callbacks = SqvmCallbacks {
+        read_exact_at,
+        ..SqvmCallbacks::default()
+    };
+    let mut reader = FfiHost::new(user_data, &callbacks, false);
+    let scratch = slice::from_raw_parts_mut(scratch, scratch_len);
+    let Ok(event) = str::from_utf8(slice::from_raw_parts(event, event_len)) else {
+        return SqvmStatus::InvalidArgument;
+    };
+    let index = match ProgramIndex::parse_from_reader(&mut reader, scratch) {
+        Ok(index) => index,
+        Err(_) => return SqvmStatus::VmError,
+    };
+    let exists = match index.handler_preload(event) {
+        Ok(_) => true,
+        Err(VmError::HandlerNotFound) => false,
+        Err(_) => return SqvmStatus::VmError,
+    };
+    *out_exists = exists;
+    SqvmStatus::Ok
 }
 
 #[no_mangle]
@@ -2979,10 +3031,10 @@ impl TraceSink for FfiHost<'_> {
                     let _ = line.write_str(text);
                 }
                 Value::I32(value) => {
-                    let _ = write!(line, "{value}");
+                    line.write_i32(*value);
                 }
                 Value::Bool(value) => {
-                    let _ = write!(line, "{value}");
+                    line.write_bool(*value);
                 }
                 Value::Null => {
                     let _ = line.write_str("null");
@@ -4509,6 +4561,32 @@ mod tests {
             sqvm_context_size()
         );
     }
+
+    #[test]
+    fn fixed_line_writes_i32_without_fmt_runtime() {
+        let mut line = FixedLine::<64>::default();
+
+        line.write_i32(0);
+        let _ = line.write_str(" ");
+        line.write_i32(42);
+        let _ = line.write_str(" ");
+        line.write_i32(-17);
+        let _ = line.write_str(" ");
+        line.write_i32(i32::MIN);
+
+        assert_eq!(line.as_str().unwrap(), "0 42 -17 -2147483648");
+    }
+
+    #[test]
+    fn fixed_line_writes_bool_without_fmt_runtime() {
+        let mut line = FixedLine::<16>::default();
+
+        line.write_bool(true);
+        let _ = line.write_str(" ");
+        line.write_bool(false);
+
+        assert_eq!(line.as_str().unwrap(), "true false");
+    }
 }
 
 unsafe fn wifi_ap_ip_from_ffi<'a>(result: &SqvmWifiApIp) -> Result<WifiApIp<'a>, VmError> {
@@ -4663,6 +4741,37 @@ impl<const N: usize> FixedLine<N> {
 
     fn as_str(&self) -> Result<&str, VmError> {
         str::from_utf8(&self.bytes[..self.len]).map_err(|_| VmError::InvalidUtf8)
+    }
+
+    fn write_bool(&mut self, value: bool) {
+        let _ = self.write_str(if value { "true" } else { "false" });
+    }
+
+    fn write_i32(&mut self, value: i32) {
+        if value == 0 {
+            let _ = self.write_str("0");
+            return;
+        }
+
+        let mut magnitude = if value < 0 {
+            let _ = self.write_str("-");
+            value.wrapping_neg() as u32
+        } else {
+            value as u32
+        };
+        let mut digits = [0u8; 10];
+        let mut len = 0usize;
+        while magnitude > 0 && len < digits.len() {
+            digits[len] = b'0' + (magnitude % 10) as u8;
+            magnitude /= 10;
+            len += 1;
+        }
+        while len > 0 {
+            len -= 1;
+            let digit = [digits[len]];
+            let text = str::from_utf8(&digit).unwrap_or("");
+            let _ = self.write_str(text);
+        }
     }
 }
 
@@ -4842,7 +4951,10 @@ fn sqdp_crc32_update(crc: u32, bytes: &[u8]) -> u32 {
 #[cfg(feature = "zephyr")]
 #[panic_handler]
 fn panic(_info: &PanicInfo<'_>) -> ! {
-    loop {
-        core::hint::spin_loop();
-    }
+    unsafe { sqvm_ffi_panic_abort() }
+}
+
+#[cfg(feature = "zephyr")]
+unsafe extern "C" {
+    fn sqvm_ffi_panic_abort() -> !;
 }

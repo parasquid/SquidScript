@@ -192,7 +192,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         prj_conf = self.read("firmware/zephyr/prj.conf")
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         start = protocol.index("static int __noinline resources_response")
-        end = protocol.index("static void clear_runtime_context")
+        end = protocol.index("static int clear_runtime_context")
         body = protocol[start:end]
 
         self.assertIn("CONFIG_SYS_HEAP_RUNTIME_STATS=y", prj_conf)
@@ -546,20 +546,20 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_zephyr_main_stack_tracks_measured_protocol_work(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
 
-        self.assertIn("CONFIG_MAIN_STACK_SIZE=3264", prj_conf)
+        self.assertIn("CONFIG_MAIN_STACK_SIZE=8192", prj_conf)
+        self.assertNotIn("CONFIG_MAIN_STACK_SIZE=3264", prj_conf)
         self.assertNotIn("CONFIG_MAIN_STACK_SIZE=3328", prj_conf)
         self.assertNotIn("CONFIG_MAIN_STACK_SIZE=3584", prj_conf)
         self.assertNotIn("CONFIG_MAIN_STACK_SIZE=4096", prj_conf)
         self.assertNotIn("CONFIG_MAIN_STACK_SIZE=5120", prj_conf)
         self.assertNotIn("CONFIG_MAIN_STACK_SIZE=6144", prj_conf)
-        self.assertNotIn("CONFIG_MAIN_STACK_SIZE=8192", prj_conf)
 
     def test_stack_usage_harness_tracks_current_vm_worker_budget(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         stack_script = self.read("scripts/c3-supermini-measure-stack-usage.sh")
 
-        self.assertIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 18016", runtime_h)
-        self.assertIn('Expected vm_stack_size_bytes=18016', stack_script)
+        self.assertIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 22016", runtime_h)
+        self.assertIn('Expected vm_stack_size_bytes=22016', stack_script)
         self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 18048", runtime_h)
         self.assertNotIn('Expected vm_worker_stack_size_bytes=18048', stack_script)
         self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 18432", runtime_h)
@@ -567,15 +567,16 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 19456", runtime_h)
         self.assertNotIn('Expected vm_worker_stack_size_bytes=19456', stack_script)
         self.assertNotIn('Expected vm_worker_stack_size_bytes=20480', stack_script)
+        self.assertNotIn('Expected vm_stack_size_bytes=18016', stack_script)
         self.assertNotIn('Expected vm_worker_stack_size_bytes=16384', stack_script)
         self.assertIn("proto_stack_size_bytes", stack_script)
-        self.assertIn('Expected proto_stack_size_bytes=3264', stack_script)
+        self.assertIn('Expected proto_stack_size_bytes=8192', stack_script)
+        self.assertNotIn('Expected proto_stack_size_bytes=3264', stack_script)
         self.assertNotIn('Expected protocol_thread_stack_size_bytes=3328', stack_script)
         self.assertNotIn('Expected protocol_thread_stack_size_bytes=3584', stack_script)
         self.assertNotIn('Expected protocol_thread_stack_size_bytes=4096', stack_script)
         self.assertNotIn('Expected protocol_thread_stack_size_bytes=5120', stack_script)
         self.assertNotIn('Expected protocol_thread_stack_size_bytes=6144', stack_script)
-        self.assertNotIn('Expected protocol_thread_stack_size_bytes=8192', stack_script)
         self.assertIn("proto_stack_pre_used_bytes", stack_script)
         self.assertNotIn("proto_stack_pre_res_used_bytes", stack_script)
         self.assertIn('PROTOCOL_STACK_MIN_UNUSED_BYTES="${PROTOCOL_STACK_MIN_UNUSED_BYTES:-768}"', stack_script)
@@ -817,8 +818,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             )
         ]
         work_body = runtime_c[
-            runtime_c.index("static void runtime_work_handler")
-            : runtime_c.index("void sq_vm_runtime_init", runtime_c.index("static void runtime_work_handler"))
+            runtime_c.index("static void runtime_run_job")
+            : runtime_c.index("void sq_vm_runtime_init", runtime_c.index("static void runtime_run_job"))
         ]
 
         self.assertIn("sq_vm_runtime_prepare_app_start", runtime_c)
@@ -826,7 +827,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("static int __noinline sq_vm_runtime_apply_saved_device_config", runtime_c)
         self.assertIn("static int __noinline sq_vm_runtime_apply_device_bindings", runtime_c)
         self.assertIn("sq_vm_runtime_prepare_app_start(runtime)", work_body)
-        self.assertIn("runtime->start_setup_done", start_body)
+        self.assertIn("runtime->start_apply_bindings", start_body)
         self.assertNotIn("sq_vm_runtime_apply_device_bindings(runtime)", start_body)
         self.assertNotIn("sq_vm_runtime_apply_saved_device_config(runtime)", start_body)
         self.assertNotIn("sq_vm_runtime_apply_target_default_indicator_binding(runtime)", start_body)
@@ -841,13 +842,13 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("#define SQ_VM_RUNTIME_TRACE_MAX 8", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_TRACE_LEN 25", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_TRACE_LEN 32", runtime_h)
-        self.assertIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 5", runtime_h)
+        self.assertIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 12", runtime_h)
+        self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 5", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 6", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 8", runtime_h)
         self.assertIn("SQ_VM_RUNTIME_OUTPUT_MAX >= 5", ztest)
         self.assertNotIn("SQ_VM_RUNTIME_OUTPUT_MAX >= 6", ztest)
         self.assertIn("#define SQ_VM_RUNTIME_OUTPUT_LEN 54", runtime_h)
-        self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 12", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_LEN 56", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_LEN 64", runtime_h)
         self.assertIn("#define SQ_VM_RUNTIME_DRAWLOG_MAX 4", runtime_h)
@@ -879,16 +880,17 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("uint8_t payload[512]", body)
         self.assertNotIn("append_string_field(payload", body)
 
-    def test_lifecycle_response_uses_rust_encoder_without_c_payload_staging(self):
+    def test_lifecycle_response_encodes_without_resident_timer_staging(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         start = protocol.index("static int __noinline lifecycle_response")
         end = protocol.index("static int __noinline state_get_response")
         body = protocol[start:end]
 
-        self.assertIn("sqdp_encode_lifecycle_response", body)
-        self.assertIn("offsetof(struct sq_vm_runtime_armed_timer, active)", body)
-        self.assertIn("offsetof(struct sq_vm_runtime_armed_timer, app_id)", body)
-        self.assertIn("offsetof(struct sq_vm_runtime_armed_timer, event)", body)
+        self.assertIn("encode_lifecycle_header", body)
+        self.assertIn("append_line_payload", body)
+        self.assertIn("runtime->armed_timers[i].active", body)
+        self.assertIn("runtime->armed_timers[i].app_id", body)
+        self.assertIn("runtime->armed_timers[i].event", body)
         self.assertNotIn("SqdpLifecycleTimer armed_timers[SQ_VM_RUNTIME_ARMED_TIMER_MAX];", body)
         self.assertNotIn("uint8_t payload[256]", body)
         self.assertNotIn("append_string_field(payload", body)
@@ -937,7 +939,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_resources_response_encodes_without_resident_metric_staging(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         start = protocol.index("static int __noinline resources_response")
-        end = protocol.index("static void clear_runtime_context")
+        end = protocol.index("static int clear_runtime_context")
         body = protocol[start:end]
 
         self.assertIn("append_resource_metric", body)
@@ -1124,25 +1126,19 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("sq_app_store_vm_storage_for_app_bytes", app_store_h)
         self.assertNotIn("char app_id_buffer[SQ_APP_STORE_APP_ID_MAX];", body)
         self.assertNotIn("memcpy(app_id_buffer, launch.app_id, launch.app_id_len);", body)
-        self.assertIn("start_foreground_app_bytes(context, launch.app_id, launch.app_id_len,",
-                      body)
+        self.assertIn("context->runtime->pending_launch_app", body)
+        self.assertIn("drain_runtime_lifecycle(context, SQ_HOST_LAUNCH_DRAIN_TIMEOUT_MS)", body)
 
-    def test_app_launch_uses_foreground_byte_start_without_set_current_branch(self):
+    def test_app_launch_uses_pending_lifecycle_chain_without_direct_start(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         launch_start = protocol.index("static int __noinline launch_app")
         launch_end = protocol.index("static int start_installed_app", launch_start)
         launch_body = protocol[launch_start:launch_end]
-        self.assertIn("static int start_foreground_app_bytes", protocol)
-        helper_start = protocol.index("static int start_foreground_app_bytes")
-        helper_end = protocol.index("static int start_installed_app(")
-        helper_body = protocol[helper_start:helper_end]
 
-        self.assertIn("start_foreground_app_bytes(context, launch.app_id, launch.app_id_len,",
-                      launch_body)
+        self.assertIn("context->runtime->pending_launch_active = true", launch_body)
+        self.assertIn("drain_runtime_lifecycle(context, SQ_HOST_LAUNCH_DRAIN_TIMEOUT_MS)", launch_body)
+        self.assertNotIn("start_foreground_app_bytes", protocol)
         self.assertNotIn("start_installed_app_bytes(context, launch.app_id", launch_body)
-        self.assertNotIn("bool set_current", helper_body)
-        self.assertNotIn("if (set_current)", helper_body)
-        self.assertNotIn("set_current ||", helper_body)
 
     def test_event_dispatch_uses_rust_parser_without_c_tlv_loop(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
@@ -1595,8 +1591,11 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         script = self.read("scripts/c3-supermini-test-breathe.sh")
         app = self.read("examples/breathe-supermini/main.squid")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
+        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
 
         self.assertIn("service.indicator.breathe()", app)
+        self.assertIn("#if IS_ENABLED(CONFIG_PWM) && DT_NODE_HAS_PROP(DT_ALIAS(indicator0), pwms)", runtime)
+        self.assertNotIn("!defined(CONFIG_SOC_ESP32C3)", runtime)
         self.assertIn('service.timer.after("timer.breathe.marker"', app)
         self.assertIn('event.on("timer.breathe.marker")', app)
         self.assertIn("service.indicator.write(false)", app)
@@ -2115,7 +2114,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", app_store_h)
         self.assertNotIn("char state_path[SQ_APP_STORE_PATH_MAX];", app_store_h)
 
-    def test_trigger_registration_avoids_local_sqbc_path_scratch(self):
+    def test_trigger_registration_uses_dedicated_storage_without_local_sqbc_path_scratch(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         app_store_h = self.read("firmware/zephyr/src/app_store.h")
         start = protocol.index("static int __noinline register_app_triggers")
@@ -2127,7 +2126,9 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertNotIn("char sqbc_path[SQ_APP_STORE_APP_FILE_PATH_MAX];", body)
         self.assertNotIn("char sqbc_path[SQ_APP_STORE_PATH_MAX];", body)
         self.assertIn("sq_app_store_vm_storage_for_app(context->store_mount_point, app_id,", body)
-        self.assertIn("context->launch_storage);", body)
+        self.assertIn("context->trigger_storage == NULL", body)
+        self.assertIn("trigger_storage);", body)
+        self.assertNotIn("context->launch_storage);", body)
 
     def test_protocol_begin_and_commit_validation_avoid_unused_action_stack(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
@@ -2483,7 +2484,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
                       body)
         self.assertIn("sizeof(context->runtime->event)", body)
 
-    def test_trigger_registration_reuses_launch_storage_path_buffers(self):
+    def test_trigger_registration_uses_dedicated_runtime_storage_path_buffers(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         app_store_h = self.read("firmware/zephyr/src/app_store.h")
         app_store_c = self.read("firmware/zephyr/src/app_store.c")
@@ -2493,13 +2494,16 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
 
         self.assertIn("sq_app_store_sqbc_path", app_store_h)
         self.assertIn("int sq_app_store_sqbc_path", app_store_c)
-        self.assertNotIn("struct sq_app_store_vm_storage trigger_storage", body)
         self.assertNotIn("char sqbc_path[SQ_APP_STORE_APP_FILE_PATH_MAX];", body)
         self.assertNotIn("struct sq_vm_fs_storage trigger_storage", body)
-        self.assertIn("context->launch_storage == NULL", body)
+        self.assertIn("struct sq_app_store_vm_storage *trigger_storage;", body)
+        self.assertIn("context->trigger_storage == NULL", body)
+        self.assertIn("trigger_storage = context->trigger_storage;", body)
         self.assertIn("sq_app_store_vm_storage_for_app(context->store_mount_point, app_id,", body)
-        self.assertIn("context->launch_storage);", body)
-        self.assertIn("sq_app_store_vm_storage_backend(context->launch_storage)", body)
+        self.assertIn("trigger_storage);", body)
+        self.assertIn("sq_app_store_vm_storage_backend(trigger_storage)", body)
+        self.assertNotIn("context->launch_storage);", body)
+        self.assertNotIn("sq_app_store_vm_storage_backend(context->launch_storage)", body)
         self.assertIn("static int __noinline register_app_triggers", protocol)
         self.assertIn("static int __noinline register_app_trigger_timer", protocol)
         self.assertNotIn("SqvmTriggerTimer timer = {0};", body)
@@ -2708,7 +2712,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
             protocol_c.index("static int __noinline launch_app"),
         )
         start_body = protocol_c[
-            start_definition : protocol_c.index("static void clear_foreground_timers", start_definition)
+            start_definition : protocol_c.index("static int start_fallback_app", start_definition)
         ]
 
         self.assertIn("bool context_ready", runtime_h)
@@ -2730,7 +2734,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
             protocol_c.index("static int __noinline launch_app"),
         )
         start_body = protocol_c[
-            start_definition : protocol_c.index("static void clear_foreground_timers", start_definition)
+            start_definition : protocol_c.index("static bool is_main_app_id", start_definition)
         ]
 
         self.assertIn("const uint8_t *event, size_t event_len", start_body)

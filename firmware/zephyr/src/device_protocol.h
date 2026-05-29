@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "app_store.h"
+#include "fallback_app.h"
 #include "vm_runtime.h"
 
 #define SQ_DEVICE_FIELD_TARGET 1
@@ -35,7 +36,7 @@
 #define SQ_DEVICE_TEMP_RUN_MAX_BYTES SQ_DEVICE_INSTALL_MAX_BYTES
 #define SQ_DEVICE_TEMP_STATE_BYTES SQVM_SAVED_STATE_CAPACITY
 #define SQ_DEVICE_RESPONSE_BYTES 826u
-#define SQ_DEVICE_STAGING_PATH_BYTES 72u
+#define SQ_DEVICE_STAGING_PATH_BYTES 80u
 #define SQ_DEVICE_RESOURCE_PATH_BYTES 80u
 #define SQ_DEVICE_WIFI_PROFILE_NAME_BYTES 16
 #define SQ_DEVICE_WIFI_PROFILE_SSID_BYTES 32
@@ -87,6 +88,8 @@ struct sq_device_protocol_context {
 	struct sq_device_resource_session *resource_session;
 	struct sq_vm_runtime *runtime;
 	struct sq_app_store_vm_storage *launch_storage;
+	struct sq_app_store_vm_storage *trigger_storage;
+	const struct sq_firmware_fallback_app *fallback_app;
 	const char *store_mount_point;
 };
 
@@ -95,5 +98,7 @@ int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 				    size_t response_cap, size_t *response_len);
 
 int sq_device_protocol_poll(const struct sq_device_protocol_context *context);
+
+int sq_device_protocol_start_root(const struct sq_device_protocol_context *context);
 
 #endif

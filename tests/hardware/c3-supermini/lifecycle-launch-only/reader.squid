@@ -1,0 +1,9 @@
+app "reader"
+
+event.on("app.start") {
+  debug.print("launch-only reader")
+  let process = app.processStack()
+  for appId in process max 2 {
+    debug.print("launch-only process", appId)
+  }
+}

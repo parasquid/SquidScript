@@ -38,6 +38,15 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 - Extend the `app.triggers` model beyond current timer metadata declarations to
   future logical button/input triggers while keeping `event.on(...)` as the
   handler for the activation event that fires later.
+- Persist the foreground app launch/return stack across MCU reboot and relaunch
+  the top app on startup while preserving the rest of the chain for later
+  returns. Treat the persisted chain as firmware/runtime state, keep app launch
+  failures visible instead of falling through silently, and preserve the
+  built-in fallback `main` behavior only when no installed/persisted foreground
+  app can be selected.
+- Replace Zephyr protocol ztest static SQBC byte arrays with generated fixtures
+  built from checked-in `.squid` sources, so builtin ID regrouping cannot leave
+  protocol tests executing stale bytecode.
 - Design and implement richer logical input events for press and release
   phases, long press, double tap, and chords. Specify naming, target policy,
   precedence, debounce/timing windows, and whether recognized long/chord/double
@@ -69,7 +78,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   14,272 bytes after moving Wi-Fi scan result backing into runtime transfer
   scratch, adding a diagnostic transfer-owner marker for scratch/completion/
   Wi-Fi-scan overlap checks, capping foreground runtime timers to two slots,
-  capping retained VM output history at five lines,
+  capping retained VM output history at twelve lines for lifecycle diagnostics,
   retained VM trace history at four lines,
   narrowing output and drawlog diagnostic line storage, bounding transient VM
   result records to 26 fields, trimming the ESP32-C3 VM context reserve to
@@ -88,7 +97,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   holds eight installed-app entries with 40-byte app-id storage slots for
   current measured app workloads, and the serial
   receive frame budget is 256 bytes with host upload chunking derived from that
-  limit, protocol transfer sessions use 72-byte staging path slots and 80-byte
+  limit, protocol transfer sessions use 80-byte staging path slots and 80-byte
   resource path slots, and resource diagnostics encode directly into the
   826-byte response buffer without a resident metric staging array. Runtime
   physical input state is bounded to two GPIO button slots for the confirmed
@@ -101,15 +110,17 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   deferred logger buffer and process-thread stack are explicitly bounded at 512
   bytes each. LittleFS open-file slots are bounded at two while directory slots
   remain at the Zephyr default for recursive format/delete walks. The
-  protocol/main stack is now 3264 bytes, leaving 788 bytes over the last
-  measured 2476-byte protocol peak, and the VM worker stack is now 18016 bytes.
+  protocol/main stack is now 8192 bytes after installed-app lifecycle launch
+  coverage exposed a protocol/main-side fatal crash at the earlier 3264-byte
+  budget, and the VM worker stack is now 22016 bytes.
   The latest target build reports 184,576 bytes
   of linker DRAM use and 184,560 bytes through the RAM audit; next
-  reductions should physically revalidate the 3264-byte protocol/main stack
-  with the bounded stack harness. The stack harness now fails with captured
+  reductions should re-attribute trigger metadata registration, installed-app
+  launch, and protocol/main stack use before lowering the 8192-byte protocol
+  budget again. The stack harness now fails with captured
   resources if protocol/main unused stack drops below 768 bytes or VM worker
   unused stack drops below 384 bytes. After that, investigate full-suite
-  worker-stack high-water headroom after the 18016-byte stack reduction and
+  worker-stack high-water headroom after raising the worker stack to 22016 bytes and
   inspect any remaining accidental static buffers. For host-side attribution
   before physical confirmation, build with `SQUID_ZEPHYR_STACK_USAGE=1` and run
   `scripts/c3-supermini-stack-usage-report.sh` to sort generated Zephyr app C
@@ -197,7 +208,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   `begin_install -> sq_app_store_begin_staged_install ->
   prepare_filesystem_with_path -> ensure_directory`; investigate the install
   begin path next. Staged install begin now reuses the protocol transfer
-  session's 72-byte `staging_path` buffer for filesystem preparation and
+  session's 80-byte `staging_path` buffer for filesystem preparation and
   app-directory creation before formatting the final temp `main.sqbc.tmp`
   path. That reduces `sq_app_store_begin_staged_install` from 112 bytes to
   48 bytes and the cumulative `begin_install` path from 272 bytes to 208
@@ -206,7 +217,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   the registry scan path next. Registry scanning now has a caller-scratch entry
   point. The public `sq_app_store_scan_registry` wrapper still owns a narrow
   64-byte path buffer, while protocol app-install commit reuses the install
-  session's 72-byte `staging_path` buffer after the staged file is renamed.
+  session's 80-byte `staging_path` buffer after the staged file is renamed.
   That reduces the protocol `commit_install` path from 272 bytes to 224 bytes.
   Installed-app launch now stores the file-backed VM storage backend directly
   in the runtime-owned job backend instead of keeping a protocol-stack backend
@@ -322,11 +333,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   resources-response ceiling, reducing `response.0` from 848 bytes to 826 bytes.
   Protocol polling now reuses runtime app-id/event scratch for lifecycle and
   armed timer transitions, app-arm trigger discovery is split out of the steady
-  poll frame, and trigger registration reuses the caller-owned launch storage
-  path buffers. The trigger registration path is now attributed separately at
-  64 bytes, with per-trigger timer decode/register attributed to a 96-byte
-  helper, instead of retaining that scratch in `sq_device_protocol_poll` or a
-  separate 400-byte trigger-registration frame. Protocol event dispatch now
+  poll frame, and trigger registration uses dedicated resident trigger storage
+  so metadata reads cannot overwrite the active foreground app's file-backed
+  launch storage backend. Protocol event dispatch now
   passes event bytes directly into `sq_vm_runtime_start_event` instead of
   staging a NUL-terminated event buffer, reducing `dispatch_event_from_parts`
   from 112 bytes to 96 bytes. Installed-app foreground handoff now reuses the
@@ -373,13 +382,17 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   unconfigured pins can produce one-off changed samples. For the ESP32-C3 Super
   Mini reference board, treat GPIO9 as the confirmed physical input path; do
   not treat GPIO3, GPIO4, GPIO7, GPIO10, or GPIO5 scan changes as real buttons
-  without targeted confirmation. The protocol/main stack budget has been
+  without targeted confirmation. The protocol/main stack budget was
   reduced from 8 KiB to 3264 bytes based on repeated 2476-byte measured peaks,
-  while keeping 788 bytes of headroom. The worker stack has been reduced from
-  19 KiB to 18016 bytes based on saved workload peaks, leaving 396 bytes above
-  the highest saved 17620-byte full-suite peak before hardware revalidation.
-  Next, validate the 3264-byte protocol/main stack and 18016-byte worker stack with
-  the hardware suite.
+  then restored to 8 KiB after installed-app lifecycle launch and trigger
+  metadata registration exposed a protocol/main-side fatal crash at the smaller
+  budget. The worker stack was reduced from
+  19 KiB to 18016 bytes based on saved workload peaks, then raised to 22016
+  bytes after installed-app lifecycle launch testing exposed a fatal crash
+  consistent with worker-stack exhaustion. Next, validate the 8192-byte
+  protocol/main stack and 22016-byte worker stack with the hardware suite, then
+  re-attribute trigger metadata and app-launch paths before attempting another
+  protocol/main stack reduction.
 - Improve network heap attribution before expanding Wi-Fi scope. Current AP
   start/stop hardware coverage drives `heap_max_alloc_bytes` close to
   the 36 KiB system heap budget; add clearer per-workload heap reset or

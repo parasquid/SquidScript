@@ -22,17 +22,33 @@ if(NOT SQUID_ZEPHYR_TARGET_DEFAULTS_RESULT EQUAL 0)
   message(FATAL_ERROR "Failed to generate SquidScript Zephyr target defaults")
 endif()
 
-target_include_directories(app PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(SQUID_ZEPHYR_FALLBACK_SOURCE "${CMAKE_CURRENT_LIST_DIR}/fallback/esp32c3-supermini-main.squid" CACHE FILEPATH "SquidScript firmware fallback source")
+set(SQUID_ZEPHYR_FALLBACK_APP_ID "main" CACHE STRING "SquidScript firmware fallback logical app id")
+set(SQUID_ZEPHYR_FALLBACK_SQBC "${CMAKE_CURRENT_BINARY_DIR}/generated/squidscript_fallback_app.sqbc")
+set(SQUID_ZEPHYR_FALLBACK_H "${CMAKE_CURRENT_BINARY_DIR}/generated/squidscript_fallback_app.h")
+set(SQUID_ZEPHYR_FALLBACK_C "${CMAKE_CURRENT_BINARY_DIR}/generated/squidscript_fallback_app.c")
+add_custom_command(
+  OUTPUT "${SQUID_ZEPHYR_FALLBACK_SQBC}" "${SQUID_ZEPHYR_FALLBACK_H}" "${SQUID_ZEPHYR_FALLBACK_C}"
+  COMMAND cargo run -p squidc -- build "${SQUID_ZEPHYR_FALLBACK_SOURCE}" --out "${SQUID_ZEPHYR_FALLBACK_SQBC}"
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/../../scripts/generate-zephyr-fallback-app.py" "${SQUID_ZEPHYR_FALLBACK_SQBC}" "${SQUID_ZEPHYR_FALLBACK_APP_ID}" "${SQUID_ZEPHYR_FALLBACK_H}" "${SQUID_ZEPHYR_FALLBACK_C}"
+  DEPENDS "${SQUID_ZEPHYR_FALLBACK_SOURCE}" "${CMAKE_CURRENT_LIST_DIR}/../../scripts/generate-zephyr-fallback-app.py"
+  WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/../.."
+  VERBATIM
+)
+
+target_include_directories(app PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
 target_sources(app PRIVATE
   src/app_store.c
   src/device_protocol.c
+  src/fallback_app.c
   src/main.c
   src/protocol.c
   src/serial_transport.c
   src/vm_fs_storage.c
   src/vm_runtime.c
   src/vm_storage.c
+  "${SQUID_ZEPHYR_FALLBACK_C}"
 )
 
 option(SQUID_ZEPHYR_STACK_USAGE "Emit GCC .su stack-usage files for Zephyr app C sources" OFF)

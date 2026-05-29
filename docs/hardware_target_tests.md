@@ -118,7 +118,10 @@ registered on the armed stack through `app.arm`, waits for the armed timer to
 start `break-reminder`, then sends `SELECT` so `app.exit` returns to the
 previous app on the process stack. It also verifies app-facing lifecycle
 inspection through `app.processStack()`, `app.armedStack()`, and
-`app.armedStack.get(...)`. The lifecycle fixtures use volatile
+`app.armedStack.get(...)`. The reader fixture prints armed-stack diagnostics
+only on the first timer tick that sees the armed app, so the bounded retained
+output history keeps the root launch, reader launch, and armed-selection proof
+lines together. The lifecycle fixtures use volatile
 in-memory counters and intentionally avoid `state.load()` / `state.save()` so
 the check distinguishes ordinary foreground event dispatch from fresh VM
 sessions on launch, armed trigger activation, and app-exit return.
@@ -178,17 +181,22 @@ app lifecycle checks in the full ESP32-C3 Super Mini suite. It records
 `device resources` output under `target/hardware-tests/stack-usage/` and
 verifies `proto_stack_*` and `vm_stack_*` metrics are
 internally consistent. The current firmware keeps the protocol/main stack budget
-at 3,264 bytes and the VM worker stack budget at 18,016 bytes based on measured
-high-water data. The harness uses a command-level timeout for its
+at 8,192 bytes and the VM worker stack budget at 22,016 bytes. The protocol
+stack was previously reduced to 3,264 bytes from measured GPIO9 input rows, but
+installed app lifecycle coverage later exposed a protocol/main-side fatal crash
+while registering armed trigger metadata and launching installed foreground
+apps. Treat the 8,192-byte budget as a reliability baseline until the trigger
+metadata and launch paths are re-attributed and reduced with hardware evidence.
+The harness uses a command-level timeout for its
 `device resources`
 request so serial stalls fail with captured output instead of hanging the full
 suite. GPIO-button device-binding launch coverage previously measured
 protocol/main stack use above the old 8 KiB budget before launch-time binding
 setup moved to the VM worker stack. Current targeted clean-boot and skip-flash
 GPIO9 input rows measure protocol/main stack use flat at 2476 bytes across
-format, install, launch, release, and timeout rows. The 3,264-byte budget keeps
-788 bytes of headroom over that measured protocol peak; remeasure with the full
-hardware suite before lowering the configured main stack budget again.
+format, install, launch, release, and timeout rows. Do not lower the configured
+main stack budget again until lifecycle, registry, GPIO input, and stack
+resource checks all pass in the same firmware build.
 Use `scripts/c3-supermini-measure-input-stack-isolation.sh` when the input path
 needs clean high-water attribution. It builds/flashes by default, verifies the
 diagnostic boot banner, then records `after-boot`, `after-format`,
@@ -245,10 +253,10 @@ measured `vm_stack_used_bytes=17620` before lowering the worker stack to
 20480. Targeted GPIO9 input summary coverage after app-start binding setup moved
 to the VM worker measured `vm_stack_used_bytes=17296`, and narrowing the
 FFI app process/armed stack scratch reduced the input launch row to 17056. The
-worker stack is now 18,016 bytes. This keeps 396 bytes of headroom above the
-highest saved full-suite `vm_stack_used_bytes=17620` peak and 752 bytes
-above the saved GPIO9 input summary peak. Remeasure the physical press row and
-full hardware suite before lowering that budget again. The stack harness fails
+worker stack is now 22,016 bytes. This replaces the previous 18,016-byte budget
+after installed-app lifecycle launch testing exposed a fatal crash consistent
+with worker-stack exhaustion. Remeasure the physical press row and full
+hardware suite before lowering that budget again. The stack harness fails
 with the captured resource frame when protocol/main unused stack drops below
 768 bytes or VM worker unused stack drops below 384 bytes.
 

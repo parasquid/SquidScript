@@ -1,0 +1,5 @@
+app "debug-int"
+
+event.on("app.start") {
+  debug.print("num", 1)
+}

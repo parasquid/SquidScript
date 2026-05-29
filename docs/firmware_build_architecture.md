@@ -20,6 +20,15 @@ old serial protocol or flash layout. If behavior fails on ESP32-C3 under
 Zephyr, treat it as a Zephyr implementation, driver, configuration, or
 workaround task.
 
+The ESP32-C3 Super Mini firmware embeds a target-specific fallback SquidScript
+app from `firmware/zephyr/fallback/esp32c3-supermini-main.squid`. CMake compiles
+that source with `squidc build`, converts the resulting SQBC into generated C,
+and links it as a read-only fallback storage backend. Boot policy selects this
+fallback as logical `main` only when the app store mounted, the registry scan
+succeeded, and no installed `main` exists. Installed `main` always takes
+precedence, and app-store failures remain warnings/diagnostics rather than
+being hidden by fallback launch.
+
 ## Repository Interfaces
 
 From the repository root:
@@ -92,7 +101,7 @@ checked against the FFI-reported context size in Zephyr ztests. Native simulator
 ztests use a larger host-only context reservation because the host Rust ABI has
 larger pointer-sized VM structures; this does not change the ESP32-C3 runtime
 RAM budget.
-Protocol transfer sessions use explicit firmware-side bounds: 72-byte internal
+Protocol transfer sessions use explicit firmware-side bounds: 80-byte internal
 staging-path buffers for fixed staging filenames and 80-byte resource-path
 buffers for package-relative resource paths. The app-store path cap remains
 larger because it formats full filesystem paths that include the mount point,
@@ -143,7 +152,7 @@ bounded at 512 bytes each; app-visible diagnostics use protocol output, trace,
 draw-log, lifecycle, and resources responses instead of relying on a large
 firmware log ring.
 The protocol/main thread stack is currently 3,264 bytes and the VM worker stack
-is 18,016 bytes. Resource diagnostics expose each stack's high-water use
+is 22,016 bytes. Resource diagnostics expose each stack's high-water use
 separately so budget reductions can be tied to measured workloads instead of
 inferred from static allocation alone. The 3,264-byte protocol stack keeps
 788 bytes of headroom over the last measured 2,476-byte protocol peak and
@@ -253,7 +262,7 @@ to 272 bytes, and moves the top source-known main/protocol path to 464 bytes
 through `begin_install -> sq_app_store_begin_staged_install ->
 prepare_filesystem_with_path -> ensure_directory`. Linker DRAM remains
 185,024 bytes and the RAM audit remains 185,008 bytes.
-Staged install begin now reuses the protocol transfer session's 72-byte
+Staged install begin now reuses the protocol transfer session's 80-byte
 `staging_path` buffer for filesystem preparation and app-directory creation
 before formatting the final temp `main.sqbc.tmp` path. That reduces
 `sq_app_store_begin_staged_install` from 112 bytes to 48 bytes and reduces the
@@ -263,7 +272,7 @@ source-known main/protocol path remains 464 bytes, now through
 remains 185,024 bytes and the RAM audit remains 185,008 bytes.
 Registry scanning now has a caller-scratch entry point. The public
 `sq_app_store_scan_registry` wrapper still owns a narrow 64-byte path buffer,
-while protocol app-install commit reuses the install session's 72-byte
+while protocol app-install commit reuses the install session's 80-byte
 `staging_path` buffer after the staged file is renamed. That reduces the
 protocol `commit_install` path from 272 bytes to 224 bytes. The top
 source-known main/protocol path remains 464 bytes through app launch, while
@@ -421,11 +430,10 @@ chunks, and the maximum app-id plus resource-path transfer-begin request remains
 within the same fixed receive buffer.
 Protocol polling reuses runtime app-id/event scratch for lifecycle and armed
 timer transitions. App-arm trigger discovery is split out of the steady poll
-frame and reuses the caller-owned launch storage path buffers instead of
-allocating a per-call SQBC path and filesystem storage wrapper. The emitted C
-stack report now attributes `sq_device_protocol_poll` at 32 bytes,
-`register_app_triggers` at 64 bytes, and per-trigger timer decode/register at
-96 bytes, down from the earlier combined 400-byte trigger-registration frame.
+frame and uses a dedicated resident trigger metadata storage backend instead of
+allocating a per-call SQBC path and filesystem storage wrapper or overwriting
+the active foreground launch storage backend. The emitted C stack report
+attributes trigger registration separately from the steady poll path.
 Protocol event dispatch passes event bytes directly into
 `sq_vm_runtime_start_event` instead of staging a NUL-terminated event buffer on
 the protocol stack, reducing `dispatch_event_from_parts` from 112 bytes to 96
@@ -433,9 +441,9 @@ bytes. The existing string-based `sq_vm_runtime_start` remains as a wrapper for
 callers that already own NUL-terminated event names.
 Installed-app foreground handoff reuses the runtime-owned pending-launch app-id
 slot as temporary rollback storage while switching `current_app`, instead of
-allocating a protocol-stack previous-app buffer. That reduces
-`start_installed_app` from 128 bytes to 96 bytes and clears the scratch before
-returning.
+allocating a protocol-stack previous-app buffer. Host `app-launch` and
+app-driven `app.launch` both dispatch the current foreground app's `app.exit`
+before pushing the return target and starting the requested app.
 Display draw-log, GPIO, indicator, timer, app lifecycle, and Wi-Fi VM service
 calls now cross the Rust FFI boundary into Zephyr callbacks. Zephyr now
 performs installed-app foreground handoff for `app.launch` and `app.exit` with

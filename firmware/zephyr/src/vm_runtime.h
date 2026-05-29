@@ -21,7 +21,7 @@ extern "C" {
 
 #define SQ_VM_RUNTIME_TRACE_MAX 4
 #define SQ_VM_RUNTIME_TRACE_LEN 26
-#define SQ_VM_RUNTIME_OUTPUT_MAX 5
+#define SQ_VM_RUNTIME_OUTPUT_MAX 12
 #define SQ_VM_RUNTIME_OUTPUT_LEN 54
 #define SQ_VM_RUNTIME_DRAWLOG_MAX 4
 #define SQ_VM_RUNTIME_DRAWLOG_LEN 48
@@ -36,7 +36,7 @@ extern "C" {
 #define SQ_VM_RUNTIME_CONTEXT_BYTES 10400
 #endif
 #define SQ_VM_RUNTIME_SCRATCH_BYTES SQVM_STORAGE_TRANSFER_CAPACITY
-#define SQ_VM_RUNTIME_WORK_STACK_SIZE 18016
+#define SQ_VM_RUNTIME_WORK_STACK_SIZE 22016
 #define SQ_VM_RUNTIME_EVENT_LEN 24
 #define SQ_VM_RUNTIME_INDICATOR_BREATHE_STEPS 65
 #define SQ_VM_RUNTIME_RETURN_STACK_MAX 2
@@ -109,9 +109,9 @@ union sq_vm_runtime_transfer {
 };
 
 struct sq_vm_runtime {
-	struct k_work work;
 	uint64_t context_words[SQ_VM_RUNTIME_CONTEXT_BYTES / sizeof(uint64_t)];
 	bool work_initialized;
+	bool work_submitted;
 	bool context_ready;
 	union sq_vm_runtime_transfer transfer;
 #if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
@@ -123,8 +123,6 @@ struct sq_vm_runtime {
 	const struct sq_app_registry *registry;
 	struct sq_vm_storage_backend job_backend;
 	bool start_apply_bindings;
-	struct k_sem *start_setup_done;
-	int start_setup_result;
 	char event[SQ_VM_RUNTIME_EVENT_LEN];
 	enum sq_vm_runtime_status status;
 	int result_code;
@@ -242,6 +240,7 @@ void sq_vm_runtime_init(struct sq_vm_runtime *runtime);
 
 void sq_vm_runtime_reset(struct sq_vm_runtime *runtime);
 void sq_vm_runtime_reset_vm_context(struct sq_vm_runtime *runtime);
+int sq_vm_runtime_wait_idle(struct sq_vm_runtime *runtime, int32_t timeout_ms);
 void sq_vm_runtime_set_store_mount_point(struct sq_vm_runtime *runtime, const char *mount_point);
 void sq_vm_runtime_set_registry(struct sq_vm_runtime *runtime,
 				const struct sq_app_registry *registry);

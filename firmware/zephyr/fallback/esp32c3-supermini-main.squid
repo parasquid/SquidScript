@@ -1,0 +1,9 @@
+app "main"
+
+event.on("app.start") {
+  debug.print("fallback app launched: no foreground app")
+  service.indicator.breathe()
+}
+
+event.on("app.exit") {
+}

@@ -11,6 +11,7 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/pwm.h>
 #include <zephyr/fs/fs.h>
+#include <zephyr/kernel.h>
 #include <zephyr/sys/sys_heap.h>
 #if IS_ENABLED(CONFIG_NET_L2_WIFI_MGMT) && IS_ENABLED(CONFIG_NET_MGMT_EVENT) && \
 	IS_ENABLED(CONFIG_NET_MGMT_EVENT_INFO)
@@ -107,9 +108,19 @@ static const struct gpio_dt_spec input_sw0_gpio = GPIO_DT_SPEC_GET(DT_ALIAS(sw0)
 #define SQ_VM_RUNTIME_HAS_WIFI_MGMT 0
 #endif
 
+void sqvm_ffi_panic_abort(void)
+{
+	printk("sqvm ffi panic\n");
+	k_panic();
+	CODE_UNREACHABLE;
+}
+
 K_THREAD_STACK_DEFINE(sq_vm_runtime_work_stack, SQ_VM_RUNTIME_WORK_STACK_SIZE);
-static struct k_work_q sq_vm_runtime_work_q;
-static bool sq_vm_runtime_work_q_started;
+static struct k_thread sq_vm_runtime_work_thread;
+static struct k_sem sq_vm_runtime_done_sem;
+static struct sq_vm_runtime *sq_vm_runtime_active_work;
+static bool sq_vm_runtime_work_sem_initialized;
+static bool sq_vm_runtime_work_thread_started;
 
 static void runtime_trace(void *user_data, const uint8_t *message, size_t message_len)
 {
@@ -2266,22 +2277,13 @@ static void clear_dispatch_transfer(struct sq_vm_runtime *runtime)
 	runtime->backend = NULL;
 }
 
-static void runtime_signal_start_setup(struct sq_vm_runtime *runtime, int result)
+static void runtime_run_job(struct sq_vm_runtime *runtime)
 {
-	struct k_sem *done = runtime->start_setup_done;
-
-	runtime->start_setup_result = result;
-	runtime->start_setup_done = NULL;
-	if (done != NULL) {
-		k_sem_give(done);
-	}
-}
-
-static void runtime_work_handler(struct k_work *work)
-{
-	struct sq_vm_runtime *runtime = CONTAINER_OF(work, struct sq_vm_runtime, work);
 	int result = 0;
 
+	if (runtime == NULL) {
+		return;
+	}
 	if (runtime->start_apply_bindings) {
 		result = sq_vm_runtime_prepare_app_start(runtime);
 		runtime->start_apply_bindings = false;
@@ -2290,10 +2292,8 @@ static void runtime_work_handler(struct k_work *work)
 		runtime->result_code = result;
 		runtime->dispatch_exited = false;
 		runtime->status = SQ_VM_RUNTIME_IDLE;
-		runtime_signal_start_setup(runtime, result);
 		return;
 	}
-	runtime_signal_start_setup(runtime, result);
 
 	result = sq_vm_runtime_dispatch(runtime, &runtime->job_backend, runtime->event);
 
@@ -2302,18 +2302,28 @@ static void runtime_work_handler(struct k_work *work)
 	runtime->status = result == 0 ? SQ_VM_RUNTIME_COMPLETE : SQ_VM_RUNTIME_ERROR;
 }
 
+static void runtime_worker_thread(void *arg1, void *arg2, void *arg3)
+{
+	ARG_UNUSED(arg1);
+	ARG_UNUSED(arg2);
+	ARG_UNUSED(arg3);
+
+	runtime_run_job(sq_vm_runtime_active_work);
+	sq_vm_runtime_active_work = NULL;
+	k_sem_give(&sq_vm_runtime_done_sem);
+}
+
 void sq_vm_runtime_init(struct sq_vm_runtime *runtime)
 {
 	if (runtime == NULL || runtime->work_initialized) {
 		return;
 	}
-	if (!sq_vm_runtime_work_q_started) {
-		k_work_queue_start(&sq_vm_runtime_work_q, sq_vm_runtime_work_stack,
-				   K_THREAD_STACK_SIZEOF(sq_vm_runtime_work_stack), 5, NULL);
-		sq_vm_runtime_work_q_started = true;
+	if (!sq_vm_runtime_work_sem_initialized) {
+		k_sem_init(&sq_vm_runtime_done_sem, 0, 1);
+		sq_vm_runtime_work_sem_initialized = true;
 	}
-	k_work_init(&runtime->work, runtime_work_handler);
 	runtime->work_initialized = true;
+	runtime->work_submitted = false;
 	runtime->status = SQ_VM_RUNTIME_IDLE;
 }
 
@@ -2329,16 +2339,49 @@ int sq_vm_runtime_work_stack_unused(size_t *unused)
 	}
 
 #if defined(CONFIG_INIT_STACKS) && defined(CONFIG_THREAD_STACK_INFO)
-	if (!sq_vm_runtime_work_q_started) {
+	if (!sq_vm_runtime_work_thread_started) {
 		*unused = sq_vm_runtime_work_stack_size();
 		return 0;
 	}
-
-	return k_thread_stack_space_get(k_work_queue_thread_get(&sq_vm_runtime_work_q), unused);
+	return k_thread_stack_space_get(&sq_vm_runtime_work_thread, unused);
 #else
 	*unused = 0;
 	return -ENOTSUP;
 #endif
+}
+
+int sq_vm_runtime_wait_idle(struct sq_vm_runtime *runtime, int32_t timeout_ms)
+{
+	int64_t deadline_ms;
+
+	if (runtime == NULL) {
+		return -EINVAL;
+	}
+	if (runtime->status == SQ_VM_RUNTIME_RUNNING) {
+		if (timeout_ms <= 0) {
+			return -ETIMEDOUT;
+		}
+
+		deadline_ms = k_uptime_get() + timeout_ms;
+		while (runtime->status == SQ_VM_RUNTIME_RUNNING) {
+			if (k_uptime_get() >= deadline_ms) {
+				return -ETIMEDOUT;
+			}
+			k_sleep(K_MSEC(1));
+		}
+	}
+	if (!runtime->work_initialized) {
+		return 0;
+	}
+	if (runtime->work_submitted) {
+		k_timeout_t timeout = timeout_ms <= 0 ? K_NO_WAIT : K_MSEC(timeout_ms);
+
+		if (k_thread_join(&sq_vm_runtime_work_thread, timeout) != 0) {
+			return -ETIMEDOUT;
+		}
+		runtime->work_submitted = false;
+	}
+	return 0;
 }
 
 void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
@@ -2355,8 +2398,6 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	memset(runtime->pending_launch_app, 0, sizeof(runtime->pending_launch_app));
 	runtime->pending_launch_active = false;
 	runtime->start_apply_bindings = false;
-	runtime->start_setup_done = NULL;
-	runtime->start_setup_result = 0;
 	memset(runtime->pending_arm_app, 0, sizeof(runtime->pending_arm_app));
 	runtime->pending_arm_active = false;
 	runtime->arm_registration_active = false;
@@ -2416,8 +2457,8 @@ void sq_vm_runtime_reset_vm_context(struct sq_vm_runtime *runtime)
 	if (runtime == NULL) {
 		return;
 	}
+	(void)sqvm_context_reset_in_place(runtime->context_words, sizeof(runtime->context_words));
 	clear_dispatch_transfer(runtime);
-	memset(runtime->context_words, 0, sizeof(runtime->context_words));
 	runtime->context_ready = false;
 }
 
@@ -2616,9 +2657,7 @@ int sq_vm_runtime_start_event(struct sq_vm_runtime *runtime,
 			      const struct sq_vm_storage_backend *backend,
 			      const uint8_t *event, size_t event_len)
 {
-	struct k_sem setup_done;
-	bool wait_for_setup;
-	int result;
+	bool apply_bindings;
 
 	if (runtime == NULL || backend == NULL || event == NULL) {
 		return -EINVAL;
@@ -2627,40 +2666,39 @@ int sq_vm_runtime_start_event(struct sq_vm_runtime *runtime,
 	if (runtime->status == SQ_VM_RUNTIME_RUNNING) {
 		return -EBUSY;
 	}
+	if (runtime->work_submitted) {
+		int result = sq_vm_runtime_wait_idle(runtime, 250);
+		if (result != 0) {
+			return result;
+		}
+	}
 	if (event_len == 0 || event_len >= sizeof(runtime->event)) {
 		return -EINVAL;
 	}
 
 	runtime->job_backend = *backend;
 	runtime->backend = &runtime->job_backend;
-	wait_for_setup = event_len == 9u && memcmp(event, "app.start", 9u) == 0;
-	runtime->start_apply_bindings = wait_for_setup;
-	runtime->start_setup_result = 0;
-	if (wait_for_setup) {
-		k_sem_init(&setup_done, 0, 1);
-		runtime->start_setup_done = &setup_done;
-	} else {
-		runtime->start_setup_done = NULL;
-	}
+	apply_bindings = event_len == 9u && memcmp(event, "app.start", 9u) == 0;
+	runtime->start_apply_bindings = apply_bindings;
 	memmove(runtime->event, event, event_len);
 	runtime->event[event_len] = '\0';
 	runtime->result_code = 0;
 	runtime->dispatch_exited = false;
 	runtime->status = SQ_VM_RUNTIME_RUNNING;
-	result = k_work_submit_to_queue(&sq_vm_runtime_work_q, &runtime->work);
-	if (result < 0) {
+	if (sq_vm_runtime_active_work != NULL) {
 		runtime->start_apply_bindings = false;
-		runtime->start_setup_done = NULL;
 		runtime->status = SQ_VM_RUNTIME_ERROR;
-		runtime->result_code = result;
-		return result;
+		runtime->result_code = -EBUSY;
+		return -EBUSY;
 	}
-	if (wait_for_setup) {
-		k_sem_take(&setup_done, K_FOREVER);
-		if (runtime->start_setup_result != 0) {
-			return runtime->start_setup_result;
-		}
-	}
+	k_sem_reset(&sq_vm_runtime_done_sem);
+	sq_vm_runtime_active_work = runtime;
+	runtime->work_submitted = true;
+	k_thread_create(&sq_vm_runtime_work_thread, sq_vm_runtime_work_stack,
+			K_THREAD_STACK_SIZEOF(sq_vm_runtime_work_stack),
+			runtime_worker_thread, NULL, NULL, NULL, 5, 0, K_NO_WAIT);
+	k_thread_name_set(&sq_vm_runtime_work_thread, "sq_vm_runtime");
+	sq_vm_runtime_work_thread_started = true;
 	return 0;
 }
 

@@ -6,6 +6,7 @@
 #include "app_store.h"
 #include "device_protocol.h"
 #include "serial_transport.h"
+#include "squidscript_fallback_app.h"
 
 LOG_MODULE_REGISTER(squidscript, LOG_LEVEL_INF);
 
@@ -24,10 +25,12 @@ int main(void)
 	static struct sq_device_resource_session resource_session;
 	static struct sq_vm_runtime runtime;
 	static struct sq_app_store_vm_storage launch_storage;
+	static struct sq_app_store_vm_storage trigger_storage;
 	static uint8_t response[SQ_DEVICE_RESPONSE_BYTES];
 	static struct sq_device_protocol_context protocol_context;
 	size_t response_len = 0;
 	uint8_t byte;
+	bool registry_ready = false;
 
 #if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
 	LOG_INF("SquidScript Zephyr firmware diagnostic boot");
@@ -47,6 +50,8 @@ int main(void)
 		.resource_session = &resource_session,
 		.runtime = &runtime,
 		.launch_storage = &launch_storage,
+		.trigger_storage = &trigger_storage,
+		.fallback_app = &sq_zephyr_fallback_app,
 	};
 
 	int storage_result = sq_app_store_mount_target_filesystem();
@@ -57,6 +62,8 @@ int main(void)
 		int registry_result = sq_app_store_scan_registry(sq_app_store_mount_point(), &registry);
 		if (registry_result != 0) {
 			LOG_WRN("SquidScript app registry unavailable: %d", registry_result);
+		} else {
+			registry_ready = true;
 		}
 	} else {
 		LOG_WRN("SquidScript app store unavailable: %d", storage_result);
@@ -65,6 +72,12 @@ int main(void)
 	sq_serial_transport_init(&transport);
 	sq_vm_runtime_init(&runtime);
 	sq_vm_runtime_set_registry(&runtime, &registry);
+	if (registry_ready) {
+		int root_result = sq_device_protocol_start_root(&protocol_context);
+		if (root_result != 0) {
+			LOG_WRN("SquidScript root app launch failed: %d", root_result);
+		}
+	}
 
 	while (true) {
 		bool consumed = false;
