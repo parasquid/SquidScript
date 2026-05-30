@@ -293,17 +293,18 @@ registry scan path is the public/admin
 join_path2` path at 256 cumulative bytes; it carries the public wrapper's
 64-byte app-file path scratch, a scan helper `struct fs_dir_t`, a reused
 `struct fs_dirent`, and small scalars.
-The current top source-known protocol/main stack attribution is planned sleep
-resume work: `main -> sq_device_protocol_restore_planned_resume ->
-register_app_triggers -> register_app_trigger_timer ->
-sq_vm_runtime_register_armed_timer` at 864 cumulative bytes, and
-`sq_device_protocol_poll -> write_planned_resume_file ->
-sq_device_protocol_encode_planned_resume -> append_fixed_app_id` at
-656 cumulative bytes. The restore frame carries a planned-resume record,
-encoded record bytes, a 48-byte planned-resume path, an `fs_file_t`, and
-scalars before re-registering armed app triggers. The write frame carries a
-planned-resume record, encoded record bytes, separate 48-byte temp and final
-paths for temp-write-plus-rename, an `fs_file_t`, and scalars.
+Planned sleep checkpoint and restore use protocol-owned scratch for the
+planned-resume record, encoded bytes, temp/final paths, and `fs_file_t`. This
+keeps those SQPR temporaries off the protocol/main stack while preserving the
+same planned-resume file format and temp-write-plus-rename checkpoint
+protocol. The protocol scratch has an explicit owner field so diagnostic builds
+reject overlapping scratch use instead of silently aliasing planned-resume
+storage. Current source-known stack rows report
+`sq_device_protocol_restore_planned_resume -> register_app_triggers ->
+register_app_trigger_timer -> sq_vm_runtime_register_armed_timer` at
+240 cumulative bytes and `sq_device_protocol_poll -> register_app_triggers ->
+register_app_trigger_timer -> sq_vm_runtime_register_armed_timer` at
+272 cumulative bytes.
 Protocol dispatch decodes only the request opcode and sequence into the live
 dispatch header because opcode handlers parse payloads from the original
 request bytes, so `sq_device_protocol_handle_frame` emits 80 bytes.
@@ -354,8 +355,8 @@ copying result records before returning to VM execution.
 The Rust VM uses one string interner for SQBC literals, firmware static strings,
 and dynamic runtime text. Dynamic text can reuse exact SQBC/static matches and
 contiguous substrings of existing dynamic/static text. Current ESP32-C3
-firmware symbols report `runtime.4` at 15,128 bytes; the target build reports
-198,320 bytes of linker DRAM and 198,304 bytes through the RAM audit.
+firmware symbols report `runtime.4` at 15,096 bytes; the target build reports
+198,816 bytes of linker DRAM and 198,800 bytes through the RAM audit.
 The resident protocol response buffer is 826 bytes, matching the current
 resources-response ceiling: 806 bytes of metric payload plus the 20-byte frame
 header. This trims the previous 848-byte buffer without changing the response

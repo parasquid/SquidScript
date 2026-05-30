@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <zephyr/fs/fs.h>
+
 #include "app_store.h"
 #include "fallback_app.h"
 #include "vm_runtime.h"
@@ -41,6 +43,12 @@
 #define SQ_DEVICE_WIFI_PROFILE_NAME_BYTES 16
 #define SQ_DEVICE_WIFI_PROFILE_SSID_BYTES 32
 #define SQ_DEVICE_WIFI_PROFILE_PASSWORD_BYTES 64
+#define SQ_DEVICE_PLANNED_RESUME_MAGIC "SQPR"
+#define SQ_DEVICE_PLANNED_RESUME_VERSION 1u
+#define SQ_DEVICE_PLANNED_RESUME_LEN                                                   \
+	(4u + 1u + SQ_APP_STORE_APP_ID_MAX + 1u +                                      \
+	 (SQ_VM_RUNTIME_RETURN_STACK_MAX * SQ_APP_STORE_APP_ID_MAX) + 1u +             \
+	 (SQ_VM_RUNTIME_ARMED_TIMER_MAX * SQ_APP_STORE_APP_ID_MAX))
 
 struct sq_device_identity {
 	const char *target;
@@ -79,18 +87,9 @@ struct sq_device_resource_session {
 	char staging_path[SQ_DEVICE_STAGING_PATH_BYTES];
 };
 
-struct sq_device_protocol_context {
-	const struct sq_device_identity *identity;
-	const struct sq_app_registry *registry;
-	struct sq_app_registry *mutable_registry;
-	struct sq_device_install_session *install_session;
-	struct sq_device_temp_session *temp_session;
-	struct sq_device_resource_session *resource_session;
-	struct sq_vm_runtime *runtime;
-	struct sq_app_store_vm_storage *launch_storage;
-	struct sq_app_store_vm_storage *trigger_storage;
-	const struct sq_firmware_fallback_app *fallback_app;
-	const char *store_mount_point;
+enum sq_device_protocol_scratch_owner {
+	SQ_DEVICE_PROTOCOL_SCRATCH_FREE = 0,
+	SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME = 1,
 };
 
 struct sq_device_planned_resume_record {
@@ -99,6 +98,31 @@ struct sq_device_planned_resume_record {
 	char return_stack[SQ_VM_RUNTIME_RETURN_STACK_MAX][SQ_APP_STORE_APP_ID_MAX];
 	uint8_t armed_app_count;
 	char armed_apps[SQ_VM_RUNTIME_ARMED_TIMER_MAX][SQ_APP_STORE_APP_ID_MAX];
+};
+
+struct sq_device_protocol_scratch {
+	enum sq_device_protocol_scratch_owner owner;
+	struct sq_device_planned_resume_record planned_resume_record;
+	uint8_t planned_resume_bytes[SQ_DEVICE_PLANNED_RESUME_LEN];
+	size_t planned_resume_len;
+	char planned_resume_temp_path[SQ_APP_STORE_PLANNED_RESUME_PATH_MAX];
+	char planned_resume_final_path[SQ_APP_STORE_PLANNED_RESUME_PATH_MAX];
+	struct fs_file_t planned_resume_file;
+};
+
+struct sq_device_protocol_context {
+	const struct sq_device_identity *identity;
+	const struct sq_app_registry *registry;
+	struct sq_app_registry *mutable_registry;
+	struct sq_device_install_session *install_session;
+	struct sq_device_temp_session *temp_session;
+	struct sq_device_resource_session *resource_session;
+	struct sq_device_protocol_scratch *scratch;
+	struct sq_vm_runtime *runtime;
+	struct sq_app_store_vm_storage *launch_storage;
+	struct sq_app_store_vm_storage *trigger_storage;
+	const struct sq_firmware_fallback_app *fallback_app;
+	const char *store_mount_point;
 };
 
 int sq_device_protocol_encode_planned_resume(

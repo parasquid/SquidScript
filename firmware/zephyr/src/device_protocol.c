@@ -31,13 +31,6 @@ BUILD_ASSERT(SQ_DEVICE_WIFI_PROFILE_NAME_BYTES == SQ_VM_RUNTIME_WIFI_PROFILE_NAM
 BUILD_ASSERT(SQ_DEVICE_WIFI_PROFILE_SSID_BYTES == SQ_VM_RUNTIME_WIFI_PROFILE_SSID_BYTES);
 BUILD_ASSERT(SQ_DEVICE_WIFI_PROFILE_PASSWORD_BYTES == SQ_VM_RUNTIME_WIFI_PROFILE_PASSWORD_BYTES);
 
-#define SQ_DEVICE_PLANNED_RESUME_MAGIC "SQPR"
-#define SQ_DEVICE_PLANNED_RESUME_VERSION 1u
-#define SQ_DEVICE_PLANNED_RESUME_LEN                                                   \
-	(4u + 1u + SQ_APP_STORE_APP_ID_MAX + 1u +                                      \
-	 (SQ_VM_RUNTIME_RETURN_STACK_MAX * SQ_APP_STORE_APP_ID_MAX) + 1u +             \
-	 (SQ_VM_RUNTIME_ARMED_TIMER_MAX * SQ_APP_STORE_APP_ID_MAX))
-
 enum sq_device_field_type {
 	SQ_DEVICE_FIELD_TYPE_STRING = 1,
 	SQ_DEVICE_FIELD_TYPE_U64 = 5,
@@ -222,59 +215,107 @@ __weak int sq_device_protocol_enter_planned_sleep(int32_t wake_after_ms)
 	return 0;
 }
 
+static int protocol_scratch_acquire(const struct sq_device_protocol_context *context,
+				    enum sq_device_protocol_scratch_owner owner)
+{
+	if (context == NULL || context->scratch == NULL ||
+	    owner == SQ_DEVICE_PROTOCOL_SCRATCH_FREE) {
+		return -EINVAL;
+	}
+	if (context->scratch->owner != SQ_DEVICE_PROTOCOL_SCRATCH_FREE) {
+		return -EBUSY;
+	}
+	memset(context->scratch, 0, sizeof(*context->scratch));
+	context->scratch->owner = owner;
+	return 0;
+}
+
+static int protocol_scratch_release(const struct sq_device_protocol_context *context,
+				    enum sq_device_protocol_scratch_owner owner)
+{
+	if (context == NULL || context->scratch == NULL ||
+	    owner == SQ_DEVICE_PROTOCOL_SCRATCH_FREE) {
+		return -EINVAL;
+	}
+	if (context->scratch->owner != owner) {
+		return -EBUSY;
+	}
+	memset(context->scratch, 0, sizeof(*context->scratch));
+	return 0;
+}
+
 static int write_planned_resume_file(const struct sq_device_protocol_context *context)
 {
-	struct sq_device_planned_resume_record record = {0};
-	uint8_t bytes[SQ_DEVICE_PLANNED_RESUME_LEN];
-	size_t len = 0;
-	char temp_path[SQ_APP_STORE_PLANNED_RESUME_PATH_MAX];
-	char final_path[SQ_APP_STORE_PLANNED_RESUME_PATH_MAX];
-	struct fs_file_t file;
+	struct sq_device_protocol_scratch *scratch;
 	ssize_t written;
 	int result;
 
 	if (context == NULL || context->runtime == NULL || context->store_mount_point == NULL) {
 		return -EINVAL;
 	}
-	result = sq_device_protocol_planned_resume_from_runtime(context->runtime, &record);
+	result = protocol_scratch_acquire(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
 	if (result != 0) {
 		return result;
 	}
-	result = sq_device_protocol_encode_planned_resume(&record, bytes, sizeof(bytes), &len);
+	scratch = context->scratch;
+	result = sq_device_protocol_planned_resume_from_runtime(context->runtime,
+							       &scratch->planned_resume_record);
 	if (result != 0) {
+		(void)protocol_scratch_release(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
 		return result;
 	}
-	result = sq_app_store_planned_resume_temp_path(context->store_mount_point, temp_path,
-						       sizeof(temp_path));
+	result = sq_device_protocol_encode_planned_resume(
+		&scratch->planned_resume_record, scratch->planned_resume_bytes,
+		sizeof(scratch->planned_resume_bytes), &scratch->planned_resume_len);
 	if (result != 0) {
+		(void)protocol_scratch_release(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
 		return result;
 	}
-	result = sq_app_store_planned_resume_path(context->store_mount_point, final_path,
-						  sizeof(final_path));
+	result = sq_app_store_planned_resume_temp_path(
+		context->store_mount_point, scratch->planned_resume_temp_path,
+		sizeof(scratch->planned_resume_temp_path));
 	if (result != 0) {
+		(void)protocol_scratch_release(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
 		return result;
 	}
-	fs_file_t_init(&file);
-	result = fs_open(&file, temp_path, FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC);
+	result = sq_app_store_planned_resume_path(
+		context->store_mount_point, scratch->planned_resume_final_path,
+		sizeof(scratch->planned_resume_final_path));
 	if (result != 0) {
+		(void)protocol_scratch_release(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
 		return result;
 	}
-	written = fs_write(&file, bytes, len);
-	result = fs_close(&file);
+	fs_file_t_init(&scratch->planned_resume_file);
+	result = fs_open(&scratch->planned_resume_file, scratch->planned_resume_temp_path,
+			 FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC);
+	if (result != 0) {
+		(void)protocol_scratch_release(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
+		return result;
+	}
+	written = fs_write(&scratch->planned_resume_file, scratch->planned_resume_bytes,
+			   scratch->planned_resume_len);
+	result = fs_close(&scratch->planned_resume_file);
 	if (written < 0) {
+		(void)protocol_scratch_release(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
 		return (int)written;
 	}
 	if (result != 0) {
+		(void)protocol_scratch_release(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
 		return result;
 	}
-	if ((size_t)written != len) {
+	if ((size_t)written != scratch->planned_resume_len) {
+		(void)protocol_scratch_release(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
 		return -EIO;
 	}
-	result = fs_unlink(final_path);
+	result = fs_unlink(scratch->planned_resume_final_path);
 	if (result != 0 && result != -ENOENT) {
+		(void)protocol_scratch_release(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
 		return result;
 	}
-	return fs_rename(temp_path, final_path);
+	result = fs_rename(scratch->planned_resume_temp_path,
+			   scratch->planned_resume_final_path);
+	(void)protocol_scratch_release(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
+	return result;
 }
 
 static int sqdp_status_to_protocol_result(SqdpStatus status)
@@ -1097,52 +1138,67 @@ int sq_device_protocol_start_root(const struct sq_device_protocol_context *conte
 
 int sq_device_protocol_restore_planned_resume(const struct sq_device_protocol_context *context)
 {
-	struct sq_device_planned_resume_record record = {0};
-	uint8_t bytes[SQ_DEVICE_PLANNED_RESUME_LEN];
-	char path[SQ_APP_STORE_PLANNED_RESUME_PATH_MAX];
-	struct fs_file_t file;
+	struct sq_device_protocol_scratch *scratch;
 	ssize_t read_len;
 	int result;
 
 	if (context == NULL || context->runtime == NULL || context->store_mount_point == NULL) {
 		return -EINVAL;
 	}
-	result = sq_app_store_planned_resume_path(context->store_mount_point, path, sizeof(path));
+	result = protocol_scratch_acquire(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
 	if (result != 0) {
 		return result;
 	}
-	fs_file_t_init(&file);
-	result = fs_open(&file, path, FS_O_READ);
+	scratch = context->scratch;
+	result = sq_app_store_planned_resume_path(
+		context->store_mount_point, scratch->planned_resume_final_path,
+		sizeof(scratch->planned_resume_final_path));
+	if (result != 0) {
+		(void)protocol_scratch_release(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
+		return result;
+	}
+	fs_file_t_init(&scratch->planned_resume_file);
+	result = fs_open(&scratch->planned_resume_file, scratch->planned_resume_final_path,
+			 FS_O_READ);
 	if (result == -ENOENT) {
+		(void)protocol_scratch_release(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
 		return -ENOENT;
 	}
 	if (result != 0) {
+		(void)protocol_scratch_release(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
 		return result;
 	}
-	read_len = fs_read(&file, bytes, sizeof(bytes));
-	result = fs_close(&file);
+	read_len = fs_read(&scratch->planned_resume_file, scratch->planned_resume_bytes,
+			   sizeof(scratch->planned_resume_bytes));
+	result = fs_close(&scratch->planned_resume_file);
 	if (read_len < 0) {
+		(void)protocol_scratch_release(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
 		return (int)read_len;
 	}
 	if (result != 0) {
+		(void)protocol_scratch_release(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
 		return result;
 	}
-	result = sq_device_protocol_decode_planned_resume(bytes, (size_t)read_len, &record);
+	result = sq_device_protocol_decode_planned_resume(
+		scratch->planned_resume_bytes, (size_t)read_len,
+		&scratch->planned_resume_record);
 	if (result != 0) {
-		(void)fs_unlink(path);
+		(void)fs_unlink(scratch->planned_resume_final_path);
+		(void)protocol_scratch_release(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
 		return result;
 	}
-	(void)fs_unlink(path);
+	(void)fs_unlink(scratch->planned_resume_final_path);
 	memset(context->runtime->return_stack, 0, sizeof(context->runtime->return_stack));
-	context->runtime->return_stack_count = record.return_stack_count;
-	for (size_t i = 0; i < record.return_stack_count; i++) {
-		strncpy(context->runtime->return_stack[i], record.return_stack[i],
+	context->runtime->return_stack_count = scratch->planned_resume_record.return_stack_count;
+	for (size_t i = 0; i < scratch->planned_resume_record.return_stack_count; i++) {
+		strncpy(context->runtime->return_stack[i],
+			scratch->planned_resume_record.return_stack[i],
 			sizeof(context->runtime->return_stack[i]) - 1);
 	}
 	memset(context->runtime->start_reason, 0, sizeof(context->runtime->start_reason));
 	strncpy(context->runtime->start_reason, "wake", sizeof(context->runtime->start_reason) - 1);
-	for (size_t i = 0; i < record.armed_app_count; i++) {
-		result = register_app_triggers(context, record.armed_apps[i]);
+	for (size_t i = 0; i < scratch->planned_resume_record.armed_app_count; i++) {
+		result = register_app_triggers(context, scratch->planned_resume_record.armed_apps[i]);
 		if (result != 0) {
 			sq_vm_runtime_record_trace(
 				context->runtime,
@@ -1150,8 +1206,9 @@ int sq_device_protocol_restore_planned_resume(const struct sq_device_protocol_co
 				sizeof("planned resume armed app restore failed") - 1);
 		}
 	}
-	result = start_resolved_app(context, record.current_app, (const uint8_t *)"app.start",
-				    sizeof("app.start") - 1, true);
+	result = start_resolved_app(context, scratch->planned_resume_record.current_app,
+				    (const uint8_t *)"app.start", sizeof("app.start") - 1, true);
+	(void)protocol_scratch_release(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
 	if (result != 0) {
 		sq_vm_runtime_record_trace(context->runtime,
 					   (const uint8_t *)"planned resume app missing",

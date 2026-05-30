@@ -81,9 +81,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   paths; check those before splitting more app-store or protocol helpers
   because per-function `.su` reductions can increase real stack high-water use
   when a larger callee remains active under the caller.
-  Current ESP32-C3 build evidence after compact substring-capable VM string
-  interning reports 198,320 bytes of linker DRAM, 198,304 bytes through
-  `zephyr-ram-audit`, and a 15,128-byte `runtime.4` static runtime symbol.
+  Current ESP32-C3 build evidence after planned-resume protocol scratch
+  migration reports 198,816 bytes of linker DRAM, 198,800 bytes through
+  `zephyr-ram-audit`, and a 15,096-byte `runtime.4` static runtime symbol.
 
   Current stack report evidence shows that the previous
   `commit_install -> sq_app_store_scan_registry_with_path -> join_path2`
@@ -101,20 +101,17 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   `struct fs_dir_t`, `struct fs_dirent`, and small scalars. It is not on the
   install-commit protocol path.
 
-  Current source-known protocol/main stack targets are planned-resume paths:
-  `main -> sq_device_protocol_restore_planned_resume -> register_app_triggers ->
+  Planned-resume checkpoint and restore use protocol-owned scratch for the
+  planned-resume record, encoded bytes, file paths, and file handle instead of
+  carrying those temporaries on the protocol/main stack. Keep validating the
+  current protocol/main and worker stack budgets with the hardware suite before
+  attempting another stack reduction. Current stack-report evidence after that
+  migration shows `sq_device_protocol_restore_planned_resume ->
+  register_app_triggers -> register_app_trigger_timer ->
+  sq_vm_runtime_register_armed_timer` at 240 cumulative bytes and
+  `sq_device_protocol_poll -> register_app_triggers ->
   register_app_trigger_timer -> sq_vm_runtime_register_armed_timer` at
-  864 cumulative bytes, and `sq_device_protocol_poll ->
-  write_planned_resume_file -> sq_device_protocol_encode_planned_resume ->
-  append_fixed_app_id` at 656 cumulative bytes. The restore frame carries a
-  planned-resume record, encoded record bytes, a 48-byte planned-resume path,
-  an `fs_file_t`, and scalars before re-registering armed app triggers. The
-  write frame carries a planned-resume record, encoded record bytes, separate
-  48-byte temp and final paths needed for the temp-write-plus-rename protocol,
-  an `fs_file_t`, and scalars. Next RAM work should investigate whether those
-  planned-resume record/encoded-byte/path/file temporaries can use
-  caller-owned, runtime-owned, or streaming storage without weakening atomic
-  checkpoint behavior, app-store correctness, or wake restore semantics.
+  272 cumulative bytes.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
   succeeds but serial commands stall, app launch hangs, or input dispatch stops
   responding, check stack exhaustion early with `device resources`, compare
@@ -123,12 +120,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   before treating GPIO, flashing, or serial as the primary failure. Hardware
   scripts now use the shared bounded command helper, which prints captured
   command output when a command fails or times out.
-- Investigate the ESP32-C3 app-registry hardware check returning an empty host
-  `app list` after `app install` reports success. This reproduces on clean
-  firmware with no `device errors` output after restoring the app-store
-  directory check to `fs_stat`, so do not use
-  `scripts/c3-supermini-test-app-registry-api.sh` as evidence for stack changes
-  until the registry/listing path is diagnosed.
 - Complete physical GPIO9 input stack attribution and budget reduction.
   `scripts/c3-supermini-measure-input-stack-isolation.sh` now records a
   fresh-boot physical input path baseline through format, install, launch, and

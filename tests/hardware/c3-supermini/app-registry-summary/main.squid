@@ -6,11 +6,6 @@ event.on("app.start") {
     debug.print("registry app", appId)
   }
   let selected = app.registry.get(apps, 0)
-  debug.print(
-    "registry selected",
-    selected.id,
-    selected.name,
-    selected.build,
-    selected.description
-  )
+  debug.print("registry selected id", selected.id)
+  debug.print("registry selected name", selected.name)
 }

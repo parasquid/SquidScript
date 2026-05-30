@@ -876,6 +876,38 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertIn("docs/app_lifecycle_state_machine.md", self.read(path))
 
+    def test_planned_resume_uses_protocol_scratch_not_stack_arrays(self):
+        protocol_h = self.read("firmware/zephyr/src/device_protocol.h")
+        protocol_c = self.read("firmware/zephyr/src/device_protocol.c")
+        main_c = self.read("firmware/zephyr/src/main.c")
+        ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
+
+        write_start = protocol_c.index("static int write_planned_resume_file")
+        write_end = protocol_c.index("static int sqdp_status_to_protocol_result")
+        write_body = protocol_c[write_start:write_end]
+        restore_start = protocol_c.index("int sq_device_protocol_restore_planned_resume")
+        restore_end = protocol_c.index("int sq_device_protocol_poll")
+        restore_body = protocol_c[restore_start:restore_end]
+
+        self.assertIn("enum sq_device_protocol_scratch_owner", protocol_h)
+        self.assertIn("SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME", protocol_h)
+        self.assertIn("struct sq_device_protocol_scratch", protocol_h)
+        self.assertIn("struct sq_device_protocol_scratch *scratch;", protocol_h)
+        self.assertIn("static struct sq_device_protocol_scratch protocol_scratch;", main_c)
+        self.assertIn(".scratch = &protocol_scratch", main_c)
+        self.assertIn("protocol_scratch_acquire(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME)", write_body)
+        self.assertIn("protocol_scratch_release(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME)", write_body)
+        self.assertIn("protocol_scratch_acquire(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME)", restore_body)
+        self.assertIn("protocol_scratch_release(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME)", restore_body)
+        for body in [write_body, restore_body]:
+            self.assertNotIn("struct sq_device_planned_resume_record record = {0};", body)
+            self.assertNotIn("uint8_t bytes[SQ_DEVICE_PLANNED_RESUME_LEN];", body)
+            self.assertNotIn("char path[SQ_APP_STORE_PLANNED_RESUME_PATH_MAX];", body)
+            self.assertNotIn("char temp_path[SQ_APP_STORE_PLANNED_RESUME_PATH_MAX];", body)
+            self.assertNotIn("char final_path[SQ_APP_STORE_PLANNED_RESUME_PATH_MAX];", body)
+            self.assertNotIn("struct fs_file_t file;", body)
+        self.assertIn("test_planned_resume_scratch_rejects_overlap", ztest)
+
     def test_vm_runtime_uses_byte_sized_counts_for_small_fixed_arrays(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         body = runtime_h[
@@ -1300,7 +1332,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             suite.index("c3-supermini-measure-stack-usage.sh"),
         )
 
-    def test_hardware_suite_keeps_app_registry_api_out_until_baseline_is_fixed(self):
+    def test_hardware_suite_runs_app_registry_api_after_lifecycle(self):
         script = self.read("scripts/c3-supermini-test-app-registry-api.sh")
         app = self.read("tests/hardware/c3-supermini/app-registry-summary/main.squid")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
@@ -1319,10 +1351,23 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             script,
         )
         self.assertIn("output=registry app app-registry-summary", script)
-        self.assertIn("output=registry selected app-registry-summary app-registry-summary", script)
+        self.assertIn("output=registry selected id app-registry-summary", script)
+        self.assertIn("output=registry selected name app-registry-summary", script)
+        self.assertNotIn(
+            "output=registry selected app-registry-summary app-registry-summary",
+            script,
+        )
         self.assertIn("assert_file_empty_command", script)
-        self.assertIn("app-registry hardware check returning an empty host", roadmap)
-        self.assertNotIn("c3-supermini-test-app-registry-api.sh", suite)
+        self.assertNotIn("app-registry hardware check returning an empty host", roadmap)
+        self.assertIn("c3-supermini-test-app-registry-api.sh", suite)
+        self.assertLess(
+            suite.index("c3-supermini-test-app-lifecycle.sh"),
+            suite.index("c3-supermini-test-app-registry-api.sh"),
+        )
+        self.assertLess(
+            suite.index("c3-supermini-test-app-registry-api.sh"),
+            suite.index("c3-supermini-measure-stack-usage.sh"),
+        )
 
     def test_hardware_suite_runs_device_config_script_before_stack_measurement(self):
         script = self.read("scripts/c3-supermini-test-device-config.sh")

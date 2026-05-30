@@ -222,6 +222,10 @@ static struct fs_mount_t test_fs_mount = {
 
 ZTEST_SUITE(squidscript_protocol, NULL, NULL, NULL, NULL, NULL);
 
+static int write_test_file(const char *path, const uint8_t *bytes, size_t len);
+static int mount_test_fs(void);
+static int format_test_app_store(void);
+
 ZTEST(squidscript_protocol, test_planned_resume_record_round_trips)
 {
 	struct sq_device_planned_resume_record record = {0};
@@ -289,6 +293,42 @@ ZTEST(squidscript_protocol, test_planned_resume_record_deduplicates_armed_app_id
 	zassert_str_equal(record.return_stack[0], "main");
 	zassert_equal(record.armed_app_count, 1);
 	zassert_str_equal(record.armed_apps[0], "break-reminder");
+}
+
+ZTEST(squidscript_protocol, test_planned_resume_scratch_rejects_overlap)
+{
+	struct sq_device_planned_resume_record record = {0};
+	uint8_t bytes[SQ_DEVICE_PLANNED_RESUME_LEN];
+	char path[SQ_APP_STORE_PLANNED_RESUME_PATH_MAX];
+	size_t len = 0;
+	struct sq_vm_runtime runtime = {0};
+	struct sq_app_registry registry = {0};
+	struct sq_app_store_vm_storage launch_storage = {0};
+	struct sq_device_protocol_scratch scratch = {
+		.owner = SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME,
+	};
+	struct sq_device_protocol_context context = {
+		.registry = &registry,
+		.store_mount_point = test_fs_mount.mnt_point,
+		.runtime = &runtime,
+		.launch_storage = &launch_storage,
+		.scratch = &scratch,
+		.fallback_app = &sq_zephyr_fallback_app,
+	};
+
+	strcpy(record.current_app, "reader");
+	zassert_equal(sq_device_protocol_encode_planned_resume(&record, bytes, sizeof(bytes), &len),
+		      0);
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(format_test_app_store(), 0);
+	zassert_equal(sq_app_store_planned_resume_path(test_fs_mount.mnt_point, path, sizeof(path)),
+		      0);
+	zassert_equal(write_test_file(path, bytes, len), 0);
+
+	zassert_equal(sq_device_protocol_restore_planned_resume(&context), -EBUSY);
+	zassert_equal(scratch.owner, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }
 
 static void wait_runtime_done(struct sq_vm_runtime *runtime)
@@ -3793,10 +3833,11 @@ ZTEST(squidscript_protocol, test_vm_runtime_dispatches_app_registry_callbacks)
 	memset(&runtime, 0, sizeof(runtime));
 	sq_vm_runtime_set_registry(&runtime, &registry);
 	zassert_equal(sq_vm_runtime_dispatch(&runtime, &backend, "app.start"), 0);
-	zassert_equal(runtime.output_count, 3);
+	zassert_equal(runtime.output_count, 4);
 	zassert_str_equal(runtime.outputs[0], "registry app alpha");
 	zassert_str_equal(runtime.outputs[1], "registry app beta");
-	zassert_str_equal(runtime.outputs[2], "registry selected alpha alpha  ");
+	zassert_str_equal(runtime.outputs[2], "registry selected id alpha");
+	zassert_str_equal(runtime.outputs[3], "registry selected name alpha");
 }
 
 ZTEST(squidscript_protocol, test_vm_runtime_dispatches_stack_inspection_callbacks)

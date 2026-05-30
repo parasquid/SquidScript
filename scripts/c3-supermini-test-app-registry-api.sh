@@ -66,9 +66,10 @@ assert_file_contains "${apps_out}" "app=app-registry-summary"
 
 run_capture launch-registry cargo run --quiet -p squidc -- app launch app-registry-summary >/dev/null
 
-output_out="$(wait_for_contains output-registry "output=registry selected app-registry-summary app-registry-summary" \
+output_out="$(wait_for_contains output-registry "output=registry selected name app-registry-summary" \
   "device output" cargo run --quiet -p squidc -- device output)"
 assert_file_contains "${output_out}" "output=registry app app-registry-summary"
+assert_file_contains "${output_out}" "output=registry selected id app-registry-summary"
 
 errors_out="$(run_capture errors cargo run --quiet -p squidc -- device errors)"
 assert_file_empty_command "${errors_out}"
