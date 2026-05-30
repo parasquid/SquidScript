@@ -42,9 +42,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   slice. Investigate safe GPIO wake for physical inputs without using BOOT/GPIO9
   as the default wake source, and keep wake trigger metadata derived from
   installed app trigger declarations rather than persisted VM state.
-- Replace Zephyr protocol ztest static SQBC byte arrays with generated fixtures
-  built from checked-in `.squid` sources, so builtin ID regrouping cannot leave
-  protocol tests executing stale bytecode.
 - Design and implement richer logical input events for press and release
   phases, long press, double tap, and chords. Specify naming, target policy,
   precedence, debounce/timing windows, and whether recognized long/chord/double

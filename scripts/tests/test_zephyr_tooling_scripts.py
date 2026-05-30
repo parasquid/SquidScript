@@ -110,6 +110,17 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("native_sim/native/64", script)
         self.assertIn("scripts/zephyr-test-protocol.sh", docs)
 
+    def test_protocol_ztests_use_generated_squid_fixtures_not_static_sqbc_blobs(self):
+        ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
+        cmake = self.read("firmware/zephyr/tests/protocol/CMakeLists.txt")
+        docs = self.read("docs/firmware_build_architecture.md")
+
+        self.assertNotIn("_sqbc[] = {", ztest)
+        self.assertIn("squidscript_protocol_fixtures.h", ztest)
+        self.assertIn("generate-zephyr-protocol-fixtures.py", cmake)
+        self.assertIn("fixtures/*.squid", cmake)
+        self.assertIn("Generated protocol test fixtures", docs)
+
     def test_build_wrapper_applies_supermini_overlay(self):
         build = self.read("scripts/c3-supermini-zephyr-build.sh")
 

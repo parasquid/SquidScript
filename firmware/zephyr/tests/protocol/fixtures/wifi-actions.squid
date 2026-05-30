@@ -1,0 +1,14 @@
+app "wifi-actions"
+
+event.on("app.start") {
+  let ap = service.wifi.startAP("SquidScript")
+  let ip = service.wifi.getAPIP()
+  let stop = service.wifi.stopAP()
+  let connected = service.wifi.connect("dev")
+  let disconnected = service.wifi.disconnect()
+  debug.print(ap.ok, ap.error)
+  debug.print(ip.error)
+  debug.print(stop.ok, stop.error, connected.ok, connected.error, disconnected.ok, disconnected.error)
+}
+
+screen("main") {}

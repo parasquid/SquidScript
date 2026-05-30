@@ -1,0 +1,5 @@
+app "noop"
+
+event.on("app.start") {}
+
+screen("main") {}

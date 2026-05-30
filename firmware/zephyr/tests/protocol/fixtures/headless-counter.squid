@@ -1,0 +1,19 @@
+app "headless-counter" target "esp32c3-super-mini"
+
+state {
+  count: int = 0
+}
+
+event.on("app.start") {
+  debug.print("started")
+}
+
+event.on("key.SELECT") {
+  state.count = state.count + 1
+}
+
+event.on("key.BACK") {
+  app.exit()
+}
+
+screen("main") {}

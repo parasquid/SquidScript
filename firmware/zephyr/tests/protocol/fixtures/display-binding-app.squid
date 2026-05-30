@@ -1,0 +1,14 @@
+app "display-binding-app" target "esp32c3-super-mini"
+
+device {
+  display "status" { use "device/status-display.sqdevice" }
+}
+
+event.on("app.start") {
+  debug.print("display binding ready")
+  screen.open("main")
+}
+
+screen("main") {
+  service.display.select("status")
+}

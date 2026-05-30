@@ -1,0 +1,18 @@
+app "app-registry-summary"
+
+event.on("app.start") {
+  let apps = app.registry()
+  for appId in apps max 4 {
+    debug.print("registry app", appId)
+  }
+  let selected = app.registry.get(apps, 0)
+  debug.print(
+    "registry selected",
+    selected.id,
+    selected.name,
+    selected.build,
+    selected.description
+  )
+}
+
+screen("main") {}

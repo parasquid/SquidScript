@@ -9,7 +9,7 @@ app.triggers {
 }
 
 event.on("timer.break") {
-  @fires = @fires + 1
+  state.fires = state.fires + 1
   debug.print("break fired", @fires)
 }
 

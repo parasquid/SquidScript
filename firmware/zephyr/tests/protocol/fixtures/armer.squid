@@ -1,0 +1,7 @@
+app "armer"
+
+event.on("app.start") {
+  app.arm("break-reminder")
+}
+
+screen("main") {}

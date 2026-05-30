@@ -1,0 +1,10 @@
+app "content-read"
+
+event.on("app.start") {
+  let text = file.readText("notes.txt")
+  let lines = file.readLines("notes.txt", 4)
+  debug.print(text.ok, text.error, text.text)
+  debug.print(lines.ok, lines.error, lines.lines)
+}
+
+screen("main") {}

@@ -35,6 +35,20 @@ add_custom_command(
   VERBATIM
 )
 
+file(GLOB SQUID_ZEPHYR_PROTOCOL_FIXTURE_SOURCES CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_LIST_DIR}/fixtures/*.squid"
+)
+set(SQUID_ZEPHYR_PROTOCOL_FIXTURES_H "${CMAKE_CURRENT_BINARY_DIR}/generated/squidscript_protocol_fixtures.h")
+add_custom_command(
+  OUTPUT "${SQUID_ZEPHYR_PROTOCOL_FIXTURES_H}"
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/../../../../scripts/generate-zephyr-protocol-fixtures.py" "${SQUID_ZEPHYR_PROTOCOL_FIXTURES_H}" ${SQUID_ZEPHYR_PROTOCOL_FIXTURE_SOURCES}
+  DEPENDS ${SQUID_ZEPHYR_PROTOCOL_FIXTURE_SOURCES} "${CMAKE_CURRENT_LIST_DIR}/../../../../scripts/generate-zephyr-protocol-fixtures.py"
+  WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/../../../.."
+  VERBATIM
+)
+add_custom_target(squidscript_protocol_fixtures DEPENDS "${SQUID_ZEPHYR_PROTOCOL_FIXTURES_H}")
+add_dependencies(app squidscript_protocol_fixtures)
+
 target_include_directories(app PRIVATE ../../src "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_sources(app PRIVATE
   ../../src/app_store.c

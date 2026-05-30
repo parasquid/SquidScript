@@ -1,0 +1,8 @@
+app "resources"
+
+event.on("app.start") {
+  debug.print("system memory", system.memory())
+  debug.print("system apps", system.storage("apps"))
+}
+
+screen("main") {}

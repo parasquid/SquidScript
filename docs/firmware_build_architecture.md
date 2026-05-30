@@ -93,6 +93,15 @@ The repo-local Zephyr setup installs the lightweight Twister dependencies
 needed to run `firmware/zephyr/tests/protocol` through Zephyr's test runner.
 Use `scripts/zephyr-test-protocol.sh` for that protocol suite; it selects
 `native_sim/native/64`, which avoids requiring host 32-bit libc headers.
+Generated protocol test fixtures come from checked-in SquidScript sources under
+`firmware/zephyr/tests/protocol/fixtures`. The protocol test CMake target runs
+`scripts/generate-zephyr-protocol-fixtures.py`, which compiles each `.squid`
+fixture with `squidc build` and emits `squidscript_protocol_fixtures.h` in the
+build directory. Zephyr protocol ztests should include that generated header
+and reference the generated `<fixture>_sqbc` arrays. Do not add hand-maintained
+SQBC byte arrays to `firmware/zephyr/tests/protocol/src/main.c`; add a minimal
+`.squid` fixture instead so builtin ID and SQBC layout changes are exercised
+through the current compiler.
 Temp-run state uses the same file-backed VM storage backend as installed apps,
 with a bounded temp state path cleared before each temp launch, so the firmware
 does not reserve a resident saved-state-capacity RAM buffer for temp runs.
