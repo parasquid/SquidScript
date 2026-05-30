@@ -125,6 +125,9 @@ lines together. The lifecycle fixtures use volatile
 in-memory counters and intentionally avoid `state.load()` / `state.save()` so
 the check distinguishes ordinary foreground event dispatch from fresh VM
 sessions on launch, armed trigger activation, and app-exit return.
+See `docs/app_lifecycle_state_machine.md` for the lifecycle state model and
+the `device reset` versus `device storage-format` isolation rule used by
+stateful hardware harnesses.
 
 The Zephyr app registry API check is
 `scripts/c3-supermini-test-app-registry-api.sh`. It formats app storage,

@@ -135,6 +135,10 @@ Production device execution flow:
 11. When an app exits, firmware starts the previous installed return target fresh with `event.on("app.start")`.
 12. If no return target exists, firmware restarts installed `main.sqbc`.
 
+See `docs/app_lifecycle_state_machine.md` for the foreground lifecycle state
+machine, host launch handoff, fallback `main`, armed trigger activation,
+planned sleep restore, and test isolation rules.
+
 The active foreground app session preserves in-memory state across
 non-lifecycle foreground event dispatches, such as key and foreground timer
 handlers. App launch, app-exit returns, and armed trigger activations start
@@ -1332,6 +1336,9 @@ event.on("app.exit") {
 ```
 
 Lifecycle handlers are optional.
+
+See `docs/app_lifecycle_state_machine.md` for the lifecycle transition model
+that determines when these handlers run and which start reason is reported.
 
 ---
 

@@ -1,0 +1,9 @@
+app "lifecycle-callbacks"
+
+event.on("repl") {
+  app.arm("break-reminder")
+  app.launch("reader")
+  app.disarm("break-reminder")
+}
+
+screen("main") {}

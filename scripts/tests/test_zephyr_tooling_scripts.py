@@ -801,6 +801,81 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertLess(body.index("dispatch_sequence"), body.index("dispatch_exited"))
         self.assertLess(body.index("dispatch_exited"), body.index("current_app"))
 
+    def test_app_lifecycle_uses_explicit_phase_enum(self):
+        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+        protocol_c = self.read("firmware/zephyr/src/device_protocol.c")
+        runtime_body = runtime_h[
+            runtime_h.index("struct sq_vm_runtime {") : runtime_h.index(
+                "void sq_vm_runtime_init", runtime_h.index("struct sq_vm_runtime {")
+            )
+        ]
+        poll_body = protocol_c[
+            protocol_c.index("int sq_device_protocol_poll")
+            : protocol_c.index(
+                "static int drain_runtime_lifecycle",
+                protocol_c.index("int sq_device_protocol_poll"),
+            )
+        ]
+        drain_body = protocol_c[
+            protocol_c.index("static int drain_runtime_lifecycle")
+            : protocol_c.index("static int repeated_runtime_lines_response")
+        ]
+
+        self.assertIn("enum sq_vm_runtime_lifecycle_phase", runtime_h)
+        for phase in [
+            "SQ_VM_RUNTIME_LIFECYCLE_IDLE",
+            "SQ_VM_RUNTIME_LIFECYCLE_LAUNCH_REQUESTED",
+            "SQ_VM_RUNTIME_LIFECYCLE_EXIT_FOR_LAUNCH",
+            "SQ_VM_RUNTIME_LIFECYCLE_RETURN_REQUESTED",
+            "SQ_VM_RUNTIME_LIFECYCLE_SLEEP_REQUESTED",
+            "SQ_VM_RUNTIME_LIFECYCLE_SLEEP_CHECKPOINT",
+        ]:
+            self.assertIn(phase, runtime_h)
+        self.assertIn("enum sq_vm_runtime_lifecycle_phase lifecycle_phase;", runtime_body)
+        self.assertIn("enum sq_vm_runtime_arm_phase", runtime_h)
+        self.assertIn("enum sq_vm_runtime_arm_phase arm_phase;", runtime_body)
+        self.assertIn("char arm_target_app[SQ_APP_STORE_APP_ID_MAX];", runtime_body)
+        self.assertIn("sq_vm_runtime_lifecycle_busy(runtime)", drain_body)
+        self.assertIn("switch (runtime->lifecycle_phase)", poll_body)
+        for obsolete_flag in [
+            "bool pending_launch_active;",
+            "bool pending_arm_active;",
+            "bool arm_registration_active;",
+            "bool lifecycle_launch_after_exit;",
+            "bool planned_sleep_requested;",
+            "bool planned_sleep_preparing;",
+        ]:
+            self.assertNotIn(obsolete_flag, runtime_body)
+
+    def test_app_lifecycle_state_machine_docs_are_linked(self):
+        lifecycle_doc = self.read("docs/app_lifecycle_state_machine.md")
+        expected_terms = [
+            "host `app launch`",
+            "`app.launch`",
+            "`app.exit`",
+            "fallback `main`",
+            "armed timer",
+            "planned sleep",
+            "start reason",
+            "`device reset`",
+            "`device storage-format`",
+            "`-ENOSPC`",
+            "```mermaid",
+        ]
+        for term in expected_terms:
+            with self.subTest(term=term):
+                self.assertIn(term, lifecycle_doc)
+
+        for path in [
+            "docs/language_spec.md",
+            "docs/developer_repl_protocol.md",
+            "docs/firmware_build_architecture.md",
+            "docs/firmware_app_storage.md",
+            "docs/hardware_target_tests.md",
+        ]:
+            with self.subTest(path=path):
+                self.assertIn("docs/app_lifecycle_state_machine.md", self.read(path))
+
     def test_vm_runtime_uses_byte_sized_counts_for_small_fixed_arrays(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         body = runtime_h[
@@ -1139,7 +1214,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("sq_app_store_vm_storage_for_app_bytes", app_store_h)
         self.assertNotIn("char app_id_buffer[SQ_APP_STORE_APP_ID_MAX];", body)
         self.assertNotIn("memcpy(app_id_buffer, launch.app_id, launch.app_id_len);", body)
-        self.assertIn("context->runtime->pending_launch_app", body)
+        self.assertIn("context->runtime->lifecycle_target_app", body)
         self.assertIn("drain_runtime_lifecycle(context, SQ_HOST_LAUNCH_DRAIN_TIMEOUT_MS)", body)
 
     def test_app_launch_uses_pending_lifecycle_chain_without_direct_start(self):
@@ -1148,7 +1223,10 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         launch_end = protocol.index("static int start_installed_app", launch_start)
         launch_body = protocol[launch_start:launch_end]
 
-        self.assertIn("context->runtime->pending_launch_active = true", launch_body)
+        self.assertIn(
+            "context->runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_LAUNCH_REQUESTED",
+            launch_body,
+        )
         self.assertIn("drain_runtime_lifecycle(context, SQ_HOST_LAUNCH_DRAIN_TIMEOUT_MS)", launch_body)
         self.assertNotIn("start_foreground_app_bytes", protocol)
         self.assertNotIn("start_installed_app_bytes(context, launch.app_id", launch_body)
@@ -2756,8 +2834,8 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("set_current || strlen(context->runtime->current_app) != app_id_len", start_body)
         self.assertIn("memcmp(context->runtime->current_app, app_id, app_id_len) != 0", start_body)
         self.assertNotIn("char previous_app[SQ_APP_STORE_APP_ID_MAX];", start_body)
-        self.assertIn("context->runtime->pending_launch_app", start_body)
-        self.assertIn("memset(context->runtime->pending_launch_app, 0,", start_body)
+        self.assertIn("context->runtime->lifecycle_previous_app", start_body)
+        self.assertIn("memset(context->runtime->lifecycle_previous_app, 0,", start_body)
 
     def test_installed_app_start_uses_byte_slice_runtime_start(self):
         protocol_c = self.read("firmware/zephyr/src/device_protocol.c")

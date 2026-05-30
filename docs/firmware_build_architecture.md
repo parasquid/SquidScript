@@ -392,6 +392,8 @@ starts. Planned sleep writes a firmware-owned lifecycle record under
 foreground return stack app ids, and armed app ids across ESP32-C3 timer
 wake. It does not persist VM frames, current screen, or foreground timers;
 apps persist their own content state through `state.save()` and `state.load()`.
+See `docs/app_lifecycle_state_machine.md` for the explicit lifecycle phases,
+transition rules, start reasons, and failure cases.
 The current Zephyr Wi-Fi callbacks use Zephyr Wi-Fi management for
 status, scan, AP start/stop, AP IP reporting, station connect/disconnect, and
 station DHCP/IP status reporting. `device wifi-profile` stores one volatile

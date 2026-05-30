@@ -199,17 +199,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   instead of mixed-lifetime heap usage. This should help explain failures where
   free heap appears sufficient but a larger contiguous allocation cannot be
   satisfied.
-- Formalize the app lifecycle state machine that is currently encoded as
-  Zephyr runtime flags plus ordered protocol polling branches. Document the
-  foreground lifecycle states, transitions, and failure cases for host
-  `app launch`, in-app `app.launch`, `app.exit`, armed timer activation,
-  fallback `main`, and planned sleep restore. Include Mermaid state/sequence
-  diagrams in stable docs so harnesses and future firmware changes can reason
-  about return-stack growth, `app.exit` cleanup, start reasons, fresh VM
-  sessions, and when `device reset` or storage formatting should be used to
-  isolate tests. Consider whether the C implementation should gain an explicit
-  lifecycle phase enum after the documentation makes the current implicit
-  state machine clear.
 - Refactor implicit runtime state-machine concepts into explicit, documented,
   testable abstractions where the transition model is already meaningful.
   Treat the app lifecycle as the first candidate, followed by device input

@@ -252,3 +252,5 @@ restarts the restored foreground app with `app.start` and
 current installed app metadata, and preserves return-stack behavior for
 `app.exit()`. Apps remain responsible for saving and loading their own content
 state with `state.save()` and `state.load()`.
+See `docs/app_lifecycle_state_machine.md` for planned sleep and wake restore
+in the broader app lifecycle state machine.

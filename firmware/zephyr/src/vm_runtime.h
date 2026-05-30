@@ -63,6 +63,20 @@ enum sq_vm_runtime_transfer_owner {
 	SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN = 3,
 };
 
+enum sq_vm_runtime_lifecycle_phase {
+	SQ_VM_RUNTIME_LIFECYCLE_IDLE = 0,
+	SQ_VM_RUNTIME_LIFECYCLE_LAUNCH_REQUESTED = 1,
+	SQ_VM_RUNTIME_LIFECYCLE_EXIT_FOR_LAUNCH = 2,
+	SQ_VM_RUNTIME_LIFECYCLE_RETURN_REQUESTED = 3,
+	SQ_VM_RUNTIME_LIFECYCLE_SLEEP_REQUESTED = 4,
+	SQ_VM_RUNTIME_LIFECYCLE_SLEEP_CHECKPOINT = 5,
+};
+
+enum sq_vm_runtime_arm_phase {
+	SQ_VM_RUNTIME_ARM_IDLE = 0,
+	SQ_VM_RUNTIME_ARM_REQUESTED = 1,
+};
+
 struct sq_vm_runtime_timer {
 	bool active;
 	bool repeating;
@@ -135,16 +149,11 @@ struct sq_vm_runtime {
 	uint32_t dispatch_sqbc_read_bytes;
 	bool dispatch_exited;
 	char current_app[SQ_APP_STORE_APP_ID_MAX];
-	char pending_launch_app[SQ_APP_STORE_APP_ID_MAX];
-	bool pending_launch_active;
-	char pending_arm_app[SQ_APP_STORE_APP_ID_MAX];
-	bool pending_arm_active;
-	bool arm_registration_active;
-	char arm_registration_app[SQ_APP_STORE_APP_ID_MAX];
+	enum sq_vm_runtime_lifecycle_phase lifecycle_phase;
 	char lifecycle_target_app[SQ_APP_STORE_APP_ID_MAX];
-	bool lifecycle_launch_after_exit;
-	bool planned_sleep_requested;
-	bool planned_sleep_preparing;
+	char lifecycle_previous_app[SQ_APP_STORE_APP_ID_MAX];
+	enum sq_vm_runtime_arm_phase arm_phase;
+	char arm_target_app[SQ_APP_STORE_APP_ID_MAX];
 	bool planned_sleep_ready;
 	int32_t planned_sleep_wake_after_ms;
 	char start_reason[16];
@@ -239,6 +248,17 @@ static inline int sq_vm_runtime_transfer_release(struct sq_vm_runtime *runtime,
 	ARG_UNUSED(owner);
 #endif
 	return 0;
+}
+
+static inline bool sq_vm_runtime_lifecycle_busy(const struct sq_vm_runtime *runtime)
+{
+	return runtime != NULL &&
+	       runtime->lifecycle_phase != SQ_VM_RUNTIME_LIFECYCLE_IDLE;
+}
+
+static inline bool sq_vm_runtime_arm_busy(const struct sq_vm_runtime *runtime)
+{
+	return runtime != NULL && runtime->arm_phase != SQ_VM_RUNTIME_ARM_IDLE;
 }
 
 void sq_vm_runtime_init(struct sq_vm_runtime *runtime);

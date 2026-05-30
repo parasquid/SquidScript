@@ -1332,7 +1332,7 @@ ZTEST(squidscript_protocol, test_host_app_launch_without_current_app_pushes_logi
 						      &context, response, sizeof(response),
 						      &response_len),
 		      SQ_PROTOCOL_OK);
-	zassert_false(runtime.pending_launch_active);
+	zassert_false(sq_vm_runtime_lifecycle_busy(&runtime));
 	zassert_str_equal(runtime.current_app, "reader");
 	zassert_equal(runtime.return_stack_count, 1);
 	zassert_str_equal(runtime.return_stack[0], "main");
@@ -1385,7 +1385,7 @@ ZTEST(squidscript_protocol, test_host_app_launch_without_current_app_starts_stat
 						      &response_len),
 		      SQ_PROTOCOL_OK);
 
-	zassert_false(runtime.pending_launch_active);
+	zassert_false(sq_vm_runtime_lifecycle_busy(&runtime));
 	zassert_equal(runtime.status, SQ_VM_RUNTIME_COMPLETE);
 	zassert_equal(runtime.result_code, 0);
 	zassert_str_equal(runtime.current_app, "state-counter");
@@ -1460,7 +1460,7 @@ ZTEST(squidscript_protocol, test_host_app_launch_noop_from_fallback_stays_protoc
 						      &context, response, sizeof(response),
 						      &response_len),
 		      SQ_PROTOCOL_OK);
-	zassert_false(runtime.pending_launch_active);
+	zassert_false(sq_vm_runtime_lifecycle_busy(&runtime));
 	zassert_str_equal(runtime.current_app, "noop");
 	zassert_equal(runtime.status, SQ_VM_RUNTIME_COMPLETE);
 
@@ -1722,15 +1722,7 @@ ZTEST(squidscript_protocol, test_event_dispatch_exposes_lifecycle_trace_records)
 	zassert_mem_equal(field.value, "repl", strlen("repl"));
 	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
 		      SQ_PROTOCOL_OK);
-	zassert_mem_equal(field.value, "app.arm break-reminder",
-			  strlen("app.arm break-reminder"));
-	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
-		      SQ_PROTOCOL_OK);
 	zassert_mem_equal(field.value, "app.launch reader", strlen("app.launch reader"));
-	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
-		      SQ_PROTOCOL_OK);
-	zassert_mem_equal(field.value, "app.disarm break-reminder",
-			  strlen("app.disarm break-reminder"));
 
 	k_sleep(K_MSEC(300));
 	zassert_equal(sq_vm_runtime_poll(&runtime), 0);
@@ -1745,18 +1737,77 @@ ZTEST(squidscript_protocol, test_event_dispatch_exposes_lifecycle_trace_records)
 		      SQ_PROTOCOL_OK);
 	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
 	offset = 0;
-	bool saw_arm = false;
 	bool saw_launch = false;
-	bool saw_disarm = false;
 	while (sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field) ==
 	       SQ_PROTOCOL_OK) {
-		saw_arm = saw_arm || field_string_equals(&field, "app.arm break-reminder");
 		saw_launch = saw_launch || field_string_equals(&field, "app.launch reader");
-		saw_disarm = saw_disarm || field_string_equals(&field, "app.disarm break-reminder");
 	}
-	zassert_true(saw_arm);
 	zassert_true(saw_launch);
-	zassert_true(saw_disarm);
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
+ZTEST(squidscript_protocol, test_second_lifecycle_request_in_one_dispatch_is_rejected)
+{
+	uint8_t payload[80];
+	uint8_t request[128];
+	uint8_t response[512];
+	size_t payload_len = 0;
+	size_t response_len = 0;
+	struct sq_device_identity identity = {
+		.target = "esp32c3-supermini",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_vm_runtime runtime = {0};
+	struct sq_app_store_vm_storage launch_storage = {0};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.store_mount_point = test_fs_mount.mnt_point,
+		.runtime = &runtime,
+		.launch_storage = &launch_storage,
+	};
+
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point,
+					       "double-lifecycle-request",
+					       double_lifecycle_request_sqbc,
+					       sizeof(double_lifecycle_request_sqbc)),
+		      0);
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "reader", reader_exit_sqbc,
+					       sizeof(reader_exit_sqbc)),
+		      0);
+	zassert_equal(sq_protocol_append_string_field(payload, sizeof(payload), &payload_len, 1,
+						      "double-lifecycle-request"),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_append_string_field(payload, sizeof(payload), &payload_len, 2,
+						      "repl"),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_EVENT_DISPATCH,
+						      SQ_STATUS_OK, 48, payload, payload_len,
+						      request, sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	memcpy(&request[SQ_PROTOCOL_HEADER_LEN], payload, payload_len);
+
+	zassert_equal(sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN + payload_len,
+						      &context, response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	wait_runtime_done(&runtime);
+	zassert_equal(runtime.status, SQ_VM_RUNTIME_ERROR,
+		      "status=%d result=%d phase=%d target=%s current=%s trace_count=%u trace0=%s trace1=%s trace2=%s trace3=%s",
+		      runtime.status, runtime.result_code, runtime.lifecycle_phase,
+		      runtime.lifecycle_target_app, runtime.current_app, runtime.trace_count,
+		      runtime.traces[0], runtime.traces[1], runtime.traces[2],
+		      runtime.traces[3]);
+	zassert_not_equal(runtime.result_code, 0,
+			  "status=%d result=%d phase=%d target=%s current=%s trace_count=%u trace0=%s trace1=%s trace2=%s trace3=%s",
+			  runtime.status, runtime.result_code, runtime.lifecycle_phase,
+			  runtime.lifecycle_target_app, runtime.current_app, runtime.trace_count,
+			  runtime.traces[0], runtime.traces[1], runtime.traces[2],
+			  runtime.traces[3]);
+	zassert_false(sq_vm_runtime_lifecycle_busy(&runtime));
+	zassert_str_equal(runtime.current_app, "");
 
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }
@@ -1832,11 +1883,18 @@ ZTEST(squidscript_protocol, test_app_launch_and_exit_update_foreground_stack)
 						      &response_len),
 		      SQ_PROTOCOL_OK);
 	wait_runtime_done(&runtime);
-	zassert_equal(poll_until_current_app(&context, &runtime, "reader"), 0);
+	int poll_result = poll_until_current_app(&context, &runtime, "reader");
+	zassert_true(poll_result == 0,
+		     "poll_result=%d current=%s status=%d result=%d phase=%d target=%s previous=%s exited=%d stack=%u output=%u trace_count=%u trace0=%s trace1=%s trace2=%s trace3=%s",
+		     poll_result, runtime.current_app, runtime.status, runtime.result_code,
+		     runtime.lifecycle_phase, runtime.lifecycle_target_app,
+		     runtime.lifecycle_previous_app, runtime.dispatch_exited,
+		     runtime.return_stack_count, runtime.output_count, runtime.trace_count,
+		     runtime.traces[0], runtime.traces[1], runtime.traces[2], runtime.traces[3]);
 	zassert_true(strcmp(runtime.current_app, "reader") == 0,
-		     "current=%s status=%d pending=%d pending_app=%s exited=%d stack=%u output=%u trace_count=%u trace0=%s trace1=%s trace2=%s trace3=%s",
-		     runtime.current_app, runtime.status, runtime.pending_launch_active,
-		     runtime.pending_launch_app, runtime.dispatch_exited, runtime.return_stack_count,
+		     "current=%s status=%d phase=%d target_app=%s exited=%d stack=%u output=%u trace_count=%u trace0=%s trace1=%s trace2=%s trace3=%s",
+		     runtime.current_app, runtime.status, runtime.lifecycle_phase,
+		     runtime.lifecycle_target_app, runtime.dispatch_exited, runtime.return_stack_count,
 		     runtime.output_count, runtime.trace_count, runtime.traces[0], runtime.traces[1],
 		     runtime.traces[2], runtime.traces[3]);
 	zassert_equal(runtime.return_stack_count, 2);
@@ -1933,8 +1991,8 @@ ZTEST(squidscript_protocol, test_app_arm_registers_timer_and_dispatches_armed_ap
 	zassert_equal(sq_app_store_scan_registry(test_fs_mount.mnt_point, &registry), 0);
 
 	strncpy(runtime.current_app, "armer", sizeof(runtime.current_app) - 1);
-	strncpy(runtime.pending_arm_app, "break-reminder", sizeof(runtime.pending_arm_app) - 1);
-	runtime.pending_arm_active = true;
+	strncpy(runtime.arm_target_app, "break-reminder", sizeof(runtime.arm_target_app) - 1);
+	runtime.arm_phase = SQ_VM_RUNTIME_ARM_REQUESTED;
 	zassert_equal(sq_device_protocol_poll(&context), 0);
 	zassert_str_equal(runtime.current_app, "armer");
 	zassert_equal(runtime.armed_timer_count, 1);
@@ -3593,8 +3651,8 @@ ZTEST(squidscript_protocol, test_zephyr_calls_squidvm_ffi_lifecycle_callbacks)
 {
 	struct ffi_vm_fixture fixture = {
 		.storage = {
-			.sqbc = lifecycle_trace_sqbc,
-			.sqbc_len = sizeof(lifecycle_trace_sqbc),
+			.sqbc = lifecycle_callbacks_sqbc,
+			.sqbc_len = sizeof(lifecycle_callbacks_sqbc),
 		},
 	};
 	SqvmCallbacks callbacks = {

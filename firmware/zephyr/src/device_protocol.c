@@ -768,12 +768,12 @@ static int __noinline launch_app(const struct sq_protocol_request *request,
 		return -EINVAL;
 	}
 
-	if (context->runtime->pending_launch_active) {
+	if (sq_vm_runtime_lifecycle_busy(context->runtime)) {
 		return -EBUSY;
 	}
-	memcpy(context->runtime->pending_launch_app, launch.app_id, launch.app_id_len);
-	context->runtime->pending_launch_app[launch.app_id_len] = '\0';
-	context->runtime->pending_launch_active = true;
+	memcpy(context->runtime->lifecycle_target_app, launch.app_id, launch.app_id_len);
+	context->runtime->lifecycle_target_app[launch.app_id_len] = '\0';
+	context->runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_LAUNCH_REQUESTED;
 
 	int result = drain_runtime_lifecycle(context, SQ_HOST_LAUNCH_DRAIN_TIMEOUT_MS);
 	if (result != 0) {
@@ -830,10 +830,11 @@ static int start_installed_app_bytes(const struct sq_device_protocol_context *co
 	}
 	context->runtime->job_backend = sq_app_store_vm_storage_backend(context->launch_storage);
 	if (set_current) {
-		strncpy(context->runtime->pending_launch_app, context->runtime->current_app,
-			sizeof(context->runtime->pending_launch_app) - 1);
-		context->runtime->pending_launch_app[sizeof(context->runtime->pending_launch_app) -
-						    1] = '\0';
+		strncpy(context->runtime->lifecycle_previous_app, context->runtime->current_app,
+			sizeof(context->runtime->lifecycle_previous_app) - 1);
+		context->runtime
+			->lifecycle_previous_app[sizeof(context->runtime->lifecycle_previous_app) -
+						 1] = '\0';
 		memcpy(context->runtime->current_app, app_id, app_id_len);
 		context->runtime->current_app[app_id_len] = '\0';
 	}
@@ -841,18 +842,19 @@ static int start_installed_app_bytes(const struct sq_device_protocol_context *co
 					   event_len);
 	if (result != 0) {
 		if (set_current) {
-			strncpy(context->runtime->current_app, context->runtime->pending_launch_app,
+			strncpy(context->runtime->current_app,
+				context->runtime->lifecycle_previous_app,
 				sizeof(context->runtime->current_app) - 1);
 			context->runtime->current_app[sizeof(context->runtime->current_app) - 1] =
 				'\0';
-			memset(context->runtime->pending_launch_app, 0,
-			       sizeof(context->runtime->pending_launch_app));
+			memset(context->runtime->lifecycle_previous_app, 0,
+			       sizeof(context->runtime->lifecycle_previous_app));
 		}
 		return result;
 	}
 	if (set_current) {
-		memset(context->runtime->pending_launch_app, 0,
-		       sizeof(context->runtime->pending_launch_app));
+		memset(context->runtime->lifecycle_previous_app, 0,
+		       sizeof(context->runtime->lifecycle_previous_app));
 	}
 	return 0;
 }
@@ -895,10 +897,11 @@ static int start_fallback_app(const struct sq_device_protocol_context *context,
 	backend = sq_firmware_fallback_app_backend(context->fallback_app);
 	context->runtime->job_backend = backend;
 	if (set_current) {
-		strncpy(context->runtime->pending_launch_app, context->runtime->current_app,
-			sizeof(context->runtime->pending_launch_app) - 1);
-		context->runtime->pending_launch_app[sizeof(context->runtime->pending_launch_app) -
-						    1] = '\0';
+		strncpy(context->runtime->lifecycle_previous_app, context->runtime->current_app,
+			sizeof(context->runtime->lifecycle_previous_app) - 1);
+		context->runtime
+			->lifecycle_previous_app[sizeof(context->runtime->lifecycle_previous_app) -
+						 1] = '\0';
 		strncpy(context->runtime->current_app, "main",
 			sizeof(context->runtime->current_app) - 1);
 		context->runtime->current_app[sizeof(context->runtime->current_app) - 1] = '\0';
@@ -907,18 +910,19 @@ static int start_fallback_app(const struct sq_device_protocol_context *context,
 					   event_len);
 	if (result != 0) {
 		if (set_current) {
-			strncpy(context->runtime->current_app, context->runtime->pending_launch_app,
+			strncpy(context->runtime->current_app,
+				context->runtime->lifecycle_previous_app,
 				sizeof(context->runtime->current_app) - 1);
 			context->runtime->current_app[sizeof(context->runtime->current_app) - 1] =
 				'\0';
-			memset(context->runtime->pending_launch_app, 0,
-			       sizeof(context->runtime->pending_launch_app));
+			memset(context->runtime->lifecycle_previous_app, 0,
+			       sizeof(context->runtime->lifecycle_previous_app));
 		}
 		return result;
 	}
 	if (set_current) {
-		memset(context->runtime->pending_launch_app, 0,
-		       sizeof(context->runtime->pending_launch_app));
+		memset(context->runtime->lifecycle_previous_app, 0,
+		       sizeof(context->runtime->lifecycle_previous_app));
 	}
 	return 0;
 }
@@ -1174,8 +1178,15 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 		return 0;
 	}
 
-	if (runtime->planned_sleep_preparing) {
-		runtime->planned_sleep_preparing = false;
+	if (runtime->dispatch_exited &&
+	    runtime->lifecycle_phase == SQ_VM_RUNTIME_LIFECYCLE_IDLE) {
+		runtime->dispatch_exited = false;
+		runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_RETURN_REQUESTED;
+	}
+
+	switch (runtime->lifecycle_phase) {
+	case SQ_VM_RUNTIME_LIFECYCLE_SLEEP_CHECKPOINT:
+		runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_IDLE;
 		result = write_planned_resume_file(context);
 		if (result != 0) {
 			sq_vm_runtime_record_trace(
@@ -1195,20 +1206,23 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 			return result;
 		}
 		return 0;
-	}
 
-	if (runtime->planned_sleep_requested) {
-		runtime->planned_sleep_requested = false;
-		runtime->planned_sleep_preparing = true;
-		return start_resolved_app(context, runtime->current_app,
-					  (const uint8_t *)"power.sleep",
-					  sizeof("power.sleep") - 1, false);
-	}
+	case SQ_VM_RUNTIME_LIFECYCLE_SLEEP_REQUESTED:
+		runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_SLEEP_CHECKPOINT;
+		result = start_resolved_app(context, runtime->current_app,
+					    (const uint8_t *)"power.sleep",
+					    sizeof("power.sleep") - 1, false);
+		if (result != 0) {
+			runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_IDLE;
+		}
+		return result;
 
-	if (runtime->lifecycle_launch_after_exit) {
-		runtime->lifecycle_launch_after_exit = false;
+	case SQ_VM_RUNTIME_LIFECYCLE_EXIT_FOR_LAUNCH:
+		runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_IDLE;
 		result = push_return_app(runtime, runtime->current_app);
 		if (result != 0) {
+			memset(runtime->lifecycle_target_app, 0,
+			       sizeof(runtime->lifecycle_target_app));
 			return result;
 		}
 		memset(runtime->start_reason, 0, sizeof(runtime->start_reason));
@@ -1219,23 +1233,9 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 		memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
 		runtime->dispatch_exited = false;
 		return result;
-	}
 
-	if (runtime->arm_registration_active) {
-		runtime->arm_registration_active = false;
-		memset(runtime->arm_registration_app, 0, sizeof(runtime->arm_registration_app));
-		return 0;
-	}
-
-	if (runtime->pending_launch_active) {
+	case SQ_VM_RUNTIME_LIFECYCLE_LAUNCH_REQUESTED:
 		if (runtime->current_app[0] == '\0') {
-			strncpy(runtime->lifecycle_target_app, runtime->pending_launch_app,
-				sizeof(runtime->lifecycle_target_app) - 1);
-			runtime->lifecycle_target_app[sizeof(runtime->lifecycle_target_app) - 1] =
-				'\0';
-			memset(runtime->pending_launch_app, 0,
-			       sizeof(runtime->pending_launch_app));
-			runtime->pending_launch_active = false;
 			if (strcmp(runtime->lifecycle_target_app, "main") != 0) {
 				strncpy(runtime->current_app, "main",
 					sizeof(runtime->current_app) - 1);
@@ -1245,6 +1245,7 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 					return result;
 				}
 			}
+			runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_IDLE;
 			memset(runtime->start_reason, 0, sizeof(runtime->start_reason));
 			strncpy(runtime->start_reason, "launch",
 				sizeof(runtime->start_reason) - 1);
@@ -1255,34 +1256,21 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 			       sizeof(runtime->lifecycle_target_app));
 			return result;
 		}
-		strncpy(runtime->lifecycle_target_app, runtime->pending_launch_app,
-			sizeof(runtime->lifecycle_target_app) - 1);
-		runtime->lifecycle_target_app[sizeof(runtime->lifecycle_target_app) - 1] = '\0';
-		memset(runtime->pending_launch_app, 0, sizeof(runtime->pending_launch_app));
-		runtime->pending_launch_active = false;
-		runtime->lifecycle_launch_after_exit = true;
+		runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_EXIT_FOR_LAUNCH;
 
 		result = start_resolved_app(context, runtime->current_app,
 					    (const uint8_t *)"app.exit",
 					    sizeof("app.exit") - 1, false);
 		if (result != 0) {
-			runtime->lifecycle_launch_after_exit = false;
+			runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_IDLE;
 			memset(runtime->lifecycle_target_app, 0,
 			       sizeof(runtime->lifecycle_target_app));
 			return result;
 		}
 		return 0;
-	}
 
-	if (runtime->pending_arm_active) {
-		result = register_app_triggers(context, runtime->pending_arm_app);
-		memset(runtime->pending_arm_app, 0, sizeof(runtime->pending_arm_app));
-		runtime->pending_arm_active = false;
-		return result;
-	}
-
-	if (runtime->dispatch_exited) {
-		runtime->dispatch_exited = false;
+	case SQ_VM_RUNTIME_LIFECYCLE_RETURN_REQUESTED:
+		runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_IDLE;
 		result = pop_return_app(runtime, runtime->lifecycle_target_app,
 					sizeof(runtime->lifecycle_target_app));
 		if (result != 0) {
@@ -1294,6 +1282,16 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 					    (const uint8_t *)"app.start",
 					    sizeof("app.start") - 1, true);
 		memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
+		return result;
+
+	case SQ_VM_RUNTIME_LIFECYCLE_IDLE:
+		break;
+	}
+
+	if (runtime->arm_phase == SQ_VM_RUNTIME_ARM_REQUESTED) {
+		result = register_app_triggers(context, runtime->arm_target_app);
+		memset(runtime->arm_target_app, 0, sizeof(runtime->arm_target_app));
+		runtime->arm_phase = SQ_VM_RUNTIME_ARM_IDLE;
 		return result;
 	}
 
@@ -1331,7 +1329,7 @@ static int drain_runtime_lifecycle(const struct sq_device_protocol_context *cont
 	runtime = context->runtime;
 	deadline_ms = k_uptime_get() + timeout_ms;
 
-	while (runtime->pending_launch_active || runtime->lifecycle_launch_after_exit ||
+	while (sq_vm_runtime_lifecycle_busy(runtime) || sq_vm_runtime_arm_busy(runtime) ||
 	       runtime->status == SQ_VM_RUNTIME_RUNNING) {
 		int64_t now_ms = k_uptime_get();
 		int32_t remaining_ms;
