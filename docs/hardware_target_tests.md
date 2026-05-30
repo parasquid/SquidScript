@@ -264,9 +264,14 @@ with the captured resource frame when protocol/main unused stack drops below
 attribution harness. It formats app storage, installs the GPIO9 input summary
 app, launches it, dispatches a serial `SELECT`, and records `device resources`
 snapshots after format, install, launch, and dispatch under
-`target/hardware-tests/ram-workloads/summary.tsv`. Use it before reducing stack
-budgets so changes can be tied to a specific workload boundary. The resources
-response also reports `proto_stack_pre_*` so the harness can
+`target/hardware-tests/ram-workloads/summary.tsv`. The input app launch and
+`SELECT` dispatch stay in one foreground session, while later independent
+display, system-resource, and Wi-Fi workload groups reset runtime lifecycle
+state before launch. This keeps host `app launch` lifecycle semantics intact
+without filling the bounded foreground return stack during unrelated RAM
+measurements. Use it before reducing stack budgets so changes can be tied to a
+specific workload boundary. The resources response also reports
+`proto_stack_pre_*` so the harness can
 distinguish stack already consumed before resource-response encoding from stack
 pressure caused by the diagnostic command itself. Stack values are Zephyr
 high-water readings for the current boot, so unchanged stack values across rows

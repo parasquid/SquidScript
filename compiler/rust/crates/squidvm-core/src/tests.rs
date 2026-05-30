@@ -65,6 +65,50 @@ fn dynamic_string_refs_fail_when_slots_are_exhausted_instead_of_wrapping() {
     }
 }
 
+#[test]
+fn dynamic_string_refs_reuse_existing_substring_bytes() {
+    let mut strings = StringInterner::new();
+
+    let parent = strings
+        .intern_event(&EmptyStringTable, "prefix-shared-suffix")
+        .unwrap();
+    let child = strings.intern_event(&EmptyStringTable, "shared").unwrap();
+
+    assert_eq!(strings.dynamic_bytes_used(), "prefix-shared-suffix".len());
+    assert_eq!(
+        strings.value_str(&EmptyStringTable, parent),
+        Ok("prefix-shared-suffix")
+    );
+    assert_eq!(strings.value_str(&EmptyStringTable, child), Ok("shared"));
+}
+
+#[test]
+fn dynamic_string_refs_reuse_static_substring_bytes() {
+    let mut strings = StringInterner::new();
+
+    let child = strings.intern_event(&EmptyStringTable, "ead").unwrap();
+
+    assert_eq!(strings.dynamic_bytes_used(), 0);
+    assert_eq!(strings.value_str(&EmptyStringTable, child), Ok("ead"));
+}
+
+#[test]
+fn retained_substring_state_value_survives_without_parent_value() {
+    let mut strings = StringInterner::new();
+    let _parent = strings
+        .intern_event(&EmptyStringTable, "prefix-shared-suffix")
+        .unwrap();
+    let child = strings.intern_event(&EmptyStringTable, "shared").unwrap();
+    let mut state = [child];
+
+    strings
+        .retain_state_values(&EmptyStringTable, &mut state)
+        .unwrap();
+
+    assert_eq!(strings.dynamic_bytes_used(), "shared".len());
+    assert_eq!(strings.value_str(&EmptyStringTable, state[0]), Ok("shared"));
+}
+
 const WIFI_SCAN_TEST_NETWORKS: [WifiAccessPoint; 2] = [
     WifiAccessPoint::from_fixed_parts(
         [

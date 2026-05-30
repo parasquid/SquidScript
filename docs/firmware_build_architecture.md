@@ -105,7 +105,7 @@ through the current compiler.
 Temp-run state uses the same file-backed VM storage backend as installed apps,
 with a bounded temp state path cleared before each temp launch, so the firmware
 does not reserve a resident saved-state-capacity RAM buffer for temp runs.
-The ESP32-C3 linked Rust VM context reservation is capped at 15,040 bytes and
+The ESP32-C3 linked Rust VM context reservation is capped at 10,880 bytes and
 checked against the FFI-reported context size in Zephyr ztests. Native simulator
 ztests use a larger host-only context reservation because the host Rust ABI has
 larger pointer-sized VM structures; this does not change the ESP32-C3 runtime
@@ -340,8 +340,8 @@ one-byte overflow read instead of staging a `struct fs_dirent` for a size
 probe, so `fs_storage_load_state` now emits 48 bytes instead of 192 bytes and
 `runtime_device_config_read_file` now emits 32 bytes instead of 192 bytes.
 The Zephyr VM context reserve follows the measured 32-bit Rust FFI context
-size. The unified VM string interner increased the ESP32-C3 context beyond the
-previous 10,400-byte reserve, so the C runtime now reserves 15,040 bytes.
+size. The compact substring-capable VM string interner keeps the measured
+context under the current 10,880-byte ESP32-C3 reserve.
 Wi-Fi scan result backing uses the runtime transfer scratch because the Rust
 FFI copies scan results out of the callback before returning to the VM. This
 keeps scan SSID/BSSID/auth/network arrays out of the resident runtime object
@@ -352,9 +352,10 @@ aliasing the same bytes. The owner marker guards C-side scratch construction
 and service callback phases; the Wi-Fi scan result still relies on the Rust FFI
 copying result records before returning to VM execution.
 The Rust VM uses one string interner for SQBC literals, firmware static strings,
-and dynamic runtime text. Current ESP32-C3 firmware symbols report `runtime.4`
-at 19,288 bytes; the target build reports 202,480 bytes of linker DRAM and
-202,464 bytes through the RAM audit.
+and dynamic runtime text. Dynamic text can reuse exact SQBC/static matches and
+contiguous substrings of existing dynamic/static text. Current ESP32-C3
+firmware symbols report `runtime.4` at 15,128 bytes; the target build reports
+198,320 bytes of linker DRAM and 198,304 bytes through the RAM audit.
 The resident protocol response buffer is 826 bytes, matching the current
 resources-response ceiling: 806 bytes of metric payload plus the 20-byte frame
 header. This trims the previous 848-byte buffer without changing the response

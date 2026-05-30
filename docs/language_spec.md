@@ -4346,9 +4346,11 @@ value references one of three sources:
   concatenation results, and other runtime-created text
 
 SQBC and firmware static strings do not consume dynamic string storage. Dynamic
-strings are interned whole-string values: an exact duplicate reuses the
-existing dynamic reference instead of consuming another slot or copying the
-bytes again.
+strings are interned values: an exact duplicate reuses the existing dynamic
+reference instead of consuming another slot or copying bytes again. When a
+runtime-created string is a contiguous substring of an existing dynamic or
+firmware static string, the runtime may store a substring reference instead of
+copying the bytes into the dynamic string arena.
 
 Each dispatched event starts by retaining only dynamic string values stored in
 persistent app state, then clears all other dynamic strings, records, and lists
@@ -4359,14 +4361,16 @@ strings, and intermediate concatenation results do not.
 Current reference VM limits:
 
 - dynamic string references per event after state retention: 32
-- dynamic string byte arena per event after state retention: 768 bytes
+- dynamic string byte arena per event after state retention: 512 bytes
 - maximum bytes in one dynamic string: 48 bytes
 
 Direct string-returning built-ins and string concatenation produce dynamic
 interned strings unless the result exactly matches an SQBC literal or firmware
-static string. Assigning a dynamic string into `state {}` marks that reference
-as retained so the next event cleanup preserves it. `state.load()` uses the
-same interner and reuses exact SQBC/static matches when possible.
+static string, or can be represented as a substring of an existing dynamic or
+firmware static string. Assigning a dynamic string into `state {}` marks that
+reference as retained so the next event cleanup preserves its text.
+`state.load()` uses the same interner and reuses exact SQBC/static matches when
+possible.
 
 Exceeding the dynamic reference or byte budget stops the current event with a
 runtime error instead of wrapping, truncating, or leaking into the next event.

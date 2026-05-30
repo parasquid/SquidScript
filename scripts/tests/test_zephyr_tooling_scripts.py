@@ -712,12 +712,14 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
         self.assertIn("pub const MAX_RUNTIME_RECORD_FIELDS: usize = 26;", limits_rs)
         self.assertNotIn("pub const MAX_RUNTIME_RECORD_FIELDS: usize = 32;", limits_rs)
-        self.assertIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 10_400;", ffi_rs)
-        self.assertNotIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 10_880;", ffi_rs)
-        self.assertIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 10400", runtime_h)
-        self.assertIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 10400", ztest)
-        self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 10880", runtime_h)
-        self.assertNotIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 10880", ztest)
+        self.assertIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 10_880;", ffi_rs)
+        self.assertNotIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 10_400;", ffi_rs)
+        self.assertIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 10880", runtime_h)
+        self.assertIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 10880", ztest)
+        self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 10400", runtime_h)
+        self.assertNotIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 10400", ztest)
+        self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 15040", runtime_h)
+        self.assertNotIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 15040", ztest)
         self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 11776", runtime_h)
         self.assertNotIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 11776", ztest)
         self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 12032", runtime_h)
@@ -1751,6 +1753,25 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('proto_stack_pre_used_bytes', stack)
         self.assertNotIn('proto_stack_pre_res_used_bytes', stack)
         self.assertIn('vm_stack_used_bytes', stack)
+        self.assertIn("reset_runtime_between_workloads display", stack)
+        self.assertIn("reset_runtime_between_workloads system", stack)
+        self.assertIn("reset_runtime_between_workloads wifi-ap", stack)
+        self.assertLess(
+            stack.index('run_capture key-select cargo run --quiet -p squidc -- device key SELECT'),
+            stack.index("reset_runtime_between_workloads display"),
+        )
+        self.assertLess(
+            stack.index("reset_runtime_between_workloads display"),
+            stack.index('run_capture launch-display-drawlog cargo run --quiet -p squidc -- app launch display-drawlog'),
+        )
+        self.assertLess(
+            stack.index("reset_runtime_between_workloads system"),
+            stack.index('run_capture launch-system-resources cargo run --quiet -p squidc -- app launch system-resources'),
+        )
+        self.assertLess(
+            stack.index("reset_runtime_between_workloads wifi-ap"),
+            stack.index('run_capture launch-wifi-ap cargo run --quiet -p squidc -- app launch wifi-ap-summary'),
+        )
         self.assertIn('heap_alloc_bytes', stack)
         self.assertIn('heap_max_alloc_bytes', stack)
         self.assertIn('summary.tsv', stack)

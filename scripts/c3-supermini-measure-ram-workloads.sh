@@ -79,6 +79,12 @@ snapshot_resources() {
     >>"${summary_out}"
 }
 
+reset_runtime_between_workloads() {
+  local label="$1"
+  run_capture "reset-${label}" cargo run --quiet -p squidc -- device reset >/dev/null
+  printf 'runtime reset before independent workload group: %s\n' "${label}" >&2
+}
+
 summary_out="${WORK_DIR}/summary.tsv"
 {
   printf 'workload\tproto_stack_pre_used_bytes\t'
@@ -105,18 +111,21 @@ wait_for_contains input-output-select "output=count 1" \
   "device output" cargo run --quiet -p squidc -- device output >/dev/null
 snapshot_resources input-after-select
 
+reset_runtime_between_workloads display
 run_capture install-display-drawlog cargo run --quiet -p squidc -- app install "${DISPLAY_APP}" >/dev/null
 run_capture launch-display-drawlog cargo run --quiet -p squidc -- app launch display-drawlog >/dev/null
 wait_for_contains display-drawlog 'draw=resource drawable="drawable/page" x=0 y=0' \
   "device drawlog" cargo run --quiet -p squidc -- device drawlog >/dev/null
 snapshot_resources display-after-launch
 
+reset_runtime_between_workloads system
 run_capture install-system-resources cargo run --quiet -p squidc -- app install "${SYSTEM_APP}" >/dev/null
 run_capture launch-system-resources cargo run --quiet -p squidc -- app launch system-resources >/dev/null
 wait_for_contains system-output "output=system memory RAM" \
   "device output" cargo run --quiet -p squidc -- device output >/dev/null
 snapshot_resources system-after-launch
 
+reset_runtime_between_workloads wifi-ap
 run_capture install-wifi-ap cargo run --quiet -p squidc -- app install "${WIFI_AP_APP}" >/dev/null
 run_capture launch-wifi-ap cargo run --quiet -p squidc -- app launch wifi-ap-summary >/dev/null
 wait_for_contains wifi-ap-output-start "output=wifi start true null" \

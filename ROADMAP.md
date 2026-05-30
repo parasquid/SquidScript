@@ -81,9 +81,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   paths; check those before splitting more app-store or protocol helpers
   because per-function `.su` reductions can increase real stack high-water use
   when a larger callee remains active under the caller.
-  Current ESP32-C3 build evidence after unified VM string interning reports
-  202,480 bytes of linker DRAM, 202,464 bytes through `zephyr-ram-audit`, and a
-  19,288-byte `runtime.4` static runtime symbol.
+  Current ESP32-C3 build evidence after compact substring-capable VM string
+  interning reports 198,320 bytes of linker DRAM, 198,304 bytes through
+  `zephyr-ram-audit`, and a 15,128-byte `runtime.4` static runtime symbol.
 
   Current stack report evidence shows that the previous
   `commit_install -> sq_app_store_scan_registry_with_path -> join_path2`
@@ -189,13 +189,44 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.
+- Add heap fragmentation diagnostics and mitigation for ESP32-C3 Zephyr RAM
+  work. `system.memory()` and/or `device resources` should distinguish total
+  free heap from allocator fragmentation by reporting the largest allocatable
+  block when Zephyr exposes it, allocation high-water data, and subsystem
+  allocation failures where practical. Use the data to keep SquidScript runtime
+  paths on fixed arenas, caller-owned buffers, bounded scratch, slabs/pools for
+  unavoidable dynamic allocations, and startup-owned long-lived allocations
+  instead of mixed-lifetime heap usage. This should help explain failures where
+  free heap appears sufficient but a larger contiguous allocation cannot be
+  satisfied.
+- Formalize the app lifecycle state machine that is currently encoded as
+  Zephyr runtime flags plus ordered protocol polling branches. Document the
+  foreground lifecycle states, transitions, and failure cases for host
+  `app launch`, in-app `app.launch`, `app.exit`, armed timer activation,
+  fallback `main`, and planned sleep restore. Include Mermaid state/sequence
+  diagrams in stable docs so harnesses and future firmware changes can reason
+  about return-stack growth, `app.exit` cleanup, start reasons, fresh VM
+  sessions, and when `device reset` or storage formatting should be used to
+  isolate tests. Consider whether the C implementation should gain an explicit
+  lifecycle phase enum after the documentation makes the current implicit
+  state machine clear.
+- Refactor implicit runtime state-machine concepts into explicit, documented,
+  testable abstractions where the transition model is already meaningful.
+  Treat the app lifecycle as the first candidate, followed by device input
+  press/release/debounce/gesture recognition, planned-sleep
+  prepare/ready/restore coordination, protocol transfer sessions for
+  install/temp/resource uploads, scoped scratch-buffer ownership, and reusable
+  timed output patterns for indicator blink/breathe behavior. For each
+  abstraction, document the stable states, events, failure handling, ownership
+  boundaries, and cross-platform contract versus target-specific wiring; add
+  Mermaid state or sequence diagrams where they make transitions clearer.
+  Keep Wi-Fi scan/connect/AP lifecycle as a separate future service-state
+  machine item unless Wi-Fi work is explicitly in scope, and leave simple
+  trace/output/drawlog buffers as bounded queues rather than overfitting them
+  into state machines.
 - Design a cursor-style Wi-Fi scan API so targets can expose more scan results
   without materializing every AP record and string into one VM event. Compare
   options such as `wifi.scan()` returning a snapshot handle with
   `wifi.scan.get(scan, index)`, paged scan reads, or an iterator-like cursor,
   and keep SSID/BSSID/auth strings backed by host/runtime storage until the app
   asks for a specific network.
-- Investigate segmented interned string references after whole-string
-  interning has enough RAM evidence. Consider word or substring references only
-  for repeated large dynamic text where the measured memory reduction justifies
-  the added resolver and lifetime complexity.
