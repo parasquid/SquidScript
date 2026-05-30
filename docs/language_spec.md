@@ -4329,6 +4329,39 @@ The exact values may be tuned per firmware target.
 
 The runtime may reject apps or stop execution if limits are exceeded.
 
+### Reference VM Temporary Strings
+
+The current Rust VM and Zephyr firmware keep temporary runtime strings in a
+bounded per-event pool. Each dispatched event starts by retaining only string
+values stored in persistent app state, then clears all other temporary runtime
+strings, records, and lists from the previous event.
+
+Current reference VM limits:
+
+- temporary runtime string slots per event: 12
+- temporary runtime string bytes per slot: 48 bytes
+
+String-returning built-ins and string concatenation consume these slots during
+the current event. A value stored in `state {}` can survive into later events;
+ordinary locals, service-result record fields, list items, diagnostic strings,
+and intermediate concatenation results do not. Exceeding the temporary string
+slot budget stops the current event with a runtime error instead of wrapping,
+truncating, or leaking into the next event.
+
+The current runtime materializes string fields eagerly when a service result is
+created. This means a call can consume string slots for fields the script does
+not later read. For example, `display.info()` materializes its status, binding,
+driver, transport, color model, and native pixel format strings; `wifi.scan()`
+materializes string fields for returned access-point records; `file.readLines`
+materializes returned line strings; and `app.registry.get(...)` materializes
+the selected app's id, name, build, and description.
+
+Portable apps should keep large string-returning service calls in separate
+events or persist only the specific state they need. Future runtime work may
+replace eager materialization with lazy or reclaimable service-result strings,
+but the current contract is an explicit bounded per-event temporary string
+budget.
+
 ---
 
 ## 46. Memory Model

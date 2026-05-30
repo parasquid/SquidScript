@@ -78,6 +78,130 @@ const WIFI_SCAN_TEST_NETWORKS: [WifiAccessPoint; 2] = [
     ),
 ];
 
+const WIFI_SCAN_BUDGET_NETWORKS: [WifiAccessPoint; 4] = [
+    WifiAccessPoint::from_fixed_parts(
+        [
+            b'N', b'e', b't', b'0', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ],
+        4,
+        [
+            b'0', b'0', b':', b'0', b'0', b':', b'0', b'0', b':', b'0', b'0', b':', b'0', b'0',
+            b':', b'0', b'0',
+        ],
+        true,
+        4,
+        1,
+        -40,
+        Some("wpa2"),
+        false,
+    ),
+    WifiAccessPoint::from_fixed_parts(
+        [
+            b'N', b'e', b't', b'1', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ],
+        4,
+        [
+            b'0', b'0', b':', b'0', b'0', b':', b'0', b'0', b':', b'0', b'0', b':', b'0', b'0',
+            b':', b'1', b'1',
+        ],
+        true,
+        4,
+        6,
+        -50,
+        Some("wpa3"),
+        false,
+    ),
+    WifiAccessPoint::from_fixed_parts(
+        [
+            b'N', b'e', b't', b'2', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ],
+        4,
+        [
+            b'0', b'0', b':', b'0', b'0', b':', b'0', b'0', b':', b'0', b'0', b':', b'0', b'0',
+            b':', b'2', b'2',
+        ],
+        true,
+        4,
+        11,
+        -60,
+        Some("open"),
+        false,
+    ),
+    WifiAccessPoint::from_fixed_parts(
+        [
+            b'N', b'e', b't', b'3', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ],
+        4,
+        [
+            b'0', b'0', b':', b'0', b'0', b':', b'0', b'0', b':', b'0', b'0', b':', b'0', b'0',
+            b':', b'3', b'3',
+        ],
+        true,
+        4,
+        13,
+        -70,
+        Some("wep"),
+        true,
+    ),
+];
+
+const REGISTRY_BUDGET_APPS: [AppRegistryEntry; 8] = [
+    AppRegistryEntry {
+        id: "app0",
+        name: "App 0",
+        build: "build0",
+        description: "Desc 0",
+    },
+    AppRegistryEntry {
+        id: "app1",
+        name: "App 1",
+        build: "build1",
+        description: "Desc 1",
+    },
+    AppRegistryEntry {
+        id: "app2",
+        name: "App 2",
+        build: "build2",
+        description: "Desc 2",
+    },
+    AppRegistryEntry {
+        id: "app3",
+        name: "App 3",
+        build: "build3",
+        description: "Desc 3",
+    },
+    AppRegistryEntry {
+        id: "app4",
+        name: "App 4",
+        build: "build4",
+        description: "Desc 4",
+    },
+    AppRegistryEntry {
+        id: "app5",
+        name: "App 5",
+        build: "build5",
+        description: "Desc 5",
+    },
+    AppRegistryEntry {
+        id: "app6",
+        name: "App 6",
+        build: "build6",
+        description: "Desc 6",
+    },
+    AppRegistryEntry {
+        id: "app7",
+        name: "App 7",
+        build: "build7",
+        description: "Desc 7",
+    },
+];
+
+const FILE_BUDGET_LINES: [&str; 4] = ["line0", "line1", "line2", "line3"];
+
 #[derive(Default)]
 struct Trace {
     events: Vec<String>,
@@ -557,6 +681,117 @@ impl TraceSink for WifiTrace {
         self.teardown_count += 1;
         self.active = false;
         Ok(())
+    }
+}
+
+#[derive(Default)]
+struct BudgetTrace {
+    events: Vec<String>,
+    wifi_teardown_count: usize,
+}
+
+impl TraceSink for BudgetTrace {
+    fn trace(&mut self, message: &str) {
+        self.events.push(message.to_string());
+    }
+
+    fn debug_print(&mut self, strings: &StringResolver<'_>, values: &[Value]) {
+        let mut line = String::new();
+        for (index, value) in values.iter().enumerate() {
+            if index > 0 {
+                line.push(' ');
+            }
+            match value {
+                Value::String(_) | Value::RuntimeString(_) => {
+                    line.push_str(strings.value_str(*value).unwrap())
+                }
+                Value::I32(value) => line.push_str(&value.to_string()),
+                Value::Bool(value) => line.push_str(&value.to_string()),
+                Value::Null => line.push_str("null"),
+                Value::Record(_) => line.push_str("<record>"),
+                Value::List(_) => line.push_str("<list>"),
+            }
+        }
+        self.events.push(format!("debug {line}"));
+    }
+
+    fn system_memory_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
+        write!(out, "RAM 292 KiB").map_err(|_| VmError::InvalidOperand)
+    }
+
+    fn system_start_reason_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
+        write!(out, "wake").map_err(|_| VmError::InvalidOperand)
+    }
+
+    fn display_info<'a>(&'a mut self) -> Result<DisplayInfo<'a>, VmError> {
+        self.events.push("display.info".to_string());
+        Ok(DisplayInfo {
+            ok: true,
+            error: None,
+            warning: None,
+            available: true,
+            status: "ready",
+            binding: "display.default",
+            driver: "ssd1306",
+            transport: "i2c",
+            width: 78,
+            height: 40,
+            physical_width: 78,
+            physical_height: 40,
+            rotation: 0,
+            color_model: "mono",
+            logical_gray_levels: 2,
+            native_bpp: 1,
+            native_pixel_format: "MONO1_PACKED",
+            default_font_height: 8,
+            supports_partial_refresh: false,
+            supports_fast_refresh: true,
+        })
+    }
+
+    fn service_wifi_scan<'a>(&'a mut self) -> Result<WifiScanResult<'a>, VmError> {
+        self.events.push("wifi.scan".to_string());
+        Ok(WifiScanResult {
+            ok: true,
+            error: None,
+            networks: &WIFI_SCAN_BUDGET_NETWORKS,
+        })
+    }
+
+    fn service_wifi_teardown(&mut self) -> Result<(), VmError> {
+        self.events.push("wifi.teardown".to_string());
+        self.wifi_teardown_count += 1;
+        Ok(())
+    }
+
+    fn app_registry_list<'a>(&'a mut self) -> Result<AppRegistryList<'a>, VmError> {
+        self.events.push("registry.list".to_string());
+        Ok(AppRegistryList {
+            apps: &REGISTRY_BUDGET_APPS,
+        })
+    }
+
+    fn app_registry_get<'a>(&'a mut self, app_id: &str) -> Result<AppRegistryEntry<'a>, VmError> {
+        self.events.push(format!("registry.get {app_id}"));
+        REGISTRY_BUDGET_APPS
+            .iter()
+            .copied()
+            .find(|app| app.id == app_id)
+            .ok_or(VmError::InvalidOperand)
+    }
+
+    fn file_read_lines<'a>(
+        &'a mut self,
+        path: &str,
+        max_lines: i32,
+    ) -> Result<FileReadLinesResult<'a>, VmError> {
+        self.events
+            .push(format!("file.readLines {path} {max_lines}"));
+        Ok(FileReadLinesResult {
+            ok: true,
+            error: None,
+            lines: &FILE_BUDGET_LINES,
+        })
     }
 }
 
@@ -1868,6 +2103,334 @@ screen("main") {}
             "debug break-reminder",
             "debug weather-sync",
             "debug weather-sync timer.sync",
+        ]
+    );
+}
+
+#[test]
+fn display_info_runtime_strings_work_at_exact_event_budget() {
+    let source = r#"app "display-budget"
+event.on("app.start") {
+  let first = display.info()
+  let second = display.info()
+  debug.print(first.status, second.nativePixelFormat)
+}
+"#;
+    let bytes = compile_sqbc(source);
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = BudgetTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "display.info",
+            "display.info",
+            "debug ready MONO1_PACKED",
+        ]
+    );
+}
+
+#[test]
+fn display_info_runtime_strings_fail_cleanly_over_event_budget() {
+    let source = r#"app "display-over-budget"
+event.on("app.start") {
+  let first = display.info()
+  let second = display.info()
+  let third = display.info()
+  debug.print(first.status, second.status, third.status)
+}
+"#;
+    let bytes = compile_sqbc(source);
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = BudgetTrace::default();
+
+    assert_eq!(
+        vm.dispatch("app.start", &mut trace),
+        Err(VmError::TooManyStrings)
+    );
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "display.info",
+            "display.info",
+            "display.info",
+            "wifi.teardown",
+        ]
+    );
+}
+
+#[test]
+fn wifi_scan_runtime_strings_work_at_exact_event_budget() {
+    let source = r#"app "wifi-budget"
+event.on("app.start") {
+  let scan = wifi.scan()
+  debug.print(scan.count)
+}
+"#;
+    let bytes = compile_sqbc(source);
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = BudgetTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec!["app.start", "wifi.scan", "debug 4"]
+    );
+}
+
+#[test]
+fn wifi_scan_runtime_strings_fail_cleanly_over_event_budget() {
+    let source = r#"app "wifi-over-budget"
+event.on("app.start") {
+  let scan = wifi.scan()
+  debug.print(scan.count)
+  debug.print(system.startReason())
+}
+"#;
+    let bytes = compile_sqbc(source);
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = BudgetTrace::default();
+
+    assert_eq!(
+        vm.dispatch("app.start", &mut trace),
+        Err(VmError::TooManyStrings)
+    );
+    assert_eq!(
+        trace.events,
+        vec!["app.start", "wifi.scan", "debug 4", "wifi.teardown"]
+    );
+    assert_eq!(trace.wifi_teardown_count, 1);
+}
+
+#[test]
+fn app_registry_runtime_strings_work_at_exact_event_budget() {
+    let source = r#"app "registry-budget"
+event.on("app.start") {
+  let apps = app.registry()
+  let selected = app.registry.get(apps, 0)
+  debug.print(selected.id, selected.name, selected.build, selected.description)
+}
+"#;
+    let bytes = compile_sqbc(source);
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = BudgetTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "registry.list",
+            "registry.get app0",
+            "debug app0 App 0 build0 Desc 0",
+        ]
+    );
+}
+
+#[test]
+fn app_registry_runtime_strings_fail_cleanly_over_event_budget() {
+    let source = r#"app "registry-over-budget"
+event.on("app.start") {
+  let apps = app.registry()
+  let selected = app.registry.get(apps, 0)
+  debug.print(selected.id)
+  debug.print(system.memory())
+}
+"#;
+    let bytes = compile_sqbc(source);
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = BudgetTrace::default();
+
+    assert_eq!(
+        vm.dispatch("app.start", &mut trace),
+        Err(VmError::TooManyStrings)
+    );
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "registry.list",
+            "registry.get app0",
+            "debug app0",
+            "wifi.teardown",
+        ]
+    );
+}
+
+#[test]
+fn file_read_lines_runtime_strings_work_at_exact_event_budget() {
+    let source = r#"app "file-budget"
+event.on("app.start") {
+  let first = file.readLines("a.txt", 4)
+  let second = file.readLines("b.txt", 4)
+  let third = file.readLines("c.txt", 4)
+  debug.print(first.lines, second.lines, third.lines)
+}
+"#;
+    let bytes = compile_sqbc(source);
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = BudgetTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "file.readLines a.txt 4",
+            "file.readLines b.txt 4",
+            "file.readLines c.txt 4",
+            "debug <list> <list> <list>",
+        ]
+    );
+}
+
+#[test]
+fn file_read_lines_runtime_strings_fail_cleanly_over_event_budget() {
+    let source = r#"app "file-over-budget"
+event.on("app.start") {
+  let first = file.readLines("a.txt", 4)
+  let second = file.readLines("b.txt", 4)
+  let third = file.readLines("c.txt", 4)
+  debug.print(first.lines, second.lines, third.lines)
+  debug.print(system.memory())
+}
+"#;
+    let bytes = compile_sqbc(source);
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = BudgetTrace::default();
+
+    assert_eq!(
+        vm.dispatch("app.start", &mut trace),
+        Err(VmError::TooManyStrings)
+    );
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "file.readLines a.txt 4",
+            "file.readLines b.txt 4",
+            "file.readLines c.txt 4",
+            "debug <list> <list> <list>",
+            "wifi.teardown",
+        ]
+    );
+}
+
+#[test]
+fn string_concatenation_runtime_strings_work_at_exact_event_budget() {
+    let source = r#"app "concat-budget"
+event.on("app.start") {
+  let s0 = system.startReason()
+  let s1 = s0 + "x"
+  let s2 = s1 + "x"
+  let s3 = s2 + "x"
+  let s4 = s3 + "x"
+  let s5 = s4 + "x"
+  let s6 = s5 + "x"
+  let s7 = s6 + "x"
+  let s8 = s7 + "x"
+  let s9 = s8 + "x"
+  let s10 = s9 + "x"
+  let s11 = s10 + "x"
+  debug.print(s11)
+}
+"#;
+    let bytes = compile_sqbc(source);
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = BudgetTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert_eq!(trace.events, vec!["app.start", "debug wakexxxxxxxxxxx"]);
+}
+
+#[test]
+fn string_concatenation_runtime_strings_fail_cleanly_over_event_budget() {
+    let source = r#"app "concat-over-budget"
+event.on("app.start") {
+  let s0 = system.startReason()
+  let s1 = s0 + "x"
+  let s2 = s1 + "x"
+  let s3 = s2 + "x"
+  let s4 = s3 + "x"
+  let s5 = s4 + "x"
+  let s6 = s5 + "x"
+  let s7 = s6 + "x"
+  let s8 = s7 + "x"
+  let s9 = s8 + "x"
+  let s10 = s9 + "x"
+  let s11 = s10 + "x"
+  let s12 = s11 + "x"
+  debug.print(s12)
+}
+"#;
+    let bytes = compile_sqbc(source);
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = BudgetTrace::default();
+
+    assert_eq!(
+        vm.dispatch("app.start", &mut trace),
+        Err(VmError::TooManyStrings)
+    );
+    assert_eq!(trace.events, vec!["app.start", "wifi.teardown"]);
+}
+
+#[test]
+fn runtime_strings_are_reclaimed_between_events_after_budget_exhaustion() {
+    let source = r#"app "budget-reclaim"
+event.on("app.start") {
+  let first = display.info()
+  let second = display.info()
+  let third = display.info()
+  debug.print(first.status, second.status, third.status)
+}
+
+event.on("timer.clock") {
+  let first = display.info()
+  let second = display.info()
+  debug.print(first.status, second.status)
+}
+"#;
+    let bytes = compile_sqbc(source);
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = BudgetTrace::default();
+
+    assert_eq!(
+        vm.dispatch("app.start", &mut trace),
+        Err(VmError::TooManyStrings)
+    );
+    vm.dispatch("timer.clock", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "display.info",
+            "display.info",
+            "display.info",
+            "wifi.teardown",
+            "timer.clock",
+            "display.info",
+            "display.info",
+            "debug ready ready",
         ]
     );
 }

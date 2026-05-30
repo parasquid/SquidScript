@@ -413,13 +413,13 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.
-- Add VM/runtime budget coverage for single-event runtime string
-  materializers. Cross-event runtime string cleanup now preserves only current
-  state strings, but service records such as `wifi.scan()`, app registry
-  inspection, display info, file line reads, and repeated string concatenation
-  can still consume most or all 12 runtime string slots inside one handler.
-  Add focused tests and decide whether to document this as a per-event budget
-  or change materialization to be lazier/reclaimable within a handler.
+- Design lazy or reclaimable runtime string materialization for service-result
+  records and lists. The current contract intentionally exposes a bounded
+  12-slot per-event temporary string pool, and tests cover exact-budget and
+  over-budget behavior for display info, Wi-Fi scan, app registry, file line
+  reads, and repeated string concatenation. Remaining improvement work is to
+  avoid consuming slots for service-result string fields that the app never
+  reads, without unbounded allocation or hidden lifetime hazards.
 - Design a cursor-style Wi-Fi scan API so targets can expose more scan results
   without materializing every AP record and string into one VM event. Compare
   options such as `wifi.scan()` returning a snapshot handle with
