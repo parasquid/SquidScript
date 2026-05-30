@@ -7,6 +7,7 @@ pub enum Value {
     I32(i32),
     String(u16),
     RuntimeString(u8),
+    ServiceString(u8),
     Record(u8),
     List(u8),
 }
@@ -17,7 +18,11 @@ impl Value {
             Value::Null => false,
             Value::Bool(value) => value,
             Value::I32(value) => value != 0,
-            Value::String(_) | Value::RuntimeString(_) | Value::Record(_) | Value::List(_) => true,
+            Value::String(_)
+            | Value::RuntimeString(_)
+            | Value::ServiceString(_)
+            | Value::Record(_)
+            | Value::List(_) => true,
         }
     }
 
@@ -29,6 +34,9 @@ impl Value {
     }
 
     pub(crate) const fn is_string(self) -> bool {
-        matches!(self, Value::String(_) | Value::RuntimeString(_))
+        matches!(
+            self,
+            Value::String(_) | Value::RuntimeString(_) | Value::ServiceString(_)
+        )
     }
 }

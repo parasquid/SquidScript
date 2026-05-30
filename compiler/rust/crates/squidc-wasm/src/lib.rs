@@ -309,7 +309,9 @@ fn value_json(strings: &StringResolver<'_>, value: Value) -> serde_json::Value {
         Value::Null => serde_json::Value::Null,
         Value::Bool(value) => serde_json::json!(value),
         Value::I32(value) => serde_json::json!(value),
-        Value::String(_) | Value::RuntimeString(_) => serde_json::json!(value_text(strings, value)),
+        Value::String(_) | Value::RuntimeString(_) | Value::ServiceString(_) => {
+            serde_json::json!(value_text(strings, value))
+        }
         Value::Record(_) => serde_json::json!("<record>"),
         Value::List(_) => serde_json::json!("<list>"),
     }
@@ -320,7 +322,7 @@ fn value_text(strings: &StringResolver<'_>, value: Value) -> String {
         Value::Null => "null".to_string(),
         Value::Bool(value) => value.to_string(),
         Value::I32(value) => value.to_string(),
-        Value::String(_) | Value::RuntimeString(_) => {
+        Value::String(_) | Value::RuntimeString(_) | Value::ServiceString(_) => {
             strings.value_str(value).unwrap_or("").to_string()
         }
         Value::Record(_) => "<record>".to_string(),

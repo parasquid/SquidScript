@@ -413,13 +413,11 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.
-- Design lazy or reclaimable runtime string materialization for service-result
-  records and lists. The current contract intentionally exposes a bounded
-  12-slot per-event temporary string pool, and tests cover exact-budget and
-  over-budget behavior for display info, Wi-Fi scan, app registry, file line
-  reads, and repeated string concatenation. Remaining improvement work is to
-  avoid consuming slots for service-result string fields that the app never
-  reads, without unbounded allocation or hidden lifetime hazards.
+- Reuse SQBC string-pool literals for loaded string state values when the saved
+  bytes exactly match an existing compiled string. Current `state.load()`
+  materializes saved dynamic string values into runtime string slots because
+  persisted state can contain app data that is not present in SQBC; matching
+  literals could avoid that slot use without changing state semantics.
 - Design a cursor-style Wi-Fi scan API so targets can expose more scan results
   without materializing every AP record and string into one VM event. Compare
   options such as `wifi.scan()` returning a snapshot handle with

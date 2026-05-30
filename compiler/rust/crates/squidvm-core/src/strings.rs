@@ -2,7 +2,10 @@ use core::{fmt, str};
 
 use crate::{
     error::VmError,
-    limits::{MAX_RUNTIME_STRINGS, MAX_RUNTIME_STRING_BYTES},
+    limits::{
+        MAX_RUNTIME_STRINGS, MAX_RUNTIME_STRING_BYTES, MAX_SERVICE_STRINGS,
+        MAX_SERVICE_STRING_BYTES,
+    },
     value::Value,
 };
 
@@ -13,6 +16,7 @@ pub trait StringTable {
 pub struct StringResolver<'a> {
     strings: &'a dyn StringTable,
     runtime_strings: &'a RuntimeStrings,
+    service_strings: Option<&'a RuntimeServiceStrings>,
 }
 
 impl<'a> StringResolver<'a> {
@@ -20,6 +24,19 @@ impl<'a> StringResolver<'a> {
         Self {
             strings,
             runtime_strings,
+            service_strings: None,
+        }
+    }
+
+    pub(crate) fn with_service_strings(
+        strings: &'a dyn StringTable,
+        runtime_strings: &'a RuntimeStrings,
+        service_strings: &'a RuntimeServiceStrings,
+    ) -> Self {
+        Self {
+            strings,
+            runtime_strings,
+            service_strings: Some(service_strings),
         }
     }
 
@@ -27,9 +44,131 @@ impl<'a> StringResolver<'a> {
         match value {
             Value::String(id) => self.strings.string(id),
             Value::RuntimeString(id) => self.runtime_strings.get(id),
+            Value::ServiceString(id) => {
+                self.service_strings.ok_or(VmError::InvalidOperand)?.get(id)
+            }
             _ => Err(VmError::InvalidOperand),
         }
     }
+}
+
+const STATIC_SERVICE_STRINGS: [&str; 28] = [
+    "unsupported",
+    "ready",
+    "display.default",
+    "ssd1306",
+    "i2c",
+    "mono",
+    "MONO1_PACKED",
+    "sim",
+    "zephyr",
+    "esp",
+    "ap",
+    "sta",
+    "started",
+    "stopped",
+    "idle",
+    "unavailable",
+    "configuring",
+    "starting",
+    "stopping",
+    "scanning",
+    "authenticating",
+    "open",
+    "wep",
+    "wpa",
+    "wpa2",
+    "wpa3",
+    "unknown",
+    "wifi busy",
+];
+
+#[derive(Clone, Copy)]
+enum ServiceStringRef {
+    Empty,
+    Static(u8),
+    Inline { offset: u16, len: u16 },
+}
+
+pub struct RuntimeServiceStrings {
+    refs: [ServiceStringRef; MAX_SERVICE_STRINGS],
+    next: usize,
+    bytes: [u8; MAX_SERVICE_STRING_BYTES],
+    bytes_len: usize,
+}
+
+impl RuntimeServiceStrings {
+    pub(crate) const fn new() -> Self {
+        Self {
+            refs: [ServiceStringRef::Empty; MAX_SERVICE_STRINGS],
+            next: 0,
+            bytes: [0; MAX_SERVICE_STRING_BYTES],
+            bytes_len: 0,
+        }
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.next = 0;
+        self.bytes_len = 0;
+    }
+
+    pub(crate) fn alloc(&mut self, value: &str) -> Result<Value, VmError> {
+        if value.len() > MAX_RUNTIME_STRING_BYTES {
+            return Err(VmError::InvalidOperand);
+        }
+        if self.next >= MAX_SERVICE_STRINGS {
+            return Err(VmError::TooManyStrings);
+        }
+        let id = self.next;
+        self.next += 1;
+
+        if let Some(static_id) = static_service_string_id(value) {
+            self.refs[id] = ServiceStringRef::Static(static_id as u8);
+            return Ok(Value::ServiceString(id as u8));
+        }
+
+        let offset = self.bytes_len;
+        let next_len = offset
+            .checked_add(value.len())
+            .ok_or(VmError::TooManyStrings)?;
+        if next_len > self.bytes.len() {
+            return Err(VmError::TooManyStrings);
+        }
+        self.bytes[offset..next_len].copy_from_slice(value.as_bytes());
+        self.bytes_len = next_len;
+        self.refs[id] = ServiceStringRef::Inline {
+            offset: offset as u16,
+            len: value.len() as u16,
+        };
+        Ok(Value::ServiceString(id as u8))
+    }
+
+    pub(crate) fn get(&self, id: u8) -> Result<&str, VmError> {
+        let reference = self.refs.get(id as usize).ok_or(VmError::InvalidOperand)?;
+        match *reference {
+            ServiceStringRef::Empty => Err(VmError::InvalidOperand),
+            ServiceStringRef::Static(id) => STATIC_SERVICE_STRINGS
+                .get(id as usize)
+                .copied()
+                .ok_or(VmError::InvalidOperand),
+            ServiceStringRef::Inline { offset, len } => {
+                let start = offset as usize;
+                let end = start
+                    .checked_add(len as usize)
+                    .ok_or(VmError::InvalidOperand)?;
+                if end > self.bytes_len {
+                    return Err(VmError::InvalidOperand);
+                }
+                str::from_utf8(&self.bytes[start..end]).map_err(|_| VmError::InvalidUtf8)
+            }
+        }
+    }
+}
+
+fn static_service_string_id(value: &str) -> Option<usize> {
+    STATIC_SERVICE_STRINGS
+        .iter()
+        .position(|candidate| *candidate == value)
 }
 
 pub struct RuntimeStrings {

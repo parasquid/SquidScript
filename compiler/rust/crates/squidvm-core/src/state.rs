@@ -8,7 +8,7 @@ use crate::{
     error::VmError,
     limits::{MAX_RUNTIME_STRING_BYTES, MAX_SAVED_STATE_BYTES, MAX_STATE},
     model::{StateSlot, StateType},
-    strings::{RuntimeStrings, StringResolver, StringTable},
+    strings::{RuntimeServiceStrings, RuntimeStrings, StringResolver, StringTable},
     value::Value,
 };
 
@@ -67,12 +67,14 @@ pub(crate) fn state_value_matches(tag: u8, nullable: bool, value: Value) -> bool
             | (STATE_TYPE_BOOL, Value::Bool(_))
             | (STATE_TYPE_STRING, Value::String(_))
             | (STATE_TYPE_STRING, Value::RuntimeString(_))
+            | (STATE_TYPE_STRING, Value::ServiceString(_))
     )
 }
 
 pub(crate) fn values_equal(
     strings: &dyn StringTable,
     runtime_strings: &RuntimeStrings,
+    service_strings: &RuntimeServiceStrings,
     left: Value,
     right: Value,
 ) -> Result<bool, VmError> {
@@ -80,7 +82,8 @@ pub(crate) fn values_equal(
         if !left.is_string() || !right.is_string() {
             return Ok(false);
         }
-        let resolver = StringResolver::new(strings, runtime_strings);
+        let resolver =
+            StringResolver::with_service_strings(strings, runtime_strings, service_strings);
         return Ok(resolver.value_str(left)? == resolver.value_str(right)?);
     }
     Ok(left == right)
@@ -89,11 +92,12 @@ pub(crate) fn values_equal(
 pub(crate) fn concat_value_strings(
     strings: &dyn StringTable,
     runtime_strings: &RuntimeStrings,
+    service_strings: &RuntimeServiceStrings,
     left: Value,
     right: Value,
     out: &mut [u8; MAX_RUNTIME_STRING_BYTES],
 ) -> Result<usize, VmError> {
-    let resolver = StringResolver::new(strings, runtime_strings);
+    let resolver = StringResolver::with_service_strings(strings, runtime_strings, service_strings);
     let left = resolver.value_str(left)?.as_bytes();
     let right = resolver.value_str(right)?.as_bytes();
     let len = left
@@ -111,6 +115,7 @@ pub(crate) fn concat_value_strings(
 pub(crate) fn encode_state_record(
     strings: &dyn StringTable,
     runtime_strings: &RuntimeStrings,
+    service_strings: &RuntimeServiceStrings,
     slots: &[StateSlot],
     state: &[Value],
     out: &mut [u8; MAX_SAVED_STATE_BYTES],
@@ -118,7 +123,7 @@ pub(crate) fn encode_state_record(
     let mut cursor = 0usize;
     write_bytes(out, &mut cursor, STATE_RECORD_MAGIC)?;
     write_byte(out, &mut cursor, slots.len() as u8)?;
-    let resolver = StringResolver::new(strings, runtime_strings);
+    let resolver = StringResolver::with_service_strings(strings, runtime_strings, service_strings);
     for (slot, value) in slots.iter().zip(state.iter().copied()) {
         let name = strings.string(slot.name_id)?;
         write_len_prefixed(out, &mut cursor, name.as_bytes())?;
@@ -145,7 +150,7 @@ pub(crate) fn encode_state_record_value(
             write_byte(out, cursor, VALUE_I32)?;
             write_bytes(out, cursor, &value.to_le_bytes())
         }
-        Value::String(_) | Value::RuntimeString(_) => {
+        Value::String(_) | Value::RuntimeString(_) | Value::ServiceString(_) => {
             write_byte(out, cursor, VALUE_STRING)?;
             write_len_prefixed(out, cursor, strings.value_str(value)?.as_bytes())
         }

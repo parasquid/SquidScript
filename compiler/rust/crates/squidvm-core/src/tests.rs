@@ -81,8 +81,8 @@ const WIFI_SCAN_TEST_NETWORKS: [WifiAccessPoint; 2] = [
 const WIFI_SCAN_BUDGET_NETWORKS: [WifiAccessPoint; 4] = [
     WifiAccessPoint::from_fixed_parts(
         [
-            b'N', b'e', b't', b'0', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            b'N', b'e', b't', b'0', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0,
         ],
         4,
         [
@@ -98,8 +98,8 @@ const WIFI_SCAN_BUDGET_NETWORKS: [WifiAccessPoint; 4] = [
     ),
     WifiAccessPoint::from_fixed_parts(
         [
-            b'N', b'e', b't', b'1', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            b'N', b'e', b't', b'1', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0,
         ],
         4,
         [
@@ -115,8 +115,8 @@ const WIFI_SCAN_BUDGET_NETWORKS: [WifiAccessPoint; 4] = [
     ),
     WifiAccessPoint::from_fixed_parts(
         [
-            b'N', b'e', b't', b'2', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            b'N', b'e', b't', b'2', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0,
         ],
         4,
         [
@@ -132,8 +132,8 @@ const WIFI_SCAN_BUDGET_NETWORKS: [WifiAccessPoint; 4] = [
     ),
     WifiAccessPoint::from_fixed_parts(
         [
-            b'N', b'e', b't', b'3', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            b'N', b'e', b't', b'3', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0,
         ],
         4,
         [
@@ -201,6 +201,12 @@ const REGISTRY_BUDGET_APPS: [AppRegistryEntry; 8] = [
 ];
 
 const FILE_BUDGET_LINES: [&str; 4] = ["line0", "line1", "line2", "line3"];
+const LONG_FILE_LINES: [&str; 4] = [
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "cccccccccccccccccccccccccccccccccccccccccccccccc",
+    "dddddddddddddddddddddddddddddddddddddddddddddddd",
+];
 
 #[derive(Default)]
 struct Trace {
@@ -287,7 +293,7 @@ impl TraceSink for RuntimeTrace {
                 line.push(' ');
             }
             match value {
-                Value::String(_) | Value::RuntimeString(_) => {
+                Value::String(_) | Value::RuntimeString(_) | Value::ServiceString(_) => {
                     line.push_str(strings.value_str(*value).unwrap())
                 }
                 Value::I32(value) => line.push_str(&value.to_string()),
@@ -500,7 +506,7 @@ impl TraceSink for RegistryTrace {
                 line.push(' ');
             }
             match value {
-                Value::String(_) | Value::RuntimeString(_) => {
+                Value::String(_) | Value::RuntimeString(_) | Value::ServiceString(_) => {
                     line.push_str(strings.value_str(*value).unwrap())
                 }
                 Value::I32(value) => line.push_str(&value.to_string()),
@@ -564,7 +570,7 @@ impl TraceSink for WifiTrace {
                 line.push(' ');
             }
             match value {
-                Value::String(_) | Value::RuntimeString(_) => {
+                Value::String(_) | Value::RuntimeString(_) | Value::ServiceString(_) => {
                     line.push_str(strings.value_str(*value).unwrap())
                 }
                 Value::I32(value) => line.push_str(&value.to_string()),
@@ -702,7 +708,7 @@ impl TraceSink for BudgetTrace {
                 line.push(' ');
             }
             match value {
-                Value::String(_) | Value::RuntimeString(_) => {
+                Value::String(_) | Value::RuntimeString(_) | Value::ServiceString(_) => {
                     line.push_str(strings.value_str(*value).unwrap())
                 }
                 Value::I32(value) => line.push_str(&value.to_string()),
@@ -787,10 +793,15 @@ impl TraceSink for BudgetTrace {
     ) -> Result<FileReadLinesResult<'a>, VmError> {
         self.events
             .push(format!("file.readLines {path} {max_lines}"));
+        let lines = if path == "long.txt" {
+            &LONG_FILE_LINES
+        } else {
+            &FILE_BUDGET_LINES
+        };
         Ok(FileReadLinesResult {
             ok: true,
             error: None,
-            lines: &FILE_BUDGET_LINES,
+            lines,
         })
     }
 }
@@ -1711,7 +1722,7 @@ impl TraceSink for CountingReader<'_> {
                 line.push(' ');
             }
             match value {
-                Value::String(_) | Value::RuntimeString(_) => {
+                Value::String(_) | Value::RuntimeString(_) | Value::ServiceString(_) => {
                     line.push_str(strings.value_str(*value).unwrap())
                 }
                 Value::I32(value) => line.push_str(&value.to_string()),
@@ -2135,7 +2146,7 @@ event.on("app.start") {
 }
 
 #[test]
-fn display_info_runtime_strings_fail_cleanly_over_event_budget() {
+fn display_info_service_strings_do_not_consume_runtime_string_budget() {
     let source = r#"app "display-over-budget"
 event.on("app.start") {
   let first = display.info()
@@ -2149,10 +2160,7 @@ event.on("app.start") {
     let mut vm = Vm::new(program);
     let mut trace = BudgetTrace::default();
 
-    assert_eq!(
-        vm.dispatch("app.start", &mut trace),
-        Err(VmError::TooManyStrings)
-    );
+    vm.dispatch("app.start", &mut trace).unwrap();
     assert_eq!(
         trace.events,
         vec![
@@ -2160,7 +2168,7 @@ event.on("app.start") {
             "display.info",
             "display.info",
             "display.info",
-            "wifi.teardown",
+            "debug ready ready ready",
         ]
     );
 }
@@ -2180,14 +2188,11 @@ event.on("app.start") {
 
     vm.dispatch("app.start", &mut trace).unwrap();
 
-    assert_eq!(
-        trace.events,
-        vec!["app.start", "wifi.scan", "debug 4"]
-    );
+    assert_eq!(trace.events, vec!["app.start", "wifi.scan", "debug 4"]);
 }
 
 #[test]
-fn wifi_scan_runtime_strings_fail_cleanly_over_event_budget() {
+fn wifi_scan_service_strings_do_not_consume_runtime_string_budget() {
     let source = r#"app "wifi-over-budget"
 event.on("app.start") {
   let scan = wifi.scan()
@@ -2200,15 +2205,12 @@ event.on("app.start") {
     let mut vm = Vm::new(program);
     let mut trace = BudgetTrace::default();
 
-    assert_eq!(
-        vm.dispatch("app.start", &mut trace),
-        Err(VmError::TooManyStrings)
-    );
+    vm.dispatch("app.start", &mut trace).unwrap();
     assert_eq!(
         trace.events,
-        vec!["app.start", "wifi.scan", "debug 4", "wifi.teardown"]
+        vec!["app.start", "wifi.scan", "debug 4", "debug wake"]
     );
-    assert_eq!(trace.wifi_teardown_count, 1);
+    assert_eq!(trace.wifi_teardown_count, 0);
 }
 
 #[test]
@@ -2239,7 +2241,7 @@ event.on("app.start") {
 }
 
 #[test]
-fn app_registry_runtime_strings_fail_cleanly_over_event_budget() {
+fn app_registry_service_strings_do_not_consume_runtime_string_budget() {
     let source = r#"app "registry-over-budget"
 event.on("app.start") {
   let apps = app.registry()
@@ -2253,10 +2255,7 @@ event.on("app.start") {
     let mut vm = Vm::new(program);
     let mut trace = BudgetTrace::default();
 
-    assert_eq!(
-        vm.dispatch("app.start", &mut trace),
-        Err(VmError::TooManyStrings)
-    );
+    vm.dispatch("app.start", &mut trace).unwrap();
     assert_eq!(
         trace.events,
         vec![
@@ -2264,7 +2263,7 @@ event.on("app.start") {
             "registry.list",
             "registry.get app0",
             "debug app0",
-            "wifi.teardown",
+            "debug RAM 292 KiB",
         ]
     );
 }
@@ -2299,7 +2298,7 @@ event.on("app.start") {
 }
 
 #[test]
-fn file_read_lines_runtime_strings_fail_cleanly_over_event_budget() {
+fn file_read_lines_service_strings_do_not_consume_runtime_string_budget() {
     let source = r#"app "file-over-budget"
 event.on("app.start") {
   let first = file.readLines("a.txt", 4)
@@ -2307,6 +2306,37 @@ event.on("app.start") {
   let third = file.readLines("c.txt", 4)
   debug.print(first.lines, second.lines, third.lines)
   debug.print(system.memory())
+}
+"#;
+    let bytes = compile_sqbc(source);
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = BudgetTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "file.readLines a.txt 4",
+            "file.readLines b.txt 4",
+            "file.readLines c.txt 4",
+            "debug <list> <list> <list>",
+            "debug RAM 292 KiB",
+        ]
+    );
+}
+
+#[test]
+fn dynamic_service_string_arena_fails_cleanly_when_exhausted() {
+    let source = r#"app "service-arena-over-budget"
+event.on("app.start") {
+  let first = file.readLines("long.txt", 4)
+  let second = file.readLines("long.txt", 4)
+  let third = file.readLines("long.txt", 4)
+  let fourth = file.readLines("long.txt", 4)
+  let fifth = file.readLines("long.txt", 4)
+  debug.print(first.lines, second.lines, third.lines, fourth.lines, fifth.lines)
 }
 "#;
     let bytes = compile_sqbc(source);
@@ -2322,10 +2352,11 @@ event.on("app.start") {
         trace.events,
         vec![
             "app.start",
-            "file.readLines a.txt 4",
-            "file.readLines b.txt 4",
-            "file.readLines c.txt 4",
-            "debug <list> <list> <list>",
+            "file.readLines long.txt 4",
+            "file.readLines long.txt 4",
+            "file.readLines long.txt 4",
+            "file.readLines long.txt 4",
+            "file.readLines long.txt 4",
             "wifi.teardown",
         ]
     );
@@ -2396,10 +2427,20 @@ event.on("app.start") {
 fn runtime_strings_are_reclaimed_between_events_after_budget_exhaustion() {
     let source = r#"app "budget-reclaim"
 event.on("app.start") {
-  let first = display.info()
-  let second = display.info()
-  let third = display.info()
-  debug.print(first.status, second.status, third.status)
+  let s0 = system.startReason()
+  let s1 = s0 + "x"
+  let s2 = s1 + "x"
+  let s3 = s2 + "x"
+  let s4 = s3 + "x"
+  let s5 = s4 + "x"
+  let s6 = s5 + "x"
+  let s7 = s6 + "x"
+  let s8 = s7 + "x"
+  let s9 = s8 + "x"
+  let s10 = s9 + "x"
+  let s11 = s10 + "x"
+  let s12 = s11 + "x"
+  debug.print(s12)
 }
 
 event.on("timer.clock") {
@@ -2423,15 +2464,41 @@ event.on("timer.clock") {
         trace.events,
         vec![
             "app.start",
-            "display.info",
-            "display.info",
-            "display.info",
             "wifi.teardown",
             "timer.clock",
             "display.info",
             "display.info",
             "debug ready ready",
         ]
+    );
+}
+
+#[test]
+fn service_result_string_assigned_to_state_survives_event_cleanup() {
+    let source = r#"app "service-state"
+state {
+  label: string = ""
+}
+event.on("app.start") {
+  let info = display.info()
+  state.label = info.status
+}
+
+event.on("timer.clock") {
+  debug.print(state.label)
+}
+"#;
+    let bytes = compile_sqbc(source);
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = BudgetTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+    vm.dispatch("timer.clock", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec!["app.start", "display.info", "timer.clock", "debug ready"]
     );
 }
 

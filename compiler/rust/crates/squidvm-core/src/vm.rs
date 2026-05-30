@@ -45,7 +45,7 @@ use crate::{
         apply_state_record, concat_value_strings, encode_state_record, state_value_matches,
         values_equal,
     },
-    strings::{RuntimeStrings, StringResolver, StringTable},
+    strings::{RuntimeServiceStrings, RuntimeStrings, StringResolver, StringTable},
     value::Value,
 };
 
@@ -57,6 +57,7 @@ pub struct Vm<'a> {
 pub struct ChunkedVm {
     index: ProgramIndex,
     runtime_strings: RuntimeStrings,
+    service_strings: RuntimeServiceStrings,
     runtime_records: RuntimeRecords,
     runtime_lists: RuntimeLists,
     state: [Value; MAX_STATE],
@@ -288,6 +289,7 @@ impl ChunkedVm {
         Self {
             index,
             runtime_strings: RuntimeStrings::new(),
+            service_strings: RuntimeServiceStrings::new(),
             runtime_records: RuntimeRecords::new(),
             runtime_lists: RuntimeLists::new(),
             state,
@@ -327,6 +329,7 @@ impl ChunkedVm {
 
     unsafe fn init_after_index_in_place(out: *mut Self) {
         ptr::addr_of_mut!((*out).runtime_strings).write(RuntimeStrings::new());
+        ptr::addr_of_mut!((*out).service_strings).write(RuntimeServiceStrings::new());
         init_runtime_records_in_place(ptr::addr_of_mut!((*out).runtime_records));
         init_runtime_lists_in_place(ptr::addr_of_mut!((*out).runtime_lists));
 
@@ -397,6 +400,7 @@ impl ChunkedVm {
         let (index, handler) = self.index.handler(event)?;
         self.runtime_strings
             .retain_state_values(&mut self.state[..self.index.state_count])?;
+        self.service_strings.reset();
         self.runtime_records.reset();
         self.runtime_lists.reset();
         let key = ChunkRef {
@@ -553,6 +557,7 @@ impl ChunkedVm {
     }
 
     pub fn set_state_value(&mut self, name: &str, value: Value) -> Result<(), VmError> {
+        let value = self.materialize_state_value(value)?;
         for (index, slot) in self
             .index
             .state_slots
@@ -572,11 +577,39 @@ impl ChunkedVm {
     }
 
     pub fn string_resolver(&self) -> StringResolver<'_> {
-        StringResolver::new(&self.index, &self.runtime_strings)
+        self.resolver()
     }
 
     pub fn string_table(&self) -> &dyn StringTable {
         &self.index
+    }
+
+    fn resolver(&self) -> StringResolver<'_> {
+        StringResolver::with_service_strings(
+            &self.index,
+            &self.runtime_strings,
+            &self.service_strings,
+        )
+    }
+
+    fn materialize_state_value(&mut self, value: Value) -> Result<Value, VmError> {
+        let Value::ServiceString(_) = value else {
+            return Ok(value);
+        };
+        let resolver = self.resolver();
+        let text = resolver.value_str(value)?;
+        let mut bytes = [0u8; MAX_RUNTIME_STRING_BYTES];
+        let len = text.len();
+        if len > bytes.len() {
+            return Err(VmError::InvalidOperand);
+        }
+        bytes[..len].copy_from_slice(text.as_bytes());
+        let text = str::from_utf8(&bytes[..len]).map_err(|_| VmError::InvalidUtf8)?;
+        let mut writer = self.runtime_strings.alloc()?;
+        writer
+            .write_str(text)
+            .map_err(|_| VmError::InvalidOperand)?;
+        Ok(writer.value())
     }
 
     pub const fn installed_code_cache_bytes(&self) -> usize {
@@ -790,6 +823,7 @@ impl ChunkedVm {
                     let state = self.read_u16_code(self.frames[frame_index].ip)? as usize;
                     self.frames[frame_index].ip += 2;
                     let value = self.pop()?;
+                    let value = self.materialize_state_value(value)?;
                     let state_slot = self
                         .index
                         .state_slots
@@ -983,6 +1017,7 @@ impl ChunkedVm {
                 let len = encode_state_record(
                     &self.index,
                     &self.runtime_strings,
+                    &self.service_strings,
                     &self.index.state_slots[..self.index.state_count],
                     &self.state[..self.index.state_count],
                     &mut self.storage_bytes,
@@ -1026,7 +1061,7 @@ impl ChunkedVm {
                     return Err(VmError::StackUnderflow);
                 }
                 let start = self.stack_len - count;
-                let strings = StringResolver::new(&self.index, &self.runtime_strings);
+                let strings = self.resolver();
                 host.debug_print(&strings, &self.stack[start..self.stack_len]);
                 self.stack_len = start;
             }
@@ -1047,7 +1082,7 @@ impl ChunkedVm {
                 let y = self.pop()?.expect_i32()?;
                 let x = self.pop()?.expect_i32()?;
                 let text = self.pop()?;
-                let strings = StringResolver::new(&self.index, &self.runtime_strings);
+                let strings = self.resolver();
                 host.draw_text(
                     &strings,
                     text,
@@ -1123,7 +1158,7 @@ impl ChunkedVm {
                 let y = self.pop()?.expect_i32()?;
                 let x = self.pop()?.expect_i32()?;
                 let drawable = self.pop()?;
-                let strings = StringResolver::new(&self.index, &self.runtime_strings);
+                let strings = self.resolver();
                 host.draw_resource(&strings, drawable, DisplayResourceOptions { x, y, w, h });
             }
             BUILTIN_DISPLAY_INFO => {
@@ -1212,7 +1247,7 @@ impl ChunkedVm {
                     return Err(VmError::InvalidOperand);
                 };
                 let app_id = self.runtime_lists.get(list_id, index)?;
-                let strings = StringResolver::new(&self.index, &self.runtime_strings);
+                let strings = self.resolver();
                 let app_id = strings.value_str(app_id)?;
                 let entry = host.app_registry_get(app_id)?;
                 let value = self.app_registry_record(entry)?;
@@ -1317,7 +1352,7 @@ impl ChunkedVm {
                 let Value::String(key_id) = self.pop()? else {
                     return Err(VmError::InvalidOperand);
                 };
-                let strings = StringResolver::new(&self.index, &self.runtime_strings);
+                let strings = self.resolver();
                 let result = host.device_config_set(self.index.string(key_id)?, value, &strings)?;
                 let value = self.device_config_result_record(result)?;
                 self.push(value)?;
@@ -1394,11 +1429,7 @@ impl ChunkedVm {
         let Some(value) = value else {
             return Ok(Value::Null);
         };
-        let mut writer = self.runtime_strings.alloc()?;
-        writer
-            .write_str(value)
-            .map_err(|_| VmError::InvalidOperand)?;
-        Ok(writer.value())
+        self.service_strings.alloc(value)
     }
 
     fn wifi_action_record(&mut self, result: WifiActionResult<'_>) -> Result<Value, VmError> {
@@ -1632,12 +1663,14 @@ impl ChunkedVm {
             OP_EQ => Value::Bool(values_equal(
                 &self.index,
                 &self.runtime_strings,
+                &self.service_strings,
                 left,
                 right,
             )?),
             OP_NE => Value::Bool(!values_equal(
                 &self.index,
                 &self.runtime_strings,
+                &self.service_strings,
                 left,
                 right,
             )?),
@@ -1656,8 +1689,14 @@ impl ChunkedVm {
         }
         if left.is_string() && right.is_string() {
             let mut bytes = [0u8; MAX_RUNTIME_STRING_BYTES];
-            let len =
-                concat_value_strings(&self.index, &self.runtime_strings, left, right, &mut bytes)?;
+            let len = concat_value_strings(
+                &self.index,
+                &self.runtime_strings,
+                &self.service_strings,
+                left,
+                right,
+                &mut bytes,
+            )?;
             let text = str::from_utf8(&bytes[..len]).map_err(|_| VmError::InvalidUtf8)?;
             let mut writer = self.runtime_strings.alloc()?;
             writer
