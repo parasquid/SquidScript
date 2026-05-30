@@ -170,6 +170,15 @@ impl StringTable for Program<'_> {
     fn string(&self, id: u16) -> Result<&str, VmError> {
         Program::string(self, id)
     }
+
+    fn find_string(&self, value: &str) -> Result<Option<u16>, VmError> {
+        for index in 0..self.string_count {
+            if self.strings[index] == value {
+                return Ok(Some(index as u16));
+            }
+        }
+        Ok(None)
+    }
 }
 
 pub struct ProgramIndex {
@@ -575,6 +584,15 @@ impl ProgramIndex {
 impl StringTable for ProgramIndex {
     fn string(&self, id: u16) -> Result<&str, VmError> {
         ProgramIndex::string(self, id)
+    }
+
+    fn find_string(&self, value: &str) -> Result<Option<u16>, VmError> {
+        for index in 0..self.string_count {
+            if self.string(index as u16)? == value {
+                return Ok(Some(index as u16));
+            }
+        }
+        Ok(None)
     }
 }
 

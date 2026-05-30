@@ -3038,7 +3038,7 @@ impl TraceSink for FfiHost<'_> {
                 let _ = line.write_str(" ");
             }
             match value {
-                Value::String(_) | Value::RuntimeString(_) | Value::ServiceString(_) => {
+                Value::String(_) => {
                     let text = strings.value_str(*value).unwrap_or("<string>");
                     let _ = line.write_str(text);
                 }
@@ -4558,7 +4558,7 @@ fn device_config_value_to_ffi(
             i32_value: value,
             ..SqvmDeviceConfigValue::default()
         }),
-        Value::String(_) | Value::RuntimeString(_) | Value::ServiceString(_) => {
+        Value::String(_) => {
             let text = strings.value_str(value)?;
             Ok(SqvmDeviceConfigValue {
                 kind: SqvmDeviceConfigValueKind::String,
@@ -4711,7 +4711,7 @@ fn write_value<const N: usize>(
     value: Value,
 ) {
     match value {
-        Value::String(_) | Value::RuntimeString(_) | Value::ServiceString(_) => {
+        Value::String(_) => {
             let text = strings.value_str(value).unwrap_or("<string>");
             let _ = line.write_str(text);
         }

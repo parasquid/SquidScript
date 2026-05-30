@@ -45,8 +45,8 @@ use crate::{
         apply_state_record, concat_value_strings, encode_state_record, state_value_matches,
         values_equal,
     },
-    strings::{RuntimeServiceStrings, RuntimeStrings, StringResolver, StringTable},
-    value::Value,
+    strings::{StringInterner, StringResolver, StringTable},
+    value::{StringRef, Value},
 };
 
 pub struct Vm<'a> {
@@ -56,8 +56,7 @@ pub struct Vm<'a> {
 
 pub struct ChunkedVm {
     index: ProgramIndex,
-    runtime_strings: RuntimeStrings,
-    service_strings: RuntimeServiceStrings,
+    strings: StringInterner,
     runtime_records: RuntimeRecords,
     runtime_lists: RuntimeLists,
     state: [Value; MAX_STATE],
@@ -231,6 +230,36 @@ struct RuntimeLists {
     next: usize,
 }
 
+struct FixedString {
+    bytes: [u8; MAX_RUNTIME_STRING_BYTES],
+    len: usize,
+}
+
+impl FixedString {
+    const fn new() -> Self {
+        Self {
+            bytes: [0; MAX_RUNTIME_STRING_BYTES],
+            len: 0,
+        }
+    }
+
+    fn as_str(&self) -> Result<&str, VmError> {
+        str::from_utf8(&self.bytes[..self.len]).map_err(|_| VmError::InvalidUtf8)
+    }
+}
+
+impl Write for FixedString {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        let end = self.len.checked_add(s.len()).ok_or(core::fmt::Error)?;
+        if end > self.bytes.len() {
+            return Err(core::fmt::Error);
+        }
+        self.bytes[self.len..end].copy_from_slice(s.as_bytes());
+        self.len = end;
+        Ok(())
+    }
+}
+
 impl RuntimeLists {
     const fn new() -> Self {
         Self {
@@ -288,8 +317,7 @@ impl ChunkedVm {
         }
         Self {
             index,
-            runtime_strings: RuntimeStrings::new(),
-            service_strings: RuntimeServiceStrings::new(),
+            strings: StringInterner::new(),
             runtime_records: RuntimeRecords::new(),
             runtime_lists: RuntimeLists::new(),
             state,
@@ -328,8 +356,7 @@ impl ChunkedVm {
     }
 
     unsafe fn init_after_index_in_place(out: *mut Self) {
-        ptr::addr_of_mut!((*out).runtime_strings).write(RuntimeStrings::new());
-        ptr::addr_of_mut!((*out).service_strings).write(RuntimeServiceStrings::new());
+        ptr::addr_of_mut!((*out).strings).write(StringInterner::new());
         init_runtime_records_in_place(ptr::addr_of_mut!((*out).runtime_records));
         init_runtime_lists_in_place(ptr::addr_of_mut!((*out).runtime_lists));
 
@@ -398,9 +425,8 @@ impl ChunkedVm {
             return Ok(VmDispatch::Complete);
         }
         let (index, handler) = self.index.handler(event)?;
-        self.runtime_strings
-            .retain_state_values(&mut self.state[..self.index.state_count])?;
-        self.service_strings.reset();
+        self.strings
+            .retain_state_values(&self.index, &mut self.state[..self.index.state_count])?;
         self.runtime_records.reset();
         self.runtime_lists.reset();
         let key = ChunkRef {
@@ -448,7 +474,7 @@ impl ChunkedVm {
                         &completion.bytes[..len],
                         &self.index,
                         &self.index.state_slots[..self.index.state_count],
-                        &mut self.runtime_strings,
+                        &mut self.strings,
                         &mut self.state[..self.index.state_count],
                     )?;
                 }
@@ -492,7 +518,7 @@ impl ChunkedVm {
                         &self.storage_bytes[..len],
                         &self.index,
                         &self.index.state_slots[..self.index.state_count],
-                        &mut self.runtime_strings,
+                        &mut self.strings,
                         &mut self.state[..self.index.state_count],
                     )?;
                 }
@@ -585,31 +611,11 @@ impl ChunkedVm {
     }
 
     fn resolver(&self) -> StringResolver<'_> {
-        StringResolver::with_service_strings(
-            &self.index,
-            &self.runtime_strings,
-            &self.service_strings,
-        )
+        StringResolver::new(&self.index, &self.strings)
     }
 
     fn materialize_state_value(&mut self, value: Value) -> Result<Value, VmError> {
-        let Value::ServiceString(_) = value else {
-            return Ok(value);
-        };
-        let resolver = self.resolver();
-        let text = resolver.value_str(value)?;
-        let mut bytes = [0u8; MAX_RUNTIME_STRING_BYTES];
-        let len = text.len();
-        if len > bytes.len() {
-            return Err(VmError::InvalidOperand);
-        }
-        bytes[..len].copy_from_slice(text.as_bytes());
-        let text = str::from_utf8(&bytes[..len]).map_err(|_| VmError::InvalidUtf8)?;
-        let mut writer = self.runtime_strings.alloc()?;
-        writer
-            .write_str(text)
-            .map_err(|_| VmError::InvalidOperand)?;
-        Ok(writer.value())
+        self.strings.retain_value(value)
     }
 
     pub const fn installed_code_cache_bytes(&self) -> usize {
@@ -657,7 +663,14 @@ impl ChunkedVm {
     fn pop_optional_string(&mut self) -> Result<Option<u16>, VmError> {
         match self.pop()? {
             Value::Null => Ok(None),
-            Value::String(id) => Ok(Some(id)),
+            Value::String(StringRef::Sqbc(id)) => Ok(Some(id)),
+            _ => Err(VmError::InvalidOperand),
+        }
+    }
+
+    fn pop_sqbc_string_id(&mut self) -> Result<u16, VmError> {
+        match self.pop()? {
+            Value::String(StringRef::Sqbc(id)) => Ok(id),
             _ => Err(VmError::InvalidOperand),
         }
     }
@@ -811,7 +824,7 @@ impl ChunkedVm {
                 OP_PUSH_STRING => {
                     let value = self.read_u16_code(self.frames[frame_index].ip)?;
                     self.frames[frame_index].ip += 2;
-                    self.push(Value::String(value))?;
+                    self.push(Value::String(StringRef::Sqbc(value)))?;
                 }
                 OP_PUSH_NULL => self.push(Value::Null)?,
                 OP_GET_STATE => {
@@ -915,9 +928,7 @@ impl ChunkedVm {
                         0
                     };
                     if builtin == BUILTIN_SCREEN_OPEN {
-                        let Value::String(name_id) = self.pop()? else {
-                            return Err(VmError::InvalidOperand);
-                        };
+                        let name_id = self.pop_sqbc_string_id()?;
                         self.current_screen = Some(name_id);
                         let depth = self.frames[frame_index].depth;
                         self.push_screen_resume_frame(name_id, depth + 1)?;
@@ -1016,8 +1027,7 @@ impl ChunkedVm {
             BUILTIN_STATE_SAVE => {
                 let len = encode_state_record(
                     &self.index,
-                    &self.runtime_strings,
-                    &self.service_strings,
+                    &self.strings,
                     &self.index.state_slots[..self.index.state_count],
                     &self.state[..self.index.state_count],
                     &mut self.storage_bytes,
@@ -1066,9 +1076,7 @@ impl ChunkedVm {
                 self.stack_len = start;
             }
             BUILTIN_DISPLAY_CLEAR => {
-                let Value::String(color_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let color_id = self.pop_sqbc_string_id()?;
                 host.draw_clear(self.index.string(color_id)?);
             }
             BUILTIN_DISPLAY_TEXT => {
@@ -1134,9 +1142,7 @@ impl ChunkedVm {
                 });
             }
             BUILTIN_DISPLAY_SELECT => {
-                let Value::String(name_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let name_id = self.pop_sqbc_string_id()?;
                 host.draw_select(self.index.string(name_id)?)?;
             }
             BUILTIN_DISPLAY_IMAGE => {
@@ -1144,9 +1150,7 @@ impl ChunkedVm {
                 let w = self.pop()?.expect_i32()?;
                 let y = self.pop()?.expect_i32()?;
                 let x = self.pop()?.expect_i32()?;
-                let Value::String(path_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let path_id = self.pop_sqbc_string_id()?;
                 host.draw_image(
                     self.index.string(path_id)?,
                     DisplayResourceOptions { x, y, w, h },
@@ -1167,24 +1171,18 @@ impl ChunkedVm {
                 self.push(record)?;
             }
             BUILTIN_HARDWARE_GPIO_WRITE => {
-                let Value::String(name_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let name_id = self.pop_sqbc_string_id()?;
                 let Value::Bool(value) = self.pop()? else {
                     return Err(VmError::InvalidOperand);
                 };
                 host.hardware_gpio_write(self.index.string(name_id)?, value)?;
             }
             BUILTIN_HARDWARE_GPIO_TOGGLE => {
-                let Value::String(name_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let name_id = self.pop_sqbc_string_id()?;
                 host.hardware_gpio_toggle(self.index.string(name_id)?)?;
             }
             BUILTIN_HARDWARE_GPIO_READ => {
-                let Value::String(name_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let name_id = self.pop_sqbc_string_id()?;
                 let value = host.hardware_gpio_read(self.index.string(name_id)?)?;
                 self.push(Value::Bool(value))?;
             }
@@ -1214,21 +1212,15 @@ impl ChunkedVm {
                 self.push(Value::Bool(value))?;
             }
             BUILTIN_APP_LAUNCH => {
-                let Value::String(app_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let app_id = self.pop_sqbc_string_id()?;
                 host.app_launch(self.index.string(app_id)?)?;
             }
             BUILTIN_APP_ARM => {
-                let Value::String(app_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let app_id = self.pop_sqbc_string_id()?;
                 host.app_arm(self.index.string(app_id)?)?;
             }
             BUILTIN_APP_DISARM => {
-                let Value::String(app_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let app_id = self.pop_sqbc_string_id()?;
                 host.app_disarm(self.index.string(app_id)?)?;
             }
             BUILTIN_APP_REGISTRY_LIST => {
@@ -1282,16 +1274,12 @@ impl ChunkedVm {
             }
             BUILTIN_SERVICE_TIMER_EVERY => {
                 let interval_ms = self.pop()?.expect_i32()?;
-                let Value::String(event_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let event_id = self.pop_sqbc_string_id()?;
                 host.service_timer_every(self.index.string(event_id)?, interval_ms)?;
             }
             BUILTIN_SERVICE_TIMER_AFTER => {
                 let delay_ms = self.pop()?.expect_i32()?;
-                let Value::String(event_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let event_id = self.pop_sqbc_string_id()?;
                 host.service_timer_after(self.index.string(event_id)?, delay_ms)?;
             }
             BUILTIN_SERVICE_POWER_SLEEP => {
@@ -1299,9 +1287,7 @@ impl ChunkedVm {
                 host.service_power_sleep(wake_after_ms)?;
             }
             BUILTIN_SERVICE_WIFI_START_AP => {
-                let Value::String(ssid_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let ssid_id = self.pop_sqbc_string_id()?;
                 let result = host.service_wifi_start_ap(self.index.string(ssid_id)?)?;
                 let value = self.wifi_action_record(result)?;
                 self.push(value)?;
@@ -1312,9 +1298,7 @@ impl ChunkedVm {
                 self.push(value)?;
             }
             BUILTIN_SERVICE_WIFI_CONNECT => {
-                let Value::String(profile_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let profile_id = self.pop_sqbc_string_id()?;
                 let result = host.service_wifi_connect(self.index.string(profile_id)?)?;
                 let value = self.wifi_action_record(result)?;
                 self.push(value)?;
@@ -1340,84 +1324,68 @@ impl ChunkedVm {
                 self.push(value)?;
             }
             BUILTIN_DEVICE_CONFIG_LOAD => {
-                let Value::String(source_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let source_id = self.pop_sqbc_string_id()?;
                 let result = host.device_config_load(self.index.string(source_id)?)?;
                 let value = self.device_config_result_record(result)?;
                 self.push(value)?;
             }
             BUILTIN_DEVICE_CONFIG_SET => {
                 let value = self.pop()?;
-                let Value::String(key_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let key_id = self.pop_sqbc_string_id()?;
                 let strings = self.resolver();
                 let result = host.device_config_set(self.index.string(key_id)?, value, &strings)?;
                 let value = self.device_config_result_record(result)?;
                 self.push(value)?;
             }
             BUILTIN_DEVICE_CONFIG_REBIND => {
-                let Value::String(binding_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let binding_id = self.pop_sqbc_string_id()?;
                 let result = host.device_config_rebind(self.index.string(binding_id)?)?;
                 let value = self.device_config_result_record(result)?;
                 self.push(value)?;
             }
             BUILTIN_DEVICE_CONFIG_SAVE => {
-                let Value::String(destination_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let destination_id = self.pop_sqbc_string_id()?;
                 let result = host.device_config_save(self.index.string(destination_id)?)?;
                 let value = self.device_config_result_record(result)?;
                 self.push(value)?;
             }
             crate::bytecode::BUILTIN_FILE_PICK_FILE => {
-                let Value::String(extension_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let extension_id = self.pop_sqbc_string_id()?;
                 let result = host.file_pick_file(self.index.string(extension_id)?)?;
                 let value = self.file_pick_file_result_record(result)?;
                 self.push(value)?;
             }
             crate::bytecode::BUILTIN_FILE_READ_TEXT => {
-                let Value::String(path_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let path_id = self.pop_sqbc_string_id()?;
                 let result = host.file_read_text(self.index.string(path_id)?)?;
                 let value = self.file_read_text_result_record(result)?;
                 self.push(value)?;
             }
             crate::bytecode::BUILTIN_FILE_READ_LINES => {
                 let max_lines = self.pop()?.expect_i32()?;
-                let Value::String(path_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let path_id = self.pop_sqbc_string_id()?;
                 let result = host.file_read_lines(self.index.string(path_id)?, max_lines)?;
                 let value = self.file_read_lines_result_record(result)?;
                 self.push(value)?;
             }
             BUILTIN_SYSTEM_MEMORY => {
-                let mut writer = self.runtime_strings.alloc()?;
-                host.system_memory_text(&mut writer)?;
-                let value = writer.value();
+                let mut text = FixedString::new();
+                host.system_memory_text(&mut text)?;
+                let value = self.runtime_string_value(Some(text.as_str()?))?;
                 self.push(value)?;
             }
             BUILTIN_SYSTEM_STORAGE => {
-                let Value::String(name_id) = self.pop()? else {
-                    return Err(VmError::InvalidOperand);
-                };
+                let name_id = self.pop_sqbc_string_id()?;
                 let name = self.index.string(name_id)?;
-                let mut writer = self.runtime_strings.alloc()?;
-                host.system_storage_text(name, &mut writer)?;
-                let value = writer.value();
+                let mut text = FixedString::new();
+                host.system_storage_text(name, &mut text)?;
+                let value = self.runtime_string_value(Some(text.as_str()?))?;
                 self.push(value)?;
             }
             BUILTIN_SYSTEM_START_REASON => {
-                let mut writer = self.runtime_strings.alloc()?;
-                host.system_start_reason_text(&mut writer)?;
-                let value = writer.value();
+                let mut text = FixedString::new();
+                host.system_start_reason_text(&mut text)?;
+                let value = self.runtime_string_value(Some(text.as_str()?))?;
                 self.push(value)?;
             }
             _ => return Err(VmError::InvalidOperand),
@@ -1429,7 +1397,7 @@ impl ChunkedVm {
         let Some(value) = value else {
             return Ok(Value::Null);
         };
-        self.service_strings.alloc(value)
+        self.strings.intern_event(&self.index, value)
     }
 
     fn wifi_action_record(&mut self, result: WifiActionResult<'_>) -> Result<Value, VmError> {
@@ -1660,20 +1628,8 @@ impl ChunkedVm {
         let value = match op {
             OP_ADD => self.add_values(left, right)?,
             OP_SUB => Value::I32(left.expect_i32()? - right.expect_i32()?),
-            OP_EQ => Value::Bool(values_equal(
-                &self.index,
-                &self.runtime_strings,
-                &self.service_strings,
-                left,
-                right,
-            )?),
-            OP_NE => Value::Bool(!values_equal(
-                &self.index,
-                &self.runtime_strings,
-                &self.service_strings,
-                left,
-                right,
-            )?),
+            OP_EQ => Value::Bool(values_equal(&self.index, &self.strings, left, right)?),
+            OP_NE => Value::Bool(!values_equal(&self.index, &self.strings, left, right)?),
             OP_LT => Value::Bool(left.expect_i32()? < right.expect_i32()?),
             OP_LTE => Value::Bool(left.expect_i32()? <= right.expect_i32()?),
             OP_GT => Value::Bool(left.expect_i32()? > right.expect_i32()?),
@@ -1689,20 +1645,9 @@ impl ChunkedVm {
         }
         if left.is_string() && right.is_string() {
             let mut bytes = [0u8; MAX_RUNTIME_STRING_BYTES];
-            let len = concat_value_strings(
-                &self.index,
-                &self.runtime_strings,
-                &self.service_strings,
-                left,
-                right,
-                &mut bytes,
-            )?;
+            let len = concat_value_strings(&self.index, &self.strings, left, right, &mut bytes)?;
             let text = str::from_utf8(&bytes[..len]).map_err(|_| VmError::InvalidUtf8)?;
-            let mut writer = self.runtime_strings.alloc()?;
-            writer
-                .write_str(text)
-                .map_err(|_| VmError::InvalidOperand)?;
-            return Ok(writer.value());
+            return self.runtime_string_value(Some(text));
         }
         Err(VmError::InvalidOperand)
     }

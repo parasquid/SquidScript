@@ -1,4 +1,4 @@
-use core::{fmt::Write, str};
+use core::str;
 
 use crate::{
     bytecode::{
@@ -8,7 +8,7 @@ use crate::{
     error::VmError,
     limits::{MAX_RUNTIME_STRING_BYTES, MAX_SAVED_STATE_BYTES, MAX_STATE},
     model::{StateSlot, StateType},
-    strings::{RuntimeServiceStrings, RuntimeStrings, StringResolver, StringTable},
+    strings::{StringInterner, StringResolver, StringTable},
     value::Value,
 };
 
@@ -66,15 +66,12 @@ pub(crate) fn state_value_matches(tag: u8, nullable: bool, value: Value) -> bool
         (STATE_TYPE_INT, Value::I32(_))
             | (STATE_TYPE_BOOL, Value::Bool(_))
             | (STATE_TYPE_STRING, Value::String(_))
-            | (STATE_TYPE_STRING, Value::RuntimeString(_))
-            | (STATE_TYPE_STRING, Value::ServiceString(_))
     )
 }
 
 pub(crate) fn values_equal(
     strings: &dyn StringTable,
-    runtime_strings: &RuntimeStrings,
-    service_strings: &RuntimeServiceStrings,
+    interner: &StringInterner,
     left: Value,
     right: Value,
 ) -> Result<bool, VmError> {
@@ -82,8 +79,7 @@ pub(crate) fn values_equal(
         if !left.is_string() || !right.is_string() {
             return Ok(false);
         }
-        let resolver =
-            StringResolver::with_service_strings(strings, runtime_strings, service_strings);
+        let resolver = StringResolver::new(strings, interner);
         return Ok(resolver.value_str(left)? == resolver.value_str(right)?);
     }
     Ok(left == right)
@@ -91,13 +87,12 @@ pub(crate) fn values_equal(
 
 pub(crate) fn concat_value_strings(
     strings: &dyn StringTable,
-    runtime_strings: &RuntimeStrings,
-    service_strings: &RuntimeServiceStrings,
+    interner: &StringInterner,
     left: Value,
     right: Value,
     out: &mut [u8; MAX_RUNTIME_STRING_BYTES],
 ) -> Result<usize, VmError> {
-    let resolver = StringResolver::with_service_strings(strings, runtime_strings, service_strings);
+    let resolver = StringResolver::new(strings, interner);
     let left = resolver.value_str(left)?.as_bytes();
     let right = resolver.value_str(right)?.as_bytes();
     let len = left
@@ -114,8 +109,7 @@ pub(crate) fn concat_value_strings(
 
 pub(crate) fn encode_state_record(
     strings: &dyn StringTable,
-    runtime_strings: &RuntimeStrings,
-    service_strings: &RuntimeServiceStrings,
+    interner: &StringInterner,
     slots: &[StateSlot],
     state: &[Value],
     out: &mut [u8; MAX_SAVED_STATE_BYTES],
@@ -123,7 +117,7 @@ pub(crate) fn encode_state_record(
     let mut cursor = 0usize;
     write_bytes(out, &mut cursor, STATE_RECORD_MAGIC)?;
     write_byte(out, &mut cursor, slots.len() as u8)?;
-    let resolver = StringResolver::with_service_strings(strings, runtime_strings, service_strings);
+    let resolver = StringResolver::new(strings, interner);
     for (slot, value) in slots.iter().zip(state.iter().copied()) {
         let name = strings.string(slot.name_id)?;
         write_len_prefixed(out, &mut cursor, name.as_bytes())?;
@@ -150,7 +144,7 @@ pub(crate) fn encode_state_record_value(
             write_byte(out, cursor, VALUE_I32)?;
             write_bytes(out, cursor, &value.to_le_bytes())
         }
-        Value::String(_) | Value::RuntimeString(_) | Value::ServiceString(_) => {
+        Value::String(_) => {
             write_byte(out, cursor, VALUE_STRING)?;
             write_len_prefixed(out, cursor, strings.value_str(value)?.as_bytes())
         }
@@ -162,7 +156,7 @@ pub(crate) fn apply_state_record(
     bytes: &[u8],
     strings: &dyn StringTable,
     slots: &[StateSlot],
-    runtime_strings: &mut RuntimeStrings,
+    interner: &mut StringInterner,
     state: &mut [Value],
 ) -> Result<(), VmError> {
     if bytes.len() > MAX_SAVED_STATE_BYTES || bytes.len() < 5 {
@@ -198,7 +192,7 @@ pub(crate) fn apply_state_record(
         if slot.value_type.tag != tag || slot.value_type.nullable != nullable {
             return Err(VmError::StateTypeMismatch);
         }
-        state[index] = materialize_state_value(value, runtime_strings)?;
+        state[index] = materialize_state_value(value, strings, interner)?;
     }
     if cursor != bytes.len() {
         return Err(VmError::InvalidStateRecord);
@@ -257,18 +251,22 @@ fn saved_state_value_matches(tag: u8, nullable: bool, value: &SavedStateValue<'_
 
 fn materialize_state_value(
     value: SavedStateValue<'_>,
-    runtime_strings: &mut RuntimeStrings,
+    strings: &dyn StringTable,
+    interner: &mut StringInterner,
 ) -> Result<Value, VmError> {
     match value {
         SavedStateValue::Null => Ok(Value::Null),
         SavedStateValue::Bool(value) => Ok(Value::Bool(value)),
         SavedStateValue::I32(value) => Ok(Value::I32(value)),
         SavedStateValue::String(value) => {
-            let mut writer = runtime_strings.alloc()?;
-            writer
-                .write_str(value)
-                .map_err(|_| VmError::InvalidStateRecord)?;
-            Ok(writer.value())
+            interner
+                .intern_retained(strings, value)
+                .map_err(|error| match error {
+                    VmError::TooManyStrings | VmError::InvalidOperand => {
+                        VmError::InvalidStateRecord
+                    }
+                    other => other,
+                })
         }
     }
 }

@@ -222,9 +222,12 @@ stack, current screen, foreground timers, or handles.
 
 `state.load()` applies matching slots by name and declared type, leaves missing
 slots at defaults, ignores removed slots, and fails with a VM error for
-malformed records or matching-name type/value mismatches. `state.save()` writes
-the current typed record. `state.reset()` clears the persistent state record for
-the app.
+malformed records or matching-name type/value mismatches. Loaded string values
+that exactly match an existing SQBC string-pool literal or firmware static
+string reuse that reference instead of consuming dynamic string storage; other
+loaded strings are retained in the VM string interner. `state.save()` writes
+the current typed record.
+`state.reset()` clears the persistent state record for the app.
 
 `RUN.TEMP` state is volatile and RAM-backed, bounded to the VM saved-state
 capacity. Only the temporary SQBC bytecode artifact is file-backed.

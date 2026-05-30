@@ -2132,7 +2132,7 @@ fn dispatches_app_lifecycle_inspection_callbacks() {
 }
 
 #[test]
-fn repeated_armed_stack_inspection_does_not_exhaust_ffi_runtime_strings() {
+fn repeated_armed_stack_inspection_does_not_exhaust_ffi_dynamic_strings() {
     let mut host = Host {
         sqbc: compile_repeated_armed_stack_sqbc(),
         ..Host::default()

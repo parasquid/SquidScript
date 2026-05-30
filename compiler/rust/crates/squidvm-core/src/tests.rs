@@ -9,6 +9,18 @@ use crate::{
     value::*, vm::*,
 };
 
+struct EmptyStringTable;
+
+impl StringTable for EmptyStringTable {
+    fn string(&self, _id: u16) -> Result<&str, VmError> {
+        Err(VmError::InvalidOperand)
+    }
+
+    fn find_string(&self, _value: &str) -> Result<Option<u16>, VmError> {
+        Ok(None)
+    }
+}
+
 #[test]
 fn runtime_record_field_limit_matches_largest_service_record() {
     assert_eq!(MAX_RUNTIME_RECORD_FIELDS, 26);
@@ -16,34 +28,40 @@ fn runtime_record_field_limit_matches_largest_service_record() {
 
 #[test]
 fn runtime_string_writer_rejects_oversized_writes_without_truncating() {
-    let mut strings = RuntimeStrings::new();
-    let mut writer = strings.alloc().unwrap();
+    let mut strings = StringInterner::new();
     let original = "ok";
-    writer.write_str(original).unwrap();
+    let value = strings.intern_event(&EmptyStringTable, original).unwrap();
 
-    let oversized = "x".repeat(MAX_RUNTIME_STRING_BYTES);
-    assert!(writer.write_str(&oversized).is_err());
+    let oversized = "x".repeat(MAX_RUNTIME_STRING_BYTES + 1);
+    assert_eq!(
+        strings.intern_event(&EmptyStringTable, &oversized),
+        Err(VmError::InvalidOperand)
+    );
 
-    let value = writer.value();
-    drop(writer);
-    let Value::RuntimeString(id) = value else {
-        panic!("expected runtime string");
+    let Value::String(StringRef::Dynamic(id)) = value else {
+        panic!("expected dynamic string");
     };
-    assert_eq!(strings.get(id).unwrap(), original);
+    assert_eq!(
+        strings
+            .get(&EmptyStringTable, StringRef::Dynamic(id))
+            .unwrap(),
+        original
+    );
 }
 
 #[test]
-fn runtime_strings_fail_when_slots_are_exhausted_instead_of_wrapping() {
-    let mut strings = RuntimeStrings::new();
+fn dynamic_string_refs_fail_when_slots_are_exhausted_instead_of_wrapping() {
+    let mut strings = StringInterner::new();
 
-    for _ in 0..MAX_RUNTIME_STRINGS {
-        let writer = strings.alloc().unwrap();
-        drop(writer);
+    for index in 0..MAX_SERVICE_STRINGS {
+        strings
+            .intern_event(&EmptyStringTable, &format!("s{index}"))
+            .unwrap();
     }
 
-    match strings.alloc() {
+    match strings.intern_event(&EmptyStringTable, "one-too-many") {
         Err(err) => assert_eq!(err, VmError::TooManyStrings),
-        Ok(_) => panic!("expected runtime string allocation failure"),
+        Ok(_) => panic!("expected dynamic string allocation failure"),
     }
 }
 
@@ -293,9 +311,7 @@ impl TraceSink for RuntimeTrace {
                 line.push(' ');
             }
             match value {
-                Value::String(_) | Value::RuntimeString(_) | Value::ServiceString(_) => {
-                    line.push_str(strings.value_str(*value).unwrap())
-                }
+                Value::String(_) => line.push_str(strings.value_str(*value).unwrap()),
                 Value::I32(value) => line.push_str(&value.to_string()),
                 Value::Bool(value) => line.push_str(&value.to_string()),
                 Value::Null => line.push_str("null"),
@@ -506,9 +522,7 @@ impl TraceSink for RegistryTrace {
                 line.push(' ');
             }
             match value {
-                Value::String(_) | Value::RuntimeString(_) | Value::ServiceString(_) => {
-                    line.push_str(strings.value_str(*value).unwrap())
-                }
+                Value::String(_) => line.push_str(strings.value_str(*value).unwrap()),
                 Value::I32(value) => line.push_str(&value.to_string()),
                 Value::Bool(value) => line.push_str(&value.to_string()),
                 Value::Null => line.push_str("null"),
@@ -570,9 +584,7 @@ impl TraceSink for WifiTrace {
                 line.push(' ');
             }
             match value {
-                Value::String(_) | Value::RuntimeString(_) | Value::ServiceString(_) => {
-                    line.push_str(strings.value_str(*value).unwrap())
-                }
+                Value::String(_) => line.push_str(strings.value_str(*value).unwrap()),
                 Value::I32(value) => line.push_str(&value.to_string()),
                 Value::Bool(value) => line.push_str(&value.to_string()),
                 Value::Null => line.push_str("null"),
@@ -708,9 +720,7 @@ impl TraceSink for BudgetTrace {
                 line.push(' ');
             }
             match value {
-                Value::String(_) | Value::RuntimeString(_) | Value::ServiceString(_) => {
-                    line.push_str(strings.value_str(*value).unwrap())
-                }
+                Value::String(_) => line.push_str(strings.value_str(*value).unwrap()),
                 Value::I32(value) => line.push_str(&value.to_string()),
                 Value::Bool(value) => line.push_str(&value.to_string()),
                 Value::Null => line.push_str("null"),
@@ -925,7 +935,7 @@ event.on("key.BACK") {
 }
 screen("main") {}
 "#;
-    let bytes = compile_sqbc(source);
+    let bytes = compile_sqbc(&source);
     let mut trace = StateTrace::default();
     {
         let program = Program::parse(&bytes).unwrap();
@@ -942,6 +952,10 @@ screen("main") {}
     assert_eq!(restored.state_value("count"), Ok(Value::I32(7)));
     assert_eq!(restored.state_value("enabled"), Ok(Value::Bool(true)));
     assert_eq!(restored.state_value("retryAt"), Ok(Value::I32(42)));
+    assert!(matches!(
+        restored.state_value("label").unwrap(),
+        Value::String(StringRef::Dynamic(_))
+    ));
     assert_eq!(
         restored
             .string_resolver()
@@ -956,6 +970,30 @@ screen("main") {}
 }
 
 #[test]
+fn state_load_reuses_matching_sqbc_string_literal() {
+    let source = r#"app "state-literal-load"
+state { label: string = "cold" }
+event.on("app.start") {
+  state.load()
+}
+screen("main") {}
+"#;
+    let bytes = compile_sqbc(&source);
+    let program = Program::parse(&bytes).unwrap();
+    let mut trace = StateTrace {
+        saved_state: string_state_record("label", "cold"),
+        ..StateTrace::default()
+    };
+    let mut vm = Vm::new(program);
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    let loaded = vm.state_value("label").unwrap();
+    assert!(matches!(loaded, Value::String(_)), "{loaded:?}");
+    assert_eq!(vm.string_resolver().value_str(loaded), Ok("cold"));
+}
+
+#[test]
 fn state_load_rejects_malformed_record_and_type_mismatch() {
     let source = r#"app "state-demo"
 state { count: int = 0 }
@@ -964,7 +1002,7 @@ event.on("app.start") {
 }
 screen("main") {}
 "#;
-    let bytes = compile_sqbc(source);
+    let bytes = compile_sqbc(&source);
     let mut trace = StateTrace {
         saved_state: b"bad".to_vec(),
         ..StateTrace::default()
@@ -1722,9 +1760,7 @@ impl TraceSink for CountingReader<'_> {
                 line.push(' ');
             }
             match value {
-                Value::String(_) | Value::RuntimeString(_) | Value::ServiceString(_) => {
-                    line.push_str(strings.value_str(*value).unwrap())
-                }
+                Value::String(_) => line.push_str(strings.value_str(*value).unwrap()),
                 Value::I32(value) => line.push_str(&value.to_string()),
                 Value::Bool(value) => line.push_str(&value.to_string()),
                 Value::Null => line.push_str("null"),
@@ -2119,7 +2155,7 @@ screen("main") {}
 }
 
 #[test]
-fn display_info_runtime_strings_work_at_exact_event_budget() {
+fn display_info_static_strings_work_without_dynamic_entries() {
     let source = r#"app "display-budget"
 event.on("app.start") {
   let first = display.info()
@@ -2127,7 +2163,7 @@ event.on("app.start") {
   debug.print(first.status, second.nativePixelFormat)
 }
 "#;
-    let bytes = compile_sqbc(source);
+    let bytes = compile_sqbc(&source);
     let program = Program::parse(&bytes).unwrap();
     let mut vm = Vm::new(program);
     let mut trace = BudgetTrace::default();
@@ -2146,7 +2182,7 @@ event.on("app.start") {
 }
 
 #[test]
-fn display_info_service_strings_do_not_consume_runtime_string_budget() {
+fn repeated_display_info_static_strings_do_not_consume_dynamic_entries() {
     let source = r#"app "display-over-budget"
 event.on("app.start") {
   let first = display.info()
@@ -2155,7 +2191,7 @@ event.on("app.start") {
   debug.print(first.status, second.status, third.status)
 }
 "#;
-    let bytes = compile_sqbc(source);
+    let bytes = compile_sqbc(&source);
     let program = Program::parse(&bytes).unwrap();
     let mut vm = Vm::new(program);
     let mut trace = BudgetTrace::default();
@@ -2174,14 +2210,44 @@ event.on("app.start") {
 }
 
 #[test]
-fn wifi_scan_runtime_strings_work_at_exact_event_budget() {
+fn static_service_result_strings_do_not_consume_interned_dynamic_entries() {
+    let mut source = String::from(
+        r#"app "display-static-intern"
+event.on("app.start") {
+  let first = display.info()
+  let last = first
+"#,
+    );
+    for _ in 0..40 {
+        let _ = writeln!(source, "  last = display.info()");
+    }
+    source.push_str(
+        r#"  debug.print(first.status, last.nativePixelFormat)
+}
+"#,
+    );
+    let bytes = compile_sqbc(&source);
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = BudgetTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events.last().map(String::as_str),
+        Some("debug ready MONO1_PACKED")
+    );
+}
+
+#[test]
+fn wifi_scan_dynamic_strings_work_with_current_budget() {
     let source = r#"app "wifi-budget"
 event.on("app.start") {
   let scan = wifi.scan()
   debug.print(scan.count)
 }
 "#;
-    let bytes = compile_sqbc(source);
+    let bytes = compile_sqbc(&source);
     let program = Program::parse(&bytes).unwrap();
     let mut vm = Vm::new(program);
     let mut trace = BudgetTrace::default();
@@ -2192,7 +2258,7 @@ event.on("app.start") {
 }
 
 #[test]
-fn wifi_scan_service_strings_do_not_consume_runtime_string_budget() {
+fn wifi_scan_static_strings_do_not_consume_dynamic_entries() {
     let source = r#"app "wifi-over-budget"
 event.on("app.start") {
   let scan = wifi.scan()
@@ -2214,7 +2280,7 @@ event.on("app.start") {
 }
 
 #[test]
-fn app_registry_runtime_strings_work_at_exact_event_budget() {
+fn app_registry_dynamic_strings_work_with_current_budget() {
     let source = r#"app "registry-budget"
 event.on("app.start") {
   let apps = app.registry()
@@ -2241,7 +2307,7 @@ event.on("app.start") {
 }
 
 #[test]
-fn app_registry_service_strings_do_not_consume_runtime_string_budget() {
+fn app_registry_dynamic_string_interning_leaves_room_for_system_text() {
     let source = r#"app "registry-over-budget"
 event.on("app.start") {
   let apps = app.registry()
@@ -2269,7 +2335,7 @@ event.on("app.start") {
 }
 
 #[test]
-fn file_read_lines_runtime_strings_work_at_exact_event_budget() {
+fn file_read_lines_dynamic_strings_work_with_current_budget() {
     let source = r#"app "file-budget"
 event.on("app.start") {
   let first = file.readLines("a.txt", 4)
@@ -2298,7 +2364,7 @@ event.on("app.start") {
 }
 
 #[test]
-fn file_read_lines_service_strings_do_not_consume_runtime_string_budget() {
+fn file_read_lines_dynamic_string_interning_leaves_room_for_system_text() {
     let source = r#"app "file-over-budget"
 event.on("app.start") {
   let first = file.readLines("a.txt", 4)
@@ -2331,12 +2397,16 @@ event.on("app.start") {
 fn dynamic_service_string_arena_fails_cleanly_when_exhausted() {
     let source = r#"app "service-arena-over-budget"
 event.on("app.start") {
-  let first = file.readLines("long.txt", 4)
-  let second = file.readLines("long.txt", 4)
-  let third = file.readLines("long.txt", 4)
-  let fourth = file.readLines("long.txt", 4)
-  let fifth = file.readLines("long.txt", 4)
-  debug.print(first.lines, second.lines, third.lines, fourth.lines, fifth.lines)
+  let apps = app.registry()
+  let e0 = app.registry.get(apps, 0)
+  let e1 = app.registry.get(apps, 1)
+  let e2 = app.registry.get(apps, 2)
+  let e3 = app.registry.get(apps, 3)
+  let e4 = app.registry.get(apps, 4)
+  let e5 = app.registry.get(apps, 5)
+  let e6 = app.registry.get(apps, 6)
+  let e7 = app.registry.get(apps, 7)
+  debug.print(system.memory())
 }
 "#;
     let bytes = compile_sqbc(source);
@@ -2352,18 +2422,22 @@ event.on("app.start") {
         trace.events,
         vec![
             "app.start",
-            "file.readLines long.txt 4",
-            "file.readLines long.txt 4",
-            "file.readLines long.txt 4",
-            "file.readLines long.txt 4",
-            "file.readLines long.txt 4",
+            "registry.list",
+            "registry.get app0",
+            "registry.get app1",
+            "registry.get app2",
+            "registry.get app3",
+            "registry.get app4",
+            "registry.get app5",
+            "registry.get app6",
+            "registry.get app7",
             "wifi.teardown",
         ]
     );
 }
 
 #[test]
-fn string_concatenation_runtime_strings_work_at_exact_event_budget() {
+fn string_concatenation_dynamic_strings_work_with_current_budget() {
     let source = r#"app "concat-budget"
 event.on("app.start") {
   let s0 = system.startReason()
@@ -2392,26 +2466,23 @@ event.on("app.start") {
 }
 
 #[test]
-fn string_concatenation_runtime_strings_fail_cleanly_over_event_budget() {
-    let source = r#"app "concat-over-budget"
+fn string_concatenation_dynamic_strings_fail_cleanly_over_event_budget() {
+    let mut source = String::from(
+        r#"app "concat-over-budget"
 event.on("app.start") {
   let s0 = system.startReason()
-  let s1 = s0 + "x"
-  let s2 = s1 + "x"
-  let s3 = s2 + "x"
-  let s4 = s3 + "x"
-  let s5 = s4 + "x"
-  let s6 = s5 + "x"
-  let s7 = s6 + "x"
-  let s8 = s7 + "x"
-  let s9 = s8 + "x"
-  let s10 = s9 + "x"
-  let s11 = s10 + "x"
-  let s12 = s11 + "x"
-  debug.print(s12)
+"#,
+    );
+    for _ in 0..32 {
+        let _ = writeln!(source, "  s0 = s0 + \"x\"");
+    }
+    source.push_str(
+        r#"
+  debug.print(s0)
 }
-"#;
-    let bytes = compile_sqbc(source);
+"#,
+    );
+    let bytes = compile_sqbc(&source);
     let program = Program::parse(&bytes).unwrap();
     let mut vm = Vm::new(program);
     let mut trace = BudgetTrace::default();
@@ -2424,23 +2495,19 @@ event.on("app.start") {
 }
 
 #[test]
-fn runtime_strings_are_reclaimed_between_events_after_budget_exhaustion() {
-    let source = r#"app "budget-reclaim"
+fn dynamic_strings_are_reclaimed_between_events_after_budget_exhaustion() {
+    let mut source = String::from(
+        r#"app "budget-reclaim"
 event.on("app.start") {
   let s0 = system.startReason()
-  let s1 = s0 + "x"
-  let s2 = s1 + "x"
-  let s3 = s2 + "x"
-  let s4 = s3 + "x"
-  let s5 = s4 + "x"
-  let s6 = s5 + "x"
-  let s7 = s6 + "x"
-  let s8 = s7 + "x"
-  let s9 = s8 + "x"
-  let s10 = s9 + "x"
-  let s11 = s10 + "x"
-  let s12 = s11 + "x"
-  debug.print(s12)
+"#,
+    );
+    for _ in 0..32 {
+        let _ = writeln!(source, "  s0 = s0 + \"x\"");
+    }
+    source.push_str(
+        r#"
+  debug.print(s0)
 }
 
 event.on("timer.clock") {
@@ -2448,8 +2515,9 @@ event.on("timer.clock") {
   let second = display.info()
   debug.print(first.status, second.status)
 }
-"#;
-    let bytes = compile_sqbc(source);
+"#,
+    );
+    let bytes = compile_sqbc(&source);
     let program = Program::parse(&bytes).unwrap();
     let mut vm = Vm::new(program);
     let mut trace = BudgetTrace::default();
@@ -2503,7 +2571,7 @@ event.on("timer.clock") {
 }
 
 #[test]
-fn repeated_armed_stack_inspection_from_timer_does_not_exhaust_runtime_strings() {
+fn repeated_armed_stack_inspection_from_timer_does_not_exhaust_dynamic_strings() {
     let source = r#"app "reader"
 event.on("timer.clock") {
   let armed = app.armedStack()
@@ -2927,6 +2995,20 @@ fn mismatched_count_state_record() -> Vec<u8> {
     out.push(0);
     out.push(VALUE_BOOL);
     out.push(1);
+    out
+}
+
+fn string_state_record(name: &str, value: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(STATE_RECORD_MAGIC);
+    out.push(1);
+    out.push(name.len() as u8);
+    out.extend_from_slice(name.as_bytes());
+    out.push(STATE_TYPE_STRING);
+    out.push(0);
+    out.push(VALUE_STRING);
+    out.push(value.len() as u8);
+    out.extend_from_slice(value.as_bytes());
     out
 }
 

@@ -1,13 +1,18 @@
 use crate::error::VmError;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StringRef {
+    Sqbc(u16),
+    Static(u8),
+    Dynamic(u8),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Value {
     Null,
     Bool(bool),
     I32(i32),
-    String(u16),
-    RuntimeString(u8),
-    ServiceString(u8),
+    String(StringRef),
     Record(u8),
     List(u8),
 }
@@ -18,11 +23,7 @@ impl Value {
             Value::Null => false,
             Value::Bool(value) => value,
             Value::I32(value) => value != 0,
-            Value::String(_)
-            | Value::RuntimeString(_)
-            | Value::ServiceString(_)
-            | Value::Record(_)
-            | Value::List(_) => true,
+            Value::String(_) | Value::Record(_) | Value::List(_) => true,
         }
     }
 
@@ -34,9 +35,6 @@ impl Value {
     }
 
     pub(crate) const fn is_string(self) -> bool {
-        matches!(
-            self,
-            Value::String(_) | Value::RuntimeString(_) | Value::ServiceString(_)
-        )
+        matches!(self, Value::String(_))
     }
 }

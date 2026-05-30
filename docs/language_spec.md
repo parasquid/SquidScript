@@ -649,6 +649,12 @@ runtime requests, not fixed filesystem paths.
 State variables are persisted by `state.save()` and restored by `state.load()`.
 `state.reset()` restores declared defaults for the current app and removes the
 persisted state record for installed apps.
+When a loaded string value exactly matches an existing SQBC string-pool literal,
+or a firmware static string, the runtime may reuse that reference instead of
+copying the value into dynamic string storage. Loaded string values that are
+not available as SQBC or static strings are retained in the VM string interner
+because persisted state can contain app data that was not compiled into the
+app.
 
 Example:
 
@@ -4329,36 +4335,42 @@ The exact values may be tuned per firmware target.
 
 The runtime may reject apps or stop execution if limits are exceeded.
 
-### Reference VM Temporary Strings
+### Reference VM String References
 
-The current Rust VM and Zephyr firmware keep temporary runtime strings in a
-bounded per-event pool. Each dispatched event starts by retaining only string
-values stored in persistent app state, then clears all other runtime strings,
-service-result strings, records, and lists from the previous event.
+The current Rust VM and Zephyr firmware use one string value model. A string
+value references one of three sources:
+
+- an SQBC string-pool literal compiled into the app
+- a firmware static string for stable target/runtime vocabulary
+- a dynamic VM-interned string for service results, loaded state values,
+  concatenation results, and other runtime-created text
+
+SQBC and firmware static strings do not consume dynamic string storage. Dynamic
+strings are interned whole-string values: an exact duplicate reuses the
+existing dynamic reference instead of consuming another slot or copying the
+bytes again.
+
+Each dispatched event starts by retaining only dynamic string values stored in
+persistent app state, then clears all other dynamic strings, records, and lists
+from the previous event. A value stored in `state {}` can survive into later
+events; ordinary locals, service-result record fields, list items, diagnostic
+strings, and intermediate concatenation results do not.
 
 Current reference VM limits:
 
-- temporary runtime string slots per event: 12
-- temporary runtime string bytes per slot: 48 bytes
+- dynamic string references per event after state retention: 32
+- dynamic string byte arena per event after state retention: 768 bytes
+- maximum bytes in one dynamic string: 48 bytes
 
-Direct string-returning built-ins and string concatenation consume these slots
-during the current event. A value stored in `state {}` can survive into later
-events; ordinary locals, service-result record fields, list items, diagnostic
-strings, and intermediate concatenation results do not. Exceeding the
-temporary string slot budget stops the current event with a runtime error
-instead of wrapping, truncating, or leaking into the next event.
+Direct string-returning built-ins and string concatenation produce dynamic
+interned strings unless the result exactly matches an SQBC literal or firmware
+static string. Assigning a dynamic string into `state {}` marks that reference
+as retained so the next event cleanup preserves it. `state.load()` uses the
+same interner and reuses exact SQBC/static matches when possible.
 
-Service-result string fields use a separate bounded per-event service-string
-table. Stable firmware vocabulary can be represented as flash/rodata-backed
-static string references, while dynamic callback values such as SSIDs, BSSIDs,
-file lines, app IDs, app names, and app descriptions are copied into a bounded
-VM-owned service-string byte arena. Reading, printing, comparing, or iterating
-service-result strings does not consume the 12 temporary runtime string slots.
-If a service-result string is assigned into `state {}`, the VM copies it into
-the normal runtime string pool because state survives across events.
-
-Portable apps should still keep very large string-returning workflows bounded:
-the service-string table and dynamic service-string arena are finite, and
+Exceeding the dynamic reference or byte budget stops the current event with a
+runtime error instead of wrapping, truncating, or leaking into the next event.
+Portable apps should keep very large string-returning workflows bounded, and
 cursor-style APIs may be added for workloads such as large Wi-Fi scans.
 
 ---

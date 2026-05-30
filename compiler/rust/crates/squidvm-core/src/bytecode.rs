@@ -1,4 +1,7 @@
-use crate::{error::VmError, value::Value};
+use crate::{
+    error::VmError,
+    value::{StringRef, Value},
+};
 
 pub(crate) const SECTION_STRINGS: u16 = 1;
 pub(crate) const SECTION_STATE: u16 = 2;
@@ -108,7 +111,10 @@ pub(crate) fn read_value(bytes: &[u8], cursor: usize) -> Result<(Value, usize), 
             cursor + 2,
         )),
         VALUE_I32 => Ok((Value::I32(read_i32(bytes, cursor + 1)?), cursor + 5)),
-        VALUE_STRING => Ok((Value::String(read_u16(bytes, cursor + 1)?), cursor + 3)),
+        VALUE_STRING => Ok((
+            Value::String(StringRef::Sqbc(read_u16(bytes, cursor + 1)?)),
+            cursor + 3,
+        )),
         _ => Err(VmError::InvalidSection),
     }
 }

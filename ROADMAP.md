@@ -69,273 +69,52 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 - Reduce ESP32-C3 Zephyr RAM as canonical firmware hardening. Identify concrete
   reductions for the largest static allocations, especially VM runtime storage,
   work stacks, response/session buffers, logging, LittleFS pools, and file
-  caches. Current C3 build map evidence sizes the resident runtime object at
-  14,272 bytes after moving Wi-Fi scan result backing into runtime transfer
-  scratch, adding a diagnostic transfer-owner marker for scratch/completion/
-  Wi-Fi-scan overlap checks, capping foreground runtime timers to two slots,
-  capping retained VM output history at twelve lines for lifecycle diagnostics,
-  retained VM trace history at four lines,
-  narrowing output and drawlog diagnostic line storage, bounding transient VM
-  result records to 26 fields, trimming the ESP32-C3 VM context reserve to
-  10,400 bytes, reducing app-id slots to 40 bytes, and
-  lowering the SQBC code/read transfer window to 768 bytes. The runtime layout
-  keeps small flags out of 32-bit alignment gaps and stores fixed-array counts
-  as bytes where the backing arrays are capped below 255. Runtime device
-  config drafts now hold five records with 48-byte string values, enough for the
-  five-record GPIO button binding shape and current package `.sqdevice` resource
-  paths without retaining unused slots. Runtime event-name slots are now
-  24 bytes, enough for the current measured examples and tests such as
-  `timer.breathe.marker` without retaining the previous 32-byte slots. The
-  resident installed-app VM launch storage now uses 64-byte SQBC path storage
-  and 60-byte state path storage for the fixed installed-app path shapes instead
-  of two general 128-byte app-store path buffers. The resident app registry now
-  holds eight installed-app entries with 40-byte app-id storage slots for
-  current measured app workloads, and the serial
-  receive frame budget is 256 bytes with host upload chunking derived from that
-  limit, protocol transfer sessions use 80-byte staging path slots and 80-byte
-  resource path slots, and resource diagnostics encode directly into the
-  826-byte response buffer without a resident metric staging array. Runtime
-  physical input state is bounded to two GPIO button slots for the confirmed
-  BOOT/GPIO9 path plus one targeted diagnostic slot, foreground runtime timers
-  are bounded to two slots for current one-shot/repeating workloads, and active
-  device bindings are bounded to three entries for the current indicator,
-  display/input, and targeted diagnostic binding workloads. Temp-run
-  state now uses the file-backed VM storage backend with a cleared temp state
-  path instead of a resident saved-state-capacity RAM buffer, and Zephyr's
-  deferred logger buffer and process-thread stack are explicitly bounded at 512
-  bytes each. LittleFS open-file slots are bounded at two while directory slots
-  remain at the Zephyr default for recursive format/delete walks. The
-  protocol/main stack is now 8192 bytes after installed-app lifecycle launch
-  coverage exposed a protocol/main-side fatal crash at the earlier 3264-byte
-  budget, and the VM worker stack is now 22016 bytes.
-  The latest target build reports 184,576 bytes
-  of linker DRAM use and 184,560 bytes through the RAM audit; next
-  reductions should re-attribute trigger metadata registration, installed-app
-  launch, and protocol/main stack use before lowering the 8192-byte protocol
-  budget again. The stack harness now fails with captured
-  resources if protocol/main unused stack drops below 768 bytes or VM worker
-  unused stack drops below 384 bytes. After that, investigate full-suite
-  worker-stack high-water headroom after raising the worker stack to 22016 bytes and
-  inspect any remaining accidental static buffers. For host-side attribution
-  before physical confirmation, build with `SQUID_ZEPHYR_STACK_USAGE=1` and run
+  caches. Current target configuration keeps the protocol/main stack at
+  8192 bytes and the VM worker stack at 22016 bytes after installed-app
+  lifecycle launch and trigger metadata registration exposed stack exhaustion at
+  lower budgets. The stack harness fails with captured resources if
+  protocol/main unused stack drops below 768 bytes or VM worker unused stack
+  drops below 384 bytes. For host-side attribution before physical
+  confirmation, build with `SQUID_ZEPHYR_STACK_USAGE=1` and run
   `scripts/c3-supermini-stack-usage-report.sh` to sort generated Zephyr app C
   `.su` stack-usage records. The report includes source-known cumulative call
   paths; check those before splitting more app-store or protocol helpers
   because per-function `.su` reductions can increase real stack high-water use
-  when a larger callee remains active under the caller. Current host
-  attribution has reduced
-  `sq_app_store_scan_registry` from 576 bytes to 224 bytes by reusing its path
-  scratch buffer after opening the app directory, reusing its directory entry
-  for `main.sqbc` stats, and narrowing the shared app-file path scratch to
-  the fixed `/apps/<app>/main.sqbc` shape. The Zephyr filesystem filename
-  buffer is now capped at 80 bytes to match the protocol resource-path cap
-  instead of keeping 128-byte `fs_dirent` name slots. It has also reduced
-  `sq_app_store_install_resource` plus `sq_app_store_commit_staged_resource`
-  from 432 bytes each to 176 bytes each by reusing path scratch and validating
-  the app's `main.sqbc` with an open/close check instead of a directory-entry
-  stat. Their parent-directory creation now reuses the caller-owned path
-  scratch and calls `fs_mkdir` directly, accepting `-EEXIST` instead of probing
-  existing parents with `fs_stat`, reducing `ensure_resource_parent_dirs` from
-  176 bytes to 48 bytes and the source-known `commit_resource_install` path
-  from 496 bytes to 304 bytes. The current cumulative
-  `sq_app_store_commit_staged_resource` path is 272 bytes via
-  `validate_app_main_sqbc` and `format_app_path`. Direct app install and
-  staged-install commit paths now use the fixed
-  app-file path scratch and emit 96-byte C stack estimates, down from 288 and
-  304 bytes respectively; staged-install begin now emits 112 bytes. Package
-  `.sqdevice` loads now format resource paths directly from validated bytes,
-  reducing `sq_vm_runtime_device_config_load_resource` from 304 bytes to 176
-  bytes. Recursive app-store format/delete walks now reuse the caller-owned
-  path buffer instead of allocating a full child path per recursion, reducing
-  `delete_files_under` from 320 bytes to 160 bytes. The storage-format path now
-  reuses its format path scratch when recreating top-level app-store
-  directories, reducing the source-known `storage_format` path from 448 bytes
-  to 352 bytes and the top source-known main/protocol path from 656 bytes to
-  608 bytes. Direct app install and staged-install begin now reuse their
-  existing app-file/app-directory scratch when preparing top-level app-store
-  directories, reducing the source-known direct app install path from 352 bytes
-  to 224 bytes, staged-install begin from 368 bytes to 240 bytes, and the top
-  source-known main/protocol path from 608 bytes to 576 bytes. Resource install
-  and staged-resource commit now validate the app's `main.sqbc` with a narrow
-  app-file-path helper, reducing each function from 176 bytes to 160 bytes,
-  the source-known `commit_resource_install` path from 368 bytes to 352 bytes,
-  and the top source-known main/protocol path from 576 bytes to 560 bytes.
-  Protocol dispatch now decodes only the opcode and sequence into its live
-  request header because opcode handlers parse payloads from the original
-  request bytes, reducing `sq_device_protocol_handle_frame` from 96 bytes to
-  80 bytes and the top source-known main/protocol path from 560 bytes to 544
-  bytes; after the resource parent directory change, the top source-known
-  main/protocol path remains 544 bytes and is dominated by
-  `storage_format -> sq_app_store_format_filesystem -> delete_files_under`.
-  ESP32-C3 target storage format now unmounts the target LittleFS app-store
-  partition, erases the flash area, remounts it so LittleFS formats the blank
-  partition, and recreates the top-level app-store directories. The recursive
-  delete walk remains as the non-target fallback, but the target
-  `storage_format` path now emits 272 bytes and the top source-known
-  main/protocol path is 528 bytes through transfer-begin filesystem
-  preparation, with linker DRAM still at 185,024 bytes and RAM audit DRAM at
-  185,008 bytes. Transfer-begin filesystem preparation now reuses the
-  caller-owned staging path scratch for temp runs and staged resources,
-  reducing `sq_app_store_begin_temp_run` and
-  `sq_app_store_begin_staged_resource` source-known paths from 304 bytes to
-  176 bytes, `begin_resource_install` to 208 bytes, and the staged
-  `begin_install` path to 272 bytes. Resource install and staged-resource
-  commit validation now pass the caller-owned path scratch into
-  `validate_app_main_sqbc_with_path`, whose emitted C stack estimate is
-  32 bytes; `commit_resource_install` is now 240 bytes and
-  `sq_app_store_commit_staged_resource` is now 208 bytes. Linker DRAM remains
-  185,024 bytes and RAM audit DRAM remains 185,008 bytes. The top source-known
-  main/protocol path is now 496 bytes through
-  `launch_app -> start_installed_app -> sq_vm_runtime_start ->
-  sq_vm_runtime_start_event -> sq_vm_runtime_init`; investigate that launch
-  path next. Installed-app launch now passes event bytes and length directly
-  into `sq_vm_runtime_start_event`, removing the string wrapper from the launch
-  path. The cumulative launch path is now 272 bytes and `start_installed_app`
-  is now 192 bytes. Linker DRAM remains 185,024 bytes and RAM audit DRAM
-  remains 185,008 bytes. The top source-known main/protocol path is now
-  480 bytes through
-  `dispatch_key -> dispatch_event_from_parts -> sq_vm_runtime_start_event ->
-  sq_vm_runtime_init`; investigate the key/event dispatch path next. Key
-  dispatch now decodes key events into the runtime-owned event scratch instead
-  of retaining a separate `SQ_VM_RUNTIME_EVENT_LEN` stack buffer, reducing
-  `dispatch_key` from 96 bytes to 80 bytes and its cumulative path to
-  272 bytes. The top source-known main/protocol path is now 464 bytes through
-  `begin_install -> sq_app_store_begin_staged_install ->
-  prepare_filesystem_with_path -> ensure_directory`; investigate the install
-  begin path next. Staged install begin now reuses the protocol transfer
-  session's 80-byte `staging_path` buffer for filesystem preparation and
-  app-directory creation before formatting the final temp `main.sqbc.tmp`
-  path. That reduces `sq_app_store_begin_staged_install` from 112 bytes to
-  48 bytes and the cumulative `begin_install` path from 272 bytes to 208
-  bytes. The top source-known main/protocol path remains 464 bytes, now through
-  `commit_install -> sq_app_store_scan_registry -> join_path2`; investigate
-  the registry scan path next. Registry scanning now has a caller-scratch entry
-  point. The public `sq_app_store_scan_registry` wrapper still owns a narrow
-  64-byte path buffer, while protocol app-install commit reuses the install
-  session's 80-byte `staging_path` buffer after the staged file is renamed.
-  That reduces the protocol `commit_install` path from 272 bytes to 224 bytes.
-  Installed-app launch now stores the file-backed VM storage backend directly
-  in the runtime-owned job backend instead of keeping a protocol-stack backend
-  temporary. That reduces `start_installed_app` from 96 bytes to 64 bytes and
-  the cumulative launch path from 272 bytes to 240 bytes. The top source-known
-  main/protocol path remains 464 bytes, now through
-  `reset_runtime -> clear_runtime_context -> sq_vm_runtime_reset ->
-  sq_vm_runtime_apply_target_default_indicator_binding ->
-  sq_vm_runtime_device_config_rebind -> runtime_device_config_string_equals ->
-  runtime_device_config_find`. Target default indicator binding still
-  materializes the generated target default into the in-memory SQDC draft, but
-  now applies that generated default directly instead of routing it through
-  the general dynamic `sq_vm_runtime_device_config_rebind` path. That reduces
-  the cumulative `reset_runtime` path from 272 bytes to 176 bytes and removes
-  reset/default-indicator rebinding from the top source-known main/protocol
-  path. The top source-known main/protocol path remains 464 bytes through
-  `dispatch_event_request -> dispatch_event_from_parts ->
-  sq_vm_runtime_start_event -> sq_vm_runtime_init`. Event dispatch now keeps
-  parsed app IDs as borrowed byte slices through app storage path formatting
-  instead of copying them into a protocol-stack app-id buffer. That reduces
-  `dispatch_event_from_parts` from 96 bytes to 80 bytes and the top
-  source-known main/protocol path from 464 bytes to 448 bytes. Event-dispatch
-  protocol requests now handle their parsed app and event slices directly
-  instead of adding the shared key-dispatch helper frame. That leaves key
-  dispatch on `dispatch_event_from_parts`, reduces the event-dispatch
-  cumulative path to 192 bytes, and moves the top source-known main/protocol
-  path to 432 bytes through
-  `commit_resource_install -> sq_app_store_commit_staged_resource ->
-  validate_app_main_sqbc_with_path -> format_app_path`. Protocol resource
-  commit now passes the caller-owned response buffer as path scratch to
-  `sq_app_store_commit_staged_resource_with_path`, reducing
-  `commit_resource_install` from 240 bytes to 112 bytes and moving the top
-  source-known main/protocol path to 432 bytes through
-  `commit_temp_run -> sq_vm_runtime_start -> sq_vm_runtime_start_event ->
-  sq_vm_runtime_init`. Temp-run commit now starts `app.start` through
-  `sq_vm_runtime_start_event` directly, reducing its cumulative path from
-  240 bytes to 208 bytes and moving the top source-known main/protocol path to
-  432 bytes through `launch_app -> start_installed_app ->
-  sq_vm_runtime_start_event -> sq_vm_runtime_init`. App launch now passes the
-  parsed app-id byte slice into a byte-slice installed-start helper instead of
-  materializing a NUL-terminated `SQ_APP_STORE_APP_ID_MAX` protocol-stack
-  buffer, reducing `launch_app` from 80 bytes to 48 bytes, its cumulative path
-  from 240 bytes to 224 bytes, and the top source-known main/protocol path
-  from 432 bytes to 416 bytes through
-  `commit_install -> sq_app_store_scan_registry_with_path -> join_path2`.
-  Install commit now updates or inserts the committed app's mutable registry
-  entry directly with `sq_app_store_update_registry_entry_with_path` instead of
-  rescanning the full app directory, reducing the cumulative `commit_install`
-  path from 224 bytes to 208 bytes. The top source-known main/protocol path
-  remains 416 bytes through `launch_app -> start_installed_app_bytes ->
-  sq_vm_runtime_start_event -> sq_vm_runtime_init`. Foreground app launch now
-  uses a byte-slice helper dedicated to setting the current app instead of
-  routing through the generic `set_current` installed-app start path. The
-  launch chain drops out of the top source-known paths, the remaining
-  `launch_app` path is 112 bytes through `ok_response`, and the top
-  source-known main/protocol path is 400 bytes through
-  `begin_install -> sq_app_store_begin_temp_run -> prepare_filesystem_with_path -> ensure_directory`;
-  transfer-begin filesystem preparation now creates only the needed target
-  directory for temp runs, staged resources, and staged installs. Temp/resource
-  begin paths now emit 80-byte source-known app-store paths, staged install
-  begin no longer carries full filesystem preparation, and registry entry
-  updates now open `main.sqbc` and use `fs_seek`/`fs_tell` for file size
-  instead of carrying Zephyr's large `fs_dirent` stat buffer. That reduces
-  `sq_app_store_update_registry_entry_with_path` from 144 bytes to 80 bytes
-  and the source-known `commit_install` path to 160 bytes. Temp-run commit now
-  stores its file-backed backend in the runtime-owned job backend, reducing
-  `commit_temp_run` from 112 bytes to 80 bytes and its source-known cumulative
-  path from 208 bytes to 176 bytes. The top source-known main/protocol path is
-  now 384 bytes through `errors_response -> repeated_runtime_lines_response`.
-  Wi-Fi scan result backing now reuses runtime transfer scratch because the
-  Rust FFI copies scan results out of the C callback before returning to the
-  VM. The diagnostic transfer-owner marker then guards scratch/completion/
-  Wi-Fi-scan overlap and leaves `runtime.3` at 14,272 bytes, with the current
-  build at 184,576 bytes linker DRAM / 184,560 bytes RAM-audit DRAM. Remaining
-  resident RAM reductions should come from workload-attributed worker stack,
-  system heap, or runtime-object cuts rather than stack-only path cleanups. VM
-  dispatch now uses a
-  static callback table plus an explicit `user_data` pointer across the FFI
-  boundary, reducing `sq_vm_runtime_dispatch` from 432 bytes to 80 bytes
-  without adding resident runtime RAM. Protocol frame dispatch now keeps
-  opcode-specific request parsing/formatting out of the top-level switch,
-  reducing `sq_device_protocol_handle_frame` from 352 bytes to 96 bytes in
-  the emitted C stack report. Protocol transfer begin and commit validation
-  now passes a null action output when the C handler only needs session
-  validation, reducing `begin_install`, `begin_resource_install`,
-  `commit_install`, and `commit_resource_install` from 96 bytes each to 32
-  bytes each, and `commit_temp_run` from 144 bytes to 112 bytes; chunk handlers
-  still keep a decoded action record for offsets and payload byte slices.
-  Lifecycle diagnostics now encode armed timers
-  directly from the runtime timer array instead of staging copied timer records
-  on the C stack, reducing `lifecycle_response` from 224 bytes to 96 bytes.
-  VM worker dispatch setup now keeps app-start binding preparation out of the
-  worker callback frame, reducing `runtime_work_handler` from 224 bytes to 16
-  bytes for steady event dispatch. App-start setup is split into separately
-  attributed phases: `sq_vm_runtime_prepare_app_start` is now 16 bytes,
-  saved-device-config setup is 80 bytes, and app device-binding setup is
-  128 bytes, instead of retaining the combined 224-byte prepare frame.
-  The fixed `/system/device-config.sqdc` path now uses a 40-byte path slot and
-  direct formatting, reducing `sq_app_store_device_config_path` from 144 bytes
-  to 16 bytes and `sq_vm_runtime_device_config_save` from 160 bytes to 80 bytes.
-  File-backed state and device-config reads now detect oversized files with a
-  one-byte overflow read instead of a `struct fs_dirent` size probe, reducing
-  `fs_storage_load_state` from 192 bytes to 48 bytes and
-  `runtime_device_config_read_file` from 192 bytes to 32 bytes.
-  The Zephyr VM context reserve now tracks the measured 32-bit FFI context size
-  of 10,392 bytes with a 10,400-byte C reserve, reducing the static runtime
-  block from 15,232 bytes to 14,752 bytes.
-  Runtime field ordering and byte-sized fixed-array counters now reduce the
-  static runtime block further to 14,720 bytes.
-  Installed-app VM launch storage path buffers now reduce `launch_storage`
-  from 276 bytes to 144 bytes.
-  The resident protocol response buffer now tracks the calculated current
-  resources-response ceiling, reducing `response.0` from 848 bytes to 826 bytes.
-  Protocol polling now reuses runtime app-id/event scratch for lifecycle and
-  armed timer transitions, app-arm trigger discovery is split out of the steady
-  poll frame, and trigger registration uses dedicated resident trigger storage
-  so metadata reads cannot overwrite the active foreground app's file-backed
-  launch storage backend. Protocol event dispatch now
-  passes event bytes directly into `sq_vm_runtime_start_event` instead of
-  staging a NUL-terminated event buffer, reducing `dispatch_event_from_parts`
-  from 112 bytes to 96 bytes. Installed-app foreground handoff now reuses the
-  runtime-owned pending-launch app-id slot as temporary rollback storage,
-  reducing `start_installed_app` from 128 bytes to 96 bytes.
+  when a larger callee remains active under the caller.
+  Current ESP32-C3 build evidence after unified VM string interning reports
+  202,480 bytes of linker DRAM, 202,464 bytes through `zephyr-ram-audit`, and a
+  19,288-byte `runtime.4` static runtime symbol.
+
+  Current stack report evidence shows that the previous
+  `commit_install -> sq_app_store_scan_registry_with_path -> join_path2`
+  target is no longer current. `commit_install` now updates the mutable app
+  registry entry directly through `sq_app_store_update_registry_entry_with_path`
+  after staged-file rename, reusing the install session's staging-path scratch
+  and avoiding a full directory scan. The emitted `commit_install` frame is
+  48 bytes, `sq_app_store_commit_staged_install` is 96 bytes, and
+  `sq_app_store_update_registry_entry_with_path` uses `fs_open` plus
+  `fs_seek`/`fs_tell` instead of a `struct fs_dirent` stat buffer. The remaining
+  registry scan path is the public/admin
+  `sq_app_store_scan_registry -> sq_app_store_scan_registry_with_path ->
+  join_path2` path at 256 cumulative bytes. Its live storage is the public
+  wrapper's 64-byte app-file path scratch plus the scan helper's
+  `struct fs_dir_t`, `struct fs_dirent`, and small scalars. It is not on the
+  install-commit protocol path.
+
+  Current source-known protocol/main stack targets are planned-resume paths:
+  `main -> sq_device_protocol_restore_planned_resume -> register_app_triggers ->
+  register_app_trigger_timer -> sq_vm_runtime_register_armed_timer` at
+  864 cumulative bytes, and `sq_device_protocol_poll ->
+  write_planned_resume_file -> sq_device_protocol_encode_planned_resume ->
+  append_fixed_app_id` at 656 cumulative bytes. The restore frame carries a
+  planned-resume record, encoded record bytes, a 48-byte planned-resume path,
+  an `fs_file_t`, and scalars before re-registering armed app triggers. The
+  write frame carries a planned-resume record, encoded record bytes, separate
+  48-byte temp and final paths needed for the temp-write-plus-rename protocol,
+  an `fs_file_t`, and scalars. Next RAM work should investigate whether those
+  planned-resume record/encoded-byte/path/file temporaries can use
+  caller-owned, runtime-owned, or streaming storage without weakening atomic
+  checkpoint behavior, app-store correctness, or wake restore semantics.
 - Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
   succeeds but serial commands stall, app launch hangs, or input dispatch stops
   responding, check stack exhaustion early with `device resources`, compare
@@ -410,14 +189,13 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.
-- Reuse SQBC string-pool literals for loaded string state values when the saved
-  bytes exactly match an existing compiled string. Current `state.load()`
-  materializes saved dynamic string values into runtime string slots because
-  persisted state can contain app data that is not present in SQBC; matching
-  literals could avoid that slot use without changing state semantics.
 - Design a cursor-style Wi-Fi scan API so targets can expose more scan results
   without materializing every AP record and string into one VM event. Compare
   options such as `wifi.scan()` returning a snapshot handle with
   `wifi.scan.get(scan, index)`, paged scan reads, or an iterator-like cursor,
   and keep SSID/BSSID/auth strings backed by host/runtime storage until the app
   asks for a specific network.
+- Investigate segmented interned string references after whole-string
+  interning has enough RAM evidence. Consider word or substring references only
+  for repeated large dynamic text where the measured memory reduction justifies
+  the added resolver and lifetime complexity.

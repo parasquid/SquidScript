@@ -598,7 +598,7 @@ static int32_t runtime_system_memory_text(void *user_data, uint8_t *out, size_t 
 	}
 #endif
 
-	int written = snprintf((char *)out, out_cap, "RAM %u KiB heap %zu B used %zu B free",
+	int written = snprintf((char *)out, out_cap, "RAM %u KiB heap %zu used %zu free",
 			       (unsigned int)CONFIG_SRAM_SIZE, heap_allocated_bytes,
 			       heap_free_bytes);
 	if (written <= 0 || (size_t)written >= out_cap) {
