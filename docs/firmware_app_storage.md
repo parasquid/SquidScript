@@ -57,6 +57,14 @@ SQBC byte-range read, app state load, app state save, and app state reset. The
 adapter is bounded by the 768-byte FFI transfer capacity and is tested with an
 in-memory backend, including a native Zephyr ztest that runs real SQBC through
 the linked Rust VM and completes its state load/save flow through the adapter.
+Runtime dispatch does not drain an unbounded chain of pending storage requests
+in one worker pass. `sq_vm_runtime_dispatch_slice` starts or resumes one VM
+event and completes at most the caller-provided number of pending storage
+requests; the Zephyr async runtime worker uses a one-request slice and is
+rescheduled by `sq_vm_runtime_poll` / `sq_vm_runtime_wait_idle` until the event
+finishes. The synchronous `sq_vm_runtime_dispatch` helper remains available for
+native tests and other callers that already own execution; it drives slices
+until completion.
 
 `firmware/zephyr/src/vm_fs_storage` is the current file-backed implementation
 of that callback boundary. It uses Zephyr `fs_*` APIs to read byte ranges from

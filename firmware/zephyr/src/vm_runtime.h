@@ -141,12 +141,14 @@ struct sq_vm_runtime {
 	enum sq_vm_runtime_status status;
 	int result_code;
 	uint64_t dispatch_sequence;
+	uint64_t dispatch_start_cycles;
 	uint64_t last_dispatch_sequence;
 	uint64_t last_dispatch_elapsed_us;
 	uint32_t last_dispatch_sqbc_read_count;
 	uint32_t last_dispatch_sqbc_read_bytes;
 	uint32_t dispatch_sqbc_read_count;
 	uint32_t dispatch_sqbc_read_bytes;
+	bool dispatch_started;
 	bool dispatch_exited;
 	char current_app[SQ_APP_STORE_APP_ID_MAX];
 	enum sq_vm_runtime_lifecycle_phase lifecycle_phase;
@@ -275,6 +277,9 @@ int sq_vm_runtime_status_to_errno(SqvmStatus status);
 
 int sq_vm_runtime_dispatch(struct sq_vm_runtime *runtime,
 			   const struct sq_vm_storage_backend *backend, const char *event);
+int sq_vm_runtime_dispatch_slice(struct sq_vm_runtime *runtime,
+				 const struct sq_vm_storage_backend *backend, const char *event,
+				 size_t storage_completion_budget, bool *complete);
 
 int sq_vm_runtime_start(struct sq_vm_runtime *runtime,
 			const struct sq_vm_storage_backend *backend, const char *event);

@@ -191,8 +191,24 @@ impl SerialDevice {
     }
 
     pub fn storage_format(&mut self) -> Result<String, String> {
-        self.send_protocol_expect_ok(&storage_format_request(81))?;
-        Ok("storage formatted\n".to_string())
+        let request = storage_format_request(81);
+        for _ in 0..256 {
+            let response_frame = self.send_protocol_request(&request)?;
+            if response_frame.kind != FrameKind::Response
+                || response_frame.opcode != request.opcode
+                || response_frame.sequence != request.sequence
+            {
+                return Err(format!("unexpected protocol response: {response_frame:?}"));
+            }
+            match response_frame.status {
+                Status::Ok => return Ok("storage formatted\n".to_string()),
+                Status::Pending => continue,
+                Status::Error => {
+                    return Err(format!("unexpected protocol response: {response_frame:?}"))
+                }
+            }
+        }
+        return Err("storage format did not complete after 256 bounded steps".to_string());
     }
 
     pub fn send_key(&mut self, key: &str) -> Result<String, String> {

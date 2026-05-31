@@ -90,6 +90,7 @@ struct sq_device_resource_session {
 enum sq_device_protocol_scratch_owner {
 	SQ_DEVICE_PROTOCOL_SCRATCH_FREE = 0,
 	SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME = 1,
+	SQ_DEVICE_PROTOCOL_SCRATCH_STORAGE_FORMAT = 2,
 };
 
 struct sq_device_planned_resume_record {
@@ -108,6 +109,7 @@ struct sq_device_protocol_scratch {
 	char planned_resume_temp_path[SQ_APP_STORE_PLANNED_RESUME_PATH_MAX];
 	char planned_resume_final_path[SQ_APP_STORE_PLANNED_RESUME_PATH_MAX];
 	struct fs_file_t planned_resume_file;
+	struct sq_app_store_format_job format_job;
 };
 
 struct sq_device_protocol_context {

@@ -65,6 +65,15 @@ report profile names and byte lengths only; it must not echo SSIDs, passwords,
 BSSIDs, MAC addresses, local IP addresses, or other environment-identifying
 values unless the user explicitly asks for raw identifiers.
 
+`storage-format` is an administrative app-store maintenance command with
+bounded protocol progress. The first accepted request clears the foreground
+runtime, transfer sessions, and mutable registry, then starts a format job in
+protocol scratch. Each request deletes or prepares one bounded filesystem unit
+and returns `PENDING` with a progress line until the final request returns
+`OK`. Host tooling should repeat the same command until it receives `OK`;
+single-frame protocol callers must not assume storage format completes in one
+firmware handler call.
+
 ## Host Tooling
 
 Normal workflows should use grouped `squidc` commands. Raw protocol access is

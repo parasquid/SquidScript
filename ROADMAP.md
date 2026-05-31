@@ -199,14 +199,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   rather than the serial main loop, but they still block app/runtime progress
   and conflict with the firmware rule that services should use short steps,
   async progress, or target scheduler integration.
-- Convert remaining synchronous firmware storage and app-store maintenance
-  paths to bounded progress where they can run during interactive use. The
-  event-driven audit found Zephyr storage requests are resumable at the
-  VM/FFI boundary but are completed with synchronous filesystem calls in the
-  firmware backend, while registry scans, recursive deletes, and storage format
-  loops can run as blocking administrative operations. Keep startup/admin-only
-  work explicitly scoped, and move any user-visible or runtime-reachable work
-  toward chunked, callback-driven, or scheduler-integrated progress.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.

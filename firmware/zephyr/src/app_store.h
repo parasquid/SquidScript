@@ -3,6 +3,7 @@
 
 #include "vm_fs_storage.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -34,6 +35,11 @@ struct sq_app_store_vm_storage {
 	struct sq_vm_fs_storage fs_storage;
 	char sqbc_path[SQ_APP_STORE_APP_FILE_PATH_MAX];
 	char state_path[SQ_APP_STORE_APP_STATE_PATH_MAX];
+};
+
+struct sq_app_store_format_job {
+	bool active;
+	uint8_t phase;
 };
 
 int sq_app_store_prepare_filesystem(const char *mount_point);
@@ -104,6 +110,9 @@ int sq_app_store_update_registry_entry_with_path(const char *mount_point,
 						 size_t path_cap);
 
 int sq_app_store_format_filesystem(const char *mount_point);
+void sq_app_store_format_job_reset(struct sq_app_store_format_job *job);
+int sq_app_store_format_job_step(struct sq_app_store_format_job *job, const char *mount_point,
+				 bool *done);
 
 const struct sq_app_registry_entry *sq_app_registry_find(const struct sq_app_registry *registry,
 							const char *app_id);

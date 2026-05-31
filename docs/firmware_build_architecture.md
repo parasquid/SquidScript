@@ -236,19 +236,21 @@ instead of 368 bytes, and the top source-known main/protocol path is now 560
 bytes.
 Resource parent directory creation now skips the directory-entry stat probe by
 calling `fs_mkdir` and accepting `-EEXIST` for existing parents. That keeps
-`ensure_resource_parent_dirs` at 48 bytes and reduces the source-known
-`commit_resource_install` path from 352 bytes to 304 bytes; the top
-source-known main/protocol path remains 544 bytes and is now dominated by
-`storage_format -> sq_app_store_format_filesystem -> delete_files_under`.
-On the ESP32-C3 target, storage format now uses the target LittleFS mount
-directly: it unmounts the app-store partition, erases the flash area, remounts
-it so LittleFS formats the blank partition, then recreates the top-level
-app-store directories. The recursive delete walk remains as the fallback for
-non-target mounts, but the target `storage_format` path no longer carries it;
-the source-known storage-format path now emits 272 bytes and the top
-source-known main/protocol path is 528 bytes through transfer-begin filesystem
-preparation. This keeps linker DRAM at 185,024 bytes and the RAM audit at
-185,008 bytes.
+`ensure_resource_parent_dirs` bounded and avoids parent-directory recursion in
+resource commit.
+The framed `storage-format` protocol command uses a protocol-scratch format job
+instead of deleting the whole app store in one handler call. The first accepted
+request clears the foreground runtime, transfer sessions, and mutable registry;
+each later step deletes one file/empty directory or recreates one top-level
+directory, returning `PENDING` until the final `OK`. This keeps serial protocol
+ownership bounded during administrative app-store cleanup. The synchronous
+`sq_app_store_format_filesystem` helper remains available for startup/test code
+that already owns execution and is not part of an interactive protocol loop.
+VM dispatch storage completions are also sliced. The runtime worker completes
+at most one pending SQBC/state storage request per scheduled worker pass, then
+lets poll/wait scheduling resume the event if more storage is pending. This
+keeps runtime-visible storage progress bounded while preserving the synchronous
+`sq_vm_runtime_dispatch` helper for native tests and owned-execution callers.
 Transfer-begin filesystem preparation now also reuses the caller-owned staging
 path scratch for temp runs and staged resources. The source-known
 `sq_app_store_begin_temp_run` and `sq_app_store_begin_staged_resource` paths

@@ -357,6 +357,9 @@ static int app_list_response(const struct sq_protocol_request *request,
 		request->sequence, entries, entry_count, response, response_cap, response_len));
 }
 
+static int append_line_payload(uint8_t *payload, size_t payload_cap, size_t *payload_len,
+			       const char *line);
+
 static int ok_response(const struct sq_protocol_request *request, uint8_t *response,
 		       size_t response_cap, size_t *response_len)
 {
@@ -374,6 +377,34 @@ static int ok_response(const struct sq_protocol_request *request, uint8_t *respo
 	write_u32_le_device(&response[12], 0);
 	write_u32_le_device(&response[16], sq_protocol_crc32(NULL, 0));
 	*response_len = SQ_PROTOCOL_HEADER_LEN;
+	return SQ_PROTOCOL_OK;
+}
+
+static int pending_line_response(const struct sq_protocol_request *request, const char *line,
+				 uint8_t *response, size_t response_cap, size_t *response_len)
+{
+	size_t payload_len = 0;
+	uint8_t *payload;
+
+	if (request == NULL || response == NULL || response_len == NULL ||
+	    response_cap < SQ_PROTOCOL_HEADER_LEN) {
+		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
+	}
+	payload = &response[SQ_PROTOCOL_HEADER_LEN];
+	if (append_line_payload(payload, response_cap - SQ_PROTOCOL_HEADER_LEN, &payload_len,
+				line) != SQ_PROTOCOL_OK) {
+		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
+	}
+
+	memcpy(response, "SQDP", 4);
+	response[4] = SQ_FRAME_RESPONSE;
+	response[5] = request->opcode;
+	response[6] = SQ_STATUS_PENDING;
+	response[7] = 0;
+	write_u32_le_device(&response[8], request->sequence);
+	write_u32_le_device(&response[12], (uint32_t)payload_len);
+	write_u32_le_device(&response[16], sq_protocol_crc32(payload, payload_len));
+	*response_len = SQ_PROTOCOL_HEADER_LEN + payload_len;
 	return SQ_PROTOCOL_OK;
 }
 
@@ -1223,7 +1254,7 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 	runtime = context->runtime;
 
 	if (runtime->status == SQ_VM_RUNTIME_RUNNING) {
-		return 0;
+		return sq_vm_runtime_poll(runtime);
 	}
 
 	if (runtime->dispatch_exited &&
@@ -1722,17 +1753,40 @@ static int __noinline storage_format(const struct sq_protocol_request *request,
 	if (context->store_mount_point == NULL) {
 		return -ENODEV;
 	}
-	int result = clear_runtime_context(context);
+	if (context->scratch == NULL) {
+		return -ENODEV;
+	}
+	if (context->runtime != NULL && context->runtime->status == SQ_VM_RUNTIME_RUNNING) {
+		return -EBUSY;
+	}
+
+	if (context->scratch->owner == SQ_DEVICE_PROTOCOL_SCRATCH_FREE) {
+		int result = clear_runtime_context(context);
+		if (result != 0) {
+			return result;
+		}
+		context->scratch->owner = SQ_DEVICE_PROTOCOL_SCRATCH_STORAGE_FORMAT;
+		sq_app_store_format_job_reset(&context->scratch->format_job);
+		if (context->mutable_registry != NULL) {
+			memset(context->mutable_registry, 0, sizeof(*context->mutable_registry));
+		}
+	} else if (context->scratch->owner != SQ_DEVICE_PROTOCOL_SCRATCH_STORAGE_FORMAT) {
+		return -EBUSY;
+	}
+
+	bool done = false;
+	int result = sq_app_store_format_job_step(&context->scratch->format_job,
+						 context->store_mount_point, &done);
 	if (result != 0) {
+		sq_app_store_format_job_reset(&context->scratch->format_job);
+		context->scratch->owner = SQ_DEVICE_PROTOCOL_SCRATCH_FREE;
 		return result;
 	}
-	result = sq_app_store_format_filesystem(context->store_mount_point);
-	if (result != 0) {
-		return result;
+	if (!done) {
+		return pending_line_response(request, "storage-format pending", response, response_cap,
+					     response_len);
 	}
-	if (context->mutable_registry != NULL) {
-		memset(context->mutable_registry, 0, sizeof(*context->mutable_registry));
-	}
+	context->scratch->owner = SQ_DEVICE_PROTOCOL_SCRATCH_FREE;
 	return ok_response(request, response, response_cap, response_len);
 }
 

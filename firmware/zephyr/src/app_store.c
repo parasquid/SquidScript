@@ -994,6 +994,86 @@ int sq_app_store_update_registry_entry_with_path(const char *mount_point,
 	return 0;
 }
 
+static int delete_one_under(char *path, size_t path_cap, bool *deleted_any, bool *empty)
+{
+	struct fs_dirent entry;
+	struct fs_dir_t dir;
+	int result;
+
+	if (path == NULL || deleted_any == NULL || empty == NULL) {
+		return -EINVAL;
+	}
+
+	*deleted_any = false;
+	*empty = true;
+	fs_dir_t_init(&dir);
+	result = fs_opendir(&dir, path);
+	if (result == -ENOENT) {
+		return 0;
+	}
+	if (result != 0) {
+		return result;
+	}
+	while (true) {
+		result = fs_readdir(&dir, &entry);
+		if (result != 0) {
+			(void)fs_closedir(&dir);
+			return result;
+		}
+		if (entry.name[0] == '\0') {
+			break;
+		}
+		if (strcmp(entry.name, ".") == 0 || strcmp(entry.name, "..") == 0) {
+			continue;
+		}
+
+		*empty = false;
+		size_t path_len = strlen(path);
+		size_t name_len = strlen(entry.name);
+		if (path_len + 1u + name_len >= path_cap) {
+			(void)fs_closedir(&dir);
+			return -ENAMETOOLONG;
+		}
+		path[path_len] = '/';
+		memcpy(&path[path_len + 1u], entry.name, name_len + 1u);
+
+		if (entry.type == FS_DIR_ENTRY_DIR) {
+			bool child_deleted = false;
+			bool child_empty = false;
+
+			result = delete_one_under(path, path_cap, &child_deleted, &child_empty);
+			if (result != 0) {
+				path[path_len] = '\0';
+				(void)fs_closedir(&dir);
+				return result;
+			}
+			if (child_deleted) {
+				path[path_len] = '\0';
+				(void)fs_closedir(&dir);
+				*deleted_any = true;
+				return 0;
+			}
+			if (!child_empty) {
+				path[path_len] = '\0';
+				continue;
+			}
+		}
+
+		(void)fs_closedir(&dir);
+		result = fs_unlink(path);
+		path[path_len] = '\0';
+		if (result == -ENOENT) {
+			return 0;
+		}
+		if (result != 0) {
+			return result;
+		}
+		*deleted_any = true;
+		return 0;
+	}
+	return fs_closedir(&dir);
+}
+
 static int delete_files_under(char *path, size_t path_cap, bool *deleted_any)
 {
 	struct fs_dirent entry;
@@ -1065,6 +1145,109 @@ static int delete_files_under(char *path, size_t path_cap, bool *deleted_any)
 		}
 	}
 	return fs_closedir(&dir);
+}
+
+enum sq_app_store_format_phase {
+	SQ_APP_STORE_FORMAT_PHASE_APPS = 0,
+	SQ_APP_STORE_FORMAT_PHASE_STATE = 1,
+	SQ_APP_STORE_FORMAT_PHASE_TMP = 2,
+	SQ_APP_STORE_FORMAT_PHASE_PREPARE_APPS = 3,
+	SQ_APP_STORE_FORMAT_PHASE_PREPARE_STATE = 4,
+	SQ_APP_STORE_FORMAT_PHASE_PREPARE_TMP = 5,
+	SQ_APP_STORE_FORMAT_PHASE_PREPARE_SYSTEM = 6,
+	SQ_APP_STORE_FORMAT_PHASE_DONE = 7,
+};
+
+static const char *format_delete_phase_name(uint8_t phase)
+{
+	switch (phase) {
+	case SQ_APP_STORE_FORMAT_PHASE_APPS:
+		return "apps";
+	case SQ_APP_STORE_FORMAT_PHASE_STATE:
+		return "state";
+	case SQ_APP_STORE_FORMAT_PHASE_TMP:
+		return "tmp";
+	default:
+		return NULL;
+	}
+}
+
+static const char *format_prepare_phase_name(uint8_t phase)
+{
+	switch (phase) {
+	case SQ_APP_STORE_FORMAT_PHASE_PREPARE_APPS:
+		return "apps";
+	case SQ_APP_STORE_FORMAT_PHASE_PREPARE_STATE:
+		return "state";
+	case SQ_APP_STORE_FORMAT_PHASE_PREPARE_TMP:
+		return "tmp";
+	case SQ_APP_STORE_FORMAT_PHASE_PREPARE_SYSTEM:
+		return "system";
+	default:
+		return NULL;
+	}
+}
+
+void sq_app_store_format_job_reset(struct sq_app_store_format_job *job)
+{
+	if (job != NULL) {
+		memset(job, 0, sizeof(*job));
+	}
+}
+
+int sq_app_store_format_job_step(struct sq_app_store_format_job *job, const char *mount_point,
+				 bool *done)
+{
+	char path[SQ_APP_STORE_PATH_MAX];
+	int result;
+
+	if (job == NULL || mount_point == NULL || done == NULL) {
+		return -EINVAL;
+	}
+
+	*done = false;
+	if (!job->active) {
+		job->active = true;
+		job->phase = SQ_APP_STORE_FORMAT_PHASE_APPS;
+	}
+
+	const char *delete_name = format_delete_phase_name(job->phase);
+	if (delete_name != NULL) {
+		bool deleted_any = false;
+		bool empty = false;
+
+		result = join_path2(path, sizeof(path), mount_point, delete_name);
+		if (result != 0) {
+			return result;
+		}
+		result = delete_one_under(path, sizeof(path), &deleted_any, &empty);
+		if (result != 0) {
+			return result;
+		}
+		if (!deleted_any) {
+			job->phase++;
+		}
+		return 0;
+	}
+
+	const char *prepare_name = format_prepare_phase_name(job->phase);
+	if (prepare_name != NULL) {
+		result = join_path2(path, sizeof(path), mount_point, prepare_name);
+		if (result != 0) {
+			return result;
+		}
+		result = ensure_directory(path);
+		if (result != 0) {
+			return result;
+		}
+		job->phase++;
+		return 0;
+	}
+
+	job->active = false;
+	job->phase = SQ_APP_STORE_FORMAT_PHASE_DONE;
+	*done = true;
+	return 0;
 }
 
 static int format_filesystem_by_delete_walk(const char *mount_point)

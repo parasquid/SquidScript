@@ -131,7 +131,9 @@ apps.
 
 `device storage-format` erases Zephyr app storage, including installed apps,
 resources, temp app staging, and app state files, then recreates the expected
-storage directories.
+storage directories. Firmware may report bounded pending progress internally;
+the CLI repeats the framed command until the final success response so callers
+still see one completed command.
 
 `device wifi-profile` provisions a volatile Wi-Fi station profile through the
 current framed Zephyr command surface. It reads the SSID and password from

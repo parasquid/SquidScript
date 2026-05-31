@@ -939,6 +939,7 @@ ZTEST(squidscript_protocol, test_storage_format_clears_runtime_before_erasing_fi
 	struct sq_device_install_session install_session = {.active = true};
 	struct sq_device_temp_session temp_session = {.active = true};
 	struct sq_device_resource_session resource_session = {.active = true};
+	struct sq_device_protocol_scratch scratch = {0};
 	struct sq_device_protocol_context context = {
 		.identity = &identity,
 		.registry = &registry,
@@ -946,6 +947,7 @@ ZTEST(squidscript_protocol, test_storage_format_clears_runtime_before_erasing_fi
 		.install_session = &install_session,
 		.temp_session = &temp_session,
 		.resource_session = &resource_session,
+		.scratch = &scratch,
 		.runtime = &runtime,
 		.store_mount_point = test_fs_mount.mnt_point,
 		.launch_storage = &launch_storage,
@@ -955,6 +957,10 @@ ZTEST(squidscript_protocol, test_storage_format_clears_runtime_before_erasing_fi
 	zassert_equal(mount_test_fs(), 0, "mount failed");
 	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "main", sqbc, sizeof(sqbc)),
 		      0);
+	zassert_equal(sq_app_store_install_resource(test_fs_mount.mnt_point, "main",
+						    "icons/main.bin", sqbc, sizeof(sqbc)),
+		      0);
+	zassert_equal(write_test_file("/sqtest/state/main.state", sqbc, sizeof(sqbc)), 0);
 	zassert_equal(sq_app_store_vm_storage_for_app(test_fs_mount.mnt_point, "main",
 						     &launch_storage),
 		      0);
@@ -968,15 +974,29 @@ ZTEST(squidscript_protocol, test_storage_format_clears_runtime_before_erasing_fi
 	zassert_equal(handle_result, SQ_PROTOCOL_OK, "handle result %d", handle_result);
 	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
 	zassert_equal(frame.opcode, SQ_OPCODE_STORAGE_FORMAT);
-	zassert_equal(frame.status, SQ_STATUS_OK);
+	zassert_equal(frame.status, SQ_STATUS_PENDING);
+	zassert_true(frame.payload_len > 0);
 	zassert_equal(registry.count, 0);
 	zassert_equal(runtime.status, SQ_VM_RUNTIME_IDLE);
 	zassert_false(install_session.active);
 	zassert_false(temp_session.active);
 	zassert_false(resource_session.active);
 	zassert_equal(launch_storage.sqbc_path[0], '\0');
+
+	for (size_t i = 0; i < 32 && frame.status == SQ_STATUS_PENDING; i++) {
+		handle_result = sq_device_protocol_handle_frame(request, sizeof(request), &context,
+							       response, sizeof(response),
+							       &response_len);
+		zassert_equal(handle_result, SQ_PROTOCOL_OK, "handle result %d", handle_result);
+		zassert_equal(sq_protocol_decode_frame(response, response_len, &frame),
+			      SQ_PROTOCOL_OK);
+		zassert_equal(frame.opcode, SQ_OPCODE_STORAGE_FORMAT);
+	}
+	zassert_equal(frame.status, SQ_STATUS_OK);
+	zassert_equal(frame.payload_len, 0);
 	zassert_equal(fs_stat("/sqtest/apps/main/main.sqbc", &entry), -ENOENT);
 	zassert_equal(fs_stat("/sqtest/apps/main", &entry), -ENOENT);
+	zassert_equal(fs_stat("/sqtest/state/main.state", &entry), -ENOENT);
 	zassert_equal(fs_stat("/sqtest/apps", &entry), 0);
 	zassert_equal(fs_stat("/sqtest/state", &entry), 0);
 	zassert_equal(fs_stat("/sqtest/tmp", &entry), 0);
@@ -2685,6 +2705,13 @@ struct delayed_vm_storage_fixture {
 	int32_t read_delay_ms;
 };
 
+struct budgeted_vm_storage_fixture {
+	struct vm_storage_fixture storage;
+	size_t read_budget;
+	size_t read_count;
+	bool over_budget;
+};
+
 struct ffi_vm_fixture {
 	struct vm_storage_fixture storage;
 	char traces[4][32];
@@ -2760,6 +2787,19 @@ static int delayed_fixture_read_sqbc(void *user_data, size_t offset, uint8_t *ou
 	if (fixture->read_delay_ms > 0) {
 		k_sleep(K_MSEC(fixture->read_delay_ms));
 	}
+	return fixture_read_sqbc(&fixture->storage, offset, out, len);
+}
+
+static int budgeted_fixture_read_sqbc(void *user_data, size_t offset, uint8_t *out, size_t len)
+{
+	struct budgeted_vm_storage_fixture *fixture = user_data;
+
+	if (fixture->read_budget == 0) {
+		fixture->over_budget = true;
+		return -EAGAIN;
+	}
+	fixture->read_budget--;
+	fixture->read_count++;
 	return fixture_read_sqbc(&fixture->storage, offset, out, len);
 }
 
@@ -2840,6 +2880,48 @@ ZTEST(squidscript_protocol, test_app_start_returns_without_waiting_for_binding_s
 		     "worker remained running after async app.start setup");
 	zassert_equal(sq_vm_runtime_wait_idle(&runtime, 250), 0);
 	zassert_false(runtime.work_submitted);
+
+	sq_vm_runtime_reset(&runtime);
+}
+
+ZTEST(squidscript_protocol, test_runtime_dispatch_slice_completes_one_storage_request)
+{
+	struct budgeted_vm_storage_fixture fixture = {
+		.storage = {
+			.sqbc = headless_counter_sqbc,
+			.sqbc_len = sizeof(headless_counter_sqbc),
+		},
+	};
+	struct sq_vm_storage_backend backend = {
+		.user_data = &fixture,
+		.read_sqbc = budgeted_fixture_read_sqbc,
+		.load_state = fixture_load_state,
+		.save_state = fixture_save_state,
+		.reset_state = fixture_reset_state,
+	};
+	static struct sq_vm_runtime runtime;
+	bool complete = false;
+
+	memset(&runtime, 0, sizeof(runtime));
+	runtime.store_mount_point = test_fs_mount.mnt_point;
+	strncpy(runtime.current_app, "headless-counter", sizeof(runtime.current_app) - 1);
+
+	fixture.read_budget = SIZE_MAX;
+	int result = sq_vm_runtime_dispatch_slice(&runtime, &backend, "app.start", 0, &complete);
+	zassert_equal(result, 0, "dispatch_slice result %d status %d", result, runtime.status);
+	zassert_false(complete);
+	zassert_false(fixture.over_budget);
+	size_t setup_reads = fixture.read_count;
+	zassert_true(setup_reads > 0);
+
+	fixture.read_budget = 1;
+	result = sq_vm_runtime_dispatch_slice(&runtime, &backend, "app.start", 1, &complete);
+	zassert_equal(result, 0, "dispatch_slice result %d status %d", result, runtime.status);
+	zassert_false(fixture.over_budget);
+	zassert_true(fixture.read_count <= setup_reads + 1);
+
+	zassert_true(complete);
+	zassert_equal(runtime.status, SQ_VM_RUNTIME_IDLE);
 
 	sq_vm_runtime_reset(&runtime);
 }
@@ -3836,7 +3918,9 @@ ZTEST(squidscript_protocol, test_vm_runtime_dispatches_app_start_and_records_tra
 	};
 	struct sq_vm_runtime runtime = {0};
 
-	zassert_equal(sq_vm_runtime_dispatch(&runtime, &backend, "app.start"), 0);
+	int result = sq_vm_runtime_dispatch(&runtime, &backend, "app.start");
+	zassert_equal(result, 0, "dispatch result %d outcome %d status %d", result,
+		      runtime.result.outcome, runtime.result.status);
 	zassert_equal(runtime.trace_count, 1,
 		      "trace_count=%u trace0=%s trace1=%s trace2=%s trace3=%s",
 		      runtime.trace_count, runtime.traces[0], runtime.traces[1],
@@ -4266,4 +4350,26 @@ ZTEST(squidscript_protocol, test_vm_runtime_tracks_output_indicator_and_due_time
 	zassert_equal(sq_vm_runtime_next_due_timer(&runtime, event, sizeof(event)), 0);
 	zassert_str_equal(event, "timer.debug");
 	zassert_not_equal(sq_vm_runtime_next_due_timer(&runtime, event, sizeof(event)), 0);
+}
+
+ZTEST(squidscript_protocol, test_device_protocol_poll_advances_running_runtime_poll)
+{
+	struct sq_vm_runtime runtime = {0};
+	struct sq_device_protocol_context context = {
+		.runtime = &runtime,
+	};
+
+	sq_vm_runtime_init(&runtime);
+	sq_vm_runtime_reset(&runtime);
+	zassert_equal(sq_vm_runtime_indicator_breathe(&runtime), 0);
+	zassert_true(runtime.indicator_breathe_active);
+	uint8_t first_step = runtime.indicator_breathe_step;
+
+	runtime.status = SQ_VM_RUNTIME_RUNNING;
+	runtime.indicator_breathe_next_ms = k_uptime_get() - 1;
+	zassert_equal(sq_device_protocol_poll(&context), 0);
+	zassert_not_equal(runtime.indicator_breathe_step, first_step);
+
+	runtime.status = SQ_VM_RUNTIME_IDLE;
+	sq_vm_runtime_reset(&runtime);
 }
