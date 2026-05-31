@@ -58,6 +58,9 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 
 - Do not invent SquidScript syntax, keywords, helpers, or simulator-only DSL conveniences.
 - Implement the documented language/spec as written. Use `docs/language_spec.md` as the primary reference.
+- When designing SquidScript language features, public APIs, references, or
+  declarations, prefer explicit typed forms over stringly or implicit forms
+  unless there is a concrete implementation or usability reason not to.
 - If a feature is not implemented yet, say so clearly and keep fixtures/tests honest.
 - Do not add tests for removed fake syntax. Treat fake syntax as if it never existed.
 - Critical pre-1.0 rule: replace directly. Do not preserve, detect, migrate,
