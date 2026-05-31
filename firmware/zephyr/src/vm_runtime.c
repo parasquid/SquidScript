@@ -21,6 +21,9 @@
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/net_ip.h>
 #include <zephyr/net/wifi_mgmt.h>
+#if IS_ENABLED(CONFIG_WIFI_NM)
+#include <zephyr/net/wifi_nm.h>
+#endif
 #endif
 
 #define SQ_VM_RUNTIME_BREATHE_LEVEL_MS 31
@@ -106,6 +109,10 @@ static const struct gpio_dt_spec input_sw0_gpio = GPIO_DT_SPEC_GET(DT_ALIAS(sw0)
 #define SQ_VM_RUNTIME_WIFI_AP_DHCP_POOL_START_OFFSET 10
 #else
 #define SQ_VM_RUNTIME_HAS_WIFI_MGMT 0
+#endif
+
+#if SQ_VM_RUNTIME_HAS_WIFI_MGMT
+static struct sq_vm_runtime *runtime_wifi_scan_active_runtime;
 #endif
 
 void sqvm_ffi_panic_abort(void)
@@ -761,6 +768,7 @@ static void runtime_wifi_reset_scan(struct sq_vm_runtime *runtime)
 	memset(scan, 0, sizeof(*scan));
 	runtime->wifi_scan_count = 0;
 	runtime->wifi_scan_status = 0;
+	runtime->wifi_scan_collecting = false;
 }
 
 static struct net_if *runtime_wifi_iface(void)
@@ -771,6 +779,28 @@ static struct net_if *runtime_wifi_iface(void)
 static struct net_if *runtime_wifi_ap_iface(void)
 {
 	return net_if_get_wifi_sap();
+}
+
+static const struct wifi_mgmt_ops *runtime_wifi_driver_ops(struct net_if *iface)
+{
+	const struct device *dev;
+	const struct net_wifi_mgmt_offload *off_api;
+
+	if (iface == NULL || !net_if_is_wifi(iface)) {
+		return NULL;
+	}
+	dev = net_if_get_device(iface);
+	if (dev == NULL) {
+		return NULL;
+	}
+#if IS_ENABLED(CONFIG_WIFI_NM)
+	struct wifi_nm_instance *nm = wifi_nm_get_instance_iface(iface);
+	if (nm != NULL && nm->ops != NULL) {
+		return nm->ops;
+	}
+#endif
+	off_api = (const struct net_wifi_mgmt_offload *)dev->api;
+	return off_api == NULL ? NULL : off_api->wifi_mgmt_api;
 }
 
 static bool runtime_wifi_profile_matches(const struct sq_vm_runtime *runtime,
@@ -861,17 +891,12 @@ static void runtime_wifi_record_scan_result(struct sq_vm_runtime *runtime,
 	}
 	memcpy(scan->ssids[index], entry->ssid, ssid_len);
 	scan->ssids[index][ssid_len] = '\0';
-	if (entry->mac_length >= 6) {
-		(void)sq_vm_runtime_wifi_format_bssid(entry->mac, entry->mac_length,
-						      scan->bssids[index],
-						      sizeof(scan->bssids[index]));
-	}
 	copy_text(scan->auth[index], sizeof(scan->auth[index]), wifi_security_txt(entry->security));
 
 	network->ssid = (const uint8_t *)scan->ssids[index];
-	network->ssid_len = strlen(scan->ssids[index]);
-	network->bssid = (const uint8_t *)scan->bssids[index];
-	network->bssid_len = strlen(scan->bssids[index]);
+	network->ssid_len = ssid_len;
+	network->bssid = NULL;
+	network->bssid_len = 0;
 	network->ssid_length = entry->ssid_length;
 	network->channel = entry->channel;
 	network->rssi = entry->rssi;
@@ -879,6 +904,27 @@ static void runtime_wifi_record_scan_result(struct sq_vm_runtime *runtime,
 	network->auth_len = strlen(scan->auth[index]);
 	network->hidden = entry->ssid_length == 0;
 	runtime->wifi_scan_count++;
+}
+
+static void runtime_wifi_scan_driver_callback(struct net_if *iface, int status,
+					      struct wifi_scan_result *entry)
+{
+	ARG_UNUSED(iface);
+	struct sq_vm_runtime *runtime = runtime_wifi_scan_active_runtime;
+
+	if (runtime == NULL) {
+		return;
+	}
+	if (entry != NULL) {
+		if (runtime->wifi_scan_collecting) {
+			runtime_wifi_record_scan_result(runtime, entry);
+		}
+		return;
+	}
+	runtime->wifi_scan_status = status;
+	runtime->wifi_scan_collecting = false;
+	runtime_wifi_scan_active_runtime = NULL;
+	k_sem_give(&runtime->wifi_scan_done);
 }
 
 static void runtime_wifi_event_handler(struct net_mgmt_event_callback *cb, uint64_t mgmt_event,
@@ -1309,6 +1355,8 @@ static int32_t runtime_wifi_scan(void *user_data, SqvmWifiScanResult *out)
 #if SQ_VM_RUNTIME_HAS_WIFI_MGMT
 	struct sq_vm_runtime *runtime = user_data;
 	struct net_if *iface = runtime_wifi_iface();
+	const struct wifi_mgmt_ops *wifi_mgmt_api;
+	const struct device *dev;
 	struct wifi_iface_status status = {0};
 	struct wifi_scan_params params = {0};
 	int transfer_result;
@@ -1319,8 +1367,17 @@ static int32_t runtime_wifi_scan(void *user_data, SqvmWifiScanResult *out)
 		return 0;
 	}
 	runtime_wifi_init_events(runtime);
+	wifi_mgmt_api = runtime_wifi_driver_ops(iface);
+	dev = net_if_get_device(iface);
+	if (wifi_mgmt_api == NULL || wifi_mgmt_api->scan == NULL || dev == NULL ||
+	    !net_if_is_admin_up(iface)) {
+		out->ok = false;
+		SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+		return 0;
+	}
 	int status_result = net_mgmt(NET_REQUEST_WIFI_IFACE_STATUS, iface, &status, sizeof(status));
-	if (status_result == 0 && runtime_wifi_state_blocks_scan(status.state)) {
+	if (runtime_wifi_scan_active_runtime != NULL || runtime->wifi_ap_active ||
+	    (status_result == 0 && runtime_wifi_state_blocks_scan(status.state))) {
 		out->ok = false;
 		SQ_SET_LITERAL_FIELD(out, error, "wifi busy");
 		return 0;
@@ -1334,20 +1391,29 @@ static int32_t runtime_wifi_scan(void *user_data, SqvmWifiScanResult *out)
 	}
 	runtime_wifi_reset_scan(runtime);
 	k_sem_reset(&runtime->wifi_scan_done);
-	params.max_bss_cnt = SQVM_WIFI_SCAN_MAX_NETWORKS;
-	int result = net_mgmt(NET_REQUEST_WIFI_SCAN, iface, &params, sizeof(params));
+	runtime->wifi_scan_collecting = true;
+	runtime_wifi_scan_active_runtime = runtime;
+	int result = wifi_mgmt_api->scan(dev, iface, &params, runtime_wifi_scan_driver_callback);
 	if (result != 0) {
+		runtime->wifi_scan_collecting = false;
+		runtime_wifi_scan_active_runtime = NULL;
 		(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN);
 		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "scan request failed");
+		if (result == -EINPROGRESS || result == -EBUSY || result == -EALREADY) {
+			SQ_SET_LITERAL_FIELD(out, error, "wifi busy");
+		} else {
+			SQ_SET_LITERAL_FIELD(out, error, "driver error");
+		}
 		return 0;
 	}
-	if (k_sem_take(&runtime->wifi_scan_done, K_MSEC(SQ_VM_RUNTIME_WIFI_SCAN_TIMEOUT_MS)) != 0) {
-		(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN);
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "scan timeout");
-		return 0;
-	}
+		if (k_sem_take(&runtime->wifi_scan_done, K_MSEC(SQ_VM_RUNTIME_WIFI_SCAN_TIMEOUT_MS)) != 0) {
+			runtime->wifi_scan_collecting = false;
+			runtime_wifi_scan_active_runtime = NULL;
+			(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN);
+			out->ok = false;
+			SQ_SET_LITERAL_FIELD(out, error, "scan timeout");
+			return 0;
+		}
 	if (runtime->wifi_scan_status != 0) {
 		(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN);
 		out->ok = false;
@@ -2344,7 +2410,7 @@ static void runtime_run_job(struct sq_vm_runtime *runtime)
 	if (result != 0) {
 		runtime->result_code = result;
 		runtime->dispatch_exited = false;
-		runtime->status = SQ_VM_RUNTIME_IDLE;
+		runtime->status = SQ_VM_RUNTIME_ERROR;
 		return;
 	}
 

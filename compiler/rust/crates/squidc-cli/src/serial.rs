@@ -16,10 +16,10 @@ use squid_device_protocol::{
     resource_install_commit_request, resource_values, resources_get_request, state_bytes,
     state_get_request, state_import_request, storage_format_request, temp_run_begin_request,
     temp_run_chunk_request, temp_run_commit_request, trace_get_request, trace_lines,
-    wifi_profile_set_request, AppEntry, DecodeError, Frame, FrameKind, Status,
+    wifi_profile_set_request, AppEntry, DecodeError, Frame, FrameKind, Status, HEADER_LEN, MAGIC,
 };
 
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 const FIRMWARE_SERIAL_FRAME_BUDGET: usize = 256;
 
 pub struct SerialDevice {
@@ -219,7 +219,9 @@ impl SerialDevice {
     }
 
     fn send_protocol_request_bytes(&mut self, request: &[u8]) -> Result<Frame, String> {
-        let response = self.send_bytes_until_quiet(request)?;
+        self.drain();
+        self.write_all(request)?;
+        let response = self.read_protocol_frame(DEFAULT_TIMEOUT)?;
         decode_frame_from_stream(&response)
             .map_err(|error| format!("invalid protocol response frame: {error:?}"))
     }
@@ -303,6 +305,43 @@ impl SerialDevice {
         }
         Ok(response)
     }
+
+    fn read_protocol_frame(&mut self, timeout: Duration) -> Result<Vec<u8>, String> {
+        let deadline = Instant::now() + timeout;
+        let mut response = Vec::new();
+        let mut buf = [0u8; 512];
+        while Instant::now() < deadline {
+            match self.port.read(&mut buf) {
+                Ok(count) if count > 0 => {
+                    response.extend_from_slice(&buf[..count]);
+                    if let Some(end) = complete_frame_end_from_stream(&response) {
+                        response.truncate(end);
+                        break;
+                    }
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(error) => return Err(format!("serial read failed: {error}")),
+            }
+        }
+        Ok(response)
+    }
+}
+
+fn complete_frame_end_from_stream(bytes: &[u8]) -> Option<usize> {
+    let start = bytes
+        .windows(MAGIC.len())
+        .position(|window| window == MAGIC)?;
+    if bytes.len() - start < HEADER_LEN {
+        return None;
+    }
+    let payload_len = u32::from_le_bytes(
+        bytes[start + 12..start + 16]
+            .try_into()
+            .expect("slice length checked"),
+    ) as usize;
+    let end = start.checked_add(HEADER_LEN)?.checked_add(payload_len)?;
+    (bytes.len() >= end).then_some(end)
 }
 
 fn max_transfer_chunk_size() -> usize {
@@ -469,9 +508,9 @@ impl OutputTail {
 #[cfg(test)]
 mod tests {
     use super::{
-        configure_tty_args, format_lines, format_raw_lines, max_transfer_chunk_size,
-        max_transfer_chunk_size_for_frame_budget, retryable_protocol_decode_error, OutputTail,
-        FIRMWARE_SERIAL_FRAME_BUDGET,
+        complete_frame_end_from_stream, configure_tty_args, format_lines, format_raw_lines,
+        max_transfer_chunk_size, max_transfer_chunk_size_for_frame_budget,
+        retryable_protocol_decode_error, OutputTail, FIRMWARE_SERIAL_FRAME_BUDGET,
     };
     use squid_device_protocol::{
         app_install_begin_request, app_install_chunk_request, encoded_frame_len,
@@ -518,6 +557,28 @@ mod tests {
         ];
         assert_eq!(tail.next_lines(&second), vec!["output=\"tick\" false"]);
         assert!(tail.next_lines(&second).is_empty());
+    }
+
+    #[test]
+    fn detects_complete_protocol_frame_after_serial_noise() {
+        let frame = squid_device_protocol::encode_frame(&squid_device_protocol::hello_request(7));
+        let mut stream = b"boot log before response\n".to_vec();
+        stream.extend_from_slice(&frame);
+        stream.extend_from_slice(b"trailing log");
+
+        assert_eq!(
+            complete_frame_end_from_stream(&stream),
+            Some(b"boot log before response\n".len() + frame.len())
+        );
+    }
+
+    #[test]
+    fn waits_for_complete_protocol_frame_after_serial_noise() {
+        let frame = squid_device_protocol::encode_frame(&squid_device_protocol::hello_request(7));
+        let mut partial = b"wifi log before response\n".to_vec();
+        partial.extend_from_slice(&frame[..frame.len() - 1]);
+
+        assert_eq!(complete_frame_end_from_stream(&partial), None);
     }
 
     #[test]

@@ -85,7 +85,8 @@ sequenceDiagram
   Runtime->>Store: open target SQBC
   Runtime->>Runtime: reset VM context
   Runtime->>Runtime: dispatch app.start with start reason launch
-  Protocol-->>Host: response after lifecycle and queued arm registration drain
+  Protocol-->>Host: accepted response
+  Note over Runtime,Store: The main loop drains app.exit/app.start lifecycle work after the command response.
 ```
 
 ## Armed Timer Sequence

@@ -787,10 +787,6 @@ static int start_resolved_app_bytes(const struct sq_device_protocol_context *con
 static bool is_main_app_id(const uint8_t *app_id, size_t app_id_len);
 static int push_return_app(struct sq_vm_runtime *runtime, const char *app_id);
 static void clear_foreground_timers(struct sq_vm_runtime *runtime);
-static int drain_runtime_lifecycle(const struct sq_device_protocol_context *context,
-				   int32_t timeout_ms);
-
-#define SQ_HOST_LAUNCH_DRAIN_TIMEOUT_MS 2000
 
 static int __noinline launch_app(const struct sq_protocol_request *request,
 		      const uint8_t *request_bytes, size_t request_len,
@@ -815,11 +811,6 @@ static int __noinline launch_app(const struct sq_protocol_request *request,
 	memcpy(context->runtime->lifecycle_target_app, launch.app_id, launch.app_id_len);
 	context->runtime->lifecycle_target_app[launch.app_id_len] = '\0';
 	context->runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_LAUNCH_REQUESTED;
-
-	int result = drain_runtime_lifecycle(context, SQ_HOST_LAUNCH_DRAIN_TIMEOUT_MS);
-	if (result != 0) {
-		return result;
-	}
 
 	return ok_response(request, response, response_cap, response_len);
 }
@@ -1371,50 +1362,6 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 	return sq_vm_runtime_poll(runtime);
 }
 
-static int drain_runtime_lifecycle(const struct sq_device_protocol_context *context,
-				   int32_t timeout_ms)
-{
-	struct sq_vm_runtime *runtime;
-	int64_t deadline_ms;
-
-	if (context == NULL || context->runtime == NULL) {
-		return -EINVAL;
-	}
-	if (timeout_ms <= 0) {
-		return -EINVAL;
-	}
-	runtime = context->runtime;
-	deadline_ms = k_uptime_get() + timeout_ms;
-
-	while (sq_vm_runtime_lifecycle_busy(runtime) || sq_vm_runtime_arm_busy(runtime) ||
-	       runtime->status == SQ_VM_RUNTIME_RUNNING) {
-		int64_t now_ms = k_uptime_get();
-		int32_t remaining_ms;
-		int result;
-
-		if (now_ms >= deadline_ms) {
-			return -ETIMEDOUT;
-		}
-		result = sq_device_protocol_poll(context);
-		if (result != 0) {
-			return result;
-		}
-		now_ms = k_uptime_get();
-		if (now_ms >= deadline_ms) {
-			return -ETIMEDOUT;
-		}
-		remaining_ms = (int32_t)(deadline_ms - now_ms);
-		if (remaining_ms > 250) {
-			remaining_ms = 250;
-		}
-		result = sq_vm_runtime_wait_idle(runtime, remaining_ms);
-		if (result != 0 && runtime->status == SQ_VM_RUNTIME_RUNNING) {
-			return result;
-		}
-	}
-	return 0;
-}
-
 static int repeated_runtime_lines_response(const struct sq_protocol_request *request,
 					   const struct sq_vm_runtime *runtime,
 					   const char *const *extra_lines, size_t extra_count,
@@ -1618,6 +1565,8 @@ static int __noinline resources_response(const struct sq_protocol_request *reque
 	size_t heap_free_bytes = 0;
 	size_t heap_allocated_bytes = 0;
 	size_t heap_max_allocated_bytes = 0;
+	size_t heap_largest_free_supported = 0;
+	size_t heap_largest_free_bytes = 0;
 	size_t input_button_pressed_count = 0;
 	size_t input_button_state = 0;
 
@@ -1696,6 +1645,8 @@ static int __noinline resources_response(const struct sq_protocol_request *reque
 	SQ_RESOURCE_METRIC("heap_free_bytes", heap_free_bytes);
 	SQ_RESOURCE_METRIC("heap_alloc_bytes", heap_allocated_bytes);
 	SQ_RESOURCE_METRIC("heap_max_alloc_bytes", heap_max_allocated_bytes);
+	SQ_RESOURCE_METRIC("heap_largest_free_supported", heap_largest_free_supported);
+	SQ_RESOURCE_METRIC("heap_largest_free_bytes", heap_largest_free_bytes);
 	SQ_RESOURCE_METRIC("last_dispatch_us",
 			   context->runtime == NULL ? 0 : context->runtime->last_dispatch_elapsed_us);
 	SQ_RESOURCE_METRIC("last_dispatch_seq",

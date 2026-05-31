@@ -179,7 +179,7 @@ snapshot_resources() {
   file="$(run_capture "resources-${label}" cargo run --quiet -p squidc -- device resources)"
   assert_stack_accounting "$file" proto
   assert_stack_accounting "$file" vm
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$label" \
     "$(resource_value "$file" proto_stack_pre_used_bytes)" \
     "$(resource_value "$file" proto_stack_used_bytes)" \
@@ -188,6 +188,8 @@ snapshot_resources() {
     "$(resource_value "$file" vm_stack_unused_bytes)" \
     "$(resource_value "$file" heap_alloc_bytes)" \
     "$(resource_value "$file" heap_max_alloc_bytes)" \
+    "$(resource_value "$file" heap_largest_free_supported)" \
+    "$(resource_value "$file" heap_largest_free_bytes)" \
     "$(resource_value "$file" runtime_static_bytes)" \
     "$(resource_value "$file" last_dispatch_seq)" \
     "$(resource_value "$file" last_dispatch_us)" \
@@ -202,6 +204,7 @@ summary_out="${WORK_DIR}/summary.tsv"
   printf 'proto_stack_unused_bytes\t'
   printf 'vm_stack_used_bytes\tvm_stack_unused_bytes\t'
   printf 'heap_alloc_bytes\theap_max_alloc_bytes\t'
+  printf 'heap_largest_free_supported\theap_largest_free_bytes\t'
   printf 'runtime_static_bytes\tlast_dispatch_seq\tlast_dispatch_us\t'
   printf 'input_button_state\n'
 } >"${summary_out}"

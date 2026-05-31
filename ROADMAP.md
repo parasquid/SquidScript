@@ -81,9 +81,39 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   paths; check those before splitting more app-store or protocol helpers
   because per-function `.su` reductions can increase real stack high-water use
   when a larger callee remains active under the caller.
-  Current ESP32-C3 build evidence after planned-resume protocol scratch
-  migration reports 198,816 bytes of linker DRAM, 198,800 bytes through
+  Current ESP32-C3 build evidence with the real Wi-Fi scan backend enabled
+  reports 215,424 bytes of linker DRAM, 215,396 bytes through
   `zephyr-ram-audit`, and a 15,096-byte `runtime.4` static runtime symbol.
+  Current same-build non-scan hardware coverage on the flashed target passed
+  app state, foreground memory, app lifecycle, app registry, display drawlog,
+  system resources, indicator state, device binding, inline GPIO binding,
+  inline GPIO10 binding, unsupported inline GPIO rejection, device config, file
+  pick, stack usage, Wi-Fi status, Wi-Fi AP, and final blinky checks. Use
+  `scripts/c3-supermini-test-hardware-non-scan.sh` to repeat that same-build
+  RAM-confidence path; `--skip-physical-input` is allowed only for unattended
+  stack/RAM coverage and does not validate the physical GPIO9 press row. The
+  same-build physical input-button check reached the BOOT/GPIO9 prompt but
+  timed out with `output=count 0`, so the physical press row still needs a
+  confirmed run. The targeted RAM workload measured
+  protocol/main stack at
+  4,048 bytes used with 4,144 bytes free, VM worker stack peak at 16,128 bytes
+  used with 5,888 bytes free, and Wi-Fi AP heap high-water at
+  `heap_max_alloc_bytes=36460`. The GPIO9 input stack isolation path refreshed
+  current-format resource rows through `after-press-timeout`; without a
+  physical press, `input_button_state=1` proves one configured input and zero
+  currently pressed inputs during that run, not dispatch. The broader
+  same-build non-scan stack checkpoint measured protocol/main stack at
+  4,048 bytes used with 4,144 bytes free and VM worker stack at
+  16,128 bytes used with 5,888 bytes free. Current
+  `device resources` includes
+  `heap_largest_free_supported` and `heap_largest_free_bytes`; ESP32-C3 reports
+  `0/0` because the public Zephyr heap stats available in this build do not
+  expose a safe non-mutating largest-free-block query. Physical GPIO9 input
+  isolation still needs a same-build confirmed press row before another stack
+  reduction. Real ESP32-C3 Zephyr Wi-Fi scan/list coverage now passes through
+  the driver scan callback with bounded redacted AP rows; keep future Wi-Fi
+  scan work focused on result pagination/cursor APIs and broader service-state
+  modeling rather than the old unsupported scan path.
 
   Current stack report evidence shows that the previous
   `commit_install -> sq_app_store_scan_registry_with_path -> join_path2`
@@ -180,16 +210,14 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 - Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
   replace accidental stack or harness buffers with caller-owned, borrowed,
   streaming, file-backed, or VM-owned storage where practical.
-- Add heap fragmentation diagnostics and mitigation for ESP32-C3 Zephyr RAM
-  work. `system.memory()` and/or `device resources` should distinguish total
-  free heap from allocator fragmentation by reporting the largest allocatable
-  block when Zephyr exposes it, allocation high-water data, and subsystem
-  allocation failures where practical. Use the data to keep SquidScript runtime
-  paths on fixed arenas, caller-owned buffers, bounded scratch, slabs/pools for
-  unavoidable dynamic allocations, and startup-owned long-lived allocations
-  instead of mixed-lifetime heap usage. This should help explain failures where
-  free heap appears sufficient but a larger contiguous allocation cannot be
-  satisfied.
+- Add a safe largest-free-block heap probe or mitigation path for ESP32-C3
+  Zephyr RAM work. `device resources` now reports allocation high-water data and
+  largest-free-block support/value fields, but the current public Zephyr heap
+  stats do not expose a safe non-mutating largest-free-block query. Continue
+  with a target-safe probe, subsystem allocation-failure attribution, or heap
+  design mitigation such as fixed arenas, caller-owned buffers, bounded
+  scratch, slabs/pools for unavoidable dynamic allocations, and startup-owned
+  long-lived allocations instead of mixed-lifetime heap usage.
 - Refactor implicit runtime state-machine concepts into explicit, documented,
   testable abstractions where the transition model is already meaningful.
   Treat the app lifecycle as the first candidate, followed by device input
@@ -208,5 +236,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   without materializing every AP record and string into one VM event. Compare
   options such as `wifi.scan()` returning a snapshot handle with
   `wifi.scan.get(scan, index)`, paged scan reads, or an iterator-like cursor,
-  and keep SSID/BSSID/auth strings backed by host/runtime storage until the app
-  asks for a specific network.
+  and keep SSID/auth strings backed by host/runtime storage until the app asks
+  for a specific network. Preserve the current rule that raw BSSID/MAC values
+  are not exposed to SquidScript.

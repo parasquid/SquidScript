@@ -1199,6 +1199,72 @@ ZTEST(squidscript_protocol, test_handles_app_launch_dispatches_installed_app_sta
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }
 
+ZTEST(squidscript_protocol, test_app_launch_reports_unsupported_inline_gpio_binding)
+{
+	uint8_t payload[48];
+	uint8_t request[96];
+	uint8_t response[256];
+	size_t payload_len = 0;
+	size_t response_len = 0;
+	struct sq_protocol_frame frame;
+	struct sq_device_identity identity = {
+		.target = "esp32c3-supermini",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_vm_runtime runtime = {0};
+	struct sq_app_registry registry = {0};
+	struct sq_app_store_vm_storage launch_storage = {0};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.registry = &registry,
+		.store_mount_point = test_fs_mount.mnt_point,
+		.runtime = &runtime,
+		.launch_storage = &launch_storage,
+		.fallback_app = &sq_zephyr_fallback_app,
+	};
+
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(format_test_app_store(), 0);
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point,
+					       "unsupported-inline-gpio-binding",
+					       unsupported_inline_gpio_binding_sqbc,
+					       sizeof(unsupported_inline_gpio_binding_sqbc)),
+		      0);
+	zassert_equal(sq_app_store_scan_registry(test_fs_mount.mnt_point, &registry), 0);
+	sq_vm_runtime_set_store_mount_point(&runtime, test_fs_mount.mnt_point);
+	start_test_root(&context, &runtime);
+	zassert_str_equal(runtime.current_app, "main");
+
+	zassert_equal(sq_protocol_append_string_field(payload, sizeof(payload), &payload_len, 1,
+						      "unsupported-inline-gpio-binding"),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_APP_LAUNCH,
+						      SQ_STATUS_OK, 41, payload, payload_len,
+						      request, sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	memcpy(&request[SQ_PROTOCOL_HEADER_LEN], payload, payload_len);
+
+	zassert_equal(sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN + payload_len,
+						      &context, response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
+	zassert_equal(frame.opcode, SQ_OPCODE_APP_LAUNCH);
+	zassert_true(frame.status == SQ_STATUS_OK,
+		     "frame.status=%u runtime.status=%d result=%d current=%s stack=%u output=%u",
+		     frame.status, runtime.status, runtime.result_code, runtime.current_app,
+		     runtime.return_stack_count, runtime.output_count);
+	zassert_equal(poll_until_current_app(&context, &runtime, "unsupported-inline-gpio-binding"),
+		      0);
+	zassert_equal(runtime.status, SQ_VM_RUNTIME_ERROR);
+	zassert_equal(runtime.result_code, -ENOTSUP);
+	zassert_str_equal(runtime.current_app, "unsupported-inline-gpio-binding");
+	zassert_equal(runtime.output_count, 0);
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
 ZTEST(squidscript_protocol, test_launch_root_uses_fallback_main_when_installed_main_is_absent)
 {
 	struct sq_vm_runtime runtime = {0};
@@ -1372,7 +1438,8 @@ ZTEST(squidscript_protocol, test_host_app_launch_without_current_app_pushes_logi
 						      &context, response, sizeof(response),
 						      &response_len),
 		      SQ_PROTOCOL_OK);
-	zassert_false(sq_vm_runtime_lifecycle_busy(&runtime));
+	zassert_true(sq_vm_runtime_lifecycle_busy(&runtime));
+	zassert_equal(poll_until_current_app(&context, &runtime, "reader"), 0);
 	zassert_str_equal(runtime.current_app, "reader");
 	zassert_equal(runtime.return_stack_count, 1);
 	zassert_str_equal(runtime.return_stack[0], "main");
@@ -1425,6 +1492,8 @@ ZTEST(squidscript_protocol, test_host_app_launch_without_current_app_starts_stat
 						      &response_len),
 		      SQ_PROTOCOL_OK);
 
+	zassert_true(sq_vm_runtime_lifecycle_busy(&runtime));
+	zassert_equal(poll_until_current_app(&context, &runtime, "state-counter"), 0);
 	zassert_false(sq_vm_runtime_lifecycle_busy(&runtime));
 	zassert_equal(runtime.status, SQ_VM_RUNTIME_COMPLETE);
 	zassert_equal(runtime.result_code, 0);
@@ -1500,7 +1569,8 @@ ZTEST(squidscript_protocol, test_host_app_launch_noop_from_fallback_stays_protoc
 						      &context, response, sizeof(response),
 						      &response_len),
 		      SQ_PROTOCOL_OK);
-	zassert_false(sq_vm_runtime_lifecycle_busy(&runtime));
+	zassert_true(sq_vm_runtime_lifecycle_busy(&runtime));
+	zassert_equal(poll_until_current_app(&context, &runtime, "noop"), 0);
 	zassert_str_equal(runtime.current_app, "noop");
 	zassert_equal(runtime.status, SQ_VM_RUNTIME_COMPLETE);
 
@@ -2409,6 +2479,8 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 	uint64_t protocol_stack_pre_resources_unused = 0;
 	uint64_t protocol_stack_pre_resources_used = 0;
 	uint64_t vm_sqbc_chunk = 0;
+	uint64_t heap_largest_free_supported = 99;
+	uint64_t heap_largest_free_bytes = 99;
 	uint64_t last_dispatch_sequence = 99;
 	uint64_t last_dispatch_elapsed_us = 99;
 	uint64_t last_dispatch_sqbc_read_count = 99;
@@ -2431,7 +2503,7 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 	result = sq_device_protocol_handle_frame(request, sizeof(request), &context, response,
 						 sizeof(response), &response_len);
 	zassert_equal(result, SQ_PROTOCOL_OK, "resources result %d", result);
-	zassert_true(response_len <= 826, "resources response_len=%zu", response_len);
+	zassert_true(response_len <= 916, "resources response_len=%zu", response_len);
 	zassert_true(response_len <= SQ_DEVICE_RESPONSE_BYTES);
 	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
 	zassert_equal(frame.opcode, SQ_OPCODE_RESOURCES_GET);
@@ -2443,6 +2515,12 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 					   CONFIG_MAIN_STACK_SIZE));
 	zassert_true(resource_value_for_key(&frame, "vm_sqbc_chunk_bytes", &vm_sqbc_chunk));
 	zassert_equal(vm_sqbc_chunk, SQVM_STORAGE_TRANSFER_CAPACITY);
+	zassert_true(resource_value_for_key(&frame, "heap_largest_free_supported",
+					    &heap_largest_free_supported));
+	zassert_equal(heap_largest_free_supported, 0);
+	zassert_true(resource_value_for_key(&frame, "heap_largest_free_bytes",
+					    &heap_largest_free_bytes));
+	zassert_equal(heap_largest_free_bytes, 0);
 	zassert_true(resource_value_for_key(&frame, "last_dispatch_us",
 					    &last_dispatch_elapsed_us));
 	zassert_equal(last_dispatch_elapsed_us, 1234);
@@ -3630,7 +3708,7 @@ ZTEST(squidscript_protocol, test_vm_runtime_rejects_unsupported_packaged_gpio_as
 
 	zassert_equal(sq_vm_runtime_start(&runtime, &backend, "app.start"), 0);
 	wait_runtime_done(&runtime);
-	zassert_equal(runtime.status, SQ_VM_RUNTIME_IDLE);
+	zassert_equal(runtime.status, SQ_VM_RUNTIME_ERROR);
 	zassert_equal(runtime.result_code, -ENOTSUP);
 	zassert_true(runtime.indicator_binding_active);
 	zassert_equal(runtime.indicator_binding_pin, 8);

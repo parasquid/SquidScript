@@ -446,6 +446,65 @@ unsafe extern "C" fn wifi_scan(
     0
 }
 
+unsafe extern "C" fn zephyr_wifi_scan(
+    user_data: *mut c_void,
+    out: *mut squidvm_ffi::SqvmWifiScanResult,
+) -> i32 {
+    static VISIBLE_SSID: &[u8] = b"truncated-visible-ssid";
+    static WPA2_AUTH: &[u8] = b"WPA2-PSK";
+    static OPEN_AUTH: &[u8] = b"OPEN";
+    static OTHER_SSID: &[u8] = b"other-auth";
+    static WAPI_AUTH: &[u8] = b"WAPI";
+    static mut NETWORKS: [squidvm_ffi::SqvmWifiAccessPoint; 3] = [
+        squidvm_ffi::SqvmWifiAccessPoint {
+            ssid: VISIBLE_SSID.as_ptr(),
+            ssid_len: VISIBLE_SSID.len(),
+            bssid: ptr::null(),
+            bssid_len: 0,
+            ssid_length: 40,
+            channel: 6,
+            rssi: -41,
+            auth: WPA2_AUTH.as_ptr(),
+            auth_len: WPA2_AUTH.len(),
+            hidden: false,
+        },
+        squidvm_ffi::SqvmWifiAccessPoint {
+            ssid: ptr::null(),
+            ssid_len: 0,
+            bssid: ptr::null(),
+            bssid_len: 0,
+            ssid_length: 0,
+            channel: 11,
+            rssi: -72,
+            auth: OPEN_AUTH.as_ptr(),
+            auth_len: OPEN_AUTH.len(),
+            hidden: true,
+        },
+        squidvm_ffi::SqvmWifiAccessPoint {
+            ssid: OTHER_SSID.as_ptr(),
+            ssid_len: OTHER_SSID.len(),
+            bssid: ptr::null(),
+            bssid_len: 0,
+            ssid_length: 10,
+            channel: 1,
+            rssi: -88,
+            auth: WAPI_AUTH.as_ptr(),
+            auth_len: WAPI_AUTH.len(),
+            hidden: false,
+        },
+    ];
+    let host = &mut *(user_data as *mut Host);
+    host.wifi_scan_count += 1;
+    *out = squidvm_ffi::SqvmWifiScanResult {
+        ok: true,
+        error: ptr::null(),
+        error_len: 0,
+        networks: (&raw const NETWORKS).cast::<squidvm_ffi::SqvmWifiAccessPoint>(),
+        network_count: 3,
+    };
+    0
+}
+
 unsafe extern "C" fn device_config_load(
     user_data: *mut c_void,
     source: *const u8,
@@ -1280,6 +1339,20 @@ screen("main") {}
     )
 }
 
+fn compile_wifi_scan_networks_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-wifi-networks"
+event.on("app.start") {
+  let scan = service.wifi.scan()
+  for network in scan.networks max 4 {
+    debug.print(network.ssidLength, network.channel, network.rssi, network.auth, network.hidden)
+  }
+}
+screen("main") {}
+"#,
+    )
+}
+
 fn compile_wifi_actions_sqbc() -> Vec<u8> {
     compile_sqbc(
         r#"app "ffi-wifi-actions"
@@ -1730,6 +1803,50 @@ fn dispatches_wifi_status_and_scan_callbacks() {
         vec![
             "stopped zephyr true unsupported".to_string(),
             "false unsupported 0".to_string()
+        ]
+    );
+}
+
+#[test]
+fn dispatches_zephyr_wifi_scan_network_auth_and_original_ssid_length() {
+    let mut host = Host {
+        sqbc: compile_wifi_scan_networks_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+    let mut callbacks = callbacks(&mut host);
+    callbacks.wifi_scan = Some(zephyr_wifi_scan);
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks,
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks,
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(host.wifi_scan_count, 1);
+    assert_eq!(
+        host.output,
+        vec![
+            "40 6 -41 wpa2 false".to_string(),
+            "0 11 -72 open true".to_string(),
+            "10 1 -88 unknown false".to_string(),
         ]
     );
 }

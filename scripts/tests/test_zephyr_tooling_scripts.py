@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 import os
+import re
 import stat
 import subprocess
 import tempfile
@@ -155,6 +156,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             "CONFIG_NET_BUF_RX_COUNT=24",
             "CONFIG_NET_BUF_TX_COUNT=24",
             "CONFIG_NET_MGMT_EVENT_QUEUE_SIZE=8",
+            "CONFIG_NET_MGMT_EVENT_QUEUE_TIMEOUT=5000",
         ]:
             self.assertIn(option, prj_conf)
 
@@ -179,8 +181,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_default_config_uses_bounded_logger_stack(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
 
-        self.assertIn("CONFIG_LOG_PROCESS_THREAD_STACK_SIZE=512", prj_conf)
-        self.assertNotIn("CONFIG_LOG_PROCESS_THREAD_STACK_SIZE=768", prj_conf)
+        self.assertIn("CONFIG_LOG_PROCESS_THREAD_STACK_SIZE=768", prj_conf)
+        self.assertNotIn("CONFIG_LOG_PROCESS_THREAD_STACK_SIZE=512", prj_conf)
 
     def test_default_config_uses_bounded_littlefs_file_pool(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
@@ -212,6 +214,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("heap_free_bytes", body)
         self.assertIn("heap_alloc_bytes", body)
         self.assertIn("heap_max_alloc_bytes", body)
+        self.assertIn("heap_largest_free_supported", body)
+        self.assertIn("heap_largest_free_bytes", body)
         self.assertIn("proto_stack_pre_unused_bytes", body)
         self.assertIn("proto_stack_pre_used_bytes", body)
         self.assertNotIn("proto_stack_pre_res_unused_bytes", body)
@@ -253,7 +257,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_default_config_uses_measured_system_heap_budget(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
 
-        self.assertIn("CONFIG_HEAP_MEM_POOL_SIZE=36864", prj_conf)
+        self.assertIn("CONFIG_HEAP_MEM_POOL_SIZE=51200", prj_conf)
         self.assertIn("CONFIG_HEAP_MEM_POOL_IGNORE_MIN=y", prj_conf)
         self.assertNotIn("CONFIG_HEAP_MEM_POOL_ADD_SIZE_ESP_WIFI=", prj_conf)
 
@@ -304,17 +308,29 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         status = self.read("scripts/c3-supermini-test-wifi-state.sh")
         scan = self.read("scripts/c3-supermini-test-wifi-scan-api.sh")
         list_check = self.read("scripts/c3-supermini-test-wifi-list-api.sh")
+        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
 
         self.assertIn("--require-real-wifi", status)
         self.assertIn("zephyr true", status)
         self.assertIn("unsupported", status)
         self.assertIn("--require-real-wifi", scan)
         self.assertIn("wifi scan true", scan)
-        self.assertIn("unsupported", scan)
+        self.assertNotIn("wifi scan false ", scan)
+        self.assertNotIn("clear app-visible scan error", scan)
         self.assertIn("--require-real-wifi", list_check)
         self.assertIn("wifi list true", list_check)
+        self.assertNotIn("wifi list false ", list_check)
+        self.assertNotIn("clear app-visible scan error", list_check)
         self.assertIn("wifi ap", list_check)
         self.assertIn("assert_no_raw_network_identifiers", list_check)
+        self.assertNotIn("SQ_VM_RUNTIME_WIFI_SCAN_REQUEST_UNSAFE", runtime)
+        scan_start = runtime.index("static int32_t runtime_wifi_scan")
+        scan_end = runtime.index("#else", scan_start)
+        scan_body = runtime[scan_start:scan_end]
+        self.assertIn("runtime_wifi_scan_driver_callback", runtime)
+        self.assertIn("runtime_wifi_driver_ops", scan_body)
+        self.assertIn("wifi_mgmt_api->scan", scan_body)
+        self.assertNotIn("NET_REQUEST_WIFI_SCAN", scan_body)
 
     def test_wifi_list_fixture_iterates_redacted_network_records(self):
         source = self.read("tests/hardware/c3-supermini/wifi-list-summary/main.squid")
@@ -811,13 +827,6 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         ]
         poll_body = protocol_c[
             protocol_c.index("int sq_device_protocol_poll")
-            : protocol_c.index(
-                "static int drain_runtime_lifecycle",
-                protocol_c.index("int sq_device_protocol_poll"),
-            )
-        ]
-        drain_body = protocol_c[
-            protocol_c.index("static int drain_runtime_lifecycle")
             : protocol_c.index("static int repeated_runtime_lines_response")
         ]
 
@@ -835,7 +844,6 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("enum sq_vm_runtime_arm_phase", runtime_h)
         self.assertIn("enum sq_vm_runtime_arm_phase arm_phase;", runtime_body)
         self.assertIn("char arm_target_app[SQ_APP_STORE_APP_ID_MAX];", runtime_body)
-        self.assertIn("sq_vm_runtime_lifecycle_busy(runtime)", drain_body)
         self.assertIn("switch (runtime->lifecycle_phase)", poll_body)
         for obsolete_flag in [
             "bool pending_launch_active;",
@@ -1074,7 +1082,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         stack = self.read("scripts/c3-supermini-measure-input-stack-isolation.sh")
         ffi_rs = self.read("compiler/rust/crates/squidvm-ffi/src/lib.rs")
 
-        self.assertIn("#define SQ_DEVICE_RESPONSE_BYTES 826u", header)
+        self.assertIn("#define SQ_DEVICE_RESPONSE_BYTES 916u", header)
+        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 826u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 834u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 848u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 960u", header)
@@ -1247,7 +1256,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("char app_id_buffer[SQ_APP_STORE_APP_ID_MAX];", body)
         self.assertNotIn("memcpy(app_id_buffer, launch.app_id, launch.app_id_len);", body)
         self.assertIn("context->runtime->lifecycle_target_app", body)
-        self.assertIn("drain_runtime_lifecycle(context, SQ_HOST_LAUNCH_DRAIN_TIMEOUT_MS)", body)
+        self.assertIn("ok_response(request, response, response_cap, response_len)", body)
 
     def test_app_launch_uses_pending_lifecycle_chain_without_direct_start(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
@@ -1259,7 +1268,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             "context->runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_LAUNCH_REQUESTED",
             launch_body,
         )
-        self.assertIn("drain_runtime_lifecycle(context, SQ_HOST_LAUNCH_DRAIN_TIMEOUT_MS)", launch_body)
+        self.assertNotIn("sq_device_protocol_poll(context)", launch_body)
+        self.assertNotIn("sq_vm_runtime_wait_idle", launch_body)
         self.assertNotIn("start_foreground_app_bytes", protocol)
         self.assertNotIn("start_installed_app_bytes(context, launch.app_id", launch_body)
 
@@ -1682,9 +1692,10 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             'cargo run --quiet -p squidc -- app install "${UNSUPPORTED_INLINE_GPIO_APP}"',
             script,
         )
-        self.assertIn("assert_command_fails_contains", script)
-        self.assertIn("unsupported (-95)", script)
+        self.assertIn("wait_for_contains", script)
+        self.assertIn("run_capture launch-unsupported-inline-gpio", script)
         self.assertIn("assert_file_empty_command", script)
+        self.assertIn('assert_file_contains "${errors_out}" "runtime=host_error"', script)
         self.assertIn("c3-supermini-test-unsupported-inline-gpio-binding.sh", suite)
         self.assertLess(
             suite.index("c3-supermini-test-inline-gpio-binding.sh"),
@@ -1698,6 +1709,23 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             suite.index("c3-supermini-test-unsupported-inline-gpio-binding.sh"),
             suite.index("c3-supermini-test-blinky.sh"),
         )
+
+    def test_serial_protocol_reader_allows_long_wifi_scan_launch_response(self):
+        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+        serial = self.read("compiler/rust/crates/squidc-cli/src/serial.rs")
+
+        scan_timeout = re.search(
+            r"#define SQ_VM_RUNTIME_WIFI_SCAN_TIMEOUT_MS ([0-9]+)", runtime
+        )
+        cli_timeout = re.search(
+            r"const DEFAULT_TIMEOUT: Duration = Duration::from_secs\(([0-9]+)\);", serial
+        )
+
+        self.assertIsNotNone(scan_timeout)
+        self.assertIsNotNone(cli_timeout)
+        self.assertGreaterEqual(int(cli_timeout.group(1)) * 1000, int(scan_timeout.group(1)) + 1000)
+        self.assertIn("read_protocol_frame(DEFAULT_TIMEOUT)", serial)
+        self.assertIn("complete_frame_end_from_stream", serial)
 
     def test_device_binding_planning_stays_in_rust_ffi(self):
         ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
@@ -1897,6 +1925,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         )
         self.assertIn('heap_alloc_bytes', stack)
         self.assertIn('heap_max_alloc_bytes', stack)
+        self.assertIn('heap_largest_free_supported', stack)
+        self.assertIn('heap_largest_free_bytes', stack)
         self.assertIn('summary.tsv', stack)
         self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', stack)
         self.assertIn('local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS))', stack)
@@ -1945,6 +1975,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn('proto_stack_pre_res_used_bytes', stack)
         self.assertIn('vm_stack_used_bytes', stack)
         self.assertIn('heap_alloc_bytes', stack)
+        self.assertIn('heap_largest_free_supported', stack)
+        self.assertIn('heap_largest_free_bytes', stack)
         self.assertIn('summary.tsv', stack)
         self.assertNotIn("wifi", stack.lower())
 
@@ -2746,6 +2778,9 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn('cargo run --quiet -p squidc -- app launch wifi-scan-summary', wifi)
         self.assertIn('output=wifi scan', wifi)
         self.assertIn('assert_no_raw_network_identifiers', wifi)
+        self.assertIn("capture_timeout_diagnostics", wifi)
+        self.assertIn("device resources", wifi)
+        self.assertIn("device errors", wifi)
         self.assertNotIn("obsolete", wifi.lower())
         self.assertNotIn("wifi ap", wifi)
         self.assertNotIn("app.exit()", self.read("tests/hardware/c3-supermini/wifi-scan-summary/main.squid"))
@@ -2755,6 +2790,16 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         blinky_check = suite.index('c3-supermini-test-blinky.sh')
         self.assertLess(stack_check, wifi_check)
         self.assertLess(wifi_check, blinky_check)
+
+    def test_wifi_list_timeout_captures_resource_diagnostics(self):
+        wifi = self.read("scripts/c3-supermini-test-wifi-list-api.sh")
+
+        self.assertIn('output=wifi list', wifi)
+        self.assertIn("capture_timeout_diagnostics", wifi)
+        self.assertIn("device resources", wifi)
+        self.assertIn("device errors", wifi)
+        self.assertIn('assert_no_raw_network_identifiers', wifi)
+        self.assertIn('assert_no_null_auth_rows', wifi)
 
     def test_hardware_suite_runs_redacted_wifi_status_before_scan(self):
         status = self.read("scripts/c3-supermini-test-wifi-state.sh")
@@ -2773,6 +2818,32 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         scan_check = suite.index('c3-supermini-test-wifi-scan-api.sh')
         self.assertLess(stack_check, status_check)
         self.assertLess(status_check, scan_check)
+
+    def test_non_scan_hardware_suite_skips_scan_list_and_leaves_blinky_last(self):
+        suite = self.read("scripts/c3-supermini-test-hardware-non-scan.sh")
+        docs = self.read("docs/hardware_target_tests.md")
+
+        self.assertIn("[--skip-flash] [--skip-physical-input]", suite)
+        self.assertIn("SKIP_PHYSICAL_INPUT=0", suite)
+        self.assertIn("--skip-physical-input", suite)
+        self.assertIn('c3-supermini-test-input-button.sh', suite)
+        self.assertIn('if [[ "$SKIP_PHYSICAL_INPUT" != "1" ]]; then', suite)
+        self.assertIn('c3-supermini-test-wifi-state.sh" --require-real-wifi', suite)
+        self.assertIn('c3-supermini-test-wifi-ap-api.sh', suite)
+        self.assertNotIn("c3-supermini-test-wifi-scan-api.sh", suite)
+        self.assertNotIn("c3-supermini-test-wifi-list-api.sh", suite)
+
+        stack_check = suite.index('c3-supermini-measure-stack-usage.sh')
+        status_check = suite.index('c3-supermini-test-wifi-state.sh')
+        ap_check = suite.index('c3-supermini-test-wifi-ap-api.sh')
+        blinky_check = suite.index('c3-supermini-test-blinky.sh')
+        self.assertLess(stack_check, status_check)
+        self.assertLess(status_check, ap_check)
+        self.assertLess(ap_check, blinky_check)
+        self.assertEqual(suite.strip().splitlines()[-1], '"$ROOT/scripts/c3-supermini-test-blinky.sh"')
+        self.assertIn("RAM-confidence subset", docs)
+        self.assertIn("does not validate Wi-Fi scan/list", docs)
+        self.assertIn("does not validate physical input dispatch", docs)
 
     def test_wifi_station_check_is_explicit_credentials_only_and_redacted(self):
         station = self.read("scripts/c3-supermini-test-wifi-station-api.sh")

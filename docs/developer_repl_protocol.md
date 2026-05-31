@@ -84,6 +84,10 @@ byte length, and tag `4` for CRC32. The firmware-side resource path staging
 capacity is 80 bytes including the terminating NUL, so package-relative
 resource paths must be at most 79 bytes in this reference firmware.
 Each chunk uses tag `1` byte offset and tag `2` byte payload.
+Host app launch follows the same foreground lifecycle path as app-requested
+launches. The launch command enqueues the lifecycle transition and returns a
+protocol OK response once the request is accepted; later app-start failures such
+as target-rejected device bindings remain visible through `device errors`.
 
 The ESP32-C3 Zephyr reference firmware accepts app IDs up to 39 bytes. The
 shared Rust host protocol, Rust FFI validator, and Zephyr app-store buffers use
@@ -219,21 +223,26 @@ is the immediate firmware build constraint.
 `vm_stack_used_bytes` so future stack budget reductions can be based on
 representative real-device high-water data. It also reports live Zephyr heap
 telemetry as `heap_count`, `heap_free_bytes`,
-`heap_alloc_bytes`, and `heap_max_alloc_bytes`, so system-heap
-budget reductions can be based on allocator high-water data instead of static
-map size alone. `runtime_static_bytes` includes the Zephyr VM runtime object;
+`heap_alloc_bytes`, `heap_max_alloc_bytes`,
+`heap_largest_free_supported`, and `heap_largest_free_bytes`, so system-heap
+budget reductions can be based on allocator high-water data and explicit
+fragmentation-probe availability instead of static map size alone. Current
+Zephyr public heap stats do not expose a safe non-mutating largest-free-block
+query, so ESP32-C3 firmware reports `heap_largest_free_supported=0` and
+`heap_largest_free_bytes=0` until a safe probe is added. `system.memory()`
+remains a display-oriented summary; use `device resources` for raw heap
+diagnostics. `runtime_static_bytes` includes the Zephyr VM runtime object;
 the runtime shares its VM initialization scratch buffer with later storage
 completion transfer storage because those buffers are not live at the same
 time. `vm_sqbc_chunk_bytes` reports the bounded 768-byte SQBC code/read
 transfer window used for file-backed installed app dispatch; the full installed
 `main.sqbc` payload is not resident in that window. The ESP32-C3 Super Mini
-build map currently sizes the resident runtime object at 15,232 bytes. The
+build map currently sizes the resident runtime object at 15,096 bytes. The
 current ESP32-C3 canonical configuration keeps Zephyr's system heap at 36,864
-bytes; representative app, display, device binding, content, Wi-Fi status,
-scan, list, and AP workloads measured `heap_max_alloc_bytes=36376`,
-leaving roughly 0.5 KiB headroom.
-Remeasure before adding TCP, AP client throughput, BLE coexistence, or larger
-Wi-Fi workloads.
+bytes. Representative app, display, system-resource, and Wi-Fi AP start/stop
+workloads measured `heap_max_alloc_bytes=36460`, leaving roughly 0.4 KiB
+headroom. Remeasure before adding TCP, AP client throughput, BLE coexistence,
+or larger Wi-Fi workloads.
 
 Wi-Fi diagnostics should distinguish internal firmware/driver state from
 external RF proof. A successful Zephyr Wi-Fi status record does not by itself

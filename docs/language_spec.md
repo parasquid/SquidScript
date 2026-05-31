@@ -2008,8 +2008,8 @@ service.display.text(system.memory(), { x: 0, y: 0 })
 The exact metric is target-specific. On Zephyr firmware it should include
 static board RAM context plus live allocator/heap numbers that the target can
 measure. The display string is for human diagnostics; scripts that need raw
-diagnostics should use the device protocol or CLI resource command rather than
-parsing this text.
+diagnostics, including heap fragmentation probe availability, should use the
+device protocol or CLI resource command rather than parsing this text.
 
 system.startReason()
 
@@ -2452,9 +2452,10 @@ such as `service.wifi.connect("dev")`; credentials are provisioned by firmware,
 host tooling, or target setup outside SquidScript. Firmware must not expose
 configured station SSIDs or passwords in SquidScript source, state, records,
 logs, diagnostics, or source maps. Current ESP32-C3 development firmware
-supports Wi-Fi status, scan, AP start/stop, volatile station profiles, and
-station connect/disconnect through Zephyr. When the station interface has a
-preferred DHCP IPv4 address, `service.wifi.status().ipAddress` reports it.
+supports Wi-Fi status, bounded redacted scan/list snapshots, AP start/stop,
+volatile station profiles, and station connect/disconnect through Zephyr. When
+the station interface has a preferred DHCP IPv4 address,
+`service.wifi.status().ipAddress` reports it.
 
 Rules:
 - Apps may start a foreground-owned access point when the target exposes the Wi-Fi service.
@@ -2465,9 +2466,10 @@ Rules:
   interrupting radio state.
 - If the target has no Wi-Fi or scanning is unsupported, `wifi.scan()` returns
   `{ ok: false, error: "unsupported", count: 0, networks: [] }`.
-- Scan results may expose nearby SSID names, BSSIDs, channels, RSSI values, auth
-  names, and hidden flags. They must not create, update, select, or reveal saved
-  station profiles or credential values.
+- Scan results may expose nearby SSID names according to the target's bounded
+  SSID policy, SSID byte length, channels, RSSI values, auth names, and hidden
+  flags. They must not expose raw BSSID/MAC values, create, update, select, or
+  reveal saved station profiles or credential values.
 - Wi-Fi activity requested by a normal app is foreground-only in current draft.
 - Firmware must stop or release app-owned Wi-Fi requests when the app exits, crashes, or loses foreground.
 - Wi-Fi credentials must never be exposed to SquidScript source, state, records, logs, diagnostics, or source maps.

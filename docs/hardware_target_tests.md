@@ -74,6 +74,14 @@ The default Zephyr-only hardware suite covers the current required inventory:
 Keep the suite ordered so stateful reset/install tests run before the final
 visible board-state check.
 
+`scripts/c3-supermini-test-hardware-non-scan.sh` is the RAM-confidence subset
+for same-build stack and heap validation when Wi-Fi scan/list is verified
+separately. It runs the same ordered stateful checks but excludes Wi-Fi
+scan/list, so it does not validate Wi-Fi scan/list. It still runs Wi-Fi status,
+Wi-Fi AP, stack usage, and the final visible blinky check. Pass
+`--skip-physical-input` only for unattended runs where the BOOT/GPIO9 press
+cannot be confirmed; that run does not validate physical input dispatch.
+
 `scripts/c3-supermini-zephyr-test-diagnostic.sh` builds and flashes the Zephyr
 diagnostic image, then runs a bounded serial monitor check for the diagnostic
 boot banner. It writes the captured monitor output to
@@ -94,10 +102,19 @@ uses bounded native-network packet and buffer pools sized for current
 low-throughput control-plane Wi-Fi behavior and measured socket-service,
 network-management event, ESP timer task, and network RX stack budgets; TCP,
 HTTP, AP client throughput, or other bulk traffic must be remeasured before
-increasing service scope. The Zephyr system heap is sized at 36864 bytes from
-live `device resources` heap high-water data after representative app, display,
-device binding, file, Wi-Fi status, scan, list, and AP workloads; remeasure
-it before adding larger radio or networking workloads.
+increasing service scope. The Zephyr system heap is sized at 51200 bytes, the
+ESP32 Wi-Fi driver's documented system-heap floor for `ESP_WIFI_HEAP_SYSTEM`;
+remeasure it with live `device resources` data after representative app,
+display, device binding, file, Wi-Fi status, scan, and AP workloads before
+adding larger radio or networking workloads. `device resources`
+also reports `heap_largest_free_supported` and `heap_largest_free_bytes`.
+Current ESP32-C3 Zephyr builds set the supported flag to `0` because the
+public Zephyr heap stats API exposes free/allocated/high-water bytes but no
+safe non-mutating largest-free-block query.
+The deferred logger process stack stays at Zephyr's 768-byte default for this
+target class. Do not reduce it below that without rerunning Wi-Fi scan while
+capturing raw serial output, because scan-time driver and filesystem logs share
+the USB serial path used by protocol diagnostics.
 
 `targets/esp32c3-super-mini.target.json` should describe these verified Zephyr
 runtime services and defaults, not only the ESP32-C3 silicon radio capability.
@@ -197,11 +214,15 @@ The harness uses a command-level timeout for its
 request so serial stalls fail with captured output instead of hanging the full
 suite. GPIO-button device-binding launch coverage previously measured
 protocol/main stack use above the old 8 KiB budget before launch-time binding
-setup moved to the VM worker stack. Current targeted clean-boot and skip-flash
-GPIO9 input rows measure protocol/main stack use flat at 2476 bytes across
-format, install, launch, release, and timeout rows. Do not lower the configured
-main stack budget again until lifecycle, registry, GPIO input, and stack
-resource checks all pass in the same firmware build.
+setup moved to the VM worker stack. Current broader same-build non-scan
+hardware coverage measured protocol/main stack use at 4,048 bytes with
+4,144 bytes free, and VM worker stack use at 16,128 bytes with 5,888 bytes
+free. The repeatable non-scan wrapper is
+`scripts/c3-supermini-test-hardware-non-scan.sh`; a run with
+`--skip-physical-input` is useful for unattended same-build coverage but does
+not replace the GPIO9 physical press row. Do not lower the configured main stack
+budget again until lifecycle, registry, GPIO input, and stack resource checks
+all pass in the same firmware build.
 Use `scripts/c3-supermini-measure-input-stack-isolation.sh` when the input path
 needs clean high-water attribution. It builds/flashes by default, verifies the
 diagnostic boot banner, then records `after-boot`, `after-format`,
@@ -214,11 +235,16 @@ and `INPUT_BUTTON_LABEL` to run the same attribution flow against a candidate
 binding such as `tests/hardware/c3-supermini/input-button-gpio5-summary`.
 For the default ESP32-C3 Super Mini GPIO9 active-low path, short GPIO9 to GND
 during the held phase if the tiny BOOT button cannot be held reliably.
-The current clean-boot GPIO9 input isolation launch row measured protocol/main
-stack flat at 2476 bytes and VM worker stack use at 17056 bytes, with 2400
-bytes free and `input_button_state=1`. The low byte confirms one physical GPIO9
-binding was installed; the next byte reports zero currently pressed inputs
-after the BOOT/GPIO9 pull-up is configured through devicetree. The script waits
+Current same-build hardware coverage reached the BOOT/GPIO9 prompt in
+`scripts/c3-supermini-test-input-button.sh` but timed out with `output=count 0`,
+so it proves the app launched and the line was not pressed during that run; it
+does not prove physical dispatch. Current GPIO9 input isolation coverage with
+`--skip-flash` refreshed the resource summary through `after-press-timeout`.
+That run measured protocol/main stack use at 4,048 bytes with 4,144 bytes free,
+VM worker stack use at 16,128 bytes with 5,888 bytes free, and
+`input_button_state=1`. The low byte confirms one physical GPIO9 binding was
+installed; the next byte reports zero currently pressed inputs after the
+BOOT/GPIO9 pull-up is configured through devicetree. The script waits
 for release before asking for a held press and writes `after-release-timeout`
 diagnostics if the line never reads released. If the held press is not observed
 electrically, it writes `after-press-timeout` diagnostics; if the press is
@@ -282,11 +308,14 @@ pressure caused by the diagnostic command itself. Stack values are Zephyr
 high-water readings for the current boot, so unchanged stack values across rows
 mean the peak happened before or during the earliest matching snapshot, not that
 every workload used the same stack depth. It is separate from the full hardware
-suite because it intentionally resets app storage. A representative GPIO9 input
-summary run after moving app-start binding setup to the VM worker stack measured
-the protocol/main stack flat at 2476 bytes, while the VM worker stack rose from
-264 bytes to 17296 bytes during launch and kept 2160 bytes free; the serial
-`SELECT` dispatch did not increase those high-water marks.
+suite because it intentionally resets app storage. A representative current
+run measured the protocol/main stack flat at 4,048 bytes with 4,144 bytes free.
+The VM worker high-water mark was 16,128 bytes with 5,888 bytes free during
+input launch, display drawlog, system-resource, and Wi-Fi AP start workloads.
+Wi-Fi AP start/stop measured `heap_max_alloc_bytes=36460`.
+`heap_largest_free_supported=0` and `heap_largest_free_bytes=0` mean the
+current Zephyr public heap API does not expose a safe non-mutating
+largest-free-block query.
 
 `scripts/c3-supermini-test-system-resources.sh` runs after lifecycle coverage
 and before stack measurement. It installs
@@ -372,9 +401,10 @@ supported inline binding check and before the explicit device config API check.
 It installs `tests/hardware/c3-supermini/unsupported-inline-gpio-binding`,
 whose top-level `device { indicator { use "gpio:GPIO18" } }` binding is
 syntactically valid but reserved for native USB in the ESP32-C3 Super Mini
-target metadata. `app launch` must fail with `unsupported (-95)`, `device output`
-remains empty, and `device errors` remains empty, proving target validation
-rejects the binding before VM start while the protocol remains responsive.
+target metadata. Host `app launch` accepts the lifecycle request, `device output`
+remains empty, and `device errors` reports the retained runtime failure as
+`runtime=host_error`, proving target validation rejects the binding before app
+code runs while the protocol remains responsive.
 
 `scripts/c3-supermini-test-blink.sh` is an explicit visible indicator check. It
 installs `examples/blink-supermini`, launches it, verifies
@@ -404,8 +434,11 @@ and before Wi-Fi list coverage. It installs
 SquidScript app that calls `service.wifi.scan()` without credentials. The app
 prints only `ok`, `error`, and `count`; the script rejects raw BSSID, MAC, or
 local IP patterns in captured output. In the default full hardware suite it runs
-with `--require-real-wifi`, which rejects the unsupported fallback and requires
-a successful real Zephyr Wi-Fi scan.
+with `--require-real-wifi`, which requires a successful real Zephyr Wi-Fi scan.
+On output timeout, the script writes best-effort `output-timeout-resources.out`
+and `output-timeout-errors.out` captures under
+`target/hardware-tests/wifi-scan/`; these files may contain the last
+stack/heap/error evidence if the protocol path is still responsive.
 
 `scripts/c3-supermini-test-wifi-list-api.sh` runs after Wi-Fi scan coverage and
 before Wi-Fi AP coverage. It installs
@@ -413,8 +446,11 @@ before Wi-Fi AP coverage. It installs
 that iterates `service.wifi.scan().networks`. The app prints only redacted
 per-network structure: SSID length, channel, RSSI, auth, and hidden flag. It
 does not print SSIDs or BSSIDs. The script rejects raw BSSID, MAC, or local IP
-patterns in captured output, and `--require-real-wifi` requires at least one
-redacted `wifi ap` record from the real Zephyr Wi-Fi backend.
+patterns in captured output, rejects `null` auth values in AP rows, and
+`--require-real-wifi` requires at least one redacted `wifi ap` record from the
+real Zephyr Wi-Fi backend. On output timeout, the script writes best-effort
+`output-timeout-resources.out` and `output-timeout-errors.out` captures under
+`target/hardware-tests/wifi-list/`.
 
 `scripts/c3-supermini-test-wifi-station-api.sh` is explicit-credentials-only
 and is not part of the default full hardware suite. It skips successfully unless

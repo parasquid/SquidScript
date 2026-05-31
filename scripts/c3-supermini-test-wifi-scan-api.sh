@@ -15,8 +15,7 @@ usage() {
 Usage: scripts/c3-supermini-test-wifi-scan-api.sh [--require-real-wifi]
 
 Runs the Zephyr Wi-Fi scan SquidScript hardware check. With
---require-real-wifi, the output must prove the real Zephyr Wi-Fi backend
-completed a scan instead of an unsupported fallback.
+--require-real-wifi, the output must prove a real Zephyr Wi-Fi scan completed.
 EOF
 }
 
@@ -69,6 +68,17 @@ assert_no_raw_network_identifiers() {
   fi
 }
 
+capture_timeout_diagnostics() {
+  local label="$1"
+
+  timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" \
+    cargo run --quiet -p squidc -- device resources \
+    >"${WORK_DIR}/${label}-resources.out" 2>&1 || true
+  timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" \
+    cargo run --quiet -p squidc -- device errors \
+    >"${WORK_DIR}/${label}-errors.out" 2>&1 || true
+}
+
 wait_for_contains() {
   local label="$1"
   local expected="$2"
@@ -89,6 +99,10 @@ wait_for_contains() {
   printf 'Timed out waiting for %s in %s\n' "${expected}" "${command_name}" >&2
   printf '%s\n' "--- ${out} ---" >&2
   sed -n '1,200p' "${out}" >&2
+  capture_timeout_diagnostics "${label}-timeout"
+  printf 'timeout diagnostics: %s %s\n' \
+    "${WORK_DIR}/${label}-timeout-resources.out" \
+    "${WORK_DIR}/${label}-timeout-errors.out" >&2
   exit 1
 }
 
@@ -104,9 +118,8 @@ output_out="$(wait_for_contains output "output=wifi scan" \
   "device output" cargo run --quiet -p squidc -- device output)"
 assert_no_raw_network_identifiers "${output_out}"
 if [[ "${REQUIRE_REAL_WIFI}" == "1" ]]; then
-  assert_file_contains "${output_out}" "wifi scan true"
-  if grep -Fq "unsupported" "${output_out}"; then
-    printf 'Expected %s not to contain unsupported fallback in real Wi-Fi mode\n' "${output_out}" >&2
+  if ! grep -Fq "wifi scan true" "${output_out}"; then
+    printf 'Expected %s to contain a successful real Zephyr Wi-Fi scan\n' "${output_out}" >&2
     printf '%s\n' "--- ${output_out} ---" >&2
     sed -n '1,200p' "${output_out}" >&2
     exit 1

@@ -122,7 +122,7 @@ walks can hold nested directories open.
 Zephyr filesystem filename buffer is capped at 80 bytes, matching the current
 package-relative resource-path protocol bound and avoiding 128-byte `fs_dirent`
 name slots in every directory/stat stack frame.
-Resource diagnostics are encoded directly into the caller-owned 826-byte
+Resource diagnostics are encoded directly into the caller-owned 916-byte
 protocol response buffer and do not keep a resident metric staging array.
 Runtime diagnostic history is bounded to four 26-byte trace lines, five 54-byte
 output lines, and four 48-byte draw-log lines so recent debugging data remains
@@ -343,24 +343,29 @@ probe, so `fs_storage_load_state` now emits 48 bytes instead of 192 bytes and
 The Zephyr VM context reserve follows the measured 32-bit Rust FFI context
 size. The compact substring-capable VM string interner keeps the measured
 context under the current 10,880-byte ESP32-C3 reserve.
-Wi-Fi scan result backing uses the runtime transfer scratch because the Rust
-FFI copies scan results out of the callback before returning to the VM. This
-keeps scan SSID/BSSID/auth/network arrays out of the resident runtime object
-and reduces `runtime.3` from 14,720 bytes to 14,264 bytes. The diagnostic
+Wi-Fi scan result backing uses the runtime transfer scratch because the Rust FFI
+copies scan results out of the callback before returning to the VM. This keeps
+scan SSID/BSSID/auth/network arrays out of the resident runtime object. The
+ESP32-C3 Zephyr backend returns bounded real scan snapshots through the driver
+scan callback; BSSID/MAC data is not exposed to SquidScript, and Zephyr auth
+labels are normalized to the portable SquidScript auth labels. The diagnostic
 firmware keeps a transfer-owner marker for this shared scratch so scratch,
 storage-completion, and Wi-Fi-scan users fail on overlap instead of silently
-aliasing the same bytes. The owner marker guards C-side scratch construction
-and service callback phases; the Wi-Fi scan result still relies on the Rust FFI
+aliasing the same bytes. The owner marker guards C-side scratch construction and
+service callback phases; enabled Wi-Fi scan results still rely on the Rust FFI
 copying result records before returning to VM execution.
 The Rust VM uses one string interner for SQBC literals, firmware static strings,
 and dynamic runtime text. Dynamic text can reuse exact SQBC/static matches and
 contiguous substrings of existing dynamic/static text. Current ESP32-C3
-firmware symbols report `runtime.4` at 15,096 bytes; the target build reports
-198,816 bytes of linker DRAM and 198,800 bytes through the RAM audit.
-The resident protocol response buffer is 826 bytes, matching the current
-resources-response ceiling: 806 bytes of metric payload plus the 20-byte frame
-header. This trims the previous 848-byte buffer without changing the response
-set.
+firmware symbols report `runtime.4` at 15,096 bytes; the current Wi-Fi
+scan-enabled target build reports 215,424 bytes of linker DRAM and
+215,396 bytes through the RAM audit.
+The resident protocol response buffer is 916 bytes, matching the current
+resources-response ceiling: 896 bytes of metric payload plus the 20-byte frame
+header. The larger ceiling is intentional: `device resources` now includes
+heap largest-free-block support/value fields so host RAM diagnostics can
+distinguish "not exposed safely by this Zephyr build" from an actual zero-byte
+largest block.
 The resident serial receive buffer is 256 bytes, with host upload chunking
 derived from the same encoded frame budget. Transfer chunk requests use
 36 bytes of protocol overhead, so current host tooling sends 220-byte upload

@@ -4648,24 +4648,34 @@ fn wifi_access_point_from_ffi(network: &SqvmWifiAccessPoint) -> Result<WifiAcces
             required_ffi_str(network.bssid, network.bssid_len)?
         })?)
     };
-    WifiAccessPoint::new(
+    let mut access_point = WifiAccessPoint::new(
         ssid,
         bssid,
         network.channel,
         network.rssi,
         wifi_auth_static(unsafe { optional_ffi_str(network.auth, network.auth_len)? }),
         network.hidden,
-    )
+    )?;
+    access_point.ssid_length = network.ssid_length;
+    Ok(access_point)
 }
 
 fn wifi_auth_static(value: Option<&str>) -> Option<&'static str> {
     match value {
-        Some("open") => Some("open"),
-        Some("wep") => Some("wep"),
-        Some("wpa") => Some("wpa"),
-        Some("wpa2") => Some("wpa2"),
-        Some("wpa3") => Some("wpa3"),
-        Some("unknown") => Some("unknown"),
+        Some("open") | Some("OPEN") => Some("open"),
+        Some("wep") | Some("WEP") | Some("WEP-OPEN") | Some("WEP-SHARED") => Some("wep"),
+        Some("wpa") | Some("WPA-PSK") | Some("WPA/WPA2/WPA3 PSK") => Some("wpa"),
+        Some("wpa2") | Some("WPA2-PSK") | Some("WPA2-PSK-SHA256") | Some("FT-PSK") => {
+            Some("wpa2")
+        }
+        Some("wpa3")
+        | Some("WPA3-SAE-HNP")
+        | Some("WPA3-SAE-H2E")
+        | Some("WPA3-SAE-AUTO")
+        | Some("WPA3-SAE-EXT-KEY")
+        | Some("FT-SAE") => Some("wpa3"),
+        Some("unknown") | Some("UNKNOWN") => Some("unknown"),
+        Some(_) => Some("unknown"),
         _ => None,
     }
 }

@@ -201,6 +201,7 @@ struct sq_vm_runtime {
 	char wifi_station_ip[SQ_VM_RUNTIME_WIFI_IPV4_LEN];
 	size_t wifi_scan_count;
 	int wifi_scan_status;
+	bool wifi_scan_collecting;
 	int wifi_station_connect_status;
 	int wifi_station_disconnect_status;
 	bool wifi_ap_active;
