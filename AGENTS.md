@@ -44,12 +44,12 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   docs, keep it in saved memory for durable cross-session context or in `/tmp`
   or another gitignored scratch file for temporary notes instead of turning
   project documentation into a diary.
-- When executing a plan, create or update the todo tracker before doing any
-  implementation, investigation, or verification work from that plan. Treat
-  this as a hard gate for plan execution: every active implementation step
-  should be represented in the tracker, and item statuses should be updated as
-  work starts, completes, or becomes blocked so progress and remaining work
-  survive context compaction.
+- Every active implementation plan must be added to the todo tracker before
+  doing implementation, investigation, or verification work from that plan.
+  Treat this as a hard gate for plan execution: every active implementation
+  step should be represented in the tracker, and item statuses should be
+  updated as work starts, completes, or becomes blocked so the plan, progress,
+  and remaining work survive context compaction.
 - When the user asks for memory numbers without further qualification, report
   RAM numbers by default. Treat flash/app-storage/image-size numbers as flash
   storage and only include them when requested or clearly relevant.
