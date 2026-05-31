@@ -58,13 +58,15 @@ The language should be useful because its device contracts are explicit, not bec
 ### 2.1 Learning From Embedded Scripting Projects
 
 SquidScript should learn from mature embedded scripting projects such as
-Espruino and MicroPython without adopting their full runtime contracts.
+Espruino, MicroPython, and PikaPython without adopting their full runtime
+contracts.
 
 Useful concepts include clear hardware affordances, explicit input
 configuration, edge-triggered device behavior, debounce controls, timers,
-interactive hardware exploration, and fast developer feedback. These ideas
-should be evaluated through SquidScript's app model rather than copied
-directly.
+interactive hardware exploration, fast developer feedback, serial app download
+workflows, memory diagnostics, board capability matrices, and host/firmware
+binding declarations. These ideas should be evaluated through SquidScript's app
+model rather than copied directly.
 
 The constraint is deliberate: SquidScript is not trying to be a general
 programming language. SquidScript apps are compiled off-device, validated before
@@ -73,6 +75,15 @@ capabilities. Event handlers are named declarations, not arbitrary JavaScript
 callbacks or closures. Input should flow through device declarations, target
 metadata, and logical events. Screens should stay render-pure so firmware can
 redraw, recover, or refresh without changing app state.
+
+SquidScript service APIs should be documented as explicit interfaces between
+compiled apps and firmware hosts. A service capability should have a stable
+source contract, bytecode lowering, VM callback shape, firmware implementation
+contract, target capability metadata, diagnostics, and tests. PikaPython's
+interface-oriented C-module declarations are useful inspiration for that
+documentation style; SquidScript should express the pattern in its own
+compiler/SQBC/runtime terms rather than adopting Python syntax or a general
+on-device module system.
 
 For users who want a mature general-purpose programming language on a
 microcontroller, Espruino is often a better fit when they want JavaScript,

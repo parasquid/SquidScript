@@ -10,6 +10,19 @@ host the Rust VM through `squidvm-ffi`. Coverage should prove that implemented
 callbacks have Rust FFI tests and Zephyr ztests for success, boundary,
 unsupported, and error/status behavior where those states apply.
 
+## Service Interface Rule
+
+Future SquidScript service interfaces should move as complete host contracts,
+not as firmware-only conveniences. For a new VM-visible service callback, add
+or update the source API contract, compiler lowering, SQBC builtin ID, Rust VM
+callback shape, C FFI boundary, Zephyr runtime wiring, target capability
+metadata when applicable, diagnostics, Rust FFI equivalence tests, and Zephyr
+ztests in the same slice. Interface-declaration systems such as PikaPython's
+C-module `.pyi` files are useful inspiration for keeping host bindings explicit;
+SquidScript expresses that contract through its language docs, compiler tables,
+SQBC ABI, FFI headers, and firmware tests rather than through Python module
+stubs.
+
 ## Current Evidence
 
 - Rust FFI dispatch tests cover success paths for debug output, display draw

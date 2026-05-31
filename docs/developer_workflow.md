@@ -27,6 +27,33 @@ Open:
 http://127.0.0.1:5174/
 ```
 
+## Host-Compiled Serial App Workflow
+
+SquidScript apps compile on the host. The firmware receives SQBC bytecode or a
+package produced by `squidc`; it does not compile source as the normal
+development or production path. This keeps parsing, semantic checks, bytecode
+validation, source maps, and package assembly in host tooling while the device
+keeps a bounded runtime and firmware-owned service surface.
+
+Common serial workflows:
+
+```bash
+cargo run -p squidc -- build examples/blinky-supermini/main.squid --out target/blinky.sqbc
+cargo run -p squidc -- run examples/blinky-supermini/main.squid
+cargo run -p squidc -- app install examples/blinky-supermini/main.squid
+cargo run -p squidc -- app launch blinky-supermini
+cargo run -p squidc -- device output
+cargo run -p squidc -- device resources
+```
+
+`run` is the fast host-compiled temp-app path: `squidc` compiles the source on
+the host, uploads the resulting SQBC through the Zephyr temp-run protocol, and
+launches it without installing a foreground app. `app install` is the persistent
+path: source input is still compiled on the host, then uploaded as installed
+SQBC or package data. Use `device output`, `device trace`, `device drawlog`,
+`device lifecycle`, `device errors`, and `device resources` to inspect
+firmware-visible app behavior after launch.
+
 ## Rust/WASM Toolchain
 
 `npm run build` runs `npm run wasm:build`, which requires:

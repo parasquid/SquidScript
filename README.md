@@ -88,16 +88,19 @@ CrossPoint may share nearby interests, but SquidScript's scope is the language a
 
 ## SquidScript And General Embedded Scripting
 
-SquidScript, [Espruino](https://www.espruino.com/), and
-[MicroPython](https://micropython.org/) all make small-device programming more
-approachable, but they choose different runtime contracts.
+SquidScript, [Espruino](https://www.espruino.com/),
+[MicroPython](https://micropython.org/), and
+[PikaPython](https://github.com/pikasTech/PikaPython) all make small-device
+programming more approachable, but they choose different runtime contracts.
 
 Espruino is a mature JavaScript runtime and ecosystem for microcontrollers. It
 is a strong fit when you want a general programming language on the device,
 broad JavaScript familiarity, interactive hardware exploration, and an
 established app/module ecosystem. MicroPython is another strong fit for users
 who want a mature Python implementation for microcontrollers and its embedded
-ecosystem.
+ecosystem. PikaPython is a useful reference for constrained-device positioning,
+serial script download workflows, host/C binding surfaces, memory visibility in
+examples, and board/capability matrices.
 
 SquidScript is intentionally narrower. It is an off-device compiled app
 language for constrained display devices: apps become prevalidated bytecode,
@@ -105,8 +108,10 @@ run through firmware-owned services, use explicit target capabilities, handle
 declared events deterministically, and keep screen rendering replayable.
 Espruino has inspired some of SquidScript's hardware-facing design questions,
 especially around clear input configuration and edge-triggered device behavior,
-but SquidScript adapts those ideas into a bounded app model instead of becoming
-a general embedded programming language.
+and PikaPython is a useful reference for documenting tiny-device workflows and
+host-to-firmware bindings. SquidScript adapts those ideas into a bounded app
+model instead of becoming a general embedded programming language, embedded
+Python runtime, or on-device source compiler.
 
 ## Related Xteink Firmware References
 
