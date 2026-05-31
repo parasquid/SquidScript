@@ -1,15 +1,51 @@
+import chrome from "lib/chrome.squid"
+
+requires state {
+  file: string
+  navCount: int
+  tocIndex: int
+  tocTop: int
+}
+
 function drawTocRow(row, navIndex) {
   if (navIndex < state.navCount) {
     let book = binbook.open(state.file)
-    let entry = binbook.navEntry(book, navIndex)
-    let y = 64 + row * 72
+    let _entry = binbook.navEntry(book, navIndex)
+    let y = 64
+    if (row == 1) {
+      y = 136
+    } else {
+      if (row == 2) {
+        y = 208
+      } else {
+        if (row == 3) {
+          y = 280
+        } else {
+          if (row == 4) {
+            y = 352
+          } else {
+            if (row == 5) {
+              y = 424
+            } else {
+              if (row == 6) {
+                y = 496
+              } else {
+                if (row == 7) {
+                  y = 568
+                }
+              }
+            }
+          }
+        }
+      }
+    }
 
     if (navIndex == state.tocIndex) {
       service.display.rect(0, y - 8, 480, 60, { fillColor: "gray4" })
     }
 
-    service.display.text(entry.title, { x: 24, y: y, w: 360, h: 32, fontHeight: 18 })
-    service.display.text(string.format("{}", entry.renderedPageNumber + 1), {
+    service.display.text(string.format("Chapter {}", navIndex + 1), { x: 24, y: y, w: 360, h: 32, fontHeight: 18 })
+    service.display.text(string.format("{}", navIndex + 1), {
       x: 390,
       y: y,
       w: 70,
@@ -20,9 +56,9 @@ function drawTocRow(row, navIndex) {
   }
 }
 
-screen("toc") {
+export screen("toc") {
   service.display.clear("white")
-  drawTopBar("Table of Contents")
+  chrome.drawTopBar("Table of Contents")
 
   if (state.navCount == 0) {
     service.display.text("No table of contents", { x: 24, y: 120, w: 432, h: 40, fontHeight: 24 })
@@ -37,5 +73,5 @@ screen("toc") {
     drawTocRow(7, state.tocTop + 7)
   }
 
-  drawBottomBar("UP/DOWN select  SELECT open  BACK reader")
+  chrome.drawBottomBar("UP/DOWN select  SELECT open  BACK reader")
 }

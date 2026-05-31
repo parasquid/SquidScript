@@ -1,7 +1,7 @@
 use std::{fs, path::Path};
 
 use squidc_core::{
-    compile::{compile_with_profile, CompileRequest},
+    compile::{compile_path_with_profile, compile_with_profile, CompileRequest},
     profile::{BuildProfile, PORTABLE_TARGET_ID},
     sqbc::encode_sqbc_with_profile,
 };
@@ -49,6 +49,27 @@ pub fn compile_source_to_sqbc(
         },
         profile,
     );
+    if !compiled.ok {
+        for diagnostic in compiled.diagnostics {
+            eprintln!(
+                "{}:{}..{}: {}",
+                diagnostic.code, diagnostic.span.start, diagnostic.span.end, diagnostic.message
+            );
+        }
+        return Err("compile failed".to_string());
+    }
+    let ir = compiled
+        .ir
+        .ok_or_else(|| "compiler returned no IR".to_string())?;
+    encode_sqbc_with_profile(&ir, profile).map_err(|error| error.message)
+}
+
+pub fn compile_path_to_sqbc(
+    input: &Path,
+    target: &str,
+    profile: BuildProfile,
+) -> Result<Vec<u8>, String> {
+    let compiled = compile_path_with_profile(input, target, profile);
     if !compiled.ok {
         for diagnostic in compiled.diagnostics {
             eprintln!(

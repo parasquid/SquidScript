@@ -1,12 +1,13 @@
 app "device-binding-summary" target "esp32c3-super-mini"
 
+import indicator from "lib/indicator.squid"
+
 device {
   indicator { use "device/indicator.sqdevice" }
 }
 
 event.on("app.start") {
-  service.indicator.write(true)
-  debug.print("device binding ready")
+  indicator.ready("device binding ready")
 }
 
 screen("main") {}

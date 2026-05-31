@@ -1,6 +1,7 @@
 use crate::{
     ast::{
-        AstAppDecl, AstFunction, AstHandler, AstRoot, AstScreen, AstStateBlock, AstTriggerBlock,
+        AstAppDecl, AstFunction, AstHandler, AstImport, AstRoot, AstScreen, AstStateBlock,
+        AstStateRequirement, AstTriggerBlock,
     },
     device_config,
     diagnostic::{error, Diagnostic, SourceSpan},
@@ -70,7 +71,19 @@ impl Parser<'_> {
                 continue;
             }
 
-            if self.at_qualified_ident("app", "triggers") {
+            if self.at_ident("include") {
+                self.reject_pending_attribute();
+                self.parse_removed_include(builder);
+            } else if self.at_ident("import") {
+                self.reject_pending_attribute();
+                self.parse_import(builder);
+            } else if self.at_ident("requires") {
+                self.reject_pending_attribute();
+                self.parse_required_state(builder);
+            } else if self.at_ident("export") {
+                self.reject_pending_attribute();
+                self.parse_exported_decl(builder);
+            } else if self.at_qualified_ident("app", "triggers") {
                 self.reject_pending_attribute();
                 self.parse_app_triggers(builder);
             } else if self.at_ident("app") {
@@ -87,15 +100,136 @@ impl Parser<'_> {
                 self.parse_event_handler(builder, preload);
             } else if self.at_ident("function") {
                 self.reject_pending_attribute();
-                self.parse_function(builder);
+                self.parse_function(builder, false);
             } else if self.at_ident("screen") {
                 self.reject_pending_attribute();
-                self.parse_screen(builder);
+                self.parse_screen(builder, false);
             } else if !self.at_end() {
                 self.reject_pending_attribute();
                 self.bump(builder);
             }
         }
+    }
+
+    fn parse_removed_include(&mut self, builder: &mut GreenNodeBuilder) {
+        let start = self.peek().map(|token| token.span.start).unwrap_or(0);
+        self.bump(builder);
+        while !self.at_end() && !self.at_ident("app") && !self.at_ident("state") {
+            if self.at_kind(TokenKind::String) {
+                self.bump(builder);
+                break;
+            }
+            self.bump(builder);
+        }
+        let end = self.previous_end().unwrap_or(start);
+        self.diagnostics.push(error(
+            "E_INCLUDE_REMOVED",
+            "include has been removed; use import alias from \"path\"",
+            start,
+            end,
+        ));
+    }
+
+    fn parse_import(&mut self, builder: &mut GreenNodeBuilder) {
+        builder.start_node(SquidLang::kind_to_raw(SquidKind::Token));
+        let start = self.peek().map(|token| token.span.start).unwrap_or(0);
+        self.bump(builder);
+        self.consume_ws(builder);
+        let alias = self.consume_ident(builder).unwrap_or_default();
+        self.consume_ws(builder);
+        if self.at_ident("from") {
+            self.bump(builder);
+        } else {
+            self.diagnostics.push(error(
+                "E_IMPORT_SYNTAX",
+                "import must use: import alias from \"path\"",
+                start,
+                self.previous_end().unwrap_or(start),
+            ));
+        }
+        self.consume_ws(builder);
+        let path = self.consume_string(builder).unwrap_or_default();
+        let end = self.previous_end().unwrap_or(start);
+        builder.finish_node();
+        if !alias.is_empty() && !path.is_empty() {
+            self.ast.imports.push(AstImport {
+                alias,
+                path,
+                span: SourceSpan { start, end },
+            });
+        }
+    }
+
+    fn parse_exported_decl(&mut self, builder: &mut GreenNodeBuilder) {
+        let start = self.peek().map(|token| token.span.start).unwrap_or(0);
+        self.bump(builder);
+        self.consume_ws(builder);
+        if self.at_ident("function") {
+            self.parse_function(builder, true);
+        } else if self.at_ident("screen") {
+            self.parse_screen(builder, true);
+        } else {
+            self.diagnostics.push(error(
+                "E_EXPORT_TARGET",
+                "export is only valid before function or screen",
+                start,
+                self.previous_end().unwrap_or(start),
+            ));
+        }
+    }
+
+    fn parse_required_state(&mut self, builder: &mut GreenNodeBuilder) {
+        builder.start_node(SquidLang::kind_to_raw(SquidKind::Token));
+        let start = self.peek().map(|token| token.span.start).unwrap_or(0);
+        self.bump(builder); // requires
+        self.consume_ws(builder);
+        if self.at_ident("state") {
+            self.bump(builder);
+        }
+        self.consume_ws(builder);
+        if self.at_kind(TokenKind::OpenBrace) {
+            self.bump(builder);
+        }
+        while !self.at_end() {
+            self.consume_ws(builder);
+            if self.at_kind(TokenKind::CloseBrace) {
+                self.bump(builder);
+                break;
+            }
+            let field_start = self.peek().map(|token| token.span.start).unwrap_or(start);
+            let Some(name) = self.consume_ident(builder) else {
+                self.bump(builder);
+                continue;
+            };
+            self.consume_ws(builder);
+            if self.at_kind(TokenKind::Colon) {
+                self.bump(builder);
+            }
+            self.consume_ws(builder);
+            let value_type = self.consume_ident(builder).unwrap_or_default();
+            self.consume_ws(builder);
+            let nullable = if self.at_kind(TokenKind::Question) {
+                self.bump(builder);
+                true
+            } else {
+                false
+            };
+            let field_end = self.previous_end().unwrap_or(field_start);
+            if !value_type.is_empty() {
+                self.ast.required_state.push(AstStateRequirement {
+                    name,
+                    value_type,
+                    nullable,
+                    span: SourceSpan {
+                        start: field_start,
+                        end: field_end,
+                    },
+                });
+            }
+            self.consume_ws(builder);
+            self.consume_comma(builder);
+        }
+        builder.finish_node();
     }
 
     fn parse_attribute(&mut self, builder: &mut GreenNodeBuilder) {
@@ -371,7 +505,7 @@ impl Parser<'_> {
         builder.finish_node();
     }
 
-    fn parse_screen(&mut self, builder: &mut GreenNodeBuilder) {
+    fn parse_screen(&mut self, builder: &mut GreenNodeBuilder, exported: bool) {
         builder.start_node(SquidLang::kind_to_raw(SquidKind::Token));
         let start = self.peek().map(|token| token.span.start).unwrap_or(0);
 
@@ -418,6 +552,7 @@ impl Parser<'_> {
             name,
             render,
             statements,
+            exported,
             span: SourceSpan { start, end },
         });
     }
@@ -478,7 +613,7 @@ impl Parser<'_> {
         });
     }
 
-    fn parse_function(&mut self, builder: &mut GreenNodeBuilder) {
+    fn parse_function(&mut self, builder: &mut GreenNodeBuilder, exported: bool) {
         builder.start_node(SquidLang::kind_to_raw(SquidKind::Token));
         let start = self.peek().map(|token| token.span.start).unwrap_or(0);
         self.bump(builder);
@@ -497,6 +632,7 @@ impl Parser<'_> {
             name,
             params,
             statements,
+            exported,
             span: SourceSpan { start, end },
         });
     }
@@ -786,7 +922,10 @@ impl Parser<'_> {
                 Some(IrStatement::ScreenRefresh)
             }
             ("screen", "open") => {
-                let screen = self.consume_string(builder).unwrap_or_default();
+                let screen = self
+                    .consume_string(builder)
+                    .or_else(|| self.consume_symbolic_screen_ref(builder))
+                    .unwrap_or_default();
                 self.consume_call_tail(builder);
                 Some(IrStatement::ScreenOpen { screen })
             }
@@ -1465,6 +1604,19 @@ impl Parser<'_> {
         let text = self.peek()?.text.clone();
         self.bump(builder);
         Some(text.trim_matches('"').to_string())
+    }
+
+    fn consume_symbolic_screen_ref(&mut self, builder: &mut GreenNodeBuilder) -> Option<String> {
+        self.consume_ws(builder);
+        let first = self.consume_ident(builder)?;
+        self.consume_ws(builder);
+        if !self.at_kind(TokenKind::Dot) {
+            return Some(first);
+        }
+        self.bump(builder);
+        self.consume_ws(builder);
+        let second = self.consume_ident(builder)?;
+        Some(format!("{first}.{second}"))
     }
 
     fn consume_ident(&mut self, builder: &mut GreenNodeBuilder) -> Option<String> {

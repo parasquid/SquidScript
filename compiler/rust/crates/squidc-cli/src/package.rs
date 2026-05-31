@@ -7,7 +7,7 @@ use std::{
 use squidc_core::{profile::BuildProfile, sqbc::read_app_id};
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
-use crate::compile::compile_source_to_sqbc;
+use crate::compile::compile_path_to_sqbc;
 
 pub struct PackageResult {
     pub out: PathBuf,
@@ -36,8 +36,7 @@ pub fn package_app_dir(
         return Err(format!("app directory not found: {}", app_dir.display()));
     }
     let main = app_dir.join("main.squid");
-    let source = load_source_with_includes(app_dir, &main, 0, &mut Vec::new())?;
-    let sqbc = compile_source_to_sqbc(&source, target, profile)?;
+    let sqbc = compile_path_to_sqbc(&main, target, profile)?;
     let app_id = read_app_id(&sqbc)
         .map_err(|error| error.message)?
         .ok_or_else(|| "compiled SQBC has no app id".to_string())?;
@@ -60,66 +59,6 @@ pub fn package_app_dir(
         entries: entries.into_iter().map(|entry| entry.path).collect(),
         bytes,
     })
-}
-
-fn load_source_with_includes(
-    app_dir: &Path,
-    path: &Path,
-    depth: usize,
-    seen: &mut Vec<PathBuf>,
-) -> Result<String, String> {
-    if depth > 4 {
-        return Err("include depth limit exceeded".to_string());
-    }
-    let canonical_app = app_dir
-        .canonicalize()
-        .map_err(|error| format!("failed to read {}: {error}", app_dir.display()))?;
-    let canonical_path = path
-        .canonicalize()
-        .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
-    if !canonical_path.starts_with(&canonical_app) {
-        return Err(format!("include escapes app directory: {}", path.display()));
-    }
-    if seen.contains(&canonical_path) {
-        return Err(format!("include cycle at {}", path.display()));
-    }
-    seen.push(canonical_path);
-
-    let text = fs::read_to_string(path)
-        .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
-    let mut out = String::new();
-    for line in text.lines() {
-        if let Some(include) = parse_include(line)? {
-            if include.contains("..") || include.starts_with('/') || include.contains('\\') {
-                return Err(format!("invalid include path: {include}"));
-            }
-            let include_path = app_dir.join(include);
-            out.push_str(&load_source_with_includes(
-                app_dir,
-                &include_path,
-                depth + 1,
-                seen,
-            )?);
-            out.push('\n');
-        } else {
-            out.push_str(line);
-            out.push('\n');
-        }
-    }
-    seen.pop();
-    Ok(out)
-}
-
-fn parse_include(line: &str) -> Result<Option<&str>, String> {
-    let trimmed = line.trim();
-    let Some(rest) = trimmed.strip_prefix("include") else {
-        return Ok(None);
-    };
-    let rest = rest.trim_start();
-    if !rest.starts_with('"') || !rest.ends_with('"') || rest.len() < 2 {
-        return Err(format!("invalid include directive: {line}"));
-    }
-    Ok(Some(&rest[1..rest.len() - 1]))
 }
 
 fn collect_resource_entries(

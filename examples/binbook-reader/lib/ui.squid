@@ -1,4 +1,22 @@
-function loadBookInfo() {
+requires state {
+  file: string
+  title: string
+  pageIndex: int
+  pageCount: int
+  navCount: int
+  tocIndex: int
+  tocTop: int
+  jumpPage: int
+  browserIndex: int
+  uiState: string
+}
+
+import browser from "screens/browser.squid"
+import reader from "screens/reader.squid"
+import toc from "screens/toc.squid"
+import jump from "screens/jump.squid"
+
+export function loadBookInfo() {
   let book = binbook.open(state.file)
   let info = binbook.info(book)
 
@@ -20,24 +38,24 @@ function loadBookInfo() {
   }
 }
 
-function saveAndRefresh() {
+export function saveAndRefresh() {
   state.save()
   screen.refresh()
 }
 
-function openBrowser() {
+export function openBrowser() {
   stateMachine.enter("uiState", "browser")
-  screen.open("browser")
+  screen.open("browser.browser")
 }
 
-function browserPrevious() {
+export function browserPrevious() {
   if (state.browserIndex > 0) {
     state.browserIndex = state.browserIndex - 1
     saveAndRefresh()
   }
 }
 
-function browserNext() {
+export function browserNext() {
   if (state.file != "") {
     if (state.browserIndex < 1) {
       state.browserIndex = state.browserIndex + 1
@@ -46,7 +64,7 @@ function browserNext() {
   }
 }
 
-function openSelectedBrowserItem() {
+export function openSelectedBrowserItem() {
   if (state.browserIndex == 0) {
     browseForBook()
   } else {
@@ -54,7 +72,7 @@ function openSelectedBrowserItem() {
   }
 }
 
-function browseForBook() {
+export function browseForBook() {
   let picked = file.pickFile(".binbook")
 
   if (picked != "") {
@@ -69,7 +87,7 @@ function browseForBook() {
   }
 }
 
-function resumeBook() {
+export function resumeBook() {
   if (state.file != "") {
     loadBookInfo()
     state.save()
@@ -77,7 +95,7 @@ function resumeBook() {
   }
 }
 
-function openToc() {
+export function openToc() {
   if (state.tocIndex < state.tocTop) {
     state.tocTop = state.tocIndex
   }
@@ -87,21 +105,21 @@ function openToc() {
   }
 
   stateMachine.enter("uiState", "toc")
-  screen.open("toc")
+  screen.open("toc.toc")
 }
 
-function openJump() {
+export function openJump() {
   state.jumpPage = state.pageIndex + 1
   stateMachine.enter("uiState", "jump")
-  screen.open("jump")
+  screen.open("jump.jump")
 }
 
-function openReader() {
+export function openReader() {
   stateMachine.enter("uiState", "reader")
-  screen.open("reader")
+  screen.open("reader.reader")
 }
 
-function handleUp() {
+export function handleUp() {
   if (stateMachine.is("uiState", "reader")) {
     previousChapter()
   } else {
@@ -119,7 +137,7 @@ function handleUp() {
   }
 }
 
-function handleDown() {
+export function handleDown() {
   if (stateMachine.is("uiState", "reader")) {
     nextChapter()
   } else {
@@ -137,7 +155,7 @@ function handleDown() {
   }
 }
 
-function handleSelect() {
+export function handleSelect() {
   if (stateMachine.is("uiState", "reader")) {
     openJump()
   } else {
@@ -155,21 +173,21 @@ function handleSelect() {
   }
 }
 
-function previousPage() {
+export function previousPage() {
   if (state.pageIndex > 0) {
     state.pageIndex = state.pageIndex - 1
     saveAndRefresh()
   }
 }
 
-function nextPage() {
+export function nextPage() {
   if (state.pageIndex < state.pageCount - 1) {
     state.pageIndex = state.pageIndex + 1
     saveAndRefresh()
   }
 }
 
-function setPage(newPageIndex) {
+export function setPage(newPageIndex) {
   if (newPageIndex < 0) {
     state.pageIndex = 0
   } else {
@@ -183,7 +201,7 @@ function setPage(newPageIndex) {
   saveAndRefresh()
 }
 
-function nextChapter() {
+export function nextChapter() {
   if (state.navCount > 0) {
     let book = binbook.open(state.file)
     let scan = state.tocIndex + 1
@@ -204,7 +222,7 @@ function nextChapter() {
   }
 }
 
-function previousChapter() {
+export function previousChapter() {
   if (state.navCount > 0) {
     let book = binbook.open(state.file)
     let scan = state.tocIndex - 1
@@ -225,7 +243,7 @@ function previousChapter() {
   }
 }
 
-function tocPrevious() {
+export function tocPrevious() {
   if (state.tocIndex > 0) {
     state.tocIndex = state.tocIndex - 1
 
@@ -237,7 +255,7 @@ function tocPrevious() {
   }
 }
 
-function tocNext() {
+export function tocNext() {
   if (state.tocIndex < state.navCount - 1) {
     state.tocIndex = state.tocIndex + 1
 
@@ -249,7 +267,7 @@ function tocNext() {
   }
 }
 
-function openSelectedTocEntry() {
+export function openSelectedTocEntry() {
   if (state.navCount > 0) {
     let book = binbook.open(state.file)
     let entry = binbook.navEntry(book, state.tocIndex)
@@ -260,7 +278,7 @@ function openSelectedTocEntry() {
   }
 }
 
-function jumpForward10() {
+export function jumpForward10() {
   if (state.jumpPage + 10 <= state.pageCount) {
     state.jumpPage = state.jumpPage + 10
   } else {
@@ -270,7 +288,7 @@ function jumpForward10() {
   saveAndRefresh()
 }
 
-function jumpBack10() {
+export function jumpBack10() {
   if (state.jumpPage > 10) {
     state.jumpPage = state.jumpPage - 10
   } else {
@@ -280,34 +298,22 @@ function jumpBack10() {
   saveAndRefresh()
 }
 
-function jumpForward1() {
+export function jumpForward1() {
   if (state.jumpPage < state.pageCount) {
     state.jumpPage = state.jumpPage + 1
     saveAndRefresh()
   }
 }
 
-function jumpBack1() {
+export function jumpBack1() {
   if (state.jumpPage > 1) {
     state.jumpPage = state.jumpPage - 1
     saveAndRefresh()
   }
 }
 
-function commitJump() {
+export function commitJump() {
   state.pageIndex = state.jumpPage - 1
   state.save()
   openReader()
-}
-
-function drawTopBar(label) {
-  service.display.rect(0, 0, 480, 36, { fillColor: "gray0" })
-  service.display.text(label, { x: 12, y: 8, w: 456, h: 24, fontHeight: 18 })
-  service.display.line(0, 38, 480, 38, { color: "gray15" })
-}
-
-function drawBottomBar(label) {
-  service.display.rect(0, 758, 480, 42, { fillColor: "gray0" })
-  service.display.line(0, 758, 480, 758, { color: "gray15" })
-  service.display.text(label, { x: 12, y: 770, w: 456, h: 24, fontHeight: 18, align: "right" })
 }

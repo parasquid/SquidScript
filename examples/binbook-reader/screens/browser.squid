@@ -1,6 +1,16 @@
-screen("browser") {
+import chrome from "lib/chrome.squid"
+
+requires state {
+  file: string
+  title: string
+  pageIndex: int
+  pageCount: int
+  browserIndex: int
+}
+
+export screen("browser") {
   service.display.clear("white")
-  drawTopBar("BinBook Reader")
+  chrome.drawTopBar("BinBook Reader")
 
   if (state.browserIndex == 0) {
     service.display.rect(20, 120, 440, 72, { fillColor: "gray4" })
@@ -27,5 +37,5 @@ screen("browser") {
     service.display.text("No book to resume", { x: 36, y: 238, w: 408, h: 32, fontHeight: 18 })
   }
 
-  drawBottomBar("UP/DOWN select  SELECT open  BACK exit")
+  chrome.drawBottomBar("UP/DOWN select  SELECT open  BACK exit")
 }

@@ -5,6 +5,8 @@ use crate::{
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AstRoot {
+    pub imports: Vec<AstImport>,
+    pub required_state: Vec<AstStateRequirement>,
     pub app: Option<AstAppDecl>,
     pub state: Option<AstStateBlock>,
     pub device_bindings: Vec<IrDeviceBinding>,
@@ -12,6 +14,21 @@ pub struct AstRoot {
     pub functions: Vec<AstFunction>,
     pub handlers: Vec<AstHandler>,
     pub screens: Vec<AstScreen>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AstImport {
+    pub alias: String,
+    pub path: String,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AstStateRequirement {
+    pub name: String,
+    pub value_type: String,
+    pub nullable: bool,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,6 +52,7 @@ pub struct AstScreen {
     pub name: String,
     pub render: String,
     pub statements: Vec<IrStatement>,
+    pub exported: bool,
     pub span: SourceSpan,
 }
 
@@ -57,5 +75,6 @@ pub struct AstFunction {
     pub name: String,
     pub params: Vec<String>,
     pub statements: Vec<IrStatement>,
+    pub exported: bool,
     pub span: SourceSpan,
 }

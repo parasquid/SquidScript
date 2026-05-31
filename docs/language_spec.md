@@ -111,7 +111,7 @@ Authoring flow:
 
 ```text
 User writes .squid source
-  -> squidc resolves includes
+  -> squidc resolves local modules
   -> squidc parses and validates source
   -> squidc emits .sqbc bytecode
   -> squidc optionally emits source-map.json
@@ -302,13 +302,16 @@ The off-device compiler squidc parses source files and emits .sqbc bytecode.
 A source file contains top-level declarations.
 
 Allowed top-level declarations:
-- include "path"
+- import alias from "path"
+- requires state { ... } in import-only files
 - state { ... }
 - device { ... }
 - @preload before `event.on(...)`
 - event.on("event.name") { ... }
-- screen("name") { ... } unless the app is intentionally headless
+- screen("name") { ... } unless the app entry is intentionally headless
 - function name(...) { ... }
+- export function name(...) { ... } in import-only files
+- export screen("name") { ... } in import-only files
 
 Top-level executable statements are not allowed.
 
@@ -330,59 +333,105 @@ event.on("key.RIGHT") {
 
 ---
 
-## 8. Includes
+## 8. Modules And Imports
 
-SquidScript supports compile-time includes.
+SquidScript supports compile-time local modules.
 
-Includes are resolved by squidc.
+Modules are resolved by squidc from the app entry source file.
 
-Production firmware does not resolve source includes.
+Production firmware does not resolve source modules.
 
 Syntax:
 
 ```squid
-include "lib/ui.squid"
-include "screens/reader.squid"
+import ui from "lib/ui.squid"
+import reader from "screens/reader.squid"
 ```
 
-Include rules:
-- include is allowed only at top level
-- include path must be a string literal
-- include path is relative to the app directory
-- include path must not contain ..
-- include path must not be absolute
-- included files must remain inside the app directory
-- include cycles are rejected
-- maximum include depth is enforced
-- maximum number of included files is enforced
+The app entry file is the only file that becomes an app. Import-only files are
+reusable modules. Imported files may export functions and screens, declare
+their required app-state contract, and import other modules. They must not
+declare `app`, `state`, `device`, `app.triggers`, or `event.on(...)`.
+
+Module exports are explicit:
+
+```squid
+requires state {
+  page: int
+  title: string
+}
+
+export function openCurrent() {
+  debug.print(state.title)
+}
+
+export screen("page") {
+  display.text(state.title, { x: 0, y: 0 })
+}
+```
+
+The importing source calls exported functions through its local alias:
+
+```squid
+import reader from "screens/reader.squid"
+
+event.on("key.SELECT") {
+  reader.openCurrent()
+  screen.open(reader.page)
+}
+```
+
+`screen.open(alias.screen)` is a symbolic module screen reference. squidc
+validates that the alias is imported by the current file and that the screen is
+exported by that module, then lowers it to the concrete screen table name in
+SQBC. Local string screen references such as `screen.open("detail")` remain
+valid within the source module that declares `screen("detail")`.
+
+Import rules:
+- imports are allowed only at top level
+- every import must have an explicit alias
+- import path must be a string literal
+- import path is relative to the app directory
+- import path must not contain `..`
+- import path must not be absolute
+- imported files must remain inside the app directory
+- import cycles are rejected
+- maximum import depth is enforced
+- maximum number of imported files is enforced
 - maximum combined source size is enforced
+- duplicate aliases in one source file are compile-time errors
+- aliases must not collide with local declarations or built-in namespaces
+- duplicate declarations and duplicate exports are compile-time errors
+- imports do not provide override behavior
 
 Valid:
 
 ```squid
-include "lib/common.squid"
-include "screens/reader.squid"
+import common from "lib/common.squid"
+import reader from "screens/reader.squid"
 ```
 
 Invalid:
 
 ```squid
-include "../other-app/main.squid"
-include "/sd/system/secret.squid"
-include file.pickFile(".squid")
+import other from "../other-app/main.squid"
+import secret from "/sd/system/secret.squid"
+import chosen from file.pickFile(".squid")
 ```
 
-Recommended include limits:
-- max include files: 16
-- max include depth: 4
+Recommended import limits:
+- max imported files: 16
+- max import depth: 4
 - max combined source size: 32 KB to 64 KB
-- max include path length: 96 bytes
+- max import path length: 96 bytes
 
-Includes behave as source-level compilation units.
+Modules behave as source-level compilation units.
 
 They are not runtime imports.
 
-The current SquidScript draft does not support JavaScript-style import/export.
+Package imports and import versioning are reserved for a future package manager
+and are not accepted by the current compiler. The removed `include "path"`
+syntax is not supported.
 
 ---
 
@@ -408,7 +457,7 @@ handler chunk under memory pressure. App correctness must not depend on preload
 behavior. Evicting a handler chunk is not app lifecycle behavior and does not
 dispatch `event.on("app.exit")` or any other cleanup event.
 
-`@preload` is not valid before `function`, `screen`, `state`, `include`, or
+`@preload` is not valid before `function`, `screen`, `state`, `import`, or
 `app` declarations in current draft. Script authors should mark latency-sensitive event
 handlers rather than internal helper functions.
 
@@ -1002,8 +1051,6 @@ try { ... } catch (...) { ... }
 throw ...
 break
 continue
-import ...
-export ...
 class ...
 async function ...
 await ...
@@ -3919,7 +3966,7 @@ Production firmware is not required to parse .squid source.
 squidc compiles:
 
 ```text
-.squid source + includes
+.squid source + local modules
   -> .sqbc bytecode
   -> optional source-map.json
 ```
@@ -4593,8 +4640,6 @@ The current SquidScript draft does not support:
 - this
 - prototype
 - constructor
-- import
-- export
 - async
 - await
 - Promise
@@ -4655,7 +4700,7 @@ Source maps:
 squidc is the off-device SquidScript compiler.
 
 squidc responsibilities:
-- resolve includes
+- resolve local modules
 - tokenize .squid source
 - parse source
 - validate language rules
@@ -4935,7 +4980,7 @@ Firmware:
 - error/crash diagnostics
 
 Compiler:
-- include resolver
+- local module resolver
 - tokenizer
 - parser
 - validator

@@ -1,8 +1,6 @@
-include "lib/ui.squid"
-include "screens/browser.squid"
-include "screens/reader.squid"
-include "screens/toc.squid"
-include "screens/jump.squid"
+app "binbook-reader" target "xteink-x4"
+
+import ui from "lib/ui.squid"
 
 state {
   stateVersion: int = 1,
@@ -25,7 +23,7 @@ event.on("app.start") {
     state.stateVersion = 1
     state.save()
   }
-  openBrowser()
+  ui.openBrowser()
 }
 
 event.on("app.exit") {
@@ -34,53 +32,53 @@ event.on("app.exit") {
 
 event.on("key.RIGHT") {
   if (stateMachine.is("uiState", "reader")) {
-    nextPage()
+    ui.nextPage()
   } else {
     if (stateMachine.is("uiState", "jump")) {
-      jumpForward10()
+      ui.jumpForward10()
     }
   }
 }
 
 event.on("key.LEFT") {
   if (stateMachine.is("uiState", "reader")) {
-    previousPage()
+    ui.previousPage()
   } else {
     if (stateMachine.is("uiState", "jump")) {
-      jumpBack10()
+      ui.jumpBack10()
     }
   }
 }
 
 event.on("key.UP") {
-  handleUp()
+  ui.handleUp()
 }
 
 event.on("key.DOWN") {
-  handleDown()
+  ui.handleDown()
 }
 
 event.on("key.SELECT") {
-  handleSelect()
+  ui.handleSelect()
 }
 
 event.on("key.POWER") {
   if (stateMachine.is("uiState", "reader")) {
-    openToc()
+    ui.openToc()
   } else {
-    openReader()
+    ui.openReader()
   }
 }
 
 event.on("key.BACK") {
   if (stateMachine.is("uiState", "reader")) {
-    openBrowser()
+    ui.openBrowser()
   } else {
     if (stateMachine.is("uiState", "browser")) {
       state.save()
       app.exit()
     } else {
-      openReader()
+      ui.openReader()
     }
   }
 }

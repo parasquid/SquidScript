@@ -1,6 +1,13 @@
-screen("jump") {
+import chrome from "lib/chrome.squid"
+
+requires state {
+  jumpPage: int
+  pageCount: int
+}
+
+export screen("jump") {
   service.display.clear("white")
-  drawTopBar("Jump to Page")
+  chrome.drawTopBar("Jump to Page")
 
   service.display.text(string.format("{}", state.jumpPage), {
     x: 0,
@@ -23,5 +30,5 @@ screen("jump") {
   service.display.text("LEFT/RIGHT -10/+10", { x: 40, y: 500, w: 400, h: 32, fontHeight: 18, align: "center" })
   service.display.text("DOWN/UP -1/+1", { x: 40, y: 540, w: 400, h: 32, fontHeight: 18, align: "center" })
 
-  drawBottomBar("SELECT jump  BACK reader")
+  chrome.drawBottomBar("SELECT jump  BACK reader")
 }

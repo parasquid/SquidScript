@@ -1,4 +1,12 @@
-screen("reader", { render: "stream" }) {
+import chrome from "lib/chrome.squid"
+
+requires state {
+  file: string
+  pageIndex: int
+  pageCount: int
+}
+
+export screen("reader", { render: "stream" }) {
   service.display.clear("white")
 
   let book = binbook.open(state.file)
@@ -7,5 +15,5 @@ screen("reader", { render: "stream" }) {
 
   service.display.draw(image, { x: 0, y: 0 })
 
-  drawBottomBar(string.format("{}/{}", state.pageIndex + 1, state.pageCount))
+  chrome.drawBottomBar(string.format("{}/{}", state.pageIndex + 1, state.pageCount))
 }

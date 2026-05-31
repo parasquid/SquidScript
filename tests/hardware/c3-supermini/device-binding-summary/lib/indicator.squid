@@ -1,0 +1,4 @@
+export function ready(label) {
+  service.indicator.write(true)
+  debug.print(label)
+}

@@ -1,5 +1,5 @@
 use crate::{
-    compile::{compile, compile_with_profile, CompileRequest},
+    compile::{compile, compile_path_with_profile, compile_with_profile, CompileRequest},
     ir::{encode_sqbc, IrDeviceBinding, IrExpr, IrStatement, SQBC_MAGIC},
     parser::parse,
     profile::{BuildProfile, PORTABLE_TARGET_ID},
@@ -19,6 +19,20 @@ fn repo_path(parts: &[&str]) -> PathBuf {
 
 fn read_repo_fixture(parts: &[&str]) -> String {
     std::fs::read_to_string(repo_path(parts)).expect("fixture should be readable")
+}
+
+fn unique_test_dir(prefix: &str) -> PathBuf {
+    let mut path = std::env::temp_dir();
+    path.push(format!(
+        "{}-{}-{}",
+        prefix,
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    path
 }
 
 #[test]
@@ -666,6 +680,271 @@ fn compiles_browser_sim_binbook_reader_fixture() {
     let ir = output.ir.unwrap();
     assert_eq!(ir.app.id, "binbook-reader");
     assert!(ir.screens.iter().any(|screen| screen.name == "main"));
+}
+
+#[test]
+fn compiles_namespaced_module_function_screen_and_state_contract() {
+    let root = unique_test_dir("squidc-modules");
+    let app_dir = root.join("app");
+    std::fs::create_dir_all(app_dir.join("screens")).unwrap();
+    std::fs::write(
+        app_dir.join("main.squid"),
+        r#"app "module-demo"
+import reader from "screens/reader.squid"
+state {
+  page: int = 1
+}
+
+event.on("app.start") {
+  reader.openCurrent()
+  screen.open(reader.page)
+}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        app_dir.join("screens").join("reader.squid"),
+        r#"requires state {
+  page: int
+}
+
+export function openCurrent() {
+  debug.print(@page)
+}
+
+export screen("page") {
+  debug.print(@page)
+}
+"#,
+    )
+    .unwrap();
+
+    let output =
+        compile_path_with_profile(&app_dir.join("main.squid"), "portable", BuildProfile::Dev);
+
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let ir = output.ir.unwrap();
+    assert!(ir
+        .functions
+        .iter()
+        .any(|function| function.name == "reader.openCurrent"));
+    assert!(ir.screens.iter().any(|screen| screen.name == "reader.page"));
+    assert!(matches!(
+        ir.handlers[0].statements[1],
+        IrStatement::ScreenOpen { ref screen } if screen == "reader.page"
+    ));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn rejects_import_module_lifecycle_and_state_declarations() {
+    let root = unique_test_dir("squidc-modules");
+    let app_dir = root.join("app");
+    std::fs::create_dir_all(app_dir.join("lib")).unwrap();
+    std::fs::write(
+        app_dir.join("main.squid"),
+        r#"app "module-demo"
+import bad from "lib/bad.squid"
+state {}
+screen("main") {}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        app_dir.join("lib").join("bad.squid"),
+        r#"state {
+  count: int = 0
+}
+
+event.on("app.start") {}
+"#,
+    )
+    .unwrap();
+
+    let output =
+        compile_path_with_profile(&app_dir.join("main.squid"), "portable", BuildProfile::Dev);
+
+    assert!(!output.ok);
+    assert!(output
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "E_IMPORT_ONLY_DECL"));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn rejects_missing_module_state_contract_field() {
+    let root = unique_test_dir("squidc-modules");
+    let app_dir = root.join("app");
+    std::fs::create_dir_all(app_dir.join("lib")).unwrap();
+    std::fs::write(
+        app_dir.join("main.squid"),
+        r#"app "module-demo"
+import reader from "lib/reader.squid"
+state {}
+screen("main") {}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        app_dir.join("lib").join("reader.squid"),
+        r#"requires state {
+  page: int
+}
+
+export function show() {
+  debug.print(@page)
+}
+"#,
+    )
+    .unwrap();
+
+    let output =
+        compile_path_with_profile(&app_dir.join("main.squid"), "portable", BuildProfile::Dev);
+
+    assert!(!output.ok);
+    assert!(output
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "E_STATE_CONTRACT"));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn rejects_private_module_exports_and_duplicate_aliases() {
+    let root = unique_test_dir("squidc-modules");
+    let app_dir = root.join("app");
+    std::fs::create_dir_all(app_dir.join("lib")).unwrap();
+    std::fs::write(
+        app_dir.join("main.squid"),
+        r#"app "module-demo"
+import reader from "lib/reader.squid"
+import reader from "lib/other.squid"
+state {}
+event.on("app.start") {
+  reader.hidden()
+}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        app_dir.join("lib").join("reader.squid"),
+        r#"function hidden() {}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        app_dir.join("lib").join("other.squid"),
+        r#"export function visible() {}
+"#,
+    )
+    .unwrap();
+
+    let output =
+        compile_path_with_profile(&app_dir.join("main.squid"), "portable", BuildProfile::Dev);
+
+    assert!(!output.ok);
+    assert!(output
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "E_DUPLICATE_IMPORT_ALIAS"));
+    assert!(output
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "E_UNKNOWN_MODULE_SYMBOL"));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn module_call_resolution_only_uses_current_file_import_aliases() {
+    let root = unique_test_dir("squidc-modules");
+    let app_dir = root.join("app");
+    std::fs::create_dir_all(app_dir.join("lib")).unwrap();
+    std::fs::write(
+        app_dir.join("main.squid"),
+        r#"app "module-demo"
+import helper from "lib/helper.squid"
+state {}
+event.on("app.start") {
+  futureCapability.doThing()
+  helper.visible()
+}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        app_dir.join("lib").join("helper.squid"),
+        r#"export function visible() {}
+"#,
+    )
+    .unwrap();
+
+    let output =
+        compile_path_with_profile(&app_dir.join("main.squid"), "portable", BuildProfile::Dev);
+
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let ir = output.ir.unwrap();
+    assert!(matches!(
+        ir.handlers[0].statements[0],
+        IrStatement::Call { ref name, .. } if name == "futureCapability.doThing"
+    ));
+    assert!(matches!(
+        ir.handlers[0].statements[1],
+        IrStatement::Call { ref name, .. } if name == "helper.visible"
+    ));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn rejects_import_alias_that_collides_with_reserved_namespace() {
+    let root = unique_test_dir("squidc-modules");
+    let app_dir = root.join("app");
+    std::fs::create_dir_all(app_dir.join("lib")).unwrap();
+    std::fs::write(
+        app_dir.join("main.squid"),
+        r#"app "module-demo"
+import file from "lib/helper.squid"
+state {}
+screen("main") {}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        app_dir.join("lib").join("helper.squid"),
+        r#"export function visible() {}
+"#,
+    )
+    .unwrap();
+
+    let output =
+        compile_path_with_profile(&app_dir.join("main.squid"), "portable", BuildProfile::Dev);
+
+    assert!(!output.ok);
+    assert!(output
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "E_DUPLICATE_IMPORT_ALIAS"));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn rejects_include_as_removed_module_syntax() {
+    let source = r#"app "include-demo"
+include "lib/ui.squid"
+state {}
+screen("main") {}
+"#;
+
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+
+    assert!(!output.ok);
+    assert!(output
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "E_INCLUDE_REMOVED"));
 }
 
 #[test]

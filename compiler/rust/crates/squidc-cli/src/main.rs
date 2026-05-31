@@ -13,7 +13,7 @@ use std::{
 
 use app_id::{generated_app_id, source_app_id, source_for_compile};
 use clap::{error::ErrorKind, Args, Parser, Subcommand, ValueEnum};
-use compile::{compile_source_to_sqbc, compile_target_id};
+use compile::{compile_path_to_sqbc, compile_source_to_sqbc, compile_target_id};
 use package::{package_app_dir, read_stored_zip_entries};
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -352,12 +352,7 @@ fn package_app(args: PackageArgs) -> Result<Value, String> {
 
 fn build(args: BuildArgs) -> Result<Value, String> {
     let target = compile_target_id(args.target.as_deref(), args.check_target)?;
-    let bytes = compile_source_to_sqbc(
-        &fs::read_to_string(&args.input)
-            .map_err(|error| format!("failed to read {}: {error}", args.input.display()))?,
-        &target,
-        args.profile.into(),
-    )?;
+    let bytes = compile_path_to_sqbc(&args.input, &target, args.profile.into())?;
     if let Some(parent) = args
         .out
         .parent()
@@ -380,9 +375,13 @@ fn run_app_source(args: DeviceSourceArgs, human: bool) -> Result<Value, String> 
     let source = fs::read_to_string(&args.input)
         .map_err(|error| format!("failed to read {}: {error}", args.input.display()))?;
     let app_id = source_app_id(&source).unwrap_or_else(|| generated_app_id(&args.input, &source));
-    let source = source_for_compile(&source, &app_id);
     let target = compile_target_id(args.device.target.as_deref(), args.device.check_target)?;
-    let sqbc = compile_source_to_sqbc(&source, &target, args.device.profile.into())?;
+    let sqbc = if source_app_id(&source).is_some() {
+        compile_path_to_sqbc(&args.input, &target, args.device.profile.into())?
+    } else {
+        let source = source_for_compile(&source, &app_id);
+        compile_source_to_sqbc(&source, &target, args.device.profile.into())?
+    };
     let port = resolve_port(&args.device.device)?;
     let mut device = SerialDevice::open(&port)?;
     let response = device.run_temp_app(&app_id, &sqbc)?;
@@ -482,9 +481,13 @@ fn read_installable_app(
         .map(ToOwned::to_owned)
         .or_else(|| source_app_id(&source))
         .unwrap_or_else(|| generated_app_id(input, &source));
-    let source = source_for_compile(&source, &app_id);
     let target = compile_target_id(options.target.as_deref(), options.check_target)?;
-    let bytes = compile_source_to_sqbc(&source, &target, options.profile.into())?;
+    let bytes = if source_app_id(&source).is_some() {
+        compile_path_to_sqbc(input, &target, options.profile.into())?
+    } else {
+        let source = source_for_compile(&source, &app_id);
+        compile_source_to_sqbc(&source, &target, options.profile.into())?
+    };
     Ok((bytes, app_id))
 }
 
@@ -1670,16 +1673,18 @@ mod tests {
         fs::write(
             app_dir.join("main.squid"),
             r#"app "package-demo"
-include "lib/ui.squid"
+import ui from "lib/ui.squid"
 state {}
-event.on("app.start") {}
+event.on("app.start") {
+  ui.helper()
+}
 screen("main") {}
 "#,
         )
         .unwrap();
         fs::write(
             app_dir.join("lib").join("ui.squid"),
-            "function helper() {}\n",
+            "export function helper() {}\n",
         )
         .unwrap();
         fs::write(app_dir.join("static").join("index.html"), "<h1>Demo</h1>").unwrap();
@@ -1699,6 +1704,72 @@ screen("main") {}
         assert_eq!(entries, vec!["main.sqbc", "static/index.html"]);
         assert!(result.entries.contains(&"main.sqbc".to_string()));
         assert!(result.entries.contains(&"static/index.html".to_string()));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn package_app_dir_rejects_removed_include_syntax() {
+        let root = unique_test_dir("squidc-package");
+        let app_dir = root.join("app");
+        fs::create_dir_all(app_dir.join("lib")).unwrap();
+        fs::write(
+            app_dir.join("main.squid"),
+            r#"app "package-demo"
+include "lib/ui.squid"
+state {}
+screen("main") {}
+"#,
+        )
+        .unwrap();
+        fs::write(
+            app_dir.join("lib").join("ui.squid"),
+            "function helper() {}\n",
+        )
+        .unwrap();
+
+        let result = package_app_dir(&app_dir, None, "portable", BuildProfile::Dev);
+
+        assert!(result.is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn app_install_source_with_override_still_resolves_imports_for_declared_app() {
+        let root = unique_test_dir("squidc-install-imports");
+        let app_dir = root.join("app");
+        fs::create_dir_all(app_dir.join("lib")).unwrap();
+        fs::write(
+            app_dir.join("main.squid"),
+            r#"app "declared-app"
+import helper from "lib/helper.squid"
+state {}
+event.on("app.start") {
+  helper.ready()
+}
+"#,
+        )
+        .unwrap();
+        fs::write(
+            app_dir.join("lib").join("helper.squid"),
+            r#"export function ready() {
+  debug.print("ready")
+}
+"#,
+        )
+        .unwrap();
+        let options = DeviceOptions {
+            device: DeviceOnlyOptions { port: None },
+            target: None,
+            check_target: false,
+            profile: ProfileArg::Dev,
+        };
+
+        let (bytes, app_id) =
+            read_installable_app(&app_dir.join("main.squid"), Some("override-app"), &options)
+                .unwrap();
+
+        assert_eq!(app_id, "override-app");
+        assert!(!bytes.is_empty());
         fs::remove_dir_all(root).unwrap();
     }
 

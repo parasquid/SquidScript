@@ -970,10 +970,10 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("#define SQ_VM_RUNTIME_TRACE_MAX 8", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_TRACE_LEN 25", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_TRACE_LEN 32", runtime_h)
-        self.assertIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 12", runtime_h)
+        self.assertIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 8", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 5", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 6", runtime_h)
-        self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 8", runtime_h)
+        self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 12", runtime_h)
         self.assertIn("SQ_VM_RUNTIME_OUTPUT_MAX >= 5", ztest)
         self.assertNotIn("SQ_VM_RUNTIME_OUTPUT_MAX >= 6", ztest)
         self.assertIn("#define SQ_VM_RUNTIME_OUTPUT_LEN 54", runtime_h)
@@ -1448,14 +1448,19 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_hardware_suite_runs_top_level_device_binding_script(self):
         script = self.read("scripts/c3-supermini-test-device-binding.sh")
         app = self.read("tests/hardware/c3-supermini/device-binding-summary/main.squid")
+        helper = self.read(
+            "tests/hardware/c3-supermini/device-binding-summary/lib/indicator.squid"
+        )
         resource = self.read(
             "tests/hardware/c3-supermini/device-binding-summary/device/indicator.sqdevice"
         )
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
 
         self.assertIn('device {', app)
+        self.assertIn('import indicator from "lib/indicator.squid"', app)
         self.assertIn('indicator { use "device/indicator.sqdevice" }', app)
-        self.assertIn("service.indicator.write(true)", app)
+        self.assertIn('indicator.ready("device binding ready")', app)
+        self.assertIn("service.indicator.write(true)", helper)
         self.assertIn("indicator.default", resource)
         self.assertIn("pinName string 5:GPIO8", resource)
         self.assertIn('cargo run --quiet -p squidc -- package "${DEVICE_BINDING_APP}"', script)
@@ -2275,7 +2280,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
     def test_registry_entry_update_avoids_dirent_stat_buffer(self):
         app_store = self.read("firmware/zephyr/src/app_store.c")
         start = app_store.index("int sq_app_store_update_registry_entry_with_path")
-        end = app_store.index("static int delete_files_under", start)
+        end = app_store.index("static int delete_one_under", start)
         body = app_store[start:end]
 
         self.assertNotIn("struct fs_dirent entry;", body)

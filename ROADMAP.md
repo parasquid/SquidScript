@@ -23,13 +23,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   needed, and adopt a dependency only after proving bounded strip/window
   writes, caller-owned buffers, and bounded/nonblocking BUSY handling for
   constrained firmware RAM.
-- Design app-entry versus import-only source semantics before adding real
-  include/import expansion. Only an app entry file should become an app;
-  include/import files should be reusable declarations and should not synthesize
-  screens by themselves. Use that design pass to settle related module
-  questions such as symbol namespacing, declaration override rules,
-  package/import versioning, duplicate declarations across files, and what
-  app-lifecycle declarations are legal in import-only files.
 - Add external Wi-Fi AP client association/DHCP lease proof through
   Zephyr-native subsystems.
 - Decide whether the ESP32-C3 Super Mini reference target should expose
