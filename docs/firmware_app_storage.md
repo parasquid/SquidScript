@@ -83,6 +83,10 @@ through the reader path.
 The resident installed-app VM storage keeps separate bounded path buffers for
 the fixed app bytecode and state-file path shapes: 64 bytes for
 `/apps/<app-id>/main.sqbc` and 60 bytes for `/state/<app-id>.state`.
+Runtime output history is intentionally retained in an eight-entry fixed
+window. This keeps the current lifecycle and hardware-test assertion window
+available through `device output` without making debug output an unbounded
+resident RAM sink.
 
 Installed app execution keeps a bounded VM context and one SQBC code transfer
 window resident. VM initialization reads the SQBC header, section table, string

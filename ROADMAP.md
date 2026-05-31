@@ -199,9 +199,13 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   rather than the serial main loop, but they still block app/runtime progress
   and conflict with the firmware rule that services should use short steps,
   async progress, or target scheduler integration.
-- Audit remaining firmware, FFI, protocol, and hardware-helper fixed buffers;
-  replace accidental stack or harness buffers with caller-owned, borrowed,
-  streaming, file-backed, or VM-owned storage where practical.
+- Continue SquidScript-owned static DRAM reductions after the fixed-buffer
+  classification pass. Current deferred candidates are VM context cap
+  investigation, protocol response cap investigation, and replacing resident
+  Wi-Fi scan result storage with a cursor-backed API if the Wi-Fi scan design
+  moves forward. Keep Zephyr kernel stacks, system heap, network packet pools,
+  Wi-Fi driver storage, and other platform symbols separate unless platform RAM
+  policy is explicitly in scope.
 - Add a safe largest-free-block heap probe or mitigation path for ESP32-C3
   Zephyr RAM work. `device resources` now reports allocation high-water data and
   largest-free-block support/value fields, but the current public Zephyr heap

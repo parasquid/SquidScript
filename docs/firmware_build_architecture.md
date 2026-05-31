@@ -124,9 +124,9 @@ package-relative resource-path protocol bound and avoiding 128-byte `fs_dirent`
 name slots in every directory/stat stack frame.
 Resource diagnostics are encoded directly into the caller-owned 916-byte
 protocol response buffer and do not keep a resident metric staging array.
-Runtime diagnostic history is bounded to four 26-byte trace lines, five 54-byte
-output lines, and four 48-byte draw-log lines so recent debugging data remains
-available without retaining unbounded VM text in RAM. Transient VM result
+Runtime diagnostic history is bounded to four 26-byte trace lines, eight
+54-byte output lines, and four 48-byte draw-log lines so recent debugging data
+remains available without retaining unbounded VM text in RAM. Transient VM result
 records are bounded to 26 fields, matching the largest current service result
 shape and avoiding unused per-record field slots in the resident VM context.
 The runtime object keeps small flags out of 32-bit alignment gaps and stores
@@ -185,6 +185,23 @@ functions that have `.su` rows. Use cumulative rows before splitting helpers:
 a lower per-function row can still increase the active caller-plus-callee path
 if the helper remains live under the caller. Keep using `device resources`
 and the hardware stack harness for final stack-budget validation.
+
+For static DRAM attribution, build the ESP32-C3 firmware and summarize
+DRAM-resident symbols:
+
+```sh
+scripts/c3-supermini-build.sh
+scripts/zephyr-static-buffer-report.sh
+```
+
+The static-buffer report groups symbols as SquidScript-owned, platform-owned,
+or unknown. SquidScript-owned fixed buffers include the VM runtime object, VM
+worker stack, protocol response buffer, app registry, transfer sessions,
+protocol scratch, serial transport, and resident app-store VM storage. Treat
+Zephyr kernel stacks, system heap, network packet pools, Wi-Fi driver storage,
+and other platform symbols as separate target-configuration work unless the
+current task explicitly covers platform RAM policy.
+
 The app registry scan currently reuses its path scratch buffer after opening
 the app directory, reuses its directory entry for `main.sqbc` stats, and uses a
 narrow app-file path buffer for the fixed `/apps/<app>/main.sqbc` shape. Its

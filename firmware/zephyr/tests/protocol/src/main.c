@@ -2457,6 +2457,57 @@ ZTEST(squidscript_protocol, test_runtime_reuses_transfer_storage_for_init_scratc
 #endif
 }
 
+ZTEST(squidscript_protocol, test_squidscript_owned_fixed_buffer_budgets)
+{
+	zassert_equal(SQ_VM_RUNTIME_OUTPUT_MAX, 8);
+	zassert_equal(SQ_VM_RUNTIME_OUTPUT_LEN, 54);
+	zassert_equal(SQ_VM_RUNTIME_TRACE_MAX, 4);
+	zassert_equal(SQ_VM_RUNTIME_DRAWLOG_MAX, 4);
+	zassert_equal(SQ_VM_RUNTIME_RETURN_STACK_MAX, 2);
+	zassert_equal(SQ_VM_RUNTIME_ARMED_TIMER_MAX, 2);
+	zassert_equal(SQ_VM_RUNTIME_INPUT_BUTTON_MAX, 2);
+	zassert_equal(SQ_DEVICE_RESPONSE_BYTES, 916);
+	zassert_true(sizeof(struct sq_device_protocol_scratch) <= 552,
+		     "protocol scratch=%zu", sizeof(struct sq_device_protocol_scratch));
+	zassert_true(sizeof(struct sq_device_install_session) <= 152,
+		     "install session=%zu", sizeof(struct sq_device_install_session));
+	zassert_true(sizeof(struct sq_device_temp_session) <= 152,
+		     "temp session=%zu", sizeof(struct sq_device_temp_session));
+	zassert_true(sizeof(struct sq_device_resource_session) <= 232,
+		     "resource session=%zu", sizeof(struct sq_device_resource_session));
+	zassert_true(sizeof(struct sq_app_registry) <= 356,
+		     "app registry=%zu", sizeof(struct sq_app_registry));
+	zassert_true(sizeof(struct sq_app_store_vm_storage) <= 168,
+		     "app storage=%zu", sizeof(struct sq_app_store_vm_storage));
+}
+
+ZTEST(squidscript_protocol, test_output_history_retains_current_lifecycle_assertion_window)
+{
+	struct sq_vm_runtime runtime = {0};
+	char line[24];
+
+	sq_vm_runtime_init(&runtime);
+	sq_vm_runtime_reset(&runtime);
+
+	for (size_t i = 0; i < SQ_VM_RUNTIME_OUTPUT_MAX + 1; i++) {
+		int written = snprintf(line, sizeof(line), "lifecycle line %zu", i);
+		zassert_true(written > 0 && (size_t)written < sizeof(line));
+		zassert_equal(sq_vm_runtime_record_output(&runtime, (const uint8_t *)line,
+							  (size_t)written),
+			      0);
+	}
+
+	zassert_equal(runtime.output_count, 8);
+	zassert_str_equal(runtime.outputs[0], "lifecycle line 1");
+	zassert_str_equal(runtime.outputs[1], "lifecycle line 2");
+	zassert_str_equal(runtime.outputs[2], "lifecycle line 3");
+	zassert_str_equal(runtime.outputs[3], "lifecycle line 4");
+	zassert_str_equal(runtime.outputs[4], "lifecycle line 5");
+	zassert_str_equal(runtime.outputs[5], "lifecycle line 6");
+	zassert_str_equal(runtime.outputs[6], "lifecycle line 7");
+	zassert_str_equal(runtime.outputs[7], "lifecycle line 8");
+}
+
 ZTEST(squidscript_protocol, test_runtime_transfer_owner_rejects_overlap)
 {
 	static struct sq_vm_runtime runtime;
