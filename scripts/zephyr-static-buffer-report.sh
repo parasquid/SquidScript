@@ -46,7 +46,7 @@ symbol_rows="$(
       if (name ~ /^(runtime|response|registry|install_session|temp_session|resource_session|protocol_scratch|launch_storage|trigger_storage|transport|sq_vm_runtime_work_stack)(\.|$)/) {
         return "squidscript"
       }
-      if (name ~ /^(z_|kheap_|_k_|net_|mgmt_|rx_|timer_task_stack|logging_|service_thread|wifi_|esp|g_|s_wifi_|fdtable|server_ctx|contexts|buf32)/) {
+      if (name ~ /^(z_|kheap_|_k_|net_|mgmt_|rx_|timer_task_stack|sys_work_q_stack|logging_|service_thread|wifi_|esp|g_|g[A-Z]|s_wifi_|fdtable|server_ctx|contexts|buf32|TxRxCxt|phy_param|global_data|route_ipv4_entries|_net_buf_)/) {
         return "platform"
       }
       return "unknown"

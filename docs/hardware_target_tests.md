@@ -313,6 +313,11 @@ run measured the protocol/main stack flat at 4,048 bytes with 4,144 bytes free.
 The VM worker high-water mark was 16,128 bytes with 5,888 bytes free during
 input launch, display drawlog, system-resource, and Wi-Fi AP start workloads.
 Wi-Fi AP start/stop measured `heap_max_alloc_bytes=36460`.
+`scripts/c3-supermini-measure-ram-workloads.sh` also records
+`heap_max_headroom_bytes`, computed from the configured 51,200-byte Zephyr
+system heap and each row's allocation high-water mark, so AP/Wi-Fi pressure can
+be compared across workload rows without adding another firmware response
+metric.
 `heap_largest_free_supported=0` and `heap_largest_free_bytes=0` mean the
 current Zephyr public heap API does not expose a safe non-mutating
 largest-free-block query.

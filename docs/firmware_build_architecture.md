@@ -197,10 +197,14 @@ scripts/zephyr-static-buffer-report.sh
 The static-buffer report groups symbols as SquidScript-owned, platform-owned,
 or unknown. SquidScript-owned fixed buffers include the VM runtime object, VM
 worker stack, protocol response buffer, app registry, transfer sessions,
-protocol scratch, serial transport, and resident app-store VM storage. Treat
-Zephyr kernel stacks, system heap, network packet pools, Wi-Fi driver storage,
-and other platform symbols as separate target-configuration work unless the
-current task explicitly covers platform RAM policy.
+protocol scratch, serial transport, and resident app-store VM storage. The
+platform group covers Zephyr kernel stacks, system heap, work queue stack,
+network packet and buffer pools, ESP/Wi-Fi driver storage, logging storage, and
+other target-owned symbols. Treat platform symbols as separate
+target-configuration work unless the current task explicitly covers platform
+RAM policy. Unknown symbols should remain small; if a large unknown appears in
+the top-symbol report, classify it before using the group totals as evidence
+for SquidScript-owned reductions.
 
 The app registry scan currently reuses its path scratch buffer after opening
 the app directory, reuses its directory entry for `main.sqbc` stats, and uses a
@@ -376,9 +380,13 @@ copying result records before returning to VM execution.
 The Rust VM uses one string interner for SQBC literals, firmware static strings,
 and dynamic runtime text. Dynamic text can reuse exact SQBC/static matches and
 contiguous substrings of existing dynamic/static text. Current ESP32-C3
-firmware symbols report `runtime.4` at 15,096 bytes; the current Wi-Fi
-scan-enabled target build reports 215,424 bytes of linker DRAM and
-215,396 bytes through the RAM audit.
+firmware symbols report `runtime.4` from the current image under test; the
+current local Wi-Fi scan-enabled target ELF reports 215,188 bytes of linker
+DRAM through the RAM audit and a 14,888-byte `runtime.4` static runtime symbol.
+The static-buffer report classifies the top ESP32-C3 symbols as approximately
+103 KiB platform-owned, 39 KiB SquidScript-owned, and 8 KiB unknown small
+symbols for that same local ELF. Rebuild and rerun the report before treating
+these values as current for a different firmware image.
 The resident protocol response buffer is 916 bytes, matching the current
 resources-response ceiling: 896 bytes of metric payload plus the 20-byte frame
 header. The larger ceiling is intentional: `device resources` now includes

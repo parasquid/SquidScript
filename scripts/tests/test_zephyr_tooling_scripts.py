@@ -256,10 +256,14 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
     def test_default_config_uses_measured_system_heap_budget(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
+        ram_workloads = self.read("scripts/c3-supermini-measure-ram-workloads.sh")
 
         self.assertIn("CONFIG_HEAP_MEM_POOL_SIZE=51200", prj_conf)
         self.assertIn("CONFIG_HEAP_MEM_POOL_IGNORE_MIN=y", prj_conf)
         self.assertNotIn("CONFIG_HEAP_MEM_POOL_ADD_SIZE_ESP_WIFI=", prj_conf)
+        self.assertIn('SYSTEM_HEAP_BYTES="${SYSTEM_HEAP_BYTES:-51200}"', ram_workloads)
+        self.assertIn("heap_max_headroom_bytes", ram_workloads)
+        self.assertIn("SYSTEM_HEAP_BYTES - heap_max_alloc", ram_workloads)
 
     def test_hardware_suite_requires_real_zephyr_wifi_backend(self):
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
@@ -422,6 +426,64 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("target_ram_total_bytes=409600", result.stdout)
         self.assertIn("target_ram_profile_percent=65", result.stdout)
         self.assertIn("target_ram_used_percent=24.8", result.stdout)
+
+    def test_static_buffer_report_classifies_known_platform_symbols(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            elf = tmp_path / "zephyr.elf"
+            elf.write_bytes(b"fake")
+            nm_tool = tmp_path / "fake-nm"
+            self.write_executable(
+                nm_tool,
+                "#!/usr/bin/env bash\n"
+                "cat <<'EOF'\n"
+                "3fc90000 00005600 B sq_vm_runtime_work_stack\n"
+                "3fc95600 00003a28 b runtime.4\n"
+                "3fc99000 00002000 B z_main_stack\n"
+                "3fc9b000 00000400 b sys_work_q_stack\n"
+                "3fc9b400 000003c0 D TxRxCxt\n"
+                "3fc9b7c0 000002a0 b _net_buf_rx_bufs\n"
+                "3fc9ba60 000002a0 b _net_buf_tx_bufs\n"
+                "3fc9bd00 00000350 D phy_param\n"
+                "3fc9c050 00000330 B gWpaSm\n"
+                "3fc9c380 00000284 b global_data\n"
+                "3fc9c604 00000220 b route_ipv4_entries\n"
+                "3fc9c824 00000250 B gChmCxt\n"
+                "3fc9ca74 0000011c B gScanStruct\n"
+                "3fc9cb90 00000394 b response.0\n"
+                "EOF\n",
+            )
+
+            env = os.environ.copy()
+            env["NM"] = str(nm_tool)
+
+            result = subprocess.run(
+                [str(ROOT / "scripts/zephyr-static-buffer-report.sh"), str(elf)],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+        self.assertNotIn("group=unknown", result.stdout)
+        for name in [
+            "sys_work_q_stack",
+            "TxRxCxt",
+            "_net_buf_rx_bufs",
+            "_net_buf_tx_bufs",
+            "phy_param",
+            "gWpaSm",
+            "global_data",
+            "route_ipv4_entries",
+            "gChmCxt",
+            "gScanStruct",
+        ]:
+            with self.subTest(name=name):
+                self.assertRegex(result.stdout, rf"group=platform .*name={name}")
+        self.assertRegex(result.stdout, r"group=squidscript .*name=sq_vm_runtime_work_stack")
+        self.assertRegex(result.stdout, r"group=squidscript .*name=runtime\.4")
+        self.assertRegex(result.stdout, r"group=squidscript .*name=response\.0")
 
     def test_zephyr_target_defaults_generator_emits_indicator_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:

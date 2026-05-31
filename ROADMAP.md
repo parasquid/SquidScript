@@ -74,9 +74,12 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   paths; check those before splitting more app-store or protocol helpers
   because per-function `.su` reductions can increase real stack high-water use
   when a larger callee remains active under the caller.
-  Current ESP32-C3 build evidence with the real Wi-Fi scan backend enabled
-  reports 215,424 bytes of linker DRAM, 215,396 bytes through
-  `zephyr-ram-audit`, and a 15,096-byte `runtime.4` static runtime symbol.
+  Current local ESP32-C3 build evidence with the real Wi-Fi scan backend
+  enabled reports 215,188 bytes of linker DRAM through `zephyr-ram-audit` and
+  a 14,888-byte `runtime.4` static runtime symbol. The static-buffer report
+  classifies the top ESP32-C3 symbols as approximately 103 KiB platform-owned,
+  39 KiB SquidScript-owned, and 8 KiB unknown small symbols; classify any large
+  unknown future symbols before using group totals for reduction decisions.
   Current same-build non-scan hardware coverage on the flashed target passed
   app state, foreground memory, app lifecycle, app registry, display drawlog,
   system resources, indicator state, device binding, inline GPIO binding,
@@ -182,23 +185,23 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   re-attribute trigger metadata and app-launch paths before attempting another
   protocol/main stack reduction.
 - Improve network heap attribution before expanding Wi-Fi scope. Current AP
-  start/stop hardware coverage drives `heap_max_alloc_bytes` close to
-  the 36 KiB system heap budget; add clearer per-workload heap reset or
-  attribution before TCP, AP client throughput, BLE coexistence, or larger
-  network workloads.
+  start/stop hardware coverage drives `heap_max_alloc_bytes=36460` against the
+  51,200-byte configured Zephyr system heap; add clearer per-workload heap
+  reset or attribution before TCP, AP client throughput, BLE coexistence, or
+  larger network workloads.
 - Convert blocking Wi-Fi VM callbacks to nonblocking runtime progress. Current
   Zephyr `wifi.connect`, `wifi.disconnect`, and `wifi.scan` callbacks wait on
   semaphores for up to 15s, 5s, and 8s respectively. They run in the VM worker
   rather than the serial main loop, but they still block app/runtime progress
   and conflict with the firmware rule that services should use short steps,
   async progress, or target scheduler integration.
-- Continue SquidScript-owned static DRAM reductions after the fixed-buffer
-  classification pass. Current deferred candidates are VM context cap
-  investigation, protocol response cap investigation, and replacing resident
-  Wi-Fi scan result storage with a cursor-backed API if the Wi-Fi scan design
-  moves forward. Keep Zephyr kernel stacks, system heap, network packet pools,
-  Wi-Fi driver storage, and other platform symbols separate unless platform RAM
-  policy is explicitly in scope.
+- Continue SquidScript-owned static DRAM reductions using the classified
+  static-buffer report. Current deferred candidates are VM context cap
+  investigation, protocol response cap investigation, bounded output/trace/
+  drawlog queue review, and replacing resident Wi-Fi scan result storage with a
+  cursor-backed API if the Wi-Fi scan design moves forward. Keep Zephyr kernel
+  stacks, system heap, network packet pools, Wi-Fi driver storage, and other
+  platform symbols separate unless platform RAM policy is explicitly in scope.
 - Add a safe largest-free-block heap probe or mitigation path for ESP32-C3
   Zephyr RAM work. `device resources` now reports allocation high-water data and
   largest-free-block support/value fields, but the current public Zephyr heap

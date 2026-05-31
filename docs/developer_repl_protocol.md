@@ -245,13 +245,15 @@ the runtime shares its VM initialization scratch buffer with later storage
 completion transfer storage because those buffers are not live at the same
 time. `vm_sqbc_chunk_bytes` reports the bounded 768-byte SQBC code/read
 transfer window used for file-backed installed app dispatch; the full installed
-`main.sqbc` payload is not resident in that window. The ESP32-C3 Super Mini
-build map currently sizes the resident runtime object at 15,096 bytes. The
-current ESP32-C3 canonical configuration keeps Zephyr's system heap at 36,864
-bytes. Representative app, display, system-resource, and Wi-Fi AP start/stop
-workloads measured `heap_max_alloc_bytes=36460`, leaving roughly 0.4 KiB
-headroom. Remeasure before adding TCP, AP client throughput, BLE coexistence,
-or larger Wi-Fi workloads.
+`main.sqbc` payload is not resident in that window. Use
+`scripts/zephyr-static-buffer-report.sh` for static ownership attribution: the
+current report separates SquidScript-owned runtime/protocol buffers from
+Zephyr, ESP, network, Wi-Fi, heap, and stack symbols. The ESP32-C3 Super Mini
+canonical configuration keeps Zephyr's system heap at 51,200 bytes.
+Representative app, display, system-resource, and Wi-Fi AP start/stop workloads
+measured `heap_max_alloc_bytes=36460`, leaving roughly 14.7 KiB below the
+configured heap ceiling. Remeasure before adding TCP, AP client throughput, BLE
+coexistence, or larger Wi-Fi workloads.
 
 Wi-Fi diagnostics should distinguish internal firmware/driver state from
 external RF proof. A successful Zephyr Wi-Fi status record does not by itself
