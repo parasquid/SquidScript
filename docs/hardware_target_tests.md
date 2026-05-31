@@ -203,12 +203,9 @@ app lifecycle checks in the full ESP32-C3 Super Mini suite. It records
 `device resources` output under `target/hardware-tests/stack-usage/` and
 verifies `proto_stack_*` and `vm_stack_*` metrics are
 internally consistent. The current firmware keeps the protocol/main stack budget
-at 8,192 bytes and the VM worker stack budget at 22,016 bytes. The protocol
-stack was previously reduced to 3,264 bytes from measured GPIO9 input rows, but
-installed app lifecycle coverage later exposed a protocol/main-side fatal crash
-while registering armed trigger metadata and launching installed foreground
-apps. Treat the 8,192-byte budget as a reliability baseline until the trigger
-metadata and launch paths are re-attributed and reduced with hardware evidence.
+at 5,120 bytes and the VM worker stack budget at 19,456 bytes. Treat the current
+budgets as the reliability baseline until lifecycle, registry, GPIO input, and
+stack resource checks pass with fresh hardware evidence for a smaller setting.
 The harness uses a command-level timeout for its
 `device resources`
 request so serial stalls fail with captured output instead of hanging the full
@@ -216,7 +213,7 @@ suite. GPIO-button device-binding launch coverage previously measured
 protocol/main stack use above the old 8 KiB budget before launch-time binding
 setup moved to the VM worker stack. Current broader same-build non-scan
 hardware coverage measured protocol/main stack use at 4,048 bytes with
-4,144 bytes free, and VM worker stack use at 16,128 bytes with 5,888 bytes
+1,072 bytes free, and VM worker stack use at 16,160 bytes with 3,296 bytes
 free. The repeatable non-scan wrapper is
 `scripts/c3-supermini-test-hardware-non-scan.sh`; a run with
 `--skip-physical-input` is useful for unattended same-build coverage but does
@@ -240,11 +237,11 @@ Current same-build hardware coverage reached the BOOT/GPIO9 prompt in
 so it proves the app launched and the line was not pressed during that run; it
 does not prove physical dispatch. Current GPIO9 input isolation coverage with
 `--skip-flash` refreshed the resource summary through `after-press-timeout`.
-That run measured protocol/main stack use at 4,048 bytes with 4,144 bytes free,
-VM worker stack use at 16,128 bytes with 5,888 bytes free, and
-`input_button_state=1`. The low byte confirms one physical GPIO9 binding was
-installed; the next byte reports zero currently pressed inputs after the
-BOOT/GPIO9 pull-up is configured through devicetree. The script waits
+Re-run input isolation after stack-budget changes when the exact free-byte
+margin on the physical press path matters. The low byte of
+`input_button_state` confirms installed physical GPIO bindings; the next byte
+reports currently pressed inputs after the BOOT/GPIO9 pull-up is configured
+through devicetree. The script waits
 for release before asking for a held press and writes `after-release-timeout`
 diagnostics if the line never reads released. If the held press is not observed
 electrically, it writes `after-press-timeout` diagnostics; if the press is
@@ -274,22 +271,15 @@ GPIO4, GPIO7, GPIO10, or GPIO5 scan changes as ESP32-C3 Super Mini buttons
 without a targeted raw probe and input-stack run. GPIO3 is also part of
 ESP32-C3 boot strapping, while GPIO4 and GPIO7 have alternate JTAG/FSPI-related
 functions, so broad unconfigured scans are not authoritative for button mapping.
-After flattening the resumable screen-render interpreter path, a headless
-draw-log isolation run showed that `screen.open(...)` into a screen with only
-`service.display.clear("gray0")` uses `vm_stack_used_bytes=17056` of
-the prior 24576-byte budget, down from the previous 24020-byte display-only
-spike. After moving
-function calls onto the same VM-owned continuation stack, full suite coverage
-measured `vm_stack_used_bytes=17620` before lowering the worker stack to
-20480. Targeted GPIO9 input summary coverage after app-start binding setup moved
-to the VM worker measured `vm_stack_used_bytes=17296`, and narrowing the
-FFI app process/armed stack scratch reduced the input launch row to 17056. The
-worker stack is now 22,016 bytes. This replaces the previous 18,016-byte budget
-after installed-app lifecycle launch testing exposed a fatal crash consistent
-with worker-stack exhaustion. Remeasure the physical press row and full
-hardware suite before lowering that budget again. The stack harness fails
-with the captured resource frame when protocol/main unused stack drops below
-768 bytes or VM worker unused stack drops below 384 bytes.
+After flattening the resumable screen-render interpreter path and moving
+function calls onto the VM-owned continuation stack, the ESP32-C3 reference
+firmware now uses a 5,120-byte protocol/main stack and a 19,456-byte VM worker
+stack. The non-scan hardware suite with physical input skipped measured
+`proto_stack_used_bytes=4048`, `proto_stack_unused_bytes=1072`,
+`vm_stack_used_bytes=16160`, and `vm_stack_unused_bytes=3296`. Keep the stack
+harness in the validation path before lowering either budget again. The harness
+fails with the captured resource frame when protocol/main unused stack drops
+below 768 bytes or VM worker unused stack drops below 384 bytes.
 
 `scripts/c3-supermini-measure-ram-workloads.sh` is the targeted RAM and stack
 attribution harness. It formats app storage, installs the GPIO9 input summary
@@ -308,11 +298,11 @@ pressure caused by the diagnostic command itself. Stack values are Zephyr
 high-water readings for the current boot, so unchanged stack values across rows
 mean the peak happened before or during the earliest matching snapshot, not that
 every workload used the same stack depth. It is separate from the full hardware
-suite because it intentionally resets app storage. A representative current
-run measured the protocol/main stack flat at 4,048 bytes with 4,144 bytes free.
-The VM worker high-water mark was 16,128 bytes with 5,888 bytes free during
-input launch, display drawlog, system-resource, and Wi-Fi AP start workloads.
-Wi-Fi AP start/stop measured `heap_max_alloc_bytes=36460`.
+suite because it intentionally resets app storage. Re-run the workload harness
+after stack-budget changes when exact free-byte margins are needed. Current
+non-scan suite coverage measured the protocol/main stack at 4,048 bytes used
+with 1,072 bytes free and the VM worker stack at 16,160 bytes used with
+3,296 bytes free. Wi-Fi AP start/stop measured `heap_max_alloc_bytes=36460`.
 `scripts/c3-supermini-measure-ram-workloads.sh` also records
 `heap_max_headroom_bytes`, computed from the configured 51,200-byte Zephyr
 system heap and each row's allocation high-water mark, so AP/Wi-Fi pressure can

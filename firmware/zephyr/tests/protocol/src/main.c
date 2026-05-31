@@ -2418,9 +2418,9 @@ ZTEST(squidscript_protocol, test_links_squidvm_ffi_context_metadata)
 	zassert_true(sqvm_context_align() > 0);
 	zassert_true(sqvm_context_size() <= SQ_VM_RUNTIME_CONTEXT_BYTES);
 #if !defined(CONFIG_BOARD_NATIVE_SIM)
-	zassert_true(SQ_VM_RUNTIME_CONTEXT_BYTES <= 10880);
+	zassert_true(SQ_VM_RUNTIME_CONTEXT_BYTES <= 10624);
 #endif
-	zassert_true(SQ_VM_RUNTIME_WORK_STACK_SIZE <= 22048);
+	zassert_true(SQ_VM_RUNTIME_WORK_STACK_SIZE <= 19456);
 }
 
 ZTEST(squidscript_protocol, test_runtime_wait_idle_times_out_while_worker_is_running)
@@ -2453,7 +2453,7 @@ ZTEST(squidscript_protocol, test_runtime_reuses_transfer_storage_for_init_scratc
 	zassert_true(sizeof(runtime.transfer) >= sizeof(runtime.transfer.completion));
 #if !defined(CONFIG_BOARD_NATIVE_SIM)
 	size_t runtime_static = sizeof(runtime);
-	zassert_true(runtime_static <= 14304, "runtime_static=%zu", runtime_static);
+	zassert_true(runtime_static <= 14176, "runtime_static=%zu", runtime_static);
 #endif
 }
 
@@ -2643,7 +2643,7 @@ ZTEST(squidscript_protocol, test_exposes_resumable_squidvm_ffi_abi)
 	SqvmStorageCompletion completion = {0};
 
 	zassert_equal(sqvm_storage_transfer_capacity(), SQVM_STORAGE_TRANSFER_CAPACITY);
-	zassert_true(SQVM_STORAGE_TRANSFER_CAPACITY <= 768);
+	zassert_true(SQVM_STORAGE_TRANSFER_CAPACITY <= 640);
 	zassert_equal(sqvm_saved_state_capacity(), SQVM_SAVED_STATE_CAPACITY);
 	zassert_equal(sizeof(result.storage.bytes), SQVM_STORAGE_TRANSFER_CAPACITY);
 	zassert_equal(sizeof(completion.bytes), SQVM_STORAGE_TRANSFER_CAPACITY);

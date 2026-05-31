@@ -379,14 +379,14 @@ service callback phases; enabled Wi-Fi scan results still rely on the Rust FFI
 copying result records before returning to VM execution.
 The Rust VM uses one string interner for SQBC literals, firmware static strings,
 and dynamic runtime text. Dynamic text can reuse exact SQBC/static matches and
-contiguous substrings of existing dynamic/static text. Current ESP32-C3
-firmware symbols report `runtime.4` from the current image under test; the
-current local Wi-Fi scan-enabled target ELF reports 215,188 bytes of linker
-DRAM through the RAM audit and a 14,888-byte `runtime.4` static runtime symbol.
-The static-buffer report classifies the top ESP32-C3 symbols as approximately
-103 KiB platform-owned, 39 KiB SquidScript-owned, and 8 KiB unknown small
-symbols for that same local ELF. Rebuild and rerun the report before treating
-these values as current for a different firmware image.
+contiguous substrings of existing dynamic/static text. ESP32-C3 firmware symbols
+must be read from the current image under test. The validated Wi-Fi-enabled
+reference build reports 209,072 bytes of linker DRAM, 209,044 bytes through
+`scripts/zephyr-ram-audit.sh`, and a 14,376-byte `runtime.4` static runtime
+symbol. The static-buffer report classifies that image's top symbols as
+approximately 100 KiB platform-owned, 36 KiB SquidScript-owned, and 8 KiB
+unknown small symbols. Rebuild and rerun the reports before treating these
+values as current for a different firmware image.
 The resident protocol response buffer is 916 bytes, matching the current
 resources-response ceiling: 896 bytes of metric payload plus the 20-byte frame
 header. The larger ceiling is intentional: `device resources` now includes
