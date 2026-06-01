@@ -4,6 +4,7 @@ import os
 import re
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -18,6 +19,182 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def write_executable(self, path, contents):
         path.write_text(contents, encoding="utf-8")
         path.chmod(path.stat().st_mode | stat.S_IXUSR)
+
+    def test_squidvm_ffi_abi_checker_validates_current_manifest(self):
+        checker = ROOT / "scripts/check-squidvm-ffi-abi.py"
+        manifest_path = ROOT / "compiler/rust/crates/squidvm-ffi/abi/manifest.json"
+        coverage_doc = self.read("docs/zephyr_vm_host_abi_coverage.md")
+
+        result = subprocess.run(
+            [sys.executable, str(checker), "--check"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        export_names = {item["name"] for item in manifest["exports"]}
+        callback_fields = {item["field"] for item in manifest["callbacks"]}
+
+        self.assertIn("sqvm_dispatch_start_resumable_with_payload", export_names)
+        self.assertIn("sqvm_trigger_ble_profile_read", export_names)
+        self.assertIn("sqdp_parse_event_dispatch_request", export_names)
+        self.assertIn("sqdc_plan_device_binding", export_names)
+        self.assertIn("wifi_scan_network", callback_fields)
+        self.assertIn("system_memory_text", callback_fields)
+        self.assertIn("power_sleep", callback_fields)
+        self.assertIn("<!-- BEGIN SQUIDVM_FFI_ABI_MANIFEST -->", coverage_doc)
+        self.assertIn("<!-- END SQUIDVM_FFI_ABI_MANIFEST -->", coverage_doc)
+
+    def test_squidvm_ffi_abi_checker_reports_symbol_drift(self):
+        checker = ROOT / "scripts/check-squidvm-ffi-abi.py"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            rust = tmp_path / "lib.rs"
+            header = tmp_path / "squidvm_ffi.h"
+            runtime = tmp_path / "vm_runtime.c"
+            rust_tests = tmp_path / "ffi_dispatch.rs"
+            zephyr_tests = tmp_path / "main.c"
+            manifest = tmp_path / "manifest.json"
+            doc = tmp_path / "coverage.md"
+
+            rust.write_text(
+                """
+#[repr(C)]
+pub struct SqvmCallbacks {
+    pub trace: Option<unsafe extern "C" fn()>,
+}
+
+#[no_mangle]
+pub extern "C" fn sqvm_present(void) {}
+
+#[no_mangle]
+pub extern "C" fn sqvm_unlisted_rust(void) {}
+""",
+                encoding="utf-8",
+            )
+            header.write_text(
+                """
+typedef struct {
+    SqvmTraceCallback trace;
+} SqvmCallbacks;
+
+void sqvm_present(void);
+void sqvm_unlisted_header(void);
+""",
+                encoding="utf-8",
+            )
+            runtime.write_text(
+                """
+static const SqvmCallbacks runtime_callbacks = {
+    .trace = runtime_trace,
+};
+""",
+                encoding="utf-8",
+            )
+            rust_tests.write_text("fn covers_trace() {}\n", encoding="utf-8")
+            zephyr_tests.write_text(
+                "ZTEST(squidscript_protocol, test_trace_boundary)\n",
+                encoding="utf-8",
+            )
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "format": "squidscript-squidvm-ffi-abi-v1",
+                        "exports": [
+                            {
+                                "name": "sqvm_present",
+                                "family": "vm",
+                                "direction": "rust_to_c",
+                            },
+                            {
+                                "name": "sqvm_missing",
+                                "family": "vm",
+                                "direction": "rust_to_c",
+                            },
+                        ],
+                        "callbacks": [
+                            {
+                                "field": "trace",
+                                "typedef": "SqvmTraceCallback",
+                                "family": "core",
+                            },
+                            {
+                                "field": "missing_callback",
+                                "typedef": "SqvmMissingCallback",
+                                "family": "core",
+                            },
+                        ],
+                        "types": ["SqvmCallbacks"],
+                        "constants": [],
+                        "coverage": [
+                            {
+                                "family": "Core",
+                                "callbacks": ["trace", "missing_callback"],
+                                "rust": "fake rust coverage",
+                                "zephyr": "fake zephyr coverage",
+                                "rust_tests": ["covers_trace", "missing_rust_test"],
+                                "zephyr_tests": ["test_trace_boundary", "missing_zephyr_test"],
+                            }
+                        ],
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            doc.write_text(
+                """
+# Coverage
+
+<!-- BEGIN SQUIDVM_FFI_ABI_MANIFEST -->
+stale
+<!-- END SQUIDVM_FFI_ABI_MANIFEST -->
+""",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(checker),
+                    "--check",
+                    "--manifest",
+                    str(manifest),
+                    "--rust",
+                    str(rust),
+                    "--header",
+                    str(header),
+                    "--runtime",
+                    str(runtime),
+                    "--rust-tests",
+                    str(rust_tests),
+                    "--zephyr-tests",
+                    str(zephyr_tests),
+                    "--coverage-doc",
+                    str(doc),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        output = result.stderr + result.stdout
+        self.assertIn("manifest exports missing from Rust", output)
+        self.assertIn("sqvm_missing", output)
+        self.assertIn("unlisted Rust exports", output)
+        self.assertIn("sqvm_unlisted_rust", output)
+        self.assertIn("unlisted C header prototypes", output)
+        self.assertIn("sqvm_unlisted_header", output)
+        self.assertIn("manifest callbacks missing from Rust", output)
+        self.assertIn("missing_callback", output)
+        self.assertIn("manifest callbacks missing from Zephyr runtime wiring", output)
+        self.assertIn("manifest coverage evidence missing", output)
+        self.assertIn("missing_rust_test", output)
+        self.assertIn("missing_zephyr_test", output)
+        self.assertIn("coverage doc generated section is stale", output)
 
     def test_obsolete_rust_firmware_tree_and_scripts_are_removed(self):
         obsolete_paths = [

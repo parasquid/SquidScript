@@ -1,0 +1,878 @@
+{
+  "format": "squidscript-squidvm-ffi-abi-v1",
+  "exports": [
+    {
+      "name": "sqdc_config_clear",
+      "family": "device-config",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdc_is_safe_sqdevice_path",
+      "family": "device-config",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdc_parse_sqdevice",
+      "family": "device-config",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdc_config_set_null",
+      "family": "device-config",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdc_config_set_bool",
+      "family": "device-config",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdc_config_set_i32",
+      "family": "device-config",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdc_config_set_string",
+      "family": "device-config",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdc_encode_sqdc",
+      "family": "device-config",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdc_decode_sqdc",
+      "family": "device-config",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdc_plan_device_binding",
+      "family": "device-config",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_context_size",
+      "family": "vm-context",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_context_align",
+      "family": "vm-context",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_storage_transfer_capacity",
+      "family": "vm-context",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_saved_state_capacity",
+      "family": "vm-context",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_context_prepare",
+      "family": "vm-context",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_context_reset_in_place",
+      "family": "vm-context",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_context_init_in_place",
+      "family": "vm-context",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_trigger_timer_count",
+      "family": "triggers",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_trigger_timer_read",
+      "family": "triggers",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_trigger_timer_count_from_reader",
+      "family": "triggers",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_trigger_timer_read_from_reader",
+      "family": "triggers",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_trigger_ble_profile_count",
+      "family": "triggers",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_trigger_ble_profile_read",
+      "family": "triggers",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_trigger_ble_profile_count_from_reader",
+      "family": "triggers",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_trigger_ble_profile_read_from_reader",
+      "family": "triggers",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_device_binding_count_from_reader",
+      "family": "device-bindings",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_event_handler_exists_from_reader",
+      "family": "events",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_device_binding_read_from_reader",
+      "family": "device-bindings",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_dispatch",
+      "family": "dispatch",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_dispatch_start_resumable",
+      "family": "dispatch",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_dispatch_start_resumable_with_payload",
+      "family": "dispatch",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_dispatch_resume_storage",
+      "family": "dispatch",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_encode_empty_response",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_encode_hello_response",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_encode_error_response",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_encode_error_response_for_code",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_encode_app_list_response",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_encode_line_response",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_encode_lifecycle_response",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_encode_lifecycle_response_from_runtime_timers",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_encode_resources_response",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_encode_state_response",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_prepare_key_event",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_parse_wifi_profile_set_request",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_parse_state_import_request",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_parse_app_launch_request",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_parse_event_dispatch_request",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_prepare_transfer_begin",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_prepare_transfer_chunk",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_complete_transfer_chunk",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_prepare_transfer_commit",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_clear_transfer_session",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_prepare_resource_begin",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_prepare_resource_chunk",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_complete_resource_chunk",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_prepare_resource_commit",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqdp_clear_resource_session",
+      "family": "device-protocol",
+      "direction": "rust_to_c"
+    },
+    {
+      "name": "sqvm_ffi_panic_abort",
+      "family": "panic",
+      "direction": "c_to_rust"
+    }
+  ],
+  "callbacks": [
+    {
+      "field": "trace",
+      "typedef": "SqvmTraceCallback",
+      "family": "core"
+    },
+    {
+      "field": "read_exact_at",
+      "typedef": "SqvmReadExactAtCallback",
+      "family": "core"
+    },
+    {
+      "field": "debug_output",
+      "typedef": "SqvmDebugOutputCallback",
+      "family": "core"
+    },
+    {
+      "field": "display_clear",
+      "typedef": "SqvmDisplayClearCallback",
+      "family": "display"
+    },
+    {
+      "field": "display_text",
+      "typedef": "SqvmDisplayTextCallback",
+      "family": "display"
+    },
+    {
+      "field": "display_rect",
+      "typedef": "SqvmDisplayRectCallback",
+      "family": "display"
+    },
+    {
+      "field": "display_line",
+      "typedef": "SqvmDisplayLineCallback",
+      "family": "display"
+    },
+    {
+      "field": "display_select",
+      "typedef": "SqvmDisplaySelectCallback",
+      "family": "display"
+    },
+    {
+      "field": "display_image",
+      "typedef": "SqvmDisplayImageCallback",
+      "family": "display"
+    },
+    {
+      "field": "display_draw",
+      "typedef": "SqvmDisplayDrawCallback",
+      "family": "display"
+    },
+    {
+      "field": "display_info",
+      "typedef": "SqvmDisplayInfoCallback",
+      "family": "display"
+    },
+    {
+      "field": "indicator_write",
+      "typedef": "SqvmIndicatorWriteCallback",
+      "family": "indicator"
+    },
+    {
+      "field": "indicator_toggle",
+      "typedef": "SqvmIndicatorToggleCallback",
+      "family": "indicator"
+    },
+    {
+      "field": "indicator_read",
+      "typedef": "SqvmIndicatorReadCallback",
+      "family": "indicator"
+    },
+    {
+      "field": "indicator_breathe",
+      "typedef": "SqvmIndicatorBreatheCallback",
+      "family": "indicator"
+    },
+    {
+      "field": "indicator_blink",
+      "typedef": "SqvmIndicatorBlinkCallback",
+      "family": "indicator"
+    },
+    {
+      "field": "hardware_gpio_write",
+      "typedef": "SqvmHardwareGpioWriteCallback",
+      "family": "hardware-gpio"
+    },
+    {
+      "field": "hardware_gpio_toggle",
+      "typedef": "SqvmHardwareGpioToggleCallback",
+      "family": "hardware-gpio"
+    },
+    {
+      "field": "hardware_gpio_read",
+      "typedef": "SqvmHardwareGpioReadCallback",
+      "family": "hardware-gpio"
+    },
+    {
+      "field": "app_launch",
+      "typedef": "SqvmAppLifecycleCallback",
+      "family": "app-lifecycle"
+    },
+    {
+      "field": "app_arm",
+      "typedef": "SqvmAppLifecycleCallback",
+      "family": "app-lifecycle"
+    },
+    {
+      "field": "app_disarm",
+      "typedef": "SqvmAppLifecycleCallback",
+      "family": "app-lifecycle"
+    },
+    {
+      "field": "app_registry_list",
+      "typedef": "SqvmAppRegistryListCallback",
+      "family": "app-lifecycle"
+    },
+    {
+      "field": "app_registry_get",
+      "typedef": "SqvmAppRegistryGetCallback",
+      "family": "app-lifecycle"
+    },
+    {
+      "field": "app_process_stack",
+      "typedef": "SqvmAppStackCallback",
+      "family": "app-lifecycle"
+    },
+    {
+      "field": "app_armed_stack",
+      "typedef": "SqvmAppStackCallback",
+      "family": "app-lifecycle"
+    },
+    {
+      "field": "timer_every",
+      "typedef": "SqvmTimerEveryCallback",
+      "family": "timer"
+    },
+    {
+      "field": "timer_after",
+      "typedef": "SqvmTimerAfterCallback",
+      "family": "timer"
+    },
+    {
+      "field": "wifi_start_ap",
+      "typedef": "SqvmWifiStartApCallback",
+      "family": "wifi"
+    },
+    {
+      "field": "wifi_stop_ap",
+      "typedef": "SqvmWifiStopApCallback",
+      "family": "wifi"
+    },
+    {
+      "field": "wifi_connect",
+      "typedef": "SqvmWifiConnectCallback",
+      "family": "wifi"
+    },
+    {
+      "field": "wifi_disconnect",
+      "typedef": "SqvmWifiDisconnectCallback",
+      "family": "wifi"
+    },
+    {
+      "field": "wifi_get_ap_ip",
+      "typedef": "SqvmWifiGetApIpCallback",
+      "family": "wifi"
+    },
+    {
+      "field": "wifi_status",
+      "typedef": "SqvmWifiStatusCallback",
+      "family": "wifi"
+    },
+    {
+      "field": "wifi_scan",
+      "typedef": "SqvmWifiScanCallback",
+      "family": "wifi"
+    },
+    {
+      "field": "wifi_operation",
+      "typedef": "SqvmWifiOperationCallback",
+      "family": "wifi"
+    },
+    {
+      "field": "wifi_result",
+      "typedef": "SqvmWifiResultCallback",
+      "family": "wifi"
+    },
+    {
+      "field": "wifi_cancel",
+      "typedef": "SqvmWifiCancelCallback",
+      "family": "wifi"
+    },
+    {
+      "field": "wifi_scan_network",
+      "typedef": "SqvmWifiScanNetworkCallback",
+      "family": "wifi"
+    },
+    {
+      "field": "device_config_load",
+      "typedef": "SqvmDeviceConfigLoadCallback",
+      "family": "device-config"
+    },
+    {
+      "field": "device_config_set",
+      "typedef": "SqvmDeviceConfigSetCallback",
+      "family": "device-config"
+    },
+    {
+      "field": "device_config_rebind",
+      "typedef": "SqvmDeviceConfigRebindCallback",
+      "family": "device-config"
+    },
+    {
+      "field": "device_config_save",
+      "typedef": "SqvmDeviceConfigSaveCallback",
+      "family": "device-config"
+    },
+    {
+      "field": "file_pick_file",
+      "typedef": "SqvmFilePickFileCallback",
+      "family": "file"
+    },
+    {
+      "field": "file_read_text",
+      "typedef": "SqvmFileReadTextCallback",
+      "family": "file"
+    },
+    {
+      "field": "file_read_lines",
+      "typedef": "SqvmFileReadLinesCallback",
+      "family": "file"
+    },
+    {
+      "field": "system_memory_text",
+      "typedef": "SqvmSystemMemoryTextCallback",
+      "family": "system"
+    },
+    {
+      "field": "system_storage_text",
+      "typedef": "SqvmSystemStorageTextCallback",
+      "family": "system"
+    },
+    {
+      "field": "system_start_reason_text",
+      "typedef": "SqvmSystemStartReasonTextCallback",
+      "family": "system"
+    },
+    {
+      "field": "power_sleep",
+      "typedef": "SqvmPowerSleepCallback",
+      "family": "power"
+    }
+  ],
+  "types": [
+    "SqvmStatus",
+    "SqdpStatus",
+    "SqdcStatus",
+    "SqdcValueKind",
+    "SqdcValue",
+    "SqdcRecord",
+    "SqdcConfig",
+    "SqdcDeviceBindingResourceKind",
+    "SqdcDeviceBindingPlan",
+    "SqdpActionKind",
+    "SqdpAppListEntry",
+    "SqdpLineSlice",
+    "SqdpResourceMetric",
+    "SqdpLifecycleTimer",
+    "SqdpAction",
+    "SqdpWifiProfile",
+    "SqdpStateImport",
+    "SqdpAppLaunch",
+    "SqvmTriggerTimer",
+    "SqvmBleProfileEventRoute",
+    "SqvmBleProfileTrigger",
+    "SqvmEventPayloadField",
+    "SqvmDeviceBinding",
+    "SqdpEventDispatch",
+    "SqvmDispatchOutcome",
+    "SqvmStorageRequestKind",
+    "SqvmStorageRequest",
+    "SqvmStorageCompletion",
+    "SqvmDispatchResult",
+    "SqvmDisplayTextOptions",
+    "SqvmDisplayRectOptions",
+    "SqvmDisplayLineOptions",
+    "SqvmDisplayResourceOptions",
+    "SqvmDisplayInfo",
+    "SqvmAppRegistryEntry",
+    "SqvmAppStackEntry",
+    "SqvmWifiStatus",
+    "SqvmWifiAccessPoint",
+    "SqvmWifiOperation",
+    "SqvmWifiOperationResult",
+    "SqvmWifiScanNetworkResult",
+    "SqvmDeviceConfigValueKind",
+    "SqvmDeviceConfigValue",
+    "SqvmDeviceConfigResult",
+    "SqvmFilePickFileResult",
+    "SqvmFileReadTextResult",
+    "SqvmFileReadLinesResult",
+    "SqvmWifiApIp",
+    "SqvmCallbacks",
+    "SqvmTraceCallback",
+    "SqvmReadExactAtCallback",
+    "SqvmDebugOutputCallback",
+    "SqvmDisplayClearCallback",
+    "SqvmDisplayTextCallback",
+    "SqvmDisplayRectCallback",
+    "SqvmDisplayLineCallback",
+    "SqvmDisplaySelectCallback",
+    "SqvmDisplayImageCallback",
+    "SqvmDisplayDrawCallback",
+    "SqvmDisplayInfoCallback",
+    "SqvmWifiStartApCallback",
+    "SqvmWifiStopApCallback",
+    "SqvmWifiConnectCallback",
+    "SqvmWifiDisconnectCallback",
+    "SqvmWifiGetApIpCallback",
+    "SqvmWifiStatusCallback",
+    "SqvmWifiScanCallback",
+    "SqvmWifiOperationCallback",
+    "SqvmWifiResultCallback",
+    "SqvmWifiCancelCallback",
+    "SqvmWifiScanNetworkCallback",
+    "SqvmDeviceConfigLoadCallback",
+    "SqvmDeviceConfigSetCallback",
+    "SqvmDeviceConfigRebindCallback",
+    "SqvmDeviceConfigSaveCallback",
+    "SqvmFilePickFileCallback",
+    "SqvmFileReadTextCallback",
+    "SqvmFileReadLinesCallback",
+    "SqvmIndicatorWriteCallback",
+    "SqvmIndicatorToggleCallback",
+    "SqvmIndicatorReadCallback",
+    "SqvmIndicatorBreatheCallback",
+    "SqvmIndicatorBlinkCallback",
+    "SqvmHardwareGpioWriteCallback",
+    "SqvmHardwareGpioToggleCallback",
+    "SqvmHardwareGpioReadCallback",
+    "SqvmAppLifecycleCallback",
+    "SqvmAppRegistryListCallback",
+    "SqvmAppRegistryGetCallback",
+    "SqvmAppStackCallback",
+    "SqvmTimerEveryCallback",
+    "SqvmTimerAfterCallback",
+    "SqvmSystemMemoryTextCallback",
+    "SqvmSystemStorageTextCallback",
+    "SqvmSystemStartReasonTextCallback",
+    "SqvmPowerSleepCallback"
+  ],
+  "constants": [
+    "SQVM_STORAGE_TRANSFER_CAPACITY",
+    "SQVM_SAVED_STATE_CAPACITY",
+    "SQVM_DEVICE_BINDING_NAME_CAP",
+    "SQVM_DEVICE_BINDING_RESOURCE_CAP",
+    "SQDC_CONFIG_MAX_RECORDS",
+    "SQDC_CONFIG_KEY_CAP",
+    "SQDC_CONFIG_STRING_CAP",
+    "SQVM_BLE_PROFILE_TEXT_CAP",
+    "SQVM_BLE_PROFILE_ACCEPT_MAX",
+    "SQVM_BLE_PROFILE_EVENT_MAX",
+    "SQVM_EVENT_PAYLOAD_FIELD_MAX",
+    "SQVM_WIFI_SCAN_MAX_NETWORKS"
+  ],
+  "coverage": [
+    {
+      "family": "core",
+      "callbacks": [
+        "trace",
+        "read_exact_at",
+        "debug_output"
+      ],
+      "rust": "Rust FFI dispatch and reader tests",
+      "zephyr": "protocol dispatch and storage adapter ztests",
+      "rust_tests": [
+        "dispatches_debug_indicator_and_timer_service_callbacks",
+        "dispatches_sqbc_through_c_abi_callbacks",
+        "missing_required_callbacks_surface_as_vm_error_status"
+      ],
+      "zephyr_tests": [
+        "test_zephyr_calls_squidvm_ffi_with_storage_adapter",
+        "test_vm_runtime_callback_boundary_statuses"
+      ]
+    },
+    {
+      "family": "display",
+      "callbacks": [
+        "display_clear",
+        "display_text",
+        "display_rect",
+        "display_line",
+        "display_select",
+        "display_image",
+        "display_draw",
+        "display_info"
+      ],
+      "rust": "Rust FFI dispatch display tests",
+      "zephyr": "draw-log and display-info ztests",
+      "rust_tests": [
+        "dispatches_display_service_callbacks"
+      ],
+      "zephyr_tests": [
+        "test_vm_runtime_dispatches_display_drawlog_callbacks"
+      ]
+    },
+    {
+      "family": "indicator",
+      "callbacks": [
+        "indicator_write",
+        "indicator_toggle",
+        "indicator_read",
+        "indicator_breathe",
+        "indicator_blink"
+      ],
+      "rust": "Rust FFI dispatch indicator tests",
+      "zephyr": "runtime callback boundary ztests",
+      "rust_tests": [
+        "dispatches_debug_indicator_and_timer_service_callbacks",
+        "dispatches_indicator_breathe_service_callback",
+        "dispatches_indicator_blink_service_callback"
+      ],
+      "zephyr_tests": [
+        "test_vm_runtime_tracks_output_indicator_and_due_timers",
+        "test_indicator_pattern_state_machine_transitions",
+        "test_vm_runtime_callback_boundary_statuses"
+      ]
+    },
+    {
+      "family": "hardware-gpio",
+      "callbacks": [
+        "hardware_gpio_write",
+        "hardware_gpio_toggle",
+        "hardware_gpio_read"
+      ],
+      "rust": "Rust FFI dispatch GPIO tests",
+      "zephyr": "runtime callback boundary ztests",
+      "rust_tests": [
+        "dispatches_hardware_gpio_service_callbacks"
+      ],
+      "zephyr_tests": [
+        "test_vm_runtime_rebinds_inline_gpio_button_input",
+        "test_vm_runtime_callback_boundary_statuses"
+      ]
+    },
+    {
+      "family": "app-lifecycle",
+      "callbacks": [
+        "app_launch",
+        "app_arm",
+        "app_disarm",
+        "app_registry_list",
+        "app_registry_get",
+        "app_process_stack",
+        "app_armed_stack"
+      ],
+      "rust": "Rust FFI dispatch lifecycle tests",
+      "zephyr": "app lifecycle and registry ztests",
+      "rust_tests": [
+        "dispatches_app_lifecycle_and_timer_after_callbacks",
+        "dispatches_app_registry_callbacks",
+        "dispatches_app_lifecycle_inspection_callbacks"
+      ],
+      "zephyr_tests": [
+        "test_zephyr_calls_squidvm_ffi_lifecycle_callbacks",
+        "test_vm_runtime_dispatches_app_registry_callbacks",
+        "test_vm_runtime_dispatches_stack_inspection_callbacks"
+      ]
+    },
+    {
+      "family": "timer",
+      "callbacks": [
+        "timer_every",
+        "timer_after"
+      ],
+      "rust": "Rust FFI dispatch timer tests",
+      "zephyr": "timer helper boundary ztests",
+      "rust_tests": [
+        "dispatches_debug_indicator_and_timer_service_callbacks",
+        "dispatches_app_lifecycle_and_timer_after_callbacks"
+      ],
+      "zephyr_tests": [
+        "test_app_arm_registers_timer_and_dispatches_armed_app",
+        "test_vm_runtime_tracks_output_indicator_and_due_timers"
+      ]
+    },
+    {
+      "family": "wifi",
+      "callbacks": [
+        "wifi_start_ap",
+        "wifi_stop_ap",
+        "wifi_connect",
+        "wifi_disconnect",
+        "wifi_get_ap_ip",
+        "wifi_status",
+        "wifi_scan",
+        "wifi_operation",
+        "wifi_result",
+        "wifi_cancel",
+        "wifi_scan_network"
+      ],
+      "rust": "Rust FFI dispatch Wi-Fi tests",
+      "zephyr": "unsupported/action stub ztests",
+      "rust_tests": [
+        "dispatches_wifi_status_and_scan_callbacks",
+        "dispatches_wifi_action_service_callbacks",
+        "dispatches_zephyr_wifi_scan_network_auth_and_original_ssid_length"
+      ],
+      "zephyr_tests": [
+        "test_vm_runtime_dispatches_wifi_action_stubs",
+        "test_vm_runtime_formats_wifi_bssid_without_heap"
+      ]
+    },
+    {
+      "family": "device-config",
+      "callbacks": [
+        "device_config_load",
+        "device_config_set",
+        "device_config_rebind",
+        "device_config_save"
+      ],
+      "rust": "Rust FFI dispatch device-config tests",
+      "zephyr": "device configuration ztests",
+      "rust_tests": [
+        "dispatches_device_config_callbacks",
+        "missing_device_config_callbacks_return_unsupported_records"
+      ],
+      "zephyr_tests": [
+        "test_sqdc_ffi_parses_and_encodes_device_config",
+        "test_vm_runtime_rebinds_display_device_config",
+        "test_vm_runtime_saves_device_config_draft_to_flash_sqdc"
+      ]
+    },
+    {
+      "family": "file",
+      "callbacks": [
+        "file_pick_file",
+        "file_read_text",
+        "file_read_lines"
+      ],
+      "rust": "Rust FFI dispatch file result tests",
+      "zephyr": "unsupported content/file result ztests",
+      "rust_tests": [
+        "dispatches_file_pick_file_callback",
+        "dispatches_file_read_callbacks",
+        "missing_file_callbacks_return_unsupported_records"
+      ],
+      "zephyr_tests": [
+        "test_vm_runtime_dispatches_file_pick_file_unsupported_result",
+        "test_vm_runtime_dispatches_file_read_unsupported_results"
+      ]
+    },
+    {
+      "family": "system",
+      "callbacks": [
+        "system_memory_text",
+        "system_storage_text",
+        "system_start_reason_text"
+      ],
+      "rust": "Rust FFI dispatch system text tests",
+      "zephyr": "system resource/start reason ztests",
+      "rust_tests": [
+        "dispatches_system_resource_text_callbacks",
+        "dispatches_power_sleep_and_start_reason_callbacks"
+      ],
+      "zephyr_tests": [
+        "test_vm_runtime_dispatches_system_resource_callbacks"
+      ]
+    },
+    {
+      "family": "power",
+      "callbacks": [
+        "power_sleep"
+      ],
+      "rust": "Rust FFI dispatch power tests",
+      "zephyr": "power sleep dispatch ztests",
+      "rust_tests": [
+        "dispatches_power_sleep_and_start_reason_callbacks"
+      ],
+      "zephyr_tests": [
+        "test_vm_runtime_callback_boundary_statuses"
+      ]
+    }
+  ]
+}

@@ -89,6 +89,18 @@ load/save/reset paths; native ztests cover it through a host-mounted filesystem.
 The Zephyr VM runtime scratch buffer is sized to the FFI storage transfer
 capacity so the firmware does not reserve a full max-app buffer when the VM
 only needs one bounded code/storage chunk for resumable dispatch.
+
+The VM host ABI inventory is checked by
+`scripts/check-squidvm-ffi-abi.py`. The manifest at
+`compiler/rust/crates/squidvm-ffi/abi/manifest.json` describes the current
+`sqvm_`, `sqdp_`, and `sqdc_` exports, `SqvmCallbacks` fields, public ABI
+types, constants, and callback coverage expectations. The checker validates
+Rust `#[no_mangle] extern "C"` exports, `src/squidvm_ffi.h` prototypes and
+types, `src/vm_runtime.c` callback wiring, and the generated inventory section
+in `docs/zephyr_vm_host_abi_coverage.md`. After changing the ABI, update the
+manifest and run `python3 scripts/check-squidvm-ffi-abi.py --write-doc`; the
+normal Python tooling tests run the checker in `--check` mode.
+
 The repo-local Zephyr setup installs the lightweight Twister dependencies
 needed to run `firmware/zephyr/tests/protocol` through Zephyr's test runner.
 Use `scripts/zephyr-test-protocol.sh` for that protocol suite; it selects

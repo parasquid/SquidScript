@@ -80,3 +80,46 @@ stubs.
 - Future callbacks should keep the same caller-owned-buffer pattern used by
   `system.memory()` and `system.storage("apps")` unless a documented API
   requirement makes another ownership model necessary.
+
+<!-- BEGIN SQUIDVM_FFI_ABI_MANIFEST -->
+## Manifest-Checked ABI Inventory
+
+This section is generated from `compiler/rust/crates/squidvm-ffi/abi/manifest.json`.
+Run `python3 scripts/check-squidvm-ffi-abi.py --write-doc` after changing the FFI ABI.
+The checker validates Rust exports, the Zephyr C header, runtime callback wiring,
+and this generated documentation section against the manifest.
+
+- Exports: 58
+- Callback fields: 50
+- Public ABI types: 96
+- Public ABI constants: 12
+
+### Export Families
+
+| Family | Direction | Symbols |
+| --- | --- | --- |
+| device-bindings | rust_to_c | 2 |
+| device-config | rust_to_c | 10 |
+| device-protocol | rust_to_c | 25 |
+| dispatch | rust_to_c | 4 |
+| events | rust_to_c | 1 |
+| panic | c_to_rust | 1 |
+| triggers | rust_to_c | 8 |
+| vm-context | rust_to_c | 7 |
+
+### Callback Coverage Expectations
+
+| Family | Callbacks | Rust coverage | Zephyr coverage | Evidence checks |
+| --- | --- | --- | --- | ---: |
+| core | trace, read_exact_at, debug_output | Rust FFI dispatch and reader tests | protocol dispatch and storage adapter ztests | 5 |
+| display | display_clear, display_text, display_rect, display_line, display_select, display_image, display_draw, display_info | Rust FFI dispatch display tests | draw-log and display-info ztests | 2 |
+| indicator | indicator_write, indicator_toggle, indicator_read, indicator_breathe, indicator_blink | Rust FFI dispatch indicator tests | runtime callback boundary ztests | 6 |
+| hardware-gpio | hardware_gpio_write, hardware_gpio_toggle, hardware_gpio_read | Rust FFI dispatch GPIO tests | runtime callback boundary ztests | 3 |
+| app-lifecycle | app_launch, app_arm, app_disarm, app_registry_list, app_registry_get, app_process_stack, app_armed_stack | Rust FFI dispatch lifecycle tests | app lifecycle and registry ztests | 6 |
+| timer | timer_every, timer_after | Rust FFI dispatch timer tests | timer helper boundary ztests | 4 |
+| wifi | wifi_start_ap, wifi_stop_ap, wifi_connect, wifi_disconnect, wifi_get_ap_ip, wifi_status, wifi_scan, wifi_operation, wifi_result, wifi_cancel, wifi_scan_network | Rust FFI dispatch Wi-Fi tests | unsupported/action stub ztests | 5 |
+| device-config | device_config_load, device_config_set, device_config_rebind, device_config_save | Rust FFI dispatch device-config tests | device configuration ztests | 5 |
+| file | file_pick_file, file_read_text, file_read_lines | Rust FFI dispatch file result tests | unsupported content/file result ztests | 5 |
+| system | system_memory_text, system_storage_text, system_start_reason_text | Rust FFI dispatch system text tests | system resource/start reason ztests | 3 |
+| power | power_sleep | Rust FFI dispatch power tests | power sleep dispatch ztests | 2 |
+<!-- END SQUIDVM_FFI_ABI_MANIFEST -->
