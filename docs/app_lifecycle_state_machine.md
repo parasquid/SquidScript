@@ -20,6 +20,10 @@ shape used by the device protocol, app store, and hardware harnesses.
   queued in the same event as `app.launch`.
 - `system.startReason()` reports `"boot"`, `"launch"`, `"return"`, or
   `"wake"` for the newly started foreground session.
+- Zephyr lifecycle transition decisions live in `app_lifecycle.c`. Device
+  protocol code performs target/storage effects requested by the lifecycle step,
+  such as opening SQBC, dispatching an event, writing planned-resume records, or
+  registering armed triggers.
 
 ## Foreground State Machine
 
@@ -59,12 +63,26 @@ stateDiagram-v2
 - A missing requested installed app fails the launch and must be visible through
   protocol diagnostics; fallback `main` is used only for logical root `main`,
   not to hide a missing requested foreground app.
-- If `app.exit` dispatch fails during a launch handoff, the target launch is not
-  started.
+- If the firmware cannot start the `app.exit` handoff dispatch, the target
+  launch is not started. Once the handoff dispatch reaches a terminal VM
+  result, the lifecycle continues to the target app so apps without an
+  `app.exit` handler do not wedge host/app launches.
 - If planned sleep checkpoint writing fails, firmware records a diagnostic and
   does not treat the lifecycle record as valid.
 - If planned wake restore cannot start the recorded active app, firmware records
   `planned resume app missing` and returns to normal root-start behavior.
+
+## Diagnostics
+
+`device lifecycle` reports the visible app routing state:
+
+- `active=<app-id>` for the active foreground app.
+- `process_stack[n]=<app-id>` for return targets.
+- `armed_stack[n]=<app-id> <event>` for registered armed triggers.
+- `lifecycle=<phase>` for the foreground lifecycle phase.
+- `arm_lifecycle=<phase>` for pending armed-trigger registration.
+- `start_reason=<reason>` for the reason the current foreground app was
+  started.
 
 ## Host Launch Sequence
 

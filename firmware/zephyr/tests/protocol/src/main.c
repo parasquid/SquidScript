@@ -2,11 +2,13 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 
 #include <zephyr/fs/fs.h>
 #include <zephyr/ztest.h>
 
 #include "app_store.h"
+#include "app_lifecycle.h"
 #include "device_protocol.h"
 #include "protocol.h"
 #include "serial_transport.h"
@@ -306,6 +308,32 @@ ZTEST(squidscript_protocol, test_planned_resume_record_deduplicates_armed_app_id
 	zassert_str_equal(record.return_stack[0], "main");
 	zassert_equal(record.armed_app_count, 1);
 	zassert_str_equal(record.armed_apps[0], "break-reminder");
+}
+
+ZTEST(squidscript_protocol, test_lifecycle_state_machine_restores_planned_route)
+{
+	struct sq_vm_runtime runtime = {0};
+	char return_stack[SQ_VM_RUNTIME_RETURN_STACK_MAX][SQ_APP_STORE_APP_ID_MAX] = {0};
+
+	strncpy(runtime.current_app, "old-app", sizeof(runtime.current_app) - 1);
+	runtime.return_stack_count = 1;
+	strncpy(runtime.return_stack[0], "old-root", sizeof(runtime.return_stack[0]) - 1);
+	runtime.lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_LAUNCH_REQUESTED;
+	strncpy(runtime.lifecycle_target_app, "stale-target",
+		sizeof(runtime.lifecycle_target_app) - 1);
+	runtime.dispatch_exited = true;
+
+	strncpy(return_stack[0], "main", sizeof(return_stack[0]) - 1);
+	strncpy(return_stack[1], "library", sizeof(return_stack[1]) - 1);
+
+	zassert_equal(sq_app_lifecycle_restore_planned_route(&runtime, return_stack, 2), 0);
+	zassert_equal(runtime.lifecycle_phase, SQ_VM_RUNTIME_LIFECYCLE_IDLE);
+	zassert_false(runtime.dispatch_exited);
+	zassert_str_equal(runtime.lifecycle_target_app, "");
+	zassert_str_equal(runtime.start_reason, "wake");
+	zassert_equal(runtime.return_stack_count, 2);
+	zassert_str_equal(runtime.return_stack[0], "main");
+	zassert_str_equal(runtime.return_stack[1], "library");
 }
 
 ZTEST(squidscript_protocol, test_planned_resume_scratch_rejects_overlap)
@@ -1356,6 +1384,74 @@ ZTEST(squidscript_protocol, test_launch_root_prefers_installed_main_over_fallbac
 	zassert_str_equal(runtime.outputs[0], "reader start");
 
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
+ZTEST(squidscript_protocol, test_lifecycle_state_machine_host_launch_from_empty_pushes_root)
+{
+	struct sq_vm_runtime runtime = {0};
+	struct sq_app_lifecycle_step step = {0};
+
+	zassert_equal(sq_app_lifecycle_request_launch(&runtime, (const uint8_t *)"reader",
+						      sizeof("reader") - 1),
+		      0);
+	zassert_true(sq_vm_runtime_lifecycle_busy(&runtime));
+
+	zassert_equal(sq_app_lifecycle_next_step(&runtime, NULL, NULL, &step), 0);
+	zassert_equal(step.kind, SQ_APP_LIFECYCLE_STEP_START_APP);
+	zassert_str_equal(step.app_id, "reader");
+	zassert_str_equal(step.event, "app.start");
+	zassert_true(step.set_current);
+	zassert_equal(runtime.return_stack_count, 1);
+	zassert_str_equal(runtime.return_stack[0], "main");
+	zassert_str_equal(runtime.start_reason, "launch");
+	zassert_false(sq_vm_runtime_lifecycle_busy(&runtime));
+}
+
+ZTEST(squidscript_protocol, test_lifecycle_state_machine_host_launch_from_current_dispatches_exit)
+{
+	struct sq_vm_runtime runtime = {0};
+	struct sq_app_lifecycle_step step = {0};
+
+	strncpy(runtime.current_app, "reader", sizeof(runtime.current_app) - 1);
+	zassert_equal(sq_app_lifecycle_request_launch(&runtime, (const uint8_t *)"settings",
+						      sizeof("settings") - 1),
+		      0);
+
+	zassert_equal(sq_app_lifecycle_next_step(&runtime, NULL, NULL, &step), 0);
+	zassert_equal(step.kind, SQ_APP_LIFECYCLE_STEP_START_APP);
+	zassert_str_equal(step.app_id, "reader");
+	zassert_str_equal(step.event, "app.exit");
+	zassert_false(step.set_current);
+	zassert_equal(runtime.lifecycle_phase, SQ_VM_RUNTIME_LIFECYCLE_EXIT_FOR_LAUNCH);
+	zassert_equal(runtime.return_stack_count, 0);
+
+	memset(&step, 0, sizeof(step));
+	zassert_equal(sq_app_lifecycle_next_step(&runtime, NULL, NULL, &step), 0);
+	zassert_equal(step.kind, SQ_APP_LIFECYCLE_STEP_START_APP);
+	zassert_str_equal(step.app_id, "settings");
+	zassert_str_equal(step.event, "app.start");
+	zassert_true(step.set_current);
+	zassert_equal(runtime.return_stack_count, 1);
+	zassert_str_equal(runtime.return_stack[0], "reader");
+	zassert_str_equal(runtime.start_reason, "launch");
+	zassert_false(sq_vm_runtime_lifecycle_busy(&runtime));
+}
+
+ZTEST(squidscript_protocol, test_lifecycle_state_machine_dispatch_error_preserves_exit_handoff)
+{
+	struct sq_vm_runtime runtime = {0};
+	struct sq_app_lifecycle_step step = {0};
+
+	strncpy(runtime.current_app, "reader", sizeof(runtime.current_app) - 1);
+	zassert_equal(sq_app_lifecycle_request_launch(&runtime, (const uint8_t *)"settings",
+						      sizeof("settings") - 1),
+		      0);
+	zassert_equal(sq_app_lifecycle_next_step(&runtime, NULL, NULL, &step), 0);
+	zassert_equal(runtime.lifecycle_phase, SQ_VM_RUNTIME_LIFECYCLE_EXIT_FOR_LAUNCH);
+
+	sq_app_lifecycle_cancel_pending_after_dispatch_error(&runtime, -EIO);
+	zassert_equal(runtime.lifecycle_phase, SQ_VM_RUNTIME_LIFECYCLE_EXIT_FOR_LAUNCH);
+	zassert_str_equal(runtime.lifecycle_target_app, "settings");
 }
 
 ZTEST(squidscript_protocol, test_host_app_launch_uses_lifecycle_chain_from_fallback_root)

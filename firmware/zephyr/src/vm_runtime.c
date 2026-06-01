@@ -1,5 +1,6 @@
 #include "vm_runtime.h"
 
+#include "app_lifecycle.h"
 #include "squidscript_target_defaults.h"
 
 #include <errno.h>
@@ -415,17 +416,7 @@ static int32_t runtime_app_launch(void *user_data, const uint8_t *app, size_t ap
 	if (result != 0) {
 		return result;
 	}
-	if (runtime == NULL || app == NULL || app_len == 0 ||
-	    app_len >= sizeof(runtime->lifecycle_target_app)) {
-		return -EINVAL;
-	}
-	if (sq_vm_runtime_lifecycle_busy(runtime)) {
-		return -EBUSY;
-	}
-	memcpy(runtime->lifecycle_target_app, app, app_len);
-	runtime->lifecycle_target_app[app_len] = '\0';
-	runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_LAUNCH_REQUESTED;
-	return 0;
+	return sq_app_lifecycle_request_launch(runtime, app, app_len);
 }
 
 static int32_t runtime_app_arm(void *user_data, const uint8_t *app, size_t app_len)
@@ -436,17 +427,7 @@ static int32_t runtime_app_arm(void *user_data, const uint8_t *app, size_t app_l
 	if (result != 0) {
 		return result;
 	}
-	if (runtime == NULL || app == NULL || app_len == 0 ||
-	    app_len >= sizeof(runtime->arm_target_app)) {
-		return -EINVAL;
-	}
-	if (sq_vm_runtime_arm_busy(runtime)) {
-		return -EBUSY;
-	}
-	memcpy(runtime->arm_target_app, app, app_len);
-	runtime->arm_target_app[app_len] = '\0';
-	runtime->arm_phase = SQ_VM_RUNTIME_ARM_REQUESTED;
-	return 0;
+	return sq_app_lifecycle_request_arm(runtime, app, app_len);
 }
 
 static int32_t runtime_app_disarm(void *user_data, const uint8_t *app, size_t app_len)
@@ -457,11 +438,11 @@ static int32_t runtime_app_disarm(void *user_data, const uint8_t *app, size_t ap
 		return result;
 	}
 	struct sq_vm_runtime *runtime = user_data;
-	if (runtime != NULL && app != NULL && runtime->arm_phase == SQ_VM_RUNTIME_ARM_REQUESTED &&
-	    strlen(runtime->arm_target_app) == app_len &&
-	    memcmp(runtime->arm_target_app, app, app_len) == 0) {
-		memset(runtime->arm_target_app, 0, sizeof(runtime->arm_target_app));
-		runtime->arm_phase = SQ_VM_RUNTIME_ARM_IDLE;
+	if (runtime != NULL && app != NULL) {
+		result = sq_app_lifecycle_cancel_pending_arm(runtime, app, app_len);
+		if (result != 0) {
+			return result;
+		}
 	}
 	return sq_vm_runtime_clear_armed_app(user_data, app, app_len);
 }
@@ -594,13 +575,8 @@ static int32_t runtime_power_sleep(void *user_data, int32_t wake_after_ms)
 	if (runtime == NULL || wake_after_ms <= 0) {
 		return -EINVAL;
 	}
-	if (sq_vm_runtime_lifecycle_busy(runtime)) {
-		return -EBUSY;
-	}
 	runtime_trace(runtime, (const uint8_t *)"service.power.sleep", sizeof("service.power.sleep") - 1);
-	runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_SLEEP_REQUESTED;
-	runtime->planned_sleep_wake_after_ms = wake_after_ms;
-	return 0;
+	return sq_app_lifecycle_request_sleep(runtime, wake_after_ms);
 }
 
 static int32_t runtime_system_memory_text(void *user_data, uint8_t *out, size_t out_cap,
@@ -2637,18 +2613,7 @@ static void runtime_run_job(struct sq_vm_runtime *runtime)
 	if (result == 0 && !complete) {
 		return;
 	}
-	if (result != 0 &&
-	    (runtime->lifecycle_phase == SQ_VM_RUNTIME_LIFECYCLE_LAUNCH_REQUESTED ||
-	     runtime->lifecycle_phase == SQ_VM_RUNTIME_LIFECYCLE_SLEEP_REQUESTED)) {
-		runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_IDLE;
-		memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
-		memset(runtime->lifecycle_previous_app, 0, sizeof(runtime->lifecycle_previous_app));
-	}
-	if (result != 0 && runtime->lifecycle_phase == SQ_VM_RUNTIME_LIFECYCLE_IDLE &&
-	    runtime->arm_phase == SQ_VM_RUNTIME_ARM_REQUESTED) {
-		runtime->arm_phase = SQ_VM_RUNTIME_ARM_IDLE;
-		memset(runtime->arm_target_app, 0, sizeof(runtime->arm_target_app));
-	}
+	sq_app_lifecycle_cancel_pending_after_dispatch_error(runtime, result);
 	runtime->dispatch_exited = result == 0 && runtime->result.exited;
 	runtime->status = result == 0 ? SQ_VM_RUNTIME_COMPLETE : SQ_VM_RUNTIME_ERROR;
 }

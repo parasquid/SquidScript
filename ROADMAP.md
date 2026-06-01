@@ -141,15 +141,13 @@ RAM verification notes:
 
 ## Explicit State Machines
 
-- Refactor implicit runtime state-machine concepts into explicit, documented,
-  testable abstractions where the transition model is already meaningful.
-- Treat the app lifecycle as the first candidate. Document stable states,
-  events, failure handling, host command behavior, ownership boundaries, and
-  cross-platform contract versus target-specific wiring.
-- Follow with device input press/release/debounce/gesture recognition,
-  planned-sleep prepare/ready/restore coordination, protocol transfer sessions
-  for install/temp/resource uploads, scoped scratch-buffer ownership, and
-  reusable timed output patterns for indicator blink/breathe behavior.
+- Continue refactoring implicit runtime state-machine concepts into explicit,
+  documented, testable abstractions where the transition model is already
+  meaningful.
+- Candidate areas: device input press/release/debounce/gesture recognition,
+  protocol transfer sessions for install/temp/resource uploads, scoped
+  scratch-buffer ownership, and reusable timed output patterns for indicator
+  blink/breathe behavior.
 - Add Mermaid state or sequence diagrams where they clarify transitions.
 - Leave simple trace/output/drawlog buffers as bounded queues rather than
   overfitting them into state machines.

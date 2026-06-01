@@ -11,6 +11,7 @@
 #include <zephyr/sys/sys_heap.h>
 #include <zephyr/sys/util.h>
 
+#include "app_lifecycle.h"
 #include "protocol.h"
 #include "squidvm_ffi.h"
 
@@ -815,9 +816,6 @@ static int __noinline commit_install(const struct sq_protocol_request *request,
 	return ok_response(request, response, response_cap, response_len);
 }
 
-static int start_installed_app(const struct sq_device_protocol_context *context,
-			       const char *app_id, const uint8_t *event, size_t event_len,
-			       bool set_current);
 static int start_installed_app_bytes(const struct sq_device_protocol_context *context,
 				     const uint8_t *app_id, size_t app_id_len,
 				     const uint8_t *event, size_t event_len, bool set_current);
@@ -828,7 +826,6 @@ static int start_resolved_app_bytes(const struct sq_device_protocol_context *con
 				    const uint8_t *app_id, size_t app_id_len,
 				    const uint8_t *event, size_t event_len, bool set_current);
 static bool is_main_app_id(const uint8_t *app_id, size_t app_id_len);
-static int push_return_app(struct sq_vm_runtime *runtime, const char *app_id);
 static void clear_foreground_timers(struct sq_vm_runtime *runtime);
 
 static int __noinline launch_app(const struct sq_protocol_request *request,
@@ -848,25 +845,13 @@ static int __noinline launch_app(const struct sq_protocol_request *request,
 		return -EINVAL;
 	}
 
-	if (sq_vm_runtime_lifecycle_busy(context->runtime)) {
-		return -EBUSY;
+	int result = sq_app_lifecycle_request_launch(context->runtime, launch.app_id,
+						     launch.app_id_len);
+	if (result != 0) {
+		return result;
 	}
-	memcpy(context->runtime->lifecycle_target_app, launch.app_id, launch.app_id_len);
-	context->runtime->lifecycle_target_app[launch.app_id_len] = '\0';
-	context->runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_LAUNCH_REQUESTED;
 
 	return ok_response(request, response, response_cap, response_len);
-}
-
-static int start_installed_app(const struct sq_device_protocol_context *context,
-			       const char *app_id, const uint8_t *event, size_t event_len,
-			       bool set_current)
-{
-	if (app_id == NULL) {
-		return -EINVAL;
-	}
-	return start_installed_app_bytes(context, (const uint8_t *)app_id, strlen(app_id), event,
-					 event_len, set_current);
 }
 
 static int start_installed_app_bytes(const struct sq_device_protocol_context *context,
@@ -1032,40 +1017,6 @@ static void clear_foreground_timers(struct sq_vm_runtime *runtime)
 	memset(runtime->timers, 0, sizeof(runtime->timers));
 }
 
-static int push_return_app(struct sq_vm_runtime *runtime, const char *app_id)
-{
-	if (runtime == NULL || app_id == NULL || app_id[0] == '\0') {
-		return 0;
-	}
-	if (runtime->return_stack_count >= SQ_VM_RUNTIME_RETURN_STACK_MAX) {
-		return -ENOSPC;
-	}
-	strncpy(runtime->return_stack[runtime->return_stack_count], app_id,
-		sizeof(runtime->return_stack[0]) - 1);
-	runtime->return_stack[runtime->return_stack_count][sizeof(runtime->return_stack[0]) - 1] =
-		'\0';
-	runtime->return_stack_count++;
-	return 0;
-}
-
-static int pop_return_app(struct sq_vm_runtime *runtime, char *out, size_t out_len)
-{
-	if (runtime == NULL || out == NULL || out_len == 0) {
-		return -EINVAL;
-	}
-	if (runtime->return_stack_count == 0) {
-		strncpy(out, "main", out_len - 1);
-		out[out_len - 1] = '\0';
-		return 0;
-	}
-	runtime->return_stack_count--;
-	strncpy(out, runtime->return_stack[runtime->return_stack_count], out_len - 1);
-	out[out_len - 1] = '\0';
-	memset(runtime->return_stack[runtime->return_stack_count], 0,
-	       sizeof(runtime->return_stack[0]));
-	return 0;
-}
-
 static size_t c_array_len(const uint8_t *bytes, size_t cap)
 {
 	size_t len = 0;
@@ -1222,15 +1173,13 @@ int sq_device_protocol_restore_planned_resume(const struct sq_device_protocol_co
 		return result;
 	}
 	(void)fs_unlink(scratch->planned_resume_final_path);
-	memset(context->runtime->return_stack, 0, sizeof(context->runtime->return_stack));
-	context->runtime->return_stack_count = scratch->planned_resume_record.return_stack_count;
-	for (size_t i = 0; i < scratch->planned_resume_record.return_stack_count; i++) {
-		strncpy(context->runtime->return_stack[i],
-			scratch->planned_resume_record.return_stack[i],
-			sizeof(context->runtime->return_stack[i]) - 1);
+	result = sq_app_lifecycle_restore_planned_route(
+		context->runtime, scratch->planned_resume_record.return_stack,
+		scratch->planned_resume_record.return_stack_count);
+	if (result != 0) {
+		(void)protocol_scratch_release(context, SQ_DEVICE_PROTOCOL_SCRATCH_PLANNED_RESUME);
+		return result;
 	}
-	memset(context->runtime->start_reason, 0, sizeof(context->runtime->start_reason));
-	strncpy(context->runtime->start_reason, "wake", sizeof(context->runtime->start_reason) - 1);
 	for (size_t i = 0; i < scratch->planned_resume_record.armed_app_count; i++) {
 		result = register_app_triggers(context, scratch->planned_resume_record.armed_apps[i]);
 		if (result != 0) {
@@ -1258,6 +1207,11 @@ int sq_device_protocol_restore_planned_resume(const struct sq_device_protocol_co
 int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 {
 	struct sq_vm_runtime *runtime;
+	struct sq_app_lifecycle_step step;
+	char due_app[SQ_APP_STORE_APP_ID_MAX] = {0};
+	char due_event[SQ_VM_RUNTIME_EVENT_LEN] = {0};
+	const char *due_app_ptr = NULL;
+	const char *due_event_ptr = NULL;
 	int result;
 
 	if (context == NULL || context->runtime == NULL) {
@@ -1269,15 +1223,21 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 		return sq_vm_runtime_poll(runtime);
 	}
 
-	if (runtime->dispatch_exited &&
-	    runtime->lifecycle_phase == SQ_VM_RUNTIME_LIFECYCLE_IDLE) {
-		runtime->dispatch_exited = false;
-		runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_RETURN_REQUESTED;
+	if (runtime->lifecycle_phase == SQ_VM_RUNTIME_LIFECYCLE_IDLE &&
+	    runtime->arm_phase == SQ_VM_RUNTIME_ARM_IDLE &&
+	    sq_vm_runtime_next_due_armed_timer(runtime, due_app, sizeof(due_app), due_event,
+					      sizeof(due_event)) == 0) {
+		due_app_ptr = due_app;
+		due_event_ptr = due_event;
 	}
 
-	switch (runtime->lifecycle_phase) {
-	case SQ_VM_RUNTIME_LIFECYCLE_SLEEP_CHECKPOINT:
-		runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_IDLE;
+	result = sq_app_lifecycle_next_step(runtime, due_app_ptr, due_event_ptr, &step);
+	if (result != 0) {
+		return result;
+	}
+
+	switch (step.kind) {
+	case SQ_APP_LIFECYCLE_STEP_WRITE_SLEEP_CHECKPOINT:
 		result = write_planned_resume_file(context);
 		if (result != 0) {
 			sq_vm_runtime_record_trace(
@@ -1298,111 +1258,25 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 		}
 		return 0;
 
-	case SQ_VM_RUNTIME_LIFECYCLE_SLEEP_REQUESTED:
-		runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_SLEEP_CHECKPOINT;
-		result = start_resolved_app(context, runtime->current_app,
-					    (const uint8_t *)"power.sleep",
-					    sizeof("power.sleep") - 1, false);
+	case SQ_APP_LIFECYCLE_STEP_START_APP:
+		result = start_resolved_app(context, step.app_id, (const uint8_t *)step.event,
+					    strlen(step.event), step.set_current);
 		if (result != 0) {
-			runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_IDLE;
+			sq_app_lifecycle_cancel_pending_after_start_failure(runtime, result);
 		}
 		return result;
 
-	case SQ_VM_RUNTIME_LIFECYCLE_EXIT_FOR_LAUNCH:
-		runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_IDLE;
-		result = push_return_app(runtime, runtime->current_app);
-		if (result != 0) {
-			memset(runtime->lifecycle_target_app, 0,
-			       sizeof(runtime->lifecycle_target_app));
-			return result;
-		}
-		memset(runtime->start_reason, 0, sizeof(runtime->start_reason));
-		strncpy(runtime->start_reason, "launch", sizeof(runtime->start_reason) - 1);
-		result = start_resolved_app(context, runtime->lifecycle_target_app,
-					    (const uint8_t *)"app.start",
-					    sizeof("app.start") - 1, true);
-		memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
-		runtime->dispatch_exited = false;
-		return result;
+	case SQ_APP_LIFECYCLE_STEP_REGISTER_ARMED_APP:
+		return register_app_triggers(context, step.app_id);
 
-	case SQ_VM_RUNTIME_LIFECYCLE_LAUNCH_REQUESTED:
-		if (runtime->current_app[0] == '\0') {
-			if (strcmp(runtime->lifecycle_target_app, "main") != 0) {
-				strncpy(runtime->current_app, "main",
-					sizeof(runtime->current_app) - 1);
-				runtime->current_app[sizeof(runtime->current_app) - 1] = '\0';
-				result = push_return_app(runtime, "main");
-				if (result != 0) {
-					return result;
-				}
-			}
-			runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_IDLE;
-			memset(runtime->start_reason, 0, sizeof(runtime->start_reason));
-			strncpy(runtime->start_reason, "launch",
-				sizeof(runtime->start_reason) - 1);
-			result = start_resolved_app(context, runtime->lifecycle_target_app,
-						    (const uint8_t *)"app.start",
-						    sizeof("app.start") - 1, true);
-			memset(runtime->lifecycle_target_app, 0,
-			       sizeof(runtime->lifecycle_target_app));
-			return result;
-		}
-		runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_EXIT_FOR_LAUNCH;
+	case SQ_APP_LIFECYCLE_STEP_POLL_RUNTIME:
+		return sq_vm_runtime_poll(runtime);
 
-		result = start_resolved_app(context, runtime->current_app,
-					    (const uint8_t *)"app.exit",
-					    sizeof("app.exit") - 1, false);
-		if (result != 0) {
-			runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_IDLE;
-			memset(runtime->lifecycle_target_app, 0,
-			       sizeof(runtime->lifecycle_target_app));
-			return result;
-		}
+	case SQ_APP_LIFECYCLE_STEP_NONE:
 		return 0;
-
-	case SQ_VM_RUNTIME_LIFECYCLE_RETURN_REQUESTED:
-		runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_IDLE;
-		result = pop_return_app(runtime, runtime->lifecycle_target_app,
-					sizeof(runtime->lifecycle_target_app));
-		if (result != 0) {
-			return result;
-		}
-		memset(runtime->start_reason, 0, sizeof(runtime->start_reason));
-		strncpy(runtime->start_reason, "return", sizeof(runtime->start_reason) - 1);
-		result = start_resolved_app(context, runtime->lifecycle_target_app,
-					    (const uint8_t *)"app.start",
-					    sizeof("app.start") - 1, true);
-		memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
-		return result;
-
-	case SQ_VM_RUNTIME_LIFECYCLE_IDLE:
-		break;
 	}
 
-	if (runtime->arm_phase == SQ_VM_RUNTIME_ARM_REQUESTED) {
-		result = register_app_triggers(context, runtime->arm_target_app);
-		memset(runtime->arm_target_app, 0, sizeof(runtime->arm_target_app));
-		runtime->arm_phase = SQ_VM_RUNTIME_ARM_IDLE;
-		return result;
-	}
-
-	if (sq_vm_runtime_next_due_armed_timer(runtime, runtime->lifecycle_target_app,
-					       sizeof(runtime->lifecycle_target_app),
-					       runtime->event, sizeof(runtime->event)) == 0) {
-		result = push_return_app(runtime, runtime->current_app);
-		if (result != 0) {
-			return result;
-		}
-		memset(runtime->start_reason, 0, sizeof(runtime->start_reason));
-		strncpy(runtime->start_reason, "launch", sizeof(runtime->start_reason) - 1);
-		result = start_installed_app(context, runtime->lifecycle_target_app,
-					     (const uint8_t *)runtime->event,
-					     strlen(runtime->event), true);
-		memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
-		return result;
-	}
-
-	return sq_vm_runtime_poll(runtime);
+	return -EINVAL;
 }
 
 static int repeated_runtime_lines_response(const struct sq_protocol_request *request,
@@ -1509,6 +1383,34 @@ static int __noinline lifecycle_response(const struct sq_protocol_request *reque
 				return result;
 			}
 			armed_line_index++;
+		}
+	}
+	if (runtime != NULL) {
+		written = snprintf(line, sizeof(line), "lifecycle=%s",
+				   sq_app_lifecycle_phase_name(runtime->lifecycle_phase));
+		if (written < 0 || (size_t)written >= sizeof(line)) {
+			return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
+		}
+		result = append_line_payload(payload, payload_cap, &payload_len, line);
+		if (result != SQ_PROTOCOL_OK) {
+			return result;
+		}
+		written = snprintf(line, sizeof(line), "arm_lifecycle=%s",
+				   sq_app_lifecycle_arm_phase_name(runtime->arm_phase));
+		if (written < 0 || (size_t)written >= sizeof(line)) {
+			return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
+		}
+		result = append_line_payload(payload, payload_cap, &payload_len, line);
+		if (result != SQ_PROTOCOL_OK) {
+			return result;
+		}
+		written = snprintf(line, sizeof(line), "start_reason=%s", runtime->start_reason);
+		if (written < 0 || (size_t)written >= sizeof(line)) {
+			return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
+		}
+		result = append_line_payload(payload, payload_cap, &payload_len, line);
+		if (result != SQ_PROTOCOL_OK) {
+			return result;
 		}
 	}
 
