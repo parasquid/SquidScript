@@ -90,16 +90,19 @@ The Zephyr VM runtime scratch buffer is sized to the FFI storage transfer
 capacity so the firmware does not reserve a full max-app buffer when the VM
 only needs one bounded code/storage chunk for resumable dispatch.
 
-The VM host ABI inventory is checked by
+The VM host ABI C header and inventory are generated and checked by
 `scripts/check-squidvm-ffi-abi.py`. The manifest at
 `compiler/rust/crates/squidvm-ffi/abi/manifest.json` describes the current
 `sqvm_`, `sqdp_`, and `sqdc_` exports, `SqvmCallbacks` fields, public ABI
-types, constants, and callback coverage expectations. The checker validates
-Rust `#[no_mangle] extern "C"` exports, `src/squidvm_ffi.h` prototypes and
-types, `src/vm_runtime.c` callback wiring, and the generated inventory section
-in `docs/zephyr_vm_host_abi_coverage.md`. After changing the ABI, update the
-manifest and run `python3 scripts/check-squidvm-ffi-abi.py --write-doc`; the
-normal Python tooling tests run the checker in `--check` mode.
+types, constants, callback coverage expectations, and the C definitions used
+to emit `src/squidvm_ffi.h`. Do not edit `src/squidvm_ffi.h` directly. After
+changing the ABI, update the manifest and run
+`python3 scripts/check-squidvm-ffi-abi.py --write-header --write-doc`. The
+checker validates Rust `#[no_mangle] extern "C"` exports, the generated C
+header, `src/vm_runtime.c` callback wiring, concrete Rust/Zephyr test evidence,
+and the generated inventory section in
+`docs/zephyr_vm_host_abi_coverage.md`; the normal Python tooling tests run the
+checker in `--check` mode.
 
 The repo-local Zephyr setup installs the lightweight Twister dependencies
 needed to run `firmware/zephyr/tests/protocol` through Zephyr's test runner.

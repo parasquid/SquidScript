@@ -4,292 +4,350 @@
     {
       "name": "sqdc_config_clear",
       "family": "device-config",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdcStatus sqdc_config_clear(SqdcConfig *config);"
     },
     {
       "name": "sqdc_is_safe_sqdevice_path",
       "family": "device-config",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdcStatus sqdc_is_safe_sqdevice_path(const uint8_t *path, size_t path_len);"
     },
     {
       "name": "sqdc_parse_sqdevice",
       "family": "device-config",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdcStatus sqdc_parse_sqdevice(const uint8_t *input, size_t input_len, SqdcConfig *out);"
     },
     {
       "name": "sqdc_config_set_null",
       "family": "device-config",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdcStatus sqdc_config_set_null(SqdcConfig *config, const uint8_t *key, size_t key_len);"
     },
     {
       "name": "sqdc_config_set_bool",
       "family": "device-config",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdcStatus sqdc_config_set_bool(SqdcConfig *config, const uint8_t *key, size_t key_len,\n\t\t\t\tbool value);"
     },
     {
       "name": "sqdc_config_set_i32",
       "family": "device-config",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdcStatus sqdc_config_set_i32(SqdcConfig *config, const uint8_t *key, size_t key_len,\n\t\t\t       int32_t value);"
     },
     {
       "name": "sqdc_config_set_string",
       "family": "device-config",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdcStatus sqdc_config_set_string(SqdcConfig *config, const uint8_t *key, size_t key_len,\n\t\t\t\t  const uint8_t *value, size_t value_len);"
     },
     {
       "name": "sqdc_encode_sqdc",
       "family": "device-config",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdcStatus sqdc_encode_sqdc(const SqdcConfig *config, uint8_t *out, size_t out_cap,\n\t\t\t    size_t *out_len);"
     },
     {
       "name": "sqdc_decode_sqdc",
       "family": "device-config",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdcStatus sqdc_decode_sqdc(const uint8_t *input, size_t input_len, SqdcConfig *out);"
     },
     {
       "name": "sqdc_plan_device_binding",
       "family": "device-config",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdcStatus sqdc_plan_device_binding(const uint8_t *service, size_t service_len,\n\t\t\t\t    const uint8_t *binding, size_t binding_len,\n\t\t\t\t    const uint8_t *resource, size_t resource_len,\n\t\t\t\t    SqdcDeviceBindingPlan *out,\n\t\t\t\t    SqdcConfig *out_inline_config);"
     },
     {
       "name": "sqvm_context_size",
       "family": "vm-context",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "size_t sqvm_context_size(void);"
     },
     {
       "name": "sqvm_context_align",
       "family": "vm-context",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "size_t sqvm_context_align(void);"
     },
     {
       "name": "sqvm_storage_transfer_capacity",
       "family": "vm-context",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "size_t sqvm_storage_transfer_capacity(void);"
     },
     {
       "name": "sqvm_saved_state_capacity",
       "family": "vm-context",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "size_t sqvm_saved_state_capacity(void);"
     },
     {
       "name": "sqvm_context_prepare",
       "family": "vm-context",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_context_prepare(void *context, size_t context_len);"
     },
     {
       "name": "sqvm_context_reset_in_place",
       "family": "vm-context",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_context_reset_in_place(void *context, size_t context_len);"
     },
     {
       "name": "sqvm_context_init_in_place",
       "family": "vm-context",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_context_init_in_place(\n\tvoid *context,\n\tvoid *user_data,\n\tconst SqvmCallbacks *callbacks,\n\tuint8_t *scratch,\n\tsize_t scratch_len);"
     },
     {
       "name": "sqvm_trigger_timer_count",
       "family": "triggers",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_trigger_timer_count(\n\tconst uint8_t *sqbc,\n\tsize_t sqbc_len,\n\tsize_t *out_count);"
     },
     {
       "name": "sqvm_trigger_timer_read",
       "family": "triggers",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_trigger_timer_read(\n\tconst uint8_t *sqbc,\n\tsize_t sqbc_len,\n\tsize_t index,\n\tSqvmTriggerTimer *out_timer);"
     },
     {
       "name": "sqvm_trigger_timer_count_from_reader",
       "family": "triggers",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_trigger_timer_count_from_reader(\n\tvoid *user_data,\n\tSqvmReadExactAtCallback read_exact_at,\n\tuint8_t *scratch,\n\tsize_t scratch_len,\n\tsize_t *out_count);"
     },
     {
       "name": "sqvm_trigger_timer_read_from_reader",
       "family": "triggers",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_trigger_timer_read_from_reader(\n\tvoid *user_data,\n\tSqvmReadExactAtCallback read_exact_at,\n\tuint8_t *scratch,\n\tsize_t scratch_len,\n\tsize_t index,\n\tSqvmTriggerTimer *out_timer);"
     },
     {
       "name": "sqvm_trigger_ble_profile_count",
       "family": "triggers",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_trigger_ble_profile_count(\n\tconst uint8_t *sqbc,\n\tsize_t sqbc_len,\n\tsize_t *out_count);"
     },
     {
       "name": "sqvm_trigger_ble_profile_read",
       "family": "triggers",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_trigger_ble_profile_read(\n\tconst uint8_t *sqbc,\n\tsize_t sqbc_len,\n\tsize_t index,\n\tSqvmBleProfileTrigger *out_profile);"
     },
     {
       "name": "sqvm_trigger_ble_profile_count_from_reader",
       "family": "triggers",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_trigger_ble_profile_count_from_reader(\n\tvoid *user_data,\n\tSqvmReadExactAtCallback read_exact_at,\n\tuint8_t *scratch,\n\tsize_t scratch_len,\n\tsize_t *out_count);"
     },
     {
       "name": "sqvm_trigger_ble_profile_read_from_reader",
       "family": "triggers",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_trigger_ble_profile_read_from_reader(\n\tvoid *user_data,\n\tSqvmReadExactAtCallback read_exact_at,\n\tuint8_t *scratch,\n\tsize_t scratch_len,\n\tsize_t index,\n\tSqvmBleProfileTrigger *out_profile);"
     },
     {
       "name": "sqvm_device_binding_count_from_reader",
       "family": "device-bindings",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_device_binding_count_from_reader(\n\tvoid *user_data,\n\tSqvmReadExactAtCallback read_exact_at,\n\tuint8_t *scratch,\n\tsize_t scratch_len,\n\tsize_t *out_count);"
     },
     {
       "name": "sqvm_event_handler_exists_from_reader",
       "family": "events",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_event_handler_exists_from_reader(\n\tvoid *user_data,\n\tSqvmReadExactAtCallback read_exact_at,\n\tuint8_t *scratch,\n\tsize_t scratch_len,\n\tconst uint8_t *event,\n\tsize_t event_len,\n\tbool *out_exists);"
     },
     {
       "name": "sqvm_device_binding_read_from_reader",
       "family": "device-bindings",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_device_binding_read_from_reader(\n\tvoid *user_data,\n\tSqvmReadExactAtCallback read_exact_at,\n\tuint8_t *scratch,\n\tsize_t scratch_len,\n\tsize_t index,\n\tSqvmDeviceBinding *out_binding);"
     },
     {
       "name": "sqvm_dispatch",
       "family": "dispatch",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_dispatch(\n\tvoid *context,\n\tvoid *user_data,\n\tconst SqvmCallbacks *callbacks,\n\tconst uint8_t *event,\n\tsize_t event_len);"
     },
     {
       "name": "sqvm_dispatch_start_resumable",
       "family": "dispatch",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_dispatch_start_resumable(\n\tvoid *context,\n\tvoid *user_data,\n\tconst SqvmCallbacks *callbacks,\n\tconst uint8_t *event,\n\tsize_t event_len,\n\tSqvmDispatchResult *out_result);"
     },
     {
       "name": "sqvm_dispatch_start_resumable_with_payload",
       "family": "dispatch",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_dispatch_start_resumable_with_payload(\n\tvoid *context,\n\tvoid *user_data,\n\tconst SqvmCallbacks *callbacks,\n\tconst uint8_t *event,\n\tsize_t event_len,\n\tconst SqvmEventPayloadField *payload_fields,\n\tsize_t payload_field_count,\n\tSqvmDispatchResult *out_result);"
     },
     {
       "name": "sqvm_dispatch_resume_storage",
       "family": "dispatch",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_dispatch_resume_storage(\n\tvoid *context,\n\tvoid *user_data,\n\tconst SqvmCallbacks *callbacks,\n\tconst SqvmStorageCompletion *completion,\n\tSqvmDispatchResult *out_result);"
     },
     {
       "name": "sqdp_encode_empty_response",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_encode_empty_response(\n\tuint8_t opcode,\n\tuint8_t status,\n\tuint32_t sequence,\n\tuint8_t *out,\n\tsize_t out_cap,\n\tsize_t *out_len);"
     },
     {
       "name": "sqdp_encode_hello_response",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_encode_hello_response(\n\tuint8_t opcode,\n\tuint32_t sequence,\n\tconst uint8_t *target,\n\tsize_t target_len,\n\tconst uint8_t *firmware,\n\tsize_t firmware_len,\n\tbool diagnostic,\n\tuint8_t *out,\n\tsize_t out_cap,\n\tsize_t *out_len);"
     },
     {
       "name": "sqdp_encode_error_response",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_encode_error_response(\n\tuint8_t opcode,\n\tuint32_t sequence,\n\tint64_t code,\n\tconst uint8_t *message,\n\tsize_t message_len,\n\tuint8_t *out,\n\tsize_t out_cap,\n\tsize_t *out_len);"
     },
     {
       "name": "sqdp_encode_error_response_for_code",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_encode_error_response_for_code(\n\tuint8_t opcode,\n\tuint32_t sequence,\n\tint64_t code,\n\tuint8_t *out,\n\tsize_t out_cap,\n\tsize_t *out_len);"
     },
     {
       "name": "sqdp_encode_app_list_response",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_encode_app_list_response(\n\tuint32_t sequence,\n\tconst SqdpAppListEntry *entries,\n\tsize_t entry_count,\n\tuint8_t *out,\n\tsize_t out_cap,\n\tsize_t *out_len);"
     },
     {
       "name": "sqdp_encode_line_response",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_encode_line_response(\n\tuint8_t opcode,\n\tuint32_t sequence,\n\tconst uint8_t *fixed_lines,\n\tsize_t fixed_count,\n\tsize_t fixed_stride,\n\tconst SqdpLineSlice *extra_lines,\n\tsize_t extra_count,\n\tuint8_t *out,\n\tsize_t out_cap,\n\tsize_t *out_len);"
     },
     {
       "name": "sqdp_encode_lifecycle_response",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_encode_lifecycle_response(\n\tuint32_t sequence,\n\tconst uint8_t *active_app,\n\tsize_t active_app_len,\n\tconst uint8_t *process_stack,\n\tsize_t process_count,\n\tsize_t process_stride,\n\tconst SqdpLifecycleTimer *armed_timers,\n\tsize_t armed_count,\n\tuint8_t *out,\n\tsize_t out_cap,\n\tsize_t *out_len);"
     },
     {
       "name": "sqdp_encode_lifecycle_response_from_runtime_timers",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_encode_lifecycle_response_from_runtime_timers(\n\tuint32_t sequence,\n\tconst uint8_t *active_app,\n\tsize_t active_app_len,\n\tconst uint8_t *process_stack,\n\tsize_t process_count,\n\tsize_t process_stride,\n\tconst uint8_t *armed_timer_base,\n\tsize_t armed_timer_count,\n\tsize_t armed_timer_stride,\n\tsize_t armed_timer_active_offset,\n\tsize_t armed_timer_app_id_offset,\n\tsize_t armed_timer_app_id_cap,\n\tsize_t armed_timer_event_offset,\n\tsize_t armed_timer_event_cap,\n\tuint8_t *out,\n\tsize_t out_cap,\n\tsize_t *out_len);"
     },
     {
       "name": "sqdp_encode_resources_response",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_encode_resources_response(\n\tuint32_t sequence,\n\tconst SqdpResourceMetric *metrics,\n\tsize_t metric_count,\n\tuint8_t *out,\n\tsize_t out_cap,\n\tsize_t *out_len);"
     },
     {
       "name": "sqdp_encode_state_response",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_encode_state_response(\n\tuint32_t sequence,\n\tconst uint8_t *bytes,\n\tsize_t bytes_len,\n\tuint8_t *out,\n\tsize_t out_cap,\n\tsize_t *out_len);"
     },
     {
       "name": "sqdp_prepare_key_event",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_prepare_key_event(\n\tconst uint8_t *request,\n\tsize_t request_len,\n\tuint8_t *out,\n\tsize_t out_cap,\n\tsize_t *out_len);"
     },
     {
       "name": "sqdp_parse_wifi_profile_set_request",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_parse_wifi_profile_set_request(\n\tconst uint8_t *request,\n\tsize_t request_len,\n\tSqdpWifiProfile *out_profile);"
     },
     {
       "name": "sqdp_parse_state_import_request",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_parse_state_import_request(\n\tconst uint8_t *request,\n\tsize_t request_len,\n\tSqdpStateImport *out_import);"
     },
     {
       "name": "sqdp_parse_app_launch_request",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_parse_app_launch_request(\n\tconst uint8_t *request,\n\tsize_t request_len,\n\tSqdpAppLaunch *out_launch);"
     },
     {
       "name": "sqdp_parse_event_dispatch_request",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_parse_event_dispatch_request(\n\tconst uint8_t *request,\n\tsize_t request_len,\n\tSqdpEventDispatch *out_event);"
     },
     {
       "name": "sqdp_prepare_transfer_begin",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_prepare_transfer_begin(\n\tconst uint8_t *request,\n\tsize_t request_len,\n\tvoid *session,\n\tSqdpAction *out_action);"
     },
     {
       "name": "sqdp_prepare_transfer_chunk",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_prepare_transfer_chunk(\n\tconst uint8_t *request,\n\tsize_t request_len,\n\tconst void *session,\n\tSqdpAction *out_action);"
     },
     {
       "name": "sqdp_complete_transfer_chunk",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_complete_transfer_chunk(\n\tvoid *session,\n\tconst uint8_t *bytes,\n\tsize_t bytes_len);"
     },
     {
       "name": "sqdp_prepare_transfer_commit",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_prepare_transfer_commit(\n\tconst uint8_t *request,\n\tsize_t request_len,\n\tconst void *session,\n\tSqdpAction *out_action);"
     },
     {
       "name": "sqdp_clear_transfer_session",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "void sqdp_clear_transfer_session(void *session);"
     },
     {
       "name": "sqdp_prepare_resource_begin",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_prepare_resource_begin(\n\tconst uint8_t *request,\n\tsize_t request_len,\n\tvoid *session,\n\tSqdpAction *out_action);"
     },
     {
       "name": "sqdp_prepare_resource_chunk",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_prepare_resource_chunk(\n\tconst uint8_t *request,\n\tsize_t request_len,\n\tconst void *session,\n\tSqdpAction *out_action);"
     },
     {
       "name": "sqdp_complete_resource_chunk",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_complete_resource_chunk(\n\tvoid *session,\n\tconst uint8_t *bytes,\n\tsize_t bytes_len);"
     },
     {
       "name": "sqdp_prepare_resource_commit",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "SqdpStatus sqdp_prepare_resource_commit(\n\tconst uint8_t *request,\n\tsize_t request_len,\n\tconst void *session,\n\tSqdpAction *out_action);"
     },
     {
       "name": "sqdp_clear_resource_session",
       "family": "device-protocol",
-      "direction": "rust_to_c"
+      "direction": "rust_to_c",
+      "prototype": "void sqdp_clear_resource_session(void *session);"
     },
     {
       "name": "sqvm_ffi_panic_abort",
       "family": "panic",
-      "direction": "c_to_rust"
+      "direction": "c_to_rust",
+      "prototype": "void sqvm_ffi_panic_abort(void);"
     }
   ],
   "callbacks": [
@@ -545,116 +603,440 @@
     }
   ],
   "types": [
-    "SqvmStatus",
-    "SqdpStatus",
-    "SqdcStatus",
-    "SqdcValueKind",
-    "SqdcValue",
-    "SqdcRecord",
-    "SqdcConfig",
-    "SqdcDeviceBindingResourceKind",
-    "SqdcDeviceBindingPlan",
-    "SqdpActionKind",
-    "SqdpAppListEntry",
-    "SqdpLineSlice",
-    "SqdpResourceMetric",
-    "SqdpLifecycleTimer",
-    "SqdpAction",
-    "SqdpWifiProfile",
-    "SqdpStateImport",
-    "SqdpAppLaunch",
-    "SqvmTriggerTimer",
-    "SqvmBleProfileEventRoute",
-    "SqvmBleProfileTrigger",
-    "SqvmEventPayloadField",
-    "SqvmDeviceBinding",
-    "SqdpEventDispatch",
-    "SqvmDispatchOutcome",
-    "SqvmStorageRequestKind",
-    "SqvmStorageRequest",
-    "SqvmStorageCompletion",
-    "SqvmDispatchResult",
-    "SqvmDisplayTextOptions",
-    "SqvmDisplayRectOptions",
-    "SqvmDisplayLineOptions",
-    "SqvmDisplayResourceOptions",
-    "SqvmDisplayInfo",
-    "SqvmAppRegistryEntry",
-    "SqvmAppStackEntry",
-    "SqvmWifiStatus",
-    "SqvmWifiAccessPoint",
-    "SqvmWifiOperation",
-    "SqvmWifiOperationResult",
-    "SqvmWifiScanNetworkResult",
-    "SqvmDeviceConfigValueKind",
-    "SqvmDeviceConfigValue",
-    "SqvmDeviceConfigResult",
-    "SqvmFilePickFileResult",
-    "SqvmFileReadTextResult",
-    "SqvmFileReadLinesResult",
-    "SqvmWifiApIp",
-    "SqvmCallbacks",
-    "SqvmTraceCallback",
-    "SqvmReadExactAtCallback",
-    "SqvmDebugOutputCallback",
-    "SqvmDisplayClearCallback",
-    "SqvmDisplayTextCallback",
-    "SqvmDisplayRectCallback",
-    "SqvmDisplayLineCallback",
-    "SqvmDisplaySelectCallback",
-    "SqvmDisplayImageCallback",
-    "SqvmDisplayDrawCallback",
-    "SqvmDisplayInfoCallback",
-    "SqvmWifiStartApCallback",
-    "SqvmWifiStopApCallback",
-    "SqvmWifiConnectCallback",
-    "SqvmWifiDisconnectCallback",
-    "SqvmWifiGetApIpCallback",
-    "SqvmWifiStatusCallback",
-    "SqvmWifiScanCallback",
-    "SqvmWifiOperationCallback",
-    "SqvmWifiResultCallback",
-    "SqvmWifiCancelCallback",
-    "SqvmWifiScanNetworkCallback",
-    "SqvmDeviceConfigLoadCallback",
-    "SqvmDeviceConfigSetCallback",
-    "SqvmDeviceConfigRebindCallback",
-    "SqvmDeviceConfigSaveCallback",
-    "SqvmFilePickFileCallback",
-    "SqvmFileReadTextCallback",
-    "SqvmFileReadLinesCallback",
-    "SqvmIndicatorWriteCallback",
-    "SqvmIndicatorToggleCallback",
-    "SqvmIndicatorReadCallback",
-    "SqvmIndicatorBreatheCallback",
-    "SqvmIndicatorBlinkCallback",
-    "SqvmHardwareGpioWriteCallback",
-    "SqvmHardwareGpioToggleCallback",
-    "SqvmHardwareGpioReadCallback",
-    "SqvmAppLifecycleCallback",
-    "SqvmAppRegistryListCallback",
-    "SqvmAppRegistryGetCallback",
-    "SqvmAppStackCallback",
-    "SqvmTimerEveryCallback",
-    "SqvmTimerAfterCallback",
-    "SqvmSystemMemoryTextCallback",
-    "SqvmSystemStorageTextCallback",
-    "SqvmSystemStartReasonTextCallback",
-    "SqvmPowerSleepCallback"
+    {
+      "name": "SqvmStatus",
+      "definition": "typedef enum {\n\tSQVM_STATUS_OK = 0,\n\tSQVM_STATUS_INVALID_ARGUMENT = 1,\n\tSQVM_STATUS_VM_ERROR = 2,\n} SqvmStatus;"
+    },
+    {
+      "name": "SqdpStatus",
+      "definition": "typedef enum {\n\tSQDP_STATUS_OK = 0,\n\tSQDP_STATUS_INVALID_ARGUMENT = 1,\n\tSQDP_STATUS_BUFFER_TOO_SMALL = 2,\n\tSQDP_STATUS_ENCODE_ERROR = 3,\n} SqdpStatus;"
+    },
+    {
+      "name": "SqdcStatus",
+      "definition": "typedef enum {\n\tSQDC_STATUS_OK = 0,\n\tSQDC_STATUS_INVALID_ARGUMENT = 1,\n\tSQDC_STATUS_BUFFER_TOO_SMALL = 2,\n\tSQDC_STATUS_PARSE_ERROR = 3,\n\tSQDC_STATUS_TOO_MANY_RECORDS = 4,\n} SqdcStatus;"
+    },
+    {
+      "name": "SqdcValueKind",
+      "definition": "typedef enum {\n\tSQDC_VALUE_NULL = 0,\n\tSQDC_VALUE_BOOL = 1,\n\tSQDC_VALUE_I32 = 2,\n\tSQDC_VALUE_STRING = 3,\n} SqdcValueKind;"
+    },
+    {
+      "name": "SqdcValue",
+      "definition": "typedef struct {\n\tSqdcValueKind kind;\n\tbool bool_value;\n\tint32_t i32_value;\n\tuint8_t string[SQDC_CONFIG_STRING_CAP];\n\tsize_t string_len;\n} SqdcValue;"
+    },
+    {
+      "name": "SqdcRecord",
+      "definition": "typedef struct {\n\tbool present;\n\tuint8_t key[SQDC_CONFIG_KEY_CAP];\n\tsize_t key_len;\n\tSqdcValue value;\n} SqdcRecord;"
+    },
+    {
+      "name": "SqdcConfig",
+      "definition": "typedef struct {\n\tSqdcRecord records[SQDC_CONFIG_MAX_RECORDS];\n\tsize_t count;\n} SqdcConfig;"
+    },
+    {
+      "name": "SqdcDeviceBindingResourceKind",
+      "definition": "typedef enum {\n\tSQDC_DEVICE_BINDING_RESOURCE_UNSUPPORTED = 0,\n\tSQDC_DEVICE_BINDING_RESOURCE_PACKAGE_SQDEVICE = 1,\n\tSQDC_DEVICE_BINDING_RESOURCE_INLINE_GPIO = 2,\n\tSQDC_DEVICE_BINDING_RESOURCE_INLINE_GPIO_BUTTON = 3,\n} SqdcDeviceBindingResourceKind;"
+    },
+    {
+      "name": "SqdcDeviceBindingPlan",
+      "definition": "typedef struct {\n\tSqdcDeviceBindingResourceKind kind;\n\tuint8_t alias[SQVM_DEVICE_BINDING_NAME_CAP];\n\tsize_t alias_len;\n\tuint8_t resource[SQVM_DEVICE_BINDING_RESOURCE_CAP];\n\tsize_t resource_len;\n} SqdcDeviceBindingPlan;"
+    },
+    {
+      "name": "SqdpActionKind",
+      "definition": "typedef enum {\n\tSQDP_ACTION_NONE = 0,\n\tSQDP_ACTION_BEGIN_INSTALL = 1,\n\tSQDP_ACTION_WRITE_INSTALL_CHUNK = 2,\n\tSQDP_ACTION_COMMIT_INSTALL = 3,\n\tSQDP_ACTION_BEGIN_TEMP_RUN = 4,\n\tSQDP_ACTION_WRITE_TEMP_RUN_CHUNK = 5,\n\tSQDP_ACTION_COMMIT_TEMP_RUN = 6,\n\tSQDP_ACTION_BEGIN_RESOURCE_INSTALL = 7,\n\tSQDP_ACTION_WRITE_RESOURCE_CHUNK = 8,\n\tSQDP_ACTION_COMMIT_RESOURCE_INSTALL = 9,\n} SqdpActionKind;"
+    },
+    {
+      "name": "SqdpAppListEntry",
+      "definition": "typedef struct {\n\tuint8_t app_id[40];\n\tuint32_t sqbc_len;\n} SqdpAppListEntry;"
+    },
+    {
+      "name": "SqdpLineSlice",
+      "definition": "typedef struct {\n\tconst uint8_t *bytes;\n\tsize_t len;\n} SqdpLineSlice;"
+    },
+    {
+      "name": "SqdpResourceMetric",
+      "definition": "typedef struct {\n\tconst uint8_t *key;\n\tsize_t key_len;\n\tuint64_t value;\n} SqdpResourceMetric;"
+    },
+    {
+      "name": "SqdpLifecycleTimer",
+      "definition": "typedef struct {\n\tuint8_t app_id[40];\n\tuint8_t event[32];\n} SqdpLifecycleTimer;"
+    },
+    {
+      "name": "SqdpAction",
+      "definition": "typedef struct {\n\tSqdpActionKind kind;\n\tconst uint8_t *app_id;\n\tsize_t app_id_len;\n\tconst uint8_t *resource_path;\n\tsize_t resource_path_len;\n\tconst uint8_t *staging_path;\n\tsize_t staging_path_len;\n\tsize_t offset;\n\tconst uint8_t *bytes;\n\tsize_t bytes_len;\n\tsize_t total_len;\n} SqdpAction;"
+    },
+    {
+      "name": "SqdpWifiProfile",
+      "definition": "typedef struct {\n\tconst uint8_t *profile;\n\tsize_t profile_len;\n\tconst uint8_t *ssid;\n\tsize_t ssid_len;\n\tconst uint8_t *password;\n\tsize_t password_len;\n} SqdpWifiProfile;"
+    },
+    {
+      "name": "SqdpStateImport",
+      "definition": "typedef struct {\n\tconst uint8_t *bytes;\n\tsize_t bytes_len;\n} SqdpStateImport;"
+    },
+    {
+      "name": "SqdpAppLaunch",
+      "definition": "typedef struct {\n\tconst uint8_t *app_id;\n\tsize_t app_id_len;\n} SqdpAppLaunch;"
+    },
+    {
+      "name": "SqvmTriggerTimer",
+      "definition": "typedef struct {\n\tuint8_t event[32];\n\tint32_t interval_ms;\n\tbool repeating;\n} SqvmTriggerTimer;"
+    },
+    {
+      "name": "SqvmBleProfileEventRoute",
+      "definition": "typedef struct {\n\tuint8_t kind[SQVM_BLE_PROFILE_TEXT_CAP];\n\tuint8_t event[SQVM_BLE_PROFILE_TEXT_CAP];\n} SqvmBleProfileEventRoute;"
+    },
+    {
+      "name": "SqvmBleProfileTrigger",
+      "definition": "typedef struct {\n\tuint8_t profile[SQVM_BLE_PROFILE_TEXT_CAP];\n\tuint8_t id[SQVM_BLE_PROFILE_TEXT_CAP];\n\tuint8_t role[SQVM_BLE_PROFILE_TEXT_CAP];\n\tsize_t accept_count;\n\tuint8_t accept[SQVM_BLE_PROFILE_ACCEPT_MAX][SQVM_BLE_PROFILE_TEXT_CAP];\n\tsize_t event_count;\n\tSqvmBleProfileEventRoute events[SQVM_BLE_PROFILE_EVENT_MAX];\n} SqvmBleProfileTrigger;"
+    },
+    {
+      "name": "SqvmEventPayloadField",
+      "definition": "typedef struct {\n\tconst uint8_t *name;\n\tsize_t name_len;\n\tconst uint8_t *value;\n\tsize_t value_len;\n} SqvmEventPayloadField;"
+    },
+    {
+      "name": "SqvmDeviceBinding",
+      "definition": "typedef struct {\n\tuint8_t service[SQVM_DEVICE_BINDING_NAME_CAP];\n\tuint8_t binding[SQVM_DEVICE_BINDING_NAME_CAP];\n\tuint8_t resource[SQVM_DEVICE_BINDING_RESOURCE_CAP];\n} SqvmDeviceBinding;"
+    },
+    {
+      "name": "SqdpEventDispatch",
+      "definition": "typedef struct {\n\tconst uint8_t *app_id;\n\tsize_t app_id_len;\n\tconst uint8_t *event;\n\tsize_t event_len;\n} SqdpEventDispatch;"
+    },
+    {
+      "name": "SqvmDispatchOutcome",
+      "definition": "typedef enum {\n\tSQVM_DISPATCH_COMPLETE = 0,\n\tSQVM_DISPATCH_PENDING_STORAGE = 1,\n} SqvmDispatchOutcome;"
+    },
+    {
+      "name": "SqvmStorageRequestKind",
+      "definition": "typedef enum {\n\tSQVM_STORAGE_REQUEST_NONE = 0,\n\tSQVM_STORAGE_REQUEST_SQBC_READ = 1,\n\tSQVM_STORAGE_REQUEST_STATE_LOAD = 2,\n\tSQVM_STORAGE_REQUEST_STATE_SAVE = 3,\n\tSQVM_STORAGE_REQUEST_STATE_RESET = 4,\n} SqvmStorageRequestKind;"
+    },
+    {
+      "name": "SqvmStorageRequest",
+      "definition": "typedef struct {\n\tSqvmStorageRequestKind kind;\n\tsize_t offset;\n\tsize_t len;\n\tuint8_t bytes[SQVM_STORAGE_TRANSFER_CAPACITY];\n} SqvmStorageRequest;"
+    },
+    {
+      "name": "SqvmStorageCompletion",
+      "definition": "typedef struct {\n\tbool has_len;\n\tsize_t len;\n\tuint8_t bytes[SQVM_STORAGE_TRANSFER_CAPACITY];\n} SqvmStorageCompletion;"
+    },
+    {
+      "name": "SqvmDispatchResult",
+      "definition": "typedef struct {\n\tSqvmStatus status;\n\tSqvmDispatchOutcome outcome;\n\tbool exited;\n\tSqvmStorageRequest storage;\n} SqvmDispatchResult;"
+    },
+    {
+      "name": "SqvmTraceCallback",
+      "definition": "typedef void (*SqvmTraceCallback)(void *user_data, const uint8_t *message, size_t message_len);"
+    },
+    {
+      "name": "SqvmReadExactAtCallback",
+      "definition": "typedef int32_t (*SqvmReadExactAtCallback)(\n\tvoid *user_data,\n\tsize_t offset,\n\tuint8_t *out,\n\tsize_t out_len);"
+    },
+    {
+      "name": "SqvmDebugOutputCallback",
+      "definition": "typedef void (*SqvmDebugOutputCallback)(void *user_data, const uint8_t *message, size_t message_len);"
+    },
+    {
+      "name": "SqvmDisplayTextOptions",
+      "definition": "typedef struct {\n\tint32_t x;\n\tint32_t y;\n\tint32_t w;\n\tint32_t h;\n\tint32_t font_height;\n\tconst uint8_t *text_color;\n\tsize_t text_color_len;\n\tconst uint8_t *background_color;\n\tsize_t background_color_len;\n\tconst uint8_t *align;\n\tsize_t align_len;\n\tconst uint8_t *valign;\n\tsize_t valign_len;\n} SqvmDisplayTextOptions;"
+    },
+    {
+      "name": "SqvmDisplayRectOptions",
+      "definition": "typedef struct {\n\tint32_t x;\n\tint32_t y;\n\tint32_t w;\n\tint32_t h;\n\tconst uint8_t *fill_color;\n\tsize_t fill_color_len;\n\tconst uint8_t *stroke_color;\n\tsize_t stroke_color_len;\n} SqvmDisplayRectOptions;"
+    },
+    {
+      "name": "SqvmDisplayLineOptions",
+      "definition": "typedef struct {\n\tint32_t x1;\n\tint32_t y1;\n\tint32_t x2;\n\tint32_t y2;\n\tconst uint8_t *color;\n\tsize_t color_len;\n} SqvmDisplayLineOptions;"
+    },
+    {
+      "name": "SqvmDisplayResourceOptions",
+      "definition": "typedef struct {\n\tint32_t x;\n\tint32_t y;\n\tint32_t w;\n\tint32_t h;\n} SqvmDisplayResourceOptions;"
+    },
+    {
+      "name": "SqvmDisplayInfo",
+      "definition": "typedef struct {\n\tbool ok;\n\tconst uint8_t *error;\n\tsize_t error_len;\n\tconst uint8_t *warning;\n\tsize_t warning_len;\n\tbool available;\n\tconst uint8_t *status;\n\tsize_t status_len;\n\tconst uint8_t *binding;\n\tsize_t binding_len;\n\tconst uint8_t *driver;\n\tsize_t driver_len;\n\tconst uint8_t *transport;\n\tsize_t transport_len;\n\tint32_t width;\n\tint32_t height;\n\tint32_t physical_width;\n\tint32_t physical_height;\n\tint32_t rotation;\n\tconst uint8_t *color_model;\n\tsize_t color_model_len;\n\tint32_t logical_gray_levels;\n\tint32_t native_bpp;\n\tconst uint8_t *native_pixel_format;\n\tsize_t native_pixel_format_len;\n\tint32_t default_font_height;\n\tbool supports_partial_refresh;\n\tbool supports_fast_refresh;\n} SqvmDisplayInfo;"
+    },
+    {
+      "name": "SqvmAppRegistryEntry",
+      "definition": "typedef struct {\n\tconst uint8_t *id;\n\tsize_t id_len;\n\tconst uint8_t *name;\n\tsize_t name_len;\n\tconst uint8_t *build;\n\tsize_t build_len;\n\tconst uint8_t *description;\n\tsize_t description_len;\n} SqvmAppRegistryEntry;"
+    },
+    {
+      "name": "SqvmAppStackEntry",
+      "definition": "typedef struct {\n\tconst uint8_t *app_id;\n\tsize_t app_id_len;\n\tconst uint8_t *event;\n\tsize_t event_len;\n} SqvmAppStackEntry;"
+    },
+    {
+      "name": "SqvmDisplayClearCallback",
+      "definition": "typedef void (*SqvmDisplayClearCallback)(void *user_data, const uint8_t *color, size_t color_len);"
+    },
+    {
+      "name": "SqvmDisplayTextCallback",
+      "definition": "typedef void (*SqvmDisplayTextCallback)(\n\tvoid *user_data,\n\tconst uint8_t *text,\n\tsize_t text_len,\n\tconst SqvmDisplayTextOptions *options);"
+    },
+    {
+      "name": "SqvmDisplayRectCallback",
+      "definition": "typedef void (*SqvmDisplayRectCallback)(void *user_data, const SqvmDisplayRectOptions *options);"
+    },
+    {
+      "name": "SqvmDisplayLineCallback",
+      "definition": "typedef void (*SqvmDisplayLineCallback)(void *user_data, const SqvmDisplayLineOptions *options);"
+    },
+    {
+      "name": "SqvmDisplaySelectCallback",
+      "definition": "typedef int32_t (*SqvmDisplaySelectCallback)(void *user_data, const uint8_t *name,\n\t\t\t\t\t     size_t name_len);"
+    },
+    {
+      "name": "SqvmDisplayImageCallback",
+      "definition": "typedef void (*SqvmDisplayImageCallback)(void *user_data, const uint8_t *path,\n\t\t\t\t\t size_t path_len,\n\t\t\t\t\t const SqvmDisplayResourceOptions *options);"
+    },
+    {
+      "name": "SqvmDisplayDrawCallback",
+      "definition": "typedef void (*SqvmDisplayDrawCallback)(void *user_data, const uint8_t *drawable,\n\t\t\t\t\tsize_t drawable_len,\n\t\t\t\t\tconst SqvmDisplayResourceOptions *options);"
+    },
+    {
+      "name": "SqvmDisplayInfoCallback",
+      "definition": "typedef int32_t (*SqvmDisplayInfoCallback)(void *user_data, SqvmDisplayInfo *out);"
+    },
+    {
+      "name": "SqvmWifiStatus",
+      "definition": "typedef struct {\n\tbool active;\n\tconst uint8_t *mode;\n\tsize_t mode_len;\n\tconst uint8_t *ip_address;\n\tsize_t ip_address_len;\n\tconst uint8_t *ssid;\n\tsize_t ssid_len;\n\tint32_t clients;\n\tconst uint8_t *error;\n\tsize_t error_len;\n\tconst uint8_t *state;\n\tsize_t state_len;\n\tconst uint8_t *backend;\n\tsize_t backend_len;\n\tbool driver_started;\n\tbool configured;\n\tconst uint8_t *driver_mode;\n\tsize_t driver_mode_len;\n\tint32_t channel;\n\tint32_t ap_start_events;\n\tint32_t ap_stop_events;\n\tint32_t probe_events;\n\tint32_t sta_connected_events;\n\tint32_t sta_disconnected_events;\n\tconst uint8_t *last_backend_code;\n\tsize_t last_backend_code_len;\n\tconst uint8_t *profile;\n\tsize_t profile_len;\n\tbool connected;\n\tint32_t scan_matches;\n\tint32_t rssi;\n\tconst uint8_t *auth;\n\tsize_t auth_len;\n\tconst uint8_t *bssid;\n\tsize_t bssid_len;\n\tconst uint8_t *disconnect_reason;\n\tsize_t disconnect_reason_len;\n\tint32_t disconnect_reason_code;\n} SqvmWifiStatus;"
+    },
+    {
+      "name": "SqvmWifiAccessPoint",
+      "definition": "typedef struct {\n\tconst uint8_t *ssid;\n\tsize_t ssid_len;\n\tconst uint8_t *bssid;\n\tsize_t bssid_len;\n\tint32_t ssid_length;\n\tint32_t channel;\n\tint32_t rssi;\n\tconst uint8_t *auth;\n\tsize_t auth_len;\n\tbool hidden;\n} SqvmWifiAccessPoint;"
+    },
+    {
+      "name": "SqvmWifiOperation",
+      "definition": "typedef struct {\n\tbool active;\n\tconst uint8_t *kind;\n\tsize_t kind_len;\n\tconst uint8_t *state;\n\tsize_t state_len;\n\tbool done;\n\tbool cancelled;\n\tbool ok;\n\tconst uint8_t *error;\n\tsize_t error_len;\n} SqvmWifiOperation;"
+    },
+    {
+      "name": "SqvmWifiOperationResult",
+      "definition": "typedef struct {\n\tbool ready;\n\tconst uint8_t *kind;\n\tsize_t kind_len;\n\tconst uint8_t *state;\n\tsize_t state_len;\n\tbool ok;\n\tconst uint8_t *error;\n\tsize_t error_len;\n\tbool cancelled;\n\tint32_t count;\n} SqvmWifiOperationResult;"
+    },
+    {
+      "name": "SqvmWifiScanNetworkResult",
+      "definition": "typedef struct {\n\tbool ok;\n\tconst uint8_t *error;\n\tsize_t error_len;\n\tSqvmWifiAccessPoint network;\n} SqvmWifiScanNetworkResult;"
+    },
+    {
+      "name": "SqvmDeviceConfigValueKind",
+      "definition": "typedef enum {\n\tSQVM_DEVICE_CONFIG_VALUE_NULL = 0,\n\tSQVM_DEVICE_CONFIG_VALUE_BOOL = 1,\n\tSQVM_DEVICE_CONFIG_VALUE_I32 = 2,\n\tSQVM_DEVICE_CONFIG_VALUE_STRING = 3,\n} SqvmDeviceConfigValueKind;"
+    },
+    {
+      "name": "SqvmDeviceConfigValue",
+      "definition": "typedef struct {\n\tSqvmDeviceConfigValueKind kind;\n\tbool bool_value;\n\tint32_t i32_value;\n\tconst uint8_t *string;\n\tsize_t string_len;\n} SqvmDeviceConfigValue;"
+    },
+    {
+      "name": "SqvmDeviceConfigResult",
+      "definition": "typedef struct {\n\tbool ok;\n\tconst uint8_t *error;\n\tsize_t error_len;\n\tconst uint8_t *warning;\n\tsize_t warning_len;\n} SqvmDeviceConfigResult;"
+    },
+    {
+      "name": "SqvmFilePickFileResult",
+      "definition": "typedef struct {\n\tbool ok;\n\tconst uint8_t *error;\n\tsize_t error_len;\n\tconst uint8_t *path;\n\tsize_t path_len;\n} SqvmFilePickFileResult;"
+    },
+    {
+      "name": "SqvmFileReadTextResult",
+      "definition": "typedef struct {\n\tbool ok;\n\tconst uint8_t *error;\n\tsize_t error_len;\n\tconst uint8_t *text;\n\tsize_t text_len;\n} SqvmFileReadTextResult;"
+    },
+    {
+      "name": "SqvmFileReadLinesResult",
+      "definition": "typedef struct {\n\tbool ok;\n\tconst uint8_t *error;\n\tsize_t error_len;\n} SqvmFileReadLinesResult;"
+    },
+    {
+      "name": "SqvmWifiApIp",
+      "definition": "typedef struct {\n\tconst uint8_t *ip;\n\tsize_t ip_len;\n\tconst uint8_t *gw;\n\tsize_t gw_len;\n\tconst uint8_t *netmask;\n\tsize_t netmask_len;\n\tconst uint8_t *error;\n\tsize_t error_len;\n} SqvmWifiApIp;"
+    },
+    {
+      "name": "SqvmWifiStartApCallback",
+      "definition": "typedef int32_t (*SqvmWifiStartApCallback)(void *user_data, const uint8_t *ssid,\n\t\t\t\t\t   size_t ssid_len, SqvmWifiOperation *out);"
+    },
+    {
+      "name": "SqvmWifiStopApCallback",
+      "definition": "typedef int32_t (*SqvmWifiStopApCallback)(void *user_data, SqvmWifiOperation *out);"
+    },
+    {
+      "name": "SqvmWifiConnectCallback",
+      "definition": "typedef int32_t (*SqvmWifiConnectCallback)(void *user_data, const uint8_t *profile,\n\t\t\t\t\t   size_t profile_len, SqvmWifiOperation *out);"
+    },
+    {
+      "name": "SqvmWifiDisconnectCallback",
+      "definition": "typedef int32_t (*SqvmWifiDisconnectCallback)(void *user_data, SqvmWifiOperation *out);"
+    },
+    {
+      "name": "SqvmWifiGetApIpCallback",
+      "definition": "typedef int32_t (*SqvmWifiGetApIpCallback)(void *user_data, SqvmWifiApIp *out);"
+    },
+    {
+      "name": "SqvmWifiStatusCallback",
+      "definition": "typedef int32_t (*SqvmWifiStatusCallback)(void *user_data, SqvmWifiStatus *out);"
+    },
+    {
+      "name": "SqvmWifiScanCallback",
+      "definition": "typedef int32_t (*SqvmWifiScanCallback)(void *user_data, SqvmWifiOperation *out);"
+    },
+    {
+      "name": "SqvmWifiOperationCallback",
+      "definition": "typedef int32_t (*SqvmWifiOperationCallback)(void *user_data, SqvmWifiOperation *out);"
+    },
+    {
+      "name": "SqvmWifiResultCallback",
+      "definition": "typedef int32_t (*SqvmWifiResultCallback)(void *user_data, SqvmWifiOperationResult *out);"
+    },
+    {
+      "name": "SqvmWifiCancelCallback",
+      "definition": "typedef int32_t (*SqvmWifiCancelCallback)(void *user_data, SqvmWifiOperation *out);"
+    },
+    {
+      "name": "SqvmWifiScanNetworkCallback",
+      "definition": "typedef int32_t (*SqvmWifiScanNetworkCallback)(void *user_data, int32_t index,\n\t\t\t\t\t       SqvmWifiScanNetworkResult *out);"
+    },
+    {
+      "name": "SqvmDeviceConfigLoadCallback",
+      "definition": "typedef int32_t (*SqvmDeviceConfigLoadCallback)(void *user_data, const uint8_t *source,\n\t\t\t\t\t\tsize_t source_len, SqvmDeviceConfigResult *out);"
+    },
+    {
+      "name": "SqvmDeviceConfigSetCallback",
+      "definition": "typedef int32_t (*SqvmDeviceConfigSetCallback)(void *user_data, const uint8_t *key,\n\t\t\t\t\t       size_t key_len, SqvmDeviceConfigValue value,\n\t\t\t\t\t       SqvmDeviceConfigResult *out);"
+    },
+    {
+      "name": "SqvmDeviceConfigRebindCallback",
+      "definition": "typedef int32_t (*SqvmDeviceConfigRebindCallback)(void *user_data, const uint8_t *alias,\n\t\t\t\t\t\t  size_t alias_len, SqvmDeviceConfigResult *out);"
+    },
+    {
+      "name": "SqvmDeviceConfigSaveCallback",
+      "definition": "typedef int32_t (*SqvmDeviceConfigSaveCallback)(void *user_data, const uint8_t *destination,\n\t\t\t\t\t\tsize_t destination_len,\n\t\t\t\t\t\tSqvmDeviceConfigResult *out);"
+    },
+    {
+      "name": "SqvmFilePickFileCallback",
+      "definition": "typedef int32_t (*SqvmFilePickFileCallback)(void *user_data, const uint8_t *extension,\n\t\t\t\t\t       size_t extension_len,\n\t\t\t\t\t       SqvmFilePickFileResult *out);"
+    },
+    {
+      "name": "SqvmFileReadTextCallback",
+      "definition": "typedef int32_t (*SqvmFileReadTextCallback)(void *user_data, const uint8_t *path,\n\t\t\t\t\t       size_t path_len, SqvmFileReadTextResult *out);"
+    },
+    {
+      "name": "SqvmFileReadLinesCallback",
+      "definition": "typedef int32_t (*SqvmFileReadLinesCallback)(void *user_data, const uint8_t *path,\n\t\t\t\t\t\tsize_t path_len, int32_t max_lines,\n\t\t\t\t\t\tSqvmFileReadLinesResult *out);"
+    },
+    {
+      "name": "SqvmIndicatorWriteCallback",
+      "definition": "typedef int32_t (*SqvmIndicatorWriteCallback)(void *user_data, bool value);"
+    },
+    {
+      "name": "SqvmIndicatorToggleCallback",
+      "definition": "typedef int32_t (*SqvmIndicatorToggleCallback)(void *user_data);"
+    },
+    {
+      "name": "SqvmIndicatorReadCallback",
+      "definition": "typedef int32_t (*SqvmIndicatorReadCallback)(void *user_data, bool *out);"
+    },
+    {
+      "name": "SqvmIndicatorBreatheCallback",
+      "definition": "typedef int32_t (*SqvmIndicatorBreatheCallback)(void *user_data);"
+    },
+    {
+      "name": "SqvmIndicatorBlinkCallback",
+      "definition": "typedef int32_t (*SqvmIndicatorBlinkCallback)(void *user_data, int32_t on_ms, int32_t off_ms);"
+    },
+    {
+      "name": "SqvmHardwareGpioWriteCallback",
+      "definition": "typedef int32_t (*SqvmHardwareGpioWriteCallback)(\n\tvoid *user_data,\n\tconst uint8_t *name,\n\tsize_t name_len,\n\tbool value);"
+    },
+    {
+      "name": "SqvmHardwareGpioToggleCallback",
+      "definition": "typedef int32_t (*SqvmHardwareGpioToggleCallback)(\n\tvoid *user_data,\n\tconst uint8_t *name,\n\tsize_t name_len);"
+    },
+    {
+      "name": "SqvmHardwareGpioReadCallback",
+      "definition": "typedef int32_t (*SqvmHardwareGpioReadCallback)(\n\tvoid *user_data,\n\tconst uint8_t *name,\n\tsize_t name_len,\n\tbool *out);"
+    },
+    {
+      "name": "SqvmAppLifecycleCallback",
+      "definition": "typedef int32_t (*SqvmAppLifecycleCallback)(void *user_data, const uint8_t *app, size_t app_len);"
+    },
+    {
+      "name": "SqvmAppRegistryListCallback",
+      "definition": "typedef int32_t (*SqvmAppRegistryListCallback)(void *user_data, SqvmAppRegistryEntry *out,\n\t\t\t\t\t       size_t out_cap, size_t *out_count);"
+    },
+    {
+      "name": "SqvmAppRegistryGetCallback",
+      "definition": "typedef int32_t (*SqvmAppRegistryGetCallback)(void *user_data, const uint8_t *app,\n\t\t\t\t\t      size_t app_len, SqvmAppRegistryEntry *out);"
+    },
+    {
+      "name": "SqvmAppStackCallback",
+      "definition": "typedef int32_t (*SqvmAppStackCallback)(void *user_data, SqvmAppStackEntry *out,\n\t\t\t\t\tsize_t out_cap, size_t *out_count);"
+    },
+    {
+      "name": "SqvmTimerEveryCallback",
+      "definition": "typedef int32_t (*SqvmTimerEveryCallback)(\n\tvoid *user_data,\n\tconst uint8_t *event,\n\tsize_t event_len,\n\tint32_t interval_ms);"
+    },
+    {
+      "name": "SqvmTimerAfterCallback",
+      "definition": "typedef int32_t (*SqvmTimerAfterCallback)(\n\tvoid *user_data,\n\tconst uint8_t *event,\n\tsize_t event_len,\n\tint32_t delay_ms);"
+    },
+    {
+      "name": "SqvmSystemMemoryTextCallback",
+      "definition": "typedef int32_t (*SqvmSystemMemoryTextCallback)(\n\tvoid *user_data,\n\tuint8_t *out,\n\tsize_t out_cap,\n\tsize_t *out_len);"
+    },
+    {
+      "name": "SqvmSystemStorageTextCallback",
+      "definition": "typedef int32_t (*SqvmSystemStorageTextCallback)(\n\tvoid *user_data,\n\tconst uint8_t *name,\n\tsize_t name_len,\n\tuint8_t *out,\n\tsize_t out_cap,\n\tsize_t *out_len);"
+    },
+    {
+      "name": "SqvmSystemStartReasonTextCallback",
+      "definition": "typedef int32_t (*SqvmSystemStartReasonTextCallback)(\n\tvoid *user_data,\n\tuint8_t *out,\n\tsize_t out_cap,\n\tsize_t *out_len);"
+    },
+    {
+      "name": "SqvmPowerSleepCallback",
+      "definition": "typedef int32_t (*SqvmPowerSleepCallback)(void *user_data, int32_t wake_after_ms);"
+    },
+    {
+      "name": "SqvmCallbacks",
+      "definition": "typedef struct {\n\tSqvmTraceCallback trace;\n\tSqvmReadExactAtCallback read_exact_at;\n\tSqvmDebugOutputCallback debug_output;\n\tSqvmDisplayClearCallback display_clear;\n\tSqvmDisplayTextCallback display_text;\n\tSqvmDisplayRectCallback display_rect;\n\tSqvmDisplayLineCallback display_line;\n\tSqvmDisplaySelectCallback display_select;\n\tSqvmDisplayImageCallback display_image;\n\tSqvmDisplayDrawCallback display_draw;\n\tSqvmDisplayInfoCallback display_info;\n\tSqvmIndicatorWriteCallback indicator_write;\n\tSqvmIndicatorToggleCallback indicator_toggle;\n\tSqvmIndicatorReadCallback indicator_read;\n\tSqvmIndicatorBreatheCallback indicator_breathe;\n\tSqvmIndicatorBlinkCallback indicator_blink;\n\tSqvmHardwareGpioWriteCallback hardware_gpio_write;\n\tSqvmHardwareGpioToggleCallback hardware_gpio_toggle;\n\tSqvmHardwareGpioReadCallback hardware_gpio_read;\n\tSqvmAppLifecycleCallback app_launch;\n\tSqvmAppLifecycleCallback app_arm;\n\tSqvmAppLifecycleCallback app_disarm;\n\tSqvmAppRegistryListCallback app_registry_list;\n\tSqvmAppRegistryGetCallback app_registry_get;\n\tSqvmAppStackCallback app_process_stack;\n\tSqvmAppStackCallback app_armed_stack;\n\tSqvmTimerEveryCallback timer_every;\n\tSqvmTimerAfterCallback timer_after;\n\tSqvmWifiStartApCallback wifi_start_ap;\n\tSqvmWifiStopApCallback wifi_stop_ap;\n\tSqvmWifiConnectCallback wifi_connect;\n\tSqvmWifiDisconnectCallback wifi_disconnect;\n\tSqvmWifiGetApIpCallback wifi_get_ap_ip;\n\tSqvmWifiStatusCallback wifi_status;\n\tSqvmWifiScanCallback wifi_scan;\n\tSqvmWifiOperationCallback wifi_operation;\n\tSqvmWifiResultCallback wifi_result;\n\tSqvmWifiCancelCallback wifi_cancel;\n\tSqvmWifiScanNetworkCallback wifi_scan_network;\n\tSqvmDeviceConfigLoadCallback device_config_load;\n\tSqvmDeviceConfigSetCallback device_config_set;\n\tSqvmDeviceConfigRebindCallback device_config_rebind;\n\tSqvmDeviceConfigSaveCallback device_config_save;\n\tSqvmFilePickFileCallback file_pick_file;\n\tSqvmFileReadTextCallback file_read_text;\n\tSqvmFileReadLinesCallback file_read_lines;\n\tSqvmSystemMemoryTextCallback system_memory_text;\n\tSqvmSystemStorageTextCallback system_storage_text;\n\tSqvmSystemStartReasonTextCallback system_start_reason_text;\n\tSqvmPowerSleepCallback power_sleep;\n} SqvmCallbacks;"
+    }
   ],
   "constants": [
-    "SQVM_STORAGE_TRANSFER_CAPACITY",
-    "SQVM_SAVED_STATE_CAPACITY",
-    "SQVM_DEVICE_BINDING_NAME_CAP",
-    "SQVM_DEVICE_BINDING_RESOURCE_CAP",
-    "SQDC_CONFIG_MAX_RECORDS",
-    "SQDC_CONFIG_KEY_CAP",
-    "SQDC_CONFIG_STRING_CAP",
-    "SQVM_BLE_PROFILE_TEXT_CAP",
-    "SQVM_BLE_PROFILE_ACCEPT_MAX",
-    "SQVM_BLE_PROFILE_EVENT_MAX",
-    "SQVM_EVENT_PAYLOAD_FIELD_MAX",
-    "SQVM_WIFI_SCAN_MAX_NETWORKS"
+    {
+      "name": "SQVM_STORAGE_TRANSFER_CAPACITY",
+      "definition": "#define SQVM_STORAGE_TRANSFER_CAPACITY 640"
+    },
+    {
+      "name": "SQVM_SAVED_STATE_CAPACITY",
+      "definition": "#define SQVM_SAVED_STATE_CAPACITY 512"
+    },
+    {
+      "name": "SQVM_DEVICE_BINDING_NAME_CAP",
+      "definition": "#define SQVM_DEVICE_BINDING_NAME_CAP 32"
+    },
+    {
+      "name": "SQVM_DEVICE_BINDING_RESOURCE_CAP",
+      "definition": "#define SQVM_DEVICE_BINDING_RESOURCE_CAP 128"
+    },
+    {
+      "name": "SQDC_CONFIG_MAX_RECORDS",
+      "definition": "#define SQDC_CONFIG_MAX_RECORDS 5"
+    },
+    {
+      "name": "SQDC_CONFIG_KEY_CAP",
+      "definition": "#define SQDC_CONFIG_KEY_CAP 32"
+    },
+    {
+      "name": "SQDC_CONFIG_STRING_CAP",
+      "definition": "#define SQDC_CONFIG_STRING_CAP 48"
+    },
+    {
+      "name": "SQVM_BLE_PROFILE_TEXT_CAP",
+      "definition": "#define SQVM_BLE_PROFILE_TEXT_CAP 32"
+    },
+    {
+      "name": "SQVM_BLE_PROFILE_ACCEPT_MAX",
+      "definition": "#define SQVM_BLE_PROFILE_ACCEPT_MAX 4"
+    },
+    {
+      "name": "SQVM_BLE_PROFILE_EVENT_MAX",
+      "definition": "#define SQVM_BLE_PROFILE_EVENT_MAX 8"
+    },
+    {
+      "name": "SQVM_EVENT_PAYLOAD_FIELD_MAX",
+      "definition": "#define SQVM_EVENT_PAYLOAD_FIELD_MAX 8"
+    },
+    {
+      "name": "SQVM_WIFI_SCAN_MAX_NETWORKS",
+      "definition": "#define SQVM_WIFI_SCAN_MAX_NETWORKS 4"
+    }
   ],
   "coverage": [
     {
@@ -874,5 +1256,13 @@
         "test_vm_runtime_callback_boundary_statuses"
       ]
     }
-  ]
+  ],
+  "header": {
+    "guard": "SQUIDSCRIPT_SQUIDVM_FFI_H",
+    "includes": [
+      "stddef.h",
+      "stdbool.h",
+      "stdint.h"
+    ]
+  }
 }

@@ -85,9 +85,9 @@ stubs.
 ## Manifest-Checked ABI Inventory
 
 This section is generated from `compiler/rust/crates/squidvm-ffi/abi/manifest.json`.
-Run `python3 scripts/check-squidvm-ffi-abi.py --write-doc` after changing the FFI ABI.
-The checker validates Rust exports, the Zephyr C header, runtime callback wiring,
-and this generated documentation section against the manifest.
+Run `python3 scripts/check-squidvm-ffi-abi.py --write-header --write-doc` after changing the FFI ABI.
+The checker validates Rust exports, the generated Zephyr C header, runtime
+callback wiring, and this generated documentation section against the manifest.
 
 - Exports: 58
 - Callback fields: 50

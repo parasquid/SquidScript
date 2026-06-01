@@ -11,8 +11,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Runtime Services
 
-- Replace the hand-maintained Zephyr VM host ABI C header with generated C once
-  the manifest/checker workflow is stable enough to own full header emission.
 - Decide service priority and target support for spec-recognized APIs that are
   not yet SQBC-backed: `httpServer.*`, remaining `service.ble.*` runtime
   pieces, and remaining `file.*` APIs beyond the current file pick/read family.
