@@ -337,20 +337,23 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("runtime_wifi_scan_driver_callback", runtime)
         self.assertIn("runtime_wifi_driver_ops", scan_body)
         self.assertIn("wifi_mgmt_api->scan", scan_body)
+        self.assertIn("runtime_wifi_fill_operation(runtime, out)", scan_body)
+        self.assertNotIn("k_sem_take", scan_body)
         self.assertNotIn("NET_REQUEST_WIFI_SCAN", scan_body)
 
     def test_wifi_list_fixture_iterates_redacted_network_records(self):
         source = self.read("tests/hardware/c3-supermini/wifi-list-summary/main.squid")
 
         self.assertIn("service.wifi.scan()", source)
-        self.assertIn("for network in scan.networks max 8", source)
-        self.assertIn("network.ssidLength", source)
-        self.assertIn("network.channel", source)
-        self.assertIn("network.rssi", source)
-        self.assertIn("network.auth", source)
-        self.assertIn("network.hidden", source)
-        self.assertNotIn("network.ssid,", source)
-        self.assertNotIn("network.bssid", source)
+        self.assertIn("service.wifi.result()", source)
+        self.assertIn("service.wifi.scanNetwork(0)", source)
+        self.assertIn("first.ssidLength", source)
+        self.assertIn("first.channel", source)
+        self.assertIn("first.rssi", source)
+        self.assertIn("first.auth", source)
+        self.assertIn("first.hidden", source)
+        self.assertNotIn(".ssid,", source)
+        self.assertNotIn(".bssid", source)
 
     def test_docs_point_to_setup_script(self):
         firmware_readme = self.read("firmware/README.md")
@@ -736,12 +739,14 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         guard = "#if IS_ENABLED(CONFIG_NET_L2_WIFI_MGMT) && IS_ENABLED(CONFIG_NET_MGMT_EVENT) &&"
         self.assertIn(guard, runtime_h)
         guard_index = runtime_h.index(guard, runtime_h.index("struct sq_vm_runtime"))
-        scan_sem_index = runtime_h.index("wifi_scan_sem_initialized")
-        end_index = runtime_h.index("#endif", scan_sem_index)
-        self.assertLess(guard_index, scan_sem_index)
-        self.assertLess(runtime_h.index("wifi_scan_sem_initialized"), end_index)
+        op_index = runtime_h.index("wifi_op_kind", guard_index)
+        end_index = runtime_h.index("#endif", op_index)
+        self.assertLess(guard_index, op_index)
+        self.assertLess(runtime_h.index("wifi_scan_done"), end_index)
+        self.assertNotIn("wifi_scan_sem_initialized", runtime_h)
+        self.assertNotIn("struct k_sem wifi_scan_done", runtime_h)
 
-    def test_wifi_scan_results_use_transfer_scratch_not_resident_runtime_buffers(self):
+    def test_wifi_scan_results_use_resident_cursor_snapshot_not_transfer_scratch(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
@@ -753,13 +758,14 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
         self.assertIn("struct sq_vm_runtime_wifi_scan_scratch", runtime_h)
         self.assertIn("struct sq_vm_runtime_wifi_scan_scratch wifi_scan", runtime_h)
-        self.assertIn("BUILD_ASSERT(sizeof(runtime->transfer.wifi_scan) <=", runtime_c)
+        self.assertNotIn("wifi_scan", runtime_h[runtime_h.index("union sq_vm_runtime_transfer") : runtime_h.index("};", runtime_h.index("union sq_vm_runtime_transfer"))])
         self.assertNotIn("SqvmWifiAccessPoint wifi_scan_networks", runtime_body)
         self.assertNotIn("char wifi_scan_ssids", runtime_body)
         self.assertNotIn("char wifi_scan_bssids", runtime_body)
         self.assertNotIn("char wifi_scan_auth", runtime_body)
         self.assertIn("struct sq_vm_runtime_wifi_scan_scratch *scan =", runtime_c)
-        self.assertIn("out->networks = runtime->transfer.wifi_scan.networks", runtime_c)
+        self.assertIn("out->network = runtime->wifi_scan.networks[index]", runtime_c)
+        self.assertNotIn("runtime->transfer.wifi_scan", runtime_c)
         self.assertIn("runtime_static <= 13984", ztest)
         self.assertNotIn("runtime_static <= 14176", ztest)
         self.assertNotIn("runtime_static <= 14304", ztest)
@@ -776,21 +782,14 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("enum sq_vm_runtime_transfer_owner", runtime_h)
         self.assertIn("SQ_VM_RUNTIME_TRANSFER_SCRATCH", runtime_h)
         self.assertIn("SQ_VM_RUNTIME_TRANSFER_COMPLETION", runtime_h)
-        self.assertIn("SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN", runtime_h)
+        self.assertNotIn("SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN", runtime_h)
         self.assertIn("enum sq_vm_runtime_transfer_owner transfer_owner", runtime_h)
         self.assertIn("sq_vm_runtime_transfer_acquire", runtime_h)
         self.assertIn("sq_vm_runtime_transfer_release", runtime_h)
         self.assertIn("CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC", runtime_h)
         self.assertIn("return -EBUSY", runtime_h)
 
-        self.assertIn(
-            "sq_vm_runtime_transfer_acquire(runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN)",
-            runtime_c,
-        )
-        self.assertIn(
-            "sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN)",
-            runtime_c,
-        )
+        self.assertNotIn("SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN", runtime_c)
         self.assertIn(
             "sq_vm_runtime_transfer_acquire(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION)",
             runtime_c,

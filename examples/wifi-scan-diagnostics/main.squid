@@ -12,9 +12,31 @@ event.on("timer.wifi.scan") {
 }
 
 function scanAndPrint() {
-  let scan = service.wifi.scan()
-  debug.print("wifi scan", scan.ok, scan.error, scan.count)
-  for network in scan.networks max 8 {
-    debug.print("wifi ap", network.ssidLength, network.channel, network.rssi, network.auth, network.hidden)
+  service.wifi.scan()
+  service.timer.after("timer.wifi.scan.result", 250)
+}
+
+event.on("timer.wifi.scan.result") {
+  let result = service.wifi.result()
+  if result.ready {
+    debug.print("wifi scan", result.ok, result.error, result.count)
+    if result.count > 0 {
+      let first = service.wifi.scanNetwork(0)
+      debug.print("wifi ap", first.ssidLength, first.channel, first.rssi, first.auth, first.hidden)
+    }
+    if result.count > 1 {
+      let second = service.wifi.scanNetwork(1)
+      debug.print("wifi ap", second.ssidLength, second.channel, second.rssi, second.auth, second.hidden)
+    }
+    if result.count > 2 {
+      let third = service.wifi.scanNetwork(2)
+      debug.print("wifi ap", third.ssidLength, third.channel, third.rssi, third.auth, third.hidden)
+    }
+    if result.count > 3 {
+      let fourth = service.wifi.scanNetwork(3)
+      debug.print("wifi ap", fourth.ssidLength, fourth.channel, fourth.rssi, fourth.auth, fourth.hidden)
+    }
+  } else {
+    service.timer.after("timer.wifi.scan.result", 250)
   }
 }

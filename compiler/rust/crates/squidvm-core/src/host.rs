@@ -154,22 +154,19 @@ pub trait TraceSink {
     fn service_timer_after(&mut self, _event: &str, _delay_ms: i32) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
     }
-    fn service_wifi_start_ap<'a>(
-        &'a mut self,
-        _ssid: &str,
-    ) -> Result<WifiActionResult<'a>, VmError> {
+    fn service_wifi_start_ap<'a>(&'a mut self, _ssid: &str) -> Result<WifiOperation<'a>, VmError> {
         Err(VmError::InvalidOperand)
     }
-    fn service_wifi_stop_ap<'a>(&'a mut self) -> Result<WifiActionResult<'a>, VmError> {
+    fn service_wifi_stop_ap<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError> {
         Err(VmError::InvalidOperand)
     }
     fn service_wifi_connect<'a>(
         &'a mut self,
         _profile: &str,
-    ) -> Result<WifiActionResult<'a>, VmError> {
+    ) -> Result<WifiOperation<'a>, VmError> {
         Err(VmError::InvalidOperand)
     }
-    fn service_wifi_disconnect<'a>(&'a mut self) -> Result<WifiActionResult<'a>, VmError> {
+    fn service_wifi_disconnect<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError> {
         Err(VmError::InvalidOperand)
     }
     fn service_wifi_status<'a>(&'a mut self) -> Result<WifiStatus<'a>, VmError> {
@@ -178,12 +175,23 @@ pub trait TraceSink {
     fn service_wifi_get_ap_ip<'a>(&'a mut self) -> Result<WifiApIp<'a>, VmError> {
         Err(VmError::InvalidOperand)
     }
-    fn service_wifi_scan<'a>(&'a mut self) -> Result<WifiScanResult<'a>, VmError> {
-        Ok(WifiScanResult {
-            ok: false,
-            error: Some("unsupported"),
-            networks: &[],
-        })
+    fn service_wifi_scan<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError> {
+        Ok(WifiOperation::unsupported())
+    }
+    fn service_wifi_operation<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError> {
+        Ok(WifiOperation::idle())
+    }
+    fn service_wifi_result<'a>(&'a mut self) -> Result<WifiOperationResult<'a>, VmError> {
+        Ok(WifiOperationResult::unsupported())
+    }
+    fn service_wifi_cancel<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError> {
+        Ok(WifiOperation::idle())
+    }
+    fn service_wifi_scan_network<'a>(
+        &'a mut self,
+        _index: i32,
+    ) -> Result<WifiScanNetwork<'a>, VmError> {
+        Ok(WifiScanNetwork::unsupported())
     }
     fn service_wifi_teardown(&mut self) -> Result<(), VmError> {
         Ok(())
@@ -446,9 +454,65 @@ impl DisplayInfo<'_> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct WifiActionResult<'a> {
+pub struct WifiOperation<'a> {
+    pub active: bool,
+    pub kind: Option<&'a str>,
+    pub state: &'a str,
+    pub done: bool,
+    pub cancelled: bool,
     pub ok: bool,
     pub error: Option<&'a str>,
+}
+
+impl<'a> WifiOperation<'a> {
+    pub const fn idle() -> Self {
+        Self {
+            active: false,
+            kind: None,
+            state: "idle",
+            done: false,
+            cancelled: false,
+            ok: true,
+            error: None,
+        }
+    }
+
+    pub const fn unsupported() -> Self {
+        Self {
+            active: false,
+            kind: None,
+            state: "error",
+            done: true,
+            cancelled: false,
+            ok: false,
+            error: Some("unsupported"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WifiOperationResult<'a> {
+    pub ready: bool,
+    pub kind: Option<&'a str>,
+    pub state: &'a str,
+    pub ok: bool,
+    pub error: Option<&'a str>,
+    pub cancelled: bool,
+    pub count: i32,
+}
+
+impl<'a> WifiOperationResult<'a> {
+    pub const fn unsupported() -> Self {
+        Self {
+            ready: true,
+            kind: None,
+            state: "error",
+            ok: false,
+            error: Some("unsupported"),
+            cancelled: false,
+            count: 0,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -503,6 +567,23 @@ pub struct WifiAccessPoint {
     pub rssi: i32,
     pub auth: Option<&'static str>,
     pub hidden: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WifiScanNetwork<'a> {
+    pub ok: bool,
+    pub error: Option<&'a str>,
+    pub network: Option<WifiAccessPoint>,
+}
+
+impl<'a> WifiScanNetwork<'a> {
+    pub const fn unsupported() -> Self {
+        Self {
+            ok: false,
+            error: Some("unsupported"),
+            network: None,
+        }
+    }
 }
 
 impl WifiAccessPoint {
@@ -602,25 +683,22 @@ impl WifiAccessPoint {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct WifiScanResult<'a> {
-    pub ok: bool,
-    pub error: Option<&'a str>,
-    pub networks: &'a [WifiAccessPoint],
-}
-
 const SIM_WIFI_SSID_CAP: usize = 32;
 const SIM_WIFI_AP_IP: &str = "192.168.4.1";
 const SIM_WIFI_AP_NETMASK: &str = "255.255.255.0";
 
 pub trait WifiBackend {
-    fn start_ap(&mut self, ssid: &str) -> Result<WifiActionResult<'static>, VmError>;
-    fn stop_ap(&mut self) -> Result<WifiActionResult<'static>, VmError>;
-    fn connect(&mut self, profile: &str) -> Result<WifiActionResult<'static>, VmError>;
-    fn disconnect(&mut self) -> Result<WifiActionResult<'static>, VmError>;
+    fn start_ap(&mut self, ssid: &str) -> Result<WifiOperation<'static>, VmError>;
+    fn stop_ap(&mut self) -> Result<WifiOperation<'static>, VmError>;
+    fn connect(&mut self, profile: &str) -> Result<WifiOperation<'static>, VmError>;
+    fn disconnect(&mut self) -> Result<WifiOperation<'static>, VmError>;
     fn status<'a>(&'a mut self) -> Result<WifiStatus<'a>, VmError>;
     fn ap_ip<'a>(&'a mut self) -> Result<WifiApIp<'a>, VmError>;
-    fn scan<'a>(&'a mut self) -> Result<WifiScanResult<'a>, VmError>;
+    fn scan<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError>;
+    fn operation<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError>;
+    fn result<'a>(&'a mut self) -> Result<WifiOperationResult<'a>, VmError>;
+    fn cancel<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError>;
+    fn scan_network<'a>(&'a mut self, index: i32) -> Result<WifiScanNetwork<'a>, VmError>;
     fn teardown(&mut self) -> Result<bool, VmError>;
 }
 
@@ -667,10 +745,15 @@ impl Default for SimWifiBackend {
 }
 
 impl WifiBackend for SimWifiBackend {
-    fn start_ap(&mut self, ssid: &str) -> Result<WifiActionResult<'static>, VmError> {
+    fn start_ap(&mut self, ssid: &str) -> Result<WifiOperation<'static>, VmError> {
         let bytes = ssid.as_bytes();
         if bytes.is_empty() || bytes.len() > self.ssid.len() {
-            return Ok(WifiActionResult {
+            return Ok(WifiOperation {
+                active: false,
+                kind: Some("startAP"),
+                state: "error",
+                done: true,
+                cancelled: false,
                 ok: false,
                 error: Some("invalid ssid"),
             });
@@ -678,26 +761,41 @@ impl WifiBackend for SimWifiBackend {
         self.ssid[..bytes.len()].copy_from_slice(bytes);
         self.ssid_len = bytes.len();
         self.active = true;
-        Ok(WifiActionResult {
+        Ok(WifiOperation {
+            active: true,
+            kind: Some("startAP"),
+            state: "done",
+            done: true,
+            cancelled: false,
             ok: true,
             error: None,
         })
     }
 
-    fn stop_ap(&mut self) -> Result<WifiActionResult<'static>, VmError> {
+    fn stop_ap(&mut self) -> Result<WifiOperation<'static>, VmError> {
         self.active = false;
         self.ssid_len = 0;
         self.clients = 0;
-        Ok(WifiActionResult {
+        Ok(WifiOperation {
+            active: true,
+            kind: Some("stopAP"),
+            state: "done",
+            done: true,
+            cancelled: false,
             ok: true,
             error: None,
         })
     }
 
-    fn connect(&mut self, profile: &str) -> Result<WifiActionResult<'static>, VmError> {
+    fn connect(&mut self, profile: &str) -> Result<WifiOperation<'static>, VmError> {
         let bytes = profile.as_bytes();
         if bytes.is_empty() || bytes.len() > self.profile.len() {
-            return Ok(WifiActionResult {
+            return Ok(WifiOperation {
+                active: false,
+                kind: Some("connect"),
+                state: "error",
+                done: true,
+                cancelled: false,
                 ok: false,
                 error: Some("invalid profile"),
             });
@@ -705,16 +803,26 @@ impl WifiBackend for SimWifiBackend {
         self.profile[..bytes.len()].copy_from_slice(bytes);
         self.profile_len = bytes.len();
         self.connected = true;
-        Ok(WifiActionResult {
+        Ok(WifiOperation {
+            active: true,
+            kind: Some("connect"),
+            state: "done",
+            done: true,
+            cancelled: false,
             ok: true,
             error: None,
         })
     }
 
-    fn disconnect(&mut self) -> Result<WifiActionResult<'static>, VmError> {
+    fn disconnect(&mut self) -> Result<WifiOperation<'static>, VmError> {
         self.connected = false;
         self.profile_len = 0;
-        Ok(WifiActionResult {
+        Ok(WifiOperation {
+            active: true,
+            kind: Some("disconnect"),
+            state: "done",
+            done: true,
+            cancelled: false,
             ok: true,
             error: None,
         })
@@ -798,20 +906,44 @@ impl WifiBackend for SimWifiBackend {
         })
     }
 
-    fn scan<'a>(&'a mut self) -> Result<WifiScanResult<'a>, VmError> {
+    fn scan<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError> {
         if self.active || self.connected {
-            Ok(WifiScanResult {
+            Ok(WifiOperation {
+                active: false,
+                kind: Some("scan"),
+                state: "error",
+                done: true,
+                cancelled: false,
                 ok: false,
                 error: Some("wifi busy"),
-                networks: &[],
             })
         } else {
-            Ok(WifiScanResult {
+            Ok(WifiOperation {
+                active: false,
+                kind: Some("scan"),
+                state: "error",
+                done: true,
+                cancelled: false,
                 ok: false,
                 error: Some("unsupported"),
-                networks: &[],
             })
         }
+    }
+
+    fn operation<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError> {
+        Ok(WifiOperation::idle())
+    }
+
+    fn result<'a>(&'a mut self) -> Result<WifiOperationResult<'a>, VmError> {
+        Ok(WifiOperationResult::unsupported())
+    }
+
+    fn cancel<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError> {
+        Ok(WifiOperation::idle())
+    }
+
+    fn scan_network<'a>(&'a mut self, _index: i32) -> Result<WifiScanNetwork<'a>, VmError> {
+        Ok(WifiScanNetwork::unsupported())
     }
 
     fn teardown(&mut self) -> Result<bool, VmError> {
@@ -922,13 +1054,13 @@ mod wifi_backend_tests {
         let scan = backend.scan().unwrap();
         assert!(!scan.ok);
         assert_eq!(scan.error, Some("wifi busy"));
-        assert!(scan.networks.is_empty());
+        assert_eq!(scan.state, "error");
 
         backend.stop_ap().unwrap();
         backend.connect("dev").unwrap();
         let scan = backend.scan().unwrap();
         assert!(!scan.ok);
         assert_eq!(scan.error, Some("wifi busy"));
-        assert!(scan.networks.is_empty());
+        assert_eq!(scan.state, "error");
     }
 }

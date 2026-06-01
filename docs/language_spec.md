@@ -2409,26 +2409,47 @@ requests:
 - `service.wifi.connect(profileName)`
 - `service.wifi.disconnect()`
 - `service.wifi.scan()`
+- `service.wifi.operation()`
+- `service.wifi.result()`
+- `service.wifi.cancel()`
+- `service.wifi.scanNetwork(index)`
 - `service.wifi.status()`
 - `service.wifi.getAPIP()`
 
-`startAP`, `stopAP`, `connect`, and `disconnect` return a result record:
+`startAP`, `stopAP`, `connect`, `disconnect`, and `scan` start or replace the
+single foreground Wi-Fi operation and return an operation record immediately:
 
+- `active`: bool
+- `kind`: string or null; currently `startAP`, `stopAP`, `connect`,
+  `disconnect`, or `scan`
+- `state`: string; `idle`, `running`, `done`, `cancelled`, or `error`
+- `done`: bool
+- `cancelled`: bool
 - `ok`: bool
 - `error`: string or null
 
-`scan` returns a read-only snapshot record:
+`operation()` returns the current operation record without starting a new
+operation. `cancel()` cancels the current foreground Wi-Fi operation when the
+target can stop it, or records the operation as cancelled when the underlying
+driver cannot cancel an in-flight request.
+
+`result()` returns the latest operation result summary:
+
+- `ready`: bool
+- `kind`: string or null
+- `state`: string
+- `ok`: bool
+- `error`: string or null
+- `cancelled`: bool
+- `count`: int; for scan results, the number of bounded AP records currently
+  available
+
+`scanNetwork(index)` returns one AP record from the latest completed scan:
 
 - `ok`: bool
 - `error`: string or null
-- `count`: int, the number of AP records returned after target/runtime bounds
-- `networks`: read-only bounded list of AP records
-
-Each AP record contains:
-
 - `ssid`: string, empty for hidden or undecodable SSIDs
 - `ssidLength`: int
-- `bssid`: string or null
 - `channel`: int
 - `rssi`: int
 - `auth`: string or null; stable values include `open`, `wep`, `wpa`, `wpa2`,
@@ -2506,13 +2527,18 @@ the station interface has a preferred DHCP IPv4 address,
 
 Rules:
 - Apps may start a foreground-owned access point when the target exposes the Wi-Fi service.
-- Wi-Fi scans are foreground-owned snapshots. Apps call `wifi.scan()` again to
-  refresh results.
-- If Wi-Fi AP or station mode is active, `wifi.scan()` returns
-  `{ ok: false, error: "wifi busy", count: 0, networks: [] }` instead of
-  interrupting radio state.
-- If the target has no Wi-Fi or scanning is unsupported, `wifi.scan()` returns
-  `{ ok: false, error: "unsupported", count: 0, networks: [] }`.
+- Wi-Fi operations are foreground-owned and nonblocking. Apps start an
+  operation, poll `wifi.operation()` or `wifi.result()` from a timer/event, and
+  keep serial/runtime polling responsive while the driver progresses.
+- Starting a second operation while one is running returns an operation record
+  with `ok == false` and `error == "wifi busy"`.
+- Apps call `wifi.scan()` again to refresh scan results, then use
+  `wifi.result().count` and `wifi.scanNetwork(index)` to inspect bounded rows.
+- If Wi-Fi AP or station mode is active, `wifi.scan()` returns an operation
+  record with `ok == false` and `error == "wifi busy"` instead of interrupting
+  radio state.
+- If the target has no Wi-Fi or scanning is unsupported, Wi-Fi operation/result
+  records use `ok == false` and `error == "unsupported"`.
 - Scan results may expose nearby SSID names according to the target's bounded
   SSID policy, SSID byte length, channels, RSSI values, auth names, and hidden
   flags. They must not expose raw BSSID/MAC values, create, update, select, or
@@ -3790,11 +3816,12 @@ input.text
 service.wifi
 - Allows foreground-owned firmware Wi-Fi service calls such as
   `service.wifi.startAP`, `service.wifi.stopAP`, `service.wifi.scan`,
-  `service.wifi.status`, and `service.wifi.getAPIP`. Source may use `wifi.*`
-  sugar for these calls.
+  `service.wifi.operation`, `service.wifi.result`,
+  `service.wifi.scanNetwork`, `service.wifi.status`, and
+  `service.wifi.getAPIP`. Source may use `wifi.*` sugar for these calls.
 
 service.wifi.scan
-- Allows scanning for nearby Wi-Fi networks without exposing credentials.
+- Allows starting and polling nearby Wi-Fi scans without exposing credentials.
 
 service.wifi.accessPoint
 - Allows starting and stopping foreground-only firmware-owned Wi-Fi access points.

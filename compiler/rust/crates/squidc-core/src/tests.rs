@@ -2010,6 +2010,57 @@ screen("main") {}
 }
 
 #[test]
+fn compiles_async_wifi_operation_calls_and_wifi_sugar() {
+    let source = r#"app "wifi-async"
+state {}
+
+event.on("app.start") {
+  let scan = wifi.scan()
+  let op = service.wifi.operation()
+  let row = wifi.scanNetwork(0)
+  let result = service.wifi.result()
+  let cancel = wifi.cancel()
+  debug.print(scan.state, op.active, row.ok, result.ready, cancel.cancelled)
+}
+
+screen("main") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let ir = output.ir.unwrap();
+    let handler = ir
+        .handlers
+        .iter()
+        .find(|handler| handler.event == "app.start")
+        .unwrap();
+    assert!(matches!(
+        &handler.statements[0],
+        IrStatement::Let { expr: IrExpr::Call { name, .. }, .. } if name == "service.wifi.scan"
+    ));
+    assert!(matches!(
+        &handler.statements[1],
+        IrStatement::Let { expr: IrExpr::Call { name, .. }, .. } if name == "service.wifi.operation"
+    ));
+    assert!(matches!(
+        &handler.statements[2],
+        IrStatement::Let { expr: IrExpr::Call { name, .. }, .. } if name == "service.wifi.scanNetwork"
+    ));
+    assert!(matches!(
+        &handler.statements[3],
+        IrStatement::Let { expr: IrExpr::Call { name, .. }, .. } if name == "service.wifi.result"
+    ));
+    assert!(matches!(
+        &handler.statements[4],
+        IrStatement::Let { expr: IrExpr::Call { name, .. }, .. } if name == "service.wifi.cancel"
+    ));
+    sqbc::encode_sqbc(&ir).expect("async wifi calls should lower to bytecode");
+}
+
+#[test]
 fn warns_when_fallible_result_is_ignored() {
     let source = r#"app "ignored-result" target "xteink-x4"
 event.on("app.start") {

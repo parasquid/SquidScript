@@ -2538,8 +2538,6 @@ ZTEST(squidscript_protocol, test_runtime_transfer_owner_rejects_overlap)
 		      0);
 	zassert_equal(sq_vm_runtime_transfer_release(&runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION),
 		      0);
-	zassert_equal(sq_vm_runtime_transfer_acquire(&runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN), 0);
-	zassert_equal(sq_vm_runtime_transfer_release(&runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN), 0);
 }
 
 ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
@@ -4198,11 +4196,12 @@ ZTEST(squidscript_protocol, test_vm_runtime_dispatches_wifi_action_stubs)
 
 	memset(&runtime, 0, sizeof(runtime));
 	zassert_equal(sq_vm_runtime_dispatch(&runtime, &backend, "app.start"), 0);
-	zassert_equal(runtime.output_count, 3);
-	zassert_str_equal(runtime.outputs[0], "false unsupported");
+	zassert_equal(runtime.output_count, 4);
+	zassert_str_equal(runtime.outputs[0], "true null");
 	zassert_str_equal(runtime.outputs[1], "unsupported");
 	zassert_str_equal(runtime.outputs[2],
 			  "false unsupported false unsupported false unsupported");
+	zassert_str_equal(runtime.outputs[3], "idle false unsupported false unsupported idle");
 }
 
 ZTEST(squidscript_protocol, test_vm_runtime_dispatches_file_pick_file_unsupported_result)

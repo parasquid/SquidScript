@@ -446,9 +446,10 @@ fallback and requires the real Zephyr Wi-Fi backend to be active.
 and before Wi-Fi list coverage. It installs
 `tests/hardware/c3-supermini/wifi-scan-summary` and launches a summary-only
 SquidScript app that calls `service.wifi.scan()` without credentials. The app
-prints only `ok`, `error`, and `count`; the script rejects raw BSSID, MAC, or
-local IP patterns in captured output. In the default full hardware suite it runs
-with `--require-real-wifi`, which requires a successful real Zephyr Wi-Fi scan.
+polls `service.wifi.result()` from a timer and prints only `ok`, `error`, and
+`count`; the script rejects raw BSSID, MAC, or local IP patterns in captured
+output. In the default full hardware suite it runs with `--require-real-wifi`,
+which requires a successful real Zephyr Wi-Fi scan.
 On output timeout, the script writes best-effort `output-timeout-resources.out`
 and `output-timeout-errors.out` captures under
 `target/hardware-tests/wifi-scan/`; these files may contain the last
@@ -457,12 +458,13 @@ stack/heap/error evidence if the protocol path is still responsive.
 `scripts/c3-supermini-test-wifi-list-api.sh` runs after Wi-Fi scan coverage and
 before Wi-Fi AP coverage. It installs
 `tests/hardware/c3-supermini/wifi-list-summary` and launches a SquidScript app
-that iterates `service.wifi.scan().networks`. The app prints only redacted
-per-network structure: SSID length, channel, RSSI, auth, and hidden flag. It
-does not print SSIDs or BSSIDs. The script rejects raw BSSID, MAC, or local IP
-patterns in captured output, rejects `null` auth values in AP rows, and
-`--require-real-wifi` requires at least one redacted `wifi ap` record from the
-real Zephyr Wi-Fi backend. On output timeout, the script writes best-effort
+that starts `service.wifi.scan()`, polls `service.wifi.result()`, and reads
+bounded rows through `service.wifi.scanNetwork(index)`. The app prints only
+redacted per-network structure: SSID length, channel, RSSI, auth, and hidden
+flag. It does not print SSIDs or BSSIDs. The script rejects raw BSSID, MAC, or
+local IP patterns in captured output, rejects `null` auth values in AP rows,
+and `--require-real-wifi` requires at least one redacted `wifi ap` record from
+the real Zephyr Wi-Fi backend. On output timeout, the script writes best-effort
 `output-timeout-resources.out` and `output-timeout-errors.out` captures under
 `target/hardware-tests/wifi-list/`.
 
@@ -473,10 +475,11 @@ variables are present, it provisions profile `dev` through
 `squidc device wifi-profile --ssid-env SQUID_WIFI_STATION_SSID --password-env
 SQUID_WIFI_STATION_PASSWORD`, installs
 `tests/hardware/c3-supermini/wifi-station-summary`, and launches a summary-only
-app that calls `service.wifi.connect("dev")` and `service.wifi.status()`. The
-script requires `connect.ok == true` and `status.connected == true`, prints
-command names and lengths only, and rejects raw SSIDs, passwords, BSSIDs, MACs,
-or local IP patterns in captured output.
+app that calls `service.wifi.connect("dev")`, polls `service.wifi.operation()`,
+and then reads `service.wifi.status()`. The script requires the start request
+to be accepted and `status.connected == true`, prints command names and lengths
+only, and rejects raw SSIDs, passwords, BSSIDs, MACs, or local IP patterns in
+captured output.
 
 `scripts/c3-supermini-test-wifi-ap-api.sh` runs after Wi-Fi list coverage and
 before the final visible LED check in the default full hardware suite. It

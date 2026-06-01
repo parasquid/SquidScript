@@ -7,7 +7,7 @@ use squidvm_core::{
     error::VmError,
     host::{
         DisplayLineOptions, DisplayRectOptions, DisplayTextOptions, SimWifiBackend, TraceSink,
-        WifiActionResult, WifiApIp, WifiBackend, WifiStatus,
+        WifiApIp, WifiBackend, WifiOperation, WifiOperationResult, WifiScanNetwork, WifiStatus,
     },
     limits::MAX_SAVED_STATE_BYTES,
     program::Program,
@@ -268,15 +268,20 @@ impl TraceSink for BrowserHost {
         Ok(())
     }
 
-    fn service_wifi_start_ap<'a>(
-        &'a mut self,
-        ssid: &str,
-    ) -> Result<WifiActionResult<'a>, VmError> {
+    fn service_wifi_start_ap<'a>(&'a mut self, ssid: &str) -> Result<WifiOperation<'a>, VmError> {
         self.wifi.start_ap(ssid)
     }
 
-    fn service_wifi_stop_ap<'a>(&'a mut self) -> Result<WifiActionResult<'a>, VmError> {
+    fn service_wifi_stop_ap<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError> {
         self.wifi.stop_ap()
+    }
+
+    fn service_wifi_connect<'a>(&'a mut self, profile: &str) -> Result<WifiOperation<'a>, VmError> {
+        self.wifi.connect(profile)
+    }
+
+    fn service_wifi_disconnect<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError> {
+        self.wifi.disconnect()
     }
 
     fn service_wifi_status<'a>(&'a mut self) -> Result<WifiStatus<'a>, VmError> {
@@ -285,6 +290,29 @@ impl TraceSink for BrowserHost {
 
     fn service_wifi_get_ap_ip<'a>(&'a mut self) -> Result<WifiApIp<'a>, VmError> {
         self.wifi.ap_ip()
+    }
+
+    fn service_wifi_scan<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError> {
+        self.wifi.scan()
+    }
+
+    fn service_wifi_operation<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError> {
+        self.wifi.operation()
+    }
+
+    fn service_wifi_result<'a>(&'a mut self) -> Result<WifiOperationResult<'a>, VmError> {
+        self.wifi.result()
+    }
+
+    fn service_wifi_cancel<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError> {
+        self.wifi.cancel()
+    }
+
+    fn service_wifi_scan_network<'a>(
+        &'a mut self,
+        index: i32,
+    ) -> Result<WifiScanNetwork<'a>, VmError> {
+        self.wifi.scan_network(index)
     }
 
     fn service_wifi_teardown(&mut self) -> Result<(), VmError> {

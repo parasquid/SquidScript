@@ -367,18 +367,37 @@ typedef struct {
 } SqvmWifiAccessPoint;
 
 typedef struct {
+	bool active;
+	const uint8_t *kind;
+	size_t kind_len;
+	const uint8_t *state;
+	size_t state_len;
+	bool done;
+	bool cancelled;
 	bool ok;
 	const uint8_t *error;
 	size_t error_len;
-	const SqvmWifiAccessPoint *networks;
-	size_t network_count;
-} SqvmWifiScanResult;
+} SqvmWifiOperation;
+
+typedef struct {
+	bool ready;
+	const uint8_t *kind;
+	size_t kind_len;
+	const uint8_t *state;
+	size_t state_len;
+	bool ok;
+	const uint8_t *error;
+	size_t error_len;
+	bool cancelled;
+	int32_t count;
+} SqvmWifiOperationResult;
 
 typedef struct {
 	bool ok;
 	const uint8_t *error;
 	size_t error_len;
-} SqvmWifiActionResult;
+	SqvmWifiAccessPoint network;
+} SqvmWifiScanNetworkResult;
 
 typedef enum {
 	SQVM_DEVICE_CONFIG_VALUE_NULL = 0,
@@ -437,14 +456,19 @@ typedef struct {
 } SqvmWifiApIp;
 
 typedef int32_t (*SqvmWifiStartApCallback)(void *user_data, const uint8_t *ssid,
-					   size_t ssid_len, SqvmWifiActionResult *out);
-typedef int32_t (*SqvmWifiStopApCallback)(void *user_data, SqvmWifiActionResult *out);
+					   size_t ssid_len, SqvmWifiOperation *out);
+typedef int32_t (*SqvmWifiStopApCallback)(void *user_data, SqvmWifiOperation *out);
 typedef int32_t (*SqvmWifiConnectCallback)(void *user_data, const uint8_t *profile,
-					   size_t profile_len, SqvmWifiActionResult *out);
-typedef int32_t (*SqvmWifiDisconnectCallback)(void *user_data, SqvmWifiActionResult *out);
+					   size_t profile_len, SqvmWifiOperation *out);
+typedef int32_t (*SqvmWifiDisconnectCallback)(void *user_data, SqvmWifiOperation *out);
 typedef int32_t (*SqvmWifiGetApIpCallback)(void *user_data, SqvmWifiApIp *out);
 typedef int32_t (*SqvmWifiStatusCallback)(void *user_data, SqvmWifiStatus *out);
-typedef int32_t (*SqvmWifiScanCallback)(void *user_data, SqvmWifiScanResult *out);
+typedef int32_t (*SqvmWifiScanCallback)(void *user_data, SqvmWifiOperation *out);
+typedef int32_t (*SqvmWifiOperationCallback)(void *user_data, SqvmWifiOperation *out);
+typedef int32_t (*SqvmWifiResultCallback)(void *user_data, SqvmWifiOperationResult *out);
+typedef int32_t (*SqvmWifiCancelCallback)(void *user_data, SqvmWifiOperation *out);
+typedef int32_t (*SqvmWifiScanNetworkCallback)(void *user_data, int32_t index,
+					       SqvmWifiScanNetworkResult *out);
 typedef int32_t (*SqvmDeviceConfigLoadCallback)(void *user_data, const uint8_t *source,
 						size_t source_len, SqvmDeviceConfigResult *out);
 typedef int32_t (*SqvmDeviceConfigSetCallback)(void *user_data, const uint8_t *key,
@@ -555,6 +579,10 @@ typedef struct {
 	SqvmWifiGetApIpCallback wifi_get_ap_ip;
 	SqvmWifiStatusCallback wifi_status;
 	SqvmWifiScanCallback wifi_scan;
+	SqvmWifiOperationCallback wifi_operation;
+	SqvmWifiResultCallback wifi_result;
+	SqvmWifiCancelCallback wifi_cancel;
+	SqvmWifiScanNetworkCallback wifi_scan_network;
 	SqvmDeviceConfigLoadCallback device_config_load;
 	SqvmDeviceConfigSetCallback device_config_set;
 	SqvmDeviceConfigRebindCallback device_config_rebind;

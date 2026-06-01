@@ -87,6 +87,10 @@ const BUILTIN_SERVICE_WIFI_GET_AP_IP: u8 = 0x53;
 const BUILTIN_SERVICE_WIFI_CONNECT: u8 = 0x54;
 const BUILTIN_SERVICE_WIFI_DISCONNECT: u8 = 0x55;
 const BUILTIN_SERVICE_WIFI_SCAN: u8 = 0x56;
+const BUILTIN_SERVICE_WIFI_OPERATION: u8 = 0x57;
+const BUILTIN_SERVICE_WIFI_RESULT: u8 = 0x58;
+const BUILTIN_SERVICE_WIFI_CANCEL: u8 = 0x59;
+const BUILTIN_SERVICE_WIFI_SCAN_NETWORK: u8 = 0x5a;
 const BUILTIN_DEVICE_CONFIG_LOAD: u8 = 0x70;
 const BUILTIN_DEVICE_CONFIG_SET: u8 = 0x71;
 const BUILTIN_DEVICE_CONFIG_REBIND: u8 = 0x72;
@@ -1164,6 +1168,10 @@ fn builtin_for_call(name: &str) -> Option<u8> {
         "service.wifi.connect" => Some(BUILTIN_SERVICE_WIFI_CONNECT),
         "service.wifi.disconnect" => Some(BUILTIN_SERVICE_WIFI_DISCONNECT),
         "service.wifi.scan" => Some(BUILTIN_SERVICE_WIFI_SCAN),
+        "service.wifi.operation" => Some(BUILTIN_SERVICE_WIFI_OPERATION),
+        "service.wifi.result" => Some(BUILTIN_SERVICE_WIFI_RESULT),
+        "service.wifi.cancel" => Some(BUILTIN_SERVICE_WIFI_CANCEL),
+        "service.wifi.scanNetwork" => Some(BUILTIN_SERVICE_WIFI_SCAN_NETWORK),
         "app.registry" => Some(BUILTIN_APP_REGISTRY_LIST),
         "app.registry.get" => Some(BUILTIN_APP_REGISTRY_GET),
         "app.processStack" => Some(BUILTIN_APP_PROCESS_STACK),
@@ -1189,9 +1197,13 @@ fn validate_builtin_arg_count(name: &str, count: usize) -> Result<(), SqbcError>
         | "service.wifi.getAPIP"
         | "service.wifi.disconnect"
         | "service.wifi.scan"
+        | "service.wifi.operation"
+        | "service.wifi.result"
+        | "service.wifi.cancel"
         | "app.registry"
         | "app.processStack"
         | "app.armedStack" => count == 0,
+        "service.wifi.scanNetwork" => count == 1,
         "app.registry.get" | "app.armedStack.get" => count == 2,
         "device.config.load" | "device.config.rebind" | "device.config.save" => count == 1,
         "device.config.set" => count == 2,

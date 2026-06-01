@@ -115,6 +115,18 @@ static const struct gpio_dt_spec input_sw0_gpio = GPIO_DT_SPEC_GET(DT_ALIAS(sw0)
 static struct sq_vm_runtime *runtime_wifi_scan_active_runtime;
 #endif
 
+static void runtime_wifi_error_operation(SqvmWifiOperation *out, const char *error)
+{
+	memset(out, 0, sizeof(*out));
+	out->active = false;
+	out->done = true;
+	out->ok = false;
+	out->state = (const uint8_t *)"error";
+	out->state_len = strlen("error");
+	out->error = (const uint8_t *)error;
+	out->error_len = strlen(error);
+}
+
 void sqvm_ffi_panic_abort(void)
 {
 	printk("sqvm ffi panic\n");
@@ -764,13 +776,140 @@ static void copy_text(char *out, size_t out_len, const char *text)
 
 static void runtime_wifi_reset_scan(struct sq_vm_runtime *runtime)
 {
-	struct sq_vm_runtime_wifi_scan_scratch *scan = &runtime->transfer.wifi_scan;
+	struct sq_vm_runtime_wifi_scan_scratch *scan = &runtime->wifi_scan;
 
-	BUILD_ASSERT(sizeof(runtime->transfer.wifi_scan) <= sizeof(runtime->transfer.init_scratch));
 	memset(scan, 0, sizeof(*scan));
 	runtime->wifi_scan_count = 0;
 	runtime->wifi_scan_status = 0;
 	runtime->wifi_scan_collecting = false;
+	runtime->wifi_scan_done = false;
+}
+
+static const char *runtime_wifi_op_kind_text(enum sq_vm_runtime_wifi_op_kind kind)
+{
+	switch (kind) {
+	case SQ_VM_RUNTIME_WIFI_OP_START_AP:
+		return "startAP";
+	case SQ_VM_RUNTIME_WIFI_OP_STOP_AP:
+		return "stopAP";
+	case SQ_VM_RUNTIME_WIFI_OP_CONNECT:
+		return "connect";
+	case SQ_VM_RUNTIME_WIFI_OP_DISCONNECT:
+		return "disconnect";
+	case SQ_VM_RUNTIME_WIFI_OP_SCAN:
+		return "scan";
+	case SQ_VM_RUNTIME_WIFI_OP_NONE:
+	default:
+		return NULL;
+	}
+}
+
+static struct net_if *runtime_wifi_iface(void);
+
+static void runtime_wifi_fill_operation(struct sq_vm_runtime *runtime, SqvmWifiOperation *out)
+{
+	const char *kind = runtime_wifi_op_kind_text(runtime->wifi_op_kind);
+	const char *state = "idle";
+
+	memset(out, 0, sizeof(*out));
+	if (runtime->wifi_op_active) {
+		state = runtime->wifi_op_done ?
+				(runtime->wifi_op_cancelled ? "cancelled" :
+				 runtime->wifi_op_ok ? "done" : "error") :
+				"running";
+	}
+	out->active = runtime->wifi_op_active;
+	if (kind != NULL) {
+		out->kind = (const uint8_t *)kind;
+		out->kind_len = strlen(kind);
+	}
+	out->state = (const uint8_t *)state;
+	out->state_len = strlen(state);
+	out->done = runtime->wifi_op_done;
+	out->cancelled = runtime->wifi_op_cancelled;
+	out->ok = runtime->wifi_op_ok;
+	if (runtime->wifi_op_error != NULL) {
+		out->error = (const uint8_t *)runtime->wifi_op_error;
+		out->error_len = strlen(runtime->wifi_op_error);
+	}
+}
+
+static void runtime_wifi_start_operation(struct sq_vm_runtime *runtime,
+					 enum sq_vm_runtime_wifi_op_kind kind,
+					 int64_t timeout_ms)
+{
+	runtime->wifi_op_kind = kind;
+	runtime->wifi_op_active = true;
+	runtime->wifi_op_done = false;
+	runtime->wifi_op_cancelled = false;
+	runtime->wifi_op_ok = true;
+	runtime->wifi_op_error = NULL;
+	runtime->wifi_op_deadline_ms = k_uptime_get() + timeout_ms;
+}
+
+static void runtime_wifi_finish_operation(struct sq_vm_runtime *runtime, bool ok, const char *error)
+{
+	runtime->wifi_op_active = true;
+	runtime->wifi_op_done = true;
+	runtime->wifi_op_ok = ok;
+	runtime->wifi_op_error = ok ? NULL : error;
+}
+
+static void runtime_wifi_complete_if_ready(struct sq_vm_runtime *runtime)
+{
+	struct net_if *iface;
+	struct wifi_iface_status status = {0};
+
+	if (runtime == NULL || !runtime->wifi_op_active || runtime->wifi_op_done) {
+		return;
+	}
+	if (k_uptime_get() > runtime->wifi_op_deadline_ms) {
+		runtime_wifi_finish_operation(runtime, false, "timeout");
+		if (runtime->wifi_op_kind == SQ_VM_RUNTIME_WIFI_OP_SCAN) {
+			runtime->wifi_scan_collecting = false;
+			runtime_wifi_scan_active_runtime = NULL;
+		}
+		return;
+	}
+	switch (runtime->wifi_op_kind) {
+	case SQ_VM_RUNTIME_WIFI_OP_SCAN:
+		if (runtime->wifi_scan_done) {
+			runtime_wifi_finish_operation(runtime, runtime->wifi_scan_status == 0,
+						      "scan failed");
+		}
+		break;
+	case SQ_VM_RUNTIME_WIFI_OP_CONNECT:
+		if (runtime->wifi_station_connect_done) {
+			if (runtime->wifi_station_connect_status != 0) {
+				runtime_wifi_finish_operation(runtime, false, "connect failed");
+				break;
+			}
+			iface = runtime_wifi_iface();
+			if (iface != NULL &&
+			    net_mgmt(NET_REQUEST_WIFI_IFACE_STATUS, iface, &status, sizeof(status)) ==
+				    0 &&
+			    status.state == WIFI_STATE_COMPLETED) {
+				net_dhcpv4_start(iface);
+				runtime_wifi_finish_operation(runtime, true, NULL);
+			}
+		}
+		break;
+	case SQ_VM_RUNTIME_WIFI_OP_DISCONNECT:
+		if (runtime->wifi_station_disconnect_done) {
+			if (runtime->wifi_station_disconnect_status == 0) {
+				iface = runtime_wifi_iface();
+				if (iface != NULL) {
+					net_dhcpv4_stop(iface);
+				}
+				runtime_wifi_finish_operation(runtime, true, NULL);
+			} else {
+				runtime_wifi_finish_operation(runtime, false, "disconnect failed");
+			}
+		}
+		break;
+	default:
+		break;
+	}
 }
 
 static struct net_if *runtime_wifi_iface(void)
@@ -885,7 +1024,7 @@ static void runtime_wifi_record_scan_result(struct sq_vm_runtime *runtime,
 	}
 
 	size_t index = runtime->wifi_scan_count;
-	struct sq_vm_runtime_wifi_scan_scratch *scan = &runtime->transfer.wifi_scan;
+	struct sq_vm_runtime_wifi_scan_scratch *scan = &runtime->wifi_scan;
 	SqvmWifiAccessPoint *network = &scan->networks[index];
 	size_t ssid_len = entry->ssid_length;
 	if (ssid_len >= SQ_VM_RUNTIME_WIFI_SSID_LEN) {
@@ -925,8 +1064,8 @@ static void runtime_wifi_scan_driver_callback(struct net_if *iface, int status,
 	}
 	runtime->wifi_scan_status = status;
 	runtime->wifi_scan_collecting = false;
+	runtime->wifi_scan_done = true;
 	runtime_wifi_scan_active_runtime = NULL;
-	k_sem_give(&runtime->wifi_scan_done);
 }
 
 static void runtime_wifi_event_handler(struct net_mgmt_event_callback *cb, uint64_t mgmt_event,
@@ -944,21 +1083,23 @@ static void runtime_wifi_event_handler(struct net_mgmt_event_callback *cb, uint6
 			const struct wifi_status *status = cb->info;
 			runtime->wifi_scan_status = status->status;
 		}
-		k_sem_give(&runtime->wifi_scan_done);
+		runtime->wifi_scan_collecting = false;
+		runtime->wifi_scan_done = true;
+		runtime_wifi_scan_active_runtime = NULL;
 		break;
 	case NET_EVENT_WIFI_CONNECT_RESULT:
 		if (cb->info != NULL && cb->info_length >= sizeof(struct wifi_status)) {
 			const struct wifi_status *status = cb->info;
 			runtime->wifi_station_connect_status = status->status;
 		}
-		k_sem_give(&runtime->wifi_station_connect_done);
+		runtime->wifi_station_connect_done = true;
 		break;
 	case NET_EVENT_WIFI_DISCONNECT_RESULT:
 		if (cb->info != NULL && cb->info_length >= sizeof(struct wifi_status)) {
 			const struct wifi_status *status = cb->info;
 			runtime->wifi_station_disconnect_status = status->status;
 		}
-		k_sem_give(&runtime->wifi_station_disconnect_done);
+		runtime->wifi_station_disconnect_done = true;
 		break;
 	case NET_EVENT_WIFI_AP_ENABLE_RESULT:
 		runtime->wifi_ap_active = true;
@@ -975,15 +1116,6 @@ static void runtime_wifi_event_handler(struct net_mgmt_event_callback *cb, uint6
 
 static void runtime_wifi_init_events(struct sq_vm_runtime *runtime)
 {
-	if (!runtime->wifi_scan_sem_initialized) {
-		k_sem_init(&runtime->wifi_scan_done, 0, 1);
-		runtime->wifi_scan_sem_initialized = true;
-	}
-	if (!runtime->wifi_station_sem_initialized) {
-		k_sem_init(&runtime->wifi_station_connect_done, 0, 1);
-		k_sem_init(&runtime->wifi_station_disconnect_done, 0, 1);
-		runtime->wifi_station_sem_initialized = true;
-	}
 	if (!runtime->wifi_mgmt_cb_registered) {
 		net_mgmt_init_event_callback(&runtime->wifi_mgmt_cb, runtime_wifi_event_handler,
 					     NET_EVENT_WIFI_SCAN_RESULT |
@@ -1007,20 +1139,18 @@ static bool runtime_wifi_state_blocks_scan(int state)
 #endif
 
 #if !SQ_VM_RUNTIME_HAS_WIFI_MGMT
-static int32_t runtime_wifi_unsupported_action(SqvmWifiActionResult *out)
+static int32_t runtime_wifi_unsupported_action(SqvmWifiOperation *out)
 {
 	if (out == NULL) {
 		return -EINVAL;
 	}
-	memset(out, 0, sizeof(*out));
-	out->ok = false;
-	SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+	runtime_wifi_error_operation(out, "unsupported");
 	return 0;
 }
 #endif
 
 static int32_t runtime_wifi_start_ap(void *user_data, const uint8_t *ssid, size_t ssid_len,
-				     SqvmWifiActionResult *out)
+				     SqvmWifiOperation *out)
 {
 	if (out == NULL) {
 		return -EINVAL;
@@ -1032,22 +1162,20 @@ static int32_t runtime_wifi_start_ap(void *user_data, const uint8_t *ssid, size_
 	struct wifi_connect_req_params params = {0};
 
 	if (runtime == NULL || iface == NULL) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+		runtime_wifi_error_operation(out, "unsupported");
 		return 0;
 	}
 	if (ssid == NULL || ssid_len == 0 || ssid_len > SQ_VM_RUNTIME_WIFI_SSID_LEN - 1) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "invalid ssid");
+		runtime_wifi_error_operation(out, "invalid ssid");
 		return 0;
 	}
 	runtime_wifi_init_events(runtime);
 	int ip_result = runtime_wifi_configure_ap_ipv4(iface);
 	if (ip_result != 0) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "ap ip failed");
+		runtime_wifi_error_operation(out, "ap ip failed");
 		return 0;
 	}
+	runtime_wifi_start_operation(runtime, SQ_VM_RUNTIME_WIFI_OP_START_AP, 0);
 
 	params.ssid = ssid;
 	params.ssid_length = (uint8_t)ssid_len;
@@ -1057,20 +1185,21 @@ static int32_t runtime_wifi_start_ap(void *user_data, const uint8_t *ssid, size_
 
 	int result = net_mgmt(NET_REQUEST_WIFI_AP_ENABLE, iface, &params, sizeof(params));
 	if (result != 0) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "ap start failed");
+		runtime_wifi_finish_operation(runtime, false, "ap start failed");
+		runtime_wifi_fill_operation(runtime, out);
 		return 0;
 	}
 	result = runtime_wifi_start_ap_dhcp(iface);
 	if (result != 0) {
 		(void)net_mgmt(NET_REQUEST_WIFI_AP_DISABLE, iface, NULL, 0);
 		runtime->wifi_ap_active = false;
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "ap dhcp failed");
+		runtime_wifi_finish_operation(runtime, false, "ap dhcp failed");
+		runtime_wifi_fill_operation(runtime, out);
 		return 0;
 	}
 	runtime->wifi_ap_active = true;
-	out->ok = true;
+	runtime_wifi_finish_operation(runtime, true, NULL);
+	runtime_wifi_fill_operation(runtime, out);
 	return 0;
 #else
 	ARG_UNUSED(user_data);
@@ -1081,7 +1210,7 @@ static int32_t runtime_wifi_start_ap(void *user_data, const uint8_t *ssid, size_
 #endif
 }
 
-static int32_t runtime_wifi_stop_ap(void *user_data, SqvmWifiActionResult *out)
+static int32_t runtime_wifi_stop_ap(void *user_data, SqvmWifiOperation *out)
 {
 	if (out == NULL) {
 		return -EINVAL;
@@ -1092,25 +1221,26 @@ static int32_t runtime_wifi_stop_ap(void *user_data, SqvmWifiActionResult *out)
 	struct net_if *iface = runtime_wifi_ap_iface();
 
 	if (runtime == NULL || iface == NULL) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+		runtime_wifi_error_operation(out, "unsupported");
 		return 0;
 	}
 	runtime_wifi_init_events(runtime);
+	runtime_wifi_start_operation(runtime, SQ_VM_RUNTIME_WIFI_OP_STOP_AP, 0);
 	int result = runtime_wifi_stop_ap_dhcp(iface);
 	if (result != 0) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "ap dhcp stop failed");
+		runtime_wifi_finish_operation(runtime, false, "ap dhcp stop failed");
+		runtime_wifi_fill_operation(runtime, out);
 		return 0;
 	}
 	result = net_mgmt(NET_REQUEST_WIFI_AP_DISABLE, iface, NULL, 0);
 	if (result != 0) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "ap stop failed");
+		runtime_wifi_finish_operation(runtime, false, "ap stop failed");
+		runtime_wifi_fill_operation(runtime, out);
 		return 0;
 	}
 	runtime->wifi_ap_active = false;
-	out->ok = true;
+	runtime_wifi_finish_operation(runtime, true, NULL);
+	runtime_wifi_fill_operation(runtime, out);
 	return 0;
 #else
 	ARG_UNUSED(user_data);
@@ -1120,7 +1250,7 @@ static int32_t runtime_wifi_stop_ap(void *user_data, SqvmWifiActionResult *out)
 }
 
 static int32_t runtime_wifi_connect(void *user_data, const uint8_t *profile, size_t profile_len,
-				    SqvmWifiActionResult *out)
+				    SqvmWifiOperation *out)
 {
 	if (out == NULL) {
 		return -EINVAL;
@@ -1130,27 +1260,29 @@ static int32_t runtime_wifi_connect(void *user_data, const uint8_t *profile, siz
 	struct sq_vm_runtime *runtime = user_data;
 	struct net_if *iface = runtime_wifi_iface();
 	struct wifi_connect_req_params params = {0};
-	struct wifi_iface_status status = {0};
 
 	if (runtime == NULL || iface == NULL) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+		runtime_wifi_error_operation(out, "unsupported");
 		return 0;
 	}
 	if (!runtime_wifi_profile_matches(runtime, profile, profile_len)) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "profile missing");
+		runtime_wifi_error_operation(out, "profile missing");
 		return 0;
 	}
 	if (runtime->wifi_profile_password_len > 0 && runtime->wifi_profile_password_len < 8) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "invalid password");
+		runtime_wifi_error_operation(out, "invalid password");
+		return 0;
+	}
+	if (runtime->wifi_op_active && !runtime->wifi_op_done) {
+		runtime_wifi_error_operation(out, "wifi busy");
 		return 0;
 	}
 
 	runtime_wifi_init_events(runtime);
-	k_sem_reset(&runtime->wifi_station_connect_done);
+	runtime_wifi_start_operation(runtime, SQ_VM_RUNTIME_WIFI_OP_CONNECT,
+				     SQ_VM_RUNTIME_WIFI_CONNECT_TIMEOUT_MS);
 	runtime->wifi_station_connect_status = 0;
+	runtime->wifi_station_connect_done = false;
 
 	params.ssid = runtime->wifi_profile_ssid;
 	params.ssid_length = (uint8_t)runtime->wifi_profile_ssid_len;
@@ -1168,29 +1300,11 @@ static int32_t runtime_wifi_connect(void *user_data, const uint8_t *profile, siz
 
 	int result = net_mgmt(NET_REQUEST_WIFI_CONNECT, iface, &params, sizeof(params));
 	if (result != 0) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "connect request failed");
+		runtime_wifi_finish_operation(runtime, false, "connect request failed");
+		runtime_wifi_fill_operation(runtime, out);
 		return 0;
 	}
-	if (k_sem_take(&runtime->wifi_station_connect_done,
-		       K_MSEC(SQ_VM_RUNTIME_WIFI_CONNECT_TIMEOUT_MS)) != 0) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "connect timeout");
-		return 0;
-	}
-	if (runtime->wifi_station_connect_status != 0) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "connect failed");
-		return 0;
-	}
-	result = net_mgmt(NET_REQUEST_WIFI_IFACE_STATUS, iface, &status, sizeof(status));
-	if (result != 0 || status.state != WIFI_STATE_COMPLETED) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "connect pending");
-		return 0;
-	}
-	net_dhcpv4_start(iface);
-	out->ok = true;
+	runtime_wifi_fill_operation(runtime, out);
 	return 0;
 #else
 	ARG_UNUSED(user_data);
@@ -1201,7 +1315,7 @@ static int32_t runtime_wifi_connect(void *user_data, const uint8_t *profile, siz
 #endif
 }
 
-static int32_t runtime_wifi_disconnect(void *user_data, SqvmWifiActionResult *out)
+static int32_t runtime_wifi_disconnect(void *user_data, SqvmWifiOperation *out)
 {
 	if (out == NULL) {
 		return -EINVAL;
@@ -1212,34 +1326,27 @@ static int32_t runtime_wifi_disconnect(void *user_data, SqvmWifiActionResult *ou
 	struct net_if *iface = runtime_wifi_iface();
 
 	if (runtime == NULL || iface == NULL) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+		runtime_wifi_error_operation(out, "unsupported");
+		return 0;
+	}
+	if (runtime->wifi_op_active && !runtime->wifi_op_done) {
+		runtime_wifi_error_operation(out, "wifi busy");
 		return 0;
 	}
 
 	runtime_wifi_init_events(runtime);
-	k_sem_reset(&runtime->wifi_station_disconnect_done);
+	runtime_wifi_start_operation(runtime, SQ_VM_RUNTIME_WIFI_OP_DISCONNECT,
+				     SQ_VM_RUNTIME_WIFI_DISCONNECT_TIMEOUT_MS);
 	runtime->wifi_station_disconnect_status = 0;
+	runtime->wifi_station_disconnect_done = false;
 
 	int result = net_mgmt(NET_REQUEST_WIFI_DISCONNECT, iface, NULL, 0);
 	if (result != 0) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "disconnect request failed");
+		runtime_wifi_finish_operation(runtime, false, "disconnect request failed");
+		runtime_wifi_fill_operation(runtime, out);
 		return 0;
 	}
-	if (k_sem_take(&runtime->wifi_station_disconnect_done,
-		       K_MSEC(SQ_VM_RUNTIME_WIFI_DISCONNECT_TIMEOUT_MS)) != 0) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "disconnect timeout");
-		return 0;
-	}
-	if (runtime->wifi_station_disconnect_status != 0) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "disconnect failed");
-		return 0;
-	}
-	net_dhcpv4_stop(iface);
-	out->ok = true;
+	runtime_wifi_fill_operation(runtime, out);
 	return 0;
 #else
 	ARG_UNUSED(user_data);
@@ -1348,7 +1455,7 @@ static int32_t runtime_wifi_status(void *user_data, SqvmWifiStatus *out)
 #endif
 }
 
-static int32_t runtime_wifi_scan(void *user_data, SqvmWifiScanResult *out)
+static int32_t runtime_wifi_scan(void *user_data, SqvmWifiOperation *out)
 {
 	if (out == NULL) {
 		return -EINVAL;
@@ -1361,11 +1468,9 @@ static int32_t runtime_wifi_scan(void *user_data, SqvmWifiScanResult *out)
 	const struct device *dev;
 	struct wifi_iface_status status = {0};
 	struct wifi_scan_params params = {0};
-	int transfer_result;
 
 	if (runtime == NULL || iface == NULL) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+		runtime_wifi_error_operation(out, "unsupported");
 		return 0;
 	}
 	runtime_wifi_init_events(runtime);
@@ -1373,66 +1478,174 @@ static int32_t runtime_wifi_scan(void *user_data, SqvmWifiScanResult *out)
 	dev = net_if_get_device(iface);
 	if (wifi_mgmt_api == NULL || wifi_mgmt_api->scan == NULL || dev == NULL ||
 	    !net_if_is_admin_up(iface)) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+		runtime_wifi_error_operation(out, "unsupported");
 		return 0;
 	}
 	int status_result = net_mgmt(NET_REQUEST_WIFI_IFACE_STATUS, iface, &status, sizeof(status));
-	if (runtime_wifi_scan_active_runtime != NULL || runtime->wifi_ap_active ||
+	if ((runtime->wifi_op_active && !runtime->wifi_op_done) ||
+	    runtime_wifi_scan_active_runtime != NULL || runtime->wifi_ap_active ||
 	    (status_result == 0 && runtime_wifi_state_blocks_scan(status.state))) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "wifi busy");
-		return 0;
-	}
-
-	transfer_result = sq_vm_runtime_transfer_acquire(runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN);
-	if (transfer_result != 0) {
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "transfer busy");
+		runtime_wifi_error_operation(out, "wifi busy");
 		return 0;
 	}
 	runtime_wifi_reset_scan(runtime);
-	k_sem_reset(&runtime->wifi_scan_done);
+	runtime_wifi_start_operation(runtime, SQ_VM_RUNTIME_WIFI_OP_SCAN,
+				     SQ_VM_RUNTIME_WIFI_SCAN_TIMEOUT_MS);
 	runtime->wifi_scan_collecting = true;
 	runtime_wifi_scan_active_runtime = runtime;
 	int result = wifi_mgmt_api->scan(dev, iface, &params, runtime_wifi_scan_driver_callback);
 	if (result != 0) {
 		runtime->wifi_scan_collecting = false;
 		runtime_wifi_scan_active_runtime = NULL;
-		(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN);
-		out->ok = false;
 		if (result == -EINPROGRESS || result == -EBUSY || result == -EALREADY) {
-			SQ_SET_LITERAL_FIELD(out, error, "wifi busy");
+			runtime_wifi_finish_operation(runtime, false, "wifi busy");
 		} else {
-			SQ_SET_LITERAL_FIELD(out, error, "driver error");
+			runtime_wifi_finish_operation(runtime, false, "driver error");
 		}
+		runtime_wifi_fill_operation(runtime, out);
 		return 0;
 	}
-		if (k_sem_take(&runtime->wifi_scan_done, K_MSEC(SQ_VM_RUNTIME_WIFI_SCAN_TIMEOUT_MS)) != 0) {
-			runtime->wifi_scan_collecting = false;
-			runtime_wifi_scan_active_runtime = NULL;
-			(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN);
-			out->ok = false;
-			SQ_SET_LITERAL_FIELD(out, error, "scan timeout");
-			return 0;
-		}
-	if (runtime->wifi_scan_status != 0) {
-		(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN);
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, error, "scan failed");
-		return 0;
-	}
-	out->ok = true;
-	out->networks = runtime->transfer.wifi_scan.networks;
-	out->network_count = runtime->wifi_scan_count;
-	(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN);
+	runtime_wifi_fill_operation(runtime, out);
 	return 0;
 #else
 	ARG_UNUSED(user_data);
+	runtime_wifi_error_operation(out, "unsupported");
+	return 0;
+#endif
+}
+
+static int32_t runtime_wifi_operation(void *user_data, SqvmWifiOperation *out)
+{
+	if (out == NULL) {
+		return -EINVAL;
+	}
+#if SQ_VM_RUNTIME_HAS_WIFI_MGMT
+	struct sq_vm_runtime *runtime = user_data;
+	if (runtime == NULL) {
+		runtime_wifi_error_operation(out, "unsupported");
+		return 0;
+	}
+	runtime_wifi_complete_if_ready(runtime);
+	runtime_wifi_fill_operation(runtime, out);
+	return 0;
+#else
+	ARG_UNUSED(user_data);
+	memset(out, 0, sizeof(*out));
+	SQ_SET_LITERAL_FIELD(out, state, "idle");
+	out->ok = true;
+	return 0;
+#endif
+}
+
+static int32_t runtime_wifi_result(void *user_data, SqvmWifiOperationResult *out)
+{
+	if (out == NULL) {
+		return -EINVAL;
+	}
+	memset(out, 0, sizeof(*out));
+#if SQ_VM_RUNTIME_HAS_WIFI_MGMT
+	struct sq_vm_runtime *runtime = user_data;
+	if (runtime == NULL) {
+		out->ready = true;
+		out->ok = false;
+		SQ_SET_LITERAL_FIELD(out, state, "error");
+		SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+		return 0;
+	}
+	runtime_wifi_complete_if_ready(runtime);
+	const char *kind = runtime_wifi_op_kind_text(runtime->wifi_op_kind);
+	out->ready = runtime->wifi_op_done;
+	out->ok = runtime->wifi_op_ok;
+	out->cancelled = runtime->wifi_op_cancelled;
+	out->count = runtime->wifi_op_kind == SQ_VM_RUNTIME_WIFI_OP_SCAN ?
+			     (int32_t)runtime->wifi_scan_count :
+			     0;
+	SQ_SET_LITERAL_FIELD(out, state, "idle");
+	if (runtime->wifi_op_active) {
+		const char *state = runtime->wifi_op_done ?
+					    (runtime->wifi_op_cancelled ? "cancelled" :
+					     runtime->wifi_op_ok ? "done" : "error") :
+					    "running";
+		out->state = (const uint8_t *)state;
+		out->state_len = strlen(state);
+	}
+	if (kind != NULL) {
+		out->kind = (const uint8_t *)kind;
+		out->kind_len = strlen(kind);
+	}
+	if (runtime->wifi_op_error != NULL) {
+		out->error = (const uint8_t *)runtime->wifi_op_error;
+		out->error_len = strlen(runtime->wifi_op_error);
+	}
+	return 0;
+#else
+	ARG_UNUSED(user_data);
+	out->ready = true;
+	out->ok = false;
+	SQ_SET_LITERAL_FIELD(out, state, "error");
+	SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+	return 0;
+#endif
+}
+
+static int32_t runtime_wifi_cancel(void *user_data, SqvmWifiOperation *out)
+{
+	if (out == NULL) {
+		return -EINVAL;
+	}
+#if SQ_VM_RUNTIME_HAS_WIFI_MGMT
+	struct sq_vm_runtime *runtime = user_data;
+	if (runtime == NULL) {
+		runtime_wifi_error_operation(out, "unsupported");
+		return 0;
+	}
+	if (!runtime->wifi_op_active || runtime->wifi_op_done) {
+		memset(out, 0, sizeof(*out));
+		SQ_SET_LITERAL_FIELD(out, state, "idle");
+		out->ok = true;
+		return 0;
+	}
+	runtime->wifi_op_done = true;
+	runtime->wifi_op_cancelled = true;
+	runtime->wifi_op_ok = true;
+	runtime->wifi_op_error = NULL;
+	if (runtime->wifi_op_kind == SQ_VM_RUNTIME_WIFI_OP_SCAN) {
+		runtime->wifi_scan_collecting = false;
+		runtime_wifi_scan_active_runtime = NULL;
+	}
+	runtime_wifi_fill_operation(runtime, out);
+	return 0;
+#else
+	ARG_UNUSED(user_data);
+	memset(out, 0, sizeof(*out));
+	SQ_SET_LITERAL_FIELD(out, state, "idle");
+	out->ok = true;
+	return 0;
+#endif
+}
+
+static int32_t runtime_wifi_scan_network(void *user_data, int32_t index,
+					 SqvmWifiScanNetworkResult *out)
+{
+	if (out == NULL) {
+		return -EINVAL;
+	}
+	memset(out, 0, sizeof(*out));
+#if SQ_VM_RUNTIME_HAS_WIFI_MGMT
+	struct sq_vm_runtime *runtime = user_data;
+	if (runtime == NULL || index < 0 || (size_t)index >= runtime->wifi_scan_count) {
+		out->ok = false;
+		SQ_SET_LITERAL_FIELD(out, error, "not found");
+		return 0;
+	}
+	out->ok = true;
+	out->network = runtime->wifi_scan.networks[index];
+	return 0;
+#else
+	ARG_UNUSED(user_data);
+	ARG_UNUSED(index);
 	out->ok = false;
 	SQ_SET_LITERAL_FIELD(out, error, "unsupported");
-	out->networks = NULL;
-	out->network_count = 0;
 	return 0;
 #endif
 }
@@ -2725,6 +2938,10 @@ static const SqvmCallbacks runtime_callbacks = {
 	.wifi_get_ap_ip = runtime_wifi_get_ap_ip,
 	.wifi_status = runtime_wifi_status,
 	.wifi_scan = runtime_wifi_scan,
+	.wifi_operation = runtime_wifi_operation,
+	.wifi_result = runtime_wifi_result,
+	.wifi_cancel = runtime_wifi_cancel,
+	.wifi_scan_network = runtime_wifi_scan_network,
 	.device_config_load = runtime_device_config_load,
 	.device_config_set = runtime_device_config_set,
 	.device_config_rebind = runtime_device_config_rebind,

@@ -60,7 +60,6 @@ enum sq_vm_runtime_transfer_owner {
 	SQ_VM_RUNTIME_TRANSFER_FREE = 0,
 	SQ_VM_RUNTIME_TRANSFER_SCRATCH = 1,
 	SQ_VM_RUNTIME_TRANSFER_COMPLETION = 2,
-	SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN = 3,
 };
 
 enum sq_vm_runtime_lifecycle_phase {
@@ -119,7 +118,15 @@ struct sq_vm_runtime_wifi_scan_scratch {
 union sq_vm_runtime_transfer {
 	uint8_t init_scratch[SQ_VM_RUNTIME_SCRATCH_BYTES];
 	SqvmStorageCompletion completion;
-	struct sq_vm_runtime_wifi_scan_scratch wifi_scan;
+};
+
+enum sq_vm_runtime_wifi_op_kind {
+	SQ_VM_RUNTIME_WIFI_OP_NONE = 0,
+	SQ_VM_RUNTIME_WIFI_OP_START_AP,
+	SQ_VM_RUNTIME_WIFI_OP_STOP_AP,
+	SQ_VM_RUNTIME_WIFI_OP_CONNECT,
+	SQ_VM_RUNTIME_WIFI_OP_DISCONNECT,
+	SQ_VM_RUNTIME_WIFI_OP_SCAN,
 };
 
 struct sq_vm_runtime {
@@ -201,19 +208,25 @@ struct sq_vm_runtime {
 #if IS_ENABLED(CONFIG_NET_L2_WIFI_MGMT) && IS_ENABLED(CONFIG_NET_MGMT_EVENT) && \
 	IS_ENABLED(CONFIG_NET_MGMT_EVENT_INFO)
 	char wifi_station_ip[SQ_VM_RUNTIME_WIFI_IPV4_LEN];
+	struct sq_vm_runtime_wifi_scan_scratch wifi_scan;
 	size_t wifi_scan_count;
 	int wifi_scan_status;
 	bool wifi_scan_collecting;
+	bool wifi_scan_done;
 	int wifi_station_connect_status;
 	int wifi_station_disconnect_status;
+	bool wifi_station_connect_done;
+	bool wifi_station_disconnect_done;
+	enum sq_vm_runtime_wifi_op_kind wifi_op_kind;
+	bool wifi_op_active;
+	bool wifi_op_done;
+	bool wifi_op_cancelled;
+	bool wifi_op_ok;
+	const char *wifi_op_error;
+	int64_t wifi_op_deadline_ms;
 	bool wifi_ap_active;
 	int32_t wifi_ap_start_events;
 	int32_t wifi_ap_stop_events;
-	struct k_sem wifi_scan_done;
-	struct k_sem wifi_station_connect_done;
-	struct k_sem wifi_station_disconnect_done;
-	bool wifi_scan_sem_initialized;
-	bool wifi_station_sem_initialized;
 	struct net_mgmt_event_callback wifi_mgmt_cb;
 	bool wifi_mgmt_cb_registered;
 #endif

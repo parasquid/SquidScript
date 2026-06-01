@@ -11,6 +11,7 @@ event.on("app.start") {
 
   let loaded = device.config.load("package:device/indicator.sqdevice")
   let scan = service.wifi.scan()
+  let operation = service.wifi.operation()
 
-  debug.print("transfer owner", @runs, loaded.ok, loaded.error, scan.ok, scan.error, scan.count)
+  debug.print("transfer owner", @runs, loaded.ok, loaded.error, scan.ok, scan.error, operation.state)
 }

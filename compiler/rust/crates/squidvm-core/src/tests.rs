@@ -640,45 +640,59 @@ impl TraceSink for WifiTrace {
         self.events.push(format!("debug {line}"));
     }
 
-    fn service_wifi_start_ap<'a>(
-        &'a mut self,
-        ssid: &str,
-    ) -> Result<WifiActionResult<'a>, VmError> {
+    fn service_wifi_start_ap<'a>(&'a mut self, ssid: &str) -> Result<WifiOperation<'a>, VmError> {
         self.events.push(format!("wifi.startAP {ssid}"));
         self.active = true;
         self.ssid = ssid.to_string();
-        Ok(WifiActionResult {
+        Ok(WifiOperation {
+            active: true,
+            kind: Some("startAP"),
+            state: "done",
+            done: true,
+            cancelled: false,
             ok: true,
             error: None,
         })
     }
 
-    fn service_wifi_stop_ap<'a>(&'a mut self) -> Result<WifiActionResult<'a>, VmError> {
+    fn service_wifi_stop_ap<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError> {
         self.events.push("wifi.stopAP".to_string());
         self.active = false;
-        Ok(WifiActionResult {
+        Ok(WifiOperation {
+            active: true,
+            kind: Some("stopAP"),
+            state: "done",
+            done: true,
+            cancelled: false,
             ok: true,
             error: None,
         })
     }
 
-    fn service_wifi_connect<'a>(
-        &'a mut self,
-        profile: &str,
-    ) -> Result<WifiActionResult<'a>, VmError> {
+    fn service_wifi_connect<'a>(&'a mut self, profile: &str) -> Result<WifiOperation<'a>, VmError> {
         self.events.push(format!("wifi.connect {profile}"));
         self.active = true;
         self.ssid = profile.to_string();
-        Ok(WifiActionResult {
+        Ok(WifiOperation {
+            active: true,
+            kind: Some("connect"),
+            state: "done",
+            done: true,
+            cancelled: false,
             ok: true,
             error: None,
         })
     }
 
-    fn service_wifi_disconnect<'a>(&'a mut self) -> Result<WifiActionResult<'a>, VmError> {
+    fn service_wifi_disconnect<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError> {
         self.events.push("wifi.disconnect".to_string());
         self.active = false;
-        Ok(WifiActionResult {
+        Ok(WifiOperation {
+            active: true,
+            kind: Some("disconnect"),
+            state: "done",
+            done: true,
+            cancelled: false,
             ok: true,
             error: None,
         })
@@ -730,12 +744,74 @@ impl TraceSink for WifiTrace {
         })
     }
 
-    fn service_wifi_scan<'a>(&'a mut self) -> Result<WifiScanResult<'a>, VmError> {
+    fn service_wifi_scan<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError> {
         self.events.push("wifi.scan".to_string());
-        Ok(WifiScanResult {
+        Ok(WifiOperation {
+            active: true,
+            kind: Some("scan"),
+            state: "started",
+            done: false,
+            cancelled: false,
             ok: true,
             error: None,
-            networks: &WIFI_SCAN_TEST_NETWORKS,
+        })
+    }
+
+    fn service_wifi_operation<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError> {
+        self.events.push("wifi.operation".to_string());
+        Ok(WifiOperation {
+            active: true,
+            kind: Some("scan"),
+            state: "done",
+            done: true,
+            cancelled: false,
+            ok: true,
+            error: None,
+        })
+    }
+
+    fn service_wifi_result<'a>(&'a mut self) -> Result<WifiOperationResult<'a>, VmError> {
+        self.events.push("wifi.result".to_string());
+        Ok(WifiOperationResult {
+            ready: true,
+            kind: Some("scan"),
+            state: "done",
+            ok: true,
+            error: None,
+            cancelled: false,
+            count: WIFI_SCAN_TEST_NETWORKS.len() as i32,
+        })
+    }
+
+    fn service_wifi_cancel<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError> {
+        self.events.push("wifi.cancel".to_string());
+        Ok(WifiOperation {
+            active: true,
+            kind: Some("scan"),
+            state: "cancelled",
+            done: true,
+            cancelled: true,
+            ok: true,
+            error: None,
+        })
+    }
+
+    fn service_wifi_scan_network<'a>(
+        &'a mut self,
+        index: i32,
+    ) -> Result<WifiScanNetwork<'a>, VmError> {
+        self.events.push(format!("wifi.scanNetwork {index}"));
+        let network = usize::try_from(index)
+            .ok()
+            .and_then(|index| WIFI_SCAN_TEST_NETWORKS.get(index).copied());
+        Ok(WifiScanNetwork {
+            ok: network.is_some(),
+            error: if network.is_some() {
+                None
+            } else {
+                Some("not found")
+            },
+            network,
         })
     }
 
@@ -810,12 +886,48 @@ impl TraceSink for BudgetTrace {
         })
     }
 
-    fn service_wifi_scan<'a>(&'a mut self) -> Result<WifiScanResult<'a>, VmError> {
+    fn service_wifi_scan<'a>(&'a mut self) -> Result<WifiOperation<'a>, VmError> {
         self.events.push("wifi.scan".to_string());
-        Ok(WifiScanResult {
+        Ok(WifiOperation {
+            active: true,
+            kind: Some("scan"),
+            state: "started",
+            done: false,
+            cancelled: false,
             ok: true,
             error: None,
-            networks: &WIFI_SCAN_BUDGET_NETWORKS,
+        })
+    }
+
+    fn service_wifi_result<'a>(&'a mut self) -> Result<WifiOperationResult<'a>, VmError> {
+        self.events.push("wifi.result".to_string());
+        Ok(WifiOperationResult {
+            ready: true,
+            kind: Some("scan"),
+            state: "done",
+            ok: true,
+            error: None,
+            cancelled: false,
+            count: WIFI_SCAN_BUDGET_NETWORKS.len() as i32,
+        })
+    }
+
+    fn service_wifi_scan_network<'a>(
+        &'a mut self,
+        index: i32,
+    ) -> Result<WifiScanNetwork<'a>, VmError> {
+        self.events.push(format!("wifi.scanNetwork {index}"));
+        let network = usize::try_from(index)
+            .ok()
+            .and_then(|index| WIFI_SCAN_BUDGET_NETWORKS.get(index).copied());
+        Ok(WifiScanNetwork {
+            ok: network.is_some(),
+            error: if network.is_some() {
+                None
+            } else {
+                Some("not found")
+            },
+            network,
         })
     }
 
@@ -2288,8 +2400,9 @@ event.on("app.start") {
 fn wifi_scan_dynamic_strings_work_with_current_budget() {
     let source = r#"app "wifi-budget"
 event.on("app.start") {
-  let scan = wifi.scan()
-  debug.print(scan.count)
+  wifi.scan()
+  let result = wifi.result()
+  debug.print(result.count)
 }
 "#;
     let bytes = compile_sqbc(&source);
@@ -2299,15 +2412,19 @@ event.on("app.start") {
 
     vm.dispatch("app.start", &mut trace).unwrap();
 
-    assert_eq!(trace.events, vec!["app.start", "wifi.scan", "debug 4"]);
+    assert_eq!(
+        trace.events,
+        vec!["app.start", "wifi.scan", "wifi.result", "debug 4"]
+    );
 }
 
 #[test]
 fn wifi_scan_static_strings_do_not_consume_dynamic_entries() {
     let source = r#"app "wifi-over-budget"
 event.on("app.start") {
-  let scan = wifi.scan()
-  debug.print(scan.count)
+  wifi.scan()
+  let result = wifi.result()
+  debug.print(result.count)
   debug.print(system.startReason())
 }
 "#;
@@ -2319,7 +2436,13 @@ event.on("app.start") {
     vm.dispatch("app.start", &mut trace).unwrap();
     assert_eq!(
         trace.events,
-        vec!["app.start", "wifi.scan", "debug 4", "debug wake"]
+        vec![
+            "app.start",
+            "wifi.scan",
+            "wifi.result",
+            "debug 4",
+            "debug wake"
+        ]
     );
     assert_eq!(trace.wifi_teardown_count, 0);
 }
@@ -2819,13 +2942,12 @@ fn runs_wifi_scan_record_and_bounded_network_records() {
 state {}
 
 event.on("app.start") {
-  let scan = wifi.scan()
-  debug.print(scan.ok, scan.error, scan.count)
-  for network in scan.networks max 1 {
-    debug.print(network.ssid, network.ssidLength, network.bssid, network.channel, network.rssi, network.auth, network.hidden)
-    debug.print(network.password)
-  }
-  debug.print(scan.password)
+  let started = wifi.scan()
+  let result = wifi.result()
+  let network = wifi.scanNetwork(0)
+  debug.print(started.ok, result.error, result.count)
+  debug.print(network.ssid, network.ssidLength, network.channel, network.rssi, network.auth, network.hidden)
+  debug.print(network.password)
   app.exit()
 }
 
@@ -2852,9 +2974,46 @@ screen("main") {}
         vec![
             "app.start",
             "wifi.scan",
+            "wifi.result",
+            "wifi.scanNetwork 0",
             "debug true null 2",
-            "debug LabNetwork 10 00:11:22:33:44:55 6 -42 wpa2 false",
+            "debug LabNetwork 10 6 -42 wpa2 false",
             "wifi.teardown",
+        ]
+    );
+}
+
+#[test]
+fn runs_async_wifi_operation_poll_result_cancel_and_scan_network() {
+    let source = r#"app "wifi-async-runtime"
+state {}
+
+event.on("app.start") {
+  let started = wifi.scan()
+  let op = wifi.operation()
+  let result = wifi.result()
+  let row = wifi.scanNetwork(0)
+  let cancel = wifi.cancel()
+  debug.print(started.active, started.kind, op.state, result.ready, result.count, row.ok, row.ssidLength, cancel.cancelled)
+}
+
+screen("main") {}
+"#;
+    let bytes = compile_sqbc(source);
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = WifiTrace::default();
+    vm.dispatch("app.start", &mut trace).unwrap();
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "wifi.scan",
+            "wifi.operation",
+            "wifi.result",
+            "wifi.scanNetwork 0",
+            "wifi.cancel",
+            "debug true scan done true 2 true 10 true",
         ]
     );
 }

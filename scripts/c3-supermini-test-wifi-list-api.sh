@@ -14,8 +14,9 @@ usage() {
   cat <<'EOF'
 Usage: scripts/c3-supermini-test-wifi-list-api.sh [--require-real-wifi]
 
-Runs the Zephyr Wi-Fi list SquidScript hardware check. The app iterates
-service.wifi.scan().networks and prints redacted structural AP fields only:
+Runs the Zephyr Wi-Fi list SquidScript hardware check. The app starts
+service.wifi.scan(), polls service.wifi.result(), reads rows with
+service.wifi.scanNetwork(index), and prints redacted structural AP fields only:
 SSID length, channel, RSSI, auth, and hidden flag.
 With --require-real-wifi, the output must prove a real Zephyr Wi-Fi scan
 completed and returned at least one redacted AP row.

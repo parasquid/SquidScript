@@ -13,10 +13,11 @@ use crate::{
         BUILTIN_SERVICE_INDICATOR_BREATHE, BUILTIN_SERVICE_INDICATOR_READ,
         BUILTIN_SERVICE_INDICATOR_TOGGLE, BUILTIN_SERVICE_INDICATOR_WRITE,
         BUILTIN_SERVICE_POWER_SLEEP, BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY,
-        BUILTIN_SERVICE_WIFI_CONNECT, BUILTIN_SERVICE_WIFI_DISCONNECT,
-        BUILTIN_SERVICE_WIFI_GET_AP_IP, BUILTIN_SERVICE_WIFI_SCAN, BUILTIN_SERVICE_WIFI_START_AP,
-        BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP, BUILTIN_STATE_LOAD,
-        BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, BUILTIN_SYSTEM_MEMORY,
+        BUILTIN_SERVICE_WIFI_CANCEL, BUILTIN_SERVICE_WIFI_CONNECT, BUILTIN_SERVICE_WIFI_DISCONNECT,
+        BUILTIN_SERVICE_WIFI_GET_AP_IP, BUILTIN_SERVICE_WIFI_OPERATION,
+        BUILTIN_SERVICE_WIFI_RESULT, BUILTIN_SERVICE_WIFI_SCAN, BUILTIN_SERVICE_WIFI_SCAN_NETWORK,
+        BUILTIN_SERVICE_WIFI_START_AP, BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP,
+        BUILTIN_STATE_LOAD, BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, BUILTIN_SYSTEM_MEMORY,
         BUILTIN_SYSTEM_START_REASON, BUILTIN_SYSTEM_STORAGE, OP_ADD, OP_CALL_BUILTIN,
         OP_CALL_FUNCTION, OP_EQ, OP_GET_FIELD, OP_GET_LOCAL, OP_GET_STATE, OP_GT, OP_GTE, OP_HALT,
         OP_JUMP, OP_JUMP_IF_FALSE, OP_LIST_GET, OP_LIST_LEN, OP_LT, OP_LTE, OP_NE, OP_POP,
@@ -30,7 +31,7 @@ use crate::{
         DeviceConfigResult, DisplayInfo, DisplayLineOptions, DisplayRectOptions,
         DisplayResourceOptions, DisplayTextOptions, FilePickFileResult, FileReadLinesResult,
         FileReadTextResult, StorageCompletion, StorageRequest, TraceSink, VmDispatch,
-        WifiAccessPoint, WifiActionResult, WifiApIp, WifiScanResult, WifiStatus,
+        WifiAccessPoint, WifiApIp, WifiOperation, WifiOperationResult, WifiScanNetwork, WifiStatus,
     },
     limits::{
         MAX_CALL_DEPTH, MAX_CODE_CHUNK_BYTES, MAX_FUNCTIONS, MAX_HANDLERS,
@@ -1289,23 +1290,23 @@ impl ChunkedVm {
             BUILTIN_SERVICE_WIFI_START_AP => {
                 let ssid_id = self.pop_sqbc_string_id()?;
                 let result = host.service_wifi_start_ap(self.index.string(ssid_id)?)?;
-                let value = self.wifi_action_record(result)?;
+                let value = self.wifi_operation_record(result)?;
                 self.push(value)?;
             }
             BUILTIN_SERVICE_WIFI_STOP_AP => {
                 let result = host.service_wifi_stop_ap()?;
-                let value = self.wifi_action_record(result)?;
+                let value = self.wifi_operation_record(result)?;
                 self.push(value)?;
             }
             BUILTIN_SERVICE_WIFI_CONNECT => {
                 let profile_id = self.pop_sqbc_string_id()?;
                 let result = host.service_wifi_connect(self.index.string(profile_id)?)?;
-                let value = self.wifi_action_record(result)?;
+                let value = self.wifi_operation_record(result)?;
                 self.push(value)?;
             }
             BUILTIN_SERVICE_WIFI_DISCONNECT => {
                 let result = host.service_wifi_disconnect()?;
-                let value = self.wifi_action_record(result)?;
+                let value = self.wifi_operation_record(result)?;
                 self.push(value)?;
             }
             BUILTIN_SERVICE_WIFI_STATUS => {
@@ -1320,7 +1321,28 @@ impl ChunkedVm {
             }
             BUILTIN_SERVICE_WIFI_SCAN => {
                 let result = host.service_wifi_scan()?;
-                let value = self.wifi_scan_record(result)?;
+                let value = self.wifi_operation_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_SERVICE_WIFI_OPERATION => {
+                let result = host.service_wifi_operation()?;
+                let value = self.wifi_operation_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_SERVICE_WIFI_RESULT => {
+                let result = host.service_wifi_result()?;
+                let value = self.wifi_operation_result_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_SERVICE_WIFI_CANCEL => {
+                let result = host.service_wifi_cancel()?;
+                let value = self.wifi_operation_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_SERVICE_WIFI_SCAN_NETWORK => {
+                let index = self.pop()?.expect_i32()?;
+                let result = host.service_wifi_scan_network(index)?;
+                let value = self.wifi_scan_network_record(result)?;
                 self.push(value)?;
             }
             BUILTIN_DEVICE_CONFIG_LOAD => {
@@ -1400,11 +1422,36 @@ impl ChunkedVm {
         self.strings.intern_event(&self.index, value)
     }
 
-    fn wifi_action_record(&mut self, result: WifiActionResult<'_>) -> Result<Value, VmError> {
+    fn wifi_operation_record(&mut self, result: WifiOperation<'_>) -> Result<Value, VmError> {
+        let kind = self.runtime_string_value(result.kind)?;
+        let state = self.runtime_string_value(Some(result.state))?;
         let error = self.runtime_string_value(result.error)?;
         self.runtime_records.alloc(&[
+            RuntimeRecordField::new("active", Value::Bool(result.active)),
+            RuntimeRecordField::new("kind", kind),
+            RuntimeRecordField::new("state", state),
+            RuntimeRecordField::new("done", Value::Bool(result.done)),
+            RuntimeRecordField::new("cancelled", Value::Bool(result.cancelled)),
             RuntimeRecordField::new("ok", Value::Bool(result.ok)),
             RuntimeRecordField::new("error", error),
+        ])
+    }
+
+    fn wifi_operation_result_record(
+        &mut self,
+        result: WifiOperationResult<'_>,
+    ) -> Result<Value, VmError> {
+        let kind = self.runtime_string_value(result.kind)?;
+        let state = self.runtime_string_value(Some(result.state))?;
+        let error = self.runtime_string_value(result.error)?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new("ready", Value::Bool(result.ready)),
+            RuntimeRecordField::new("kind", kind),
+            RuntimeRecordField::new("state", state),
+            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
+            RuntimeRecordField::new("error", error),
+            RuntimeRecordField::new("cancelled", Value::Bool(result.cancelled)),
+            RuntimeRecordField::new("count", Value::I32(result.count)),
         ])
     }
 
@@ -1591,30 +1638,16 @@ impl ChunkedVm {
         ])
     }
 
-    fn wifi_scan_record(&mut self, result: WifiScanResult<'_>) -> Result<Value, VmError> {
+    fn wifi_scan_network_record(&mut self, result: WifiScanNetwork<'_>) -> Result<Value, VmError> {
         let error = self.runtime_string_value(result.error)?;
-        let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
-        let count = result.networks.len().min(MAX_RUNTIME_LIST_ITEMS);
-        for (index, network) in result.networks.iter().take(count).enumerate() {
-            items[index] = self.wifi_access_point_record(*network)?;
-        }
-        let networks = self.runtime_lists.alloc(&items[..count])?;
+        let network = result.network.unwrap_or_else(WifiAccessPoint::empty);
+        let ssid = self.runtime_string_value(Some(network.ssid()?))?;
+        let auth = self.runtime_string_value(network.auth)?;
         self.runtime_records.alloc(&[
             RuntimeRecordField::new("ok", Value::Bool(result.ok)),
             RuntimeRecordField::new("error", error),
-            RuntimeRecordField::new("count", Value::I32(count.min(i32::MAX as usize) as i32)),
-            RuntimeRecordField::new("networks", networks),
-        ])
-    }
-
-    fn wifi_access_point_record(&mut self, network: WifiAccessPoint) -> Result<Value, VmError> {
-        let ssid = self.runtime_string_value(Some(network.ssid()?))?;
-        let bssid = self.runtime_string_value(network.bssid()?)?;
-        let auth = self.runtime_string_value(network.auth)?;
-        self.runtime_records.alloc(&[
             RuntimeRecordField::new("ssid", ssid),
             RuntimeRecordField::new("ssidLength", Value::I32(network.ssid_length)),
-            RuntimeRecordField::new("bssid", bssid),
             RuntimeRecordField::new("channel", Value::I32(network.channel)),
             RuntimeRecordField::new("rssi", Value::I32(network.rssi)),
             RuntimeRecordField::new("auth", auth),
@@ -1860,25 +1893,19 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
         self.trace.service_timer_after(event, delay_ms)
     }
 
-    fn service_wifi_start_ap<'b>(
-        &'b mut self,
-        ssid: &str,
-    ) -> Result<WifiActionResult<'b>, VmError> {
+    fn service_wifi_start_ap<'b>(&'b mut self, ssid: &str) -> Result<WifiOperation<'b>, VmError> {
         self.trace.service_wifi_start_ap(ssid)
     }
 
-    fn service_wifi_stop_ap<'b>(&'b mut self) -> Result<WifiActionResult<'b>, VmError> {
+    fn service_wifi_stop_ap<'b>(&'b mut self) -> Result<WifiOperation<'b>, VmError> {
         self.trace.service_wifi_stop_ap()
     }
 
-    fn service_wifi_connect<'b>(
-        &'b mut self,
-        profile: &str,
-    ) -> Result<WifiActionResult<'b>, VmError> {
+    fn service_wifi_connect<'b>(&'b mut self, profile: &str) -> Result<WifiOperation<'b>, VmError> {
         self.trace.service_wifi_connect(profile)
     }
 
-    fn service_wifi_disconnect<'b>(&'b mut self) -> Result<WifiActionResult<'b>, VmError> {
+    fn service_wifi_disconnect<'b>(&'b mut self) -> Result<WifiOperation<'b>, VmError> {
         self.trace.service_wifi_disconnect()
     }
 
@@ -1890,8 +1917,27 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
         self.trace.service_wifi_get_ap_ip()
     }
 
-    fn service_wifi_scan<'b>(&'b mut self) -> Result<WifiScanResult<'b>, VmError> {
+    fn service_wifi_scan<'b>(&'b mut self) -> Result<WifiOperation<'b>, VmError> {
         self.trace.service_wifi_scan()
+    }
+
+    fn service_wifi_operation<'b>(&'b mut self) -> Result<WifiOperation<'b>, VmError> {
+        self.trace.service_wifi_operation()
+    }
+
+    fn service_wifi_result<'b>(&'b mut self) -> Result<WifiOperationResult<'b>, VmError> {
+        self.trace.service_wifi_result()
+    }
+
+    fn service_wifi_cancel<'b>(&'b mut self) -> Result<WifiOperation<'b>, VmError> {
+        self.trace.service_wifi_cancel()
+    }
+
+    fn service_wifi_scan_network<'b>(
+        &'b mut self,
+        index: i32,
+    ) -> Result<WifiScanNetwork<'b>, VmError> {
+        self.trace.service_wifi_scan_network(index)
     }
 
     fn service_wifi_teardown(&mut self) -> Result<(), VmError> {

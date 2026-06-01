@@ -174,12 +174,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   before treating GPIO, flashing, or serial as the primary failure. Hardware
   scripts now use the shared bounded command helper, which prints captured
   command output when a command fails or times out.
-- Convert blocking Wi-Fi VM callbacks to nonblocking runtime progress. Current
-  Zephyr `wifi.connect`, `wifi.disconnect`, and `wifi.scan` callbacks wait on
-  semaphores for up to 15s, 5s, and 8s respectively. They run in the VM worker
-  rather than the serial main loop, but they still block app/runtime progress
-  and conflict with the firmware rule that services should use short steps,
-  async progress, or target scheduler integration.
 - Continue SquidScript-owned static DRAM reductions using the classified
   static-buffer report. Current same-build evidence does not justify lowering
   the 17,408-byte VM worker stack further: the broad non-scan suite leaves
@@ -192,11 +186,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   response. Treat `runtime.4` quota cuts as test-first changes: reduce VM
   records, record fields, dynamic string slots, trace/output/drawlog slots, or
   lifecycle/input arrays only when compiler/runtime fixtures and hardware apps
-  show the smaller quota still covers current behavior. Replacing resident
-  Wi-Fi scan result storage with a cursor-backed API remains a separate design
-  item if Wi-Fi scan pagination moves forward. Keep Zephyr kernel stacks,
-  system heap, network packet pools, Wi-Fi driver storage, and other platform
-  symbols separate unless platform RAM policy is explicitly in scope.
+  show the smaller quota still covers current behavior. Keep Zephyr kernel
+  stacks, system heap, network packet pools, Wi-Fi driver storage, and other
+  platform symbols separate unless platform RAM policy is explicitly in scope.
 - Add a safe largest-free-block heap probe or mitigation path for ESP32-C3
   Zephyr RAM work. `device resources` now reports allocation high-water data and
   largest-free-block support/value fields, and workload scripts can reset the
@@ -223,10 +215,3 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   machine item unless Wi-Fi work is explicitly in scope, and leave simple
   trace/output/drawlog buffers as bounded queues rather than overfitting them
   into state machines.
-- Design a cursor-style Wi-Fi scan API so targets can expose more scan results
-  without materializing every AP record and string into one VM event. Compare
-  options such as `wifi.scan()` returning a snapshot handle with
-  `wifi.scan.get(scan, index)`, paged scan reads, or an iterator-like cursor,
-  and keep SSID/auth strings backed by host/runtime storage until the app asks
-  for a specific network. Preserve the current rule that raw BSSID/MAC values
-  are not exposed to SquidScript.

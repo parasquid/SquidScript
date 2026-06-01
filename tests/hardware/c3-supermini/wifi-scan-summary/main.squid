@@ -3,6 +3,15 @@ app "wifi-scan-summary"
 state {}
 
 event.on("app.start") {
-  let scan = service.wifi.scan()
-  debug.print("wifi scan", scan.ok, scan.error, scan.count)
+  service.wifi.scan()
+  service.timer.after("timer.wifi.scan", 250)
+}
+
+event.on("timer.wifi.scan") {
+  let result = service.wifi.result()
+  if result.ready {
+    debug.print("wifi scan", result.ok, result.error, result.count)
+  } else {
+    service.timer.after("timer.wifi.scan", 250)
+  }
 }

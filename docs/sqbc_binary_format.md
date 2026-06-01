@@ -141,6 +141,10 @@ be refreshed as capability boundaries become clearer.
 0x54 service.wifi.connect
 0x55 service.wifi.disconnect
 0x56 service.wifi.scan
+0x57 service.wifi.operation
+0x58 service.wifi.result
+0x59 service.wifi.cancel
+0x5a service.wifi.scanNetwork
 
 0x60 reserved for service.ble/service.bluetooth
 

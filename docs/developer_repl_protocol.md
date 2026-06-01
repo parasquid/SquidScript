@@ -151,13 +151,17 @@ bounded station profile in Zephyr runtime memory. Rust `sqdp_` FFI code owns
 the request TLV parsing and returns borrowed field slices to Zephyr C, which
 only applies the validated profile to the runtime. The command response is
 empty on success and must not echo SSIDs or passwords.
-SquidScript VM calls to `service.wifi.status()`, `service.wifi.scan()`,
-`service.wifi.startAP(...)`, `service.wifi.stopAP()`, and
+SquidScript VM calls to `service.wifi.status()`, `service.wifi.startAP(...)`,
+`service.wifi.stopAP()`, `service.wifi.connect(...)`,
+`service.wifi.disconnect()`, `service.wifi.scan()`,
+`service.wifi.operation()`, `service.wifi.result()`,
+`service.wifi.cancel()`, `service.wifi.scanNetwork(index)`, and
 `service.wifi.getAPIP()` are connected to Zephyr Wi-Fi management callbacks.
-`service.wifi.connect(...)` and `service.wifi.disconnect()` use the provisioned
-volatile profile and Zephyr station connect/disconnect requests. Wi-Fi command
-output and hardware checks must stay redacted unless the user explicitly
-requests raw identifiers.
+Operation-starting calls return immediately; apps poll operation/result records
+from timers instead of blocking serial/runtime progress. Station connect and
+disconnect use the provisioned volatile profile and Zephyr station requests.
+Wi-Fi command output and hardware checks must stay redacted unless the user
+explicitly requests raw identifiers.
 `system.memory()` and `system.storage("apps")` are connected through the same
 Zephyr VM FFI host boundary as other runtime services. `system.memory()` returns
 a display-oriented RAM/heap diagnostic string. `system.storage("apps")` returns

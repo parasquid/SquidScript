@@ -332,12 +332,19 @@ unsafe extern "C" fn wifi_start_ap(
     user_data: *mut c_void,
     ssid: *const u8,
     ssid_len: usize,
-    out: *mut squidvm_ffi::SqvmWifiActionResult,
+    out: *mut squidvm_ffi::SqvmWifiOperation,
 ) -> i32 {
     let host = &mut *(user_data as *mut Host);
     let ssid = std::str::from_utf8(std::slice::from_raw_parts(ssid, ssid_len)).unwrap();
     host.wifi_actions.push(format!("startAP {ssid}"));
-    *out = squidvm_ffi::SqvmWifiActionResult {
+    *out = squidvm_ffi::SqvmWifiOperation {
+        active: true,
+        kind: b"startAP".as_ptr(),
+        kind_len: b"startAP".len(),
+        state: b"done".as_ptr(),
+        state_len: b"done".len(),
+        done: true,
+        cancelled: false,
         ok: true,
         error: ptr::null(),
         error_len: 0,
@@ -347,11 +354,18 @@ unsafe extern "C" fn wifi_start_ap(
 
 unsafe extern "C" fn wifi_stop_ap(
     user_data: *mut c_void,
-    out: *mut squidvm_ffi::SqvmWifiActionResult,
+    out: *mut squidvm_ffi::SqvmWifiOperation,
 ) -> i32 {
     let host = &mut *(user_data as *mut Host);
     host.wifi_actions.push("stopAP".to_string());
-    *out = squidvm_ffi::SqvmWifiActionResult {
+    *out = squidvm_ffi::SqvmWifiOperation {
+        active: true,
+        kind: b"stopAP".as_ptr(),
+        kind_len: b"stopAP".len(),
+        state: b"done".as_ptr(),
+        state_len: b"done".len(),
+        done: true,
+        cancelled: false,
         ok: true,
         error: ptr::null(),
         error_len: 0,
@@ -363,12 +377,19 @@ unsafe extern "C" fn wifi_connect(
     user_data: *mut c_void,
     profile: *const u8,
     profile_len: usize,
-    out: *mut squidvm_ffi::SqvmWifiActionResult,
+    out: *mut squidvm_ffi::SqvmWifiOperation,
 ) -> i32 {
     let host = &mut *(user_data as *mut Host);
     let profile = std::str::from_utf8(std::slice::from_raw_parts(profile, profile_len)).unwrap();
     host.wifi_actions.push(format!("connect {profile}"));
-    *out = squidvm_ffi::SqvmWifiActionResult {
+    *out = squidvm_ffi::SqvmWifiOperation {
+        active: true,
+        kind: b"connect".as_ptr(),
+        kind_len: b"connect".len(),
+        state: b"done".as_ptr(),
+        state_len: b"done".len(),
+        done: true,
+        cancelled: false,
         ok: true,
         error: ptr::null(),
         error_len: 0,
@@ -378,11 +399,18 @@ unsafe extern "C" fn wifi_connect(
 
 unsafe extern "C" fn wifi_disconnect(
     user_data: *mut c_void,
-    out: *mut squidvm_ffi::SqvmWifiActionResult,
+    out: *mut squidvm_ffi::SqvmWifiOperation,
 ) -> i32 {
     let host = &mut *(user_data as *mut Host);
     host.wifi_actions.push("disconnect".to_string());
-    *out = squidvm_ffi::SqvmWifiActionResult {
+    *out = squidvm_ffi::SqvmWifiOperation {
+        active: true,
+        kind: b"disconnect".as_ptr(),
+        kind_len: b"disconnect".len(),
+        state: b"done".as_ptr(),
+        state_len: b"done".len(),
+        done: true,
+        cancelled: false,
         ok: true,
         error: ptr::null(),
         error_len: 0,
@@ -432,23 +460,92 @@ unsafe extern "C" fn wifi_status(
 
 unsafe extern "C" fn wifi_scan(
     user_data: *mut c_void,
-    out: *mut squidvm_ffi::SqvmWifiScanResult,
+    out: *mut squidvm_ffi::SqvmWifiOperation,
 ) -> i32 {
     let host = &mut *(user_data as *mut Host);
     host.wifi_scan_count += 1;
-    *out = squidvm_ffi::SqvmWifiScanResult {
+    *out = squidvm_ffi::SqvmWifiOperation {
+        active: true,
+        kind: b"scan".as_ptr(),
+        kind_len: b"scan".len(),
+        state: b"started".as_ptr(),
+        state_len: b"started".len(),
+        done: false,
+        cancelled: false,
         ok: false,
         error: b"unsupported".as_ptr(),
         error_len: b"unsupported".len(),
-        networks: ptr::null(),
-        network_count: 0,
     };
     0
 }
 
-unsafe extern "C" fn zephyr_wifi_scan(
+unsafe extern "C" fn wifi_operation(
     user_data: *mut c_void,
-    out: *mut squidvm_ffi::SqvmWifiScanResult,
+    out: *mut squidvm_ffi::SqvmWifiOperation,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.wifi_actions.push("operation".to_string());
+    *out = squidvm_ffi::SqvmWifiOperation {
+        active: true,
+        kind: b"scan".as_ptr(),
+        kind_len: b"scan".len(),
+        state: b"done".as_ptr(),
+        state_len: b"done".len(),
+        done: true,
+        cancelled: false,
+        ok: true,
+        error: ptr::null(),
+        error_len: 0,
+    };
+    0
+}
+
+unsafe extern "C" fn wifi_result(
+    user_data: *mut c_void,
+    out: *mut squidvm_ffi::SqvmWifiOperationResult,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.wifi_actions.push("result".to_string());
+    *out = squidvm_ffi::SqvmWifiOperationResult {
+        ready: true,
+        kind: b"scan".as_ptr(),
+        kind_len: b"scan".len(),
+        state: b"done".as_ptr(),
+        state_len: b"done".len(),
+        ok: true,
+        error: ptr::null(),
+        error_len: 0,
+        cancelled: false,
+        count: 3,
+    };
+    0
+}
+
+unsafe extern "C" fn wifi_cancel(
+    user_data: *mut c_void,
+    out: *mut squidvm_ffi::SqvmWifiOperation,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.wifi_actions.push("cancel".to_string());
+    *out = squidvm_ffi::SqvmWifiOperation {
+        active: true,
+        kind: b"scan".as_ptr(),
+        kind_len: b"scan".len(),
+        state: b"cancelled".as_ptr(),
+        state_len: b"cancelled".len(),
+        done: true,
+        cancelled: true,
+        ok: true,
+        error: ptr::null(),
+        error_len: 0,
+    };
+    0
+}
+
+unsafe extern "C" fn zephyr_wifi_scan_network(
+    user_data: *mut c_void,
+    index: i32,
+    out: *mut squidvm_ffi::SqvmWifiScanNetworkResult,
 ) -> i32 {
     static VISIBLE_SSID: &[u8] = b"truncated-visible-ssid";
     static WPA2_AUTH: &[u8] = b"WPA2-PSK";
@@ -494,13 +591,21 @@ unsafe extern "C" fn zephyr_wifi_scan(
         },
     ];
     let host = &mut *(user_data as *mut Host);
-    host.wifi_scan_count += 1;
-    *out = squidvm_ffi::SqvmWifiScanResult {
+    let Ok(index) = usize::try_from(index) else {
+        *out = squidvm_ffi::SqvmWifiScanNetworkResult::default();
+        return 0;
+    };
+    let networks = &raw const NETWORKS;
+    let Some(network) = (*networks).get(index).copied() else {
+        *out = squidvm_ffi::SqvmWifiScanNetworkResult::default();
+        return 0;
+    };
+    host.wifi_actions.push(format!("scanNetwork {index}"));
+    *out = squidvm_ffi::SqvmWifiScanNetworkResult {
         ok: true,
         error: ptr::null(),
         error_len: 0,
-        networks: (&raw const NETWORKS).cast::<squidvm_ffi::SqvmWifiAccessPoint>(),
-        network_count: 3,
+        network,
     };
     0
 }
@@ -829,14 +934,14 @@ unsafe extern "C" fn failing_wifi_start_ap(
     _user_data: *mut c_void,
     _ssid: *const u8,
     _ssid_len: usize,
-    _out: *mut squidvm_ffi::SqvmWifiActionResult,
+    _out: *mut squidvm_ffi::SqvmWifiOperation,
 ) -> i32 {
     -22
 }
 
 unsafe extern "C" fn failing_wifi_stop_ap(
     _user_data: *mut c_void,
-    _out: *mut squidvm_ffi::SqvmWifiActionResult,
+    _out: *mut squidvm_ffi::SqvmWifiOperation,
 ) -> i32 {
     -22
 }
@@ -845,14 +950,14 @@ unsafe extern "C" fn failing_wifi_connect(
     _user_data: *mut c_void,
     _profile: *const u8,
     _profile_len: usize,
-    _out: *mut squidvm_ffi::SqvmWifiActionResult,
+    _out: *mut squidvm_ffi::SqvmWifiOperation,
 ) -> i32 {
     -22
 }
 
 unsafe extern "C" fn failing_wifi_disconnect(
     _user_data: *mut c_void,
-    _out: *mut squidvm_ffi::SqvmWifiActionResult,
+    _out: *mut squidvm_ffi::SqvmWifiOperation,
 ) -> i32 {
     -22
 }
@@ -873,7 +978,7 @@ unsafe extern "C" fn failing_wifi_status(
 
 unsafe extern "C" fn failing_wifi_scan(
     _user_data: *mut c_void,
-    _out: *mut squidvm_ffi::SqvmWifiScanResult,
+    _out: *mut squidvm_ffi::SqvmWifiOperation,
 ) -> i32 {
     -22
 }
@@ -1149,6 +1254,10 @@ fn callbacks(_host: &mut Host) -> SqvmCallbacks {
         wifi_get_ap_ip: Some(wifi_get_ap_ip),
         wifi_status: Some(wifi_status),
         wifi_scan: Some(wifi_scan),
+        wifi_operation: Some(wifi_operation),
+        wifi_result: Some(wifi_result),
+        wifi_cancel: Some(wifi_cancel),
+        wifi_scan_network: Some(zephyr_wifi_scan_network),
         device_config_load: Some(device_config_load),
         device_config_set: Some(device_config_set),
         device_config_rebind: Some(device_config_rebind),
@@ -1330,9 +1439,10 @@ fn compile_wifi_sqbc() -> Vec<u8> {
         r#"app "ffi-wifi"
 event.on("app.start") {
   let status = service.wifi.status()
-  let scan = service.wifi.scan()
+  service.wifi.scan()
+  let result = service.wifi.result()
   debug.print(status.state, status.backend, status.driverStarted, status.error)
-  debug.print(scan.ok, scan.error, scan.count)
+  debug.print(result.ok, result.error, result.count)
 }
 screen("main") {}
 "#,
@@ -1343,10 +1453,15 @@ fn compile_wifi_scan_networks_sqbc() -> Vec<u8> {
     compile_sqbc(
         r#"app "ffi-wifi-networks"
 event.on("app.start") {
-  let scan = service.wifi.scan()
-  for network in scan.networks max 4 {
-    debug.print(network.ssidLength, network.channel, network.rssi, network.auth, network.hidden)
-  }
+  service.wifi.scan()
+  let result = service.wifi.result()
+  let first = service.wifi.scanNetwork(0)
+  let second = service.wifi.scanNetwork(1)
+  let third = service.wifi.scanNetwork(2)
+  debug.print(result.count)
+  debug.print(first.ssidLength, first.channel, first.rssi, first.auth, first.hidden)
+  debug.print(second.ssidLength, second.channel, second.rssi, second.auth, second.hidden)
+  debug.print(third.ssidLength, third.channel, third.rssi, third.auth, third.hidden)
 }
 screen("main") {}
 "#,
@@ -1802,7 +1917,7 @@ fn dispatches_wifi_status_and_scan_callbacks() {
         host.output,
         vec![
             "stopped zephyr true unsupported".to_string(),
-            "false unsupported 0".to_string()
+            "true null 3".to_string()
         ]
     );
 }
@@ -1815,8 +1930,7 @@ fn dispatches_zephyr_wifi_scan_network_auth_and_original_ssid_length() {
     };
     let mut scratch = vec![0u8; 4096];
     let mut context = sqvm_context_init();
-    let mut callbacks = callbacks(&mut host);
-    callbacks.wifi_scan = Some(zephyr_wifi_scan);
+    let callbacks = callbacks(&mut host);
 
     let status = unsafe {
         sqvm_context_init_in_place(
@@ -1844,6 +1958,7 @@ fn dispatches_zephyr_wifi_scan_network_auth_and_original_ssid_length() {
     assert_eq!(
         host.output,
         vec![
+            "3".to_string(),
             "40 6 -41 wpa2 false".to_string(),
             "0 11 -72 open true".to_string(),
             "10 1 -88 unknown false".to_string(),
@@ -2654,6 +2769,7 @@ fn missing_optional_service_callbacks_return_unsupported_records() {
     context = sqvm_context_init();
     host_callbacks = callbacks(&mut host);
     host_callbacks.wifi_scan = None;
+    host_callbacks.wifi_result = None;
 
     let status = unsafe {
         sqvm_context_init_in_place(
