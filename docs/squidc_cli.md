@@ -122,7 +122,13 @@ before measuring later work.
 `last_dispatch_seq`, `last_dispatch_us`,
 `last_sqbc_reads`, and `last_sqbc_bytes` report
 firmware-owned metrics for the most recent VM dispatch and are intended for
-hardware benchmarks that must exclude host serial latency. With `--json`,
+hardware benchmarks that must exclude host serial latency. `runtime_status`,
+`runtime_dispatch_started`, `runtime_dispatch_age_us`,
+`runtime_work_submitted`, `runtime_current_app_present`,
+`runtime_lifecycle_phase`, and `runtime_arm_phase` are lockup triage metrics:
+if serial remains responsive while app launch, input dispatch, or a service
+call appears stuck, compare these fields with the stack and heap fields before
+treating GPIO, flashing, or serial as the primary failure. With `--json`,
 parsed values are returned under `data.resources`. Firmware diagnostics should
 distinguish volatile temp-run state from installed-app code cache and app-store
 usage.

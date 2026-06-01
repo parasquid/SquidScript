@@ -2579,7 +2579,7 @@ ZTEST(squidscript_protocol, test_squidscript_owned_fixed_buffer_budgets)
 	zassert_equal(SQ_VM_RUNTIME_RETURN_STACK_MAX, 2);
 	zassert_equal(SQ_VM_RUNTIME_ARMED_TIMER_MAX, 2);
 	zassert_equal(SQ_VM_RUNTIME_INPUT_BUTTON_MAX, 2);
-	zassert_equal(SQ_DEVICE_RESPONSE_BYTES, 824);
+	zassert_equal(SQ_DEVICE_RESPONSE_BYTES, 1120);
 	zassert_true(sizeof(struct sq_device_protocol_scratch) <= 552,
 		     "protocol scratch=%zu", sizeof(struct sq_device_protocol_scratch));
 	zassert_true(sizeof(struct sq_device_install_session) <= 152,
@@ -2665,10 +2665,24 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 	uint64_t last_dispatch_elapsed_us = 99;
 	uint64_t last_dispatch_sqbc_read_count = 99;
 	uint64_t last_dispatch_sqbc_read_bytes = 99;
+	uint64_t runtime_status = 99;
+	uint64_t runtime_dispatch_started = 99;
+	uint64_t runtime_dispatch_age_us = 99;
+	uint64_t runtime_work_submitted = 99;
+	uint64_t runtime_current_app_present = 99;
+	uint64_t runtime_lifecycle_phase = 99;
+	uint64_t runtime_arm_phase = 99;
 	int result;
 
 	memset(&runtime, 0, sizeof(runtime));
 	sq_vm_runtime_init(&runtime);
+	runtime.status = SQ_VM_RUNTIME_RUNNING;
+	runtime.dispatch_started = true;
+	runtime.dispatch_start_cycles = 0;
+	runtime.work_submitted = true;
+	runtime.lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_SLEEP_REQUESTED;
+	runtime.arm_phase = SQ_VM_RUNTIME_ARM_REQUESTED;
+	strncpy(runtime.current_app, "triage-app", sizeof(runtime.current_app) - 1);
 	runtime.last_dispatch_sequence = 7;
 	runtime.last_dispatch_elapsed_us = 1234;
 	runtime.last_dispatch_sqbc_read_count = 2;
@@ -2683,7 +2697,7 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 	result = sq_device_protocol_handle_frame(request, sizeof(request), &context, response,
 						 sizeof(response), &response_len);
 	zassert_equal(result, SQ_PROTOCOL_OK, "resources result %d", result);
-	zassert_true(response_len <= 824, "resources response_len=%zu", response_len);
+	zassert_true(response_len <= 1120, "resources response_len=%zu", response_len);
 	zassert_true(response_len <= SQ_DEVICE_RESPONSE_BYTES);
 	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
 	zassert_equal(frame.opcode, SQ_OPCODE_RESOURCES_GET);
@@ -2713,6 +2727,27 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 	zassert_true(resource_value_for_key(&frame, "last_sqbc_bytes",
 					    &last_dispatch_sqbc_read_bytes));
 	zassert_equal(last_dispatch_sqbc_read_bytes, 2048);
+	zassert_true(resource_value_for_key(&frame, "runtime_status",
+					    &runtime_status));
+	zassert_equal(runtime_status, SQ_VM_RUNTIME_RUNNING);
+	zassert_true(resource_value_for_key(&frame, "runtime_dispatch_started",
+					    &runtime_dispatch_started));
+	zassert_equal(runtime_dispatch_started, 1);
+	zassert_true(resource_value_for_key(&frame, "runtime_dispatch_age_us",
+					    &runtime_dispatch_age_us));
+	zassert_true(runtime_dispatch_age_us > 0);
+	zassert_true(resource_value_for_key(&frame, "runtime_work_submitted",
+					    &runtime_work_submitted));
+	zassert_equal(runtime_work_submitted, 1);
+	zassert_true(resource_value_for_key(&frame, "runtime_current_app_present",
+					    &runtime_current_app_present));
+	zassert_equal(runtime_current_app_present, 1);
+	zassert_true(resource_value_for_key(&frame, "runtime_lifecycle_phase",
+					    &runtime_lifecycle_phase));
+	zassert_equal(runtime_lifecycle_phase, SQ_VM_RUNTIME_LIFECYCLE_SLEEP_REQUESTED);
+	zassert_true(resource_value_for_key(&frame, "runtime_arm_phase",
+					    &runtime_arm_phase));
+	zassert_equal(runtime_arm_phase, SQ_VM_RUNTIME_ARM_REQUESTED);
 	zassert_true(resource_value_for_key(&frame, "proto_stack_unused_bytes",
 					    &protocol_stack_unused));
 	zassert_true(resource_value_for_key(&frame, "proto_stack_used_bytes",

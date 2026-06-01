@@ -255,6 +255,26 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("dispatch_sqbc_read_bytes += out_len", runtime_c)
         self.assertIn("dispatch_sequence++", runtime_c)
 
+    def test_resources_include_runtime_lockup_triage_metrics(self):
+        protocol = self.read("firmware/zephyr/src/device_protocol.c")
+        start = protocol.index("static int __noinline resources_response")
+        end = protocol.index("static int clear_runtime_context")
+        body = protocol[start:end]
+
+        for metric in [
+            "runtime_status",
+            "runtime_dispatch_started",
+            "runtime_dispatch_age_us",
+            "runtime_work_submitted",
+            "runtime_current_app_present",
+            "runtime_lifecycle_phase",
+            "runtime_arm_phase",
+        ]:
+            self.assertIn(metric, body)
+
+        self.assertIn("k_cycle_get_64", body)
+        self.assertIn("k_cyc_to_us_floor64", body)
+
     def test_default_config_uses_measured_system_heap_budget(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
         ram_workloads = self.read("scripts/c3-supermini-measure-ram-workloads.sh")
@@ -943,6 +963,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_app_lifecycle_uses_explicit_phase_enum(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         protocol_c = self.read("firmware/zephyr/src/device_protocol.c")
+        lifecycle_c = self.read("firmware/zephyr/src/app_lifecycle.c")
         runtime_body = runtime_h[
             runtime_h.index("struct sq_vm_runtime {") : runtime_h.index(
                 "void sq_vm_runtime_init", runtime_h.index("struct sq_vm_runtime {")
@@ -967,7 +988,9 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("enum sq_vm_runtime_arm_phase", runtime_h)
         self.assertIn("enum sq_vm_runtime_arm_phase arm_phase;", runtime_body)
         self.assertIn("char arm_target_app[SQ_APP_STORE_APP_ID_MAX];", runtime_body)
-        self.assertIn("switch (runtime->lifecycle_phase)", poll_body)
+        self.assertIn("switch (runtime->lifecycle_phase)", lifecycle_c)
+        self.assertIn("sq_app_lifecycle_next_step", poll_body)
+        self.assertIn("switch (step.kind)", poll_body)
         for obsolete_flag in [
             "bool pending_launch_active;",
             "bool pending_arm_active;",
@@ -1210,7 +1233,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         stack = self.read("scripts/c3-supermini-measure-input-stack-isolation.sh")
         ffi_rs = self.read("compiler/rust/crates/squidvm-ffi/src/lib.rs")
 
-        self.assertIn("#define SQ_DEVICE_RESPONSE_BYTES 824u", header)
+        self.assertIn("#define SQ_DEVICE_RESPONSE_BYTES 1120u", header)
+        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 824u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 820u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 916u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 826u", header)
@@ -1385,7 +1409,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("sq_app_store_vm_storage_for_app_bytes", app_store_h)
         self.assertNotIn("char app_id_buffer[SQ_APP_STORE_APP_ID_MAX];", body)
         self.assertNotIn("memcpy(app_id_buffer, launch.app_id, launch.app_id_len);", body)
-        self.assertIn("context->runtime->lifecycle_target_app", body)
+        self.assertIn("sq_app_lifecycle_request_launch(context->runtime, launch.app_id", body)
         self.assertIn("ok_response(request, response, response_cap, response_len)", body)
 
     def test_app_launch_uses_pending_lifecycle_chain_without_direct_start(self):
@@ -1394,10 +1418,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         launch_end = protocol.index("static int start_installed_app", launch_start)
         launch_body = protocol[launch_start:launch_end]
 
-        self.assertIn(
-            "context->runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_LAUNCH_REQUESTED",
-            launch_body,
-        )
+        self.assertIn("sq_app_lifecycle_request_launch", launch_body)
         self.assertNotIn("sq_device_protocol_poll(context)", launch_body)
         self.assertNotIn("sq_vm_runtime_wait_idle", launch_body)
         self.assertNotIn("start_foreground_app_bytes", protocol)
@@ -2123,6 +2144,10 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('COMMAND_TIMEOUT_SECONDS:-20', helper)
         self.assertIn('Command failed or timed out', helper)
         self.assertIn('sed -n \'1,200p\' "${out}" >&2', helper)
+        self.assertIn("capture_device_diagnostics", helper)
+        self.assertIn("device resources", helper)
+        self.assertIn("device errors", helper)
+        self.assertIn("device lifecycle", helper)
 
         for script_path in sorted(scripts_dir.glob("c3-supermini-*.sh")):
             contents = script_path.read_text(encoding="utf-8")
@@ -2134,6 +2159,15 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             with self.subTest(script=script_path.name):
                 self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', contents)
                 self.assertNotIn("\nrun_capture() {\n", contents)
+
+    def test_shared_hardware_command_helper_captures_device_diagnostics_on_failure(self):
+        helper = self.read("scripts/lib/hardware-command.sh")
+
+        self.assertIn('capture_device_diagnostics "${name}-failure"', helper)
+        self.assertIn('${label}-resources.out', helper)
+        self.assertIn('${label}-errors.out', helper)
+        self.assertIn('${label}-lifecycle.out', helper)
+        self.assertNotIn("device output", helper)
 
     def test_hardware_scripts_use_deadline_based_polling(self):
         scripts_dir = ROOT / "scripts"
@@ -2178,6 +2212,49 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("Command failed or timed out", result.stderr)
         self.assertIn("--- ", result.stderr)
         self.assertIn("diagnostic-line", result.stderr)
+
+    def test_hardware_command_helper_runs_best_effort_diagnostics_on_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            cargo_log = tmp_path / "cargo.log"
+            fake_bin = tmp_path / "bin"
+            fake_bin.mkdir()
+            self.write_executable(
+                fake_bin / "cargo",
+                f"""#!/usr/bin/env bash
+printf '%s\\n' "$*" >>"{cargo_log}"
+exit 0
+""",
+            )
+            script = tmp_path / "probe.sh"
+            script.write_text(
+                f"""#!/usr/bin/env bash
+set -euo pipefail
+ROOT={ROOT}
+WORK_DIR={tmp_path}
+PATH={fake_bin}:$PATH
+source "${{ROOT}}/scripts/lib/hardware-command.sh"
+run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
+""",
+                encoding="utf-8",
+            )
+            script.chmod(script.stat().st_mode | stat.S_IXUSR)
+
+            result = subprocess.run(
+                [str(script)],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(result.returncode, 7)
+            log = cargo_log.read_text(encoding="utf-8")
+            self.assertIn("run --quiet -p squidc -- device resources", log)
+            self.assertIn("run --quiet -p squidc -- device errors", log)
+            self.assertIn("run --quiet -p squidc -- device lifecycle", log)
+            self.assertTrue((tmp_path / "failing-failure-resources.out").exists())
+            self.assertTrue((tmp_path / "failing-failure-errors.out").exists())
+            self.assertTrue((tmp_path / "failing-failure-lifecycle.out").exists())
 
     def test_hardware_output_helper_bounds_device_output_command(self):
         helper = self.read("scripts/lib/hardware-output.sh")
@@ -2755,20 +2832,21 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
     def test_protocol_poll_uses_runtime_scratch_instead_of_stack_arrays(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+        lifecycle = self.read("firmware/zephyr/src/app_lifecycle.c")
         start = protocol.index("int sq_device_protocol_poll")
         end = protocol.index("static int repeated_runtime_lines_response")
         body = protocol[start:end]
 
         self.assertNotIn("char target[SQ_APP_STORE_APP_ID_MAX];", body)
         self.assertNotIn("char armed_event[SQ_VM_RUNTIME_EVENT_LEN];", body)
-        self.assertIn("pop_return_app(runtime, runtime->lifecycle_target_app,", body)
         self.assertIn(
-            "sq_vm_runtime_next_due_armed_timer(runtime, runtime->lifecycle_target_app,",
-            body,
+            "sq_app_lifecycle_pop_return(runtime, runtime->lifecycle_target_app,",
+            lifecycle,
         )
-        self.assertIn("runtime->event, sizeof(runtime->event)", body)
-        self.assertIn("(const uint8_t *)runtime->event", body)
-        self.assertIn("strlen(runtime->event), true);", body)
+        self.assertIn("sq_vm_runtime_next_due_armed_timer", body)
+        self.assertIn("due_app, sizeof(due_app), due_event", body)
+        self.assertIn("(const uint8_t *)step.event", body)
+        self.assertIn("strlen(step.event), step.set_current);", body)
         self.assertIn("memmove(runtime->event, event, event_len);", runtime)
         self.assertIn("runtime->event[event_len] = '\\0';", runtime)
 
@@ -2914,9 +2992,8 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn('cargo run --quiet -p squidc -- app launch wifi-scan-summary', wifi)
         self.assertIn('output=wifi scan', wifi)
         self.assertIn('assert_no_raw_network_identifiers', wifi)
-        self.assertIn("capture_timeout_diagnostics", wifi)
-        self.assertIn("device resources", wifi)
-        self.assertIn("device errors", wifi)
+        self.assertIn("capture_device_diagnostics", wifi)
+        self.assertNotIn("capture_timeout_diagnostics", wifi)
         self.assertNotIn("obsolete", wifi.lower())
         self.assertNotIn("wifi ap", wifi)
         self.assertNotIn("app.exit()", self.read("tests/hardware/c3-supermini/wifi-scan-summary/main.squid"))
@@ -2931,11 +3008,19 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         wifi = self.read("scripts/c3-supermini-test-wifi-list-api.sh")
 
         self.assertIn('output=wifi list', wifi)
-        self.assertIn("capture_timeout_diagnostics", wifi)
-        self.assertIn("device resources", wifi)
-        self.assertIn("device errors", wifi)
+        self.assertIn("capture_device_diagnostics", wifi)
+        self.assertNotIn("capture_timeout_diagnostics", wifi)
         self.assertIn('assert_no_raw_network_identifiers', wifi)
         self.assertIn('assert_no_null_auth_rows', wifi)
+
+    def test_input_button_timeout_captures_shared_device_diagnostics(self):
+        script = self.read("scripts/c3-supermini-test-input-button.sh")
+
+        self.assertIn("capture_device_diagnostics", script)
+        self.assertIn("${label}-timeout", script)
+        self.assertIn("${WORK_DIR}/${label}-timeout-resources.out", script)
+        self.assertIn("${WORK_DIR}/${label}-timeout-errors.out", script)
+        self.assertIn("${WORK_DIR}/${label}-timeout-lifecycle.out", script)
 
     def test_hardware_suite_runs_redacted_wifi_status_before_scan(self):
         status = self.read("scripts/c3-supermini-test-wifi-state.sh")
@@ -3070,7 +3155,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
             )
         ]
         start_definition = protocol_c.index(
-            "static int start_installed_app(const struct sq_device_protocol_context *context,",
+            "static int start_installed_app_bytes(const struct sq_device_protocol_context *context,",
             protocol_c.index("static int __noinline launch_app"),
         )
         start_body = protocol_c[
@@ -3091,8 +3176,9 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
 
     def test_installed_app_start_uses_byte_slice_runtime_start(self):
         protocol_c = self.read("firmware/zephyr/src/device_protocol.c")
+        lifecycle_c = self.read("firmware/zephyr/src/app_lifecycle.c")
         start_definition = protocol_c.index(
-            "static int start_installed_app(const struct sq_device_protocol_context *context,",
+            "static int start_installed_app_bytes(const struct sq_device_protocol_context *context,",
             protocol_c.index("static int __noinline launch_app"),
         )
         start_body = protocol_c[
@@ -3115,8 +3201,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertNotIn("&backend", start_body)
         self.assertIn('(const uint8_t *)"app.start"', protocol_c)
         self.assertIn('sizeof("app.start") - 1, true', protocol_c)
-        self.assertIn('(const uint8_t *)"app.exit"', protocol_c)
-        self.assertIn('sizeof("app.exit") - 1, false', protocol_c)
+        self.assertIn('"app.exit", false', lifecycle_c)
 
     def test_zephyr_wifi_station_uses_real_connect_disconnect_backend(self):
         runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")

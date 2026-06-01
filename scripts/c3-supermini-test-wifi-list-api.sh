@@ -82,17 +82,6 @@ assert_no_null_auth_rows() {
   fi
 }
 
-capture_timeout_diagnostics() {
-  local label="$1"
-
-  timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" \
-    cargo run --quiet -p squidc -- device resources \
-    >"${WORK_DIR}/${label}-resources.out" 2>&1 || true
-  timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" \
-    cargo run --quiet -p squidc -- device errors \
-    >"${WORK_DIR}/${label}-errors.out" 2>&1 || true
-}
-
 wait_for_contains() {
   local label="$1"
   local expected="$2"
@@ -113,10 +102,11 @@ wait_for_contains() {
   printf 'Timed out waiting for %s in %s\n' "${expected}" "${command_name}" >&2
   printf '%s\n' "--- ${out} ---" >&2
   sed -n '1,200p' "${out}" >&2
-  capture_timeout_diagnostics "${label}-timeout"
-  printf 'timeout diagnostics: %s %s\n' \
+  capture_device_diagnostics "${label}-timeout"
+  printf 'timeout diagnostics: %s %s %s\n' \
     "${WORK_DIR}/${label}-timeout-resources.out" \
-    "${WORK_DIR}/${label}-timeout-errors.out" >&2
+    "${WORK_DIR}/${label}-timeout-errors.out" \
+    "${WORK_DIR}/${label}-timeout-lifecycle.out" >&2
   exit 1
 }
 

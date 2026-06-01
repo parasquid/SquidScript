@@ -2,6 +2,29 @@
 
 HARDWARE_COMMAND_LABEL="${HARDWARE_COMMAND_LABEL:-${0##*/}}"
 
+capture_device_diagnostics() {
+  local label="$1"
+  local timeout_seconds="${COMMAND_TIMEOUT_SECONDS:-20}"
+
+  if [[ "${SQUID_CAPTURE_DEVICE_DIAGNOSTICS:-1}" == "0" ]]; then
+    return 0
+  fi
+  if [[ -z "${WORK_DIR:-}" ]]; then
+    return 0
+  fi
+
+  printf 'Capturing device diagnostics for %s\n' "${label}" >&2
+  timeout "${timeout_seconds}s" \
+    cargo run --quiet -p squidc -- device resources \
+    >"${WORK_DIR}/${label}-resources.out" 2>&1 || true
+  timeout "${timeout_seconds}s" \
+    cargo run --quiet -p squidc -- device errors \
+    >"${WORK_DIR}/${label}-errors.out" 2>&1 || true
+  timeout "${timeout_seconds}s" \
+    cargo run --quiet -p squidc -- device lifecycle \
+    >"${WORK_DIR}/${label}-lifecycle.out" 2>&1 || true
+}
+
 run_capture() {
   local name="$1"
   shift
@@ -16,6 +39,11 @@ run_capture() {
     printf 'Command failed or timed out after %ss: %s\n' "${timeout_seconds}" "$*" >&2
     printf '%s\n' "--- ${out} ---" >&2
     sed -n '1,200p' "${out}" >&2
+    capture_device_diagnostics "${name}-failure"
+    printf 'failure diagnostics: %s %s %s\n' \
+      "${WORK_DIR}/${name}-failure-resources.out" \
+      "${WORK_DIR}/${name}-failure-errors.out" \
+      "${WORK_DIR}/${name}-failure-lifecycle.out" >&2
     return "${status}"
   fi
 }

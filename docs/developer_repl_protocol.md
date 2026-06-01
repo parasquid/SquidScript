@@ -234,7 +234,12 @@ is the immediate firmware build constraint.
 `proto_stack_unused_bytes`, `proto_stack_used_bytes`,
 `vm_stack_size_bytes`, `vm_stack_unused_bytes`, and
 `vm_stack_used_bytes` so future stack budget reductions can be based on
-representative real-device high-water data. It also reports live Zephyr heap
+representative real-device high-water data. It also reports
+`runtime_status`, `runtime_dispatch_started`, `runtime_dispatch_age_us`,
+`runtime_work_submitted`, `runtime_current_app_present`,
+`runtime_lifecycle_phase`, and `runtime_arm_phase` so a responsive serial
+protocol can distinguish a running or wedged VM dispatch from an idle runtime
+while triaging lockups. It also reports live Zephyr heap
 telemetry as `heap_count`, `heap_free_bytes`,
 `heap_alloc_bytes`, `heap_max_alloc_bytes`,
 `heap_largest_free_supported`, and `heap_largest_free_bytes`, so system-heap

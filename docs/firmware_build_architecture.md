@@ -122,7 +122,7 @@ walks can hold nested directories open.
 Zephyr filesystem filename buffer is capped at 80 bytes, matching the current
 package-relative resource-path protocol bound and avoiding 128-byte `fs_dirent`
 name slots in every directory/stat stack frame.
-Resource diagnostics are encoded directly into the caller-owned 824-byte
+Resource diagnostics are encoded directly into the caller-owned 1120-byte
 protocol response buffer and do not keep a resident metric staging array.
 Runtime diagnostic history is bounded to four 26-byte trace lines, six
 54-byte output lines, and four 48-byte draw-log lines so recent debugging data

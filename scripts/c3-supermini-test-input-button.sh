@@ -52,6 +52,11 @@ wait_for_contains() {
   printf 'Timed out waiting for %s in %s\n' "${expected}" "${command_name}" >&2
   printf '%s\n' "--- ${out} ---" >&2
   sed -n '1,200p' "${out}" >&2
+  capture_device_diagnostics "${label}-timeout"
+  printf 'timeout diagnostics: %s %s %s\n' \
+    "${WORK_DIR}/${label}-timeout-resources.out" \
+    "${WORK_DIR}/${label}-timeout-errors.out" \
+    "${WORK_DIR}/${label}-timeout-lifecycle.out" >&2
   exit 1
 }
 

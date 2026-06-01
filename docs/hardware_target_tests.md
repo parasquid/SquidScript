@@ -264,6 +264,32 @@ input and one currently pressed input, and `device output` changed from
 protocol/main stack flat at 2476 bytes and VM worker stack use at 17136 bytes,
 with 2320 bytes free.
 
+### Lockup Triage
+
+Hardware scripts that use `scripts/lib/hardware-command.sh` capture
+best-effort diagnostics on command failure or timeout:
+
+- `<label>-failure-resources.out`
+- `<label>-failure-errors.out`
+- `<label>-failure-lifecycle.out`
+
+Polling loops that wait for app output use the same helper with a
+`<label>-timeout-*` prefix. The diagnostics are bounded by
+`COMMAND_TIMEOUT_SECONDS` and are captured sequentially on the same serial
+target.
+
+When flashing succeeds but serial commands stall, app launch hangs, or input
+dispatch stops responding, inspect `device resources` first. Compare
+`proto_stack_*` and `vm_stack_*` used/unused values, then inspect
+`runtime_status`, `runtime_dispatch_started`, `runtime_dispatch_age_us`,
+`runtime_work_submitted`, `runtime_current_app_present`,
+`runtime_lifecycle_phase`, and `runtime_arm_phase`. If serial remains
+responsive and `runtime_dispatch_age_us` keeps growing, treat the VM worker or
+the active service path as the first suspect. If stack unused values are close
+to their guardrails, inspect recent FFI, metadata parsing, storage, and service
+changes for hidden stack temporaries before treating GPIO, flashing, or serial
+as the root cause.
+
 For the ESP32-C3 Super Mini reference board, treat GPIO9 as the confirmed BOOT
 button input path. Board pinout references identify GPIO9 as the BOOT button,
 and local hardware evidence confirms GPIO9 reads released as `true`, held as

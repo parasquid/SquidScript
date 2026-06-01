@@ -1563,6 +1563,13 @@ static int __noinline resources_response(const struct sq_protocol_request *reque
 	size_t heap_largest_free_bytes = 0;
 	size_t input_button_pressed_count = 0;
 	size_t input_button_state = 0;
+	size_t runtime_status = 0;
+	size_t runtime_dispatch_started = 0;
+	size_t runtime_dispatch_age_us = 0;
+	size_t runtime_work_submitted = 0;
+	size_t runtime_current_app_present = 0;
+	size_t runtime_lifecycle_phase = 0;
+	size_t runtime_arm_phase = 0;
 	bool reset_heap_max = false;
 
 	if (response == NULL || response_len == NULL || response_cap < SQ_PROTOCOL_HEADER_LEN) {
@@ -1628,6 +1635,20 @@ static int __noinline resources_response(const struct sq_protocol_request *reque
 		}
 		input_button_state = context->runtime->input_button_count |
 				     (input_button_pressed_count << 8);
+		runtime_status = (size_t)context->runtime->status;
+		runtime_dispatch_started = context->runtime->dispatch_started ? 1u : 0u;
+		if (context->runtime->dispatch_started) {
+			uint64_t dispatch_age_cycles =
+				k_cycle_get_64() - context->runtime->dispatch_start_cycles;
+			uint64_t dispatch_age_us = k_cyc_to_us_floor64(dispatch_age_cycles);
+
+			runtime_dispatch_age_us =
+				dispatch_age_us > UINT32_MAX ? UINT32_MAX : (size_t)dispatch_age_us;
+		}
+		runtime_work_submitted = context->runtime->work_submitted ? 1u : 0u;
+		runtime_current_app_present = context->runtime->current_app[0] == '\0' ? 0u : 1u;
+		runtime_lifecycle_phase = (size_t)context->runtime->lifecycle_phase;
+		runtime_arm_phase = (size_t)context->runtime->arm_phase;
 	}
 
 #define SQ_RESOURCE_METRIC(key_literal, metric_value) \
@@ -1658,6 +1679,13 @@ static int __noinline resources_response(const struct sq_protocol_request *reque
 	SQ_RESOURCE_METRIC("last_sqbc_bytes",
 			   context->runtime == NULL ? 0 :
 						      context->runtime->last_dispatch_sqbc_read_bytes);
+	SQ_RESOURCE_METRIC("runtime_status", runtime_status);
+	SQ_RESOURCE_METRIC("runtime_dispatch_started", runtime_dispatch_started);
+	SQ_RESOURCE_METRIC("runtime_dispatch_age_us", runtime_dispatch_age_us);
+	SQ_RESOURCE_METRIC("runtime_work_submitted", runtime_work_submitted);
+	SQ_RESOURCE_METRIC("runtime_current_app_present", runtime_current_app_present);
+	SQ_RESOURCE_METRIC("runtime_lifecycle_phase", runtime_lifecycle_phase);
+	SQ_RESOURCE_METRIC("runtime_arm_phase", runtime_arm_phase);
 	SQ_RESOURCE_METRIC("proto_stack_size_bytes", protocol_stack_size);
 	SQ_RESOURCE_METRIC("proto_stack_pre_unused_bytes",
 			   protocol_stack_pre_resources_unused);

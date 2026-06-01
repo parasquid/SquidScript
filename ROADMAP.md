@@ -100,7 +100,7 @@ Active RAM work:
 - Do not lower the 17,408-byte VM worker stack again without same-build
   input-button or equivalent logical-input fixture evidence proving the
   physical/input app path stays below the proposed budget.
-- Keep the 824-byte protocol response buffer until resources output is
+- Keep the 1120-byte protocol response buffer until resources output is
   redesigned again, because it is sized to the current largest response.
 - Treat `runtime.4` quota cuts as test-first changes: reduce VM records, record
   fields, dynamic string slots, trace/output/drawlog slots, or lifecycle/input
@@ -127,17 +127,6 @@ RAM verification notes:
   callback with bounded redacted AP rows. Future Wi-Fi scan RAM work should
   focus on result pagination/cursor behavior and broader service-state modeling,
   not the old unsupported scan path.
-
-## Firmware Lockup Triage
-
-- Add a firmware lockup triage pass for ESP32-C3 hardware work. When flashing
-  succeeds but serial commands stall, app launch hangs, or input dispatch stops
-  responding, check stack exhaustion early with `device resources`, compare
-  protocol/main and VM worker stack used/unused values, and inspect recent FFI,
-  metadata parsing, storage, and service paths for hidden stack temporaries
-  before treating GPIO, flashing, or serial as the primary failure.
-- Keep hardware scripts on the shared bounded command helper so command failure
-  and timeout reports include captured output and diagnostics.
 
 ## Explicit State Machines
 
