@@ -224,6 +224,13 @@ impl Field {
         }
     }
 
+    pub fn u32(tag: u8, value: u32) -> Self {
+        Self {
+            tag,
+            value: FieldValue::U32(value),
+        }
+    }
+
     pub fn u64(tag: u8, value: u64) -> Self {
         Self {
             tag,
@@ -246,6 +253,7 @@ pub enum FieldValue {
     String(String),
     Bool(bool),
     I64(i64),
+    U32(u32),
     U64(u64),
     Record(Vec<Field>),
 }
@@ -960,6 +968,11 @@ pub fn resources_get_request(sequence: u32) -> Frame {
 }
 
 #[cfg(feature = "alloc")]
+pub fn resources_get_request_with_heap_reset(sequence: u32) -> Frame {
+    Frame::request(Opcode::ResourcesGet, sequence, vec![Field::bool(1, true)])
+}
+
+#[cfg(feature = "alloc")]
 pub fn lifecycle_get_request(sequence: u32) -> Frame {
     Frame::request(Opcode::LifecycleGet, sequence, Vec::new())
 }
@@ -1244,6 +1257,7 @@ pub fn resource_values(frame: &Frame) -> Option<Vec<(String, u64)>> {
         for field in fields {
             match (field.tag, &field.value) {
                 (1, FieldValue::String(text)) => key = Some(text.clone()),
+                (2, FieldValue::U32(number)) => value = Some(u64::from(*number)),
                 (2, FieldValue::U64(number)) => value = Some(*number),
                 _ => {}
             }
@@ -1454,7 +1468,7 @@ where
     let mut payload_len = 0usize;
     for metric in metrics.clone() {
         let record_len = tlv_string_len(metric.key)?
-            .checked_add(tlv_u64_len())
+            .checked_add(tlv_u32_len())
             .ok_or(DecodeError::OutputTooSmall {
                 needed: usize::MAX,
                 capacity: out.len(),
@@ -1475,8 +1489,13 @@ where
         out,
         |mut payload| {
             for metric in metrics {
+                let value =
+                    u32::try_from(metric.value).map_err(|_| DecodeError::OutputTooSmall {
+                        needed: metric.value as usize,
+                        capacity: u32::MAX as usize,
+                    })?;
                 let record_len = tlv_string_len(metric.key)?
-                    .checked_add(tlv_u64_len())
+                    .checked_add(tlv_u32_len())
                     .ok_or(DecodeError::OutputTooSmall {
                         needed: usize::MAX,
                         capacity: payload.len(),
@@ -1484,7 +1503,7 @@ where
                 write_tlv_header(payload, 1, 32, record_len)?;
                 let (record, rest) = payload[4..].split_at_mut(record_len);
                 let record = write_string_tlv(record, 1, metric.key)?;
-                write_u64_tlv(record, 2, metric.value)?;
+                write_u32_tlv(record, 2, value)?;
                 payload = rest;
             }
             Ok(())
@@ -1744,6 +1763,10 @@ fn tlv_u64_len() -> usize {
     12
 }
 
+fn tlv_u32_len() -> usize {
+    8
+}
+
 fn tlv_record_len(value_len: usize) -> Result<usize, DecodeError> {
     if value_len > u16::MAX as usize {
         return Err(DecodeError::OutputTooSmall {
@@ -1790,6 +1813,12 @@ fn write_u64_tlv(out: &mut [u8], tag: u8, value: u64) -> Result<&mut [u8], Decod
     write_tlv_header(out, tag, 5, 8)?;
     out[4..12].copy_from_slice(&value.to_le_bytes());
     Ok(&mut out[12..])
+}
+
+fn write_u32_tlv(out: &mut [u8], tag: u8, value: u32) -> Result<&mut [u8], DecodeError> {
+    write_tlv_header(out, tag, 6, 4)?;
+    out[4..8].copy_from_slice(&value.to_le_bytes());
+    Ok(&mut out[8..])
 }
 
 fn write_active_line_tlv<'a>(out: &'a mut [u8], active: &str) -> Result<&'a mut [u8], DecodeError> {
@@ -1896,6 +1925,12 @@ pub fn parse_field_arg(kind: &str, value: &str) -> Result<Field, String> {
                 .parse()
                 .map_err(|error| format!("invalid u64 field {tag}: {error}"))?,
         )),
+        "u32" => Ok(Field::u32(
+            tag,
+            raw_value
+                .parse()
+                .map_err(|error| format!("invalid u32 field {tag}: {error}"))?,
+        )),
         "i64" => Ok(Field::i64(
             tag,
             raw_value
@@ -1945,6 +1980,7 @@ fn encoded_field_value_len(value: &FieldValue) -> Result<usize, DecodeError> {
         FieldValue::String(value) => Ok(value.len()),
         FieldValue::Bool(_) => Ok(1),
         FieldValue::I64(_) | FieldValue::U64(_) => Ok(8),
+        FieldValue::U32(_) => Ok(4),
         FieldValue::Record(fields) => encoded_fields_len(fields),
     }
 }
@@ -1958,6 +1994,7 @@ fn encode_fields_into(fields: &[Field], mut out: &mut [u8]) -> Result<(), Decode
             FieldValue::Bool(_) => 3,
             FieldValue::I64(_) => 4,
             FieldValue::U64(_) => 5,
+            FieldValue::U32(_) => 6,
             FieldValue::Record(_) => 32,
         };
         let value_len = encoded_field_value_len(&field.value)?;
@@ -1984,6 +2021,7 @@ fn encode_field_value_into(value: &FieldValue, out: &mut [u8]) -> Result<(), Dec
         FieldValue::Bool(value) => out[0] = u8::from(*value),
         FieldValue::I64(value) => out.copy_from_slice(&value.to_le_bytes()),
         FieldValue::U64(value) => out.copy_from_slice(&value.to_le_bytes()),
+        FieldValue::U32(value) => out.copy_from_slice(&value.to_le_bytes()),
         FieldValue::Record(fields) => encode_fields_into(fields, out)?,
     }
     Ok(())
@@ -2036,6 +2074,12 @@ fn decode_field_value(field_type: u8, value: &[u8]) -> Result<FieldValue, Decode
                 .try_into()
                 .map_err(|_| DecodeError::InvalidIntegerLength(value.len()))?;
             Ok(FieldValue::U64(u64::from_le_bytes(bytes)))
+        }
+        6 => {
+            let bytes: [u8; 4] = value
+                .try_into()
+                .map_err(|_| DecodeError::InvalidIntegerLength(value.len()))?;
+            Ok(FieldValue::U32(u32::from_le_bytes(bytes)))
         }
         32 => Ok(FieldValue::Record(decode_fields(value)?)),
         _ => Err(DecodeError::UnknownFieldType(field_type)),

@@ -23,6 +23,7 @@ impl StringTable for EmptyStringTable {
 
 #[test]
 fn runtime_record_field_limit_matches_largest_service_record() {
+    assert_eq!(MAX_RUNTIME_RECORDS, 8);
     assert_eq!(MAX_RUNTIME_RECORD_FIELDS, 26);
 }
 

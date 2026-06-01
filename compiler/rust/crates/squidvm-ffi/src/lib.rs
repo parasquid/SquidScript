@@ -4587,7 +4587,7 @@ mod tests {
     #[test]
     #[cfg(target_pointer_width = "32")]
     fn sqvm_context_still_fits_zephyr_runtime_context_buffer() {
-        const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 10_624;
+        const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 8_624;
         assert!(
             sqvm_context_size() <= ZEPHYR_RUNTIME_CONTEXT_BYTES,
             "SqvmContext is {} bytes and must fit firmware/zephyr/src/vm_runtime.h context_words",
@@ -4665,9 +4665,7 @@ fn wifi_auth_static(value: Option<&str>) -> Option<&'static str> {
         Some("open") | Some("OPEN") => Some("open"),
         Some("wep") | Some("WEP") | Some("WEP-OPEN") | Some("WEP-SHARED") => Some("wep"),
         Some("wpa") | Some("WPA-PSK") | Some("WPA/WPA2/WPA3 PSK") => Some("wpa"),
-        Some("wpa2") | Some("WPA2-PSK") | Some("WPA2-PSK-SHA256") | Some("FT-PSK") => {
-            Some("wpa2")
-        }
+        Some("wpa2") | Some("WPA2-PSK") | Some("WPA2-PSK-SHA256") | Some("FT-PSK") => Some("wpa2"),
         Some("wpa3")
         | Some("WPA3-SAE-HNP")
         | Some("WPA3-SAE-H2E")

@@ -74,8 +74,8 @@ if (( protocol_stack_unused < PROTOCOL_STACK_MIN_UNUSED_BYTES ||
   exit 1
 fi
 
-if [[ "$stack_size" != "19456" ]]; then
-  printf 'Expected vm_stack_size_bytes=19456, got %s\n' "$stack_size" >&2
+if [[ "$stack_size" != "17408" ]]; then
+  printf 'Expected vm_stack_size_bytes=17408, got %s\n' "$stack_size" >&2
   printf '%s\n' "--- ${resources_out} ---" >&2
   sed -n '1,200p' "${resources_out}" >&2
   exit 1

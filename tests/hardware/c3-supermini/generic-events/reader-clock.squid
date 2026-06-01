@@ -18,8 +18,8 @@ event.on("app.start") {
 
 event.on("timer.clock") {
   state.clocks = state.clocks + 1
-  debug.print("reader clock", state.clocks)
   if (state.clocks == 1) {
+    debug.print("reader clock", state.clocks)
     let armedThisTick = 0
     let armed = app.armedStack()
     for armedApp in armed max 2 {

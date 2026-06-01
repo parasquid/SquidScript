@@ -98,15 +98,18 @@ usage, AP DHCPv4 server support, and station DHCP/IP status reporting without
 TCP. Its
 measured `dram0_0_seg` must be read from the latest `scripts/zephyr-ram-audit.sh`
 output for the firmware image under test. The ESP32-C3 reference configuration
-uses bounded native-network packet and buffer pools sized for current
-low-throughput control-plane Wi-Fi behavior and measured socket-service,
+uses bounded 6/6 native-network packet pools and 16/16 network buffer pools
+sized for current low-throughput control-plane Wi-Fi behavior and measured
+socket-service,
 network-management event, ESP timer task, and network RX stack budgets; TCP,
 HTTP, AP client throughput, or other bulk traffic must be remeasured before
-increasing service scope. The Zephyr system heap is sized at 51200 bytes, the
-ESP32 Wi-Fi driver's documented system-heap floor for `ESP_WIFI_HEAP_SYSTEM`;
-remeasure it with live `device resources` data after representative app,
-display, device binding, file, Wi-Fi status, scan, and AP workloads before
-adding larger radio or networking workloads. `device resources`
+increasing service scope. The Zephyr system heap is sized at 45056 bytes for
+the current reference workload. This deliberately uses
+`CONFIG_HEAP_MEM_POOL_IGNORE_MIN` below the ESP32 Wi-Fi driver's 51200-byte
+`ESP_WIFI_HEAP_SYSTEM` minimum because reset-bounded workload telemetry provides
+a tighter app-specific ceiling; remeasure it with live `device resources` data
+after representative app, display, device binding, file, Wi-Fi status, scan,
+and AP workloads before adding larger radio or networking workloads. `device resources`
 also reports `heap_largest_free_supported` and `heap_largest_free_bytes`.
 Current ESP32-C3 Zephyr builds set the supported flag to `0` because the
 public Zephyr heap stats API exposes free/allocated/high-water bytes but no
@@ -174,6 +177,11 @@ The Zephyr GPIO input button check is
 the ESP32-C3 Super Mini BOOT/GPIO9 button to `key.SELECT`. The script verifies
 launch output, waits for a physical BOOT/GPIO9 press to increment app state, and
 the app starts a visible indicator blink when the press is handled.
+For RAM and stack-budget validation, host-injected `device key SELECT` events
+exercise the logical input dispatch and app handler path after an input event is
+queued. Physical GPIO9 checks are still required when validating the electrical
+pin, pull configuration, debounce, and binding path that turns the BOOT/GPIO9
+press into that logical event.
 
 `scripts/c3-supermini-probe-gpio9-raw.sh` is a targeted GPIO9 electrical
 diagnostic, not part of the full suite. It installs
@@ -203,7 +211,7 @@ app lifecycle checks in the full ESP32-C3 Super Mini suite. It records
 `device resources` output under `target/hardware-tests/stack-usage/` and
 verifies `proto_stack_*` and `vm_stack_*` metrics are
 internally consistent. The current firmware keeps the protocol/main stack budget
-at 5,120 bytes and the VM worker stack budget at 19,456 bytes. Treat the current
+at 5,120 bytes and the VM worker stack budget at 17,408 bytes. Treat the current
 budgets as the reliability baseline until lifecycle, registry, GPIO input, and
 stack resource checks pass with fresh hardware evidence for a smaller setting.
 The harness uses a command-level timeout for its
@@ -213,7 +221,7 @@ suite. GPIO-button device-binding launch coverage previously measured
 protocol/main stack use above the old 8 KiB budget before launch-time binding
 setup moved to the VM worker stack. Current broader same-build non-scan
 hardware coverage measured protocol/main stack use at 4,048 bytes with
-1,072 bytes free, and VM worker stack use at 16,160 bytes with 3,296 bytes
+1,072 bytes free, and VM worker stack use at 16,128 bytes with 1,280 bytes
 free. The repeatable non-scan wrapper is
 `scripts/c3-supermini-test-hardware-non-scan.sh`; a run with
 `--skip-physical-input` is useful for unattended same-build coverage but does
@@ -273,10 +281,10 @@ ESP32-C3 boot strapping, while GPIO4 and GPIO7 have alternate JTAG/FSPI-related
 functions, so broad unconfigured scans are not authoritative for button mapping.
 After flattening the resumable screen-render interpreter path and moving
 function calls onto the VM-owned continuation stack, the ESP32-C3 reference
-firmware now uses a 5,120-byte protocol/main stack and a 19,456-byte VM worker
+firmware now uses a 5,120-byte protocol/main stack and a 17,408-byte VM worker
 stack. The non-scan hardware suite with physical input skipped measured
 `proto_stack_used_bytes=4048`, `proto_stack_unused_bytes=1072`,
-`vm_stack_used_bytes=16160`, and `vm_stack_unused_bytes=3296`. Keep the stack
+`vm_stack_used_bytes=16128`, and `vm_stack_unused_bytes=1280`. Keep the stack
 harness in the validation path before lowering either budget again. The harness
 fails with the captured resource frame when protocol/main unused stack drops
 below 768 bytes or VM worker unused stack drops below 384 bytes.
@@ -297,20 +305,31 @@ distinguish stack already consumed before resource-response encoding from stack
 pressure caused by the diagnostic command itself. Stack values are Zephyr
 high-water readings for the current boot, so unchanged stack values across rows
 mean the peak happened before or during the earliest matching snapshot, not that
-every workload used the same stack depth. It is separate from the full hardware
-suite because it intentionally resets app storage. Re-run the workload harness
-after stack-budget changes when exact free-byte margins are needed. Current
+every workload used the same stack depth. Before each workload boundary, the
+harness runs `device resources --reset-heap-max`; each later
+`heap_max_alloc_bytes` row is therefore the peak since that reset, while
+`heap_alloc_bytes` remains the live allocation count at sample time. It is
+separate from the full hardware suite because it intentionally resets app
+storage. Re-run the workload harness after stack-budget changes when exact
+free-byte margins are needed. Current
 non-scan suite coverage measured the protocol/main stack at 4,048 bytes used
-with 1,072 bytes free and the VM worker stack at 16,160 bytes used with
-3,296 bytes free. Wi-Fi AP start/stop measured `heap_max_alloc_bytes=36460`.
+with 1,072 bytes free and the VM worker stack at 16,128 bytes used with
+1,280 bytes free. The current targeted RAM workload measured protocol/main
+stack at 2,292 bytes used, VM worker stack peak at 16,128 bytes used, Wi-Fi AP
+start at `heap_max_alloc_bytes=36432`, and Wi-Fi AP stop at
+`heap_max_alloc_bytes=36460`, leaving at least 8,596 bytes below the configured
+heap ceiling in those reset-bounded rows.
 `scripts/c3-supermini-measure-ram-workloads.sh` also records
-`heap_max_headroom_bytes`, computed from the configured 51,200-byte Zephyr
+`heap_max_headroom_bytes`, computed from the configured 45,056-byte Zephyr
 system heap and each row's allocation high-water mark, so AP/Wi-Fi pressure can
 be compared across workload rows without adding another firmware response
 metric.
 `heap_largest_free_supported=0` and `heap_largest_free_bytes=0` mean the
 current Zephyr public heap API does not expose a safe non-mutating
-largest-free-block query.
+largest-free-block query. `sys_heap_runtime_stats_get()` returns free,
+allocated, and max-allocated byte counts; `sys_heap_print_info()` prints bucket
+details but does not provide a bounded numeric telemetry value; heap listeners
+report allocation/free events rather than the current largest free block.
 
 `scripts/c3-supermini-test-system-resources.sh` runs after lifecycle coverage
 and before stack measurement. It installs

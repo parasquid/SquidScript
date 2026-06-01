@@ -116,6 +116,9 @@ enabled; `heap_*` fields are live allocator telemetry from the running
 firmware; `runtime_static_bytes` is the resident VM runtime object after
 internal buffer sharing; `vm_sqbc_chunk_bytes` is the bounded SQBC read/code
 window used for file-backed installed app dispatch.
+Use `device resources --reset-heap-max` at a workload boundary to reset
+Zephyr's heap allocation high-water statistic to the current allocated bytes
+before measuring later work.
 `last_dispatch_seq`, `last_dispatch_us`,
 `last_sqbc_reads`, and `last_sqbc_bytes` report
 firmware-owned metrics for the most recent VM dispatch and are intended for
@@ -150,13 +153,13 @@ when literal serial bytes are needed. JSON monitor output must be bounded with
 
 ```sh
 cargo run -p squidc -- protocol raw hello --seq 1 --string 1=esp32c3-supermini
-cargo run -p squidc -- protocol raw resources-get --u64 1=409600
+cargo run -p squidc -- protocol raw resources-get --u32 1=409600
 ```
 
 Use `protocol raw` for low-level Zephyr protocol troubleshooting only. It sends
 one binary framed request, not a text command. Field options are typed TLV
 entries: `--string TAG=VALUE`, `--bytes TAG=HEX`, `--bool TAG=true|false`,
-`--u64 TAG=VALUE`, and `--i64 TAG=VALUE`. Prefer grouped `app` and `device`
+`--u32 TAG=VALUE`, `--u64 TAG=VALUE`, and `--i64 TAG=VALUE`. Prefer grouped `app` and `device`
 commands for normal workflows.
 
 Framed command, app lifecycle, diagnostics, state, resources, and storage

@@ -44,8 +44,8 @@ Every frame starts with a 20-byte little-endian header:
 The payload is a compact TLV stream. Each field uses one byte for tag, one byte
 for type, two little-endian bytes for value length, then the value bytes. Field
 types are `0` bytes, `1` UTF-8 string, `3` bool, `4` signed 64-bit integer, `5`
-unsigned 64-bit integer, and `32` nested record. Repeated records are preserved
-as repeated TLV fields with the same tag.
+unsigned 64-bit integer, `6` unsigned 32-bit integer, and `32` nested record.
+Repeated records are preserved as repeated TLV fields with the same tag.
 
 The authoritative host codec lives in the shared Rust
 `squid-device-protocol` crate. Zephyr links that code through `squidvm-ffi`
@@ -235,10 +235,18 @@ telemetry as `heap_count`, `heap_free_bytes`,
 `heap_alloc_bytes`, `heap_max_alloc_bytes`,
 `heap_largest_free_supported`, and `heap_largest_free_bytes`, so system-heap
 budget reductions can be based on allocator high-water data and explicit
-fragmentation-probe availability instead of static map size alone. Current
+fragmentation-probe availability instead of static map size alone. A
+`resources-get` request may include bool field tag `1` set to `true` to reset
+Zephyr's heap allocation high-water statistic to the current allocated bytes
+before the response is sampled; the CLI exposes this as
+`device resources --reset-heap-max` for workload-boundary attribution. Current
 Zephyr public heap stats do not expose a safe non-mutating largest-free-block
-query, so ESP32-C3 firmware reports `heap_largest_free_supported=0` and
-`heap_largest_free_bytes=0` until a safe probe is added. `system.memory()`
+query: `sys_heap_runtime_stats_get()` returns only free, allocated, and
+max-allocated bytes, while `sys_heap_print_info()` prints bucket details instead
+of returning a bounded numeric value. The heap listener API reports allocation
+and free events, not the current largest free block. ESP32-C3 firmware therefore
+reports `heap_largest_free_supported=0` and `heap_largest_free_bytes=0` until a
+safe probe or allocation-failure mitigation is added. `system.memory()`
 remains a display-oriented summary; use `device resources` for raw heap
 diagnostics. `runtime_static_bytes` includes the Zephyr VM runtime object;
 the runtime shares its VM initialization scratch buffer with later storage
@@ -249,11 +257,12 @@ transfer window used for file-backed installed app dispatch; the full installed
 `scripts/zephyr-static-buffer-report.sh` for static ownership attribution: the
 current report separates SquidScript-owned runtime/protocol buffers from
 Zephyr, ESP, network, Wi-Fi, heap, and stack symbols. The ESP32-C3 Super Mini
-canonical configuration keeps Zephyr's system heap at 51,200 bytes.
+canonical configuration keeps Zephyr's system heap at 45,056 bytes.
 Representative app, display, system-resource, and Wi-Fi AP start/stop workloads
-measured `heap_max_alloc_bytes=36460`, leaving roughly 14.7 KiB below the
-configured heap ceiling. Remeasure before adding TCP, AP client throughput, BLE
-coexistence, or larger Wi-Fi workloads.
+with reset-bounded heap high-water rows measured Wi-Fi AP start at
+`heap_max_alloc_bytes=36432` and Wi-Fi AP stop at `heap_max_alloc_bytes=36460`,
+leaving at least 8,596 bytes below the configured heap ceiling. Remeasure before
+adding TCP, AP client throughput, BLE coexistence, or larger Wi-Fi workloads.
 
 Wi-Fi diagnostics should distinguish internal firmware/driver state from
 external RF proof. A successful Zephyr Wi-Fi status record does not by itself

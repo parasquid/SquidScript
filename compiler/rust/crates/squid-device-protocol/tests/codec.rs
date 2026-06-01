@@ -5,8 +5,9 @@ use squid_device_protocol::{
     encode_error_response_into, encode_frame, encode_frame_into, encode_hello_response_into,
     encode_lifecycle_response_into, encode_line_response_into, encode_resources_response_into,
     hello_identity, hello_request, key_event_from_request_into, key_request, lifecycle_lines,
-    output_lines, resource_values, AppListEntry, DecodeError, Field, FieldValue, Frame, FrameKind,
-    LifecycleTimer, Opcode, ResourceMetric, Status,
+    output_lines, resource_values, resources_get_request_with_heap_reset, AppListEntry,
+    DecodeError, Field, FieldValue, Frame, FrameKind, LifecycleTimer, Opcode, ResourceMetric,
+    Status,
 };
 
 #[test]
@@ -241,6 +242,10 @@ fn encodes_heap_free_resources_response_from_metrics() {
     assert_eq!(decoded.kind, FrameKind::Response);
     assert_eq!(decoded.opcode, Opcode::ResourcesGet);
     assert_eq!(decoded.status, Status::Ok);
+    let FieldValue::Record(first_fields) = &decoded.fields[0].value else {
+        panic!("first resource metric should be a record");
+    };
+    assert!(matches!(first_fields[1].value, FieldValue::U32(409_600)));
     assert_eq!(
         resource_values(&decoded).unwrap(),
         vec![
@@ -248,6 +253,16 @@ fn encodes_heap_free_resources_response_from_metrics() {
             ("proto_stack_used_bytes".to_string(), 3_928),
         ]
     );
+}
+
+#[test]
+fn encodes_resources_get_request_with_heap_max_reset() {
+    let request = resources_get_request_with_heap_reset(17);
+
+    assert_eq!(request.kind, FrameKind::Request);
+    assert_eq!(request.opcode, Opcode::ResourcesGet);
+    assert_eq!(request.sequence, 17);
+    assert_eq!(request.fields, vec![Field::bool(1, true)]);
 }
 
 #[test]

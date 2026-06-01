@@ -63,7 +63,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   reductions for the largest static allocations, especially VM runtime storage,
   work stacks, response/session buffers, logging, LittleFS pools, and file
   caches. Current target configuration uses a 5,120-byte protocol/main stack
-  and a 19,456-byte VM worker stack. The stack harness fails with captured
+  and a 17,408-byte VM worker stack. The stack harness fails with captured
   resources if
   protocol/main unused stack drops below 768 bytes or VM worker unused stack
   drops below 384 bytes. For host-side attribution before physical
@@ -74,12 +74,31 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   because per-function `.su` reductions can increase real stack high-water use
   when a larger callee remains active under the caller.
   Current ESP32-C3 build evidence with the real Wi-Fi scan backend enabled
-  reports 209,072 bytes of linker DRAM, 209,044 bytes through
-  `zephyr-ram-audit`, and a 14,376-byte `runtime.4` static runtime symbol. The
+  reports 195,632 bytes of linker DRAM, 195,604 bytes through
+  `zephyr-ram-audit`, and a 12,264-byte `runtime.4` static runtime symbol. The
   static-buffer report classifies the top ESP32-C3 symbols as approximately
-  100 KiB platform-owned, 36 KiB SquidScript-owned, and 8 KiB unknown small
-  symbols; classify any large unknown future symbols before using group totals
-  for reduction decisions.
+  89 KiB platform-owned, 32 KiB SquidScript-owned, and 8 KiB unknown small
+  symbols. Recent SquidScript-owned reductions lowered the runtime output
+  history from eight to six retained lines and the VM operand stack from 32 to
+  16 values, then lowered the resident protocol response buffer from 916 to 824
+  bytes by encoding resource metric values as U32 TLVs, then capped the linked
+  Rust VM context reservation at 10,304 bytes after the then-current RISC-V
+  `sqvm_context_size()` measured 10,284 bytes, then reduced the VM worker stack
+  from 19,456 to 18,432 bytes using the existing confirmed GPIO9 press row and
+  current same-build non-scan stack evidence, then lowered the configured Zephyr
+  system heap from 51,200 to 45,056 bytes based on reset-bounded heap high-water
+  rows, then lowered the native network packet pools from 10/10 packets and
+  24/24 buffers to 6/6 packets and 16/16 buffers for the current
+  low-throughput Wi-Fi scope, then capped service-result runtime records from
+  12 to 8 and lowered the linked Rust VM context reservation to 8,624 bytes
+  after the RISC-V `sqvm_context_size()` measured 8,604 bytes, then reduced
+  the VM worker stack from 18,432 to 17,408 bytes using same-build broad
+  hardware evidence. Together these save at least 13,440 bytes of linker DRAM
+  and 13,440 bytes of RAM-audit DRAM
+  while preserving current host, Zephyr, real Wi-Fi scan/list, and non-scan
+  hardware coverage. Classify any large unknown future symbols before using
+  group totals for reduction
+  decisions.
   Current same-build non-scan hardware coverage on the flashed target passed
   app state, foreground memory, app lifecycle, app registry, display drawlog,
   system resources, indicator state, device binding, inline GPIO binding,
@@ -87,28 +106,38 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   pick, stack usage, Wi-Fi status, Wi-Fi AP, and final blinky checks. Use
   `scripts/c3-supermini-test-hardware-non-scan.sh` to repeat that same-build
   RAM-confidence path; `--skip-physical-input` is allowed only for unattended
-  stack/RAM coverage and does not validate the physical GPIO9 press row. The
-  same-build physical input-button check reached the BOOT/GPIO9 prompt but
-  timed out with `output=count 0`, so the physical press row still needs a
-  confirmed run. The targeted RAM workload measured
-  protocol/main stack at 4,048 bytes used and VM worker stack peak at 16,128
-  bytes used before the current stack-size cuts, plus Wi-Fi AP heap high-water at
-  `heap_max_alloc_bytes=36460`. The GPIO9 input stack isolation path refreshed
-  current-format resource rows through `after-press-timeout`; without a
+  stack/RAM coverage and does not validate the physical GPIO9 press row.
+  Logical input dispatch stack coverage can use host-injected
+  `device key SELECT` events; the physical GPIO9 tests validate the
+  electrical/binding path that queues the same logical event. A completed
+  physical GPIO9 input-stack run observed `after-press-observed` with
+  `input_button_state=257`, proving one configured input and one currently
+  pressed input; app output changed from `output=count 0` to `output=count 1`.
+  The press row kept protocol/main stack flat at 2,476 bytes and VM worker stack
+  at 17,136 bytes with 2,320 bytes free. The current targeted RAM workload
+  measured protocol/main stack at 2,292 bytes used and VM worker stack peak at
+  16,128 bytes used.
+  The Zephyr system heap is currently capped at 45,056 bytes, below the ESP32
+  Wi-Fi driver's 51,200-byte `ESP_WIFI_HEAP_SYSTEM` minimum through
+  `CONFIG_HEAP_MEM_POOL_IGNORE_MIN`, because current reset-bounded workloads
+  provide a tighter app-specific ceiling. Reset-bounded heap workload rows
+  measured Wi-Fi AP start at `heap_max_alloc_bytes=36432` and Wi-Fi AP stop at
+  `heap_max_alloc_bytes=36460`, leaving at least 8,596 bytes below the
+  configured heap ceiling. The GPIO9 input stack isolation path
+  refreshed current-format resource rows through `after-press-timeout`; without a
   physical press, `input_button_state=1` proves one configured input and zero
   currently pressed inputs during that run, not dispatch. The broader
   same-build non-scan stack checkpoint measured protocol/main stack at
   4,048 bytes used with 1,072 bytes free and VM worker stack at
-  16,160 bytes used with 3,296 bytes free. Current
+  16,128 bytes used with 1,280 bytes free. Current
   `device resources` includes
   `heap_largest_free_supported` and `heap_largest_free_bytes`; ESP32-C3 reports
   `0/0` because the public Zephyr heap stats available in this build do not
-  expose a safe non-mutating largest-free-block query. Physical GPIO9 input
-  isolation still needs a same-build confirmed press row before another stack
-  reduction. Real ESP32-C3 Zephyr Wi-Fi scan/list coverage now passes through
-  the driver scan callback with bounded redacted AP rows; keep future Wi-Fi
-  scan work focused on result pagination/cursor APIs and broader service-state
-  modeling rather than the old unsupported scan path.
+  expose a safe non-mutating largest-free-block query. Real ESP32-C3 Zephyr
+  Wi-Fi scan/list coverage now passes through the driver scan callback with
+  bounded redacted AP rows; keep future Wi-Fi scan work focused on result
+  pagination/cursor APIs and broader service-state modeling rather than the old
+  unsupported scan path.
 
   Current stack report evidence shows that the previous
   `commit_install -> sq_app_store_scan_registry_with_path -> join_path2`
@@ -145,42 +174,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   before treating GPIO, flashing, or serial as the primary failure. Hardware
   scripts now use the shared bounded command helper, which prints captured
   command output when a command fails or times out.
-- Complete physical GPIO9 input stack attribution and budget reduction.
-  `scripts/c3-supermini-measure-input-stack-isolation.sh` now records a
-  fresh-boot physical input path baseline through format, install, launch, and
-  observed BOOT/GPIO9 press. Current launch evidence shows protocol/main stack
-  flat at 2476 bytes and VM worker stack reduced from 17296 to 17056 bytes by
-  narrowing FFI app process/armed stack scratch to the firmware's two-entry
-  limit. The launch and timeout rows now include `input_button_state`, where the
-  low byte is configured input count and the next byte is currently pressed
-  count, so timeout runs can prove whether the physical binding was installed
-  and whether the firmware saw the line pressed. Current hardware evidence has
-  `input_button_state=1` at launch and after release, meaning the GPIO9 binding
-  is installed and the line now reads released after devicetree pull-up
-  configuration. The input isolation script now asks for a held press and
-  separates electrical press timeout from dispatch/output timeout. The raw GPIO9
-  probe confirms `hardware.gpio.read("GPIO9")` sees released as `true` and held
-  as `false` with the same pull-up configuration, separating physical pin
-  visibility from event dispatch. A completed physical GPIO9 input-stack run
-  observed `after-press-observed` with `input_button_state=257`, proving one
-  configured input and one currently pressed input; app output changed from
-  `output=count 0` to `output=count 1`. The press row kept protocol/main stack
-  flat at 2476 bytes and VM worker stack at 17136 bytes with 2320 bytes free in
-  the current skip-flash run. The broader BOOT-button pin scan samples GPIO0
-  through GPIO10 and now requires repeated stable changed samples before
-  accepting a result because a pen-held tiny button can slip and floating or
-  unconfigured pins can produce one-off changed samples. For the ESP32-C3 Super
-  Mini reference board, treat GPIO9 as the confirmed physical input path; do
-  not treat GPIO3, GPIO4, GPIO7, GPIO10, or GPIO5 scan changes as real buttons
-  without targeted confirmation. Current stack budgets are validated by the
-  non-scan hardware suite at 5,120 bytes for protocol/main and 19,456 bytes for
-  the VM worker. Before another stack reduction, remeasure the physical press
-  row and keep protocol/main headroom above the stack harness minimum.
-- Improve network heap attribution before expanding Wi-Fi scope. Current AP
-  start/stop hardware coverage drives `heap_max_alloc_bytes=36460` against the
-  51,200-byte configured Zephyr system heap; add clearer per-workload heap
-  reset or attribution before TCP, AP client throughput, BLE coexistence, or
-  larger network workloads.
 - Convert blocking Wi-Fi VM callbacks to nonblocking runtime progress. Current
   Zephyr `wifi.connect`, `wifi.disconnect`, and `wifi.scan` callbacks wait on
   semaphores for up to 15s, 5s, and 8s respectively. They run in the VM worker
@@ -188,20 +181,34 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   and conflict with the firmware rule that services should use short steps,
   async progress, or target scheduler integration.
 - Continue SquidScript-owned static DRAM reductions using the classified
-  static-buffer report. Current deferred candidates are VM context cap
-  investigation, protocol response cap investigation, bounded output/trace/
-  drawlog queue review, and replacing resident Wi-Fi scan result storage with a
-  cursor-backed API if the Wi-Fi scan design moves forward. Keep Zephyr kernel
-  stacks, system heap, network packet pools, Wi-Fi driver storage, and other
-  platform symbols separate unless platform RAM policy is explicitly in scope.
+  static-buffer report. Current same-build evidence does not justify lowering
+  the 17,408-byte VM worker stack further: the broad non-scan suite leaves
+  1,280 bytes free, while the stack harness requires at least 384 bytes and the
+  older physical GPIO9 input isolation row peaked at 17,136 bytes on the then
+  current image. Lower it only after a same-build input-button or equivalent
+  logical-input fixture proves the physical/input app path stays below the new
+  candidate budget. Keep the 824-byte protocol response buffer until resources
+  output is redesigned again, because it is sized to the current largest
+  response. Treat `runtime.4` quota cuts as test-first changes: reduce VM
+  records, record fields, dynamic string slots, trace/output/drawlog slots, or
+  lifecycle/input arrays only when compiler/runtime fixtures and hardware apps
+  show the smaller quota still covers current behavior. Replacing resident
+  Wi-Fi scan result storage with a cursor-backed API remains a separate design
+  item if Wi-Fi scan pagination moves forward. Keep Zephyr kernel stacks,
+  system heap, network packet pools, Wi-Fi driver storage, and other platform
+  symbols separate unless platform RAM policy is explicitly in scope.
 - Add a safe largest-free-block heap probe or mitigation path for ESP32-C3
   Zephyr RAM work. `device resources` now reports allocation high-water data and
-  largest-free-block support/value fields, but the current public Zephyr heap
-  stats do not expose a safe non-mutating largest-free-block query. Continue
-  with a target-safe probe, subsystem allocation-failure attribution, or heap
-  design mitigation such as fixed arenas, caller-owned buffers, bounded
-  scratch, slabs/pools for unavoidable dynamic allocations, and startup-owned
-  long-lived allocations instead of mixed-lifetime heap usage.
+  largest-free-block support/value fields, and workload scripts can reset the
+  allocation high-water mark at measurement boundaries. The current public
+  Zephyr heap stats API only returns free, allocated, and max-allocated bytes;
+  `sys_heap_print_info()` prints bucket details but does not return bounded
+  numeric telemetry, and heap listeners report allocation/free events rather
+  than the current largest free block. Continue with a target-safe probe,
+  subsystem allocation-failure attribution, or heap design mitigation such as
+  fixed arenas, caller-owned buffers, bounded scratch, slabs/pools for
+  unavoidable dynamic allocations, and startup-owned long-lived allocations
+  instead of mixed-lifetime heap usage.
 - Refactor implicit runtime state-machine concepts into explicit, documented,
   testable abstractions where the transition model is already meaningful.
   Treat the app lifecycle as the first candidate, followed by device input

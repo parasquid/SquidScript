@@ -13,10 +13,11 @@ use squid_device_protocol::{
     errors_get_request, event_dispatch_request, hello_identity, hello_request, key_request,
     lifecycle_get_request, lifecycle_lines, output_get_request, output_lines, protocol_error,
     reset_request, resource_install_begin_request, resource_install_chunk_request,
-    resource_install_commit_request, resource_values, resources_get_request, state_bytes,
-    state_get_request, state_import_request, storage_format_request, temp_run_begin_request,
-    temp_run_chunk_request, temp_run_commit_request, trace_get_request, trace_lines,
-    wifi_profile_set_request, AppEntry, DecodeError, Frame, FrameKind, Status, HEADER_LEN, MAGIC,
+    resource_install_commit_request, resource_values, resources_get_request,
+    resources_get_request_with_heap_reset, state_bytes, state_get_request, state_import_request,
+    storage_format_request, temp_run_begin_request, temp_run_chunk_request,
+    temp_run_commit_request, trace_get_request, trace_lines, wifi_profile_set_request, AppEntry,
+    DecodeError, Frame, FrameKind, Status, HEADER_LEN, MAGIC,
 };
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
@@ -180,8 +181,13 @@ impl SerialDevice {
         state_bytes(&frame).ok_or_else(|| "not a successful state response".to_string())
     }
 
-    pub fn resource_values(&mut self) -> Result<Vec<(String, u64)>, String> {
-        let frame = self.send_protocol_request(&resources_get_request(8))?;
+    pub fn resource_values(&mut self, reset_heap_max: bool) -> Result<Vec<(String, u64)>, String> {
+        let request = if reset_heap_max {
+            resources_get_request_with_heap_reset(8)
+        } else {
+            resources_get_request(8)
+        };
+        let frame = self.send_protocol_request(&request)?;
         resource_values(&frame).ok_or_else(|| "not a successful resources response".to_string())
     }
 

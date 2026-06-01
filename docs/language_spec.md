@@ -4416,6 +4416,7 @@ strings, and intermediate concatenation results do not.
 
 Current reference VM limits:
 
+- operand stack values per event frame: 16
 - dynamic string references per event after state retention: 32
 - dynamic string byte arena per event after state retention: 512 bytes
 - maximum bytes in one dynamic string: 48 bytes

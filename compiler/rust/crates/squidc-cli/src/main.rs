@@ -134,7 +134,7 @@ enum DeviceCommands {
     Trace(DeviceOnlyArgs),
     Lifecycle(DeviceOnlyArgs),
     Errors(DeviceOnlyArgs),
-    Resources(DeviceOnlyArgs),
+    Resources(DeviceResourcesArgs),
     StorageFormat(DeviceOnlyArgs),
     Monitor(MonitorArgs),
 }
@@ -218,6 +218,14 @@ struct DeviceOnlyArgs {
 }
 
 #[derive(Args, Debug)]
+struct DeviceResourcesArgs {
+    #[command(flatten)]
+    device: DeviceOnlyOptions,
+    #[arg(long)]
+    reset_heap_max: bool,
+}
+
+#[derive(Args, Debug)]
 struct ProtocolRawArgs {
     #[command(flatten)]
     device: DeviceOnlyOptions,
@@ -232,6 +240,8 @@ struct ProtocolRawArgs {
     r#bool: Vec<String>,
     #[arg(long = "u64")]
     u64: Vec<String>,
+    #[arg(long = "u32")]
+    u32: Vec<String>,
     #[arg(long = "i64")]
     i64: Vec<String>,
 }
@@ -582,6 +592,9 @@ fn protocol_raw(args: ProtocolRawArgs, human: bool) -> Result<Value, String> {
     for value in &args.u64 {
         fields.push(protocol::parse_field_arg("u64", value)?);
     }
+    for value in &args.u32 {
+        fields.push(protocol::parse_field_arg("u32", value)?);
+    }
     for value in &args.i64 {
         fields.push(protocol::parse_field_arg("i64", value)?);
     }
@@ -612,10 +625,10 @@ fn hex_string(bytes: &[u8]) -> String {
     out
 }
 
-fn resources(args: DeviceOnlyArgs, human: bool) -> Result<Value, String> {
+fn resources(args: DeviceResourcesArgs, human: bool) -> Result<Value, String> {
     let port = resolve_port(&args.device)?;
     let mut device = SerialDevice::open(&port)?;
-    let resources = device.resource_values()?;
+    let resources = device.resource_values(args.reset_heap_max)?;
     if human {
         for (key, value) in &resources {
             println!("{key}={value}");
@@ -1514,7 +1527,7 @@ impl ReplSession {
             ["trace"] => format_lines("trace", &device.trace_lines()?),
             ["drawlog"] => format_raw_lines(&device.drawlog_lines()?),
             ["resources"] => device
-                .resource_values()?
+                .resource_values(false)?
                 .into_iter()
                 .map(|(key, value)| format!("{key}={value}\n"))
                 .collect::<String>(),
@@ -1815,6 +1828,8 @@ event.on("app.start") {
             "target=esp32c3-supermini",
             "--bool",
             "diagnostic=true",
+            "--u32",
+            "capacity=824",
         ])
         .unwrap();
         let Commands::Protocol {
@@ -1827,17 +1842,20 @@ event.on("app.start") {
         assert_eq!(args.seq, 7);
         assert_eq!(args.string, vec!["target=esp32c3-supermini".to_string()]);
         assert_eq!(args.r#bool, vec!["diagnostic=true".to_string()]);
+        assert_eq!(args.u32, vec!["capacity=824".to_string()]);
     }
 
     #[test]
     fn parses_device_resources_command_and_resource_block() {
-        let cli = Cli::try_parse_from(["squidc", "device", "resources"]).unwrap();
+        let cli =
+            Cli::try_parse_from(["squidc", "device", "resources", "--reset-heap-max"]).unwrap();
         let Commands::Device {
-            command: DeviceCommands::Resources(_),
+            command: DeviceCommands::Resources(args),
         } = cli.command
         else {
             panic!("expected device resources");
         };
+        assert!(args.reset_heap_max);
     }
 
     #[test]

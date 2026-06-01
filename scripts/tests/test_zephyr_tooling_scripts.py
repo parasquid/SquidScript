@@ -151,10 +151,10 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         prj_conf = self.read("firmware/zephyr/prj.conf")
 
         for option in [
-            "CONFIG_NET_PKT_RX_COUNT=10",
-            "CONFIG_NET_PKT_TX_COUNT=10",
-            "CONFIG_NET_BUF_RX_COUNT=24",
-            "CONFIG_NET_BUF_TX_COUNT=24",
+            "CONFIG_NET_PKT_RX_COUNT=6",
+            "CONFIG_NET_PKT_TX_COUNT=6",
+            "CONFIG_NET_BUF_RX_COUNT=16",
+            "CONFIG_NET_BUF_TX_COUNT=16",
             "CONFIG_NET_MGMT_EVENT_QUEUE_SIZE=8",
             "CONFIG_NET_MGMT_EVENT_QUEUE_TIMEOUT=5000",
         ]:
@@ -214,6 +214,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("heap_free_bytes", body)
         self.assertIn("heap_alloc_bytes", body)
         self.assertIn("heap_max_alloc_bytes", body)
+        self.assertIn("sys_heap_runtime_stats_reset_max", body)
         self.assertIn("heap_largest_free_supported", body)
         self.assertIn("heap_largest_free_bytes", body)
         self.assertIn("proto_stack_pre_unused_bytes", body)
@@ -258,10 +259,12 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         prj_conf = self.read("firmware/zephyr/prj.conf")
         ram_workloads = self.read("scripts/c3-supermini-measure-ram-workloads.sh")
 
-        self.assertIn("CONFIG_HEAP_MEM_POOL_SIZE=51200", prj_conf)
+        self.assertIn("CONFIG_HEAP_MEM_POOL_SIZE=45056", prj_conf)
+        self.assertNotIn("CONFIG_HEAP_MEM_POOL_SIZE=51200", prj_conf)
         self.assertIn("CONFIG_HEAP_MEM_POOL_IGNORE_MIN=y", prj_conf)
         self.assertNotIn("CONFIG_HEAP_MEM_POOL_ADD_SIZE_ESP_WIFI=", prj_conf)
-        self.assertIn('SYSTEM_HEAP_BYTES="${SYSTEM_HEAP_BYTES:-51200}"', ram_workloads)
+        self.assertIn('SYSTEM_HEAP_BYTES="${SYSTEM_HEAP_BYTES:-45056}"', ram_workloads)
+        self.assertNotIn('SYSTEM_HEAP_BYTES="${SYSTEM_HEAP_BYTES:-51200}"', ram_workloads)
         self.assertIn("heap_max_headroom_bytes", ram_workloads)
         self.assertIn("SYSTEM_HEAP_BYTES - heap_max_alloc", ram_workloads)
 
@@ -438,7 +441,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
                 "#!/usr/bin/env bash\n"
                 "cat <<'EOF'\n"
                 "3fc90000 00005600 B sq_vm_runtime_work_stack\n"
-                "3fc95600 00003a28 b runtime.4\n"
+                "3fc95600 00002fe8 b runtime.4\n"
                 "3fc99000 00002000 B z_main_stack\n"
                 "3fc9b000 00000400 b sys_work_q_stack\n"
                 "3fc9b400 000003c0 D TxRxCxt\n"
@@ -647,15 +650,17 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         stack_script = self.read("scripts/c3-supermini-measure-stack-usage.sh")
 
-        self.assertIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 19456", runtime_h)
-        self.assertIn('Expected vm_stack_size_bytes=19456', stack_script)
+        self.assertIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 17408", runtime_h)
+        self.assertIn('Expected vm_stack_size_bytes=17408', stack_script)
+        self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 18432", runtime_h)
+        self.assertNotIn('Expected vm_stack_size_bytes=18432', stack_script)
         self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 20480", runtime_h)
         self.assertNotIn('Expected vm_stack_size_bytes=20480', stack_script)
         self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 22016", runtime_h)
         self.assertNotIn('Expected vm_stack_size_bytes=22016', stack_script)
         self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 18048", runtime_h)
         self.assertNotIn('Expected vm_worker_stack_size_bytes=18048', stack_script)
-        self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 18432", runtime_h)
+        self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 19456", runtime_h)
         self.assertNotIn('Expected vm_worker_stack_size_bytes=18432', stack_script)
         self.assertNotIn('Expected vm_worker_stack_size_bytes=19456', stack_script)
         self.assertNotIn('Expected vm_worker_stack_size_bytes=20480', stack_script)
@@ -677,6 +682,44 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('WORKER_STACK_MIN_UNUSED_BYTES="${WORKER_STACK_MIN_UNUSED_BYTES:-384}"', stack_script)
         self.assertIn("Protocol stack headroom below", stack_script)
         self.assertIn("VM worker stack headroom below", stack_script)
+
+    def test_ram_reference_docs_track_current_esp32c3_baseline(self):
+        stack_script = self.read("scripts/c3-supermini-measure-stack-usage.sh")
+        docs = {
+            "ROADMAP.md": self.read("ROADMAP.md"),
+            "docs/firmware_build_architecture.md": self.read(
+                "docs/firmware_build_architecture.md"
+            ),
+            "docs/hardware_target_tests.md": self.read(
+                "docs/hardware_target_tests.md"
+            ),
+            "docs/firmware_app_storage.md": self.read("docs/firmware_app_storage.md"),
+        }
+
+        for path, contents in docs.items():
+            with self.subTest(path=path):
+                self.assertNotIn("22,016 bytes", contents)
+                self.assertNotIn("22,016-byte", contents)
+                self.assertNotIn("22016 bytes", contents)
+                self.assertNotIn("8,192 bytes", contents)
+                self.assertNotIn("8,192-byte", contents)
+                self.assertNotIn("8192 bytes", contents)
+                self.assertNotIn("10,880 bytes", contents)
+                self.assertNotIn("10,880-byte", contents)
+                self.assertNotIn("10,624 bytes", contents)
+                self.assertNotIn("10,624-byte", contents)
+                self.assertNotIn("215,188 bytes", contents)
+                self.assertNotIn("14,888-byte", contents)
+
+        build_doc = docs["docs/firmware_build_architecture.md"]
+        self.assertIn("8,624 bytes", build_doc)
+        self.assertNotIn("10,304 bytes", build_doc)
+        self.assertNotIn("10,496 bytes", build_doc)
+        self.assertIn("protocol/main thread stack is currently 5,120 bytes", build_doc)
+        self.assertIn("VM worker stack\nis 17,408 bytes", build_doc)
+        self.assertIn("195,632 bytes of linker DRAM", build_doc)
+        self.assertIn("195,604 bytes through", build_doc)
+        self.assertIn("12,264-byte `runtime.4`", build_doc)
         self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', stack_script)
         self.assertIn(
             'resources_out="$(run_capture resources-after-workloads cargo run --quiet -p squidc -- device resources)"',
@@ -717,7 +760,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("char wifi_scan_auth", runtime_body)
         self.assertIn("struct sq_vm_runtime_wifi_scan_scratch *scan =", runtime_c)
         self.assertIn("out->networks = runtime->transfer.wifi_scan.networks", runtime_c)
-        self.assertIn("runtime_static <= 14176", ztest)
+        self.assertIn("runtime_static <= 13984", ztest)
+        self.assertNotIn("runtime_static <= 14176", ztest)
         self.assertNotIn("runtime_static <= 14304", ztest)
         self.assertNotIn("runtime_static <= 14720", ztest)
 
@@ -796,15 +840,21 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
         self.assertIn("pub const MAX_RUNTIME_RECORD_FIELDS: usize = 26;", limits_rs)
         self.assertNotIn("pub const MAX_RUNTIME_RECORD_FIELDS: usize = 32;", limits_rs)
-        self.assertIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 10_624;", ffi_rs)
+        self.assertIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 8_624;", ffi_rs)
+        self.assertNotIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 10_304;", ffi_rs)
+        self.assertNotIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 10_496;", ffi_rs)
+        self.assertNotIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 10_624;", ffi_rs)
         self.assertNotIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 10_880;", ffi_rs)
-        self.assertIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 10624", runtime_h)
-        self.assertIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 10624", ztest)
+        self.assertIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 8624", runtime_h)
+        self.assertIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 8624", ztest)
+        self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 10304", runtime_h)
+        self.assertNotIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 10304", ztest)
+        self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 10496", runtime_h)
+        self.assertNotIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 10496", ztest)
+        self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 10624", runtime_h)
+        self.assertNotIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 10624", ztest)
         self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 10880", runtime_h)
         self.assertNotIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 10880", ztest)
-        self.assertNotIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 10_400;", ffi_rs)
-        self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 10400", runtime_h)
-        self.assertNotIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 10400", ztest)
         self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 15040", runtime_h)
         self.assertNotIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 15040", ztest)
         self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 11776", runtime_h)
@@ -838,7 +888,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertNotIn("SqvmStorageCompletion completion;", runtime_body)
         self.assertIn("sizeof(runtime.transfer.init_scratch)", ztest)
         self.assertIn("SQVM_STORAGE_TRANSFER_CAPACITY <= 640", ztest)
-        self.assertIn("runtime_static <= 14176", ztest)
+        self.assertIn("runtime_static <= 13984", ztest)
+        self.assertNotIn("runtime_static <= 14176", ztest)
         self.assertNotIn("runtime_static <= 14720", ztest)
         self.assertNotIn("runtime_static <= 14736", ztest)
         self.assertNotIn("runtime_static <= 15264", ztest)
@@ -1036,18 +1087,23 @@ class ZephyrToolingScriptTests(unittest.TestCase):
     def test_runtime_keeps_bounded_diagnostic_history(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
+        limits = self.read("compiler/rust/crates/squidvm-core/src/limits.rs")
 
+        self.assertIn("pub const MAX_STACK: usize = 16;", limits)
+        self.assertNotIn("pub const MAX_STACK: usize = 32;", limits)
         self.assertIn("#define SQ_VM_RUNTIME_TRACE_MAX 4", runtime_h)
         self.assertIn("#define SQ_VM_RUNTIME_TRACE_LEN 26", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_TRACE_MAX 6", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_TRACE_MAX 8", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_TRACE_LEN 25", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_TRACE_LEN 32", runtime_h)
-        self.assertIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 8", runtime_h)
+        self.assertIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 6", runtime_h)
+        self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 8", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 5", runtime_h)
-        self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 6", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 12", runtime_h)
-        self.assertIn("SQ_VM_RUNTIME_OUTPUT_MAX >= 5", ztest)
+        self.assertIn("SQ_VM_RUNTIME_OUTPUT_MAX == 6", ztest)
+        self.assertNotIn("SQ_VM_RUNTIME_OUTPUT_MAX == 5", ztest)
+        self.assertNotIn("SQ_VM_RUNTIME_OUTPUT_MAX >= 5", ztest)
         self.assertNotIn("SQ_VM_RUNTIME_OUTPUT_MAX >= 6", ztest)
         self.assertIn("#define SQ_VM_RUNTIME_OUTPUT_LEN 54", runtime_h)
         self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_LEN 56", runtime_h)
@@ -1155,7 +1211,9 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         stack = self.read("scripts/c3-supermini-measure-input-stack-isolation.sh")
         ffi_rs = self.read("compiler/rust/crates/squidvm-ffi/src/lib.rs")
 
-        self.assertIn("#define SQ_DEVICE_RESPONSE_BYTES 916u", header)
+        self.assertIn("#define SQ_DEVICE_RESPONSE_BYTES 824u", header)
+        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 820u", header)
+        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 916u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 826u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 834u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 848u", header)
@@ -2003,6 +2061,7 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         )
         self.assertIn('heap_alloc_bytes', stack)
         self.assertIn('heap_max_alloc_bytes', stack)
+        self.assertIn('device resources --reset-heap-max', stack)
         self.assertIn('heap_largest_free_supported', stack)
         self.assertIn('heap_largest_free_bytes', stack)
         self.assertIn('summary.tsv', stack)

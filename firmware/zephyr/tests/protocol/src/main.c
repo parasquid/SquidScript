@@ -26,6 +26,7 @@ enum sq_test_field_type {
 	SQ_FIELD_BOOL = 3,
 	SQ_FIELD_I64 = 4,
 	SQ_FIELD_U64 = 5,
+	SQ_FIELD_U32 = 6,
 	SQ_FIELD_RECORD = 32,
 };
 
@@ -90,6 +91,18 @@ static uint64_t sq_protocol_read_u64_le(const uint8_t *bytes)
 	uint64_t value = 0;
 
 	for (int i = 7; i >= 0; i--) {
+		value <<= 8;
+		value |= bytes[i];
+	}
+
+	return value;
+}
+
+static uint32_t sq_protocol_read_u32_le(const uint8_t *bytes)
+{
+	uint32_t value = 0;
+
+	for (int i = 3; i >= 0; i--) {
 		value <<= 8;
 		value |= bytes[i];
 	}
@@ -488,10 +501,14 @@ static bool resource_value_for_key(const struct sq_protocol_frame *frame, const 
 			if (field.tag == SQ_DEVICE_RECORD_FIELD_KEY && field.type == SQ_FIELD_STRING) {
 				record_key = (const char *)field.value;
 				record_key_len = field.len;
-			} else if (field.tag == SQ_DEVICE_RECORD_FIELD_VALUE &&
-				   field.type == SQ_FIELD_U64 && field.len == 8) {
-				record_value = sq_protocol_read_u64_le(field.value);
-				has_value = true;
+			} else if (field.tag == SQ_DEVICE_RECORD_FIELD_VALUE) {
+				if (field.type == SQ_FIELD_U64 && field.len == 8) {
+					record_value = sq_protocol_read_u64_le(field.value);
+					has_value = true;
+				} else if (field.type == SQ_FIELD_U32 && field.len == 4) {
+					record_value = sq_protocol_read_u32_le(field.value);
+					has_value = true;
+				}
 			}
 		}
 
@@ -2418,9 +2435,9 @@ ZTEST(squidscript_protocol, test_links_squidvm_ffi_context_metadata)
 	zassert_true(sqvm_context_align() > 0);
 	zassert_true(sqvm_context_size() <= SQ_VM_RUNTIME_CONTEXT_BYTES);
 #if !defined(CONFIG_BOARD_NATIVE_SIM)
-	zassert_true(SQ_VM_RUNTIME_CONTEXT_BYTES <= 10624);
+	zassert_true(SQ_VM_RUNTIME_CONTEXT_BYTES <= 8624);
 #endif
-	zassert_true(SQ_VM_RUNTIME_WORK_STACK_SIZE <= 19456);
+	zassert_true(SQ_VM_RUNTIME_WORK_STACK_SIZE <= 17408);
 }
 
 ZTEST(squidscript_protocol, test_runtime_wait_idle_times_out_while_worker_is_running)
@@ -2453,20 +2470,20 @@ ZTEST(squidscript_protocol, test_runtime_reuses_transfer_storage_for_init_scratc
 	zassert_true(sizeof(runtime.transfer) >= sizeof(runtime.transfer.completion));
 #if !defined(CONFIG_BOARD_NATIVE_SIM)
 	size_t runtime_static = sizeof(runtime);
-	zassert_true(runtime_static <= 14176, "runtime_static=%zu", runtime_static);
+	zassert_true(runtime_static <= 13984, "runtime_static=%zu", runtime_static);
 #endif
 }
 
 ZTEST(squidscript_protocol, test_squidscript_owned_fixed_buffer_budgets)
 {
-	zassert_equal(SQ_VM_RUNTIME_OUTPUT_MAX, 8);
+	zassert_equal(SQ_VM_RUNTIME_OUTPUT_MAX, 6);
 	zassert_equal(SQ_VM_RUNTIME_OUTPUT_LEN, 54);
 	zassert_equal(SQ_VM_RUNTIME_TRACE_MAX, 4);
 	zassert_equal(SQ_VM_RUNTIME_DRAWLOG_MAX, 4);
 	zassert_equal(SQ_VM_RUNTIME_RETURN_STACK_MAX, 2);
 	zassert_equal(SQ_VM_RUNTIME_ARMED_TIMER_MAX, 2);
 	zassert_equal(SQ_VM_RUNTIME_INPUT_BUTTON_MAX, 2);
-	zassert_equal(SQ_DEVICE_RESPONSE_BYTES, 916);
+	zassert_equal(SQ_DEVICE_RESPONSE_BYTES, 824);
 	zassert_true(sizeof(struct sq_device_protocol_scratch) <= 552,
 		     "protocol scratch=%zu", sizeof(struct sq_device_protocol_scratch));
 	zassert_true(sizeof(struct sq_device_install_session) <= 152,
@@ -2497,15 +2514,13 @@ ZTEST(squidscript_protocol, test_output_history_retains_current_lifecycle_assert
 			      0);
 	}
 
-	zassert_equal(runtime.output_count, 8);
+	zassert_equal(runtime.output_count, 6);
 	zassert_str_equal(runtime.outputs[0], "lifecycle line 1");
 	zassert_str_equal(runtime.outputs[1], "lifecycle line 2");
 	zassert_str_equal(runtime.outputs[2], "lifecycle line 3");
 	zassert_str_equal(runtime.outputs[3], "lifecycle line 4");
 	zassert_str_equal(runtime.outputs[4], "lifecycle line 5");
 	zassert_str_equal(runtime.outputs[5], "lifecycle line 6");
-	zassert_str_equal(runtime.outputs[6], "lifecycle line 7");
-	zassert_str_equal(runtime.outputs[7], "lifecycle line 8");
 }
 
 ZTEST(squidscript_protocol, test_runtime_transfer_owner_rejects_overlap)
@@ -2574,7 +2589,7 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 	result = sq_device_protocol_handle_frame(request, sizeof(request), &context, response,
 						 sizeof(response), &response_len);
 	zassert_equal(result, SQ_PROTOCOL_OK, "resources result %d", result);
-	zassert_true(response_len <= 916, "resources response_len=%zu", response_len);
+	zassert_true(response_len <= 824, "resources response_len=%zu", response_len);
 	zassert_true(response_len <= SQ_DEVICE_RESPONSE_BYTES);
 	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
 	zassert_equal(frame.opcode, SQ_OPCODE_RESOURCES_GET);
@@ -2634,6 +2649,43 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 	zassert_true(stack_used <= SQ_VM_RUNTIME_WORK_STACK_SIZE);
 	zassert_equal(stack_unused + stack_used, SQ_VM_RUNTIME_WORK_STACK_SIZE,
 		      "unused=%llu used=%llu", stack_unused, stack_used);
+}
+
+ZTEST(squidscript_protocol, test_resources_request_accepts_heap_max_reset_option)
+{
+	const uint8_t payload[] = {1, SQ_FIELD_BOOL, 1, 0, 1};
+	uint8_t request[SQ_PROTOCOL_HEADER_LEN + sizeof(payload)];
+	uint8_t response[SQ_DEVICE_RESPONSE_BYTES];
+	size_t response_len = 0;
+	struct sq_protocol_frame frame;
+	static struct sq_vm_runtime runtime;
+	struct sq_device_identity identity = {
+		.target = "native-test",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.runtime = &runtime,
+	};
+
+	memset(&runtime, 0, sizeof(runtime));
+	sq_vm_runtime_init(&runtime);
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_RESOURCES_GET,
+						      SQ_STATUS_OK, 74, payload,
+						      sizeof(payload), request,
+						      sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	memcpy(&request[SQ_PROTOCOL_HEADER_LEN], payload, sizeof(payload));
+
+	zassert_equal(sq_device_protocol_handle_frame(request, sizeof(request), &context,
+						      response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
+	zassert_equal(frame.opcode, SQ_OPCODE_RESOURCES_GET);
+	zassert_equal(frame.status, SQ_STATUS_OK);
+	zassert_true(resource_value_equals(&frame, "heap_largest_free_supported", 0));
 }
 
 ZTEST(squidscript_protocol, test_exposes_resumable_squidvm_ffi_abi)
@@ -4086,7 +4138,7 @@ ZTEST(squidscript_protocol, test_vm_runtime_dispatches_stack_inspection_callback
 
 	zassert_equal(sq_vm_runtime_dispatch(&runtime, &backend, "app.start"), 0);
 	zassert_equal(runtime.output_count, 5);
-	zassert_true(SQ_VM_RUNTIME_OUTPUT_MAX >= 5);
+	zassert_true(SQ_VM_RUNTIME_OUTPUT_MAX == 6);
 	zassert_str_equal(runtime.outputs[0], "process launcher");
 	zassert_str_equal(runtime.outputs[1], "process parent");
 	zassert_str_equal(runtime.outputs[2], "armed break-reminder timer.break");
