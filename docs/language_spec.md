@@ -2773,102 +2773,74 @@ Rules:
 - Apps may request sending only allowlisted keys supported by the target profile.
 - Apps must not construct raw HID reports in current draft.
 
-### Bluetooth File Transfer Built-ins
+### BLE Object Transfer Triggers
 
-The `bleTransfer.*` namespace provides small foreground-only BLE upload services for devices where Wi-Fi is unavailable, disabled, or inconvenient.
-
-BLE upload is a transport, not a separate installer. BLE, HTTP, USB-copy, and
-SD-card-copy workflows should all hand completed files to the same
-firmware-owned staging and installation pipeline. That shared pipeline
-validates the finished file/package, sanitizes names, selects a target
-library/volume, writes atomically where possible, validates SQBC bytecode and
-target requirements, and then publishes the result.
-
-BLE is usually slower than Wi-Fi and should not be the primary large-book path unless the target and client tooling make that acceptable. It is a reasonable fallback for small scripts, small books, settings bundles, and recovery workflows.
-
-bleTransfer.start(serviceName, options)
-
-Starts a named BLE upload service owned by the current foreground app.
-
-Requires runtime support:
-
-```text
-bleTransfer.receive
-```
-
-Example:
+BLE object transfer is an app trigger capability, not a foreground polling API.
+An app declares the profiles it can receive in `app.triggers`; firmware reads
+the trigger metadata from installed SQBC and can arm the app without running
+foreground code or keeping a background VM resident.
 
 ```squid
-bleTransfer.start("uploads", {
-  name: "SquidScript XTEINK",
-  uploadExtension: ".sqbc",
-  maxUploadBytes: 1048576
-})
-```
+app "ble-install"
 
-Allowed options:
-- `name`: string advertised device/service name
-- `uploadExtension`: string
-- `maxUploadBytes`: int
-- `pairingRequired`: bool
-
-bleTransfer.stop(serviceName)
-
-Stops a named BLE upload service owned by the current app.
-
-bleTransfer.status(serviceName)
-
-Returns service state.
-
-Suggested fields:
-- `running`: bool
-- `advertising`: bool
-- `connected`: bool
-- `bytesReceived`: int
-- `totalBytes`: int
-- `error`: string
-
-bleTransfer.poll(serviceName)
-
-Returns one bounded event record or `kind: "none"`.
-
-Suggested event fields:
-- `kind`: string such as `"none"`, `"connected"`, `"uploadStarted"`, `"uploadProgress"`, `"uploadComplete"`, or `"error"`
-- `bytesReceived`: int
-- `totalBytes`: int
-- `error`: string
-
-bleTransfer.upload(event)
-
-Returns an opaque upload handle from an `uploadComplete` event.
-
-Example:
-
-```squid
-let event = bleTransfer.poll("uploads")
-
-if (event.kind == "uploadComplete") {
-  let upload = bleTransfer.upload(event)
-  library.installUpload(upload, {
-    library: "apps-inbox",
-    volume: "sd",
-    folder: "/",
-    extension: ".sqbc"
+app.triggers {
+  service.ble.profile("object-transfer", {
+    id: "sqbc-install",
+    accept: [".sqbc"],
+    events: {
+      complete: "ble.object.complete",
+      error: "ble.object.error"
+    }
   })
+}
+
+event.on("ble.object.complete", ev) {
+  debug.print(ev.id)
 }
 ```
 
+`service.ble.profile("object-transfer", options)` is valid only inside
+`app.triggers`.
+
+Options:
+- `id`: required string. This is the app-local profile instance identifier,
+  exposed to handlers as `ev.id` and used by firmware diagnostics and conflict
+  checks.
+- `role`: optional string. The current default and only implemented value is
+  `"server"`.
+- `accept`: required non-empty list of file-extension strings such as
+  `".sqbc"`.
+- `events`: required object mapping transfer event kinds to SquidScript event
+  names. Current event kinds are `complete` and `error`.
+
+Handler payload parameters are declared as the second argument to `event.on`.
+The parameter is a read-only event record whose fields are provided by the
+firmware dispatch path for that event. Current BLE object-transfer fields are
+string fields:
+
+```text
+profile
+id
+objectName
+bytesReceived
+totalBytes
+upload
+error
+```
+
 Rules:
-- BLE upload services are foreground-only in current draft.
-- Firmware must stop services owned by an app when that app exits, crashes, or loses foreground.
+- BLE object-transfer profiles are armed-app metadata. They do not grant raw
+  GATT access to SquidScript apps.
 - Firmware must stream BLE chunks to staging storage rather than app RAM.
-- Firmware should validate uploaded content only after the transfer completes and the staged file is flushed.
-- Failed validation must delete or quarantine the staged file without publishing it.
-- Firmware must expose upload progress so apps can render a progress UI.
-- Firmware should clamp BLE upload size below Wi-Fi upload size unless the target explicitly supports larger BLE transfers.
+- Firmware should validate uploaded content only after the transfer completes
+  and the staged file is flushed.
+- Failed validation must delete or quarantine the staged file without
+  publishing it.
 - App artifacts uploaded through BLE should use `.sqbc` until a resource
   package format is specified, and they should follow the same installer rules
   as HTTP uploads.
+- A target may expose BLE radio hardware metadata without implementing
+  `service.ble.profile("object-transfer", ...)` runtime support.
 
 ---
 
@@ -3401,7 +3373,10 @@ handle
 
 binbook.inspect(uploadHandle)
 
-Validates a completed firmware-staged upload as a BinBook before it is published into a library. This is intended for upload flows where the app receives an opaque upload handle from `httpServer.upload(...)` or `bleTransfer.upload(...)`.
+Validates a completed firmware-staged upload as a BinBook before it is
+published into a library. This is intended for upload flows where the app
+receives an opaque upload handle from a firmware-owned upload service such as
+HTTP upload or BLE object transfer.
 
 Example:
 
@@ -3856,8 +3831,9 @@ bluetoothHid.advertise
 bluetoothHid.keys
 - Allows sending allowlisted Bluetooth HID key events while this app owns the foreground HID session.
 
-bleTransfer.receive
-- Allows starting foreground-only firmware-owned BLE upload services that produce staged upload handles.
+service.ble.object-transfer
+- Allows declaring firmware-owned BLE object-transfer trigger profiles that
+  produce staged upload handles through event payloads.
 
 binbook.read
 - Allows BinBook document APIs.

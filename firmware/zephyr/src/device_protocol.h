@@ -56,6 +56,12 @@ struct sq_device_identity {
 	bool diagnostic;
 };
 
+enum sq_device_transfer_phase {
+	SQ_DEVICE_TRANSFER_IDLE = 0,
+	SQ_DEVICE_TRANSFER_RECEIVING = 1,
+	SQ_DEVICE_TRANSFER_COMMITTING = 2,
+};
+
 struct sq_device_install_session {
 	bool active;
 	char app_id[SQ_APP_STORE_APP_ID_MAX];
@@ -64,6 +70,7 @@ struct sq_device_install_session {
 	uint32_t expected_crc;
 	uint32_t running_crc;
 	char staging_path[SQ_DEVICE_STAGING_PATH_BYTES];
+	enum sq_device_transfer_phase phase;
 };
 
 struct sq_device_temp_session {
@@ -74,6 +81,7 @@ struct sq_device_temp_session {
 	uint32_t expected_crc;
 	uint32_t running_crc;
 	char staging_path[SQ_DEVICE_STAGING_PATH_BYTES];
+	enum sq_device_transfer_phase phase;
 };
 
 struct sq_device_resource_session {
@@ -85,7 +93,27 @@ struct sq_device_resource_session {
 	uint32_t expected_crc;
 	uint32_t running_crc;
 	char staging_path[SQ_DEVICE_STAGING_PATH_BYTES];
+	enum sq_device_transfer_phase phase;
 };
+
+#define transfer_session_begin_receiving(session_ptr)                                      \
+	do {                                                                              \
+		(session_ptr)->active = true;                                             \
+		(session_ptr)->phase = SQ_DEVICE_TRANSFER_RECEIVING;                      \
+	} while (false)
+
+#define transfer_session_begin_committing(session_ptr)                                     \
+	((session_ptr)->active &&                                                        \
+	 ((session_ptr)->phase == SQ_DEVICE_TRANSFER_RECEIVING ||                         \
+	  (session_ptr)->phase == SQ_DEVICE_TRANSFER_COMMITTING) ?                        \
+		 ((session_ptr)->phase = SQ_DEVICE_TRANSFER_COMMITTING, 0) :               \
+		 -EINVAL)
+
+#define transfer_session_finish_idle(session_ptr)                                          \
+	do {                                                                              \
+		(session_ptr)->active = false;                                            \
+		(session_ptr)->phase = SQ_DEVICE_TRANSFER_IDLE;                           \
+	} while (false)
 
 enum sq_device_protocol_scratch_owner {
 	SQ_DEVICE_PROTOCOL_SCRATCH_FREE = 0,

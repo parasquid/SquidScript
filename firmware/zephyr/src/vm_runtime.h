@@ -76,6 +76,20 @@ enum sq_vm_runtime_arm_phase {
 	SQ_VM_RUNTIME_ARM_REQUESTED = 1,
 };
 
+enum sq_vm_runtime_input_button_phase {
+	SQ_VM_RUNTIME_INPUT_INACTIVE = 0,
+	SQ_VM_RUNTIME_INPUT_RELEASED = 1,
+	SQ_VM_RUNTIME_INPUT_DEBOUNCING_PRESS = 2,
+	SQ_VM_RUNTIME_INPUT_PRESSED = 3,
+	SQ_VM_RUNTIME_INPUT_DEBOUNCING_RELEASE = 4,
+};
+
+enum sq_vm_runtime_indicator_pattern {
+	SQ_VM_RUNTIME_INDICATOR_STEADY = 0,
+	SQ_VM_RUNTIME_INDICATOR_BREATHE = 1,
+	SQ_VM_RUNTIME_INDICATOR_BLINK = 2,
+};
+
 struct sq_vm_runtime_timer {
 	bool active;
 	bool repeating;
@@ -103,6 +117,7 @@ struct sq_vm_runtime_input_button {
 	uint8_t pin;
 	bool active_low;
 	bool pressed;
+	enum sq_vm_runtime_input_button_phase phase;
 	int64_t next_poll_ms;
 	int64_t debounce_until_ms;
 	char event[SQ_VM_RUNTIME_EVENT_LEN];
@@ -186,14 +201,12 @@ struct sq_vm_runtime {
 	bool indicator_binding_active;
 	uint8_t indicator_binding_pin;
 	bool indicator_binding_active_low;
-	bool indicator_breathe_active;
-	uint8_t indicator_breathe_step;
-	int64_t indicator_breathe_next_ms;
-	bool indicator_blink_active;
-	bool indicator_blink_on;
-	int32_t indicator_blink_on_ms;
-	int32_t indicator_blink_off_ms;
-	int64_t indicator_blink_next_ms;
+	enum sq_vm_runtime_indicator_pattern indicator_pattern;
+	uint8_t indicator_pattern_step;
+	bool indicator_pattern_on;
+	int32_t indicator_pattern_on_ms;
+	int32_t indicator_pattern_off_ms;
+	int64_t indicator_pattern_next_ms;
 	SqdcConfig device_config_draft;
 	bool device_config_draft_loaded;
 	uint32_t gpio_configured_mask;

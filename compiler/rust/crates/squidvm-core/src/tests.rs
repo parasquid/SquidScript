@@ -1277,7 +1277,7 @@ screen("main") {}
     );
 
     let mut reader = SliceSqbcReader::new(&bytes);
-    let mut small_scratch = [0u8; 128];
+    let mut small_scratch = [0u8; 160];
     assert_eq!(
         ProgramIndex::trigger_timer_count_from_reader(&mut reader, &mut small_scratch).unwrap(),
         2
@@ -1636,10 +1636,7 @@ fn chunked_vm_rejects_oversized_handler_chunk() {
     let functions = vec![0, 0];
     let mut handlers = Vec::new();
     push_u16(&mut handlers, 1);
-    push_u16(&mut handlers, 1);
-    push_u16(&mut handlers, 0);
-    push_u32(&mut handlers, 0);
-    push_u32(&mut handlers, (MAX_CODE_CHUNK_BYTES + 1) as u32);
+    push_handler(&mut handlers, 1, false, 0, 0, 0, MAX_CODE_CHUNK_BYTES + 1);
     let code = vec![OP_HALT; MAX_CODE_CHUNK_BYTES + 1];
     let bytes = encode_container(vec![
         (SECTION_STRINGS, strings),
@@ -1726,14 +1723,8 @@ fn in_memory_vm_preserves_stack_when_function_call_underflows() {
 
     let mut handlers = Vec::new();
     push_u16(&mut handlers, 2);
-    push_u16(&mut handlers, 1);
-    push_u16(&mut handlers, 0);
-    push_u32(&mut handlers, fail as u32);
-    push_u32(&mut handlers, (drain - fail) as u32);
-    push_u16(&mut handlers, 2);
-    push_u16(&mut handlers, 0);
-    push_u32(&mut handlers, drain as u32);
-    push_u32(&mut handlers, (code.len() - drain) as u32);
+    push_handler(&mut handlers, 1, false, 0, 0, fail, drain - fail);
+    push_handler(&mut handlers, 2, false, 0, 0, drain, code.len() - drain);
 
     let bytes = encode_container(vec![
         (SECTION_STRINGS, strings),
@@ -3158,18 +3149,9 @@ fn fixture_counter_sqbc() -> Vec<u8> {
 
     let mut handlers = Vec::new();
     push_u16(&mut handlers, 3);
-    push_u16(&mut handlers, 3);
-    push_u16(&mut handlers, 0);
-    push_u32(&mut handlers, on_start as u32);
-    push_u32(&mut handlers, (select - on_start) as u32);
-    push_u16(&mut handlers, 4);
-    push_u16(&mut handlers, 0);
-    push_u32(&mut handlers, select as u32);
-    push_u32(&mut handlers, (back - select) as u32);
-    push_u16(&mut handlers, 5);
-    push_u16(&mut handlers, 0);
-    push_u32(&mut handlers, back as u32);
-    push_u32(&mut handlers, (code.len() - back) as u32);
+    push_handler(&mut handlers, 3, false, 0, 0, on_start, select - on_start);
+    push_handler(&mut handlers, 4, false, 0, 0, select, back - select);
+    push_handler(&mut handlers, 5, false, 0, 0, back, code.len() - back);
 
     encode_container(vec![
         (SECTION_STRINGS, strings),
@@ -3250,6 +3232,24 @@ fn encode_container(sections: Vec<(u16, Vec<u8>)>) -> Vec<u8> {
 
 fn push_u16(out: &mut Vec<u8>, value: u16) {
     out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn push_handler(
+    out: &mut Vec<u8>,
+    event_id: u16,
+    preload: bool,
+    param_count: u16,
+    local_count: u16,
+    start: usize,
+    len: usize,
+) {
+    push_u16(out, event_id);
+    out.push(u8::from(preload));
+    out.push(0);
+    push_u16(out, param_count);
+    push_u16(out, local_count);
+    push_u32(out, start as u32);
+    push_u32(out, len as u32);
 }
 
 fn push_u32(out: &mut Vec<u8>, value: u32) {

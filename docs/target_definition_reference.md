@@ -694,8 +694,8 @@ The target compiler should emit these limits into firmware and compiler-facing t
 Radio hardware in `radios` does not automatically expose SquidScript runtime
 features. For example, an ESP32-C3 target may record MCU-supported Wi-Fi or BLE
 with `status: "mcu-supported-runtime-unsupported"` while omitting
-`service.wifi.*` or `bleTransfer.*` from `features` until the firmware backend
-implements and verifies those services.
+`service.wifi.*` or `service.ble.object-transfer` from `features` until the
+firmware backend implements and verifies those services.
 
 Examples:
 
@@ -712,7 +712,7 @@ Examples:
 - `service.wifi.configureIp`
 - `service.wifi.setup`
 - `httpServer.serve`
-- `bleTransfer.receive`
+- `service.ble.object-transfer`
 - `binbook.read`
 
 Features and target requirements should be backed by concrete target fields.

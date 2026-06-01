@@ -2582,11 +2582,11 @@ ZTEST(squidscript_protocol, test_squidscript_owned_fixed_buffer_budgets)
 	zassert_equal(SQ_DEVICE_RESPONSE_BYTES, 1120);
 	zassert_true(sizeof(struct sq_device_protocol_scratch) <= 552,
 		     "protocol scratch=%zu", sizeof(struct sq_device_protocol_scratch));
-	zassert_true(sizeof(struct sq_device_install_session) <= 152,
+	zassert_true(sizeof(struct sq_device_install_session) <= 160,
 		     "install session=%zu", sizeof(struct sq_device_install_session));
-	zassert_true(sizeof(struct sq_device_temp_session) <= 152,
+	zassert_true(sizeof(struct sq_device_temp_session) <= 160,
 		     "temp session=%zu", sizeof(struct sq_device_temp_session));
-	zassert_true(sizeof(struct sq_device_resource_session) <= 232,
+	zassert_true(sizeof(struct sq_device_resource_session) <= 240,
 		     "resource session=%zu", sizeof(struct sq_device_resource_session));
 	zassert_true(sizeof(struct sq_app_registry) <= 356,
 		     "app registry=%zu", sizeof(struct sq_app_registry));
@@ -2634,6 +2634,64 @@ ZTEST(squidscript_protocol, test_runtime_transfer_owner_rejects_overlap)
 		      0);
 	zassert_equal(sq_vm_runtime_transfer_release(&runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION),
 		      0);
+}
+
+ZTEST(squidscript_protocol, test_protocol_transfer_session_phases_track_begin_chunk_commit)
+{
+	struct sq_device_install_session install = {0};
+	struct sq_device_temp_session temp = {0};
+	struct sq_device_resource_session resource = {0};
+
+	zassert_equal(install.phase, SQ_DEVICE_TRANSFER_IDLE);
+	zassert_equal(temp.phase, SQ_DEVICE_TRANSFER_IDLE);
+	zassert_equal(resource.phase, SQ_DEVICE_TRANSFER_IDLE);
+
+	transfer_session_begin_receiving(&install);
+	transfer_session_begin_receiving(&temp);
+	transfer_session_begin_receiving(&resource);
+	zassert_true(install.active);
+	zassert_true(temp.active);
+	zassert_true(resource.active);
+	zassert_equal(install.phase, SQ_DEVICE_TRANSFER_RECEIVING);
+	zassert_equal(temp.phase, SQ_DEVICE_TRANSFER_RECEIVING);
+	zassert_equal(resource.phase, SQ_DEVICE_TRANSFER_RECEIVING);
+
+	zassert_equal(transfer_session_begin_committing(&install), 0);
+	zassert_equal(transfer_session_begin_committing(&temp), 0);
+	zassert_equal(transfer_session_begin_committing(&resource), 0);
+	zassert_equal(install.phase, SQ_DEVICE_TRANSFER_COMMITTING);
+	zassert_equal(temp.phase, SQ_DEVICE_TRANSFER_COMMITTING);
+	zassert_equal(resource.phase, SQ_DEVICE_TRANSFER_COMMITTING);
+
+	transfer_session_finish_idle(&install);
+	transfer_session_finish_idle(&temp);
+	transfer_session_finish_idle(&resource);
+	zassert_false(install.active);
+	zassert_false(temp.active);
+	zassert_false(resource.active);
+	zassert_equal(install.phase, SQ_DEVICE_TRANSFER_IDLE);
+	zassert_equal(temp.phase, SQ_DEVICE_TRANSFER_IDLE);
+	zassert_equal(resource.phase, SQ_DEVICE_TRANSFER_IDLE);
+}
+
+ZTEST(squidscript_protocol, test_input_button_phase_tracks_press_and_release_without_release_dispatch)
+{
+	struct sq_vm_runtime_input_button button = {0};
+
+	zassert_equal(button.phase, SQ_VM_RUNTIME_INPUT_INACTIVE);
+	button.active = true;
+	button.phase = SQ_VM_RUNTIME_INPUT_RELEASED;
+	button.pressed = false;
+	button.phase = SQ_VM_RUNTIME_INPUT_DEBOUNCING_PRESS;
+	zassert_equal(button.phase, SQ_VM_RUNTIME_INPUT_DEBOUNCING_PRESS);
+	button.pressed = true;
+	button.phase = SQ_VM_RUNTIME_INPUT_PRESSED;
+	zassert_equal(button.phase, SQ_VM_RUNTIME_INPUT_PRESSED);
+	button.phase = SQ_VM_RUNTIME_INPUT_DEBOUNCING_RELEASE;
+	zassert_equal(button.phase, SQ_VM_RUNTIME_INPUT_DEBOUNCING_RELEASE);
+	button.pressed = false;
+	button.phase = SQ_VM_RUNTIME_INPUT_RELEASED;
+	zassert_equal(button.phase, SQ_VM_RUNTIME_INPUT_RELEASED);
 }
 
 ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
@@ -4528,37 +4586,34 @@ ZTEST(squidscript_protocol, test_vm_runtime_tracks_output_indicator_and_due_time
 	zassert_false(value);
 
 	zassert_equal(sq_vm_runtime_indicator_breathe(&runtime), 0);
-	zassert_true(runtime.indicator_breathe_active);
-	uint8_t first_step = runtime.indicator_breathe_step;
-	runtime.indicator_breathe_next_ms = k_uptime_get() - 1;
+	zassert_equal(runtime.indicator_pattern, SQ_VM_RUNTIME_INDICATOR_BREATHE);
+	uint8_t first_step = runtime.indicator_pattern_step;
+	runtime.indicator_pattern_next_ms = k_uptime_get() - 1;
 	zassert_equal(sq_vm_runtime_poll(&runtime), 0);
-	zassert_true(runtime.indicator_breathe_active);
-	zassert_not_equal(runtime.indicator_breathe_step, first_step);
+	zassert_equal(runtime.indicator_pattern, SQ_VM_RUNTIME_INDICATOR_BREATHE);
+	zassert_not_equal(runtime.indicator_pattern_step, first_step);
 
 	zassert_equal(sq_vm_runtime_indicator_blink(&runtime, 10, 20), 0);
-	zassert_true(runtime.indicator_blink_active);
-	zassert_false(runtime.indicator_breathe_active);
-	zassert_true(runtime.indicator_blink_on);
+	zassert_equal(runtime.indicator_pattern, SQ_VM_RUNTIME_INDICATOR_BLINK);
+	zassert_true(runtime.indicator_pattern_on);
 	zassert_true(runtime.indicator_state);
-	zassert_equal(runtime.indicator_blink_on_ms, 10);
-	zassert_equal(runtime.indicator_blink_off_ms, 20);
-	runtime.indicator_blink_next_ms = k_uptime_get() - 1;
+	zassert_equal(runtime.indicator_pattern_on_ms, 10);
+	zassert_equal(runtime.indicator_pattern_off_ms, 20);
+	runtime.indicator_pattern_next_ms = k_uptime_get() - 1;
 	zassert_equal(sq_vm_runtime_poll(&runtime), 0);
-	zassert_true(runtime.indicator_blink_active);
-	zassert_false(runtime.indicator_blink_on);
+	zassert_equal(runtime.indicator_pattern, SQ_VM_RUNTIME_INDICATOR_BLINK);
+	zassert_false(runtime.indicator_pattern_on);
 	zassert_false(runtime.indicator_state);
-	runtime.indicator_blink_next_ms = k_uptime_get() - 1;
+	runtime.indicator_pattern_next_ms = k_uptime_get() - 1;
 	zassert_equal(sq_vm_runtime_poll(&runtime), 0);
-	zassert_true(runtime.indicator_blink_on);
+	zassert_true(runtime.indicator_pattern_on);
 	zassert_true(runtime.indicator_state);
 
 	zassert_equal(sq_vm_runtime_indicator_write(&runtime, true), 0);
-	zassert_false(runtime.indicator_breathe_active);
-	zassert_false(runtime.indicator_blink_active);
+	zassert_equal(runtime.indicator_pattern, SQ_VM_RUNTIME_INDICATOR_STEADY);
 
 	zassert_equal(sq_vm_runtime_indicator_breathe(&runtime), 0);
-	zassert_true(runtime.indicator_breathe_active);
-	zassert_false(runtime.indicator_blink_active);
+	zassert_equal(runtime.indicator_pattern, SQ_VM_RUNTIME_INDICATOR_BREATHE);
 	zassert_equal(sq_vm_runtime_hardware_gpio_write(&runtime, (const uint8_t *)"GPIO8",
 							strlen("GPIO8"), true),
 		      0);
@@ -4567,7 +4622,7 @@ ZTEST(squidscript_protocol, test_vm_runtime_tracks_output_indicator_and_due_time
 		      0);
 	zassert_true(value);
 	zassert_equal(sq_vm_runtime_indicator_breathe(&runtime), 0);
-	zassert_true(runtime.indicator_breathe_active);
+	zassert_equal(runtime.indicator_pattern, SQ_VM_RUNTIME_INDICATOR_BREATHE);
 	zassert_equal(sq_vm_runtime_hardware_gpio_toggle(&runtime, (const uint8_t *)"GPIO8",
 							 strlen("GPIO8")),
 		      0);
@@ -4585,6 +4640,27 @@ ZTEST(squidscript_protocol, test_vm_runtime_tracks_output_indicator_and_due_time
 	zassert_not_equal(sq_vm_runtime_next_due_timer(&runtime, event, sizeof(event)), 0);
 }
 
+ZTEST(squidscript_protocol, test_indicator_pattern_state_machine_transitions)
+{
+	struct sq_vm_runtime runtime = {0};
+
+	sq_vm_runtime_init(&runtime);
+	sq_vm_runtime_reset(&runtime);
+	zassert_equal(runtime.indicator_pattern, SQ_VM_RUNTIME_INDICATOR_STEADY);
+
+	zassert_equal(sq_vm_runtime_indicator_breathe(&runtime), 0);
+	zassert_equal(runtime.indicator_pattern, SQ_VM_RUNTIME_INDICATOR_BREATHE);
+	zassert_equal(runtime.indicator_pattern_step, 0);
+
+	zassert_equal(sq_vm_runtime_indicator_blink(&runtime, 10, 20), 0);
+	zassert_equal(runtime.indicator_pattern, SQ_VM_RUNTIME_INDICATOR_BLINK);
+	zassert_true(runtime.indicator_pattern_on);
+
+	zassert_equal(sq_vm_runtime_indicator_write(&runtime, false), 0);
+	zassert_equal(runtime.indicator_pattern, SQ_VM_RUNTIME_INDICATOR_STEADY);
+	zassert_false(runtime.indicator_state);
+}
+
 ZTEST(squidscript_protocol, test_device_protocol_poll_advances_running_runtime_poll)
 {
 	struct sq_vm_runtime runtime = {0};
@@ -4595,13 +4671,13 @@ ZTEST(squidscript_protocol, test_device_protocol_poll_advances_running_runtime_p
 	sq_vm_runtime_init(&runtime);
 	sq_vm_runtime_reset(&runtime);
 	zassert_equal(sq_vm_runtime_indicator_breathe(&runtime), 0);
-	zassert_true(runtime.indicator_breathe_active);
-	uint8_t first_step = runtime.indicator_breathe_step;
+	zassert_equal(runtime.indicator_pattern, SQ_VM_RUNTIME_INDICATOR_BREATHE);
+	uint8_t first_step = runtime.indicator_pattern_step;
 
 	runtime.status = SQ_VM_RUNTIME_RUNNING;
-	runtime.indicator_breathe_next_ms = k_uptime_get() - 1;
+	runtime.indicator_pattern_next_ms = k_uptime_get() - 1;
 	zassert_equal(sq_device_protocol_poll(&context), 0);
-	zassert_not_equal(runtime.indicator_breathe_step, first_step);
+	zassert_not_equal(runtime.indicator_pattern_step, first_step);
 
 	runtime.status = SQ_VM_RUNTIME_IDLE;
 	sq_vm_runtime_reset(&runtime);

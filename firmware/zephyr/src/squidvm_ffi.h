@@ -154,6 +154,33 @@ typedef struct {
 	bool repeating;
 } SqvmTriggerTimer;
 
+#define SQVM_BLE_PROFILE_TEXT_CAP 32
+#define SQVM_BLE_PROFILE_ACCEPT_MAX 4
+#define SQVM_BLE_PROFILE_EVENT_MAX 8
+#define SQVM_EVENT_PAYLOAD_FIELD_MAX 8
+
+typedef struct {
+	uint8_t kind[SQVM_BLE_PROFILE_TEXT_CAP];
+	uint8_t event[SQVM_BLE_PROFILE_TEXT_CAP];
+} SqvmBleProfileEventRoute;
+
+typedef struct {
+	uint8_t profile[SQVM_BLE_PROFILE_TEXT_CAP];
+	uint8_t id[SQVM_BLE_PROFILE_TEXT_CAP];
+	uint8_t role[SQVM_BLE_PROFILE_TEXT_CAP];
+	size_t accept_count;
+	uint8_t accept[SQVM_BLE_PROFILE_ACCEPT_MAX][SQVM_BLE_PROFILE_TEXT_CAP];
+	size_t event_count;
+	SqvmBleProfileEventRoute events[SQVM_BLE_PROFILE_EVENT_MAX];
+} SqvmBleProfileTrigger;
+
+typedef struct {
+	const uint8_t *name;
+	size_t name_len;
+	const uint8_t *value;
+	size_t value_len;
+} SqvmEventPayloadField;
+
 typedef struct {
 	uint8_t service[SQVM_DEVICE_BINDING_NAME_CAP];
 	uint8_t binding[SQVM_DEVICE_BINDING_NAME_CAP];
@@ -648,6 +675,28 @@ SqvmStatus sqvm_trigger_timer_read_from_reader(
 	size_t scratch_len,
 	size_t index,
 	SqvmTriggerTimer *out_timer);
+SqvmStatus sqvm_trigger_ble_profile_count(
+	const uint8_t *sqbc,
+	size_t sqbc_len,
+	size_t *out_count);
+SqvmStatus sqvm_trigger_ble_profile_read(
+	const uint8_t *sqbc,
+	size_t sqbc_len,
+	size_t index,
+	SqvmBleProfileTrigger *out_profile);
+SqvmStatus sqvm_trigger_ble_profile_count_from_reader(
+	void *user_data,
+	SqvmReadExactAtCallback read_exact_at,
+	uint8_t *scratch,
+	size_t scratch_len,
+	size_t *out_count);
+SqvmStatus sqvm_trigger_ble_profile_read_from_reader(
+	void *user_data,
+	SqvmReadExactAtCallback read_exact_at,
+	uint8_t *scratch,
+	size_t scratch_len,
+	size_t index,
+	SqvmBleProfileTrigger *out_profile);
 SqvmStatus sqvm_device_binding_count_from_reader(
 	void *user_data,
 	SqvmReadExactAtCallback read_exact_at,
@@ -681,6 +730,15 @@ SqvmStatus sqvm_dispatch_start_resumable(
 	const SqvmCallbacks *callbacks,
 	const uint8_t *event,
 	size_t event_len,
+	SqvmDispatchResult *out_result);
+SqvmStatus sqvm_dispatch_start_resumable_with_payload(
+	void *context,
+	void *user_data,
+	const SqvmCallbacks *callbacks,
+	const uint8_t *event,
+	size_t event_len,
+	const SqvmEventPayloadField *payload_fields,
+	size_t payload_field_count,
 	SqvmDispatchResult *out_result);
 SqvmStatus sqvm_dispatch_resume_storage(
 	void *context,

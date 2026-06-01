@@ -123,6 +123,14 @@ pub struct StringInterner {
 }
 
 impl StringInterner {
+    pub(crate) fn intern_runtime(
+        &mut self,
+        strings: &dyn StringTable,
+        value: &str,
+    ) -> Result<Value, VmError> {
+        self.intern_dynamic(strings, value, false)
+    }
+
     pub(crate) const fn new() -> Self {
         Self {
             refs: [DynamicStringRef::empty(); MAX_SERVICE_STRINGS],

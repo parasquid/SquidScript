@@ -428,7 +428,7 @@
     "service.wifi.configureIp",
     "service.wifi.setup",
     "httpServer.serve",
-    "bleTransfer.receive",
+    "service.ble.object-transfer",
     "binbook.read"
   ]
 }

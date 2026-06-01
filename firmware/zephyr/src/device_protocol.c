@@ -20,13 +20,13 @@ BUILD_ASSERT(offsetof(struct sq_app_registry_entry, app_id) == offsetof(SqdpAppL
 BUILD_ASSERT(offsetof(struct sq_app_registry_entry, sqbc_len) ==
 	     offsetof(SqdpAppListEntry, sqbc_len));
 #if SIZE_MAX == UINT64_MAX
-BUILD_ASSERT(sizeof(struct sq_device_install_session) == 152);
-BUILD_ASSERT(sizeof(struct sq_device_temp_session) == 152);
-BUILD_ASSERT(sizeof(struct sq_device_resource_session) == 232);
+BUILD_ASSERT(sizeof(struct sq_device_install_session) == 160);
+BUILD_ASSERT(sizeof(struct sq_device_temp_session) == 160);
+BUILD_ASSERT(sizeof(struct sq_device_resource_session) == 240);
 #else
-BUILD_ASSERT(sizeof(struct sq_device_install_session) == 140);
-BUILD_ASSERT(sizeof(struct sq_device_temp_session) == 140);
-BUILD_ASSERT(sizeof(struct sq_device_resource_session) == 220);
+BUILD_ASSERT(sizeof(struct sq_device_install_session) == 144);
+BUILD_ASSERT(sizeof(struct sq_device_temp_session) == 144);
+BUILD_ASSERT(sizeof(struct sq_device_resource_session) == 224);
 #endif
 BUILD_ASSERT(SQ_DEVICE_WIFI_PROFILE_NAME_BYTES == SQ_VM_RUNTIME_WIFI_PROFILE_NAME_BYTES);
 BUILD_ASSERT(SQ_DEVICE_WIFI_PROFILE_SSID_BYTES == SQ_VM_RUNTIME_WIFI_PROFILE_SSID_BYTES);
@@ -582,7 +582,7 @@ static int __noinline begin_install(const struct sq_protocol_request *request,
 			memset(session, 0, sizeof(*session));
 			return result;
 		}
-		session->active = true;
+		transfer_session_begin_receiving(session);
 		return ok_response(request, response, response_cap, response_len);
 	}
 
@@ -603,7 +603,7 @@ static int __noinline begin_install(const struct sq_protocol_request *request,
 		memset(session, 0, sizeof(*session));
 		return result;
 	}
-	session->active = true;
+	transfer_session_begin_receiving(session);
 
 	return ok_response(request, response, response_cap, response_len);
 }
@@ -677,7 +677,7 @@ static int __noinline begin_resource_install(const struct sq_protocol_request *r
 		memset(session, 0, sizeof(*session));
 		return result;
 	}
-	session->active = true;
+	transfer_session_begin_receiving(session);
 	return ok_response(request, response, response_cap, response_len);
 }
 
@@ -717,6 +717,9 @@ static int __noinline commit_resource_install(const struct sq_protocol_request *
 		    SQDP_STATUS_OK) {
 		return -EINVAL;
 	}
+	if (transfer_session_begin_committing(session) != 0) {
+		return -EINVAL;
+	}
 
 	int result = sq_app_store_commit_staged_resource_with_path(
 		context->store_mount_point, session->app_id, session->resource_path,
@@ -725,6 +728,7 @@ static int __noinline commit_resource_install(const struct sq_protocol_request *
 		return result;
 	}
 	sqdp_clear_resource_session(session);
+	transfer_session_finish_idle(session);
 	return ok_response(request, response, response_cap, response_len);
 }
 
@@ -761,6 +765,9 @@ static int __noinline commit_temp_run(const struct sq_protocol_request *request,
 		    SQDP_STATUS_OK) {
 		return -EINVAL;
 	}
+	if (transfer_session_begin_committing(session) != 0) {
+		return -EINVAL;
+	}
 
 	memset(&temp_storage, 0, sizeof(temp_storage));
 	result = temp_state_path_for_mount(context->store_mount_point, temp_storage.state_path,
@@ -781,6 +788,7 @@ static int __noinline commit_temp_run(const struct sq_protocol_request *request,
 		return result;
 	}
 
+	transfer_session_finish_idle(session);
 	return ok_response(request, response, response_cap, response_len);
 }
 
@@ -795,6 +803,9 @@ static int __noinline commit_install(const struct sq_protocol_request *request,
 	if (session == NULL || context->store_mount_point == NULL ||
 	    sqdp_prepare_transfer_commit(request_bytes, request_len, session, NULL) !=
 		    SQDP_STATUS_OK) {
+		return -EINVAL;
+	}
+	if (transfer_session_begin_committing(session) != 0) {
 		return -EINVAL;
 	}
 
@@ -813,6 +824,7 @@ static int __noinline commit_install(const struct sq_protocol_request *request,
 	}
 
 	sqdp_clear_transfer_session(session);
+	transfer_session_finish_idle(session);
 	return ok_response(request, response, response_cap, response_len);
 }
 

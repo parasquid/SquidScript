@@ -21,6 +21,20 @@ fn read_repo_fixture(parts: &[&str]) -> String {
     std::fs::read_to_string(repo_path(parts)).expect("fixture should be readable")
 }
 
+fn sqbc_sections(bytes: &[u8]) -> Vec<(u16, usize, usize)> {
+    assert_eq!(&bytes[0..4], b"SQBC");
+    let section_count = u32::from_le_bytes(bytes[10..14].try_into().unwrap()) as usize;
+    (0..section_count)
+        .map(|index| {
+            let base = 14 + index * 12;
+            let kind = u16::from_le_bytes(bytes[base..base + 2].try_into().unwrap());
+            let offset = u32::from_le_bytes(bytes[base + 4..base + 8].try_into().unwrap()) as usize;
+            let len = u32::from_le_bytes(bytes[base + 8..base + 12].try_into().unwrap()) as usize;
+            (kind, offset, len)
+        })
+        .collect()
+}
+
 fn unique_test_dir(prefix: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
     path.push(format!(
@@ -1031,7 +1045,7 @@ fn encodes_reference_sqbc_for_headless_counter() {
         u32::from_le_bytes(sqbc[6..10].try_into().unwrap()) as usize,
         sqbc.len()
     );
-    assert_eq!(u32::from_le_bytes(sqbc[10..14].try_into().unwrap()), 9);
+    assert_eq!(u32::from_le_bytes(sqbc[10..14].try_into().unwrap()), 10);
     assert_eq!(
         sqbc::read_app_id(&sqbc).unwrap().as_deref(),
         Some("headless-counter")
@@ -1255,7 +1269,7 @@ screen("main") {
     });
     assert!(output.ok, "{:?}", output.diagnostics);
     let sqbc = sqbc::encode_sqbc(&output.ir.unwrap()).unwrap();
-    assert_eq!(u32::from_le_bytes(sqbc[10..14].try_into().unwrap()), 9);
+    assert_eq!(u32::from_le_bytes(sqbc[10..14].try_into().unwrap()), 10);
 }
 
 #[test]
@@ -1751,6 +1765,133 @@ screen("main") {}
     assert_eq!(ir.triggers[0].event, "timer.break");
     assert_eq!(ir.triggers[0].interval_ms, 1500000);
     assert!(!ir.triggers[0].repeating);
+}
+
+#[test]
+fn parses_ble_object_transfer_trigger_and_payload_handler() {
+    let source = r#"app "ble-install"
+app.triggers {
+  service.ble.profile("object-transfer", {
+    id: "sqbc-install",
+    accept: [".sqbc"],
+    events: {
+      complete: "ble.object.complete",
+      error: "ble.object.error"
+    }
+  })
+}
+event.on("ble.object.complete", ev) {
+  debug.print(ev.id)
+}
+screen("main") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let ir = output.ir.unwrap();
+    assert_eq!(ir.triggers.len(), 1);
+    let trigger = &ir.triggers[0];
+    let ble = trigger.ble.as_ref().expect("BLE trigger metadata");
+    assert_eq!(ble.profile, "object-transfer");
+    assert_eq!(ble.id, "sqbc-install");
+    assert_eq!(ble.role, "server");
+    assert_eq!(ble.accept, vec![".sqbc"]);
+    assert_eq!(
+        ble.events.get("complete").map(String::as_str),
+        Some("ble.object.complete")
+    );
+    assert_eq!(ir.handlers[0].event, "ble.object.complete");
+    assert_eq!(ir.handlers[0].param.as_deref(), Some("ev"));
+}
+
+#[test]
+fn rejects_ble_object_transfer_trigger_without_id() {
+    let source = r#"app "ble-install"
+app.triggers {
+  service.ble.profile("object-transfer", {
+    accept: [".sqbc"],
+    events: { complete: "ble.object.complete" }
+  })
+}
+event.on("ble.object.complete", ev) {
+  debug.print(ev.id)
+}
+screen("main") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(!output.ok);
+    assert!(output
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "E_BLE_PROFILE_TRIGGER"));
+}
+
+#[test]
+fn rejects_duplicate_ble_object_transfer_profile_ids() {
+    let source = r#"app "ble-install"
+app.triggers {
+  service.ble.profile("object-transfer", {
+    id: "sqbc-install",
+    accept: [".sqbc"],
+    events: { complete: "ble.object.complete" }
+  })
+  service.ble.profile("object-transfer", {
+    id: "sqbc-install",
+    accept: [".sqbc"],
+    events: { complete: "ble.object.complete" }
+  })
+}
+event.on("ble.object.complete", ev) {
+  debug.print(ev.id)
+}
+screen("main") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(!output.ok);
+    assert!(output
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "E_BLE_PROFILE_TRIGGER"));
+}
+
+#[test]
+fn encodes_ble_object_transfer_trigger_metadata_in_sqbc() {
+    let source = r#"app "ble-install"
+app.triggers {
+  service.ble.profile("object-transfer", {
+    id: "sqbc-install",
+    accept: [".sqbc"],
+    events: {
+      complete: "ble.object.complete",
+      error: "ble.object.error"
+    }
+  })
+}
+event.on("ble.object.complete", ev) {
+  debug.print(ev.id)
+}
+screen("main") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let bytes = sqbc::encode_sqbc(&output.ir.unwrap()).expect("SQBC should encode");
+    let sections = sqbc_sections(&bytes);
+    let ble = sections
+        .iter()
+        .find(|(kind, _, _)| *kind == 10)
+        .expect("BLE trigger section should be present");
+    assert!(ble.2 > 2);
 }
 
 #[test]

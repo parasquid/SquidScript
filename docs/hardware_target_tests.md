@@ -70,9 +70,14 @@ The default Zephyr-only hardware suite covers the current required inventory:
 - Verify Wi-Fi scan without credentials.
 - Verify Wi-Fi station behavior only when credentials are explicitly provided
   through the separate station script.
+- Verify ESP32-C3 BLE advertising when the target JSON declares
+  `service.ble.object-transfer`.
 
-Keep the suite ordered so stateful reset/install tests run before the final
-visible board-state check.
+Keep the suite ordered so stateful reset/install tests run before Wi-Fi and
+late physical-input checks, and keep the final visible board-state check last.
+Pass `--skip-physical-input` to the full suite for unattended runs where the
+BOOT/GPIO9 press cannot be confirmed; that run does not validate physical input
+dispatch.
 
 `scripts/c3-supermini-test-hardware-non-scan.sh` is the RAM-confidence subset
 for same-build stack and heap validation when Wi-Fi scan/list is verified
@@ -103,13 +108,15 @@ sized for current low-throughput control-plane Wi-Fi behavior and measured
 socket-service,
 network-management event, ESP timer task, and network RX stack budgets; TCP,
 HTTP, AP client throughput, or other bulk traffic must be remeasured before
-increasing service scope. The Zephyr system heap is sized at 45056 bytes for
-the current reference workload. This deliberately uses
-`CONFIG_HEAP_MEM_POOL_IGNORE_MIN` below the ESP32 Wi-Fi driver's 51200-byte
-`ESP_WIFI_HEAP_SYSTEM` minimum because reset-bounded workload telemetry provides
-a tighter app-specific ceiling; remeasure it with live `device resources` data
-after representative app, display, device binding, file, Wi-Fi status, scan,
-and AP workloads before adding larger radio or networking workloads. `device resources`
+increasing service scope. The Zephyr system heap is sized at 65536 bytes for
+the current reference workload, including ESP32-C3 Wi-Fi and BLE advertising
+support selected from target metadata. Keep
+`CONFIG_HEAP_MEM_POOL_IGNORE_MIN` enabled because reset-bounded workload
+telemetry, not the ESP Wi-Fi minimum alone, is the sizing authority for this
+target. Remeasure it with live `device resources` data after representative
+app, display, device binding, file, Wi-Fi status, scan, AP, BLE advertising,
+and future BLE transfer workloads before changing the heap budget again.
+`device resources`
 also reports `heap_largest_free_supported` and `heap_largest_free_bytes`.
 Current ESP32-C3 Zephyr builds set the supported flag to `0` because the
 public Zephyr heap stats API exposes free/allocated/high-water bytes but no
@@ -177,6 +184,11 @@ The Zephyr GPIO input button check is
 the ESP32-C3 Super Mini BOOT/GPIO9 button to `key.SELECT`. The script verifies
 launch output, waits for a physical BOOT/GPIO9 press to increment app state, and
 the app starts a visible indicator blink when the press is handled.
+The full hardware suite runs this physical prompt near the end, immediately
+before the final blinky check, so unattended or missed-button failures do not
+hide earlier app, storage, lifecycle, display, resource, GPIO, and Wi-Fi
+coverage. Use `scripts/c3-supermini-test-hardware.sh --skip-physical-input`
+when no one is present to press BOOT/GPIO9.
 For RAM and stack-budget validation, host-injected `device key SELECT` events
 exercise the logical input dispatch and app handler path after an input event is
 queued. Physical GPIO9 checks are still required when validating the electrical
@@ -516,6 +528,18 @@ requires start, AP IP lookup, and stop to report success without printing the
 raw AP SSID, BSSIDs, MACs, or local IP patterns in captured output. AP start
 also starts a bounded DHCPv4 server on the AP interface. This script does not
 prove that an external client associated with the AP or received a lease.
+
+`scripts/c3-supermini-test-ble-smoke.sh` runs after Wi-Fi coverage and before
+physical-input/final-visible checks. It builds and flashes the selected
+ESP32-C3 Super Mini target firmware, verifies the serial log line
+`BLE advertising started: ESP32-C3 Super Mini`, and uses `bluetoothctl` to scan
+for the advertised name when the host has a usable Bluetooth controller. If host
+Bluetooth tooling or a controller is unavailable, or the host does not discover
+the device within the bounded scan window, the script reports that host
+discovery was not confirmed after the serial advertising proof. Use
+`--require-host-scan` when the host-side BLE path must be proven. This check
+validates that the target radio backend is enabled by target metadata; it does
+not validate BLE object-transfer chunking, staging, or app install.
 
 For the current ESP32-C3 Super Mini Zephyr target,
 `scripts/c3-supermini-test-blinky.sh` is the final full-suite check. It

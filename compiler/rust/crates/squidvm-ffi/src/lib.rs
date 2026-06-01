@@ -21,12 +21,15 @@ use squidvm_core::{
         WifiStatus, MAX_STORAGE_TRANSFER_BYTES,
     },
     limits::{MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES, MAX_SAVED_STATE_BYTES},
-    program::ProgramIndex,
+    program::{Program, ProgramIndex, SqbcSection},
     reader::{SliceSqbcReader, SqbcReader},
     strings::StringResolver,
     value::Value,
-    vm::ChunkedVm,
+    vm::{ChunkedVm, EventPayload, EventPayloadField},
 };
+
+const SECTION_STRINGS: u16 = 1;
+const SECTION_BLE_TRIGGERS: u16 = 10;
 
 use squid_device_protocol::{
     encode_app_list_response_into, encode_empty_response_into, encode_error_response_into,
@@ -394,6 +397,74 @@ pub struct SqvmTriggerTimer {
     pub event: [u8; 32],
     pub interval_ms: i32,
     pub repeating: bool,
+}
+
+pub const SQVM_BLE_PROFILE_TEXT_CAP: usize = 32;
+pub const SQVM_BLE_PROFILE_ACCEPT_MAX: usize = 4;
+pub const SQVM_BLE_PROFILE_EVENT_MAX: usize = 8;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmBleProfileEventRoute {
+    pub kind: [u8; SQVM_BLE_PROFILE_TEXT_CAP],
+    pub event: [u8; SQVM_BLE_PROFILE_TEXT_CAP],
+}
+
+impl Default for SqvmBleProfileEventRoute {
+    fn default() -> Self {
+        Self {
+            kind: [0; SQVM_BLE_PROFILE_TEXT_CAP],
+            event: [0; SQVM_BLE_PROFILE_TEXT_CAP],
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmBleProfileTrigger {
+    pub profile: [u8; SQVM_BLE_PROFILE_TEXT_CAP],
+    pub id: [u8; SQVM_BLE_PROFILE_TEXT_CAP],
+    pub role: [u8; SQVM_BLE_PROFILE_TEXT_CAP],
+    pub accept_count: usize,
+    pub accept: [[u8; SQVM_BLE_PROFILE_TEXT_CAP]; SQVM_BLE_PROFILE_ACCEPT_MAX],
+    pub event_count: usize,
+    pub events: [SqvmBleProfileEventRoute; SQVM_BLE_PROFILE_EVENT_MAX],
+}
+
+pub const SQVM_EVENT_PAYLOAD_FIELD_MAX: usize = 8;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct SqvmEventPayloadField {
+    pub name: *const u8,
+    pub name_len: usize,
+    pub value: *const u8,
+    pub value_len: usize,
+}
+
+impl Default for SqvmEventPayloadField {
+    fn default() -> Self {
+        Self {
+            name: ptr::null(),
+            name_len: 0,
+            value: ptr::null(),
+            value_len: 0,
+        }
+    }
+}
+
+impl Default for SqvmBleProfileTrigger {
+    fn default() -> Self {
+        Self {
+            profile: [0; SQVM_BLE_PROFILE_TEXT_CAP],
+            id: [0; SQVM_BLE_PROFILE_TEXT_CAP],
+            role: [0; SQVM_BLE_PROFILE_TEXT_CAP],
+            accept_count: 0,
+            accept: [[0; SQVM_BLE_PROFILE_TEXT_CAP]; SQVM_BLE_PROFILE_ACCEPT_MAX],
+            event_count: 0,
+            events: [SqvmBleProfileEventRoute::default(); SQVM_BLE_PROFILE_EVENT_MAX],
+        }
+    }
 }
 
 impl Default for SqvmTriggerTimer {
@@ -1800,6 +1871,76 @@ pub unsafe extern "C" fn sqvm_trigger_timer_read_from_reader(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn sqvm_trigger_ble_profile_count(
+    sqbc: *const u8,
+    sqbc_len: usize,
+    out_count: *mut usize,
+) -> SqvmStatus {
+    if sqbc.is_null() || out_count.is_null() {
+        return SqvmStatus::InvalidArgument;
+    }
+    let mut scratch = [0u8; MAX_APP_BYTES];
+    let mut reader = SliceSqbcReader::new(slice::from_raw_parts(sqbc, sqbc_len));
+    ble_profile_count_from_reader(&mut reader, &mut scratch, out_count)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqvm_trigger_ble_profile_read(
+    sqbc: *const u8,
+    sqbc_len: usize,
+    index: usize,
+    out_profile: *mut SqvmBleProfileTrigger,
+) -> SqvmStatus {
+    if sqbc.is_null() || out_profile.is_null() {
+        return SqvmStatus::InvalidArgument;
+    }
+    let mut scratch = [0u8; MAX_APP_BYTES];
+    let mut reader = SliceSqbcReader::new(slice::from_raw_parts(sqbc, sqbc_len));
+    ble_profile_read_from_reader(&mut reader, &mut scratch, index, out_profile)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqvm_trigger_ble_profile_count_from_reader(
+    user_data: *mut c_void,
+    read_exact_at: SqvmReadExactAtCallback,
+    scratch: *mut u8,
+    scratch_len: usize,
+    out_count: *mut usize,
+) -> SqvmStatus {
+    if read_exact_at.is_none() || scratch.is_null() || out_count.is_null() {
+        return SqvmStatus::InvalidArgument;
+    }
+    let callbacks = SqvmCallbacks {
+        read_exact_at,
+        ..SqvmCallbacks::default()
+    };
+    let mut reader = FfiHost::new(user_data, &callbacks, false);
+    let scratch = slice::from_raw_parts_mut(scratch, scratch_len);
+    ble_profile_count_from_reader(&mut reader, scratch, out_count)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqvm_trigger_ble_profile_read_from_reader(
+    user_data: *mut c_void,
+    read_exact_at: SqvmReadExactAtCallback,
+    scratch: *mut u8,
+    scratch_len: usize,
+    index: usize,
+    out_profile: *mut SqvmBleProfileTrigger,
+) -> SqvmStatus {
+    if read_exact_at.is_none() || scratch.is_null() || out_profile.is_null() {
+        return SqvmStatus::InvalidArgument;
+    }
+    let callbacks = SqvmCallbacks {
+        read_exact_at,
+        ..SqvmCallbacks::default()
+    };
+    let mut reader = FfiHost::new(user_data, &callbacks, false);
+    let scratch = slice::from_raw_parts_mut(scratch, scratch_len);
+    ble_profile_read_from_reader(&mut reader, scratch, index, out_profile)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn sqvm_device_binding_count_from_reader(
     user_data: *mut c_void,
     read_exact_at: SqvmReadExactAtCallback,
@@ -1922,6 +2063,65 @@ pub unsafe extern "C" fn sqvm_dispatch_start_resumable(
     let vm = &mut *context.vm_ptr();
     let mut host = FfiHost::new(user_data, callbacks, true);
     let result = vm.dispatch_resumable(&mut host, event);
+    write_dispatch_result(out_result, vm.exited(), result)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqvm_dispatch_start_resumable_with_payload(
+    context: *mut SqvmContext,
+    user_data: *mut c_void,
+    callbacks: *const SqvmCallbacks,
+    event: *const u8,
+    event_len: usize,
+    payload_fields: *const SqvmEventPayloadField,
+    payload_field_count: usize,
+    out_result: *mut SqvmDispatchResult,
+) -> SqvmStatus {
+    if context.is_null()
+        || callbacks.is_null()
+        || event.is_null()
+        || out_result.is_null()
+        || (payload_field_count > 0 && payload_fields.is_null())
+    {
+        return SqvmStatus::InvalidArgument;
+    }
+    if payload_field_count > SQVM_EVENT_PAYLOAD_FIELD_MAX {
+        return SqvmStatus::InvalidArgument;
+    }
+    let context = &mut *context;
+    if !context.initialized {
+        return SqvmStatus::InvalidArgument;
+    }
+    let Ok(event) = str::from_utf8(slice::from_raw_parts(event, event_len)) else {
+        return SqvmStatus::InvalidArgument;
+    };
+    let mut fields = [EventPayloadField {
+        name: "",
+        value: "",
+    }; SQVM_EVENT_PAYLOAD_FIELD_MAX];
+    let raw_fields = slice::from_raw_parts(payload_fields, payload_field_count);
+    for (index, raw) in raw_fields.iter().enumerate() {
+        if raw.name.is_null() || raw.value.is_null() {
+            return SqvmStatus::InvalidArgument;
+        }
+        let Ok(name) = str::from_utf8(slice::from_raw_parts(raw.name, raw.name_len)) else {
+            return SqvmStatus::InvalidArgument;
+        };
+        let Some(name) = payload_field_name(name) else {
+            return SqvmStatus::InvalidArgument;
+        };
+        let Ok(value) = str::from_utf8(slice::from_raw_parts(raw.value, raw.value_len)) else {
+            return SqvmStatus::InvalidArgument;
+        };
+        fields[index] = EventPayloadField { name, value };
+    }
+    let callbacks = &*callbacks;
+    let vm = &mut *context.vm_ptr();
+    let mut host = FfiHost::new(user_data, callbacks, true);
+    let payload = EventPayload {
+        fields: &fields[..payload_field_count],
+    };
+    let result = vm.dispatch_resumable_with_payload(&mut host, event, Some(payload));
     write_dispatch_result(out_result, vm.exited(), result)
 }
 
@@ -3788,6 +3988,273 @@ fn trigger_timer_read_from_reader(
         *out_timer = out;
     }
     SqvmStatus::Ok
+}
+
+fn ble_profile_count_from_reader(
+    reader: &mut impl SqbcReader,
+    scratch: &mut [u8],
+    out_count: *mut usize,
+) -> SqvmStatus {
+    let (_, section) = match ble_trigger_reader_sections(reader, scratch) {
+        Ok(sections) => sections,
+        Err(_) => return SqvmStatus::VmError,
+    };
+    let Some(section) = section else {
+        unsafe {
+            *out_count = 0;
+        }
+        return SqvmStatus::Ok;
+    };
+    if section.len > scratch.len() {
+        return SqvmStatus::VmError;
+    }
+    if reader
+        .read_exact_at(section.offset, &mut scratch[..section.len])
+        .is_err()
+    {
+        return SqvmStatus::VmError;
+    }
+    let count = match read_u16_slice(scratch, 0) {
+        Some(count) => count as usize,
+        None => return SqvmStatus::VmError,
+    };
+    if count > 16 {
+        return SqvmStatus::VmError;
+    }
+    unsafe {
+        *out_count = count;
+    }
+    SqvmStatus::Ok
+}
+
+fn ble_profile_read_from_reader(
+    reader: &mut impl SqbcReader,
+    scratch: &mut [u8],
+    profile_index: usize,
+    out_profile: *mut SqvmBleProfileTrigger,
+) -> SqvmStatus {
+    let (strings_section, section) = match ble_trigger_reader_sections(reader, scratch) {
+        Ok(sections) => sections,
+        Err(_) => return SqvmStatus::VmError,
+    };
+    let Some(section) = section else {
+        return SqvmStatus::InvalidArgument;
+    };
+    if section.len > scratch.len() || strings_section.len > scratch.len() {
+        return SqvmStatus::VmError;
+    }
+    if reader
+        .read_exact_at(section.offset, &mut scratch[..section.len])
+        .is_err()
+    {
+        return SqvmStatus::VmError;
+    }
+    let count = match read_u16_slice(scratch, 0) {
+        Some(count) => count as usize,
+        None => return SqvmStatus::VmError,
+    };
+    if profile_index >= count {
+        return SqvmStatus::InvalidArgument;
+    }
+    let mut cursor = 2usize;
+    let mut selected = None;
+    for index in 0..count {
+        let profile_id = match read_u16_slice(scratch, cursor) {
+            Some(value) => value,
+            None => return SqvmStatus::VmError,
+        };
+        let id_id = match read_u16_slice(scratch, cursor + 2) {
+            Some(value) => value,
+            None => return SqvmStatus::VmError,
+        };
+        let role_id = match read_u16_slice(scratch, cursor + 4) {
+            Some(value) => value,
+            None => return SqvmStatus::VmError,
+        };
+        let accept_count = match read_u16_slice(scratch, cursor + 6) {
+            Some(value) => value as usize,
+            None => return SqvmStatus::VmError,
+        };
+        cursor += 8;
+        if accept_count > SQVM_BLE_PROFILE_ACCEPT_MAX {
+            return SqvmStatus::VmError;
+        }
+        let accept_start = cursor;
+        cursor = match cursor.checked_add(accept_count * 2) {
+            Some(value) => value,
+            None => return SqvmStatus::VmError,
+        };
+        let event_count = match read_u16_slice(scratch, cursor) {
+            Some(value) => value as usize,
+            None => return SqvmStatus::VmError,
+        };
+        cursor += 2;
+        if event_count > SQVM_BLE_PROFILE_EVENT_MAX {
+            return SqvmStatus::VmError;
+        }
+        let events_start = cursor;
+        cursor = match cursor.checked_add(event_count * 4) {
+            Some(value) => value,
+            None => return SqvmStatus::VmError,
+        };
+        if cursor > section.len {
+            return SqvmStatus::VmError;
+        }
+        if index == profile_index {
+            selected = Some((
+                profile_id,
+                id_id,
+                role_id,
+                accept_count,
+                accept_start,
+                event_count,
+                events_start,
+            ));
+        }
+    }
+    if cursor != section.len {
+        return SqvmStatus::VmError;
+    }
+
+    let Some((profile_id, id_id, role_id, accept_count, accept_start, event_count, events_start)) =
+        selected
+    else {
+        return SqvmStatus::InvalidArgument;
+    };
+    let mut accept_ids = [0u16; SQVM_BLE_PROFILE_ACCEPT_MAX];
+    for (index, slot) in accept_ids.iter_mut().enumerate().take(accept_count) {
+        *slot = match read_u16_slice(scratch, accept_start + index * 2) {
+            Some(value) => value,
+            None => return SqvmStatus::VmError,
+        };
+    }
+    let mut event_ids = [(0u16, 0u16); SQVM_BLE_PROFILE_EVENT_MAX];
+    for (index, slot) in event_ids.iter_mut().enumerate().take(event_count) {
+        let base = events_start + index * 4;
+        let kind_id = match read_u16_slice(scratch, base) {
+            Some(value) => value,
+            None => return SqvmStatus::VmError,
+        };
+        let event_id = match read_u16_slice(scratch, base + 2) {
+            Some(value) => value,
+            None => return SqvmStatus::VmError,
+        };
+        *slot = (kind_id, event_id);
+    }
+    if reader
+        .read_exact_at(strings_section.offset, &mut scratch[..strings_section.len])
+        .is_err()
+    {
+        return SqvmStatus::VmError;
+    }
+    let strings_len = strings_section.len;
+    let mut out = SqvmBleProfileTrigger {
+        accept_count,
+        event_count,
+        ..SqvmBleProfileTrigger::default()
+    };
+    if copy_string_id(&scratch[..strings_len], profile_id, &mut out.profile).is_err()
+        || copy_string_id(&scratch[..strings_len], id_id, &mut out.id).is_err()
+        || copy_string_id(&scratch[..strings_len], role_id, &mut out.role).is_err()
+    {
+        return SqvmStatus::VmError;
+    }
+    for index in 0..accept_count {
+        if copy_string_id(&scratch[..strings_len], accept_ids[index], &mut out.accept[index])
+            .is_err()
+        {
+            return SqvmStatus::VmError;
+        }
+    }
+    for index in 0..event_count {
+        let (kind_id, event_id) = event_ids[index];
+        if copy_string_id(&scratch[..strings_len], kind_id, &mut out.events[index].kind).is_err()
+            || copy_string_id(&scratch[..strings_len], event_id, &mut out.events[index].event)
+                .is_err()
+        {
+            return SqvmStatus::VmError;
+        }
+    }
+    unsafe {
+        *out_profile = out;
+    }
+    SqvmStatus::Ok
+}
+
+fn ble_trigger_reader_sections(
+    reader: &mut impl SqbcReader,
+    scratch: &mut [u8],
+) -> Result<(SqbcSection, Option<SqbcSection>), VmError> {
+    let mut fixed_header = [0u8; 14];
+    reader.read_exact_at(0, &mut fixed_header)?;
+    let header = Program::parse_header(&fixed_header)?;
+    if header.header_len > scratch.len() {
+        return Err(VmError::InvalidHeader);
+    }
+    reader.read_exact_at(0, &mut scratch[..header.header_len])?;
+    let mut strings_section = None;
+    let mut ble_section = None;
+    for index in 0..header.section_count {
+        let record = Program::parse_section_record(&scratch[..header.header_len], index)?;
+        match record.kind {
+            SECTION_STRINGS => strings_section = Some(record),
+            SECTION_BLE_TRIGGERS => ble_section = Some(record),
+            _ => {}
+        }
+    }
+    Ok((
+        strings_section.ok_or(VmError::MissingSection)?,
+        ble_section,
+    ))
+}
+
+fn read_u16_slice(bytes: &[u8], offset: usize) -> Option<u16> {
+    Some(u16::from_le_bytes([
+        *bytes.get(offset)?,
+        *bytes.get(offset + 1)?,
+    ]))
+}
+
+fn string_from_section(bytes: &[u8], id: u16) -> Result<&str, VmError> {
+    let count = read_u16_slice(bytes, 0).ok_or(VmError::InvalidSection)? as usize;
+    let mut cursor = 2usize;
+    for index in 0..count {
+        let len = read_u16_slice(bytes, cursor).ok_or(VmError::InvalidSection)? as usize;
+        cursor = cursor.checked_add(2).ok_or(VmError::InvalidSection)?;
+        let end = cursor.checked_add(len).ok_or(VmError::InvalidSection)?;
+        if end > bytes.len() {
+            return Err(VmError::InvalidSection);
+        }
+        if index == id as usize {
+            return str::from_utf8(&bytes[cursor..end]).map_err(|_| VmError::InvalidSection);
+        }
+        cursor = end;
+    }
+    Err(VmError::InvalidSection)
+}
+
+fn copy_string_id(bytes: &[u8], id: u16, out: &mut [u8]) -> Result<(), VmError> {
+    let value = string_from_section(bytes, id)?;
+    let value = value.as_bytes();
+    if value.len() >= out.len() {
+        return Err(VmError::InvalidSection);
+    }
+    out.fill(0);
+    out[..value.len()].copy_from_slice(value);
+    Ok(())
+}
+
+fn payload_field_name(name: &str) -> Option<&'static str> {
+    match name {
+        "profile" => Some("profile"),
+        "id" => Some("id"),
+        "objectName" => Some("objectName"),
+        "bytesReceived" => Some("bytesReceived"),
+        "totalBytes" => Some("totalBytes"),
+        "upload" => Some("upload"),
+        "error" => Some("error"),
+        _ => None,
+    }
 }
 
 fn device_binding_count_from_reader(

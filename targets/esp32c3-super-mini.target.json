@@ -81,9 +81,11 @@
     "ble": {
       "type": "bluetooth-le",
       "standard": "Bluetooth LE",
-      "status": "mcu-supported-runtime-unsupported",
-      "runtimeFeatures": [],
-      "reason": "ESP32-C3 silicon includes Bluetooth LE, but this target does not yet expose SquidScript BLE transfer runtime features."
+      "status": "runtime-supported-reference",
+      "runtimeFeatures": [
+        "service.ble.object-transfer"
+      ],
+      "reason": "The ESP32-C3 Super Mini Zephyr reference firmware enables Bluetooth LE for SquidScript BLE object-transfer trigger work. Current hardware coverage verifies BLE advertising; staged chunk receive and install remain tracked runtime work."
     }
   },
   "pins": {
@@ -376,6 +378,7 @@
     "service.wifi.stopAP",
     "service.wifi.getAPIP",
     "service.wifi.connect",
-    "service.wifi.disconnect"
+    "service.wifi.disconnect",
+    "service.ble.object-transfer"
   ]
 }

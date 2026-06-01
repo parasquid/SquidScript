@@ -59,6 +59,7 @@ pub struct AstScreen {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AstHandler {
     pub event: String,
+    pub param: Option<String>,
     pub preload: bool,
     pub statements: Vec<IrStatement>,
     pub span: SourceSpan,

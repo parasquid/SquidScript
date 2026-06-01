@@ -11,14 +11,19 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Runtime Services
 
+- Add a Zephyr VM host ABI manifest/codegen path for FFI declarations, generated
+  C headers, coverage docs, and consistency tests so callback/export lists do
+  not drift as SquidScript services grow.
 - Decide service priority and target support for spec-recognized APIs that are
-  not yet SQBC-backed: `httpServer.*`, `bleTransfer.*`, and remaining `file.*`
-  APIs beyond the current file pick/read family. Add each API only as a real
-  compiler/SQBC/VM/Zephyr slice with honest unsupported behavior until target
-  support is implemented.
-- Decide whether the ESP32-C3 Super Mini reference target should expose
-  `bleTransfer.*`; if yes, implement and verify it through Zephyr BLE instead
-  of relying on MCU radio metadata alone.
+  not yet SQBC-backed: `httpServer.*`, remaining `service.ble.*` runtime
+  pieces, and remaining `file.*` APIs beyond the current file pick/read family.
+  Add each API only as a real compiler/SQBC/VM/Zephyr slice with honest
+  unsupported behavior until target support is implemented.
+- Complete BLE object-transfer runtime support after the metadata/handler
+  payload slice: stream chunks to staging storage, expose typed progress/error
+  payload fields, install completed `.sqbc` uploads through the shared app-store
+  pipeline, and verify on ESP32-C3 hardware with skip behavior when host
+  Bluetooth is unavailable.
 - Add external Wi-Fi AP client association and DHCP lease proof through
   Zephyr-native subsystems.
 - Treat Wi-Fi scan/connect/AP lifecycle as a future explicit service-state
@@ -75,7 +80,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 Current ESP32-C3 RAM baseline:
 
-- Latest observed linker DRAM from `scripts/c3-supermini-build.sh`: 196,048
+- Latest observed linker DRAM from `scripts/c3-supermini-build.sh`: 244,160
   bytes.
 - Current target configuration: 5,120-byte protocol/main stack and
   17,408-byte VM worker stack.
@@ -127,16 +132,3 @@ RAM verification notes:
   callback with bounded redacted AP rows. Future Wi-Fi scan RAM work should
   focus on result pagination/cursor behavior and broader service-state modeling,
   not the old unsupported scan path.
-
-## Explicit State Machines
-
-- Continue refactoring implicit runtime state-machine concepts into explicit,
-  documented, testable abstractions where the transition model is already
-  meaningful.
-- Candidate areas: device input press/release/debounce/gesture recognition,
-  protocol transfer sessions for install/temp/resource uploads, scoped
-  scratch-buffer ownership, and reusable timed output patterns for indicator
-  blink/breathe behavior.
-- Add Mermaid state or sequence diagrams where they clarify transitions.
-- Leave simple trace/output/drawlog buffers as bounded queues rather than
-  overfitting them into state machines.

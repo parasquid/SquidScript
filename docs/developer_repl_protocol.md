@@ -183,7 +183,9 @@ successful host launch means the target app has been selected through the same
 foreground handoff path used by app-driven launch.
 See `docs/app_lifecycle_state_machine.md` for the full lifecycle state machine,
 failure cases, fallback `main` behavior, and reset versus storage-format test
-isolation guidance.
+isolation guidance. See `docs/firmware_state_machines.md` for the protocol
+transfer, scratch ownership, input button, indicator pattern, and bounded-queue
+state models.
 Zephyr preserves the active foreground VM's in-memory state across
 non-lifecycle foreground event dispatches, such as key and foreground timer
 handlers, so apps do not need to call `state.load()` for every event. App

@@ -499,7 +499,7 @@ Example ESP32-C3 low-RAM runtime:
     "service.wifi.configureIp",
     "service.wifi.setup",
     "httpServer.serve",
-    "bleTransfer.receive",
+    "service.ble.object-transfer",
     "bluetoothHid.advertise",
     "bluetoothHid.keys"
   ]
@@ -545,7 +545,7 @@ Example ESP32-S3 PSRAM runtime:
     "service.wifi.configureIp",
     "service.wifi.setup",
     "httpServer.serve",
-    "bleTransfer.receive",
+    "service.ble.object-transfer",
     "bluetoothHid.advertise",
     "bluetoothHid.keys",
     "debug-ui"

@@ -50,6 +50,8 @@ Initial section kinds:
 6  screen table
 7  app metadata
 8  device binding table
+9  timer trigger table
+10 BLE profile trigger table
 ```
 
 Initial value tags:
@@ -197,19 +199,18 @@ Handler table entries are:
 ```text
 offset  size  field
 0       2     little-endian u16 event string id
-2       2     little-endian u16 flags
-4       4     little-endian u32 bytecode offset
-8       4     little-endian u32 bytecode length
+2       1     preload hint from @preload, 0 or 1
+3       1     reserved, must be 0
+4       2     little-endian u16 handler payload parameter count
+6       2     little-endian u16 local slot count
+8       4     little-endian u32 bytecode offset
+12      4     little-endian u32 bytecode length
 ```
 
-Handler flags:
-
-```text
-bit 0  preload hint from @preload
-```
-
-The preload bit is advisory. Firmware may use it to load or retain
+The preload hint is advisory. Firmware may use it to load or retain
 latency-sensitive handler chunks, but app correctness must not depend on it.
+Handler payload parameters are currently used for event records such as
+`event.on("ble.object.complete", ev)`.
 
 Trigger table entries are:
 
@@ -224,6 +225,32 @@ offset  size  field
 The trigger table contains the compiled `app.triggers` declarations for timer
 sources. Firmware reads this section during `app.arm(appId)` and records the
 timer registrations directly.
+
+BLE profile trigger table payload:
+
+```text
+offset  size  field
+0       2     little-endian u16 profile count
+...           variable profile records
+```
+
+Each profile record is:
+
+```text
+offset  size  field
+0       2     little-endian u16 profile name string id
+2       2     little-endian u16 app-local profile id string id
+4       2     little-endian u16 role string id
+6       2     little-endian u16 accept count
+8       2*n   accepted extension string ids
+...     2     little-endian u16 event route count
+...     4*n   event route pairs: kind string id, event string id
+```
+
+Current BLE profile metadata is emitted for
+`service.ble.profile("object-transfer", ...)` declarations inside
+`app.triggers`. Firmware reads this metadata to arm object-transfer trigger
+profiles without dispatching foreground app code.
 
 Zephyr firmware must install named SQBC apps, start `main`, arm trigger
 registrations, dispatch real timer events, and exercise app-stack behavior.

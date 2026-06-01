@@ -8,7 +8,7 @@ use crate::{
     error::VmError,
     limits::{
         MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES, MAX_DEVICE_BINDINGS, MAX_FUNCTIONS, MAX_HANDLERS,
-        MAX_PROGRAM_STRING_BYTES, MAX_SCREENS, MAX_STATE, MAX_STRINGS, MAX_TRIGGERS,
+        MAX_LOCALS, MAX_PROGRAM_STRING_BYTES, MAX_SCREENS, MAX_STATE, MAX_STRINGS, MAX_TRIGGERS,
     },
     model::{Function, Handler, Screen, StateSlot, TriggerTimerMeta},
     reader::{SliceSqbcReader, SqbcReader},
@@ -879,20 +879,30 @@ fn parse_handlers(
     let mut handlers = [Handler {
         event_id: 0,
         preload: false,
+        param_count: 0,
+        local_count: 0,
         start: 0,
         len: 0,
     }; MAX_HANDLERS];
     let mut cursor = 2usize;
     for handler in handlers.iter_mut().take(count) {
         let event_id = read_u16(bytes, cursor)?;
-        let preload = read_u16(bytes, cursor + 2)? != 0;
-        let start = read_u32(bytes, cursor + 4)? as usize;
-        let len = read_u32(bytes, cursor + 8)? as usize;
-        cursor += 12;
+        let preload = *bytes.get(cursor + 2).ok_or(VmError::InvalidSection)? != 0;
+        let reserved = *bytes.get(cursor + 3).ok_or(VmError::InvalidSection)?;
+        let param_count = read_u16(bytes, cursor + 4)?;
+        let local_count = read_u16(bytes, cursor + 6)?;
+        let start = read_u32(bytes, cursor + 8)? as usize;
+        let len = read_u32(bytes, cursor + 12)? as usize;
+        cursor += 16;
+        if reserved != 0 || param_count > local_count || local_count as usize > MAX_LOCALS {
+            return Err(VmError::InvalidSection);
+        }
         validate_range(start, len, code_len)?;
         *handler = Handler {
             event_id,
             preload,
+            param_count,
+            local_count,
             start,
             len,
         };

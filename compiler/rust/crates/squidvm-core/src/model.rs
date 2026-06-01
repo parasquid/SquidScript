@@ -13,6 +13,8 @@ pub(crate) struct Function {
 pub(crate) struct Handler {
     pub(crate) event_id: u16,
     pub(crate) preload: bool,
+    pub(crate) param_count: u16,
+    pub(crate) local_count: u16,
     pub(crate) start: usize,
     pub(crate) len: usize,
 }

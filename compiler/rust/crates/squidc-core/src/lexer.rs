@@ -7,6 +7,8 @@ pub(crate) enum TokenKind {
     Number,
     OpenBrace,
     CloseBrace,
+    OpenBracket,
+    CloseBracket,
     OpenParen,
     CloseParen,
     Colon,
@@ -100,6 +102,8 @@ pub(crate) fn lex(source: &str) -> Vec<LexToken> {
             let kind = match ch {
                 '{' => TokenKind::OpenBrace,
                 '}' => TokenKind::CloseBrace,
+                '[' => TokenKind::OpenBracket,
+                ']' => TokenKind::CloseBracket,
                 '(' => TokenKind::OpenParen,
                 ')' => TokenKind::CloseParen,
                 ':' => TokenKind::Colon,
@@ -139,6 +143,8 @@ pub(crate) fn syntax_kind_for(kind: TokenKind) -> SquidKind {
         TokenKind::Unknown => SquidKind::Error,
         TokenKind::OpenBrace
         | TokenKind::CloseBrace
+        | TokenKind::OpenBracket
+        | TokenKind::CloseBracket
         | TokenKind::OpenParen
         | TokenKind::CloseParen
         | TokenKind::Colon

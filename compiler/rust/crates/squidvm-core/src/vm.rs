@@ -76,6 +76,16 @@ pub struct ChunkedVm {
 }
 
 #[derive(Clone, Copy)]
+pub struct EventPayloadField<'a> {
+    pub name: &'static str,
+    pub value: &'a str,
+}
+
+pub struct EventPayload<'a> {
+    pub fields: &'a [EventPayloadField<'a>],
+}
+
+#[derive(Clone, Copy)]
 struct ChunkedResume {
     kind: ChunkedFrameKind,
     start: usize,
@@ -422,10 +432,22 @@ impl ChunkedVm {
         host: &mut impl ChunkedVmHost,
         event: &str,
     ) -> Result<VmDispatch, VmError> {
+        self.dispatch_resumable_with_payload(host, event, None)
+    }
+
+    pub fn dispatch_resumable_with_payload(
+        &mut self,
+        host: &mut impl ChunkedVmHost,
+        event: &str,
+        payload: Option<EventPayload<'_>>,
+    ) -> Result<VmDispatch, VmError> {
         if self.exited {
             return Ok(VmDispatch::Complete);
         }
         let (index, handler) = self.index.handler(event)?;
+        if handler.local_count as usize > MAX_LOCALS || handler.param_count > handler.local_count {
+            return Err(VmError::LocalOutOfBounds);
+        }
         self.strings
             .retain_state_values(&self.index, &mut self.state[..self.index.state_count])?;
         self.runtime_records.reset();
@@ -440,13 +462,35 @@ impl ChunkedVm {
         host.trace(event);
         self.instructions = 0;
         self.frame_count = 0;
-        self.push_resume_frame(
+        let frame_index = self.push_resume_frame(
             ChunkedFrameKind::Handler(index as u16),
             handler.start,
             handler.len,
             0,
         )?;
+        if handler.param_count > 1 {
+            return Err(VmError::LocalOutOfBounds);
+        }
+        if handler.param_count == 1 {
+            let payload = payload
+                .map(|payload| self.event_payload_record(payload))
+                .transpose()?
+                .unwrap_or(Value::Null);
+            self.frames[frame_index].locals[0] = payload;
+        }
         self.execute_resume_frames(host)
+    }
+
+    fn event_payload_record(&mut self, payload: EventPayload<'_>) -> Result<Value, VmError> {
+        if payload.fields.len() > MAX_RUNTIME_RECORD_FIELDS {
+            return Err(VmError::InvalidOperand);
+        }
+        let mut fields = [RuntimeRecordField::new("", Value::Null); MAX_RUNTIME_RECORD_FIELDS];
+        for (index, field) in payload.fields.iter().enumerate() {
+            let value = self.strings.intern_runtime(&self.index, field.value)?;
+            fields[index] = RuntimeRecordField::new(field.name, value);
+        }
+        self.runtime_records.alloc(&fields[..payload.fields.len()])
     }
 
     pub fn resume_storage(

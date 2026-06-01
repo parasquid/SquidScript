@@ -10,6 +10,7 @@ use crate::{
     syntax::{SquidKind, SquidLang},
 };
 use rowan::{GreenNode, GreenNodeBuilder, Language};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone)]
 pub struct ParsedSource {
@@ -573,6 +574,14 @@ impl Parser<'_> {
         }
         self.consume_ws(builder);
         let event = self.consume_string(builder).unwrap_or_default();
+        self.consume_ws(builder);
+        let param = if self.at_kind(TokenKind::Comma) {
+            self.bump(builder);
+            self.consume_ws(builder);
+            self.consume_ident(builder)
+        } else {
+            None
+        };
         self.consume_call_tail(builder);
         self.consume_ws(builder);
         if self.at_kind(TokenKind::OpenBrace) {
@@ -584,6 +593,7 @@ impl Parser<'_> {
         builder.finish_node();
         self.ast.handlers.push(AstHandler {
             event,
+            param,
             preload,
             statements,
             span: SourceSpan { start, end },
@@ -795,7 +805,7 @@ impl Parser<'_> {
         if first == "service"
             && matches!(
                 method.as_str(),
-                "timer" | "display" | "indicator" | "wifi" | "power"
+                "timer" | "display" | "indicator" | "wifi" | "power" | "ble"
             )
         {
             if self.at_kind(TokenKind::Dot) {
@@ -816,6 +826,59 @@ impl Parser<'_> {
                     name: format!("service.wifi.{action}"),
                     args: self.parse_call_args_after_open(builder),
                 });
+            }
+            if method == "ble" {
+                return match action.as_str() {
+                    "profile" => {
+                        let profile = self.consume_string(builder).unwrap_or_default();
+                        self.consume_comma(builder);
+                        let options = self.parse_static_options_object(builder);
+                        self.consume_call_tail(builder);
+                        let id = options
+                            .get("id")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or_default()
+                            .to_string();
+                        let role = options
+                            .get("role")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("server")
+                            .to_string();
+                        let accept = options
+                            .get("accept")
+                            .and_then(|value| value.as_array())
+                            .map(|values| {
+                                values
+                                    .iter()
+                                    .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_default();
+                        let events = options
+                            .get("events")
+                            .and_then(|value| value.as_object())
+                            .map(|events| {
+                                events
+                                    .iter()
+                                    .filter_map(|(key, value)| {
+                                        value.as_str().map(|value| (key.clone(), value.to_string()))
+                                    })
+                                    .collect::<BTreeMap<_, _>>()
+                            })
+                            .unwrap_or_default();
+                        Some(IrStatement::ServiceBleProfile {
+                            profile,
+                            id,
+                            role,
+                            accept,
+                            events,
+                        })
+                    }
+                    _ => {
+                        self.consume_call_tail(builder);
+                        None
+                    }
+                };
             }
             if method == "power" {
                 return match action.as_str() {
@@ -1528,6 +1591,95 @@ impl Parser<'_> {
             }
         }
         serde_json::Value::Object(map)
+    }
+
+    fn parse_static_options_object(&mut self, builder: &mut GreenNodeBuilder) -> serde_json::Value {
+        self.consume_ws(builder);
+        if !self.at_kind(TokenKind::OpenBrace) {
+            return serde_json::json!({});
+        }
+        self.parse_static_object_after_open(builder)
+    }
+
+    fn parse_static_object_after_open(&mut self, builder: &mut GreenNodeBuilder) -> serde_json::Value {
+        let mut map = serde_json::Map::new();
+        self.bump(builder);
+        while !self.at_end() {
+            self.consume_ws(builder);
+            if self.at_kind(TokenKind::CloseBrace) {
+                self.bump(builder);
+                break;
+            }
+            let Some(key) = self.consume_ident(builder) else {
+                self.bump(builder);
+                continue;
+            };
+            self.consume_ws(builder);
+            if self.at_kind(TokenKind::Colon) {
+                self.bump(builder);
+            }
+            self.consume_ws(builder);
+            let value = self
+                .parse_static_value(builder)
+                .unwrap_or(serde_json::Value::Null);
+            map.insert(key, value);
+            self.consume_ws(builder);
+            if self.at_kind(TokenKind::Comma) {
+                self.bump(builder);
+            }
+        }
+        serde_json::Value::Object(map)
+    }
+
+    fn parse_static_array_after_open(&mut self, builder: &mut GreenNodeBuilder) -> serde_json::Value {
+        let mut values = Vec::new();
+        self.bump(builder);
+        while !self.at_end() {
+            self.consume_ws(builder);
+            if self.at_kind(TokenKind::CloseBracket) {
+                self.bump(builder);
+                break;
+            }
+            values.push(
+                self.parse_static_value(builder)
+                    .unwrap_or(serde_json::Value::Null),
+            );
+            self.consume_ws(builder);
+            if self.at_kind(TokenKind::Comma) {
+                self.bump(builder);
+            }
+        }
+        serde_json::Value::Array(values)
+    }
+
+    fn parse_static_value(&mut self, builder: &mut GreenNodeBuilder) -> Option<serde_json::Value> {
+        self.consume_ws(builder);
+        if self.at_kind(TokenKind::String) {
+            return self
+                .consume_string(builder)
+                .map(|value| serde_json::Value::String(value));
+        }
+        if self.at_kind(TokenKind::Number) {
+            return self
+                .consume_number(builder)
+                .map(|value| serde_json::json!(value));
+        }
+        if self.at_kind(TokenKind::Ident) {
+            let ident = self.consume_ident(builder)?;
+            return Some(match ident.as_str() {
+                "true" => serde_json::Value::Bool(true),
+                "false" => serde_json::Value::Bool(false),
+                "null" => serde_json::Value::Null,
+                _ => serde_json::Value::String(ident),
+            });
+        }
+        if self.at_kind(TokenKind::OpenBrace) {
+            return Some(self.parse_static_object_after_open(builder));
+        }
+        if self.at_kind(TokenKind::OpenBracket) {
+            return Some(self.parse_static_array_after_open(builder));
+        }
+        None
     }
 
     fn consume_literal_value(

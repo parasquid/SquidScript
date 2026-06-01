@@ -11,6 +11,7 @@
 #endif
 
 #include "app_store.h"
+#include "ble_smoke.h"
 #include "device_protocol.h"
 #include "serial_transport.h"
 #include "squidscript_fallback_app.h"
@@ -134,6 +135,8 @@ int main(void)
 			LOG_WRN("SquidScript root app launch failed: %d", root_result);
 		}
 	}
+
+	(void)sq_ble_smoke_start();
 
 	while (true) {
 		bool consumed = false;

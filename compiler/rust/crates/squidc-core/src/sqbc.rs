@@ -16,6 +16,7 @@ const SECTION_SCREENS: u16 = 6;
 const SECTION_APP_META: u16 = 7;
 const SECTION_DEVICE_BINDINGS: u16 = 8;
 const SECTION_TRIGGERS: u16 = 9;
+const SECTION_BLE_TRIGGERS: u16 = 10;
 
 const OP_PUSH_INT: u8 = 1;
 const OP_PUSH_BOOL: u8 = 2;
@@ -170,6 +171,8 @@ struct FunctionMeta {
 #[derive(Clone)]
 struct HandlerMeta {
     event_id: u16,
+    param_count: u16,
+    local_count: u16,
     preload: bool,
     start: u32,
     len: u32,
@@ -278,12 +281,16 @@ pub fn encode_sqbc_with_profile(
     for handler in &ir.handlers {
         let event_id = unit.strings.intern(&handler.event)?;
         let start = u32::try_from(unit.code.len()).map_err(|_| SqbcError::new("code too large"))?;
-        let mut frame = FrameCompiler::default();
+        let params = handler.param.iter().cloned().collect::<Vec<_>>();
+        let mut frame = FrameCompiler::with_params(&params)?;
         compile_statements(&mut unit, &mut frame, &handler.statements, profile)?;
         emit(&mut unit.code, OP_HALT);
         let end = u32::try_from(unit.code.len()).map_err(|_| SqbcError::new("code too large"))?;
         unit.handler_metas.push(HandlerMeta {
             event_id,
+            param_count: u16::try_from(params.len())
+                .map_err(|_| SqbcError::new("too many handler params"))?,
+            local_count: frame.next_local,
             preload: handler.preload,
             start,
             len: end - start,
@@ -314,6 +321,10 @@ pub fn encode_sqbc_with_profile(
         (SECTION_STATE, encode_state_section(ir, &unit.strings)?),
         (SECTION_FUNCTIONS, encode_functions(&unit.function_metas)),
         (SECTION_TRIGGERS, encode_triggers(ir, &unit.strings)?),
+        (
+            SECTION_BLE_TRIGGERS,
+            encode_ble_triggers(ir, &unit.strings)?,
+        ),
         (SECTION_HANDLERS, encode_handlers(&unit.handler_metas)),
         (SECTION_SCREENS, encode_screens(&unit.screen_metas)),
         (SECTION_CODE, unit.code),
@@ -366,6 +377,18 @@ fn collect_strings(
     }
     for trigger in &ir.triggers {
         strings.intern(&trigger.event)?;
+        if let Some(ble) = &trigger.ble {
+            strings.intern(&ble.profile)?;
+            strings.intern(&ble.id)?;
+            strings.intern(&ble.role)?;
+            for extension in &ble.accept {
+                strings.intern(extension)?;
+            }
+            for (kind, event) in &ble.events {
+                strings.intern(kind)?;
+                strings.intern(event)?;
+            }
+        }
     }
     for state in &ir.state {
         strings.intern(&state.name)?;
@@ -454,6 +477,24 @@ fn collect_statement_strings(
             IrStatement::ServiceTimerAfter { event, delay_ms } => {
                 strings.intern(event)?;
                 collect_expr_strings(delay_ms, strings)?;
+            }
+            IrStatement::ServiceBleProfile {
+                profile,
+                id,
+                role,
+                accept,
+                events,
+            } => {
+                strings.intern(profile)?;
+                strings.intern(id)?;
+                strings.intern(role)?;
+                for extension in accept {
+                    strings.intern(extension)?;
+                }
+                for (kind, event) in events {
+                    strings.intern(kind)?;
+                    strings.intern(event)?;
+                }
             }
             IrStatement::ServicePowerSleep { wake_after_ms } => {
                 collect_expr_strings(wake_after_ms, strings)?;
@@ -754,6 +795,7 @@ fn compile_statement(
             compile_expr(unit, frame, delay_ms)?;
             emit_builtin(&mut unit.code, BUILTIN_SERVICE_TIMER_AFTER);
         }
+        IrStatement::ServiceBleProfile { .. } => {}
         IrStatement::ServicePowerSleep { wake_after_ms } => {
             compile_expr(unit, frame, wake_after_ms)?;
             emit_builtin(&mut unit.code, BUILTIN_SERVICE_POWER_SLEEP);
@@ -1299,7 +1341,10 @@ fn encode_handlers(handlers: &[HandlerMeta]) -> Vec<u8> {
     write_u16(&mut out, handlers.len() as u16);
     for handler in handlers {
         write_u16(&mut out, handler.event_id);
-        write_u16(&mut out, u16::from(handler.preload));
+        out.push(u8::from(handler.preload));
+        out.push(0);
+        write_u16(&mut out, handler.param_count);
+        write_u16(&mut out, handler.local_count);
         write_u32(&mut out, handler.start);
         write_u32(&mut out, handler.len);
     }
@@ -1307,12 +1352,17 @@ fn encode_handlers(handlers: &[HandlerMeta]) -> Vec<u8> {
 }
 
 fn encode_triggers(ir: &IrProgram, strings: &StringTable) -> Result<Vec<u8>, SqbcError> {
+    let timer_triggers = ir
+        .triggers
+        .iter()
+        .filter(|trigger| trigger.ble.is_none())
+        .collect::<Vec<_>>();
     let mut out = Vec::new();
     write_u16(
         &mut out,
-        u16::try_from(ir.triggers.len()).map_err(|_| SqbcError::new("too many triggers"))?,
+        u16::try_from(timer_triggers.len()).map_err(|_| SqbcError::new("too many triggers"))?,
     );
-    for trigger in &ir.triggers {
+    for trigger in timer_triggers {
         let event_id = strings
             .ids
             .get(&trigger.event)
@@ -1324,6 +1374,50 @@ fn encode_triggers(ir: &IrProgram, strings: &StringTable) -> Result<Vec<u8>, Sqb
         write_i32(&mut out, trigger.interval_ms);
     }
     Ok(out)
+}
+
+fn encode_ble_triggers(ir: &IrProgram, strings: &StringTable) -> Result<Vec<u8>, SqbcError> {
+    let ble_triggers = ir
+        .triggers
+        .iter()
+        .filter_map(|trigger| trigger.ble.as_ref())
+        .collect::<Vec<_>>();
+    let mut out = Vec::new();
+    write_u16(
+        &mut out,
+        u16::try_from(ble_triggers.len()).map_err(|_| SqbcError::new("too many BLE triggers"))?,
+    );
+    for trigger in ble_triggers {
+        write_u16(&mut out, string_id(strings, &trigger.profile)?);
+        write_u16(&mut out, string_id(strings, &trigger.id)?);
+        write_u16(&mut out, string_id(strings, &trigger.role)?);
+        write_u16(
+            &mut out,
+            u16::try_from(trigger.accept.len())
+                .map_err(|_| SqbcError::new("too many BLE accept extensions"))?,
+        );
+        for extension in &trigger.accept {
+            write_u16(&mut out, string_id(strings, extension)?);
+        }
+        write_u16(
+            &mut out,
+            u16::try_from(trigger.events.len())
+                .map_err(|_| SqbcError::new("too many BLE event routes"))?,
+        );
+        for (kind, event) in &trigger.events {
+            write_u16(&mut out, string_id(strings, kind)?);
+            write_u16(&mut out, string_id(strings, event)?);
+        }
+    }
+    Ok(out)
+}
+
+fn string_id(strings: &StringTable, value: &str) -> Result<u16, SqbcError> {
+    strings
+        .ids
+        .get(value)
+        .copied()
+        .ok_or_else(|| SqbcError::new("unknown string"))
 }
 
 fn encode_screens(screens: &[ScreenMeta]) -> Vec<u8> {

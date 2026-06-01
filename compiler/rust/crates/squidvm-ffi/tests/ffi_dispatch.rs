@@ -7,12 +7,15 @@ use squidc_core::{
 use squidvm_ffi::{
     sqvm_context_init, sqvm_context_init_in_place, sqvm_context_prepare, sqvm_context_size,
     sqvm_device_binding_count_from_reader, sqvm_device_binding_read_from_reader, sqvm_dispatch,
-    sqvm_dispatch_resume_storage, sqvm_dispatch_start_resumable, sqvm_trigger_timer_count,
-    sqvm_trigger_timer_read, SqvmAppRegistryEntry, SqvmAppStackEntry, SqvmCallbacks,
-    SqvmDeviceBinding, SqvmDeviceConfigResult, SqvmDeviceConfigValue, SqvmDeviceConfigValueKind,
-    SqvmDispatchOutcome, SqvmDispatchResult, SqvmDisplayInfo, SqvmFilePickFileResult,
-    SqvmFileReadLinesResult, SqvmFileReadTextResult, SqvmStatus, SqvmStorageCompletion,
-    SqvmStorageRequestKind, SqvmTriggerTimer,
+    sqvm_dispatch_resume_storage, sqvm_dispatch_start_resumable,
+    sqvm_dispatch_start_resumable_with_payload,
+    sqvm_trigger_ble_profile_count, sqvm_trigger_ble_profile_read, sqvm_trigger_timer_count,
+    sqvm_trigger_timer_read, SqvmAppRegistryEntry, SqvmAppStackEntry, SqvmBleProfileTrigger,
+    SqvmCallbacks, SqvmDeviceBinding, SqvmDeviceConfigResult, SqvmDeviceConfigValue,
+    SqvmDeviceConfigValueKind, SqvmDispatchOutcome, SqvmDispatchResult, SqvmDisplayInfo,
+    SqvmEventPayloadField, SqvmFilePickFileResult, SqvmFileReadLinesResult,
+    SqvmFileReadTextResult, SqvmStatus, SqvmStorageCompletion, SqvmStorageRequestKind,
+    SqvmTriggerTimer,
 };
 
 #[derive(Default)]
@@ -1401,6 +1404,27 @@ screen("main") {}
     )
 }
 
+fn compile_ble_object_transfer_trigger_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-ble"
+app.triggers {
+  service.ble.profile("object-transfer", {
+    id: "sqbc-install",
+    accept: [".sqbc"],
+    events: {
+      complete: "ble.object.complete",
+      error: "ble.object.error"
+    }
+  })
+}
+event.on("ble.object.complete", ev) {
+  debug.print(ev.id)
+}
+screen("main") {}
+"#,
+    )
+}
+
 fn compile_exit_sqbc() -> Vec<u8> {
     compile_sqbc(
         r#"app "ffi-exit"
@@ -1629,6 +1653,54 @@ fn dispatch_resumable_to_completion(
             &callbacks(host),
             event.as_ptr(),
             event.len(),
+            &mut result,
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    while result.outcome == SqvmDispatchOutcome::PendingStorage {
+        let mut completion = SqvmStorageCompletion::default();
+        match result.storage.kind {
+            SqvmStorageRequestKind::SqbcRead => {
+                completion.has_len = true;
+                completion.len = result.storage.len;
+                let start = result.storage.offset;
+                let end = start + result.storage.len;
+                completion.bytes[..result.storage.len].copy_from_slice(&host.sqbc[start..end]);
+            }
+            SqvmStorageRequestKind::StateLoad => {}
+            SqvmStorageRequestKind::StateSave | SqvmStorageRequestKind::StateReset => {}
+            SqvmStorageRequestKind::None => panic!("pending storage without request"),
+        }
+        let status = unsafe {
+            sqvm_dispatch_resume_storage(
+                context,
+                callback_user_data(host),
+                &callbacks(host),
+                &completion,
+                &mut result,
+            )
+        };
+        assert_eq!(status, SqvmStatus::Ok);
+    }
+    result
+}
+
+fn dispatch_resumable_with_payload_to_completion(
+    context: &mut squidvm_ffi::SqvmContext,
+    host: &mut Host,
+    event: &[u8],
+    payload: &[SqvmEventPayloadField],
+) -> SqvmDispatchResult {
+    let mut result = SqvmDispatchResult::default();
+    let status = unsafe {
+        sqvm_dispatch_start_resumable_with_payload(
+            context,
+            callback_user_data(host),
+            &callbacks(host),
+            event.as_ptr(),
+            event.len(),
+            payload.as_ptr(),
+            payload.len(),
             &mut result,
         )
     };
@@ -3152,6 +3224,71 @@ fn reads_trigger_timer_metadata_without_dispatching_app_arm() {
     );
     assert!(host.timer_after.is_empty());
     assert!(host.timer_every.is_empty());
+}
+
+#[test]
+fn reads_ble_object_transfer_trigger_metadata() {
+    let sqbc = compile_ble_object_transfer_trigger_sqbc();
+    let mut count = 0usize;
+    let status = unsafe { sqvm_trigger_ble_profile_count(sqbc.as_ptr(), sqbc.len(), &mut count) };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(count, 1);
+
+    let mut profile = SqvmBleProfileTrigger::default();
+    let status = unsafe {
+        sqvm_trigger_ble_profile_read(sqbc.as_ptr(), sqbc.len(), 0, &mut profile as *mut _)
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(fixed_text(&profile.profile), "object-transfer");
+    assert_eq!(fixed_text(&profile.id), "sqbc-install");
+    assert_eq!(fixed_text(&profile.role), "server");
+    assert_eq!(profile.accept_count, 1);
+    assert_eq!(fixed_text(&profile.accept[0]), ".sqbc");
+    assert_eq!(profile.event_count, 2);
+    assert_eq!(fixed_text(&profile.events[0].kind), "complete");
+    assert_eq!(fixed_text(&profile.events[0].event), "ble.object.complete");
+    assert_eq!(fixed_text(&profile.events[1].kind), "error");
+    assert_eq!(fixed_text(&profile.events[1].event), "ble.object.error");
+}
+
+#[test]
+fn dispatches_payload_handler_with_read_only_event_record() {
+    let sqbc = compile_ble_object_transfer_trigger_sqbc();
+    let mut host = Host {
+        sqbc,
+        ..Host::default()
+    };
+    let mut context = sqvm_context_init();
+    let mut scratch = vec![0u8; 4096];
+    assert_eq!(
+        unsafe {
+            sqvm_context_init_in_place(
+                &mut context,
+                callback_user_data(&mut host),
+                &callbacks(&mut host),
+                scratch.as_mut_ptr(),
+                scratch.len(),
+            )
+        },
+        SqvmStatus::Ok
+    );
+
+    let name = b"id";
+    let value = b"sqbc-install";
+    let payload = [SqvmEventPayloadField {
+        name: name.as_ptr(),
+        name_len: name.len(),
+        value: value.as_ptr(),
+        value_len: value.len(),
+    }];
+    let result = dispatch_resumable_with_payload_to_completion(
+        &mut context,
+        &mut host,
+        b"ble.object.complete",
+        &payload,
+    );
+    assert_eq!(result.outcome, SqvmDispatchOutcome::Complete);
+    assert_eq!(host.output, vec!["sqbc-install"]);
 }
 
 #[test]

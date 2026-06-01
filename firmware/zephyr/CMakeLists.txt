@@ -41,6 +41,7 @@ target_include_directories(app PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/generate
 target_sources(app PRIVATE
   src/app_lifecycle.c
   src/app_store.c
+  src/ble_smoke.c
   src/device_protocol.c
   src/fallback_app.c
   src/main.c

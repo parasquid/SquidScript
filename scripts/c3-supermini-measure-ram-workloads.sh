@@ -10,7 +10,7 @@ SYSTEM_APP="${ROOT}/tests/hardware/c3-supermini/system-resources/main.squid"
 WIFI_AP_APP="${ROOT}/tests/hardware/c3-supermini/wifi-ap-summary/main.squid"
 COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-12}"
 WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-60}"
-SYSTEM_HEAP_BYTES="${SYSTEM_HEAP_BYTES:-45056}"
+SYSTEM_HEAP_BYTES="${SYSTEM_HEAP_BYTES:-65536}"
 
 mkdir -p "${WORK_DIR}"
 

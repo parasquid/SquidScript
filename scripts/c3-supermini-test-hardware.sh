@@ -4,13 +4,19 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${ROOT}/scripts/lib/serial-port.sh"
 
+SKIP_PHYSICAL_INPUT=0
+
 usage() {
   cat <<'EOF'
-Usage: scripts/c3-supermini-test-hardware.sh [--skip-flash]
+Usage: scripts/c3-supermini-test-hardware.sh [--skip-flash] [--skip-physical-input]
 
 Runs the current Zephyr-backed ESP32-C3 Super Mini hardware checks
 sequentially. Stateful install/lifecycle checks run before any final visible
 board-state checks.
+
+Options:
+  --skip-flash             Reuse the firmware already on the device.
+  --skip-physical-input    Skip the BOOT/GPIO9 press prompt.
 EOF
 }
 
@@ -18,6 +24,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --skip-flash)
       export SKIP_FLASH=1
+      shift
+      ;;
+    --skip-physical-input)
+      SKIP_PHYSICAL_INPUT=1
       shift
       ;;
     -h|--help)
@@ -44,7 +54,6 @@ export ESPFLASH_PORT="$(resolve_esp_serial_port)"
 "$ROOT/scripts/c3-supermini-test-device-binding.sh"
 "$ROOT/scripts/c3-supermini-test-inline-gpio-binding.sh"
 "$ROOT/scripts/c3-supermini-test-inline-gpio10-binding.sh"
-"$ROOT/scripts/c3-supermini-test-input-button.sh"
 "$ROOT/scripts/c3-supermini-test-unsupported-inline-gpio-binding.sh"
 "$ROOT/scripts/c3-supermini-test-device-config.sh"
 "$ROOT/scripts/c3-supermini-test-file-pick.sh"
@@ -53,4 +62,8 @@ export ESPFLASH_PORT="$(resolve_esp_serial_port)"
 "$ROOT/scripts/c3-supermini-test-wifi-scan-api.sh" --require-real-wifi
 "$ROOT/scripts/c3-supermini-test-wifi-list-api.sh" --require-real-wifi
 "$ROOT/scripts/c3-supermini-test-wifi-ap-api.sh"
+"$ROOT/scripts/c3-supermini-test-ble-smoke.sh"
+if [[ "$SKIP_PHYSICAL_INPUT" != "1" ]]; then
+  "$ROOT/scripts/c3-supermini-test-input-button.sh"
+fi
 "$ROOT/scripts/c3-supermini-test-blinky.sh"

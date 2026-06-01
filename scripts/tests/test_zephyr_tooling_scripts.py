@@ -127,15 +127,42 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
         self.assertIn("DTC_OVERLAY_FILE", build)
         self.assertIn("esp32c3_supermini.overlay", build)
+        self.assertIn("generate-zephyr-target-kconfig.py", build)
+        self.assertIn("SQUID_ZEPHYR_TARGET_JSON", build)
+        self.assertIn("EXTRA_CONF_FILE", build)
         self.assertIn("ZEPHYR_PRISTINE", build)
         self.assertNotIn("unverified default", build)
 
-    def test_default_config_enables_real_wifi_scan_status_backend(self):
+    def test_target_kconfig_enables_declared_radio_backends(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
+        generator = ROOT / "scripts/generate-zephyr-target-kconfig.py"
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "target.conf"
+            subprocess.run(
+                [
+                    str(generator),
+                    str(ROOT / "targets/esp32c3-super-mini.target.json"),
+                    str(out),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            target_conf = out.read_text(encoding="utf-8")
+
+        for option in [
+            "CONFIG_WIFI=y",
+            "CONFIG_WIFI_NM=y",
+            "CONFIG_BT=y",
+            "CONFIG_BT_PERIPHERAL=y",
+            'CONFIG_BT_DEVICE_NAME="ESP32-C3 Super Mini"',
+            "CONFIG_BT_RX_STACK_SIZE=1536",
+        ]:
+            self.assertIn(option, target_conf)
 
         for option in [
             "CONFIG_NETWORKING=y",
-            "CONFIG_WIFI=y",
             "CONFIG_WIFI_USAGE_MODE_STA_AP=y",
             "CONFIG_NET_MGMT=y",
             "CONFIG_NET_MGMT_EVENT=y",
@@ -279,11 +306,11 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         prj_conf = self.read("firmware/zephyr/prj.conf")
         ram_workloads = self.read("scripts/c3-supermini-measure-ram-workloads.sh")
 
-        self.assertIn("CONFIG_HEAP_MEM_POOL_SIZE=45056", prj_conf)
+        self.assertIn("CONFIG_HEAP_MEM_POOL_SIZE=65536", prj_conf)
         self.assertNotIn("CONFIG_HEAP_MEM_POOL_SIZE=51200", prj_conf)
         self.assertIn("CONFIG_HEAP_MEM_POOL_IGNORE_MIN=y", prj_conf)
         self.assertNotIn("CONFIG_HEAP_MEM_POOL_ADD_SIZE_ESP_WIFI=", prj_conf)
-        self.assertIn('SYSTEM_HEAP_BYTES="${SYSTEM_HEAP_BYTES:-45056}"', ram_workloads)
+        self.assertIn('SYSTEM_HEAP_BYTES="${SYSTEM_HEAP_BYTES:-65536}"', ram_workloads)
         self.assertNotIn('SYSTEM_HEAP_BYTES="${SYSTEM_HEAP_BYTES:-51200}"', ram_workloads)
         self.assertIn("heap_max_headroom_bytes", ram_workloads)
         self.assertIn("SYSTEM_HEAP_BYTES - heap_max_alloc", ram_workloads)
@@ -295,10 +322,13 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('c3-supermini-test-wifi-scan-api.sh" --require-real-wifi', suite)
         self.assertIn('c3-supermini-test-wifi-list-api.sh" --require-real-wifi', suite)
         self.assertIn("c3-supermini-test-wifi-ap-api.sh", suite)
+        self.assertIn("c3-supermini-test-ble-smoke.sh", suite)
         self.assertIn("c3-supermini-test-blinky.sh", suite)
         self.assertLess(suite.index("c3-supermini-test-wifi-list-api.sh"), suite.index("c3-supermini-test-blinky.sh"))
         self.assertLess(suite.index("c3-supermini-test-wifi-list-api.sh"), suite.index("c3-supermini-test-wifi-ap-api.sh"))
         self.assertLess(suite.index("c3-supermini-test-wifi-ap-api.sh"), suite.index("c3-supermini-test-blinky.sh"))
+        self.assertLess(suite.index("c3-supermini-test-wifi-ap-api.sh"), suite.index("c3-supermini-test-ble-smoke.sh"))
+        self.assertLess(suite.index("c3-supermini-test-ble-smoke.sh"), suite.index("c3-supermini-test-blinky.sh"))
 
     def test_lazy_load_screen_benchmark_has_portable_contract(self):
         docs = self.read("docs/hardware_benchmarks.md")
@@ -837,6 +867,51 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn("test_runtime_transfer_owner_rejects_overlap", ztest)
         self.assertIn("config SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC", ztest_kconfig)
         self.assertIn("CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC=y", ztest_conf)
+
+    def test_firmware_state_machines_are_documented_and_linked(self):
+        doc = self.read("docs/firmware_state_machines.md")
+        roadmap = self.read("ROADMAP.md")
+        protocol_doc = self.read("docs/developer_repl_protocol.md")
+
+        for heading in [
+            "# Firmware State Machines",
+            "## Protocol Transfer Sessions",
+            "## Protocol Scratch Ownership",
+            "## Device Input Buttons",
+            "## Indicator Patterns",
+            "## Bounded Queues",
+        ]:
+            self.assertIn(heading, doc)
+        self.assertIn("```mermaid", doc)
+        self.assertIn("docs/app_lifecycle_state_machine.md", doc)
+        self.assertIn("docs/firmware_state_machines.md", protocol_doc)
+        self.assertNotIn("## Explicit State Machines", roadmap)
+
+    def test_protocol_transfer_sessions_use_explicit_phases(self):
+        protocol_h = self.read("firmware/zephyr/src/device_protocol.h")
+        protocol_c = self.read("firmware/zephyr/src/device_protocol.c")
+        ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
+
+        self.assertIn("enum sq_device_transfer_phase", protocol_h)
+        for phase in [
+            "SQ_DEVICE_TRANSFER_IDLE",
+            "SQ_DEVICE_TRANSFER_RECEIVING",
+            "SQ_DEVICE_TRANSFER_COMMITTING",
+        ]:
+            self.assertIn(phase, protocol_h)
+        for struct_name in [
+            "struct sq_device_install_session",
+            "struct sq_device_temp_session",
+            "struct sq_device_resource_session",
+        ]:
+            body = protocol_h[
+                protocol_h.index(struct_name) : protocol_h.index("};", protocol_h.index(struct_name))
+            ]
+            self.assertIn("enum sq_device_transfer_phase phase;", body)
+        self.assertIn("transfer_session_begin_receiving", protocol_c)
+        self.assertIn("transfer_session_begin_committing", protocol_c)
+        self.assertIn("transfer_session_finish_idle", protocol_c)
+        self.assertIn("test_protocol_transfer_session_phases_track_begin_chunk_commit", ztest)
 
     def test_transfer_owner_exercise_fixture_uses_state_config_and_wifi_scan(self):
         app = self.read("tests/hardware/c3-supermini/transfer-owner-summary/main.squid")
@@ -1754,13 +1829,17 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', script)
         self.assertIn('timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" "$@"', script)
         self.assertIn("c3-supermini-test-input-button.sh", suite)
+        self.assertIn("[--skip-flash] [--skip-physical-input]", suite)
+        self.assertIn("SKIP_PHYSICAL_INPUT=0", suite)
+        self.assertIn("--skip-physical-input", suite)
+        self.assertIn('if [[ "$SKIP_PHYSICAL_INPUT" != "1" ]]; then', suite)
         self.assertLess(
             suite.index("c3-supermini-test-inline-gpio10-binding.sh"),
             suite.index("c3-supermini-test-input-button.sh"),
         )
         self.assertLess(
+            suite.index("c3-supermini-test-wifi-ap-api.sh"),
             suite.index("c3-supermini-test-input-button.sh"),
-            suite.index("c3-supermini-test-unsupported-inline-gpio-binding.sh"),
         )
         self.assertLess(
             suite.index("c3-supermini-test-input-button.sh"),
@@ -1822,6 +1901,8 @@ class ZephyrToolingScriptTests(unittest.TestCase):
 
     def test_sw0_gpio_button_path_configures_pullup_and_uses_binding_polarity(self):
         runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+        ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
         configure_start = runtime.rindex("static int configure_input_button_gpio")
         read_start = runtime.rindex("static int read_input_button_gpio")
         configure_body = runtime[configure_start:read_start]
@@ -1835,6 +1916,32 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         )
         self.assertIn("*pressed = active_low ? raw == 0 : raw != 0", read_body)
         self.assertNotIn("gpio_pin_get_dt(&input_sw0_gpio)", read_body)
+        self.assertIn("enum sq_vm_runtime_input_button_phase", runtime_h)
+        self.assertIn("SQ_VM_RUNTIME_INPUT_DEBOUNCING_PRESS", runtime_h)
+        self.assertIn("SQ_VM_RUNTIME_INPUT_DEBOUNCING_RELEASE", runtime_h)
+        self.assertIn("enum sq_vm_runtime_input_button_phase phase;", runtime_h)
+        self.assertIn("button->phase = SQ_VM_RUNTIME_INPUT_DEBOUNCING_PRESS", runtime)
+        self.assertIn("button->phase = SQ_VM_RUNTIME_INPUT_PRESSED", runtime)
+        self.assertIn("button->phase = SQ_VM_RUNTIME_INPUT_RELEASED", runtime)
+        self.assertIn("test_input_button_phase_tracks_press_and_release_without_release_dispatch", ztest)
+
+    def test_indicator_patterns_use_single_state_machine(self):
+        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+        runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
+
+        self.assertIn("enum sq_vm_runtime_indicator_pattern", runtime_h)
+        for pattern in [
+            "SQ_VM_RUNTIME_INDICATOR_STEADY",
+            "SQ_VM_RUNTIME_INDICATOR_BREATHE",
+            "SQ_VM_RUNTIME_INDICATOR_BLINK",
+        ]:
+            self.assertIn(pattern, runtime_h)
+        self.assertIn("enum sq_vm_runtime_indicator_pattern indicator_pattern;", runtime_h)
+        self.assertNotIn("indicator_breathe_active", runtime_h)
+        self.assertNotIn("indicator_blink_active", runtime_h)
+        self.assertIn("switch (runtime->indicator_pattern)", runtime_c)
+        self.assertIn("test_indicator_pattern_state_machine_transitions", ztest)
 
     def test_hardware_suite_runs_unsupported_inline_gpio_binding_script(self):
         script = self.read("scripts/c3-supermini-test-unsupported-inline-gpio-binding.sh")
@@ -3003,6 +3110,21 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         blinky_check = suite.index('c3-supermini-test-blinky.sh')
         self.assertLess(stack_check, wifi_check)
         self.assertLess(wifi_check, blinky_check)
+
+    def test_ble_smoke_is_target_feature_driven(self):
+        target = json.loads(self.read("targets/esp32c3-super-mini.target.json"))
+        script = self.read("scripts/c3-supermini-test-ble-smoke.sh")
+        docs = self.read("docs/hardware_target_tests.md")
+
+        self.assertIn("service.ble.object-transfer", target["features"])
+        self.assertEqual(target["radios"]["ble"]["status"], "runtime-supported-reference")
+        self.assertIn("BLE advertising started: ${DEVICE_NAME}", script)
+        self.assertIn("bluetoothctl", script)
+        self.assertIn("host scan skipped", script)
+        self.assertIn("--require-host-scan", script)
+        self.assertIn("host scan did not discover", script)
+        self.assertNotIn("ble-smoke.conf", script)
+        self.assertIn("target metadata", docs)
 
     def test_wifi_list_timeout_captures_resource_diagnostics(self):
         wifi = self.read("scripts/c3-supermini-test-wifi-list-api.sh")

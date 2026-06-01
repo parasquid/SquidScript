@@ -2039,8 +2039,7 @@ static int runtime_apply_indicator_gpio_binding(struct sq_vm_runtime *runtime, c
 	if (runtime == NULL || alias == NULL || alias_len == 0) {
 		return -EINVAL;
 	}
-	runtime->indicator_breathe_active = false;
-	runtime->indicator_blink_active = false;
+	runtime->indicator_pattern = SQ_VM_RUNTIME_INDICATOR_STEADY;
 	runtime->indicator_binding_active = true;
 	runtime->indicator_binding_pin = pin;
 	runtime->indicator_binding_active_low = active_low;
@@ -2080,6 +2079,7 @@ static int runtime_activate_input_button(struct sq_vm_runtime *runtime, uint8_t 
 	slot->pin = pin;
 	slot->active_low = active_low;
 	slot->pressed = pressed;
+	slot->phase = SQ_VM_RUNTIME_INPUT_RELEASED;
 	slot->next_poll_ms = k_uptime_get() + SQ_VM_RUNTIME_INPUT_POLL_MS;
 	slot->debounce_until_ms = k_uptime_get() + SQ_VM_RUNTIME_INPUT_DEBOUNCE_MS;
 	memcpy(slot->event, event, event_len);
@@ -2091,6 +2091,7 @@ static int runtime_activate_input_button(struct sq_vm_runtime *runtime, uint8_t 
 		return result;
 	}
 	slot->pressed = pressed;
+	slot->phase = pressed ? SQ_VM_RUNTIME_INPUT_PRESSED : SQ_VM_RUNTIME_INPUT_RELEASED;
 	return 0;
 }
 
@@ -2223,8 +2224,12 @@ static void runtime_clear_active_bindings(struct sq_vm_runtime *runtime)
 	}
 	memset(runtime->active_bindings, 0, sizeof(runtime->active_bindings));
 	runtime->active_binding_count = 0;
-	runtime->indicator_breathe_active = false;
-	runtime->indicator_blink_active = false;
+	runtime->indicator_pattern = SQ_VM_RUNTIME_INDICATOR_STEADY;
+	runtime->indicator_pattern_step = 0;
+	runtime->indicator_pattern_on = false;
+	runtime->indicator_pattern_on_ms = 0;
+	runtime->indicator_pattern_off_ms = 0;
+	runtime->indicator_pattern_next_ms = 0;
 	runtime->indicator_binding_active = false;
 	runtime->indicator_binding_pin = 0;
 	runtime->indicator_binding_active_low = false;
@@ -2769,14 +2774,12 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->drawlog_count = 0;
 	memset(runtime->timers, 0, sizeof(runtime->timers));
 	runtime->indicator_state = false;
-	runtime->indicator_breathe_active = false;
-	runtime->indicator_breathe_step = 0;
-	runtime->indicator_breathe_next_ms = 0;
-	runtime->indicator_blink_active = false;
-	runtime->indicator_blink_on = false;
-	runtime->indicator_blink_on_ms = 0;
-	runtime->indicator_blink_off_ms = 0;
-	runtime->indicator_blink_next_ms = 0;
+	runtime->indicator_pattern = SQ_VM_RUNTIME_INDICATOR_STEADY;
+	runtime->indicator_pattern_step = 0;
+	runtime->indicator_pattern_on = false;
+	runtime->indicator_pattern_on_ms = 0;
+	runtime->indicator_pattern_off_ms = 0;
+	runtime->indicator_pattern_next_ms = 0;
 	(void)sq_vm_runtime_apply_target_default_indicator_binding(runtime);
 	runtime->gpio_configured_mask = 0;
 	runtime->gpio_state_mask = 0;
@@ -3257,8 +3260,7 @@ int sq_vm_runtime_indicator_write(struct sq_vm_runtime *runtime, bool value)
 	if (runtime == NULL) {
 		return -EINVAL;
 	}
-	runtime->indicator_breathe_active = false;
-	runtime->indicator_blink_active = false;
+	runtime->indicator_pattern = SQ_VM_RUNTIME_INDICATOR_STEADY;
 	return set_indicator_brightness(runtime, value ? 100U : 0U);
 }
 
@@ -3287,10 +3289,12 @@ int sq_vm_runtime_indicator_breathe(struct sq_vm_runtime *runtime)
 		return -EINVAL;
 	}
 	now = k_uptime_get();
-	runtime->indicator_breathe_active = true;
-	runtime->indicator_blink_active = false;
-	runtime->indicator_breathe_step = 0;
-	runtime->indicator_breathe_next_ms = now;
+	runtime->indicator_pattern = SQ_VM_RUNTIME_INDICATOR_BREATHE;
+	runtime->indicator_pattern_step = 0;
+	runtime->indicator_pattern_on = false;
+	runtime->indicator_pattern_on_ms = 0;
+	runtime->indicator_pattern_off_ms = 0;
+	runtime->indicator_pattern_next_ms = now;
 	return set_indicator_brightness(runtime, 0U);
 }
 
@@ -3302,12 +3306,12 @@ int sq_vm_runtime_indicator_blink(struct sq_vm_runtime *runtime, int32_t on_ms, 
 		return -EINVAL;
 	}
 	now = k_uptime_get();
-	runtime->indicator_breathe_active = false;
-	runtime->indicator_blink_active = true;
-	runtime->indicator_blink_on = true;
-	runtime->indicator_blink_on_ms = on_ms;
-	runtime->indicator_blink_off_ms = off_ms;
-	runtime->indicator_blink_next_ms = now + on_ms;
+	runtime->indicator_pattern = SQ_VM_RUNTIME_INDICATOR_BLINK;
+	runtime->indicator_pattern_step = 0;
+	runtime->indicator_pattern_on = true;
+	runtime->indicator_pattern_on_ms = on_ms;
+	runtime->indicator_pattern_off_ms = off_ms;
+	runtime->indicator_pattern_next_ms = now + on_ms;
 	return set_indicator_brightness(runtime, 100U);
 }
 
@@ -3435,8 +3439,7 @@ int sq_vm_runtime_hardware_gpio_write(struct sq_vm_runtime *runtime, const uint8
 		return -EINVAL;
 	}
 	if (runtime_indicator_uses_pin(runtime, pin)) {
-		runtime->indicator_breathe_active = false;
-		runtime->indicator_blink_active = false;
+		runtime->indicator_pattern = SQ_VM_RUNTIME_INDICATOR_STEADY;
 		runtime->indicator_state =
 			runtime_indicator_active_low(runtime) ? !value : value;
 		bit = BIT(pin);
@@ -3506,44 +3509,39 @@ int sq_vm_runtime_hardware_gpio_read(struct sq_vm_runtime *runtime, const uint8_
 	return 0;
 }
 
-static int sq_vm_runtime_poll_indicator_breathe(struct sq_vm_runtime *runtime)
+static int sq_vm_runtime_poll_indicator(struct sq_vm_runtime *runtime)
 {
 	int64_t now;
 	uint8_t brightness;
 
-	if (!runtime->indicator_breathe_active) {
+	switch (runtime->indicator_pattern) {
+	case SQ_VM_RUNTIME_INDICATOR_STEADY:
 		return 0;
-	}
-	now = k_uptime_get();
-	if (now < runtime->indicator_breathe_next_ms) {
-		return 0;
-	}
-
-	brightness = indicator_breathe_duties[runtime->indicator_breathe_step];
-	runtime->indicator_breathe_step =
-		(uint8_t)((runtime->indicator_breathe_step + 1U) %
+	case SQ_VM_RUNTIME_INDICATOR_BREATHE:
+		now = k_uptime_get();
+		if (now < runtime->indicator_pattern_next_ms) {
+			return 0;
+		}
+		brightness = indicator_breathe_duties[runtime->indicator_pattern_step];
+		runtime->indicator_pattern_step =
+			(uint8_t)((runtime->indicator_pattern_step + 1U) %
 			  SQ_VM_RUNTIME_INDICATOR_BREATHE_STEPS);
-	runtime->indicator_breathe_next_ms = now + SQ_VM_RUNTIME_BREATHE_LEVEL_MS;
-	return set_indicator_brightness(runtime, brightness);
-}
-
-static int sq_vm_runtime_poll_indicator_blink(struct sq_vm_runtime *runtime)
-{
-	int64_t now;
-
-	if (!runtime->indicator_blink_active) {
+		runtime->indicator_pattern_next_ms = now + SQ_VM_RUNTIME_BREATHE_LEVEL_MS;
+		return set_indicator_brightness(runtime, brightness);
+	case SQ_VM_RUNTIME_INDICATOR_BLINK:
+		now = k_uptime_get();
+		if (now < runtime->indicator_pattern_next_ms) {
+			return 0;
+		}
+		runtime->indicator_pattern_on = !runtime->indicator_pattern_on;
+		runtime->indicator_pattern_next_ms =
+			now + (runtime->indicator_pattern_on ? runtime->indicator_pattern_on_ms :
+							runtime->indicator_pattern_off_ms);
+		return set_indicator_brightness(runtime, runtime->indicator_pattern_on ? 100U : 0U);
+	default:
+		runtime->indicator_pattern = SQ_VM_RUNTIME_INDICATOR_STEADY;
 		return 0;
 	}
-	now = k_uptime_get();
-	if (now < runtime->indicator_blink_next_ms) {
-		return 0;
-	}
-
-	runtime->indicator_blink_on = !runtime->indicator_blink_on;
-	runtime->indicator_blink_next_ms =
-		now + (runtime->indicator_blink_on ? runtime->indicator_blink_on_ms :
-						   runtime->indicator_blink_off_ms);
-	return set_indicator_brightness(runtime, runtime->indicator_blink_on ? 100U : 0U);
 }
 
 static int sq_vm_runtime_poll_input_buttons(struct sq_vm_runtime *runtime)
@@ -3570,14 +3568,29 @@ static int sq_vm_runtime_poll_input_buttons(struct sq_vm_runtime *runtime)
 		if (result != 0) {
 			return result;
 		}
-		if (pressed == button->pressed || now < button->debounce_until_ms) {
+		if (pressed == button->pressed) {
+			if (pressed) {
+				button->phase = SQ_VM_RUNTIME_INPUT_PRESSED;
+			} else {
+				button->phase = SQ_VM_RUNTIME_INPUT_RELEASED;
+			}
+			continue;
+		}
+		if (now < button->debounce_until_ms) {
+			if (pressed) {
+				button->phase = SQ_VM_RUNTIME_INPUT_DEBOUNCING_PRESS;
+			} else {
+				button->phase = SQ_VM_RUNTIME_INPUT_DEBOUNCING_RELEASE;
+			}
 			continue;
 		}
 		button->pressed = pressed;
 		button->debounce_until_ms = now + SQ_VM_RUNTIME_INPUT_DEBOUNCE_MS;
 		if (pressed) {
+			button->phase = SQ_VM_RUNTIME_INPUT_PRESSED;
 			return sq_vm_runtime_start(runtime, &runtime->job_backend, button->event);
 		}
+		button->phase = SQ_VM_RUNTIME_INPUT_RELEASED;
 	}
 	return 0;
 }
@@ -3737,8 +3750,7 @@ int sq_vm_runtime_poll(struct sq_vm_runtime *runtime)
 	if (runtime == NULL) {
 		return 0;
 	}
-	(void)sq_vm_runtime_poll_indicator_blink(runtime);
-	(void)sq_vm_runtime_poll_indicator_breathe(runtime);
+	(void)sq_vm_runtime_poll_indicator(runtime);
 	if (sq_vm_runtime_poll_input_buttons(runtime) != 0) {
 		return -EIO;
 	}
