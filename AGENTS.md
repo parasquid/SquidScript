@@ -74,6 +74,13 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   unsupported placeholder when a real implementation path is available. Drive
   the requested behavior through to working code and honest verification, and
   use follow-up roadmap items only for genuinely separate work.
+- Pre-1.0 redesign churn is not a reason to avoid recommending or choosing the
+  better SquidScript authoring model, API shape, or architecture. When comparing
+  approaches, treat compatibility churn as acceptable by default and optimize
+  for the best long-term language/runtime design unless the user explicitly
+  asks for a smaller compatibility-preserving slice or there is a concrete
+  blocker such as hardware limits, unavailable tooling, safety risk, or missing
+  implementation evidence.
 - Do not treat a plan's "spec/API slice first" wording, prior roadmap split, or
   existing unsupported stub as a hard boundary when the user asks for a working
   feature. If repo code or available libraries show a plausible real
