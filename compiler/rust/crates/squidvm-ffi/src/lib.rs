@@ -4160,17 +4160,30 @@ fn ble_profile_read_from_reader(
         return SqvmStatus::VmError;
     }
     for index in 0..accept_count {
-        if copy_string_id(&scratch[..strings_len], accept_ids[index], &mut out.accept[index])
-            .is_err()
+        if copy_string_id(
+            &scratch[..strings_len],
+            accept_ids[index],
+            &mut out.accept[index],
+        )
+        .is_err()
         {
             return SqvmStatus::VmError;
         }
     }
     for index in 0..event_count {
         let (kind_id, event_id) = event_ids[index];
-        if copy_string_id(&scratch[..strings_len], kind_id, &mut out.events[index].kind).is_err()
-            || copy_string_id(&scratch[..strings_len], event_id, &mut out.events[index].event)
-                .is_err()
+        if copy_string_id(
+            &scratch[..strings_len],
+            kind_id,
+            &mut out.events[index].kind,
+        )
+        .is_err()
+            || copy_string_id(
+                &scratch[..strings_len],
+                event_id,
+                &mut out.events[index].event,
+            )
+            .is_err()
         {
             return SqvmStatus::VmError;
         }
@@ -4202,10 +4215,7 @@ fn ble_trigger_reader_sections(
             _ => {}
         }
     }
-    Ok((
-        strings_section.ok_or(VmError::MissingSection)?,
-        ble_section,
-    ))
+    Ok((strings_section.ok_or(VmError::MissingSection)?, ble_section))
 }
 
 fn read_u16_slice(bytes: &[u8], offset: usize) -> Option<u16> {
@@ -5143,7 +5153,7 @@ mod tests {
     #[test]
     #[cfg(target_pointer_width = "32")]
     fn sqvm_context_still_fits_zephyr_runtime_context_buffer() {
-        const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 8_624;
+        const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 7_872;
         assert!(
             sqvm_context_size() <= ZEPHYR_RUNTIME_CONTEXT_BYTES,
             "SqvmContext is {} bytes and must fit firmware/zephyr/src/vm_runtime.h context_words",

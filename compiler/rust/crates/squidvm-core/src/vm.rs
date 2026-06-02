@@ -148,14 +148,171 @@ enum PendingStorageResume {
     StateReset,
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+#[repr(u8)]
+enum RuntimeFieldName {
+    Empty = 0,
+    Active,
+    ApStartEvents,
+    ApStopEvents,
+    AppId,
+    Auth,
+    Available,
+    Backend,
+    Binding,
+    Bssid,
+    Build,
+    BytesReceived,
+    Cancelled,
+    Channel,
+    Clients,
+    ColorModel,
+    Configured,
+    Connected,
+    Count,
+    DefaultFontHeight,
+    Description,
+    DisconnectReason,
+    DisconnectReasonCode,
+    Done,
+    Driver,
+    DriverMode,
+    DriverStarted,
+    Error,
+    Event,
+    Gw,
+    Height,
+    Hidden,
+    Id,
+    Ip,
+    IpAddress,
+    Kind,
+    LastBackendCode,
+    Lines,
+    LogicalGrayLevels,
+    Mode,
+    Name,
+    NativeBpp,
+    NativePixelFormat,
+    Netmask,
+    ObjectName,
+    Ok,
+    Path,
+    PhysicalHeight,
+    PhysicalWidth,
+    ProbeEvents,
+    Profile,
+    Ready,
+    Rotation,
+    Rssi,
+    ScanMatches,
+    Ssid,
+    SsidLength,
+    StaConnectedEvents,
+    StaDisconnectedEvents,
+    State,
+    Status,
+    SupportsFastRefresh,
+    SupportsPartialRefresh,
+    Text,
+    TotalBytes,
+    Transport,
+    Upload,
+    Warning,
+    Width,
+}
+
+impl RuntimeFieldName {
+    fn parse(name: &str) -> Option<Self> {
+        Some(match name {
+            "active" => Self::Active,
+            "apStartEvents" => Self::ApStartEvents,
+            "apStopEvents" => Self::ApStopEvents,
+            "appId" => Self::AppId,
+            "auth" => Self::Auth,
+            "available" => Self::Available,
+            "backend" => Self::Backend,
+            "binding" => Self::Binding,
+            "bssid" => Self::Bssid,
+            "build" => Self::Build,
+            "bytesReceived" => Self::BytesReceived,
+            "cancelled" => Self::Cancelled,
+            "channel" => Self::Channel,
+            "clients" => Self::Clients,
+            "colorModel" => Self::ColorModel,
+            "configured" => Self::Configured,
+            "connected" => Self::Connected,
+            "count" => Self::Count,
+            "defaultFontHeight" => Self::DefaultFontHeight,
+            "description" => Self::Description,
+            "disconnectReason" => Self::DisconnectReason,
+            "disconnectReasonCode" => Self::DisconnectReasonCode,
+            "done" => Self::Done,
+            "driver" => Self::Driver,
+            "driverMode" => Self::DriverMode,
+            "driverStarted" => Self::DriverStarted,
+            "error" => Self::Error,
+            "event" => Self::Event,
+            "gw" => Self::Gw,
+            "height" => Self::Height,
+            "hidden" => Self::Hidden,
+            "id" => Self::Id,
+            "ip" => Self::Ip,
+            "ipAddress" => Self::IpAddress,
+            "kind" => Self::Kind,
+            "lastBackendCode" => Self::LastBackendCode,
+            "lines" => Self::Lines,
+            "logicalGrayLevels" => Self::LogicalGrayLevels,
+            "mode" => Self::Mode,
+            "name" => Self::Name,
+            "nativeBpp" => Self::NativeBpp,
+            "nativePixelFormat" => Self::NativePixelFormat,
+            "netmask" => Self::Netmask,
+            "objectName" => Self::ObjectName,
+            "ok" => Self::Ok,
+            "path" => Self::Path,
+            "physicalHeight" => Self::PhysicalHeight,
+            "physicalWidth" => Self::PhysicalWidth,
+            "probeEvents" => Self::ProbeEvents,
+            "profile" => Self::Profile,
+            "ready" => Self::Ready,
+            "rotation" => Self::Rotation,
+            "rssi" => Self::Rssi,
+            "scanMatches" => Self::ScanMatches,
+            "ssid" => Self::Ssid,
+            "ssidLength" => Self::SsidLength,
+            "staConnectedEvents" => Self::StaConnectedEvents,
+            "staDisconnectedEvents" => Self::StaDisconnectedEvents,
+            "state" => Self::State,
+            "status" => Self::Status,
+            "supportsFastRefresh" => Self::SupportsFastRefresh,
+            "supportsPartialRefresh" => Self::SupportsPartialRefresh,
+            "text" => Self::Text,
+            "totalBytes" => Self::TotalBytes,
+            "transport" => Self::Transport,
+            "upload" => Self::Upload,
+            "warning" => Self::Warning,
+            "width" => Self::Width,
+            _ => return None,
+        })
+    }
+}
+
 #[derive(Clone, Copy)]
 struct RuntimeRecordField {
-    name: &'static str,
+    name: RuntimeFieldName,
     value: Value,
 }
 
 impl RuntimeRecordField {
-    const fn new(name: &'static str, value: Value) -> Self {
+    const fn empty() -> Self {
+        Self {
+            name: RuntimeFieldName::Empty,
+            value: Value::Null,
+        }
+    }
+
+    const fn new(name: RuntimeFieldName, value: Value) -> Self {
         Self { name, value }
     }
 }
@@ -169,7 +326,7 @@ struct RuntimeRecord {
 impl RuntimeRecord {
     const fn empty() -> Self {
         Self {
-            fields: [RuntimeRecordField::new("", Value::Null); MAX_RUNTIME_RECORD_FIELDS],
+            fields: [RuntimeRecordField::empty(); MAX_RUNTIME_RECORD_FIELDS],
             field_count: 0,
         }
     }
@@ -193,6 +350,23 @@ impl RuntimeList {
 struct RuntimeRecords {
     records: [RuntimeRecord; MAX_RUNTIME_RECORDS],
     next: usize,
+}
+
+#[cfg(test)]
+mod runtime_record_layout_tests {
+    use core::mem::size_of;
+
+    use super::{RuntimeRecordField, Value};
+
+    #[test]
+    fn runtime_record_fields_store_compact_field_symbols() {
+        assert!(
+            size_of::<RuntimeRecordField>() <= size_of::<Value>() + 4,
+            "RuntimeRecordField stores too much per field: field={} value={}",
+            size_of::<RuntimeRecordField>(),
+            size_of::<Value>()
+        );
+    }
 }
 
 impl RuntimeRecords {
@@ -219,6 +393,7 @@ impl RuntimeRecords {
     }
 
     fn field(&self, record_id: u8, field_name: &str) -> Result<Value, VmError> {
+        let field_name = RuntimeFieldName::parse(field_name).ok_or(VmError::InvalidOperand)?;
         let record = self
             .records
             .get(record_id as usize)
@@ -485,10 +660,11 @@ impl ChunkedVm {
         if payload.fields.len() > MAX_RUNTIME_RECORD_FIELDS {
             return Err(VmError::InvalidOperand);
         }
-        let mut fields = [RuntimeRecordField::new("", Value::Null); MAX_RUNTIME_RECORD_FIELDS];
+        let mut fields = [RuntimeRecordField::empty(); MAX_RUNTIME_RECORD_FIELDS];
         for (index, field) in payload.fields.iter().enumerate() {
             let value = self.strings.intern_runtime(&self.index, field.value)?;
-            fields[index] = RuntimeRecordField::new(field.name, value);
+            let name = RuntimeFieldName::parse(field.name).ok_or(VmError::InvalidOperand)?;
+            fields[index] = RuntimeRecordField::new(name, value);
         }
         self.runtime_records.alloc(&fields[..payload.fields.len()])
     }
@@ -1471,13 +1647,13 @@ impl ChunkedVm {
         let state = self.runtime_string_value(Some(result.state))?;
         let error = self.runtime_string_value(result.error)?;
         self.runtime_records.alloc(&[
-            RuntimeRecordField::new("active", Value::Bool(result.active)),
-            RuntimeRecordField::new("kind", kind),
-            RuntimeRecordField::new("state", state),
-            RuntimeRecordField::new("done", Value::Bool(result.done)),
-            RuntimeRecordField::new("cancelled", Value::Bool(result.cancelled)),
-            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
-            RuntimeRecordField::new("error", error),
+            RuntimeRecordField::new(RuntimeFieldName::Active, Value::Bool(result.active)),
+            RuntimeRecordField::new(RuntimeFieldName::Kind, kind),
+            RuntimeRecordField::new(RuntimeFieldName::State, state),
+            RuntimeRecordField::new(RuntimeFieldName::Done, Value::Bool(result.done)),
+            RuntimeRecordField::new(RuntimeFieldName::Cancelled, Value::Bool(result.cancelled)),
+            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
         ])
     }
 
@@ -1489,13 +1665,13 @@ impl ChunkedVm {
         let state = self.runtime_string_value(Some(result.state))?;
         let error = self.runtime_string_value(result.error)?;
         self.runtime_records.alloc(&[
-            RuntimeRecordField::new("ready", Value::Bool(result.ready)),
-            RuntimeRecordField::new("kind", kind),
-            RuntimeRecordField::new("state", state),
-            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
-            RuntimeRecordField::new("error", error),
-            RuntimeRecordField::new("cancelled", Value::Bool(result.cancelled)),
-            RuntimeRecordField::new("count", Value::I32(result.count)),
+            RuntimeRecordField::new(RuntimeFieldName::Ready, Value::Bool(result.ready)),
+            RuntimeRecordField::new(RuntimeFieldName::Kind, kind),
+            RuntimeRecordField::new(RuntimeFieldName::State, state),
+            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
+            RuntimeRecordField::new(RuntimeFieldName::Cancelled, Value::Bool(result.cancelled)),
+            RuntimeRecordField::new(RuntimeFieldName::Count, Value::I32(result.count)),
         ])
     }
 
@@ -1506,9 +1682,9 @@ impl ChunkedVm {
         let error = self.runtime_string_value(result.error)?;
         let warning = self.runtime_string_value(result.warning)?;
         self.runtime_records.alloc(&[
-            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
-            RuntimeRecordField::new("error", error),
-            RuntimeRecordField::new("warning", warning),
+            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
+            RuntimeRecordField::new(RuntimeFieldName::Warning, warning),
         ])
     }
 
@@ -1519,9 +1695,9 @@ impl ChunkedVm {
         let error = self.runtime_string_value(result.error)?;
         let path = self.runtime_string_value(result.path)?;
         self.runtime_records.alloc(&[
-            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
-            RuntimeRecordField::new("error", error),
-            RuntimeRecordField::new("path", path),
+            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
+            RuntimeRecordField::new(RuntimeFieldName::Path, path),
         ])
     }
 
@@ -1532,9 +1708,9 @@ impl ChunkedVm {
         let error = self.runtime_string_value(result.error)?;
         let text = self.runtime_string_value(result.text)?;
         self.runtime_records.alloc(&[
-            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
-            RuntimeRecordField::new("error", error),
-            RuntimeRecordField::new("text", text),
+            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
+            RuntimeRecordField::new(RuntimeFieldName::Text, text),
         ])
     }
 
@@ -1550,9 +1726,9 @@ impl ChunkedVm {
         }
         let lines = self.runtime_lists.alloc(&items[..count])?;
         self.runtime_records.alloc(&[
-            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
-            RuntimeRecordField::new("error", error),
-            RuntimeRecordField::new("lines", lines),
+            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
+            RuntimeRecordField::new(RuntimeFieldName::Lines, lines),
         ])
     }
 
@@ -1566,30 +1742,42 @@ impl ChunkedVm {
         let color_model = self.runtime_string_value(Some(result.color_model))?;
         let native_pixel_format = self.runtime_string_value(Some(result.native_pixel_format))?;
         self.runtime_records.alloc(&[
-            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
-            RuntimeRecordField::new("error", error),
-            RuntimeRecordField::new("warning", warning),
-            RuntimeRecordField::new("available", Value::Bool(result.available)),
-            RuntimeRecordField::new("status", status),
-            RuntimeRecordField::new("binding", binding),
-            RuntimeRecordField::new("driver", driver),
-            RuntimeRecordField::new("transport", transport),
-            RuntimeRecordField::new("width", Value::I32(result.width)),
-            RuntimeRecordField::new("height", Value::I32(result.height)),
-            RuntimeRecordField::new("physicalWidth", Value::I32(result.physical_width)),
-            RuntimeRecordField::new("physicalHeight", Value::I32(result.physical_height)),
-            RuntimeRecordField::new("rotation", Value::I32(result.rotation)),
-            RuntimeRecordField::new("colorModel", color_model),
-            RuntimeRecordField::new("logicalGrayLevels", Value::I32(result.logical_gray_levels)),
-            RuntimeRecordField::new("nativeBpp", Value::I32(result.native_bpp)),
-            RuntimeRecordField::new("nativePixelFormat", native_pixel_format),
-            RuntimeRecordField::new("defaultFontHeight", Value::I32(result.default_font_height)),
+            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
+            RuntimeRecordField::new(RuntimeFieldName::Warning, warning),
+            RuntimeRecordField::new(RuntimeFieldName::Available, Value::Bool(result.available)),
+            RuntimeRecordField::new(RuntimeFieldName::Status, status),
+            RuntimeRecordField::new(RuntimeFieldName::Binding, binding),
+            RuntimeRecordField::new(RuntimeFieldName::Driver, driver),
+            RuntimeRecordField::new(RuntimeFieldName::Transport, transport),
+            RuntimeRecordField::new(RuntimeFieldName::Width, Value::I32(result.width)),
+            RuntimeRecordField::new(RuntimeFieldName::Height, Value::I32(result.height)),
             RuntimeRecordField::new(
-                "supportsPartialRefresh",
+                RuntimeFieldName::PhysicalWidth,
+                Value::I32(result.physical_width),
+            ),
+            RuntimeRecordField::new(
+                RuntimeFieldName::PhysicalHeight,
+                Value::I32(result.physical_height),
+            ),
+            RuntimeRecordField::new(RuntimeFieldName::Rotation, Value::I32(result.rotation)),
+            RuntimeRecordField::new(RuntimeFieldName::ColorModel, color_model),
+            RuntimeRecordField::new(
+                RuntimeFieldName::LogicalGrayLevels,
+                Value::I32(result.logical_gray_levels),
+            ),
+            RuntimeRecordField::new(RuntimeFieldName::NativeBpp, Value::I32(result.native_bpp)),
+            RuntimeRecordField::new(RuntimeFieldName::NativePixelFormat, native_pixel_format),
+            RuntimeRecordField::new(
+                RuntimeFieldName::DefaultFontHeight,
+                Value::I32(result.default_font_height),
+            ),
+            RuntimeRecordField::new(
+                RuntimeFieldName::SupportsPartialRefresh,
                 Value::Bool(result.supports_partial_refresh),
             ),
             RuntimeRecordField::new(
-                "supportsFastRefresh",
+                RuntimeFieldName::SupportsFastRefresh,
                 Value::Bool(result.supports_fast_refresh),
             ),
         ])
@@ -1601,10 +1789,10 @@ impl ChunkedVm {
         let build = self.runtime_string_value(Some(entry.build))?;
         let description = self.runtime_string_value(Some(entry.description))?;
         self.runtime_records.alloc(&[
-            RuntimeRecordField::new("id", id),
-            RuntimeRecordField::new("name", name),
-            RuntimeRecordField::new("build", build),
-            RuntimeRecordField::new("description", description),
+            RuntimeRecordField::new(RuntimeFieldName::Id, id),
+            RuntimeRecordField::new(RuntimeFieldName::Name, name),
+            RuntimeRecordField::new(RuntimeFieldName::Build, build),
+            RuntimeRecordField::new(RuntimeFieldName::Description, description),
         ])
     }
 
@@ -1612,8 +1800,8 @@ impl ChunkedVm {
         let app_id = self.runtime_string_value(Some(entry.app_id))?;
         let event = self.runtime_string_value(Some(entry.event))?;
         self.runtime_records.alloc(&[
-            RuntimeRecordField::new("appId", app_id),
-            RuntimeRecordField::new("event", event),
+            RuntimeRecordField::new(RuntimeFieldName::AppId, app_id),
+            RuntimeRecordField::new(RuntimeFieldName::Event, event),
         ])
     }
 
@@ -1631,39 +1819,54 @@ impl ChunkedVm {
         let bssid = self.runtime_string_value(result.bssid)?;
         let disconnect_reason = self.runtime_string_value(result.disconnect_reason)?;
         self.runtime_records.alloc(&[
-            RuntimeRecordField::new("active", Value::Bool(result.active)),
-            RuntimeRecordField::new("mode", mode),
-            RuntimeRecordField::new("ipAddress", ip_address),
-            RuntimeRecordField::new("ssid", ssid),
-            RuntimeRecordField::new("clients", Value::I32(result.clients)),
-            RuntimeRecordField::new("error", error),
-            RuntimeRecordField::new("state", state),
-            RuntimeRecordField::new("backend", backend),
-            RuntimeRecordField::new("driverStarted", Value::Bool(result.driver_started)),
-            RuntimeRecordField::new("configured", Value::Bool(result.configured)),
-            RuntimeRecordField::new("driverMode", driver_mode),
-            RuntimeRecordField::new("channel", Value::I32(result.channel)),
-            RuntimeRecordField::new("apStartEvents", Value::I32(result.ap_start_events)),
-            RuntimeRecordField::new("apStopEvents", Value::I32(result.ap_stop_events)),
-            RuntimeRecordField::new("probeEvents", Value::I32(result.probe_events)),
+            RuntimeRecordField::new(RuntimeFieldName::Active, Value::Bool(result.active)),
+            RuntimeRecordField::new(RuntimeFieldName::Mode, mode),
+            RuntimeRecordField::new(RuntimeFieldName::IpAddress, ip_address),
+            RuntimeRecordField::new(RuntimeFieldName::Ssid, ssid),
+            RuntimeRecordField::new(RuntimeFieldName::Clients, Value::I32(result.clients)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
+            RuntimeRecordField::new(RuntimeFieldName::State, state),
+            RuntimeRecordField::new(RuntimeFieldName::Backend, backend),
             RuntimeRecordField::new(
-                "staConnectedEvents",
+                RuntimeFieldName::DriverStarted,
+                Value::Bool(result.driver_started),
+            ),
+            RuntimeRecordField::new(RuntimeFieldName::Configured, Value::Bool(result.configured)),
+            RuntimeRecordField::new(RuntimeFieldName::DriverMode, driver_mode),
+            RuntimeRecordField::new(RuntimeFieldName::Channel, Value::I32(result.channel)),
+            RuntimeRecordField::new(
+                RuntimeFieldName::ApStartEvents,
+                Value::I32(result.ap_start_events),
+            ),
+            RuntimeRecordField::new(
+                RuntimeFieldName::ApStopEvents,
+                Value::I32(result.ap_stop_events),
+            ),
+            RuntimeRecordField::new(
+                RuntimeFieldName::ProbeEvents,
+                Value::I32(result.probe_events),
+            ),
+            RuntimeRecordField::new(
+                RuntimeFieldName::StaConnectedEvents,
                 Value::I32(result.sta_connected_events),
             ),
             RuntimeRecordField::new(
-                "staDisconnectedEvents",
+                RuntimeFieldName::StaDisconnectedEvents,
                 Value::I32(result.sta_disconnected_events),
             ),
-            RuntimeRecordField::new("lastBackendCode", last_backend_code),
-            RuntimeRecordField::new("profile", profile),
-            RuntimeRecordField::new("connected", Value::Bool(result.connected)),
-            RuntimeRecordField::new("scanMatches", Value::I32(result.scan_matches)),
-            RuntimeRecordField::new("rssi", Value::I32(result.rssi)),
-            RuntimeRecordField::new("auth", auth),
-            RuntimeRecordField::new("bssid", bssid),
-            RuntimeRecordField::new("disconnectReason", disconnect_reason),
+            RuntimeRecordField::new(RuntimeFieldName::LastBackendCode, last_backend_code),
+            RuntimeRecordField::new(RuntimeFieldName::Profile, profile),
+            RuntimeRecordField::new(RuntimeFieldName::Connected, Value::Bool(result.connected)),
             RuntimeRecordField::new(
-                "disconnectReasonCode",
+                RuntimeFieldName::ScanMatches,
+                Value::I32(result.scan_matches),
+            ),
+            RuntimeRecordField::new(RuntimeFieldName::Rssi, Value::I32(result.rssi)),
+            RuntimeRecordField::new(RuntimeFieldName::Auth, auth),
+            RuntimeRecordField::new(RuntimeFieldName::Bssid, bssid),
+            RuntimeRecordField::new(RuntimeFieldName::DisconnectReason, disconnect_reason),
+            RuntimeRecordField::new(
+                RuntimeFieldName::DisconnectReasonCode,
                 Value::I32(result.disconnect_reason_code),
             ),
         ])
@@ -1675,10 +1878,10 @@ impl ChunkedVm {
         let netmask = self.runtime_string_value(result.netmask)?;
         let error = self.runtime_string_value(result.error)?;
         self.runtime_records.alloc(&[
-            RuntimeRecordField::new("ip", ip),
-            RuntimeRecordField::new("gw", gw),
-            RuntimeRecordField::new("netmask", netmask),
-            RuntimeRecordField::new("error", error),
+            RuntimeRecordField::new(RuntimeFieldName::Ip, ip),
+            RuntimeRecordField::new(RuntimeFieldName::Gw, gw),
+            RuntimeRecordField::new(RuntimeFieldName::Netmask, netmask),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
         ])
     }
 
@@ -1688,14 +1891,17 @@ impl ChunkedVm {
         let ssid = self.runtime_string_value(Some(network.ssid()?))?;
         let auth = self.runtime_string_value(network.auth)?;
         self.runtime_records.alloc(&[
-            RuntimeRecordField::new("ok", Value::Bool(result.ok)),
-            RuntimeRecordField::new("error", error),
-            RuntimeRecordField::new("ssid", ssid),
-            RuntimeRecordField::new("ssidLength", Value::I32(network.ssid_length)),
-            RuntimeRecordField::new("channel", Value::I32(network.channel)),
-            RuntimeRecordField::new("rssi", Value::I32(network.rssi)),
-            RuntimeRecordField::new("auth", auth),
-            RuntimeRecordField::new("hidden", Value::Bool(network.hidden)),
+            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
+            RuntimeRecordField::new(RuntimeFieldName::Ssid, ssid),
+            RuntimeRecordField::new(
+                RuntimeFieldName::SsidLength,
+                Value::I32(network.ssid_length),
+            ),
+            RuntimeRecordField::new(RuntimeFieldName::Channel, Value::I32(network.channel)),
+            RuntimeRecordField::new(RuntimeFieldName::Rssi, Value::I32(network.rssi)),
+            RuntimeRecordField::new(RuntimeFieldName::Auth, auth),
+            RuntimeRecordField::new(RuntimeFieldName::Hidden, Value::Bool(network.hidden)),
         ])
     }
 
@@ -2123,9 +2329,7 @@ unsafe fn init_runtime_records_in_place(out: *mut RuntimeRecords) {
         let record = records.add(record_index);
         let fields = ptr::addr_of_mut!((*record).fields).cast::<RuntimeRecordField>();
         for field_index in 0..MAX_RUNTIME_RECORD_FIELDS {
-            fields
-                .add(field_index)
-                .write(RuntimeRecordField::new("", Value::Null));
+            fields.add(field_index).write(RuntimeRecordField::empty());
         }
         ptr::addr_of_mut!((*record).field_count).write(0);
     }

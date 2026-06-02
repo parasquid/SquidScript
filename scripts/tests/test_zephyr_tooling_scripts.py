@@ -548,6 +548,21 @@ stale
         ]:
             self.assertIn(option, prj_conf)
 
+    def test_default_config_uses_bounded_ble_peripheral_pools(self):
+        prj_conf = self.read("firmware/zephyr/prj.conf")
+
+        for option in [
+            "CONFIG_BT_BUF_ACL_TX_COUNT=3",
+            "CONFIG_BT_L2CAP_TX_BUF_COUNT=3",
+            "CONFIG_BT_ATT_TX_COUNT=3",
+            "CONFIG_BT_CONN_TX_MAX=3",
+            "CONFIG_BT_BUF_EVT_RX_COUNT=4",
+            "CONFIG_BT_BUF_EVT_DISCARDABLE_COUNT=1",
+            "CONFIG_ESP32_BT_CTLR_LE_MAX_CONN=1",
+            "CONFIG_ESP32_BT_CTLR_LE_MAX_ACT=2",
+        ]:
+            self.assertIn(option, prj_conf)
+
     def test_default_config_uses_measured_low_throughput_network_pools(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
 
@@ -881,6 +896,9 @@ stale
                 "3fc9c824 00000250 B gChmCxt\n"
                 "3fc9ca74 0000011c B gScanStruct\n"
                 "3fc9cb90 00000394 b response.0\n"
+                "3fc9cf24 00001000 b bt_stack\n"
+                "3fc9df24 00000400 b bt_tx_processor_stack\n"
+                "3fc9e324 00000520 B bt_lw_stack_area\n"
                 "EOF\n",
             )
 
@@ -908,6 +926,9 @@ stale
             "route_ipv4_entries",
             "gChmCxt",
             "gScanStruct",
+            "bt_stack",
+            "bt_tx_processor_stack",
+            "bt_lw_stack_area",
         ]:
             with self.subTest(name=name):
                 self.assertRegex(result.stdout, rf"group=platform .*name={name}")
@@ -1065,7 +1086,9 @@ stale
     def test_zephyr_main_stack_tracks_measured_protocol_work(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
 
-        self.assertIn("CONFIG_MAIN_STACK_SIZE=5120", prj_conf)
+        self.assertIn("CONFIG_MAIN_STACK_SIZE=4864", prj_conf)
+        self.assertNotIn("CONFIG_MAIN_STACK_SIZE=4608", prj_conf)
+        self.assertNotIn("CONFIG_MAIN_STACK_SIZE=5120", prj_conf)
         self.assertNotIn("CONFIG_MAIN_STACK_SIZE=6144", prj_conf)
         self.assertNotIn("CONFIG_MAIN_STACK_SIZE=8192", prj_conf)
         self.assertNotIn("CONFIG_MAIN_STACK_SIZE=3264", prj_conf)
@@ -1077,8 +1100,10 @@ stale
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         stack_script = self.read("scripts/c3-supermini-measure-stack-usage.sh")
 
-        self.assertIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 17408", runtime_h)
-        self.assertIn('Expected vm_stack_size_bytes=17408', stack_script)
+        self.assertIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 16640", runtime_h)
+        self.assertIn('Expected vm_stack_size_bytes=16640', stack_script)
+        self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 17408", runtime_h)
+        self.assertNotIn('Expected vm_stack_size_bytes=17408', stack_script)
         self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 18432", runtime_h)
         self.assertNotIn('Expected vm_stack_size_bytes=18432', stack_script)
         self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 20480", runtime_h)
@@ -1094,7 +1119,9 @@ stale
         self.assertNotIn('Expected vm_stack_size_bytes=18016', stack_script)
         self.assertNotIn('Expected vm_worker_stack_size_bytes=16384', stack_script)
         self.assertIn("proto_stack_size_bytes", stack_script)
-        self.assertIn('Expected proto_stack_size_bytes=5120', stack_script)
+        self.assertIn('Expected proto_stack_size_bytes=4864', stack_script)
+        self.assertNotIn('Expected proto_stack_size_bytes=4608', stack_script)
+        self.assertNotIn('Expected proto_stack_size_bytes=5120', stack_script)
         self.assertNotIn('Expected proto_stack_size_bytes=6144', stack_script)
         self.assertNotIn('Expected proto_stack_size_bytes=8192', stack_script)
         self.assertNotIn('Expected proto_stack_size_bytes=3264', stack_script)
@@ -1139,14 +1166,14 @@ stale
                 self.assertNotIn("14,888-byte", contents)
 
         build_doc = docs["docs/firmware_build_architecture.md"]
-        self.assertIn("8,624 bytes", build_doc)
+        self.assertIn("7,872 bytes", build_doc)
         self.assertNotIn("10,304 bytes", build_doc)
         self.assertNotIn("10,496 bytes", build_doc)
-        self.assertIn("protocol/main thread stack is currently 5,120 bytes", build_doc)
-        self.assertIn("VM worker stack\nis 17,408 bytes", build_doc)
-        self.assertIn("195,632 bytes of linker DRAM", build_doc)
-        self.assertIn("195,604 bytes through", build_doc)
-        self.assertIn("12,264-byte `runtime.4`", build_doc)
+        self.assertIn("protocol/main thread stack is currently 4,864 bytes", build_doc)
+        self.assertIn("VM worker stack\nis 16,640 bytes", build_doc)
+        self.assertIn("239,232 bytes of linker DRAM", build_doc)
+        self.assertIn("239,216 bytes through", build_doc)
+        self.assertIn("11,920-byte `runtime.4`", build_doc)
         self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', stack_script)
         self.assertIn(
             'resources_out="$(run_capture resources-after-workloads cargo run --quiet -p squidc -- device resources)"',
@@ -1170,6 +1197,17 @@ stale
         self.assertNotIn("wifi_scan_sem_initialized", runtime_h)
         self.assertNotIn("struct k_sem wifi_scan_done", runtime_h)
 
+    def test_diagnostic_banner_is_reemitted_after_optional_ble_startup(self):
+        main_c = self.read("firmware/zephyr/src/main.c")
+
+        banner = 'LOG_INF("SquidScript Zephyr firmware diagnostic boot");'
+        self.assertEqual(main_c.count(banner), 2)
+        first_banner = main_c.index(banner)
+        ble_start = main_c.index("(void)sq_ble_smoke_start();")
+        second_banner = main_c.index(banner, first_banner + 1)
+        self.assertLess(first_banner, ble_start)
+        self.assertGreater(second_banner, ble_start)
+
     def test_wifi_scan_results_use_resident_cursor_snapshot_not_transfer_scratch(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
@@ -1190,7 +1228,8 @@ stale
         self.assertIn("struct sq_vm_runtime_wifi_scan_scratch *scan =", runtime_c)
         self.assertIn("out->network = runtime->wifi_scan.networks[index]", runtime_c)
         self.assertNotIn("runtime->transfer.wifi_scan", runtime_c)
-        self.assertIn("runtime_static <= 13984", ztest)
+        self.assertIn("runtime_static <= 12160", ztest)
+        self.assertNotIn("runtime_static <= 13984", ztest)
         self.assertNotIn("runtime_static <= 14176", ztest)
         self.assertNotIn("runtime_static <= 14304", ztest)
         self.assertNotIn("runtime_static <= 14720", ztest)
@@ -1308,13 +1347,19 @@ stale
 
         self.assertIn("pub const MAX_RUNTIME_RECORD_FIELDS: usize = 26;", limits_rs)
         self.assertNotIn("pub const MAX_RUNTIME_RECORD_FIELDS: usize = 32;", limits_rs)
-        self.assertIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 8_624;", ffi_rs)
+        self.assertIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 7_872;", ffi_rs)
+        self.assertNotIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 8_704;", ffi_rs)
+        self.assertNotIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 8_624;", ffi_rs)
         self.assertNotIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 10_304;", ffi_rs)
         self.assertNotIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 10_496;", ffi_rs)
         self.assertNotIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 10_624;", ffi_rs)
         self.assertNotIn("const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 10_880;", ffi_rs)
-        self.assertIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 8624", runtime_h)
-        self.assertIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 8624", ztest)
+        self.assertIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 7872", runtime_h)
+        self.assertIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 7872", ztest)
+        self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 8704", runtime_h)
+        self.assertNotIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 8704", ztest)
+        self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 8624", runtime_h)
+        self.assertNotIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 8624", ztest)
         self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 10304", runtime_h)
         self.assertNotIn("SQ_VM_RUNTIME_CONTEXT_BYTES <= 10304", ztest)
         self.assertNotIn("#define SQ_VM_RUNTIME_CONTEXT_BYTES 10496", runtime_h)
@@ -1356,7 +1401,8 @@ stale
         self.assertNotIn("SqvmStorageCompletion completion;", runtime_body)
         self.assertIn("sizeof(runtime.transfer.init_scratch)", ztest)
         self.assertIn("SQVM_STORAGE_TRANSFER_CAPACITY <= 640", ztest)
-        self.assertIn("runtime_static <= 13984", ztest)
+        self.assertIn("runtime_static <= 12160", ztest)
+        self.assertNotIn("runtime_static <= 13984", ztest)
         self.assertNotIn("runtime_static <= 14176", ztest)
         self.assertNotIn("runtime_static <= 14720", ztest)
         self.assertNotIn("runtime_static <= 14736", ztest)
@@ -1682,7 +1728,8 @@ stale
         stack = self.read("scripts/c3-supermini-measure-input-stack-isolation.sh")
         ffi_rs = self.read("compiler/rust/crates/squidvm-ffi/src/lib.rs")
 
-        self.assertIn("#define SQ_DEVICE_RESPONSE_BYTES 1120u", header)
+        self.assertIn("#define SQ_DEVICE_RESPONSE_BYTES 1088u", header)
+        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 1120u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 824u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 820u", header)
         self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 916u", header)
@@ -2529,6 +2576,7 @@ stale
         self.assertIn('snapshot_resources input-after-install', stack)
         self.assertIn('snapshot_resources input-after-launch', stack)
         self.assertIn('snapshot_resources input-after-select', stack)
+        self.assertNotIn('wait_for_contains input-output-start "output=count 0"', stack)
         self.assertIn('snapshot_resources display-after-launch', stack)
         self.assertIn('snapshot_resources system-after-launch', stack)
         self.assertIn('snapshot_resources wifi-ap-after-start', stack)

@@ -77,10 +77,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 Current ESP32-C3 RAM baseline:
 
-- Latest observed linker DRAM from `scripts/c3-supermini-build.sh`: 244,160
+- Latest observed linker DRAM from `scripts/c3-supermini-build.sh`: 239,232
   bytes.
-- Current target configuration: 5,120-byte protocol/main stack and
-  17,408-byte VM worker stack.
+- Current target configuration: 4,864-byte protocol/main stack and
+  16,640-byte VM worker stack.
 - Stack harness guardrails: fail if protocol/main unused stack drops below 768
   bytes or VM worker unused stack drops below 384 bytes.
 - Current `device resources` reports allocation high-water data and
@@ -89,33 +89,30 @@ Current ESP32-C3 RAM baseline:
   stats available in this build do not expose a safe non-mutating largest free
   block query.
 
-Active RAM work:
+RAM follow-up triggers:
 
-- Continue SquidScript-owned static DRAM reductions using the classified
-  static-buffer report. Prioritize VM runtime storage, response/session
-  buffers, logging, LittleFS pools, file caches, and any large unknown symbols.
-- Before stack reductions, build with `SQUID_ZEPHYR_STACK_USAGE=1` and run
-  `scripts/c3-supermini-stack-usage-report.sh` to review source-known
-  cumulative call paths. Check both per-function `.su` size and real hardware
-  high-water use because splitting helpers can increase live stack if a larger
-  callee remains active under its caller.
-- Do not lower the 17,408-byte VM worker stack again without same-build
+- Continue SquidScript-owned static DRAM reductions only when new evidence
+  identifies a larger target than the current measured groups: 123,310 bytes
+  platform-owned, 31,616 bytes SquidScript-owned, and 10,729 bytes unknown.
+  Current SquidScript-owned buffers are guarded by tests or protocol bounds:
+  `runtime.4` is 11,920 bytes, the protocol response buffer is 1,088 bytes,
+  and app-store/session/storage scratch buffers are explicitly capped.
+- Do not lower the 16,640-byte VM worker stack again without same-build
   input-button or equivalent logical-input fixture evidence proving the
-  physical/input app path stays below the proposed budget.
-- Keep the 1120-byte protocol response buffer until resources output is
-  redesigned again, because it is sized to the current largest response.
-- Treat `runtime.4` quota cuts as test-first changes: reduce VM records, record
-  fields, dynamic string slots, trace/output/drawlog slots, or lifecycle/input
-  arrays only when compiler/runtime fixtures and hardware apps show the smaller
-  quota still covers current behavior.
-- Add a safe largest-free-block heap probe or mitigation path. Candidate
-  mitigations include target-safe probes, subsystem allocation-failure
-  attribution, fixed arenas, caller-owned buffers, bounded scratch, slabs/pools
-  for unavoidable dynamic allocations, and startup-owned long-lived allocations
-  instead of mixed-lifetime heap usage.
-- Keep Zephyr kernel stacks, system heap, network packet pools, Wi-Fi driver
-  storage, and other platform symbols separate unless platform RAM policy is
-  explicitly in scope.
+  physical/input app path stays below the proposed budget. Before any future
+  stack reduction, build with `SQUID_ZEPHYR_STACK_USAGE=1` and run
+  `scripts/c3-supermini-stack-usage-report.sh`; check both per-function `.su`
+  size and real hardware high-water use because splitting helpers can increase
+  live stack if a larger callee remains active under its caller.
+- Keep heap fragmentation work evidence-driven. This Zephyr build does not
+  expose a safe non-mutating largest-free-block query, so current diagnostics
+  report heap allocation high-water plus explicit `heap_largest_free_supported`
+  / `heap_largest_free_bytes` fields. Future mitigation work should target a
+  concrete allocation failure, target-safe heap probe, or subsystem-specific
+  pool/slab redesign rather than adding speculative RAM counters.
+- Keep Zephyr kernel stacks, system heap, network packet pools, Wi-Fi/BLE
+  driver storage, and other platform symbols separate unless platform RAM
+  policy is explicitly in scope.
 
 RAM verification notes:
 

@@ -2531,9 +2531,9 @@ ZTEST(squidscript_protocol, test_links_squidvm_ffi_context_metadata)
 	zassert_true(sqvm_context_align() > 0);
 	zassert_true(sqvm_context_size() <= SQ_VM_RUNTIME_CONTEXT_BYTES);
 #if !defined(CONFIG_BOARD_NATIVE_SIM)
-	zassert_true(SQ_VM_RUNTIME_CONTEXT_BYTES <= 8624);
+	zassert_true(SQ_VM_RUNTIME_CONTEXT_BYTES <= 7872);
 #endif
-	zassert_true(SQ_VM_RUNTIME_WORK_STACK_SIZE <= 17408);
+	zassert_true(SQ_VM_RUNTIME_WORK_STACK_SIZE <= 16640);
 }
 
 ZTEST(squidscript_protocol, test_runtime_wait_idle_times_out_while_worker_is_running)
@@ -2566,7 +2566,7 @@ ZTEST(squidscript_protocol, test_runtime_reuses_transfer_storage_for_init_scratc
 	zassert_true(sizeof(runtime.transfer) >= sizeof(runtime.transfer.completion));
 #if !defined(CONFIG_BOARD_NATIVE_SIM)
 	size_t runtime_static = sizeof(runtime);
-	zassert_true(runtime_static <= 13984, "runtime_static=%zu", runtime_static);
+	zassert_true(runtime_static <= 12160, "runtime_static=%zu", runtime_static);
 #endif
 }
 
@@ -2579,7 +2579,7 @@ ZTEST(squidscript_protocol, test_squidscript_owned_fixed_buffer_budgets)
 	zassert_equal(SQ_VM_RUNTIME_RETURN_STACK_MAX, 2);
 	zassert_equal(SQ_VM_RUNTIME_ARMED_TIMER_MAX, 2);
 	zassert_equal(SQ_VM_RUNTIME_INPUT_BUTTON_MAX, 2);
-	zassert_equal(SQ_DEVICE_RESPONSE_BYTES, 1120);
+	zassert_equal(SQ_DEVICE_RESPONSE_BYTES, 1088);
 	zassert_true(sizeof(struct sq_device_protocol_scratch) <= 552,
 		     "protocol scratch=%zu", sizeof(struct sq_device_protocol_scratch));
 	zassert_true(sizeof(struct sq_device_install_session) <= 160,
@@ -2755,7 +2755,7 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 	result = sq_device_protocol_handle_frame(request, sizeof(request), &context, response,
 						 sizeof(response), &response_len);
 	zassert_equal(result, SQ_PROTOCOL_OK, "resources result %d", result);
-	zassert_true(response_len <= 1120, "resources response_len=%zu", response_len);
+	zassert_true(response_len <= 1088, "resources response_len=%zu", response_len);
 	zassert_true(response_len <= SQ_DEVICE_RESPONSE_BYTES);
 	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
 	zassert_equal(frame.opcode, SQ_OPCODE_RESOURCES_GET);

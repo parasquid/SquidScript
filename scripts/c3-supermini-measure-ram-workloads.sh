@@ -124,8 +124,6 @@ snapshot_resources input-after-install
 
 reset_heap_max_attribution input-launch
 run_capture launch-input-button cargo run --quiet -p squidc -- app launch input-button-summary >/dev/null
-wait_for_contains input-output-start "output=count 0" \
-  "device output" cargo run --quiet -p squidc -- device output >/dev/null
 snapshot_resources input-after-launch
 
 reset_heap_max_attribution input-select

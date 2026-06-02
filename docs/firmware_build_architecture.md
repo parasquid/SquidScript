@@ -120,7 +120,7 @@ through the current compiler.
 Temp-run state uses the same file-backed VM storage backend as installed apps,
 with a bounded temp state path cleared before each temp launch, so the firmware
 does not reserve a resident saved-state-capacity RAM buffer for temp runs.
-The ESP32-C3 linked Rust VM context reservation is capped at 8,624 bytes and
+The ESP32-C3 linked Rust VM context reservation is capped at 7,872 bytes and
 checked against the FFI-reported context size in Zephyr ztests. Native simulator
 ztests use a larger host-only context reservation because the host Rust ABI has
 larger pointer-sized VM structures; this does not change the ESP32-C3 runtime
@@ -137,7 +137,7 @@ walks can hold nested directories open.
 Zephyr filesystem filename buffer is capped at 80 bytes, matching the current
 package-relative resource-path protocol bound and avoiding 128-byte `fs_dirent`
 name slots in every directory/stat stack frame.
-Resource diagnostics are encoded directly into the caller-owned 1120-byte
+Resource diagnostics are encoded directly into the caller-owned 1088-byte
 protocol response buffer and do not keep a resident metric staging array.
 Runtime diagnostic history is bounded to four 26-byte trace lines, six
 54-byte output lines, and four 48-byte draw-log lines so recent debugging data
@@ -175,12 +175,12 @@ Zephyr's deferred logger buffer and process-thread stack are explicitly
 bounded at 512 bytes each; app-visible diagnostics use protocol output, trace,
 draw-log, lifecycle, and resources responses instead of relying on a large
 firmware log ring.
-The protocol/main thread stack is currently 5,120 bytes and the VM worker stack
-is 17,408 bytes. Resource diagnostics expose each stack's high-water use
+The protocol/main thread stack is currently 4,864 bytes and the VM worker stack
+is 16,640 bytes. Resource diagnostics expose each stack's high-water use
 separately so budget reductions can be tied to measured workloads instead of
-inferred from static allocation alone. Current same-build non-scan hardware
-coverage measured protocol/main stack use at 4,048 bytes with 1,072 bytes free,
-and VM worker stack use at 16,128 bytes with 1,280 bytes free. The stack harness
+inferred from static allocation alone. Current same-build hardware coverage
+measured protocol/main stack use at 3,904 bytes with 960 bytes free, and VM
+worker stack use at 16,112 bytes with 528 bytes free. The stack harness
 enforces minimum unused-stack floors of 768 bytes for protocol/main and 384
 bytes for the VM worker, printing the captured resource frame if either floor
 is crossed.
@@ -380,7 +380,7 @@ probe, so `fs_storage_load_state` now emits 48 bytes instead of 192 bytes and
 `runtime_device_config_read_file` now emits 32 bytes instead of 192 bytes.
 The Zephyr VM context reserve follows the measured 32-bit Rust FFI context
 size. The compact substring-capable VM string interner keeps the measured
-context under the current 8,624-byte ESP32-C3 reserve.
+context under the current 7,872-byte ESP32-C3 reserve.
 Wi-Fi scan result backing uses the runtime transfer scratch because the Rust FFI
 copies scan results out of the callback before returning to the VM. This keeps
 scan SSID/BSSID/auth/network arrays out of the resident runtime object. The
@@ -395,18 +395,18 @@ copying result records before returning to VM execution.
 The Rust VM uses one string interner for SQBC literals, firmware static strings,
 and dynamic runtime text. Dynamic text can reuse exact SQBC/static matches and
 contiguous substrings of existing dynamic/static text. ESP32-C3 firmware symbols
-must be read from the current image under test. The validated Wi-Fi-enabled
-reference build reports 195,632 bytes of linker DRAM, 195,604 bytes through
-`scripts/zephyr-ram-audit.sh`, and a 12,264-byte `runtime.4` static runtime
+must be read from the current image under test. The validated Wi-Fi/BLE-enabled
+reference build reports 239,232 bytes of linker DRAM, 239,216 bytes through
+`scripts/zephyr-ram-audit.sh`, and an 11,920-byte `runtime.4` static runtime
 symbol. The static-buffer report classifies that image's top symbols as
-approximately 89 KiB platform-owned, 32 KiB SquidScript-owned, and 8 KiB
+123,310 bytes platform-owned, 31,616 bytes SquidScript-owned, and 10,729 bytes
 unknown small symbols. Rebuild and rerun the reports before treating these
 values as current for a different firmware image.
-The resident protocol response buffer is 824 bytes, matching the current
-resources-response ceiling: 804 bytes of metric payload plus the 20-byte frame
-header. Resource metric values use the protocol's U32 TLV type because ESP32-C3
-diagnostic counters fit within 32-bit ranges; request transfer lengths and CRCs
-continue to use U64 where needed. The larger resource ceiling is intentional:
+The resident protocol response buffer is 1,088 bytes, sized for the current
+largest bounded protocol response. Resource metric values use the protocol's
+U32 TLV type because ESP32-C3 diagnostic counters fit within 32-bit ranges;
+request transfer lengths and CRCs continue to use U64 where needed. The larger
+resource ceiling is intentional:
 `device resources` includes heap largest-free-block support/value fields so host
 RAM diagnostics can distinguish "not exposed safely by this Zephyr build" from
 an actual zero-byte largest block. `device resources --reset-heap-max` sends the

@@ -137,6 +137,9 @@ int main(void)
 	}
 
 	(void)sq_ble_smoke_start();
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
+	LOG_INF("SquidScript Zephyr firmware diagnostic boot");
+#endif
 
 	while (true) {
 		bool consumed = false;
