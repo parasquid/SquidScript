@@ -46,9 +46,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Refactoring Opportunities
 
-- Split `scripts/tests/test_zephyr_tooling_scripts.py` into focused test
-  modules by topic, such as wrapper scripts, target metadata, hardware suite
-  order, Wi-Fi/BLE expectations, RAM checks, and generated docs.
 - Split `squidc-core` parser code by declaration/expression family when adding
   more language surface, keeping imports/modules, state/device declarations,
   handlers/screens/functions, expressions, and static objects easier to reason
