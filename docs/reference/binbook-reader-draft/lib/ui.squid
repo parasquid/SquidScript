@@ -44,7 +44,7 @@ export function saveAndRefresh() {
 }
 
 export function openBrowser() {
-  stateMachine.enter("uiState", "browser")
+  state.uiState = "browser"
   screen.open("browser.browser")
 }
 
@@ -104,32 +104,32 @@ export function openToc() {
     state.tocTop = state.tocIndex - 7
   }
 
-  stateMachine.enter("uiState", "toc")
+  state.uiState = "toc"
   screen.open("toc.toc")
 }
 
 export function openJump() {
   state.jumpPage = state.pageIndex + 1
-  stateMachine.enter("uiState", "jump")
+  state.uiState = "jump"
   screen.open("jump.jump")
 }
 
 export function openReader() {
-  stateMachine.enter("uiState", "reader")
+  state.uiState = "reader"
   screen.open("reader.reader")
 }
 
 export function handleUp() {
-  if (stateMachine.is("uiState", "reader")) {
+  if (state.uiState == "reader") {
     previousChapter()
   } else {
-    if (stateMachine.is("uiState", "toc")) {
+    if (state.uiState == "toc") {
       tocPrevious()
     } else {
-      if (stateMachine.is("uiState", "jump")) {
+      if (state.uiState == "jump") {
         jumpForward1()
       } else {
-        if (stateMachine.is("uiState", "browser")) {
+        if (state.uiState == "browser") {
           browserPrevious()
         }
       }
@@ -138,16 +138,16 @@ export function handleUp() {
 }
 
 export function handleDown() {
-  if (stateMachine.is("uiState", "reader")) {
+  if (state.uiState == "reader") {
     nextChapter()
   } else {
-    if (stateMachine.is("uiState", "toc")) {
+    if (state.uiState == "toc") {
       tocNext()
     } else {
-      if (stateMachine.is("uiState", "jump")) {
+      if (state.uiState == "jump") {
         jumpBack1()
       } else {
-        if (stateMachine.is("uiState", "browser")) {
+        if (state.uiState == "browser") {
           browserNext()
         }
       }
@@ -156,16 +156,16 @@ export function handleDown() {
 }
 
 export function handleSelect() {
-  if (stateMachine.is("uiState", "reader")) {
+  if (state.uiState == "reader") {
     openJump()
   } else {
-    if (stateMachine.is("uiState", "toc")) {
+    if (state.uiState == "toc") {
       openSelectedTocEntry()
     } else {
-      if (stateMachine.is("uiState", "jump")) {
+      if (state.uiState == "jump") {
         commitJump()
       } else {
-        if (stateMachine.is("uiState", "browser")) {
+        if (state.uiState == "browser") {
           openSelectedBrowserItem()
         }
       }

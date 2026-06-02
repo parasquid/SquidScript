@@ -61,8 +61,21 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - When designing SquidScript language features, public APIs, references, or
   declarations, prefer explicit typed forms over stringly or implicit forms
   unless there is a concrete implementation or usability reason not to.
+- Treat `service.*` as the namespace for target- or firmware-backed runtime
+  capability endpoints that app code invokes and that may vary by target
+  availability, binding, configuration, or runtime state. Use it for portable
+  services such as display, indicator, Wi-Fi, power, timers, BLE profiles, and
+  future bindable/configurable target endpoints. Do not move VM/app concepts
+  such as `app.*`, `screen.*`, `state.*`, `string.*`, or `system.*` under
+  `service.*`; keep raw target access under `hardware.*`.
+  For content/document APIs such as `file.*` and future document namespaces,
+  choose the app-facing namespace based on the authoring concept unless the API
+  is explicitly exposing a runtime service endpoint.
 - If a feature is not implemented yet, say so clearly and keep fixtures/tests honest.
 - Do not add tests for removed fake syntax. Treat fake syntax as if it never existed.
+- Do not add regression tests that name removed syntax or removed API forms.
+  Tests may verify current generic parser/compiler behavior, but must not
+  preserve old names, compatibility diagnostics, examples, or aliases.
 - Critical pre-1.0 rule: replace directly. Do not preserve, detect, migrate,
   alias, wrap, special-case, document, test, or otherwise carry old APIs,
   syntax, storage formats, examples, scripts, or behavior unless the user

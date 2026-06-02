@@ -72,10 +72,7 @@ impl Parser<'_> {
                 continue;
             }
 
-            if self.at_ident("include") {
-                self.reject_pending_attribute();
-                self.parse_removed_include(builder);
-            } else if self.at_ident("import") {
+            if self.at_ident("import") {
                 self.reject_pending_attribute();
                 self.parse_import(builder);
             } else if self.at_ident("requires") {
@@ -107,25 +104,18 @@ impl Parser<'_> {
                 self.parse_screen(builder, false);
             } else if !self.at_end() {
                 self.reject_pending_attribute();
-                self.bump(builder);
+                self.parse_unexpected_top_level(builder);
             }
         }
     }
 
-    fn parse_removed_include(&mut self, builder: &mut GreenNodeBuilder) {
+    fn parse_unexpected_top_level(&mut self, builder: &mut GreenNodeBuilder) {
         let start = self.peek().map(|token| token.span.start).unwrap_or(0);
         self.bump(builder);
-        while !self.at_end() && !self.at_ident("app") && !self.at_ident("state") {
-            if self.at_kind(TokenKind::String) {
-                self.bump(builder);
-                break;
-            }
-            self.bump(builder);
-        }
         let end = self.previous_end().unwrap_or(start);
         self.diagnostics.push(error(
-            "E_INCLUDE_REMOVED",
-            "include has been removed; use import alias from \"path\"",
+            "E_UNEXPECTED_TOP_LEVEL",
+            "unexpected top-level declaration",
             start,
             end,
         ));
@@ -1601,7 +1591,10 @@ impl Parser<'_> {
         self.parse_static_object_after_open(builder)
     }
 
-    fn parse_static_object_after_open(&mut self, builder: &mut GreenNodeBuilder) -> serde_json::Value {
+    fn parse_static_object_after_open(
+        &mut self,
+        builder: &mut GreenNodeBuilder,
+    ) -> serde_json::Value {
         let mut map = serde_json::Map::new();
         self.bump(builder);
         while !self.at_end() {
@@ -1631,7 +1624,10 @@ impl Parser<'_> {
         serde_json::Value::Object(map)
     }
 
-    fn parse_static_array_after_open(&mut self, builder: &mut GreenNodeBuilder) -> serde_json::Value {
+    fn parse_static_array_after_open(
+        &mut self,
+        builder: &mut GreenNodeBuilder,
+    ) -> serde_json::Value {
         let mut values = Vec::new();
         self.bump(builder);
         while !self.at_end() {

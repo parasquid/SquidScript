@@ -479,29 +479,20 @@ Example ESP32-C3 low-RAM runtime:
     "maxLoopIterationsPerEvent": 100,
     "maxScreenDrawCommands": 128,
     "maxFileReadSize": 65536,
-    "maxParsedDataSections": 256,
     "maxListItemsReturned": 256,
     "maxHandles": 16
   },
   "features": [
     "squidscript.bytecode",
     "service.display.draw",
-    "input.text",
     "state.read",
     "state.write",
-    "stateMachine",
     "file.pick",
     "file.read",
-    "binbook.read",
     "service.wifi.connect",
     "service.wifi.scan",
     "service.wifi.accessPoint",
-    "service.wifi.configureIp",
-    "service.wifi.setup",
-    "httpServer.serve",
-    "service.ble.object-transfer",
-    "bluetoothHid.advertise",
-    "bluetoothHid.keys"
+    "service.ble.object-transfer"
   ]
 }
 ```
@@ -525,29 +516,20 @@ Example ESP32-S3 PSRAM runtime:
     "maxLoopIterationsPerEvent": 1000,
     "maxScreenDrawCommands": 512,
     "maxFileReadSize": 262144,
-    "maxParsedDataSections": 1024,
     "maxListItemsReturned": 1024,
     "maxHandles": 64
   },
   "features": [
     "squidscript.bytecode",
     "service.display.draw",
-    "input.text",
     "state.read",
     "state.write",
-    "stateMachine",
     "file.pick",
     "file.read",
-    "binbook.read",
     "service.wifi.connect",
     "service.wifi.scan",
     "service.wifi.accessPoint",
-    "service.wifi.configureIp",
-    "service.wifi.setup",
-    "httpServer.serve",
     "service.ble.object-transfer",
-    "bluetoothHid.advertise",
-    "bluetoothHid.keys",
     "debug-ui"
   ]
 }
@@ -587,7 +569,6 @@ Trimmed XTEINK X4 shape:
   "features": [
     "sdcard",
     "buttons",
-    "binbook.read",
     "squidscript.bytecode"
   ]
 }
@@ -612,14 +593,15 @@ Example ESP32-S3 + Waveshare development target using split profile parts:
     "sdcard",
     "buttons",
     "usb-serial",
-    "binbook.read",
     "squidscript.bytecode",
     "debug-ui"
   ]
 }
 ```
 
-`binbook` names the document/book format. Runtime access to BinBook documents is represented by capabilities such as `binbook.read`. SquidScript bytecode is the executable bytecode format for SquidScript apps; runtime support for loading and executing it is represented by `squidscript.bytecode`.
+SquidScript bytecode is the executable bytecode format for SquidScript apps;
+runtime support for loading and executing it is represented by
+`squidscript.bytecode`.
 
 ---
 
@@ -907,13 +889,10 @@ Example:
     "keys": ["LEFT", "RIGHT", "BACK"],
     "features": [
       "service.display.draw",
-      "input.text",
       "state.read",
       "state.write",
-      "binbook.read",
       "service.wifi.connect",
-      "service.wifi.accessPoint",
-      "httpServer.serve"
+      "service.wifi.accessPoint"
     ]
   }
 }
@@ -949,18 +928,18 @@ device/runtime error.
 Concrete target build:
 
 ```sh
-squidc build apps/binbook-reader \
-  --out apps/binbook-reader/main.sqbc \
+squidc build apps/hello-menu \
+  --out apps/hello-menu/main.sqbc \
   --source-map
 ```
 
 Explicit target capability check:
 
 ```sh
-squidc build apps/binbook-reader \
+squidc build apps/hello-menu \
   --target targets/xteink-x4.target.json \
   --check-target \
-  --out apps/binbook-reader/main.sqbc \
+  --out apps/hello-menu/main.sqbc \
   --source-map
 ```
 
@@ -972,12 +951,12 @@ squidc build apps/binbook-reader \
 - available logical keys
 - available built-ins
 - SQBC target requirements
-- foreground radio/server capabilities such as `service.wifi.*`, `httpServer.*`, and `bluetoothHid.*`
+- foreground radio capabilities such as `service.wifi.*`
 - bytecode size limit
 - draw command limit
 - max file read size
 - max handle count
-- BinBook support
+- required runtime service support
 
 ---
 
@@ -1022,7 +1001,6 @@ required_features:
   - service.display.draw
   - state.read
   - state.write
-  - binbook.read
 display_min_width: 480
 ```
 display_min_height: 800
@@ -1055,7 +1033,6 @@ Example:
 - requires service.display.draw
 - requires 480x800 minimum display
 - requires LEFT, RIGHT, BACK keys
-- requires binbook.read
 
 This app can run on multiple devices if they provide those capabilities.
 
@@ -1340,7 +1317,6 @@ Integrated target schema shape:
   "features": [
     "sdcard",
     "buttons",
-    "binbook.read",
     "squidscript.bytecode"
   ]
 }
@@ -1405,7 +1381,8 @@ Combined profile validation must check:
 - storage `maxFileReadSize` does not exceed the runtime limit exposed to apps
 - display `defaultPixelFormat` is listed in `supportedPixelFormats`
 - display `defaultBpp` is consistent with `defaultPixelFormat`
-- target capabilities such as `binbook.read` and `squidscript.bytecode` are provided by the selected firmware/runtime modules
+- target capabilities such as `squidscript.bytecode` and `service.display.draw`
+  are provided by the selected firmware/runtime modules
 
 Target-check tooling should:
 

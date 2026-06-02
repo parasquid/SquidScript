@@ -25,7 +25,7 @@ SquidScript uses familiar JavaScript-style syntax for authoring, but it does not
 
 SquidScript is an imperative, event-driven language with simple procedural functions and capability-oriented platform APIs. It is not object-oriented and not functional in current draft.
 
-SquidScript separates the core language from the standard platform capability set. Core language features define syntax, control flow, values, handlers, screens, state, and bytecode execution semantics. Standard platform capabilities are namespaced firmware/runtime APIs such as `service.display.*`, `state.*`, `file.*`, and `binbook.*`.
+SquidScript separates the core language from the standard platform capability set. Core language features define syntax, control flow, values, handlers, screens, state, and bytecode execution semantics. Standard platform capabilities are namespaced firmware/runtime APIs such as `service.display.*`, `state.*`, `file.*`, and device services.
 
 The current SquidScript draft does not provide a user library or package system. Standard capabilities are built in from an app author's perspective, but they should be specified as declared, bounded, namespaced APIs known to `squidc`, `.sqbc` validation, and `squidvm`, not as special syntax.
 
@@ -55,14 +55,14 @@ The firmware owns:
 - bytecode validation
 - bytecode execution
 - crash recovery
-- document capabilities such as BinBook
+- document and storage capabilities exposed by the current runtime
 
 SquidScript apps own:
 - app behavior
 - screen definitions
 - input handling
 - persistent app state
-- file, data, network, and device workflows through standard platform APIs
+- file, network, and device workflows through standard platform APIs
 - calls to firmware capabilities exposed by the current runtime
 
 ---
@@ -174,12 +174,12 @@ Debuggable app:
 Complex app:
 
 ```text
-/sd/apps/binbook-reader/
+/sd/apps/reader/
 |-- main.sqbc
 |-- source-map.json
 |-- main.squid
 |-- device/
-|   `-- epaper.sqdevice
+|   `-- display.sqdevice
 |-- lib/
 |   `-- ui.squid
 |-- screens/
@@ -194,10 +194,10 @@ System-managed files:
 ```text
 /sd/system/
 |-- app-state/
-|   `-- binbook-reader.json
+|   `-- reader.json
 |-- device-config.sqdc
 |-- app-errors/
-|   `-- binbook-reader.txt
+|   `-- reader.txt
 |-- app-cache/
 |-- app-registry.json
 `-- crashlog.txt
@@ -430,8 +430,7 @@ Modules behave as source-level compilation units.
 They are not runtime imports.
 
 Package imports and import versioning are reserved for a future package manager
-and are not accepted by the current compiler. The removed `include "path"`
-syntax is not supported.
+and are not accepted by the current compiler.
 
 ---
 
@@ -631,7 +630,7 @@ Lists are read-only in current draft and are usually returned by built-ins.
 Example:
 
 ```squid
-let lines = data.fields(section, "body")
+let lines = file.readLines("data/notes.txt", 8)
 ```
 
 record:
@@ -641,9 +640,8 @@ A fixed-shape read-only object returned by built-ins.
 Example:
 
 ```squid
-let info = binbook.info(book)
-title = info.title
-pageCount = info.pageCount
+let info = service.display.info()
+state.title = info.driver
 ```
 
 handle:
@@ -653,9 +651,8 @@ An opaque firmware-owned reference.
 Examples:
 
 ```squid
-let book = binbook.open(state.file)
-let page = binbook.page(book, state.pageIndex)
-let doc = data.read(state.file)
+let apps = app.registry()
+let selected = app.registry.get(apps, state.selected)
 ```
 
 Handles are not pointers.
@@ -666,7 +663,8 @@ Handle lifetime is bounded to the current event or render turn unless a built-in
 
 The runtime must release any remaining handles at the end of the current event or render turn.
 
-Built-ins such as binbook.close(book) may release a handle earlier.
+Built-ins that return handles may also provide explicit release calls when the
+runtime exposes a longer-lived handle type.
 
 Using a released handle is a runtime error.
 
@@ -714,9 +712,9 @@ Example:
 ```squid
 event.on("app.start") {
   state.load()
-  if (stateVersion != 2) {
+  if (state.stateVersion != 2) {
     state.reset()
-    stateVersion = 2
+    state.stateVersion = 2
     state.save()
   }
   screen.open("main")
@@ -751,7 +749,7 @@ Invalid:
 
 ```squid
 state {
-  book: binbook.open("x.binbook")
+  apps: app.registry()
 }
 ```
 
@@ -774,9 +772,8 @@ Example:
 
 ```squid
 function loadSlide() {
-  let doc = data.read(state.file)
-  let s = data.section(doc, "slide", current)
-  state.title = data.field(s, "title")
+  let info = service.display.info()
+  state.title = info.driver
 }
 ```
 
@@ -846,10 +843,10 @@ The current SquidScript draft supports read-only fixed-shape records returned by
 Example:
 
 ```squid
-let info = binbook.info(book)
+let info = service.display.info()
 
-title = info.title
-pageCount = info.pageCount
+state.title = info.driver
+state.pageCount = info.height
 ```
 
 Records are not JavaScript objects.
@@ -918,7 +915,7 @@ on the same record.
 Example:
 
 ```squid
-let result = library.mkdir("books", "/manuals")
+let result = file.pickFile(".txt")
 if (!result.ok) {
   service.display.text(result.error, { x: 20, y: 60, fontHeight: 24 })
 }
@@ -1005,16 +1002,8 @@ SquidScript does not perform automatic string conversion for +.
 Example:
 
 ```squid
-title = "Page " + suffix
+state.title = "Page " + state.suffix
 ```
-
-Recommended formatting uses string.format():
-
-```squid
-service.display.text(string.format("{}/{}", state.pageIndex + 1, state.pageCount), { x: 360, y: 760 })
-```
-
-To combine strings and non-string values, use string.format().
 
 Function arguments are evaluated left-to-right.
 
@@ -1064,23 +1053,36 @@ Capability APIs are namespaced.
 
 These namespaces form the standard platform capability set for the current draft. They are not user-imported libraries, and they are not core language syntax. `squidc` validates calls against known capability signatures and emits builtin IDs into `.sqbc`; `squidvm` validates and dispatches those IDs to firmware/runtime modules.
 
+`service.*` is reserved for target- or firmware-backed runtime capability
+endpoints that app code invokes and that may vary by target availability,
+binding, configuration, or runtime state. A service may be a physical or
+logical device endpoint such as display or indicator, a target subsystem such
+as Wi-Fi or power, or a firmware scheduler/radio facility such as timers or BLE
+profiles. The common rule is that the target/runtime owns the capability
+boundary and apps interact with it through bounded calls, result records,
+service bindings, or service state.
+
+Namespaces that are VM/app concepts rather than target runtime endpoints should
+stay outside `service.*`. Examples include `app.*`, `screen.*`, `state.*`,
+`string.*`, and `system.*`. Raw target access remains under
+`hardware.*` so portable services do not imply direct register or pin control.
+Content/document APIs such as `file.*` may depend on storage-backed firmware
+services internally, but their app-facing namespace should reflect the
+authoring concept unless they are explicitly exposing a runtime service
+endpoint.
+
 The current draft uses these built-in namespaces:
 
-- `app.*` for app-level actions such as exit and firmware dialogs
+- `app.*` for app-level actions such as exit, launch, arming, and registry inspection
 - `screen.*` for current-screen navigation and refresh
-- `service.*` for bindable runtime services such as `service.display.*` and `service.indicator.*`
+- `service.*` for target/firmware-backed runtime capability endpoints such as
+  `service.display.*`, `service.indicator.*`, `service.wifi.*`, timers, power,
+  and BLE profiles
 - `device.config.*` for loading, editing, rebinding, and saving active device service configuration
 - `hardware.*` for target-defined hardware capabilities such as GPIO
-- `input.*` for firmware-owned text entry dialogs
 - `state.*` for firmware-managed persistent state
-- `stateMachine.*` for generic app state/mode helpers backed by persistent state variables
 - `service.wifi.*` for firmware-owned Wi-Fi services; `wifi.*` is source sugar for the same calls
-- `httpServer.*` for small foreground-only firmware-owned HTTP services
-- `bluetoothHid.*` for foreground-only Bluetooth HID peripheral behavior
 - `file.*` for user-selected files and bounded reads
-- `data.*` for parsed declarative app data
-- `string.*` for deterministic string utilities
-- `binbook.*` for BinBook document handles and drawable page resources
 - `app.registry.*` for installed app listing and inspection
 - `system.*` for safe target/firmware information
 
@@ -1224,7 +1226,7 @@ With else:
 if (state.pageIndex < state.pageCount - 1) {
   state.pageIndex = state.pageIndex + 1
 } else {
-  app.message("End", "This is the last page.")
+  debug.print("end")
 }
 ```
 
@@ -1309,11 +1311,10 @@ Example:
 
 ```squid
 function loadSlide() {
-  let doc = data.read(state.file)
-  let s = data.section(doc, "slide", state.pageIndex)
-
-  title = data.field(s, "title")
-  body = string.join(data.fields(s, "body"), "\n")
+  let picked = file.pickFile(".txt")
+  if (picked.ok) {
+    state.file = picked.path
+  }
 }
 ```
 
@@ -1321,7 +1322,7 @@ Functions may return values:
 
 ```squid
 function nextPageIndex() {
-  return pageIndex + 1
+  return state.pageIndex + 1
 }
 ```
 
@@ -1491,7 +1492,7 @@ Example:
 screen("main") {
   display.clear("white")
   display.text("Count", { x: 20, y: 40, fontHeight: 32 })
-  display.text(count, { x: 20, y: 120, fontHeight: 48 })
+  display.text(state.count, { x: 20, y: 120, fontHeight: 48 })
 }
 ```
 
@@ -1518,16 +1519,12 @@ The current draft render policy values:
 
 Render policy expresses app intent. It is not a request for a specific hardware buffer implementation. Firmware maps render policies to target-supported display render modes such as `single` or `strip`.
 
-Example BinBook reader screen:
+Example stream-oriented reader screen:
 
 ```squid
 screen("reader", { render: "stream" }) {
-  let book = binbook.open(state.file)
-  let page = binbook.page(book, state.pageIndex)
-  let image = binbook.pageImage(page)
-
-  service.display.draw(image, { x: 0, y: 0 })
-  drawBottomBar(string.format("{}/{}", state.pageIndex + 1, state.pageCount))
+  service.display.image("data/page.bmp", { x: 0, y: 0 })
+  service.display.text(state.title, { x: 12, y: 740, fontHeight: 18 })
 }
 ```
 
@@ -1554,7 +1551,6 @@ Allowed in screen blocks:
 - service.display.draw(...)
 - service.display.info()
 - local let bindings for display-only calculations
-- string.format(...)
 - safe read-only value access
 - render-safe handle creation for drawing APIs
 
@@ -2153,102 +2149,7 @@ event.on("timer.break") {
 }
 ```
 
-app.message(title, body)
-
-Shows a firmware-provided message dialog.
-
-Example:
-
-```squid
-app.message("Error", "Could not open file.")
-```
-
-app.confirm(title, body)
-
-Optional and not required by the current draft.
-
-Returns bool if supported.
-
-Example:
-
-```squid
-let ok = app.confirm("Reset", "Reset app state?")
-```
-
-string.format(template, ...)
-
-Returns a string by replacing `{}` placeholders in `template` with the remaining arguments in order.
-
-Example:
-
-```squid
-let label = string.format("{}/{}", state.pageIndex + 1, state.pageCount)
-```
-
-Rules:
-- template must be a string
-- each `{}` consumes one argument
-- argument count must match placeholder count
-- supported argument types are int, bool, string, and null
-- formatting is deterministic and locale-independent
-- to render a literal brace, use `{{` or `}}`
-
----
-
-## 28. Input Built-ins
-
-The `input.*` namespace provides firmware-owned text entry UI.
-
-Input dialogs are system overlays, not SquidScript screens. While an input dialog is active, app bytecode is not executing. Firmware owns drawing, key navigation, cursor movement, editing, layout switching, cancellation, and restoration of the app screen after the dialog closes.
-
-When an input dialog closes, firmware must invalidate the current screen. After the event handler that called `input.text(...)` returns, firmware must re-render the current `screen("...")` block automatically. Apps do not need to call `screen.refresh()` only to erase the keyboard or restore the screen that was underneath it.
-
-input.text(title, options)
-
-Shows a firmware-owned text entry dialog and returns the entered string.
-
-Requires runtime support:
-
-```text
-input.text
-```
-
-Example:
-
-```squid
-let label = input.text("Book label", { maxLength: 40 })
-
-if (label != "") {
-  title = label
-  state.save()
-}
-```
-
-Allowed options:
-- `maxLength`: int
-- `initial`: string
-- `placeholder`: string
-
-The firmware may provide an e-ink-friendly grid keyboard with layout modes such as lowercase, uppercase, numbers, and symbols. Logical keys navigate and select keys:
-- `LEFT` and `RIGHT` move across keyboard keys
-- `UP` and `DOWN` move between rows
-- `SELECT` activates the highlighted key
-- `BACK` cancels or closes
-- `MENU` may switch keyboard layout
-
-Rules:
-- `input.text(...)` may be called only from event handlers and user-defined functions reached from event handlers.
-- `input.text(...)` is not render-safe and must not be called from screen blocks.
-- returned strings are bounded by `maxLength` and target profile limits.
-- cancellation returns an empty string.
-- firmware may clamp `maxLength` according to target limits.
-- app instruction limits do not advance while firmware input UI is active.
-- closing the input dialog schedules an automatic re-render of the current screen after the calling event handler returns.
-- password or credential entry for system services should use the owning system capability, such as `wifi.openSetup()`, instead of returning secrets to app code.
-
----
-
-## 29. State Built-ins
+## 28. State Built-ins
 
 state.load()
 
@@ -2313,89 +2214,7 @@ Recommended write strategy:
 
 ---
 
-## 30. State Machine Built-ins
-
-The `stateMachine.*` namespace provides generic helpers for app modes and small finite-state workflows.
-
-State machines are not new syntax and they do not store hidden runtime state. A state machine is backed by an existing string variable declared in the app's `state { ... }` block. The backing variable remains the source of truth: explicit assignments to `state.<field>` or `@field` immediately change the state observed by `stateMachine.current(...)` and `stateMachine.is(...)`.
-
-Example:
-
-```squid
-state {
-  uiState: string = "browser"
-}
-
-function openReader() {
-  stateMachine.enter("uiState", "reader")
-  screen.open("reader")
-}
-
-event.on("key.RIGHT") {
-  if (stateMachine.is("uiState", "reader")) {
-    nextPage()
-  } else {
-    if (stateMachine.is("uiState", "jump")) {
-      jumpForward10()
-    }
-  }
-}
-```
-
-stateMachine.current(backingStateName)
-
-Returns the current state name from the backing state variable.
-
-Example:
-
-```squid
-let current = stateMachine.current("uiState")
-```
-
-stateMachine.is(backingStateName, stateName)
-
-Returns bool.
-
-Example:
-
-```squid
-if (stateMachine.is("uiState", "reader")) {
-  nextPage()
-}
-```
-
-stateMachine.enter(backingStateName, stateName)
-
-Sets the backing state variable to `stateName`.
-
-Example:
-
-```squid
-stateMachine.enter("uiState", "toc")
-screen.open("toc")
-```
-
-Rules:
-- `backingStateName` must be a string literal naming an existing `state { ... }` variable
-- the backing variable must have type string
-- `stateName` must be a string literal
-- `stateMachine.*` requires the `stateMachine` runtime feature but does not require a separate permission
-- `stateMachine.enter(...)` mutates the in-memory backing variable but does not call `state.save()`
-- screen navigation remains explicit; `stateMachine.enter(...)` does not call `screen.open(...)`
-- state machines are generic app behavior helpers and must not contain domain-specific states
-
-squidc should validate state machine use per backing variable:
-- every referenced backing variable exists and is string-typed
-- every entered state is a non-empty string literal
-- every literal state tested with `stateMachine.is(...)` is either the backing variable's default value or appears in a `stateMachine.enter(...)` call for the same backing variable
-- direct assignments to a backing variable use `state.<field>` or `@field`; assigned string literals must be in the same validated state set
-- squidc should reject non-literal assignments to a backing variable unless it can prove the assigned value is one of the validated states
-
-This validation allows misspelled states to be caught without adding enum declarations or new state-machine syntax.
-
----
-
-## 31. Wi-Fi Service Built-ins
+## 29. Wi-Fi Service Built-ins
 
 The canonical Wi-Fi namespace is `service.wifi.*`. Source may use the shorter
 `wifi.*` sugar; the compiler normalizes it to the same IR and bytecode as
@@ -2550,230 +2369,7 @@ Rules:
 
 ---
 
-## 32. HTTP Server Built-ins
-
-The `httpServer.*` namespace provides small foreground-only HTTP services owned by firmware.
-
-SquidScript apps may use this capability to provide local web UIs, such as BinBook upload pages, library managers, or device setup tools.
-
-SquidScript apps do not need raw sockets or manual HTTP parsing. Firmware owns request parsing, static asset serving, path matching, form parsing, upload limits, temporary file storage, cleanup, and server lifecycle. Apps start a named service and poll bounded events.
-
-httpServer.start(serviceName, options)
-
-Starts a named foreground HTTP service for the current app.
-
-Requires runtime support:
-
-```text
-httpServer.serve
-```
-
-Example:
-
-```squid
-httpServer.start("uploads", {
-  port: 8080,
-  assets: "admin-ui",
-  routes: ["upload-book"],
-  uploadExtension: ".binbook",
-  maxUploadBytes: 16777216
-})
-```
-
-Allowed options:
-- `port`: int
-- `assets`: string path to a static asset directory inside the app directory
-- `routes`: list of named app routes accepted for forms/uploads
-- `uploadExtension`: string
-- `maxUploadBytes`: int
-
-The runtime may clamp or reject ports and upload limits according to the target profile.
-
-Static web assets:
-- this is browser-facing static file serving for a phone/computer web browser, not HTML rendering on the device display.
-- firmware does not execute JavaScript from app web assets; browser-side JavaScript runs only in the user's browser.
-- `assets` is an arbitrary safe package-relative directory inside the app
-  directory; `web` is a convention, not a reserved name.
-- paths must not be absolute and must not contain `..`.
-- firmware serves files with fixed content types based on extension.
-- firmware should prefer `index.html` for the asset root.
-- assets are read-only to the HTTP server.
-- firmware must not expose directory listings unless the app explicitly uses file-management APIs.
-- current draft should support at least `.html`, `.css`, `.js`, `.png`, `.jpg`, `.jpeg`, `.svg`, `.ico`, `.txt`, and `.json`.
-- static asset reads must be bounded by target limits.
-
-httpServer.stop(serviceName)
-
-Stops a named HTTP service owned by the current app.
-
-Example:
-
-```squid
-httpServer.stop("uploads")
-```
-
-httpServer.status(serviceName)
-
-Returns a read-only record describing service state.
-
-Suggested fields:
-- `running`: bool
-- `url`: string
-- `ipAddress`: string
-- `hostname`: string
-- `mode`: string such as `"station"` or `"accessPoint"`
-- `port`: int
-- `error`: string
-
-httpServer.poll(serviceName)
-
-Returns one bounded event record for the named service, or a record with `kind: "none"` if no event is pending.
-
-Example:
-
-```squid
-let event = httpServer.poll("uploads")
-
-if (event.kind == "formSubmit" && event.route == "upload-book") {
-  let title = httpServer.field(event, "title")
-  let upload = httpServer.upload(event, "book")
-  let checked = binbook.inspect(upload)
-
-  if (checked.ok) {
-    library.installUpload(upload, {
-      library: "books",
-      folder: "/",
-      name: title,
-      extension: ".binbook"
-    })
-  }
-
-  screen.refresh()
-}
-```
-
-Suggested event fields:
-- `kind`: string such as `"none"`, `"request"`, `"formSubmit"`, `"uploadStarted"`, `"uploadProgress"`, `"uploadComplete"`, or `"error"`
-- `route`: string route name for app-defined form/upload routes
-- `path`: string request path for static or routed requests
-- `bytesReceived`: int
-- `totalBytes`: int
-- `error`: string
-
-httpServer.field(event, name)
-
-Returns a bounded string field from a `formSubmit` event.
-
-Example:
-
-```squid
-let title = httpServer.field(event, "title")
-```
-
-httpServer.upload(event, name)
-
-Returns an opaque upload handle from a `formSubmit` event.
-
-Example:
-
-```squid
-let upload = httpServer.upload(event, "book")
-```
-
-Upload handles are transient firmware-owned references. Apps may pass them to APIs such as `library.installUpload(...)`, but may not inspect raw upload bytes in current draft.
-
-Rules:
-- HTTP server services are foreground-only in current draft.
-- Firmware must stop all services owned by an app when that app exits, crashes, or loses foreground.
-- Uploaded files must first be written to firmware-managed staging storage.
-- Completed uploads should be exposed to apps as upload handles.
-- Apps install or move uploaded files through library/content APIs.
-- Firmware must enforce maximum body size, request count, service count, path length, header size, and event queue limits.
-- Firmware must remove incomplete staged uploads when a client disconnects, the server stops, or the owning app exits.
-- Firmware must reject path traversal and must not let upload form filenames choose final storage paths directly.
-- Firmware should validate uploaded content only after the transfer completes and the staged file is flushed. Failed validation must delete or quarantine the staged file without publishing it.
-- App uploads through HTTP should hand completed SQBC artifacts or future
-  resource packages to the firmware-owned app installer. Resource package
-  format is intentionally left for a separate design pass.
-- Raw sockets, arbitrary outbound HTTP clients, TLS configuration, and general web frameworks are not part of the current draft.
-
----
-
-## 33. Bluetooth Built-ins
-
-The `bluetoothHid.*` namespace provides bounded Bluetooth HID peripheral behavior for apps such as presentation clickers.
-
-Generic Bluetooth scanning, arbitrary GATT services, and raw Bluetooth data transfer are not part of the current draft. Bounded BLE upload is exposed as a firmware-owned transfer service, not raw GATT access.
-
-bluetoothHid.start(deviceName)
-
-Starts foreground-only Bluetooth HID advertising or reconnect behavior for the current app.
-
-Requires runtime support:
-
-```text
-bluetoothHid.advertise
-```
-
-Example:
-
-```squid
-bluetoothHid.start("Squid Clicker")
-```
-
-bluetoothHid.stop()
-
-Stops Bluetooth HID behavior owned by the current app.
-
-bluetoothHid.status()
-
-Returns a read-only record describing HID state.
-
-Suggested fields:
-- `active`: bool
-- `connected`: bool
-- `paired`: bool
-- `deviceName`: string
-- `error`: string
-
-bluetoothHid.sendKey(keyName)
-
-Sends one approved HID key press/release sequence.
-
-Requires runtime support:
-
-```text
-bluetoothHid.keys
-```
-
-Example:
-
-```squid
-bluetoothHid.sendKey("PAGE_DOWN")
-```
-
-Suggested key names:
-- `PAGE_UP`
-- `PAGE_DOWN`
-- `LEFT`
-- `RIGHT`
-- `UP`
-- `DOWN`
-- `ENTER`
-- `ESCAPE`
-- `SPACE`
-- `VOLUME_UP`
-- `VOLUME_DOWN`
-
-Rules:
-- Bluetooth HID is foreground-only in current draft.
-- Firmware must stop advertising, disconnect, or release app-owned HID behavior when the app exits, crashes, or loses foreground.
-- Firmware owns pairing, bonding, host trust decisions, HID report descriptors,
-  rate limiting, and target/platform behavior.
-- Apps may request sending only allowlisted keys supported by the target profile.
-- Apps must not construct raw HID reports in current draft.
-
-### BLE Object Transfer Triggers
+## 30. BLE Object Transfer Trigger Metadata
 
 BLE object transfer is an app trigger capability, not a foreground polling API.
 An app declares the profiles it can receive in `app.triggers`; firmware reads
@@ -2844,58 +2440,23 @@ Rules:
 
 ---
 
-## 34. File and Data Built-ins
+## 31. File Built-ins
 
-`file.*` is the app-facing API for user/device-visible files. File references
-abstract over the backing location: a picked or associated file may live on SD,
-internal flash, simulator storage, USB mass storage, or another target-defined
-backend. Normal app code should pass the returned file reference back to
-`file.*` calls rather than constructing physical volume paths.
+`file.*` is the app-facing API for user/device-visible files currently backed
+by SQBC and VM runtime calls. File references abstract over backing location: a
+picked or associated file may live on SD, internal flash, simulator storage, USB
+mass storage, or another target-defined backend. Normal app code should pass the
+returned file reference back to `file.*` calls rather than constructing physical
+volume paths.
 
-SquidScript file management should use target-defined libraries rather than raw device paths.
-
-Libraries are named storage roots exposed by firmware. A target may provide libraries such as:
-
-- `books`: user book/file library, normally on SD
-- `apps-inbox`: uploaded app packages awaiting firmware/app-installer validation
-- `appdata`: current app's private data area
-- `flash-library`: internal flash-backed user library when the target defines an explicit writable flash partition
-
-The exact backing filesystem is a firmware and target-definition concern. On XTEINK X4, SD is the primary large-content store. Internal flash may be exposed as `flash-library` only when firmware provides a mounted flash filesystem partition; it is not implicit unused firmware image space.
-
-Logical libraries and physical volumes are separate concepts.
-
-Examples:
-
-```text
-Logical libraries:
-- books
-- apps-inbox
-- appdata
-
-Physical volumes:
-- sd
-- flash
-```
-
-Portable apps may inspect file metadata when the target exposes such an API,
-but storage location remains metadata, not part of the default read contract.
-Use `service.storage.*` for volume capacity, mount status, and backend
-capabilities. Use `file.*` for opening and reading app-visible files.
-
-`library.list("books", { volume: "all" })` may return a merged view across SD and flash when both volumes provide book storage. Each entry should still identify its backing volume so file-manager apps can show whether a file lives on removable SD or internal flash.
-
-Write operations should either specify a target volume or use a documented default. Large books should default to SD. Flash should be chosen explicitly or through a target-defined fallback policy.
-
-Removable volumes may become unavailable while the device is running. Some hardware provides a card-detect GPIO; XTEINK X4 does not currently have a verified card-detect or write-protect signal in the public pinouts. When no detect signal exists, firmware must infer SD removal from I/O errors, mount probes, or changed volume identity.
-
-Reference implementations for the XTEINK family use this same broad pattern. Papyrix initializes SdFat at startup, reports `SdCardNotFound` when mounting fails, and exposes storage operations through result/error records. CrossPoint initializes SD storage before normal app flow, gates file/web operations behind that storage layer, and removes incomplete uploads when a transfer aborts. Neither public code path depends on a documented XTEINK card-detect GPIO.
-
-Normal storage failures should be returned as result records, not treated as VM crashes. Programmer errors, invalid bytecode, and invalid handle or API use may still stop the current app.
+Storage location remains metadata, not part of the default read contract. The
+firmware/runtime owns physical volume selection, mount state, path validation,
+quota checks, and I/O errors. Apps may not directly write to `/sd/system` or
+construct physical system paths.
 
 Common storage error codes:
+
 - `not-found`
-- `already-exists`
 - `read-only`
 - `volume-missing`
 - `volume-changed`
@@ -2917,7 +2478,7 @@ file.pick
 Example:
 
 ```squid
-let picked = file.pickFile(".binbook")
+let picked = file.pickFile(".txt")
 if (picked.ok) {
   state.file = picked.path
 }
@@ -2938,7 +2499,7 @@ Reads a bounded text file.
 Requires runtime support:
 
 ```text
-file.read or appdata.read, depending on path.
+file.read or appdata.read, depending on path
 ```
 
 Example:
@@ -2946,7 +2507,7 @@ Example:
 ```squid
 let result = file.readText(state.file)
 if (result.ok) {
-  text = result.text
+  debug.print(result.text)
 }
 ```
 
@@ -2966,7 +2527,7 @@ Example:
 ```squid
 let result = file.readLines("data/notes.txt", 100)
 if (result.ok) {
-  lines = result.lines
+  debug.print(result.lines)
 }
 ```
 
@@ -2977,519 +2538,20 @@ ESP32-C3 Zephyr canonical firmware, this API returns:
 { ok: false, error: "unsupported", lines: [] }
 ```
 
-data.read(path)
-
-Reads and parses a generic structured data file.
-
-Example:
-
-```squid
-let loaded = data.read(state.file)
-if (loaded.ok) {
-  doc = loaded.doc
-}
-```
-
-data.countSections(doc, name)
-
-Example:
-
-```squid
-let total = data.countSections(doc, "slide")
-```
-
-data.section(doc, name, index)
-
-Example:
-
-```squid
-let s = data.section(doc, "slide", current)
-```
-
-data.field(section, name)
-
-Example:
-
-```squid
-title = data.field(s, "title")
-```
-
-data.fields(section, name)
-
-Example:
-
-```squid
-body = string.join(data.fields(s, "body"), "\n")
-```
-
-string.join(list, separator)
-
-Example:
-
-```squid
-body = string.join(lines, "\n")
-```
-
-Path restrictions:
-- apps may read and write target-defined libraries through standard capability APIs
-- apps may read own app data if `appdata.read` is declared
-- apps may write own app data if `appdata.write` is declared
-- apps may read user-selected file if `file.read` is declared
-- paths are library-relative unless a capability explicitly returns a firmware-owned path
-- paths must not contain `..`
-
-library.list(libraryId, options)
-
-Lists bounded entries in a target-defined library.
-
-Requires the corresponding library capability, such as:
-
-```text
-library.books.read
-library.flash.read
-appdata.read
-```
-
-Example:
-
-```squid
-let files = library.list("books", { path: "/", extension: ".binbook" })
-if (!files.ok) {
-  service.display.text(files.error, { x: 20, y: 60, fontHeight: 24 })
-}
-```
-
-Paginated example:
-
-```squid
-let page = library.list("books", {
-  path: "/",
-  extension: ".binbook",
-  volume: "all",
-  limit: 50,
-  cursor: cursor
-})
-```
-
-Suggested result fields:
-- `ok`: bool
-- `entries`: list of entry records
-- `nextCursor`: string
-- `complete`: bool
-- `error`: string
-
-Suggested entry fields:
-- `name`: string
-- `path`: string library-relative path
-- `kind`: string such as `"file"` or `"directory"`
-- `size`: int
-- `extension`: string
-- `library`: string logical library ID
-- `volume`: string physical volume ID such as `"sd"` or `"flash"`
-
-library.volumes(libraryId)
-
-Returns bounded status records for the physical volumes backing a logical library.
-
-Example:
-
-```squid
-let volumes = library.volumes("books")
-if (!volumes.ok) {
-  service.display.text(volumes.error, { x: 20, y: 60, fontHeight: 24 })
-}
-```
-
-Suggested volume fields:
-- `id`: string such as `"sd"` or `"flash"`
-- `available`: bool
-- `removable`: bool
-- `readOnly`: bool
-- `freeBytes`: int
-- `totalBytes`: int
-- `error`: string
-
-`library.volumes(...)` should trigger a bounded refresh/probe when a removable volume has no card-detect signal and is currently marked unavailable. Firmware should debounce repeated probes to avoid blocking the UI.
-
-library.mkdir(libraryId, path)
-
-Creates a directory in a target-defined library.
-
-Example:
-
-```squid
-let result = library.mkdir("books", "/manuals")
-```
-
-Returns a result record:
-
-```squid
-let result = library.mkdir("books", "/manuals")
-if (!result.ok) {
-  service.display.text(result.error, { x: 20, y: 60, fontHeight: 24 })
-}
-```
-
-library.rename(libraryId, path, newName)
-
-Renames a file or directory without moving it to a different parent directory.
-
-Example:
-
-```squid
-library.rename("books", "/old.binbook", "new.binbook")
-```
-
-Returns a result record.
-
-library.move(libraryId, fromPath, toPath)
-
-Moves a file or directory inside the same library.
-
-Example:
-
-```squid
-library.move("books", "/incoming/book.binbook", "/manuals/book.binbook")
-```
-
-Returns a result record. Same-volume moves should use filesystem rename when possible. Cross-volume moves are not atomic; firmware must implement them as copy, verify, then delete, or reject them with `unsupported`.
-
-library.delete(libraryId, path)
-
-Deletes a file or empty directory.
-
-Example:
-
-```squid
-library.delete("books", "/bad.binbook")
-```
-
-Returns a result record. Deleting non-empty directories may be rejected unless the API call explicitly opts into recursive deletion in a future revision.
-
-library.installUpload(uploadHandle, options)
-
-Installs a firmware-staged upload into a target-defined library.
-
-Example:
-
-```squid
-library.installUpload(upload, {
-  library: "books",
-  volume: "sd",
-  folder: "/",
-  name: "example",
-  extension: ".binbook"
-})
-```
-
-Returns a result record with at least:
-- `ok`: bool
-- `path`: string
-- `library`: string
-- `volume`: string
-- `error`: string
-
-BinBook upload example:
-
-```squid
-let checked = binbook.inspect(upload)
-
-if (checked.ok) {
-  let installed = library.installUpload(upload, {
-    library: "books",
-    volume: "sd",
-    folder: "/",
-    name: checked.title,
-    extension: ".binbook"
-  })
-}
-```
-
-App package upload example:
-
-```squid
-let installed = library.installUpload(upload, {
-  library: "apps-inbox",
-  volume: "sd",
-  folder: "/",
-  extension: ".sqbc"
-})
-```
-
-Uploaded `.sqbc` files and `.squid.zip` packages are staging artifacts until
-the firmware app installer validates bytecode and target requirements, places
-the artifact under the app ID derived from SQBC metadata, and publishes the
-installed app where the filesystem permits it. Host tools may unpack and
-validate `.squid.zip` before streaming normalized package files to constrained
-firmware; production firmware is not required to parse ZIP archives directly.
-
 Rules:
-- firmware must sanitize names and reject path traversal
-- firmware must enforce target storage quotas and maximum file sizes
-- writes should be atomic where the backing filesystem permits it
-- app uploads should land in `apps-inbox`; actual app installation remains firmware-owned
-- app upload extensions should be `.sqbc` or `.squid.zip`
-- large books should default to SD-backed `books`, not internal flash, unless the user or app explicitly selects `flash-library`
-- if a removable volume disappears during an operation, firmware should return a structured storage error and mark the volume unavailable until remount/probe succeeds
+
+- file APIs return result records for normal storage/runtime unavailability
+- paths must not contain `..`
+- returned file paths are firmware-owned references, not raw physical paths
+- direct writes, directory management, uploads, and content libraries are not
+  part of the current language/runtime API
+- larger storage, library, upload, data parsing, and document capabilities must
+  be added as real compiler, SQBC, VM, firmware, docs, and tests slices before
+  they appear in this canonical spec
 
 ---
 
-## 35. Generic Data Format
-
-SquidScript may support a generic structured text format for app-specific data.
-
-Example presentation file:
-
-```text
-presentation {
-  title: "Demo"
-}
-
-slide {
-  title: "ESP32-C3 Miniapps"
-  body: """
-  Firmware provides the runtime.
-  Apps live on the SD card.
-  Scripts handle buttons and drawing.
-  """
-}
-
-slide {
-  title: "Safe Extensibility"
-  body: """
-  No native binaries.
-  No unbounded loops.
-  No raw filesystem writes.
-  """
-}
-```
-
-The runtime may expose this through:
-
-```squid
-data.read(path)
-data.countSections(doc, "slide")
-data.section(doc, "slide", index)
-data.field(section, "title")
-data.fields(section, "body")
-```
-
-The data format is declarative.
-
-It must not contain executable code.
-
----
-
-## 36. BinBook Capability
-
-BinBook support is provided as a firmware-native capability module.
-
-BinBook is part of the standard platform capability set, not the core language syntax.
-
-The draft capability contract is:
-
-```text
-capabilities/binbook.cap.json
-```
-
-The contract is a source/spec/build artifact used by compiler and firmware implementations. It must not be embedded as JSON in `.sqbc`.
-
-SquidScript does not parse BinBook bytes directly.
-
-SquidScript uses opaque handles and read-only records.
-
-The authoritative BinBook file-format reference is the GitHub-hosted BinBook specification:
-
-```text
-https://github.com/parasquid/binbook/blob/main/BINBOOK_FORMAT_SPEC.md
-```
-
-`.sqbc` is executable SquidScript bytecode. `.binbook` is a separate compiled raster-book document container.
-
-`.uf2` is a firmware replacement image when the target bootloader supports UF2. It is not a SquidScript app format and must not be treated as a container for `.sqbc` or `.binbook` files.
-
-Required runtime support:
-
-```text
-binbook.read
-```
-
-Typical usage:
-
-```squid
-let opened = binbook.open(state.file)
-if (opened.ok) {
-  let info = binbook.info(opened.book)
-  let page = binbook.page(opened.book, state.pageIndex)
-  let image = binbook.pageImage(page)
-  service.display.draw(image, { x: 0, y: 0 })
-}
-```
-
-The BinBook capability owns document-specific work. The display service owns final composition. Prefer this style of composition over BinBook-specific rendering syntax or all-in-one helpers that bypass `service.display.*`.
-
-Built-ins:
-
-```text
-binbook.open(path)
-binbook.inspect(uploadHandle)
-binbook.info(book)
-binbook.pageCount(book)
-binbook.pageInfo(book, pageIndex)
-binbook.page(book, state.pageIndex)
-binbook.pageImage(page)
-binbook.navCount(book)
-binbook.navEntry(book, navIndex)
-binbook.close(book)
-service.display.draw(drawable, options)
-```
-
-Minimum API:
-
-```text
-binbook.open(path)
-binbook.inspect(uploadHandle)
-binbook.info(book)
-binbook.page(book, state.pageIndex)
-binbook.pageImage(page)
-service.display.draw(drawable, options)
-```
-
-binbook.open(path)
-
-Opens and validates a BinBook file.
-
-Example:
-
-```squid
-let book = binbook.open(state.file)
-```
-
-Returns:
-
-```text
-handle
-```
-
-binbook.inspect(uploadHandle)
-
-Validates a completed firmware-staged upload as a BinBook before it is
-published into a library. This is intended for upload flows where the app
-receives an opaque upload handle from a firmware-owned upload service such as
-HTTP upload or BLE object transfer.
-
-Example:
-
-```squid
-let checked = binbook.inspect(upload)
-
-if (checked.ok) {
-  library.installUpload(upload, {
-    library: "books",
-    volume: "sd",
-    folder: "/",
-    name: checked.title,
-    extension: ".binbook"
-  })
-}
-```
-
-Suggested result fields:
-- `ok`: bool
-- `title`: string
-- `author`: string
-- `pageCount`: int
-- `logicalWidth`: int
-- `logicalHeight`: int
-- `bpp`: int
-- `error`: string
-
-binbook.info(book)
-
-Returns a read-only record.
-
-Example record:
-
-```text
-{
-  title: "My Book",
-  author: "Unknown",
-  pageCount: 42,
-  logicalWidth: 480,
-  logicalHeight: 800,
-  bpp: 2
-}
-```
-
-Example:
-
-```squid
-let info = binbook.info(book)
-title = info.title
-pageCount = info.pageCount
-```
-
-binbook.page(book, state.pageIndex)
-
-Returns an opaque page handle.
-
-Example:
-
-```squid
-let page = binbook.page(book, state.pageIndex)
-```
-
-binbook.pageImage(page)
-
-Returns a display-ready drawable resource for a BinBook page.
-
-Example:
-
-```squid
-let image = binbook.pageImage(page)
-service.display.draw(image, { x: 0, y: 0 })
-```
-
-The firmware module owns:
-- header validation
-- index validation
-- page decoding
-- bit-depth conversion
-- bounds checks
-- memory management
-- display tiling if needed
-- rotation handling if needed
-- error reporting
-
-Scripts should persist:
-- file path
-- page index
-
-Scripts should not persist:
-- book handles
-- page handles
-- decoded pixel buffers
-
-Valid state:
-
-```squid
-state {
-  file: string = ""
-  pageIndex: int = 0
-}
-```
-
-Invalid state:
-
-```squid
-state {
-  book: string = null
-}
-```
-
----
-
-## 36.1 App Registry And Launch Capability
+## 32. App Registry And Launch Capability
 
 App registry support is provided by firmware. SquidScript apps may request
 installed app summaries and start another installed app, but firmware owns
@@ -3605,14 +2667,14 @@ event.on("app.start") {
 
 event.on("key.SELECT") {
   let apps = app.registry()
-  let selectedApp = app.registry.get(apps, selected)
+  let selectedApp = app.registry.get(apps, state.selected)
   app.launch(selectedApp.id)
 }
 ```
 
 ---
 
-## 36.2 Device Config Capability
+## 33. Device Config Capability
 
 Device config support is provided by firmware/runtime services. SquidScript
 apps may load editable text SQDEVICE records, set draft values, transactionally
@@ -3749,7 +2811,7 @@ per-app data.
 
 ---
 
-## 37. Runtime APIs And Target Support
+## 34. Runtime APIs And Target Support
 
 SquidScript does not use app-declared permissions. Built-ins are normal
 language/runtime APIs. The compiler validates known APIs and call shapes,
@@ -3785,9 +2847,6 @@ file.pick
 file.read
 - Allows reading a user-selected external file.
 
-input.text
-- Allows opening firmware-owned text entry dialogs for non-credential app input.
-
 service.wifi
 - Allows foreground-owned firmware Wi-Fi service calls such as
   `service.wifi.startAP`, `service.wifi.stopAP`, `service.wifi.scan`,
@@ -3801,42 +2860,10 @@ service.wifi.scan
 service.wifi.accessPoint
 - Allows starting and stopping foreground-only firmware-owned Wi-Fi access points.
 
-service.wifi.configureIp
-- Allows requesting station/AP IP and hostname configuration where the target supports it.
-
-service.wifi.setup
-- Allows opening firmware-owned Wi-Fi setup UI. This does not expose Wi-Fi credentials to the app.
-
-httpServer.serve
-- Allows starting foreground-only firmware-owned HTTP services for bounded app use cases such as uploads.
-
-library.books.read
-- Allows listing and reading entries in the user book library.
-
-library.books.write
-- Allows creating folders, installing uploads, renaming, moving, and deleting entries in the user book library.
-
-library.flash.read
-- Allows listing and reading entries in the internal flash library when the target provides one.
-
-library.flash.write
-- Allows creating folders, installing uploads, renaming, moving, and deleting entries in the internal flash library when the target provides one.
-
-library.appsInbox.write
-- Allows installing uploaded app packages into the apps inbox for later firmware/app-installer validation.
-
-bluetoothHid.advertise
-- Allows starting foreground-only Bluetooth HID peripheral advertising or reconnect behavior.
-
-bluetoothHid.keys
-- Allows sending allowlisted Bluetooth HID key events while this app owns the foreground HID session.
-
 service.ble.object-transfer
 - Allows declaring firmware-owned BLE object-transfer trigger profiles that
-  produce staged upload handles through event payloads.
-
-binbook.read
-- Allows BinBook document APIs.
+  are encoded in installed SQBC metadata. Runtime chunk receive and install
+  support is target/firmware-specific and may still be unavailable.
 
 system.info
 - Allows safe device info and resource-status queries such as
@@ -3880,7 +2907,7 @@ available on the current target, firmware must return a target/runtime error.
 
 ---
 
-## 38. Bytecode Execution Model
+## 35. Bytecode Execution Model
 
 ## Developer Builds, REPL, And Debug Console
 
@@ -3987,7 +3014,7 @@ Runtime execution:
 
 ---
 
-## 39. SQBC Bytecode File
+## 36. SQBC Bytecode File
 
 .sqbc is the SquidScript bytecode format.
 
@@ -4067,7 +3094,7 @@ The fixed header is followed by arrays of string-pool IDs for required logical k
 
 ---
 
-## 40. Bytecode Validation
+## 37. Bytecode Validation
 
 Precompiled bytecode is an external app artifact and must be validated before execution.
 
@@ -4100,7 +3127,7 @@ If validation fails, the app is marked invalid and must not run.
 
 ---
 
-## 41. Internal Bytecode Sketch
+## 38. Internal Bytecode Sketch
 
 Possible opcodes:
 
@@ -4183,7 +3210,7 @@ enum SquidValueType {
 
 ---
 
-## 42. Screen Compilation
+## 39. Screen Compilation
 
 Screen blocks may be compiled into draw-command templates.
 
@@ -4216,7 +3243,7 @@ The screen render policy should be encoded with or adjacent to the screen's draw
 
 ---
 
-## 43. Source Maps
+## 40. Source Maps
 
 Source maps are optional debug metadata.
 
@@ -4313,7 +3340,7 @@ Production firmware may show only file names and line numbers.
 
 ---
 
-## 44. Runtime Diagnostics
+## 41. Runtime Diagnostics
 
 On runtime error, squidvm should record:
 - app ID
@@ -4329,20 +3356,20 @@ On runtime error, squidvm should record:
 Error with source map:
 
 ```text
-App: binbook-reader
-Error: binbook.page index out of range
-Event: KEY_RIGHT
+App: counter
+Error: integer overflow
+Event: key.RIGHT
 Handler: event.on("key.RIGHT")
-Function: loadPage()
-Source: screens/reader.squid:38
+Function: increment()
+Source: main.squid:18
 ```
 
 Fallback without source map:
 
 ```text
-App: binbook-reader
-Error: binbook.page index out of range
-Event: KEY_RIGHT
+App: counter
+Error: integer overflow
+Event: key.RIGHT
 Function: fn#4
 Instruction: 182
 ```
@@ -4350,8 +3377,8 @@ Instruction: 182
 Crash log example:
 
 ```text
-App: binbook-reader
-Error: binbook.page index out of range
+App: counter
+Error: integer overflow
 Event: key.RIGHT
 
 Bytecode:
@@ -4360,15 +3387,15 @@ Bytecode:
 
 Call stack:
 - key.RIGHT @ ip 92
-- loadPage @ ip 178
+- increment @ ip 178
 
 Source:
-- screens/reader.squid:38
+- main.squid:18
 ```
 
 ---
 
-## 45. Runtime Quotas
+## 42. Runtime Quotas
 
 Suggested current draft limits:
 
@@ -4386,7 +3413,6 @@ Suggested current draft limits:
 - max loop iterations per event: 100
 - max screen draw commands: 128
 - max file read size: 64 KB
-- max parsed data sections: 256
 - max list items returned by a built-in: 256
 - max handle count: 16 to 32
 
@@ -4439,7 +3465,7 @@ cursor-style APIs may be added for workloads such as large Wi-Fi scans.
 
 ---
 
-## 46. Memory Model
+## 43. Memory Model
 
 Runtime memory should be bounded.
 
@@ -4468,7 +3494,7 @@ Large document data such as BinBook pages should be streamed or tiled by firmwar
 
 ---
 
-## 47. Execution Model
+## 44. Execution Model
 
 The runtime is event-driven.
 
@@ -4505,7 +3531,7 @@ No multitasking in current draft.
 
 ---
 
-## 48. Error Handling
+## 45. Error Handling
 
 Bytecode validation error:
 - app is marked invalid
@@ -4532,25 +3558,25 @@ Repeated runtime errors:
 Example error report:
 
 ```text
-App: binbook-reader
+App: notes
 File: main.sqbc
-Source: screens/reader.squid:38
-Error: runtime support binbook.read unavailable for binbook.open()
+Source: main.squid:12
+Error: runtime support file.read unavailable for file.readText()
 ```
 
 If no valid source map exists:
 
 ```text
-App: binbook-reader
+App: notes
 File: main.sqbc
 Function: fn#3
 Instruction: 121
-Error: runtime support binbook.read unavailable for binbook.open()
+Error: runtime support file.read unavailable for file.readText()
 ```
 
 ---
 
-## 49. Crash Recovery
+## 46. Crash Recovery
 
 Before launching an app, firmware records:
 - app ID
@@ -4585,7 +3611,7 @@ Crash marker example:
 
 ---
 
-## 50. Runtime and Platform Safety Rules
+## 47. Runtime and Platform Safety Rules
 
 SquidScript apps are first-class device apps. Firmware still validates app packages and `.sqbc` bytecode before execution, just as a device platform should validate any installable app artifact before running it.
 
@@ -4634,7 +3660,7 @@ onSlideOpen() {
 
 ---
 
-## 51. Unsupported JavaScript Features
+## 48. Unsupported JavaScript Features
 
 The current SquidScript draft does not support:
 - var
@@ -4678,12 +3704,18 @@ Unsupported bytecode is a firmware validation error.
 
 ---
 
-## 52. Current-Format Validation
+## 49. Current-Format Validation
 
 SquidScript is pre-1.0 and has no compatibility contract. Current compiler,
 runtime, firmware, and simulator artifacts are expected to agree on the current
 format. If current bytecode does not run on the current runtime, treat that as a
 bug to fix or an artifact to rebuild.
+
+The canonical specification describes only current accepted forms. Removed
+forms are omitted rather than documented as unsupported. Test fixtures should
+not preserve removed syntax or removed API names by name, and tooling should
+not add migration diagnostics, aliases, compatibility modes, or special
+fallbacks unless that bridge is explicitly requested.
 
 Validation behavior:
 - if the magic is wrong: reject app
@@ -4699,7 +3731,7 @@ Source maps:
 
 ---
 
-## 53. Compiler: squidc
+## 50. Compiler: squidc
 
 squidc is the off-device SquidScript compiler.
 
@@ -4732,12 +3764,12 @@ Compiler diagnostics should include:
 Example:
 
 ```text
-screens/reader.squid:38: binbook.page requires runtime support binbook.read
+main.squid:12: state field count must be accessed as state.count or @count
 ```
 
 ---
 
-## 54. Example: Hello Menu App
+## 51. Example: Hello Menu App
 
 Installed artifact:
 
@@ -4916,43 +3948,9 @@ squidc build /sd/apps/hello-menu --out /sd/apps/hello-menu/main.sqbc --source-ma
 
 ---
 
-## 55. Example: BinBook Reader App
+## 52. Current Reference Baseline
 
-The draft reference implementation is documented in:
-
-```text
-docs/binbook_reader_reference.md
-```
-
-Draft source files are available under:
-
-```text
-examples/binbook-reader/
-```
-
-This example is intentionally limited to reading and navigation:
-- first-screen BinBook browser
-- resume last book from app state
-- page forward/back
-- coarse page movement
-- table of contents navigation
-- jump-to-page
-
-It does not include dictionaries, annotations, highlighting, search, bookmarks, or background indexing.
-
-The language specification does not duplicate the reader source. The reference document explains the design choices, and the files under `examples/binbook-reader/` are the source of truth for the example implementation.
-
-Build:
-
-```sh
-squidc build /sd/apps/binbook-reader --out /sd/apps/binbook-reader/main.sqbc --source-map
-```
-
----
-
-## 56. Recommended MVP
-
-The first implementation should support:
+The current reference implementation supports:
 
 Firmware:
 - SD app scanner
@@ -4975,11 +3973,16 @@ Firmware:
 - state.load
 - state.save
 - file.pickFile
-- BinBook minimum capability:
-  - binbook.open
-  - binbook.info
-  - binbook.page
-  - binbook.pageImage
+- file.readText
+- file.readLines
+- service.indicator.*
+- hardware.gpio.*
+- service.timer.*
+- service.power.sleep
+- service.wifi status, AP, station profile, and scan calls
+- app registry, launch, arm, disarm, process stack, and armed stack calls
+- device.config load, set, rebind, and save calls
+- BLE object-transfer trigger metadata
 - optional source-map loader
 - error/crash diagnostics
 
@@ -5009,12 +4012,12 @@ Source language:
 
 Test apps:
 1. Hello Menu
-2. BinBook Reader
-3. Presentation Clicker
+2. hardware and runtime target fixtures
+3. browser simulator fixtures
 
 ---
 
-## 57. Summary
+## 53. Summary
 
 SquidScript is a JavaScript-like source language for first-class apps on low-RAM e-ink/display devices.
 
@@ -5028,7 +4031,9 @@ squidvm validates and executes .sqbc on the ESP32-C3.
 
 Firmware images should be distributed as UF2 where the target bootloader supports it, so users can replace firmware through a USB mass-storage copy flow.
 
-UF2 is only for firmware replacement. SquidScript apps, source maps, BinBook content, and user state remain normal storage files and must not be packaged into firmware UF2 images.
+UF2 is only for firmware replacement. SquidScript apps, source maps, app data,
+and user state remain normal storage files and must not be packaged into
+firmware UF2 images.
 
 Production firmware should not need a source compiler.
 
@@ -5044,10 +4049,8 @@ Firmware:
 - bytecode VM
 - display/input/storage/power
 - API and target validation
-- BinBook module
 - Wi-Fi profile manager
-- foreground HTTP server module
-- Bluetooth HID module
+- BLE trigger metadata handling where enabled by the target
 - firmware services that emit generic events
 - crash recovery
 - optional source-map diagnostics
@@ -5066,7 +4069,10 @@ SquidScript apps:
 - manage state
 - use standard firmware capabilities
 
-SquidScript's core language is intentionally small. First-party device behavior is exposed through standard platform capabilities known to the compiler and VM. Domain-heavy capabilities such as BinBook are acceptable when they lift parsing, validation, decoding, memory management, or target-specific work that app authors should not perform in SquidScript.
+SquidScript's core language is intentionally small. First-party device behavior
+is exposed through standard platform capabilities known to the compiler and VM.
+Domain-heavy capabilities should be promoted into this spec only when the
+compiler, SQBC, VM, firmware, docs, and tests all support the current API.
 
 SquidScript intentionally avoids:
 - full JavaScript semantics

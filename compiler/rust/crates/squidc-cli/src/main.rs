@@ -1721,14 +1721,14 @@ screen("main") {}
     }
 
     #[test]
-    fn package_app_dir_rejects_removed_include_syntax() {
+    fn package_app_dir_rejects_unknown_top_level_declaration() {
         let root = unique_test_dir("squidc-package");
         let app_dir = root.join("app");
         fs::create_dir_all(app_dir.join("lib")).unwrap();
         fs::write(
             app_dir.join("main.squid"),
             r#"app "package-demo"
-include "lib/ui.squid"
+capability "demo"
 state {}
 screen("main") {}
 "#,

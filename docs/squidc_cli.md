@@ -13,7 +13,7 @@ configuration, firmware build metadata, docs, and autocomplete.
 
 ```sh
 cargo run -p squidc -- build examples/blinky-supermini/main.squid --out target/blinky.sqbc
-cargo run -p squidc -- package examples/binbook-reader
+cargo run -p squidc -- package examples/blinky-supermini
 cargo run -p squidc -- run examples/blinky-supermini/main.squid
 cargo run -p squidc -- repl --script tests/repl/default-dev.session
 cargo run -p squidc -- doctor
@@ -48,10 +48,10 @@ scripted hardware checks.
 ## App Commands
 
 ```sh
-cargo run -p squidc -- package examples/binbook-reader
-cargo run -p squidc -- package examples/binbook-reader --out target/binbook-reader.squid.zip
+cargo run -p squidc -- package examples/blinky-supermini
+cargo run -p squidc -- package examples/blinky-supermini --out target/blinky-supermini.squid.zip
 cargo run -p squidc -- app install examples/blinky-supermini/main.squid
-cargo run -p squidc -- app install binbook-reader.squid.zip
+cargo run -p squidc -- app install blinky-supermini.squid.zip
 cargo run -p squidc -- app install --as reader tests/hardware/c3-supermini/generic-events/reader-clock.squid
 cargo run -p squidc -- app launch reader
 cargo run -p squidc -- app list

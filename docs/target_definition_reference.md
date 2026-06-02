@@ -709,11 +709,7 @@ Examples:
 - `service.wifi.connect`
 - `service.wifi.scan`
 - `service.wifi.accessPoint`
-- `service.wifi.configureIp`
-- `service.wifi.setup`
-- `httpServer.serve`
 - `service.ble.object-transfer`
-- `binbook.read`
 
 Features and target requirements should be backed by concrete target fields.
 Do not use compatibility strings as a substitute for explicit display, input,

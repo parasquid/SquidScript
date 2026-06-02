@@ -388,7 +388,6 @@
       "maxLoopIterationsPerEvent": 100,
       "maxScreenDrawCommands": 128,
       "maxFileReadSize": 65536,
-      "maxParsedDataSections": 256,
       "maxListItemsReturned": 256,
       "maxHandles": 16
     }
@@ -401,8 +400,7 @@
     "squidscript-0.2",
     "portrait-480x800",
     "pixel-format.GRAY1_PACKED",
-    "pixel-format.GRAY2_PACKED",
-    "binbook"
+    "pixel-format.GRAY2_PACKED"
   ],
   "features": [
     "sdcard",
@@ -417,18 +415,8 @@
     "state.write",
     "file.pick",
     "file.read",
-    "input.text",
-    "stateMachine",
-    "library.books.read",
-    "library.books.write",
-    "library.appsInbox.write",
     "service.wifi.connect",
     "service.wifi.scan",
-    "service.wifi.accessPoint",
-    "service.wifi.configureIp",
-    "service.wifi.setup",
-    "httpServer.serve",
-    "service.ble.object-transfer",
-    "binbook.read"
+    "service.wifi.accessPoint"
   ]
 }

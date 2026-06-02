@@ -942,9 +942,9 @@ screen("main") {}
 }
 
 #[test]
-fn rejects_include_as_removed_module_syntax() {
-    let source = r#"app "include-demo"
-include "lib/ui.squid"
+fn rejects_unknown_top_level_declaration() {
+    let source = r#"app "unknown-top-level"
+capability "demo"
 state {}
 screen("main") {}
 "#;
@@ -958,7 +958,7 @@ screen("main") {}
     assert!(output
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "E_INCLUDE_REMOVED"));
+        .any(|diagnostic| diagnostic.code == "E_UNEXPECTED_TOP_LEVEL"));
 }
 
 #[test]
@@ -1521,29 +1521,6 @@ event.on("app.start") {
 }
 
 #[test]
-fn rejects_removed_content_file_namespace() {
-    let source = r#"app "content-removed"
-
-event.on("app.start") {
-  let picked = content.pickFile(".binbook")
-  debug.print(picked.ok)
-}
-"#;
-    let output = compile(CompileRequest {
-        source: source.to_string(),
-        target_id: PORTABLE_TARGET_ID.to_string(),
-    });
-
-    assert!(output.ok, "{:?}", output.diagnostics);
-    let err = sqbc::encode_sqbc(&output.ir.unwrap()).expect_err("removed content namespace fails");
-    let message = err.message;
-    assert!(
-        message.contains("unknown function content.pickFile"),
-        "{message:?}"
-    );
-}
-
-#[test]
 fn parses_hardware_gpio_calls() {
     let source = r#"app "gpio"
 state { led: bool = false }
@@ -2004,7 +1981,7 @@ fn parses_result_record_field_access_and_unary_not() {
     let source = r#"app "result-records" target "xteink-x4"
 state { failed: bool = false }
 event.on("app.start") {
-  let result = library.mkdir("books", "/manuals")
+  let result = file.pickFile(".txt")
   if (!result.ok) {
 state.failed = true
 debug.print(result.error)
@@ -2024,7 +2001,7 @@ screen("main") {
     let IrStatement::Let { expr, .. } = &ir.handlers[0].statements[0] else {
         panic!("expected result let");
     };
-    assert!(matches!(expr, IrExpr::Call { name, .. } if name == "library.mkdir"));
+    assert!(matches!(expr, IrExpr::Call { name, .. } if name == "file.pickFile"));
     let IrStatement::If {
         condition,
         then_statements,
@@ -2205,7 +2182,7 @@ screen("main") {}
 fn warns_when_fallible_result_is_ignored() {
     let source = r#"app "ignored-result" target "xteink-x4"
 event.on("app.start") {
-  library.mkdir("books", "/manuals")
+  file.pickFile(".txt")
   screen.open("main")
 }
 screen("main") {

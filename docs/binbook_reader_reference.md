@@ -1,12 +1,12 @@
 # Draft Reference Implementation: BinBook Reader
 
-Status: Draft
-Purpose: Show what a practical SquidScript BinBook reader might look like using app-owned persistent state and the `binbook.*` standard domain capability.
+Status: Future reference design
+Purpose: Show what a practical SquidScript BinBook reader could look like using app-owned persistent state and a future `binbook.*` standard domain capability.
 
 Draft source files are available under:
 
 ```text
-examples/binbook-reader/
+docs/reference/binbook-reader-draft/
 ```
 
 This example is intentionally limited to reading and navigation:
@@ -128,7 +128,9 @@ This keeps resume behavior inside the BinBook reader's own app state.
 
 ## Navigation Model
 
-`uiState` is a persisted string used by `stateMachine.*` to route input. The state machine is backed by that normal app state variable, so explicit assignments to `state.uiState` and calls to `stateMachine.enter("uiState", "...")` affect the same source of truth.
+`uiState` is a persisted string used to route input. It is normal app state:
+helpers assign `state.uiState` when they open a view, and key handlers compare
+`state.uiState` directly.
 
 ```squid
 event.on("key.SELECT") {
@@ -136,16 +138,16 @@ event.on("key.SELECT") {
 }
 
 function handleSelect() {
-  if (stateMachine.is("uiState", "reader")) {
+  if (state.uiState == "reader") {
     openJump()
   } else {
-    if (stateMachine.is("uiState", "toc")) {
+    if (state.uiState == "toc") {
       openSelectedTocEntry()
     } else {
-      if (stateMachine.is("uiState", "jump")) {
+      if (state.uiState == "jump") {
         commitJump()
       } else {
-        if (stateMachine.is("uiState", "browser")) {
+        if (state.uiState == "browser") {
           openSelectedBrowserItem()
         }
       }
@@ -222,12 +224,12 @@ The limit keeps event work bounded. A future capability helper could replace thi
 
 The draft implementation is split into:
 
-- `examples/binbook-reader/main.squid`
-- `examples/binbook-reader/lib/ui.squid`
-- `examples/binbook-reader/screens/browser.squid`
-- `examples/binbook-reader/screens/reader.squid`
-- `examples/binbook-reader/screens/toc.squid`
-- `examples/binbook-reader/screens/jump.squid`
+- `docs/reference/binbook-reader-draft/main.squid`
+- `docs/reference/binbook-reader-draft/lib/ui.squid`
+- `docs/reference/binbook-reader-draft/screens/browser.squid`
+- `docs/reference/binbook-reader-draft/screens/reader.squid`
+- `docs/reference/binbook-reader-draft/screens/toc.squid`
+- `docs/reference/binbook-reader-draft/screens/jump.squid`
 
 These files are the reference source for this example. The snippets above explain the key design choices but are not a separate implementation.
 
@@ -240,7 +242,7 @@ This example intentionally pressures a few current draft design choices:
 - It uses app-owned persistent state for resume instead of a separate library/recent-books capability.
 - It uses `file.pickFile(".binbook")` as the browse action because the
   current draft does not expose direct directory enumeration.
-- It uses `stateMachine.*` backed by a `uiState` string to route key handlers without requiring a `screen.current()` built-in or hidden state-machine storage.
+- It uses an explicit `uiState` string state field to route key handlers without requiring a `screen.current()` built-in or hidden mode storage.
 - It uses `binbook.navCount(book)` and `binbook.navEntry(book, index)` from the draft capability contract.
 - It treats read-only BinBook operations as render-safe so screens can open, resolve, and draw a page without storing handles in persistent state.
 - It uses bounded chapter scans instead of unbounded search.

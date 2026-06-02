@@ -2,8 +2,8 @@ use crate::{
     ast::{AstRoot, AstScreen},
     diagnostic::{error, Diagnostic},
     ir::{
-        default_state_store, IrApp, IrBleProfileTrigger, IrExpr, IrFunction, IrHandler,
-        IrProgram, IrScreen, IrStatement, IrTrigger,
+        default_state_store, IrApp, IrBleProfileTrigger, IrExpr, IrFunction, IrHandler, IrProgram,
+        IrScreen, IrStatement, IrTrigger,
     },
     parser::parse,
     profile::{BuildProfile, PORTABLE_TARGET_ID},
@@ -513,19 +513,7 @@ fn validate_import_aliases(
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     const BUILTINS: &[&str] = &[
-        "app",
-        "screen",
-        "service",
-        "device",
-        "hardware",
-        "input",
-        "state",
-        "stateMachine",
-        "wifi",
-        "display",
-        "file",
-        "data",
-        "string",
+        "app", "screen", "service", "device", "hardware", "state", "wifi", "display", "file",
         "debug",
     ];
     for module in modules.values() {
