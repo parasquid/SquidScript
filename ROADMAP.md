@@ -46,9 +46,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Refactoring Opportunities
 
-- Generate or table-drive VM/FFI dispatch and dispatch tests from the shared
-  ABI manifest so new services do not require repeated hand-edits across Rust
-  FFI, C ABI expectations, docs, and tests.
 - Split Zephyr `vm_runtime.c` by service family, such as display,
   indicator/GPIO, Wi-Fi, file, device config, app lifecycle callbacks, and
   diagnostics, while preserving current callback behavior and RAM attribution.

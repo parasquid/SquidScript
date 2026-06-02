@@ -223,6 +223,12 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
   instead of invoking `west twister` directly. The wrapper sources
   `scripts/zephyr-env.sh`, which adds the repo-local `target/zephyr/venv/bin`
   `west` to `PATH` and sets the expected Zephyr environment.
+- Run Zephyr Twister protocol tests outside the Codex sandbox. Twister uses a
+  Python multiprocessing manager that opens a local socket; sandboxed runs can
+  fail with `PermissionError: [Errno 1] Operation not permitted` or an
+  `EOFError` before building or running tests. Treat that as an environment
+  limitation, rerun the documented wrapper with escalated execution, and do not
+  diagnose it as a source/test failure.
 - Run ESP32-C3 Super Mini Zephyr build wrappers outside the Codex sandbox in
   this environment. Zephyr/ccache may write host cache files outside the
   workspace, so sandboxed firmware builds can fail with read-only filesystem

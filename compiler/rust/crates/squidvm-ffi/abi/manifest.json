@@ -354,252 +354,431 @@
     {
       "field": "trace",
       "typedef": "SqvmTraceCallback",
-      "family": "core"
+      "family": "core",
+      "rust_type": "Option< unsafe extern \"C\" fn(user_data: *mut c_void, message: *const u8, message_len: usize), >",
+      "missing_policy": "noop"
     },
     {
       "field": "read_exact_at",
       "typedef": "SqvmReadExactAtCallback",
-      "family": "core"
+      "family": "core",
+      "rust_type": "SqvmReadExactAtCallback",
+      "missing_policy": "read_failed"
     },
     {
       "field": "debug_output",
       "typedef": "SqvmDebugOutputCallback",
-      "family": "core"
+      "family": "core",
+      "rust_type": "Option< unsafe extern \"C\" fn(user_data: *mut c_void, message: *const u8, message_len: usize), >",
+      "missing_policy": "noop",
+      "test_fixture": "compile_blinky_service_sqbc"
     },
     {
       "field": "display_clear",
       "typedef": "SqvmDisplayClearCallback",
-      "family": "display"
+      "family": "display",
+      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void, color: *const u8, color_len: usize)>",
+      "missing_policy": "noop",
+      "test_fixture": "compile_display_sqbc"
     },
     {
       "field": "display_text",
       "typedef": "SqvmDisplayTextCallback",
-      "family": "display"
+      "family": "display",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, text: *const u8, text_len: usize, options: *const SqvmDisplayTextOptions, ), >",
+      "missing_policy": "noop",
+      "test_fixture": "compile_display_sqbc"
     },
     {
       "field": "display_rect",
       "typedef": "SqvmDisplayRectCallback",
-      "family": "display"
+      "family": "display",
+      "rust_type": "Option< unsafe extern \"C\" fn(user_data: *mut c_void, options: *const SqvmDisplayRectOptions), >",
+      "missing_policy": "noop",
+      "test_fixture": "compile_display_sqbc"
     },
     {
       "field": "display_line",
       "typedef": "SqvmDisplayLineCallback",
-      "family": "display"
+      "family": "display",
+      "rust_type": "Option< unsafe extern \"C\" fn(user_data: *mut c_void, options: *const SqvmDisplayLineOptions), >",
+      "missing_policy": "noop",
+      "test_fixture": "compile_display_sqbc"
     },
     {
       "field": "display_select",
       "typedef": "SqvmDisplaySelectCallback",
-      "family": "display"
+      "family": "display",
+      "rust_type": "Option< unsafe extern \"C\" fn(user_data: *mut c_void, name: *const u8, name_len: usize) -> i32, >",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_display_sqbc",
+      "failing_callback": "failing_display_select"
     },
     {
       "field": "display_image",
       "typedef": "SqvmDisplayImageCallback",
-      "family": "display"
+      "family": "display",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, path: *const u8, path_len: usize, options: *const SqvmDisplayResourceOptions, ), >",
+      "missing_policy": "noop",
+      "test_fixture": "compile_display_sqbc"
     },
     {
       "field": "display_draw",
       "typedef": "SqvmDisplayDrawCallback",
-      "family": "display"
+      "family": "display",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, drawable: *const u8, drawable_len: usize, options: *const SqvmDisplayResourceOptions, ), >",
+      "missing_policy": "noop",
+      "test_fixture": "compile_display_sqbc"
     },
     {
       "field": "display_info",
       "typedef": "SqvmDisplayInfoCallback",
-      "family": "display"
+      "family": "display",
+      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void, out: *mut SqvmDisplayInfo) -> i32>",
+      "missing_policy": "unsupported_result",
+      "test_fixture": "compile_display_sqbc"
     },
     {
       "field": "indicator_write",
       "typedef": "SqvmIndicatorWriteCallback",
-      "family": "indicator"
+      "family": "indicator",
+      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void, value: bool) -> i32>",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_blinky_service_sqbc",
+      "failing_callback": "failing_indicator_write"
     },
     {
       "field": "indicator_toggle",
       "typedef": "SqvmIndicatorToggleCallback",
-      "family": "indicator"
+      "family": "indicator",
+      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void) -> i32>",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_indicator_toggle_read_sqbc",
+      "failing_callback": "failing_indicator_toggle"
     },
     {
       "field": "indicator_read",
       "typedef": "SqvmIndicatorReadCallback",
-      "family": "indicator"
+      "family": "indicator",
+      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void, out: *mut bool) -> i32>",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_indicator_toggle_read_sqbc",
+      "failing_callback": "failing_indicator_read"
     },
     {
       "field": "indicator_breathe",
       "typedef": "SqvmIndicatorBreatheCallback",
-      "family": "indicator"
+      "family": "indicator",
+      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void) -> i32>",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_indicator_breathe_sqbc",
+      "failing_callback": "failing_indicator_breathe"
     },
     {
       "field": "indicator_blink",
       "typedef": "SqvmIndicatorBlinkCallback",
-      "family": "indicator"
+      "family": "indicator",
+      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void, on_ms: i32, off_ms: i32) -> i32>",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_indicator_blink_sqbc",
+      "failing_callback": "failing_indicator_blink"
     },
     {
       "field": "hardware_gpio_write",
       "typedef": "SqvmHardwareGpioWriteCallback",
-      "family": "hardware-gpio"
+      "family": "hardware-gpio",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, name: *const u8, name_len: usize, value: bool, ) -> i32, >",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_hardware_gpio_sqbc",
+      "failing_callback": "failing_hardware_gpio_write"
     },
     {
       "field": "hardware_gpio_toggle",
       "typedef": "SqvmHardwareGpioToggleCallback",
-      "family": "hardware-gpio"
+      "family": "hardware-gpio",
+      "rust_type": "Option< unsafe extern \"C\" fn(user_data: *mut c_void, name: *const u8, name_len: usize) -> i32, >",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_hardware_gpio_sqbc",
+      "failing_callback": "failing_hardware_gpio_toggle"
     },
     {
       "field": "hardware_gpio_read",
       "typedef": "SqvmHardwareGpioReadCallback",
-      "family": "hardware-gpio"
+      "family": "hardware-gpio",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, name: *const u8, name_len: usize, out: *mut bool, ) -> i32, >",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_hardware_gpio_sqbc",
+      "failing_callback": "failing_hardware_gpio_read"
     },
     {
       "field": "app_launch",
       "typedef": "SqvmAppLifecycleCallback",
-      "family": "app-lifecycle"
+      "family": "app-lifecycle",
+      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void, app: *const u8, app_len: usize) -> i32>",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_lifecycle_sqbc",
+      "failing_callback": "failing_app_launch"
     },
     {
       "field": "app_arm",
       "typedef": "SqvmAppLifecycleCallback",
-      "family": "app-lifecycle"
+      "family": "app-lifecycle",
+      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void, app: *const u8, app_len: usize) -> i32>",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_lifecycle_sqbc",
+      "failing_callback": "failing_app_arm"
     },
     {
       "field": "app_disarm",
       "typedef": "SqvmAppLifecycleCallback",
-      "family": "app-lifecycle"
+      "family": "app-lifecycle",
+      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void, app: *const u8, app_len: usize) -> i32>",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_app_disarm_sqbc",
+      "failing_callback": "failing_app_disarm"
     },
     {
       "field": "app_registry_list",
       "typedef": "SqvmAppRegistryListCallback",
-      "family": "app-lifecycle"
+      "family": "app-lifecycle",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, out: *mut SqvmAppRegistryEntry, out_cap: usize, out_count: *mut usize, ) -> i32, >",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_app_registry_sqbc",
+      "failing_callback": "failing_app_registry_list"
     },
     {
       "field": "app_registry_get",
       "typedef": "SqvmAppRegistryGetCallback",
-      "family": "app-lifecycle"
+      "family": "app-lifecycle",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, app: *const u8, app_len: usize, out: *mut SqvmAppRegistryEntry, ) -> i32, >",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_app_registry_sqbc",
+      "failing_callback": "failing_app_registry_get"
     },
     {
       "field": "app_process_stack",
       "typedef": "SqvmAppStackCallback",
-      "family": "app-lifecycle"
+      "family": "app-lifecycle",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, out: *mut SqvmAppStackEntry, out_cap: usize, out_count: *mut usize, ) -> i32, >",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_app_lifecycle_inspection_sqbc",
+      "failing_callback": "failing_app_process_stack"
     },
     {
       "field": "app_armed_stack",
       "typedef": "SqvmAppStackCallback",
-      "family": "app-lifecycle"
+      "family": "app-lifecycle",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, out: *mut SqvmAppStackEntry, out_cap: usize, out_count: *mut usize, ) -> i32, >",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_app_lifecycle_inspection_sqbc",
+      "failing_callback": "failing_app_armed_stack"
     },
     {
       "field": "timer_every",
       "typedef": "SqvmTimerEveryCallback",
-      "family": "timer"
+      "family": "timer",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, event: *const u8, event_len: usize, interval_ms: i32, ) -> i32, >",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_blinky_service_sqbc",
+      "failing_callback": "failing_timer_every"
     },
     {
       "field": "timer_after",
       "typedef": "SqvmTimerAfterCallback",
-      "family": "timer"
+      "family": "timer",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, event: *const u8, event_len: usize, delay_ms: i32, ) -> i32, >",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_lifecycle_sqbc",
+      "failing_callback": "failing_timer_after"
     },
     {
       "field": "wifi_start_ap",
       "typedef": "SqvmWifiStartApCallback",
-      "family": "wifi"
+      "family": "wifi",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, ssid: *const u8, ssid_len: usize, out: *mut SqvmWifiOperation, ) -> i32, >",
+      "missing_policy": "unsupported_result",
+      "test_fixture": "compile_wifi_actions_sqbc",
+      "failing_callback": "failing_wifi_start_ap"
     },
     {
       "field": "wifi_stop_ap",
       "typedef": "SqvmWifiStopApCallback",
-      "family": "wifi"
+      "family": "wifi",
+      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void, out: *mut SqvmWifiOperation) -> i32>",
+      "missing_policy": "unsupported_result",
+      "test_fixture": "compile_wifi_actions_sqbc",
+      "failing_callback": "failing_wifi_stop_ap"
     },
     {
       "field": "wifi_connect",
       "typedef": "SqvmWifiConnectCallback",
-      "family": "wifi"
+      "family": "wifi",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, profile: *const u8, profile_len: usize, out: *mut SqvmWifiOperation, ) -> i32, >",
+      "missing_policy": "unsupported_result",
+      "test_fixture": "compile_wifi_actions_sqbc",
+      "failing_callback": "failing_wifi_connect"
     },
     {
       "field": "wifi_disconnect",
       "typedef": "SqvmWifiDisconnectCallback",
-      "family": "wifi"
+      "family": "wifi",
+      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void, out: *mut SqvmWifiOperation) -> i32>",
+      "missing_policy": "unsupported_result",
+      "test_fixture": "compile_wifi_actions_sqbc",
+      "failing_callback": "failing_wifi_disconnect"
     },
     {
       "field": "wifi_get_ap_ip",
       "typedef": "SqvmWifiGetApIpCallback",
-      "family": "wifi"
+      "family": "wifi",
+      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void, out: *mut SqvmWifiApIp) -> i32>",
+      "missing_policy": "unsupported_result",
+      "test_fixture": "compile_wifi_actions_sqbc",
+      "failing_callback": "failing_wifi_get_ap_ip"
     },
     {
       "field": "wifi_status",
       "typedef": "SqvmWifiStatusCallback",
-      "family": "wifi"
+      "family": "wifi",
+      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void, out: *mut SqvmWifiStatus) -> i32>",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_wifi_sqbc",
+      "failing_callback": "failing_wifi_status"
     },
     {
       "field": "wifi_scan",
       "typedef": "SqvmWifiScanCallback",
-      "family": "wifi"
+      "family": "wifi",
+      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void, out: *mut SqvmWifiOperation) -> i32>",
+      "missing_policy": "unsupported_result",
+      "test_fixture": "compile_wifi_sqbc",
+      "failing_callback": "failing_wifi_scan"
     },
     {
       "field": "wifi_operation",
       "typedef": "SqvmWifiOperationCallback",
-      "family": "wifi"
+      "family": "wifi",
+      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void, out: *mut SqvmWifiOperation) -> i32>",
+      "missing_policy": "idle_result"
     },
     {
       "field": "wifi_result",
       "typedef": "SqvmWifiResultCallback",
-      "family": "wifi"
+      "family": "wifi",
+      "rust_type": "Option< unsafe extern \"C\" fn(user_data: *mut c_void, out: *mut SqvmWifiOperationResult) -> i32, >",
+      "missing_policy": "unsupported_result",
+      "test_fixture": "compile_wifi_sqbc"
     },
     {
       "field": "wifi_cancel",
       "typedef": "SqvmWifiCancelCallback",
-      "family": "wifi"
+      "family": "wifi",
+      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void, out: *mut SqvmWifiOperation) -> i32>",
+      "missing_policy": "idle_result"
     },
     {
       "field": "wifi_scan_network",
       "typedef": "SqvmWifiScanNetworkCallback",
-      "family": "wifi"
+      "family": "wifi",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, index: i32, out: *mut SqvmWifiScanNetworkResult, ) -> i32, >",
+      "missing_policy": "unsupported_result",
+      "test_fixture": "compile_wifi_scan_networks_sqbc"
     },
     {
       "field": "device_config_load",
       "typedef": "SqvmDeviceConfigLoadCallback",
-      "family": "device-config"
+      "family": "device-config",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, source: *const u8, source_len: usize, out: *mut SqvmDeviceConfigResult, ) -> i32, >",
+      "missing_policy": "unsupported_result",
+      "test_fixture": "compile_device_config_sqbc",
+      "failing_callback": "failing_device_config_load"
     },
     {
       "field": "device_config_set",
       "typedef": "SqvmDeviceConfigSetCallback",
-      "family": "device-config"
+      "family": "device-config",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, key: *const u8, key_len: usize, value: SqvmDeviceConfigValue, out: *mut SqvmDeviceConfigResult, ) -> i32, >",
+      "missing_policy": "unsupported_result",
+      "test_fixture": "compile_device_config_sqbc",
+      "failing_callback": "failing_device_config_set"
     },
     {
       "field": "device_config_rebind",
       "typedef": "SqvmDeviceConfigRebindCallback",
-      "family": "device-config"
+      "family": "device-config",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, alias: *const u8, alias_len: usize, out: *mut SqvmDeviceConfigResult, ) -> i32, >",
+      "missing_policy": "unsupported_result",
+      "test_fixture": "compile_device_config_sqbc",
+      "failing_callback": "failing_device_config_rebind"
     },
     {
       "field": "device_config_save",
       "typedef": "SqvmDeviceConfigSaveCallback",
-      "family": "device-config"
+      "family": "device-config",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, destination: *const u8, destination_len: usize, out: *mut SqvmDeviceConfigResult, ) -> i32, >",
+      "missing_policy": "unsupported_result",
+      "test_fixture": "compile_device_config_sqbc",
+      "failing_callback": "failing_device_config_save"
     },
     {
       "field": "file_pick_file",
       "typedef": "SqvmFilePickFileCallback",
-      "family": "file"
+      "family": "file",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, extension: *const u8, extension_len: usize, out: *mut SqvmFilePickFileResult, ) -> i32, >",
+      "missing_policy": "unsupported_result",
+      "test_fixture": "compile_file_pick_file_sqbc",
+      "failing_callback": "failing_file_pick_file"
     },
     {
       "field": "file_read_text",
       "typedef": "SqvmFileReadTextCallback",
-      "family": "file"
+      "family": "file",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, path: *const u8, path_len: usize, out: *mut SqvmFileReadTextResult, ) -> i32, >",
+      "missing_policy": "unsupported_result",
+      "test_fixture": "compile_file_read_sqbc",
+      "failing_callback": "failing_file_read_text"
     },
     {
       "field": "file_read_lines",
       "typedef": "SqvmFileReadLinesCallback",
-      "family": "file"
+      "family": "file",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, path: *const u8, path_len: usize, max_lines: i32, out: *mut SqvmFileReadLinesResult, ) -> i32, >",
+      "missing_policy": "unsupported_result",
+      "test_fixture": "compile_file_read_sqbc",
+      "failing_callback": "failing_file_read_lines"
     },
     {
       "field": "system_memory_text",
       "typedef": "SqvmSystemMemoryTextCallback",
-      "family": "system"
+      "family": "system",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, out: *mut u8, out_cap: usize, out_len: *mut usize, ) -> i32, >",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_system_resources_sqbc",
+      "failing_callback": "failing_system_memory_text"
     },
     {
       "field": "system_storage_text",
       "typedef": "SqvmSystemStorageTextCallback",
-      "family": "system"
+      "family": "system",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, name: *const u8, name_len: usize, out: *mut u8, out_cap: usize, out_len: *mut usize, ) -> i32, >",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_system_resources_sqbc"
     },
     {
       "field": "system_start_reason_text",
       "typedef": "SqvmSystemStartReasonTextCallback",
-      "family": "system"
+      "family": "system",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, out: *mut u8, out_cap: usize, out_len: *mut usize, ) -> i32, >",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_power_lifecycle_sqbc"
     },
     {
       "field": "power_sleep",
       "typedef": "SqvmPowerSleepCallback",
-      "family": "power"
+      "family": "power",
+      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void, wake_after_ms: i32) -> i32>",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_power_lifecycle_sqbc"
     }
   ],
   "types": [

@@ -57,6 +57,9 @@ class ZephyrToolingScriptTests(unittest.TestCase):
             header = tmp_path / "squidvm_ffi.h"
             runtime = tmp_path / "vm_runtime.c"
             rust_tests = tmp_path / "ffi_dispatch.rs"
+            generated_callbacks = tmp_path / "generated_callbacks.rs"
+            generated_dispatch_cases = tmp_path / "generated_ffi_dispatch_cases.rs"
+            generated_runtime_callbacks = tmp_path / "generated_runtime_callbacks.inc"
             zephyr_tests = tmp_path / "main.c"
             manifest = tmp_path / "manifest.json"
             doc = tmp_path / "coverage.md"
@@ -76,7 +79,7 @@ pub extern "C" fn sqvm_present() {}
             runtime.write_text(
                 """
 static const SqvmCallbacks runtime_callbacks = {
-    .trace = runtime_trace,
+#include "generated_runtime_callbacks.inc"
 };
 """,
                 encoding="utf-8",
@@ -128,6 +131,10 @@ static const SqvmCallbacks runtime_callbacks = {
                                 "field": "trace",
                                 "typedef": "SqvmTraceCallback",
                                 "family": "core",
+                                "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void)>",
+                                "missing_policy": "noop",
+                                "test_fixture": "compile_trace_sqbc",
+                                "failing_callback": "failing_trace",
                             }
                         ],
                         "coverage": [
@@ -161,6 +168,12 @@ static const SqvmCallbacks runtime_callbacks = {
                     str(runtime),
                     "--rust-tests",
                     str(rust_tests),
+                    "--generated-rust-callbacks",
+                    str(generated_callbacks),
+                    "--generated-rust-dispatch-cases",
+                    str(generated_dispatch_cases),
+                    "--generated-runtime-callbacks",
+                    str(generated_runtime_callbacks),
                     "--zephyr-tests",
                     str(zephyr_tests),
                     "--coverage-doc",
@@ -182,6 +195,7 @@ static const SqvmCallbacks runtime_callbacks = {
                     str(checker),
                     "--write-header",
                     "--write-doc",
+                    "--write-generated",
                     "--manifest",
                     str(manifest),
                     "--rust",
@@ -192,6 +206,12 @@ static const SqvmCallbacks runtime_callbacks = {
                     str(runtime),
                     "--rust-tests",
                     str(rust_tests),
+                    "--generated-rust-callbacks",
+                    str(generated_callbacks),
+                    "--generated-rust-dispatch-cases",
+                    str(generated_dispatch_cases),
+                    "--generated-runtime-callbacks",
+                    str(generated_runtime_callbacks),
                     "--zephyr-tests",
                     str(zephyr_tests),
                     "--coverage-doc",
@@ -204,6 +224,9 @@ static const SqvmCallbacks runtime_callbacks = {
 
             self.assertEqual(write_result.returncode, 0, write_result.stderr + write_result.stdout)
             header.write_text(header.read_text(encoding="utf-8") + "\n/* hand edit */\n", encoding="utf-8")
+            generated_callbacks.write_text(generated_callbacks.read_text(encoding="utf-8") + "\n// hand edit\n", encoding="utf-8")
+            generated_dispatch_cases.write_text(generated_dispatch_cases.read_text(encoding="utf-8") + "\n// hand edit\n", encoding="utf-8")
+            generated_runtime_callbacks.write_text(generated_runtime_callbacks.read_text(encoding="utf-8") + "\n/* hand edit */\n", encoding="utf-8")
 
             check_result = subprocess.run(
                 [
@@ -220,6 +243,12 @@ static const SqvmCallbacks runtime_callbacks = {
                     str(runtime),
                     "--rust-tests",
                     str(rust_tests),
+                    "--generated-rust-callbacks",
+                    str(generated_callbacks),
+                    "--generated-rust-dispatch-cases",
+                    str(generated_dispatch_cases),
+                    "--generated-runtime-callbacks",
+                    str(generated_runtime_callbacks),
                     "--zephyr-tests",
                     str(zephyr_tests),
                     "--coverage-doc",
@@ -231,7 +260,11 @@ static const SqvmCallbacks runtime_callbacks = {
             )
 
         self.assertNotEqual(check_result.returncode, 0)
-        self.assertIn("generated C header is stale", check_result.stderr + check_result.stdout)
+        combined = check_result.stderr + check_result.stdout
+        self.assertIn("generated C header is stale", combined)
+        self.assertIn("generated Rust callback module is stale", combined)
+        self.assertIn("generated Rust dispatch cases are stale", combined)
+        self.assertIn("generated Zephyr runtime callback initializer is stale", combined)
 
     def test_squidvm_ffi_abi_checker_reports_symbol_drift(self):
         checker = ROOT / "scripts/check-squidvm-ffi-abi.py"
@@ -308,11 +341,15 @@ static const SqvmCallbacks runtime_callbacks = {
                                 "field": "trace",
                                 "typedef": "SqvmTraceCallback",
                                 "family": "core",
+                                "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void)>",
+                                "missing_policy": "noop",
                             },
                             {
                                 "field": "missing_callback",
                                 "typedef": "SqvmMissingCallback",
                                 "family": "core",
+                                "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void)>",
+                                "missing_policy": "noop",
                             },
                         ],
                         "types": [
@@ -3658,14 +3695,15 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
     def test_zephyr_vm_runtime_wires_system_resource_callbacks(self):
         ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
         runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime_callbacks = self.read("firmware/zephyr/src/generated_runtime_callbacks.inc")
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
 
         self.assertIn("SqvmSystemMemoryTextCallback system_memory_text", ffi_h)
         self.assertIn("SqvmSystemStorageTextCallback system_storage_text", ffi_h)
         self.assertIn("runtime_system_memory_text", runtime_c)
         self.assertIn("runtime_system_storage_text", runtime_c)
-        self.assertIn(".system_memory_text = runtime_system_memory_text", runtime_c)
-        self.assertIn(".system_storage_text = runtime_system_storage_text", runtime_c)
+        self.assertIn(".system_memory_text = runtime_system_memory_text", runtime_callbacks)
+        self.assertIn(".system_storage_text = runtime_system_storage_text", runtime_callbacks)
         self.assertIn("sq_vm_runtime_set_store_mount_point", runtime_h)
 
     def test_zephyr_header_exposes_bounded_rust_device_config_core(self):

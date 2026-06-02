@@ -17,6 +17,9 @@ use squidvm_ffi::{
     SqvmStorageCompletion, SqvmStorageRequestKind, SqvmTriggerTimer,
 };
 
+#[path = "support/generated_ffi_dispatch_cases.rs"]
+mod generated_ffi_dispatch_cases;
+
 #[derive(Default)]
 struct Host {
     sqbc: Vec<u8>,
@@ -2580,145 +2583,7 @@ fn dispatches_app_lifecycle_and_timer_after_callbacks() {
 
 #[test]
 fn callback_errors_surface_as_vm_error_status() {
-    let cases: &[(&str, Vec<u8>, fn(&mut SqvmCallbacks))] = &[
-        (
-            "indicator write",
-            compile_blinky_service_sqbc(),
-            |callbacks| callbacks.indicator_write = Some(failing_indicator_write),
-        ),
-        (
-            "indicator toggle",
-            compile_indicator_toggle_read_sqbc(),
-            |callbacks| callbacks.indicator_toggle = Some(failing_indicator_toggle),
-        ),
-        (
-            "indicator read",
-            compile_indicator_toggle_read_sqbc(),
-            |callbacks| callbacks.indicator_read = Some(failing_indicator_read),
-        ),
-        (
-            "indicator breathe",
-            compile_indicator_breathe_sqbc(),
-            |callbacks| callbacks.indicator_breathe = Some(failing_indicator_breathe),
-        ),
-        (
-            "indicator blink",
-            compile_indicator_blink_sqbc(),
-            |callbacks| callbacks.indicator_blink = Some(failing_indicator_blink),
-        ),
-        ("display select", compile_display_sqbc(), |callbacks| {
-            callbacks.display_select = Some(failing_display_select)
-        }),
-        (
-            "hardware gpio write",
-            compile_hardware_gpio_sqbc(),
-            |callbacks| callbacks.hardware_gpio_write = Some(failing_hardware_gpio_write),
-        ),
-        (
-            "hardware gpio read",
-            compile_hardware_gpio_sqbc(),
-            |callbacks| callbacks.hardware_gpio_read = Some(failing_hardware_gpio_read),
-        ),
-        (
-            "hardware gpio toggle",
-            compile_hardware_gpio_sqbc(),
-            |callbacks| callbacks.hardware_gpio_toggle = Some(failing_hardware_gpio_toggle),
-        ),
-        ("app arm", compile_lifecycle_sqbc(), |callbacks| {
-            callbacks.app_arm = Some(failing_app_arm)
-        }),
-        ("app launch", compile_lifecycle_sqbc(), |callbacks| {
-            callbacks.app_launch = Some(failing_app_launch)
-        }),
-        ("app disarm", compile_app_disarm_sqbc(), |callbacks| {
-            callbacks.app_disarm = Some(failing_app_disarm)
-        }),
-        (
-            "app registry list",
-            compile_app_registry_sqbc(),
-            |callbacks| callbacks.app_registry_list = Some(failing_app_registry_list),
-        ),
-        (
-            "app registry get",
-            compile_app_registry_sqbc(),
-            |callbacks| callbacks.app_registry_get = Some(failing_app_registry_get),
-        ),
-        (
-            "app process stack",
-            compile_app_lifecycle_inspection_sqbc(),
-            |callbacks| callbacks.app_process_stack = Some(failing_app_process_stack),
-        ),
-        (
-            "app armed stack",
-            compile_app_lifecycle_inspection_sqbc(),
-            |callbacks| callbacks.app_armed_stack = Some(failing_app_armed_stack),
-        ),
-        ("timer after", compile_lifecycle_sqbc(), |callbacks| {
-            callbacks.timer_after = Some(failing_timer_after)
-        }),
-        ("timer every", compile_blinky_service_sqbc(), |callbacks| {
-            callbacks.timer_every = Some(failing_timer_every)
-        }),
-        ("wifi start ap", compile_wifi_actions_sqbc(), |callbacks| {
-            callbacks.wifi_start_ap = Some(failing_wifi_start_ap)
-        }),
-        ("wifi get ap ip", compile_wifi_actions_sqbc(), |callbacks| {
-            callbacks.wifi_get_ap_ip = Some(failing_wifi_get_ap_ip)
-        }),
-        ("wifi stop ap", compile_wifi_actions_sqbc(), |callbacks| {
-            callbacks.wifi_stop_ap = Some(failing_wifi_stop_ap)
-        }),
-        ("wifi connect", compile_wifi_actions_sqbc(), |callbacks| {
-            callbacks.wifi_connect = Some(failing_wifi_connect)
-        }),
-        (
-            "wifi disconnect",
-            compile_wifi_actions_sqbc(),
-            |callbacks| callbacks.wifi_disconnect = Some(failing_wifi_disconnect),
-        ),
-        ("wifi status", compile_wifi_sqbc(), |callbacks| {
-            callbacks.wifi_status = Some(failing_wifi_status)
-        }),
-        ("wifi scan", compile_wifi_sqbc(), |callbacks| {
-            callbacks.wifi_scan = Some(failing_wifi_scan)
-        }),
-        (
-            "device config load",
-            compile_device_config_sqbc(),
-            |callbacks| callbacks.device_config_load = Some(failing_device_config_load),
-        ),
-        (
-            "device config set",
-            compile_device_config_sqbc(),
-            |callbacks| callbacks.device_config_set = Some(failing_device_config_set),
-        ),
-        (
-            "device config rebind",
-            compile_device_config_sqbc(),
-            |callbacks| callbacks.device_config_rebind = Some(failing_device_config_rebind),
-        ),
-        (
-            "device config save",
-            compile_device_config_sqbc(),
-            |callbacks| callbacks.device_config_save = Some(failing_device_config_save),
-        ),
-        (
-            "file pick file",
-            compile_file_pick_file_sqbc(),
-            |callbacks| callbacks.file_pick_file = Some(failing_file_pick_file),
-        ),
-        ("file read text", compile_file_read_sqbc(), |callbacks| {
-            callbacks.file_read_text = Some(failing_file_read_text)
-        }),
-        ("file read lines", compile_file_read_sqbc(), |callbacks| {
-            callbacks.file_read_lines = Some(failing_file_read_lines)
-        }),
-        (
-            "system memory",
-            compile_system_resources_sqbc(),
-            |callbacks| callbacks.system_memory_text = Some(failing_system_memory_text),
-        ),
-    ];
+    let cases = generated_ffi_dispatch_cases::callback_error_cases();
 
     for (name, sqbc, break_callback) in cases {
         let mut host = Host {
@@ -2754,6 +2619,17 @@ fn callback_errors_surface_as_vm_error_status() {
 
         assert_eq!(status, SqvmStatus::VmError, "{name}");
     }
+}
+
+#[test]
+fn generated_callback_policy_cases_cover_manifest_inventory() {
+    let cases = generated_ffi_dispatch_cases::callback_policy_cases();
+    assert_eq!(cases.len(), 50);
+    assert!(cases.contains(&("display_info", "unsupported_result")));
+    assert!(cases.contains(&("wifi_operation", "idle_result")));
+    assert!(cases.contains(&("wifi_scan_network", "unsupported_result")));
+    assert!(cases.contains(&("system_start_reason_text", "required_vm_error")));
+    assert!(cases.contains(&("power_sleep", "required_vm_error")));
 }
 
 #[test]
@@ -2975,29 +2851,7 @@ fn missing_file_callbacks_return_unsupported_records() {
 
 #[test]
 fn missing_noop_callbacks_remain_optional() {
-    let cases: &[(&str, Vec<u8>, fn(&mut SqvmCallbacks))] = &[
-        ("debug output", compile_blinky_service_sqbc(), |callbacks| {
-            callbacks.debug_output = None
-        }),
-        ("display clear", compile_display_sqbc(), |callbacks| {
-            callbacks.display_clear = None
-        }),
-        ("display text", compile_display_sqbc(), |callbacks| {
-            callbacks.display_text = None
-        }),
-        ("display rect", compile_display_sqbc(), |callbacks| {
-            callbacks.display_rect = None
-        }),
-        ("display line", compile_display_sqbc(), |callbacks| {
-            callbacks.display_line = None
-        }),
-        ("display image", compile_display_sqbc(), |callbacks| {
-            callbacks.display_image = None
-        }),
-        ("display draw", compile_display_sqbc(), |callbacks| {
-            callbacks.display_draw = None
-        }),
-    ];
+    let cases = generated_ffi_dispatch_cases::missing_noop_cases();
 
     for (name, sqbc, remove_callback) in cases {
         let mut host = Host {
@@ -3037,99 +2891,7 @@ fn missing_noop_callbacks_remain_optional() {
 
 #[test]
 fn missing_required_callbacks_surface_as_vm_error_status() {
-    let cases: &[(&str, Vec<u8>, fn(&mut SqvmCallbacks))] = &[
-        ("display select", compile_display_sqbc(), |callbacks| {
-            callbacks.display_select = None
-        }),
-        (
-            "indicator write",
-            compile_blinky_service_sqbc(),
-            |callbacks| callbacks.indicator_write = None,
-        ),
-        (
-            "indicator toggle",
-            compile_indicator_toggle_read_sqbc(),
-            |callbacks| callbacks.indicator_toggle = None,
-        ),
-        (
-            "indicator read",
-            compile_indicator_toggle_read_sqbc(),
-            |callbacks| callbacks.indicator_read = None,
-        ),
-        (
-            "indicator breathe",
-            compile_indicator_breathe_sqbc(),
-            |callbacks| callbacks.indicator_breathe = None,
-        ),
-        (
-            "indicator blink",
-            compile_indicator_blink_sqbc(),
-            |callbacks| callbacks.indicator_blink = None,
-        ),
-        (
-            "hardware gpio write",
-            compile_hardware_gpio_sqbc(),
-            |callbacks| callbacks.hardware_gpio_write = None,
-        ),
-        (
-            "hardware gpio read",
-            compile_hardware_gpio_sqbc(),
-            |callbacks| callbacks.hardware_gpio_read = None,
-        ),
-        (
-            "hardware gpio toggle",
-            compile_hardware_gpio_sqbc(),
-            |callbacks| callbacks.hardware_gpio_toggle = None,
-        ),
-        ("app arm", compile_lifecycle_sqbc(), |callbacks| {
-            callbacks.app_arm = None
-        }),
-        ("app launch", compile_lifecycle_sqbc(), |callbacks| {
-            callbacks.app_launch = None
-        }),
-        ("app disarm", compile_app_disarm_sqbc(), |callbacks| {
-            callbacks.app_disarm = None
-        }),
-        ("timer every", compile_blinky_service_sqbc(), |callbacks| {
-            callbacks.timer_every = None
-        }),
-        ("timer after", compile_lifecycle_sqbc(), |callbacks| {
-            callbacks.timer_after = None
-        }),
-        ("wifi status", compile_wifi_sqbc(), |callbacks| {
-            callbacks.wifi_status = None
-        }),
-        (
-            "app registry list",
-            compile_app_registry_sqbc(),
-            |callbacks| callbacks.app_registry_list = None,
-        ),
-        (
-            "app registry get",
-            compile_app_registry_sqbc(),
-            |callbacks| callbacks.app_registry_get = None,
-        ),
-        (
-            "app process stack",
-            compile_app_lifecycle_inspection_sqbc(),
-            |callbacks| callbacks.app_process_stack = None,
-        ),
-        (
-            "app armed stack",
-            compile_app_lifecycle_inspection_sqbc(),
-            |callbacks| callbacks.app_armed_stack = None,
-        ),
-        (
-            "system memory",
-            compile_system_resources_sqbc(),
-            |callbacks| callbacks.system_memory_text = None,
-        ),
-        (
-            "system storage",
-            compile_system_resources_sqbc(),
-            |callbacks| callbacks.system_storage_text = None,
-        ),
-    ];
+    let cases = generated_ffi_dispatch_cases::missing_required_cases();
 
     for (name, sqbc, remove_callback) in cases {
         let mut host = Host {

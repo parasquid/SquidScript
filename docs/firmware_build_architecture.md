@@ -97,7 +97,7 @@ The VM host ABI C header and inventory are generated and checked by
 types, constants, callback coverage expectations, and the C definitions used
 to emit `src/squidvm_ffi.h`. Do not edit `src/squidvm_ffi.h` directly. After
 changing the ABI, update the manifest and run
-`python3 scripts/check-squidvm-ffi-abi.py --write-header --write-doc`. The
+`python3 scripts/check-squidvm-ffi-abi.py --write-header --write-doc --write-generated`. The
 checker validates Rust `#[no_mangle] extern "C"` exports, the generated C
 header, `src/vm_runtime.c` callback wiring, concrete Rust/Zephyr test evidence,
 and the generated inventory section in
