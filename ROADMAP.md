@@ -46,9 +46,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Refactoring Opportunities
 
-- Split Zephyr `vm_runtime.c` by service family, such as display,
-  indicator/GPIO, Wi-Fi, file, device config, app lifecycle callbacks, and
-  diagnostics, while preserving current callback behavior and RAM attribution.
 - Split `scripts/tests/test_zephyr_tooling_scripts.py` into focused test
   modules by topic, such as wrapper scripts, target metadata, hardware suite
   order, Wi-Fi/BLE expectations, RAM checks, and generated docs.

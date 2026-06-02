@@ -250,7 +250,28 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
   firmware flash scripts, monitor scripts, hardware test scripts, and hardware
   benchmark scripts. Use one standalone tool call per hardware command.
 - Hardware target tests are listed in `docs/hardware_target_tests.md`; use that inventory to identify real-device tests before running them.
-- When firmware work changes behavior that has hardware coverage and an ESP32-C3 Super Mini is attached or reasonably available, run the relevant hardware target tests. Sandbox isolation is not a reason to skip them; use escalated command execution for serial visibility checks and the hardware test command, and report the result.
+- When firmware work changes behavior that has hardware coverage and a relevant
+  hardware target is attached or reasonably available, run the relevant
+  hardware target tests. Sandbox isolation is not a reason to skip them; use
+  escalated command execution for serial visibility checks and the hardware
+  test command, and report the result. The ESP32-C3 Super Mini is the current
+  frequently available target, not the only SquidScript hardware target.
+- Treat changes under `firmware/zephyr/**`, generated Zephyr C includes,
+  target metadata consumed by firmware, serial protocol behavior, app
+  lifecycle/runtime callbacks, storage/runtime state, and hardware-facing
+  scripts as firmware-impacting changes for hardware-test decisions. Generated
+  firmware artifacts count the same as handwritten C; moving C wiring into a
+  generated include still requires the same hardware-test decision.
+- Native Zephyr ztests are the pre-hardware gate for firmware-impacting
+  changes, not a replacement for relevant hardware checks when hardware is
+  available. For low-risk firmware refactors, the minimum hardware check is
+  build/flash/boot without hanging on an attached target that exercises the
+  changed firmware path; run the broader hardware suite when runtime behavior
+  paths changed or when the target test inventory indicates coverage.
+- If hardware tests are skipped for firmware-impacting work, explicitly report
+  that hardware tests were not run, why they were skipped, what native/host
+  checks were run instead, and whether the change still needs hardware
+  confirmation.
 - When running the ESP32-C3 Super Mini hardware target suite, use
   `scripts/c3-supermini-test-hardware.sh` so stateful checks run first and the
   blinky app runs last. Blinky is the final visible board-state check and

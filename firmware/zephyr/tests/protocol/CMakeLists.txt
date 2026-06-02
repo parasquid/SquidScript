@@ -59,6 +59,14 @@ target_sources(app PRIVATE
   ../../src/serial_transport.c
   ../../src/vm_fs_storage.c
   ../../src/vm_runtime.c
+  ../../src/vm_runtime_app_lifecycle.c
+  ../../src/vm_runtime_device_config.c
+  ../../src/vm_runtime_display.c
+  ../../src/vm_runtime_file.c
+  ../../src/vm_runtime_indicator_gpio.c
+  ../../src/vm_runtime_system.c
+  ../../src/vm_runtime_timers.c
+  ../../src/vm_runtime_wifi.c
   ../../src/vm_storage.c
   "${SQUID_ZEPHYR_FALLBACK_C}"
   src/main.c

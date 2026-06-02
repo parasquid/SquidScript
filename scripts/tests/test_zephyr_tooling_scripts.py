@@ -20,6 +20,24 @@ class ZephyrToolingScriptTests(unittest.TestCase):
         path.write_text(contents, encoding="utf-8")
         path.chmod(path.stat().st_mode | stat.S_IXUSR)
 
+    def test_zephyr_runtime_service_family_sources_are_listed_for_firmware_and_tests(self):
+        firmware_cmake = self.read("firmware/zephyr/CMakeLists.txt")
+        protocol_cmake = self.read("firmware/zephyr/tests/protocol/CMakeLists.txt")
+        runtime_sources = [
+            "vm_runtime_app_lifecycle.c",
+            "vm_runtime_device_config.c",
+            "vm_runtime_display.c",
+            "vm_runtime_file.c",
+            "vm_runtime_indicator_gpio.c",
+            "vm_runtime_system.c",
+            "vm_runtime_timers.c",
+            "vm_runtime_wifi.c",
+        ]
+
+        for source in runtime_sources:
+            self.assertIn(f"src/{source}", firmware_cmake, source)
+            self.assertIn(f"../../src/{source}", protocol_cmake, source)
+
     def test_squidvm_ffi_abi_checker_validates_current_manifest(self):
         checker = ROOT / "scripts/check-squidvm-ffi-abi.py"
         manifest_path = ROOT / "compiler/rust/crates/squidvm-ffi/abi/manifest.json"
@@ -791,7 +809,7 @@ stale
         status = self.read("scripts/c3-supermini-test-wifi-state.sh")
         scan = self.read("scripts/c3-supermini-test-wifi-scan-api.sh")
         list_check = self.read("scripts/c3-supermini-test-wifi-list-api.sh")
-        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime = self.read("firmware/zephyr/src/vm_runtime_wifi.c")
 
         self.assertIn("--require-real-wifi", status)
         self.assertIn("zephyr true", status)
@@ -807,7 +825,7 @@ stale
         self.assertIn("wifi ap", list_check)
         self.assertIn("assert_no_raw_network_identifiers", list_check)
         self.assertNotIn("SQ_VM_RUNTIME_WIFI_SCAN_REQUEST_UNSAFE", runtime)
-        scan_start = runtime.index("static int32_t runtime_wifi_scan")
+        scan_start = runtime.index("int32_t runtime_wifi_scan")
         scan_end = runtime.index("#else", scan_start)
         scan_body = runtime[scan_start:scan_end]
         self.assertIn("runtime_wifi_scan_driver_callback", runtime)
@@ -1092,7 +1110,7 @@ stale
     def test_zephyr_builds_generate_target_defaults_from_target_json(self):
         app_cmake = self.read("firmware/zephyr/CMakeLists.txt")
         test_cmake = self.read("firmware/zephyr/tests/protocol/CMakeLists.txt")
-        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime = self.read("firmware/zephyr/src/vm_runtime_device_config.c")
 
         for cmake in [app_cmake, test_cmake]:
             self.assertIn("SQUID_ZEPHYR_TARGET_JSON", cmake)
@@ -1106,12 +1124,12 @@ stale
         self.assertNotIn("indicator_gpio.pin;\n\truntime->indicator_binding_active_low", runtime)
 
     def test_target_default_indicator_binding_does_not_rebind_generated_sqdc(self):
-        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime = self.read("firmware/zephyr/src/vm_runtime_device_config.c")
         default_start = runtime.index(
-            "static int sq_vm_runtime_apply_target_default_indicator_binding"
+            "int sq_vm_runtime_apply_target_default_indicator_binding"
         )
         default_body = runtime[
-            default_start : runtime.index("static void runtime_clear_active_bindings", default_start)
+            default_start : runtime.index("void runtime_clear_active_bindings", default_start)
         ]
 
         self.assertIn("runtime_apply_indicator_gpio_binding", runtime)
@@ -1247,7 +1265,7 @@ stale
 
     def test_wifi_scan_results_use_resident_cursor_snapshot_not_transfer_scratch(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
-        runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime_c = self.read("firmware/zephyr/src/vm_runtime_wifi.c")
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
         runtime_body = runtime_h[
             runtime_h.index("struct sq_vm_runtime {") : runtime_h.index(
@@ -1273,7 +1291,12 @@ stale
 
     def test_runtime_transfer_scratch_has_diagnostic_owner_checks(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
-        runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime_impl = "\n".join(
+            [
+                self.read("firmware/zephyr/src/vm_runtime.c"),
+                self.read("firmware/zephyr/src/vm_runtime_device_config.c"),
+            ]
+        )
         protocol_c = self.read("firmware/zephyr/src/device_protocol.c")
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
         ztest_kconfig = self.read("firmware/zephyr/tests/protocol/Kconfig")
@@ -1289,22 +1312,22 @@ stale
         self.assertIn("CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC", runtime_h)
         self.assertIn("return -EBUSY", runtime_h)
 
-        self.assertNotIn("SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN", runtime_c)
+        self.assertNotIn("SQ_VM_RUNTIME_TRANSFER_WIFI_SCAN", runtime_impl)
         self.assertIn(
             "sq_vm_runtime_transfer_acquire(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION)",
-            runtime_c,
+            runtime_impl,
         )
         self.assertIn(
             "sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION)",
-            runtime_c,
+            runtime_impl,
         )
         self.assertIn(
             "sq_vm_runtime_transfer_acquire(runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH)",
-            runtime_c,
+            runtime_impl,
         )
         self.assertIn(
             "sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH)",
-            runtime_c,
+            runtime_impl,
         )
         self.assertIn(
             "sq_vm_runtime_transfer_acquire(context->runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH)",
@@ -1464,10 +1487,10 @@ stale
         self.assertNotIn("SqdcDeviceBindingPlan device_binding_plan;", runtime_body)
         self.assertNotIn("SqvmDeviceConfigResult device_config_result;", runtime_body)
         self.assertIn("SqdcConfig device_config_draft;", runtime_body)
-        runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime_c = self.read("firmware/zephyr/src/vm_runtime_device_config.c")
         apply_start = runtime_c.index("static int __noinline sq_vm_runtime_apply_device_bindings")
         apply_body = runtime_c[
-            apply_start : runtime_c.index("static int32_t runtime_device_config_load", apply_start)
+            apply_start : runtime_c.index("int32_t runtime_device_config_load", apply_start)
         ]
         self.assertIn("struct sq_vm_runtime_binding_scratch", runtime_c)
         self.assertIn("sizeof(*scratch) <= sizeof(runtime->transfer.init_scratch)", apply_body)
@@ -1616,6 +1639,7 @@ stale
 
     def test_app_start_binding_setup_runs_on_worker_stack(self):
         runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        device_config_c = self.read("firmware/zephyr/src/vm_runtime_device_config.c")
         start_body = runtime_c[
             runtime_c.index("int sq_vm_runtime_start")
             : runtime_c.index(
@@ -1629,9 +1653,9 @@ stale
         ]
 
         self.assertIn("sq_vm_runtime_prepare_app_start", runtime_c)
-        self.assertIn("static int __noinline sq_vm_runtime_prepare_app_start", runtime_c)
-        self.assertIn("static int __noinline sq_vm_runtime_apply_saved_device_config", runtime_c)
-        self.assertIn("static int __noinline sq_vm_runtime_apply_device_bindings", runtime_c)
+        self.assertIn("int __noinline sq_vm_runtime_prepare_app_start", device_config_c)
+        self.assertIn("static int __noinline sq_vm_runtime_apply_saved_device_config", device_config_c)
+        self.assertIn("static int __noinline sq_vm_runtime_apply_device_bindings", device_config_c)
         self.assertIn("sq_vm_runtime_prepare_app_start(runtime)", work_body)
         self.assertIn("runtime->start_apply_bindings", start_body)
         self.assertNotIn("sq_vm_runtime_apply_device_bindings(runtime)", start_body)
@@ -2358,10 +2382,10 @@ stale
         self.assertNotIn("c3-supermini-probe-boot-button-pins.sh", suite)
 
     def test_sw0_gpio_button_path_configures_pullup_and_uses_binding_polarity(self):
-        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime = self.read("firmware/zephyr/src/vm_runtime_indicator_gpio.c")
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
-        configure_start = runtime.rindex("static int configure_input_button_gpio")
+        configure_start = runtime.rindex("int configure_input_button_gpio")
         read_start = runtime.rindex("static int read_input_button_gpio")
         configure_body = runtime[configure_start:read_start]
         read_end = runtime.index("int sq_vm_runtime_hardware_gpio_write")
@@ -2385,7 +2409,7 @@ stale
 
     def test_indicator_patterns_use_single_state_machine(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
-        runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime_c = self.read("firmware/zephyr/src/vm_runtime_indicator_gpio.c")
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
 
         self.assertIn("enum sq_vm_runtime_indicator_pattern", runtime_h)
@@ -2432,7 +2456,7 @@ stale
         )
 
     def test_serial_protocol_reader_allows_long_wifi_scan_launch_response(self):
-        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime = self.read("firmware/zephyr/src/vm_runtime_wifi.c")
         serial = self.read("compiler/rust/crates/squidc-cli/src/serial.rs")
 
         scan_timeout = re.search(
@@ -2450,7 +2474,7 @@ stale
 
     def test_device_binding_planning_stays_in_rust_ffi(self):
         ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
-        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime = self.read("firmware/zephyr/src/vm_runtime_device_config.c")
         ffi_rs = self.read("compiler/rust/crates/squidvm-ffi/src/lib.rs")
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
 
@@ -2476,7 +2500,7 @@ stale
         script = self.read("scripts/c3-supermini-test-breathe.sh")
         app = self.read("examples/breathe-supermini/main.squid")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
-        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime = self.read("firmware/zephyr/src/vm_runtime_indicator_gpio.c")
 
         self.assertIn("service.indicator.breathe()", app)
         self.assertIn("#if IS_ENABLED(CONFIG_PWM) && DT_NODE_HAS_PROP(DT_ALIAS(indicator0), pwms)", runtime)
@@ -3234,7 +3258,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
 
     def test_file_backed_state_and_config_reads_avoid_dirent_size_probe(self):
         storage = self.read("firmware/zephyr/src/vm_fs_storage.c")
-        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime = self.read("firmware/zephyr/src/vm_runtime_device_config.c")
 
         storage_start = storage.index("static int read_optional_file")
         storage_end = storage.index("static int write_file")
@@ -3476,7 +3500,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertNotIn("SqvmTriggerTimer timer = {0};", body)
 
     def test_device_config_package_load_formats_resource_path_from_bytes(self):
-        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime = self.read("firmware/zephyr/src/vm_runtime_device_config.c")
         app_store_h = self.read("firmware/zephyr/src/app_store.h")
         app_store_c = self.read("firmware/zephyr/src/app_store.c")
         start = runtime.index("static int sq_vm_runtime_device_config_load_resource")
@@ -3493,7 +3517,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertNotIn("memcpy(resource, resource_bytes, resource_len);", body)
 
     def test_device_config_flash_path_uses_fixed_path_bound_without_temp_dir(self):
-        runtime = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime = self.read("firmware/zephyr/src/vm_runtime_device_config.c")
         app_store_h = self.read("firmware/zephyr/src/app_store.h")
         app_store_c = self.read("firmware/zephyr/src/app_store.c")
         path_start = app_store_c.index("int sq_app_store_device_config_path")
@@ -3503,7 +3527,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         load_end = runtime.index("static int __noinline sq_vm_runtime_apply_device_bindings")
         load_body = runtime[load_start:load_end]
         save_start = runtime.index("int sq_vm_runtime_device_config_save")
-        save_end = runtime.index("void sq_vm_runtime_reset_vm_context")
+        save_end = runtime.index("int32_t runtime_device_config_save", save_start)
         save_body = runtime[save_start:save_end]
 
         self.assertIn("#define SQ_APP_STORE_DEVICE_CONFIG_PATH_MAX 40", app_store_h)
@@ -3694,7 +3718,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
 
     def test_zephyr_vm_runtime_wires_system_resource_callbacks(self):
         ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
-        runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime_c = self.read("firmware/zephyr/src/vm_runtime_system.c")
         runtime_callbacks = self.read("firmware/zephyr/src/generated_runtime_callbacks.inc")
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
 
@@ -3786,11 +3810,11 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn('"app.exit", false', lifecycle_c)
 
     def test_zephyr_wifi_station_uses_real_connect_disconnect_backend(self):
-        runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime_c = self.read("firmware/zephyr/src/vm_runtime_wifi.c")
 
-        connect_start = runtime_c.index("static int32_t runtime_wifi_connect")
-        disconnect_start = runtime_c.index("static int32_t runtime_wifi_disconnect")
-        ap_ip_start = runtime_c.index("static int32_t runtime_wifi_get_ap_ip")
+        connect_start = runtime_c.index("int32_t runtime_wifi_connect")
+        disconnect_start = runtime_c.index("int32_t runtime_wifi_disconnect")
+        ap_ip_start = runtime_c.index("int32_t runtime_wifi_get_ap_ip")
         connect_body = runtime_c[connect_start:disconnect_start]
         disconnect_body = runtime_c[disconnect_start:ap_ip_start]
 
@@ -3802,7 +3826,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertNotIn("runtime_wifi_unsupported_action(out)", disconnect_body.split("#else", 1)[0])
 
     def test_zephyr_wifi_status_reports_station_dhcp_ip_without_fixture_leak(self):
-        runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime_c = self.read("firmware/zephyr/src/vm_runtime_wifi.c")
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         station_fixture = self.read("tests/hardware/c3-supermini/wifi-station-summary/main.squid")
 
@@ -3816,7 +3840,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
     def test_wifi_ap_check_is_current_redacted_and_in_default_suite(self):
         ap = self.read("scripts/c3-supermini-test-wifi-ap-api.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
-        runtime_c = self.read("firmware/zephyr/src/vm_runtime.c")
+        runtime_c = self.read("firmware/zephyr/src/vm_runtime_wifi.c")
 
         self.assertIn('tests/hardware/c3-supermini/wifi-ap-summary/main.squid', ap)
         self.assertIn('cargo run --quiet -p squidc -- app launch wifi-ap-summary', ap)

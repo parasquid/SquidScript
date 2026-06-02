@@ -99,10 +99,20 @@ to emit `src/squidvm_ffi.h`. Do not edit `src/squidvm_ffi.h` directly. After
 changing the ABI, update the manifest and run
 `python3 scripts/check-squidvm-ffi-abi.py --write-header --write-doc --write-generated`. The
 checker validates Rust `#[no_mangle] extern "C"` exports, the generated C
-header, `src/vm_runtime.c` callback wiring, concrete Rust/Zephyr test evidence,
+header, Zephyr runtime callback wiring, concrete Rust/Zephyr test evidence,
 and the generated inventory section in
 `docs/zephyr_vm_host_abi_coverage.md`; the normal Python tooling tests run the
 checker in `--check` mode.
+
+Zephyr runtime callback wiring is split between `src/vm_runtime.c` and
+service-family implementation files. `src/vm_runtime.c` owns runtime context
+initialization, dispatch/resume flow, the worker thread, trace/debug output,
+shared output buffers, and the generated `SqvmCallbacks` table. Files named
+`src/vm_runtime_<family>.c` implement the concrete service callbacks for
+display, indicator/GPIO, app lifecycle, timers/power, system diagnostics,
+Wi-Fi, device config, and file services. The generated callback table still
+uses the canonical `runtime_*` symbol names; adding or moving a callback must
+update both firmware and protocol-test CMake source lists.
 
 The repo-local Zephyr setup installs the lightweight Twister dependencies
 needed to run `firmware/zephyr/tests/protocol` through Zephyr's test runner.
