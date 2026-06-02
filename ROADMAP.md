@@ -46,10 +46,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Refactoring Opportunities
 
-- Split `squidc-core` parser code by declaration/expression family when adding
-  more language surface, keeping imports/modules, state/device declarations,
-  handlers/screens/functions, expressions, and static objects easier to reason
-  about independently.
 - Consolidate service result record construction across VM core, FFI, and
   Zephyr so unsupported/default result shapes and static string handling do not
   drift between runtime layers.
