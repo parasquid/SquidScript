@@ -212,6 +212,18 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
 
 - Firmware source for the canonical ESP32-C3 firmware lives under
   `firmware/zephyr`; the old Rust ESP32-C3 firmware tree has been removed.
+- Treat known sandbox limitations as instructions to use escalated execution
+  immediately, not as hypotheses to re-test. If AGENTS.md, saved memory, or the
+  current conversation identifies a command category as sandbox-hostile, do not
+  run it in the sandbox first just to confirm the failure. Request escalated
+  execution up front, cite the known limitation, and continue with the actual
+  task.
+- This immediate-escalation rule covers, at minimum, `gh`/GitHub API commands
+  that need the host credential store or network, `git add`/`git commit` and
+  other commands that must update `.git/index`, hardware/serial/flashing
+  commands, Zephyr/Twister/build wrappers documented below as host-only, and
+  commands that need host-visible USB devices, keyrings, sockets, or caches
+  outside the workspace. Do not waste a turn on an expected sandbox failure.
 - Before reporting that firmware build, flashing, serial, or hardware checks do
   not work in this environment, check the relevant repository docs and wrapper
   scripts first. Prefer the documented wrapper command over ad hoc direct tool
@@ -306,7 +318,15 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
   a separate branch or worktree.
 - For slice-based implementation work, commit and push each completed,
   verified slice before moving on to the next slice.
-- Git commits must run outside the Codex sandbox. Sandboxed commits cannot create `.git/index.lock` in this environment, so use escalated command execution for `git commit` instead of trying once in the sandbox.
+- Git index-writing commands must run outside the Codex sandbox. Sandboxed
+  staging and commits cannot reliably create or update `.git/index.lock` in
+  this environment, so use escalated command execution for `git add`,
+  `git commit`, and similar index-writing commands instead of trying once in
+  the sandbox.
+- GitHub CLI commands that need authentication, repository API access, or
+  network access must run outside the Codex sandbox. If `gh` works on the host
+  but fails in the sandbox, treat that as expected environment isolation, not as
+  an auth problem to debug.
 
 ## CLI Workflow Ergonomics
 
