@@ -51,6 +51,15 @@
       "reason": "The Zephyr ESP32-C3 build path currently produces ESP flashable binaries for this repository; no XIAO UF2 replacement flow is implemented."
     }
   },
+  "firmware": {
+    "zephyr": {
+      "board": "xiao_esp32c3",
+      "buildDir": "build/zephyr/xiao-esp32c3-gdeq0426t82-sd",
+      "overlay": "firmware/zephyr/boards/xiao_esp32c3_gdeq0426t82_sd.overlay",
+      "fallbackSource": "firmware/zephyr/fallback/xiao-esp32c3-gdeq0426t82-sd-main.squid",
+      "targetKconfig": "target/zephyr/generated/xiao-esp32c3-gdeq0426t82-sd-target.conf"
+    }
+  },
   "radios": {
     "wifi": {
       "type": "wifi",

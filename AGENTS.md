@@ -238,9 +238,10 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
   not work in this environment, check the relevant repository docs and wrapper
   scripts first. Prefer the documented wrapper command over ad hoc direct tool
   invocations, and only call something blocked after the documented path fails.
-- Use `scripts/c3-supermini-build.sh` to build or type-check the ESP32-C3
-  canonical firmware binary. The wrapper delegates to the Zephyr build wrapper
-  and sources the repository Zephyr environment.
+- Use `cargo run -p squidc -- target build --target esp32c3-super-mini` to
+  build or type-check the ESP32-C3 Super Mini canonical firmware binary.
+  `squidc target` resolves target JSON metadata, Zephyr board, overlay,
+  fallback app, generated Kconfig path, and build directory.
 - Use `scripts/zephyr-test-protocol.sh` for the Zephyr native protocol ztests
   instead of invoking `west twister` directly. The wrapper sources
   `scripts/zephyr-env.sh`, which adds the repo-local `target/zephyr/venv/bin`

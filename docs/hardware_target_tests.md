@@ -25,37 +25,36 @@ Super Mini remains a supported regression hardware target.
 Default XIAO build and flash:
 
 ```sh
-./scripts/zephyr-build.sh
+cargo run -p squidc -- target build --target xiao-esp32c3-gdeq0426t82-sd
 SQUID_ZEPHYR_TARGET_JSON=targets/xiao-esp32c3-gdeq0426t82-sd.target.json \
   ./scripts/zephyr-ram-audit.sh build/zephyr/xiao-esp32c3-gdeq0426t82-sd/zephyr/zephyr.elf
-./scripts/zephyr-flash.sh
+cargo run -p squidc -- target flash --target xiao-esp32c3-gdeq0426t82-sd
 ```
 
 XIAO monitor:
 
 ```sh
-./scripts/xiao-esp32c3-epaper-zephyr-monitor.sh
+cargo run -p squidc -- target monitor --target xiao-esp32c3-gdeq0426t82-sd
 ```
 
 Super Mini regression build and flash:
 
 ```sh
-./scripts/c3-supermini-build.sh
+cargo run -p squidc -- target build --target esp32c3-super-mini
 SQUID_ZEPHYR_TARGET_JSON=targets/esp32c3-super-mini.target.json \
   ./scripts/zephyr-ram-audit.sh
-./scripts/c3-supermini-flash.sh
+cargo run -p squidc -- target flash --target esp32c3-super-mini
 ```
 
 Super Mini monitor:
 
 ```sh
-./scripts/c3-supermini-zephyr-monitor.sh
+cargo run -p squidc -- target monitor --target esp32c3-super-mini
 ```
 
-The XIAO wrappers default to Zephyr's `xiao_esp32c3` board target. The Super
-Mini wrappers default to Zephyr's `esp32c3_supermini` board target and should
-be used for Super Mini regression checks instead of relying on shared
-environment defaults.
+Pass `--target` explicitly in scripts and CI. `squidc target` resolves the
+Zephyr board, overlay, fallback app, generated Kconfig path, and build
+directory from target JSON.
 
 ## Test Inventory
 

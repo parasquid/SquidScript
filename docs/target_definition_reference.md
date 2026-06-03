@@ -42,7 +42,7 @@ Target definitions must be explicit enough to prevent hidden board assumptions f
 Rules:
 
 1. A target JSON object must declare `format`, `id`, and `name`.
-2. `format` must be `squid-target` for this schema.
+2. `format` must be `squid-target-v1` for this schema.
 3. Integrated production devices should use one target file with named sections.
 4. Split board/display/input/storage/power/runtime profiles are optional advanced composition, mainly for reusable development-board combinations.
 5. GPIOs, buses, onboard devices, and logical capabilities must be described in the target file.
@@ -78,7 +78,7 @@ The generated artifacts are allowed to be C/C++ specific. The source JSON should
 
 Required fields:
 
-- `format`: schema identifier. Must be `squid-target`.
+- `format`: schema identifier. Must be `squid-target-v1`.
 - `id`: stable lowercase target ID, such as `xteink-x4`.
 - `name`: human-readable device name.
 - `mcu`: MCU and memory facts.
@@ -97,6 +97,7 @@ Optional fields:
 - `status`: lifecycle marker such as `draft`, `reference`, or `production`.
 - `sourceAttribution`: list of sources used to verify hardware facts.
 - `firmwareUpdate`: firmware image and replacement metadata.
+- `firmware`: firmware build metadata consumed by target tooling.
 - `radios`: Wi-Fi, BLE, or other radio hardware available on the target.
 - `simulator`: optional simulator and layout metadata.
 
@@ -225,6 +226,37 @@ Example:
   }
 }
 ```
+
+## 6.1 Firmware Tooling Section
+
+`firmware` describes repository firmware build metadata for concrete targets.
+For Zephyr-backed targets, `squidc target` reads `firmware.zephyr` to resolve
+the Zephyr board, build directory, overlay, fallback SquidScript app, and
+generated Kconfig fragment.
+
+Example:
+
+```json
+{
+  "firmware": {
+    "zephyr": {
+      "board": "xiao_esp32c3",
+      "buildDir": "build/zephyr/xiao-esp32c3-gdeq0426t82-sd",
+      "overlay": "firmware/zephyr/boards/xiao_esp32c3_gdeq0426t82_sd.overlay",
+      "fallbackSource": "firmware/zephyr/fallback/xiao-esp32c3-gdeq0426t82-sd-main.squid",
+      "targetKconfig": "target/zephyr/generated/xiao-esp32c3-gdeq0426t82-sd-target.conf"
+    }
+  }
+}
+```
+
+Rules:
+
+1. Paths are repository-relative unless absolute.
+2. Scripts and CI should pass target IDs explicitly to `squidc target`.
+3. A target without `firmware.zephyr` may still be listed and inspected.
+   Zephyr build, flash, and monitor commands fail with an unsupported-target
+   error; `target doctor` reports a failed Zephyr metadata check.
 
 If UF2 support is verified later, `formats` may include `uf2`, `preferredFormat` may become `uf2`, and a target-specific UF2 family ID or conversion rule should be added.
 

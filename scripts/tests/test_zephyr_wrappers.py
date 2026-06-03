@@ -101,16 +101,27 @@ class ZephyrWrapperTests(ZephyrScriptTestCase):
         self.assertIn('PATH="${SQUID_ZEPHYR_HOME}/venv/bin:${PATH}"', env)
         self.assertIn('ZEPHYR_BASE="${SQUID_ZEPHYR_HOME}/workspace/zephyr"', env)
 
-    def test_zephyr_wrappers_source_shared_env(self):
-        for script in [
+    def test_target_wrappers_are_removed_and_protocol_wrapper_keeps_env(self):
+        removed = [
             "scripts/c3-supermini-zephyr-build.sh",
             "scripts/c3-supermini-zephyr-flash.sh",
             "scripts/c3-supermini-zephyr-monitor.sh",
-            "scripts/zephyr-test-protocol.sh",
-        ]:
+            "scripts/c3-supermini-build.sh",
+            "scripts/c3-supermini-flash.sh",
+            "scripts/zephyr-build.sh",
+            "scripts/zephyr-flash.sh",
+            "scripts/xiao-esp32c3-epaper-build.sh",
+            "scripts/xiao-esp32c3-epaper-flash.sh",
+            "scripts/xiao-esp32c3-epaper-zephyr-build.sh",
+            "scripts/xiao-esp32c3-epaper-zephyr-flash.sh",
+            "scripts/xiao-esp32c3-epaper-zephyr-monitor.sh",
+        ]
+        for script in removed:
             with self.subTest(script=script):
-                contents = self.read(script)
-                self.assertIn('source "${ROOT}/scripts/zephyr-env.sh"', contents)
+                self.assertFalse((ROOT / script).exists())
+
+        protocol = self.read("scripts/zephyr-test-protocol.sh")
+        self.assertIn('source "${ROOT}/scripts/zephyr-env.sh"', protocol)
 
     def test_protocol_twister_wrapper_uses_64_bit_native_platform(self):
         script = self.read("scripts/zephyr-test-protocol.sh")
@@ -132,16 +143,18 @@ class ZephyrWrapperTests(ZephyrScriptTestCase):
         self.assertIn("fixtures/*.squid", cmake)
         self.assertIn("Generated protocol test fixtures", docs)
 
-    def test_build_wrapper_applies_supermini_overlay(self):
-        build = self.read("scripts/c3-supermini-zephyr-build.sh")
+    def test_target_cli_metadata_applies_supermini_overlay(self):
+        target = json.loads(self.read("targets/esp32c3-super-mini.target.json"))
+        cli = self.read("compiler/rust/crates/squidc-cli/src/target.rs")
 
-        self.assertIn("DTC_OVERLAY_FILE", build)
-        self.assertIn("esp32c3_supermini.overlay", build)
-        self.assertIn("generate-zephyr-target-kconfig.py", build)
-        self.assertIn("SQUID_ZEPHYR_TARGET_JSON", build)
-        self.assertIn("EXTRA_CONF_FILE", build)
-        self.assertIn("ZEPHYR_PRISTINE", build)
-        self.assertNotIn("unverified default", build)
+        zephyr = target["firmware"]["zephyr"]
+        self.assertEqual("esp32c3_supermini", zephyr["board"])
+        self.assertEqual("firmware/zephyr/boards/esp32c3_supermini.overlay", zephyr["overlay"])
+        self.assertIn("generate-zephyr-target-kconfig.py", cli)
+        self.assertIn("DTC_OVERLAY_FILE", cli)
+        self.assertIn("SQUID_ZEPHYR_TARGET_JSON", cli)
+        self.assertIn("EXTRA_CONF_FILE", cli)
+        self.assertIn("--pristine", cli)
 
     def test_docs_point_to_setup_script(self):
         firmware_readme = self.read("firmware/README.md")

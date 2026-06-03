@@ -175,6 +175,36 @@ commands for normal workflows.
 Framed command, app lifecycle, diagnostics, state, resources, and storage
 operations are implemented in the host and Zephyr serial transport layers.
 
+## Target Commands
+
+`target` commands are the canonical firmware-target workflow. They read
+repository target JSON metadata and resolve Zephyr board, build directory,
+overlay, fallback app, and generated Kconfig paths from that metadata.
+
+```sh
+cargo run -p squidc -- target list
+cargo run -p squidc -- target inspect --target xiao-esp32c3-gdeq0426t82-sd
+cargo run -p squidc -- target build --target xiao-esp32c3-gdeq0426t82-sd
+cargo run -p squidc -- target flash --target xiao-esp32c3-gdeq0426t82-sd
+cargo run -p squidc -- target monitor --target xiao-esp32c3-gdeq0426t82-sd
+cargo run -p squidc -- target doctor --target xiao-esp32c3-gdeq0426t82-sd
+```
+
+Use `target inspect` or `--print-plan` before side-effectful operations when
+automation needs to verify the resolved command without invoking Zephyr:
+
+```sh
+cargo run -p squidc -- target build --target esp32c3-super-mini --print-plan
+cargo run -p squidc -- target flash --target esp32c3-super-mini --print-plan -- --runner esp32
+```
+
+When `--target` is omitted, interactive terminals show a target picker.
+Noninteractive sessions fail and should pass `--target <target-id>` explicitly.
+
+`target flash` builds first, then flashes. It monitors only when
+`--monitor-after-flash` is passed. `target monitor` is a streaming hardware
+command; with `--json`, use `--print-plan` instead of starting the stream.
+
 ## JSON
 
 All commands accept global `--json`:
@@ -182,6 +212,7 @@ All commands accept global `--json`:
 ```sh
 cargo run -p squidc -- --json doctor
 cargo run -p squidc -- --json app list
+cargo run -p squidc -- --json target inspect --target esp32c3-super-mini
 ```
 
 JSON output uses a stable envelope:
@@ -198,6 +229,10 @@ JSON output uses a stable envelope:
 
 Failures use the same shape with `ok: false`, `data: null`, and one or more
 entries in `errors`.
+
+Automation and AI agents should use `--json` for machine-readable output and
+must not parse human output. Commands that invoke child tools keep JSON stdout
+structured; child-tool logs are written to stderr.
 
 ## Doctor
 

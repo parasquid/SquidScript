@@ -41,17 +41,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   before advertising SD-backed `supportsApps`, `supportsFile`, `sdcard`, or
   file APIs.
 
-## CLI And Target Workflows
-
-- Add a first-class `squidc target` command group for target-firmware workflows.
-  It should support scriptable commands such as `squidc target list`,
-  `squidc target build --target <target-id>`, `squidc target flash --target
-  <target-id>`, `squidc target monitor --target <target-id>`, and `squidc
-  target doctor --target <target-id>`. Target IDs should resolve through
-  canonical target JSON metadata, and target JSON should drive Zephyr board,
-  overlay, fallback app, generated Kconfig/defaults, and build directory
-  selection. When no `--target` is supplied for an interactive command, present
-  a target picker; CI/scripts should use explicit `--target`.
 ## Display And Output
 
 - Implement an SSD1677/GDEQ0426T82 SquidScript display backend when the display
@@ -96,7 +85,8 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 Current ESP32-C3 RAM baseline:
 
-- Latest observed linker DRAM from `scripts/c3-supermini-build.sh`: 239,232
+- Latest observed linker DRAM from
+  `cargo run -p squidc -- target build --target esp32c3-super-mini`: 239,232
   bytes.
 - Current target configuration: 4,864-byte protocol/main stack and
   16,640-byte VM worker stack.

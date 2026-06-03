@@ -61,6 +61,15 @@
       "reason": "Generic ESP32-C3 Super Mini boards do not expose a verified UF2 bootloader by default."
     }
   },
+  "firmware": {
+    "zephyr": {
+      "board": "esp32c3_supermini",
+      "buildDir": "build/zephyr/c3-supermini",
+      "overlay": "firmware/zephyr/boards/esp32c3_supermini.overlay",
+      "fallbackSource": "firmware/zephyr/fallback/esp32c3-supermini-main.squid",
+      "targetKconfig": "target/zephyr/generated/c3-supermini-target.conf"
+    }
+  },
   "radios": {
     "wifi": {
       "type": "wifi",

@@ -84,7 +84,7 @@ Examples:
 - `squid-target-storage`
 - `squid-target-power`
 - `squid-target-runtime`
-- `squid-target`
+- `squid-target-v1`
 
 Split composition example:
 
@@ -551,7 +551,7 @@ Trimmed XTEINK X4 shape:
 
 ```json
 {
-  "format": "squid-target",
+  "format": "squid-target-v1",
   "id": "xteink-x4",
   "name": "XTEINK X4",
   "mcu": {
@@ -580,7 +580,7 @@ Example ESP32-S3 + Waveshare development target using split profile parts:
 
 ```json
 {
-  "format": "squid-target",
+  "format": "squid-target-v1",
   "id": "esp32s3-waveshare-7in5",
   "name": "ESP32-S3 DevKit + Waveshare 7.5in e-Paper",
   "board": "esp32s3-devkit",
@@ -653,10 +653,10 @@ The firmware build should select a concrete target.
 Example with the Zephyr backend:
 
 ```sh
-scripts/c3-supermini-build.sh
+cargo run -p squidc -- target build --target esp32c3-super-mini
 ```
 
-Example wrapper:
+Example target metadata:
 
 ```sh
 make target=xteink-x4 build
@@ -1212,7 +1212,7 @@ Example:
 
 ```json
 {
-  "format": "squid-target",
+  "format": "squid-target-v1",
   "id": "esp32s3-dev-waveshare",
   "board": "esp32s3-devkit",
   "display": "waveshare-7in5-v2",
@@ -1227,7 +1227,7 @@ Another development target using the same board and display but different input:
 
 ```json
 {
-  "format": "squid-target",
+  "format": "squid-target-v1",
   "id": "esp32s3-dev-waveshare-touch",
   "board": "esp32s3-devkit",
   "display": "waveshare-7in5-v2",
@@ -1277,7 +1277,7 @@ Targets may also inherit from other targets:
 
 ```json
 {
-  "format": "squid-target",
+  "format": "squid-target-v1",
   "id": "esp32s3-waveshare-7in5-touch-prototype",
   "extends": "esp32s3-waveshare-7in5",
   "input": "waveshare-touch"
@@ -1292,14 +1292,14 @@ Array replacement is intentional because lists such as `features`, `buttons`, an
 
 ## 18. Target Profile Schema
 
-The canonical practical schema is `squid-target` and is documented in detail in
+The canonical practical schema is `squid-target-v1` and is documented in detail in
 `docs/target_definition_reference.md`.
 
 Integrated target schema shape:
 
 ```json
 {
-  "format": "squid-target",
+  "format": "squid-target-v1",
   "id": "target-id",
   "name": "Human Name",
   "mcu": {},
@@ -1324,7 +1324,7 @@ Optional split composition schema shape:
 
 ```json
 {
-  "format": "squid-target",
+  "format": "squid-target-v1",
   "id": "target-id",
   "name": "Human Name",
   "extends": "optional-base-target-id",

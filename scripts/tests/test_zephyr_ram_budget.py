@@ -496,18 +496,21 @@ class ZephyrRamBudgetTests(ZephyrScriptTestCase):
         self.assertNotIn("wifi", stack.lower())
 
     def test_c3_stack_usage_attribution_is_opt_in_and_reportable(self):
-        build = self.read("scripts/c3-supermini-zephyr-build.sh")
+        cli = self.read("compiler/rust/crates/squidc-cli/src/target.rs")
         cmake = self.read("firmware/zephyr/CMakeLists.txt")
         docs = self.read("docs/firmware_build_architecture.md")
         report = ROOT / "scripts/c3-supermini-stack-usage-report.sh"
 
         self.assertTrue(report.exists())
-        self.assertIn("SQUID_ZEPHYR_STACK_USAGE", build)
-        self.assertIn("-DSQUID_ZEPHYR_STACK_USAGE=ON", build)
+        self.assertIn("SQUID_ZEPHYR_STACK_USAGE", cli)
+        self.assertIn("-DSQUID_ZEPHYR_STACK_USAGE=ON", cli)
         self.assertIn("SQUID_ZEPHYR_STACK_USAGE", cmake)
         self.assertIn("-fstack-usage", cmake)
         self.assertIn("scripts/c3-supermini-stack-usage-report.sh", docs)
-        self.assertIn("SQUID_ZEPHYR_STACK_USAGE=1 scripts/c3-supermini-build.sh", docs)
+        self.assertIn(
+            "cargo run -p squidc -- target build --target esp32c3-super-mini --stack-usage",
+            docs,
+        )
 
     def test_c3_stack_usage_report_sorts_largest_functions(self):
         with tempfile.TemporaryDirectory() as tmp:

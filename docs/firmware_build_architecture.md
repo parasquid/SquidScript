@@ -38,18 +38,17 @@ From the repository root:
 ```sh
 scripts/zephyr-setup.sh
 scripts/zephyr-test-protocol.sh
-scripts/zephyr-build.sh
-scripts/zephyr-flash.sh
-scripts/xiao-esp32c3-epaper-build.sh
-scripts/xiao-esp32c3-epaper-flash.sh
-scripts/c3-supermini-build.sh
-scripts/c3-supermini-flash.sh
-scripts/c3-supermini-zephyr-monitor.sh
+cargo run -p squidc -- target list
+cargo run -p squidc -- target inspect --target <target-id>
+cargo run -p squidc -- target build --target <target-id>
+cargo run -p squidc -- target flash --target <target-id>
+cargo run -p squidc -- target monitor --target <target-id>
 ```
 
-The build and flash wrappers delegate to Zephyr-specific scripts and source
-`scripts/zephyr-env.sh`. By default, `SQUID_ZEPHYR_HOME` is
-`target/zephyr`, with `west` installed in `target/zephyr/venv` and the Zephyr
+`squidc target` resolves Zephyr board, overlay, fallback app, generated
+Kconfig path, and build directory from target JSON. By default,
+`SQUID_ZEPHYR_HOME` is `target/zephyr`, with `west` installed in
+`target/zephyr/venv` and the Zephyr
 workspace in `target/zephyr/workspace`.
 
 `scripts/zephyr-setup.sh` prepares that local tooling area. It may install
@@ -209,7 +208,7 @@ For C stack attribution without hardware, build with GCC stack-usage emission
 enabled and summarize the generated `.su` files:
 
 ```sh
-SQUID_ZEPHYR_STACK_USAGE=1 scripts/c3-supermini-build.sh
+cargo run -p squidc -- target build --target esp32c3-super-mini --stack-usage
 scripts/c3-supermini-stack-usage-report.sh
 ```
 
@@ -226,7 +225,7 @@ For static DRAM attribution, build the ESP32-C3 firmware and summarize
 DRAM-resident symbols:
 
 ```sh
-scripts/c3-supermini-build.sh
+cargo run -p squidc -- target build --target esp32c3-super-mini
 scripts/zephyr-static-buffer-report.sh
 ```
 

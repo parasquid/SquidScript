@@ -13,7 +13,7 @@ fi
 mapfile -t STACK_FILES < <(find "$BUILD_DIR" -name '*.su' -type f | sort)
 if [[ "${#STACK_FILES[@]}" -eq 0 ]]; then
   printf 'No .su stack-usage files found under %s\n' "$BUILD_DIR" >&2
-  printf 'Build with: SQUID_ZEPHYR_STACK_USAGE=1 scripts/c3-supermini-build.sh\n' >&2
+  printf 'Build with: cargo run -p squidc -- target build --target esp32c3-super-mini --stack-usage\n' >&2
   exit 1
 fi
 

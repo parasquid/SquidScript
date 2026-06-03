@@ -34,20 +34,18 @@ From the repository root:
 
 ```sh
 scripts/zephyr-setup.sh
-scripts/zephyr-build.sh
-scripts/zephyr-flash.sh
-scripts/xiao-esp32c3-epaper-zephyr-monitor.sh
-scripts/c3-supermini-build.sh
-scripts/c3-supermini-flash.sh
-scripts/c3-supermini-zephyr-monitor.sh
+cargo run -p squidc -- target build --target xiao-esp32c3-gdeq0426t82-sd
+cargo run -p squidc -- target flash --target xiao-esp32c3-gdeq0426t82-sd
+cargo run -p squidc -- target monitor --target xiao-esp32c3-gdeq0426t82-sd
+cargo run -p squidc -- target build --target esp32c3-super-mini
+cargo run -p squidc -- target flash --target esp32c3-super-mini
+cargo run -p squidc -- target monitor --target esp32c3-super-mini
 ```
 
-`scripts/zephyr-build.sh` and `scripts/zephyr-flash.sh` use the current
-default XIAO target. The XIAO-specific wrappers expose the same target
-explicitly. The `c3-supermini-build.sh` and `c3-supermini-flash.sh` wrappers
-select the Super Mini target JSON, overlay, fallback app, Zephyr board, and
-build directory before sourcing the shared environment. Flashing does not
-auto-monitor unless `MONITOR_AFTER_FLASH=1` is set.
+`squidc target` reads the selected target JSON, resolves the Zephyr board,
+overlay, fallback app, generated Kconfig path, and build directory, then runs
+the Zephyr command. Flashing builds first and does not monitor unless
+`--monitor-after-flash` is passed.
 
 Zephyr setup is host-specific but repository-local by default:
 

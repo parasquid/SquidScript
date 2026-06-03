@@ -5,56 +5,255 @@ use super::*;
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SqvmCallbacks {
-    pub trace: Option< unsafe extern "C" fn(user_data: *mut c_void, message: *const u8, message_len: usize), >,
+    pub trace: Option<
+        unsafe extern "C" fn(user_data: *mut c_void, message: *const u8, message_len: usize),
+    >,
     pub read_exact_at: SqvmReadExactAtCallback,
-    pub debug_output: Option< unsafe extern "C" fn(user_data: *mut c_void, message: *const u8, message_len: usize), >,
-    pub display_clear: Option<unsafe extern "C" fn(user_data: *mut c_void, color: *const u8, color_len: usize)>,
-    pub display_text: Option< unsafe extern "C" fn( user_data: *mut c_void, text: *const u8, text_len: usize, options: *const SqvmDisplayTextOptions, ), >,
-    pub display_rect: Option< unsafe extern "C" fn(user_data: *mut c_void, options: *const SqvmDisplayRectOptions), >,
-    pub display_line: Option< unsafe extern "C" fn(user_data: *mut c_void, options: *const SqvmDisplayLineOptions), >,
-    pub display_select: Option< unsafe extern "C" fn(user_data: *mut c_void, name: *const u8, name_len: usize) -> i32, >,
-    pub display_image: Option< unsafe extern "C" fn( user_data: *mut c_void, path: *const u8, path_len: usize, options: *const SqvmDisplayResourceOptions, ), >,
-    pub display_draw: Option< unsafe extern "C" fn( user_data: *mut c_void, drawable: *const u8, drawable_len: usize, options: *const SqvmDisplayResourceOptions, ), >,
-    pub display_info: Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmDisplayInfo) -> i32>,
+    pub debug_output: Option<
+        unsafe extern "C" fn(user_data: *mut c_void, message: *const u8, message_len: usize),
+    >,
+    pub display_clear:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, color: *const u8, color_len: usize)>,
+    pub display_text: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            text: *const u8,
+            text_len: usize,
+            options: *const SqvmDisplayTextOptions,
+        ),
+    >,
+    pub display_rect: Option<
+        unsafe extern "C" fn(user_data: *mut c_void, options: *const SqvmDisplayRectOptions),
+    >,
+    pub display_line: Option<
+        unsafe extern "C" fn(user_data: *mut c_void, options: *const SqvmDisplayLineOptions),
+    >,
+    pub display_select: Option<
+        unsafe extern "C" fn(user_data: *mut c_void, name: *const u8, name_len: usize) -> i32,
+    >,
+    pub display_image: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            path: *const u8,
+            path_len: usize,
+            options: *const SqvmDisplayResourceOptions,
+        ),
+    >,
+    pub display_draw: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            drawable: *const u8,
+            drawable_len: usize,
+            options: *const SqvmDisplayResourceOptions,
+        ),
+    >,
+    pub display_info:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmDisplayInfo) -> i32>,
     pub indicator_write: Option<unsafe extern "C" fn(user_data: *mut c_void, value: bool) -> i32>,
     pub indicator_toggle: Option<unsafe extern "C" fn(user_data: *mut c_void) -> i32>,
     pub indicator_read: Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut bool) -> i32>,
     pub indicator_breathe: Option<unsafe extern "C" fn(user_data: *mut c_void) -> i32>,
-    pub indicator_blink: Option<unsafe extern "C" fn(user_data: *mut c_void, on_ms: i32, off_ms: i32) -> i32>,
-    pub hardware_gpio_write: Option< unsafe extern "C" fn( user_data: *mut c_void, name: *const u8, name_len: usize, value: bool, ) -> i32, >,
-    pub hardware_gpio_toggle: Option< unsafe extern "C" fn(user_data: *mut c_void, name: *const u8, name_len: usize) -> i32, >,
-    pub hardware_gpio_read: Option< unsafe extern "C" fn( user_data: *mut c_void, name: *const u8, name_len: usize, out: *mut bool, ) -> i32, >,
-    pub app_launch: Option<unsafe extern "C" fn(user_data: *mut c_void, app: *const u8, app_len: usize) -> i32>,
-    pub app_arm: Option<unsafe extern "C" fn(user_data: *mut c_void, app: *const u8, app_len: usize) -> i32>,
-    pub app_disarm: Option<unsafe extern "C" fn(user_data: *mut c_void, app: *const u8, app_len: usize) -> i32>,
-    pub app_registry_list: Option< unsafe extern "C" fn( user_data: *mut c_void, out: *mut SqvmAppRegistryEntry, out_cap: usize, out_count: *mut usize, ) -> i32, >,
-    pub app_registry_get: Option< unsafe extern "C" fn( user_data: *mut c_void, app: *const u8, app_len: usize, out: *mut SqvmAppRegistryEntry, ) -> i32, >,
-    pub app_process_stack: Option< unsafe extern "C" fn( user_data: *mut c_void, out: *mut SqvmAppStackEntry, out_cap: usize, out_count: *mut usize, ) -> i32, >,
-    pub app_armed_stack: Option< unsafe extern "C" fn( user_data: *mut c_void, out: *mut SqvmAppStackEntry, out_cap: usize, out_count: *mut usize, ) -> i32, >,
-    pub timer_every: Option< unsafe extern "C" fn( user_data: *mut c_void, event: *const u8, event_len: usize, interval_ms: i32, ) -> i32, >,
-    pub timer_after: Option< unsafe extern "C" fn( user_data: *mut c_void, event: *const u8, event_len: usize, delay_ms: i32, ) -> i32, >,
-    pub wifi_start_ap: Option< unsafe extern "C" fn( user_data: *mut c_void, ssid: *const u8, ssid_len: usize, out: *mut SqvmWifiOperation, ) -> i32, >,
-    pub wifi_stop_ap: Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiOperation) -> i32>,
-    pub wifi_connect: Option< unsafe extern "C" fn( user_data: *mut c_void, profile: *const u8, profile_len: usize, out: *mut SqvmWifiOperation, ) -> i32, >,
-    pub wifi_disconnect: Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiOperation) -> i32>,
-    pub wifi_get_ap_ip: Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiApIp) -> i32>,
-    pub wifi_status: Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiStatus) -> i32>,
-    pub wifi_scan: Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiOperation) -> i32>,
-    pub wifi_operation: Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiOperation) -> i32>,
-    pub wifi_result: Option< unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiOperationResult) -> i32, >,
-    pub wifi_cancel: Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiOperation) -> i32>,
-    pub wifi_scan_network: Option< unsafe extern "C" fn( user_data: *mut c_void, index: i32, out: *mut SqvmWifiScanNetworkResult, ) -> i32, >,
-    pub device_config_load: Option< unsafe extern "C" fn( user_data: *mut c_void, source: *const u8, source_len: usize, out: *mut SqvmDeviceConfigResult, ) -> i32, >,
-    pub device_config_set: Option< unsafe extern "C" fn( user_data: *mut c_void, key: *const u8, key_len: usize, value: SqvmDeviceConfigValue, out: *mut SqvmDeviceConfigResult, ) -> i32, >,
-    pub device_config_rebind: Option< unsafe extern "C" fn( user_data: *mut c_void, alias: *const u8, alias_len: usize, out: *mut SqvmDeviceConfigResult, ) -> i32, >,
-    pub device_config_save: Option< unsafe extern "C" fn( user_data: *mut c_void, destination: *const u8, destination_len: usize, out: *mut SqvmDeviceConfigResult, ) -> i32, >,
-    pub file_pick_file: Option< unsafe extern "C" fn( user_data: *mut c_void, extension: *const u8, extension_len: usize, out: *mut SqvmFilePickFileResult, ) -> i32, >,
-    pub file_read_text: Option< unsafe extern "C" fn( user_data: *mut c_void, path: *const u8, path_len: usize, out: *mut SqvmFileReadTextResult, ) -> i32, >,
-    pub file_read_lines: Option< unsafe extern "C" fn( user_data: *mut c_void, path: *const u8, path_len: usize, max_lines: i32, out: *mut SqvmFileReadLinesResult, ) -> i32, >,
-    pub system_memory_text: Option< unsafe extern "C" fn( user_data: *mut c_void, out: *mut u8, out_cap: usize, out_len: *mut usize, ) -> i32, >,
-    pub system_storage_text: Option< unsafe extern "C" fn( user_data: *mut c_void, name: *const u8, name_len: usize, out: *mut u8, out_cap: usize, out_len: *mut usize, ) -> i32, >,
-    pub system_start_reason_text: Option< unsafe extern "C" fn( user_data: *mut c_void, out: *mut u8, out_cap: usize, out_len: *mut usize, ) -> i32, >,
-    pub power_sleep: Option<unsafe extern "C" fn(user_data: *mut c_void, wake_after_ms: i32) -> i32>,
+    pub indicator_blink:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, on_ms: i32, off_ms: i32) -> i32>,
+    pub hardware_gpio_write: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            name: *const u8,
+            name_len: usize,
+            value: bool,
+        ) -> i32,
+    >,
+    pub hardware_gpio_toggle: Option<
+        unsafe extern "C" fn(user_data: *mut c_void, name: *const u8, name_len: usize) -> i32,
+    >,
+    pub hardware_gpio_read: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            name: *const u8,
+            name_len: usize,
+            out: *mut bool,
+        ) -> i32,
+    >,
+    pub app_launch:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, app: *const u8, app_len: usize) -> i32>,
+    pub app_arm:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, app: *const u8, app_len: usize) -> i32>,
+    pub app_disarm:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, app: *const u8, app_len: usize) -> i32>,
+    pub app_registry_list: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            out: *mut SqvmAppRegistryEntry,
+            out_cap: usize,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
+    pub app_registry_get: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            app: *const u8,
+            app_len: usize,
+            out: *mut SqvmAppRegistryEntry,
+        ) -> i32,
+    >,
+    pub app_process_stack: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            out: *mut SqvmAppStackEntry,
+            out_cap: usize,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
+    pub app_armed_stack: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            out: *mut SqvmAppStackEntry,
+            out_cap: usize,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
+    pub timer_every: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            event: *const u8,
+            event_len: usize,
+            interval_ms: i32,
+        ) -> i32,
+    >,
+    pub timer_after: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            event: *const u8,
+            event_len: usize,
+            delay_ms: i32,
+        ) -> i32,
+    >,
+    pub wifi_start_ap: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            ssid: *const u8,
+            ssid_len: usize,
+            out: *mut SqvmWifiOperation,
+        ) -> i32,
+    >,
+    pub wifi_stop_ap:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiOperation) -> i32>,
+    pub wifi_connect: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            profile: *const u8,
+            profile_len: usize,
+            out: *mut SqvmWifiOperation,
+        ) -> i32,
+    >,
+    pub wifi_disconnect:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiOperation) -> i32>,
+    pub wifi_get_ap_ip:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiApIp) -> i32>,
+    pub wifi_status:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiStatus) -> i32>,
+    pub wifi_scan:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiOperation) -> i32>,
+    pub wifi_operation:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiOperation) -> i32>,
+    pub wifi_result: Option<
+        unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiOperationResult) -> i32,
+    >,
+    pub wifi_cancel:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, out: *mut SqvmWifiOperation) -> i32>,
+    pub wifi_scan_network: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            index: i32,
+            out: *mut SqvmWifiScanNetworkResult,
+        ) -> i32,
+    >,
+    pub device_config_load: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            source: *const u8,
+            source_len: usize,
+            out: *mut SqvmDeviceConfigResult,
+        ) -> i32,
+    >,
+    pub device_config_set: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            key: *const u8,
+            key_len: usize,
+            value: SqvmDeviceConfigValue,
+            out: *mut SqvmDeviceConfigResult,
+        ) -> i32,
+    >,
+    pub device_config_rebind: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            alias: *const u8,
+            alias_len: usize,
+            out: *mut SqvmDeviceConfigResult,
+        ) -> i32,
+    >,
+    pub device_config_save: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            destination: *const u8,
+            destination_len: usize,
+            out: *mut SqvmDeviceConfigResult,
+        ) -> i32,
+    >,
+    pub file_pick_file: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            extension: *const u8,
+            extension_len: usize,
+            out: *mut SqvmFilePickFileResult,
+        ) -> i32,
+    >,
+    pub file_read_text: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            path: *const u8,
+            path_len: usize,
+            out: *mut SqvmFileReadTextResult,
+        ) -> i32,
+    >,
+    pub file_read_lines: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            path: *const u8,
+            path_len: usize,
+            max_lines: i32,
+            out: *mut SqvmFileReadLinesResult,
+        ) -> i32,
+    >,
+    pub system_memory_text: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            out: *mut u8,
+            out_cap: usize,
+            out_len: *mut usize,
+        ) -> i32,
+    >,
+    pub system_storage_text: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            name: *const u8,
+            name_len: usize,
+            out: *mut u8,
+            out_cap: usize,
+            out_len: *mut usize,
+        ) -> i32,
+    >,
+    pub system_start_reason_text: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            out: *mut u8,
+            out_cap: usize,
+            out_len: *mut usize,
+        ) -> i32,
+    >,
+    pub power_sleep:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, wake_after_ms: i32) -> i32>,
 }
 
 impl Default for SqvmCallbacks {

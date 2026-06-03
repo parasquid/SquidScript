@@ -58,24 +58,24 @@ export ZEPHYR_PRISTINE="${ZEPHYR_PRISTINE:-always}"
 PORT="$(resolve_esp_serial_port)"
 
 if [[ "$SKIP_FLASH" != "1" ]]; then
-  "$ROOT/scripts/c3-supermini-zephyr-flash.sh"
+  cargo run --quiet -p squidc -- target flash --target esp32c3-super-mini
 else
-  "$ROOT/scripts/c3-supermini-zephyr-build.sh" >/dev/null
+  cargo run --quiet -p squidc -- target build --target esp32c3-super-mini >/dev/null
 fi
 
 monitor_log="${WORK_DIR}/advertising.log"
-monitor_cmd=(west espressif monitor -p "$PORT" -e zephyr/zephyr.elf)
+monitor_cmd=(cargo run --quiet -p squidc -- target monitor --target esp32c3-super-mini --port "$PORT")
 monitor_shell_command="$(printf '%q ' "${monitor_cmd[@]}")"
 
 set +e
 if command -v script >/dev/null 2>&1; then
   (
-    cd "$ZEPHYR_BUILD_DIR"
+    cd "$ROOT"
     timeout "${LOG_TIMEOUT_SECONDS}s" script -q -e -c "$monitor_shell_command" /dev/null
   ) >"$monitor_log" 2>&1
 else
   (
-    cd "$ZEPHYR_BUILD_DIR"
+    cd "$ROOT"
     timeout "${LOG_TIMEOUT_SECONDS}s" "${monitor_cmd[@]}"
   ) >"$monitor_log" 2>&1
 fi

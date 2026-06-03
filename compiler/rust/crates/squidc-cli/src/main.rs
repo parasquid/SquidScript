@@ -2,6 +2,7 @@ mod app_id;
 mod compile;
 mod package;
 mod serial;
+mod target;
 
 use std::{
     env, fs,
@@ -96,6 +97,10 @@ enum Commands {
         #[command(subcommand)]
         command: ProtocolCommands,
     },
+    Target {
+        #[command(subcommand)]
+        command: TargetCommands,
+    },
 }
 
 impl Commands {
@@ -106,6 +111,7 @@ impl Commands {
             Self::App { .. } => "app",
             Self::Device { .. } => "device",
             Self::Protocol { .. } => "protocol",
+            Self::Target { .. } => "target",
         }
     }
 }
@@ -139,6 +145,16 @@ enum DeviceCommands {
 #[derive(Subcommand, Debug)]
 enum ProtocolCommands {
     Raw(ProtocolRawArgs),
+}
+
+#[derive(Subcommand, Debug)]
+enum TargetCommands {
+    List(TargetListArgs),
+    Inspect(TargetOnlyArgs),
+    Build(TargetBuildArgs),
+    Flash(TargetFlashArgs),
+    Monitor(TargetMonitorArgs),
+    Doctor(TargetDoctorArgs),
 }
 
 #[derive(Args, Debug)]
@@ -244,6 +260,78 @@ struct ProtocolRawArgs {
 }
 
 #[derive(Args, Debug)]
+struct TargetListArgs {}
+
+#[derive(Args, Debug)]
+struct TargetOnlyArgs {
+    #[arg(long)]
+    target: Option<String>,
+}
+
+#[derive(Args, Debug)]
+struct TargetBuildArgs {
+    #[arg(long)]
+    target: Option<String>,
+    #[arg(long)]
+    stack_usage: bool,
+    #[arg(long, value_enum, default_value_t = TargetPristineArg::Auto)]
+    pristine: TargetPristineArg,
+    #[arg(long)]
+    print_plan: bool,
+    #[arg(last = true)]
+    west_args: Vec<String>,
+}
+
+#[derive(Args, Debug)]
+struct TargetFlashArgs {
+    #[arg(long)]
+    target: Option<String>,
+    #[arg(long)]
+    monitor_after_flash: bool,
+    #[arg(long)]
+    print_plan: bool,
+    #[arg(last = true)]
+    west_args: Vec<String>,
+}
+
+#[derive(Args, Debug)]
+struct TargetMonitorArgs {
+    #[arg(long)]
+    target: Option<String>,
+    #[arg(long)]
+    port: Option<String>,
+    #[arg(long)]
+    print_plan: bool,
+    #[arg(last = true)]
+    west_args: Vec<String>,
+}
+
+#[derive(Args, Debug)]
+struct TargetDoctorArgs {
+    #[arg(long)]
+    target: Option<String>,
+    #[arg(long)]
+    port: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum TargetPristineArg {
+    Auto,
+    Always,
+    Never,
+}
+
+impl From<TargetPristineArg> for target::TargetPristine {
+    fn from(value: TargetPristineArg) -> Self {
+        match value {
+            TargetPristineArg::Auto => target::TargetPristine::Auto,
+            TargetPristineArg::Always => target::TargetPristine::Always,
+            TargetPristineArg::Never => target::TargetPristine::Never,
+        }
+    }
+}
+
+#[derive(Args, Debug)]
 struct MonitorArgs {
     #[command(flatten)]
     device: DeviceOnlyOptions,
@@ -335,6 +423,14 @@ fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String>
         },
         Commands::Protocol { command } => match command {
             ProtocolCommands::Raw(args) => protocol_raw(args, human),
+        },
+        Commands::Target { command } => match command {
+            TargetCommands::List(args) => target_list(args, human),
+            TargetCommands::Inspect(args) => target_inspect(args, human),
+            TargetCommands::Build(args) => target_build(args, human),
+            TargetCommands::Flash(args) => target_flash(args, human),
+            TargetCommands::Monitor(args) => target_monitor(args, human),
+            TargetCommands::Doctor(args) => target_doctor(args, human),
         },
     }
 }
@@ -611,6 +707,254 @@ fn protocol_raw(args: ProtocolRawArgs, human: bool) -> Result<Value, String> {
         "requestHex": hex_string(&bytes),
         "responseHex": hex_string(&response)
     }))
+}
+
+fn target_list(_args: TargetListArgs, human: bool) -> Result<Value, String> {
+    let root = target::repo_root();
+    let targets = target::load_targets(&root)?;
+    if human {
+        for target in &targets {
+            let zephyr = if target.zephyr.is_some() {
+                " zephyr=true"
+            } else {
+                " zephyr=false"
+            };
+            println!(
+                "target={} name=\"{}\" status={}{}",
+                target.id,
+                target.name,
+                target.status.as_deref().unwrap_or(""),
+                zephyr
+            );
+        }
+    }
+    Ok(json!({
+        "targets": targets.iter().map(|target| target.summary_json()).collect::<Vec<_>>()
+    }))
+}
+
+fn target_inspect(args: TargetOnlyArgs, human: bool) -> Result<Value, String> {
+    let root = target::repo_root();
+    let target = target::resolve_target_arg(
+        &root,
+        args.target.as_deref(),
+        target::stdin_is_interactive(),
+    )?;
+    let data = target.inspect_json(&root);
+    if human {
+        println!("target={}", target.id);
+        println!("name={}", target.name);
+        println!("status={}", target.status.as_deref().unwrap_or(""));
+        if let Some(zephyr) = &target.zephyr {
+            println!("zephyr.board={}", zephyr.board);
+            println!("zephyr.buildDir={}", root.join(&zephyr.build_dir).display());
+            println!("zephyr.overlay={}", root.join(&zephyr.overlay).display());
+            println!(
+                "zephyr.fallbackSource={}",
+                root.join(&zephyr.fallback_source).display()
+            );
+            println!(
+                "zephyr.targetKconfig={}",
+                root.join(&zephyr.target_kconfig).display()
+            );
+        } else {
+            println!("zephyr.supported=false");
+        }
+    }
+    Ok(data)
+}
+
+fn target_build(args: TargetBuildArgs, human: bool) -> Result<Value, String> {
+    let root = target::repo_root();
+    let target_def = target::resolve_target_arg(
+        &root,
+        args.target.as_deref(),
+        target::stdin_is_interactive(),
+    )?;
+    let plan = target::plan_build_command(
+        &root,
+        &target_def,
+        target::TargetBuildPlanOptions {
+            stack_usage: args.stack_usage,
+            pristine: args.pristine.into(),
+            west_args: args.west_args,
+        },
+    )?;
+    if args.print_plan {
+        if human {
+            print_command_plan(&plan);
+        }
+        return Ok(json!({"target": target_def.summary_json(), "plan": plan.as_json()}));
+    }
+    target::ensure_target_kconfig(&root, &target_def)?;
+    if human {
+        eprintln!("building target {}", target_def.id);
+    }
+    target::run_plan(&plan)?;
+    Ok(json!({"target": target_def.summary_json(), "plan": plan.as_json()}))
+}
+
+fn target_flash(args: TargetFlashArgs, human: bool) -> Result<Value, String> {
+    if !human && args.monitor_after_flash && !args.print_plan {
+        return Err("target flash --json cannot stream monitor output; use --print-plan or omit --monitor-after-flash".to_string());
+    }
+    let root = target::repo_root();
+    let target_def = target::resolve_target_arg(
+        &root,
+        args.target.as_deref(),
+        target::stdin_is_interactive(),
+    )?;
+    let build_plan = target::plan_build_command(
+        &root,
+        &target_def,
+        target::TargetBuildPlanOptions {
+            stack_usage: false,
+            pristine: target::TargetPristine::Auto,
+            west_args: Vec::new(),
+        },
+    )?;
+    let flash_plan = target::plan_flash_command(
+        &root,
+        &target_def,
+        target::TargetFlashPlanOptions {
+            west_args: args.west_args,
+        },
+    )?;
+    let monitor_plan = if args.monitor_after_flash {
+        let port = if args.print_plan {
+            None
+        } else {
+            Some(detect_port()?)
+        };
+        Some(target::plan_monitor_command(
+            &root,
+            &target_def,
+            target::TargetMonitorPlanOptions {
+                port,
+                west_args: Vec::new(),
+            },
+        )?)
+    } else {
+        None
+    };
+    if args.print_plan {
+        if human {
+            print_command_plan(&build_plan);
+            print_command_plan(&flash_plan);
+            if let Some(plan) = &monitor_plan {
+                print_command_plan(plan);
+            }
+        }
+        return Ok(json!({
+            "target": target_def.summary_json(),
+            "plans": {
+                "build": build_plan.as_json(),
+                "flash": flash_plan.as_json(),
+                "monitor": monitor_plan.as_ref().map(|plan| plan.as_json())
+            }
+        }));
+    }
+    target::ensure_target_kconfig(&root, &target_def)?;
+    if human {
+        eprintln!("building target {}", target_def.id);
+    }
+    target::run_plan(&build_plan)?;
+    if human {
+        eprintln!("flashing target {}", target_def.id);
+    }
+    target::run_plan(&flash_plan)?;
+    if let Some(plan) = &monitor_plan {
+        target::run_plan_streaming(plan)?;
+    }
+    Ok(json!({
+        "target": target_def.summary_json(),
+        "plans": {
+            "build": build_plan.as_json(),
+            "flash": flash_plan.as_json(),
+            "monitor": monitor_plan.as_ref().map(|plan| plan.as_json())
+        }
+    }))
+}
+
+fn target_monitor(args: TargetMonitorArgs, human: bool) -> Result<Value, String> {
+    if !human && !args.print_plan {
+        return Err(
+            "target monitor --json requires --print-plan because monitor output is a stream"
+                .to_string(),
+        );
+    }
+    let root = target::repo_root();
+    let target_def = target::resolve_target_arg(
+        &root,
+        args.target.as_deref(),
+        target::stdin_is_interactive(),
+    )?;
+    let plan = target::plan_monitor_command(
+        &root,
+        &target_def,
+        target::TargetMonitorPlanOptions {
+            port: match args.port {
+                Some(port) => Some(port),
+                None if args.print_plan => None,
+                None => Some(detect_port()?),
+            },
+            west_args: args.west_args,
+        },
+    )?;
+    if args.print_plan {
+        if human {
+            print_command_plan(&plan);
+        }
+        return Ok(json!({"target": target_def.summary_json(), "plan": plan.as_json()}));
+    }
+    target::run_plan_streaming(&plan)?;
+    Ok(json!({"target": target_def.summary_json(), "plan": plan.as_json()}))
+}
+
+fn target_doctor(args: TargetDoctorArgs, human: bool) -> Result<Value, String> {
+    let root = target::repo_root();
+    let target_def = target::resolve_target_arg(
+        &root,
+        args.target.as_deref(),
+        target::stdin_is_interactive(),
+    )?;
+    let checks = target::doctor_checks(&root, &target_def, args.port.as_deref());
+    let failed = checks
+        .iter()
+        .any(|check| check["status"].as_str() == Some("fail"));
+    let warning = checks
+        .iter()
+        .any(|check| check["status"].as_str() == Some("warn"));
+    let summary = if failed {
+        "fail"
+    } else if warning {
+        "warn"
+    } else {
+        "ok"
+    };
+    if human {
+        for check in &checks {
+            println!(
+                "[{}] {}: {}",
+                check["status"].as_str().unwrap_or("unknown"),
+                check["name"].as_str().unwrap_or("check"),
+                check["message"].as_str().unwrap_or("")
+            );
+        }
+    }
+    Ok(json!({
+        "target": target_def.summary_json(),
+        "summary": summary,
+        "checks": checks
+    }))
+}
+
+fn print_command_plan(plan: &target::CommandPlan) {
+    println!("cwd={}", plan.cwd.display());
+    for (key, value) in &plan.env {
+        println!("env.{key}={value}");
+    }
+    println!("command={}", plan.command_line());
 }
 
 fn hex_string(bytes: &[u8]) -> String {
@@ -1159,7 +1503,7 @@ fn riscv_c_toolchain_check() -> DoctorCheck {
                 details: json!({
                     "required": true,
                     "path": candidate,
-                    "note": "riscv64-elf-gcc is used with -march=rv32imc -mabi=ilp32 by scripts/c3-supermini-build.sh"
+                    "note": "riscv64-elf-gcc is used with -march=rv32imc -mabi=ilp32 by `squidc target build --target esp32c3-super-mini`"
                 }),
             };
         }
@@ -1703,9 +2047,13 @@ mod tests {
 
     #[test]
     fn parses_grouped_app_run_command() {
-        let cli =
-            Cli::try_parse_from(["squidc", "app", "run", "examples/blinky-supermini/main.squid"])
-                .unwrap();
+        let cli = Cli::try_parse_from([
+            "squidc",
+            "app",
+            "run",
+            "examples/blinky-supermini/main.squid",
+        ])
+        .unwrap();
         let Commands::App {
             command: AppCommands::Run(args),
         } = cli.command
@@ -1727,6 +2075,174 @@ mod tests {
                 "{command} should only exist under squidc app"
             );
         }
+    }
+
+    #[test]
+    fn parses_target_build_command_with_print_plan_and_forwarded_args() {
+        let cli = Cli::try_parse_from([
+            "squidc",
+            "target",
+            "build",
+            "--target",
+            "esp32c3-super-mini",
+            "--stack-usage",
+            "--pristine",
+            "always",
+            "--print-plan",
+            "--",
+            "-DOVERLAY_CONFIG=extra.conf",
+        ])
+        .unwrap();
+        let Commands::Target {
+            command: TargetCommands::Build(args),
+        } = cli.command
+        else {
+            panic!("expected target build");
+        };
+        assert_eq!(args.target.as_deref(), Some("esp32c3-super-mini"));
+        assert!(args.stack_usage);
+        assert!(args.print_plan);
+        assert_eq!(args.pristine, TargetPristineArg::Always);
+        assert_eq!(args.west_args, vec!["-DOVERLAY_CONFIG=extra.conf"]);
+    }
+
+    #[test]
+    fn parses_target_flash_monitor_doctor_and_inspect_commands() {
+        let flash = Cli::try_parse_from([
+            "squidc",
+            "target",
+            "flash",
+            "--target",
+            "esp32c3-super-mini",
+            "--monitor-after-flash",
+            "--",
+            "--runner",
+            "esp32",
+        ])
+        .unwrap();
+        let Commands::Target {
+            command: TargetCommands::Flash(args),
+        } = flash.command
+        else {
+            panic!("expected target flash");
+        };
+        assert_eq!(args.target.as_deref(), Some("esp32c3-super-mini"));
+        assert!(args.monitor_after_flash);
+        assert_eq!(args.west_args, vec!["--runner", "esp32"]);
+
+        let monitor = Cli::try_parse_from([
+            "squidc",
+            "target",
+            "monitor",
+            "--target",
+            "esp32c3-super-mini",
+            "--port",
+            "/dev/ttyACM0",
+        ])
+        .unwrap();
+        let Commands::Target {
+            command: TargetCommands::Monitor(args),
+        } = monitor.command
+        else {
+            panic!("expected target monitor");
+        };
+        assert_eq!(args.target.as_deref(), Some("esp32c3-super-mini"));
+        assert_eq!(args.port.as_deref(), Some("/dev/ttyACM0"));
+
+        let doctor = Cli::try_parse_from([
+            "squidc",
+            "target",
+            "doctor",
+            "--target",
+            "esp32c3-super-mini",
+        ])
+        .unwrap();
+        assert!(matches!(
+            doctor.command,
+            Commands::Target {
+                command: TargetCommands::Doctor(_)
+            }
+        ));
+
+        let inspect = Cli::try_parse_from([
+            "squidc",
+            "target",
+            "inspect",
+            "--target",
+            "esp32c3-super-mini",
+        ])
+        .unwrap();
+        assert!(matches!(
+            inspect.command,
+            Commands::Target {
+                command: TargetCommands::Inspect(_)
+            }
+        ));
+    }
+
+    #[test]
+    fn loads_zephyr_target_metadata_and_plans_build_command() {
+        let root = target::repo_root();
+        let target = target::load_target_by_id(&root, "esp32c3-super-mini").unwrap();
+        assert_eq!(target.id, "esp32c3-super-mini");
+        let zephyr = target.zephyr.as_ref().expect("super mini zephyr metadata");
+        assert_eq!(zephyr.board, "esp32c3_supermini");
+
+        let plan = target::plan_build_command(
+            &root,
+            &target,
+            target::TargetBuildPlanOptions {
+                stack_usage: true,
+                pristine: target::TargetPristine::Always,
+                west_args: vec!["-DOVERLAY_CONFIG=extra.conf".to_string()],
+            },
+        )
+        .unwrap();
+        assert_eq!(plan.program, "west");
+        assert!(plan.args.starts_with(&[
+            "build".to_string(),
+            "--build-dir".to_string(),
+            root.join("build/zephyr/c3-supermini").display().to_string(),
+            "--board".to_string(),
+            "esp32c3_supermini".to_string(),
+            "--pristine".to_string(),
+            "always".to_string(),
+        ]));
+        assert!(plan
+            .env
+            .iter()
+            .any(|(key, value)| { key == "SQUID_ZEPHYR_STACK_USAGE" && value == "1" }));
+        assert!(plan.env.iter().any(|(key, value)| {
+            key == "SQUID_ZEPHYR_TARGET_JSON"
+                && value.ends_with("targets/esp32c3-super-mini.target.json")
+        }));
+        assert!(plan
+            .args
+            .contains(&"-DOVERLAY_CONFIG=extra.conf".to_string()));
+    }
+
+    #[test]
+    fn target_without_zephyr_metadata_is_unsupported_for_build() {
+        let root = target::repo_root();
+        let target = target::load_target_by_id(&root, "xteink-x4").unwrap();
+        let error = target::plan_build_command(
+            &root,
+            &target,
+            target::TargetBuildPlanOptions {
+                stack_usage: false,
+                pristine: target::TargetPristine::Auto,
+                west_args: Vec::new(),
+            },
+        )
+        .unwrap_err();
+        assert!(error.contains("has no Zephyr firmware metadata"));
+    }
+
+    #[test]
+    fn missing_target_fails_noninteractive() {
+        let root = target::repo_root();
+        let error = target::resolve_target_arg(&root, None, false).unwrap_err();
+        assert!(error.contains("pass --target"));
     }
 
     #[test]

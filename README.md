@@ -143,10 +143,10 @@ npm run build
 npm run test:e2e
 ```
 
-Build the ESP32-C3 Zephyr firmware with the repository wrapper:
+Build the ESP32-C3 Super Mini Zephyr firmware through target metadata:
 
 ```sh
-scripts/c3-supermini-build.sh
+cargo run -p squidc -- target build --target esp32c3-super-mini
 ```
 
 ## License
