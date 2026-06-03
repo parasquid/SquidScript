@@ -1,0 +1,12 @@
+app "temp-foreground-timer"
+
+event.on("app.start") {
+  debug.print("temp start")
+  service.timer.after("timer.temp", 1)
+}
+
+event.on("timer.temp") {
+  debug.print("temp timer")
+}
+
+screen("main") {}

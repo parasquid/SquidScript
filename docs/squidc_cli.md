@@ -23,7 +23,10 @@ cargo run -p squidc -- doctor
 command, and launches it as a temporary foreground app. Firmware stages the
 temp SQBC as a temporary app-store file instead of buffering the payload in
 RAM. It does not publish an installed app, does not overwrite `main`, and keeps
-temp app state volatile.
+temp app state volatile. The temp app participates in normal foreground
+lifecycle routing: key events and foreground timers dispatch to it while it is
+current, it can launch installed apps and return through `app.exit`, and a new
+temp run replaces the prior temp route.
 
 ## Scripted REPL Checks
 

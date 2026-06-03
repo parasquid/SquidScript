@@ -38,7 +38,7 @@ static int set_start_reason(struct sq_vm_runtime *runtime, const char *reason)
 }
 
 static int set_step_start(struct sq_app_lifecycle_step *step, const char *app_id,
-			  const char *event, bool set_current)
+			  const char *event, bool set_current, bool temp_app)
 {
 	int result;
 
@@ -52,6 +52,7 @@ static int set_step_start(struct sq_app_lifecycle_step *step, const char *app_id
 	}
 	step->kind = SQ_APP_LIFECYCLE_STEP_START_APP;
 	step->set_current = set_current;
+	step->temp_app = temp_app;
 	return 0;
 }
 
@@ -77,6 +78,29 @@ int sq_app_lifecycle_request_launch(struct sq_vm_runtime *runtime, const uint8_t
 	if (result != 0) {
 		return result;
 	}
+	runtime->lifecycle_target_temp = false;
+	runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_LAUNCH_REQUESTED;
+	return 0;
+}
+
+int sq_app_lifecycle_request_temp_launch(struct sq_vm_runtime *runtime, const uint8_t *app,
+					 size_t app_len)
+{
+	int result;
+
+	if (runtime == NULL || app == NULL || app_len == 0 ||
+	    app_len >= sizeof(runtime->lifecycle_target_app)) {
+		return -EINVAL;
+	}
+	if (sq_vm_runtime_lifecycle_busy(runtime)) {
+		return -EBUSY;
+	}
+	result = copy_app_id_bytes(runtime->lifecycle_target_app,
+				   sizeof(runtime->lifecycle_target_app), app, app_len);
+	if (result != 0) {
+		return result;
+	}
+	runtime->lifecycle_target_temp = true;
 	runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_LAUNCH_REQUESTED;
 	return 0;
 }
@@ -122,6 +146,10 @@ int sq_app_lifecycle_request_sleep(struct sq_vm_runtime *runtime, int32_t wake_a
 	if (runtime == NULL || wake_after_ms <= 0) {
 		return -EINVAL;
 	}
+	if (runtime->current_app_temp) {
+		sq_vm_runtime_record_device_error(runtime, "temp app sleep unsupported");
+		return -ENOTSUP;
+	}
 	if (sq_vm_runtime_lifecycle_busy(runtime)) {
 		return -EBUSY;
 	}
@@ -140,7 +168,9 @@ void sq_app_lifecycle_cancel_pending_after_dispatch_error(struct sq_vm_runtime *
 	    runtime->lifecycle_phase == SQ_VM_RUNTIME_LIFECYCLE_SLEEP_REQUESTED) {
 		runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_IDLE;
 		memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
+		runtime->lifecycle_target_temp = false;
 		memset(runtime->lifecycle_previous_app, 0, sizeof(runtime->lifecycle_previous_app));
+		runtime->lifecycle_previous_app_temp = false;
 	}
 	if (runtime->lifecycle_phase == SQ_VM_RUNTIME_LIFECYCLE_IDLE &&
 	    runtime->arm_phase == SQ_VM_RUNTIME_ARM_REQUESTED) {
@@ -160,7 +190,9 @@ void sq_app_lifecycle_cancel_pending_after_start_failure(struct sq_vm_runtime *r
 	    runtime->lifecycle_phase == SQ_VM_RUNTIME_LIFECYCLE_RETURN_REQUESTED) {
 		runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_IDLE;
 		memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
+		runtime->lifecycle_target_temp = false;
 		memset(runtime->lifecycle_previous_app, 0, sizeof(runtime->lifecycle_previous_app));
+		runtime->lifecycle_previous_app_temp = false;
 	}
 }
 
@@ -178,6 +210,8 @@ int sq_app_lifecycle_push_return(struct sq_vm_runtime *runtime, const char *app_
 	if (result != 0) {
 		return result;
 	}
+	runtime->return_stack_temp[runtime->return_stack_count] =
+		strcmp(runtime->current_app, app_id) == 0 && runtime->current_app_temp;
 	runtime->return_stack_count++;
 	return 0;
 }
@@ -188,14 +222,51 @@ int sq_app_lifecycle_pop_return(struct sq_vm_runtime *runtime, char *out, size_t
 		return -EINVAL;
 	}
 	if (runtime->return_stack_count == 0) {
+		runtime->lifecycle_target_temp = false;
 		return copy_app_id_text(out, out_len, "main");
 	}
 	runtime->return_stack_count--;
 	int result = copy_app_id_text(out, out_len, runtime->return_stack[runtime->return_stack_count]);
 
+	runtime->lifecycle_target_temp = runtime->return_stack_temp[runtime->return_stack_count];
 	memset(runtime->return_stack[runtime->return_stack_count], 0,
 	       sizeof(runtime->return_stack[0]));
+	runtime->return_stack_temp[runtime->return_stack_count] = false;
 	return result;
+}
+
+void sq_app_lifecycle_clear_temp_routes(struct sq_vm_runtime *runtime)
+{
+	if (runtime == NULL) {
+		return;
+	}
+	if (runtime->current_app_temp) {
+		memset(runtime->current_app, 0, sizeof(runtime->current_app));
+		runtime->current_app_temp = false;
+	}
+	if (runtime->lifecycle_target_temp) {
+		memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
+		runtime->lifecycle_target_temp = false;
+	}
+	if (runtime->lifecycle_previous_app_temp) {
+		memset(runtime->lifecycle_previous_app, 0, sizeof(runtime->lifecycle_previous_app));
+		runtime->lifecycle_previous_app_temp = false;
+	}
+	for (size_t i = 0; i < runtime->return_stack_count;) {
+		if (!runtime->return_stack_temp[i]) {
+			i++;
+			continue;
+		}
+		for (size_t j = i; j + 1 < runtime->return_stack_count; j++) {
+			memcpy(runtime->return_stack[j], runtime->return_stack[j + 1],
+			       sizeof(runtime->return_stack[j]));
+			runtime->return_stack_temp[j] = runtime->return_stack_temp[j + 1];
+		}
+		runtime->return_stack_count--;
+		memset(runtime->return_stack[runtime->return_stack_count], 0,
+		       sizeof(runtime->return_stack[0]));
+		runtime->return_stack_temp[runtime->return_stack_count] = false;
+	}
 }
 
 int sq_app_lifecycle_restore_planned_route(
@@ -210,9 +281,12 @@ int sq_app_lifecycle_restore_planned_route(
 
 	runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_IDLE;
 	memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
+	runtime->lifecycle_target_temp = false;
 	memset(runtime->lifecycle_previous_app, 0, sizeof(runtime->lifecycle_previous_app));
+	runtime->lifecycle_previous_app_temp = false;
 	runtime->dispatch_exited = false;
 	memset(runtime->return_stack, 0, sizeof(runtime->return_stack));
+	memset(runtime->return_stack_temp, 0, sizeof(runtime->return_stack_temp));
 	runtime->return_stack_count = 0;
 	for (size_t i = 0; i < return_stack_count; i++) {
 		int result = sq_app_lifecycle_push_return(runtime, return_stack[i]);
@@ -230,6 +304,7 @@ int sq_app_lifecycle_next_step(struct sq_vm_runtime *runtime, const char *due_ap
 			       const char *due_event, struct sq_app_lifecycle_step *out)
 {
 	int result;
+	bool target_temp;
 
 	if (runtime == NULL || out == NULL) {
 		return -EINVAL;
@@ -251,7 +326,8 @@ int sq_app_lifecycle_next_step(struct sq_vm_runtime *runtime, const char *due_ap
 
 	case SQ_VM_RUNTIME_LIFECYCLE_SLEEP_REQUESTED:
 		runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_SLEEP_CHECKPOINT;
-		return set_step_start(out, runtime->current_app, "power.sleep", false);
+		return set_step_start(out, runtime->current_app, "power.sleep", false,
+				      runtime->current_app_temp);
 
 	case SQ_VM_RUNTIME_LIFECYCLE_EXIT_FOR_LAUNCH:
 		runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_IDLE;
@@ -265,15 +341,19 @@ int sq_app_lifecycle_next_step(struct sq_vm_runtime *runtime, const char *due_ap
 		if (result != 0) {
 			return result;
 		}
-		result = set_step_start(out, runtime->lifecycle_target_app, "app.start", true);
+		target_temp = runtime->lifecycle_target_temp;
+		result = set_step_start(out, runtime->lifecycle_target_app, "app.start", true,
+					target_temp);
 		memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
+		runtime->lifecycle_target_temp = false;
 		runtime->dispatch_exited = false;
 		return result;
 
 	case SQ_VM_RUNTIME_LIFECYCLE_LAUNCH_REQUESTED:
 		if (runtime->current_app[0] != '\0') {
 			runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_EXIT_FOR_LAUNCH;
-			return set_step_start(out, runtime->current_app, "app.exit", false);
+			return set_step_start(out, runtime->current_app, "app.exit", false,
+					      runtime->current_app_temp);
 		}
 		if (!app_id_is_main(runtime->lifecycle_target_app)) {
 			result = sq_app_lifecycle_push_return(runtime, "main");
@@ -286,8 +366,11 @@ int sq_app_lifecycle_next_step(struct sq_vm_runtime *runtime, const char *due_ap
 		if (result != 0) {
 			return result;
 		}
-		result = set_step_start(out, runtime->lifecycle_target_app, "app.start", true);
+		target_temp = runtime->lifecycle_target_temp;
+		result = set_step_start(out, runtime->lifecycle_target_app, "app.start", true,
+					target_temp);
 		memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
+		runtime->lifecycle_target_temp = false;
 		return result;
 
 	case SQ_VM_RUNTIME_LIFECYCLE_RETURN_REQUESTED:
@@ -301,8 +384,11 @@ int sq_app_lifecycle_next_step(struct sq_vm_runtime *runtime, const char *due_ap
 		if (result != 0) {
 			return result;
 		}
-		result = set_step_start(out, runtime->lifecycle_target_app, "app.start", true);
+		target_temp = runtime->lifecycle_target_temp;
+		result = set_step_start(out, runtime->lifecycle_target_app, "app.start", true,
+					target_temp);
 		memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
+		runtime->lifecycle_target_temp = false;
 		return result;
 
 	case SQ_VM_RUNTIME_LIFECYCLE_IDLE:
@@ -329,7 +415,7 @@ int sq_app_lifecycle_next_step(struct sq_vm_runtime *runtime, const char *due_ap
 		if (result != 0) {
 			return result;
 		}
-		result = set_step_start(out, due_app, due_event, true);
+		result = set_step_start(out, due_app, due_event, true, false);
 		return result;
 	}
 

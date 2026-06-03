@@ -48,9 +48,11 @@ cargo run -p squidc -- device resources
 
 `app run` is the fast host-compiled temp-app path: `squidc` compiles the source
 on the host, uploads the resulting SQBC through the Zephyr temp-run protocol,
-and launches it without installing a foreground app. `app install` is the
-persistent path: source input is still compiled on the host, then uploaded as
-installed SQBC or package data. Use `device output`, `device trace`,
+and launches it as a temporary foreground app through the normal lifecycle
+handoff path. The temp app is not published into the installed app registry and
+does not overwrite `main`. `app install` is the persistent path: source input
+is still compiled on the host, then uploaded as installed SQBC or package data.
+Use `device output`, `device trace`,
 `device drawlog`, `device lifecycle`, `device errors`, and `device resources`
 to inspect firmware-visible app behavior after launch.
 

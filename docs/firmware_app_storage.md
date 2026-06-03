@@ -32,7 +32,11 @@ rather than silently falling through to fallback behavior.
 
 `RUN.TEMP` bytecode is staged as a temporary app-store file instead of being
 buffered in RAM. It is not published into the installed app registry and does
-not overwrite `main`.
+not overwrite `main`. On commit, firmware resets the temp app's volatile state
+record and queues the temp app as a normal foreground lifecycle launch. While
+the temp app is current, foreground key events and foreground timers reuse the
+temp SQBC/state backend. Starting another temp run replaces the prior temp
+foreground route and state.
 
 The ESP32-C3 Zephyr reference firmware keeps eight installed-app registry
 entries resident in RAM, covering the current measured app workloads without
@@ -241,8 +245,10 @@ loaded strings are retained in the VM string interner. `state.save()` writes
 the current typed record.
 `state.reset()` clears the persistent state record for the app.
 
-`RUN.TEMP` state is volatile and RAM-backed, bounded to the VM saved-state
-capacity. Only the temporary SQBC bytecode artifact is file-backed.
+`RUN.TEMP` state is volatile and file-backed under the temp app-store area so
+the same VM storage callback shape is used for temp and installed apps. It is
+not published as installed app state and is reset when a new temp run is
+committed.
 
 ## Planned Sleep Lifecycle Checkpoint
 
@@ -262,7 +268,9 @@ foreground timers, trigger event rows, or app content state. On wake, firmware
 restarts the restored foreground app with `app.start` and
 `system.startReason() == "wake"`, re-registers armed app triggers by reading
 current installed app metadata, and preserves return-stack behavior for
-`app.exit()`. Apps remain responsible for saving and loading their own content
-state with `state.save()` and `state.load()`.
+`app.exit()`. Temp foreground apps are not eligible for planned-resume records
+because their staged SQBC slot is replaceable. Apps remain responsible for
+saving and loading their own content state with `state.save()` and
+`state.load()`.
 See `docs/app_lifecycle_state_machine.md` for planned sleep and wake restore
 in the broader app lifecycle state machine.

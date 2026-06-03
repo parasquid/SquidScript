@@ -23,11 +23,14 @@ struct sq_app_lifecycle_step {
 	char app_id[SQ_APP_STORE_APP_ID_MAX];
 	char event[SQ_VM_RUNTIME_EVENT_LEN];
 	bool set_current;
+	bool temp_app;
 	int32_t wake_after_ms;
 };
 
 int sq_app_lifecycle_request_launch(struct sq_vm_runtime *runtime, const uint8_t *app,
 				    size_t app_len);
+int sq_app_lifecycle_request_temp_launch(struct sq_vm_runtime *runtime, const uint8_t *app,
+					 size_t app_len);
 int sq_app_lifecycle_request_arm(struct sq_vm_runtime *runtime, const uint8_t *app,
 				 size_t app_len);
 int sq_app_lifecycle_cancel_pending_arm(struct sq_vm_runtime *runtime, const uint8_t *app,
@@ -39,6 +42,7 @@ void sq_app_lifecycle_cancel_pending_after_start_failure(struct sq_vm_runtime *r
 							 int result);
 int sq_app_lifecycle_push_return(struct sq_vm_runtime *runtime, const char *app_id);
 int sq_app_lifecycle_pop_return(struct sq_vm_runtime *runtime, char *out, size_t out_len);
+void sq_app_lifecycle_clear_temp_routes(struct sq_vm_runtime *runtime);
 int sq_app_lifecycle_restore_planned_route(
 	struct sq_vm_runtime *runtime,
 	const char return_stack[SQ_VM_RUNTIME_RETURN_STACK_MAX][SQ_APP_STORE_APP_ID_MAX],

@@ -310,6 +310,19 @@ ZTEST(squidscript_protocol, test_planned_resume_record_deduplicates_armed_app_id
 	zassert_str_equal(record.armed_apps[0], "break-reminder");
 }
 
+ZTEST(squidscript_protocol, test_planned_resume_rejects_temp_foreground_app)
+{
+	struct sq_vm_runtime runtime = {0};
+	struct sq_device_planned_resume_record record = {0};
+
+	sq_vm_runtime_init(&runtime);
+	sq_vm_runtime_reset(&runtime);
+	strcpy(runtime.current_app, "temp-reader");
+	runtime.current_app_temp = true;
+
+	zassert_equal(sq_device_protocol_planned_resume_from_runtime(&runtime, &record), -ENOTSUP);
+}
+
 ZTEST(squidscript_protocol, test_lifecycle_state_machine_restores_planned_route)
 {
 	struct sq_vm_runtime runtime = {0};
@@ -2405,14 +2418,112 @@ ZTEST(squidscript_protocol, test_foreground_timers_clear_when_armed_app_takes_fo
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }
 
-ZTEST(squidscript_protocol, test_handles_temp_run_commit_dispatches_file_staged_app_start)
+static int run_temp_fixture(const struct sq_device_protocol_context *context, const char *app_id,
+			    const uint8_t *sqbc, size_t sqbc_len)
 {
 	uint8_t begin_payload[64];
-	uint8_t chunk_payload[512];
-	uint8_t request[768];
+	uint8_t chunk_payload[1024];
+	uint8_t request[1200];
 	uint8_t response[128];
 	size_t payload_len = 0;
 	size_t response_len = 0;
+	int result;
+
+	if (sqbc_len > sizeof(chunk_payload) - 32) {
+		return -ENOSPC;
+	}
+
+	result = sq_protocol_append_string_field(begin_payload, sizeof(begin_payload),
+						 &payload_len, 1, app_id);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	result = sq_protocol_append_u64_field(begin_payload, sizeof(begin_payload), &payload_len, 2,
+					      sqbc_len);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	result = sq_protocol_append_u64_field(begin_payload, sizeof(begin_payload), &payload_len, 3,
+					      sq_protocol_crc32(sqbc, sqbc_len));
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	result = sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_TEMP_RUN_BEGIN,
+						 SQ_STATUS_OK, 50, begin_payload, payload_len,
+						 request, sizeof(request));
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	memcpy(&request[SQ_PROTOCOL_HEADER_LEN], begin_payload, payload_len);
+	result = sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN + payload_len,
+						 context, response, sizeof(response),
+						 &response_len);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+
+	payload_len = 0;
+	result = sq_protocol_append_u64_field(chunk_payload, sizeof(chunk_payload), &payload_len, 1,
+					      0);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	result = sq_protocol_append_bytes_field(chunk_payload, sizeof(chunk_payload), &payload_len,
+						2, sqbc, sqbc_len);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	result = sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_TEMP_RUN_CHUNK,
+						 SQ_STATUS_OK, 51, chunk_payload, payload_len,
+						 request, sizeof(request));
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	memcpy(&request[SQ_PROTOCOL_HEADER_LEN], chunk_payload, payload_len);
+	result = sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN + payload_len,
+						 context, response, sizeof(response),
+						 &response_len);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+
+	result = sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_TEMP_RUN_COMMIT,
+						 SQ_STATUS_OK, 52, NULL, 0, request,
+						 sizeof(request));
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	return sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN, context, response,
+					       sizeof(response), &response_len);
+}
+
+static int dispatch_select_key(const struct sq_device_protocol_context *context)
+{
+	uint8_t payload[32];
+	uint8_t request[128];
+	uint8_t response[512];
+	size_t payload_len = 0;
+	size_t response_len = 0;
+	int result;
+
+	result = sq_protocol_append_string_field(payload, sizeof(payload), &payload_len, 1,
+						 "SELECT");
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	result = sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_KEY,
+						 SQ_STATUS_OK, 60, payload, payload_len,
+						 request, sizeof(request));
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	memcpy(&request[SQ_PROTOCOL_HEADER_LEN], payload, payload_len);
+	return sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN + payload_len,
+					       context, response, sizeof(response), &response_len);
+}
+
+ZTEST(squidscript_protocol, test_handles_temp_run_commit_dispatches_file_staged_app_start)
+{
 	struct sq_device_identity identity = {
 		.target = "esp32c3-supermini",
 		.firmware = "squidscript-zephyr",
@@ -2420,11 +2531,13 @@ ZTEST(squidscript_protocol, test_handles_temp_run_commit_dispatches_file_staged_
 	};
 	struct sq_device_temp_session temp_session = {0};
 	struct sq_vm_runtime runtime = {0};
+	struct sq_app_store_vm_storage launch_storage = {0};
 	struct sq_device_protocol_context context = {
 		.identity = &identity,
 		.temp_session = &temp_session,
 		.runtime = &runtime,
 		.store_mount_point = test_fs_mount.mnt_point,
+		.launch_storage = &launch_storage,
 	};
 
 	zassert_equal(mount_test_fs(), 0, "mount failed");
@@ -2432,60 +2545,114 @@ ZTEST(squidscript_protocol, test_handles_temp_run_commit_dispatches_file_staged_
 	zassert_true(sizeof(temp_session) < 512,
 		     "temp-run session must not reserve full SQBC payload RAM");
 
-	zassert_equal(sq_protocol_append_string_field(begin_payload, sizeof(begin_payload),
-						     &payload_len, 1, "temp-app"),
+	zassert_equal(run_temp_fixture(&context, "temp-app", headless_counter_sqbc,
+				       sizeof(headless_counter_sqbc)),
 		      SQ_PROTOCOL_OK);
-	zassert_equal(sq_protocol_append_u64_field(begin_payload, sizeof(begin_payload),
-						  &payload_len, 2,
-						  sizeof(headless_counter_sqbc)),
-		      SQ_PROTOCOL_OK);
-	zassert_equal(sq_protocol_append_u64_field(begin_payload, sizeof(begin_payload),
-						  &payload_len, 3,
-						  sq_protocol_crc32(headless_counter_sqbc,
-								    sizeof(headless_counter_sqbc))),
-		      SQ_PROTOCOL_OK);
-	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_TEMP_RUN_BEGIN,
-						      SQ_STATUS_OK, 50, begin_payload,
-						      payload_len, request, sizeof(request)),
-		      SQ_PROTOCOL_OK);
-	memcpy(&request[SQ_PROTOCOL_HEADER_LEN], begin_payload, payload_len);
-	zassert_equal(sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN + payload_len,
-						      &context, response, sizeof(response),
-						      &response_len),
-		      SQ_PROTOCOL_OK);
-
-	payload_len = 0;
-	zassert_equal(sq_protocol_append_u64_field(chunk_payload, sizeof(chunk_payload),
-						  &payload_len, 1, 0),
-		      SQ_PROTOCOL_OK);
-	zassert_equal(sq_protocol_append_bytes_field(chunk_payload, sizeof(chunk_payload),
-						    &payload_len, 2, headless_counter_sqbc,
-						    sizeof(headless_counter_sqbc)),
-		      SQ_PROTOCOL_OK);
-	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_TEMP_RUN_CHUNK,
-						      SQ_STATUS_OK, 51, chunk_payload,
-						      payload_len, request, sizeof(request)),
-		      SQ_PROTOCOL_OK);
-	memcpy(&request[SQ_PROTOCOL_HEADER_LEN], chunk_payload, payload_len);
-	zassert_equal(sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN + payload_len,
-						      &context, response, sizeof(response),
-						      &response_len),
-		      SQ_PROTOCOL_OK);
-
-	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_TEMP_RUN_COMMIT,
-						      SQ_STATUS_OK, 52, NULL, 0, request,
-						      sizeof(request)),
-		      SQ_PROTOCOL_OK);
-	zassert_equal(sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN, &context,
-						      response, sizeof(response), &response_len),
-		      SQ_PROTOCOL_OK);
-	zassert_true(response_len >= SQ_PROTOCOL_HEADER_LEN);
+	zassert_equal(sq_device_protocol_poll(&context), 0);
 	zassert_equal(runtime.status, SQ_VM_RUNTIME_RUNNING);
+	zassert_str_equal(runtime.current_app, "temp-app");
+	zassert_true(runtime.current_app_temp);
 	wait_runtime_done(&runtime);
 	zassert_equal(runtime.status, SQ_VM_RUNTIME_COMPLETE);
 	zassert_equal(runtime.result_code, 0);
 	zassert_equal(runtime.trace_count, 1);
 	zassert_str_equal(runtime.traces[0], "app.start");
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
+ZTEST(squidscript_protocol, test_temp_run_foreground_timer_reuses_temp_backend)
+{
+	struct sq_device_identity identity = {
+		.target = "esp32c3-supermini",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_device_temp_session temp_session = {0};
+	struct sq_vm_runtime runtime = {0};
+	struct sq_app_store_vm_storage launch_storage = {0};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.temp_session = &temp_session,
+		.runtime = &runtime,
+		.store_mount_point = test_fs_mount.mnt_point,
+		.launch_storage = &launch_storage,
+		.fallback_app = &sq_zephyr_fallback_app,
+	};
+
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(format_test_app_store(), 0);
+	zassert_equal(run_temp_fixture(&context, "temp-foreground-timer",
+				       temp_foreground_timer_sqbc,
+				       sizeof(temp_foreground_timer_sqbc)),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(poll_until_current_app(&context, &runtime, "temp-foreground-timer"), 0);
+	wait_runtime_done(&runtime);
+	zassert_str_equal(runtime.current_app, "temp-foreground-timer");
+	zassert_equal(runtime.output_count, 1);
+	zassert_str_equal(runtime.outputs[0], "temp start");
+	zassert_equal(poll_until_output_count(&context, &runtime, 2), 0);
+	zassert_str_equal(runtime.current_app, "temp-foreground-timer");
+	zassert_equal(runtime.output_count, 2);
+	zassert_str_equal(runtime.outputs[1], "temp timer");
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
+ZTEST(squidscript_protocol, test_temp_run_can_launch_installed_app_and_return_to_temp)
+{
+	struct sq_device_identity identity = {
+		.target = "esp32c3-supermini",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_device_temp_session temp_session = {0};
+	struct sq_vm_runtime runtime = {0};
+	struct sq_app_registry registry = {0};
+	struct sq_app_store_vm_storage launch_storage = {0};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.registry = &registry,
+		.temp_session = &temp_session,
+		.runtime = &runtime,
+		.store_mount_point = test_fs_mount.mnt_point,
+		.launch_storage = &launch_storage,
+		.fallback_app = &sq_zephyr_fallback_app,
+	};
+
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(format_test_app_store(), 0);
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "reader", reader_exit_sqbc,
+					       sizeof(reader_exit_sqbc)),
+		      0);
+	zassert_equal(sq_app_store_scan_registry(test_fs_mount.mnt_point, &registry), 0);
+	zassert_equal(run_temp_fixture(&context, "temp-foreground-launcher",
+				       temp_foreground_launcher_sqbc,
+				       sizeof(temp_foreground_launcher_sqbc)),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(poll_until_current_app(&context, &runtime, "temp-foreground-launcher"), 0);
+	wait_runtime_done(&runtime);
+	zassert_str_equal(runtime.current_app, "temp-foreground-launcher");
+	zassert_equal(runtime.output_count, 1);
+	zassert_str_equal(runtime.outputs[0], "temp start");
+
+	zassert_equal(dispatch_select_key(&context), SQ_PROTOCOL_OK);
+	wait_runtime_done(&runtime);
+	zassert_equal(poll_until_current_app(&context, &runtime, "reader"), 0);
+	zassert_equal(runtime.return_stack_count, 2);
+	zassert_str_equal(runtime.return_stack[0], "main");
+	zassert_str_equal(runtime.return_stack[1], "temp-foreground-launcher");
+	zassert_equal(runtime.output_count, 3);
+	zassert_str_equal(runtime.outputs[1], "temp exit");
+	zassert_str_equal(runtime.outputs[2], "reader start");
+
+	zassert_equal(dispatch_select_key(&context), SQ_PROTOCOL_OK);
+	wait_runtime_done(&runtime);
+	zassert_equal(poll_until_current_app(&context, &runtime, "temp-foreground-launcher"), 0);
+	zassert_equal(runtime.return_stack_count, 1);
+	zassert_str_equal(runtime.return_stack[0], "main");
+	zassert_str_equal(runtime.current_app, "temp-foreground-launcher");
+	zassert_str_equal(runtime.outputs[runtime.output_count - 1], "temp start");
 
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }

@@ -32,6 +32,11 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   distinguish pre-existing failures from regressions, and restore the test
   baseline before continuing unless the user explicitly narrows the scope or a
   concrete blocker makes that impossible.
+- When an agent encounters behavior that could plausibly be a bug, regression,
+  semantic gap, or documentation mismatch, highlight it explicitly to the user
+  with the evidence observed and whether it was verified, suspected, or still
+  ambiguous. Do not silently treat possible bugs as incidental tool noise or
+  bury them in a long status update.
 
 ## Documentation Planning
 

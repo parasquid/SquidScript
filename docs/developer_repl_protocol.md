@@ -105,8 +105,8 @@ the same 40-byte storage capacity including the terminating NUL byte.
 Install commit verifies byte count and CRC32 before publishing
 `/sq/apps/<app-id>/main.sqbc`; resource commit publishes under
 `/sq/apps/<app-id>/<resource-path>`; temp-run commit verifies byte count and
-CRC32 before launching the temporary foreground app from
-`/sq/tmp/temp-run.sqbc.tmp`.
+CRC32, stages `/sq/tmp/temp-run.sqbc.tmp`, resets volatile temp state, and
+queues the temporary foreground app through the normal lifecycle path.
 
 Installed-app, temp-run, and resource begin/chunk/commit commands use
 caller-owned buffers across the C/Rust boundary. Zephyr passes the received
@@ -181,6 +181,12 @@ firmware uses the target-specific built-in fallback app as logical `main`.
 The command response is delayed until that bounded lifecycle chain drains, so a
 successful host launch means the target app has been selected through the same
 foreground handoff path used by app-driven launch.
+Host `app run` uses the same lifecycle model with a temporary foreground app.
+The staged temp SQBC is not installed in the registry, but while it is current,
+foreground key events and foreground timers dispatch through the temp backend
+instead of installed-app storage. Starting another temp run replaces the prior
+temp route and volatile temp state. Planned sleep does not persist temp
+foreground routes because the staged SQBC slot is replaceable.
 See `docs/app_lifecycle_state_machine.md` for the full lifecycle state machine,
 failure cases, fallback `main` behavior, and reset versus storage-format test
 isolation guidance. See `docs/firmware_state_machines.md` for the protocol

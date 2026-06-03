@@ -856,7 +856,7 @@ firmware/
 
 The firmware app-lifecycle host owns app registry access, bytecode validation,
 launch transitions, crash recovery, root `main.sqbc` restart, and returning
-control to the previous installed return target.
+control to the previous foreground return target.
 
 A user-facing app picker or home screen is an ordinary SquidScript app,
 commonly installed as root `main.sqbc`. Target profiles must not require a

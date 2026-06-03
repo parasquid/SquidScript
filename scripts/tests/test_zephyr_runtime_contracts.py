@@ -860,18 +860,17 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
 
         self.assertIn("if !out_action.is_null() {", ffi_rs)
 
-    def test_temp_run_commit_uses_direct_event_start(self):
+    def test_temp_run_commit_requests_lifecycle_temp_launch(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")
         start = protocol.index("static int __noinline commit_temp_run")
         end = protocol.index("static int __noinline commit_install")
         body = protocol[start:end]
 
-        self.assertIn("context->runtime->job_backend = sq_vm_fs_storage_backend", body)
+        self.assertIn("sq_vm_fs_storage_backend", body)
         self.assertIn("context->runtime->job_backend.reset_state", body)
-        self.assertIn("sq_vm_runtime_start_event(context->runtime, &context->runtime->job_backend,",
-                      body)
-        self.assertIn('(const uint8_t *)"app.start"', body)
-        self.assertIn('sizeof("app.start") - 1', body)
+        self.assertIn("sq_app_lifecycle_clear_temp_routes(context->runtime)", body)
+        self.assertIn("sq_app_lifecycle_request_temp_launch", body)
+        self.assertNotIn("sq_vm_runtime_start_event", body)
         self.assertNotIn("struct sq_vm_storage_backend backend;", body)
         self.assertNotIn("sq_vm_runtime_start(context->runtime, &backend,", body)
 
@@ -1156,7 +1155,7 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
         self.assertIn("sq_vm_runtime_next_due_armed_timer", body)
         self.assertIn("due_app, sizeof(due_app), due_event", body)
         self.assertIn("(const uint8_t *)step.event", body)
-        self.assertIn("strlen(step.event), step.set_current);", body)
+        self.assertIn("strlen(step.event), step.set_current, step.temp_app);", body)
         self.assertIn("memmove(runtime->event, event, event_len);", runtime)
         self.assertIn("runtime->event[event_len] = '\\0';", runtime)
 
@@ -1179,7 +1178,9 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
         self.assertNotIn("memcpy(app_id_buffer, app_id, app_id_len);", body)
         self.assertIn("sq_app_store_vm_storage_for_app_bytes", app_store_h)
         self.assertIn("sq_app_store_vm_storage_for_app_bytes", app_store_c)
-        self.assertIn("sq_app_store_vm_storage_for_app_bytes(context->store_mount_point,", body)
+        self.assertIn("sq_app_store_vm_storage_for_app_bytes", body)
+        self.assertIn("use_temp_backend = context->runtime->current_app_temp", body)
+        self.assertIn("&context->runtime->job_backend", body)
         self.assertIn("sq_vm_runtime_start_event(context->runtime, &backend, event, event_len)", body)
 
     def test_key_dispatch_uses_runtime_event_scratch(self):
@@ -1305,10 +1306,12 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
         self.assertIn("sqvm_context_init_in_place", dispatch_body)
         self.assertNotIn("clear_dispatch_state(runtime);", dispatch_body)
         self.assertIn("sq_vm_runtime_reset_vm_context(context->runtime)", start_body)
-        self.assertIn("set_current || strlen(context->runtime->current_app) != app_id_len", start_body)
+        self.assertIn("set_current || context->runtime->current_app_temp ||", start_body)
+        self.assertIn("strlen(context->runtime->current_app) != app_id_len", start_body)
         self.assertIn("memcmp(context->runtime->current_app, app_id, app_id_len) != 0", start_body)
         self.assertNotIn("char previous_app[SQ_APP_STORE_APP_ID_MAX];", start_body)
         self.assertIn("context->runtime->lifecycle_previous_app", start_body)
+        self.assertIn("context->runtime->lifecycle_previous_app_temp", start_body)
         self.assertIn("memset(context->runtime->lifecycle_previous_app, 0,", start_body)
 
     def test_installed_app_start_uses_byte_slice_runtime_start(self):

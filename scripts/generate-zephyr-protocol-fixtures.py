@@ -49,7 +49,18 @@ def main() -> int:
                 return fail(f"fixture source must use .squid extension: {source}")
             sqbc = tmp_path / f"{source.stem}.sqbc"
             result = subprocess.run(
-                ["cargo", "run", "-p", "squidc", "--", "build", str(source), "--out", str(sqbc)],
+                [
+                    "cargo",
+                    "run",
+                    "-p",
+                    "squidc",
+                    "--",
+                    "app",
+                    "build",
+                    str(source),
+                    "--out",
+                    str(sqbc),
+                ],
                 cwd=ROOT,
                 text=True,
                 capture_output=True,

@@ -257,10 +257,13 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	memset(runtime->traces, 0, sizeof(runtime->traces));
 	runtime->trace_count = 0;
 	memset(runtime->current_app, 0, sizeof(runtime->current_app));
+	runtime->current_app_temp = false;
 	runtime->start_apply_bindings = false;
 	runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_IDLE;
 	memset(runtime->lifecycle_target_app, 0, sizeof(runtime->lifecycle_target_app));
+	runtime->lifecycle_target_temp = false;
 	memset(runtime->lifecycle_previous_app, 0, sizeof(runtime->lifecycle_previous_app));
+	runtime->lifecycle_previous_app_temp = false;
 	runtime->arm_phase = SQ_VM_RUNTIME_ARM_IDLE;
 	memset(runtime->arm_target_app, 0, sizeof(runtime->arm_target_app));
 	runtime->planned_sleep_ready = false;
@@ -268,6 +271,7 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	strncpy(runtime->start_reason, "boot", sizeof(runtime->start_reason) - 1);
 	runtime->start_reason[sizeof(runtime->start_reason) - 1] = '\0';
 	memset(runtime->return_stack, 0, sizeof(runtime->return_stack));
+	memset(runtime->return_stack_temp, 0, sizeof(runtime->return_stack_temp));
 	runtime->return_stack_count = 0;
 	memset(runtime->armed_timers, 0, sizeof(runtime->armed_timers));
 	runtime->armed_timer_count = 0;

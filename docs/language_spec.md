@@ -131,8 +131,8 @@ Production device execution flow:
 7. Runtime waits for input, timer, service, or app lifecycle events.
 8. Runtime dispatches matching event handlers.
 9. Runtime records recoverable errors and crash diagnostics.
-10. If an app starts another app, firmware runs `event.on("app.exit")` and stores only the installed app id as a return target.
-11. When an app exits, firmware starts the previous installed return target fresh with `event.on("app.start")`.
+10. If an app starts another app, firmware runs `event.on("app.exit")` and stores the current foreground app id as a return target.
+11. When an app exits, firmware starts the previous foreground return target fresh with `event.on("app.start")`.
 12. If no return target exists, firmware restarts installed `main.sqbc`.
 
 See `docs/app_lifecycle_state_machine.md` for the foreground lifecycle state
@@ -1966,9 +1966,9 @@ screen.refresh()
 app.exit()
 
 Exits the current app session. Firmware dispatches `event.on("app.exit")`,
-clears session-local timers, then starts the next installed return target with
-`event.on("app.start")`. If no return target exists, firmware restarts
-installed `main.sqbc`.
+clears session-local timers, then starts the next foreground return target with
+`event.on("app.start")`. If no return target exists, firmware restarts logical
+`main`.
 
 Example:
 
@@ -2099,6 +2099,8 @@ firmware restores the foreground app by dispatching `app.start` with
 `system.startReason() == "wake"`, re-registers armed app triggers from current
 installed app metadata, and preserves app-exit return behavior through the
 restored return stack.
+Temp foreground apps are not eligible for planned resume because their staged
+SQBC slot is replaceable.
 
 ```squid
 event.on("key.POWER") {
@@ -3512,8 +3514,8 @@ Launch flow:
 10. runtime runs matching event handler
 11. runtime renders if requested
 12. runtime saves state if requested
-13. if the app starts another app, firmware runs `event.on("app.exit")`, clears session-local timers, and records only the installed app id as a return target
-14. when an app exits, firmware starts the previous installed return target fresh with `event.on("app.start")`
+13. if the app starts another app, firmware runs `event.on("app.exit")`, clears session-local timers, and records the current foreground app id as a return target
+14. when an app exits, firmware starts the previous foreground return target fresh with `event.on("app.start")`
 15. when no return target exists, firmware restarts installed `main.sqbc`
 
 Only one app is active at a time. The active foreground app keeps in-memory
@@ -3541,7 +3543,7 @@ Bytecode validation error:
 Runtime error:
 - execution stops
 - error is recorded
-- user is returned to the previous installed return target, or root `main.sqbc`
+- user is returned to the previous foreground return target, or logical `main`
   is restarted
 
 Recoverable API failure:

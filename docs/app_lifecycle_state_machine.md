@@ -10,8 +10,9 @@ shape used by the device protocol, app store, and hardware harnesses.
 - The logical root app id is `main`. If installed `main` is absent and the
   target provides a built-in fallback app, fallback `main` is used only as the
   logical root.
-- The process stack stores installed app ids that should be restarted when the
-  foreground app calls `app.exit`.
+- The process stack stores foreground app ids that should be restarted when the
+  foreground app calls `app.exit`. Temp-run app ids may appear in the live
+  process stack but are volatile and are not persisted for planned resume.
 - A lifecycle handoff starts a fresh VM session and dispatches `app.start` or
   the armed trigger event. Non-lifecycle foreground events reuse the current VM
   session.
@@ -50,6 +51,7 @@ stateDiagram-v2
 | --- | --- | --- | --- |
 | Host `app launch <id>` with no current app | Idle | Use logical `main` as the return target, set start reason `"launch"`, start `<id>` fresh. | `<id>` |
 | Host `app launch <id>` with current app | Idle | Dispatch current `app.exit`, push current app id, set start reason `"launch"`, start `<id>` fresh. | `<id>` |
+| Host `app run <source>` | Idle or current app | Stage temp SQBC, reset volatile temp state, then use the same lifecycle launch chain as host `app launch`. Foreground key and timer events dispatch through the temp backend while it is current. | temp app id |
 | In-app `app.launch(id)` | Current VM event | Queue the same handoff used by host `app launch`. A second lifecycle request before the first drains fails the dispatch and does not leave a pending handoff. | `id` |
 | In-app `app.arm(id)` | Current VM event | Queue trigger metadata registration for `id`. This may coexist with a foreground launch request. | unchanged |
 | In-app `app.exit()` | Current VM event | Pop the process stack. If empty, use logical `main`. Set start reason `"return"` and start that app fresh. | popped app or `main` |
@@ -69,6 +71,8 @@ stateDiagram-v2
   `app.exit` handler do not wedge host/app launches.
 - If planned sleep checkpoint writing fails, firmware records a diagnostic and
   does not treat the lifecycle record as valid.
+- Planned sleep is rejected for temp foreground apps because temp SQBC is staged
+  in a replaceable slot and cannot be restored after boot.
 - If planned wake restore cannot start the recorded active app, firmware records
   `planned resume app missing` and returns to normal root-start behavior.
 
