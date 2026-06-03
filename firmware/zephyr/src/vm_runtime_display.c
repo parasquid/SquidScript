@@ -115,6 +115,26 @@ int32_t runtime_display_info(void *user_data, SqvmDisplayInfo *out)
 	memset(out, 0, sizeof(*out));
 	out->ok = true;
 	out->available = false;
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_TARGET_DISPLAY_SSD1677_EXPECTED)
+	runtime_display_info_text("unavailable", &out->status, &out->status_len);
+	runtime_display_info_text("display.default", &out->binding, &out->binding_len);
+	runtime_display_info_text("ssd1677", &out->driver, &out->driver_len);
+	runtime_display_info_text("spi", &out->transport, &out->transport_len);
+	out->width = 800;
+	out->height = 480;
+	out->physical_width = 800;
+	out->physical_height = 480;
+	out->rotation = 0;
+	runtime_display_info_text("grayscale", &out->color_model, &out->color_model_len);
+	out->logical_gray_levels = 16;
+	out->native_bpp = 1;
+	runtime_display_info_text("GRAY1_PACKED", &out->native_pixel_format,
+				  &out->native_pixel_format_len);
+	out->default_font_height = 20;
+	out->supports_partial_refresh = false;
+	out->supports_fast_refresh = false;
+	return 0;
+#else
 	runtime_display_info_text("drawlog", &out->status, &out->status_len);
 	runtime_display_info_text("display.default", &out->binding, &out->binding_len);
 	runtime_display_info_text("drawlog", &out->driver, &out->driver_len);
@@ -133,5 +153,5 @@ int32_t runtime_display_info(void *user_data, SqvmDisplayInfo *out)
 	out->supports_partial_refresh = false;
 	out->supports_fast_refresh = false;
 	return 0;
+#endif
 }
-

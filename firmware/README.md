@@ -21,11 +21,12 @@ The Zephyr app is the canonical firmware implementation:
 - `compiler/rust/crates/squidvm-ffi`: Rust staticlib/rlib exposing the VM C
   ABI.
 
-The ESP32-C3 Super Mini board identifier defaults to Zephyr's
-`esp32c3_supermini` board in the wrapper scripts. The repository overlay adds
-the SquidScript `indicator0` PWM binding while keeping USB Serial/JTAG console
-selection explicit for the reference hardware flow. Override `ZEPHYR_BOARD`
-when testing a different ESP32-C3 board variant.
+The default firmware target is `xiao-esp32c3-gdeq0426t82-sd`, built on
+Zephyr's upstream `xiao_esp32c3` board with a SquidScript-owned overlay for
+the Seeed XIAO ePaper Driver Board and 4.26 inch GDEQ0426T82/SSD1677 panel.
+The overlay describes target-environment wiring; it does not fork the upstream
+board definition. The ESP32-C3 Super Mini remains an explicit regression
+target through the `c3-supermini-*` wrappers.
 
 ## Commands
 
@@ -33,30 +34,43 @@ From the repository root:
 
 ```sh
 scripts/zephyr-setup.sh
+scripts/zephyr-build.sh
+scripts/zephyr-flash.sh
+scripts/xiao-esp32c3-epaper-zephyr-monitor.sh
 scripts/c3-supermini-build.sh
 scripts/c3-supermini-flash.sh
 scripts/c3-supermini-zephyr-monitor.sh
 ```
 
-The generic `c3-supermini-build.sh` and `c3-supermini-flash.sh` wrappers now
-delegate to the Zephyr wrappers. Flashing does not auto-monitor unless
-`MONITOR_AFTER_FLASH=1` is set.
+`scripts/zephyr-build.sh` and `scripts/zephyr-flash.sh` use the current
+default XIAO target. The XIAO-specific wrappers expose the same target
+explicitly. The `c3-supermini-build.sh` and `c3-supermini-flash.sh` wrappers
+select the Super Mini target JSON, overlay, fallback app, Zephyr board, and
+build directory before sourcing the shared environment. Flashing does not
+auto-monitor unless `MONITOR_AFTER_FLASH=1` is set.
 
 Zephyr setup is host-specific but repository-local by default:
 
 - `scripts/zephyr-setup.sh` installs missing generic host tools with Homebrew,
   creates `target/zephyr/venv`, installs `west` into that venv, initializes and
   updates a Zephyr workspace under `target/zephyr/workspace`, installs Zephyr's
-  base/build-test Python requirements plus the repo-local Twister requirements,
-  and fetches `hal_espressif` blobs. When no SDK is detected, it uses Zephyr's
+  base/build-test Python requirements plus the repo-local requirements for
+  Twister and optional runner discovery, and fetches `hal_espressif` blobs.
+  When no SDK is detected, it uses Zephyr's
   supported `west sdk install` flow to install the RISC-V Zephyr GNU toolchain
   under `target/zephyr/sdk`; pass `--skip-sdk` to leave SDK installation
   manual.
 - `scripts/zephyr-env.sh` exports the local `west` path, `ZEPHYR_BASE` when the
-  workspace exists, the default `ZEPHYR_BUILD_DIR`, and the ESP32-C3 Super Mini
-  default `ZEPHYR_BOARD`.
+  workspace exists, the default XIAO `ZEPHYR_BUILD_DIR`, `ZEPHYR_BOARD`,
+  `SQUID_ZEPHYR_TARGET_JSON`, `SQUID_ZEPHYR_TARGET_OVERLAY`, and fallback app
+  source.
 - `SQUID_ZEPHYR_HOME` overrides the default `target/zephyr` tool/workspace
   root.
+
+Target-generated Kconfig enables device drivers for declared target devices.
+For example, an ESP32-C3 target may expose PWM-capable GPIOs without enabling
+Zephyr's PWM driver until the target declares a PWM-backed device such as an
+onboard indicator.
 
 The setup script does not use `rpm-ostree`. Set `ZEPHYR_SDK_INSTALL_DIR` if an
 existing SDK is installed somewhere the env script cannot find.

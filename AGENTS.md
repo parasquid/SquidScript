@@ -20,6 +20,9 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - When a roadmap item is completed, remove it from `ROADMAP.md` in the same change or in the next cleanup commit.
 - If an AI agent identifies a concrete future task or follow-up while working, add it to `ROADMAP.md` rather than leaving it only in chat.
 - Keep roadmap entries concise, actionable, and scoped to repository work.
+- Keep speculative or conditional ideas in `ICEBOX.md`, not `ROADMAP.md`.
+  Move them back to the roadmap only when they have a concrete target, use
+  case, or implementation reason that makes them actionable.
 
 ## Test Safety Net
 

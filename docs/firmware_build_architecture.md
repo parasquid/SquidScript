@@ -20,14 +20,16 @@ old serial protocol or flash layout. If behavior fails on ESP32-C3 under
 Zephyr, treat it as a Zephyr implementation, driver, configuration, or
 workaround task.
 
-The ESP32-C3 Super Mini firmware embeds a target-specific fallback SquidScript
-app from `firmware/zephyr/fallback/esp32c3-supermini-main.squid`. CMake compiles
-that source with `squidc build`, converts the resulting SQBC into generated C,
-and links it as a read-only fallback storage backend. Boot policy selects this
-fallback as logical `main` only when the app store mounted, the registry scan
-succeeded, and no installed `main` exists. Installed `main` always takes
-precedence, and app-store failures remain warnings/diagnostics rather than
-being hidden by fallback launch.
+The default XIAO ESP32-C3 e-paper firmware embeds a target-specific fallback
+SquidScript app from
+`firmware/zephyr/fallback/xiao-esp32c3-gdeq0426t82-sd-main.squid`. CMake
+compiles that source with `squidc build`, converts the resulting SQBC into
+generated C, and links it as a read-only fallback storage backend. Boot policy
+selects this fallback as logical `main` only when the app store mounted, the
+registry scan succeeded, and no installed `main` exists. Installed `main`
+always takes precedence, and app-store failures remain warnings/diagnostics
+rather than being hidden by fallback launch. Super Mini wrappers override the
+fallback source with `firmware/zephyr/fallback/esp32c3-supermini-main.squid`.
 
 ## Repository Interfaces
 
@@ -36,6 +38,10 @@ From the repository root:
 ```sh
 scripts/zephyr-setup.sh
 scripts/zephyr-test-protocol.sh
+scripts/zephyr-build.sh
+scripts/zephyr-flash.sh
+scripts/xiao-esp32c3-epaper-build.sh
+scripts/xiao-esp32c3-epaper-flash.sh
 scripts/c3-supermini-build.sh
 scripts/c3-supermini-flash.sh
 scripts/c3-supermini-zephyr-monitor.sh
@@ -51,15 +57,20 @@ generic host tools with Homebrew (`cmake`, `ninja`, `dtc`, `wget`, and `xz`),
 creates the Python venv, installs `west`, initializes and updates the Zephyr
 workspace from `firmware/zephyr/west.yml`, installs Zephyr's base/build-test
 Python requirements plus `firmware/zephyr/requirements-twister.txt`, and runs
-`west blobs fetch hal_espressif` for Espressif RF blob support. If no SDK is
-detected, it runs Zephyr's supported `west sdk install` flow for the
+`west blobs fetch hal_espressif` for Espressif RF blob support. The repo-local
+requirements include Twister dependencies and lightweight optional-runner
+dependencies such as `pyusb`, because west imports runner modules while
+discovering available flash runners even when a different runner is used. If no
+SDK is detected, it runs Zephyr's supported `west sdk install` flow for the
 `riscv64-zephyr-elf` GNU toolchain under `target/zephyr/sdk`; pass
 `--skip-sdk` to leave SDK installation manual. The setup path does not use
 `rpm-ostree`.
 
-`ZEPHYR_BOARD` selects the board. The ESP32-C3 Super Mini wrappers default to
-Zephyr's `esp32c3_supermini` board target. Override `ZEPHYR_BOARD` when testing
-a different ESP32-C3 board variant.
+`ZEPHYR_BOARD` selects the board. The shared environment defaults to Zephyr's
+`xiao_esp32c3` board and the
+`targets/xiao-esp32c3-gdeq0426t82-sd.target.json` metadata. The Super Mini
+wrappers explicitly select Zephyr's `esp32c3_supermini` board, the Super Mini
+target JSON, the Super Mini overlay, and the Super Mini fallback app.
 
 ## Rust VM Static Library
 
@@ -507,6 +518,13 @@ also validates those defaults against `SQUID_ZEPHYR_TARGET_OVERLAY` so the
 target JSON indicator GPIO, polarity, and PWM frequency cannot silently drift
 from the Zephyr overlay. Zephyr devicetree still owns driver nodes, PWM
 channels, and pinctrl setup.
+
+Target-generated Kconfig should distinguish MCU capabilities from connected
+firmware devices. ESP32-C3 GPIOs may be PWM-capable in target metadata, but
+`CONFIG_PWM` should be generated only for a target that declares a PWM-backed
+device, such as `indicator.default` on the ESP32-C3 Super Mini. This keeps
+disconnected-capability targets such as the XIAO e-paper bring-up from enabling
+empty Zephyr driver libraries.
 
 Generated target defaults are trusted firmware metadata, not author/package
 input. Firmware should keep them visible through the documented runtime

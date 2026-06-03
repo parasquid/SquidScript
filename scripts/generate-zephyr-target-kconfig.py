@@ -60,6 +60,26 @@ def main(argv):
             ]
         )
 
+    devices = target.get("devices", {})
+    if isinstance(devices, dict) and any(
+        isinstance(device, dict) and isinstance(device.get("pwm"), dict)
+        for device in devices.values()
+    ):
+        lines.extend(
+            [
+                "CONFIG_PWM=y",
+                "",
+            ]
+        )
+
+    if "display.epaper.ssd1677" in feature_set:
+        lines.extend(
+            [
+                "CONFIG_SQUIDSCRIPT_TARGET_DISPLAY_SSD1677_EXPECTED=y",
+                "",
+            ]
+        )
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(lines), encoding="utf-8")
     return 0

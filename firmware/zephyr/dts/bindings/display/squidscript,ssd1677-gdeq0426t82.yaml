@@ -1,0 +1,41 @@
+description: SquidScript SSD1677 GDEQ0426T82 e-paper target binding
+
+compatible: "squidscript,ssd1677-gdeq0426t82"
+
+include: base.yaml
+
+properties:
+  spi:
+    type: phandle
+    required: true
+    description: SPI controller used for SSD1677 command/data transfers.
+
+  cs-gpios:
+    type: phandle-array
+    required: true
+    description: Display chip-select GPIO.
+
+  dc-gpios:
+    type: phandle-array
+    required: true
+    description: Display data/command GPIO.
+
+  reset-gpios:
+    type: phandle-array
+    required: true
+    description: Display reset GPIO.
+
+  busy-gpios:
+    type: phandle-array
+    required: true
+    description: SSD1677 BUSY GPIO. Active high means the controller is busy.
+
+  width:
+    type: int
+    required: true
+    description: Physical panel width in pixels.
+
+  height:
+    type: int
+    required: true
+    description: Physical panel height in pixels.

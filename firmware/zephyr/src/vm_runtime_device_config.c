@@ -213,6 +213,7 @@ int sq_vm_runtime_device_config_load(struct sq_vm_runtime *runtime, const uint8_
 	return sq_vm_runtime_device_config_load_resource(runtime, resource_bytes, resource_len, out);
 }
 
+#if SQ_TARGET_INDICATOR_DEFAULT_HAS_GPIO
 static int runtime_device_config_append_string(SqdcConfig *config, const char *key,
 					       const char *value)
 {
@@ -264,6 +265,7 @@ static int runtime_device_config_append_bool(SqdcConfig *config, const char *key
 	config->count++;
 	return 0;
 }
+#endif
 
 int sq_vm_runtime_device_config_set(struct sq_vm_runtime *runtime, const uint8_t *key,
 				    size_t key_len, SqvmDeviceConfigValue value,

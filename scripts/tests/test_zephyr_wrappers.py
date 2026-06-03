@@ -87,6 +87,7 @@ class ZephyrWrapperTests(ZephyrScriptTestCase):
         self.assertIn("firmware/zephyr/requirements-twister.txt", setup)
         self.assertIn("natsort", requirements)
         self.assertIn("tabulate", requirements)
+        self.assertIn("pyusb", requirements)
         self.assertIn("twister", docs.lower())
         self.assertNotIn("missing Twister Python dependencies", roadmap)
 
@@ -94,9 +95,9 @@ class ZephyrWrapperTests(ZephyrScriptTestCase):
         env = self.read("scripts/zephyr-env.sh")
 
         self.assertIn('SQUID_ZEPHYR_HOME="${SQUID_ZEPHYR_HOME:-${ROOT}/target/zephyr}"', env)
-        self.assertIn('export ZEPHYR_BOARD="${ZEPHYR_BOARD:-esp32c3_supermini}"', env)
-        self.assertIn('export ZEPHYR_BUILD_DIR="${ZEPHYR_BUILD_DIR:-${ROOT}/build/zephyr/c3-supermini}"', env)
-        self.assertIn('export SQUID_ZEPHYR_TARGET_JSON="${SQUID_ZEPHYR_TARGET_JSON:-${ROOT}/targets/esp32c3-super-mini.target.json}"', env)
+        self.assertIn('export ZEPHYR_BOARD="${ZEPHYR_BOARD:-xiao_esp32c3}"', env)
+        self.assertIn('export ZEPHYR_BUILD_DIR="${ZEPHYR_BUILD_DIR:-${ROOT}/build/zephyr/xiao-esp32c3-gdeq0426t82-sd}"', env)
+        self.assertIn('export SQUID_ZEPHYR_TARGET_JSON="${SQUID_ZEPHYR_TARGET_JSON:-${ROOT}/targets/xiao-esp32c3-gdeq0426t82-sd.target.json}"', env)
         self.assertIn('PATH="${SQUID_ZEPHYR_HOME}/venv/bin:${PATH}"', env)
         self.assertIn('ZEPHYR_BASE="${SQUID_ZEPHYR_HOME}/workspace/zephyr"', env)
 

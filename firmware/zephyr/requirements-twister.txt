@@ -4,3 +4,4 @@
 # ztest execution.
 natsort
 tabulate
+pyusb

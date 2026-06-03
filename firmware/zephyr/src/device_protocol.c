@@ -1300,7 +1300,7 @@ static int repeated_runtime_lines_response(const struct sq_protocol_request *req
 	const uint8_t *fixed_lines = NULL;
 	size_t fixed_count = 0;
 	size_t fixed_stride = 0;
-	SqdpLineSlice extra_slices[1];
+	SqdpLineSlice extra_slices[1 + SQ_VM_RUNTIME_DEVICE_ERROR_MAX];
 	size_t extra_slice_count = 0;
 
 	if (runtime != NULL && request->opcode == SQ_OPCODE_TRACE_GET) {
@@ -1946,10 +1946,16 @@ static int __noinline errors_response(const struct sq_protocol_request *request,
 				      const struct sq_vm_runtime *runtime, uint8_t *response,
 				      size_t response_cap, size_t *response_len)
 {
-	const char *lines[1];
+	const char *lines[1 + SQ_VM_RUNTIME_DEVICE_ERROR_MAX];
 	size_t line_count = 0;
 	char error_line[48];
 
+	if (runtime != NULL) {
+		for (size_t i = 0; i < runtime->device_error_count && line_count < ARRAY_SIZE(lines);
+		     i++) {
+			lines[line_count++] = runtime->device_errors[i];
+		}
+	}
 	if (runtime != NULL && runtime->status == SQ_VM_RUNTIME_ERROR) {
 		const char *status_name = runtime->result.status == SQVM_STATUS_OK ?
 						  "host_error" :

@@ -274,20 +274,27 @@ Implementation decisions to resolve:
 - Is 2-bit grayscale part of the initial backend, or is the initial backend
   black/white-only until full refresh and strip writes are stable?
 
-Capture actual wiring in the implementation change with a target-specific table
-like this. Do not fill it with guessed pins:
+The default XIAO ESP32-C3 e-paper target uses the Seeed XIAO ePaper Driver
+Board. The following display wiring is source-backed by Seeed's board
+documentation and the XIAO ESP32-C3 connector mapping. Boot-risk notes come
+from the XIAO ESP32-C3 strapping-pin guidance.
 
 | SSD1677 signal | MCU pin | Source | Notes |
 | --- | --- | --- | --- |
-| `VCC` | Unconfirmed | Unconfirmed | Voltage rail and power control path. |
-| `GND` | Unconfirmed | Unconfirmed | Shared ground. |
-| `SCK` | Unconfirmed | Unconfirmed | SPI clock. |
-| `DIN`/`MOSI` | Unconfirmed | Unconfirmed | SPI data from MCU to controller. |
-| `CS` | Unconfirmed | Unconfirmed | Display chip select. |
-| `DC` | Unconfirmed | Unconfirmed | Command/data select. |
-| `RST` | Unconfirmed | Unconfirmed | Hardware reset. |
-| `BUSY` | Unconfirmed | Unconfirmed | Confirm active-high at the MCU pin. |
-| `SDO`/`MISO` | Optional/unconfirmed | Unconfirmed | Needed only for read paths. |
+| `VCC` | XIAO 3V3 | Seeed ePaper Driver Board | Confirm the display FPC and board are powered from the expected 3.3 V rail before first refresh. |
+| `GND` | XIAO GND | Seeed ePaper Driver Board | Shared ground. |
+| `SCK` | D8 / GPIO8 | Seeed ePaper Driver Board + XIAO pin map | Shared SPI clock. GPIO8 is an ESP32-C3 strapping pin; confirm the board does not pull it into an invalid boot state. |
+| `DIN`/`MOSI` | D10 / GPIO10 | Seeed ePaper Driver Board + XIAO pin map | Shared SPI data from MCU to controller. |
+| `CS` | D1 / GPIO3 | Seeed ePaper Driver Board + XIAO pin map | Display chip select. |
+| `DC` | D3 / GPIO5 | Seeed ePaper Driver Board + XIAO pin map | Command/data select. |
+| `RST` | D0 / GPIO2 | Seeed ePaper Driver Board + XIAO pin map | Hardware reset. GPIO2 is an ESP32-C3 strapping pin; confirm reset circuitry does not block normal boot. |
+| `BUSY` | D2 / GPIO4 | Seeed ePaper Driver Board + XIAO pin map | Treat as active-high until measured otherwise at the MCU pin. |
+| `SDO`/`MISO` | Not connected by default | Target decision | The initial SquidScript display path is write-only. Do not route display reads through GPIO9/BOOT by default. |
+
+The planned external SD reader shares display `SCK` and `MOSI` through jumper
+wires from the e-paper board IO breakout. SD `MISO` and `CS` are not part of
+the source-backed display wiring and must remain unverified in target metadata
+until the physical jumper choices are confirmed.
 
 Minimum SSD1677 command skeleton for the backend:
 

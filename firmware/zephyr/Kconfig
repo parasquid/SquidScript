@@ -6,6 +6,15 @@ config SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC
 	help
 	  Emit a minimal boot diagnostic for the initial Zephyr firmware host.
 
+config SQUIDSCRIPT_TARGET_DISPLAY_SSD1677_EXPECTED
+	bool "Target expects an SSD1677 e-paper display"
+	default n
+	help
+	  Mark targets whose metadata declares an SSD1677 display. Until a real
+	  display backend is active, firmware reports the display as unavailable
+	  through retained diagnostics instead of pretending draw-log output is a
+	  physical display.
+
 endmenu
 
 source "Kconfig.zephyr"

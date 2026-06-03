@@ -910,6 +910,45 @@ ZTEST(squidscript_protocol, test_errors_get_reports_vm_status_label_and_errno)
 	zassert_true(field_string_equals(&field, "runtime=invalid_argument code=-22"));
 }
 
+ZTEST(squidscript_protocol, test_errors_get_reports_retained_device_diagnostics_without_runtime_error)
+{
+	struct sq_device_identity identity = {
+		.target = "xiao-esp32c3-gdeq0426t82-sd",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_vm_runtime runtime = {0};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.runtime = &runtime,
+	};
+	uint8_t request[SQ_PROTOCOL_HEADER_LEN];
+	uint8_t response[512];
+	size_t response_len = 0;
+	struct sq_protocol_frame frame;
+	struct sq_protocol_field field;
+	size_t offset = 0;
+
+	sq_vm_runtime_record_device_error(&runtime, "display=unavailable code=-19");
+
+	zassert_equal(runtime.status, SQ_VM_RUNTIME_IDLE);
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_ERRORS_GET,
+						      SQ_STATUS_OK, 66, NULL, 0, request,
+						      sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_device_protocol_handle_frame(request, sizeof(request), &context,
+						      response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
+	zassert_equal(frame.opcode, SQ_OPCODE_ERRORS_GET);
+	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
+		      SQ_PROTOCOL_OK);
+	zassert_true(field_string_equals(&field, "display=unavailable code=-19"));
+	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
+		      SQ_PROTOCOL_DONE);
+}
+
 ZTEST(squidscript_protocol, test_wifi_profile_set_stores_volatile_profile_without_echoing_secret)
 {
 	uint8_t payload[96];

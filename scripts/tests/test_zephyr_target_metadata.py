@@ -10,15 +10,14 @@ from scripts.tests.zephyr_test_utils import ROOT, ZephyrScriptTestCase
 
 
 class ZephyrTargetMetadataTests(ZephyrScriptTestCase):
-    def test_target_kconfig_enables_declared_radio_backends(self):
-        prj_conf = self.read("firmware/zephyr/prj.conf")
+    def generate_target_kconfig(self, target_name):
         generator = ROOT / "scripts/generate-zephyr-target-kconfig.py"
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "target.conf"
             subprocess.run(
                 [
                     str(generator),
-                    str(ROOT / "targets/esp32c3-super-mini.target.json"),
+                    str(ROOT / "targets" / target_name),
                     str(out),
                 ],
                 cwd=ROOT,
@@ -26,7 +25,11 @@ class ZephyrTargetMetadataTests(ZephyrScriptTestCase):
                 capture_output=True,
                 check=True,
             )
-            target_conf = out.read_text(encoding="utf-8")
+            return out.read_text(encoding="utf-8")
+
+    def test_target_kconfig_enables_declared_radio_backends(self):
+        prj_conf = self.read("firmware/zephyr/prj.conf")
+        target_conf = self.generate_target_kconfig("esp32c3-super-mini.target.json")
 
         for option in [
             "CONFIG_WIFI=y",
@@ -50,6 +53,25 @@ class ZephyrTargetMetadataTests(ZephyrScriptTestCase):
             "CONFIG_NET_UDP=y",
         ]:
             self.assertIn(option, prj_conf)
+
+    def test_target_kconfig_enables_pwm_only_for_declared_pwm_devices(self):
+        supermini_conf = self.generate_target_kconfig("esp32c3-super-mini.target.json")
+        xiao_conf = self.generate_target_kconfig("xiao-esp32c3-gdeq0426t82-sd.target.json")
+        prj_conf = self.read("firmware/zephyr/prj.conf")
+
+        self.assertIn("CONFIG_PWM=y", supermini_conf)
+        self.assertNotIn("CONFIG_PWM=y", xiao_conf)
+        self.assertNotIn("CONFIG_PWM=y", prj_conf)
+
+    def test_xiao_exposes_pwm_capable_gpio_without_default_pwm_device(self):
+        target = json.loads(self.read("targets/xiao-esp32c3-gdeq0426t82-sd.target.json"))
+        pins = target["pins"]
+
+        for pin in ["GPIO2", "GPIO3", "GPIO4", "GPIO5", "GPIO6", "GPIO7", "GPIO8", "GPIO9", "GPIO10", "GPIO20", "GPIO21"]:
+            with self.subTest(pin=pin):
+                self.assertIn("pwm", pins[pin]["capabilities"])
+
+        self.assertNotIn("indicator.default", target["devices"])
 
     def test_zephyr_target_defaults_generator_emits_indicator_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -596,6 +596,28 @@ int sq_vm_runtime_record_drawlog(struct sq_vm_runtime *runtime, const char *line
 	return 0;
 }
 
+int sq_vm_runtime_record_device_error(struct sq_vm_runtime *runtime, const char *line)
+{
+	if (runtime == NULL || line == NULL) {
+		return -EINVAL;
+	}
+	size_t slot = runtime->device_error_count;
+	if (slot >= SQ_VM_RUNTIME_DEVICE_ERROR_MAX) {
+		memmove(runtime->device_errors[0], runtime->device_errors[1],
+			(SQ_VM_RUNTIME_DEVICE_ERROR_MAX - 1) * SQ_VM_RUNTIME_DEVICE_ERROR_LEN);
+		slot = SQ_VM_RUNTIME_DEVICE_ERROR_MAX - 1;
+		runtime->device_error_count = SQ_VM_RUNTIME_DEVICE_ERROR_MAX - 1;
+	}
+	size_t len = 0;
+	while (len < SQ_VM_RUNTIME_DEVICE_ERROR_LEN - 1 && line[len] != '\0') {
+		len++;
+	}
+	memcpy(runtime->device_errors[slot], line, len);
+	runtime->device_errors[slot][len] = '\0';
+	runtime->device_error_count++;
+	return 0;
+}
+
 int sq_vm_runtime_poll(struct sq_vm_runtime *runtime)
 {
 	char event[SQ_VM_RUNTIME_EVENT_LEN];

@@ -4,6 +4,8 @@ This file is the repository issue tracker for agent-visible project work.
 Keep entries concise and actionable. When a roadmap item is completed, remove
 it from this file in the same change or in the next cleanup commit.
 
+Speculative ideas that are not currently actionable belong in `ICEBOX.md`.
+
 ## Current Track: Canonical Zephyr Firmware
 
 Goal: keep Zephyr as the canonical firmware architecture while Rust remains
@@ -30,6 +32,34 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   available and the BinBook spec has settled enough to avoid optimizing around
   rough draft behavior.
 
+## Storage And Content
+
+- Promote the XIAO ESP32-C3 e-paper target's external SPI SD reader from
+  metadata-only to mounted app/content storage after jumper wiring is
+  confirmed. Define card-missing boot policy, retained diagnostics, app-store
+  recovery behavior, content volume semantics, and shared install validation
+  before advertising SD-backed `supportsApps`, `supportsFile`, `sdcard`, or
+  file APIs.
+
+## CLI And Target Workflows
+
+- Add a first-class `squidc target` command group for target-firmware workflows.
+  It should support scriptable commands such as `squidc target list`,
+  `squidc target build --target <target-id>`, `squidc target flash --target
+  <target-id>`, `squidc target monitor --target <target-id>`, and `squidc
+  target doctor --target <target-id>`. Target IDs should resolve through
+  canonical target JSON metadata, and target JSON should drive Zephyr board,
+  overlay, fallback app, generated Kconfig/defaults, and build directory
+  selection. When no `--target` is supplied for an interactive command, present
+  a target picker; CI/scripts should use explicit `--target`.
+- Reorganize `squidc` CLI namespaces so app operations live under `squidc app`
+  and firmware/board operations live under `squidc target`. Replace the
+  ambiguous top-level `squidc build` app-SQBC command with `squidc app build`,
+  consider moving top-level `package` to `squidc app package`, and decide
+  whether top-level `run` should become `squidc app run`. Because SquidScript
+  is pre-1.0, directly replace old command shapes instead of preserving aliases
+  unless a specific transition bridge is requested.
+
 ## Display And Output
 
 - Implement an SSD1677/GDEQ0426T82 SquidScript display backend when the display
@@ -40,9 +70,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 - Add a generic PWM-capable LED-like device output model beyond
   `service.indicator`, so future target-described GPIO/PWM endpoints can expose
   smooth brightness control without board-specific app code.
-- Support multiple `use` entries for one logical indicator when an app
-  intentionally wants `service.indicator.write(...)` to drive more than one
-  physical output.
 
 ## Input, Triggers, And Power
 

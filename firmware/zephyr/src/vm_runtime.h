@@ -25,6 +25,8 @@ extern "C" {
 #define SQ_VM_RUNTIME_OUTPUT_LEN 54
 #define SQ_VM_RUNTIME_DRAWLOG_MAX 4
 #define SQ_VM_RUNTIME_DRAWLOG_LEN 48
+#define SQ_VM_RUNTIME_DEVICE_ERROR_MAX 2
+#define SQ_VM_RUNTIME_DEVICE_ERROR_LEN 48
 #define SQ_VM_RUNTIME_TIMER_MAX 2
 #define SQ_VM_RUNTIME_ACTIVE_BINDING_MAX 3
 #define SQ_VM_RUNTIME_INPUT_BUTTON_MAX 2
@@ -195,6 +197,8 @@ struct sq_vm_runtime {
 	uint8_t output_count;
 	char drawlog[SQ_VM_RUNTIME_DRAWLOG_MAX][SQ_VM_RUNTIME_DRAWLOG_LEN];
 	uint8_t drawlog_count;
+	char device_errors[SQ_VM_RUNTIME_DEVICE_ERROR_MAX][SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
+	uint8_t device_error_count;
 	bool indicator_state;
 	bool indicator_gpio_configured;
 	bool indicator_gpio_available;
@@ -318,6 +322,7 @@ int sq_vm_runtime_record_output(struct sq_vm_runtime *runtime, const uint8_t *me
 int sq_vm_runtime_record_trace(struct sq_vm_runtime *runtime, const uint8_t *message,
 			       size_t message_len);
 int sq_vm_runtime_record_drawlog(struct sq_vm_runtime *runtime, const char *line);
+int sq_vm_runtime_record_device_error(struct sq_vm_runtime *runtime, const char *line);
 int sq_vm_runtime_indicator_write(struct sq_vm_runtime *runtime, bool value);
 int sq_vm_runtime_indicator_toggle(struct sq_vm_runtime *runtime);
 int sq_vm_runtime_indicator_read(struct sq_vm_runtime *runtime, bool *out);

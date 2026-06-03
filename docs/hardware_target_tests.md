@@ -16,12 +16,28 @@ under `target/hardware-tests/` or `target/hardware-benchmarks/` with a
 command-level timeout. If a protocol command stalls, the script should fail with
 the captured command output instead of hanging the full suite.
 
-## Current Target
+## Current Targets
 
-The current real firmware target is Zephyr-backed ESP32-C3 work under
-`firmware/zephyr`.
+The default real firmware target is Zephyr-backed XIAO ESP32-C3 with the Seeed
+XIAO ePaper Driver Board and GDEQ0426T82/SSD1677 panel metadata. The ESP32-C3
+Super Mini remains a supported regression hardware target.
 
-Build and flash:
+Default XIAO build and flash:
+
+```sh
+./scripts/zephyr-build.sh
+SQUID_ZEPHYR_TARGET_JSON=targets/xiao-esp32c3-gdeq0426t82-sd.target.json \
+  ./scripts/zephyr-ram-audit.sh build/zephyr/xiao-esp32c3-gdeq0426t82-sd/zephyr/zephyr.elf
+./scripts/zephyr-flash.sh
+```
+
+XIAO monitor:
+
+```sh
+./scripts/xiao-esp32c3-epaper-zephyr-monitor.sh
+```
+
+Super Mini regression build and flash:
 
 ```sh
 ./scripts/c3-supermini-build.sh
@@ -30,14 +46,16 @@ SQUID_ZEPHYR_TARGET_JSON=targets/esp32c3-super-mini.target.json \
 ./scripts/c3-supermini-flash.sh
 ```
 
-Monitor:
+Super Mini monitor:
 
 ```sh
 ./scripts/c3-supermini-zephyr-monitor.sh
 ```
 
-The ESP32-C3 Super Mini wrappers default to Zephyr's `esp32c3_supermini` board
-target. Set `ZEPHYR_BOARD` when testing a different ESP32-C3 board variant.
+The XIAO wrappers default to Zephyr's `xiao_esp32c3` board target. The Super
+Mini wrappers default to Zephyr's `esp32c3_supermini` board target and should
+be used for Super Mini regression checks instead of relying on shared
+environment defaults.
 
 ## Test Inventory
 
@@ -72,6 +90,14 @@ The default Zephyr-only hardware suite covers the current required inventory:
   through the separate station script.
 - Verify ESP32-C3 BLE advertising when the target JSON declares
   `service.ble.object-transfer`.
+
+For the XIAO e-paper target, missing e-paper or external SD hardware must not
+block boot, fallback app launch, serial, or host protocol commands. Boot logs
+should surface target-device availability failures, and retained diagnostics
+should be queryable later with `device errors`. In the first XIAO slice, the
+external SD reader is target metadata only: SD `MISO` and `CS` jumper wiring,
+mounting, app storage, and content volume behavior remain unverified and are
+not runtime-advertised features.
 
 Keep the suite ordered so stateful reset/install tests run before Wi-Fi and
 late physical-input checks, and keep the final visible board-state check last.
@@ -250,8 +276,8 @@ only when preserving the current firmware session is more important than a
 fresh high-water baseline. Override `INPUT_BUTTON_APP`, `INPUT_BUTTON_APP_ID`,
 and `INPUT_BUTTON_LABEL` to run the same attribution flow against a candidate
 binding such as `tests/hardware/c3-supermini/input-button-gpio5-summary`.
-For the default ESP32-C3 Super Mini GPIO9 active-low path, short GPIO9 to GND
-during the held phase if the tiny BOOT button cannot be held reliably.
+For the ESP32-C3 Super Mini regression GPIO9 active-low path, short GPIO9 to
+GND during the held phase if the tiny BOOT button cannot be held reliably.
 Current same-build hardware coverage reached the BOOT/GPIO9 prompt in
 `scripts/c3-supermini-test-input-button.sh` but timed out with `output=count 0`,
 so it proves the app launched and the line was not pressed during that run; it

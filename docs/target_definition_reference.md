@@ -447,6 +447,14 @@ If a SquidScript screen omits `render`, firmware should use `rendering.defaultPo
 
 For XTEINK X4, the microSD card is on the shared SPI bus with CS on GPIO12 and MISO on GPIO7.
 
+For development targets with an external SD breakout, target metadata may
+reserve the shared SPI bus and mark unconfirmed SD pins as `planned-unverified`.
+Do not advertise `supportsApps`, `supportsFile`, `sdcard`, `file.pick`, or
+`file.read` from that SD device until the wiring is confirmed and firmware
+mount/probe behavior is implemented. The XIAO ESP32-C3 e-paper target follows
+this model: installed apps and state remain on internal LittleFS, while the SD
+reader is documented as planned external storage.
+
 Example:
 
 ```json

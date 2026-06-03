@@ -2,15 +2,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export ZEPHYR_BOARD="${ZEPHYR_BOARD:-esp32c3_supermini}"
-export ZEPHYR_BUILD_DIR="${ZEPHYR_BUILD_DIR:-${ROOT}/build/zephyr/c3-supermini}"
-export SQUID_ZEPHYR_TARGET_JSON="${SQUID_ZEPHYR_TARGET_JSON:-${ROOT}/targets/esp32c3-super-mini.target.json}"
-export SQUID_ZEPHYR_TARGET_OVERLAY="${SQUID_ZEPHYR_TARGET_OVERLAY:-${ROOT}/firmware/zephyr/boards/esp32c3_supermini.overlay}"
-export SQUID_ZEPHYR_FALLBACK_SOURCE="${SQUID_ZEPHYR_FALLBACK_SOURCE:-${ROOT}/firmware/zephyr/fallback/esp32c3-supermini-main.squid}"
 source "${ROOT}/scripts/zephyr-env.sh"
 APP_DIR="${ROOT}/firmware/zephyr"
 EXTRA_ARGS=("$@")
-TARGET_KCONFIG="${ROOT}/target/zephyr/generated/c3-supermini-target.conf"
+TARGET_KCONFIG="${ROOT}/target/zephyr/generated/xiao-esp32c3-gdeq0426t82-sd-target.conf"
 mkdir -p "$(dirname "$TARGET_KCONFIG")"
 "${ROOT}/scripts/generate-zephyr-target-kconfig.py" "$SQUID_ZEPHYR_TARGET_JSON" "$TARGET_KCONFIG"
 
@@ -37,7 +32,7 @@ if ! command -v west >/dev/null 2>&1; then
   exit 1
 fi
 
-printf 'Using Zephyr board %s for ESP32-C3 Super Mini; override with ZEPHYR_BOARD.\n' "$ZEPHYR_BOARD" >&2
+printf 'Using Zephyr board %s for XIAO ESP32-C3 e-paper target.\n' "$ZEPHYR_BOARD" >&2
 
 west build \
   --build-dir "$ZEPHYR_BUILD_DIR" \
