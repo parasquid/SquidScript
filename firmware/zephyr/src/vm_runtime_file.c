@@ -10,11 +10,7 @@ int32_t runtime_file_pick_file(void *user_data, const uint8_t *extension,
 	if (out == NULL) {
 		return -EINVAL;
 	}
-	out->ok = false;
-	out->error = (const uint8_t *)"unsupported";
-	out->error_len = strlen("unsupported");
-	out->path = NULL;
-	out->path_len = 0;
+	sqvm_file_pick_file_result_unsupported(out);
 	return 0;
 }
 
@@ -28,11 +24,7 @@ int32_t runtime_file_read_text(void *user_data, const uint8_t *path, size_t path
 	if (out == NULL) {
 		return -EINVAL;
 	}
-	out->ok = false;
-	out->error = (const uint8_t *)"unsupported";
-	out->error_len = strlen("unsupported");
-	out->text = NULL;
-	out->text_len = 0;
+	sqvm_file_read_text_result_unsupported(out);
 	return 0;
 }
 
@@ -47,9 +39,6 @@ int32_t runtime_file_read_lines(void *user_data, const uint8_t *path, size_t pat
 	if (out == NULL) {
 		return -EINVAL;
 	}
-	out->ok = false;
-	out->error = (const uint8_t *)"unsupported";
-	out->error_len = strlen("unsupported");
+	sqvm_file_read_lines_result_unsupported(out);
 	return 0;
 }
-

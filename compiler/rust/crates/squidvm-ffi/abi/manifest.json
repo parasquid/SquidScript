@@ -1167,6 +1167,246 @@
       "definition": "typedef struct {\n\tSqvmTraceCallback trace;\n\tSqvmReadExactAtCallback read_exact_at;\n\tSqvmDebugOutputCallback debug_output;\n\tSqvmDisplayClearCallback display_clear;\n\tSqvmDisplayTextCallback display_text;\n\tSqvmDisplayRectCallback display_rect;\n\tSqvmDisplayLineCallback display_line;\n\tSqvmDisplaySelectCallback display_select;\n\tSqvmDisplayImageCallback display_image;\n\tSqvmDisplayDrawCallback display_draw;\n\tSqvmDisplayInfoCallback display_info;\n\tSqvmIndicatorWriteCallback indicator_write;\n\tSqvmIndicatorToggleCallback indicator_toggle;\n\tSqvmIndicatorReadCallback indicator_read;\n\tSqvmIndicatorBreatheCallback indicator_breathe;\n\tSqvmIndicatorBlinkCallback indicator_blink;\n\tSqvmHardwareGpioWriteCallback hardware_gpio_write;\n\tSqvmHardwareGpioToggleCallback hardware_gpio_toggle;\n\tSqvmHardwareGpioReadCallback hardware_gpio_read;\n\tSqvmAppLifecycleCallback app_launch;\n\tSqvmAppLifecycleCallback app_arm;\n\tSqvmAppLifecycleCallback app_disarm;\n\tSqvmAppRegistryListCallback app_registry_list;\n\tSqvmAppRegistryGetCallback app_registry_get;\n\tSqvmAppStackCallback app_process_stack;\n\tSqvmAppStackCallback app_armed_stack;\n\tSqvmTimerEveryCallback timer_every;\n\tSqvmTimerAfterCallback timer_after;\n\tSqvmWifiStartApCallback wifi_start_ap;\n\tSqvmWifiStopApCallback wifi_stop_ap;\n\tSqvmWifiConnectCallback wifi_connect;\n\tSqvmWifiDisconnectCallback wifi_disconnect;\n\tSqvmWifiGetApIpCallback wifi_get_ap_ip;\n\tSqvmWifiStatusCallback wifi_status;\n\tSqvmWifiScanCallback wifi_scan;\n\tSqvmWifiOperationCallback wifi_operation;\n\tSqvmWifiResultCallback wifi_result;\n\tSqvmWifiCancelCallback wifi_cancel;\n\tSqvmWifiScanNetworkCallback wifi_scan_network;\n\tSqvmDeviceConfigLoadCallback device_config_load;\n\tSqvmDeviceConfigSetCallback device_config_set;\n\tSqvmDeviceConfigRebindCallback device_config_rebind;\n\tSqvmDeviceConfigSaveCallback device_config_save;\n\tSqvmFilePickFileCallback file_pick_file;\n\tSqvmFileReadTextCallback file_read_text;\n\tSqvmFileReadLinesCallback file_read_lines;\n\tSqvmSystemMemoryTextCallback system_memory_text;\n\tSqvmSystemStorageTextCallback system_storage_text;\n\tSqvmSystemStartReasonTextCallback system_start_reason_text;\n\tSqvmPowerSleepCallback power_sleep;\n} SqvmCallbacks;"
     }
   ],
+  "result_defaults": [
+    {
+      "type": "SqvmDisplayInfo",
+      "rust_fields": [
+        {"field": "ok", "value": "false"},
+        {"field": "error", "literal": "unsupported"},
+        {"field": "warning", "null": true},
+        {"field": "available", "value": "false"},
+        {"field": "status", "literal": "unsupported"},
+        {"field": "binding", "literal": "display.default"},
+        {"field": "driver", "null": true},
+        {"field": "transport", "null": true},
+        {"field": "width", "value": "0"},
+        {"field": "height", "value": "0"},
+        {"field": "physical_width", "value": "0"},
+        {"field": "physical_height", "value": "0"},
+        {"field": "rotation", "value": "0"},
+        {"field": "color_model", "null": true},
+        {"field": "logical_gray_levels", "value": "0"},
+        {"field": "native_bpp", "value": "0"},
+        {"field": "native_pixel_format", "null": true},
+        {"field": "default_font_height", "value": "0"},
+        {"field": "supports_partial_refresh", "value": "false"},
+        {"field": "supports_fast_refresh", "value": "false"}
+      ],
+      "c_helpers": [
+        {
+          "name": "sqvm_display_info_unsupported",
+          "fields": [
+            {"field": "ok", "value": "false"},
+            {"field": "error", "literal": "unsupported"},
+            {"field": "warning", "null": true},
+            {"field": "available", "value": "false"},
+            {"field": "status", "literal": "unsupported"},
+            {"field": "binding", "literal": "display.default"},
+            {"field": "driver", "null": true},
+            {"field": "transport", "null": true},
+            {"field": "width", "value": "0"},
+            {"field": "height", "value": "0"},
+            {"field": "physical_width", "value": "0"},
+            {"field": "physical_height", "value": "0"},
+            {"field": "rotation", "value": "0"},
+            {"field": "color_model", "null": true},
+            {"field": "logical_gray_levels", "value": "0"},
+            {"field": "native_bpp", "value": "0"},
+            {"field": "native_pixel_format", "null": true},
+            {"field": "default_font_height", "value": "0"},
+            {"field": "supports_partial_refresh", "value": "false"},
+            {"field": "supports_fast_refresh", "value": "false"}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "SqvmWifiOperation",
+      "rust_fields": [
+        {"field": "active", "value": "false"},
+        {"field": "kind", "null": true},
+        {"field": "state", "literal": "error"},
+        {"field": "done", "value": "true"},
+        {"field": "cancelled", "value": "false"},
+        {"field": "ok", "value": "false"},
+        {"field": "error", "literal": "unsupported"}
+      ],
+      "c_helpers": [
+        {
+          "name": "sqvm_wifi_operation_unsupported",
+          "fields": [
+            {"field": "active", "value": "false"},
+            {"field": "kind", "null": true},
+            {"field": "state", "literal": "error"},
+            {"field": "done", "value": "true"},
+            {"field": "cancelled", "value": "false"},
+            {"field": "ok", "value": "false"},
+            {"field": "error", "literal": "unsupported"}
+          ]
+        },
+        {
+          "name": "sqvm_wifi_operation_idle",
+          "fields": [
+            {"field": "active", "value": "false"},
+            {"field": "kind", "null": true},
+            {"field": "state", "literal": "idle"},
+            {"field": "done", "value": "false"},
+            {"field": "cancelled", "value": "false"},
+            {"field": "ok", "value": "true"},
+            {"field": "error", "null": true}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "SqvmWifiOperationResult",
+      "rust_fields": [
+        {"field": "ready", "value": "true"},
+        {"field": "kind", "null": true},
+        {"field": "state", "literal": "error"},
+        {"field": "ok", "value": "false"},
+        {"field": "error", "literal": "unsupported"},
+        {"field": "cancelled", "value": "false"},
+        {"field": "count", "value": "0"}
+      ],
+      "c_helpers": [
+        {
+          "name": "sqvm_wifi_operation_result_unsupported",
+          "fields": [
+            {"field": "ready", "value": "true"},
+            {"field": "kind", "null": true},
+            {"field": "state", "literal": "error"},
+            {"field": "ok", "value": "false"},
+            {"field": "error", "literal": "unsupported"},
+            {"field": "cancelled", "value": "false"},
+            {"field": "count", "value": "0"}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "SqvmWifiScanNetworkResult",
+      "rust_fields": [
+        {"field": "ok", "value": "false"},
+        {"field": "error", "literal": "unsupported"},
+        {"field": "network", "value": "SqvmWifiAccessPoint { ssid: ptr::null(), ssid_len: 0, bssid: ptr::null(), bssid_len: 0, ssid_length: 0, channel: 0, rssi: 0, auth: ptr::null(), auth_len: 0, hidden: false }"}
+      ],
+      "c_helpers": [
+        {
+          "name": "sqvm_wifi_scan_network_unsupported",
+          "fields": [
+            {"field": "ok", "value": "false"},
+            {"field": "error", "literal": "unsupported"},
+            {"field": "network.ssid", "null": true},
+            {"field": "network.bssid", "null": true},
+            {"field": "network.ssid_length", "value": "0"},
+            {"field": "network.channel", "value": "0"},
+            {"field": "network.rssi", "value": "0"},
+            {"field": "network.auth", "null": true},
+            {"field": "network.hidden", "value": "false"}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "SqvmDeviceConfigResult",
+      "rust_fields": [
+        {"field": "ok", "value": "false"},
+        {"field": "error", "literal": "unsupported"},
+        {"field": "warning", "null": true}
+      ],
+      "c_helpers": [
+        {
+          "name": "sqvm_device_config_result_unsupported",
+          "fields": [
+            {"field": "ok", "value": "false"},
+            {"field": "error", "literal": "unsupported"},
+            {"field": "warning", "null": true}
+          ]
+        },
+        {
+          "name": "sqvm_device_config_result_ok",
+          "fields": [
+            {"field": "ok", "value": "true"},
+            {"field": "error", "null": true},
+            {"field": "warning", "null": true}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "SqvmFilePickFileResult",
+      "rust_fields": [
+        {"field": "ok", "value": "false"},
+        {"field": "error", "literal": "unsupported"},
+        {"field": "path", "null": true}
+      ],
+      "c_helpers": [
+        {
+          "name": "sqvm_file_pick_file_result_unsupported",
+          "fields": [
+            {"field": "ok", "value": "false"},
+            {"field": "error", "literal": "unsupported"},
+            {"field": "path", "null": true}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "SqvmFileReadTextResult",
+      "rust_fields": [
+        {"field": "ok", "value": "false"},
+        {"field": "error", "literal": "unsupported"},
+        {"field": "text", "null": true}
+      ],
+      "c_helpers": [
+        {
+          "name": "sqvm_file_read_text_result_unsupported",
+          "fields": [
+            {"field": "ok", "value": "false"},
+            {"field": "error", "literal": "unsupported"},
+            {"field": "text", "null": true}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "SqvmFileReadLinesResult",
+      "rust_fields": [
+        {"field": "ok", "value": "false"},
+        {"field": "error", "literal": "unsupported"}
+      ],
+      "c_helpers": [
+        {
+          "name": "sqvm_file_read_lines_result_unsupported",
+          "fields": [
+            {"field": "ok", "value": "false"},
+            {"field": "error", "literal": "unsupported"}
+          ]
+        }
+      ]
+    },
+    {
+      "type": "SqvmWifiApIp",
+      "rust_fields": [
+        {"field": "ip", "null": true},
+        {"field": "gw", "null": true},
+        {"field": "netmask", "null": true},
+        {"field": "error", "literal": "unsupported"}
+      ],
+      "c_helpers": [
+        {
+          "name": "sqvm_wifi_ap_ip_unsupported",
+          "fields": [
+            {"field": "ip", "null": true},
+            {"field": "gw", "null": true},
+            {"field": "netmask", "null": true},
+            {"field": "error", "literal": "unsupported"}
+          ]
+        }
+      ]
+    }
+  ],
   "constants": [
     {
       "name": "SQVM_STORAGE_TRANSFER_CAPACITY",

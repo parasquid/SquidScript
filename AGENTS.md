@@ -154,6 +154,13 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   wiring, docs, Rust FFI equivalence tests, and Zephyr ztests. Keep
   `docs/zephyr_vm_host_abi_coverage.md` current when callbacks are added, and
   prefer caller-owned buffers over hidden allocation across the FFI boundary.
+- When C helpers, defaults, callback initializers, or result-shape utilities
+  are mechanically derived from the SquidVM FFI ABI, generate them from
+  `compiler/rust/crates/squidvm-ffi/abi/manifest.json` through
+  `scripts/check-squidvm-ffi-abi.py` instead of hand-duplicating equivalent C
+  logic. Hand-written C should be reserved for behavior that cannot reasonably
+  be expressed as ABI metadata, and that exception should be explicit in the
+  code or plan.
 
 ## Hardware And Placeholder Discipline
 

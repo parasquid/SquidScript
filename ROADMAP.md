@@ -44,12 +44,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   intentionally wants `service.indicator.write(...)` to drive more than one
   physical output.
 
-## Refactoring Opportunities
-
-- Consolidate service result record construction across VM core, FFI, and
-  Zephyr so unsupported/default result shapes and static string handling do not
-  drift between runtime layers.
-
 ## Input, Triggers, And Power
 
 - Extend the `app.triggers` model beyond current timer metadata declarations to

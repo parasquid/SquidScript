@@ -12,9 +12,7 @@ static int32_t runtime_device_config_unsupported(SqvmDeviceConfigResult *out)
 	if (out == NULL) {
 		return -EINVAL;
 	}
-	memset(out, 0, sizeof(*out));
-	out->ok = false;
-	SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+	sqvm_device_config_result_unsupported(out);
 	return 0;
 }
 
@@ -49,8 +47,7 @@ static int32_t runtime_device_config_ok(SqvmDeviceConfigResult *out)
 	if (out == NULL) {
 		return -EINVAL;
 	}
-	memset(out, 0, sizeof(*out));
-	out->ok = true;
+	sqvm_device_config_result_ok(out);
 	return 0;
 }
 
@@ -909,4 +906,3 @@ int32_t runtime_device_config_save(void *user_data, const uint8_t *destination,
 {
 	return sq_vm_runtime_device_config_save(user_data, destination, destination_len, out);
 }
-

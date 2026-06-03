@@ -672,6 +672,185 @@ typedef struct {
 	SqvmPowerSleepCallback power_sleep;
 } SqvmCallbacks;
 
+static inline void sqvm_display_info_unsupported(SqvmDisplayInfo *out)
+{
+	if (out == NULL) {
+		return;
+	}
+	out->ok = false;
+	out->error = (const uint8_t *)"unsupported";
+	out->error_len = sizeof("unsupported") - 1;
+	out->warning = NULL;
+	out->warning_len = 0;
+	out->available = false;
+	out->status = (const uint8_t *)"unsupported";
+	out->status_len = sizeof("unsupported") - 1;
+	out->binding = (const uint8_t *)"display.default";
+	out->binding_len = sizeof("display.default") - 1;
+	out->driver = NULL;
+	out->driver_len = 0;
+	out->transport = NULL;
+	out->transport_len = 0;
+	out->width = 0;
+	out->height = 0;
+	out->physical_width = 0;
+	out->physical_height = 0;
+	out->rotation = 0;
+	out->color_model = NULL;
+	out->color_model_len = 0;
+	out->logical_gray_levels = 0;
+	out->native_bpp = 0;
+	out->native_pixel_format = NULL;
+	out->native_pixel_format_len = 0;
+	out->default_font_height = 0;
+	out->supports_partial_refresh = false;
+	out->supports_fast_refresh = false;
+}
+
+static inline void sqvm_wifi_operation_unsupported(SqvmWifiOperation *out)
+{
+	if (out == NULL) {
+		return;
+	}
+	out->active = false;
+	out->kind = NULL;
+	out->kind_len = 0;
+	out->state = (const uint8_t *)"error";
+	out->state_len = sizeof("error") - 1;
+	out->done = true;
+	out->cancelled = false;
+	out->ok = false;
+	out->error = (const uint8_t *)"unsupported";
+	out->error_len = sizeof("unsupported") - 1;
+}
+
+static inline void sqvm_wifi_operation_idle(SqvmWifiOperation *out)
+{
+	if (out == NULL) {
+		return;
+	}
+	out->active = false;
+	out->kind = NULL;
+	out->kind_len = 0;
+	out->state = (const uint8_t *)"idle";
+	out->state_len = sizeof("idle") - 1;
+	out->done = false;
+	out->cancelled = false;
+	out->ok = true;
+	out->error = NULL;
+	out->error_len = 0;
+}
+
+static inline void sqvm_wifi_operation_result_unsupported(SqvmWifiOperationResult *out)
+{
+	if (out == NULL) {
+		return;
+	}
+	out->ready = true;
+	out->kind = NULL;
+	out->kind_len = 0;
+	out->state = (const uint8_t *)"error";
+	out->state_len = sizeof("error") - 1;
+	out->ok = false;
+	out->error = (const uint8_t *)"unsupported";
+	out->error_len = sizeof("unsupported") - 1;
+	out->cancelled = false;
+	out->count = 0;
+}
+
+static inline void sqvm_wifi_scan_network_unsupported(SqvmWifiScanNetworkResult *out)
+{
+	if (out == NULL) {
+		return;
+	}
+	out->ok = false;
+	out->error = (const uint8_t *)"unsupported";
+	out->error_len = sizeof("unsupported") - 1;
+	out->network.ssid = NULL;
+	out->network.ssid_len = 0;
+	out->network.bssid = NULL;
+	out->network.bssid_len = 0;
+	out->network.ssid_length = 0;
+	out->network.channel = 0;
+	out->network.rssi = 0;
+	out->network.auth = NULL;
+	out->network.auth_len = 0;
+	out->network.hidden = false;
+}
+
+static inline void sqvm_device_config_result_unsupported(SqvmDeviceConfigResult *out)
+{
+	if (out == NULL) {
+		return;
+	}
+	out->ok = false;
+	out->error = (const uint8_t *)"unsupported";
+	out->error_len = sizeof("unsupported") - 1;
+	out->warning = NULL;
+	out->warning_len = 0;
+}
+
+static inline void sqvm_device_config_result_ok(SqvmDeviceConfigResult *out)
+{
+	if (out == NULL) {
+		return;
+	}
+	out->ok = true;
+	out->error = NULL;
+	out->error_len = 0;
+	out->warning = NULL;
+	out->warning_len = 0;
+}
+
+static inline void sqvm_file_pick_file_result_unsupported(SqvmFilePickFileResult *out)
+{
+	if (out == NULL) {
+		return;
+	}
+	out->ok = false;
+	out->error = (const uint8_t *)"unsupported";
+	out->error_len = sizeof("unsupported") - 1;
+	out->path = NULL;
+	out->path_len = 0;
+}
+
+static inline void sqvm_file_read_text_result_unsupported(SqvmFileReadTextResult *out)
+{
+	if (out == NULL) {
+		return;
+	}
+	out->ok = false;
+	out->error = (const uint8_t *)"unsupported";
+	out->error_len = sizeof("unsupported") - 1;
+	out->text = NULL;
+	out->text_len = 0;
+}
+
+static inline void sqvm_file_read_lines_result_unsupported(SqvmFileReadLinesResult *out)
+{
+	if (out == NULL) {
+		return;
+	}
+	out->ok = false;
+	out->error = (const uint8_t *)"unsupported";
+	out->error_len = sizeof("unsupported") - 1;
+}
+
+static inline void sqvm_wifi_ap_ip_unsupported(SqvmWifiApIp *out)
+{
+	if (out == NULL) {
+		return;
+	}
+	out->ip = NULL;
+	out->ip_len = 0;
+	out->gw = NULL;
+	out->gw_len = 0;
+	out->netmask = NULL;
+	out->netmask_len = 0;
+	out->error = (const uint8_t *)"unsupported";
+	out->error_len = sizeof("unsupported") - 1;
+}
+
 SqdcStatus sqdc_config_clear(SqdcConfig *config);
 SqdcStatus sqdc_is_safe_sqdevice_path(const uint8_t *path, size_t path_len);
 SqdcStatus sqdc_parse_sqdevice(const uint8_t *input, size_t input_len, SqdcConfig *out);

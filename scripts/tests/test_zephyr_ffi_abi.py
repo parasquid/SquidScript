@@ -48,6 +48,7 @@ class ZephyrFfiAbiTests(ZephyrScriptTestCase):
             runtime = tmp_path / "vm_runtime.c"
             rust_tests = tmp_path / "ffi_dispatch.rs"
             generated_callbacks = tmp_path / "generated_callbacks.rs"
+            generated_result_defaults = tmp_path / "generated_result_defaults.rs"
             generated_dispatch_cases = tmp_path / "generated_ffi_dispatch_cases.rs"
             generated_runtime_callbacks = tmp_path / "generated_runtime_callbacks.inc"
             zephyr_tests = tmp_path / "main.c"
@@ -108,6 +109,26 @@ static const SqvmCallbacks runtime_callbacks = {
                                 "definition": "typedef struct {\n\tSqvmTraceCallback trace;\n} SqvmCallbacks;",
                             },
                         ],
+                        "result_defaults": [
+                            {
+                                "type": "SqvmTestResult",
+                                "rust_fields": [
+                                    {"field": "ok", "value": "false"},
+                                    {"field": "error", "literal": "unsupported"},
+                                    {"field": "path", "null": True},
+                                ],
+                                "c_helpers": [
+                                    {
+                                        "name": "sqvm_test_result_unsupported",
+                                        "fields": [
+                                            {"field": "ok", "value": "false"},
+                                            {"field": "error", "literal": "unsupported"},
+                                            {"field": "path", "null": True},
+                                        ],
+                                    }
+                                ],
+                            }
+                        ],
                         "exports": [
                             {
                                 "name": "sqvm_present",
@@ -160,6 +181,8 @@ static const SqvmCallbacks runtime_callbacks = {
                     str(rust_tests),
                     "--generated-rust-callbacks",
                     str(generated_callbacks),
+                    "--generated-rust-result-defaults",
+                    str(generated_result_defaults),
                     "--generated-rust-dispatch-cases",
                     str(generated_dispatch_cases),
                     "--generated-runtime-callbacks",
@@ -198,6 +221,8 @@ static const SqvmCallbacks runtime_callbacks = {
                     str(rust_tests),
                     "--generated-rust-callbacks",
                     str(generated_callbacks),
+                    "--generated-rust-result-defaults",
+                    str(generated_result_defaults),
                     "--generated-rust-dispatch-cases",
                     str(generated_dispatch_cases),
                     "--generated-runtime-callbacks",
@@ -213,8 +238,25 @@ static const SqvmCallbacks runtime_callbacks = {
             )
 
             self.assertEqual(write_result.returncode, 0, write_result.stderr + write_result.stdout)
+            self.assertIn(
+                "impl Default for SqvmTestResult",
+                generated_result_defaults.read_text(encoding="utf-8"),
+            )
+            self.assertIn(
+                'error: b"unsupported".as_ptr()',
+                generated_result_defaults.read_text(encoding="utf-8"),
+            )
+            self.assertIn(
+                "static inline void sqvm_test_result_unsupported(SqvmTestResult *out)",
+                header.read_text(encoding="utf-8"),
+            )
+            self.assertIn(
+                "out->error_len = sizeof(\"unsupported\") - 1;",
+                header.read_text(encoding="utf-8"),
+            )
             header.write_text(header.read_text(encoding="utf-8") + "\n/* hand edit */\n", encoding="utf-8")
             generated_callbacks.write_text(generated_callbacks.read_text(encoding="utf-8") + "\n// hand edit\n", encoding="utf-8")
+            generated_result_defaults.write_text(generated_result_defaults.read_text(encoding="utf-8") + "\n// hand edit\n", encoding="utf-8")
             generated_dispatch_cases.write_text(generated_dispatch_cases.read_text(encoding="utf-8") + "\n// hand edit\n", encoding="utf-8")
             generated_runtime_callbacks.write_text(generated_runtime_callbacks.read_text(encoding="utf-8") + "\n/* hand edit */\n", encoding="utf-8")
 
@@ -235,6 +277,8 @@ static const SqvmCallbacks runtime_callbacks = {
                     str(rust_tests),
                     "--generated-rust-callbacks",
                     str(generated_callbacks),
+                    "--generated-rust-result-defaults",
+                    str(generated_result_defaults),
                     "--generated-rust-dispatch-cases",
                     str(generated_dispatch_cases),
                     "--generated-runtime-callbacks",
@@ -253,6 +297,7 @@ static const SqvmCallbacks runtime_callbacks = {
         combined = check_result.stderr + check_result.stdout
         self.assertIn("generated C header is stale", combined)
         self.assertIn("generated Rust callback module is stale", combined)
+        self.assertIn("generated Rust result defaults module is stale", combined)
         self.assertIn("generated Rust dispatch cases are stale", combined)
         self.assertIn("generated Zephyr runtime callback initializer is stale", combined)
 

@@ -714,41 +714,6 @@ pub struct SqvmDisplayInfo {
     pub supports_fast_refresh: bool,
 }
 
-impl Default for SqvmDisplayInfo {
-    fn default() -> Self {
-        Self {
-            ok: false,
-            error: b"unsupported".as_ptr(),
-            error_len: b"unsupported".len(),
-            warning: ptr::null(),
-            warning_len: 0,
-            available: false,
-            status: b"unsupported".as_ptr(),
-            status_len: b"unsupported".len(),
-            binding: b"display.default".as_ptr(),
-            binding_len: b"display.default".len(),
-            driver: ptr::null(),
-            driver_len: 0,
-            transport: ptr::null(),
-            transport_len: 0,
-            width: 0,
-            height: 0,
-            physical_width: 0,
-            physical_height: 0,
-            rotation: 0,
-            color_model: ptr::null(),
-            color_model_len: 0,
-            logical_gray_levels: 0,
-            native_bpp: 0,
-            native_pixel_format: ptr::null(),
-            native_pixel_format_len: 0,
-            default_font_height: 0,
-            supports_partial_refresh: false,
-            supports_fast_refresh: false,
-        }
-    }
-}
-
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SqvmAppRegistryEntry {
@@ -917,23 +882,6 @@ pub struct SqvmWifiOperation {
     pub error_len: usize,
 }
 
-impl Default for SqvmWifiOperation {
-    fn default() -> Self {
-        Self {
-            active: false,
-            kind: ptr::null(),
-            kind_len: 0,
-            state: b"error".as_ptr(),
-            state_len: b"error".len(),
-            done: true,
-            cancelled: false,
-            ok: false,
-            error: b"unsupported".as_ptr(),
-            error_len: b"unsupported".len(),
-        }
-    }
-}
-
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SqvmWifiOperationResult {
@@ -949,23 +897,6 @@ pub struct SqvmWifiOperationResult {
     pub count: i32,
 }
 
-impl Default for SqvmWifiOperationResult {
-    fn default() -> Self {
-        Self {
-            ready: true,
-            kind: ptr::null(),
-            kind_len: 0,
-            state: b"error".as_ptr(),
-            state_len: b"error".len(),
-            ok: false,
-            error: b"unsupported".as_ptr(),
-            error_len: b"unsupported".len(),
-            cancelled: false,
-            count: 0,
-        }
-    }
-}
-
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SqvmWifiScanNetworkResult {
@@ -973,28 +904,6 @@ pub struct SqvmWifiScanNetworkResult {
     pub error: *const u8,
     pub error_len: usize,
     pub network: SqvmWifiAccessPoint,
-}
-
-impl Default for SqvmWifiScanNetworkResult {
-    fn default() -> Self {
-        Self {
-            ok: false,
-            error: b"unsupported".as_ptr(),
-            error_len: b"unsupported".len(),
-            network: SqvmWifiAccessPoint {
-                ssid: ptr::null(),
-                ssid_len: 0,
-                bssid: ptr::null(),
-                bssid_len: 0,
-                ssid_length: 0,
-                channel: 0,
-                rssi: 0,
-                auth: ptr::null(),
-                auth_len: 0,
-                hidden: false,
-            },
-        }
-    }
 }
 
 #[repr(C)]
@@ -1038,18 +947,6 @@ pub struct SqvmDeviceConfigResult {
     pub warning_len: usize,
 }
 
-impl Default for SqvmDeviceConfigResult {
-    fn default() -> Self {
-        Self {
-            ok: false,
-            error: b"unsupported".as_ptr(),
-            error_len: b"unsupported".len(),
-            warning: ptr::null(),
-            warning_len: 0,
-        }
-    }
-}
-
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SqvmFilePickFileResult {
@@ -1058,18 +955,6 @@ pub struct SqvmFilePickFileResult {
     pub error_len: usize,
     pub path: *const u8,
     pub path_len: usize,
-}
-
-impl Default for SqvmFilePickFileResult {
-    fn default() -> Self {
-        Self {
-            ok: false,
-            error: b"unsupported".as_ptr(),
-            error_len: b"unsupported".len(),
-            path: ptr::null(),
-            path_len: 0,
-        }
-    }
 }
 
 #[repr(C)]
@@ -1082,34 +967,12 @@ pub struct SqvmFileReadTextResult {
     pub text_len: usize,
 }
 
-impl Default for SqvmFileReadTextResult {
-    fn default() -> Self {
-        Self {
-            ok: false,
-            error: b"unsupported".as_ptr(),
-            error_len: b"unsupported".len(),
-            text: ptr::null(),
-            text_len: 0,
-        }
-    }
-}
-
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SqvmFileReadLinesResult {
     pub ok: bool,
     pub error: *const u8,
     pub error_len: usize,
-}
-
-impl Default for SqvmFileReadLinesResult {
-    fn default() -> Self {
-        Self {
-            ok: false,
-            error: b"unsupported".as_ptr(),
-            error_len: b"unsupported".len(),
-        }
-    }
 }
 
 #[repr(C)]
@@ -1143,21 +1006,6 @@ impl Default for SqvmDeviceBinding {
     }
 }
 
-impl Default for SqvmWifiApIp {
-    fn default() -> Self {
-        Self {
-            ip: ptr::null(),
-            ip_len: 0,
-            gw: ptr::null(),
-            gw_len: 0,
-            netmask: ptr::null(),
-            netmask_len: 0,
-            error: b"unsupported".as_ptr(),
-            error_len: b"unsupported".len(),
-        }
-    }
-}
-
 pub type SqvmReadExactAtCallback = Option<
     unsafe extern "C" fn(
         user_data: *mut c_void,
@@ -1168,6 +1016,7 @@ pub type SqvmReadExactAtCallback = Option<
 >;
 
 mod generated_callbacks;
+mod generated_result_defaults;
 pub use generated_callbacks::SqvmCallbacks;
 
 #[no_mangle]

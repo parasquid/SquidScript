@@ -475,7 +475,7 @@ static int32_t runtime_wifi_unsupported_action(SqvmWifiOperation *out)
 	if (out == NULL) {
 		return -EINVAL;
 	}
-	runtime_wifi_error_operation(out, "unsupported");
+	sqvm_wifi_operation_unsupported(out);
 	return 0;
 }
 #endif
@@ -704,7 +704,7 @@ int32_t runtime_wifi_get_ap_ip(void *user_data, SqvmWifiApIp *out)
 	return 0;
 #else
 	ARG_UNUSED(user_data);
-	SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+	sqvm_wifi_ap_ip_unsupported(out);
 	return 0;
 #endif
 }
@@ -861,9 +861,7 @@ int32_t runtime_wifi_operation(void *user_data, SqvmWifiOperation *out)
 	return 0;
 #else
 	ARG_UNUSED(user_data);
-	memset(out, 0, sizeof(*out));
-	SQ_SET_LITERAL_FIELD(out, state, "idle");
-	out->ok = true;
+	sqvm_wifi_operation_idle(out);
 	return 0;
 #endif
 }
@@ -877,10 +875,7 @@ int32_t runtime_wifi_result(void *user_data, SqvmWifiOperationResult *out)
 #if SQ_VM_RUNTIME_HAS_WIFI_MGMT
 	struct sq_vm_runtime *runtime = user_data;
 	if (runtime == NULL) {
-		out->ready = true;
-		out->ok = false;
-		SQ_SET_LITERAL_FIELD(out, state, "error");
-		SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+		sqvm_wifi_operation_result_unsupported(out);
 		return 0;
 	}
 	runtime_wifi_complete_if_ready(runtime);
@@ -911,10 +906,7 @@ int32_t runtime_wifi_result(void *user_data, SqvmWifiOperationResult *out)
 	return 0;
 #else
 	ARG_UNUSED(user_data);
-	out->ready = true;
-	out->ok = false;
-	SQ_SET_LITERAL_FIELD(out, state, "error");
-	SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+	sqvm_wifi_operation_result_unsupported(out);
 	return 0;
 #endif
 }
@@ -931,9 +923,7 @@ int32_t runtime_wifi_cancel(void *user_data, SqvmWifiOperation *out)
 		return 0;
 	}
 	if (!runtime->wifi_op_active || runtime->wifi_op_done) {
-		memset(out, 0, sizeof(*out));
-		SQ_SET_LITERAL_FIELD(out, state, "idle");
-		out->ok = true;
+		sqvm_wifi_operation_idle(out);
 		return 0;
 	}
 	runtime->wifi_op_done = true;
@@ -948,9 +938,7 @@ int32_t runtime_wifi_cancel(void *user_data, SqvmWifiOperation *out)
 	return 0;
 #else
 	ARG_UNUSED(user_data);
-	memset(out, 0, sizeof(*out));
-	SQ_SET_LITERAL_FIELD(out, state, "idle");
-	out->ok = true;
+	sqvm_wifi_operation_idle(out);
 	return 0;
 #endif
 }
@@ -975,9 +963,7 @@ int32_t runtime_wifi_scan_network(void *user_data, int32_t index,
 #else
 	ARG_UNUSED(user_data);
 	ARG_UNUSED(index);
-	out->ok = false;
-	SQ_SET_LITERAL_FIELD(out, error, "unsupported");
+	sqvm_wifi_scan_network_unsupported(out);
 	return 0;
 #endif
 }
-
