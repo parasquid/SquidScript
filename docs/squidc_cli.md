@@ -12,18 +12,18 @@ configuration, firmware build metadata, docs, and autocomplete.
 ## Common Commands
 
 ```sh
-cargo run -p squidc -- build examples/blinky-supermini/main.squid --out target/blinky.sqbc
-cargo run -p squidc -- package examples/blinky-supermini
-cargo run -p squidc -- run examples/blinky-supermini/main.squid
+cargo run -p squidc -- app build examples/blinky-supermini/main.squid --out target/blinky.sqbc
+cargo run -p squidc -- app package examples/blinky-supermini
+cargo run -p squidc -- app run examples/blinky-supermini/main.squid
 cargo run -p squidc -- repl --script tests/repl/default-dev.session
 cargo run -p squidc -- doctor
 ```
 
-`run` compiles the input app, uploads it through the Zephyr temp-run command,
-and launches it as a temporary foreground app. Firmware stages the temp SQBC as
-a temporary app-store file instead of buffering the payload in RAM. It does not
-publish an installed app, does not overwrite `main`, and keeps temp app state
-volatile.
+`app run` compiles the input app, uploads it through the Zephyr temp-run
+command, and launches it as a temporary foreground app. Firmware stages the
+temp SQBC as a temporary app-store file instead of buffering the payload in
+RAM. It does not publish an installed app, does not overwrite `main`, and keeps
+temp app state volatile.
 
 ## Scripted REPL Checks
 
@@ -48,8 +48,10 @@ scripted hardware checks.
 ## App Commands
 
 ```sh
-cargo run -p squidc -- package examples/blinky-supermini
-cargo run -p squidc -- package examples/blinky-supermini --out target/blinky-supermini.squid.zip
+cargo run -p squidc -- app build examples/blinky-supermini/main.squid --out target/blinky.sqbc
+cargo run -p squidc -- app package examples/blinky-supermini
+cargo run -p squidc -- app package examples/blinky-supermini --out target/blinky-supermini.squid.zip
+cargo run -p squidc -- app run examples/blinky-supermini/main.squid
 cargo run -p squidc -- app install examples/blinky-supermini/main.squid
 cargo run -p squidc -- app install blinky-supermini.squid.zip
 cargo run -p squidc -- app install --as reader tests/hardware/c3-supermini/generic-events/reader-clock.squid
@@ -57,7 +59,9 @@ cargo run -p squidc -- app launch reader
 cargo run -p squidc -- app list
 ```
 
-`package <app-dir>` expects `<app-dir>/main.squid`, compiles it to package
+`app build` compiles a SquidScript app or source file to SQBC.
+
+`app package <app-dir>` expects `<app-dir>/main.squid`, compiles it to package
 entry `main.sqbc`, and writes `<app-id>.squid.zip` in the current directory
 unless `--out` is provided. Package output includes safe non-source runtime
 files from the app directory. It excludes `.squid` source files, dot-files,
@@ -220,13 +224,13 @@ sandbox.
 Normal compile/upload:
 
 ```sh
-cargo run -p squidc -- run examples/blinky-supermini/main.squid
+cargo run -p squidc -- app run examples/blinky-supermini/main.squid
 ```
 
 Explicit target check:
 
 ```sh
-cargo run -p squidc -- run examples/blinky-supermini/main.squid \
+cargo run -p squidc -- app run examples/blinky-supermini/main.squid \
   --target targets/esp32c3-super-mini.target.json \
   --check-target
 ```

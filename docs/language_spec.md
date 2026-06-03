@@ -3750,7 +3750,7 @@ squidc responsibilities:
 Suggested command:
 
 ```sh
-squidc build /path/to/app --out /path/to/app/main.sqbc --source-map
+squidc app build /path/to/app --out /path/to/app/main.sqbc
 ```
 
 Compiler diagnostics should include:
@@ -3943,7 +3943,7 @@ In this example, `event.on("key.UP")` and `event.on("key.DOWN")` update `selecte
 Build:
 
 ```sh
-squidc build /sd/apps/hello-menu --out /sd/apps/hello-menu/main.sqbc --source-map
+squidc app build /sd/apps/hello-menu --out /sd/apps/hello-menu/main.sqbc
 ```
 
 ---

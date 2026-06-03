@@ -23,7 +23,7 @@ workaround task.
 The default XIAO ESP32-C3 e-paper firmware embeds a target-specific fallback
 SquidScript app from
 `firmware/zephyr/fallback/xiao-esp32c3-gdeq0426t82-sd-main.squid`. CMake
-compiles that source with `squidc build`, converts the resulting SQBC into
+compiles that source with `squidc app build`, converts the resulting SQBC into
 generated C, and links it as a read-only fallback storage backend. Boot policy
 selects this fallback as logical `main` only when the app store mounted, the
 registry scan succeeded, and no installed `main` exists. Installed `main`
@@ -132,7 +132,7 @@ Use `scripts/zephyr-test-protocol.sh` for that protocol suite; it selects
 Generated protocol test fixtures come from checked-in SquidScript sources under
 `firmware/zephyr/tests/protocol/fixtures`. The protocol test CMake target runs
 `scripts/generate-zephyr-protocol-fixtures.py`, which compiles each `.squid`
-fixture with `squidc build` and emits `squidscript_protocol_fixtures.h` in the
+fixture with `squidc app build` and emits `squidscript_protocol_fixtures.h` in the
 build directory. Zephyr protocol ztests should include that generated header
 and reference the generated `<fixture>_sqbc` arrays. Do not add hand-maintained
 SQBC byte arrays to `firmware/zephyr/tests/protocol/src/main.c`; add a minimal

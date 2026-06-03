@@ -52,14 +52,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   overlay, fallback app, generated Kconfig/defaults, and build directory
   selection. When no `--target` is supplied for an interactive command, present
   a target picker; CI/scripts should use explicit `--target`.
-- Reorganize `squidc` CLI namespaces so app operations live under `squidc app`
-  and firmware/board operations live under `squidc target`. Replace the
-  ambiguous top-level `squidc build` app-SQBC command with `squidc app build`,
-  consider moving top-level `package` to `squidc app package`, and decide
-  whether top-level `run` should become `squidc app run`. Because SquidScript
-  is pre-1.0, directly replace old command shapes instead of preserving aliases
-  unless a specific transition bridge is requested.
-
 ## Display And Output
 
 - Implement an SSD1677/GDEQ0426T82 SquidScript display backend when the display

@@ -82,9 +82,6 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    Build(BuildArgs),
-    Package(PackageArgs),
-    Run(DeviceSourceArgs),
     Repl(ReplArgs),
     Doctor(DoctorArgs),
     App {
@@ -104,9 +101,6 @@ enum Commands {
 impl Commands {
     fn name(&self) -> &'static str {
         match self {
-            Self::Build(_) => "build",
-            Self::Package(_) => "package",
-            Self::Run(_) => "run",
             Self::Repl(_) => "repl",
             Self::Doctor(_) => "doctor",
             Self::App { .. } => "app",
@@ -118,6 +112,9 @@ impl Commands {
 
 #[derive(Subcommand, Debug)]
 enum AppCommands {
+    Build(BuildArgs),
+    Package(PackageArgs),
+    Run(DeviceSourceArgs),
     Install(AppInstallArgs),
     Launch(AppLaunchArgs),
     List(DeviceOnlyArgs),
@@ -312,12 +309,12 @@ impl From<ProfileArg> for BuildProfile {
 
 fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String> {
     match command {
-        Commands::Build(args) => build(args),
-        Commands::Package(args) => package_app(args),
-        Commands::Run(args) => run_app_source(args, human),
         Commands::Repl(args) => repl(args, human),
         Commands::Doctor(args) => doctor(args, human),
         Commands::App { command } => match command {
+            AppCommands::Build(args) => build(args),
+            AppCommands::Package(args) => package_app(args),
+            AppCommands::Run(args) => run_app_source(args, human),
             AppCommands::Install(args) => install_app(args, human),
             AppCommands::Launch(args) => launch_app(args, human),
             AppCommands::List(args) => app_list(args, human),
@@ -1667,13 +1664,69 @@ mod tests {
     }
 
     #[test]
-    fn parses_package_command_with_default_output() {
-        let cli = Cli::try_parse_from(["squidc", "package", "examples/binbook-reader"]).unwrap();
-        let Commands::Package(args) = cli.command else {
-            panic!("expected package");
+    fn parses_grouped_app_build_command() {
+        let cli = Cli::try_parse_from([
+            "squidc",
+            "app",
+            "build",
+            "examples/blinky-supermini/main.squid",
+            "--out",
+            "target/blinky.sqbc",
+        ])
+        .unwrap();
+        let Commands::App {
+            command: AppCommands::Build(args),
+        } = cli.command
+        else {
+            panic!("expected app build");
+        };
+        assert_eq!(
+            args.input,
+            PathBuf::from("examples/blinky-supermini/main.squid")
+        );
+        assert_eq!(args.out, PathBuf::from("target/blinky.sqbc"));
+    }
+
+    #[test]
+    fn parses_grouped_app_package_command_with_default_output() {
+        let cli =
+            Cli::try_parse_from(["squidc", "app", "package", "examples/binbook-reader"]).unwrap();
+        let Commands::App {
+            command: AppCommands::Package(args),
+        } = cli.command
+        else {
+            panic!("expected app package");
         };
         assert_eq!(args.input, PathBuf::from("examples/binbook-reader"));
         assert_eq!(args.out, None);
+    }
+
+    #[test]
+    fn parses_grouped_app_run_command() {
+        let cli =
+            Cli::try_parse_from(["squidc", "app", "run", "examples/blinky-supermini/main.squid"])
+                .unwrap();
+        let Commands::App {
+            command: AppCommands::Run(args),
+        } = cli.command
+        else {
+            panic!("expected app run");
+        };
+        assert_eq!(
+            args.input,
+            PathBuf::from("examples/blinky-supermini/main.squid")
+        );
+    }
+
+    #[test]
+    fn rejects_removed_top_level_app_commands() {
+        for command in ["build", "package", "run"] {
+            assert!(
+                Cli::try_parse_from(["squidc", command, "examples/blinky-supermini/main.squid"])
+                    .is_err(),
+                "{command} should only exist under squidc app"
+            );
+        }
     }
 
     #[test]

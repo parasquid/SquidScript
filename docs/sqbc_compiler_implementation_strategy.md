@@ -465,13 +465,13 @@ firmware upload.
 Normal portable build:
 
 ```bash
-squidc build app.squid --out app.sqbc
+squidc app build app.squid --out app.sqbc
 ```
 
 Explicit target check:
 
 ```bash
-squidc build app.squid --target targets/xteink-x4.target.json --check-target --out app.sqbc
+squidc app build app.squid --target targets/xteink-x4.target.json --check-target --out app.sqbc
 ```
 
 The compiler should load the resolved target model produced from:
@@ -527,9 +527,9 @@ Compatibility tooling may eventually allow both:
 Example CLI forms:
 
 ```bash
-squidc build app.squid --target targets/xteink-x4.target.json --check-target
+squidc app build app.squid --target targets/xteink-x4.target.json --check-target --out app.sqbc
 
-squidc build app.squid \
+squidc app build app.squid \
   --board esp32s3 \
   --display waveshare_4_2_bw \
   --input custom_buttons.toml \
@@ -827,7 +827,7 @@ Exit criteria:
 
 Goals:
 
-- implement `squidc build`
+- implement `squidc app build`
 - implement `squidc check`
 - implement `squidc inspect`
 - implement target/profile loading

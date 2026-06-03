@@ -56,7 +56,7 @@ wait_for_contains() {
 }
 
 run_capture storage-format cargo run --quiet -p squidc -- device storage-format >/dev/null
-run_capture package-device-binding cargo run --quiet -p squidc -- package "${DEVICE_BINDING_APP}" --out "${DEVICE_BINDING_PACKAGE}" >/dev/null
+run_capture package-device-binding cargo run --quiet -p squidc -- app package "${DEVICE_BINDING_APP}" --out "${DEVICE_BINDING_PACKAGE}" >/dev/null
 run_capture install-device-binding cargo run --quiet -p squidc -- app install "${DEVICE_BINDING_PACKAGE}" >/dev/null
 
 apps_out="$(run_capture app-list cargo run --quiet -p squidc -- app list)"

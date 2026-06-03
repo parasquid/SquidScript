@@ -55,7 +55,7 @@ wait_for_contains() {
   exit 1
 }
 
-run_capture package-device-config cargo run --quiet -p squidc -- package "${DEVICE_CONFIG_APP}" --out "${DEVICE_CONFIG_PACKAGE}" >/dev/null
+run_capture package-device-config cargo run --quiet -p squidc -- app package "${DEVICE_CONFIG_APP}" --out "${DEVICE_CONFIG_PACKAGE}" >/dev/null
 run_capture storage-format cargo run --quiet -p squidc -- device storage-format >/dev/null
 run_capture install-device-config cargo run --quiet -p squidc -- app install "${DEVICE_CONFIG_PACKAGE}" >/dev/null
 

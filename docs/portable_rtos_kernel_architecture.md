@@ -79,9 +79,10 @@ use a documented coalesce/drop policy.
 ## Firmware Command Surface
 
 The Zephyr firmware command surface is the current device protocol. Host tools
-such as `squidc run`, `squidc app`, `squidc repl`, and `squidc device` should
-speak that protocol directly as it is implemented. Do not preserve old command
-names or response shapes unless they are also the current Zephyr protocol.
+such as `squidc app run`, other `squidc app ...` commands, `squidc repl`, and
+`squidc device` should speak that protocol directly as it is implemented. Do
+not preserve old command names or response shapes unless they are also the
+current Zephyr protocol.
 
 ## Storage Model
 

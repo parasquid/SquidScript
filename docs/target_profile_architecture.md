@@ -928,19 +928,17 @@ device/runtime error.
 Concrete target build:
 
 ```sh
-squidc build apps/hello-menu \
-  --out apps/hello-menu/main.sqbc \
-  --source-map
+squidc app build apps/hello-menu \
+  --out apps/hello-menu/main.sqbc
 ```
 
 Explicit target capability check:
 
 ```sh
-squidc build apps/hello-menu \
+squidc app build apps/hello-menu \
   --target targets/xteink-x4.target.json \
   --check-target \
-  --out apps/hello-menu/main.sqbc \
-  --source-map
+  --out apps/hello-menu/main.sqbc
 ```
 
 `squidc` should use the selected target/profile to check:

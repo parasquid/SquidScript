@@ -191,7 +191,7 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
         self.assertIn("device.config.save", app)
         self.assertIn("SQDEVICE", resource)
         self.assertIn("indicator.default", resource)
-        self.assertIn('cargo run --quiet -p squidc -- package "${DEVICE_CONFIG_APP}"', script)
+        self.assertIn('cargo run --quiet -p squidc -- app package "${DEVICE_CONFIG_APP}"', script)
         self.assertIn(
             'cargo run --quiet -p squidc -- app install "${DEVICE_CONFIG_PACKAGE}"',
             script,
@@ -261,7 +261,7 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
         self.assertIn("service.indicator.write(true)", helper)
         self.assertIn("indicator.default", resource)
         self.assertIn("pinName string 5:GPIO8", resource)
-        self.assertIn('cargo run --quiet -p squidc -- package "${DEVICE_BINDING_APP}"', script)
+        self.assertIn('cargo run --quiet -p squidc -- app package "${DEVICE_BINDING_APP}"', script)
         self.assertIn(
             "cargo run --quiet -p squidc -- app launch device-binding-summary",
             script,

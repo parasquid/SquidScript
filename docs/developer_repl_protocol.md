@@ -4,8 +4,8 @@ Status: shared host/firmware codec established; command, lifecycle,
 diagnostics, state, resources, and storage helpers use framed requests.
 
 The current real firmware path is Zephyr. The developer device protocol is the
-Zephyr-owned command surface used by `squidc run`, `squidc app`, `squidc repl`,
-and `squidc device`.
+Zephyr-owned command surface used by `squidc app run`, other `squidc app ...`
+commands, `squidc repl`, and `squidc device`.
 
 The old ESP32-C3 Rust firmware line protocol is obsolete reference material.
 Do not preserve its command names, response markers, or storage behavior unless
