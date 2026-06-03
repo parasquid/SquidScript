@@ -390,7 +390,8 @@ pub fn doctor_checks(root: &Path, target: &TargetDefinition, port: Option<&str>)
                 "fallback-source",
                 &resolve_repo_path(root, &zephyr.fallback_source),
             ));
-            checks.push(check_command("west", &["--version"]));
+            let envs = zephyr_env(root, target, false).unwrap_or_default();
+            checks.push(check_command_with_env("west", &["--version"], &envs));
             checks.push(check_path("firmware-dir", &root.join("firmware/zephyr")));
             let candidates = match port {
                 Some(port) => vec![port.to_string()],
@@ -555,8 +556,12 @@ fn check_path(name: &str, path: &Path) -> Value {
     })
 }
 
-fn check_command(name: &str, args: &[&str]) -> Value {
-    match Command::new(name).args(args).output() {
+fn check_command_with_env(name: &str, args: &[&str], envs: &[(String, String)]) -> Value {
+    match Command::new(name)
+        .args(args)
+        .envs(envs.iter().map(|(key, value)| (key, value)))
+        .output()
+    {
         Ok(output) if output.status.success() => json!({
             "name": name,
             "status": "ok",
@@ -583,5 +588,33 @@ fn resolve_repo_path(root: &Path, path: &Path) -> PathBuf {
         path.to_path_buf()
     } else {
         root.join(path)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_check_uses_injected_environment_path() {
+        let scratch = repo_root().join("target/squidc-cli-test-doctor-env");
+        let bin = scratch.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let west = bin.join("west");
+        fs::write(&west, "#!/bin/sh\nprintf 'west 1.2.3\\n'\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&west, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        let check = check_command_with_env(
+            "west",
+            &["--version"],
+            &[("PATH".to_string(), bin.display().to_string())],
+        );
+
+        assert_eq!(check["status"].as_str(), Some("ok"));
+        assert_eq!(check["message"].as_str(), Some("west 1.2.3"));
     }
 }
