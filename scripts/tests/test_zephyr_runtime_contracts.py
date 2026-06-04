@@ -170,6 +170,22 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
         self.assertIn("debug.print", app)
         self.assertIn("mode string 4:gpio", device)
 
+    def test_wifi_station_hardware_script_waits_for_connected_status(self):
+        script = self.read("scripts/zephyr-test-wifi-station-api.sh")
+
+        self.assertIn(
+            'wait_for_contains output "output=wifi station dev true"',
+            script,
+        )
+        self.assertIn(
+            'assert_file_contains "${output_out}" "output=wifi connect true null"',
+            script,
+        )
+        self.assertNotIn(
+            'wait_for_contains output "output=wifi connect true null"',
+            script,
+        )
+
     def test_runtime_reuses_transfer_storage_for_init_scratch_and_completion(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")

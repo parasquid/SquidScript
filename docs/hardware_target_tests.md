@@ -529,7 +529,7 @@ the real Zephyr Wi-Fi backend. On output timeout, the script writes best-effort
 `output-timeout-resources.out` and `output-timeout-errors.out` captures under
 `target/hardware-tests/wifi-list/`.
 
-`scripts/c3-supermini-test-wifi-station-api.sh` is explicit-credentials-only
+`scripts/zephyr-test-wifi-station-api.sh` is explicit-credentials-only
 and is not part of the default full hardware suite. It skips successfully unless
 `SQUID_WIFI_STATION_SSID` and `SQUID_WIFI_STATION_PASSWORD` are set. When those
 variables are present, it provisions profile `dev` through
@@ -540,7 +540,10 @@ app that calls `service.wifi.connect("dev")`, polls `service.wifi.operation()`,
 and then reads `service.wifi.status()`. The script requires the start request
 to be accepted and `status.connected == true`, prints command names and lengths
 only, and rejects raw SSIDs, passwords, BSSIDs, MACs, or local IP patterns in
-captured output.
+captured output. It rejects unexpected `device errors` output, but allows the
+known `error=display=unavailable code=-19` diagnostic so the Wi-Fi station check
+can run on target setups where configured display hardware is intentionally not
+connected.
 
 `scripts/c3-supermini-test-wifi-ap-api.sh` runs after Wi-Fi list coverage and
 before the final visible LED check in the default full hardware suite. It
@@ -551,6 +554,19 @@ requires start, AP IP lookup, and stop to report success without printing the
 raw AP SSID, BSSIDs, MACs, or local IP patterns in captured output. AP start
 also starts a bounded DHCPv4 server on the AP interface. This script does not
 prove that an external client associated with the AP or received a lease.
+To verify AP connectability, leave `wifi-ap-summary` running after AP start and
+use a separate Wi-Fi client to scan for and join the test AP. A passing
+connectability check requires all of:
+
+- the second client sees the test AP SSID
+- the second client associates successfully
+- the second client receives an IPv4 lease
+- firmware still reports successful AP stop after sending `SELECT`
+
+When using a host Wi-Fi interface for this check, do not print nearby SSIDs,
+BSSIDs, MACs, or assigned IP addresses in logs; report only whether the test AP
+was found, whether the client connected, and whether an IPv4 address was
+assigned.
 
 `scripts/c3-supermini-test-ble-smoke.sh` runs after Wi-Fi coverage and before
 physical-input/final-visible checks. It builds and flashes the selected
@@ -563,6 +579,24 @@ discovery was not confirmed after the serial advertising proof. Use
 `--require-host-scan` when the host-side BLE path must be proven. This check
 validates that the target radio backend is enabled by target metadata; it does
 not validate BLE object-transfer chunking, staging, or app install.
+
+For non-Super-Mini ESP32-C3 targets such as
+`xiao-esp32c3-gdeq0426t82-sd`, run the same checks against the selected target:
+
+- build/flash the selected target
+- capture serial boot logs and require `BLE advertising started: <device name>`
+- use a host Bluetooth controller to scan for the advertised name
+- connect to the discovered peripheral
+- disconnect after verification
+
+Do not print BLE MAC addresses in logs. Redact addresses and report only
+whether advertising, host discovery, connection, and disconnection succeeded.
+Legacy BLE advertising and scan-response payloads are length-limited. If the
+configured target name is too long for the current advertising data shape, host
+scans may show a truncated name even though the serial log prints the full
+`CONFIG_BT_DEVICE_NAME`. Treat this as a naming/payload issue, not as proof
+that BLE failed, and shorten the target BLE name or move to an extended
+advertising/scan-response design before relying on exact full-name discovery.
 
 For the current ESP32-C3 Super Mini Zephyr target,
 `scripts/c3-supermini-test-blinky.sh` is the final full-suite check. It

@@ -30,10 +30,10 @@ assert_file_contains() {
   fi
 }
 
-assert_file_empty_command() {
+assert_no_unexpected_device_errors() {
   local file="$1"
-  if [[ -s "${file}" ]]; then
-    printf 'Expected %s to be empty\n' "${file}" >&2
+  if grep -Fvxq 'error=display=unavailable code=-19' "${file}"; then
+    printf 'Expected %s to contain only recognized non-Wi-Fi diagnostics\n' "${file}" >&2
     printf '%s\n' "--- ${file} ---" >&2
     sed -n '1,200p' "${file}" >&2
     exit 1
@@ -93,9 +93,9 @@ assert_file_contains "${apps_out}" "app=wifi-station-summary"
 
 run_capture launch-wifi-station cargo run --quiet -p squidc -- app launch wifi-station-summary >/dev/null
 
-output_out="$(wait_for_contains output "output=wifi connect true null" \
+output_out="$(wait_for_contains output "output=wifi station dev true" \
   "device output" cargo run --quiet -p squidc -- device output)"
-assert_file_contains "${output_out}" "output=wifi station dev true"
+assert_file_contains "${output_out}" "output=wifi connect true null"
 if grep -Fq "unsupported" "${output_out}"; then
   printf 'Expected %s not to contain unsupported Wi-Fi station results\n' "${output_out}" >&2
   printf '%s\n' "--- ${output_out} ---" >&2
@@ -105,6 +105,6 @@ fi
 assert_no_raw_network_identifiers "${output_out}"
 
 errors_out="$(run_capture errors cargo run --quiet -p squidc -- device errors)"
-assert_file_empty_command "${errors_out}"
+assert_no_unexpected_device_errors "${errors_out}"
 
 printf '%s\n' 'OK Zephyr Wi-Fi station SquidScript hardware check passed'

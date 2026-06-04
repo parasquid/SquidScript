@@ -902,7 +902,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("does not validate physical input dispatch", docs)
 
     def test_wifi_station_check_is_explicit_credentials_only_and_redacted(self):
-        station = self.read("scripts/c3-supermini-test-wifi-station-api.sh")
+        station = self.read("scripts/zephyr-test-wifi-station-api.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
 
         self.assertIn('tests/hardware/c3-supermini/wifi-station-summary/main.squid', station)
@@ -917,10 +917,12 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn('output=wifi station dev true', station)
         self.assertIn("unsupported", station)
         self.assertIn('assert_no_raw_network_identifiers', station)
+        self.assertIn('assert_no_unexpected_device_errors', station)
+        self.assertIn('error=display=unavailable code=-19', station)
         self.assertNotIn("obsolete", station.lower())
         self.assertNotIn("wifi ap", station)
         self.assertNotIn("SQUID_WIFI_STATION_PASSWORD}", station)
-        self.assertNotIn("c3-supermini-test-wifi-station-api.sh", suite)
+        self.assertNotIn("zephyr-test-wifi-station-api.sh", suite)
         self.assertNotIn("app.exit()", self.read("tests/hardware/c3-supermini/wifi-station-summary/main.squid"))
 
     def test_wifi_ap_check_is_current_redacted_and_in_default_suite(self):
