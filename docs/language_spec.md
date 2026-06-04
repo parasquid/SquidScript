@@ -2020,6 +2020,11 @@ matching `event.on(eventName)` handler exactly; dotted names such as
 `"timer.clock"` or `"foo.bar"` are naming conventions only and do not create
 namespaces or bind the event to a service.
 
+Runtime event-name storage is bounded. Event names must be shorter than the
+firmware event slot, which is currently 24 bytes including the terminating NUL;
+the portable authoring limit is therefore 23 UTF-8 bytes. This applies to
+foreground timers, armed timers, and other runtime-dispatched event names.
+
 Example:
 
 ```squid

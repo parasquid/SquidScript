@@ -1,0 +1,15 @@
+app "radio-wifi-ap"
+
+state {}
+
+event.on("app.start") {
+  let ap = service.wifi.startAP("SquidScript")
+  let ip = service.wifi.getAPIP()
+  debug.print("radio wifi ap start", ap.ok, ap.error)
+  debug.print("radio wifi ap ip", ip.error)
+}
+
+event.on("key.SELECT") {
+  let stop = service.wifi.stopAP()
+  debug.print("radio wifi ap stop", stop.ok, stop.error)
+}

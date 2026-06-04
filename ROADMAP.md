@@ -23,8 +23,17 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   payload fields, install completed `.sqbc` uploads through the shared app-store
   pipeline, and verify on ESP32-C3 hardware with skip behavior when host
   Bluetooth is unavailable.
+- Investigate BLE re-advertising after host disconnect on ESP32-C3 Zephyr.
+  Current radio concurrency evidence proves active BLE stays connected during
+  Wi-Fi scan/list, AP, and station work, but host rediscovery after disconnect
+  does not observe a fresh advertisement even with delayed advertising restart
+  scheduled from the disconnect callback.
 - Add external Wi-Fi AP client association and DHCP lease proof through
   Zephyr-native subsystems.
+- Investigate ESP32-C3 Wi-Fi AP start after station connect/disconnect. Current
+  XIAO radio concurrency evidence shows station reaches disconnected status, but
+  a later AP start can report `ap ip failed`; isolate whether Zephyr interface
+  mode/IP state needs explicit reset after station use.
 - Treat Wi-Fi scan/connect/AP lifecycle as a future explicit service-state
   machine item when Wi-Fi work is in scope. Keep the current nonblocking
   operation/result/cursor API as the baseline.

@@ -839,6 +839,17 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertNotIn("ble-smoke.conf", script)
         self.assertIn("target metadata", docs)
 
+    def test_ble_smoke_restarts_advertising_after_disconnect(self):
+        ble = self.read("firmware/zephyr/src/ble_smoke.c")
+
+        self.assertIn("#include <zephyr/bluetooth/conn.h>", ble)
+        self.assertIn("BT_CONN_CB_DEFINE", ble)
+        self.assertIn("sq_ble_smoke_disconnected", ble)
+        self.assertIn("K_WORK_DELAYABLE_DEFINE", ble)
+        self.assertIn("k_work_schedule", ble)
+        self.assertIn("sq_ble_smoke_start_advertising", ble)
+        self.assertIn("BLE advertising restarted after disconnect", ble)
+
     def test_wifi_list_timeout_captures_resource_diagnostics(self):
         wifi = self.read("scripts/c3-supermini-test-wifi-list-api.sh")
 
@@ -924,6 +935,91 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertNotIn("SQUID_WIFI_STATION_PASSWORD}", station)
         self.assertNotIn("zephyr-test-wifi-station-api.sh", suite)
         self.assertNotIn("app.exit()", self.read("tests/hardware/c3-supermini/wifi-station-summary/main.squid"))
+
+    def test_radio_concurrency_check_is_opt_in_target_aware_and_redacted(self):
+        script = self.read("scripts/zephyr-test-radio-concurrency.sh")
+        suite = self.read("scripts/c3-supermini-test-hardware.sh")
+        docs = self.read("docs/hardware_target_tests.md")
+
+        self.assertIn('TARGET_ID="${TARGET_ID:-xiao-esp32c3-gdeq0426t82-sd}"', script)
+        self.assertIn("target inspect --target", script)
+        self.assertIn("tests/hardware/zephyr/radio-concurrency/wifi-list/main.squid", script)
+        self.assertIn("tests/hardware/zephyr/radio-concurrency/wifi-station/main.squid", script)
+        self.assertIn("tests/hardware/zephyr/radio-concurrency/wifi-ap/main.squid", script)
+        self.assertIn("tests/hardware/zephyr/radio-concurrency/wifi-status/main.squid", script)
+        self.assertIn("cleanup_radio_concurrency", script)
+        self.assertIn("trap cleanup_radio_concurrency EXIT", script)
+        self.assertIn("nmcli", script)
+        self.assertIn("device wifi rescan", script)
+        self.assertIn("connect_host_to_device_ap", script)
+        self.assertIn("bluetoothctl", script)
+        self.assertIn("ble-connect-attempt", script)
+        self.assertIn("ble_is_connected", script)
+        self.assertIn("assert_no_raw_network_identifiers", script)
+        self.assertIn("SQUID_WIFI_STATION_SSID", script)
+        self.assertIn("SQUID_WIFI_STATION_PASSWORD", script)
+        self.assertIn("output=radio wifi list true", script)
+        self.assertIn("output=radio wifi station dev true", script)
+        self.assertIn("output=radio wifi ap start true", script)
+        self.assertIn("output=radio wifi ap stop true", script)
+        self.assertIn("output=radio wifi status", script)
+        self.assertIn("reset-before-wifi-ap", script)
+        self.assertIn("reset-before-wifi-status", script)
+        self.assertIn("ensure_ble_connected", script)
+        self.assertIn(
+            "assert_ble_connected\n"
+            "check_device_errors recovery\n"
+            "disconnect_ble_device\n"
+            'if [[ "${REQUIRE_BLE_RECONNECT}" == "1" ]]; then',
+            script,
+        )
+        self.assertIn("error=display=unavailable code=-19", script)
+        self.assertNotIn("host-scan.log", script)
+        self.assertNotIn(" BSS", script)
+        self.assertNotIn("zephyr-test-radio-concurrency.sh", suite)
+        self.assertIn("radio concurrency", docs)
+        self.assertIn("scripts/zephyr-test-radio-concurrency.sh", docs)
+
+    def test_radio_concurrency_fixtures_are_portable_and_redacted(self):
+        wifi_list = self.read("tests/hardware/zephyr/radio-concurrency/wifi-list/main.squid")
+        wifi_station = self.read("tests/hardware/zephyr/radio-concurrency/wifi-station/main.squid")
+        wifi_ap = self.read("tests/hardware/zephyr/radio-concurrency/wifi-ap/main.squid")
+        wifi_status = self.read("tests/hardware/zephyr/radio-concurrency/wifi-status/main.squid")
+
+        self.assertIn('app "radio-wifi-list"', wifi_list)
+        self.assertIn("service.wifi.scan()", wifi_list)
+        self.assertIn("service.wifi.scanNetwork(0)", wifi_list)
+        self.assertIn("first.ssidLength", wifi_list)
+        self.assertNotIn("first.ssid,", wifi_list)
+        self.assertNotIn("app.exit()", wifi_list)
+
+        self.assertIn('app "radio-wifi-station"', wifi_station)
+        self.assertIn('service.wifi.connect("dev")', wifi_station)
+        self.assertIn('service.timer.after("timer.radio.station", 250)', wifi_station)
+        self.assertNotIn("timer.radio.wifi.station", wifi_station)
+        self.assertIn("service.wifi.disconnect()", wifi_station)
+        self.assertIn("radio wifi station", wifi_station)
+        self.assertIn("radio wifi disconnect", wifi_station)
+        self.assertIn("radio wifi disconnected", wifi_station)
+        self.assertIn('service.timer.after("timer.radio.disc", 250)', wifi_station)
+        self.assertIn("output=radio wifi disconnected dev false", self.read("scripts/zephyr-test-radio-concurrency.sh"))
+        self.assertNotIn("status.ssid", wifi_station)
+        self.assertNotIn("app.exit()", wifi_station)
+
+        self.assertIn('app "radio-wifi-ap"', wifi_ap)
+        self.assertIn('service.wifi.startAP("SquidScript")', wifi_ap)
+        self.assertIn("service.wifi.getAPIP()", wifi_ap)
+        self.assertIn("service.wifi.stopAP()", wifi_ap)
+        self.assertIn("radio wifi ap start", wifi_ap)
+        self.assertIn("radio wifi ap stop", wifi_ap)
+        self.assertNotIn("ip.ip", wifi_ap)
+        self.assertNotIn("app.exit()", wifi_ap)
+
+        self.assertIn('app "radio-wifi-status"', wifi_status)
+        self.assertIn("service.wifi.status()", wifi_status)
+        self.assertIn("radio wifi status", wifi_status)
+        self.assertNotIn("status.ssid", wifi_status)
+        self.assertNotIn("app.exit()", wifi_status)
 
     def test_wifi_ap_check_is_current_redacted_and_in_default_suite(self):
         ap = self.read("scripts/c3-supermini-test-wifi-ap-api.sh")

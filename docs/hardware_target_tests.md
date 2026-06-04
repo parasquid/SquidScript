@@ -545,6 +545,60 @@ known `error=display=unavailable code=-19` diagnostic so the Wi-Fi station check
 can run on target setups where configured display hardware is intentionally not
 connected.
 
+`scripts/zephyr-test-radio-concurrency.sh` is an opt-in radio concurrency check
+for Zephyr ESP32-C3 targets and is not part of the default full hardware suite.
+It defaults to `--target xiao-esp32c3-gdeq0426t82-sd` and accepts
+`--target <id>`, `--skip-flash`, `--require-ble-reconnect`, and
+`--host-wifi-iface <iface>`. The script may temporarily take over the host
+Wi-Fi and Bluetooth controllers. It builds or flashes the selected target,
+confirms BLE advertising from the target boot log, discovers the target with
+host Bluetooth, connects to it, and keeps that BLE connection active while
+normal SquidScript Wi-Fi apps exercise scan/list, target AP
+start/client-association/stop, and station connect/disconnect through a
+generated temporary host AP. It finishes by checking Wi-Fi status. Pass
+`--require-ble-reconnect` only when validating BLE re-advertising after host
+disconnect; the default matrix proves active BLE coexistence during Wi-Fi work
+without making reconnectability a pass requirement.
+
+ESP32-C3 targets can enable Wi-Fi and BLE in the same firmware image. The
+ESP32-C3 datasheet lists 2.4 GHz Wi-Fi, Bluetooth LE, and an internal
+coexistence mechanism that lets Wi-Fi and Bluetooth share the same antenna:
+<https://documentation.espressif.com/esp32-c3_datasheet_en.html>. Espressif's
+ESP32-C3 RF coexistence guide describes the implementation as shared RF
+time-division multiplexing rather than independent simultaneous Wi-Fi/BLE
+radios, and its coexistence table marks STA scan/connect/connected activity
+with BLE advertising/connecting/connected as supported. The same table marks
+SoftAP beaconing with BLE as stable, while SoftAP with connected client traffic
+is supported but performance-unstable:
+<https://docs.espressif.com/projects/esp-idf/en/v5.2/esp32c3/api-guides/coexist.html>.
+The Zephyr XIAO ESP32-C3 board documentation identifies the board as ESP32-C3
+based with Wi-Fi and BLE support:
+<https://docs.zephyrproject.org/latest/boards/seeed/xiao_esp32c3/doc/index.html>.
+
+For SquidScript ESP32-C3 firmware, treat Wi-Fi/BLE coexistence as a target
+capability that must be verified on the actual board and antenna arrangement.
+The XIAO target with the external antenna has hardware evidence for an active
+BLE connection staying connected while SquidScript apps perform Wi-Fi scan/list,
+target AP start/client-association/stop, station connect/disconnect through a
+temporary host AP, and Wi-Fi status. The ESP32-C3 Super Mini uses the same SoC
+radio class, but clone-board antenna and RF layout quality are variant-dependent;
+run the radio concurrency script against the specific Super Mini board before
+claiming the same coexistence quality. When both radios are enabled, the
+generated Zephyr `.config` for the image under test should contain
+`CONFIG_ESP32_SW_COEXIST_ENABLE=y`.
+
+The radio concurrency script uses the portable fixtures under
+`tests/hardware/zephyr/radio-concurrency/`. These fixtures print only redacted
+Wi-Fi structure and command status: counts, SSID lengths, channels, RSSI, auth,
+hidden flags, operation status, and error strings. The script stores raw host
+tool output under `target/hardware-tests/radio-concurrency/` for local
+diagnosis but does not print SSIDs, BSSIDs, MAC addresses, local IP addresses,
+or generated credentials. It deletes the generated temporary station password
+and host NetworkManager profiles on exit. Like the station check, it rejects
+unexpected `device errors` output but allows the known
+`error=display=unavailable code=-19` diagnostic for target setups where the
+configured display is intentionally disconnected.
+
 `scripts/c3-supermini-test-wifi-ap-api.sh` runs after Wi-Fi list coverage and
 before the final visible LED check in the default full hardware suite. It
 installs `tests/hardware/c3-supermini/wifi-ap-summary`, launches a summary-only
