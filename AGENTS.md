@@ -29,6 +29,7 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - `ROADMAP.md` is the repository issue tracker for agent-visible project work.
 - When a roadmap item is completed, remove it from `ROADMAP.md` in the same change or in the next cleanup commit.
 - If an AI agent identifies a concrete future task or follow-up while working, add it to `ROADMAP.md` rather than leaving it only in chat.
+- Before writing a new ROADMAP entry, surface the proposed wording to the user and wait for confirmation. ROADMAP.md is the user's planning surface; do not commit agent-authored entries silently.
 - Keep roadmap entries concise, actionable, and scoped to repository work.
 - Keep speculative or conditional ideas in `ICEBOX.md`, not `ROADMAP.md`.
   Move them back to the roadmap only when they have a concrete target, use
