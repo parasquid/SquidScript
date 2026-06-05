@@ -16,6 +16,13 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   cons, and the practical impact of each choice so the user can make an
   informed decision. Add concise examples when they help clarify what an option
   would look like in practice.
+- Never revert, discard, or overwrite a user's working-tree changes without
+  asking first. If a change looks unrelated to the current task, surface it to
+  the user and let them decide. Untracked, unstaged, and uncommitted edits in
+  the working tree are the user's work, not noise to clean up.
+- If a `git checkout` / `git restore` / `git reset` / `git stash` operation
+  could destroy or hide the user's work, stop and ask before running it. This
+  applies even when the goal is to keep a commit "clean".
 
 ## Roadmap Maintenance
 
@@ -235,6 +242,7 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
 - If a change cannot reasonably be test-driven, state the concrete reason before implementation and use the narrowest practical verification instead.
 - Keep tests honest. Do not add assertions for unsupported SquidScript syntax, simulator-only conveniences, or fake firmware behavior.
 - For firmware work, separate host-testable logic from hardware-bound code so behavior can be driven by unit tests before flashing a device.
+- When adding a new `BUILTIN_*` opcode to `compiler/rust/crates/squidvm-core/src/vm.rs`, add the constant to the `crate::bytecode::{...}` import list in the same change. Without the import, Rust treats the match arm as a wildcard binding that shadows every other builtin and the VM silently dispatches everything to the new opcode. Use the bytecode FFI dispatch tests as the canary: any unrelated builtin (wifi, indicator, app lifecycle) failing after a VM dispatch change points at a missing import. The planned long-term fix is to switch all `BUILTIN_*` match arms to fully-qualified `bytecode::BUILTIN_*` paths (see ROADMAP), which makes the shadowing impossible.
 
 ## Script And Firmware Tooling Discipline
 
