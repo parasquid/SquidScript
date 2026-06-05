@@ -76,6 +76,10 @@ void sq_ble_ots_reset_session(void);
 int sq_ble_ots_drain_pending_event(char *app_id_out, size_t app_id_cap, char *event_out,
 				   size_t event_cap);
 
+const char *sq_ble_ots_pending_staging_path(void);
+
+void sq_ble_ots_cleanup_staging(void);
+
 bool sq_ble_ots_pending_is_complete(void);
 
 const char *sq_ble_ots_pending_app_id(void);

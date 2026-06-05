@@ -548,9 +548,18 @@ int sq_ble_ots_drain_pending_event(char *app_id_out, size_t app_id_cap, char *ev
 		strncpy(event_out, sq_ble_ots_pending.event, event_cap - 1);
 		event_out[event_cap - 1] = '\0';
 	}
+	return 0;
+}
+
+const char *sq_ble_ots_pending_staging_path(void)
+{
+	return sq_ble_ots_pending.staging_path;
+}
+
+void sq_ble_ots_cleanup_staging(void)
+{
 	if (sq_ble_ots_pending.staging_path[0] != '\0') {
 		(void)fs_unlink(sq_ble_ots_pending.staging_path);
 	}
 	memset(&sq_ble_ots_pending, 0, sizeof(sq_ble_ots_pending));
-	return 0;
 }
