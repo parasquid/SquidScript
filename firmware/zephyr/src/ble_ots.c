@@ -1,10 +1,13 @@
 #include "ble_ots.h"
 
 #include <errno.h>
+#include <string.h>
 
 #include <zephyr/bluetooth/services/ots.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+
+#include "app_store.h"
 
 LOG_MODULE_REGISTER(squidscript_ble_ots, LOG_LEVEL_INF);
 
@@ -138,6 +141,64 @@ void *sq_ble_ots_svc_decl_get(void)
 		return NULL;
 	}
 	return bt_ots_svc_decl_get(sq_ble_ots_instance);
+}
+
+int sq_ble_ots_parse_object_name(const char *name, char *app_id_out, size_t app_id_cap,
+				 char *profile_id_out, size_t profile_id_cap,
+				 char *extension_out, size_t extension_cap)
+{
+	const char *p;
+	const char *q;
+	const char *extension;
+	size_t app_len;
+	size_t prof_len;
+	size_t extension_len;
+
+	if (name == NULL || app_id_out == NULL || profile_id_out == NULL ||
+	    extension_out == NULL) {
+		return -EINVAL;
+	}
+
+	p = strchr(name, '/');
+	if (p == NULL) {
+		return BT_GATT_OTS_OACP_RES_INV_PARAM;
+	}
+	q = strchr(p + 1, '/');
+	if (q == NULL) {
+		return BT_GATT_OTS_OACP_RES_INV_PARAM;
+	}
+	if (strchr(q + 1, '/') != NULL) {
+		return BT_GATT_OTS_OACP_RES_INV_PARAM;
+	}
+
+	app_len = (size_t)(p - name);
+	prof_len = (size_t)(q - (p + 1));
+	extension = q + 1;
+	extension_len = strlen(extension);
+
+	if (app_len == 0 || prof_len == 0 || extension_len == 0) {
+		return BT_GATT_OTS_OACP_RES_INV_PARAM;
+	}
+	if (app_len >= app_id_cap || prof_len >= profile_id_cap ||
+	    extension_len >= extension_cap) {
+		return BT_GATT_OTS_OACP_RES_INV_PARAM;
+	}
+	if (extension[0] != '.') {
+		return BT_GATT_OTS_OACP_RES_INV_PARAM;
+	}
+
+	memcpy(app_id_out, name, app_len);
+	app_id_out[app_len] = '\0';
+	if (!sq_app_store_is_safe_app_id(app_id_out)) {
+		return BT_GATT_OTS_OACP_RES_INV_PARAM;
+	}
+
+	memcpy(profile_id_out, p + 1, prof_len);
+	profile_id_out[prof_len] = '\0';
+
+	memcpy(extension_out, extension, extension_len + 1);
+
+	return 0;
 }
 
 ssize_t sq_ble_ots_test_invoke_obj_write(struct bt_conn *conn, uint64_t id, const void *data,

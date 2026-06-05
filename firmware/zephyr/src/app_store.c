@@ -45,6 +45,11 @@ static bool is_safe_app_id(const char *app_id)
 	return true;
 }
 
+bool sq_app_store_is_safe_app_id(const char *app_id)
+{
+	return is_safe_app_id(app_id);
+}
+
 static bool is_safe_app_id_bytes(const uint8_t *app_id, size_t app_id_len)
 {
 	if (app_id == NULL || app_id_len == 0 || app_id_len >= SQ_APP_STORE_APP_ID_MAX) {
