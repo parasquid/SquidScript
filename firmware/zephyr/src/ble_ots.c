@@ -1,9 +1,12 @@
 #include "ble_ots.h"
 
 #include <errno.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <zephyr/bluetooth/services/ots.h>
+#include <zephyr/fs/fs.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
@@ -14,8 +17,50 @@ LOG_MODULE_REGISTER(squidscript_ble_ots, LOG_LEVEL_INF);
 #define BT_OTS_OACP_FEAT_CREATE_WRITE                                                       \
 	(BIT(BT_OTS_OACP_FEAT_CREATE) | BIT(BT_OTS_OACP_FEAT_WRITE))
 
+#define SQ_BLE_OTS_APP_ID_MAX      SQ_APP_STORE_APP_ID_MAX
+#define SQ_BLE_OTS_PROFILE_ID_MAX  32
+#define SQ_BLE_OTS_PATH_MAX        SQ_APP_STORE_PATH_MAX
+
+#ifndef SQ_BLE_OTS_STAGING_DIR
+#define SQ_BLE_OTS_STAGING_DIR     "/sq/tmp"
+#endif
+
+struct sq_ble_ots_session {
+	bool active;
+	char app_id[SQ_BLE_OTS_APP_ID_MAX];
+	char profile_id[SQ_BLE_OTS_PROFILE_ID_MAX];
+	char staging_path[SQ_BLE_OTS_PATH_MAX];
+	size_t alloc_size;
+	size_t bytes_received;
+};
+
 static struct bt_ots *sq_ble_ots_instance;
 static bool sq_ble_ots_initialized;
+static struct sq_ble_ots_session sq_ble_ots_session;
+
+static int sq_ble_ots_format_staging_path(char *out, size_t out_len, const char *app_id,
+					  const char *profile_id)
+{
+	int written;
+
+	if (out == NULL || app_id == NULL || profile_id == NULL || out_len == 0) {
+		return -EINVAL;
+	}
+	written = snprintf(out, out_len, "%s/ble-object-%s-%s.tmp", SQ_BLE_OTS_STAGING_DIR,
+			   app_id, profile_id);
+	if (written < 0 || (size_t)written >= out_len) {
+		return -ENOSPC;
+	}
+	return 0;
+}
+
+static void sq_ble_ots_close_session_files(void)
+{
+	if (sq_ble_ots_session.staging_path[0] != '\0') {
+		(void)fs_unlink(sq_ble_ots_session.staging_path);
+		sq_ble_ots_session.staging_path[0] = '\0';
+	}
+}
 
 static int sq_ble_ots_obj_created_cb(struct bt_ots *ots, struct bt_conn *conn, uint64_t id,
 				     const struct bt_ots_obj_add_param *add_param,
@@ -212,4 +257,149 @@ int sq_ble_ots_test_invoke_obj_created(struct bt_conn *conn, uint64_t id,
 				       struct bt_ots_obj_created_desc *created_desc)
 {
 	return sq_ble_ots_obj_created_cb(sq_ble_ots_instance, conn, id, add_param, created_desc);
+}
+
+static int sq_ble_ots_open_staging_file(struct sq_ble_ots_session *session)
+{
+	struct fs_file_t file;
+	int result;
+
+	fs_file_t_init(&file);
+	result = fs_open(&file, session->staging_path, FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC);
+	if (result != 0) {
+		return result;
+	}
+	return fs_close(&file);
+}
+
+static int sq_ble_ots_obj_created_internal(const char *name, size_t alloc_size)
+{
+	char app_id[SQ_BLE_OTS_APP_ID_MAX] = {0};
+	char profile_id[SQ_BLE_OTS_PROFILE_ID_MAX] = {0};
+	char extension[16] = {0};
+	int result;
+
+	if (sq_ble_ots_session.active) {
+		return BT_GATT_OTS_OACP_RES_OBJ_LOCKED;
+	}
+	result = sq_ble_ots_parse_object_name(name, app_id, sizeof(app_id), profile_id,
+					      sizeof(profile_id), extension, sizeof(extension));
+	if (result != 0) {
+		return result;
+	}
+
+	memset(&sq_ble_ots_session, 0, sizeof(sq_ble_ots_session));
+	strncpy(sq_ble_ots_session.app_id, app_id,
+		sizeof(sq_ble_ots_session.app_id) - 1);
+	strncpy(sq_ble_ots_session.profile_id, profile_id,
+		sizeof(sq_ble_ots_session.profile_id) - 1);
+
+	result = sq_ble_ots_format_staging_path(sq_ble_ots_session.staging_path,
+						sizeof(sq_ble_ots_session.staging_path), app_id,
+						profile_id);
+	if (result != 0) {
+		return BT_GATT_OTS_OACP_RES_INV_PARAM;
+	}
+
+	result = sq_ble_ots_open_staging_file(&sq_ble_ots_session);
+	if (result != 0) {
+		sq_ble_ots_session.staging_path[0] = '\0';
+		return result;
+	}
+
+	sq_ble_ots_session.active = true;
+	sq_ble_ots_session.alloc_size = alloc_size;
+	sq_ble_ots_session.bytes_received = 0;
+
+	LOG_INF("obj_created app=%s profile=%s path=%s alloc=%zu", app_id, profile_id,
+		sq_ble_ots_session.staging_path, alloc_size);
+	return 0;
+}
+
+static int sq_ble_ots_obj_write_internal(const char *staging_path, const void *data, size_t len,
+					off_t offset, size_t rem)
+{
+	struct fs_file_t file;
+	ssize_t written;
+	int result;
+
+	ARG_UNUSED(rem);
+
+	if (!sq_ble_ots_session.active || staging_path == NULL) {
+		return -EINVAL;
+	}
+	if (strcmp(staging_path, sq_ble_ots_session.staging_path) != 0) {
+		return -EINVAL;
+	}
+
+	fs_file_t_init(&file);
+	result = fs_open(&file, staging_path, FS_O_WRITE);
+	if (result != 0) {
+		return result;
+	}
+	if (offset > 0) {
+		result = fs_seek(&file, offset, FS_SEEK_SET);
+		if (result != 0) {
+			(void)fs_close(&file);
+			return result;
+		}
+	}
+	written = fs_write(&file, data, len);
+	(void)fs_close(&file);
+	if (written < 0) {
+		return (int)written;
+	}
+	if ((size_t)written != len) {
+		return -EIO;
+	}
+	sq_ble_ots_session.bytes_received += len;
+	return (int)written;
+}
+
+void sq_ble_ots_reset_session(void)
+{
+	if (sq_ble_ots_session.active) {
+		LOG_INF("reset_session: clearing in-flight app=%s profile=%s",
+			sq_ble_ots_session.app_id, sq_ble_ots_session.profile_id);
+	}
+	sq_ble_ots_close_session_files();
+	memset(&sq_ble_ots_session, 0, sizeof(sq_ble_ots_session));
+}
+
+static void sq_ble_ots_abort_internal(void)
+{
+	if (sq_ble_ots_session.active) {
+		LOG_INF("abort: clearing in-flight app=%s profile=%s",
+			sq_ble_ots_session.app_id, sq_ble_ots_session.profile_id);
+	}
+	sq_ble_ots_close_session_files();
+	memset(&sq_ble_ots_session, 0, sizeof(sq_ble_ots_session));
+}
+
+int sq_ble_ots_test_invoke_obj_created_with_name(const char *name, size_t alloc_size,
+						 char *staging_path_out,
+						 size_t staging_path_out_len)
+{
+	int result = sq_ble_ots_obj_created_internal(name, alloc_size);
+
+	if (result != 0) {
+		return result;
+	}
+	if (staging_path_out != NULL && staging_path_out_len > 0) {
+		strncpy(staging_path_out, sq_ble_ots_session.staging_path,
+			staging_path_out_len - 1);
+		staging_path_out[staging_path_out_len - 1] = '\0';
+	}
+	return 0;
+}
+
+int sq_ble_ots_test_invoke_obj_write_with_path(const char *staging_path, const void *data,
+					       size_t len, off_t offset, size_t rem)
+{
+	return sq_ble_ots_obj_write_internal(staging_path, data, len, offset, rem);
+}
+
+void sq_ble_ots_test_invoke_abort(void)
+{
+	sq_ble_ots_abort_internal();
 }

@@ -46,6 +46,17 @@ int sq_ble_ots_parse_object_name(const char *name, char *app_id_out, size_t app_
 				 char *profile_id_out, size_t profile_id_cap,
 				 char *extension_out, size_t extension_cap);
 
+void sq_ble_ots_reset_session(void);
+
+int sq_ble_ots_test_invoke_obj_created_with_name(const char *name, size_t alloc_size,
+						 char *staging_path_out,
+						 size_t staging_path_out_len);
+
+int sq_ble_ots_test_invoke_obj_write_with_path(const char *staging_path, const void *data,
+					       size_t len, off_t offset, size_t rem);
+
+void sq_ble_ots_test_invoke_abort(void);
+
 ssize_t sq_ble_ots_test_invoke_obj_write(struct bt_conn *conn, uint64_t id, const void *data,
 					size_t len, off_t offset, size_t rem);
 
