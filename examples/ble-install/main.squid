@@ -1,0 +1,45 @@
+app "ble-install"
+
+state {
+  stateVersion: int = 1
+  received: int = 0
+  installed: int = 0
+  failed: int = 0
+}
+
+app.triggers {
+  service.ble.profile("object-transfer", {
+    id: "sqbc-install",
+    accept: [".sqbc"],
+    events: {
+      complete: "ble.object.complete",
+      error: "ble.object.error"
+    }
+  })
+}
+
+event.on("app.start") {
+  state.load()
+  if (state.stateVersion != 1) {
+    state.reset()
+    state.stateVersion = 1
+  }
+  state.save()
+  debug.print("ble-install ready")
+}
+
+event.on("ble.object.complete") {
+  state.load()
+  state.received = state.received + 1
+  debug.print("received file", state.received)
+  app.install("/sq/tmp/ble-object-ble-install-wallpaper.tmp", "installed-app")
+  state.installed = state.installed + 1
+  state.save()
+}
+
+event.on("ble.object.error") {
+  state.load()
+  state.failed = state.failed + 1
+  state.save()
+  debug.print("transfer failed")
+}
