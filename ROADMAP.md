@@ -122,6 +122,26 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   `debounce`) as design inspiration, adapted to SquidScript's explicit
   device/input binding model instead of global auto-mode side effects.
 
+## Build-Time And Runtime Caps
+
+- **Runtime-tunable cap overrides**: implement the design in
+  `docs/runtime_limits.md` "Runtime-Tunable Overrides (Design)" section.
+  Storage: new `/device/runtime.sqdc` file (parallel SQDC format to
+  `/device/active.sqdc`); build-time `runtime_limits.json` stays the
+  maximum; runtime active count is the override. Boot applies on
+  `sq_vm_runtime_init` from a new `sq_vm_runtime_load_runtime_caps`
+  call. Registration gates (`count < SQ_VM_RUNTIME_*_MAX`) change to
+  `count < runtime->active_*_max`. Wire surface: new
+  `SQ_OPCODE_RUNTIME_CAP_SET/GET` ops, `runtime.active_caps` resource
+  metric, CLI `squidc device runtime-cap get/set/clear`. Validation:
+  reject out-of-range, reject values that would orphan active entries
+  (the host stops the foreground app first). TDD: failing ztest for
+  boot-apply, out-of-range, and orphan-rejection paths before
+  production code. Open questions: armed-app sleep state depth, CLI
+  side-by-side display, opt-in vs always-on reporting, app-facing
+  `system.info()` exposure — see `docs/runtime_limits.md` "Open
+  Questions."
+
 ## ESP32-C3 RAM Hardening
 
 Current ESP32-C3 RAM baseline:
