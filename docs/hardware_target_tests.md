@@ -661,6 +661,21 @@ For non-Super-Mini ESP32-C3 targets such as
 
 Do not print BLE MAC addresses in logs. Redact addresses and report only
 whether advertising, host discovery, connection, and disconnection succeeded.
+
+### BLE Object Transfer Service (OTS) Initialization
+
+The BLE object-transfer GATT service is registered in-process through
+`firmware/zephyr/src/ble_ots.c::sq_ble_ots_init()`. Host-side
+ztests in `firmware/zephyr/tests/ble-ots-init` verify that
+`bt_ots_svc_decl_get()` returns a non-NULL handle and that
+`sq_ble_ots_init()` is idempotent, using
+`scripts/zephyr-test-ble-ots-init.sh`. The service UUID
+(`0x1825`) becomes visible in the GATT database whether or not
+any SquidScript app is currently armed; the OTS feature bits
+advertise OACP Create + Write. Execute and Abort are procedures
+that are not advertised as features. Advertising-data inclusion
+of the OTS UUID is a separate piece of work tracked against the
+BLE object-transfer slices.
 Legacy BLE advertising and scan-response payloads are length-limited. If the
 configured target name is too long for the current advertising data shape, host
 scans may show a truncated name even though the serial log prints the full
