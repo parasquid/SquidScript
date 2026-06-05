@@ -1,0 +1,82 @@
+app "ap-after-station"
+
+state {}
+
+event.on("app.start") {
+  let ap1 = service.wifi.startAP("SquidScript-AP-1")
+  debug.print("ap1 start", ap1.ok, ap1.error)
+  let ip1 = service.wifi.getAPIP()
+  debug.print("ap1 ip", ip1.error)
+  let stop1 = service.wifi.stopAP()
+  debug.print("ap1 stop", stop1.ok, stop1.error)
+  service.timer.after("t1", 100)
+}
+
+event.on("t1") {
+  let connect = service.wifi.connect("dev")
+  debug.print("connect1", connect.ok, connect.error)
+  service.timer.after("t2", 500)
+}
+
+event.on("t2") {
+  let operation = service.wifi.operation()
+  if operation.done {
+    let status = service.wifi.status()
+    debug.print("station1", status.profile, status.connected, status.state, status.error)
+    let disconnect = service.wifi.disconnect()
+    debug.print("disconnect1", disconnect.ok, disconnect.error)
+    service.timer.after("t3", 500)
+  } else {
+    service.timer.after("t2", 500)
+  }
+}
+
+event.on("t3") {
+  let operation = service.wifi.operation()
+  if operation.done {
+    let status = service.wifi.status()
+    debug.print("station1after", status.profile, status.connected, status.state, status.error)
+    let ap2 = service.wifi.startAP("SquidScript-AP-2")
+    debug.print("ap2 start", ap2.ok, ap2.error)
+    let ip2 = service.wifi.getAPIP()
+    debug.print("ap2 ip", ip2.error)
+    let stop2 = service.wifi.stopAP()
+    debug.print("ap2 stop", stop2.ok, stop2.error)
+    service.timer.after("t4", 100)
+  } else {
+    service.timer.after("t3", 500)
+  }
+}
+
+event.on("t4") {
+  let connect = service.wifi.connect("dev")
+  debug.print("connect2", connect.ok, connect.error)
+  service.timer.after("t5", 500)
+}
+
+event.on("t5") {
+  let operation = service.wifi.operation()
+  if operation.done {
+    let status = service.wifi.status()
+    debug.print("station2", status.profile, status.connected, status.state, status.error)
+    let disconnect = service.wifi.disconnect()
+    debug.print("disconnect2", disconnect.ok, disconnect.error)
+    service.timer.after("t6", 500)
+  } else {
+    service.timer.after("t5", 500)
+  }
+}
+
+event.on("t6") {
+  let operation = service.wifi.operation()
+  if operation.done {
+    let status = service.wifi.status()
+    debug.print("station2after", status.profile, status.connected, status.state, status.error)
+    let ap3 = service.wifi.startAP("SquidScript-AP-3")
+    debug.print("ap3 start", ap3.ok, ap3.error)
+    let ip3 = service.wifi.getAPIP()
+    debug.print("ap3 ip", ip3.error)
+  } else {
+    service.timer.after("t6", 500)
+  }
+}

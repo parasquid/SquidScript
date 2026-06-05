@@ -40,10 +40,16 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   same path under Wi-Fi pressure.
 - Add external Wi-Fi AP client association and DHCP lease proof through
   Zephyr-native subsystems.
-- Investigate ESP32-C3 Wi-Fi AP start after station connect/disconnect. Current
-  XIAO radio concurrency evidence shows station reaches disconnected status, but
-  a later AP start can report `ap ip failed`; isolate whether Zephyr interface
-  mode/IP state needs explicit reset after station use.
+- Investigate ESP32-C3 Wi-Fi AP start after station connect/disconnect.
+  Investigated: a regression test now drives a single runtime session through
+  AP start, AP stop, station connect, station disconnect, and a second AP
+  start (verified end-to-end on the XIAO ESP32-C3 via
+  `scripts/zephyr-test-ap-after-station.sh`). The hypothesis that
+  `runtime_wifi_configure_ap_ipv4` would fail with "ap ip failed" on the
+  second AP start is not reproducible on the current firmware; the test
+  passes and `grep -rln "ap ip failed"` over `target/hardware-tests/`
+  returns no historical evidence either. Keep the test as a regression
+  guard and reopen this entry if a real reproduction surfaces.
 - Treat Wi-Fi scan/connect/AP lifecycle as a future explicit service-state
   machine item when Wi-Fi work is in scope. Keep the current nonblocking
   operation/result/cursor API as the baseline.

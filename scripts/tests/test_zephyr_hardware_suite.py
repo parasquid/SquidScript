@@ -886,6 +886,26 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("rediscovered fresh advertisement", script)
         self.assertIn("scripts/zephyr-test-ble-reconnect.sh", docs)
 
+    def test_ap_after_station_script_covers_station_teardown_path(self):
+        script = self.read("scripts/zephyr-test-ap-after-station.sh")
+        app = self.read("tests/hardware/zephyr/ap-after-station/main.squid")
+
+        self.assertIn("ap1 start true", script)
+        self.assertIn("ap1 stop true", script)
+        self.assertIn("station1 dev true", script)
+        self.assertIn("disconnect1 true null", script)
+        self.assertIn("station1after dev false", script)
+        self.assertIn("ap2 start true", script)
+        self.assertIn("ap ip failed", script)
+        self.assertIn("ESPFLASH_PORT", script)
+        self.assertIn("--target", script)
+        self.assertIn("--skip-flash", script)
+        self.assertIn('service.wifi.startAP("SquidScript-AP-1")', app)
+        self.assertIn('service.wifi.startAP("SquidScript-AP-2")', app)
+        self.assertIn('service.wifi.connect("dev")', app)
+        self.assertIn('service.wifi.disconnect()', app)
+        self.assertIn("service.wifi.getAPIP()", app)
+
     def test_wifi_list_timeout_captures_resource_diagnostics(self):
         wifi = self.read("scripts/c3-supermini-test-wifi-list-api.sh")
 
