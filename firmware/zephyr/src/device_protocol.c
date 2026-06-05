@@ -12,6 +12,7 @@
 #include <zephyr/sys/util.h>
 
 #include "app_lifecycle.h"
+#include "ble_ots.h"
 #include "protocol.h"
 #include "squidvm_ffi.h"
 
@@ -1250,6 +1251,97 @@ static int __noinline register_app_triggers(const struct sq_device_protocol_cont
 		}
 	}
 	return 0;
+}
+
+__attribute__((unused)) static int __noinline register_app_ble_profile_triggers(
+	const struct sq_device_protocol_context *context, const char *app_id)
+{
+	struct sq_vm_storage_backend backend;
+	struct sq_app_store_vm_storage *trigger_storage;
+	size_t ble_profile_count = 0;
+	size_t current_count;
+	SqvmStatus status;
+	SqvmBleProfileTrigger profile;
+	int result;
+	int appended = 0;
+
+	if (context == NULL || context->runtime == NULL || context->store_mount_point == NULL ||
+	    context->trigger_storage == NULL || app_id == NULL) {
+		return -EINVAL;
+	}
+	trigger_storage = context->trigger_storage;
+	result = sq_app_store_vm_storage_for_app(context->store_mount_point, app_id,
+						 trigger_storage);
+	if (result != 0) {
+		return result;
+	}
+	backend = sq_app_store_vm_storage_backend(trigger_storage);
+	if (backend.read_sqbc == NULL) {
+		return -ENODEV;
+	}
+
+	result = sq_vm_runtime_transfer_acquire(context->runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH);
+	if (result != 0) {
+		return result;
+	}
+	status = sqvm_trigger_ble_profile_count_from_reader(
+		backend.user_data, backend.read_sqbc, context->runtime->transfer.init_scratch,
+		sizeof(context->runtime->transfer.init_scratch), &ble_profile_count);
+	result = sq_vm_runtime_transfer_release(context->runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH);
+	if (result != 0) {
+		return result;
+	}
+	if (status != SQVM_STATUS_OK) {
+		return -EINVAL;
+	}
+
+	current_count = sq_ble_profile_table_count();
+	if (ble_profile_count > SQ_VM_RUNTIME_BLE_PROFILE_ARMED_MAX ||
+	    current_count + ble_profile_count > SQ_VM_RUNTIME_BLE_PROFILE_ARMED_MAX) {
+		return -EINVAL;
+	}
+
+	for (size_t i = 0; i < ble_profile_count; i++) {
+		memset(&profile, 0, sizeof(profile));
+		result = sq_vm_runtime_transfer_acquire(context->runtime,
+						       SQ_VM_RUNTIME_TRANSFER_SCRATCH);
+		if (result != 0) {
+			sq_ble_profile_table_remove_app(app_id);
+			return result;
+		}
+		status = sqvm_trigger_ble_profile_read_from_reader(
+			backend.user_data, backend.read_sqbc,
+			context->runtime->transfer.init_scratch,
+			sizeof(context->runtime->transfer.init_scratch), i, &profile);
+		result = sq_vm_runtime_transfer_release(context->runtime,
+						       SQ_VM_RUNTIME_TRANSFER_SCRATCH);
+		if (result != 0) {
+			sq_ble_profile_table_remove_app(app_id);
+			return result;
+		}
+		if (status != SQVM_STATUS_OK) {
+			sq_ble_profile_table_remove_app(app_id);
+			return -EINVAL;
+		}
+
+		result = sq_ble_profile_table_add(
+			app_id, (const char *)profile.profile,
+			(const char (*)[SQVM_BLE_PROFILE_TEXT_CAP])profile.accept,
+			(uint8_t)profile.accept_count, profile.events,
+			(uint8_t)profile.event_count);
+		if (result != 0) {
+			sq_ble_profile_table_remove_app(app_id);
+			return result;
+		}
+		appended++;
+	}
+	return appended > 0 ? 0 : -EINVAL;
+}
+
+__attribute__((unused)) static void clear_app_ble_profile_triggers(const char *app_id)
+{
+	sq_ble_profile_table_remove_app(app_id);
+	(void)app_id;
 }
 
 int sq_device_protocol_start_root(const struct sq_device_protocol_context *context)

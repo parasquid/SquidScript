@@ -1,9 +1,9 @@
 common:
   tags:
     - squidscript
-    - ble-ots-dispatch
+    - ble-trigger-table
 tests:
-  squidscript.ble_ots_dispatch:
+  squidscript.ble_trigger_table:
     platform_allow:
       - native_sim
       - native_sim/native/64

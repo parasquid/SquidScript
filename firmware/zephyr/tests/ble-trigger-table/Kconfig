@@ -1,0 +1,18 @@
+menu "SquidScript BLE trigger-table test firmware"
+
+config SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC
+	bool "Enable SquidScript diagnostic test paths"
+	default y
+
+config SQUIDSCRIPT_BLE_TRIGGER_TABLE_TEST
+	bool "Compile the SquidScript BLE trigger-table helpers into the test image"
+	default y
+	help
+	  Expose the BLE profile trigger-table add/remove/lookup helpers
+	  in the native_sim test image so unit tests can verify cap
+	  enforcement, all-or-nothing arming, and the lookup API
+	  without a real Bluetooth connection or a VM running.
+
+endmenu
+
+source "Kconfig.zephyr"
