@@ -1,0 +1,52 @@
+{
+  "_comment": "Build-time tuning source for SquidScript Zephyr firmware runtime resource caps. Regenerate firmware/zephyr/src/runtime_limits.h with scripts/generate-runtime-limits-header.py after editing. The C headers that own the arrays (vm_runtime.h, app_store.h, device_protocol.h, serial_transport.h, squidvm_ffi.h) use #ifndef guards so the C defaults still build if this file is missing or the generated header has not been generated. The human-readable summary is docs/runtime_limits.md.",
+
+  "vm_runtime": {
+    "trace_max": 4,
+    "trace_len": 26,
+    "output_max": 6,
+    "output_len": 54,
+    "drawlog_max": 4,
+    "drawlog_len": 48,
+    "device_error_max": 2,
+    "device_error_len": 48,
+    "timer_max": 4,
+    "armed_timer_max": 2,
+    "active_binding_max": 3,
+    "input_button_max": 2,
+    "input_poll_ms": 20,
+    "input_debounce_ms": 30,
+    "event_len": 24,
+    "return_stack_max": 2,
+    "indicator_breathe_steps": 65,
+    "wifi_ssid_len": 33,
+    "wifi_bssid_len": 18,
+    "wifi_auth_len": 24,
+    "wifi_ipv4_len": 16,
+    "wifi_profile_name_bytes": 16,
+    "wifi_profile_ssid_bytes": 32,
+    "wifi_profile_password_bytes": 64,
+    "work_stack_size": 16640
+  },
+
+  "app_store": {
+    "max_apps": 8,
+    "path_max": 128,
+    "app_id_max": 40,
+    "app_file_path_max": 64,
+    "app_state_path_max": 60,
+    "device_config_path_max": 40,
+    "planned_resume_path_max": 48
+  },
+
+  "device_protocol": {
+    "response_bytes": 1088,
+    "staging_path_bytes": 80,
+    "resource_path_bytes": 80,
+    "install_max_bytes": 65536
+  },
+
+  "serial_transport": {
+    "max_frame_len": 256
+  }
+}

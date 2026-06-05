@@ -174,7 +174,7 @@ Runtime event-name storage is bounded to 24-byte slots, which preserves the
 current measured event workload, including the 20-byte `timer.breathe.marker`
 fixture, while avoiding the previous 32-byte slot size across timers, armed
 timers, input bindings, and dispatch state.
-Foreground runtime timers are bounded to two slots for current one-shot and
+Foreground runtime timers are bounded to four slots for current one-shot and
 repeating timer workloads; armed app timers use a separate two-slot table.
 Runtime active device bindings are bounded to three entries for the current
 indicator, display/input, and targeted diagnostic binding workloads.
@@ -416,12 +416,22 @@ The Rust VM uses one string interner for SQBC literals, firmware static strings,
 and dynamic runtime text. Dynamic text can reuse exact SQBC/static matches and
 contiguous substrings of existing dynamic/static text. ESP32-C3 firmware symbols
 must be read from the current image under test. The validated Wi-Fi/BLE-enabled
-reference build reports 239,232 bytes of linker DRAM, 239,216 bytes through
-`scripts/zephyr-ram-audit.sh`, and an 11,920-byte `runtime.4` static runtime
+reference build reports 239,472 bytes of linker DRAM, 239,456 bytes through
+`scripts/zephyr-ram-audit.sh`, and a 12,104-byte `runtime.4` static runtime
 symbol. The static-buffer report classifies that image's top symbols as
 123,310 bytes platform-owned, 31,616 bytes SquidScript-owned, and 10,729 bytes
 unknown small symbols. Rebuild and rerun the reports before treating these
 values as current for a different firmware image.
+Foreground runtime timers are bounded to four slots for current one-shot and
+repeating timer workloads; armed app timers use a separate two-slot table.
+Raising `SQ_VM_RUNTIME_TIMER_MAX` from 2 to 4 added 80 bytes of linker DRAM
+(two extra `struct sq_vm_runtime_timer` slots, 40 bytes each after
+`int64_t due_ms` 8-byte alignment) and a matching 80 bytes to the
+`runtime.4` static runtime symbol. Runtime cap macros are sourced from
+`firmware/zephyr/src/runtime_limits.h`, generated from
+`firmware/zephyr/runtime_limits.json` by
+`scripts/generate-runtime-limits-header.py`; the C headers that own the
+arrays use `#ifndef` guards so the C defaults still build standalone.
 The resident protocol response buffer is 1,088 bytes, sized for the current
 largest bounded protocol response. Resource metric values use the protocol's
 U32 TLV type because ESP32-C3 diagnostic counters fit within 32-bit ranges;

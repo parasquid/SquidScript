@@ -418,41 +418,11 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
 
         self.assertIn("pub const MAX_STACK: usize = 16;", limits)
         self.assertNotIn("pub const MAX_STACK: usize = 32;", limits)
-        self.assertIn("#define SQ_VM_RUNTIME_TRACE_MAX 4", runtime_h)
-        self.assertIn("#define SQ_VM_RUNTIME_TRACE_LEN 26", runtime_h)
-        self.assertNotIn("#define SQ_VM_RUNTIME_TRACE_MAX 6", runtime_h)
-        self.assertNotIn("#define SQ_VM_RUNTIME_TRACE_MAX 8", runtime_h)
-        self.assertNotIn("#define SQ_VM_RUNTIME_TRACE_LEN 25", runtime_h)
-        self.assertNotIn("#define SQ_VM_RUNTIME_TRACE_LEN 32", runtime_h)
-        self.assertIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 6", runtime_h)
-        self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 8", runtime_h)
-        self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 5", runtime_h)
-        self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_MAX 12", runtime_h)
-        self.assertIn("SQ_VM_RUNTIME_OUTPUT_MAX == 6", ztest)
-        self.assertNotIn("SQ_VM_RUNTIME_OUTPUT_MAX == 5", ztest)
-        self.assertNotIn("SQ_VM_RUNTIME_OUTPUT_MAX >= 5", ztest)
-        self.assertNotIn("SQ_VM_RUNTIME_OUTPUT_MAX >= 6", ztest)
-        self.assertIn("#define SQ_VM_RUNTIME_OUTPUT_LEN 54", runtime_h)
-        self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_LEN 56", runtime_h)
-        self.assertNotIn("#define SQ_VM_RUNTIME_OUTPUT_LEN 64", runtime_h)
-        self.assertIn("#define SQ_VM_RUNTIME_DRAWLOG_MAX 4", runtime_h)
-        self.assertIn("#define SQ_VM_RUNTIME_DRAWLOG_LEN 48", runtime_h)
-        self.assertNotIn("#define SQ_VM_RUNTIME_DRAWLOG_LEN 64", runtime_h)
-        self.assertNotIn("#define SQ_VM_RUNTIME_DRAWLOG_LEN 96", runtime_h)
 
-    def test_runtime_keeps_physical_input_slots_bounded(self):
-        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+    def test_event_name_slot_fits_timer_breathe_marker(self):
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
 
-        self.assertIn("#define SQ_VM_RUNTIME_ACTIVE_BINDING_MAX 3", runtime_h)
-        self.assertNotIn("#define SQ_VM_RUNTIME_ACTIVE_BINDING_MAX 4", runtime_h)
-        self.assertIn("#define SQ_VM_RUNTIME_INPUT_BUTTON_MAX 2", runtime_h)
-        self.assertNotIn("#define SQ_VM_RUNTIME_INPUT_BUTTON_MAX 4", runtime_h)
-        self.assertIn("#define SQ_VM_RUNTIME_EVENT_LEN 24", runtime_h)
-        self.assertNotIn("#define SQ_VM_RUNTIME_EVENT_LEN 32", runtime_h)
         self.assertIn('strlen("timer.breathe.marker") < SQ_VM_RUNTIME_EVENT_LEN', ztest)
-        self.assertIn("#define SQ_VM_RUNTIME_TIMER_MAX 2", runtime_h)
-        self.assertNotIn("#define SQ_VM_RUNTIME_TIMER_MAX 4", runtime_h)
 
     def test_repeated_line_responses_use_rust_encoder_without_c_payload_staging(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")

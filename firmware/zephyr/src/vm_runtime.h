@@ -1,6 +1,14 @@
 #ifndef SQUIDSCRIPT_VM_RUNTIME_H
 #define SQUIDSCRIPT_VM_RUNTIME_H
 
+/*
+ * SquidScript foreground app runtime. The cap macros below are the source of
+ * truth for bounded runtime resources; the human-readable summary is
+ * docs/runtime_limits.md. The behavior of these caps is verified by the
+ * protocol ztest at firmware/zephyr/tests/protocol/src/main.c (look for
+ * SQ_VM_RUNTIME_*_MAX / SQ_VM_RUNTIME_EVENT_LEN references).
+ */
+
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -14,42 +22,93 @@
 
 #include "app_store.h"
 #include "vm_storage.h"
+#include "runtime_limits.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#ifndef SQ_VM_RUNTIME_TRACE_MAX
 #define SQ_VM_RUNTIME_TRACE_MAX 4
+#endif
+#ifndef SQ_VM_RUNTIME_TRACE_LEN
 #define SQ_VM_RUNTIME_TRACE_LEN 26
+#endif
+#ifndef SQ_VM_RUNTIME_OUTPUT_MAX
 #define SQ_VM_RUNTIME_OUTPUT_MAX 6
+#endif
+#ifndef SQ_VM_RUNTIME_OUTPUT_LEN
 #define SQ_VM_RUNTIME_OUTPUT_LEN 54
+#endif
+#ifndef SQ_VM_RUNTIME_DRAWLOG_MAX
 #define SQ_VM_RUNTIME_DRAWLOG_MAX 4
+#endif
+#ifndef SQ_VM_RUNTIME_DRAWLOG_LEN
 #define SQ_VM_RUNTIME_DRAWLOG_LEN 48
+#endif
+#ifndef SQ_VM_RUNTIME_DEVICE_ERROR_MAX
 #define SQ_VM_RUNTIME_DEVICE_ERROR_MAX 2
+#endif
+#ifndef SQ_VM_RUNTIME_DEVICE_ERROR_LEN
 #define SQ_VM_RUNTIME_DEVICE_ERROR_LEN 48
-#define SQ_VM_RUNTIME_TIMER_MAX 2
+#endif
+#ifndef SQ_VM_RUNTIME_TIMER_MAX
+#define SQ_VM_RUNTIME_TIMER_MAX 4
+#endif
+#ifndef SQ_VM_RUNTIME_ACTIVE_BINDING_MAX
 #define SQ_VM_RUNTIME_ACTIVE_BINDING_MAX 3
+#endif
+#ifndef SQ_VM_RUNTIME_INPUT_BUTTON_MAX
 #define SQ_VM_RUNTIME_INPUT_BUTTON_MAX 2
+#endif
+#ifndef SQ_VM_RUNTIME_INPUT_POLL_MS
 #define SQ_VM_RUNTIME_INPUT_POLL_MS 20
+#endif
+#ifndef SQ_VM_RUNTIME_INPUT_DEBOUNCE_MS
 #define SQ_VM_RUNTIME_INPUT_DEBOUNCE_MS 30
+#endif
 #if defined(CONFIG_BOARD_NATIVE_SIM)
 #define SQ_VM_RUNTIME_CONTEXT_BYTES 65536
 #else
 #define SQ_VM_RUNTIME_CONTEXT_BYTES 7872
 #endif
 #define SQ_VM_RUNTIME_SCRATCH_BYTES SQVM_STORAGE_TRANSFER_CAPACITY
+#ifndef SQ_VM_RUNTIME_WORK_STACK_SIZE
 #define SQ_VM_RUNTIME_WORK_STACK_SIZE 16640
+#endif
+#ifndef SQ_VM_RUNTIME_EVENT_LEN
 #define SQ_VM_RUNTIME_EVENT_LEN 24
+#endif
+#ifndef SQ_VM_RUNTIME_INDICATOR_BREATHE_STEPS
 #define SQ_VM_RUNTIME_INDICATOR_BREATHE_STEPS 65
+#endif
+#ifndef SQ_VM_RUNTIME_RETURN_STACK_MAX
 #define SQ_VM_RUNTIME_RETURN_STACK_MAX 2
+#endif
+#ifndef SQ_VM_RUNTIME_ARMED_TIMER_MAX
 #define SQ_VM_RUNTIME_ARMED_TIMER_MAX 2
+#endif
+#ifndef SQ_VM_RUNTIME_WIFI_SSID_LEN
 #define SQ_VM_RUNTIME_WIFI_SSID_LEN 33
+#endif
+#ifndef SQ_VM_RUNTIME_WIFI_BSSID_LEN
 #define SQ_VM_RUNTIME_WIFI_BSSID_LEN 18
+#endif
+#ifndef SQ_VM_RUNTIME_WIFI_AUTH_LEN
 #define SQ_VM_RUNTIME_WIFI_AUTH_LEN 24
+#endif
+#ifndef SQ_VM_RUNTIME_WIFI_IPV4_LEN
 #define SQ_VM_RUNTIME_WIFI_IPV4_LEN 16
+#endif
+#ifndef SQ_VM_RUNTIME_WIFI_PROFILE_NAME_BYTES
 #define SQ_VM_RUNTIME_WIFI_PROFILE_NAME_BYTES 16
+#endif
+#ifndef SQ_VM_RUNTIME_WIFI_PROFILE_SSID_BYTES
 #define SQ_VM_RUNTIME_WIFI_PROFILE_SSID_BYTES 32
+#endif
+#ifndef SQ_VM_RUNTIME_WIFI_PROFILE_PASSWORD_BYTES
 #define SQ_VM_RUNTIME_WIFI_PROFILE_PASSWORD_BYTES 64
+#endif
 
 enum sq_vm_runtime_status {
 	SQ_VM_RUNTIME_IDLE = 0,

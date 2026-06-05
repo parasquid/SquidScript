@@ -2,6 +2,7 @@
 #define SQUIDSCRIPT_APP_STORE_H
 
 #include "vm_fs_storage.h"
+#include "runtime_limits.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -11,13 +12,27 @@
 extern "C" {
 #endif
 
+#ifndef SQ_APP_STORE_PATH_MAX
 #define SQ_APP_STORE_PATH_MAX 128
+#endif
+#ifndef SQ_APP_STORE_APP_FILE_PATH_MAX
 #define SQ_APP_STORE_APP_FILE_PATH_MAX 64
+#endif
+#ifndef SQ_APP_STORE_APP_STATE_PATH_MAX
 #define SQ_APP_STORE_APP_STATE_PATH_MAX 60
+#endif
+#ifndef SQ_APP_STORE_DEVICE_CONFIG_PATH_MAX
 #define SQ_APP_STORE_DEVICE_CONFIG_PATH_MAX 40
+#endif
+#ifndef SQ_APP_STORE_PLANNED_RESUME_PATH_MAX
 #define SQ_APP_STORE_PLANNED_RESUME_PATH_MAX 48
+#endif
+#ifndef SQ_APP_STORE_APP_ID_MAX
 #define SQ_APP_STORE_APP_ID_MAX 40
+#endif
+#ifndef SQ_APP_STORE_MAX_APPS
 #define SQ_APP_STORE_MAX_APPS 8
+#endif
 
 struct fs_mount_t;
 

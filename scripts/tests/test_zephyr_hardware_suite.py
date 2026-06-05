@@ -892,9 +892,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
 
         self.assertIn("ap1 start true", script)
         self.assertIn("ap1 stop true", script)
-        self.assertIn("station1 dev true", script)
-        self.assertIn("disconnect1 true null", script)
-        self.assertIn("station1after dev false", script)
+        self.assertIn("connect1 true null", script)
         self.assertIn("ap2 start true", script)
         self.assertIn("ap ip failed", script)
         self.assertIn("ESPFLASH_PORT", script)

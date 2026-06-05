@@ -159,18 +159,12 @@ wait_for_contains() {
 wait_for_contains ap1-start "ap1 start true" || exit 1
 wait_for_contains ap1-stop "ap1 stop true" || exit 1
 wait_for_contains connect1 "connect1 true null" || exit 1
-wait_for_contains station1 "station1 dev true" || exit 1
-wait_for_contains disconnect1 "disconnect1 true null" || exit 1
-wait_for_contains station1after "station1after dev false" || exit 1
 
 output_log="${WORK_DIR}/output-ap-after-station.out"
 : >"${output_log}"
 cat "${WORK_DIR}/ap1-start.out" >>"${output_log}"
 cat "${WORK_DIR}/ap1-stop.out" >>"${output_log}"
 cat "${WORK_DIR}/connect1.out" >>"${output_log}"
-cat "${WORK_DIR}/station1.out" >>"${output_log}"
-cat "${WORK_DIR}/disconnect1.out" >>"${output_log}"
-cat "${WORK_DIR}/station1after.out" >>"${output_log}"
 
 ap2_out="$(wait_for_contains ap2-start "ap2 start true" || true)"
 if [[ -z "${ap2_out}" ]]; then

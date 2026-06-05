@@ -2025,6 +2025,13 @@ firmware event slot, which is currently 24 bytes including the terminating NUL;
 the portable authoring limit is therefore 23 UTF-8 bytes. This applies to
 foreground timers, armed timers, and other runtime-dispatched event names.
 
+Runtime resources are bounded; the full table of caps (foreground timer slots,
+armed timer slots, active device-binding slots, input button slots, output
+line slots, drawlog record slots, app store limits, and wire-format limits)
+lives in `docs/runtime_limits.md` and the macros in
+`firmware/zephyr/src/vm_runtime.h` are the source of truth. Registering a
+foreground timer beyond the cap returns `-ENOSPC` to the VM.
+
 Example:
 
 ```squid
