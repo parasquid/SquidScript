@@ -24,10 +24,20 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   pipeline, and verify on ESP32-C3 hardware with skip behavior when host
   Bluetooth is unavailable.
 - Investigate BLE re-advertising after host disconnect on ESP32-C3 Zephyr.
-  Current radio concurrency evidence proves active BLE stays connected during
-  Wi-Fi scan/list, AP, and station work, but host rediscovery after disconnect
-  does not observe a fresh advertisement even with delayed advertising restart
-  scheduled from the disconnect callback.
+  Resolved: `ble_smoke.c` was calling `bt_le_adv_start` directly from the
+  delayed restart work and the controller returned `-EALREADY` (handled
+  silently as success), so no fresh advertisement went out. The fix forces a
+  clean state transition by calling `bt_le_adv_stop` before `bt_le_adv_start`
+  in the restart path, with a `BLE advertising stopped before restart` log
+  line. Native ztests under `firmware/zephyr/tests/ble-smoke` exercise the
+  state machine with function-pointer stubs on `native_sim`, and
+  `scripts/zephyr-test-ble-reconnect.sh` drives the real host Bluetooth
+  controller on the XIAO ESP32-C3 to flash, connect, disconnect, wait out
+  the grace window, and rescan for a fresh advertisement (verified with
+  `58:8C:81:AC:52:5A XIAO ESP32-C3 ePaper 4.26 + SD` in
+  `target/hardware-tests/ble-reconnect/`). The radio concurrency script's
+  `--require-ble-reconnect` flag remains a secondary proof point for the
+  same path under Wi-Fi pressure.
 - Add external Wi-Fi AP client association and DHCP lease proof through
   Zephyr-native subsystems.
 - Investigate ESP32-C3 Wi-Fi AP start after station connect/disconnect. Current

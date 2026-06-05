@@ -1,6 +1,8 @@
 #include "ble_smoke.h"
+#include "ble_smoke_sm.h"
 
 #include <errno.h>
+#include <stdbool.h>
 
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -15,6 +17,97 @@
 
 LOG_MODULE_REGISTER(squidscript_ble, LOG_LEVEL_INF);
 
+#if IS_ENABLED(CONFIG_BT) || defined(CONFIG_SQUIDSCRIPT_BLE_SMOKE_TEST)
+
+static enum sq_ble_smoke_state sq_ble_smoke_state = SQ_BLE_SMOKE_STATE_IDLE;
+static const struct sq_ble_smoke_adv_api *sq_ble_smoke_api;
+
+void sq_ble_smoke_sm_install_api(const struct sq_ble_smoke_adv_api *api)
+{
+	sq_ble_smoke_api = api;
+}
+
+enum sq_ble_smoke_state sq_ble_smoke_sm_get_state(void)
+{
+	return sq_ble_smoke_state;
+}
+
+static int sq_ble_smoke_call_adv_start(void)
+{
+	if (sq_ble_smoke_api == NULL || sq_ble_smoke_api->start == NULL) {
+		return -ENOTSUP;
+	}
+	return sq_ble_smoke_api->start();
+}
+
+static int sq_ble_smoke_call_adv_stop(void)
+{
+	if (sq_ble_smoke_api == NULL || sq_ble_smoke_api->stop == NULL) {
+		return -ENOTSUP;
+	}
+	return sq_ble_smoke_api->stop();
+}
+
+static void sq_ble_smoke_advertising_restart_work(struct k_work *work);
+
+K_WORK_DELAYABLE_DEFINE(sq_ble_smoke_restart_advertising,
+			sq_ble_smoke_advertising_restart_work);
+
+void sq_ble_smoke_sm_reset(void)
+{
+	sq_ble_smoke_state = SQ_BLE_SMOKE_STATE_IDLE;
+	(void)k_work_cancel_delayable(&sq_ble_smoke_restart_advertising);
+}
+
+int sq_ble_smoke_sm_begin_advertising(void)
+{
+	int result = sq_ble_smoke_call_adv_start();
+
+	if (result == -EALREADY) {
+		sq_ble_smoke_state = SQ_BLE_SMOKE_STATE_ADVERTISING;
+		return 0;
+	}
+	if (result != 0) {
+		return result;
+	}
+	sq_ble_smoke_state = SQ_BLE_SMOKE_STATE_ADVERTISING;
+	return 0;
+}
+
+int sq_ble_smoke_sm_handle_disconnect(void)
+{
+	sq_ble_smoke_state = SQ_BLE_SMOKE_STATE_RESTART_PENDING;
+	(void)k_work_schedule(&sq_ble_smoke_restart_advertising, K_MSEC(100));
+	return 0;
+}
+
+static void sq_ble_smoke_advertising_restart_work(struct k_work *work)
+{
+	ARG_UNUSED(work);
+
+	int stop_result = sq_ble_smoke_call_adv_stop();
+	if (stop_result != 0 && stop_result != -EALREADY) {
+		LOG_WRN("BLE advertising stop before restart failed: %d", stop_result);
+		sq_ble_smoke_state = SQ_BLE_SMOKE_STATE_IDLE;
+		return;
+	}
+	LOG_INF("BLE advertising stopped before restart");
+
+	int start_result = sq_ble_smoke_sm_begin_advertising();
+	if (start_result != 0) {
+		LOG_WRN("BLE advertising restart failed after disconnect: %d", start_result);
+		sq_ble_smoke_state = SQ_BLE_SMOKE_STATE_IDLE;
+		return;
+	}
+	LOG_INF("BLE advertising restarted after disconnect");
+}
+
+int sq_ble_smoke_sm_run_restart(void)
+{
+	sq_ble_smoke_advertising_restart_work(&sq_ble_smoke_restart_advertising.work);
+	return 0;
+}
+
 #if IS_ENABLED(CONFIG_BT)
 static const struct bt_data ad[] = {
 	BT_DATA_BYTES(BT_DATA_FLAGS, BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR),
@@ -25,41 +118,34 @@ static const struct bt_data sd[] = {
 		sizeof(CONFIG_BT_DEVICE_NAME) - 1),
 };
 
-static int sq_ble_smoke_start_advertising(void)
+static int sq_ble_smoke_adv_start_real(void)
 {
-	int result = bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
-	if (result == -EALREADY) {
-		return 0;
-	}
-	return result;
+	return bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
 }
 
-static void sq_ble_smoke_advertising_restart_work(struct k_work *work)
+static int sq_ble_smoke_adv_stop_real(void)
 {
-	ARG_UNUSED(work);
-
-	int result = sq_ble_smoke_start_advertising();
-	if (result != 0) {
-		LOG_WRN("BLE advertising restart failed after disconnect: %d", result);
-		return;
-	}
-	LOG_INF("BLE advertising restarted after disconnect");
+	return bt_le_adv_stop();
 }
 
-K_WORK_DELAYABLE_DEFINE(sq_ble_smoke_restart_advertising,
-			sq_ble_smoke_advertising_restart_work);
+static const struct sq_ble_smoke_adv_api sq_ble_smoke_real_api = {
+	.start = sq_ble_smoke_adv_start_real,
+	.stop = sq_ble_smoke_adv_stop_real,
+};
 
 static void sq_ble_smoke_disconnected(struct bt_conn *conn, uint8_t reason)
 {
 	ARG_UNUSED(conn);
 	ARG_UNUSED(reason);
 
-	(void)k_work_schedule(&sq_ble_smoke_restart_advertising, K_MSEC(100));
+	(void)sq_ble_smoke_sm_handle_disconnect();
 }
 
 BT_CONN_CB_DEFINE(sq_ble_smoke_conn_callbacks) = {
 	.disconnected = sq_ble_smoke_disconnected,
 };
+#endif
+
 #endif
 
 int sq_ble_smoke_start(void)
@@ -71,7 +157,9 @@ int sq_ble_smoke_start(void)
 		return result;
 	}
 
-	result = sq_ble_smoke_start_advertising();
+	sq_ble_smoke_sm_install_api(&sq_ble_smoke_real_api);
+
+	result = sq_ble_smoke_sm_begin_advertising();
 	if (result != 0) {
 		LOG_WRN("BLE advertising failed: %d", result);
 		return result;

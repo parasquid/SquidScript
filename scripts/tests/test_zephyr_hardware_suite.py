@@ -847,8 +847,44 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("sq_ble_smoke_disconnected", ble)
         self.assertIn("K_WORK_DELAYABLE_DEFINE", ble)
         self.assertIn("k_work_schedule", ble)
-        self.assertIn("sq_ble_smoke_start_advertising", ble)
+        self.assertIn("sq_ble_smoke_sm_handle_disconnect", ble)
         self.assertIn("BLE advertising restarted after disconnect", ble)
+
+    def test_ble_smoke_restart_stops_before_starting_again(self):
+        ble = self.read("firmware/zephyr/src/ble_smoke.c")
+        sm = self.read("firmware/zephyr/src/ble_smoke_sm.h")
+        ztest_main = self.read("firmware/zephyr/tests/ble-smoke/src/main.c")
+        ztest_kconfig = self.read("firmware/zephyr/tests/ble-smoke/Kconfig")
+        ztest_conf = self.read("firmware/zephyr/tests/ble-smoke/prj.conf")
+        script = self.read("scripts/zephyr-test-ble-smoke.sh")
+
+        self.assertIn("BLE advertising stopped before restart", ble)
+        stop_index = ble.index("BLE advertising stopped before restart")
+        start_index = ble.index("BLE advertising restarted after disconnect")
+        self.assertLess(stop_index, start_index)
+        self.assertIn("bt_le_adv_stop", ble)
+        self.assertIn("bt_le_adv_start(BT_LE_ADV_CONN_FAST_1", ble)
+        self.assertIn("struct sq_ble_smoke_adv_api", sm)
+        self.assertIn("SQUIDSCRIPT_BLE_SMOKE_TEST", ztest_kconfig)
+        self.assertIn("CONFIG_SQUIDSCRIPT_BLE_SMOKE_TEST=y", ztest_conf)
+        self.assertIn("restart_work_calls_stop_before_start", ztest_main)
+        self.assertIn("native_sim/native/64", script)
+
+    def test_ble_reconnect_script_uses_host_rescan_proof(self):
+        script = self.read("scripts/zephyr-test-ble-reconnect.sh")
+        docs = self.read("docs/hardware_target_tests.md")
+
+        self.assertIn("bluetoothctl", script)
+        self.assertIn("rediscover", script)
+        self.assertIn("BLE_RESCAN_TIMEOUT_SECONDS", script)
+        self.assertIn("BLE_RESTART_GRACE_SECONDS", script)
+        self.assertIn("ESPFLASH_PORT", script)
+        self.assertIn("--target", script)
+        self.assertIn("--skip-flash", script)
+        self.assertIn("connect \"${BLE_ADDR}\"", script)
+        self.assertIn("disconnect \"${BLE_ADDR}\"", script)
+        self.assertIn("rediscovered fresh advertisement", script)
+        self.assertIn("scripts/zephyr-test-ble-reconnect.sh", docs)
 
     def test_wifi_list_timeout_captures_resource_diagnostics(self):
         wifi = self.read("scripts/c3-supermini-test-wifi-list-api.sh")

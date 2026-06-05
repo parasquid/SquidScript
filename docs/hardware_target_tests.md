@@ -634,6 +634,22 @@ discovery was not confirmed after the serial advertising proof. Use
 validates that the target radio backend is enabled by target metadata; it does
 not validate BLE object-transfer chunking, staging, or app install.
 
+`scripts/zephyr-test-ble-reconnect.sh` is a focused re-advertising check. It
+builds or flashes the selected target, captures the initial
+`BLE advertising started: <device>` log line, connects to the device from a
+host Bluetooth controller, requests a host disconnect, watches the firmware
+log `BLE advertising stopped before restart` followed by
+`BLE advertising restarted after disconnect`, and rescans the host controller
+to confirm a fresh advertisement is observed. Use it to verify the
+`bt_le_adv_stop` → `bt_le_adv_start` restart sequence in
+`firmware/zephyr/src/ble_smoke.c` actually puts bytes back on the air. The
+companion host-side ztests in `firmware/zephyr/tests/ble-smoke` drive the
+state machine on `native_sim` with function-pointer stubs, and the
+`scripts/zephyr-test-ble-smoke.sh` wrapper runs them through Twister. Pass
+`--skip-flash` to either script when preserving the current firmware session
+is more important than a fresh baseline; the reconnect script still requires a
+host Bluetooth controller.
+
 For non-Super-Mini ESP32-C3 targets such as
 `xiao-esp32c3-gdeq0426t82-sd`, run the same checks against the selected target:
 
