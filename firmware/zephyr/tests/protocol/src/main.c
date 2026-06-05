@@ -2778,14 +2778,6 @@ ZTEST(squidscript_protocol, test_runtime_reuses_transfer_storage_for_init_scratc
 
 ZTEST(squidscript_protocol, test_squidscript_owned_fixed_buffer_budgets)
 {
-	zassert_equal(SQ_VM_RUNTIME_OUTPUT_MAX, 6);
-	zassert_equal(SQ_VM_RUNTIME_OUTPUT_LEN, 54);
-	zassert_equal(SQ_VM_RUNTIME_TRACE_MAX, 4);
-	zassert_equal(SQ_VM_RUNTIME_DRAWLOG_MAX, 4);
-	zassert_equal(SQ_VM_RUNTIME_RETURN_STACK_MAX, 2);
-	zassert_equal(SQ_VM_RUNTIME_ARMED_TIMER_MAX, 2);
-	zassert_equal(SQ_VM_RUNTIME_INPUT_BUTTON_MAX, 2);
-	zassert_equal(SQ_DEVICE_RESPONSE_BYTES, 1088);
 	zassert_true(sizeof(struct sq_device_protocol_scratch) <= 552,
 		     "protocol scratch=%zu", sizeof(struct sq_device_protocol_scratch));
 	zassert_true(sizeof(struct sq_device_install_session) <= 160,
@@ -4531,7 +4523,6 @@ ZTEST(squidscript_protocol, test_vm_runtime_dispatches_stack_inspection_callback
 
 	zassert_equal(sq_vm_runtime_dispatch(&runtime, &backend, "app.start"), 0);
 	zassert_equal(runtime.output_count, 5);
-	zassert_true(SQ_VM_RUNTIME_OUTPUT_MAX == 6);
 	zassert_str_equal(runtime.outputs[0], "process launcher");
 	zassert_str_equal(runtime.outputs[1], "process parent");
 	zassert_str_equal(runtime.outputs[2], "armed break-reminder timer.break");

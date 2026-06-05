@@ -167,9 +167,10 @@ shape and avoiding unused per-record field slots in the resident VM context.
 The runtime object keeps small flags out of 32-bit alignment gaps and stores
 fixed-array counters as byte-sized values when their backing arrays are capped
 below 255.
-Runtime physical input state is bounded to two GPIO button slots; the ESP32-C3
+Runtime physical input state is bounded to eight GPIO button slots; the ESP32-C3
 Super Mini reference path only needs the confirmed BOOT/GPIO9 binding plus one
-additional slot for targeted diagnostics.
+additional slot for targeted diagnostics, but the cap leaves headroom for
+future targets with more physical inputs (e.g., 4-direction nav + 4 actions).
 Runtime event-name storage is bounded to 24-byte slots, which preserves the
 current measured event workload, including the 20-byte `timer.breathe.marker`
 fixture, while avoiding the previous 32-byte slot size across timers, armed
@@ -416,20 +417,23 @@ The Rust VM uses one string interner for SQBC literals, firmware static strings,
 and dynamic runtime text. Dynamic text can reuse exact SQBC/static matches and
 contiguous substrings of existing dynamic/static text. ESP32-C3 firmware symbols
 must be read from the current image under test. The validated Wi-Fi/BLE-enabled
-reference build reports 239,472 bytes of linker DRAM, 239,456 bytes through
-`scripts/zephyr-ram-audit.sh`, and a 12,104-byte `runtime.4` static runtime
+reference build reports 239,760 bytes of linker DRAM, 239,744 bytes through
+`scripts/zephyr-ram-audit.sh`, and a 12,392-byte `runtime.4` static runtime
 symbol. The static-buffer report classifies that image's top symbols as
 123,310 bytes platform-owned, 31,616 bytes SquidScript-owned, and 10,729 bytes
 unknown small symbols. Rebuild and rerun the reports before treating these
 values as current for a different firmware image.
 Foreground runtime timers are bounded to four slots for current one-shot and
 repeating timer workloads; armed app timers use a separate two-slot table.
-Raising `SQ_VM_RUNTIME_TIMER_MAX` from 2 to 4 added 80 bytes of linker DRAM
-(two extra `struct sq_vm_runtime_timer` slots, 40 bytes each after
-`int64_t due_ms` 8-byte alignment) and a matching 80 bytes to the
-`runtime.4` static runtime symbol. Runtime cap macros are sourced from
-`firmware/zephyr/src/runtime_limits.h`, generated from
-`firmware/zephyr/runtime_limits.json` by
+Runtime physical input state is bounded to eight GPIO button slots for current
+and future targets (Super Mini needs only BOOT/GPIO9 plus one diagnostic slot;
+the larger cap leaves headroom for 4-direction nav + 4 actions on richer
+boards). Raising `SQ_VM_RUNTIME_INPUT_BUTTON_MAX` from 2 to 8 added 288 bytes
+of linker DRAM (six extra `struct sq_vm_runtime_input_button` slots, 48 bytes
+each after `int64_t next_poll_ms` and `int64_t debounce_until_ms` 8-byte
+alignment) and a matching 288 bytes to the `runtime.4` static runtime symbol.
+Runtime cap macros are sourced from `firmware/zephyr/src/runtime_limits.h`,
+generated from `firmware/zephyr/runtime_limits.json` by
 `scripts/generate-runtime-limits-header.py`; the C headers that own the
 arrays use `#ifndef` guards so the C defaults still build standalone.
 The resident protocol response buffer is 1,088 bytes, sized for the current

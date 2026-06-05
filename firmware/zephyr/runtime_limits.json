@@ -13,7 +13,7 @@
     "timer_max": 4,
     "armed_timer_max": 2,
     "active_binding_max": 3,
-    "input_button_max": 2,
+    "input_button_max": 8,
     "input_poll_ms": 20,
     "input_debounce_ms": 30,
     "event_len": 24,

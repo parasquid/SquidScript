@@ -23,7 +23,7 @@ following caps bound the resources one app can hold at once.
 | Foreground timer slots | 4 | `SQ_VM_RUNTIME_TIMER_MAX` |
 | Armed (background) timer slots | 2 | `SQ_VM_RUNTIME_ARMED_TIMER_MAX` |
 | Active device-binding slots | 3 | `SQ_VM_RUNTIME_ACTIVE_BINDING_MAX` |
-| Input button slots | 2 | `SQ_VM_RUNTIME_INPUT_BUTTON_MAX` |
+| Input button slots | 8 | `SQ_VM_RUNTIME_INPUT_BUTTON_MAX` |
 | Event name max length | 23 UTF-8 bytes (+ NUL) | `SQ_VM_RUNTIME_EVENT_LEN` |
 | Trace record slots | 4 | `SQ_VM_RUNTIME_TRACE_MAX` |
 | Trace record length | 26 bytes | `SQ_VM_RUNTIME_TRACE_LEN` |

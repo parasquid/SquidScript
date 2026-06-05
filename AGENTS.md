@@ -9,6 +9,9 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - Watch the conversation for recurring user preferences, workflow corrections, verification expectations, and safety constraints that should guide future agents.
 - When a preference or workflow rule is likely to apply beyond the current turn, suggest adding it to `AGENTS.md`.
 - If the user agrees, update `AGENTS.md` promptly and keep the guidance concise, actionable, and specific to this repository.
+- Do not trim the todo list down to just the pending items at the end of a
+  slice. The completed items are the record of what was done in this
+  session; leave them in the list and add new pending items below.
 - When presenting decision questions, include the meaningful options with pros,
   cons, and the practical impact of each choice so the user can make an
   informed decision. Add concise examples when they help clarify what an option
