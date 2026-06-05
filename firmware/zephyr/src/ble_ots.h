@@ -7,6 +7,8 @@
 
 #include <zephyr/bluetooth/services/ots.h>
 
+#include "vm_runtime.h"
+
 /* OTS Object Action Control Point result codes that this module emits when
  * the OTS layer should reject an OACP Create. The numeric values match the
  * BT SIG GSS spec and the Zephyr bt_gatt_ots_oacp_res_code enum in
@@ -47,6 +49,15 @@ int sq_ble_ots_parse_object_name(const char *name, char *app_id_out, size_t app_
 				 char *extension_out, size_t extension_cap);
 
 void sq_ble_ots_reset_session(void);
+
+int sq_ble_ots_drain_pending_event(char *app_id_out, size_t app_id_cap, char *event_out,
+				   size_t event_cap);
+
+bool sq_ble_ots_pending_is_complete(void);
+
+const char *sq_ble_ots_pending_app_id(void);
+
+const char *sq_ble_ots_pending_event_name(void);
 
 int sq_ble_ots_test_invoke_obj_created_with_name(const char *name, size_t alloc_size,
 						 char *staging_path_out,

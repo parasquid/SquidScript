@@ -34,9 +34,17 @@ struct sq_ble_ots_session {
 	size_t bytes_received;
 };
 
+struct sq_ble_ots_pending_event {
+	bool active;
+	char app_id[SQ_BLE_OTS_APP_ID_MAX];
+	char event[SQ_VM_RUNTIME_EVENT_LEN];
+	char staging_path[SQ_BLE_OTS_PATH_MAX];
+};
+
 static struct bt_ots *sq_ble_ots_instance;
 static bool sq_ble_ots_initialized;
 static struct sq_ble_ots_session sq_ble_ots_session;
+static struct sq_ble_ots_pending_event sq_ble_ots_pending;
 
 static int sq_ble_ots_format_staging_path(char *out, size_t out_len, const char *app_id,
 					  const char *profile_id)
@@ -323,8 +331,6 @@ static int sq_ble_ots_obj_write_internal(const char *staging_path, const void *d
 	ssize_t written;
 	int result;
 
-	ARG_UNUSED(rem);
-
 	if (!sq_ble_ots_session.active || staging_path == NULL) {
 		return -EINVAL;
 	}
@@ -353,6 +359,19 @@ static int sq_ble_ots_obj_write_internal(const char *staging_path, const void *d
 		return -EIO;
 	}
 	sq_ble_ots_session.bytes_received += len;
+
+	if (rem == 0) {
+		memset(&sq_ble_ots_pending, 0, sizeof(sq_ble_ots_pending));
+		sq_ble_ots_pending.active = true;
+		strncpy(sq_ble_ots_pending.app_id, sq_ble_ots_session.app_id,
+			sizeof(sq_ble_ots_pending.app_id) - 1);
+		strncpy(sq_ble_ots_pending.event, "ble.object.complete",
+			sizeof(sq_ble_ots_pending.event) - 1);
+		strncpy(sq_ble_ots_pending.staging_path, sq_ble_ots_session.staging_path,
+			sizeof(sq_ble_ots_pending.staging_path) - 1);
+		LOG_INF("obj_write complete: pending event app=%s", sq_ble_ots_pending.app_id);
+	}
+
 	return (int)written;
 }
 
@@ -364,6 +383,13 @@ void sq_ble_ots_reset_session(void)
 	}
 	sq_ble_ots_close_session_files();
 	memset(&sq_ble_ots_session, 0, sizeof(sq_ble_ots_session));
+
+	if (sq_ble_ots_pending.active) {
+		if (sq_ble_ots_pending.staging_path[0] != '\0') {
+			(void)fs_unlink(sq_ble_ots_pending.staging_path);
+		}
+		memset(&sq_ble_ots_pending, 0, sizeof(sq_ble_ots_pending));
+	}
 }
 
 static void sq_ble_ots_abort_internal(void)
@@ -402,4 +428,40 @@ int sq_ble_ots_test_invoke_obj_write_with_path(const char *staging_path, const v
 void sq_ble_ots_test_invoke_abort(void)
 {
 	sq_ble_ots_abort_internal();
+}
+
+bool sq_ble_ots_pending_is_complete(void)
+{
+	return sq_ble_ots_pending.active;
+}
+
+const char *sq_ble_ots_pending_app_id(void)
+{
+	return sq_ble_ots_pending.app_id;
+}
+
+const char *sq_ble_ots_pending_event_name(void)
+{
+	return sq_ble_ots_pending.event;
+}
+
+int sq_ble_ots_drain_pending_event(char *app_id_out, size_t app_id_cap, char *event_out,
+				   size_t event_cap)
+{
+	if (!sq_ble_ots_pending.active) {
+		return -ENOENT;
+	}
+	if (app_id_out != NULL && app_id_cap > 0) {
+		strncpy(app_id_out, sq_ble_ots_pending.app_id, app_id_cap - 1);
+		app_id_out[app_id_cap - 1] = '\0';
+	}
+	if (event_out != NULL && event_cap > 0) {
+		strncpy(event_out, sq_ble_ots_pending.event, event_cap - 1);
+		event_out[event_cap - 1] = '\0';
+	}
+	if (sq_ble_ots_pending.staging_path[0] != '\0') {
+		(void)fs_unlink(sq_ble_ots_pending.staging_path);
+	}
+	memset(&sq_ble_ots_pending, 0, sizeof(sq_ble_ots_pending));
+	return 0;
 }
