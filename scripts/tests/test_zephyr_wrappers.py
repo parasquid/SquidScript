@@ -132,6 +132,12 @@ class ZephyrWrapperTests(ZephyrScriptTestCase):
         self.assertIn("native_sim/native/64", script)
         self.assertIn("scripts/zephyr-test-protocol.sh", docs)
 
+    def test_protocol_twister_wrapper_clobbers_output_to_prevent_accumulation(self):
+        script = self.read("scripts/zephyr-test-protocol.sh")
+
+        self.assertIn("--clobber-output", script)
+        self.assertIn("-c", script)
+
     def test_protocol_ztests_use_generated_squid_fixtures_not_static_sqbc_blobs(self):
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
         cmake = self.read("firmware/zephyr/tests/protocol/CMakeLists.txt")

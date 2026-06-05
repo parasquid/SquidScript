@@ -12,7 +12,10 @@ usage() {
 Usage: scripts/zephyr-test-protocol.sh [-- <extra twister args>]
 
 Runs the Zephyr protocol ztests through Twister on native_sim/native/64.
-Extra arguments after -- are forwarded to west twister.
+Defaults to `--clobber-output` so the `twister-out/` directory is deleted
+between runs instead of being renamed to `twister-out.N`. Pass `-- --no-clean`
+to re-use the outdir for faster incremental builds when iterating.
+Extra arguments after `--` are forwarded to west twister.
 USAGE
 }
 
@@ -39,4 +42,5 @@ west twister \
   -T "${ROOT}/firmware/zephyr/tests/protocol" \
   --platform native_sim/native/64 \
   --inline-logs \
+  --clobber-output \
   "${EXTRA_ARGS[@]}"
