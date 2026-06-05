@@ -64,6 +64,11 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - When the user asks for memory numbers without further qualification, report
   RAM numbers by default. Treat flash/app-storage/image-size numbers as flash
   storage and only include them when requested or clearly relevant.
+- Design specs for major features (written before implementation) live at
+  `docs/specs/YYYY-MM-DD-<topic>-design.md`. Use this path consistently;
+  do not use `docs/designs/`, `docs/rfcs/`, or other locations. The naming
+  convention is `<date>-<topic>-design.md` where `topic` is short
+  kebab-case (e.g. `ble-object-transfer`, `runtime-tunable-caps`).
 
 ## Language And Spec Discipline
 

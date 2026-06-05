@@ -79,6 +79,19 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Input, Triggers, And Power
 
+- Add a bounded queued event-delivery path so trigger events are not dropped
+  when the VM is busy. Today the main loop (`main.c:148-171`) is the sole event
+  dispatcher and only checks armed timers / input when the VM is `IDLE`
+  (`device_protocol.c:1368-1370`, `vm_runtime_indicator_gpio.c:507`); the VM is
+  single-job (`sq_vm_runtime_submit_work` returns `-EBUSY`, `vm_runtime.c:146`)
+  with no pending-event buffer, so any timer or input event that arrives while a
+  foreground app is running is silently dropped — a button press fully inside
+  the run window is not even latched. Add a bounded, thread-safe pending-event
+  queue (e.g. `k_msgq`) that input edges and timers enqueue and the poll loop
+  drains when the VM returns to `IDLE`, with a documented overflow policy
+  (drop-oldest vs drop-newest vs coalesce-by-event). Out of scope: delivering
+  events into an already-running app (re-entrant in-app dispatch) is a separate
+  VM-semantics change.
 - Extend the `app.triggers` model beyond current timer metadata declarations to
   future logical button/input triggers while keeping `event.on(...)` as the
   handler for the activation event that fires later.
@@ -121,6 +134,61 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   (`input_pullup`/`input_pulldown`) and watches (`edge: rising/falling/both`,
   `debounce`) as design inspiration, adapted to SquidScript's explicit
   device/input binding model instead of global auto-mode side effects.
+
+## Test And Documentation Integrity
+
+Hardware-test and metadata hygiene follow-ups.
+
+- Add a "Concepts" or "Glossary" section near the top of
+  `docs/language_spec.md` consolidating the arming model. Define each
+  "armed-*" phrase (`armed trigger registration`, `armed app`, `armed
+  timer`, `armed stack`, `armed-app metadata`, etc.) as an alias for the
+  canonical term, state the declare → arm → fire → launch model in one
+  paragraph, and cross-reference sections 28, 30, and 44. Tighten the
+  incomplete sentence at `docs/runtime_limits.md:36`. Deferred from the
+  2026-06-05 BLE object-transfer design spec.
+- Fix the stale XIAO target metadata test. `targets/xiao-esp32c3-gdeq0426t82-sd
+  .target.json` now carries a `devices."indicator.default"` entry (`type:
+  "not-present"`), but `scripts/tests/test_zephyr_target_metadata.py:74` still
+  asserts `assertNotIn("indicator.default", target["devices"])` and currently
+  fails. Update the assertion to expect the `not-present` indicator entry (or
+  assert on its `type`/`softwareControllable` fields) so the metadata contract
+  is actually pinned.
+- Make `zephyr-test-ble-reconnect.sh` honest about what it proves, or make it
+  prove more. Its usage text and `docs/hardware_target_tests.md:637` claim it
+  "confirms the initial BLE advertising log" and "waits for the firmware's
+  restart-advertising work item," but the script only drives host-side
+  `bluetoothctl`; it never reads serial logs and `BLE_ADVERTISING_LOG_TIMEOUT_
+  SECONDS` is set but unused. Either read `device output` for the
+  `BLE advertising stopped before restart` / `restarted after disconnect`
+  log lines, or soften the docs to claim only host rediscovery.
+- Harden the BLE rediscovery check against BlueZ cache false-passes. The final
+  rescan at `scripts/zephyr-test-ble-reconnect.sh:189` accepts the device name
+  or MAC anywhere in the scan dump, while the initial scan parser already
+  filters `[DEL]` lines. Remove the device from the BlueZ cache before the
+  rescan, require a fresh `[NEW]`/`[CHG]` event after scan start, and filter
+  `[DEL]` echoes so the "fresh advertisement" guarantee actually holds.
+- Strengthen or rename the `test_multiple_disconnects_only_one_restart_runs`
+  ztest (`firmware/zephyr/tests/ble-smoke/src/main.c:146`). It calls
+  `sq_ble_smoke_sm_handle_disconnect()` twice then manually invokes
+  `sq_ble_smoke_sm_run_restart()` once, so it proves a single restart
+  invocation behaves correctly, not that the real `k_work_schedule` delayed
+  work coalesces/cancels to one execution. Drive the work queue (or assert on
+  the pending-work state) to actually prove the coalescing the name claims.
+- Reconnect the host Wi-Fi interface in `zephyr-test-ap-after-station.sh`
+  cleanup. The `cleanup()` at line 64 only downs/deletes the temporary AP
+  connection and leaves the host radio disassociated, whereas
+  `zephyr-test-radio-concurrency.sh:92` reconnects the interface
+  (`nmcli device connect "$HOST_WIFI_IFACE"`). Mirror that so the test does not
+  leave the developer's machine off Wi-Fi.
+- Resolve the runtime-limits "source of truth" ambiguity and add a drift guard.
+  `docs/runtime_limits.md:5` calls `firmware/zephyr/runtime_limits.json` the
+  build-time tuning source while `firmware/zephyr/src/vm_runtime.h:4` says the
+  cap macros are the source of truth, and nothing regenerates
+  `runtime_limits.h` from the JSON and diffs it. Add a test or build rule that
+  runs `scripts/generate-runtime-limits-header.py` and fails on a mismatch with
+  the committed header, and reconcile the wording so one document is clearly
+  authoritative.
 
 ## Build-Time And Runtime Caps
 
