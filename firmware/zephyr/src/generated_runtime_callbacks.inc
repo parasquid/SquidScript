@@ -21,6 +21,7 @@
 	.app_launch = runtime_app_launch,
 	.app_arm = runtime_app_arm,
 	.app_disarm = runtime_app_disarm,
+	.app_install_file = runtime_app_install_file,
 	.app_registry_list = runtime_app_registry_list,
 	.app_registry_get = runtime_app_registry_get,
 	.app_process_stack = runtime_app_process_stack,

@@ -382,6 +382,11 @@ impl TraceSink for RuntimeTrace {
         Ok(())
     }
 
+    fn app_install(&mut self, file_ref: &str, app_id: &str) -> Result<(), VmError> {
+        self.events.push(format!("install {file_ref} {app_id}"));
+        Ok(())
+    }
+
     fn service_timer_every(&mut self, event: &str, interval_ms: i32) -> Result<(), VmError> {
         self.events
             .push(format!("service.timer.every {event} {interval_ms}"));

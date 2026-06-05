@@ -3087,6 +3087,21 @@ impl TraceSink for FfiHost<'_> {
         callback_status(unsafe { app_disarm(self.user_data, app.as_ptr(), app.len()) })
     }
 
+    fn app_install(&mut self, file_ref: &str, app_id: &str) -> Result<(), VmError> {
+        let Some(app_install_file) = self.callbacks.app_install_file else {
+            return Err(VmError::InvalidOperand);
+        };
+        callback_status(unsafe {
+            app_install_file(
+                self.user_data,
+                file_ref.as_ptr(),
+                file_ref.len(),
+                app_id.as_ptr(),
+                app_id.len(),
+            )
+        })
+    }
+
     fn app_registry_list<'a>(&'a mut self) -> Result<AppRegistryList<'a>, VmError> {
         let Some(app_registry_list) = self.callbacks.app_registry_list else {
             return Err(VmError::InvalidOperand);

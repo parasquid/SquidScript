@@ -31,6 +31,7 @@ struct Host {
     blink_requests: Vec<(i32, i32)>,
     gpio: Vec<(String, bool)>,
     lifecycle: Vec<String>,
+    app_install_files: Vec<(String, String)>,
     timer_every: Vec<(String, i32)>,
     timer_after: Vec<(String, i32)>,
     wifi_actions: Vec<String>,
@@ -331,6 +332,31 @@ unsafe extern "C" fn app_disarm(user_data: *mut c_void, app: *const u8, app_len:
     let app = std::str::from_utf8(std::slice::from_raw_parts(app, app_len)).unwrap();
     host.lifecycle.push(format!("disarm {app}"));
     0
+}
+
+unsafe extern "C" fn app_install_file(
+    user_data: *mut c_void,
+    file_ref: *const u8,
+    file_ref_len: usize,
+    app_id: *const u8,
+    app_id_len: usize,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let file_ref = std::str::from_utf8(std::slice::from_raw_parts(file_ref, file_ref_len)).unwrap();
+    let app_id = std::str::from_utf8(std::slice::from_raw_parts(app_id, app_id_len)).unwrap();
+    host.app_install_files
+        .push((file_ref.to_string(), app_id.to_string()));
+    0
+}
+
+unsafe extern "C" fn failing_app_install_file(
+    _user_data: *mut c_void,
+    _file_ref: *const u8,
+    _file_ref_len: usize,
+    _app_id: *const u8,
+    _app_id_len: usize,
+) -> i32 {
+    -22
 }
 
 unsafe extern "C" fn wifi_start_ap(
@@ -1246,6 +1272,7 @@ fn callbacks(_host: &mut Host) -> SqvmCallbacks {
         app_launch: Some(app_launch),
         app_arm: Some(app_arm),
         app_disarm: Some(app_disarm),
+        app_install_file: Some(app_install_file),
         app_registry_list: Some(app_registry_list),
         app_registry_get: Some(app_registry_get),
         app_process_stack: Some(app_process_stack),
@@ -1374,6 +1401,17 @@ event.on("app.start") {
 event.on("timer.break") {
   app.disarm("break-reminder")
   debug.print("lifecycle timer")
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_app_install_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-install"
+event.on("app.start") {
+  app.install("/sq/tmp/ble-object-test.sqbc", "installed-app")
 }
 screen("main") {}
 "#,
@@ -2518,6 +2556,45 @@ fn dispatches_hardware_gpio_service_callbacks() {
 }
 
 #[test]
+fn dispatches_app_install_file_callback() {
+    let mut host = Host {
+        sqbc: compile_app_install_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(
+        host.app_install_files,
+        vec![(
+            "/sq/tmp/ble-object-test.sqbc".to_string(),
+            "installed-app".to_string()
+        )]
+    );
+}
+
+#[test]
 fn dispatches_app_lifecycle_and_timer_after_callbacks() {
     let mut host = Host {
         sqbc: compile_lifecycle_sqbc(),
@@ -2624,7 +2701,7 @@ fn callback_errors_surface_as_vm_error_status() {
 #[test]
 fn generated_callback_policy_cases_cover_manifest_inventory() {
     let cases = generated_ffi_dispatch_cases::callback_policy_cases();
-    assert_eq!(cases.len(), 50);
+    assert_eq!(cases.len(), 51);
     assert!(cases.contains(&("display_info", "unsupported_result")));
     assert!(cases.contains(&("wifi_operation", "idle_result")));
     assert!(cases.contains(&("wifi_scan_network", "unsupported_result")));

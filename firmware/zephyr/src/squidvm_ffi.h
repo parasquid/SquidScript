@@ -576,6 +576,9 @@ typedef int32_t (*SqvmHardwareGpioReadCallback)(
 
 typedef int32_t (*SqvmAppLifecycleCallback)(void *user_data, const uint8_t *app, size_t app_len);
 
+typedef int32_t (*SqvmAppInstallFileCallback)(void *user_data, const uint8_t *file_ref,
+				       size_t file_ref_len, const uint8_t *app_id, size_t app_id_len);
+
 typedef int32_t (*SqvmAppRegistryListCallback)(void *user_data, SqvmAppRegistryEntry *out,
 					       size_t out_cap, size_t *out_count);
 
@@ -642,6 +645,7 @@ typedef struct {
 	SqvmAppLifecycleCallback app_launch;
 	SqvmAppLifecycleCallback app_arm;
 	SqvmAppLifecycleCallback app_disarm;
+	SqvmAppInstallFileCallback app_install_file;
 	SqvmAppRegistryListCallback app_registry_list;
 	SqvmAppRegistryGetCallback app_registry_get;
 	SqvmAppStackCallback app_process_stack;

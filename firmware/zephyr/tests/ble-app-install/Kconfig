@@ -1,0 +1,18 @@
+menu "SquidScript BLE app-install test firmware"
+
+config SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC
+	bool "Enable SquidScript diagnostic test paths"
+	default y
+
+config SQUIDSCRIPT_BLE_APP_INSTALL_TEST
+	bool "Compile the SquidScript BLE app-install helpers into the test image"
+	default y
+	help
+	  Expose the BLE app-install validation logic (SQBC magic check + staged
+	  install) in the native_sim test image without enabling the real Zephyr
+	  Bluetooth stack. Unit tests call sq_app_store_install_from_file_ref
+	  directly against the host test filesystem.
+
+endmenu
+
+source "Kconfig.zephyr"

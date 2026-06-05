@@ -3,6 +3,7 @@ use core::{fmt::Write, ptr, slice, str};
 use crate::{
     bytecode::{
         BUILTIN_APP_ARM, BUILTIN_APP_ARMED_STACK, BUILTIN_APP_ARMED_STACK_GET, BUILTIN_APP_DISARM,
+        BUILTIN_APP_INSTALL,
         BUILTIN_APP_EXIT, BUILTIN_APP_LAUNCH, BUILTIN_APP_PROCESS_STACK, BUILTIN_APP_REGISTRY_GET,
         BUILTIN_APP_REGISTRY_LIST, BUILTIN_DEBUG_PRINT, BUILTIN_DEVICE_CONFIG_LOAD,
         BUILTIN_DEVICE_CONFIG_REBIND, BUILTIN_DEVICE_CONFIG_SAVE, BUILTIN_DEVICE_CONFIG_SET,
@@ -1444,6 +1445,11 @@ impl ChunkedVm {
                 let app_id = self.pop_sqbc_string_id()?;
                 host.app_disarm(self.index.string(app_id)?)?;
             }
+            BUILTIN_APP_INSTALL => {
+                let file_ref_id = self.pop_sqbc_string_id()?;
+                let app_id_id = self.pop_sqbc_string_id()?;
+                host.app_install(self.index.string(file_ref_id)?, self.index.string(app_id_id)?)?;
+            }
             BUILTIN_APP_REGISTRY_LIST => {
                 let registry = host.app_registry_list()?;
                 let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
@@ -2117,6 +2123,10 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
 
     fn app_disarm(&mut self, app: &str) -> Result<(), VmError> {
         self.trace.app_disarm(app)
+    }
+
+    fn app_install(&mut self, file_ref: &str, app_id: &str) -> Result<(), VmError> {
+        self.trace.app_install(file_ref, app_id)
     }
 
     fn app_registry_list<'b>(&'b mut self) -> Result<AppRegistryList<'b>, VmError> {

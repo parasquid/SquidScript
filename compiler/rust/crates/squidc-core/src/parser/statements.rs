@@ -378,6 +378,13 @@ impl Parser<'_> {
                 self.consume_call_tail(builder);
                 Some(IrStatement::AppDisarm { app })
             }
+            ("app", "install") => {
+                let file_ref = self.consume_string(builder).unwrap_or_default();
+                self.consume_comma(builder);
+                let app_id = self.consume_string(builder).unwrap_or_default();
+                self.consume_call_tail(builder);
+                Some(IrStatement::AppInstall { file_ref, app_id })
+            }
             ("debug", "print") => {
                 let args = self.parse_call_args_after_open(builder);
                 Some(IrStatement::DebugPrint { args })

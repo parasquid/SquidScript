@@ -136,6 +136,9 @@ pub trait TraceSink {
     fn app_disarm(&mut self, _app: &str) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
     }
+    fn app_install(&mut self, _file_ref: &str, _app_id: &str) -> Result<(), VmError> {
+        Err(VmError::InvalidOperand)
+    }
     fn app_registry_list<'a>(&'a mut self) -> Result<AppRegistryList<'a>, VmError> {
         Err(VmError::InvalidOperand)
     }

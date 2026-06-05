@@ -92,6 +92,28 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   (drop-oldest vs drop-newest vs coalesce-by-event). Out of scope: delivering
   events into an already-running app (re-entrant in-app dispatch) is a separate
   VM-semantics change.
+- Stop a trigger from self-relaunching the app that already owns it. When a
+  trigger fires and its target app is already `current_app`, the `due_app` path
+  (`app_lifecycle.c:409-420`) currently does `push_return(current_app)` + start,
+  so the foreground app gets stacked onto its own return stack and its handler
+  re-runs from a reset context. Repeated firings accumulate duplicate frames
+  (bounded by `SQ_VM_RUNTIME_RETURN_STACK_MAX`, then `push_return` errors) and
+  force redundant work — e.g. a long-press-summoned e-ink sleep/wallpaper app
+  would do a full e-ink refresh on every repeat press during its pre-sleep
+  window. Fix: detect `due_app == current_app` and do NOT relaunch or push the
+  return stack. Chosen behavior — deliver a distinct re-trigger event (working
+  name `app.retrigger`, or `<event>.again`) to the already-current app, with a
+  silent no-op default when the app declares no handler for it. The no-op
+  default makes the common case ("the screen is already up, ignore the repeat")
+  require zero app code and avoids redundant e-ink refreshes; apps that want to
+  react (reset a countdown, sleep immediately) opt in via a handler, and because
+  the re-trigger event is distinct from the launch event they can act without
+  re-running launch-time work. Out of scope: re-entrant delivery into an app
+  that is actively `RUNNING` (still gated at `IDLE` today) — that is the
+  separate VM-semantics change tracked by the queued event-delivery item above.
+  Spec the new event name, target policy, and the no-op default in
+  `docs/language_spec.md`, and add a ztest for the `due_app == current_app`
+  case (no return-stack growth, correct event delivered).
 - Extend the `app.triggers` model beyond current timer metadata declarations to
   future logical button/input triggers while keeping `event.on(...)` as the
   handler for the activation event that fires later.
@@ -189,6 +211,23 @@ Hardware-test and metadata hygiene follow-ups.
   runs `scripts/generate-runtime-limits-header.py` and fails on a mismatch with
   the committed header, and reconcile the wording so one document is clearly
   authoritative.
+
+## Developer Tooling
+
+- Add a SquidScript source formatter. Recommended shape: a top-level
+  `squidc fmt` command (mirrors `cargo fmt` / `gofmt`; formatting is a
+  source-file operation that does not belong under the existing `app` / `device`
+  / `target` / `protocol` subcommand groups in
+  `compiler/rust/crates/squidc-cli/src/main.rs`). Accept one or more `.squid`
+  paths (and/or globs/directories), default to rewriting files in place, and
+  support `--check` (exit non-zero with a diff on unformatted files, for CI /
+  pre-commit) and `--stdin`/stdout for editor integration. Build it on the
+  existing parser so formatting is lossless and idempotent (`fmt` of formatted
+  output is a no-op); decide whether comments and blank-line grouping are
+  preserved. Open questions: canonical style rules (indentation width, brace
+  style, `app.triggers` / `device { ... }` block layout, trailing commas),
+  whether to format embedded literals, and whether a `--check` mode should be
+  wired into an existing test/CI script.
 
 ## Build-Time And Runtime Caps
 

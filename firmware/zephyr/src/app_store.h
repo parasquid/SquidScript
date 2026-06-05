@@ -75,6 +75,9 @@ int sq_app_store_sqbc_path(const char *mount_point, const char *app_id, char *ou
 int sq_app_store_install_app(const char *mount_point, const char *app_id, const uint8_t *sqbc,
 			     size_t sqbc_len);
 
+int sq_app_store_install_from_file_ref(const char *mount_point, const char *app_id,
+				       const char *staging_path);
+
 int sq_app_store_begin_staged_install(const char *mount_point, const char *app_id,
 				      char *staging_path, size_t staging_path_len);
 

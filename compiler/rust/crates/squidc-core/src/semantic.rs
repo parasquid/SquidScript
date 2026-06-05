@@ -518,6 +518,7 @@ fn validate_statement_names(
             | IrStatement::AppLaunch { .. }
             | IrStatement::AppArm { .. }
             | IrStatement::AppDisarm { .. }
+            | IrStatement::AppInstall { .. }
             | IrStatement::HardwareGpioToggle { .. }
             | IrStatement::ServiceIndicatorToggle
             | IrStatement::ServiceIndicatorBreathe
@@ -720,6 +721,7 @@ fn statement_is_render_impure(
         | IrStatement::AppLaunch { .. }
         | IrStatement::AppArm { .. }
         | IrStatement::AppDisarm { .. }
+        | IrStatement::AppInstall { .. }
         | IrStatement::ServiceTimerEvery { .. }
         | IrStatement::ServiceTimerAfter { .. }
         | IrStatement::ServiceBleProfile { .. }
@@ -924,6 +926,7 @@ fn validate_debug_block_statements(
             | IrStatement::AppLaunch { .. }
             | IrStatement::AppArm { .. }
             | IrStatement::AppDisarm { .. }
+            | IrStatement::AppInstall { .. }
             | IrStatement::ServiceTimerEvery { .. }
             | IrStatement::ServiceTimerAfter { .. }
             | IrStatement::ServiceBleProfile { .. }
@@ -1052,6 +1055,7 @@ fn statement_uses_any_name(
         | IrStatement::AppLaunch { .. }
         | IrStatement::AppArm { .. }
         | IrStatement::AppDisarm { .. }
+        | IrStatement::AppInstall { .. }
         | IrStatement::HardwareGpioToggle { .. }
         | IrStatement::ServiceIndicatorToggle
         | IrStatement::ServiceIndicatorBreathe
@@ -1133,6 +1137,7 @@ fn validate_screen_statements(
             | IrStatement::AppLaunch { .. }
             | IrStatement::AppArm { .. }
             | IrStatement::AppDisarm { .. }
+            | IrStatement::AppInstall { .. }
             | IrStatement::ServiceTimerEvery { .. }
             | IrStatement::ServiceTimerAfter { .. }
             | IrStatement::ServicePowerSleep { .. }

@@ -1,5 +1,7 @@
 #include "vm_runtime_internal.h"
 
+#include "app_store.h"
+
 static int32_t runtime_app_lifecycle(void *user_data, const char *action, const uint8_t *app,
 				     size_t app_len)
 {
@@ -54,6 +56,36 @@ int32_t runtime_app_disarm(void *user_data, const uint8_t *app, size_t app_len)
 		}
 	}
 	return sq_vm_runtime_clear_armed_app(user_data, app, app_len);
+}
+
+int32_t runtime_app_install_file(void *user_data, const uint8_t *file_ref, size_t file_ref_len,
+				 const uint8_t *app_id, size_t app_id_len)
+{
+	struct sq_vm_runtime *runtime = user_data;
+	char app_id_buf[SQ_APP_STORE_APP_ID_MAX];
+	char file_path_buf[SQ_APP_STORE_PATH_MAX];
+	int trace_result;
+	int result;
+
+	if (runtime == NULL || file_ref == NULL || app_id == NULL || file_ref_len == 0 ||
+	    app_id_len == 0 || app_id_len >= sizeof(app_id_buf) ||
+	    file_ref_len >= sizeof(file_path_buf)) {
+		return -EINVAL;
+	}
+
+	memcpy(app_id_buf, app_id, app_id_len);
+	app_id_buf[app_id_len] = '\0';
+	memcpy(file_path_buf, file_ref, file_ref_len);
+	file_path_buf[file_ref_len] = '\0';
+
+	trace_result = runtime_app_lifecycle(user_data, "install", app_id, app_id_len);
+	if (trace_result != 0) {
+		return trace_result;
+	}
+
+	result = sq_app_store_install_from_file_ref(runtime->store_mount_point, app_id_buf,
+						     file_path_buf);
+	return result;
 }
 
 static void runtime_app_registry_entry_from_store(const struct sq_app_registry_entry *source,

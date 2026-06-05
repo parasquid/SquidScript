@@ -61,6 +61,7 @@ const BUILTIN_APP_REGISTRY_GET: u8 = 0x15;
 const BUILTIN_APP_PROCESS_STACK: u8 = 0x16;
 const BUILTIN_APP_ARMED_STACK: u8 = 0x17;
 const BUILTIN_APP_ARMED_STACK_GET: u8 = 0x18;
+const BUILTIN_APP_INSTALL: u8 = 0x19;
 const BUILTIN_SCREEN_OPEN: u8 = 0x20;
 const BUILTIN_SCREEN_REFRESH: u8 = 0x21;
 const BUILTIN_SERVICE_TIMER_EVERY: u8 = 0x22;
@@ -470,6 +471,10 @@ fn collect_statement_strings(
             IrStatement::AppArm { app } | IrStatement::AppDisarm { app } => {
                 strings.intern(app)?;
             }
+            IrStatement::AppInstall { file_ref, app_id } => {
+                strings.intern(file_ref)?;
+                strings.intern(app_id)?;
+            }
             IrStatement::ServiceTimerEvery { event, interval_ms } => {
                 strings.intern(event)?;
                 collect_expr_strings(interval_ms, strings)?;
@@ -784,6 +789,11 @@ fn compile_statement(
         IrStatement::AppDisarm { app } => {
             emit_string(unit, app)?;
             emit_builtin(&mut unit.code, BUILTIN_APP_DISARM);
+        }
+        IrStatement::AppInstall { file_ref, app_id } => {
+            emit_string(unit, app_id)?;
+            emit_string(unit, file_ref)?;
+            emit_builtin(&mut unit.code, BUILTIN_APP_INSTALL);
         }
         IrStatement::ServiceTimerEvery { event, interval_ms } => {
             emit_string(unit, event)?;

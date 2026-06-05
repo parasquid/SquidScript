@@ -21,17 +21,17 @@ antenna.
                  .--------.
                  |        |
         .--------'        '--------.
-        | PWR LED     BOOT    RST |
+        | PWR LED     BOOT    RST  |
         | no GPIO    GPIO9   EN/RST|
-        |    *       [    ] [    ]|
- GPIO5  | o                    o  | 5V
- GPIO6  | o                    o  | GND
- GPIO7  | o       BLUE LED     o  | 3V3
- GPIO8  | o        GPIO8*      o  | GPIO4
- GPIO9  | o       BOOT*        o  | GPIO3
- GPIO10 | o                    o  | GPIO2
- GPIO20 | o                    o  | GPIO1
- GPIO21 | o                    o  | GPIO0
+        |    *       [    ] [    ] |
+ GPIO5  | o                    o   | 5V
+ GPIO6  | o                    o   | GND
+ GPIO7  | o       BLUE LED     o   | 3V3
+ GPIO8  | o        GPIO8*      o   | GPIO4
+ GPIO9  | o       BOOT*        o   | GPIO3
+ GPIO10 | o                    o   | GPIO2
+ GPIO20 | o                    o   | GPIO1
+ GPIO21 | o                    o   | GPIO0
         |                          |
         |        PCB ANTENNA       |
         '--------------------------'

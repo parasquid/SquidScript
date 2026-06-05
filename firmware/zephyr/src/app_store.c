@@ -585,6 +585,50 @@ int sq_app_store_install_app(const char *mount_point, const char *app_id, const 
 	return write_file(path, sqbc, sqbc_len);
 }
 
+#define SQ_APP_STORE_INSTALL_SCRATCH_BYTES 1024
+#define SQBC_MAGIC_LEN 4
+static const uint8_t SQBC_MAGIC_BYTES[SQBC_MAGIC_LEN] = {'S', 'Q', 'B', 'C'};
+
+int sq_app_store_install_from_file_ref(const char *mount_point, const char *app_id,
+				       const char *staging_path)
+{
+	struct fs_file_t file;
+	uint8_t scratch[SQ_APP_STORE_INSTALL_SCRATCH_BYTES];
+	ssize_t total = 0;
+	int result;
+
+	if (mount_point == NULL || !is_safe_app_id(app_id) || staging_path == NULL) {
+		return -EINVAL;
+	}
+
+	fs_file_t_init(&file);
+	result = fs_open(&file, staging_path, FS_O_READ);
+	if (result != 0) {
+		return result == -ENOENT ? -EINVAL : result;
+	}
+
+	while (total < (ssize_t)sizeof(scratch)) {
+		ssize_t bytes = fs_read(&file, scratch + total, sizeof(scratch) - (size_t)total);
+		if (bytes < 0) {
+			(void)fs_close(&file);
+			return (int)bytes;
+		}
+		if (bytes == 0) {
+			break;
+		}
+		total += bytes;
+	}
+
+	(void)fs_close(&file);
+
+	if (total < (ssize_t)SQBC_MAGIC_LEN ||
+	    memcmp(scratch, SQBC_MAGIC_BYTES, SQBC_MAGIC_LEN) != 0) {
+		return -EINVAL;
+	}
+
+	return sq_app_store_install_app(mount_point, app_id, scratch, (size_t)total);
+}
+
 int sq_app_store_begin_staged_install(const char *mount_point, const char *app_id,
 				      char *staging_path, size_t staging_path_len)
 {
