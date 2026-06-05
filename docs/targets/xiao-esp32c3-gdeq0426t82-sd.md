@@ -27,5 +27,6 @@ Generated from `targets/xiao-esp32c3-gdeq0426t82-sd.target.json`. Do not hand-ed
 | Device | Type | GPIO / Pins | Status | Notes |
 | --- | --- | --- | --- | --- |
 | `display.epd` | epaper-display | cs=`GPIO3`, dc=`GPIO5`, rst=`GPIO2`, busy=`GPIO4` | metadata-backed-not-yet-hardware-verified |  |
+| `indicator.default` | not-present |  | metadata-confirmed | The XIAO ESP32-C3 + ePaper Driver Board stack has no firmware-controllable onboard LED wired to a numbered GPIO. The visible board state is the GDEQ0426T82 e-paper display, not an LED. SquidScript visible-state checks must use the e-paper display, serial output, or e-paper drawlog evidence; LED-observation-based tests such as scripts/c3-supermini-test-blinky.sh and scripts/c3-supermini-test-blink.sh are Super-Mini-only and will not work on the XIAO. |
 | `storage.sd` | external-spi-sdcard | sck=`GPIO8`, mosi=`GPIO10`, miso=`None`, cs=`None` | planned-unverified | The SD reader is an external breakout jumper-wired to the XIAO ePaper Driver Board IO breakout. SCK and MOSI share the e-paper SPI bus; MISO and CS must be filled in only after physical wiring is confirmed. |
 | `usb.native` | esp32c3-native-usb-serial-jtag | d-=`GPIO18`, d+=`GPIO19` | preferred-for-this-bringup |  |

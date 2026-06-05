@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${ROOT}/scripts/lib/hardware-command.sh"
 source "${ROOT}/scripts/lib/serial-port.sh"
 
-TARGET_ID="${TARGET_ID:-esp32c3-super-mini}"
+TARGET_ID="${TARGET_ID:-xiao-esp32c3-gdeq0426t82-sd}"
 SKIP_FLASH="${SKIP_FLASH:-0}"
 BLE_ADVERTISING_LOG_TIMEOUT_SECONDS="${BLE_ADVERTISING_LOG_TIMEOUT_SECONDS:-20}"
 BLE_DISCONNECT_TIMEOUT_SECONDS="${BLE_DISCONNECT_TIMEOUT_SECONDS:-10}"

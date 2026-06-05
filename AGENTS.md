@@ -251,10 +251,17 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
   not work in this environment, check the relevant repository docs and wrapper
   scripts first. Prefer the documented wrapper command over ad hoc direct tool
   invocations, and only call something blocked after the documented path fails.
-- Use `cargo run -p squidc -- target build --target esp32c3-super-mini` to
-  build or type-check the ESP32-C3 Super Mini canonical firmware binary.
-  `squidc target` resolves target JSON metadata, Zephyr board, overlay,
-  fallback app, generated Kconfig path, and build directory.
+- Use `cargo run -p squidc -- target build --target xiao-esp32c3-gdeq0426t82-sd`
+  to build or type-check the XIAO ESP32-C3 e-paper default dev firmware
+  binary. `squidc target` resolves target JSON metadata, Zephyr board,
+  overlay, fallback app, generated Kconfig path, and build directory.
+  The XIAO is the default dev target — `scripts/zephyr-env.sh` defaults
+  to it, `scripts/zephyr-test-radio-concurrency.sh` defaults to it, and
+  `docs/hardware_target_tests.md` documents it as the default. The
+  ESP32-C3 Super Mini (`esp32c3-super-mini`) remains a supported
+  regression hardware target, with its own scripts under
+  `scripts/c3-supermini-*.sh` and its full suite
+  `scripts/c3-supermini-test-hardware.sh`.
 - Use `scripts/zephyr-test-protocol.sh` for the Zephyr native protocol ztests
   instead of invoking `west twister` directly. The wrapper sources
   `scripts/zephyr-env.sh`, which adds the repo-local `target/zephyr/venv/bin`
@@ -270,7 +277,7 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
   workspace, so sandboxed firmware builds can fail with read-only filesystem
   errors unrelated to the source.
 - Dry-run new scripts before calling them ready: run `bash -n`, verify required tools and Rust targets, check wrapped command help where practical, and confirm wrapper scripts forward user-supplied arguments.
-- For firmware flashing scripts, avoid auto-monitoring by default when USB reset or re-enumeration can break the serial session. Prefer `squidc device monitor` for ESP32-C3 Super Mini SquidScript output, and use explicit opt-in monitoring such as `MONITOR_AFTER_FLASH=1` only when needed.
+- For firmware flashing scripts, avoid auto-monitoring by default when USB reset or re-enumeration can break the serial session. Prefer `squidc device monitor` for XIAO ESP32-C3 SquidScript output, and use explicit opt-in monitoring such as `MONITOR_AFTER_FLASH=1` only when needed.
 - Do not filter or suppress flashing tool stderr in firmware scripts. Surface warnings and errors directly, and document known harmless tool warnings instead of hiding them.
 - Clearly report host visibility limits, such as Codex sandbox sessions that cannot see `/dev/ttyACM*`, `/dev/ttyUSB*`, or `/dev/bus/usb`.
 - Never run hardware scripts or serial commands in parallel against the same
@@ -290,8 +297,9 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
   hardware target is attached or reasonably available, run the relevant
   hardware target tests. Sandbox isolation is not a reason to skip them; use
   escalated command execution for serial visibility checks and the hardware
-  test command, and report the result. The ESP32-C3 Super Mini is the current
-  frequently available target, not the only SquidScript hardware target.
+  test command, and report the result. The XIAO ESP32-C3 e-paper target is the
+  default dev target; the ESP32-C3 Super Mini is a regression target, not the
+  only SquidScript hardware target.
 - Treat changes under `firmware/zephyr/**`, generated Zephyr C includes,
   target metadata consumed by firmware, serial protocol behavior, app
   lifecycle/runtime callbacks, storage/runtime state, and hardware-facing
@@ -313,8 +321,11 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
   blinky app runs last. Blinky is the final visible board-state check and
   should be left running unless the user asks otherwise. Do not run any serial
   command after the final blinky launch unless you are deliberately debugging
-  the final board state.
-- Hardware target tests and serial/flashing commands must run outside the Codex sandbox. Sandboxed sessions do not reliably expose `/dev/ttyACM*`, `/dev/ttyUSB*`, or `/dev/serial/by-id`, even after host reboot. Use escalated command execution for ESP32-C3 Super Mini serial visibility checks and hardware target tests.
+  the final board state. The XIAO target uses the `scripts/zephyr-test-*.sh`
+  family of scripts (each script is a single target-aware check); there is no
+  single XIAO full-suite wrapper, so prefer running the individual scripts that
+  cover the firmware path under test.
+- Hardware target tests and serial/flashing commands must run outside the Codex sandbox. Sandboxed sessions do not reliably expose `/dev/ttyACM*`, `/dev/ttyUSB*`, or `/dev/serial/by-id`, even after host reboot. Use escalated command execution for ESP32-C3 serial visibility checks and hardware target tests on either the XIAO default dev target or the Super Mini regression target.
 - For ESP-IDF hardware-isolation experiments under
   `experiments/esp32c3-supermini/firmware/esp-idf-softap-hwtest`, the user has
   approved the repository's documented containerized ESP-IDF build path when no
@@ -326,7 +337,7 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
   `firmware/README.md` and the Zephyr wrapper scripts before suggesting broader
   sudo changes.
 - For REPL work, default app and firmware profiles are `dev`. Hardware target tests should include `tests/repl/default-dev.session`, which intentionally does not set `:profile dev`.
-- For `hardware.gpio.*` work on the ESP32-C3 Super Mini, run the serial GPIO REPL session and the blinky upload session when hardware is available; the blinky check requires both serial assertions and physical onboard LED observation.
+- For `hardware.gpio.*` work on the ESP32-C3 Super Mini, run the serial GPIO REPL session and the blinky upload session when hardware is available; the blinky check requires both serial assertions and physical onboard LED observation. The XIAO ESP32-C3 e-paper target has **no onboard LED** wired into the firmware (`targets/xiao-esp32c3-gdeq0426t82-sd.target.json` declares no `pwm-led` indicator) — its "visible board state" is the GDEQ0426T82 e-paper display, not an LED. LED-observation-based tests such as `scripts/c3-supermini-test-blinky.sh` and `scripts/c3-supermini-test-blink.sh` are Super-Mini-only and will not work on the XIAO. For XIAO GPIO/input work, rely on serial output and e-paper drawlog evidence, not LED observation.
 - When analyzing hardware benchmark results, inspect the full distribution and
   explain outliers before summarizing. Do not assume convenient causes such as
   caching, timing noise, or hardware quirks when a pattern aligns with app
