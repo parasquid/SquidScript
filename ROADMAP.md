@@ -99,6 +99,22 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   binding metadata request input bias such as pull-up, pull-down, or floating
   where the target supports it, while keeping portable service APIs separate
   from board-specific GPIO names.
+- Support non-GPIO input bindings in the device config language and firmware:
+  matrix keyboards (row/column scanning with debounce and ghosting rules),
+  ADC-ladder / resistor-network buttons (one analog pin, N voltage thresholds
+  producing N logical keys), and I2C GPIO expanders (e.g., MCP23017). The
+  target definition reference and target profile architecture docs already
+  advertise `adc-ladder-button`, `matrix`, and `adc-button-ladder` as valid
+  input types, but `runtime_device_config` only accepts `mode ==
+  "gpio-button"` today (rejects others as "invalid binding"). This entry
+  needs language spec phrasing, target JSON examples, device config validation
+  acceptance, a reader per type, polling/debounce hooks in
+  `sq_vm_runtime_poll_input_buttons`, and verified end-to-end on a target
+  that exercises each path. The `SQ_VM_RUNTIME_INPUT_BUTTON_MAX` cap currently
+  sizes the GPIO slot table; matrix/ADC/expander inputs may share the same
+  cap or get separate per-type caps depending on storage shape. Fix the
+  doc-code gap by either delivering the feature or downgrading the docs to
+  say "GPIO-only" until readers land.
 - Use the GPIO input configuration affordance to make ESP32-C3 Super Mini
   diagnostic scans less noisy without changing the confirmed GPIO9 BOOT binding
   from active-low pull-up behavior. Use Espruino's split between pin mode
