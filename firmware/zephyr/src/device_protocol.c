@@ -1457,11 +1457,21 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 	}
 
 	if (runtime->lifecycle_phase == SQ_VM_RUNTIME_LIFECYCLE_IDLE &&
-	    runtime->arm_phase == SQ_VM_RUNTIME_ARM_IDLE &&
-	    sq_vm_runtime_next_due_armed_timer(runtime, due_app, sizeof(due_app), due_event,
-					      sizeof(due_event)) == 0) {
-		due_app_ptr = due_app;
-		due_event_ptr = due_event;
+	    runtime->arm_phase == SQ_VM_RUNTIME_ARM_IDLE) {
+		if (sq_vm_runtime_next_due_armed_timer(runtime, due_app, sizeof(due_app), due_event,
+						       sizeof(due_event)) == 0) {
+			due_app_ptr = due_app;
+			due_event_ptr = due_event;
+		} else if (sq_ble_ots_pending_is_complete() &&
+			   sq_ble_ots_drain_pending_event(due_app, sizeof(due_app), due_event,
+							  sizeof(due_event)) == 0) {
+			/* A completed BLE object transfer dispatches its event to
+			 * the target app exactly like an armed timer. drain is
+			 * consume-once so this fires a single time.
+			 */
+			due_app_ptr = due_app;
+			due_event_ptr = due_event;
+		}
 	}
 
 	result = sq_app_lifecycle_next_step(runtime, due_app_ptr, due_event_ptr, &step);

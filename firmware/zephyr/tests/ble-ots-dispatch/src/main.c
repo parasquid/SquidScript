@@ -128,6 +128,41 @@ ZTEST(ble_ots_dispatch, test_drain_returns_app_id_and_event)
 	zassert_str_equal(drained_event, "ble.object.complete", "drained event mismatch");
 }
 
+ZTEST(ble_ots_dispatch, test_drain_is_consume_once)
+{
+	char staging_path[128] = {0};
+	const uint8_t chunk[] = {'S', 'Q', 'B', 'C'};
+	char app_id[SQ_APP_STORE_APP_ID_MAX] = {0};
+	char event[SQ_VM_RUNTIME_EVENT_LEN] = {0};
+	int result;
+
+	result = sq_ble_ots_test_invoke_obj_created_with_name("break-reminder/wallpaper/.sqbc",
+							      4096, staging_path,
+							      sizeof(staging_path));
+	zassert_equal(result, 0);
+	result = sq_ble_ots_test_invoke_obj_write_with_path(staging_path, chunk, sizeof(chunk), 0,
+							    0);
+	zassert_equal(result, (int)sizeof(chunk));
+	zassert_true(sq_ble_ots_pending_is_complete());
+
+	/* First drain succeeds and consumes the event so a poll loop won't refire it. */
+	result = sq_ble_ots_drain_pending_event(app_id, sizeof(app_id), event, sizeof(event));
+	zassert_equal(result, 0);
+	zassert_false(sq_ble_ots_pending_is_complete(), "drain should consume the pending event");
+
+	/* Second drain (without cleanup) is empty. */
+	result = sq_ble_ots_drain_pending_event(app_id, sizeof(app_id), event, sizeof(event));
+	zassert_equal(result, -ENOENT, "second drain should return -ENOENT, got %d", result);
+
+	/* The staging path is retained after drain so the handler can still install. */
+	zassert_true(sq_ble_ots_pending_staging_path()[0] != '\0',
+		     "staging path should survive drain for the install step");
+	zassert_true(staging_file_exists(sq_ble_ots_pending_staging_path()),
+		     "staging file should survive drain");
+
+	sq_ble_ots_cleanup_staging();
+}
+
 ZTEST(ble_ots_dispatch, test_cleanup_clears_pending_slot)
 {
 	char staging_path[128] = {0};

@@ -1,6 +1,7 @@
 #include "vm_runtime_internal.h"
 
 #include "app_store.h"
+#include "ble_profile_table.h"
 
 static int32_t runtime_app_lifecycle(void *user_data, const char *action, const uint8_t *app,
 				     size_t app_len)
@@ -54,6 +55,14 @@ int32_t runtime_app_disarm(void *user_data, const uint8_t *app, size_t app_len)
 		if (result != 0) {
 			return result;
 		}
+	}
+	/* Drop this app's BLE profile routes alongside its armed timers. */
+	if (app != NULL && app_len < SQ_APP_STORE_APP_ID_MAX) {
+		char app_id[SQ_APP_STORE_APP_ID_MAX];
+
+		memcpy(app_id, app, app_len);
+		app_id[app_len] = '\0';
+		sq_ble_profile_table_remove_app(app_id);
 	}
 	return sq_vm_runtime_clear_armed_app(user_data, app, app_len);
 }

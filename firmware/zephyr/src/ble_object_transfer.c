@@ -245,12 +245,14 @@ void sq_ble_ots_reset_session(void)
 	sq_ble_ots_close_session_files();
 	memset(&sq_ble_ots_session, 0, sizeof(sq_ble_ots_session));
 
-	if (sq_ble_ots_pending.active) {
-		if (sq_ble_ots_pending.staging_path[0] != '\0') {
-			(void)fs_unlink(sq_ble_ots_pending.staging_path);
-		}
-		memset(&sq_ble_ots_pending, 0, sizeof(sq_ble_ots_pending));
+	/* Unlink any pending staging file regardless of the active flag: a drained
+	 * (consumed) transfer leaves the file behind for the app to install from,
+	 * and a disconnect must still clean it up.
+	 */
+	if (sq_ble_ots_pending.staging_path[0] != '\0') {
+		(void)fs_unlink(sq_ble_ots_pending.staging_path);
 	}
+	memset(&sq_ble_ots_pending, 0, sizeof(sq_ble_ots_pending));
 }
 
 static void sq_ble_ots_abort_internal(void)
@@ -320,6 +322,12 @@ int sq_ble_ots_drain_pending_event(char *app_id_out, size_t app_id_cap, char *ev
 		strncpy(event_out, sq_ble_ots_pending.event, event_cap - 1);
 		event_out[event_cap - 1] = '\0';
 	}
+	/* Consume-once: a polled caller would otherwise re-dispatch the same
+	 * event every iteration. The app_id/event/staging_path stay populated so
+	 * the caller can still deliver the staging path and clean it up
+	 * (cleanup_staging / reset_session) after the handler has installed.
+	 */
+	sq_ble_ots_pending.active = false;
 	return 0;
 }
 

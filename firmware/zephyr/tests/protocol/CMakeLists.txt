@@ -53,6 +53,8 @@ target_include_directories(app PRIVATE ../../src "${CMAKE_CURRENT_BINARY_DIR}/ge
 target_sources(app PRIVATE
   ../../src/app_lifecycle.c
   ../../src/app_store.c
+  ../../src/ble_object_transfer.c
+  ../../src/ble_profile_table.c
   ../../src/device_protocol.c
   ../../src/fallback_app.c
   ../../src/protocol.c
