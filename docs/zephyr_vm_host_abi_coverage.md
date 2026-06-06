@@ -118,7 +118,8 @@ manifest.
 | display | display_clear, display_text, display_rect, display_line, display_select, display_image, display_draw, display_info | Rust FFI dispatch display tests | draw-log and display-info ztests | 2 |
 | indicator | indicator_write, indicator_toggle, indicator_read, indicator_breathe, indicator_blink | Rust FFI dispatch indicator tests | runtime callback boundary ztests | 6 |
 | hardware-gpio | hardware_gpio_write, hardware_gpio_toggle, hardware_gpio_read | Rust FFI dispatch GPIO tests | runtime callback boundary ztests | 3 |
-| app-lifecycle | app_launch, app_arm, app_disarm, app_registry_list, app_registry_get, app_process_stack, app_armed_stack | Rust FFI dispatch lifecycle tests | app lifecycle and registry ztests | 6 |
+| app-lifecycle | app_launch, app_arm, app_disarm, app_install_file, app_registry_list, app_registry_get, app_process_stack, app_armed_stack | Rust FFI dispatch lifecycle tests (including `app_install_file` for `app.install`) | app lifecycle, registry, and `app.install` validation ztests (`ble-app-install`) | 7 |
+| ble-object-transfer | (no FFI callbacks; firmware-internal OTS service in `ble_ots.c`) | n/a | `ble-ots-init`, `ble-ots-parse`, `ble-ots-staging`, `ble-ots-dispatch`, `ble-trigger-table` ztests | 5 |
 | timer | timer_every, timer_after | Rust FFI dispatch timer tests | timer helper boundary ztests | 4 |
 | wifi | wifi_start_ap, wifi_stop_ap, wifi_connect, wifi_disconnect, wifi_get_ap_ip, wifi_status, wifi_scan, wifi_operation, wifi_result, wifi_cancel, wifi_scan_network | Rust FFI dispatch Wi-Fi tests | unsupported/action stub ztests | 5 |
 | device-config | device_config_load, device_config_set, device_config_rebind, device_config_save | Rust FFI dispatch device-config tests | device configuration ztests | 5 |

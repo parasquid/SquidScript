@@ -2434,18 +2434,26 @@ id
 objectName
 bytesReceived
 totalBytes
-upload
-error
 ```
+
+The `ble.object.complete` event additionally carries a `file` field: a
+`file.*` reference to the staging file at
+`/sq/tmp/ble-object-<app_id>-<profile_id>.tmp`. The reference is valid
+only inside the `ble.object.complete` handler — the firmware `fs_unlink`s
+the staging file after the handler returns. The `ble.object.error` event
+additionally carries an `error` string describing the failure reason
+(currently `"client-abort"` on disconnect mid-stream).
 
 Rules:
 - BLE object-transfer profiles are armed-app metadata. They do not grant raw
   GATT access to SquidScript apps.
 - Firmware must stream BLE chunks to staging storage rather than app RAM.
-- Firmware should validate uploaded content only after the transfer completes
-  and the staged file is flushed.
-- Failed validation must delete or quarantine the staged file without
-  publishing it.
+- Firmware delivers the file as-is to the armed app. Validation is the
+  app's responsibility (e.g., via `app.install(file_ref)` which validates the
+  SQBC magic header).
+- The staging file is ephemeral: it is `fs_unlink`d after the
+  `ble.object.complete` event handler returns. The app must consume the file
+  (copy, install, log) before returning from the handler.
 - App artifacts uploaded through BLE should use `.sqbc` until a resource
   package format is specified, and they should follow the same installer rules
   as HTTP uploads.
@@ -2665,6 +2673,25 @@ Requires runtime support:
 
 ```text
 app.launch
+```
+
+`app.install(fileRef, appId)`
+
+Installs a SquidScript app from a file reference to a staged SQBC payload.
+The firmware opens `fileRef`, validates the SQBC magic header
+(`'S' 'Q' 'B' 'C'`), and if valid copies the bytes to
+`<store_mount_point>/apps/<appId>/main.sqbc` and registers the app in the
+app registry. The file reference is typically the `file` field of a
+`ble.object.complete` event after a successful BLE Object Transfer.
+
+Returns 0 on success; negative errno on failure (`-EINVAL` for
+malformed args, unsafe `appId`, or missing SQBC magic; `-EIO` for
+filesystem errors).
+
+Requires runtime support:
+
+```text
+app.install
 ```
 
 Example app-picker flow:

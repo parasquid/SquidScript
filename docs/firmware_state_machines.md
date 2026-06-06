@@ -116,6 +116,37 @@ Pattern rules:
 - Indicator polling is best-effort from the main runtime poll path; errors do
   not block unrelated protocol polling.
 
+## BLE Object Transfer (OTS / L2CAP CoC)
+
+The BLE Object Transfer Service (GATT UUID 0x1825) follows a different
+state machine than the serial begin/chunk/commit install path. The Zephyr
+`bt_ots` module owns the OACP/OBCP procedure state; the firmware's
+`ble_ots.c` adds an in-flight session state on top of it.
+
+| Phase | Trigger | Action | Outcome |
+| --- | --- | --- | --- |
+| Idle | — | No in-flight transfer; `app_install_file` and `app_install_app` idle | Ready for new transfer |
+| OACP Create | Client writes Object Name + OACP Create with size | `sq_ble_ots_obj_created_internal` parses the Object Name (`app_id/profile_id/.ext`), rejects with `OBJ_LOCKED` if busy, opens staging file at `/sq/tmp/ble-object-<app_id>-<profile_id>.tmp` | In-flight session active; staging file open |
+| OACP Write | Client streams OACP Write via L2CAP CoC (PSM 0x0025) | `sq_ble_ots_obj_write_internal` `fs_seek`s to the L2CAP SDU offset and `fs_write`s the chunk to the staging file | Staging file grows; `bytes_received` tracked |
+| OACP Execute=WRITE | Final OACP Write (`rem == 0`) | Closes the staging file; populates `sq_ble_ots_pending` with `is_complete=true` | Pending slot ready; poll path dispatches `ble.object.complete` |
+| OACP Abort | Client sends OACP Abort (procedure 0x07) | Closes + `fs_unlink`s the staging file; clears the in-flight session; no event emitted | Idle; in-flight slot cleared |
+| BT disconnect (mid-stream) | `BT_CONN_CB` disconnect | Populates `sq_ble_ots_pending` with `is_complete=false` and `error_reason="client-abort"`; poll path dispatches `ble.object.error` | Idle after handler; staging file `fs_unlink`d |
+| Reset / StorageFormat | Device protocol handler | `sq_ble_ots_reset_session` closes + `fs_unlink`s the staging file, clears the in-flight session, clears the trigger table; no event emitted | Idle; trigger table empty |
+
+The producer/consumer handoff is a single-slot pending event queue
+(`sq_ble_ots_pending`) that the OTS callbacks (BT context) populate and
+the device-protocol poll (main loop) drains. `sq_ble_ots_drain_pending_event`
+copies the `app_id` and `event` (`ble.object.complete` or `ble.object.error`)
+into caller-owned buffers; the poll path then runs the event handler
+(via `start_resolved_app` + the existing lifecycle machinery). After the
+handler returns (detected via `lifecycle_phase == IDLE`),
+`sq_ble_ots_cleanup_staging` `fs_unlink`s the staging file and clears the
+pending slot. The `app.install(fileRef, appId)` builtin reads the staging
+file before the handler returns, validates the SQBC magic, and registers
+the app at `<mount>/apps/<appId>/main.sqbc`. Single-session policy:
+`SQ_VM_RUNTIME_BLE_PROFILE_ARMED_MAX = 2` armed profile entries, but only
+one can be the active in-flight transfer at a time.
+
 ## Bounded Queues
 
 Trace lines, output lines, drawlog entries, and similar diagnostics are bounded

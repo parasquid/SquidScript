@@ -152,12 +152,34 @@ esptool --port /dev/ttyACM0 erase-region 0x3b0000 0x30000
 
 Temp runs use `/sq/tmp/temp-run.sqbc.tmp` as their staging artifact. Firmware
 writes chunks directly to that file and lets the VM read SQBC byte ranges back
-through the same storage callback shape used by installed apps. The
+through the same storage callback shape used for installed apps. The
 begin/chunk/commit session validation for installed apps, temp runs, and
 resources is implemented in the Rust `sqdp_` FFI layer with caller-owned
 buffers; Zephyr C performs the LittleFS writes and commits, then reports
 successful chunks back to Rust so byte counts and CRC32 progress advance only
 after storage succeeds.
+
+BLE Object Transfer (when `CONFIG_BT_OTS=y`) uses
+`/sq/tmp/ble-object-<app_id>-<profile_id>.tmp` as the staging artifact for
+each in-flight transfer. The path is computed at `obj_created` time from
+the parsed `app_id` and `profile_id` segments of the BLE Object Name.
+The staging file is `FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC` opened at
+`obj_created`, written in `obj_write` chunks (with `fs_seek` to the
+L2CAP SDU offset), closed on the final chunk, and `fs_unlink`d after
+the `ble.object.complete` event handler returns. The `app.install`
+builtin (slice 2) consumes the staging file via
+`sq_app_store_install_from_file_ref(mount_point, app_id, staging_path)`,
+which opens the file, reads up to `SQ_APP_STORE_INSTALL_SCRATCH_BYTES`
+(1 KiB) into a caller-owned scratch buffer, validates the SQBC magic
+(`'S' 'Q' 'B' 'C'`), and if valid calls `sq_app_store_install_app` to
+register the app at `<mount_point>/apps/<app_id>/main.sqbc`. Single
+in-flight session: a second `obj_created` while busy returns
+`BT_GATT_OTS_OACP_RES_OBJ_LOCKED` and is rejected without touching
+storage. The Zephyr native ztests under
+`firmware/zephyr/tests/ble-ots-staging` and
+`firmware/zephyr/tests/ble-app-install` exercise the staging lifecycle
+and the `app.install` validation path with a real host LittleFS mount
+at `/sqtest` (overridable via `SQ_BLE_OTS_STAGING_DIR`).
 
 Package resources are stored below the app directory using package-relative
 paths:

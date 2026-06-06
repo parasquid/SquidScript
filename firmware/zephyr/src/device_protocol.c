@@ -1254,7 +1254,7 @@ static int __noinline register_app_triggers(const struct sq_device_protocol_cont
 	return 0;
 }
 
-__attribute__((unused)) static int __noinline register_app_ble_profile_triggers(
+static int __noinline register_app_ble_profile_triggers(
 	const struct sq_device_protocol_context *context, const char *app_id)
 {
 	struct sq_vm_storage_backend backend;
@@ -1264,7 +1264,6 @@ __attribute__((unused)) static int __noinline register_app_ble_profile_triggers(
 	SqvmStatus status;
 	SqvmBleProfileTrigger profile;
 	int result;
-	int appended = 0;
 
 	if (context == NULL || context->runtime == NULL || context->store_mount_point == NULL ||
 	    context->trigger_storage == NULL || app_id == NULL) {
@@ -1280,6 +1279,11 @@ __attribute__((unused)) static int __noinline register_app_ble_profile_triggers(
 	if (backend.read_sqbc == NULL) {
 		return -ENODEV;
 	}
+
+	/* Drop any prior entries for this app so re-arming is idempotent and the
+	 * cap check below does not double-count this app's own slots.
+	 */
+	sq_ble_profile_table_remove_app(app_id);
 
 	result = sq_vm_runtime_transfer_acquire(context->runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH);
 	if (result != 0) {
@@ -1334,15 +1338,9 @@ __attribute__((unused)) static int __noinline register_app_ble_profile_triggers(
 			sq_ble_profile_table_remove_app(app_id);
 			return result;
 		}
-		appended++;
 	}
-	return appended > 0 ? 0 : -EINVAL;
-}
-
-__attribute__((unused)) static void clear_app_ble_profile_triggers(const char *app_id)
-{
-	sq_ble_profile_table_remove_app(app_id);
-	(void)app_id;
+	/* Zero BLE profiles is success: a normal (non-BLE) app must still arm. */
+	return 0;
 }
 
 int sq_device_protocol_start_root(const struct sq_device_protocol_context *context)
@@ -1502,7 +1500,11 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 		return result;
 
 	case SQ_APP_LIFECYCLE_STEP_REGISTER_ARMED_APP:
-		return register_app_triggers(context, step.app_id);
+		result = register_app_triggers(context, step.app_id);
+		if (result != 0) {
+			return result;
+		}
+		return register_app_ble_profile_triggers(context, step.app_id);
 
 	case SQ_APP_LIFECYCLE_STEP_POLL_RUNTIME:
 		return sq_vm_runtime_poll(runtime);
