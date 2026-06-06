@@ -277,6 +277,11 @@ static int sq_ble_ots_obj_write_internal(const char *staging_path, const void *d
 		sq_ble_ots_pending.bytes_received = sq_ble_ots_session.bytes_received;
 		sq_ble_ots_pending.total_bytes = sq_ble_ots_session.alloc_size;
 		sq_ble_ots_pending.active = true;
+		/* Ownership of the staging file moves to the pending event (the
+		 * consumer pipeline). Detach it from the session so session teardown
+		 * on disconnect (close_session_files / reset_session) does not unlink
+		 * the handed-off file out from under the deferred install. */
+		sq_ble_ots_session.staging_path[0] = '\0';
 		LOG_INF("obj_write complete: pending event app=%s", sq_ble_ots_pending.app_id);
 	}
 
@@ -285,21 +290,28 @@ static int sq_ble_ots_obj_write_internal(const char *staging_path, const void *d
 
 void sq_ble_ots_reset_session(void)
 {
+	/* A completed transfer publishes its pending event (active) right before
+	 * the client disconnects -- which fires this reset. The pending event and
+	 * its staging file are owned from that point by the consumer pipeline
+	 * (poll drain -> app install -> cleanup_staging). Clearing them here would
+	 * race that deferred install: it would drop the event and unlink the file
+	 * mid-install. So leave a completed pending untouched; only the consumer
+	 * clears it. */
+	bool completed_handoff = sq_ble_ots_pending.active;
+
 	if (sq_ble_ots_session.active) {
 		LOG_INF("reset_session: clearing in-flight app=%s profile=%s",
 			sq_ble_ots_session.app_id, sq_ble_ots_session.profile_id);
 	}
 	sq_ble_ots_close_session_files();
-	memset(&sq_ble_ots_session, 0, sizeof(sq_ble_ots_session));
-
-	/* Unlink any pending staging file regardless of the active flag: a drained
-	 * (consumed) transfer leaves the file behind for the app to install from,
-	 * and a disconnect must still clean it up.
-	 */
-	if (sq_ble_ots_pending.staging_path[0] != '\0') {
-		(void)fs_unlink(sq_ble_ots_pending.staging_path);
+	/* An abandoned partial upload (started, never completed -> no handoff) has
+	 * no consumer, so remove its staging file. A completed transfer shares the
+	 * same staging_path but is owned by the consumer; leave that file alone. */
+	if (sq_ble_ots_session.active && !completed_handoff &&
+	    sq_ble_ots_session.staging_path[0] != '\0') {
+		(void)fs_unlink(sq_ble_ots_session.staging_path);
 	}
-	memset(&sq_ble_ots_pending, 0, sizeof(sq_ble_ots_pending));
+	memset(&sq_ble_ots_session, 0, sizeof(sq_ble_ots_session));
 	memset(&sq_ble_framed, 0, sizeof(sq_ble_framed));
 }
 

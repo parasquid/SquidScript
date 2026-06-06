@@ -66,6 +66,10 @@ static void *ble_ots_dispatch_setup(void)
 static void ble_ots_dispatch_before(void *fixture)
 {
 	(void)fixture;
+	/* reset_session deliberately preserves a completed (handed-off) pending
+	 * event, so a full reset for test isolation also calls cleanup_staging,
+	 * the consumer-side path that clears pending. */
+	sq_ble_ots_cleanup_staging();
 	sq_ble_ots_reset_session();
 	zassert_equal(unmount_test_fs(), 0, "unmount failed");
 	zassert_equal(mount_test_fs(), 0, "remount failed");
@@ -75,6 +79,7 @@ static void ble_ots_dispatch_before(void *fixture)
 static void ble_ots_dispatch_teardown(void *fixture)
 {
 	(void)fixture;
+	sq_ble_ots_cleanup_staging();
 	sq_ble_ots_reset_session();
 	(void)unmount_test_fs();
 }
@@ -218,7 +223,12 @@ ZTEST(ble_ots_dispatch, test_cleanup_staging_unlinks_file)
 		      "staging file should be unlinked after cleanup_staging");
 }
 
-ZTEST(ble_ots_dispatch, test_reset_session_clears_pending_slot)
+/* A disconnect fires reset_session right after the completion notify, racing the
+ * poll-loop drain/install. A *completed* transfer is already handed off to that
+ * consumer pipeline (drain -> install -> cleanup_staging), so reset_session must
+ * leave its pending event and staging file intact; otherwise the deferred install
+ * loses its event and reads an unlinked file. */
+ZTEST(ble_ots_dispatch, test_reset_session_preserves_completed_pending)
 {
 	char staging_path[128] = {0};
 	const uint8_t chunk[] = {'S', 'Q', 'B', 'C'};
@@ -235,13 +245,45 @@ ZTEST(ble_ots_dispatch, test_reset_session_clears_pending_slot)
 	zassert_equal(result, (int)sizeof(chunk));
 	zassert_true(sq_ble_ots_pending_is_complete());
 
+	/* Simulate the disconnect that arrives right after completion. */
 	sq_ble_ots_reset_session();
-	zassert_false(sq_ble_ots_pending_is_complete(),
-		      "reset_session should clear pending slot");
+
+	zassert_true(sq_ble_ots_pending_is_complete(),
+		     "reset_session must preserve a completed (handed-off) pending event");
+	zassert_true(staging_file_exists(staging_path),
+		     "reset_session must preserve the completed transfer's staging file");
 
 	result = sq_ble_ots_drain_pending_event(drained_app_id, sizeof(drained_app_id),
 					       drained_event, sizeof(drained_event));
-	zassert_equal(result, -ENOENT, "drain after reset should return -ENOENT, got %d", result);
+	zassert_equal(result, 0, "drain after reset should still succeed, got %d", result);
+	zassert_str_equal(drained_app_id, "break-reminder");
+	zassert_true(staging_file_exists(staging_path),
+		     "staging file must survive until the consumer calls cleanup_staging");
+}
+
+/* An abandoned partial upload (begun but never completed -> no pending handoff)
+ * has no consumer; a disconnect's reset_session must remove its staging file. */
+ZTEST(ble_ots_dispatch, test_reset_session_clears_incomplete_partial)
+{
+	char staging_path[128] = {0};
+	const uint8_t chunk[] = {'S', 'Q', 'B', 'C'};
+	int result;
+
+	result = sq_ble_ots_test_invoke_obj_created_with_name("break-reminder/wallpaper/.sqbc",
+							      4096, staging_path,
+							      sizeof(staging_path));
+	zassert_equal(result, 0);
+	/* Partial write that does not reach the declared size (rem != 0). */
+	result = sq_ble_ots_test_invoke_obj_write_with_path(staging_path, chunk, sizeof(chunk), 0,
+							    4096 - sizeof(chunk));
+	zassert_equal(result, (int)sizeof(chunk));
+	zassert_false(sq_ble_ots_pending_is_complete(), "partial transfer must not be complete");
+	zassert_true(staging_file_exists(staging_path), "partial staging file should exist");
+
+	sq_ble_ots_reset_session();
+
+	zassert_false(staging_file_exists(staging_path),
+		      "reset_session must unlink an abandoned partial's staging file");
 }
 
 ZTEST(ble_ots_dispatch, test_end_to_end_ots_to_app_install)
