@@ -192,6 +192,12 @@ static int sq_ble_ots_obj_write_internal(const char *staging_path, const void *d
 	if (strcmp(staging_path, sq_ble_ots_session.staging_path) != 0) {
 		return -EINVAL;
 	}
+	/* Reject writes that would push the object past its declared size, so a
+	 * misbehaving client cannot overrun the staging file / fill the FS.
+	 */
+	if ((size_t)offset + len > sq_ble_ots_session.alloc_size) {
+		return -EFBIG;
+	}
 
 	fs_file_t_init(&file);
 	result = fs_open(&file, staging_path, FS_O_WRITE);

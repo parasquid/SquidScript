@@ -180,6 +180,27 @@ ZTEST(ble_ots_staging, test_abort_unlinks_and_clears_in_flight_session)
 	zassert_equal(result, 0, "create after abort should succeed, got %d", result);
 }
 
+ZTEST(ble_ots_staging, test_write_beyond_declared_size_rejected)
+{
+	char staging_path[128] = {0};
+	uint8_t chunk[16] = {0};
+	int result;
+
+	result = sq_ble_ots_test_invoke_obj_created_with_name("break-reminder/wallpaper/.sqbc", 8,
+							      staging_path, sizeof(staging_path));
+	zassert_equal(result, 0, "obj_created failed: %d", result);
+
+	/* Declared size is 8; a 16-byte write from offset 0 overruns it. */
+	result = sq_ble_ots_test_invoke_obj_write_with_path(staging_path, chunk, sizeof(chunk), 0,
+							    0);
+	zassert_equal(result, -EFBIG, "expected -EFBIG writing past declared size, got %d",
+		      result);
+
+	/* A write that fits exactly is accepted. */
+	result = sq_ble_ots_test_invoke_obj_write_with_path(staging_path, chunk, 8, 0, 0);
+	zassert_equal(result, 8, "expected exact-size write to succeed, got %d", result);
+}
+
 ZTEST(ble_ots_staging, test_reset_after_completed_transfer_does_not_error)
 {
 	char staging_path[128] = {0};

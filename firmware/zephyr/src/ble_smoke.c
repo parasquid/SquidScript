@@ -13,6 +13,8 @@
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/gap.h>
 #include <zephyr/bluetooth/uuid.h>
+
+#include "ble_ots.h"
 #endif
 
 LOG_MODULE_REGISTER(squidscript_ble, LOG_LEVEL_INF);
@@ -138,6 +140,8 @@ static void sq_ble_smoke_disconnected(struct bt_conn *conn, uint8_t reason)
 	ARG_UNUSED(conn);
 	ARG_UNUSED(reason);
 
+	/* Discard any in-flight BLE object transfer that the peer abandoned. */
+	sq_ble_ots_reset_session();
 	(void)sq_ble_smoke_sm_handle_disconnect();
 }
 
@@ -155,6 +159,15 @@ int sq_ble_smoke_start(void)
 	if (result != 0) {
 		LOG_WRN("BLE init failed: %d", result);
 		return result;
+	}
+
+	/* Register the OTS object-transfer GATT service before advertising so it
+	 * is present in the GATT database for connecting peers. Non-fatal: a
+	 * failure here must not prevent basic advertising.
+	 */
+	int ots_result = sq_ble_ots_init();
+	if (ots_result != 0) {
+		LOG_WRN("BLE OTS init failed: %d", ots_result);
 	}
 
 	sq_ble_smoke_sm_install_api(&sq_ble_smoke_real_api);
