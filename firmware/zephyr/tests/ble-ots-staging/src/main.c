@@ -3,12 +3,11 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <zephyr/bluetooth/services/ots.h>
 #include <zephyr/fs/fs.h>
 #include <zephyr/kernel.h>
 #include <zephyr/ztest.h>
 
-#include "ble_ots.h"
+#include "ble_object_transfer.h"
 
 static struct fs_mount_t test_fs_mount = {
 	.type = FS_NATIVE_MOUNT,
@@ -63,7 +62,6 @@ static void ble_ots_staging_before(void *fixture)
 	zassert_equal(unmount_test_fs(), 0, "unmount failed");
 	zassert_equal(mount_test_fs(), 0, "remount failed");
 	zassert_equal(format_test_fs(), 0, "format failed");
-	zassert_equal(sq_ble_ots_init(), 0, "sq_ble_ots_init failed");
 }
 
 static void ble_ots_staging_teardown(void *fixture)

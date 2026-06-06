@@ -15,7 +15,7 @@
 #include <zephyr/bluetooth/uuid.h>
 
 #include "ble_app_transfer.h"
-#include "ble_ots.h"
+#include "ble_object_transfer.h"
 #endif
 
 LOG_MODULE_REGISTER(squidscript_ble, LOG_LEVEL_INF);
@@ -168,15 +168,10 @@ int sq_ble_smoke_start(void)
 		return result;
 	}
 
-	/* Register the OTS object-transfer GATT service before advertising so it
-	 * is present in the GATT database for connecting peers. Non-fatal: a
-	 * failure here must not prevent basic advertising.
+	/* The custom GATT app-transfer service is auto-registered via
+	 * BT_GATT_SERVICE_DEFINE, so it is already in the GATT database here; no
+	 * explicit registration call is needed before advertising.
 	 */
-	int ots_result = sq_ble_ots_init();
-	if (ots_result != 0) {
-		LOG_WRN("BLE OTS init failed: %d", ots_result);
-	}
-
 	sq_ble_smoke_sm_install_api(&sq_ble_smoke_real_api);
 
 	result = sq_ble_smoke_sm_begin_advertising();

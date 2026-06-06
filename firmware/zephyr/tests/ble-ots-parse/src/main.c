@@ -3,11 +3,10 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <zephyr/bluetooth/services/ots.h>
 #include <zephyr/kernel.h>
 #include <zephyr/ztest.h>
 
-#include "ble_ots.h"
+#include "ble_object_transfer.h"
 
 #define APP_ID_CAP 32
 #define PROFILE_ID_CAP 32
