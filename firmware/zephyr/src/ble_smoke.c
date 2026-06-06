@@ -14,6 +14,7 @@
 #include <zephyr/bluetooth/gap.h>
 #include <zephyr/bluetooth/uuid.h>
 
+#include "ble_app_transfer.h"
 #include "ble_ots.h"
 #endif
 
@@ -113,6 +114,11 @@ int sq_ble_smoke_sm_run_restart(void)
 #if IS_ENABLED(CONFIG_BT)
 static const struct bt_data ad[] = {
 	BT_DATA_BYTES(BT_DATA_FLAGS, BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR),
+	/* Advertise the app-transfer service UUID so a Web Bluetooth client can
+	 * filter for and discover the device.
+	 */
+	BT_DATA(BT_DATA_UUID128_ALL, sq_ble_app_transfer_adv_uuid,
+		sizeof(sq_ble_app_transfer_adv_uuid)),
 };
 
 static const struct bt_data sd[] = {
@@ -141,6 +147,7 @@ static void sq_ble_smoke_disconnected(struct bt_conn *conn, uint8_t reason)
 	ARG_UNUSED(reason);
 
 	/* Discard any in-flight BLE object transfer that the peer abandoned. */
+	sq_ble_app_transfer_reset();
 	sq_ble_ots_reset_session();
 	(void)sq_ble_smoke_sm_handle_disconnect();
 }

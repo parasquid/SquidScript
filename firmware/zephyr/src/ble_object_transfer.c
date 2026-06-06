@@ -225,8 +225,14 @@ static int sq_ble_ots_obj_write_internal(const char *staging_path, const void *d
 	sq_ble_ots_session.bytes_received += len;
 
 	if (rem == 0) {
+		/* Fill all fields first, then publish by setting `active` LAST. The
+		 * poll thread reads `active` (sq_ble_ots_pending_is_complete) before
+		 * draining, so on the single-core ESP32-C3 it either sees the
+		 * pre-publish (inactive) state or the fully populated one -- never a
+		 * half-written pending. A producer write callback and the poll-loop
+		 * consumer run on different threads but the same core.
+		 */
 		memset(&sq_ble_ots_pending, 0, sizeof(sq_ble_ots_pending));
-		sq_ble_ots_pending.active = true;
 		strncpy(sq_ble_ots_pending.app_id, sq_ble_ots_session.app_id,
 			sizeof(sq_ble_ots_pending.app_id) - 1);
 		strncpy(sq_ble_ots_pending.profile_id, sq_ble_ots_session.profile_id,
@@ -237,6 +243,7 @@ static int sq_ble_ots_obj_write_internal(const char *staging_path, const void *d
 			sizeof(sq_ble_ots_pending.staging_path) - 1);
 		sq_ble_ots_pending.bytes_received = sq_ble_ots_session.bytes_received;
 		sq_ble_ots_pending.total_bytes = sq_ble_ots_session.alloc_size;
+		sq_ble_ots_pending.active = true;
 		LOG_INF("obj_write complete: pending event app=%s", sq_ble_ots_pending.app_id);
 	}
 
@@ -270,6 +277,29 @@ static void sq_ble_ots_abort_internal(void)
 	}
 	sq_ble_ots_close_session_files();
 	memset(&sq_ble_ots_session, 0, sizeof(sq_ble_ots_session));
+}
+
+/*
+ * Public transport-facing API. A BLE transport front-end (the custom GATT
+ * service) drives a transfer through these: begin a session from the object
+ * name + declared size, append chunks, and abort on cancel/error. They wrap the
+ * same internals the test shims use.
+ */
+int sq_ble_transfer_begin(const char *name, size_t alloc_size)
+{
+	return sq_ble_ots_obj_created_internal(name, alloc_size);
+}
+
+int sq_ble_transfer_write_chunk(const void *data, size_t len, off_t offset, size_t rem)
+{
+	/* Writes target the active session's staging file. */
+	return sq_ble_ots_obj_write_internal(sq_ble_ots_session.staging_path, data, len, offset,
+					     rem);
+}
+
+void sq_ble_transfer_abort(void)
+{
+	sq_ble_ots_abort_internal();
 }
 
 int sq_ble_ots_test_invoke_obj_created_with_name(const char *name, size_t alloc_size,
