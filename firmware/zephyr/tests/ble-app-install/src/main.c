@@ -5,6 +5,7 @@
 
 #include <zephyr/fs/fs.h>
 #include <zephyr/kernel.h>
+#include <zephyr/sys/util.h>
 #include <zephyr/ztest.h>
 
 #include "app_store.h"
@@ -54,6 +55,76 @@ static int write_staging_file(const char *path, const uint8_t *bytes, size_t len
 		return -EIO;
 	}
 	return 0;
+}
+
+static const uint8_t sqbc_magic[] = {'S', 'Q', 'B', 'C'};
+
+/* Deterministic SQBC content: 'SQBC' magic followed by (pos & 0xFF) for each
+ * later byte, so a byte-exact readback can detect any truncation or corruption.
+ */
+static uint8_t generated_byte_at(size_t pos)
+{
+	return pos < sizeof(sqbc_magic) ? sqbc_magic[pos] : (uint8_t)(pos & 0xFFu);
+}
+
+static int write_generated_sqbc(const char *path, size_t total_len)
+{
+	struct fs_file_t file;
+	uint8_t buf[256];
+	size_t written_total = 0;
+	int result;
+
+	fs_file_t_init(&file);
+	result = fs_open(&file, path, FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC);
+	if (result != 0) {
+		return result;
+	}
+	while (written_total < total_len) {
+		size_t chunk = MIN(sizeof(buf), total_len - written_total);
+		ssize_t written;
+
+		for (size_t i = 0; i < chunk; i++) {
+			buf[i] = generated_byte_at(written_total + i);
+		}
+		written = fs_write(&file, buf, chunk);
+		if (written < 0) {
+			(void)fs_close(&file);
+			return (int)written;
+		}
+		if ((size_t)written != chunk) {
+			(void)fs_close(&file);
+			return -EIO;
+		}
+		written_total += chunk;
+	}
+	return fs_close(&file);
+}
+
+static void verify_installed_matches_generated(const char *installed_path, size_t total_len)
+{
+	struct fs_file_t verify;
+	uint8_t buf[256];
+	size_t pos = 0;
+
+	fs_file_t_init(&verify);
+	zassert_equal(fs_open(&verify, installed_path, FS_O_READ), 0,
+		      "expected installed SQBC at %s", installed_path);
+	for (;;) {
+		ssize_t got = fs_read(&verify, buf, sizeof(buf));
+
+		zassert_true(got >= 0, "read error %d", (int)got);
+		if (got == 0) {
+			break;
+		}
+		for (ssize_t i = 0; i < got; i++) {
+			zassert_equal(buf[i], generated_byte_at(pos),
+				      "installed byte %zu mismatch", pos);
+			pos++;
+		}
+	}
+	(void)fs_close(&verify);
+	zassert_equal(pos, total_len, "installed length mismatch: got %zu want %zu", pos,
+		      total_len);
 }
 
 static void *ble_app_install_setup(void)
@@ -212,4 +283,52 @@ ZTEST(ble_app_install, test_installed_file_overwrites_existing)
 	(void)fs_close(&verify);
 	zassert_equal(bytes_read, (ssize_t)sizeof(second_sqbc));
 	zassert_mem_equal(readback, second_sqbc, sizeof(second_sqbc));
+}
+
+/* Regression: a file larger than the old 1024-byte scratch buffer must install
+ * byte-exact, not silently truncated. Fails before the streaming rewrite of
+ * sq_app_store_install_from_file_ref.
+ */
+ZTEST(ble_app_install, test_installs_large_sqbc_without_truncation)
+{
+	const size_t big_len = 4096; /* well over the former 1 KiB cap */
+	char staging_path[SQ_APP_STORE_PATH_MAX];
+	char installed_path[SQ_APP_STORE_APP_FILE_PATH_MAX];
+
+	zassert_true(snprintf(staging_path, sizeof(staging_path), "%s/large.sqbc",
+			      test_fs_mount.mnt_point) > 0);
+	zassert_equal(write_generated_sqbc(staging_path, big_len), 0);
+
+	zassert_equal(sq_app_store_install_from_file_ref(test_fs_mount.mnt_point, "large-app",
+							 staging_path),
+		      0, "expected large SQBC to install");
+
+	zassert_true(snprintf(installed_path, sizeof(installed_path),
+			      "%s/apps/large-app/main.sqbc", test_fs_mount.mnt_point) > 0);
+	verify_installed_matches_generated(installed_path, big_len);
+}
+
+/* A file above SQ_DEVICE_INSTALL_MAX_BYTES is rejected with -EFBIG and nothing
+ * is committed.
+ */
+ZTEST(ble_app_install, test_rejects_oversized_sqbc)
+{
+	char staging_path[SQ_APP_STORE_PATH_MAX];
+	char installed_path[SQ_APP_STORE_APP_FILE_PATH_MAX];
+	struct fs_file_t verify;
+	int result;
+
+	zassert_true(snprintf(staging_path, sizeof(staging_path), "%s/oversized.sqbc",
+			      test_fs_mount.mnt_point) > 0);
+	zassert_equal(write_generated_sqbc(staging_path, SQ_DEVICE_INSTALL_MAX_BYTES + 1), 0);
+
+	result = sq_app_store_install_from_file_ref(test_fs_mount.mnt_point, "oversized-app",
+						    staging_path);
+	zassert_equal(result, -EFBIG, "expected -EFBIG for oversized file, got %d", result);
+
+	zassert_true(snprintf(installed_path, sizeof(installed_path),
+			      "%s/apps/oversized-app/main.sqbc", test_fs_mount.mnt_point) > 0);
+	fs_file_t_init(&verify);
+	zassert_not_equal(fs_open(&verify, installed_path, FS_O_READ), 0,
+			  "oversized file must not be committed");
 }

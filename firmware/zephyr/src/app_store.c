@@ -590,48 +590,90 @@ int sq_app_store_install_app(const char *mount_point, const char *app_id, const 
 	return write_file(path, sqbc, sqbc_len);
 }
 
-#define SQ_APP_STORE_INSTALL_SCRATCH_BYTES 1024
+#define SQ_APP_STORE_INSTALL_COPY_CHUNK 512
 #define SQBC_MAGIC_LEN 4
 static const uint8_t SQBC_MAGIC_BYTES[SQBC_MAGIC_LEN] = {'S', 'Q', 'B', 'C'};
 
+/*
+ * Install an already-staged file (e.g. a BLE-transferred upload at
+ * /sq/tmp/...) as app_id. Streams the source file in bounded chunks through
+ * the shared begin/write/commit staged-install API so there is no whole-file
+ * buffer and no size cap beyond SQ_DEVICE_INSTALL_MAX_BYTES. The SQBC magic is
+ * validated from the first chunk; on any failure the partial staged copy is
+ * unlinked and nothing is committed.
+ */
 int sq_app_store_install_from_file_ref(const char *mount_point, const char *app_id,
 				       const char *staging_path)
 {
-	struct fs_file_t file;
-	uint8_t scratch[SQ_APP_STORE_INSTALL_SCRATCH_BYTES];
-	ssize_t total = 0;
+	struct fs_file_t src;
+	char staged_path[SQ_APP_STORE_PATH_MAX];
+	uint8_t chunk[SQ_APP_STORE_INSTALL_COPY_CHUNK];
+	size_t total = 0;
+	bool magic_checked = false;
 	int result;
+	int close_result;
 
 	if (mount_point == NULL || !is_safe_app_id(app_id) || staging_path == NULL) {
 		return -EINVAL;
 	}
 
-	fs_file_t_init(&file);
-	result = fs_open(&file, staging_path, FS_O_READ);
+	fs_file_t_init(&src);
+	result = fs_open(&src, staging_path, FS_O_READ);
 	if (result != 0) {
 		return result == -ENOENT ? -EINVAL : result;
 	}
 
-	while (total < (ssize_t)sizeof(scratch)) {
-		ssize_t bytes = fs_read(&file, scratch + total, sizeof(scratch) - (size_t)total);
+	result = sq_app_store_begin_staged_install(mount_point, app_id, staged_path,
+						   sizeof(staged_path));
+	if (result != 0) {
+		(void)fs_close(&src);
+		return result;
+	}
+
+	for (;;) {
+		ssize_t bytes = fs_read(&src, chunk, sizeof(chunk));
+
 		if (bytes < 0) {
-			(void)fs_close(&file);
-			return (int)bytes;
+			result = (int)bytes;
+			break;
 		}
 		if (bytes == 0) {
 			break;
 		}
-		total += bytes;
+		if (!magic_checked) {
+			if ((size_t)bytes < SQBC_MAGIC_LEN ||
+			    memcmp(chunk, SQBC_MAGIC_BYTES, SQBC_MAGIC_LEN) != 0) {
+				result = -EINVAL;
+				break;
+			}
+			magic_checked = true;
+		}
+		if (total + (size_t)bytes > SQ_DEVICE_INSTALL_MAX_BYTES) {
+			result = -EFBIG;
+			break;
+		}
+		result = sq_app_store_write_staged_chunk(staged_path, total, chunk, (size_t)bytes);
+		if (result != 0) {
+			break;
+		}
+		total += (size_t)bytes;
 	}
 
-	(void)fs_close(&file);
-
-	if (total < (ssize_t)SQBC_MAGIC_LEN ||
-	    memcmp(scratch, SQBC_MAGIC_BYTES, SQBC_MAGIC_LEN) != 0) {
-		return -EINVAL;
+	close_result = fs_close(&src);
+	if (result == 0 && close_result != 0) {
+		result = close_result;
 	}
 
-	return sq_app_store_install_app(mount_point, app_id, scratch, (size_t)total);
+	if (result != 0 || !magic_checked) {
+		(void)fs_unlink(staged_path);
+		return result != 0 ? result : -EINVAL;
+	}
+
+	result = sq_app_store_commit_staged_install(mount_point, app_id, staged_path);
+	if (result != 0) {
+		(void)fs_unlink(staged_path);
+	}
+	return result;
 }
 
 int sq_app_store_begin_staged_install(const char *mount_point, const char *app_id,

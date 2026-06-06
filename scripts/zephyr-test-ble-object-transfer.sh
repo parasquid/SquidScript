@@ -91,7 +91,7 @@ if [[ -z "$DEVICE" ]]; then
 fi
 
 if [[ -z "$PORT" ]]; then
-	PORT="$(resolve_esp.serial_port 2>/dev/null || true)"
+	PORT="$(resolve_esp_serial_port 2>/dev/null || true)"
 	if [[ -z "$PORT" ]]; then
 		PORT="$(ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null | head -1 || true)"
 	fi
