@@ -34,6 +34,13 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - Keep speculative or conditional ideas in `ICEBOX.md`, not `ROADMAP.md`.
   Move them back to the roadmap only when they have a concrete target, use
   case, or implementation reason that makes them actionable.
+- When dropping a transport or API before 1.0 (for example, a spec-named
+  protocol that doesn't fit the actual user-facing client), the dropped work
+  goes to `ICEBOX.md` with three things: the rationale — why was it dropped;
+  the conditions to revive it — what use case would make it worth re-adding;
+  the parts that are still in use — which code, docs, or tests survive the
+  drop. Don't leave "what was dropped and why" in chat or in a commit
+  message; it gets lost. `ICEBOX.md` is the durable surface.
 
 ## Test Safety Net
 
@@ -54,6 +61,7 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - When making implementation plans, include documentation work explicitly.
 - Create new docs when needed, update related existing docs in the same change, and remove or revise obsolete docs so repository documentation stays aligned with the implementation and current project decisions.
 - Before finishing implementation work, check related docs for stale command examples, old API shapes, outdated storage/runtime descriptions, and obsolete compatibility notes.
+- When a commit deletes a `.c`/`.h` file or replaces a transport, protocol, or core module, grep the deleted file's basename across `docs/`, `README.md`, `ROADMAP.md`, and the commit message of any related doc commits. Fix references in the same commit, not the next. A 30-second grep catches the obvious staleness that would otherwise leave docs describing a state that no longer exists.
 - Write reference documentation as current-state facts, requirements, commands,
   and interpretation rules, not as a chronological diary of an investigation.
   Future readers need the stable conclusion and what to do with it; omit
@@ -183,6 +191,10 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - Do not let a demo requirement define public language/runtime semantics implicitly. If a demo needs a timer, GPIO, app lifecycle, or service behavior that is not already specified, update the plan/spec first or clearly mark the implementation as harness-only.
 - It is acceptable for real implementation work to inform and reshape the language/API design, but those discoveries must be promoted through the correct boundary: spec/docs for language decisions, compiler tests for language semantics, firmware tests for runtime behavior, CLI tests for host workflow, and hardware target tests for board demos.
 - Avoid large cross-layer patches when a narrow change would answer the request. If a change touches compiler, SQBC, firmware, CLI, examples, and docs together, explicitly list why each layer is necessary before editing.
+- When a doc commit touches more than 3 doc files, flag the doc set as a snapshot that may need re-validation against the current code at the next major refactor. A large doc commit is correct when written, becomes stale the same day a refactor lands, and the user has to re-derive the actual state from the refactor commits. Mark the commit message with "doc snapshot — re-validate after next refactor" so future agents know to verify.
+- Before 1.0, when committing to a transport, protocol, or API shape, ask "what is the actual user-facing client, and what can it do?" Examples of client capabilities that have already shaped this codebase: Web Bluetooth is GATT-only (no L2CAP); iOS Safari has no Web Bluetooth at all; bleak 3.x's cross-platform client does not expose L2CAP CoC writes. When the spec names a transport that the actual client cannot drive, the spec is wrong, not the client. Design from the client up, not from the protocol down. After 1.0 the spec wins and the client must catch up; before 1.0 the client wins because compatibility is not yet a commitment.
+- For any transport, protocol, or external dependency that the spec names but this session has not yet exercised on the actual host, do a small spike first. The spike should be throwaway (a separate commit that is reverted or deleted in the next commit) and answer one question: "can the actual host do this, and if so, how?" Then decide, then implement. A 30-minute spike that returns "no, the host cannot do this" saves a multi-slice implementation that would have hit the same wall.
+- When a spec text and an obvious ergonomic API are in tension (for example, "the file is ephemeral, no final path" vs. an app that needs to know where the file lives during the handler), surface the ambiguity to the user with the two readings before committing the spec change. Don't remove a field, tighten a payload, or pick a minimalist interpretation unilaterally — the spec text and the use case both need to survive the decision.
 - Prefer library-quality seams over one-off firmware harness slots. Fixed app-id storage like `timer-armed-app`, `reader-clock`, or `break-reminder` belongs only in temporary harness code and must be documented as such until replaced by a real app registry/storage model.
 - Example app tests should verify the example at its natural boundary: compile/run with `squidc`, simulator tests, or hardware target tests. They should not become compiler-core unit tests unless the example has been promoted into a compiler fixture with a language-semantics purpose.
 - Future Zephyr VM host ABI additions should move as one implemented slice:
@@ -277,6 +289,8 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
 - Keep tests honest. Do not add assertions for unsupported SquidScript syntax, simulator-only conveniences, or fake firmware behavior.
 - For firmware work, separate host-testable logic from hardware-bound code so behavior can be driven by unit tests before flashing a device.
 - When adding a new `BUILTIN_*` opcode to `compiler/rust/crates/squidvm-core/src/vm.rs`, add the constant to the `crate::bytecode::{...}` import list in the same change. Without the import, Rust treats the match arm as a wildcard binding that shadows every other builtin and the VM silently dispatches everything to the new opcode. Use the bytecode FFI dispatch tests as the canary: any unrelated builtin (wifi, indicator, app lifecycle) failing after a VM dispatch change points at a missing import. The planned long-term fix is to switch all `BUILTIN_*` match arms to fully-qualified `bytecode::BUILTIN_*` paths (see ROADMAP), which makes the shadowing impossible.
+- Test any path that reads, copies, streams, or installs a file with a payload LARGER than the obvious scratch buffer, scratch register, or streaming chunk size. A test fixture that fits the scratch buffer is a no-op test; a test fixture that overflows the scratch buffer is the test that catches the truncation bug. Example: an install path backed by a 1 KiB scratch needs a 2 KiB or 4 KiB fixture, not a 685-byte hello-menu fixture.
+- A slice is not done when its ztests pass on native_sim. A slice that exercises an end-to-end user flow (install + arm + push + verify) is done when that flow has been driven end-to-end on real hardware with a real payload, not just skipped with a clean exit code. Define the done criterion in the slice plan: "is hardware verification required for this slice?" If yes, do not mark the slice done until the hardware run completes the loop. A "clean skip" is information about the host, not evidence that the slice works.
 
 ## Script And Firmware Tooling Discipline
 
