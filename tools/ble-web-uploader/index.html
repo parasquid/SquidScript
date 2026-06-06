@@ -42,18 +42,20 @@ const CTRL = "7e57c0de-0002-4a5b-8c6d-0123456789ab";
 const DATA = "7e57c0de-0003-4a5b-8c6d-0123456789ab";
 const STAT = "7e57c0de-0004-4a5b-8c6d-0123456789ab";
 const OP_BEGIN = 0x01;
+const OP_NAME = 0x02;
 const STATUS_COMPLETE = 0x00;
-const CHUNK = 180; // conservative; well under the negotiated ATT MTU
+const CHUNK = 180;       // content chunk; conservative under the default ATT MTU
+const NAME_CHUNK = 18;   // NAME writes must fit the default 23-byte ATT MTU
 
 const logEl = document.getElementById("log");
 const log = (m) => { logEl.textContent += m + "\n"; };
 
-function beginCommand(objectName, size) {
-  const name = new TextEncoder().encode(objectName);
-  const buf = new Uint8Array(5 + name.length);
+function beginCommand(size, nameLen) {
+  const buf = new Uint8Array(7);
   buf[0] = OP_BEGIN;
-  new DataView(buf.buffer).setUint32(1, size, true); // little-endian
-  buf.set(name, 5);
+  const dv = new DataView(buf.buffer);
+  dv.setUint32(1, size, true);    // content size, little-endian
+  dv.setUint16(5, nameLen, true); // object-name length, little-endian
   return buf;
 }
 
@@ -85,8 +87,16 @@ async function upload() {
   });
   await stat.startNotifications();
 
+  const nameBytes = new TextEncoder().encode(objectName);
   log(`BEGIN ${objectName} (${bytes.length} bytes)`);
-  await ctrl.writeValue(beginCommand(objectName, bytes.length));
+  await ctrl.writeValue(beginCommand(bytes.length, nameBytes.length));
+  for (let off = 0; off < nameBytes.length; off += NAME_CHUNK) {
+    const piece = nameBytes.subarray(off, off + NAME_CHUNK);
+    const w = new Uint8Array(1 + piece.length);
+    w[0] = OP_NAME;
+    w.set(piece, 1);
+    await ctrl.writeValue(w);
+  }
 
   for (let off = 0; off < bytes.length; off += CHUNK) {
     await data.writeValueWithoutResponse(bytes.subarray(off, off + CHUNK));
