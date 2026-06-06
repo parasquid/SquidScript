@@ -28,6 +28,30 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   with `-EBUSY` if the app is currently `current_app` (the caller must
   `app.exit` first or `app.launch` a different app). No new firmware cap
   needed; reuses the existing `sq_app_store` mount point.
+- Foreground-gated BLE receive (preferred design). Make BLE app-upload an
+  explicit, foreground, ephemeral capability owned by a receiver app, replacing
+  the current always-on advertising (today the device broadcasts the
+  app-transfer service UUID from boot and accepts a well-formed transfer
+  regardless of app state). Target model: a SquidScript app (e.g. a dedicated
+  "receive-and-install" app) brings the radio up only while it is foreground,
+  accepts one transfer, installs and launches it, and brings the radio down when
+  it exits. Pieces:
+  1. Advertising tied to app lifecycle — start advertising when the receiver app
+     is foreground; `bt_le_adv_stop` (or `bt_disable`) when it exits. Decide the
+     SquidScript surface: implicit (the app's `service.ble.profile` trigger means
+     "advertise while foreground") vs an explicit `service.ble.*` advertise/
+     receive control.
+  2. Authorize transfers — use `sq_ble_profile_lookup` (defined today but never
+     called) in the GATT `BEGIN`/`obj_created` path to reject a transfer whose
+     `(app_id, profile_id)` is not the foreground receiver's armed profile.
+  3. Radio-off on exit — stop advertising and drop any open connection when the
+     receiver app's handler returns / it exits.
+  Rationale: lower idle radio power and a smaller attack surface than always-on,
+  plus a clear "open uploader -> send -> close" UX. Coexists with the
+  background/armed `app.triggers` model (some apps may still arm in the
+  background); foreground/ephemeral is the preferred default for app upload.
+  Builds on the same GATT transfer path currently blocked by the control-write
+  ATT MTU issue; sequence it after that lands.
 - Add a BLE OTS client role so SquidScript apps can pull (not just receive)
   objects from a paired peer. The Zephyr OTS module already exposes
   `bt_ots_client_*` helpers in `include/zephyr/bluetooth/services/ots.h`;
