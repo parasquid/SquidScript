@@ -233,6 +233,12 @@ struct sq_vm_runtime {
 	uint32_t dispatch_sqbc_read_bytes;
 	bool dispatch_started;
 	bool dispatch_exited;
+	/* One-shot event payload applied to the next start dispatch only. Points
+	 * at caller-owned fields that must outlive the dispatch-slice call; the
+	 * runtime clears it after consuming it at start.
+	 */
+	const SqvmEventPayloadField *pending_event_payload;
+	size_t pending_event_payload_count;
 	char current_app[SQ_APP_STORE_APP_ID_MAX];
 	bool current_app_temp;
 	enum sq_vm_runtime_lifecycle_phase lifecycle_phase;
@@ -379,6 +385,13 @@ int sq_vm_runtime_start(struct sq_vm_runtime *runtime,
 int sq_vm_runtime_start_event(struct sq_vm_runtime *runtime,
 			      const struct sq_vm_storage_backend *backend,
 			      const uint8_t *event, size_t event_len);
+
+/* Attach payload fields to the NEXT start dispatch only. `fields` must remain
+ * valid until that dispatch starts (it is consumed and cleared at start). Pass
+ * count 0 to clear. Field names must be in the FFI payload whitelist.
+ */
+void sq_vm_runtime_set_pending_event_payload(struct sq_vm_runtime *runtime,
+					     const SqvmEventPayloadField *fields, size_t count);
 
 int sq_vm_runtime_record_output(struct sq_vm_runtime *runtime, const uint8_t *message,
 				size_t message_len);

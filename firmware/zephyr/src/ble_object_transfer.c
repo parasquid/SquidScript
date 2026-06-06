@@ -33,8 +33,11 @@ struct sq_ble_ots_session {
 struct sq_ble_ots_pending_event {
 	bool active;
 	char app_id[SQ_BLE_OTS_APP_ID_MAX];
+	char profile_id[SQ_BLE_OTS_PROFILE_ID_MAX];
 	char event[SQ_VM_RUNTIME_EVENT_LEN];
 	char staging_path[SQ_BLE_OTS_PATH_MAX];
+	size_t bytes_received;
+	size_t total_bytes;
 };
 
 static struct sq_ble_ots_session sq_ble_ots_session;
@@ -226,10 +229,14 @@ static int sq_ble_ots_obj_write_internal(const char *staging_path, const void *d
 		sq_ble_ots_pending.active = true;
 		strncpy(sq_ble_ots_pending.app_id, sq_ble_ots_session.app_id,
 			sizeof(sq_ble_ots_pending.app_id) - 1);
+		strncpy(sq_ble_ots_pending.profile_id, sq_ble_ots_session.profile_id,
+			sizeof(sq_ble_ots_pending.profile_id) - 1);
 		strncpy(sq_ble_ots_pending.event, "ble.object.complete",
 			sizeof(sq_ble_ots_pending.event) - 1);
 		strncpy(sq_ble_ots_pending.staging_path, sq_ble_ots_session.staging_path,
 			sizeof(sq_ble_ots_pending.staging_path) - 1);
+		sq_ble_ots_pending.bytes_received = sq_ble_ots_session.bytes_received;
+		sq_ble_ots_pending.total_bytes = sq_ble_ots_session.alloc_size;
 		LOG_INF("obj_write complete: pending event app=%s", sq_ble_ots_pending.app_id);
 	}
 
@@ -334,6 +341,21 @@ int sq_ble_ots_drain_pending_event(char *app_id_out, size_t app_id_cap, char *ev
 const char *sq_ble_ots_pending_staging_path(void)
 {
 	return sq_ble_ots_pending.staging_path;
+}
+
+const char *sq_ble_ots_pending_profile_id(void)
+{
+	return sq_ble_ots_pending.profile_id;
+}
+
+size_t sq_ble_ots_pending_bytes_received(void)
+{
+	return sq_ble_ots_pending.bytes_received;
+}
+
+size_t sq_ble_ots_pending_total_bytes(void)
+{
+	return sq_ble_ots_pending.total_bytes;
 }
 
 void sq_ble_ots_cleanup_staging(void)

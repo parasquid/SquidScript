@@ -42,6 +42,12 @@ int sq_ble_ots_drain_pending_event(char *app_id_out, size_t app_id_cap, char *ev
 
 const char *sq_ble_ots_pending_staging_path(void);
 
+const char *sq_ble_ots_pending_profile_id(void);
+
+size_t sq_ble_ots_pending_bytes_received(void);
+
+size_t sq_ble_ots_pending_total_bytes(void);
+
 void sq_ble_ots_cleanup_staging(void);
 
 bool sq_ble_ots_pending_is_complete(void);

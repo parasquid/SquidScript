@@ -445,10 +445,22 @@ int sq_vm_runtime_dispatch_slice(struct sq_vm_runtime *runtime,
 			}
 			runtime->context_ready = true;
 		}
-		status = sqvm_dispatch_start_resumable(runtime->context_words, runtime,
-						       &runtime_callbacks,
-						       (const uint8_t *)event, strlen(event),
-						       &runtime->result);
+		if (runtime->pending_event_payload != NULL &&
+		    runtime->pending_event_payload_count > 0) {
+			status = sqvm_dispatch_start_resumable_with_payload(
+				runtime->context_words, runtime, &runtime_callbacks,
+				(const uint8_t *)event, strlen(event),
+				runtime->pending_event_payload,
+				runtime->pending_event_payload_count, &runtime->result);
+		} else {
+			status = sqvm_dispatch_start_resumable(runtime->context_words, runtime,
+							       &runtime_callbacks,
+							       (const uint8_t *)event, strlen(event),
+							       &runtime->result);
+		}
+		/* One-shot: the payload applies only to this start dispatch. */
+		runtime->pending_event_payload = NULL;
+		runtime->pending_event_payload_count = 0;
 		if (status != SQVM_STATUS_OK) {
 			runtime_finish_dispatch_metrics(runtime, runtime->dispatch_start_cycles);
 			return sq_vm_runtime_status_to_errno(status);
@@ -510,6 +522,21 @@ int sq_vm_runtime_start(struct sq_vm_runtime *runtime,
 		return -EINVAL;
 	}
 	return sq_vm_runtime_start_event(runtime, backend, (const uint8_t *)event, strlen(event));
+}
+
+void sq_vm_runtime_set_pending_event_payload(struct sq_vm_runtime *runtime,
+					     const SqvmEventPayloadField *fields, size_t count)
+{
+	if (runtime == NULL) {
+		return;
+	}
+	if (fields == NULL || count == 0) {
+		runtime->pending_event_payload = NULL;
+		runtime->pending_event_payload_count = 0;
+		return;
+	}
+	runtime->pending_event_payload = fields;
+	runtime->pending_event_payload_count = count;
 }
 
 int sq_vm_runtime_start_event(struct sq_vm_runtime *runtime,

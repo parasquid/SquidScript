@@ -1437,6 +1437,15 @@ int sq_device_protocol_restore_planned_resume(const struct sq_device_protocol_co
 	return 0;
 }
 
+/* Backing storage for the BLE object-transfer completion event payload. Lives
+ * at file scope (not on the poll stack) because the dispatch that reads it runs
+ * on the VM worker thread after sq_device_protocol_poll returns. Single in-flight
+ * transfer + main-thread-only writes make file-static storage safe.
+ */
+static SqvmEventPayloadField ble_payload_fields[4];
+static char ble_payload_bytes_buf[12];
+static char ble_payload_total_buf[12];
+
 int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 {
 	struct sq_vm_runtime *runtime;
@@ -1462,13 +1471,45 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 						       sizeof(due_event)) == 0) {
 			due_app_ptr = due_app;
 			due_event_ptr = due_event;
-		} else if (sq_ble_ots_pending_is_complete() &&
+		} else if (!runtime->dispatch_exited && sq_ble_ots_pending_is_complete() &&
 			   sq_ble_ots_drain_pending_event(due_app, sizeof(due_app), due_event,
 							  sizeof(due_event)) == 0) {
 			/* A completed BLE object transfer dispatches its event to
 			 * the target app exactly like an armed timer. drain is
-			 * consume-once so this fires a single time.
+			 * consume-once so this fires a single time. The
+			 * !dispatch_exited guard ensures next_step will start this
+			 * event (not divert to a pending return) so the consumed
+			 * event is not lost.
+			 *
+			 * Attach the event payload (the staged file path + sizes).
+			 * The dispatch runs on the VM worker thread, so the field
+			 * storage must outlive this poll: the values live in the BLE
+			 * module's static pending state and the file-static buffers
+			 * below; both persist until the next transfer / disconnect,
+			 * well after the worker consumes them at dispatch start.
 			 */
+			const char *upload_path = sq_ble_ots_pending_staging_path();
+			const char *profile_id = sq_ble_ots_pending_profile_id();
+
+			(void)snprintf(ble_payload_bytes_buf, sizeof(ble_payload_bytes_buf), "%zu",
+				       sq_ble_ots_pending_bytes_received());
+			(void)snprintf(ble_payload_total_buf, sizeof(ble_payload_total_buf), "%zu",
+				       sq_ble_ots_pending_total_bytes());
+			ble_payload_fields[0] = (SqvmEventPayloadField){
+				(const uint8_t *)"upload", 6, (const uint8_t *)upload_path,
+				strlen(upload_path)};
+			ble_payload_fields[1] = (SqvmEventPayloadField){
+				(const uint8_t *)"bytesReceived", 13,
+				(const uint8_t *)ble_payload_bytes_buf,
+				strlen(ble_payload_bytes_buf)};
+			ble_payload_fields[2] = (SqvmEventPayloadField){
+				(const uint8_t *)"totalBytes", 10,
+				(const uint8_t *)ble_payload_total_buf,
+				strlen(ble_payload_total_buf)};
+			ble_payload_fields[3] = (SqvmEventPayloadField){
+				(const uint8_t *)"id", 2, (const uint8_t *)profile_id,
+				strlen(profile_id)};
+			sq_vm_runtime_set_pending_event_payload(runtime, ble_payload_fields, 4);
 			due_app_ptr = due_app;
 			due_event_ptr = due_event;
 		}
