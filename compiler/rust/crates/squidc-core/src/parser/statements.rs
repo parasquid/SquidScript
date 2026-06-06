@@ -196,7 +196,7 @@ impl Parser<'_> {
             }
             if method == "ble" {
                 return match action.as_str() {
-                    "profile" => {
+                    "start" => {
                         let profile = self.consume_string(builder).unwrap_or_default();
                         self.consume_comma(builder);
                         let options = self.parse_static_options_object(builder);
@@ -205,11 +205,6 @@ impl Parser<'_> {
                             .get("id")
                             .and_then(|value| value.as_str())
                             .unwrap_or_default()
-                            .to_string();
-                        let role = options
-                            .get("role")
-                            .and_then(|value| value.as_str())
-                            .unwrap_or("server")
                             .to_string();
                         let accept = options
                             .get("accept")
@@ -233,13 +228,16 @@ impl Parser<'_> {
                                     .collect::<BTreeMap<_, _>>()
                             })
                             .unwrap_or_default();
-                        Some(IrStatement::ServiceBleProfile {
+                        Some(IrStatement::ServiceBleStart {
                             profile,
                             id,
-                            role,
                             accept,
                             events,
                         })
+                    }
+                    "stop" => {
+                        self.consume_call_tail(builder);
+                        Some(IrStatement::ServiceBleStop)
                     }
                     _ => {
                         self.consume_call_tail(builder);

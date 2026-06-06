@@ -137,13 +137,11 @@ pub(crate) fn validate_semantics(
             diagnostics,
         );
     }
-    let mut ble_profile_ids = BTreeSet::new();
     for trigger_block in &ast.trigger_blocks {
         validate_trigger_statements(
             &trigger_block.statements,
             trigger_block.span.start,
             trigger_block.span.end,
-            &mut ble_profile_ids,
             diagnostics,
         );
     }
@@ -194,7 +192,6 @@ fn validate_trigger_statements(
     statements: &[IrStatement],
     start: usize,
     end: usize,
-    ble_profile_ids: &mut BTreeSet<String>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     for statement in statements {
@@ -205,28 +202,9 @@ fn validate_trigger_statements(
             IrStatement::ServiceTimerAfter { delay_ms, .. } => {
                 validate_trigger_interval(delay_ms, start, end, diagnostics);
             }
-            IrStatement::ServiceBleProfile {
-                profile,
-                id,
-                role,
-                accept,
-                events,
-            } => {
-                validate_ble_profile_trigger(
-                    profile,
-                    id,
-                    role,
-                    accept,
-                    events,
-                    ble_profile_ids,
-                    start,
-                    end,
-                    diagnostics,
-                );
-            }
             _ => diagnostics.push(error(
                 "E_APP_TRIGGER_STATEMENT",
-                "app.triggers may only declare timer or BLE profile trigger registrations",
+                "app.triggers may only declare timer trigger registrations",
                 start,
                 end,
             )),
@@ -234,13 +212,11 @@ fn validate_trigger_statements(
     }
 }
 
-fn validate_ble_profile_trigger(
+fn validate_ble_start(
     profile: &str,
     id: &str,
-    role: &str,
     accept: &[String],
     events: &BTreeMap<String, String>,
-    ble_profile_ids: &mut BTreeSet<String>,
     start: usize,
     end: usize,
     diagnostics: &mut Vec<Diagnostic>,
@@ -252,22 +228,16 @@ fn validate_ble_profile_trigger(
     if id.is_empty() {
         invalid = true;
     }
-    if role != "server" {
-        invalid = true;
-    }
     if accept.is_empty() || !accept.iter().all(|extension| extension.starts_with('.')) {
         invalid = true;
     }
     if events.is_empty() || events.values().any(|event| event.is_empty()) {
         invalid = true;
     }
-    if !id.is_empty() && !ble_profile_ids.insert(id.to_string()) {
-        invalid = true;
-    }
     if invalid {
         diagnostics.push(error(
-            "E_BLE_PROFILE_TRIGGER",
-            "BLE object-transfer triggers require profile object-transfer, a unique id, server role, accepted extensions, and event routes",
+            "E_BLE_PROFILE",
+            "service.ble.start requires profile object-transfer, a non-empty id, accepted extensions, and event routes",
             start,
             end,
         ));
@@ -492,7 +462,15 @@ fn validate_statement_names(
             IrStatement::AppInstall { file_ref, .. } => {
                 validate_expr_names(file_ref, state_names, visible, start, end, diagnostics);
             }
-            IrStatement::ServiceBleProfile { .. } => {}
+            IrStatement::ServiceBleStart {
+                profile,
+                id,
+                accept,
+                events,
+            } => {
+                validate_ble_start(profile, id, accept, events, start, end, diagnostics);
+            }
+            IrStatement::ServiceBleStop => {}
             IrStatement::ServicePowerSleep { wake_after_ms } => {
                 validate_expr_names(wake_after_ms, state_names, visible, start, end, diagnostics);
             }
@@ -726,7 +704,8 @@ fn statement_is_render_impure(
         | IrStatement::AppInstall { .. }
         | IrStatement::ServiceTimerEvery { .. }
         | IrStatement::ServiceTimerAfter { .. }
-        | IrStatement::ServiceBleProfile { .. }
+        | IrStatement::ServiceBleStart { .. }
+        | IrStatement::ServiceBleStop
         | IrStatement::ServicePowerSleep { .. }
         | IrStatement::HardwareGpioWrite { .. }
         | IrStatement::HardwareGpioToggle { .. }
@@ -931,7 +910,8 @@ fn validate_debug_block_statements(
             | IrStatement::AppInstall { .. }
             | IrStatement::ServiceTimerEvery { .. }
             | IrStatement::ServiceTimerAfter { .. }
-            | IrStatement::ServiceBleProfile { .. }
+            | IrStatement::ServiceBleStart { .. }
+            | IrStatement::ServiceBleStop
             | IrStatement::ServicePowerSleep { .. }
             | IrStatement::HardwareGpioWrite { .. }
             | IrStatement::HardwareGpioToggle { .. }
@@ -1037,7 +1017,7 @@ fn statement_uses_any_name(
         }
         IrStatement::ServiceTimerAfter { delay_ms, .. } => expr_uses_any_name(delay_ms, names),
         IrStatement::AppInstall { file_ref, .. } => expr_uses_any_name(file_ref, names),
-        IrStatement::ServiceBleProfile { .. } => false,
+        IrStatement::ServiceBleStart { .. } | IrStatement::ServiceBleStop => false,
         IrStatement::ServicePowerSleep { wake_after_ms } => {
             expr_uses_any_name(wake_after_ms, names)
         }

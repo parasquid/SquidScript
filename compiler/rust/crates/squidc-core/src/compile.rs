@@ -2,8 +2,8 @@ use crate::{
     ast::{AstRoot, AstScreen},
     diagnostic::{error, Diagnostic},
     ir::{
-        default_state_store, IrApp, IrBleProfileTrigger, IrExpr, IrFunction, IrHandler, IrProgram,
-        IrScreen, IrStatement, IrTrigger,
+        default_state_store, IrApp, IrExpr, IrFunction, IrHandler, IrProgram, IrScreen,
+        IrStatement, IrTrigger,
     },
     parser::parse,
     profile::{BuildProfile, PORTABLE_TARGET_ID},
@@ -1007,7 +1007,6 @@ fn trigger_from_statement(statement: &IrStatement) -> Option<IrTrigger> {
                 event: event.clone(),
                 repeating: true,
                 interval_ms,
-                ble: None,
             })
         }
         IrStatement::ServiceTimerAfter { event, delay_ms } => {
@@ -1015,27 +1014,8 @@ fn trigger_from_statement(statement: &IrStatement) -> Option<IrTrigger> {
                 event: event.clone(),
                 repeating: false,
                 interval_ms,
-                ble: None,
             })
         }
-        IrStatement::ServiceBleProfile {
-            profile,
-            id,
-            role,
-            accept,
-            events,
-        } => Some(IrTrigger {
-            event: String::new(),
-            repeating: false,
-            interval_ms: 0,
-            ble: Some(IrBleProfileTrigger {
-                profile: profile.clone(),
-                id: id.clone(),
-                role: role.clone(),
-                accept: accept.clone(),
-                events: events.clone(),
-            }),
-        }),
         _ => None,
     }
 }

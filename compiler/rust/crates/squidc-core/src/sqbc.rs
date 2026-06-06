@@ -2,7 +2,7 @@ use crate::{
     ir::{IrExpr, IrProgram, IrStatement},
     profile::BuildProfile,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub const SQBC_MAGIC: &[u8; 4] = b"SQBC";
 const SQBC_HEADER_LEN: usize = 14;
@@ -16,7 +16,7 @@ const SECTION_SCREENS: u16 = 6;
 const SECTION_APP_META: u16 = 7;
 const SECTION_DEVICE_BINDINGS: u16 = 8;
 const SECTION_TRIGGERS: u16 = 9;
-const SECTION_BLE_TRIGGERS: u16 = 10;
+const SECTION_BLE_PROFILES: u16 = 10;
 
 const OP_PUSH_INT: u8 = 1;
 const OP_PUSH_BOOL: u8 = 2;
@@ -101,6 +101,8 @@ const BUILTIN_FILE_PICK_FILE: u8 = 0x90;
 const BUILTIN_FILE_READ_TEXT: u8 = 0x91;
 const BUILTIN_FILE_READ_LINES: u8 = 0x92;
 const BUILTIN_SERVICE_POWER_SLEEP: u8 = 0xc0;
+const BUILTIN_SERVICE_BLE_START: u8 = 0xc1;
+const BUILTIN_SERVICE_BLE_STOP: u8 = 0xc2;
 
 const VALUE_NULL: u8 = 0;
 const VALUE_BOOL: u8 = 1;
@@ -323,8 +325,8 @@ pub fn encode_sqbc_with_profile(
         (SECTION_FUNCTIONS, encode_functions(&unit.function_metas)),
         (SECTION_TRIGGERS, encode_triggers(ir, &unit.strings)?),
         (
-            SECTION_BLE_TRIGGERS,
-            encode_ble_triggers(ir, &unit.strings)?,
+            SECTION_BLE_PROFILES,
+            encode_ble_profiles(&collect_ble_profiles(ir), &unit.strings)?,
         ),
         (SECTION_HANDLERS, encode_handlers(&unit.handler_metas)),
         (SECTION_SCREENS, encode_screens(&unit.screen_metas)),
@@ -378,18 +380,6 @@ fn collect_strings(
     }
     for trigger in &ir.triggers {
         strings.intern(&trigger.event)?;
-        if let Some(ble) = &trigger.ble {
-            strings.intern(&ble.profile)?;
-            strings.intern(&ble.id)?;
-            strings.intern(&ble.role)?;
-            for extension in &ble.accept {
-                strings.intern(extension)?;
-            }
-            for (kind, event) in &ble.events {
-                strings.intern(kind)?;
-                strings.intern(event)?;
-            }
-        }
     }
     for state in &ir.state {
         strings.intern(&state.name)?;
@@ -483,16 +473,15 @@ fn collect_statement_strings(
                 strings.intern(event)?;
                 collect_expr_strings(delay_ms, strings)?;
             }
-            IrStatement::ServiceBleProfile {
+            IrStatement::ServiceBleStart {
                 profile,
                 id,
-                role,
                 accept,
                 events,
             } => {
                 strings.intern(profile)?;
                 strings.intern(id)?;
-                strings.intern(role)?;
+                strings.intern("server")?;
                 for extension in accept {
                     strings.intern(extension)?;
                 }
@@ -501,6 +490,7 @@ fn collect_statement_strings(
                     strings.intern(event)?;
                 }
             }
+            IrStatement::ServiceBleStop => {}
             IrStatement::ServicePowerSleep { wake_after_ms } => {
                 collect_expr_strings(wake_after_ms, strings)?;
             }
@@ -805,7 +795,13 @@ fn compile_statement(
             compile_expr(unit, frame, delay_ms)?;
             emit_builtin(&mut unit.code, BUILTIN_SERVICE_TIMER_AFTER);
         }
-        IrStatement::ServiceBleProfile { .. } => {}
+        IrStatement::ServiceBleStart { id, .. } => {
+            emit_string(unit, id)?;
+            emit_builtin(&mut unit.code, BUILTIN_SERVICE_BLE_START);
+        }
+        IrStatement::ServiceBleStop => {
+            emit_builtin(&mut unit.code, BUILTIN_SERVICE_BLE_STOP);
+        }
         IrStatement::ServicePowerSleep { wake_after_ms } => {
             compile_expr(unit, frame, wake_after_ms)?;
             emit_builtin(&mut unit.code, BUILTIN_SERVICE_POWER_SLEEP);
@@ -1362,11 +1358,7 @@ fn encode_handlers(handlers: &[HandlerMeta]) -> Vec<u8> {
 }
 
 fn encode_triggers(ir: &IrProgram, strings: &StringTable) -> Result<Vec<u8>, SqbcError> {
-    let timer_triggers = ir
-        .triggers
-        .iter()
-        .filter(|trigger| trigger.ble.is_none())
-        .collect::<Vec<_>>();
+    let timer_triggers = ir.triggers.iter().collect::<Vec<_>>();
     let mut out = Vec::new();
     write_u16(
         &mut out,
@@ -1386,35 +1378,102 @@ fn encode_triggers(ir: &IrProgram, strings: &StringTable) -> Result<Vec<u8>, Sqb
     Ok(out)
 }
 
-fn encode_ble_triggers(ir: &IrProgram, strings: &StringTable) -> Result<Vec<u8>, SqbcError> {
-    let ble_triggers = ir
-        .triggers
-        .iter()
-        .filter_map(|trigger| trigger.ble.as_ref())
-        .collect::<Vec<_>>();
+/// A BLE object-transfer profile registered by a `service.ble.start` statement.
+/// The config is a compile-time literal encoded into [`SECTION_BLE_PROFILES`];
+/// the firmware looks it up by `id` when the start builtin runs at runtime.
+struct BleProfile<'a> {
+    profile: &'a str,
+    id: &'a str,
+    accept: &'a [String],
+    events: &'a BTreeMap<String, String>,
+}
+
+/// Walk every statement body in the program and collect the unique
+/// `service.ble.start` configs in document order, keyed by `id`. The firmware
+/// resolves a started profile by `id`, so a repeated `id` is encoded once.
+fn collect_ble_profiles(ir: &IrProgram) -> Vec<BleProfile<'_>> {
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::new();
+    for function in &ir.functions {
+        collect_ble_profiles_in(&function.statements, &mut seen, &mut out);
+    }
+    for handler in &ir.handlers {
+        collect_ble_profiles_in(&handler.statements, &mut seen, &mut out);
+    }
+    for screen in &ir.screens {
+        collect_ble_profiles_in(&screen.statements, &mut seen, &mut out);
+    }
+    out
+}
+
+fn collect_ble_profiles_in<'a>(
+    statements: &'a [IrStatement],
+    seen: &mut BTreeSet<String>,
+    out: &mut Vec<BleProfile<'a>>,
+) {
+    for statement in statements {
+        match statement {
+            IrStatement::ServiceBleStart {
+                profile,
+                id,
+                accept,
+                events,
+            } => {
+                if seen.insert(id.clone()) {
+                    out.push(BleProfile {
+                        profile,
+                        id,
+                        accept,
+                        events,
+                    });
+                }
+            }
+            IrStatement::If {
+                then_statements,
+                else_statements,
+                ..
+            } => {
+                collect_ble_profiles_in(then_statements, seen, out);
+                collect_ble_profiles_in(else_statements, seen, out);
+            }
+            IrStatement::Repeat { statements, .. }
+            | IrStatement::For { statements, .. }
+            | IrStatement::DebugBlock { statements } => {
+                collect_ble_profiles_in(statements, seen, out);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn encode_ble_profiles(
+    profiles: &[BleProfile<'_>],
+    strings: &StringTable,
+) -> Result<Vec<u8>, SqbcError> {
     let mut out = Vec::new();
     write_u16(
         &mut out,
-        u16::try_from(ble_triggers.len()).map_err(|_| SqbcError::new("too many BLE triggers"))?,
+        u16::try_from(profiles.len()).map_err(|_| SqbcError::new("too many BLE profiles"))?,
     );
-    for trigger in ble_triggers {
-        write_u16(&mut out, string_id(strings, &trigger.profile)?);
-        write_u16(&mut out, string_id(strings, &trigger.id)?);
-        write_u16(&mut out, string_id(strings, &trigger.role)?);
+    for profile in profiles {
+        write_u16(&mut out, string_id(strings, profile.profile)?);
+        write_u16(&mut out, string_id(strings, profile.id)?);
+        // Server is the only role; encode it as a fixed string for the firmware reader.
+        write_u16(&mut out, string_id(strings, "server")?);
         write_u16(
             &mut out,
-            u16::try_from(trigger.accept.len())
+            u16::try_from(profile.accept.len())
                 .map_err(|_| SqbcError::new("too many BLE accept extensions"))?,
         );
-        for extension in &trigger.accept {
+        for extension in profile.accept {
             write_u16(&mut out, string_id(strings, extension)?);
         }
         write_u16(
             &mut out,
-            u16::try_from(trigger.events.len())
+            u16::try_from(profile.events.len())
                 .map_err(|_| SqbcError::new("too many BLE event routes"))?,
         );
-        for (kind, event) in &trigger.events {
+        for (kind, event) in profile.events {
             write_u16(&mut out, string_id(strings, kind)?);
             write_u16(&mut out, string_id(strings, event)?);
         }

@@ -1447,8 +1447,8 @@ screen("main") {}
 fn compile_ble_object_transfer_trigger_sqbc() -> Vec<u8> {
     compile_sqbc(
         r#"app "ffi-ble"
-app.triggers {
-  service.ble.profile("object-transfer", {
+event.on("app.start") {
+  service.ble.start("object-transfer", {
     id: "sqbc-install",
     accept: [".sqbc"],
     events: {

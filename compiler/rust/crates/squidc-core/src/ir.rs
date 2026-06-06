@@ -69,17 +69,6 @@ pub struct IrTrigger {
     pub event: String,
     pub repeating: bool,
     pub interval_ms: i32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ble: Option<IrBleProfileTrigger>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct IrBleProfileTrigger {
-    pub profile: String,
-    pub id: String,
-    pub role: String,
-    pub accept: Vec<String>,
-    pub events: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -116,14 +105,15 @@ pub enum IrStatement {
     ServiceTimerEvery { event: String, interval_ms: IrExpr },
     #[serde(rename = "service.timer.after")]
     ServiceTimerAfter { event: String, delay_ms: IrExpr },
-    #[serde(rename = "service.ble.profile")]
-    ServiceBleProfile {
+    #[serde(rename = "service.ble.start")]
+    ServiceBleStart {
         profile: String,
         id: String,
-        role: String,
         accept: Vec<String>,
         events: BTreeMap<String, String>,
     },
+    #[serde(rename = "service.ble.stop")]
+    ServiceBleStop,
     #[serde(rename = "service.power.sleep")]
     ServicePowerSleep { wake_after_ms: IrExpr },
     #[serde(rename = "assign")]

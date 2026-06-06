@@ -1745,10 +1745,10 @@ screen("main") {}
 }
 
 #[test]
-fn parses_ble_object_transfer_trigger_and_payload_handler() {
+fn parses_service_ble_start_and_stop_statements() {
     let source = r#"app "ble-install"
-app.triggers {
-  service.ble.profile("object-transfer", {
+event.on("app.start") {
+  service.ble.start("object-transfer", {
     id: "sqbc-install",
     accept: [".sqbc"],
     events: {
@@ -1756,6 +1756,9 @@ app.triggers {
       error: "ble.object.error"
     }
   })
+}
+event.on("app.exit") {
+  service.ble.stop()
 }
 event.on("ble.object.complete", ev) {
   debug.print(ev.id)
@@ -1768,32 +1771,41 @@ screen("main") {}
     });
     assert!(output.ok, "{:?}", output.diagnostics);
     let ir = output.ir.unwrap();
-    assert_eq!(ir.triggers.len(), 1);
-    let trigger = &ir.triggers[0];
-    let ble = trigger.ble.as_ref().expect("BLE trigger metadata");
-    assert_eq!(ble.profile, "object-transfer");
-    assert_eq!(ble.id, "sqbc-install");
-    assert_eq!(ble.role, "server");
-    assert_eq!(ble.accept, vec![".sqbc"]);
-    assert_eq!(
-        ble.events.get("complete").map(String::as_str),
-        Some("ble.object.complete")
-    );
-    assert_eq!(ir.handlers[0].event, "ble.object.complete");
-    assert_eq!(ir.handlers[0].param.as_deref(), Some("ev"));
+    // service.ble.start/stop are statements, not triggers.
+    assert!(ir.triggers.is_empty());
+    assert_eq!(ir.handlers[0].event, "app.start");
+    match &ir.handlers[0].statements[0] {
+        IrStatement::ServiceBleStart {
+            profile,
+            id,
+            accept,
+            events,
+        } => {
+            assert_eq!(profile, "object-transfer");
+            assert_eq!(id, "sqbc-install");
+            assert_eq!(accept, &vec![".sqbc".to_string()]);
+            assert_eq!(
+                events.get("complete").map(String::as_str),
+                Some("ble.object.complete")
+            );
+        }
+        other => panic!("expected ServiceBleStart, got {other:?}"),
+    }
+    assert_eq!(ir.handlers[1].event, "app.exit");
+    assert!(matches!(
+        ir.handlers[1].statements[0],
+        IrStatement::ServiceBleStop
+    ));
 }
 
 #[test]
-fn rejects_ble_object_transfer_trigger_without_id() {
+fn rejects_service_ble_start_without_id() {
     let source = r#"app "ble-install"
-app.triggers {
-  service.ble.profile("object-transfer", {
+event.on("app.start") {
+  service.ble.start("object-transfer", {
     accept: [".sqbc"],
     events: { complete: "ble.object.complete" }
   })
-}
-event.on("ble.object.complete", ev) {
-  debug.print(ev.id)
 }
 screen("main") {}
 "#;
@@ -1805,27 +1817,20 @@ screen("main") {}
     assert!(output
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "E_BLE_PROFILE_TRIGGER"));
+        .any(|diagnostic| diagnostic.code == "E_BLE_PROFILE"));
 }
 
 #[test]
-fn rejects_duplicate_ble_object_transfer_profile_ids() {
+fn rejects_service_ble_start_in_app_triggers() {
     let source = r#"app "ble-install"
 app.triggers {
-  service.ble.profile("object-transfer", {
-    id: "sqbc-install",
-    accept: [".sqbc"],
-    events: { complete: "ble.object.complete" }
-  })
-  service.ble.profile("object-transfer", {
+  service.ble.start("object-transfer", {
     id: "sqbc-install",
     accept: [".sqbc"],
     events: { complete: "ble.object.complete" }
   })
 }
-event.on("ble.object.complete", ev) {
-  debug.print(ev.id)
-}
+event.on("app.start") {}
 screen("main") {}
 "#;
     let output = compile(CompileRequest {
@@ -1836,14 +1841,14 @@ screen("main") {}
     assert!(output
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "E_BLE_PROFILE_TRIGGER"));
+        .any(|diagnostic| diagnostic.code == "E_APP_TRIGGER_STATEMENT"));
 }
 
 #[test]
-fn encodes_ble_object_transfer_trigger_metadata_in_sqbc() {
+fn encodes_ble_profile_metadata_from_start_statement() {
     let source = r#"app "ble-install"
-app.triggers {
-  service.ble.profile("object-transfer", {
+event.on("app.start") {
+  service.ble.start("object-transfer", {
     id: "sqbc-install",
     accept: [".sqbc"],
     events: {
@@ -1851,9 +1856,6 @@ app.triggers {
       error: "ble.object.error"
     }
   })
-}
-event.on("ble.object.complete", ev) {
-  debug.print(ev.id)
 }
 screen("main") {}
 "#;
@@ -1867,7 +1869,8 @@ screen("main") {}
     let ble = sections
         .iter()
         .find(|(kind, _, _)| *kind == 10)
-        .expect("BLE trigger section should be present");
+        .expect("BLE profile section should be present");
+    // count (u16) == 1 profile encoded from the start statement.
     assert!(ble.2 > 2);
 }
 
