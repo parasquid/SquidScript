@@ -14,7 +14,6 @@
 #include <zephyr/bluetooth/gap.h>
 #include <zephyr/bluetooth/uuid.h>
 
-#include "ble_l2cap_probe.h"
 #include "ble_ots.h"
 #endif
 
@@ -170,9 +169,6 @@ int sq_ble_smoke_start(void)
 	if (ots_result != 0) {
 		LOG_WRN("BLE OTS init failed: %d", ots_result);
 	}
-
-	/* No-op unless CONFIG_SQUIDSCRIPT_BLE_L2CAP_PROBE is set (transport spike). */
-	(void)sq_ble_l2cap_probe_init();
 
 	sq_ble_smoke_sm_install_api(&sq_ble_smoke_real_api);
 
