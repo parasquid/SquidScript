@@ -132,10 +132,15 @@ async def _push_via_gatt(
         done.set()
 
     async with bleak.BleakClient(device) as client:
-        services = getattr(client, "services", None)
-        if services is not None and SVC_UUID not in {str(s.uuid).lower() for s in services}:
-            return OtsPushResult(False, app_id, profile_id, 0,
-                                 f"app-transfer service {SVC_UUID} not found on device")
+        # Best-effort service presence check; bleak resolves characteristics by
+        # UUID on write anyway, and .services can raise if discovery is mid-flight.
+        try:
+            uuids = {str(s.uuid).lower() for s in client.services}
+            if uuids and SVC_UUID not in uuids:
+                return OtsPushResult(False, app_id, profile_id, 0,
+                                     f"app-transfer service {SVC_UUID} not found on device")
+        except Exception:
+            pass
 
         await client.start_notify(STAT_UUID, on_status)
 

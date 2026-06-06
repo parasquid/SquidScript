@@ -55,7 +55,10 @@ def main(argv):
                 "CONFIG_BT=y",
                 "CONFIG_BT_PERIPHERAL=y",
                 f'CONFIG_BT_DEVICE_NAME="{device_name}"',
-                "CONFIG_BT_RX_STACK_SIZE=1536",
+                # GATT write callbacks run on the BT RX thread and the
+                # app-transfer service opens/writes the LittleFS staging file
+                # there, which needs more stack than the 1536-byte BLE default.
+                "CONFIG_BT_RX_STACK_SIZE=4096",
                 "",
             ]
         )
