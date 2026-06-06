@@ -13,6 +13,7 @@
 
 #include "app_lifecycle.h"
 #include "ble_ots.h"
+#include "ble_profile_table.h"
 #include "protocol.h"
 #include "squidvm_ffi.h"
 

@@ -3,12 +3,11 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <zephyr/bluetooth/services/ots.h>
 #include <zephyr/fs/fs.h>
 #include <zephyr/kernel.h>
 #include <zephyr/ztest.h>
 
-#include "ble_ots.h"
+#include "ble_profile_table.h"
 
 static void ble_trigger_table_before(void *fixture)
 {

@@ -48,29 +48,6 @@ int sq_ble_ots_parse_object_name(const char *name, char *app_id_out, size_t app_
 				 char *profile_id_out, size_t profile_id_cap,
 				 char *extension_out, size_t extension_cap);
 
-struct sq_ble_profile_entry {
-	char app_id[SQ_APP_STORE_APP_ID_MAX];
-	char profile_id[SQVM_BLE_PROFILE_TEXT_CAP];
-	char accept_exts[SQVM_BLE_PROFILE_ACCEPT_MAX][SQVM_BLE_PROFILE_TEXT_CAP];
-	uint8_t accept_count;
-	SqvmBleProfileEventRoute events[SQVM_BLE_PROFILE_EVENT_MAX];
-	uint8_t event_count;
-};
-
-int sq_ble_profile_table_add(const char *app_id, const char *profile_id,
-			     const char (*accept_exts)[SQVM_BLE_PROFILE_TEXT_CAP],
-			     uint8_t accept_count,
-			     const SqvmBleProfileEventRoute *events, uint8_t event_count);
-
-void sq_ble_profile_table_remove_app(const char *app_id);
-
-void sq_ble_profile_table_reset(void);
-
-size_t sq_ble_profile_table_count(void);
-
-const struct sq_ble_profile_entry *sq_ble_profile_lookup(const char *app_id,
-							const char *profile_id);
-
 void sq_ble_ots_reset_session(void);
 
 int sq_ble_ots_drain_pending_event(char *app_id_out, size_t app_id_cap, char *event_out,

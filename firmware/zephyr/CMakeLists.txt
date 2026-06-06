@@ -45,6 +45,7 @@ target_sources(app PRIVATE
   src/app_lifecycle.c
   src/app_store.c
   src/ble_ots.c
+  src/ble_profile_table.c
   src/ble_smoke.c
   src/device_protocol.c
   src/fallback_app.c
