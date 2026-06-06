@@ -34,24 +34,17 @@ const uint8_t sq_ble_app_transfer_adv_uuid[16] = {SQ_XFER_SVC_UUID};
 
 /* Control opcodes (first byte of a control write). */
 #define SQ_XFER_OP_BEGIN 0x01
+#define SQ_XFER_OP_NAME  0x02
 #define SQ_XFER_OP_ABORT 0x03
 
 /* Status notification codes. */
 #define SQ_XFER_STATUS_COMPLETE 0x00
 #define SQ_XFER_STATUS_ERROR    0x01
 
-#define SQ_XFER_NAME_MAX 96
-
-/* Single in-flight transfer, mirroring the core's single-session policy. All
- * GATT write callbacks run on the BT RX thread, so this needs no lock of its
- * own.
+/* The transfer state (size, name, offset) lives in the transport-neutral core
+ * (ble_object_transfer.c); this shim only frames opcodes onto its API. All GATT
+ * write callbacks run on the BT RX thread.
  */
-static struct {
-	bool in_progress;
-	size_t declared_size;
-	size_t offset;
-} sq_xfer_state;
-
 static void sq_xfer_notify_status(uint8_t code);
 
 static ssize_t sq_xfer_ctrl_write(struct bt_conn *conn, const struct bt_gatt_attr *attr,
@@ -71,39 +64,34 @@ static ssize_t sq_xfer_ctrl_write(struct bt_conn *conn, const struct bt_gatt_att
 	op = bytes[0];
 
 	if (op == SQ_XFER_OP_BEGIN) {
-		char name[SQ_XFER_NAME_MAX];
-		size_t name_len;
 		uint32_t size;
-		int result;
+		uint16_t name_len;
 
-		if (len < 5) {
-			return BT_GATT_ERR(BT_ATT_ERR_INVALID_ATTRIBUTE_LEN);
-		}
-		name_len = (size_t)len - 5u;
-		if (name_len == 0 || name_len >= sizeof(name)) {
+		if (len != 7) {
 			return BT_GATT_ERR(BT_ATT_ERR_INVALID_ATTRIBUTE_LEN);
 		}
 		size = sys_get_le32(&bytes[1]);
-		memcpy(name, &bytes[5], name_len);
-		name[name_len] = '\0';
-
-		result = sq_ble_transfer_begin(name, size);
-		if (result != 0) {
-			sq_xfer_state.in_progress = false;
-			LOG_WRN("xfer begin rejected: %d", result);
+		name_len = sys_get_le16(&bytes[5]);
+		if (sq_ble_transfer_begin_framed(size, name_len) != 0) {
+			LOG_WRN("xfer begin rejected (size=%u name_len=%u)", size, name_len);
 			sq_xfer_notify_status(SQ_XFER_STATUS_ERROR);
 			return BT_GATT_ERR(BT_ATT_ERR_WRITE_NOT_PERMITTED);
 		}
-		sq_xfer_state.in_progress = true;
-		sq_xfer_state.declared_size = size;
-		sq_xfer_state.offset = 0;
-		LOG_INF("xfer begin name=%s size=%u", name, size);
+		LOG_INF("xfer begin size=%u name_len=%u", size, name_len);
+		return len;
+	}
+
+	if (op == SQ_XFER_OP_NAME) {
+		if (sq_ble_transfer_feed_name(&bytes[1], (size_t)len - 1u) != 0) {
+			sq_ble_transfer_abort();
+			sq_xfer_notify_status(SQ_XFER_STATUS_ERROR);
+			return BT_GATT_ERR(BT_ATT_ERR_WRITE_NOT_PERMITTED);
+		}
 		return len;
 	}
 
 	if (op == SQ_XFER_OP_ABORT) {
 		sq_ble_transfer_abort();
-		sq_xfer_state.in_progress = false;
 		LOG_INF("xfer aborted by client");
 		return len;
 	}
@@ -114,7 +102,6 @@ static ssize_t sq_xfer_ctrl_write(struct bt_conn *conn, const struct bt_gatt_att
 static ssize_t sq_xfer_data_write(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 				  const void *buf, uint16_t len, uint16_t offset, uint8_t flags)
 {
-	size_t rem;
 	int result;
 
 	ARG_UNUSED(conn);
@@ -122,30 +109,15 @@ static ssize_t sq_xfer_data_write(struct bt_conn *conn, const struct bt_gatt_att
 	ARG_UNUSED(offset);
 	ARG_UNUSED(flags);
 
-	if (!sq_xfer_state.in_progress) {
-		return BT_GATT_ERR(BT_ATT_ERR_WRITE_NOT_PERMITTED);
-	}
-	if (sq_xfer_state.offset + len > sq_xfer_state.declared_size) {
+	result = sq_ble_transfer_feed_content(buf, len);
+	if (result != 0) {
 		sq_ble_transfer_abort();
-		sq_xfer_state.in_progress = false;
-		sq_xfer_notify_status(SQ_XFER_STATUS_ERROR);
-		return BT_GATT_ERR(BT_ATT_ERR_VALUE_NOT_ALLOWED);
-	}
-
-	rem = sq_xfer_state.declared_size - (sq_xfer_state.offset + len);
-	result = sq_ble_transfer_write_chunk(buf, len, (off_t)sq_xfer_state.offset, rem);
-	if (result < 0) {
-		sq_ble_transfer_abort();
-		sq_xfer_state.in_progress = false;
-		LOG_WRN("xfer chunk failed at offset %zu: %d", sq_xfer_state.offset, result);
+		LOG_WRN("xfer content rejected: %d", result);
 		sq_xfer_notify_status(SQ_XFER_STATUS_ERROR);
 		return BT_GATT_ERR(BT_ATT_ERR_UNLIKELY);
 	}
-	sq_xfer_state.offset += len;
-
-	if (rem == 0) {
-		sq_xfer_state.in_progress = false;
-		LOG_INF("xfer complete: %zu bytes", sq_xfer_state.offset);
+	if (sq_ble_ots_pending_is_complete()) {
+		LOG_INF("xfer content complete");
 		sq_xfer_notify_status(SQ_XFER_STATUS_COMPLETE);
 	}
 	return len;
@@ -185,9 +157,10 @@ static void sq_xfer_notify_status(uint8_t code)
 
 void sq_ble_app_transfer_reset(void)
 {
-	sq_xfer_state.in_progress = false;
-	sq_xfer_state.declared_size = 0;
-	sq_xfer_state.offset = 0;
+	/* Discard any in-flight transfer; the framing/session state lives in the
+	 * transport-neutral core.
+	 */
+	sq_ble_transfer_abort();
 }
 
 #else /* !CONFIG_BT */

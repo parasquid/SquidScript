@@ -33,16 +33,7 @@ int sq_ble_ots_parse_object_name(const char *name, char *app_id_out, size_t app_
 				 char *profile_id_out, size_t profile_id_cap,
 				 char *extension_out, size_t extension_cap);
 
-/* Transport-facing API used by a BLE transport front-end (custom GATT service).
- * begin opens a staging session from the object name + declared size; write
- * appends a chunk at `offset` and, when `rem` reaches 0, publishes the
- * completion pending event; abort discards an in-flight session. Return values
- * are 0 on success or a reject/-errno code (see codes above / errno.h).
- */
-int sq_ble_transfer_begin(const char *name, size_t alloc_size);
-
-int sq_ble_transfer_write_chunk(const void *data, size_t len, off_t offset, size_t rem);
-
+/* Discard an in-flight transfer (client ABORT, disconnect, or error). */
 void sq_ble_transfer_abort(void);
 
 /* Framed transfer for transports whose individual writes must stay small (e.g.

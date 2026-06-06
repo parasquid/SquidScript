@@ -315,23 +315,10 @@ static void sq_ble_ots_abort_internal(void)
 }
 
 /*
- * Public transport-facing API. A BLE transport front-end (the custom GATT
- * service) drives a transfer through these: begin a session from the object
- * name + declared size, append chunks, and abort on cancel/error. They wrap the
- * same internals the test shims use.
+ * Public transport-facing API used by a BLE transport front-end (the custom
+ * GATT service): set up a framed transfer, feed the object name and content,
+ * and abort on cancel/error.
  */
-int sq_ble_transfer_begin(const char *name, size_t alloc_size)
-{
-	return sq_ble_ots_obj_created_internal(name, alloc_size);
-}
-
-int sq_ble_transfer_write_chunk(const void *data, size_t len, off_t offset, size_t rem)
-{
-	/* Writes target the active session's staging file. */
-	return sq_ble_ots_obj_write_internal(sq_ble_ots_session.staging_path, data, len, offset,
-					     rem);
-}
-
 void sq_ble_transfer_abort(void)
 {
 	sq_ble_ots_abort_internal();
