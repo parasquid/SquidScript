@@ -87,15 +87,27 @@ then `app.launch(...)` — still fails to launch the installed app with `-5`,
   app is merely *resident* (VM idle) also works.
 - A handler that only **launches** a pre-existing app works.
 - It fails only when **install and launch run from inside the same VM
-  dispatch** (the handler). Diagnostics showed the post-handler `START_APP`
-  carrying `app=ble-install` (the receiver) rather than the requested
-  `installed-app`, suggesting a **lifecycle ordering bug**: the pending-event
-  dispatch and the in-handler `LAUNCH_REQUESTED(installed-app)` interact so the
-  wrong app is (re)launched. A LittleFS read-cache flush via remount did **not**
-  fix it, which argues against a pure storage-cache explanation.
+  dispatch** (the handler).
 
-Next step for whoever picks this up: instrument `sq_app_lifecycle_next_step` to
-log the chosen step + `lifecycle_target_app` when both a pending event and a
-`LAUNCH_REQUESTED` are set after a handler that installed an app. The fix is
-likely in how the launch request is sequenced relative to the event drain, not
-in the install or the filesystem.
+Root cause (as far as traced): **writing the app store to flash from inside a
+VM dispatch corrupts the flash read cache** for subsequently-read bytecode, so
+the VM reads stale bytes and faults (`vm_error -5`). It is *not* a
+lifecycle-target bug — the post-install `START_APP` for `app=ble-install` is the
+**normal** "exit the current app before launching the target" step
+(`LAUNCH_REQUESTED` → `EXIT_FOR_LAUNCH` dispatches the current app's `app.exit`,
+then launches `lifecycle_target_app`); the stale read just happens to surface on
+that read. Crucially, a **LittleFS unmount+remount did not fix it** (the stale
+read persisted), so the stale cache is **below** LittleFS — the ESP32 flash
+read/XIP cache — and only a reboot clears it. Installing when the VM is idle
+(protocol/CLI path, even with another app resident) does not corrupt it.
+
+Candidate fixes (both non-trivial; needs a decision):
+- **Defer the install to VM-idle.** Make `app.install` from a handler record a
+  pending install (file ref + app id) and perform the flash write after the
+  dispatch slice completes, like the serial protocol install (which works).
+  Requires keeping the BLE staging file alive until the deferred install and
+  sequencing install-then-launch in the lifecycle.
+- **Flush the ESP32 flash read cache after the install write.** Zephyr exposes
+  only `fs_sync(file)` (the install already closes its files); an ESP-IDF-level
+  cache writeback/invalidate would be needed, which the Zephyr flash API does
+  not surface today.
