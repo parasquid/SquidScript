@@ -10,9 +10,9 @@
 /*
  * BLE profile / routing table. Transport-neutral: it maps an (app_id,
  * profile_id) pair declared in an armed app's SQBC BLE-trigger section to the
- * event routes the runtime should fire. Both the OTS (ble_ots.c) and the custom
- * GATT (ble_app_transfer.c) front-ends look up routing through this table, so it
- * lives in its own translation unit independent of either transport.
+ * event routes the runtime should fire. The BLE transport front-end
+ * (ble_app_transfer.c) looks up routing through this table; it lives in its own
+ * translation unit independent of any transport.
  */
 
 #ifdef __cplusplus

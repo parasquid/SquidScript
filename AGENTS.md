@@ -63,6 +63,13 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   docs, keep it in saved memory for durable cross-session context or in `/tmp`
   or another gitignored scratch file for temporary notes instead of turning
   project documentation into a diary.
+- This applies to code and config comments too, not just reference docs.
+  Describe what the code currently does, never what it used to do or what was
+  removed. A surviving comment like "X was dropped", "replaces Y", "formerly
+  Z", or "historical name, rename later" is noise to a new reader who never saw
+  X/Y/Z — it describes a delta against a state that no longer exists. Put
+  removal/transition rationale in the commit message (history) or, for parked
+  ideas, in `ICEBOX.md` — not in the comment that outlives the change.
 - Every active implementation plan must be added to the todo tracker before
   doing implementation, investigation, or verification work from that plan.
   Treat this as a hard gate for plan execution: every active implementation

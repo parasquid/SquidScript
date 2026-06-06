@@ -9,18 +9,16 @@
 /*
  * Transport-neutral BLE object-transfer core: the single in-flight staging
  * session, the object-name router/parser, and the completed-transfer pending
- * event handed off to the runtime poll loop. Both the OTS (ble_ots.c) and the
- * custom GATT (ble_app_transfer.c) front-ends drive this core, so it lives in
- * its own translation unit independent of any one transport.
- *
- * NOTE: symbols still carry the historical sq_ble_ots_* prefix; renaming to a
- * neutral sq_ble_transfer_* prefix is a follow-up step.
+ * event handed off to the runtime poll loop. The BLE transport front-end
+ * (ble_app_transfer.c) drives this core; it lives in its own translation unit
+ * so additional transport front-ends can sit on top without depending on a
+ * specific one.
  */
 
-/* OACP result codes the object-name parser returns on a rejected create. The
- * numeric values match the BT SIG GSS spec / Zephyr bt_gatt_ots_oacp_res_code
- * so the OTS front-end can return them verbatim without reaching into the OTS
- * internal header. (The custom GATT front-end maps them to its own status.)
+/* Reject codes the object-name parser / create returns when the request is
+ * malformed (INV_PARAM) or a transfer is already in progress (OBJ_LOCKED). A
+ * transport front-end maps them to its own wire-level error (e.g. an ATT error
+ * for the GATT transport).
  */
 #define SQ_BLE_OTS_OACP_RES_INV_PARAM  0x03
 #define SQ_BLE_OTS_OACP_RES_OBJ_LOCKED 0x0a
