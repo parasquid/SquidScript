@@ -53,10 +53,15 @@ event.on("ble.object.complete", ev) {
 }
 ```
 
-- `service.ble.start(profile, config)` — register the profile in the routing
-  table and begin advertising the service UUID. The `config` object is the same
-  shape used by the old declaration (`id`, `accept`, `events`).
-- `service.ble.stop()` — clear the calling app's profile(s), abort any in-flight
+- `service.ble.start(profile, config)` — **set** the calling app's BLE receive
+  to this profile: register it in the routing table and begin advertising the
+  service UUID. The `config` object is the same shape used by the old
+  declaration (`id`, `accept`, `events`). **One receive per app** and `start` is
+  **idempotent** — calling it again re-applies the config (same config is a
+  no-op; a changed config replaces the prior one). It never errors on a second
+  call, which is what makes putting `start` in `app.start` safe across
+  re-launches (see Re-launch semantics).
+- `service.ble.stop()` — clear the calling app's profile, abort any in-flight
   transfer, and stop advertising if no profiles remain.
 
 `service.ble.profile(...)` inside `app.triggers` is **removed** (pre-1.0:
@@ -81,6 +86,28 @@ replace directly, no alias or migration).
 - **Caps unchanged.** `SQ_VM_RUNTIME_BLE_PROFILE_ARMED_MAX` continues to bound
   total registered profiles; rename to drop "ARMED" from the macro name since the
   gating is no longer armed-based (see `docs/runtime_limits.md`).
+
+### Re-launch semantics (resolved)
+
+Two dispatch paths matter:
+
+- **Explicit launch** (`app.launch`, opening the app) dispatches `app.start`.
+- **A pushed file to an exited-but-persisted app** dispatches the configured
+  event (`ble.object.complete`) directly — **not** `app.start`.
+
+So the only place `start` runs twice is an **explicit re-launch**, because
+`app.start` re-runs and re-calls `start` while the persisted profile still
+exists. A background push never re-runs `app.start`, so it never re-calls
+`start`. Because `start` is idempotent (set/replace), the re-launch case is a
+clean re-apply — no error, and no implicit "clear on launch" rule is needed.
+
+### Activation requires running the app once (consequence)
+
+The profile is created by *running* `service.ble.start`, not by reading the
+compiled trigger table. So after a device reset, BLE receive is inactive until
+the owning app is launched once and runs `start`. This is the intended
+"explicit/imperative" behavior and differs from the old armed model, which
+registered profiles from boot.
 
 ## Why this dissolves the launch `-5`
 
@@ -120,10 +147,12 @@ armed-app launch path that produced `-5` is no longer exercised by this flow.
   install byte-exact **and** the installed app launches (DoD #6) without `-5`,
   then `service.ble.stop` (or app exit) stops advertising.
 
-## Open questions
+## Resolved decisions
 
-- Should `service.ble.stop()` take an optional profile id to stop one of several,
-  or always stop all of the calling app's profiles? (Default: stop all of the
-  caller's; revisit if multi-profile apps appear.)
-- Should a started profile auto-clear when its owning app is uninstalled?
-  (Default: yes, on uninstall; otherwise persists.)
+- **One receive per app.** No profile-id argument on `stop`; no multi-profile
+  bookkeeping. A second `start` is an idempotent set/replace, not an error.
+- **`start` is idempotent (set/replace).** Re-running it (e.g. on re-launch)
+  re-applies the config; it never errors.
+- **Persist across exit; app decides cleanup.** Exiting does not auto-stop;
+  the app calls `service.ble.stop()` if it wants to. A started profile
+  auto-clears when its owning app is uninstalled.
