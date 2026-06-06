@@ -142,7 +142,26 @@ int sq_ble_ots_parse_object_name(const char *name, char *app_id_out, size_t app_
 static int sq_ble_ots_open_staging_file(struct sq_ble_ots_session *session)
 {
 	struct fs_file_t file;
+	const char *slash;
 	int result;
+
+	/* Ensure the parent directory exists (e.g. /sq/tmp on a fresh device,
+	 * before any other staged operation has created it).
+	 */
+	slash = strrchr(session->staging_path, '/');
+	if (slash != NULL && slash != session->staging_path) {
+		char dir[SQ_BLE_OTS_PATH_MAX];
+		size_t dir_len = (size_t)(slash - session->staging_path);
+
+		if (dir_len < sizeof(dir)) {
+			memcpy(dir, session->staging_path, dir_len);
+			dir[dir_len] = '\0';
+			result = fs_mkdir(dir);
+			if (result != 0 && result != -EEXIST) {
+				return result;
+			}
+		}
+	}
 
 	fs_file_t_init(&file);
 	result = fs_open(&file, session->staging_path, FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC);

@@ -216,3 +216,17 @@ ZTEST(ble_ots_staging, test_reset_after_completed_transfer_does_not_error)
 
 	sq_ble_ots_reset_session();
 }
+
+ZTEST(ble_ots_staging, test_obj_created_creates_missing_tmp_dir)
+{
+	char staging_path[128] = {0};
+	int result;
+
+	/* Mimic a fresh device with no staging dir yet. */
+	(void)fs_unlink("/sqtest/tmp");
+	result = sq_ble_ots_test_invoke_obj_created_with_name("a/b/.sqbc", 16, staging_path,
+							      sizeof(staging_path));
+	zassert_equal(result, 0, "obj_created should create the staging dir, got %d", result);
+	zassert_true(staging_file_exists(staging_path), "staging file should exist at %s",
+		     staging_path);
+}
