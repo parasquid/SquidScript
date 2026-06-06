@@ -601,6 +601,24 @@
       "failing_callback": "failing_timer_after"
     },
     {
+      "field": "ble_start",
+      "typedef": "SqvmBleStartCallback",
+      "family": "ble",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, id: *const u8, id_len: usize, ) -> i32, >",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_ble_object_transfer_trigger_sqbc",
+      "failing_callback": "failing_ble_start"
+    },
+    {
+      "field": "ble_stop",
+      "typedef": "SqvmBleStopCallback",
+      "family": "ble",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, ) -> i32, >",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_ble_stop_sqbc",
+      "failing_callback": "failing_ble_stop"
+    },
+    {
       "field": "wifi_start_ap",
       "typedef": "SqvmWifiStartApCallback",
       "family": "wifi",
@@ -1160,6 +1178,14 @@
       "definition": "typedef int32_t (*SqvmTimerAfterCallback)(\n\tvoid *user_data,\n\tconst uint8_t *event,\n\tsize_t event_len,\n\tint32_t delay_ms);"
     },
     {
+      "name": "SqvmBleStartCallback",
+      "definition": "typedef int32_t (*SqvmBleStartCallback)(\n\tvoid *user_data,\n\tconst uint8_t *id,\n\tsize_t id_len);"
+    },
+    {
+      "name": "SqvmBleStopCallback",
+      "definition": "typedef int32_t (*SqvmBleStopCallback)(\n\tvoid *user_data);"
+    },
+    {
       "name": "SqvmSystemMemoryTextCallback",
       "definition": "typedef int32_t (*SqvmSystemMemoryTextCallback)(\n\tvoid *user_data,\n\tuint8_t *out,\n\tsize_t out_cap,\n\tsize_t *out_len);"
     },
@@ -1177,7 +1203,7 @@
     },
     {
       "name": "SqvmCallbacks",
-      "definition": "typedef struct {\n\tSqvmTraceCallback trace;\n\tSqvmReadExactAtCallback read_exact_at;\n\tSqvmDebugOutputCallback debug_output;\n\tSqvmDisplayClearCallback display_clear;\n\tSqvmDisplayTextCallback display_text;\n\tSqvmDisplayRectCallback display_rect;\n\tSqvmDisplayLineCallback display_line;\n\tSqvmDisplaySelectCallback display_select;\n\tSqvmDisplayImageCallback display_image;\n\tSqvmDisplayDrawCallback display_draw;\n\tSqvmDisplayInfoCallback display_info;\n\tSqvmIndicatorWriteCallback indicator_write;\n\tSqvmIndicatorToggleCallback indicator_toggle;\n\tSqvmIndicatorReadCallback indicator_read;\n\tSqvmIndicatorBreatheCallback indicator_breathe;\n\tSqvmIndicatorBlinkCallback indicator_blink;\n\tSqvmHardwareGpioWriteCallback hardware_gpio_write;\n\tSqvmHardwareGpioToggleCallback hardware_gpio_toggle;\n\tSqvmHardwareGpioReadCallback hardware_gpio_read;\n\tSqvmAppLifecycleCallback app_launch;\n\tSqvmAppLifecycleCallback app_arm;\n\tSqvmAppLifecycleCallback app_disarm;\n\tSqvmAppInstallFileCallback app_install_file;\n\tSqvmAppRegistryListCallback app_registry_list;\n\tSqvmAppRegistryGetCallback app_registry_get;\n\tSqvmAppStackCallback app_process_stack;\n\tSqvmAppStackCallback app_armed_stack;\n\tSqvmTimerEveryCallback timer_every;\n\tSqvmTimerAfterCallback timer_after;\n\tSqvmWifiStartApCallback wifi_start_ap;\n\tSqvmWifiStopApCallback wifi_stop_ap;\n\tSqvmWifiConnectCallback wifi_connect;\n\tSqvmWifiDisconnectCallback wifi_disconnect;\n\tSqvmWifiGetApIpCallback wifi_get_ap_ip;\n\tSqvmWifiStatusCallback wifi_status;\n\tSqvmWifiScanCallback wifi_scan;\n\tSqvmWifiOperationCallback wifi_operation;\n\tSqvmWifiResultCallback wifi_result;\n\tSqvmWifiCancelCallback wifi_cancel;\n\tSqvmWifiScanNetworkCallback wifi_scan_network;\n\tSqvmDeviceConfigLoadCallback device_config_load;\n\tSqvmDeviceConfigSetCallback device_config_set;\n\tSqvmDeviceConfigRebindCallback device_config_rebind;\n\tSqvmDeviceConfigSaveCallback device_config_save;\n\tSqvmFilePickFileCallback file_pick_file;\n\tSqvmFileReadTextCallback file_read_text;\n\tSqvmFileReadLinesCallback file_read_lines;\n\tSqvmSystemMemoryTextCallback system_memory_text;\n\tSqvmSystemStorageTextCallback system_storage_text;\n\tSqvmSystemStartReasonTextCallback system_start_reason_text;\n\tSqvmPowerSleepCallback power_sleep;\n} SqvmCallbacks;"
+      "definition": "typedef struct {\n\tSqvmTraceCallback trace;\n\tSqvmReadExactAtCallback read_exact_at;\n\tSqvmDebugOutputCallback debug_output;\n\tSqvmDisplayClearCallback display_clear;\n\tSqvmDisplayTextCallback display_text;\n\tSqvmDisplayRectCallback display_rect;\n\tSqvmDisplayLineCallback display_line;\n\tSqvmDisplaySelectCallback display_select;\n\tSqvmDisplayImageCallback display_image;\n\tSqvmDisplayDrawCallback display_draw;\n\tSqvmDisplayInfoCallback display_info;\n\tSqvmIndicatorWriteCallback indicator_write;\n\tSqvmIndicatorToggleCallback indicator_toggle;\n\tSqvmIndicatorReadCallback indicator_read;\n\tSqvmIndicatorBreatheCallback indicator_breathe;\n\tSqvmIndicatorBlinkCallback indicator_blink;\n\tSqvmHardwareGpioWriteCallback hardware_gpio_write;\n\tSqvmHardwareGpioToggleCallback hardware_gpio_toggle;\n\tSqvmHardwareGpioReadCallback hardware_gpio_read;\n\tSqvmAppLifecycleCallback app_launch;\n\tSqvmAppLifecycleCallback app_arm;\n\tSqvmAppLifecycleCallback app_disarm;\n\tSqvmAppInstallFileCallback app_install_file;\n\tSqvmAppRegistryListCallback app_registry_list;\n\tSqvmAppRegistryGetCallback app_registry_get;\n\tSqvmAppStackCallback app_process_stack;\n\tSqvmAppStackCallback app_armed_stack;\n\tSqvmTimerEveryCallback timer_every;\n\tSqvmTimerAfterCallback timer_after;\n\tSqvmBleStartCallback ble_start;\n\tSqvmBleStopCallback ble_stop;\n\tSqvmWifiStartApCallback wifi_start_ap;\n\tSqvmWifiStopApCallback wifi_stop_ap;\n\tSqvmWifiConnectCallback wifi_connect;\n\tSqvmWifiDisconnectCallback wifi_disconnect;\n\tSqvmWifiGetApIpCallback wifi_get_ap_ip;\n\tSqvmWifiStatusCallback wifi_status;\n\tSqvmWifiScanCallback wifi_scan;\n\tSqvmWifiOperationCallback wifi_operation;\n\tSqvmWifiResultCallback wifi_result;\n\tSqvmWifiCancelCallback wifi_cancel;\n\tSqvmWifiScanNetworkCallback wifi_scan_network;\n\tSqvmDeviceConfigLoadCallback device_config_load;\n\tSqvmDeviceConfigSetCallback device_config_set;\n\tSqvmDeviceConfigRebindCallback device_config_rebind;\n\tSqvmDeviceConfigSaveCallback device_config_save;\n\tSqvmFilePickFileCallback file_pick_file;\n\tSqvmFileReadTextCallback file_read_text;\n\tSqvmFileReadLinesCallback file_read_lines;\n\tSqvmSystemMemoryTextCallback system_memory_text;\n\tSqvmSystemStorageTextCallback system_storage_text;\n\tSqvmSystemStartReasonTextCallback system_start_reason_text;\n\tSqvmPowerSleepCallback power_sleep;\n} SqvmCallbacks;"
     }
   ],
   "result_defaults": [

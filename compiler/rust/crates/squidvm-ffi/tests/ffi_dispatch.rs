@@ -34,6 +34,8 @@ struct Host {
     app_install_files: Vec<(String, String)>,
     timer_every: Vec<(String, i32)>,
     timer_after: Vec<(String, i32)>,
+    ble_start: Vec<String>,
+    ble_stop: usize,
     wifi_actions: Vec<String>,
     wifi_status_count: usize,
     wifi_scan_count: usize,
@@ -310,6 +312,19 @@ unsafe extern "C" fn timer_after(
     let host = &mut *(user_data as *mut Host);
     let event = std::str::from_utf8(std::slice::from_raw_parts(event, event_len)).unwrap();
     host.timer_after.push((event.to_string(), delay_ms));
+    0
+}
+
+unsafe extern "C" fn ble_start(user_data: *mut c_void, id: *const u8, id_len: usize) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let id = std::str::from_utf8(std::slice::from_raw_parts(id, id_len)).unwrap();
+    host.ble_start.push(id.to_string());
+    0
+}
+
+unsafe extern "C" fn ble_stop(user_data: *mut c_void) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.ble_stop += 1;
     0
 }
 
@@ -961,6 +976,18 @@ unsafe extern "C" fn failing_timer_every(
     -22
 }
 
+unsafe extern "C" fn failing_ble_start(
+    _user_data: *mut c_void,
+    _id: *const u8,
+    _id_len: usize,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_ble_stop(_user_data: *mut c_void) -> i32 {
+    -22
+}
+
 unsafe extern "C" fn failing_wifi_start_ap(
     _user_data: *mut c_void,
     _ssid: *const u8,
@@ -1279,6 +1306,8 @@ fn callbacks(_host: &mut Host) -> SqvmCallbacks {
         app_armed_stack: Some(app_armed_stack),
         timer_every: Some(timer_every),
         timer_after: Some(timer_after),
+        ble_start: Some(ble_start),
+        ble_stop: Some(ble_stop),
         wifi_start_ap: Some(wifi_start_ap),
         wifi_stop_ap: Some(wifi_stop_ap),
         wifi_connect: Some(wifi_connect),
@@ -1459,6 +1488,24 @@ event.on("app.start") {
 }
 event.on("ble.object.complete", ev) {
   debug.print(ev.id)
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_ble_stop_sqbc() -> Vec<u8> {
+    // start then stop in the same handler so the generated coverage harness,
+    // which always dispatches "app.start", exercises both callbacks.
+    compile_sqbc(
+        r#"app "ffi-ble-stop"
+event.on("app.start") {
+  service.ble.start("object-transfer", {
+    id: "sqbc-install",
+    accept: [".sqbc"],
+    events: { complete: "ble.object.complete", error: "ble.object.error" }
+  })
+  service.ble.stop()
 }
 screen("main") {}
 "#,
@@ -2701,7 +2748,7 @@ fn callback_errors_surface_as_vm_error_status() {
 #[test]
 fn generated_callback_policy_cases_cover_manifest_inventory() {
     let cases = generated_ffi_dispatch_cases::callback_policy_cases();
-    assert_eq!(cases.len(), 51);
+    assert_eq!(cases.len(), 53);
     assert!(cases.contains(&("display_info", "unsupported_result")));
     assert!(cases.contains(&("wifi_operation", "idle_result")));
     assert!(cases.contains(&("wifi_scan_network", "unsupported_result")));
@@ -3087,6 +3134,41 @@ fn reads_ble_object_transfer_trigger_metadata() {
     assert_eq!(fixed_text(&profile.events[0].event), "ble.object.complete");
     assert_eq!(fixed_text(&profile.events[1].kind), "error");
     assert_eq!(fixed_text(&profile.events[1].event), "ble.object.error");
+}
+
+#[test]
+fn dispatch_handles_ble_start_and_stop_builtins() {
+    let mut host = Host {
+        sqbc: compile_ble_stop_sqbc(),
+        ..Host::default()
+    };
+    let mut context = sqvm_context_init();
+    let mut scratch = vec![0u8; 4096];
+    assert_eq!(
+        unsafe {
+            sqvm_context_init_in_place(
+                &mut context,
+                callback_user_data(&mut host),
+                &callbacks(&mut host),
+                scratch.as_mut_ptr(),
+                scratch.len(),
+            )
+        },
+        SqvmStatus::Ok
+    );
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(host.ble_start, vec!["sqbc-install".to_string()]);
+    assert_eq!(host.ble_stop, 1);
 }
 
 #[test]

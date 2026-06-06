@@ -3207,6 +3207,20 @@ impl TraceSink for FfiHost<'_> {
         })
     }
 
+    fn service_ble_start(&mut self, id: &str) -> Result<(), VmError> {
+        let Some(ble_start) = self.callbacks.ble_start else {
+            return Err(VmError::InvalidOperand);
+        };
+        callback_status(unsafe { ble_start(self.user_data, id.as_ptr(), id.len()) })
+    }
+
+    fn service_ble_stop(&mut self) -> Result<(), VmError> {
+        let Some(ble_stop) = self.callbacks.ble_stop else {
+            return Err(VmError::InvalidOperand);
+        };
+        callback_status(unsafe { ble_stop(self.user_data) })
+    }
+
     fn service_wifi_start_ap<'a>(&'a mut self, ssid: &str) -> Result<WifiOperation<'a>, VmError> {
         let Some(wifi_start_ap) = self.callbacks.wifi_start_ap else {
             return Ok(WifiOperation::unsupported());

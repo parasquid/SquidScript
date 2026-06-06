@@ -28,6 +28,8 @@
 	.app_armed_stack = runtime_app_armed_stack,
 	.timer_every = runtime_timer_every,
 	.timer_after = runtime_timer_after,
+	.ble_start = runtime_ble_start,
+	.ble_stop = runtime_ble_stop,
 	.wifi_start_ap = runtime_wifi_start_ap,
 	.wifi_stop_ap = runtime_wifi_stop_ap,
 	.wifi_connect = runtime_wifi_connect,

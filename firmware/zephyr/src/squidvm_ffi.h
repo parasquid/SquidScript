@@ -600,6 +600,14 @@ typedef int32_t (*SqvmTimerAfterCallback)(
 	size_t event_len,
 	int32_t delay_ms);
 
+typedef int32_t (*SqvmBleStartCallback)(
+	void *user_data,
+	const uint8_t *id,
+	size_t id_len);
+
+typedef int32_t (*SqvmBleStopCallback)(
+	void *user_data);
+
 typedef int32_t (*SqvmSystemMemoryTextCallback)(
 	void *user_data,
 	uint8_t *out,
@@ -652,6 +660,8 @@ typedef struct {
 	SqvmAppStackCallback app_armed_stack;
 	SqvmTimerEveryCallback timer_every;
 	SqvmTimerAfterCallback timer_after;
+	SqvmBleStartCallback ble_start;
+	SqvmBleStopCallback ble_stop;
 	SqvmWifiStartApCallback wifi_start_ap;
 	SqvmWifiStopApCallback wifi_stop_ap;
 	SqvmWifiConnectCallback wifi_connect;
