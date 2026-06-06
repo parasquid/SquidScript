@@ -33,8 +33,10 @@ event.on("ble.object.complete", ev) {
   state.received = state.received + 1
   debug.print("received file", state.received)
   // ev.upload is the staged file path delivered by the runtime
-  // (/sq/tmp/ble-object-<app_id>-<profile_id>.tmp); install it as a new app.
+  // (/sq/tmp/ble-object-<app_id>-<profile_id>.tmp); install it as a new app
+  // and start it.
   app.install(ev.upload, "installed-app")
+  app.launch("installed-app")
   state.installed = state.installed + 1
   state.save()
 }

@@ -1,0 +1,5 @@
+app "hello"
+
+event.on("app.start") {
+  debug.print("hello from installed app")
+}
