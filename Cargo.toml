@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "compiler/rust/crates/squidvm-limits",
   "compiler/rust/crates/squidc-core",
   "compiler/rust/crates/squid-device-protocol",
   "compiler/rust/crates/squidvm-core",

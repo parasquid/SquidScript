@@ -5,6 +5,7 @@ edition = "2021"
 license = "AGPL-3.0-only"
 
 [dependencies]
+squidvm-limits = { path = "../squidvm-limits" }
 
 [dev-dependencies]
 squidc-core = { path = "../squidc-core" }

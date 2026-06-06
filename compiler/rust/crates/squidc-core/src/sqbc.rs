@@ -104,6 +104,17 @@ const BUILTIN_SERVICE_POWER_SLEEP: u8 = 0xc0;
 const BUILTIN_SERVICE_BLE_START: u8 = 0xc1;
 const BUILTIN_SERVICE_BLE_STOP: u8 = 0xc2;
 
+/*
+ * Runtime load/execution caps, shared with the VM via the `squidvm-limits`
+ * crate. The compiler enforces them when emitting SQBC so an app the
+ * constrained VM cannot load or run is rejected at compile time instead of
+ * failing on-device with an opaque error.
+ */
+use squidvm_limits::{
+    MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES, MAX_FUNCTIONS, MAX_HANDLERS, MAX_PROGRAM_STRING_BYTES,
+    MAX_SCREENS, MAX_STATE, MAX_STRINGS, MAX_TRIGGERS,
+};
+
 const VALUE_NULL: u8 = 0;
 const VALUE_BOOL: u8 = 1;
 const VALUE_I32: u8 = 2;
@@ -271,13 +282,15 @@ pub fn encode_sqbc_with_profile(
         emit(&mut unit.code, OP_PUSH_NULL);
         emit(&mut unit.code, OP_RETURN);
         let end = u32::try_from(unit.code.len()).map_err(|_| SqbcError::new("code too large"))?;
+        let len = end - start;
+        check_frame_code_len(len, "function", &function.name)?;
         unit.function_metas.push(FunctionMeta {
             name_id,
             param_count: u16::try_from(function.params.len())
                 .map_err(|_| SqbcError::new("too many params"))?,
             local_count: frame.next_local,
             start,
-            len: end - start,
+            len,
         });
     }
 
@@ -289,6 +302,8 @@ pub fn encode_sqbc_with_profile(
         compile_statements(&mut unit, &mut frame, &handler.statements, profile)?;
         emit(&mut unit.code, OP_HALT);
         let end = u32::try_from(unit.code.len()).map_err(|_| SqbcError::new("code too large"))?;
+        let len = end - start;
+        check_frame_code_len(len, "handler", &handler.event)?;
         unit.handler_metas.push(HandlerMeta {
             event_id,
             param_count: u16::try_from(params.len())
@@ -296,7 +311,7 @@ pub fn encode_sqbc_with_profile(
             local_count: frame.next_local,
             preload: handler.preload,
             start,
-            len: end - start,
+            len,
         });
     }
 
@@ -307,12 +322,16 @@ pub fn encode_sqbc_with_profile(
         compile_statements(&mut unit, &mut frame, &screen.statements, profile)?;
         emit(&mut unit.code, OP_HALT);
         let end = u32::try_from(unit.code.len()).map_err(|_| SqbcError::new("code too large"))?;
+        let len = end - start;
+        check_frame_code_len(len, "screen", &screen.name)?;
         unit.screen_metas.push(ScreenMeta {
             name_id,
             start,
-            len: end - start,
+            len,
         });
     }
+
+    check_program_limits(ir, &unit)?;
 
     let sections = vec![
         (SECTION_APP_META, encode_app_meta(ir, &unit.strings)?),
@@ -332,7 +351,61 @@ pub fn encode_sqbc_with_profile(
         (SECTION_SCREENS, encode_screens(&unit.screen_metas)),
         (SECTION_CODE, unit.code),
     ];
-    encode_container(sections)
+    let bytes = encode_container(sections)?;
+    if bytes.len() > MAX_APP_BYTES {
+        return Err(SqbcError::new(format!(
+            "app compiles to {} bytes, over the {MAX_APP_BYTES}-byte limit",
+            bytes.len()
+        )));
+    }
+    Ok(bytes)
+}
+
+/// Reject a single frame (handler/function/screen) whose compiled code exceeds
+/// the VM's code-chunk buffer: the VM loads a whole frame into one chunk, so a
+/// larger frame cannot execute (it would fail on-device as a load error).
+fn check_frame_code_len(len: u32, kind: &str, name: &str) -> Result<(), SqbcError> {
+    if len as usize > MAX_CODE_CHUNK_BYTES {
+        return Err(SqbcError::new(format!(
+            "{kind} '{name}' compiles to {len} bytes of code, over the \
+             {MAX_CODE_CHUNK_BYTES}-byte per-block limit; split it into smaller \
+             functions"
+        )));
+    }
+    Ok(())
+}
+
+/// Reject programs that exceed the VM's table/string caps so they fail at
+/// compile time instead of on-device at load time.
+fn check_program_limits(ir: &IrProgram, unit: &CompileUnit) -> Result<(), SqbcError> {
+    let string_bytes: usize = unit.strings.values.iter().map(|value| value.len()).sum();
+    if string_bytes > MAX_PROGRAM_STRING_BYTES {
+        return Err(SqbcError::new(format!(
+            "app uses {string_bytes} bytes of string text, over the \
+             {MAX_PROGRAM_STRING_BYTES}-byte limit"
+        )));
+    }
+    if unit.strings.values.len() > MAX_STRINGS {
+        return Err(SqbcError::new(format!(
+            "app uses {} distinct strings, over the limit of {MAX_STRINGS}",
+            unit.strings.values.len()
+        )));
+    }
+    let checks = [
+        ("functions", ir.functions.len(), MAX_FUNCTIONS),
+        ("handlers", ir.handlers.len(), MAX_HANDLERS),
+        ("screens", ir.screens.len(), MAX_SCREENS),
+        ("state fields", ir.state.len(), MAX_STATE),
+        ("timer triggers", ir.triggers.len(), MAX_TRIGGERS),
+    ];
+    for (label, count, max) in checks {
+        if count > max {
+            return Err(SqbcError::new(format!(
+                "app declares {count} {label}, over the limit of {max}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 pub fn read_app_id(bytes: &[u8]) -> Result<Option<String>, SqbcError> {

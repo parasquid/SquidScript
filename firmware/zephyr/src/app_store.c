@@ -605,48 +605,49 @@ static const uint8_t SQBC_MAGIC_BYTES[SQBC_MAGIC_LEN] = {'S', 'Q', 'B', 'C'};
 int sq_app_store_install_from_file_ref(const char *mount_point, const char *app_id,
 				       const char *staging_path)
 {
-	struct fs_file_t src;
-	struct fs_file_t dst;
 	char staged_path[SQ_APP_STORE_PATH_MAX];
 	uint8_t chunk[SQ_APP_STORE_INSTALL_COPY_CHUNK];
 	size_t total = 0;
 	bool magic_checked = false;
 	int result;
-	int close_result;
 
 	if (mount_point == NULL || !is_safe_app_id(app_id) || staging_path == NULL) {
 		return -EINVAL;
 	}
 
-	fs_file_t_init(&src);
-	result = fs_open(&src, staging_path, FS_O_READ);
-	if (result != 0) {
-		return result == -ENOENT ? -EINVAL : result;
-	}
-
 	result = sq_app_store_begin_staged_install(mount_point, app_id, staged_path,
 						   sizeof(staged_path));
 	if (result != 0) {
-		(void)fs_close(&src);
 		return result;
 	}
 
-	/* Hold the staged file open and write sequentially. Re-opening and seeking
-	 * per chunk (as the serial protocol's incremental write_staged_chunk does)
-	 * fails partway for multi-chunk payloads here; a single open streamed in
-	 * order copies the whole file regardless of size.
+	/* Copy the source into the staged file one chunk at a time, never holding
+	 * the source and destination open at once. Both live on the same LittleFS
+	 * mount, and holding two handles open across an interleaved read/write
+	 * aliases the filesystem's shared read/prog cache, corrupting the copied
+	 * bytes (the install reports the right size but the app reads back garbage
+	 * and the VM faults on launch). Opening/closing each side per chunk keeps
+	 * the cache coherent, matching the serial install path.
 	 */
-	fs_file_t_init(&dst);
-	result = fs_open(&dst, staged_path, FS_O_WRITE);
-	if (result != 0) {
-		(void)fs_close(&src);
-		(void)fs_unlink(staged_path);
-		return result;
-	}
-
 	for (;;) {
-		ssize_t bytes = fs_read(&src, chunk, sizeof(chunk));
+		struct fs_file_t src;
+		ssize_t bytes;
 
+		fs_file_t_init(&src);
+		result = fs_open(&src, staging_path, FS_O_READ);
+		if (result != 0) {
+			result = result == -ENOENT ? -EINVAL : result;
+			break;
+		}
+		if (total > 0) {
+			result = fs_seek(&src, (off_t)total, FS_SEEK_SET);
+			if (result != 0) {
+				(void)fs_close(&src);
+				break;
+			}
+		}
+		bytes = fs_read(&src, chunk, sizeof(chunk));
+		(void)fs_close(&src);
 		if (bytes < 0) {
 			result = (int)bytes;
 			break;
@@ -666,25 +667,11 @@ int sq_app_store_install_from_file_ref(const char *mount_point, const char *app_
 			result = -EFBIG;
 			break;
 		}
-		ssize_t written = fs_write(&dst, chunk, (size_t)bytes);
-		if (written < 0) {
-			result = (int)written;
-			break;
-		}
-		if ((size_t)written != (size_t)bytes) {
-			result = -EIO;
+		result = sq_app_store_write_staged_chunk(staged_path, total, chunk, (size_t)bytes);
+		if (result != 0) {
 			break;
 		}
 		total += (size_t)bytes;
-	}
-
-	close_result = fs_close(&dst);
-	if (result == 0 && close_result != 0) {
-		result = close_result;
-	}
-	close_result = fs_close(&src);
-	if (result == 0 && close_result != 0) {
-		result = close_result;
 	}
 
 	if (result != 0 || !magic_checked) {

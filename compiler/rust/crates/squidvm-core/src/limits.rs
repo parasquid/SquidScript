@@ -1,23 +1,6 @@
-pub const MAX_STRINGS: usize = 64;
-pub const MAX_STATE: usize = 16;
-pub const MAX_FUNCTIONS: usize = 16;
-pub const MAX_HANDLERS: usize = 16;
-pub const MAX_TRIGGERS: usize = 16;
-pub const MAX_DEVICE_BINDINGS: usize = 8;
-pub const MAX_SCREENS: usize = 16;
-pub const MAX_LOCALS: usize = 16;
-pub const MAX_STACK: usize = 16;
-pub const MAX_CALL_DEPTH: usize = 4;
-pub const MAX_INSTRUCTIONS_PER_EVENT: usize = 1000;
-pub const MAX_APP_BYTES: usize = 4 * 1024;
-pub const MAX_PROGRAM_STRING_BYTES: usize = 768;
-pub const MAX_CODE_CHUNK_BYTES: usize = 640;
-pub const MAX_SAVED_STATE_BYTES: usize = 512;
-pub const MAX_RUNTIME_STRINGS: usize = 12;
-pub const MAX_RUNTIME_STRING_BYTES: usize = 48;
-pub const MAX_SERVICE_STRINGS: usize = 32;
-pub const MAX_SERVICE_STRING_BYTES: usize = 512;
-pub const MAX_RUNTIME_RECORDS: usize = 8;
-pub const MAX_RUNTIME_RECORD_FIELDS: usize = 26;
-pub const MAX_RUNTIME_LISTS: usize = 2;
-pub const MAX_RUNTIME_LIST_ITEMS: usize = 8;
+//! VM resource limits.
+//!
+//! The constants live in the shared `squidvm-limits` crate so the compiler
+//! (`squidc-core`) enforces the exact same caps it must produce SQBC for.
+//! Re-exported here so existing `crate::limits::MAX_*` references keep working.
+pub use squidvm_limits::*;

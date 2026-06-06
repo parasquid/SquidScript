@@ -1745,6 +1745,31 @@ screen("main") {}
 }
 
 #[test]
+fn rejects_handler_code_block_over_vm_chunk_limit() {
+    // The VM loads a whole handler/function/screen frame into one 640-byte code
+    // chunk, so the compiler must reject a frame whose compiled code exceeds it
+    // (otherwise it fails on-device with an opaque error).
+    let mut source =
+        String::from("app \"big\"\nstate { acc: int = 0 }\nevent.on(\"app.start\") {\n");
+    for _ in 0..200 {
+        source.push_str("  state.acc = state.acc + 1\n");
+    }
+    source.push_str("}\nscreen(\"main\") {}\n");
+    let output = compile(CompileRequest {
+        source,
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let err =
+        sqbc::encode_sqbc(&output.ir.unwrap()).expect_err("over-limit app must fail to encode");
+    assert!(
+        err.message.contains("per-block limit"),
+        "unexpected error: {}",
+        err.message
+    );
+}
+
+#[test]
 fn parses_service_ble_start_and_stop_statements() {
     let source = r#"app "ble-install"
 event.on("app.start") {

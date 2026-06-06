@@ -376,6 +376,7 @@ dependencies = [
  "rowan",
  "serde",
  "serde_json",
+ "squidvm-limits",
 ]
 
 [[package]]
@@ -393,6 +394,7 @@ name = "squidvm-core"
 version = "0.1.0"
 dependencies = [
  "squidc-core",
+ "squidvm-limits",
 ]
 
 [[package]]
@@ -404,6 +406,10 @@ dependencies = [
  "squidc-core",
  "squidvm-core",
 ]
+
+[[package]]
+name = "squidvm-limits"
+version = "0.1.0"
 
 [[package]]
 name = "strsim"
