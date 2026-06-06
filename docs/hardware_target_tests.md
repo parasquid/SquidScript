@@ -683,6 +683,51 @@ scans may show a truncated name even though the serial log prints the full
 that BLE failed, and shorten the target BLE name or move to an extended
 advertising/scan-response design before relying on exact full-name discovery.
 
+### BLE Object Transfer end-to-end
+
+`scripts/zephyr-test-ble-object-transfer.sh` is the end-to-end hardware
+check for the BLE Object Transfer work. It builds the XIAO ESP32-C3
+e-paper dev target firmware, flashes it via `west flash -d
+build/zephyr/xiao-esp32c3-gdeq0426t82-sd`, installs
+`examples/ble-install/main.squid` over the serial protocol, launches
+the app (which arms itself on `app.start`), and then runs
+`tools/ots-push` to push a payload over BLE OTS to the device. The
+wrapper verifies that the new app appears in `squidc app list`.
+
+The host-side driver requires bleak 3.x plus a platform that exposes
+L2CAP CoC writes. As of bleak 3.0.2, the cross-platform `BleakClient`
+does not expose `write_l2cap_coc`, so on any current host the wrapper
+exits 0 with the skip message `OK ble-ots-push skipped because bleak
+on this platform does not support L2CAP CoC`. The end-to-end
+app-list check fails as a result, which is the expected behavior on
+hosts without L2CAP CoC — the skip is clean and the failure is
+informative. The pytest suite under `tools/ots-push/tests/` exercises
+the full GATT/CoC call order with a mock bleak backend, independent
+of host BLE capability. The native ztests under
+`firmware/zephyr/tests/ble-ots-{init,parse,staging,dispatch,trigger-table}`
+and `firmware/zephyr/tests/ble-app-install` exercise the firmware
+sides (service registration, Object Name parsing, staging lifecycle,
+dispatch handoff, trigger table, and the `app.install` validation
+path) without BLE.
+
+The wrapper requires `bleak` to be importable from the same
+`python3` that runs after sourcing `scripts/zephyr-env.sh`. That
+script prepends `target/zephyr/venv/bin` to `PATH`, so the Zephyr
+venv's Python is used. Install bleak into the venv if it isn't
+already there:
+
+```sh
+pip install --target target/zephyr/venv/lib/python3.14/site-packages bleak
+```
+
+Required arguments: `--device <name-or-address>` (the BLE device the
+host will connect to). Optional: `--port <serial-port>` (auto-detected
+via `scripts/lib/serial-port.sh::resolve_esp.serial_port`),
+`--source <file.squid>` (default: ble-install example),
+`--skip-flash` (build only; assume the firmware is already on the
+device), `--app-id <id>` (default: `ble-install`),
+`--payload-id <id>` (default: `installed-app`).
+
 For the current ESP32-C3 Super Mini Zephyr target,
 `scripts/c3-supermini-test-blinky.sh` is the final full-suite check. It
 installs and launches `examples/blinky-supermini/main.squid`. Serial

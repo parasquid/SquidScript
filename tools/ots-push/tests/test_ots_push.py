@@ -77,23 +77,19 @@ def test_push_file_calls_discovery_then_object_name_then_create_then_coc_then_ex
     fake_device.address = "AA:BB:CC:DD:EE:FF"
     fake_device.name = "squid-xiao"
 
+    fake_name_handle = MagicMock(name="object_name_handle")
+    fake_oacp_handle = MagicMock(name="oacp_handle")
+    fake_name_char = MagicMock(uuid="object-name", handle=fake_name_handle)
+    fake_oacp_char = MagicMock(uuid="object-action-control-point", handle=fake_oacp_handle)
     fake_service = MagicMock()
     fake_service.uuid = OTS_SERVICE_UUID
-    fake_name_char = MagicMock()
-    fake_name_char.uuid = "object-name"
-    fake_oacp_char = MagicMock()
-    fake_oacp_char.uuid = "object-action-control-point"
-    fake_service.get_characteristic = MagicMock(
-        side_effect=lambda uuid: {"object-name": fake_name_char,
-                                   "object-action-control-point": fake_oacp_char}.get(uuid)
-    )
     fake_service.characteristics = [fake_name_char, fake_oacp_char]
 
     fake_services = [fake_service]
     fake_client = MagicMock()
     fake_client.__aenter__ = AsyncMock(return_value=fake_client)
     fake_client.__aexit__ = AsyncMock(return_value=None)
-    fake_client.get_services = AsyncMock(return_value=fake_services)
+    fake_client.services = fake_services
     fake_client.write_gatt_char = AsyncMock()
     fake_client.write_l2cap_coc = AsyncMock()
 
@@ -101,6 +97,7 @@ def test_push_file_calls_discovery_then_object_name_then_create_then_coc_then_ex
     fake_scanner.find_device_by_filter = AsyncMock(return_value=fake_device)
     fake_bleak.BleakScanner = MagicMock(return_value=fake_scanner)
     fake_bleak.BleakClient = MagicMock(return_value=fake_client)
+    fake_bleak._ots_push_l2cap_supported = lambda: True
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".sqbc") as f:
         f.write(b"SQBCpayload")
@@ -122,16 +119,16 @@ def test_push_file_calls_discovery_then_object_name_then_create_then_coc_then_ex
     assert len(calls) == 3, f"expected 3 write_gatt_char calls, got {len(calls)}"
 
     first_char, first_data = calls[0].args
-    assert first_char is fake_name_char
+    assert first_char is fake_name_handle
     assert first_data == b"break-reminder/wallpaper/.sqbc"
 
     second_char, second_data = calls[1].args
-    assert second_char is fake_oacp_char
+    assert second_char is fake_oacp_handle
     assert second_data[0] == OACP_OPCODE_CREATE
     assert int.from_bytes(second_data[1:5], "little") == len(b"SQBCpayload")
 
     third_char, third_data = calls[2].args
-    assert third_char is fake_oacp_char
+    assert third_char is fake_oacp_handle
     assert third_data[0] == OACP_OPCODE_EXECUTE
     assert third_data[1] == 0x02
 

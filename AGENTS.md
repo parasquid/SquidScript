@@ -276,6 +276,20 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
   regression hardware target, with its own scripts under
   `scripts/c3-supermini-*.sh` and its full suite
   `scripts/c3-supermini-test-hardware.sh`.
+- For hardware flashing, use `west flash -d build/zephyr/<target>` after
+  building. The `target build` command compiles but does not flash; the
+  wrapper convention is to run `west flash` explicitly. The serial port
+  is auto-detected via `scripts/lib/serial-port.sh::resolve_esp.serial_port`
+  and exported as `ESPFLASH_PORT`. `scripts/zephyr-test-ble-object-transfer.sh`
+  is the reference for the full end-to-end flash + protocol + BLE flow.
+- `scripts/zephyr-env.sh` prepends `target/zephyr/venv/bin` to `PATH`, so
+  any `python3` invoked after sourcing it is the Zephyr venv Python, not
+  the system Python. Python packages installed at the system level
+  (e.g. `pip install bleak`) are NOT visible to wrappers that source
+  `zephyr-env.sh`. Install Python dependencies into the Zephyr venv with
+  `pip install --target target/zephyr/venv/lib/python3.14/site-packages <pkg>`
+  when a wrapper needs them. `tools/ots-push/README.md` documents this
+  pattern for bleak.
 - Use `scripts/zephyr-test-protocol.sh` for the Zephyr native protocol ztests
   instead of invoking `west twister` directly. The wrapper sources
   `scripts/zephyr-env.sh`, which adds the repo-local `target/zephyr/venv/bin`
