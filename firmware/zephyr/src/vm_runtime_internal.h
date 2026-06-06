@@ -85,6 +85,8 @@ int32_t runtime_timer_every(void *user_data, const uint8_t *event, size_t event_
 			    int32_t interval_ms);
 int32_t runtime_timer_after(void *user_data, const uint8_t *event, size_t event_len,
 			    int32_t delay_ms);
+int32_t runtime_ble_start(void *user_data, const uint8_t *id, size_t id_len);
+int32_t runtime_ble_stop(void *user_data);
 int32_t runtime_power_sleep(void *user_data, int32_t wake_after_ms);
 
 int32_t runtime_system_memory_text(void *user_data, uint8_t *out, size_t out_cap,

@@ -77,6 +77,17 @@ int sq_ble_smoke_sm_begin_advertising(void)
 	return 0;
 }
 
+int sq_ble_smoke_sm_stop_advertising(void)
+{
+	(void)k_work_cancel_delayable(&sq_ble_smoke_restart_advertising);
+	int result = sq_ble_smoke_call_adv_stop();
+	sq_ble_smoke_state = SQ_BLE_SMOKE_STATE_IDLE;
+	if (result == -EALREADY) {
+		return 0;
+	}
+	return result;
+}
+
 int sq_ble_smoke_sm_handle_disconnect(void)
 {
 	sq_ble_smoke_state = SQ_BLE_SMOKE_STATE_RESTART_PENDING;
@@ -174,13 +185,12 @@ int sq_ble_smoke_start(void)
 	 */
 	sq_ble_smoke_sm_install_api(&sq_ble_smoke_real_api);
 
-	result = sq_ble_smoke_sm_begin_advertising();
-	if (result != 0) {
-		LOG_WRN("BLE advertising failed: %d", result);
-		return result;
-	}
-
-	LOG_INF("BLE advertising started: %s", CONFIG_BT_DEVICE_NAME);
+	/* Bring the radio up but do not advertise yet. Advertising is gated on an
+	 * app starting a BLE object-receive profile via service.ble.start; the
+	 * runtime begins advertising when the first profile registers and stops it
+	 * when the last one is cleared.
+	 */
+	LOG_INF("BLE enabled (idle); advertising gated on active profiles");
 	return 0;
 #else
 	return -ENOTSUP;

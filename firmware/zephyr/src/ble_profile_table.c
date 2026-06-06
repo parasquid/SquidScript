@@ -5,7 +5,7 @@
 
 #include "app_store.h"
 
-static struct sq_ble_profile_entry sq_ble_profile_table[SQ_VM_RUNTIME_BLE_PROFILE_ARMED_MAX];
+static struct sq_ble_profile_entry sq_ble_profile_table[SQ_VM_RUNTIME_BLE_PROFILE_MAX];
 static size_t sq_ble_profile_table_count_static;
 
 int sq_ble_profile_table_add(const char *app_id, const char *profile_id,
@@ -27,7 +27,7 @@ int sq_ble_profile_table_add(const char *app_id, const char *profile_id,
 	if (events != NULL && event_count > SQVM_BLE_PROFILE_EVENT_MAX) {
 		return -EINVAL;
 	}
-	if (sq_ble_profile_table_count_static >= SQ_VM_RUNTIME_BLE_PROFILE_ARMED_MAX) {
+	if (sq_ble_profile_table_count_static >= SQ_VM_RUNTIME_BLE_PROFILE_MAX) {
 		return -EINVAL;
 	}
 

@@ -12,7 +12,7 @@
     "device_error_len": 48,
     "timer_max": 4,
     "armed_timer_max": 2,
-    "ble_profile_armed_max": 2,
+    "ble_profile_max": 2,
     "active_binding_max": 3,
     "input_button_max": 8,
     "input_poll_ms": 20,

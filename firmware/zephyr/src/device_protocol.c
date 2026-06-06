@@ -1255,95 +1255,6 @@ static int __noinline register_app_triggers(const struct sq_device_protocol_cont
 	return 0;
 }
 
-static int __noinline register_app_ble_profile_triggers(
-	const struct sq_device_protocol_context *context, const char *app_id)
-{
-	struct sq_vm_storage_backend backend;
-	struct sq_app_store_vm_storage *trigger_storage;
-	size_t ble_profile_count = 0;
-	size_t current_count;
-	SqvmStatus status;
-	SqvmBleProfileTrigger profile;
-	int result;
-
-	if (context == NULL || context->runtime == NULL || context->store_mount_point == NULL ||
-	    context->trigger_storage == NULL || app_id == NULL) {
-		return -EINVAL;
-	}
-	trigger_storage = context->trigger_storage;
-	result = sq_app_store_vm_storage_for_app(context->store_mount_point, app_id,
-						 trigger_storage);
-	if (result != 0) {
-		return result;
-	}
-	backend = sq_app_store_vm_storage_backend(trigger_storage);
-	if (backend.read_sqbc == NULL) {
-		return -ENODEV;
-	}
-
-	/* Drop any prior entries for this app so re-arming is idempotent and the
-	 * cap check below does not double-count this app's own slots.
-	 */
-	sq_ble_profile_table_remove_app(app_id);
-
-	result = sq_vm_runtime_transfer_acquire(context->runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH);
-	if (result != 0) {
-		return result;
-	}
-	status = sqvm_trigger_ble_profile_count_from_reader(
-		backend.user_data, backend.read_sqbc, context->runtime->transfer.init_scratch,
-		sizeof(context->runtime->transfer.init_scratch), &ble_profile_count);
-	result = sq_vm_runtime_transfer_release(context->runtime, SQ_VM_RUNTIME_TRANSFER_SCRATCH);
-	if (result != 0) {
-		return result;
-	}
-	if (status != SQVM_STATUS_OK) {
-		return -EINVAL;
-	}
-
-	current_count = sq_ble_profile_table_count();
-	if (ble_profile_count > SQ_VM_RUNTIME_BLE_PROFILE_ARMED_MAX ||
-	    current_count + ble_profile_count > SQ_VM_RUNTIME_BLE_PROFILE_ARMED_MAX) {
-		return -EINVAL;
-	}
-
-	for (size_t i = 0; i < ble_profile_count; i++) {
-		memset(&profile, 0, sizeof(profile));
-		result = sq_vm_runtime_transfer_acquire(context->runtime,
-						       SQ_VM_RUNTIME_TRANSFER_SCRATCH);
-		if (result != 0) {
-			sq_ble_profile_table_remove_app(app_id);
-			return result;
-		}
-		status = sqvm_trigger_ble_profile_read_from_reader(
-			backend.user_data, backend.read_sqbc,
-			context->runtime->transfer.init_scratch,
-			sizeof(context->runtime->transfer.init_scratch), i, &profile);
-		result = sq_vm_runtime_transfer_release(context->runtime,
-						       SQ_VM_RUNTIME_TRANSFER_SCRATCH);
-		if (result != 0) {
-			sq_ble_profile_table_remove_app(app_id);
-			return result;
-		}
-		if (status != SQVM_STATUS_OK) {
-			sq_ble_profile_table_remove_app(app_id);
-			return -EINVAL;
-		}
-
-		result = sq_ble_profile_table_add(
-			app_id, (const char *)profile.profile,
-			(const char (*)[SQVM_BLE_PROFILE_TEXT_CAP])profile.accept,
-			(uint8_t)profile.accept_count, profile.events,
-			(uint8_t)profile.event_count);
-		if (result != 0) {
-			sq_ble_profile_table_remove_app(app_id);
-			return result;
-		}
-	}
-	/* Zero BLE profiles is success: a normal (non-BLE) app must still arm. */
-	return 0;
-}
-
 int sq_device_protocol_start_root(const struct sq_device_protocol_context *context)
 {
 	if (context == NULL || context->runtime == NULL || context->store_mount_point == NULL ||
@@ -1552,11 +1463,11 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 		return result;
 
 	case SQ_APP_LIFECYCLE_STEP_REGISTER_ARMED_APP:
-		result = register_app_triggers(context, step.app_id);
-		if (result != 0) {
-			return result;
-		}
-		return register_app_ble_profile_triggers(context, step.app_id);
+		/* BLE object-receive profiles are no longer registered at arm time;
+		 * an app registers its profile imperatively via service.ble.start
+		 * (runtime_ble_start) while running foreground.
+		 */
+		return register_app_triggers(context, step.app_id);
 
 	case SQ_APP_LIFECYCLE_STEP_POLL_RUNTIME:
 		return sq_vm_runtime_poll(runtime);
