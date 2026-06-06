@@ -27,7 +27,7 @@
     "wifi_profile_name_bytes": 16,
     "wifi_profile_ssid_bytes": 32,
     "wifi_profile_password_bytes": 64,
-    "work_stack_size": 16640
+    "work_stack_size": 24576
   },
 
   "app_store": {

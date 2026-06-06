@@ -62,6 +62,7 @@ target_sources(app PRIVATE
   ../../src/vm_fs_storage.c
   ../../src/vm_runtime.c
   ../../src/vm_runtime_app_lifecycle.c
+  ../../src/vm_runtime_ble.c
   ../../src/vm_runtime_device_config.c
   ../../src/vm_runtime_display.c
   ../../src/vm_runtime_file.c

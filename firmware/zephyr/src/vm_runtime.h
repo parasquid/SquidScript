@@ -218,6 +218,7 @@ struct sq_vm_runtime {
 	const struct sq_vm_storage_backend *backend;
 	const char *store_mount_point;
 	const struct sq_app_registry *registry;
+	struct sq_app_registry *mutable_registry;
 	struct sq_vm_storage_backend job_backend;
 	bool start_apply_bindings;
 	char event[SQ_VM_RUNTIME_EVENT_LEN];
@@ -371,6 +372,8 @@ int sq_vm_runtime_wait_idle(struct sq_vm_runtime *runtime, int32_t timeout_ms);
 void sq_vm_runtime_set_store_mount_point(struct sq_vm_runtime *runtime, const char *mount_point);
 void sq_vm_runtime_set_registry(struct sq_vm_runtime *runtime,
 				const struct sq_app_registry *registry);
+void sq_vm_runtime_set_mutable_registry(struct sq_vm_runtime *runtime,
+					struct sq_app_registry *registry);
 const char *sq_vm_runtime_status_name(SqvmStatus status);
 int sq_vm_runtime_status_to_errno(SqvmStatus status);
 

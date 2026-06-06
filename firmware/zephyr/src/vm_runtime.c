@@ -343,6 +343,14 @@ void sq_vm_runtime_set_registry(struct sq_vm_runtime *runtime, const struct sq_a
 	}
 }
 
+void sq_vm_runtime_set_mutable_registry(struct sq_vm_runtime *runtime,
+					struct sq_app_registry *registry)
+{
+	if (runtime != NULL) {
+		runtime->mutable_registry = registry;
+	}
+}
+
 const char *sq_vm_runtime_status_name(SqvmStatus status)
 {
 	switch (status) {

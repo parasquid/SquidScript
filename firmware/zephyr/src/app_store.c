@@ -606,6 +606,7 @@ int sq_app_store_install_from_file_ref(const char *mount_point, const char *app_
 				       const char *staging_path)
 {
 	struct fs_file_t src;
+	struct fs_file_t dst;
 	char staged_path[SQ_APP_STORE_PATH_MAX];
 	uint8_t chunk[SQ_APP_STORE_INSTALL_COPY_CHUNK];
 	size_t total = 0;
@@ -627,6 +628,19 @@ int sq_app_store_install_from_file_ref(const char *mount_point, const char *app_
 						   sizeof(staged_path));
 	if (result != 0) {
 		(void)fs_close(&src);
+		return result;
+	}
+
+	/* Hold the staged file open and write sequentially. Re-opening and seeking
+	 * per chunk (as the serial protocol's incremental write_staged_chunk does)
+	 * fails partway for multi-chunk payloads here; a single open streamed in
+	 * order copies the whole file regardless of size.
+	 */
+	fs_file_t_init(&dst);
+	result = fs_open(&dst, staged_path, FS_O_WRITE);
+	if (result != 0) {
+		(void)fs_close(&src);
+		(void)fs_unlink(staged_path);
 		return result;
 	}
 
@@ -652,13 +666,22 @@ int sq_app_store_install_from_file_ref(const char *mount_point, const char *app_
 			result = -EFBIG;
 			break;
 		}
-		result = sq_app_store_write_staged_chunk(staged_path, total, chunk, (size_t)bytes);
-		if (result != 0) {
+		ssize_t written = fs_write(&dst, chunk, (size_t)bytes);
+		if (written < 0) {
+			result = (int)written;
+			break;
+		}
+		if ((size_t)written != (size_t)bytes) {
+			result = -EIO;
 			break;
 		}
 		total += (size_t)bytes;
 	}
 
+	close_result = fs_close(&dst);
+	if (result == 0 && close_result != 0) {
+		result = close_result;
+	}
 	close_result = fs_close(&src);
 	if (result == 0 && close_result != 0) {
 		result = close_result;

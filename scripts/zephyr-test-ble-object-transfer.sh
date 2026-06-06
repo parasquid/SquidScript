@@ -129,8 +129,8 @@ cargo run --quiet -p squidc -- app install "$EXAMPLE_SQBC"
 echo ">>> Launching ${APP_ID} (starts BLE receive on app.start)"
 cargo run --quiet -p squidc -- app launch "${APP_ID}"
 
-echo ">>> Compiling payload (${PAYLOAD_ID})"
-cargo run --quiet -p squidc -- app build "${ROOT}/examples/ble-install/main.squid" --out "$PAYLOAD_SQBC"
+echo ">>> Compiling payload (${PAYLOAD_ID}) from ${SOURCE}"
+cargo run --quiet -p squidc -- app build "${SOURCE}" --out "$PAYLOAD_SQBC"
 
 echo ">>> Pushing payload via BLE OTS to $DEVICE"
 cd "${ROOT}/tools/ots-push"

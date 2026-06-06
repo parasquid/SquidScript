@@ -3718,11 +3718,16 @@ fn ble_profile_read_from_reader(
         return SqvmStatus::VmError;
     }
     let strings_len = strings_section.len;
-    let mut out = SqvmBleProfileTrigger {
-        accept_count,
-        event_count,
-        ..SqvmBleProfileTrigger::default()
-    };
+    // Construct the result in place in the caller-owned buffer. This runs deep
+    // inside VM builtin dispatch (service.ble.start), so a 640-byte
+    // SqvmBleProfileTrigger temporary on this stack would overflow the VM work
+    // stack. Zero the out struct, then copy string fields directly into it.
+    unsafe {
+        core::ptr::write_bytes(out_profile, 0u8, 1);
+    }
+    let out = unsafe { &mut *out_profile };
+    out.accept_count = accept_count;
+    out.event_count = event_count;
     if copy_string_id(&scratch[..strings_len], profile_id, &mut out.profile).is_err()
         || copy_string_id(&scratch[..strings_len], id_id, &mut out.id).is_err()
         || copy_string_id(&scratch[..strings_len], role_id, &mut out.role).is_err()
@@ -3757,9 +3762,6 @@ fn ble_profile_read_from_reader(
         {
             return SqvmStatus::VmError;
         }
-    }
-    unsafe {
-        *out_profile = out;
     }
     SqvmStatus::Ok
 }

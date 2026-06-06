@@ -2741,7 +2741,7 @@ ZTEST(squidscript_protocol, test_links_squidvm_ffi_context_metadata)
 #if !defined(CONFIG_BOARD_NATIVE_SIM)
 	zassert_true(SQ_VM_RUNTIME_CONTEXT_BYTES <= 7872);
 #endif
-	zassert_true(SQ_VM_RUNTIME_WORK_STACK_SIZE <= 16640);
+	zassert_true(SQ_VM_RUNTIME_WORK_STACK_SIZE <= 24576);
 }
 
 ZTEST(squidscript_protocol, test_runtime_wait_idle_times_out_while_worker_is_running)

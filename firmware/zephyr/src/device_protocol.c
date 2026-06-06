@@ -914,6 +914,10 @@ static int start_installed_app_bytes(const struct sq_device_protocol_context *co
 	    memcmp(context->runtime->current_app, app_id, app_id_len) != 0) {
 		result = sq_vm_runtime_wait_idle(context->runtime, 250);
 		if (result != 0) {
+			char l[SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
+			(void)snprintf(l, sizeof(l), "launch waitidle %d (%s)", result,
+				       sq_errno_name(result));
+			(void)sq_vm_runtime_record_device_error(context->runtime, l);
 			return result;
 		}
 		sq_vm_runtime_reset_vm_context(context->runtime);
@@ -922,6 +926,10 @@ static int start_installed_app_bytes(const struct sq_device_protocol_context *co
 	result = sq_app_store_vm_storage_for_app_bytes(context->store_mount_point, app_id,
 						       app_id_len, context->launch_storage);
 	if (result != 0) {
+		char l[SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
+		(void)snprintf(l, sizeof(l), "launch storage %d (%s)", result,
+			       sq_errno_name(result));
+		(void)sq_vm_runtime_record_device_error(context->runtime, l);
 		return result;
 	}
 	context->runtime->job_backend = sq_app_store_vm_storage_backend(context->launch_storage);
@@ -939,6 +947,10 @@ static int start_installed_app_bytes(const struct sq_device_protocol_context *co
 	result = sq_vm_runtime_start_event(context->runtime, &context->runtime->job_backend, event,
 					   event_len);
 	if (result != 0) {
+		char l[SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
+		(void)snprintf(l, sizeof(l), "launch start_event %d (%s)", result,
+			       sq_errno_name(result));
+		(void)sq_vm_runtime_record_device_error(context->runtime, l);
 		if (set_current) {
 			strncpy(context->runtime->current_app,
 				context->runtime->lifecycle_previous_app,

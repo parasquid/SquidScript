@@ -5,6 +5,8 @@
 #include "squidvm_ffi.h"
 
 #if IS_ENABLED(CONFIG_BT)
+#include <zephyr/kernel.h>
+
 #include "ble_smoke_sm.h"
 #endif
 
@@ -19,20 +21,42 @@
  * transfer. Advertising is gated on the profile table being non-empty.
  */
 
-/* Advertising follows the profile table: advertise while >=1 profile is
- * registered, stop once the last one is cleared. On non-BT builds (native_sim
- * ztests) there is no radio, so registration still updates the routing table
- * but advertising is a no-op.
+/* The reader fills a ~640-byte SqvmBleProfileTrigger. runtime_ble_start runs
+ * deep inside VM builtin dispatch (main loop -> protocol -> VM execute ->
+ * call_builtin -> FFI), so keep this transient struct off that stack to avoid
+ * overflowing the VM work stack. Access is single-threaded (one VM dispatch at
+ * a time), so a file-scope buffer is safe. The reader itself constructs the
+ * result in place in this buffer rather than on its own stack.
  */
-static int sq_vm_runtime_ble_advertising_sync(void)
+static SqvmBleProfileTrigger sq_ble_start_profile;
+
+#if IS_ENABLED(CONFIG_BT)
+/* Advertising must not be started/stopped inside the VM builtin dispatch:
+ * bt_le_adv_start blocks on an HCI command. Defer the begin/stop to the system
+ * work queue, the same context the disconnect-restart path drives advertising
+ * from.
+ */
+static void sq_ble_adv_sync_work(struct k_work *work)
+{
+	ARG_UNUSED(work);
+	if (sq_ble_profile_table_count() > 0) {
+		(void)sq_ble_smoke_sm_begin_advertising();
+	} else {
+		(void)sq_ble_smoke_sm_stop_advertising();
+	}
+}
+
+K_WORK_DEFINE(sq_ble_adv_sync, sq_ble_adv_sync_work);
+#endif
+
+/* Sync advertising to the profile table. On non-BT builds (native_sim ztests)
+ * there is no radio, so registration still updates the routing table while
+ * advertising is a no-op.
+ */
+static void sq_vm_runtime_ble_advertising_sync(void)
 {
 #if IS_ENABLED(CONFIG_BT)
-	if (sq_ble_profile_table_count() > 0) {
-		return sq_ble_smoke_sm_begin_advertising();
-	}
-	return sq_ble_smoke_sm_stop_advertising();
-#else
-	return 0;
+	(void)k_work_submit(&sq_ble_adv_sync);
 #endif
 }
 
@@ -40,7 +64,6 @@ int32_t runtime_ble_start(void *user_data, const uint8_t *id, size_t id_len)
 {
 	struct sq_vm_runtime *runtime = user_data;
 	char want_id[SQVM_BLE_PROFILE_TEXT_CAP];
-	SqvmBleProfileTrigger profile;
 	size_t count = 0;
 	bool found = false;
 	SqvmStatus status;
@@ -62,14 +85,14 @@ int32_t runtime_ble_start(void *user_data, const uint8_t *id, size_t id_len)
 		runtime->backend->user_data, (SqvmReadExactAtCallback)runtime->backend->read_sqbc,
 		runtime->transfer.init_scratch, sizeof(runtime->transfer.init_scratch), &count);
 	for (size_t i = 0; status == SQVM_STATUS_OK && i < count && !found; i++) {
-		memset(&profile, 0, sizeof(profile));
 		status = sqvm_trigger_ble_profile_read_from_reader(
 			runtime->backend->user_data,
 			(SqvmReadExactAtCallback)runtime->backend->read_sqbc,
 			runtime->transfer.init_scratch, sizeof(runtime->transfer.init_scratch), i,
-			&profile);
+			&sq_ble_start_profile);
 		if (status == SQVM_STATUS_OK &&
-		    strncmp((const char *)profile.id, want_id, SQVM_BLE_PROFILE_TEXT_CAP) == 0) {
+		    strncmp((const char *)sq_ble_start_profile.id, want_id,
+			    SQVM_BLE_PROFILE_TEXT_CAP) == 0) {
 			found = true;
 		}
 	}
@@ -86,13 +109,14 @@ int32_t runtime_ble_start(void *user_data, const uint8_t *id, size_t id_len)
 	 */
 	sq_ble_profile_table_remove_app(runtime->current_app);
 	result = sq_ble_profile_table_add(
-		runtime->current_app, (const char *)profile.profile,
-		(const char (*)[SQVM_BLE_PROFILE_TEXT_CAP])profile.accept,
-		(uint8_t)profile.accept_count, profile.events, (uint8_t)profile.event_count);
+		runtime->current_app, (const char *)sq_ble_start_profile.profile,
+		(const char (*)[SQVM_BLE_PROFILE_TEXT_CAP])sq_ble_start_profile.accept,
+		(uint8_t)sq_ble_start_profile.accept_count, sq_ble_start_profile.events,
+		(uint8_t)sq_ble_start_profile.event_count);
 	if (result != 0) {
 		return result;
 	}
-	(void)sq_vm_runtime_ble_advertising_sync();
+	sq_vm_runtime_ble_advertising_sync();
 	return 0;
 }
 
@@ -108,6 +132,6 @@ int32_t runtime_ble_stop(void *user_data)
 	 * pending event is preserved by the abort/reset path for the consumer.
 	 */
 	sq_ble_transfer_abort();
-	(void)sq_vm_runtime_ble_advertising_sync();
+	sq_vm_runtime_ble_advertising_sync();
 	return 0;
 }

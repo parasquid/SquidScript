@@ -14,9 +14,6 @@ event.on("app.start") {
     state.stateVersion = 1
   }
   state.save()
-  // Imperatively start BLE object receive while this app runs. The radio
-  // advertises only while a profile is registered; start is idempotent, so
-  // re-running app.start on a re-launch simply re-applies the profile.
   service.ble.start("object-transfer", {
     id: "sqbc-install",
     accept: [".sqbc"],
@@ -32,9 +29,6 @@ event.on("ble.object.complete", ev) {
   state.load()
   state.received = state.received + 1
   debug.print("received file", state.received)
-  // ev.upload is the staged file path delivered by the runtime
-  // (/sq/tmp/ble-object-<app_id>-<profile_id>.tmp); install it as a new app
-  // and start it.
   app.install(ev.upload, "installed-app")
   app.launch("installed-app")
   state.installed = state.installed + 1
