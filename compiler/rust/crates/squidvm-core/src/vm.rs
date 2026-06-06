@@ -1446,9 +1446,15 @@ impl ChunkedVm {
                 host.app_disarm(self.index.string(app_id)?)?;
             }
             BUILTIN_APP_INSTALL => {
-                let file_ref_id = self.pop_sqbc_string_id()?;
+                // file_ref is a runtime expression value (any string variant --
+                // SQBC constant, static, or dynamic event/state string); app_id is
+                // a literal install target id.
+                let file_ref = self.pop()?;
                 let app_id_id = self.pop_sqbc_string_id()?;
-                host.app_install(self.index.string(file_ref_id)?, self.index.string(app_id_id)?)?;
+                let app_id = self.index.string(app_id_id)?;
+                let resolver = self.resolver();
+                let file_ref = resolver.value_str(file_ref)?;
+                host.app_install(file_ref, app_id)?;
             }
             BUILTIN_APP_REGISTRY_LIST => {
                 let registry = host.app_registry_list()?;

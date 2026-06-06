@@ -1074,6 +1074,40 @@ fn runs_sqbc_emitted_by_squidc_core() {
 }
 
 #[test]
+fn app_install_accepts_a_runtime_file_ref_expression() {
+    // app.install's file_ref is a runtime expression (here a state string), not a
+    // compile-time string literal. The handler must reach the host with the actual
+    // runtime path -- this is what lets an app install a file whose path is only
+    // known at runtime (e.g. a BLE-received object's staged path).
+    let source = r#"app "install-demo"
+state {
+  path: string = "/sd/apps/x/main.sqbc"
+}
+event.on("app.start") {
+  state.load()
+  app.install(state.path, "target")
+}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: "esp32c3-super-mini".to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = RuntimeTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert!(
+        trace.events.contains(&"install /sd/apps/x/main.sqbc target".to_string()),
+        "expected the runtime file_ref to reach the host, got events: {:?}",
+        trace.events
+    );
+}
+
+#[test]
 fn state_save_load_and_reset_use_typed_persistent_record() {
     let source = r#"app "state-demo"
 state {

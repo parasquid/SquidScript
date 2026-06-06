@@ -489,6 +489,9 @@ fn validate_statement_names(
             IrStatement::ServiceTimerAfter { delay_ms, .. } => {
                 validate_expr_names(delay_ms, state_names, visible, start, end, diagnostics);
             }
+            IrStatement::AppInstall { file_ref, .. } => {
+                validate_expr_names(file_ref, state_names, visible, start, end, diagnostics);
+            }
             IrStatement::ServiceBleProfile { .. } => {}
             IrStatement::ServicePowerSleep { wake_after_ms } => {
                 validate_expr_names(wake_after_ms, state_names, visible, start, end, diagnostics);
@@ -518,7 +521,6 @@ fn validate_statement_names(
             | IrStatement::AppLaunch { .. }
             | IrStatement::AppArm { .. }
             | IrStatement::AppDisarm { .. }
-            | IrStatement::AppInstall { .. }
             | IrStatement::HardwareGpioToggle { .. }
             | IrStatement::ServiceIndicatorToggle
             | IrStatement::ServiceIndicatorBreathe
@@ -1034,6 +1036,7 @@ fn statement_uses_any_name(
             expr_uses_any_name(interval_ms, names)
         }
         IrStatement::ServiceTimerAfter { delay_ms, .. } => expr_uses_any_name(delay_ms, names),
+        IrStatement::AppInstall { file_ref, .. } => expr_uses_any_name(file_ref, names),
         IrStatement::ServiceBleProfile { .. } => false,
         IrStatement::ServicePowerSleep { wake_after_ms } => {
             expr_uses_any_name(wake_after_ms, names)
@@ -1055,7 +1058,6 @@ fn statement_uses_any_name(
         | IrStatement::AppLaunch { .. }
         | IrStatement::AppArm { .. }
         | IrStatement::AppDisarm { .. }
-        | IrStatement::AppInstall { .. }
         | IrStatement::HardwareGpioToggle { .. }
         | IrStatement::ServiceIndicatorToggle
         | IrStatement::ServiceIndicatorBreathe

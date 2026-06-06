@@ -379,7 +379,12 @@ impl Parser<'_> {
                 Some(IrStatement::AppDisarm { app })
             }
             ("app", "install") => {
-                let file_ref = self.consume_string(builder).unwrap_or_default();
+                // file_ref is a runtime expression (string literal, state value,
+                // event field, ...) so an app can install a file whose path is only
+                // known at runtime; app_id is a literal install target id.
+                let file_ref = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
+                    value: serde_json::json!(""),
+                });
                 self.consume_comma(builder);
                 let app_id = self.consume_string(builder).unwrap_or_default();
                 self.consume_call_tail(builder);

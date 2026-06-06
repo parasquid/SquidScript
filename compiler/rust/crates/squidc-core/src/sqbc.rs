@@ -472,7 +472,7 @@ fn collect_statement_strings(
                 strings.intern(app)?;
             }
             IrStatement::AppInstall { file_ref, app_id } => {
-                strings.intern(file_ref)?;
+                collect_expr_strings(file_ref, strings)?;
                 strings.intern(app_id)?;
             }
             IrStatement::ServiceTimerEvery { event, interval_ms } => {
@@ -792,7 +792,7 @@ fn compile_statement(
         }
         IrStatement::AppInstall { file_ref, app_id } => {
             emit_string(unit, app_id)?;
-            emit_string(unit, file_ref)?;
+            compile_expr(unit, frame, file_ref)?;
             emit_builtin(&mut unit.code, BUILTIN_APP_INSTALL);
         }
         IrStatement::ServiceTimerEvery { event, interval_ms } => {

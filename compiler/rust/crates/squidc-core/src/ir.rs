@@ -111,7 +111,7 @@ pub enum IrStatement {
     #[serde(rename = "app.disarm")]
     AppDisarm { app: String },
     #[serde(rename = "app.install")]
-    AppInstall { file_ref: String, app_id: String },
+    AppInstall { file_ref: IrExpr, app_id: String },
     #[serde(rename = "service.timer.every")]
     ServiceTimerEvery { event: String, interval_ms: IrExpr },
     #[serde(rename = "service.timer.after")]
