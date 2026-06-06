@@ -45,6 +45,20 @@ int sq_ble_transfer_write_chunk(const void *data, size_t len, off_t offset, size
 
 void sq_ble_transfer_abort(void);
 
+/* Framed transfer for transports whose individual writes must stay small (e.g.
+ * GATT at the default ATT MTU). begin_framed declares the content size and the
+ * object-name length; feed_name appends name bytes (across one or more writes)
+ * until name_len is reached, at which point the name is parsed and the staging
+ * file opened; feed_content then appends content bytes, and completion (content
+ * fully received) publishes the same pending event as the non-framed path.
+ * Each returns 0 on success or a reject/-errno code.
+ */
+int sq_ble_transfer_begin_framed(size_t total_size, size_t name_len);
+
+int sq_ble_transfer_feed_name(const void *data, size_t len);
+
+int sq_ble_transfer_feed_content(const void *data, size_t len);
+
 void sq_ble_ots_reset_session(void);
 
 int sq_ble_ots_drain_pending_event(char *app_id_out, size_t app_id_cap, char *event_out,

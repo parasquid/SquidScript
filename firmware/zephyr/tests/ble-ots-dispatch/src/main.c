@@ -366,3 +366,59 @@ ZTEST(ble_ots_dispatch, test_end_to_end_multichunk_large_payload)
 
 	sq_ble_ots_cleanup_staging();
 }
+
+ZTEST(ble_ots_dispatch, test_framed_name_then_content_one_feed)
+{
+	const char *name = "installed-app/wallpaper/.sqbc";
+	const uint8_t content[] = {'S', 'Q', 'B', 'C', 0x10, 0x20, 0x30, 0x40};
+	char app_id[SQ_APP_STORE_APP_ID_MAX] = {0};
+	char event[SQ_VM_RUNTIME_EVENT_LEN] = {0};
+	struct fs_file_t verify;
+	uint8_t readback[8] = {0};
+	int result;
+
+	zassert_equal(sq_ble_transfer_begin_framed(sizeof(content), strlen(name)), 0);
+	result = sq_ble_transfer_feed_name(name, strlen(name));
+	zassert_equal(result, 0, "feed_name failed: %d", result);
+	result = sq_ble_transfer_feed_content(content, sizeof(content));
+	zassert_equal(result, 0, "feed_content failed: %d", result);
+
+	zassert_true(sq_ble_ots_pending_is_complete(), "transfer should be complete");
+	zassert_equal(sq_ble_ots_drain_pending_event(app_id, sizeof(app_id), event, sizeof(event)), 0);
+	zassert_str_equal(app_id, "installed-app");
+
+	fs_file_t_init(&verify);
+	zassert_equal(fs_open(&verify, sq_ble_ots_pending_staging_path(), FS_O_READ), 0);
+	zassert_equal(fs_read(&verify, readback, sizeof(readback)), (ssize_t)sizeof(content));
+	(void)fs_close(&verify);
+	zassert_mem_equal(readback, content, sizeof(content));
+	sq_ble_ots_cleanup_staging();
+}
+
+ZTEST(ble_ots_dispatch, test_framed_split_across_name_content_boundary)
+{
+	const char *name = "installed-app/wallpaper/.sqbc";
+	const uint8_t content[16] = {'S', 'Q', 'B', 'C', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+	size_t nl = strlen(name);
+
+	zassert_equal(sq_ble_transfer_begin_framed(sizeof(content), nl), 0);
+	zassert_equal(sq_ble_transfer_feed_name(name, 5), 0);
+	zassert_equal(sq_ble_transfer_feed_name(name + 5, nl - 5), 0);
+	zassert_equal(sq_ble_transfer_feed_content(content, 4), 0);
+	zassert_equal(sq_ble_transfer_feed_content(content + 4, 8), 0);
+	zassert_equal(sq_ble_transfer_feed_content(content + 12, 4), 0);
+	zassert_true(sq_ble_ots_pending_is_complete());
+	sq_ble_ots_cleanup_staging();
+}
+
+ZTEST(ble_ots_dispatch, test_framed_rejects_content_overrun)
+{
+	const char *name = "installed-app/wallpaper/.sqbc";
+	uint8_t over[16] = {'S', 'Q', 'B', 'C', 0};
+
+	zassert_equal(sq_ble_transfer_begin_framed(8, strlen(name)), 0);
+	zassert_equal(sq_ble_transfer_feed_name(name, strlen(name)), 0);
+	/* declared 8 bytes; feeding 16 must be rejected, not overrun */
+	zassert_equal(sq_ble_transfer_feed_content(over, sizeof(over)), -EFBIG);
+	sq_ble_ots_test_invoke_abort();
+}

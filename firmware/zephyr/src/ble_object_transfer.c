@@ -43,6 +43,20 @@ struct sq_ble_ots_pending_event {
 static struct sq_ble_ots_session sq_ble_ots_session;
 static struct sq_ble_ots_pending_event sq_ble_ots_pending;
 
+#define SQ_BLE_TRANSFER_NAME_MAX 96
+
+/* Framing state for the opcode transport: the object name arrives as a run of
+ * name bytes (across NAME writes) followed by content bytes. */
+static struct {
+	bool active;
+	bool name_done;
+	size_t total_size;
+	size_t name_len;
+	size_t name_got;
+	size_t content_off;
+	char name[SQ_BLE_TRANSFER_NAME_MAX];
+} sq_ble_framed;
+
 static int sq_ble_ots_format_staging_path(char *out, size_t out_len, const char *app_id,
 					  const char *profile_id)
 {
@@ -267,6 +281,7 @@ void sq_ble_ots_reset_session(void)
 		(void)fs_unlink(sq_ble_ots_pending.staging_path);
 	}
 	memset(&sq_ble_ots_pending, 0, sizeof(sq_ble_ots_pending));
+	memset(&sq_ble_framed, 0, sizeof(sq_ble_framed));
 }
 
 static void sq_ble_ots_abort_internal(void)
@@ -275,6 +290,7 @@ static void sq_ble_ots_abort_internal(void)
 		LOG_INF("abort: clearing in-flight app=%s profile=%s",
 			sq_ble_ots_session.app_id, sq_ble_ots_session.profile_id);
 	}
+	memset(&sq_ble_framed, 0, sizeof(sq_ble_framed));
 	sq_ble_ots_close_session_files();
 	memset(&sq_ble_ots_session, 0, sizeof(sq_ble_ots_session));
 }
@@ -300,6 +316,73 @@ int sq_ble_transfer_write_chunk(const void *data, size_t len, off_t offset, size
 void sq_ble_transfer_abort(void)
 {
 	sq_ble_ots_abort_internal();
+}
+
+int sq_ble_transfer_begin_framed(size_t total_size, size_t name_len)
+{
+	if (name_len == 0 || name_len >= sizeof(sq_ble_framed.name)) {
+		return BT_GATT_OTS_OACP_RES_INV_PARAM;
+	}
+	if (total_size == 0 || total_size > SQ_DEVICE_INSTALL_MAX_BYTES) {
+		return BT_GATT_OTS_OACP_RES_INV_PARAM;
+	}
+	if (sq_ble_ots_session.active || sq_ble_framed.active) {
+		return BT_GATT_OTS_OACP_RES_OBJ_LOCKED;
+	}
+	memset(&sq_ble_framed, 0, sizeof(sq_ble_framed));
+	sq_ble_framed.active = true;
+	sq_ble_framed.total_size = total_size;
+	sq_ble_framed.name_len = name_len;
+	return 0;
+}
+
+int sq_ble_transfer_feed_name(const void *data, size_t len)
+{
+	int result;
+
+	if (!sq_ble_framed.active || sq_ble_framed.name_done || data == NULL) {
+		return -EINVAL;
+	}
+	if (sq_ble_framed.name_got + len > sq_ble_framed.name_len) {
+		return BT_GATT_OTS_OACP_RES_INV_PARAM;
+	}
+	memcpy(sq_ble_framed.name + sq_ble_framed.name_got, data, len);
+	sq_ble_framed.name_got += len;
+	if (sq_ble_framed.name_got == sq_ble_framed.name_len) {
+		sq_ble_framed.name[sq_ble_framed.name_len] = '\0';
+		result = sq_ble_ots_obj_created_internal(sq_ble_framed.name,
+							 sq_ble_framed.total_size);
+		if (result != 0) {
+			memset(&sq_ble_framed, 0, sizeof(sq_ble_framed));
+			return result;
+		}
+		sq_ble_framed.name_done = true;
+	}
+	return 0;
+}
+
+int sq_ble_transfer_feed_content(const void *data, size_t len)
+{
+	size_t rem;
+	int result;
+
+	if (!sq_ble_framed.active || !sq_ble_framed.name_done || data == NULL) {
+		return -EINVAL;
+	}
+	if (sq_ble_framed.content_off + len > sq_ble_framed.total_size) {
+		return -EFBIG;
+	}
+	rem = sq_ble_framed.total_size - (sq_ble_framed.content_off + len);
+	result = sq_ble_ots_obj_write_internal(sq_ble_ots_session.staging_path, data, len,
+					       (off_t)sq_ble_framed.content_off, rem);
+	if (result < 0) {
+		return result;
+	}
+	sq_ble_framed.content_off += len;
+	if (rem == 0) {
+		sq_ble_framed.active = false;
+	}
+	return 0;
 }
 
 int sq_ble_ots_test_invoke_obj_created_with_name(const char *name, size_t alloc_size,
