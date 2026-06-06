@@ -157,6 +157,16 @@ pub trait TraceSink {
     fn service_timer_after(&mut self, _event: &str, _delay_ms: i32) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
     }
+    /// Set the calling app's BLE object-receive profile to the one whose
+    /// compile-time `id` matches and begin advertising. Idempotent set/replace.
+    fn service_ble_start(&mut self, _id: &str) -> Result<(), VmError> {
+        Err(VmError::InvalidOperand)
+    }
+    /// Clear the calling app's BLE profile, abort any in-flight transfer, and
+    /// stop advertising if no profiles remain.
+    fn service_ble_stop(&mut self) -> Result<(), VmError> {
+        Err(VmError::InvalidOperand)
+    }
     fn service_wifi_start_ap<'a>(&'a mut self, _ssid: &str) -> Result<WifiOperation<'a>, VmError> {
         Err(VmError::InvalidOperand)
     }

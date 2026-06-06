@@ -405,6 +405,16 @@ impl TraceSink for RuntimeTrace {
         Ok(())
     }
 
+    fn service_ble_start(&mut self, id: &str) -> Result<(), VmError> {
+        self.events.push(format!("service.ble.start {id}"));
+        Ok(())
+    }
+
+    fn service_ble_stop(&mut self) -> Result<(), VmError> {
+        self.events.push("service.ble.stop".to_string());
+        Ok(())
+    }
+
     fn system_memory_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
         write!(out, "RAM 292 KiB").map_err(|_| VmError::InvalidOperand)
     }
@@ -1101,7 +1111,9 @@ event.on("app.start") {
     vm.dispatch("app.start", &mut trace).unwrap();
 
     assert!(
-        trace.events.contains(&"install /sd/apps/x/main.sqbc target".to_string()),
+        trace
+            .events
+            .contains(&"install /sd/apps/x/main.sqbc target".to_string()),
         "expected the runtime file_ref to reach the host, got events: {:?}",
         trace.events
     );
@@ -2015,6 +2027,45 @@ screen("main") {}
             "service.timer.every timer.debug 1000",
             "timer.debug",
             "debug timer 0",
+        ]
+    );
+}
+
+#[test]
+fn dispatch_handles_service_ble_start_and_stop() {
+    let source = r#"app "ble-install"
+event.on("app.start") {
+  service.ble.start("object-transfer", {
+    id: "sqbc-install",
+    accept: [".sqbc"],
+    events: { complete: "ble.object.complete", error: "ble.object.error" }
+  })
+}
+event.on("done") {
+  service.ble.stop()
+}
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = RuntimeTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+    vm.dispatch("done", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "service.ble.start sqbc-install",
+            "done",
+            "service.ble.stop",
         ]
     );
 }
