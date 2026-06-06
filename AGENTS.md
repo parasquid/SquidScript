@@ -215,6 +215,32 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   explicitly asks for raw identifiers. Preserve technical evidence with counts,
   lengths, channels, RSSI, auth modes, and redacted placeholders instead.
 
+## Hardware Availability — Probe Before Assuming
+
+- Do not claim you "can't test on hardware" or "have no radio/device" without
+  first checking. An agent working on this project may be running on a developer
+  workstation with real hardware attached, and assuming otherwise has led to
+  shipping firmware as "build-verified only" when it could have been driven
+  end-to-end on a live device.
+- This is an *example* of what may be present (your environment may differ —
+  probe, do not hardcode these assumptions):
+  - A host **Bluetooth controller**: `ls /sys/class/bluetooth/`, `bluetoothctl
+    list`, `rfkill list`, and a Python BLE stack (`python3 -c "import bleak"`)
+    let you scan, connect, and drive GATT against a flashed device.
+  - An **ESP32-C3 dev board on a serial port**: `ls /dev/ttyACM* /dev/ttyUSB*`,
+    then `cargo run -p squidc -- target flash --target <id>` (set
+    `ESPFLASH_PORT`) to flash, and `cargo run -p squidc -- app install|launch|
+    list` / `device output` to drive it over serial.
+- When a change touches firmware, a transport, or a hardware path, attempt the
+  real end-to-end run (flash, drive, observe) before reporting completion. Unit
+  tests and mocks catch logic bugs; only real hardware catches things like ATT
+  MTU limits, advertising/GATT registration, and on-wire timing. If hardware
+  genuinely is not reachable after probing, say so explicitly *and* say what you
+  checked — never assume it away.
+- Reflashing the project's dev board is routine for this work; treat it like
+  running a test, not a destructive action. Still redact environment
+  identifiers per the placeholder-discipline rules above.
+
 ## Constrained Device RAM Discipline
 
 - Treat RAM as a constrained hardware resource by default in firmware,
