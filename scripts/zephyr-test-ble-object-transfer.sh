@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Push a SQBC file to a SquidScript device's BLE OTS service and verify
-# the device installs it. This is the slice 10 hardware test wrapper.
+# Push a SQBC file to a SquidScript device's custom GATT app-transfer
+# service and verify the device installs it. Hardware test wrapper.
 #
 # Defaults to the XIAO ESP32-C3 e-paper dev target. The wrapper builds
 # and flashes the firmware via west flash, installs the ble-install

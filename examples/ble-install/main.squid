@@ -28,11 +28,13 @@ event.on("app.start") {
   debug.print("ble-install ready")
 }
 
-event.on("ble.object.complete") {
+event.on("ble.object.complete", ev) {
   state.load()
   state.received = state.received + 1
   debug.print("received file", state.received)
-  app.install("/sq/tmp/ble-object-ble-install-wallpaper.tmp", "installed-app")
+  // ev.upload is the staged file path delivered by the runtime
+  // (/sq/tmp/ble-object-<app_id>-<profile_id>.tmp); install it as a new app.
+  app.install(ev.upload, "installed-app")
   state.installed = state.installed + 1
   state.save()
 }
