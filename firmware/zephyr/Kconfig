@@ -15,6 +15,17 @@ config SQUIDSCRIPT_TARGET_DISPLAY_SSD1677_EXPECTED
 	  through retained diagnostics instead of pretending draw-log output is a
 	  physical display.
 
+config SQUIDSCRIPT_BLE_L2CAP_PROBE
+	bool "Throwaway BLE L2CAP CoC sink for the transport spike"
+	default n
+	depends on BT
+	select BT_L2CAP_DYNAMIC_CHANNEL
+	help
+	  Register a bare L2CAP connection-oriented-channel server that accepts a
+	  single channel and logs the bytes it receives. Used only to confirm a
+	  host (e.g. a Linux BlueZ raw L2CAP socket) can drive LE CoC against this
+	  device before committing to an OTS/CoC transport. NOT for production.
+
 endmenu
 
 source "Kconfig.zephyr"
