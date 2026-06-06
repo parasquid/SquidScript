@@ -26,12 +26,15 @@ DATA_UUID = "7e57c0de-0003-4a5b-8c6d-0123456789ab"
 STAT_UUID = "7e57c0de-0004-4a5b-8c6d-0123456789ab"
 
 OP_BEGIN = 0x01
+OP_NAME = 0x02
 OP_ABORT = 0x03
 STATUS_COMPLETE = 0x00
 STATUS_ERROR = 0x01
 
 # Conservative GATT write chunk; raised to (MTU - 3) after connect when known.
 DEFAULT_CHUNK = 180
+# NAME control writes must fit the default 23-byte ATT MTU (minus ATT + opcode).
+NAME_CHUNK = 18
 
 
 @dataclass
@@ -64,9 +67,12 @@ def build_object_name(app_id: str, profile_id: str, extension: str = ".sqbc") ->
     return f"{app_id}/{profile_id}/{extension}"
 
 
-def build_begin_command(object_name: str, size: int) -> bytes:
-    """Frame the control-characteristic BEGIN write."""
-    return bytes([OP_BEGIN]) + int(size).to_bytes(4, "little") + object_name.encode("utf-8")
+def build_begin_command(size: int, name_len: int) -> bytes:
+    """Frame the control BEGIN write: opcode + content size + object-name length.
+
+    Stays at 7 bytes so it fits the default 23-byte ATT MTU (no long write).
+    """
+    return bytes([OP_BEGIN]) + int(size).to_bytes(4, "little") + int(name_len).to_bytes(2, "little")
 
 
 async def push_file(
@@ -133,9 +139,15 @@ async def _push_via_gatt(
 
         await client.start_notify(STAT_UUID, on_status)
 
-        # BEGIN routes the upload and declares the size.
-        await client.write_gatt_char(CTRL_UUID, build_begin_command(object_name, file_size),
+        # BEGIN declares content size + object-name length (fits the default MTU).
+        name_bytes = object_name.encode("utf-8")
+        await client.write_gatt_char(CTRL_UUID, build_begin_command(file_size, len(name_bytes)),
                                      response=True)
+        # NAME writes carry the object name in MTU-sized pieces.
+        for off in range(0, len(name_bytes), NAME_CHUNK):
+            await client.write_gatt_char(CTRL_UUID,
+                                         bytes([OP_NAME]) + name_bytes[off : off + NAME_CHUNK],
+                                         response=True)
 
         chunk = _resolve_chunk(client)
         sent = 0

@@ -16,6 +16,7 @@ from ots_push.client import (
     CTRL_UUID,
     DATA_UUID,
     OP_BEGIN,
+    OP_NAME,
     STAT_UUID,
     STATUS_COMPLETE,
     STATUS_ERROR,
@@ -54,11 +55,12 @@ def test_build_object_name_canonical():
     assert build_object_name("app-a", "wallpaper") == "app-a/wallpaper/.sqbc"
 
 
-def test_build_begin_command_frames_opcode_size_name():
-    cmd = build_begin_command("app/p/.sqbc", 0x01020304)
+def test_build_begin_command_frames_opcode_size_namelen():
+    cmd = build_begin_command(0x01020304, 30)
     assert cmd[0] == OP_BEGIN
-    assert cmd[1:5] == bytes([0x04, 0x03, 0x02, 0x01])  # little-endian
-    assert cmd[5:] == b"app/p/.sqbc"
+    assert cmd[1:5] == bytes([0x04, 0x03, 0x02, 0x01])  # size, little-endian
+    assert cmd[5:7] == bytes([30, 0x00])                # name_len, little-endian
+    assert len(cmd) == 7
 
 
 class _FakeService:
@@ -123,13 +125,19 @@ def test_push_happy_path_writes_begin_then_chunks():
     assert result.bytes_sent == len(payload)
     assert client.notify_started and client.notify_stopped
 
+    name = b"ble-install/sqbc-install/.sqbc"
     ctrl_writes = [w for w in client.writes if w[0] == CTRL_UUID]
     data_writes = [w for w in client.writes if w[0] == DATA_UUID]
-    assert len(ctrl_writes) == 1
-    begin = ctrl_writes[0][1]
-    assert begin[0] == OP_BEGIN
+
+    begin = next(w[1] for w in ctrl_writes if w[1][0] == OP_BEGIN)
     assert int.from_bytes(begin[1:5], "little") == len(payload)
-    assert begin[5:] == b"ble-install/sqbc-install/.sqbc"
+    assert int.from_bytes(begin[5:7], "little") == len(name)
+    assert len(begin) == 7  # fits the default 23-byte ATT MTU
+
+    name_writes = [w[1] for w in ctrl_writes if w[1][0] == OP_NAME]
+    assert b"".join(w[1:] for w in name_writes) == name
+    assert all(len(w) <= 23 for w in name_writes)  # each NAME write fits the MTU
+
     assert data_writes, "expected chunked data writes"
     assert sum(len(w[1]) for w in data_writes) == len(payload)
     assert all(w[2] is False for w in data_writes)  # write-without-response
