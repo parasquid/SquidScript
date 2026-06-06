@@ -7,18 +7,15 @@
 
 #include <zephyr/bluetooth/services/ots.h>
 
+#include "ble_object_transfer.h"
 #include "vm_runtime.h"
 
-/* OTS Object Action Control Point result codes that this module emits when
- * the OTS layer should reject an OACP Create. The numeric values match the
- * BT SIG GSS spec and the Zephyr bt_gatt_ots_oacp_res_code enum in
- * subsys/bluetooth/services/ots/ots_oacp_internal.h. We re-declare them here
- * so callers do not need to reach into the OTS internal header.
+/*
+ * OTS (Object Transfer Service) transport front-end. Registers the standard
+ * GATT OTS service and routes its OACP / object-name / object-write callbacks
+ * into the transport-neutral core in ble_object_transfer.h. The OACP result
+ * codes and the staging/session/pending API live in that core header.
  */
-#define SQ_BLE_OTS_OACP_RES_INV_PARAM  0x03
-#define SQ_BLE_OTS_OACP_RES_OBJ_LOCKED 0x0a
-#define BT_GATT_OTS_OACP_RES_INV_PARAM SQ_BLE_OTS_OACP_RES_INV_PARAM
-#define BT_GATT_OTS_OACP_RES_OBJ_LOCKED SQ_BLE_OTS_OACP_RES_OBJ_LOCKED
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,34 +40,6 @@ struct sq_ble_ots_obj_write_args {
 int sq_ble_ots_init(void);
 
 void *sq_ble_ots_svc_decl_get(void);
-
-int sq_ble_ots_parse_object_name(const char *name, char *app_id_out, size_t app_id_cap,
-				 char *profile_id_out, size_t profile_id_cap,
-				 char *extension_out, size_t extension_cap);
-
-void sq_ble_ots_reset_session(void);
-
-int sq_ble_ots_drain_pending_event(char *app_id_out, size_t app_id_cap, char *event_out,
-				   size_t event_cap);
-
-const char *sq_ble_ots_pending_staging_path(void);
-
-void sq_ble_ots_cleanup_staging(void);
-
-bool sq_ble_ots_pending_is_complete(void);
-
-const char *sq_ble_ots_pending_app_id(void);
-
-const char *sq_ble_ots_pending_event_name(void);
-
-int sq_ble_ots_test_invoke_obj_created_with_name(const char *name, size_t alloc_size,
-						 char *staging_path_out,
-						 size_t staging_path_out_len);
-
-int sq_ble_ots_test_invoke_obj_write_with_path(const char *staging_path, const void *data,
-					       size_t len, off_t offset, size_t rem);
-
-void sq_ble_ots_test_invoke_abort(void);
 
 ssize_t sq_ble_ots_test_invoke_obj_write(struct bt_conn *conn, uint64_t id, const void *data,
 					size_t len, off_t offset, size_t rem);

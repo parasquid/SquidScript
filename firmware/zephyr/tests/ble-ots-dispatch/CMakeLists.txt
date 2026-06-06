@@ -25,6 +25,7 @@ endif()
 target_include_directories(app PRIVATE ../../src "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_sources(app PRIVATE
   ../../src/app_store.c
+  ../../src/ble_object_transfer.c
   ../../src/ble_ots.c
   src/main.c
 )
