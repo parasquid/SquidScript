@@ -4,7 +4,7 @@
 #
 # Defaults to the XIAO ESP32-C3 e-paper dev target. The wrapper builds
 # and flashes the firmware via west flash, installs the ble-install
-# example, launches it (which arms itself on app.start), runs the
+# example, launches it (which starts BLE receive on app.start), runs the
 # ots-push driver against the device, and verifies the installed
 # payload is registered. Skip behavior is fully encapsulated in
 # ots-push: a host without a usable BLE adapter exits 0 cleanly.
@@ -25,7 +25,7 @@ Usage: scripts/zephyr-test-ble-object-transfer.sh [-- <extra args>]
   --port <serial-port>         Serial port (default: auto-detect)
   --source <file.squid>        Source SQBC to push (default: ble-install example)
   --skip-flash                 Skip the west flash step (assume firmware is already on the device)
-  --app-id <id>                App id for the armed example (default: ble-install)
+  --app-id <id>                App id for the receiver example (default: ble-install)
   --payload-id <id>            App id for the installed payload (default: installed-app)
 
 Environment:
@@ -33,7 +33,7 @@ Environment:
   SQUID_ZEPHYR_TARGET_OVERLAY   Override the Zephyr board overlay
 
 The wrapper builds the XIAO target, flashes it via west flash, installs
-the ble-install example, launches it (which arms itself on app.start),
+the ble-install example, launches it (which starts BLE receive on app.start),
 pushes the source SQBC via tools/ots-push over BLE OTS, and verifies the
 installed payload is registered.
 USAGE
@@ -120,13 +120,13 @@ if [[ "$SKIP_FLASH" -eq 0 ]]; then
 	west flash -d "${ZEPHYR_BUILD_DIR}"
 fi
 
-echo ">>> Compiling armed example (${APP_ID})"
+echo ">>> Compiling receiver example (${APP_ID})"
 cargo run --quiet -p squidc -- app build "${ROOT}/examples/ble-install/main.squid" --out "$EXAMPLE_SQBC"
 
-echo ">>> Installing armed example"
+echo ">>> Installing receiver example"
 cargo run --quiet -p squidc -- app install "$EXAMPLE_SQBC"
 
-echo ">>> Launching ${APP_ID} (arms itself on app.start)"
+echo ">>> Launching ${APP_ID} (starts BLE receive on app.start)"
 cargo run --quiet -p squidc -- app launch "${APP_ID}"
 
 echo ">>> Compiling payload (${PAYLOAD_ID})"

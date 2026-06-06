@@ -32,19 +32,20 @@ following caps bound the resources one app can hold at once.
 | Drawlog record slots | 4 | `SQ_VM_RUNTIME_DRAWLOG_MAX` |
 | Drawlog record length | 48 bytes | `SQ_VM_RUNTIME_DRAWLOG_LEN` |
 
-## BLE object-transfer trigger metadata
+## BLE object-receive profile table
 
 | Limit | Value | Macro |
 | --- | --- | --- |
-| Armed BLE profile entries | 2 | `SQ_VM_RUNTIME_BLE_PROFILE_ARMED_MAX` |
+| Registered BLE profile entries | 2 | `SQ_VM_RUNTIME_BLE_PROFILE_MAX` |
 
-The BLE profile trigger table is a static array of
-`SQ_VM_RUNTIME_BLE_PROFILE_ARMED_MAX` entries (~640 bytes each, ~1.25
-KiB total). The natural upper bound is `SQ_APP_STORE_MAX_APPS = 8` but
-the runtime cap of 2 is tighter and matches the single-session OTS
-policy (one in-flight transfer at a time across all profiles).
-Registering a third profile returns `-EINVAL` to the VM (verified by
-`firmware/zephyr/tests/ble-trigger-table/src/main.c`).
+The BLE profile routing table is a static array of
+`SQ_VM_RUNTIME_BLE_PROFILE_MAX` entries (~640 bytes each, ~1.25 KiB
+total). Profiles are registered imperatively when an app runs
+`service.ble.start` (one receive per app, set/replace). The natural upper
+bound is `SQ_APP_STORE_MAX_APPS = 8` but the runtime cap of 2 is tighter
+and matches the single-session OTS policy (one in-flight transfer at a
+time across all profiles). Registering a third profile returns `-EINVAL`
+to the VM (verified by `firmware/zephyr/tests/ble-trigger-table/src/main.c`).
 
 `service.timer.every(...)`, `service.timer.after(...)`, and `app.triggers`
 all share the foreground or armed timer caps. Registering one beyond the

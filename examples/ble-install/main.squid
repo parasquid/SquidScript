@@ -7,17 +7,6 @@ state {
   failed: int = 0
 }
 
-app.triggers {
-  service.ble.profile("object-transfer", {
-    id: "sqbc-install",
-    accept: [".sqbc"],
-    events: {
-      complete: "ble.object.complete",
-      error: "ble.object.error"
-    }
-  })
-}
-
 event.on("app.start") {
   state.load()
   if (state.stateVersion != 1) {
@@ -25,6 +14,17 @@ event.on("app.start") {
     state.stateVersion = 1
   }
   state.save()
+  // Imperatively start BLE object receive while this app runs. The radio
+  // advertises only while a profile is registered; start is idempotent, so
+  // re-running app.start on a re-launch simply re-applies the profile.
+  service.ble.start("object-transfer", {
+    id: "sqbc-install",
+    accept: [".sqbc"],
+    events: {
+      complete: "ble.object.complete",
+      error: "ble.object.error"
+    }
+  })
   debug.print("ble-install ready")
 }
 

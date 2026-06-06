@@ -690,9 +690,12 @@ check for the BLE Object Transfer work. It builds the XIAO ESP32-C3
 e-paper dev target firmware, flashes it via `west flash -d
 build/zephyr/xiao-esp32c3-gdeq0426t82-sd`, installs
 `examples/ble-install/main.squid` over the serial protocol, launches
-the app (which arms itself on `app.start`), and then runs
-`tools/ots-push` to push a payload over BLE OTS to the device. The
-wrapper verifies that the new app appears in `squidc app list`.
+the app (which runs `service.ble.start` on `app.start`, registering its
+receive profile and beginning advertising), and then runs `tools/ots-push`
+to push a payload over BLE OTS to the device. The wrapper verifies that the
+new app appears in `squidc app list`. Because receive is imperative, the
+owning app must be launched once before a push can be accepted; advertising
+is gated on the started profile rather than running unconditionally from boot.
 
 The host-side driver requires bleak 3.x plus a platform that exposes
 L2CAP CoC writes. As of bleak 3.0.2, the cross-platform `BleakClient`
