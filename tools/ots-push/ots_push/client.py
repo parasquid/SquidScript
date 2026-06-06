@@ -157,7 +157,12 @@ async def _push_via_gatt(
         chunk = _resolve_chunk(client)
         sent = 0
         while sent < len(payload):
-            await client.write_gatt_char(DATA_UUID, payload[sent : sent + chunk], response=False)
+            # Acknowledged (write-with-response) writes: write-without-response is
+            # the UDP analogue -- the controller silently drops chunks under load,
+            # so the transfer never reaches its declared size. The data char
+            # advertises both; ACKed writes trade throughput for a deterministic,
+            # lossless transfer, which is the right call for small SQBC payloads.
+            await client.write_gatt_char(DATA_UUID, payload[sent : sent + chunk], response=True)
             sent += chunk
         sent = min(sent, len(payload))
 
