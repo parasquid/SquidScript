@@ -920,7 +920,9 @@ ZTEST(squidscript_protocol, test_errors_get_reports_vm_status_label_and_errno)
 	zassert_equal(frame.opcode, SQ_OPCODE_ERRORS_GET);
 	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
 		      SQ_PROTOCOL_OK);
-	zassert_true(field_string_equals(&field, "runtime=invalid_argument code=-22"));
+	/* The numeric code is paired with its errno name so the diagnostic is legible
+	 * without an external lookup. */
+	zassert_true(field_string_equals(&field, "runtime=invalid_argument code=-22 (EINVAL)"));
 }
 
 ZTEST(squidscript_protocol, test_errors_get_reports_retained_device_diagnostics_without_runtime_error)

@@ -5,6 +5,7 @@
 #include <zephyr/fs/fs.h>
 #include <zephyr/sys/util.h>
 #include <errno.h>
+#include <stdio.h>
 #if defined(CONFIG_SOC_ESP32C3)
 #include <zephyr/sys/poweroff.h>
 #include <esp_sleep.h>
@@ -14,6 +15,7 @@
 #include "ble_smoke.h"
 #include "device_protocol.h"
 #include "serial_transport.h"
+#include "sq_errno.h"
 #include "squidscript_fallback_app.h"
 
 LOG_MODULE_REGISTER(squidscript, LOG_LEVEL_INF);
@@ -118,7 +120,14 @@ int main(void)
 	sq_vm_runtime_set_registry(&runtime, &registry);
 #if IS_ENABLED(CONFIG_SQUIDSCRIPT_TARGET_DISPLAY_SSD1677_EXPECTED)
 	LOG_WRN("SquidScript target display unavailable: SSD1677 backend not active");
-	(void)sq_vm_runtime_record_device_error(&runtime, "display=unavailable code=-19");
+	{
+		char line[64];
+		int n = snprintf(line, sizeof(line), "display=unavailable code=%d (%s)", -ENODEV,
+				 sq_errno_name(-ENODEV));
+		if (n > 0 && (size_t)n < sizeof(line)) {
+			(void)sq_vm_runtime_record_device_error(&runtime, line);
+		}
+	}
 #endif
 	if (registry_ready) {
 		int root_result;

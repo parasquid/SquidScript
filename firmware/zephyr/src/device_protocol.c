@@ -15,6 +15,7 @@
 #include "ble_object_transfer.h"
 #include "ble_profile_table.h"
 #include "protocol.h"
+#include "sq_errno.h"
 #include "squidvm_ffi.h"
 
 BUILD_ASSERT(sizeof(struct sq_app_registry_entry) == sizeof(SqdpAppListEntry));
@@ -2259,7 +2260,7 @@ static int __noinline errors_response(const struct sq_protocol_request *request,
 {
 	const char *lines[1 + SQ_VM_RUNTIME_DEVICE_ERROR_MAX];
 	size_t line_count = 0;
-	char error_line[48];
+	char error_line[64];
 
 	if (runtime != NULL) {
 		for (size_t i = 0; i < runtime->device_error_count && line_count < ARRAY_SIZE(lines);
@@ -2271,8 +2272,9 @@ static int __noinline errors_response(const struct sq_protocol_request *request,
 		const char *status_name = runtime->result.status == SQVM_STATUS_OK ?
 						  "host_error" :
 						  sq_vm_runtime_status_name(runtime->result.status);
-		int written = snprintf(error_line, sizeof(error_line), "runtime=%s code=%d",
-				       status_name, runtime->result_code);
+		int written = snprintf(error_line, sizeof(error_line), "runtime=%s code=%d (%s)",
+				       status_name, runtime->result_code,
+				       sq_errno_name(runtime->result_code));
 		if (written > 0 && (size_t)written < sizeof(error_line)) {
 			lines[line_count++] = error_line;
 		}

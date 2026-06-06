@@ -277,6 +277,26 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   bound narrow, and add a roadmap item to replace it with a streaming,
   file-backed, or caller-owned design.
 
+## Magic Numbers And Legible Diagnostics
+
+- Avoid magic numbers. Prefer named constants, enum values, or the platform's
+  named symbols (e.g. `-ENODEV`, `EIO`) over bare integer literals in code,
+  config, protocol framing, and especially in diagnostics. A literal `-19` or
+  `0x01` forces every future reader to look it up and rots silently when the
+  underlying value changes.
+- When a status, errno, opcode, or protocol code is emitted to a human-facing
+  surface (device error/trace output, logs, CLI), pair the number with its
+  name so it is legible at the point of use, e.g. `code=-12 (ENOMEM)` via
+  `sq_errno_name` rather than a bare `code=-12`. The number alone is a dead end
+  during debugging.
+- Preserve error specificity end to end. Do not collapse distinct failures into
+  one opaque code: when a boundary (FFI, callback, transport) must narrow a rich
+  error, record the original code/name at the source before it is flattened, so
+  the real cause is recoverable instead of surfacing as a generic catch-all.
+- When you must introduce a numeric literal that is not yet named, define a
+  named constant next to its definition and reference that, rather than
+  repeating the literal across call sites.
+
 ## Browser Simulator Verification
 
 When changing `simulator/browser`, verify the actual app behavior, not only unit tests. Use `docs/browser_simulator.md` for the simulator design and workflow.
