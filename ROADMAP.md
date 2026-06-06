@@ -277,6 +277,15 @@ Hardware-test and metadata hygiene follow-ups.
   style, `app.triggers` / `device { ... }` block layout, trailing commas),
   whether to format embedded literals, and whether a `--check` mode should be
   wired into an existing test/CI script.
+- Add a `squidc`-native BLE app-upload command so uploading a `.sqbc` over BLE
+  no longer needs the separate Python `ots-push` tool. Drive the custom GATT
+  app-transfer service (`firmware/zephyr/src/ble_app_transfer.c`) — control
+  `BEGIN`/`ABORT`, chunked data writes, status notify — from Rust via a
+  cross-platform BLE crate (e.g. `btleplug`, Linux/macOS/Windows). Likely shape:
+  `squidc app push <device> <file> [--profile <id>]`. Retire `tools/ots-push/`
+  once at parity; keep the Web Bluetooth uploader (`tools/ble-web-uploader/`) as
+  the no-app/browser path. Independent of the BLE control-write MTU fix — the
+  on-wire protocol work applies to any client.
 
 ## Build-Time And Runtime Caps
 
