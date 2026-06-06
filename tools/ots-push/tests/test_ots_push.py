@@ -1,181 +1,159 @@
-"""Pytest suite for ots-push.
+"""Unit tests for the custom-GATT app-upload client.
 
-Uses a mock bleak backend to verify the OTS push protocol calls
-the right GATT/CoC methods in the right order, without requiring a
-real Bluetooth adapter. Also verifies the CLI skip patterns when
-bleak is unavailable or the adapter is missing.
+Uses a fake bleak backend (no real adapter) to verify the client's call
+sequence: discover, BEGIN control write, chunked data writes, status notify,
+completion.
 """
-
-from __future__ import annotations
 
 import asyncio
 import os
-import sys
 import tempfile
-from unittest.mock import AsyncMock, MagicMock
+import unittest.mock as mock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from ots_push.client import (  # noqa: E402
-    L2CAP_PSM_OTS,
-    OACP_OPCODE_CREATE,
-    OACP_OPCODE_EXECUTE,
-    OACP_OPCODE_WRITE,
-    OACP_RESULT_OBJ_LOCKED,
-    OACP_RESULT_SUCCESS,
-    OTS_SERVICE_UUID,
+from ots_push.client import (
+    CTRL_UUID,
+    DATA_UUID,
+    OP_BEGIN,
+    STAT_UUID,
+    STATUS_COMPLETE,
+    STATUS_ERROR,
+    SVC_UUID,
+    build_begin_command,
     build_object_name,
-    main,
     parse_object_name,
     push_file,
 )
 
 
 def test_parse_object_name_valid():
-    app_id, profile_id, ext = parse_object_name("break-reminder/wallpaper/.sqbc")
-    assert app_id == "break-reminder"
-    assert profile_id == "wallpaper"
-    assert ext == ".sqbc"
+    assert parse_object_name("break-reminder/wallpaper/.sqbc") == (
+        "break-reminder",
+        "wallpaper",
+        ".sqbc",
+    )
 
 
 def test_parse_object_name_wrong_slash_count():
     with pytest.raises(ValueError):
-        parse_object_name("noslash")
+        parse_object_name("a/b")
 
 
 def test_parse_object_name_empty_segment():
     with pytest.raises(ValueError):
-        parse_object_name("/wallpaper/.sqbc")
+        parse_object_name("a//.sqbc")
 
 
 def test_parse_object_name_extension_must_start_with_dot():
     with pytest.raises(ValueError):
-        parse_object_name("app/wallpaper/sqbc")
+        parse_object_name("a/b/sqbc")
 
 
 def test_build_object_name_canonical():
     assert build_object_name("app-a", "wallpaper") == "app-a/wallpaper/.sqbc"
 
 
-def test_build_object_name_rejects_empty_segments():
-    with pytest.raises(ValueError):
-        build_object_name("", "wallpaper")
-    with pytest.raises(ValueError):
-        build_object_name("app-a", "")
+def test_build_begin_command_frames_opcode_size_name():
+    cmd = build_begin_command("app/p/.sqbc", 0x01020304)
+    assert cmd[0] == OP_BEGIN
+    assert cmd[1:5] == bytes([0x04, 0x03, 0x02, 0x01])  # little-endian
+    assert cmd[5:] == b"app/p/.sqbc"
 
 
-def test_build_object_name_rejects_bad_extension():
-    with pytest.raises(ValueError):
-        build_object_name("app-a", "wallpaper", "sqbc")
+class _FakeService:
+    def __init__(self, uuid):
+        self.uuid = uuid
 
 
-def test_push_file_calls_discovery_then_object_name_then_create_then_coc_then_execute():
-    fake_bleak = MagicMock()
-    fake_device = MagicMock()
-    fake_device.address = "AA:BB:CC:DD:EE:FF"
-    fake_device.name = "squid-xiao"
+class _FakeClient:
+    """Async-context-manager stand-in for bleak.BleakClient."""
 
-    fake_name_handle = MagicMock(name="object_name_handle")
-    fake_oacp_handle = MagicMock(name="oacp_handle")
-    fake_name_char = MagicMock(uuid="object-name", handle=fake_name_handle)
-    fake_oacp_char = MagicMock(uuid="object-action-control-point", handle=fake_oacp_handle)
-    fake_service = MagicMock()
-    fake_service.uuid = OTS_SERVICE_UUID
-    fake_service.characteristics = [fake_name_char, fake_oacp_char]
+    def __init__(self, *, status=STATUS_COMPLETE, has_service=True):
+        self._status = status
+        self.services = [_FakeService(SVC_UUID)] if has_service else []
+        self.mtu_size = 247
+        self.writes = []
+        self.notify_started = False
+        self.notify_stopped = False
 
-    fake_services = [fake_service]
-    fake_client = MagicMock()
-    fake_client.__aenter__ = AsyncMock(return_value=fake_client)
-    fake_client.__aexit__ = AsyncMock(return_value=None)
-    fake_client.services = fake_services
-    fake_client.write_gatt_char = AsyncMock()
-    fake_client.write_l2cap_coc = AsyncMock()
+    async def __aenter__(self):
+        return self
 
-    fake_scanner = MagicMock()
-    fake_scanner.find_device_by_filter = AsyncMock(return_value=fake_device)
-    fake_bleak.BleakScanner = MagicMock(return_value=fake_scanner)
-    fake_bleak.BleakClient = MagicMock(return_value=fake_client)
-    fake_bleak._ots_push_l2cap_supported = lambda: True
+    async def __aexit__(self, *exc):
+        return False
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".sqbc") as f:
-        f.write(b"SQBCpayload")
-        path = f.name
-    try:
-        result = asyncio.run(push_file(
-            "AA:BB:CC:DD:EE:FF", "break-reminder", "wallpaper", path, bleak_module=fake_bleak
-        ))
-    finally:
-        os.unlink(path)
+    async def start_notify(self, uuid, callback):
+        assert uuid == STAT_UUID
+        self.notify_started = True
+        callback(0, bytearray([self._status]))  # simulate device notification
+
+    async def stop_notify(self, uuid):
+        self.notify_stopped = True
+
+    async def write_gatt_char(self, uuid, data, response=True):
+        self.writes.append((uuid, bytes(data), response))
+
+
+def _fake_bleak(client):
+    fake = mock.MagicMock()
+    fake.BleakScanner.find_device_by_filter = mock.AsyncMock(return_value=mock.MagicMock())
+    fake.BleakClient = mock.MagicMock(return_value=client)
+    return fake
+
+
+def _write_sqbc(tmpdir, payload):
+    path = os.path.join(tmpdir, "app.sqbc")
+    with open(path, "wb") as handle:
+        handle.write(payload)
+    return path
+
+
+def test_push_happy_path_writes_begin_then_chunks():
+    payload = b"SQBC" + bytes(range(256)) * 2  # larger than one chunk
+    client = _FakeClient()
+    with tempfile.TemporaryDirectory() as tmp:
+        src = _write_sqbc(tmp, payload)
+        result = asyncio.run(
+            push_file("AA:BB:CC:DD:EE:FF", "ble-install", "sqbc-install", src,
+                      bleak_module=_fake_bleak(client))
+        )
 
     assert result.pushed is True
-    assert result.app_id == "break-reminder"
-    assert result.profile_id == "wallpaper"
-    assert result.bytes_sent == len(b"SQBCpayload")
-    assert result.skipped_reason is None
+    assert result.bytes_sent == len(payload)
+    assert client.notify_started and client.notify_stopped
 
-    calls = fake_client.write_gatt_char.call_args_list
-    assert len(calls) == 3, f"expected 3 write_gatt_char calls, got {len(calls)}"
-
-    first_char, first_data = calls[0].args
-    assert first_char is fake_name_handle
-    assert first_data == b"break-reminder/wallpaper/.sqbc"
-
-    second_char, second_data = calls[1].args
-    assert second_char is fake_oacp_handle
-    assert second_data[0] == OACP_OPCODE_CREATE
-    assert int.from_bytes(second_data[1:5], "little") == len(b"SQBCpayload")
-
-    third_char, third_data = calls[2].args
-    assert third_char is fake_oacp_handle
-    assert third_data[0] == OACP_OPCODE_EXECUTE
-    assert third_data[1] == 0x02
-
-    coc_calls = fake_client.write_l2cap_coc.call_args_list
-    assert len(coc_calls) >= 1
-    for call in coc_calls:
-        assert call.args[0] == L2CAP_PSM_OTS
-        assert isinstance(call.args[1], (bytes, bytearray))
+    ctrl_writes = [w for w in client.writes if w[0] == CTRL_UUID]
+    data_writes = [w for w in client.writes if w[0] == DATA_UUID]
+    assert len(ctrl_writes) == 1
+    begin = ctrl_writes[0][1]
+    assert begin[0] == OP_BEGIN
+    assert int.from_bytes(begin[1:5], "little") == len(payload)
+    assert begin[5:] == b"ble-install/sqbc-install/.sqbc"
+    assert data_writes, "expected chunked data writes"
+    assert sum(len(w[1]) for w in data_writes) == len(payload)
+    assert all(w[2] is False for w in data_writes)  # write-without-response
 
 
-def test_push_file_skips_when_no_adapter():
-    fake_bleak = MagicMock()
-    fake_scanner = MagicMock()
-    fake_scanner.find_device_by_filter = AsyncMock(return_value=None)
-    fake_bleak.BleakScanner = MagicMock(return_value=fake_scanner)
-    fake_bleak.BleakClient = MagicMock()
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".sqbc") as f:
-        f.write(b"x")
-        path = f.name
-    try:
-        result = asyncio.run(push_file(
-            "missing-device", "app", "wallpaper", path, bleak_module=fake_bleak
-        ))
-    finally:
-        os.unlink(path)
-
+def test_push_reports_device_error_status():
+    client = _FakeClient(status=STATUS_ERROR)
+    with tempfile.TemporaryDirectory() as tmp:
+        src = _write_sqbc(tmp, b"SQBCxxxx")
+        result = asyncio.run(push_file("dev", "a", "b", src, bleak_module=_fake_bleak(client)))
     assert result.pushed is False
-    assert "no Bluetooth adapter" in (result.skipped_reason or "")
+    assert "error status" in (result.skipped_reason or "")
 
 
-def test_push_file_skips_when_bleak_unavailable():
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".sqbc") as f:
-        f.write(b"x")
-        path = f.name
-    try:
-        result = asyncio.run(push_file("dev", "app", "wallpaper", path, bleak_module=None))
-    finally:
-        os.unlink(path)
-
+def test_push_skips_when_service_absent():
+    client = _FakeClient(has_service=False)
+    with tempfile.TemporaryDirectory() as tmp:
+        src = _write_sqbc(tmp, b"SQBCxxxx")
+        result = asyncio.run(push_file("dev", "a", "b", src, bleak_module=_fake_bleak(client)))
     assert result.pushed is False
-    assert result.skipped_reason is not None
+    assert "service" in (result.skipped_reason or "")
 
 
-def test_cli_returns_zero_on_clean_skip(monkeypatch, capsys):
-    monkeypatch.setattr(sys, "argv", ["ots_push", "push", "dev", "app", "wallpaper", "/nonexistent"])
-    exit_code = main()
-    captured = capsys.readouterr()
-    assert exit_code == 0
-    assert "skipped" in captured.out or "skipped" in captured.err
+def test_push_missing_source_file():
+    result = asyncio.run(push_file("dev", "a", "b", "/nope/missing.sqbc", bleak_module=object()))
+    assert result.pushed is False
+    assert "source file not found" in (result.skipped_reason or "")

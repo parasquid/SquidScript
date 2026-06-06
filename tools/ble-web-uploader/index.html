@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SquidScript BLE App Uploader</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
+  label { display: block; margin: 0.5rem 0 0.2rem; font-weight: 600; }
+  input { width: 100%; padding: 0.4rem; box-sizing: border-box; }
+  button { margin-top: 1rem; padding: 0.6rem 1rem; font-size: 1rem; }
+  #log { margin-top: 1rem; padding: 0.6rem; background: #111; color: #0f0;
+         font-family: monospace; white-space: pre-wrap; min-height: 6rem; border-radius: 4px; }
+  .note { color: #666; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<h1>SquidScript BLE App Uploader</h1>
+<p class="note">
+  Uploads a compiled <code>.sqbc</code> to a SquidScript device over the custom
+  GATT app-transfer service. Requires Web Bluetooth: Chrome/Edge on desktop or
+  Android. <b>iOS Safari is not supported</b> (no Web Bluetooth).
+  Must be served over HTTPS (or http://localhost).
+</p>
+
+<label for="appId">Armed app id</label>
+<input id="appId" value="ble-install" />
+<label for="profileId">Profile id</label>
+<input id="profileId" value="sqbc-install" />
+<label for="ext">Extension</label>
+<input id="ext" value=".sqbc" />
+<label for="file">.sqbc file</label>
+<input id="file" type="file" accept=".sqbc,application/octet-stream" />
+<button id="go">Connect &amp; upload</button>
+<div id="log"></div>
+
+<script>
+"use strict";
+// Vendor UUIDs — must match firmware/zephyr/src/ble_app_transfer.c.
+const SVC  = "7e57c0de-0001-4a5b-8c6d-0123456789ab";
+const CTRL = "7e57c0de-0002-4a5b-8c6d-0123456789ab";
+const DATA = "7e57c0de-0003-4a5b-8c6d-0123456789ab";
+const STAT = "7e57c0de-0004-4a5b-8c6d-0123456789ab";
+const OP_BEGIN = 0x01;
+const STATUS_COMPLETE = 0x00;
+const CHUNK = 180; // conservative; well under the negotiated ATT MTU
+
+const logEl = document.getElementById("log");
+const log = (m) => { logEl.textContent += m + "\n"; };
+
+function beginCommand(objectName, size) {
+  const name = new TextEncoder().encode(objectName);
+  const buf = new Uint8Array(5 + name.length);
+  buf[0] = OP_BEGIN;
+  new DataView(buf.buffer).setUint32(1, size, true); // little-endian
+  buf.set(name, 5);
+  return buf;
+}
+
+async function upload() {
+  logEl.textContent = "";
+  const fileInput = document.getElementById("file");
+  if (!fileInput.files.length) { log("Pick a .sqbc file first."); return; }
+  const objectName = `${document.getElementById("appId").value}/` +
+                     `${document.getElementById("profileId").value}/` +
+                     `${document.getElementById("ext").value}`;
+  const bytes = new Uint8Array(await fileInput.files[0].arrayBuffer());
+
+  log(`Requesting device (service ${SVC})...`);
+  const device = await navigator.bluetooth.requestDevice({
+    filters: [{ services: [SVC] }],
+    optionalServices: [SVC],
+  });
+  log(`Connecting to ${device.name || device.id}...`);
+  const server = await device.gatt.connect();
+  const svc = await server.getPrimaryService(SVC);
+  const ctrl = await svc.getCharacteristic(CTRL);
+  const data = await svc.getCharacteristic(DATA);
+  const stat = await svc.getCharacteristic(STAT);
+
+  const done = new Promise((resolve) => {
+    stat.addEventListener("characteristicvaluechanged", (e) => {
+      resolve(e.target.value.getUint8(0));
+    });
+  });
+  await stat.startNotifications();
+
+  log(`BEGIN ${objectName} (${bytes.length} bytes)`);
+  await ctrl.writeValue(beginCommand(objectName, bytes.length));
+
+  for (let off = 0; off < bytes.length; off += CHUNK) {
+    await data.writeValueWithoutResponse(bytes.subarray(off, off + CHUNK));
+  }
+  log("Data sent; waiting for device status...");
+
+  const status = await Promise.race([
+    done,
+    new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 30000)),
+  ]);
+  await stat.stopNotifications();
+  device.gatt.disconnect();
+  log(status === STATUS_COMPLETE ? "OK upload complete." : `Device error status ${status}.`);
+}
+
+document.getElementById("go").addEventListener("click", () => {
+  upload().catch((err) => log("ERROR: " + err.message));
+});
+</script>
+</body>
+</html>
