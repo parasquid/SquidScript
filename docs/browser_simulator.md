@@ -234,3 +234,94 @@ targets/layouts/xteink-x4.layout.json
 ```
 
 The browser simulator still keeps a derived fallback layout in code for resilience. When the layout JSON is available, that file is the preferred source for shell and physical button placement.
+
+## Verification
+
+When changing `simulator/browser`, verify the actual app behavior, not only unit tests. For the per-area check commands, the expected baseline checks, and the Hello Menu proof checklist, see `docs/standards/verification-commands.md`.
+
+## Dev Server
+
+If browser behavior disagrees with code, check for a stale Vite server on port `5174`. Restart the dev server and hard reload the browser before assuming runtime/compiler behavior is wrong.
+
+Use `http://127.0.0.1:5174/` as the default URL for simulator verification.
+
+## Browser State
+
+The browser simulator uses browser storage:
+
+- IndexedDB backs simulated `/sd`
+- `localStorage` stores the editor draft
+
+`localhost:5174` and `127.0.0.1:5174` are separate browser origins. Clearing one does not clear the other.
+
+Use the simulator's reset controls when debugging:
+
+- `Reset App State`: clears app-scoped runtime state
+- `Reset Storage`: clears simulated `/sd`
+- `Reset Simulator`: clears simulated `/sd`, editor draft, compiled state, installed app selection, runtime state, and debug log
+- `Clean Launch`: resets, restores default Hello Menu source, compiles, uploads, and runs in one path
+
+## Grayscale Semantics
+
+SquidScript logical grayscale follows the language spec. See `docs/language_spec.md` and `docs/target_profile_architecture.md`.
+
+- `gray0` is white
+- `gray15` is black
+- `white` is equivalent to `gray0`
+- `black` is equivalent to `gray15`
+
+Do not introduce internal inversions that make renderer and runtime disagree. Renderer-facing draw commands should use the same logical grayscale values.
+
+## Firefox Canvas Caveat
+
+Firefox on Linux may visually composite a scaled `<canvas>` incorrectly when CSS uses:
+
+```css
+image-rendering: pixelated;
+```
+
+We observed a case where Firefox displayed the X4 canvas as black even though `getImageData()` returned correct pixels:
+
+- background: white
+- selected row: black
+- unselected row: white
+
+The browser simulator should avoid `image-rendering: pixelated` on the main device canvas unless this is re-tested in real Firefox. Prefer `image-rendering: auto` for the scaled device display.
+
+If Firefox appears visually wrong, inspect the actual canvas before changing runtime logic:
+
+```js
+(() => {
+  const c = document.querySelector('canvas[aria-label="X4 display"]');
+  const ctx = c?.getContext("2d");
+  const pix = (x, y) => ctx ? Array.from(ctx.getImageData(x, y, 1, 1).data) : null;
+
+  return {
+    canvasFound: !!c,
+    attrs: c ? {
+      renderOk: c.getAttribute("data-render-ok"),
+      commandCount: c.getAttribute("data-command-count"),
+      firstCommand: c.getAttribute("data-first-command"),
+      width: c.width,
+      height: c.height,
+      clientWidth: c.clientWidth,
+      clientHeight: c.clientHeight
+    } : null,
+    pixels: {
+      background: pix(10, 10),
+      selectedRow: pix(40, 170),
+      aboutRow: pix(40, 226)
+    },
+    diagnostics: document.querySelector('[aria-label="display diagnostics"]')?.textContent
+  };
+})();
+```
+
+If backing pixels are correct but the canvas looks wrong, suspect CSS/compositor behavior before changing compiler/runtime semantics.
+
+## Target And Rendering References
+
+- `targets/xteink-x4.target.json`: XTEINK X4 target data used by browser-sim
+- `docs/target_definition_reference.md`: target definition reference
+- `docs/target_profile_architecture.md`: target profile and grayscale semantics
+- `docs/ir_schema.md`: browser-sim IR JSON shape

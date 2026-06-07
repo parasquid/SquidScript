@@ -297,9 +297,13 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   named constant next to its definition and reference that, rather than
   repeating the literal across call sites.
 
-## Browser Simulator Verification
+## Browser Simulator
 
-When changing `simulator/browser`, verify the actual app behavior, not only unit tests. Use `docs/browser_simulator.md` for the simulator design and workflow.
+When changing `simulator/browser`, verify the actual app behavior, not only unit
+tests. `docs/browser_simulator.md` is the source for simulator design, workflow,
+dev-server and browser-state debugging, the Firefox canvas caveat, grayscale
+semantics, and target/rendering references. `docs/standards/verification-commands.md`
+lists the per-area check commands and the Hello Menu proof.
 
 ## Test-Driven Development
 
@@ -314,8 +318,11 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
 
 ## Script And Firmware Tooling Discipline
 
-- Firmware source for the canonical ESP32-C3 firmware lives under
-  `firmware/zephyr`; the old Rust ESP32-C3 firmware tree has been removed.
+Exact build/flash/serial commands, Zephyr env + test wrappers, target names,
+venv paths, and the hardware-test inventory live in
+`docs/standards/firmware-tooling.md` — read it when doing firmware or hardware
+work. The always-fire disciplines stay here:
+
 - Treat known sandbox limitations as instructions to use escalated execution
   immediately, not as hypotheses to re-test. If AGENTS.md, saved memory, or the
   current conversation identifies a command category as sandbox-hostile, do not
@@ -325,56 +332,10 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
 - This immediate-escalation rule covers, at minimum, `gh`/GitHub API commands
   that need the host credential store or network, `git add`/`git commit` and
   other commands that must update `.git/index`, hardware/serial/flashing
-  commands, Zephyr/Twister/build wrappers documented below as host-only, and
+  commands, Zephyr/Twister/build wrappers documented in
+  `docs/standards/firmware-tooling.md` as host-only, and
   commands that need host-visible USB devices, keyrings, sockets, or caches
   outside the workspace. Do not waste a turn on an expected sandbox failure.
-- Before reporting that firmware build, flashing, serial, or hardware checks do
-  not work in this environment, check the relevant repository docs and wrapper
-  scripts first. Prefer the documented wrapper command over ad hoc direct tool
-  invocations, and only call something blocked after the documented path fails.
-- Use `cargo run -p squidc -- target build --target xiao-esp32c3-gdeq0426t82-sd`
-  to build or type-check the XIAO ESP32-C3 e-paper default dev firmware
-  binary. `squidc target` resolves target JSON metadata, Zephyr board,
-  overlay, fallback app, generated Kconfig path, and build directory.
-  The XIAO is the default dev target — `scripts/zephyr-env.sh` defaults
-  to it, `scripts/zephyr-test-radio-concurrency.sh` defaults to it, and
-  `docs/hardware_target_tests.md` documents it as the default. The
-  ESP32-C3 Super Mini (`esp32c3-super-mini`) remains a supported
-  regression hardware target, with its own scripts under
-  `scripts/c3-supermini-*.sh` and its full suite
-  `scripts/c3-supermini-test-hardware.sh`.
-- For hardware flashing, use `west flash -d build/zephyr/<target>` after
-  building. The `target build` command compiles but does not flash; the
-  wrapper convention is to run `west flash` explicitly. The serial port
-  is auto-detected via `scripts/lib/serial-port.sh::resolve_esp.serial_port`
-  and exported as `ESPFLASH_PORT`. `scripts/zephyr-test-ble-object-transfer.sh`
-  is the reference for the full end-to-end flash + protocol + BLE flow.
-- `scripts/zephyr-env.sh` prepends `target/zephyr/venv/bin` to `PATH`, so
-  any `python3` invoked after sourcing it is the Zephyr venv Python, not
-  the system Python. Python packages installed at the system level
-  (e.g. `pip install bleak`) are NOT visible to wrappers that source
-  `zephyr-env.sh`. Install Python dependencies into the Zephyr venv with
-  `pip install --target target/zephyr/venv/lib/python3.14/site-packages <pkg>`
-  when a wrapper needs them. `tools/ots-push/README.md` documents this
-  pattern for bleak.
-- Use `scripts/zephyr-test-protocol.sh` for the Zephyr native protocol ztests
-  instead of invoking `west twister` directly. The wrapper sources
-  `scripts/zephyr-env.sh`, which adds the repo-local `target/zephyr/venv/bin`
-  `west` to `PATH` and sets the expected Zephyr environment.
-- Run Zephyr Twister protocol tests outside the Codex sandbox. Twister uses a
-  Python multiprocessing manager that opens a local socket; sandboxed runs can
-  fail with `PermissionError: [Errno 1] Operation not permitted` or an
-  `EOFError` before building or running tests. Treat that as an environment
-  limitation, rerun the documented wrapper with escalated execution, and do not
-  diagnose it as a source/test failure.
-- Run ESP32-C3 Super Mini Zephyr build wrappers outside the Codex sandbox in
-  this environment. Zephyr/ccache may write host cache files outside the
-  workspace, so sandboxed firmware builds can fail with read-only filesystem
-  errors unrelated to the source.
-- Dry-run new scripts before calling them ready: run `bash -n`, verify required tools and Rust targets, check wrapped command help where practical, and confirm wrapper scripts forward user-supplied arguments.
-- For firmware flashing scripts, avoid auto-monitoring by default when USB reset or re-enumeration can break the serial session. Prefer `squidc device monitor` for XIAO ESP32-C3 SquidScript output, and use explicit opt-in monitoring such as `MONITOR_AFTER_FLASH=1` only when needed.
-- Do not filter or suppress flashing tool stderr in firmware scripts. Surface warnings and errors directly, and document known harmless tool warnings instead of hiding them.
-- Clearly report host visibility limits, such as Codex sandbox sessions that cannot see `/dev/ttyACM*`, `/dev/ttyUSB*`, or `/dev/bus/usb`.
 - Never run hardware scripts or serial commands in parallel against the same
   physical target. A single USB serial device is a shared mutable resource:
   concurrent flash, install, hardware-test, monitor, REPL, or `squidc device`
@@ -387,7 +348,6 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
   hardware, `cargo run ... -- device ...`, `cargo run ... -- app ...`,
   firmware flash scripts, monitor scripts, hardware test scripts, and hardware
   benchmark scripts. Use one standalone tool call per hardware command.
-- Hardware target tests are listed in `docs/hardware_target_tests.md`; use that inventory to identify real-device tests before running them.
 - When firmware work changes behavior that has hardware coverage and a relevant
   hardware target is attached or reasonably available, run the relevant
   hardware target tests. Sandbox isolation is not a reason to skip them; use
@@ -411,36 +371,6 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
   that hardware tests were not run, why they were skipped, what native/host
   checks were run instead, and whether the change still needs hardware
   confirmation.
-- When running the ESP32-C3 Super Mini hardware target suite, use
-  `scripts/c3-supermini-test-hardware.sh` so stateful checks run first and the
-  blinky app runs last. Blinky is the final visible board-state check and
-  should be left running unless the user asks otherwise. Do not run any serial
-  command after the final blinky launch unless you are deliberately debugging
-  the final board state. The XIAO target uses the `scripts/zephyr-test-*.sh`
-  family of scripts (each script is a single target-aware check); there is no
-  single XIAO full-suite wrapper, so prefer running the individual scripts that
-  cover the firmware path under test.
-- Hardware target tests and serial/flashing commands must run outside the Codex sandbox. Sandboxed sessions do not reliably expose `/dev/ttyACM*`, `/dev/ttyUSB*`, or `/dev/serial/by-id`, even after host reboot. Use escalated command execution for ESP32-C3 serial visibility checks and hardware target tests on either the XIAO default dev target or the Super Mini regression target.
-- For ESP-IDF hardware-isolation experiments under
-  `experiments/esp32c3-supermini/firmware/esp-idf-softap-hwtest`, the user has
-  approved the repository's documented containerized ESP-IDF build path when no
-  local `idf.py` is installed. Do not re-ask for approval just because Podman or
-  Docker will run the official Espressif IDF image with the experiment mounted;
-  still avoid passing Wi-Fi credentials to containers unless the specific test
-  requires station credentials.
-- When troubleshooting ESP32-C3 Super Mini flashing access, check
-  `firmware/README.md` and the Zephyr wrapper scripts before suggesting broader
-  sudo changes.
-- For REPL work, default app and firmware profiles are `dev`. Hardware target tests should include `tests/repl/default-dev.session`, which intentionally does not set `:profile dev`.
-- For `hardware.gpio.*` work on the ESP32-C3 Super Mini, run the serial GPIO REPL session and the blinky upload session when hardware is available; the blinky check requires both serial assertions and physical onboard LED observation. The XIAO ESP32-C3 e-paper target has **no onboard LED** wired into the firmware (`targets/xiao-esp32c3-gdeq0426t82-sd.target.json` declares no `pwm-led` indicator) — its "visible board state" is the GDEQ0426T82 e-paper display, not an LED. LED-observation-based tests such as `scripts/c3-supermini-test-blinky.sh` and `scripts/c3-supermini-test-blink.sh` are Super-Mini-only and will not work on the XIAO. For XIAO GPIO/input work, rely on serial output and e-paper drawlog evidence, not LED observation.
-- When analyzing hardware benchmark results, inspect the full distribution and
-  explain outliers before summarizing. Do not assume convenient causes such as
-  caching, timing noise, or hardware quirks when a pattern aligns with app
-  logic, wraparound boundaries, state changes, or event counts. Correlate
-  anomalous rows with trace, drawlog, state, resource metrics, or fixture
-  source before calling the benchmark valid.
-- Do not require `--target` for normal `squidc repl` upload/run flows. SquidScript apps compile against the portable language/runtime API; target definitions are opt-in for explicit target checks, simulator config, firmware metadata, docs, and autocomplete.
-- When changing the `squidc` CLI surface, update `docs/squidc_cli.md`, scripts, and command examples in docs in the same change.
 
 ## Git Workflow
 
@@ -465,125 +395,8 @@ When changing `simulator/browser`, verify the actual app behavior, not only unit
   output in the current directory while still offering `--out` for explicit
   paths.
 
-## Command Matrix
+## Verification Commands
 
-Run checks from the directory shown unless noted.
-
-| Change area | Commands |
-| --- | --- |
-| Rust compiler crates, fixtures, IR lowering, SQBC container | `cargo test` from repo root |
-| Browser simulator TypeScript runtime, WASM compiler bridge, rendering, storage, input | `npm test` from `simulator/browser` |
-| Browser simulator production build or WASM compiler bridge | `npm run build` from `simulator/browser` |
-| Browser UI behavior, Hello Menu flow, canvas pixels, Firefox/mobile coverage | `npm run test:e2e` from `simulator/browser` |
-| Target definitions or render policy docs | `cargo test` plus relevant browser tests if browser-sim consumes the target |
-| Docs-only edits | Usually no tests required, unless examples/fixtures changed |
-
-For browser-sim changes that affect the real app experience, run `npm test`, `npm run build`, and `npm run test:e2e`; then try the flow manually on `http://127.0.0.1:5174/` when visual behavior is relevant.
-
-Expected baseline checks:
-
-- `npm test`
-- `npm run build`
-- `npm run test:e2e`
-- Run the dev server on `http://127.0.0.1:5174/`
-- Exercise the browser UI: reset, compile, upload, run, and input navigation for Hello Menu.
-
-Hello Menu should prove:
-
-- compile succeeds with the WASM compiler
-- upload installs `/sd/apps/hello-menu/main.sqbc`
-- run opens the `menu` screen
-- selected row pixels are black and unselected/background pixels are white
-- `UP`/`DOWN` move selection correctly and stay bounded
-- `SELECT` opens screens or exits according to the script
-- `BACK` returns from `hello`/`about` to `menu`; `BACK` exits only from `menu`
-- reload preserves saved app state
-- reset controls clear the right state/storage
-
-## Firefox Canvas Caveat
-
-Firefox on Linux may visually composite a scaled `<canvas>` incorrectly when CSS uses:
-
-```css
-image-rendering: pixelated;
-```
-
-We observed a case where Firefox displayed the X4 canvas as black even though `getImageData()` returned correct pixels:
-
-- background: white
-- selected row: black
-- unselected row: white
-
-The browser simulator should avoid `image-rendering: pixelated` on the main device canvas unless this is re-tested in real Firefox. Prefer `image-rendering: auto` for the scaled device display.
-
-If Firefox appears visually wrong, inspect the actual canvas before changing runtime logic:
-
-```js
-(() => {
-  const c = document.querySelector('canvas[aria-label="X4 display"]');
-  const ctx = c?.getContext("2d");
-  const pix = (x, y) => ctx ? Array.from(ctx.getImageData(x, y, 1, 1).data) : null;
-
-  return {
-    canvasFound: !!c,
-    attrs: c ? {
-      renderOk: c.getAttribute("data-render-ok"),
-      commandCount: c.getAttribute("data-command-count"),
-      firstCommand: c.getAttribute("data-first-command"),
-      width: c.width,
-      height: c.height,
-      clientWidth: c.clientWidth,
-      clientHeight: c.clientHeight
-    } : null,
-    pixels: {
-      background: pix(10, 10),
-      selectedRow: pix(40, 170),
-      aboutRow: pix(40, 226)
-    },
-    diagnostics: document.querySelector('[aria-label="display diagnostics"]')?.textContent
-  };
-})();
-```
-
-If backing pixels are correct but the canvas looks wrong, suspect CSS/compositor behavior before changing compiler/runtime semantics.
-
-## Grayscale Semantics
-
-SquidScript logical grayscale follows the language spec. See `docs/language_spec.md` and `docs/target_profile_architecture.md`.
-
-- `gray0` is white
-- `gray15` is black
-- `white` is equivalent to `gray0`
-- `black` is equivalent to `gray15`
-
-Do not introduce internal inversions that make renderer and runtime disagree. Renderer-facing draw commands should use the same logical grayscale values.
-
-## Browser State
-
-The browser simulator uses browser storage:
-
-- IndexedDB backs simulated `/sd`
-- `localStorage` stores the editor draft
-
-`localhost:5174` and `127.0.0.1:5174` are separate browser origins. Clearing one does not clear the other.
-
-Use the simulator's reset controls when debugging:
-
-- `Reset App State`: clears app-scoped runtime state
-- `Reset Storage`: clears simulated `/sd`
-- `Reset Simulator`: clears simulated `/sd`, editor draft, compiled state, installed app selection, runtime state, and debug log
-- `Clean Launch`: resets, restores default Hello Menu source, compiles, uploads, and runs in one path
-
-## Target And Rendering References
-
-- `targets/xteink-x4.target.json`: XTEINK X4 target data used by browser-sim
-- `docs/target_definition_reference.md`: target definition reference
-- `docs/target_profile_architecture.md`: target profile and grayscale semantics
-- `docs/browser_simulator.md`: browser simulator architecture and workflow
-- `docs/ir_schema.md`: browser-sim IR JSON shape
-
-## Dev Server
-
-If browser behavior disagrees with code, check for a stale Vite server on port `5174`. Restart the dev server and hard reload the browser before assuming runtime/compiler behavior is wrong.
-
-Use `http://127.0.0.1:5174/` as the default URL for simulator verification.
+Which checks to run per change area (Rust, browser-sim, targets, docs), the
+expected baseline checks, and the Hello Menu proof checklist live in
+`docs/standards/verification-commands.md`.
