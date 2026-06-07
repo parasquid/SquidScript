@@ -252,7 +252,11 @@ fn builds_event_key_state_resource_and_wifi_requests() {
     );
     assert_eq!(
         resource_install_chunk_request(51, 2, b"ab".to_vec()).fields,
-        vec![Field::u64(1, 2), Field::bytes(2, b"ab".to_vec())]
+        vec![
+            Field::u64(1, 2),
+            Field::bytes(2, b"ab".to_vec()),
+            Field::bool(3, true),
+        ]
     );
     assert_eq!(
         resource_install_commit_request(52).opcode,
@@ -295,7 +299,11 @@ fn builds_installed_app_chunked_write_requests() {
     assert_eq!(chunk.opcode, Opcode::AppInstallChunk);
     assert_eq!(
         chunk.fields,
-        vec![Field::u64(1, 3), Field::bytes(2, b"lo".to_vec())]
+        vec![
+            Field::u64(1, 3),
+            Field::bytes(2, b"lo".to_vec()),
+            Field::bool(3, true),
+        ]
     );
 
     let commit = app_install_commit_request(13);
@@ -322,7 +330,11 @@ fn builds_temp_run_chunked_write_requests() {
     );
     assert_eq!(
         temp_run_chunk_request(31, 0, b"hel".to_vec()).fields,
-        vec![Field::u64(1, 0), Field::bytes(2, b"hel".to_vec())]
+        vec![
+            Field::u64(1, 0),
+            Field::bytes(2, b"hel".to_vec()),
+            Field::bool(3, true),
+        ]
     );
     assert_eq!(temp_run_commit_request(32).opcode, Opcode::TempRunCommit);
 }

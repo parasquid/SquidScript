@@ -92,7 +92,12 @@ the app ID, tag `2` for the package-relative resource path, tag `3` for total
 byte length, and tag `4` for CRC32. The firmware-side resource path staging
 capacity is 80 bytes including the terminating NUL, so package-relative
 resource paths must be at most 79 bytes in this reference firmware.
-Each chunk uses tag `1` byte offset and tag `2` byte payload.
+Each chunk uses tag `1` byte offset, tag `2` byte payload, and optional tag
+`3` bool acknowledgement request. If tag `3` is absent, firmware treats the
+chunk as acknowledged. If tag `3` is present and false, a successful write does
+not emit a response frame; errors still emit an error response. Host tooling
+uses this to send bounded windows of chunks and waits at acknowledgement
+boundaries and at the final chunk.
 Host app launch follows the same foreground lifecycle path as app-requested
 launches. The launch command enqueues the lifecycle transition and returns a
 protocol OK response once the request is accepted; later app-start failures such
@@ -113,11 +118,12 @@ caller-owned buffers across the C/Rust boundary. Zephyr passes the received
 frame and its fixed session storage to Rust; Rust returns a bounded action with
 borrowed byte slices or stored session strings; Zephyr performs the filesystem
 or VM operation and then calls the completion function so Rust updates progress.
-Host tooling derives upload chunk payload size from the 256-byte encoded
-protocol frame budget so install, resource, and temp-run chunk frames fit the
-firmware's fixed serial receive buffer without increasing firmware RAM. The
-current transfer chunk frame has 36 bytes of protocol overhead, leaving a
-220-byte upload payload per chunk.
+Host tooling derives upload chunk payload size from the target serial frame
+budget so install, resource, and temp-run chunk frames fit the firmware's fixed
+serial receive buffer. The ESP32-C3 Zephyr profile uses a 1024-byte frame
+budget and a 4096-byte acknowledgement window. Current transfer chunk frames
+carry offset, bytes, and acknowledgement intent, leaving 983 upload bytes per
+chunk on that profile.
 Rust also encodes `app-list`, lifecycle diagnostics, state export responses,
 and protocol error responses directly into Zephyr's caller-owned response
 buffer so Zephyr C does not stage duplicate TLV payload arrays for those command

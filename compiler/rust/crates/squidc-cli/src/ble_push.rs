@@ -1,7 +1,7 @@
 use std::{fs, path::Path, time::Duration};
 
 use btleplug::{
-    api::{Central, Manager as _, Peripheral as _, ScanFilter, WriteType},
+    api::{Central, CharPropFlags, Manager as _, Peripheral as _, ScanFilter, WriteType},
     platform::{Adapter, Manager, Peripheral},
 };
 use futures::StreamExt;
@@ -220,6 +220,7 @@ async fn push_connected_peripheral(
         .into_iter()
         .find(|characteristic| characteristic.uuid == data_uuid)
         .ok_or_else(|| format!("data characteristic {DATA_UUID} not found on device"))?;
+    let data_write_type = ble_data_write_type(data.properties);
     let status = peripheral
         .characteristics()
         .into_iter()
@@ -257,7 +258,7 @@ async fn push_connected_peripheral(
     let chunk_size = negotiated_chunk_size(peripheral.mtu());
     for chunk in payload.chunks(chunk_size) {
         peripheral
-            .write(&data, chunk, WriteType::WithResponse)
+            .write(&data, chunk, data_write_type)
             .await
             .map_err(|error| format!("failed to send BLE data chunk: {error}"))?;
     }
@@ -296,6 +297,14 @@ fn negotiated_chunk_size(mtu: u16) -> usize {
         .filter(|size| *size > 0)
         .map(|size| size.min(MAX_CHUNK))
         .unwrap_or(DEFAULT_CHUNK)
+}
+
+fn ble_data_write_type(properties: CharPropFlags) -> WriteType {
+    if properties.contains(CharPropFlags::WRITE_WITHOUT_RESPONSE) {
+        WriteType::WithoutResponse
+    } else {
+        WriteType::WithResponse
+    }
 }
 
 fn parse_uuid(value: &str) -> Result<Uuid, String> {
@@ -527,6 +536,20 @@ mod tests {
 
         assert!(error.contains("device reported error status 1"));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn ble_data_write_type_prefers_without_response_when_supported() {
+        use btleplug::api::CharPropFlags;
+
+        assert_eq!(
+            ble_data_write_type(CharPropFlags::WRITE | CharPropFlags::WRITE_WITHOUT_RESPONSE),
+            WriteType::WithoutResponse
+        );
+        assert_eq!(
+            ble_data_write_type(CharPropFlags::WRITE),
+            WriteType::WithResponse
+        );
     }
 
     fn unique_test_dir(prefix: &str) -> PathBuf {

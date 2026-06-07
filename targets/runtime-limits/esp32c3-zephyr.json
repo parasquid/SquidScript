@@ -48,6 +48,6 @@
   },
 
   "serial_transport": {
-    "max_frame_len": 256
+    "max_frame_len": 1024
   }
 }

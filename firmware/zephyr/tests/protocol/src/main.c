@@ -243,6 +243,24 @@ static int sq_protocol_append_u32_field(uint8_t *payload, size_t cap, size_t *le
 	return SQ_PROTOCOL_OK;
 }
 
+static int sq_protocol_append_bool_field(uint8_t *payload, size_t cap, size_t *len, uint8_t tag,
+					 bool value)
+{
+	size_t needed = *len + 5u;
+
+	if (payload == NULL || len == NULL || needed > cap) {
+		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
+	}
+
+	payload[*len] = tag;
+	payload[*len + 1u] = SQ_FIELD_BOOL;
+	payload[*len + 2u] = 1u;
+	payload[*len + 3u] = 0u;
+	payload[*len + 4u] = value ? 1u : 0u;
+	*len = needed;
+	return SQ_PROTOCOL_OK;
+}
+
 static int sq_protocol_encode_frame_header(uint8_t kind, uint8_t opcode, uint8_t status,
 					   uint32_t sequence, const uint8_t *payload,
 					   size_t payload_len, uint8_t *out, size_t out_len)
@@ -1513,6 +1531,79 @@ ZTEST(squidscript_protocol, test_handles_installed_app_begin_chunk_commit)
 		      SQ_PROTOCOL_OK);
 	zassert_equal(sq_app_store_scan_registry(test_fs_mount.mnt_point, &registry), 0);
 	zassert_not_null(sq_app_registry_find(&registry, "framed-app"));
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
+ZTEST(squidscript_protocol, test_install_chunk_without_ack_writes_without_response)
+{
+	const uint8_t chunk[] = {'h', 'e', 'l'};
+	uint8_t begin_payload[64];
+	uint8_t chunk_payload[64];
+	uint8_t request[128];
+	uint8_t response[128];
+	size_t payload_len = 0;
+	size_t response_len = 0;
+	struct sq_device_identity identity = {
+		.target = "esp32c3-supermini",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_device_install_session install_session = {0};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.install_session = &install_session,
+		.store_mount_point = test_fs_mount.mnt_point,
+	};
+
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(format_test_app_store(), 0);
+
+	zassert_equal(sq_protocol_append_string_field(begin_payload, sizeof(begin_payload),
+						     &payload_len, 1, "window-app"),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_append_u64_field(begin_payload, sizeof(begin_payload),
+						  &payload_len, 2, sizeof(chunk)),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_append_u64_field(begin_payload, sizeof(begin_payload),
+						  &payload_len, 3,
+						  sq_protocol_crc32(chunk, sizeof(chunk))),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST,
+						      SQ_OPCODE_APP_INSTALL_BEGIN,
+						      SQ_STATUS_OK, 41, begin_payload,
+						      payload_len, request, sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	memcpy(&request[SQ_PROTOCOL_HEADER_LEN], begin_payload, payload_len);
+	zassert_equal(sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN + payload_len,
+						      &context, response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_not_equal(response_len, 0);
+
+	payload_len = 0;
+	response_len = 0;
+	zassert_equal(sq_protocol_append_u64_field(chunk_payload, sizeof(chunk_payload),
+						  &payload_len, 1, 0),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_append_bytes_field(chunk_payload, sizeof(chunk_payload),
+						    &payload_len, 2, chunk, sizeof(chunk)),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_append_bool_field(chunk_payload, sizeof(chunk_payload),
+						   &payload_len, 3, false),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST,
+						      SQ_OPCODE_APP_INSTALL_CHUNK,
+						      SQ_STATUS_OK, 42, chunk_payload,
+						      payload_len, request, sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	memcpy(&request[SQ_PROTOCOL_HEADER_LEN], chunk_payload, payload_len);
+	zassert_equal(sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN + payload_len,
+						      &context, response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(response_len, 0);
+	zassert_equal(install_session.received, sizeof(chunk));
 
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }

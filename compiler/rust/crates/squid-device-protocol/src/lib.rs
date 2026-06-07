@@ -13,6 +13,8 @@ pub const MAX_APP_ID_LEN: usize = 40;
 pub const MAX_PATH_LEN: usize = 128;
 pub const MAX_APP_BYTES: usize = 65_536;
 pub const MAX_RESOURCE_BYTES: usize = 1_048_576;
+pub const DEFAULT_SERIAL_MAX_FRAME_BYTES: usize = 1024;
+pub const DEFAULT_TRANSFER_ACK_WINDOW_BYTES: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -935,6 +937,25 @@ pub struct ResourceMetric<'a> {
     pub value: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TransferCapabilities {
+    pub max_frame_bytes: usize,
+    pub max_payload_bytes: usize,
+    pub ack_window_bytes: usize,
+}
+
+impl TransferCapabilities {
+    pub fn default_serial() -> Self {
+        let max_payload_bytes =
+            transfer_chunk_payload_for_frame_budget(DEFAULT_SERIAL_MAX_FRAME_BYTES);
+        Self {
+            max_frame_bytes: DEFAULT_SERIAL_MAX_FRAME_BYTES,
+            max_payload_bytes,
+            ack_window_bytes: DEFAULT_TRANSFER_ACK_WINDOW_BYTES,
+        }
+    }
+}
+
 const RESOURCE_METRIC_NAMES: &[(u32, &str)] = &[
     (1, "ram_total_bytes"),
     (2, "runtime_static_bytes"),
@@ -1154,10 +1175,20 @@ pub fn app_install_begin_request(
 
 #[cfg(feature = "alloc")]
 pub fn app_install_chunk_request(sequence: u32, offset: u64, bytes: Vec<u8>) -> Frame {
+    app_install_chunk_request_with_ack(sequence, offset, bytes, true)
+}
+
+#[cfg(feature = "alloc")]
+pub fn app_install_chunk_request_with_ack(
+    sequence: u32,
+    offset: u64,
+    bytes: Vec<u8>,
+    ack_requested: bool,
+) -> Frame {
     Frame::request(
         Opcode::AppInstallChunk,
         sequence,
-        vec![Field::u64(1, offset), Field::bytes(2, bytes)],
+        transfer_chunk_fields(offset, bytes, ack_requested),
     )
 }
 
@@ -1188,10 +1219,20 @@ pub fn resource_install_begin_request(
 
 #[cfg(feature = "alloc")]
 pub fn resource_install_chunk_request(sequence: u32, offset: u64, bytes: Vec<u8>) -> Frame {
+    resource_install_chunk_request_with_ack(sequence, offset, bytes, true)
+}
+
+#[cfg(feature = "alloc")]
+pub fn resource_install_chunk_request_with_ack(
+    sequence: u32,
+    offset: u64,
+    bytes: Vec<u8>,
+    ack_requested: bool,
+) -> Frame {
     Frame::request(
         Opcode::ResourceInstallChunk,
         sequence,
-        vec![Field::u64(1, offset), Field::bytes(2, bytes)],
+        transfer_chunk_fields(offset, bytes, ack_requested),
     )
 }
 
@@ -1225,16 +1266,35 @@ pub fn temp_run_begin_request(
 
 #[cfg(feature = "alloc")]
 pub fn temp_run_chunk_request(sequence: u32, offset: u64, bytes: Vec<u8>) -> Frame {
+    temp_run_chunk_request_with_ack(sequence, offset, bytes, true)
+}
+
+#[cfg(feature = "alloc")]
+pub fn temp_run_chunk_request_with_ack(
+    sequence: u32,
+    offset: u64,
+    bytes: Vec<u8>,
+    ack_requested: bool,
+) -> Frame {
     Frame::request(
         Opcode::TempRunChunk,
         sequence,
-        vec![Field::u64(1, offset), Field::bytes(2, bytes)],
+        transfer_chunk_fields(offset, bytes, ack_requested),
     )
 }
 
 #[cfg(feature = "alloc")]
 pub fn temp_run_commit_request(sequence: u32) -> Frame {
     Frame::request(Opcode::TempRunCommit, sequence, Vec::new())
+}
+
+#[cfg(feature = "alloc")]
+fn transfer_chunk_fields(offset: u64, bytes: Vec<u8>, ack_requested: bool) -> Vec<Field> {
+    vec![
+        Field::u64(1, offset),
+        Field::bytes(2, bytes),
+        Field::bool(3, ack_requested),
+    ]
 }
 
 #[cfg(feature = "alloc")]
@@ -2069,6 +2129,11 @@ pub fn encoded_frame_len(frame: &Frame) -> Result<usize, DecodeError> {
         })
 }
 
+pub fn transfer_chunk_payload_for_frame_budget(frame_budget: usize) -> usize {
+    const TRANSFER_CHUNK_FIXED_BYTES: usize = HEADER_LEN + 4 + 8 + 4 + 4 + 4 + 1;
+    frame_budget.saturating_sub(TRANSFER_CHUNK_FIXED_BYTES)
+}
+
 #[cfg(feature = "alloc")]
 fn encoded_fields_len(fields: &[Field]) -> Result<usize, DecodeError> {
     let mut len = 0usize;
@@ -2234,4 +2299,31 @@ fn parse_hex_bytes(value: &str) -> Result<Vec<u8>, String> {
                 .map_err(|error| format!("invalid hex byte {text}: {error}"))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        app_install_chunk_request_with_ack, FieldValue, Opcode, Status, TransferCapabilities,
+    };
+
+    #[test]
+    fn transfer_chunk_requests_carry_ack_intent() {
+        let frame = app_install_chunk_request_with_ack(42, 1024, vec![1, 2, 3], false);
+
+        assert_eq!(frame.opcode, Opcode::AppInstallChunk);
+        assert_eq!(frame.status, Status::Ok);
+        assert_eq!(frame.fields.len(), 3);
+        assert_eq!(frame.fields[2].tag, 3);
+        assert_eq!(frame.fields[2].value, FieldValue::Bool(false));
+    }
+
+    #[test]
+    fn transfer_capabilities_default_to_serial_window_limits() {
+        let caps = TransferCapabilities::default_serial();
+
+        assert_eq!(caps.max_frame_bytes, 1024);
+        assert!(caps.max_payload_bytes > 900);
+        assert!(caps.ack_window_bytes >= caps.max_payload_bytes * 4);
+    }
 }

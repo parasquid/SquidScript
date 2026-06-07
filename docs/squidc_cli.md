@@ -124,8 +124,9 @@ BLE GATT file-transfer service. The target app must already be running a
 `service.ble.start("file-transfer", ...)` profile that accepts `.sqbc`; the
 receiving app decides whether to call `app.install(ev.upload)` or handle the
 file another way. The CLI matches the BLE peripheral by advertised name or
-address, writes `.sqbc` as the transfer file name, sends acknowledged GATT
-writes, and waits for the firmware completion notification.
+address, writes `.sqbc` as the transfer file name, uses write-without-response
+for data chunks when the characteristic supports it, and waits for the firmware
+completion notification.
 
 ## Device Commands
 

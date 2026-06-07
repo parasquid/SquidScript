@@ -465,11 +465,13 @@ an actual zero-byte largest block. `device resources --reset-heap-max` sends the
 normal resources request with bool field tag `1`, causing firmware to reset
 Zephyr's heap allocation high-water statistic to the current allocated bytes
 before returning the sampled resource frame.
-The resident serial receive buffer is 256 bytes, with host upload chunking
-derived from the same encoded frame budget. Transfer chunk requests use
-36 bytes of protocol overhead, so current host tooling sends 220-byte upload
-chunks, and the maximum app-id plus resource-path transfer-begin request remains
-within the same fixed receive buffer.
+The resident serial receive buffer is 1,024 bytes on the ESP32-C3 Zephyr
+profile, with host upload chunking derived from the same encoded frame budget.
+Transfer chunk requests carry offset, bytes, and acknowledgement intent, so
+current host tooling sends 983-byte upload chunks and waits at bounded
+acknowledgement windows instead of after every chunk. The maximum app-id plus
+resource-path transfer-begin request remains within the same fixed receive
+buffer.
 Protocol polling reuses runtime app-id/event scratch for lifecycle and armed
 timer transitions. App-arm trigger discovery is split out of the steady poll
 frame and uses a dedicated resident trigger metadata storage backend instead of

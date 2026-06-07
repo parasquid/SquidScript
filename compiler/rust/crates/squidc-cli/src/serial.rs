@@ -7,22 +7,24 @@ use std::{
 };
 
 use squid_device_protocol::{
-    app_install_begin_request, app_install_chunk_request, app_install_commit_request,
+    app_install_begin_request, app_install_chunk_request_with_ack, app_install_commit_request,
     app_launch_request, app_list_entries, app_list_request, decode_frame_from_stream,
-    drawlog_get_request, drawlog_lines, encode_frame, encoded_frame_len, error_lines,
-    errors_get_request, event_dispatch_request, hello_identity, hello_request, key_request,
-    lifecycle_get_request, lifecycle_lines, output_get_request, output_lines, protocol_error,
-    reset_request, resource_install_begin_request, resource_install_chunk_request,
+    drawlog_get_request, drawlog_lines, encode_frame, error_lines, errors_get_request,
+    event_dispatch_request, hello_identity, hello_request, key_request, lifecycle_get_request,
+    lifecycle_lines, output_get_request, output_lines, protocol_error, reset_request,
+    resource_install_begin_request, resource_install_chunk_request_with_ack,
     resource_install_commit_request, resource_values, resources_get_request,
     resources_get_request_with_heap_reset, runtime_cap_clear_request, runtime_cap_get_request,
     runtime_cap_lines, runtime_cap_set_request, state_bytes, state_get_request,
-    state_import_request, storage_format_request, temp_run_begin_request, temp_run_chunk_request,
-    temp_run_commit_request, trace_get_request, trace_lines, wifi_profile_set_request, AppEntry,
-    DecodeError, Frame, FrameKind, Status, HEADER_LEN, MAGIC,
+    state_import_request, storage_format_request, temp_run_begin_request,
+    temp_run_chunk_request_with_ack, temp_run_commit_request, trace_get_request, trace_lines,
+    wifi_profile_set_request, AppEntry, DecodeError, Frame, FrameKind, Status,
+    TransferCapabilities, HEADER_LEN, MAGIC,
 };
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
-const FIRMWARE_SERIAL_FRAME_BUDGET: usize = 256;
+#[cfg(test)]
+const FIRMWARE_SERIAL_FRAME_BUDGET: usize = 1024;
 
 pub struct SerialDevice {
     port: File,
@@ -55,22 +57,27 @@ impl SerialDevice {
     }
 
     pub fn install_app(&mut self, app_id: &str, bytes: &[u8]) -> Result<String, String> {
-        let chunk_size = max_transfer_chunk_size();
+        let transfer = serial_transfer_plan_for_default_caps(bytes.len());
         self.send_protocol_expect_ok(&app_install_begin_request(
             10,
             app_id,
             bytes.len() as u64,
             crc32fast::hash(bytes) as u64,
         ))?;
-        for (index, chunk) in bytes.chunks(chunk_size).enumerate() {
-            self.send_protocol_expect_ok(&app_install_chunk_request(
-                11 + index as u32,
-                (index * chunk_size) as u64,
-                chunk.to_vec(),
-            ))?;
+        for (index, planned) in transfer.chunks.iter().enumerate() {
+            let chunk = &bytes[planned.offset..planned.offset + planned.len];
+            self.send_protocol_transfer_chunk(
+                &app_install_chunk_request_with_ack(
+                    11 + index as u32,
+                    planned.offset as u64,
+                    chunk.to_vec(),
+                    planned.ack_requested,
+                ),
+                planned.ack_requested,
+            )?;
         }
         self.send_protocol_expect_ok(&app_install_commit_request(
-            11 + bytes.chunks(chunk_size).count() as u32,
+            11 + transfer.chunks.len() as u32,
         ))?;
         Ok(format!("installed app {app_id} len={}\n", bytes.len()))
     }
@@ -81,7 +88,7 @@ impl SerialDevice {
         path: &str,
         bytes: &[u8],
     ) -> Result<String, String> {
-        let chunk_size = max_transfer_chunk_size();
+        let transfer = serial_transfer_plan_for_default_caps(bytes.len());
         self.send_protocol_expect_ok(&resource_install_begin_request(
             50,
             app_id,
@@ -89,15 +96,20 @@ impl SerialDevice {
             bytes.len() as u64,
             crc32fast::hash(bytes) as u64,
         ))?;
-        for (index, chunk) in bytes.chunks(chunk_size).enumerate() {
-            self.send_protocol_expect_ok(&resource_install_chunk_request(
-                51 + index as u32,
-                (index * chunk_size) as u64,
-                chunk.to_vec(),
-            ))?;
+        for (index, planned) in transfer.chunks.iter().enumerate() {
+            let chunk = &bytes[planned.offset..planned.offset + planned.len];
+            self.send_protocol_transfer_chunk(
+                &resource_install_chunk_request_with_ack(
+                    51 + index as u32,
+                    planned.offset as u64,
+                    chunk.to_vec(),
+                    planned.ack_requested,
+                ),
+                planned.ack_requested,
+            )?;
         }
         self.send_protocol_expect_ok(&resource_install_commit_request(
-            51 + bytes.chunks(chunk_size).count() as u32,
+            51 + transfer.chunks.len() as u32,
         ))?;
         Ok(format!(
             "installed resource {app_id}/{path} len={}\n",
@@ -106,23 +118,26 @@ impl SerialDevice {
     }
 
     pub fn run_temp_app(&mut self, app_id: &str, bytes: &[u8]) -> Result<String, String> {
-        let chunk_size = max_transfer_chunk_size();
+        let transfer = serial_transfer_plan_for_default_caps(bytes.len());
         self.send_protocol_expect_ok(&temp_run_begin_request(
             30,
             app_id,
             bytes.len() as u64,
             crc32fast::hash(bytes) as u64,
         ))?;
-        for (index, chunk) in bytes.chunks(chunk_size).enumerate() {
-            self.send_protocol_expect_ok(&temp_run_chunk_request(
-                31 + index as u32,
-                (index * chunk_size) as u64,
-                chunk.to_vec(),
-            ))?;
+        for (index, planned) in transfer.chunks.iter().enumerate() {
+            let chunk = &bytes[planned.offset..planned.offset + planned.len];
+            self.send_protocol_transfer_chunk(
+                &temp_run_chunk_request_with_ack(
+                    31 + index as u32,
+                    planned.offset as u64,
+                    chunk.to_vec(),
+                    planned.ack_requested,
+                ),
+                planned.ack_requested,
+            )?;
         }
-        self.send_protocol_expect_ok(&temp_run_commit_request(
-            31 + bytes.chunks(chunk_size).count() as u32,
-        ))?;
+        self.send_protocol_expect_ok(&temp_run_commit_request(31 + transfer.chunks.len() as u32))?;
         Ok(format!("ran temp app {app_id} len={}\n", bytes.len()))
     }
 
@@ -262,6 +277,33 @@ impl SerialDevice {
             .map_err(|error| format!("invalid protocol response frame: {error:?}"))
     }
 
+    fn send_protocol_transfer_chunk(
+        &mut self,
+        frame: &Frame,
+        wait_for_ack: bool,
+    ) -> Result<(), String> {
+        let request = encode_frame(frame);
+        if wait_for_ack {
+            self.write_all(&request)?;
+            let response = self.read_protocol_frame(DEFAULT_TIMEOUT)?;
+            let response_frame = decode_frame_from_stream(&response)
+                .map_err(|error| format!("invalid protocol response frame: {error:?}"))?;
+            if let Some(error) = protocol_error(&response_frame) {
+                return Err(format!("{} ({})", error.message, error.code));
+            }
+            if response_frame.kind != FrameKind::Response
+                || response_frame.opcode != frame.opcode
+                || response_frame.status != Status::Ok
+                || response_frame.sequence != frame.sequence
+            {
+                return Err(format!("unexpected protocol response: {response_frame:?}"));
+            }
+            Ok(())
+        } else {
+            self.write_all(&request)
+        }
+    }
+
     fn wait_until_ready(&mut self) -> Result<(), String> {
         let request = encode_frame(&hello_request(1));
         let mut last_error = None;
@@ -380,6 +422,7 @@ fn complete_frame_end_from_stream(bytes: &[u8]) -> Option<usize> {
     (bytes.len() >= end).then_some(end)
 }
 
+#[cfg(test)]
 fn max_transfer_chunk_size() -> usize {
     let chunk_size = max_transfer_chunk_size_for_frame_budget(FIRMWARE_SERIAL_FRAME_BUDGET);
     assert!(
@@ -389,16 +432,63 @@ fn max_transfer_chunk_size() -> usize {
     chunk_size
 }
 
+#[cfg(test)]
 fn max_transfer_chunk_size_for_frame_budget(frame_budget: usize) -> usize {
     let mut chunk_size = 0usize;
     for candidate in 1..=frame_budget {
-        let frame = app_install_chunk_request(11, 0, vec![0; candidate]);
-        match encoded_frame_len(&frame) {
+        let frame = squid_device_protocol::app_install_chunk_request(11, 0, vec![0; candidate]);
+        match squid_device_protocol::encoded_frame_len(&frame) {
             Ok(len) if len <= frame_budget => chunk_size = candidate,
             _ => break,
         }
     }
     chunk_size
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SerialTransferPlan {
+    chunk_size: usize,
+    chunks: Vec<SerialTransferChunk>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SerialTransferChunk {
+    offset: usize,
+    len: usize,
+    ack_requested: bool,
+}
+
+fn serial_transfer_plan_for_default_caps(total_len: usize) -> SerialTransferPlan {
+    let caps = TransferCapabilities::default_serial();
+    serial_transfer_plan(total_len, caps.max_payload_bytes, caps.ack_window_bytes)
+}
+
+fn serial_transfer_plan(
+    total_len: usize,
+    max_payload_bytes: usize,
+    ack_window_bytes: usize,
+) -> SerialTransferPlan {
+    let chunk_size = max_payload_bytes.max(1);
+    let ack_window_bytes = ack_window_bytes.max(chunk_size);
+    let mut chunks = Vec::new();
+    let mut offset = 0usize;
+    let mut bytes_since_ack = 0usize;
+    while offset < total_len {
+        let len = chunk_size.min(total_len - offset);
+        bytes_since_ack += len;
+        let end = offset + len == total_len;
+        let ack_requested = bytes_since_ack >= ack_window_bytes || end;
+        chunks.push(SerialTransferChunk {
+            offset,
+            len,
+            ack_requested,
+        });
+        if ack_requested {
+            bytes_since_ack = 0;
+        }
+        offset += len;
+    }
+    SerialTransferPlan { chunk_size, chunks }
 }
 
 pub fn detect_port() -> Result<String, String> {
@@ -546,7 +636,8 @@ mod tests {
     use super::{
         complete_frame_end_from_stream, configure_tty_args, format_lines, format_raw_lines,
         max_transfer_chunk_size, max_transfer_chunk_size_for_frame_budget,
-        retryable_protocol_decode_error, OutputTail, FIRMWARE_SERIAL_FRAME_BUDGET,
+        retryable_protocol_decode_error, serial_transfer_plan, OutputTail,
+        FIRMWARE_SERIAL_FRAME_BUDGET,
     };
     use squid_device_protocol::{
         app_install_begin_request, app_install_chunk_request, encoded_frame_len,
@@ -630,10 +721,10 @@ mod tests {
 
     #[test]
     fn transfer_chunk_size_uses_current_firmware_frame_budget() {
-        assert_eq!(FIRMWARE_SERIAL_FRAME_BUDGET, 256);
+        assert_eq!(FIRMWARE_SERIAL_FRAME_BUDGET, 1024);
         let chunk_size = max_transfer_chunk_size();
 
-        assert!(chunk_size > 64);
+        assert!(chunk_size > 900);
         assert_transfer_chunk_fits(|bytes| app_install_chunk_request(11, 0, bytes), chunk_size);
         assert_transfer_chunk_fits(
             |bytes| resource_install_chunk_request(51, 0, bytes),
@@ -695,6 +786,19 @@ mod tests {
         assert!(chunk_size < max_transfer_chunk_size());
         let frame = app_install_chunk_request(11, 0, vec![0; chunk_size]);
         assert!(encoded_frame_len(&frame).unwrap() <= small_budget);
+    }
+
+    #[test]
+    fn transfer_plan_batches_acknowledgements_by_window() {
+        let plan = serial_transfer_plan(5000, 1024, 4096);
+
+        assert_eq!(plan.chunk_size, 1024);
+        assert_eq!(plan.chunks.len(), 5);
+        assert!(!plan.chunks[0].ack_requested);
+        assert!(!plan.chunks[1].ack_requested);
+        assert!(!plan.chunks[2].ack_requested);
+        assert!(plan.chunks[3].ack_requested);
+        assert!(plan.chunks[4].ack_requested);
     }
 
     fn assert_transfer_chunk_fits(

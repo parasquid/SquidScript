@@ -622,6 +622,57 @@ static int encode_lifecycle_header(uint32_t sequence, uint8_t *response, size_t 
 	return SQ_PROTOCOL_OK;
 }
 
+static bool transfer_chunk_ack_requested(const uint8_t *request_bytes, size_t request_len)
+{
+	const uint8_t *payload;
+	uint32_t payload_len;
+	size_t offset = 0;
+
+	if (request_bytes == NULL || request_len < SQ_PROTOCOL_HEADER_LEN) {
+		return true;
+	}
+	payload_len = read_u32_le_device(&request_bytes[12]);
+	if ((size_t)payload_len > request_len - SQ_PROTOCOL_HEADER_LEN) {
+		return true;
+	}
+	payload = &request_bytes[SQ_PROTOCOL_HEADER_LEN];
+	while (offset < payload_len) {
+		const uint8_t *field;
+		uint8_t tag;
+		uint8_t type;
+		uint16_t len;
+		size_t next_offset;
+
+		if ((size_t)payload_len - offset < 4u) {
+			return true;
+		}
+		field = &payload[offset];
+		tag = field[0];
+		type = field[1];
+		len = (uint16_t)field[2] | ((uint16_t)field[3] << 8);
+		next_offset = offset + 4u + len;
+		if (next_offset > payload_len) {
+			return true;
+		}
+		if (tag == SQ_DEVICE_CHUNK_FIELD_ACK_REQUESTED) {
+			return type != SQ_DEVICE_FIELD_TYPE_BOOL || len != 1u || field[4] != 0u;
+		}
+		offset = next_offset;
+	}
+	return true;
+}
+
+static int transfer_chunk_response(const struct sq_protocol_request *request,
+				   const uint8_t *request_bytes, size_t request_len,
+				   uint8_t *response, size_t response_cap, size_t *response_len)
+{
+	if (!transfer_chunk_ack_requested(request_bytes, request_len)) {
+		*response_len = 0;
+		return SQ_PROTOCOL_OK;
+	}
+	return ok_response(request, response, response_cap, response_len);
+}
+
 static int __noinline begin_install(const struct sq_protocol_request *request,
 			 const uint8_t *request_bytes, size_t request_len,
 			 const struct sq_device_protocol_context *context, uint8_t *response,
@@ -703,7 +754,8 @@ static int __noinline append_install_chunk(const struct sq_protocol_request *req
 		    SQDP_STATUS_OK) {
 			return -EINVAL;
 		}
-		return ok_response(request, response, response_cap, response_len);
+		return transfer_chunk_response(request, request_bytes, request_len, response,
+					       response_cap, response_len);
 	}
 
 	struct sq_device_install_session *session = context->install_session;
@@ -723,7 +775,8 @@ static int __noinline append_install_chunk(const struct sq_protocol_request *req
 		return -EINVAL;
 	}
 
-	return ok_response(request, response, response_cap, response_len);
+	return transfer_chunk_response(request, request_bytes, request_len, response, response_cap,
+				       response_len);
 }
 
 static int __noinline begin_resource_install(const struct sq_protocol_request *request,
@@ -773,7 +826,8 @@ static int __noinline append_resource_chunk(const struct sq_protocol_request *re
 	    SQDP_STATUS_OK) {
 		return -EINVAL;
 	}
-	return ok_response(request, response, response_cap, response_len);
+	return transfer_chunk_response(request, request_bytes, request_len, response, response_cap,
+				       response_len);
 }
 
 static int __noinline commit_resource_install(const struct sq_protocol_request *request,
