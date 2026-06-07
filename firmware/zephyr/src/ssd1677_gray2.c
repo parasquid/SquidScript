@@ -31,3 +31,17 @@ uint8_t sq_ssd1677_gray2_msb_active_mask(uint8_t packed)
 {
 	return gray2_plane_active_mask(packed, 0x02U);
 }
+
+uint8_t sq_ssd1677_gray2_bw_active_mask(uint8_t packed)
+{
+	uint8_t mask = 0U;
+
+	for (uint8_t pixel = 0; pixel < 4U; ++pixel) {
+		uint8_t gray = (uint8_t)((packed >> (6U - pixel * 2U)) & 0x03U);
+
+		if (gray < 2U) {
+			mask |= (uint8_t)(0x80U >> pixel);
+		}
+	}
+	return mask;
+}

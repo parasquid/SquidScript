@@ -125,6 +125,26 @@ native 800 x 480 panel content with black, dark gray, light gray, white bands.
 The script can capture a USB webcam frame as optional evidence; pass
 `--require-camera` only when the camera itself is part of the check.
 
+`scripts/xiao-esp32c3-test-epaper-fast-redraw-smoke.sh` is the retained
+XIAO e-paper fast redraw smoke test for repeated product-firmware BinBook redraws.
+It packages, installs, and launches
+`tests/hardware/xiao-esp32c3/epaper-fast-redraw-smoke`, then injects
+`key.RIGHT` events to cycle the three-page GRAY2 fixture through
+`service.display.draw`. The unattended pass criteria are serial: `device output`
+contains `fast redraw page 1`, `fast redraw page 2`, and `fast redraw page 0`,
+`device drawlog` contains `draw=binbook`, `device errors` is empty, and
+`device resources` responds after the repeated redraws. The expected visible
+sequence is gray bands -> chimp/image -> sharp geometry. The visual acceptance
+question is no full flash-style refresh between page changes. The SSD1677
+backend renders the cadence refresh with true GRAY2 and uses thresholded
+black/white partial DU updates for intermediate page turns. Each partial update
+streams the remembered old page to RED/previous RAM (`0x26`) and the new page to
+BW/current RAM (`0x24`) before activation so both black-to-white and
+white-to-black transitions are represented. Human or camera evidence is needed
+for the optical judgment; the serial checks prove app/runtime/display-path
+activity and report the selected firmware refresh mode, not final visible
+quality.
+
 The default XIAO firmware also drives the SSD1677/GDEQ0426T82 display through
 the Zephyr SPI backend for `service.display.clear` and `service.display.text`.
 The target JSON is the source of truth for the default portrait logical

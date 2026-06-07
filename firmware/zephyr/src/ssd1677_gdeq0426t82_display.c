@@ -60,6 +60,8 @@ LOG_MODULE_REGISTER(squidscript_ssd1677, LOG_LEVEL_INF);
 #define SSD1677_ENTRY_X_INC_Y_INC_HORIZONTAL 0x03
 #define SSD1677_UPDATE_FULL 0xf7
 #define SSD1677_UPDATE_GRAYSCALE 0xc7
+#define SSD1677_UPDATE_PARTIAL 0xfc
+#define SSD1677_BINBOOK_FULL_REFRESH_CADENCE 5U
 #define BINBOOK_PIXEL_FORMAT_GRAY2_PACKED 2U
 #define BINBOOK_COMPRESSION_RLE_PACKBITS 1U
 #define BINBOOK_GRAY2_ROW_BYTES (PANEL_WIDTH / 4U)
@@ -84,6 +86,9 @@ static const struct spi_config spi_cfg = {
 
 static enum ssd1677_display_mode display_mode;
 static uint8_t row[ROW_BYTES];
+static uint32_t binbook_fast_refresh_count;
+static bool binbook_previous_page_valid;
+static struct sq_vm_runtime_binbook_page binbook_previous_page;
 
 static const uint8_t ssd1677_lut_4g[] = {
 	0x80, 0x48, 0x4a, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -604,6 +609,114 @@ static int stream_binbook_gray2_page(const struct sq_vm_runtime_binbook_page *pa
 	return stream_binbook_gray2_plane(page, SSD1677_CMD_WRITE_RAM, false);
 }
 
+static int validate_binbook_gray2_page(const struct sq_vm_runtime_binbook_page *page)
+{
+	if (page == NULL || page->path[0] == '\0' ||
+	    page->pixel_format != BINBOOK_PIXEL_FORMAT_GRAY2_PACKED ||
+	    page->compression_method != BINBOOK_COMPRESSION_RLE_PACKBITS ||
+	    page->stored_width != PANEL_WIDTH || page->stored_height != PANEL_HEIGHT ||
+	    page->uncompressed_size != BINBOOK_GRAY2_PAGE_BYTES || page->compressed_size == 0) {
+		return -ENOTSUP;
+	}
+	return 0;
+}
+
+static bool binbook_should_full_refresh(void)
+{
+	return !binbook_previous_page_valid || binbook_fast_refresh_count == 0U ||
+	       binbook_fast_refresh_count >= SSD1677_BINBOOK_FULL_REFRESH_CADENCE;
+}
+
+static void binbook_remember_previous_page(const struct sq_vm_runtime_binbook_page *page)
+{
+	if (page == NULL) {
+		binbook_previous_page_valid = false;
+		memset(&binbook_previous_page, 0, sizeof(binbook_previous_page));
+		return;
+	}
+	binbook_previous_page = *page;
+	binbook_previous_page_valid = true;
+}
+
+static void binbook_record_refresh(bool full_refresh)
+{
+	if (full_refresh) {
+		binbook_fast_refresh_count = 1U;
+	} else {
+		binbook_fast_refresh_count++;
+	}
+}
+
+static int stream_binbook_gray2_bw_plane(const struct sq_vm_runtime_binbook_page *page,
+					 uint8_t command)
+{
+	struct packbits_reader reader = {0};
+	int ret;
+
+	fs_file_t_init(&reader.file);
+	ret = fs_open(&reader.file, page->path, FS_O_READ);
+	if (ret != 0) {
+		return ret;
+	}
+	ret = fs_seek(&reader.file, (off_t)page->blob_offset, FS_SEEK_SET);
+	if (ret != 0) {
+		(void)fs_close(&reader.file);
+		return ret;
+	}
+	ret = write_command(command);
+	if (ret != 0) {
+		(void)fs_close(&reader.file);
+		return ret;
+	}
+	reader.compressed_left = page->compressed_size;
+	for (uint16_t y = 0; y < PANEL_HEIGHT; ++y) {
+		memset(row, 0xff, sizeof(row));
+		for (uint16_t x = 0; x < PANEL_WIDTH; x += 4U) {
+			uint8_t packed = 0;
+			uint8_t active_mask;
+
+			ret = packbits_next_byte(&reader, &packed);
+			if (ret != 0) {
+				(void)fs_close(&reader.file);
+				return ret;
+			}
+			active_mask = sq_ssd1677_gray2_bw_active_mask(packed);
+			apply_active_mask_to_row(row, x, active_mask);
+		}
+		ret = write_data(row, sizeof(row));
+		if (ret != 0) {
+			(void)fs_close(&reader.file);
+			return ret;
+		}
+	}
+	(void)fs_close(&reader.file);
+	return 0;
+}
+
+static int stream_binbook_gray2_bw_page(const struct sq_vm_runtime_binbook_page *page)
+{
+	int ret = validate_binbook_gray2_page(page);
+
+	if (ret != 0) {
+		return ret;
+	}
+	return stream_binbook_gray2_bw_plane(page, SSD1677_CMD_WRITE_RAM);
+}
+
+static int stream_binbook_gray2_bw_previous_page(void)
+{
+	int ret;
+
+	if (!binbook_previous_page_valid) {
+		return -EIO;
+	}
+	ret = validate_binbook_gray2_page(&binbook_previous_page);
+	if (ret != 0) {
+		return ret;
+	}
+	return stream_binbook_gray2_bw_plane(&binbook_previous_page, SSD1677_CMD_WRITE_RED_RAM);
+}
+
 static void draw_text_row(uint8_t line[ROW_BYTES], uint16_t y,
 			  const struct sq_vm_runtime_display_op *op)
 {
@@ -706,6 +819,27 @@ static int refresh_grayscale_display(bool *observed_busy)
 	return wait_ready("refresh-grayscale", observed_busy);
 }
 
+static int refresh_binbook_bw_partial_display(bool *observed_busy)
+{
+	const uint8_t display_update[] = {0x00, 0x00};
+	const uint8_t update = SSD1677_UPDATE_PARTIAL;
+	int ret = write_command_data(SSD1677_CMD_DISPLAY_UPDATE_CTRL, display_update,
+				     sizeof(display_update));
+
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command_data(SSD1677_CMD_UPDATE_CTRL2, &update, sizeof(update));
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command(SSD1677_CMD_MASTER_ACTIVATION);
+	if (ret != 0) {
+		return ret;
+	}
+	return wait_ready("refresh-partial", observed_busy);
+}
+
 static int configure_display(void)
 {
 	if (!device_is_ready(spi_dev) || !gpio_is_ready_dt(&cs_gpio) ||
@@ -732,6 +866,8 @@ static int configure_display(void)
 int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t op_count)
 {
 	bool observed_busy = false;
+	bool full_refresh = false;
+	const char *refresh_mode = "bw-full";
 	int ret;
 	const struct sq_vm_runtime_display_op *binbook = NULL;
 
@@ -745,6 +881,7 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 	}
 	binbook = find_binbook_drawable_op(ops, op_count);
 	if (binbook != NULL) {
+		full_refresh = binbook_should_full_refresh();
 		if (display_mode != SSD1677_DISPLAY_MODE_GRAYSCALE) {
 			ret = init_grayscale_display();
 			if (ret != 0) {
@@ -754,6 +891,8 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 			}
 		}
 	} else if (display_mode != SSD1677_DISPLAY_MODE_BW) {
+		binbook_fast_refresh_count = 0U;
+		binbook_remember_previous_page(NULL);
 		ret = epaper_init();
 		if (ret != 0) {
 			LOG_ERR("display init failed: %d", ret);
@@ -766,7 +905,14 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 		return ret;
 	}
 	if (binbook != NULL) {
-		ret = stream_binbook_gray2_page(&binbook->binbook_page);
+		if (full_refresh) {
+			ret = stream_binbook_gray2_page(&binbook->binbook_page);
+		} else {
+			ret = stream_binbook_gray2_bw_previous_page();
+			if (ret == 0) {
+				ret = stream_binbook_gray2_bw_page(&binbook->binbook_page);
+			}
+		}
 		if (ret != 0) {
 			LOG_ERR("display binbook stream failed: %d", ret);
 			return ret;
@@ -785,14 +931,23 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 		}
 	}
 	if (binbook != NULL) {
-		ret = refresh_grayscale_display(&observed_busy);
+		refresh_mode = full_refresh ? "gray2-full" : "gray2-bw-partial";
+		if (full_refresh) {
+			ret = refresh_grayscale_display(&observed_busy);
+		} else {
+			ret = refresh_binbook_bw_partial_display(&observed_busy);
+		}
 	} else {
 		ret = refresh_display(&observed_busy);
 	}
 	if (ret != 0) {
 		return ret;
 	}
-	LOG_INF("display refresh complete busy_observed=%d", observed_busy);
+	if (binbook != NULL) {
+		binbook_remember_previous_page(&binbook->binbook_page);
+		binbook_record_refresh(full_refresh);
+	}
+	LOG_INF("display refresh complete mode=%s busy_observed=%d", refresh_mode, observed_busy);
 	return 0;
 }
 

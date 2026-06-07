@@ -209,8 +209,8 @@ int32_t runtime_display_info(void *user_data, SqvmDisplayInfo *out)
 	runtime_display_info_text("GRAY1_PACKED", &out->native_pixel_format,
 				  &out->native_pixel_format_len);
 	out->default_font_height = 20;
-	out->supports_partial_refresh = false;
-	out->supports_fast_refresh = false;
+	out->supports_partial_refresh = true;
+	out->supports_fast_refresh = true;
 	return 0;
 #else
 	runtime_display_info_text("drawlog", &out->status, &out->status_len);

@@ -294,8 +294,9 @@
     },
     "refresh": {
       "full": true,
-      "partial": false,
-      "fast": false
+      "partial": true,
+      "fast": true,
+      "fullCadence": 5
     },
     "rendering": {
       "screenPolicies": ["compose", "stream"],

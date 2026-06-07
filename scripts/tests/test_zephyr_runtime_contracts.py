@@ -77,6 +77,27 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
         self.assertIn("ret = refresh_grayscale_display(&observed_busy);", flush_body)
         self.assertIn("ret = refresh_display(&observed_busy);", flush_body)
 
+    def test_ssd1677_binbook_uses_fast_refresh_between_full_cadence_refreshes(self):
+        display_c = self.read("firmware/zephyr/src/ssd1677_gdeq0426t82_display.c")
+        target = self.read_json("targets/xiao-esp32c3-gdeq0426t82-sd.target.json")
+
+        self.assertTrue(target["display"]["refresh"]["full"])
+        self.assertTrue(target["display"]["refresh"]["partial"])
+        self.assertTrue(target["display"]["refresh"]["fast"])
+        self.assertEqual(target["display"]["refresh"]["fullCadence"], 5)
+        self.assertIn("SSD1677_BINBOOK_FULL_REFRESH_CADENCE", display_c)
+        self.assertIn("static uint32_t binbook_fast_refresh_count;", display_c)
+        self.assertIn("static bool binbook_previous_page_valid;", display_c)
+        self.assertIn("static struct sq_vm_runtime_binbook_page binbook_previous_page;", display_c)
+        self.assertIn("static bool binbook_should_full_refresh", display_c)
+        self.assertIn("stream_binbook_gray2_bw_page", display_c)
+        self.assertIn("stream_binbook_gray2_bw_previous_page", display_c)
+        self.assertIn("SSD1677_UPDATE_PARTIAL", display_c)
+        self.assertIn('refresh_mode = full_refresh ? "gray2-full" : "gray2-bw-partial"', display_c)
+        self.assertIn("refresh_binbook_bw_partial_display(&observed_busy)", display_c)
+        self.assertIn("binbook_remember_previous_page(&binbook->binbook_page)", display_c)
+        self.assertIn('LOG_INF("display refresh complete mode=%s busy_observed=%d"', display_c)
+
     def test_wifi_scan_results_use_resident_cursor_snapshot_not_transfer_scratch(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         runtime_c = self.read("firmware/zephyr/src/vm_runtime_wifi.c")

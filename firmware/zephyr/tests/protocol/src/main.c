@@ -5173,6 +5173,7 @@ ZTEST(squidscript_protocol, test_ssd1677_gray2_maps_canonical_binbook_values_to_
 
 	zassert_equal(sq_ssd1677_gray2_lsb_active_mask(packed), 0x50);
 	zassert_equal(sq_ssd1677_gray2_msb_active_mask(packed), 0x30);
+	zassert_equal(sq_ssd1677_gray2_bw_active_mask(packed), 0xc0);
 }
 
 ZTEST(squidscript_protocol, test_vm_runtime_dispatches_wifi_action_stubs)

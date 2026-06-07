@@ -1,0 +1,41 @@
+app "epaper-fast-redraw-smoke"
+
+state {
+  pageIndex: int = 0
+}
+
+event.on("app.start") {
+  state.pageIndex = 0
+  screen.open("reader")
+}
+
+event.on("key.RIGHT") {
+  if (state.pageIndex < 2) {
+    state.pageIndex = state.pageIndex + 1
+  } else {
+    state.pageIndex = 0
+  }
+  debug.print("fast redraw page", state.pageIndex)
+  screen.refresh()
+}
+
+event.on("key.SELECT") {
+  if (state.pageIndex < 2) {
+    state.pageIndex = state.pageIndex + 1
+  } else {
+    state.pageIndex = 0
+  }
+  debug.print("fast redraw page", state.pageIndex)
+  screen.refresh()
+}
+
+screen("reader", { render: "stream" }) {
+  let opened = binbook.open("books/sample.binbook")
+  if (opened.ok) {
+    let page = binbook.readPage(opened.book, state.pageIndex)
+    if (page.ok) {
+      service.display.draw(page.drawable)
+      debug.print("fast redraw render", state.pageIndex)
+    }
+  }
+}

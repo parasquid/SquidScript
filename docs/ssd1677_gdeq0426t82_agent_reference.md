@@ -344,15 +344,27 @@ rotation `270`) to each draw op, maps physical X to panel RAM X in reverse,
 writes BW RAM (`0x24`), and refreshes with the black/white full-update path.
 
 The BinBook drawable path accepts target-native full-panel `GRAY2_PACKED`
-resources and streams the compressed page twice without allocating a full-screen
-framebuffer. It writes the two one-bit SSD1677 grayscale planes to RED RAM
-(`0x26`) and BW RAM (`0x24`), loads the panel-specific 4-gray LUT with `0x32`,
-sets the LUT-derived gate/source/VCOM voltage registers (`0x03`, `0x04`,
-`0x2c`), enables normal RED RAM handling with display update control `0x21`
-data `0x00, 0x00`, and refreshes with update control byte `0xc7` before
-master activation (`0x20`). Canonical BinBook GRAY2 values are mapped to the
-SSD1677 plane states in ascending order: `0=black`, `1=dark gray`,
-`2=light gray`, and `3=white`.
+resources and streams compressed pages without allocating a full-screen
+framebuffer. Cadence refreshes use the true 4-gray path: the backend writes the
+two one-bit SSD1677 grayscale planes to RED RAM (`0x26`) and BW RAM (`0x24`),
+loads the panel-specific 4-gray LUT with `0x32`, sets the LUT-derived
+gate/source/VCOM voltage registers (`0x03`, `0x04`, `0x2c`), enables normal RED
+RAM handling with display update control `0x21` data `0x00, 0x00`, and refreshes
+with update control byte `0xc7` before master activation (`0x20`). Canonical
+BinBook GRAY2 values are mapped to the SSD1677 plane states in ascending order:
+`0=black`, `1=dark gray`, `2=light gray`, and `3=white`.
+
+Intermediate BinBook page turns use the controller's differential partial path
+for smoother redraws. The backend thresholds GRAY2 to black/white, writes the
+remembered old page to RED/previous RAM (`0x26`), writes the new page to
+BW/current RAM (`0x24`), and refreshes with display update control `0x21` data
+`0x00, 0x00` plus update control byte `0xfc`. Writing both planes immediately
+before activation gives the waveform explicit black-to-white and white-to-black
+transitions and reduces ghosting during page turns. This uses the same
+controller-RAM convention as GxEPD2 and Pulp OS: `0x26` is a grayscale bitplane
+during true GRAY2 refreshes and the previous-frame plane during differential
+black/white partial refreshes. The target metadata declares full, partial, and
+fast refresh support with a full-refresh cadence of five BinBook refreshes.
 
 The verified unattended firmware activity signal is a completed display refresh
 with an empty `device errors` response. Hardware validation for BinBook GRAY2
