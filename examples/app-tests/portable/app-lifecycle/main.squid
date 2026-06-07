@@ -1,0 +1,8 @@
+app "app-lifecycle"
+
+state {
+}
+
+event.on("app.start") {
+  debug.print("app-lifecycle ready")
+}

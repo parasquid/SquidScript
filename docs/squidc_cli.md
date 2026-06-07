@@ -15,6 +15,8 @@ configuration, firmware build metadata, docs, and autocomplete.
 cargo run -p squidc -- app build examples/blinky-supermini/main.squid --out target/blinky.sqbc
 cargo run -p squidc -- app package examples/blinky-supermini
 cargo run -p squidc -- app run examples/blinky-supermini/main.squid
+cargo run -p squidc -- app test examples/app-tests/portable
+cargo run -p squidc -- app test --negative tests/app-tests/negative
 cargo run -p squidc -- fmt examples
 cargo run -p squidc -- fmt --check examples/ble-install/main.squid
 cargo run -p squidc -- repl --script tests/repl/default-dev.session
@@ -76,6 +78,9 @@ cargo run -p squidc -- app build examples/blinky-supermini/main.squid --out targ
 cargo run -p squidc -- app package examples/blinky-supermini
 cargo run -p squidc -- app package examples/blinky-supermini --out target/blinky-supermini.squid.zip
 cargo run -p squidc -- app run examples/blinky-supermini/main.squid
+cargo run -p squidc -- app test examples/app-tests/portable
+cargo run -p squidc -- app test --negative tests/app-tests/negative
+cargo run -p squidc -- app test --list examples/app-tests/portable
 cargo run -p squidc -- app install examples/blinky-supermini/main.squid
 cargo run -p squidc -- app install blinky-supermini.squid.zip
 cargo run -p squidc -- app push SquidScript target/installed-app.sqbc
@@ -98,6 +103,21 @@ packages. Source is compiled before upload. `.sqbc` input must include app-id
 metadata unless `--as` is provided. Package installs derive the app ID from
 `main.sqbc`; `--as` is not supported for packages. Use `app install` plus
 `app launch` for persistent apps.
+
+`app test <path>` discovers small example-backed tests. A positive app test is
+a directory containing `main.squid` and a sibling `test.session`. The source is
+compiled and installed through the existing scripted REPL runner, then the
+session drives hardware assertions such as `:output`, `:state`, `:trace`, and
+`:expect-*`. Passing a directory scans recursively, so
+`examples/app-tests/portable` is the portable app regression suite. Use
+`--port <serial-port>` when auto-detection is ambiguous. Use `--list` to inspect
+the selected tests without touching hardware.
+
+`app test --negative <path>` discovers compile-failure fixtures. A negative
+fixture is a directory containing `main.squid` and `expected.txt`; the first
+non-empty line of `expected.txt` must match a compiler diagnostic code or
+message fragment. Negative tests are host-only and do not require connected
+hardware.
 
 `app push <device-name-or-address> <file.sqbc>` uploads SQBC over the custom
 BLE GATT file-transfer service. The target app must already be running a
@@ -235,6 +255,8 @@ cargo run -p squidc -- target build --target xiao-esp32c3-gdeq0426t82-sd
 cargo run -p squidc -- target flash --target xiao-esp32c3-gdeq0426t82-sd
 cargo run -p squidc -- target monitor --target xiao-esp32c3-gdeq0426t82-sd
 cargo run -p squidc -- target doctor --target xiao-esp32c3-gdeq0426t82-sd
+cargo run -p squidc -- hardware test --target xiao-esp32c3-gdeq0426t82-sd
+cargo run -p squidc -- hardware test --target xiao-esp32c3-gdeq0426t82-sd --list
 ```
 
 Use `target inspect` or `--print-plan` before side-effectful operations when
@@ -251,6 +273,16 @@ Noninteractive sessions fail and should pass `--target <target-id>` explicitly.
 `target flash` builds first, then flashes. It monitors only when
 `--monitor-after-flash` is passed. `target monitor` is a streaming hardware
 command; with `--json`, use `--print-plan` instead of starting the stream.
+
+`hardware test --target <target-id>` runs the target-aware hardware regression
+checks selected from target metadata features. The XIAO ESP32-C3 default dev
+target currently selects portable app tests, BLE file-transfer install, BLE
+reconnect, radio concurrency, and AP-after-station checks. It excludes display
+drawlog and SD-card checks until those capabilities are ready for this target.
+Use `--skip-flash` when the correct firmware is already flashed. Use
+`--ble-device <name-or-address>` to override BLE matching and
+`--host-wifi-iface <iface>` when Wi-Fi tests should use a specific host
+interface.
 
 ## JSON
 

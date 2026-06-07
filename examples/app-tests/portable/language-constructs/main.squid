@@ -1,0 +1,9 @@
+app "language-constructs"
+
+state {
+  count: int = 0
+}
+
+event.on("app.start") {
+  debug.print("language-constructs ready")
+}

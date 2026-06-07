@@ -2,23 +2,21 @@
 # Push a SQBC file to a SquidScript device's custom GATT file-transfer
 # service and verify the device installs it. Hardware test wrapper.
 #
-# Defaults to the XIAO ESP32-C3 e-paper dev target. The wrapper builds
-# and flashes the firmware with the default fallback installer, runs the
-# squidc BLE push driver against the device, and verifies the installed payload
-# is registered.
+# Builds and optionally flashes the selected Zephyr target with the default
+# fallback installer, runs the squidc BLE push driver against the device, and
+# verifies the installed payload is registered.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export SQUID_ZEPHYR_TARGET_JSON="${SQUID_ZEPHYR_TARGET_JSON:-${ROOT}/targets/xiao-esp32c3-gdeq0426t82-sd.target.json}"
-export SQUID_ZEPHYR_TARGET_OVERLAY="${SQUID_ZEPHYR_TARGET_OVERLAY:-${ROOT}/firmware/zephyr/boards/xiao_esp32c3_gdeq0426t82_sd.overlay}"
-export ZEPHYR_BUILD_DIR="${ZEPHYR_BUILD_DIR:-${ROOT}/build/zephyr/xiao-esp32c3-gdeq0426t82-sd}"
 source "${ROOT}/scripts/zephyr-env.sh"
 source "${ROOT}/scripts/lib/serial-port.sh"
+TARGET_ID="${TARGET_ID:-xiao-esp32c3-gdeq0426t82-sd}"
 
 usage() {
 	cat <<'USAGE'
-Usage: scripts/zephyr-test-ble-file-transfer.sh [-- <extra args>]
+Usage: scripts/zephyr-test-ble-file-transfer.sh [--target <id>] [-- <extra args>]
 
+  --target <id>                Target metadata id (default: xiao-esp32c3-gdeq0426t82-sd)
   --device <name-or-address>   BLE device name or address (required)
   --port <serial-port>         Serial port (default: auto-detect)
   --source <file.squid>        Source app to compile and push (default: hello example)
@@ -29,10 +27,10 @@ Environment:
   SQUID_ZEPHYR_TARGET_JSON      Override the target metadata JSON
   SQUID_ZEPHYR_TARGET_OVERLAY   Override the Zephyr board overlay
 
-The wrapper builds the XIAO target, flashes it via west flash, launches the
-default fallback main app, pushes the compiled SQBC via `squidc app push` over
-the custom BLE GATT transfer service, and verifies the installed payload is
-registered.
+The wrapper builds the selected target, flashes it unless --skip-flash is set,
+launches the default fallback main app, pushes the compiled SQBC via `squidc
+app push` over the custom BLE GATT transfer service, and verifies the installed
+payload is registered.
 USAGE
 }
 
@@ -41,6 +39,8 @@ PORT=""
 SOURCE=""
 SKIP_FLASH=0
 PAYLOAD_ID="hello"
+WORK_DIR="$(mktemp -d)"
+trap 'rm -rf "$WORK_DIR"' EXIT
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -50,6 +50,10 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--device)
 			DEVICE="$2"
+			shift
+			;;
+		--target)
+			TARGET_ID="$2"
 			shift
 			;;
 		--port)
@@ -76,12 +80,6 @@ while [[ $# -gt 0 ]]; do
 	shift
 done
 
-if [[ -z "$DEVICE" ]]; then
-	echo "ERROR: --device is required (BLE device name or address)" >&2
-	usage
-	exit 64
-fi
-
 if [[ -z "$PORT" ]]; then
 	PORT="$(resolve_esp_serial_port 2>/dev/null || true)"
 	if [[ -z "$PORT" ]]; then
@@ -95,20 +93,30 @@ fi
 
 export ESPFLASH_PORT="$PORT"
 
+if [[ -z "$DEVICE" ]]; then
+	TARGET_INSPECT_JSON="${WORK_DIR}/target-inspect.json"
+	cargo run --quiet -p squidc -- --json target inspect --target "$TARGET_ID" >"$TARGET_INSPECT_JSON"
+	DEVICE="$(python3 - "$TARGET_INSPECT_JSON" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    print(json.load(handle)["data"]["name"])
+PY
+)"
+fi
+
 if [[ -z "$SOURCE" ]]; then
 	SOURCE="${ROOT}/examples/hello/main.squid"
 fi
 
-WORK_DIR="$(mktemp -d)"
-trap 'rm -rf "$WORK_DIR"' EXIT
 PAYLOAD_SQBC="${WORK_DIR}/${PAYLOAD_ID}.sqbc"
 
-echo ">>> Building XIAO target"
-cargo run -p squidc -- target build --target xiao-esp32c3-gdeq0426t82-sd
+echo ">>> Building ${TARGET_ID}"
+cargo run -p squidc -- target build --target "$TARGET_ID"
 
 if [[ "$SKIP_FLASH" -eq 0 ]]; then
-	echo ">>> Flashing $PORT via west flash"
-	west flash -d "${ZEPHYR_BUILD_DIR}"
+	echo ">>> Flashing ${TARGET_ID} on $PORT"
+	cargo run -p squidc -- target flash --target "$TARGET_ID"
 fi
 
 echo ">>> Formatting app storage on ${PORT}"

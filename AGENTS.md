@@ -197,6 +197,14 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - When a spec text and an obvious ergonomic API are in tension (for example, "the file is ephemeral, no final path" vs. an app that needs to know where the file lives during the handler), surface the ambiguity to the user with the two readings before committing the spec change. Don't remove a field, tighten a payload, or pick a minimalist interpretation unilaterally — the spec text and the use case both need to survive the decision.
 - Prefer library-quality seams over one-off firmware harness slots. Fixed app-id storage like `timer-armed-app`, `reader-clock`, or `break-reminder` belongs only in temporary harness code and must be documented as such until replaced by a real app registry/storage model.
 - Example app tests should verify the example at its natural boundary: compile/run with `squidc`, simulator tests, or hardware target tests. They should not become compiler-core unit tests unless the example has been promoted into a compiler fixture with a language-semantics purpose.
+- Keep small SquidScript hardware/runtime regression tests as example-backed
+  app tests where possible: `examples/app-tests/**/main.squid` plus sibling
+  `test.session`, driven by `cargo run -p squidc -- app test <suite>`.
+  Keep negative compile fixtures under `tests/app-tests/negative` and run them
+  with `cargo run -p squidc -- app test --negative tests/app-tests/negative`.
+  Do not collapse portable language/app checks into one huge script; prefer
+  small unit-style examples that are useful to users and proven by the test
+  runner.
 - Future Zephyr VM host ABI additions should move as one implemented slice:
   compiler lowering, SQBC builtin IDs, Rust VM callbacks, FFI, Zephyr runtime
   wiring, docs, Rust FFI equivalence tests, and Zephyr ztests. Keep
@@ -368,6 +376,11 @@ work. The always-fire disciplines stay here:
   test command, and report the result. The XIAO ESP32-C3 e-paper target is the
   default dev target; the ESP32-C3 Super Mini is a regression target, not the
   only SquidScript hardware target.
+- Prefer `cargo run -p squidc -- hardware test --target <target-id>` when the
+  target-aware wrapper covers the changed path. On the XIAO ESP32-C3 default
+  dev target, this currently exercises portable app tests, BLE file-transfer
+  install, BLE reconnect, radio concurrency, and AP-after-station; display and
+  SD checks remain out of scope until those target capabilities are ready.
 - Treat changes under `firmware/zephyr/**`, generated Zephyr C includes,
   target metadata consumed by firmware, serial protocol behavior, app
   lifecycle/runtime callbacks, storage/runtime state, and hardware-facing

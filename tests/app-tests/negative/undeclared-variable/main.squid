@@ -1,0 +1,8 @@
+app "negative-undeclared-variable"
+
+state {
+}
+
+event.on("app.start") {
+  debug.print(missing)
+}

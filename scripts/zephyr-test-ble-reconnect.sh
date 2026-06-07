@@ -14,13 +14,14 @@ BLE_CONNECT_TIMEOUT_SECONDS="${BLE_CONNECT_TIMEOUT_SECONDS:-15}"
 BLE_RESTART_GRACE_SECONDS="${BLE_RESTART_GRACE_SECONDS:-10}"
 WORK_DIR="${ROOT}/target/hardware-tests/ble-reconnect"
 DEVICE_NAME=""
+DEVICE_SELECTOR=""
 PORT=""
 MONITOR_PID=""
 MONITOR_LOG="${WORK_DIR}/serial-monitor.log"
 
 usage() {
 	cat <<'EOF'
-Usage: scripts/zephyr-test-ble-reconnect.sh [--target <id>] [--skip-flash]
+Usage: scripts/zephyr-test-ble-reconnect.sh [--target <id>] [--device <name-or-address>] [--skip-flash]
 
 Builds or flashes the Zephyr firmware for the selected target, launches the
 fallback main app to start its BLE file-transfer profile, connects to the
@@ -45,6 +46,10 @@ while [[ $# -gt 0 ]]; do
 		--skip-flash)
 			SKIP_FLASH=1
 			shift
+			;;
+		--device)
+			DEVICE_SELECTOR="$2"
+			shift 2
 			;;
 		-h|--help)
 			usage
@@ -115,18 +120,18 @@ wait_for_log_line() {
 
 scan_for_device() {
 	local scan_file="$1"
-	local full_name="$2"
+	local selector="$2"
 	local require_fresh="$3"
 
-	python3 - "${scan_file}" "${full_name}" "${require_fresh}" <<'PY'
+	python3 - "${scan_file}" "${selector}" "${require_fresh}" <<'PY'
 import re
 import sys
-path, full_name, require_fresh = sys.argv[1:4]
+path, selector, require_fresh = sys.argv[1:4]
 ansi = re.compile(r"\x1b\[[0-9;]*m")
 event_prefix = re.compile(r"\[(NEW|CHG|DEL)\]")
 device_line = re.compile(r"Device\s+([0-9A-Fa-f:]{17})\s+(.+)$")
 name_change = re.compile(r"Device\s+([0-9A-Fa-f:]{17})\s+Name:\s+(.+)$")
-truncated = full_name.encode("utf-8")[:29].decode("utf-8", "ignore")
+truncated = selector.encode("utf-8")[:29].decode("utf-8", "ignore")
 with open(path, encoding="utf-8", errors="replace") as handle:
     for raw_line in handle:
         line = ansi.sub("", raw_line)
@@ -138,9 +143,10 @@ with open(path, encoding="utf-8", errors="replace") as handle:
         match = name_change.search(line) or device_line.search(line)
         if not match:
             continue
+        address = match.group(1).strip()
         name = match.group(2).strip()
-        if full_name in name or truncated in name:
-            print(match.group(1))
+        if selector.lower() == address.lower() or selector in name or truncated in name:
+            print(address)
             break
 PY
 }
@@ -161,6 +167,9 @@ with open(sys.argv[1], encoding="utf-8") as handle:
     data = json.load(handle)
 print(data["data"]["name"])
 ' "${target_inspect_out}")"
+if [[ -z "${DEVICE_SELECTOR}" ]]; then
+	DEVICE_SELECTOR="${DEVICE_NAME}"
+fi
 
 PORT="$(resolve_esp_serial_port)"
 export ESPFLASH_PORT="${ESPFLASH_PORT:-${PORT}}"
@@ -190,10 +199,10 @@ if [[ "${scan_status}" != "0" && "${scan_status}" != "124" ]]; then
 	exit "${scan_status}"
 fi
 
-BLE_ADDR="$(scan_for_device "${scan_out}" "${DEVICE_NAME}" 0)"
+BLE_ADDR="$(scan_for_device "${scan_out}" "${DEVICE_SELECTOR}" 0)"
 if [[ -z "${BLE_ADDR}" ]]; then
 	printf 'Expected host Bluetooth scan to discover %s within %ss\n' \
-		"${DEVICE_NAME}" "${BLE_RESCAN_TIMEOUT_SECONDS}" >&2
+		"${DEVICE_SELECTOR}" "${BLE_RESCAN_TIMEOUT_SECONDS}" >&2
 	printf 'Scan log: %s\n' "${scan_out}" >&2
 	exit 1
 fi
@@ -252,10 +261,10 @@ if [[ "${rescan_status}" != "0" && "${rescan_status}" != "124" ]]; then
 	exit "${rescan_status}"
 fi
 
-rediscovered_addr="$(scan_for_device "${rescan_out}" "${DEVICE_NAME}" 1)"
+rediscovered_addr="$(scan_for_device "${rescan_out}" "${DEVICE_SELECTOR}" 1)"
 if [[ -z "${rediscovered_addr}" ]]; then
 	printf 'Expected host Bluetooth to rediscover %s within %ss after disconnect\n' \
-		"${DEVICE_NAME}" "${BLE_RESCAN_TIMEOUT_SECONDS}" >&2
+		"${DEVICE_SELECTOR}" "${BLE_RESCAN_TIMEOUT_SECONDS}" >&2
 	printf 'Rescan log: %s\n' "${rescan_out}" >&2
 	exit 1
 fi

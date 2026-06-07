@@ -24,7 +24,11 @@ use serial::{
     SerialDevice,
 };
 use squid_device_protocol as protocol;
-use squidc_core::{formatter::format_source, profile::BuildProfile};
+use squidc_core::{
+    compile::{compile_path_with_profile, CompileResponse},
+    formatter::format_source,
+    profile::BuildProfile,
+};
 
 fn main() {
     let raw_args = env::args().collect::<Vec<_>>();
@@ -99,6 +103,10 @@ enum Commands {
         #[command(subcommand)]
         command: ProtocolCommands,
     },
+    Hardware {
+        #[command(subcommand)]
+        command: HardwareCommands,
+    },
     Target {
         #[command(subcommand)]
         command: TargetCommands,
@@ -114,6 +122,7 @@ impl Commands {
             Self::App { .. } => "app",
             Self::Device { .. } => "device",
             Self::Protocol { .. } => "protocol",
+            Self::Hardware { .. } => "hardware",
             Self::Target { .. } => "target",
         }
     }
@@ -136,6 +145,7 @@ enum AppCommands {
     Build(BuildArgs),
     Package(PackageArgs),
     Run(DeviceSourceArgs),
+    Test(AppTestArgs),
     Install(AppInstallArgs),
     Push(AppPushArgs),
     Launch(AppLaunchArgs),
@@ -162,6 +172,11 @@ enum DeviceCommands {
 #[derive(Subcommand, Debug)]
 enum ProtocolCommands {
     Raw(ProtocolRawArgs),
+}
+
+#[derive(Subcommand, Debug)]
+enum HardwareCommands {
+    Test(HardwareTestArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -198,6 +213,21 @@ struct PackageArgs {
     out: Option<PathBuf>,
     #[arg(long, value_enum, default_value_t = ProfileArg::Dev)]
     profile: ProfileArg,
+}
+
+#[derive(Args, Debug)]
+struct AppTestArgs {
+    #[command(flatten)]
+    device: DeviceOnlyOptions,
+    #[arg(long)]
+    target: Option<String>,
+    #[arg(long)]
+    check_target: bool,
+    #[arg(long)]
+    negative: bool,
+    #[arg(long)]
+    list: bool,
+    input: PathBuf,
 }
 
 #[derive(Args, Debug)]
@@ -295,6 +325,22 @@ struct ProtocolRawArgs {
     u32: Vec<String>,
     #[arg(long = "i64")]
     i64: Vec<String>,
+}
+
+#[derive(Args, Debug)]
+struct HardwareTestArgs {
+    #[arg(long)]
+    target: Option<String>,
+    #[arg(long)]
+    skip_flash: bool,
+    #[arg(long)]
+    port: Option<String>,
+    #[arg(long)]
+    ble_device: Option<String>,
+    #[arg(long)]
+    host_wifi_iface: Option<String>,
+    #[arg(long)]
+    list: bool,
 }
 
 #[derive(Args, Debug)]
@@ -442,6 +488,7 @@ fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String>
             AppCommands::Build(args) => build(args),
             AppCommands::Package(args) => package_app(args),
             AppCommands::Run(args) => run_app_source(args, human),
+            AppCommands::Test(args) => app_test(args, human),
             AppCommands::Install(args) => install_app(args, human),
             AppCommands::Push(args) => push_app_ble(args, human),
             AppCommands::Launch(args) => launch_app(args, human),
@@ -464,6 +511,9 @@ fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String>
         },
         Commands::Protocol { command } => match command {
             ProtocolCommands::Raw(args) => protocol_raw(args, human),
+        },
+        Commands::Hardware { command } => match command {
+            HardwareCommands::Test(args) => hardware_test(args, human),
         },
         Commands::Target { command } => match command {
             TargetCommands::List(args) => target_list(args, human),
@@ -783,6 +833,256 @@ fn app_list(args: DeviceOnlyArgs, human: bool) -> Result<Value, String> {
     }))
 }
 
+#[derive(Clone, Debug, Serialize)]
+struct AppTestCase {
+    name: String,
+    source: PathBuf,
+    session: PathBuf,
+}
+
+#[derive(Clone, Debug)]
+struct NegativeAppTest {
+    source: PathBuf,
+    expected_diagnostic: String,
+}
+
+fn app_test(args: AppTestArgs, human: bool) -> Result<Value, String> {
+    if args.negative {
+        return run_negative_app_tests(&args.input, args.list, human);
+    }
+
+    let tests = discover_app_tests(&args.input)?;
+    if args.list {
+        if human {
+            for test in &tests {
+                println!("app-test={} source={}", test.name, test.source.display());
+            }
+        }
+        return Ok(json!({"tests": tests}));
+    }
+
+    let target = compile_target_id(args.target.as_deref(), args.check_target)?;
+    let port = resolve_port(&args.device)?;
+    let mut results = Vec::new();
+    for test in tests {
+        let source = fs::read_to_string(&test.source)
+            .map_err(|error| format!("failed to read {}: {error}", test.source.display()))?;
+        let script = fs::read_to_string(&test.session)
+            .map_err(|error| format!("failed to read {}: {error}", test.session.display()))?;
+        ReplSession::new(target.clone(), port.clone(), source, human).run_script(&script)?;
+        if human {
+            println!("app-test={} ok", test.name);
+        }
+        results.push(json!({
+            "name": test.name,
+            "source": test.source,
+            "session": test.session,
+            "status": "ok"
+        }));
+    }
+
+    Ok(json!({
+        "port": port,
+        "target": target,
+        "tests": results
+    }))
+}
+
+fn discover_app_tests(path: &Path) -> Result<Vec<AppTestCase>, String> {
+    discover_app_test_paths(path)?
+        .into_iter()
+        .map(|source| {
+            let session = source
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .join("test.session");
+            if !session.is_file() {
+                return Err(format!(
+                    "app test {} is missing sibling test.session",
+                    source.display()
+                ));
+            }
+            let name = test_name_for_source(&source);
+            Ok(AppTestCase {
+                name,
+                source,
+                session,
+            })
+        })
+        .collect()
+}
+
+fn discover_app_test_paths(path: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut paths = Vec::new();
+    collect_main_squid_paths(path, &mut paths)?;
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
+}
+
+fn collect_main_squid_paths(path: &Path, paths: &mut Vec<PathBuf>) -> Result<(), String> {
+    let metadata = fs::metadata(path)
+        .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?;
+    if metadata.is_file() {
+        if path.file_name().and_then(|value| value.to_str()) == Some("main.squid") {
+            paths.push(path.to_path_buf());
+        }
+        return Ok(());
+    }
+    if path.join("main.squid").is_file() {
+        paths.push(path.join("main.squid"));
+        return Ok(());
+    }
+    let entries = fs::read_dir(path)
+        .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    for entry in entries {
+        let entry =
+            entry.map_err(|error| format!("failed to read {} entry: {error}", path.display()))?;
+        let child = entry.path();
+        if child.is_dir() && !is_hidden_path(&child) {
+            collect_main_squid_paths(&child, paths)?;
+        }
+    }
+    Ok(())
+}
+
+fn run_negative_app_tests(input: &Path, list_only: bool, human: bool) -> Result<Value, String> {
+    let tests = discover_negative_app_tests(input)?;
+    if list_only {
+        if human {
+            for test in &tests {
+                println!(
+                    "negative-app-test={} expected={}",
+                    test.source.display(),
+                    test.expected_diagnostic
+                );
+            }
+        }
+        return Ok(json!({
+            "negative": true,
+            "tests": tests.iter().map(|test| {
+                json!({
+                    "source": test.source,
+                    "expectedDiagnostic": test.expected_diagnostic
+                })
+            }).collect::<Vec<_>>()
+        }));
+    }
+
+    let mut results = Vec::new();
+    for test in tests {
+        let compiled = compile_path_with_profile(&test.source, "portable", BuildProfile::Dev);
+        assert_negative_compile_result(&test, compiled)?;
+        if human {
+            println!(
+                "negative-app-test={} expected={} ok",
+                test.source.display(),
+                test.expected_diagnostic
+            );
+        }
+        results.push(json!({
+            "source": test.source,
+            "expectedDiagnostic": test.expected_diagnostic,
+            "status": "ok"
+        }));
+    }
+
+    Ok(json!({
+        "negative": true,
+        "tests": results
+    }))
+}
+
+fn assert_negative_compile_result(
+    test: &NegativeAppTest,
+    compiled: CompileResponse,
+) -> Result<(), String> {
+    if compiled.ok {
+        return Err(format!(
+            "negative app test {} compiled successfully; expected {}",
+            test.source.display(),
+            test.expected_diagnostic
+        ));
+    }
+    let expected = test.expected_diagnostic.trim();
+    if compiled
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == expected || diagnostic.message.contains(expected))
+    {
+        return Ok(());
+    }
+    let diagnostics = compiled
+        .diagnostics
+        .iter()
+        .map(|diagnostic| format!("{}: {}", diagnostic.code, diagnostic.message))
+        .collect::<Vec<_>>()
+        .join("; ");
+    Err(format!(
+        "negative app test {} expected diagnostic {}, got {}",
+        test.source.display(),
+        expected,
+        diagnostics
+    ))
+}
+
+fn discover_negative_app_tests(path: &Path) -> Result<Vec<NegativeAppTest>, String> {
+    let mut tests = Vec::new();
+    collect_negative_app_tests(path, &mut tests)?;
+    tests.sort_by(|left, right| left.source.cmp(&right.source));
+    Ok(tests)
+}
+
+fn collect_negative_app_tests(path: &Path, tests: &mut Vec<NegativeAppTest>) -> Result<(), String> {
+    let metadata = fs::metadata(path)
+        .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?;
+    if metadata.is_file() {
+        return Ok(());
+    }
+    let source = path.join("main.squid");
+    let expected = path.join("expected.txt");
+    if source.is_file() && expected.is_file() {
+        let expected_diagnostic = fs::read_to_string(&expected)
+            .map_err(|error| format!("failed to read {}: {error}", expected.display()))?
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty() && !line.starts_with('#'))
+            .ok_or_else(|| format!("{} has no expected diagnostic", expected.display()))?
+            .to_string();
+        tests.push(NegativeAppTest {
+            source,
+            expected_diagnostic,
+        });
+        return Ok(());
+    }
+    let entries = fs::read_dir(path)
+        .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    for entry in entries {
+        let entry =
+            entry.map_err(|error| format!("failed to read {} entry: {error}", path.display()))?;
+        let child = entry.path();
+        if child.is_dir() && !is_hidden_path(&child) {
+            collect_negative_app_tests(&child, tests)?;
+        }
+    }
+    Ok(())
+}
+
+fn test_name_for_source(source: &Path) -> String {
+    source
+        .parent()
+        .and_then(|path| path.file_name())
+        .and_then(|value| value.to_str())
+        .unwrap_or("main")
+        .to_string()
+}
+
+fn is_hidden_path(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|value| value.to_str())
+        .is_some_and(|name| name.starts_with('.'))
+}
+
 fn key(args: DeviceKeyArgs, human: bool) -> Result<Value, String> {
     let port = resolve_port(&args.device)?;
     let mut device = SerialDevice::open(&port)?;
@@ -1077,6 +1377,168 @@ fn target_flash(args: TargetFlashArgs, human: bool) -> Result<Value, String> {
             "monitor": monitor_plan.as_ref().map(|plan| plan.as_json())
         }
     }))
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+struct HardwareTestCheck {
+    name: &'static str,
+    script: Option<&'static str>,
+}
+
+fn hardware_test(args: HardwareTestArgs, human: bool) -> Result<Value, String> {
+    let root = target::repo_root();
+    let target_def = target::resolve_target_arg(
+        &root,
+        args.target.as_deref(),
+        target::stdin_is_interactive(),
+    )?;
+    let checks = hardware_test_checks_for_target(&target_def);
+    if args.list {
+        if human {
+            for check in &checks {
+                println!("hardware-test={}", check.name);
+            }
+        }
+        return Ok(json!({
+            "target": target_def.summary_json(),
+            "checks": checks
+        }));
+    }
+
+    if !args.skip_flash {
+        target_flash(
+            TargetFlashArgs {
+                target: Some(target_def.id.clone()),
+                monitor_after_flash: false,
+                print_plan: false,
+                west_args: Vec::new(),
+            },
+            human,
+        )?;
+    }
+
+    let mut results = Vec::new();
+    for check in &checks {
+        if human {
+            eprintln!("running hardware test {}", check.name);
+        }
+        match check.name {
+            "portable-app-tests" => {
+                app_test(
+                    AppTestArgs {
+                        device: DeviceOnlyOptions {
+                            port: args.port.clone(),
+                        },
+                        target: Some(target_def.id.clone()),
+                        check_target: false,
+                        negative: false,
+                        list: false,
+                        input: root.join("examples/app-tests/portable"),
+                    },
+                    human,
+                )?;
+            }
+            _ => run_hardware_script(&root, check, &target_def, &args)?,
+        }
+        results.push(json!({"name": check.name, "status": "ok"}));
+    }
+
+    Ok(json!({
+        "target": target_def.summary_json(),
+        "checks": results
+    }))
+}
+
+fn hardware_test_checks_for_target(target: &target::TargetDefinition) -> Vec<HardwareTestCheck> {
+    let has = |feature: &str| target.features.iter().any(|value| value == feature);
+    let mut checks = Vec::new();
+    if has("squidscript.serial-install") || has("squidscript.bytecode.v2.reference") {
+        checks.push(HardwareTestCheck {
+            name: "portable-app-tests",
+            script: None,
+        });
+    }
+    if has("service.ble.file-transfer") {
+        checks.push(HardwareTestCheck {
+            name: "ble-file-transfer-install",
+            script: Some("scripts/zephyr-test-ble-file-transfer.sh"),
+        });
+        checks.push(HardwareTestCheck {
+            name: "ble-reconnect",
+            script: Some("scripts/zephyr-test-ble-reconnect.sh"),
+        });
+    }
+    let has_station_wifi = has("service.wifi.connect") && has("service.wifi.disconnect");
+    let has_ap_wifi = has("service.wifi.startAP") && has("service.wifi.stopAP");
+    if has("service.ble.file-transfer") && has_station_wifi {
+        checks.push(HardwareTestCheck {
+            name: "radio-concurrency",
+            script: Some("scripts/zephyr-test-radio-concurrency.sh"),
+        });
+    }
+    if has_station_wifi && has_ap_wifi {
+        checks.push(HardwareTestCheck {
+            name: "ap-after-station",
+            script: Some("scripts/zephyr-test-ap-after-station.sh"),
+        });
+    }
+    checks
+}
+
+fn run_hardware_script(
+    root: &Path,
+    check: &HardwareTestCheck,
+    target_def: &target::TargetDefinition,
+    args: &HardwareTestArgs,
+) -> Result<(), String> {
+    let script = check
+        .script
+        .ok_or_else(|| format!("hardware test {} has no runner", check.name))?;
+    let mut command = Command::new(root.join(script));
+    command.current_dir(root);
+    command.arg("--target").arg(&target_def.id);
+    command.arg("--skip-flash");
+    match check.name {
+        "ble-file-transfer-install" => {
+            if let Some(port) = &args.port {
+                command.arg("--port").arg(port);
+            }
+            if let Some(device) = &args.ble_device {
+                command.arg("--device").arg(device);
+            }
+        }
+        "ble-reconnect" => {
+            if let Some(device) = &args.ble_device {
+                command.arg("--device").arg(device);
+            }
+        }
+        "radio-concurrency" => {
+            if let Some(iface) = &args.host_wifi_iface {
+                command.arg("--host-wifi-iface").arg(iface);
+            }
+        }
+        "ap-after-station" => {
+            if let Some(iface) = &args.host_wifi_iface {
+                command.env("HOST_WIFI_IFACE", iface);
+            }
+        }
+        _ => {}
+    }
+    let status = command
+        .status()
+        .map_err(|error| format!("failed to run {script}: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "hardware test {} failed with status {}",
+            check.name,
+            status
+                .code()
+                .map(|code| code.to_string())
+                .unwrap_or_else(|| "signal".to_string())
+        ))
+    }
 }
 
 fn target_monitor(args: TargetMonitorArgs, human: bool) -> Result<Value, String> {
@@ -2267,6 +2729,138 @@ mod tests {
             args.input,
             PathBuf::from("examples/blinky-supermini/main.squid")
         );
+    }
+
+    #[test]
+    fn parses_app_test_positive_and_negative_commands() {
+        let positive =
+            Cli::try_parse_from(["squidc", "app", "test", "examples/app-tests/portable"]).unwrap();
+        let Commands::App {
+            command: AppCommands::Test(args),
+        } = positive.command
+        else {
+            panic!("expected app test");
+        };
+        assert_eq!(args.input, PathBuf::from("examples/app-tests/portable"));
+        assert!(!args.negative);
+        assert!(!args.list);
+
+        let negative = Cli::try_parse_from([
+            "squidc",
+            "app",
+            "test",
+            "--negative",
+            "tests/squidscript/negative",
+        ])
+        .unwrap();
+        let Commands::App {
+            command: AppCommands::Test(args),
+        } = negative.command
+        else {
+            panic!("expected app test --negative");
+        };
+        assert_eq!(args.input, PathBuf::from("tests/squidscript/negative"));
+        assert!(args.negative);
+    }
+
+    #[test]
+    fn parses_hardware_test_command() {
+        let cli = Cli::try_parse_from([
+            "squidc",
+            "hardware",
+            "test",
+            "--target",
+            "xiao-esp32c3-gdeq0426t82-sd",
+            "--skip-flash",
+            "--port",
+            "/dev/ttyACM0",
+            "--ble-device",
+            "SquidScript",
+            "--host-wifi-iface",
+            "wlan0",
+        ])
+        .unwrap();
+        let Commands::Hardware {
+            command: HardwareCommands::Test(args),
+        } = cli.command
+        else {
+            panic!("expected hardware test");
+        };
+        assert_eq!(args.target.as_deref(), Some("xiao-esp32c3-gdeq0426t82-sd"));
+        assert!(args.skip_flash);
+        assert_eq!(args.port.as_deref(), Some("/dev/ttyACM0"));
+        assert_eq!(args.ble_device.as_deref(), Some("SquidScript"));
+        assert_eq!(args.host_wifi_iface.as_deref(), Some("wlan0"));
+    }
+
+    #[test]
+    fn xiao_hardware_test_selection_includes_current_supported_checks_only() {
+        let root = target::repo_root();
+        let target = target::load_target_by_id(&root, "xiao-esp32c3-gdeq0426t82-sd").unwrap();
+        let checks = hardware_test_checks_for_target(&target);
+        let names = checks.iter().map(|check| check.name).collect::<Vec<_>>();
+
+        assert_eq!(
+            names,
+            vec![
+                "portable-app-tests",
+                "ble-file-transfer-install",
+                "ble-reconnect",
+                "radio-concurrency",
+                "ap-after-station",
+            ]
+        );
+        assert!(!names.contains(&"display-drawlog"));
+        assert!(!names.contains(&"sd-card"));
+    }
+
+    #[test]
+    fn app_test_discovers_small_example_directories() {
+        let root = unique_test_dir("squidc-app-tests");
+        let suite = root.join("portable");
+        fs::create_dir_all(suite.join("state-counter")).unwrap();
+        fs::create_dir_all(suite.join("timer-event")).unwrap();
+        fs::write(
+            suite.join("state-counter").join("main.squid"),
+            "app \"state-counter\"\n",
+        )
+        .unwrap();
+        fs::write(
+            suite.join("timer-event").join("main.squid"),
+            "app \"timer-event\"\n",
+        )
+        .unwrap();
+
+        let tests = discover_app_test_paths(&suite).unwrap();
+
+        assert_eq!(
+            tests,
+            vec![
+                suite.join("state-counter").join("main.squid"),
+                suite.join("timer-event").join("main.squid"),
+            ]
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn negative_app_test_fixture_reads_expected_diagnostic() {
+        let root = unique_test_dir("squidc-negative-tests");
+        let fixture = root.join("undeclared-variable");
+        fs::create_dir_all(&fixture).unwrap();
+        fs::write(
+            fixture.join("main.squid"),
+            "app \"bad\"\ndebug.print(missing)\n",
+        )
+        .unwrap();
+        fs::write(fixture.join("expected.txt"), "E_UNDECLARED_VARIABLE\n").unwrap();
+
+        let tests = discover_negative_app_tests(&root).unwrap();
+
+        assert_eq!(tests.len(), 1);
+        assert_eq!(tests[0].source, fixture.join("main.squid"));
+        assert_eq!(tests[0].expected_diagnostic, "E_UNDECLARED_VARIABLE");
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

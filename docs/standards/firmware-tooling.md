@@ -63,6 +63,11 @@ Discipline"; read both when doing firmware or hardware work.
 ## Hardware Target Tests
 
 - Hardware target tests are listed in `docs/hardware_target_tests.md`; use that inventory to identify real-device tests before running them.
+- Use `cargo run -p squidc -- hardware test --target <target-id>` for the
+  target-aware regression wrapper when it covers the changed path. The wrapper
+  selects checks from target metadata features, flashes once unless
+  `--skip-flash` is passed, runs portable example app tests, and delegates
+  BLE/Wi-Fi checks to the existing hardware scripts.
 - Clearly report host visibility limits, such as Codex sandbox sessions that cannot see `/dev/ttyACM*`, `/dev/ttyUSB*`, or `/dev/bus/usb`.
 - When running the ESP32-C3 Super Mini hardware target suite, use
   `scripts/c3-supermini-test-hardware.sh` so stateful checks run first and the

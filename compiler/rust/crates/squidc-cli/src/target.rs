@@ -16,6 +16,8 @@ pub struct TargetDefinition {
     pub status: Option<String>,
     #[serde(default)]
     pub firmware: Option<TargetFirmware>,
+    #[serde(default)]
+    pub features: Vec<String>,
     #[serde(skip)]
     pub zephyr: Option<ZephyrFirmware>,
     #[serde(skip)]
@@ -34,6 +36,7 @@ impl TargetDefinition {
             "id": self.id,
             "name": self.name,
             "status": self.status,
+            "features": self.features,
             "path": self.path,
             "zephyrSupported": self.zephyr.is_some(),
             "zephyrBoard": self.zephyr.as_ref().map(|zephyr| zephyr.board.clone())
@@ -45,6 +48,7 @@ impl TargetDefinition {
             "id": self.id,
             "name": self.name,
             "status": self.status,
+            "features": self.features,
             "path": self.path,
             "zephyr": self.zephyr.as_ref().map(|zephyr| zephyr.resolved_json(root))
         })

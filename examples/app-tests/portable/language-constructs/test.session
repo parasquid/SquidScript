@@ -1,0 +1,21 @@
+:reset
+:reload
+:output
+:expect-output language-constructs ready
+
+state {
+  count: int = 0
+}
+
+debug.print("start", state.count)
+state.count = state.count + 1
+state.save()
+debug.print("after", state.count)
+state.count = state.count + 1
+state.save()
+debug.print("again", state.count)
+:state
+:output
+:expect-output output=start 0
+:expect-output output=after 1
+:expect-output output=again 2
