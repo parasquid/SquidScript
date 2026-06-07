@@ -19,7 +19,11 @@ use case, or implementation reason to make it actionable.
   needs: (a) interop with generic standard-OTS phone clients, or (b) a native
   iOS/Android uploader app (both platforms expose L2CAP CoC: iOS CBL2CAPChannel,
   Android createInsecureL2capChannel). Note CoC is testable on Linux via BlueZ
-  raw L2CAP sockets but not on Windows, and never in a browser. The
-  transport-neutral core (`ble_object_transfer.c`: staging session, object-name
-  parser, pending-event handoff) was kept precisely so an OTS front-end could be
-  re-added later beside the GATT one without touching the core.
+  raw L2CAP sockets but not on Windows, and never in a browser. OTS-specific
+  extensions stay parked with the transport: an OTS client/pull role,
+  host-platform CoC probing, OACP Calculate Checksum, and higher
+  `CONFIG_BT_MAX_CONN` for multiple OTS clients are useful only if OTS returns
+  as an active transport. The transport-neutral core (`ble_object_transfer.c`:
+  staging session, object-name parser, pending-event handoff) was kept precisely
+  so an OTS front-end could be re-added later beside the GATT one without
+  touching the core.

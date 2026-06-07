@@ -28,62 +28,15 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   with `-EBUSY` if the app is currently `current_app` (the caller must
   `app.exit` first or `app.launch` a different app). No new firmware cap
   needed; reuses the existing `sq_app_store` mount point.
-- Clean up post-GATT-pivot OTS staleness in docs and roadmap. The GATT-only
+- Clean up post-GATT-pivot OTS staleness in docs and names. The GATT-only
   pivot removed `ble_ots.c` / OTS / L2CAP CoC but left stale references. Remove
   the dead "BLE Object Transfer Service (OTS) Initialization" section in
   `docs/hardware_target_tests.md` (`sq_ble_ots_init()`, `tests/ble-ots-init`,
-  `scripts/zephyr-test-ble-ots-init.sh`). Remove the OTS-era items still in this
-  ROADMAP (the OTS client-pull role, L2CAP CoC availability probe, OACP
-  Calculate Checksum, and raise-`BT_MAX_CONN`-for-a-second-OTS-client items).
-  Rename the `ble-ots-*` test dirs off the misleading `ots` prefix (they test
-  the transport-neutral core now). Decide `tools/ots-push`'s fate (rename — it
-  pushes over the custom GATT service, not OTS). Verify remaining BLE doc
-  statements (`language_spec`, `runtime_limits`) match the as-built GATT-only +
-  imperative code.
-- Add a BLE OTS client role so SquidScript apps can pull (not just receive)
-  objects from a paired peer. The Zephyr OTS module already exposes
-  `bt_ots_client_*` helpers in `include/zephyr/bluetooth/services/ots.h`;
-  wrap them in a `ble_ots_client.c` companion to `ble_ots.c` with an
-  `service.ble.pull` (or similar) app-facing API that returns a file ref
-  to the downloaded object. Use case: a "config sync" app fetches a JSON
-  config from a paired phone; a "log pull" app drains a remote log file
-  over OTS. Single-session policy applies symmetrically: the device
-  either serves or pulls, not both at once. Likely a 2-3 slice
-  follow-up after the current object-transfer work is merged.
-- Verify L2CAP CoC availability across host platforms. The
-  `tools/ots-push/` driver uses `bleak`'s L2CAP CoC support; CoC
-  availability varies by platform (Linux BlueZ 5.x supports it, macOS
-  Core Bluetooth has limited support, Windows varies). The slice 10
-  skip pattern already handles "CoC unsupported" cleanly, but a CI
-  matrix that actually probes each platform's CoC capability and reports
-  it in the skip message (instead of a generic "unsupported" string)
-  would make the CI signal actionable. Add a `tools/ots-push/probe.py`
-  that prints the platform, bleak version, and a one-line CoC
-  capability verdict; invoke it from the skip path.
-- Add `OACP Calculate Checksum` support. The spec explicitly chose not
-  to enable `CONFIG_BT_OTS_OACP_CHECKSUM_SUPPORT` because the
-  firmware's `sq_app_store_install_from_file_ref` validates the SQBC
-  magic on its own. If a future app needs the Zephyr OTS-level CRC32
-  (e.g., to deduplicate uploads before staging), enabling this would
-  add ~1 KiB of code for the `crc32_ieee` helpers
-  (`<zephyr/sys/crc.h>`) and a real `obj_cal_checksum` callback impl
-  that computes the CRC32 over the staging file range. The current
-  stub returns `-ENOTSUP`; a real implementation would open the
-  staging file, seek to the requested offset, and accumulate
-  `crc32_ieee_update` over the range. Add a small ztest
-  (`ble-ots-checksum`) that pre-stages a known-byte file and asserts
-  the callback returns the expected CRC32.
-- Raise `CONFIG_BT_MAX_CONN` from 1 to 2 to allow a second OTS client
-  to connect while a transfer is in progress. The current
-  single-connection cap means a second BT connection mid-transfer is
-  rejected by Zephyr's BT stack before OACP; raising to 2 lets a second
-  peer queue up while the first is mid-transfer (still rejected at
-  the app level by the single-session policy, but with a clean GATT
-  disconnect instead of a link-layer rejection). Cost: ~8 KiB
-  additional RAM for the second connection's GATT/ATT buffers, plus
-  the per-connection OTS context (~640 bytes per the slice 7 RAM
-  budget). Verify on XIAO via `scripts/zephyr-ram-audit.sh` that the
-  new `dram0_0_seg` stays under the 65% profile threshold.
+  `scripts/zephyr-test-ble-ots-init.sh`). Rename the `ble-ots-*` test dirs off
+  the misleading `ots` prefix (they test the transport-neutral core now). Decide
+  `tools/ots-push`'s fate (rename — it pushes over the custom GATT service, not
+  OTS). Verify remaining BLE doc statements (`language_spec`, `runtime_limits`)
+  match the as-built GATT-only + imperative code.
 - Investigate BLE re-advertising after host disconnect on ESP32-C3 Zephyr.
   Resolved: `ble_smoke.c` was calling `bt_le_adv_start` directly from the
   delayed restart work and the controller returned `-EALREADY` (handled
@@ -313,21 +266,12 @@ Current ESP32-C3 RAM baseline:
 - Latest observed linker DRAM from
   `cargo run -p squidc -- target build --target esp32c3-super-mini`: 239,232
   bytes.
-- XIAO ESP32-C3 e-paper dev target after the BLE object-transfer
-  work (slices 2-10): 243,832 bytes (`dram0_0_seg` from
-  `scripts/zephyr-ram-audit.sh`), a delta of +4,088 bytes vs the
-  Super Mini baseline. The bulk of the increase is the Zephyr
-  `bt_ots` module itself (L2CAP CoC, GATT dynamic DB, SMP, EXPERIMENTAL
-  auto-selects), not the SquidScript-owned additions. The
-  SquidScript-owned delta is small: the 2-entry trigger table
-  (~1,280 bytes), the pending event slot, the in-flight session
-  struct, and the OTS callback dispatch. The `ram_static_top_bytes`
-  went from 131,084 to 131,924 (+840 bytes for SquidScript-owned
-  symbols); the rest is Zephyr OTS internals. If RAM becomes tight,
-  `CONFIG_BT_OTS_OACP_WRITE_SUPPORT` and the other OTS Kconfig
-  features can be selectively disabled to claw back a few hundred
-  bytes, and `CONFIG_BT_MAX_CONN=1` (already set) keeps the
-  per-connection buffers at the minimum.
+- Latest observed linker DRAM from
+  `cargo run -p squidc -- target build --target xiao-esp32c3-gdeq0426t82-sd`:
+  256,976 bytes. The custom BLE app-transfer path keeps SquidScript-owned state
+  bounded: a small profile table, one pending event slot, and one in-flight
+  staging session. If RAM becomes tight, audit the target Bluetooth feature set
+  and connection/buffer counts before increasing firmware-owned static buffers.
 - Current target configuration: 4,864-byte protocol/main stack and
   16,640-byte VM worker stack.
 - Stack harness guardrails: fail if protocol/main unused stack drops below 768
