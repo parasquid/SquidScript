@@ -3,7 +3,8 @@ use squid_device_protocol::{
     app_launch_request, app_list_entries, decode_frame, encode_frame, event_dispatch_request,
     key_request, lifecycle_lines, output_lines, protocol_error, resource_install_begin_request,
     resource_install_chunk_request, resource_install_commit_request, resource_values, state_bytes,
-    state_import_request, wifi_profile_set_request, FrameKind, Opcode, Status,
+    state_import_request, wifi_profile_set_request, FrameKind, Opcode, Status, MAX_APP_BYTES,
+    MAX_RESOURCE_BYTES,
 };
 use squidvm_ffi::{
     SqdcConfig, SqdcDeviceBindingPlan, SqdcDeviceBindingResourceKind, SqdcStatus, SqdcValueKind,
@@ -991,6 +992,34 @@ fn ffi_validates_resource_session_progress_with_caller_owned_storage() {
     };
     assert_eq!(status as i32, 0);
     assert_eq!(action.kind, SqdpActionKind::CommitResourceInstall);
+}
+
+#[test]
+fn ffi_allows_resource_begin_larger_than_app_install_cap() {
+    let resource_len = MAX_APP_BYTES + 1;
+    assert!(resource_len <= MAX_RESOURCE_BYTES);
+    let begin = encode_frame(&resource_install_begin_request(
+        1,
+        "ffi-app",
+        "assets/main.bin",
+        resource_len as u64,
+        0,
+    ));
+    let mut session = SqdpResourceSession::default();
+    let mut action = SqdpAction::default();
+
+    let status = unsafe {
+        squidvm_ffi::sqdp_prepare_resource_begin(
+            begin.as_ptr(),
+            begin.len(),
+            &mut session,
+            &mut action,
+        )
+    };
+
+    assert_eq!(status as i32, 0);
+    assert_eq!(action.kind, SqdpActionKind::BeginResourceInstall);
+    assert_eq!(action.total_len, resource_len);
 }
 
 #[test]

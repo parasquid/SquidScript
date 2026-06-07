@@ -520,10 +520,12 @@ app directory creation, boot-time registry scanning, package-resource lookup
 paths, diagnostics, resources, app lifecycle orchestration, and Wi-Fi service
 records are connected through the current Zephyr command and VM host surface.
 For the current ESP32-C3 Super Mini Zephyr 4 MB layout, `storage_partition` is
-the 192 KiB region at offset `0x3b0000`. The default table also provides
-`image-0`, `image-1`, and `image-scratch` firmware-update partitions; the
-current SquidScript workflow flashes firmware directly and does not yet expose
-a user-facing A/B or OTA update flow.
+the 192 KiB region at offset `0x3b0000`. The XIAO ESP32-C3 e-paper development
+target overrides the default table so `storage_partition` is the 768 KiB region
+at offset `0x2e0000`. The default table also provides `image-0`, `image-1`,
+and `image-scratch` firmware-update partitions; the current SquidScript
+workflow flashes firmware directly and does not yet expose a user-facing A/B or
+OTA update flow.
 
 ## Target Definitions
 

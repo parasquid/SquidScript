@@ -138,16 +138,19 @@ transport. The app store can create per-app directories during install, write
 size metadata, and registry lookup.
 The current ESP32-C3 Super Mini Zephyr 4 MB flash layout reserves
 `storage_partition` at offset `0x3b0000` with size `0x30000` bytes, so the
-LittleFS app store is 192 KiB. Firmware is built for the `image-0` slot; the
-default Zephyr partition table also includes `image-1`, `image-scratch`, and
-`coredump` partitions, but SquidScript does not currently expose a user-facing
-A/B or OTA firmware update flow.
+LittleFS app store is 192 KiB. The XIAO ESP32-C3 e-paper development target
+keeps the primary firmware slot intact, shrinks the unused secondary image
+slot, and reserves `storage_partition` at offset `0x2e0000` with size
+`0xc0000` bytes, so its LittleFS app store is 768 KiB. Firmware is built for
+the `image-0` slot; the default Zephyr partition table also includes
+`image-1`, `image-scratch`, and `coredump` partitions, but SquidScript does not
+currently expose a user-facing A/B or OTA firmware update flow.
 Flashing a new firmware image does not erase the LittleFS app store partition.
 If a persisted pre-fix app prevents boot or serial command processing during
 development, erase only the app-store partition before retrying:
 
 ```sh
-esptool --port /dev/ttyACM0 erase-region 0x3b0000 0x30000
+esptool --port /dev/ttyACM0 erase-region 0x2e0000 0xc0000
 ```
 
 Temp runs use `/sq/tmp/temp-run.sqbc.tmp` as their staging artifact. Firmware

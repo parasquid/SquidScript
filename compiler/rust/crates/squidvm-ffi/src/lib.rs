@@ -38,6 +38,7 @@ use squid_device_protocol::{
     encode_resources_response_into, encode_state_response_into, key_event_from_request_into,
     AppListEntry, DecodeError, DeviceRequest, LifecycleTimer, Opcode, ResourceMetric,
     Status as SqdpFrameStatus, MAX_APP_BYTES as SQDP_MAX_APP_BYTES,
+    MAX_RESOURCE_BYTES as SQDP_MAX_RESOURCE_BYTES,
 };
 
 #[repr(C)]
@@ -2684,7 +2685,7 @@ pub unsafe extern "C" fn sqdp_prepare_resource_begin(
         return SqdpStatus::InvalidArgument;
     };
     if total_len == 0
-        || total_len > SQDP_MAX_APP_BYTES as u64
+        || total_len > SQDP_MAX_RESOURCE_BYTES as u64
         || total_len > usize::MAX as u64
         || expected_crc > u32::MAX as u64
     {

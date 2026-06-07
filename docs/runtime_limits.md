@@ -73,6 +73,7 @@ the current single-session GATT policy.
 | Staging path bytes | 80 B | `SQ_DEVICE_STAGING_PATH_BYTES` |
 | Resource path bytes | 80 B | `SQ_DEVICE_RESOURCE_PATH_BYTES` |
 | Install payload bytes | 65536 B | `SQ_DEVICE_INSTALL_MAX_BYTES` |
+| Resource install payload bytes | 1048576 B | `MAX_RESOURCE_BYTES` |
 | Serial frame budget | 256 B | `SQ_SERIAL_MAX_FRAME_LEN` |
 | FFI storage chunk | 640 B | `SQVM_STORAGE_TRANSFER_CAPACITY` |
 

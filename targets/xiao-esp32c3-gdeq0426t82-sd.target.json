@@ -316,8 +316,8 @@
     "supportsFile": false,
     "partition": {
       "name": "storage",
-      "offset": "0x3b0000",
-      "size": "0x30000",
+      "offset": "0x2e0000",
+      "size": "0xc0000",
       "filesystem": "littlefs"
     },
     "external": {
@@ -328,7 +328,7 @@
       "status": "planned-unverified",
       "reason": "The physical SD reader is part of the target plan but is not mounted or exposed to SquidScript until direct wiring, card-missing policy, and app/content storage behavior are implemented."
     },
-    "reason": "Installed apps and app state remain on the internal 192 KiB LittleFS app store for the first XIAO slice. SD app/content storage is tracked as follow-up work."
+    "reason": "Installed apps, app state, and small package resources use the internal 768 KiB LittleFS app store for the XIAO development target. SD app/content storage is tracked as follow-up work for larger books and media."
   },
   "input": {
     "type": "serial-first",

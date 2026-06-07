@@ -47,3 +47,19 @@
 	pinctrl-0 = <&spim2_epaper_default>;
 	pinctrl-names = "default";
 };
+
+&slot1_partition {
+	reg = <0x1e0000 0x100000>;
+};
+
+&flash0 {
+	partitions {
+		/delete-node/ partition@3b0000;
+
+		storage_partition: partition@2e0000 {
+			compatible = "zephyr,mapped-partition";
+			label = "storage";
+			reg = <0x2e0000 0xc0000>;
+		};
+	};
+};

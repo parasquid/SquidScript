@@ -12,6 +12,7 @@ pub const HEADER_LEN: usize = 20;
 pub const MAX_APP_ID_LEN: usize = 40;
 pub const MAX_PATH_LEN: usize = 128;
 pub const MAX_APP_BYTES: usize = 65_536;
+pub const MAX_RESOURCE_BYTES: usize = 1_048_576;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -527,7 +528,17 @@ impl TransferSession {
         total_len: usize,
         expected_crc: u32,
     ) -> Result<(), SessionError> {
-        validate_transfer_len(total_len)?;
+        self.begin_with_limit(app_id, total_len, expected_crc, MAX_APP_BYTES)
+    }
+
+    fn begin_with_limit(
+        &mut self,
+        app_id: &str,
+        total_len: usize,
+        expected_crc: u32,
+        max_bytes: usize,
+    ) -> Result<(), SessionError> {
+        validate_transfer_len(total_len, max_bytes)?;
         self.clear();
         self.app_id.set(app_id)?;
         self.total_len = total_len;
@@ -601,7 +612,8 @@ impl ResourceSession {
         expected_crc: u32,
     ) -> Result<(), SessionError> {
         self.clear();
-        self.transfer.begin(app_id, total_len, expected_crc)?;
+        self.transfer
+            .begin_with_limit(app_id, total_len, expected_crc, MAX_RESOURCE_BYTES)?;
         self.resource_path.set(resource_path)?;
         Ok(())
     }
@@ -788,11 +800,11 @@ impl ProtocolSessions {
     }
 }
 
-fn validate_transfer_len(total_len: usize) -> Result<(), SessionError> {
+fn validate_transfer_len(total_len: usize, max_bytes: usize) -> Result<(), SessionError> {
     if total_len == 0 {
         return Err(SessionError::InvalidRequest);
     }
-    if total_len > MAX_APP_BYTES {
+    if total_len > max_bytes {
         return Err(SessionError::TooLarge);
     }
     Ok(())

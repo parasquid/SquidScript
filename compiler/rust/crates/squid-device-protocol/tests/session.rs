@@ -5,7 +5,7 @@ use squid_device_protocol::{
     resource_install_begin_request, resource_install_chunk_request,
     resource_install_commit_request, temp_run_begin_request, temp_run_chunk_request,
     temp_run_commit_request, DeviceRequest, HostAction, ProtocolSessions, SessionError,
-    MAX_APP_BYTES, MAX_APP_ID_LEN,
+    MAX_APP_BYTES, MAX_APP_ID_LEN, MAX_RESOURCE_BYTES,
 };
 
 #[test]
@@ -216,6 +216,30 @@ fn rust_session_engine_rejects_oversized_install_before_zephyr_storage_work() {
     let request = DeviceRequest::decode(&begin).unwrap();
 
     assert_eq!(sessions.next_action(&request), Err(SessionError::TooLarge));
+}
+
+#[test]
+fn rust_session_engine_allows_resources_larger_than_app_install_cap() {
+    let mut sessions = ProtocolSessions::default();
+    let resource_len = MAX_APP_BYTES + 1;
+    assert!(resource_len <= MAX_RESOURCE_BYTES);
+    let begin = encode_frame(&resource_install_begin_request(
+        1,
+        "book-reader",
+        "books/sample.binbook",
+        resource_len as u64,
+        0,
+    ));
+    let request = DeviceRequest::decode(&begin).unwrap();
+
+    assert_eq!(
+        sessions.next_action(&request),
+        Ok(HostAction::BeginResourceInstall {
+            app_id: "book-reader",
+            resource_path: "books/sample.binbook",
+            total_len: resource_len
+        })
+    );
 }
 
 #[test]
