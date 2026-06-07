@@ -43,11 +43,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Display And Output
 
-- Implement an SSD1677/GDEQ0426T82 SquidScript display backend when the display
-  breakout is available. Evaluate `ssd1677-driver` first, compare `ssd1677` if
-  needed, and adopt a dependency only after proving bounded strip/window
-  writes, caller-owned buffers, and bounded/nonblocking BUSY handling for
-  constrained firmware RAM.
 - Add a generic PWM-capable LED-like device output model beyond
   `service.indicator`, so future target-described GPIO/PWM endpoints can expose
   smooth brightness control without board-specific app code.
