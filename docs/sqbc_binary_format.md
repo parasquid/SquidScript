@@ -155,7 +155,9 @@ be refreshed as capability boundaries become clearer.
 0x72 device.config.rebind
 0x73 device.config.save
 
-0x80 reserved for binbook
+0x80 binbook.open
+0x81 binbook.info
+0x82 binbook.readPage
 
 0x90 file.pickFile
 0x91 file.readText

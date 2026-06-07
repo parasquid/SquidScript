@@ -82,6 +82,9 @@ pub(crate) fn values_equal(
         let resolver = StringResolver::new(strings, interner);
         return Ok(resolver.value_str(left)? == resolver.value_str(right)?);
     }
+    if matches!((left, right), (Value::Handle(_), _) | (_, Value::Handle(_))) {
+        return Err(VmError::InvalidOperand);
+    }
     Ok(left == right)
 }
 
@@ -148,7 +151,7 @@ pub(crate) fn encode_state_record_value(
             write_byte(out, cursor, VALUE_STRING)?;
             write_len_prefixed(out, cursor, strings.value_str(value)?.as_bytes())
         }
-        Value::Record(_) | Value::List(_) => Err(VmError::InvalidOperand),
+        Value::Record(_) | Value::List(_) | Value::Handle(_) => Err(VmError::InvalidOperand),
     }
 }
 

@@ -1283,6 +1283,7 @@ screen("main") {
   service.display.select("status")
   service.display.image("data/icon.bmp", { x: 20, y: 24 })
   service.display.draw("drawable/page", { x: 0, y: 0 })
+  service.display.draw("drawable/full-page")
 }
 "#;
     let output = compile(CompileRequest {
@@ -1324,7 +1325,51 @@ screen("main") {
         screen.statements[6],
         IrStatement::DisplayDraw { .. }
     ));
-    sqbc::encode_sqbc(&ir).expect("display sugar should lower to display bytecode");
+    assert!(matches!(
+        screen.statements[7],
+        IrStatement::DisplayDraw { .. }
+    ));
+    let sqbc = sqbc::encode_sqbc(&ir).expect("display sugar should lower to display bytecode");
+    assert!(
+        sqbc.windows(2).any(|window| window == [50, 0x36]),
+        "expected service.display.draw builtin in SQBC"
+    );
+}
+
+#[test]
+fn compiles_binbook_handle_api_and_default_draw_options() {
+    let source = r#"app "binbook-smoke"
+state { pageIndex: int = 0 }
+screen("main", { render: "stream" }) {
+  let opened = binbook.open("books/sample.binbook")
+  if (opened.ok) {
+    let info = binbook.info(opened.book)
+    let page = binbook.readPage(opened.book, state.pageIndex)
+    if (page.ok) {
+      service.display.draw(page.drawable)
+      debug.print("pages", info.pageCount)
+    }
+  }
+}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let sqbc = sqbc::encode_sqbc(&output.ir.unwrap()).unwrap();
+    assert!(
+        sqbc.windows(2).any(|window| window == [50, 0x80]),
+        "expected binbook.open builtin in SQBC"
+    );
+    assert!(
+        sqbc.windows(2).any(|window| window == [50, 0x81]),
+        "expected binbook.info builtin in SQBC"
+    );
+    assert!(
+        sqbc.windows(2).any(|window| window == [50, 0x82]),
+        "expected binbook.readPage builtin in SQBC"
+    );
 }
 
 #[test]

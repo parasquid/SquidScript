@@ -239,6 +239,19 @@ enum sq_vm_runtime_wifi_service_state {
 enum sq_vm_runtime_display_op_kind {
 	SQ_VM_RUNTIME_DISPLAY_OP_CLEAR = 0,
 	SQ_VM_RUNTIME_DISPLAY_OP_TEXT,
+	SQ_VM_RUNTIME_DISPLAY_OP_BINBOOK_DRAWABLE,
+};
+
+struct sq_vm_runtime_binbook_page {
+	char path[SQ_APP_STORE_PATH_MAX];
+	uint64_t blob_offset;
+	uint32_t compressed_size;
+	uint32_t uncompressed_size;
+	uint32_t page_index;
+	uint16_t pixel_format;
+	uint16_t compression_method;
+	uint16_t stored_width;
+	uint16_t stored_height;
 };
 
 struct sq_vm_runtime_display_op {
@@ -247,6 +260,21 @@ struct sq_vm_runtime_display_op {
 	int32_t x;
 	int32_t y;
 	int32_t font_height;
+	struct sq_vm_runtime_binbook_page binbook_page;
+};
+
+struct sq_vm_runtime_binbook_handle {
+	bool active;
+	char path[SQ_APP_STORE_PATH_MAX];
+	uint64_t page_index_offset;
+	uint64_t page_data_offset;
+	uint32_t page_count;
+	uint16_t page_index_entry_size;
+};
+
+struct sq_vm_runtime_drawable_handle {
+	bool active;
+	struct sq_vm_runtime_binbook_page page;
 };
 
 struct sq_vm_runtime {
@@ -329,6 +357,8 @@ struct sq_vm_runtime {
 	struct sq_vm_runtime_display_op display_ops[SQ_VM_RUNTIME_DISPLAY_OP_MAX];
 	uint8_t display_op_count;
 	bool display_dirty;
+	struct sq_vm_runtime_binbook_handle binbook;
+	struct sq_vm_runtime_drawable_handle drawable;
 	char device_errors[SQ_VM_RUNTIME_DEVICE_ERROR_MAX][SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
 	uint8_t device_error_count;
 	bool indicator_state;

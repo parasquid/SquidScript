@@ -77,18 +77,7 @@ impl Default for SqvmWifiScanNetworkResult {
             ok: false,
             error: b"unsupported".as_ptr(),
             error_len: b"unsupported".len(),
-            network: SqvmWifiAccessPoint {
-                ssid: ptr::null(),
-                ssid_len: 0,
-                bssid: ptr::null(),
-                bssid_len: 0,
-                ssid_length: 0,
-                channel: 0,
-                rssi: 0,
-                auth: ptr::null(),
-                auth_len: 0,
-                hidden: false,
-            },
+            network: SqvmWifiAccessPoint { ssid: ptr::null(), ssid_len: 0, bssid: ptr::null(), bssid_len: 0, ssid_length: 0, channel: 0, rssi: 0, auth: ptr::null(), auth_len: 0, hidden: false },
         }
     }
 }
@@ -135,6 +124,41 @@ impl Default for SqvmFileReadLinesResult {
             ok: false,
             error: b"unsupported".as_ptr(),
             error_len: b"unsupported".len(),
+        }
+    }
+}
+
+impl Default for SqvmBinBookOpenResult {
+    fn default() -> Self {
+        Self {
+            ok: false,
+            error: b"unsupported".as_ptr(),
+            error_len: b"unsupported".len(),
+            book: SqvmHandle::default(),
+        }
+    }
+}
+
+impl Default for SqvmBinBookInfoResult {
+    fn default() -> Self {
+        Self {
+            ok: false,
+            error: b"unsupported".as_ptr(),
+            error_len: b"unsupported".len(),
+            title: ptr::null(),
+            title_len: 0,
+            page_count: 0,
+        }
+    }
+}
+
+impl Default for SqvmBinBookReadPageResult {
+    fn default() -> Self {
+        Self {
+            ok: false,
+            error: b"unsupported".as_ptr(),
+            error_len: b"unsupported".len(),
+            drawable: SqvmHandle::default(),
         }
     }
 }

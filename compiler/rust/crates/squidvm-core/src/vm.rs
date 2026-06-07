@@ -5,6 +5,7 @@ use crate::{
         BUILTIN_APP_ARM, BUILTIN_APP_ARMED_STACK, BUILTIN_APP_ARMED_STACK_GET, BUILTIN_APP_DISARM,
         BUILTIN_APP_EXIT, BUILTIN_APP_INSTALL, BUILTIN_APP_INSTALL_METADATA, BUILTIN_APP_LAUNCH,
         BUILTIN_APP_PROCESS_STACK, BUILTIN_APP_REGISTRY_GET, BUILTIN_APP_REGISTRY_LIST,
+        BUILTIN_BINBOOK_INFO, BUILTIN_BINBOOK_OPEN, BUILTIN_BINBOOK_READ_PAGE,
         BUILTIN_DEBUG_PRINT, BUILTIN_DEVICE_CONFIG_LOAD, BUILTIN_DEVICE_CONFIG_REBIND,
         BUILTIN_DEVICE_CONFIG_SAVE, BUILTIN_DEVICE_CONFIG_SET, BUILTIN_DISPLAY_CLEAR,
         BUILTIN_DISPLAY_DRAW, BUILTIN_DISPLAY_IMAGE, BUILTIN_DISPLAY_INFO, BUILTIN_DISPLAY_LINE,
@@ -30,7 +31,8 @@ use crate::{
     error::VmError,
     host::{
         AppArmedStack, AppArmedStackEntry, AppInstallResult, AppProcessStack, AppRegistryEntry,
-        AppRegistryList, DeviceConfigResult, DisplayInfo, DisplayLineOptions, DisplayRectOptions,
+        AppRegistryList, BinBookInfoResult, BinBookOpenResult, BinBookReadPageResult,
+        DeviceConfigResult, DisplayInfo, DisplayLineOptions, DisplayRectOptions,
         DisplayResourceOptions, DisplayTextOptions, FilePickFileResult, FileReadLinesResult,
         FileReadTextResult, StorageCompletion, StorageRequest, TraceSink, VmDispatch,
         WifiAccessPoint, WifiApIp, WifiOperation, WifiOperationResult, WifiScanNetwork, WifiStatus,
@@ -49,7 +51,7 @@ use crate::{
         values_equal,
     },
     strings::{StringInterner, StringResolver, StringTable},
-    value::{StringRef, Value},
+    value::{Handle, StringRef, Value},
 };
 
 pub struct Vm<'a> {
@@ -162,6 +164,7 @@ enum RuntimeFieldName {
     Available,
     Backend,
     Binding,
+    Book,
     Bssid,
     Build,
     BytesReceived,
@@ -180,6 +183,7 @@ enum RuntimeFieldName {
     Driver,
     DriverMode,
     DriverStarted,
+    Drawable,
     Error,
     Event,
     Gw,
@@ -199,6 +203,7 @@ enum RuntimeFieldName {
     Netmask,
     ObjectName,
     Ok,
+    PageCount,
     Path,
     PhysicalHeight,
     PhysicalWidth,
@@ -217,6 +222,7 @@ enum RuntimeFieldName {
     SupportsFastRefresh,
     SupportsPartialRefresh,
     Text,
+    Title,
     TotalBytes,
     Transport,
     Upload,
@@ -235,6 +241,7 @@ impl RuntimeFieldName {
             "available" => Self::Available,
             "backend" => Self::Backend,
             "binding" => Self::Binding,
+            "book" => Self::Book,
             "bssid" => Self::Bssid,
             "build" => Self::Build,
             "bytesReceived" => Self::BytesReceived,
@@ -253,6 +260,7 @@ impl RuntimeFieldName {
             "driver" => Self::Driver,
             "driverMode" => Self::DriverMode,
             "driverStarted" => Self::DriverStarted,
+            "drawable" => Self::Drawable,
             "error" => Self::Error,
             "event" => Self::Event,
             "gw" => Self::Gw,
@@ -272,6 +280,7 @@ impl RuntimeFieldName {
             "netmask" => Self::Netmask,
             "objectName" => Self::ObjectName,
             "ok" => Self::Ok,
+            "pageCount" => Self::PageCount,
             "path" => Self::Path,
             "physicalHeight" => Self::PhysicalHeight,
             "physicalWidth" => Self::PhysicalWidth,
@@ -290,6 +299,7 @@ impl RuntimeFieldName {
             "supportsFastRefresh" => Self::SupportsFastRefresh,
             "supportsPartialRefresh" => Self::SupportsPartialRefresh,
             "text" => Self::Text,
+            "title" => Self::Title,
             "totalBytes" => Self::TotalBytes,
             "transport" => Self::Transport,
             "upload" => Self::Upload,
@@ -894,6 +904,13 @@ impl ChunkedVm {
     fn pop_sqbc_string_id(&mut self) -> Result<u16, VmError> {
         match self.pop()? {
             Value::String(StringRef::Sqbc(id)) => Ok(id),
+            _ => Err(VmError::InvalidOperand),
+        }
+    }
+
+    fn pop_handle(&mut self) -> Result<Handle, VmError> {
+        match self.pop()? {
+            Value::Handle(handle) => Ok(handle),
             _ => Err(VmError::InvalidOperand),
         }
     }
@@ -1625,6 +1642,25 @@ impl ChunkedVm {
                 let value = self.device_config_result_record(result)?;
                 self.push(value)?;
             }
+            BUILTIN_BINBOOK_OPEN => {
+                let path_id = self.pop_sqbc_string_id()?;
+                let result = host.binbook_open(self.index.string(path_id)?)?;
+                let value = self.binbook_open_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_BINBOOK_INFO => {
+                let book = self.pop_handle()?;
+                let result = host.binbook_info(book)?;
+                let value = self.binbook_info_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_BINBOOK_READ_PAGE => {
+                let page_index = self.pop()?.expect_i32()?;
+                let book = self.pop_handle()?;
+                let result = host.binbook_read_page(book, page_index)?;
+                let value = self.binbook_read_page_record(result)?;
+                self.push(value)?;
+            }
             crate::bytecode::BUILTIN_FILE_PICK_FILE => {
                 let extension_id = self.pop_sqbc_string_id()?;
                 let result = host.file_pick_file(self.index.string(extension_id)?)?;
@@ -1763,6 +1799,40 @@ impl ChunkedVm {
             RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
             RuntimeRecordField::new(RuntimeFieldName::Error, error),
             RuntimeRecordField::new(RuntimeFieldName::Lines, lines),
+        ])
+    }
+
+    fn binbook_open_record(&mut self, result: BinBookOpenResult<'_>) -> Result<Value, VmError> {
+        let error = self.runtime_string_value(result.error)?;
+        let book = result.book.map_or(Value::Null, Value::Handle);
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
+            RuntimeRecordField::new(RuntimeFieldName::Book, book),
+        ])
+    }
+
+    fn binbook_info_record(&mut self, result: BinBookInfoResult<'_>) -> Result<Value, VmError> {
+        let error = self.runtime_string_value(result.error)?;
+        let title = self.runtime_string_value(result.title)?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
+            RuntimeRecordField::new(RuntimeFieldName::Title, title),
+            RuntimeRecordField::new(RuntimeFieldName::PageCount, Value::I32(result.page_count)),
+        ])
+    }
+
+    fn binbook_read_page_record(
+        &mut self,
+        result: BinBookReadPageResult<'_>,
+    ) -> Result<Value, VmError> {
+        let error = self.runtime_string_value(result.error)?;
+        let drawable = result.drawable.map_or(Value::Null, Value::Handle);
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
+            RuntimeRecordField::new(RuntimeFieldName::Drawable, drawable),
         ])
     }
 
@@ -2313,6 +2383,22 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
         max_lines: i32,
     ) -> Result<FileReadLinesResult<'b>, VmError> {
         self.trace.file_read_lines(path, max_lines)
+    }
+
+    fn binbook_open<'b>(&'b mut self, path: &str) -> Result<BinBookOpenResult<'b>, VmError> {
+        self.trace.binbook_open(path)
+    }
+
+    fn binbook_info<'b>(&'b mut self, book: Handle) -> Result<BinBookInfoResult<'b>, VmError> {
+        self.trace.binbook_info(book)
+    }
+
+    fn binbook_read_page<'b>(
+        &'b mut self,
+        book: Handle,
+        page_index: i32,
+    ) -> Result<BinBookReadPageResult<'b>, VmError> {
+        self.trace.binbook_read_page(book, page_index)
     }
 
     fn state_load(&mut self, out: &mut [u8]) -> Result<Option<usize>, VmError> {

@@ -6,6 +6,7 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/spi.h>
+#include <zephyr/fs/fs.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
@@ -51,6 +52,10 @@ LOG_MODULE_REGISTER(squidscript_ssd1677, LOG_LEVEL_INF);
 
 #define SSD1677_ENTRY_X_INC_Y_INC_HORIZONTAL 0x03
 #define SSD1677_UPDATE_FULL 0xf7
+#define BINBOOK_PIXEL_FORMAT_GRAY2_PACKED 2U
+#define BINBOOK_COMPRESSION_RLE_PACKBITS 1U
+#define BINBOOK_GRAY2_ROW_BYTES (PANEL_WIDTH / 4U)
+#define BINBOOK_GRAY2_PAGE_BYTES (BINBOOK_GRAY2_ROW_BYTES * PANEL_HEIGHT)
 
 static const struct device *const spi_dev = DEVICE_DT_GET(DT_PHANDLE(SSD1677_NODE, spi));
 static const struct gpio_dt_spec cs_gpio = GPIO_DT_SPEC_GET(SSD1677_NODE, cs_gpios);
@@ -65,6 +70,14 @@ static const struct spi_config spi_cfg = {
 
 static bool display_ready;
 static uint8_t row[ROW_BYTES];
+
+struct packbits_reader {
+	struct fs_file_t file;
+	uint32_t compressed_left;
+	uint8_t repeat_value;
+	uint8_t repeat_remaining;
+	uint8_t literal_remaining;
+};
 
 static int spi_write_bytes(const uint8_t *data, size_t len)
 {
@@ -350,6 +363,120 @@ static void set_black_pixel(uint8_t line[ROW_BYTES], uint16_t x)
 	line[ram_x / 8U] &= (uint8_t)~(0x80U >> (ram_x % 8U));
 }
 
+static const struct sq_vm_runtime_display_op *find_binbook_drawable_op(
+	const struct sq_vm_runtime_display_op *ops, size_t op_count)
+{
+	for (size_t i = op_count; i > 0; --i) {
+		if (ops[i - 1].kind == SQ_VM_RUNTIME_DISPLAY_OP_BINBOOK_DRAWABLE) {
+			return &ops[i - 1];
+		}
+	}
+	return NULL;
+}
+
+static int packbits_read_raw(struct packbits_reader *reader, uint8_t *out)
+{
+	if (reader->compressed_left == 0) {
+		return -EIO;
+	}
+	ssize_t read = fs_read(&reader->file, out, 1);
+
+	if (read < 0) {
+		return (int)read;
+	}
+	if (read != 1) {
+		return -EIO;
+	}
+	reader->compressed_left--;
+	return 0;
+}
+
+static int packbits_next_byte(struct packbits_reader *reader, uint8_t *out)
+{
+	if (reader->repeat_remaining > 0) {
+		reader->repeat_remaining--;
+		*out = reader->repeat_value;
+		return 0;
+	}
+	if (reader->literal_remaining > 0) {
+		reader->literal_remaining--;
+		return packbits_read_raw(reader, out);
+	}
+	uint8_t control = 0;
+	int ret = packbits_read_raw(reader, &control);
+
+	if (ret != 0) {
+		return ret;
+	}
+	if (control <= 127U) {
+		reader->literal_remaining = control + 1U;
+		reader->literal_remaining--;
+		return packbits_read_raw(reader, out);
+	}
+	ret = packbits_read_raw(reader, &reader->repeat_value);
+	if (ret != 0) {
+		return ret;
+	}
+	reader->repeat_remaining = (control & 0x7fU);
+	*out = reader->repeat_value;
+	return 0;
+}
+
+static void gray2_byte_to_mono(uint8_t line[ROW_BYTES], uint16_t x, uint8_t packed)
+{
+	for (uint8_t pixel = 0; pixel < 4U; ++pixel) {
+		uint8_t gray = (uint8_t)((packed >> (6U - pixel * 2U)) & 0x03U);
+
+		if (gray <= 1U) {
+			set_black_pixel(line, x + pixel);
+		}
+	}
+}
+
+static int stream_binbook_gray2_page(const struct sq_vm_runtime_binbook_page *page)
+{
+	struct packbits_reader reader = {0};
+	int ret;
+
+	if (page == NULL || page->path[0] == '\0' || page->pixel_format != BINBOOK_PIXEL_FORMAT_GRAY2_PACKED ||
+	    page->compression_method != BINBOOK_COMPRESSION_RLE_PACKBITS ||
+	    page->stored_width != PANEL_WIDTH || page->stored_height != PANEL_HEIGHT ||
+	    page->uncompressed_size != BINBOOK_GRAY2_PAGE_BYTES || page->compressed_size == 0) {
+		return -ENOTSUP;
+	}
+	fs_file_t_init(&reader.file);
+	ret = fs_open(&reader.file, page->path, FS_O_READ);
+	if (ret != 0) {
+		return ret;
+	}
+	ret = fs_seek(&reader.file, (off_t)page->blob_offset, FS_SEEK_SET);
+	if (ret != 0) {
+		(void)fs_close(&reader.file);
+		return ret;
+	}
+	reader.compressed_left = page->compressed_size;
+	for (uint16_t y = 0; y < PANEL_HEIGHT; ++y) {
+		memset(row, 0xff, sizeof(row));
+		for (uint16_t x = 0; x < PANEL_WIDTH; x += 4U) {
+			uint8_t packed = 0;
+
+			ret = packbits_next_byte(&reader, &packed);
+			if (ret != 0) {
+				(void)fs_close(&reader.file);
+				return ret;
+			}
+			gray2_byte_to_mono(row, x, packed);
+		}
+		ret = write_data(row, sizeof(row));
+		if (ret != 0) {
+			(void)fs_close(&reader.file);
+			return ret;
+		}
+	}
+	(void)fs_close(&reader.file);
+	return 0;
+}
+
 static void draw_text_row(uint8_t line[ROW_BYTES], uint16_t y,
 			  const struct sq_vm_runtime_display_op *op)
 {
@@ -458,6 +585,7 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 {
 	bool observed_busy = false;
 	int ret;
+	const struct sq_vm_runtime_display_op *binbook = NULL;
 
 	if (ops == NULL || op_count == 0) {
 		return 0;
@@ -483,11 +611,20 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 	if (ret != 0) {
 		return ret;
 	}
-	for (uint16_t y = 0; y < PANEL_HEIGHT; ++y) {
-		render_row(row, y, ops, op_count);
-		ret = write_data(row, sizeof(row));
+	binbook = find_binbook_drawable_op(ops, op_count);
+	if (binbook != NULL) {
+		ret = stream_binbook_gray2_page(&binbook->binbook_page);
 		if (ret != 0) {
+			LOG_ERR("display binbook stream failed: %d", ret);
 			return ret;
+		}
+	} else {
+		for (uint16_t y = 0; y < PANEL_HEIGHT; ++y) {
+			render_row(row, y, ops, op_count);
+			ret = write_data(row, sizeof(row));
+			if (ret != 0) {
+				return ret;
+			}
 		}
 	}
 	ret = refresh_display(&observed_busy);

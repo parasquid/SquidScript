@@ -47,7 +47,7 @@ void runtime_display_line(void *user_data, const SqvmDisplayLineOptions *options
 int32_t runtime_display_select(void *user_data, const uint8_t *name, size_t name_len);
 void runtime_display_image(void *user_data, const uint8_t *path, size_t path_len,
 			   const SqvmDisplayResourceOptions *options);
-void runtime_display_draw(void *user_data, const uint8_t *drawable, size_t drawable_len,
+void runtime_display_draw(void *user_data, SqvmHandle drawable,
 			  const SqvmDisplayResourceOptions *options);
 int32_t runtime_display_info(void *user_data, SqvmDisplayInfo *out);
 
@@ -132,5 +132,10 @@ int32_t runtime_file_read_text(void *user_data, const uint8_t *path, size_t path
 			       SqvmFileReadTextResult *out);
 int32_t runtime_file_read_lines(void *user_data, const uint8_t *path, size_t path_len,
 				int32_t max_lines, SqvmFileReadLinesResult *out);
+int32_t runtime_binbook_open(void *user_data, const uint8_t *path, size_t path_len,
+			     SqvmBinBookOpenResult *out);
+int32_t runtime_binbook_info(void *user_data, SqvmHandle book, SqvmBinBookInfoResult *out);
+int32_t runtime_binbook_read_page(void *user_data, SqvmHandle book, int32_t page_index,
+				  SqvmBinBookReadPageResult *out);
 
 #endif

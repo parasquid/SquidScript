@@ -280,6 +280,17 @@ typedef struct {
 	int32_t h;
 } SqvmDisplayResourceOptions;
 
+typedef enum {
+	SQVM_HANDLE_NONE = 0,
+	SQVM_HANDLE_BINBOOK = 1,
+	SQVM_HANDLE_DRAWABLE = 2,
+} SqvmHandleKind;
+
+typedef struct {
+	SqvmHandleKind kind;
+	uint16_t id;
+} SqvmHandle;
+
 typedef struct {
 	bool ok;
 	const uint8_t *error;
@@ -348,8 +359,7 @@ typedef void (*SqvmDisplayImageCallback)(void *user_data, const uint8_t *path,
 					 size_t path_len,
 					 const SqvmDisplayResourceOptions *options);
 
-typedef void (*SqvmDisplayDrawCallback)(void *user_data, const uint8_t *drawable,
-					size_t drawable_len,
+typedef void (*SqvmDisplayDrawCallback)(void *user_data, SqvmHandle drawable,
 					const SqvmDisplayResourceOptions *options);
 
 typedef int32_t (*SqvmDisplayInfoCallback)(void *user_data, SqvmDisplayInfo *out);
@@ -487,6 +497,29 @@ typedef struct {
 } SqvmFileReadLinesResult;
 
 typedef struct {
+	bool ok;
+	const uint8_t *error;
+	size_t error_len;
+	SqvmHandle book;
+} SqvmBinBookOpenResult;
+
+typedef struct {
+	bool ok;
+	const uint8_t *error;
+	size_t error_len;
+	const uint8_t *title;
+	size_t title_len;
+	int32_t page_count;
+} SqvmBinBookInfoResult;
+
+typedef struct {
+	bool ok;
+	const uint8_t *error;
+	size_t error_len;
+	SqvmHandle drawable;
+} SqvmBinBookReadPageResult;
+
+typedef struct {
 	const uint8_t *ip;
 	size_t ip_len;
 	const uint8_t *gw;
@@ -546,6 +579,16 @@ typedef int32_t (*SqvmFileReadTextCallback)(void *user_data, const uint8_t *path
 typedef int32_t (*SqvmFileReadLinesCallback)(void *user_data, const uint8_t *path,
 						size_t path_len, int32_t max_lines,
 						SqvmFileReadLinesResult *out);
+
+typedef int32_t (*SqvmBinBookOpenCallback)(void *user_data, const uint8_t *path,
+					     size_t path_len, SqvmBinBookOpenResult *out);
+
+typedef int32_t (*SqvmBinBookInfoCallback)(void *user_data, SqvmHandle book,
+					     SqvmBinBookInfoResult *out);
+
+typedef int32_t (*SqvmBinBookReadPageCallback)(void *user_data, SqvmHandle book,
+						 int32_t page_index,
+						 SqvmBinBookReadPageResult *out);
 
 typedef int32_t (*SqvmIndicatorWriteCallback)(void *user_data, bool value);
 
@@ -682,6 +725,9 @@ typedef struct {
 	SqvmFilePickFileCallback file_pick_file;
 	SqvmFileReadTextCallback file_read_text;
 	SqvmFileReadLinesCallback file_read_lines;
+	SqvmBinBookOpenCallback binbook_open;
+	SqvmBinBookInfoCallback binbook_info;
+	SqvmBinBookReadPageCallback binbook_read_page;
 	SqvmSystemMemoryTextCallback system_memory_text;
 	SqvmSystemStorageTextCallback system_storage_text;
 	SqvmSystemStartReasonTextCallback system_start_reason_text;
@@ -850,6 +896,41 @@ static inline void sqvm_file_read_lines_result_unsupported(SqvmFileReadLinesResu
 	out->ok = false;
 	out->error = (const uint8_t *)"unsupported";
 	out->error_len = sizeof("unsupported") - 1;
+}
+
+static inline void sqvm_binbook_open_result_unsupported(SqvmBinBookOpenResult *out)
+{
+	if (out == NULL) {
+		return;
+	}
+	out->ok = false;
+	out->error = (const uint8_t *)"unsupported";
+	out->error_len = sizeof("unsupported") - 1;
+	out->book = (SqvmHandle){ .kind = SQVM_HANDLE_NONE, .id = 0 };
+}
+
+static inline void sqvm_binbook_info_result_unsupported(SqvmBinBookInfoResult *out)
+{
+	if (out == NULL) {
+		return;
+	}
+	out->ok = false;
+	out->error = (const uint8_t *)"unsupported";
+	out->error_len = sizeof("unsupported") - 1;
+	out->title = NULL;
+	out->title_len = 0;
+	out->page_count = 0;
+}
+
+static inline void sqvm_binbook_read_page_result_unsupported(SqvmBinBookReadPageResult *out)
+{
+	if (out == NULL) {
+		return;
+	}
+	out->ok = false;
+	out->error = (const uint8_t *)"unsupported";
+	out->error_len = sizeof("unsupported") - 1;
+	out->drawable = (SqvmHandle){ .kind = SQVM_HANDLE_NONE, .id = 0 };
 }
 
 static inline void sqvm_wifi_ap_ip_unsupported(SqvmWifiApIp *out)

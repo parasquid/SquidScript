@@ -1938,13 +1938,18 @@ service.display.image("data/icon.bmp", { x: 20, y: 20 })
 
 service.display.draw(drawable, options)
 
-Draws a display-ready resource, such as an image resource, canvas surface, or BinBook page image.
+Draws a display-ready resource handle, such as a BinBook page drawable.
+`drawable` must be a firmware-owned drawable handle. String paths are not
+drawables.
 
 Example:
 
 ```squid
 service.display.draw(drawable, { x: 0, y: 0 })
 ```
+
+`options` is optional. Omitted coordinates default to `{ x: 0, y: 0 }`.
+Omitted width and height default to the drawable's natural size.
 
 The runtime may clip drawing outside the logical screen.
 
@@ -2631,6 +2636,72 @@ Rules:
 - larger storage, library, upload, data parsing, and document capabilities must
   be added as real compiler, SQBC, VM, firmware, docs, and tests slices before
   they appear in this canonical spec
+
+---
+
+## 31A. BinBook Built-ins
+
+`binbook.*` is the app-facing API for compiled `.binbook` raster-book
+resources. The firmware owns BinBook validation, page-index lookup, page data
+streaming, display conversion, and handle lifetime. App code receives handles
+and result records; it does not parse BinBook bytes.
+
+`binbook.open(path)`
+
+Opens and validates a package-relative `.binbook` resource for the current app.
+The current Zephyr firmware supports safe package resource paths such as
+`"books/sample.binbook"`.
+
+Result:
+
+```text
+{ ok: bool, error: string?, book: handle? }
+```
+
+`binbook.info(book)`
+
+Returns metadata for an opened book handle.
+
+Result:
+
+```text
+{ ok: bool, error: string?, title: string?, pageCount: int }
+```
+
+`binbook.readPage(book, pageIndex)`
+
+Resolves a page from an opened book handle into a display-ready drawable
+handle. The page index is zero-based. The current SSD1677 Zephyr backend
+accepts target-native full-panel GRAY2 BinBook page data and thresholds it to
+1-bit e-paper output while streaming from the resource file.
+
+Result:
+
+```text
+{ ok: bool, error: string?, drawable: handle? }
+```
+
+Example:
+
+```squid
+let opened = binbook.open("books/sample.binbook")
+if (opened.ok) {
+  let info = binbook.info(opened.book)
+  let page = binbook.readPage(opened.book, state.pageIndex)
+  if (page.ok) {
+    service.display.draw(page.drawable)
+    debug.print("pages", info.pageCount)
+  }
+}
+```
+
+Rules:
+
+- BinBook book and drawable handles are transient firmware-owned handles.
+- App state may store page indexes and package-relative paths, not handles.
+- `service.display.draw(...)` is the composition API for returned drawables.
+- Unsupported or invalid books/pages return result records; scripts should
+  check `ok` before using returned handles.
 
 ---
 

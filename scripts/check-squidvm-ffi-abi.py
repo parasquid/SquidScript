@@ -203,6 +203,8 @@ def c_result_field_lines(target: str, field: dict) -> list[str]:
     name = field["field"]
     access = f"{target}->{name}"
     len_access = f"{target}->{name}_len"
+    if "c_value" in field:
+        return [f"\t{access} = {field['c_value']};"]
     if "literal" in field:
         value = str(field["literal"])
         return [
@@ -216,7 +218,9 @@ def c_result_field_lines(target: str, field: dict) -> list[str]:
         return lines
     if "value" in field:
         return [f"\t{access} = {field['value']};"]
-    raise CheckError(f"manifest result_default field {name} has no value, literal, or null")
+    raise CheckError(
+        f"manifest result_default field {name} has no value, literal, c_value, or null"
+    )
 
 
 def emit_c_result_helpers(manifest: dict) -> str:
@@ -290,6 +294,8 @@ def emit_header(manifest: dict) -> str:
 
 
 def rust_result_field_value(field: dict) -> str:
+    if "rust_value" in field:
+        return str(field["rust_value"])
     if "literal" in field:
         return f'b"{field["literal"]}".as_ptr()'
     if field.get("null"):
@@ -297,7 +303,7 @@ def rust_result_field_value(field: dict) -> str:
     if "value" in field:
         return str(field["value"])
     raise CheckError(
-        f"manifest result_default field {field.get('field', '<unknown>')} has no value, literal, or null"
+        f"manifest result_default field {field.get('field', '<unknown>')} has no value, literal, rust_value, c_value, or null"
     )
 
 

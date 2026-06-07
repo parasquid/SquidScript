@@ -522,6 +522,89 @@ static int write_test_file(const char *path, const uint8_t *bytes, size_t len)
 	return result;
 }
 
+#define TEST_BINBOOK_HEADER_SIZE 256U
+#define TEST_BINBOOK_SECTION_ENTRY_SIZE 40U
+#define TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE 76U
+#define TEST_BINBOOK_SECTION_COUNT 2U
+#define TEST_BINBOOK_PAGE_INDEX_OFFSET \
+	(TEST_BINBOOK_HEADER_SIZE + TEST_BINBOOK_SECTION_COUNT * TEST_BINBOOK_SECTION_ENTRY_SIZE)
+#define TEST_BINBOOK_PAGE_DATA_OFFSET \
+	(TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE)
+#define TEST_BINBOOK_PAGE_DATA_LEN 4U
+#define TEST_BINBOOK_LEN (TEST_BINBOOK_PAGE_DATA_OFFSET + TEST_BINBOOK_PAGE_DATA_LEN)
+
+static void test_write_le16(uint8_t *out, uint16_t value)
+{
+	out[0] = (uint8_t)(value & 0xff);
+	out[1] = (uint8_t)(value >> 8);
+}
+
+static void test_write_le32(uint8_t *out, uint32_t value)
+{
+	out[0] = (uint8_t)(value & 0xff);
+	out[1] = (uint8_t)((value >> 8) & 0xff);
+	out[2] = (uint8_t)((value >> 16) & 0xff);
+	out[3] = (uint8_t)(value >> 24);
+}
+
+static void test_write_le64(uint8_t *out, uint64_t value)
+{
+	test_write_le32(out, (uint32_t)value);
+	test_write_le32(out + 4, (uint32_t)(value >> 32));
+}
+
+static void test_write_binbook_section(uint8_t *out, uint16_t section_id, uint64_t offset,
+				       uint64_t length, uint32_t entry_size,
+				       uint32_t record_count)
+{
+	memset(out, 0, TEST_BINBOOK_SECTION_ENTRY_SIZE);
+	test_write_le16(&out[0], section_id);
+	test_write_le64(&out[4], offset);
+	test_write_le64(&out[12], length);
+	test_write_le32(&out[20], entry_size);
+	test_write_le32(&out[24], record_count);
+}
+
+static void build_test_binbook(uint8_t out[TEST_BINBOOK_LEN])
+{
+	memset(out, 0, TEST_BINBOOK_LEN);
+	memcpy(&out[0], "BINBOOK", 7);
+	test_write_le16(&out[8], 0);
+	test_write_le16(&out[10], 1);
+	test_write_le16(&out[12], TEST_BINBOOK_HEADER_SIZE);
+	test_write_le64(&out[16], TEST_BINBOOK_LEN);
+	test_write_le64(&out[24], TEST_BINBOOK_HEADER_SIZE);
+	test_write_le32(&out[32], TEST_BINBOOK_SECTION_COUNT * TEST_BINBOOK_SECTION_ENTRY_SIZE);
+	test_write_le16(&out[36], TEST_BINBOOK_SECTION_ENTRY_SIZE);
+	test_write_le16(&out[38], TEST_BINBOOK_SECTION_COUNT);
+	test_write_le16(&out[40], TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE);
+	test_write_le16(&out[42], 48);
+	test_write_le64(&out[44], TEST_BINBOOK_PAGE_DATA_OFFSET);
+	test_write_le64(&out[52], TEST_BINBOOK_PAGE_DATA_LEN);
+
+	test_write_binbook_section(&out[TEST_BINBOOK_HEADER_SIZE], 40,
+				   TEST_BINBOOK_PAGE_INDEX_OFFSET,
+				   TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE,
+				   TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE, 1);
+	test_write_binbook_section(&out[TEST_BINBOOK_HEADER_SIZE + TEST_BINBOOK_SECTION_ENTRY_SIZE],
+				   50, TEST_BINBOOK_PAGE_DATA_OFFSET,
+				   TEST_BINBOOK_PAGE_DATA_LEN, 0, 0);
+
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET], 0);
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 4], 1);
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 6], 2);
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 8], 1);
+	test_write_le64(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 16], 0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 24], TEST_BINBOOK_PAGE_DATA_LEN);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 28], 96000);
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 36], 800);
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 38], 480);
+	out[TEST_BINBOOK_PAGE_DATA_OFFSET] = 3;
+	out[TEST_BINBOOK_PAGE_DATA_OFFSET + 1] = 0xff;
+	out[TEST_BINBOOK_PAGE_DATA_OFFSET + 2] = 0xff;
+	out[TEST_BINBOOK_PAGE_DATA_OFFSET + 3] = 0xff;
+}
+
 static int read_test_file(const char *path, uint8_t *bytes, size_t cap, size_t *out_len)
 {
 	struct fs_dirent entry;
@@ -4964,12 +5047,10 @@ ZTEST(squidscript_protocol, test_vm_runtime_dispatches_display_drawlog_callbacks
 
 	memset(&runtime, 0, sizeof(runtime));
 	zassert_equal(sq_vm_runtime_dispatch(&runtime, &backend, "app.start"), 0);
-	zassert_equal(runtime.drawlog_count, 4);
+	zassert_equal(runtime.drawlog_count, 3);
 	zassert_str_equal(runtime.drawlog[0], "draw=clear color=gray0");
 	zassert_str_equal(runtime.drawlog[1], "draw=select name=status");
 	zassert_str_equal(runtime.drawlog[2], "draw=image path=\"data/icon.bmp\" x=20 y=24");
-	zassert_str_equal(runtime.drawlog[3],
-			  "draw=resource drawable=\"drawable/page\" x=0 y=0");
 
 	fixture.sqbc = display_primitives_sqbc;
 	fixture.sqbc_len = sizeof(display_primitives_sqbc);
@@ -5008,6 +5089,80 @@ ZTEST(squidscript_protocol, test_vm_runtime_records_physical_display_clear_and_t
 	zassert_equal(runtime.display_ops[1].x, 10);
 	zassert_equal(runtime.display_ops[1].y, 20);
 	zassert_equal(runtime.display_ops[1].font_height, 24);
+}
+
+ZTEST(squidscript_protocol, test_vm_runtime_dispatches_binbook_resource_drawable)
+{
+	uint8_t book[TEST_BINBOOK_LEN];
+	struct sq_app_store_vm_storage app_storage = {0};
+	struct sq_vm_storage_backend backend;
+	static struct sq_vm_runtime runtime;
+
+	build_test_binbook(book);
+	zassert_equal(mount_test_fs(), 0);
+	zassert_equal(format_test_app_store(), 0);
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "binbook-reader",
+					       binbook_reader_sqbc, sizeof(binbook_reader_sqbc)),
+		      0);
+	zassert_equal(sq_app_store_install_resource(test_fs_mount.mnt_point, "binbook-reader",
+						    "books/sample.binbook", book, sizeof(book)),
+		      0);
+
+	memset(&runtime, 0, sizeof(runtime));
+	zassert_equal(sq_app_store_vm_storage_for_app(test_fs_mount.mnt_point, "binbook-reader",
+						      &app_storage),
+		      0);
+	backend = sq_app_store_vm_storage_backend(&app_storage);
+	sq_vm_runtime_set_store_mount_point(&runtime, test_fs_mount.mnt_point);
+	strncpy(runtime.current_app, "binbook-reader", sizeof(runtime.current_app) - 1);
+
+	zassert_equal(sq_vm_runtime_start(&runtime, &backend, "app.start"), 0);
+	wait_runtime_done(&runtime);
+	zassert_equal(runtime.output_count, 1);
+	zassert_str_equal(runtime.outputs[0], "pages 1");
+	zassert_equal(runtime.drawlog_count, 1);
+	zassert_str_equal(runtime.drawlog[0], "draw=binbook id=1 x=0 y=0");
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
+ZTEST(squidscript_protocol, test_vm_runtime_records_binbook_drawable_display_op)
+{
+	static struct sq_vm_runtime runtime;
+	const SqvmDisplayResourceOptions options = {0};
+	const SqvmHandle drawable = {
+		.kind = SQVM_HANDLE_DRAWABLE,
+		.id = 1,
+	};
+
+	memset(&runtime, 0, sizeof(runtime));
+	runtime.drawable.active = true;
+	runtime.drawable.page = (struct sq_vm_runtime_binbook_page){
+		.blob_offset = 412,
+		.compressed_size = 4,
+		.uncompressed_size = 96000,
+		.page_index = 0,
+		.pixel_format = 2,
+		.compression_method = 1,
+		.stored_width = 800,
+		.stored_height = 480,
+	};
+	strncpy(runtime.drawable.page.path, "/sqtest/apps/binbook-reader/resources/books/sample.binbook",
+		sizeof(runtime.drawable.page.path) - 1);
+
+	runtime_display_draw(&runtime, drawable, &options);
+
+	zassert_equal(runtime.drawlog_count, 1);
+	zassert_str_equal(runtime.drawlog[0], "draw=binbook id=1 x=0 y=0");
+	zassert_true(runtime.display_dirty);
+	zassert_equal(runtime.display_op_count, 1);
+	zassert_equal(runtime.display_ops[0].kind, SQ_VM_RUNTIME_DISPLAY_OP_BINBOOK_DRAWABLE);
+	zassert_str_equal(runtime.display_ops[0].binbook_page.path,
+			  "/sqtest/apps/binbook-reader/resources/books/sample.binbook");
+	zassert_equal(runtime.display_ops[0].binbook_page.blob_offset, 412);
+	zassert_equal(runtime.display_ops[0].binbook_page.compressed_size, 4);
+	zassert_equal(runtime.display_ops[0].binbook_page.uncompressed_size, 96000);
+	zassert_equal(runtime.display_ops[0].binbook_page.stored_width, 800);
+	zassert_equal(runtime.display_ops[0].binbook_page.stored_height, 480);
 }
 
 ZTEST(squidscript_protocol, test_vm_runtime_dispatches_wifi_action_stubs)

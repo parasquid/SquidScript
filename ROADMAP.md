@@ -28,12 +28,15 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   with `-EBUSY` if the app is currently `current_app` (the caller must
   `app.exit` first or `app.launch` a different app). No new firmware cap
   needed; reuses the existing `sq_app_store` mount point.
-- Defer `binbook.*` compiler/FFI/firmware work until the e-paper display is
-  available and the BinBook spec has settled enough to avoid optimizing around
-  rough draft behavior.
 
 ## Storage And Content
 
+- Add BLE/file-transfer delivery for `.binbook` resources and app-facing
+  content selection once bundled-resource BinBook reading is exercised end to
+  end.
+- Add a target-native BinBook output profile for the XIAO ESP32-C3 +
+  GDEQ0426T82 SSD1677 backend so generated pages stream in physical panel
+  order without requiring a full rotation framebuffer.
 - Promote the XIAO ESP32-C3 e-paper target's external SPI SD reader from
   metadata-only to mounted app/content storage after jumper wiring is
   confirmed. Define card-missing boot policy, retained diagnostics, app-store
@@ -43,6 +46,8 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Display And Output
 
+- Add true multi-gray e-paper rendering for BinBook GRAY2 instead of
+  thresholding to 1-bit on the current SSD1677 backend.
 - Add a generic PWM-capable LED-like device output model beyond
   `service.indicator`, so future target-described GPIO/PWM endpoints can expose
   smooth brightness control without board-specific app code.

@@ -571,10 +571,12 @@ The preferred source API shape is:
 
 ```squid
 let book = binbook.open(state.file)
-let page = binbook.page(book, state.pageIndex)
-let image = binbook.pageImage(page)
-
-service.display.draw(image, { x: 0, y: 0 })
+if (book.ok) {
+  let page = binbook.readPage(book.book, state.pageIndex)
+  if (page.ok) {
+    service.display.draw(page.drawable)
+  }
+}
 ```
 
 The BinBook capability owns:

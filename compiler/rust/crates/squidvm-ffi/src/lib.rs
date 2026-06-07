@@ -14,17 +14,18 @@ use squidvm_core::{
     error::VmError,
     host::{
         AppArmedStack, AppArmedStackEntry, AppInstallResult, AppProcessStack, AppRegistryEntry,
-        AppRegistryList, DeviceConfigResult, DisplayInfo, DisplayLineOptions, DisplayRectOptions,
+        AppRegistryList, BinBookInfoResult, BinBookOpenResult, BinBookReadPageResult,
+        DeviceConfigResult, DisplayInfo, DisplayLineOptions, DisplayRectOptions,
         DisplayResourceOptions, DisplayTextOptions, FilePickFileResult, FileReadLinesResult,
         FileReadTextResult, StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink,
-        VmDispatch, WifiAccessPoint, WifiApIp, WifiOperation, WifiOperationResult, WifiScanNetwork,
-        WifiStatus, MAX_STORAGE_TRANSFER_BYTES,
+        VmDispatch, WifiAccessPoint, WifiApIp, WifiOperation, WifiOperationResult,
+        WifiScanNetwork, WifiStatus, MAX_STORAGE_TRANSFER_BYTES,
     },
     limits::{MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES, MAX_SAVED_STATE_BYTES},
     program::{Program, ProgramIndex, SqbcSection},
     reader::{SliceSqbcReader, SqbcReader},
     strings::StringResolver,
-    value::Value,
+    value::{Handle, HandleKind, Value},
     vm::{ChunkedVm, EventPayload, EventPayloadField},
 };
 
@@ -683,6 +684,30 @@ pub struct SqvmDisplayResourceOptions {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SqvmHandleKind {
+    None = 0,
+    BinBook = 1,
+    Drawable = 2,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmHandle {
+    pub kind: SqvmHandleKind,
+    pub id: u16,
+}
+
+impl Default for SqvmHandle {
+    fn default() -> Self {
+        Self {
+            kind: SqvmHandleKind::None,
+            id: 0,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SqvmDisplayInfo {
     pub ok: bool,
     pub error: *const u8,
@@ -973,6 +998,35 @@ pub struct SqvmFileReadLinesResult {
     pub ok: bool,
     pub error: *const u8,
     pub error_len: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmBinBookOpenResult {
+    pub ok: bool,
+    pub error: *const u8,
+    pub error_len: usize,
+    pub book: SqvmHandle,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmBinBookInfoResult {
+    pub ok: bool,
+    pub error: *const u8,
+    pub error_len: usize,
+    pub title: *const u8,
+    pub title_len: usize,
+    pub page_count: i32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmBinBookReadPageResult {
+    pub ok: bool,
+    pub error: *const u8,
+    pub error_len: usize,
+    pub drawable: SqvmHandle,
 }
 
 #[repr(C)]
@@ -2872,6 +2926,9 @@ impl TraceSink for FfiHost<'_> {
                 Value::List(_) => {
                     let _ = line.write_str("<list>");
                 }
+                Value::Handle(_) => {
+                    let _ = line.write_str("<handle>");
+                }
             }
         }
         unsafe {
@@ -2978,15 +3035,16 @@ impl TraceSink for FfiHost<'_> {
 
     fn draw_resource(
         &mut self,
-        strings: &StringResolver<'_>,
+        _strings: &StringResolver<'_>,
         drawable: Value,
         options: DisplayResourceOptions,
     ) {
         let Some(display_draw) = self.callbacks.display_draw else {
             return;
         };
-        let mut rendered = FixedLine::<128>::default();
-        write_value(&mut rendered, strings, drawable);
+        let Value::Handle(handle) = drawable else {
+            return;
+        };
         let options = SqvmDisplayResourceOptions {
             x: options.x,
             y: options.y,
@@ -2994,7 +3052,7 @@ impl TraceSink for FfiHost<'_> {
             h: options.h,
         };
         unsafe {
-            display_draw(self.user_data, rendered.as_ptr(), rendered.len(), &options);
+            display_draw(self.user_data, handle_to_ffi(handle), &options);
         }
     }
 
@@ -3469,6 +3527,41 @@ impl TraceSink for FfiHost<'_> {
             )
         })?;
         unsafe { file_read_lines_result_from_ffi(&out) }
+    }
+
+    fn binbook_open<'a>(&'a mut self, path: &str) -> Result<BinBookOpenResult<'a>, VmError> {
+        let Some(binbook_open) = self.callbacks.binbook_open else {
+            return Ok(BinBookOpenResult::unsupported());
+        };
+        let mut out = SqvmBinBookOpenResult::default();
+        callback_status(unsafe {
+            binbook_open(self.user_data, path.as_ptr(), path.len(), &mut out)
+        })?;
+        unsafe { binbook_open_result_from_ffi(&out) }
+    }
+
+    fn binbook_info<'a>(&'a mut self, book: Handle) -> Result<BinBookInfoResult<'a>, VmError> {
+        let Some(binbook_info) = self.callbacks.binbook_info else {
+            return Ok(BinBookInfoResult::unsupported());
+        };
+        let mut out = SqvmBinBookInfoResult::default();
+        callback_status(unsafe { binbook_info(self.user_data, handle_to_ffi(book), &mut out) })?;
+        unsafe { binbook_info_result_from_ffi(&out) }
+    }
+
+    fn binbook_read_page<'a>(
+        &'a mut self,
+        book: Handle,
+        page_index: i32,
+    ) -> Result<BinBookReadPageResult<'a>, VmError> {
+        let Some(binbook_read_page) = self.callbacks.binbook_read_page else {
+            return Ok(BinBookReadPageResult::unsupported());
+        };
+        let mut out = SqvmBinBookReadPageResult::default();
+        callback_status(unsafe {
+            binbook_read_page(self.user_data, handle_to_ffi(book), page_index, &mut out)
+        })?;
+        unsafe { binbook_read_page_result_from_ffi(&out) }
     }
 
     fn system_memory_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
@@ -4531,6 +4624,24 @@ fn callback_status(status: i32) -> Result<(), VmError> {
     }
 }
 
+fn handle_to_ffi(handle: Handle) -> SqvmHandle {
+    SqvmHandle {
+        kind: match handle.kind {
+            HandleKind::BinBook => SqvmHandleKind::BinBook,
+            HandleKind::Drawable => SqvmHandleKind::Drawable,
+        },
+        id: handle.id,
+    }
+}
+
+fn handle_from_ffi(handle: SqvmHandle) -> Result<Option<Handle>, VmError> {
+    match handle.kind {
+        SqvmHandleKind::None => Ok(None),
+        SqvmHandleKind::BinBook => Ok(Some(Handle::new(HandleKind::BinBook, handle.id))),
+        SqvmHandleKind::Drawable => Ok(Some(Handle::new(HandleKind::Drawable, handle.id))),
+    }
+}
+
 unsafe fn optional_ffi_str<'a>(ptr: *const u8, len: usize) -> Result<Option<&'a str>, VmError> {
     if len == 0 {
         return Ok(None);
@@ -4701,6 +4812,37 @@ unsafe fn file_read_lines_result_from_ffi<'a>(
     })
 }
 
+unsafe fn binbook_open_result_from_ffi<'a>(
+    result: &SqvmBinBookOpenResult,
+) -> Result<BinBookOpenResult<'a>, VmError> {
+    Ok(BinBookOpenResult {
+        ok: result.ok,
+        error: optional_ffi_str(result.error, result.error_len)?,
+        book: handle_from_ffi(result.book)?,
+    })
+}
+
+unsafe fn binbook_info_result_from_ffi<'a>(
+    result: &SqvmBinBookInfoResult,
+) -> Result<BinBookInfoResult<'a>, VmError> {
+    Ok(BinBookInfoResult {
+        ok: result.ok,
+        error: optional_ffi_str(result.error, result.error_len)?,
+        title: optional_ffi_str(result.title, result.title_len)?,
+        page_count: result.page_count,
+    })
+}
+
+unsafe fn binbook_read_page_result_from_ffi<'a>(
+    result: &SqvmBinBookReadPageResult,
+) -> Result<BinBookReadPageResult<'a>, VmError> {
+    Ok(BinBookReadPageResult {
+        ok: result.ok,
+        error: optional_ffi_str(result.error, result.error_len)?,
+        drawable: handle_from_ffi(result.drawable)?,
+    })
+}
+
 fn device_config_value_to_ffi(
     value: Value,
     strings: &StringResolver<'_>,
@@ -4729,7 +4871,7 @@ fn device_config_value_to_ffi(
                 ..SqvmDeviceConfigValue::default()
             })
         }
-        Value::Record(_) | Value::List(_) => Err(VmError::InvalidOperand),
+        Value::Record(_) | Value::List(_) | Value::Handle(_) => Err(VmError::InvalidOperand),
     }
 }
 
@@ -4914,6 +5056,9 @@ fn write_value<const N: usize>(
         }
         Value::List(_) => {
             let _ = line.write_str("<list>");
+        }
+        Value::Handle(_) => {
+            let _ = line.write_str("<handle>");
         }
     }
 }

@@ -363,6 +363,9 @@ impl TraceSink for RuntimeTrace {
                 Value::Null => line.push_str("null"),
                 Value::Record(_) => line.push_str("<record>"),
                 Value::List(_) => line.push_str("<list>"),
+                Value::Handle(handle) => {
+                    write!(line, "<handle:{:?}:{}>", handle.kind, handle.id).unwrap();
+                }
             }
         }
         self.events.push(format!("debug {line}"));
@@ -540,6 +543,54 @@ impl TraceSink for RuntimeTrace {
         Ok(FileReadLinesResult::unsupported())
     }
 
+    fn binbook_open<'a>(&'a mut self, path: &str) -> Result<BinBookOpenResult<'a>, VmError> {
+        self.events.push(format!("binbook.open {path}"));
+        Ok(BinBookOpenResult {
+            ok: true,
+            error: None,
+            book: Some(Handle::new(HandleKind::BinBook, 7)),
+        })
+    }
+
+    fn binbook_info<'a>(&'a mut self, book: Handle) -> Result<BinBookInfoResult<'a>, VmError> {
+        self.events
+            .push(format!("binbook.info {:?}:{}", book.kind, book.id));
+        Ok(BinBookInfoResult {
+            ok: true,
+            error: None,
+            title: Some("Sample Book"),
+            page_count: 3,
+        })
+    }
+
+    fn binbook_read_page<'a>(
+        &'a mut self,
+        book: Handle,
+        page_index: i32,
+    ) -> Result<BinBookReadPageResult<'a>, VmError> {
+        self.events.push(format!(
+            "binbook.readPage {:?}:{} {page_index}",
+            book.kind, book.id
+        ));
+        Ok(BinBookReadPageResult {
+            ok: true,
+            error: None,
+            drawable: Some(Handle::new(HandleKind::Drawable, 11)),
+        })
+    }
+
+    fn draw_resource(
+        &mut self,
+        _strings: &StringResolver<'_>,
+        drawable: Value,
+        options: DisplayResourceOptions,
+    ) {
+        self.events.push(format!(
+            "draw.resource {drawable:?} {} {} {} {}",
+            options.x, options.y, options.w, options.h
+        ));
+    }
+
     fn app_armed_stack<'a>(&'a mut self) -> Result<AppArmedStack<'a>, VmError> {
         self.events.push("armed.stack".to_string());
         Ok(AppArmedStack {
@@ -598,6 +649,7 @@ impl TraceSink for RegistryTrace {
                 Value::Null => line.push_str("null"),
                 Value::Record(_) => line.push_str("<record>"),
                 Value::List(_) => line.push_str("<list>"),
+                Value::Handle(_) => line.push_str("<handle>"),
             }
         }
         self.events.push(format!("debug {line}"));
@@ -660,6 +712,7 @@ impl TraceSink for WifiTrace {
                 Value::Null => line.push_str("null"),
                 Value::Record(_) => line.push_str("<record>"),
                 Value::List(_) => line.push_str("<list>"),
+                Value::Handle(_) => line.push_str("<handle>"),
             }
         }
         self.events.push(format!("debug {line}"));
@@ -872,6 +925,7 @@ impl TraceSink for BudgetTrace {
                 Value::Null => line.push_str("null"),
                 Value::Record(_) => line.push_str("<record>"),
                 Value::List(_) => line.push_str("<list>"),
+                Value::Handle(_) => line.push_str("<handle>"),
             }
         }
         self.events.push(format!("debug {line}"));
@@ -2007,6 +2061,7 @@ impl TraceSink for CountingReader<'_> {
                 Value::Null => line.push_str("null"),
                 Value::Record(_) => line.push_str("<record>"),
                 Value::List(_) => line.push_str("<list>"),
+                Value::Handle(_) => line.push_str("<handle>"),
             }
         }
         self.events.push(format!("debug {line}"));
@@ -2108,6 +2163,50 @@ screen("main") {}
             "service.ble.start sqbc-install",
             "done",
             "service.ble.stop",
+        ]
+    );
+}
+
+#[test]
+fn runs_binbook_handle_api_and_draws_drawable_from_real_bytecode() {
+    let source = r#"app "binbook-smoke"
+state { pageIndex: int = 0 }
+event.on("app.start") {
+  screen.open("main")
+}
+screen("main", { render: "stream" }) {
+  let opened = binbook.open("books/sample.binbook")
+  if (opened.ok) {
+    let info = binbook.info(opened.book)
+    let page = binbook.readPage(opened.book, state.pageIndex)
+    if (page.ok) {
+      service.display.draw(page.drawable)
+      debug.print("pages", info.pageCount)
+    }
+  }
+}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = RuntimeTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "binbook.open books/sample.binbook",
+            "binbook.info BinBook:7",
+            "binbook.readPage BinBook:7 0",
+            "draw.resource Handle(Handle { kind: Drawable, id: 11 }) 0 0 0 0",
+            "debug pages 3",
         ]
     );
 }

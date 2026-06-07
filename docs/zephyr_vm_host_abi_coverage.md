@@ -92,9 +92,9 @@ callback wiring, and this generated documentation section against the
 manifest.
 
 - Exports: 58
-- Callback fields: 53
-- Generated result-default records: 9
-- Public ABI types: 99
+- Callback fields: 56
+- Generated result-default records: 12
+- Public ABI types: 107
 - Public ABI constants: 12
 
 ### Export Families

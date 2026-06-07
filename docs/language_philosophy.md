@@ -302,10 +302,13 @@ The parser sees namespaced calls. The compiler validates the calls against known
 `binbook.*` is a standard domain capability.
 
 ```squid
-let book = binbook.open(state.file)
-let page = binbook.page(book, state.pageIndex)
-let image = binbook.pageImage(page)
-service.display.draw(image, { x: 0, y: 0 })
+let opened = binbook.open(state.file)
+if (opened.ok) {
+  let page = binbook.readPage(opened.book, state.pageIndex)
+  if (page.ok) {
+    service.display.draw(page.drawable)
+  }
+}
 ```
 
 The BinBook capability owns document parsing, validation, page lookup, decoding, conversion, memory management, and safe handles. Final drawing still composes through `service.display.draw`.
@@ -353,9 +356,8 @@ Prefer capability APIs that return composable SquidScript values:
 Good:
 
 ```squid
-let page = binbook.page(book, state.pageIndex)
-let image = binbook.pageImage(page)
-service.display.draw(image, { x: 0, y: 0 })
+let page = binbook.readPage(book, state.pageIndex)
+service.display.draw(page.drawable)
 ```
 
 Riskier:
@@ -526,7 +528,7 @@ Examples:
 |---|---|---|
 | `if` | Core language | Changes control flow and bytecode execution |
 | `service.display.draw(drawable, options)` | Standard platform capability | Exposes display composition through firmware |
-| `binbook.pageImage(page)` | Standard domain capability | Converts document content into a composable drawable |
+| `binbook.readPage(book, pageIndex)` | Standard domain capability | Converts document content into a composable drawable handle |
 | BinBook-specific syntax | Usually reject | Special syntax is not needed when capability calls compose |
 | `binbook.showPage(file, index)` | Require review | Convenient, but may bypass composition and combine too many responsibilities |
 | User package imports | Defer/reject for the current draft | Adds dependency, validation, and runtime model complexity |
@@ -553,7 +555,7 @@ BinBook is the model case. App authors should not parse BinBook bytes, validate 
 
 The BinBook capability contract makes this extensibility concrete. It gives the compiler an interface to check without making the compiler a BinBook implementation. It gives the VM stable builtin IDs and validation rules without putting JSON metadata into `.sqbc`. It gives firmware a clear responsibility boundary: implement the native document capability according to the BinBook file-format spec and the SquidScript capability contract.
 
-This distinction matters for future design. Adding `binbook.pageImage(page)` expands the standard platform. Adding BinBook-specific syntax expands the language. The first can be declared, profiled, validated, and implemented as a firmware module. The second changes how the language is parsed and taught. SquidScript should choose the first path unless the second is clearly necessary.
+This distinction matters for future design. Adding `binbook.readPage(book, pageIndex)` expands the standard platform. Adding BinBook-specific syntax expands the language. The first can be declared, profiled, validated, and implemented as a firmware module. The second changes how the language is parsed and taught. SquidScript should choose the first path unless the second is clearly necessary.
 
 The same principle applies beyond BinBook. New features should be reviewed by what they cost the whole system, not just by whether they make one example shorter. A good feature is bounded, diagnosable, fixture-testable, target-aware, and composable. It should fail predictably. It should not require the firmware to guess. It should not hide unbounded work behind friendly syntax.
 

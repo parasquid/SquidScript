@@ -11,8 +11,4 @@ screen("main") {
     x: 20
     y: 24
   })
-  service.display.draw("drawable/page", {
-    x: 0
-    y: 0
-  })
 }

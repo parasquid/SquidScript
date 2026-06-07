@@ -4,7 +4,7 @@ use crate::{
     error::VmError,
     limits::{MAX_CODE_CHUNK_BYTES, MAX_SAVED_STATE_BYTES},
     strings::StringResolver,
-    value::Value,
+    value::{Handle, Value},
 };
 
 pub const MAX_STORAGE_TRANSFER_BYTES: usize = if MAX_CODE_CHUNK_BYTES > MAX_SAVED_STATE_BYTES {
@@ -271,6 +271,19 @@ pub trait TraceSink {
     ) -> Result<FileReadLinesResult<'a>, VmError> {
         Ok(FileReadLinesResult::unsupported())
     }
+    fn binbook_open<'a>(&'a mut self, _path: &str) -> Result<BinBookOpenResult<'a>, VmError> {
+        Ok(BinBookOpenResult::unsupported())
+    }
+    fn binbook_info<'a>(&'a mut self, _book: Handle) -> Result<BinBookInfoResult<'a>, VmError> {
+        Ok(BinBookInfoResult::unsupported())
+    }
+    fn binbook_read_page<'a>(
+        &'a mut self,
+        _book: Handle,
+        _page_index: i32,
+    ) -> Result<BinBookReadPageResult<'a>, VmError> {
+        Ok(BinBookReadPageResult::unsupported())
+    }
     fn state_load(&mut self, _out: &mut [u8]) -> Result<Option<usize>, VmError> {
         Ok(None)
     }
@@ -346,6 +359,59 @@ impl FileReadLinesResult<'_> {
             ok: false,
             error: Some("unsupported"),
             lines: &[],
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BinBookOpenResult<'a> {
+    pub ok: bool,
+    pub error: Option<&'a str>,
+    pub book: Option<Handle>,
+}
+
+impl BinBookOpenResult<'_> {
+    pub const fn unsupported() -> Self {
+        Self {
+            ok: false,
+            error: Some("unsupported"),
+            book: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BinBookInfoResult<'a> {
+    pub ok: bool,
+    pub error: Option<&'a str>,
+    pub title: Option<&'a str>,
+    pub page_count: i32,
+}
+
+impl BinBookInfoResult<'_> {
+    pub const fn unsupported() -> Self {
+        Self {
+            ok: false,
+            error: Some("unsupported"),
+            title: None,
+            page_count: 0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BinBookReadPageResult<'a> {
+    pub ok: bool,
+    pub error: Option<&'a str>,
+    pub drawable: Option<Handle>,
+}
+
+impl BinBookReadPageResult<'_> {
+    pub const fn unsupported() -> Self {
+        Self {
+            ok: false,
+            error: Some("unsupported"),
+            drawable: None,
         }
     }
 }

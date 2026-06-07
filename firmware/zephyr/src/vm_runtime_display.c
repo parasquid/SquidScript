@@ -150,20 +150,30 @@ void runtime_display_image(void *user_data, const uint8_t *path, size_t path_len
 	}
 }
 
-void runtime_display_draw(void *user_data, const uint8_t *drawable, size_t drawable_len,
-				 const SqvmDisplayResourceOptions *options)
+void runtime_display_draw(void *user_data, SqvmHandle drawable,
+			  const SqvmDisplayResourceOptions *options)
 {
+	struct sq_vm_runtime *runtime = user_data;
 	char line[SQ_VM_RUNTIME_DRAWLOG_LEN];
 
 	if (options == NULL) {
 		return;
 	}
-	int written = snprintf(line, sizeof(line), "draw=resource drawable=\"%.*s\" x=%d y=%d",
-			       (int)drawable_len,
-			       drawable == NULL ? (const uint8_t *)"" : drawable, options->x,
-			       options->y);
+	if (runtime == NULL || drawable.kind != SQVM_HANDLE_DRAWABLE || drawable.id != 1 ||
+	    !runtime->drawable.active) {
+		return;
+	}
+	int written = snprintf(line, sizeof(line), "draw=binbook id=%u x=%d y=%d",
+			       (unsigned int)drawable.id, options->x, options->y);
 	if (written > 0) {
-		(void)sq_vm_runtime_record_drawlog(user_data, line);
+		(void)sq_vm_runtime_record_drawlog(runtime, line);
+	}
+	struct sq_vm_runtime_display_op *op = runtime_display_append_op(runtime);
+	if (op != NULL) {
+		op->kind = SQ_VM_RUNTIME_DISPLAY_OP_BINBOOK_DRAWABLE;
+		op->x = options->x;
+		op->y = options->y;
+		op->binbook_page = runtime->drawable.page;
 	}
 }
 

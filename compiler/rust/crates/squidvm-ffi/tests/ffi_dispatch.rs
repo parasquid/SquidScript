@@ -11,9 +11,10 @@ use squidvm_ffi::{
     sqvm_dispatch_start_resumable_with_payload, sqvm_trigger_ble_profile_count,
     sqvm_trigger_ble_profile_read, sqvm_trigger_timer_count, sqvm_trigger_timer_read,
     SqvmAppRegistryEntry, SqvmAppStackEntry, SqvmBleProfileTrigger, SqvmCallbacks,
-    SqvmDeviceBinding, SqvmDeviceConfigResult, SqvmDeviceConfigValue, SqvmDeviceConfigValueKind,
-    SqvmDispatchOutcome, SqvmDispatchResult, SqvmDisplayInfo, SqvmEventPayloadField,
-    SqvmFilePickFileResult, SqvmFileReadLinesResult, SqvmFileReadTextResult, SqvmStatus,
+    SqvmBinBookInfoResult, SqvmBinBookOpenResult, SqvmBinBookReadPageResult, SqvmDeviceBinding,
+    SqvmDeviceConfigResult, SqvmDeviceConfigValue, SqvmDeviceConfigValueKind, SqvmDispatchOutcome,
+    SqvmDispatchResult, SqvmDisplayInfo, SqvmEventPayloadField, SqvmFilePickFileResult,
+    SqvmFileReadLinesResult, SqvmFileReadTextResult, SqvmHandle, SqvmHandleKind, SqvmStatus,
     SqvmStorageCompletion, SqvmStorageRequestKind, SqvmTriggerTimer,
 };
 
@@ -44,6 +45,7 @@ struct Host {
     file_pick_files: Vec<String>,
     file_read_texts: Vec<String>,
     file_read_lines: Vec<(String, i32)>,
+    binbook_actions: Vec<String>,
     system_memory_count: usize,
     system_storage_names: Vec<String>,
     system_start_reason_count: usize,
@@ -167,16 +169,14 @@ unsafe extern "C" fn display_image(
 
 unsafe extern "C" fn display_draw(
     user_data: *mut c_void,
-    drawable: *const u8,
-    drawable_len: usize,
+    drawable: SqvmHandle,
     options: *const squidvm_ffi::SqvmDisplayResourceOptions,
 ) {
     let host = &mut *(user_data as *mut Host);
-    let drawable = std::str::from_utf8(std::slice::from_raw_parts(drawable, drawable_len)).unwrap();
     let options = *options;
     host.drawlog.push(format!(
-        "draw=resource drawable=\"{drawable}\" x={} y={}",
-        options.x, options.y
+        "draw=resource kind={:?} id={} x={} y={} w={} h={}",
+        drawable.kind, drawable.id, options.x, options.y, options.w, options.h
     ));
 }
 
@@ -1286,6 +1286,78 @@ unsafe extern "C" fn app_armed_stack(
     0
 }
 
+unsafe extern "C" fn binbook_open(
+    user_data: *mut c_void,
+    path: *const u8,
+    path_len: usize,
+    out: *mut SqvmBinBookOpenResult,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let path = std::str::from_utf8(std::slice::from_raw_parts(path, path_len)).unwrap();
+    host.binbook_actions.push(format!("open {path}"));
+    if out.is_null() {
+        return -1;
+    }
+    *out = SqvmBinBookOpenResult {
+        ok: true,
+        error: ptr::null(),
+        error_len: 0,
+        book: SqvmHandle {
+            kind: SqvmHandleKind::BinBook,
+            id: 7,
+        },
+    };
+    0
+}
+
+unsafe extern "C" fn binbook_info(
+    user_data: *mut c_void,
+    book: SqvmHandle,
+    out: *mut SqvmBinBookInfoResult,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.binbook_actions
+        .push(format!("info {:?}:{}", book.kind, book.id));
+    if out.is_null() {
+        return -1;
+    }
+    *out = SqvmBinBookInfoResult {
+        ok: true,
+        error: ptr::null(),
+        error_len: 0,
+        title: b"Sample Book".as_ptr(),
+        title_len: b"Sample Book".len(),
+        page_count: 3,
+    };
+    0
+}
+
+unsafe extern "C" fn binbook_read_page(
+    user_data: *mut c_void,
+    book: SqvmHandle,
+    page_index: i32,
+    out: *mut SqvmBinBookReadPageResult,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.binbook_actions.push(format!(
+        "readPage {:?}:{} {page_index}",
+        book.kind, book.id
+    ));
+    if out.is_null() {
+        return -1;
+    }
+    *out = SqvmBinBookReadPageResult {
+        ok: true,
+        error: ptr::null(),
+        error_len: 0,
+        drawable: SqvmHandle {
+            kind: SqvmHandleKind::Drawable,
+            id: 11,
+        },
+    };
+    0
+}
+
 fn callback_user_data(host: &mut Host) -> *mut c_void {
     host as *mut Host as *mut c_void
 }
@@ -1341,6 +1413,9 @@ fn callbacks(_host: &mut Host) -> SqvmCallbacks {
         file_pick_file: Some(file_pick_file),
         file_read_text: Some(file_read_text),
         file_read_lines: Some(file_read_lines),
+        binbook_open: Some(binbook_open),
+        binbook_info: Some(binbook_info),
+        binbook_read_page: Some(binbook_read_page),
         system_memory_text: Some(system_memory_text),
         system_storage_text: Some(system_storage_text),
         system_start_reason_text: Some(system_start_reason_text),
@@ -1554,7 +1629,28 @@ screen("main") {
   service.display.line(5, 6, 7, 8, { color: "gray15" })
   service.display.select("status")
   service.display.image("data/icon.bmp", { x: 20, y: 24 })
-  service.display.draw("drawable/page", { x: 0, y: 0 })
+}
+"#,
+    )
+}
+
+fn compile_binbook_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-binbook"
+state { pageIndex: int = 0 }
+event.on("app.start") {
+  screen.open("main")
+}
+screen("main") {
+  let opened = binbook.open("books/sample.binbook")
+  if (opened.ok) {
+    let info = binbook.info(opened.book)
+    let page = binbook.readPage(opened.book, state.pageIndex)
+    if (page.ok) {
+      service.display.draw(page.drawable)
+      debug.print(info.title, info.pageCount)
+    }
+  }
 }
 "#,
     )
@@ -2048,9 +2144,54 @@ fn dispatches_display_service_callbacks() {
             "draw=rect x=1 y=2 w=3 h=4".to_string(),
             "draw=line x1=5 y1=6 x2=7 y2=8".to_string(),
             "draw=select name=status".to_string(),
-            "draw=image path=\"data/icon.bmp\" x=20 y=24".to_string(),
-            "draw=resource drawable=\"drawable/page\" x=0 y=0".to_string()
+            "draw=image path=\"data/icon.bmp\" x=20 y=24".to_string()
         ]
+    );
+}
+
+#[test]
+fn dispatches_binbook_callbacks_and_draws_typed_handle() {
+    let mut host = Host {
+        sqbc: compile_binbook_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(
+        host.binbook_actions,
+        vec![
+            "open books/sample.binbook".to_string(),
+            "info BinBook:7".to_string(),
+            "readPage BinBook:7 0".to_string()
+        ]
+    );
+    assert_eq!(host.output, vec!["Sample Book 3"]);
+    assert_eq!(
+        host.drawlog,
+        vec!["draw=resource kind=Drawable id=11 x=0 y=0 w=0 h=0".to_string()]
     );
 }
 
@@ -2763,8 +2904,11 @@ fn callback_errors_surface_as_vm_error_status() {
 #[test]
 fn generated_callback_policy_cases_cover_manifest_inventory() {
     let cases = generated_ffi_dispatch_cases::callback_policy_cases();
-    assert_eq!(cases.len(), 53);
+    assert_eq!(cases.len(), 56);
     assert!(cases.contains(&("display_info", "unsupported_result")));
+    assert!(cases.contains(&("binbook_open", "unsupported_result")));
+    assert!(cases.contains(&("binbook_info", "unsupported_result")));
+    assert!(cases.contains(&("binbook_read_page", "unsupported_result")));
     assert!(cases.contains(&("wifi_operation", "idle_result")));
     assert!(cases.contains(&("wifi_scan_network", "unsupported_result")));
     assert!(cases.contains(&("system_start_reason_text", "required_vm_error")));

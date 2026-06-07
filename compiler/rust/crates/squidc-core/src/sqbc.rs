@@ -98,6 +98,9 @@ const BUILTIN_DEVICE_CONFIG_LOAD: u8 = 0x70;
 const BUILTIN_DEVICE_CONFIG_SET: u8 = 0x71;
 const BUILTIN_DEVICE_CONFIG_REBIND: u8 = 0x72;
 const BUILTIN_DEVICE_CONFIG_SAVE: u8 = 0x73;
+const BUILTIN_BINBOOK_OPEN: u8 = 0x80;
+const BUILTIN_BINBOOK_INFO: u8 = 0x81;
+const BUILTIN_BINBOOK_READ_PAGE: u8 = 0x82;
 const BUILTIN_FILE_PICK_FILE: u8 = 0x90;
 const BUILTIN_FILE_READ_TEXT: u8 = 0x91;
 const BUILTIN_FILE_READ_LINES: u8 = 0x92;
@@ -1322,6 +1325,9 @@ fn builtin_for_call(name: &str) -> Option<u8> {
         "device.config.set" => Some(BUILTIN_DEVICE_CONFIG_SET),
         "device.config.rebind" => Some(BUILTIN_DEVICE_CONFIG_REBIND),
         "device.config.save" => Some(BUILTIN_DEVICE_CONFIG_SAVE),
+        "binbook.open" => Some(BUILTIN_BINBOOK_OPEN),
+        "binbook.info" => Some(BUILTIN_BINBOOK_INFO),
+        "binbook.readPage" => Some(BUILTIN_BINBOOK_READ_PAGE),
         "file.pickFile" => Some(BUILTIN_FILE_PICK_FILE),
         "file.readText" => Some(BUILTIN_FILE_READ_TEXT),
         "file.readLines" => Some(BUILTIN_FILE_READ_LINES),
@@ -1349,6 +1355,9 @@ fn validate_builtin_arg_count(name: &str, count: usize) -> Result<(), SqbcError>
         "app.registry.get" | "app.armedStack.get" => count == 2,
         "device.config.load" | "device.config.rebind" | "device.config.save" => count == 1,
         "device.config.set" => count == 2,
+        "binbook.open" => count == 1,
+        "binbook.info" => count == 1,
+        "binbook.readPage" => count == 2,
         "file.pickFile" => count == 1,
         "file.readText" => count == 1,
         "file.readLines" => count == 2,

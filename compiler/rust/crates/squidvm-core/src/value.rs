@@ -8,6 +8,24 @@ pub enum StringRef {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HandleKind {
+    BinBook,
+    Drawable,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Handle {
+    pub kind: HandleKind,
+    pub id: u16,
+}
+
+impl Handle {
+    pub const fn new(kind: HandleKind, id: u16) -> Self {
+        Self { kind, id }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Value {
     Null,
     Bool(bool),
@@ -15,6 +33,7 @@ pub enum Value {
     String(StringRef),
     Record(u8),
     List(u8),
+    Handle(Handle),
 }
 
 impl Value {
@@ -23,7 +42,7 @@ impl Value {
             Value::Null => false,
             Value::Bool(value) => value,
             Value::I32(value) => value != 0,
-            Value::String(_) | Value::Record(_) | Value::List(_) => true,
+            Value::String(_) | Value::Record(_) | Value::List(_) | Value::Handle(_) => true,
         }
     }
 
