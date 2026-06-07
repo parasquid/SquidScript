@@ -1,5 +1,7 @@
 app "noop"
 
-event.on("app.start") {}
+event.on("app.start") {
+}
 
-screen("main") {}
+screen("main") {
+}

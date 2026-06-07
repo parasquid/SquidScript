@@ -10,7 +10,11 @@ event.on("app.start") {
   state.starts = state.starts + 1
   debug.print("reader start", state.starts)
   let process = app.processStack()
-  for appId in process max 2 {
+  for
+  appId
+  in
+  process
+  max 2 {
     debug.print("reader process", appId)
   }
   service.timer.every("timer.clock", 500)
@@ -22,7 +26,11 @@ event.on("timer.clock") {
     debug.print("reader clock", state.clocks)
     let armedThisTick = 0
     let armed = app.armedStack()
-    for armedApp in armed max 2 {
+    for
+    armedApp
+    in
+    armed
+    max 2 {
       armedThisTick = armedThisTick + 1
       debug.print("reader armed", armedApp.appId, armedApp.event)
     }

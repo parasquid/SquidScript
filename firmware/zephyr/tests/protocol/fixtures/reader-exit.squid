@@ -8,4 +8,5 @@ event.on("key.SELECT") {
   app.exit()
 }
 
-screen("main") {}
+screen("main") {
+}

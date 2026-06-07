@@ -1,7 +1,9 @@
 app "gpio9-raw-probe"
 
 device {
-  input { use "gpio-button:GPIO9:key.SELECT:activeLow" }
+  input {
+    use "gpio-button:GPIO9:key.SELECT:activeLow"
+  }
 }
 
 event.on("app.start") {

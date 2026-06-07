@@ -1,7 +1,9 @@
 app "input-button-gpio5-summary"
 
 device {
-  input { use "gpio-button:GPIO5:key.SELECT:activeHigh" }
+  input {
+    use "gpio-button:GPIO5:key.SELECT:activeHigh"
+  }
 }
 
 state {

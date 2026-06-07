@@ -15,11 +15,9 @@ event.on("app.start") {
   state.ticks = 0
   state.led = false
   service.indicator.breathe()
-
   let ap = service.wifi.startAP("SquidScript")
   let status = service.wifi.status()
   let ip = service.wifi.getAPIP()
-
   debug.print("wifi start", ap.ok, ap.error)
   debug.print("wifi status", status.active, status.mode, status.ssid, status.ipAddress, status.clients, status.error)
   debug.print("wifi state", status.state, status.backend, status.driverStarted, status.configured, status.driverMode, status.channel, status.lastBackendCode)
@@ -31,10 +29,8 @@ event.on("app.start") {
 
 event.on("timer.debug") {
   let status = service.wifi.status()
-
   state.previousClients = state.clients
   state.clients = status.clients
-
   if (state.clients <= 0) {
     if (state.previousClients > 0) {
       debug.print("wifi all clients disconnected")
@@ -44,14 +40,12 @@ event.on("timer.debug") {
     state.led = false
     service.indicator.breathe()
   }
-
   if (state.clients > 0) {
     if (state.previousClients == 0) {
       state.mode = 1
       state.ticks = 0
       debug.print("wifi connecting", state.clients)
     }
-
     if (state.mode == 1) {
       service.indicator.toggle()
       state.led = service.indicator.read()
@@ -64,7 +58,6 @@ event.on("timer.debug") {
         debug.print("wifi connected", state.clients)
       }
     }
-
     if (state.mode == 2) {
       state.ticks = state.ticks + 1
       if (state.ticks == 8) {
@@ -77,11 +70,9 @@ event.on("timer.debug") {
         state.ticks = 0
       }
     }
-
-  if (state.clients != state.previousClients) {
+    if (state.clients != state.previousClients) {
       debug.print("wifi clients", state.clients)
     }
-
     if (status.probeEvents > 0) {
       debug.print("wifi probe events", status.probeEvents)
     }
@@ -91,7 +82,6 @@ event.on("timer.debug") {
 event.on("key.SELECT") {
   let stop = service.wifi.stopAP()
   let status = service.wifi.status()
-
   debug.print("wifi stop", stop.ok, stop.error)
   debug.print("wifi status", status.active, status.mode, status.ssid, status.ipAddress, status.clients, status.error)
   debug.print("wifi state", status.state, status.backend, status.driverStarted, status.configured, status.driverMode, status.channel, status.lastBackendCode)

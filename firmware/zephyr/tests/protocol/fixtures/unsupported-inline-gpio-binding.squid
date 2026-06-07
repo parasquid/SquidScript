@@ -1,7 +1,9 @@
 app "unsupported-inline-gpio-binding" target "esp32c3-super-mini"
 
 device {
-  indicator { use "gpio:GPIO18" }
+  indicator {
+    use "gpio:GPIO18"
+  }
 }
 
 event.on("app.start") {
@@ -9,4 +11,5 @@ event.on("app.start") {
   debug.print("unsupported inline gpio binding should not start")
 }
 
-screen("main") {}
+screen("main") {
+}

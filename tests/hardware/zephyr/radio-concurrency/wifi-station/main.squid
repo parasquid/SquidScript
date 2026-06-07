@@ -1,6 +1,7 @@
 app "radio-wifi-station"
 
-state {}
+state {
+}
 
 event.on("app.start") {
   let connect = service.wifi.connect("dev")
@@ -10,10 +11,12 @@ event.on("app.start") {
 
 event.on("timer.radio.station") {
   let operation = service.wifi.operation()
-  if operation.done {
+  if
+  operation.done {
     let status = service.wifi.status()
     debug.print("radio wifi station", status.profile, status.connected, status.state, status.error)
-  } else {
+  }
+  else {
     service.timer.after("timer.radio.station", 250)
   }
 }
@@ -26,10 +29,12 @@ event.on("key.SELECT") {
 
 event.on("timer.radio.disc") {
   let operation = service.wifi.operation()
-  if operation.done {
+  if
+  operation.done {
     let status = service.wifi.status()
     debug.print("radio wifi disconnected", status.profile, status.connected, status.state, status.error)
-  } else {
+  }
+  else {
     service.timer.after("timer.radio.disc", 250)
   }
 }

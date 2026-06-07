@@ -1,6 +1,7 @@
 app "wifi-status-summary"
 
-state {}
+state {
+}
 
 event.on("app.start") {
   let status = service.wifi.status()

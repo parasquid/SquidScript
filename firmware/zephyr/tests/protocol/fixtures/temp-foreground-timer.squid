@@ -9,4 +9,5 @@ event.on("timer.temp") {
   debug.print("temp timer")
 }
 
-screen("main") {}
+screen("main") {
+}

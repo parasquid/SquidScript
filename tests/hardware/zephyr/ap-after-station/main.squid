@@ -1,6 +1,7 @@
 app "ap-after-station"
 
-state {}
+state {
+}
 
 event.on("app.start") {
   let ap1 = service.wifi.startAP("SquidScript-AP-1")
@@ -20,20 +21,23 @@ event.on("t1") {
 
 event.on("t2") {
   let operation = service.wifi.operation()
-  if operation.done {
+  if
+  operation.done {
     let status = service.wifi.status()
     debug.print("station1", status.profile, status.connected, status.state, status.error)
     let disconnect = service.wifi.disconnect()
     debug.print("disconnect1", disconnect.ok, disconnect.error)
     service.timer.after("t3", 500)
-  } else {
+  }
+  else {
     service.timer.after("t2", 500)
   }
 }
 
 event.on("t3") {
   let operation = service.wifi.operation()
-  if operation.done {
+  if
+  operation.done {
     let status = service.wifi.status()
     debug.print("station1after", status.profile, status.connected, status.state, status.error)
     let ap2 = service.wifi.startAP("SquidScript-AP-2")
@@ -43,7 +47,8 @@ event.on("t3") {
     let stop2 = service.wifi.stopAP()
     debug.print("ap2 stop", stop2.ok, stop2.error)
     service.timer.after("t4", 100)
-  } else {
+  }
+  else {
     service.timer.after("t3", 500)
   }
 }
@@ -56,27 +61,31 @@ event.on("t4") {
 
 event.on("t5") {
   let operation = service.wifi.operation()
-  if operation.done {
+  if
+  operation.done {
     let status = service.wifi.status()
     debug.print("station2", status.profile, status.connected, status.state, status.error)
     let disconnect = service.wifi.disconnect()
     debug.print("disconnect2", disconnect.ok, disconnect.error)
     service.timer.after("t6", 500)
-  } else {
+  }
+  else {
     service.timer.after("t5", 500)
   }
 }
 
 event.on("t6") {
   let operation = service.wifi.operation()
-  if operation.done {
+  if
+  operation.done {
     let status = service.wifi.status()
     debug.print("station2after", status.profile, status.connected, status.state, status.error)
     let ap3 = service.wifi.startAP("SquidScript-AP-3")
     debug.print("ap3 start", ap3.ok, ap3.error)
     let ip3 = service.wifi.getAPIP()
     debug.print("ap3 ip", ip3.error)
-  } else {
+  }
+  else {
     service.timer.after("t6", 500)
   }
 }

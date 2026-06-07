@@ -12,7 +12,11 @@ event.on("app.start") {
 event.on("timer.clock") {
   state.ticks = state.ticks + 1
   let armed = app.armedStack()
-  for armedApp in armed max 2 {
+  for
+  armedApp
+  in
+  armed
+  max 2 {
     debug.print("armed", state.ticks, armedApp.appId, armedApp.event)
   }
   let selected = app.armedStack.get(armed, 0)

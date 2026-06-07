@@ -1,6 +1,7 @@
 app "wifi-station-summary"
 
-state {}
+state {
+}
 
 event.on("app.start") {
   let connect = service.wifi.connect("dev")
@@ -10,10 +11,12 @@ event.on("app.start") {
 
 event.on("timer.wifi.station") {
   let operation = service.wifi.operation()
-  if operation.done {
+  if
+  operation.done {
     let status = service.wifi.status()
     debug.print("wifi station", status.profile, status.connected, status.state, status.error)
-  } else {
+  }
+  else {
     service.timer.after("timer.wifi.station", 250)
   }
 }

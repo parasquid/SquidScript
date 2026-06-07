@@ -1,7 +1,9 @@
 app "device-binding-app" target "esp32c3-super-mini"
 
 device {
-  indicator { use "device/indicator.sqdevice" }
+  indicator {
+    use "device/indicator.sqdevice"
+  }
 }
 
 event.on("app.start") {
@@ -9,4 +11,5 @@ event.on("app.start") {
   debug.print("binding ready")
 }
 
-screen("main") {}
+screen("main") {
+}

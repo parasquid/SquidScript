@@ -1,6 +1,7 @@
 app "radio-wifi-ap"
 
-state {}
+state {
+}
 
 event.on("app.start") {
   let ap = service.wifi.startAP("SquidScript")

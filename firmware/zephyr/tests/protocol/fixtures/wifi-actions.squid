@@ -16,4 +16,5 @@ event.on("app.start") {
   debug.print(operation.state, result.ok, result.error, network.ok, network.error, cancel.state)
 }
 
-screen("main") {}
+screen("main") {
+}

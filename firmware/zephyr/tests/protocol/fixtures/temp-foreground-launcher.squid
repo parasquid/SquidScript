@@ -12,4 +12,5 @@ event.on("key.SELECT") {
   app.launch("reader")
 }
 
-screen("main") {}
+screen("main") {
+}

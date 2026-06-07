@@ -14,4 +14,5 @@ event.on("key.SELECT") {
   debug.print("memory select", state.count)
 }
 
-screen("main") {}
+screen("main") {
+}

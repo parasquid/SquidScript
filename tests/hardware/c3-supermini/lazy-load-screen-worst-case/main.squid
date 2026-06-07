@@ -49,320 +49,1440 @@ event.on("timer.transition") {
 
 screen("s0") {
   service.display.clear("gray0")
-  service.display.text("pad", { x: 4, y: 8, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 18, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 28, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 38, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 48, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 58, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 68, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 78, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 88, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 98, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 108, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 118, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 128, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 138, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 148, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 158, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 168, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 178, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 188, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 198, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 208, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 218, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 228, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 238, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 248, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 258, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 268, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 278, color: "gray15" })
+  service.display.text("pad", {
+    x: 4
+    y: 8
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 18
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 28
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 38
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 48
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 58
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 68
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 78
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 88
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 98
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 108
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 118
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 128
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 138
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 148
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 158
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 168
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 178
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 188
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 198
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 208
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 218
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 228
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 238
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 248
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 258
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 268
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 278
+    color: "gray15"
+  })
 }
 
 screen("s1") {
   service.display.clear("gray0")
-  service.display.text("pad", { x: 4, y: 8, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 18, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 28, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 38, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 48, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 58, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 68, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 78, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 88, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 98, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 108, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 118, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 128, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 138, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 148, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 158, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 168, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 178, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 188, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 198, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 208, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 218, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 228, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 238, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 248, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 258, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 268, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 278, color: "gray15" })
+  service.display.text("pad", {
+    x: 4
+    y: 8
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 18
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 28
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 38
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 48
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 58
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 68
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 78
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 88
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 98
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 108
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 118
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 128
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 138
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 148
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 158
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 168
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 178
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 188
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 198
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 208
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 218
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 228
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 238
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 248
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 258
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 268
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 278
+    color: "gray15"
+  })
 }
 
 screen("s2") {
   service.display.clear("gray0")
-  service.display.text("pad", { x: 4, y: 8, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 18, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 28, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 38, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 48, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 58, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 68, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 78, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 88, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 98, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 108, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 118, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 128, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 138, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 148, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 158, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 168, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 178, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 188, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 198, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 208, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 218, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 228, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 238, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 248, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 258, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 268, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 278, color: "gray15" })
+  service.display.text("pad", {
+    x: 4
+    y: 8
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 18
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 28
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 38
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 48
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 58
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 68
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 78
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 88
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 98
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 108
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 118
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 128
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 138
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 148
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 158
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 168
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 178
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 188
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 198
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 208
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 218
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 228
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 238
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 248
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 258
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 268
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 278
+    color: "gray15"
+  })
 }
 
 screen("s3") {
   service.display.clear("gray0")
-  service.display.text("pad", { x: 4, y: 8, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 18, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 28, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 38, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 48, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 58, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 68, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 78, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 88, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 98, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 108, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 118, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 128, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 138, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 148, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 158, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 168, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 178, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 188, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 198, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 208, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 218, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 228, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 238, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 248, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 258, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 268, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 278, color: "gray15" })
+  service.display.text("pad", {
+    x: 4
+    y: 8
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 18
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 28
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 38
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 48
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 58
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 68
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 78
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 88
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 98
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 108
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 118
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 128
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 138
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 148
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 158
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 168
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 178
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 188
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 198
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 208
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 218
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 228
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 238
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 248
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 258
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 268
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 278
+    color: "gray15"
+  })
 }
 
 screen("s4") {
   service.display.clear("gray0")
-  service.display.text("pad", { x: 4, y: 8, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 18, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 28, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 38, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 48, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 58, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 68, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 78, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 88, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 98, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 108, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 118, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 128, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 138, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 148, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 158, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 168, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 178, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 188, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 198, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 208, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 218, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 228, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 238, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 248, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 258, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 268, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 278, color: "gray15" })
+  service.display.text("pad", {
+    x: 4
+    y: 8
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 18
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 28
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 38
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 48
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 58
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 68
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 78
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 88
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 98
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 108
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 118
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 128
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 138
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 148
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 158
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 168
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 178
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 188
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 198
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 208
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 218
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 228
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 238
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 248
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 258
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 268
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 278
+    color: "gray15"
+  })
 }
 
 screen("s5") {
   service.display.clear("gray0")
-  service.display.text("pad", { x: 4, y: 8, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 18, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 28, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 38, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 48, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 58, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 68, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 78, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 88, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 98, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 108, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 118, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 128, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 138, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 148, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 158, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 168, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 178, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 188, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 198, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 208, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 218, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 228, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 238, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 248, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 258, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 268, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 278, color: "gray15" })
+  service.display.text("pad", {
+    x: 4
+    y: 8
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 18
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 28
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 38
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 48
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 58
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 68
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 78
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 88
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 98
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 108
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 118
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 128
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 138
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 148
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 158
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 168
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 178
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 188
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 198
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 208
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 218
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 228
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 238
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 248
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 258
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 268
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 278
+    color: "gray15"
+  })
 }
 
 screen("s6") {
   service.display.clear("gray0")
-  service.display.text("pad", { x: 4, y: 8, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 18, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 28, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 38, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 48, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 58, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 68, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 78, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 88, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 98, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 108, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 118, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 128, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 138, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 148, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 158, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 168, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 178, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 188, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 198, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 208, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 218, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 228, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 238, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 248, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 258, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 268, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 278, color: "gray15" })
+  service.display.text("pad", {
+    x: 4
+    y: 8
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 18
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 28
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 38
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 48
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 58
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 68
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 78
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 88
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 98
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 108
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 118
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 128
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 138
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 148
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 158
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 168
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 178
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 188
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 198
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 208
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 218
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 228
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 238
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 248
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 258
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 268
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 278
+    color: "gray15"
+  })
 }
 
 screen("s7") {
   service.display.clear("gray0")
-  service.display.text("pad", { x: 4, y: 8, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 18, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 28, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 38, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 48, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 58, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 68, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 78, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 88, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 98, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 108, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 118, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 128, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 138, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 148, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 158, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 168, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 178, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 188, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 198, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 208, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 218, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 228, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 238, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 248, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 258, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 268, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 278, color: "gray15" })
+  service.display.text("pad", {
+    x: 4
+    y: 8
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 18
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 28
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 38
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 48
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 58
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 68
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 78
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 88
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 98
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 108
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 118
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 128
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 138
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 148
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 158
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 168
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 178
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 188
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 198
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 208
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 218
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 228
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 238
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 248
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 258
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 268
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 278
+    color: "gray15"
+  })
 }
 
 screen("s8") {
   service.display.clear("gray0")
-  service.display.text("pad", { x: 4, y: 8, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 18, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 28, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 38, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 48, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 58, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 68, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 78, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 88, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 98, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 108, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 118, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 128, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 138, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 148, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 158, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 168, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 178, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 188, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 198, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 208, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 218, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 228, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 238, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 248, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 258, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 268, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 278, color: "gray15" })
+  service.display.text("pad", {
+    x: 4
+    y: 8
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 18
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 28
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 38
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 48
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 58
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 68
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 78
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 88
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 98
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 108
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 118
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 128
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 138
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 148
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 158
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 168
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 178
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 188
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 198
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 208
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 218
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 228
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 238
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 248
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 258
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 268
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 278
+    color: "gray15"
+  })
 }
 
 screen("s9") {
   service.display.clear("gray0")
-  service.display.text("pad", { x: 4, y: 8, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 18, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 28, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 38, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 48, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 58, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 68, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 78, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 88, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 98, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 108, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 118, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 128, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 138, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 148, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 158, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 168, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 178, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 188, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 198, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 208, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 218, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 228, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 238, color: "gray15" })
-  service.display.text("pad", { x: 4, y: 248, color: "gray15" })
-  service.display.text("pad", { x: 40, y: 258, color: "gray15" })
-  service.display.text("pad", { x: 76, y: 268, color: "gray15" })
-  service.display.text("pad", { x: 112, y: 278, color: "gray15" })
+  service.display.text("pad", {
+    x: 4
+    y: 8
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 18
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 28
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 38
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 48
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 58
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 68
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 78
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 88
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 98
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 108
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 118
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 128
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 138
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 148
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 158
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 168
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 178
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 188
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 198
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 208
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 218
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 228
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 238
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 4
+    y: 248
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 40
+    y: 258
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 76
+    y: 268
+    color: "gray15"
+  })
+  service.display.text("pad", {
+    x: 112
+    y: 278
+    color: "gray15"
+  })
 }

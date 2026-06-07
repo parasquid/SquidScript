@@ -5,4 +5,5 @@ event.on("app.start") {
   debug.print("blink ready")
 }
 
-screen("main") {}
+screen("main") {
+}

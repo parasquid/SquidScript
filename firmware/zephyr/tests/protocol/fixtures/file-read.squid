@@ -7,4 +7,5 @@ event.on("app.start") {
   debug.print(lines.ok, lines.error, lines.lines)
 }
 
-screen("main") {}
+screen("main") {
+}

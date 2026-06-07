@@ -13,4 +13,5 @@ event.on("timer.break") {
   debug.print("break fired", @fires)
 }
 
-screen("main") {}
+screen("main") {
+}

@@ -6,4 +6,5 @@ event.on("repl") {
   app.disarm("break-reminder")
 }
 
-screen("main") {}
+screen("main") {
+}

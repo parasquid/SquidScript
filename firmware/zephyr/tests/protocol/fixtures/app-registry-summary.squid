@@ -2,7 +2,11 @@ app "app-registry-summary"
 
 event.on("app.start") {
   let apps = app.registry()
-  for appId in apps max 4 {
+  for
+  appId
+  in
+  apps
+  max 4 {
     debug.print("registry app", appId)
   }
   let selected = app.registry.get(apps, 0)
@@ -10,4 +14,5 @@ event.on("app.start") {
   debug.print("registry selected name", selected.name)
 }
 
-screen("main") {}
+screen("main") {
+}

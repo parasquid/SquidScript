@@ -6,4 +6,5 @@ event.on("app.start") {
 event.on("timer.break") {
 }
 
-screen("main") {}
+screen("main") {
+}

@@ -5,4 +5,5 @@ event.on("app.start") {
   debug.print("system apps", system.storage("apps"))
 }
 
-screen("main") {}
+screen("main") {
+}

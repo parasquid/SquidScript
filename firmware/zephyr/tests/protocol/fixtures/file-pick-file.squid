@@ -5,4 +5,5 @@ event.on("app.start") {
   debug.print(picked.ok, picked.error, picked.path)
 }
 
-screen("main") {}
+screen("main") {
+}

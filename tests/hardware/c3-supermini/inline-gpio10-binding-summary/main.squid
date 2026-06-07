@@ -1,7 +1,9 @@
 app "inline-gpio10-binding-summary" target "esp32c3-super-mini"
 
 device {
-  indicator { use "gpio:GPIO10" }
+  indicator {
+    use "gpio:GPIO10"
+  }
 }
 
 event.on("app.start") {
@@ -9,4 +11,5 @@ event.on("app.start") {
   debug.print("inline gpio10 binding ready")
 }
 
-screen("main") {}
+screen("main") {
+}

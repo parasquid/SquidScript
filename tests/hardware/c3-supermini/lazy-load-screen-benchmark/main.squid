@@ -49,50 +49,90 @@ event.on("timer.transition") {
 
 screen("s0") {
   service.display.clear("gray0")
-  service.display.text("screen 0", { x: 4, y: 8, color: "gray15" })
+  service.display.text("screen 0", {
+    x: 4
+    y: 8
+    color: "gray15"
+  })
 }
 
 screen("s1") {
   service.display.clear("gray0")
-  service.display.text("screen 1", { x: 4, y: 8, color: "gray15" })
+  service.display.text("screen 1", {
+    x: 4
+    y: 8
+    color: "gray15"
+  })
 }
 
 screen("s2") {
   service.display.clear("gray0")
-  service.display.text("screen 2", { x: 4, y: 8, color: "gray15" })
+  service.display.text("screen 2", {
+    x: 4
+    y: 8
+    color: "gray15"
+  })
 }
 
 screen("s3") {
   service.display.clear("gray0")
-  service.display.text("screen 3", { x: 4, y: 8, color: "gray15" })
+  service.display.text("screen 3", {
+    x: 4
+    y: 8
+    color: "gray15"
+  })
 }
 
 screen("s4") {
   service.display.clear("gray0")
-  service.display.text("screen 4", { x: 4, y: 8, color: "gray15" })
+  service.display.text("screen 4", {
+    x: 4
+    y: 8
+    color: "gray15"
+  })
 }
 
 screen("s5") {
   service.display.clear("gray0")
-  service.display.text("screen 5", { x: 4, y: 8, color: "gray15" })
+  service.display.text("screen 5", {
+    x: 4
+    y: 8
+    color: "gray15"
+  })
 }
 
 screen("s6") {
   service.display.clear("gray0")
-  service.display.text("screen 6", { x: 4, y: 8, color: "gray15" })
+  service.display.text("screen 6", {
+    x: 4
+    y: 8
+    color: "gray15"
+  })
 }
 
 screen("s7") {
   service.display.clear("gray0")
-  service.display.text("screen 7", { x: 4, y: 8, color: "gray15" })
+  service.display.text("screen 7", {
+    x: 4
+    y: 8
+    color: "gray15"
+  })
 }
 
 screen("s8") {
   service.display.clear("gray0")
-  service.display.text("screen 8", { x: 4, y: 8, color: "gray15" })
+  service.display.text("screen 8", {
+    x: 4
+    y: 8
+    color: "gray15"
+  })
 }
 
 screen("s9") {
   service.display.clear("gray0")
-  service.display.text("screen 9", { x: 4, y: 8, color: "gray15" })
+  service.display.text("screen 9", {
+    x: 4
+    y: 8
+    color: "gray15"
+  })
 }

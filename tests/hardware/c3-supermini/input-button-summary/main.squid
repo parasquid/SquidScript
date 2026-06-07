@@ -1,7 +1,9 @@
 app "input-button-summary"
 
 device {
-  input { use "gpio-button:GPIO9:key.SELECT:activeLow" }
+  input {
+    use "gpio-button:GPIO9:key.SELECT:activeLow"
+  }
 }
 
 state {

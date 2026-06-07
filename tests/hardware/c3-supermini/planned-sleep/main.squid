@@ -11,7 +11,9 @@ event.on("app.start") {
 
 event.on("key.SELECT") {
   @count = @count + 1
-  service.power.sleep({ wakeAfterMs: 1500 })
+  service.power.sleep({
+    wakeAfterMs: 1500
+  })
 }
 
 event.on("power.sleep") {

@@ -16,4 +16,5 @@ event.on("key.BACK") {
   app.exit()
 }
 
-screen("main") {}
+screen("main") {
+}

@@ -5,4 +5,5 @@ event.on("repl") {
   app.launch("reader")
 }
 
-screen("main") {}
+screen("main") {
+}

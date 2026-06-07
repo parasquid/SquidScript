@@ -17,6 +17,7 @@ event.on("timer.debug") {
 }
 
 @preload
+
 event.on("key.SELECT") {
   service.indicator.toggle()
   state.led = service.indicator.read()

@@ -1,7 +1,9 @@
 app "inline-gpio-binding-app" target "esp32c3-super-mini"
 
 device {
-  indicator { use "gpio:GPIO8" }
+  indicator {
+    use "gpio:GPIO8"
+  }
 }
 
 event.on("app.start") {
@@ -9,4 +11,5 @@ event.on("app.start") {
   debug.print("inline binding ready")
 }
 
-screen("main") {}
+screen("main") {
+}

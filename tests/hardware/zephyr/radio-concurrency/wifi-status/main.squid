@@ -1,6 +1,7 @@
 app "radio-wifi-status"
 
-state {}
+state {
+}
 
 event.on("app.start") {
   let status = service.wifi.status()

@@ -2,8 +2,8 @@ app "main"
 
 event.on("app.start") {
   service.ble.start("file-transfer", {
-    id: "sqbc-install",
-    accept: [".sqbc"],
+    id: "sqbc-install"
+    accept: [".sqbc"]
     events: {
       complete: "ble.file.complete"
     }
@@ -14,9 +14,21 @@ event.on("app.start") {
 
 screen("main") {
   service.display.clear("white")
-  service.display.text("SquidScript", { x: 24, y: 32, fontHeight: 24 })
-  service.display.text("BLE installer ready", { x: 24, y: 72, fontHeight: 20 })
-  service.display.text("Push a .sqbc app", { x: 24, y: 104, fontHeight: 18 })
+  service.display.text("SquidScript", {
+    x: 24
+    y: 32
+    fontHeight: 24
+  })
+  service.display.text("BLE installer ready", {
+    x: 24
+    y: 72
+    fontHeight: 20
+  })
+  service.display.text("Push a .sqbc app", {
+    x: 24
+    y: 104
+    fontHeight: 18
+  })
 }
 
 event.on("ble.file.complete", ev) {

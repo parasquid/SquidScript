@@ -96,8 +96,22 @@ impl Formatter {
                     self.binary_operator("!=");
                     self.cursor += 1;
                 }
-                TokenKind::Less => self.binary_operator("<"),
-                TokenKind::Greater => self.binary_operator(">"),
+                TokenKind::Less => {
+                    if self.next_kind() == Some(TokenKind::Equals) {
+                        self.binary_operator("<=");
+                        self.cursor += 1;
+                    } else {
+                        self.binary_operator("<");
+                    }
+                }
+                TokenKind::Greater => {
+                    if self.next_kind() == Some(TokenKind::Equals) {
+                        self.binary_operator(">=");
+                        self.cursor += 1;
+                    } else {
+                        self.binary_operator(">");
+                    }
+                }
                 TokenKind::Plus => self.binary_operator("+"),
                 TokenKind::Minus => self.binary_operator("-"),
                 TokenKind::Ident | TokenKind::String | TokenKind::Number | TokenKind::At => {
@@ -175,6 +189,9 @@ impl Formatter {
         if self.line_start || self.out.is_empty() || self.previous_kind == Some(TokenKind::Dot) {
             return;
         }
+        if self.previous_text.as_deref() == Some("let") {
+            return;
+        }
         if self.contexts.is_empty() && is_top_level_keyword(text) {
             self.blank_line();
             return;
@@ -185,6 +202,8 @@ impl Formatter {
                 Some(
                     TokenKind::CloseParen
                         | TokenKind::CloseBrace
+                        | TokenKind::CloseBracket
+                        | TokenKind::Ident
                         | TokenKind::String
                         | TokenKind::Number
                 )
@@ -376,6 +395,81 @@ event.on("app.start") {
         let twice = format_source(&once).unwrap();
 
         assert_eq!(twice, once);
+    }
+
+    #[test]
+    fn preserves_comparison_operators_and_splits_identifier_ended_statements() {
+        let source = r#"app "wifi"
+event.on("timer.debug"){state.clients=status.clients if(state.clients<=0){state.led=false service.indicator.breathe()}if(state.ticks>=8){state.led=true service.indicator.write(state.led)}}
+"#;
+
+        let formatted = format_source(source).unwrap();
+
+        assert_eq!(
+            formatted,
+            r#"app "wifi"
+
+event.on("timer.debug") {
+  state.clients = status.clients
+  if (state.clients <= 0) {
+    state.led = false
+    service.indicator.breathe()
+  }
+  if (state.ticks >= 8) {
+    state.led = true
+    service.indicator.write(state.led)
+  }
+}
+"#
+        );
+        assert_eq!(format_source(&formatted).unwrap(), formatted);
+    }
+
+    #[test]
+    fn keeps_let_binding_name_on_same_line() {
+        let source = r#"app "demo"
+event.on("app.start"){let installed=app.install(ev.upload)app.launch(installed.id)}
+"#;
+
+        let formatted = format_source(source).unwrap();
+
+        assert_eq!(
+            formatted,
+            r#"app "demo"
+
+event.on("app.start") {
+  let installed = app.install(ev.upload)
+  app.launch(installed.id)
+}
+"#
+        );
+        assert_eq!(format_source(&formatted).unwrap(), formatted);
+    }
+
+    #[test]
+    fn keeps_object_field_after_list_on_own_line() {
+        let source = r#"app "demo"
+event.on("app.start"){service.ble.start("file-transfer",{id:"sqbc-install",accept:[".sqbc"],events:{complete:"ble.file.complete"}})}
+"#;
+
+        let formatted = format_source(source).unwrap();
+
+        assert_eq!(
+            formatted,
+            r#"app "demo"
+
+event.on("app.start") {
+  service.ble.start("file-transfer", {
+    id: "sqbc-install"
+    accept: [".sqbc"]
+    events: {
+      complete: "ble.file.complete"
+    }
+  })
+}
+"#
+        );
+        assert_eq!(format_source(&formatted).unwrap(), formatted);
     }
 
     #[test]
