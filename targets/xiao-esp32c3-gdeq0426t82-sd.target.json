@@ -15,9 +15,9 @@
       "scope": "Upstream Zephyr base board, connector mapping, USB serial console, SPI2, Wi-Fi, and Bluetooth HCI enablement."
     },
     {
-      "name": "Seeed Studio XIAO ePaper Driver Board",
-      "url": "https://wiki.seeedstudio.com/xiao_eink_expansion_board_v2/",
-      "scope": "e-paper driver board pin bindings for RST, CS, BUSY, DC, SCK, MOSI, 3V3, and GND."
+      "name": "Good Display DESPI-C02 connector board",
+      "url": "https://www.good-display.com/companyfile/1556.html",
+      "scope": "Canonical development adapter for the XIAO ESP32-C3 + GDEQ0426T82 display setup, including DESPI-C02 signal labels, panel voltage selection, and FPC connector context."
     },
     {
       "name": "Good Display GDEQ0426T82-T01C and SSD1677 reference",
@@ -115,7 +115,7 @@
       "voltage": "3v3",
       "usedBy": ["display.epd.cs"],
       "status": "used",
-      "reason": "Seeed maps XIAO D1 to GPIO3; the ePaper Driver Board uses it as e-paper chip select."
+      "reason": "Seeed maps XIAO D1 to GPIO3; the canonical DESPI-C02 wiring uses it as e-paper chip select."
     },
     "GPIO4": {
       "label": "D2",
@@ -123,7 +123,7 @@
       "voltage": "3v3",
       "usedBy": ["display.epd.busy"],
       "status": "used",
-      "reason": "Seeed maps XIAO D2 to GPIO4; the ePaper Driver Board uses it as e-paper BUSY."
+      "reason": "Seeed maps XIAO D2 to GPIO4; the canonical DESPI-C02 wiring uses it as e-paper BUSY."
     },
     "GPIO5": {
       "label": "D3",
@@ -131,7 +131,7 @@
       "voltage": "3v3",
       "usedBy": ["display.epd.dc"],
       "status": "used",
-      "reason": "Seeed maps XIAO D3 to GPIO5; the ePaper Driver Board uses it as e-paper D/C."
+      "reason": "Seeed maps XIAO D3 to GPIO5; the canonical DESPI-C02 wiring uses it as e-paper D/C."
     },
     "GPIO6": {
       "label": "D4",
@@ -139,7 +139,7 @@
       "voltage": "3v3",
       "usedBy": ["storage.sd.cs.unverified"],
       "status": "reserved-unverified",
-      "reason": "Available through the XIAO ePaper Driver Board IO breakout. Planned SD chip-select candidate only; confirm jumper wiring before enabling runtime SD."
+      "reason": "Planned SD chip-select candidate only; confirm direct jumper wiring before enabling runtime SD."
     },
     "GPIO7": {
       "label": "D5",
@@ -147,7 +147,7 @@
       "voltage": "3v3",
       "usedBy": ["storage.sd.miso.unverified"],
       "status": "reserved-unverified",
-      "reason": "Available through the XIAO ePaper Driver Board IO breakout. Planned SD MISO candidate only; confirm jumper wiring before enabling runtime SD."
+      "reason": "Planned SD MISO candidate only; confirm direct jumper wiring before enabling runtime SD."
     },
     "GPIO8": {
       "label": "D8",
@@ -171,7 +171,7 @@
       "voltage": "3v3",
       "usedBy": ["spi.shared.mosi", "display.epd.mosi", "storage.sd.mosi"],
       "status": "used",
-      "reason": "Seeed maps XIAO D10 to GPIO10; the ePaper Driver Board uses it as MOSI and the planned SD reader shares it."
+      "reason": "Seeed maps XIAO D10 to GPIO10; the canonical DESPI-C02 wiring uses it as display SDI/DIN/MOSI and the planned SD reader shares it."
     },
     "GPIO18": {
       "capabilities": ["usb_d-"],
@@ -231,7 +231,7 @@
       "type": "epaper-display",
       "controller": "SSD1677",
       "panel": "GDEQ0426T82",
-      "board": "Seeed XIAO ePaper Driver Board",
+      "board": "Good Display DESPI-C02 or equivalent XIAO-wired SSD1677 adapter",
       "bus": "spi.shared",
       "pins": {
         "cs": "GPIO3",
@@ -239,7 +239,8 @@
         "rst": "GPIO2",
         "busy": "GPIO4"
       },
-      "status": "metadata-backed-not-yet-hardware-verified",
+      "status": "firmware-backed-hardware-verified",
+      "verification": "The canonical XIAO ESP32-C3 dev setup with DESPI-C02 and GDEQ0426T82 refreshed the default SquidScript fallback screen through the Zephyr SPI SSD1677 backend; BUSY asserted during refresh and device errors were empty.",
       "missingPolicy": "boot-continue-retained-diagnostic"
     },
     "storage.sd": {
@@ -252,7 +253,7 @@
         "cs": null
       },
       "status": "planned-unverified",
-      "reason": "The SD reader is an external breakout jumper-wired to the XIAO ePaper Driver Board IO breakout. SCK and MOSI share the e-paper SPI bus; MISO and CS must be filled in only after physical wiring is confirmed."
+      "reason": "The SD reader is planned as direct external wiring to the shared SPI bus. SCK and MOSI share the e-paper SPI bus; MISO and CS must be filled in only after physical wiring is confirmed."
     },
     "indicator.default": {
       "type": "not-present",
@@ -261,7 +262,7 @@
       "physical": {
         "label": "no onboard LED"
       },
-      "reason": "The XIAO ESP32-C3 + ePaper Driver Board stack has no firmware-controllable onboard LED wired to a numbered GPIO. The visible board state is the GDEQ0426T82 e-paper display, not an LED. SquidScript visible-state checks must use the e-paper display, serial output, or e-paper drawlog evidence; LED-observation-based tests such as scripts/c3-supermini-test-blinky.sh and scripts/c3-supermini-test-blink.sh are Super-Mini-only and will not work on the XIAO."
+      "reason": "The canonical XIAO ESP32-C3 + DESPI-C02 e-paper setup has no firmware-controllable onboard LED wired to a numbered GPIO. The visible board state is the GDEQ0426T82 e-paper display, not an LED. SquidScript visible-state checks must use the e-paper display, serial output, or e-paper drawlog evidence; LED-observation-based tests such as scripts/c3-supermini-test-blinky.sh and scripts/c3-supermini-test-blink.sh are Super-Mini-only and will not work on the XIAO."
     }
   },
   "display": {
@@ -272,9 +273,9 @@
       "height": 480
     },
     "logical": {
-      "width": 800,
-      "height": 480,
-      "rotation": 0
+      "width": 480,
+      "height": 800,
+      "rotation": 270
     },
     "color": {
       "logicalGrayscaleLevels": 16,
@@ -293,7 +294,7 @@
     },
     "refresh": {
       "full": true,
-      "partial": true,
+      "partial": false,
       "fast": false
     },
     "rendering": {
@@ -305,7 +306,8 @@
       "singleBufferBytes1bpp": 48000,
       "maxFullBufferBpp": 1
     },
-    "status": "metadata-backed-backend-pending",
+    "status": "firmware-backed-clear-text",
+    "verification": "The Zephyr firmware backend renders service.display.clear and service.display.text through SPI2 with a bounded row buffer, using BUSY assertion during refresh as the unattended activity check.",
     "missingPolicy": "boot-continue-retained-diagnostic"
   },
   "storage": {
@@ -324,14 +326,14 @@
       "supportsApps": false,
       "supportsFile": false,
       "status": "planned-unverified",
-      "reason": "The physical SD reader is part of the target plan but is not mounted or exposed to SquidScript until wiring, card-missing policy, and app/content storage behavior are implemented."
+      "reason": "The physical SD reader is part of the target plan but is not mounted or exposed to SquidScript until direct wiring, card-missing policy, and app/content storage behavior are implemented."
     },
     "reason": "Installed apps and app state remain on the internal 192 KiB LittleFS app store for the first XIAO slice. SD app/content storage is tracked as follow-up work."
   },
   "input": {
     "type": "serial-first",
     "buttons": [],
-    "reason": "The XIAO ePaper Driver Board target currently uses serial commands for SquidScript input during bring-up. No physical input is declared until a concrete button/input board is selected."
+    "reason": "The canonical XIAO e-paper dev setup currently uses serial commands for SquidScript input during bring-up. No physical input is declared until a concrete button/input board is selected."
   },
   "power": {
     "type": "usb-or-battery",

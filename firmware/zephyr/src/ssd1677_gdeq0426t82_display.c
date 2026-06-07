@@ -1,0 +1,510 @@
+#include "vm_runtime_display_backend.h"
+
+#include <errno.h>
+#include <string.h>
+
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
+
+LOG_MODULE_REGISTER(squidscript_ssd1677, LOG_LEVEL_INF);
+
+#define SSD1677_NODE DT_ALIAS(epaper0)
+
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_TARGET_DISPLAY_SSD1677_EXPECTED) && \
+	DT_NODE_HAS_STATUS(SSD1677_NODE, okay)
+
+#define PANEL_WIDTH DT_PROP(SSD1677_NODE, width)
+#define PANEL_HEIGHT DT_PROP(SSD1677_NODE, height)
+#define ROW_BYTES (PANEL_WIDTH / 8U)
+#define PANEL_LAST_Y (PANEL_HEIGHT - 1U)
+#define BUSY_TIMEOUT_MS 60000
+#define EPAPER_SPI_HZ 4000000U
+
+#if CONFIG_SQ_TARGET_DISPLAY_PHYSICAL_WIDTH != PANEL_WIDTH
+#error "target display physical width must match the SSD1677 devicetree width"
+#endif
+
+#if CONFIG_SQ_TARGET_DISPLAY_PHYSICAL_HEIGHT != PANEL_HEIGHT
+#error "target display physical height must match the SSD1677 devicetree height"
+#endif
+
+#define LOGICAL_WIDTH CONFIG_SQ_TARGET_DISPLAY_LOGICAL_WIDTH
+#define LOGICAL_HEIGHT CONFIG_SQ_TARGET_DISPLAY_LOGICAL_HEIGHT
+#define LOGICAL_ROTATION CONFIG_SQ_TARGET_DISPLAY_ROTATION
+
+#define SSD1677_CMD_GDO_CTRL 0x01
+#define SSD1677_CMD_ENTRY_MODE 0x11
+#define SSD1677_CMD_SW_RESET 0x12
+#define SSD1677_CMD_TSENSOR_SELECTION 0x18
+#define SSD1677_CMD_MASTER_ACTIVATION 0x20
+#define SSD1677_CMD_UPDATE_CTRL2 0x22
+#define SSD1677_CMD_WRITE_RAM 0x24
+#define SSD1677_CMD_BOOSTER_SOFT_START 0x0c
+#define SSD1677_CMD_BORDER_WAVEFORM 0x3c
+#define SSD1677_CMD_RAM_XPOS_CTRL 0x44
+#define SSD1677_CMD_RAM_YPOS_CTRL 0x45
+#define SSD1677_CMD_RAM_XPOS_CNTR 0x4e
+#define SSD1677_CMD_RAM_YPOS_CNTR 0x4f
+
+#define SSD1677_ENTRY_X_INC_Y_INC_HORIZONTAL 0x03
+#define SSD1677_UPDATE_FULL 0xf7
+
+static const struct device *const spi_dev = DEVICE_DT_GET(DT_PHANDLE(SSD1677_NODE, spi));
+static const struct gpio_dt_spec cs_gpio = GPIO_DT_SPEC_GET(SSD1677_NODE, cs_gpios);
+static const struct gpio_dt_spec dc_gpio = GPIO_DT_SPEC_GET(SSD1677_NODE, dc_gpios);
+static const struct gpio_dt_spec reset_gpio = GPIO_DT_SPEC_GET(SSD1677_NODE, reset_gpios);
+static const struct gpio_dt_spec busy_gpio = GPIO_DT_SPEC_GET(SSD1677_NODE, busy_gpios);
+static const struct spi_config spi_cfg = {
+	.frequency = EPAPER_SPI_HZ,
+	.operation = SPI_WORD_SET(8) | SPI_TRANSFER_MSB,
+	.slave = 0,
+};
+
+static bool display_ready;
+static uint8_t row[ROW_BYTES];
+
+static int spi_write_bytes(const uint8_t *data, size_t len)
+{
+	const struct spi_buf buf = {
+		.buf = (void *)data,
+		.len = len,
+	};
+	const struct spi_buf_set tx = {
+		.buffers = &buf,
+		.count = 1,
+	};
+	int ret = gpio_pin_set_dt(&cs_gpio, 1);
+
+	if (ret != 0) {
+		return ret;
+	}
+	ret = spi_write(spi_dev, &spi_cfg, &tx);
+	int cs_ret = gpio_pin_set_dt(&cs_gpio, 0);
+
+	return ret != 0 ? ret : cs_ret;
+}
+
+static int write_command(uint8_t command)
+{
+	int ret = gpio_pin_set_dt(&dc_gpio, 0);
+
+	if (ret != 0) {
+		return ret;
+	}
+	return spi_write_bytes(&command, 1);
+}
+
+static int write_data(const uint8_t *data, size_t len)
+{
+	int ret = gpio_pin_set_dt(&dc_gpio, 1);
+
+	if (ret != 0) {
+		return ret;
+	}
+	return spi_write_bytes(data, len);
+}
+
+static int write_command_data(uint8_t command, const uint8_t *data, size_t len)
+{
+	int ret = write_command(command);
+
+	if (ret != 0 || len == 0) {
+		return ret;
+	}
+	return write_data(data, len);
+}
+
+static int wait_ready(const char *phase, bool *observed_busy)
+{
+	int64_t deadline = k_uptime_get() + BUSY_TIMEOUT_MS;
+	int initial = gpio_pin_get_dt(&busy_gpio);
+
+	if (observed_busy != NULL && initial > 0) {
+		*observed_busy = true;
+	}
+	while (gpio_pin_get_dt(&busy_gpio) > 0) {
+		if (k_uptime_get() >= deadline) {
+			LOG_ERR("display busy timeout phase=%s", phase);
+			return -ETIMEDOUT;
+		}
+		if (observed_busy != NULL) {
+			*observed_busy = true;
+		}
+		k_msleep(10);
+	}
+	LOG_INF("display busy phase=%s initial=%d ready=%d observed=%d", phase, initial,
+		gpio_pin_get_dt(&busy_gpio), observed_busy != NULL && *observed_busy);
+	return 0;
+}
+
+static int epaper_reset(void)
+{
+	int ret = gpio_pin_set_dt(&reset_gpio, 0);
+
+	if (ret != 0) {
+		return ret;
+	}
+	k_msleep(20);
+	ret = gpio_pin_set_dt(&reset_gpio, 1);
+	if (ret != 0) {
+		return ret;
+	}
+	k_msleep(20);
+	ret = gpio_pin_set_dt(&reset_gpio, 0);
+	if (ret != 0) {
+		return ret;
+	}
+	k_msleep(200);
+	return wait_ready("hardware-reset", NULL);
+}
+
+static int set_full_window(void)
+{
+	const uint8_t x_range[] = {
+		0x00,
+		0x00,
+		(uint8_t)((PANEL_WIDTH - 1U) & 0xffU),
+		(uint8_t)((PANEL_WIDTH - 1U) >> 8),
+	};
+	const uint8_t y_range[] = {
+		0x00,
+		0x00,
+		(uint8_t)(PANEL_LAST_Y & 0xffU),
+		(uint8_t)(PANEL_LAST_Y >> 8),
+	};
+	const uint8_t start[] = {0x00, 0x00};
+	int ret = write_command_data(SSD1677_CMD_RAM_XPOS_CTRL, x_range, sizeof(x_range));
+
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command_data(SSD1677_CMD_RAM_YPOS_CTRL, y_range, sizeof(y_range));
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command_data(SSD1677_CMD_RAM_XPOS_CNTR, start, sizeof(start));
+	if (ret != 0) {
+		return ret;
+	}
+	return write_command_data(SSD1677_CMD_RAM_YPOS_CNTR, start, sizeof(start));
+}
+
+static int epaper_init(void)
+{
+	const uint8_t gate_output[] = {
+		(uint8_t)(PANEL_LAST_Y & 0xffU),
+		(uint8_t)(PANEL_LAST_Y >> 8),
+		0x02,
+	};
+	const uint8_t entry_mode = SSD1677_ENTRY_X_INC_Y_INC_HORIZONTAL;
+	const uint8_t border_waveform = 0x01;
+	const uint8_t temp_sensor = 0x80;
+	const uint8_t booster_soft_start[] = {0xae, 0xc7, 0xc3, 0xc0, 0x80};
+	int ret = epaper_reset();
+
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command(SSD1677_CMD_SW_RESET);
+	if (ret != 0) {
+		return ret;
+	}
+	ret = wait_ready("software-reset", NULL);
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command_data(SSD1677_CMD_TSENSOR_SELECTION, &temp_sensor, sizeof(temp_sensor));
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command_data(SSD1677_CMD_BOOSTER_SOFT_START, booster_soft_start,
+				 sizeof(booster_soft_start));
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command_data(SSD1677_CMD_GDO_CTRL, gate_output, sizeof(gate_output));
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command_data(SSD1677_CMD_ENTRY_MODE, &entry_mode, sizeof(entry_mode));
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command_data(SSD1677_CMD_BORDER_WAVEFORM, &border_waveform,
+				 sizeof(border_waveform));
+	if (ret != 0) {
+		return ret;
+	}
+	display_ready = true;
+	return set_full_window();
+}
+
+static const uint8_t *glyph_for(char ch)
+{
+	static const uint8_t glyph_space[7] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+	static const uint8_t glyph_digits[10][7] = {
+		{0x0e, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0e},
+		{0x04, 0x0c, 0x04, 0x04, 0x04, 0x04, 0x0e},
+		{0x0e, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1f},
+		{0x1e, 0x01, 0x01, 0x0e, 0x01, 0x01, 0x1e},
+		{0x02, 0x06, 0x0a, 0x12, 0x1f, 0x02, 0x02},
+		{0x1f, 0x10, 0x10, 0x1e, 0x01, 0x01, 0x1e},
+		{0x06, 0x08, 0x10, 0x1e, 0x11, 0x11, 0x0e},
+		{0x1f, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08},
+		{0x0e, 0x11, 0x11, 0x0e, 0x11, 0x11, 0x0e},
+		{0x0e, 0x11, 0x11, 0x0f, 0x01, 0x02, 0x0c},
+	};
+	static const uint8_t glyph_letters[26][7] = {
+		{0x0e, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11},
+		{0x1e, 0x11, 0x11, 0x1e, 0x11, 0x11, 0x1e},
+		{0x0e, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0e},
+		{0x1e, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1e},
+		{0x1f, 0x10, 0x10, 0x1e, 0x10, 0x10, 0x1f},
+		{0x1f, 0x10, 0x10, 0x1e, 0x10, 0x10, 0x10},
+		{0x0e, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0f},
+		{0x11, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11},
+		{0x0e, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0e},
+		{0x07, 0x02, 0x02, 0x02, 0x12, 0x12, 0x0c},
+		{0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11},
+		{0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1f},
+		{0x11, 0x1b, 0x15, 0x15, 0x11, 0x11, 0x11},
+		{0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11},
+		{0x0e, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0e},
+		{0x1e, 0x11, 0x11, 0x1e, 0x10, 0x10, 0x10},
+		{0x0e, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0d},
+		{0x1e, 0x11, 0x11, 0x1e, 0x14, 0x12, 0x11},
+		{0x0f, 0x10, 0x10, 0x0e, 0x01, 0x01, 0x1e},
+		{0x1f, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04},
+		{0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0e},
+		{0x11, 0x11, 0x11, 0x11, 0x11, 0x0a, 0x04},
+		{0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0a},
+		{0x11, 0x11, 0x0a, 0x04, 0x0a, 0x11, 0x11},
+		{0x11, 0x11, 0x0a, 0x04, 0x04, 0x04, 0x04},
+		{0x1f, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1f},
+	};
+	static const uint8_t glyph_colon[7] = {0x00, 0x04, 0x04, 0x00, 0x04, 0x04, 0x00};
+	static const uint8_t glyph_dash[7] = {0x00, 0x00, 0x00, 0x1f, 0x00, 0x00, 0x00};
+	static const uint8_t glyph_slash[7] = {0x01, 0x01, 0x02, 0x04, 0x08, 0x10, 0x10};
+
+	if (ch >= 'a' && ch <= 'z') {
+		ch = (char)(ch - 'a' + 'A');
+	}
+	if (ch >= 'A' && ch <= 'Z') {
+		return glyph_letters[ch - 'A'];
+	}
+	if (ch >= '0' && ch <= '9') {
+		return glyph_digits[ch - '0'];
+	}
+	if (ch == ':') {
+		return glyph_colon;
+	}
+	if (ch == '-' || ch == '_') {
+		return glyph_dash;
+	}
+	if (ch == '/') {
+		return glyph_slash;
+	}
+	return glyph_space;
+}
+
+static bool logical_to_physical(uint16_t logical_x, uint16_t logical_y,
+				uint16_t *physical_x, uint16_t *physical_y)
+{
+	if (logical_x >= LOGICAL_WIDTH || logical_y >= LOGICAL_HEIGHT || physical_x == NULL ||
+	    physical_y == NULL) {
+		return false;
+	}
+	switch (LOGICAL_ROTATION) {
+	case 0:
+		*physical_x = logical_x;
+		*physical_y = logical_y;
+		break;
+	case 90:
+		*physical_x = logical_y;
+		*physical_y = (uint16_t)(LOGICAL_WIDTH - 1U - logical_x);
+		break;
+	case 180:
+		*physical_x = (uint16_t)(LOGICAL_WIDTH - 1U - logical_x);
+		*physical_y = (uint16_t)(LOGICAL_HEIGHT - 1U - logical_y);
+		break;
+	case 270:
+		*physical_x = (uint16_t)(LOGICAL_HEIGHT - 1U - logical_y);
+		*physical_y = logical_x;
+		break;
+	default:
+		return false;
+	}
+	return *physical_x < PANEL_WIDTH && *physical_y < PANEL_HEIGHT;
+}
+
+static void set_black_pixel(uint8_t line[ROW_BYTES], uint16_t x)
+{
+	if (x >= PANEL_WIDTH) {
+		return;
+	}
+	uint16_t ram_x = (uint16_t)(PANEL_WIDTH - 1U - x);
+
+	line[ram_x / 8U] &= (uint8_t)~(0x80U >> (ram_x % 8U));
+}
+
+static void draw_text_row(uint8_t line[ROW_BYTES], uint16_t y,
+			  const struct sq_vm_runtime_display_op *op)
+{
+	if (op->kind != SQ_VM_RUNTIME_DISPLAY_OP_TEXT || op->font_height <= 0 ||
+	    op->x >= LOGICAL_WIDTH || op->y >= LOGICAL_HEIGHT) {
+		return;
+	}
+	uint8_t scale = (uint8_t)(op->font_height / 7);
+	if (scale == 0) {
+		scale = 1;
+	}
+	uint16_t text_y = op->y < 0 ? 0 : (uint16_t)op->y;
+	uint16_t cursor_x = op->x < 0 ? 0 : (uint16_t)op->x;
+
+	for (size_t i = 0; op->text[i] != '\0'; ++i) {
+		const uint8_t *glyph = glyph_for(op->text[i]);
+
+		for (uint8_t glyph_row = 0; glyph_row < 7U; ++glyph_row) {
+			for (uint8_t row = 0; row < scale; ++row) {
+				uint16_t logical_y = text_y + (uint16_t)(glyph_row * scale) + row;
+
+				for (uint8_t col = 0; col < 5U; ++col) {
+					if ((glyph[glyph_row] & (0x10U >> col)) == 0U) {
+						continue;
+					}
+					for (uint8_t dx = 0; dx < scale; ++dx) {
+						uint16_t logical_x = cursor_x +
+								     (uint16_t)(col * scale) + dx;
+						uint16_t physical_x = 0;
+						uint16_t physical_y = 0;
+
+						if (logical_to_physical(logical_x, logical_y,
+									&physical_x, &physical_y) &&
+						    physical_y == y) {
+							set_black_pixel(line, physical_x);
+						}
+					}
+				}
+			}
+		}
+		cursor_x += (uint16_t)(6U * scale);
+		if (cursor_x >= LOGICAL_WIDTH) {
+			return;
+		}
+	}
+}
+
+static bool clear_is_black(const struct sq_vm_runtime_display_op *ops, size_t op_count)
+{
+	for (size_t i = 0; i < op_count; ++i) {
+		if (ops[i].kind == SQ_VM_RUNTIME_DISPLAY_OP_CLEAR) {
+			return strcmp(ops[i].text, "black") == 0 || strcmp(ops[i].text, "gray15") == 0;
+		}
+	}
+	return false;
+}
+
+static void render_row(uint8_t line[ROW_BYTES], uint16_t y,
+		       const struct sq_vm_runtime_display_op *ops, size_t op_count)
+{
+	memset(line, clear_is_black(ops, op_count) ? 0x00 : 0xff, ROW_BYTES);
+	for (size_t i = 0; i < op_count; ++i) {
+		draw_text_row(line, y, &ops[i]);
+	}
+}
+
+static int refresh_display(bool *observed_busy)
+{
+	const uint8_t update = SSD1677_UPDATE_FULL;
+	int ret = write_command_data(SSD1677_CMD_UPDATE_CTRL2, &update, sizeof(update));
+
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command(SSD1677_CMD_MASTER_ACTIVATION);
+	if (ret != 0) {
+		return ret;
+	}
+	return wait_ready("refresh", observed_busy);
+}
+
+static int configure_display(void)
+{
+	if (!device_is_ready(spi_dev) || !gpio_is_ready_dt(&cs_gpio) ||
+	    !gpio_is_ready_dt(&dc_gpio) || !gpio_is_ready_dt(&reset_gpio) ||
+	    !gpio_is_ready_dt(&busy_gpio)) {
+		return -ENODEV;
+	}
+	int ret = gpio_pin_configure_dt(&dc_gpio, GPIO_OUTPUT_INACTIVE);
+
+	if (ret != 0) {
+		return ret;
+	}
+	ret = gpio_pin_configure_dt(&reset_gpio, GPIO_OUTPUT_INACTIVE);
+	if (ret != 0) {
+		return ret;
+	}
+	ret = gpio_pin_configure_dt(&cs_gpio, GPIO_OUTPUT_INACTIVE);
+	if (ret != 0) {
+		return ret;
+	}
+	return gpio_pin_configure_dt(&busy_gpio, GPIO_INPUT);
+}
+
+int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t op_count)
+{
+	bool observed_busy = false;
+	int ret;
+
+	if (ops == NULL || op_count == 0) {
+		return 0;
+	}
+	ret = configure_display();
+	if (ret != 0) {
+		LOG_ERR("display configure failed: %d", ret);
+		return ret;
+	}
+	if (!display_ready) {
+		ret = epaper_init();
+		if (ret != 0) {
+			LOG_ERR("display init failed: %d", ret);
+			display_ready = false;
+			return ret;
+		}
+	}
+	ret = set_full_window();
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command(SSD1677_CMD_WRITE_RAM);
+	if (ret != 0) {
+		return ret;
+	}
+	for (uint16_t y = 0; y < PANEL_HEIGHT; ++y) {
+		render_row(row, y, ops, op_count);
+		ret = write_data(row, sizeof(row));
+		if (ret != 0) {
+			return ret;
+		}
+	}
+	ret = refresh_display(&observed_busy);
+	if (ret != 0) {
+		return ret;
+	}
+	LOG_INF("display refresh complete busy_observed=%d", observed_busy);
+	return 0;
+}
+
+#else
+
+int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t op_count)
+{
+	ARG_UNUSED(ops);
+	ARG_UNUSED(op_count);
+	return 0;
+}
+
+#endif

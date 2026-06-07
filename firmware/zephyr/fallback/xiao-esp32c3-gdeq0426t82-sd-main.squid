@@ -14,19 +14,34 @@ event.on("app.start") {
 
 screen("main") {
   service.display.clear("white")
-  service.display.text("SquidScript", {
+  service.display.text("XIAO ESP32-C3", {
     x: 24
-    y: 32
+    y: 48
     fontHeight: 24
+  })
+  service.display.text("ePaper portrait", {
+    x: 24
+    y: 88
+    fontHeight: 20
+  })
+  service.display.text(system.memory(), {
+    x: 24
+    y: 136
+    fontHeight: 16
+  })
+  service.display.text(system.storage("apps"), {
+    x: 24
+    y: 168
+    fontHeight: 16
   })
   service.display.text("BLE installer ready", {
     x: 24
-    y: 72
+    y: 224
     fontHeight: 20
   })
   service.display.text("Push a .sqbc app", {
     x: 24
-    y: 104
+    y: 264
     fontHeight: 18
   })
 }

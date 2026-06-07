@@ -10,10 +10,27 @@ config SQUIDSCRIPT_TARGET_DISPLAY_SSD1677_EXPECTED
 	bool "Target expects an SSD1677 e-paper display"
 	default n
 	help
-	  Mark targets whose metadata declares an SSD1677 display. Until a real
-	  display backend is active, firmware reports the display as unavailable
-	  through retained diagnostics instead of pretending draw-log output is a
-	  physical display.
+	  Mark targets whose metadata declares an SSD1677 display.
+
+config SQ_TARGET_DISPLAY_PHYSICAL_WIDTH
+	int "SQ_TARGET_DISPLAY_PHYSICAL_WIDTH"
+	default 0
+
+config SQ_TARGET_DISPLAY_PHYSICAL_HEIGHT
+	int "SQ_TARGET_DISPLAY_PHYSICAL_HEIGHT"
+	default 0
+
+config SQ_TARGET_DISPLAY_LOGICAL_WIDTH
+	int "SQ_TARGET_DISPLAY_LOGICAL_WIDTH"
+	default 0
+
+config SQ_TARGET_DISPLAY_LOGICAL_HEIGHT
+	int "SQ_TARGET_DISPLAY_LOGICAL_HEIGHT"
+	default 0
+
+config SQ_TARGET_DISPLAY_ROTATION
+	int "SQ_TARGET_DISPLAY_ROTATION"
+	default 0
 
 config SQ_VM_RUNTIME_ACTIVE_BINDING_MAX
 	int "SQ_VM_RUNTIME_ACTIVE_BINDING_MAX"

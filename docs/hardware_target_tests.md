@@ -18,9 +18,9 @@ the captured command output instead of hanging the full suite.
 
 ## Current Targets
 
-The default real firmware target is Zephyr-backed XIAO ESP32-C3 with the Seeed
-XIAO ePaper Driver Board and GDEQ0426T82/SSD1677 panel metadata. The ESP32-C3
-Super Mini remains a supported regression hardware target.
+The default real firmware target is Zephyr-backed XIAO ESP32-C3 directly wired
+to the Good Display DESPI-C02 connector board and GDEQ0426T82/SSD1677 panel.
+The ESP32-C3 Super Mini remains a supported regression hardware target.
 
 Default XIAO build and flash:
 
@@ -97,6 +97,35 @@ should be queryable later with `device errors`. In the first XIAO slice, the
 external SD reader is target metadata only: SD `MISO` and `CS` jumper wiring,
 mounting, app storage, and content volume behavior remain unverified and are
 not runtime-advertised features.
+
+`scripts/xiao-esp32c3-test-epaper-hello.sh` is the XIAO physical-display smoke
+test. It builds and flashes the diagnostic-only Zephyr app under
+`tests/hardware/xiao-esp32c3/epaper-hello`, which bypasses SquidScript and the
+product firmware runtime, drives the SSD1677/GDEQ0426T82 panel directly, and
+prints `EPAPER_HELLO_READY` after the refresh command completes. The serial
+marker proves that the app reached the refresh path; the physical pass
+criterion is visual confirmation that the panel shows `HELLO WORLD` with a
+border and black bars, with the text oriented normally rather than mirrored.
+The app leaves the image on the e-paper display. This write-only display path
+does not provide pixel readback; without a camera or another optical sensor,
+serial evidence can prove controller activity but cannot prove the final
+visible pixels. For unattended runs, treat `BUSY` asserting during refresh and
+returning ready as the current e-paper activity check. Visual confirmation is
+still required before claiming the rendered output is correct.
+
+The default XIAO firmware also drives the SSD1677/GDEQ0426T82 display through
+the Zephyr SPI backend for `service.display.clear` and `service.display.text`.
+The target JSON is the source of truth for the default portrait logical
+orientation: physical `800 x 480`, logical `480 x 800`, rotation `270`. The
+backend translates logical display ops into physical panel coordinates. On
+boot, fallback `main` renders the target label, `system.memory()`,
+`system.storage("apps")`, and BLE installer status. The unattended firmware
+display proof is: the serial monitor logs `display refresh complete
+busy_observed=1`, `device drawlog` contains fallback text commands, and
+`device errors` is empty. The drawlog is bounded, so early commands such as
+`clear` can roll out after the full fallback screen renders. `rect`, `line`,
+`image`, `draw`, partial refresh, and grayscale dithering are not
+physical-display features in this slice.
 
 Keep the suite ordered so stateful reset/install tests run before Wi-Fi and
 late physical-input checks, and keep the final visible board-state check last.

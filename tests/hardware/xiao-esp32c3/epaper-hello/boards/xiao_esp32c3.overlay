@@ -1,0 +1,12 @@
+/*
+ * Diagnostic-only XIAO ESP32-C3 e-paper smoke-test overlay.
+ *
+ * This is not the SquidScript firmware display backend. It only selects the
+ * USB serial console used by tests/hardware/xiao-esp32c3/epaper-hello.
+ */
+
+/ {
+	chosen {
+		zephyr,console = &usb_serial;
+	};
+};

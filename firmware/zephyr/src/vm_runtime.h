@@ -47,6 +47,12 @@ extern "C" {
 #ifndef SQ_VM_RUNTIME_DRAWLOG_LEN
 #define SQ_VM_RUNTIME_DRAWLOG_LEN 48
 #endif
+#ifndef SQ_VM_RUNTIME_DISPLAY_OP_MAX
+#define SQ_VM_RUNTIME_DISPLAY_OP_MAX 8
+#endif
+#ifndef SQ_VM_RUNTIME_DISPLAY_TEXT_LEN
+#define SQ_VM_RUNTIME_DISPLAY_TEXT_LEN 64
+#endif
 #ifndef SQ_VM_RUNTIME_DEVICE_ERROR_MAX
 #define SQ_VM_RUNTIME_DEVICE_ERROR_MAX 2
 #endif
@@ -230,6 +236,19 @@ enum sq_vm_runtime_wifi_service_state {
 	SQ_VM_RUNTIME_WIFI_SERVICE_ERROR,
 };
 
+enum sq_vm_runtime_display_op_kind {
+	SQ_VM_RUNTIME_DISPLAY_OP_CLEAR = 0,
+	SQ_VM_RUNTIME_DISPLAY_OP_TEXT,
+};
+
+struct sq_vm_runtime_display_op {
+	enum sq_vm_runtime_display_op_kind kind;
+	char text[SQ_VM_RUNTIME_DISPLAY_TEXT_LEN];
+	int32_t x;
+	int32_t y;
+	int32_t font_height;
+};
+
 struct sq_vm_runtime {
 	uint64_t context_words[SQ_VM_RUNTIME_CONTEXT_BYTES / sizeof(uint64_t)];
 	bool work_initialized;
@@ -307,6 +326,9 @@ struct sq_vm_runtime {
 	char drawlog[SQ_VM_RUNTIME_DRAWLOG_MAX][SQ_VM_RUNTIME_DRAWLOG_LEN];
 	uint8_t active_drawlog_max;
 	uint8_t drawlog_count;
+	struct sq_vm_runtime_display_op display_ops[SQ_VM_RUNTIME_DISPLAY_OP_MAX];
+	uint8_t display_op_count;
+	bool display_dirty;
 	char device_errors[SQ_VM_RUNTIME_DEVICE_ERROR_MAX][SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
 	uint8_t device_error_count;
 	bool indicator_state;

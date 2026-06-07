@@ -1,19 +1,78 @@
 #include "vm_runtime_internal.h"
 
+#ifndef CONFIG_SQ_TARGET_DISPLAY_LOGICAL_WIDTH
+#define CONFIG_SQ_TARGET_DISPLAY_LOGICAL_WIDTH 0
+#endif
+#ifndef CONFIG_SQ_TARGET_DISPLAY_LOGICAL_HEIGHT
+#define CONFIG_SQ_TARGET_DISPLAY_LOGICAL_HEIGHT 0
+#endif
+#ifndef CONFIG_SQ_TARGET_DISPLAY_PHYSICAL_WIDTH
+#define CONFIG_SQ_TARGET_DISPLAY_PHYSICAL_WIDTH 0
+#endif
+#ifndef CONFIG_SQ_TARGET_DISPLAY_PHYSICAL_HEIGHT
+#define CONFIG_SQ_TARGET_DISPLAY_PHYSICAL_HEIGHT 0
+#endif
+#ifndef CONFIG_SQ_TARGET_DISPLAY_ROTATION
+#define CONFIG_SQ_TARGET_DISPLAY_ROTATION 0
+#endif
+
+static void runtime_display_copy_text(char *out, size_t out_cap, const uint8_t *text,
+				      size_t text_len)
+{
+	if (out == NULL || out_cap == 0) {
+		return;
+	}
+	size_t len = text_len;
+	if (text == NULL) {
+		len = 0;
+	} else if (len >= out_cap) {
+		len = out_cap - 1;
+	}
+	if (len > 0) {
+		memcpy(out, text, len);
+	}
+	out[len] = '\0';
+}
+
+static struct sq_vm_runtime_display_op *runtime_display_append_op(struct sq_vm_runtime *runtime)
+{
+	if (runtime == NULL) {
+		return NULL;
+	}
+	size_t slot = runtime->display_op_count;
+	if (slot >= SQ_VM_RUNTIME_DISPLAY_OP_MAX) {
+		memmove(&runtime->display_ops[0], &runtime->display_ops[1],
+			(SQ_VM_RUNTIME_DISPLAY_OP_MAX - 1) * sizeof(runtime->display_ops[0]));
+		slot = SQ_VM_RUNTIME_DISPLAY_OP_MAX - 1;
+		runtime->display_op_count = SQ_VM_RUNTIME_DISPLAY_OP_MAX - 1;
+	}
+	memset(&runtime->display_ops[slot], 0, sizeof(runtime->display_ops[slot]));
+	runtime->display_op_count++;
+	runtime->display_dirty = true;
+	return &runtime->display_ops[slot];
+}
+
 void runtime_display_clear(void *user_data, const uint8_t *color, size_t color_len)
 {
+	struct sq_vm_runtime *runtime = user_data;
 	char line[SQ_VM_RUNTIME_DRAWLOG_LEN];
 	int written = snprintf(line, sizeof(line), "draw=clear color=%.*s", (int)color_len,
 			       color == NULL ? (const uint8_t *)"" : color);
 
 	if (written > 0) {
-		(void)sq_vm_runtime_record_drawlog(user_data, line);
+		(void)sq_vm_runtime_record_drawlog(runtime, line);
+	}
+	struct sq_vm_runtime_display_op *op = runtime_display_append_op(runtime);
+	if (op != NULL) {
+		op->kind = SQ_VM_RUNTIME_DISPLAY_OP_CLEAR;
+		runtime_display_copy_text(op->text, sizeof(op->text), color, color_len);
 	}
 }
 
 void runtime_display_text(void *user_data, const uint8_t *text, size_t text_len,
 				 const SqvmDisplayTextOptions *options)
 {
+	struct sq_vm_runtime *runtime = user_data;
 	char line[SQ_VM_RUNTIME_DRAWLOG_LEN];
 
 	if (options == NULL) {
@@ -23,7 +82,15 @@ void runtime_display_text(void *user_data, const uint8_t *text, size_t text_len,
 			       (int)text_len, text == NULL ? (const uint8_t *)"" : text,
 			       options->x, options->y);
 	if (written > 0) {
-		(void)sq_vm_runtime_record_drawlog(user_data, line);
+		(void)sq_vm_runtime_record_drawlog(runtime, line);
+	}
+	struct sq_vm_runtime_display_op *op = runtime_display_append_op(runtime);
+	if (op != NULL) {
+		op->kind = SQ_VM_RUNTIME_DISPLAY_OP_TEXT;
+		runtime_display_copy_text(op->text, sizeof(op->text), text, text_len);
+		op->x = options->x;
+		op->y = options->y;
+		op->font_height = options->font_height;
 	}
 }
 
@@ -116,15 +183,16 @@ int32_t runtime_display_info(void *user_data, SqvmDisplayInfo *out)
 	out->ok = true;
 	out->available = false;
 #if IS_ENABLED(CONFIG_SQUIDSCRIPT_TARGET_DISPLAY_SSD1677_EXPECTED)
-	runtime_display_info_text("unavailable", &out->status, &out->status_len);
+	out->available = true;
+	runtime_display_info_text("ready", &out->status, &out->status_len);
 	runtime_display_info_text("display.default", &out->binding, &out->binding_len);
 	runtime_display_info_text("ssd1677", &out->driver, &out->driver_len);
 	runtime_display_info_text("spi", &out->transport, &out->transport_len);
-	out->width = 800;
-	out->height = 480;
-	out->physical_width = 800;
-	out->physical_height = 480;
-	out->rotation = 0;
+	out->width = CONFIG_SQ_TARGET_DISPLAY_LOGICAL_WIDTH;
+	out->height = CONFIG_SQ_TARGET_DISPLAY_LOGICAL_HEIGHT;
+	out->physical_width = CONFIG_SQ_TARGET_DISPLAY_PHYSICAL_WIDTH;
+	out->physical_height = CONFIG_SQ_TARGET_DISPLAY_PHYSICAL_HEIGHT;
+	out->rotation = CONFIG_SQ_TARGET_DISPLAY_ROTATION;
 	runtime_display_info_text("grayscale", &out->color_model, &out->color_model_len);
 	out->logical_gray_levels = 16;
 	out->native_bpp = 1;

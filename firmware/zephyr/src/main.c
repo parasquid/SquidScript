@@ -119,17 +119,6 @@ int main(void)
 	sq_vm_runtime_init(&runtime);
 	sq_vm_runtime_set_registry(&runtime, &registry);
 	sq_vm_runtime_set_mutable_registry(&runtime, &registry);
-#if IS_ENABLED(CONFIG_SQUIDSCRIPT_TARGET_DISPLAY_SSD1677_EXPECTED)
-	LOG_WRN("SquidScript target display unavailable: SSD1677 backend not active");
-	{
-		char line[64];
-		int n = snprintf(line, sizeof(line), "display=unavailable code=%d (%s)", -ENODEV,
-				 sq_errno_name(-ENODEV));
-		if (n > 0 && (size_t)n < sizeof(line)) {
-			(void)sq_vm_runtime_record_device_error(&runtime, line);
-		}
-	}
-#endif
 	if (registry_ready) {
 		int root_result;
 

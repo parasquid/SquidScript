@@ -262,39 +262,101 @@ Scheduler rule:
 
 Implementation decisions to resolve:
 
-- Which source-backed panel initialization sequence should be treated as the
-  trusted baseline?
 - Does `ssd1677-driver` expose enough low-level RAM window and RAM plane writes,
   or does it need a wrapper/fork?
 - Does `ssd1677` expose a better strip/window path if `ssd1677-driver` is too
   framebuffer-oriented?
-- Is `BUSY` active-high at the breakout pin, or inverted by board circuitry?
 - Is partial refresh acceptable on the actual panel after repeated updates, or
   does it ghost too heavily for the intended UI?
 - Is 2-bit grayscale part of the initial backend, or is the initial backend
   black/white-only until full refresh and strip writes are stable?
 
-The default XIAO ESP32-C3 e-paper target uses the Seeed XIAO ePaper Driver
-Board. The following display wiring is source-backed by Seeed's board
-documentation and the XIAO ESP32-C3 connector mapping. Boot-risk notes come
-from the XIAO ESP32-C3 strapping-pin guidance.
+The canonical XIAO e-paper dev setup is a XIAO ESP32-C3 directly wired to the
+Good Display DESPI-C02 connector board and GDEQ0426T82 panel. The following
+display wiring is verified for that setup. Boot-risk notes come from the XIAO
+ESP32-C3 strapping-pin guidance.
 
 | SSD1677 signal | MCU pin | Source | Notes |
 | --- | --- | --- | --- |
-| `VCC` | XIAO 3V3 | Seeed ePaper Driver Board | Confirm the display FPC and board are powered from the expected 3.3 V rail before first refresh. |
-| `GND` | XIAO GND | Seeed ePaper Driver Board | Shared ground. |
-| `SCK` | D8 / GPIO8 | Seeed ePaper Driver Board + XIAO pin map | Shared SPI clock. GPIO8 is an ESP32-C3 strapping pin; confirm the board does not pull it into an invalid boot state. |
-| `DIN`/`MOSI` | D10 / GPIO10 | Seeed ePaper Driver Board + XIAO pin map | Shared SPI data from MCU to controller. |
-| `CS` | D1 / GPIO3 | Seeed ePaper Driver Board + XIAO pin map | Display chip select. |
-| `DC` | D3 / GPIO5 | Seeed ePaper Driver Board + XIAO pin map | Command/data select. |
-| `RST` | D0 / GPIO2 | Seeed ePaper Driver Board + XIAO pin map | Hardware reset. GPIO2 is an ESP32-C3 strapping pin; confirm reset circuitry does not block normal boot. |
-| `BUSY` | D2 / GPIO4 | Seeed ePaper Driver Board + XIAO pin map | Treat as active-high until measured otherwise at the MCU pin. |
+| `VCC` | XIAO 3V3 | DESPI-C02 verified wiring | Power from the XIAO 3.3 V rail, not 5 V. Confirm the display FPC and board are powered from the expected rail before first refresh. |
+| `GND` | XIAO GND | DESPI-C02 verified wiring | Shared ground. |
+| `SCK` | D8 / GPIO8 | DESPI-C02 verified wiring + XIAO pin map | Shared SPI clock. GPIO8 is an ESP32-C3 strapping pin; confirm external wiring does not pull it into an invalid boot state. |
+| `DIN`/`MOSI`/`SDI` | D10 / GPIO10 | DESPI-C02 verified wiring + XIAO pin map | Shared SPI data from MCU to controller. DESPI-C02 labels this signal `SDI`. |
+| `CS` | D1 / GPIO3 | DESPI-C02 verified wiring + XIAO pin map | Display chip select. |
+| `DC` | D3 / GPIO5 | DESPI-C02 verified wiring + XIAO pin map | Command/data select. |
+| `RST` | D0 / GPIO2 | DESPI-C02 verified wiring + XIAO pin map | Hardware reset. GPIO2 is an ESP32-C3 strapping pin; confirm reset wiring does not block normal boot. |
+| `BUSY` | D2 / GPIO4 | DESPI-C02 verified wiring + XIAO pin map | Active-high at the tested adapter pin. |
 | `SDO`/`MISO` | Not connected by default | Target decision | The initial SquidScript display path is write-only. Do not route display reads through GPIO9/BOOT by default. |
 
-The planned external SD reader shares display `SCK` and `MOSI` through jumper
-wires from the e-paper board IO breakout. SD `MISO` and `CS` are not part of
-the source-backed display wiring and must remain unverified in target metadata
-until the physical jumper choices are confirmed.
+The planned external SD reader shares display `SCK` and `MOSI` through direct
+external wiring. SD `MISO` and `CS` are not part of the verified display wiring
+and must remain unverified in target metadata until the physical jumper choices
+are confirmed.
+
+Verified XIAO ESP32-C3 + DESPI-C02 + GDEQ0426T82 diagnostic wiring:
+
+| DESPI-C02 signal | XIAO pin | GPIO | Notes |
+| --- | --- | --- | --- |
+| `BUSY` | D2 | GPIO4 | BUSY asserted during software reset and refresh, then returned ready. Current bench wire color: white. |
+| `RES`/`RST` | D0 | GPIO2 | Hardware reset. GPIO2 is an ESP32-C3 strapping pin; avoid external pulls that block boot. |
+| `D/C` | D3 | GPIO5 | Command/data select. |
+| `CS` | D1 | GPIO3 | Chip select. |
+| `SCK` | D8 | GPIO8 | SPI clock. GPIO8 is an ESP32-C3 strapping pin; avoid external pulls that block boot. |
+| `SDI` | D10 | GPIO10 | MCU-to-display data, equivalent to `DIN`/`MOSI`. |
+| `GND` | GND |  | Shared ground. |
+| `3.3V` | 3V3 |  | Power from the XIAO 3.3 V rail, not 5 V. |
+
+Current bench wire colors:
+
+| Wire color | Signal | XIAO pin | GPIO | Status |
+| --- | --- | --- | --- | --- |
+| black | shared `GND` | `GND` |  | verified display wiring; shared with SD |
+| yellow | shared `3.3V` | `3V3` |  | verified display wiring; shared with SD |
+| orange | shared `SCK` | `D8` | `GPIO8` | verified display wiring; wired as SD SCK candidate |
+| green | shared `SDI`/`MOSI` | `D10` | `GPIO10` | verified display wiring; wired as SD MOSI candidate |
+| blue | e-paper `CS` | `D1` | `GPIO3` | verified display wiring |
+| different blue | SD `CS` | `D4` | `GPIO6` | wired candidate; not firmware-verified yet |
+| violet | e-paper `D/C` | `D3` | `GPIO5` | verified display wiring |
+| violet | SD `MISO` | `D5` | `GPIO7` | wired candidate; not firmware-verified yet |
+| grey | e-paper `RST`/`RES` | `D0` | `GPIO2` | verified display wiring |
+| white | e-paper `BUSY` | `D2` | `GPIO4` | verified display wiring |
+
+The confirmed smoke-test command path is implemented in
+`tests/hardware/xiao-esp32c3/epaper-hello`. It uses direct GPIO bit-banged SPI
+rather than the Zephyr SPI peripheral so the smoke test can isolate display
+wiring, panel command sequencing, and BUSY behavior. The working initialization
+sequence uses software reset (`0x12`), temperature sensor selection (`0x18`
+with `0x80`), booster soft start (`0x0c` with
+`0xae, 0xc7, 0xc3, 0xc0, 0x80`), gate output control (`0x01` with gate end
+479 and scan byte `0x02`), entry mode (`0x11` with `0x03`), border waveform
+(`0x3c` with `0x01`), full RAM windows (`0x44` for X `0..799`, `0x45` for Y
+`0..479`), BW RAM write (`0x24`), update control (`0x22` with `0xf7`), and
+master activation (`0x20`). The smoke test writes one row buffer at a time and
+maps logical X to panel RAM X in reverse so rendered text is not mirrored.
+`BUSY` is active-high at the tested adapter pin.
+
+The default XIAO firmware uses the same command sequence through the Zephyr SPI
+driver, with `CS`, `D/C`, `RST`, and `BUSY` as GPIOs. The firmware path renders
+only `service.display.clear` and `service.display.text` to physical pixels in
+this slice; other display primitives continue to be drawlog-only. The renderer
+keeps a row-sized buffer, applies the target JSON's default portrait logical
+orientation (`480 x 800`, rotation `270`) to each draw op, maps physical X to
+panel RAM X in reverse, and flushes after a VM dispatch completes so one screen
+render produces one full refresh. The verified unattended firmware activity
+signal is `display refresh complete busy_observed=1` with an empty
+`device errors` response.
+
+`EPAPER_HELLO_READY` proves that the diagnostic app booted, reached display
+refresh, and observed BUSY complete. It does not prove the visible pixels. The
+GDEQ0426T82 path used here is write-only: there is no display framebuffer
+readback over the connected SPI signals, and BUSY does not report pixel
+orientation, contrast, FPC seating, or whether the final image is mirrored. For
+unattended smoke checks, BUSY asserting during refresh and returning ready is
+the current proxy for e-paper activity. Autonomous visible-output checks
+require an external observation channel such as a fixed USB camera, a
+phone/camera stream visible to the host, or a simpler optical fixture for
+targeted black/white regions. Without that, a human visual confirmation remains
+part of the physical-display pass criterion.
 
 Minimum SSD1677 command skeleton for the backend:
 

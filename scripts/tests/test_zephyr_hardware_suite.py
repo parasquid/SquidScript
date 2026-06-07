@@ -1039,6 +1039,33 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("radio concurrency", docs)
         self.assertIn("scripts/zephyr-test-radio-concurrency.sh", docs)
 
+    def test_xiao_epaper_hello_smoke_is_diagnostic_and_visual(self):
+        script = self.read("scripts/xiao-esp32c3-test-epaper-hello.sh")
+        app = self.read("tests/hardware/xiao-esp32c3/epaper-hello/src/main.c")
+        docs = self.read("docs/hardware_target_tests.md")
+
+        self.assertIn("xiao-esp32c3-gdeq0426t82-sd", script)
+        self.assertIn("tests/hardware/xiao-esp32c3/epaper-hello", script)
+        self.assertIn("west build", script)
+        self.assertIn("west flash", script)
+        self.assertIn("EPAPER_HELLO_READY", script)
+        self.assertIn("visual confirmation", script)
+        self.assertIn("not mirrored", script)
+        self.assertIn("diagnostic-only", script)
+        self.assertIn("HELLO WORLD", app)
+        self.assertIn("SSD1677_CMD_WRITE_RAM", app)
+        self.assertIn("bitbang_write_byte", app)
+        self.assertIn("ROW_BYTES", app)
+        self.assertNotIn("uint8_t framebuffer", app)
+        self.assertIn("scripts/xiao-esp32c3-test-epaper-hello.sh", docs)
+        self.assertIn("EPAPER_HELLO_READY", docs)
+        self.assertIn("visual confirmation", docs)
+        self.assertIn("serial evidence can prove controller activity", docs)
+        self.assertIn("current e-paper activity check", docs)
+        self.assertIn("Zephyr SPI backend", docs)
+        self.assertIn("service.display.clear", docs)
+        self.assertIn("busy_observed=1", docs)
+
     def test_radio_concurrency_fixtures_are_portable_and_redacted(self):
         wifi_list = self.read("tests/hardware/zephyr/radio-concurrency/wifi-list/main.squid")
         wifi_station = self.read("tests/hardware/zephyr/radio-concurrency/wifi-station/main.squid")

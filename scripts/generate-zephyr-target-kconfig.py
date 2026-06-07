@@ -76,6 +76,34 @@ def emit_runtime_limits(target_path, target, lines):
     return None
 
 
+def emit_display_config(target, lines):
+    display = target.get("display")
+    if not isinstance(display, dict):
+        return None
+    physical = display.get("physical")
+    logical = display.get("logical")
+    if not isinstance(physical, dict) or not isinstance(logical, dict):
+        if display.get("type") == "none" and physical is None and logical is None:
+            return None
+        return "display.physical and display.logical must be objects"
+
+    values = {
+        "PHYSICAL_WIDTH": physical.get("width"),
+        "PHYSICAL_HEIGHT": physical.get("height"),
+        "LOGICAL_WIDTH": logical.get("width"),
+        "LOGICAL_HEIGHT": logical.get("height"),
+        "ROTATION": logical.get("rotation"),
+    }
+    for name, value in values.items():
+        if not isinstance(value, int) or value < 0:
+            return f"display {name.lower()} must be a non-negative integer"
+    lines.append("# Display geometry from target metadata.")
+    for name, value in values.items():
+        lines.append(f"CONFIG_SQ_TARGET_DISPLAY_{name}={value}")
+    lines.append("")
+    return None
+
+
 def main(argv):
     if len(argv) != 3:
         return fail("usage: generate-zephyr-target-kconfig.py <target.json> <out.conf>")
@@ -110,6 +138,9 @@ def main(argv):
     runtime_error = emit_runtime_limits(target_path, target, lines)
     if runtime_error is not None:
         return fail(runtime_error)
+    display_error = emit_display_config(target, lines)
+    if display_error is not None:
+        return fail(display_error)
 
     if any(feature.startswith("service.wifi.") for feature in feature_set):
         lines.extend(
@@ -150,6 +181,7 @@ def main(argv):
         lines.extend(
             [
                 "CONFIG_SQUIDSCRIPT_TARGET_DISPLAY_SSD1677_EXPECTED=y",
+                "CONFIG_SPI=y",
                 "",
             ]
         )

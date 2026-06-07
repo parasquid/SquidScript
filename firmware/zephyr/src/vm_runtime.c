@@ -1,4 +1,6 @@
 #include "vm_runtime_internal.h"
+#include "vm_runtime_display_backend.h"
+#include "sq_errno.h"
 
 void sqvm_ffi_panic_abort(void)
 {
@@ -473,6 +475,25 @@ static void clear_dispatch_transfer(struct sq_vm_runtime *runtime)
 	runtime->backend = NULL;
 }
 
+static void runtime_flush_display_if_dirty(struct sq_vm_runtime *runtime)
+{
+	if (runtime == NULL || !runtime->display_dirty || runtime->display_op_count == 0) {
+		return;
+	}
+	int result = sq_display_backend_flush(runtime->display_ops, runtime->display_op_count);
+	if (result != 0) {
+		char line[SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
+		int n = snprintf(line, sizeof(line), "display=flush code=%d (%s)", result,
+				 sq_errno_name(result));
+		if (n > 0 && (size_t)n < sizeof(line)) {
+			(void)sq_vm_runtime_record_device_error(runtime, line);
+		}
+	}
+	memset(runtime->display_ops, 0, sizeof(runtime->display_ops));
+	runtime->display_op_count = 0;
+	runtime->display_dirty = false;
+}
+
 static void runtime_run_job(struct sq_vm_runtime *runtime)
 {
 	int result = 0;
@@ -659,6 +680,9 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->output_count = 0;
 	memset(runtime->drawlog, 0, sizeof(runtime->drawlog));
 	runtime->drawlog_count = 0;
+	memset(runtime->display_ops, 0, sizeof(runtime->display_ops));
+	runtime->display_op_count = 0;
+	runtime->display_dirty = false;
 	memset(runtime->timers, 0, sizeof(runtime->timers));
 	runtime->indicator_state = false;
 	runtime->indicator_pattern = SQ_VM_RUNTIME_INDICATOR_STEADY;
@@ -925,6 +949,9 @@ int sq_vm_runtime_dispatch_slice(struct sq_vm_runtime *runtime,
 	runtime->dispatch_exited = runtime->result.outcome == SQVM_DISPATCH_COMPLETE &&
 				   runtime->result.exited;
 	runtime->dispatch_started = false;
+	if (runtime->result.outcome == SQVM_DISPATCH_COMPLETE) {
+		runtime_flush_display_if_dirty(runtime);
+	}
 	runtime_finish_dispatch_metrics(runtime, runtime->dispatch_start_cycles);
 	*complete = runtime->result.outcome == SQVM_DISPATCH_COMPLETE;
 	return *complete ? 0 : -EIO;

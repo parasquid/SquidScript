@@ -16,6 +16,7 @@
 #include "squidscript_protocol_fixtures.h"
 #include "squidscript_target_defaults.h"
 #include "vm_runtime.h"
+#include "vm_runtime_internal.h"
 #include "vm_fs_storage.h"
 #include "squidvm_ffi.h"
 #include "vm_storage.h"
@@ -4951,6 +4952,34 @@ ZTEST(squidscript_protocol, test_vm_runtime_dispatches_display_drawlog_callbacks
 	zassert_str_equal(runtime.drawlog[1], "draw=text text=\"Hello\" x=10 y=20");
 	zassert_str_equal(runtime.drawlog[2], "draw=rect x=1 y=2 w=3 h=4");
 	zassert_str_equal(runtime.drawlog[3], "draw=line x1=5 y1=6 x2=7 y2=8");
+}
+
+ZTEST(squidscript_protocol, test_vm_runtime_records_physical_display_clear_and_text_ops)
+{
+	static struct sq_vm_runtime runtime;
+	const SqvmDisplayTextOptions text_options = {
+		.x = 10,
+		.y = 20,
+		.font_height = 24,
+	};
+
+	memset(&runtime, 0, sizeof(runtime));
+	runtime_display_clear(&runtime, (const uint8_t *)"white", strlen("white"));
+	runtime_display_text(&runtime, (const uint8_t *)"Hello", strlen("Hello"),
+			     &text_options);
+
+	zassert_equal(runtime.drawlog_count, 2);
+	zassert_str_equal(runtime.drawlog[0], "draw=clear color=white");
+	zassert_str_equal(runtime.drawlog[1], "draw=text text=\"Hello\" x=10 y=20");
+	zassert_true(runtime.display_dirty);
+	zassert_equal(runtime.display_op_count, 2);
+	zassert_equal(runtime.display_ops[0].kind, SQ_VM_RUNTIME_DISPLAY_OP_CLEAR);
+	zassert_str_equal(runtime.display_ops[0].text, "white");
+	zassert_equal(runtime.display_ops[1].kind, SQ_VM_RUNTIME_DISPLAY_OP_TEXT);
+	zassert_str_equal(runtime.display_ops[1].text, "Hello");
+	zassert_equal(runtime.display_ops[1].x, 10);
+	zassert_equal(runtime.display_ops[1].y, 20);
+	zassert_equal(runtime.display_ops[1].font_height, 24);
 }
 
 ZTEST(squidscript_protocol, test_vm_runtime_dispatches_wifi_action_stubs)

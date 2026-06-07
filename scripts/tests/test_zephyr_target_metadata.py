@@ -37,6 +37,21 @@ class ZephyrTargetMetadataTests(ZephyrScriptTestCase):
             self.assertIn("CONFIG_SQ_VM_RUNTIME_DEVICE_ERROR_MAX=8", conf)
             self.assertIn("CONFIG_SQ_DEVICE_RESPONSE_BYTES=1088", conf)
 
+    def test_xiao_display_orientation_is_generated_from_target_json(self):
+        target = json.loads(self.read("targets/xiao-esp32c3-gdeq0426t82-sd.target.json"))
+        xiao_conf = self.generate_target_kconfig("xiao-esp32c3-gdeq0426t82-sd.target.json")
+
+        self.assertEqual(target["display"]["physical"], {"width": 800, "height": 480})
+        self.assertEqual(target["display"]["logical"], {"width": 480, "height": 800, "rotation": 270})
+        for option in [
+            "CONFIG_SQ_TARGET_DISPLAY_PHYSICAL_WIDTH=800",
+            "CONFIG_SQ_TARGET_DISPLAY_PHYSICAL_HEIGHT=480",
+            "CONFIG_SQ_TARGET_DISPLAY_LOGICAL_WIDTH=480",
+            "CONFIG_SQ_TARGET_DISPLAY_LOGICAL_HEIGHT=800",
+            "CONFIG_SQ_TARGET_DISPLAY_ROTATION=270",
+        ]:
+            self.assertIn(option, xiao_conf)
+
     def test_checked_in_target_kconfigs_are_generated_from_target_json(self):
         expected = {
             "esp32c3-super-mini.target.json": "target/zephyr/generated/c3-supermini-target.conf",
@@ -186,6 +201,17 @@ class ZephyrTargetMetadataTests(ZephyrScriptTestCase):
         self.assertIn("Target JSON files are the canonical target descriptions", agents)
         self.assertIn("generate-target-markdown.py", agents)
         self.assertIn("Do not hand-edit generated target Markdown tables", agents)
+
+    def test_xiao_despi_c02_is_canonical_display_dev_setup(self):
+        target = json.loads(self.read("targets/xiao-esp32c3-gdeq0426t82-sd.target.json"))
+        hardware_docs = self.read("docs/hardware_target_tests.md")
+        display_docs = self.read("docs/ssd1677_gdeq0426t82_agent_reference.md")
+
+        self.assertIn("DESPI-C02", target["devices"]["display.epd"]["board"])
+        self.assertIn("canonical", target["devices"]["display.epd"]["verification"])
+        self.assertIn("DESPI-C02", hardware_docs)
+        self.assertIn("canonical XIAO e-paper dev setup", display_docs)
+        self.assertNotIn("default real firmware target is Zephyr-backed XIAO ESP32-C3 with the Seeed", hardware_docs)
 
     def test_zephyr_target_defaults_generator_validates_indicator_overlay(self):
         with tempfile.TemporaryDirectory() as tmp:
