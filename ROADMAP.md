@@ -37,6 +37,19 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   `tools/ots-push`'s fate (rename — it pushes over the custom GATT service, not
   OTS). Verify remaining BLE doc statements (`language_spec`, `runtime_limits`)
   match the as-built GATT-only + imperative code.
+- Remove BLE receive's leftover armed-model naming from source-facing surfaces.
+  Keep the real `app.arm` / armed timer lifecycle intact, but rename BLE profile
+  caps, helpers, comments, CLI help, and tests that still describe BLE receive as
+  "armed" now that BLE receive is an imperative foreground service. Historical
+  rationale may remain in specs or `ICEBOX.md`; current source comments and
+  user-facing help should describe only the current model.
+- Fix stale BLE receive documentation around event routing and lifecycle.
+  Reconcile `docs/language_spec.md`, `docs/firmware_state_machines.md`,
+  `examples/ble-install/README.md`, and related BLE docs so they describe the
+  current imperative foreground `service.ble.start` model: `ble.object.complete`
+  is a due event, current-foreground delivery uses `set_current=false`, and only
+  due events targeted at another app start that app fresh. Remove old
+  object-name routed / armed-app wording from current-state docs.
 - Investigate BLE re-advertising after host disconnect on ESP32-C3 Zephyr.
   Resolved: `ble_smoke.c` was calling `bt_le_adv_start` directly from the
   delayed restart work and the controller returned `-EALREADY` (handled
