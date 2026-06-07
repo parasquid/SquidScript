@@ -11,6 +11,25 @@ from scripts.tests.zephyr_test_utils import ROOT, ZephyrScriptTestCase
 
 
 class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
+    def test_xiao_sd_card_smoke_is_retained_read_only_wiring_check(self):
+        script = self.read("scripts/xiao-esp32c3-test-sd-card-smoke.sh")
+        source = self.read("tests/hardware/xiao-esp32c3/sd-card-smoke/src/main.c")
+        overlay = self.read("tests/hardware/xiao-esp32c3/sd-card-smoke/boards/xiao_esp32c3.overlay")
+        docs = self.read("docs/ssd1677_gdeq0426t82_agent_reference.md")
+
+        self.assertIn("SD_CARD_SMOKE_READY", script)
+        self.assertIn("SD_CARD_SMOKE_READY", source)
+        self.assertIn("sd_init", source)
+        self.assertIn("sdmmc_read_blocks", source)
+        self.assertNotIn("sdmmc_write_blocks", source)
+        self.assertNotIn("DISK_IOCTL_CTRL_SYNC", source)
+        self.assertIn("<SPIM2_SCLK_GPIO8>", overlay)
+        self.assertIn("<SPIM2_MOSI_GPIO10>", overlay)
+        self.assertIn("<SPIM2_MISO_GPIO7>", overlay)
+        self.assertIn("cs-gpios = <&gpio0 6 GPIO_ACTIVE_LOW>", overlay)
+        self.assertIn("SD `CS` | `D4` | `GPIO6`", docs)
+        self.assertIn("SD `MISO` | `D5` | `GPIO7`", docs)
+
     def test_hardware_suite_requires_real_zephyr_wifi_backend(self):
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
 

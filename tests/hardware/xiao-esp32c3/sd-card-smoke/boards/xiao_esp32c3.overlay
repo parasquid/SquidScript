@@ -1,0 +1,50 @@
+/*
+ * Diagnostic-only XIAO ESP32-C3 SPI SD-card smoke-test overlay.
+ *
+ * This checks the documented bench wiring without enabling SquidScript SD
+ * storage. The SD breakout shares SCK/MOSI with the e-paper panel wiring.
+ */
+
+#include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/pinctrl/esp32c3-pinctrl.h>
+
+/ {
+	chosen {
+		zephyr,console = &usb_serial;
+	};
+
+	aliases {
+		sdhc0 = &sdcard;
+	};
+};
+
+&pinctrl {
+	spim2_sd_default: spim2_sd_default {
+		group1 {
+			pinmux = <SPIM2_SCLK_GPIO8>,
+				 <SPIM2_MOSI_GPIO10>,
+				 <SPIM2_MISO_GPIO7>;
+			output-low;
+		};
+	};
+};
+
+&spi2 {
+	status = "okay";
+	pinctrl-0 = <&spim2_sd_default>;
+	pinctrl-names = "default";
+	cs-gpios = <&gpio0 6 GPIO_ACTIVE_LOW>;
+
+	sdcard: sdcard@0 {
+		compatible = "zephyr,sdhc-spi-slot";
+		reg = <0>;
+		status = "okay";
+		spi-max-frequency = <1000000>;
+
+		sdmmc {
+			compatible = "zephyr,sdmmc-disk";
+			disk-name = "SD";
+			status = "okay";
+		};
+	};
+};
