@@ -59,6 +59,27 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
         self.assertIn(r"busy \(-16\)", script)
         self.assertIn("firmware did not become ready", script)
 
+    def test_hardware_command_failures_capture_raw_serial_when_protocol_diagnostics_are_empty(self):
+        helper = self.read("scripts/lib/hardware-command.sh")
+
+        self.assertIn("capture_raw_serial_diagnostics", helper)
+        self.assertIn("raw-serial.out", helper)
+        self.assertIn("target monitor", helper)
+        self.assertIn("command -v script", helper)
+        self.assertIn("script -q -e -c", helper)
+        self.assertIn("SQUID_CAPTURE_RAW_SERIAL_DIAGNOSTICS", helper)
+        self.assertIn("protocol diagnostics were empty", helper)
+
+    def test_ap_after_station_initial_reset_uses_bounded_recovery_diagnostics(self):
+        script = self.read("scripts/zephyr-test-ap-after-station.sh")
+
+        self.assertIn("run_reset_with_recovery reset-before-ap-after-station", script)
+        self.assertIn("${label}-hello-before.out", script)
+        self.assertIn("${label}-raw-serial.out", script)
+        self.assertIn("firmware did not become ready", script)
+        self.assertIn('"${status}" == "124"', script)
+        self.assertNotIn("run_capture reset-before-ap-after-station cargo run --quiet -p squidc -- device reset", script)
+
     def test_lazy_load_screen_benchmark_has_portable_contract(self):
         docs = self.read("docs/hardware_benchmarks.md")
         script = self.read("scripts/c3-supermini-benchmark-lazy-load-screen.sh")
@@ -1026,6 +1047,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
     def test_radio_concurrency_check_is_opt_in_target_aware_and_redacted(self):
         script = self.read("scripts/zephyr-test-radio-concurrency.sh")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
+        cli = self.read("compiler/rust/crates/squidc-cli/src/main.rs")
         docs = self.read("docs/hardware_target_tests.md")
 
         self.assertIn('TARGET_ID="${TARGET_ID:-xiao-esp32c3-gdeq0426t82-sd}"', script)
@@ -1040,9 +1062,10 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("device wifi rescan", script)
         self.assertIn("connect_host_to_device_ap", script)
         self.assertIn("assert_device_ap_dhcp_lease", script)
-        self.assertIn("wait_for_device_ap_client_count", script)
         self.assertIn("OK host Wi-Fi received target AP DHCP lease", script)
         self.assertIn("bluetoothctl", script)
+        self.assertIn("--device", script)
+        self.assertIn("DEVICE_SELECTOR", script)
         self.assertIn("ble-connect-attempt", script)
         self.assertIn("ble_is_connected", script)
         self.assertIn("launch_fallback_ble_installer", script)
@@ -1071,6 +1094,11 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertNotIn("zephyr-test-radio-concurrency.sh", suite)
         self.assertIn("radio concurrency", docs)
         self.assertIn("scripts/zephyr-test-radio-concurrency.sh", docs)
+        self.assertIn("reset-boundary recovery", docs)
+        self.assertIn("raw serial diagnostics", docs)
+        self.assertIn("`radio-concurrency`\nbefore `ap-after-station`", docs)
+        self.assertIn("command.arg(\"--device\").arg(device)", cli)
+        self.assertNotIn("wait_for_device_ap_client_count", script)
 
     def test_xiao_epaper_hello_smoke_is_diagnostic_with_optional_visual_check(self):
         script = self.read("scripts/xiao-esp32c3-test-epaper-hello.sh")

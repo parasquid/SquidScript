@@ -2,6 +2,43 @@
 
 HARDWARE_COMMAND_LABEL="${HARDWARE_COMMAND_LABEL:-${0##*/}}"
 
+protocol_diagnostics_empty() {
+  local label="$1"
+
+  [[ ! -s "${WORK_DIR}/${label}-resources.out" ]] &&
+    [[ ! -s "${WORK_DIR}/${label}-errors.out" ]] &&
+    [[ ! -s "${WORK_DIR}/${label}-lifecycle.out" ]]
+}
+
+capture_raw_serial_diagnostics() {
+  local label="$1"
+  local raw_seconds="${SQUID_RAW_SERIAL_DIAGNOSTIC_SECONDS:-8}"
+  local out="${WORK_DIR}/${label}-raw-serial.out"
+  local command=(cargo run --quiet -p squidc -- target monitor)
+  local monitor_shell_command
+
+  if [[ "${SQUID_CAPTURE_RAW_SERIAL_DIAGNOSTICS:-1}" == "0" ]]; then
+    return 0
+  fi
+  if [[ -z "${WORK_DIR:-}" ]]; then
+    return 0
+  fi
+  if [[ -n "${TARGET_ID:-}" ]]; then
+    command+=(--target "${TARGET_ID}")
+  fi
+  if [[ -n "${ESPFLASH_PORT:-}" ]]; then
+    command+=(--port "${ESPFLASH_PORT}")
+  fi
+
+  printf 'Capturing raw serial diagnostics for %s\n' "${label}" >&2
+  monitor_shell_command="$(printf '%q ' "${command[@]}")"
+  if command -v script >/dev/null 2>&1; then
+    timeout "${raw_seconds}s" script -q -e -c "${monitor_shell_command}" /dev/null >"${out}" 2>&1 || true
+  else
+    timeout "${raw_seconds}s" "${command[@]}" >"${out}" 2>&1 || true
+  fi
+}
+
 capture_device_diagnostics() {
   local label="$1"
   local timeout_seconds="${COMMAND_TIMEOUT_SECONDS:-20}"
@@ -23,6 +60,10 @@ capture_device_diagnostics() {
   timeout "${timeout_seconds}s" \
     cargo run --quiet -p squidc -- device lifecycle \
     >"${WORK_DIR}/${label}-lifecycle.out" 2>&1 || true
+  if protocol_diagnostics_empty "${label}"; then
+    printf 'protocol diagnostics were empty for %s; capturing raw serial\n' "${label}" >&2
+    capture_raw_serial_diagnostics "${label}"
+  fi
 }
 
 run_capture() {
@@ -44,6 +85,10 @@ run_capture() {
       "${WORK_DIR}/${name}-failure-resources.out" \
       "${WORK_DIR}/${name}-failure-errors.out" \
       "${WORK_DIR}/${name}-failure-lifecycle.out" >&2
+    if [[ -e "${WORK_DIR}/${name}-failure-raw-serial.out" ]]; then
+      printf 'raw serial diagnostics: %s\n' \
+        "${WORK_DIR}/${name}-failure-raw-serial.out" >&2
+    fi
     return "${status}"
   fi
 }

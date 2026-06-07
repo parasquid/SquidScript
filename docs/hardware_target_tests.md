@@ -14,7 +14,10 @@ Scripts that invoke `squidc device ...` or `squidc app ...` source
 `scripts/lib/hardware-command.sh` so each hardware-owning command is captured
 under `target/hardware-tests/` or `target/hardware-benchmarks/` with a
 command-level timeout. If a protocol command stalls, the script should fail with
-the captured command output instead of hanging the full suite.
+the captured command output instead of hanging the full suite. If the protocol
+diagnostic captures are empty, the helper also records bounded raw serial
+diagnostics so a failure can distinguish a live firmware log stream from a
+silent USB/protocol path.
 
 ## Current Targets
 
@@ -566,8 +569,8 @@ intentionally not connected.
 `scripts/zephyr-test-radio-concurrency.sh` is an opt-in radio concurrency check
 for Zephyr ESP32-C3 targets and is not part of the default full hardware suite.
 It defaults to `--target xiao-esp32c3-gdeq0426t82-sd` and accepts
-`--target <id>`, `--skip-flash`, `--require-ble-reconnect`, and
-`--host-wifi-iface <iface>`. The script may temporarily take over the host
+`--target <id>`, `--skip-flash`, `--require-ble-reconnect`,
+`--device <name-or-address>`, and `--host-wifi-iface <iface>`. The script may temporarily take over the host
 Wi-Fi and Bluetooth controllers. It builds or flashes the selected target,
 formats app storage, launches fallback `main` so `service.ble.start` registers
 an active file-transfer profile, discovers the target with host Bluetooth,
@@ -619,6 +622,15 @@ and host NetworkManager profiles on exit. Like the station check, it rejects
 unexpected `device errors` output but allows the known
 `error=display=unavailable code=-19 (ENODEV)` diagnostic for target setups where
 the configured display is intentionally disconnected.
+
+The target-aware XIAO hardware wrapper intentionally runs `radio-concurrency`
+before `ap-after-station`. Treat this as reset-boundary recovery coverage: after
+Wi-Fi scan/list, AP client association, station connect/disconnect, and BLE
+disconnect, `device reset` must still answer and leave the follow-on
+`ap-after-station` check able to install and launch its fixture. If this
+boundary fails, inspect the captured protocol diagnostics first; when they are
+empty, inspect the raw serial diagnostics before classifying the failure as
+host timing, firmware recovery, USB re-enumeration, or target radio state.
 
 The target AP row in `scripts/zephyr-test-radio-concurrency.sh` proves AP
 connectability with the host Wi-Fi interface: the host associates to the target

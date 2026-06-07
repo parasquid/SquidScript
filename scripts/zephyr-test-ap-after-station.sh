@@ -13,6 +13,8 @@ source "${ROOT}/scripts/lib/serial-port.sh"
 TARGET_ID="${TARGET_ID:-xiao-esp32c3-gdeq0426t82-sd}"
 SKIP_FLASH="${SKIP_FLASH:-0}"
 AP_AFTER_STATION_TIMEOUT_SECONDS="${AP_AFTER_STATION_TIMEOUT_SECONDS:-30}"
+AP_AFTER_STATION_RESET_ATTEMPTS="${AP_AFTER_STATION_RESET_ATTEMPTS:-3}"
+AP_AFTER_STATION_RESET_DELAY_SECONDS="${AP_AFTER_STATION_RESET_DELAY_SECONDS:-2}"
 APP_SRC="${ROOT}/tests/hardware/zephyr/ap-after-station/main.squid"
 APP_ID="ap-after-station"
 HOST_AP_SSID="${HOST_AP_SSID:-SquidApAfterStation}"
@@ -86,6 +88,49 @@ if ! command -v nmcli >/dev/null 2>&1; then
 	exit 1
 fi
 
+run_reset_with_recovery() {
+	local label="$1"
+	local status=0
+
+	timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" \
+		cargo run --quiet -p squidc -- device resources \
+		>"${WORK_DIR}/${label}-hello-before.out" 2>&1 || true
+
+	for attempt in $(seq 1 "${AP_AFTER_STATION_RESET_ATTEMPTS}"); do
+		set +e
+		timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" \
+			cargo run --quiet -p squidc -- device reset \
+			>"${WORK_DIR}/${label}.out" 2>&1
+		status=$?
+		set -e
+		if [[ "${status}" == "0" ]]; then
+			cat "${WORK_DIR}/${label}.out"
+			return 0
+		fi
+		capture_device_diagnostics "${label}-attempt-${attempt}"
+		if (( attempt < AP_AFTER_STATION_RESET_ATTEMPTS )); then
+			if [[ "${status}" == "124" ]] ||
+				grep -Eq 'busy \(-16\)|firmware did not become ready|BadMagic|TruncatedHeader|LengthMismatch' \
+					"${WORK_DIR}/${label}.out"; then
+				sleep "${AP_AFTER_STATION_RESET_DELAY_SECONDS}"
+				continue
+			fi
+		fi
+		break
+	done
+
+	capture_raw_serial_diagnostics "${label}"
+	printf 'Command failed or timed out during AP-after-station reset recovery: device reset\n' >&2
+	printf '%s\n' "--- ${WORK_DIR}/${label}.out ---" >&2
+	sed -n '1,200p' "${WORK_DIR}/${label}.out" >&2
+	printf 'failure diagnostics: %s %s %s %s\n' \
+		"${WORK_DIR}/${label}-hello-before.out" \
+		"${WORK_DIR}/${label}-raw-serial.out" \
+		"${WORK_DIR}/${label}-attempt-${attempt}-resources.out" \
+		"${WORK_DIR}/${label}-attempt-${attempt}-errors.out" >&2
+	return "${status}"
+}
+
 PORT="$(resolve_esp_serial_port)"
 export ESPFLASH_PORT="${ESPFLASH_PORT:-${PORT}}"
 
@@ -136,7 +181,7 @@ nmcli connection modify "${HOST_AP_CONN}" \
 	>"${WORK_DIR}/host-ap-configure.out" 2>&1
 nmcli connection up "${HOST_AP_CONN}" >"${WORK_DIR}/host-ap-up.out" 2>&1
 
-run_capture reset-before-ap-after-station cargo run --quiet -p squidc -- device reset >/dev/null
+run_reset_with_recovery reset-before-ap-after-station >/dev/null
 
 export SQUID_WIFI_STATION_SSID="${HOST_AP_SSID}"
 export SQUID_WIFI_STATION_PASSWORD="${local_password}"

@@ -620,6 +620,86 @@ static bool runtime_wifi_state_blocks_scan(int state)
 }
 #endif
 
+static bool runtime_wifi_reset_needs_target_cleanup(const struct sq_vm_runtime *runtime)
+{
+	if (runtime == NULL) {
+		return false;
+	}
+	if (runtime->wifi_op_active || runtime->wifi_service_state != SQ_VM_RUNTIME_WIFI_SERVICE_IDLE ||
+	    runtime->wifi_ap_clients > 0 || runtime->wifi_ap_sta_connected_events > 0 ||
+	    runtime->wifi_ap_sta_disconnected_events > 0) {
+		return true;
+	}
+#if SQ_VM_RUNTIME_HAS_WIFI_MGMT
+	if (runtime_wifi_scan_active_runtime == runtime || runtime->wifi_ap_active ||
+	    runtime->wifi_ap_start_events > 0 || runtime->wifi_ap_stop_events > 0) {
+		return true;
+	}
+#endif
+	return false;
+}
+
+#if SQ_VM_RUNTIME_HAS_WIFI_MGMT
+static bool runtime_wifi_station_may_be_active(const struct sq_vm_runtime *runtime)
+{
+	if (runtime == NULL) {
+		return false;
+	}
+	switch (runtime->wifi_service_state) {
+	case SQ_VM_RUNTIME_WIFI_SERVICE_CONNECTING:
+	case SQ_VM_RUNTIME_WIFI_SERVICE_CONNECTED:
+	case SQ_VM_RUNTIME_WIFI_SERVICE_DISCONNECTING:
+		return true;
+	default:
+		break;
+	}
+	switch (runtime->wifi_op_kind) {
+	case SQ_VM_RUNTIME_WIFI_OP_CONNECT:
+	case SQ_VM_RUNTIME_WIFI_OP_DISCONNECT:
+		return true;
+	default:
+		return false;
+	}
+}
+#endif
+
+void __weak sq_vm_runtime_wifi_reset_platform(struct sq_vm_runtime *runtime)
+{
+#if SQ_VM_RUNTIME_HAS_WIFI_MGMT
+	if (runtime == NULL) {
+		return;
+	}
+	if (runtime_wifi_scan_active_runtime == runtime) {
+		runtime->wifi_scan_collecting = false;
+		runtime_wifi_scan_active_runtime = NULL;
+	}
+	struct net_if *ap_iface = runtime_wifi_ap_iface();
+	if (ap_iface != NULL &&
+	    (runtime->wifi_ap_active ||
+	     runtime->wifi_service_state == SQ_VM_RUNTIME_WIFI_SERVICE_AP_STARTING ||
+	     runtime->wifi_service_state == SQ_VM_RUNTIME_WIFI_SERVICE_AP_STARTED ||
+	     runtime->wifi_service_state == SQ_VM_RUNTIME_WIFI_SERVICE_AP_STOPPING)) {
+		(void)runtime_wifi_stop_ap_dhcp(ap_iface);
+		(void)net_mgmt(NET_REQUEST_WIFI_AP_DISABLE, ap_iface, NULL, 0);
+	}
+	struct net_if *sta_iface = runtime_wifi_iface();
+	if (sta_iface != NULL && runtime_wifi_station_may_be_active(runtime)) {
+		net_dhcpv4_stop(sta_iface);
+		(void)net_mgmt(NET_REQUEST_WIFI_DISCONNECT, sta_iface, NULL, 0);
+	}
+#else
+	ARG_UNUSED(runtime);
+#endif
+}
+
+void sq_vm_runtime_wifi_reset_target(struct sq_vm_runtime *runtime)
+{
+	if (!runtime_wifi_reset_needs_target_cleanup(runtime)) {
+		return;
+	}
+	sq_vm_runtime_wifi_reset_platform(runtime);
+}
+
 #if !SQ_VM_RUNTIME_HAS_WIFI_MGMT
 static int32_t runtime_wifi_unsupported_action(SqvmWifiOperation *out)
 {

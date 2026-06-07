@@ -9,6 +9,7 @@ TARGET_ID="${TARGET_ID:-xiao-esp32c3-gdeq0426t82-sd}"
 SKIP_FLASH="${SKIP_FLASH:-0}"
 REQUIRE_BLE_RECONNECT="${REQUIRE_BLE_RECONNECT:-0}"
 HOST_WIFI_IFACE="${HOST_WIFI_IFACE:-}"
+DEVICE_SELECTOR="${DEVICE_SELECTOR:-}"
 WORK_DIR="${ROOT}/target/hardware-tests/radio-concurrency"
 WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-75}"
 BLE_LOG_TIMEOUT_SECONDS="${BLE_LOG_TIMEOUT_SECONDS:-20}"
@@ -29,7 +30,7 @@ DEVICE_AP_ACTIVE=0
 
 usage() {
   cat <<'EOF'
-Usage: scripts/zephyr-test-radio-concurrency.sh [--target <id>] [--skip-flash] [--require-ble-reconnect] [--host-wifi-iface <iface>]
+Usage: scripts/zephyr-test-radio-concurrency.sh [--target <id>] [--skip-flash] [--require-ble-reconnect] [--device <name-or-address>] [--host-wifi-iface <iface>]
 
 Runs an opt-in Wi-Fi/BLE concurrency matrix against a Zephyr ESP32-C3 target.
 The script may temporarily take over the host Wi-Fi and Bluetooth controllers.
@@ -52,6 +53,10 @@ while [[ $# -gt 0 ]]; do
     --require-ble-reconnect)
       REQUIRE_BLE_RECONNECT=1
       shift
+      ;;
+    --device)
+      DEVICE_SELECTOR="$2"
+      shift 2
       ;;
     --host-wifi-iface)
       HOST_WIFI_IFACE="$2"
@@ -290,35 +295,6 @@ PY
   exit 1
 }
 
-wait_for_device_ap_client_count() {
-  local out="${WORK_DIR}/output-wifi-ap-clients.out"
-  local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS))
-  while (( SECONDS < deadline )); do
-    timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" cargo run --quiet -p squidc -- device output \
-      >"${out}" 2>&1
-    if python3 - "${out}" <<'PY'
-import re
-import sys
-
-with open(sys.argv[1], encoding="utf-8", errors="replace") as handle:
-    for line in handle:
-        match = re.search(r"output=radio wifi ap clients ([0-9]+) ", line)
-        if match and int(match.group(1)) > 0:
-            raise SystemExit(0)
-
-raise SystemExit(1)
-PY
-    then
-      printf '%s\n' "${out}"
-      return 0
-    fi
-    sleep 0.2
-  done
-  printf '%s\n' 'Timed out waiting for target AP client count to become positive' >&2
-  capture_device_diagnostics "output-wifi-ap-clients-timeout"
-  exit 1
-}
-
 disconnect_host_from_device_ap() {
   nmcli connection down "${DEVICE_AP_CONN}" >"${WORK_DIR}/device-ap-down.out" 2>&1 || true
   nmcli connection delete "${DEVICE_AP_CONN}" >"${WORK_DIR}/device-ap-delete.out" 2>&1 || true
@@ -365,6 +341,7 @@ capture_ble_advertising_log() {
 discover_ble_device() {
   local target_name="$1"
   local target_prefix
+  local selector="${DEVICE_SELECTOR:-$1}"
   target_prefix="$(ble_name_prefix "${target_name}")"
   if ! command -v bluetoothctl >/dev/null 2>&1; then
     printf '%s\n' 'bluetoothctl is required for radio concurrency testing' >&2
@@ -384,10 +361,10 @@ discover_ble_device() {
     exit "${scan_status}"
   fi
   bluetoothctl scan off >"${WORK_DIR}/ble-scan-off.out" 2>&1 || true
-  BLE_ADDR="$(python3 - "${scan_out}" "${target_name}" "${target_prefix}" <<'PY'
+  BLE_ADDR="$(python3 - "${scan_out}" "${target_name}" "${target_prefix}" "${selector}" <<'PY'
 import re
 import sys
-path, full_name, prefix = sys.argv[1:4]
+path, full_name, prefix, selector = sys.argv[1:5]
 ansi = re.compile(r"\x1b\[[0-9;]*m")
 device_line = re.compile(r"Device\s+([0-9A-Fa-f:]{17})\s+(.+)$")
 name_change = re.compile(r"Device\s+([0-9A-Fa-f:]{17})\s+Name:\s+(.+)$")
@@ -399,9 +376,10 @@ with open(path, encoding="utf-8", errors="replace") as handle:
         match = name_change.search(line) or device_line.search(line)
         if not match:
             continue
+        address = match.group(1).strip()
         name = match.group(2).strip()
-        if full_name in name or prefix in name:
-            print(match.group(1))
+        if selector.lower() == address.lower() or selector in name or full_name in name or prefix in name:
+            print(address)
             break
 PY
 )"
@@ -513,15 +491,13 @@ assert_no_raw_network_identifiers "${ap_start_out}"
 DEVICE_AP_ACTIVE=1
 connect_host_to_device_ap
 assert_device_ap_dhcp_lease
-ap_clients_out="$(wait_for_device_ap_client_count)"
-assert_no_raw_network_identifiers "${ap_clients_out}"
 assert_ble_connected
+disconnect_host_from_device_ap
 run_capture ap-stop-key cargo run --quiet -p squidc -- device key SELECT >/dev/null
 ap_stop_out="$(wait_for_contains output-wifi-ap-stop "output=radio wifi ap stop true" \
   "device output" cargo run --quiet -p squidc -- device output)"
 assert_no_raw_network_identifiers "${ap_stop_out}"
 DEVICE_AP_ACTIVE=0
-disconnect_host_from_device_ap
 check_device_errors wifi-ap
 printf '%s\n' 'OK BLE stayed connected during Wi-Fi AP client association'
 

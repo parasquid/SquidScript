@@ -54,6 +54,34 @@ static bool runtime_has_active_binding(const struct sq_vm_runtime *runtime, cons
 	return false;
 }
 
+static int test_wifi_reset_platform_calls;
+static enum sq_vm_runtime_wifi_op_kind test_wifi_reset_platform_kind;
+static enum sq_vm_runtime_wifi_service_state test_wifi_reset_platform_state;
+static bool test_wifi_reset_platform_ap_active;
+
+void sq_vm_runtime_wifi_reset_platform(struct sq_vm_runtime *runtime)
+{
+	test_wifi_reset_platform_calls++;
+	if (runtime == NULL) {
+		return;
+	}
+	test_wifi_reset_platform_kind = runtime->wifi_op_kind;
+	test_wifi_reset_platform_state = runtime->wifi_service_state;
+#if SQ_VM_RUNTIME_HAS_WIFI_MGMT
+	test_wifi_reset_platform_ap_active = runtime->wifi_ap_active;
+#else
+	test_wifi_reset_platform_ap_active = false;
+#endif
+}
+
+static void reset_wifi_reset_platform_observer(void)
+{
+	test_wifi_reset_platform_calls = 0;
+	test_wifi_reset_platform_kind = SQ_VM_RUNTIME_WIFI_OP_NONE;
+	test_wifi_reset_platform_state = SQ_VM_RUNTIME_WIFI_SERVICE_IDLE;
+	test_wifi_reset_platform_ap_active = false;
+}
+
 static void write_u32_le(uint8_t *bytes, uint32_t value)
 {
 	bytes[0] = value & 0xff;
@@ -5116,6 +5144,32 @@ ZTEST(squidscript_protocol, test_vm_runtime_tracks_wifi_service_state_transition
 	zassert_str_equal(runtime.wifi_op_error, "connect failed");
 	zassert_str_equal(sq_vm_runtime_wifi_service_state_text(runtime.wifi_service_state),
 			  "error");
+}
+
+ZTEST(squidscript_protocol, test_vm_runtime_reset_runs_wifi_target_cleanup_before_clearing_state)
+{
+	static struct sq_vm_runtime runtime;
+
+	sq_vm_runtime_reset(&runtime);
+	reset_wifi_reset_platform_observer();
+
+	sq_vm_runtime_wifi_service_begin(&runtime, SQ_VM_RUNTIME_WIFI_OP_DISCONNECT,
+					 SQ_VM_RUNTIME_WIFI_SERVICE_DISCONNECTING, 1000);
+#if SQ_VM_RUNTIME_HAS_WIFI_MGMT
+	runtime.wifi_ap_active = true;
+#endif
+	sq_vm_runtime_reset(&runtime);
+
+	zassert_equal(test_wifi_reset_platform_calls, 1);
+	zassert_equal(test_wifi_reset_platform_kind, SQ_VM_RUNTIME_WIFI_OP_DISCONNECT);
+	zassert_equal(test_wifi_reset_platform_state, SQ_VM_RUNTIME_WIFI_SERVICE_DISCONNECTING);
+#if SQ_VM_RUNTIME_HAS_WIFI_MGMT
+	zassert_true(test_wifi_reset_platform_ap_active);
+#endif
+	zassert_equal(runtime.wifi_service_state, SQ_VM_RUNTIME_WIFI_SERVICE_IDLE);
+	zassert_equal(runtime.wifi_op_kind, SQ_VM_RUNTIME_WIFI_OP_NONE);
+	zassert_false(runtime.wifi_op_active);
+	zassert_false(runtime.wifi_op_done);
 }
 
 ZTEST(squidscript_protocol, test_sqdc_ffi_parses_and_encodes_device_config)

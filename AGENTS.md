@@ -412,6 +412,12 @@ work. The always-fire disciplines stay here:
   build/flash/boot without hanging on an attached target that exercises the
   changed firmware path; run the broader hardware suite when runtime behavior
   paths changed or when the target test inventory indicates coverage.
+- When a hardware command timeout produces empty protocol diagnostics
+  (`device resources`, `device errors`, and `device lifecycle`), capture bounded
+  raw serial evidence before calling the test flaky or assuming host timing.
+  This is especially important at the reset boundary between XIAO
+  `radio-concurrency` and `ap-after-station`, where firmware recovery, USB
+  serial visibility, and Wi-Fi/BLE target state must be distinguished.
 - If hardware tests are skipped for firmware-impacting work, explicitly report
   that hardware tests were not run, why they were skipped, what native/host
   checks were run instead, and whether the change still needs hardware

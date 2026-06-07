@@ -1415,6 +1415,7 @@ fn hardware_test(args: HardwareTestArgs, human: bool) -> Result<Value, String> {
             },
             human,
         )?;
+        wait_for_hardware_test_device_reset(args.port.as_deref())?;
     }
 
     let mut results = Vec::new();
@@ -1447,6 +1448,49 @@ fn hardware_test(args: HardwareTestArgs, human: bool) -> Result<Value, String> {
         "target": target_def.summary_json(),
         "checks": results
     }))
+}
+
+fn wait_for_hardware_test_device_reset(port: Option<&str>) -> Result<(), String> {
+    const ATTEMPTS: usize = 8;
+    const DELAY: Duration = Duration::from_secs(2);
+
+    let mut last_error = None;
+    for attempt in 1..=ATTEMPTS {
+        let result = match port {
+            Some(port) => {
+                SerialDevice::open(port).and_then(|mut device| device.reset().map(|_| ()))
+            }
+            None => detect_port().and_then(|port| {
+                SerialDevice::open(&port).and_then(|mut device| device.reset().map(|_| ()))
+            }),
+        };
+        match result {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                let retryable = hardware_test_reset_error_is_retryable(&error);
+                last_error = Some(error);
+                if !retryable || attempt == ATTEMPTS {
+                    break;
+                }
+                std::thread::sleep(DELAY);
+            }
+        }
+    }
+    Err(format!(
+        "firmware did not become ready for hardware tests after flash: {}",
+        last_error.unwrap_or_else(|| "no response".to_string())
+    ))
+}
+
+fn hardware_test_reset_error_is_retryable(error: &str) -> bool {
+    error.contains("(-116)")
+        || error.contains("(ETIMEDOUT)")
+        || error.contains("busy (-16)")
+        || error.contains("firmware did not become ready")
+        || error.contains("BadMagic")
+        || error.contains("TruncatedHeader")
+        || error.contains("LengthMismatch")
+        || error.contains("no SquidScript firmware serial target found")
 }
 
 fn hardware_test_checks_for_target(target: &target::TargetDefinition) -> Vec<HardwareTestCheck> {
@@ -1513,6 +1557,9 @@ fn run_hardware_script(
             }
         }
         "radio-concurrency" => {
+            if let Some(device) = &args.ble_device {
+                command.arg("--device").arg(device);
+            }
             if let Some(iface) = &args.host_wifi_iface {
                 command.arg("--host-wifi-iface").arg(iface);
             }
@@ -2812,6 +2859,29 @@ mod tests {
         );
         assert!(!names.contains(&"display-drawlog"));
         assert!(!names.contains(&"sd-card"));
+    }
+
+    #[test]
+    fn hardware_test_post_flash_reset_retries_readiness_failures_only() {
+        assert!(hardware_test_reset_error_is_retryable(
+            "command failed (-116)"
+        ));
+        assert!(hardware_test_reset_error_is_retryable("busy (-16)"));
+        assert!(hardware_test_reset_error_is_retryable(
+            "firmware did not become ready for protocol commands: BadMagic"
+        ));
+        assert!(hardware_test_reset_error_is_retryable(
+            "invalid hello frame: TruncatedHeader"
+        ));
+        assert!(hardware_test_reset_error_is_retryable(
+            "no SquidScript firmware serial target found"
+        ));
+        assert!(!hardware_test_reset_error_is_retryable(
+            "command failed (-5)"
+        ));
+        assert!(!hardware_test_reset_error_is_retryable(
+            "failed to configure /dev/ttyACM0 with stty"
+        ));
     }
 
     #[test]

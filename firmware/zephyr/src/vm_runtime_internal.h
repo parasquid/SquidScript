@@ -111,6 +111,8 @@ int32_t runtime_wifi_result(void *user_data, SqvmWifiOperationResult *out);
 int32_t runtime_wifi_cancel(void *user_data, SqvmWifiOperation *out);
 int32_t runtime_wifi_scan_network(void *user_data, int32_t index,
 				  SqvmWifiScanNetworkResult *out);
+void sq_vm_runtime_wifi_reset_target(struct sq_vm_runtime *runtime);
+void sq_vm_runtime_wifi_reset_platform(struct sq_vm_runtime *runtime);
 
 int32_t runtime_device_config_load(void *user_data, const uint8_t *source, size_t source_len,
 				   SqvmDeviceConfigResult *out);
