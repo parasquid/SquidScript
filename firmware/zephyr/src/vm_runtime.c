@@ -679,6 +679,14 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->wifi_ap_clients = 0;
 	runtime->wifi_ap_sta_connected_events = 0;
 	runtime->wifi_ap_sta_disconnected_events = 0;
+	runtime->wifi_service_state = SQ_VM_RUNTIME_WIFI_SERVICE_IDLE;
+	runtime->wifi_op_kind = SQ_VM_RUNTIME_WIFI_OP_NONE;
+	runtime->wifi_op_active = false;
+	runtime->wifi_op_done = false;
+	runtime->wifi_op_cancelled = false;
+	runtime->wifi_op_ok = false;
+	runtime->wifi_op_error = NULL;
+	runtime->wifi_op_deadline_ms = 0;
 #if SQ_VM_RUNTIME_HAS_WIFI_MGMT
 	memset(runtime->wifi_station_ip, 0, sizeof(runtime->wifi_station_ip));
 	runtime->wifi_station_connect_status = 0;

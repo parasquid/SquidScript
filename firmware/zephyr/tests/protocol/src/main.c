@@ -5054,6 +5054,41 @@ ZTEST(squidscript_protocol, test_vm_runtime_tracks_wifi_ap_client_count)
 	zassert_equal(runtime.wifi_ap_clients, 0);
 }
 
+ZTEST(squidscript_protocol, test_vm_runtime_tracks_wifi_service_state_transitions)
+{
+	static struct sq_vm_runtime runtime;
+
+	sq_vm_runtime_reset(&runtime);
+	zassert_equal(runtime.wifi_service_state, SQ_VM_RUNTIME_WIFI_SERVICE_IDLE);
+	zassert_str_equal(sq_vm_runtime_wifi_service_state_text(runtime.wifi_service_state),
+			  "idle");
+
+	sq_vm_runtime_wifi_service_begin(&runtime, SQ_VM_RUNTIME_WIFI_OP_SCAN,
+					 SQ_VM_RUNTIME_WIFI_SERVICE_SCANNING, 1000);
+	zassert_equal(runtime.wifi_service_state, SQ_VM_RUNTIME_WIFI_SERVICE_SCANNING);
+	zassert_equal(runtime.wifi_op_kind, SQ_VM_RUNTIME_WIFI_OP_SCAN);
+	zassert_true(runtime.wifi_op_active);
+	zassert_false(runtime.wifi_op_done);
+	zassert_str_equal(sq_vm_runtime_wifi_service_state_text(runtime.wifi_service_state),
+			  "scanning");
+
+	sq_vm_runtime_wifi_service_finish(&runtime, SQ_VM_RUNTIME_WIFI_SERVICE_IDLE, true, NULL);
+	zassert_equal(runtime.wifi_service_state, SQ_VM_RUNTIME_WIFI_SERVICE_IDLE);
+	zassert_true(runtime.wifi_op_done);
+	zassert_true(runtime.wifi_op_ok);
+
+	sq_vm_runtime_wifi_service_begin(&runtime, SQ_VM_RUNTIME_WIFI_OP_CONNECT,
+					 SQ_VM_RUNTIME_WIFI_SERVICE_CONNECTING, 1000);
+	sq_vm_runtime_wifi_service_finish(&runtime, SQ_VM_RUNTIME_WIFI_SERVICE_ERROR, false,
+					  "connect failed");
+	zassert_equal(runtime.wifi_service_state, SQ_VM_RUNTIME_WIFI_SERVICE_ERROR);
+	zassert_true(runtime.wifi_op_done);
+	zassert_false(runtime.wifi_op_ok);
+	zassert_str_equal(runtime.wifi_op_error, "connect failed");
+	zassert_str_equal(sq_vm_runtime_wifi_service_state_text(runtime.wifi_service_state),
+			  "error");
+}
+
 ZTEST(squidscript_protocol, test_sqdc_ffi_parses_and_encodes_device_config)
 {
 	const uint8_t source[] =

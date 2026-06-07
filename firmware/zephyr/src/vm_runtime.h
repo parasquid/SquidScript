@@ -218,6 +218,18 @@ enum sq_vm_runtime_wifi_op_kind {
 	SQ_VM_RUNTIME_WIFI_OP_SCAN,
 };
 
+enum sq_vm_runtime_wifi_service_state {
+	SQ_VM_RUNTIME_WIFI_SERVICE_IDLE = 0,
+	SQ_VM_RUNTIME_WIFI_SERVICE_SCANNING,
+	SQ_VM_RUNTIME_WIFI_SERVICE_CONNECTING,
+	SQ_VM_RUNTIME_WIFI_SERVICE_CONNECTED,
+	SQ_VM_RUNTIME_WIFI_SERVICE_DISCONNECTING,
+	SQ_VM_RUNTIME_WIFI_SERVICE_AP_STARTING,
+	SQ_VM_RUNTIME_WIFI_SERVICE_AP_STARTED,
+	SQ_VM_RUNTIME_WIFI_SERVICE_AP_STOPPING,
+	SQ_VM_RUNTIME_WIFI_SERVICE_ERROR,
+};
+
 struct sq_vm_runtime {
 	uint64_t context_words[SQ_VM_RUNTIME_CONTEXT_BYTES / sizeof(uint64_t)];
 	bool work_initialized;
@@ -324,6 +336,14 @@ struct sq_vm_runtime {
 	int32_t wifi_ap_clients;
 	int32_t wifi_ap_sta_connected_events;
 	int32_t wifi_ap_sta_disconnected_events;
+	enum sq_vm_runtime_wifi_service_state wifi_service_state;
+	enum sq_vm_runtime_wifi_op_kind wifi_op_kind;
+	bool wifi_op_active;
+	bool wifi_op_done;
+	bool wifi_op_cancelled;
+	bool wifi_op_ok;
+	const char *wifi_op_error;
+	int64_t wifi_op_deadline_ms;
 #if IS_ENABLED(CONFIG_NET_L2_WIFI_MGMT) && IS_ENABLED(CONFIG_NET_MGMT_EVENT) && \
 	IS_ENABLED(CONFIG_NET_MGMT_EVENT_INFO)
 	char wifi_station_ip[SQ_VM_RUNTIME_WIFI_IPV4_LEN];
@@ -336,13 +356,6 @@ struct sq_vm_runtime {
 	int wifi_station_disconnect_status;
 	bool wifi_station_connect_done;
 	bool wifi_station_disconnect_done;
-	enum sq_vm_runtime_wifi_op_kind wifi_op_kind;
-	bool wifi_op_active;
-	bool wifi_op_done;
-	bool wifi_op_cancelled;
-	bool wifi_op_ok;
-	const char *wifi_op_error;
-	int64_t wifi_op_deadline_ms;
 	bool wifi_ap_active;
 	int32_t wifi_ap_start_events;
 	int32_t wifi_ap_stop_events;
@@ -472,6 +485,18 @@ int sq_vm_runtime_work_stack_unused(size_t *unused);
 int sq_vm_runtime_wifi_format_bssid(const uint8_t *mac, size_t mac_len, char *out, size_t out_len);
 void sq_vm_runtime_wifi_note_ap_sta_connected(struct sq_vm_runtime *runtime);
 void sq_vm_runtime_wifi_note_ap_sta_disconnected(struct sq_vm_runtime *runtime);
+const char *sq_vm_runtime_wifi_service_state_text(
+	enum sq_vm_runtime_wifi_service_state state);
+void sq_vm_runtime_wifi_service_begin(struct sq_vm_runtime *runtime,
+				      enum sq_vm_runtime_wifi_op_kind kind,
+				      enum sq_vm_runtime_wifi_service_state state,
+				      int64_t timeout_ms);
+void sq_vm_runtime_wifi_service_finish(struct sq_vm_runtime *runtime,
+				       enum sq_vm_runtime_wifi_service_state state,
+				       bool ok, const char *error);
+void sq_vm_runtime_wifi_service_cancel(struct sq_vm_runtime *runtime,
+				       enum sq_vm_runtime_wifi_service_state state);
+bool sq_vm_runtime_wifi_service_busy(const struct sq_vm_runtime *runtime);
 int sq_vm_runtime_set_wifi_profile(struct sq_vm_runtime *runtime, const uint8_t *profile,
 				   size_t profile_len, const uint8_t *ssid, size_t ssid_len,
 				   const uint8_t *password, size_t password_len);

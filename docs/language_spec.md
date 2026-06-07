@@ -2315,6 +2315,10 @@ driver cannot cancel an in-flight request.
 - `count`: int; for scan results, the number of bounded AP records currently
   available
 
+The operation record describes the foreground command's progress. It is
+separate from the Wi-Fi service state reported by `status()`, so a completed
+scan can have `operation().state == "done"` while `status().state == "idle"`.
+
 `scanNetwork(index)` returns one AP record from the latest completed scan:
 
 - `ok`: bool
@@ -2338,7 +2342,7 @@ driver cannot cancel an in-flight request.
 - `error`: string or null
 - `state`: string, one of `unavailable`, `idle`, `configuring`, `starting`,
   `started`, `stopping`, `stopped`, or `error`
-- `backend`: string, currently `esp`, `sim`, or `unavailable`
+- `backend`: string, currently `zephyr`, `sim`, or `unavailable`
 - `driverStarted`: bool
 - `configured`: bool
 - `driverMode`: string or null
@@ -2364,6 +2368,11 @@ driver cannot cancel an in-flight request.
 - `gw`: string or null
 - `netmask`: string or null
 - `error`: string or null
+
+`status().state` is a service-level lifecycle value. Firmware maps target
+driver states into the portable set `unavailable`, `idle`, `configuring`,
+`starting`, `started`, `stopping`, `stopped`, or `error`; raw target driver
+states are not exposed through this field.
 
 Example:
 

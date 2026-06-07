@@ -28,9 +28,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   with `-EBUSY` if the app is currently `current_app` (the caller must
   `app.exit` first or `app.launch` a different app). No new firmware cap
   needed; reuses the existing `sq_app_store` mount point.
-- Treat Wi-Fi scan/connect/AP lifecycle as a future explicit service-state
-  machine item when Wi-Fi work is in scope. Keep the current nonblocking
-  operation/result/cursor API as the baseline.
 - Defer `binbook.*` compiler/FFI/firmware work until the e-paper display is
   available and the BinBook spec has settled enough to avoid optimizing around
   rough draft behavior.

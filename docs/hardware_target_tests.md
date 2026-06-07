@@ -552,7 +552,9 @@ an active file-transfer profile, discovers the target with host Bluetooth,
 connects to it, and keeps that BLE connection active while normal SquidScript
 Wi-Fi apps exercise scan/list, target AP
 start/client-association/DHCP-lease/stop, and station connect/disconnect
-through a generated temporary host AP. It finishes by checking Wi-Fi status. Pass
+through a generated temporary host AP. These operations exercise the firmware
+Wi-Fi service-state machine through scan, AP, and station transitions rather
+than only probing individual driver calls. It finishes by checking Wi-Fi status. Pass
 `--require-ble-reconnect` only when validating BLE re-advertising after host
 disconnect; the default matrix proves active BLE coexistence during Wi-Fi work
 without making reconnectability a pass requirement.
