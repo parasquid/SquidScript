@@ -55,10 +55,6 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
         self.assertIn("out->network = runtime->wifi_scan.networks[index]", runtime_c)
         self.assertNotIn("runtime->transfer.wifi_scan", runtime_c)
         self.assertIn("runtime_static <= 12160", ztest)
-        self.assertNotIn("runtime_static <= 13984", ztest)
-        self.assertNotIn("runtime_static <= 14176", ztest)
-        self.assertNotIn("runtime_static <= 14304", ztest)
-        self.assertNotIn("runtime_static <= 14720", ztest)
 
     def test_runtime_transfer_scratch_has_diagnostic_owner_checks(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
@@ -197,32 +193,21 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
             )
         ]
 
-        self.assertIn("#define SQVM_STORAGE_TRANSFER_CAPACITY 640", ffi_h)
-        self.assertIn("pub const MAX_CODE_CHUNK_BYTES: usize = 640;", limits_rs)
-        self.assertNotIn("#define SQVM_STORAGE_TRANSFER_CAPACITY 768", ffi_h)
-        self.assertNotIn("pub const MAX_CODE_CHUNK_BYTES: usize = 768;", limits_rs)
-        self.assertNotIn("#define SQVM_STORAGE_TRANSFER_CAPACITY 1024", ffi_h)
-        self.assertNotIn("pub const MAX_CODE_CHUNK_BYTES: usize = 1024;", limits_rs)
+        max_code_chunk = re.search(
+            r"pub const MAX_CODE_CHUNK_BYTES: usize = ([0-9]+);", limits_rs
+        )
+        self.assertIsNotNone(max_code_chunk)
+        transfer_capacity = int(max_code_chunk.group(1))
+
+        self.assert_define_value(ffi_h, "SQVM_STORAGE_TRANSFER_CAPACITY", transfer_capacity)
         self.assertIn("union sq_vm_runtime_transfer", runtime_h)
         self.assertIn("uint8_t init_scratch[SQ_VM_RUNTIME_SCRATCH_BYTES]", runtime_h)
         self.assertIn("SqvmStorageCompletion completion", runtime_h)
         self.assertNotIn("uint8_t scratch[SQ_VM_RUNTIME_SCRATCH_BYTES];", runtime_body)
         self.assertNotIn("SqvmStorageCompletion completion;", runtime_body)
         self.assertIn("sizeof(runtime.transfer.init_scratch)", ztest)
-        self.assertIn("SQVM_STORAGE_TRANSFER_CAPACITY <= 640", ztest)
+        self.assertIn(f"SQVM_STORAGE_TRANSFER_CAPACITY <= {transfer_capacity}", ztest)
         self.assertIn("runtime_static <= 12160", ztest)
-        self.assertNotIn("runtime_static <= 13984", ztest)
-        self.assertNotIn("runtime_static <= 14176", ztest)
-        self.assertNotIn("runtime_static <= 14720", ztest)
-        self.assertNotIn("runtime_static <= 14736", ztest)
-        self.assertNotIn("runtime_static <= 15264", ztest)
-        self.assertNotIn("runtime_static <= 16160", ztest)
-        self.assertNotIn("runtime_static <= 16240", ztest)
-        self.assertNotIn("runtime_static <= 16312", ztest)
-        self.assertNotIn("runtime_static <= 16320", ztest)
-        self.assertNotIn("runtime_static <= 16344", ztest)
-        self.assertNotIn("runtime_static <= 16408", ztest)
-        self.assertNotIn("runtime_static <= 16512", ztest)
 
     def test_runtime_does_not_keep_launch_binding_scratch_resident(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
@@ -507,25 +492,14 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
         header = self.read("firmware/zephyr/src/device_protocol.h")
         stack = self.read("scripts/c3-supermini-measure-input-stack-isolation.sh")
         ffi_rs = self.read("compiler/rust/crates/squidvm-ffi/src/lib.rs")
+        limits = self.esp32c3_runtime_limits()
+        response_bytes = limits["device_protocol"]["response_bytes"]
+        resource_path_bytes = limits["device_protocol"]["resource_path_bytes"]
 
-        self.assertIn("#define SQ_DEVICE_RESPONSE_BYTES 1088u", header)
-        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 1120u", header)
-        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 824u", header)
-        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 820u", header)
-        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 916u", header)
-        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 826u", header)
-        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 834u", header)
-        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 848u", header)
-        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 960u", header)
-        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 976u", header)
-        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 928u", header)
-        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 984u", header)
-        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 992u", header)
-        self.assertNotIn("#define SQ_DEVICE_RESPONSE_BYTES 1024u", header)
-        self.assertIn("#define SQ_DEVICE_RESOURCE_PATH_BYTES 80u", header)
+        self.assert_define_value(header, "SQ_DEVICE_RESPONSE_BYTES", response_bytes)
+        self.assert_define_value(header, "SQ_DEVICE_RESOURCE_PATH_BYTES", resource_path_bytes)
         self.assertNotIn("char resource_path[SQ_APP_STORE_PATH_MAX];", header)
-        self.assertIn("const SQDP_PATH_CAP: usize = 80;", ffi_rs)
-        self.assertNotIn("const SQDP_PATH_CAP: usize = 128;", ffi_rs)
+        self.assertIn(f"const SQDP_PATH_CAP: usize = {resource_path_bytes};", ffi_rs)
         self.assertNotIn("SQ_DEVICE_RESOURCE_METRIC_MAX", header)
         self.assertNotIn("SqdpResourceMetric *resource_metrics", header)
         self.assertNotIn('SQ_RESOURCE_METRIC("active_binding_count"', protocol)
@@ -539,31 +513,22 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
     def test_app_registry_keeps_constrained_firmware_capacity_bounded(self):
         app_store_h = self.read("firmware/zephyr/src/app_store.h")
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
+        max_apps = self.esp32c3_runtime_limits()["app_store"]["max_apps"]
 
-        self.assertIn("#define SQ_APP_STORE_MAX_APPS 8", app_store_h)
+        self.assert_define_value(app_store_h, "SQ_APP_STORE_MAX_APPS", max_apps)
         self.assertIn("uint8_t count;", app_store_h)
         self.assertIn("uint32_t sqbc_len;", app_store_h)
         self.assertNotIn("size_t sqbc_len;", app_store_h)
         self.assertIn("format_test_app_store()", ztest)
-        self.assertNotIn("#define SQ_APP_STORE_MAX_APPS 4", app_store_h)
-        self.assertNotIn("#define SQ_APP_STORE_MAX_APPS 10", app_store_h)
-        self.assertNotIn("#define SQ_APP_STORE_MAX_APPS 11", app_store_h)
-        self.assertNotIn("#define SQ_APP_STORE_MAX_APPS 12", app_store_h)
-        self.assertNotIn("#define SQ_APP_STORE_MAX_APPS 16", app_store_h)
         self.assertNotIn("size_t count;", app_store_h)
 
     def test_serial_transport_uses_reduced_frame_budget(self):
         serial_h = self.read("firmware/zephyr/src/serial_transport.h")
         cli_serial = self.read("compiler/rust/crates/squidc-cli/src/serial.rs")
+        max_frame_len = self.esp32c3_runtime_limits()["serial_transport"]["max_frame_len"]
 
-        self.assertIn("#define SQ_SERIAL_MAX_FRAME_LEN 256u", serial_h)
-        self.assertIn("const FIRMWARE_SERIAL_FRAME_BUDGET: usize = 256;", cli_serial)
-        self.assertNotIn("#define SQ_SERIAL_MAX_FRAME_LEN 320u", serial_h)
-        self.assertNotIn("const FIRMWARE_SERIAL_FRAME_BUDGET: usize = 320;", cli_serial)
-        self.assertNotIn("#define SQ_SERIAL_MAX_FRAME_LEN 384u", serial_h)
-        self.assertNotIn("const FIRMWARE_SERIAL_FRAME_BUDGET: usize = 384;", cli_serial)
-        self.assertNotIn("#define SQ_SERIAL_MAX_FRAME_LEN 512u", serial_h)
-        self.assertNotIn("const FIRMWARE_SERIAL_FRAME_BUDGET: usize = 512;", cli_serial)
+        self.assert_define_value(serial_h, "SQ_SERIAL_MAX_FRAME_LEN", max_frame_len)
+        self.assertIn(f"const FIRMWARE_SERIAL_FRAME_BUDGET: usize = {max_frame_len};", cli_serial)
 
     def test_key_dispatch_uses_rust_parser_without_c_payload_staging(self):
         protocol = self.read("firmware/zephyr/src/device_protocol.c")

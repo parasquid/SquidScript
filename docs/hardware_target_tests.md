@@ -277,18 +277,13 @@ app lifecycle checks in the full ESP32-C3 Super Mini suite. It records
 `device resources` output under `target/hardware-tests/stack-usage/` and
 verifies `proto_stack_*` and `vm_stack_*` metrics are
 internally consistent. The current firmware keeps the protocol/main stack budget
-at 4,864 bytes and the VM worker stack budget at 16,640 bytes. Treat the current
+at 4,864 bytes and the VM worker stack budget at 24,576 bytes. Treat the current
 budgets as the reliability baseline until lifecycle, registry, GPIO input, and
 stack resource checks pass with fresh hardware evidence for a smaller setting.
 The harness uses a command-level timeout for its
 `device resources`
 request so serial stalls fail with captured output instead of hanging the full
-suite. GPIO-button device-binding launch coverage previously measured
-protocol/main stack use above the old 8 KiB budget before launch-time binding
-setup moved to the VM worker stack. Current broader same-build non-scan
-hardware coverage measured protocol/main stack use at 4,048 bytes with
-1,072 bytes free, and VM worker stack use at 16,128 bytes with 1,280 bytes
-free. The repeatable non-scan wrapper is
+suite. The repeatable non-scan wrapper is
 `scripts/c3-supermini-test-hardware-non-scan.sh`; a run with
 `--skip-physical-input` is useful for unattended same-build coverage but does
 not replace the GPIO9 physical press row. Do not lower the configured main stack

@@ -7,6 +7,8 @@ WORK_DIR="${ROOT}/target/hardware-tests/stack-usage"
 COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-20}"
 PROTOCOL_STACK_MIN_UNUSED_BYTES="${PROTOCOL_STACK_MIN_UNUSED_BYTES:-768}"
 WORKER_STACK_MIN_UNUSED_BYTES="${WORKER_STACK_MIN_UNUSED_BYTES:-384}"
+TARGET_CONF="${TARGET_CONF:-${ROOT}/target/zephyr/generated/c3-supermini-target.conf}"
+PRJ_CONF="${PRJ_CONF:-${ROOT}/firmware/zephyr/prj.conf}"
 
 mkdir -p "${WORK_DIR}"
 
@@ -14,12 +16,27 @@ summary_out="${WORK_DIR}/summary.out"
 
 resources_out="$(run_capture resources-after-workloads cargo run --quiet -p squidc -- device resources)"
 
+config_value() {
+  local file="$1"
+  local key="$2"
+  local value
+  value="$(awk -F= -v key="$key" '$1 == key { print $2; found = 1 } END { if (!found) exit 1 }' "$file")"
+  printf '%s\n' "$value"
+}
+
 resource_value() {
   local key="$1"
   local value
   value="$(awk -F= -v key="$key" '$1 == key { print $2; found = 1 } END { if (!found) exit 1 }' "${resources_out}")"
   printf '%s\n' "$value"
 }
+
+expected_protocol_stack_size="$(
+  config_value "${PRJ_CONF}" CONFIG_MAIN_STACK_SIZE
+)"
+expected_worker_stack_size="$(
+  config_value "${TARGET_CONF}" CONFIG_SQ_VM_RUNTIME_WORK_STACK_SIZE
+)"
 
 stack_size="$(resource_value vm_stack_size_bytes)"
 stack_unused="$(resource_value vm_stack_unused_bytes)"
@@ -34,9 +51,9 @@ protocol_stack_pre_resources_used="$(
   resource_value proto_stack_pre_used_bytes
 )"
 
-if [[ "$protocol_stack_size" != "4864" ]]; then
-  printf 'Expected proto_stack_size_bytes=4864, got %s\n' \
-    "$protocol_stack_size" >&2
+if [[ "$protocol_stack_size" != "$expected_protocol_stack_size" ]]; then
+  printf 'Expected proto_stack_size_bytes=%s, got %s\n' \
+    "$expected_protocol_stack_size" "$protocol_stack_size" >&2
   printf '%s\n' "--- ${resources_out} ---" >&2
   sed -n '1,200p' "${resources_out}" >&2
   exit 1
@@ -74,8 +91,9 @@ if (( protocol_stack_unused < PROTOCOL_STACK_MIN_UNUSED_BYTES ||
   exit 1
 fi
 
-if [[ "$stack_size" != "16640" ]]; then
-  printf 'Expected vm_stack_size_bytes=16640, got %s\n' "$stack_size" >&2
+if [[ "$stack_size" != "$expected_worker_stack_size" ]]; then
+  printf 'Expected vm_stack_size_bytes=%s, got %s\n' \
+    "$expected_worker_stack_size" "$stack_size" >&2
   printf '%s\n' "--- ${resources_out} ---" >&2
   sed -n '1,200p' "${resources_out}" >&2
   exit 1

@@ -55,6 +55,21 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   with the evidence observed and whether it was verified, suspected, or still
   ambiguous. Do not silently treat possible bugs as incidental tool noise or
   bury them in a long status update.
+- Keep tests focused on durable contracts, not incidental implementation text.
+  Use exact assertions for public behavior, compiler semantics, ABI/protocol
+  wire formats, generated artifact equality, and manifest-selected budgets.
+  Avoid source-shape sentinels such as exact helper names, field order, old
+  numeric values, or stale doc prose unless they are the narrowest way to catch
+  a real pre-1.0 API/storage/protocol compatibility regression.
+- Treat RAM, stack, pool, response-size, and target capability tests as budget
+  tests. Exact values should come from target/runtime metadata, generated
+  headers, or another explicit source of truth; otherwise prefer bounds or
+  behavior checks. Delete historical old-value `assertNotIn` checks once the
+  current budget is checked from its source of truth.
+- Migration tests for removed syntax, APIs, storage formats, protocol names, or
+  compatibility bridges are allowed only while they protect an active removal
+  decision. Keep them grouped and purposeful; do not let them accumulate as
+  permanent "old value must not appear" tests.
 
 ## Documentation Planning
 

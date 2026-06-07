@@ -15,7 +15,7 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
         script = self.read("scripts/xiao-esp32c3-test-sd-card-smoke.sh")
         source = self.read("tests/hardware/xiao-esp32c3/sd-card-smoke/src/main.c")
         overlay = self.read("tests/hardware/xiao-esp32c3/sd-card-smoke/boards/xiao_esp32c3.overlay")
-        docs = self.read("docs/ssd1677_gdeq0426t82_agent_reference.md")
+        target = self.read_json("targets/xiao-esp32c3-gdeq0426t82-sd.target.json")
 
         self.assertIn("SD_CARD_SMOKE_READY", script)
         self.assertIn("SD_CARD_SMOKE_READY", source)
@@ -27,8 +27,11 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
         self.assertIn("<SPIM2_MOSI_GPIO10>", overlay)
         self.assertIn("<SPIM2_MISO_GPIO7>", overlay)
         self.assertIn("cs-gpios = <&gpio0 6 GPIO_ACTIVE_LOW>", overlay)
-        self.assertIn("SD `CS` | `D4` | `GPIO6`", docs)
-        self.assertIn("SD `MISO` | `D5` | `GPIO7`", docs)
+        self.assertIn("storage.sd.cs.unverified", target["pins"]["GPIO6"]["usedBy"])
+        self.assertIn("storage.sd.miso.unverified", target["pins"]["GPIO7"]["usedBy"])
+        self.assertEqual(target["buses"]["spi"]["shared"]["sck"], "GPIO8")
+        self.assertEqual(target["buses"]["spi"]["shared"]["mosi"], "GPIO10")
+        self.assertEqual(target["devices"]["storage.sd"]["status"], "planned-unverified")
 
     def test_hardware_suite_requires_real_zephyr_wifi_backend(self):
         suite = self.read("scripts/c3-supermini-test-hardware.sh")

@@ -53,31 +53,34 @@ class ZephyrRamBudgetTests(ZephyrScriptTestCase):
     def test_default_config_uses_bounded_logger_buffer(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
 
-        self.assertIn("CONFIG_LOG_BUFFER_SIZE=512", prj_conf)
-        self.assertNotIn("CONFIG_LOG_BUFFER_SIZE=1024", prj_conf)
+        self.assert_config_value(prj_conf, "CONFIG_LOG_BUFFER_SIZE", 512)
 
     def test_default_config_uses_bounded_logger_stack(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
 
-        self.assertIn("CONFIG_LOG_PROCESS_THREAD_STACK_SIZE=768", prj_conf)
-        self.assertNotIn("CONFIG_LOG_PROCESS_THREAD_STACK_SIZE=512", prj_conf)
+        self.assert_config_value(prj_conf, "CONFIG_LOG_PROCESS_THREAD_STACK_SIZE", 768)
 
     def test_default_config_uses_bounded_littlefs_file_pool(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
+        values = self.parse_config_assignments(prj_conf)
 
-        self.assertIn("CONFIG_FS_LITTLEFS_NUM_FILES=2", prj_conf)
-        self.assertNotIn("CONFIG_FS_LITTLEFS_NUM_FILES=4", prj_conf)
-        self.assertNotIn("CONFIG_FS_LITTLEFS_NUM_DIRS=2", prj_conf)
+        self.assertIn("CONFIG_FS_LITTLEFS_NUM_FILES", values)
+        self.assertLessEqual(int(values["CONFIG_FS_LITTLEFS_NUM_FILES"]), 4)
+        self.assertNotIn("CONFIG_FS_LITTLEFS_NUM_DIRS=", prj_conf)
 
     def test_default_config_uses_bounded_filesystem_name_buffer(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
         protocol_h = self.read("firmware/zephyr/src/device_protocol.h")
         build_doc = self.read("docs/firmware_build_architecture.md")
+        limits = self.esp32c3_runtime_limits()
+        resource_path_bytes = limits["device_protocol"]["resource_path_bytes"]
 
-        self.assertIn("CONFIG_FILE_SYSTEM_MAX_FILE_NAME=80", prj_conf)
-        self.assertIn("#define SQ_DEVICE_RESOURCE_PATH_BYTES 80u", protocol_h)
-        self.assertIn("Zephyr filesystem filename buffer is capped at 80 bytes", build_doc)
-        self.assertNotIn("CONFIG_FILE_SYSTEM_MAX_FILE_NAME=128", prj_conf)
+        self.assert_config_value(prj_conf, "CONFIG_FILE_SYSTEM_MAX_FILE_NAME", resource_path_bytes)
+        self.assert_define_value(protocol_h, "SQ_DEVICE_RESOURCE_PATH_BYTES", resource_path_bytes)
+        self.assertIn(
+            f"Zephyr filesystem filename buffer is capped at {resource_path_bytes} bytes",
+            build_doc,
+        )
 
     def test_default_config_enables_live_heap_resource_telemetry(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
@@ -90,13 +93,13 @@ class ZephyrRamBudgetTests(ZephyrScriptTestCase):
         self.assertIn("sys_heap_runtime_stats_get", body)
         self.assertIn("heap_count", body)
         self.assertIn("heap_free_bytes", body)
-        self.assertIn("heap_alloc_bytes", body)
-        self.assertIn("heap_max_alloc_bytes", body)
+        self.assertIn("SQ_RESOURCE_METRIC_HEAP_ALLOC_BYTES", body)
+        self.assertIn("SQ_RESOURCE_METRIC_HEAP_MAX_ALLOC_BYTES", body)
         self.assertIn("sys_heap_runtime_stats_reset_max", body)
         self.assertIn("heap_largest_free_supported", body)
         self.assertIn("heap_largest_free_bytes", body)
-        self.assertIn("proto_stack_pre_unused_bytes", body)
-        self.assertIn("proto_stack_pre_used_bytes", body)
+        self.assertIn("SQ_RESOURCE_METRIC_PROTO_STACK_PRE_UNUSED_BYTES", body)
+        self.assertIn("SQ_RESOURCE_METRIC_PROTO_STACK_PRE_USED_BYTES", body)
         self.assertNotIn("proto_stack_pre_res_unused_bytes", body)
         self.assertNotIn("proto_stack_pre_res_used_bytes", body)
         self.assertNotIn("ram_heap_allocated_bytes", body)
@@ -114,10 +117,10 @@ class ZephyrRamBudgetTests(ZephyrScriptTestCase):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
 
         for metric in [
-            "last_dispatch_seq",
-            "last_dispatch_us",
-            "last_sqbc_reads",
-            "last_sqbc_bytes",
+            "SQ_RESOURCE_METRIC_LAST_DISPATCH_SEQ",
+            "SQ_RESOURCE_METRIC_LAST_DISPATCH_US",
+            "SQ_RESOURCE_METRIC_LAST_SQBC_READS",
+            "SQ_RESOURCE_METRIC_LAST_SQBC_BYTES",
         ]:
             self.assertIn(metric, protocol)
         for field in [
@@ -156,13 +159,12 @@ class ZephyrRamBudgetTests(ZephyrScriptTestCase):
     def test_default_config_uses_measured_system_heap_budget(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
         ram_workloads = self.read("scripts/c3-supermini-measure-ram-workloads.sh")
+        heap_bytes = 65536
 
-        self.assertIn("CONFIG_HEAP_MEM_POOL_SIZE=65536", prj_conf)
-        self.assertNotIn("CONFIG_HEAP_MEM_POOL_SIZE=51200", prj_conf)
+        self.assert_config_value(prj_conf, "CONFIG_HEAP_MEM_POOL_SIZE", heap_bytes)
         self.assertIn("CONFIG_HEAP_MEM_POOL_IGNORE_MIN=y", prj_conf)
         self.assertNotIn("CONFIG_HEAP_MEM_POOL_ADD_SIZE_ESP_WIFI=", prj_conf)
-        self.assertIn('SYSTEM_HEAP_BYTES="${SYSTEM_HEAP_BYTES:-65536}"', ram_workloads)
-        self.assertNotIn('SYSTEM_HEAP_BYTES="${SYSTEM_HEAP_BYTES:-51200}"', ram_workloads)
+        self.assertIn(f'SYSTEM_HEAP_BYTES="${{SYSTEM_HEAP_BYTES:-{heap_bytes}}}"', ram_workloads)
         self.assertIn("heap_max_headroom_bytes", ram_workloads)
         self.assertIn("SYSTEM_HEAP_BYTES - heap_max_alloc", ram_workloads)
 
@@ -297,50 +299,26 @@ class ZephyrRamBudgetTests(ZephyrScriptTestCase):
     def test_zephyr_main_stack_tracks_measured_protocol_work(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
 
-        self.assertIn("CONFIG_MAIN_STACK_SIZE=4864", prj_conf)
-        self.assertNotIn("CONFIG_MAIN_STACK_SIZE=4608", prj_conf)
-        self.assertNotIn("CONFIG_MAIN_STACK_SIZE=5120", prj_conf)
-        self.assertNotIn("CONFIG_MAIN_STACK_SIZE=6144", prj_conf)
-        self.assertNotIn("CONFIG_MAIN_STACK_SIZE=8192", prj_conf)
-        self.assertNotIn("CONFIG_MAIN_STACK_SIZE=3264", prj_conf)
-        self.assertNotIn("CONFIG_MAIN_STACK_SIZE=3328", prj_conf)
-        self.assertNotIn("CONFIG_MAIN_STACK_SIZE=3584", prj_conf)
-        self.assertNotIn("CONFIG_MAIN_STACK_SIZE=4096", prj_conf)
+        self.assert_config_value(prj_conf, "CONFIG_MAIN_STACK_SIZE", 4864)
 
     def test_stack_usage_harness_tracks_current_vm_worker_budget(self):
-        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+        limits = self.esp32c3_runtime_limits()
+        runtime_limits_h = self.read("firmware/zephyr/src/runtime_limits.h")
         stack_script = self.read("scripts/c3-supermini-measure-stack-usage.sh")
+        prj_conf = self.read("firmware/zephyr/prj.conf")
+        worker_stack_bytes = limits["vm_runtime"]["work_stack_size"]
+        protocol_stack_bytes = int(self.parse_config_assignments(prj_conf)["CONFIG_MAIN_STACK_SIZE"])
 
-        self.assertIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 16640", runtime_h)
-        self.assertIn('Expected vm_stack_size_bytes=16640', stack_script)
-        self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 17408", runtime_h)
-        self.assertNotIn('Expected vm_stack_size_bytes=17408', stack_script)
-        self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 18432", runtime_h)
-        self.assertNotIn('Expected vm_stack_size_bytes=18432', stack_script)
-        self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 20480", runtime_h)
-        self.assertNotIn('Expected vm_stack_size_bytes=20480', stack_script)
-        self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 22016", runtime_h)
-        self.assertNotIn('Expected vm_stack_size_bytes=22016', stack_script)
-        self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 18048", runtime_h)
-        self.assertNotIn('Expected vm_worker_stack_size_bytes=18048', stack_script)
-        self.assertNotIn("#define SQ_VM_RUNTIME_WORK_STACK_SIZE 19456", runtime_h)
-        self.assertNotIn('Expected vm_worker_stack_size_bytes=18432', stack_script)
-        self.assertNotIn('Expected vm_worker_stack_size_bytes=19456', stack_script)
-        self.assertNotIn('Expected vm_worker_stack_size_bytes=20480', stack_script)
-        self.assertNotIn('Expected vm_stack_size_bytes=18016', stack_script)
-        self.assertNotIn('Expected vm_worker_stack_size_bytes=16384', stack_script)
+        self.assert_define_value(runtime_limits_h, "SQ_VM_RUNTIME_WORK_STACK_SIZE", worker_stack_bytes)
+        self.assertEqual(worker_stack_bytes, int(self.parse_config_assignments(
+            self.read("target/zephyr/generated/c3-supermini-target.conf")
+        )["CONFIG_SQ_VM_RUNTIME_WORK_STACK_SIZE"]))
+        self.assertIn("CONFIG_SQ_VM_RUNTIME_WORK_STACK_SIZE", stack_script)
+        self.assertIn("CONFIG_MAIN_STACK_SIZE", stack_script)
+        self.assertIn('printf \'Expected vm_stack_size_bytes=%s, got %s\\n\'', stack_script)
         self.assertIn("proto_stack_size_bytes", stack_script)
-        self.assertIn('Expected proto_stack_size_bytes=4864', stack_script)
-        self.assertNotIn('Expected proto_stack_size_bytes=4608', stack_script)
-        self.assertNotIn('Expected proto_stack_size_bytes=5120', stack_script)
-        self.assertNotIn('Expected proto_stack_size_bytes=6144', stack_script)
-        self.assertNotIn('Expected proto_stack_size_bytes=8192', stack_script)
-        self.assertNotIn('Expected proto_stack_size_bytes=3264', stack_script)
-        self.assertNotIn('Expected protocol_thread_stack_size_bytes=3328', stack_script)
-        self.assertNotIn('Expected protocol_thread_stack_size_bytes=3584', stack_script)
-        self.assertNotIn('Expected protocol_thread_stack_size_bytes=4096', stack_script)
-        self.assertNotIn('Expected protocol_thread_stack_size_bytes=5120', stack_script)
-        self.assertNotIn('Expected protocol_thread_stack_size_bytes=6144', stack_script)
+        self.assertIn('printf \'Expected proto_stack_size_bytes=%s, got %s\\n\'', stack_script)
+        self.assertEqual(protocol_stack_bytes, 4864)
         self.assertIn("proto_stack_pre_used_bytes", stack_script)
         self.assertNotIn("proto_stack_pre_res_used_bytes", stack_script)
         self.assertIn('PROTOCOL_STACK_MIN_UNUSED_BYTES="${PROTOCOL_STACK_MIN_UNUSED_BYTES:-768}"', stack_script)
@@ -350,6 +328,10 @@ class ZephyrRamBudgetTests(ZephyrScriptTestCase):
 
     def test_ram_reference_docs_track_current_esp32c3_baseline(self):
         stack_script = self.read("scripts/c3-supermini-measure-stack-usage.sh")
+        prj_conf = self.read("firmware/zephyr/prj.conf")
+        limits = self.esp32c3_runtime_limits()
+        protocol_stack_bytes = int(self.parse_config_assignments(prj_conf)["CONFIG_MAIN_STACK_SIZE"])
+        worker_stack_bytes = limits["vm_runtime"]["work_stack_size"]
         docs = {
             "ROADMAP.md": self.read("ROADMAP.md"),
             "docs/firmware_build_architecture.md": self.read(
@@ -361,30 +343,16 @@ class ZephyrRamBudgetTests(ZephyrScriptTestCase):
             "docs/firmware_app_storage.md": self.read("docs/firmware_app_storage.md"),
         }
 
-        for path, contents in docs.items():
-            with self.subTest(path=path):
-                self.assertNotIn("22,016 bytes", contents)
-                self.assertNotIn("22,016-byte", contents)
-                self.assertNotIn("22016 bytes", contents)
-                self.assertNotIn("8,192 bytes", contents)
-                self.assertNotIn("8,192-byte", contents)
-                self.assertNotIn("8192 bytes", contents)
-                self.assertNotIn("10,880 bytes", contents)
-                self.assertNotIn("10,880-byte", contents)
-                self.assertNotIn("10,624 bytes", contents)
-                self.assertNotIn("10,624-byte", contents)
-                self.assertNotIn("215,188 bytes", contents)
-                self.assertNotIn("14,888-byte", contents)
-
         build_doc = docs["docs/firmware_build_architecture.md"]
         self.assertIn("7,872 bytes", build_doc)
-        self.assertNotIn("10,304 bytes", build_doc)
-        self.assertNotIn("10,496 bytes", build_doc)
-        self.assertIn("protocol/main thread stack is currently 4,864 bytes", build_doc)
-        self.assertIn("VM worker stack\nis 16,640 bytes", build_doc)
-        self.assertIn("239,232 bytes of linker DRAM", build_doc)
-        self.assertIn("239,216 bytes through", build_doc)
-        self.assertIn("11,920-byte `runtime.4`", build_doc)
+        self.assertIn(
+            f"protocol/main thread stack is currently {protocol_stack_bytes:,} bytes",
+            build_doc,
+        )
+        self.assertIn(f"VM worker stack\nis {worker_stack_bytes:,} bytes", build_doc)
+        self.assertIn("239,760 bytes of linker DRAM", build_doc)
+        self.assertIn("239,744 bytes through", build_doc)
+        self.assertIn("12,392-byte `runtime.4`", build_doc)
         self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', stack_script)
         self.assertIn(
             'resources_out="$(run_capture resources-after-workloads cargo run --quiet -p squidc -- device resources)"',

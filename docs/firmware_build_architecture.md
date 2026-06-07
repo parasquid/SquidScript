@@ -198,14 +198,11 @@ bounded at 512 bytes each; app-visible diagnostics use protocol output, trace,
 draw-log, lifecycle, and resources responses instead of relying on a large
 firmware log ring.
 The protocol/main thread stack is currently 4,864 bytes and the VM worker stack
-is 16,640 bytes. Resource diagnostics expose each stack's high-water use
+is 24,576 bytes. Resource diagnostics expose each stack's high-water use
 separately so budget reductions can be tied to measured workloads instead of
-inferred from static allocation alone. Current same-build hardware coverage
-measured protocol/main stack use at 3,904 bytes with 960 bytes free, and VM
-worker stack use at 16,112 bytes with 528 bytes free. The stack harness
-enforces minimum unused-stack floors of 768 bytes for protocol/main and 384
-bytes for the VM worker, printing the captured resource frame if either floor
-is crossed.
+inferred from static allocation alone. The stack harness enforces minimum
+unused-stack floors of 768 bytes for protocol/main and 384 bytes for the VM
+worker, printing the captured resource frame if either floor is crossed.
 For C stack attribution without hardware, build with GCC stack-usage emission
 enabled and summarize the generated `.su` files:
 
