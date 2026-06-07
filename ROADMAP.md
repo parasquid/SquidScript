@@ -79,6 +79,13 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   phases, long press, double tap, and chords. Specify naming, target policy,
   precedence, debounce/timing windows, and whether recognized long/chord/double
   gestures suppress component short press/release events.
+- Design and implement BLE HID input sources as system-owned pairing with
+  declarative foreground app demand. Firmware should map HID reports from page
+  turners, keyboards, and similar controllers to logical key events, gate
+  scanning/connection on active input demand for energy, and include a
+  `ble-hid-tester` example that prints received logical keys to serial and
+  display. Keep app-owned BLE file-transfer lifecycle separate from background
+  input services.
 - Add a way for app or device input configuration to set long-press duration
   thresholds, likely through `device { input ... }` binding metadata or a
   related input config block, while preserving target defaults and target-owned
