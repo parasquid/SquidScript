@@ -159,24 +159,23 @@ buffers; Zephyr C performs the LittleFS writes and commits, then reports
 successful chunks back to Rust so byte counts and CRC32 progress advance only
 after storage succeeds.
 
-BLE Object Transfer (when `CONFIG_BT_OTS=y`) uses
-`/sq/tmp/ble-object-<app_id>-<profile_id>.tmp` as the staging artifact for
-each in-flight transfer. The path is computed at `obj_created` time from
-the active foreground BLE profile that accepts the uploaded object extension.
+BLE File Transfer (when `CONFIG_BT=y`) uses
+`/sq/tmp/ble-file-transfer-<app_id>-<profile_id>.tmp` as the staging artifact for
+each in-flight transfer. The path is computed when a transfer begins from
+the active foreground BLE profile that accepts the uploaded file extension.
 The staging file is `FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC` opened at
-`obj_created`, written in `obj_write` chunks (with `fs_seek` to the
-L2CAP SDU offset), closed on the final chunk, and `fs_unlink`d after
-the `ble.object.complete` event handler returns. The `app.install`
+transfer begin, written in bounded chunks, closed on the final chunk, and
+`fs_unlink`d after
+the `ble.file.complete` event handler returns. The `app.install`
 builtin consumes the staging file by reading SQBC metadata for the app id,
 validating the SQBC header, and renaming the already-written staging file into
 `<mount_point>/apps/<app_id>/main.sqbc`. Single in-flight session: a second
-`obj_created` while busy returns
-`BT_GATT_OTS_OACP_RES_OBJ_LOCKED` and is rejected without touching
-storage. The Zephyr native ztests under
-`firmware/zephyr/tests/ble-ots-staging` and
+transfer begin while busy returns `SQ_BLE_FILE_TRANSFER_RES_BUSY` and is
+rejected without touching storage. The Zephyr native ztests under
+`firmware/zephyr/tests/ble-file-transfer-staging` and
 `firmware/zephyr/tests/ble-app-install` exercise the staging lifecycle
 and the `app.install` validation path with a real host LittleFS mount
-at `/sqtest` (overridable via `SQ_BLE_OTS_STAGING_DIR`).
+at `/sqtest` (overridable via `SQ_BLE_FILE_TRANSFER_STAGING_DIR`).
 
 Package resources are stored below the app directory using package-relative
 paths:

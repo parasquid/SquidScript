@@ -28,28 +28,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   with `-EBUSY` if the app is currently `current_app` (the caller must
   `app.exit` first or `app.launch` a different app). No new firmware cap
   needed; reuses the existing `sq_app_store` mount point.
-- Clean up post-GATT-pivot OTS staleness in docs and names. The GATT-only
-  pivot removed `ble_ots.c` / OTS / L2CAP CoC but left stale references. Remove
-  the dead "BLE Object Transfer Service (OTS) Initialization" section in
-  `docs/hardware_target_tests.md` (`sq_ble_ots_init()`, `tests/ble-ots-init`,
-  `scripts/zephyr-test-ble-ots-init.sh`). Rename the `ble-ots-*` test dirs off
-  the misleading `ots` prefix (they test the transport-neutral core now). Decide
-  `tools/ots-push`'s fate (rename — it pushes over the custom GATT service, not
-  OTS). Verify remaining BLE doc statements (`language_spec`, `runtime_limits`)
-  match the as-built GATT-only + imperative code.
-- Remove BLE receive's leftover armed-model naming from source-facing surfaces.
-  Keep the real `app.arm` / armed timer lifecycle intact, but rename BLE profile
-  caps, helpers, comments, CLI help, and tests that still describe BLE receive as
-  "armed" now that BLE receive is an imperative foreground service. Historical
-  rationale may remain in specs or `ICEBOX.md`; current source comments and
-  user-facing help should describe only the current model.
-- Fix stale BLE receive documentation around event routing and lifecycle.
-  Reconcile `docs/language_spec.md`, `docs/firmware_state_machines.md`,
-  `examples/ble-install/README.md`, and related BLE docs so they describe the
-  current imperative foreground `service.ble.start` model: `ble.object.complete`
-  is a due event, current-foreground delivery uses `set_current=false`, and only
-  due events targeted at another app start that app fresh. Remove old
-  object-name routed / armed-app wording from current-state docs.
 - Investigate BLE re-advertising after host disconnect on ESP32-C3 Zephyr.
   Resolved: `ble_smoke.c` was calling `bt_le_adv_start` directly from the
   delayed restart work and the controller returned `-EALREADY` (handled
@@ -61,7 +39,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   `scripts/zephyr-test-ble-reconnect.sh` drives the real host Bluetooth
   controller on the XIAO ESP32-C3 to flash, connect, disconnect, wait out
   the grace window, and rescan for a fresh advertisement (verified with
-  `58:8C:81:AC:52:5A XIAO ESP32-C3 ePaper 4.26 + SD` in
+  `<redacted BLE address> XIAO ESP32-C3 ePaper 4.26 + SD` in
   `target/hardware-tests/ble-reconnect/`). The radio concurrency script's
   `--require-ble-reconnect` flag remains a secondary proof point for the
   same path under Wi-Fi pressure.
@@ -173,7 +151,7 @@ Hardware-test and metadata hygiene follow-ups.
   canonical term, state the declare → arm → fire → launch model in one
   paragraph, and cross-reference sections 28, 30, and 44. Tighten the
   incomplete sentence at `docs/runtime_limits.md:36`. Deferred from the
-  2026-06-05 BLE object-transfer design spec.
+  2026-06-05 BLE file-transfer design spec.
 - Fix the stale XIAO target metadata test. `targets/xiao-esp32c3-gdeq0426t82-sd
   .target.json` now carries a `devices."indicator.default"` entry (`type:
   "not-present"`), but `scripts/tests/test_zephyr_target_metadata.py:74` still
@@ -234,11 +212,11 @@ Hardware-test and metadata hygiene follow-ups.
   whether to format embedded literals, and whether a `--check` mode should be
   wired into an existing test/CI script.
 - Add a `squidc`-native BLE app-upload command so uploading a `.sqbc` over BLE
-  no longer needs the separate Python `ots-push` tool. Drive the custom GATT
-  app-transfer service (`firmware/zephyr/src/ble_app_transfer.c`) — control
+  no longer needs the separate Python `ble-file-push` tool. Drive the custom GATT
+  file-transfer service (`firmware/zephyr/src/ble_file_transfer.c`) — control
   `BEGIN`/`ABORT`, chunked data writes, status notify — from Rust via a
   cross-platform BLE crate (e.g. `btleplug`, Linux/macOS/Windows). Likely shape:
-  `squidc app push <device> <file> [--profile <id>]`. Retire `tools/ots-push/`
+  `squidc app push <device> <file> [--profile <id>]`. Retire `tools/ble-file-push/`
   once at parity; keep the Web Bluetooth uploader (`tools/ble-web-uploader/`) as
   the no-app/browser path. Independent of the BLE control-write MTU fix — the
   on-wire protocol work applies to any client.
@@ -281,7 +259,7 @@ Current ESP32-C3 RAM baseline:
   bytes.
 - Latest observed linker DRAM from
   `cargo run -p squidc -- target build --target xiao-esp32c3-gdeq0426t82-sd`:
-  256,976 bytes. The custom BLE app-transfer path keeps SquidScript-owned state
+  256,992 bytes. The custom BLE file-transfer path keeps SquidScript-owned state
   bounded: a small profile table, one pending event slot, and one in-flight
   staging session. If RAM becomes tight, audit the target Bluetooth feature set
   and connection/buffer counts before increasing firmware-owned static buffers.

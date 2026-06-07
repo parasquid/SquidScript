@@ -1517,11 +1517,11 @@ ZTEST(squidscript_protocol, test_lifecycle_state_machine_due_event_for_current_a
 	strncpy(runtime.start_reason, "boot", sizeof(runtime.start_reason) - 1);
 
 	zassert_equal(sq_app_lifecycle_next_step(&runtime, "ble-install",
-						 "ble.object.complete", &step),
+						 "ble.file.complete", &step),
 		      0);
 	zassert_equal(step.kind, SQ_APP_LIFECYCLE_STEP_START_APP);
 	zassert_str_equal(step.app_id, "ble-install");
-	zassert_str_equal(step.event, "ble.object.complete");
+	zassert_str_equal(step.event, "ble.file.complete");
 	zassert_false(step.set_current);
 	zassert_equal(runtime.return_stack_count, 0);
 	zassert_str_equal(runtime.start_reason, "boot");

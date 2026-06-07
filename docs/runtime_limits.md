@@ -43,7 +43,7 @@ The BLE profile routing table is a static array of
 total). Profiles are registered imperatively when an app runs
 `service.ble.start` (one receive per app, set/replace). The natural upper
 bound is `SQ_APP_STORE_MAX_APPS = 8` but the runtime cap of 2 is tighter
-and matches the single-session OTS policy (one in-flight transfer at a
+and matches the single-session GATT policy (one in-flight transfer at a
 time across all profiles). Registering a third profile returns `-EINVAL`
 to the VM (verified by `firmware/zephyr/tests/ble-trigger-table/src/main.c`).
 

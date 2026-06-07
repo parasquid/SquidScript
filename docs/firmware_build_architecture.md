@@ -253,26 +253,24 @@ report attributes 80 bytes to `sq_app_store_scan_registry`, 160 bytes to
 `sq_app_store_scan_registry -> sq_app_store_scan_registry_with_path ->
 join_path2`.
 
-The BLE Object Transfer Service (slice 3-10) adds `firmware/zephyr/src/ble_ots.c`
-to the SquidScript-owned C stack. SquidScript-owned additions: the 2-entry
-trigger table (`sq_ble_profile_table[SQ_VM_RUNTIME_BLE_PROFILE_ARMED_MAX]`,
-~1,280 bytes static), the in-flight session struct (~640 bytes), the pending
-event slot (~640 bytes), the 1 KiB `SQ_APP_STORE_INSTALL_SCRATCH_BYTES` scratch
-buffer, the OACP/OBCP callback wrappers, the OTS UUID GATT entry, and the
-pending-event producer/consumer handoff (`sq_ble_ots_drain_pending_event` +
-`sq_ble_ots_cleanup_staging`). The bulk of the OTS RAM cost is in the Zephyr
-`bt_ots` module itself: the L2CAP CoC instance, the GATT dynamic DB, the SMP
-state machine, and the `EXPERIMENTAL` auto-selects. The XIAO ESP32-C3
-e-paper dev target after the BLE object-transfer work uses 243,856 bytes
+The BLE File Transfer Service adds `firmware/zephyr/src/ble_file_transfer.c`
+and `firmware/zephyr/src/ble_file_transfer_core.c` to the SquidScript-owned C
+stack. SquidScript-owned additions include the 2-entry BLE profile table, the
+in-flight file-transfer session, the pending event slot, the 1 KiB
+`SQ_APP_STORE_INSTALL_SCRATCH_BYTES` scratch buffer, the custom GATT service
+UUID entries, and the pending-event producer/consumer handoff
+(`sq_ble_file_transfer_drain_pending_event` +
+`sq_ble_file_transfer_cleanup_staging`). The bulk of the BLE RAM cost is in
+Zephyr's Bluetooth host/controller support and the custom GATT database. The
+XIAO ESP32-C3
+e-paper dev target after the BLE file-transfer work uses 243,856 bytes
 `dram0_0_seg` (64.40% of the 378 KiB region), a delta of +4,088 bytes vs
-the Super Mini baseline. `ram_static_top_bytes` (SquidScript-owned) grew
-by ~840 bytes; the rest is Zephyr OTS internals. If RAM becomes tight,
-`CONFIG_BT_OTS_OACP_WRITE_SUPPORT` and the other OTS Kconfig features
-can be selectively disabled to claw back a few hundred bytes, and
-`CONFIG_BT_MAX_CONN=1` (already set) keeps the per-connection buffers at
-the minimum. See `docs/runtime_limits.md` for the BLE profile cap
-(`SQ_VM_RUNTIME_BLE_PROFILE_ARMED_MAX = 2`) and `ROADMAP.md` "ESP32-C3 RAM
-Hardening" for the full XIAO measurement.
+the Super Mini baseline. `ram_static_top_bytes` (SquidScript-owned) grew by
+~840 bytes; the rest is Zephyr BLE/GATT internals. If RAM becomes tight, audit
+Bluetooth buffer counts and connection limits before increasing
+SquidScript-owned static buffers. See `docs/runtime_limits.md` for the BLE
+profile cap and `ROADMAP.md` "ESP32-C3 RAM Hardening" for the full XIAO
+measurement.
 Package resource install and staged-resource commit paths likewise reuse one
 path scratch buffer after validating the app's `main.sqbc` with an open/close
 check instead of a directory-entry stat, so each currently emits a 176-byte C

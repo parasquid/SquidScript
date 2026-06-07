@@ -116,34 +116,34 @@ Pattern rules:
 - Indicator polling is best-effort from the main runtime poll path; errors do
   not block unrelated protocol polling.
 
-## BLE Object Transfer (custom GATT)
+## BLE File Transfer (custom GATT)
 
-The BLE object transfer service follows a different state machine than the
+The BLE file transfer service follows a different state machine than the
 serial begin/chunk/commit install path. The firmware's custom GATT service
 frames a small control stream and appends content chunks into a staging file.
 
 | Phase | Trigger | Action | Outcome |
 | --- | --- | --- | --- |
 | Idle | — | No in-flight transfer; `app_install_file` and `app_install_app` idle | Ready for new transfer |
-| Begin | Client writes object extension + content size | `sq_ble_ots_obj_created_internal` parses the extension-only Object Name (such as `.sqbc`), matches it to the active foreground BLE profile, rejects with `OBJ_LOCKED` if busy, and opens a staging file under `/sq/tmp` | In-flight session active; staging file open |
-| Content | Client streams content chunks | `sq_ble_ots_obj_write_internal` `fs_seek`s to the chunk offset and `fs_write`s the chunk to the staging file | Staging file grows; `bytes_received` tracked |
-| Complete | Final content chunk reaches the declared size | Closes the staging file; populates `sq_ble_ots_pending` with `is_complete=true` | Pending slot ready; poll path dispatches `ble.object.complete` |
+| Begin | Client writes file extension + content size | `sq_ble_file_transfer_begin_internal` parses the extension-only File name (such as `.sqbc`), matches it to the active foreground BLE profile, rejects with `BUSY` if busy, and opens a staging file under `/sq/tmp` | In-flight session active; staging file open |
+| Content | Client streams content chunks | `sq_ble_file_transfer_write_internal` `fs_seek`s to the chunk offset and `fs_write`s the chunk to the staging file | Staging file grows; `bytes_received` tracked |
+| Complete | Final content chunk reaches the declared size | Closes the staging file; populates `sq_ble_file_transfer_pending` with the configured `complete` route | Pending slot ready; poll path dispatches the app's completion event |
 | Abort | Client sends abort | Closes + `fs_unlink`s the staging file; clears the in-flight session; no event emitted | Idle; in-flight slot cleared |
-| BT disconnect (mid-stream) | `BT_CONN_CB` disconnect | Populates `sq_ble_ots_pending` with `is_complete=false` and `error_reason="client-abort"`; poll path dispatches `ble.object.error` | Idle after handler; staging file `fs_unlink`d |
-| Reset / StorageFormat | Device protocol handler | `sq_ble_ots_reset_session` closes + `fs_unlink`s the staging file, clears the in-flight session, clears BLE profile registrations; no event emitted | Idle; profile table empty |
+| BT disconnect (mid-stream) | `BT_CONN_CB` disconnect | Clears the in-flight session and removes the staging file; no event emitted | Idle; staging file `fs_unlink`d |
+| Reset / StorageFormat | Device protocol handler | `sq_ble_file_transfer_reset_session` closes + `fs_unlink`s the staging file, clears the in-flight session, clears BLE profile registrations; no event emitted | Idle; profile table empty |
 
 The producer/consumer handoff is a single-slot pending event queue
-(`sq_ble_ots_pending`) that the OTS callbacks (BT context) populate and
-the device-protocol poll (main loop) drains. `sq_ble_ots_drain_pending_event`
-copies the receiving foreground `app_id` and `event` (`ble.object.complete` or
-`ble.object.error`) into caller-owned buffers; the poll path then runs the event handler
+(`sq_ble_file_transfer_pending`) that the GATT callbacks (BT context) populate and
+the device-protocol poll (main loop) drains. `sq_ble_file_transfer_drain_pending_event`
+copies the receiving foreground `app_id` and configured completion `event` into caller-owned
+buffers; the poll path then runs the event handler
 (via `start_resolved_app` + the existing lifecycle machinery). After the
 handler returns (detected via `lifecycle_phase == IDLE`),
-`sq_ble_ots_cleanup_staging` `fs_unlink`s the staging file and clears the
+`sq_ble_file_transfer_cleanup_staging` `fs_unlink`s the staging file and clears the
 pending slot. The `app.install(fileRef)` builtin reads SQBC metadata before the
 handler returns, validates the app id, and queues a rename-based install at
-`<mount>/apps/<id>/main.sqbc`. Single-session policy: only one BLE object
-transfer can be active in-flight at a time.
+`<mount>/apps/<id>/main.sqbc`. Single-session policy: only one BLE file transfer
+can be active in-flight at a time.
 
 ## Bounded Queues
 

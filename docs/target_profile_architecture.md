@@ -492,7 +492,7 @@ Example ESP32-C3 low-RAM runtime:
     "service.wifi.connect",
     "service.wifi.scan",
     "service.wifi.accessPoint",
-    "service.ble.object-transfer"
+    "service.ble.file-transfer"
   ]
 }
 ```
@@ -529,7 +529,7 @@ Example ESP32-S3 PSRAM runtime:
     "service.wifi.connect",
     "service.wifi.scan",
     "service.wifi.accessPoint",
-    "service.ble.object-transfer",
+    "service.ble.file-transfer",
     "debug-ui"
   ]
 }

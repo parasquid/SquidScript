@@ -2077,10 +2077,10 @@ screen("main") {}
 fn dispatch_handles_service_ble_start_and_stop() {
     let source = r#"app "ble-install"
 event.on("app.start") {
-  service.ble.start("object-transfer", {
+  service.ble.start("file-transfer", {
     id: "sqbc-install",
     accept: [".sqbc"],
-    events: { complete: "ble.object.complete", error: "ble.object.error" }
+    events: { complete: "ble.file.complete", error: "ble.file.error" }
   })
 }
 event.on("done") {

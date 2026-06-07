@@ -1,6 +1,6 @@
 #include "vm_runtime_internal.h"
 
-#include "ble_object_transfer.h"
+#include "ble_file_transfer_core.h"
 #include "ble_profile_table.h"
 #include "squidvm_ffi.h"
 
@@ -128,10 +128,10 @@ int32_t runtime_ble_stop(void *user_data)
 		return -EINVAL;
 	}
 	sq_ble_profile_table_remove_app(runtime->current_app);
-	/* Discard any partially received object for this profile. A completed
+	/* Discard any partially received file for this profile. A completed
 	 * pending event is preserved by the abort/reset path for the consumer.
 	 */
-	sq_ble_transfer_abort();
+	sq_ble_file_transfer_abort();
 	sq_vm_runtime_ble_advertising_sync();
 	return 0;
 }

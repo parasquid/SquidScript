@@ -13,7 +13,7 @@ Usage: scripts/zephyr-test-ble-trigger-table.sh [-- <extra twister args>]
 Runs the BLE profile trigger-table ztests through Twister on
 native_sim/native/64. The tests verify add/remove/reset/lookup
 behavior and the SQ_VM_RUNTIME_BLE_PROFILE_MAX=2 cap on the
-table that drives BLE Object Transfer dispatch. No real Bluetooth
+table that drives BLE File Transfer dispatch. No real Bluetooth
 or VM is required.
 USAGE
 }

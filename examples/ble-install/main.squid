@@ -4,7 +4,6 @@ state {
   stateVersion: int = 1
   received: int = 0
   installed: int = 0
-  failed: int = 0
 }
 
 event.on("app.start") {
@@ -14,18 +13,17 @@ event.on("app.start") {
     state.stateVersion = 1
   }
   state.save()
-  service.ble.start("object-transfer", {
+  service.ble.start("file-transfer", {
     id: "sqbc-install",
     accept: [".sqbc"],
     events: {
-      complete: "ble.object.complete",
-      error: "ble.object.error"
+      complete: "ble.file.complete"
     }
   })
   debug.print("ble-install ready")
 }
 
-event.on("ble.object.complete", ev) {
+event.on("ble.file.complete", ev) {
   state.load()
   state.received = state.received + 1
   debug.print("received file", state.received)
@@ -33,11 +31,4 @@ event.on("ble.object.complete", ev) {
   app.launch(installed.id)
   state.installed = state.installed + 1
   state.save()
-}
-
-event.on("ble.object.error") {
-  state.load()
-  state.failed = state.failed + 1
-  state.save()
-  debug.print("transfer failed")
 }

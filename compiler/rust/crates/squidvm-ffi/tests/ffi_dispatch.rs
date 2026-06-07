@@ -1455,7 +1455,7 @@ fn compile_app_install_sqbc() -> Vec<u8> {
     compile_sqbc(
         r#"app "ffi-install"
 event.on("app.start") {
-  app.install("/sq/tmp/ble-object-test.sqbc", "installed-app")
+  app.install("/sq/tmp/ble-file-test.sqbc", "installed-app")
 }
 screen("main") {}
 "#,
@@ -1488,20 +1488,20 @@ screen("main") {}
     )
 }
 
-fn compile_ble_object_transfer_trigger_sqbc() -> Vec<u8> {
+fn compile_ble_file_transfer_trigger_sqbc() -> Vec<u8> {
     compile_sqbc(
         r#"app "ffi-ble"
 event.on("app.start") {
-  service.ble.start("object-transfer", {
+  service.ble.start("file-transfer", {
     id: "sqbc-install",
     accept: [".sqbc"],
     events: {
-      complete: "ble.object.complete",
-      error: "ble.object.error"
+      complete: "ble.file.complete",
+      error: "ble.file.error"
     }
   })
 }
-event.on("ble.object.complete", ev) {
+event.on("ble.file.complete", ev) {
   debug.print(ev.id)
 }
 screen("main") {}
@@ -1515,10 +1515,10 @@ fn compile_ble_stop_sqbc() -> Vec<u8> {
     compile_sqbc(
         r#"app "ffi-ble-stop"
 event.on("app.start") {
-  service.ble.start("object-transfer", {
+  service.ble.start("file-transfer", {
     id: "sqbc-install",
     accept: [".sqbc"],
-    events: { complete: "ble.object.complete", error: "ble.object.error" }
+    events: { complete: "ble.file.complete", error: "ble.file.error" }
   })
   service.ble.stop()
 }
@@ -2650,7 +2650,7 @@ fn dispatches_app_install_file_callback() {
     assert_eq!(
         host.app_install_files,
         vec![(
-            "/sq/tmp/ble-object-test.sqbc".to_string(),
+            "/sq/tmp/ble-file-test.sqbc".to_string(),
             "installed-app".to_string()
         )]
     );
@@ -3127,8 +3127,8 @@ fn reads_trigger_timer_metadata_without_dispatching_app_arm() {
 }
 
 #[test]
-fn reads_ble_object_transfer_trigger_metadata() {
-    let sqbc = compile_ble_object_transfer_trigger_sqbc();
+fn reads_ble_file_transfer_trigger_metadata() {
+    let sqbc = compile_ble_file_transfer_trigger_sqbc();
     let mut count = 0usize;
     let status = unsafe { sqvm_trigger_ble_profile_count(sqbc.as_ptr(), sqbc.len(), &mut count) };
     assert_eq!(status, SqvmStatus::Ok);
@@ -3139,16 +3139,16 @@ fn reads_ble_object_transfer_trigger_metadata() {
         sqvm_trigger_ble_profile_read(sqbc.as_ptr(), sqbc.len(), 0, &mut profile as *mut _)
     };
     assert_eq!(status, SqvmStatus::Ok);
-    assert_eq!(fixed_text(&profile.profile), "object-transfer");
+    assert_eq!(fixed_text(&profile.profile), "file-transfer");
     assert_eq!(fixed_text(&profile.id), "sqbc-install");
     assert_eq!(fixed_text(&profile.role), "server");
     assert_eq!(profile.accept_count, 1);
     assert_eq!(fixed_text(&profile.accept[0]), ".sqbc");
     assert_eq!(profile.event_count, 2);
     assert_eq!(fixed_text(&profile.events[0].kind), "complete");
-    assert_eq!(fixed_text(&profile.events[0].event), "ble.object.complete");
+    assert_eq!(fixed_text(&profile.events[0].event), "ble.file.complete");
     assert_eq!(fixed_text(&profile.events[1].kind), "error");
-    assert_eq!(fixed_text(&profile.events[1].event), "ble.object.error");
+    assert_eq!(fixed_text(&profile.events[1].event), "ble.file.error");
 }
 
 #[test]
@@ -3188,7 +3188,7 @@ fn dispatch_handles_ble_start_and_stop_builtins() {
 
 #[test]
 fn dispatches_payload_handler_with_read_only_event_record() {
-    let sqbc = compile_ble_object_transfer_trigger_sqbc();
+    let sqbc = compile_ble_file_transfer_trigger_sqbc();
     let mut host = Host {
         sqbc,
         ..Host::default()
@@ -3219,7 +3219,7 @@ fn dispatches_payload_handler_with_read_only_event_record() {
     let result = dispatch_resumable_with_payload_to_completion(
         &mut context,
         &mut host,
-        b"ble.object.complete",
+        b"ble.file.complete",
         &payload,
     );
     assert_eq!(result.outcome, SqvmDispatchOutcome::Complete);

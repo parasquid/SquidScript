@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>SquidScript BLE App Uploader</title>
+<title>SquidScript BLE File Transfer</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
   label { display: block; margin: 0.5rem 0 0.2rem; font-weight: 600; }
@@ -15,18 +15,14 @@
 </style>
 </head>
 <body>
-<h1>SquidScript BLE App Uploader</h1>
+<h1>SquidScript BLE File Transfer</h1>
 <p class="note">
   Uploads a compiled <code>.sqbc</code> to a SquidScript device over the custom
-  GATT app-transfer service. Requires Web Bluetooth: Chrome/Edge on desktop or
+  GATT file-transfer service. Requires Web Bluetooth: Chrome/Edge on desktop or
   Android. <b>iOS Safari is not supported</b> (no Web Bluetooth).
   Must be served over HTTPS (or http://localhost).
 </p>
 
-<label for="appId">Armed app id</label>
-<input id="appId" value="ble-install" />
-<label for="profileId">Profile id</label>
-<input id="profileId" value="sqbc-install" />
 <label for="ext">Extension</label>
 <input id="ext" value=".sqbc" />
 <label for="file">.sqbc file</label>
@@ -36,7 +32,7 @@
 
 <script>
 "use strict";
-// Vendor UUIDs — must match firmware/zephyr/src/ble_app_transfer.c.
+// Vendor UUIDs — must match firmware/zephyr/src/ble_file_transfer.c.
 const SVC  = "7e57c0de-0001-4a5b-8c6d-0123456789ab";
 const CTRL = "7e57c0de-0002-4a5b-8c6d-0123456789ab";
 const DATA = "7e57c0de-0003-4a5b-8c6d-0123456789ab";
@@ -55,7 +51,7 @@ function beginCommand(size, nameLen) {
   buf[0] = OP_BEGIN;
   const dv = new DataView(buf.buffer);
   dv.setUint32(1, size, true);    // content size, little-endian
-  dv.setUint16(5, nameLen, true); // object-name length, little-endian
+  dv.setUint16(5, nameLen, true); // file-name length, little-endian
   return buf;
 }
 
@@ -63,9 +59,11 @@ async function upload() {
   logEl.textContent = "";
   const fileInput = document.getElementById("file");
   if (!fileInput.files.length) { log("Pick a .sqbc file first."); return; }
-  const objectName = `${document.getElementById("appId").value}/` +
-                     `${document.getElementById("profileId").value}/` +
-                     `${document.getElementById("ext").value}`;
+  const fileName = document.getElementById("ext").value;
+  if (!fileName.startsWith(".") || fileName.includes("/")) {
+    log("Extension must start with '.' and must not contain '/'.");
+    return;
+  }
   const bytes = new Uint8Array(await fileInput.files[0].arrayBuffer());
 
   log(`Requesting device (service ${SVC})...`);
@@ -87,8 +85,8 @@ async function upload() {
   });
   await stat.startNotifications();
 
-  const nameBytes = new TextEncoder().encode(objectName);
-  log(`BEGIN ${objectName} (${bytes.length} bytes)`);
+  const nameBytes = new TextEncoder().encode(fileName);
+  log(`BEGIN ${fileName} (${bytes.length} bytes)`);
   await ctrl.writeValue(beginCommand(bytes.length, nameBytes.length));
   for (let off = 0; off < nameBytes.length; off += NAME_CHUNK) {
     const piece = nameBytes.subarray(off, off + NAME_CHUNK);

@@ -9,8 +9,8 @@
 
 /*
  * BLE foreground profile table. service.ble.start registers the current app's
- * active object-transfer profile here; the transport uses the table to match
- * uploaded object extensions to the foreground receiver.
+ * active file-transfer profile here; the transport uses the table to match
+ * uploaded file extensions to the foreground receiver.
  */
 
 #ifdef __cplusplus

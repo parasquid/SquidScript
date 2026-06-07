@@ -88,7 +88,7 @@ The default Zephyr-only hardware suite covers the current required inventory:
 - Verify Wi-Fi station behavior only when credentials are explicitly provided
   through the separate station script.
 - Verify ESP32-C3 BLE advertising when the target JSON declares
-  `service.ble.object-transfer`.
+  `service.ble.file-transfer`.
 
 For the XIAO e-paper target, missing e-paper or external SD hardware must not
 block boot, fallback app launch, serial, or host protocol commands. Boot logs
@@ -632,7 +632,7 @@ the device within the bounded scan window, the script reports that host
 discovery was not confirmed after the serial advertising proof. Use
 `--require-host-scan` when the host-side BLE path must be proven. This check
 validates that the target radio backend is enabled by target metadata; it does
-not validate BLE object-transfer chunking, staging, or app install.
+not validate BLE file-transfer chunking, staging, or app install.
 
 `scripts/zephyr-test-ble-reconnect.sh` is a focused re-advertising check. It
 builds or flashes the selected target, captures the initial
@@ -662,20 +662,13 @@ For non-Super-Mini ESP32-C3 targets such as
 Do not print BLE MAC addresses in logs. Redact addresses and report only
 whether advertising, host discovery, connection, and disconnection succeeded.
 
-### BLE Object Transfer Service (OTS) Initialization
+### BLE File Transfer Service
 
-The BLE object-transfer GATT service is registered in-process through
-`firmware/zephyr/src/ble_ots.c::sq_ble_ots_init()`. Host-side
-ztests in `firmware/zephyr/tests/ble-ots-init` verify that
-`bt_ots_svc_decl_get()` returns a non-NULL handle and that
-`sq_ble_ots_init()` is idempotent, using
-`scripts/zephyr-test-ble-ots-init.sh`. The service UUID
-(`0x1825`) becomes visible in the GATT database whether or not
-any SquidScript app is currently armed; the OTS feature bits
-advertise OACP Create + Write. Execute and Abort are procedures
-that are not advertised as features. Advertising-data inclusion
-of the OTS UUID is a separate piece of work tracked against the
-BLE object-transfer slices.
+The BLE file-transfer GATT service is registered in-process through
+`firmware/zephyr/src/ble_file_transfer.c` with `BT_GATT_SERVICE_DEFINE`.
+There is no explicit init call. The service becomes discoverable when the BLE
+radio starts advertising and includes the custom 128-bit service UUID in
+advertising data.
 Legacy BLE advertising and scan-response payloads are length-limited. If the
 configured target name is too long for the current advertising data shape, host
 scans may show a truncated name even though the serial log prints the full
@@ -683,25 +676,25 @@ scans may show a truncated name even though the serial log prints the full
 that BLE failed, and shorten the target BLE name or move to an extended
 advertising/scan-response design before relying on exact full-name discovery.
 
-### BLE Object Transfer end-to-end
+### BLE File Transfer end-to-end
 
-`scripts/zephyr-test-ble-object-transfer.sh` is the end-to-end hardware
-check for the BLE Object Transfer work. It builds the XIAO ESP32-C3
+`scripts/zephyr-test-ble-file-transfer.sh` is the end-to-end hardware
+check for the BLE File Transfer work. It builds the XIAO ESP32-C3
 e-paper dev target firmware, flashes it via `west flash -d
 build/zephyr/xiao-esp32c3-gdeq0426t82-sd`, boots the default fallback
-installer, and then runs `tools/ots-push` to push a payload over the custom
+installer, and then runs `tools/ble-file-push` to push a payload over the custom
 BLE GATT transfer service. The fallback starts `service.ble.start` on
 `app.start`, receives `.sqbc`, calls `app.install(ev.upload)`, and launches
 the installed app.
 
 The host-side driver requires bleak 3.x and a Bluetooth adapter. The pytest
-suite under `tools/ots-push/tests/` exercises the GATT call order with a mock
+suite under `tools/ble-file-push/tests/` exercises the GATT call order with a mock
 bleak backend, independent of host BLE capability. The native ztests under
-`firmware/zephyr/tests/ble-ots-{init,parse,staging,dispatch,trigger-table}`
-and `firmware/zephyr/tests/ble-app-install` exercise the firmware
-sides (service registration, Object Name parsing, staging lifecycle,
-dispatch handoff, profile table, and the `app.install` validation
-path) without BLE.
+`firmware/zephyr/tests/ble-file-transfer-{parse,staging,dispatch}`,
+`firmware/zephyr/tests/ble-trigger-table`, and
+`firmware/zephyr/tests/ble-app-install` exercise the firmware sides (file-name
+parsing, staging lifecycle, dispatch handoff, profile table, and the
+`app.install` validation path) without BLE.
 
 The wrapper requires `bleak` to be importable from the same
 `python3` that runs after sourcing `scripts/zephyr-env.sh`. That

@@ -49,14 +49,14 @@ def main(argv):
             ]
         )
 
-    if "service.ble.object-transfer" in feature_set:
+    if "service.ble.file-transfer" in feature_set:
         lines.extend(
             [
                 "CONFIG_BT=y",
                 "CONFIG_BT_PERIPHERAL=y",
                 f'CONFIG_BT_DEVICE_NAME="{device_name}"',
                 # GATT write callbacks run on the BT RX thread and the
-                # app-transfer service opens/writes the LittleFS staging file
+                # file-transfer service opens/writes the LittleFS staging file
                 # there, which needs more stack than the 1536-byte BLE default.
                 "CONFIG_BT_RX_STACK_SIZE=4096",
                 "",

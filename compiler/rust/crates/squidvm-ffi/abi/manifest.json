@@ -606,7 +606,7 @@
       "family": "ble",
       "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, id: *const u8, id_len: usize, ) -> i32, >",
       "missing_policy": "required_vm_error",
-      "test_fixture": "compile_ble_object_transfer_trigger_sqbc",
+      "test_fixture": "compile_ble_file_transfer_trigger_sqbc",
       "failing_callback": "failing_ble_start"
     },
     {

@@ -1667,7 +1667,7 @@ screen("main") {}
 #[test]
 fn parses_dynamic_lifecycle_ids_and_app_install_result() {
     let source = r#"app "ble-bootstrap"
-event.on("ble.object.complete", ev) {
+event.on("ble.file.complete", ev) {
   let installed = app.install(ev.upload)
   app.launch(installed.id)
   app.arm(installed.id)
@@ -1809,19 +1809,19 @@ fn rejects_handler_code_block_over_vm_chunk_limit() {
 fn parses_service_ble_start_and_stop_statements() {
     let source = r#"app "ble-install"
 event.on("app.start") {
-  service.ble.start("object-transfer", {
+  service.ble.start("file-transfer", {
     id: "sqbc-install",
     accept: [".sqbc"],
     events: {
-      complete: "ble.object.complete",
-      error: "ble.object.error"
+      complete: "ble.file.complete",
+      error: "ble.file.error"
     }
   })
 }
 event.on("app.exit") {
   service.ble.stop()
 }
-event.on("ble.object.complete", ev) {
+event.on("ble.file.complete", ev) {
   debug.print(ev.id)
 }
 screen("main") {}
@@ -1842,12 +1842,12 @@ screen("main") {}
             accept,
             events,
         } => {
-            assert_eq!(profile, "object-transfer");
+            assert_eq!(profile, "file-transfer");
             assert_eq!(id, "sqbc-install");
             assert_eq!(accept, &vec![".sqbc".to_string()]);
             assert_eq!(
                 events.get("complete").map(String::as_str),
-                Some("ble.object.complete")
+                Some("ble.file.complete")
             );
         }
         other => panic!("expected ServiceBleStart, got {other:?}"),
@@ -1863,9 +1863,32 @@ screen("main") {}
 fn rejects_service_ble_start_without_id() {
     let source = r#"app "ble-install"
 event.on("app.start") {
-  service.ble.start("object-transfer", {
+  service.ble.start("file-transfer", {
     accept: [".sqbc"],
-    events: { complete: "ble.object.complete" }
+    events: { complete: "ble.file.complete" }
+  })
+}
+screen("main") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(!output.ok);
+    assert!(output
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "E_BLE_PROFILE"));
+}
+
+#[test]
+fn rejects_service_ble_start_without_complete_event_route() {
+    let source = r#"app "ble-install"
+event.on("app.start") {
+  service.ble.start("file-transfer", {
+    id: "sqbc-install",
+    accept: [".sqbc"],
+    events: { error: "ble.file.error" }
   })
 }
 screen("main") {}
@@ -1885,10 +1908,10 @@ screen("main") {}
 fn rejects_service_ble_start_in_app_triggers() {
     let source = r#"app "ble-install"
 app.triggers {
-  service.ble.start("object-transfer", {
+  service.ble.start("file-transfer", {
     id: "sqbc-install",
     accept: [".sqbc"],
-    events: { complete: "ble.object.complete" }
+    events: { complete: "ble.file.complete" }
   })
 }
 event.on("app.start") {}
@@ -1909,12 +1932,12 @@ screen("main") {}
 fn encodes_ble_profile_metadata_from_start_statement() {
     let source = r#"app "ble-install"
 event.on("app.start") {
-  service.ble.start("object-transfer", {
+  service.ble.start("file-transfer", {
     id: "sqbc-install",
     accept: [".sqbc"],
     events: {
-      complete: "ble.object.complete",
-      error: "ble.object.error"
+      complete: "ble.file.complete",
+      error: "ble.file.error"
     }
   })
 }

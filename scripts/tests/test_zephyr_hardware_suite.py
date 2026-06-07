@@ -829,7 +829,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         script = self.read("scripts/c3-supermini-test-ble-smoke.sh")
         docs = self.read("docs/hardware_target_tests.md")
 
-        self.assertIn("service.ble.object-transfer", target["features"])
+        self.assertIn("service.ble.file-transfer", target["features"])
         self.assertEqual(target["radios"]["ble"]["status"], "runtime-supported-reference")
         self.assertIn("BLE advertising started: ${DEVICE_NAME}", script)
         self.assertIn("bluetoothctl", script)

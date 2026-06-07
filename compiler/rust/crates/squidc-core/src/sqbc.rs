@@ -1472,7 +1472,7 @@ fn encode_triggers(ir: &IrProgram, strings: &StringTable) -> Result<Vec<u8>, Sqb
     Ok(out)
 }
 
-/// A BLE object-transfer profile registered by a `service.ble.start` statement.
+/// A BLE file-transfer profile registered by a `service.ble.start` statement.
 /// The config is a compile-time literal encoded into [`SECTION_BLE_PROFILES`];
 /// the firmware looks it up by `id` when the start builtin runs at runtime.
 struct BleProfile<'a> {

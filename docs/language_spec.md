@@ -2383,9 +2383,9 @@ Rules:
 
 ---
 
-## 30. BLE Object Receive
+## 30. BLE File Transfer
 
-BLE object receive is an imperative `service.ble.*` capability the app drives
+BLE file transfer is an imperative `service.ble.*` capability the app drives
 itself, consistent with `service.wifi.*` and `service.timer.*`. An app turns
 receive on with `service.ble.start` and off with `service.ble.stop`; it is not
 declared in `app.triggers`.
@@ -2394,17 +2394,16 @@ declared in `app.triggers`.
 app "ble-install"
 
 event.on("app.start") {
-  service.ble.start("object-transfer", {
+  service.ble.start("file-transfer", {
     id: "sqbc-install",
     accept: [".sqbc"],
     events: {
-      complete: "ble.object.complete",
-      error: "ble.object.error"
+      complete: "ble.file.complete"
     }
   })
 }
 
-event.on("ble.object.complete", ev) {
+event.on("ble.file.complete", ev) {
   let installed = app.install(ev.upload)
   app.launch(installed.id)
 }
@@ -2412,7 +2411,7 @@ event.on("ble.object.complete", ev) {
 
 `service.ble.start(profile, config)` sets the calling app's BLE receive to the
 given profile: it registers the profile in the routing table and begins
-advertising the transfer service UUID. `profile` is `"object-transfer"`.
+advertising the transfer service UUID. `profile` is `"file-transfer"`.
 
 `config` options:
 - `id`: required string. The app-local profile instance identifier, exposed to
@@ -2420,7 +2419,7 @@ advertising the transfer service UUID. `profile` is `"object-transfer"`.
 - `accept`: required non-empty list of file-extension strings such as
   `".sqbc"`.
 - `events`: required object mapping transfer event kinds to SquidScript event
-  names. Current event kinds are `complete` and `error`.
+  names. Current event kinds: `complete`.
 
 `service.ble.stop()` clears the calling app's profile, aborts any in-flight
 transfer, and stops advertising once no profiles remain. It takes no arguments.
@@ -2443,7 +2442,7 @@ Semantics:
 
 Handler payload parameters are declared as the second argument to `event.on`.
 The parameter is a read-only event record whose fields are provided by the
-firmware dispatch path for that event. The `ble.object.complete` event carries:
+firmware dispatch path for that event. The `ble.file.complete` event carries:
 
 ```text
 upload          file reference to the received staging file
@@ -2453,27 +2452,26 @@ id              the profile instance id
 ```
 
 `upload` is a `file.*` reference to the staging file. The reference is valid
-only inside the `ble.object.complete` handler — the firmware `fs_unlink`s the
-staging file after the handler returns. The `ble.object.error` event carries an
-`error` string describing the failure reason (currently `"client-abort"` on
-disconnect mid-stream).
+only inside the `ble.file.complete` handler — the firmware `fs_unlink`s the
+staging file after the handler returns. Failed, aborted, or rejected transfers
+do not dispatch a SquidScript event in the current firmware.
 
 Rules:
-- BLE object receive does not grant raw GATT access to SquidScript apps.
+- BLE file transfer does not grant raw GATT access to SquidScript apps.
 - Firmware must stream BLE chunks to staging storage rather than app RAM.
 - Firmware delivers the file as-is to the receiving app. Validation is the
   app's responsibility (e.g., via `app.install(ev.upload)` which validates the
   SQBC magic header).
 - The staging file is ephemeral: it is `fs_unlink`d after the
-  `ble.object.complete` event handler returns. The app must consume the file
+  `ble.file.complete` event handler returns. The app must consume the file
   (copy, install, log) before returning from the handler.
 - A completed transfer is delivered to the foreground app profile whose
-  `accept` list contains the uploaded object extension, such as `.sqbc`.
+  `accept` list contains the uploaded file extension, such as `.sqbc`.
 - App artifacts uploaded through BLE should use `.sqbc` until a resource
   package format is specified, and they should follow the same installer rules
   as HTTP uploads.
 - A target may expose BLE radio hardware metadata without implementing
-  `service.ble.start("object-transfer", ...)` runtime support.
+  `service.ble.start("file-transfer", ...)` runtime support.
 
 ---
 
@@ -2925,8 +2923,8 @@ service.wifi.scan
 service.wifi.accessPoint
 - Allows starting and stopping foreground-only firmware-owned Wi-Fi access points.
 
-service.ble.object-transfer
-- Allows declaring firmware-owned BLE object-transfer trigger profiles that
+service.ble.file-transfer
+- Allows declaring firmware-owned BLE file-transfer trigger profiles that
   are encoded in installed SQBC metadata. Runtime chunk receive and install
   support is target/firmware-specific and may still be unavailable.
 
@@ -4047,7 +4045,7 @@ Firmware:
 - service.wifi status, AP, station profile, and scan calls
 - app registry, launch, arm, disarm, process stack, and armed stack calls
 - device.config load, set, rebind, and save calls
-- BLE object-transfer trigger metadata
+- BLE file-transfer trigger metadata
 - optional source-map loader
 - error/crash diagnostics
 

@@ -81,8 +81,8 @@
       "type": "bluetooth-le",
       "standard": "Bluetooth LE",
       "status": "runtime-supported-reference",
-      "runtimeFeatures": ["service.ble.object-transfer"],
-      "reason": "The upstream Zephyr XIAO ESP32-C3 board enables ESP32 Bluetooth HCI. SquidScript BLE object-transfer runtime completion and XIAO hardware validation remain separate work."
+      "runtimeFeatures": ["service.ble.file-transfer"],
+      "reason": "The upstream Zephyr XIAO ESP32-C3 board enables ESP32 Bluetooth HCI. SquidScript BLE file-transfer runtime completion and XIAO hardware validation remain separate work."
     }
   },
   "pins": {
@@ -370,6 +370,6 @@
     "service.wifi.getAPIP",
     "service.wifi.connect",
     "service.wifi.disconnect",
-    "service.ble.object-transfer"
+    "service.ble.file-transfer"
   ]
 }

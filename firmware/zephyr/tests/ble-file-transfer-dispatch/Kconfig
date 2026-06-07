@@ -1,0 +1,21 @@
+menu "SquidScript BLE GATT dispatch test firmware"
+
+config SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC
+	bool "Enable SquidScript diagnostic test paths"
+	default y
+
+config SQUIDSCRIPT_BLE_FILE_TRANSFER_DISPATCH_TEST
+	bool "Compile the SquidScript BLE GATT pending-event handoff into the test image"
+	default y
+	help
+	  Expose the producer (final content write → populate pending slot) and
+	  consumer (drain pending slot → return app_id + event) sides of
+	  the BLE File Transfer dispatch in the native_sim test image.
+	  The tests verify that a completed BLE transfer populates the
+	  pending slot and that the drain call returns the expected
+	  app_id and event name, and that the staging file is fs_unlink'd
+	  after the drain. No real Bluetooth or VM is required.
+
+endmenu
+
+source "Kconfig.zephyr"

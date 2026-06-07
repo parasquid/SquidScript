@@ -222,7 +222,7 @@ fn validate_ble_start(
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     let mut invalid = false;
-    if profile != "object-transfer" {
+    if profile != "file-transfer" {
         invalid = true;
     }
     if id.is_empty() {
@@ -231,13 +231,17 @@ fn validate_ble_start(
     if accept.is_empty() || !accept.iter().all(|extension| extension.starts_with('.')) {
         invalid = true;
     }
-    if events.is_empty() || events.values().any(|event| event.is_empty()) {
+    if events
+        .get("complete")
+        .map_or(true, |event| event.is_empty())
+        || events.values().any(|event| event.is_empty())
+    {
         invalid = true;
     }
     if invalid {
         diagnostics.push(error(
             "E_BLE_PROFILE",
-            "service.ble.start requires profile object-transfer, a non-empty id, accepted extensions, and event routes",
+            "service.ble.start requires profile file-transfer, a non-empty id, accepted extensions, and a complete event route",
             start,
             end,
         ));

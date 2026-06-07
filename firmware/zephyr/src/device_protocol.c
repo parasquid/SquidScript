@@ -12,7 +12,7 @@
 #include <zephyr/sys/util.h>
 
 #include "app_lifecycle.h"
-#include "ble_object_transfer.h"
+#include "ble_file_transfer_core.h"
 #include "ble_profile_table.h"
 #include "protocol.h"
 #include "sq_errno.h"
@@ -1364,7 +1364,7 @@ int sq_device_protocol_restore_planned_resume(const struct sq_device_protocol_co
 	return 0;
 }
 
-/* Backing storage for the BLE object-transfer completion event payload. Lives
+/* Backing storage for the BLE file-transfer completion event payload. Lives
  * at file scope (not on the poll stack) because the dispatch that reads it runs
  * on the VM worker thread after sq_device_protocol_poll returns. Single in-flight
  * transfer + main-thread-only writes make file-static storage safe.
@@ -1428,10 +1428,10 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 						       sizeof(due_event)) == 0) {
 			due_app_ptr = due_app;
 			due_event_ptr = due_event;
-		} else if (!runtime->dispatch_exited && sq_ble_ots_pending_is_complete() &&
-			   sq_ble_ots_drain_pending_event(due_app, sizeof(due_app), due_event,
+		} else if (!runtime->dispatch_exited && sq_ble_file_transfer_pending_is_complete() &&
+			   sq_ble_file_transfer_drain_pending_event(due_app, sizeof(due_app), due_event,
 							  sizeof(due_event)) == 0) {
-			/* A completed BLE object transfer dispatches its event to
+			/* A completed BLE file transfer dispatches its event to
 			 * the target app exactly like an armed timer. drain is
 			 * consume-once so this fires a single time. The
 			 * !dispatch_exited guard ensures next_step will start this
@@ -1445,13 +1445,13 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 			 * below; both persist until the next transfer / disconnect,
 			 * well after the worker consumes them at dispatch start.
 			 */
-			const char *upload_path = sq_ble_ots_pending_staging_path();
-			const char *profile_id = sq_ble_ots_pending_profile_id();
+			const char *upload_path = sq_ble_file_transfer_pending_staging_path();
+			const char *profile_id = sq_ble_file_transfer_pending_profile_id();
 
 			(void)snprintf(ble_payload_bytes_buf, sizeof(ble_payload_bytes_buf), "%zu",
-				       sq_ble_ots_pending_bytes_received());
+				       sq_ble_file_transfer_pending_bytes_received());
 			(void)snprintf(ble_payload_total_buf, sizeof(ble_payload_total_buf), "%zu",
-				       sq_ble_ots_pending_total_bytes());
+				       sq_ble_file_transfer_pending_total_bytes());
 			ble_payload_fields[0] = (SqvmEventPayloadField){
 				(const uint8_t *)"upload", 6, (const uint8_t *)upload_path,
 				strlen(upload_path)};

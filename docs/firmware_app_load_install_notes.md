@@ -71,18 +71,18 @@ second open file).
   takes one. Widen it temporarily when a failure records more than one line.
 - **BLE advertised name is truncated.** The XIAO advertises ~29 chars of
   `CONFIG_BT_DEVICE_NAME`, so an exact-name scan filter misses it. Match by
-  address (`tools/ots-push` accepts an address or name).
+  address (`tools/ble-file-push` accepts an address or name).
 
 ## BLE install-and-launch lifecycle
 
 A BLE receive app may install the uploaded `.sqbc` from its
-`ble.object.complete` handler and immediately call `app.launch` for the
+configured file-transfer completion handler and immediately call `app.launch` for the
 installed app. The firmware performs the queued install while the VM is idle,
 then runs the ordinary foreground launch chain. The accepted DoD flow is:
 
 1. Launch the receiver app so `service.ble.start` registers the receive profile.
 2. Push the payload over the custom BLE transfer service.
-3. The receiver handles `ble.object.complete`, calls `app.install`, then
+3. The receiver handles the configured completion event, calls `app.install`, then
    `app.launch`.
 4. The device reports no VM `-5`, `device output` includes the installed app's
    output, and `device lifecycle` reports `active=<installed-app-id>`.

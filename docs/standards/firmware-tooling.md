@@ -32,7 +32,7 @@ Discipline"; read both when doing firmware or hardware work.
   building. The `target build` command compiles but does not flash; the
   wrapper convention is to run `west flash` explicitly. The serial port
   is auto-detected via `scripts/lib/serial-port.sh::resolve_esp.serial_port`
-  and exported as `ESPFLASH_PORT`. `scripts/zephyr-test-ble-object-transfer.sh`
+  and exported as `ESPFLASH_PORT`. `scripts/zephyr-test-ble-file-transfer.sh`
   is the reference for the full end-to-end flash + protocol + BLE flow.
 - For firmware flashing scripts, avoid auto-monitoring by default when USB reset or re-enumeration can break the serial session. Prefer `squidc device monitor` for XIAO ESP32-C3 SquidScript output, and use explicit opt-in monitoring such as `MONITOR_AFTER_FLASH=1` only when needed.
 - Do not filter or suppress flashing tool stderr in firmware scripts. Surface warnings and errors directly, and document known harmless tool warnings instead of hiding them.
@@ -45,7 +45,7 @@ Discipline"; read both when doing firmware or hardware work.
   (e.g. `pip install bleak`) are NOT visible to wrappers that source
   `zephyr-env.sh`. Install Python dependencies into the Zephyr venv with
   `pip install --target target/zephyr/venv/lib/python3.14/site-packages <pkg>`
-  when a wrapper needs them. `tools/ots-push/README.md` documents this
+  when a wrapper needs them. `tools/ble-file-push/README.md` documents this
   pattern for bleak.
 - Use `scripts/zephyr-test-protocol.sh` for the Zephyr native protocol ztests
   instead of invoking `west twister` directly. The wrapper sources
