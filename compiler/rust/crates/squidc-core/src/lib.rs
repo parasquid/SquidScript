@@ -2,6 +2,7 @@ pub mod ast;
 pub mod compile;
 pub mod device_config;
 pub mod diagnostic;
+pub mod formatter;
 pub mod ir;
 pub mod lexer;
 pub mod parser;

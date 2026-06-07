@@ -117,20 +117,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Developer Tooling
 
-- Add a SquidScript source formatter. Recommended shape: a top-level
-  `squidc fmt` command (mirrors `cargo fmt` / `gofmt`; formatting is a
-  source-file operation that does not belong under the existing `app` / `device`
-  / `target` / `protocol` subcommand groups in
-  `compiler/rust/crates/squidc-cli/src/main.rs`). Accept one or more `.squid`
-  paths (and/or globs/directories), default to rewriting files in place, and
-  support `--check` (exit non-zero with a diff on unformatted files, for CI /
-  pre-commit) and `--stdin`/stdout for editor integration. Build it on the
-  existing parser so formatting is lossless and idempotent (`fmt` of formatted
-  output is a no-op); decide whether comments and blank-line grouping are
-  preserved. Open questions: canonical style rules (indentation width, brace
-  style, `app.triggers` / `device { ... }` block layout, trailing commas),
-  whether to format embedded literals, and whether a `--check` mode should be
-  wired into an existing test/CI script.
 - Add a `squidc`-native BLE app-upload command so uploading a `.sqbc` over BLE
   no longer needs the separate Python `ble-file-push` tool. Drive the custom GATT
   file-transfer service (`firmware/zephyr/src/ble_file_transfer.c`) — control

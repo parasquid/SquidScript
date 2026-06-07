@@ -6,7 +6,7 @@ mod target;
 
 use std::{
     env, fs,
-    io::{self, Write},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
     process::Command,
     time::Duration,
@@ -23,7 +23,7 @@ use serial::{
     SerialDevice,
 };
 use squid_device_protocol as protocol;
-use squidc_core::profile::BuildProfile;
+use squidc_core::{formatter::format_source, profile::BuildProfile};
 
 fn main() {
     let raw_args = env::args().collect::<Vec<_>>();
@@ -83,6 +83,7 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    Fmt(FmtArgs),
     Repl(ReplArgs),
     Doctor(DoctorArgs),
     App {
@@ -106,6 +107,7 @@ enum Commands {
 impl Commands {
     fn name(&self) -> &'static str {
         match self {
+            Self::Fmt(_) => "fmt",
             Self::Repl(_) => "repl",
             Self::Doctor(_) => "doctor",
             Self::App { .. } => "app",
@@ -114,6 +116,18 @@ impl Commands {
             Self::Target { .. } => "target",
         }
     }
+}
+
+#[derive(Args, Debug)]
+struct FmtArgs {
+    #[arg(long, help = "Check formatting without rewriting files")]
+    check: bool,
+    #[arg(
+        long,
+        help = "Read SquidScript source from stdin and write formatted source to stdout"
+    )]
+    stdin: bool,
+    paths: Vec<PathBuf>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -413,6 +427,7 @@ impl From<ProfileArg> for BuildProfile {
 
 fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String> {
     match command {
+        Commands::Fmt(args) => fmt_command_with_output(args, human),
         Commands::Repl(args) => repl(args, human),
         Commands::Doctor(args) => doctor(args, human),
         Commands::App { command } => match command {
@@ -450,6 +465,104 @@ fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String>
             TargetCommands::Doctor(args) => target_doctor(args, human),
         },
     }
+}
+
+fn fmt_command_with_output(args: FmtArgs, human: bool) -> Result<Value, String> {
+    let result = fmt_command(args)?;
+    if human {
+        if let Some(formatted) = result.get("formattedStdin").and_then(Value::as_str) {
+            print!("{formatted}");
+        } else {
+            println!(
+                "formatted checked={} changed={}",
+                result["checked"], result["changed"]
+            );
+        }
+    }
+    Ok(result)
+}
+
+fn fmt_command(args: FmtArgs) -> Result<Value, String> {
+    if args.stdin {
+        if !args.paths.is_empty() {
+            return Err("--stdin cannot be combined with file paths".to_string());
+        }
+        let mut source = String::new();
+        io::stdin()
+            .read_to_string(&mut source)
+            .map_err(|error| format!("failed to read stdin: {error}"))?;
+        let formatted = format_source(&source).map_err(|error| error.message)?;
+        if args.check && formatted != source {
+            return Err("stdin would reformat".to_string());
+        }
+        return Ok(json!({
+            "checked": 1,
+            "changed": usize::from(formatted != source),
+            "formattedStdin": formatted
+        }));
+    }
+
+    if args.paths.is_empty() {
+        return Err("fmt requires at least one path or --stdin".to_string());
+    }
+
+    let files = collect_squid_files(&args.paths)?;
+    let mut changed = Vec::new();
+    for file in &files {
+        let source = fs::read_to_string(file)
+            .map_err(|error| format!("failed to read {}: {error}", file.display()))?;
+        let formatted = format_source(&source)
+            .map_err(|error| format!("failed to format {}: {}", file.display(), error.message))?;
+        if formatted != source {
+            changed.push(file.clone());
+            if !args.check {
+                fs::write(file, formatted)
+                    .map_err(|error| format!("failed to write {}: {error}", file.display()))?;
+            }
+        }
+    }
+
+    if args.check && !changed.is_empty() {
+        let files = changed
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!("would reformat {files}"));
+    }
+
+    Ok(json!({
+        "checked": files.len(),
+        "changed": changed.len(),
+        "files": files
+    }))
+}
+
+fn collect_squid_files(paths: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
+    let mut files = Vec::new();
+    for path in paths {
+        collect_squid_files_from_path(path, &mut files)?;
+    }
+    files.sort();
+    files.dedup();
+    Ok(files)
+}
+
+fn collect_squid_files_from_path(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
+    let metadata = fs::metadata(path)
+        .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?;
+    if metadata.is_dir() {
+        let entries = fs::read_dir(path)
+            .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+        for entry in entries {
+            let entry = entry
+                .map_err(|error| format!("failed to read {} entry: {error}", path.display()))?;
+            collect_squid_files_from_path(&entry.path(), files)?;
+        }
+    } else if path.extension().and_then(|value| value.to_str()) == Some("squid") {
+        files.push(path.to_path_buf());
+    }
+    Ok(())
 }
 
 fn package_app(args: PackageArgs) -> Result<Value, String> {
@@ -2572,6 +2685,65 @@ event.on("app.start") {
             }
             _ => panic!("expected runtime-cap clear"),
         }
+    }
+
+    #[test]
+    fn parses_fmt_commands() {
+        let cli = Cli::try_parse_from(["squidc", "fmt", "--check", "examples"]).unwrap();
+        let Commands::Fmt(args) = cli.command else {
+            panic!("expected fmt command");
+        };
+        assert!(args.check);
+        assert!(!args.stdin);
+        assert_eq!(args.paths, vec![PathBuf::from("examples")]);
+
+        let cli = Cli::try_parse_from(["squidc", "fmt", "--stdin"]).unwrap();
+        let Commands::Fmt(args) = cli.command else {
+            panic!("expected fmt command");
+        };
+        assert!(args.stdin);
+        assert!(args.paths.is_empty());
+    }
+
+    #[test]
+    fn fmt_rewrites_squid_files_in_place() {
+        let root = unique_test_dir("squidc-fmt");
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("main.squid");
+        fs::write(&source, "app   \"demo\"\nstate{count:int=0,}\n").unwrap();
+
+        let result = fmt_command(FmtArgs {
+            check: false,
+            stdin: false,
+            paths: vec![source.clone()],
+        })
+        .unwrap();
+
+        assert_eq!(result["changed"], 1);
+        assert_eq!(
+            fs::read_to_string(&source).unwrap(),
+            "app \"demo\"\n\nstate {\n  count: int = 0\n}\n"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn fmt_check_reports_unformatted_files_without_rewriting() {
+        let root = unique_test_dir("squidc-fmt-check");
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("main.squid");
+        fs::write(&source, "app   \"demo\"\n").unwrap();
+
+        let error = fmt_command(FmtArgs {
+            check: true,
+            stdin: false,
+            paths: vec![source.clone()],
+        })
+        .unwrap_err();
+
+        assert!(error.contains("would reformat"));
+        assert_eq!(fs::read_to_string(&source).unwrap(), "app   \"demo\"\n");
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

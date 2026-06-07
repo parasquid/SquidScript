@@ -15,6 +15,8 @@ configuration, firmware build metadata, docs, and autocomplete.
 cargo run -p squidc -- app build examples/blinky-supermini/main.squid --out target/blinky.sqbc
 cargo run -p squidc -- app package examples/blinky-supermini
 cargo run -p squidc -- app run examples/blinky-supermini/main.squid
+cargo run -p squidc -- fmt examples
+cargo run -p squidc -- fmt --check examples/ble-install/main.squid
 cargo run -p squidc -- repl --script tests/repl/default-dev.session
 cargo run -p squidc -- doctor
 ```
@@ -27,6 +29,25 @@ temp app state volatile. The temp app participates in normal foreground
 lifecycle routing: key events and foreground timers dispatch to it while it is
 current, it can launch installed apps and return through `app.exit`, and a new
 temp run replaces the prior temp route.
+
+## Source Formatting
+
+```sh
+cargo run -p squidc -- fmt examples/ble-install/main.squid
+cargo run -p squidc -- fmt examples docs/reference/binbook-reader-draft
+cargo run -p squidc -- fmt --check examples
+cargo run -p squidc -- fmt --stdin < examples/ble-install/main.squid
+```
+
+`fmt` canonicalizes `.squid` source files using the current parser. File and
+directory paths are accepted; directories are scanned recursively for `.squid`
+files. The default mode rewrites files in place. `--check` reports files that
+would be reformatted and leaves them untouched. `--stdin` reads one source file
+from standard input and writes formatted source to standard output.
+
+The formatter requires parser-clean source. SquidScript comments are not a
+recognized source syntax today, so there is no formatter comment preservation
+policy until comments are added to the language.
 
 ## Scripted REPL Checks
 
