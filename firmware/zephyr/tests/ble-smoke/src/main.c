@@ -161,12 +161,13 @@ ZTEST(ble_smoke, test_restart_work_transitions_to_advertising_on_already_stop)
 	zassert_equal(sq_ble_smoke_sm_get_state(), SQ_BLE_SMOKE_STATE_ADVERTISING);
 }
 
-ZTEST(ble_smoke, test_multiple_disconnects_only_one_restart_runs)
+ZTEST(ble_smoke, test_repeated_disconnects_keep_one_pending_restart_state)
 {
 	sq_test_reset();
 	zassert_equal(sq_ble_smoke_sm_begin_advertising(), 0);
 	zassert_equal(sq_ble_smoke_sm_handle_disconnect(), 0);
 	zassert_equal(sq_ble_smoke_sm_handle_disconnect(), 0);
+	zassert_equal(sq_ble_smoke_sm_get_state(), SQ_BLE_SMOKE_STATE_RESTART_PENDING);
 	zassert_equal(sq_ble_smoke_sm_run_restart(), 0);
 	zassert_equal(sq_test_adv_stop_calls, 1);
 	zassert_equal(sq_test_adv_start_calls, 2);

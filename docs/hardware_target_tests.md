@@ -635,12 +635,12 @@ validates that the target radio backend is enabled by target metadata; it does
 not validate BLE file-transfer chunking, staging, or app install.
 
 `scripts/zephyr-test-ble-reconnect.sh` is a focused re-advertising check. It
-builds or flashes the selected target, captures the initial
-`BLE advertising started: <device>` log line, connects to the device from a
-host Bluetooth controller, requests a host disconnect, watches the firmware
-log `BLE advertising stopped before restart` followed by
-`BLE advertising restarted after disconnect`, and rescans the host controller
-to confirm a fresh advertisement is observed. Use it to verify the
+builds or flashes the selected target, launches fallback `main` to start the
+BLE file-transfer profile, discovers the initial advertisement from a host
+Bluetooth controller, connects to the device, requests a host disconnect,
+watches the firmware log `BLE advertising stopped before restart` followed by
+`BLE advertising restarted after disconnect`, and rescans the host controller to
+confirm a fresh advertisement is observed. Use it to verify the
 `bt_le_adv_stop` → `bt_le_adv_start` restart sequence in
 `firmware/zephyr/src/ble_smoke.c` actually puts bytes back on the air. The
 companion host-side ztests in `firmware/zephyr/tests/ble-smoke` drive the
@@ -654,10 +654,13 @@ For non-Super-Mini ESP32-C3 targets such as
 `xiao-esp32c3-gdeq0426t82-sd`, run the same checks against the selected target:
 
 - build/flash the selected target
-- capture serial boot logs and require `BLE advertising started: <device name>`
+- launch fallback `main` so `service.ble.start("file-transfer", ...)` registers
+  an active profile
 - use a host Bluetooth controller to scan for the advertised name
 - connect to the discovered peripheral
-- disconnect after verification
+- disconnect after verification and require the restart log sequence
+- remove the device from the BlueZ cache and require a fresh `[NEW]`/`[CHG]`
+  rediscovery event after rescan
 
 Do not print BLE MAC addresses in logs. Redact addresses and report only
 whether advertising, host discovery, connection, and disconnection succeeded.

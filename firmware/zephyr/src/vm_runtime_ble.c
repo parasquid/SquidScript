@@ -11,7 +11,7 @@
 #endif
 
 /*
- * Imperative BLE object-receive service. service.ble.start(profile, config)
+ * Imperative BLE file-transfer service. service.ble.start(profile, config)
  * lowers to BUILTIN_SERVICE_BLE_START carrying the profile id; the VM calls
  * runtime_ble_start while the owning app is the running foreground app. The
  * profile config is the compile-time literal encoded in the SQBC BLE-profile

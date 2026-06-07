@@ -37,7 +37,7 @@ class ZephyrTargetMetadataTests(ZephyrScriptTestCase):
             "CONFIG_BT=y",
             "CONFIG_BT_PERIPHERAL=y",
             'CONFIG_BT_DEVICE_NAME="ESP32-C3 Super Mini"',
-            "CONFIG_BT_RX_STACK_SIZE=1536",
+            "CONFIG_BT_RX_STACK_SIZE=4096",
         ]:
             self.assertIn(option, target_conf)
 
@@ -71,7 +71,9 @@ class ZephyrTargetMetadataTests(ZephyrScriptTestCase):
             with self.subTest(pin=pin):
                 self.assertIn("pwm", pins[pin]["capabilities"])
 
-        self.assertNotIn("indicator.default", target["devices"])
+        indicator = target["devices"]["indicator.default"]
+        self.assertEqual(indicator["type"], "not-present")
+        self.assertFalse(indicator["softwareControllable"])
 
     def test_zephyr_target_defaults_generator_emits_indicator_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -219,3 +221,24 @@ class ZephyrTargetMetadataTests(ZephyrScriptTestCase):
         self.assertIn("runtime_apply_indicator_gpio_binding(runtime,", default_body)
         self.assertNotIn("sq_vm_runtime_device_config_rebind", default_body)
         self.assertNotIn("SqvmDeviceConfigResult result", default_body)
+
+    def test_runtime_limits_header_is_generated_from_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            generated = Path(tmp) / "runtime_limits.h"
+
+            subprocess.run(
+                [
+                    str(ROOT / "scripts/generate-runtime-limits-header.py"),
+                    str(ROOT / "firmware/zephyr/runtime_limits.json"),
+                    str(generated),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            generated_text = generated.read_text(encoding="utf-8")
+
+        checked_in = self.read("firmware/zephyr/src/runtime_limits.h")
+        self.assertEqual(generated_text, checked_in)

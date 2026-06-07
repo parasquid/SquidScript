@@ -14,17 +14,21 @@ BLE_CONNECT_TIMEOUT_SECONDS="${BLE_CONNECT_TIMEOUT_SECONDS:-15}"
 BLE_RESTART_GRACE_SECONDS="${BLE_RESTART_GRACE_SECONDS:-10}"
 WORK_DIR="${ROOT}/target/hardware-tests/ble-reconnect"
 DEVICE_NAME=""
+PORT=""
+MONITOR_PID=""
+MONITOR_LOG="${WORK_DIR}/serial-monitor.log"
 
 usage() {
 	cat <<'EOF'
 Usage: scripts/zephyr-test-ble-reconnect.sh [--target <id>] [--skip-flash]
 
-Builds or flashes the Zephyr firmware for the selected target, confirms the
-initial BLE advertising log, connects to the device from a host Bluetooth
-controller, disconnects, waits for the firmware's restart-advertising work
-item, and verifies a fresh advertisement can be rediscovered. This is the
-real-hardware counterpart of firmware/zephyr/tests/ble-smoke and proves the
-stop-before-start restart sequence actually puts bytes back on the air.
+Builds or flashes the Zephyr firmware for the selected target, launches the
+fallback main app to start its BLE file-transfer profile, connects to the
+device from a host Bluetooth controller, disconnects, watches the firmware's
+restart-advertising log sequence, and verifies a fresh advertisement can be
+rediscovered. This is the real-hardware counterpart of
+firmware/zephyr/tests/ble-smoke and proves the stop-before-start restart
+sequence actually puts bytes back on the air.
 
 The script requires a host Bluetooth controller accessible to bluetoothctl.
 Do not run it in parallel with any other firmware, monitor, or hardware
@@ -58,6 +62,10 @@ mkdir -p "${WORK_DIR}"
 BLE_ADDR=""
 cleanup() {
 	set +e
+	if [[ -n "${MONITOR_PID}" ]]; then
+		kill "${MONITOR_PID}" >/dev/null 2>&1 || true
+		wait "${MONITOR_PID}" >/dev/null 2>&1 || true
+	fi
 	if [[ -n "${BLE_ADDR}" ]]; then
 		timeout "${BLE_CONNECT_TIMEOUT_SECONDS}s" bluetoothctl disconnect "${BLE_ADDR}" \
 			>"${WORK_DIR}/cleanup-ble-disconnect.out" 2>&1 || true
@@ -67,6 +75,75 @@ cleanup() {
 	fi
 }
 trap cleanup EXIT
+
+start_serial_monitor() {
+	local monitor_cmd
+
+	: >"${MONITOR_LOG}"
+	monitor_cmd="$(printf '%q ' cargo run --quiet -p squidc -- target monitor --target "${TARGET_ID}" --port "${PORT}")"
+	if command -v script >/dev/null 2>&1; then
+		(
+			cd "${ROOT}"
+			timeout "$((BLE_ADVERTISING_LOG_TIMEOUT_SECONDS + BLE_RESTART_GRACE_SECONDS + BLE_RESCAN_TIMEOUT_SECONDS + 20))s" \
+				script -q -e -c "${monitor_cmd}" /dev/null
+		) >"${MONITOR_LOG}" 2>&1 &
+	else
+		(
+			cd "${ROOT}"
+			timeout "$((BLE_ADVERTISING_LOG_TIMEOUT_SECONDS + BLE_RESTART_GRACE_SECONDS + BLE_RESCAN_TIMEOUT_SECONDS + 20))s" \
+				cargo run --quiet -p squidc -- target monitor --target "${TARGET_ID}" --port "${PORT}"
+		) >"${MONITOR_LOG}" 2>&1 &
+	fi
+	MONITOR_PID="$!"
+}
+
+wait_for_log_line() {
+	local expected="$1"
+	local timeout_seconds="$2"
+	local deadline=$((SECONDS + timeout_seconds))
+
+	while (( SECONDS < deadline )); do
+		if grep -Fq "${expected}" "${MONITOR_LOG}"; then
+			return 0
+		fi
+		sleep 0.5
+	done
+	printf 'Timed out waiting for serial log line: %s\n' "${expected}" >&2
+	printf 'Monitor log: %s\n' "${MONITOR_LOG}" >&2
+	exit 1
+}
+
+scan_for_device() {
+	local scan_file="$1"
+	local full_name="$2"
+	local require_fresh="$3"
+
+	python3 - "${scan_file}" "${full_name}" "${require_fresh}" <<'PY'
+import re
+import sys
+path, full_name, require_fresh = sys.argv[1:4]
+ansi = re.compile(r"\x1b\[[0-9;]*m")
+event_prefix = re.compile(r"\[(NEW|CHG|DEL)\]")
+device_line = re.compile(r"Device\s+([0-9A-Fa-f:]{17})\s+(.+)$")
+name_change = re.compile(r"Device\s+([0-9A-Fa-f:]{17})\s+Name:\s+(.+)$")
+truncated = full_name.encode("utf-8")[:29].decode("utf-8", "ignore")
+with open(path, encoding="utf-8", errors="replace") as handle:
+    for raw_line in handle:
+        line = ansi.sub("", raw_line)
+        event = event_prefix.search(line)
+        if event and event.group(1) == "DEL":
+            continue
+        if require_fresh == "1" and (not event or event.group(1) not in {"NEW", "CHG"}):
+            continue
+        match = name_change.search(line) or device_line.search(line)
+        if not match:
+            continue
+        name = match.group(2).strip()
+        if full_name in name or truncated in name:
+            print(match.group(1))
+            break
+PY
+}
 
 if ! command -v bluetoothctl >/dev/null 2>&1; then
 	printf '%s\n' 'bluetoothctl is required for the BLE re-advertising check' >&2
@@ -97,6 +174,10 @@ else
 	run_capture target-build cargo run --quiet -p squidc -- target build --target "${TARGET_ID}" >/dev/null
 fi
 
+run_capture launch-fallback-main cargo run --quiet -p squidc -- app launch main >/dev/null
+printf '%s\n' 'OK fallback main launched to start BLE profile'
+start_serial_monitor
+
 scan_out="${WORK_DIR}/ble-scan.raw"
 set +e
 timeout "$((BLE_RESCAN_TIMEOUT_SECONDS + 3))s" bluetoothctl --timeout "${BLE_RESCAN_TIMEOUT_SECONDS}" \
@@ -109,27 +190,7 @@ if [[ "${scan_status}" != "0" && "${scan_status}" != "124" ]]; then
 	exit "${scan_status}"
 fi
 
-BLE_ADDR="$(python3 - "${scan_out}" "${DEVICE_NAME}" <<'PY'
-import re
-import sys
-path, full_name = sys.argv[1:3]
-ansi = re.compile(r"\x1b\[[0-9;]*m")
-device_line = re.compile(r"Device\s+([0-9A-Fa-f:]{17})\s+(.+)$")
-name_change = re.compile(r"Device\s+([0-9A-Fa-f:]{17})\s+Name:\s+(.+)$")
-with open(path, encoding="utf-8", errors="replace") as handle:
-    for line in handle:
-        line = ansi.sub("", line)
-        if "[DEL]" in line:
-            continue
-        match = name_change.search(line) or device_line.search(line)
-        if not match:
-            continue
-        name = match.group(2).strip()
-        if full_name in name or full_name.encode("utf-8")[:29].decode("utf-8", "ignore") in name:
-            print(match.group(1))
-            break
-PY
-)"
+BLE_ADDR="$(scan_for_device "${scan_out}" "${DEVICE_NAME}" 0)"
 if [[ -z "${BLE_ADDR}" ]]; then
 	printf 'Expected host Bluetooth scan to discover %s within %ss\n' \
 		"${DEVICE_NAME}" "${BLE_RESCAN_TIMEOUT_SECONDS}" >&2
@@ -173,6 +234,11 @@ fi
 printf '%s\n' 'OK BLE host disconnect requested'
 
 sleep "${BLE_RESTART_GRACE_SECONDS}"
+wait_for_log_line "BLE advertising stopped before restart" "${BLE_ADVERTISING_LOG_TIMEOUT_SECONDS}"
+wait_for_log_line "BLE advertising restarted after disconnect" "${BLE_ADVERTISING_LOG_TIMEOUT_SECONDS}"
+printf '%s\n' 'OK BLE firmware restart logs observed'
+
+bluetoothctl remove "${BLE_ADDR}" >"${WORK_DIR}/ble-remove-before-rescan.out" 2>&1 || true
 
 rescan_out="${WORK_DIR}/ble-rescan.raw"
 set +e
@@ -186,9 +252,10 @@ if [[ "${rescan_status}" != "0" && "${rescan_status}" != "124" ]]; then
 	exit "${rescan_status}"
 fi
 
-if ! grep -Fq "${DEVICE_NAME}" "${rescan_out}" && ! grep -Fqi "${BLE_ADDR}" "${rescan_out}"; then
-	printf 'Expected host Bluetooth to rediscover %s (%s) within %ss after disconnect\n' \
-		"${DEVICE_NAME}" "${BLE_ADDR}" "${BLE_RESCAN_TIMEOUT_SECONDS}" >&2
+rediscovered_addr="$(scan_for_device "${rescan_out}" "${DEVICE_NAME}" 1)"
+if [[ -z "${rediscovered_addr}" ]]; then
+	printf 'Expected host Bluetooth to rediscover %s within %ss after disconnect\n' \
+		"${DEVICE_NAME}" "${BLE_RESCAN_TIMEOUT_SECONDS}" >&2
 	printf 'Rescan log: %s\n' "${rescan_out}" >&2
 	exit 1
 fi

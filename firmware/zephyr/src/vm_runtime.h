@@ -2,11 +2,12 @@
 #define SQUIDSCRIPT_VM_RUNTIME_H
 
 /*
- * SquidScript foreground app runtime. The cap macros below are the source of
- * truth for bounded runtime resources; the human-readable summary is
- * docs/runtime_limits.md. The behavior of these caps is verified by the
- * protocol ztest at firmware/zephyr/tests/protocol/src/main.c (look for
- * SQ_VM_RUNTIME_*_MAX / SQ_VM_RUNTIME_EVENT_LEN references).
+ * SquidScript foreground app runtime. firmware/zephyr/runtime_limits.json is
+ * the build-time tuning source for bounded runtime resources, and
+ * runtime_limits.h is generated from it. The guarded defaults below are
+ * fallback values for standalone C builds when the generated header is absent.
+ * The behavior of these caps is verified by the protocol ztest at
+ * firmware/zephyr/tests/protocol/src/main.c.
  */
 
 #include <errno.h>

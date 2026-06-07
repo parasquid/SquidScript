@@ -151,6 +151,42 @@ Production firmware does not need to compile .squid.
 
 ---
 
+## Concepts And Lifecycle Terms
+
+SquidScript has one foreground app session at a time. Foreground lifecycle
+events such as `app.start`, `app.exit`, key events, and foreground timer events
+run against that active session. Launching another installed app or returning
+from an app-exit boundary starts a fresh session; apps persist data across those
+boundaries with explicit `state.*` calls.
+
+An armed trigger registration is a firmware-owned event source declared in an
+installed app's `app.triggers` metadata. `app.arm(appId)` reads that metadata
+and records the trigger without running the app's foreground lifecycle code.
+When the trigger fires, firmware launches the armed app as the foreground app
+and dispatches the declared event handler. This is the declare → arm → fire →
+launch model used by `app.triggers` and planned sleep restore.
+
+Arming terms used throughout this spec:
+
+- `armed app`: an installed app with at least one active armed trigger
+  registration.
+- `armed timer`: a timer event source registered from `app.triggers` rather
+  than from a running foreground app session.
+- `armed stack`: the bounded firmware list of app ids with active armed trigger
+  registrations.
+- `armed-app metadata`: the compiled `app.triggers` records read from an
+  installed app's SQBC when `app.arm(appId)` runs.
+
+BLE file transfer is not an armed trigger registration. It is an imperative
+foreground service started by `service.ble.start("file-transfer", ...)`; a
+completed transfer dispatches the configured completion event to the foreground
+receiver.
+
+See sections 21, 30, 32, and 47 for lifecycle handlers, BLE file transfer,
+app registry/launch APIs, and runtime model details.
+
+---
+
 ## 4. File Layout
 
 Minimum production app:
@@ -2028,9 +2064,10 @@ foreground timers, armed timers, and other runtime-dispatched event names.
 Runtime resources are bounded; the full table of caps (foreground timer slots,
 armed timer slots, active device-binding slots, input button slots, output
 line slots, drawlog record slots, app store limits, and wire-format limits)
-lives in `docs/runtime_limits.md` and the macros in
-`firmware/zephyr/src/vm_runtime.h` are the source of truth. Registering a
-foreground timer beyond the cap returns `-ENOSPC` to the VM.
+lives in `docs/runtime_limits.md`. The build-time tuning source is
+`firmware/zephyr/runtime_limits.json`, and
+`firmware/zephyr/src/runtime_limits.h` is generated from it. Registering a
+foreground timer beyond the active cap returns `-ENOSPC` to the VM.
 
 Example:
 

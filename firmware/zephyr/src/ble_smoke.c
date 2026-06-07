@@ -186,7 +186,7 @@ int sq_ble_smoke_start(void)
 	sq_ble_smoke_sm_install_api(&sq_ble_smoke_real_api);
 
 	/* Bring the radio up but do not advertise yet. Advertising is gated on an
-	 * app starting a BLE object-receive profile via service.ble.start; the
+	 * app starting a BLE file-transfer profile via service.ble.start; the
 	 * runtime begins advertising when the first profile registers and stops it
 	 * when the last one is cleared.
 	 */

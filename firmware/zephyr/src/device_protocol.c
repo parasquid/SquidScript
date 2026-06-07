@@ -1508,7 +1508,7 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 		return result;
 
 	case SQ_APP_LIFECYCLE_STEP_REGISTER_ARMED_APP:
-		/* BLE object-receive profiles are no longer registered at arm time;
+		/* BLE file-transfer profiles are no longer registered at arm time;
 		 * an app registers its profile imperatively via service.ble.start
 		 * (runtime_ble_start) while running foreground.
 		 */

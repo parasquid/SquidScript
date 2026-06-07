@@ -18,6 +18,7 @@ APP_ID="ap-after-station"
 HOST_AP_SSID="${HOST_AP_SSID:-SquidApAfterStation}"
 HOST_AP_CONN="${HOST_AP_CONN:-squid-ap-after-station-host}"
 HOST_WIFI_IFACE="${HOST_WIFI_IFACE:-}"
+HOST_WIFI_RECONNECT_CONN=""
 HOST_AP_PASS_FILE=""
 WORK_DIR="${ROOT}/target/hardware-tests/ap-after-station"
 
@@ -66,6 +67,15 @@ cleanup() {
 	if [[ -n "${HOST_AP_PASS_FILE}" ]] && [[ -s "${HOST_AP_PASS_FILE}" ]]; then
 		nmcli connection down "${HOST_AP_CONN}" >"${WORK_DIR}/cleanup-host-ap-down.out" 2>&1 || true
 		nmcli connection delete "${HOST_AP_CONN}" >"${WORK_DIR}/cleanup-host-ap-delete.out" 2>&1 || true
+		if [[ -n "${HOST_WIFI_IFACE}" ]]; then
+			if [[ -n "${HOST_WIFI_RECONNECT_CONN}" ]]; then
+				nmcli connection up "${HOST_WIFI_RECONNECT_CONN}" \
+					>"${WORK_DIR}/cleanup-host-wifi-connect.out" 2>&1 || true
+			else
+				nmcli device connect "${HOST_WIFI_IFACE}" \
+					>"${WORK_DIR}/cleanup-host-wifi-connect.out" 2>&1 || true
+			fi
+		fi
 		rm -f "${HOST_AP_PASS_FILE}"
 	fi
 }
@@ -96,6 +106,12 @@ fi
 if [[ -z "${HOST_WIFI_IFACE}" ]]; then
 	printf '%s\n' 'No host Wi-Fi interface found for AP-after-station test' >&2
 	exit 1
+fi
+HOST_WIFI_RECONNECT_CONN="$(nmcli -t -f NAME,DEVICE connection show --active |
+	awk -F: -v iface="${HOST_WIFI_IFACE}" '$2 == iface { print $1; exit }')"
+if [[ -z "${HOST_WIFI_RECONNECT_CONN}" ]]; then
+	HOST_WIFI_RECONNECT_CONN="$(nmcli -t -f NAME,TYPE connection show |
+		awk -F: -v host_conn="${HOST_AP_CONN}" '$2 == "802-11-wireless" && $1 != host_conn { print $1; exit }')"
 fi
 
 HOST_AP_PASS_FILE="$(mktemp "${WORK_DIR}/host-ap-pass.XXXXXX")"

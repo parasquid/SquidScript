@@ -23,7 +23,7 @@ Bluetooth controller can discover the advertised device name. Host discovery is
 best-effort by default; use --require-host-scan when validating the host-side
 radio path.
 
-This is a BLE radio smoke check. It does not validate SquidScript BLE object
+This is a BLE radio smoke check. It does not validate SquidScript BLE file
 transfer chunking, staging, or app install.
 EOF
 }
