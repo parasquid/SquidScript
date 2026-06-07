@@ -41,12 +41,9 @@ Discipline"; read both when doing firmware or hardware work.
 
 - `scripts/zephyr-env.sh` prepends `target/zephyr/venv/bin` to `PATH`, so
   any `python3` invoked after sourcing it is the Zephyr venv Python, not
-  the system Python. Python packages installed at the system level
-  (e.g. `pip install bleak`) are NOT visible to wrappers that source
-  `zephyr-env.sh`. Install Python dependencies into the Zephyr venv with
-  `pip install --target target/zephyr/venv/lib/python3.14/site-packages <pkg>`
-  when a wrapper needs them. `tools/ble-file-push/README.md` documents this
-  pattern for bleak.
+  the system Python. Python packages installed at the system level are NOT
+  visible to wrappers that source `scripts/zephyr-env.sh`; install wrapper
+  Python dependencies into the Zephyr venv when a wrapper needs them.
 - Use `scripts/zephyr-test-protocol.sh` for the Zephyr native protocol ztests
   instead of invoking `west twister` directly. The wrapper sources
   `scripts/zephyr-env.sh`, which adds the repo-local `target/zephyr/venv/bin`

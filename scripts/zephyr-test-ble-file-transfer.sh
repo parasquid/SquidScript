@@ -4,9 +4,8 @@
 #
 # Defaults to the XIAO ESP32-C3 e-paper dev target. The wrapper builds
 # and flashes the firmware with the default fallback installer, runs the
-# ble-file-push driver against the device, and verifies the installed payload
-# is registered. Skip behavior is fully encapsulated in ble-file-push: a host
-# without a usable BLE adapter exits 0 cleanly.
+# squidc BLE push driver against the device, and verifies the installed payload
+# is registered.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -31,7 +30,7 @@ Environment:
   SQUID_ZEPHYR_TARGET_OVERLAY   Override the Zephyr board overlay
 
 The wrapper builds the XIAO target, flashes it via west flash, launches the
-default fallback main app, pushes the compiled SQBC via tools/ble-file-push over
+default fallback main app, pushes the compiled SQBC via `squidc app push` over
 the custom BLE GATT transfer service, and verifies the installed payload is
 registered.
 USAGE
@@ -122,9 +121,7 @@ echo ">>> Compiling payload (${PAYLOAD_ID}) from ${SOURCE}"
 cargo run --quiet -p squidc -- app build "${SOURCE}" --out "$PAYLOAD_SQBC"
 
 echo ">>> Pushing payload via BLE to $DEVICE"
-cd "${ROOT}/tools/ble-file-push"
-python3 -m ble_file_push push "$DEVICE" "$PAYLOAD_SQBC"
-cd "$ROOT"
+cargo run --quiet -p squidc -- app push "$DEVICE" "$PAYLOAD_SQBC"
 
 echo ">>> Verifying ${PAYLOAD_ID} is registered"
 cargo run --quiet -p squidc -- app list --port "$PORT" | grep -q "${PAYLOAD_ID}" || {

@@ -71,7 +71,8 @@ second open file).
   takes one. Widen it temporarily when a failure records more than one line.
 - **BLE advertised name is truncated.** The XIAO advertises ~29 chars of
   `CONFIG_BT_DEVICE_NAME`, so an exact-name scan filter misses it. Match by
-  address (`tools/ble-file-push` accepts an address or name).
+  address when the advertised name is truncated; `squidc app push` accepts an
+  address or advertised name.
 
 ## BLE install-and-launch lifecycle
 

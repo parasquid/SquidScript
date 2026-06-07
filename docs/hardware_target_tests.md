@@ -681,29 +681,19 @@ advertising/scan-response design before relying on exact full-name discovery.
 check for the BLE File Transfer work. It builds the XIAO ESP32-C3
 e-paper dev target firmware, flashes it via `west flash -d
 build/zephyr/xiao-esp32c3-gdeq0426t82-sd`, boots the default fallback
-installer, and then runs `tools/ble-file-push` to push a payload over the custom
+installer, and then runs `squidc app push` to push a payload over the custom
 BLE GATT transfer service. The fallback starts `service.ble.start` on
 `app.start`, receives `.sqbc`, calls `app.install(ev.upload)`, and launches
 the installed app.
 
-The host-side driver requires bleak 3.x and a Bluetooth adapter. The pytest
-suite under `tools/ble-file-push/tests/` exercises the GATT call order with a mock
-bleak backend, independent of host BLE capability. The native ztests under
+The host-side driver is the Rust `squidc app push` client and requires a host
+Bluetooth adapter. The `squidc` BLE push tests exercise the GATT call order with
+a fake client, independent of host BLE capability. The native ztests under
 `firmware/zephyr/tests/ble-file-transfer-{parse,staging,dispatch}`,
 `firmware/zephyr/tests/ble-trigger-table`, and
 `firmware/zephyr/tests/ble-app-install` exercise the firmware sides (file-name
 parsing, staging lifecycle, dispatch handoff, profile table, and the
 `app.install` validation path) without BLE.
-
-The wrapper requires `bleak` to be importable from the same
-`python3` that runs after sourcing `scripts/zephyr-env.sh`. That
-script prepends `target/zephyr/venv/bin` to `PATH`, so the Zephyr
-venv's Python is used. Install bleak into the venv if it isn't
-already there:
-
-```sh
-pip install --target target/zephyr/venv/lib/python3.14/site-packages bleak
-```
 
 Required arguments: `--device <name-or-address>` (the BLE device the host will
 connect to). Optional: `--port <serial-port>` (auto-detected via

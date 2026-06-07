@@ -78,6 +78,7 @@ cargo run -p squidc -- app package examples/blinky-supermini --out target/blinky
 cargo run -p squidc -- app run examples/blinky-supermini/main.squid
 cargo run -p squidc -- app install examples/blinky-supermini/main.squid
 cargo run -p squidc -- app install blinky-supermini.squid.zip
+cargo run -p squidc -- app push SquidScript target/installed-app.sqbc
 cargo run -p squidc -- app install --as reader tests/hardware/c3-supermini/generic-events/reader-clock.squid
 cargo run -p squidc -- app launch reader
 cargo run -p squidc -- app list
@@ -97,6 +98,14 @@ packages. Source is compiled before upload. `.sqbc` input must include app-id
 metadata unless `--as` is provided. Package installs derive the app ID from
 `main.sqbc`; `--as` is not supported for packages. Use `app install` plus
 `app launch` for persistent apps.
+
+`app push <device-name-or-address> <file.sqbc>` uploads SQBC over the custom
+BLE GATT file-transfer service. The target app must already be running a
+`service.ble.start("file-transfer", ...)` profile that accepts `.sqbc`; the
+receiving app decides whether to call `app.install(ev.upload)` or handle the
+file another way. The CLI matches the BLE peripheral by advertised name or
+address, writes `.sqbc` as the transfer file name, sends acknowledged GATT
+writes, and waits for the firmware completion notification.
 
 ## Device Commands
 

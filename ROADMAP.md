@@ -117,15 +117,13 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Developer Tooling
 
-- Add a `squidc`-native BLE app-upload command so uploading a `.sqbc` over BLE
-  no longer needs the separate Python `ble-file-push` tool. Drive the custom GATT
-  file-transfer service (`firmware/zephyr/src/ble_file_transfer.c`) — control
-  `BEGIN`/`ABORT`, chunked data writes, status notify — from Rust via a
-  cross-platform BLE crate (e.g. `btleplug`, Linux/macOS/Windows). Likely shape:
-  `squidc app push <device> <file> [--profile <id>]`. Retire `tools/ble-file-push/`
-  once at parity; keep the Web Bluetooth uploader (`tools/ble-web-uploader/`) as
-  the no-app/browser path. Independent of the BLE control-write MTU fix — the
-  on-wire protocol work applies to any client.
+- Reduce repo-owned Python tooling by folding generators and serial helpers into
+  `squidc` Rust subcommands while keeping Zephyr `west`/`twister` Python as an
+  external firmware toolchain dependency. Context: Python remains unavoidable
+  for the Zephyr build/test stack, but repo-owned scripts such as target/code
+  generators, markdown generation, serial helpers, Python unit tests, and small
+  inline shell-wrapper Python snippets can move to Rust over time so project
+  tooling is easier to install, test, and keep consistent.
 
 ## ESP32-C3 RAM Hardening
 

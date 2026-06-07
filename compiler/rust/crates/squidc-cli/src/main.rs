@@ -1,4 +1,5 @@
 mod app_id;
+mod ble_push;
 mod compile;
 mod package;
 mod serial;
@@ -136,6 +137,7 @@ enum AppCommands {
     Package(PackageArgs),
     Run(DeviceSourceArgs),
     Install(AppInstallArgs),
+    Push(AppPushArgs),
     Launch(AppLaunchArgs),
     List(DeviceOnlyArgs),
 }
@@ -211,6 +213,12 @@ struct AppInstallArgs {
     device: DeviceOptions,
     #[arg(long = "as")]
     app_id_override: Option<String>,
+    input: PathBuf,
+}
+
+#[derive(Args, Debug)]
+struct AppPushArgs {
+    device: String,
     input: PathBuf,
 }
 
@@ -435,6 +443,7 @@ fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String>
             AppCommands::Package(args) => package_app(args),
             AppCommands::Run(args) => run_app_source(args, human),
             AppCommands::Install(args) => install_app(args, human),
+            AppCommands::Push(args) => push_app_ble(args, human),
             AppCommands::Launch(args) => launch_app(args, human),
             AppCommands::List(args) => app_list(args, human),
         },
@@ -688,6 +697,22 @@ fn install_app_package(args: AppInstallArgs, human: bool) -> Result<Value, Strin
         "bytes": bytes.len(),
         "files": entries.len() + 1,
         "response": response
+    }))
+}
+
+fn push_app_ble(args: AppPushArgs, human: bool) -> Result<Value, String> {
+    let result = ble_push::push_sqbc(&args.device, &args.input)?;
+    if human {
+        println!(
+            "BLE uploaded ext={} bytes={}",
+            result.extension, result.bytes_sent
+        );
+    }
+    Ok(json!({
+        "device": args.device,
+        "input": args.input,
+        "extension": result.extension,
+        "bytes": result.bytes_sent
     }))
 }
 
@@ -2703,6 +2728,20 @@ event.on("app.start") {
         };
         assert!(args.stdin);
         assert!(args.paths.is_empty());
+    }
+
+    #[test]
+    fn parses_app_push_command() {
+        let cli = Cli::try_parse_from(["squidc", "app", "push", "SquidScript", "target/app.sqbc"])
+            .unwrap();
+        let Commands::App {
+            command: AppCommands::Push(args),
+        } = cli.command
+        else {
+            panic!("expected app push");
+        };
+        assert_eq!(args.device, "SquidScript");
+        assert_eq!(args.input, PathBuf::from("target/app.sqbc"));
     }
 
     #[test]
