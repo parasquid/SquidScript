@@ -111,7 +111,7 @@ assert_file_contains() {
 
 assert_no_unexpected_device_errors() {
   local file="$1"
-  if grep -Fvxq 'error=display=unavailable code=-19' "${file}"; then
+  if grep -Evq '^error=display=unavailable code=-19( \(ENODEV\))?$' "${file}"; then
     printf 'Expected %s to contain only recognized non-radio diagnostics\n' "${file}" >&2
     printf '%s\n' "--- ${file} ---" >&2
     sed -n '1,200p' "${file}" >&2
@@ -257,6 +257,66 @@ connect_host_to_device_ap() {
     exit 1
   fi
   printf '%s\n' 'OK host Wi-Fi associated to device AP during BLE connection'
+}
+
+assert_device_ap_dhcp_lease() {
+  detect_host_wifi_iface
+  local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS))
+  while (( SECONDS < deadline )); do
+    nmcli -t -f IP4.ADDRESS device show "${HOST_WIFI_IFACE}" \
+      >"${WORK_DIR}/device-ap-ipv4.raw" 2>&1 || true
+    if python3 - "${WORK_DIR}/device-ap-ipv4.raw" <<'PY'
+import re
+import sys
+
+with open(sys.argv[1], encoding="utf-8", errors="replace") as handle:
+    text = handle.read()
+
+for match in re.finditer(r"192\.168\.4\.(\d+)/(\d+)", text):
+    host = int(match.group(1))
+    prefix = int(match.group(2))
+    if 2 <= host <= 254 and prefix == 24:
+        raise SystemExit(0)
+
+raise SystemExit(1)
+PY
+    then
+      printf '%s\n' 'OK host Wi-Fi received target AP DHCP lease'
+      return 0
+    fi
+    sleep 0.5
+  done
+  printf '%s\n' 'Expected host Wi-Fi to receive a target AP DHCP lease within timeout' >&2
+  exit 1
+}
+
+wait_for_device_ap_client_count() {
+  local out="${WORK_DIR}/output-wifi-ap-clients.out"
+  local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS))
+  while (( SECONDS < deadline )); do
+    timeout "${COMMAND_TIMEOUT_SECONDS:-20}s" cargo run --quiet -p squidc -- device output \
+      >"${out}" 2>&1
+    if python3 - "${out}" <<'PY'
+import re
+import sys
+
+with open(sys.argv[1], encoding="utf-8", errors="replace") as handle:
+    for line in handle:
+        match = re.search(r"output=radio wifi ap clients ([0-9]+) ", line)
+        if match and int(match.group(1)) > 0:
+            raise SystemExit(0)
+
+raise SystemExit(1)
+PY
+    then
+      printf '%s\n' "${out}"
+      return 0
+    fi
+    sleep 0.2
+  done
+  printf '%s\n' 'Timed out waiting for target AP client count to become positive' >&2
+  capture_device_diagnostics "output-wifi-ap-clients-timeout"
+  exit 1
 }
 
 disconnect_host_from_device_ap() {
@@ -411,6 +471,16 @@ check_device_errors() {
   assert_no_unexpected_device_errors "${errors_out}"
 }
 
+launch_fallback_ble_installer() {
+  run_capture storage-format cargo run --quiet -p squidc -- device storage-format >/dev/null
+  run_capture launch-fallback-main cargo run --quiet -p squidc -- app launch main >/dev/null
+  local ready_out
+  ready_out="$(wait_for_contains output-ble-installer "output=ble installer ready" \
+    "device output" cargo run --quiet -p squidc -- device output)"
+  assert_no_raw_network_identifiers "${ready_out}"
+  printf '%s\n' 'OK fallback BLE installer launched'
+}
+
 target_out="${WORK_DIR}/target-inspect.json"
 cargo run --quiet -p squidc -- --json target inspect --target "${TARGET_ID}" >"${target_out}"
 target_name="$(python_json_field "${target_out}" "name")"
@@ -421,11 +491,9 @@ else
   cargo run --quiet -p squidc -- target build --target "${TARGET_ID}" >/dev/null
 fi
 
-capture_ble_advertising_log "${target_name}"
+launch_fallback_ble_installer
 discover_ble_device "${target_name}"
 connect_ble_device
-
-run_capture storage-format cargo run --quiet -p squidc -- device storage-format >/dev/null
 
 install_and_launch_app wifi-list "${WIFI_LIST_APP}" radio-wifi-list
 list_out="$(wait_for_contains output-wifi-list "output=radio wifi list true" \
@@ -444,6 +512,9 @@ assert_file_contains "${ap_start_out}" "output=radio wifi ap ip null"
 assert_no_raw_network_identifiers "${ap_start_out}"
 DEVICE_AP_ACTIVE=1
 connect_host_to_device_ap
+assert_device_ap_dhcp_lease
+ap_clients_out="$(wait_for_device_ap_client_count)"
+assert_no_raw_network_identifiers "${ap_clients_out}"
 assert_ble_connected
 run_capture ap-stop-key cargo run --quiet -p squidc -- device key SELECT >/dev/null
 ap_stop_out="$(wait_for_contains output-wifi-ap-stop "output=radio wifi ap stop true" \

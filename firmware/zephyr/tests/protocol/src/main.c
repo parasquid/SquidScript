@@ -5032,6 +5032,28 @@ ZTEST(squidscript_protocol, test_vm_runtime_formats_wifi_bssid_without_heap)
 	zassert_equal(sq_vm_runtime_wifi_format_bssid(mac, sizeof(mac), bssid, 17), -ENOSPC);
 }
 
+ZTEST(squidscript_protocol, test_vm_runtime_tracks_wifi_ap_client_count)
+{
+	static struct sq_vm_runtime runtime;
+
+	sq_vm_runtime_reset(&runtime);
+
+	sq_vm_runtime_wifi_note_ap_sta_connected(&runtime);
+	zassert_equal(runtime.wifi_ap_clients, 1);
+
+	sq_vm_runtime_wifi_note_ap_sta_connected(&runtime);
+	zassert_equal(runtime.wifi_ap_clients, 2);
+
+	sq_vm_runtime_wifi_note_ap_sta_disconnected(&runtime);
+	zassert_equal(runtime.wifi_ap_clients, 1);
+
+	sq_vm_runtime_wifi_note_ap_sta_disconnected(&runtime);
+	zassert_equal(runtime.wifi_ap_clients, 0);
+
+	sq_vm_runtime_wifi_note_ap_sta_disconnected(&runtime);
+	zassert_equal(runtime.wifi_ap_clients, 0);
+}
+
 ZTEST(squidscript_protocol, test_sqdc_ffi_parses_and_encodes_device_config)
 {
 	const uint8_t source[] =

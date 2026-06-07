@@ -321,6 +321,9 @@ struct sq_vm_runtime {
 	size_t wifi_profile_ssid_len;
 	uint8_t wifi_profile_password[SQ_VM_RUNTIME_WIFI_PROFILE_PASSWORD_BYTES];
 	size_t wifi_profile_password_len;
+	int32_t wifi_ap_clients;
+	int32_t wifi_ap_sta_connected_events;
+	int32_t wifi_ap_sta_disconnected_events;
 #if IS_ENABLED(CONFIG_NET_L2_WIFI_MGMT) && IS_ENABLED(CONFIG_NET_MGMT_EVENT) && \
 	IS_ENABLED(CONFIG_NET_MGMT_EVENT_INFO)
 	char wifi_station_ip[SQ_VM_RUNTIME_WIFI_IPV4_LEN];
@@ -467,6 +470,8 @@ int sq_vm_runtime_poll(struct sq_vm_runtime *runtime);
 size_t sq_vm_runtime_work_stack_size(void);
 int sq_vm_runtime_work_stack_unused(size_t *unused);
 int sq_vm_runtime_wifi_format_bssid(const uint8_t *mac, size_t mac_len, char *out, size_t out_len);
+void sq_vm_runtime_wifi_note_ap_sta_connected(struct sq_vm_runtime *runtime);
+void sq_vm_runtime_wifi_note_ap_sta_disconnected(struct sq_vm_runtime *runtime);
 int sq_vm_runtime_set_wifi_profile(struct sq_vm_runtime *runtime, const uint8_t *profile,
 				   size_t profile_len, const uint8_t *ssid, size_t ssid_len,
 				   const uint8_t *password, size_t password_len);

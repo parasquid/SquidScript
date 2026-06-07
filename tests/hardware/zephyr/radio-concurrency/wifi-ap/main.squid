@@ -1,13 +1,24 @@
 app "radio-wifi-ap"
 
 state {
+  clients: int = 0
 }
 
 event.on("app.start") {
+  state.clients = 0
   let ap = service.wifi.startAP("SquidScript")
   let ip = service.wifi.getAPIP()
   debug.print("radio wifi ap start", ap.ok, ap.error)
   debug.print("radio wifi ap ip", ip.error)
+  service.timer.every("timer.ap", 250)
+}
+
+event.on("timer.ap") {
+  let status = service.wifi.status()
+  if (status.clients != state.clients) {
+    state.clients = status.clients
+    debug.print("radio wifi ap clients", status.clients, status.staConnectedEvents, status.staDisconnectedEvents)
+  }
 }
 
 event.on("key.SELECT") {

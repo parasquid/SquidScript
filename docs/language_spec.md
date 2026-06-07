@@ -2381,10 +2381,11 @@ chosen: open AP, target-chosen channel, conventional AP address
 `192.168.4.1/24`, a bounded DHCPv4 lease pool on that subnet, and bounded
 target-clamped client count. A successful `startAP` and
 `status.state == "started"` prove that the firmware backend accepted and
-reports the AP state; they do not prove that a phone or laptop can see, join,
-obtain DHCP, or reach HTTP services unless the target's hardware test performs
-that external-client check. Password/security policy, richer `startAP` options,
-profile setup UI, hostnames, and configurable IP are deferred.
+reports the AP state. Target hardware tests that exercise external AP clients
+must prove client association and DHCP lease assignment separately from AP
+start/stop. AP client reachability to HTTP services is a separate networking
+feature. Password/security policy, richer `startAP` options, profile setup UI,
+hostnames, and configurable IP are deferred.
 
 Station mode uses named profiles. SquidScript source passes only a profile name
 such as `service.wifi.connect("dev")`; credentials are provisioned by firmware,

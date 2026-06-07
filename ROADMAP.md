@@ -28,8 +28,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   with `-EBUSY` if the app is currently `current_app` (the caller must
   `app.exit` first or `app.launch` a different app). No new firmware cap
   needed; reuses the existing `sq_app_store` mount point.
-- Add external Wi-Fi AP client association and DHCP lease proof through
-  Zephyr-native subsystems.
 - Treat Wi-Fi scan/connect/AP lifecycle as a future explicit service-state
   machine item when Wi-Fi work is in scope. Keep the current nonblocking
   operation/result/cursor API as the baseline.

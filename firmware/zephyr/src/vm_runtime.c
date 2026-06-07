@@ -676,6 +676,9 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->wifi_profile_ssid_len = 0;
 	memset(runtime->wifi_profile_password, 0, sizeof(runtime->wifi_profile_password));
 	runtime->wifi_profile_password_len = 0;
+	runtime->wifi_ap_clients = 0;
+	runtime->wifi_ap_sta_connected_events = 0;
+	runtime->wifi_ap_sta_disconnected_events = 0;
 #if SQ_VM_RUNTIME_HAS_WIFI_MGMT
 	memset(runtime->wifi_station_ip, 0, sizeof(runtime->wifi_station_ip));
 	runtime->wifi_station_connect_status = 0;

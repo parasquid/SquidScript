@@ -32,7 +32,7 @@ assert_file_contains() {
 
 assert_no_unexpected_device_errors() {
   local file="$1"
-  if grep -Fvxq 'error=display=unavailable code=-19' "${file}"; then
+  if grep -Evq '^error=display=unavailable code=-19( \(ENODEV\))?$' "${file}"; then
     printf 'Expected %s to contain only recognized non-Wi-Fi diagnostics\n' "${file}" >&2
     printf '%s\n' "--- ${file} ---" >&2
     sed -n '1,200p' "${file}" >&2

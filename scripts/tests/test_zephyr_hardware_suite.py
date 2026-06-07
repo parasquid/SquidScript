@@ -256,7 +256,7 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
 
         self.assertIn('device {', app)
         self.assertIn('import indicator from "lib/indicator.squid"', app)
-        self.assertIn('indicator { use "device/indicator.sqdevice" }', app)
+        self.assertRegex(app, r'indicator\s*\{\s*use "device/indicator\.sqdevice"\s*\}')
         self.assertIn('indicator.ready("device binding ready")', app)
         self.assertIn("service.indicator.write(true)", helper)
         self.assertIn("indicator.default", resource)
@@ -318,7 +318,7 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
 
         self.assertIn("device {", app)
-        self.assertIn('indicator { use "gpio:GPIO8" }', app)
+        self.assertRegex(app, r'indicator\s*\{\s*use "gpio:GPIO8"\s*\}')
         self.assertIn("service.indicator.write(true)", app)
         self.assertIn(
             'cargo run --quiet -p squidc -- app install "${INLINE_GPIO_APP}"',
@@ -351,7 +351,7 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
         )
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
 
-        self.assertIn('indicator { use "gpio:GPIO10" }', app)
+        self.assertRegex(app, r'indicator\s*\{\s*use "gpio:GPIO10"\s*\}')
         self.assertIn(
             'cargo run --quiet -p squidc -- app install "${INLINE_GPIO10_APP}"',
             script,
@@ -381,7 +381,7 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
         app = self.read("tests/hardware/c3-supermini/input-button-summary/main.squid")
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
 
-        self.assertIn('input { use "gpio-button:GPIO9:key.SELECT:activeLow" }', app)
+        self.assertRegex(app, r'input\s*\{\s*use "gpio-button:GPIO9:key\.SELECT:activeLow"\s*\}')
         self.assertIn('event.on("key.SELECT")', app)
         self.assertIn("service.indicator.blink(120, 80)", app)
         self.assertIn(
@@ -504,7 +504,7 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
         )
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
 
-        self.assertIn('indicator { use "gpio:GPIO18" }', app)
+        self.assertRegex(app, r'indicator\s*\{\s*use "gpio:GPIO18"\s*\}')
         self.assertIn(
             'cargo run --quiet -p squidc -- app install "${UNSUPPORTED_INLINE_GPIO_APP}"',
             script,
@@ -983,7 +983,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("unsupported", station)
         self.assertIn('assert_no_raw_network_identifiers', station)
         self.assertIn('assert_no_unexpected_device_errors', station)
-        self.assertIn('error=display=unavailable code=-19', station)
+        self.assertIn(r'^error=display=unavailable code=-19( \(ENODEV\))?$', station)
         self.assertNotIn("obsolete", station.lower())
         self.assertNotIn("wifi ap", station)
         self.assertNotIn("SQUID_WIFI_STATION_PASSWORD}", station)
@@ -1006,9 +1006,14 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("nmcli", script)
         self.assertIn("device wifi rescan", script)
         self.assertIn("connect_host_to_device_ap", script)
+        self.assertIn("assert_device_ap_dhcp_lease", script)
+        self.assertIn("wait_for_device_ap_client_count", script)
+        self.assertIn("OK host Wi-Fi received target AP DHCP lease", script)
         self.assertIn("bluetoothctl", script)
         self.assertIn("ble-connect-attempt", script)
         self.assertIn("ble_is_connected", script)
+        self.assertIn("launch_fallback_ble_installer", script)
+        self.assertIn("output=ble installer ready", script)
         self.assertIn("assert_no_raw_network_identifiers", script)
         self.assertIn("SQUID_WIFI_STATION_SSID", script)
         self.assertIn("SQUID_WIFI_STATION_PASSWORD", script)
@@ -1027,7 +1032,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
             'if [[ "${REQUIRE_BLE_RECONNECT}" == "1" ]]; then',
             script,
         )
-        self.assertIn("error=display=unavailable code=-19", script)
+        self.assertIn(r'^error=display=unavailable code=-19( \(ENODEV\))?$', script)
         self.assertNotIn("host-scan.log", script)
         self.assertNotIn(" BSS", script)
         self.assertNotIn("zephyr-test-radio-concurrency.sh", suite)
@@ -1065,6 +1070,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("service.wifi.getAPIP()", wifi_ap)
         self.assertIn("service.wifi.stopAP()", wifi_ap)
         self.assertIn("radio wifi ap start", wifi_ap)
+        self.assertIn("radio wifi ap clients", wifi_ap)
         self.assertIn("radio wifi ap stop", wifi_ap)
         self.assertNotIn("ip.ip", wifi_ap)
         self.assertNotIn("app.exit()", wifi_ap)

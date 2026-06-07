@@ -51,6 +51,28 @@ int sq_vm_runtime_wifi_format_bssid(const uint8_t *mac, size_t mac_len, char *ou
 	return written == SQ_VM_RUNTIME_WIFI_BSSID_LEN - 1 ? 0 : -EIO;
 }
 
+void sq_vm_runtime_wifi_note_ap_sta_connected(struct sq_vm_runtime *runtime)
+{
+	if (runtime == NULL) {
+		return;
+	}
+	runtime->wifi_ap_sta_connected_events++;
+	if (runtime->wifi_ap_clients < INT32_MAX) {
+		runtime->wifi_ap_clients++;
+	}
+}
+
+void sq_vm_runtime_wifi_note_ap_sta_disconnected(struct sq_vm_runtime *runtime)
+{
+	if (runtime == NULL) {
+		return;
+	}
+	runtime->wifi_ap_sta_disconnected_events++;
+	if (runtime->wifi_ap_clients > 0) {
+		runtime->wifi_ap_clients--;
+	}
+}
+
 static bool runtime_wifi_valid_profile_name(const uint8_t *profile, size_t profile_len)
 {
 	if (profile == NULL || profile_len == 0 ||
@@ -325,6 +347,33 @@ static int runtime_wifi_stop_ap_dhcp(struct net_if *iface)
 	return result == -ENOENT ? 0 : result;
 }
 
+static void runtime_wifi_count_ap_lease(struct net_if *iface, struct dhcpv4_addr_slot *lease,
+					void *user_data)
+{
+	ARG_UNUSED(iface);
+	int32_t *count = user_data;
+
+	if (count == NULL || lease == NULL) {
+		return;
+	}
+	if (lease->state == DHCPV4_SERVER_ADDR_ALLOCATED && *count < INT32_MAX) {
+		(*count)++;
+	}
+}
+
+static int32_t runtime_wifi_ap_lease_count(struct net_if *iface)
+{
+	int32_t count = 0;
+
+	if (iface == NULL) {
+		return 0;
+	}
+	if (net_dhcpv4_server_foreach_lease(iface, runtime_wifi_count_ap_lease, &count) != 0) {
+		return 0;
+	}
+	return count;
+}
+
 static void runtime_wifi_record_station_ipv4(struct sq_vm_runtime *runtime, struct net_if *iface,
 					     SqvmWifiStatus *out)
 {
@@ -438,7 +487,14 @@ static void runtime_wifi_event_handler(struct net_mgmt_event_callback *cb, uint6
 		break;
 	case NET_EVENT_WIFI_AP_DISABLE_RESULT:
 		runtime->wifi_ap_active = false;
+		runtime->wifi_ap_clients = 0;
 		runtime->wifi_ap_stop_events++;
+		break;
+	case NET_EVENT_WIFI_AP_STA_CONNECTED:
+		sq_vm_runtime_wifi_note_ap_sta_connected(runtime);
+		break;
+	case NET_EVENT_WIFI_AP_STA_DISCONNECTED:
+		sq_vm_runtime_wifi_note_ap_sta_disconnected(runtime);
 		break;
 	default:
 		break;
@@ -454,7 +510,9 @@ static void runtime_wifi_init_events(struct sq_vm_runtime *runtime)
 						     NET_EVENT_WIFI_CONNECT_RESULT |
 						     NET_EVENT_WIFI_DISCONNECT_RESULT |
 						     NET_EVENT_WIFI_AP_ENABLE_RESULT |
-						     NET_EVENT_WIFI_AP_DISABLE_RESULT);
+						     NET_EVENT_WIFI_AP_DISABLE_RESULT |
+						     NET_EVENT_WIFI_AP_STA_CONNECTED |
+						     NET_EVENT_WIFI_AP_STA_DISCONNECTED);
 		net_mgmt_add_event_callback(&runtime->wifi_mgmt_cb);
 		runtime->wifi_mgmt_cb_registered = true;
 	}
@@ -507,6 +565,7 @@ int32_t runtime_wifi_start_ap(void *user_data, const uint8_t *ssid, size_t ssid_
 		return 0;
 	}
 	runtime_wifi_start_operation(runtime, SQ_VM_RUNTIME_WIFI_OP_START_AP, 0);
+	runtime->wifi_ap_clients = 0;
 
 	params.ssid = ssid;
 	params.ssid_length = (uint8_t)ssid_len;
@@ -570,6 +629,7 @@ int32_t runtime_wifi_stop_ap(void *user_data, SqvmWifiOperation *out)
 		return 0;
 	}
 	runtime->wifi_ap_active = false;
+	runtime->wifi_ap_clients = 0;
 	runtime_wifi_finish_operation(runtime, true, NULL);
 	runtime_wifi_fill_operation(runtime, out);
 	return 0;
@@ -718,6 +778,7 @@ int32_t runtime_wifi_status(void *user_data, SqvmWifiStatus *out)
 #if SQ_VM_RUNTIME_HAS_WIFI_MGMT
 	struct sq_vm_runtime *runtime = user_data;
 	struct net_if *iface = runtime_wifi_iface();
+	struct net_if *ap_iface = runtime_wifi_ap_iface();
 	struct wifi_iface_status status = {0};
 	if (runtime != NULL) {
 		runtime_wifi_init_events(runtime);
@@ -732,8 +793,13 @@ int32_t runtime_wifi_status(void *user_data, SqvmWifiStatus *out)
 		SQ_SET_LITERAL_FIELD(out, state, "started");
 		SQ_SET_LITERAL_FIELD(out, driver_mode, "ap");
 		SQ_SET_LITERAL_FIELD(out, ip_address, SQ_VM_RUNTIME_WIFI_AP_IP);
+		int32_t lease_count = runtime_wifi_ap_lease_count(ap_iface);
+		out->clients = runtime->wifi_ap_clients > lease_count ? runtime->wifi_ap_clients :
+								       lease_count;
 		out->ap_start_events = runtime->wifi_ap_start_events;
 		out->ap_stop_events = runtime->wifi_ap_stop_events;
+		out->sta_connected_events = runtime->wifi_ap_sta_connected_events;
+		out->sta_disconnected_events = runtime->wifi_ap_sta_disconnected_events;
 		return 0;
 	}
 	if (iface == NULL) {

@@ -537,9 +537,9 @@ and then reads `service.wifi.status()`. The script requires the start request
 to be accepted and `status.connected == true`, prints command names and lengths
 only, and rejects raw SSIDs, passwords, BSSIDs, MACs, or local IP patterns in
 captured output. It rejects unexpected `device errors` output, but allows the
-known `error=display=unavailable code=-19` diagnostic so the Wi-Fi station check
-can run on target setups where configured display hardware is intentionally not
-connected.
+known `error=display=unavailable code=-19 (ENODEV)` diagnostic so the Wi-Fi
+station check can run on target setups where configured display hardware is
+intentionally not connected.
 
 `scripts/zephyr-test-radio-concurrency.sh` is an opt-in radio concurrency check
 for Zephyr ESP32-C3 targets and is not part of the default full hardware suite.
@@ -547,11 +547,12 @@ It defaults to `--target xiao-esp32c3-gdeq0426t82-sd` and accepts
 `--target <id>`, `--skip-flash`, `--require-ble-reconnect`, and
 `--host-wifi-iface <iface>`. The script may temporarily take over the host
 Wi-Fi and Bluetooth controllers. It builds or flashes the selected target,
-confirms BLE advertising from the target boot log, discovers the target with
-host Bluetooth, connects to it, and keeps that BLE connection active while
-normal SquidScript Wi-Fi apps exercise scan/list, target AP
-start/client-association/stop, and station connect/disconnect through a
-generated temporary host AP. It finishes by checking Wi-Fi status. Pass
+formats app storage, launches fallback `main` so `service.ble.start` registers
+an active file-transfer profile, discovers the target with host Bluetooth,
+connects to it, and keeps that BLE connection active while normal SquidScript
+Wi-Fi apps exercise scan/list, target AP
+start/client-association/DHCP-lease/stop, and station connect/disconnect
+through a generated temporary host AP. It finishes by checking Wi-Fi status. Pass
 `--require-ble-reconnect` only when validating BLE re-advertising after host
 disconnect; the default matrix proves active BLE coexistence during Wi-Fi work
 without making reconnectability a pass requirement.
@@ -575,8 +576,8 @@ For SquidScript ESP32-C3 firmware, treat Wi-Fi/BLE coexistence as a target
 capability that must be verified on the actual board and antenna arrangement.
 The XIAO target with the external antenna has hardware evidence for an active
 BLE connection staying connected while SquidScript apps perform Wi-Fi scan/list,
-target AP start/client-association/stop, station connect/disconnect through a
-temporary host AP, and Wi-Fi status. The ESP32-C3 Super Mini uses the same SoC
+target AP start/client-association/DHCP-lease/stop, station connect/disconnect
+through a temporary host AP, and Wi-Fi status. The ESP32-C3 Super Mini uses the same SoC
 radio class, but clone-board antenna and RF layout quality are variant-dependent;
 run the radio concurrency script against the specific Super Mini board before
 claiming the same coexistence quality. When both radios are enabled, the
@@ -592,8 +593,15 @@ diagnosis but does not print SSIDs, BSSIDs, MAC addresses, local IP addresses,
 or generated credentials. It deletes the generated temporary station password
 and host NetworkManager profiles on exit. Like the station check, it rejects
 unexpected `device errors` output but allows the known
-`error=display=unavailable code=-19` diagnostic for target setups where the
-configured display is intentionally disconnected.
+`error=display=unavailable code=-19 (ENODEV)` diagnostic for target setups where
+the configured display is intentionally disconnected.
+
+The target AP row in `scripts/zephyr-test-radio-concurrency.sh` proves AP
+connectability with the host Wi-Fi interface: the host associates to the target
+AP, receives an IPv4 DHCP lease in the target AP subnet, and the SquidScript AP
+fixture reports a positive `service.wifi.status().clients` count. The script
+prints only boolean/count proof and keeps raw host NetworkManager output in the
+gitignored hardware-test work directory for local diagnosis.
 
 `scripts/c3-supermini-test-wifi-ap-api.sh` runs after Wi-Fi list coverage and
 before the final visible LED check in the default full hardware suite. It
@@ -602,20 +610,12 @@ app that calls `service.wifi.startAP("SquidScript")` and
 `service.wifi.getAPIP()`, sends `SELECT` to call `service.wifi.stopAP()`, and
 requires start, AP IP lookup, and stop to report success without printing the
 raw AP SSID, BSSIDs, MACs, or local IP patterns in captured output. AP start
-also starts a bounded DHCPv4 server on the AP interface. This script does not
-prove that an external client associated with the AP or received a lease.
-To verify AP connectability, leave `wifi-ap-summary` running after AP start and
-use a separate Wi-Fi client to scan for and join the test AP. A passing
-connectability check requires all of:
-
-- the second client sees the test AP SSID
-- the second client associates successfully
-- the second client receives an IPv4 lease
-- firmware still reports successful AP stop after sending `SELECT`
-
-When using a host Wi-Fi interface for this check, do not print nearby SSIDs,
-BSSIDs, MACs, or assigned IP addresses in logs; report only whether the test AP
-was found, whether the client connected, and whether an IPv4 address was
+also starts a bounded DHCPv4 server on the AP interface. This Super Mini script
+is an AP API check only; use `scripts/zephyr-test-radio-concurrency.sh` when the
+acceptance criterion includes an external AP client association and DHCP lease
+proof. When using a host Wi-Fi interface for AP proof, do not print nearby
+SSIDs, BSSIDs, MACs, or assigned IP addresses in logs; report only whether the
+test AP was found, whether the client connected, and whether an IPv4 lease was
 assigned.
 
 `scripts/c3-supermini-test-ble-smoke.sh` runs after Wi-Fi coverage and before
