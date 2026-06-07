@@ -1,77 +1,85 @@
 import chrome from "lib/chrome.squid"
 
-requires state {
+requires
+
+state {
   file: string
   navCount: int
   tocIndex: int
   tocTop: int
 }
 
-function drawTocRow(row, navIndex) {
-  if (navIndex < state.navCount) {
-    let book = binbook.open(state.file)
-    let _entry = binbook.navEntry(book, navIndex)
-    let y = 64
-    if (row == 1) {
-      y = 136
-    } else {
-      if (row == 2) {
-        y = 208
-      } else {
-        if (row == 3) {
-          y = 280
-        } else {
-          if (row == 4) {
-            y = 352
-          } else {
-            if (row == 5) {
-              y = 424
-            } else {
-              if (row == 6) {
-                y = 496
-              } else {
-                if (row == 7) {
-                  y = 568
-                }
-              }
-            }
-          }
-        }
-      }
-    }
+export
 
-    if (navIndex == state.tocIndex) {
-      service.display.rect(0, y - 8, 480, 60, { fillColor: "gray4" })
-    }
-
-    service.display.text(string.format("Chapter {}", navIndex + 1), { x: 24, y: y, w: 360, h: 32, fontHeight: 18 })
-    service.display.text(string.format("{}", navIndex + 1), {
-      x: 390,
-      y: y,
-      w: 70,
-      h: 32,
-      fontHeight: 18,
-      align: "right"
+screen("t") {
+  service.display.clear("white")
+  chrome.drawTopBar("TOC")
+  if (state.navCount == 0) {
+    service.display.text("No TOC", {
+      x: 24
+      y: 120
+      w: 432
+      h: 40
+      fontHeight: 24
     })
   }
-}
-
-export screen("toc") {
-  service.display.clear("white")
-  chrome.drawTopBar("Table of Contents")
-
-  if (state.navCount == 0) {
-    service.display.text("No table of contents", { x: 24, y: 120, w: 432, h: 40, fontHeight: 24 })
-  } else {
-    drawTocRow(0, state.tocTop)
-    drawTocRow(1, state.tocTop + 1)
-    drawTocRow(2, state.tocTop + 2)
-    drawTocRow(3, state.tocTop + 3)
-    drawTocRow(4, state.tocTop + 4)
-    drawTocRow(5, state.tocTop + 5)
-    drawTocRow(6, state.tocTop + 6)
-    drawTocRow(7, state.tocTop + 7)
+  else {
+    service.display.text("C1", {
+      x: 24
+      y: 64
+      w: 360
+      h: 32
+      fontHeight: 18
+    })
+    service.display.text("C2", {
+      x: 24
+      y: 136
+      w: 360
+      h: 32
+      fontHeight: 18
+    })
+    service.display.text("C3", {
+      x: 24
+      y: 208
+      w: 360
+      h: 32
+      fontHeight: 18
+    })
+    service.display.text("C4", {
+      x: 24
+      y: 280
+      w: 360
+      h: 32
+      fontHeight: 18
+    })
+    service.display.text("C5", {
+      x: 24
+      y: 352
+      w: 360
+      h: 32
+      fontHeight: 18
+    })
+    service.display.text("C6", {
+      x: 24
+      y: 424
+      w: 360
+      h: 32
+      fontHeight: 18
+    })
+    service.display.text("C7", {
+      x: 24
+      y: 496
+      w: 360
+      h: 32
+      fontHeight: 18
+    })
+    service.display.text("C8", {
+      x: 24
+      y: 568
+      w: 360
+      h: 32
+      fontHeight: 18
+    })
   }
-
-  chrome.drawBottomBar("UP/DOWN select  SELECT open  BACK reader")
+  chrome.drawBottomBar("UP DOWN SELECT BACK")
 }

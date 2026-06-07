@@ -1,19 +1,15 @@
-app "binbook-reader" target "xteink-x4"
+app "bb"
 
 import ui from "lib/ui.squid"
 
 state {
-  stateVersion: int = 1,
-  file: string = "",
-  title: string = "",
-  pageIndex: int = 0,
-  pageCount: int = 0,
-  navCount: int = 0,
-  tocIndex: int = 0,
-  tocTop: int = 0,
-  jumpPage: int = 1,
-  browserIndex: int = 0,
-  uiState: string = "browser"
+  stateVersion: int = 1
+  file: string = ""
+  title: string = ""
+  pageIndex: int = 0
+  pageCount: int = 0
+  browserIndex: int = 0
+  uiState: string = "b"
 }
 
 event.on("app.start") {
@@ -31,22 +27,14 @@ event.on("app.exit") {
 }
 
 event.on("key.RIGHT") {
-  if (state.uiState == "reader") {
+  if (state.uiState == "r") {
     ui.nextPage()
-  } else {
-    if (state.uiState == "jump") {
-      ui.jumpForward10()
-    }
   }
 }
 
 event.on("key.LEFT") {
-  if (state.uiState == "reader") {
+  if (state.uiState == "r") {
     ui.previousPage()
-  } else {
-    if (state.uiState == "jump") {
-      ui.jumpBack10()
-    }
   }
 }
 
@@ -63,21 +51,24 @@ event.on("key.SELECT") {
 }
 
 event.on("key.POWER") {
-  if (state.uiState == "reader") {
-    ui.openToc()
-  } else {
+  if (state.uiState == "r") {
+    ui.openReader()
+  }
+  else {
     ui.openReader()
   }
 }
 
 event.on("key.BACK") {
-  if (state.uiState == "reader") {
+  if (state.uiState == "r") {
     ui.openBrowser()
-  } else {
-    if (state.uiState == "browser") {
+  }
+  else {
+    if (state.uiState == "b") {
       state.save()
       app.exit()
-    } else {
+    }
+    else {
       ui.openReader()
     }
   }

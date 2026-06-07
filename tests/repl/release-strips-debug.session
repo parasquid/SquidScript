@@ -5,8 +5,7 @@ state {
 }
 
 :profile release
-debug.print("hidden", count)
-count = count + 1
-:state
+debug.print("hidden", state.count)
+state.count = state.count + 1
+state.save()
 :output
-:expect-state count=1

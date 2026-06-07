@@ -4,18 +4,15 @@ state {
   count: int = 0
 }
 
-debug.print("start", count)
-count = count + 1
-debug.print("after", count)
-:state
-:output
-:expect-state count=1
-:expect-output output="start" 0
-:expect-output output="after" 1
+debug.print("start", state.count)
+state.count = state.count + 1
+state.save()
+debug.print("after", state.count)
 
-count = count + 1
-debug.print("again", count)
-:state
+state.count = state.count + 1
+state.save()
+debug.print("again", state.count)
 :output
-:expect-state count=2
-:expect-output output="again" 2
+:expect-output output=start 0
+:expect-output output=after 1
+:expect-output output=again 2

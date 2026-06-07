@@ -112,12 +112,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Developer Tooling
 
-- Scan all `.squid` files and scripted sessions, especially `examples/` and
-  `tests/repl/`, for stale pre-1.0 syntax such as bare persistent-state fields.
-  Update them to current SquidScript forms like `state.count`/`@count`, or
-  delete redundant examples/fixtures instead of preserving compatibility with
-  removed syntax. Context: the new `squidc app test` hardware run exposed stale
-  bare `count` usage in example-style sessions.
 - Extend `squidc hardware test --target esp32c3-super-mini` so the Super Mini
   regression target uses the same target-aware hardware-test architecture as
   the XIAO default dev target, with checks selected from target metadata and
