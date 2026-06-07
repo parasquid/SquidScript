@@ -52,6 +52,19 @@ class ZephyrTargetMetadataTests(ZephyrScriptTestCase):
         ]:
             self.assertIn(option, xiao_conf)
 
+    def test_xiao_display_exposes_gray2_binbook_without_changing_default_primitives(self):
+        target = json.loads(self.read("targets/xiao-esp32c3-gdeq0426t82-sd.target.json"))
+        display = target["display"]["color"]
+
+        self.assertEqual(display["defaultBpp"], 1)
+        self.assertEqual(display["defaultPixelFormat"], "GRAY1_PACKED")
+        self.assertIn(1, display["supportedBpp"])
+        self.assertIn(2, display["supportedBpp"])
+        self.assertIn("GRAY1_PACKED", display["supportedPixelFormats"])
+        self.assertIn("GRAY2_PACKED", display["supportedPixelFormats"])
+        self.assertIn("pixel-format.GRAY1_PACKED", target["compatibility"])
+        self.assertIn("pixel-format.GRAY2_PACKED", target["compatibility"])
+
     def test_checked_in_target_kconfigs_are_generated_from_target_json(self):
         expected = {
             "esp32c3-super-mini.target.json": "target/zephyr/generated/c3-supermini-target.conf",

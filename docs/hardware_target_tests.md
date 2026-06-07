@@ -114,6 +114,17 @@ cannot prove the final visible pixels. Visual confirmation is optional for
 smoke runs and required only when the task explicitly asks to verify rendered
 pixels or a human is present to inspect the panel.
 
+`scripts/xiao-esp32c3-test-epaper-gray2-smoke.sh` is the XIAO e-paper GRAY2 smoke
+test for the product firmware display path. It packages, installs, and launches
+`tests/hardware/xiao-esp32c3/epaper-gray2-smoke`, whose BinBook fixture
+exercises `service.display.draw` with packed 2bpp content. The
+unattended pass criteria are serial: `device output` contains `gray2 pages 1`,
+`device drawlog` contains `draw=binbook`, `device errors` is empty, and
+`device resources` responds after the refresh. The expected visible image is
+native 800 x 480 panel content with black, dark gray, light gray, white bands.
+The script can capture a USB webcam frame as optional evidence; pass
+`--require-camera` only when the camera itself is part of the check.
+
 The default XIAO firmware also drives the SSD1677/GDEQ0426T82 display through
 the Zephyr SPI backend for `service.display.clear` and `service.display.text`.
 The target JSON is the source of truth for the default portrait logical

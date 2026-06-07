@@ -335,16 +335,30 @@ master activation (`0x20`). The smoke test writes one row buffer at a time and
 maps logical X to panel RAM X in reverse so rendered text is not mirrored.
 `BUSY` is active-high at the tested adapter pin.
 
-The default XIAO firmware uses the same command sequence through the Zephyr SPI
-driver, with `CS`, `D/C`, `RST`, and `BUSY` as GPIOs. The firmware path renders
-only `service.display.clear` and `service.display.text` to physical pixels in
-this slice; other display primitives continue to be drawlog-only. The renderer
-keeps a row-sized buffer, applies the target JSON's default portrait logical
-orientation (`480 x 800`, rotation `270`) to each draw op, maps physical X to
-panel RAM X in reverse, and flushes after a VM dispatch completes so one screen
-render produces one full refresh. The verified unattended firmware activity
-signal is `display refresh complete busy_observed=1` with an empty
-`device errors` response.
+The default XIAO firmware uses the Zephyr SPI driver with `CS`, `D/C`, `RST`,
+and `BUSY` as GPIOs. The primitive display path renders
+`service.display.clear` and `service.display.text` to physical pixels and keeps
+other primitives drawlog-only. The primitive renderer keeps a row-sized buffer,
+applies the target JSON's default portrait logical orientation (`480 x 800`,
+rotation `270`) to each draw op, maps physical X to panel RAM X in reverse,
+writes BW RAM (`0x24`), and refreshes with the black/white full-update path.
+
+The BinBook drawable path accepts target-native full-panel `GRAY2_PACKED`
+resources and streams the compressed page twice without allocating a full-screen
+framebuffer. It writes the two one-bit SSD1677 grayscale planes to RED RAM
+(`0x26`) and BW RAM (`0x24`), loads the panel-specific 4-gray LUT with `0x32`,
+sets the LUT-derived gate/source/VCOM voltage registers (`0x03`, `0x04`,
+`0x2c`), enables normal RED RAM handling with display update control `0x21`
+data `0x00, 0x00`, and refreshes with update control byte `0xc7` before
+master activation (`0x20`). Canonical BinBook GRAY2 values are mapped to the
+SSD1677 plane states in ascending order: `0=black`, `1=dark gray`,
+`2=light gray`, and `3=white`.
+
+The verified unattended firmware activity signal is a completed display refresh
+with an empty `device errors` response. Hardware validation for BinBook GRAY2
+also checks `device output` for `pages <n>`, `device drawlog` for
+`draw=binbook id=<n>`, and resource metrics for healthy VM/protocol stack
+headroom.
 
 `EPAPER_HELLO_READY` proves that the diagnostic app booted, reached display
 refresh, and observed BUSY complete. It does not prove the visible pixels. The
@@ -352,11 +366,12 @@ GDEQ0426T82 path used here is write-only: there is no display framebuffer
 readback over the connected SPI signals, and BUSY does not report pixel
 orientation, contrast, FPC seating, or whether the final image is mirrored. For
 unattended smoke checks, BUSY asserting during refresh and returning ready is
-the current proxy for e-paper activity. Autonomous visible-output checks
-require an external observation channel such as a fixed USB camera, a
-phone/camera stream visible to the host, or a simpler optical fixture for
-targeted black/white regions. Without that, a human visual confirmation remains
-part of the physical-display pass criterion.
+the current proxy for e-paper activity. A host-visible USB webcam can provide a
+coarse autonomous visible-output check for blank-vs-rendered and multi-band
+grayscale output when the panel is close, well lit, and placed against a
+high-contrast background. Human visual confirmation remains the more reliable
+physical-display pass criterion for exact tone order, contrast, and subtle
+grayscale differences.
 
 Minimum SSD1677 command skeleton for the backend:
 

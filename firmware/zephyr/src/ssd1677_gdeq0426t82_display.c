@@ -1,4 +1,5 @@
 #include "vm_runtime_display_backend.h"
+#include "ssd1677_gray2.h"
 
 #include <errno.h>
 #include <string.h>
@@ -37,13 +38,19 @@ LOG_MODULE_REGISTER(squidscript_ssd1677, LOG_LEVEL_INF);
 #define LOGICAL_ROTATION CONFIG_SQ_TARGET_DISPLAY_ROTATION
 
 #define SSD1677_CMD_GDO_CTRL 0x01
+#define SSD1677_CMD_GATE_VOLTAGE 0x03
+#define SSD1677_CMD_SOURCE_VOLTAGE 0x04
+#define SSD1677_CMD_BOOSTER_SOFT_START 0x0c
 #define SSD1677_CMD_ENTRY_MODE 0x11
 #define SSD1677_CMD_SW_RESET 0x12
 #define SSD1677_CMD_TSENSOR_SELECTION 0x18
+#define SSD1677_CMD_DISPLAY_UPDATE_CTRL 0x21
 #define SSD1677_CMD_MASTER_ACTIVATION 0x20
 #define SSD1677_CMD_UPDATE_CTRL2 0x22
 #define SSD1677_CMD_WRITE_RAM 0x24
-#define SSD1677_CMD_BOOSTER_SOFT_START 0x0c
+#define SSD1677_CMD_VCOM_VOLTAGE 0x2c
+#define SSD1677_CMD_WRITE_RED_RAM 0x26
+#define SSD1677_CMD_WRITE_LUT 0x32
 #define SSD1677_CMD_BORDER_WAVEFORM 0x3c
 #define SSD1677_CMD_RAM_XPOS_CTRL 0x44
 #define SSD1677_CMD_RAM_YPOS_CTRL 0x45
@@ -52,10 +59,17 @@ LOG_MODULE_REGISTER(squidscript_ssd1677, LOG_LEVEL_INF);
 
 #define SSD1677_ENTRY_X_INC_Y_INC_HORIZONTAL 0x03
 #define SSD1677_UPDATE_FULL 0xf7
+#define SSD1677_UPDATE_GRAYSCALE 0xc7
 #define BINBOOK_PIXEL_FORMAT_GRAY2_PACKED 2U
 #define BINBOOK_COMPRESSION_RLE_PACKBITS 1U
 #define BINBOOK_GRAY2_ROW_BYTES (PANEL_WIDTH / 4U)
 #define BINBOOK_GRAY2_PAGE_BYTES (BINBOOK_GRAY2_ROW_BYTES * PANEL_HEIGHT)
+
+enum ssd1677_display_mode {
+	SSD1677_DISPLAY_MODE_NONE,
+	SSD1677_DISPLAY_MODE_BW,
+	SSD1677_DISPLAY_MODE_GRAYSCALE,
+};
 
 static const struct device *const spi_dev = DEVICE_DT_GET(DT_PHANDLE(SSD1677_NODE, spi));
 static const struct gpio_dt_spec cs_gpio = GPIO_DT_SPEC_GET(SSD1677_NODE, cs_gpios);
@@ -68,8 +82,29 @@ static const struct spi_config spi_cfg = {
 	.slave = 0,
 };
 
-static bool display_ready;
+static enum ssd1677_display_mode display_mode;
 static uint8_t row[ROW_BYTES];
+
+static const uint8_t ssd1677_lut_4g[] = {
+	0x80, 0x48, 0x4a, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x0a, 0x48, 0x68, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x88, 0x48, 0x60, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0xa8, 0x48, 0x45, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x07, 0x1e, 0x1c, 0x02, 0x00,
+	0x05, 0x01, 0x05, 0x01, 0x02,
+	0x08, 0x01, 0x01, 0x04, 0x04,
+	0x00, 0x02, 0x01, 0x02, 0x02,
+	0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x01,
+	0x22, 0x22, 0x22, 0x22, 0x22,
+	0x17, 0x41, 0xa8, 0x32, 0x30,
+	0x00, 0x00,
+};
 
 struct packbits_reader {
 	struct fs_file_t file;
@@ -251,8 +286,81 @@ static int epaper_init(void)
 	if (ret != 0) {
 		return ret;
 	}
-	display_ready = true;
+	display_mode = SSD1677_DISPLAY_MODE_BW;
 	return set_full_window();
+}
+
+static int init_grayscale_display(void)
+{
+	const uint8_t gate_output[] = {
+		(uint8_t)(PANEL_LAST_Y & 0xffU),
+		(uint8_t)(PANEL_LAST_Y >> 8),
+		0x02,
+	};
+	const uint8_t entry_mode = SSD1677_ENTRY_X_INC_Y_INC_HORIZONTAL;
+	const uint8_t border_waveform = 0x00;
+	const uint8_t temp_sensor = 0x80;
+	const uint8_t booster_soft_start[] = {0xae, 0xc7, 0xc3, 0xc0, 0x80};
+	const uint8_t source_voltage[] = {ssd1677_lut_4g[106], ssd1677_lut_4g[107],
+					  ssd1677_lut_4g[108]};
+	int ret = epaper_reset();
+
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command(SSD1677_CMD_SW_RESET);
+	if (ret != 0) {
+		return ret;
+	}
+	ret = wait_ready("software-reset", NULL);
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command_data(SSD1677_CMD_BOOSTER_SOFT_START, booster_soft_start,
+				 sizeof(booster_soft_start));
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command_data(SSD1677_CMD_GDO_CTRL, gate_output, sizeof(gate_output));
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command_data(SSD1677_CMD_ENTRY_MODE, &entry_mode, sizeof(entry_mode));
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command_data(SSD1677_CMD_BORDER_WAVEFORM, &border_waveform,
+				 sizeof(border_waveform));
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command_data(SSD1677_CMD_TSENSOR_SELECTION, &temp_sensor, sizeof(temp_sensor));
+	if (ret != 0) {
+		return ret;
+	}
+	ret = set_full_window();
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command_data(SSD1677_CMD_WRITE_LUT, ssd1677_lut_4g, 105U);
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command_data(SSD1677_CMD_GATE_VOLTAGE, &ssd1677_lut_4g[105], 1U);
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command_data(SSD1677_CMD_SOURCE_VOLTAGE, source_voltage,
+				 sizeof(source_voltage));
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command_data(SSD1677_CMD_VCOM_VOLTAGE, &ssd1677_lut_4g[109], 1U);
+	if (ret != 0) {
+		return ret;
+	}
+	display_mode = SSD1677_DISPLAY_MODE_GRAYSCALE;
+	return 0;
 }
 
 static const uint8_t *glyph_for(char ch)
@@ -422,28 +530,21 @@ static int packbits_next_byte(struct packbits_reader *reader, uint8_t *out)
 	return 0;
 }
 
-static void gray2_byte_to_mono(uint8_t line[ROW_BYTES], uint16_t x, uint8_t packed)
+static void apply_active_mask_to_row(uint8_t line[ROW_BYTES], uint16_t x, uint8_t active_mask)
 {
 	for (uint8_t pixel = 0; pixel < 4U; ++pixel) {
-		uint8_t gray = (uint8_t)((packed >> (6U - pixel * 2U)) & 0x03U);
-
-		if (gray <= 1U) {
+		if ((active_mask & (0x80U >> pixel)) != 0U) {
 			set_black_pixel(line, x + pixel);
 		}
 	}
 }
 
-static int stream_binbook_gray2_page(const struct sq_vm_runtime_binbook_page *page)
+static int stream_binbook_gray2_plane(const struct sq_vm_runtime_binbook_page *page,
+				      uint8_t command, bool msb_plane)
 {
 	struct packbits_reader reader = {0};
 	int ret;
 
-	if (page == NULL || page->path[0] == '\0' || page->pixel_format != BINBOOK_PIXEL_FORMAT_GRAY2_PACKED ||
-	    page->compression_method != BINBOOK_COMPRESSION_RLE_PACKBITS ||
-	    page->stored_width != PANEL_WIDTH || page->stored_height != PANEL_HEIGHT ||
-	    page->uncompressed_size != BINBOOK_GRAY2_PAGE_BYTES || page->compressed_size == 0) {
-		return -ENOTSUP;
-	}
 	fs_file_t_init(&reader.file);
 	ret = fs_open(&reader.file, page->path, FS_O_READ);
 	if (ret != 0) {
@@ -454,18 +555,26 @@ static int stream_binbook_gray2_page(const struct sq_vm_runtime_binbook_page *pa
 		(void)fs_close(&reader.file);
 		return ret;
 	}
+	ret = write_command(command);
+	if (ret != 0) {
+		(void)fs_close(&reader.file);
+		return ret;
+	}
 	reader.compressed_left = page->compressed_size;
 	for (uint16_t y = 0; y < PANEL_HEIGHT; ++y) {
 		memset(row, 0xff, sizeof(row));
 		for (uint16_t x = 0; x < PANEL_WIDTH; x += 4U) {
 			uint8_t packed = 0;
+			uint8_t active_mask;
 
 			ret = packbits_next_byte(&reader, &packed);
 			if (ret != 0) {
 				(void)fs_close(&reader.file);
 				return ret;
 			}
-			gray2_byte_to_mono(row, x, packed);
+			active_mask = msb_plane ? sq_ssd1677_gray2_msb_active_mask(packed)
+						: sq_ssd1677_gray2_lsb_active_mask(packed);
+			apply_active_mask_to_row(row, x, active_mask);
 		}
 		ret = write_data(row, sizeof(row));
 		if (ret != 0) {
@@ -475,6 +584,24 @@ static int stream_binbook_gray2_page(const struct sq_vm_runtime_binbook_page *pa
 	}
 	(void)fs_close(&reader.file);
 	return 0;
+}
+
+static int stream_binbook_gray2_page(const struct sq_vm_runtime_binbook_page *page)
+{
+	int ret;
+
+	if (page == NULL || page->path[0] == '\0' ||
+	    page->pixel_format != BINBOOK_PIXEL_FORMAT_GRAY2_PACKED ||
+	    page->compression_method != BINBOOK_COMPRESSION_RLE_PACKBITS ||
+	    page->stored_width != PANEL_WIDTH || page->stored_height != PANEL_HEIGHT ||
+	    page->uncompressed_size != BINBOOK_GRAY2_PAGE_BYTES || page->compressed_size == 0) {
+		return -ENOTSUP;
+	}
+	ret = stream_binbook_gray2_plane(page, SSD1677_CMD_WRITE_RED_RAM, true);
+	if (ret != 0) {
+		return ret;
+	}
+	return stream_binbook_gray2_plane(page, SSD1677_CMD_WRITE_RAM, false);
 }
 
 static void draw_text_row(uint8_t line[ROW_BYTES], uint16_t y,
@@ -558,6 +685,27 @@ static int refresh_display(bool *observed_busy)
 	return wait_ready("refresh", observed_busy);
 }
 
+static int refresh_grayscale_display(bool *observed_busy)
+{
+	const uint8_t display_update[] = {0x00, 0x00};
+	const uint8_t update = SSD1677_UPDATE_GRAYSCALE;
+	int ret = write_command_data(SSD1677_CMD_DISPLAY_UPDATE_CTRL, display_update,
+				     sizeof(display_update));
+
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command_data(SSD1677_CMD_UPDATE_CTRL2, &update, sizeof(update));
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command(SSD1677_CMD_MASTER_ACTIVATION);
+	if (ret != 0) {
+		return ret;
+	}
+	return wait_ready("refresh-grayscale", observed_busy);
+}
+
 static int configure_display(void)
 {
 	if (!device_is_ready(spi_dev) || !gpio_is_ready_dt(&cs_gpio) ||
@@ -595,11 +743,21 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 		LOG_ERR("display configure failed: %d", ret);
 		return ret;
 	}
-	if (!display_ready) {
+	binbook = find_binbook_drawable_op(ops, op_count);
+	if (binbook != NULL) {
+		if (display_mode != SSD1677_DISPLAY_MODE_GRAYSCALE) {
+			ret = init_grayscale_display();
+			if (ret != 0) {
+				LOG_ERR("display grayscale init failed: %d", ret);
+				display_mode = SSD1677_DISPLAY_MODE_NONE;
+				return ret;
+			}
+		}
+	} else if (display_mode != SSD1677_DISPLAY_MODE_BW) {
 		ret = epaper_init();
 		if (ret != 0) {
 			LOG_ERR("display init failed: %d", ret);
-			display_ready = false;
+			display_mode = SSD1677_DISPLAY_MODE_NONE;
 			return ret;
 		}
 	}
@@ -607,11 +765,6 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 	if (ret != 0) {
 		return ret;
 	}
-	ret = write_command(SSD1677_CMD_WRITE_RAM);
-	if (ret != 0) {
-		return ret;
-	}
-	binbook = find_binbook_drawable_op(ops, op_count);
 	if (binbook != NULL) {
 		ret = stream_binbook_gray2_page(&binbook->binbook_page);
 		if (ret != 0) {
@@ -619,6 +772,10 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 			return ret;
 		}
 	} else {
+		ret = write_command(SSD1677_CMD_WRITE_RAM);
+		if (ret != 0) {
+			return ret;
+		}
 		for (uint16_t y = 0; y < PANEL_HEIGHT; ++y) {
 			render_row(row, y, ops, op_count);
 			ret = write_data(row, sizeof(row));
@@ -627,7 +784,11 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 			}
 		}
 	}
-	ret = refresh_display(&observed_busy);
+	if (binbook != NULL) {
+		ret = refresh_grayscale_display(&observed_busy);
+	} else {
+		ret = refresh_display(&observed_busy);
+	}
 	if (ret != 0) {
 		return ret;
 	}

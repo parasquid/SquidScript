@@ -53,6 +53,7 @@ target_sources(app PRIVATE
   src/main.c
   src/protocol.c
   src/serial_transport.c
+  src/ssd1677_gray2.c
   src/ssd1677_gdeq0426t82_display.c
   src/vm_fs_storage.c
   src/vm_runtime.c

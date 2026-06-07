@@ -279,9 +279,9 @@
     },
     "color": {
       "logicalGrayscaleLevels": 16,
-      "supportedBpp": [1],
+      "supportedBpp": [1, 2],
       "defaultBpp": 1,
-      "supportedPixelFormats": ["GRAY1_PACKED"],
+      "supportedPixelFormats": ["GRAY1_PACKED", "GRAY2_PACKED"],
       "defaultPixelFormat": "GRAY1_PACKED",
       "mapping": "nearest"
     },
@@ -355,6 +355,7 @@
     "esp32c3",
     "epaper-800x480",
     "pixel-format.GRAY1_PACKED",
+    "pixel-format.GRAY2_PACKED",
     "squidscript-reference-vm"
   ],
   "features": [

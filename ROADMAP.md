@@ -46,8 +46,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Display And Output
 
-- Add true multi-gray e-paper rendering for BinBook GRAY2 instead of
-  thresholding to 1-bit on the current SSD1677 backend.
+- Add a GRAY2-aware streaming display compositor for
+  `service.display.clear/text/rect/line` on SSD1677 targets, preserving
+  source-order composition without a full-screen 2bpp framebuffer.
 - Add a generic PWM-capable LED-like device output model beyond
   `service.indicator`, so future target-described GPIO/PWM endpoints can expose
   smooth brightness control without board-specific app code.

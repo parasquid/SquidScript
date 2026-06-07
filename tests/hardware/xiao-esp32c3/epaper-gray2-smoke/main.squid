@@ -1,0 +1,21 @@
+app "epaper-gray2-smoke"
+
+state {
+  pageIndex: int = 0
+}
+
+event.on("app.start") {
+  screen.open("reader")
+}
+
+screen("reader") {
+  let opened = binbook.open("books/sample.binbook")
+  if (opened.ok) {
+    let info = binbook.info(opened.book)
+    let page = binbook.readPage(opened.book, state.pageIndex)
+    if (page.ok) {
+      service.display.draw(page.drawable)
+      debug.print("gray2 pages", info.pageCount)
+    }
+  }
+}

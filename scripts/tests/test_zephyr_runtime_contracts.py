@@ -34,6 +34,49 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
         self.assertLess(first_banner, ble_start)
         self.assertGreater(second_banner, ble_start)
 
+    def test_ssd1677_binbook_gray2_uses_grayscale_lut_refresh_path(self):
+        display_c = self.read("firmware/zephyr/src/ssd1677_gdeq0426t82_display.c")
+
+        for token in [
+            "SSD1677_CMD_DISPLAY_UPDATE_CTRL",
+            "SSD1677_CMD_WRITE_LUT",
+            "SSD1677_CMD_GATE_VOLTAGE",
+            "SSD1677_CMD_SOURCE_VOLTAGE",
+            "SSD1677_CMD_VCOM_VOLTAGE",
+            "SSD1677_UPDATE_GRAYSCALE",
+            "ssd1677_lut_4g",
+            "init_grayscale_display",
+            "refresh_grayscale_display",
+        ]:
+            self.assertIn(token, display_c)
+
+        self.assertIn("write_command_data(SSD1677_CMD_WRITE_LUT, ssd1677_lut_4g, 105U)", display_c)
+        self.assertIn("const uint8_t display_update[] = {0x00, 0x00};", display_c)
+        self.assertIn(
+            "write_command_data(SSD1677_CMD_DISPLAY_UPDATE_CTRL, display_update,\n\t\t\t\t     sizeof(display_update))",
+            display_c,
+        )
+        self.assertIn("const uint8_t update = SSD1677_UPDATE_GRAYSCALE;", display_c)
+        self.assertIn("stream_binbook_gray2_plane(page, SSD1677_CMD_WRITE_RED_RAM, true)", display_c)
+        self.assertIn("stream_binbook_gray2_plane(page, SSD1677_CMD_WRITE_RAM, false)", display_c)
+
+    def test_ssd1677_binbook_gray2_does_not_refresh_with_bw_full_update(self):
+        display_c = self.read("firmware/zephyr/src/ssd1677_gdeq0426t82_display.c")
+        binbook_body = display_c[
+            display_c.index("static int stream_binbook_gray2_page") : display_c.index(
+                "static void draw_text_row", display_c.index("static int stream_binbook_gray2_page")
+            )
+        ]
+        flush_body = display_c[
+            display_c.index("int sq_display_backend_flush") : display_c.index(
+                "#else", display_c.index("int sq_display_backend_flush")
+            )
+        ]
+
+        self.assertNotIn("SSD1677_UPDATE_FULL", binbook_body)
+        self.assertIn("ret = refresh_grayscale_display(&observed_busy);", flush_body)
+        self.assertIn("ret = refresh_display(&observed_busy);", flush_body)
+
     def test_wifi_scan_results_use_resident_cursor_snapshot_not_transfer_scratch(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         runtime_c = self.read("firmware/zephyr/src/vm_runtime_wifi.c")

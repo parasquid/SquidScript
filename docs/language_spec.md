@@ -2672,8 +2672,9 @@ Result:
 
 Resolves a page from an opened book handle into a display-ready drawable
 handle. The page index is zero-based. The current SSD1677 Zephyr backend
-accepts target-native full-panel GRAY2 BinBook page data and thresholds it to
-1-bit e-paper output while streaming from the resource file.
+accepts target-native full-panel GRAY2 BinBook page data and streams it from
+the resource file into the controller's two display planes without allocating a
+full-screen framebuffer.
 
 Result:
 

@@ -15,6 +15,7 @@
 #include "squidscript_fallback_app.h"
 #include "squidscript_protocol_fixtures.h"
 #include "squidscript_target_defaults.h"
+#include "ssd1677_gray2.h"
 #include "vm_runtime.h"
 #include "vm_runtime_internal.h"
 #include "vm_fs_storage.h"
@@ -5163,6 +5164,15 @@ ZTEST(squidscript_protocol, test_vm_runtime_records_binbook_drawable_display_op)
 	zassert_equal(runtime.display_ops[0].binbook_page.uncompressed_size, 96000);
 	zassert_equal(runtime.display_ops[0].binbook_page.stored_width, 800);
 	zassert_equal(runtime.display_ops[0].binbook_page.stored_height, 480);
+}
+
+ZTEST(squidscript_protocol, test_ssd1677_gray2_maps_canonical_binbook_values_to_distinct_planes)
+{
+	/* packed pixels: black, dark gray, light gray, white */
+	const uint8_t packed = 0x1b;
+
+	zassert_equal(sq_ssd1677_gray2_lsb_active_mask(packed), 0x50);
+	zassert_equal(sq_ssd1677_gray2_msb_active_mask(packed), 0x30);
 }
 
 ZTEST(squidscript_protocol, test_vm_runtime_dispatches_wifi_action_stubs)

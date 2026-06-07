@@ -33,6 +33,39 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
         self.assertEqual(target["buses"]["spi"]["shared"]["mosi"], "GPIO10")
         self.assertEqual(target["devices"]["storage.sd"]["status"], "planned-unverified")
 
+    def test_xiao_epaper_gray2_smoke_is_retained_hardware_display_check(self):
+        script = self.read("scripts/xiao-esp32c3-test-epaper-gray2-smoke.sh")
+        docs = self.read("docs/hardware_target_tests.md")
+        app = self.read("tests/hardware/xiao-esp32c3/epaper-gray2-smoke/main.squid")
+        fixture = ROOT / "tests/hardware/xiao-esp32c3/epaper-gray2-smoke/books/sample.binbook"
+
+        self.assertTrue(fixture.exists())
+        self.assertGreater(fixture.stat().st_size, 1024)
+        self.assertLess(fixture.stat().st_size, 16384)
+        self.assertIn('binbook.open("books/sample.binbook")', app)
+        self.assertIn("binbook.readPage", app)
+        self.assertIn("service.display.draw", app)
+        self.assertIn("gray2 pages", app)
+        self.assertIn('APP_ID="epaper-gray2-smoke"', script)
+        self.assertIn('APP_DIR="${ROOT}/tests/hardware/xiao-esp32c3/epaper-gray2-smoke"', script)
+        self.assertIn('cargo run --quiet -p squidc -- app package "${APP_DIR}"', script)
+        self.assertIn('cargo run --quiet -p squidc -- app install "${PACKAGE}"', script)
+        self.assertIn("cargo run --quiet -p squidc -- app launch ${APP_ID}", script)
+        self.assertIn("device drawlog", script)
+        self.assertIn("device errors", script)
+        self.assertIn("device resources", script)
+        self.assertIn("draw=binbook", script)
+        self.assertIn("gray2 pages 1", script)
+        self.assertIn("--skip-flash", script)
+        self.assertIn("--require-camera", script)
+        self.assertIn("ffmpeg", script)
+        self.assertIn("XIAO e-paper GRAY2 smoke", docs)
+        self.assertIn("xiao-esp32c3-test-epaper-gray2-smoke.sh", docs)
+        self.assertIn("BinBook fixture", docs)
+        self.assertIn("draw=binbook", docs)
+        self.assertIn("black, dark gray, light gray, white", docs)
+        self.assertIn("USB webcam", docs)
+
     def test_hardware_suite_requires_real_zephyr_wifi_backend(self):
         suite = self.read("scripts/c3-supermini-test-hardware.sh")
 
