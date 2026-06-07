@@ -16,6 +16,383 @@ static bool sq_vm_runtime_work_thread_started;
 
 static bool runtime_has_pending_storage(const struct sq_vm_runtime *runtime);
 
+enum sq_vm_runtime_cap_kind {
+	SQ_VM_RUNTIME_CAP_TIMER = 0,
+	SQ_VM_RUNTIME_CAP_ARMED_TIMER,
+	SQ_VM_RUNTIME_CAP_INPUT_BUTTON,
+	SQ_VM_RUNTIME_CAP_BINDING,
+	SQ_VM_RUNTIME_CAP_OUTPUT,
+	SQ_VM_RUNTIME_CAP_DRAWLOG,
+};
+
+struct sq_vm_runtime_cap_def {
+	const char *key;
+	enum sq_vm_runtime_cap_kind kind;
+	uint8_t hard_max;
+};
+
+static const struct sq_vm_runtime_cap_def runtime_cap_defs[] = {
+	{"vm_runtime.timer_max", SQ_VM_RUNTIME_CAP_TIMER, SQ_VM_RUNTIME_TIMER_MAX},
+	{"vm_runtime.armed_timer_max", SQ_VM_RUNTIME_CAP_ARMED_TIMER,
+	 SQ_VM_RUNTIME_ARMED_TIMER_MAX},
+	{"vm_runtime.input_button_max", SQ_VM_RUNTIME_CAP_INPUT_BUTTON,
+	 SQ_VM_RUNTIME_INPUT_BUTTON_MAX},
+	{"vm_runtime.active_binding_max", SQ_VM_RUNTIME_CAP_BINDING,
+	 SQ_VM_RUNTIME_ACTIVE_BINDING_MAX},
+	{"vm_runtime.output_max", SQ_VM_RUNTIME_CAP_OUTPUT, SQ_VM_RUNTIME_OUTPUT_MAX},
+	{"vm_runtime.drawlog_max", SQ_VM_RUNTIME_CAP_DRAWLOG, SQ_VM_RUNTIME_DRAWLOG_MAX},
+};
+
+static void runtime_active_caps_set_hard_max(struct sq_vm_runtime *runtime)
+{
+	runtime->active_timer_max = SQ_VM_RUNTIME_TIMER_MAX;
+	runtime->active_armed_timer_max = SQ_VM_RUNTIME_ARMED_TIMER_MAX;
+	runtime->active_input_button_max = SQ_VM_RUNTIME_INPUT_BUTTON_MAX;
+	runtime->active_binding_max = SQ_VM_RUNTIME_ACTIVE_BINDING_MAX;
+	runtime->active_output_max = SQ_VM_RUNTIME_OUTPUT_MAX;
+	runtime->active_drawlog_max = SQ_VM_RUNTIME_DRAWLOG_MAX;
+}
+
+static const struct sq_vm_runtime_cap_def *runtime_cap_def_for_key(const char *key)
+{
+	if (key == NULL) {
+		return NULL;
+	}
+	for (size_t i = 0; i < ARRAY_SIZE(runtime_cap_defs); i++) {
+		if (strcmp(runtime_cap_defs[i].key, key) == 0) {
+			return &runtime_cap_defs[i];
+		}
+	}
+	return NULL;
+}
+
+static uint8_t *runtime_cap_active_slot(struct sq_vm_runtime *runtime,
+					const struct sq_vm_runtime_cap_def *def)
+{
+	if (runtime == NULL || def == NULL) {
+		return NULL;
+	}
+	switch (def->kind) {
+	case SQ_VM_RUNTIME_CAP_TIMER:
+		return &runtime->active_timer_max;
+	case SQ_VM_RUNTIME_CAP_ARMED_TIMER:
+		return &runtime->active_armed_timer_max;
+	case SQ_VM_RUNTIME_CAP_INPUT_BUTTON:
+		return &runtime->active_input_button_max;
+	case SQ_VM_RUNTIME_CAP_BINDING:
+		return &runtime->active_binding_max;
+	case SQ_VM_RUNTIME_CAP_OUTPUT:
+		return &runtime->active_output_max;
+	case SQ_VM_RUNTIME_CAP_DRAWLOG:
+		return &runtime->active_drawlog_max;
+	}
+	return NULL;
+}
+
+static const uint8_t *runtime_cap_active_slot_const(const struct sq_vm_runtime *runtime,
+						    const struct sq_vm_runtime_cap_def *def)
+{
+	if (runtime == NULL || def == NULL) {
+		return NULL;
+	}
+	switch (def->kind) {
+	case SQ_VM_RUNTIME_CAP_TIMER:
+		return &runtime->active_timer_max;
+	case SQ_VM_RUNTIME_CAP_ARMED_TIMER:
+		return &runtime->active_armed_timer_max;
+	case SQ_VM_RUNTIME_CAP_INPUT_BUTTON:
+		return &runtime->active_input_button_max;
+	case SQ_VM_RUNTIME_CAP_BINDING:
+		return &runtime->active_binding_max;
+	case SQ_VM_RUNTIME_CAP_OUTPUT:
+		return &runtime->active_output_max;
+	case SQ_VM_RUNTIME_CAP_DRAWLOG:
+		return &runtime->active_drawlog_max;
+	}
+	return NULL;
+}
+
+static uint8_t runtime_cap_current_usage(const struct sq_vm_runtime *runtime,
+					 const struct sq_vm_runtime_cap_def *def)
+{
+	if (runtime == NULL || def == NULL) {
+		return 0;
+	}
+	switch (def->kind) {
+	case SQ_VM_RUNTIME_CAP_TIMER: {
+		uint8_t count = 0;
+
+		for (size_t i = 0; i < SQ_VM_RUNTIME_TIMER_MAX; i++) {
+			if (runtime->timers[i].active) {
+				count++;
+			}
+		}
+		return count;
+	}
+	case SQ_VM_RUNTIME_CAP_ARMED_TIMER:
+		return runtime->armed_timer_count;
+	case SQ_VM_RUNTIME_CAP_INPUT_BUTTON:
+		return runtime->input_button_count;
+	case SQ_VM_RUNTIME_CAP_BINDING:
+		return runtime->active_binding_count;
+	case SQ_VM_RUNTIME_CAP_OUTPUT:
+		return runtime->output_count;
+	case SQ_VM_RUNTIME_CAP_DRAWLOG:
+		return runtime->drawlog_count;
+	}
+	return 0;
+}
+
+int sq_vm_runtime_cap_get(const struct sq_vm_runtime *runtime, const char *key, uint16_t *out)
+{
+	const struct sq_vm_runtime_cap_def *def = runtime_cap_def_for_key(key);
+	const uint8_t *slot;
+
+	if (runtime == NULL || out == NULL || def == NULL) {
+		return -EINVAL;
+	}
+	slot = runtime_cap_active_slot_const(runtime, def);
+	if (slot == NULL) {
+		return -EINVAL;
+	}
+	*out = *slot == 0 ? def->hard_max : *slot;
+	return 0;
+}
+
+int sq_vm_runtime_cap_set(struct sq_vm_runtime *runtime, const char *key, uint16_t value)
+{
+	const struct sq_vm_runtime_cap_def *def = runtime_cap_def_for_key(key);
+	uint8_t *slot;
+
+	if (runtime == NULL || def == NULL) {
+		return -EINVAL;
+	}
+	if (value == 0 || value > def->hard_max || value > UINT8_MAX) {
+		return -ERANGE;
+	}
+	if (runtime_cap_current_usage(runtime, def) > value) {
+		return -EBUSY;
+	}
+	slot = runtime_cap_active_slot(runtime, def);
+	if (slot == NULL) {
+		return -EINVAL;
+	}
+	*slot = (uint8_t)value;
+	return 0;
+}
+
+int sq_vm_runtime_cap_clear(struct sq_vm_runtime *runtime, const char *key)
+{
+	if (runtime == NULL) {
+		return -EINVAL;
+	}
+	if (key == NULL || key[0] == '\0') {
+		runtime_active_caps_set_hard_max(runtime);
+		return 0;
+	}
+	const struct sq_vm_runtime_cap_def *def = runtime_cap_def_for_key(key);
+	uint8_t *slot;
+
+	if (def == NULL) {
+		return -EINVAL;
+	}
+	slot = runtime_cap_active_slot(runtime, def);
+	if (slot == NULL) {
+		return -EINVAL;
+	}
+	*slot = def->hard_max;
+	return 0;
+}
+
+static int runtime_cap_read_file(const char *path, uint8_t *buffer, size_t buffer_len,
+				 size_t *out_len)
+{
+	struct fs_dirent entry;
+	struct fs_file_t file;
+	int result;
+
+	if (path == NULL || buffer == NULL || out_len == NULL) {
+		return -EINVAL;
+	}
+	*out_len = 0;
+	result = fs_stat(path, &entry);
+	if (result != 0) {
+		return result;
+	}
+	if (entry.type != FS_DIR_ENTRY_FILE || entry.size > buffer_len) {
+		return -EINVAL;
+	}
+
+	fs_file_t_init(&file);
+	result = fs_open(&file, path, FS_O_READ);
+	if (result != 0) {
+		return result;
+	}
+	ssize_t bytes_read = fs_read(&file, buffer, entry.size);
+	result = fs_close(&file);
+	if (bytes_read < 0) {
+		return (int)bytes_read;
+	}
+	if ((size_t)bytes_read != entry.size) {
+		return -EIO;
+	}
+	*out_len = bytes_read;
+	return result;
+}
+
+static int runtime_cap_write_file(const char *path, const uint8_t *bytes, size_t len)
+{
+	struct fs_file_t file;
+	int result;
+
+	if (path == NULL || bytes == NULL) {
+		return -EINVAL;
+	}
+
+	fs_file_t_init(&file);
+	result = fs_open(&file, path, FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC);
+	if (result != 0) {
+		return result;
+	}
+	ssize_t written = fs_write(&file, bytes, len);
+	result = fs_close(&file);
+	if (written < 0) {
+		return (int)written;
+	}
+	if ((size_t)written != len) {
+		return -EIO;
+	}
+	return result;
+}
+
+static int runtime_cap_apply_record(struct sq_vm_runtime *runtime, const SqdcRecord *record)
+{
+	char key[SQDC_CONFIG_KEY_CAP];
+
+	if (runtime == NULL || record == NULL || !record->present ||
+	    record->key_len == 0 || record->key_len >= sizeof(key) ||
+	    record->value.kind != SQDC_VALUE_I32 || record->value.i32_value <= 0 ||
+	    record->value.i32_value > UINT16_MAX) {
+		return -EINVAL;
+	}
+	memcpy(key, record->key, record->key_len);
+	key[record->key_len] = '\0';
+	return sq_vm_runtime_cap_set(runtime, key, (uint16_t)record->value.i32_value);
+}
+
+int sq_vm_runtime_cap_load(struct sq_vm_runtime *runtime)
+{
+	char path[SQ_APP_STORE_RUNTIME_CONFIG_PATH_MAX];
+	SqdcConfig config = {0};
+	size_t bytes_len = 0;
+	SqdcStatus status;
+	int result;
+
+	if (runtime == NULL) {
+		return -EINVAL;
+	}
+	runtime_active_caps_set_hard_max(runtime);
+	if (runtime->store_mount_point == NULL) {
+		return 0;
+	}
+	result = sq_app_store_runtime_config_path(runtime->store_mount_point, path, sizeof(path));
+	if (result != 0) {
+		return result;
+	}
+	result = sq_vm_runtime_transfer_acquire(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION);
+	if (result != 0) {
+		return result;
+	}
+	result = runtime_cap_read_file(path, runtime->transfer.completion.bytes,
+				       sizeof(runtime->transfer.completion.bytes), &bytes_len);
+	if (result == -ENOENT) {
+		(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION);
+		return 0;
+	}
+	if (result != 0) {
+		(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION);
+		return result;
+	}
+	status = sqdc_decode_sqdc(runtime->transfer.completion.bytes, bytes_len, &config);
+	result = sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION);
+	if (result != 0) {
+		return result;
+	}
+	if (status != SQDC_STATUS_OK) {
+		return -EINVAL;
+	}
+	for (size_t i = 0; i < config.count; i++) {
+		result = runtime_cap_apply_record(runtime, &config.records[i]);
+		if (result != 0) {
+			runtime_active_caps_set_hard_max(runtime);
+			return result;
+		}
+	}
+	return 0;
+}
+
+int sq_vm_runtime_cap_save(struct sq_vm_runtime *runtime)
+{
+	char path[SQ_APP_STORE_RUNTIME_CONFIG_PATH_MAX];
+	SqdcConfig config = {0};
+	size_t encoded_len = 0;
+	SqdcStatus status;
+	int result;
+
+	if (runtime == NULL) {
+		return -EINVAL;
+	}
+	if (runtime->store_mount_point == NULL) {
+		return -ENODEV;
+	}
+	result = sq_app_store_prepare_filesystem(runtime->store_mount_point);
+	if (result != 0) {
+		return result;
+	}
+	result = sq_app_store_runtime_config_path(runtime->store_mount_point, path, sizeof(path));
+	if (result != 0) {
+		return result;
+	}
+	status = sqdc_config_clear(&config);
+	if (status != SQDC_STATUS_OK) {
+		return -EINVAL;
+	}
+	for (size_t i = 0; i < ARRAY_SIZE(runtime_cap_defs); i++) {
+		uint16_t value = 0;
+
+		result = sq_vm_runtime_cap_get(runtime, runtime_cap_defs[i].key, &value);
+		if (result != 0) {
+			return result;
+		}
+		if (value == runtime_cap_defs[i].hard_max) {
+			continue;
+		}
+		status = sqdc_config_set_i32(&config, (const uint8_t *)runtime_cap_defs[i].key,
+					     strlen(runtime_cap_defs[i].key), value);
+		if (status != SQDC_STATUS_OK) {
+			return -EINVAL;
+		}
+	}
+	if (config.count == 0) {
+		result = fs_unlink(path);
+		return result == -ENOENT ? 0 : result;
+	}
+	result = sq_vm_runtime_transfer_acquire(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION);
+	if (result != 0) {
+		return result;
+	}
+	status = sqdc_encode_sqdc(&config, runtime->transfer.completion.bytes,
+				  sizeof(runtime->transfer.completion.bytes), &encoded_len);
+	if (status != SQDC_STATUS_OK) {
+		(void)sq_vm_runtime_transfer_release(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION);
+		return -EINVAL;
+	}
+	result = runtime_cap_write_file(path, runtime->transfer.completion.bytes, encoded_len);
+	int release_result = sq_vm_runtime_transfer_release(runtime,
+							    SQ_VM_RUNTIME_TRANSFER_COMPLETION);
+	return result != 0 ? result : release_result;
+}
+
 static void runtime_trace(void *user_data, const uint8_t *message, size_t message_len)
 {
 	struct sq_vm_runtime *runtime = user_data;
@@ -169,6 +546,8 @@ void sq_vm_runtime_init(struct sq_vm_runtime *runtime)
 	runtime->work_initialized = true;
 	runtime->work_submitted = false;
 	runtime->status = SQ_VM_RUNTIME_IDLE;
+	runtime_active_caps_set_hard_max(runtime);
+	(void)sq_vm_runtime_cap_load(runtime);
 }
 
 size_t sq_vm_runtime_work_stack_size(void)
@@ -333,6 +712,9 @@ void sq_vm_runtime_set_store_mount_point(struct sq_vm_runtime *runtime, const ch
 {
 	if (runtime != NULL) {
 		runtime->store_mount_point = mount_point;
+		if (runtime->work_initialized) {
+			(void)sq_vm_runtime_cap_load(runtime);
+		}
 	}
 }
 
@@ -611,11 +993,13 @@ int sq_vm_runtime_record_output(struct sq_vm_runtime *runtime, const uint8_t *me
 		return -EINVAL;
 	}
 	size_t slot = runtime->output_count;
-	if (slot >= SQ_VM_RUNTIME_OUTPUT_MAX) {
+	size_t active_max = runtime->active_output_max == 0 ? SQ_VM_RUNTIME_OUTPUT_MAX :
+							runtime->active_output_max;
+	if (slot >= active_max) {
 		memmove(runtime->outputs[0], runtime->outputs[1],
-			(SQ_VM_RUNTIME_OUTPUT_MAX - 1) * SQ_VM_RUNTIME_OUTPUT_LEN);
-		slot = SQ_VM_RUNTIME_OUTPUT_MAX - 1;
-		runtime->output_count = SQ_VM_RUNTIME_OUTPUT_MAX - 1;
+			(active_max - 1) * SQ_VM_RUNTIME_OUTPUT_LEN);
+		slot = active_max - 1;
+		runtime->output_count = active_max - 1;
 	}
 	size_t len = message_len;
 	if (len >= SQ_VM_RUNTIME_OUTPUT_LEN) {
@@ -633,11 +1017,13 @@ int sq_vm_runtime_record_drawlog(struct sq_vm_runtime *runtime, const char *line
 		return -EINVAL;
 	}
 	size_t slot = runtime->drawlog_count;
-	if (slot >= SQ_VM_RUNTIME_DRAWLOG_MAX) {
+	size_t active_max = runtime->active_drawlog_max == 0 ? SQ_VM_RUNTIME_DRAWLOG_MAX :
+							 runtime->active_drawlog_max;
+	if (slot >= active_max) {
 		memmove(runtime->drawlog[0], runtime->drawlog[1],
-			(SQ_VM_RUNTIME_DRAWLOG_MAX - 1) * SQ_VM_RUNTIME_DRAWLOG_LEN);
-		slot = SQ_VM_RUNTIME_DRAWLOG_MAX - 1;
-		runtime->drawlog_count = SQ_VM_RUNTIME_DRAWLOG_MAX - 1;
+			(active_max - 1) * SQ_VM_RUNTIME_DRAWLOG_LEN);
+		slot = active_max - 1;
+		runtime->drawlog_count = active_max - 1;
 	}
 	size_t len = 0;
 	while (len < SQ_VM_RUNTIME_DRAWLOG_LEN - 1 && line[len] != '\0') {

@@ -297,6 +297,19 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   named constant next to its definition and reference that, rather than
   repeating the literal across call sites.
 
+## Device Protocol Encoding Discipline
+
+- Prefer compact, typed, stable identifiers on constrained device wire
+  protocols instead of repeated human-readable strings when the response can
+  grow with diagnostics, resources, metrics, or table rows. Use named
+  constants/enums for those identifiers, never bare numeric literals.
+- Keep human-facing names in host tooling, docs, and CLI output by translating
+  protocol identifiers at the boundary. Firmware should not spend RAM or frame
+  budget repeating strings solely to make the raw wire payload readable.
+- Do not collapse this into opaque diagnostics: protocol IDs must have a
+  maintained name table in the host codec/tests so `squidc` output remains
+  readable and stable.
+
 ## Browser Simulator
 
 When changing `simulator/browser`, verify the actual app behavior, not only unit

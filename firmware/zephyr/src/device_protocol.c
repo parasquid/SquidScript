@@ -47,6 +47,65 @@ enum sq_resources_request_field {
 	SQ_RESOURCES_FIELD_RESET_HEAP_MAX = 1,
 };
 
+enum sq_runtime_cap_request_field {
+	SQ_RUNTIME_CAP_FIELD_KEY = 1,
+	SQ_RUNTIME_CAP_FIELD_VALUE = 2,
+};
+
+struct sq_runtime_cap_request {
+	char key[40];
+	size_t key_len;
+	uint32_t value;
+	bool has_key;
+	bool has_value;
+};
+
+enum sq_resource_metric_id {
+	SQ_RESOURCE_METRIC_RAM_TOTAL_BYTES = 1,
+	SQ_RESOURCE_METRIC_RUNTIME_STATIC_BYTES = 2,
+	SQ_RESOURCE_METRIC_VM_SQBC_CHUNK_BYTES = 3,
+	SQ_RESOURCE_METRIC_HEAP_COUNT = 4,
+	SQ_RESOURCE_METRIC_HEAP_FREE_BYTES = 5,
+	SQ_RESOURCE_METRIC_HEAP_ALLOC_BYTES = 6,
+	SQ_RESOURCE_METRIC_HEAP_MAX_ALLOC_BYTES = 7,
+	SQ_RESOURCE_METRIC_HEAP_LARGEST_FREE_SUPPORTED = 8,
+	SQ_RESOURCE_METRIC_HEAP_LARGEST_FREE_BYTES = 9,
+	SQ_RESOURCE_METRIC_LAST_DISPATCH_US = 10,
+	SQ_RESOURCE_METRIC_LAST_DISPATCH_SEQ = 11,
+	SQ_RESOURCE_METRIC_LAST_SQBC_READS = 12,
+	SQ_RESOURCE_METRIC_LAST_SQBC_BYTES = 13,
+	SQ_RESOURCE_METRIC_RUNTIME_STATUS = 14,
+	SQ_RESOURCE_METRIC_RUNTIME_DISPATCH_STARTED = 15,
+	SQ_RESOURCE_METRIC_RUNTIME_DISPATCH_AGE_US = 16,
+	SQ_RESOURCE_METRIC_RUNTIME_WORK_SUBMITTED = 17,
+	SQ_RESOURCE_METRIC_RUNTIME_CURRENT_APP_PRESENT = 18,
+	SQ_RESOURCE_METRIC_RUNTIME_LIFECYCLE_PHASE = 19,
+	SQ_RESOURCE_METRIC_RUNTIME_ARM_PHASE = 20,
+	SQ_RESOURCE_METRIC_CAP_STATIC_TIMER = 21,
+	SQ_RESOURCE_METRIC_CAP_STATIC_ARMED_TIMER = 22,
+	SQ_RESOURCE_METRIC_CAP_STATIC_INPUT_BUTTON = 23,
+	SQ_RESOURCE_METRIC_CAP_STATIC_BINDING = 24,
+	SQ_RESOURCE_METRIC_CAP_STATIC_OUTPUT = 25,
+	SQ_RESOURCE_METRIC_CAP_STATIC_DRAWLOG = 26,
+	SQ_RESOURCE_METRIC_CAP_STATIC_DEVICE_ERROR = 27,
+	SQ_RESOURCE_METRIC_CAP_ACTIVE_TIMER = 28,
+	SQ_RESOURCE_METRIC_CAP_ACTIVE_ARMED_TIMER = 29,
+	SQ_RESOURCE_METRIC_CAP_ACTIVE_INPUT_BUTTON = 30,
+	SQ_RESOURCE_METRIC_CAP_ACTIVE_BINDING = 31,
+	SQ_RESOURCE_METRIC_CAP_ACTIVE_OUTPUT = 32,
+	SQ_RESOURCE_METRIC_CAP_ACTIVE_DRAWLOG = 33,
+	SQ_RESOURCE_METRIC_PROTO_STACK_SIZE_BYTES = 34,
+	SQ_RESOURCE_METRIC_PROTO_STACK_PRE_UNUSED_BYTES = 35,
+	SQ_RESOURCE_METRIC_PROTO_STACK_PRE_USED_BYTES = 36,
+	SQ_RESOURCE_METRIC_PROTO_STACK_UNUSED_BYTES = 37,
+	SQ_RESOURCE_METRIC_PROTO_STACK_USED_BYTES = 38,
+	SQ_RESOURCE_METRIC_VM_STACK_SIZE_BYTES = 39,
+	SQ_RESOURCE_METRIC_VM_STACK_UNUSED_BYTES = 40,
+	SQ_RESOURCE_METRIC_VM_STACK_USED_BYTES = 41,
+	SQ_RESOURCE_METRIC_APP_COUNT = 42,
+	SQ_RESOURCE_METRIC_INPUT_BUTTON_STATE = 43,
+};
+
 static int copy_app_id(char *out, size_t out_cap, const char *app_id)
 {
 	size_t len = 0;
@@ -472,23 +531,18 @@ static int append_line_payload(uint8_t *payload, size_t payload_cap, size_t *pay
 }
 
 static int append_resource_metric(uint8_t *payload, size_t payload_cap, size_t *payload_len,
-				  const char *key, uint64_t value)
+				  uint32_t id, uint64_t value)
 {
-	size_t key_len;
 	size_t record_len;
 	size_t needed;
 	uint8_t *record;
 	uint8_t *value_field;
 
-	if (payload == NULL || payload_len == NULL || key == NULL || value > UINT32_MAX) {
+	if (payload == NULL || payload_len == NULL || id == 0 || value > UINT32_MAX) {
 		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
 	}
 
-	key_len = strlen(key);
-	if (key_len > UINT16_MAX || key_len > UINT16_MAX - 12u) {
-		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
-	}
-	record_len = 12u + key_len;
+	record_len = 16u;
 	needed = *payload_len + 4u + record_len;
 	if (needed > payload_cap) {
 		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
@@ -501,12 +555,14 @@ static int append_resource_metric(uint8_t *payload, size_t payload_cap, size_t *
 
 	record = &payload[*payload_len + 4u];
 	record[0] = SQ_DEVICE_RECORD_FIELD_KEY;
-	record[1] = SQ_DEVICE_FIELD_TYPE_STRING;
-	record[2] = key_len & 0xffu;
-	record[3] = (key_len >> 8) & 0xffu;
-	memcpy(&record[4], key, key_len);
+	record[1] = SQ_DEVICE_FIELD_TYPE_U32;
+	record[2] = 4u;
+	record[3] = 0u;
+	for (size_t i = 0; i < 4u; i++) {
+		record[4u + i] = (id >> (i * 8u)) & 0xffu;
+	}
 
-	value_field = &record[4u + key_len];
+	value_field = &record[8u];
 	value_field[0] = SQ_DEVICE_RECORD_FIELD_VALUE;
 	value_field[1] = SQ_DEVICE_FIELD_TYPE_U32;
 	value_field[2] = 4u;
@@ -1533,7 +1589,7 @@ static int repeated_runtime_lines_response(const struct sq_protocol_request *req
 	const uint8_t *fixed_lines = NULL;
 	size_t fixed_count = 0;
 	size_t fixed_stride = 0;
-	SqdpLineSlice extra_slices[1 + SQ_VM_RUNTIME_DEVICE_ERROR_MAX];
+	SqdpLineSlice extra_slices[2 + SQ_VM_RUNTIME_DEVICE_ERROR_MAX];
 	size_t extra_slice_count = 0;
 
 	if (runtime != NULL && request->opcode == SQ_OPCODE_TRACE_GET) {
@@ -1896,53 +1952,85 @@ static int __noinline resources_response(const struct sq_protocol_request *reque
 		runtime_arm_phase = (size_t)context->runtime->arm_phase;
 	}
 
-#define SQ_RESOURCE_METRIC(key_literal, metric_value) \
+#define SQ_RESOURCE_METRIC(metric_id, metric_value) \
 	do { \
 		int metric_result = append_resource_metric(payload, payload_cap, &payload_len, \
-							   (key_literal), (metric_value)); \
+							   (metric_id), (metric_value)); \
 		if (metric_result != SQ_PROTOCOL_OK) { \
 			return metric_result; \
 		} \
 	} while (false)
-	SQ_RESOURCE_METRIC("ram_total_bytes", CONFIG_SRAM_SIZE * 1024u);
-	SQ_RESOURCE_METRIC("runtime_static_bytes",
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_RAM_TOTAL_BYTES, CONFIG_SRAM_SIZE * 1024u);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_RUNTIME_STATIC_BYTES,
 			   context->runtime == NULL ? 0 : sizeof(*context->runtime));
-	SQ_RESOURCE_METRIC("vm_sqbc_chunk_bytes", SQVM_STORAGE_TRANSFER_CAPACITY);
-	SQ_RESOURCE_METRIC("heap_count", heap_count);
-	SQ_RESOURCE_METRIC("heap_free_bytes", heap_free_bytes);
-	SQ_RESOURCE_METRIC("heap_alloc_bytes", heap_allocated_bytes);
-	SQ_RESOURCE_METRIC("heap_max_alloc_bytes", heap_max_allocated_bytes);
-	SQ_RESOURCE_METRIC("heap_largest_free_supported", heap_largest_free_supported);
-	SQ_RESOURCE_METRIC("heap_largest_free_bytes", heap_largest_free_bytes);
-	SQ_RESOURCE_METRIC("last_dispatch_us",
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_VM_SQBC_CHUNK_BYTES, SQVM_STORAGE_TRANSFER_CAPACITY);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_HEAP_COUNT, heap_count);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_HEAP_FREE_BYTES, heap_free_bytes);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_HEAP_ALLOC_BYTES, heap_allocated_bytes);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_HEAP_MAX_ALLOC_BYTES, heap_max_allocated_bytes);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_HEAP_LARGEST_FREE_SUPPORTED,
+			   heap_largest_free_supported);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_HEAP_LARGEST_FREE_BYTES, heap_largest_free_bytes);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_LAST_DISPATCH_US,
 			   context->runtime == NULL ? 0 : context->runtime->last_dispatch_elapsed_us);
-	SQ_RESOURCE_METRIC("last_dispatch_seq",
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_LAST_DISPATCH_SEQ,
 			   context->runtime == NULL ? 0 : context->runtime->last_dispatch_sequence);
-	SQ_RESOURCE_METRIC("last_sqbc_reads",
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_LAST_SQBC_READS,
 			   context->runtime == NULL ? 0 :
 						      context->runtime->last_dispatch_sqbc_read_count);
-	SQ_RESOURCE_METRIC("last_sqbc_bytes",
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_LAST_SQBC_BYTES,
 			   context->runtime == NULL ? 0 :
 						      context->runtime->last_dispatch_sqbc_read_bytes);
-	SQ_RESOURCE_METRIC("runtime_status", runtime_status);
-	SQ_RESOURCE_METRIC("runtime_dispatch_started", runtime_dispatch_started);
-	SQ_RESOURCE_METRIC("runtime_dispatch_age_us", runtime_dispatch_age_us);
-	SQ_RESOURCE_METRIC("runtime_work_submitted", runtime_work_submitted);
-	SQ_RESOURCE_METRIC("runtime_current_app_present", runtime_current_app_present);
-	SQ_RESOURCE_METRIC("runtime_lifecycle_phase", runtime_lifecycle_phase);
-	SQ_RESOURCE_METRIC("runtime_arm_phase", runtime_arm_phase);
-	SQ_RESOURCE_METRIC("proto_stack_size_bytes", protocol_stack_size);
-	SQ_RESOURCE_METRIC("proto_stack_pre_unused_bytes",
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_RUNTIME_STATUS, runtime_status);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_RUNTIME_DISPATCH_STARTED, runtime_dispatch_started);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_RUNTIME_DISPATCH_AGE_US, runtime_dispatch_age_us);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_RUNTIME_WORK_SUBMITTED, runtime_work_submitted);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_RUNTIME_CURRENT_APP_PRESENT,
+			   runtime_current_app_present);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_RUNTIME_LIFECYCLE_PHASE, runtime_lifecycle_phase);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_RUNTIME_ARM_PHASE, runtime_arm_phase);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_CAP_STATIC_TIMER, SQ_VM_RUNTIME_TIMER_MAX);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_CAP_STATIC_ARMED_TIMER,
+			   SQ_VM_RUNTIME_ARMED_TIMER_MAX);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_CAP_STATIC_INPUT_BUTTON,
+			   SQ_VM_RUNTIME_INPUT_BUTTON_MAX);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_CAP_STATIC_BINDING,
+			   SQ_VM_RUNTIME_ACTIVE_BINDING_MAX);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_CAP_STATIC_OUTPUT, SQ_VM_RUNTIME_OUTPUT_MAX);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_CAP_STATIC_DRAWLOG, SQ_VM_RUNTIME_DRAWLOG_MAX);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_CAP_STATIC_DEVICE_ERROR,
+			   SQ_VM_RUNTIME_DEVICE_ERROR_MAX);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_CAP_ACTIVE_TIMER,
+			   context->runtime == NULL ? SQ_VM_RUNTIME_TIMER_MAX :
+						      context->runtime->active_timer_max);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_CAP_ACTIVE_ARMED_TIMER,
+			   context->runtime == NULL ? SQ_VM_RUNTIME_ARMED_TIMER_MAX :
+						      context->runtime->active_armed_timer_max);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_CAP_ACTIVE_INPUT_BUTTON,
+			   context->runtime == NULL ? SQ_VM_RUNTIME_INPUT_BUTTON_MAX :
+						      context->runtime->active_input_button_max);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_CAP_ACTIVE_BINDING,
+			   context->runtime == NULL ? SQ_VM_RUNTIME_ACTIVE_BINDING_MAX :
+						      context->runtime->active_binding_max);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_CAP_ACTIVE_OUTPUT,
+			   context->runtime == NULL ? SQ_VM_RUNTIME_OUTPUT_MAX :
+						      context->runtime->active_output_max);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_CAP_ACTIVE_DRAWLOG,
+			   context->runtime == NULL ? SQ_VM_RUNTIME_DRAWLOG_MAX :
+						      context->runtime->active_drawlog_max);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_PROTO_STACK_SIZE_BYTES, protocol_stack_size);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_PROTO_STACK_PRE_UNUSED_BYTES,
 			   protocol_stack_pre_resources_unused);
-	SQ_RESOURCE_METRIC("proto_stack_pre_used_bytes",
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_PROTO_STACK_PRE_USED_BYTES,
 			   protocol_stack_pre_resources_used);
-	SQ_RESOURCE_METRIC("proto_stack_unused_bytes", protocol_stack_unused);
-	SQ_RESOURCE_METRIC("proto_stack_used_bytes", protocol_stack_used);
-	SQ_RESOURCE_METRIC("vm_stack_size_bytes", vm_worker_stack_size);
-	SQ_RESOURCE_METRIC("vm_stack_unused_bytes", vm_worker_stack_unused);
-	SQ_RESOURCE_METRIC("vm_stack_used_bytes", vm_worker_stack_used);
-	SQ_RESOURCE_METRIC("app_count", context->registry == NULL ? 0 : context->registry->count);
-	SQ_RESOURCE_METRIC("input_button_state", input_button_state);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_PROTO_STACK_UNUSED_BYTES, protocol_stack_unused);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_PROTO_STACK_USED_BYTES, protocol_stack_used);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_VM_STACK_SIZE_BYTES, vm_worker_stack_size);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_VM_STACK_UNUSED_BYTES, vm_worker_stack_unused);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_VM_STACK_USED_BYTES, vm_worker_stack_used);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_APP_COUNT,
+			   context->registry == NULL ? 0 : context->registry->count);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_INPUT_BUTTON_STATE, input_button_state);
 #undef SQ_RESOURCE_METRIC
 
 	return encode_resource_metrics_header(request->sequence, response, response_cap,
@@ -2210,18 +2298,206 @@ static int __noinline wifi_profile_set(const struct sq_protocol_request *request
 	return ok_response(request, response, response_cap, response_len);
 }
 
+static int parse_runtime_cap_request(const uint8_t *request_bytes, size_t request_len,
+				     struct sq_runtime_cap_request *out)
+{
+	const uint8_t *payload;
+	uint32_t payload_len;
+	size_t offset = 0;
+
+	if (request_bytes == NULL || out == NULL || request_len < SQ_PROTOCOL_HEADER_LEN) {
+		return -EINVAL;
+	}
+	payload_len = read_u32_le_device(&request_bytes[12]);
+	if ((size_t)payload_len > request_len - SQ_PROTOCOL_HEADER_LEN) {
+		return -EINVAL;
+	}
+	payload = &request_bytes[SQ_PROTOCOL_HEADER_LEN];
+	memset(out, 0, sizeof(*out));
+
+	while (offset < payload_len) {
+		const uint8_t *field;
+		uint8_t tag;
+		uint8_t type;
+		uint16_t len;
+		size_t next_offset;
+
+		if ((size_t)payload_len - offset < 4u) {
+			return -EINVAL;
+		}
+		field = &payload[offset];
+		tag = field[0];
+		type = field[1];
+		len = (uint16_t)field[2] | ((uint16_t)field[3] << 8);
+		next_offset = offset + 4u + len;
+		if (next_offset > payload_len) {
+			return -EINVAL;
+		}
+		switch (tag) {
+		case SQ_RUNTIME_CAP_FIELD_KEY:
+			if (type != SQ_DEVICE_FIELD_TYPE_STRING || len == 0u ||
+			    len >= sizeof(out->key)) {
+				return -EINVAL;
+			}
+			memcpy(out->key, &field[4], len);
+			out->key[len] = '\0';
+			out->key_len = len;
+			out->has_key = true;
+			break;
+		case SQ_RUNTIME_CAP_FIELD_VALUE:
+			if (type != SQ_DEVICE_FIELD_TYPE_U32 || len != sizeof(uint32_t)) {
+				return -EINVAL;
+			}
+			out->value = read_u32_le_device(&field[4]);
+			out->has_value = true;
+			break;
+		default:
+			return -EINVAL;
+		}
+		offset = next_offset;
+	}
+	return 0;
+}
+
+static int __noinline runtime_cap_set(const struct sq_protocol_request *request,
+				      const uint8_t *request_bytes, size_t request_len,
+				      const struct sq_device_protocol_context *context,
+				      uint8_t *response, size_t response_cap,
+				      size_t *response_len)
+{
+	struct sq_runtime_cap_request cap_request;
+
+	if (context == NULL || context->runtime == NULL) {
+		return -ENODEV;
+	}
+	if (parse_runtime_cap_request(request_bytes, request_len, &cap_request) != 0 ||
+	    !cap_request.has_key || !cap_request.has_value || cap_request.value > UINT16_MAX) {
+		return -EINVAL;
+	}
+	int result = sq_vm_runtime_cap_set(context->runtime, cap_request.key,
+					   (uint16_t)cap_request.value);
+	if (result != 0) {
+		return result;
+	}
+	if (context->runtime->store_mount_point != NULL) {
+		result = sq_vm_runtime_cap_save(context->runtime);
+		if (result != 0) {
+			return result;
+		}
+	}
+	return ok_response(request, response, response_cap, response_len);
+}
+
+static int __noinline runtime_cap_clear(const struct sq_protocol_request *request,
+					const uint8_t *request_bytes, size_t request_len,
+					const struct sq_device_protocol_context *context,
+					uint8_t *response, size_t response_cap,
+					size_t *response_len)
+{
+	struct sq_runtime_cap_request cap_request;
+
+	if (context == NULL || context->runtime == NULL) {
+		return -ENODEV;
+	}
+	if (parse_runtime_cap_request(request_bytes, request_len, &cap_request) != 0 ||
+	    cap_request.has_value) {
+		return -EINVAL;
+	}
+	int result = sq_vm_runtime_cap_clear(context->runtime,
+					     cap_request.has_key ? cap_request.key : NULL);
+	if (result != 0) {
+		return result;
+	}
+	if (context->runtime->store_mount_point != NULL) {
+		result = sq_vm_runtime_cap_save(context->runtime);
+		if (result != 0) {
+			return result;
+		}
+	}
+	return ok_response(request, response, response_cap, response_len);
+}
+
+static int runtime_cap_format_line(const struct sq_vm_runtime *runtime, const char *key,
+				   char *out, size_t out_len)
+{
+	uint16_t value;
+	int result = sq_vm_runtime_cap_get(runtime, key, &value);
+
+	if (result != 0) {
+		return result;
+	}
+	int written = snprintf(out, out_len, "%s=%u", key, value);
+	if (written < 0 || (size_t)written >= out_len) {
+		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
+	}
+	return 0;
+}
+
+static int __noinline runtime_cap_get(const struct sq_protocol_request *request,
+				      const uint8_t *request_bytes, size_t request_len,
+				      const struct sq_device_protocol_context *context,
+				      uint8_t *response, size_t response_cap,
+				      size_t *response_len)
+{
+	static const char *const runtime_cap_keys[] = {
+		"vm_runtime.timer_max",
+		"vm_runtime.armed_timer_max",
+		"vm_runtime.input_button_max",
+		"vm_runtime.active_binding_max",
+		"vm_runtime.output_max",
+		"vm_runtime.drawlog_max",
+	};
+	struct sq_runtime_cap_request cap_request;
+	const char *lines[ARRAY_SIZE(runtime_cap_keys)];
+	char line_storage[ARRAY_SIZE(runtime_cap_keys)][48];
+	size_t line_count = 0;
+
+	if (context == NULL || context->runtime == NULL) {
+		return -ENODEV;
+	}
+	if (parse_runtime_cap_request(request_bytes, request_len, &cap_request) != 0 ||
+	    cap_request.has_value) {
+		return -EINVAL;
+	}
+	if (cap_request.has_key) {
+		int result = runtime_cap_format_line(context->runtime, cap_request.key,
+						     line_storage[0], sizeof(line_storage[0]));
+		if (result != 0) {
+			return result;
+		}
+		lines[line_count++] = line_storage[0];
+	} else {
+		for (size_t i = 0; i < ARRAY_SIZE(runtime_cap_keys); i++) {
+			int result = runtime_cap_format_line(context->runtime, runtime_cap_keys[i],
+							     line_storage[i],
+							     sizeof(line_storage[i]));
+			if (result != 0) {
+				return result;
+			}
+			lines[line_count++] = line_storage[i];
+		}
+	}
+	return repeated_runtime_lines_response(request, context->runtime, lines, line_count,
+					      response, response_cap, response_len);
+}
+
 static int __noinline errors_response(const struct sq_protocol_request *request,
 				      const struct sq_vm_runtime *runtime, uint8_t *response,
 				      size_t response_cap, size_t *response_len)
 {
-	const char *lines[1 + SQ_VM_RUNTIME_DEVICE_ERROR_MAX];
+	const char *available[1 + SQ_VM_RUNTIME_DEVICE_ERROR_MAX];
+	const char *lines[2 + SQ_VM_RUNTIME_DEVICE_ERROR_MAX];
+	size_t available_count = 0;
 	size_t line_count = 0;
 	char error_line[64];
+	char truncated_line[32];
+	size_t omitted_count = 0;
 
 	if (runtime != NULL) {
-		for (size_t i = 0; i < runtime->device_error_count && line_count < ARRAY_SIZE(lines);
+		for (size_t i = 0;
+		     i < runtime->device_error_count && available_count < ARRAY_SIZE(available);
 		     i++) {
-			lines[line_count++] = runtime->device_errors[i];
+			available[available_count++] = runtime->device_errors[i];
 		}
 	}
 	if (runtime != NULL && runtime->status == SQ_VM_RUNTIME_ERROR) {
@@ -2232,8 +2508,40 @@ static int __noinline errors_response(const struct sq_protocol_request *request,
 				       status_name, runtime->result_code,
 				       sq_errno_name(runtime->result_code));
 		if (written > 0 && (size_t)written < sizeof(error_line)) {
-			lines[line_count++] = error_line;
+			available[available_count++] = error_line;
 		}
+	}
+	if (response_cap < SQ_PROTOCOL_HEADER_LEN) {
+		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
+	}
+	size_t payload_cap = response_cap - SQ_PROTOCOL_HEADER_LEN;
+	for (omitted_count = 0; omitted_count <= available_count; omitted_count++) {
+		size_t required = 0;
+		size_t retained_start = omitted_count;
+
+		if (omitted_count > 0) {
+			int written = snprintf(truncated_line, sizeof(truncated_line),
+					       "errors_truncated=%zu", omitted_count);
+			if (written < 0 || (size_t)written >= sizeof(truncated_line)) {
+				return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
+			}
+			required += 4u + strlen(truncated_line);
+		}
+		for (size_t i = retained_start; i < available_count; i++) {
+			required += 4u + strlen(available[i]);
+		}
+		if (required <= payload_cap) {
+			break;
+		}
+	}
+	if (omitted_count > available_count) {
+		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
+	}
+	if (omitted_count > 0) {
+		lines[line_count++] = truncated_line;
+	}
+	for (size_t i = omitted_count; i < available_count; i++) {
+		lines[line_count++] = available[i];
 	}
 	return repeated_runtime_lines_response(request, runtime, lines, line_count, response,
 					      response_cap, response_len);
@@ -2335,6 +2643,18 @@ int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 		break;
 	case SQ_OPCODE_STORAGE_FORMAT:
 		result = storage_format(&frame, context, response, response_cap, response_len);
+		break;
+	case SQ_OPCODE_RUNTIME_CAP_GET:
+		result = runtime_cap_get(&frame, request, request_len, context, response,
+					 response_cap, response_len);
+		break;
+	case SQ_OPCODE_RUNTIME_CAP_SET:
+		result = runtime_cap_set(&frame, request, request_len, context, response,
+					 response_cap, response_len);
+		break;
+	case SQ_OPCODE_RUNTIME_CAP_CLEAR:
+		result = runtime_cap_clear(&frame, request, request_len, context, response,
+					   response_cap, response_len);
 		break;
 	case SQ_OPCODE_EVENT_DISPATCH:
 		result = dispatch_event_request(&frame, request, request_len, context, response, response_cap,

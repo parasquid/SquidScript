@@ -14,8 +14,9 @@ use squid_device_protocol::{
     lifecycle_get_request, lifecycle_lines, output_get_request, output_lines, protocol_error,
     reset_request, resource_install_begin_request, resource_install_chunk_request,
     resource_install_commit_request, resource_values, resources_get_request,
-    resources_get_request_with_heap_reset, state_bytes, state_get_request, state_import_request,
-    storage_format_request, temp_run_begin_request, temp_run_chunk_request,
+    resources_get_request_with_heap_reset, runtime_cap_clear_request, runtime_cap_get_request,
+    runtime_cap_lines, runtime_cap_set_request, state_bytes, state_get_request,
+    state_import_request, storage_format_request, temp_run_begin_request, temp_run_chunk_request,
     temp_run_commit_request, trace_get_request, trace_lines, wifi_profile_set_request, AppEntry,
     DecodeError, Frame, FrameKind, Status, HEADER_LEN, MAGIC,
 };
@@ -229,6 +230,19 @@ impl SerialDevice {
         password: &str,
     ) -> Result<(), String> {
         self.send_protocol_expect_ok(&wifi_profile_set_request(76, profile, ssid, password))
+    }
+
+    pub fn runtime_cap_get(&mut self, key: Option<&str>) -> Result<Vec<String>, String> {
+        let frame = self.send_protocol_request(&runtime_cap_get_request(82, key))?;
+        runtime_cap_lines(&frame).ok_or_else(|| "not a successful runtime-cap response".to_string())
+    }
+
+    pub fn runtime_cap_set(&mut self, key: &str, value: u16) -> Result<(), String> {
+        self.send_protocol_expect_ok(&runtime_cap_set_request(83, key, value))
+    }
+
+    pub fn runtime_cap_clear(&mut self, key: Option<&str>) -> Result<(), String> {
+        self.send_protocol_expect_ok(&runtime_cap_clear_request(84, key))
     }
 
     pub fn send_protocol_request(&mut self, frame: &Frame) -> Result<Frame, String> {

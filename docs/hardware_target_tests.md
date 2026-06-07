@@ -342,12 +342,8 @@ GPIO4, GPIO7, GPIO10, or GPIO5 scan changes as ESP32-C3 Super Mini buttons
 without a targeted raw probe and input-stack run. GPIO3 is also part of
 ESP32-C3 boot strapping, while GPIO4 and GPIO7 have alternate JTAG/FSPI-related
 functions, so broad unconfigured scans are not authoritative for button mapping.
-After flattening the resumable screen-render interpreter path and moving
-function calls onto the VM-owned continuation stack, the ESP32-C3 reference
-firmware now uses a 4,864-byte protocol/main stack and a 16,640-byte VM worker
-stack. Current hardware coverage measured `proto_stack_used_bytes=3904`,
-`proto_stack_unused_bytes=960`, `vm_stack_used_bytes=16112`, and
-`vm_stack_unused_bytes=528`. Keep the stack harness in the validation path
+The ESP32-C3 reference firmware uses a 4,864-byte protocol/main stack and a
+24,576-byte VM worker stack. Keep the stack harness in the validation path
 before lowering either budget again. The harness fails with the captured
 resource frame when protocol/main unused stack drops below 768 bytes or VM
 worker unused stack drops below 384 bytes.

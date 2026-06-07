@@ -2,10 +2,10 @@
 #define SQUIDSCRIPT_VM_RUNTIME_H
 
 /*
- * SquidScript foreground app runtime. firmware/zephyr/runtime_limits.json is
- * the build-time tuning source for bounded runtime resources, and
- * runtime_limits.h is generated from it. The guarded defaults below are
- * fallback values for standalone C builds when the generated header is absent.
+ * SquidScript foreground app runtime. Target-selected runtime limit profiles
+ * provide build-time hard caps; runtime_limits.h bridges generated Kconfig to
+ * C macros. The guarded defaults below are fallback values for standalone C
+ * builds when the generated header is absent.
  * The behavior of these caps is verified by the protocol ztest at
  * firmware/zephyr/tests/protocol/src/main.c.
  */
@@ -279,16 +279,21 @@ struct sq_vm_runtime {
 	bool return_stack_temp[SQ_VM_RUNTIME_RETURN_STACK_MAX];
 	uint8_t return_stack_count;
 	struct sq_vm_runtime_armed_timer armed_timers[SQ_VM_RUNTIME_ARMED_TIMER_MAX];
+	uint8_t active_armed_timer_max;
 	uint8_t armed_timer_count;
 	struct sq_vm_runtime_active_binding active_bindings[SQ_VM_RUNTIME_ACTIVE_BINDING_MAX];
+	uint8_t active_binding_max;
 	uint8_t active_binding_count;
 	struct sq_vm_runtime_input_button input_buttons[SQ_VM_RUNTIME_INPUT_BUTTON_MAX];
+	uint8_t active_input_button_max;
 	uint8_t input_button_count;
 	char traces[SQ_VM_RUNTIME_TRACE_MAX][SQ_VM_RUNTIME_TRACE_LEN];
 	uint8_t trace_count;
 	char outputs[SQ_VM_RUNTIME_OUTPUT_MAX][SQ_VM_RUNTIME_OUTPUT_LEN];
+	uint8_t active_output_max;
 	uint8_t output_count;
 	char drawlog[SQ_VM_RUNTIME_DRAWLOG_MAX][SQ_VM_RUNTIME_DRAWLOG_LEN];
+	uint8_t active_drawlog_max;
 	uint8_t drawlog_count;
 	char device_errors[SQ_VM_RUNTIME_DEVICE_ERROR_MAX][SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
 	uint8_t device_error_count;
@@ -309,6 +314,7 @@ struct sq_vm_runtime {
 	uint32_t gpio_configured_mask;
 	uint32_t gpio_state_mask;
 	struct sq_vm_runtime_timer timers[SQ_VM_RUNTIME_TIMER_MAX];
+	uint8_t active_timer_max;
 	char wifi_profile[SQ_VM_RUNTIME_WIFI_PROFILE_NAME_BYTES];
 	size_t wifi_profile_len;
 	uint8_t wifi_profile_ssid[SQ_VM_RUNTIME_WIFI_PROFILE_SSID_BYTES];
@@ -464,6 +470,11 @@ int sq_vm_runtime_wifi_format_bssid(const uint8_t *mac, size_t mac_len, char *ou
 int sq_vm_runtime_set_wifi_profile(struct sq_vm_runtime *runtime, const uint8_t *profile,
 				   size_t profile_len, const uint8_t *ssid, size_t ssid_len,
 				   const uint8_t *password, size_t password_len);
+int sq_vm_runtime_cap_get(const struct sq_vm_runtime *runtime, const char *key, uint16_t *out);
+int sq_vm_runtime_cap_set(struct sq_vm_runtime *runtime, const char *key, uint16_t value);
+int sq_vm_runtime_cap_clear(struct sq_vm_runtime *runtime, const char *key);
+int sq_vm_runtime_cap_load(struct sq_vm_runtime *runtime);
+int sq_vm_runtime_cap_save(struct sq_vm_runtime *runtime);
 
 #ifdef __cplusplus
 }

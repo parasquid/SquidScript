@@ -24,6 +24,9 @@ extern "C" {
 #ifndef SQ_APP_STORE_DEVICE_CONFIG_PATH_MAX
 #define SQ_APP_STORE_DEVICE_CONFIG_PATH_MAX 40
 #endif
+#ifndef SQ_APP_STORE_RUNTIME_CONFIG_PATH_MAX
+#define SQ_APP_STORE_RUNTIME_CONFIG_PATH_MAX 40
+#endif
 #ifndef SQ_APP_STORE_PLANNED_RESUME_PATH_MAX
 #define SQ_APP_STORE_PLANNED_RESUME_PATH_MAX 48
 #endif
@@ -122,6 +125,7 @@ int sq_app_store_resource_path_bytes(const char *mount_point, const char *app_id
 				     char *out, size_t out_len);
 
 int sq_app_store_device_config_path(const char *mount_point, char *out, size_t out_len);
+int sq_app_store_runtime_config_path(const char *mount_point, char *out, size_t out_len);
 int sq_app_store_planned_resume_path(const char *mount_point, char *out, size_t out_len);
 int sq_app_store_planned_resume_temp_path(const char *mount_point, char *out, size_t out_len);
 

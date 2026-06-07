@@ -1059,6 +1059,20 @@ int sq_app_store_device_config_path(const char *mount_point, char *out, size_t o
 	return 0;
 }
 
+int sq_app_store_runtime_config_path(const char *mount_point, char *out, size_t out_len)
+{
+	int written;
+
+	if (mount_point == NULL || out == NULL) {
+		return -EINVAL;
+	}
+	written = snprintf(out, out_len, "%s/system/runtime.sqdc", mount_point);
+	if (written < 0 || (size_t)written >= out_len) {
+		return -ENAMETOOLONG;
+	}
+	return 0;
+}
+
 int sq_app_store_planned_resume_path(const char *mount_point, char *out, size_t out_len)
 {
 	int written;

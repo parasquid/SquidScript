@@ -88,6 +88,8 @@ cargo run -p squidc -- device trace
 cargo run -p squidc -- device lifecycle
 cargo run -p squidc -- device errors
 cargo run -p squidc -- device resources
+cargo run -p squidc -- device runtime-cap get
+cargo run -p squidc -- device runtime-cap set vm_runtime.timer_max 2
 cargo run -p squidc -- device reset
 cargo run -p squidc -- device storage-format
 cargo run -p squidc -- device wifi-profile dev --ssid-env SQUID_WIFI_STATION_SSID --password-env SQUID_WIFI_STATION_PASSWORD
@@ -112,8 +114,11 @@ stack entries are objects with `appId` and `event` fields.
 
 `device errors` is empty when no firmware runtime error is active. If a VM
 dispatch fails, Zephyr reports a line such as
-`runtime=vm_error code=-5` or `runtime=invalid_argument code=-22`, preserving
-both the FFI status class and the mapped errno.
+`runtime=vm_error code=-5 (EIO)` or
+`runtime=invalid_argument code=-22 (EINVAL)`, preserving both the FFI status
+class and the mapped errno. When the retained diagnostic ring is larger than
+the response budget, firmware returns the newest lines that fit and includes
+`errors_truncated=N`.
 
 `device resources` reads Zephyr firmware resource diagnostics and reports
 raw target-specific RAM and app-storage byte counts. `ram_total_bytes` is
@@ -139,6 +144,15 @@ treating GPIO, flashing, or serial as the primary failure. With `--json`,
 parsed values are returned under `data.resources`. Firmware diagnostics should
 distinguish volatile temp-run state from installed-app code cache and app-store
 usage.
+
+`device runtime-cap` reads and writes active runtime cap overrides without
+rebuilding firmware. `get` prints every active cap, or one key when a key is
+provided. `set <key> <value>` persists a non-default active cap to
+firmware-owned runtime config; values must be greater than zero, no larger than
+the build-time hard cap, and not below currently active entries. `clear <key>`
+restores one key to its hard cap, and `clear` with no key restores all tunable
+active caps to their hard caps. Supported keys are listed in
+`docs/runtime_limits.md`.
 
 `device reset` performs a firmware soft boot. It clears the current VM, temp
 app, foreground stack, pending launches, trigger/timer registrations, and debug

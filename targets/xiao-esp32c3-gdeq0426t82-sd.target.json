@@ -57,7 +57,8 @@
       "buildDir": "build/zephyr/xiao-esp32c3-gdeq0426t82-sd",
       "overlay": "firmware/zephyr/boards/xiao_esp32c3_gdeq0426t82_sd.overlay",
       "fallbackSource": "firmware/zephyr/fallback/xiao-esp32c3-gdeq0426t82-sd-main.squid",
-      "targetKconfig": "target/zephyr/generated/xiao-esp32c3-gdeq0426t82-sd-target.conf"
+      "targetKconfig": "target/zephyr/generated/xiao-esp32c3-gdeq0426t82-sd-target.conf",
+      "runtimeLimits": "targets/runtime-limits/esp32c3-zephyr.json"
     }
   },
   "radios": {

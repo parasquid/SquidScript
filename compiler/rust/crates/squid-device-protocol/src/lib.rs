@@ -62,6 +62,9 @@ pub enum Opcode {
     WifiProfileSet = 76,
     Reset = 80,
     StorageFormat = 81,
+    RuntimeCapGet = 82,
+    RuntimeCapSet = 83,
+    RuntimeCapClear = 84,
 }
 
 impl Opcode {
@@ -93,6 +96,9 @@ impl Opcode {
             "wifiprofileset" => Ok(Self::WifiProfileSet),
             "reset" => Ok(Self::Reset),
             "storageformat" => Ok(Self::StorageFormat),
+            "runtimecapget" => Ok(Self::RuntimeCapGet),
+            "runtimecapset" => Ok(Self::RuntimeCapSet),
+            "runtimecapclear" => Ok(Self::RuntimeCapClear),
             _ => Err(format!("unknown protocol opcode: {name}")),
         }
     }
@@ -128,6 +134,9 @@ impl TryFrom<u8> for Opcode {
             76 => Ok(Self::WifiProfileSet),
             80 => Ok(Self::Reset),
             81 => Ok(Self::StorageFormat),
+            82 => Ok(Self::RuntimeCapGet),
+            83 => Ok(Self::RuntimeCapSet),
+            84 => Ok(Self::RuntimeCapClear),
             _ => Err(DecodeError::UnknownOpcode(value)),
         }
     }
@@ -914,6 +923,66 @@ pub struct ResourceMetric<'a> {
     pub value: u64,
 }
 
+const RESOURCE_METRIC_NAMES: &[(u32, &str)] = &[
+    (1, "ram_total_bytes"),
+    (2, "runtime_static_bytes"),
+    (3, "vm_sqbc_chunk_bytes"),
+    (4, "heap_count"),
+    (5, "heap_free_bytes"),
+    (6, "heap_alloc_bytes"),
+    (7, "heap_max_alloc_bytes"),
+    (8, "heap_largest_free_supported"),
+    (9, "heap_largest_free_bytes"),
+    (10, "last_dispatch_us"),
+    (11, "last_dispatch_seq"),
+    (12, "last_sqbc_reads"),
+    (13, "last_sqbc_bytes"),
+    (14, "runtime_status"),
+    (15, "runtime_dispatch_started"),
+    (16, "runtime_dispatch_age_us"),
+    (17, "runtime_work_submitted"),
+    (18, "runtime_current_app_present"),
+    (19, "runtime_lifecycle_phase"),
+    (20, "runtime_arm_phase"),
+    (21, "cap.static.timer"),
+    (22, "cap.static.armed_timer"),
+    (23, "cap.static.input_button"),
+    (24, "cap.static.binding"),
+    (25, "cap.static.output"),
+    (26, "cap.static.drawlog"),
+    (27, "cap.static.device_error"),
+    (28, "cap.active.timer"),
+    (29, "cap.active.armed_timer"),
+    (30, "cap.active.input_button"),
+    (31, "cap.active.binding"),
+    (32, "cap.active.output"),
+    (33, "cap.active.drawlog"),
+    (34, "proto_stack_size_bytes"),
+    (35, "proto_stack_pre_unused_bytes"),
+    (36, "proto_stack_pre_used_bytes"),
+    (37, "proto_stack_unused_bytes"),
+    (38, "proto_stack_used_bytes"),
+    (39, "vm_stack_size_bytes"),
+    (40, "vm_stack_unused_bytes"),
+    (41, "vm_stack_used_bytes"),
+    (42, "app_count"),
+    (43, "input_button_state"),
+];
+
+fn resource_metric_id_for_name(name: &str) -> Option<u32> {
+    RESOURCE_METRIC_NAMES
+        .iter()
+        .find_map(|(id, metric_name)| (*metric_name == name).then_some(*id))
+}
+
+#[cfg(feature = "alloc")]
+fn resource_metric_name_for_id(id: u32) -> String {
+    RESOURCE_METRIC_NAMES
+        .iter()
+        .find_map(|(metric_id, metric_name)| (*metric_id == id).then_some((*metric_name).into()))
+        .unwrap_or_else(|| format!("resource.{id}"))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LifecycleTimer<'a> {
     pub app_id: &'a str,
@@ -985,6 +1054,31 @@ pub fn reset_request(sequence: u32) -> Frame {
 #[cfg(feature = "alloc")]
 pub fn storage_format_request(sequence: u32) -> Frame {
     Frame::request(Opcode::StorageFormat, sequence, Vec::new())
+}
+
+#[cfg(feature = "alloc")]
+pub fn runtime_cap_get_request(sequence: u32, key: Option<&str>) -> Frame {
+    let fields = key
+        .map(|key| vec![Field::string(1, key)])
+        .unwrap_or_default();
+    Frame::request(Opcode::RuntimeCapGet, sequence, fields)
+}
+
+#[cfg(feature = "alloc")]
+pub fn runtime_cap_set_request(sequence: u32, key: impl Into<String>, value: u16) -> Frame {
+    Frame::request(
+        Opcode::RuntimeCapSet,
+        sequence,
+        vec![Field::string(1, key), Field::u32(2, u32::from(value))],
+    )
+}
+
+#[cfg(feature = "alloc")]
+pub fn runtime_cap_clear_request(sequence: u32, key: Option<&str>) -> Frame {
+    let fields = key
+        .map(|key| vec![Field::string(1, key)])
+        .unwrap_or_default();
+    Frame::request(Opcode::RuntimeCapClear, sequence, fields)
 }
 
 #[cfg(feature = "alloc")]
@@ -1211,6 +1305,11 @@ pub fn lifecycle_lines(frame: &Frame) -> Option<Vec<String>> {
 }
 
 #[cfg(feature = "alloc")]
+pub fn runtime_cap_lines(frame: &Frame) -> Option<Vec<String>> {
+    repeated_string_fields(frame, Opcode::RuntimeCapGet, 1)
+}
+
+#[cfg(feature = "alloc")]
 pub fn drawlog_lines(frame: &Frame) -> Option<Vec<String>> {
     repeated_string_fields(frame, Opcode::DrawlogGet, 1)
 }
@@ -1257,6 +1356,7 @@ pub fn resource_values(frame: &Frame) -> Option<Vec<(String, u64)>> {
         for field in fields {
             match (field.tag, &field.value) {
                 (1, FieldValue::String(text)) => key = Some(text.clone()),
+                (1, FieldValue::U32(id)) => key = Some(resource_metric_name_for_id(*id)),
                 (2, FieldValue::U32(number)) => value = Some(u64::from(*number)),
                 (2, FieldValue::U64(number)) => value = Some(*number),
                 _ => {}
@@ -1466,13 +1566,14 @@ where
     I: Clone + Iterator<Item = ResourceMetric<'a>>,
 {
     let mut payload_len = 0usize;
-    for metric in metrics.clone() {
-        let record_len = tlv_string_len(metric.key)?
-            .checked_add(tlv_u32_len())
-            .ok_or(DecodeError::OutputTooSmall {
-                needed: usize::MAX,
-                capacity: out.len(),
-            })?;
+    for _metric in metrics.clone() {
+        let record_len =
+            tlv_u32_len()
+                .checked_add(tlv_u32_len())
+                .ok_or(DecodeError::OutputTooSmall {
+                    needed: usize::MAX,
+                    capacity: out.len(),
+                })?;
         payload_len = payload_len.checked_add(tlv_record_len(record_len)?).ok_or(
             DecodeError::OutputTooSmall {
                 needed: usize::MAX,
@@ -1494,15 +1595,20 @@ where
                         needed: metric.value as usize,
                         capacity: u32::MAX as usize,
                     })?;
-                let record_len = tlv_string_len(metric.key)?
-                    .checked_add(tlv_u32_len())
-                    .ok_or(DecodeError::OutputTooSmall {
+                let key =
+                    resource_metric_id_for_name(metric.key).ok_or(DecodeError::OutputTooSmall {
+                        needed: metric.key.len(),
+                        capacity: 0,
+                    })?;
+                let record_len = tlv_u32_len().checked_add(tlv_u32_len()).ok_or(
+                    DecodeError::OutputTooSmall {
                         needed: usize::MAX,
                         capacity: payload.len(),
-                    })?;
+                    },
+                )?;
                 write_tlv_header(payload, 1, 32, record_len)?;
                 let (record, rest) = payload[4..].split_at_mut(record_len);
-                let record = write_string_tlv(record, 1, metric.key)?;
+                let record = write_u32_tlv(record, 1, key)?;
                 write_u32_tlv(record, 2, value)?;
                 payload = rest;
             }

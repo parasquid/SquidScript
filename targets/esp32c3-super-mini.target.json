@@ -67,7 +67,8 @@
       "buildDir": "build/zephyr/c3-supermini",
       "overlay": "firmware/zephyr/boards/esp32c3_supermini.overlay",
       "fallbackSource": "firmware/zephyr/fallback/esp32c3-supermini-main.squid",
-      "targetKconfig": "target/zephyr/generated/c3-supermini-target.conf"
+      "targetKconfig": "target/zephyr/generated/c3-supermini-target.conf",
+      "runtimeLimits": "targets/runtime-limits/esp32c3-zephyr.json"
     }
   },
   "radios": {

@@ -65,6 +65,8 @@ pub struct ZephyrFirmware {
     pub overlay: PathBuf,
     pub fallback_source: PathBuf,
     pub target_kconfig: PathBuf,
+    #[serde(default)]
+    pub runtime_limits: Option<PathBuf>,
 }
 
 impl ZephyrFirmware {
@@ -75,6 +77,7 @@ impl ZephyrFirmware {
             "overlay": resolve_repo_path(root, &self.overlay),
             "fallbackSource": resolve_repo_path(root, &self.fallback_source),
             "targetKconfig": resolve_repo_path(root, &self.target_kconfig),
+            "runtimeLimits": self.runtime_limits.as_ref().map(|path| resolve_repo_path(root, path)),
         })
     }
 }

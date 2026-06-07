@@ -508,7 +508,9 @@ int sq_vm_runtime_poll_input_buttons(struct sq_vm_runtime *runtime)
 		return 0;
 	}
 	now = k_uptime_get();
-	for (size_t i = 0; i < SQ_VM_RUNTIME_INPUT_BUTTON_MAX; i++) {
+	size_t active_max = runtime->active_input_button_max == 0 ? SQ_VM_RUNTIME_INPUT_BUTTON_MAX :
+								    runtime->active_input_button_max;
+	for (size_t i = 0; i < active_max; i++) {
 		struct sq_vm_runtime_input_button *button = &runtime->input_buttons[i];
 
 		if (!button->active) {

@@ -133,18 +133,32 @@ actions.
 app record, record field tag `1` is the app ID string, and record field tag `2`
 is the SQBC length as an unsigned 64-bit integer.
 
-`output-get`, `trace-get`, `drawlog-get`, `lifecycle-get`, and `errors-get` responses use
-repeated string fields with tag `1`, one field per line. `state-get` returns
-state bytes as field tag `1`; Rust owns the response encoder while Zephyr owns
-the storage load and supplies the caller-owned state byte buffer.
-Runtime error lines include the mapped VM FFI status label and errno, for
-example `runtime=vm_error code=-5` or
-`runtime=invalid_argument code=-22`.
+`output-get`, `trace-get`, `drawlog-get`, `lifecycle-get`, and `errors-get`
+responses use repeated string fields with tag `1`, one field per line.
+`errors-get` retains the newest diagnostics that fit the response budget and
+adds `errors_truncated=N` when older retained diagnostics are omitted. Runtime
+error lines include the mapped VM FFI status label and errno, for example
+`runtime=vm_error code=-5 (EIO)` or
+`runtime=invalid_argument code=-22 (EINVAL)`.
 `state-import` request TLV parsing is owned by the Rust `sqdp_` FFI helper and
 returns a borrowed state byte slice to Zephyr C for storage. `resources-get`
 returns repeated record fields: response field tag `1` is one resource record,
-record field tag `1` is the metric key string, and record field tag `2` is the
-value as an unsigned 64-bit integer.
+record field tag `1` is the compact unsigned 32-bit metric ID, and record field
+tag `2` is the value as an unsigned 32-bit or unsigned 64-bit integer. Host
+tooling maps metric IDs to names such as `ram_total_bytes` and
+`cap.active.timer`.
+
+Runtime-cap commands are framed protocol requests:
+
+| Opcode | Name | Payload |
+| ---: | --- | --- |
+| 82 | `runtimecapget` | optional string field `1` key |
+| 83 | `runtimecapset` | string field `1` key, u32 field `2` value |
+| 84 | `runtimecapclear` | optional string field `1` key |
+
+Runtime-cap writes validate against the build-time hard cap, reject values below
+currently active entries, persist non-default active caps to firmware-owned
+runtime config, and return an empty OK response on success.
 
 Wi-Fi profile provisioning uses the framed opcode to store one volatile,
 bounded station profile in Zephyr runtime memory. Rust `sqdp_` FFI code owns

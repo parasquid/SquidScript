@@ -31,7 +31,9 @@ int sq_vm_runtime_register_timer(struct sq_vm_runtime *runtime, const uint8_t *e
 	    event_len >= SQ_VM_RUNTIME_EVENT_LEN || interval_ms <= 0) {
 		return -EINVAL;
 	}
-	for (size_t i = 0; i < SQ_VM_RUNTIME_TIMER_MAX; i++) {
+	size_t active_max = runtime->active_timer_max == 0 ? SQ_VM_RUNTIME_TIMER_MAX :
+							 runtime->active_timer_max;
+	for (size_t i = 0; i < active_max; i++) {
 		if (runtime->timers[i].active &&
 		    strncmp(runtime->timers[i].event, (const char *)event, event_len) == 0 &&
 		    runtime->timers[i].event[event_len] == '\0') {
@@ -41,7 +43,7 @@ int sq_vm_runtime_register_timer(struct sq_vm_runtime *runtime, const uint8_t *e
 			return 0;
 		}
 	}
-	for (size_t i = 0; i < SQ_VM_RUNTIME_TIMER_MAX; i++) {
+	for (size_t i = 0; i < active_max; i++) {
 		if (!runtime->timers[i].active) {
 			runtime->timers[i].active = true;
 			runtime->timers[i].repeating = repeating;
@@ -64,7 +66,9 @@ int sq_vm_runtime_register_armed_timer(struct sq_vm_runtime *runtime, const char
 	    event_len >= SQ_VM_RUNTIME_EVENT_LEN || interval_ms <= 0) {
 		return -EINVAL;
 	}
-	for (size_t i = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
+	size_t active_max = runtime->active_armed_timer_max == 0 ? SQ_VM_RUNTIME_ARMED_TIMER_MAX :
+								 runtime->active_armed_timer_max;
+	for (size_t i = 0; i < active_max; i++) {
 		struct sq_vm_runtime_armed_timer *timer = &runtime->armed_timers[i];
 		if (timer->active && strcmp(timer->app_id, app) == 0 &&
 		    strncmp(timer->event, (const char *)event, event_len) == 0 &&
@@ -75,7 +79,7 @@ int sq_vm_runtime_register_armed_timer(struct sq_vm_runtime *runtime, const char
 			return 0;
 		}
 	}
-	for (size_t i = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
+	for (size_t i = 0; i < active_max; i++) {
 		struct sq_vm_runtime_armed_timer *timer = &runtime->armed_timers[i];
 		if (!timer->active) {
 			timer->active = true;
@@ -100,7 +104,9 @@ int sq_vm_runtime_clear_armed_app(struct sq_vm_runtime *runtime, const uint8_t *
 	    app_len >= SQ_APP_STORE_APP_ID_MAX) {
 		return -EINVAL;
 	}
-	for (size_t i = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
+	size_t active_max = runtime->active_armed_timer_max == 0 ? SQ_VM_RUNTIME_ARMED_TIMER_MAX :
+								 runtime->active_armed_timer_max;
+	for (size_t i = 0; i < active_max; i++) {
 		struct sq_vm_runtime_armed_timer *timer = &runtime->armed_timers[i];
 		if (timer->active && strlen(timer->app_id) == app_len &&
 		    memcmp(timer->app_id, app, app_len) == 0) {
@@ -108,7 +114,7 @@ int sq_vm_runtime_clear_armed_app(struct sq_vm_runtime *runtime, const uint8_t *
 		}
 	}
 	runtime->armed_timer_count = 0;
-	for (size_t i = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
+	for (size_t i = 0; i < active_max; i++) {
 		if (runtime->armed_timers[i].active) {
 			runtime->armed_timer_count++;
 		}
@@ -123,7 +129,9 @@ int sq_vm_runtime_next_due_armed_timer(struct sq_vm_runtime *runtime, char *app,
 		return -EINVAL;
 	}
 	int64_t now = k_uptime_get();
-	for (size_t i = 0; i < SQ_VM_RUNTIME_ARMED_TIMER_MAX; i++) {
+	size_t active_max = runtime->active_armed_timer_max == 0 ? SQ_VM_RUNTIME_ARMED_TIMER_MAX :
+								 runtime->active_armed_timer_max;
+	for (size_t i = 0; i < active_max; i++) {
 		struct sq_vm_runtime_armed_timer *timer = &runtime->armed_timers[i];
 		if (!timer->active || timer->due_ms > now) {
 			continue;
@@ -152,7 +160,9 @@ int sq_vm_runtime_next_due_timer(struct sq_vm_runtime *runtime, char *event, siz
 		return -EINVAL;
 	}
 	int64_t now = k_uptime_get();
-	for (size_t i = 0; i < SQ_VM_RUNTIME_TIMER_MAX; i++) {
+	size_t active_max = runtime->active_timer_max == 0 ? SQ_VM_RUNTIME_TIMER_MAX :
+							 runtime->active_timer_max;
+	for (size_t i = 0; i < active_max; i++) {
 		struct sq_vm_runtime_timer *timer = &runtime->timers[i];
 		if (!timer->active || timer->due_ms > now) {
 			continue;

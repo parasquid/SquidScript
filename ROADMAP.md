@@ -141,35 +141,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   the no-app/browser path. Independent of the BLE control-write MTU fix — the
   on-wire protocol work applies to any client.
 
-## Build-Time And Runtime Caps
-
-- **Runtime-tunable cap overrides**: implement the design in
-  `docs/runtime_limits.md` "Runtime-Tunable Overrides (Design)" section.
-  Storage: new `/device/runtime.sqdc` file (parallel SQDC format to
-  `/device/active.sqdc`); build-time `runtime_limits.json` stays the
-  maximum; runtime active count is the override. Boot applies on
-  `sq_vm_runtime_init` from a new `sq_vm_runtime_load_runtime_caps`
-  call. Registration gates (`count < SQ_VM_RUNTIME_*_MAX`) change to
-  `count < runtime->active_*_max`. Wire surface: new
-  `SQ_OPCODE_RUNTIME_CAP_SET/GET` ops, `runtime.active_caps` resource
-  metric, CLI `squidc device runtime-cap get/set/clear`. Validation:
-  reject out-of-range, reject values that would orphan active entries
-  (the host stops the foreground app first). TDD: failing ztest for
-  boot-apply, out-of-range, and orphan-rejection paths before
-  production code. Open questions: armed-app sleep state depth, CLI
-  side-by-side display, opt-in vs always-on reporting, app-facing
-  `system.info()` exposure — see `docs/runtime_limits.md` "Open
-  Questions."
-- Make `device errors` robust when the retained diagnostic ring grows. A
-  diagnostic bump from `SQ_VM_RUNTIME_DEVICE_ERROR_MAX == 2` to 8 worked during
-  BLE-install debugging, but 12 overflowed the fixed protocol response and
-  surfaced `-EIO`. Before raising the retained ring permanently, separate the
-  runtime retention cap from the protocol response cap: page or truncate the
-  response deliberately, report truncation/remaining count, and add protocol
-  ztests for oversized rings so larger diagnostics cannot break the `errors`
-  command. Then update `firmware/zephyr/runtime_limits.json`, regenerated
-  headers, `vm_runtime.h`, and docs to the chosen cap.
-
 ## ESP32-C3 RAM Hardening
 
 Current ESP32-C3 RAM baseline:
@@ -184,7 +155,7 @@ Current ESP32-C3 RAM baseline:
   staging session. If RAM becomes tight, audit the target Bluetooth feature set
   and connection/buffer counts before increasing firmware-owned static buffers.
 - Current target configuration: 4,864-byte protocol/main stack and
-  16,640-byte VM worker stack.
+  24,576-byte VM worker stack.
 - Stack harness guardrails: fail if protocol/main unused stack drops below 768
   bytes or VM worker unused stack drops below 384 bytes.
 - Current `device resources` reports allocation high-water data and
@@ -195,13 +166,17 @@ Current ESP32-C3 RAM baseline:
 
 RAM follow-up triggers:
 
+- Revisit ESP32-C3 RAM optimization after runtime caps and diagnostics settle:
+  remeasure linker DRAM, protocol response size, stack high-water, and
+  SquidScript-owned static buffers; then decide whether to shrink response
+  buffers, cap metrics, stacks, or subsystem feature buffers based on evidence.
 - Continue SquidScript-owned static DRAM reductions only when new evidence
   identifies a larger target than the current measured groups: 123,310 bytes
   platform-owned, 31,616 bytes SquidScript-owned, and 10,729 bytes unknown.
   Current SquidScript-owned buffers are guarded by tests or protocol bounds:
   `runtime.4` is 11,920 bytes, the protocol response buffer is 1,088 bytes,
   and app-store/session/storage scratch buffers are explicitly capped.
-- Do not lower the 16,640-byte VM worker stack again without same-build
+- Do not lower the 24,576-byte VM worker stack again without same-build
   input-button or equivalent logical-input fixture evidence proving the
   physical/input app path stays below the proposed budget. Before any future
   stack reduction, build with `SQUID_ZEPHYR_STACK_USAGE=1` and run

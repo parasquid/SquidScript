@@ -130,6 +130,7 @@ enum AppCommands {
 enum DeviceCommands {
     Key(DeviceKeyArgs),
     WifiProfile(DeviceWifiProfileArgs),
+    RuntimeCap(DeviceRuntimeCapArgs),
     Reset(DeviceOnlyArgs),
     Output(DeviceOnlyArgs),
     State(DeviceOnlyArgs),
@@ -222,6 +223,21 @@ struct DeviceWifiProfileArgs {
     ssid_env: String,
     #[arg(long)]
     password_env: String,
+}
+
+#[derive(Args, Debug)]
+struct DeviceRuntimeCapArgs {
+    #[command(flatten)]
+    device: DeviceOnlyOptions,
+    #[command(subcommand)]
+    command: RuntimeCapCommands,
+}
+
+#[derive(Subcommand, Debug)]
+enum RuntimeCapCommands {
+    Get { key: Option<String> },
+    Set { key: String, value: u16 },
+    Clear { key: Option<String> },
 }
 
 #[derive(Args, Debug)]
@@ -410,6 +426,7 @@ fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String>
         Commands::Device { command } => match command {
             DeviceCommands::Key(args) => key(args, human),
             DeviceCommands::WifiProfile(args) => wifi_profile(args, human),
+            DeviceCommands::RuntimeCap(args) => runtime_cap(args, human),
             DeviceCommands::Reset(args) => reset(args.device, human),
             DeviceCommands::Output(args) => device_output(args.device, human),
             DeviceCommands::State(args) => state(args.device, human),
@@ -668,6 +685,54 @@ fn wifi_profile(args: DeviceWifiProfileArgs, human: bool) -> Result<Value, Strin
         "ssidLen": ssid.len(),
         "passwordLen": password.len(),
     }))
+}
+
+fn runtime_cap(args: DeviceRuntimeCapArgs, human: bool) -> Result<Value, String> {
+    let port = resolve_port(&args.device)?;
+    let mut device = SerialDevice::open(&port)?;
+    match args.command {
+        RuntimeCapCommands::Get { key } => {
+            let lines = device.runtime_cap_get(key.as_deref())?;
+            if human {
+                for line in &lines {
+                    println!("{line}");
+                }
+            }
+            Ok(json!({
+                "port": port,
+                "action": "get",
+                "key": key,
+                "lines": lines,
+            }))
+        }
+        RuntimeCapCommands::Set { key, value } => {
+            device.runtime_cap_set(&key, value)?;
+            if human {
+                println!("runtime-cap set {key}={value}");
+            }
+            Ok(json!({
+                "port": port,
+                "action": "set",
+                "key": key,
+                "value": value,
+            }))
+        }
+        RuntimeCapCommands::Clear { key } => {
+            device.runtime_cap_clear(key.as_deref())?;
+            if human {
+                if let Some(key) = &key {
+                    println!("runtime-cap cleared {key}");
+                } else {
+                    println!("runtime-cap cleared");
+                }
+            }
+            Ok(json!({
+                "port": port,
+                "action": "clear",
+                "key": key,
+            }))
+        }
+    }
 }
 
 fn protocol_raw(args: ProtocolRawArgs, human: bool) -> Result<Value, String> {
@@ -2460,6 +2525,53 @@ event.on("app.start") {
         assert_eq!(args.profile, "dev");
         assert_eq!(args.ssid_env, "SQUID_WIFI_STATION_SSID");
         assert_eq!(args.password_env, "SQUID_WIFI_STATION_PASSWORD");
+    }
+
+    #[test]
+    fn parses_device_runtime_cap_commands() {
+        let cli = Cli::try_parse_from([
+            "squidc",
+            "device",
+            "runtime-cap",
+            "set",
+            "vm_runtime.timer_max",
+            "2",
+        ])
+        .unwrap();
+        let Commands::Device {
+            command: DeviceCommands::RuntimeCap(args),
+        } = cli.command
+        else {
+            panic!("expected device runtime-cap");
+        };
+        match args.command {
+            RuntimeCapCommands::Set { key, value } => {
+                assert_eq!(key, "vm_runtime.timer_max");
+                assert_eq!(value, 2);
+            }
+            _ => panic!("expected runtime-cap set"),
+        }
+
+        let cli = Cli::try_parse_from([
+            "squidc",
+            "device",
+            "runtime-cap",
+            "clear",
+            "vm_runtime.timer_max",
+        ])
+        .unwrap();
+        let Commands::Device {
+            command: DeviceCommands::RuntimeCap(args),
+        } = cli.command
+        else {
+            panic!("expected device runtime-cap");
+        };
+        match args.command {
+            RuntimeCapCommands::Clear { key } => {
+                assert_eq!(key.as_deref(), Some("vm_runtime.timer_max"));
+            }
+            _ => panic!("expected runtime-cap clear"),
+        }
     }
 
     #[test]

@@ -2064,10 +2064,11 @@ foreground timers, armed timers, and other runtime-dispatched event names.
 Runtime resources are bounded; the full table of caps (foreground timer slots,
 armed timer slots, active device-binding slots, input button slots, output
 line slots, drawlog record slots, app store limits, and wire-format limits)
-lives in `docs/runtime_limits.md`. The build-time tuning source is
-`firmware/zephyr/runtime_limits.json`, and
-`firmware/zephyr/src/runtime_limits.h` is generated from it. Registering a
-foreground timer beyond the active cap returns `-ENOSPC` to the VM.
+lives in `docs/runtime_limits.md`. Zephyr target JSON selects a build-time
+runtime-limits profile under `targets/runtime-limits/`, and
+`firmware/zephyr/src/runtime_limits.h` bridges generated Kconfig symbols to C
+macros. Registering a foreground timer beyond the active cap returns `-ENOSPC`
+to the VM.
 
 Example:
 

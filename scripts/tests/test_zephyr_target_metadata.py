@@ -27,6 +27,43 @@ class ZephyrTargetMetadataTests(ZephyrScriptTestCase):
             )
             return out.read_text(encoding="utf-8")
 
+    def test_target_kconfig_includes_selected_runtime_limits(self):
+        supermini_conf = self.generate_target_kconfig("esp32c3-super-mini.target.json")
+        xiao_conf = self.generate_target_kconfig("xiao-esp32c3-gdeq0426t82-sd.target.json")
+
+        for conf in [supermini_conf, xiao_conf]:
+            self.assertIn("CONFIG_SQ_VM_RUNTIME_TIMER_MAX=4", conf)
+            self.assertIn("CONFIG_SQ_VM_RUNTIME_INPUT_BUTTON_MAX=8", conf)
+            self.assertIn("CONFIG_SQ_VM_RUNTIME_DEVICE_ERROR_MAX=8", conf)
+            self.assertIn("CONFIG_SQ_DEVICE_RESPONSE_BYTES=1088", conf)
+
+    def test_checked_in_target_kconfigs_are_generated_from_target_json(self):
+        expected = {
+            "esp32c3-super-mini.target.json": "target/zephyr/generated/c3-supermini-target.conf",
+            "xiao-esp32c3-gdeq0426t82-sd.target.json": (
+                "target/zephyr/generated/xiao-esp32c3-gdeq0426t82-sd-target.conf"
+            ),
+        }
+
+        for target_name, checked_in_path in expected.items():
+            with self.subTest(target=target_name):
+                generated = self.generate_target_kconfig(target_name)
+                checked_in = self.read(checked_in_path)
+                self.assertEqual(generated, checked_in)
+
+    def test_generated_sq_kconfig_options_are_user_configurable(self):
+        target_conf = self.generate_target_kconfig("xiao-esp32c3-gdeq0426t82-sd.target.json")
+        kconfig = self.read("firmware/zephyr/Kconfig")
+
+        assigned = {
+            line.split("=", 1)[0].removeprefix("CONFIG_")
+            for line in target_conf.splitlines()
+            if line.startswith("CONFIG_SQ_")
+        }
+        for symbol in sorted(assigned):
+            with self.subTest(symbol=symbol):
+                self.assertRegex(kconfig, rf"config {re.escape(symbol)}\n\tint \"{re.escape(symbol)}\"")
+
     def test_target_kconfig_enables_declared_radio_backends(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
         target_conf = self.generate_target_kconfig("esp32c3-super-mini.target.json")
@@ -229,7 +266,7 @@ class ZephyrTargetMetadataTests(ZephyrScriptTestCase):
             subprocess.run(
                 [
                     str(ROOT / "scripts/generate-runtime-limits-header.py"),
-                    str(ROOT / "firmware/zephyr/runtime_limits.json"),
+                    str(ROOT / "targets/runtime-limits/esp32c3-zephyr.json"),
                     str(generated),
                 ],
                 cwd=ROOT,

@@ -5,7 +5,8 @@ use squid_device_protocol::{
     encode_error_response_into, encode_frame, encode_frame_into, encode_hello_response_into,
     encode_lifecycle_response_into, encode_line_response_into, encode_resources_response_into,
     hello_identity, hello_request, key_event_from_request_into, key_request, lifecycle_lines,
-    output_lines, resource_values, resources_get_request_with_heap_reset, AppListEntry,
+    output_lines, resource_values, resources_get_request_with_heap_reset,
+    runtime_cap_clear_request, runtime_cap_get_request, runtime_cap_set_request, AppListEntry,
     DecodeError, Field, FieldValue, Frame, FrameKind, LifecycleTimer, Opcode, ResourceMetric,
     Status,
 };
@@ -245,6 +246,7 @@ fn encodes_heap_free_resources_response_from_metrics() {
     let FieldValue::Record(first_fields) = &decoded.fields[0].value else {
         panic!("first resource metric should be a record");
     };
+    assert!(matches!(first_fields[0].value, FieldValue::U32(1)));
     assert!(matches!(first_fields[1].value, FieldValue::U32(409_600)));
     assert_eq!(
         resource_values(&decoded).unwrap(),
@@ -263,6 +265,28 @@ fn encodes_resources_get_request_with_heap_max_reset() {
     assert_eq!(request.opcode, Opcode::ResourcesGet);
     assert_eq!(request.sequence, 17);
     assert_eq!(request.fields, vec![Field::bool(1, true)]);
+}
+
+#[test]
+fn encodes_runtime_cap_requests() {
+    let get = runtime_cap_get_request(82, Some("vm_runtime.timer_max"));
+    assert_eq!(get.opcode, Opcode::RuntimeCapGet);
+    assert_eq!(get.fields, vec![Field::string(1, "vm_runtime.timer_max")]);
+
+    let get_all = runtime_cap_get_request(83, None);
+    assert_eq!(get_all.opcode, Opcode::RuntimeCapGet);
+    assert!(get_all.fields.is_empty());
+
+    let set = runtime_cap_set_request(84, "vm_runtime.timer_max", 2);
+    assert_eq!(set.opcode, Opcode::RuntimeCapSet);
+    assert_eq!(
+        set.fields,
+        vec![Field::string(1, "vm_runtime.timer_max"), Field::u32(2, 2)]
+    );
+
+    let clear = runtime_cap_clear_request(85, Some("vm_runtime.timer_max"));
+    assert_eq!(clear.opcode, Opcode::RuntimeCapClear);
+    assert_eq!(clear.fields, vec![Field::string(1, "vm_runtime.timer_max")]);
 }
 
 #[test]

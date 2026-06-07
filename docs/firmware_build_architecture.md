@@ -452,10 +452,11 @@ boards). Raising `SQ_VM_RUNTIME_INPUT_BUTTON_MAX` from 2 to 8 added 288 bytes
 of linker DRAM (six extra `struct sq_vm_runtime_input_button` slots, 48 bytes
 each after `int64_t next_poll_ms` and `int64_t debounce_until_ms` 8-byte
 alignment) and a matching 288 bytes to the `runtime.4` static runtime symbol.
-Runtime cap macros are sourced from `firmware/zephyr/src/runtime_limits.h`,
-generated from `firmware/zephyr/runtime_limits.json` by
-`scripts/generate-runtime-limits-header.py`; the C headers that own the
-arrays use `#ifndef` guards so the C defaults still build standalone.
+Runtime cap macros are sourced from `firmware/zephyr/src/runtime_limits.h`.
+Zephyr target JSON selects a hard-cap profile under `targets/runtime-limits/`,
+target Kconfig generation emits `CONFIG_SQ_*` symbols, and the generated header
+bridges those symbols to C `SQ_*` macros. The C headers that own the arrays use
+`#ifndef` guards so the C defaults still build standalone.
 The resident protocol response buffer is 1,088 bytes, sized for the current
 largest bounded protocol response. Resource metric values use the protocol's
 U32 TLV type because ESP32-C3 diagnostic counters fit within 32-bit ranges;

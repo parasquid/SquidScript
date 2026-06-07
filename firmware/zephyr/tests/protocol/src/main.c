@@ -189,6 +189,30 @@ static int sq_protocol_append_u64_field(uint8_t *payload, size_t cap, size_t *le
 	return SQ_PROTOCOL_OK;
 }
 
+static int sq_protocol_append_u32_field(uint8_t *payload, size_t cap, size_t *len, uint8_t tag,
+					uint32_t value)
+{
+	uint8_t encoded[4] = {
+		value & 0xffu,
+		(value >> 8) & 0xffu,
+		(value >> 16) & 0xffu,
+		(value >> 24) & 0xffu,
+	};
+	size_t needed = *len + 4u + sizeof(encoded);
+
+	if (payload == NULL || len == NULL || needed > cap) {
+		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
+	}
+
+	payload[*len] = tag;
+	payload[*len + 1u] = SQ_FIELD_U32;
+	payload[*len + 2u] = sizeof(encoded);
+	payload[*len + 3u] = 0;
+	memcpy(&payload[*len + 4u], encoded, sizeof(encoded));
+	*len = needed;
+	return SQ_PROTOCOL_OK;
+}
+
 static int sq_protocol_encode_frame_header(uint8_t kind, uint8_t opcode, uint8_t status,
 					   uint32_t sequence, const uint8_t *payload,
 					   size_t payload_len, uint8_t *out, size_t out_len)
@@ -521,8 +545,65 @@ static int unlink_test_file_if_exists(const char *path)
 static bool resource_value_for_key(const struct sq_protocol_frame *frame, const char *key,
 				   uint64_t *out)
 {
+	struct resource_metric_name {
+		uint32_t id;
+		const char *name;
+	};
+	static const struct resource_metric_name metric_names[] = {
+		{1, "ram_total_bytes"},
+		{2, "runtime_static_bytes"},
+		{3, "vm_sqbc_chunk_bytes"},
+		{4, "heap_count"},
+		{5, "heap_free_bytes"},
+		{6, "heap_alloc_bytes"},
+		{7, "heap_max_alloc_bytes"},
+		{8, "heap_largest_free_supported"},
+		{9, "heap_largest_free_bytes"},
+		{10, "last_dispatch_us"},
+		{11, "last_dispatch_seq"},
+		{12, "last_sqbc_reads"},
+		{13, "last_sqbc_bytes"},
+		{14, "runtime_status"},
+		{15, "runtime_dispatch_started"},
+		{16, "runtime_dispatch_age_us"},
+		{17, "runtime_work_submitted"},
+		{18, "runtime_current_app_present"},
+		{19, "runtime_lifecycle_phase"},
+		{20, "runtime_arm_phase"},
+		{21, "cap.static.timer"},
+		{22, "cap.static.armed_timer"},
+		{23, "cap.static.input_button"},
+		{24, "cap.static.binding"},
+		{25, "cap.static.output"},
+		{26, "cap.static.drawlog"},
+		{27, "cap.static.device_error"},
+		{28, "cap.active.timer"},
+		{29, "cap.active.armed_timer"},
+		{30, "cap.active.input_button"},
+		{31, "cap.active.binding"},
+		{32, "cap.active.output"},
+		{33, "cap.active.drawlog"},
+		{34, "proto_stack_size_bytes"},
+		{35, "proto_stack_pre_unused_bytes"},
+		{36, "proto_stack_pre_used_bytes"},
+		{37, "proto_stack_unused_bytes"},
+		{38, "proto_stack_used_bytes"},
+		{39, "vm_stack_size_bytes"},
+		{40, "vm_stack_unused_bytes"},
+		{41, "vm_stack_used_bytes"},
+		{42, "app_count"},
+		{43, "input_button_state"},
+	};
 	size_t offset = 0;
 	struct sq_protocol_field entry;
+	uint32_t expected_id = 0;
+
+	for (size_t i = 0; i < ARRAY_SIZE(metric_names); i++) {
+		if (strcmp(metric_names[i].name, key) == 0) {
+			expected_id = metric_names[i].id;
+			break;
+		}
+	}
 
 	while (sq_protocol_next_field(frame->payload, frame->payload_len, &offset, &entry) ==
 	       SQ_PROTOCOL_OK) {
@@ -530,6 +611,7 @@ static bool resource_value_for_key(const struct sq_protocol_frame *frame, const 
 		struct sq_protocol_field field;
 		const char *record_key = NULL;
 		size_t record_key_len = 0;
+		uint32_t record_id = 0;
 		uint64_t record_value = 0;
 		bool has_value = false;
 
@@ -542,6 +624,9 @@ static bool resource_value_for_key(const struct sq_protocol_frame *frame, const 
 			if (field.tag == SQ_DEVICE_RECORD_FIELD_KEY && field.type == SQ_FIELD_STRING) {
 				record_key = (const char *)field.value;
 				record_key_len = field.len;
+			} else if (field.tag == SQ_DEVICE_RECORD_FIELD_KEY &&
+				   field.type == SQ_FIELD_U32 && field.len == 4) {
+				record_id = sq_protocol_read_u32_le(field.value);
 			} else if (field.tag == SQ_DEVICE_RECORD_FIELD_VALUE) {
 				if (field.type == SQ_FIELD_U64 && field.len == 8) {
 					record_value = sq_protocol_read_u64_le(field.value);
@@ -555,6 +640,10 @@ static bool resource_value_for_key(const struct sq_protocol_frame *frame, const 
 
 		if (record_key != NULL && has_value && strlen(key) == record_key_len &&
 		    memcmp(record_key, key, record_key_len) == 0) {
+			*out = record_value;
+			return true;
+		}
+		if (expected_id != 0 && record_id == expected_id && has_value) {
 			*out = record_value;
 			return true;
 		}
@@ -962,6 +1051,62 @@ ZTEST(squidscript_protocol, test_errors_get_reports_retained_device_diagnostics_
 	zassert_true(field_string_equals(&field, "display=unavailable code=-19"));
 	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
 		      SQ_PROTOCOL_DONE);
+}
+
+ZTEST(squidscript_protocol, test_errors_get_truncates_retained_device_diagnostics_to_response_cap)
+{
+	struct sq_device_identity identity = {
+		.target = "xiao-esp32c3-gdeq0426t82-sd",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_vm_runtime runtime = {0};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.runtime = &runtime,
+	};
+	uint8_t request[SQ_PROTOCOL_HEADER_LEN];
+	uint8_t response[192];
+	size_t response_len = 0;
+	struct sq_protocol_frame frame;
+	struct sq_protocol_field field;
+	size_t offset = 0;
+	bool saw_truncation = false;
+	bool saw_newest_error = false;
+
+	for (size_t i = 0; i < SQ_VM_RUNTIME_DEVICE_ERROR_MAX; i++) {
+		char line[SQ_VM_RUNTIME_DEVICE_ERROR_LEN + 8];
+
+		snprintk(line, sizeof(line), "device-error-index-%02zu detail-abcdefghijklmnop", i);
+		zassert_equal(sq_vm_runtime_record_device_error(&runtime, line), 0);
+	}
+
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_ERRORS_GET,
+						      SQ_STATUS_OK, 67, NULL, 0, request,
+						      sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_device_protocol_handle_frame(request, sizeof(request), &context,
+						      response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_true(response_len <= sizeof(response));
+	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
+	zassert_equal(frame.opcode, SQ_OPCODE_ERRORS_GET);
+	zassert_equal(frame.status, SQ_STATUS_OK);
+
+	while (sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field) ==
+	       SQ_PROTOCOL_OK) {
+		if (field_string_equals(&field, "errors_truncated=5")) {
+			saw_truncation = true;
+		}
+		if (field.len >= strlen("device-error-index-07") &&
+		    memcmp(field.value, "device-error-index-07", strlen("device-error-index-07")) ==
+			    0) {
+			saw_newest_error = true;
+		}
+	}
+	zassert_true(saw_truncation);
+	zassert_true(saw_newest_error);
 }
 
 ZTEST(squidscript_protocol, test_wifi_profile_set_stores_volatile_profile_without_echoing_secret)
@@ -2839,6 +2984,173 @@ ZTEST(squidscript_protocol, test_output_history_retains_current_lifecycle_assert
 	zassert_str_equal(runtime.outputs[5], "lifecycle line 6");
 }
 
+ZTEST(squidscript_protocol, test_runtime_active_caps_default_to_hard_caps_and_gate_runtime_tables)
+{
+	struct sq_vm_runtime runtime = {0};
+
+	sq_vm_runtime_init(&runtime);
+
+	zassert_equal(runtime.active_timer_max, SQ_VM_RUNTIME_TIMER_MAX);
+	zassert_equal(runtime.active_armed_timer_max, SQ_VM_RUNTIME_ARMED_TIMER_MAX);
+	zassert_equal(runtime.active_input_button_max, SQ_VM_RUNTIME_INPUT_BUTTON_MAX);
+	zassert_equal(runtime.active_binding_max, SQ_VM_RUNTIME_ACTIVE_BINDING_MAX);
+	zassert_equal(runtime.active_output_max, SQ_VM_RUNTIME_OUTPUT_MAX);
+	zassert_equal(runtime.active_drawlog_max, SQ_VM_RUNTIME_DRAWLOG_MAX);
+
+	runtime.active_timer_max = 2;
+	zassert_equal(sq_vm_runtime_register_timer(&runtime, (const uint8_t *)"timer.a",
+						   strlen("timer.a"), 100, true),
+		      0);
+	zassert_equal(sq_vm_runtime_register_timer(&runtime, (const uint8_t *)"timer.b",
+						   strlen("timer.b"), 100, true),
+		      0);
+	zassert_equal(sq_vm_runtime_register_timer(&runtime, (const uint8_t *)"timer.c",
+						   strlen("timer.c"), 100, true),
+		      -ENOSPC);
+
+	runtime.active_output_max = 2;
+	zassert_equal(sq_vm_runtime_record_output(&runtime, (const uint8_t *)"out.1",
+						  strlen("out.1")),
+		      0);
+	zassert_equal(sq_vm_runtime_record_output(&runtime, (const uint8_t *)"out.2",
+						  strlen("out.2")),
+		      0);
+	zassert_equal(sq_vm_runtime_record_output(&runtime, (const uint8_t *)"out.3",
+						  strlen("out.3")),
+		      0);
+	zassert_equal(runtime.output_count, 2);
+	zassert_str_equal(runtime.outputs[0], "out.2");
+	zassert_str_equal(runtime.outputs[1], "out.3");
+
+	runtime.active_drawlog_max = 1;
+	zassert_equal(sq_vm_runtime_record_drawlog(&runtime, "draw.1"), 0);
+	zassert_equal(sq_vm_runtime_record_drawlog(&runtime, "draw.2"), 0);
+	zassert_equal(runtime.drawlog_count, 1);
+	zassert_str_equal(runtime.drawlog[0], "draw.2");
+}
+
+ZTEST(squidscript_protocol, test_runtime_cap_protocol_get_set_and_clear_active_caps)
+{
+	uint8_t request[128];
+	uint8_t payload[96];
+	uint8_t response[SQ_DEVICE_RESPONSE_BYTES];
+	size_t payload_len = 0;
+	size_t response_len = 0;
+	struct sq_protocol_frame frame;
+	struct sq_protocol_field field;
+	size_t offset = 0;
+	static struct sq_vm_runtime runtime;
+	struct sq_device_identity identity = {
+		.target = "native-test",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.runtime = &runtime,
+	};
+
+	memset(&runtime, 0, sizeof(runtime));
+	sq_vm_runtime_init(&runtime);
+
+	zassert_equal(sq_protocol_append_string_field(payload, sizeof(payload), &payload_len, 1,
+						      "vm_runtime.timer_max"),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_append_u32_field(payload, sizeof(payload), &payload_len, 2, 2),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_RUNTIME_CAP_SET,
+						      SQ_STATUS_OK, 82, payload, payload_len,
+						      request, sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	memcpy(&request[SQ_PROTOCOL_HEADER_LEN], payload, payload_len);
+	zassert_equal(sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN + payload_len,
+						      &context, response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(runtime.active_timer_max, 2);
+
+	payload_len = 0;
+	zassert_equal(sq_protocol_append_string_field(payload, sizeof(payload), &payload_len, 1,
+						      "vm_runtime.timer_max"),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_RUNTIME_CAP_GET,
+						      SQ_STATUS_OK, 83, payload, payload_len,
+						      request, sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	memcpy(&request[SQ_PROTOCOL_HEADER_LEN], payload, payload_len);
+	zassert_equal(sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN + payload_len,
+						      &context, response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
+	zassert_equal(frame.opcode, SQ_OPCODE_RUNTIME_CAP_GET);
+	zassert_equal(frame.status, SQ_STATUS_OK);
+	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(field.type, SQ_FIELD_STRING);
+	zassert_mem_equal(field.value, "vm_runtime.timer_max=2", strlen("vm_runtime.timer_max=2"));
+
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_RUNTIME_CAP_CLEAR,
+						      SQ_STATUS_OK, 84, payload, payload_len,
+						      request, sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	memcpy(&request[SQ_PROTOCOL_HEADER_LEN], payload, payload_len);
+	zassert_equal(sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN + payload_len,
+						      &context, response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(runtime.active_timer_max, SQ_VM_RUNTIME_TIMER_MAX);
+}
+
+ZTEST(squidscript_protocol, test_runtime_cap_protocol_set_persists_active_caps)
+{
+	uint8_t request[128];
+	uint8_t payload[96];
+	uint8_t response[SQ_DEVICE_RESPONSE_BYTES];
+	size_t payload_len = 0;
+	size_t response_len = 0;
+	struct sq_vm_runtime runtime = {0};
+	struct sq_vm_runtime reloaded = {0};
+	uint16_t timer_cap = 0;
+	struct sq_device_identity identity = {
+		.target = "native-test",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.runtime = &runtime,
+		.store_mount_point = test_fs_mount.mnt_point,
+	};
+
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(format_test_app_store(), 0);
+	sq_vm_runtime_init(&runtime);
+	sq_vm_runtime_set_store_mount_point(&runtime, test_fs_mount.mnt_point);
+
+	zassert_equal(sq_protocol_append_string_field(payload, sizeof(payload), &payload_len, 1,
+						      "vm_runtime.timer_max"),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_append_u32_field(payload, sizeof(payload), &payload_len, 2, 2),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_RUNTIME_CAP_SET,
+						      SQ_STATUS_OK, 85, payload, payload_len,
+						      request, sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	memcpy(&request[SQ_PROTOCOL_HEADER_LEN], payload, payload_len);
+	zassert_equal(sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN + payload_len,
+						      &context, response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+
+	sq_vm_runtime_init(&reloaded);
+	sq_vm_runtime_set_store_mount_point(&reloaded, test_fs_mount.mnt_point);
+	zassert_equal(sq_vm_runtime_cap_get(&reloaded, "vm_runtime.timer_max", &timer_cap), 0);
+	zassert_equal(timer_cap, 2);
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
 ZTEST(squidscript_protocol, test_runtime_transfer_owner_rejects_overlap)
 {
 	static struct sq_vm_runtime runtime;
@@ -2950,10 +3262,14 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 	uint64_t runtime_current_app_present = 99;
 	uint64_t runtime_lifecycle_phase = 99;
 	uint64_t runtime_arm_phase = 99;
+	uint64_t active_timer_max = 99;
+	uint64_t active_output_max = 99;
 	int result;
 
 	memset(&runtime, 0, sizeof(runtime));
 	sq_vm_runtime_init(&runtime);
+	runtime.active_timer_max = 2;
+	runtime.active_output_max = 3;
 	runtime.status = SQ_VM_RUNTIME_RUNNING;
 	runtime.dispatch_started = true;
 	runtime.dispatch_start_cycles = 0;
@@ -2975,7 +3291,8 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 	result = sq_device_protocol_handle_frame(request, sizeof(request), &context, response,
 						 sizeof(response), &response_len);
 	zassert_equal(result, SQ_PROTOCOL_OK, "resources result %d", result);
-	zassert_true(response_len <= 1088, "resources response_len=%zu", response_len);
+	zassert_true(response_len <= SQ_DEVICE_RESPONSE_BYTES, "resources response_len=%zu",
+		     response_len);
 	zassert_true(response_len <= SQ_DEVICE_RESPONSE_BYTES);
 	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
 	zassert_equal(frame.opcode, SQ_OPCODE_RESOURCES_GET);
@@ -3026,6 +3343,15 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 	zassert_true(resource_value_for_key(&frame, "runtime_arm_phase",
 					    &runtime_arm_phase));
 	zassert_equal(runtime_arm_phase, SQ_VM_RUNTIME_ARM_REQUESTED);
+	zassert_true(resource_value_for_key(&frame, "cap.active.timer",
+					    &active_timer_max));
+	zassert_equal(active_timer_max, 2);
+	zassert_true(resource_value_for_key(&frame, "cap.active.output",
+					    &active_output_max));
+	zassert_equal(active_output_max, 3);
+	zassert_true(resource_value_equals(&frame, "cap.static.timer", SQ_VM_RUNTIME_TIMER_MAX));
+	zassert_true(resource_value_equals(&frame, "cap.static.device_error",
+					   SQ_VM_RUNTIME_DEVICE_ERROR_MAX));
 	zassert_true(resource_value_for_key(&frame, "proto_stack_unused_bytes",
 					    &protocol_stack_unused));
 	zassert_true(resource_value_for_key(&frame, "proto_stack_used_bytes",
@@ -4007,6 +4333,46 @@ ZTEST(squidscript_protocol, test_vm_runtime_saves_device_config_draft_to_flash_s
 	zassert_true(saved_len > 0);
 	zassert_equal(sqdc_decode_sqdc(saved, saved_len, &decoded), SQDC_STATUS_OK);
 	zassert_equal(decoded.count, 4);
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
+ZTEST(squidscript_protocol, test_vm_runtime_persists_active_caps_to_flash_sqdc)
+{
+	struct sq_vm_runtime save_runtime = {0};
+	struct sq_vm_runtime load_runtime = {0};
+	uint8_t saved[256];
+	size_t saved_len = 0;
+	SqdcConfig decoded = {0};
+	char path[SQ_APP_STORE_RUNTIME_CONFIG_PATH_MAX];
+	uint16_t timer_cap = 0;
+
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(format_test_app_store(), 0);
+
+	sq_vm_runtime_init(&save_runtime);
+	sq_vm_runtime_set_store_mount_point(&save_runtime, test_fs_mount.mnt_point);
+	zassert_equal(sq_vm_runtime_cap_set(&save_runtime, "vm_runtime.timer_max", 2), 0);
+	zassert_equal(sq_vm_runtime_cap_save(&save_runtime), 0);
+
+	zassert_equal(sq_app_store_runtime_config_path(test_fs_mount.mnt_point, path,
+						       sizeof(path)),
+		      0);
+	zassert_equal(read_test_file(path, saved, sizeof(saved), &saved_len), 0);
+	zassert_true(saved_len > 0);
+	zassert_equal(sqdc_decode_sqdc(saved, saved_len, &decoded), SQDC_STATUS_OK);
+	zassert_equal(decoded.count, 1);
+	zassert_mem_equal(decoded.records[0].key, "vm_runtime.timer_max",
+			  strlen("vm_runtime.timer_max"));
+	zassert_equal(decoded.records[0].value.kind, SQDC_VALUE_I32);
+	zassert_equal(decoded.records[0].value.i32_value, 2);
+
+	sq_vm_runtime_init(&load_runtime);
+	sq_vm_runtime_set_store_mount_point(&load_runtime, test_fs_mount.mnt_point);
+	zassert_equal(sq_vm_runtime_cap_load(&load_runtime), 0);
+	zassert_equal(sq_vm_runtime_cap_get(&load_runtime, "vm_runtime.timer_max", &timer_cap),
+		      0);
+	zassert_equal(timer_cap, 2);
 
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }

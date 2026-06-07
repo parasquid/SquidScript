@@ -394,7 +394,9 @@ static int runtime_activate_binding(struct sq_vm_runtime *runtime, const uint8_t
 	    alias_len >= SQVM_DEVICE_BINDING_NAME_CAP) {
 		return -EINVAL;
 	}
-	for (size_t i = 0; i < SQ_VM_RUNTIME_ACTIVE_BINDING_MAX; i++) {
+	size_t active_max = runtime->active_binding_max == 0 ? SQ_VM_RUNTIME_ACTIVE_BINDING_MAX :
+								  runtime->active_binding_max;
+	for (size_t i = 0; i < active_max; i++) {
 		if (runtime_active_binding_matches(&runtime->active_bindings[i], alias, alias_len)) {
 			return 0;
 		}
@@ -438,7 +440,9 @@ static int runtime_activate_input_button(struct sq_vm_runtime *runtime, uint8_t 
 	    event_len >= SQ_VM_RUNTIME_EVENT_LEN) {
 		return -EINVAL;
 	}
-	for (size_t i = 0; i < SQ_VM_RUNTIME_INPUT_BUTTON_MAX; i++) {
+	size_t active_max = runtime->active_input_button_max == 0 ? SQ_VM_RUNTIME_INPUT_BUTTON_MAX :
+								    runtime->active_input_button_max;
+	for (size_t i = 0; i < active_max; i++) {
 		if (runtime->input_buttons[i].active && runtime->input_buttons[i].pin == pin) {
 			slot = &runtime->input_buttons[i];
 			break;
