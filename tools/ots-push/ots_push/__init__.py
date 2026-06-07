@@ -1,9 +1,8 @@
-"""ots-push: push SQBC files to a SquidScript device over BLE Object Transfer.
+"""ots-push: push SQBC files to a SquidScript device over BLE.
 
-This package drives the OTS GATT service and L2CAP CoC data path on a
-paired SquidScript device. It uses bleak for cross-platform BLE access
-and exits cleanly with a skip message when the host environment
-cannot support the transfer (no adapter, no bleak, no CoC support).
+This package drives the firmware's custom GATT app-transfer service. It uses
+bleak for cross-platform BLE access and exits cleanly with a skip message when
+the host environment cannot support the transfer.
 """
 
 __version__ = "0.1.0"

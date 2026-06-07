@@ -211,12 +211,11 @@ The preload hint is advisory. Firmware may use it to load or retain
 latency-sensitive handler chunks, but app correctness must not depend on it.
 Handler payload parameters are currently used for event records such as
 `event.on("ble.object.complete", ev)`. The `ble.object.complete` event
-record carries a `file` field (a `file.*` reference to the staging file at
-`/sq/tmp/ble-object-<app_id>-<profile_id>.tmp`); the `ble.object.error`
-event record carries an `error` string describing the failure reason
-(currently `"client-abort"` on disconnect mid-stream). Profile records
-do not carry a `sink` field; firmware owns the file ref lifetime, the app
-just consumes (copy, install, log) the file inside the handler before
+record carries an `upload` field (a `file.*` reference to the staging file);
+the `ble.object.error` event record carries an `error` string describing the
+failure reason (currently `"client-abort"` on disconnect mid-stream). Profile
+records do not carry a `sink` field; firmware owns the file ref lifetime, the
+app just consumes (copy, install, log) the file inside the handler before
 returning.
 
 Trigger table entries are:

@@ -10,9 +10,8 @@ config SQUIDSCRIPT_BLE_OTS_PARSE_TEST
 	help
 	  Expose the Object Name parser in the native_sim test image so
 	  unit tests can verify validation rules without a real Bluetooth
-	  connection. The parser validates the `app_id/profile_id/.ext`
-	  Object Name shape used to route an in-flight transfer to the
-	  armed SquidScript app.
+	  connection. The parser validates the extension-only Object Name
+	  shape used by the custom BLE transfer service.
 
 endmenu
 

@@ -1665,6 +1665,42 @@ screen("main") {}
 }
 
 #[test]
+fn parses_dynamic_lifecycle_ids_and_app_install_result() {
+    let source = r#"app "ble-bootstrap"
+event.on("ble.object.complete", ev) {
+  let installed = app.install(ev.upload)
+  app.launch(installed.id)
+  app.arm(installed.id)
+  app.disarm(installed.id)
+}
+screen("main") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let ir = output.ir.unwrap();
+    assert!(matches!(
+        ir.handlers[0].statements[0],
+        IrStatement::Let { .. }
+    ));
+    assert!(matches!(
+        ir.handlers[0].statements[1],
+        IrStatement::AppLaunch { .. }
+    ));
+    assert!(matches!(
+        ir.handlers[0].statements[2],
+        IrStatement::AppArm { .. }
+    ));
+    assert!(matches!(
+        ir.handlers[0].statements[3],
+        IrStatement::AppDisarm { .. }
+    ));
+    sqbc::encode_sqbc(&ir).expect("SQBC should encode dynamic lifecycle ids");
+}
+
+#[test]
 fn parses_generic_events_and_trigger_lifecycle_calls() {
     let source = r#"app "event-demo"
 state { ticks: int = 0 }

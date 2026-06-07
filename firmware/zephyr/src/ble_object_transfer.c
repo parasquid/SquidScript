@@ -9,6 +9,7 @@
 #include <zephyr/logging/log.h>
 
 #include "app_store.h"
+#include "ble_profile_table.h"
 #include "vm_runtime.h"
 
 LOG_MODULE_REGISTER(squidscript_ble_transfer, LOG_LEVEL_INF);
@@ -81,60 +82,29 @@ static void sq_ble_ots_close_session_files(void)
 	}
 }
 
-int sq_ble_ots_parse_object_name(const char *name, char *app_id_out, size_t app_id_cap,
-				 char *profile_id_out, size_t profile_id_cap,
-				 char *extension_out, size_t extension_cap)
+int sq_ble_ots_parse_object_name(const char *name, char *extension_out, size_t extension_cap)
 {
-	const char *p;
-	const char *q;
-	const char *extension;
-	size_t app_len;
-	size_t prof_len;
 	size_t extension_len;
 
-	if (name == NULL || app_id_out == NULL || profile_id_out == NULL ||
-	    extension_out == NULL) {
+	if (name == NULL || extension_out == NULL) {
 		return -EINVAL;
 	}
-
-	p = strchr(name, '/');
-	if (p == NULL) {
-		return BT_GATT_OTS_OACP_RES_INV_PARAM;
-	}
-	q = strchr(p + 1, '/');
-	if (q == NULL) {
-		return BT_GATT_OTS_OACP_RES_INV_PARAM;
-	}
-	if (strchr(q + 1, '/') != NULL) {
+	if (strchr(name, '/') != NULL) {
 		return BT_GATT_OTS_OACP_RES_INV_PARAM;
 	}
 
-	app_len = (size_t)(p - name);
-	prof_len = (size_t)(q - (p + 1));
-	extension = q + 1;
-	extension_len = strlen(extension);
-
-	if (app_len == 0 || prof_len == 0 || extension_len == 0) {
+	extension_len = strlen(name);
+	if (extension_len == 0) {
 		return BT_GATT_OTS_OACP_RES_INV_PARAM;
 	}
-	if (app_len >= app_id_cap || prof_len >= profile_id_cap ||
-	    extension_len >= extension_cap) {
+	if (extension_len >= extension_cap) {
 		return BT_GATT_OTS_OACP_RES_INV_PARAM;
 	}
-	if (extension[0] != '.') {
+	if (name[0] != '.') {
 		return BT_GATT_OTS_OACP_RES_INV_PARAM;
 	}
 
-	memcpy(app_id_out, name, app_len);
-	app_id_out[app_len] = '\0';
-	if (!sq_app_store_is_safe_app_id(app_id_out)) {
-		return BT_GATT_OTS_OACP_RES_INV_PARAM;
-	}
-
-	memcpy(profile_id_out, p + 1, prof_len);
-	profile_id_out[prof_len] = '\0';
-
-	memcpy(extension_out, extension, extension_len + 1);
+	memcpy(extension_out, name, extension_len + 1);
 
 	return 0;
 }
@@ -176,16 +146,22 @@ static int sq_ble_ots_obj_created_internal(const char *name, size_t alloc_size)
 	char app_id[SQ_BLE_OTS_APP_ID_MAX] = {0};
 	char profile_id[SQ_BLE_OTS_PROFILE_ID_MAX] = {0};
 	char extension[16] = {0};
+	const struct sq_ble_profile_entry *profile;
 	int result;
 
 	if (sq_ble_ots_session.active) {
 		return BT_GATT_OTS_OACP_RES_OBJ_LOCKED;
 	}
-	result = sq_ble_ots_parse_object_name(name, app_id, sizeof(app_id), profile_id,
-					      sizeof(profile_id), extension, sizeof(extension));
+	result = sq_ble_ots_parse_object_name(name, extension, sizeof(extension));
 	if (result != 0) {
 		return result;
 	}
+	profile = sq_ble_profile_lookup_accepting_extension(extension);
+	if (profile == NULL) {
+		return BT_GATT_OTS_OACP_RES_INV_PARAM;
+	}
+	strncpy(app_id, profile->app_id, sizeof(app_id) - 1);
+	strncpy(profile_id, profile->profile_id, sizeof(profile_id) - 1);
 
 	memset(&sq_ble_ots_session, 0, sizeof(sq_ble_ots_session));
 	strncpy(sq_ble_ots_session.app_id, app_id,

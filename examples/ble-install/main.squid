@@ -29,8 +29,8 @@ event.on("ble.object.complete", ev) {
   state.load()
   state.received = state.received + 1
   debug.print("received file", state.received)
-  app.install(ev.upload, "installed-app")
-  app.launch("installed-app")
+  let installed = app.install(ev.upload)
+  app.launch(installed.id)
   state.installed = state.installed + 1
   state.save()
 }

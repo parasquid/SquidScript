@@ -355,10 +355,22 @@ unsafe extern "C" fn app_install_file(
     file_ref_len: usize,
     app_id: *const u8,
     app_id_len: usize,
+    out_app_id: *mut u8,
+    out_app_id_cap: usize,
+    out_app_id_len: *mut usize,
 ) -> i32 {
     let host = &mut *(user_data as *mut Host);
     let file_ref = std::str::from_utf8(std::slice::from_raw_parts(file_ref, file_ref_len)).unwrap();
-    let app_id = std::str::from_utf8(std::slice::from_raw_parts(app_id, app_id_len)).unwrap();
+    let app_id = if app_id.is_null() {
+        "metadata-app"
+    } else {
+        std::str::from_utf8(std::slice::from_raw_parts(app_id, app_id_len)).unwrap()
+    };
+    if out_app_id.is_null() || out_app_id_len.is_null() || app_id.len() > out_app_id_cap {
+        return -22;
+    }
+    std::ptr::copy_nonoverlapping(app_id.as_ptr(), out_app_id, app_id.len());
+    *out_app_id_len = app_id.len();
     host.app_install_files
         .push((file_ref.to_string(), app_id.to_string()));
     0
@@ -370,6 +382,9 @@ unsafe extern "C" fn failing_app_install_file(
     _file_ref_len: usize,
     _app_id: *const u8,
     _app_id_len: usize,
+    _out_app_id: *mut u8,
+    _out_app_id_cap: usize,
+    _out_app_id_len: *mut usize,
 ) -> i32 {
     -22
 }

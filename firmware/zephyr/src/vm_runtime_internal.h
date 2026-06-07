@@ -71,7 +71,8 @@ int32_t runtime_app_launch(void *user_data, const uint8_t *app, size_t app_len);
 int32_t runtime_app_arm(void *user_data, const uint8_t *app, size_t app_len);
 int32_t runtime_app_disarm(void *user_data, const uint8_t *app, size_t app_len);
 int32_t runtime_app_install_file(void *user_data, const uint8_t *file_ref, size_t file_ref_len,
-				 const uint8_t *app_id, size_t app_id_len);
+				 const uint8_t *app_id, size_t app_id_len, uint8_t *out_app_id,
+				 size_t out_app_id_cap, size_t *out_app_id_len);
 int32_t runtime_app_registry_list(void *user_data, SqvmAppRegistryEntry *out, size_t out_cap,
 				  size_t *out_count);
 int32_t runtime_app_registry_get(void *user_data, const uint8_t *app, size_t app_len,

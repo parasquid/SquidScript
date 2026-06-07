@@ -2405,8 +2405,8 @@ event.on("app.start") {
 }
 
 event.on("ble.object.complete", ev) {
-  app.install(ev.upload, "installed-app")
-  app.launch("installed-app")
+  let installed = app.install(ev.upload)
+  app.launch(installed.id)
 }
 ```
 
@@ -2416,7 +2416,7 @@ advertising the transfer service UUID. `profile` is `"object-transfer"`.
 
 `config` options:
 - `id`: required string. The app-local profile instance identifier, exposed to
-  handlers as `ev.id` and used by firmware diagnostics and routing.
+  handlers as `ev.id` and used by firmware diagnostics.
 - `accept`: required non-empty list of file-extension strings such as
   `".sqbc"`.
 - `events`: required object mapping transfer event kinds to SquidScript event
@@ -2430,13 +2430,13 @@ Semantics:
   re-applies the config (same config is a no-op; a changed config replaces the
   prior one). It never errors on a second call, so placing `start` in
   `app.start` is safe across re-launches.
-- **Explicit, persistent state.** `start` activates receive until `stop`, a
-  device reset, or the owning app is uninstalled. App exit does not auto-stop;
-  the app calls `service.ble.stop()` itself if it wants to.
+- **Foreground service.** `start` activates receive for the current foreground
+  app. Launching another foreground app clears the previous app's active BLE
+  receive profile.
 - **Advertising is gated on active profiles.** The radio advertises the transfer
-  service UUID only while at least one profile is registered. Boot does not
-  advertise; receive becomes active only after the owning app is launched once
-  and runs `start`.
+  service UUID only while at least one profile is registered. A target fallback
+  app may start receive at boot, but receive otherwise becomes active only after
+  the foreground app runs `start`.
 - **Activation requires running the app once.** The profile is created by
   running `service.ble.start`, not by reading compiled metadata. After a device
   reset, BLE receive is inactive until the owning app runs `start` again.
@@ -2452,12 +2452,11 @@ totalBytes      string
 id              the profile instance id
 ```
 
-`upload` is a `file.*` reference to the staging file at
-`/sq/tmp/ble-object-<app_id>-<profile_id>.tmp`. The reference is valid only
-inside the `ble.object.complete` handler — the firmware `fs_unlink`s the staging
-file after the handler returns. The `ble.object.error` event carries an `error`
-string describing the failure reason (currently `"client-abort"` on disconnect
-mid-stream).
+`upload` is a `file.*` reference to the staging file. The reference is valid
+only inside the `ble.object.complete` handler — the firmware `fs_unlink`s the
+staging file after the handler returns. The `ble.object.error` event carries an
+`error` string describing the failure reason (currently `"client-abort"` on
+disconnect mid-stream).
 
 Rules:
 - BLE object receive does not grant raw GATT access to SquidScript apps.
@@ -2468,9 +2467,8 @@ Rules:
 - The staging file is ephemeral: it is `fs_unlink`d after the
   `ble.object.complete` event handler returns. The app must consume the file
   (copy, install, log) before returning from the handler.
-- A completed transfer routes by object name (`<app_id>/<profile_id>/<.ext>`)
-  to the app that started the matching profile. If that app is not running, it
-  is started to handle the event.
+- A completed transfer is delivered to the foreground app profile whose
+  `accept` list contains the uploaded object extension, such as `.sqbc`.
 - App artifacts uploaded through BLE should use `.sqbc` until a resource
   package format is specified, and they should follow the same installer rules
   as HTTP uploads.
@@ -2692,18 +2690,27 @@ Requires runtime support:
 app.launch
 ```
 
+`app.install(fileRef)`
+
+Installs a SquidScript app from a file reference to a staged SQBC payload. The
+firmware reads the app id embedded in the SQBC metadata, validates it, moves the
+payload to `<store_mount_point>/apps/<id>/main.sqbc`, and registers the app in
+the app registry. The call returns a record with the installed app id:
+
+```squid
+let installed = app.install(ev.upload)
+app.launch(installed.id)
+```
+
 `app.install(fileRef, appId)`
 
-Installs a SquidScript app from a file reference to a staged SQBC payload.
-The firmware opens `fileRef`, validates the SQBC magic header
-(`'S' 'Q' 'B' 'C'`), and if valid copies the bytes to
-`<store_mount_point>/apps/<appId>/main.sqbc` and registers the app in the
-app registry. The file reference is typically the `file` field of a
-`ble.object.complete` event after a successful BLE Object Transfer.
+Installs the same file using an explicit destination app id. This is an
+override for tooling and tests; the one-argument form is the normal BLE
+installer flow.
 
-Returns 0 on success; negative errno on failure (`-EINVAL` for
-malformed args, unsafe `appId`, or missing SQBC magic; `-EIO` for
-filesystem errors).
+Both forms return a record with at least `id`. Runtime failures surface through
+the VM error path (`-EINVAL` for malformed args, unsafe app ids, or invalid SQBC;
+`-EIO` for filesystem errors).
 
 Requires runtime support:
 

@@ -62,6 +62,7 @@ const BUILTIN_APP_PROCESS_STACK: u8 = 0x16;
 const BUILTIN_APP_ARMED_STACK: u8 = 0x17;
 const BUILTIN_APP_ARMED_STACK_GET: u8 = 0x18;
 const BUILTIN_APP_INSTALL: u8 = 0x19;
+const BUILTIN_APP_INSTALL_METADATA: u8 = 0x1a;
 const BUILTIN_SCREEN_OPEN: u8 = 0x20;
 const BUILTIN_SCREEN_REFRESH: u8 = 0x21;
 const BUILTIN_SERVICE_TIMER_EVERY: u8 = 0x22;
@@ -528,15 +529,14 @@ fn collect_statement_strings(
                     collect_statement_strings(statements, strings, profile)?;
                 }
             }
-            IrStatement::AppLaunch { app } => {
-                strings.intern(app)?;
-            }
-            IrStatement::AppArm { app } | IrStatement::AppDisarm { app } => {
-                strings.intern(app)?;
-            }
+            IrStatement::AppLaunch { app }
+            | IrStatement::AppArm { app }
+            | IrStatement::AppDisarm { app } => collect_expr_strings(app, strings)?,
             IrStatement::AppInstall { file_ref, app_id } => {
                 collect_expr_strings(file_ref, strings)?;
-                strings.intern(app_id)?;
+                if let Some(app_id) = app_id {
+                    strings.intern(app_id)?;
+                }
             }
             IrStatement::ServiceTimerEvery { event, interval_ms } => {
                 strings.intern(event)?;
@@ -801,7 +801,7 @@ fn compile_statement(
             for arg in args {
                 compile_expr(unit, frame, arg)?;
             }
-            if let Some(builtin) = builtin_for_call(name) {
+            if let Some(builtin) = builtin_for_call_with_arg_count(name, args.len()) {
                 validate_builtin_arg_count(name, args.len())?;
                 emit_builtin(&mut unit.code, builtin);
             } else {
@@ -842,21 +842,30 @@ fn compile_statement(
             }
         }
         IrStatement::AppLaunch { app } => {
-            emit_string(unit, app)?;
+            compile_expr(unit, frame, app)?;
             emit_builtin(&mut unit.code, BUILTIN_APP_LAUNCH);
         }
         IrStatement::AppArm { app } => {
-            emit_string(unit, app)?;
+            compile_expr(unit, frame, app)?;
             emit_builtin(&mut unit.code, BUILTIN_APP_ARM);
         }
         IrStatement::AppDisarm { app } => {
-            emit_string(unit, app)?;
+            compile_expr(unit, frame, app)?;
             emit_builtin(&mut unit.code, BUILTIN_APP_DISARM);
         }
         IrStatement::AppInstall { file_ref, app_id } => {
-            emit_string(unit, app_id)?;
-            compile_expr(unit, frame, file_ref)?;
-            emit_builtin(&mut unit.code, BUILTIN_APP_INSTALL);
+            match app_id {
+                Some(app_id) => {
+                    emit_string(unit, app_id)?;
+                    compile_expr(unit, frame, file_ref)?;
+                    emit_builtin(&mut unit.code, BUILTIN_APP_INSTALL);
+                }
+                None => {
+                    compile_expr(unit, frame, file_ref)?;
+                    emit_builtin(&mut unit.code, BUILTIN_APP_INSTALL_METADATA);
+                }
+            }
+            emit(&mut unit.code, OP_POP);
         }
         IrStatement::ServiceTimerEvery { event, interval_ms } => {
             emit_string(unit, event)?;
@@ -1195,7 +1204,7 @@ fn compile_expr(
             for arg in args {
                 compile_expr(unit, frame, arg)?;
             }
-            if let Some(builtin) = builtin_for_call(name) {
+            if let Some(builtin) = builtin_for_call_with_arg_count(name, args.len()) {
                 validate_builtin_arg_count(name, args.len())?;
                 emit_builtin(&mut unit.code, builtin);
             } else {
@@ -1280,6 +1289,17 @@ fn emit_builtin(code: &mut Vec<u8>, builtin: u8) {
     emit(code, builtin);
 }
 
+fn builtin_for_call_with_arg_count(name: &str, count: usize) -> Option<u8> {
+    if name == "app.install" {
+        return match count {
+            1 => Some(BUILTIN_APP_INSTALL_METADATA),
+            2 => Some(BUILTIN_APP_INSTALL),
+            _ => None,
+        };
+    }
+    builtin_for_call(name)
+}
+
 fn builtin_for_call(name: &str) -> Option<u8> {
     match name {
         "service.wifi.startAP" => Some(BUILTIN_SERVICE_WIFI_START_AP),
@@ -1312,6 +1332,7 @@ fn builtin_for_call(name: &str) -> Option<u8> {
 
 fn validate_builtin_arg_count(name: &str, count: usize) -> Result<(), SqbcError> {
     let valid = match name {
+        "app.install" => count == 1 || count == 2,
         "service.wifi.startAP" | "service.wifi.connect" => count == 1,
         "service.wifi.stopAP"
         | "service.wifi.status"

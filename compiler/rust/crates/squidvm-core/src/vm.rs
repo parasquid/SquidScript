@@ -3,8 +3,9 @@ use core::{fmt::Write, ptr, slice, str};
 use crate::{
     bytecode::{
         BUILTIN_APP_ARM, BUILTIN_APP_ARMED_STACK, BUILTIN_APP_ARMED_STACK_GET, BUILTIN_APP_DISARM,
-        BUILTIN_APP_EXIT, BUILTIN_APP_INSTALL, BUILTIN_APP_LAUNCH, BUILTIN_APP_PROCESS_STACK,
-        BUILTIN_APP_REGISTRY_GET, BUILTIN_APP_REGISTRY_LIST, BUILTIN_DEBUG_PRINT,
+        BUILTIN_APP_EXIT, BUILTIN_APP_INSTALL, BUILTIN_APP_INSTALL_METADATA, BUILTIN_APP_LAUNCH,
+        BUILTIN_APP_PROCESS_STACK, BUILTIN_APP_REGISTRY_GET, BUILTIN_APP_REGISTRY_LIST,
+        BUILTIN_DEBUG_PRINT,
         BUILTIN_DEVICE_CONFIG_LOAD, BUILTIN_DEVICE_CONFIG_REBIND, BUILTIN_DEVICE_CONFIG_SAVE,
         BUILTIN_DEVICE_CONFIG_SET, BUILTIN_DISPLAY_CLEAR, BUILTIN_DISPLAY_DRAW,
         BUILTIN_DISPLAY_IMAGE, BUILTIN_DISPLAY_INFO, BUILTIN_DISPLAY_LINE, BUILTIN_DISPLAY_RECT,
@@ -29,8 +30,8 @@ use crate::{
     chunk::{ChunkCache, ChunkKind, ChunkRef},
     error::VmError,
     host::{
-        AppArmedStack, AppArmedStackEntry, AppProcessStack, AppRegistryEntry, AppRegistryList,
-        DeviceConfigResult, DisplayInfo, DisplayLineOptions, DisplayRectOptions,
+        AppArmedStack, AppArmedStackEntry, AppInstallResult, AppProcessStack, AppRegistryEntry,
+        AppRegistryList, DeviceConfigResult, DisplayInfo, DisplayLineOptions, DisplayRectOptions,
         DisplayResourceOptions, DisplayTextOptions, FilePickFileResult, FileReadLinesResult,
         FileReadTextResult, StorageCompletion, StorageRequest, TraceSink, VmDispatch,
         WifiAccessPoint, WifiApIp, WifiOperation, WifiOperationResult, WifiScanNetwork, WifiStatus,
@@ -1435,27 +1436,38 @@ impl ChunkedVm {
                 self.push(Value::Bool(value))?;
             }
             BUILTIN_APP_LAUNCH => {
-                let app_id = self.pop_sqbc_string_id()?;
-                host.app_launch(self.index.string(app_id)?)?;
+                let app = self.pop()?;
+                let resolver = self.resolver();
+                host.app_launch(resolver.value_str(app)?)?;
             }
             BUILTIN_APP_ARM => {
-                let app_id = self.pop_sqbc_string_id()?;
-                host.app_arm(self.index.string(app_id)?)?;
+                let app = self.pop()?;
+                let resolver = self.resolver();
+                host.app_arm(resolver.value_str(app)?)?;
             }
             BUILTIN_APP_DISARM => {
-                let app_id = self.pop_sqbc_string_id()?;
-                host.app_disarm(self.index.string(app_id)?)?;
+                let app = self.pop()?;
+                let resolver = self.resolver();
+                host.app_disarm(resolver.value_str(app)?)?;
             }
             BUILTIN_APP_INSTALL => {
-                // file_ref is a runtime expression value (any string variant --
-                // SQBC constant, static, or dynamic event/state string); app_id is
-                // a literal install target id.
                 let file_ref = self.pop()?;
-                let app_id_id = self.pop_sqbc_string_id()?;
-                let app_id = self.index.string(app_id_id)?;
-                let resolver = self.resolver();
-                let file_ref = resolver.value_str(file_ref)?;
-                host.app_install(file_ref, app_id)?;
+                let app_id = self.pop()?;
+                let result = {
+                    let resolver = self.resolver();
+                    host.app_install(resolver.value_str(file_ref)?, Some(resolver.value_str(app_id)?))?
+                };
+                let value = self.app_install_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_APP_INSTALL_METADATA => {
+                let file_ref = self.pop()?;
+                let result = {
+                    let resolver = self.resolver();
+                    host.app_install(resolver.value_str(file_ref)?, None)?
+                };
+                let value = self.app_install_record(result)?;
+                self.push(value)?;
             }
             BUILTIN_APP_REGISTRY_LIST => {
                 let registry = host.app_registry_list()?;
@@ -1816,6 +1828,12 @@ impl ChunkedVm {
         ])
     }
 
+    fn app_install_record(&mut self, result: AppInstallResult<'_>) -> Result<Value, VmError> {
+        let id = self.runtime_string_value(Some(result.id))?;
+        self.runtime_records
+            .alloc(&[RuntimeRecordField::new(RuntimeFieldName::Id, id)])
+    }
+
     fn app_armed_stack_record(&mut self, entry: AppArmedStackEntry<'_>) -> Result<Value, VmError> {
         let app_id = self.runtime_string_value(Some(entry.app_id))?;
         let event = self.runtime_string_value(Some(entry.event))?;
@@ -2139,7 +2157,11 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
         self.trace.app_disarm(app)
     }
 
-    fn app_install(&mut self, file_ref: &str, app_id: &str) -> Result<(), VmError> {
+    fn app_install<'b>(
+        &'b mut self,
+        file_ref: &str,
+        app_id: Option<&str>,
+    ) -> Result<AppInstallResult<'b>, VmError> {
         self.trace.app_install(file_ref, app_id)
     }
 

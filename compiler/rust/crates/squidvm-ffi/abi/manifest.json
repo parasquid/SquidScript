@@ -541,7 +541,7 @@
       "field": "app_install_file",
       "typedef": "SqvmAppInstallFileCallback",
       "family": "app-lifecycle",
-      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void, file_ref: *const u8, file_ref_len: usize, app_id: *const u8, app_id_len: usize) -> i32>",
+      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void, file_ref: *const u8, file_ref_len: usize, app_id: *const u8, app_id_len: usize, out_app_id: *mut u8, out_app_id_cap: usize, out_app_id_len: *mut usize) -> i32>",
       "missing_policy": "required_vm_error",
       "test_fixture": "compile_app_install_sqbc",
       "failing_callback": "failing_app_install_file"
@@ -1155,7 +1155,7 @@
     },
     {
       "name": "SqvmAppInstallFileCallback",
-      "definition": "typedef int32_t (*SqvmAppInstallFileCallback)(void *user_data, const uint8_t *file_ref,\n\t\t\t\t       size_t file_ref_len, const uint8_t *app_id, size_t app_id_len);"
+      "definition": "typedef int32_t (*SqvmAppInstallFileCallback)(void *user_data, const uint8_t *file_ref,\n\t\t\t\t       size_t file_ref_len, const uint8_t *app_id, size_t app_id_len,\n\t\t\t\t       uint8_t *out_app_id, size_t out_app_id_cap,\n\t\t\t\t       size_t *out_app_id_len);"
     },
     {
       "name": "SqvmAppRegistryListCallback",

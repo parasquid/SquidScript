@@ -577,7 +577,9 @@ typedef int32_t (*SqvmHardwareGpioReadCallback)(
 typedef int32_t (*SqvmAppLifecycleCallback)(void *user_data, const uint8_t *app, size_t app_len);
 
 typedef int32_t (*SqvmAppInstallFileCallback)(void *user_data, const uint8_t *file_ref,
-				       size_t file_ref_len, const uint8_t *app_id, size_t app_id_len);
+				       size_t file_ref_len, const uint8_t *app_id, size_t app_id_len,
+				       uint8_t *out_app_id, size_t out_app_id_cap,
+				       size_t *out_app_id_len);
 
 typedef int32_t (*SqvmAppRegistryListCallback)(void *user_data, SqvmAppRegistryEntry *out,
 					       size_t out_cap, size_t *out_count);

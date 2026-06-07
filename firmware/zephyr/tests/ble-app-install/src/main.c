@@ -58,6 +58,18 @@ static int write_staging_file(const char *path, const uint8_t *bytes, size_t len
 }
 
 static const uint8_t sqbc_magic[] = {'S', 'Q', 'B', 'C'};
+static const uint8_t metadata_app_sqbc[] = {
+	'S', 'Q', 'B', 'C',
+	0x1a, 0x00,             /* header_len = 26 */
+	0x28, 0x00, 0x00, 0x00, /* file_len = 40 */
+	0x01, 0x00, 0x00, 0x00, /* section_count = 1 */
+	0x07, 0x00,             /* section kind = app metadata */
+	0x00, 0x00,             /* reserved */
+	0x1a, 0x00, 0x00, 0x00, /* metadata offset = 26 */
+	0x0e, 0x00, 0x00, 0x00, /* metadata len = 14 */
+	0x0c, 0x00,             /* app id len = 12 */
+	'm', 'e', 't', 'a', 'd', 'a', 't', 'a', '-', 'a', 'p', 'p',
+};
 
 /* Deterministic SQBC content: 'SQBC' magic followed by (pos & 0xFF) for each
  * later byte, so a byte-exact readback can detect any truncation or corruption.
@@ -150,6 +162,22 @@ static void ble_app_install_teardown(void *fixture)
 
 ZTEST_SUITE(ble_app_install, NULL, ble_app_install_setup, ble_app_install_before, NULL,
 	    ble_app_install_teardown);
+
+ZTEST(ble_app_install, test_reads_app_id_from_sqbc_metadata)
+{
+	char staging_path[SQ_APP_STORE_PATH_MAX];
+	char app_id[SQ_APP_STORE_APP_ID_MAX] = {0};
+
+	zassert_true(snprintf(staging_path, sizeof(staging_path), "%s/metadata.sqbc",
+			      test_fs_mount.mnt_point) > 0);
+	zassert_equal(write_staging_file(staging_path, metadata_app_sqbc,
+					 sizeof(metadata_app_sqbc)),
+		      0);
+	zassert_equal(sq_app_store_read_app_id_from_file_ref(staging_path, app_id,
+							    sizeof(app_id)),
+		      0);
+	zassert_str_equal(app_id, "metadata-app");
+}
 
 ZTEST(ble_app_install, test_rejects_null_mount_point)
 {

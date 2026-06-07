@@ -459,6 +459,11 @@ fn validate_statement_names(
             IrStatement::ServiceTimerAfter { delay_ms, .. } => {
                 validate_expr_names(delay_ms, state_names, visible, start, end, diagnostics);
             }
+            IrStatement::AppLaunch { app }
+            | IrStatement::AppArm { app }
+            | IrStatement::AppDisarm { app } => {
+                validate_expr_names(app, state_names, visible, start, end, diagnostics);
+            }
             IrStatement::AppInstall { file_ref, .. } => {
                 validate_expr_names(file_ref, state_names, visible, start, end, diagnostics);
             }
@@ -496,9 +501,6 @@ fn validate_statement_names(
             | IrStatement::ScreenOpen { .. }
             | IrStatement::ScreenRefresh
             | IrStatement::AppExit
-            | IrStatement::AppLaunch { .. }
-            | IrStatement::AppArm { .. }
-            | IrStatement::AppDisarm { .. }
             | IrStatement::HardwareGpioToggle { .. }
             | IrStatement::ServiceIndicatorToggle
             | IrStatement::ServiceIndicatorBreathe
@@ -1016,6 +1018,9 @@ fn statement_uses_any_name(
             expr_uses_any_name(interval_ms, names)
         }
         IrStatement::ServiceTimerAfter { delay_ms, .. } => expr_uses_any_name(delay_ms, names),
+        IrStatement::AppLaunch { app }
+        | IrStatement::AppArm { app }
+        | IrStatement::AppDisarm { app } => expr_uses_any_name(app, names),
         IrStatement::AppInstall { file_ref, .. } => expr_uses_any_name(file_ref, names),
         IrStatement::ServiceBleStart { .. } | IrStatement::ServiceBleStop => false,
         IrStatement::ServicePowerSleep { wake_after_ms } => {
@@ -1035,9 +1040,6 @@ fn statement_uses_any_name(
         | IrStatement::ScreenOpen { .. }
         | IrStatement::ScreenRefresh
         | IrStatement::AppExit
-        | IrStatement::AppLaunch { .. }
-        | IrStatement::AppArm { .. }
-        | IrStatement::AppDisarm { .. }
         | IrStatement::HardwareGpioToggle { .. }
         | IrStatement::ServiceIndicatorToggle
         | IrStatement::ServiceIndicatorBreathe

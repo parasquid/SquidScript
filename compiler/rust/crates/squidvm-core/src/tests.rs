@@ -342,6 +342,7 @@ impl TraceSink for GpioTrace {
 #[derive(Default)]
 struct RuntimeTrace {
     events: Vec<String>,
+    installed_app_id: String,
 }
 
 impl TraceSink for RuntimeTrace {
@@ -382,9 +383,18 @@ impl TraceSink for RuntimeTrace {
         Ok(())
     }
 
-    fn app_install(&mut self, file_ref: &str, app_id: &str) -> Result<(), VmError> {
+    fn app_install<'a>(
+        &'a mut self,
+        file_ref: &str,
+        app_id: Option<&str>,
+    ) -> Result<AppInstallResult<'a>, VmError> {
+        let app_id = app_id.unwrap_or("metadata-app");
         self.events.push(format!("install {file_ref} {app_id}"));
-        Ok(())
+        self.installed_app_id.clear();
+        self.installed_app_id.push_str(app_id);
+        Ok(AppInstallResult {
+            id: &self.installed_app_id,
+        })
     }
 
     fn service_timer_every(&mut self, event: &str, interval_ms: i32) -> Result<(), VmError> {
@@ -1089,7 +1099,7 @@ fn app_install_accepts_a_runtime_file_ref_expression() {
     // compile-time string literal. The handler must reach the host with the actual
     // runtime path -- this is what lets an app install a file whose path is only
     // known at runtime (e.g. a BLE-received object's staged path).
-    let source = r#"app "install-demo"
+    let source = r##"app "install-demo"
 state {
   path: string = "/sd/apps/x/main.sqbc"
 }
@@ -1097,7 +1107,7 @@ event.on("app.start") {
   state.load()
   app.install(state.path, "target")
 }
-"#;
+"##;
     let compiled = compile(CompileRequest {
         source: source.to_string(),
         target_id: "esp32c3-super-mini".to_string(),
@@ -1116,6 +1126,38 @@ event.on("app.start") {
             .contains(&"install /sd/apps/x/main.sqbc target".to_string()),
         "expected the runtime file_ref to reach the host, got events: {:?}",
         trace.events
+    );
+}
+
+#[test]
+fn app_install_can_return_installed_id_for_dynamic_launch() {
+    let source = r##"app "install-demo"
+event.on("app.start") {
+  let installed = app.install("/sq/tmp/upload.sqbc")
+  debug.print(installed.id)
+  app.launch(installed.id)
+}
+"##;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: "esp32c3-super-mini".to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = RuntimeTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "install /sq/tmp/upload.sqbc metadata-app",
+            "debug metadata-app",
+            "launch metadata-app",
+        ]
     );
 }
 

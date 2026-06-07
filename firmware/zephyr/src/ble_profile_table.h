@@ -8,11 +8,9 @@
 #include "squidvm_ffi.h"
 
 /*
- * BLE profile / routing table. Transport-neutral: it maps an (app_id,
- * profile_id) pair declared in an armed app's SQBC BLE-trigger section to the
- * event routes the runtime should fire. The BLE transport front-end
- * (ble_app_transfer.c) looks up routing through this table; it lives in its own
- * translation unit independent of any transport.
+ * BLE foreground profile table. service.ble.start registers the current app's
+ * active object-transfer profile here; the transport uses the table to match
+ * uploaded object extensions to the foreground receiver.
  */
 
 #ifdef __cplusplus
@@ -41,6 +39,12 @@ size_t sq_ble_profile_table_count(void);
 
 const struct sq_ble_profile_entry *sq_ble_profile_lookup(const char *app_id,
 							 const char *profile_id);
+
+const struct sq_ble_profile_entry *sq_ble_profile_lookup_app_accepting_extension(
+	const char *app_id, const char *extension);
+
+const struct sq_ble_profile_entry *sq_ble_profile_lookup_accepting_extension(
+	const char *extension);
 
 #ifdef __cplusplus
 }

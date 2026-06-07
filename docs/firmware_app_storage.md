@@ -162,18 +162,15 @@ after storage succeeds.
 BLE Object Transfer (when `CONFIG_BT_OTS=y`) uses
 `/sq/tmp/ble-object-<app_id>-<profile_id>.tmp` as the staging artifact for
 each in-flight transfer. The path is computed at `obj_created` time from
-the parsed `app_id` and `profile_id` segments of the BLE Object Name.
+the active foreground BLE profile that accepts the uploaded object extension.
 The staging file is `FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC` opened at
 `obj_created`, written in `obj_write` chunks (with `fs_seek` to the
 L2CAP SDU offset), closed on the final chunk, and `fs_unlink`d after
 the `ble.object.complete` event handler returns. The `app.install`
-builtin (slice 2) consumes the staging file via
-`sq_app_store_install_from_file_ref(mount_point, app_id, staging_path)`,
-which opens the file, reads up to `SQ_APP_STORE_INSTALL_SCRATCH_BYTES`
-(1 KiB) into a caller-owned scratch buffer, validates the SQBC magic
-(`'S' 'Q' 'B' 'C'`), and if valid calls `sq_app_store_install_app` to
-register the app at `<mount_point>/apps/<app_id>/main.sqbc`. Single
-in-flight session: a second `obj_created` while busy returns
+builtin consumes the staging file by reading SQBC metadata for the app id,
+validating the SQBC header, and renaming the already-written staging file into
+`<mount_point>/apps/<app_id>/main.sqbc`. Single in-flight session: a second
+`obj_created` while busy returns
 `BT_GATT_OTS_OACP_RES_OBJ_LOCKED` and is rejected without touching
 storage. The Zephyr native ztests under
 `firmware/zephyr/tests/ble-ots-staging` and

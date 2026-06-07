@@ -56,6 +56,7 @@ pub(crate) const BUILTIN_APP_PROCESS_STACK: u8 = 0x16;
 pub(crate) const BUILTIN_APP_ARMED_STACK: u8 = 0x17;
 pub(crate) const BUILTIN_APP_ARMED_STACK_GET: u8 = 0x18;
 pub(crate) const BUILTIN_APP_INSTALL: u8 = 0x19;
+pub(crate) const BUILTIN_APP_INSTALL_METADATA: u8 = 0x1a;
 pub(crate) const BUILTIN_SCREEN_OPEN: u8 = 0x20;
 pub(crate) const BUILTIN_SCREEN_REFRESH: u8 = 0x21;
 pub(crate) const BUILTIN_SERVICE_TIMER_EVERY: u8 = 0x22;

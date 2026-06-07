@@ -1,14 +1,33 @@
 app "main"
 
 event.on("app.start") {
-  debug.print("fallback app launched: no foreground app")
+  service.ble.start("object-transfer", {
+    id: "sqbc-install",
+    accept: [".sqbc"],
+    events: {
+      complete: "ble.object.complete",
+      error: "ble.object.error"
+    }
+  })
+  debug.print("ble installer ready")
   screen.open("main")
 }
 
 screen("main") {
   service.display.clear("white")
   service.display.text("SquidScript", { x: 24, y: 32, fontHeight: 24 })
-  service.display.text("No foreground app", { x: 24, y: 72, fontHeight: 20 })
+  service.display.text("BLE installer ready", { x: 24, y: 72, fontHeight: 20 })
+  service.display.text("Push a .sqbc app", { x: 24, y: 104, fontHeight: 18 })
+}
+
+event.on("ble.object.complete", ev) {
+  let installed = app.install(ev.upload)
+  debug.print("installed", installed.id)
+  app.launch(installed.id)
+}
+
+event.on("ble.object.error") {
+  debug.print("ble install failed")
 }
 
 event.on("app.exit") {

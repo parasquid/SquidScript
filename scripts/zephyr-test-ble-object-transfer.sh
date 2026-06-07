@@ -3,11 +3,10 @@
 # service and verify the device installs it. Hardware test wrapper.
 #
 # Defaults to the XIAO ESP32-C3 e-paper dev target. The wrapper builds
-# and flashes the firmware via west flash, installs the ble-install
-# example, launches it (which starts BLE receive on app.start), runs the
-# ots-push driver against the device, and verifies the installed
-# payload is registered. Skip behavior is fully encapsulated in
-# ots-push: a host without a usable BLE adapter exits 0 cleanly.
+# and flashes the firmware with the default fallback installer, runs the
+# ots-push driver against the device, and verifies the installed payload
+# is registered. Skip behavior is fully encapsulated in ots-push: a host
+# without a usable BLE adapter exits 0 cleanly.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -23,19 +22,18 @@ Usage: scripts/zephyr-test-ble-object-transfer.sh [-- <extra args>]
 
   --device <name-or-address>   BLE device name or address (required)
   --port <serial-port>         Serial port (default: auto-detect)
-  --source <file.squid>        Source SQBC to push (default: ble-install example)
+  --source <file.squid>        Source app to compile and push (default: hello example)
   --skip-flash                 Skip the west flash step (assume firmware is already on the device)
-  --app-id <id>                App id for the receiver example (default: ble-install)
-  --payload-id <id>            App id for the installed payload (default: installed-app)
+  --payload-id <id>            Expected app id from SQBC metadata (default: hello)
 
 Environment:
   SQUID_ZEPHYR_TARGET_JSON      Override the target metadata JSON
   SQUID_ZEPHYR_TARGET_OVERLAY   Override the Zephyr board overlay
 
-The wrapper builds the XIAO target, flashes it via west flash, installs
-the ble-install example, launches it (which starts BLE receive on app.start),
-pushes the source SQBC via tools/ots-push over BLE OTS, and verifies the
-installed payload is registered.
+The wrapper builds the XIAO target, flashes it via west flash, launches the
+default fallback main app, pushes the compiled SQBC via tools/ots-push over
+the custom BLE GATT transfer service, and verifies the installed payload is
+registered.
 USAGE
 }
 
@@ -43,8 +41,7 @@ DEVICE=""
 PORT=""
 SOURCE=""
 SKIP_FLASH=0
-APP_ID="ble-install"
-PAYLOAD_ID="installed-app"
+PAYLOAD_ID="hello"
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -66,10 +63,6 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--skip-flash)
 			SKIP_FLASH=1
-			;;
-		--app-id)
-			APP_ID="$2"
-			shift
 			;;
 		--payload-id)
 			PAYLOAD_ID="$2"
@@ -104,12 +97,11 @@ fi
 export ESPFLASH_PORT="$PORT"
 
 if [[ -z "$SOURCE" ]]; then
-	SOURCE="${ROOT}/examples/ble-install/main.squid"
+	SOURCE="${ROOT}/examples/hello/main.squid"
 fi
 
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
-EXAMPLE_SQBC="${WORK_DIR}/${APP_ID}.sqbc"
 PAYLOAD_SQBC="${WORK_DIR}/${PAYLOAD_ID}.sqbc"
 
 echo ">>> Building XIAO target"
@@ -120,25 +112,22 @@ if [[ "$SKIP_FLASH" -eq 0 ]]; then
 	west flash -d "${ZEPHYR_BUILD_DIR}"
 fi
 
-echo ">>> Compiling receiver example (${APP_ID})"
-cargo run --quiet -p squidc -- app build "${ROOT}/examples/ble-install/main.squid" --out "$EXAMPLE_SQBC"
+echo ">>> Formatting app storage on ${PORT}"
+cargo run --quiet -p squidc -- device storage-format --port "$PORT"
 
-echo ">>> Installing receiver example"
-cargo run --quiet -p squidc -- app install "$EXAMPLE_SQBC"
-
-echo ">>> Launching ${APP_ID} (starts BLE receive on app.start)"
-cargo run --quiet -p squidc -- app launch "${APP_ID}"
+echo ">>> Launching fallback main (starts BLE receive on app.start)"
+cargo run --quiet -p squidc -- app launch main --port "$PORT"
 
 echo ">>> Compiling payload (${PAYLOAD_ID}) from ${SOURCE}"
 cargo run --quiet -p squidc -- app build "${SOURCE}" --out "$PAYLOAD_SQBC"
 
-echo ">>> Pushing payload via BLE OTS to $DEVICE"
+echo ">>> Pushing payload via BLE to $DEVICE"
 cd "${ROOT}/tools/ots-push"
-python3 -m ots_push push "$DEVICE" "${APP_ID}" sqbc-install "$PAYLOAD_SQBC"
+python3 -m ots_push push "$DEVICE" "$PAYLOAD_SQBC"
 cd "$ROOT"
 
 echo ">>> Verifying ${PAYLOAD_ID} is registered"
-cargo run --quiet -p squidc -- app list | grep -q "${PAYLOAD_ID}" || {
+cargo run --quiet -p squidc -- app list --port "$PORT" | grep -q "${PAYLOAD_ID}" || {
 	echo "ERROR: ${PAYLOAD_ID} not found in app list" >&2
 	exit 1
 }

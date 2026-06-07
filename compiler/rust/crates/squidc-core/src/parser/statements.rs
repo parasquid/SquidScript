@@ -362,29 +362,40 @@ impl Parser<'_> {
                 Some(IrStatement::AppExit)
             }
             ("app", "launch") => {
-                let app = self.consume_string(builder).unwrap_or_default();
+                let app = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
+                    value: serde_json::json!(""),
+                });
                 self.consume_call_tail(builder);
                 Some(IrStatement::AppLaunch { app })
             }
             ("app", "arm") => {
-                let app = self.consume_string(builder).unwrap_or_default();
+                let app = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
+                    value: serde_json::json!(""),
+                });
                 self.consume_call_tail(builder);
                 Some(IrStatement::AppArm { app })
             }
             ("app", "disarm") => {
-                let app = self.consume_string(builder).unwrap_or_default();
+                let app = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
+                    value: serde_json::json!(""),
+                });
                 self.consume_call_tail(builder);
                 Some(IrStatement::AppDisarm { app })
             }
             ("app", "install") => {
-                // file_ref is a runtime expression (string literal, state value,
-                // event field, ...) so an app can install a file whose path is only
-                // known at runtime; app_id is a literal install target id.
+                // file_ref is a runtime expression. app_id is optional: if omitted,
+                // firmware derives the install target from SQBC metadata.
                 let file_ref = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
                     value: serde_json::json!(""),
                 });
-                self.consume_comma(builder);
-                let app_id = self.consume_string(builder).unwrap_or_default();
+                self.consume_ws(builder);
+                let app_id = if self.at_kind(TokenKind::Comma) {
+                    self.bump(builder);
+                    self.consume_ws(builder);
+                    Some(self.consume_string(builder).unwrap_or_default())
+                } else {
+                    None
+                };
                 self.consume_call_tail(builder);
                 Some(IrStatement::AppInstall { file_ref, app_id })
             }

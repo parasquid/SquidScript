@@ -13,8 +13,8 @@ use core::panic::PanicInfo;
 use squidvm_core::{
     error::VmError,
     host::{
-        AppArmedStack, AppArmedStackEntry, AppProcessStack, AppRegistryEntry, AppRegistryList,
-        DeviceConfigResult, DisplayInfo, DisplayLineOptions, DisplayRectOptions,
+        AppArmedStack, AppArmedStackEntry, AppInstallResult, AppProcessStack, AppRegistryEntry,
+        AppRegistryList, DeviceConfigResult, DisplayInfo, DisplayLineOptions, DisplayRectOptions,
         DisplayResourceOptions, DisplayTextOptions, FilePickFileResult, FileReadLinesResult,
         FileReadTextResult, StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink,
         VmDispatch, WifiAccessPoint, WifiApIp, WifiOperation, WifiOperationResult, WifiScanNetwork,
@@ -2772,6 +2772,7 @@ pub unsafe extern "C" fn sqdp_clear_resource_session(session: *mut SqdpResourceS
 
 // Mirrors the current Zephyr runtime return-stack and armed-timer capacities.
 const SQVM_FFI_APP_STACK_CAP: usize = 2;
+const SQVM_FFI_APP_INSTALL_ID_CAP: usize = 40;
 
 struct FfiHost<'a> {
     user_data: *mut c_void,
@@ -2784,6 +2785,8 @@ struct FfiHost<'a> {
     app_process_stack_apps: [&'static str; SQVM_FFI_APP_STACK_CAP],
     app_armed_stack_entries: [AppArmedStackEntry<'static>; SQVM_FFI_APP_STACK_CAP],
     app_stack_count: usize,
+    app_install_id: [u8; SQVM_FFI_APP_INSTALL_ID_CAP],
+    app_install_id_len: usize,
 }
 
 impl<'a> FfiHost<'a> {
@@ -2807,6 +2810,8 @@ impl<'a> FfiHost<'a> {
                 event: "",
             }; SQVM_FFI_APP_STACK_CAP],
             app_stack_count: 0,
+            app_install_id: [0; SQVM_FFI_APP_INSTALL_ID_CAP],
+            app_install_id_len: 0,
         }
     }
 }
@@ -3087,19 +3092,38 @@ impl TraceSink for FfiHost<'_> {
         callback_status(unsafe { app_disarm(self.user_data, app.as_ptr(), app.len()) })
     }
 
-    fn app_install(&mut self, file_ref: &str, app_id: &str) -> Result<(), VmError> {
+    fn app_install<'b>(
+        &'b mut self,
+        file_ref: &str,
+        app_id: Option<&str>,
+    ) -> Result<AppInstallResult<'b>, VmError> {
         let Some(app_install_file) = self.callbacks.app_install_file else {
             return Err(VmError::InvalidOperand);
         };
+        let (app_id_ptr, app_id_len) = match app_id {
+            Some(app_id) => (app_id.as_ptr(), app_id.len()),
+            None => (ptr::null(), 0),
+        };
+        self.app_install_id = [0; SQVM_FFI_APP_INSTALL_ID_CAP];
+        self.app_install_id_len = 0;
         callback_status(unsafe {
             app_install_file(
                 self.user_data,
                 file_ref.as_ptr(),
                 file_ref.len(),
-                app_id.as_ptr(),
-                app_id.len(),
+                app_id_ptr,
+                app_id_len,
+                self.app_install_id.as_mut_ptr(),
+                self.app_install_id.len(),
+                &mut self.app_install_id_len,
             )
-        })
+        })?;
+        if self.app_install_id_len > self.app_install_id.len() {
+            return Err(VmError::InvalidOperand);
+        }
+        let id = str::from_utf8(&self.app_install_id[..self.app_install_id_len])
+            .map_err(|_| VmError::InvalidUtf8)?;
+        Ok(AppInstallResult { id })
     }
 
     fn app_registry_list<'a>(&'a mut self) -> Result<AppRegistryList<'a>, VmError> {

@@ -94,13 +94,16 @@ pub enum IrStatement {
     #[serde(rename = "app.exit")]
     AppExit,
     #[serde(rename = "app.launch")]
-    AppLaunch { app: String },
+    AppLaunch { app: IrExpr },
     #[serde(rename = "app.arm")]
-    AppArm { app: String },
+    AppArm { app: IrExpr },
     #[serde(rename = "app.disarm")]
-    AppDisarm { app: String },
+    AppDisarm { app: IrExpr },
     #[serde(rename = "app.install")]
-    AppInstall { file_ref: IrExpr, app_id: String },
+    AppInstall {
+        file_ref: IrExpr,
+        app_id: Option<String>,
+    },
     #[serde(rename = "service.timer.every")]
     ServiceTimerEvery { event: String, interval_ms: IrExpr },
     #[serde(rename = "service.timer.after")]

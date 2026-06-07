@@ -69,7 +69,8 @@ int32_t runtime_app_disarm(void *user_data, const uint8_t *app, size_t app_len)
 }
 
 int32_t runtime_app_install_file(void *user_data, const uint8_t *file_ref, size_t file_ref_len,
-				 const uint8_t *app_id, size_t app_id_len)
+				 const uint8_t *app_id, size_t app_id_len, uint8_t *out_app_id,
+				 size_t out_app_id_cap, size_t *out_app_id_len)
 {
 	struct sq_vm_runtime *runtime = user_data;
 	char app_id_buf[SQ_APP_STORE_APP_ID_MAX];
@@ -77,16 +78,39 @@ int32_t runtime_app_install_file(void *user_data, const uint8_t *file_ref, size_
 	int trace_result;
 	int result;
 
-	if (runtime == NULL || file_ref == NULL || app_id == NULL || file_ref_len == 0 ||
-	    app_id_len == 0 || app_id_len >= sizeof(app_id_buf) ||
-	    file_ref_len >= sizeof(file_path_buf)) {
+	if (runtime == NULL || file_ref == NULL || file_ref_len == 0 ||
+	    file_ref_len >= sizeof(file_path_buf) || out_app_id == NULL || out_app_id_len == NULL ||
+	    out_app_id_cap == 0) {
 		return -EINVAL;
 	}
 
-	memcpy(app_id_buf, app_id, app_id_len);
-	app_id_buf[app_id_len] = '\0';
 	memcpy(file_path_buf, file_ref, file_ref_len);
 	file_path_buf[file_ref_len] = '\0';
+
+	if (app_id != NULL && app_id_len > 0) {
+		if (app_id_len >= sizeof(app_id_buf)) {
+			return -EINVAL;
+		}
+		memcpy(app_id_buf, app_id, app_id_len);
+		app_id_buf[app_id_len] = '\0';
+	} else {
+		result = sq_app_store_read_app_id_from_file_ref(file_path_buf, app_id_buf,
+								sizeof(app_id_buf));
+		if (result != 0) {
+			char line[SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
+			(void)snprintf(line, sizeof(line), "app.install metadata code=%d (%s)",
+				       result, sq_errno_name(result));
+			(void)sq_vm_runtime_record_device_error(runtime, line);
+			return result;
+		}
+		app_id_len = strlen(app_id_buf);
+		app_id = (const uint8_t *)app_id_buf;
+	}
+	if (app_id_len == 0 || app_id_len >= out_app_id_cap) {
+		return -EINVAL;
+	}
+	memcpy(out_app_id, app_id_buf, app_id_len);
+	*out_app_id_len = app_id_len;
 
 	trace_result = runtime_app_lifecycle(user_data, "install", app_id, app_id_len);
 	if (trace_result != 0) {

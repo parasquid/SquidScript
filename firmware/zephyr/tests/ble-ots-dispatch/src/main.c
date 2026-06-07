@@ -10,6 +10,7 @@
 
 #include "app_store.h"
 #include "ble_object_transfer.h"
+#include "ble_profile_table.h"
 
 static struct fs_mount_t test_fs_mount = {
 	.type = FS_NATIVE_MOUNT,
@@ -65,15 +66,21 @@ static void *ble_ots_dispatch_setup(void)
 
 static void ble_ots_dispatch_before(void *fixture)
 {
+	static const char accept_exts[1][SQVM_BLE_PROFILE_TEXT_CAP] = {".sqbc"};
+
 	(void)fixture;
 	/* reset_session deliberately preserves a completed (handed-off) pending
 	 * event, so a full reset for test isolation also calls cleanup_staging,
 	 * the consumer-side path that clears pending. */
 	sq_ble_ots_cleanup_staging();
 	sq_ble_ots_reset_session();
+	sq_ble_profile_table_reset();
 	zassert_equal(unmount_test_fs(), 0, "unmount failed");
 	zassert_equal(mount_test_fs(), 0, "remount failed");
 	zassert_equal(format_test_fs(), 0, "format failed");
+	zassert_equal(sq_ble_profile_table_add("installed-app", "sqbc-install", accept_exts, 1,
+					       NULL, 0),
+		      0, "profile add failed");
 }
 
 static void ble_ots_dispatch_teardown(void *fixture)
@@ -81,6 +88,7 @@ static void ble_ots_dispatch_teardown(void *fixture)
 	(void)fixture;
 	sq_ble_ots_cleanup_staging();
 	sq_ble_ots_reset_session();
+	sq_ble_profile_table_reset();
 	(void)unmount_test_fs();
 }
 
@@ -93,7 +101,7 @@ ZTEST(ble_ots_dispatch, test_completed_write_populates_pending_slot)
 	const uint8_t chunk[] = {'S', 'Q', 'B', 'C'};
 	int result;
 
-	result = sq_ble_ots_test_invoke_obj_created_with_name("break-reminder/wallpaper/.sqbc",
+	result = sq_ble_ots_test_invoke_obj_created_with_name(".sqbc",
 							      4096, staging_path,
 							      sizeof(staging_path));
 	zassert_equal(result, 0, "obj_created failed: %d", result);
@@ -104,7 +112,7 @@ ZTEST(ble_ots_dispatch, test_completed_write_populates_pending_slot)
 		      sizeof(chunk), result);
 
 	zassert_true(sq_ble_ots_pending_is_complete(), "pending slot should be complete");
-	zassert_str_equal(sq_ble_ots_pending_app_id(), "break-reminder");
+	zassert_str_equal(sq_ble_ots_pending_app_id(), "installed-app");
 	zassert_str_equal(sq_ble_ots_pending_event_name(), "ble.object.complete");
 }
 
@@ -116,7 +124,7 @@ ZTEST(ble_ots_dispatch, test_drain_returns_app_id_and_event)
 	char drained_event[SQ_VM_RUNTIME_EVENT_LEN] = {0};
 	int result;
 
-	result = sq_ble_ots_test_invoke_obj_created_with_name("break-reminder/wallpaper/.sqbc",
+	result = sq_ble_ots_test_invoke_obj_created_with_name(".sqbc",
 							      4096, staging_path,
 							      sizeof(staging_path));
 	zassert_equal(result, 0, "obj_created failed: %d", result);
@@ -127,7 +135,7 @@ ZTEST(ble_ots_dispatch, test_drain_returns_app_id_and_event)
 	result = sq_ble_ots_drain_pending_event(drained_app_id, sizeof(drained_app_id),
 					       drained_event, sizeof(drained_event));
 	zassert_equal(result, 0, "drain expected 0, got %d", result);
-	zassert_str_equal(drained_app_id, "break-reminder", "drained app_id mismatch");
+	zassert_str_equal(drained_app_id, "installed-app", "drained app_id mismatch");
 	zassert_str_equal(drained_event, "ble.object.complete", "drained event mismatch");
 }
 
@@ -139,7 +147,7 @@ ZTEST(ble_ots_dispatch, test_drain_is_consume_once)
 	char event[SQ_VM_RUNTIME_EVENT_LEN] = {0};
 	int result;
 
-	result = sq_ble_ots_test_invoke_obj_created_with_name("break-reminder/wallpaper/.sqbc",
+	result = sq_ble_ots_test_invoke_obj_created_with_name(".sqbc",
 							      4096, staging_path,
 							      sizeof(staging_path));
 	zassert_equal(result, 0);
@@ -174,7 +182,7 @@ ZTEST(ble_ots_dispatch, test_cleanup_clears_pending_slot)
 	char drained_event[SQ_VM_RUNTIME_EVENT_LEN] = {0};
 	int result;
 
-	result = sq_ble_ots_test_invoke_obj_created_with_name("break-reminder/wallpaper/.sqbc",
+	result = sq_ble_ots_test_invoke_obj_created_with_name(".sqbc",
 							      4096, staging_path,
 							      sizeof(staging_path));
 	zassert_equal(result, 0);
@@ -203,7 +211,7 @@ ZTEST(ble_ots_dispatch, test_cleanup_staging_unlinks_file)
 	char drained_event[SQ_VM_RUNTIME_EVENT_LEN] = {0};
 	int result;
 
-	result = sq_ble_ots_test_invoke_obj_created_with_name("break-reminder/wallpaper/.sqbc",
+	result = sq_ble_ots_test_invoke_obj_created_with_name(".sqbc",
 							      4096, staging_path,
 							      sizeof(staging_path));
 	zassert_equal(result, 0);
@@ -236,7 +244,7 @@ ZTEST(ble_ots_dispatch, test_reset_session_preserves_completed_pending)
 	char drained_event[SQ_VM_RUNTIME_EVENT_LEN] = {0};
 	int result;
 
-	result = sq_ble_ots_test_invoke_obj_created_with_name("break-reminder/wallpaper/.sqbc",
+	result = sq_ble_ots_test_invoke_obj_created_with_name(".sqbc",
 							      4096, staging_path,
 							      sizeof(staging_path));
 	zassert_equal(result, 0);
@@ -256,7 +264,7 @@ ZTEST(ble_ots_dispatch, test_reset_session_preserves_completed_pending)
 	result = sq_ble_ots_drain_pending_event(drained_app_id, sizeof(drained_app_id),
 					       drained_event, sizeof(drained_event));
 	zassert_equal(result, 0, "drain after reset should still succeed, got %d", result);
-	zassert_str_equal(drained_app_id, "break-reminder");
+	zassert_str_equal(drained_app_id, "installed-app");
 	zassert_true(staging_file_exists(staging_path),
 		     "staging file must survive until the consumer calls cleanup_staging");
 }
@@ -269,7 +277,7 @@ ZTEST(ble_ots_dispatch, test_reset_session_clears_incomplete_partial)
 	const uint8_t chunk[] = {'S', 'Q', 'B', 'C'};
 	int result;
 
-	result = sq_ble_ots_test_invoke_obj_created_with_name("break-reminder/wallpaper/.sqbc",
+	result = sq_ble_ots_test_invoke_obj_created_with_name(".sqbc",
 							      4096, staging_path,
 							      sizeof(staging_path));
 	zassert_equal(result, 0);
@@ -298,7 +306,7 @@ ZTEST(ble_ots_dispatch, test_end_to_end_ots_to_app_install)
 	ssize_t bytes_read;
 	int result;
 
-	result = sq_ble_ots_test_invoke_obj_created_with_name("installed-app/wallpaper/.sqbc",
+	result = sq_ble_ots_test_invoke_obj_created_with_name(".sqbc",
 							      4096, staging_path,
 							      sizeof(staging_path));
 	zassert_equal(result, 0, "obj_created failed: %d", result);
@@ -354,7 +362,7 @@ ZTEST(ble_ots_dispatch, test_end_to_end_multichunk_large_payload)
 	size_t verify_pos = 0;
 	int result;
 
-	result = sq_ble_ots_test_invoke_obj_created_with_name("installed-app/wallpaper/.sqbc",
+	result = sq_ble_ots_test_invoke_obj_created_with_name(".sqbc",
 							      total_len, staging_path,
 							      sizeof(staging_path));
 	zassert_equal(result, 0, "obj_created failed: %d", result);
@@ -411,7 +419,7 @@ ZTEST(ble_ots_dispatch, test_end_to_end_multichunk_large_payload)
 
 ZTEST(ble_ots_dispatch, test_framed_name_then_content_one_feed)
 {
-	const char *name = "installed-app/wallpaper/.sqbc";
+	const char *name = ".sqbc";
 	const uint8_t content[] = {'S', 'Q', 'B', 'C', 0x10, 0x20, 0x30, 0x40};
 	char app_id[SQ_APP_STORE_APP_ID_MAX] = {0};
 	char event[SQ_VM_RUNTIME_EVENT_LEN] = {0};
@@ -439,13 +447,13 @@ ZTEST(ble_ots_dispatch, test_framed_name_then_content_one_feed)
 
 ZTEST(ble_ots_dispatch, test_framed_split_across_name_content_boundary)
 {
-	const char *name = "installed-app/wallpaper/.sqbc";
+	const char *name = ".sqbc";
 	const uint8_t content[16] = {'S', 'Q', 'B', 'C', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
 	size_t nl = strlen(name);
 
 	zassert_equal(sq_ble_transfer_begin_framed(sizeof(content), nl), 0);
-	zassert_equal(sq_ble_transfer_feed_name(name, 5), 0);
-	zassert_equal(sq_ble_transfer_feed_name(name + 5, nl - 5), 0);
+	zassert_equal(sq_ble_transfer_feed_name(name, 2), 0);
+	zassert_equal(sq_ble_transfer_feed_name(name + 2, nl - 2), 0);
 	zassert_equal(sq_ble_transfer_feed_content(content, 4), 0);
 	zassert_equal(sq_ble_transfer_feed_content(content + 4, 8), 0);
 	zassert_equal(sq_ble_transfer_feed_content(content + 12, 4), 0);
@@ -455,7 +463,7 @@ ZTEST(ble_ots_dispatch, test_framed_split_across_name_content_boundary)
 
 ZTEST(ble_ots_dispatch, test_framed_rejects_content_overrun)
 {
-	const char *name = "installed-app/wallpaper/.sqbc";
+	const char *name = ".sqbc";
 	uint8_t over[16] = {'S', 'Q', 'B', 'C', 0};
 
 	zassert_equal(sq_ble_transfer_begin_framed(8, strlen(name)), 0);

@@ -94,3 +94,48 @@ const struct sq_ble_profile_entry *sq_ble_profile_lookup(const char *app_id,
 	}
 	return NULL;
 }
+
+const struct sq_ble_profile_entry *sq_ble_profile_lookup_app_accepting_extension(
+	const char *app_id, const char *extension)
+{
+	if (app_id == NULL || extension == NULL) {
+		return NULL;
+	}
+	for (size_t i = 0; i < sq_ble_profile_table_count_static; i++) {
+		const struct sq_ble_profile_entry *entry = &sq_ble_profile_table[i];
+
+		if (strcmp(entry->app_id, app_id) != 0) {
+			continue;
+		}
+		for (uint8_t j = 0; j < entry->accept_count; j++) {
+			if (strcmp(entry->accept_exts[j], extension) == 0) {
+				return entry;
+			}
+		}
+	}
+	return NULL;
+}
+
+const struct sq_ble_profile_entry *sq_ble_profile_lookup_accepting_extension(
+	const char *extension)
+{
+	const struct sq_ble_profile_entry *match = NULL;
+
+	if (extension == NULL) {
+		return NULL;
+	}
+	for (size_t i = 0; i < sq_ble_profile_table_count_static; i++) {
+		const struct sq_ble_profile_entry *entry = &sq_ble_profile_table[i];
+
+		for (uint8_t j = 0; j < entry->accept_count; j++) {
+			if (strcmp(entry->accept_exts[j], extension) != 0) {
+				continue;
+			}
+			if (match != NULL) {
+				return NULL;
+			}
+			match = entry;
+		}
+	}
+	return match;
+}

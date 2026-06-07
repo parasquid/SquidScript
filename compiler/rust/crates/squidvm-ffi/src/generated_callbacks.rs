@@ -27,7 +27,7 @@ pub struct SqvmCallbacks {
     pub app_launch: Option<unsafe extern "C" fn(user_data: *mut c_void, app: *const u8, app_len: usize) -> i32>,
     pub app_arm: Option<unsafe extern "C" fn(user_data: *mut c_void, app: *const u8, app_len: usize) -> i32>,
     pub app_disarm: Option<unsafe extern "C" fn(user_data: *mut c_void, app: *const u8, app_len: usize) -> i32>,
-    pub app_install_file: Option<unsafe extern "C" fn(user_data: *mut c_void, file_ref: *const u8, file_ref_len: usize, app_id: *const u8, app_id_len: usize) -> i32>,
+    pub app_install_file: Option<unsafe extern "C" fn(user_data: *mut c_void, file_ref: *const u8, file_ref_len: usize, app_id: *const u8, app_id_len: usize, out_app_id: *mut u8, out_app_id_cap: usize, out_app_id_len: *mut usize) -> i32>,
     pub app_registry_list: Option< unsafe extern "C" fn( user_data: *mut c_void, out: *mut SqvmAppRegistryEntry, out_cap: usize, out_count: *mut usize, ) -> i32, >,
     pub app_registry_get: Option< unsafe extern "C" fn( user_data: *mut c_void, app: *const u8, app_len: usize, out: *mut SqvmAppRegistryEntry, ) -> i32, >,
     pub app_process_stack: Option< unsafe extern "C" fn( user_data: *mut c_void, out: *mut SqvmAppStackEntry, out_cap: usize, out_count: *mut usize, ) -> i32, >,

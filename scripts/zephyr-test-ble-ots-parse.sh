@@ -11,11 +11,10 @@ usage() {
 Usage: scripts/zephyr-test-ble-ots-parse.sh [-- <extra twister args>]
 
 Runs the BLE OTS Object Name parser ztests through Twister on
-native_sim/native/64. The tests validate the app_id/profile_id/.ext
-Object Name shape used to route an in-flight transfer to the armed
-SquidScript app, with host-side rule coverage (empty segments, unsafe
-app_id, missing extension dot, buffer overflow) on the host filesystem
-without real Bluetooth.
+native_sim/native/64. The tests validate the extension-only Object Name
+shape used by the custom BLE transfer service, with host-side rule
+coverage for routed segments, empty names, missing extension dots, and
+buffer overflow without real Bluetooth.
 USAGE
 }
 

@@ -2,8 +2,8 @@
 
 Drives the device's custom GATT app-transfer service over plain GATT writes,
 which work cross-platform through bleak (Linux/macOS/Windows) and mirror what a
-Web Bluetooth page does. The object name routes the upload:
-``<app_id>/<profile_id>/<.ext>``.
+Web Bluetooth page does. The object name carries only the accepted file
+extension; firmware delivers the upload to the foreground app's active profile.
 
 Protocol (matches firmware/zephyr/src/ble_app_transfer.c):
   control char  write: [0x01][size: LE u32][object-name UTF-8]  (BEGIN)
@@ -40,31 +40,27 @@ NAME_CHUNK = 18
 @dataclass
 class OtsPushResult:
     pushed: bool
-    app_id: str
-    profile_id: str
+    extension: str
     bytes_sent: int
     skipped_reason: Optional[str] = None
 
 
-def parse_object_name(name: str) -> tuple[str, str, str]:
-    """Parse ``app_id/profile_id/.ext``; raise ValueError if malformed."""
-    segments = name.split("/")
-    if len(segments) != 3:
-        raise ValueError(f"Object Name must have exactly 2 slashes: {name!r}")
-    app_id, profile_id, extension = segments
-    if not app_id or not profile_id or not extension:
-        raise ValueError(f"Object Name segments must be non-empty: {name!r}")
+def parse_object_name(name: str) -> str:
+    """Parse an extension-only object name; raise ValueError if malformed."""
+    extension = name
+    if "/" in extension:
+        raise ValueError(f"Object Name must not contain route segments: {name!r}")
+    if not extension:
+        raise ValueError("Object Name must be non-empty")
     if not extension.startswith("."):
         raise ValueError(f"Extension must start with '.': {extension!r}")
-    return app_id, profile_id, extension
+    return extension
 
 
-def build_object_name(app_id: str, profile_id: str, extension: str = ".sqbc") -> str:
-    if not app_id or not profile_id:
-        raise ValueError("app_id and profile_id must be non-empty")
+def build_object_name(extension: str = ".sqbc") -> str:
     if not extension.startswith("."):
         raise ValueError(f"Extension must start with '.': {extension!r}")
-    return f"{app_id}/{profile_id}/{extension}"
+    return extension
 
 
 def build_begin_command(size: int, name_len: int) -> bytes:
@@ -77,8 +73,6 @@ def build_begin_command(size: int, name_len: int) -> bytes:
 
 async def push_file(
     device_address: str,
-    app_id: str,
-    profile_id: str,
     source_path: str,
     *,
     bleak_module=None,
@@ -89,7 +83,7 @@ async def push_file(
     skipped result (not an error) when bleak or an adapter is unavailable.
     """
     if not os.path.isfile(source_path):
-        return OtsPushResult(False, app_id, profile_id, 0, f"source file not found: {source_path}")
+        return OtsPushResult(False, ".sqbc", 0, f"source file not found: {source_path}")
 
     bleak = bleak_module
     if bleak is None:
@@ -98,11 +92,11 @@ async def push_file(
 
             bleak = _bleak
         except ImportError:
-            return OtsPushResult(False, app_id, profile_id, 0, "bleak is unavailable")
+            return OtsPushResult(False, ".sqbc", 0, "bleak is unavailable")
     if not hasattr(bleak, "BleakScanner") or not hasattr(bleak, "BleakClient"):
-        return OtsPushResult(False, app_id, profile_id, 0, "bleak API unavailable on this host")
+        return OtsPushResult(False, ".sqbc", 0, "bleak API unavailable on this host")
 
-    object_name = build_object_name(app_id, profile_id)
+    object_name = build_object_name()
     file_size = os.path.getsize(source_path)
     with open(source_path, "rb") as handle:
         payload = handle.read()
@@ -113,7 +107,7 @@ async def push_file(
 async def _push_via_gatt(
     bleak, device_address: str, object_name: str, payload: bytes, file_size: int
 ) -> OtsPushResult:
-    app_id, profile_id, _ = parse_object_name(object_name)
+    extension = parse_object_name(object_name)
 
     try:
         device = await bleak.BleakScanner.find_device_by_filter(
@@ -122,7 +116,7 @@ async def _push_via_gatt(
     except Exception:
         device = None
     if device is None:
-        return OtsPushResult(False, app_id, profile_id, 0, "device not found / no Bluetooth adapter")
+        return OtsPushResult(False, extension, 0, "device not found / no Bluetooth adapter")
 
     status: dict[str, Optional[int]] = {"code": None}
     done = asyncio.Event()
@@ -137,7 +131,7 @@ async def _push_via_gatt(
         try:
             uuids = {str(s.uuid).lower() for s in client.services}
             if uuids and SVC_UUID not in uuids:
-                return OtsPushResult(False, app_id, profile_id, 0,
+                return OtsPushResult(False, extension, 0,
                                      f"app-transfer service {SVC_UUID} not found on device")
         except Exception:
             pass
@@ -171,13 +165,13 @@ async def _push_via_gatt(
             await asyncio.wait_for(done.wait(), timeout=30)
         except asyncio.TimeoutError:
             await client.write_gatt_char(CTRL_UUID, bytes([OP_ABORT]), response=True)
-            return OtsPushResult(False, app_id, profile_id, sent, "timed out waiting for completion")
+            return OtsPushResult(False, extension, sent, "timed out waiting for completion")
         await client.stop_notify(STAT_UUID)
 
     if status["code"] != STATUS_COMPLETE:
-        return OtsPushResult(False, app_id, profile_id, sent,
+        return OtsPushResult(False, extension, sent,
                              f"device reported error status {status['code']}")
-    return OtsPushResult(True, app_id, profile_id, file_size)
+    return OtsPushResult(True, extension, file_size)
 
 
 def _resolve_chunk(client) -> int:
@@ -196,19 +190,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     push_p = sub.add_parser("push", help="upload a file to a device over the GATT transport")
     push_p.add_argument("device", help="BLE device name or address")
-    push_p.add_argument("app_id", help="armed app_id segment of the object name")
-    push_p.add_argument("profile_id", help="profile_id segment of the object name")
     push_p.add_argument("source", help="path to the SQBC file to upload")
     args = parser.parse_args(argv)
 
-    result = asyncio.run(push_file(args.device, args.app_id, args.profile_id, args.source))
+    result = asyncio.run(push_file(args.device, args.source))
     if not result.pushed:
         print(f"OK ble-push skipped because {result.skipped_reason or 'unknown'}", file=sys.stdout)
         # A missing adapter/device is a skip (0); a real transfer failure is 1.
         reason = result.skipped_reason or ""
         return 0 if ("unavailable" in reason or "not found" in reason) else 1
-    print(f"OK ble-push uploaded app={result.app_id} profile={result.profile_id} "
-          f"bytes={result.bytes_sent}")
+    print(f"OK ble-push uploaded ext={result.extension} bytes={result.bytes_sent}")
     return 0
 
 

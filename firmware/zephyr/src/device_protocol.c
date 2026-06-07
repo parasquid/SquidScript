@@ -908,6 +908,7 @@ static int start_installed_app_bytes(const struct sq_device_protocol_context *co
 			       memcmp(context->runtime->current_app, app_id, app_id_len) != 0);
 	if (current_app_changed) {
 		clear_foreground_timers(context->runtime);
+		sq_ble_profile_table_remove_app(context->runtime->current_app);
 	}
 	if (set_current || context->runtime->current_app_temp ||
 	    strlen(context->runtime->current_app) != app_id_len ||
@@ -1003,6 +1004,7 @@ static int start_temp_app_bytes(const struct sq_device_protocol_context *context
 			       memcmp(context->runtime->current_app, app_id, app_id_len) != 0);
 	if (current_app_changed) {
 		clear_foreground_timers(context->runtime);
+		sq_ble_profile_table_remove_app(context->runtime->current_app);
 	}
 	if (set_current || !context->runtime->current_app_temp ||
 	    strlen(context->runtime->current_app) != app_id_len ||
@@ -1089,6 +1091,7 @@ static int start_fallback_app(const struct sq_device_protocol_context *context,
 			       strcmp(context->runtime->current_app, "main") != 0);
 	if (current_app_changed) {
 		clear_foreground_timers(context->runtime);
+		sq_ble_profile_table_remove_app(context->runtime->current_app);
 	}
 	if (set_current || context->runtime->current_app_temp ||
 	    strcmp(context->runtime->current_app, "main") != 0) {

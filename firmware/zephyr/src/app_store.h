@@ -77,6 +77,9 @@ int sq_app_store_install_app(const char *mount_point, const char *app_id, const 
 
 bool sq_app_store_is_safe_app_id(const char *app_id);
 
+int sq_app_store_read_app_id_from_file_ref(const char *staging_path, char *out_app_id,
+					   size_t out_app_id_len);
+
 int sq_app_store_install_from_file_ref(const char *mount_point, const char *app_id,
 				       const char *staging_path);
 

@@ -8,6 +8,7 @@
 #include <zephyr/ztest.h>
 
 #include "ble_object_transfer.h"
+#include "ble_profile_table.h"
 
 static struct fs_mount_t test_fs_mount = {
 	.type = FS_NATIVE_MOUNT,
@@ -57,8 +58,14 @@ static void *ble_ots_staging_setup(void)
 
 static void ble_ots_staging_before(void *fixture)
 {
+	static const char accept_exts[1][SQVM_BLE_PROFILE_TEXT_CAP] = {".sqbc"};
+
 	(void)fixture;
 	sq_ble_ots_reset_session();
+	sq_ble_profile_table_reset();
+	zassert_equal(sq_ble_profile_table_add("installed-app", "sqbc-install", accept_exts, 1,
+					       NULL, 0), 0,
+		      "failed to register foreground BLE profile");
 	zassert_equal(unmount_test_fs(), 0, "unmount failed");
 	zassert_equal(mount_test_fs(), 0, "remount failed");
 	zassert_equal(format_test_fs(), 0, "format failed");
@@ -68,6 +75,7 @@ static void ble_ots_staging_teardown(void *fixture)
 {
 	(void)fixture;
 	sq_ble_ots_reset_session();
+	sq_ble_profile_table_reset();
 	(void)unmount_test_fs();
 }
 
@@ -79,8 +87,7 @@ ZTEST(ble_ots_staging, test_obj_created_opens_staging_file)
 	char staging_path[128] = {0};
 	int result;
 
-	result = sq_ble_ots_test_invoke_obj_created_with_name("break-reminder/wallpaper/.sqbc",
-							      4096, staging_path,
+	result = sq_ble_ots_test_invoke_obj_created_with_name(".sqbc", 4096, staging_path,
 							      sizeof(staging_path));
 	zassert_equal(result, 0, "expected 0 from obj_created, got %d", result);
 	zassert_not_null(staging_path, "staging_path should be populated");
@@ -99,8 +106,7 @@ ZTEST(ble_ots_staging, test_obj_write_writes_chunks_to_staging_file)
 	ssize_t bytes_read;
 	int result;
 
-	result = sq_ble_ots_test_invoke_obj_created_with_name("break-reminder/wallpaper/.sqbc",
-							      4096, staging_path,
+	result = sq_ble_ots_test_invoke_obj_created_with_name(".sqbc", 4096, staging_path,
 							      sizeof(staging_path));
 	zassert_equal(result, 0, "obj_created failed: %d", result);
 
@@ -128,8 +134,7 @@ ZTEST(ble_ots_staging, test_reset_session_unlinks_staging_file)
 	char staging_path[128] = {0};
 	int result;
 
-	result = sq_ble_ots_test_invoke_obj_created_with_name("break-reminder/wallpaper/.sqbc",
-							      4096, staging_path,
+	result = sq_ble_ots_test_invoke_obj_created_with_name(".sqbc", 4096, staging_path,
 							      sizeof(staging_path));
 	zassert_equal(result, 0, "obj_created failed: %d", result);
 	zassert_true(staging_file_exists(staging_path), "staging file should exist before reset");
@@ -145,13 +150,11 @@ ZTEST(ble_ots_staging, test_second_create_while_busy_returns_obj_locked)
 	char staging_path_b[128] = {0};
 	int result;
 
-	result = sq_ble_ots_test_invoke_obj_created_with_name("app-a/wallpaper-a/.sqbc",
-							      4096, staging_path_a,
+	result = sq_ble_ots_test_invoke_obj_created_with_name(".sqbc", 4096, staging_path_a,
 							      sizeof(staging_path_a));
 	zassert_equal(result, 0, "first obj_created failed: %d", result);
 
-	result = sq_ble_ots_test_invoke_obj_created_with_name("app-b/wallpaper-b/.sqbc",
-							      4096, staging_path_b,
+	result = sq_ble_ots_test_invoke_obj_created_with_name(".sqbc", 4096, staging_path_b,
 							      sizeof(staging_path_b));
 	zassert_equal(result, BT_GATT_OTS_OACP_RES_OBJ_LOCKED,
 		      "expected OBJ_LOCKED on second create, got %d", result);
@@ -162,8 +165,7 @@ ZTEST(ble_ots_staging, test_abort_unlinks_and_clears_in_flight_session)
 	char staging_path[128] = {0};
 	int result;
 
-	result = sq_ble_ots_test_invoke_obj_created_with_name("break-reminder/wallpaper/.sqbc",
-							      4096, staging_path,
+	result = sq_ble_ots_test_invoke_obj_created_with_name(".sqbc", 4096, staging_path,
 							      sizeof(staging_path));
 	zassert_equal(result, 0, "obj_created failed: %d", result);
 	zassert_true(staging_file_exists(staging_path), "staging file should exist before abort");
@@ -172,8 +174,7 @@ ZTEST(ble_ots_staging, test_abort_unlinks_and_clears_in_flight_session)
 	zassert_false(staging_file_exists(staging_path),
 		      "staging file should be unlinked after abort");
 
-	result = sq_ble_ots_test_invoke_obj_created_with_name("break-reminder/wallpaper/.sqbc",
-							      4096, staging_path,
+	result = sq_ble_ots_test_invoke_obj_created_with_name(".sqbc", 4096, staging_path,
 							      sizeof(staging_path));
 	zassert_equal(result, 0, "create after abort should succeed, got %d", result);
 }
@@ -184,8 +185,8 @@ ZTEST(ble_ots_staging, test_write_beyond_declared_size_rejected)
 	uint8_t chunk[16] = {0};
 	int result;
 
-	result = sq_ble_ots_test_invoke_obj_created_with_name("break-reminder/wallpaper/.sqbc", 8,
-							      staging_path, sizeof(staging_path));
+	result = sq_ble_ots_test_invoke_obj_created_with_name(".sqbc", 8, staging_path,
+							      sizeof(staging_path));
 	zassert_equal(result, 0, "obj_created failed: %d", result);
 
 	/* Declared size is 8; a 16-byte write from offset 0 overruns it. */
@@ -205,8 +206,7 @@ ZTEST(ble_ots_staging, test_reset_after_completed_transfer_does_not_error)
 	const uint8_t chunk[] = {'S', 'Q', 'B', 'C'};
 	int result;
 
-	result = sq_ble_ots_test_invoke_obj_created_with_name("break-reminder/wallpaper/.sqbc",
-							      4096, staging_path,
+	result = sq_ble_ots_test_invoke_obj_created_with_name(".sqbc", 4096, staging_path,
 							      sizeof(staging_path));
 	zassert_equal(result, 0, "obj_created failed: %d", result);
 	result = sq_ble_ots_test_invoke_obj_write_with_path(staging_path, chunk, sizeof(chunk), 0,
@@ -224,7 +224,7 @@ ZTEST(ble_ots_staging, test_obj_created_creates_missing_tmp_dir)
 
 	/* Mimic a fresh device with no staging dir yet. */
 	(void)fs_unlink("/sqtest/tmp");
-	result = sq_ble_ots_test_invoke_obj_created_with_name("a/b/.sqbc", 16, staging_path,
+	result = sq_ble_ots_test_invoke_obj_created_with_name(".sqbc", 16, staging_path,
 							      sizeof(staging_path));
 	zassert_equal(result, 0, "obj_created should create the staging dir, got %d", result);
 	zassert_true(staging_file_exists(staging_path), "staging file should exist at %s",

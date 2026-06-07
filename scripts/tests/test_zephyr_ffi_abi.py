@@ -468,7 +468,7 @@ stale
 
     def test_vm_context_reserve_tracks_current_ffi_size(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
-        limits_rs = self.read("compiler/rust/crates/squidvm-core/src/limits.rs")
+        limits_rs = self.read("compiler/rust/crates/squidvm-limits/src/lib.rs")
         ffi_rs = self.read("compiler/rust/crates/squidvm-ffi/src/lib.rs")
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
 

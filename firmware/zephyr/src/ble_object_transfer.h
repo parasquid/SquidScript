@@ -29,9 +29,7 @@
 extern "C" {
 #endif
 
-int sq_ble_ots_parse_object_name(const char *name, char *app_id_out, size_t app_id_cap,
-				 char *profile_id_out, size_t profile_id_cap,
-				 char *extension_out, size_t extension_cap);
+int sq_ble_ots_parse_object_name(const char *name, char *extension_out, size_t extension_cap);
 
 /* Discard an in-flight transfer (client ABORT, disconnect, or error). */
 void sq_ble_transfer_abort(void);

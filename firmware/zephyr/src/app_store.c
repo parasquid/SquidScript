@@ -592,7 +592,129 @@ int sq_app_store_install_app(const char *mount_point, const char *app_id, const 
 
 #define SQ_APP_STORE_INSTALL_COPY_CHUNK 512
 #define SQBC_MAGIC_LEN 4
+#define SQBC_HEADER_LEN 14
+#define SQBC_SECTION_RECORD_LEN 12
+#define SQBC_SECTION_APP_META 7
 static const uint8_t SQBC_MAGIC_BYTES[SQBC_MAGIC_LEN] = {'S', 'Q', 'B', 'C'};
+
+static uint16_t sqbc_read_u16_le(const uint8_t *bytes)
+{
+	return (uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8);
+}
+
+static uint32_t sqbc_read_u32_le(const uint8_t *bytes)
+{
+	return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) | ((uint32_t)bytes[2] << 16) |
+	       ((uint32_t)bytes[3] << 24);
+}
+
+static int sqbc_read_exact_at(struct fs_file_t *file, off_t offset, uint8_t *out, size_t len)
+{
+	ssize_t bytes;
+	int result;
+
+	result = fs_seek(file, offset, FS_SEEK_SET);
+	if (result != 0) {
+		return result;
+	}
+	bytes = fs_read(file, out, len);
+	if (bytes < 0) {
+		return (int)bytes;
+	}
+	return (size_t)bytes == len ? 0 : -EINVAL;
+}
+
+int sq_app_store_read_app_id_from_file_ref(const char *staging_path, char *out_app_id,
+					   size_t out_app_id_len)
+{
+	struct fs_file_t file;
+	uint8_t header[SQBC_HEADER_LEN];
+	uint8_t record[SQBC_SECTION_RECORD_LEN];
+	uint8_t app_id_len_bytes[2];
+	uint16_t header_len;
+	uint32_t file_len;
+	uint32_t section_count;
+	uint32_t meta_offset = 0;
+	uint32_t meta_len = 0;
+	uint16_t app_id_len;
+	int result;
+
+	if (staging_path == NULL || out_app_id == NULL || out_app_id_len == 0) {
+		return -EINVAL;
+	}
+	out_app_id[0] = '\0';
+
+	fs_file_t_init(&file);
+	result = fs_open(&file, staging_path, FS_O_READ);
+	if (result != 0) {
+		return result == -ENOENT ? -EINVAL : result;
+	}
+
+	result = sqbc_read_exact_at(&file, 0, header, sizeof(header));
+	if (result != 0) {
+		goto out_close;
+	}
+	if (memcmp(header, SQBC_MAGIC_BYTES, SQBC_MAGIC_LEN) != 0) {
+		result = -EINVAL;
+		goto out_close;
+	}
+
+	header_len = sqbc_read_u16_le(&header[4]);
+	file_len = sqbc_read_u32_le(&header[6]);
+	section_count = sqbc_read_u32_le(&header[10]);
+	if (section_count > (UINT32_MAX - SQBC_HEADER_LEN) / SQBC_SECTION_RECORD_LEN) {
+		result = -EINVAL;
+		goto out_close;
+	}
+	if (file_len < header_len ||
+	    header_len != SQBC_HEADER_LEN + section_count * SQBC_SECTION_RECORD_LEN) {
+		result = -EINVAL;
+		goto out_close;
+	}
+
+	for (uint32_t i = 0; i < section_count; i++) {
+		off_t offset = SQBC_HEADER_LEN + (off_t)i * SQBC_SECTION_RECORD_LEN;
+
+		result = sqbc_read_exact_at(&file, offset, record, sizeof(record));
+		if (result != 0) {
+			goto out_close;
+		}
+		if (sqbc_read_u16_le(&record[0]) == SQBC_SECTION_APP_META) {
+			meta_offset = sqbc_read_u32_le(&record[4]);
+			meta_len = sqbc_read_u32_le(&record[8]);
+			break;
+		}
+	}
+	if (meta_offset == 0 || meta_len < 2 || meta_offset > file_len ||
+	    meta_len > file_len - meta_offset) {
+		result = -EINVAL;
+		goto out_close;
+	}
+
+	result = sqbc_read_exact_at(&file, (off_t)meta_offset, app_id_len_bytes,
+				    sizeof(app_id_len_bytes));
+	if (result != 0) {
+		goto out_close;
+	}
+	app_id_len = sqbc_read_u16_le(app_id_len_bytes);
+	if (app_id_len == 0 || app_id_len >= out_app_id_len || app_id_len + 2u > meta_len ||
+	    app_id_len >= SQ_APP_STORE_APP_ID_MAX) {
+		result = -EINVAL;
+		goto out_close;
+	}
+
+	result = sqbc_read_exact_at(&file, (off_t)meta_offset + 2, (uint8_t *)out_app_id,
+				    app_id_len);
+	if (result != 0) {
+		goto out_close;
+	}
+	out_app_id[app_id_len] = '\0';
+	result = is_safe_app_id(out_app_id) ? 0 : -EINVAL;
+
+out_close:
+	(void)fs_close(&file);
+	return result;
+}
 
 /*
  * Install an already-staged file (e.g. a BLE-transferred upload at
