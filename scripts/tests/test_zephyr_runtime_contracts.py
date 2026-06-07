@@ -189,7 +189,7 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
     def test_runtime_reuses_transfer_storage_for_init_scratch_and_completion(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
-        limits_rs = self.read("compiler/rust/crates/squidvm-core/src/limits.rs")
+        limits_rs = self.read("compiler/rust/crates/squidvm-limits/src/lib.rs")
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
         runtime_body = runtime_h[
             runtime_h.index("struct sq_vm_runtime {") : runtime_h.index(
@@ -414,7 +414,7 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
     def test_runtime_keeps_bounded_diagnostic_history(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         ztest = self.read("firmware/zephyr/tests/protocol/src/main.c")
-        limits = self.read("compiler/rust/crates/squidvm-core/src/limits.rs")
+        limits = self.read("compiler/rust/crates/squidvm-limits/src/lib.rs")
 
         self.assertIn("pub const MAX_STACK: usize = 16;", limits)
         self.assertNotIn("pub const MAX_STACK: usize = 32;", limits)

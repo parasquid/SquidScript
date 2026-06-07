@@ -902,16 +902,6 @@ static int start_installed_app_bytes(const struct sq_device_protocol_context *co
 	if (app_id_len >= SQ_APP_STORE_APP_ID_MAX) {
 		return -EINVAL;
 	}
-	{
-		/* DIAGNOSTIC: trace the launch entry for the target app. */
-		char idz[SQ_APP_STORE_APP_ID_MAX];
-		char l[SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
-		memcpy(idz, app_id, app_id_len);
-		idz[app_id_len] = '\0';
-		(void)snprintf(l, sizeof(l), "sib %s sc=%d ev=%.*s", idz, (int)set_current,
-			       (int)event_len, (const char *)event);
-		(void)sq_vm_runtime_record_device_error(context->runtime, l);
-	}
 	current_app_changed = set_current &&
 			      (context->runtime->current_app_temp ||
 			       strlen(context->runtime->current_app) != app_id_len ||

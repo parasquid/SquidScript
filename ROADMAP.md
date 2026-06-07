@@ -28,18 +28,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   with `-EBUSY` if the app is currently `current_app` (the caller must
   `app.exit` first or `app.launch` a different app). No new firmware cap
   needed; reuses the existing `sq_app_store` mount point.
-- Verify BLE install->launch end-to-end on hardware (DoD #6). Depends on the
-  in-session launch fault being resolved first (see the "Known issue" in
-  `docs/firmware_app_load_install_notes.md`). On the XIAO ESP32-C3, launch the
-  `ble-install` receiver (it runs `service.ble.start` in `app.start`), push
-  `target/hardware-tests/lazy-sqbc-stress/lazy-main-stress-8192.sqbc` over BLE
-  via `tools/ots-push`, and confirm it installs byte-exact AND the installed app
-  launches in-session with no `-5` (expect `lazy start 1` in `device output`).
-  Confirm advertising comes up only after launch and stops on `service.ble.stop`
-  / app exit. Do not use the synthetic `large.sqbc` / `oversized.sqbc` fixtures
-  (install-proof only, not launchable). The imperative `service.ble.start/stop`
-  redesign that this verifies has shipped; this entry is the remaining hardware
-  proof.
 - Clean up post-GATT-pivot OTS staleness in docs and roadmap. The GATT-only
   pivot removed `ble_ots.c` / OTS / L2CAP CoC but left stale references. Remove
   the dead "BLE Object Transfer Service (OTS) Initialization" section in
@@ -165,28 +153,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   (drop-oldest vs drop-newest vs coalesce-by-event). Out of scope: delivering
   events into an already-running app (re-entrant in-app dispatch) is a separate
   VM-semantics change.
-- Stop a trigger from self-relaunching the app that already owns it. When a
-  trigger fires and its target app is already `current_app`, the `due_app` path
-  (`app_lifecycle.c:409-420`) currently does `push_return(current_app)` + start,
-  so the foreground app gets stacked onto its own return stack and its handler
-  re-runs from a reset context. Repeated firings accumulate duplicate frames
-  (bounded by `SQ_VM_RUNTIME_RETURN_STACK_MAX`, then `push_return` errors) and
-  force redundant work — e.g. a long-press-summoned e-ink sleep/wallpaper app
-  would do a full e-ink refresh on every repeat press during its pre-sleep
-  window. Fix: detect `due_app == current_app` and do NOT relaunch or push the
-  return stack. Chosen behavior — deliver a distinct re-trigger event (working
-  name `app.retrigger`, or `<event>.again`) to the already-current app, with a
-  silent no-op default when the app declares no handler for it. The no-op
-  default makes the common case ("the screen is already up, ignore the repeat")
-  require zero app code and avoids redundant e-ink refreshes; apps that want to
-  react (reset a countdown, sleep immediately) opt in via a handler, and because
-  the re-trigger event is distinct from the launch event they can act without
-  re-running launch-time work. Out of scope: re-entrant delivery into an app
-  that is actively `RUNNING` (still gated at `IDLE` today) — that is the
-  separate VM-semantics change tracked by the queued event-delivery item above.
-  Spec the new event name, target policy, and the no-op default in
-  `docs/language_spec.md`, and add a ztest for the `due_app == current_app`
-  case (no return-stack growth, correct event delivered).
 - Extend the `app.triggers` model beyond current timer metadata declarations to
   future logical button/input triggers while keeping `event.on(...)` as the
   handler for the activation event that fires later.
@@ -330,13 +296,15 @@ Hardware-test and metadata hygiene follow-ups.
   side-by-side display, opt-in vs always-on reporting, app-facing
   `system.info()` exposure — see `docs/runtime_limits.md` "Open
   Questions."
-- Increase the device debug/error entry ring to 12. Update
-  `firmware/zephyr/runtime_limits.json`, regenerate
-  `firmware/zephyr/src/runtime_limits.h`, and reconcile `vm_runtime.h`,
-  `docs/runtime_limits.md`, `docs/firmware_app_load_install_notes.md`, and the
-  protocol ztests so the build-time source, generated header, C fallback macros,
-  docs, and ring-overflow behavior all agree on
-  `SQ_VM_RUNTIME_DEVICE_ERROR_MAX == 12`.
+- Make `device errors` robust when the retained diagnostic ring grows. A
+  diagnostic bump from `SQ_VM_RUNTIME_DEVICE_ERROR_MAX == 2` to 8 worked during
+  BLE-install debugging, but 12 overflowed the fixed protocol response and
+  surfaced `-EIO`. Before raising the retained ring permanently, separate the
+  runtime retention cap from the protocol response cap: page or truncate the
+  response deliberately, report truncation/remaining count, and add protocol
+  ztests for oversized rings so larger diagnostics cannot break the `errors`
+  command. Then update `firmware/zephyr/runtime_limits.json`, regenerated
+  headers, `vm_runtime.h`, and docs to the chosen cap.
 
 ## ESP32-C3 RAM Hardening
 

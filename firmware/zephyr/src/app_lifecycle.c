@@ -407,6 +407,12 @@ int sq_app_lifecycle_next_step(struct sq_vm_runtime *runtime, const char *due_ap
 	}
 
 	if (due_app != NULL && due_app[0] != '\0' && due_event != NULL && due_event[0] != '\0') {
+		bool due_app_is_current = strcmp(runtime->current_app, due_app) == 0;
+
+		if (due_app_is_current) {
+			return set_step_start(out, due_app, due_event, false,
+					      runtime->current_app_temp);
+		}
 		result = sq_app_lifecycle_push_return(runtime, runtime->current_app);
 		if (result != 0) {
 			return result;

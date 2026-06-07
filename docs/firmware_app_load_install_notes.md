@@ -73,83 +73,23 @@ second open file).
   `CONFIG_BT_DEVICE_NAME`, so an exact-name scan filter misses it. Match by
   address (`tools/ots-push` accepts an address or name).
 
-## Known issue: a BLE-received app cannot be launched until reboot (`-5`)
+## BLE install-and-launch lifecycle
 
-An app whose bytes arrived over the BLE Object Transfer path cannot be launched
-in the same session — the VM faults with `runtime=vm_error code=-5 (EIO)`. After
-a reboot the very same on-flash app launches cleanly. This is the open blocker
-for DoD #6 (push a `.sqbc` over BLE, install, launch in one flow).
+A BLE receive app may install the uploaded `.sqbc` from its
+`ble.object.complete` handler and immediately call `app.launch` for the
+installed app. The firmware performs the queued install while the VM is idle,
+then runs the ordinary foreground launch chain. The accepted DoD flow is:
 
-### What the evidence rules in and out
+1. Launch the receiver app so `service.ble.start` registers the receive profile.
+2. Push the payload over the custom BLE transfer service.
+3. The receiver handles `ble.object.complete`, calls `app.install`, then
+   `app.launch`.
+4. The device reports no VM `-5`, `device output` includes the installed app's
+   output, and `device lifecycle` reports `active=<installed-app-id>`.
 
-Hardware-verified facts (XIAO ESP32-C3):
-
-- **The bytes are correct on flash.** After a reboot the BLE-received app
-  launches fine (`active=installed-app`, prints, no `-5`). The transfer and
-  install are byte-exact.
-- **The launch trigger is irrelevant.** It fails the same whether the launch
-  comes from the receiving handler (`app.launch` in `ble.object.complete`) or
-  from a *separate* CLI `app launch` issued seconds later. A handler that only
-  installs (no launch) records no error; the failure is on the later read.
-- **The install method is irrelevant.** Copy-into-the-app-store, rename the
-  staging file into place, defer the install to VM-idle, and a 200 ms settle
-  delay before launch all fail identically.
-- **It is not the radio being active during the read.** A **serial/protocol**
-  install of the same `.sqbc` followed by a CLI launch **succeeds even while the
-  BLE radio is advertising**. The only thing that differs between this passing
-  case and the failing case is *which path wrote the file's bytes to flash*.
-- **It is not a hardware flash cache.** This build sets
-  `CONFIG_ESP_FLASH_HOST=y`, so the Zephyr esp32 flash driver writes via
-  `esp_flash_write` (the IDF API that disables and invalidates the cache around
-  the write) and reads via `esp_flash_read` (direct SPI). A LittleFS
-  unmount+remount does **not** fix it either.
-- **It is not the BT RX thread stack** (raising `CONFIG_BT_RX_STACK_SIZE` from
-  4096 to 8192 did not change it), and there is no stack sentinel/PMP guard on
-  this port to catch a silent overflow (the espressif esp32c3 port does not wire
-  up RISC-V PMP regions, so `HW_STACK_PROTECTION` will not link;
-  `CONFIG_STACK_SENTINEL` is the only loud option and broke the protocol link
-  when tried).
-- **It is not the per-chunk write pattern.** Holding one file handle open for
-  the whole transfer (one `fs_open`, sequential `fs_write`s, one `fs_close` —
-  far fewer LittleFS metadata commits) reproduces it identically.
-- **It is not the writing thread's identity or its preemptibility.** Moving BT
-  RX processing — and thus the OTS write callback — onto the system workqueue
-  (`CONFIG_BT_RECV_WORKQ_SYS=y`, sysworkq stack 8192) reproduces it. Note the
-  system workqueue is *cooperative* (priority -1) and the BT RX workqueue is
-  *preemptible* (priority 8); both fail.
-- **It is not an active BLE connection during the write.** Holding a BLE
-  connection open and doing a **serial** install + launch in that window
-  **works**.
-- **It is not simply write-thread ≠ read-thread.** The VM dispatch (and thus the
-  launch-time SQBC read) runs on its own worker thread
-  (`sq_vm_runtime_work_stack`), so even the working serial path writes on one
-  thread and reads on another.
-
-### Current understanding (mechanism NOT yet identified)
-
-Every variable above has been ruled out on hardware. The one stable fact:
-**bytes written to flash by the serial/protocol path read back correctly
-in-session; bytes written by the BLE OTS path do not, until a reboot** — though
-they are byte-correct on flash either way (reboot launches the OTS-received app
-fine), and the corruption is localized to that file (directory listing and size
-read back fine via `app list`). The trigger is therefore something specific to
-the OTS object-write code path
-(`sq_ble_ots_obj_write_internal` in `firmware/zephyr/src/ble_object_transfer.c`)
-that is not the thread, the preemptibility, the write pattern, the connection
-state, or the install/launch step that follows — and it has resisted
-black-box isolation.
-
-Cracking it likely needs source-level instrumentation rather than more
-configuration sweeps:
-- In the deferred install (poll/protocol thread), read the **whole** OTS staging
-  file back and compare it byte-for-byte against the known-good `.sqbc` to find
-  *where* the in-session read diverges (first page only? every page? aligned to
-  a LittleFS block / cache boundary?). The magic (first 8 bytes) does read back
-  correctly, so divergence is past the first read.
-- Instrument the LittleFS `read`/`prog`/lookahead cache state and the
-  `esp_flash` guard around an OTS write vs a serial write to see what differs.
-
-### Workaround available today
-
-A BLE-received app installs correctly and launches after a **reboot**. Until the
-mechanism is found, a receive-then-reboot-to-run flow is the reliable path.
+The lifecycle rule that keeps this path stable: a due event whose target is
+already the current foreground app dispatches on the current VM session with
+`set_current=false`. It must not push the current app onto its own return stack,
+reset the VM context, or rewrite `system.startReason()`. A due event for a
+different app remains a foreground handoff: it pushes the current app, sets
+start reason `"launch"`, and dispatches the target app's registered event.

@@ -101,11 +101,6 @@ static int write_file(const char *path, const uint8_t *bytes, size_t len)
 	return result;
 }
 
-/* DIAGNOSTIC: checksum of bytes the VM worker thread actually reads at load. */
-volatile uint32_t sq_vm_fs_dbg_sum;
-volatile uint32_t sq_vm_fs_dbg_len;
-const char *volatile sq_vm_fs_dbg_path;
-
 static int fs_storage_read_sqbc(void *user_data, size_t offset, uint8_t *out, size_t len)
 {
 	struct sq_vm_fs_storage *storage = user_data;
@@ -113,17 +108,8 @@ static int fs_storage_read_sqbc(void *user_data, size_t offset, uint8_t *out, si
 	if (storage == NULL) {
 		return -EINVAL;
 	}
-	if (offset == 0) {
-		sq_vm_fs_dbg_sum = 0;
-		sq_vm_fs_dbg_len = 0;
-		sq_vm_fs_dbg_path = storage->sqbc_path;
-	}
 	int result = read_exact(storage->sqbc_path, offset, out, len);
 	if (result == 0) {
-		for (size_t i = 0; i < len; i++) {
-			sq_vm_fs_dbg_sum += out[i];
-		}
-		sq_vm_fs_dbg_len += len;
 		storage->sqbc_read_count++;
 		if (len > storage->sqbc_max_read_len) {
 			storage->sqbc_max_read_len = len;

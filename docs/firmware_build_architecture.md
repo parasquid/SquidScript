@@ -96,9 +96,10 @@ fixture with resumable dispatch, complete its storage requests through the
 adapter, and verify trace callback ordering. Zephyr also has a file-backed
 storage backend that uses `fs_*` APIs for SQBC byte-range reads and app-state
 load/save/reset paths; native ztests cover it through a host-mounted filesystem.
-The Zephyr VM runtime scratch buffer is sized to the FFI storage transfer
-capacity so the firmware does not reserve a full max-app buffer when the VM
-only needs one bounded code/storage chunk for resumable dispatch.
+The Zephyr VM runtime keeps the VM init scratch and FFI storage completion
+buffer in a shared transfer union. The storage completion buffer is fixed to
+the FFI transfer capacity; the VM init scratch is larger because context init
+may read a whole SQBC section while parsing a program.
 
 The VM host ABI C header and inventory are generated and checked by
 `scripts/check-squidvm-ffi-abi.py`. The manifest at

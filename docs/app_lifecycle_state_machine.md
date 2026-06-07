@@ -55,7 +55,8 @@ stateDiagram-v2
 | In-app `app.launch(id)` | Current VM event | Queue the same handoff used by host `app launch`. A second lifecycle request before the first drains fails the dispatch and does not leave a pending handoff. | `id` |
 | In-app `app.arm(id)` | Current VM event | Queue trigger metadata registration for `id`. This may coexist with a foreground launch request. | unchanged |
 | In-app `app.exit()` | Current VM event | Pop the process stack. If empty, use logical `main`. Set start reason `"return"` and start that app fresh. | popped app or `main` |
-| Armed timer due | Idle | Push current app id, set start reason `"launch"`, start the armed app fresh with the registered event. | armed app |
+| Due event for current foreground app | Idle | Dispatch the event on the current VM session without changing the return stack or start reason. | unchanged |
+| Due event for another app | Idle | Push current app id, set start reason `"launch"`, start the target app fresh with the registered event. | target app |
 | `service.power.sleep({ wakeAfterMs })` | Current VM event | Queue `power.sleep`, then write the planned-resume lifecycle record after that event completes. | unchanged before sleep |
 | Planned wake restore | Boot policy | Restore active app id, process stack app ids, and armed app ids; set start reason `"wake"` and dispatch `app.start`. | restored active app |
 

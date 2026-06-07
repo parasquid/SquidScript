@@ -1508,6 +1508,26 @@ ZTEST(squidscript_protocol, test_lifecycle_state_machine_dispatch_error_preserve
 	zassert_str_equal(runtime.lifecycle_target_app, "settings");
 }
 
+ZTEST(squidscript_protocol, test_lifecycle_state_machine_due_event_for_current_app_does_not_relaunch)
+{
+	struct sq_vm_runtime runtime = {0};
+	struct sq_app_lifecycle_step step = {0};
+
+	strncpy(runtime.current_app, "ble-install", sizeof(runtime.current_app) - 1);
+	strncpy(runtime.start_reason, "boot", sizeof(runtime.start_reason) - 1);
+
+	zassert_equal(sq_app_lifecycle_next_step(&runtime, "ble-install",
+						 "ble.object.complete", &step),
+		      0);
+	zassert_equal(step.kind, SQ_APP_LIFECYCLE_STEP_START_APP);
+	zassert_str_equal(step.app_id, "ble-install");
+	zassert_str_equal(step.event, "ble.object.complete");
+	zassert_false(step.set_current);
+	zassert_equal(runtime.return_stack_count, 0);
+	zassert_str_equal(runtime.start_reason, "boot");
+	zassert_false(sq_vm_runtime_lifecycle_busy(&runtime));
+}
+
 ZTEST(squidscript_protocol, test_host_app_launch_uses_lifecycle_chain_from_fallback_root)
 {
 	uint8_t payload[32];
@@ -3086,7 +3106,7 @@ ZTEST(squidscript_protocol, test_exposes_resumable_squidvm_ffi_abi)
 	zassert_equal(sqvm_saved_state_capacity(), SQVM_SAVED_STATE_CAPACITY);
 	zassert_equal(sizeof(result.storage.bytes), SQVM_STORAGE_TRANSFER_CAPACITY);
 	zassert_equal(sizeof(completion.bytes), SQVM_STORAGE_TRANSFER_CAPACITY);
-	zassert_equal(SQ_VM_RUNTIME_SCRATCH_BYTES, SQVM_STORAGE_TRANSFER_CAPACITY);
+	zassert_true(SQ_VM_RUNTIME_SCRATCH_BYTES >= SQVM_STORAGE_TRANSFER_CAPACITY);
 	zassert_equal(SQ_DEVICE_TEMP_STATE_BYTES, SQVM_SAVED_STATE_CAPACITY);
 
 	zassert_equal(sqvm_dispatch_start_resumable(NULL, NULL, &callbacks,
