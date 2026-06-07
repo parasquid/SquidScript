@@ -47,7 +47,7 @@ extern "C" {
 #define SQ_VM_RUNTIME_DRAWLOG_LEN 48
 #endif
 #ifndef SQ_VM_RUNTIME_DEVICE_ERROR_MAX
-#define SQ_VM_RUNTIME_DEVICE_ERROR_MAX 2
+#define SQ_VM_RUNTIME_DEVICE_ERROR_MAX 8
 #endif
 #ifndef SQ_VM_RUNTIME_DEVICE_ERROR_LEN
 #define SQ_VM_RUNTIME_DEVICE_ERROR_LEN 48
@@ -231,6 +231,16 @@ struct sq_vm_runtime {
 	const char *store_mount_point;
 	const struct sq_app_registry *registry;
 	struct sq_app_registry *mutable_registry;
+	/* A handler-requested app.install is deferred to run between dispatches
+	 * (VM idle): writing the app store to flash from inside a VM dispatch
+	 * corrupts the flash read cache, so a subsequent launch of the new app
+	 * reads stale bytes and faults. sq_device_protocol_poll performs this when
+	 * the VM is idle, before processing a pending launch. */
+	struct {
+		char app_id[SQ_APP_STORE_APP_ID_MAX];
+		char file_ref[SQ_APP_STORE_PATH_MAX];
+		bool active;
+	} pending_install;
 	struct sq_vm_storage_backend job_backend;
 	bool start_apply_bindings;
 	char event[SQ_VM_RUNTIME_EVENT_LEN];
@@ -386,6 +396,8 @@ void sq_vm_runtime_set_registry(struct sq_vm_runtime *runtime,
 				const struct sq_app_registry *registry);
 void sq_vm_runtime_set_mutable_registry(struct sq_vm_runtime *runtime,
 					struct sq_app_registry *registry);
+int sq_vm_runtime_request_install(struct sq_vm_runtime *runtime, const char *app_id,
+				  const char *file_ref);
 const char *sq_vm_runtime_status_name(SqvmStatus status);
 int sq_vm_runtime_status_to_errno(SqvmStatus status);
 

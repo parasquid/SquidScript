@@ -902,6 +902,16 @@ static int start_installed_app_bytes(const struct sq_device_protocol_context *co
 	if (app_id_len >= SQ_APP_STORE_APP_ID_MAX) {
 		return -EINVAL;
 	}
+	{
+		/* DIAGNOSTIC: trace the launch entry for the target app. */
+		char idz[SQ_APP_STORE_APP_ID_MAX];
+		char l[SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
+		memcpy(idz, app_id, app_id_len);
+		idz[app_id_len] = '\0';
+		(void)snprintf(l, sizeof(l), "sib %s sc=%d ev=%.*s", idz, (int)set_current,
+			       (int)event_len, (const char *)event);
+		(void)sq_vm_runtime_record_device_error(context->runtime, l);
+	}
 	current_app_changed = set_current &&
 			      (context->runtime->current_app_temp ||
 			       strlen(context->runtime->current_app) != app_id_len ||
@@ -1387,6 +1397,36 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 
 	if (runtime->status == SQ_VM_RUNTIME_RUNNING) {
 		return sq_vm_runtime_poll(runtime);
+	}
+
+	if (runtime->pending_install.active) {
+		/* A handler queued app.install. Perform it here, between dispatches
+		 * (VM idle), and crucially by RENAMING the already-received staging
+		 * file into place rather than copying it. The staging bytes were
+		 * written earlier (during the BLE/serial transfer), so a rename only
+		 * touches directory metadata and leaves the app's data blocks
+		 * untouched; a subsequent launch reads them coherently. A fresh copy
+		 * here would rewrite the exact blocks the launch reads moments later,
+		 * which read back stale from the ESP32 flash read cache and fault the
+		 * VM (-EIO). This runs before any pending launch, so app.install +
+		 * app.launch in one handler installs first, then launches cleanly. */
+		runtime->pending_install.active = false;
+		result = sq_app_store_commit_external_file(context->store_mount_point,
+							   runtime->pending_install.app_id,
+							   runtime->pending_install.file_ref);
+		if (result == 0 && context->mutable_registry != NULL) {
+			char path[SQ_APP_STORE_PATH_MAX];
+			(void)sq_app_store_update_registry_entry_with_path(
+				context->store_mount_point, context->mutable_registry,
+				runtime->pending_install.app_id, path, sizeof(path));
+		}
+		if (result != 0) {
+			char line[SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
+			(void)snprintf(line, sizeof(line), "app.install code=%d (%s)", result,
+				       sq_errno_name(result));
+			(void)sq_vm_runtime_record_device_error(runtime, line);
+		}
+		return result;
 	}
 
 	if (runtime->lifecycle_phase == SQ_VM_RUNTIME_LIFECYCLE_IDLE &&

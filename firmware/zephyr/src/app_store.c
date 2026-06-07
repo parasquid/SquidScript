@@ -686,6 +686,52 @@ int sq_app_store_install_from_file_ref(const char *mount_point, const char *app_
 	return result;
 }
 
+int sq_app_store_commit_external_file(const char *mount_point, const char *app_id,
+				      const char *source_path)
+{
+	char staged_path[SQ_APP_STORE_PATH_MAX];
+	uint8_t magic[SQBC_MAGIC_LEN];
+	struct fs_file_t src;
+	ssize_t bytes;
+	int result;
+
+	if (mount_point == NULL || !is_safe_app_id(app_id) || source_path == NULL) {
+		return -EINVAL;
+	}
+
+	/* Move an already-written staging file (e.g. a BLE-received object) into the
+	 * app store by RENAME, never by copy. A copy would freshly rewrite the exact
+	 * flash data blocks the VM reads moments later when launching the new app;
+	 * on the ESP32 those just-written blocks read back stale from the flash read
+	 * cache and the VM faults (-EIO). A rename only updates directory metadata
+	 * and leaves the source's data blocks untouched, so a subsequent launch
+	 * reads coherent bytes. This mirrors the protocol install path, which writes
+	 * its staging file during the transfer and then renames it into place. */
+	fs_file_t_init(&src);
+	result = fs_open(&src, source_path, FS_O_READ);
+	if (result != 0) {
+		return result == -ENOENT ? -EINVAL : result;
+	}
+	bytes = fs_read(&src, magic, sizeof(magic));
+	(void)fs_close(&src);
+	if (bytes < 0) {
+		return (int)bytes;
+	}
+	if ((size_t)bytes < SQBC_MAGIC_LEN ||
+	    memcmp(magic, SQBC_MAGIC_BYTES, SQBC_MAGIC_LEN) != 0) {
+		return -EINVAL;
+	}
+
+	/* Ensure apps/<app_id>/ exists as the rename target's parent. */
+	result = prepare_staged_app_path(staged_path, sizeof(staged_path), mount_point, app_id,
+					 "main.sqbc.tmp");
+	if (result != 0) {
+		return result;
+	}
+
+	return sq_app_store_commit_staged_install(mount_point, app_id, source_path);
+}
+
 int sq_app_store_begin_staged_install(const char *mount_point, const char *app_id,
 				      char *staging_path, size_t staging_path_len)
 {

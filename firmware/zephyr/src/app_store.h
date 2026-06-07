@@ -80,6 +80,14 @@ bool sq_app_store_is_safe_app_id(const char *app_id);
 int sq_app_store_install_from_file_ref(const char *mount_point, const char *app_id,
 				       const char *staging_path);
 
+/* Commit an already-written staging file into the app store by renaming it into
+ * place (no copy). Use this when the source bytes are already on flash (e.g. a
+ * BLE-received object) and the install runs close to a launch of the same app:
+ * a rename leaves the data blocks untouched, avoiding the stale-read-cache fault
+ * that a fresh copy triggers on the ESP32. Consumes the source file. */
+int sq_app_store_commit_external_file(const char *mount_point, const char *app_id,
+				      const char *source_path);
+
 int sq_app_store_begin_staged_install(const char *mount_point, const char *app_id,
 				      char *staging_path, size_t staging_path_len);
 

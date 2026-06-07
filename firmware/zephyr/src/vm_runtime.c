@@ -351,6 +351,20 @@ void sq_vm_runtime_set_mutable_registry(struct sq_vm_runtime *runtime,
 	}
 }
 
+int sq_vm_runtime_request_install(struct sq_vm_runtime *runtime, const char *app_id,
+				  const char *file_ref)
+{
+	if (runtime == NULL || app_id == NULL || file_ref == NULL ||
+	    strlen(app_id) >= sizeof(runtime->pending_install.app_id) ||
+	    strlen(file_ref) >= sizeof(runtime->pending_install.file_ref)) {
+		return -EINVAL;
+	}
+	strcpy(runtime->pending_install.app_id, app_id);
+	strcpy(runtime->pending_install.file_ref, file_ref);
+	runtime->pending_install.active = true;
+	return 0;
+}
+
 const char *sq_vm_runtime_status_name(SqvmStatus status)
 {
 	switch (status) {
@@ -446,6 +460,27 @@ int sq_vm_runtime_dispatch_slice(struct sq_vm_runtime *runtime,
 			if (transfer_result != 0) {
 				runtime_finish_dispatch_metrics(runtime, runtime->dispatch_start_cycles);
 				return transfer_result;
+			}
+			{
+				/* DIAGNOSTIC: record the checksum/len the VM worker thread
+				 * read for this load (host expects len=3277 sum=23592). */
+				extern volatile uint32_t sq_vm_fs_dbg_sum;
+				extern volatile uint32_t sq_vm_fs_dbg_len;
+				extern const char *volatile sq_vm_fs_dbg_path;
+				const char *p = (const char *)sq_vm_fs_dbg_path;
+				const char *tail = p;
+				if (p != NULL) {
+					size_t pl = strlen(p);
+					if (pl > 16) {
+						tail = p + (pl - 16);
+					}
+				}
+				char dl[SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
+				(void)snprintf(dl, sizeof(dl), "vmrd l=%u s=%u st=%d %s",
+					       (unsigned)sq_vm_fs_dbg_len,
+					       (unsigned)sq_vm_fs_dbg_sum, (int)status,
+					       tail == NULL ? "?" : tail);
+				(void)sq_vm_runtime_record_device_error(runtime, dl);
 			}
 			if (status != SQVM_STATUS_OK) {
 				runtime_finish_dispatch_metrics(runtime, runtime->dispatch_start_cycles);

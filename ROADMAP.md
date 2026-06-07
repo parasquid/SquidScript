@@ -28,30 +28,30 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   with `-EBUSY` if the app is currently `current_app` (the caller must
   `app.exit` first or `app.launch` a different app). No new firmware cap
   needed; reuses the existing `sq_app_store` mount point.
-- Foreground-gated BLE receive (preferred design). Make BLE app-upload an
-  explicit, foreground, ephemeral capability owned by a receiver app, replacing
-  the current always-on advertising (today the device broadcasts the
-  app-transfer service UUID from boot and accepts a well-formed transfer
-  regardless of app state). Target model: a SquidScript app (e.g. a dedicated
-  "receive-and-install" app) brings the radio up only while it is foreground,
-  accepts one transfer, installs and launches it, and brings the radio down when
-  it exits. Pieces:
-  1. Advertising tied to app lifecycle — start advertising when the receiver app
-     is foreground; `bt_le_adv_stop` (or `bt_disable`) when it exits. Decide the
-     SquidScript surface: implicit (the app's `service.ble.profile` trigger means
-     "advertise while foreground") vs an explicit `service.ble.*` advertise/
-     receive control.
-  2. Authorize transfers — use `sq_ble_profile_lookup` (defined today but never
-     called) in the GATT `BEGIN`/`obj_created` path to reject a transfer whose
-     `(app_id, profile_id)` is not the foreground receiver's armed profile.
-  3. Radio-off on exit — stop advertising and drop any open connection when the
-     receiver app's handler returns / it exits.
-  Rationale: lower idle radio power and a smaller attack surface than always-on,
-  plus a clear "open uploader -> send -> close" UX. Coexists with the
-  background/armed `app.triggers` model (some apps may still arm in the
-  background); foreground/ephemeral is the preferred default for app upload.
-  Builds on the same GATT transfer path currently blocked by the control-write
-  ATT MTU issue; sequence it after that lands.
+- Verify BLE install->launch end-to-end on hardware (DoD #6). Depends on the
+  in-session launch fault being resolved first (see the "Known issue" in
+  `docs/firmware_app_load_install_notes.md`). On the XIAO ESP32-C3, launch the
+  `ble-install` receiver (it runs `service.ble.start` in `app.start`), push
+  `target/hardware-tests/lazy-sqbc-stress/lazy-main-stress-8192.sqbc` over BLE
+  via `tools/ots-push`, and confirm it installs byte-exact AND the installed app
+  launches in-session with no `-5` (expect `lazy start 1` in `device output`).
+  Confirm advertising comes up only after launch and stops on `service.ble.stop`
+  / app exit. Do not use the synthetic `large.sqbc` / `oversized.sqbc` fixtures
+  (install-proof only, not launchable). The imperative `service.ble.start/stop`
+  redesign that this verifies has shipped; this entry is the remaining hardware
+  proof.
+- Clean up post-GATT-pivot OTS staleness in docs and roadmap. The GATT-only
+  pivot removed `ble_ots.c` / OTS / L2CAP CoC but left stale references. Remove
+  the dead "BLE Object Transfer Service (OTS) Initialization" section in
+  `docs/hardware_target_tests.md` (`sq_ble_ots_init()`, `tests/ble-ots-init`,
+  `scripts/zephyr-test-ble-ots-init.sh`). Remove the OTS-era items still in this
+  ROADMAP (the OTS client-pull role, L2CAP CoC availability probe, OACP
+  Calculate Checksum, and raise-`BT_MAX_CONN`-for-a-second-OTS-client items).
+  Rename the `ble-ots-*` test dirs off the misleading `ots` prefix (they test
+  the transport-neutral core now). Decide `tools/ots-push`'s fate (rename — it
+  pushes over the custom GATT service, not OTS). Verify remaining BLE doc
+  statements (`language_spec`, `runtime_limits`) match the as-built GATT-only +
+  imperative code.
 - Add a BLE OTS client role so SquidScript apps can pull (not just receive)
   objects from a paired peer. The Zephyr OTS module already exposes
   `bt_ots_client_*` helpers in `include/zephyr/bluetooth/services/ots.h`;
@@ -330,6 +330,13 @@ Hardware-test and metadata hygiene follow-ups.
   side-by-side display, opt-in vs always-on reporting, app-facing
   `system.info()` exposure — see `docs/runtime_limits.md` "Open
   Questions."
+- Increase the device debug/error entry ring to 12. Update
+  `firmware/zephyr/runtime_limits.json`, regenerate
+  `firmware/zephyr/src/runtime_limits.h`, and reconcile `vm_runtime.h`,
+  `docs/runtime_limits.md`, `docs/firmware_app_load_install_notes.md`, and the
+  protocol ztests so the build-time source, generated header, C fallback macros,
+  docs, and ring-overflow behavior all agree on
+  `SQ_VM_RUNTIME_DEVICE_ERROR_MAX == 12`.
 
 ## ESP32-C3 RAM Hardening
 

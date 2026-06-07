@@ -93,27 +93,16 @@ int32_t runtime_app_install_file(void *user_data, const uint8_t *file_ref, size_
 		return trace_result;
 	}
 
-	result = sq_app_store_install_from_file_ref(runtime->store_mount_point, app_id_buf,
-						     file_path_buf);
-	if (result == 0 && runtime->mutable_registry != NULL) {
-		/* Refresh the in-memory registry so an app.launch in the same handler
-		 * (the BLE install-and-launch flow) can resolve the just-installed
-		 * app. Without this the registry only reflects boot-time and protocol
-		 * installs, and the launch fails with the app unresolved.
-		 */
-		char path[SQ_APP_STORE_PATH_MAX];
-		(void)sq_app_store_update_registry_entry_with_path(runtime->store_mount_point,
-								   runtime->mutable_registry, app_id_buf,
-								   path, sizeof(path));
-	}
+	/* Defer the actual install (flash write) to sq_device_protocol_poll, which
+	 * runs it between dispatches with the VM idle. Writing the app store from
+	 * inside this dispatch corrupts the flash read cache, so a subsequent launch
+	 * of the freshly-installed app reads stale bytes and faults. Record the
+	 * request now; the poll performs it before any pending launch is processed.
+	 */
+	result = sq_vm_runtime_request_install(runtime, app_id_buf, file_path_buf);
 	if (result != 0) {
-		/* Preserve the real install errno at the source. The FFI boundary
-		 * collapses any nonzero host-callback return into a generic VM_ERROR,
-		 * so without this the device error would only ever read code=-5
-		 * (EIO) regardless of the true cause (e.g. -ENOMEM from running out
-		 * of open LittleFS files). */
 		char line[SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
-		int n = snprintf(line, sizeof(line), "app.install code=%d (%s)", result,
+		int n = snprintf(line, sizeof(line), "app.install queue %d (%s)", result,
 				 sq_errno_name(result));
 		if (n > 0) {
 			(void)sq_vm_runtime_record_device_error(runtime, line);
