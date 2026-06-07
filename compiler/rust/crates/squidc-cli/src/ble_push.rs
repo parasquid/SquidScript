@@ -155,21 +155,35 @@ async fn find_peripheral(adapter: &Adapter, selector: &str) -> Result<Peripheral
         .map_err(|error| format!("failed to list BLE peripherals: {error}"))?;
 
     for peripheral in peripherals {
-        let address_matches = peripheral
-            .address()
-            .to_string()
-            .eq_ignore_ascii_case(selector);
-        let name_matches = peripheral
+        let address = peripheral.address().to_string();
+        let local_name = peripheral
             .properties()
             .await
             .map_err(|error| format!("failed to read BLE peripheral properties: {error}"))?
-            .and_then(|properties| properties.local_name)
-            .is_some_and(|name| name == selector);
-        if address_matches || name_matches {
+            .and_then(|properties| properties.local_name);
+        if ble_selector_matches(&address, local_name.as_deref(), selector) {
             return Ok(peripheral);
         }
     }
     Err("BLE device not found".to_string())
+}
+
+fn ble_selector_matches(address: &str, local_name: Option<&str>, selector: &str) -> bool {
+    if address.eq_ignore_ascii_case(selector) {
+        return true;
+    }
+    let Some(name) = local_name else {
+        return false;
+    };
+    if name == selector || name.contains(selector) || (selector.contains(name) && name.len() >= 8) {
+        return true;
+    }
+    let truncated_selector = selector
+        .char_indices()
+        .take_while(|(index, ch)| index + ch.len_utf8() <= 29)
+        .map(|(_, ch)| ch)
+        .collect::<String>();
+    !truncated_selector.is_empty() && name == truncated_selector
 }
 
 async fn push_connected_peripheral(
@@ -359,6 +373,48 @@ mod tests {
         fn wait_status(&mut self, _timeout: Duration) -> Result<u8, String> {
             self.status.clone()
         }
+    }
+
+    #[test]
+    fn ble_selector_matches_exact_address_and_advertised_name() {
+        assert!(ble_selector_matches(
+            "AA:BB:CC:DD:EE:FF",
+            Some("XIAO ESP32-C3 ePaper 4.26 + SD"),
+            "aa:bb:cc:dd:ee:ff"
+        ));
+        assert!(ble_selector_matches(
+            "AA:BB:CC:DD:EE:FF",
+            Some("XIAO ESP32-C3 ePaper 4.26 + SD"),
+            "XIAO ESP32-C3 ePaper 4.26 + SD"
+        ));
+    }
+
+    #[test]
+    fn ble_selector_matches_truncated_or_partial_advertised_name() {
+        assert!(ble_selector_matches(
+            "AA:BB:CC:DD:EE:FF",
+            Some("XIAO ESP32-C3 ePaper 4.26"),
+            "XIAO ESP32-C3 ePaper 4.26 + SD"
+        ));
+        assert!(ble_selector_matches(
+            "AA:BB:CC:DD:EE:FF",
+            Some("XIAO ESP32-C3 ePaper 4.26 + SD"),
+            "ESP32-C3 ePaper"
+        ));
+    }
+
+    #[test]
+    fn ble_selector_rejects_unrelated_devices() {
+        assert!(!ble_selector_matches(
+            "AA:BB:CC:DD:EE:FF",
+            Some("XIAO ESP32-C3 ePaper 4.26 + SD"),
+            "Other Device"
+        ));
+        assert!(!ble_selector_matches(
+            "AA:BB:CC:DD:EE:FF",
+            None,
+            "Other Device"
+        ));
     }
 
     #[test]

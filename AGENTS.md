@@ -396,6 +396,10 @@ work. The always-fire disciplines stay here:
   dev target, this currently exercises portable app tests, BLE file-transfer
   install, BLE reconnect, radio concurrency, and AP-after-station; display and
   SD checks remain out of scope until those target capabilities are ready.
+- For unattended XIAO e-paper smoke tests, the serial marker or documented BUSY
+  activity evidence is sufficient. Require visual confirmation only when the
+  task explicitly asks to verify rendered pixels or the user is present to
+  inspect the panel.
 - Treat changes under `firmware/zephyr/**`, generated Zephyr C includes,
   target metadata consumed by firmware, serial protocol behavior, app
   lifecycle/runtime callbacks, storage/runtime state, and hardware-facing

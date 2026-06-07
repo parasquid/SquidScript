@@ -40,6 +40,8 @@ SOURCE=""
 SKIP_FLASH=0
 PAYLOAD_ID="hello"
 WORK_DIR="$(mktemp -d)"
+BLE_SERIAL_SETUP_ATTEMPTS="${BLE_SERIAL_SETUP_ATTEMPTS:-6}"
+BLE_SERIAL_SETUP_DELAY_SECONDS="${BLE_SERIAL_SETUP_DELAY_SECONDS:-2}"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
 while [[ $# -gt 0 ]]; do
@@ -111,6 +113,34 @@ fi
 
 PAYLOAD_SQBC="${WORK_DIR}/${PAYLOAD_ID}.sqbc"
 
+run_serial_setup() {
+	local label="$1"
+	shift
+	local out="${WORK_DIR}/${label}.out"
+	local status=0
+
+	for attempt in $(seq 1 "${BLE_SERIAL_SETUP_ATTEMPTS}"); do
+		set +e
+		"$@" >"${out}" 2>&1
+		status=$?
+		set -e
+		if [[ "${status}" == "0" ]]; then
+			cat "${out}"
+			return 0
+		fi
+		if (( attempt < BLE_SERIAL_SETUP_ATTEMPTS )); then
+			if grep -Eq 'busy \(-16\)|firmware did not become ready|BadMagic' "${out}"; then
+				sleep "${BLE_SERIAL_SETUP_DELAY_SECONDS}"
+				continue
+			fi
+		fi
+		break
+	done
+
+	cat "${out}" >&2
+	return "${status}"
+}
+
 echo ">>> Building ${TARGET_ID}"
 cargo run -p squidc -- target build --target "$TARGET_ID"
 
@@ -120,10 +150,10 @@ if [[ "$SKIP_FLASH" -eq 0 ]]; then
 fi
 
 echo ">>> Formatting app storage on ${PORT}"
-cargo run --quiet -p squidc -- device storage-format --port "$PORT"
+run_serial_setup storage-format cargo run --quiet -p squidc -- device storage-format --port "$PORT"
 
 echo ">>> Launching fallback main (starts BLE receive on app.start)"
-cargo run --quiet -p squidc -- app launch main --port "$PORT"
+run_serial_setup launch-fallback-main cargo run --quiet -p squidc -- app launch main --port "$PORT"
 
 echo ">>> Compiling payload (${PAYLOAD_ID}) from ${SOURCE}"
 cargo run --quiet -p squidc -- app build "${SOURCE}" --out "$PAYLOAD_SQBC"

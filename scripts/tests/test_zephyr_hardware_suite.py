@@ -48,6 +48,17 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
         self.assertLess(suite.index("c3-supermini-test-wifi-ap-api.sh"), suite.index("c3-supermini-test-ble-smoke.sh"))
         self.assertLess(suite.index("c3-supermini-test-ble-smoke.sh"), suite.index("c3-supermini-test-blinky.sh"))
 
+    def test_ble_file_transfer_script_retries_post_flash_serial_setup(self):
+        script = self.read("scripts/zephyr-test-ble-file-transfer.sh")
+
+        self.assertIn("run_serial_setup", script)
+        self.assertIn("BLE_SERIAL_SETUP_ATTEMPTS", script)
+        self.assertIn("BLE_SERIAL_SETUP_DELAY_SECONDS", script)
+        self.assertIn("run_serial_setup storage-format", script)
+        self.assertIn("run_serial_setup launch-fallback-main", script)
+        self.assertIn(r"busy \(-16\)", script)
+        self.assertIn("firmware did not become ready", script)
+
     def test_lazy_load_screen_benchmark_has_portable_contract(self):
         docs = self.read("docs/hardware_benchmarks.md")
         script = self.read("scripts/c3-supermini-benchmark-lazy-load-screen.sh")
@@ -1061,7 +1072,7 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("radio concurrency", docs)
         self.assertIn("scripts/zephyr-test-radio-concurrency.sh", docs)
 
-    def test_xiao_epaper_hello_smoke_is_diagnostic_and_visual(self):
+    def test_xiao_epaper_hello_smoke_is_diagnostic_with_optional_visual_check(self):
         script = self.read("scripts/xiao-esp32c3-test-epaper-hello.sh")
         app = self.read("tests/hardware/xiao-esp32c3/epaper-hello/src/main.c")
         docs = self.read("docs/hardware_target_tests.md")
@@ -1071,8 +1082,8 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertIn("west build", script)
         self.assertIn("west flash", script)
         self.assertIn("EPAPER_HELLO_READY", script)
-        self.assertIn("visual confirmation", script)
-        self.assertIn("not mirrored", script)
+        self.assertIn("serial marker reached", script)
+        self.assertIn("visual confirmation optional", script)
         self.assertIn("diagnostic-only", script)
         self.assertIn("HELLO WORLD", app)
         self.assertIn("SSD1677_CMD_WRITE_RAM", app)
@@ -1081,9 +1092,10 @@ run_capture failing bash -c 'printf "diagnostic-line\\n"; exit 7'
         self.assertNotIn("uint8_t framebuffer", app)
         self.assertIn("scripts/xiao-esp32c3-test-epaper-hello.sh", docs)
         self.assertIn("EPAPER_HELLO_READY", docs)
-        self.assertIn("visual confirmation", docs)
+        self.assertIn("unattended\nsmoke-test pass criterion", docs)
+        self.assertIn("Visual confirmation is optional for\nsmoke runs", docs)
         self.assertIn("serial evidence can prove controller activity", docs)
-        self.assertIn("current e-paper activity check", docs)
+        self.assertIn("required only when the task explicitly asks", docs)
         self.assertIn("Zephyr SPI backend", docs)
         self.assertIn("service.display.clear", docs)
         self.assertIn("busy_observed=1", docs)

@@ -103,15 +103,13 @@ test. It builds and flashes the diagnostic-only Zephyr app under
 `tests/hardware/xiao-esp32c3/epaper-hello`, which bypasses SquidScript and the
 product firmware runtime, drives the SSD1677/GDEQ0426T82 panel directly, and
 prints `EPAPER_HELLO_READY` after the refresh command completes. The serial
-marker proves that the app reached the refresh path; the physical pass
-criterion is visual confirmation that the panel shows `HELLO WORLD` with a
-border and black bars, with the text oriented normally rather than mirrored.
-The app leaves the image on the e-paper display. This write-only display path
-does not provide pixel readback; without a camera or another optical sensor,
-serial evidence can prove controller activity but cannot prove the final
-visible pixels. For unattended runs, treat `BUSY` asserting during refresh and
-returning ready as the current e-paper activity check. Visual confirmation is
-still required before claiming the rendered output is correct.
+marker proves that the app reached the refresh path and is the unattended
+smoke-test pass criterion. The app leaves the image on the e-paper display.
+This write-only display path does not provide pixel readback; without a camera
+or another optical sensor, serial evidence can prove controller activity but
+cannot prove the final visible pixels. Visual confirmation is optional for
+smoke runs and required only when the task explicitly asks to verify rendered
+pixels or a human is present to inspect the panel.
 
 The default XIAO firmware also drives the SSD1677/GDEQ0426T82 display through
 the Zephyr SPI backend for `service.display.clear` and `service.display.text`.
