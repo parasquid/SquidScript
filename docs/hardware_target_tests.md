@@ -404,39 +404,50 @@ before lowering either budget again. The harness fails with the captured
 resource frame when protocol/main unused stack drops below 768 bytes or VM
 worker unused stack drops below 384 bytes.
 
-`scripts/c3-supermini-measure-ram-workloads.sh` is the targeted RAM and stack
-attribution harness. It formats app storage, installs the GPIO9 input summary
-app, launches it, dispatches a serial `SELECT`, and records `device resources`
-snapshots after format, install, launch, and dispatch under
-`target/hardware-tests/ram-workloads/summary.tsv`. The input app launch and
-`SELECT` dispatch stay in one foreground session, while later independent
-display, system-resource, and Wi-Fi workload groups reset runtime lifecycle
-state before launch. This keeps host `app launch` lifecycle semantics intact
-without filling the bounded foreground return stack during unrelated RAM
-measurements. Use it before reducing stack budgets so changes can be tied to a
-specific workload boundary. The resources response also reports
-`proto_stack_pre_*` so the harness can
-distinguish stack already consumed before resource-response encoding from stack
-pressure caused by the diagnostic command itself. Stack values are Zephyr
-high-water readings for the current boot, so unchanged stack values across rows
-mean the peak happened before or during the earliest matching snapshot, not that
-every workload used the same stack depth. Before each workload boundary, the
-harness runs `device resources --reset-heap-max`; each later
-`heap_max_alloc_bytes` row is therefore the peak since that reset, while
-`heap_alloc_bytes` remains the live allocation count at sample time. It is
-separate from the full hardware suite because it intentionally resets app
-storage. Re-run the workload harness after stack-budget changes when exact
-free-byte margins are needed. Current hardware coverage measured the
-protocol/main stack at 3,904 bytes used with 960 bytes free and the VM worker
-stack at 16,112 bytes used with 528 bytes free. The current targeted RAM
+`scripts/lib/ram-workload-harness.sh` provides the shared targeted RAM and
+stack attribution helpers for ESP32-C3 hardware scripts. Target wrappers use it
+to reset heap high-water attribution, record `device resources` snapshots, check
+protocol/main and VM worker stack accounting, and write a stable `summary.tsv`
+with stack, heap, runtime-static, and dispatch metrics. The resources response
+also reports `proto_stack_pre_*` so the harness can distinguish stack already
+consumed before resource-response encoding from stack pressure caused by the
+diagnostic command itself. Stack values are Zephyr high-water readings for the
+current boot, so unchanged stack values across rows mean the peak happened
+before or during the earliest matching snapshot, not that every workload used
+the same stack depth. Before each workload boundary, the harness runs
+`device resources --reset-heap-max`; each later `heap_max_alloc_bytes` row is
+therefore the peak since that reset, while `heap_alloc_bytes` remains the live
+allocation count at sample time.
+
+`scripts/c3-supermini-measure-ram-workloads.sh` is the Super Mini RAM workload
+wrapper. It formats app storage, installs the GPIO9 input summary app, launches
+it, dispatches a serial `SELECT`, and records snapshots after format, install,
+launch, and dispatch under `target/hardware-tests/ram-workloads/summary.tsv`.
+The input app launch and `SELECT` dispatch stay in one foreground session,
+while later independent display, system-resource, and Wi-Fi workload groups
+reset runtime lifecycle state before launch. Current hardware coverage measured
+the protocol/main stack at 3,904 bytes used with 960 bytes free and the VM
+worker stack at 16,112 bytes used with 528 bytes free. The current targeted RAM
 workload measured Wi-Fi AP start at `heap_max_alloc_bytes=59724`, and Wi-Fi AP
 stop at `heap_max_alloc_bytes=59752`, leaving at least 5,784 bytes below the
 configured heap ceiling in those reset-bounded rows.
-`scripts/c3-supermini-measure-ram-workloads.sh` also records
-`heap_max_headroom_bytes`, computed from the configured 65,536-byte Zephyr
-system heap and each row's allocation high-water mark, so AP/Wi-Fi pressure can
-be compared across workload rows without adding another firmware response
-metric.
+
+`scripts/xiao-esp32c3-measure-ram-workloads.sh` is the XIAO ESP32-C3 e-paper
+RAM workload wrapper. It builds and flashes the selected XIAO target unless
+`--skip-flash` is passed, then records storage-format, e-paper GRAY2 display,
+system-resource, and Wi-Fi AP start/stop rows under
+`target/hardware-tests/xiao-ram-workloads/summary.tsv`. Use the XIAO wrapper
+for the default dev target RAM evidence pass before changing shared ESP32-C3
+budgets. Re-run the relevant workload harness after stack-budget changes when
+exact free-byte margins are needed. `heap_max_headroom_bytes` is computed from
+the configured 65,536-byte Zephyr system heap and each row's allocation
+high-water mark, so AP/Wi-Fi pressure can be compared across workload rows
+without adding another firmware response metric.
+Current XIAO workload evidence measured the protocol/main stack at 2,356 bytes
+used with 2,508 bytes free, the VM worker stack at 16,192 bytes used with
+8,384 bytes free, Wi-Fi AP start at `heap_max_alloc_bytes=59748`, and Wi-Fi AP
+stop at `heap_max_alloc_bytes=59776`, leaving at least 5,760 bytes below the
+configured heap ceiling in those reset-bounded rows.
 `heap_largest_free_supported=0` and `heap_largest_free_bytes=0` mean the
 current Zephyr public heap API does not expose a safe non-mutating
 largest-free-block query. `sys_heap_runtime_stats_get()` returns free,

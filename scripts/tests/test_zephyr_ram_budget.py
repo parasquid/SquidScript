@@ -158,15 +158,15 @@ class ZephyrRamBudgetTests(ZephyrScriptTestCase):
 
     def test_default_config_uses_measured_system_heap_budget(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
-        ram_workloads = self.read("scripts/c3-supermini-measure-ram-workloads.sh")
+        ram_harness = self.read("scripts/lib/ram-workload-harness.sh")
         heap_bytes = 65536
 
         self.assert_config_value(prj_conf, "CONFIG_HEAP_MEM_POOL_SIZE", heap_bytes)
         self.assertIn("CONFIG_HEAP_MEM_POOL_IGNORE_MIN=y", prj_conf)
         self.assertNotIn("CONFIG_HEAP_MEM_POOL_ADD_SIZE_ESP_WIFI=", prj_conf)
-        self.assertIn(f'SYSTEM_HEAP_BYTES="${{SYSTEM_HEAP_BYTES:-{heap_bytes}}}"', ram_workloads)
-        self.assertIn("heap_max_headroom_bytes", ram_workloads)
-        self.assertIn("SYSTEM_HEAP_BYTES - heap_max_alloc", ram_workloads)
+        self.assertIn(f'SYSTEM_HEAP_BYTES="${{SYSTEM_HEAP_BYTES:-{heap_bytes}}}"', ram_harness)
+        self.assertIn("heap_max_headroom_bytes", ram_harness)
+        self.assertIn("SYSTEM_HEAP_BYTES - heap_max_alloc", ram_harness)
 
     def test_ram_audit_default_guard_tracks_current_esp32c3_budget(self):
         audit = self.read("scripts/zephyr-ram-audit.sh")
@@ -364,57 +364,102 @@ class ZephyrRamBudgetTests(ZephyrScriptTestCase):
         )
 
     def test_hardware_workload_ram_measurement_captures_attributed_snapshots(self):
+        harness = self.read("scripts/lib/ram-workload-harness.sh")
         stack = self.read("scripts/c3-supermini-measure-ram-workloads.sh")
 
-        self.assertIn('COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-12}"', stack)
-        self.assertIn('WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-60}"', stack)
+        self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', harness)
+        self.assertIn('SYSTEM_HEAP_BYTES="${SYSTEM_HEAP_BYTES:-65536}"', harness)
+        self.assertIn("ram_resource_value()", harness)
+        self.assertIn("ram_assert_stack_accounting()", harness)
+        self.assertIn("ram_wait_for_contains()", harness)
+        self.assertIn("ram_run_device_capture()", harness)
+        self.assertIn("ram_run_app_capture()", harness)
+        self.assertIn("ram_wait_for_device_contains()", harness)
+        self.assertIn("ram_wait_for_resource_value()", harness)
+        self.assertIn('SQ_VM_RUNTIME_COMPLETE_STATUS="${SQ_VM_RUNTIME_COMPLETE_STATUS:-2}"', harness)
+        self.assertIn("ram_init_summary()", harness)
+        self.assertIn("ram_snapshot_resources()", harness)
+        self.assertIn("ram_reset_heap_max_attribution()", harness)
+        self.assertIn("ram_reset_runtime_between_workloads()", harness)
+        self.assertNotRegex(harness, r"run_capture [^\n]*ram_device_command")
+        self.assertNotRegex(harness, r"run_capture [^\n]*ram_app_command")
+        self.assertIn('COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-12}"', harness)
+        self.assertIn('WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-60}"', harness)
+        self.assertIn('local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS))', harness)
+        self.assertIn("while (( SECONDS < deadline )); do", harness)
+        self.assertIn('ram_run_device_capture "heap-reset-${label}" resources --reset-heap-max', harness)
+        self.assertIn('heap_largest_free_supported', harness)
+        self.assertIn('heap_largest_free_bytes', harness)
+        self.assertIn('summary.tsv', harness)
         self.assertIn("target/hardware-tests/ram-workloads", stack)
-        self.assertIn('snapshot_resources after-format', stack)
-        self.assertIn('snapshot_resources input-after-install', stack)
-        self.assertIn('snapshot_resources input-after-launch', stack)
-        self.assertIn('snapshot_resources input-after-select', stack)
+        self.assertIn('source "${ROOT}/scripts/lib/ram-workload-harness.sh"', stack)
+        self.assertIn('ram_init_summary', stack)
+        self.assertIn('ram_snapshot_resources after-format', stack)
+        self.assertIn('ram_snapshot_resources input-after-install', stack)
+        self.assertIn('ram_snapshot_resources input-after-launch', stack)
+        self.assertIn('ram_snapshot_resources input-after-select', stack)
         self.assertNotIn('wait_for_contains input-output-start "output=count 0"', stack)
-        self.assertIn('snapshot_resources display-after-launch', stack)
-        self.assertIn('snapshot_resources system-after-launch', stack)
-        self.assertIn('snapshot_resources wifi-ap-after-start', stack)
-        self.assertIn('snapshot_resources wifi-ap-after-stop', stack)
-        self.assertIn('cargo run --quiet -p squidc -- device key SELECT', stack)
+        self.assertIn('ram_snapshot_resources display-after-launch', stack)
+        self.assertIn('ram_snapshot_resources system-after-launch', stack)
+        self.assertIn('ram_snapshot_resources wifi-ap-after-start', stack)
+        self.assertIn('ram_snapshot_resources wifi-ap-after-stop', stack)
+        self.assertIn('ram_run_device_capture key-select key SELECT', stack)
         self.assertIn('tests/hardware/c3-supermini/display-drawlog/main.squid', stack)
         self.assertIn('tests/hardware/c3-supermini/system-resources/main.squid', stack)
         self.assertIn('tests/hardware/c3-supermini/wifi-ap-summary/main.squid', stack)
-        self.assertIn('proto_stack_used_bytes', stack)
-        self.assertIn('proto_stack_pre_used_bytes', stack)
         self.assertNotIn('proto_stack_pre_res_used_bytes', stack)
-        self.assertIn('vm_stack_used_bytes', stack)
-        self.assertIn("reset_runtime_between_workloads display", stack)
-        self.assertIn("reset_runtime_between_workloads system", stack)
-        self.assertIn("reset_runtime_between_workloads wifi-ap", stack)
+        self.assertIn("ram_reset_runtime_between_workloads display", stack)
+        self.assertIn("ram_reset_runtime_between_workloads system", stack)
+        self.assertIn("ram_reset_runtime_between_workloads wifi-ap", stack)
         self.assertLess(
-            stack.index('run_capture key-select cargo run --quiet -p squidc -- device key SELECT'),
-            stack.index("reset_runtime_between_workloads display"),
+            stack.index('ram_run_device_capture key-select key SELECT'),
+            stack.index("ram_reset_runtime_between_workloads display"),
         )
         self.assertLess(
-            stack.index("reset_runtime_between_workloads display"),
-            stack.index('run_capture launch-display-drawlog cargo run --quiet -p squidc -- app launch display-drawlog'),
+            stack.index("ram_reset_runtime_between_workloads display"),
+            stack.index('ram_run_app_capture launch-display-drawlog launch display-drawlog'),
         )
         self.assertLess(
-            stack.index("reset_runtime_between_workloads system"),
-            stack.index('run_capture launch-system-resources cargo run --quiet -p squidc -- app launch system-resources'),
+            stack.index("ram_reset_runtime_between_workloads system"),
+            stack.index('ram_run_app_capture launch-system-resources launch system-resources'),
         )
         self.assertLess(
-            stack.index("reset_runtime_between_workloads wifi-ap"),
-            stack.index('run_capture launch-wifi-ap cargo run --quiet -p squidc -- app launch wifi-ap-summary'),
+            stack.index("ram_reset_runtime_between_workloads wifi-ap"),
+            stack.index('ram_run_app_capture launch-wifi-ap launch wifi-ap-summary'),
         )
-        self.assertIn('heap_alloc_bytes', stack)
-        self.assertIn('heap_max_alloc_bytes', stack)
-        self.assertIn('device resources --reset-heap-max', stack)
-        self.assertIn('heap_largest_free_supported', stack)
-        self.assertIn('heap_largest_free_bytes', stack)
-        self.assertIn('summary.tsv', stack)
-        self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', stack)
-        self.assertIn('local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS))', stack)
-        self.assertIn("while (( SECONDS < deadline )); do", stack)
         self.assertNotIn("for _ in $(seq 1 80)", stack)
+
+    def test_xiao_ram_workload_measurement_uses_shared_harness(self):
+        script = self.read("scripts/xiao-esp32c3-measure-ram-workloads.sh")
+
+        self.assertIn('TARGET_ID="${TARGET_ID:-xiao-esp32c3-gdeq0426t82-sd}"', script)
+        self.assertIn("target/hardware-tests/xiao-ram-workloads", script)
+        self.assertIn('source "${ROOT}/scripts/lib/serial-port.sh"', script)
+        self.assertIn('source "${ROOT}/scripts/lib/ram-workload-harness.sh"', script)
+        self.assertIn('export ESPFLASH_PORT="${ESPFLASH_PORT:-$(resolve_esp_serial_port)}"', script)
+        self.assertIn('TARGET_COMMAND_TIMEOUT_SECONDS="${TARGET_COMMAND_TIMEOUT_SECONDS:-180}"', script)
+        self.assertIn('cargo run --quiet -p squidc -- target flash --target "${TARGET_ID}"', script)
+        self.assertLess(
+            script.index('ram_wait_for_device_contains post-flash-output "output=ble installer ready"'),
+            script.index('ram_wait_for_resource_value post-flash-complete runtime_status "${SQ_VM_RUNTIME_COMPLETE_STATUS}"'),
+        )
+        self.assertLess(
+            script.index('ram_wait_for_resource_value post-flash-complete runtime_status "${SQ_VM_RUNTIME_COMPLETE_STATUS}"'),
+            script.index('ram_reset_runtime_between_workloads storage-format'),
+        )
+        self.assertIn('tests/hardware/xiao-esp32c3/epaper-gray2-smoke', script)
+        self.assertIn('tests/hardware/zephyr/system-resources/main.squid', script)
+        self.assertIn('tests/hardware/zephyr/wifi-ap-summary/main.squid', script)
+        self.assertNotIn('tests/hardware/c3-supermini/input-button', script)
+        self.assertLess(
+            script.index('ram_reset_runtime_between_workloads storage-format'),
+            script.index('ram_reset_heap_max_attribution storage-format'),
+        )
+        self.assertIn('ram_snapshot_resources after-format', script)
+        self.assertIn('ram_snapshot_resources epaper-gray2-after-launch', script)
+        self.assertIn('ram_snapshot_resources system-after-launch', script)
+        self.assertIn('ram_snapshot_resources wifi-ap-after-start', script)
+        self.assertIn('ram_snapshot_resources wifi-ap-after-stop', script)
 
     def test_input_stack_isolation_measurement_is_bounded_and_input_only(self):
         stack = self.read("scripts/c3-supermini-measure-input-stack-isolation.sh")

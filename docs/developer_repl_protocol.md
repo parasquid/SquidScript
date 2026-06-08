@@ -293,8 +293,8 @@ transfer window used for file-backed installed app dispatch; the full installed
 `main.sqbc` payload is not resident in that window. Use
 `scripts/zephyr-static-buffer-report.sh` for static ownership attribution: the
 current report separates SquidScript-owned runtime/protocol buffers from
-Zephyr, ESP, network, Wi-Fi, heap, and stack symbols. The ESP32-C3 Super Mini
-canonical configuration keeps Zephyr's system heap at 45,056 bytes.
+Zephyr, ESP, network, Wi-Fi, heap, and stack symbols. The ESP32-C3 Zephyr
+canonical configuration keeps Zephyr's system heap at 65,536 bytes.
 Representative app, display, system-resource, and Wi-Fi AP start/stop workloads
 with reset-bounded heap high-water rows measured Wi-Fi AP start at
 `heap_max_alloc_bytes=36432` and Wi-Fi AP stop at `heap_max_alloc_bytes=36460`,

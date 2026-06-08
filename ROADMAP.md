@@ -143,9 +143,9 @@ Current ESP32-C3 RAM baseline:
 - Latest observed linker DRAM from
   `cargo run -p squidc -- target build --target esp32c3-super-mini`: 239,232
   bytes.
-- Latest observed linker DRAM from
+- Latest observed linker/audit DRAM from
   `cargo run -p squidc -- target build --target xiao-esp32c3-gdeq0426t82-sd`:
-  256,992 bytes. The custom BLE file-transfer path keeps SquidScript-owned state
+  261,008 / 260,988 bytes. The custom BLE file-transfer path keeps SquidScript-owned state
   bounded: a small profile table, one pending event slot, and one in-flight
   staging session. If RAM becomes tight, audit the target Bluetooth feature set
   and connection/buffer counts before increasing firmware-owned static buffers.
@@ -196,6 +196,13 @@ RAM verification notes:
 - Logical input dispatch stack coverage can use host-injected
   `device key SELECT` events. Physical GPIO9 tests validate the electrical and
   binding path that queues the same logical event.
+- The XIAO RAM workload harness records storage-format, e-paper GRAY2,
+  system-resource, and Wi-Fi AP start/stop rows under
+  `target/hardware-tests/xiao-ram-workloads/summary.tsv`. Current same-build
+  XIAO evidence measured Wi-Fi AP stop at `heap_max_alloc_bytes=59776`
+  with 5,760 bytes of configured heap headroom, protocol/main stack at
+  2,356 bytes used with 2,508 bytes free, and VM worker stack at 16,192 bytes
+  used with 8,384 bytes free.
 - Real ESP32-C3 Zephyr Wi-Fi scan/list coverage passes through the driver scan
   callback with bounded redacted AP rows. Future Wi-Fi scan RAM work should
   focus on result pagination/cursor behavior and broader service-state modeling,

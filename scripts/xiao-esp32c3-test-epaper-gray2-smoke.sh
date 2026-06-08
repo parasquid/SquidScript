@@ -12,6 +12,7 @@ REFRESH_DELAY_SECONDS="${SQUID_EPAPER_GRAY2_REFRESH_DELAY_SECONDS:-8}"
 SKIP_FLASH="${SKIP_FLASH:-0}"
 REQUIRE_CAMERA=0
 CAMERA_DEVICE="${SQUID_EPAPER_GRAY2_CAMERA:-/dev/video5}"
+COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-120}"
 
 source "${ROOT}/scripts/lib/hardware-command.sh"
 
@@ -129,6 +130,9 @@ run_capture install-epaper-gray2 \
 
 run_capture launch-epaper-gray2 \
   cargo run --quiet -p squidc -- app launch ${APP_ID} --port "${ESPFLASH_PORT}" >/dev/null
+
+launch_lifecycle_out="$(run_capture lifecycle-after-launch cargo run --quiet -p squidc -- device lifecycle --port "${ESPFLASH_PORT}")"
+assert_file_contains "${launch_lifecycle_out}" "lifecycle=active=${APP_ID}"
 
 sleep "${REFRESH_DELAY_SECONDS}"
 
