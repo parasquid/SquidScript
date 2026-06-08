@@ -22,7 +22,7 @@ host-only compile-failure fixtures under `tests/app-tests/negative`.
 
 `squidc hardware test --target <id>` selects checks from target metadata
 features. On the XIAO ESP32-C3 default dev target it covers portable app tests,
-BLE file-transfer install, BLE reconnect, radio concurrency, and
+BLE file-transfer install, installed BLE receiver routing, BLE reconnect, radio concurrency, and
 AP-after-station. Run hardware commands outside the Codex sandbox and never run
 two serial/flashing/monitor commands against the same physical board at once.
 

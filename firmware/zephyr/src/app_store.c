@@ -1217,6 +1217,35 @@ int sq_app_store_scan_registry_with_path(const char *mount_point, struct sq_app_
 	return fs_closedir(&dir);
 }
 
+int sq_app_registry_validate(const struct sq_app_registry *registry, char *line,
+			     size_t line_len)
+{
+	if (registry == NULL || line == NULL || line_len == 0) {
+		return -EINVAL;
+	}
+	if (registry->count > SQ_APP_STORE_MAX_APPS) {
+		(void)snprintf(line, line_len, "invariant.registry.count code=%d (EINVAL)",
+			       -EINVAL);
+		return -EINVAL;
+	}
+	for (uint8_t i = 0; i < registry->count; i++) {
+		if (!is_safe_app_id(registry->apps[i].app_id) || registry->apps[i].sqbc_len == 0) {
+			(void)snprintf(line, line_len, "invariant.registry.entry code=%d (EINVAL)",
+				       -EINVAL);
+			return -EINVAL;
+		}
+		for (uint8_t j = (uint8_t)(i + 1u); j < registry->count; j++) {
+			if (strcmp(registry->apps[i].app_id, registry->apps[j].app_id) == 0) {
+				(void)snprintf(line, line_len,
+					       "invariant.registry.duplicate code=%d (EEXIST)",
+					       -EEXIST);
+				return -EEXIST;
+			}
+		}
+	}
+	return 0;
+}
+
 int sq_app_store_update_registry_entry_with_path(const char *mount_point,
 						 struct sq_app_registry *registry,
 						 const char *app_id, char *path,
@@ -1614,6 +1643,36 @@ const struct sq_app_registry_entry *sq_app_registry_find(const struct sq_app_reg
 		}
 	}
 	return NULL;
+}
+
+int sq_app_registry_slot_for_app(const struct sq_app_registry *registry, const char *app_id,
+				 uint8_t *out_slot)
+{
+	if (out_slot != NULL) {
+		*out_slot = SQ_APP_REGISTRY_SLOT_INVALID;
+	}
+	if (registry == NULL || !is_safe_app_id(app_id) || out_slot == NULL) {
+		return -EINVAL;
+	}
+
+	for (uint8_t i = 0; i < registry->count; i++) {
+		if (strcmp(registry->apps[i].app_id, app_id) == 0) {
+			*out_slot = i;
+			return 0;
+		}
+	}
+	return -ENOENT;
+}
+
+const char *sq_app_registry_app_id_at(const struct sq_app_registry *registry, uint8_t slot)
+{
+	if (registry == NULL || slot == SQ_APP_REGISTRY_SLOT_INVALID || slot >= registry->count) {
+		return NULL;
+	}
+	if (registry->apps[slot].app_id[0] == '\0') {
+		return NULL;
+	}
+	return registry->apps[slot].app_id;
 }
 
 struct sq_vm_storage_backend

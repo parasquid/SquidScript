@@ -141,6 +141,26 @@ run_serial_setup() {
 	return "${status}"
 }
 
+wait_for_serial_output() {
+	local label="$1"
+	local expected="$2"
+	local out="${WORK_DIR}/${label}.out"
+
+	for attempt in $(seq 1 "${BLE_SERIAL_SETUP_ATTEMPTS}"); do
+		cargo run --quiet -p squidc -- device output --port "$PORT" >"${out}" 2>&1 || true
+		if grep -q "$expected" "${out}"; then
+			cat "${out}"
+			return 0
+		fi
+		sleep "${BLE_SERIAL_SETUP_DELAY_SECONDS}"
+	done
+
+	printf 'Expected device output to contain %s\n' "$expected" >&2
+	printf 'Output log: %s\n' "$out" >&2
+	cat "${out}" >&2
+	return 1
+}
+
 echo ">>> Building ${TARGET_ID}"
 cargo run -p squidc -- target build --target "$TARGET_ID"
 
@@ -154,6 +174,7 @@ run_serial_setup storage-format cargo run --quiet -p squidc -- device storage-fo
 
 echo ">>> Launching fallback main (starts BLE receive on app.start)"
 run_serial_setup launch-fallback-main cargo run --quiet -p squidc -- app launch main --port "$PORT"
+wait_for_serial_output fallback-ready "output=ble installer ready"
 
 echo ">>> Compiling payload (${PAYLOAD_ID}) from ${SOURCE}"
 cargo run --quiet -p squidc -- app build "${SOURCE}" --out "$PAYLOAD_SQBC"

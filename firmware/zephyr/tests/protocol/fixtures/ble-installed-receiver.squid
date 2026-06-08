@@ -1,0 +1,21 @@
+app "ble-installed-receiver"
+
+event.on("app.start") {
+  service.ble.start("file-transfer", {
+    id: "sqbc-install",
+    accept: [".sqbc"],
+    events: {
+      complete: "ble.file.complete"
+    }
+  })
+  debug.print("ble-installed-receiver ready")
+}
+
+event.on("ble.file.complete", ev) {
+  debug.print("ble-installed-receiver complete", ev.id)
+  let installed = app.install(ev.upload)
+  debug.print("ble-installed-receiver installed", installed.id)
+  app.launch(installed.id)
+}
+
+screen("main") {}

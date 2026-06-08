@@ -18,6 +18,14 @@ static struct fs_mount_t test_fs_mount = {
 	.fs_data = TEST_FS_DIR,
 };
 
+static struct sq_app_registry registry = {
+	.count = 2,
+	.apps = {
+		{.app_id = "installed-app", .sqbc_len = 128},
+		{.app_id = "library", .sqbc_len = 256},
+	},
+};
+
 static int mount_test_fs(void)
 {
 	int result = fs_mount(&test_fs_mount);
@@ -78,10 +86,11 @@ static void ble_file_transfer_dispatch_before(void *fixture)
 	sq_ble_file_transfer_cleanup_staging();
 	sq_ble_file_transfer_reset_session();
 	sq_ble_profile_table_reset();
+	sq_ble_file_transfer_set_registry(&registry);
 	zassert_equal(unmount_test_fs(), 0, "unmount failed");
 	zassert_equal(mount_test_fs(), 0, "remount failed");
 	zassert_equal(format_test_fs(), 0, "format failed");
-	zassert_equal(sq_ble_profile_table_add("installed-app", "sqbc-install", accept_exts, 1,
+	zassert_equal(sq_ble_profile_table_add(0, "sqbc-install", accept_exts, 1,
 					       events, 1),
 		      0, "profile add failed");
 }
@@ -132,7 +141,7 @@ ZTEST(ble_file_transfer_dispatch, test_completed_write_uses_configured_event_rou
 	sq_ble_file_transfer_cleanup_staging();
 	sq_ble_file_transfer_reset_session();
 	sq_ble_profile_table_reset();
-	zassert_equal(sq_ble_profile_table_add("library", "binbook-receive", accept_exts, 1,
+	zassert_equal(sq_ble_profile_table_add(1, "binbook-receive", accept_exts, 1,
 					       events, 1),
 		      0, "profile add failed");
 
@@ -148,6 +157,40 @@ ZTEST(ble_file_transfer_dispatch, test_completed_write_uses_configured_event_rou
 
 	zassert_str_equal(sq_ble_file_transfer_pending_app_id(), "library");
 	zassert_str_equal(sq_ble_file_transfer_pending_event_name(), "ble.file.ready");
+}
+
+ZTEST(ble_file_transfer_dispatch, test_completed_write_resolves_fallback_app_slot)
+{
+	static const char accept_exts[1][SQVM_BLE_PROFILE_TEXT_CAP] = {".fallback"};
+	static const SqvmBleProfileEventRoute events[1] = {
+		{.kind = "complete", .event = "ble.file.complete"},
+	};
+	char staging_path[128] = {0};
+	const uint8_t chunk[] = {'M', 'A', 'I', 'N'};
+	int result;
+
+	sq_ble_file_transfer_cleanup_staging();
+	sq_ble_file_transfer_reset_session();
+	sq_ble_profile_table_reset();
+	sq_ble_file_transfer_set_fallback_app_id("main");
+	zassert_equal(sq_ble_profile_table_add(SQ_APP_REGISTRY_SLOT_FALLBACK,
+					       "fallback-receive", accept_exts, 1,
+					       events, 1),
+		      0, "fallback profile add failed");
+
+	result = sq_ble_file_transfer_test_invoke_begin_with_name(".fallback",
+							      sizeof(chunk),
+							      staging_path,
+							      sizeof(staging_path));
+	zassert_equal(result, 0, "begin failed: %d", result);
+
+	result = sq_ble_file_transfer_test_invoke_write_with_path(staging_path, chunk, sizeof(chunk), 0,
+							    0);
+	zassert_equal(result, (int)sizeof(chunk), "final content write expected %zu, got %d",
+		      sizeof(chunk), result);
+
+	zassert_str_equal(sq_ble_file_transfer_pending_app_id(), "main");
+	zassert_str_equal(sq_ble_file_transfer_pending_profile_id(), "fallback-receive");
 }
 
 ZTEST(ble_file_transfer_dispatch, test_drain_returns_app_id_and_event)

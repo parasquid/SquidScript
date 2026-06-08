@@ -76,16 +76,19 @@ replace directly, no alias or migration).
 - **Advertising is gated on active profiles.** The radio advertises the transfer
   service UUID only while ≥1 profile is registered; it stops when the last
   profile is cleared. (Boot no longer advertises unconditionally.)
-- **Routing/dispatch is unchanged.** A completed transfer routes by object name
-  (`<app_id>/<profile_id>/<.ext>`) to the app that started the matching profile,
-  via the existing pending-event → poll-drain → `START_APP` path. If that app is
-  not currently running, it is started to handle the event, exactly as today.
+- **Routing/dispatch.** A completed transfer routes by uploaded file extension
+  to the installed app or target fallback app that started the matching profile,
+  via the pending-event poll-drain path. Firmware stores the app registry slot
+  or reserved fallback slot in the active BLE route and resolves the app-id text
+  only when dispatching the completion event. The active route table must map an
+  uploaded extension to exactly one receiver; ambiguous or stale route state is
+  reported through `device errors` as an invariant diagnostic and the transfer is
+  rejected.
 - **In-flight transfer on stop.** `stop` aborts any partially received object
   and cleans its staging file (reusing `sq_ble_transfer_abort` /
   `reset_session`, which already preserve a *completed* pending event).
-- **Caps unchanged.** `SQ_VM_RUNTIME_BLE_PROFILE_ARMED_MAX` continues to bound
-  total registered profiles; rename to drop "ARMED" from the macro name since the
-  gating is no longer armed-based (see `docs/runtime_limits.md`).
+- **Caps unchanged.** `SQ_VM_RUNTIME_BLE_PROFILE_MAX` bounds total registered
+  profiles (see `docs/runtime_limits.md`).
 
 ### Re-launch semantics (resolved)
 

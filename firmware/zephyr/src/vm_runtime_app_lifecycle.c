@@ -60,10 +60,13 @@ int32_t runtime_app_disarm(void *user_data, const uint8_t *app, size_t app_len)
 	/* Drop this app's BLE profile routes alongside its armed timers. */
 	if (app != NULL && app_len < SQ_APP_STORE_APP_ID_MAX) {
 		char app_id[SQ_APP_STORE_APP_ID_MAX];
+		uint8_t app_slot = SQ_APP_REGISTRY_SLOT_INVALID;
 
 		memcpy(app_id, app, app_len);
 		app_id[app_len] = '\0';
-		sq_ble_profile_table_remove_app(app_id);
+		if (sq_app_registry_slot_for_app(runtime->registry, app_id, &app_slot) == 0) {
+			sq_ble_profile_table_remove_app_slot(app_slot);
+		}
 	}
 	return sq_vm_runtime_clear_armed_app(user_data, app, app_len);
 }

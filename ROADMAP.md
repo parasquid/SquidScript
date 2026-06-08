@@ -124,6 +124,8 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Developer Tooling
 
+- Audit compiler, SQBC, simulator, examples, and docs for invariant violations
+  that should become explicit diagnostics instead of silent ambiguity.
 - Extend `squidc hardware test --target esp32c3-super-mini` so the Super Mini
   regression target uses the same target-aware hardware-test architecture as
   the XIAO default dev target, with checks selected from target metadata and

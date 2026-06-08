@@ -1,0 +1,17 @@
+app "ble-install"
+
+event.on("app.start") {
+  service.ble.start("file-transfer", {
+    id: "sqbc-install",
+    accept: [".sqbc"],
+    events: {
+      complete: "ble.file.complete"
+    }
+  })
+}
+
+event.on("ble.file.complete", ev) {
+  debug.print(ev.id)
+}
+
+screen("main") {}

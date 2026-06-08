@@ -259,6 +259,13 @@ class ZephyrRamBudgetTests(ZephyrScriptTestCase):
                 "3fc9cf24 00001000 b bt_stack\n"
                 "3fc9df24 00000400 b bt_tx_processor_stack\n"
                 "3fc9e324 00000520 B bt_lw_stack_area\n"
+                "3fc9e844 00000594 b sq_ble_profile_table\n"
+                "3fc9edd8 000002e8 b sq_ble_start_profile\n"
+                "3fc9f0c0 000000ec b sq_ble_file_transfer_session\n"
+                "3fc9f1ac 000000ec b sq_ble_file_transfer_pending\n"
+                "3fc9f298 00000114 b sq_app_lfs_storage\n"
+                "3fc9f3ac 000000b0 b sq_vm_runtime_work_thread\n"
+                "3fc9f45c 000000a0 b binbook_previous_page\n"
                 "EOF\n",
             )
 
@@ -292,9 +299,52 @@ class ZephyrRamBudgetTests(ZephyrScriptTestCase):
         ]:
             with self.subTest(name=name):
                 self.assertRegex(result.stdout, rf"group=platform .*name={name}")
-        self.assertRegex(result.stdout, r"group=squidscript .*name=sq_vm_runtime_work_stack")
+        for name in [
+            "sq_vm_runtime_work_stack",
+            "sq_ble_profile_table",
+            "sq_ble_start_profile",
+            "sq_ble_file_transfer_session",
+            "sq_ble_file_transfer_pending",
+            "sq_app_lfs_storage",
+            "sq_vm_runtime_work_thread",
+            "binbook_previous_page",
+        ]:
+            with self.subTest(name=name):
+                self.assertRegex(result.stdout, rf"group=squidscript .*name={name}")
         self.assertRegex(result.stdout, r"group=squidscript .*name=runtime\.4")
         self.assertRegex(result.stdout, r"group=squidscript .*name=response\.0")
+
+    def test_static_buffer_report_limited_symbol_output_exits_cleanly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            elf = tmp_path / "zephyr.elf"
+            elf.write_bytes(b"fake")
+            nm_tool = tmp_path / "fake-nm"
+            self.write_executable(
+                nm_tool,
+                "#!/usr/bin/env bash\n"
+                "for i in $(seq 0 64); do\n"
+                "  printf '3fc9%04x %08x b sq_ble_test_%02d\\n' \"$i\" $((512 + i)) \"$i\"\n"
+                "done\n",
+            )
+
+            env = os.environ.copy()
+            env["NM"] = str(nm_tool)
+            env["SQUID_ZEPHYR_STATIC_SYMBOL_COUNT"] = "2"
+
+            result = subprocess.run(
+                [str(ROOT / "scripts/zephyr-static-buffer-report.sh"), str(elf)],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+        self.assertIn("static_buffer_top_symbols=2", result.stdout)
+        self.assertIn("static_buffer_symbol[0]=", result.stdout)
+        self.assertIn("static_buffer_symbol[1]=", result.stdout)
+        self.assertNotIn("static_buffer_symbol[2]=", result.stdout)
 
     def test_zephyr_main_stack_tracks_measured_protocol_work(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")

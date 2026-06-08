@@ -10,11 +10,11 @@
 
 #include "app_store.h"
 #include "ble_profile_table.h"
+#include "sq_errno.h"
 #include "vm_runtime.h"
 
 LOG_MODULE_REGISTER(squidscript_ble_transfer, LOG_LEVEL_INF);
 
-#define SQ_BLE_FILE_TRANSFER_APP_ID_MAX      SQ_APP_STORE_APP_ID_MAX
 #define SQ_BLE_FILE_TRANSFER_PROFILE_ID_MAX  32
 #define SQ_BLE_FILE_TRANSFER_PATH_MAX        SQ_APP_STORE_PATH_MAX
 
@@ -24,8 +24,8 @@ LOG_MODULE_REGISTER(squidscript_ble_transfer, LOG_LEVEL_INF);
 
 struct sq_ble_file_transfer_session {
 	bool active;
-	char app_id[SQ_BLE_FILE_TRANSFER_APP_ID_MAX];
-	char profile_id[SQ_BLE_FILE_TRANSFER_PROFILE_ID_MAX];
+	uint8_t app_slot;
+	char instance_id[SQ_BLE_FILE_TRANSFER_PROFILE_ID_MAX];
 	char complete_event[SQ_VM_RUNTIME_EVENT_LEN];
 	char staging_path[SQ_BLE_FILE_TRANSFER_PATH_MAX];
 	size_t alloc_size;
@@ -34,8 +34,8 @@ struct sq_ble_file_transfer_session {
 
 struct sq_ble_file_transfer_pending_event {
 	bool active;
-	char app_id[SQ_BLE_FILE_TRANSFER_APP_ID_MAX];
-	char profile_id[SQ_BLE_FILE_TRANSFER_PROFILE_ID_MAX];
+	uint8_t app_slot;
+	char instance_id[SQ_BLE_FILE_TRANSFER_PROFILE_ID_MAX];
 	char event[SQ_VM_RUNTIME_EVENT_LEN];
 	char staging_path[SQ_BLE_FILE_TRANSFER_PATH_MAX];
 	size_t bytes_received;
@@ -44,6 +44,10 @@ struct sq_ble_file_transfer_pending_event {
 
 static struct sq_ble_file_transfer_session sq_ble_file_transfer_session;
 static struct sq_ble_file_transfer_pending_event sq_ble_file_transfer_pending;
+static const struct sq_app_registry *sq_ble_file_transfer_registry;
+static const char *sq_ble_file_transfer_fallback_app_id;
+static sq_ble_file_transfer_error_sink sq_ble_file_transfer_error_cb;
+static void *sq_ble_file_transfer_error_user_data;
 
 #define SQ_BLE_FILE_TRANSFER_NAME_MAX 96
 
@@ -59,62 +63,58 @@ static struct {
 	char name[SQ_BLE_FILE_TRANSFER_NAME_MAX];
 } sq_ble_framed;
 
-static int sq_ble_file_transfer_format_staging_path(char *out, size_t out_len, const char *app_id,
+void sq_ble_file_transfer_set_registry(const struct sq_app_registry *registry)
+{
+	sq_ble_file_transfer_registry = registry;
+}
+
+void sq_ble_file_transfer_set_fallback_app_id(const char *app_id)
+{
+	sq_ble_file_transfer_fallback_app_id = app_id;
+}
+
+void sq_ble_file_transfer_set_error_sink(sq_ble_file_transfer_error_sink sink, void *user_data)
+{
+	sq_ble_file_transfer_error_cb = sink;
+	sq_ble_file_transfer_error_user_data = user_data;
+}
+
+static void sq_ble_file_transfer_record_invariant(const char *name, int code)
+{
+	char line[SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
+
+	if (sq_ble_file_transfer_error_cb == NULL || name == NULL) {
+		return;
+	}
+	(void)snprintf(line, sizeof(line), "invariant.%s code=%d (%s)", name, code,
+		       sq_errno_name(code));
+	sq_ble_file_transfer_error_cb(sq_ble_file_transfer_error_user_data, line);
+}
+
+static const char *sq_ble_file_transfer_app_id_for_slot(uint8_t app_slot)
+{
+	if (app_slot == SQ_APP_REGISTRY_SLOT_FALLBACK) {
+		return sq_ble_file_transfer_fallback_app_id;
+	}
+	return sq_app_registry_app_id_at(sq_ble_file_transfer_registry, app_slot);
+}
+
+static int sq_ble_file_transfer_format_staging_path(char *out, size_t out_len, uint8_t app_slot,
 					  const char *profile_id)
 {
 	int written;
 
-	if (out == NULL || app_id == NULL || profile_id == NULL || out_len == 0) {
+	if (out == NULL || app_slot == SQ_APP_REGISTRY_SLOT_INVALID || profile_id == NULL ||
+	    out_len == 0) {
 		return -EINVAL;
 	}
-	written = snprintf(out, out_len, "%s/ble-file-transfer-%s-%s.tmp", SQ_BLE_FILE_TRANSFER_STAGING_DIR,
-			   app_id, profile_id);
+	written = snprintf(out, out_len, "%s/ble-xfer-s%u-%s.tmp",
+			   SQ_BLE_FILE_TRANSFER_STAGING_DIR, (unsigned int)app_slot,
+			   profile_id);
 	if (written < 0 || (size_t)written >= out_len) {
 		return -ENOSPC;
 	}
 	return 0;
-}
-
-static bool sq_ble_file_transfer_route_text_equal(const uint8_t *text, size_t text_cap,
-						  const char *want)
-{
-	size_t want_len;
-
-	if (text == NULL || want == NULL) {
-		return false;
-	}
-	want_len = strlen(want);
-	if (want_len >= text_cap) {
-		return false;
-	}
-	return memcmp(text, want, want_len) == 0 && text[want_len] == '\0';
-}
-
-static int sq_ble_file_transfer_copy_complete_event(const struct sq_ble_profile_entry *profile,
-						    char *out, size_t out_len)
-{
-	if (profile == NULL || out == NULL || out_len == 0) {
-		return -EINVAL;
-	}
-	for (uint8_t i = 0; i < profile->event_count; i++) {
-		const SqvmBleProfileEventRoute *route = &profile->events[i];
-		size_t event_len;
-
-		if (!sq_ble_file_transfer_route_text_equal(route->kind, sizeof(route->kind),
-							   "complete")) {
-			continue;
-		}
-		for (event_len = 0; event_len < sizeof(route->event) && route->event[event_len] != '\0';
-		     event_len++) {
-		}
-		if (event_len == 0 || event_len >= out_len || event_len >= sizeof(route->event)) {
-			return SQ_BLE_FILE_TRANSFER_RES_INV_PARAM;
-		}
-		memcpy(out, route->event, event_len);
-		out[event_len] = '\0';
-		return 0;
-	}
-	return SQ_BLE_FILE_TRANSFER_RES_INV_PARAM;
 }
 
 static void sq_ble_file_transfer_close_session_files(void)
@@ -186,10 +186,9 @@ static int sq_ble_file_transfer_open_staging_file(struct sq_ble_file_transfer_se
 
 static int sq_ble_file_transfer_begin_internal(const char *name, size_t alloc_size)
 {
-	char app_id[SQ_BLE_FILE_TRANSFER_APP_ID_MAX] = {0};
-	char profile_id[SQ_BLE_FILE_TRANSFER_PROFILE_ID_MAX] = {0};
 	char extension[16] = {0};
 	const struct sq_ble_profile_entry *profile;
+	const char *app_id;
 	int result;
 
 	if (sq_ble_file_transfer_session.active) {
@@ -199,29 +198,31 @@ static int sq_ble_file_transfer_begin_internal(const char *name, size_t alloc_si
 	if (result != 0) {
 		return result;
 	}
-	profile = sq_ble_profile_lookup_accepting_extension(extension);
-	if (profile == NULL) {
+	result = sq_ble_profile_lookup_accepting_extension_result(extension, &profile);
+	if (result == -EEXIST) {
+		sq_ble_file_transfer_record_invariant("ble.route_ambiguous", -EEXIST);
+		return SQ_BLE_FILE_TRANSFER_RES_ROUTE_AMBIGUOUS;
+	}
+	if (result != 0) {
 		return SQ_BLE_FILE_TRANSFER_RES_INV_PARAM;
 	}
-	strncpy(app_id, profile->app_id, sizeof(app_id) - 1);
-	strncpy(profile_id, profile->profile_id, sizeof(profile_id) - 1);
-
-	memset(&sq_ble_file_transfer_session, 0, sizeof(sq_ble_file_transfer_session));
-	strncpy(sq_ble_file_transfer_session.app_id, app_id,
-		sizeof(sq_ble_file_transfer_session.app_id) - 1);
-	strncpy(sq_ble_file_transfer_session.profile_id, profile_id,
-		sizeof(sq_ble_file_transfer_session.profile_id) - 1);
-	result = sq_ble_file_transfer_copy_complete_event(
-		profile, sq_ble_file_transfer_session.complete_event,
-		sizeof(sq_ble_file_transfer_session.complete_event));
-	if (result != 0) {
-		memset(&sq_ble_file_transfer_session, 0, sizeof(sq_ble_file_transfer_session));
-		return result;
+	app_id = sq_ble_file_transfer_app_id_for_slot(profile->app_slot);
+	if (app_id == NULL) {
+		sq_ble_file_transfer_record_invariant("ble.route_stale", -ENOENT);
+		return SQ_BLE_FILE_TRANSFER_RES_INV_PARAM;
 	}
 
-	result = sq_ble_file_transfer_format_staging_path(sq_ble_file_transfer_session.staging_path,
-						sizeof(sq_ble_file_transfer_session.staging_path), app_id,
-						profile_id);
+	memset(&sq_ble_file_transfer_session, 0, sizeof(sq_ble_file_transfer_session));
+	sq_ble_file_transfer_session.app_slot = profile->app_slot;
+	strncpy(sq_ble_file_transfer_session.instance_id, profile->instance_id,
+		sizeof(sq_ble_file_transfer_session.instance_id) - 1);
+	strncpy(sq_ble_file_transfer_session.complete_event, profile->complete_event,
+		sizeof(sq_ble_file_transfer_session.complete_event) - 1);
+
+	result = sq_ble_file_transfer_format_staging_path(
+		sq_ble_file_transfer_session.staging_path,
+		sizeof(sq_ble_file_transfer_session.staging_path), profile->app_slot,
+		profile->instance_id);
 	if (result != 0) {
 		return SQ_BLE_FILE_TRANSFER_RES_INV_PARAM;
 	}
@@ -236,7 +237,7 @@ static int sq_ble_file_transfer_begin_internal(const char *name, size_t alloc_si
 	sq_ble_file_transfer_session.alloc_size = alloc_size;
 	sq_ble_file_transfer_session.bytes_received = 0;
 
-	LOG_INF("begin app=%s profile=%s path=%s alloc=%zu", app_id, profile_id,
+	LOG_INF("begin app=%s profile=%s path=%s alloc=%zu", app_id, profile->instance_id,
 		sq_ble_file_transfer_session.staging_path, alloc_size);
 	return 0;
 }
@@ -292,10 +293,10 @@ static int sq_ble_file_transfer_write_internal(const char *staging_path, const v
 		 * consumer run on different threads but the same core.
 		 */
 		memset(&sq_ble_file_transfer_pending, 0, sizeof(sq_ble_file_transfer_pending));
-		strncpy(sq_ble_file_transfer_pending.app_id, sq_ble_file_transfer_session.app_id,
-			sizeof(sq_ble_file_transfer_pending.app_id) - 1);
-		strncpy(sq_ble_file_transfer_pending.profile_id, sq_ble_file_transfer_session.profile_id,
-			sizeof(sq_ble_file_transfer_pending.profile_id) - 1);
+		sq_ble_file_transfer_pending.app_slot = sq_ble_file_transfer_session.app_slot;
+		strncpy(sq_ble_file_transfer_pending.instance_id,
+			sq_ble_file_transfer_session.instance_id,
+			sizeof(sq_ble_file_transfer_pending.instance_id) - 1);
 		strncpy(sq_ble_file_transfer_pending.event, sq_ble_file_transfer_session.complete_event,
 			sizeof(sq_ble_file_transfer_pending.event) - 1);
 		strncpy(sq_ble_file_transfer_pending.staging_path, sq_ble_file_transfer_session.staging_path,
@@ -308,7 +309,8 @@ static int sq_ble_file_transfer_write_internal(const char *staging_path, const v
 		 * on disconnect (close_session_files / reset_session) does not unlink
 		 * the handed-off file out from under the deferred install. */
 		sq_ble_file_transfer_session.staging_path[0] = '\0';
-		LOG_INF("write complete: pending event app=%s", sq_ble_file_transfer_pending.app_id);
+		LOG_INF("write complete: pending event app_slot=%u",
+			(unsigned int)sq_ble_file_transfer_pending.app_slot);
 	}
 
 	return (int)written;
@@ -326,8 +328,9 @@ void sq_ble_file_transfer_reset_session(void)
 	bool completed_handoff = sq_ble_file_transfer_pending.active;
 
 	if (sq_ble_file_transfer_session.active) {
-		LOG_INF("reset_session: clearing in-flight app=%s profile=%s",
-			sq_ble_file_transfer_session.app_id, sq_ble_file_transfer_session.profile_id);
+		LOG_INF("reset_session: clearing in-flight app_slot=%u profile=%s",
+			(unsigned int)sq_ble_file_transfer_session.app_slot,
+			sq_ble_file_transfer_session.instance_id);
 	}
 	sq_ble_file_transfer_close_session_files();
 	/* An abandoned partial upload (started, never completed -> no handoff) has
@@ -344,8 +347,9 @@ void sq_ble_file_transfer_reset_session(void)
 static void sq_ble_file_transfer_abort_internal(void)
 {
 	if (sq_ble_file_transfer_session.active) {
-		LOG_INF("abort: clearing in-flight app=%s profile=%s",
-			sq_ble_file_transfer_session.app_id, sq_ble_file_transfer_session.profile_id);
+		LOG_INF("abort: clearing in-flight app_slot=%u profile=%s",
+			(unsigned int)sq_ble_file_transfer_session.app_slot,
+			sq_ble_file_transfer_session.instance_id);
 	}
 	memset(&sq_ble_framed, 0, sizeof(sq_ble_framed));
 	sq_ble_file_transfer_close_session_files();
@@ -464,7 +468,7 @@ bool sq_ble_file_transfer_pending_is_complete(void)
 
 const char *sq_ble_file_transfer_pending_app_id(void)
 {
-	return sq_ble_file_transfer_pending.app_id;
+	return sq_ble_file_transfer_app_id_for_slot(sq_ble_file_transfer_pending.app_slot);
 }
 
 const char *sq_ble_file_transfer_pending_event_name(void)
@@ -479,7 +483,12 @@ int sq_ble_file_transfer_drain_pending_event(char *app_id_out, size_t app_id_cap
 		return -ENOENT;
 	}
 	if (app_id_out != NULL && app_id_cap > 0) {
-		strncpy(app_id_out, sq_ble_file_transfer_pending.app_id, app_id_cap - 1);
+		const char *app_id = sq_ble_file_transfer_pending_app_id();
+
+		if (app_id == NULL) {
+			return -EINVAL;
+		}
+		strncpy(app_id_out, app_id, app_id_cap - 1);
 		app_id_out[app_id_cap - 1] = '\0';
 	}
 	if (event_out != NULL && event_cap > 0) {
@@ -502,7 +511,7 @@ const char *sq_ble_file_transfer_pending_staging_path(void)
 
 const char *sq_ble_file_transfer_pending_profile_id(void)
 {
-	return sq_ble_file_transfer_pending.profile_id;
+	return sq_ble_file_transfer_pending.instance_id;
 }
 
 size_t sq_ble_file_transfer_pending_bytes_received(void)

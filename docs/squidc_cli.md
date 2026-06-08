@@ -171,6 +171,13 @@ class and the mapped errno. When the retained diagnostic ring is larger than
 the response budget, firmware returns the newest lines that fit and includes
 `errors_truncated=N`.
 
+Firmware invariant diagnostics also appear here. These lines begin with
+`invariant.` and indicate impossible or ambiguous runtime state, such as
+duplicate app registry ids, duplicate active binding rows, or ambiguous BLE
+file-transfer routes. `squidc app push` maps known BLE transfer status bytes to
+readable messages such as `BLE route ambiguous`; inspect `device errors` for
+the retained firmware-side invariant line.
+
 `device resources` reads Zephyr firmware resource diagnostics and reports
 raw target-specific RAM and app-storage byte counts. `ram_total_bytes` is
 static board context; `vm_stack_*` fields expose the configured VM work
@@ -277,9 +284,10 @@ command; with `--json`, use `--print-plan` instead of starting the stream.
 
 `hardware test --target <target-id>` runs the target-aware hardware regression
 checks selected from target metadata features. The XIAO ESP32-C3 default dev
-target currently selects portable app tests, BLE file-transfer install, BLE
-reconnect, radio concurrency, and AP-after-station checks. It excludes display
-drawlog and SD-card checks until those capabilities are ready for this target.
+target currently selects portable app tests, BLE file-transfer install,
+installed BLE receiver routing, BLE reconnect, radio concurrency, and
+AP-after-station checks. It excludes display drawlog and SD-card checks until
+those capabilities are ready for this target.
 Use `--skip-flash` when the correct firmware is already flashed. Use
 `--ble-device <name-or-address>` to override BLE matching and
 `--host-wifi-iface <iface>` when Wi-Fi tests should use a specific host

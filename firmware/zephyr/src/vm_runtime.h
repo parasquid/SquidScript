@@ -501,6 +501,8 @@ int sq_vm_runtime_record_trace(struct sq_vm_runtime *runtime, const uint8_t *mes
 			       size_t message_len);
 int sq_vm_runtime_record_drawlog(struct sq_vm_runtime *runtime, const char *line);
 int sq_vm_runtime_record_device_error(struct sq_vm_runtime *runtime, const char *line);
+int sq_vm_runtime_validate_invariants(const struct sq_vm_runtime *runtime, char *line,
+				      size_t line_len);
 int sq_vm_runtime_indicator_write(struct sq_vm_runtime *runtime, bool value);
 int sq_vm_runtime_indicator_toggle(struct sq_vm_runtime *runtime);
 int sq_vm_runtime_indicator_read(struct sq_vm_runtime *runtime, bool *out);

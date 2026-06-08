@@ -37,6 +37,9 @@ extern "C" {
 #define SQ_APP_STORE_MAX_APPS 8
 #endif
 
+#define SQ_APP_REGISTRY_SLOT_INVALID UINT8_MAX
+#define SQ_APP_REGISTRY_SLOT_FALLBACK (UINT8_MAX - 1u)
+
 struct fs_mount_t;
 
 struct sq_app_registry_entry {
@@ -139,6 +142,9 @@ int sq_app_store_scan_registry_with_path(const char *mount_point,
 					 struct sq_app_registry *registry, char *path,
 					 size_t path_cap);
 
+int sq_app_registry_validate(const struct sq_app_registry *registry, char *line,
+			     size_t line_len);
+
 int sq_app_store_update_registry_entry_with_path(const char *mount_point,
 						 struct sq_app_registry *registry,
 						 const char *app_id, char *path,
@@ -151,6 +157,9 @@ int sq_app_store_format_job_step(struct sq_app_store_format_job *job, const char
 
 const struct sq_app_registry_entry *sq_app_registry_find(const struct sq_app_registry *registry,
 							const char *app_id);
+int sq_app_registry_slot_for_app(const struct sq_app_registry *registry, const char *app_id,
+				 uint8_t *out_slot);
+const char *sq_app_registry_app_id_at(const struct sq_app_registry *registry, uint8_t slot);
 
 struct sq_vm_storage_backend
 sq_app_store_vm_storage_backend(struct sq_app_store_vm_storage *storage);

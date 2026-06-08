@@ -126,12 +126,43 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
         script = self.read("scripts/zephyr-test-ble-file-transfer.sh")
 
         self.assertIn("run_serial_setup", script)
+        self.assertIn("wait_for_serial_output", script)
         self.assertIn("BLE_SERIAL_SETUP_ATTEMPTS", script)
         self.assertIn("BLE_SERIAL_SETUP_DELAY_SECONDS", script)
         self.assertIn("run_serial_setup storage-format", script)
         self.assertIn("run_serial_setup launch-fallback-main", script)
+        self.assertIn("output=ble installer ready", script)
         self.assertIn(r"busy \(-16\)", script)
         self.assertIn("firmware did not become ready", script)
+
+    def test_ble_installed_receiver_script_exercises_registry_slot_and_clear(self):
+        script = self.read("scripts/zephyr-test-ble-installed-receiver.sh")
+
+        self.assertIn("tests/hardware/zephyr/ble-installed-receiver/main.squid", script)
+        self.assertIn("app install", script)
+        self.assertIn("app launch ble-installed-receiver", script)
+        self.assertIn("output=ble-installed-receiver ready", script)
+        self.assertIn("app push", script)
+        self.assertIn("output=ble-installed-receiver complete sqbc-install", script)
+        self.assertIn("tests/hardware/zephyr/ble-route-return/main.squid", script)
+        self.assertIn("Pushing return payload via BLE to installed receiver", script)
+        self.assertIn("Pushing return payload again after foreground return", script)
+        self.assertIn("wait_for_serial_output_count receiver-ready-returned", script)
+        self.assertIn("wait_for_serial_output_count receiver-complete-again", script)
+        self.assertIn("OK ble-installed-receiver", script)
+
+    def test_target_hardware_suite_runs_installed_ble_receiver_after_fallback_install(self):
+        cli = self.read("compiler/rust/crates/squidc-cli/src/main.rs")
+
+        self.assertIn('name: "ble-installed-receiver"', cli)
+        self.assertLess(
+            cli.index('name: "ble-file-transfer-install"'),
+            cli.index('name: "ble-installed-receiver"'),
+        )
+        self.assertLess(
+            cli.index('name: "ble-installed-receiver"'),
+            cli.index('name: "ble-reconnect"'),
+        )
 
     def test_hardware_command_failures_capture_raw_serial_when_protocol_diagnostics_are_empty(self):
         helper = self.read("scripts/lib/hardware-command.sh")

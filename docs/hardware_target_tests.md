@@ -764,6 +764,18 @@ BLE GATT transfer service. The fallback starts `service.ble.start` on
 `app.start`, receives `.sqbc`, calls `app.install(ev.upload)`, and launches
 the installed app.
 
+`scripts/zephyr-test-ble-installed-receiver.sh` verifies the installed-app
+route path. It installs `tests/hardware/zephyr/ble-installed-receiver` as a
+normal app registry entry, launches it, pushes an exiting SQBC payload to that
+installed foreground receiver, verifies the completion event is delivered to
+that installed app, waits for the launched app to exit back to the receiver,
+then pushes the same payload again. This covers registry-slot BLE routing and
+foreground-return BLE reactivation separately from the fallback-slot installer.
+If either BLE transfer script fails during route selection, inspect
+`squidc device errors`: route-table ambiguity or stale registry-slot state is
+reported as an `invariant.ble.*` diagnostic rather than left as only a raw GATT
+write failure.
+
 The host-side driver is the Rust `squidc app push` client and requires a host
 Bluetooth adapter. The `squidc` BLE push tests exercise the GATT call order with
 a fake client, independent of host BLE capability. The native ztests under

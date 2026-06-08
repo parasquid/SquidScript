@@ -43,7 +43,8 @@ symbol_rows="$(
   "$nm_tool" --print-size --size-sort "$elf" |
   awk '
     function classify(name) {
-      if (name ~ /^(runtime|response|registry|install_session|temp_session|resource_session|protocol_scratch|launch_storage|trigger_storage|transport|sq_vm_runtime_work_stack)(\.|$)/) {
+      if (name ~ /^(runtime|response|registry|install_session|temp_session|resource_session|protocol_scratch|launch_storage|trigger_storage|transport|sq_vm_runtime_work_stack|sq_vm_runtime_work_thread|sq_app_lfs_storage)(\.|$)/ ||
+          name ~ /^(sq_ble_|binbook_)/) {
         return "squidscript"
       }
       if (name ~ /^(z_|kheap_|_k_|net_|mgmt_|rx_|timer_task_stack|sys_work_q_stack|logging_|service_thread|wifi_|esp|bt_|g_|g[A-Z]|s_wifi_|fdtable|server_ctx|contexts|buf32|TxRxCxt|phy_param|global_data|route_ipv4_entries|_net_buf_)/) {
@@ -80,10 +81,7 @@ awk '
 echo "static_buffer_top_symbols=$symbol_count"
 sort -nr <<<"$symbol_rows" |
   awk '
-    NR > limit {
-      exit
-    }
-    NF >= 5 {
+    NR <= limit && NF >= 5 {
       printf "static_buffer_symbol[%u]=group=%s size=%u addr=%s type=%s name=%s\n", row, $4, $1 + 0, $2, $3, $5
       row++
     }

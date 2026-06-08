@@ -2485,6 +2485,10 @@ Semantics:
 - **Foreground service.** `start` activates receive for the current foreground
   app. Launching another foreground app clears the previous app's active BLE
   receive profile.
+- **Installed apps and target fallback only.** Temp-run apps cannot start BLE
+  receive because completed transfers route through a stable app slot. Installed
+  apps use their registry slot; the target fallback app uses a reserved fallback
+  slot.
 - **Advertising is gated on active profiles.** The radio advertises the transfer
   service UUID only while at least one profile is registered. A target fallback
   app may start receive at boot, but receive otherwise becomes active only after
@@ -2520,6 +2524,10 @@ Rules:
   (copy, install, log) before returning from the handler.
 - A completed transfer is delivered to the foreground app profile whose
   `accept` list contains the uploaded file extension, such as `.sqbc`.
+- The active route table must not contain multiple receivers for the same
+  uploaded extension. Ambiguous or stale route-table state is a firmware
+  invariant violation: firmware records an `invariant.ble.*` diagnostic and
+  rejects the transfer without dispatching an app event.
 - App artifacts uploaded through BLE should use `.sqbc` until a resource
   package format is specified, and they should follow the same installer rules
   as HTTP uploads.

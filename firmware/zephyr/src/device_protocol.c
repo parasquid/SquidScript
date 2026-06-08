@@ -971,6 +971,7 @@ static int start_resolved_app_bytes(const struct sq_device_protocol_context *con
 				    bool temp_app);
 static bool is_main_app_id(const uint8_t *app_id, size_t app_id_len);
 static void clear_foreground_timers(struct sq_vm_runtime *runtime);
+static void clear_foreground_ble_profile(const struct sq_device_protocol_context *context);
 
 static int __noinline launch_app(const struct sq_protocol_request *request,
 		      const uint8_t *request_bytes, size_t request_len,
@@ -1018,7 +1019,7 @@ static int start_installed_app_bytes(const struct sq_device_protocol_context *co
 			       memcmp(context->runtime->current_app, app_id, app_id_len) != 0);
 	if (current_app_changed) {
 		clear_foreground_timers(context->runtime);
-		sq_ble_profile_table_remove_app(context->runtime->current_app);
+		clear_foreground_ble_profile(context);
 	}
 	if (set_current || context->runtime->current_app_temp ||
 	    strlen(context->runtime->current_app) != app_id_len ||
@@ -1114,7 +1115,7 @@ static int start_temp_app_bytes(const struct sq_device_protocol_context *context
 			       memcmp(context->runtime->current_app, app_id, app_id_len) != 0);
 	if (current_app_changed) {
 		clear_foreground_timers(context->runtime);
-		sq_ble_profile_table_remove_app(context->runtime->current_app);
+		clear_foreground_ble_profile(context);
 	}
 	if (set_current || !context->runtime->current_app_temp ||
 	    strlen(context->runtime->current_app) != app_id_len ||
@@ -1201,7 +1202,7 @@ static int start_fallback_app(const struct sq_device_protocol_context *context,
 			       strcmp(context->runtime->current_app, "main") != 0);
 	if (current_app_changed) {
 		clear_foreground_timers(context->runtime);
-		sq_ble_profile_table_remove_app(context->runtime->current_app);
+		clear_foreground_ble_profile(context);
 	}
 	if (set_current || context->runtime->current_app_temp ||
 	    strcmp(context->runtime->current_app, "main") != 0) {
@@ -1284,6 +1285,22 @@ static void clear_foreground_timers(struct sq_vm_runtime *runtime)
 		return;
 	}
 	memset(runtime->timers, 0, sizeof(runtime->timers));
+}
+
+static void clear_foreground_ble_profile(const struct sq_device_protocol_context *context)
+{
+	uint8_t app_slot = SQ_APP_REGISTRY_SLOT_INVALID;
+
+	if (context == NULL || context->runtime == NULL || context->runtime->current_app_temp ||
+	    context->runtime->current_app[0] == '\0') {
+		return;
+	}
+	if (sq_app_registry_slot_for_app(context->registry, context->runtime->current_app,
+					 &app_slot) == 0) {
+		sq_ble_profile_table_remove_app_slot(app_slot);
+	} else if (strcmp(context->runtime->current_app, "main") == 0) {
+		sq_ble_profile_table_remove_app_slot(SQ_APP_REGISTRY_SLOT_FALLBACK);
+	}
 }
 
 static size_t c_array_len(const uint8_t *bytes, size_t cap)
@@ -2535,10 +2552,136 @@ static int __noinline runtime_cap_get(const struct sq_protocol_request *request,
 					      response, response_cap, response_len);
 }
 
-static int __noinline errors_response(const struct sq_protocol_request *request,
-				      const struct sq_vm_runtime *runtime, uint8_t *response,
-				      size_t response_cap, size_t *response_len)
+static bool runtime_has_device_error_line(const struct sq_vm_runtime *runtime, const char *line)
 {
+	if (runtime == NULL || line == NULL) {
+		return false;
+	}
+	for (size_t i = 0; i < runtime->device_error_count; i++) {
+		if (strcmp(runtime->device_errors[i], line) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static int protocol_session_invariant_line(char *line, size_t line_len, const char *name, int code)
+{
+	int written;
+
+	if (line == NULL || line_len == 0 || name == NULL) {
+		return -EINVAL;
+	}
+	written = snprintf(line, line_len, "invariant.protocol.%s code=%d (%s)", name, code,
+			   sq_errno_name(code));
+	if (written < 0 || (size_t)written >= line_len) {
+		return -ENOSPC;
+	}
+	return code;
+}
+
+static int validate_transfer_session(bool active, const char *app_id, size_t total_len,
+				     size_t received, enum sq_device_transfer_phase phase,
+				     char *line, size_t line_len)
+{
+	if (phase > SQ_DEVICE_TRANSFER_COMMITTING) {
+		return protocol_session_invariant_line(line, line_len, "session", -EINVAL);
+	}
+	if (!active) {
+		return phase == SQ_DEVICE_TRANSFER_IDLE ? 0 :
+						 protocol_session_invariant_line(line, line_len,
+										 "session", -EINVAL);
+	}
+	if (!sq_app_store_is_safe_app_id(app_id) || total_len == 0 || received > total_len ||
+	    phase == SQ_DEVICE_TRANSFER_IDLE) {
+		return protocol_session_invariant_line(line, line_len, "session", -EINVAL);
+	}
+	return 0;
+}
+
+static int validate_context_protocol_invariants(
+	const struct sq_device_protocol_context *context, char *line, size_t line_len)
+{
+	int result;
+
+	if (context == NULL) {
+		return 0;
+	}
+	if (context->scratch != NULL &&
+	    context->scratch->owner > SQ_DEVICE_PROTOCOL_SCRATCH_STORAGE_FORMAT) {
+		return protocol_session_invariant_line(line, line_len, "scratch", -EINVAL);
+	}
+	if (context->install_session != NULL) {
+		result = validate_transfer_session(
+			context->install_session->active, context->install_session->app_id,
+			context->install_session->total_len, context->install_session->received,
+			context->install_session->phase, line, line_len);
+		if (result != 0) {
+			return result;
+		}
+	}
+	if (context->temp_session != NULL) {
+		result = validate_transfer_session(
+			context->temp_session->active, context->temp_session->app_id,
+			context->temp_session->total_len, context->temp_session->received,
+			context->temp_session->phase, line, line_len);
+		if (result != 0) {
+			return result;
+		}
+	}
+	if (context->resource_session != NULL) {
+		result = validate_transfer_session(
+			context->resource_session->active, context->resource_session->app_id,
+			context->resource_session->total_len,
+			context->resource_session->received, context->resource_session->phase,
+			line, line_len);
+		if (result != 0) {
+			return result;
+		}
+		if (context->resource_session->active &&
+		    context->resource_session->resource_path[0] == '\0') {
+			return protocol_session_invariant_line(line, line_len, "session",
+							       -EINVAL);
+		}
+	}
+	return 0;
+}
+
+static void record_context_invariant(const struct sq_device_protocol_context *context)
+{
+	char line[SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
+	int result;
+
+	if (context == NULL || context->runtime == NULL) {
+		return;
+	}
+	if (context->registry != NULL) {
+		result = sq_app_registry_validate(context->registry, line, sizeof(line));
+		if (result != 0) {
+			if (!runtime_has_device_error_line(context->runtime, line)) {
+				(void)sq_vm_runtime_record_device_error(context->runtime, line);
+			}
+			return;
+		}
+	}
+	result = sq_vm_runtime_validate_invariants(context->runtime, line, sizeof(line));
+	if (result != 0) {
+		if (!runtime_has_device_error_line(context->runtime, line)) {
+			(void)sq_vm_runtime_record_device_error(context->runtime, line);
+		}
+		return;
+	}
+	result = validate_context_protocol_invariants(context, line, sizeof(line));
+	if (result != 0 && !runtime_has_device_error_line(context->runtime, line)) {
+		(void)sq_vm_runtime_record_device_error(context->runtime, line);
+	}
+}
+
+static int __noinline errors_response(const struct sq_protocol_request *request,
+				      const struct sq_device_protocol_context *context,
+				      uint8_t *response, size_t response_cap, size_t *response_len)
+{
+	const struct sq_vm_runtime *runtime = context == NULL ? NULL : context->runtime;
 	const char *available[1 + SQ_VM_RUNTIME_DEVICE_ERROR_MAX];
 	const char *lines[2 + SQ_VM_RUNTIME_DEVICE_ERROR_MAX];
 	size_t available_count = 0;
@@ -2547,6 +2690,7 @@ static int __noinline errors_response(const struct sq_protocol_request *request,
 	char truncated_line[32];
 	size_t omitted_count = 0;
 
+	record_context_invariant(context);
 	if (runtime != NULL) {
 		for (size_t i = 0;
 		     i < runtime->device_error_count && available_count < ARRAY_SIZE(available);
@@ -2674,8 +2818,7 @@ int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 							 response, response_cap, response_len);
 		break;
 	case SQ_OPCODE_ERRORS_GET:
-		result = errors_response(&frame, context->runtime, response, response_cap,
-					 response_len);
+		result = errors_response(&frame, context, response, response_cap, response_len);
 		break;
 	case SQ_OPCODE_STATE_GET:
 		result = state_get_response(&frame, context, response, response_cap, response_len);

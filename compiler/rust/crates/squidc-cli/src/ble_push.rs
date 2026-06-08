@@ -18,6 +18,7 @@ pub const OP_ABORT: u8 = 0x03;
 pub const STATUS_COMPLETE: u8 = 0x00;
 #[cfg(test)]
 pub const STATUS_ERROR: u8 = 0x01;
+pub const STATUS_ROUTE_AMBIGUOUS: u8 = 0x11;
 
 const DEFAULT_CHUNK: usize = 180;
 const MAX_CHUNK: usize = 512;
@@ -99,7 +100,7 @@ pub fn push_sqbc_with_client<C: BleTransferClient>(
         }
         Ok(status) => {
             let _ = client.stop_notify(STAT_UUID);
-            Err(format!("device reported error status {status}"))
+            Err(ble_status_error(status))
         }
         Err(error) => {
             let _ = client.write_control(&[OP_ABORT]);
@@ -280,7 +281,7 @@ async fn push_connected_peripheral(
             extension: ".sqbc".to_string(),
             bytes_sent: payload.len(),
         }),
-        Ok(Some(status)) => Err(format!("device reported error status {status}")),
+        Ok(Some(status)) => Err(ble_status_error(status)),
         Ok(None) => Err("BLE status notification stream ended before completion".to_string()),
         Err(_) => {
             let _ = peripheral
@@ -300,10 +301,19 @@ fn negotiated_chunk_size(mtu: u16) -> usize {
 }
 
 fn ble_data_write_type(properties: CharPropFlags) -> WriteType {
-    if properties.contains(CharPropFlags::WRITE_WITHOUT_RESPONSE) {
-        WriteType::WithoutResponse
-    } else {
+    if properties.contains(CharPropFlags::WRITE) {
         WriteType::WithResponse
+    } else {
+        WriteType::WithoutResponse
+    }
+}
+
+fn ble_status_error(status: u8) -> String {
+    match status {
+        STATUS_ROUTE_AMBIGUOUS => {
+            format!("device reported BLE route ambiguous status {status}")
+        }
+        _ => format!("device reported error status {status}"),
     }
 }
 
@@ -539,16 +549,38 @@ mod tests {
     }
 
     #[test]
-    fn ble_data_write_type_prefers_without_response_when_supported() {
+    fn push_sqbc_reports_named_route_ambiguity_status() {
+        let root = unique_test_dir("squidc-ble-push-ambiguous-route");
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("app.sqbc");
+        fs::write(&source, b"SQBCxxxx").unwrap();
+        let mut client = FakeClient {
+            status: Ok(STATUS_ROUTE_AMBIGUOUS),
+            ..FakeClient::default()
+        };
+
+        let error = push_sqbc_with_client(&mut client, "SquidScript", &source).unwrap_err();
+
+        assert!(error.contains("BLE route ambiguous"));
+        assert!(error.contains("17"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn ble_data_write_type_prefers_with_response_when_supported() {
         use btleplug::api::CharPropFlags;
 
         assert_eq!(
             ble_data_write_type(CharPropFlags::WRITE | CharPropFlags::WRITE_WITHOUT_RESPONSE),
-            WriteType::WithoutResponse
+            WriteType::WithResponse
         );
         assert_eq!(
             ble_data_write_type(CharPropFlags::WRITE),
             WriteType::WithResponse
+        );
+        assert_eq!(
+            ble_data_write_type(CharPropFlags::WRITE_WITHOUT_RESPONSE),
+            WriteType::WithoutResponse
         );
     }
 

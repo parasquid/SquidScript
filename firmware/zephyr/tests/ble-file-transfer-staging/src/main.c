@@ -7,13 +7,24 @@
 #include <zephyr/kernel.h>
 #include <zephyr/ztest.h>
 
+#include "app_store.h"
 #include "ble_file_transfer_core.h"
 #include "ble_profile_table.h"
+enum {
+	SQ_TEST_VM_RUNTIME_STRING_BYTES = 48,
+};
 
 static struct fs_mount_t test_fs_mount = {
 	.type = FS_NATIVE_MOUNT,
 	.mnt_point = "/sqtest",
 	.fs_data = TEST_FS_DIR,
+};
+
+static struct sq_app_registry registry = {
+	.count = 1,
+	.apps = {
+		{.app_id = "installed-app", .sqbc_len = 128},
+	},
 };
 
 static int mount_test_fs(void)
@@ -66,7 +77,8 @@ static void ble_file_transfer_staging_before(void *fixture)
 	(void)fixture;
 	sq_ble_file_transfer_reset_session();
 	sq_ble_profile_table_reset();
-	zassert_equal(sq_ble_profile_table_add("installed-app", "sqbc-install", accept_exts, 1,
+	sq_ble_file_transfer_set_registry(&registry);
+	zassert_equal(sq_ble_profile_table_add(0, "sqbc-install", accept_exts, 1,
 					       events, 1), 0,
 		      "failed to register foreground BLE profile");
 	zassert_equal(unmount_test_fs(), 0, "unmount failed");
@@ -97,6 +109,19 @@ ZTEST(ble_file_transfer_staging, test_begin_opens_staging_file)
 	zassert_true(staging_path[0] != '\0', "staging_path should not be empty");
 	zassert_true(staging_file_exists(staging_path), "staging file should exist at %s",
 		     staging_path);
+}
+
+ZTEST(ble_file_transfer_staging, test_staging_path_fits_runtime_event_string_budget)
+{
+	char staging_path[128] = {0};
+	int result;
+
+	result = sq_ble_file_transfer_test_invoke_begin_with_name(".sqbc", 4096, staging_path,
+							      sizeof(staging_path));
+	zassert_equal(result, 0, "expected 0 from begin, got %d", result);
+	zassert_true(strlen(staging_path) <= SQ_TEST_VM_RUNTIME_STRING_BYTES,
+		     "BLE upload event path must fit runtime string cap: path=%s len=%zu cap=%d",
+		     staging_path, strlen(staging_path), SQ_TEST_VM_RUNTIME_STRING_BYTES);
 }
 
 ZTEST(ble_file_transfer_staging, test_write_writes_chunks_to_staging_file)
@@ -161,6 +186,27 @@ ZTEST(ble_file_transfer_staging, test_second_create_while_busy_returns_obj_locke
 							      sizeof(staging_path_b));
 	zassert_equal(result, SQ_BLE_FILE_TRANSFER_RES_BUSY,
 		      "expected BUSY on second create, got %d", result);
+}
+
+ZTEST(ble_file_transfer_staging, test_begin_reports_ambiguous_route)
+{
+	static const char accept_exts[1][SQVM_BLE_PROFILE_TEXT_CAP] = {".sqbc"};
+	static const SqvmBleProfileEventRoute events[1] = {
+		{.kind = "complete", .event = "ble.file.complete"},
+	};
+	char staging_path[128] = {0};
+	int result;
+
+	result = sq_ble_profile_table_add(SQ_APP_REGISTRY_SLOT_FALLBACK, "fallback",
+					  accept_exts, 1, events, 1);
+	zassert_equal(result, 0, "fallback route add failed: %d", result);
+
+	result = sq_ble_file_transfer_test_invoke_begin_with_name(".sqbc", 4096, staging_path,
+							      sizeof(staging_path));
+	zassert_equal(result, SQ_BLE_FILE_TRANSFER_RES_ROUTE_AMBIGUOUS,
+		      "expected route ambiguity status, got %d", result);
+	zassert_false(staging_file_exists(staging_path),
+		      "ambiguous route must not create staging file");
 }
 
 ZTEST(ble_file_transfer_staging, test_abort_unlinks_and_clears_in_flight_session)

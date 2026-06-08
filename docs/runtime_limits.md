@@ -46,11 +46,24 @@ returns `-ENOSPC` to the VM.
 | Registered BLE profile entries | 2 | `SQ_VM_RUNTIME_BLE_PROFILE_MAX` |
 
 The BLE profile routing table is a static array of
-`SQ_VM_RUNTIME_BLE_PROFILE_MAX` entries. Profiles are registered
-imperatively when an app runs `service.ble.start("file-transfer", ...)`; one
-file-transfer profile per app is set or replaced. The natural upper bound is
-`SQ_APP_STORE_MAX_APPS = 8`, but the runtime cap of 2 is tighter and matches
-the current single-session GATT policy.
+`SQ_VM_RUNTIME_BLE_PROFILE_MAX` entries. Each entry stores the installed-app
+registry slot, the app-local profile instance id, accepted file extensions, and
+the complete-event name. App-id text lives in the app registry and is resolved
+only at dispatch or path-construction boundaries.
+
+Profiles are registered imperatively when an installed foreground app or the
+target fallback app runs `service.ble.start("file-transfer", ...)`; one
+file-transfer profile per app is set or replaced. Temp-run apps cannot register
+BLE receive profiles because they do not have a stable app slot. The natural
+upper bound is `SQ_APP_STORE_MAX_APPS = 8` plus the reserved fallback slot, but
+the runtime cap of 2 is tighter and matches the current single-session GATT
+policy.
+
+The route table must resolve an uploaded extension to exactly one receiver. If
+two active routes accept the same extension, or if a route points at a registry
+slot that no longer resolves, firmware records an `invariant.ble.*` diagnostic
+through `device errors` and rejects the transfer instead of selecting an
+arbitrary receiver.
 
 ## App Store Limits
 

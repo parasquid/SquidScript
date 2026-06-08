@@ -1508,6 +1508,10 @@ fn hardware_test_checks_for_target(target: &target::TargetDefinition) -> Vec<Har
             script: Some("scripts/zephyr-test-ble-file-transfer.sh"),
         });
         checks.push(HardwareTestCheck {
+            name: "ble-installed-receiver",
+            script: Some("scripts/zephyr-test-ble-installed-receiver.sh"),
+        });
+        checks.push(HardwareTestCheck {
             name: "ble-reconnect",
             script: Some("scripts/zephyr-test-ble-reconnect.sh"),
         });
@@ -1544,6 +1548,14 @@ fn run_hardware_script(
     command.arg("--skip-flash");
     match check.name {
         "ble-file-transfer-install" => {
+            if let Some(port) = &args.port {
+                command.arg("--port").arg(port);
+            }
+            if let Some(device) = &args.ble_device {
+                command.arg("--device").arg(device);
+            }
+        }
+        "ble-installed-receiver" => {
             if let Some(port) = &args.port {
                 command.arg("--port").arg(port);
             }

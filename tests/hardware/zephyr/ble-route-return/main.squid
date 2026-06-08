@@ -1,0 +1,8 @@
+app "ret"
+
+event.on("app.start") {
+  debug.print("ble route return active")
+  app.exit()
+}
+
+screen("main") {}

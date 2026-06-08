@@ -9,6 +9,7 @@
 
 #include "app_store.h"
 #include "app_lifecycle.h"
+#include "ble_profile_table.h"
 #include "device_protocol.h"
 #include "protocol.h"
 #include "serial_transport.h"
@@ -1182,6 +1183,89 @@ ZTEST(squidscript_protocol, test_errors_get_reports_retained_device_diagnostics_
 	zassert_true(field_string_equals(&field, "display=unavailable code=-19"));
 	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
 		      SQ_PROTOCOL_DONE);
+}
+
+ZTEST(squidscript_protocol, test_errors_get_records_registry_duplicate_invariant)
+{
+	struct sq_device_identity identity = {
+		.target = "xiao-esp32c3-gdeq0426t82-sd",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_vm_runtime runtime = {0};
+	struct sq_app_registry registry = {
+		.count = 2,
+		.apps = {
+			{.app_id = "reader", .sqbc_len = 128},
+			{.app_id = "reader", .sqbc_len = 256},
+		},
+	};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.registry = &registry,
+		.runtime = &runtime,
+	};
+	uint8_t request[SQ_PROTOCOL_HEADER_LEN];
+	uint8_t response[512];
+	size_t response_len = 0;
+	struct sq_protocol_frame frame;
+	struct sq_protocol_field field;
+	size_t offset = 0;
+
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_ERRORS_GET,
+						      SQ_STATUS_OK, 68, NULL, 0, request,
+						      sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_device_protocol_handle_frame(request, sizeof(request), &context,
+						      response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
+		      SQ_PROTOCOL_OK);
+	zassert_true(field_string_equals(&field,
+					 "invariant.registry.duplicate code=-17 (EEXIST)"));
+}
+
+ZTEST(squidscript_protocol, test_errors_get_records_runtime_binding_duplicate_invariant)
+{
+	struct sq_device_identity identity = {
+		.target = "xiao-esp32c3-gdeq0426t82-sd",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_vm_runtime runtime = {
+		.active_binding_max = SQ_VM_RUNTIME_ACTIVE_BINDING_MAX,
+		.active_bindings = {
+			{.active = true, .alias = "indicator.default"},
+			{.active = true, .alias = "indicator.default"},
+		},
+		.active_binding_count = 2,
+	};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.runtime = &runtime,
+	};
+	uint8_t request[SQ_PROTOCOL_HEADER_LEN];
+	uint8_t response[512];
+	size_t response_len = 0;
+	struct sq_protocol_frame frame;
+	struct sq_protocol_field field;
+	size_t offset = 0;
+
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_ERRORS_GET,
+						      SQ_STATUS_OK, 69, NULL, 0, request,
+						      sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_device_protocol_handle_frame(request, sizeof(request), &context,
+						      response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
+		      SQ_PROTOCOL_OK);
+	zassert_true(field_string_equals(&field,
+					 "invariant.runtime.binding_dup code=-17 (EEXIST)"));
 }
 
 ZTEST(squidscript_protocol, test_errors_get_truncates_retained_device_diagnostics_to_response_cap)
@@ -5120,6 +5204,240 @@ ZTEST(squidscript_protocol, test_vm_runtime_dispatches_stack_inspection_callback
 	zassert_str_equal(runtime.outputs[2], "armed break-reminder timer.break");
 	zassert_str_equal(runtime.outputs[3], "armed reader-clock timer.clock");
 	zassert_str_equal(runtime.outputs[4], "selected reader-clock timer.clock");
+}
+
+ZTEST(squidscript_protocol, test_runtime_ble_start_registers_profile_id_by_registry_slot)
+{
+	struct vm_storage_fixture fixture = {
+		.sqbc = ble_receive_sqbc,
+		.sqbc_len = sizeof(ble_receive_sqbc),
+	};
+	struct sq_vm_storage_backend backend = {
+		.user_data = &fixture,
+		.read_sqbc = fixture_read_sqbc,
+	};
+	struct sq_app_registry registry = {
+		.count = 1,
+		.apps = {
+			{.app_id = "ble-install", .sqbc_len = sizeof(ble_receive_sqbc)},
+		},
+	};
+	static struct sq_vm_runtime runtime;
+	const struct sq_ble_profile_entry *entry;
+
+	memset(&runtime, 0, sizeof(runtime));
+	runtime.backend = &backend;
+	runtime.registry = &registry;
+	strncpy(runtime.current_app, "ble-install", sizeof(runtime.current_app) - 1);
+	sq_ble_profile_table_reset();
+
+	zassert_equal(runtime_ble_start(&runtime, (const uint8_t *)"sqbc-install",
+					strlen("sqbc-install")),
+		      0);
+	entry = sq_ble_profile_lookup(0, "sqbc-install");
+	zassert_not_null(entry, "BLE profile should be registered by profile instance id");
+	zassert_equal(entry->app_slot, 0, "entry app slot mismatch");
+	zassert_str_equal(entry->instance_id, "sqbc-install");
+	sq_ble_profile_table_reset();
+}
+
+ZTEST(squidscript_protocol, test_runtime_ble_start_replaces_stale_fallback_route)
+{
+	struct vm_storage_fixture fixture = {
+		.sqbc = ble_receive_sqbc,
+		.sqbc_len = sizeof(ble_receive_sqbc),
+	};
+	struct sq_vm_storage_backend backend = {
+		.user_data = &fixture,
+		.read_sqbc = fixture_read_sqbc,
+	};
+	struct sq_app_registry registry = {
+		.count = 1,
+		.apps = {
+			{.app_id = "ble-install", .sqbc_len = sizeof(ble_receive_sqbc)},
+		},
+	};
+	static const char accept_exts[1][SQVM_BLE_PROFILE_TEXT_CAP] = {".sqbc"};
+	static const SqvmBleProfileEventRoute events[1] = {
+		{.kind = "complete", .event = "ble.file.complete"},
+	};
+	static struct sq_vm_runtime runtime;
+	const struct sq_ble_profile_entry *entry;
+
+	memset(&runtime, 0, sizeof(runtime));
+	runtime.backend = &backend;
+	runtime.registry = &registry;
+	strncpy(runtime.current_app, "ble-install", sizeof(runtime.current_app) - 1);
+	sq_ble_profile_table_reset();
+	zassert_equal(sq_ble_profile_table_add(SQ_APP_REGISTRY_SLOT_FALLBACK,
+					       "sqbc-install", accept_exts, 1,
+					       events, 1),
+		      0);
+
+	zassert_equal(runtime_ble_start(&runtime, (const uint8_t *)"sqbc-install",
+					strlen("sqbc-install")),
+		      0);
+	entry = sq_ble_profile_lookup_accepting_extension(".sqbc");
+	zassert_not_null(entry, "installed route should be unambiguous after start");
+	zassert_equal(entry->app_slot, 0, "installed route should replace stale fallback");
+	zassert_equal(sq_ble_profile_table_count(), 1, "stale fallback route should be removed");
+	sq_ble_profile_table_reset();
+}
+
+ZTEST(squidscript_protocol, test_runtime_ble_start_fallback_replaces_stale_installed_route)
+{
+	struct vm_storage_fixture fixture = {
+		.sqbc = ble_receive_sqbc,
+		.sqbc_len = sizeof(ble_receive_sqbc),
+	};
+	struct sq_vm_storage_backend backend = {
+		.user_data = &fixture,
+		.read_sqbc = fixture_read_sqbc,
+	};
+	struct sq_app_registry registry = {
+		.count = 1,
+		.apps = {
+			{.app_id = "ble-install", .sqbc_len = sizeof(ble_receive_sqbc)},
+		},
+	};
+	static const char accept_exts[1][SQVM_BLE_PROFILE_TEXT_CAP] = {".sqbc"};
+	static const SqvmBleProfileEventRoute events[1] = {
+		{.kind = "complete", .event = "ble.file.complete"},
+	};
+	static struct sq_vm_runtime runtime;
+	const struct sq_ble_profile_entry *entry;
+
+	memset(&runtime, 0, sizeof(runtime));
+	runtime.backend = &backend;
+	runtime.registry = &registry;
+	strncpy(runtime.current_app, "main", sizeof(runtime.current_app) - 1);
+	sq_ble_profile_table_reset();
+	zassert_equal(sq_ble_profile_table_add(0, "sqbc-install", accept_exts, 1, events, 1),
+		      0);
+
+	zassert_equal(runtime_ble_start(&runtime, (const uint8_t *)"sqbc-install",
+					strlen("sqbc-install")),
+		      0);
+	entry = sq_ble_profile_lookup_accepting_extension(".sqbc");
+	zassert_not_null(entry, "fallback route should be unambiguous after start");
+	zassert_equal(entry->app_slot, SQ_APP_REGISTRY_SLOT_FALLBACK,
+		      "fallback route should replace stale installed route");
+	zassert_equal(sq_ble_profile_table_count(), 1,
+		      "stale installed route should be removed");
+	sq_ble_profile_table_reset();
+}
+
+ZTEST(squidscript_protocol, test_installed_ble_complete_handler_queues_uploaded_install)
+{
+	struct sq_app_registry registry = {0};
+	struct sq_app_store_vm_storage storage = {0};
+	struct sq_vm_storage_backend backend;
+	struct sq_vm_runtime runtime = {0};
+	char upload_path[SQ_APP_STORE_PATH_MAX];
+	struct fs_file_t upload;
+	SqvmEventPayloadField fields[4];
+	char bytes_buf[12];
+	char total_buf[12];
+	int result;
+
+	zassert_equal(mount_test_fs(), 0, "mount failed");
+	zassert_equal(format_test_app_store(), 0);
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "ble-installed-receiver",
+					       ble_installed_receiver_sqbc,
+					       sizeof(ble_installed_receiver_sqbc)),
+		      0);
+	zassert_equal(sq_app_store_scan_registry(test_fs_mount.mnt_point, &registry), 0);
+	zassert_equal(sq_app_store_vm_storage_for_app(test_fs_mount.mnt_point,
+						      "ble-installed-receiver", &storage),
+		      0);
+	backend = sq_app_store_vm_storage_backend(&storage);
+	zassert_true(snprintf(upload_path, sizeof(upload_path), "%s/tmp/ble-upload.sqbc",
+			      test_fs_mount.mnt_point) > 0);
+	fs_file_t_init(&upload);
+	zassert_equal(fs_open(&upload, upload_path, FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC), 0);
+	zassert_equal(fs_write(&upload, ble_route_return_sqbc, sizeof(ble_route_return_sqbc)),
+		      (ssize_t)sizeof(ble_route_return_sqbc));
+	zassert_equal(fs_close(&upload), 0);
+
+	sq_vm_runtime_init(&runtime);
+	sq_vm_runtime_set_store_mount_point(&runtime, test_fs_mount.mnt_point);
+	sq_vm_runtime_set_registry(&runtime, &registry);
+	sq_vm_runtime_set_mutable_registry(&runtime, &registry);
+	strncpy(runtime.current_app, "ble-installed-receiver", sizeof(runtime.current_app) - 1);
+	result = sq_vm_runtime_dispatch(&runtime, &backend, "app.start");
+	zassert_equal(result, 0, "app.start dispatch failed: %d", result);
+	snprintf(bytes_buf, sizeof(bytes_buf), "%zu", sizeof(ble_route_return_sqbc));
+	snprintf(total_buf, sizeof(total_buf), "%zu", sizeof(ble_route_return_sqbc));
+	fields[0] = (SqvmEventPayloadField){
+		(const uint8_t *)"upload", 6, (const uint8_t *)upload_path, strlen(upload_path)};
+	fields[1] = (SqvmEventPayloadField){
+		(const uint8_t *)"bytesReceived", 13, (const uint8_t *)bytes_buf,
+		strlen(bytes_buf)};
+	fields[2] = (SqvmEventPayloadField){
+		(const uint8_t *)"totalBytes", 10, (const uint8_t *)total_buf,
+		strlen(total_buf)};
+	fields[3] = (SqvmEventPayloadField){
+		(const uint8_t *)"id", 2, (const uint8_t *)"sqbc-install",
+		strlen("sqbc-install")};
+	sq_vm_runtime_set_pending_event_payload(&runtime, fields, ARRAY_SIZE(fields));
+
+	result = sq_vm_runtime_dispatch(&runtime, &backend, "ble.file.complete");
+	zassert_equal(result, 0, "completion handler dispatch failed: %d", result);
+	zassert_true(runtime.pending_install.active, "app.install should queue the uploaded SQBC");
+	zassert_str_equal(runtime.pending_install.app_id, "ret");
+	zassert_str_equal(runtime.pending_install.file_ref, upload_path);
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
+ZTEST(squidscript_protocol, test_runtime_ble_start_rejects_temp_foreground_app)
+{
+	struct vm_storage_fixture fixture = {
+		.sqbc = ble_receive_sqbc,
+		.sqbc_len = sizeof(ble_receive_sqbc),
+	};
+	struct sq_vm_storage_backend backend = {
+		.user_data = &fixture,
+		.read_sqbc = fixture_read_sqbc,
+	};
+	static struct sq_vm_runtime runtime;
+
+	memset(&runtime, 0, sizeof(runtime));
+	runtime.backend = &backend;
+	runtime.current_app_temp = true;
+	strncpy(runtime.current_app, "temp-ble", sizeof(runtime.current_app) - 1);
+	sq_ble_profile_table_reset();
+
+	zassert_equal(runtime_ble_start(&runtime, (const uint8_t *)"sqbc-install",
+					strlen("sqbc-install")),
+		      -EINVAL);
+	zassert_equal(sq_ble_profile_table_count(), 0, "temp app must not register BLE");
+}
+
+ZTEST(squidscript_protocol, test_runtime_ble_start_allows_fallback_main_slot)
+{
+	struct vm_storage_fixture fixture = {
+		.sqbc = ble_receive_sqbc,
+		.sqbc_len = sizeof(ble_receive_sqbc),
+	};
+	struct sq_vm_storage_backend backend = {
+		.user_data = &fixture,
+		.read_sqbc = fixture_read_sqbc,
+	};
+	static struct sq_vm_runtime runtime;
+	const struct sq_ble_profile_entry *entry;
+
+	memset(&runtime, 0, sizeof(runtime));
+	runtime.backend = &backend;
+	strncpy(runtime.current_app, "main", sizeof(runtime.current_app) - 1);
+	sq_ble_profile_table_reset();
+
+	zassert_equal(runtime_ble_start(&runtime, (const uint8_t *)"sqbc-install",
+					strlen("sqbc-install")),
+		      0);
+	entry = sq_ble_profile_lookup(SQ_APP_REGISTRY_SLOT_FALLBACK, "sqbc-install");
+	zassert_not_null(entry, "fallback main should use the compact fallback app slot");
+	sq_ble_profile_table_reset();
 }
 
 ZTEST(squidscript_protocol, test_vm_runtime_dispatches_display_drawlog_callbacks)

@@ -1,5 +1,6 @@
 #include "vm_runtime_internal.h"
 
+#include "app_store.h"
 #include "ble_file_transfer_core.h"
 #include "ble_profile_table.h"
 #include "squidvm_ffi.h"
@@ -29,6 +30,25 @@
  * result in place in this buffer rather than on its own stack.
  */
 static SqvmBleProfileTrigger sq_ble_start_profile;
+
+static int current_ble_app_slot(const struct sq_vm_runtime *runtime, uint8_t *out_slot)
+{
+	if (out_slot != NULL) {
+		*out_slot = SQ_APP_REGISTRY_SLOT_INVALID;
+	}
+	if (runtime == NULL || out_slot == NULL || runtime->current_app[0] == '\0' ||
+	    runtime->current_app_temp) {
+		return -EINVAL;
+	}
+	if (sq_app_registry_slot_for_app(runtime->registry, runtime->current_app, out_slot) == 0) {
+		return 0;
+	}
+	if (strcmp(runtime->current_app, "main") == 0) {
+		*out_slot = SQ_APP_REGISTRY_SLOT_FALLBACK;
+		return 0;
+	}
+	return -EINVAL;
+}
 
 #if IS_ENABLED(CONFIG_BT)
 /* Advertising must not be started/stopped inside the VM builtin dispatch:
@@ -64,14 +84,17 @@ int32_t runtime_ble_start(void *user_data, const uint8_t *id, size_t id_len)
 {
 	struct sq_vm_runtime *runtime = user_data;
 	char want_id[SQVM_BLE_PROFILE_TEXT_CAP];
+	uint8_t app_slot = SQ_APP_REGISTRY_SLOT_INVALID;
 	size_t count = 0;
 	bool found = false;
 	SqvmStatus status;
 	int result;
 
 	if (runtime == NULL || runtime->backend == NULL || runtime->backend->read_sqbc == NULL ||
-	    id == NULL || id_len == 0 || id_len >= SQVM_BLE_PROFILE_TEXT_CAP ||
-	    runtime->current_app[0] == '\0') {
+	    id == NULL || id_len == 0 || id_len >= SQVM_BLE_PROFILE_TEXT_CAP) {
+		return -EINVAL;
+	}
+	if (current_ble_app_slot(runtime, &app_slot) != 0) {
 		return -EINVAL;
 	}
 	memcpy(want_id, id, id_len);
@@ -104,12 +127,13 @@ int32_t runtime_ble_start(void *user_data, const uint8_t *id, size_t id_len)
 		return -ENOENT;
 	}
 
-	/* Idempotent set/replace: drop this app's prior profile, then (re)add the
-	 * resolved one. A second start with the same config is a no-op replace.
+	/* Foreground BLE receive has a single active route table. Rebuild it from
+	 * the foreground app's SQBC so stale routes from a previous app/storage
+	 * generation cannot shadow the current receiver.
 	 */
-	sq_ble_profile_table_remove_app(runtime->current_app);
+	sq_ble_profile_table_reset();
 	result = sq_ble_profile_table_add(
-		runtime->current_app, (const char *)sq_ble_start_profile.profile,
+		app_slot, (const char *)sq_ble_start_profile.id,
 		(const char (*)[SQVM_BLE_PROFILE_TEXT_CAP])sq_ble_start_profile.accept,
 		(uint8_t)sq_ble_start_profile.accept_count, sq_ble_start_profile.events,
 		(uint8_t)sq_ble_start_profile.event_count);
@@ -123,11 +147,17 @@ int32_t runtime_ble_start(void *user_data, const uint8_t *id, size_t id_len)
 int32_t runtime_ble_stop(void *user_data)
 {
 	struct sq_vm_runtime *runtime = user_data;
+	uint8_t app_slot = SQ_APP_REGISTRY_SLOT_INVALID;
+	int result;
 
-	if (runtime == NULL || runtime->current_app[0] == '\0') {
+	if (runtime == NULL) {
 		return -EINVAL;
 	}
-	sq_ble_profile_table_remove_app(runtime->current_app);
+	result = current_ble_app_slot(runtime, &app_slot);
+	if (result != 0) {
+		return -EINVAL;
+	}
+	sq_ble_profile_table_remove_app_slot(app_slot);
 	/* Discard any partially received file for this profile. A completed
 	 * pending event is preserved by the abort/reset path for the consumer.
 	 */

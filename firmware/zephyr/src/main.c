@@ -12,6 +12,7 @@
 #endif
 
 #include "app_store.h"
+#include "ble_file_transfer_core.h"
 #include "ble_smoke.h"
 #include "device_protocol.h"
 #include "serial_transport.h"
@@ -52,6 +53,11 @@ static void clear_stale_planned_resume(const char *mount_point)
 		return;
 	}
 	(void)fs_unlink(path);
+}
+
+static void record_ble_transfer_error(void *user_data, const char *line)
+{
+	(void)sq_vm_runtime_record_device_error((struct sq_vm_runtime *)user_data, line);
 }
 
 int main(void)
@@ -116,7 +122,10 @@ int main(void)
 	}
 
 	sq_serial_transport_init(&transport);
+	sq_ble_file_transfer_set_registry(&registry);
+	sq_ble_file_transfer_set_fallback_app_id(sq_zephyr_fallback_app.app_id);
 	sq_vm_runtime_init(&runtime);
+	sq_ble_file_transfer_set_error_sink(record_ble_transfer_error, &runtime);
 	sq_vm_runtime_set_registry(&runtime, &registry);
 	sq_vm_runtime_set_mutable_registry(&runtime, &registry);
 	if (registry_ready) {

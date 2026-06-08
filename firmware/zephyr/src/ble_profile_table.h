@@ -18,30 +18,32 @@ extern "C" {
 #endif
 
 struct sq_ble_profile_entry {
-	char app_id[SQ_APP_STORE_APP_ID_MAX];
-	char profile_id[SQVM_BLE_PROFILE_TEXT_CAP];
+	uint8_t app_slot;
+	char instance_id[SQVM_BLE_PROFILE_TEXT_CAP];
 	char accept_exts[SQVM_BLE_PROFILE_ACCEPT_MAX][SQVM_BLE_PROFILE_TEXT_CAP];
 	uint8_t accept_count;
-	SqvmBleProfileEventRoute events[SQVM_BLE_PROFILE_EVENT_MAX];
-	uint8_t event_count;
+	char complete_event[SQ_VM_RUNTIME_EVENT_LEN];
 };
 
-int sq_ble_profile_table_add(const char *app_id, const char *profile_id,
+int sq_ble_profile_table_add(uint8_t app_slot, const char *instance_id,
 			     const char (*accept_exts)[SQVM_BLE_PROFILE_TEXT_CAP],
 			     uint8_t accept_count,
 			     const SqvmBleProfileEventRoute *events, uint8_t event_count);
 
-void sq_ble_profile_table_remove_app(const char *app_id);
+void sq_ble_profile_table_remove_app_slot(uint8_t app_slot);
 
 void sq_ble_profile_table_reset(void);
 
 size_t sq_ble_profile_table_count(void);
 
-const struct sq_ble_profile_entry *sq_ble_profile_lookup(const char *app_id,
-							 const char *profile_id);
+const struct sq_ble_profile_entry *sq_ble_profile_lookup(uint8_t app_slot,
+							 const char *instance_id);
 
 const struct sq_ble_profile_entry *sq_ble_profile_lookup_app_accepting_extension(
-	const char *app_id, const char *extension);
+	uint8_t app_slot, const char *extension);
+
+int sq_ble_profile_lookup_accepting_extension_result(
+	const char *extension, const struct sq_ble_profile_entry **out);
 
 const struct sq_ble_profile_entry *sq_ble_profile_lookup_accepting_extension(
 	const char *extension);

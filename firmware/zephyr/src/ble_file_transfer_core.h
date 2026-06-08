@@ -22,10 +22,20 @@
  */
 #define SQ_BLE_FILE_TRANSFER_RES_INV_PARAM  0x03
 #define SQ_BLE_FILE_TRANSFER_RES_BUSY 0x0a
+#define SQ_BLE_FILE_TRANSFER_RES_ROUTE_AMBIGUOUS 0x11
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+struct sq_app_registry;
+typedef void (*sq_ble_file_transfer_error_sink)(void *user_data, const char *line);
+
+void sq_ble_file_transfer_set_registry(const struct sq_app_registry *registry);
+
+void sq_ble_file_transfer_set_fallback_app_id(const char *app_id);
+
+void sq_ble_file_transfer_set_error_sink(sq_ble_file_transfer_error_sink sink, void *user_data);
 
 int sq_ble_file_transfer_parse_file_name(const char *name, char *extension_out,
 					 size_t extension_cap);

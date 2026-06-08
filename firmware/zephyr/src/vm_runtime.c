@@ -1096,6 +1096,140 @@ int sq_vm_runtime_record_device_error(struct sq_vm_runtime *runtime, const char 
 	return 0;
 }
 
+static int runtime_invariant_line(char *line, size_t line_len, const char *name, int code)
+{
+	int written;
+
+	if (line == NULL || line_len == 0 || name == NULL) {
+		return -EINVAL;
+	}
+	written = snprintf(line, line_len, "invariant.runtime.%s code=%d (%s)", name, code,
+			   sq_errno_name(code));
+	if (written < 0 || (size_t)written >= line_len) {
+		return -ENOSPC;
+	}
+	return code;
+}
+
+static size_t runtime_active_timer_cap(const struct sq_vm_runtime *runtime)
+{
+	return runtime->active_timer_max == 0 ? SQ_VM_RUNTIME_TIMER_MAX : runtime->active_timer_max;
+}
+
+static size_t runtime_active_armed_timer_cap(const struct sq_vm_runtime *runtime)
+{
+	return runtime->active_armed_timer_max == 0 ? SQ_VM_RUNTIME_ARMED_TIMER_MAX :
+						      runtime->active_armed_timer_max;
+}
+
+static size_t runtime_active_binding_cap(const struct sq_vm_runtime *runtime)
+{
+	return runtime->active_binding_max == 0 ? SQ_VM_RUNTIME_ACTIVE_BINDING_MAX :
+						  runtime->active_binding_max;
+}
+
+int sq_vm_runtime_validate_invariants(const struct sq_vm_runtime *runtime, char *line,
+				      size_t line_len)
+{
+	size_t active_max;
+	size_t active_count;
+
+	if (runtime == NULL) {
+		return -EINVAL;
+	}
+	if (runtime->current_app_temp && runtime->current_app[0] == '\0') {
+		return runtime_invariant_line(line, line_len, "current_app", -EINVAL);
+	}
+	if (runtime->return_stack_count > SQ_VM_RUNTIME_RETURN_STACK_MAX) {
+		return runtime_invariant_line(line, line_len, "return_stack", -EINVAL);
+	}
+	for (uint8_t i = 0; i < runtime->return_stack_count; i++) {
+		if (runtime->return_stack[i][0] == '\0') {
+			return runtime_invariant_line(line, line_len, "return_stack", -EINVAL);
+		}
+	}
+
+	active_max = runtime_active_timer_cap(runtime);
+	if (active_max > SQ_VM_RUNTIME_TIMER_MAX) {
+		return runtime_invariant_line(line, line_len, "timer_cap", -EINVAL);
+	}
+	for (size_t i = 0; i < active_max; i++) {
+		if (!runtime->timers[i].active) {
+			continue;
+		}
+		if (runtime->timers[i].event[0] == '\0') {
+			return runtime_invariant_line(line, line_len, "timer", -EINVAL);
+		}
+		for (size_t j = i + 1; j < active_max; j++) {
+			if (runtime->timers[j].active &&
+			    strcmp(runtime->timers[i].event, runtime->timers[j].event) == 0) {
+				return runtime_invariant_line(line, line_len, "timer_dup",
+							      -EEXIST);
+			}
+		}
+	}
+
+	active_max = runtime_active_armed_timer_cap(runtime);
+	if (active_max > SQ_VM_RUNTIME_ARMED_TIMER_MAX ||
+	    runtime->armed_timer_count > SQ_VM_RUNTIME_ARMED_TIMER_MAX) {
+		return runtime_invariant_line(line, line_len, "armed_timer", -EINVAL);
+	}
+	active_count = 0;
+	for (size_t i = 0; i < active_max; i++) {
+		const struct sq_vm_runtime_armed_timer *timer = &runtime->armed_timers[i];
+
+		if (!timer->active) {
+			continue;
+		}
+		active_count++;
+		if (timer->app_id[0] == '\0' || timer->event[0] == '\0') {
+			return runtime_invariant_line(line, line_len, "armed_timer", -EINVAL);
+		}
+		for (size_t j = i + 1; j < active_max; j++) {
+			const struct sq_vm_runtime_armed_timer *other = &runtime->armed_timers[j];
+
+			if (other->active && strcmp(timer->app_id, other->app_id) == 0 &&
+			    strcmp(timer->event, other->event) == 0) {
+				return runtime_invariant_line(line, line_len, "armed_dup",
+							      -EEXIST);
+			}
+		}
+	}
+	if (active_count != runtime->armed_timer_count) {
+		return runtime_invariant_line(line, line_len, "armed_count", -EINVAL);
+	}
+
+	active_max = runtime_active_binding_cap(runtime);
+	if (active_max > SQ_VM_RUNTIME_ACTIVE_BINDING_MAX ||
+	    runtime->active_binding_count > SQ_VM_RUNTIME_ACTIVE_BINDING_MAX) {
+		return runtime_invariant_line(line, line_len, "binding", -EINVAL);
+	}
+	active_count = 0;
+	for (size_t i = 0; i < active_max; i++) {
+		const struct sq_vm_runtime_active_binding *binding = &runtime->active_bindings[i];
+
+		if (!binding->active) {
+			continue;
+		}
+		active_count++;
+		if (binding->alias[0] == '\0') {
+			return runtime_invariant_line(line, line_len, "binding", -EINVAL);
+		}
+		for (size_t j = i + 1; j < active_max; j++) {
+			if (runtime->active_bindings[j].active &&
+			    strcmp(binding->alias, runtime->active_bindings[j].alias) == 0) {
+				return runtime_invariant_line(line, line_len, "binding_dup",
+							      -EEXIST);
+			}
+		}
+	}
+	if (active_count != runtime->active_binding_count) {
+		return runtime_invariant_line(line, line_len, "binding_count", -EINVAL);
+	}
+
+	return 0;
+}
+
 int sq_vm_runtime_poll(struct sq_vm_runtime *runtime)
 {
 	char event[SQ_VM_RUNTIME_EVENT_LEN];
