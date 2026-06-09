@@ -1,0 +1,9 @@
+app "trigger-without-handler"
+
+app.triggers {
+  service.timer.after("timer.missing", 1000)
+}
+
+event.on("app.start") {}
+
+screen("main") {}

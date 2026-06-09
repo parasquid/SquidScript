@@ -18,6 +18,17 @@ export interface InstalledAppSummary {
   basePath: string;
 }
 
+export interface InstalledAppDiagnostic {
+  code: "E_INVALID_INSTALLED_SQBC" | "E_INSTALLED_APP_ID_MISMATCH";
+  message: string;
+  path: string;
+}
+
+export interface InstalledAppRecord extends InstalledAppSummary {
+  status: "ok" | "error";
+  diagnostics: InstalledAppDiagnostic[];
+}
+
 export interface PackageInstallOptions {
   filename: string;
   expectedAppId?: string;
@@ -109,9 +120,15 @@ export async function firstInstalledAppId(vfs: Vfs): Promise<string | null> {
 }
 
 export async function listInstalledApps(vfs: Vfs): Promise<InstalledAppSummary[]> {
+  return (await listInstalledAppRecords(vfs))
+    .filter((app): app is InstalledAppRecord & { status: "ok" } => app.status === "ok")
+    .map(({ id, name, basePath }) => ({ id, name, basePath }));
+}
+
+export async function listInstalledAppRecords(vfs: Vfs): Promise<InstalledAppRecord[]> {
   const paths = await vfs.list("/sd/apps/");
   const executablePaths = paths.filter((path) => /^\/sd\/apps\/[^/]+\/main\.sqbc$/.test(path)).sort();
-  const apps: InstalledAppSummary[] = [];
+  const apps: InstalledAppRecord[] = [];
 
   for (const path of executablePaths) {
     const raw = await vfs.readBytes(path);
@@ -120,14 +137,39 @@ export async function listInstalledApps(vfs: Vfs): Promise<InstalledAppSummary[]
     if (!id) continue;
     try {
       const appId = await readSqbcAppId(raw);
-      if (appId !== id) continue;
+      if (appId !== id) {
+        apps.push({
+          id,
+          name: id,
+          basePath: `/sd/apps/${id}`,
+          status: "error",
+          diagnostics: [{
+            code: "E_INSTALLED_APP_ID_MISMATCH",
+            message: "Installed path app id does not match SQBC app id",
+            path
+          }]
+        });
+        continue;
+      }
       apps.push({
         id: appId,
         name: appId,
-        basePath: `/sd/apps/${appId}`
+        basePath: `/sd/apps/${appId}`,
+        status: "ok",
+        diagnostics: []
       });
     } catch {
-      apps.push({ id, name: id, basePath: `/sd/apps/${id}` });
+      apps.push({
+        id,
+        name: id,
+        basePath: `/sd/apps/${id}`,
+        status: "error",
+        diagnostics: [{
+          code: "E_INVALID_INSTALLED_SQBC",
+          message: "Installed executable is not readable SQBC",
+          path
+        }]
+      });
     }
   }
 

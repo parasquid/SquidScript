@@ -3,7 +3,7 @@ import { Archive, Play, RefreshCw, RotateCcw, Save, Trash2, Upload, Wrench } fro
 import { compileSquid } from "./compiler/compileService";
 import { DEFAULT_SOURCE } from "./compiler/defaultSource";
 import { createDebugEvent, formatDebugData, type DebugEvent } from "./debug/log";
-import { installSqbcApp, installSquidPackage, listInstalledApps, loadInstalledApp, uninstallApp, type InstalledAppSummary } from "./runtime/appInstall";
+import { installSqbcApp, installSquidPackage, listInstalledAppRecords, loadInstalledApp, uninstallApp, type InstalledAppRecord } from "./runtime/appInstall";
 import { ButtonArbiter, type ButtonOutcome } from "./runtime/input";
 import { BrowserRuntime, type RuntimeSnapshot } from "./runtime/runtime";
 import { createBrowserVfs, type Vfs } from "./storage/vfs";
@@ -28,13 +28,21 @@ export default function App() {
   const [source, setSource] = useState(() => localStorage.getItem(SOURCE_KEY) ?? DEFAULT_SOURCE);
   const [compiled, setCompiled] = useState<CompileResult | null>(null);
   const [installedAppId, setInstalledAppId] = useState<string | null>(null);
-  const [installedApps, setInstalledApps] = useState<InstalledAppSummary[]>([]);
+  const [installedAppRecords, setInstalledAppRecords] = useState<InstalledAppRecord[]>([]);
   const [storageFiles, setStorageFiles] = useState<string[]>([]);
   const [compilerBackend, setCompilerBackend] = useState<CompilerBackend | "unknown">("unknown");
   const [runtime, setRuntime] = useState<BrowserRuntime | null>(null);
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot | null>(null);
   const [status, setStatus] = useState("Ready");
   const [debugEvents, setDebugEvents] = useState<DebugEvent[]>([]);
+  const installedApps = useMemo(
+    () => installedAppRecords.filter((app) => app.status === "ok"),
+    [installedAppRecords]
+  );
+  const installedAppDiagnostics = useMemo(
+    () => installedAppRecords.flatMap((app) => app.diagnostics),
+    [installedAppRecords]
+  );
 
   function log(scope: string, message: string, data?: Record<string, unknown>): void {
     const event = createDebugEvent(scope, message, data);
@@ -76,10 +84,14 @@ export default function App() {
   }
 
   async function refreshApps(): Promise<void> {
-    const apps = await listInstalledApps(vfs);
-    setInstalledApps(apps);
+    const records = await listInstalledAppRecords(vfs);
+    const apps = records.filter((app) => app.status === "ok");
+    setInstalledAppRecords(records);
     if (!installedAppId && apps[0]) setInstalledAppId(apps[0].id);
-    log("app-registry", "refreshed installed apps", { count: apps.length });
+    log("app-registry", "refreshed installed apps", {
+      count: apps.length,
+      diagnostics: records.length - apps.length
+    });
     await refreshStorageFiles();
   }
 
@@ -208,7 +220,7 @@ export default function App() {
   async function resetStorage(): Promise<void> {
     await vfs.clear();
     setInstalledAppId(null);
-    setInstalledApps([]);
+    setInstalledAppRecords([]);
     setStorageFiles([]);
     setRuntime(null);
     setSnapshot(null);
@@ -223,7 +235,7 @@ export default function App() {
     setCompiled(null);
     setCompilerBackend("unknown");
     setInstalledAppId(null);
-    setInstalledApps([]);
+    setInstalledAppRecords([]);
     setStorageFiles([]);
     setRuntime(null);
     setSnapshot(null);
@@ -330,6 +342,7 @@ export default function App() {
             ))}
           </select>
           <span>{installedApps.length} installed</span>
+          {installedAppDiagnostics.length > 0 ? <span>{installedAppDiagnostics.length} invalid</span> : null}
         </div>
         <textarea aria-label="Squid source" spellCheck={false} value={source} onChange={(event) => setSource(event.target.value)} />
         <div className="compiler-row" aria-label="compiler backend">Compiler: {compilerBackend.toUpperCase()}</div>
@@ -356,6 +369,11 @@ export default function App() {
           ))}
         </div>
         <div className="storage-panel" aria-label="storage files">
+          {installedAppDiagnostics.map((diagnostic, index) => (
+            <div key={`${diagnostic.code}-${diagnostic.path}-${index}`} className="diagnostic diagnostic-error">
+              <strong>{diagnostic.code}</strong> {diagnostic.message} <code>{diagnostic.path}</code>
+            </div>
+          ))}
           {storageFiles.length === 0 ? (
             <div className="storage-empty">No /sd files</div>
           ) : storageFiles.map((path) => (

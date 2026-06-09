@@ -52,6 +52,14 @@ unpacked files below that directory.
 Packages require `main.sqbc`. Browser-sim executes the same SQBC bytecode
 container that firmware consumes through `squidvm-core`.
 
+Installed app discovery returns valid app records plus diagnostic records for
+invalid entries under `/sd/apps/<app-id>/main.sqbc`. A corrupt SQBC executable
+surfaces `E_INVALID_INSTALLED_SQBC`; an executable whose embedded app id does
+not match the directory name surfaces `E_INSTALLED_APP_ID_MISMATCH`. Valid apps
+remain selectable and loadable while invalid records are shown in the storage
+diagnostics panel. Direct `loadInstalledApp(...)` calls stay strict and reject
+the invalid app id.
+
 Bundled package resources are read-only app resources. `.sqdevice` resources
 may live at any safe package-relative path ending `.sqdevice`; package install
 stores them but does not activate them. App launch/runtime binding from

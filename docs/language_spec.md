@@ -2192,6 +2192,9 @@ app.triggers {
 }
 ```
 
+Each trigger event declared by `app.triggers` must be unique and must have a
+matching `event.on("<event>")` handler in the same app.
+
 Break reminder example:
 
 ```squid
@@ -3265,6 +3268,11 @@ The exact structure may change during implementation.
 
 The loader must reject malformed headers.
 
+The loader rejects duplicate section kinds and duplicate lookup keys in parsed
+tables, including state names, function names, handler event names, trigger
+event names, and screen names. Table records that reference missing string-pool
+entries are invalid bytecode.
+
 Target requirements must be encoded as binary `.sqbc` sections, not JSON, YAML, CBOR, or protobuf.
 
 Suggested target requirements section:
@@ -3951,6 +3959,10 @@ Compiler diagnostics should include:
 - error message
 - missing or unsupported API if relevant
 - function/screen/handler context if relevant
+- duplicate app declarations, state blocks, state fields, device bindings,
+  function names, function parameters, local variables in a visible scope,
+  handler events, trigger events, BLE profile ids, and screen names
+- `app.triggers` events that do not have matching `event.on(...)` handlers
 
 Example:
 

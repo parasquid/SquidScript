@@ -48,6 +48,10 @@ pub(crate) fn validate_semantics(
         .map(|function| (function.name.clone(), function.statements.as_slice()))
         .collect::<BTreeMap<_, _>>();
     let impure_functions = collect_render_impure_functions(&function_map);
+    validate_device_bindings(ast, diagnostics);
+    validate_handler_events(ast, diagnostics);
+    validate_trigger_routes(ast, diagnostics);
+    validate_ble_profile_ids(ast, diagnostics);
     let mut function_names = BTreeSet::new();
     for function in &ast.functions {
         if !function_names.insert(function.name.clone()) {
@@ -58,6 +62,7 @@ pub(crate) fn validate_semantics(
                 function.span.end,
             ));
         }
+        validate_duplicate_params(function, diagnostics);
         validate_shadowing(
             &function.params,
             &state_names,
@@ -170,6 +175,162 @@ pub(crate) fn validate_semantics(
     }
 
     validate_names(ast, &state_names, diagnostics);
+}
+
+fn validate_device_bindings(ast: &AstRoot, diagnostics: &mut Vec<Diagnostic>) {
+    let mut bindings = BTreeSet::new();
+    for binding in &ast.device_bindings {
+        if !bindings.insert((binding.service.clone(), binding.binding.clone())) {
+            diagnostics.push(error(
+                "E_DUPLICATE_DEVICE_BINDING",
+                "device binding names must be unique per service",
+                0,
+                0,
+            ));
+        }
+    }
+}
+
+fn validate_handler_events(ast: &AstRoot, diagnostics: &mut Vec<Diagnostic>) {
+    let mut events = BTreeSet::new();
+    for handler in &ast.handlers {
+        if !events.insert(handler.event.clone()) {
+            diagnostics.push(error(
+                "E_DUPLICATE_HANDLER",
+                "event handlers must be unique per event",
+                handler.span.start,
+                handler.span.end,
+            ));
+        }
+    }
+}
+
+fn validate_trigger_routes(ast: &AstRoot, diagnostics: &mut Vec<Diagnostic>) {
+    let handler_events = ast
+        .handlers
+        .iter()
+        .map(|handler| handler.event.clone())
+        .collect::<BTreeSet<_>>();
+    let mut trigger_events = BTreeSet::new();
+    for trigger_block in &ast.trigger_blocks {
+        for statement in &trigger_block.statements {
+            let event = match statement {
+                IrStatement::ServiceTimerEvery { event, .. }
+                | IrStatement::ServiceTimerAfter { event, .. } => event,
+                _ => continue,
+            };
+            if !trigger_events.insert(event.clone()) {
+                diagnostics.push(error(
+                    "E_DUPLICATE_TRIGGER_EVENT",
+                    "app.triggers may register each event only once",
+                    trigger_block.span.start,
+                    trigger_block.span.end,
+                ));
+            }
+            if !handler_events.contains(event) {
+                diagnostics.push(error(
+                    "E_TRIGGER_HANDLER",
+                    "app.triggers event must have a matching event.on handler",
+                    trigger_block.span.start,
+                    trigger_block.span.end,
+                ));
+            }
+        }
+    }
+}
+
+fn validate_ble_profile_ids(ast: &AstRoot, diagnostics: &mut Vec<Diagnostic>) {
+    let mut ids = BTreeSet::new();
+    for function in &ast.functions {
+        validate_ble_profile_ids_in(
+            &function.statements,
+            &mut ids,
+            function.span.start,
+            function.span.end,
+            diagnostics,
+        );
+    }
+    for handler in &ast.handlers {
+        validate_ble_profile_ids_in(
+            &handler.statements,
+            &mut ids,
+            handler.span.start,
+            handler.span.end,
+            diagnostics,
+        );
+    }
+    for screen in &ast.screens {
+        validate_ble_profile_ids_in(
+            &screen.statements,
+            &mut ids,
+            screen.span.start,
+            screen.span.end,
+            diagnostics,
+        );
+    }
+    for trigger_block in &ast.trigger_blocks {
+        validate_ble_profile_ids_in(
+            &trigger_block.statements,
+            &mut ids,
+            trigger_block.span.start,
+            trigger_block.span.end,
+            diagnostics,
+        );
+    }
+}
+
+fn validate_ble_profile_ids_in(
+    statements: &[IrStatement],
+    ids: &mut BTreeSet<String>,
+    start: usize,
+    end: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for statement in statements {
+        match statement {
+            IrStatement::ServiceBleStart { id, .. } => {
+                if !ids.insert(id.clone()) {
+                    diagnostics.push(error(
+                        "E_DUPLICATE_BLE_PROFILE_ID",
+                        "BLE profile ids must be unique",
+                        start,
+                        end,
+                    ));
+                }
+            }
+            IrStatement::If {
+                then_statements,
+                else_statements,
+                ..
+            } => {
+                validate_ble_profile_ids_in(then_statements, ids, start, end, diagnostics);
+                validate_ble_profile_ids_in(else_statements, ids, start, end, diagnostics);
+            }
+            IrStatement::Repeat { statements, .. }
+            | IrStatement::For { statements, .. }
+            | IrStatement::DebugBlock { statements } => {
+                validate_ble_profile_ids_in(statements, ids, start, end, diagnostics);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn validate_duplicate_params(
+    function: &crate::ast::AstFunction,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let mut params = BTreeSet::new();
+    for param in &function.params {
+        if !params.insert(param.clone()) {
+            diagnostics.push(error(
+                "E_DUPLICATE_PARAM",
+                "function parameter names must be unique",
+                function.span.start,
+                function.span.end,
+            ));
+        }
+    }
 }
 
 fn validate_state_builtin_shadowing(ast: &AstRoot, diagnostics: &mut Vec<Diagnostic>) {
@@ -363,6 +524,14 @@ fn validate_statement_names(
             IrStatement::Let { name, expr } => {
                 validate_expr_names(expr, state_names, visible, start, end, diagnostics);
                 warn_if_state_shadow(name, state_names, start, end, diagnostics);
+                if visible.contains(name) {
+                    diagnostics.push(error(
+                        "E_DUPLICATE_LOCAL",
+                        "local variable names must be unique in visible scope",
+                        start,
+                        end,
+                    ));
+                }
                 visible.insert(name.clone());
             }
             IrStatement::Assign { name, expr } => {
@@ -426,6 +595,14 @@ fn validate_statement_names(
                 }
                 warn_if_state_shadow(item, state_names, start, end, diagnostics);
                 let mut nested_visible = visible.clone();
+                if nested_visible.contains(item) {
+                    diagnostics.push(error(
+                        "E_DUPLICATE_LOCAL",
+                        "loop variable names must be unique in visible scope",
+                        start,
+                        end,
+                    ));
+                }
                 nested_visible.insert(item.clone());
                 validate_statement_names(
                     statements,

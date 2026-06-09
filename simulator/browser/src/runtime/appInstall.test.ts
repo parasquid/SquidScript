@@ -4,7 +4,7 @@ import { compileSquid } from "../compiler/compileService";
 import { DEFAULT_SOURCE } from "../compiler/defaultSource";
 import { MemoryVfs } from "../test/memoryVfs";
 import { XTEINK_X4_TARGET } from "../target/target";
-import { installSqbcApp, installSquidPackage, listInstalledApps, loadInstalledApp, uninstallApp } from "./appInstall";
+import { installSqbcApp, installSquidPackage, listInstalledAppRecords, listInstalledApps, loadInstalledApp, uninstallApp } from "./appInstall";
 
 describe("SQBC app install loader", () => {
   it("installs executable SQBC, then loads from simulated /sd", async () => {
@@ -40,7 +40,51 @@ describe("SQBC app install loader", () => {
     await vfs.writeBytes("/sd/apps/other/main.sqbc", compiled.sqbc!);
 
     expect(await listInstalledApps(vfs)).toEqual([]);
+    expect(await listInstalledAppRecords(vfs)).toEqual([
+      {
+        id: "other",
+        name: "other",
+        basePath: "/sd/apps/other",
+        status: "error",
+        diagnostics: [{
+          code: "E_INSTALLED_APP_ID_MISMATCH",
+          message: "Installed path app id does not match SQBC app id",
+          path: "/sd/apps/other/main.sqbc"
+        }]
+      }
+    ]);
     await expect(loadInstalledApp(vfs, "other")).rejects.toThrow("Installed path app id does not match SQBC app id");
+  });
+
+  it("lists valid installed apps alongside invalid diagnostic records", async () => {
+    const vfs = new MemoryVfs();
+    const compiled = await compiledHello();
+    await installSqbcApp(vfs, compiled.ir!.app, compiled.sqbc!);
+    await vfs.writeBytes("/sd/apps/bad/main.sqbc", new Uint8Array([0, 1, 2]));
+
+    expect(await listInstalledApps(vfs)).toEqual([
+      { id: "hello-menu", name: "hello-menu", basePath: "/sd/apps/hello-menu" }
+    ]);
+    expect(await listInstalledAppRecords(vfs)).toEqual([
+      {
+        id: "bad",
+        name: "bad",
+        basePath: "/sd/apps/bad",
+        status: "error",
+        diagnostics: [{
+          code: "E_INVALID_INSTALLED_SQBC",
+          message: "Installed executable is not readable SQBC",
+          path: "/sd/apps/bad/main.sqbc"
+        }]
+      },
+      {
+        id: "hello-menu",
+        name: "hello-menu",
+        basePath: "/sd/apps/hello-menu",
+        status: "ok",
+        diagnostics: []
+      }
+    ]);
   });
 
   it("installs a canonical .squid.zip package with executable and resources", async () => {

@@ -7,6 +7,7 @@ use crate::{
     syntax::{SquidKind, SquidLang},
 };
 use rowan::{GreenNodeBuilder, Language};
+use std::collections::BTreeSet;
 
 use super::{state_default_matches, titleize, Parser};
 
@@ -222,6 +223,14 @@ impl Parser<'_> {
         builder.finish_node();
 
         if let Some(id) = id {
+            if self.ast.app.is_some() {
+                self.diagnostics.push(error(
+                    "E_DUPLICATE_APP",
+                    "app declaration must be unique",
+                    start,
+                    end,
+                ));
+            }
             self.ast.app = Some(AstAppDecl {
                 name: titleize(&id),
                 id,
@@ -237,6 +246,7 @@ impl Parser<'_> {
         let mut selected_default = 0;
         let mut store = default_state_store();
         let mut values = Vec::new();
+        let mut field_names = BTreeSet::new();
 
         self.bump(builder);
         self.consume_ws(builder);
@@ -359,6 +369,14 @@ impl Parser<'_> {
                                 selected_default = number;
                             }
                         }
+                        if !field_names.insert(name.clone()) {
+                            self.diagnostics.push(error(
+                                "E_DUPLICATE_STATE_FIELD",
+                                "state field names must be unique",
+                                start,
+                                self.previous_end().unwrap_or(start),
+                            ));
+                        }
                         values.push(IrStateValue {
                             name,
                             value_type: base_type,
@@ -374,6 +392,14 @@ impl Parser<'_> {
 
         let end = self.previous_end().unwrap_or(start);
         builder.finish_node();
+        if self.ast.state.is_some() {
+            self.diagnostics.push(error(
+                "E_DUPLICATE_STATE_BLOCK",
+                "state block must be unique",
+                start,
+                end,
+            ));
+        }
         self.ast.state = Some(AstStateBlock {
             selected_default,
             store,

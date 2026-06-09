@@ -1,0 +1,6 @@
+app "duplicate-handler"
+
+event.on("app.start") {}
+event.on("app.start") {}
+
+screen("main") {}

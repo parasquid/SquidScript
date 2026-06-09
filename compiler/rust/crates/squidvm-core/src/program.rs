@@ -14,6 +14,7 @@ use crate::{
     reader::{SliceSqbcReader, SqbcReader},
     state::parse_state,
     strings::StringTable,
+    value::{StringRef, Value},
 };
 
 const SQBC_HEADER_LEN: usize = 14;
@@ -96,6 +97,7 @@ impl<'a> Program<'a> {
         {
             return Err(VmError::InvalidHeader);
         }
+        validate_unique_section_kinds(&bytes[..header_len], section_count)?;
 
         let strings = section(bytes, section_count, SECTION_STRINGS)?;
         let state = section(bytes, section_count, SECTION_STATE)?;
@@ -112,6 +114,20 @@ impl<'a> Program<'a> {
         let (handlers, handler_count) = parse_handlers(handlers, code.len())?;
         let (trigger_timers, trigger_timer_count) = parse_trigger_timers(triggers)?;
         let (screens, screen_count) = parse_screens(screens, code.len())?;
+        validate_program_tables(
+            &strings,
+            string_count,
+            &state_slots,
+            state_count,
+            &functions,
+            function_count,
+            &handlers,
+            handler_count,
+            &trigger_timers,
+            trigger_timer_count,
+            &screens,
+            screen_count,
+        )?;
 
         Ok(Self {
             strings,
@@ -268,6 +284,7 @@ impl ProgramIndex {
             return Err(VmError::InvalidHeader);
         }
         reader.read_exact_at(0, &mut scratch[..header.header_len])?;
+        validate_unique_section_kinds(&scratch[..header.header_len], header.section_count)?;
 
         let mut strings_section = None;
         let mut state_section = None;
@@ -388,6 +405,7 @@ impl ProgramIndex {
         ptr::addr_of_mut!((*out).screen_count).write(screen_count);
         ptr::addr_of_mut!((*out).code_offset).write(code_section.offset);
         ptr::addr_of_mut!((*out).code_len).write(code_section.len);
+        validate_program_index_tables(&*out)?;
 
         Ok(())
     }
@@ -664,6 +682,258 @@ impl<'a, const N: usize> PartialEq<[TriggerTimer<'a>; N]> for TriggerTimers<'a> 
     }
 }
 
+fn validate_unique_section_kinds(header_bytes: &[u8], section_count: usize) -> Result<(), VmError> {
+    for index in 0..section_count {
+        let kind = read_u16(header_bytes, SQBC_HEADER_LEN + index * 12)?;
+        for previous in 0..index {
+            let previous_kind = read_u16(header_bytes, SQBC_HEADER_LEN + previous * 12)?;
+            if previous_kind == kind {
+                return Err(VmError::DuplicateSection);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_program_tables(
+    strings: &[&str; MAX_STRINGS],
+    string_count: usize,
+    state_slots: &[StateSlot; MAX_STATE],
+    state_count: usize,
+    functions: &[Function; MAX_FUNCTIONS],
+    function_count: usize,
+    handlers: &[Handler; MAX_HANDLERS],
+    handler_count: usize,
+    trigger_timers: &[TriggerTimerMeta; MAX_TRIGGERS],
+    trigger_timer_count: usize,
+    screens: &[Screen; MAX_SCREENS],
+    screen_count: usize,
+) -> Result<(), VmError> {
+    for slot in state_slots.iter().take(state_count) {
+        validate_string_id(slot.name_id, string_count)?;
+        validate_value_string_refs(&slot.default, string_count)?;
+    }
+    for function in functions.iter().take(function_count) {
+        validate_string_id(function._name_id, string_count)?;
+    }
+    for handler in handlers.iter().take(handler_count) {
+        validate_string_id(handler.event_id, string_count)?;
+    }
+    for trigger in trigger_timers.iter().take(trigger_timer_count) {
+        validate_string_id(trigger.event_id, string_count)?;
+    }
+    for screen in screens.iter().take(screen_count) {
+        validate_string_id(screen.name_id, string_count)?;
+    }
+
+    validate_unique_state_names(strings, string_count, state_slots, state_count)?;
+    validate_unique_function_names(strings, string_count, functions, function_count)?;
+    validate_unique_handler_events(strings, string_count, handlers, handler_count)?;
+    validate_unique_trigger_events(strings, string_count, trigger_timers, trigger_timer_count)?;
+    validate_unique_screen_names(strings, string_count, screens, screen_count)?;
+    Ok(())
+}
+
+fn validate_program_index_tables(index: &ProgramIndex) -> Result<(), VmError> {
+    for slot in index.state_slots.iter().take(index.state_count) {
+        validate_index_string_id(index, slot.name_id)?;
+        validate_value_string_refs(&slot.default, index.string_count)?;
+    }
+    for function in index.functions.iter().take(index.function_count) {
+        validate_index_string_id(index, function._name_id)?;
+    }
+    for handler in index.handlers.iter().take(index.handler_count) {
+        validate_index_string_id(index, handler.event_id)?;
+    }
+    for trigger in index.trigger_timers.iter().take(index.trigger_timer_count) {
+        validate_index_string_id(index, trigger.event_id)?;
+    }
+    for screen in index.screens.iter().take(index.screen_count) {
+        validate_index_string_id(index, screen.name_id)?;
+    }
+
+    validate_unique_index_state_names(index)?;
+    validate_unique_index_function_names(index)?;
+    validate_unique_index_handler_events(index)?;
+    validate_unique_index_trigger_events(index)?;
+    validate_unique_index_screen_names(index)?;
+    Ok(())
+}
+
+fn validate_string_id(id: u16, string_count: usize) -> Result<(), VmError> {
+    if id as usize >= string_count {
+        return Err(VmError::InvalidStringRef);
+    }
+    Ok(())
+}
+
+fn validate_index_string_id(index: &ProgramIndex, id: u16) -> Result<(), VmError> {
+    validate_string_id(id, index.string_count)?;
+    index.string(id)?;
+    Ok(())
+}
+
+fn validate_value_string_refs(value: &Value, string_count: usize) -> Result<(), VmError> {
+    if let Value::String(StringRef::Sqbc(id)) = value {
+        validate_string_id(*id, string_count)?;
+    }
+    Ok(())
+}
+
+fn table_string<'a>(
+    strings: &[&'a str; MAX_STRINGS],
+    string_count: usize,
+    id: u16,
+) -> Result<&'a str, VmError> {
+    validate_string_id(id, string_count)?;
+    Ok(strings[id as usize])
+}
+
+fn validate_unique_state_names(
+    strings: &[&str; MAX_STRINGS],
+    string_count: usize,
+    slots: &[StateSlot; MAX_STATE],
+    count: usize,
+) -> Result<(), VmError> {
+    for index in 0..count {
+        let name = table_string(strings, string_count, slots[index].name_id)?;
+        for previous in 0..index {
+            if table_string(strings, string_count, slots[previous].name_id)? == name {
+                return Err(VmError::DuplicateTableKey);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_unique_function_names(
+    strings: &[&str; MAX_STRINGS],
+    string_count: usize,
+    functions: &[Function; MAX_FUNCTIONS],
+    count: usize,
+) -> Result<(), VmError> {
+    for index in 0..count {
+        let name = table_string(strings, string_count, functions[index]._name_id)?;
+        for previous in 0..index {
+            if table_string(strings, string_count, functions[previous]._name_id)? == name {
+                return Err(VmError::DuplicateTableKey);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_unique_handler_events(
+    strings: &[&str; MAX_STRINGS],
+    string_count: usize,
+    handlers: &[Handler; MAX_HANDLERS],
+    count: usize,
+) -> Result<(), VmError> {
+    for index in 0..count {
+        let event = table_string(strings, string_count, handlers[index].event_id)?;
+        for previous in 0..index {
+            if table_string(strings, string_count, handlers[previous].event_id)? == event {
+                return Err(VmError::DuplicateTableKey);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_unique_trigger_events(
+    strings: &[&str; MAX_STRINGS],
+    string_count: usize,
+    triggers: &[TriggerTimerMeta; MAX_TRIGGERS],
+    count: usize,
+) -> Result<(), VmError> {
+    for index in 0..count {
+        let event = table_string(strings, string_count, triggers[index].event_id)?;
+        for previous in 0..index {
+            if table_string(strings, string_count, triggers[previous].event_id)? == event {
+                return Err(VmError::DuplicateTableKey);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_unique_screen_names(
+    strings: &[&str; MAX_STRINGS],
+    string_count: usize,
+    screens: &[Screen; MAX_SCREENS],
+    count: usize,
+) -> Result<(), VmError> {
+    for index in 0..count {
+        let name = table_string(strings, string_count, screens[index].name_id)?;
+        for previous in 0..index {
+            if table_string(strings, string_count, screens[previous].name_id)? == name {
+                return Err(VmError::DuplicateTableKey);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_unique_index_state_names(index: &ProgramIndex) -> Result<(), VmError> {
+    for slot_index in 0..index.state_count {
+        let name = index.string(index.state_slots[slot_index].name_id)?;
+        for previous in 0..slot_index {
+            if index.string(index.state_slots[previous].name_id)? == name {
+                return Err(VmError::DuplicateTableKey);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_unique_index_function_names(index: &ProgramIndex) -> Result<(), VmError> {
+    for function_index in 0..index.function_count {
+        let name = index.string(index.functions[function_index]._name_id)?;
+        for previous in 0..function_index {
+            if index.string(index.functions[previous]._name_id)? == name {
+                return Err(VmError::DuplicateTableKey);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_unique_index_handler_events(index: &ProgramIndex) -> Result<(), VmError> {
+    for handler_index in 0..index.handler_count {
+        let event = index.string(index.handlers[handler_index].event_id)?;
+        for previous in 0..handler_index {
+            if index.string(index.handlers[previous].event_id)? == event {
+                return Err(VmError::DuplicateTableKey);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_unique_index_trigger_events(index: &ProgramIndex) -> Result<(), VmError> {
+    for trigger_index in 0..index.trigger_timer_count {
+        let event = index.string(index.trigger_timers[trigger_index].event_id)?;
+        for previous in 0..trigger_index {
+            if index.string(index.trigger_timers[previous].event_id)? == event {
+                return Err(VmError::DuplicateTableKey);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_unique_index_screen_names(index: &ProgramIndex) -> Result<(), VmError> {
+    for screen_index in 0..index.screen_count {
+        let name = index.string(index.screens[screen_index].name_id)?;
+        for previous in 0..screen_index {
+            if index.string(index.screens[previous].name_id)? == name {
+                return Err(VmError::DuplicateTableKey);
+            }
+        }
+    }
+    Ok(())
+}
+
 fn section<'a>(bytes: &'a [u8], section_count: usize, kind: u16) -> Result<&'a [u8], VmError> {
     for index in 0..section_count {
         let base = SQBC_HEADER_LEN + index * 12;
@@ -701,6 +971,7 @@ fn trigger_reader_sections(
         return Err(VmError::InvalidHeader);
     }
     reader.read_exact_at(0, &mut scratch[..header.header_len])?;
+    validate_unique_section_kinds(&scratch[..header.header_len], header.section_count)?;
 
     let mut strings_section = None;
     let mut triggers_section = None;
@@ -730,6 +1001,7 @@ fn device_binding_reader_sections(
         return Err(VmError::InvalidHeader);
     }
     reader.read_exact_at(0, &mut scratch[..header.header_len])?;
+    validate_unique_section_kinds(&scratch[..header.header_len], header.section_count)?;
 
     let mut strings_section = None;
     let mut bindings_section = None;

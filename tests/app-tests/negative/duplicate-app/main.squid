@@ -1,0 +1,6 @@
+app "duplicate-app-one"
+app "duplicate-app-two"
+
+event.on("app.start") {}
+
+screen("main") {}

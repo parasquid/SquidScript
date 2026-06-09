@@ -1342,6 +1342,115 @@ fn parses_sqbc_header_and_section_records_for_partial_loading() {
 }
 
 #[test]
+fn rejects_duplicate_sqbc_section_kinds() {
+    let mut bytes = fixture_counter_sqbc();
+    let first_kind = read_u16(&bytes, 14).unwrap();
+    write_u16_at(&mut bytes, 14 + 12, first_kind);
+
+    assert_eq!(
+        Program::parse(&bytes).err(),
+        Some(VmError::DuplicateSection)
+    );
+
+    let mut scratch = [0u8; 4096];
+    assert_eq!(
+        ProgramIndex::parse(&bytes, &mut scratch).err(),
+        Some(VmError::DuplicateSection)
+    );
+}
+
+#[test]
+fn rejects_duplicate_sqbc_state_names() {
+    let mut bytes = compile_sqbc(
+        r#"app "dup-state"
+state {
+  first: int = 1
+  second: int = 2
+}
+event.on("app.start") {}
+screen("main") {}
+"#,
+    );
+    duplicate_u16_field(&mut bytes, SECTION_STATE, 2, 11);
+
+    assert_eq!(
+        Program::parse(&bytes).err(),
+        Some(VmError::DuplicateTableKey)
+    );
+
+    let mut scratch = [0u8; 4096];
+    assert_eq!(
+        ProgramIndex::parse(&bytes, &mut scratch).err(),
+        Some(VmError::DuplicateTableKey)
+    );
+}
+
+#[test]
+fn rejects_duplicate_sqbc_handler_events_screens_and_triggers() {
+    let mut handler_bytes = compile_sqbc(
+        r#"app "dup-handlers"
+event.on("app.start") {}
+event.on("key.SELECT") {}
+screen("main") {}
+"#,
+    );
+    duplicate_u16_field(&mut handler_bytes, SECTION_HANDLERS, 2, 18);
+    assert_eq!(
+        Program::parse(&handler_bytes).err(),
+        Some(VmError::DuplicateTableKey)
+    );
+
+    let mut screen_bytes = compile_sqbc(
+        r#"app "dup-screens"
+event.on("app.start") {}
+screen("main") {}
+screen("alt") {}
+"#,
+    );
+    duplicate_u16_field(&mut screen_bytes, SECTION_SCREENS, 2, 12);
+    assert_eq!(
+        Program::parse(&screen_bytes).err(),
+        Some(VmError::DuplicateTableKey)
+    );
+
+    let mut trigger_bytes = compile_sqbc(
+        r#"app "dup-triggers"
+app.triggers {
+  service.timer.every("timer.one", 1000)
+  service.timer.every("timer.two", 2000)
+}
+event.on("app.start") {}
+event.on("timer.one") {}
+event.on("timer.two") {}
+screen("main") {}
+"#,
+    );
+    duplicate_u16_field(&mut trigger_bytes, SECTION_TRIGGERS, 2, 10);
+    assert_eq!(
+        Program::parse(&trigger_bytes).err(),
+        Some(VmError::DuplicateTableKey)
+    );
+}
+
+#[test]
+fn rejects_sqbc_table_string_references_outside_string_table() {
+    let mut bytes = fixture_counter_sqbc();
+    let (handlers_offset, _) = find_section(&bytes, SECTION_HANDLERS);
+    write_u16_at(&mut bytes, handlers_offset + 2, u16::MAX);
+
+    assert_eq!(
+        Program::parse(&bytes).err(),
+        Some(VmError::InvalidStringRef)
+    );
+
+    let mut scratch = [0u8; 4096];
+    assert_eq!(
+        ProgramIndex::parse(&bytes, &mut scratch).err(),
+        Some(VmError::InvalidStringRef)
+    );
+}
+
+#[test]
 fn parses_preload_handler_metadata_from_real_bytecode() {
     let source = r#"app "preload-demo"
 @preload
@@ -3459,6 +3568,32 @@ fn encode_container(sections: Vec<(u16, Vec<u8>)>) -> Vec<u8> {
         out.extend_from_slice(&data);
     }
     out
+}
+
+fn find_section(bytes: &[u8], kind: u16) -> (usize, usize) {
+    let header = Program::parse_header(bytes).unwrap();
+    for index in 0..header.section_count {
+        let section = Program::parse_section_record(&bytes[..header.header_len], index).unwrap();
+        if section.kind == kind {
+            return (section.offset, section.len);
+        }
+    }
+    panic!("missing section {kind}");
+}
+
+fn duplicate_u16_field(
+    bytes: &mut [u8],
+    kind: u16,
+    source_relative: usize,
+    target_relative: usize,
+) {
+    let (section_offset, _) = find_section(bytes, kind);
+    let value = read_u16(bytes, section_offset + source_relative).unwrap();
+    write_u16_at(bytes, section_offset + target_relative, value);
+}
+
+fn write_u16_at(out: &mut [u8], offset: usize, value: u16) {
+    out[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
 }
 
 fn push_u16(out: &mut Vec<u8>, value: u16) {

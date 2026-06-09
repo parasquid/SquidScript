@@ -2109,6 +2109,113 @@ screen("main") {
 }
 
 #[test]
+fn reports_duplicate_source_invariants_as_errors() {
+    let source = r#"app "first"
+app "second"
+state {
+  count: int = 0
+  count: int = 1
+}
+state {
+  other: int = 0
+}
+device {
+  indicator "default" { use "gpio:GPIO8" }
+  indicator "default" { use "gpio:GPIO10" }
+}
+event.on("app.start") {}
+event.on("app.start") {}
+screen("main") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(!output.ok);
+    let codes = output
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.code.as_str())
+        .collect::<Vec<_>>();
+    assert!(codes.contains(&"E_DUPLICATE_APP"), "{codes:?}");
+    assert!(codes.contains(&"E_DUPLICATE_STATE_BLOCK"), "{codes:?}");
+    assert!(codes.contains(&"E_DUPLICATE_STATE_FIELD"), "{codes:?}");
+    assert!(codes.contains(&"E_DUPLICATE_DEVICE_BINDING"), "{codes:?}");
+    assert!(codes.contains(&"E_DUPLICATE_HANDLER"), "{codes:?}");
+}
+
+#[test]
+fn reports_duplicate_params_locals_and_trigger_events() {
+    let source = r#"app "duplicates"
+app.triggers {
+  service.timer.every("timer.tick", 1000)
+  service.timer.after("timer.tick", 2000)
+}
+event.on("app.start") {
+  let value = 1
+  let value = 2
+}
+event.on("timer.tick") {}
+function draw(label, label) {
+  debug.print(label)
+}
+screen("main") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(!output.ok);
+    let codes = output
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.code.as_str())
+        .collect::<Vec<_>>();
+    assert!(codes.contains(&"E_DUPLICATE_TRIGGER_EVENT"), "{codes:?}");
+    assert!(codes.contains(&"E_DUPLICATE_LOCAL"), "{codes:?}");
+    assert!(codes.contains(&"E_DUPLICATE_PARAM"), "{codes:?}");
+}
+
+#[test]
+fn reports_trigger_without_handler_and_duplicate_ble_profile_ids() {
+    let source = r#"app "routes"
+app.triggers {
+  service.timer.every("timer.missing", 1000)
+}
+event.on("app.start") {
+  service.ble.start({
+    profile: "file-transfer",
+    id: "inbox",
+    accept: [".txt"],
+    events: { complete: "ble.file.complete" }
+  })
+  service.ble.start({
+    profile: "file-transfer",
+    id: "inbox",
+    accept: [".bin"],
+    events: { complete: "ble.file.complete" }
+  })
+}
+event.on("ble.file.complete", ev) {
+  debug.print(ev.path)
+}
+screen("main") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(!output.ok);
+    let codes = output
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.code.as_str())
+        .collect::<Vec<_>>();
+    assert!(codes.contains(&"E_TRIGGER_HANDLER"), "{codes:?}");
+    assert!(codes.contains(&"E_DUPLICATE_BLE_PROFILE_ID"), "{codes:?}");
+}
+
+#[test]
 fn parses_result_record_field_access_and_unary_not() {
     let source = r#"app "result-records" target "xteink-x4"
 state { failed: bool = false }

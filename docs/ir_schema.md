@@ -154,4 +154,13 @@ The browser-sim IR currently recognizes:
 
 ## Validation
 
-The compiler currently reports diagnostics for missing app declarations, missing screens, target mismatches, duplicate screen and function names, unknown `screen.open(...)` targets, unsupported screen render policies, undeclared local variables, missing explicit state fields, state shadowing warnings, direct or transitive state mutation from screen rendering, display calls outside screen rendering, and invalid mutation or side effects inside `debug.block`.
+The compiler currently reports diagnostics for missing app declarations, missing
+screens, target mismatches, duplicate app declarations, duplicate state blocks,
+duplicate state fields, duplicate device bindings, duplicate function names,
+duplicate function parameters, duplicate event handlers, duplicate trigger
+events, duplicate BLE profile ids, trigger events without matching handlers,
+duplicate screen names, unknown `screen.open(...)` targets, unsupported screen
+render policies, undeclared local variables, duplicate local variables in a
+visible scope, missing explicit state fields, state shadowing warnings, direct
+or transitive state mutation from screen rendering, display calls outside screen
+rendering, and invalid mutation or side effects inside `debug.block`.
