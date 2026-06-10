@@ -49,6 +49,12 @@
 #ifndef SQ_DEVICE_RESOURCE_PATH_BYTES
 #define SQ_DEVICE_RESOURCE_PATH_BYTES 80u
 #endif
+#ifndef SQ_DEVICE_CONTENT_NAME_BYTES
+#define SQ_DEVICE_CONTENT_NAME_BYTES SQ_VM_RUNTIME_CONTENT_NAME_LEN
+#endif
+#ifndef SQ_DEVICE_CONTENT_PATH_BYTES
+#define SQ_DEVICE_CONTENT_PATH_BYTES 128u
+#endif
 #define SQ_DEVICE_WIFI_PROFILE_NAME_BYTES 16
 #define SQ_DEVICE_WIFI_PROFILE_SSID_BYTES 32
 #define SQ_DEVICE_WIFI_PROFILE_PASSWORD_BYTES 64
@@ -105,6 +111,18 @@ struct sq_device_resource_session {
 	enum sq_device_transfer_phase phase;
 };
 
+struct sq_device_content_session {
+	bool active;
+	char name[SQ_DEVICE_CONTENT_NAME_BYTES];
+	size_t total_len;
+	size_t received;
+	uint32_t expected_crc;
+	uint32_t running_crc;
+	char staging_path[SQ_DEVICE_CONTENT_PATH_BYTES];
+	char final_path[SQ_DEVICE_CONTENT_PATH_BYTES];
+	enum sq_device_transfer_phase phase;
+};
+
 #define transfer_session_begin_receiving(session_ptr)                                      \
 	do {                                                                              \
 		(session_ptr)->active = true;                                             \
@@ -156,6 +174,7 @@ struct sq_device_protocol_context {
 	struct sq_device_install_session *install_session;
 	struct sq_device_temp_session *temp_session;
 	struct sq_device_resource_session *resource_session;
+	struct sq_device_content_session *content_session;
 	struct sq_device_protocol_scratch *scratch;
 	struct sq_vm_runtime *runtime;
 	struct sq_app_store_vm_storage *launch_storage;

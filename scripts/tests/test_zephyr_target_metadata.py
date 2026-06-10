@@ -30,8 +30,9 @@ class ZephyrTargetMetadataTests(ZephyrScriptTestCase):
     def test_target_kconfig_includes_selected_runtime_limits(self):
         supermini_conf = self.generate_target_kconfig("esp32c3-super-mini.target.json")
         xiao_conf = self.generate_target_kconfig("xiao-esp32c3-gdeq0426t82-sd.target.json")
+        x4_conf = self.generate_target_kconfig("xteink-x4.target.json")
 
-        for conf in [supermini_conf, xiao_conf]:
+        for conf in [supermini_conf, xiao_conf, x4_conf]:
             self.assertIn("CONFIG_SQ_VM_RUNTIME_TIMER_MAX=4", conf)
             self.assertIn("CONFIG_SQ_VM_RUNTIME_INPUT_BUTTON_MAX=8", conf)
             self.assertIn("CONFIG_SQ_VM_RUNTIME_DEVICE_ERROR_MAX=8", conf)
@@ -52,6 +53,37 @@ class ZephyrTargetMetadataTests(ZephyrScriptTestCase):
         ]:
             self.assertIn(option, xiao_conf)
 
+    def test_x4_display_orientation_is_generated_from_target_json(self):
+        target = json.loads(self.read("targets/xteink-x4.target.json"))
+        x4_conf = self.generate_target_kconfig("xteink-x4.target.json")
+
+        self.assertEqual(target["display"]["physical"], {"width": 800, "height": 480})
+        self.assertEqual(target["display"]["logical"], {"width": 480, "height": 800, "rotation": 270})
+        for option in [
+            "CONFIG_SQ_TARGET_DISPLAY_PHYSICAL_WIDTH=800",
+            "CONFIG_SQ_TARGET_DISPLAY_PHYSICAL_HEIGHT=480",
+            "CONFIG_SQ_TARGET_DISPLAY_LOGICAL_WIDTH=480",
+            "CONFIG_SQ_TARGET_DISPLAY_LOGICAL_HEIGHT=800",
+            "CONFIG_SQ_TARGET_DISPLAY_ROTATION=270",
+        ]:
+            self.assertIn(option, x4_conf)
+
+    def test_x4_sd_storage_enables_fatfs_content_volume(self):
+        target = json.loads(self.read("targets/xteink-x4.target.json"))
+        overlay = self.read("firmware/zephyr/boards/xteink_x4.overlay")
+        west = self.read("firmware/zephyr/west.yml")
+        x4_conf = self.generate_target_kconfig("xteink-x4.target.json")
+
+        self.assertEqual(target["devices"]["storage.sd"]["mount"], "/SD:")
+        self.assertIn("fatfs", west)
+        self.assertIn("sdhc0 = &sdcard;", overlay)
+        self.assertIn('mount-point = "/SD:";', overlay)
+        self.assertIn("compatible = \"zephyr,fstab,fatfs\";", overlay)
+        self.assertIn("CONFIG_DISK_ACCESS=y", x4_conf)
+        self.assertIn("CONFIG_FAT_FILESYSTEM_ELM=y", x4_conf)
+        self.assertIn("CONFIG_FS_FATFS_LFN=y", x4_conf)
+        self.assertIn("CONFIG_FS_FATFS_MAX_LFN=80", x4_conf)
+
     def test_xiao_display_exposes_gray2_binbook_without_changing_default_primitives(self):
         target = json.loads(self.read("targets/xiao-esp32c3-gdeq0426t82-sd.target.json"))
         display = target["display"]["color"]
@@ -71,6 +103,7 @@ class ZephyrTargetMetadataTests(ZephyrScriptTestCase):
             "xiao-esp32c3-gdeq0426t82-sd.target.json": (
                 "target/zephyr/generated/xiao-esp32c3-gdeq0426t82-sd-target.conf"
             ),
+            "xteink-x4.target.json": "target/zephyr/generated/xteink-x4-target.conf",
         }
 
         for target_name, checked_in_path in expected.items():
@@ -95,6 +128,7 @@ class ZephyrTargetMetadataTests(ZephyrScriptTestCase):
     def test_target_kconfig_enables_declared_radio_backends(self):
         prj_conf = self.read("firmware/zephyr/prj.conf")
         target_conf = self.generate_target_kconfig("esp32c3-super-mini.target.json")
+        x4_conf = self.generate_target_kconfig("xteink-x4.target.json")
 
         for option in [
             "CONFIG_WIFI=y",
@@ -105,6 +139,16 @@ class ZephyrTargetMetadataTests(ZephyrScriptTestCase):
             "CONFIG_BT_RX_STACK_SIZE=4096",
         ]:
             self.assertIn(option, target_conf)
+
+        for option in [
+            "CONFIG_WIFI=y",
+            "CONFIG_WIFI_NM=y",
+            "CONFIG_BT=y",
+            "CONFIG_BT_PERIPHERAL=y",
+            'CONFIG_BT_DEVICE_NAME="XTEINK X4"',
+            "CONFIG_BT_RX_STACK_SIZE=4096",
+        ]:
+            self.assertIn(option, x4_conf)
 
         for option in [
             "CONFIG_NETWORKING=y",
@@ -122,11 +166,35 @@ class ZephyrTargetMetadataTests(ZephyrScriptTestCase):
     def test_target_kconfig_enables_pwm_only_for_declared_pwm_devices(self):
         supermini_conf = self.generate_target_kconfig("esp32c3-super-mini.target.json")
         xiao_conf = self.generate_target_kconfig("xiao-esp32c3-gdeq0426t82-sd.target.json")
+        x4_conf = self.generate_target_kconfig("xteink-x4.target.json")
         prj_conf = self.read("firmware/zephyr/prj.conf")
 
         self.assertIn("CONFIG_PWM=y", supermini_conf)
         self.assertNotIn("CONFIG_PWM=y", xiao_conf)
+        self.assertNotIn("CONFIG_PWM=y", x4_conf)
         self.assertNotIn("CONFIG_PWM=y", prj_conf)
+
+    def test_x4_zephyr_metadata_uses_x4_overlay_and_16m_flash(self):
+        target = json.loads(self.read("targets/xteink-x4.target.json"))
+        zephyr = target["firmware"]["zephyr"]
+        overlay = self.read(zephyr["overlay"])
+
+        self.assertEqual("esp32c3_devkitm", zephyr["board"])
+        self.assertEqual("build/zephyr/xteink-x4", zephyr["buildDir"])
+        self.assertEqual("firmware/zephyr/fallback/xteink-x4-main.squid", zephyr["fallbackSource"])
+        self.assertEqual("target/zephyr/generated/xteink-x4-target.conf", zephyr["targetKconfig"])
+        self.assertEqual("targets/runtime-limits/esp32c3-zephyr.json", zephyr["runtimeLimits"])
+
+        self.assertIn("zephyr,console = &usb_serial;", overlay)
+        self.assertIn("&uart0 {\n\tstatus = \"disabled\";", overlay)
+        self.assertIn("reg = <0x0 DT_SIZE_M(16)>;", overlay)
+        self.assertIn("ranges = <0x0 0x0 DT_SIZE_M(16)>;", overlay)
+        self.assertIn("cs-gpios = <&gpio0 21 GPIO_ACTIVE_LOW>;", overlay)
+        self.assertIn("dc-gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;", overlay)
+        self.assertIn("reset-gpios = <&gpio0 5 GPIO_ACTIVE_LOW>;", overlay)
+        self.assertIn("busy-gpios = <&gpio0 6 GPIO_ACTIVE_HIGH>;", overlay)
+        self.assertIn("SPIM2_SCLK_GPIO8", overlay)
+        self.assertIn("SPIM2_MOSI_GPIO10", overlay)
 
     def test_xiao_exposes_pwm_capable_gpio_without_default_pwm_device(self):
         target = json.loads(self.read("targets/xiao-esp32c3-gdeq0426t82-sd.target.json"))

@@ -15,11 +15,12 @@ use squidvm_core::{
     host::{
         AppArmedStack, AppArmedStackEntry, AppInstallResult, AppProcessStack, AppRegistryEntry,
         AppRegistryList, BinBookInfoResult, BinBookOpenResult, BinBookReadPageResult,
-        DeviceConfigResult, DisplayInfo, DisplayLineOptions, DisplayRectOptions,
-        DisplayResourceOptions, DisplayTextOptions, FilePickFileResult, FileReadLinesResult,
-        FileReadTextResult, StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink,
-        VmDispatch, WifiAccessPoint, WifiApIp, WifiOperation, WifiOperationResult,
-        WifiScanNetwork, WifiStatus, MAX_STORAGE_TRANSFER_BYTES,
+        ContentBinBookEntry, ContentBinBookListResult, DeviceConfigResult, DisplayInfo,
+        DisplayLineOptions, DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions,
+        FilePickFileResult, FileReadLinesResult, FileReadTextResult,
+        StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink, VmDispatch,
+        WifiAccessPoint, WifiApIp, WifiOperation, WifiOperationResult, WifiScanNetwork, WifiStatus,
+        MAX_STORAGE_TRANSFER_BYTES,
     },
     limits::{MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES, MAX_SAVED_STATE_BYTES},
     program::{Program, ProgramIndex, SqbcSection},
@@ -1028,6 +1029,40 @@ pub struct SqvmBinBookReadPageResult {
     pub error: *const u8,
     pub error_len: usize,
     pub drawable: SqvmHandle,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmContentBinBookEntry {
+    pub name: *const u8,
+    pub name_len: usize,
+    pub reference: *const u8,
+    pub reference_len: usize,
+    pub size: i32,
+}
+
+impl Default for SqvmContentBinBookEntry {
+    fn default() -> Self {
+        Self {
+            name: ptr::null(),
+            name_len: 0,
+            reference: ptr::null(),
+            reference_len: 0,
+            size: 0,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmContentBinBookListResult {
+    pub ok: bool,
+    pub error: *const u8,
+    pub error_len: usize,
+    pub warning: *const u8,
+    pub warning_len: usize,
+    pub count: i32,
+    pub has_more: bool,
 }
 
 #[repr(C)]
@@ -2828,6 +2863,7 @@ pub unsafe extern "C" fn sqdp_clear_resource_session(session: *mut SqdpResourceS
 // Mirrors the current Zephyr runtime return-stack and armed-timer capacities.
 const SQVM_FFI_APP_STACK_CAP: usize = 2;
 const SQVM_FFI_APP_INSTALL_ID_CAP: usize = 40;
+const SQVM_FFI_CONTENT_BINBOOK_CAP: usize = 8;
 
 struct FfiHost<'a> {
     user_data: *mut c_void,
@@ -2842,6 +2878,9 @@ struct FfiHost<'a> {
     app_stack_count: usize,
     app_install_id: [u8; SQVM_FFI_APP_INSTALL_ID_CAP],
     app_install_id_len: usize,
+    content_binbook_entries: [SqvmContentBinBookEntry; SQVM_FFI_CONTENT_BINBOOK_CAP],
+    content_binbook_core_entries: [ContentBinBookEntry<'static>; SQVM_FFI_CONTENT_BINBOOK_CAP],
+    content_binbook_count: usize,
 }
 
 impl<'a> FfiHost<'a> {
@@ -2867,6 +2906,14 @@ impl<'a> FfiHost<'a> {
             app_stack_count: 0,
             app_install_id: [0; SQVM_FFI_APP_INSTALL_ID_CAP],
             app_install_id_len: 0,
+            content_binbook_entries: [SqvmContentBinBookEntry::default();
+                SQVM_FFI_CONTENT_BINBOOK_CAP],
+            content_binbook_core_entries: [ContentBinBookEntry {
+                name: "",
+                reference: "",
+                size: 0,
+            }; SQVM_FFI_CONTENT_BINBOOK_CAP],
+            content_binbook_count: 0,
         }
     }
 }
@@ -3563,6 +3610,45 @@ impl TraceSink for FfiHost<'_> {
             binbook_read_page(self.user_data, handle_to_ffi(book), page_index, &mut out)
         })?;
         unsafe { binbook_read_page_result_from_ffi(&out) }
+    }
+
+    fn content_binbook_list<'a>(
+        &'a mut self,
+        library: &str,
+        offset: i32,
+        limit: i32,
+    ) -> Result<ContentBinBookListResult<'a>, VmError> {
+        let Some(content_binbook_list) = self.callbacks.content_binbook_list else {
+            return Ok(ContentBinBookListResult::unsupported());
+        };
+        let mut out = SqvmContentBinBookListResult::default();
+        let mut count = 0usize;
+        self.content_binbook_entries =
+            [SqvmContentBinBookEntry::default(); SQVM_FFI_CONTENT_BINBOOK_CAP];
+        callback_status(unsafe {
+            content_binbook_list(
+                self.user_data,
+                library.as_ptr(),
+                library.len(),
+                offset,
+                limit,
+                self.content_binbook_entries.as_mut_ptr(),
+                self.content_binbook_entries.len(),
+                &mut count,
+                &mut out,
+            )
+        })?;
+        self.content_binbook_count = count.min(self.content_binbook_entries.len());
+        for index in 0..self.content_binbook_count {
+            self.content_binbook_core_entries[index] =
+                unsafe { content_binbook_entry_from_ffi(&self.content_binbook_entries[index])? };
+        }
+        unsafe {
+            content_binbook_list_result_from_ffi(
+                &out,
+                &self.content_binbook_core_entries[..self.content_binbook_count],
+            )
+        }
     }
 
     fn system_memory_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
@@ -4676,6 +4762,30 @@ unsafe fn app_armed_stack_entry_from_ffi<'a>(
     Ok(AppArmedStackEntry {
         app_id: required_ffi_str(entry.app_id, entry.app_id_len)?,
         event: required_ffi_str(entry.event, entry.event_len)?,
+    })
+}
+
+unsafe fn content_binbook_entry_from_ffi<'a>(
+    entry: &SqvmContentBinBookEntry,
+) -> Result<ContentBinBookEntry<'a>, VmError> {
+    Ok(ContentBinBookEntry {
+        name: required_ffi_str(entry.name, entry.name_len)?,
+        reference: required_ffi_str(entry.reference, entry.reference_len)?,
+        size: entry.size,
+    })
+}
+
+unsafe fn content_binbook_list_result_from_ffi<'a>(
+    result: &SqvmContentBinBookListResult,
+    items: &'a [ContentBinBookEntry<'a>],
+) -> Result<ContentBinBookListResult<'a>, VmError> {
+    Ok(ContentBinBookListResult {
+        ok: result.ok,
+        error: optional_ffi_str(result.error, result.error_len)?,
+        warning: optional_ffi_str(result.warning, result.warning_len)?,
+        items,
+        count: result.count,
+        has_more: result.has_more,
     })
 }
 

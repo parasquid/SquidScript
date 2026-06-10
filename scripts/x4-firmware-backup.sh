@@ -28,7 +28,7 @@ if ! command -v esptool >/dev/null 2>&1; then
   exit 1
 fi
 
-esptool --chip esp32c3 --port "$PORT" --baud 460800 read-flash 0 16MB "$BACKUP"
+esptool --chip esp32c3 --port "$PORT" --baud 460800 read-flash 0 0x1000000 "$BACKUP"
 sha256sum "$BACKUP" | tee "$SHA"
 
 printf 'Wrote backup: %s\n' "$BACKUP"

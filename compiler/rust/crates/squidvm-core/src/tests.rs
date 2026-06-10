@@ -619,6 +619,19 @@ const REGISTRY_TEST_APPS: [AppRegistryEntry; 2] = [
     },
 ];
 
+const CONTENT_TEST_BOOKS: [ContentBinBookEntry; 2] = [
+    ContentBinBookEntry {
+        name: "alpha.binbook",
+        reference: "content:books/p/alpha.binbook",
+        size: 4096,
+    },
+    ContentBinBookEntry {
+        name: "travel-notes.binbook",
+        reference: "content:books/r/travel-notes.binbook",
+        size: 8192,
+    },
+];
+
 const LIFECYCLE_PROCESS_STACK: [&str; 2] = ["main", "reader"];
 const LIFECYCLE_ARMED_STACK: [AppArmedStackEntry; 2] = [
     AppArmedStackEntry {
@@ -669,6 +682,33 @@ impl TraceSink for RegistryTrace {
             .copied()
             .find(|app| app.id == app_id)
             .ok_or(VmError::InvalidOperand)
+    }
+
+    fn content_binbook_list<'a>(
+        &'a mut self,
+        library: &str,
+        offset: i32,
+        limit: i32,
+    ) -> Result<ContentBinBookListResult<'a>, VmError> {
+        self.events
+            .push(format!("content.binbook.list {library} {offset} {limit}"));
+        Ok(ContentBinBookListResult {
+            ok: true,
+            error: None,
+            warning: Some("sd-unavailable"),
+            items: &CONTENT_TEST_BOOKS,
+            count: 7,
+            has_more: true,
+        })
+    }
+
+    fn binbook_open<'a>(&'a mut self, path: &str) -> Result<BinBookOpenResult<'a>, VmError> {
+        self.events.push(format!("binbook.open {path}"));
+        Ok(BinBookOpenResult {
+            ok: true,
+            error: None,
+            book: Some(Handle::new(HandleKind::BinBook, 7)),
+        })
     }
 
     fn app_process_stack<'a>(&'a mut self) -> Result<AppProcessStack<'a>, VmError> {
@@ -2594,6 +2634,77 @@ screen("main") {}
             "debug reader",
             "registry.get reader",
             "debug reader Reader dev-reader Read documents",
+        ]
+    );
+}
+
+#[test]
+fn runs_content_binbook_list_from_real_bytecode() {
+    let source = r#"app "library"
+event.on("app.start") {
+  let page = content.binbook.list("books", { offset: 0, limit: 8 })
+  debug.print(page.ok, page.error, page.warning, page.count, page.hasMore)
+  for item in page.items max 8 {
+    debug.print(item.name, item.ref, item.size)
+  }
+}
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = RegistryTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "content.binbook.list books 0 8",
+            "debug true null sd-unavailable 7 true",
+            "debug alpha.binbook content:books/p/alpha.binbook 4096",
+            "debug travel-notes.binbook content:books/r/travel-notes.binbook 8192",
+        ]
+    );
+}
+
+#[test]
+fn opens_content_binbook_ref_from_list_item_real_bytecode() {
+    let source = r#"app "library-open"
+event.on("app.start") {
+  let page = content.binbook.list("books", { offset: 0, limit: 8 })
+  for item in page.items max 1 {
+    let opened = binbook.open(item.ref)
+    debug.print(opened.ok, opened.error)
+  }
+}
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = RegistryTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "content.binbook.list books 0 8",
+            "binbook.open content:books/p/alpha.binbook",
+            "debug true null",
         ]
     );
 }

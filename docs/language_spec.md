@@ -2659,9 +2659,10 @@ and result records; it does not parse BinBook bytes.
 
 `binbook.open(path)`
 
-Opens and validates a package-relative `.binbook` resource for the current app.
-The current Zephyr firmware supports safe package resource paths such as
-`"books/sample.binbook"`.
+Opens and validates a `.binbook` resource for the current app. The current
+Zephyr firmware supports safe package resource paths such as
+`"books/sample.binbook"` and opaque content refs returned by
+`content.binbook.list`.
 
 Result:
 
@@ -2714,6 +2715,50 @@ Rules:
 - `service.display.draw(...)` is the composition API for returned drawables.
 - Unsupported or invalid books/pages return result records; scripts should
   check `ok` before using returned handles.
+
+---
+
+## 31B. Content Library Built-ins
+
+`content.*` APIs expose logical content libraries. They return opaque refs for
+portable app code; refs are app-facing identifiers, not physical filesystem
+paths.
+
+`content.binbook.list("books")`
+
+`content.binbook.list("books", { offset: int, limit: int })`
+
+Lists BinBook documents in the logical `books` library. The current Zephyr
+firmware merges package resources under `resources/books` with removable
+storage content under the target's `books` library. The VM materializes at most
+the runtime list item cap in `items`; `count` reports the total matching rows
+seen by the runtime, and `hasMore` indicates that another page is available.
+
+Result:
+
+```text
+{ ok: bool, error: string?, warning: string?, items: list, count: int, hasMore: bool }
+```
+
+Each item has:
+
+```text
+{ name: string, ref: string, size: int }
+```
+
+Example:
+
+```squid
+let page = content.binbook.list("books", { offset: 0, limit: 8 })
+if (page.ok) {
+  for item in page.items max 8 {
+    let opened = binbook.open(item.ref)
+    if (opened.ok) {
+      debug.print(item.name)
+    }
+  }
+}
+```
 
 ---
 

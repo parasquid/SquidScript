@@ -1,14 +1,15 @@
 #![cfg(feature = "alloc")]
 
 use squid_device_protocol::{
-    app_list_entries, decode_frame, encode_app_list_response_into, encode_empty_response_into,
-    encode_error_response_into, encode_frame, encode_frame_into, encode_hello_response_into,
-    encode_lifecycle_response_into, encode_line_response_into, encode_resources_response_into,
-    hello_identity, hello_request, key_event_from_request_into, key_request, lifecycle_lines,
-    output_lines, resource_values, resources_get_request_with_heap_reset,
-    runtime_cap_clear_request, runtime_cap_get_request, runtime_cap_set_request, AppListEntry,
-    DecodeError, Field, FieldValue, Frame, FrameKind, LifecycleTimer, Opcode, ResourceMetric,
-    Status,
+    app_list_entries, content_install_begin_request, content_install_chunk_request,
+    content_install_commit_request, decode_frame, encode_app_list_response_into,
+    encode_empty_response_into, encode_error_response_into, encode_frame, encode_frame_into,
+    encode_hello_response_into, encode_lifecycle_response_into, encode_line_response_into,
+    encode_resources_response_into, hello_identity, hello_request, key_event_from_request_into,
+    key_request, lifecycle_lines, output_lines, resource_values,
+    resources_get_request_with_heap_reset, runtime_cap_clear_request, runtime_cap_get_request,
+    runtime_cap_set_request, AppListEntry, DecodeError, Field, FieldValue, Frame, FrameKind,
+    LifecycleTimer, Opcode, ResourceMetric, Status,
 };
 
 #[test]
@@ -287,6 +288,35 @@ fn encodes_runtime_cap_requests() {
     let clear = runtime_cap_clear_request(85, Some("vm_runtime.timer_max"));
     assert_eq!(clear.opcode, Opcode::RuntimeCapClear);
     assert_eq!(clear.fields, vec![Field::string(1, "vm_runtime.timer_max")]);
+}
+
+#[test]
+fn encodes_content_install_requests() {
+    let begin = content_install_begin_request(88, "weakest-tamer-v01.binbook", 12_460_884, 0x1234);
+    assert_eq!(begin.opcode, Opcode::ContentInstallBegin);
+    assert_eq!(
+        begin.fields,
+        vec![
+            Field::string(1, "weakest-tamer-v01.binbook"),
+            Field::u64(2, 12_460_884),
+            Field::u64(3, 0x1234),
+        ]
+    );
+
+    let chunk = content_install_chunk_request(89, 4096, b"page".to_vec());
+    assert_eq!(chunk.opcode, Opcode::ContentInstallChunk);
+    assert_eq!(
+        chunk.fields,
+        vec![
+            Field::u64(1, 4096),
+            Field::bytes(2, b"page".to_vec()),
+            Field::bool(3, true),
+        ]
+    );
+
+    let commit = content_install_commit_request(90);
+    assert_eq!(commit.opcode, Opcode::ContentInstallCommit);
+    assert!(commit.fields.is_empty());
 }
 
 #[test]

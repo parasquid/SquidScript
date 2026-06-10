@@ -1,0 +1,9 @@
+app "content-binbook-list"
+
+event.on("app.start") {
+  let page = content.binbook.list("books", { offset: 0, limit: 8 })
+  debug.print("content", page.ok, page.warning, page.count, page.hasMore)
+  for item in page.items max 8 {
+    debug.print("book", item.name, item.ref, item.size)
+  }
+}

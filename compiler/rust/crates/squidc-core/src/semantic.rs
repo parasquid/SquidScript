@@ -12,6 +12,7 @@ fn is_fallible_builtin(name: &str) -> bool {
         "file.pickFile"
             | "file.readText"
             | "file.readLines"
+            | "content.binbook.list"
             | "service.wifi.connect"
             | "service.wifi.disconnect"
             | "service.wifi.scan"

@@ -132,6 +132,7 @@ completion notification.
 
 ```sh
 cargo run -p squidc -- device key SELECT
+cargo run -p squidc -- device content-put target/book.binbook --name book.binbook
 cargo run -p squidc -- device output
 cargo run -p squidc -- device state
 cargo run -p squidc -- device drawlog
@@ -149,6 +150,14 @@ cargo run -p squidc -- device monitor --max-lines 4
 
 `device key` sends a logical key event to Zephyr firmware. It does not
 press a physical button; the firmware routes the event to the current app.
+
+`device content-put <file>` streams a host file into the target firmware's
+content volume over the framed serial protocol. The current firmware accepts
+safe `.binbook` names and writes them to the device-owned removable books
+library, such as the XTEINK X4 SPI SD card mounted by firmware at runtime.
+Use `--name <file.binbook>` to choose the stored content name; otherwise the
+input basename is used. The host OS does not mount or directly inspect this
+device-owned SD card.
 
 `device drawlog` returns the current Zephyr headless display draw log. Records
 use the current firmware diagnostic text shape, such as

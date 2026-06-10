@@ -10,12 +10,13 @@ use squidvm_ffi::{
     sqvm_dispatch_resume_storage, sqvm_dispatch_start_resumable,
     sqvm_dispatch_start_resumable_with_payload, sqvm_trigger_ble_profile_count,
     sqvm_trigger_ble_profile_read, sqvm_trigger_timer_count, sqvm_trigger_timer_read,
-    SqvmAppRegistryEntry, SqvmAppStackEntry, SqvmBleProfileTrigger, SqvmCallbacks,
-    SqvmBinBookInfoResult, SqvmBinBookOpenResult, SqvmBinBookReadPageResult, SqvmDeviceBinding,
-    SqvmDeviceConfigResult, SqvmDeviceConfigValue, SqvmDeviceConfigValueKind, SqvmDispatchOutcome,
-    SqvmDispatchResult, SqvmDisplayInfo, SqvmEventPayloadField, SqvmFilePickFileResult,
-    SqvmFileReadLinesResult, SqvmFileReadTextResult, SqvmHandle, SqvmHandleKind, SqvmStatus,
-    SqvmStorageCompletion, SqvmStorageRequestKind, SqvmTriggerTimer,
+    SqvmAppRegistryEntry, SqvmAppStackEntry, SqvmBinBookInfoResult, SqvmBinBookOpenResult,
+    SqvmBinBookReadPageResult, SqvmBleProfileTrigger, SqvmCallbacks, SqvmContentBinBookEntry,
+    SqvmContentBinBookListResult, SqvmDeviceBinding, SqvmDeviceConfigResult, SqvmDeviceConfigValue,
+    SqvmDeviceConfigValueKind, SqvmDispatchOutcome, SqvmDispatchResult, SqvmDisplayInfo,
+    SqvmEventPayloadField, SqvmFilePickFileResult, SqvmFileReadLinesResult, SqvmFileReadTextResult,
+    SqvmHandle, SqvmHandleKind, SqvmStatus, SqvmStorageCompletion, SqvmStorageRequestKind,
+    SqvmTriggerTimer,
 };
 
 #[path = "support/generated_ffi_dispatch_cases.rs"]
@@ -46,6 +47,7 @@ struct Host {
     file_read_texts: Vec<String>,
     file_read_lines: Vec<(String, i32)>,
     binbook_actions: Vec<String>,
+    content_binbook_lists: Vec<(String, i32, i32)>,
     system_memory_count: usize,
     system_storage_names: Vec<String>,
     system_start_reason_count: usize,
@@ -1121,6 +1123,20 @@ unsafe extern "C" fn failing_file_read_lines(
     -22
 }
 
+unsafe extern "C" fn failing_content_binbook_list(
+    _user_data: *mut c_void,
+    _library: *const u8,
+    _library_len: usize,
+    _offset: i32,
+    _limit: i32,
+    _out: *mut SqvmContentBinBookEntry,
+    _out_cap: usize,
+    _out_count: *mut usize,
+    _out_result: *mut SqvmContentBinBookListResult,
+) -> i32 {
+    -22
+}
+
 unsafe extern "C" fn failing_app_registry_list(
     _user_data: *mut c_void,
     _out: *mut SqvmAppRegistryEntry,
@@ -1339,10 +1355,8 @@ unsafe extern "C" fn binbook_read_page(
     out: *mut SqvmBinBookReadPageResult,
 ) -> i32 {
     let host = &mut *(user_data as *mut Host);
-    host.binbook_actions.push(format!(
-        "readPage {:?}:{} {page_index}",
-        book.kind, book.id
-    ));
+    host.binbook_actions
+        .push(format!("readPage {:?}:{} {page_index}", book.kind, book.id));
     if out.is_null() {
         return -1;
     }
@@ -1354,6 +1368,51 @@ unsafe extern "C" fn binbook_read_page(
             kind: SqvmHandleKind::Drawable,
             id: 11,
         },
+    };
+    0
+}
+
+unsafe extern "C" fn content_binbook_list(
+    user_data: *mut c_void,
+    library: *const u8,
+    library_len: usize,
+    offset: i32,
+    limit: i32,
+    out: *mut SqvmContentBinBookEntry,
+    out_cap: usize,
+    out_count: *mut usize,
+    out_result: *mut SqvmContentBinBookListResult,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let library = std::str::from_utf8(std::slice::from_raw_parts(library, library_len)).unwrap();
+    host.content_binbook_lists
+        .push((library.to_string(), offset, limit));
+    if out.is_null() || out_count.is_null() || out_result.is_null() || out_cap < 2 {
+        return -1;
+    }
+    *out.add(0) = SqvmContentBinBookEntry {
+        name: b"alpha.binbook".as_ptr(),
+        name_len: b"alpha.binbook".len(),
+        reference: b"content:books/p/alpha.binbook".as_ptr(),
+        reference_len: b"content:books/p/alpha.binbook".len(),
+        size: 4096,
+    };
+    *out.add(1) = SqvmContentBinBookEntry {
+        name: b"travel.binbook".as_ptr(),
+        name_len: b"travel.binbook".len(),
+        reference: b"content:books/r/travel.binbook".as_ptr(),
+        reference_len: b"content:books/r/travel.binbook".len(),
+        size: 8192,
+    };
+    *out_count = 2;
+    *out_result = SqvmContentBinBookListResult {
+        ok: true,
+        error: ptr::null(),
+        error_len: 0,
+        warning: b"sd-unavailable".as_ptr(),
+        warning_len: b"sd-unavailable".len(),
+        count: 7,
+        has_more: true,
     };
     0
 }
@@ -1416,6 +1475,7 @@ fn callbacks(_host: &mut Host) -> SqvmCallbacks {
         binbook_open: Some(binbook_open),
         binbook_info: Some(binbook_info),
         binbook_read_page: Some(binbook_read_page),
+        content_binbook_list: Some(content_binbook_list),
         system_memory_text: Some(system_memory_text),
         system_storage_text: Some(system_storage_text),
         system_start_reason_text: Some(system_start_reason_text),
@@ -1652,6 +1712,36 @@ screen("main") {
     }
   }
 }
+"#,
+    )
+}
+
+fn compile_content_binbook_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-content-binbook"
+event.on("app.start") {
+  let page = content.binbook.list("books", { offset: 0, limit: 8 })
+  debug.print(page.ok, page.warning, page.count, page.hasMore)
+  for item in page.items max 8 {
+    debug.print(item.name, item.ref, item.size)
+  }
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_content_binbook_open_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-content-binbook-open"
+event.on("app.start") {
+  let page = content.binbook.list("books", { offset: 0, limit: 8 })
+  for item in page.items max 1 {
+    let opened = binbook.open(item.ref)
+    debug.print(opened.ok, opened.error)
+  }
+}
+screen("main") {}
 "#,
     )
 }
@@ -2193,6 +2283,93 @@ fn dispatches_binbook_callbacks_and_draws_typed_handle() {
         host.drawlog,
         vec!["draw=resource kind=Drawable id=11 x=0 y=0 w=0 h=0".to_string()]
     );
+}
+
+#[test]
+fn dispatches_content_binbook_list_callback() {
+    let mut host = Host {
+        sqbc: compile_content_binbook_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(
+        host.content_binbook_lists,
+        vec![("books".to_string(), 0, 8)]
+    );
+    assert_eq!(
+        host.output,
+        vec![
+            "true sd-unavailable 7 true".to_string(),
+            "alpha.binbook content:books/p/alpha.binbook 4096".to_string(),
+            "travel.binbook content:books/r/travel.binbook 8192".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn dispatches_content_binbook_list_ref_to_binbook_open() {
+    let mut host = Host {
+        sqbc: compile_content_binbook_open_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(
+        host.content_binbook_lists,
+        vec![("books".to_string(), 0, 8)]
+    );
+    assert_eq!(
+        host.binbook_actions,
+        vec!["open content:books/p/alpha.binbook".to_string()]
+    );
+    assert_eq!(host.output, vec!["true null".to_string()]);
 }
 
 #[test]
@@ -2904,11 +3081,12 @@ fn callback_errors_surface_as_vm_error_status() {
 #[test]
 fn generated_callback_policy_cases_cover_manifest_inventory() {
     let cases = generated_ffi_dispatch_cases::callback_policy_cases();
-    assert_eq!(cases.len(), 56);
+    assert_eq!(cases.len(), 57);
     assert!(cases.contains(&("display_info", "unsupported_result")));
     assert!(cases.contains(&("binbook_open", "unsupported_result")));
     assert!(cases.contains(&("binbook_info", "unsupported_result")));
     assert!(cases.contains(&("binbook_read_page", "unsupported_result")));
+    assert!(cases.contains(&("content_binbook_list", "unsupported_result")));
     assert!(cases.contains(&("wifi_operation", "idle_result")));
     assert!(cases.contains(&("wifi_scan_network", "unsupported_result")));
     assert!(cases.contains(&("system_start_reason_text", "required_vm_error")));

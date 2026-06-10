@@ -2,17 +2,19 @@ use std::{
     env, fs,
     fs::{File, OpenOptions},
     io::{Read, Write},
+    path::Path,
     process::Command,
     time::{Duration, Instant},
 };
 
 use squid_device_protocol::{
     app_install_begin_request, app_install_chunk_request_with_ack, app_install_commit_request,
-    app_launch_request, app_list_entries, app_list_request, decode_frame_from_stream,
-    drawlog_get_request, drawlog_lines, encode_frame, error_lines, errors_get_request,
-    event_dispatch_request, hello_identity, hello_request, key_request, lifecycle_get_request,
-    lifecycle_lines, output_get_request, output_lines, protocol_error, reset_request,
-    resource_install_begin_request, resource_install_chunk_request_with_ack,
+    app_launch_request, app_list_entries, app_list_request, content_install_begin_request,
+    content_install_chunk_request_with_ack, content_install_commit_request,
+    decode_frame_from_stream, drawlog_get_request, drawlog_lines, encode_frame, error_lines,
+    errors_get_request, event_dispatch_request, hello_identity, hello_request, key_request,
+    lifecycle_get_request, lifecycle_lines, output_get_request, output_lines, protocol_error,
+    reset_request, resource_install_begin_request, resource_install_chunk_request_with_ack,
     resource_install_commit_request, resource_values, resources_get_request,
     resources_get_request_with_heap_reset, runtime_cap_clear_request, runtime_cap_get_request,
     runtime_cap_lines, runtime_cap_set_request, state_bytes, state_get_request,
@@ -115,6 +117,57 @@ impl SerialDevice {
             "installed resource {app_id}/{path} len={}\n",
             bytes.len()
         ))
+    }
+
+    pub fn install_content(&mut self, name: &str, source: &Path) -> Result<String, String> {
+        if !is_safe_content_name(name) {
+            return Err(format!("invalid content name: {name}"));
+        }
+        let total_len = fs::metadata(source)
+            .map_err(|error| format!("failed to stat {}: {error}", source.display()))?
+            .len() as usize;
+        let mut hasher = crc32fast::Hasher::new();
+        let mut file = File::open(source)
+            .map_err(|error| format!("failed to open {}: {error}", source.display()))?;
+        let mut crc_buf = [0u8; 8192];
+        loop {
+            let read = file
+                .read(&mut crc_buf)
+                .map_err(|error| format!("failed to read {}: {error}", source.display()))?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&crc_buf[..read]);
+        }
+        let expected_crc = hasher.finalize();
+        let transfer = serial_transfer_plan_for_default_caps(total_len);
+        self.send_protocol_expect_ok(&content_install_begin_request(
+            88,
+            name,
+            total_len as u64,
+            expected_crc as u64,
+        ))?;
+
+        let mut file = File::open(source)
+            .map_err(|error| format!("failed to open {}: {error}", source.display()))?;
+        for (index, planned) in transfer.chunks.iter().enumerate() {
+            let mut chunk = vec![0u8; planned.len];
+            file.read_exact(&mut chunk)
+                .map_err(|error| format!("failed to read {}: {error}", source.display()))?;
+            self.send_protocol_transfer_chunk(
+                &content_install_chunk_request_with_ack(
+                    89 + index as u32,
+                    planned.offset as u64,
+                    chunk,
+                    planned.ack_requested,
+                ),
+                planned.ack_requested,
+            )?;
+        }
+        self.send_protocol_expect_ok(&content_install_commit_request(
+            89 + transfer.chunks.len() as u32,
+        ))?;
+        Ok(format!("installed content {name} len={total_len}\n"))
     }
 
     pub fn run_temp_app(&mut self, app_id: &str, bytes: &[u8]) -> Result<String, String> {
@@ -559,6 +612,15 @@ pub fn candidate_ports() -> Vec<String> {
     unique
 }
 
+fn is_safe_content_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with('.')
+        && name.ends_with(".binbook")
+        && !name.contains('/')
+        && !name.contains('\\')
+        && name.len() < squid_device_protocol::MAX_PATH_LEN
+}
+
 fn configure_tty(port: &str) -> Result<(), String> {
     let status = Command::new("stty")
         .args(["-F", port])
@@ -640,9 +702,9 @@ mod tests {
         FIRMWARE_SERIAL_FRAME_BUDGET,
     };
     use squid_device_protocol::{
-        app_install_begin_request, app_install_chunk_request, encoded_frame_len,
-        resource_install_begin_request, resource_install_chunk_request, temp_run_chunk_request,
-        DecodeError, MAX_APP_ID_LEN, MAX_PATH_LEN,
+        app_install_begin_request, app_install_chunk_request, content_install_begin_request,
+        encoded_frame_len, resource_install_begin_request, resource_install_chunk_request,
+        temp_run_chunk_request, DecodeError, MAX_APP_ID_LEN, MAX_PATH_LEN,
     };
 
     #[test]
@@ -752,6 +814,11 @@ mod tests {
             u64::MAX,
         );
         assert!(encoded_frame_len(&resource_begin).unwrap() <= FIRMWARE_SERIAL_FRAME_BUDGET);
+
+        let max_content_name = format!("{}.binbook", "b".repeat(80));
+        let content_begin =
+            content_install_begin_request(88, max_content_name.as_str(), u64::MAX, u64::MAX);
+        assert!(encoded_frame_len(&content_begin).unwrap() <= FIRMWARE_SERIAL_FRAME_BUDGET);
     }
 
     #[test]

@@ -59,6 +59,41 @@
       "reason": "UF2 support is desired for SquidScript firmware replacement, but the verified XTEINK X4 bootloader/update path has not yet been confirmed as UF2-capable."
     }
   },
+  "firmware": {
+    "zephyr": {
+      "board": "esp32c3_devkitm",
+      "buildDir": "build/zephyr/xteink-x4",
+      "overlay": "firmware/zephyr/boards/xteink_x4.overlay",
+      "fallbackSource": "firmware/zephyr/fallback/xteink-x4-main.squid",
+      "targetKconfig": "target/zephyr/generated/xteink-x4-target.conf",
+      "runtimeLimits": "targets/runtime-limits/esp32c3-zephyr.json"
+    }
+  },
+  "radios": {
+    "wifi": {
+      "type": "wifi",
+      "band": "2.4GHz",
+      "standard": "802.11b/g/n",
+      "status": "runtime-supported-reference",
+      "runtimeFeatures": [
+        "service.wifi.status",
+        "service.wifi.scan",
+        "service.wifi.startAP",
+        "service.wifi.stopAP",
+        "service.wifi.getAPIP",
+        "service.wifi.connect",
+        "service.wifi.disconnect"
+      ],
+      "reason": "XTEINK X4 uses an ESP32-C3 radio. SquidScript runtime support follows the ESP32-C3 Zephyr reference path; X4 hardware validation remains target bring-up work."
+    },
+    "ble": {
+      "type": "bluetooth-le",
+      "standard": "Bluetooth LE",
+      "status": "runtime-supported-reference",
+      "runtimeFeatures": ["service.ble.file-transfer"],
+      "reason": "XTEINK X4 uses the ESP32-C3 Bluetooth LE radio class. File-transfer validation on this board is separate from enabling the Zephyr build target."
+    }
+  },
   "pins": {
     "GPIO0": {
       "capabilities": ["gpio", "adc"],
@@ -155,6 +190,7 @@
     "storage.sd": {
       "type": "spi-sdcard",
       "bus": "spi.shared",
+      "mount": "/SD:",
       "pins": {
         "cs": "GPIO12",
         "miso": "GPIO7"
@@ -181,7 +217,7 @@
     "logical": {
       "width": 480,
       "height": 800,
-      "rotation": 90
+      "rotation": 270
     },
     "color": {
       "logicalGrayscaleLevels": 16,
@@ -229,7 +265,7 @@
   "storage": {
     "type": "spi-sdcard",
     "device": "storage.sd",
-    "mount": "/sd",
+    "mount": "/SD:",
     "filesystem": {
       "required": ["fat32"],
       "optional": ["exfat"]
@@ -410,6 +446,7 @@
     "usb-detect",
     "service.display.draw",
     "display.epaper.ssd1677",
+    "service.ble.file-transfer",
     "squidscript.bytecode",
     "state.read",
     "state.write",

@@ -68,6 +68,9 @@ pub enum Opcode {
     RuntimeCapGet = 82,
     RuntimeCapSet = 83,
     RuntimeCapClear = 84,
+    ContentInstallBegin = 88,
+    ContentInstallChunk = 89,
+    ContentInstallCommit = 90,
 }
 
 impl Opcode {
@@ -102,6 +105,9 @@ impl Opcode {
             "runtimecapget" => Ok(Self::RuntimeCapGet),
             "runtimecapset" => Ok(Self::RuntimeCapSet),
             "runtimecapclear" => Ok(Self::RuntimeCapClear),
+            "contentinstallbegin" => Ok(Self::ContentInstallBegin),
+            "contentinstallchunk" => Ok(Self::ContentInstallChunk),
+            "contentinstallcommit" => Ok(Self::ContentInstallCommit),
             _ => Err(format!("unknown protocol opcode: {name}")),
         }
     }
@@ -140,6 +146,9 @@ impl TryFrom<u8> for Opcode {
             82 => Ok(Self::RuntimeCapGet),
             83 => Ok(Self::RuntimeCapSet),
             84 => Ok(Self::RuntimeCapClear),
+            88 => Ok(Self::ContentInstallBegin),
+            89 => Ok(Self::ContentInstallChunk),
+            90 => Ok(Self::ContentInstallCommit),
             _ => Err(DecodeError::UnknownOpcode(value)),
         }
     }
@@ -1239,6 +1248,48 @@ pub fn resource_install_chunk_request_with_ack(
 #[cfg(feature = "alloc")]
 pub fn resource_install_commit_request(sequence: u32) -> Frame {
     Frame::request(Opcode::ResourceInstallCommit, sequence, Vec::new())
+}
+
+#[cfg(feature = "alloc")]
+pub fn content_install_begin_request(
+    sequence: u32,
+    name: impl Into<String>,
+    total_len: u64,
+    crc32: u64,
+) -> Frame {
+    Frame::request(
+        Opcode::ContentInstallBegin,
+        sequence,
+        vec![
+            Field::string(1, name),
+            Field::u64(2, total_len),
+            Field::u64(3, crc32),
+        ],
+    )
+}
+
+#[cfg(feature = "alloc")]
+pub fn content_install_chunk_request(sequence: u32, offset: u64, bytes: Vec<u8>) -> Frame {
+    content_install_chunk_request_with_ack(sequence, offset, bytes, true)
+}
+
+#[cfg(feature = "alloc")]
+pub fn content_install_chunk_request_with_ack(
+    sequence: u32,
+    offset: u64,
+    bytes: Vec<u8>,
+    ack_requested: bool,
+) -> Frame {
+    Frame::request(
+        Opcode::ContentInstallChunk,
+        sequence,
+        transfer_chunk_fields(offset, bytes, ack_requested),
+    )
+}
+
+#[cfg(feature = "alloc")]
+pub fn content_install_commit_request(sequence: u32) -> Frame {
+    Frame::request(Opcode::ContentInstallCommit, sequence, Vec::new())
 }
 
 #[cfg(feature = "alloc")]

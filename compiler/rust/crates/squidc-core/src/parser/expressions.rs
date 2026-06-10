@@ -223,6 +223,18 @@ impl Parser<'_> {
                         name: format!("app.{namespace}.{action}"),
                         args: self.parse_call_args(builder),
                     }
+                } else if name == "content"
+                    && namespace == "binbook"
+                    && self.at_kind(TokenKind::Dot)
+                {
+                    self.bump(builder);
+                    self.consume_ws(builder);
+                    let action = self.consume_ident(builder).unwrap_or_default();
+                    self.consume_ws(builder);
+                    IrExpr::Call {
+                        name: format!("content.binbook.{action}"),
+                        args: self.parse_call_args(builder),
+                    }
                 } else if name == "state" {
                     if self.at_kind(TokenKind::OpenParen) {
                         IrExpr::Call {
@@ -283,7 +295,11 @@ impl Parser<'_> {
                 self.bump(builder);
                 break;
             }
-            if let Some(arg) = self.parse_expr(builder) {
+            if self.at_kind(TokenKind::OpenBrace) {
+                args.push(IrExpr::Literal {
+                    value: self.parse_options_object(builder),
+                });
+            } else if let Some(arg) = self.parse_expr(builder) {
                 args.push(arg);
             } else {
                 self.bump(builder);

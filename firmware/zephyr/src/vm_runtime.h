@@ -128,6 +128,16 @@ BUILD_ASSERT(SQ_VM_RUNTIME_SCRATCH_BYTES >= SQVM_STORAGE_TRANSFER_CAPACITY);
 #ifndef SQ_VM_RUNTIME_WIFI_PROFILE_PASSWORD_BYTES
 #define SQ_VM_RUNTIME_WIFI_PROFILE_PASSWORD_BYTES 64
 #endif
+#ifndef SQ_VM_RUNTIME_CONTENT_LIST_MAX
+#define SQ_VM_RUNTIME_CONTENT_LIST_MAX 8
+#endif
+#ifndef SQ_VM_RUNTIME_CONTENT_NAME_LEN
+#define SQ_VM_RUNTIME_CONTENT_NAME_LEN 80
+#endif
+#ifndef SQ_VM_RUNTIME_CONTENT_REF_LEN
+#define SQ_VM_RUNTIME_CONTENT_REF_LEN 128
+#endif
+#define SQ_VM_RUNTIME_CONTENT_BOOKS_DIR "/SD:/books"
 
 enum sq_vm_runtime_status {
 	SQ_VM_RUNTIME_IDLE = 0,
@@ -359,6 +369,9 @@ struct sq_vm_runtime {
 	bool display_dirty;
 	struct sq_vm_runtime_binbook_handle binbook;
 	struct sq_vm_runtime_drawable_handle drawable;
+	SqvmContentBinBookEntry content_binbook_entries[SQ_VM_RUNTIME_CONTENT_LIST_MAX];
+	char content_binbook_names[SQ_VM_RUNTIME_CONTENT_LIST_MAX][SQ_VM_RUNTIME_CONTENT_NAME_LEN];
+	char content_binbook_refs[SQ_VM_RUNTIME_CONTENT_LIST_MAX][SQ_VM_RUNTIME_CONTENT_REF_LEN];
 	char device_errors[SQ_VM_RUNTIME_DEVICE_ERROR_MAX][SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
 	uint8_t device_error_count;
 	bool indicator_state;

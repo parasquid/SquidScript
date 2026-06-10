@@ -186,6 +186,29 @@ def main(argv):
             ]
         )
 
+    storage = target.get("storage", {})
+    devices = target.get("devices", {})
+    storage_device = storage.get("device") if isinstance(storage, dict) else None
+    device = devices.get(storage_device, {}) if isinstance(devices, dict) else {}
+    if (
+        isinstance(storage, dict)
+        and storage.get("type") == "spi-sdcard"
+        and isinstance(device, dict)
+        and device.get("status") != "planned-unverified"
+    ):
+        lines.extend(
+            [
+                "CONFIG_SDHC=y",
+                "CONFIG_SPI_SDHC=y",
+                "CONFIG_SDMMC_STACK=y",
+                "CONFIG_DISK_ACCESS=y",
+                "CONFIG_FAT_FILESYSTEM_ELM=y",
+                "CONFIG_FS_FATFS_LFN=y",
+                "CONFIG_FS_FATFS_MAX_LFN=80",
+                "",
+            ]
+        )
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(lines), encoding="utf-8")
     return 0

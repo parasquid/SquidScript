@@ -1,0 +1,92 @@
+app "content-binbook-reader"
+
+state {
+  pageIndex: int = 0
+}
+
+event.on("app.start") {
+  screen.open("reader")
+}
+
+event.on("key.RIGHT") {
+  let listing = content.binbook.list("books", { offset: 0, limit: 1 })
+  if (listing.ok) {
+    for item in listing.items max 1 {
+      let opened = binbook.open(item.ref)
+      if (opened.ok) {
+        let info = binbook.info(opened.book)
+        if (state.pageIndex + 1 < info.pageCount) {
+          state.pageIndex = state.pageIndex + 1
+          screen.refresh()
+        }
+      }
+    }
+  }
+}
+
+event.on("key.LEFT") {
+  if (state.pageIndex > 0) {
+    state.pageIndex = state.pageIndex - 1
+    screen.refresh()
+  }
+}
+
+screen("reader") {
+  debug.print("reader-screen", state.pageIndex)
+  service.display.clear("white")
+  debug.print("after-clear")
+  let listing = content.binbook.list("books", { offset: 0, limit: 1 })
+  debug.print("after-list", listing.ok, listing.count, listing.warning)
+  if (listing.ok) {
+    if (listing.count == 0) {
+      service.display.text("No BinBook files", {
+        x: 24
+        y: 64
+        fontHeight: 24
+      })
+      service.display.text("Expected /SD:/books/*.binbook", {
+        x: 24
+        y: 112
+        fontHeight: 18
+      })
+      debug.print("book-list-empty", listing.warning, listing.count)
+    } else {
+      for item in listing.items max 1 {
+        debug.print("before-open", item.name)
+        let opened = binbook.open(item.ref)
+        debug.print("after-open", opened.ok, opened.error)
+        if (opened.ok) {
+          let info = binbook.info(opened.book)
+          debug.print("after-info", info.ok, info.pageCount)
+          let page = binbook.readPage(opened.book, state.pageIndex)
+          debug.print("after-read", page.ok, page.error)
+          if (page.ok) {
+            service.display.draw(page.drawable)
+            debug.print("book", item.name, state.pageIndex, info.pageCount)
+          } else {
+            service.display.text("Page read failed", {
+              x: 24
+              y: 64
+              fontHeight: 24
+            })
+            debug.print("page-read-failed", page.error, state.pageIndex)
+          }
+        } else {
+          service.display.text("Open failed", {
+            x: 24
+            y: 64
+            fontHeight: 24
+          })
+          debug.print("book-open-failed", item.name, opened.error)
+        }
+      }
+    }
+  } else {
+    service.display.text("Book list failed", {
+      x: 24
+      y: 64
+      fontHeight: 24
+    })
+    debug.print("book-list-failed", listing.error, listing.warning)
+  }
+}

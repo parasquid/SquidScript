@@ -43,7 +43,7 @@ pub const MAX_SAVED_STATE_BYTES: usize = 512;
 /// Maximum runtime (dynamically constructed) strings.
 pub const MAX_RUNTIME_STRINGS: usize = 12;
 /// Maximum bytes per runtime string.
-pub const MAX_RUNTIME_STRING_BYTES: usize = 48;
+pub const MAX_RUNTIME_STRING_BYTES: usize = 128;
 /// Maximum service-result strings.
 pub const MAX_SERVICE_STRINGS: usize = 32;
 /// Maximum bytes per service-result string.

@@ -36,6 +36,7 @@ BUILD_ASSERT(SQ_DEVICE_WIFI_PROFILE_SSID_BYTES == SQ_VM_RUNTIME_WIFI_PROFILE_SSI
 BUILD_ASSERT(SQ_DEVICE_WIFI_PROFILE_PASSWORD_BYTES == SQ_VM_RUNTIME_WIFI_PROFILE_PASSWORD_BYTES);
 
 enum sq_device_field_type {
+	SQ_DEVICE_FIELD_TYPE_BYTES = 0,
 	SQ_DEVICE_FIELD_TYPE_BOOL = 3,
 	SQ_DEVICE_FIELD_TYPE_STRING = 1,
 	SQ_DEVICE_FIELD_TYPE_U64 = 5,
@@ -58,6 +59,23 @@ struct sq_runtime_cap_request {
 	uint32_t value;
 	bool has_key;
 	bool has_value;
+};
+
+struct sq_content_begin_request {
+	char name[SQ_DEVICE_CONTENT_NAME_BYTES];
+	size_t total_len;
+	uint32_t expected_crc;
+	bool has_name;
+	bool has_total_len;
+	bool has_crc;
+};
+
+struct sq_content_chunk_request {
+	size_t offset;
+	const uint8_t *bytes;
+	size_t bytes_len;
+	bool has_offset;
+	bool has_bytes;
 };
 
 enum sq_resource_metric_id {
@@ -504,6 +522,24 @@ static uint32_t read_u32_le_device(const uint8_t *bytes)
 	       ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
 }
 
+static uint64_t read_u64_le_device(const uint8_t *bytes)
+{
+	return (uint64_t)read_u32_le_device(bytes) |
+	       ((uint64_t)read_u32_le_device(bytes + 4) << 32);
+}
+
+static uint32_t update_crc32(uint32_t crc, const uint8_t *bytes, size_t len)
+{
+	for (size_t i = 0; i < len; i++) {
+		crc ^= bytes[i];
+		for (int bit = 0; bit < 8; bit++) {
+			uint32_t mask = 0u - (crc & 1u);
+			crc = (crc >> 1) ^ (0xedb88320u & mask);
+		}
+	}
+	return crc;
+}
+
 static int append_line_payload(uint8_t *payload, size_t payload_cap, size_t *payload_len,
 			       const char *line)
 {
@@ -853,6 +889,334 @@ static int __noinline commit_resource_install(const struct sq_protocol_request *
 	}
 	sqdp_clear_resource_session(session);
 	transfer_session_finish_idle(session);
+	return ok_response(request, response, response_cap, response_len);
+}
+
+static bool content_install_name_safe(const char *name)
+{
+	size_t len;
+	size_t ext_len = sizeof(".binbook") - 1U;
+
+	if (name == NULL || name[0] == '\0' || name[0] == '.') {
+		return false;
+	}
+	len = strlen(name);
+	if (len <= ext_len || len >= SQ_DEVICE_CONTENT_NAME_BYTES) {
+		return false;
+	}
+	if (strcmp(name + len - ext_len, ".binbook") != 0) {
+		return false;
+	}
+	for (size_t i = 0; i < len; i++) {
+		if (name[i] == '/' || name[i] == '\\') {
+			return false;
+		}
+	}
+	return true;
+}
+
+static int content_install_paths(const char *name, char *staging, size_t staging_len,
+				 char *final, size_t final_len)
+{
+	int written;
+
+	if (!content_install_name_safe(name) || staging == NULL || final == NULL) {
+		return -EINVAL;
+	}
+	written = snprintf(final, final_len, SQ_VM_RUNTIME_CONTENT_BOOKS_DIR "/%s", name);
+	if (written <= 0 || (size_t)written >= final_len) {
+		return -ENAMETOOLONG;
+	}
+	written = snprintf(staging, staging_len, SQ_VM_RUNTIME_CONTENT_BOOKS_DIR "/%s.upload",
+			   name);
+	return written > 0 && (size_t)written < staging_len ? 0 : -ENAMETOOLONG;
+}
+
+static int parse_content_begin_request(const uint8_t *request_bytes, size_t request_len,
+				       struct sq_content_begin_request *out)
+{
+	const uint8_t *payload;
+	uint32_t payload_len;
+	size_t offset = 0;
+
+	if (request_bytes == NULL || out == NULL || request_len < SQ_PROTOCOL_HEADER_LEN) {
+		return -EINVAL;
+	}
+	payload_len = read_u32_le_device(&request_bytes[12]);
+	if ((size_t)payload_len > request_len - SQ_PROTOCOL_HEADER_LEN) {
+		return -EINVAL;
+	}
+	payload = &request_bytes[SQ_PROTOCOL_HEADER_LEN];
+	memset(out, 0, sizeof(*out));
+
+	while (offset < payload_len) {
+		const uint8_t *field;
+		uint8_t tag;
+		uint8_t type;
+		uint16_t len;
+		size_t next_offset;
+
+		if ((size_t)payload_len - offset < 4U) {
+			return -EINVAL;
+		}
+		field = &payload[offset];
+		tag = field[0];
+		type = field[1];
+		len = (uint16_t)field[2] | ((uint16_t)field[3] << 8);
+		next_offset = offset + 4U + len;
+		if (next_offset > payload_len) {
+			return -EINVAL;
+		}
+		switch (tag) {
+		case 1:
+			if (type != SQ_DEVICE_FIELD_TYPE_STRING || len == 0U ||
+			    len >= sizeof(out->name)) {
+				return -EINVAL;
+			}
+			memcpy(out->name, &field[4], len);
+			out->name[len] = '\0';
+			out->has_name = true;
+			break;
+		case 2: {
+			uint64_t total_len;
+
+			if (type != SQ_DEVICE_FIELD_TYPE_U64 || len != sizeof(uint64_t)) {
+				return -EINVAL;
+			}
+			total_len = read_u64_le_device(&field[4]);
+			if (total_len == 0U || total_len > SIZE_MAX) {
+				return -EINVAL;
+			}
+			out->total_len = (size_t)total_len;
+			out->has_total_len = true;
+			break;
+		}
+		case 3: {
+			uint64_t crc;
+
+			if (type != SQ_DEVICE_FIELD_TYPE_U64 || len != sizeof(uint64_t)) {
+				return -EINVAL;
+			}
+			crc = read_u64_le_device(&field[4]);
+			if (crc > UINT32_MAX) {
+				return -EINVAL;
+			}
+			out->expected_crc = (uint32_t)crc;
+			out->has_crc = true;
+			break;
+		}
+		default:
+			return -EINVAL;
+		}
+		offset = next_offset;
+	}
+	return out->has_name && out->has_total_len && out->has_crc &&
+		       content_install_name_safe(out->name) ?
+		       0 :
+		       -EINVAL;
+}
+
+static int parse_content_chunk_request(const uint8_t *request_bytes, size_t request_len,
+				       struct sq_content_chunk_request *out)
+{
+	const uint8_t *payload;
+	uint32_t payload_len;
+	size_t offset = 0;
+
+	if (request_bytes == NULL || out == NULL || request_len < SQ_PROTOCOL_HEADER_LEN) {
+		return -EINVAL;
+	}
+	payload_len = read_u32_le_device(&request_bytes[12]);
+	if ((size_t)payload_len > request_len - SQ_PROTOCOL_HEADER_LEN) {
+		return -EINVAL;
+	}
+	payload = &request_bytes[SQ_PROTOCOL_HEADER_LEN];
+	memset(out, 0, sizeof(*out));
+
+	while (offset < payload_len) {
+		const uint8_t *field;
+		uint8_t tag;
+		uint8_t type;
+		uint16_t len;
+		size_t next_offset;
+
+		if ((size_t)payload_len - offset < 4U) {
+			return -EINVAL;
+		}
+		field = &payload[offset];
+		tag = field[0];
+		type = field[1];
+		len = (uint16_t)field[2] | ((uint16_t)field[3] << 8);
+		next_offset = offset + 4U + len;
+		if (next_offset > payload_len) {
+			return -EINVAL;
+		}
+		switch (tag) {
+		case SQ_DEVICE_CHUNK_FIELD_OFFSET: {
+			uint64_t value;
+
+			if (type != SQ_DEVICE_FIELD_TYPE_U64 || len != sizeof(uint64_t)) {
+				return -EINVAL;
+			}
+			value = read_u64_le_device(&field[4]);
+			if (value > SIZE_MAX) {
+				return -EINVAL;
+			}
+			out->offset = (size_t)value;
+			out->has_offset = true;
+			break;
+		}
+		case SQ_DEVICE_CHUNK_FIELD_BYTES:
+			if (type != SQ_DEVICE_FIELD_TYPE_BYTES || len == 0U) {
+				return -EINVAL;
+			}
+			out->bytes = &field[4];
+			out->bytes_len = len;
+			out->has_bytes = true;
+			break;
+		case SQ_DEVICE_CHUNK_FIELD_ACK_REQUESTED:
+			if (type != SQ_DEVICE_FIELD_TYPE_BOOL || len != 1U) {
+				return -EINVAL;
+			}
+			break;
+		default:
+			return -EINVAL;
+		}
+		offset = next_offset;
+	}
+	return out->has_offset && out->has_bytes ? 0 : -EINVAL;
+}
+
+static int __noinline begin_content_install(const struct sq_protocol_request *request,
+				 const uint8_t *request_bytes, size_t request_len,
+				 const struct sq_device_protocol_context *context,
+				 uint8_t *response, size_t response_cap, size_t *response_len)
+{
+	struct sq_device_content_session *session = context->content_session;
+	struct sq_content_begin_request begin;
+	struct fs_file_t file;
+	int result;
+
+	if (session == NULL) {
+		return -ENODEV;
+	}
+	if (session->active) {
+		return -EBUSY;
+	}
+	result = parse_content_begin_request(request_bytes, request_len, &begin);
+	if (result != 0) {
+		return result;
+	}
+	memset(session, 0, sizeof(*session));
+	strncpy(session->name, begin.name, sizeof(session->name) - 1U);
+	session->total_len = begin.total_len;
+	session->expected_crc = begin.expected_crc;
+	session->running_crc = 0xffffffffU;
+	result = content_install_paths(session->name, session->staging_path,
+				       sizeof(session->staging_path), session->final_path,
+				       sizeof(session->final_path));
+	if (result != 0) {
+		memset(session, 0, sizeof(*session));
+		return result;
+	}
+	result = fs_mkdir(SQ_VM_RUNTIME_CONTENT_BOOKS_DIR);
+	if (result != 0 && result != -EEXIST) {
+		memset(session, 0, sizeof(*session));
+		return result;
+	}
+	(void)fs_unlink(session->staging_path);
+	fs_file_t_init(&file);
+	result = fs_open(&file, session->staging_path, FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC);
+	if (result != 0) {
+		memset(session, 0, sizeof(*session));
+		return result;
+	}
+	result = fs_close(&file);
+	if (result != 0) {
+		(void)fs_unlink(session->staging_path);
+		memset(session, 0, sizeof(*session));
+		return result;
+	}
+	transfer_session_begin_receiving(session);
+	return ok_response(request, response, response_cap, response_len);
+}
+
+static int __noinline append_content_chunk(const struct sq_protocol_request *request,
+				const uint8_t *request_bytes, size_t request_len,
+				const struct sq_device_protocol_context *context,
+				uint8_t *response, size_t response_cap, size_t *response_len)
+{
+	struct sq_device_content_session *session = context->content_session;
+	struct sq_content_chunk_request chunk;
+	struct fs_file_t file;
+	ssize_t written;
+	int result;
+
+	if (session == NULL || !session->active ||
+	    session->phase != SQ_DEVICE_TRANSFER_RECEIVING) {
+		return -EINVAL;
+	}
+	result = parse_content_chunk_request(request_bytes, request_len, &chunk);
+	if (result != 0) {
+		return result;
+	}
+	if (chunk.offset != session->received ||
+	    chunk.bytes_len > session->total_len - session->received) {
+		return -EINVAL;
+	}
+	fs_file_t_init(&file);
+	result = fs_open(&file, session->staging_path, FS_O_WRITE);
+	if (result != 0) {
+		return result;
+	}
+	result = fs_seek(&file, (off_t)chunk.offset, FS_SEEK_SET);
+	if (result != 0) {
+		(void)fs_close(&file);
+		return result;
+	}
+	written = fs_write(&file, chunk.bytes, chunk.bytes_len);
+	result = fs_close(&file);
+	if (written < 0) {
+		return (int)written;
+	}
+	if ((size_t)written != chunk.bytes_len) {
+		return -EIO;
+	}
+	if (result != 0) {
+		return result;
+	}
+	session->running_crc = update_crc32(session->running_crc, chunk.bytes, chunk.bytes_len);
+	session->received += chunk.bytes_len;
+	return transfer_chunk_response(request, request_bytes, request_len, response, response_cap,
+				       response_len);
+}
+
+static int __noinline commit_content_install(const struct sq_protocol_request *request,
+				  const struct sq_device_protocol_context *context,
+				  uint8_t *response, size_t response_cap, size_t *response_len)
+{
+	struct sq_device_content_session *session = context->content_session;
+	int result;
+
+	if (session == NULL || !session->active ||
+	    transfer_session_begin_committing(session) != 0) {
+		return -EINVAL;
+	}
+	if (session->received != session->total_len ||
+	    ~session->running_crc != session->expected_crc) {
+		(void)fs_unlink(session->staging_path);
+		memset(session, 0, sizeof(*session));
+		return -EIO;
+	}
+	result = fs_unlink(session->final_path);
+	if (result != 0 && result != -ENOENT) {
+		return result;
+	}
+	result = fs_rename(session->staging_path, session->final_path);
+	if (result != 0) {
+		return result;
+	}
+	memset(session, 0, sizeof(*session));
 	return ok_response(request, response, response_cap, response_len);
 }
 
@@ -2127,6 +2491,12 @@ static int clear_runtime_context(const struct sq_device_protocol_context *contex
 	if (context->resource_session != NULL) {
 		memset(context->resource_session, 0, sizeof(*context->resource_session));
 	}
+	if (context->content_session != NULL) {
+		if (context->content_session->active) {
+			(void)fs_unlink(context->content_session->staging_path);
+		}
+		memset(context->content_session, 0, sizeof(*context->content_session));
+	}
 	if (context->launch_storage != NULL) {
 		memset(context->launch_storage, 0, sizeof(*context->launch_storage));
 	}
@@ -2796,6 +3166,18 @@ int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 	case SQ_OPCODE_RESOURCE_INSTALL_COMMIT:
 		result = commit_resource_install(&frame, request, request_len, context, response,
 						 response_cap, response_len);
+		break;
+	case SQ_OPCODE_CONTENT_INSTALL_BEGIN:
+		result = begin_content_install(&frame, request, request_len, context, response,
+					       response_cap, response_len);
+		break;
+	case SQ_OPCODE_CONTENT_INSTALL_CHUNK:
+		result = append_content_chunk(&frame, request, request_len, context, response,
+					      response_cap, response_len);
+		break;
+	case SQ_OPCODE_CONTENT_INSTALL_COMMIT:
+		result = commit_content_install(&frame, context, response, response_cap,
+						response_len);
 		break;
 	case SQ_OPCODE_TEMP_RUN_COMMIT:
 		result = commit_temp_run(&frame, request, request_len, context, response,

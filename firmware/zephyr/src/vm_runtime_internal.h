@@ -137,5 +137,12 @@ int32_t runtime_binbook_open(void *user_data, const uint8_t *path, size_t path_l
 int32_t runtime_binbook_info(void *user_data, SqvmHandle book, SqvmBinBookInfoResult *out);
 int32_t runtime_binbook_read_page(void *user_data, SqvmHandle book, int32_t page_index,
 				  SqvmBinBookReadPageResult *out);
+int32_t runtime_content_binbook_list(void *user_data, const uint8_t *library,
+				     size_t library_len, int32_t offset, int32_t limit,
+				     SqvmContentBinBookEntry *out, size_t out_cap,
+				     size_t *out_count,
+				     SqvmContentBinBookListResult *out_result);
+int runtime_content_resolve_binbook_ref(struct sq_vm_runtime *runtime, const uint8_t *ref,
+					size_t ref_len, char *out, size_t out_len);
 
 #endif

@@ -33,6 +33,36 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
         self.assertEqual(target["buses"]["spi"]["shared"]["mosi"], "GPIO10")
         self.assertEqual(target["devices"]["storage.sd"]["status"], "planned-unverified")
 
+    def test_x4_sd_card_smoke_is_standalone_read_only_wiring_check(self):
+        script = self.read("scripts/xteink-x4-test-sd-card-smoke.sh")
+        source = self.read("tests/hardware/xteink-x4/sd-card-smoke/src/main.c")
+        overlay = self.read("tests/hardware/xteink-x4/sd-card-smoke/boards/esp32c3_devkitm.overlay")
+        target = self.read_json("targets/xteink-x4.target.json")
+
+        self.assertIn("XTEINK X4", script)
+        self.assertIn("SD_CARD_SMOKE_READY", script)
+        self.assertLess(
+            script.index('export ZEPHYR_BOARD="${ZEPHYR_BOARD:-esp32c3_devkitm}"'),
+            script.index('source "${ROOT}/scripts/zephyr-env.sh"'),
+        )
+        self.assertIn("SD_CARD_SMOKE_READY", source)
+        self.assertIn("diagnostic-only XTEINK X4", source)
+        self.assertIn("sd_init", source)
+        self.assertIn("sdmmc_read_blocks", source)
+        self.assertIn("SD_CARD_SMOKE_FAT", source)
+        self.assertNotIn("sdmmc_write_blocks", source)
+        self.assertNotIn("DISK_IOCTL_CTRL_SYNC", source)
+        self.assertIn('code=%d (%s)', source)
+        self.assertIn("<SPIM2_SCLK_GPIO8>", overlay)
+        self.assertIn("<SPIM2_MOSI_GPIO10>", overlay)
+        self.assertIn("<SPIM2_MISO_GPIO7>", overlay)
+        self.assertIn("cs-gpios = <&gpio0 12 GPIO_ACTIVE_LOW>", overlay)
+        self.assertNotIn("CONFIG_FAT_FILESYSTEM_ELM", self.read("tests/hardware/xteink-x4/sd-card-smoke/prj.conf"))
+        self.assertEqual(target["buses"]["spi"]["shared"]["sck"], "GPIO8")
+        self.assertEqual(target["buses"]["spi"]["shared"]["mosi"], "GPIO10")
+        self.assertEqual(target["buses"]["spi"]["shared"]["miso"], "GPIO7")
+        self.assertEqual(target["devices"]["storage.sd"]["pins"]["cs"], "GPIO12")
+
     def test_xiao_epaper_gray2_smoke_is_retained_hardware_display_check(self):
         script = self.read("scripts/xiao-esp32c3-test-epaper-gray2-smoke.sh")
         docs = self.read("docs/hardware_target_tests.md")

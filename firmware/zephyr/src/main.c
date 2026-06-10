@@ -73,6 +73,7 @@ int main(void)
 	static struct sq_device_install_session install_session;
 	static struct sq_device_temp_session temp_session;
 	static struct sq_device_resource_session resource_session;
+	static struct sq_device_content_session content_session;
 	static struct sq_device_protocol_scratch protocol_scratch;
 	static struct sq_vm_runtime runtime;
 	static struct sq_app_store_vm_storage launch_storage;
@@ -99,6 +100,7 @@ int main(void)
 		.install_session = &install_session,
 		.temp_session = &temp_session,
 		.resource_session = &resource_session,
+		.content_session = &content_session,
 		.scratch = &protocol_scratch,
 		.runtime = &runtime,
 		.launch_storage = &launch_storage,

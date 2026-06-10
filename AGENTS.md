@@ -282,6 +282,13 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - Reflashing the project's dev board is routine for this work; treat it like
   running a test, not a destructive action. Still redact environment
   identifiers per the placeholder-discipline rules above.
+- The SD card used by the XTEINK X4/dev setup is owned by the device over its
+  SPI SD interface. It will not appear as the same mounted filesystem on the
+  host while it is inside the device. Do not infer that a host-visible
+  `/run/media/...`, `/dev/sd*`, or USB MassStorageClass volume is the X4's
+  internal SD card unless the user explicitly says that exact mass-storage
+  bridge is active. To place files on the in-device card, use a firmware-backed
+  transfer path or ask the user to move/copy the card externally.
 
 ## Constrained Device RAM Discipline
 

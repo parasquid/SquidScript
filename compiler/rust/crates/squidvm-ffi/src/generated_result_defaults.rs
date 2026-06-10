@@ -77,7 +77,18 @@ impl Default for SqvmWifiScanNetworkResult {
             ok: false,
             error: b"unsupported".as_ptr(),
             error_len: b"unsupported".len(),
-            network: SqvmWifiAccessPoint { ssid: ptr::null(), ssid_len: 0, bssid: ptr::null(), bssid_len: 0, ssid_length: 0, channel: 0, rssi: 0, auth: ptr::null(), auth_len: 0, hidden: false },
+            network: SqvmWifiAccessPoint {
+                ssid: ptr::null(),
+                ssid_len: 0,
+                bssid: ptr::null(),
+                bssid_len: 0,
+                ssid_length: 0,
+                channel: 0,
+                rssi: 0,
+                auth: ptr::null(),
+                auth_len: 0,
+                hidden: false,
+            },
         }
     }
 }
@@ -159,6 +170,20 @@ impl Default for SqvmBinBookReadPageResult {
             error: b"unsupported".as_ptr(),
             error_len: b"unsupported".len(),
             drawable: SqvmHandle::default(),
+        }
+    }
+}
+
+impl Default for SqvmContentBinBookListResult {
+    fn default() -> Self {
+        Self {
+            ok: false,
+            error: b"unsupported".as_ptr(),
+            error_len: b"unsupported".len(),
+            warning: ptr::null(),
+            warning_len: 0,
+            count: 0,
+            has_more: false,
         }
     }
 }

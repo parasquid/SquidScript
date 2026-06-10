@@ -34,10 +34,16 @@ The active foreground app has a single per-session runtime instance.
 | Drawlog record length | 48 bytes | `SQ_VM_RUNTIME_DRAWLOG_LEN` | no |
 | Retained device error slots | 8 | `SQ_VM_RUNTIME_DEVICE_ERROR_MAX` | no |
 | Device error line length | 48 bytes | `SQ_VM_RUNTIME_DEVICE_ERROR_LEN` | no |
+| Content library page entries | 8 | `SQ_VM_RUNTIME_CONTENT_LIST_MAX` | no |
+| Content library ref length | 128 bytes | `SQ_VM_RUNTIME_CONTENT_REF_LEN` | no |
 
 `service.timer.every(...)`, `service.timer.after(...)`, and `app.triggers`
 share the foreground or armed timer caps. Registering one beyond the active cap
 returns `-ENOSPC` to the VM.
+
+`content.binbook.list(...)` materializes at most one content page of
+`SQ_VM_RUNTIME_CONTENT_LIST_MAX` entries per call. Each `ref` is an opaque
+logical identifier bounded by `SQ_VM_RUNTIME_CONTENT_REF_LEN`.
 
 ## BLE File-Transfer Profile Table
 

@@ -98,6 +98,26 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
         self.assertIn("binbook_remember_previous_page(&binbook->binbook_page)", display_c)
         self.assertIn('LOG_INF("display refresh complete mode=%s busy_observed=%d"', display_c)
 
+    def test_content_binbook_list_uses_bounded_logical_refs_and_sd_books_directory(self):
+        runtime_callbacks = self.read("firmware/zephyr/src/generated_runtime_callbacks.inc")
+        runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
+        content_c = self.read("firmware/zephyr/src/vm_runtime_content.c")
+        binbook_c = self.read("firmware/zephyr/src/vm_runtime_binbook.c")
+        ffi_h = self.read("firmware/zephyr/src/squidvm_ffi.h")
+
+        self.assertIn(".content_binbook_list = runtime_content_binbook_list", runtime_callbacks)
+        self.assertIn("SqvmContentBinBookEntry content_binbook_entries", runtime_h)
+        self.assertIn("#define SQ_VM_RUNTIME_CONTENT_BOOKS_DIR \"/SD:/books\"", runtime_h)
+        self.assertIn("content:books/r/", content_c)
+        self.assertIn("content:books/p/", content_c)
+        self.assertIn("SQ_VM_RUNTIME_CONTENT_REF_LEN", runtime_h)
+        self.assertIn("fs_mkdir(SQ_VM_RUNTIME_CONTENT_BOOKS_DIR)", content_c)
+        self.assertIn("package_listed = result == 0;", content_c)
+        self.assertIn("if (result == 0) {\n\t\tsd_listed = true;", content_c)
+        self.assertIn("SqvmContentBinBookListResult", ffi_h)
+        self.assertIn("runtime_content_resolve_binbook_ref", binbook_c)
+        self.assertNotIn("/SD:", self.read("docs/language_spec.md").split("content.binbook.list", 1)[-1][:1200])
+
     def test_wifi_scan_results_use_resident_cursor_snapshot_not_transfer_scratch(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
         runtime_c = self.read("firmware/zephyr/src/vm_runtime_wifi.c")
@@ -610,7 +630,7 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
         body = protocol[start:]
 
         self.assertIn("static int __noinline errors_response", protocol)
-        self.assertIn("errors_response(&frame, context->runtime", body)
+        self.assertIn("errors_response(&frame, context, response", body)
         self.assertNotIn("char error_line[48]", body)
         self.assertNotIn("const char *lines[1]", body)
 

@@ -1,0 +1,19 @@
+app "content-binbook-probe"
+
+event.on("app.start") {
+  let listing = content.binbook.list("books", { offset: 0, limit: 1 })
+  debug.print("probe-list", listing.ok, listing.count, listing.warning)
+  if (listing.ok) {
+    for item in listing.items max 1 {
+      debug.print("probe-item", item.name, item.size)
+      let opened = binbook.open(item.ref)
+      debug.print("probe-open", opened.ok, opened.error)
+      if (opened.ok) {
+        let info = binbook.info(opened.book)
+        debug.print("probe-info", info.ok, info.pageCount)
+        let page = binbook.readPage(opened.book, 0)
+        debug.print("probe-read", page.ok, page.error)
+      }
+    }
+  }
+}

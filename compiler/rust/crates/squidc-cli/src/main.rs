@@ -155,6 +155,7 @@ enum AppCommands {
 #[derive(Subcommand, Debug)]
 enum DeviceCommands {
     Key(DeviceKeyArgs),
+    ContentPut(DeviceContentPutArgs),
     WifiProfile(DeviceWifiProfileArgs),
     RuntimeCap(DeviceRuntimeCapArgs),
     Reset(DeviceOnlyArgs),
@@ -264,6 +265,15 @@ struct DeviceKeyArgs {
     #[command(flatten)]
     device: DeviceOnlyOptions,
     key: String,
+}
+
+#[derive(Args, Debug)]
+struct DeviceContentPutArgs {
+    #[command(flatten)]
+    device: DeviceOnlyOptions,
+    input: PathBuf,
+    #[arg(long)]
+    name: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -496,6 +506,7 @@ fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String>
         },
         Commands::Device { command } => match command {
             DeviceCommands::Key(args) => key(args, human),
+            DeviceCommands::ContentPut(args) => content_put(args, human),
             DeviceCommands::WifiProfile(args) => wifi_profile(args, human),
             DeviceCommands::RuntimeCap(args) => runtime_cap(args, human),
             DeviceCommands::Reset(args) => reset(args.device, human),
@@ -831,6 +842,43 @@ fn app_list(args: DeviceOnlyArgs, human: bool) -> Result<Value, String> {
             })
         }).collect::<Vec<_>>()
     }))
+}
+
+fn content_put(args: DeviceContentPutArgs, human: bool) -> Result<Value, String> {
+    let name = match args.name {
+        Some(name) => name,
+        None => args
+            .input
+            .file_name()
+            .and_then(|value| value.to_str())
+            .ok_or_else(|| format!("input path has no UTF-8 filename: {}", args.input.display()))?
+            .to_string(),
+    };
+    if !is_safe_binbook_content_name(&name) {
+        return Err(format!(
+            "content name must be a simple .binbook filename: {name}"
+        ));
+    }
+    let port = resolve_port(&args.device)?;
+    let mut device = SerialDevice::open(&port)?;
+    let response = device.install_content(&name, &args.input)?;
+    if human {
+        print!("{response}");
+    }
+    Ok(json!({
+        "port": port,
+        "name": name,
+        "input": args.input,
+        "response": response
+    }))
+}
+
+fn is_safe_binbook_content_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with('.')
+        && name.ends_with(".binbook")
+        && !name.contains('/')
+        && !name.contains('\\')
 }
 
 #[derive(Clone, Debug, Serialize)]

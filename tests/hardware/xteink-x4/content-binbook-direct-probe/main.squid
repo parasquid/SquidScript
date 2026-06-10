@@ -1,0 +1,12 @@
+app "content-binbook-direct-probe"
+
+event.on("app.start") {
+  let opened = binbook.open("content:books/r/x4-binbook-proof.binbook")
+  debug.print("direct-open", opened.ok, opened.error)
+  if (opened.ok) {
+    let info = binbook.info(opened.book)
+    debug.print("direct-info", info.ok, info.pageCount)
+    let page = binbook.readPage(opened.book, 0)
+    debug.print("direct-read", page.ok, page.error)
+  }
+}

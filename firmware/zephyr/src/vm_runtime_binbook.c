@@ -168,9 +168,13 @@ static int binbook_open_resource(struct sq_vm_runtime *runtime, const uint8_t *p
 	    runtime->current_app[0] == '\0') {
 		return -EINVAL;
 	}
-	int result = sq_app_store_resource_path_bytes(runtime->store_mount_point,
-						      runtime->current_app, path, path_len,
-						      resolved_path, resolved_path_len);
+	int result = runtime_content_resolve_binbook_ref(runtime, path, path_len, resolved_path,
+							 resolved_path_len);
+	if (result == -ENOENT) {
+		result = sq_app_store_resource_path_bytes(runtime->store_mount_point,
+							  runtime->current_app, path, path_len,
+							  resolved_path, resolved_path_len);
+	}
 	if (result != 0) {
 		return result;
 	}

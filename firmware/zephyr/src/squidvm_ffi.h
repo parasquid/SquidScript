@@ -520,6 +520,24 @@ typedef struct {
 } SqvmBinBookReadPageResult;
 
 typedef struct {
+	const uint8_t *name;
+	size_t name_len;
+	const uint8_t *reference;
+	size_t reference_len;
+	int32_t size;
+} SqvmContentBinBookEntry;
+
+typedef struct {
+	bool ok;
+	const uint8_t *error;
+	size_t error_len;
+	const uint8_t *warning;
+	size_t warning_len;
+	int32_t count;
+	bool has_more;
+} SqvmContentBinBookListResult;
+
+typedef struct {
 	const uint8_t *ip;
 	size_t ip_len;
 	const uint8_t *gw;
@@ -589,6 +607,17 @@ typedef int32_t (*SqvmBinBookInfoCallback)(void *user_data, SqvmHandle book,
 typedef int32_t (*SqvmBinBookReadPageCallback)(void *user_data, SqvmHandle book,
 						 int32_t page_index,
 						 SqvmBinBookReadPageResult *out);
+
+typedef int32_t (*SqvmContentBinBookListCallback)(
+	void *user_data,
+	const uint8_t *library,
+	size_t library_len,
+	int32_t offset,
+	int32_t limit,
+	SqvmContentBinBookEntry *out,
+	size_t out_cap,
+	size_t *out_count,
+	SqvmContentBinBookListResult *out_result);
 
 typedef int32_t (*SqvmIndicatorWriteCallback)(void *user_data, bool value);
 
@@ -728,6 +757,7 @@ typedef struct {
 	SqvmBinBookOpenCallback binbook_open;
 	SqvmBinBookInfoCallback binbook_info;
 	SqvmBinBookReadPageCallback binbook_read_page;
+	SqvmContentBinBookListCallback content_binbook_list;
 	SqvmSystemMemoryTextCallback system_memory_text;
 	SqvmSystemStorageTextCallback system_storage_text;
 	SqvmSystemStartReasonTextCallback system_start_reason_text;
@@ -931,6 +961,20 @@ static inline void sqvm_binbook_read_page_result_unsupported(SqvmBinBookReadPage
 	out->error = (const uint8_t *)"unsupported";
 	out->error_len = sizeof("unsupported") - 1;
 	out->drawable = (SqvmHandle){ .kind = SQVM_HANDLE_NONE, .id = 0 };
+}
+
+static inline void sqvm_content_binbook_list_result_unsupported(SqvmContentBinBookListResult *out)
+{
+	if (out == NULL) {
+		return;
+	}
+	out->ok = false;
+	out->error = (const uint8_t *)"unsupported";
+	out->error_len = sizeof("unsupported") - 1;
+	out->warning = NULL;
+	out->warning_len = 0;
+	out->count = 0;
+	out->has_more = false;
 }
 
 static inline void sqvm_wifi_ap_ip_unsupported(SqvmWifiApIp *out)
