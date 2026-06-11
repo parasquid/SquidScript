@@ -17,6 +17,7 @@ const SECTION_APP_META: u16 = 7;
 const SECTION_DEVICE_BINDINGS: u16 = 8;
 const SECTION_TRIGGERS: u16 = 9;
 const SECTION_BLE_PROFILES: u16 = 10;
+const SECTION_HTTP_PROFILES: u16 = 11;
 
 const OP_PUSH_INT: u8 = 1;
 const OP_PUSH_BOOL: u8 = 2;
@@ -105,9 +106,12 @@ const BUILTIN_CONTENT_BINBOOK_LIST: u8 = 0x83;
 const BUILTIN_FILE_PICK_FILE: u8 = 0x90;
 const BUILTIN_FILE_READ_TEXT: u8 = 0x91;
 const BUILTIN_FILE_READ_LINES: u8 = 0x92;
+const BUILTIN_FILE_COPY: u8 = 0x93;
 const BUILTIN_SERVICE_POWER_SLEEP: u8 = 0xc0;
 const BUILTIN_SERVICE_BLE_START: u8 = 0xc1;
 const BUILTIN_SERVICE_BLE_STOP: u8 = 0xc2;
+const BUILTIN_SERVICE_HTTP_START: u8 = 0xc3;
+const BUILTIN_SERVICE_HTTP_STOP: u8 = 0xc4;
 
 /*
  * Runtime load/execution caps, shared with the VM via the `squidvm-limits`
@@ -352,6 +356,10 @@ pub fn encode_sqbc_with_profile(
             SECTION_BLE_PROFILES,
             encode_ble_profiles(&collect_ble_profiles(ir), &unit.strings)?,
         ),
+        (
+            SECTION_HTTP_PROFILES,
+            encode_http_profiles(&collect_http_profiles(ir), &unit.strings)?,
+        ),
         (SECTION_HANDLERS, encode_handlers(&unit.handler_metas)),
         (SECTION_SCREENS, encode_screens(&unit.screen_metas)),
         (SECTION_CODE, unit.code),
@@ -568,6 +576,24 @@ fn collect_statement_strings(
                 }
             }
             IrStatement::ServiceBleStop => {}
+            IrStatement::ServiceHttpStart {
+                profile,
+                id,
+                accept,
+                events,
+            } => {
+                strings.intern(profile)?;
+                strings.intern(id)?;
+                strings.intern("server")?;
+                for extension in accept {
+                    strings.intern(extension)?;
+                }
+                for (kind, event) in events {
+                    strings.intern(kind)?;
+                    strings.intern(event)?;
+                }
+            }
+            IrStatement::ServiceHttpStop => {}
             IrStatement::ServicePowerSleep { wake_after_ms } => {
                 collect_expr_strings(wake_after_ms, strings)?;
             }
@@ -888,6 +914,13 @@ fn compile_statement(
         IrStatement::ServiceBleStop => {
             emit_builtin(&mut unit.code, BUILTIN_SERVICE_BLE_STOP);
         }
+        IrStatement::ServiceHttpStart { id, .. } => {
+            emit_string(unit, id)?;
+            emit_builtin(&mut unit.code, BUILTIN_SERVICE_HTTP_START);
+        }
+        IrStatement::ServiceHttpStop => {
+            emit_builtin(&mut unit.code, BUILTIN_SERVICE_HTTP_STOP);
+        }
         IrStatement::ServicePowerSleep { wake_after_ms } => {
             compile_expr(unit, frame, wake_after_ms)?;
             emit_builtin(&mut unit.code, BUILTIN_SERVICE_POWER_SLEEP);
@@ -1138,6 +1171,11 @@ fn expr_literal_string(value: &serde_json::Value) -> Option<&str> {
     None
 }
 
+fn expr_from_json(value: &serde_json::Value, context: &str) -> Result<IrExpr, SqbcError> {
+    serde_json::from_value(value.clone())
+        .map_err(|_| SqbcError::new(format!("{context} must be an expression")))
+}
+
 fn compile_content_binbook_list(
     unit: &mut CompileUnit,
     frame: &FrameCompiler,
@@ -1160,6 +1198,39 @@ fn compile_content_binbook_list(
     emit_i32_option(unit, frame, &options, "offset")?;
     emit_i32_option(unit, frame, &options, "limit")?;
     emit_builtin(&mut unit.code, BUILTIN_CONTENT_BINBOOK_LIST);
+    Ok(())
+}
+
+fn compile_file_copy(
+    unit: &mut CompileUnit,
+    frame: &FrameCompiler,
+    args: &[IrExpr],
+) -> Result<(), SqbcError> {
+    validate_builtin_arg_count("file.copy", args.len())?;
+    let source = args
+        .first()
+        .ok_or_else(|| SqbcError::new("file.copy requires a source"))?;
+    let destination = match args.get(1) {
+        Some(IrExpr::Literal { value }) if value.is_object() => value,
+        Some(_) => {
+            return Err(SqbcError::new(
+                "file.copy destination must be an object with library and name",
+            ))
+        }
+        None => return Err(SqbcError::new("file.copy requires a destination")),
+    };
+    let library = destination
+        .get("library")
+        .and_then(expr_literal_string)
+        .ok_or_else(|| SqbcError::new("file.copy destination requires library"))?;
+    let name = destination
+        .get("name")
+        .ok_or_else(|| SqbcError::new("file.copy destination requires name"))?;
+    let name = expr_from_json(name, "file.copy destination name")?;
+    compile_expr(unit, frame, source)?;
+    emit_string(unit, library)?;
+    compile_expr(unit, frame, &name)?;
+    emit_builtin(&mut unit.code, BUILTIN_FILE_COPY);
     Ok(())
 }
 
@@ -1232,6 +1303,10 @@ fn compile_expr(
         IrExpr::Call { name, args } => {
             if name == "content.binbook.list" {
                 compile_content_binbook_list(unit, frame, args)?;
+                return Ok(());
+            }
+            if name == "file.copy" {
+                compile_file_copy(unit, frame, args)?;
                 return Ok(());
             }
             for arg in args {
@@ -1362,6 +1437,7 @@ fn builtin_for_call(name: &str) -> Option<u8> {
         "file.pickFile" => Some(BUILTIN_FILE_PICK_FILE),
         "file.readText" => Some(BUILTIN_FILE_READ_TEXT),
         "file.readLines" => Some(BUILTIN_FILE_READ_LINES),
+        "file.copy" => Some(BUILTIN_FILE_COPY),
         "service.display.info" => Some(BUILTIN_DISPLAY_INFO),
         _ => None,
     }
@@ -1393,6 +1469,7 @@ fn validate_builtin_arg_count(name: &str, count: usize) -> Result<(), SqbcError>
         "file.pickFile" => count == 1,
         "file.readText" => count == 1,
         "file.readLines" => count == 2,
+        "file.copy" => count == 2,
         "service.display.info" => count == 0,
         _ => true,
     };
@@ -1523,6 +1600,13 @@ struct BleProfile<'a> {
     events: &'a BTreeMap<String, String>,
 }
 
+struct HttpProfile<'a> {
+    profile: &'a str,
+    id: &'a str,
+    accept: &'a [String],
+    events: &'a BTreeMap<String, String>,
+}
+
 /// Walk every statement body in the program and collect the unique
 /// `service.ble.start` configs in document order, keyed by `id`. The firmware
 /// resolves a started profile by `id`, so a repeated `id` is encoded once.
@@ -1581,6 +1665,61 @@ fn collect_ble_profiles_in<'a>(
     }
 }
 
+fn collect_http_profiles(ir: &IrProgram) -> Vec<HttpProfile<'_>> {
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::new();
+    for function in &ir.functions {
+        collect_http_profiles_in(&function.statements, &mut seen, &mut out);
+    }
+    for handler in &ir.handlers {
+        collect_http_profiles_in(&handler.statements, &mut seen, &mut out);
+    }
+    for screen in &ir.screens {
+        collect_http_profiles_in(&screen.statements, &mut seen, &mut out);
+    }
+    out
+}
+
+fn collect_http_profiles_in<'a>(
+    statements: &'a [IrStatement],
+    seen: &mut BTreeSet<String>,
+    out: &mut Vec<HttpProfile<'a>>,
+) {
+    for statement in statements {
+        match statement {
+            IrStatement::ServiceHttpStart {
+                profile,
+                id,
+                accept,
+                events,
+            } => {
+                if seen.insert(id.clone()) {
+                    out.push(HttpProfile {
+                        profile,
+                        id,
+                        accept,
+                        events,
+                    });
+                }
+            }
+            IrStatement::If {
+                then_statements,
+                else_statements,
+                ..
+            } => {
+                collect_http_profiles_in(then_statements, seen, out);
+                collect_http_profiles_in(else_statements, seen, out);
+            }
+            IrStatement::Repeat { statements, .. }
+            | IrStatement::For { statements, .. }
+            | IrStatement::DebugBlock { statements } => {
+                collect_http_profiles_in(statements, seen, out);
+            }
+            _ => {}
+        }
+    }
+}
+
 fn encode_ble_profiles(
     profiles: &[BleProfile<'_>],
     strings: &StringTable,
@@ -1607,6 +1746,40 @@ fn encode_ble_profiles(
             &mut out,
             u16::try_from(profile.events.len())
                 .map_err(|_| SqbcError::new("too many BLE event routes"))?,
+        );
+        for (kind, event) in profile.events {
+            write_u16(&mut out, string_id(strings, kind)?);
+            write_u16(&mut out, string_id(strings, event)?);
+        }
+    }
+    Ok(out)
+}
+
+fn encode_http_profiles(
+    profiles: &[HttpProfile<'_>],
+    strings: &StringTable,
+) -> Result<Vec<u8>, SqbcError> {
+    let mut out = Vec::new();
+    write_u16(
+        &mut out,
+        u16::try_from(profiles.len()).map_err(|_| SqbcError::new("too many HTTP profiles"))?,
+    );
+    for profile in profiles {
+        write_u16(&mut out, string_id(strings, profile.profile)?);
+        write_u16(&mut out, string_id(strings, profile.id)?);
+        write_u16(&mut out, string_id(strings, "server")?);
+        write_u16(
+            &mut out,
+            u16::try_from(profile.accept.len())
+                .map_err(|_| SqbcError::new("too many HTTP accept extensions"))?,
+        );
+        for extension in profile.accept {
+            write_u16(&mut out, string_id(strings, extension)?);
+        }
+        write_u16(
+            &mut out,
+            u16::try_from(profile.events.len())
+                .map_err(|_| SqbcError::new("too many HTTP event routes"))?,
         );
         for (kind, event) in profile.events {
             write_u16(&mut out, string_id(strings, kind)?);

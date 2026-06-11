@@ -50,6 +50,7 @@ target_sources(app PRIVATE
   src/ble_smoke.c
   src/device_protocol.c
   src/fallback_app.c
+  src/http_upload.c
   src/main.c
   src/protocol.c
   src/serial_transport.c
@@ -64,6 +65,7 @@ target_sources(app PRIVATE
   src/vm_runtime_device_config.c
   src/vm_runtime_display.c
   src/vm_runtime_file.c
+  src/vm_runtime_http.c
   src/vm_runtime_indicator_gpio.c
   src/vm_runtime_system.c
   src/vm_runtime_timers.c

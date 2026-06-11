@@ -20,6 +20,9 @@ extern "C" {
 #define SQVM_BLE_PROFILE_TEXT_CAP 32
 #define SQVM_BLE_PROFILE_ACCEPT_MAX 4
 #define SQVM_BLE_PROFILE_EVENT_MAX 8
+#define SQVM_HTTP_PROFILE_TEXT_CAP SQVM_BLE_PROFILE_TEXT_CAP
+#define SQVM_HTTP_PROFILE_ACCEPT_MAX SQVM_BLE_PROFILE_ACCEPT_MAX
+#define SQVM_HTTP_PROFILE_EVENT_MAX SQVM_BLE_PROFILE_EVENT_MAX
 #define SQVM_EVENT_PAYLOAD_FIELD_MAX 8
 #define SQVM_WIFI_SCAN_MAX_NETWORKS 4
 
@@ -173,6 +176,21 @@ typedef struct {
 	size_t event_count;
 	SqvmBleProfileEventRoute events[SQVM_BLE_PROFILE_EVENT_MAX];
 } SqvmBleProfileTrigger;
+
+typedef struct {
+	uint8_t kind[SQVM_HTTP_PROFILE_TEXT_CAP];
+	uint8_t event[SQVM_HTTP_PROFILE_TEXT_CAP];
+} SqvmHttpProfileEventRoute;
+
+typedef struct {
+	uint8_t profile[SQVM_HTTP_PROFILE_TEXT_CAP];
+	uint8_t id[SQVM_HTTP_PROFILE_TEXT_CAP];
+	uint8_t role[SQVM_HTTP_PROFILE_TEXT_CAP];
+	size_t accept_count;
+	uint8_t accept[SQVM_HTTP_PROFILE_ACCEPT_MAX][SQVM_HTTP_PROFILE_TEXT_CAP];
+	size_t event_count;
+	SqvmHttpProfileEventRoute events[SQVM_HTTP_PROFILE_EVENT_MAX];
+} SqvmHttpProfileTrigger;
 
 typedef struct {
 	const uint8_t *name;
@@ -500,6 +518,15 @@ typedef struct {
 	bool ok;
 	const uint8_t *error;
 	size_t error_len;
+	const uint8_t *reference;
+	size_t reference_len;
+	int32_t bytes_written;
+} SqvmFileCopyResult;
+
+typedef struct {
+	bool ok;
+	const uint8_t *error;
+	size_t error_len;
 	SqvmHandle book;
 } SqvmBinBookOpenResult;
 
@@ -598,6 +625,11 @@ typedef int32_t (*SqvmFileReadLinesCallback)(void *user_data, const uint8_t *pat
 						size_t path_len, int32_t max_lines,
 						SqvmFileReadLinesResult *out);
 
+typedef int32_t (*SqvmFileCopyCallback)(void *user_data, const uint8_t *source,
+					  size_t source_len, const uint8_t *library,
+					  size_t library_len, const uint8_t *name,
+					  size_t name_len, SqvmFileCopyResult *out);
+
 typedef int32_t (*SqvmBinBookOpenCallback)(void *user_data, const uint8_t *path,
 					     size_t path_len, SqvmBinBookOpenResult *out);
 
@@ -682,6 +714,14 @@ typedef int32_t (*SqvmBleStartCallback)(
 typedef int32_t (*SqvmBleStopCallback)(
 	void *user_data);
 
+typedef int32_t (*SqvmHttpStartCallback)(
+	void *user_data,
+	const uint8_t *id,
+	size_t id_len);
+
+typedef int32_t (*SqvmHttpStopCallback)(
+	void *user_data);
+
 typedef int32_t (*SqvmSystemMemoryTextCallback)(
 	void *user_data,
 	uint8_t *out,
@@ -736,6 +776,8 @@ typedef struct {
 	SqvmTimerAfterCallback timer_after;
 	SqvmBleStartCallback ble_start;
 	SqvmBleStopCallback ble_stop;
+	SqvmHttpStartCallback http_start;
+	SqvmHttpStopCallback http_stop;
 	SqvmWifiStartApCallback wifi_start_ap;
 	SqvmWifiStopApCallback wifi_stop_ap;
 	SqvmWifiConnectCallback wifi_connect;
@@ -754,6 +796,7 @@ typedef struct {
 	SqvmFilePickFileCallback file_pick_file;
 	SqvmFileReadTextCallback file_read_text;
 	SqvmFileReadLinesCallback file_read_lines;
+	SqvmFileCopyCallback file_copy;
 	SqvmBinBookOpenCallback binbook_open;
 	SqvmBinBookInfoCallback binbook_info;
 	SqvmBinBookReadPageCallback binbook_read_page;
@@ -928,6 +971,19 @@ static inline void sqvm_file_read_lines_result_unsupported(SqvmFileReadLinesResu
 	out->error_len = sizeof("unsupported") - 1;
 }
 
+static inline void sqvm_file_copy_result_unsupported(SqvmFileCopyResult *out)
+{
+	if (out == NULL) {
+		return;
+	}
+	out->ok = false;
+	out->error = (const uint8_t *)"unsupported";
+	out->error_len = sizeof("unsupported") - 1;
+	out->reference = NULL;
+	out->reference_len = 0;
+	out->bytes_written = 0;
+}
+
 static inline void sqvm_binbook_open_result_unsupported(SqvmBinBookOpenResult *out)
 {
 	if (out == NULL) {
@@ -1066,6 +1122,28 @@ SqvmStatus sqvm_trigger_ble_profile_read_from_reader(
 	size_t scratch_len,
 	size_t index,
 	SqvmBleProfileTrigger *out_profile);
+SqvmStatus sqvm_trigger_http_profile_count(
+	const uint8_t *sqbc,
+	size_t sqbc_len,
+	size_t *out_count);
+SqvmStatus sqvm_trigger_http_profile_read(
+	const uint8_t *sqbc,
+	size_t sqbc_len,
+	size_t index,
+	SqvmHttpProfileTrigger *out_profile);
+SqvmStatus sqvm_trigger_http_profile_count_from_reader(
+	void *user_data,
+	SqvmReadExactAtCallback read_exact_at,
+	uint8_t *scratch,
+	size_t scratch_len,
+	size_t *out_count);
+SqvmStatus sqvm_trigger_http_profile_read_from_reader(
+	void *user_data,
+	SqvmReadExactAtCallback read_exact_at,
+	uint8_t *scratch,
+	size_t scratch_len,
+	size_t index,
+	SqvmHttpProfileTrigger *out_profile);
 SqvmStatus sqvm_device_binding_count_from_reader(
 	void *user_data,
 	SqvmReadExactAtCallback read_exact_at,

@@ -57,6 +57,7 @@ target_sources(app PRIVATE
   ../../src/ble_profile_table.c
   ../../src/device_protocol.c
   ../../src/fallback_app.c
+  ../../src/http_upload.c
   ../../src/protocol.c
   ../../src/serial_transport.c
   ../../src/ssd1677_gray2.c
@@ -66,9 +67,11 @@ target_sources(app PRIVATE
   ../../src/vm_runtime_app_lifecycle.c
   ../../src/vm_runtime_binbook.c
   ../../src/vm_runtime_ble.c
+  ../../src/vm_runtime_content.c
   ../../src/vm_runtime_device_config.c
   ../../src/vm_runtime_display.c
   ../../src/vm_runtime_file.c
+  ../../src/vm_runtime_http.c
   ../../src/vm_runtime_indicator_gpio.c
   ../../src/vm_runtime_system.c
   ../../src/vm_runtime_timers.c
@@ -79,9 +82,11 @@ target_sources(app PRIVATE
 )
 
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/test_fs)
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/test_sd)
 
 target_compile_definitions(app PRIVATE
   TEST_FS_DIR="${CMAKE_CURRENT_BINARY_DIR}/test_fs"
+  TEST_SD_DIR="${CMAKE_CURRENT_BINARY_DIR}/test_sd"
 )
 
 squidscript_link_squidvm_ffi(app)

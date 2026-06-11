@@ -182,15 +182,63 @@ static int binbook_open_resource(struct sq_vm_runtime *runtime, const uint8_t *p
 	return fs_open(file, resolved_path, FS_O_READ);
 }
 
-int32_t runtime_binbook_open(void *user_data, const uint8_t *path, size_t path_len,
-			     SqvmBinBookOpenResult *out)
+static int runtime_binbook_validate_path_details(const char *path,
+						 struct binbook_header_view *out_header,
+						 struct binbook_section_view *out_page_index,
+						 struct binbook_section_view *out_page_data)
 {
-	struct sq_vm_runtime *runtime = user_data;
 	struct binbook_header_view header;
 	struct binbook_section_view page_index;
 	struct binbook_section_view page_data;
 	struct fs_dirent entry;
 	struct fs_file_t file;
+	int result;
+
+	if (path == NULL) {
+		return -EINVAL;
+	}
+	fs_file_t_init(&file);
+	result = fs_open(&file, path, FS_O_READ);
+	if (result != 0) {
+		return result;
+	}
+	result = fs_stat(path, &entry);
+	if (result == 0) {
+		result = binbook_read_header(&file, &header);
+	}
+	if (result == 0 && header.file_size != 0 && entry.size < header.file_size) {
+		result = -EIO;
+	}
+	if (result == 0) {
+		result = binbook_find_sections(&file, &header, &page_index, &page_data);
+	}
+	(void)fs_close(&file);
+	if (result == 0) {
+		if (out_header != NULL) {
+			*out_header = header;
+		}
+		if (out_page_index != NULL) {
+			*out_page_index = page_index;
+		}
+		if (out_page_data != NULL) {
+			*out_page_data = page_data;
+		}
+	}
+	return result;
+}
+
+int runtime_binbook_validate_path(const char *path)
+{
+	return runtime_binbook_validate_path_details(path, NULL, NULL, NULL);
+}
+
+int32_t runtime_binbook_open(void *user_data, const uint8_t *path, size_t path_len,
+			     SqvmBinBookOpenResult *out)
+{
+	struct sq_vm_runtime *runtime = user_data;
+	struct fs_file_t file;
+	struct binbook_section_view page_index;
+	struct binbook_section_view page_data;
 	char resolved_path[SQ_APP_STORE_PATH_MAX];
 	int result;
 
@@ -204,17 +252,8 @@ int32_t runtime_binbook_open(void *user_data, const uint8_t *path, size_t path_l
 		binbook_set_error("open failed", &out->error, &out->error_len);
 		return 0;
 	}
-	result = fs_stat(resolved_path, &entry);
-	if (result == 0) {
-		result = binbook_read_header(&file, &header);
-	}
-	if (result == 0 && header.file_size != 0 && entry.size < header.file_size) {
-		result = -EIO;
-	}
-	if (result == 0) {
-		result = binbook_find_sections(&file, &header, &page_index, &page_data);
-	}
 	(void)fs_close(&file);
+	result = runtime_binbook_validate_path_details(resolved_path, NULL, &page_index, &page_data);
 	if (result != 0) {
 		binbook_set_error("invalid binbook", &out->error, &out->error_len);
 		return 0;

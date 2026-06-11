@@ -52,6 +52,7 @@ Initial section kinds:
 8  device binding table
 9  timer trigger table
 10 BLE profile trigger table
+11 HTTP profile trigger table
 ```
 
 Initial value tags:
@@ -163,10 +164,13 @@ be refreshed as capability boundaries become clearer.
 0x90 file.pickFile
 0x91 file.readText
 0x92 file.readLines
+0x93 file.copy
 
 0xa0 reserved for service.storage
 0xb0 reserved for service.input
 0xc0 service.power.sleep
+0xc3 service.http.start
+0xc4 service.http.stop
 0xd0 reserved for service.time
 ```
 
@@ -254,10 +258,35 @@ offset  size  field
 ...     4*n   event route pairs: kind string id, event string id
 ```
 
-Current BLE profile metadata is emitted for
-`service.ble.profile("file-transfer", ...)` declarations inside
-`app.triggers`. Firmware reads this metadata to arm file-transfer trigger
-profiles without dispatching foreground app code.
+Current BLE profile metadata is emitted for `service.ble.start("file-transfer",
+...)` calls. Firmware reads the profile table when the app starts receive and
+registers the active route under the running app.
+
+HTTP profile trigger table payload:
+
+```text
+offset  size  field
+0       2     little-endian u16 profile count
+...           variable profile records
+```
+
+Each HTTP profile record uses the same shape as a BLE profile record:
+
+```text
+offset  size  field
+0       2     little-endian u16 profile name string id
+2       2     little-endian u16 app-local profile id string id
+4       2     little-endian u16 role string id
+6       2     little-endian u16 accept count
+8       2*n   accepted extension string ids
+...     2     little-endian u16 event route count
+...     4*n   event route pairs: kind string id, event string id
+```
+
+Current HTTP profile metadata is emitted for
+`service.http.start("file-upload", ...)` calls. Zephyr firmware uses that
+metadata to register the app-owned `/upload/<name>` route and dispatch the
+configured completion event with an ephemeral `upload` file reference.
 
 Zephyr firmware must install named SQBC apps, start `main`, arm trigger
 registrations, dispatch real timer events, and exercise app-stack behavior.

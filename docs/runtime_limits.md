@@ -71,6 +71,21 @@ slot that no longer resolves, firmware records an `invariant.ble.*` diagnostic
 through `device errors` and rejects the transfer instead of selecting an
 arbitrary receiver.
 
+## HTTP Upload Profile Metadata
+
+| Limit | Hard value | Macro |
+| --- | ---: | --- |
+| HTTP profile text field length | 32 bytes | `SQVM_HTTP_PROFILE_TEXT_CAP` |
+| Accepted HTTP upload extensions | 4 | `SQVM_HTTP_PROFILE_ACCEPT_MAX` |
+| HTTP upload event routes | 8 | `SQVM_HTTP_PROFILE_EVENT_MAX` |
+| HTTP upload socket-to-storage chunk buffer | 2048 bytes | `SQ_HTTP_UPLOAD_CHUNK_MAX` |
+
+The current HTTP upload runtime supports one active foreground route. Profile
+metadata uses the same compact field caps as BLE profile metadata. The active
+route stores the app id, profile id, accepted extensions, and completion event;
+the HTTP request body streams to storage through the fixed upload chunk buffer
+rather than app RAM.
+
 ## App Store Limits
 
 | Limit | Hard value | Macro |

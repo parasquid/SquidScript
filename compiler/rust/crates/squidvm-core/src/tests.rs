@@ -428,6 +428,16 @@ impl TraceSink for RuntimeTrace {
         Ok(())
     }
 
+    fn service_http_start(&mut self, id: &str) -> Result<(), VmError> {
+        self.events.push(format!("service.http.start {id}"));
+        Ok(())
+    }
+
+    fn service_http_stop(&mut self) -> Result<(), VmError> {
+        self.events.push("service.http.stop".to_string());
+        Ok(())
+    }
+
     fn system_memory_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
         write!(out, "RAM 292 KiB").map_err(|_| VmError::InvalidOperand)
     }
@@ -549,6 +559,22 @@ impl TraceSink for RuntimeTrace {
             ok: true,
             error: None,
             book: Some(Handle::new(HandleKind::BinBook, 7)),
+        })
+    }
+
+    fn file_copy<'a>(
+        &'a mut self,
+        source: &str,
+        library: &str,
+        name: &str,
+    ) -> Result<FileCopyResult<'a>, VmError> {
+        self.events
+            .push(format!("file.copy {source} {library} {name}"));
+        Ok(FileCopyResult {
+            ok: true,
+            error: None,
+            reference: Some("content:books/r/upload.binbook"),
+            bytes_written: 4096,
         })
     }
 
@@ -1539,6 +1565,9 @@ app.triggers {
 event.on("timer.break") {
   debug.print("break")
 }
+event.on("timer.stretch") {
+  debug.print("stretch")
+}
 screen("main") {}
 "#;
     let compiled = compile(CompileRequest {
@@ -2317,6 +2346,45 @@ screen("main") {}
 }
 
 #[test]
+fn dispatch_handles_service_http_start_and_stop() {
+    let source = r#"app "http-upload"
+event.on("app.start") {
+  service.http.start("file-upload", {
+    id: "binbook-upload",
+    accept: [".binbook"],
+    events: { complete: "http.file.complete" }
+  })
+}
+event.on("done") {
+  service.http.stop()
+}
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = RuntimeTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+    vm.dispatch("done", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "service.http.start binbook-upload",
+            "done",
+            "service.http.stop",
+        ]
+    );
+}
+
+#[test]
 fn runs_binbook_handle_api_and_draws_drawable_from_real_bytecode() {
     let source = r#"app "binbook-smoke"
 state { pageIndex: int = 0 }
@@ -2634,6 +2702,39 @@ screen("main") {}
             "debug reader",
             "registry.get reader",
             "debug reader Reader dev-reader Read documents",
+        ]
+    );
+}
+
+#[test]
+fn runs_file_copy_to_content_library_from_real_bytecode() {
+    let source = r#"app "file-copy"
+event.on("app.start") {
+  let copied = file.copy("/sq/tmp/http-upload.binbook", {
+    library: "books",
+    name: "upload.binbook"
+  })
+  debug.print(copied.ok, copied.error, copied.ref, copied.bytesWritten)
+}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = RuntimeTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "file.copy /sq/tmp/http-upload.binbook books upload.binbook",
+            "debug true null content:books/r/upload.binbook 4096",
         ]
     );
 }

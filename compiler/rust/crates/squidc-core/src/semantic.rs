@@ -12,6 +12,7 @@ fn is_fallible_builtin(name: &str) -> bool {
         "file.pickFile"
             | "file.readText"
             | "file.readLines"
+            | "file.copy"
             | "content.binbook.list"
             | "service.wifi.connect"
             | "service.wifi.disconnect"
@@ -22,6 +23,8 @@ fn is_fallible_builtin(name: &str) -> bool {
             | "service.wifi.scanNetwork"
             | "service.wifi.startAP"
             | "service.wifi.stopAP"
+            | "service.http.start"
+            | "service.http.stop"
     )
 }
 
@@ -299,6 +302,16 @@ fn validate_ble_profile_ids_in(
                     ));
                 }
             }
+            IrStatement::ServiceHttpStart { id, .. } => {
+                if !ids.insert(id.clone()) {
+                    diagnostics.push(error(
+                        "E_DUPLICATE_HTTP_PROFILE_ID",
+                        "HTTP profile ids must be unique",
+                        start,
+                        end,
+                    ));
+                }
+            }
             IrStatement::If {
                 then_statements,
                 else_statements,
@@ -404,6 +417,42 @@ fn validate_ble_start(
         diagnostics.push(error(
             "E_BLE_PROFILE",
             "service.ble.start requires profile file-transfer, a non-empty id, accepted extensions, and a complete event route",
+            start,
+            end,
+        ));
+    }
+}
+
+fn validate_http_start(
+    profile: &str,
+    id: &str,
+    accept: &[String],
+    events: &BTreeMap<String, String>,
+    start: usize,
+    end: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let mut invalid = false;
+    if profile != "file-upload" {
+        invalid = true;
+    }
+    if id.is_empty() {
+        invalid = true;
+    }
+    if accept.is_empty() || !accept.iter().all(|extension| extension.starts_with('.')) {
+        invalid = true;
+    }
+    if events
+        .get("complete")
+        .map_or(true, |event| event.is_empty())
+        || events.values().any(|event| event.is_empty())
+    {
+        invalid = true;
+    }
+    if invalid {
+        diagnostics.push(error(
+            "E_HTTP_PROFILE",
+            "service.http.start requires profile file-upload, a non-empty id, accepted extensions, and a complete event route",
             start,
             end,
         ));
@@ -658,6 +707,15 @@ fn validate_statement_names(
                 validate_ble_start(profile, id, accept, events, start, end, diagnostics);
             }
             IrStatement::ServiceBleStop => {}
+            IrStatement::ServiceHttpStart {
+                profile,
+                id,
+                accept,
+                events,
+            } => {
+                validate_http_start(profile, id, accept, events, start, end, diagnostics);
+            }
+            IrStatement::ServiceHttpStop => {}
             IrStatement::ServicePowerSleep { wake_after_ms } => {
                 validate_expr_names(wake_after_ms, state_names, visible, start, end, diagnostics);
             }
@@ -890,6 +948,8 @@ fn statement_is_render_impure(
         | IrStatement::ServiceTimerAfter { .. }
         | IrStatement::ServiceBleStart { .. }
         | IrStatement::ServiceBleStop
+        | IrStatement::ServiceHttpStart { .. }
+        | IrStatement::ServiceHttpStop
         | IrStatement::ServicePowerSleep { .. }
         | IrStatement::HardwareGpioWrite { .. }
         | IrStatement::HardwareGpioToggle { .. }
@@ -1096,6 +1156,8 @@ fn validate_debug_block_statements(
             | IrStatement::ServiceTimerAfter { .. }
             | IrStatement::ServiceBleStart { .. }
             | IrStatement::ServiceBleStop
+            | IrStatement::ServiceHttpStart { .. }
+            | IrStatement::ServiceHttpStop
             | IrStatement::ServicePowerSleep { .. }
             | IrStatement::HardwareGpioWrite { .. }
             | IrStatement::HardwareGpioToggle { .. }
@@ -1204,7 +1266,10 @@ fn statement_uses_any_name(
         | IrStatement::AppArm { app }
         | IrStatement::AppDisarm { app } => expr_uses_any_name(app, names),
         IrStatement::AppInstall { file_ref, .. } => expr_uses_any_name(file_ref, names),
-        IrStatement::ServiceBleStart { .. } | IrStatement::ServiceBleStop => false,
+        IrStatement::ServiceBleStart { .. }
+        | IrStatement::ServiceBleStop
+        | IrStatement::ServiceHttpStart { .. }
+        | IrStatement::ServiceHttpStop => false,
         IrStatement::ServicePowerSleep { wake_after_ms } => {
             expr_uses_any_name(wake_after_ms, names)
         }

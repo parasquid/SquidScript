@@ -152,6 +152,30 @@
       "prototype": "SqvmStatus sqvm_trigger_ble_profile_read_from_reader(\n\tvoid *user_data,\n\tSqvmReadExactAtCallback read_exact_at,\n\tuint8_t *scratch,\n\tsize_t scratch_len,\n\tsize_t index,\n\tSqvmBleProfileTrigger *out_profile);"
     },
     {
+      "name": "sqvm_trigger_http_profile_count",
+      "family": "triggers",
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_trigger_http_profile_count(\n\tconst uint8_t *sqbc,\n\tsize_t sqbc_len,\n\tsize_t *out_count);"
+    },
+    {
+      "name": "sqvm_trigger_http_profile_read",
+      "family": "triggers",
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_trigger_http_profile_read(\n\tconst uint8_t *sqbc,\n\tsize_t sqbc_len,\n\tsize_t index,\n\tSqvmHttpProfileTrigger *out_profile);"
+    },
+    {
+      "name": "sqvm_trigger_http_profile_count_from_reader",
+      "family": "triggers",
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_trigger_http_profile_count_from_reader(\n\tvoid *user_data,\n\tSqvmReadExactAtCallback read_exact_at,\n\tuint8_t *scratch,\n\tsize_t scratch_len,\n\tsize_t *out_count);"
+    },
+    {
+      "name": "sqvm_trigger_http_profile_read_from_reader",
+      "family": "triggers",
+      "direction": "rust_to_c",
+      "prototype": "SqvmStatus sqvm_trigger_http_profile_read_from_reader(\n\tvoid *user_data,\n\tSqvmReadExactAtCallback read_exact_at,\n\tuint8_t *scratch,\n\tsize_t scratch_len,\n\tsize_t index,\n\tSqvmHttpProfileTrigger *out_profile);"
+    },
+    {
       "name": "sqvm_device_binding_count_from_reader",
       "family": "device-bindings",
       "direction": "rust_to_c",
@@ -619,6 +643,24 @@
       "failing_callback": "failing_ble_stop"
     },
     {
+      "field": "http_start",
+      "typedef": "SqvmHttpStartCallback",
+      "family": "http",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, id: *const u8, id_len: usize, ) -> i32, >",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_http_file_upload_trigger_sqbc",
+      "failing_callback": "failing_http_start"
+    },
+    {
+      "field": "http_stop",
+      "typedef": "SqvmHttpStopCallback",
+      "family": "http",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, ) -> i32, >",
+      "missing_policy": "required_vm_error",
+      "test_fixture": "compile_http_stop_sqbc",
+      "failing_callback": "failing_http_stop"
+    },
+    {
       "field": "wifi_start_ap",
       "typedef": "SqvmWifiStartApCallback",
       "family": "wifi",
@@ -775,6 +817,15 @@
       "failing_callback": "failing_file_read_lines"
     },
     {
+      "field": "file_copy",
+      "typedef": "SqvmFileCopyCallback",
+      "family": "file",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, source: *const u8, source_len: usize, library: *const u8, library_len: usize, name: *const u8, name_len: usize, out: *mut SqvmFileCopyResult, ) -> i32, >",
+      "missing_policy": "unsupported_result",
+      "test_fixture": "compile_file_copy_sqbc",
+      "failing_callback": "failing_file_copy"
+    },
+    {
       "field": "binbook_open",
       "typedef": "SqvmBinBookOpenCallback",
       "family": "binbook",
@@ -925,6 +976,14 @@
     {
       "name": "SqvmBleProfileTrigger",
       "definition": "typedef struct {\n\tuint8_t profile[SQVM_BLE_PROFILE_TEXT_CAP];\n\tuint8_t id[SQVM_BLE_PROFILE_TEXT_CAP];\n\tuint8_t role[SQVM_BLE_PROFILE_TEXT_CAP];\n\tsize_t accept_count;\n\tuint8_t accept[SQVM_BLE_PROFILE_ACCEPT_MAX][SQVM_BLE_PROFILE_TEXT_CAP];\n\tsize_t event_count;\n\tSqvmBleProfileEventRoute events[SQVM_BLE_PROFILE_EVENT_MAX];\n} SqvmBleProfileTrigger;"
+    },
+    {
+      "name": "SqvmHttpProfileEventRoute",
+      "definition": "typedef struct {\n\tuint8_t kind[SQVM_HTTP_PROFILE_TEXT_CAP];\n\tuint8_t event[SQVM_HTTP_PROFILE_TEXT_CAP];\n} SqvmHttpProfileEventRoute;"
+    },
+    {
+      "name": "SqvmHttpProfileTrigger",
+      "definition": "typedef struct {\n\tuint8_t profile[SQVM_HTTP_PROFILE_TEXT_CAP];\n\tuint8_t id[SQVM_HTTP_PROFILE_TEXT_CAP];\n\tuint8_t role[SQVM_HTTP_PROFILE_TEXT_CAP];\n\tsize_t accept_count;\n\tuint8_t accept[SQVM_HTTP_PROFILE_ACCEPT_MAX][SQVM_HTTP_PROFILE_TEXT_CAP];\n\tsize_t event_count;\n\tSqvmHttpProfileEventRoute events[SQVM_HTTP_PROFILE_EVENT_MAX];\n} SqvmHttpProfileTrigger;"
     },
     {
       "name": "SqvmEventPayloadField",
@@ -1083,6 +1142,10 @@
       "definition": "typedef struct {\n\tbool ok;\n\tconst uint8_t *error;\n\tsize_t error_len;\n} SqvmFileReadLinesResult;"
     },
     {
+      "name": "SqvmFileCopyResult",
+      "definition": "typedef struct {\n\tbool ok;\n\tconst uint8_t *error;\n\tsize_t error_len;\n\tconst uint8_t *reference;\n\tsize_t reference_len;\n\tint32_t bytes_written;\n} SqvmFileCopyResult;"
+    },
+    {
       "name": "SqvmBinBookOpenResult",
       "definition": "typedef struct {\n\tbool ok;\n\tconst uint8_t *error;\n\tsize_t error_len;\n\tSqvmHandle book;\n} SqvmBinBookOpenResult;"
     },
@@ -1179,6 +1242,10 @@
       "definition": "typedef int32_t (*SqvmFileReadLinesCallback)(void *user_data, const uint8_t *path,\n\t\t\t\t\t\tsize_t path_len, int32_t max_lines,\n\t\t\t\t\t\tSqvmFileReadLinesResult *out);"
     },
     {
+      "name": "SqvmFileCopyCallback",
+      "definition": "typedef int32_t (*SqvmFileCopyCallback)(void *user_data, const uint8_t *source,\n\t\t\t\t\t  size_t source_len, const uint8_t *library,\n\t\t\t\t\t  size_t library_len, const uint8_t *name,\n\t\t\t\t\t  size_t name_len, SqvmFileCopyResult *out);"
+    },
+    {
       "name": "SqvmBinBookOpenCallback",
       "definition": "typedef int32_t (*SqvmBinBookOpenCallback)(void *user_data, const uint8_t *path,\n\t\t\t\t\t     size_t path_len, SqvmBinBookOpenResult *out);"
     },
@@ -1263,6 +1330,14 @@
       "definition": "typedef int32_t (*SqvmBleStopCallback)(\n\tvoid *user_data);"
     },
     {
+      "name": "SqvmHttpStartCallback",
+      "definition": "typedef int32_t (*SqvmHttpStartCallback)(\n\tvoid *user_data,\n\tconst uint8_t *id,\n\tsize_t id_len);"
+    },
+    {
+      "name": "SqvmHttpStopCallback",
+      "definition": "typedef int32_t (*SqvmHttpStopCallback)(\n\tvoid *user_data);"
+    },
+    {
       "name": "SqvmSystemMemoryTextCallback",
       "definition": "typedef int32_t (*SqvmSystemMemoryTextCallback)(\n\tvoid *user_data,\n\tuint8_t *out,\n\tsize_t out_cap,\n\tsize_t *out_len);"
     },
@@ -1280,7 +1355,7 @@
     },
     {
       "name": "SqvmCallbacks",
-      "definition": "typedef struct {\n\tSqvmTraceCallback trace;\n\tSqvmReadExactAtCallback read_exact_at;\n\tSqvmDebugOutputCallback debug_output;\n\tSqvmDisplayClearCallback display_clear;\n\tSqvmDisplayTextCallback display_text;\n\tSqvmDisplayRectCallback display_rect;\n\tSqvmDisplayLineCallback display_line;\n\tSqvmDisplaySelectCallback display_select;\n\tSqvmDisplayImageCallback display_image;\n\tSqvmDisplayDrawCallback display_draw;\n\tSqvmDisplayInfoCallback display_info;\n\tSqvmIndicatorWriteCallback indicator_write;\n\tSqvmIndicatorToggleCallback indicator_toggle;\n\tSqvmIndicatorReadCallback indicator_read;\n\tSqvmIndicatorBreatheCallback indicator_breathe;\n\tSqvmIndicatorBlinkCallback indicator_blink;\n\tSqvmHardwareGpioWriteCallback hardware_gpio_write;\n\tSqvmHardwareGpioToggleCallback hardware_gpio_toggle;\n\tSqvmHardwareGpioReadCallback hardware_gpio_read;\n\tSqvmAppLifecycleCallback app_launch;\n\tSqvmAppLifecycleCallback app_arm;\n\tSqvmAppLifecycleCallback app_disarm;\n\tSqvmAppInstallFileCallback app_install_file;\n\tSqvmAppRegistryListCallback app_registry_list;\n\tSqvmAppRegistryGetCallback app_registry_get;\n\tSqvmAppStackCallback app_process_stack;\n\tSqvmAppStackCallback app_armed_stack;\n\tSqvmTimerEveryCallback timer_every;\n\tSqvmTimerAfterCallback timer_after;\n\tSqvmBleStartCallback ble_start;\n\tSqvmBleStopCallback ble_stop;\n\tSqvmWifiStartApCallback wifi_start_ap;\n\tSqvmWifiStopApCallback wifi_stop_ap;\n\tSqvmWifiConnectCallback wifi_connect;\n\tSqvmWifiDisconnectCallback wifi_disconnect;\n\tSqvmWifiGetApIpCallback wifi_get_ap_ip;\n\tSqvmWifiStatusCallback wifi_status;\n\tSqvmWifiScanCallback wifi_scan;\n\tSqvmWifiOperationCallback wifi_operation;\n\tSqvmWifiResultCallback wifi_result;\n\tSqvmWifiCancelCallback wifi_cancel;\n\tSqvmWifiScanNetworkCallback wifi_scan_network;\n\tSqvmDeviceConfigLoadCallback device_config_load;\n\tSqvmDeviceConfigSetCallback device_config_set;\n\tSqvmDeviceConfigRebindCallback device_config_rebind;\n\tSqvmDeviceConfigSaveCallback device_config_save;\n\tSqvmFilePickFileCallback file_pick_file;\n\tSqvmFileReadTextCallback file_read_text;\n\tSqvmFileReadLinesCallback file_read_lines;\n\tSqvmBinBookOpenCallback binbook_open;\n\tSqvmBinBookInfoCallback binbook_info;\n\tSqvmBinBookReadPageCallback binbook_read_page;\n\tSqvmContentBinBookListCallback content_binbook_list;\n\tSqvmSystemMemoryTextCallback system_memory_text;\n\tSqvmSystemStorageTextCallback system_storage_text;\n\tSqvmSystemStartReasonTextCallback system_start_reason_text;\n\tSqvmPowerSleepCallback power_sleep;\n} SqvmCallbacks;"
+      "definition": "typedef struct {\n\tSqvmTraceCallback trace;\n\tSqvmReadExactAtCallback read_exact_at;\n\tSqvmDebugOutputCallback debug_output;\n\tSqvmDisplayClearCallback display_clear;\n\tSqvmDisplayTextCallback display_text;\n\tSqvmDisplayRectCallback display_rect;\n\tSqvmDisplayLineCallback display_line;\n\tSqvmDisplaySelectCallback display_select;\n\tSqvmDisplayImageCallback display_image;\n\tSqvmDisplayDrawCallback display_draw;\n\tSqvmDisplayInfoCallback display_info;\n\tSqvmIndicatorWriteCallback indicator_write;\n\tSqvmIndicatorToggleCallback indicator_toggle;\n\tSqvmIndicatorReadCallback indicator_read;\n\tSqvmIndicatorBreatheCallback indicator_breathe;\n\tSqvmIndicatorBlinkCallback indicator_blink;\n\tSqvmHardwareGpioWriteCallback hardware_gpio_write;\n\tSqvmHardwareGpioToggleCallback hardware_gpio_toggle;\n\tSqvmHardwareGpioReadCallback hardware_gpio_read;\n\tSqvmAppLifecycleCallback app_launch;\n\tSqvmAppLifecycleCallback app_arm;\n\tSqvmAppLifecycleCallback app_disarm;\n\tSqvmAppInstallFileCallback app_install_file;\n\tSqvmAppRegistryListCallback app_registry_list;\n\tSqvmAppRegistryGetCallback app_registry_get;\n\tSqvmAppStackCallback app_process_stack;\n\tSqvmAppStackCallback app_armed_stack;\n\tSqvmTimerEveryCallback timer_every;\n\tSqvmTimerAfterCallback timer_after;\n\tSqvmBleStartCallback ble_start;\n\tSqvmBleStopCallback ble_stop;\n\tSqvmHttpStartCallback http_start;\n\tSqvmHttpStopCallback http_stop;\n\tSqvmWifiStartApCallback wifi_start_ap;\n\tSqvmWifiStopApCallback wifi_stop_ap;\n\tSqvmWifiConnectCallback wifi_connect;\n\tSqvmWifiDisconnectCallback wifi_disconnect;\n\tSqvmWifiGetApIpCallback wifi_get_ap_ip;\n\tSqvmWifiStatusCallback wifi_status;\n\tSqvmWifiScanCallback wifi_scan;\n\tSqvmWifiOperationCallback wifi_operation;\n\tSqvmWifiResultCallback wifi_result;\n\tSqvmWifiCancelCallback wifi_cancel;\n\tSqvmWifiScanNetworkCallback wifi_scan_network;\n\tSqvmDeviceConfigLoadCallback device_config_load;\n\tSqvmDeviceConfigSetCallback device_config_set;\n\tSqvmDeviceConfigRebindCallback device_config_rebind;\n\tSqvmDeviceConfigSaveCallback device_config_save;\n\tSqvmFilePickFileCallback file_pick_file;\n\tSqvmFileReadTextCallback file_read_text;\n\tSqvmFileReadLinesCallback file_read_lines;\n\tSqvmFileCopyCallback file_copy;\n\tSqvmBinBookOpenCallback binbook_open;\n\tSqvmBinBookInfoCallback binbook_info;\n\tSqvmBinBookReadPageCallback binbook_read_page;\n\tSqvmContentBinBookListCallback content_binbook_list;\n\tSqvmSystemMemoryTextCallback system_memory_text;\n\tSqvmSystemStorageTextCallback system_storage_text;\n\tSqvmSystemStartReasonTextCallback system_start_reason_text;\n\tSqvmPowerSleepCallback power_sleep;\n} SqvmCallbacks;"
     }
   ],
   "result_defaults": [
@@ -1839,6 +1914,50 @@
       ]
     },
     {
+      "type": "SqvmFileCopyResult",
+      "rust_fields": [
+        {
+          "field": "ok",
+          "value": "false"
+        },
+        {
+          "field": "error",
+          "literal": "unsupported"
+        },
+        {
+          "field": "reference",
+          "null": true
+        },
+        {
+          "field": "bytes_written",
+          "value": "0"
+        }
+      ],
+      "c_helpers": [
+        {
+          "name": "sqvm_file_copy_result_unsupported",
+          "fields": [
+            {
+              "field": "ok",
+              "value": "false"
+            },
+            {
+              "field": "error",
+              "literal": "unsupported"
+            },
+            {
+              "field": "reference",
+              "null": true
+            },
+            {
+              "field": "bytes_written",
+              "value": "0"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "type": "SqvmBinBookOpenResult",
       "rust_fields": [
         {
@@ -2093,6 +2212,18 @@
       "definition": "#define SQVM_BLE_PROFILE_EVENT_MAX 8"
     },
     {
+      "name": "SQVM_HTTP_PROFILE_TEXT_CAP",
+      "definition": "#define SQVM_HTTP_PROFILE_TEXT_CAP SQVM_BLE_PROFILE_TEXT_CAP"
+    },
+    {
+      "name": "SQVM_HTTP_PROFILE_ACCEPT_MAX",
+      "definition": "#define SQVM_HTTP_PROFILE_ACCEPT_MAX SQVM_BLE_PROFILE_ACCEPT_MAX"
+    },
+    {
+      "name": "SQVM_HTTP_PROFILE_EVENT_MAX",
+      "definition": "#define SQVM_HTTP_PROFILE_EVENT_MAX SQVM_BLE_PROFILE_EVENT_MAX"
+    },
+    {
       "name": "SQVM_EVENT_PAYLOAD_FIELD_MAX",
       "definition": "#define SQVM_EVENT_PAYLOAD_FIELD_MAX 8"
     },
@@ -2274,18 +2405,38 @@
       "callbacks": [
         "file_pick_file",
         "file_read_text",
-        "file_read_lines"
+        "file_read_lines",
+        "file_copy"
       ],
       "rust": "Rust FFI dispatch file result tests",
-      "zephyr": "unsupported content/file result ztests",
+      "zephyr": "content publish runtime callback ztests",
       "rust_tests": [
         "dispatches_file_pick_file_callback",
         "dispatches_file_read_callbacks",
+        "dispatches_file_copy_callback",
         "missing_file_callbacks_return_unsupported_records"
       ],
       "zephyr_tests": [
         "test_vm_runtime_dispatches_file_pick_file_unsupported_result",
-        "test_vm_runtime_dispatches_file_read_unsupported_results"
+        "test_vm_runtime_dispatches_file_read_unsupported_results",
+        "test_vm_runtime_file_copy_publishes_binbook"
+      ]
+    },
+    {
+      "family": "http",
+      "callbacks": [
+        "http_start",
+        "http_stop"
+      ],
+      "rust": "Rust FFI dispatch and HTTP profile reader tests",
+      "zephyr": "HTTP upload route and callback ztests",
+      "rust_tests": [
+        "dispatches_http_service_callbacks",
+        "reads_http_profile_triggers"
+      ],
+      "zephyr_tests": [
+        "test_http_upload_registers_route",
+        "test_http_upload_dispatches_complete_event"
       ]
     },
     {

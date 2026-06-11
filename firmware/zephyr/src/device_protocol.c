@@ -14,6 +14,7 @@
 #include "app_lifecycle.h"
 #include "ble_file_transfer_core.h"
 #include "ble_profile_table.h"
+#include "http_upload.h"
 #include "protocol.h"
 #include "sq_errno.h"
 #include "squidvm_ffi.h"
@@ -1863,6 +1864,9 @@ int sq_device_protocol_restore_planned_resume(const struct sq_device_protocol_co
 static SqvmEventPayloadField ble_payload_fields[4];
 static char ble_payload_bytes_buf[12];
 static char ble_payload_total_buf[12];
+static SqvmEventPayloadField http_payload_fields[5];
+static char http_payload_bytes_buf[12];
+static char http_payload_total_buf[12];
 
 int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 {
@@ -1958,6 +1962,36 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 				(const uint8_t *)"id", 2, (const uint8_t *)profile_id,
 				strlen(profile_id)};
 			sq_vm_runtime_set_pending_event_payload(runtime, ble_payload_fields, 4);
+			due_app_ptr = due_app;
+			due_event_ptr = due_event;
+		} else if (!runtime->dispatch_exited && sq_http_upload_pending_is_complete() &&
+			   sq_http_upload_drain_pending_event(due_app, sizeof(due_app), due_event,
+							      sizeof(due_event)) == 0) {
+			const char *upload_path = sq_http_upload_pending_staging_path();
+			const char *profile_id = sq_http_upload_pending_profile_id();
+			const char *name = sq_http_upload_pending_name();
+
+			(void)snprintf(http_payload_bytes_buf, sizeof(http_payload_bytes_buf), "%zu",
+				       sq_http_upload_pending_bytes_received());
+			(void)snprintf(http_payload_total_buf, sizeof(http_payload_total_buf), "%zu",
+				       sq_http_upload_pending_total_bytes());
+			http_payload_fields[0] = (SqvmEventPayloadField){
+				(const uint8_t *)"upload", 6, (const uint8_t *)upload_path,
+				strlen(upload_path)};
+			http_payload_fields[1] = (SqvmEventPayloadField){
+				(const uint8_t *)"name", 4, (const uint8_t *)name, strlen(name)};
+			http_payload_fields[2] = (SqvmEventPayloadField){
+				(const uint8_t *)"bytesReceived", 13,
+				(const uint8_t *)http_payload_bytes_buf,
+				strlen(http_payload_bytes_buf)};
+			http_payload_fields[3] = (SqvmEventPayloadField){
+				(const uint8_t *)"totalBytes", 10,
+				(const uint8_t *)http_payload_total_buf,
+				strlen(http_payload_total_buf)};
+			http_payload_fields[4] = (SqvmEventPayloadField){
+				(const uint8_t *)"id", 2, (const uint8_t *)profile_id,
+				strlen(profile_id)};
+			sq_vm_runtime_set_pending_event_payload(runtime, http_payload_fields, 5);
 			due_app_ptr = due_app;
 			due_event_ptr = due_event;
 		}

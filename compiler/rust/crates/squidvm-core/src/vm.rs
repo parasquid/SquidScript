@@ -10,9 +10,10 @@ use crate::{
         BUILTIN_DEVICE_CONFIG_REBIND, BUILTIN_DEVICE_CONFIG_SAVE, BUILTIN_DEVICE_CONFIG_SET,
         BUILTIN_DISPLAY_CLEAR, BUILTIN_DISPLAY_DRAW, BUILTIN_DISPLAY_IMAGE, BUILTIN_DISPLAY_INFO,
         BUILTIN_DISPLAY_LINE, BUILTIN_DISPLAY_RECT, BUILTIN_DISPLAY_SELECT, BUILTIN_DISPLAY_TEXT,
-        BUILTIN_HARDWARE_GPIO_READ, BUILTIN_HARDWARE_GPIO_TOGGLE, BUILTIN_HARDWARE_GPIO_WRITE,
-        BUILTIN_SCREEN_OPEN, BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_BLE_START,
-        BUILTIN_SERVICE_BLE_STOP, BUILTIN_SERVICE_INDICATOR_BLINK,
+        BUILTIN_FILE_COPY, BUILTIN_HARDWARE_GPIO_READ, BUILTIN_HARDWARE_GPIO_TOGGLE,
+        BUILTIN_HARDWARE_GPIO_WRITE, BUILTIN_SCREEN_OPEN, BUILTIN_SCREEN_REFRESH,
+        BUILTIN_SERVICE_BLE_START, BUILTIN_SERVICE_BLE_STOP, BUILTIN_SERVICE_HTTP_START,
+        BUILTIN_SERVICE_HTTP_STOP, BUILTIN_SERVICE_INDICATOR_BLINK,
         BUILTIN_SERVICE_INDICATOR_BREATHE, BUILTIN_SERVICE_INDICATOR_READ,
         BUILTIN_SERVICE_INDICATOR_TOGGLE, BUILTIN_SERVICE_INDICATOR_WRITE,
         BUILTIN_SERVICE_POWER_SLEEP, BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY,
@@ -34,9 +35,9 @@ use crate::{
         AppRegistryList, BinBookInfoResult, BinBookOpenResult, BinBookReadPageResult,
         ContentBinBookEntry, ContentBinBookListResult, DeviceConfigResult, DisplayInfo,
         DisplayLineOptions, DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions,
-        FilePickFileResult, FileReadLinesResult, FileReadTextResult, StorageCompletion,
-        StorageRequest, TraceSink, VmDispatch, WifiAccessPoint, WifiApIp, WifiOperation,
-        WifiOperationResult, WifiScanNetwork, WifiStatus,
+        FileCopyResult, FilePickFileResult, FileReadLinesResult, FileReadTextResult,
+        StorageCompletion, StorageRequest, TraceSink, VmDispatch, WifiAccessPoint, WifiApIp,
+        WifiOperation, WifiOperationResult, WifiScanNetwork, WifiStatus,
     },
     limits::{
         MAX_CALL_DEPTH, MAX_CODE_CHUNK_BYTES, MAX_FUNCTIONS, MAX_HANDLERS,
@@ -169,6 +170,7 @@ enum RuntimeFieldName {
     Bssid,
     Build,
     BytesReceived,
+    BytesWritten,
     Cancelled,
     Channel,
     Clients,
@@ -198,6 +200,7 @@ enum RuntimeFieldName {
     Kind,
     LastBackendCode,
     Lines,
+    Library,
     LogicalGrayLevels,
     Mode,
     Name,
@@ -250,6 +253,7 @@ impl RuntimeFieldName {
             "bssid" => Self::Bssid,
             "build" => Self::Build,
             "bytesReceived" => Self::BytesReceived,
+            "bytesWritten" => Self::BytesWritten,
             "cancelled" => Self::Cancelled,
             "channel" => Self::Channel,
             "clients" => Self::Clients,
@@ -279,6 +283,7 @@ impl RuntimeFieldName {
             "kind" => Self::Kind,
             "lastBackendCode" => Self::LastBackendCode,
             "lines" => Self::Lines,
+            "library" => Self::Library,
             "logicalGrayLevels" => Self::LogicalGrayLevels,
             "mode" => Self::Mode,
             "name" => Self::Name,
@@ -1563,6 +1568,13 @@ impl ChunkedVm {
             BUILTIN_SERVICE_BLE_STOP => {
                 host.service_ble_stop()?;
             }
+            BUILTIN_SERVICE_HTTP_START => {
+                let id = self.pop_sqbc_string_id()?;
+                host.service_http_start(self.index.string(id)?)?;
+            }
+            BUILTIN_SERVICE_HTTP_STOP => {
+                host.service_http_stop()?;
+            }
             BUILTIN_SERVICE_POWER_SLEEP => {
                 let wake_after_ms = self.pop()?.expect_i32()?;
                 host.service_power_sleep(wake_after_ms)?;
@@ -1701,6 +1713,21 @@ impl ChunkedVm {
                 let value = self.file_read_lines_result_record(result)?;
                 self.push(value)?;
             }
+            BUILTIN_FILE_COPY => {
+                let name = self.pop()?;
+                let library = self.pop()?;
+                let source = self.pop()?;
+                let result = {
+                    let resolver = self.resolver();
+                    host.file_copy(
+                        resolver.value_str(source)?,
+                        resolver.value_str(library)?,
+                        resolver.value_str(name)?,
+                    )?
+                };
+                let value = self.file_copy_result_record(result)?;
+                self.push(value)?;
+            }
             BUILTIN_SYSTEM_MEMORY => {
                 let mut text = FixedString::new();
                 host.system_memory_text(&mut text)?;
@@ -1820,6 +1847,20 @@ impl ChunkedVm {
             RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
             RuntimeRecordField::new(RuntimeFieldName::Error, error),
             RuntimeRecordField::new(RuntimeFieldName::Lines, lines),
+        ])
+    }
+
+    fn file_copy_result_record(&mut self, result: FileCopyResult<'_>) -> Result<Value, VmError> {
+        let error = self.runtime_string_value(result.error)?;
+        let reference = self.runtime_string_value(result.reference)?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
+            RuntimeRecordField::new(RuntimeFieldName::Ref, reference),
+            RuntimeRecordField::new(
+                RuntimeFieldName::BytesWritten,
+                Value::I32(result.bytes_written),
+            ),
         ])
     }
 
@@ -2325,6 +2366,14 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
         self.trace.service_ble_stop()
     }
 
+    fn service_http_start(&mut self, id: &str) -> Result<(), VmError> {
+        self.trace.service_http_start(id)
+    }
+
+    fn service_http_stop(&mut self) -> Result<(), VmError> {
+        self.trace.service_http_stop()
+    }
+
     fn service_wifi_start_ap<'b>(&'b mut self, ssid: &str) -> Result<WifiOperation<'b>, VmError> {
         self.trace.service_wifi_start_ap(ssid)
     }
@@ -2439,6 +2488,15 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
         max_lines: i32,
     ) -> Result<FileReadLinesResult<'b>, VmError> {
         self.trace.file_read_lines(path, max_lines)
+    }
+
+    fn file_copy<'b>(
+        &'b mut self,
+        source: &str,
+        library: &str,
+        name: &str,
+    ) -> Result<FileCopyResult<'b>, VmError> {
+        self.trace.file_copy(source, library, name)
     }
 
     fn binbook_open<'b>(&'b mut self, path: &str) -> Result<BinBookOpenResult<'b>, VmError> {

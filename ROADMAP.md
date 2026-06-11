@@ -14,10 +14,11 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 ## Runtime Services
 
 - Decide service priority and target support for spec-recognized APIs that are
-  not yet SQBC-backed: `httpServer.*`, remaining `service.ble.*` runtime
-  pieces, and remaining `file.*` APIs beyond the current file pick/read family.
-  Add each API only as a real compiler/SQBC/VM/Zephyr slice with honest
-  unsupported behavior until target support is implemented.
+  not yet SQBC-backed: broader `httpServer.*` server APIs beyond app-owned
+  `service.http.start("file-upload", ...)`, remaining `service.ble.*` runtime
+  pieces, and remaining `file.*` APIs beyond the current pick/read/copy
+  family. Add each API only as a real compiler/SQBC/VM/Zephyr slice with
+  honest unsupported behavior until target support is implemented.
 - Add a `app.uninstall(appId)` builtin mirroring the new `app.install` shape:
   `IrStatement::AppUninstall { app_id }` → `BUILTIN_APP_UNINSTALL` → FFI
   callback `app_uninstall_file` → Zephyr `sq_app_store_uninstall_app` →

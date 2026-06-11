@@ -1,0 +1,105 @@
+app "http-binbook-upload"
+
+state {
+  pageIndex: int = 0
+  uploaded: int = 0
+}
+
+event.on("app.start") {
+  state.pageIndex = 0
+  let ap = service.wifi.startAP("SquidScript-X4")
+  service.http.start("file-upload", {
+    id: "binbook-upload"
+    accept: [".binbook"]
+    events: {
+      complete: "http.file.complete"
+    }
+  })
+  debug.print("http upload ready", ap.ok, ap.error)
+  screen.open("reader")
+}
+
+event.on("http.file.complete", ev) {
+  let copied = file.copy(ev.upload, {
+    library: "books"
+    name: ev.name
+  })
+  debug.print("http copied", copied.ok, copied.error, copied.ref, copied.bytesWritten)
+  if (copied.ok) {
+    state.uploaded = state.uploaded + 1
+    state.pageIndex = 0
+    screen.open("reader")
+  }
+}
+
+event.on("key.RIGHT") {
+  let listing = content.binbook.list("books", { offset: 0, limit: 1 })
+  if (listing.ok) {
+    for item in listing.items max 1 {
+      let opened = binbook.open(item.ref)
+      if (opened.ok) {
+        let info = binbook.info(opened.book)
+        if (state.pageIndex + 1 < info.pageCount) {
+          state.pageIndex = state.pageIndex + 1
+          screen.refresh()
+        }
+      }
+    }
+  }
+}
+
+event.on("key.LEFT") {
+  if (state.pageIndex > 0) {
+    state.pageIndex = state.pageIndex - 1
+    screen.refresh()
+  }
+}
+
+screen("reader") {
+  service.display.clear("white")
+  let listing = content.binbook.list("books", { offset: 0, limit: 1 })
+  if (listing.ok) {
+    if (listing.count == 0) {
+      service.display.text("Upload .binbook", {
+        x: 24
+        y: 64
+        fontHeight: 28
+      })
+      service.display.text("PUT /upload/book.binbook", {
+        x: 24
+        y: 112
+        fontHeight: 20
+      })
+    } else {
+      for item in listing.items max 1 {
+        let opened = binbook.open(item.ref)
+        if (opened.ok) {
+          let info = binbook.info(opened.book)
+          let page = binbook.readPage(opened.book, state.pageIndex)
+          if (page.ok) {
+            service.display.draw(page.drawable)
+            debug.print("book", item.name, state.pageIndex, info.pageCount, state.uploaded)
+          } else {
+            service.display.text("Page read failed", {
+              x: 24
+              y: 64
+              fontHeight: 24
+            })
+          }
+        } else {
+          service.display.text("Open failed", {
+            x: 24
+            y: 64
+            fontHeight: 24
+          })
+        }
+      }
+    }
+  } else {
+    service.display.text("Book list failed", {
+      x: 24
+      y: 64
+      fontHeight: 24
+    })
+  }
+}

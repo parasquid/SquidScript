@@ -88,6 +88,8 @@ int32_t runtime_timer_after(void *user_data, const uint8_t *event, size_t event_
 			    int32_t delay_ms);
 int32_t runtime_ble_start(void *user_data, const uint8_t *id, size_t id_len);
 int32_t runtime_ble_stop(void *user_data);
+int32_t runtime_http_start(void *user_data, const uint8_t *id, size_t id_len);
+int32_t runtime_http_stop(void *user_data);
 int32_t runtime_power_sleep(void *user_data, int32_t wake_after_ms);
 
 int32_t runtime_system_memory_text(void *user_data, uint8_t *out, size_t out_cap,
@@ -132,11 +134,15 @@ int32_t runtime_file_read_text(void *user_data, const uint8_t *path, size_t path
 			       SqvmFileReadTextResult *out);
 int32_t runtime_file_read_lines(void *user_data, const uint8_t *path, size_t path_len,
 				int32_t max_lines, SqvmFileReadLinesResult *out);
+int32_t runtime_file_copy(void *user_data, const uint8_t *source, size_t source_len,
+			  const uint8_t *library, size_t library_len, const uint8_t *name,
+			  size_t name_len, SqvmFileCopyResult *out);
 int32_t runtime_binbook_open(void *user_data, const uint8_t *path, size_t path_len,
 			     SqvmBinBookOpenResult *out);
 int32_t runtime_binbook_info(void *user_data, SqvmHandle book, SqvmBinBookInfoResult *out);
 int32_t runtime_binbook_read_page(void *user_data, SqvmHandle book, int32_t page_index,
 				  SqvmBinBookReadPageResult *out);
+int runtime_binbook_validate_path(const char *path);
 int32_t runtime_content_binbook_list(void *user_data, const uint8_t *library,
 				     size_t library_len, int32_t offset, int32_t limit,
 				     SqvmContentBinBookEntry *out, size_t out_cap,

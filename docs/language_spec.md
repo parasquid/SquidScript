@@ -2637,20 +2637,103 @@ ESP32-C3 Zephyr canonical firmware, this API returns:
 { ok: false, error: "unsupported", lines: [] }
 ```
 
+file.copy(source, { library, name })
+
+Publishes a firmware-owned file reference into a logical content library.
+The current Zephyr firmware supports copying a valid `.binbook` file into the
+`"books"` library with a safe `.binbook` `name`.
+
+Example:
+
+```squid
+event.on("http.file.complete", ev) {
+  let copied = file.copy(ev.upload, { library: "books", name: ev.name })
+  if (copied.ok) {
+    debug.print(copied.ref)
+  }
+}
+```
+
+Result:
+
+```text
+{ ok: bool, error: string?, ref: string?, bytesWritten: int }
+```
+
+Normal error strings include `invalid-name`, `volume-missing`,
+`invalid-content`, `no-space`, `unsupported`, and `io-error`.
+
 Rules:
 
 - file APIs return result records for normal storage/runtime unavailability
 - paths must not contain `..`
 - returned file paths are firmware-owned references, not raw physical paths
-- direct writes, directory management, uploads, and content libraries are not
-  part of the current language/runtime API
-- larger storage, library, upload, data parsing, and document capabilities must
+- direct writes and directory management are not part of the current
+  language/runtime API
+- larger storage, upload, data parsing, and document capabilities must
   be added as real compiler, SQBC, VM, firmware, docs, and tests slices before
   they appear in this canonical spec
 
 ---
 
-## 31A. BinBook Built-ins
+## 31A. HTTP File Upload
+
+HTTP upload is an imperative `service.http.*` capability for device-local
+content ingress over the target network service. An app starts the route when
+it wants to accept files and handles completed uploads as ordinary events.
+
+```squid
+app "content-uploader"
+
+event.on("app.start") {
+  service.wifi.startAP("SquidScript-X4")
+  service.http.start("file-upload", {
+    id: "binbook-upload",
+    accept: [".binbook"],
+    events: {
+      complete: "http.file.complete"
+    }
+  })
+}
+
+event.on("http.file.complete", ev) {
+  let copied = file.copy(ev.upload, { library: "books", name: ev.name })
+  debug.print(copied.ok, copied.error, copied.ref, copied.bytesWritten)
+}
+```
+
+`service.http.start(profile, config)` supports `profile` `"file-upload"`.
+`config.id` is the app-local profile id, `config.accept` is a non-empty list
+of accepted file extensions, and `config.events.complete` is the event
+dispatched after a successful upload.
+
+`service.http.stop()` clears the calling app's HTTP upload route, aborts any
+in-flight upload, and discards any retained partial upload for that route.
+
+On Zephyr firmware, `PUT /upload/<safe-name>` streams the request body into a
+firmware staging file. A client may resume an interrupted upload by sending
+`HEAD /upload/<safe-name>` and reading `X-Squid-Upload-Offset` and
+`X-Squid-Upload-Total`. A resumed `PUT` sends `Content-Range: bytes
+<offset>-<end>/<total>` and a body that starts at the reported offset. The
+retained partial upload is process-local firmware state; rebooting the device
+or stopping the HTTP service discards the resume state. A completed upload
+dispatches the configured event with:
+
+```text
+upload          file reference to the received staging file
+name            uploaded safe file name
+bytesReceived   string
+totalBytes      string
+id              profile instance id
+```
+
+The `upload` reference is ephemeral. The app should consume it inside the
+handler, normally by calling `file.copy(...)` for content or `app.install(...)`
+for SQBC app payloads.
+
+---
+
+## 31B. BinBook Built-ins
 
 `binbook.*` is the app-facing API for compiled `.binbook` raster-book
 resources. The firmware owns BinBook validation, page-index lookup, page data
@@ -2718,7 +2801,7 @@ Rules:
 
 ---
 
-## 31B. Content Library Built-ins
+## 31C. Content Library Built-ins
 
 `content.*` APIs expose logical content libraries. They return opaque refs for
 portable app code; refs are app-facing identifiers, not physical filesystem

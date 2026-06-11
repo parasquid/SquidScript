@@ -145,6 +145,26 @@ for the optical judgment; the serial checks prove app/runtime/display-path
 activity and report the selected firmware refresh mode, not final visible
 quality.
 
+`scripts/xteink-x4-test-http-binbook-upload.sh` is the XTEINK X4 HTTP BinBook
+upload hardware check. It flashes the X4 firmware, installs
+`tests/hardware/xteink-x4/http-binbook-upload`, launches a SquidScript app that
+starts the `SquidScript-X4` AP and registers
+`service.http.start("file-upload", ...)`, associates the host Wi-Fi to the
+device AP, and uploads a real `.binbook` with `curl -T` to
+`http://192.168.4.1/upload/<name>.binbook`. The wrapper prints curl progress,
+records curl byte/speed totals, and resumes interrupted transfers by querying
+`HEAD /upload/<name>.binbook` for the device-reported upload offset before the
+next `PUT`. Set `INTERRUPT_UPLOAD=1` with a large fixture to run the recovery
+variant: the script starts a rate-limited upload, interrupts it, requires the
+HTTP route to keep answering `HEAD` with a non-zero partial offset, then resumes
+and completes the upload. The unattended pass criteria are serial plus HTTP:
+curl receives `ok`, `device output` contains `http upload complete`,
+`upload copy true null`, and the uploaded book name, `device drawlog` contains
+`draw=binbook`, and `device errors` is empty. This proves the app-owned HTTP
+route, firmware staging file, resumable SD-backed upload, `file.copy`,
+`content.binbook.list("books")`, and BinBook display path work together on the
+device-owned X4 SD card.
+
 The default XIAO firmware also drives the SSD1677/GDEQ0426T82 display through
 the Zephyr SPI backend for `service.display.clear` and `service.display.text`.
 The target JSON is the source of truth for the default portrait logical

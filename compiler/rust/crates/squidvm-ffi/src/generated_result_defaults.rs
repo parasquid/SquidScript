@@ -139,6 +139,19 @@ impl Default for SqvmFileReadLinesResult {
     }
 }
 
+impl Default for SqvmFileCopyResult {
+    fn default() -> Self {
+        Self {
+            ok: false,
+            error: b"unsupported".as_ptr(),
+            error_len: b"unsupported".len(),
+            reference: ptr::null(),
+            reference_len: 0,
+            bytes_written: 0,
+        }
+    }
+}
+
 impl Default for SqvmBinBookOpenResult {
     fn default() -> Self {
         Self {

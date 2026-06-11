@@ -372,6 +372,7 @@ struct sq_vm_runtime {
 	SqvmContentBinBookEntry content_binbook_entries[SQ_VM_RUNTIME_CONTENT_LIST_MAX];
 	char content_binbook_names[SQ_VM_RUNTIME_CONTENT_LIST_MAX][SQ_VM_RUNTIME_CONTENT_NAME_LEN];
 	char content_binbook_refs[SQ_VM_RUNTIME_CONTENT_LIST_MAX][SQ_VM_RUNTIME_CONTENT_REF_LEN];
+	char file_copy_ref[SQ_VM_RUNTIME_CONTENT_REF_LEN];
 	char device_errors[SQ_VM_RUNTIME_DEVICE_ERROR_MAX][SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
 	uint8_t device_error_count;
 	bool indicator_state;

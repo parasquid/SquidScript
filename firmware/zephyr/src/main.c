@@ -15,6 +15,7 @@
 #include "ble_file_transfer_core.h"
 #include "ble_smoke.h"
 #include "device_protocol.h"
+#include "http_upload.h"
 #include "serial_transport.h"
 #include "sq_errno.h"
 #include "squidscript_fallback_app.h"
@@ -126,8 +127,11 @@ int main(void)
 	sq_serial_transport_init(&transport);
 	sq_ble_file_transfer_set_registry(&registry);
 	sq_ble_file_transfer_set_fallback_app_id(sq_zephyr_fallback_app.app_id);
+	sq_http_upload_set_registry(&registry);
+	sq_http_upload_set_fallback_app_id(sq_zephyr_fallback_app.app_id);
 	sq_vm_runtime_init(&runtime);
 	sq_ble_file_transfer_set_error_sink(record_ble_transfer_error, &runtime);
+	sq_http_upload_set_error_sink(record_ble_transfer_error, &runtime);
 	sq_vm_runtime_set_registry(&runtime, &registry);
 	sq_vm_runtime_set_mutable_registry(&runtime, &registry);
 	if (registry_ready) {

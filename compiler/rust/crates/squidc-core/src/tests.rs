@@ -415,14 +415,19 @@ fn state_shadowing_by_local_param_and_for_item_warns_but_compiles() {
 state { count: int = 0 }
 function render(count) {
   let value = count
-  for count in rows() max 3 {
-    debug.print(count)
+  for item in rows() max 3 {
+    debug.print(item)
   }
   return value
 }
 event.on("key.SELECT") {
   let count = 1
   debug.print(render(count))
+}
+event.on("key.BACK") {
+  for count in rows() max 3 {
+    debug.print(count)
+  }
 }
 screen("main") {}
 "#;
@@ -1045,7 +1050,7 @@ fn encodes_reference_sqbc_for_headless_counter() {
         u32::from_le_bytes(sqbc[6..10].try_into().unwrap()) as usize,
         sqbc.len()
     );
-    assert_eq!(u32::from_le_bytes(sqbc[10..14].try_into().unwrap()), 10);
+    assert_eq!(u32::from_le_bytes(sqbc[10..14].try_into().unwrap()), 11);
     assert_eq!(
         sqbc::read_app_id(&sqbc).unwrap().as_deref(),
         Some("headless-counter")
@@ -1269,7 +1274,7 @@ screen("main") {
     });
     assert!(output.ok, "{:?}", output.diagnostics);
     let sqbc = sqbc::encode_sqbc(&output.ir.unwrap()).unwrap();
-    assert_eq!(u32::from_le_bytes(sqbc[10..14].try_into().unwrap()), 10);
+    assert_eq!(u32::from_le_bytes(sqbc[10..14].try_into().unwrap()), 11);
 }
 
 #[test]
@@ -1925,6 +1930,60 @@ screen("main") {}
     assert!(matches!(
         ir.handlers[1].statements[0],
         IrStatement::ServiceBleStop
+    ));
+}
+
+#[test]
+fn parses_service_http_start_and_stop_statements() {
+    let source = r#"app "http-upload"
+event.on("app.start") {
+  service.http.start("file-upload", {
+    id: "binbook-upload",
+    accept: [".binbook"],
+    events: {
+      complete: "http.file.complete",
+      error: "http.file.error"
+    }
+  })
+}
+event.on("app.exit") {
+  service.http.stop()
+}
+event.on("http.file.complete", ev) {
+  let copied = file.copy(ev.upload, { library: "books", name: ev.name })
+  debug.print(copied.ref)
+}
+screen("main") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let ir = output.ir.unwrap();
+    assert!(ir.triggers.is_empty());
+    assert_eq!(ir.handlers[0].event, "app.start");
+    match &ir.handlers[0].statements[0] {
+        IrStatement::ServiceHttpStart {
+            profile,
+            id,
+            accept,
+            events,
+        } => {
+            assert_eq!(profile, "file-upload");
+            assert_eq!(id, "binbook-upload");
+            assert_eq!(accept, &vec![".binbook".to_string()]);
+            assert_eq!(
+                events.get("complete").map(String::as_str),
+                Some("http.file.complete")
+            );
+        }
+        other => panic!("expected ServiceHttpStart, got {other:?}"),
+    }
+    assert_eq!(ir.handlers[1].event, "app.exit");
+    assert!(matches!(
+        ir.handlers[1].statements[0],
+        IrStatement::ServiceHttpStop
     ));
 }
 

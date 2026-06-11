@@ -171,6 +171,12 @@ pub trait TraceSink {
     fn service_ble_stop(&mut self) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
     }
+    fn service_http_start(&mut self, _id: &str) -> Result<(), VmError> {
+        Err(VmError::InvalidOperand)
+    }
+    fn service_http_stop(&mut self) -> Result<(), VmError> {
+        Err(VmError::InvalidOperand)
+    }
     fn service_wifi_start_ap<'a>(&'a mut self, _ssid: &str) -> Result<WifiOperation<'a>, VmError> {
         Err(VmError::InvalidOperand)
     }
@@ -271,6 +277,14 @@ pub trait TraceSink {
     ) -> Result<FileReadLinesResult<'a>, VmError> {
         Ok(FileReadLinesResult::unsupported())
     }
+    fn file_copy<'a>(
+        &'a mut self,
+        _source: &str,
+        _library: &str,
+        _name: &str,
+    ) -> Result<FileCopyResult<'a>, VmError> {
+        Ok(FileCopyResult::unsupported())
+    }
     fn binbook_open<'a>(&'a mut self, _path: &str) -> Result<BinBookOpenResult<'a>, VmError> {
         Ok(BinBookOpenResult::unsupported())
     }
@@ -367,6 +381,25 @@ impl FileReadLinesResult<'_> {
             ok: false,
             error: Some("unsupported"),
             lines: &[],
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FileCopyResult<'a> {
+    pub ok: bool,
+    pub error: Option<&'a str>,
+    pub reference: Option<&'a str>,
+    pub bytes_written: i32,
+}
+
+impl FileCopyResult<'_> {
+    pub const fn unsupported() -> Self {
+        Self {
+            ok: false,
+            error: Some("unsupported"),
+            reference: None,
+            bytes_written: 0,
         }
     }
 }

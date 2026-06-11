@@ -11,6 +11,7 @@
 #include "app_lifecycle.h"
 #include "ble_profile_table.h"
 #include "device_protocol.h"
+#include "http_upload.h"
 #include "protocol.h"
 #include "serial_transport.h"
 #include "squidscript_fallback_app.h"
@@ -306,6 +307,12 @@ static struct fs_mount_t test_fs_mount = {
 	.type = FS_NATIVE_MOUNT,
 	.mnt_point = "/sqtest",
 	.fs_data = TEST_FS_DIR,
+};
+
+static struct fs_mount_t test_sd_mount = {
+	.type = FS_NATIVE_MOUNT,
+	.mnt_point = "/SD:",
+	.fs_data = TEST_SD_DIR,
 };
 
 ZTEST_SUITE(squidscript_protocol, NULL, NULL, NULL, NULL, NULL);
@@ -797,6 +804,20 @@ static int mount_test_fs(void)
 	int result = fs_mount(&test_fs_mount);
 
 	return result == -EALREADY ? 0 : result;
+}
+
+static int mount_test_sd(void)
+{
+	int result = fs_mount(&test_sd_mount);
+
+	return result == -EALREADY ? 0 : result;
+}
+
+static int unmount_test_sd(void)
+{
+	int result = fs_unmount(&test_sd_mount);
+
+	return result == -EINVAL ? 0 : result;
 }
 
 static int format_test_app_store(void)
@@ -5651,6 +5672,162 @@ ZTEST(squidscript_protocol, test_vm_runtime_dispatches_file_read_unsupported_res
 	zassert_equal(runtime.output_count, 2);
 	zassert_str_equal(runtime.outputs[0], "false unsupported null");
 	zassert_str_equal(runtime.outputs[1], "false unsupported <list>");
+}
+
+ZTEST(squidscript_protocol, test_vm_runtime_file_copy_publishes_binbook)
+{
+	static const char source_path[] = "/SD:/sq/tmp/binbook-upload.upload";
+	static const char final_path[] = "/SD:/books/upload.binbook";
+	uint8_t book[TEST_BINBOOK_LEN];
+	uint8_t readback[TEST_BINBOOK_LEN];
+	size_t readback_len = 0;
+	static struct sq_vm_runtime runtime;
+	SqvmFileCopyResult result;
+	int mkdir_result;
+
+	memset(&runtime, 0, sizeof(runtime));
+	build_test_binbook(book);
+	zassert_equal(mount_test_sd(), 0, "sd mount failed");
+	mkdir_result = fs_mkdir("/SD:/sq");
+	zassert_true(mkdir_result == 0 || mkdir_result == -EEXIST);
+	mkdir_result = fs_mkdir("/SD:/sq/tmp");
+	zassert_true(mkdir_result == 0 || mkdir_result == -EEXIST);
+	(void)fs_unlink(source_path);
+	(void)fs_unlink(final_path);
+	zassert_equal(write_test_file(source_path, book, sizeof(book)), 0);
+
+	zassert_equal(runtime_file_copy(&runtime, (const uint8_t *)source_path,
+					strlen(source_path), (const uint8_t *)"books",
+					strlen("books"), (const uint8_t *)"upload.binbook",
+					strlen("upload.binbook"), &result),
+		      0);
+	zassert_true(result.ok);
+	zassert_is_null(result.error);
+	zassert_str_equal((const char *)result.reference, "content:books/r/upload.binbook");
+	zassert_equal(result.bytes_written, sizeof(book));
+	zassert_equal(read_test_file(final_path, readback, sizeof(readback), &readback_len), 0);
+	zassert_equal(readback_len, sizeof(book));
+	zassert_mem_equal(readback, book, sizeof(book));
+	zassert_equal(unmount_test_sd(), 0, "sd unmount failed");
+}
+
+ZTEST(squidscript_protocol, test_http_upload_registers_route)
+{
+	static const char accept[1][SQVM_HTTP_PROFILE_TEXT_CAP] = {".binbook"};
+	static const SqvmHttpProfileEventRoute events[1] = {
+		{.kind = "complete", .event = "http.file.complete"},
+	};
+
+	sq_http_upload_cleanup_staging();
+	zassert_equal(sq_http_upload_start_profile("reader", "binbook-upload", accept, 1, events,
+						   1),
+		      0);
+	zassert_equal(sq_http_upload_test_complete("book.binbook",
+						  "/SD:/sq/tmp/binbook-upload.upload", 1024,
+						  1024),
+		      0);
+	zassert_true(sq_http_upload_pending_is_complete());
+	zassert_str_equal(sq_http_upload_pending_profile_id(), "binbook-upload");
+	zassert_str_equal(sq_http_upload_pending_name(), "book.binbook");
+	zassert_equal(sq_http_upload_pending_bytes_received(), 1024);
+	zassert_equal(sq_http_upload_pending_total_bytes(), 1024);
+	zassert_equal(sq_http_upload_stop_app("reader"), 0);
+	sq_http_upload_cleanup_staging();
+}
+
+ZTEST(squidscript_protocol, test_http_upload_dispatches_complete_event)
+{
+	static const char accept[1][SQVM_HTTP_PROFILE_TEXT_CAP] = {".binbook"};
+	static const SqvmHttpProfileEventRoute events[1] = {
+		{.kind = "complete", .event = "http.file.complete"},
+	};
+	char app_id[40] = {0};
+	char event[40] = {0};
+
+	sq_http_upload_cleanup_staging();
+	zassert_equal(sq_http_upload_start_profile("reader", "binbook-upload", accept, 1, events,
+						   1),
+		      0);
+	zassert_equal(sq_http_upload_test_complete("book.binbook",
+						  "/SD:/sq/tmp/binbook-upload.upload", 2048,
+						  2048),
+		      0);
+	zassert_equal(sq_http_upload_drain_pending_event(app_id, sizeof(app_id), event,
+							 sizeof(event)),
+		      0);
+	zassert_str_equal(app_id, "reader");
+	zassert_str_equal(event, "http.file.complete");
+	zassert_false(sq_http_upload_pending_is_complete());
+	sq_http_upload_cleanup_staging();
+}
+
+ZTEST(squidscript_protocol, test_http_upload_resumes_partial_at_reported_offset)
+{
+	static const char accept[1][SQVM_HTTP_PROFILE_TEXT_CAP] = {".binbook"};
+	static const SqvmHttpProfileEventRoute events[1] = {
+		{.kind = "complete", .event = "http.file.complete"},
+	};
+	static const char path[] = "/SD:/sq/tmp/binbook-upload.upload";
+	const uint8_t first[] = {'b', 'o', 'o', 'k'};
+	const uint8_t second[] = {'-', 'd', 'a', 't', 'a'};
+	uint8_t readback[sizeof(first) + sizeof(second)];
+	size_t readback_len = 0;
+	size_t offset = 0;
+	size_t total = 0;
+
+	zassert_equal(mount_test_sd(), 0, "sd mount failed");
+	(void)fs_unlink(path);
+	sq_http_upload_abort();
+	zassert_equal(sq_http_upload_start_profile("reader", "binbook-upload", accept, 1, events,
+						   1),
+		      0);
+	zassert_equal(sq_http_upload_test_begin("book.binbook", 0, sizeof(first),
+						sizeof(first) + sizeof(second)),
+		      0);
+	zassert_equal(sq_http_upload_test_write(first, sizeof(first)), 0);
+	zassert_equal(sq_http_upload_test_preserve_partial(), 0);
+	zassert_equal(sq_http_upload_test_offset("book.binbook", &offset, &total), 0);
+	zassert_equal(offset, sizeof(first));
+	zassert_equal(total, sizeof(first) + sizeof(second));
+
+	zassert_equal(sq_http_upload_test_begin("book.binbook", offset, sizeof(second), total), 0);
+	zassert_equal(sq_http_upload_test_write(second, sizeof(second)), 0);
+	zassert_equal(sq_http_upload_test_finish(), 0);
+	zassert_true(sq_http_upload_pending_is_complete());
+	zassert_equal(sq_http_upload_pending_bytes_received(), sizeof(first) + sizeof(second));
+	zassert_equal(sq_http_upload_pending_total_bytes(), sizeof(first) + sizeof(second));
+	zassert_equal(read_test_file(path, readback, sizeof(readback), &readback_len), 0);
+	zassert_equal(readback_len, sizeof(readback));
+	zassert_mem_equal(readback, "book-data", sizeof(readback));
+	sq_http_upload_cleanup_staging();
+	zassert_equal(unmount_test_sd(), 0, "sd unmount failed");
+}
+
+ZTEST(squidscript_protocol, test_http_upload_stop_discards_partial_resume_file)
+{
+	static const char accept[1][SQVM_HTTP_PROFILE_TEXT_CAP] = {".binbook"};
+	static const SqvmHttpProfileEventRoute events[1] = {
+		{.kind = "complete", .event = "http.file.complete"},
+	};
+	static const char path[] = "/SD:/sq/tmp/binbook-upload.upload";
+	const uint8_t first[] = {'p', 'a', 'r', 't'};
+	size_t offset = 0;
+	size_t total = 0;
+
+	zassert_equal(mount_test_sd(), 0, "sd mount failed");
+	(void)fs_unlink(path);
+	sq_http_upload_abort();
+	zassert_equal(sq_http_upload_start_profile("reader", "binbook-upload", accept, 1, events,
+						   1),
+		      0);
+	zassert_equal(sq_http_upload_test_begin("book.binbook", 0, sizeof(first), 12), 0);
+	zassert_equal(sq_http_upload_test_write(first, sizeof(first)), 0);
+	zassert_equal(sq_http_upload_test_preserve_partial(), 0);
+	zassert_equal(sq_http_upload_test_offset("book.binbook", &offset, &total), 0);
+	zassert_equal(offset, sizeof(first));
+	zassert_equal(sq_http_upload_stop_app("reader"), 0);
+	zassert_equal(fs_stat(path, &(struct fs_dirent){0}), -ENOENT);
+	zassert_equal(unmount_test_sd(), 0, "sd unmount failed");
 }
 
 ZTEST(squidscript_protocol, test_vm_runtime_formats_wifi_bssid_without_heap)

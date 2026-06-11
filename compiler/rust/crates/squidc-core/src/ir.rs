@@ -117,6 +117,15 @@ pub enum IrStatement {
     },
     #[serde(rename = "service.ble.stop")]
     ServiceBleStop,
+    #[serde(rename = "service.http.start")]
+    ServiceHttpStart {
+        profile: String,
+        id: String,
+        accept: Vec<String>,
+        events: BTreeMap<String, String>,
+    },
+    #[serde(rename = "service.http.stop")]
+    ServiceHttpStop,
     #[serde(rename = "service.power.sleep")]
     ServicePowerSleep { wake_after_ms: IrExpr },
     #[serde(rename = "assign")]

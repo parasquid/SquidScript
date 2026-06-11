@@ -97,6 +97,14 @@ pub(super) fn callback_error_cases() -> Vec<CallbackCase> {
         ("ble stop", compile_ble_stop_sqbc(), |callbacks| {
             callbacks.ble_stop = Some(failing_ble_stop)
         }),
+        (
+            "http start",
+            compile_http_file_upload_trigger_sqbc(),
+            |callbacks| callbacks.http_start = Some(failing_http_start),
+        ),
+        ("http stop", compile_http_stop_sqbc(), |callbacks| {
+            callbacks.http_stop = Some(failing_http_stop)
+        }),
         ("wifi start ap", compile_wifi_actions_sqbc(), |callbacks| {
             callbacks.wifi_start_ap = Some(failing_wifi_start_ap)
         }),
@@ -150,6 +158,9 @@ pub(super) fn callback_error_cases() -> Vec<CallbackCase> {
         }),
         ("file read lines", compile_file_read_sqbc(), |callbacks| {
             callbacks.file_read_lines = Some(failing_file_read_lines)
+        }),
+        ("file copy", compile_file_copy_sqbc(), |callbacks| {
+            callbacks.file_copy = Some(failing_file_copy)
         }),
         (
             "content binbook list",
@@ -283,6 +294,14 @@ pub(super) fn missing_required_cases() -> Vec<CallbackCase> {
         ("ble stop", compile_ble_stop_sqbc(), |callbacks| {
             callbacks.ble_stop = None
         }),
+        (
+            "http start",
+            compile_http_file_upload_trigger_sqbc(),
+            |callbacks| callbacks.http_start = None,
+        ),
+        ("http stop", compile_http_stop_sqbc(), |callbacks| {
+            callbacks.http_stop = None
+        }),
         ("wifi status", compile_wifi_sqbc(), |callbacks| {
             callbacks.wifi_status = None
         }),
@@ -340,6 +359,8 @@ pub(super) fn callback_policy_cases() -> &'static [(&'static str, &'static str)]
         ("timer_after", "required_vm_error"),
         ("ble_start", "required_vm_error"),
         ("ble_stop", "required_vm_error"),
+        ("http_start", "required_vm_error"),
+        ("http_stop", "required_vm_error"),
         ("wifi_start_ap", "unsupported_result"),
         ("wifi_stop_ap", "unsupported_result"),
         ("wifi_connect", "unsupported_result"),
@@ -358,6 +379,7 @@ pub(super) fn callback_policy_cases() -> &'static [(&'static str, &'static str)]
         ("file_pick_file", "unsupported_result"),
         ("file_read_text", "unsupported_result"),
         ("file_read_lines", "unsupported_result"),
+        ("file_copy", "unsupported_result"),
         ("binbook_open", "unsupported_result"),
         ("binbook_info", "unsupported_result"),
         ("binbook_read_page", "unsupported_result"),

@@ -17,7 +17,7 @@ use squidvm_core::{
         AppRegistryList, BinBookInfoResult, BinBookOpenResult, BinBookReadPageResult,
         ContentBinBookEntry, ContentBinBookListResult, DeviceConfigResult, DisplayInfo,
         DisplayLineOptions, DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions,
-        FilePickFileResult, FileReadLinesResult, FileReadTextResult,
+        FileCopyResult, FilePickFileResult, FileReadLinesResult, FileReadTextResult,
         StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink, VmDispatch,
         WifiAccessPoint, WifiApIp, WifiOperation, WifiOperationResult, WifiScanNetwork, WifiStatus,
         MAX_STORAGE_TRANSFER_BYTES,
@@ -32,6 +32,7 @@ use squidvm_core::{
 
 const SECTION_STRINGS: u16 = 1;
 const SECTION_BLE_TRIGGERS: u16 = 10;
+const SECTION_HTTP_PROFILES: u16 = 11;
 
 use squid_device_protocol::{
     encode_app_list_response_into, encode_empty_response_into, encode_error_response_into,
@@ -405,6 +406,9 @@ pub struct SqvmTriggerTimer {
 pub const SQVM_BLE_PROFILE_TEXT_CAP: usize = 32;
 pub const SQVM_BLE_PROFILE_ACCEPT_MAX: usize = 4;
 pub const SQVM_BLE_PROFILE_EVENT_MAX: usize = 8;
+pub const SQVM_HTTP_PROFILE_TEXT_CAP: usize = SQVM_BLE_PROFILE_TEXT_CAP;
+pub const SQVM_HTTP_PROFILE_ACCEPT_MAX: usize = SQVM_BLE_PROFILE_ACCEPT_MAX;
+pub const SQVM_HTTP_PROFILE_EVENT_MAX: usize = SQVM_BLE_PROFILE_EVENT_MAX;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -432,6 +436,34 @@ pub struct SqvmBleProfileTrigger {
     pub accept: [[u8; SQVM_BLE_PROFILE_TEXT_CAP]; SQVM_BLE_PROFILE_ACCEPT_MAX],
     pub event_count: usize,
     pub events: [SqvmBleProfileEventRoute; SQVM_BLE_PROFILE_EVENT_MAX],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmHttpProfileEventRoute {
+    pub kind: [u8; SQVM_HTTP_PROFILE_TEXT_CAP],
+    pub event: [u8; SQVM_HTTP_PROFILE_TEXT_CAP],
+}
+
+impl Default for SqvmHttpProfileEventRoute {
+    fn default() -> Self {
+        Self {
+            kind: [0; SQVM_HTTP_PROFILE_TEXT_CAP],
+            event: [0; SQVM_HTTP_PROFILE_TEXT_CAP],
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmHttpProfileTrigger {
+    pub profile: [u8; SQVM_HTTP_PROFILE_TEXT_CAP],
+    pub id: [u8; SQVM_HTTP_PROFILE_TEXT_CAP],
+    pub role: [u8; SQVM_HTTP_PROFILE_TEXT_CAP],
+    pub accept_count: usize,
+    pub accept: [[u8; SQVM_HTTP_PROFILE_TEXT_CAP]; SQVM_HTTP_PROFILE_ACCEPT_MAX],
+    pub event_count: usize,
+    pub events: [SqvmHttpProfileEventRoute; SQVM_HTTP_PROFILE_EVENT_MAX],
 }
 
 pub const SQVM_EVENT_PAYLOAD_FIELD_MAX: usize = 8;
@@ -466,6 +498,20 @@ impl Default for SqvmBleProfileTrigger {
             accept: [[0; SQVM_BLE_PROFILE_TEXT_CAP]; SQVM_BLE_PROFILE_ACCEPT_MAX],
             event_count: 0,
             events: [SqvmBleProfileEventRoute::default(); SQVM_BLE_PROFILE_EVENT_MAX],
+        }
+    }
+}
+
+impl Default for SqvmHttpProfileTrigger {
+    fn default() -> Self {
+        Self {
+            profile: [0; SQVM_HTTP_PROFILE_TEXT_CAP],
+            id: [0; SQVM_HTTP_PROFILE_TEXT_CAP],
+            role: [0; SQVM_HTTP_PROFILE_TEXT_CAP],
+            accept_count: 0,
+            accept: [[0; SQVM_HTTP_PROFILE_TEXT_CAP]; SQVM_HTTP_PROFILE_ACCEPT_MAX],
+            event_count: 0,
+            events: [SqvmHttpProfileEventRoute::default(); SQVM_HTTP_PROFILE_EVENT_MAX],
         }
     }
 }
@@ -1000,6 +1046,17 @@ pub struct SqvmFileReadLinesResult {
     pub ok: bool,
     pub error: *const u8,
     pub error_len: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmFileCopyResult {
+    pub ok: bool,
+    pub error: *const u8,
+    pub error_len: usize,
+    pub reference: *const u8,
+    pub reference_len: usize,
+    pub bytes_written: i32,
 }
 
 #[repr(C)]
@@ -1569,6 +1626,76 @@ pub unsafe extern "C" fn sqvm_trigger_ble_profile_read_from_reader(
     let mut reader = FfiHost::new(user_data, &callbacks, false);
     let scratch = slice::from_raw_parts_mut(scratch, scratch_len);
     ble_profile_read_from_reader(&mut reader, scratch, index, out_profile)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqvm_trigger_http_profile_count(
+    sqbc: *const u8,
+    sqbc_len: usize,
+    out_count: *mut usize,
+) -> SqvmStatus {
+    if sqbc.is_null() || out_count.is_null() {
+        return SqvmStatus::InvalidArgument;
+    }
+    let mut scratch = [0u8; MAX_APP_BYTES];
+    let mut reader = SliceSqbcReader::new(slice::from_raw_parts(sqbc, sqbc_len));
+    http_profile_count_from_reader(&mut reader, &mut scratch, out_count)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqvm_trigger_http_profile_read(
+    sqbc: *const u8,
+    sqbc_len: usize,
+    index: usize,
+    out_profile: *mut SqvmHttpProfileTrigger,
+) -> SqvmStatus {
+    if sqbc.is_null() || out_profile.is_null() {
+        return SqvmStatus::InvalidArgument;
+    }
+    let mut scratch = [0u8; MAX_APP_BYTES];
+    let mut reader = SliceSqbcReader::new(slice::from_raw_parts(sqbc, sqbc_len));
+    http_profile_read_from_reader(&mut reader, &mut scratch, index, out_profile)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqvm_trigger_http_profile_count_from_reader(
+    user_data: *mut c_void,
+    read_exact_at: SqvmReadExactAtCallback,
+    scratch: *mut u8,
+    scratch_len: usize,
+    out_count: *mut usize,
+) -> SqvmStatus {
+    if read_exact_at.is_none() || scratch.is_null() || out_count.is_null() {
+        return SqvmStatus::InvalidArgument;
+    }
+    let callbacks = SqvmCallbacks {
+        read_exact_at,
+        ..SqvmCallbacks::default()
+    };
+    let mut reader = FfiHost::new(user_data, &callbacks, false);
+    let scratch = slice::from_raw_parts_mut(scratch, scratch_len);
+    http_profile_count_from_reader(&mut reader, scratch, out_count)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn sqvm_trigger_http_profile_read_from_reader(
+    user_data: *mut c_void,
+    read_exact_at: SqvmReadExactAtCallback,
+    scratch: *mut u8,
+    scratch_len: usize,
+    index: usize,
+    out_profile: *mut SqvmHttpProfileTrigger,
+) -> SqvmStatus {
+    if read_exact_at.is_none() || scratch.is_null() || out_profile.is_null() {
+        return SqvmStatus::InvalidArgument;
+    }
+    let callbacks = SqvmCallbacks {
+        read_exact_at,
+        ..SqvmCallbacks::default()
+    };
+    let mut reader = FfiHost::new(user_data, &callbacks, false);
+    let scratch = slice::from_raw_parts_mut(scratch, scratch_len);
+    http_profile_read_from_reader(&mut reader, scratch, index, out_profile)
 }
 
 #[no_mangle]
@@ -3351,6 +3478,20 @@ impl TraceSink for FfiHost<'_> {
         callback_status(unsafe { ble_stop(self.user_data) })
     }
 
+    fn service_http_start(&mut self, id: &str) -> Result<(), VmError> {
+        let Some(http_start) = self.callbacks.http_start else {
+            return Err(VmError::InvalidOperand);
+        };
+        callback_status(unsafe { http_start(self.user_data, id.as_ptr(), id.len()) })
+    }
+
+    fn service_http_stop(&mut self) -> Result<(), VmError> {
+        let Some(http_stop) = self.callbacks.http_stop else {
+            return Err(VmError::InvalidOperand);
+        };
+        callback_status(unsafe { http_stop(self.user_data) })
+    }
+
     fn service_wifi_start_ap<'a>(&'a mut self, ssid: &str) -> Result<WifiOperation<'a>, VmError> {
         let Some(wifi_start_ap) = self.callbacks.wifi_start_ap else {
             return Ok(WifiOperation::unsupported());
@@ -3575,6 +3716,31 @@ impl TraceSink for FfiHost<'_> {
             )
         })?;
         unsafe { file_read_lines_result_from_ffi(&out) }
+    }
+
+    fn file_copy<'a>(
+        &'a mut self,
+        source: &str,
+        library: &str,
+        name: &str,
+    ) -> Result<FileCopyResult<'a>, VmError> {
+        let Some(file_copy) = self.callbacks.file_copy else {
+            return Ok(FileCopyResult::unsupported());
+        };
+        let mut out = SqvmFileCopyResult::default();
+        callback_status(unsafe {
+            file_copy(
+                self.user_data,
+                source.as_ptr(),
+                source.len(),
+                library.as_ptr(),
+                library.len(),
+                name.as_ptr(),
+                name.len(),
+                &mut out,
+            )
+        })?;
+        unsafe { file_copy_result_from_ffi(&out) }
     }
 
     fn binbook_open<'a>(&'a mut self, path: &str) -> Result<BinBookOpenResult<'a>, VmError> {
@@ -3970,6 +4136,208 @@ fn ble_profile_read_from_reader(
     SqvmStatus::Ok
 }
 
+fn http_profile_count_from_reader(
+    reader: &mut impl SqbcReader,
+    scratch: &mut [u8],
+    out_count: *mut usize,
+) -> SqvmStatus {
+    let (_, section) = match http_trigger_reader_sections(reader, scratch) {
+        Ok(sections) => sections,
+        Err(_) => return SqvmStatus::VmError,
+    };
+    let Some(section) = section else {
+        unsafe {
+            *out_count = 0;
+        }
+        return SqvmStatus::Ok;
+    };
+    if section.len > scratch.len() {
+        return SqvmStatus::VmError;
+    }
+    if reader
+        .read_exact_at(section.offset, &mut scratch[..section.len])
+        .is_err()
+    {
+        return SqvmStatus::VmError;
+    }
+    let count = match read_u16_slice(scratch, 0) {
+        Some(count) => count as usize,
+        None => return SqvmStatus::VmError,
+    };
+    if count > 16 {
+        return SqvmStatus::VmError;
+    }
+    unsafe {
+        *out_count = count;
+    }
+    SqvmStatus::Ok
+}
+
+fn http_profile_read_from_reader(
+    reader: &mut impl SqbcReader,
+    scratch: &mut [u8],
+    profile_index: usize,
+    out_profile: *mut SqvmHttpProfileTrigger,
+) -> SqvmStatus {
+    let (strings_section, section) = match http_trigger_reader_sections(reader, scratch) {
+        Ok(sections) => sections,
+        Err(_) => return SqvmStatus::VmError,
+    };
+    let Some(section) = section else {
+        return SqvmStatus::InvalidArgument;
+    };
+    if section.len > scratch.len() || strings_section.len > scratch.len() {
+        return SqvmStatus::VmError;
+    }
+    if reader
+        .read_exact_at(section.offset, &mut scratch[..section.len])
+        .is_err()
+    {
+        return SqvmStatus::VmError;
+    }
+    let count = match read_u16_slice(scratch, 0) {
+        Some(count) => count as usize,
+        None => return SqvmStatus::VmError,
+    };
+    if profile_index >= count {
+        return SqvmStatus::InvalidArgument;
+    }
+    let mut cursor = 2usize;
+    let mut selected = None;
+    for index in 0..count {
+        let profile_id = match read_u16_slice(scratch, cursor) {
+            Some(value) => value,
+            None => return SqvmStatus::VmError,
+        };
+        let id_id = match read_u16_slice(scratch, cursor + 2) {
+            Some(value) => value,
+            None => return SqvmStatus::VmError,
+        };
+        let role_id = match read_u16_slice(scratch, cursor + 4) {
+            Some(value) => value,
+            None => return SqvmStatus::VmError,
+        };
+        let accept_count = match read_u16_slice(scratch, cursor + 6) {
+            Some(value) => value as usize,
+            None => return SqvmStatus::VmError,
+        };
+        cursor += 8;
+        if accept_count > SQVM_HTTP_PROFILE_ACCEPT_MAX {
+            return SqvmStatus::VmError;
+        }
+        let accept_start = cursor;
+        cursor = match cursor.checked_add(accept_count * 2) {
+            Some(value) => value,
+            None => return SqvmStatus::VmError,
+        };
+        let event_count = match read_u16_slice(scratch, cursor) {
+            Some(value) => value as usize,
+            None => return SqvmStatus::VmError,
+        };
+        cursor += 2;
+        if event_count > SQVM_HTTP_PROFILE_EVENT_MAX {
+            return SqvmStatus::VmError;
+        }
+        let events_start = cursor;
+        cursor = match cursor.checked_add(event_count * 4) {
+            Some(value) => value,
+            None => return SqvmStatus::VmError,
+        };
+        if cursor > section.len {
+            return SqvmStatus::VmError;
+        }
+        if index == profile_index {
+            selected = Some((
+                profile_id,
+                id_id,
+                role_id,
+                accept_count,
+                accept_start,
+                event_count,
+                events_start,
+            ));
+        }
+    }
+    if cursor != section.len {
+        return SqvmStatus::VmError;
+    }
+
+    let Some((profile_id, id_id, role_id, accept_count, accept_start, event_count, events_start)) =
+        selected
+    else {
+        return SqvmStatus::InvalidArgument;
+    };
+    let mut accept_ids = [0u16; SQVM_HTTP_PROFILE_ACCEPT_MAX];
+    for (index, slot) in accept_ids.iter_mut().enumerate().take(accept_count) {
+        *slot = match read_u16_slice(scratch, accept_start + index * 2) {
+            Some(value) => value,
+            None => return SqvmStatus::VmError,
+        };
+    }
+    let mut event_ids = [(0u16, 0u16); SQVM_HTTP_PROFILE_EVENT_MAX];
+    for (index, slot) in event_ids.iter_mut().enumerate().take(event_count) {
+        let base = events_start + index * 4;
+        let kind_id = match read_u16_slice(scratch, base) {
+            Some(value) => value,
+            None => return SqvmStatus::VmError,
+        };
+        let event_id = match read_u16_slice(scratch, base + 2) {
+            Some(value) => value,
+            None => return SqvmStatus::VmError,
+        };
+        *slot = (kind_id, event_id);
+    }
+    if reader
+        .read_exact_at(strings_section.offset, &mut scratch[..strings_section.len])
+        .is_err()
+    {
+        return SqvmStatus::VmError;
+    }
+    let strings_len = strings_section.len;
+    unsafe {
+        core::ptr::write_bytes(out_profile, 0u8, 1);
+    }
+    let out = unsafe { &mut *out_profile };
+    out.accept_count = accept_count;
+    out.event_count = event_count;
+    if copy_string_id(&scratch[..strings_len], profile_id, &mut out.profile).is_err()
+        || copy_string_id(&scratch[..strings_len], id_id, &mut out.id).is_err()
+        || copy_string_id(&scratch[..strings_len], role_id, &mut out.role).is_err()
+    {
+        return SqvmStatus::VmError;
+    }
+    for index in 0..accept_count {
+        if copy_string_id(
+            &scratch[..strings_len],
+            accept_ids[index],
+            &mut out.accept[index],
+        )
+        .is_err()
+        {
+            return SqvmStatus::VmError;
+        }
+    }
+    for index in 0..event_count {
+        let (kind_id, event_id) = event_ids[index];
+        if copy_string_id(
+            &scratch[..strings_len],
+            kind_id,
+            &mut out.events[index].kind,
+        )
+        .is_err()
+            || copy_string_id(
+                &scratch[..strings_len],
+                event_id,
+                &mut out.events[index].event,
+            )
+            .is_err()
+        {
+            return SqvmStatus::VmError;
+        }
+    }
+    SqvmStatus::Ok
+}
+
 fn ble_trigger_reader_sections(
     reader: &mut impl SqbcReader,
     scratch: &mut [u8],
@@ -3992,6 +4360,33 @@ fn ble_trigger_reader_sections(
         }
     }
     Ok((strings_section.ok_or(VmError::MissingSection)?, ble_section))
+}
+
+fn http_trigger_reader_sections(
+    reader: &mut impl SqbcReader,
+    scratch: &mut [u8],
+) -> Result<(SqbcSection, Option<SqbcSection>), VmError> {
+    let mut fixed_header = [0u8; 14];
+    reader.read_exact_at(0, &mut fixed_header)?;
+    let header = Program::parse_header(&fixed_header)?;
+    if header.header_len > scratch.len() {
+        return Err(VmError::InvalidHeader);
+    }
+    reader.read_exact_at(0, &mut scratch[..header.header_len])?;
+    let mut strings_section = None;
+    let mut http_section = None;
+    for index in 0..header.section_count {
+        let record = Program::parse_section_record(&scratch[..header.header_len], index)?;
+        match record.kind {
+            SECTION_STRINGS => strings_section = Some(record),
+            SECTION_HTTP_PROFILES => http_section = Some(record),
+            _ => {}
+        }
+    }
+    Ok((
+        strings_section.ok_or(VmError::MissingSection)?,
+        http_section,
+    ))
 }
 
 fn read_u16_slice(bytes: &[u8], offset: usize) -> Option<u16> {
@@ -4034,6 +4429,7 @@ fn payload_field_name(name: &str) -> Option<&'static str> {
     match name {
         "profile" => Some("profile"),
         "id" => Some("id"),
+        "name" => Some("name"),
         "objectName" => Some("objectName"),
         "bytesReceived" => Some("bytesReceived"),
         "totalBytes" => Some("totalBytes"),
@@ -4920,6 +5316,17 @@ unsafe fn file_read_lines_result_from_ffi<'a>(
         ok: result.ok,
         error: optional_ffi_str(result.error, result.error_len)?,
         lines: &[],
+    })
+}
+
+unsafe fn file_copy_result_from_ffi<'a>(
+    result: &SqvmFileCopyResult,
+) -> Result<FileCopyResult<'a>, VmError> {
+    Ok(FileCopyResult {
+        ok: result.ok,
+        error: optional_ffi_str(result.error, result.error_len)?,
+        reference: optional_ffi_str(result.reference, result.reference_len)?,
+        bytes_written: result.bytes_written,
     })
 }
 

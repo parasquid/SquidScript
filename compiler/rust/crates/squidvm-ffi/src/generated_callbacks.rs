@@ -142,6 +142,9 @@ pub struct SqvmCallbacks {
     pub ble_start:
         Option<unsafe extern "C" fn(user_data: *mut c_void, id: *const u8, id_len: usize) -> i32>,
     pub ble_stop: Option<unsafe extern "C" fn(user_data: *mut c_void) -> i32>,
+    pub http_start:
+        Option<unsafe extern "C" fn(user_data: *mut c_void, id: *const u8, id_len: usize) -> i32>,
+    pub http_stop: Option<unsafe extern "C" fn(user_data: *mut c_void) -> i32>,
     pub wifi_start_ap: Option<
         unsafe extern "C" fn(
             user_data: *mut c_void,
@@ -238,6 +241,18 @@ pub struct SqvmCallbacks {
             path_len: usize,
             max_lines: i32,
             out: *mut SqvmFileReadLinesResult,
+        ) -> i32,
+    >,
+    pub file_copy: Option<
+        unsafe extern "C" fn(
+            user_data: *mut c_void,
+            source: *const u8,
+            source_len: usize,
+            library: *const u8,
+            library_len: usize,
+            name: *const u8,
+            name_len: usize,
+            out: *mut SqvmFileCopyResult,
         ) -> i32,
     >,
     pub binbook_open: Option<
@@ -340,6 +355,8 @@ impl Default for SqvmCallbacks {
             timer_after: None,
             ble_start: None,
             ble_stop: None,
+            http_start: None,
+            http_stop: None,
             wifi_start_ap: None,
             wifi_stop_ap: None,
             wifi_connect: None,
@@ -358,6 +375,7 @@ impl Default for SqvmCallbacks {
             file_pick_file: None,
             file_read_text: None,
             file_read_lines: None,
+            file_copy: None,
             binbook_open: None,
             binbook_info: None,
             binbook_read_page: None,

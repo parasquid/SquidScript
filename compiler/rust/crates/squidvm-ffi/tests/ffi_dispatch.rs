@@ -9,14 +9,15 @@ use squidvm_ffi::{
     sqvm_device_binding_count_from_reader, sqvm_device_binding_read_from_reader, sqvm_dispatch,
     sqvm_dispatch_resume_storage, sqvm_dispatch_start_resumable,
     sqvm_dispatch_start_resumable_with_payload, sqvm_trigger_ble_profile_count,
-    sqvm_trigger_ble_profile_read, sqvm_trigger_timer_count, sqvm_trigger_timer_read,
-    SqvmAppRegistryEntry, SqvmAppStackEntry, SqvmBinBookInfoResult, SqvmBinBookOpenResult,
-    SqvmBinBookReadPageResult, SqvmBleProfileTrigger, SqvmCallbacks, SqvmContentBinBookEntry,
-    SqvmContentBinBookListResult, SqvmDeviceBinding, SqvmDeviceConfigResult, SqvmDeviceConfigValue,
-    SqvmDeviceConfigValueKind, SqvmDispatchOutcome, SqvmDispatchResult, SqvmDisplayInfo,
-    SqvmEventPayloadField, SqvmFilePickFileResult, SqvmFileReadLinesResult, SqvmFileReadTextResult,
-    SqvmHandle, SqvmHandleKind, SqvmStatus, SqvmStorageCompletion, SqvmStorageRequestKind,
-    SqvmTriggerTimer,
+    sqvm_trigger_ble_profile_read, sqvm_trigger_http_profile_count, sqvm_trigger_http_profile_read,
+    sqvm_trigger_timer_count, sqvm_trigger_timer_read, SqvmAppRegistryEntry, SqvmAppStackEntry,
+    SqvmBinBookInfoResult, SqvmBinBookOpenResult, SqvmBinBookReadPageResult, SqvmBleProfileTrigger,
+    SqvmCallbacks, SqvmContentBinBookEntry, SqvmContentBinBookListResult, SqvmDeviceBinding,
+    SqvmDeviceConfigResult, SqvmDeviceConfigValue, SqvmDeviceConfigValueKind, SqvmDispatchOutcome,
+    SqvmDispatchResult, SqvmDisplayInfo, SqvmEventPayloadField, SqvmFileCopyResult,
+    SqvmFilePickFileResult, SqvmFileReadLinesResult, SqvmFileReadTextResult, SqvmHandle,
+    SqvmHandleKind, SqvmHttpProfileTrigger, SqvmStatus, SqvmStorageCompletion,
+    SqvmStorageRequestKind, SqvmTriggerTimer,
 };
 
 #[path = "support/generated_ffi_dispatch_cases.rs"]
@@ -38,6 +39,8 @@ struct Host {
     timer_after: Vec<(String, i32)>,
     ble_start: Vec<String>,
     ble_stop: usize,
+    http_start: Vec<String>,
+    http_stop: usize,
     wifi_actions: Vec<String>,
     wifi_status_count: usize,
     wifi_scan_count: usize,
@@ -46,6 +49,7 @@ struct Host {
     file_pick_files: Vec<String>,
     file_read_texts: Vec<String>,
     file_read_lines: Vec<(String, i32)>,
+    file_copies: Vec<(String, String, String)>,
     binbook_actions: Vec<String>,
     content_binbook_lists: Vec<(String, i32, i32)>,
     system_memory_count: usize,
@@ -327,6 +331,19 @@ unsafe extern "C" fn ble_start(user_data: *mut c_void, id: *const u8, id_len: us
 unsafe extern "C" fn ble_stop(user_data: *mut c_void) -> i32 {
     let host = &mut *(user_data as *mut Host);
     host.ble_stop += 1;
+    0
+}
+
+unsafe extern "C" fn http_start(user_data: *mut c_void, id: *const u8, id_len: usize) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let id = std::str::from_utf8(std::slice::from_raw_parts(id, id_len)).unwrap();
+    host.http_start.push(id.to_string());
+    0
+}
+
+unsafe extern "C" fn http_stop(user_data: *mut c_void) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.http_stop += 1;
     0
 }
 
@@ -824,6 +841,34 @@ unsafe extern "C" fn file_read_lines(
     0
 }
 
+unsafe extern "C" fn file_copy(
+    user_data: *mut c_void,
+    source: *const u8,
+    source_len: usize,
+    library: *const u8,
+    library_len: usize,
+    name: *const u8,
+    name_len: usize,
+    out: *mut SqvmFileCopyResult,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    let source = std::str::from_utf8(std::slice::from_raw_parts(source, source_len)).unwrap();
+    let library = std::str::from_utf8(std::slice::from_raw_parts(library, library_len)).unwrap();
+    let name = std::str::from_utf8(std::slice::from_raw_parts(name, name_len)).unwrap();
+    host.file_copies
+        .push((source.to_string(), library.to_string(), name.to_string()));
+    if out.is_null() {
+        return -1;
+    }
+    (*out).ok = true;
+    (*out).error = ptr::null();
+    (*out).error_len = 0;
+    (*out).reference = b"content:books/r/upload.binbook".as_ptr();
+    (*out).reference_len = b"content:books/r/upload.binbook".len();
+    (*out).bytes_written = 4096;
+    0
+}
+
 unsafe extern "C" fn system_memory_text(
     user_data: *mut c_void,
     out: *mut u8,
@@ -1005,6 +1050,18 @@ unsafe extern "C" fn failing_ble_stop(_user_data: *mut c_void) -> i32 {
     -22
 }
 
+unsafe extern "C" fn failing_http_start(
+    _user_data: *mut c_void,
+    _id: *const u8,
+    _id_len: usize,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_http_stop(_user_data: *mut c_void) -> i32 {
+    -22
+}
+
 unsafe extern "C" fn failing_wifi_start_ap(
     _user_data: *mut c_void,
     _ssid: *const u8,
@@ -1119,6 +1176,19 @@ unsafe extern "C" fn failing_file_read_lines(
     _path_len: usize,
     _max_lines: i32,
     _out: *mut SqvmFileReadLinesResult,
+) -> i32 {
+    -22
+}
+
+unsafe extern "C" fn failing_file_copy(
+    _user_data: *mut c_void,
+    _source: *const u8,
+    _source_len: usize,
+    _library: *const u8,
+    _library_len: usize,
+    _name: *const u8,
+    _name_len: usize,
+    _out: *mut SqvmFileCopyResult,
 ) -> i32 {
     -22
 }
@@ -1454,6 +1524,8 @@ fn callbacks(_host: &mut Host) -> SqvmCallbacks {
         timer_after: Some(timer_after),
         ble_start: Some(ble_start),
         ble_stop: Some(ble_stop),
+        http_start: Some(http_start),
+        http_stop: Some(http_stop),
         wifi_start_ap: Some(wifi_start_ap),
         wifi_stop_ap: Some(wifi_stop_ap),
         wifi_connect: Some(wifi_connect),
@@ -1472,6 +1544,7 @@ fn callbacks(_host: &mut Host) -> SqvmCallbacks {
         file_pick_file: Some(file_pick_file),
         file_read_text: Some(file_read_text),
         file_read_lines: Some(file_read_lines),
+        file_copy: Some(file_copy),
         binbook_open: Some(binbook_open),
         binbook_info: Some(binbook_info),
         binbook_read_page: Some(binbook_read_page),
@@ -1618,6 +1691,9 @@ app.triggers {
 event.on("timer.break") {
   debug.print("break")
 }
+event.on("timer.stretch") {
+  debug.print("stretch")
+}
 screen("main") {}
 "#,
     )
@@ -1656,6 +1732,46 @@ event.on("app.start") {
     events: { complete: "ble.file.complete", error: "ble.file.error" }
   })
   service.ble.stop()
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_http_file_upload_trigger_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-http"
+event.on("app.start") {
+  service.http.start("file-upload", {
+    id: "binbook-upload",
+    accept: [".binbook"],
+    events: {
+      complete: "http.file.complete",
+      error: "http.file.error"
+    }
+  })
+}
+event.on("http.file.complete", ev) {
+  debug.print(ev.id, ev.name)
+}
+event.on("http.file.error", ev) {
+  debug.print(ev.id)
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_http_stop_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-http-stop"
+event.on("app.start") {
+  service.http.start("file-upload", {
+    id: "binbook-upload",
+    accept: [".binbook"],
+    events: { complete: "http.file.complete", error: "http.file.error" }
+  })
+  service.http.stop()
 }
 screen("main") {}
 "#,
@@ -1856,6 +1972,36 @@ event.on("app.start") {
   let lines = file.readLines("notes.txt", 4)
   debug.print(text.ok, text.error, text.text)
   debug.print(lines.ok, lines.error, lines.lines)
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_file_copy_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-content-copy"
+event.on("app.start") {
+  let copied = file.copy("/SD:/sq/tmp/binbook-upload.upload", {
+    library: "books",
+    name: "upload.binbook"
+  })
+  debug.print(copied.ok, copied.error, copied.ref, copied.bytesWritten)
+}
+screen("main") {}
+"#,
+    )
+}
+
+fn compile_file_copy_from_payload_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-content-copy-payload"
+event.on("http.file.complete", ev) {
+  let copied = file.copy(ev.upload, {
+    library: "books",
+    name: ev.name
+  })
+  debug.print(copied.ok, copied.error, copied.ref, copied.bytesWritten)
 }
 screen("main") {}
 "#,
@@ -2693,6 +2839,109 @@ fn dispatches_file_read_callbacks() {
 }
 
 #[test]
+fn dispatches_file_copy_callback() {
+    let mut host = Host {
+        sqbc: compile_file_copy_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(
+        host.file_copies,
+        vec![(
+            "/SD:/sq/tmp/binbook-upload.upload".to_string(),
+            "books".to_string(),
+            "upload.binbook".to_string()
+        )]
+    );
+    assert_eq!(
+        host.output,
+        vec!["true null content:books/r/upload.binbook 4096".to_string()]
+    );
+}
+
+#[test]
+fn dispatches_file_copy_with_payload_name_callback() {
+    let mut host = Host {
+        sqbc: compile_file_copy_from_payload_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let upload_name = b"upload";
+    let upload_value = b"/SD:/sq/tmp/binbook-upload.upload";
+    let name_name = b"name";
+    let name_value = b"payload.binbook";
+    let payload = [
+        SqvmEventPayloadField {
+            name: upload_name.as_ptr(),
+            name_len: upload_name.len(),
+            value: upload_value.as_ptr(),
+            value_len: upload_value.len(),
+        },
+        SqvmEventPayloadField {
+            name: name_name.as_ptr(),
+            name_len: name_name.len(),
+            value: name_value.as_ptr(),
+            value_len: name_value.len(),
+        },
+    ];
+    let result = dispatch_resumable_with_payload_to_completion(
+        &mut context,
+        &mut host,
+        b"http.file.complete",
+        &payload,
+    );
+    assert_eq!(result.outcome, SqvmDispatchOutcome::Complete);
+    assert_eq!(
+        host.file_copies,
+        vec![(
+            "/SD:/sq/tmp/binbook-upload.upload".to_string(),
+            "books".to_string(),
+            "payload.binbook".to_string()
+        )]
+    );
+    assert_eq!(
+        host.output,
+        vec!["true null content:books/r/upload.binbook 4096".to_string()]
+    );
+}
+
+#[test]
 fn dispatches_system_resource_text_callbacks() {
     let mut host = Host {
         sqbc: compile_system_resources_sqbc(),
@@ -3081,7 +3330,10 @@ fn callback_errors_surface_as_vm_error_status() {
 #[test]
 fn generated_callback_policy_cases_cover_manifest_inventory() {
     let cases = generated_ffi_dispatch_cases::callback_policy_cases();
-    assert_eq!(cases.len(), 57);
+    assert_eq!(cases.len(), 60);
+    assert!(cases.contains(&("http_start", "required_vm_error")));
+    assert!(cases.contains(&("http_stop", "required_vm_error")));
+    assert!(cases.contains(&("file_copy", "unsupported_result")));
     assert!(cases.contains(&("display_info", "unsupported_result")));
     assert!(cases.contains(&("binbook_open", "unsupported_result")));
     assert!(cases.contains(&("binbook_info", "unsupported_result")));
@@ -3474,6 +3726,31 @@ fn reads_ble_file_transfer_trigger_metadata() {
 }
 
 #[test]
+fn reads_http_profile_triggers() {
+    let sqbc = compile_http_file_upload_trigger_sqbc();
+    let mut count = 0usize;
+    let status = unsafe { sqvm_trigger_http_profile_count(sqbc.as_ptr(), sqbc.len(), &mut count) };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(count, 1);
+
+    let mut profile = SqvmHttpProfileTrigger::default();
+    let status = unsafe {
+        sqvm_trigger_http_profile_read(sqbc.as_ptr(), sqbc.len(), 0, &mut profile as *mut _)
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(fixed_text(&profile.profile), "file-upload");
+    assert_eq!(fixed_text(&profile.id), "binbook-upload");
+    assert_eq!(fixed_text(&profile.role), "server");
+    assert_eq!(profile.accept_count, 1);
+    assert_eq!(fixed_text(&profile.accept[0]), ".binbook");
+    assert_eq!(profile.event_count, 2);
+    assert_eq!(fixed_text(&profile.events[0].kind), "complete");
+    assert_eq!(fixed_text(&profile.events[0].event), "http.file.complete");
+    assert_eq!(fixed_text(&profile.events[1].kind), "error");
+    assert_eq!(fixed_text(&profile.events[1].event), "http.file.error");
+}
+
+#[test]
 fn dispatch_handles_ble_start_and_stop_builtins() {
     let mut host = Host {
         sqbc: compile_ble_stop_sqbc(),
@@ -3506,6 +3783,41 @@ fn dispatch_handles_ble_start_and_stop_builtins() {
     assert_eq!(status, SqvmStatus::Ok);
     assert_eq!(host.ble_start, vec!["sqbc-install".to_string()]);
     assert_eq!(host.ble_stop, 1);
+}
+
+#[test]
+fn dispatches_http_service_callbacks() {
+    let mut host = Host {
+        sqbc: compile_http_stop_sqbc(),
+        ..Host::default()
+    };
+    let mut context = sqvm_context_init();
+    let mut scratch = vec![0u8; 4096];
+    assert_eq!(
+        unsafe {
+            sqvm_context_init_in_place(
+                &mut context,
+                callback_user_data(&mut host),
+                &callbacks(&mut host),
+                scratch.as_mut_ptr(),
+                scratch.len(),
+            )
+        },
+        SqvmStatus::Ok
+    );
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(host.http_start, vec!["binbook-upload".to_string()]);
+    assert_eq!(host.http_stop, 1);
 }
 
 #[test]

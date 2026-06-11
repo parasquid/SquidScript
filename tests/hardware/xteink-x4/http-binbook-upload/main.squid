@@ -1,0 +1,58 @@
+app "http-binbook-upload-smoke"
+
+state {
+  uploaded: int = 0
+}
+
+event.on("app.start") {
+  let ap = service.wifi.startAP("SquidScript-X4")
+  service.http.start("file-upload", {
+    id: "binbook-upload"
+    accept: [".binbook"]
+    events: {
+      complete: "http.upload.complete"
+    }
+  })
+  debug.print("http upload ready", ap.ok, ap.error)
+  screen.open("reader")
+}
+
+event.on("http.upload.complete", ev) {
+  debug.print("http upload complete", ev.name, ev.bytesReceived)
+  let copied = file.copy(ev.upload, {
+    library: "books"
+    name: ev.name
+  })
+  debug.print("upload copy", copied.ok, copied.error, copied.bytesWritten)
+  if (copied.ok) {
+    state.uploaded = state.uploaded + 1
+    let opened = binbook.open(copied.ref)
+    debug.print("uploaded book open", ev.name, opened.ok, opened.error)
+    if (opened.ok) {
+      let info = binbook.info(opened.book)
+      let page = binbook.readPage(opened.book, 0)
+      debug.print("uploaded book page", ev.name, info.pageCount, page.ok, page.error)
+    }
+    screen.open("reader")
+  }
+}
+
+screen("reader") {
+  service.display.clear("white")
+  let listing = content.binbook.list("books", { offset: 0, limit: 1 })
+  debug.print("content", listing.ok, listing.count, listing.warning, state.uploaded)
+  if (listing.ok) {
+    for item in listing.items max 1 {
+      let opened = binbook.open(item.ref)
+      debug.print("book open", item.name, opened.ok, opened.error)
+      if (opened.ok) {
+        let info = binbook.info(opened.book)
+        let page = binbook.readPage(opened.book, 0)
+        debug.print("book page", item.name, info.pageCount, page.ok, page.error)
+        if (page.ok) {
+          service.display.draw(page.drawable)
+        }
+      }
+    }
+  }
+}

@@ -99,9 +99,12 @@ pub(crate) const BUILTIN_CONTENT_BINBOOK_LIST: u8 = 0x83;
 pub(crate) const BUILTIN_FILE_PICK_FILE: u8 = 0x90;
 pub(crate) const BUILTIN_FILE_READ_TEXT: u8 = 0x91;
 pub(crate) const BUILTIN_FILE_READ_LINES: u8 = 0x92;
+pub(crate) const BUILTIN_FILE_COPY: u8 = 0x93;
 pub(crate) const BUILTIN_SERVICE_POWER_SLEEP: u8 = 0xc0;
 pub(crate) const BUILTIN_SERVICE_BLE_START: u8 = 0xc1;
 pub(crate) const BUILTIN_SERVICE_BLE_STOP: u8 = 0xc2;
+pub(crate) const BUILTIN_SERVICE_HTTP_START: u8 = 0xc3;
+pub(crate) const BUILTIN_SERVICE_HTTP_STOP: u8 = 0xc4;
 
 pub(crate) const VALUE_NULL: u8 = 0;
 pub(crate) const VALUE_BOOL: u8 = 1;

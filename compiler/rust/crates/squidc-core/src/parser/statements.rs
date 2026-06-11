@@ -172,7 +172,7 @@ impl Parser<'_> {
         if first == "service"
             && matches!(
                 method.as_str(),
-                "timer" | "display" | "indicator" | "wifi" | "power" | "ble"
+                "timer" | "display" | "indicator" | "wifi" | "power" | "ble" | "http"
             )
         {
             if self.at_kind(TokenKind::Dot) {
@@ -238,6 +238,57 @@ impl Parser<'_> {
                     "stop" => {
                         self.consume_call_tail(builder);
                         Some(IrStatement::ServiceBleStop)
+                    }
+                    _ => {
+                        self.consume_call_tail(builder);
+                        None
+                    }
+                };
+            }
+            if method == "http" {
+                return match action.as_str() {
+                    "start" => {
+                        let profile = self.consume_string(builder).unwrap_or_default();
+                        self.consume_comma(builder);
+                        let options = self.parse_static_options_object(builder);
+                        self.consume_call_tail(builder);
+                        let id = options
+                            .get("id")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or_default()
+                            .to_string();
+                        let accept = options
+                            .get("accept")
+                            .and_then(|value| value.as_array())
+                            .map(|values| {
+                                values
+                                    .iter()
+                                    .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_default();
+                        let events = options
+                            .get("events")
+                            .and_then(|value| value.as_object())
+                            .map(|events| {
+                                events
+                                    .iter()
+                                    .filter_map(|(key, value)| {
+                                        value.as_str().map(|value| (key.clone(), value.to_string()))
+                                    })
+                                    .collect::<BTreeMap<_, _>>()
+                            })
+                            .unwrap_or_default();
+                        Some(IrStatement::ServiceHttpStart {
+                            profile,
+                            id,
+                            accept,
+                            events,
+                        })
+                    }
+                    "stop" => {
+                        self.consume_call_tail(builder);
+                        Some(IrStatement::ServiceHttpStop)
                     }
                     _ => {
                         self.consume_call_tail(builder);
