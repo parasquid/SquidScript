@@ -1,5 +1,7 @@
 #include "xteink_x4_button_probe.h"
 
+#include "vm_runtime_internal.h"
+
 #include <errno.h>
 #include <stdbool.h>
 #include <string.h>
@@ -15,6 +17,12 @@
 #define SQ_X4_ADC_NODE DT_PATH(zephyr_user)
 #define SQ_X4_ADC_CHANNEL_COUNT DT_PROP_LEN_OR(SQ_X4_ADC_NODE, io_channels, 0)
 #define SQ_X4_POWER_NODE DT_NODELABEL(x4_power_button)
+#define SQ_X4_ADC_RIGHT_MAX 750U
+#define SQ_X4_ADC_LEFT_MAX 1600U
+#define SQ_X4_ADC_SELECT_MAX 2200U
+#define SQ_X4_ADC_BACK_MAX 2500U
+#define SQ_X4_ADC_DOWN_MAX 750U
+#define SQ_X4_ADC_UP_MAX 2200U
 
 enum sq_x4_adc_index {
 	SQ_X4_ADC_GPIO1 = 0,
@@ -39,30 +47,50 @@ static uint32_t sq_x4_probe_errno(int result)
 	return result < 0 ? (uint32_t)-result : 0u;
 }
 
+static const char *sq_x4_button_event(uint32_t logical)
+{
+	switch (logical) {
+	case SQ_X4_BUTTON_PROBE_LOGICAL_BACK:
+		return "key.BACK";
+	case SQ_X4_BUTTON_PROBE_LOGICAL_SELECT:
+		return "key.SELECT";
+	case SQ_X4_BUTTON_PROBE_LOGICAL_LEFT:
+		return "key.LEFT";
+	case SQ_X4_BUTTON_PROBE_LOGICAL_RIGHT:
+		return "key.RIGHT";
+	case SQ_X4_BUTTON_PROBE_LOGICAL_UP:
+		return "key.UP";
+	case SQ_X4_BUTTON_PROBE_LOGICAL_DOWN:
+		return "key.DOWN";
+	default:
+		return NULL;
+	}
+}
+
 static uint32_t sq_x4_decode_gpio1(uint32_t raw)
 {
-	if (raw > 3100u && raw <= 3900u) {
-		return SQ_X4_BUTTON_PROBE_LOGICAL_BACK;
+	if (raw <= SQ_X4_ADC_RIGHT_MAX) {
+		return SQ_X4_BUTTON_PROBE_LOGICAL_RIGHT;
 	}
-	if (raw > 2090u && raw <= 3100u) {
-		return SQ_X4_BUTTON_PROBE_LOGICAL_SELECT;
-	}
-	if (raw > 750u && raw <= 2090u) {
+	if (raw <= SQ_X4_ADC_LEFT_MAX) {
 		return SQ_X4_BUTTON_PROBE_LOGICAL_LEFT;
 	}
-	if (raw <= 750u) {
-		return SQ_X4_BUTTON_PROBE_LOGICAL_RIGHT;
+	if (raw <= SQ_X4_ADC_SELECT_MAX) {
+		return SQ_X4_BUTTON_PROBE_LOGICAL_SELECT;
+	}
+	if (raw <= SQ_X4_ADC_BACK_MAX) {
+		return SQ_X4_BUTTON_PROBE_LOGICAL_BACK;
 	}
 	return SQ_X4_BUTTON_PROBE_LOGICAL_NONE;
 }
 
 static uint32_t sq_x4_decode_gpio2(uint32_t raw)
 {
-	if (raw > 1120u && raw <= 3900u) {
-		return SQ_X4_BUTTON_PROBE_LOGICAL_UP;
-	}
-	if (raw <= 1120u) {
+	if (raw <= SQ_X4_ADC_DOWN_MAX) {
 		return SQ_X4_BUTTON_PROBE_LOGICAL_DOWN;
+	}
+	if (raw <= SQ_X4_ADC_UP_MAX) {
+		return SQ_X4_BUTTON_PROBE_LOGICAL_UP;
 	}
 	return SQ_X4_BUTTON_PROBE_LOGICAL_NONE;
 }
@@ -168,6 +196,70 @@ int sq_x4_button_probe_read(struct sq_x4_button_probe *out)
 	out->power_error = sq_x4_probe_errno(power_result);
 	if (gpio1_result != 0 && gpio2_result != 0 && power_result != 0) {
 		return -ENODEV;
+	}
+	return 0;
+}
+
+static int sq_x4_poll_ladder(struct sq_vm_runtime *runtime, size_t index, uint32_t observed,
+			     int64_t now)
+{
+	struct sq_vm_runtime_target_adc_button *button;
+	const char *event;
+
+	if (runtime == NULL || index >= ARRAY_SIZE(runtime->target_adc_buttons)) {
+		return -EINVAL;
+	}
+	button = &runtime->target_adc_buttons[index];
+	if (observed == button->logical) {
+		button->candidate = observed;
+		return 0;
+	}
+	if (observed != button->candidate) {
+		button->candidate = observed;
+		button->debounce_until_ms = now + SQ_VM_RUNTIME_INPUT_DEBOUNCE_MS;
+		return 0;
+	}
+	if (now < button->debounce_until_ms) {
+		return 0;
+	}
+	button->logical = observed;
+	event = sq_x4_button_event(observed);
+	if (event == NULL) {
+		return 0;
+	}
+	return sq_vm_runtime_start(runtime, &runtime->job_backend, event);
+}
+
+int sq_x4_button_probe_poll_runtime(struct sq_vm_runtime *runtime)
+{
+	struct sq_x4_button_probe probe;
+	int64_t now;
+	int result;
+
+	if (runtime == NULL || runtime->status == SQ_VM_RUNTIME_RUNNING ||
+	    runtime->job_backend.read_sqbc == NULL) {
+		return 0;
+	}
+	now = k_uptime_get();
+	if (now < runtime->target_adc_button_next_poll_ms) {
+		return 0;
+	}
+	runtime->target_adc_button_next_poll_ms = now + SQ_VM_RUNTIME_INPUT_POLL_MS;
+	result = sq_x4_button_probe_read(&probe);
+	if (result != 0) {
+		return 0;
+	}
+	if (probe.adc_gpio1_error == 0) {
+		result = sq_x4_poll_ladder(runtime, SQ_X4_ADC_GPIO1, probe.adc_gpio1_logical, now);
+		if (result != 0 || runtime->status == SQ_VM_RUNTIME_RUNNING) {
+			return result;
+		}
+	}
+	if (probe.adc_gpio2_error == 0) {
+		result = sq_x4_poll_ladder(runtime, SQ_X4_ADC_GPIO2, probe.adc_gpio2_logical, now);
+		if (result != 0) {
+			return result;
+		}
 	}
 	return 0;
 }

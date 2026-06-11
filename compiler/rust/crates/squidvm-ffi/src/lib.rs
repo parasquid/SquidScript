@@ -14,13 +14,13 @@ use squidvm_core::{
     error::VmError,
     host::{
         AppArmedStack, AppArmedStackEntry, AppInstallResult, AppProcessStack, AppRegistryEntry,
-        AppRegistryList, BinBookInfoResult, BinBookOpenResult, BinBookReadPageResult,
-        ContentBinBookEntry, ContentBinBookListResult, DeviceConfigResult, DisplayInfo,
-        DisplayLineOptions, DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions,
-        FileCopyResult, FilePickFileResult, FileReadLinesResult, FileReadTextResult,
-        StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink, VmDispatch,
-        WifiAccessPoint, WifiApIp, WifiOperation, WifiOperationResult, WifiScanNetwork, WifiStatus,
-        MAX_STORAGE_TRANSFER_BYTES,
+        AppRegistryList, BinBookChapterEntry, BinBookChapterListResult, BinBookInfoResult,
+        BinBookOpenResult, BinBookReadPageResult, ContentBinBookEntry, ContentBinBookListResult,
+        DeviceConfigResult, DisplayInfo, DisplayLineOptions, DisplayRectOptions,
+        DisplayResourceOptions, DisplayTextOptions, FileCopyResult, FilePickFileResult,
+        FileReadLinesResult, FileReadTextResult, StorageCompletion as CoreStorageCompletion,
+        StorageRequest, TraceSink, VmDispatch, WifiAccessPoint, WifiApIp, WifiOperation,
+        WifiOperationResult, WifiScanNetwork, WifiStatus, MAX_STORAGE_TRANSFER_BYTES,
     },
     limits::{MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES, MAX_SAVED_STATE_BYTES},
     program::{Program, ProgramIndex, SqbcSection},
@@ -1086,6 +1086,40 @@ pub struct SqvmBinBookReadPageResult {
     pub error: *const u8,
     pub error_len: usize,
     pub drawable: SqvmHandle,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmBinBookChapterEntry {
+    pub index: i32,
+    pub title: *const u8,
+    pub title_len: usize,
+    pub page_index: i32,
+    pub level: i32,
+    pub entry_type: i32,
+}
+
+impl Default for SqvmBinBookChapterEntry {
+    fn default() -> Self {
+        Self {
+            index: 0,
+            title: ptr::null(),
+            title_len: 0,
+            page_index: 0,
+            level: 0,
+            entry_type: 0,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmBinBookChapterListResult {
+    pub ok: bool,
+    pub error: *const u8,
+    pub error_len: usize,
+    pub count: i32,
+    pub has_more: bool,
 }
 
 #[repr(C)]
@@ -2990,6 +3024,7 @@ pub unsafe extern "C" fn sqdp_clear_resource_session(session: *mut SqdpResourceS
 // Mirrors the current Zephyr runtime return-stack and armed-timer capacities.
 const SQVM_FFI_APP_STACK_CAP: usize = 2;
 const SQVM_FFI_APP_INSTALL_ID_CAP: usize = 40;
+const SQVM_FFI_BINBOOK_CHAPTER_CAP: usize = 8;
 const SQVM_FFI_CONTENT_BINBOOK_CAP: usize = 8;
 
 struct FfiHost<'a> {
@@ -3005,6 +3040,9 @@ struct FfiHost<'a> {
     app_stack_count: usize,
     app_install_id: [u8; SQVM_FFI_APP_INSTALL_ID_CAP],
     app_install_id_len: usize,
+    binbook_chapter_entries: [SqvmBinBookChapterEntry; SQVM_FFI_BINBOOK_CHAPTER_CAP],
+    binbook_chapter_core_entries: [BinBookChapterEntry<'static>; SQVM_FFI_BINBOOK_CHAPTER_CAP],
+    binbook_chapter_count: usize,
     content_binbook_entries: [SqvmContentBinBookEntry; SQVM_FFI_CONTENT_BINBOOK_CAP],
     content_binbook_core_entries: [ContentBinBookEntry<'static>; SQVM_FFI_CONTENT_BINBOOK_CAP],
     content_binbook_count: usize,
@@ -3033,6 +3071,16 @@ impl<'a> FfiHost<'a> {
             app_stack_count: 0,
             app_install_id: [0; SQVM_FFI_APP_INSTALL_ID_CAP],
             app_install_id_len: 0,
+            binbook_chapter_entries: [SqvmBinBookChapterEntry::default();
+                SQVM_FFI_BINBOOK_CHAPTER_CAP],
+            binbook_chapter_core_entries: [BinBookChapterEntry {
+                index: 0,
+                title: "",
+                page_index: 0,
+                level: 0,
+                entry_type: 0,
+            }; SQVM_FFI_BINBOOK_CHAPTER_CAP],
+            binbook_chapter_count: 0,
             content_binbook_entries: [SqvmContentBinBookEntry::default();
                 SQVM_FFI_CONTENT_BINBOOK_CAP],
             content_binbook_core_entries: [ContentBinBookEntry {
@@ -3785,6 +3833,44 @@ impl TraceSink for FfiHost<'_> {
             binbook_read_page(self.user_data, handle_to_ffi(book), page_index, &mut out)
         })?;
         unsafe { binbook_read_page_result_from_ffi(&out) }
+    }
+
+    fn binbook_chapters<'a>(
+        &'a mut self,
+        book: Handle,
+        offset: i32,
+        limit: i32,
+    ) -> Result<BinBookChapterListResult<'a>, VmError> {
+        let Some(binbook_chapters) = self.callbacks.binbook_chapters else {
+            return Ok(BinBookChapterListResult::unsupported());
+        };
+        let mut out = SqvmBinBookChapterListResult::default();
+        let mut count = 0usize;
+        self.binbook_chapter_entries =
+            [SqvmBinBookChapterEntry::default(); SQVM_FFI_BINBOOK_CHAPTER_CAP];
+        callback_status(unsafe {
+            binbook_chapters(
+                self.user_data,
+                handle_to_ffi(book),
+                offset,
+                limit,
+                self.binbook_chapter_entries.as_mut_ptr(),
+                self.binbook_chapter_entries.len(),
+                &mut count,
+                &mut out,
+            )
+        })?;
+        self.binbook_chapter_count = count.min(self.binbook_chapter_entries.len());
+        for index in 0..self.binbook_chapter_count {
+            self.binbook_chapter_core_entries[index] =
+                unsafe { binbook_chapter_entry_from_ffi(&self.binbook_chapter_entries[index])? };
+        }
+        unsafe {
+            binbook_chapter_list_result_from_ffi(
+                &out,
+                &self.binbook_chapter_core_entries[..self.binbook_chapter_count],
+            )
+        }
     }
 
     fn content_binbook_list<'a>(
@@ -5177,6 +5263,31 @@ unsafe fn content_binbook_entry_from_ffi<'a>(
         name: required_ffi_str(entry.name, entry.name_len)?,
         reference: required_ffi_str(entry.reference, entry.reference_len)?,
         size: entry.size,
+    })
+}
+
+unsafe fn binbook_chapter_entry_from_ffi<'a>(
+    entry: &SqvmBinBookChapterEntry,
+) -> Result<BinBookChapterEntry<'a>, VmError> {
+    Ok(BinBookChapterEntry {
+        index: entry.index,
+        title: optional_ffi_str(entry.title, entry.title_len)?.unwrap_or(""),
+        page_index: entry.page_index,
+        level: entry.level,
+        entry_type: entry.entry_type,
+    })
+}
+
+unsafe fn binbook_chapter_list_result_from_ffi<'a>(
+    result: &SqvmBinBookChapterListResult,
+    items: &'a [BinBookChapterEntry<'a>],
+) -> Result<BinBookChapterListResult<'a>, VmError> {
+    Ok(BinBookChapterListResult {
+        ok: result.ok,
+        error: optional_ffi_str(result.error, result.error_len)?,
+        items,
+        count: result.count,
+        has_more: result.has_more,
     })
 }
 

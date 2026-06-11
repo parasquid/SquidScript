@@ -552,9 +552,16 @@ static int write_test_file(const char *path, const uint8_t *bytes, size_t len)
 #define TEST_BINBOOK_HEADER_SIZE 256U
 #define TEST_BINBOOK_SECTION_ENTRY_SIZE 40U
 #define TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE 76U
-#define TEST_BINBOOK_SECTION_COUNT 2U
-#define TEST_BINBOOK_PAGE_INDEX_OFFSET \
+#define TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE 48U
+#define TEST_BINBOOK_SECTION_COUNT 4U
+#define TEST_BINBOOK_STRING_TABLE_OFFSET \
 	(TEST_BINBOOK_HEADER_SIZE + TEST_BINBOOK_SECTION_COUNT * TEST_BINBOOK_SECTION_ENTRY_SIZE)
+#define TEST_BINBOOK_STRING_TABLE_LEN 22U
+#define TEST_BINBOOK_NAV_INDEX_OFFSET (TEST_BINBOOK_STRING_TABLE_OFFSET + TEST_BINBOOK_STRING_TABLE_LEN)
+#define TEST_BINBOOK_NAV_INDEX_COUNT 2U
+#define TEST_BINBOOK_NAV_INDEX_LEN (TEST_BINBOOK_NAV_INDEX_COUNT * TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE)
+#define TEST_BINBOOK_PAGE_INDEX_OFFSET \
+	(TEST_BINBOOK_NAV_INDEX_OFFSET + TEST_BINBOOK_NAV_INDEX_LEN)
 #define TEST_BINBOOK_PAGE_DATA_OFFSET \
 	(TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE)
 #define TEST_BINBOOK_PAGE_DATA_LEN 4U
@@ -605,18 +612,53 @@ static void build_test_binbook(uint8_t out[TEST_BINBOOK_LEN])
 	test_write_le16(&out[36], TEST_BINBOOK_SECTION_ENTRY_SIZE);
 	test_write_le16(&out[38], TEST_BINBOOK_SECTION_COUNT);
 	test_write_le16(&out[40], TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE);
-	test_write_le16(&out[42], 48);
+	test_write_le16(&out[42], TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE);
 	test_write_le64(&out[44], TEST_BINBOOK_PAGE_DATA_OFFSET);
 	test_write_le64(&out[52], TEST_BINBOOK_PAGE_DATA_LEN);
 
-	test_write_binbook_section(&out[TEST_BINBOOK_HEADER_SIZE], 40,
+	test_write_binbook_section(&out[TEST_BINBOOK_HEADER_SIZE], 1,
+				   TEST_BINBOOK_STRING_TABLE_OFFSET, TEST_BINBOOK_STRING_TABLE_LEN,
+				   0, 0);
+	test_write_binbook_section(&out[TEST_BINBOOK_HEADER_SIZE + TEST_BINBOOK_SECTION_ENTRY_SIZE],
+				   41, TEST_BINBOOK_NAV_INDEX_OFFSET, TEST_BINBOOK_NAV_INDEX_LEN,
+				   TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE, TEST_BINBOOK_NAV_INDEX_COUNT);
+	test_write_binbook_section(&out[TEST_BINBOOK_HEADER_SIZE + 2 * TEST_BINBOOK_SECTION_ENTRY_SIZE],
+				   40,
 				   TEST_BINBOOK_PAGE_INDEX_OFFSET,
 				   TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE,
 				   TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE, 1);
-	test_write_binbook_section(&out[TEST_BINBOOK_HEADER_SIZE + TEST_BINBOOK_SECTION_ENTRY_SIZE],
+	test_write_binbook_section(&out[TEST_BINBOOK_HEADER_SIZE + 3 * TEST_BINBOOK_SECTION_ENTRY_SIZE],
 				   50, TEST_BINBOOK_PAGE_DATA_OFFSET,
 				   TEST_BINBOOK_PAGE_DATA_LEN, 0, 0);
 
+	memcpy(&out[TEST_BINBOOK_STRING_TABLE_OFFSET], "Chapter OneChapter Two",
+	       TEST_BINBOOK_STRING_TABLE_LEN);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET], 0);
+	test_write_le16(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + 4], 3);
+	test_write_le16(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + 6], 0);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + 8], 0);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + 12], 11);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + 28], 0);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + 32], UINT32_MAX);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + 36], UINT32_MAX);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + 40], UINT32_MAX);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE], 1);
+	test_write_le16(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE + 4],
+			3);
+	test_write_le16(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE + 6],
+			0);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE + 8],
+			11);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE + 12],
+			11);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE + 28],
+			1);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE + 32],
+			UINT32_MAX);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE + 36],
+			UINT32_MAX);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE + 40],
+			UINT32_MAX);
 	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET], 0);
 	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 4], 1);
 	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 6], 2);
@@ -5562,6 +5604,63 @@ ZTEST(squidscript_protocol, test_vm_runtime_dispatches_binbook_resource_drawable
 	zassert_str_equal(runtime.outputs[0], "pages 1");
 	zassert_equal(runtime.drawlog_count, 1);
 	zassert_str_equal(runtime.drawlog[0], "draw=binbook id=1 x=0 y=0");
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
+ZTEST(squidscript_protocol, test_vm_runtime_lists_binbook_chapters)
+{
+	uint8_t book[TEST_BINBOOK_LEN];
+	static struct sq_vm_runtime runtime;
+	SqvmBinBookOpenResult open_result;
+	SqvmBinBookChapterEntry entries[2];
+	SqvmBinBookChapterListResult chapters;
+	size_t entry_count = 0;
+
+	build_test_binbook(book);
+	zassert_equal(mount_test_fs(), 0);
+	zassert_equal(format_test_app_store(), 0);
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "binbook-reader",
+					       binbook_reader_sqbc, sizeof(binbook_reader_sqbc)),
+		      0);
+	zassert_equal(sq_app_store_install_resource(test_fs_mount.mnt_point, "binbook-reader",
+						    "books/sample.binbook", book, sizeof(book)),
+		      0);
+
+	memset(&runtime, 0, sizeof(runtime));
+	sq_vm_runtime_set_store_mount_point(&runtime, test_fs_mount.mnt_point);
+	strncpy(runtime.current_app, "binbook-reader", sizeof(runtime.current_app) - 1);
+
+	zassert_equal(runtime_binbook_open(&runtime, (const uint8_t *)"books/sample.binbook",
+					   strlen("books/sample.binbook"), &open_result),
+		      0);
+	zassert_true(open_result.ok);
+	zassert_equal(runtime_binbook_chapters(&runtime, open_result.book, 0, 2, entries,
+					       ARRAY_SIZE(entries), &entry_count, &chapters),
+		      0);
+	zassert_true(chapters.ok);
+	zassert_equal(entry_count, 2);
+	zassert_equal(chapters.count, 2);
+	zassert_false(chapters.has_more);
+	zassert_mem_equal(entries[0].title, "Chapter One", entries[0].title_len);
+	zassert_equal(entries[0].title_len, strlen("Chapter One"));
+	zassert_equal(entries[0].index, 0);
+	zassert_equal(entries[0].page_index, 0);
+	zassert_equal(entries[0].level, 0);
+	zassert_equal(entries[0].entry_type, 3);
+	zassert_mem_equal(entries[1].title, "Chapter Two", entries[1].title_len);
+	zassert_equal(entries[1].title_len, strlen("Chapter Two"));
+	zassert_equal(entries[1].index, 1);
+	zassert_equal(entries[1].page_index, 1);
+
+	zassert_equal(runtime_binbook_chapters(&runtime, open_result.book, 1, 1, entries,
+					       ARRAY_SIZE(entries), &entry_count, &chapters),
+		      0);
+	zassert_true(chapters.ok);
+	zassert_equal(entry_count, 1);
+	zassert_equal(chapters.count, 2);
+	zassert_false(chapters.has_more);
+	zassert_mem_equal(entries[0].title, "Chapter Two", entries[0].title_len);
+	zassert_equal(entries[0].index, 1);
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }
 

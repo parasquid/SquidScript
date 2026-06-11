@@ -45,6 +45,10 @@ returns `-ENOSPC` to the VM.
 `SQ_VM_RUNTIME_CONTENT_LIST_MAX` entries per call. Each `ref` is an opaque
 logical identifier bounded by `SQ_VM_RUNTIME_CONTENT_REF_LEN`.
 
+`binbook.chapters(...)` materializes at most one chapter page of
+`SQ_VM_RUNTIME_CONTENT_LIST_MAX` entries per call. Chapter titles are copied
+into fixed per-entry firmware buffers bounded by `SQ_VM_RUNTIME_CONTENT_NAME_LEN`.
+
 ## BLE File-Transfer Profile Table
 
 | Limit | Hard value | Macro |

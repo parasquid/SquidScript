@@ -5,7 +5,8 @@ use crate::{
         BUILTIN_APP_ARM, BUILTIN_APP_ARMED_STACK, BUILTIN_APP_ARMED_STACK_GET, BUILTIN_APP_DISARM,
         BUILTIN_APP_EXIT, BUILTIN_APP_INSTALL, BUILTIN_APP_INSTALL_METADATA, BUILTIN_APP_LAUNCH,
         BUILTIN_APP_PROCESS_STACK, BUILTIN_APP_REGISTRY_GET, BUILTIN_APP_REGISTRY_LIST,
-        BUILTIN_BINBOOK_INFO, BUILTIN_BINBOOK_OPEN, BUILTIN_BINBOOK_READ_PAGE,
+        BUILTIN_BINBOOK_CHAPTERS, BUILTIN_BINBOOK_INFO, BUILTIN_BINBOOK_OPEN,
+        BUILTIN_BINBOOK_READ_PAGE,
         BUILTIN_CONTENT_BINBOOK_LIST, BUILTIN_DEBUG_PRINT, BUILTIN_DEVICE_CONFIG_LOAD,
         BUILTIN_DEVICE_CONFIG_REBIND, BUILTIN_DEVICE_CONFIG_SAVE, BUILTIN_DEVICE_CONFIG_SET,
         BUILTIN_DISPLAY_CLEAR, BUILTIN_DISPLAY_DRAW, BUILTIN_DISPLAY_IMAGE, BUILTIN_DISPLAY_INFO,
@@ -33,12 +34,13 @@ use crate::{
     error::VmError,
     host::{
         AppArmedStack, AppArmedStackEntry, AppInstallResult, AppProcessStack, AppRegistryEntry,
-        AppRegistryList, BinBookInfoResult, BinBookOpenResult, BinBookReadPageResult,
-        ContentBinBookEntry, ContentBinBookListResult, DeviceConfigResult, DisplayInfo,
-        DisplayLineOptions, DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions,
-        FileCopyResult, FilePickFileResult, FileReadLinesResult, FileReadTextResult,
-        StorageCompletion, StorageRequest, TraceSink, VmDispatch, WifiAccessPoint, WifiApIp,
-        WifiOperation, WifiOperationResult, WifiScanNetwork, WifiStatus,
+        AppRegistryList, BinBookChapterEntry, BinBookChapterListResult, BinBookInfoResult,
+        BinBookOpenResult, BinBookReadPageResult, ContentBinBookEntry, ContentBinBookListResult,
+        DeviceConfigResult, DisplayInfo, DisplayLineOptions, DisplayRectOptions,
+        DisplayResourceOptions, DisplayTextOptions, FileCopyResult, FilePickFileResult,
+        FileReadLinesResult, FileReadTextResult, StorageCompletion, StorageRequest, TraceSink,
+        VmDispatch, WifiAccessPoint, WifiApIp, WifiOperation, WifiOperationResult,
+        WifiScanNetwork, WifiStatus,
     },
     limits::{
         MAX_CALL_DEPTH, MAX_CODE_CHUNK_BYTES, MAX_FUNCTIONS, MAX_HANDLERS,
@@ -197,9 +199,11 @@ enum RuntimeFieldName {
     Id,
     Ip,
     IpAddress,
+    Index,
     Items,
     Kind,
     LastBackendCode,
+    Level,
     Lines,
     Library,
     LogicalGrayLevels,
@@ -211,6 +215,7 @@ enum RuntimeFieldName {
     ObjectName,
     Ok,
     PageCount,
+    PageIndex,
     Path,
     PhysicalHeight,
     PhysicalWidth,
@@ -234,6 +239,7 @@ enum RuntimeFieldName {
     Title,
     TotalBytes,
     Transport,
+    Type,
     Upload,
     Warning,
     Width,
@@ -280,9 +286,11 @@ impl RuntimeFieldName {
             "id" => Self::Id,
             "ip" => Self::Ip,
             "ipAddress" => Self::IpAddress,
+            "index" => Self::Index,
             "items" => Self::Items,
             "kind" => Self::Kind,
             "lastBackendCode" => Self::LastBackendCode,
+            "level" => Self::Level,
             "lines" => Self::Lines,
             "library" => Self::Library,
             "logicalGrayLevels" => Self::LogicalGrayLevels,
@@ -294,6 +302,7 @@ impl RuntimeFieldName {
             "objectName" => Self::ObjectName,
             "ok" => Self::Ok,
             "pageCount" => Self::PageCount,
+            "pageIndex" => Self::PageIndex,
             "path" => Self::Path,
             "physicalHeight" => Self::PhysicalHeight,
             "physicalWidth" => Self::PhysicalWidth,
@@ -317,6 +326,7 @@ impl RuntimeFieldName {
             "title" => Self::Title,
             "totalBytes" => Self::TotalBytes,
             "transport" => Self::Transport,
+            "type" => Self::Type,
             "upload" => Self::Upload,
             "warning" => Self::Warning,
             "width" => Self::Width,
@@ -1690,6 +1700,14 @@ impl ChunkedVm {
                 let value = self.binbook_read_page_record(result)?;
                 self.push(value)?;
             }
+            BUILTIN_BINBOOK_CHAPTERS => {
+                let limit = self.pop()?.expect_i32()?;
+                let offset = self.pop()?.expect_i32()?;
+                let book = self.pop_handle()?;
+                let result = host.binbook_chapters(book, offset, limit)?;
+                let value = self.binbook_chapter_list_record(result)?;
+                self.push(value)?;
+            }
             BUILTIN_CONTENT_BINBOOK_LIST => {
                 let limit = self.pop()?.expect_i32()?;
                 let offset = self.pop()?.expect_i32()?;
@@ -1900,6 +1918,40 @@ impl ChunkedVm {
             RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
             RuntimeRecordField::new(RuntimeFieldName::Error, error),
             RuntimeRecordField::new(RuntimeFieldName::Drawable, drawable),
+        ])
+    }
+
+    fn binbook_chapter_entry_record(
+        &mut self,
+        entry: BinBookChapterEntry<'_>,
+    ) -> Result<Value, VmError> {
+        let title = self.runtime_string_value(Some(entry.title))?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new(RuntimeFieldName::Index, Value::I32(entry.index)),
+            RuntimeRecordField::new(RuntimeFieldName::Title, title),
+            RuntimeRecordField::new(RuntimeFieldName::PageIndex, Value::I32(entry.page_index)),
+            RuntimeRecordField::new(RuntimeFieldName::Level, Value::I32(entry.level)),
+            RuntimeRecordField::new(RuntimeFieldName::Type, Value::I32(entry.entry_type)),
+        ])
+    }
+
+    fn binbook_chapter_list_record(
+        &mut self,
+        result: BinBookChapterListResult<'_>,
+    ) -> Result<Value, VmError> {
+        let error = self.runtime_string_value(result.error)?;
+        let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
+        let count = result.items.len().min(MAX_RUNTIME_LIST_ITEMS);
+        for (index, entry) in result.items.iter().take(count).enumerate() {
+            items[index] = self.binbook_chapter_entry_record(*entry)?;
+        }
+        let list = self.runtime_lists.alloc(&items[..count])?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
+            RuntimeRecordField::new(RuntimeFieldName::Items, list),
+            RuntimeRecordField::new(RuntimeFieldName::Count, Value::I32(result.count)),
+            RuntimeRecordField::new(RuntimeFieldName::HasMore, Value::Bool(result.has_more)),
         ])
     }
 
@@ -2518,6 +2570,15 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
         page_index: i32,
     ) -> Result<BinBookReadPageResult<'b>, VmError> {
         self.trace.binbook_read_page(book, page_index)
+    }
+
+    fn binbook_chapters<'b>(
+        &'b mut self,
+        book: Handle,
+        offset: i32,
+        limit: i32,
+    ) -> Result<BinBookChapterListResult<'b>, VmError> {
+        self.trace.binbook_chapters(book, offset, limit)
     }
 
     fn content_binbook_list<'b>(

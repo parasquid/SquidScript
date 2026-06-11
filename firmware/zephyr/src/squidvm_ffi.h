@@ -550,6 +550,23 @@ typedef struct {
 } SqvmBinBookReadPageResult;
 
 typedef struct {
+	int32_t index;
+	const uint8_t *title;
+	size_t title_len;
+	int32_t page_index;
+	int32_t level;
+	int32_t entry_type;
+} SqvmBinBookChapterEntry;
+
+typedef struct {
+	bool ok;
+	const uint8_t *error;
+	size_t error_len;
+	int32_t count;
+	bool has_more;
+} SqvmBinBookChapterListResult;
+
+typedef struct {
 	const uint8_t *name;
 	size_t name_len;
 	const uint8_t *reference;
@@ -642,6 +659,16 @@ typedef int32_t (*SqvmBinBookInfoCallback)(void *user_data, SqvmHandle book,
 typedef int32_t (*SqvmBinBookReadPageCallback)(void *user_data, SqvmHandle book,
 						 int32_t page_index,
 						 SqvmBinBookReadPageResult *out);
+
+typedef int32_t (*SqvmBinBookChaptersCallback)(
+	void *user_data,
+	SqvmHandle book,
+	int32_t offset,
+	int32_t limit,
+	SqvmBinBookChapterEntry *out,
+	size_t out_cap,
+	size_t *out_count,
+	SqvmBinBookChapterListResult *out_result);
 
 typedef int32_t (*SqvmContentBinBookListCallback)(
 	void *user_data,
@@ -804,6 +831,7 @@ typedef struct {
 	SqvmBinBookOpenCallback binbook_open;
 	SqvmBinBookInfoCallback binbook_info;
 	SqvmBinBookReadPageCallback binbook_read_page;
+	SqvmBinBookChaptersCallback binbook_chapters;
 	SqvmContentBinBookListCallback content_binbook_list;
 	SqvmSystemMemoryTextCallback system_memory_text;
 	SqvmSystemStorageTextCallback system_storage_text;
@@ -1021,6 +1049,18 @@ static inline void sqvm_binbook_read_page_result_unsupported(SqvmBinBookReadPage
 	out->error = (const uint8_t *)"unsupported";
 	out->error_len = sizeof("unsupported") - 1;
 	out->drawable = (SqvmHandle){ .kind = SQVM_HANDLE_NONE, .id = 0 };
+}
+
+static inline void sqvm_binbook_chapter_list_result_unsupported(SqvmBinBookChapterListResult *out)
+{
+	if (out == NULL) {
+		return;
+	}
+	out->ok = false;
+	out->error = (const uint8_t *)"unsupported";
+	out->error_len = sizeof("unsupported") - 1;
+	out->count = 0;
+	out->has_more = false;
 }
 
 static inline void sqvm_content_binbook_list_result_unsupported(SqvmContentBinBookListResult *out)

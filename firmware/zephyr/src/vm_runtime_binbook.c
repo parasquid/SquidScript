@@ -5,14 +5,19 @@
 #define BINBOOK_HEADER_SIZE 256U
 #define BINBOOK_SECTION_ENTRY_SIZE 40U
 #define BINBOOK_PAGE_INDEX_ENTRY_SIZE 76U
+#define BINBOOK_NAV_INDEX_ENTRY_SIZE 48U
 #define BINBOOK_MAGIC "BINBOOK"
 #define BINBOOK_VERSION_MAJOR 0U
+#define BINBOOK_SECTION_STRING_TABLE 1U
 #define BINBOOK_SECTION_PAGE_INDEX 40U
+#define BINBOOK_SECTION_NAV_INDEX 41U
 #define BINBOOK_SECTION_PAGE_DATA 50U
 #define BINBOOK_PIXEL_FORMAT_GRAY2_PACKED 2U
 #define BINBOOK_COMPRESSION_RLE_PACKBITS 1U
 #define BINBOOK_HANDLE_ID 1U
 #define BINBOOK_DRAWABLE_ID 1U
+#define BINBOOK_NAV_TYPE_CHAPTER 3U
+#define BINBOOK_NAV_TYPE_SECTION 4U
 
 struct binbook_header_view {
 	uint64_t file_size;
@@ -21,6 +26,7 @@ struct binbook_header_view {
 	uint16_t section_table_entry_size;
 	uint16_t section_count;
 	uint16_t page_index_entry_size;
+	uint16_t nav_index_entry_size;
 	uint64_t page_data_offset;
 	uint64_t page_data_length;
 };
@@ -103,10 +109,12 @@ static int binbook_read_header(struct fs_file_t *file, struct binbook_header_vie
 	out->section_table_entry_size = read_le16(&header[36]);
 	out->section_count = read_le16(&header[38]);
 	out->page_index_entry_size = read_le16(&header[40]);
+	out->nav_index_entry_size = read_le16(&header[42]);
 	out->page_data_offset = read_le64(&header[44]);
 	out->page_data_length = read_le64(&header[52]);
 	if (out->section_table_entry_size != BINBOOK_SECTION_ENTRY_SIZE ||
 	    out->page_index_entry_size != BINBOOK_PAGE_INDEX_ENTRY_SIZE ||
+	    out->nav_index_entry_size != BINBOOK_NAV_INDEX_ENTRY_SIZE ||
 	    out->section_table_offset < BINBOOK_HEADER_SIZE || out->section_count == 0 ||
 	    out->section_table_length <
 		    (uint32_t)out->section_count * BINBOOK_SECTION_ENTRY_SIZE) {
@@ -126,12 +134,16 @@ static void binbook_section_from_bytes(const uint8_t bytes[BINBOOK_SECTION_ENTRY
 }
 
 static int binbook_find_sections(struct fs_file_t *file, const struct binbook_header_view *header,
+				 struct binbook_section_view *string_table,
 				 struct binbook_section_view *page_index,
+				 struct binbook_section_view *nav_index,
 				 struct binbook_section_view *page_data)
 {
 	uint8_t bytes[BINBOOK_SECTION_ENTRY_SIZE];
 
+	memset(string_table, 0, sizeof(*string_table));
 	memset(page_index, 0, sizeof(*page_index));
+	memset(nav_index, 0, sizeof(*nav_index));
 	memset(page_data, 0, sizeof(*page_data));
 	for (uint16_t i = 0; i < header->section_count; ++i) {
 		struct binbook_section_view section;
@@ -143,15 +155,22 @@ static int binbook_find_sections(struct fs_file_t *file, const struct binbook_he
 			return result;
 		}
 		binbook_section_from_bytes(bytes, &section);
-		if (section.section_id == BINBOOK_SECTION_PAGE_INDEX) {
+		if (section.section_id == BINBOOK_SECTION_STRING_TABLE) {
+			*string_table = section;
+		} else if (section.section_id == BINBOOK_SECTION_PAGE_INDEX) {
 			*page_index = section;
+		} else if (section.section_id == BINBOOK_SECTION_NAV_INDEX) {
+			*nav_index = section;
 		} else if (section.section_id == BINBOOK_SECTION_PAGE_DATA) {
 			*page_data = section;
 		}
 	}
-	if (page_index->section_id != BINBOOK_SECTION_PAGE_INDEX ||
+	if (string_table->section_id != BINBOOK_SECTION_STRING_TABLE ||
+	    page_index->section_id != BINBOOK_SECTION_PAGE_INDEX ||
+	    nav_index->section_id != BINBOOK_SECTION_NAV_INDEX ||
 	    page_data->section_id != BINBOOK_SECTION_PAGE_DATA ||
 	    page_index->entry_size != BINBOOK_PAGE_INDEX_ENTRY_SIZE ||
+	    nav_index->entry_size != BINBOOK_NAV_INDEX_ENTRY_SIZE ||
 	    page_index->record_count == 0 || page_data->offset != header->page_data_offset ||
 	    page_data->length != header->page_data_length) {
 		return -EINVAL;
@@ -184,11 +203,15 @@ static int binbook_open_resource(struct sq_vm_runtime *runtime, const uint8_t *p
 
 static int runtime_binbook_validate_path_details(const char *path,
 						 struct binbook_header_view *out_header,
+						 struct binbook_section_view *out_string_table,
 						 struct binbook_section_view *out_page_index,
+						 struct binbook_section_view *out_nav_index,
 						 struct binbook_section_view *out_page_data)
 {
 	struct binbook_header_view header;
+	struct binbook_section_view string_table;
 	struct binbook_section_view page_index;
+	struct binbook_section_view nav_index;
 	struct binbook_section_view page_data;
 	struct fs_dirent entry;
 	struct fs_file_t file;
@@ -210,15 +233,22 @@ static int runtime_binbook_validate_path_details(const char *path,
 		result = -EIO;
 	}
 	if (result == 0) {
-		result = binbook_find_sections(&file, &header, &page_index, &page_data);
+		result = binbook_find_sections(&file, &header, &string_table, &page_index,
+					       &nav_index, &page_data);
 	}
 	(void)fs_close(&file);
 	if (result == 0) {
 		if (out_header != NULL) {
 			*out_header = header;
 		}
+		if (out_string_table != NULL) {
+			*out_string_table = string_table;
+		}
 		if (out_page_index != NULL) {
 			*out_page_index = page_index;
+		}
+		if (out_nav_index != NULL) {
+			*out_nav_index = nav_index;
 		}
 		if (out_page_data != NULL) {
 			*out_page_data = page_data;
@@ -229,7 +259,7 @@ static int runtime_binbook_validate_path_details(const char *path,
 
 int runtime_binbook_validate_path(const char *path)
 {
-	return runtime_binbook_validate_path_details(path, NULL, NULL, NULL);
+	return runtime_binbook_validate_path_details(path, NULL, NULL, NULL, NULL, NULL);
 }
 
 int32_t runtime_binbook_open(void *user_data, const uint8_t *path, size_t path_len,
@@ -237,7 +267,9 @@ int32_t runtime_binbook_open(void *user_data, const uint8_t *path, size_t path_l
 {
 	struct sq_vm_runtime *runtime = user_data;
 	struct fs_file_t file;
+	struct binbook_section_view string_table;
 	struct binbook_section_view page_index;
+	struct binbook_section_view nav_index;
 	struct binbook_section_view page_data;
 	char resolved_path[SQ_APP_STORE_PATH_MAX];
 	int result;
@@ -253,7 +285,8 @@ int32_t runtime_binbook_open(void *user_data, const uint8_t *path, size_t path_l
 		return 0;
 	}
 	(void)fs_close(&file);
-	result = runtime_binbook_validate_path_details(resolved_path, NULL, &page_index, &page_data);
+	result = runtime_binbook_validate_path_details(resolved_path, NULL, &string_table,
+						      &page_index, &nav_index, &page_data);
 	if (result != 0) {
 		binbook_set_error("invalid binbook", &out->error, &out->error_len);
 		return 0;
@@ -261,10 +294,15 @@ int32_t runtime_binbook_open(void *user_data, const uint8_t *path, size_t path_l
 	memset(&runtime->binbook, 0, sizeof(runtime->binbook));
 	runtime->binbook.active = true;
 	strncpy(runtime->binbook.path, resolved_path, sizeof(runtime->binbook.path) - 1);
+	runtime->binbook.string_table_offset = string_table.offset;
 	runtime->binbook.page_index_offset = page_index.offset;
+	runtime->binbook.nav_index_offset = nav_index.offset;
 	runtime->binbook.page_data_offset = page_data.offset;
+	runtime->binbook.string_table_length = (uint32_t)string_table.length;
 	runtime->binbook.page_index_entry_size = (uint16_t)page_index.entry_size;
+	runtime->binbook.nav_index_entry_size = (uint16_t)nav_index.entry_size;
 	runtime->binbook.page_count = page_index.record_count;
+	runtime->binbook.nav_count = nav_index.record_count;
 	memset(&runtime->drawable, 0, sizeof(runtime->drawable));
 	out->ok = true;
 	binbook_set_error(NULL, &out->error, &out->error_len);
@@ -293,6 +331,132 @@ int32_t runtime_binbook_info(void *user_data, SqvmHandle book, SqvmBinBookInfoRe
 	out->title = NULL;
 	out->title_len = 0;
 	out->page_count = (int32_t)runtime->binbook.page_count;
+	return 0;
+}
+
+static bool binbook_nav_type_is_chapter(uint16_t nav_type)
+{
+	return nav_type == BINBOOK_NAV_TYPE_CHAPTER || nav_type == BINBOOK_NAV_TYPE_SECTION;
+}
+
+static int binbook_read_title(struct fs_file_t *file, const struct sq_vm_runtime_binbook_handle *book,
+			      uint32_t title_offset, uint32_t title_len, char *out, size_t out_cap)
+{
+	size_t copy_len;
+	int result;
+
+	if (file == NULL || book == NULL || out == NULL || out_cap == 0U) {
+		return -EINVAL;
+	}
+	out[0] = '\0';
+	if (title_len == 0U) {
+		return 0;
+	}
+	if ((uint64_t)title_offset + title_len > book->string_table_length) {
+		return -EINVAL;
+	}
+	copy_len = title_len;
+	if (copy_len >= out_cap) {
+		copy_len = out_cap - 1U;
+	}
+	result = binbook_read_exact(file, book->string_table_offset + title_offset, (uint8_t *)out,
+				    copy_len);
+	if (result != 0) {
+		return result;
+	}
+	out[copy_len] = '\0';
+	return 0;
+}
+
+int32_t runtime_binbook_chapters(void *user_data, SqvmHandle book, int32_t offset, int32_t limit,
+				 SqvmBinBookChapterEntry *out, size_t out_cap, size_t *out_count,
+				 SqvmBinBookChapterListResult *out_result)
+{
+	struct sq_vm_runtime *runtime = user_data;
+	struct fs_file_t file;
+	uint8_t bytes[BINBOOK_NAV_INDEX_ENTRY_SIZE];
+	uint32_t skipped = 0;
+	uint32_t matching_count = 0;
+	size_t emitted = 0;
+	int result;
+
+	if (out_result == NULL || out_count == NULL) {
+		return -EINVAL;
+	}
+	sqvm_binbook_chapter_list_result_unsupported(out_result);
+	*out_count = 0;
+	if (runtime == NULL || book.kind != SQVM_HANDLE_BINBOOK || book.id != BINBOOK_HANDLE_ID ||
+	    !runtime->binbook.active || offset < 0 || limit < 0 || out == NULL) {
+		binbook_set_error("invalid chapters", &out_result->error, &out_result->error_len);
+		return 0;
+	}
+	memset(runtime->binbook_chapter_entries, 0, sizeof(runtime->binbook_chapter_entries));
+	memset(runtime->binbook_chapter_titles, 0, sizeof(runtime->binbook_chapter_titles));
+	fs_file_t_init(&file);
+	result = fs_open(&file, runtime->binbook.path, FS_O_READ);
+	if (result != 0) {
+		binbook_set_error("open failed", &out_result->error, &out_result->error_len);
+		return 0;
+	}
+	for (uint32_t index = 0; index < runtime->binbook.nav_count; ++index) {
+		uint16_t nav_type;
+		uint16_t level;
+		uint32_t title_offset;
+		uint32_t title_len;
+		uint32_t page_index;
+
+		result = binbook_read_exact(&file,
+					    runtime->binbook.nav_index_offset +
+						    (uint64_t)index *
+							    runtime->binbook.nav_index_entry_size,
+					    bytes, sizeof(bytes));
+		if (result != 0) {
+			break;
+		}
+		nav_type = read_le16(&bytes[4]);
+		if (!binbook_nav_type_is_chapter(nav_type)) {
+			continue;
+		}
+		level = read_le16(&bytes[6]);
+		title_offset = read_le32(&bytes[8]);
+		title_len = read_le32(&bytes[12]);
+		page_index = read_le32(&bytes[28]);
+		if (skipped < (uint32_t)offset) {
+			skipped++;
+			matching_count++;
+			continue;
+		}
+		if (emitted < out_cap && emitted < SQ_VM_RUNTIME_CONTENT_LIST_MAX &&
+		    emitted < (size_t)limit) {
+			result = binbook_read_title(&file, &runtime->binbook, title_offset, title_len,
+						    runtime->binbook_chapter_titles[emitted],
+						    sizeof(runtime->binbook_chapter_titles[emitted]));
+			if (result != 0) {
+				break;
+			}
+			runtime->binbook_chapter_entries[emitted] = (SqvmBinBookChapterEntry){
+				.index = (int32_t)matching_count,
+				.title = (const uint8_t *)runtime->binbook_chapter_titles[emitted],
+				.title_len = strlen(runtime->binbook_chapter_titles[emitted]),
+				.page_index = (int32_t)page_index,
+				.level = (int32_t)level,
+				.entry_type = (int32_t)nav_type,
+			};
+			out[emitted] = runtime->binbook_chapter_entries[emitted];
+			emitted++;
+		}
+		matching_count++;
+	}
+	(void)fs_close(&file);
+	if (result != 0) {
+		binbook_set_error("read failed", &out_result->error, &out_result->error_len);
+		return 0;
+	}
+	out_result->ok = true;
+	binbook_set_error(NULL, &out_result->error, &out_result->error_len);
+	out_result->count = (int32_t)matching_count;
+	out_result->has_more = (uint32_t)offset + (uint32_t)emitted < matching_count;
+	*out_count = emitted;
 	return 0;
 }
 

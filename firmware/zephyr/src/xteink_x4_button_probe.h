@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+struct sq_vm_runtime;
+
 enum sq_x4_button_probe_logical {
 	SQ_X4_BUTTON_PROBE_LOGICAL_NONE = 0,
 	SQ_X4_BUTTON_PROBE_LOGICAL_BACK = 1,
@@ -26,5 +28,6 @@ struct sq_x4_button_probe {
 };
 
 int sq_x4_button_probe_read(struct sq_x4_button_probe *out);
+int sq_x4_button_probe_poll_runtime(struct sq_vm_runtime *runtime);
 
 #endif /* XTEINK_X4_BUTTON_PROBE_H */

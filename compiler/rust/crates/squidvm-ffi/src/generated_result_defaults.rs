@@ -176,6 +176,18 @@ impl Default for SqvmBinBookReadPageResult {
     }
 }
 
+impl Default for SqvmBinBookChapterListResult {
+    fn default() -> Self {
+        Self {
+            ok: false,
+            error: b"unsupported".as_ptr(),
+            error_len: b"unsupported".len(),
+            count: 0,
+            has_more: false,
+        }
+    }
+}
+
 impl Default for SqvmContentBinBookListResult {
     fn default() -> Self {
         Self {

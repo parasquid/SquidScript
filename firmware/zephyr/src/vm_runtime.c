@@ -1,5 +1,6 @@
 #include "vm_runtime_internal.h"
 #include "vm_runtime_display_backend.h"
+#include "xteink_x4_button_probe.h"
 #include "sq_errno.h"
 
 void sqvm_ffi_panic_abort(void)
@@ -679,6 +680,8 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	memset(runtime->armed_timers, 0, sizeof(runtime->armed_timers));
 	runtime->armed_timer_count = 0;
 	runtime_clear_active_bindings(runtime);
+	memset(runtime->target_adc_buttons, 0, sizeof(runtime->target_adc_buttons));
+	runtime->target_adc_button_next_poll_ms = 0;
 	memset(runtime->outputs, 0, sizeof(runtime->outputs));
 	runtime->output_count = 0;
 	memset(runtime->drawlog, 0, sizeof(runtime->drawlog));
@@ -1241,6 +1244,9 @@ int sq_vm_runtime_poll(struct sq_vm_runtime *runtime)
 	}
 	(void)sq_vm_runtime_poll_indicator(runtime);
 	if (sq_vm_runtime_poll_input_buttons(runtime) != 0) {
+		return -EIO;
+	}
+	if (sq_x4_button_probe_poll_runtime(runtime) != 0) {
 		return -EIO;
 	}
 	if (runtime->status == SQ_VM_RUNTIME_RUNNING) {

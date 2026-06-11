@@ -605,6 +605,25 @@ impl TraceSink for RuntimeTrace {
         })
     }
 
+    fn binbook_chapters<'a>(
+        &'a mut self,
+        book: Handle,
+        offset: i32,
+        limit: i32,
+    ) -> Result<BinBookChapterListResult<'a>, VmError> {
+        self.events.push(format!(
+            "binbook.chapters {:?}:{} {offset} {limit}",
+            book.kind, book.id
+        ));
+        Ok(BinBookChapterListResult {
+            ok: true,
+            error: None,
+            items: &BINBOOK_TEST_CHAPTERS[..2],
+            count: BINBOOK_TEST_CHAPTERS.len() as i32,
+            has_more: true,
+        })
+    }
+
     fn draw_resource(
         &mut self,
         _strings: &StringResolver<'_>,
@@ -655,6 +674,30 @@ const CONTENT_TEST_BOOKS: [ContentBinBookEntry; 2] = [
         name: "travel-notes.binbook",
         reference: "content:books/r/travel-notes.binbook",
         size: 8192,
+    },
+];
+
+const BINBOOK_TEST_CHAPTERS: [BinBookChapterEntry; 3] = [
+    BinBookChapterEntry {
+        index: 0,
+        title: "Chapter One",
+        page_index: 0,
+        level: 0,
+        entry_type: 3,
+    },
+    BinBookChapterEntry {
+        index: 1,
+        title: "Chapter Two",
+        page_index: 4,
+        level: 0,
+        entry_type: 3,
+    },
+    BinBookChapterEntry {
+        index: 2,
+        title: "Extra",
+        page_index: 9,
+        level: 1,
+        entry_type: 4,
     },
 ];
 
@@ -2424,6 +2467,46 @@ screen("main", { render: "stream" }) {
             "binbook.readPage BinBook:7 0",
             "draw.resource Handle(Handle { kind: Drawable, id: 11 }) 0 0 0 0",
             "debug pages 3",
+        ]
+    );
+}
+
+#[test]
+fn runs_binbook_chapters_from_real_bytecode() {
+    let source = r#"app "binbook-chapters"
+event.on("app.start") {
+  let opened = binbook.open("books/sample.binbook")
+  if (opened.ok) {
+    let chapters = binbook.chapters(opened.book, { offset: 0, limit: 8 })
+    debug.print(chapters.ok, chapters.error, chapters.count, chapters.hasMore)
+    for chapter in chapters.items max 8 {
+      debug.print(chapter.index, chapter.title, chapter.pageIndex, chapter.level, chapter.type)
+    }
+  }
+}
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = RuntimeTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "binbook.open books/sample.binbook",
+            "binbook.chapters BinBook:7 0 8",
+            "debug true null 3 true",
+            "debug 0 Chapter One 0 0 3",
+            "debug 1 Chapter Two 4 0 3",
         ]
     );
 }

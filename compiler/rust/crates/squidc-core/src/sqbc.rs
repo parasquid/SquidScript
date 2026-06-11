@@ -104,6 +104,7 @@ const BUILTIN_BINBOOK_OPEN: u8 = 0x80;
 const BUILTIN_BINBOOK_INFO: u8 = 0x81;
 const BUILTIN_BINBOOK_READ_PAGE: u8 = 0x82;
 const BUILTIN_CONTENT_BINBOOK_LIST: u8 = 0x83;
+const BUILTIN_BINBOOK_CHAPTERS: u8 = 0x84;
 const BUILTIN_FILE_PICK_FILE: u8 = 0x90;
 const BUILTIN_FILE_READ_TEXT: u8 = 0x91;
 const BUILTIN_FILE_READ_LINES: u8 = 0x92;
@@ -1211,6 +1212,31 @@ fn compile_content_binbook_list(
     Ok(())
 }
 
+fn compile_binbook_chapters(
+    unit: &mut CompileUnit,
+    frame: &FrameCompiler,
+    args: &[IrExpr],
+) -> Result<(), SqbcError> {
+    validate_builtin_arg_count("binbook.chapters", args.len())?;
+    let book = args
+        .first()
+        .ok_or_else(|| SqbcError::new("binbook.chapters requires a book"))?;
+    compile_expr(unit, frame, book)?;
+    let options = match args.get(1) {
+        Some(IrExpr::Literal { value }) if value.is_object() => value.clone(),
+        Some(_) => {
+            return Err(SqbcError::new(
+                "binbook.chapters paging options must be an object",
+            ))
+        }
+        None => serde_json::json!({ "offset": 0, "limit": 8 }),
+    };
+    emit_i32_option(unit, frame, &options, "offset")?;
+    emit_i32_option(unit, frame, &options, "limit")?;
+    emit_builtin(&mut unit.code, BUILTIN_BINBOOK_CHAPTERS);
+    Ok(())
+}
+
 fn compile_file_copy(
     unit: &mut CompileUnit,
     frame: &FrameCompiler,
@@ -1311,6 +1337,10 @@ fn compile_expr(
             Ok(())
         }
         IrExpr::Call { name, args } => {
+            if name == "binbook.chapters" {
+                compile_binbook_chapters(unit, frame, args)?;
+                return Ok(());
+            }
             if name == "content.binbook.list" {
                 compile_content_binbook_list(unit, frame, args)?;
                 return Ok(());
@@ -1444,6 +1474,7 @@ fn builtin_for_call(name: &str) -> Option<u8> {
         "binbook.info" => Some(BUILTIN_BINBOOK_INFO),
         "binbook.readPage" => Some(BUILTIN_BINBOOK_READ_PAGE),
         "content.binbook.list" => Some(BUILTIN_CONTENT_BINBOOK_LIST),
+        "binbook.chapters" => Some(BUILTIN_BINBOOK_CHAPTERS),
         "file.pickFile" => Some(BUILTIN_FILE_PICK_FILE),
         "file.readText" => Some(BUILTIN_FILE_READ_TEXT),
         "file.readLines" => Some(BUILTIN_FILE_READ_LINES),
@@ -1475,6 +1506,7 @@ fn validate_builtin_arg_count(name: &str, count: usize) -> Result<(), SqbcError>
         "binbook.open" => count == 1,
         "binbook.info" => count == 1,
         "binbook.readPage" => count == 2,
+        "binbook.chapters" => count == 1 || count == 2,
         "content.binbook.list" => count == 1 || count == 2,
         "file.pickFile" => count == 1,
         "file.readText" => count == 1,

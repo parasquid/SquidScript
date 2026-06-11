@@ -161,6 +161,7 @@ be refreshed as capability boundaries become clearer.
 0x81 binbook.info
 0x82 binbook.readPage
 0x83 content.binbook.list
+0x84 binbook.chapters
 
 0x90 file.pickFile
 0x91 file.readText

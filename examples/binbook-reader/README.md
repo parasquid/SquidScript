@@ -8,6 +8,10 @@ current zero-based page index, and draws the returned drawable handle with
 page; `key.LEFT` and `key.UP` go back one page. Page indexes clamp at the first
 and last page.
 
+`key.SELECT` opens the chapter list for the current book. `key.UP` and
+`key.DOWN` move the highlighted chapter row, `key.SELECT` jumps to that
+chapter's page, and `key.BACK` returns to the current page without jumping.
+
 Current Zephyr SSD1677 firmware support expects target-native full-panel GRAY2
 BinBook page data and streams it from the resource file without allocating a
 full-screen framebuffer. Cadence refreshes use true 4-gray output; intermediate
@@ -22,4 +26,6 @@ cargo run -p squidc -- device key RIGHT
 cargo run -p squidc -- device key DOWN
 cargo run -p squidc -- device key LEFT
 cargo run -p squidc -- device key UP
+cargo run -p squidc -- device key SELECT
+cargo run -p squidc -- device key BACK
 ```

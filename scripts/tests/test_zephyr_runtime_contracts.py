@@ -76,6 +76,9 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
         self.assertNotIn("SSD1677_UPDATE_FULL", binbook_body)
         self.assertIn("ret = refresh_grayscale_display(&observed_busy);", flush_body)
         self.assertIn("ret = refresh_display(&observed_busy);", flush_body)
+        self.assertIn("refresh_request == SQ_VM_RUNTIME_DISPLAY_REFRESH_FAST_1BPP", flush_body)
+        self.assertIn("ret = refresh_partial_display(&observed_busy);", flush_body)
+        self.assertIn('"bw-partial"', flush_body)
 
     def test_ssd1677_binbook_uses_fast_refresh_between_full_cadence_refreshes(self):
         display_c = self.read("firmware/zephyr/src/ssd1677_gdeq0426t82_display.c")

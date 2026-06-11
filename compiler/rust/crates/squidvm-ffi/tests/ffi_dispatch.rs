@@ -11,12 +11,13 @@ use squidvm_ffi::{
     sqvm_dispatch_start_resumable_with_payload, sqvm_trigger_ble_profile_count,
     sqvm_trigger_ble_profile_read, sqvm_trigger_http_profile_count, sqvm_trigger_http_profile_read,
     sqvm_trigger_timer_count, sqvm_trigger_timer_read, SqvmAppRegistryEntry, SqvmAppStackEntry,
-    SqvmBinBookInfoResult, SqvmBinBookOpenResult, SqvmBinBookReadPageResult, SqvmBleProfileTrigger,
-    SqvmCallbacks, SqvmContentBinBookEntry, SqvmContentBinBookListResult, SqvmDeviceBinding,
-    SqvmDeviceConfigResult, SqvmDeviceConfigValue, SqvmDeviceConfigValueKind, SqvmDispatchOutcome,
-    SqvmDispatchResult, SqvmDisplayInfo, SqvmEventPayloadField, SqvmFileCopyResult,
-    SqvmFilePickFileResult, SqvmFileReadLinesResult, SqvmFileReadTextResult, SqvmHandle,
-    SqvmHandleKind, SqvmHttpProfileTrigger, SqvmStatus, SqvmStorageCompletion,
+    SqvmBinBookChapterEntry, SqvmBinBookChapterListResult, SqvmBinBookInfoResult,
+    SqvmBinBookOpenResult, SqvmBinBookReadPageResult, SqvmBleProfileTrigger, SqvmCallbacks,
+    SqvmContentBinBookEntry, SqvmContentBinBookListResult, SqvmDeviceBinding,
+    SqvmDeviceConfigResult, SqvmDeviceConfigValue, SqvmDeviceConfigValueKind,
+    SqvmDispatchOutcome, SqvmDispatchResult, SqvmDisplayInfo, SqvmEventPayloadField,
+    SqvmFileCopyResult, SqvmFilePickFileResult, SqvmFileReadLinesResult, SqvmFileReadTextResult,
+    SqvmHandle, SqvmHandleKind, SqvmHttpProfileTrigger, SqvmStatus, SqvmStorageCompletion,
     SqvmStorageRequestKind, SqvmTriggerTimer,
 };
 
@@ -1217,6 +1218,19 @@ unsafe extern "C" fn failing_content_binbook_list(
     -22
 }
 
+unsafe extern "C" fn failing_binbook_chapters(
+    _user_data: *mut c_void,
+    _book: SqvmHandle,
+    _offset: i32,
+    _limit: i32,
+    _out: *mut SqvmBinBookChapterEntry,
+    _out_cap: usize,
+    _out_count: *mut usize,
+    _out_result: *mut SqvmBinBookChapterListResult,
+) -> i32 {
+    -22
+}
+
 unsafe extern "C" fn failing_app_registry_list(
     _user_data: *mut c_void,
     _out: *mut SqvmAppRegistryEntry,
@@ -1452,6 +1466,51 @@ unsafe extern "C" fn binbook_read_page(
     0
 }
 
+unsafe extern "C" fn binbook_chapters(
+    user_data: *mut c_void,
+    book: SqvmHandle,
+    offset: i32,
+    limit: i32,
+    out: *mut SqvmBinBookChapterEntry,
+    out_cap: usize,
+    out_count: *mut usize,
+    out_result: *mut SqvmBinBookChapterListResult,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.binbook_actions.push(format!(
+        "chapters {:?}:{} {offset} {limit}",
+        book.kind, book.id
+    ));
+    if out.is_null() || out_count.is_null() || out_result.is_null() || out_cap < 2 {
+        return -1;
+    }
+    *out.add(0) = SqvmBinBookChapterEntry {
+        index: 0,
+        title: b"Chapter One".as_ptr(),
+        title_len: b"Chapter One".len(),
+        page_index: 0,
+        level: 0,
+        entry_type: 3,
+    };
+    *out.add(1) = SqvmBinBookChapterEntry {
+        index: 1,
+        title: b"Chapter Two".as_ptr(),
+        title_len: b"Chapter Two".len(),
+        page_index: 4,
+        level: 0,
+        entry_type: 3,
+    };
+    *out_count = 2;
+    *out_result = SqvmBinBookChapterListResult {
+        ok: true,
+        error: ptr::null(),
+        error_len: 0,
+        count: 3,
+        has_more: true,
+    };
+    0
+}
+
 unsafe extern "C" fn content_binbook_list(
     user_data: *mut c_void,
     library: *const u8,
@@ -1559,6 +1618,7 @@ fn callbacks(_host: &mut Host) -> SqvmCallbacks {
         binbook_open: Some(binbook_open),
         binbook_info: Some(binbook_info),
         binbook_read_page: Some(binbook_read_page),
+        binbook_chapters: Some(binbook_chapters),
         content_binbook_list: Some(content_binbook_list),
         system_memory_text: Some(system_memory_text),
         system_storage_text: Some(system_storage_text),
@@ -1837,6 +1897,23 @@ screen("main") {
     if (page.ok) {
       service.display.draw(page.drawable)
       debug.print(info.title, info.pageCount)
+    }
+  }
+}
+"#,
+    )
+}
+
+fn compile_binbook_chapters_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-binbook-chapters"
+event.on("app.start") {
+  let opened = binbook.open("books/sample.binbook")
+  if (opened.ok) {
+    let chapters = binbook.chapters(opened.book, { offset: 0, limit: 8 })
+    debug.print(chapters.ok, chapters.error, chapters.count, chapters.hasMore)
+    for chapter in chapters.items max 8 {
+      debug.print(chapter.index, chapter.title, chapter.pageIndex, chapter.level, chapter.type)
     }
   }
 }
@@ -2441,6 +2518,54 @@ fn dispatches_binbook_callbacks_and_draws_typed_handle() {
     assert_eq!(
         host.drawlog,
         vec!["draw=resource kind=Drawable id=11 x=0 y=0 w=0 h=0".to_string()]
+    );
+}
+
+#[test]
+fn dispatches_binbook_chapters_callback() {
+    let mut host = Host {
+        sqbc: compile_binbook_chapters_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(
+        host.binbook_actions,
+        vec![
+            "open books/sample.binbook".to_string(),
+            "chapters BinBook:7 0 8".to_string(),
+        ]
+    );
+    assert_eq!(
+        host.output,
+        vec![
+            "true null 3 true".to_string(),
+            "0 Chapter One 0 0 3".to_string(),
+            "1 Chapter Two 4 0 3".to_string(),
+        ]
     );
 }
 
@@ -3343,7 +3468,7 @@ fn callback_errors_surface_as_vm_error_status() {
 #[test]
 fn generated_callback_policy_cases_cover_manifest_inventory() {
     let cases = generated_ffi_dispatch_cases::callback_policy_cases();
-    assert_eq!(cases.len(), 60);
+    assert_eq!(cases.len(), 61);
     assert!(cases.contains(&("http_start", "required_vm_error")));
     assert!(cases.contains(&("http_stop", "required_vm_error")));
     assert!(cases.contains(&("file_copy", "unsupported_result")));
@@ -3351,6 +3476,7 @@ fn generated_callback_policy_cases_cover_manifest_inventory() {
     assert!(cases.contains(&("binbook_open", "unsupported_result")));
     assert!(cases.contains(&("binbook_info", "unsupported_result")));
     assert!(cases.contains(&("binbook_read_page", "unsupported_result")));
+    assert!(cases.contains(&("binbook_chapters", "unsupported_result")));
     assert!(cases.contains(&("content_binbook_list", "unsupported_result")));
     assert!(cases.contains(&("wifi_operation", "idle_result")));
     assert!(cases.contains(&("wifi_scan_network", "unsupported_result")));

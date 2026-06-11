@@ -213,6 +213,12 @@ struct sq_vm_runtime_input_button {
 	char event[SQ_VM_RUNTIME_EVENT_LEN];
 };
 
+struct sq_vm_runtime_target_adc_button {
+	uint32_t logical;
+	uint32_t candidate;
+	int64_t debounce_until_ms;
+};
+
 struct sq_vm_runtime_wifi_scan_scratch {
 	SqvmWifiAccessPoint networks[SQVM_WIFI_SCAN_MAX_NETWORKS];
 	char ssids[SQVM_WIFI_SCAN_MAX_NETWORKS][SQ_VM_RUNTIME_WIFI_SSID_LEN];
@@ -282,10 +288,15 @@ enum sq_vm_runtime_display_refresh_mode {
 struct sq_vm_runtime_binbook_handle {
 	bool active;
 	char path[SQ_APP_STORE_PATH_MAX];
+	uint64_t string_table_offset;
 	uint64_t page_index_offset;
+	uint64_t nav_index_offset;
 	uint64_t page_data_offset;
+	uint32_t string_table_length;
 	uint32_t page_count;
+	uint32_t nav_count;
 	uint16_t page_index_entry_size;
+	uint16_t nav_index_entry_size;
 };
 
 struct sq_vm_runtime_drawable_handle {
@@ -362,6 +373,8 @@ struct sq_vm_runtime {
 	struct sq_vm_runtime_input_button input_buttons[SQ_VM_RUNTIME_INPUT_BUTTON_MAX];
 	uint8_t active_input_button_max;
 	uint8_t input_button_count;
+	struct sq_vm_runtime_target_adc_button target_adc_buttons[2];
+	int64_t target_adc_button_next_poll_ms;
 	char traces[SQ_VM_RUNTIME_TRACE_MAX][SQ_VM_RUNTIME_TRACE_LEN];
 	uint8_t trace_count;
 	char outputs[SQ_VM_RUNTIME_OUTPUT_MAX][SQ_VM_RUNTIME_OUTPUT_LEN];
@@ -376,6 +389,8 @@ struct sq_vm_runtime {
 	bool display_dirty;
 	struct sq_vm_runtime_binbook_handle binbook;
 	struct sq_vm_runtime_drawable_handle drawable;
+	SqvmBinBookChapterEntry binbook_chapter_entries[SQ_VM_RUNTIME_CONTENT_LIST_MAX];
+	char binbook_chapter_titles[SQ_VM_RUNTIME_CONTENT_LIST_MAX][SQ_VM_RUNTIME_CONTENT_NAME_LEN];
 	SqvmContentBinBookEntry content_binbook_entries[SQ_VM_RUNTIME_CONTENT_LIST_MAX];
 	char content_binbook_names[SQ_VM_RUNTIME_CONTENT_LIST_MAX][SQ_VM_RUNTIME_CONTENT_NAME_LEN];
 	char content_binbook_refs[SQ_VM_RUNTIME_CONTENT_LIST_MAX][SQ_VM_RUNTIME_CONTENT_REF_LEN];

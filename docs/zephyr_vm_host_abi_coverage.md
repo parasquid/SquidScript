@@ -92,9 +92,9 @@ callback wiring, and this generated documentation section against the
 manifest.
 
 - Exports: 62
-- Callback fields: 61
-- Generated result-default records: 14
-- Public ABI types: 117
+- Callback fields: 62
+- Generated result-default records: 15
+- Public ABI types: 120
 - Public ABI constants: 15
 
 ### Export Families
@@ -123,6 +123,7 @@ manifest.
 | wifi | wifi_start_ap, wifi_stop_ap, wifi_connect, wifi_disconnect, wifi_get_ap_ip, wifi_status, wifi_scan, wifi_operation, wifi_result, wifi_cancel, wifi_scan_network | Rust FFI dispatch Wi-Fi tests | unsupported/action stub ztests | 5 |
 | device-config | device_config_load, device_config_set, device_config_rebind, device_config_save | Rust FFI dispatch device-config tests | device configuration ztests | 5 |
 | file | file_pick_file, file_read_text, file_read_lines, file_copy | Rust FFI dispatch file result tests | content publish runtime callback ztests | 7 |
+| binbook | binbook_open, binbook_info, binbook_read_page, binbook_chapters | Rust FFI dispatch BinBook tests | BinBook resource and chapter ztests | 4 |
 | http | http_start, http_stop | Rust FFI dispatch and HTTP profile reader tests | HTTP upload route and callback ztests | 4 |
 | system | system_memory_text, system_storage_text, system_start_reason_text | Rust FFI dispatch system text tests | system resource/start reason ztests | 3 |
 | power | power_sleep | Rust FFI dispatch power tests | power sleep dispatch ztests | 2 |

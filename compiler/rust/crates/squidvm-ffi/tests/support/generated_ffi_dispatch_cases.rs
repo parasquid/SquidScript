@@ -44,6 +44,7 @@ pub(super) fn callback_error_cases() -> Vec<CallbackCase> {
         ("file read text", compile_file_read_sqbc(), |callbacks| callbacks.file_read_text = Some(failing_file_read_text)),
         ("file read lines", compile_file_read_sqbc(), |callbacks| callbacks.file_read_lines = Some(failing_file_read_lines)),
         ("file copy", compile_file_copy_sqbc(), |callbacks| callbacks.file_copy = Some(failing_file_copy)),
+        ("binbook chapters", compile_binbook_chapters_sqbc(), |callbacks| callbacks.binbook_chapters = Some(failing_binbook_chapters)),
         ("content binbook list", compile_content_binbook_sqbc(), |callbacks| callbacks.content_binbook_list = Some(failing_content_binbook_list)),
         ("system memory text", compile_system_resources_sqbc(), |callbacks| callbacks.system_memory_text = Some(failing_system_memory_text)),
     ]
@@ -153,6 +154,7 @@ pub(super) fn callback_policy_cases() -> &'static [(&'static str, &'static str)]
         ("binbook_open", "unsupported_result"),
         ("binbook_info", "unsupported_result"),
         ("binbook_read_page", "unsupported_result"),
+        ("binbook_chapters", "unsupported_result"),
         ("content_binbook_list", "unsupported_result"),
         ("system_memory_text", "required_vm_error"),
         ("system_storage_text", "required_vm_error"),

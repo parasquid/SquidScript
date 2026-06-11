@@ -2,27 +2,60 @@ app "binbook-reader"
 
 state {
   pageIndex: int = 0
+  mode: int = 0
+  chapterSelected: int = 0
 }
 
 event.on("app.start") {
   state.pageIndex = 0
+  state.mode = 0
+  state.chapterSelected = 0
   screen.open("reader")
 }
 
 event.on("key.RIGHT") {
-  nextPage()
+  if (state.mode == 0) {
+    nextPage()
+  }
 }
 
 event.on("key.DOWN") {
-  nextPage()
+  if (state.mode == 0) {
+    nextPage()
+  } else {
+    nextChapter()
+  }
 }
 
 event.on("key.LEFT") {
-  previousPage()
+  if (state.mode == 0) {
+    previousPage()
+  }
 }
 
 event.on("key.UP") {
-  previousPage()
+  if (state.mode == 0) {
+    previousPage()
+  } else {
+    previousChapter()
+  }
+}
+
+event.on("key.SELECT") {
+  if (state.mode == 0) {
+    state.mode = 1
+    state.chapterSelected = 0
+    screen.open("chapters")
+  } else {
+    jumpToSelectedChapter()
+  }
+}
+
+event.on("key.BACK") {
+  if (state.mode == 1) {
+    state.mode = 0
+    screen.open("reader")
+  }
 }
 
 function nextPage() {
@@ -58,6 +91,96 @@ function previousPage() {
         }
       }
     }
+  }
+}
+
+function nextChapter() {
+  let listing = content.binbook.list("books", { offset: 0, limit: 1 })
+  if (listing.ok) {
+    for item in listing.items max 1 {
+      let opened = binbook.open(item.ref)
+      if (opened.ok) {
+        let chapters = binbook.chapters(opened.book, { offset: 0, limit: 5 })
+        if (chapters.ok) {
+          if (state.chapterSelected + 1 < chapters.count) {
+            if (state.chapterSelected + 1 < 5) {
+              state.chapterSelected = state.chapterSelected + 1
+              screen.refresh()
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+function previousChapter() {
+  if (state.chapterSelected > 0) {
+    state.chapterSelected = state.chapterSelected - 1
+    screen.refresh()
+  }
+}
+
+function jumpToSelectedChapter() {
+  let listing = content.binbook.list("books", { offset: 0, limit: 1 })
+  if (listing.ok) {
+    for item in listing.items max 1 {
+      let opened = binbook.open(item.ref)
+      if (opened.ok) {
+        let chapters = binbook.chapters(opened.book, { offset: 0, limit: 5 })
+        if (chapters.ok) {
+          let row = 0
+          for chapter in chapters.items max 5 {
+            if (row == state.chapterSelected) {
+              state.pageIndex = chapter.pageIndex
+              state.mode = 0
+              screen.open("reader")
+            }
+            row = row + 1
+          }
+        }
+      }
+    }
+  }
+}
+
+function drawChapterRow0(title) {
+  if (state.chapterSelected == 0) {
+    service.display.text("SELECTED", { x: 28, y: 76, w: 408, h: 48, fontHeight: 28, valign: "middle", textColor: "gray15" })
+  } else {
+    service.display.text(title, { x: 28, y: 76, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: "gray15" })
+  }
+}
+
+function drawChapterRow1(title) {
+  if (state.chapterSelected == 1) {
+    service.display.text("SELECTED", { x: 28, y: 128, w: 408, h: 48, fontHeight: 28, valign: "middle", textColor: "gray15" })
+  } else {
+    service.display.text(title, { x: 28, y: 128, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: "gray15" })
+  }
+}
+
+function drawChapterRow2(title) {
+  if (state.chapterSelected == 2) {
+    service.display.text("SELECTED", { x: 28, y: 180, w: 408, h: 48, fontHeight: 28, valign: "middle", textColor: "gray15" })
+  } else {
+    service.display.text(title, { x: 28, y: 180, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: "gray15" })
+  }
+}
+
+function drawChapterRow3(title) {
+  if (state.chapterSelected == 3) {
+    service.display.text("SELECTED", { x: 28, y: 232, w: 408, h: 48, fontHeight: 28, valign: "middle", textColor: "gray15" })
+  } else {
+    service.display.text(title, { x: 28, y: 232, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: "gray15" })
+  }
+}
+
+function drawChapterRow4(title) {
+  if (state.chapterSelected == 4) {
+    service.display.text("SELECTED", { x: 28, y: 284, w: 408, h: 48, fontHeight: 28, valign: "middle", textColor: "gray15" })
+  } else {
+    service.display.text(title, { x: 28, y: 284, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: "gray15" })
   }
 }
 
@@ -105,11 +228,51 @@ screen("reader") {
       }
     }
   } else {
-    service.display.text("Book list failed", {
+    service.display.text("List failed", {
       x: 24
       y: 64
       fontHeight: 24
     })
     debug.print("book-list-failed", listing.error, listing.warning)
+  }
+}
+
+screen("chapters") {
+  service.display.clear("white")
+  service.display.refreshMode("fast1bpp")
+  let listing = content.binbook.list("books", { offset: 0, limit: 1 })
+  if (listing.ok) {
+    for item in listing.items max 1 {
+      let opened = binbook.open(item.ref)
+      if (opened.ok) {
+        let chapters = binbook.chapters(opened.book, { offset: 0, limit: 5 })
+        if (chapters.ok) {
+          for chapter in chapters.items max 5 {
+            if (chapter.index == 0) {
+              drawChapterRow0(chapter.title)
+            }
+            if (chapter.index == 1) {
+              drawChapterRow1(chapter.title)
+            }
+            if (chapter.index == 2) {
+              drawChapterRow2(chapter.title)
+            }
+            if (chapter.index == 3) {
+              drawChapterRow3(chapter.title)
+            }
+            if (chapter.index == 4) {
+              drawChapterRow4(chapter.title)
+            }
+          }
+        } else {
+          service.display.text("Chapter list failed", {
+            x: 24
+            y: 92
+            fontHeight: 22
+          })
+          debug.print("chapter-list-failed", chapters.error)
+        }
+      }
+    }
   }
 }

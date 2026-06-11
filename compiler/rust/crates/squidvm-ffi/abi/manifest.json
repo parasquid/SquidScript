@@ -858,6 +858,15 @@
       "test_fixture": "compile_binbook_sqbc"
     },
     {
+      "field": "binbook_chapters",
+      "typedef": "SqvmBinBookChaptersCallback",
+      "family": "binbook",
+      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, book: SqvmHandle, offset: i32, limit: i32, out: *mut SqvmBinBookChapterEntry, out_cap: usize, out_count: *mut usize, out_result: *mut SqvmBinBookChapterListResult, ) -> i32, >",
+      "missing_policy": "unsupported_result",
+      "test_fixture": "compile_binbook_chapters_sqbc",
+      "failing_callback": "failing_binbook_chapters"
+    },
+    {
       "field": "content_binbook_list",
       "typedef": "SqvmContentBinBookListCallback",
       "family": "content",
@@ -1170,6 +1179,14 @@
       "definition": "typedef struct {\n\tbool ok;\n\tconst uint8_t *error;\n\tsize_t error_len;\n\tSqvmHandle drawable;\n} SqvmBinBookReadPageResult;"
     },
     {
+      "name": "SqvmBinBookChapterEntry",
+      "definition": "typedef struct {\n\tint32_t index;\n\tconst uint8_t *title;\n\tsize_t title_len;\n\tint32_t page_index;\n\tint32_t level;\n\tint32_t entry_type;\n} SqvmBinBookChapterEntry;"
+    },
+    {
+      "name": "SqvmBinBookChapterListResult",
+      "definition": "typedef struct {\n\tbool ok;\n\tconst uint8_t *error;\n\tsize_t error_len;\n\tint32_t count;\n\tbool has_more;\n} SqvmBinBookChapterListResult;"
+    },
+    {
       "name": "SqvmContentBinBookEntry",
       "definition": "typedef struct {\n\tconst uint8_t *name;\n\tsize_t name_len;\n\tconst uint8_t *reference;\n\tsize_t reference_len;\n\tint32_t size;\n} SqvmContentBinBookEntry;"
     },
@@ -1270,6 +1287,10 @@
       "definition": "typedef int32_t (*SqvmBinBookReadPageCallback)(void *user_data, SqvmHandle book,\n\t\t\t\t\t\t int32_t page_index,\n\t\t\t\t\t\t SqvmBinBookReadPageResult *out);"
     },
     {
+      "name": "SqvmBinBookChaptersCallback",
+      "definition": "typedef int32_t (*SqvmBinBookChaptersCallback)(\n\tvoid *user_data,\n\tSqvmHandle book,\n\tint32_t offset,\n\tint32_t limit,\n\tSqvmBinBookChapterEntry *out,\n\tsize_t out_cap,\n\tsize_t *out_count,\n\tSqvmBinBookChapterListResult *out_result);"
+    },
+    {
       "name": "SqvmContentBinBookListCallback",
       "definition": "typedef int32_t (*SqvmContentBinBookListCallback)(\n\tvoid *user_data,\n\tconst uint8_t *library,\n\tsize_t library_len,\n\tint32_t offset,\n\tint32_t limit,\n\tSqvmContentBinBookEntry *out,\n\tsize_t out_cap,\n\tsize_t *out_count,\n\tSqvmContentBinBookListResult *out_result);"
     },
@@ -1367,7 +1388,7 @@
     },
     {
       "name": "SqvmCallbacks",
-      "definition": "typedef struct {\n\tSqvmTraceCallback trace;\n\tSqvmReadExactAtCallback read_exact_at;\n\tSqvmDebugOutputCallback debug_output;\n\tSqvmDisplayClearCallback display_clear;\n\tSqvmDisplayTextCallback display_text;\n\tSqvmDisplayRectCallback display_rect;\n\tSqvmDisplayLineCallback display_line;\n\tSqvmDisplaySelectCallback display_select;\n\tSqvmDisplayImageCallback display_image;\n\tSqvmDisplayDrawCallback display_draw;\n\tSqvmDisplayRefreshModeCallback display_refresh_mode;\n\tSqvmDisplayInfoCallback display_info;\n\tSqvmIndicatorWriteCallback indicator_write;\n\tSqvmIndicatorToggleCallback indicator_toggle;\n\tSqvmIndicatorReadCallback indicator_read;\n\tSqvmIndicatorBreatheCallback indicator_breathe;\n\tSqvmIndicatorBlinkCallback indicator_blink;\n\tSqvmHardwareGpioWriteCallback hardware_gpio_write;\n\tSqvmHardwareGpioToggleCallback hardware_gpio_toggle;\n\tSqvmHardwareGpioReadCallback hardware_gpio_read;\n\tSqvmAppLifecycleCallback app_launch;\n\tSqvmAppLifecycleCallback app_arm;\n\tSqvmAppLifecycleCallback app_disarm;\n\tSqvmAppInstallFileCallback app_install_file;\n\tSqvmAppRegistryListCallback app_registry_list;\n\tSqvmAppRegistryGetCallback app_registry_get;\n\tSqvmAppStackCallback app_process_stack;\n\tSqvmAppStackCallback app_armed_stack;\n\tSqvmTimerEveryCallback timer_every;\n\tSqvmTimerAfterCallback timer_after;\n\tSqvmBleStartCallback ble_start;\n\tSqvmBleStopCallback ble_stop;\n\tSqvmHttpStartCallback http_start;\n\tSqvmHttpStopCallback http_stop;\n\tSqvmWifiStartApCallback wifi_start_ap;\n\tSqvmWifiStopApCallback wifi_stop_ap;\n\tSqvmWifiConnectCallback wifi_connect;\n\tSqvmWifiDisconnectCallback wifi_disconnect;\n\tSqvmWifiGetApIpCallback wifi_get_ap_ip;\n\tSqvmWifiStatusCallback wifi_status;\n\tSqvmWifiScanCallback wifi_scan;\n\tSqvmWifiOperationCallback wifi_operation;\n\tSqvmWifiResultCallback wifi_result;\n\tSqvmWifiCancelCallback wifi_cancel;\n\tSqvmWifiScanNetworkCallback wifi_scan_network;\n\tSqvmDeviceConfigLoadCallback device_config_load;\n\tSqvmDeviceConfigSetCallback device_config_set;\n\tSqvmDeviceConfigRebindCallback device_config_rebind;\n\tSqvmDeviceConfigSaveCallback device_config_save;\n\tSqvmFilePickFileCallback file_pick_file;\n\tSqvmFileReadTextCallback file_read_text;\n\tSqvmFileReadLinesCallback file_read_lines;\n\tSqvmFileCopyCallback file_copy;\n\tSqvmBinBookOpenCallback binbook_open;\n\tSqvmBinBookInfoCallback binbook_info;\n\tSqvmBinBookReadPageCallback binbook_read_page;\n\tSqvmContentBinBookListCallback content_binbook_list;\n\tSqvmSystemMemoryTextCallback system_memory_text;\n\tSqvmSystemStorageTextCallback system_storage_text;\n\tSqvmSystemStartReasonTextCallback system_start_reason_text;\n\tSqvmPowerSleepCallback power_sleep;\n} SqvmCallbacks;"
+      "definition": "typedef struct {\n\tSqvmTraceCallback trace;\n\tSqvmReadExactAtCallback read_exact_at;\n\tSqvmDebugOutputCallback debug_output;\n\tSqvmDisplayClearCallback display_clear;\n\tSqvmDisplayTextCallback display_text;\n\tSqvmDisplayRectCallback display_rect;\n\tSqvmDisplayLineCallback display_line;\n\tSqvmDisplaySelectCallback display_select;\n\tSqvmDisplayImageCallback display_image;\n\tSqvmDisplayDrawCallback display_draw;\n\tSqvmDisplayRefreshModeCallback display_refresh_mode;\n\tSqvmDisplayInfoCallback display_info;\n\tSqvmIndicatorWriteCallback indicator_write;\n\tSqvmIndicatorToggleCallback indicator_toggle;\n\tSqvmIndicatorReadCallback indicator_read;\n\tSqvmIndicatorBreatheCallback indicator_breathe;\n\tSqvmIndicatorBlinkCallback indicator_blink;\n\tSqvmHardwareGpioWriteCallback hardware_gpio_write;\n\tSqvmHardwareGpioToggleCallback hardware_gpio_toggle;\n\tSqvmHardwareGpioReadCallback hardware_gpio_read;\n\tSqvmAppLifecycleCallback app_launch;\n\tSqvmAppLifecycleCallback app_arm;\n\tSqvmAppLifecycleCallback app_disarm;\n\tSqvmAppInstallFileCallback app_install_file;\n\tSqvmAppRegistryListCallback app_registry_list;\n\tSqvmAppRegistryGetCallback app_registry_get;\n\tSqvmAppStackCallback app_process_stack;\n\tSqvmAppStackCallback app_armed_stack;\n\tSqvmTimerEveryCallback timer_every;\n\tSqvmTimerAfterCallback timer_after;\n\tSqvmBleStartCallback ble_start;\n\tSqvmBleStopCallback ble_stop;\n\tSqvmHttpStartCallback http_start;\n\tSqvmHttpStopCallback http_stop;\n\tSqvmWifiStartApCallback wifi_start_ap;\n\tSqvmWifiStopApCallback wifi_stop_ap;\n\tSqvmWifiConnectCallback wifi_connect;\n\tSqvmWifiDisconnectCallback wifi_disconnect;\n\tSqvmWifiGetApIpCallback wifi_get_ap_ip;\n\tSqvmWifiStatusCallback wifi_status;\n\tSqvmWifiScanCallback wifi_scan;\n\tSqvmWifiOperationCallback wifi_operation;\n\tSqvmWifiResultCallback wifi_result;\n\tSqvmWifiCancelCallback wifi_cancel;\n\tSqvmWifiScanNetworkCallback wifi_scan_network;\n\tSqvmDeviceConfigLoadCallback device_config_load;\n\tSqvmDeviceConfigSetCallback device_config_set;\n\tSqvmDeviceConfigRebindCallback device_config_rebind;\n\tSqvmDeviceConfigSaveCallback device_config_save;\n\tSqvmFilePickFileCallback file_pick_file;\n\tSqvmFileReadTextCallback file_read_text;\n\tSqvmFileReadLinesCallback file_read_lines;\n\tSqvmFileCopyCallback file_copy;\n\tSqvmBinBookOpenCallback binbook_open;\n\tSqvmBinBookInfoCallback binbook_info;\n\tSqvmBinBookReadPageCallback binbook_read_page;\n\tSqvmBinBookChaptersCallback binbook_chapters;\n\tSqvmContentBinBookListCallback content_binbook_list;\n\tSqvmSystemMemoryTextCallback system_memory_text;\n\tSqvmSystemStorageTextCallback system_storage_text;\n\tSqvmSystemStartReasonTextCallback system_start_reason_text;\n\tSqvmPowerSleepCallback power_sleep;\n} SqvmCallbacks;"
     }
   ],
   "result_defaults": [
@@ -2086,6 +2107,50 @@
       ]
     },
     {
+      "type": "SqvmBinBookChapterListResult",
+      "rust_fields": [
+        {
+          "field": "ok",
+          "value": "false"
+        },
+        {
+          "field": "error",
+          "literal": "unsupported"
+        },
+        {
+          "field": "count",
+          "value": "0"
+        },
+        {
+          "field": "has_more",
+          "value": "false"
+        }
+      ],
+      "c_helpers": [
+        {
+          "name": "sqvm_binbook_chapter_list_result_unsupported",
+          "fields": [
+            {
+              "field": "ok",
+              "value": "false"
+            },
+            {
+              "field": "error",
+              "literal": "unsupported"
+            },
+            {
+              "field": "count",
+              "value": "0"
+            },
+            {
+              "field": "has_more",
+              "value": "false"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "type": "SqvmContentBinBookListResult",
       "rust_fields": [
         {
@@ -2432,6 +2497,25 @@
         "test_vm_runtime_dispatches_file_pick_file_unsupported_result",
         "test_vm_runtime_dispatches_file_read_unsupported_results",
         "test_vm_runtime_file_copy_publishes_binbook"
+      ]
+    },
+    {
+      "family": "binbook",
+      "callbacks": [
+        "binbook_open",
+        "binbook_info",
+        "binbook_read_page",
+        "binbook_chapters"
+      ],
+      "rust": "Rust FFI dispatch BinBook tests",
+      "zephyr": "BinBook resource and chapter ztests",
+      "rust_tests": [
+        "dispatches_binbook_callbacks_and_draws_typed_handle",
+        "dispatches_binbook_chapters_callback"
+      ],
+      "zephyr_tests": [
+        "test_vm_runtime_dispatches_binbook_resource_drawable",
+        "test_vm_runtime_lists_binbook_chapters"
       ]
     },
     {

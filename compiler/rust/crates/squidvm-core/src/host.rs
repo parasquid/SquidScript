@@ -299,6 +299,14 @@ pub trait TraceSink {
     ) -> Result<BinBookReadPageResult<'a>, VmError> {
         Ok(BinBookReadPageResult::unsupported())
     }
+    fn binbook_chapters<'a>(
+        &'a mut self,
+        _book: Handle,
+        _offset: i32,
+        _limit: i32,
+    ) -> Result<BinBookChapterListResult<'a>, VmError> {
+        Ok(BinBookChapterListResult::unsupported())
+    }
     fn content_binbook_list<'a>(
         &'a mut self,
         _library: &str,
@@ -454,6 +462,36 @@ impl BinBookReadPageResult<'_> {
             ok: false,
             error: Some("unsupported"),
             drawable: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BinBookChapterEntry<'a> {
+    pub index: i32,
+    pub title: &'a str,
+    pub page_index: i32,
+    pub level: i32,
+    pub entry_type: i32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BinBookChapterListResult<'a> {
+    pub ok: bool,
+    pub error: Option<&'a str>,
+    pub items: &'a [BinBookChapterEntry<'a>],
+    pub count: i32,
+    pub has_more: bool,
+}
+
+impl BinBookChapterListResult<'_> {
+    pub const fn unsupported() -> Self {
+        Self {
+            ok: false,
+            error: Some("unsupported"),
+            items: &[],
+            count: 0,
+            has_more: false,
         }
     }
 }

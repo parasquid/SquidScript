@@ -2795,16 +2795,38 @@ Result:
 { ok: bool, error: string?, drawable: handle? }
 ```
 
+`binbook.chapters(book)`
+
+`binbook.chapters(book, { offset: int, limit: int })`
+
+Lists chapter/navigation entries from an opened book handle. The runtime
+materializes at most one bounded page of entries per call. The current BinBook
+backend reads `NAV_INDEX` records and title `StringRef`s from the resource file
+on demand; it does not load the full navigation table or string table into RAM.
+
+Result:
+
+```text
+{ ok: bool, error: string?, items: list, count: int, hasMore: bool }
+```
+
+Each item has:
+
+```text
+{ index: int, title: string, pageIndex: int, level: int, type: int }
+```
+
 Example:
 
 ```squid
 let opened = binbook.open("books/sample.binbook")
 if (opened.ok) {
   let info = binbook.info(opened.book)
+  let chapters = binbook.chapters(opened.book, { offset: 0, limit: 8 })
   let page = binbook.readPage(opened.book, state.pageIndex)
   if (page.ok) {
     service.display.draw(page.drawable)
-    debug.print("pages", info.pageCount)
+    debug.print("pages", info.pageCount, chapters.count)
   }
 }
 ```

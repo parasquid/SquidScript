@@ -55,6 +55,7 @@
 	.binbook_open = runtime_binbook_open,
 	.binbook_info = runtime_binbook_info,
 	.binbook_read_page = runtime_binbook_read_page,
+	.binbook_chapters = runtime_binbook_chapters,
 	.content_binbook_list = runtime_content_binbook_list,
 	.system_memory_text = runtime_system_memory_text,
 	.system_storage_text = runtime_system_storage_text,

@@ -797,6 +797,27 @@ static int refresh_display(bool *observed_busy)
 	return wait_ready("refresh", observed_busy);
 }
 
+static int refresh_partial_display(bool *observed_busy)
+{
+	const uint8_t display_update[] = {0x00, 0x00};
+	const uint8_t update = SSD1677_UPDATE_PARTIAL;
+	int ret = write_command_data(SSD1677_CMD_DISPLAY_UPDATE_CTRL, display_update,
+				     sizeof(display_update));
+
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command_data(SSD1677_CMD_UPDATE_CTRL2, &update, sizeof(update));
+	if (ret != 0) {
+		return ret;
+	}
+	ret = write_command(SSD1677_CMD_MASTER_ACTIVATION);
+	if (ret != 0) {
+		return ret;
+	}
+	return wait_ready("refresh-partial", observed_busy);
+}
+
 static int refresh_grayscale_display(bool *observed_busy)
 {
 	const uint8_t display_update[] = {0x00, 0x00};
@@ -949,7 +970,12 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 			ret = refresh_binbook_bw_partial_display(&observed_busy);
 		}
 	} else {
-		ret = refresh_display(&observed_busy);
+		if (refresh_request == SQ_VM_RUNTIME_DISPLAY_REFRESH_FAST_1BPP) {
+			refresh_mode = "bw-partial";
+			ret = refresh_partial_display(&observed_busy);
+		} else {
+			ret = refresh_display(&observed_busy);
+		}
 	}
 	if (ret != 0) {
 		return ret;
