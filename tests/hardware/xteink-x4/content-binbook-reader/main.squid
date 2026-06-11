@@ -4,12 +4,16 @@ state {
   pageIndex: int = 0
   mode: int = 0
   chapterSelected: int = 0
+  chapterTop: int = 0
+  chapterCount: int = 0
 }
 
 event.on("app.start") {
   state.pageIndex = 0
   state.mode = 0
   state.chapterSelected = 0
+  state.chapterTop = 0
+  state.chapterCount = 0
   screen.open("reader")
 }
 
@@ -45,6 +49,8 @@ event.on("key.SELECT") {
   if (state.mode == 0) {
     state.mode = 1
     state.chapterSelected = 0
+    state.chapterTop = 0
+    loadChapterCount()
     screen.open("chapters")
   } else {
     jumpToSelectedChapter()
@@ -95,29 +101,37 @@ function previousPage() {
 }
 
 function nextChapter() {
-  let listing = content.binbook.list("books", { offset: 0, limit: 1 })
-  if (listing.ok) {
-    for item in listing.items max 1 {
-      let opened = binbook.open(item.ref)
-      if (opened.ok) {
-        let chapters = binbook.chapters(opened.book, { offset: 0, limit: 5 })
-        if (chapters.ok) {
-          if (state.chapterSelected + 1 < chapters.count) {
-            if (state.chapterSelected + 1 < 5) {
-              state.chapterSelected = state.chapterSelected + 1
-              screen.refresh()
-            }
-          }
-        }
-      }
+  if (state.chapterSelected + 1 < state.chapterCount) {
+    state.chapterSelected = state.chapterSelected + 1
+    if (state.chapterSelected >= state.chapterTop + 5) {
+      state.chapterTop = state.chapterTop + 1
     }
+    screen.refresh()
   }
 }
 
 function previousChapter() {
   if (state.chapterSelected > 0) {
     state.chapterSelected = state.chapterSelected - 1
+    if (state.chapterSelected < state.chapterTop) {
+      state.chapterTop = state.chapterTop - 1
+    }
     screen.refresh()
+  }
+}
+
+function loadChapterCount() {
+  let listing = content.binbook.list("books", { offset: 0, limit: 1 })
+  if (listing.ok) {
+    for item in listing.items max 1 {
+      let opened = binbook.open(item.ref)
+      if (opened.ok) {
+        let info = binbook.info(opened.book)
+        if (info.ok) {
+          state.chapterCount = info.chapterCount
+        }
+      }
+    }
   }
 }
 
@@ -127,61 +141,50 @@ function jumpToSelectedChapter() {
     for item in listing.items max 1 {
       let opened = binbook.open(item.ref)
       if (opened.ok) {
-        let chapters = binbook.chapters(opened.book, { offset: 0, limit: 5 })
-        if (chapters.ok) {
-          let row = 0
-          for chapter in chapters.items max 5 {
-            if (row == state.chapterSelected) {
-              state.pageIndex = chapter.pageIndex
-              state.mode = 0
-              screen.open("reader")
-            }
-            row = row + 1
-          }
+        let chapter = binbook.chapter(opened.book, state.chapterSelected)
+        if (chapter.ok) {
+          state.pageIndex = chapter.pageIndex
+          state.mode = 0
+          screen.open("reader")
         }
       }
     }
   }
 }
 
-function drawChapterRow0(title) {
-  if (state.chapterSelected == 0) {
-    service.display.text("SELECTED", { x: 28, y: 76, w: 408, h: 48, fontHeight: 28, valign: "middle", textColor: "gray15" })
-  } else {
-    service.display.text(title, { x: 28, y: 76, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: "gray15" })
+function drawChapterRow0(index, title) {
+  if (state.chapterSelected == index) {
+    service.display.rect(18, 76, 424, 48, { strokeColor: "gray15" })
   }
+  service.display.text(title, { x: 28, y: 76, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: "gray15" })
 }
 
-function drawChapterRow1(title) {
-  if (state.chapterSelected == 1) {
-    service.display.text("SELECTED", { x: 28, y: 128, w: 408, h: 48, fontHeight: 28, valign: "middle", textColor: "gray15" })
-  } else {
-    service.display.text(title, { x: 28, y: 128, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: "gray15" })
+function drawChapterRow1(index, title) {
+  if (state.chapterSelected == index) {
+    service.display.rect(18, 128, 424, 48, { strokeColor: "gray15" })
   }
+  service.display.text(title, { x: 28, y: 128, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: "gray15" })
 }
 
-function drawChapterRow2(title) {
-  if (state.chapterSelected == 2) {
-    service.display.text("SELECTED", { x: 28, y: 180, w: 408, h: 48, fontHeight: 28, valign: "middle", textColor: "gray15" })
-  } else {
-    service.display.text(title, { x: 28, y: 180, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: "gray15" })
+function drawChapterRow2(index, title) {
+  if (state.chapterSelected == index) {
+    service.display.rect(18, 180, 424, 48, { strokeColor: "gray15" })
   }
+  service.display.text(title, { x: 28, y: 180, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: "gray15" })
 }
 
-function drawChapterRow3(title) {
-  if (state.chapterSelected == 3) {
-    service.display.text("SELECTED", { x: 28, y: 232, w: 408, h: 48, fontHeight: 28, valign: "middle", textColor: "gray15" })
-  } else {
-    service.display.text(title, { x: 28, y: 232, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: "gray15" })
+function drawChapterRow3(index, title) {
+  if (state.chapterSelected == index) {
+    service.display.rect(18, 232, 424, 48, { strokeColor: "gray15" })
   }
+  service.display.text(title, { x: 28, y: 232, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: "gray15" })
 }
 
-function drawChapterRow4(title) {
-  if (state.chapterSelected == 4) {
-    service.display.text("SELECTED", { x: 28, y: 284, w: 408, h: 48, fontHeight: 28, valign: "middle", textColor: "gray15" })
-  } else {
-    service.display.text(title, { x: 28, y: 284, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: "gray15" })
+function drawChapterRow4(index, title) {
+  if (state.chapterSelected == index) {
+    service.display.rect(18, 284, 424, 48, { strokeColor: "gray15" })
   }
+  service.display.text(title, { x: 28, y: 284, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: "gray15" })
 }
 
 screen("reader") {
@@ -199,7 +202,7 @@ screen("reader") {
         y: 112
         fontHeight: 18
       })
-      debug.print("book-list-empty", listing.warning, listing.count)
+      debug.print("err", listing.warning, listing.count)
     } else {
       for item in listing.items max 1 {
         let opened = binbook.open(item.ref)
@@ -215,7 +218,7 @@ screen("reader") {
               y: 64
               fontHeight: 24
             })
-            debug.print("page-read-failed", page.error, state.pageIndex)
+            debug.print("err", page.error, state.pageIndex)
           }
         } else {
           service.display.text("Open failed", {
@@ -223,7 +226,7 @@ screen("reader") {
             y: 64
             fontHeight: 24
           })
-          debug.print("book-open-failed", item.name, opened.error)
+          debug.print("err", item.name, opened.error)
         }
       }
     }
@@ -233,7 +236,7 @@ screen("reader") {
       y: 64
       fontHeight: 24
     })
-    debug.print("book-list-failed", listing.error, listing.warning)
+    debug.print("err", listing.error, listing.warning)
   }
 }
 
@@ -245,23 +248,23 @@ screen("chapters") {
     for item in listing.items max 1 {
       let opened = binbook.open(item.ref)
       if (opened.ok) {
-        let chapters = binbook.chapters(opened.book, { offset: 0, limit: 5 })
+        let chapters = binbook.chapters(opened.book, { offset: state.chapterTop, limit: 5 })
         if (chapters.ok) {
           for chapter in chapters.items max 5 {
-            if (chapter.index == 0) {
-              drawChapterRow0(chapter.title)
+            if (chapter.index == state.chapterTop) {
+              drawChapterRow0(chapter.index, chapter.title)
             }
-            if (chapter.index == 1) {
-              drawChapterRow1(chapter.title)
+            if (chapter.index == state.chapterTop + 1) {
+              drawChapterRow1(chapter.index, chapter.title)
             }
-            if (chapter.index == 2) {
-              drawChapterRow2(chapter.title)
+            if (chapter.index == state.chapterTop + 2) {
+              drawChapterRow2(chapter.index, chapter.title)
             }
-            if (chapter.index == 3) {
-              drawChapterRow3(chapter.title)
+            if (chapter.index == state.chapterTop + 3) {
+              drawChapterRow3(chapter.index, chapter.title)
             }
-            if (chapter.index == 4) {
-              drawChapterRow4(chapter.title)
+            if (chapter.index == state.chapterTop + 4) {
+              drawChapterRow4(chapter.index, chapter.title)
             }
           }
         } else {
@@ -270,7 +273,7 @@ screen("chapters") {
             y: 92
             fontHeight: 22
           })
-          debug.print("chapter-list-failed", chapters.error)
+          debug.print("err", chapters.error)
         }
       }
     }

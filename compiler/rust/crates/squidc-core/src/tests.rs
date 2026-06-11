@@ -1414,6 +1414,29 @@ event.on("app.start") {
 }
 
 #[test]
+fn compiles_binbook_chapter_result_call_to_sqbc() {
+    let source = r#"app "binbook-chapter"
+event.on("app.start") {
+  let opened = binbook.open("books/sample.binbook")
+  if (opened.ok) {
+    let chapter = binbook.chapter(opened.book, 1)
+    debug.print(chapter.ok, chapter.index, chapter.title, chapter.pageIndex)
+  }
+}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let sqbc = sqbc::encode_sqbc(&output.ir.unwrap()).unwrap();
+    assert!(
+        sqbc.windows(2).any(|window| window == [50, 0x85]),
+        "expected binbook.chapter builtin in SQBC"
+    );
+}
+
+#[test]
 fn compiles_content_binbook_list_result_call_to_sqbc() {
     let source = r#"app "content-library"
 

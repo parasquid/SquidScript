@@ -51,7 +51,9 @@ logical identifier bounded by `SQ_VM_RUNTIME_CONTENT_REF_LEN`.
 
 `binbook.chapters(...)` materializes at most one chapter page of
 `SQ_VM_RUNTIME_CONTENT_LIST_MAX` entries per call. Chapter titles are copied
-into fixed per-entry firmware buffers bounded by `SQ_VM_RUNTIME_CONTENT_NAME_LEN`.
+from BinBook `CHAPTER_INDEX` records into fixed per-entry firmware buffers
+bounded by `SQ_VM_RUNTIME_CONTENT_NAME_LEN`. `binbook.chapter(...)` reads one
+chapter entry and uses one of the same bounded title buffers.
 
 ## BLE File-Transfer Profile Table
 

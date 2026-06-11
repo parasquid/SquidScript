@@ -98,6 +98,7 @@ pub(crate) const BUILTIN_BINBOOK_INFO: u8 = 0x81;
 pub(crate) const BUILTIN_BINBOOK_READ_PAGE: u8 = 0x82;
 pub(crate) const BUILTIN_CONTENT_BINBOOK_LIST: u8 = 0x83;
 pub(crate) const BUILTIN_BINBOOK_CHAPTERS: u8 = 0x84;
+pub(crate) const BUILTIN_BINBOOK_CHAPTER: u8 = 0x85;
 pub(crate) const BUILTIN_FILE_PICK_FILE: u8 = 0x90;
 pub(crate) const BUILTIN_FILE_READ_TEXT: u8 = 0x91;
 pub(crate) const BUILTIN_FILE_READ_LINES: u8 = 0x92;

@@ -300,12 +300,15 @@ struct sq_vm_runtime_binbook_handle {
 	uint64_t string_table_offset;
 	uint64_t page_index_offset;
 	uint64_t nav_index_offset;
+	uint64_t chapter_index_offset;
 	uint64_t page_data_offset;
 	uint32_t string_table_length;
 	uint32_t page_count;
 	uint32_t nav_count;
+	uint32_t chapter_count;
 	uint16_t page_index_entry_size;
 	uint16_t nav_index_entry_size;
+	uint16_t chapter_index_entry_size;
 };
 
 struct sq_vm_runtime_drawable_handle {

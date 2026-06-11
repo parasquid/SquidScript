@@ -146,6 +146,8 @@ int32_t runtime_binbook_read_page(void *user_data, SqvmHandle book, int32_t page
 int32_t runtime_binbook_chapters(void *user_data, SqvmHandle book, int32_t offset,
 				 int32_t limit, SqvmBinBookChapterEntry *out, size_t out_cap,
 				 size_t *out_count, SqvmBinBookChapterListResult *out_result);
+int32_t runtime_binbook_chapter(void *user_data, SqvmHandle book, int32_t index,
+				SqvmBinBookChapterResult *out);
 int runtime_binbook_validate_path(const char *path);
 int32_t runtime_content_binbook_list(void *user_data, const uint8_t *library,
 				     size_t library_len, int32_t offset, int32_t limit,

@@ -14,6 +14,7 @@ fn is_fallible_builtin(name: &str) -> bool {
             | "file.readLines"
             | "file.copy"
             | "binbook.chapters"
+            | "binbook.chapter"
             | "content.binbook.list"
             | "service.wifi.connect"
             | "service.wifi.disconnect"

@@ -586,6 +586,7 @@ impl TraceSink for RuntimeTrace {
             error: None,
             title: Some("Sample Book"),
             page_count: 3,
+            chapter_count: BINBOOK_TEST_CHAPTERS.len() as i32,
         })
     }
 
@@ -621,6 +622,22 @@ impl TraceSink for RuntimeTrace {
             items: &BINBOOK_TEST_CHAPTERS[..2],
             count: BINBOOK_TEST_CHAPTERS.len() as i32,
             has_more: true,
+        })
+    }
+
+    fn binbook_chapter<'a>(
+        &'a mut self,
+        book: Handle,
+        index: i32,
+    ) -> Result<BinBookChapterResult<'a>, VmError> {
+        self.events.push(format!(
+            "binbook.chapter {:?}:{} {index}",
+            book.kind, book.id
+        ));
+        Ok(BinBookChapterResult {
+            ok: index >= 0 && (index as usize) < BINBOOK_TEST_CHAPTERS.len(),
+            error: None,
+            chapter: BINBOOK_TEST_CHAPTERS.get(index as usize).copied(),
         })
     }
 
@@ -2507,6 +2524,45 @@ screen("main") {}
             "debug true null 3 true",
             "debug 0 Chapter One 0 0 3",
             "debug 1 Chapter Two 4 0 3",
+        ]
+    );
+}
+
+#[test]
+fn runs_binbook_chapter_from_real_bytecode() {
+    let source = r#"app "binbook-chapter"
+event.on("app.start") {
+  let opened = binbook.open("books/sample.binbook")
+  if (opened.ok) {
+    let info = binbook.info(opened.book)
+    let chapter = binbook.chapter(opened.book, 1)
+    debug.print(info.pageCount, info.chapterCount)
+    debug.print(chapter.ok, chapter.error, chapter.index, chapter.title, chapter.pageIndex, chapter.level, chapter.type)
+  }
+}
+screen("main") {}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = RuntimeTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "binbook.open books/sample.binbook",
+            "binbook.info BinBook:7",
+            "binbook.chapter BinBook:7 1",
+            "debug 3 3",
+            "debug true null 1 Chapter Two 4 0 3",
         ]
     );
 }

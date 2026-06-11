@@ -11,13 +11,13 @@ use squidvm_ffi::{
     sqvm_dispatch_start_resumable_with_payload, sqvm_trigger_ble_profile_count,
     sqvm_trigger_ble_profile_read, sqvm_trigger_http_profile_count, sqvm_trigger_http_profile_read,
     sqvm_trigger_timer_count, sqvm_trigger_timer_read, SqvmAppRegistryEntry, SqvmAppStackEntry,
-    SqvmBinBookChapterEntry, SqvmBinBookChapterListResult, SqvmBinBookInfoResult,
-    SqvmBinBookOpenResult, SqvmBinBookReadPageResult, SqvmBleProfileTrigger, SqvmCallbacks,
-    SqvmContentBinBookEntry, SqvmContentBinBookListResult, SqvmDeviceBinding,
-    SqvmDeviceConfigResult, SqvmDeviceConfigValue, SqvmDeviceConfigValueKind,
-    SqvmDispatchOutcome, SqvmDispatchResult, SqvmDisplayInfo, SqvmEventPayloadField,
-    SqvmFileCopyResult, SqvmFilePickFileResult, SqvmFileReadLinesResult, SqvmFileReadTextResult,
-    SqvmHandle, SqvmHandleKind, SqvmHttpProfileTrigger, SqvmStatus, SqvmStorageCompletion,
+    SqvmBinBookChapterEntry, SqvmBinBookChapterListResult, SqvmBinBookChapterResult,
+    SqvmBinBookInfoResult, SqvmBinBookOpenResult, SqvmBinBookReadPageResult, SqvmBleProfileTrigger,
+    SqvmCallbacks, SqvmContentBinBookEntry, SqvmContentBinBookListResult, SqvmDeviceBinding,
+    SqvmDeviceConfigResult, SqvmDeviceConfigValue, SqvmDeviceConfigValueKind, SqvmDispatchOutcome,
+    SqvmDispatchResult, SqvmDisplayInfo, SqvmEventPayloadField, SqvmFileCopyResult,
+    SqvmFilePickFileResult, SqvmFileReadLinesResult, SqvmFileReadTextResult, SqvmHandle,
+    SqvmHandleKind, SqvmHttpProfileTrigger, SqvmStatus, SqvmStorageCompletion,
     SqvmStorageRequestKind, SqvmTriggerTimer,
 };
 
@@ -1231,6 +1231,15 @@ unsafe extern "C" fn failing_binbook_chapters(
     -22
 }
 
+unsafe extern "C" fn failing_binbook_chapter(
+    _user_data: *mut c_void,
+    _book: SqvmHandle,
+    _index: i32,
+    _out: *mut SqvmBinBookChapterResult,
+) -> i32 {
+    -22
+}
+
 unsafe extern "C" fn failing_app_registry_list(
     _user_data: *mut c_void,
     _out: *mut SqvmAppRegistryEntry,
@@ -1438,6 +1447,7 @@ unsafe extern "C" fn binbook_info(
         title: b"Sample Book".as_ptr(),
         title_len: b"Sample Book".len(),
         page_count: 3,
+        chapter_count: 3,
     };
     0
 }
@@ -1507,6 +1517,34 @@ unsafe extern "C" fn binbook_chapters(
         error_len: 0,
         count: 3,
         has_more: true,
+    };
+    0
+}
+
+unsafe extern "C" fn binbook_chapter(
+    user_data: *mut c_void,
+    book: SqvmHandle,
+    index: i32,
+    out: *mut SqvmBinBookChapterResult,
+) -> i32 {
+    let host = &mut *(user_data as *mut Host);
+    host.binbook_actions
+        .push(format!("chapter {:?}:{} {index}", book.kind, book.id));
+    if out.is_null() {
+        return -1;
+    }
+    *out = SqvmBinBookChapterResult {
+        ok: true,
+        error: ptr::null(),
+        error_len: 0,
+        chapter: SqvmBinBookChapterEntry {
+            index,
+            title: b"Chapter Two".as_ptr(),
+            title_len: b"Chapter Two".len(),
+            page_index: 4,
+            level: 0,
+            entry_type: 3,
+        },
     };
     0
 }
@@ -1619,6 +1657,7 @@ fn callbacks(_host: &mut Host) -> SqvmCallbacks {
         binbook_info: Some(binbook_info),
         binbook_read_page: Some(binbook_read_page),
         binbook_chapters: Some(binbook_chapters),
+        binbook_chapter: Some(binbook_chapter),
         content_binbook_list: Some(content_binbook_list),
         system_memory_text: Some(system_memory_text),
         system_storage_text: Some(system_storage_text),
@@ -1915,6 +1954,20 @@ event.on("app.start") {
     for chapter in chapters.items max 8 {
       debug.print(chapter.index, chapter.title, chapter.pageIndex, chapter.level, chapter.type)
     }
+  }
+}
+"#,
+    )
+}
+
+fn compile_binbook_chapter_sqbc() -> Vec<u8> {
+    compile_sqbc(
+        r#"app "ffi-binbook-chapter"
+event.on("app.start") {
+  let opened = binbook.open("books/sample.binbook")
+  if (opened.ok) {
+    let chapter = binbook.chapter(opened.book, 1)
+    debug.print(chapter.ok, chapter.error, chapter.index, chapter.title, chapter.pageIndex, chapter.level, chapter.type)
   }
 }
 "#,
@@ -2567,6 +2620,47 @@ fn dispatches_binbook_chapters_callback() {
             "1 Chapter Two 4 0 3".to_string(),
         ]
     );
+}
+
+#[test]
+fn dispatches_binbook_chapter_callback() {
+    let mut host = Host {
+        sqbc: compile_binbook_chapter_sqbc(),
+        ..Host::default()
+    };
+    let mut scratch = vec![0u8; 4096];
+    let mut context = sqvm_context_init();
+
+    let status = unsafe {
+        sqvm_context_init_in_place(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            scratch.as_mut_ptr(),
+            scratch.len(),
+        )
+    };
+    assert_eq!(status, SqvmStatus::Ok);
+
+    let status = unsafe {
+        sqvm_dispatch(
+            &mut context,
+            callback_user_data(&mut host),
+            &callbacks(&mut host),
+            b"app.start".as_ptr(),
+            b"app.start".len(),
+        )
+    };
+
+    assert_eq!(status, SqvmStatus::Ok);
+    assert_eq!(
+        host.binbook_actions,
+        vec![
+            "open books/sample.binbook".to_string(),
+            "chapter BinBook:7 1".to_string(),
+        ]
+    );
+    assert_eq!(host.output, vec!["true null 1 Chapter Two 4 0 3"]);
 }
 
 #[test]

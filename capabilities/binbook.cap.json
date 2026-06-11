@@ -4,10 +4,10 @@
     "version": "0.2",
     "status": "draft",
     "kind": "standard-domain-capability",
-    "summary": "Read BinBook v0.1 compiled raster-book documents through firmware-owned handles and display-ready drawables.",
+    "summary": "Read BinBook compiled raster-book documents through firmware-owned handles and display-ready drawables.",
     "sourceSpecs": [
         {
-            "name": "BinBook Format Specification v0.1",
+            "name": "BinBook Format Specification",
             "url": "https://github.com/parasquid/binbook/blob/main/BINBOOK_FORMAT_SPEC.md",
             "scope": "Defines the .binbook binary container, sections, pixel formats, compression, validation rules, and xteink-x4-portrait profile."
         },
@@ -75,6 +75,7 @@
         "Read metadata from BOOK_METADATA, DISPLAY_PROFILE, LAYOUT_PROFILE, READER_REQUIREMENTS, and related sections.",
         "Resolve page records from PAGE_INDEX.",
         "Resolve navigation records from NAV_INDEX.",
+        "Resolve bounded chapter lists and single chapter lookups from CHAPTER_INDEX.",
         "Read PAGE_DATA blobs by relative blob offset.",
         "Decompress NONE and RLE_PACKBITS page blobs when supported.",
         "Validate decompressed size and page CRC32 when present.",
@@ -154,6 +155,11 @@
                         "name": "navCount",
                         "type": "int",
                         "source": "NAV_INDEX.record_count"
+                    },
+                    {
+                        "name": "chapterCount",
+                        "type": "int",
+                        "source": "CHAPTER_INDEX.record_count"
                     },
                     {
                         "name": "logicalWidth",

@@ -105,6 +105,7 @@ const BUILTIN_BINBOOK_INFO: u8 = 0x81;
 const BUILTIN_BINBOOK_READ_PAGE: u8 = 0x82;
 const BUILTIN_CONTENT_BINBOOK_LIST: u8 = 0x83;
 const BUILTIN_BINBOOK_CHAPTERS: u8 = 0x84;
+const BUILTIN_BINBOOK_CHAPTER: u8 = 0x85;
 const BUILTIN_FILE_PICK_FILE: u8 = 0x90;
 const BUILTIN_FILE_READ_TEXT: u8 = 0x91;
 const BUILTIN_FILE_READ_LINES: u8 = 0x92;
@@ -1237,6 +1238,24 @@ fn compile_binbook_chapters(
     Ok(())
 }
 
+fn compile_binbook_chapter(
+    unit: &mut CompileUnit,
+    frame: &FrameCompiler,
+    args: &[IrExpr],
+) -> Result<(), SqbcError> {
+    validate_builtin_arg_count("binbook.chapter", args.len())?;
+    let book = args
+        .first()
+        .ok_or_else(|| SqbcError::new("binbook.chapter requires a book"))?;
+    let index = args
+        .get(1)
+        .ok_or_else(|| SqbcError::new("binbook.chapter requires an index"))?;
+    compile_expr(unit, frame, book)?;
+    compile_expr(unit, frame, index)?;
+    emit_builtin(&mut unit.code, BUILTIN_BINBOOK_CHAPTER);
+    Ok(())
+}
+
 fn compile_file_copy(
     unit: &mut CompileUnit,
     frame: &FrameCompiler,
@@ -1339,6 +1358,10 @@ fn compile_expr(
         IrExpr::Call { name, args } => {
             if name == "binbook.chapters" {
                 compile_binbook_chapters(unit, frame, args)?;
+                return Ok(());
+            }
+            if name == "binbook.chapter" {
+                compile_binbook_chapter(unit, frame, args)?;
                 return Ok(());
             }
             if name == "content.binbook.list" {
@@ -1475,6 +1498,7 @@ fn builtin_for_call(name: &str) -> Option<u8> {
         "binbook.readPage" => Some(BUILTIN_BINBOOK_READ_PAGE),
         "content.binbook.list" => Some(BUILTIN_CONTENT_BINBOOK_LIST),
         "binbook.chapters" => Some(BUILTIN_BINBOOK_CHAPTERS),
+        "binbook.chapter" => Some(BUILTIN_BINBOOK_CHAPTER),
         "file.pickFile" => Some(BUILTIN_FILE_PICK_FILE),
         "file.readText" => Some(BUILTIN_FILE_READ_TEXT),
         "file.readLines" => Some(BUILTIN_FILE_READ_LINES),
@@ -1507,6 +1531,7 @@ fn validate_builtin_arg_count(name: &str, count: usize) -> Result<(), SqbcError>
         "binbook.info" => count == 1,
         "binbook.readPage" => count == 2,
         "binbook.chapters" => count == 1 || count == 2,
+        "binbook.chapter" => count == 2,
         "content.binbook.list" => count == 1 || count == 2,
         "file.pickFile" => count == 1,
         "file.readText" => count == 1,

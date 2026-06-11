@@ -14,13 +14,14 @@ use squidvm_core::{
     error::VmError,
     host::{
         AppArmedStack, AppArmedStackEntry, AppInstallResult, AppProcessStack, AppRegistryEntry,
-        AppRegistryList, BinBookChapterEntry, BinBookChapterListResult, BinBookInfoResult,
-        BinBookOpenResult, BinBookReadPageResult, ContentBinBookEntry, ContentBinBookListResult,
-        DeviceConfigResult, DisplayInfo, DisplayLineOptions, DisplayRectOptions,
-        DisplayResourceOptions, DisplayTextOptions, FileCopyResult, FilePickFileResult,
-        FileReadLinesResult, FileReadTextResult, StorageCompletion as CoreStorageCompletion,
-        StorageRequest, TraceSink, VmDispatch, WifiAccessPoint, WifiApIp, WifiOperation,
-        WifiOperationResult, WifiScanNetwork, WifiStatus, MAX_STORAGE_TRANSFER_BYTES,
+        AppRegistryList, BinBookChapterEntry, BinBookChapterListResult, BinBookChapterResult,
+        BinBookInfoResult, BinBookOpenResult, BinBookReadPageResult, ContentBinBookEntry,
+        ContentBinBookListResult, DeviceConfigResult, DisplayInfo, DisplayLineOptions,
+        DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions, FileCopyResult,
+        FilePickFileResult, FileReadLinesResult, FileReadTextResult,
+        StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink, VmDispatch,
+        WifiAccessPoint, WifiApIp, WifiOperation, WifiOperationResult, WifiScanNetwork, WifiStatus,
+        MAX_STORAGE_TRANSFER_BYTES,
     },
     limits::{MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES, MAX_SAVED_STATE_BYTES},
     program::{Program, ProgramIndex, SqbcSection},
@@ -1077,6 +1078,7 @@ pub struct SqvmBinBookInfoResult {
     pub title: *const u8,
     pub title_len: usize,
     pub page_count: i32,
+    pub chapter_count: i32,
 }
 
 #[repr(C)]
@@ -1120,6 +1122,15 @@ pub struct SqvmBinBookChapterListResult {
     pub error_len: usize,
     pub count: i32,
     pub has_more: bool,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SqvmBinBookChapterResult {
+    pub ok: bool,
+    pub error: *const u8,
+    pub error_len: usize,
+    pub chapter: SqvmBinBookChapterEntry,
 }
 
 #[repr(C)]
@@ -3873,6 +3884,21 @@ impl TraceSink for FfiHost<'_> {
         }
     }
 
+    fn binbook_chapter<'a>(
+        &'a mut self,
+        book: Handle,
+        index: i32,
+    ) -> Result<BinBookChapterResult<'a>, VmError> {
+        let Some(binbook_chapter) = self.callbacks.binbook_chapter else {
+            return Ok(BinBookChapterResult::unsupported());
+        };
+        let mut out = SqvmBinBookChapterResult::default();
+        callback_status(unsafe {
+            binbook_chapter(self.user_data, handle_to_ffi(book), index, &mut out)
+        })?;
+        unsafe { binbook_chapter_result_from_ffi(&out) }
+    }
+
     fn content_binbook_list<'a>(
         &'a mut self,
         library: &str,
@@ -5291,6 +5317,20 @@ unsafe fn binbook_chapter_list_result_from_ffi<'a>(
     })
 }
 
+unsafe fn binbook_chapter_result_from_ffi<'a>(
+    result: &SqvmBinBookChapterResult,
+) -> Result<BinBookChapterResult<'a>, VmError> {
+    Ok(BinBookChapterResult {
+        ok: result.ok,
+        error: optional_ffi_str(result.error, result.error_len)?,
+        chapter: if result.ok {
+            Some(binbook_chapter_entry_from_ffi(&result.chapter)?)
+        } else {
+            None
+        },
+    })
+}
+
 unsafe fn content_binbook_list_result_from_ffi<'a>(
     result: &SqvmContentBinBookListResult,
     items: &'a [ContentBinBookEntry<'a>],
@@ -5468,6 +5508,7 @@ unsafe fn binbook_info_result_from_ffi<'a>(
         error: optional_ffi_str(result.error, result.error_len)?,
         title: optional_ffi_str(result.title, result.title_len)?,
         page_count: result.page_count,
+        chapter_count: result.chapter_count,
     })
 }
 

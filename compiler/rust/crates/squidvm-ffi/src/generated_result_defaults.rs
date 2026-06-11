@@ -161,6 +161,7 @@ impl Default for SqvmBinBookInfoResult {
             title: ptr::null(),
             title_len: 0,
             page_count: 0,
+            chapter_count: 0,
         }
     }
 }
@@ -184,6 +185,17 @@ impl Default for SqvmBinBookChapterListResult {
             error_len: b"unsupported".len(),
             count: 0,
             has_more: false,
+        }
+    }
+}
+
+impl Default for SqvmBinBookChapterResult {
+    fn default() -> Self {
+        Self {
+            ok: false,
+            error: b"unsupported".as_ptr(),
+            error_len: b"unsupported".len(),
+            chapter: SqvmBinBookChapterEntry::default(),
         }
     }
 }

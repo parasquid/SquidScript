@@ -5,25 +5,24 @@ use crate::{
         BUILTIN_APP_ARM, BUILTIN_APP_ARMED_STACK, BUILTIN_APP_ARMED_STACK_GET, BUILTIN_APP_DISARM,
         BUILTIN_APP_EXIT, BUILTIN_APP_INSTALL, BUILTIN_APP_INSTALL_METADATA, BUILTIN_APP_LAUNCH,
         BUILTIN_APP_PROCESS_STACK, BUILTIN_APP_REGISTRY_GET, BUILTIN_APP_REGISTRY_LIST,
-        BUILTIN_BINBOOK_CHAPTERS, BUILTIN_BINBOOK_INFO, BUILTIN_BINBOOK_OPEN,
-        BUILTIN_BINBOOK_READ_PAGE,
-        BUILTIN_CONTENT_BINBOOK_LIST, BUILTIN_DEBUG_PRINT, BUILTIN_DEVICE_CONFIG_LOAD,
-        BUILTIN_DEVICE_CONFIG_REBIND, BUILTIN_DEVICE_CONFIG_SAVE, BUILTIN_DEVICE_CONFIG_SET,
-        BUILTIN_DISPLAY_CLEAR, BUILTIN_DISPLAY_DRAW, BUILTIN_DISPLAY_IMAGE, BUILTIN_DISPLAY_INFO,
-        BUILTIN_DISPLAY_LINE, BUILTIN_DISPLAY_RECT, BUILTIN_DISPLAY_REFRESH_MODE,
-        BUILTIN_DISPLAY_SELECT, BUILTIN_DISPLAY_TEXT, BUILTIN_FILE_COPY,
-        BUILTIN_HARDWARE_GPIO_READ, BUILTIN_HARDWARE_GPIO_TOGGLE, BUILTIN_HARDWARE_GPIO_WRITE,
-        BUILTIN_SCREEN_OPEN, BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_BLE_START,
-        BUILTIN_SERVICE_BLE_STOP, BUILTIN_SERVICE_HTTP_START, BUILTIN_SERVICE_HTTP_STOP,
-        BUILTIN_SERVICE_INDICATOR_BLINK, BUILTIN_SERVICE_INDICATOR_BREATHE,
-        BUILTIN_SERVICE_INDICATOR_READ, BUILTIN_SERVICE_INDICATOR_TOGGLE,
-        BUILTIN_SERVICE_INDICATOR_WRITE, BUILTIN_SERVICE_POWER_SLEEP, BUILTIN_SERVICE_TIMER_AFTER,
-        BUILTIN_SERVICE_TIMER_EVERY, BUILTIN_SERVICE_WIFI_CANCEL, BUILTIN_SERVICE_WIFI_CONNECT,
-        BUILTIN_SERVICE_WIFI_DISCONNECT, BUILTIN_SERVICE_WIFI_GET_AP_IP,
-        BUILTIN_SERVICE_WIFI_OPERATION, BUILTIN_SERVICE_WIFI_RESULT, BUILTIN_SERVICE_WIFI_SCAN,
-        BUILTIN_SERVICE_WIFI_SCAN_NETWORK, BUILTIN_SERVICE_WIFI_START_AP,
-        BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP, BUILTIN_STATE_LOAD,
-        BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, BUILTIN_SYSTEM_MEMORY,
+        BUILTIN_BINBOOK_CHAPTER, BUILTIN_BINBOOK_CHAPTERS, BUILTIN_BINBOOK_INFO,
+        BUILTIN_BINBOOK_OPEN, BUILTIN_BINBOOK_READ_PAGE, BUILTIN_CONTENT_BINBOOK_LIST,
+        BUILTIN_DEBUG_PRINT, BUILTIN_DEVICE_CONFIG_LOAD, BUILTIN_DEVICE_CONFIG_REBIND,
+        BUILTIN_DEVICE_CONFIG_SAVE, BUILTIN_DEVICE_CONFIG_SET, BUILTIN_DISPLAY_CLEAR,
+        BUILTIN_DISPLAY_DRAW, BUILTIN_DISPLAY_IMAGE, BUILTIN_DISPLAY_INFO, BUILTIN_DISPLAY_LINE,
+        BUILTIN_DISPLAY_RECT, BUILTIN_DISPLAY_REFRESH_MODE, BUILTIN_DISPLAY_SELECT,
+        BUILTIN_DISPLAY_TEXT, BUILTIN_FILE_COPY, BUILTIN_HARDWARE_GPIO_READ,
+        BUILTIN_HARDWARE_GPIO_TOGGLE, BUILTIN_HARDWARE_GPIO_WRITE, BUILTIN_SCREEN_OPEN,
+        BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_BLE_START, BUILTIN_SERVICE_BLE_STOP,
+        BUILTIN_SERVICE_HTTP_START, BUILTIN_SERVICE_HTTP_STOP, BUILTIN_SERVICE_INDICATOR_BLINK,
+        BUILTIN_SERVICE_INDICATOR_BREATHE, BUILTIN_SERVICE_INDICATOR_READ,
+        BUILTIN_SERVICE_INDICATOR_TOGGLE, BUILTIN_SERVICE_INDICATOR_WRITE,
+        BUILTIN_SERVICE_POWER_SLEEP, BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY,
+        BUILTIN_SERVICE_WIFI_CANCEL, BUILTIN_SERVICE_WIFI_CONNECT, BUILTIN_SERVICE_WIFI_DISCONNECT,
+        BUILTIN_SERVICE_WIFI_GET_AP_IP, BUILTIN_SERVICE_WIFI_OPERATION,
+        BUILTIN_SERVICE_WIFI_RESULT, BUILTIN_SERVICE_WIFI_SCAN, BUILTIN_SERVICE_WIFI_SCAN_NETWORK,
+        BUILTIN_SERVICE_WIFI_START_AP, BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP,
+        BUILTIN_STATE_LOAD, BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, BUILTIN_SYSTEM_MEMORY,
         BUILTIN_SYSTEM_START_REASON, BUILTIN_SYSTEM_STORAGE, OP_ADD, OP_CALL_BUILTIN,
         OP_CALL_FUNCTION, OP_EQ, OP_GET_FIELD, OP_GET_LOCAL, OP_GET_STATE, OP_GT, OP_GTE, OP_HALT,
         OP_JUMP, OP_JUMP_IF_FALSE, OP_LIST_GET, OP_LIST_LEN, OP_LT, OP_LTE, OP_NE, OP_POP,
@@ -34,13 +33,13 @@ use crate::{
     error::VmError,
     host::{
         AppArmedStack, AppArmedStackEntry, AppInstallResult, AppProcessStack, AppRegistryEntry,
-        AppRegistryList, BinBookChapterEntry, BinBookChapterListResult, BinBookInfoResult,
-        BinBookOpenResult, BinBookReadPageResult, ContentBinBookEntry, ContentBinBookListResult,
-        DeviceConfigResult, DisplayInfo, DisplayLineOptions, DisplayRectOptions,
-        DisplayResourceOptions, DisplayTextOptions, FileCopyResult, FilePickFileResult,
-        FileReadLinesResult, FileReadTextResult, StorageCompletion, StorageRequest, TraceSink,
-        VmDispatch, WifiAccessPoint, WifiApIp, WifiOperation, WifiOperationResult,
-        WifiScanNetwork, WifiStatus,
+        AppRegistryList, BinBookChapterEntry, BinBookChapterListResult, BinBookChapterResult,
+        BinBookInfoResult, BinBookOpenResult, BinBookReadPageResult, ContentBinBookEntry,
+        ContentBinBookListResult, DeviceConfigResult, DisplayInfo, DisplayLineOptions,
+        DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions, FileCopyResult,
+        FilePickFileResult, FileReadLinesResult, FileReadTextResult, StorageCompletion,
+        StorageRequest, TraceSink, VmDispatch, WifiAccessPoint, WifiApIp, WifiOperation,
+        WifiOperationResult, WifiScanNetwork, WifiStatus,
     },
     limits::{
         MAX_CALL_DEPTH, MAX_CODE_CHUNK_BYTES, MAX_FUNCTIONS, MAX_HANDLERS,
@@ -176,6 +175,7 @@ enum RuntimeFieldName {
     BytesWritten,
     Cancelled,
     Channel,
+    ChapterCount,
     Clients,
     ColorModel,
     Configured,
@@ -263,6 +263,7 @@ impl RuntimeFieldName {
             "bytesWritten" => Self::BytesWritten,
             "cancelled" => Self::Cancelled,
             "channel" => Self::Channel,
+            "chapterCount" => Self::ChapterCount,
             "clients" => Self::Clients,
             "colorModel" => Self::ColorModel,
             "configured" => Self::Configured,
@@ -1708,6 +1709,13 @@ impl ChunkedVm {
                 let value = self.binbook_chapter_list_record(result)?;
                 self.push(value)?;
             }
+            BUILTIN_BINBOOK_CHAPTER => {
+                let index = self.pop()?.expect_i32()?;
+                let book = self.pop_handle()?;
+                let result = host.binbook_chapter(book, index)?;
+                let value = self.binbook_chapter_result_record(result)?;
+                self.push(value)?;
+            }
             BUILTIN_CONTENT_BINBOOK_LIST => {
                 let limit = self.pop()?.expect_i32()?;
                 let offset = self.pop()?.expect_i32()?;
@@ -1905,6 +1913,10 @@ impl ChunkedVm {
             RuntimeRecordField::new(RuntimeFieldName::Error, error),
             RuntimeRecordField::new(RuntimeFieldName::Title, title),
             RuntimeRecordField::new(RuntimeFieldName::PageCount, Value::I32(result.page_count)),
+            RuntimeRecordField::new(
+                RuntimeFieldName::ChapterCount,
+                Value::I32(result.chapter_count),
+            ),
         ])
     }
 
@@ -1952,6 +1964,30 @@ impl ChunkedVm {
             RuntimeRecordField::new(RuntimeFieldName::Items, list),
             RuntimeRecordField::new(RuntimeFieldName::Count, Value::I32(result.count)),
             RuntimeRecordField::new(RuntimeFieldName::HasMore, Value::Bool(result.has_more)),
+        ])
+    }
+
+    fn binbook_chapter_result_record(
+        &mut self,
+        result: BinBookChapterResult<'_>,
+    ) -> Result<Value, VmError> {
+        let error = self.runtime_string_value(result.error)?;
+        let title = self.runtime_string_value(result.chapter.map(|entry| entry.title))?;
+        let entry = result.chapter.unwrap_or(BinBookChapterEntry {
+            index: 0,
+            title: "",
+            page_index: 0,
+            level: 0,
+            entry_type: 0,
+        });
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
+            RuntimeRecordField::new(RuntimeFieldName::Index, Value::I32(entry.index)),
+            RuntimeRecordField::new(RuntimeFieldName::Title, title),
+            RuntimeRecordField::new(RuntimeFieldName::PageIndex, Value::I32(entry.page_index)),
+            RuntimeRecordField::new(RuntimeFieldName::Level, Value::I32(entry.level)),
+            RuntimeRecordField::new(RuntimeFieldName::Type, Value::I32(entry.entry_type)),
         ])
     }
 
@@ -2579,6 +2615,14 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
         limit: i32,
     ) -> Result<BinBookChapterListResult<'b>, VmError> {
         self.trace.binbook_chapters(book, offset, limit)
+    }
+
+    fn binbook_chapter<'b>(
+        &'b mut self,
+        book: Handle,
+        index: i32,
+    ) -> Result<BinBookChapterResult<'b>, VmError> {
+        self.trace.binbook_chapter(book, index)
     }
 
     fn content_binbook_list<'b>(

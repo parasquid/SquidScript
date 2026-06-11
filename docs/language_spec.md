@@ -2778,7 +2778,7 @@ Returns metadata for an opened book handle.
 Result:
 
 ```text
-{ ok: bool, error: string?, title: string?, pageCount: int }
+{ ok: bool, error: string?, title: string?, pageCount: int, chapterCount: int }
 ```
 
 `binbook.readPage(book, pageIndex)`
@@ -2800,9 +2800,10 @@ Result:
 `binbook.chapters(book, { offset: int, limit: int })`
 
 Lists chapter/navigation entries from an opened book handle. The runtime
-materializes at most one bounded page of entries per call. The current BinBook
-backend reads `NAV_INDEX` records and title `StringRef`s from the resource file
-on demand; it does not load the full navigation table or string table into RAM.
+materializes at most one bounded page of entries per call. The BinBook backend
+reads the fixed-size `CHAPTER_INDEX` table and title `StringRef`s from the
+resource file on demand; it does not load the full navigation table or string
+table into RAM.
 
 Result:
 
@@ -2814,6 +2815,18 @@ Each item has:
 
 ```text
 { index: int, title: string, pageIndex: int, level: int, type: int }
+```
+
+`binbook.chapter(book, index)`
+
+Reads one chapter entry by zero-based chapter index from an opened book handle.
+Use this for actions such as jumping to the selected chapter after a menu
+selection has already been tracked in app state.
+
+Result:
+
+```text
+{ ok: bool, error: string?, index: int, title: string, pageIndex: int, level: int, type: int }
 ```
 
 Example:
