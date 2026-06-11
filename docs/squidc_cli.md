@@ -140,6 +140,7 @@ cargo run -p squidc -- device trace
 cargo run -p squidc -- device lifecycle
 cargo run -p squidc -- device errors
 cargo run -p squidc -- device resources
+cargo run -p squidc -- device resources --count 20 --interval-ms 100
 cargo run -p squidc -- device runtime-cap get
 cargo run -p squidc -- device runtime-cap set vm_runtime.timer_max 2
 cargo run -p squidc -- device reset
@@ -195,6 +196,8 @@ enabled; `heap_*` fields are live allocator telemetry from the running
 firmware; `runtime_static_bytes` is the resident VM runtime object after
 internal buffer sharing; `vm_sqbc_chunk_bytes` is the bounded SQBC read/code
 window used for file-backed installed app dispatch.
+Use `--count` with `--interval-ms` to sample repeatedly over one open serial
+session. Human output prefixes repeated samples with `sample_epoch_ms=...`.
 Use `device resources --reset-heap-max` at a workload boundary to reset
 Zephyr's heap allocation high-water statistic to the current allocated bytes
 before measuring later work.

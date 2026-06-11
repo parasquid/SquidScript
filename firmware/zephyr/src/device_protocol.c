@@ -18,6 +18,7 @@
 #include "protocol.h"
 #include "sq_errno.h"
 #include "squidvm_ffi.h"
+#include "xteink_x4_button_probe.h"
 
 BUILD_ASSERT(sizeof(struct sq_app_registry_entry) == sizeof(SqdpAppListEntry));
 BUILD_ASSERT(offsetof(struct sq_app_registry_entry, app_id) == offsetof(SqdpAppListEntry, app_id));
@@ -123,6 +124,15 @@ enum sq_resource_metric_id {
 	SQ_RESOURCE_METRIC_VM_STACK_USED_BYTES = 41,
 	SQ_RESOURCE_METRIC_APP_COUNT = 42,
 	SQ_RESOURCE_METRIC_INPUT_BUTTON_STATE = 43,
+	SQ_RESOURCE_METRIC_X4_INPUT_ADC_GPIO1_RAW = 44,
+	SQ_RESOURCE_METRIC_X4_INPUT_ADC_GPIO1_LOGICAL = 45,
+	SQ_RESOURCE_METRIC_X4_INPUT_ADC_GPIO1_ERROR = 46,
+	SQ_RESOURCE_METRIC_X4_INPUT_ADC_GPIO2_RAW = 47,
+	SQ_RESOURCE_METRIC_X4_INPUT_ADC_GPIO2_LOGICAL = 48,
+	SQ_RESOURCE_METRIC_X4_INPUT_ADC_GPIO2_ERROR = 49,
+	SQ_RESOURCE_METRIC_X4_INPUT_POWER_RAW = 50,
+	SQ_RESOURCE_METRIC_X4_INPUT_POWER_PRESSED = 51,
+	SQ_RESOURCE_METRIC_X4_INPUT_POWER_ERROR = 52,
 };
 
 static int copy_app_id(char *out, size_t out_cap, const char *app_id)
@@ -2340,6 +2350,8 @@ static int __noinline resources_response(const struct sq_protocol_request *reque
 	size_t runtime_current_app_present = 0;
 	size_t runtime_lifecycle_phase = 0;
 	size_t runtime_arm_phase = 0;
+	struct sq_x4_button_probe x4_probe;
+	bool x4_probe_present = false;
 	bool reset_heap_max = false;
 
 	if (response == NULL || response_len == NULL || response_cap < SQ_PROTOCOL_HEADER_LEN) {
@@ -2419,6 +2431,9 @@ static int __noinline resources_response(const struct sq_protocol_request *reque
 		runtime_current_app_present = context->runtime->current_app[0] == '\0' ? 0u : 1u;
 		runtime_lifecycle_phase = (size_t)context->runtime->lifecycle_phase;
 		runtime_arm_phase = (size_t)context->runtime->arm_phase;
+	}
+	if (sq_x4_button_probe_read(&x4_probe) == 0) {
+		x4_probe_present = true;
 	}
 
 #define SQ_RESOURCE_METRIC(metric_id, metric_value) \
@@ -2500,6 +2515,25 @@ static int __noinline resources_response(const struct sq_protocol_request *reque
 	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_APP_COUNT,
 			   context->registry == NULL ? 0 : context->registry->count);
 	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_INPUT_BUTTON_STATE, input_button_state);
+	if (x4_probe_present) {
+		SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_X4_INPUT_ADC_GPIO1_RAW,
+				   x4_probe.adc_gpio1_raw);
+		SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_X4_INPUT_ADC_GPIO1_LOGICAL,
+				   x4_probe.adc_gpio1_logical);
+		SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_X4_INPUT_ADC_GPIO1_ERROR,
+				   x4_probe.adc_gpio1_error);
+		SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_X4_INPUT_ADC_GPIO2_RAW,
+				   x4_probe.adc_gpio2_raw);
+		SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_X4_INPUT_ADC_GPIO2_LOGICAL,
+				   x4_probe.adc_gpio2_logical);
+		SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_X4_INPUT_ADC_GPIO2_ERROR,
+				   x4_probe.adc_gpio2_error);
+		SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_X4_INPUT_POWER_RAW, x4_probe.power_raw);
+		SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_X4_INPUT_POWER_PRESSED,
+				   x4_probe.power_pressed);
+		SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_X4_INPUT_POWER_ERROR,
+				   x4_probe.power_error);
+	}
 #undef SQ_RESOURCE_METRIC
 
 	return encode_resource_metrics_header(request->sequence, response, response_cap,

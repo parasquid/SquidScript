@@ -732,6 +732,15 @@ static bool resource_value_for_key(const struct sq_protocol_frame *frame, const 
 		{41, "vm_stack_used_bytes"},
 		{42, "app_count"},
 		{43, "input_button_state"},
+		{44, "x4.input.adc_gpio1_raw"},
+		{45, "x4.input.adc_gpio1_logical"},
+		{46, "x4.input.adc_gpio1_error"},
+		{47, "x4.input.adc_gpio2_raw"},
+		{48, "x4.input.adc_gpio2_logical"},
+		{49, "x4.input.adc_gpio2_error"},
+		{50, "x4.input.power_raw"},
+		{51, "x4.input.power_pressed"},
+		{52, "x4.input.power_error"},
 	};
 	size_t offset = 0;
 	struct sq_protocol_field entry;

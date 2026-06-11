@@ -104,6 +104,17 @@ def emit_display_config(target, lines):
     return None
 
 
+def target_has_adc_ladder_buttons(target):
+    input_config = target.get("input", {})
+    buttons = input_config.get("buttons") if isinstance(input_config, dict) else None
+    if not isinstance(buttons, list):
+        return False
+    return any(
+        isinstance(button, dict) and button.get("type") == "adc-ladder-button"
+        for button in buttons
+    )
+
+
 def main(argv):
     if len(argv) != 3:
         return fail("usage: generate-zephyr-target-kconfig.py <target.json> <out.conf>")
@@ -173,6 +184,14 @@ def main(argv):
         lines.extend(
             [
                 "CONFIG_PWM=y",
+                "",
+            ]
+        )
+
+    if target_has_adc_ladder_buttons(target):
+        lines.extend(
+            [
+                "CONFIG_ADC=y",
                 "",
             ]
         )

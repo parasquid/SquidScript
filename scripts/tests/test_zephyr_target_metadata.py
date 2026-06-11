@@ -84,6 +84,18 @@ class ZephyrTargetMetadataTests(ZephyrScriptTestCase):
         self.assertIn("CONFIG_FS_FATFS_LFN=y", x4_conf)
         self.assertIn("CONFIG_FS_FATFS_MAX_LFN=80", x4_conf)
 
+    def test_x4_adc_ladder_buttons_enable_adc_probe_channels(self):
+        target = json.loads(self.read("targets/xteink-x4.target.json"))
+        overlay = self.read("firmware/zephyr/boards/xteink_x4.overlay")
+        x4_conf = self.generate_target_kconfig("xteink-x4.target.json")
+
+        self.assertTrue(
+            any(button["type"] == "adc-ladder-button" for button in target["input"]["buttons"])
+        )
+        self.assertIn("CONFIG_ADC=y", x4_conf)
+        self.assertIn("io-channels = <&adc0 1>, <&adc0 2>;", overlay)
+        self.assertIn("x4_power_button", overlay)
+
     def test_xiao_display_exposes_gray2_binbook_without_changing_default_primitives(self):
         target = json.loads(self.read("targets/xiao-esp32c3-gdeq0426t82-sd.target.json"))
         display = target["display"]["color"]

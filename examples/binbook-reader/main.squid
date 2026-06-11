@@ -5,17 +5,111 @@ state {
 }
 
 event.on("app.start") {
+  state.pageIndex = 0
   screen.open("reader")
 }
 
-screen("reader") {
-  let opened = binbook.open("books/sample.binbook")
-  if (opened.ok) {
-    let info = binbook.info(opened.book)
-    let page = binbook.readPage(opened.book, state.pageIndex)
-    if (page.ok) {
-      service.display.draw(page.drawable)
-      debug.print("pages", info.pageCount)
+event.on("key.RIGHT") {
+  nextPage()
+}
+
+event.on("key.DOWN") {
+  nextPage()
+}
+
+event.on("key.LEFT") {
+  previousPage()
+}
+
+event.on("key.UP") {
+  previousPage()
+}
+
+function nextPage() {
+  let listing = content.binbook.list("books", { offset: 0, limit: 1 })
+  if (listing.ok) {
+    for item in listing.items max 1 {
+      let opened = binbook.open(item.ref)
+      if (opened.ok) {
+        let info = binbook.info(opened.book)
+        if (state.pageIndex + 1 < info.pageCount) {
+          state.pageIndex = state.pageIndex + 1
+          screen.refresh()
+        } else {
+          debug.print("page", item.name, state.pageIndex, info.pageCount)
+        }
+      }
     }
+  }
+}
+
+function previousPage() {
+  let listing = content.binbook.list("books", { offset: 0, limit: 1 })
+  if (listing.ok) {
+    for item in listing.items max 1 {
+      let opened = binbook.open(item.ref)
+      if (opened.ok) {
+        let info = binbook.info(opened.book)
+        if (state.pageIndex > 0) {
+          state.pageIndex = state.pageIndex - 1
+          screen.refresh()
+        } else {
+          debug.print("page", item.name, state.pageIndex, info.pageCount)
+        }
+      }
+    }
+  }
+}
+
+screen("reader") {
+  service.display.clear("white")
+  let listing = content.binbook.list("books", { offset: 0, limit: 1 })
+  if (listing.ok) {
+    if (listing.count == 0) {
+      service.display.text("No BinBook files", {
+        x: 24
+        y: 64
+        fontHeight: 24
+      })
+      service.display.text("Expected /SD:/books/*.binbook", {
+        x: 24
+        y: 112
+        fontHeight: 18
+      })
+      debug.print("book-list-empty", listing.warning, listing.count)
+    } else {
+      for item in listing.items max 1 {
+        let opened = binbook.open(item.ref)
+        if (opened.ok) {
+          let info = binbook.info(opened.book)
+          let page = binbook.readPage(opened.book, state.pageIndex)
+          if (page.ok) {
+            service.display.draw(page.drawable)
+            debug.print("book", item.name, state.pageIndex, info.pageCount)
+          } else {
+            service.display.text("Page read failed", {
+              x: 24
+              y: 64
+              fontHeight: 24
+            })
+            debug.print("page-read-failed", page.error, state.pageIndex)
+          }
+        } else {
+          service.display.text("Open failed", {
+            x: 24
+            y: 64
+            fontHeight: 24
+          })
+          debug.print("book-open-failed", item.name, opened.error)
+        }
+      }
+    }
+  } else {
+    service.display.text("Book list failed", {
+      x: 24
+      y: 64
+      fontHeight: 24
+    })
+    debug.print("book-list-failed", listing.error, listing.warning)
   }
 }

@@ -24,6 +24,10 @@
 		sdhc0 = &sdcard;
 	};
 
+	zephyr,user {
+		io-channels = <&adc0 1>, <&adc0 2>;
+	};
+
 	fstab {
 		compatible = "zephyr,fstab";
 
@@ -44,6 +48,15 @@
 		busy-gpios = <&gpio0 6 GPIO_ACTIVE_HIGH>;
 		width = <800>;
 		height = <480>;
+	};
+
+	x4_power_keys {
+		compatible = "gpio-keys";
+
+		x4_power_button: power {
+			gpios = <&gpio0 3 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "POWER";
+		};
 	};
 };
 
@@ -87,6 +100,28 @@
 			disk-name = "SD";
 			status = "okay";
 		};
+	};
+};
+
+&adc0 {
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	channel@1 {
+		reg = <1>;
+		zephyr,gain = "ADC_GAIN_1_4";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+	};
+
+	channel@2 {
+		reg = <2>;
+		zephyr,gain = "ADC_GAIN_1_4";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
 	};
 };
 

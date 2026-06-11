@@ -10,7 +10,7 @@ use std::{
     io::{self, Read, Write},
     path::{Path, PathBuf},
     process::Command,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use app_id::{generated_app_id, source_app_id, source_for_compile};
@@ -314,6 +314,10 @@ struct DeviceResourcesArgs {
     device: DeviceOnlyOptions,
     #[arg(long)]
     reset_heap_max: bool,
+    #[arg(long, default_value_t = 1)]
+    count: u32,
+    #[arg(long, default_value_t = 0)]
+    interval_ms: u64,
 }
 
 #[derive(Args, Debug)]
@@ -1741,17 +1745,45 @@ fn hex_string(bytes: &[u8]) -> String {
 fn resources(args: DeviceResourcesArgs, human: bool) -> Result<Value, String> {
     let port = resolve_port(&args.device)?;
     let mut device = SerialDevice::open(&port)?;
-    let resources = device.resource_values(args.reset_heap_max)?;
-    if human {
-        for (key, value) in &resources {
-            println!("{key}={value}");
+    let count = args.count.max(1);
+    let mut samples = Vec::new();
+
+    for index in 0..count {
+        let epoch_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| format!("system time error: {error}"))?
+            .as_millis();
+        let resources = device.resource_values(args.reset_heap_max && index == 0)?;
+        if human {
+            if count > 1 {
+                if index > 0 {
+                    println!();
+                }
+                println!("sample_epoch_ms={epoch_ms}");
+            }
+            for (key, value) in &resources {
+                println!("{key}={value}");
+            }
+        }
+        samples.push(json!({
+            "epoch_ms": epoch_ms,
+            "resources": resources.iter().map(|(key, value)| {
+                json!({"key": key, "value": value})
+            }).collect::<Vec<_>>()
+        }));
+        if index + 1 < count && args.interval_ms > 0 {
+            std::thread::sleep(Duration::from_millis(args.interval_ms));
         }
     }
+    let resources = samples
+        .last()
+        .and_then(|sample| sample.get("resources"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     Ok(json!({
         "port": port,
-        "resources": resources.iter().map(|(key, value)| {
-            json!({"key": key, "value": value})
-        }).collect::<Vec<_>>()
+        "resources": resources,
+        "samples": samples,
     }))
 }
 
@@ -3343,8 +3375,17 @@ event.on("app.start") {
 
     #[test]
     fn parses_device_resources_command_and_resource_block() {
-        let cli =
-            Cli::try_parse_from(["squidc", "device", "resources", "--reset-heap-max"]).unwrap();
+        let cli = Cli::try_parse_from([
+            "squidc",
+            "device",
+            "resources",
+            "--reset-heap-max",
+            "--count",
+            "20",
+            "--interval-ms",
+            "100",
+        ])
+        .unwrap();
         let Commands::Device {
             command: DeviceCommands::Resources(args),
         } = cli.command
@@ -3352,6 +3393,8 @@ event.on("app.start") {
             panic!("expected device resources");
         };
         assert!(args.reset_heap_max);
+        assert_eq!(args.count, 20);
+        assert_eq!(args.interval_ms, 100);
     }
 
     #[test]
