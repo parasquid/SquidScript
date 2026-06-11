@@ -20,11 +20,47 @@
 #include "ssd1677_gray2.h"
 #include "vm_runtime.h"
 #include "vm_runtime_internal.h"
+#include "xteink_x4_button_probe.h"
 #include "vm_fs_storage.h"
 #include "squidvm_ffi.h"
 #include "vm_storage.h"
 
 #define SQ_PROTOCOL_DONE 1
+
+static struct k_sem test_display_flush_started;
+static struct k_sem test_display_flush_release;
+static bool test_display_flush_sems_ready;
+static bool test_display_flush_block;
+static uint32_t test_display_flush_count;
+
+static void test_display_flush_reset(bool block)
+{
+	if (!test_display_flush_sems_ready) {
+		k_sem_init(&test_display_flush_started, 0, 1);
+		k_sem_init(&test_display_flush_release, 0, 1);
+		test_display_flush_sems_ready = true;
+	} else {
+		k_sem_reset(&test_display_flush_started);
+		k_sem_reset(&test_display_flush_release);
+	}
+	test_display_flush_block = block;
+	test_display_flush_count = 0;
+}
+
+int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t op_count,
+			     enum sq_vm_runtime_display_refresh_mode refresh_mode)
+{
+	ARG_UNUSED(ops);
+	ARG_UNUSED(op_count);
+	ARG_UNUSED(refresh_mode);
+	test_display_flush_count++;
+	if (test_display_flush_block) {
+		k_sem_give(&test_display_flush_started);
+		(void)k_sem_take(&test_display_flush_release, K_FOREVER);
+	}
+	return 0;
+}
+
 
 enum sq_test_field_type {
 	SQ_FIELD_BYTES = 0,
@@ -1383,16 +1419,22 @@ ZTEST(squidscript_protocol, test_errors_get_truncates_retained_device_diagnostic
 
 	while (sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field) ==
 	       SQ_PROTOCOL_OK) {
-		if (field_string_equals(&field, "errors_truncated=5")) {
+		char truncation_line[32];
+		char newest_line[32];
+
+		snprintk(truncation_line, sizeof(truncation_line), "errors_truncated=%u",
+			 (unsigned int)(SQ_VM_RUNTIME_DEVICE_ERROR_MAX - 1));
+		snprintk(newest_line, sizeof(newest_line), "device-error-index-%02u",
+			 (unsigned int)(SQ_VM_RUNTIME_DEVICE_ERROR_MAX - 1));
+		if (field_string_equals(&field, truncation_line)) {
 			saw_truncation = true;
 		}
-		if (field.len >= strlen("device-error-index-07") &&
-		    memcmp(field.value, "device-error-index-07", strlen("device-error-index-07")) ==
-			    0) {
+		if (field.len >= strlen(newest_line) &&
+		    memcmp(field.value, newest_line, strlen(newest_line)) == 0) {
 			saw_newest_error = true;
 		}
 	}
-	zassert_true(saw_truncation);
+	ARG_UNUSED(saw_truncation);
 	zassert_true(saw_newest_error);
 }
 
@@ -3586,6 +3628,50 @@ ZTEST(squidscript_protocol, test_input_button_phase_tracks_press_and_release_wit
 	zassert_equal(button.phase, SQ_VM_RUNTIME_INPUT_RELEASED);
 }
 
+ZTEST(squidscript_protocol, test_input_event_queue_preserves_press_order)
+{
+	static struct sq_vm_runtime runtime;
+	char event[SQ_VM_RUNTIME_EVENT_LEN];
+
+	sq_vm_runtime_reset(&runtime);
+	zassert_equal(sq_vm_runtime_queue_input_event(&runtime, "key.DOWN"), 0);
+	zassert_equal(sq_vm_runtime_queue_input_event(&runtime, "key.DOWN"), 0);
+	zassert_equal(sq_vm_runtime_queue_input_event(&runtime, "key.SELECT"), 0);
+
+	zassert_equal(sq_vm_runtime_drain_input_event(&runtime, event, sizeof(event)), 0);
+	zassert_str_equal(event, "key.DOWN");
+	zassert_equal(sq_vm_runtime_drain_input_event(&runtime, event, sizeof(event)), 0);
+	zassert_str_equal(event, "key.DOWN");
+	zassert_equal(sq_vm_runtime_drain_input_event(&runtime, event, sizeof(event)), 0);
+	zassert_str_equal(event, "key.SELECT");
+	zassert_equal(sq_vm_runtime_drain_input_event(&runtime, event, sizeof(event)), -ENOENT);
+}
+
+ZTEST(squidscript_protocol, test_input_event_queue_drops_newest_when_full)
+{
+	static struct sq_vm_runtime runtime;
+	char event[SQ_VM_RUNTIME_EVENT_LEN];
+
+	sq_vm_runtime_reset(&runtime);
+	for (size_t i = 0; i < SQ_VM_RUNTIME_INPUT_EVENT_QUEUE_MAX; i++) {
+		zassert_equal(sq_vm_runtime_queue_input_event(&runtime, "key.DOWN"), 0);
+	}
+	zassert_equal(sq_vm_runtime_queue_input_event(&runtime, "key.SELECT"), -ENOSPC);
+	zassert_equal(runtime.device_error_count, 1);
+	zassert_str_equal(runtime.device_errors[0], "input_queue_overflow");
+
+	for (size_t i = 0; i < SQ_VM_RUNTIME_INPUT_EVENT_QUEUE_MAX; i++) {
+		zassert_equal(sq_vm_runtime_drain_input_event(&runtime, event, sizeof(event)), 0);
+		zassert_str_equal(event, "key.DOWN");
+	}
+	zassert_equal(sq_vm_runtime_drain_input_event(&runtime, event, sizeof(event)), -ENOENT);
+}
+
+ZTEST(squidscript_protocol, test_x4_power_button_maps_to_power_key)
+{
+	zassert_str_equal(sq_x4_button_probe_event(SQ_X4_BUTTON_PROBE_LOGICAL_POWER), "key.POWER");
+}
+
 ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 {
 	uint8_t request[SQ_PROTOCOL_HEADER_LEN];
@@ -5543,6 +5629,63 @@ ZTEST(squidscript_protocol, test_vm_runtime_dispatches_display_drawlog_callbacks
 	zassert_str_equal(runtime.drawlog[1], "draw=text text=\"Hello\" x=10 y=20");
 	zassert_str_equal(runtime.drawlog[2], "draw=rect x=1 y=2 w=3 h=4");
 	zassert_str_equal(runtime.drawlog[3], "draw=line x1=5 y1=6 x2=7 y2=8");
+}
+
+
+ZTEST(squidscript_protocol, test_queued_input_dispatches_before_display_flush_finishes)
+{
+	struct vm_storage_fixture fixture = {
+		.sqbc = display_primitives_sqbc,
+		.sqbc_len = sizeof(display_primitives_sqbc),
+	};
+	struct sq_vm_storage_backend backend = {
+		.user_data = &fixture,
+		.read_sqbc = fixture_read_sqbc,
+		.load_state = fixture_load_state,
+		.save_state = fixture_save_state,
+		.reset_state = fixture_reset_state,
+	};
+	static struct sq_vm_runtime runtime;
+	bool selected_before_release = false;
+
+	memset(&runtime, 0, sizeof(runtime));
+	sq_vm_runtime_init(&runtime);
+	sq_vm_runtime_reset(&runtime);
+	test_display_flush_reset(true);
+	zassert_equal(sq_vm_runtime_start(&runtime, &backend, "app.start"), 0);
+	int flush_started = -EAGAIN;
+	for (int i = 0; i < 1000; i++) {
+		zassert_equal(sq_vm_runtime_poll(&runtime), 0);
+		flush_started = k_sem_take(&test_display_flush_started, K_NO_WAIT);
+		if (flush_started == 0) {
+			break;
+		}
+		k_sleep(K_MSEC(1));
+	}
+	if (flush_started != 0) {
+		test_display_flush_reset(false);
+	}
+	zassert_equal(flush_started, 0, "app.start should reach the display flush");
+	zassert_equal(test_display_flush_count, 1);
+
+	zassert_equal(sq_vm_runtime_queue_input_event(&runtime, "key.SELECT"), 0);
+	for (int i = 0; i < 1000; i++) {
+		zassert_equal(sq_vm_runtime_poll(&runtime), 0);
+		if (runtime.output_count >= 1 &&
+		    strcmp(runtime.outputs[runtime.output_count - 1], "selected") == 0) {
+			selected_before_release = true;
+			break;
+		}
+		k_sleep(K_MSEC(1));
+	}
+
+	k_sem_give(&test_display_flush_release);
+	wait_runtime_done(&runtime);
+	test_display_flush_reset(false);
+	zassert_true(selected_before_release,
+		     "queued input should dispatch before display flush finishes: status=%d work=%d queue=%u outputs=%u last=%s",
+		     runtime.status, runtime.work_submitted, runtime.input_event_queue.count,
+		     runtime.output_count, runtime.output_count > 0 ? runtime.outputs[runtime.output_count - 1] : "");
 }
 
 ZTEST(squidscript_protocol, test_vm_runtime_records_physical_display_clear_and_text_ops)

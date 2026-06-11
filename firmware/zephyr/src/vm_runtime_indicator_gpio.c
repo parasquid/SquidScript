@@ -504,7 +504,7 @@ int sq_vm_runtime_poll_input_buttons(struct sq_vm_runtime *runtime)
 	int64_t now;
 
 	if (runtime == NULL || runtime->input_button_count == 0 ||
-	    runtime->status == SQ_VM_RUNTIME_RUNNING || runtime->job_backend.read_sqbc == NULL) {
+	    runtime->job_backend.read_sqbc == NULL) {
 		return 0;
 	}
 	now = k_uptime_get();
@@ -545,6 +545,11 @@ int sq_vm_runtime_poll_input_buttons(struct sq_vm_runtime *runtime)
 		button->debounce_until_ms = now + SQ_VM_RUNTIME_INPUT_DEBOUNCE_MS;
 		if (pressed) {
 			button->phase = SQ_VM_RUNTIME_INPUT_PRESSED;
+			if (runtime->status == SQ_VM_RUNTIME_RUNNING) {
+				int queued = sq_vm_runtime_queue_input_event(runtime, button->event);
+
+				return queued == -ENOSPC ? 0 : queued;
+			}
 			return sq_vm_runtime_start(runtime, &runtime->job_backend, button->event);
 		}
 		button->phase = SQ_VM_RUNTIME_INPUT_RELEASED;

@@ -1,0 +1,102 @@
+app "key-detector"
+
+state {
+  lastKey: string = "none"
+  count: int = 0
+  refreshMode: int = 0
+}
+
+event.on("app.start") {
+  state.lastKey = "none"
+  state.count = 0
+  state.refreshMode = 0
+  debug.print("key-detector ready")
+  screen.open("status")
+}
+
+event.on("key.UP") {
+  recordKey("UP")
+}
+
+event.on("key.DOWN") {
+  recordKey("DOWN")
+}
+
+event.on("key.LEFT") {
+  recordKey("LEFT")
+}
+
+event.on("key.RIGHT") {
+  recordKey("RIGHT")
+}
+
+event.on("key.SELECT") {
+  recordKey("SELECT")
+}
+
+event.on("key.BACK") {
+  recordKey("BACK")
+}
+
+event.on("key.MENU") {
+  recordKey("MENU")
+}
+
+event.on("key.HOME") {
+  recordKey("HOME")
+}
+
+event.on("key.POWER") {
+  recordKey("POWER")
+}
+
+function recordKey(name) {
+  state.lastKey = name
+  state.count = state.count + 1
+  debug.print("key", name, state.count)
+  state.refreshMode = 1
+  screen.refresh()
+}
+
+screen("status") {
+  if (state.refreshMode == 0) {
+    service.display.refreshMode("full")
+  }
+  else {
+    service.display.refreshMode("fast1bpp")
+  }
+  service.display.clear("white")
+  service.display.rect(8, 8, 464, 304, {
+    strokeColor: "gray15"
+  })
+  service.display.text("Key detector", {
+    x: 24
+    y: 48
+    fontHeight: 28
+    textColor: "gray15"
+  })
+  service.display.text("Last key:", {
+    x: 24
+    y: 112
+    fontHeight: 20
+    textColor: "gray15"
+  })
+  service.display.text(state.lastKey, {
+    x: 24
+    y: 148
+    fontHeight: 34
+    textColor: "gray15"
+  })
+  service.display.text("Count:", {
+    x: 24
+    y: 216
+    fontHeight: 20
+    textColor: "gray15"
+  })
+  service.display.text(state.count, {
+    x: 24
+    y: 252
+    fontHeight: 34
+    textColor: "gray15"
+  })
+}

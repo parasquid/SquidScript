@@ -15,6 +15,7 @@
     "ble_profile_max": 2,
     "active_binding_max": 3,
     "input_button_max": 8,
+    "input_event_queue_max": 8,
     "input_poll_ms": 20,
     "input_debounce_ms": 30,
     "event_len": 24,
@@ -27,7 +28,8 @@
     "wifi_profile_name_bytes": 16,
     "wifi_profile_ssid_bytes": 32,
     "wifi_profile_password_bytes": 64,
-    "work_stack_size": 24576
+    "work_stack_size": 24576,
+    "display_work_stack_size": 4096
   },
 
   "app_store": {

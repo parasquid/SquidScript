@@ -13,6 +13,7 @@ enum sq_x4_button_probe_logical {
 	SQ_X4_BUTTON_PROBE_LOGICAL_RIGHT = 4,
 	SQ_X4_BUTTON_PROBE_LOGICAL_UP = 5,
 	SQ_X4_BUTTON_PROBE_LOGICAL_DOWN = 6,
+	SQ_X4_BUTTON_PROBE_LOGICAL_POWER = 7,
 };
 
 struct sq_x4_button_probe {
@@ -27,6 +28,7 @@ struct sq_x4_button_probe {
 	uint32_t power_error;
 };
 
+const char *sq_x4_button_probe_event(uint32_t logical);
 int sq_x4_button_probe_read(struct sq_x4_button_probe *out);
 int sq_x4_button_probe_poll_runtime(struct sq_vm_runtime *runtime);
 

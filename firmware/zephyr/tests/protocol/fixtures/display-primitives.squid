@@ -4,6 +4,10 @@ event.on("app.start") {
   screen.open("main")
 }
 
+event.on("key.SELECT") {
+  debug.print("selected")
+}
+
 screen("main") {
   service.display.clear("gray0")
   service.display.text("Hello", {

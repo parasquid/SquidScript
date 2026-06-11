@@ -1508,7 +1508,7 @@ screen with that name exists.
 
 The `screen.*` namespace controls app-level view selection and refresh.
 
-The `service.display.*` namespace draws into the current render pass using the target's logical display coordinate system.
+The `service.display.*` namespace draws into the current render pass using the target's logical display coordinate system. Display calls are valid only while rendering a `screen(...)` body. Event handlers and helper functions reached from event handlers should update app state, then call `screen.open(...)` or `screen.refresh()`; the screen body should read that state and issue `service.display.*` calls during render. Screen bodies must not mutate app state or app lifecycle.
 
 The `service.display.*` namespace is canonical. Source may use the shorter
 `display.*` form as sugar for the same calls. `display.clear(...)`,

@@ -340,6 +340,10 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   maintained name table in the host codec/tests so `squidc` output remains
   readable and stable.
 
+## Screen Render Discipline
+
+- SquidScript display calls are render-only: call `service.display.*` or `display.*` from `screen(...)` bodies, not from event handlers or ordinary helper functions reached from events. Event handlers should update state and call `screen.open(...)` or `screen.refresh()`; the screen body reads state and draws. Screen bodies must not mutate app state or lifecycle.
+
 ## Browser Simulator
 
 When changing `simulator/browser`, verify the actual app behavior, not only unit

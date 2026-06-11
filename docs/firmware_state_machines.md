@@ -83,9 +83,15 @@ stateDiagram-v2
 Button rules:
 
 - Runtime polling stays bounded and nonblocking.
-- Input polling is skipped while a foreground VM event is running.
-- Press transition dispatches the configured logical event through the normal
-  SquidScript runtime path.
+- Input sampling and debounce continue while a foreground VM event is running.
+- Press transitions enqueue logical events when the VM is busy, then dispatch
+  queued events through the normal SquidScript runtime path when the VM becomes
+  idle.
+- The input event queue is bounded. When it is full, firmware drops the newest
+  press event and records `input_queue_overflow` in device errors.
+- Physical display refresh runs on a separate bounded worker; foreground event
+  dispatch does not wait for the e-paper busy period before draining queued
+  input events.
 - Release transition updates the button phase only.
 - Board GPIO polarity and pull configuration remain target-specific firmware
   details; the portable runtime observes logical pressed/released state.

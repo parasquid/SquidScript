@@ -1,0 +1,3 @@
+:expect-output key-detector ready
+:key SELECT
+:expect-output key SELECT

@@ -11,11 +11,28 @@ void sqvm_ffi_panic_abort(void)
 }
 
 K_THREAD_STACK_DEFINE(sq_vm_runtime_work_stack, SQ_VM_RUNTIME_WORK_STACK_SIZE);
+K_THREAD_STACK_DEFINE(sq_vm_runtime_display_work_stack, SQ_VM_RUNTIME_DISPLAY_WORK_STACK_SIZE);
 static struct k_thread sq_vm_runtime_work_thread;
+static struct k_thread sq_vm_runtime_display_work_thread;
 static struct k_sem sq_vm_runtime_done_sem;
+static struct k_mutex sq_vm_runtime_display_work_lock;
 static struct sq_vm_runtime *sq_vm_runtime_active_work;
 static bool sq_vm_runtime_work_sem_initialized;
+static bool sq_vm_runtime_display_work_lock_initialized;
 static bool sq_vm_runtime_work_thread_started;
+static bool sq_vm_runtime_display_work_thread_started;
+
+struct sq_vm_runtime_display_flush_job {
+	struct sq_vm_runtime *runtime;
+	struct sq_vm_runtime_display_op ops[SQ_VM_RUNTIME_DISPLAY_OP_MAX];
+	uint8_t op_count;
+	enum sq_vm_runtime_display_refresh_mode refresh_mode;
+};
+
+static struct sq_vm_runtime_display_flush_job sq_vm_runtime_display_active_job;
+static struct sq_vm_runtime_display_flush_job sq_vm_runtime_display_pending_job;
+static bool sq_vm_runtime_display_active;
+static bool sq_vm_runtime_display_pending;
 
 static bool runtime_has_pending_storage(const struct sq_vm_runtime *runtime);
 
@@ -476,20 +493,89 @@ static void clear_dispatch_transfer(struct sq_vm_runtime *runtime)
 	runtime->backend = NULL;
 }
 
+static void runtime_display_record_flush_error(struct sq_vm_runtime *runtime, int result)
+{
+	if (runtime == NULL || result == 0) {
+		return;
+	}
+	char line[SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
+	int n = snprintf(line, sizeof(line), "display=flush code=%d (%s)", result,
+			 sq_errno_name(result));
+	if (n > 0 && (size_t)n < sizeof(line)) {
+		(void)sq_vm_runtime_record_device_error(runtime, line);
+	}
+}
+
+static void runtime_display_copy_flush_job(struct sq_vm_runtime_display_flush_job *job,
+					   struct sq_vm_runtime *runtime)
+{
+	memset(job, 0, sizeof(*job));
+	job->runtime = runtime;
+	job->op_count = runtime->display_op_count;
+	job->refresh_mode = runtime->display_refresh_mode;
+	memcpy(job->ops, runtime->display_ops,
+	       runtime->display_op_count * sizeof(runtime->display_ops[0]));
+}
+
+static void runtime_display_flush_worker(void *arg1, void *arg2, void *arg3)
+{
+	ARG_UNUSED(arg1);
+	ARG_UNUSED(arg2);
+	ARG_UNUSED(arg3);
+
+	while (true) {
+		int result = sq_display_backend_flush(sq_vm_runtime_display_active_job.ops,
+						      sq_vm_runtime_display_active_job.op_count,
+						      sq_vm_runtime_display_active_job.refresh_mode);
+		runtime_display_record_flush_error(sq_vm_runtime_display_active_job.runtime, result);
+
+		k_mutex_lock(&sq_vm_runtime_display_work_lock, K_FOREVER);
+		if (sq_vm_runtime_display_pending) {
+			sq_vm_runtime_display_active_job = sq_vm_runtime_display_pending_job;
+			memset(&sq_vm_runtime_display_pending_job, 0,
+			       sizeof(sq_vm_runtime_display_pending_job));
+			sq_vm_runtime_display_pending = false;
+			k_mutex_unlock(&sq_vm_runtime_display_work_lock);
+			continue;
+		}
+		memset(&sq_vm_runtime_display_active_job, 0, sizeof(sq_vm_runtime_display_active_job));
+		sq_vm_runtime_display_active = false;
+		k_mutex_unlock(&sq_vm_runtime_display_work_lock);
+		return;
+	}
+}
+
+static void runtime_display_work_init(void)
+{
+	if (!sq_vm_runtime_display_work_lock_initialized) {
+		k_mutex_init(&sq_vm_runtime_display_work_lock);
+		sq_vm_runtime_display_work_lock_initialized = true;
+	}
+}
+
 static void runtime_flush_display_if_dirty(struct sq_vm_runtime *runtime)
 {
 	if (runtime == NULL || !runtime->display_dirty || runtime->display_op_count == 0) {
 		return;
 	}
-	int result = sq_display_backend_flush(runtime->display_ops, runtime->display_op_count,
-					      runtime->display_refresh_mode);
-	if (result != 0) {
-		char line[SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
-		int n = snprintf(line, sizeof(line), "display=flush code=%d (%s)", result,
-				 sq_errno_name(result));
-		if (n > 0 && (size_t)n < sizeof(line)) {
-			(void)sq_vm_runtime_record_device_error(runtime, line);
+	runtime_display_work_init();
+	k_mutex_lock(&sq_vm_runtime_display_work_lock, K_FOREVER);
+	if (sq_vm_runtime_display_active) {
+		runtime_display_copy_flush_job(&sq_vm_runtime_display_pending_job, runtime);
+		sq_vm_runtime_display_pending = true;
+		k_mutex_unlock(&sq_vm_runtime_display_work_lock);
+	} else {
+		if (sq_vm_runtime_display_work_thread_started) {
+			(void)k_thread_join(&sq_vm_runtime_display_work_thread, K_NO_WAIT);
 		}
+		runtime_display_copy_flush_job(&sq_vm_runtime_display_active_job, runtime);
+		sq_vm_runtime_display_active = true;
+		k_mutex_unlock(&sq_vm_runtime_display_work_lock);
+		k_thread_create(&sq_vm_runtime_display_work_thread, sq_vm_runtime_display_work_stack,
+				K_THREAD_STACK_SIZEOF(sq_vm_runtime_display_work_stack),
+				runtime_display_flush_worker, NULL, NULL, NULL, 5, 0, K_NO_WAIT);
+		k_thread_name_set(&sq_vm_runtime_display_work_thread, "sq_vm_display");
+		sq_vm_runtime_display_work_thread_started = true;
 	}
 	memset(runtime->display_ops, 0, sizeof(runtime->display_ops));
 	runtime->display_op_count = 0;
@@ -682,6 +768,7 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime_clear_active_bindings(runtime);
 	memset(runtime->target_adc_buttons, 0, sizeof(runtime->target_adc_buttons));
 	runtime->target_adc_button_next_poll_ms = 0;
+	memset(&runtime->input_event_queue, 0, sizeof(runtime->input_event_queue));
 	memset(runtime->outputs, 0, sizeof(runtime->outputs));
 	runtime->output_count = 0;
 	memset(runtime->drawlog, 0, sizeof(runtime->drawlog));
@@ -987,6 +1074,54 @@ void sq_vm_runtime_set_pending_event_payload(struct sq_vm_runtime *runtime,
 	runtime->pending_event_payload_count = count;
 }
 
+int sq_vm_runtime_queue_input_event(struct sq_vm_runtime *runtime, const char *event)
+{
+	size_t event_len;
+	size_t slot;
+
+	if (runtime == NULL || event == NULL) {
+		return -EINVAL;
+	}
+	event_len = strlen(event);
+	if (event_len == 0 || event_len >= SQ_VM_RUNTIME_EVENT_LEN) {
+		return -EINVAL;
+	}
+	if (runtime->input_event_queue.count >= SQ_VM_RUNTIME_INPUT_EVENT_QUEUE_MAX) {
+		(void)sq_vm_runtime_record_device_error(runtime, "input_queue_overflow");
+		return -ENOSPC;
+	}
+	slot = (runtime->input_event_queue.head + runtime->input_event_queue.count) %
+	       SQ_VM_RUNTIME_INPUT_EVENT_QUEUE_MAX;
+	memset(runtime->input_event_queue.events[slot], 0, SQ_VM_RUNTIME_EVENT_LEN);
+	memcpy(runtime->input_event_queue.events[slot], event, event_len);
+	runtime->input_event_queue.count++;
+	return 0;
+}
+
+int sq_vm_runtime_drain_input_event(struct sq_vm_runtime *runtime, char *out, size_t out_cap)
+{
+	if (runtime == NULL || out == NULL || out_cap == 0) {
+		return -EINVAL;
+	}
+	if (runtime->input_event_queue.count == 0) {
+		return -ENOENT;
+	}
+	if (out_cap <= strlen(runtime->input_event_queue.events[runtime->input_event_queue.head])) {
+		return -ENOSPC;
+	}
+	strncpy(out, runtime->input_event_queue.events[runtime->input_event_queue.head], out_cap - 1);
+	out[out_cap - 1] = '\0';
+	memset(runtime->input_event_queue.events[runtime->input_event_queue.head], 0,
+	       SQ_VM_RUNTIME_EVENT_LEN);
+	runtime->input_event_queue.head =
+		(runtime->input_event_queue.head + 1) % SQ_VM_RUNTIME_INPUT_EVENT_QUEUE_MAX;
+	runtime->input_event_queue.count--;
+	if (runtime->input_event_queue.count == 0) {
+		runtime->input_event_queue.head = 0;
+	}
+	return 0;
+}
+
 int sq_vm_runtime_start_event(struct sq_vm_runtime *runtime,
 			      const struct sq_vm_storage_backend *backend,
 			      const uint8_t *event, size_t event_len)
@@ -1261,6 +1396,9 @@ int sq_vm_runtime_poll(struct sq_vm_runtime *runtime)
 	}
 	if (runtime->job_backend.read_sqbc == NULL) {
 		return 0;
+	}
+	if (sq_vm_runtime_drain_input_event(runtime, event, sizeof(event)) == 0) {
+		return sq_vm_runtime_start(runtime, &runtime->job_backend, event);
 	}
 	if (sq_vm_runtime_next_due_timer(runtime, event, sizeof(event)) != 0) {
 		return 0;

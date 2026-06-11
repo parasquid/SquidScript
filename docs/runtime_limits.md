@@ -25,6 +25,7 @@ The active foreground app has a single per-session runtime instance.
 | Armed timer slots | 2 | `SQ_VM_RUNTIME_ARMED_TIMER_MAX` | yes |
 | Active device-binding slots | 3 | `SQ_VM_RUNTIME_ACTIVE_BINDING_MAX` | yes |
 | Input button slots | 8 | `SQ_VM_RUNTIME_INPUT_BUTTON_MAX` | yes |
+| Queued input event slots | 8 | `SQ_VM_RUNTIME_INPUT_EVENT_QUEUE_MAX` | no |
 | Event name max length | 23 UTF-8 bytes (+ NUL) | `SQ_VM_RUNTIME_EVENT_LEN` | no |
 | Trace record slots | 4 | `SQ_VM_RUNTIME_TRACE_MAX` | no |
 | Trace record length | 26 bytes | `SQ_VM_RUNTIME_TRACE_LEN` | no |
@@ -39,7 +40,10 @@ The active foreground app has a single per-session runtime instance.
 
 `service.timer.every(...)`, `service.timer.after(...)`, and `app.triggers`
 share the foreground or armed timer caps. Registering one beyond the active cap
-returns `-ENOSPC` to the VM.
+returns `-ENOSPC` to the VM. Physical input sampling can enqueue up to
+`SQ_VM_RUNTIME_INPUT_EVENT_QUEUE_MAX` press events while the foreground VM is
+busy; overflow drops the newest input event and records `input_queue_overflow`
+in device errors. Display flushes run on a separate bounded worker so input and foreground event dispatch can continue while the e-paper controller is busy.
 
 `content.binbook.list(...)` materializes at most one content page of
 `SQ_VM_RUNTIME_CONTENT_LIST_MAX` entries per call. Each `ref` is an opaque

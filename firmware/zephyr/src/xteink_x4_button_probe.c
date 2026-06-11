@@ -24,9 +24,10 @@
 #define SQ_X4_ADC_DOWN_MAX 750U
 #define SQ_X4_ADC_UP_MAX 2200U
 
-enum sq_x4_adc_index {
-	SQ_X4_ADC_GPIO1 = 0,
-	SQ_X4_ADC_GPIO2 = 1,
+enum sq_x4_button_index {
+	SQ_X4_BUTTON_INDEX_GPIO1 = 0,
+	SQ_X4_BUTTON_INDEX_GPIO2 = 1,
+	SQ_X4_BUTTON_INDEX_POWER = 2,
 };
 
 #if defined(CONFIG_ADC) && SQ_X4_ADC_CHANNEL_COUNT >= 2
@@ -47,7 +48,7 @@ static uint32_t sq_x4_probe_errno(int result)
 	return result < 0 ? (uint32_t)-result : 0u;
 }
 
-static const char *sq_x4_button_event(uint32_t logical)
+const char *sq_x4_button_probe_event(uint32_t logical)
 {
 	switch (logical) {
 	case SQ_X4_BUTTON_PROBE_LOGICAL_BACK:
@@ -62,6 +63,8 @@ static const char *sq_x4_button_event(uint32_t logical)
 		return "key.UP";
 	case SQ_X4_BUTTON_PROBE_LOGICAL_DOWN:
 		return "key.DOWN";
+	case SQ_X4_BUTTON_PROBE_LOGICAL_POWER:
+		return "key.POWER";
 	default:
 		return NULL;
 	}
@@ -182,12 +185,12 @@ int sq_x4_button_probe_read(struct sq_x4_button_probe *out)
 		return -EINVAL;
 	}
 	memset(out, 0, sizeof(*out));
-	gpio1_result = sq_x4_read_adc(SQ_X4_ADC_GPIO1, &out->adc_gpio1_raw);
+	gpio1_result = sq_x4_read_adc(SQ_X4_BUTTON_INDEX_GPIO1, &out->adc_gpio1_raw);
 	out->adc_gpio1_error = sq_x4_probe_errno(gpio1_result);
 	if (gpio1_result == 0) {
 		out->adc_gpio1_logical = sq_x4_decode_gpio1(out->adc_gpio1_raw);
 	}
-	gpio2_result = sq_x4_read_adc(SQ_X4_ADC_GPIO2, &out->adc_gpio2_raw);
+	gpio2_result = sq_x4_read_adc(SQ_X4_BUTTON_INDEX_GPIO2, &out->adc_gpio2_raw);
 	out->adc_gpio2_error = sq_x4_probe_errno(gpio2_result);
 	if (gpio2_result == 0) {
 		out->adc_gpio2_logical = sq_x4_decode_gpio2(out->adc_gpio2_raw);
@@ -200,8 +203,8 @@ int sq_x4_button_probe_read(struct sq_x4_button_probe *out)
 	return 0;
 }
 
-static int sq_x4_poll_ladder(struct sq_vm_runtime *runtime, size_t index, uint32_t observed,
-			     int64_t now)
+static int sq_x4_poll_logical_button(struct sq_vm_runtime *runtime, size_t index,
+					 uint32_t observed, int64_t now)
 {
 	struct sq_vm_runtime_target_adc_button *button;
 	const char *event;
@@ -223,9 +226,14 @@ static int sq_x4_poll_ladder(struct sq_vm_runtime *runtime, size_t index, uint32
 		return 0;
 	}
 	button->logical = observed;
-	event = sq_x4_button_event(observed);
+	event = sq_x4_button_probe_event(observed);
 	if (event == NULL) {
 		return 0;
+	}
+	if (runtime->status == SQ_VM_RUNTIME_RUNNING) {
+		int queued = sq_vm_runtime_queue_input_event(runtime, event);
+
+		return queued == -ENOSPC ? 0 : queued;
 	}
 	return sq_vm_runtime_start(runtime, &runtime->job_backend, event);
 }
@@ -236,8 +244,7 @@ int sq_x4_button_probe_poll_runtime(struct sq_vm_runtime *runtime)
 	int64_t now;
 	int result;
 
-	if (runtime == NULL || runtime->status == SQ_VM_RUNTIME_RUNNING ||
-	    runtime->job_backend.read_sqbc == NULL) {
+	if (runtime == NULL || runtime->job_backend.read_sqbc == NULL) {
 		return 0;
 	}
 	now = k_uptime_get();
@@ -250,13 +257,21 @@ int sq_x4_button_probe_poll_runtime(struct sq_vm_runtime *runtime)
 		return 0;
 	}
 	if (probe.adc_gpio1_error == 0) {
-		result = sq_x4_poll_ladder(runtime, SQ_X4_ADC_GPIO1, probe.adc_gpio1_logical, now);
+		result = sq_x4_poll_logical_button(runtime, SQ_X4_BUTTON_INDEX_GPIO1, probe.adc_gpio1_logical, now);
 		if (result != 0 || runtime->status == SQ_VM_RUNTIME_RUNNING) {
 			return result;
 		}
 	}
 	if (probe.adc_gpio2_error == 0) {
-		result = sq_x4_poll_ladder(runtime, SQ_X4_ADC_GPIO2, probe.adc_gpio2_logical, now);
+		result = sq_x4_poll_logical_button(runtime, SQ_X4_BUTTON_INDEX_GPIO2, probe.adc_gpio2_logical, now);
+		if (result != 0 || runtime->status == SQ_VM_RUNTIME_RUNNING) {
+			return result;
+		}
+	}
+	if (probe.power_error == 0) {
+		uint32_t power_logical = probe.power_pressed ? SQ_X4_BUTTON_PROBE_LOGICAL_POWER :
+								  SQ_X4_BUTTON_PROBE_LOGICAL_NONE;
+		result = sq_x4_poll_logical_button(runtime, SQ_X4_BUTTON_INDEX_POWER, power_logical, now);
 		if (result != 0) {
 			return result;
 		}

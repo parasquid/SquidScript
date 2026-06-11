@@ -68,6 +68,9 @@ extern "C" {
 #ifndef SQ_VM_RUNTIME_INPUT_BUTTON_MAX
 #define SQ_VM_RUNTIME_INPUT_BUTTON_MAX 2
 #endif
+#ifndef SQ_VM_RUNTIME_INPUT_EVENT_QUEUE_MAX
+#define SQ_VM_RUNTIME_INPUT_EVENT_QUEUE_MAX 8
+#endif
 #ifndef SQ_VM_RUNTIME_INPUT_POLL_MS
 #define SQ_VM_RUNTIME_INPUT_POLL_MS 20
 #endif
@@ -217,6 +220,12 @@ struct sq_vm_runtime_target_adc_button {
 	uint32_t logical;
 	uint32_t candidate;
 	int64_t debounce_until_ms;
+};
+
+struct sq_vm_runtime_input_event_queue {
+	char events[SQ_VM_RUNTIME_INPUT_EVENT_QUEUE_MAX][SQ_VM_RUNTIME_EVENT_LEN];
+	uint8_t head;
+	uint8_t count;
 };
 
 struct sq_vm_runtime_wifi_scan_scratch {
@@ -373,8 +382,9 @@ struct sq_vm_runtime {
 	struct sq_vm_runtime_input_button input_buttons[SQ_VM_RUNTIME_INPUT_BUTTON_MAX];
 	uint8_t active_input_button_max;
 	uint8_t input_button_count;
-	struct sq_vm_runtime_target_adc_button target_adc_buttons[2];
+	struct sq_vm_runtime_target_adc_button target_adc_buttons[3];
 	int64_t target_adc_button_next_poll_ms;
+	struct sq_vm_runtime_input_event_queue input_event_queue;
 	char traces[SQ_VM_RUNTIME_TRACE_MAX][SQ_VM_RUNTIME_TRACE_LEN];
 	uint8_t trace_count;
 	char outputs[SQ_VM_RUNTIME_OUTPUT_MAX][SQ_VM_RUNTIME_OUTPUT_LEN];
@@ -523,6 +533,8 @@ int sq_vm_runtime_start(struct sq_vm_runtime *runtime,
 int sq_vm_runtime_start_event(struct sq_vm_runtime *runtime,
 			      const struct sq_vm_storage_backend *backend,
 			      const uint8_t *event, size_t event_len);
+int sq_vm_runtime_queue_input_event(struct sq_vm_runtime *runtime, const char *event);
+int sq_vm_runtime_drain_input_event(struct sq_vm_runtime *runtime, char *out, size_t out_cap);
 
 /* Attach payload fields to the NEXT start dispatch only. `fields` must remain
  * valid until that dispatch starts (it is consumed and cleared at start). Pass
