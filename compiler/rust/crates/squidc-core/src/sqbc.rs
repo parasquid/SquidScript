@@ -76,6 +76,7 @@ const BUILTIN_DISPLAY_SELECT: u8 = 0x34;
 const BUILTIN_DISPLAY_IMAGE: u8 = 0x35;
 const BUILTIN_DISPLAY_DRAW: u8 = 0x36;
 const BUILTIN_DISPLAY_INFO: u8 = 0x37;
+const BUILTIN_DISPLAY_REFRESH_MODE: u8 = 0x38;
 const BUILTIN_HARDWARE_GPIO_WRITE: u8 = 0x40;
 const BUILTIN_HARDWARE_GPIO_TOGGLE: u8 = 0x41;
 const BUILTIN_HARDWARE_GPIO_READ: u8 = 0x42;
@@ -626,6 +627,9 @@ fn collect_statement_strings(
             IrStatement::DisplaySelect { name } => {
                 strings.intern(name)?;
             }
+            IrStatement::DisplayRefreshMode { mode } => {
+                strings.intern(mode)?;
+            }
             IrStatement::DisplayImage { path, options } => {
                 strings.intern(path)?;
                 collect_option_strings(options, strings)?;
@@ -1081,6 +1085,12 @@ fn compile_statement(
             emit(&mut unit.code, OP_PUSH_STRING);
             write_u16(&mut unit.code, name_id);
             emit_builtin(&mut unit.code, BUILTIN_DISPLAY_SELECT);
+        }
+        IrStatement::DisplayRefreshMode { mode } => {
+            let mode_id = unit.strings.intern(mode)?;
+            emit(&mut unit.code, OP_PUSH_STRING);
+            write_u16(&mut unit.code, mode_id);
+            emit_builtin(&mut unit.code, BUILTIN_DISPLAY_REFRESH_MODE);
         }
         IrStatement::DisplayImage { path, options } => {
             let path_id = unit.strings.intern(path)?;

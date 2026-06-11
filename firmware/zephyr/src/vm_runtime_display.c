@@ -177,6 +177,36 @@ void runtime_display_draw(void *user_data, SqvmHandle drawable,
 	}
 }
 
+void runtime_display_refresh_mode(void *user_data, const uint8_t *mode, size_t mode_len)
+{
+	struct sq_vm_runtime *runtime = user_data;
+	char line[SQ_VM_RUNTIME_DRAWLOG_LEN];
+	enum sq_vm_runtime_display_refresh_mode refresh_mode = SQ_VM_RUNTIME_DISPLAY_REFRESH_AUTO;
+
+	if (runtime == NULL || mode == NULL) {
+		return;
+	}
+	if (mode_len == strlen("fast1bpp") && memcmp(mode, "fast1bpp", mode_len) == 0) {
+		refresh_mode = SQ_VM_RUNTIME_DISPLAY_REFRESH_FAST_1BPP;
+	} else if (mode_len == strlen("full") && memcmp(mode, "full", mode_len) == 0) {
+		refresh_mode = SQ_VM_RUNTIME_DISPLAY_REFRESH_FULL;
+	} else if (mode_len == strlen("auto") && memcmp(mode, "auto", mode_len) == 0) {
+		refresh_mode = SQ_VM_RUNTIME_DISPLAY_REFRESH_AUTO;
+	} else {
+		int written = snprintf(line, sizeof(line), "display.refreshMode=unknown mode=%.*s",
+				       (int)mode_len, mode);
+		if (written > 0 && (size_t)written < sizeof(line)) {
+			(void)sq_vm_runtime_record_device_error(runtime, line);
+		}
+		return;
+	}
+	runtime->display_refresh_mode = refresh_mode;
+	int written = snprintf(line, sizeof(line), "draw=refresh mode=%.*s", (int)mode_len, mode);
+	if (written > 0) {
+		(void)sq_vm_runtime_record_drawlog(runtime, line);
+	}
+}
+
 static void runtime_display_info_text(const char *text, const uint8_t **out, size_t *out_len)
 {
 	*out = (const uint8_t *)text;

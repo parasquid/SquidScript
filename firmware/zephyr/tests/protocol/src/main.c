@@ -5596,6 +5596,26 @@ ZTEST(squidscript_protocol, test_vm_runtime_records_binbook_drawable_display_op)
 	zassert_equal(runtime.display_ops[0].binbook_page.stored_height, 480);
 }
 
+ZTEST(squidscript_protocol, test_display_refresh_mode_sets_render_override)
+{
+	struct sq_vm_runtime runtime = {0};
+
+	runtime_display_refresh_mode(&runtime, (const uint8_t *)"fast1bpp", strlen("fast1bpp"));
+	zassert_equal(runtime.display_refresh_mode, SQ_VM_RUNTIME_DISPLAY_REFRESH_FAST_1BPP);
+	zassert_equal(runtime.drawlog_count, 1);
+	zassert_str_equal(runtime.drawlog[0], "draw=refresh mode=fast1bpp");
+
+	runtime_display_refresh_mode(&runtime, (const uint8_t *)"full", strlen("full"));
+	zassert_equal(runtime.display_refresh_mode, SQ_VM_RUNTIME_DISPLAY_REFRESH_FULL);
+	zassert_equal(runtime.drawlog_count, 2);
+	zassert_str_equal(runtime.drawlog[1], "draw=refresh mode=full");
+
+	runtime_display_refresh_mode(&runtime, (const uint8_t *)"unknown", strlen("unknown"));
+	zassert_equal(runtime.display_refresh_mode, SQ_VM_RUNTIME_DISPLAY_REFRESH_FULL);
+	zassert_equal(runtime.device_error_count, 1);
+	zassert_str_equal(runtime.device_errors[0], "display.refreshMode=unknown mode=unknown");
+}
+
 ZTEST(squidscript_protocol, test_ssd1677_gray2_maps_canonical_binbook_values_to_distinct_planes)
 {
 	/* packed pixels: black, dark gray, light gray, white */
@@ -5604,6 +5624,45 @@ ZTEST(squidscript_protocol, test_ssd1677_gray2_maps_canonical_binbook_values_to_
 	zassert_equal(sq_ssd1677_gray2_lsb_active_mask(packed), 0x50);
 	zassert_equal(sq_ssd1677_gray2_msb_active_mask(packed), 0x30);
 	zassert_equal(sq_ssd1677_gray2_bw_active_mask(packed), 0xc0);
+	zassert_equal(sq_ssd1677_gray2_bw_active_mask(0xff), 0x00);
+	zassert_equal(sq_ssd1677_gray2_bw_active_mask(0x00), 0xf0);
+}
+
+ZTEST(squidscript_protocol, test_ssd1677_gray2_ordered_dither_preserves_bw_and_textures_grays)
+{
+	zassert_equal(sq_ssd1677_gray2_ordered_dither_bw_active_mask(0x00, 0, 0), 0xf0);
+	zassert_equal(sq_ssd1677_gray2_ordered_dither_bw_active_mask(0xff, 0, 0), 0x00);
+
+	zassert_equal(sq_ssd1677_gray2_ordered_dither_bw_active_mask(0x55, 0, 0), 0x50);
+	zassert_equal(sq_ssd1677_gray2_ordered_dither_bw_active_mask(0x55, 0, 1), 0xf0);
+	zassert_equal(sq_ssd1677_gray2_ordered_dither_bw_active_mask(0xaa, 0, 0), 0x50);
+	zassert_equal(sq_ssd1677_gray2_ordered_dither_bw_active_mask(0xaa, 0, 1), 0x00);
+}
+
+ZTEST(squidscript_protocol, test_ssd1677_binbook_refresh_policy_uses_bw_differential_between_full_refreshes)
+{
+	struct sq_ssd1677_binbook_refresh_state state = {0};
+
+	zassert_equal(sq_ssd1677_binbook_refresh_decide(&state, 5),
+		      SQ_SSD1677_BINBOOK_REFRESH_GRAY2_FULL);
+	sq_ssd1677_binbook_refresh_record(&state, SQ_SSD1677_BINBOOK_REFRESH_GRAY2_FULL);
+	zassert_true(state.previous_page_valid);
+	zassert_equal(state.fast_refresh_count, 1);
+
+	zassert_equal(sq_ssd1677_binbook_refresh_decide(&state, 5),
+		      SQ_SSD1677_BINBOOK_REFRESH_BW_DIFFERENTIAL_PARTIAL);
+	sq_ssd1677_binbook_refresh_record(&state,
+					  SQ_SSD1677_BINBOOK_REFRESH_BW_DIFFERENTIAL_PARTIAL);
+	zassert_true(state.previous_page_valid);
+	zassert_equal(state.fast_refresh_count, 2);
+
+	state.fast_refresh_count = 5;
+	zassert_equal(sq_ssd1677_binbook_refresh_decide(&state, 5),
+		      SQ_SSD1677_BINBOOK_REFRESH_GRAY2_FULL);
+
+	sq_ssd1677_binbook_refresh_reset(&state);
+	zassert_false(state.previous_page_valid);
+	zassert_equal(state.fast_refresh_count, 0);
 }
 
 ZTEST(squidscript_protocol, test_vm_runtime_dispatches_wifi_action_stubs)

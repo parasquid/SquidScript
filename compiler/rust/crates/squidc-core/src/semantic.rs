@@ -748,6 +748,7 @@ fn validate_statement_names(
             | IrStatement::DisplayRect { .. }
             | IrStatement::DisplayLine { .. }
             | IrStatement::DisplaySelect { .. }
+            | IrStatement::DisplayRefreshMode { .. }
             | IrStatement::DisplayImage { .. } => {}
         }
     }
@@ -983,6 +984,7 @@ fn statement_is_render_impure(
         | IrStatement::DisplayRect { .. }
         | IrStatement::DisplayLine { .. }
         | IrStatement::DisplaySelect { .. }
+        | IrStatement::DisplayRefreshMode { .. }
         | IrStatement::DisplayImage { .. }
         | IrStatement::DisplayDraw { .. } => false,
     }
@@ -1171,6 +1173,7 @@ fn validate_debug_block_statements(
             | IrStatement::DisplayRect { .. }
             | IrStatement::DisplayLine { .. }
             | IrStatement::DisplaySelect { .. }
+            | IrStatement::DisplayRefreshMode { .. }
             | IrStatement::DisplayImage { .. }
             | IrStatement::DisplayDraw { .. } => diagnostics.push(error(
                 "E_DEBUG_BLOCK",
@@ -1294,6 +1297,7 @@ fn statement_uses_any_name(
         | IrStatement::DisplayRect { .. }
         | IrStatement::DisplayLine { .. }
         | IrStatement::DisplaySelect { .. }
+        | IrStatement::DisplayRefreshMode { .. }
         | IrStatement::DisplayImage { .. } => false,
     }
 }
@@ -1447,6 +1451,7 @@ fn validate_handler_statements(
             | IrStatement::DisplayRect { .. }
             | IrStatement::DisplayLine { .. }
             | IrStatement::DisplaySelect { .. }
+            | IrStatement::DisplayRefreshMode { .. }
             | IrStatement::DisplayImage { .. }
             | IrStatement::DisplayDraw { .. } => {
                 diagnostics.push(error(

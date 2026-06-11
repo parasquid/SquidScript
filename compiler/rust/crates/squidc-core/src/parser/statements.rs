@@ -548,6 +548,13 @@ impl Parser<'_> {
                 self.consume_call_tail(builder);
                 Some(IrStatement::DisplaySelect { name })
             }
+            "refreshMode" => {
+                let mode = self
+                    .consume_string(builder)
+                    .unwrap_or_else(|| "auto".to_string());
+                self.consume_call_tail(builder);
+                Some(IrStatement::DisplayRefreshMode { mode })
+            }
             "image" => {
                 let path = self.consume_string(builder).unwrap_or_default();
                 self.consume_ws(builder);

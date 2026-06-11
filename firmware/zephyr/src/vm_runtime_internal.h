@@ -49,6 +49,7 @@ void runtime_display_image(void *user_data, const uint8_t *path, size_t path_len
 			   const SqvmDisplayResourceOptions *options);
 void runtime_display_draw(void *user_data, SqvmHandle drawable,
 			  const SqvmDisplayResourceOptions *options);
+void runtime_display_refresh_mode(void *user_data, const uint8_t *mode, size_t mode_len);
 int32_t runtime_display_info(void *user_data, SqvmDisplayInfo *out);
 
 int32_t runtime_indicator_write(void *user_data, bool value);

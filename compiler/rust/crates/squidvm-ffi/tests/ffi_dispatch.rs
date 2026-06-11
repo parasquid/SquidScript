@@ -158,6 +158,16 @@ unsafe extern "C" fn display_select(
     0
 }
 
+unsafe extern "C" fn display_refresh_mode(
+    user_data: *mut c_void,
+    mode: *const u8,
+    mode_len: usize,
+) {
+    let host = &mut *(user_data as *mut Host);
+    let mode = std::str::from_utf8(std::slice::from_raw_parts(mode, mode_len)).unwrap();
+    host.drawlog.push(format!("draw=refresh mode={mode}"));
+}
+
 unsafe extern "C" fn display_image(
     user_data: *mut c_void,
     path: *const u8,
@@ -1503,6 +1513,7 @@ fn callbacks(_host: &mut Host) -> SqvmCallbacks {
         display_select: Some(display_select),
         display_image: Some(display_image),
         display_draw: Some(display_draw),
+        display_refresh_mode: Some(display_refresh_mode),
         display_info: Some(display_info),
         indicator_write: Some(indicator_write),
         indicator_toggle: Some(indicator_toggle),
@@ -1804,6 +1815,7 @@ screen("main") {
   service.display.rect(1, 2, 3, 4, { fillColor: "gray4" })
   service.display.line(5, 6, 7, 8, { color: "gray15" })
   service.display.select("status")
+  service.display.refreshMode("full")
   service.display.image("data/icon.bmp", { x: 20, y: 24 })
 }
 "#,
@@ -2380,6 +2392,7 @@ fn dispatches_display_service_callbacks() {
             "draw=rect x=1 y=2 w=3 h=4".to_string(),
             "draw=line x1=5 y1=6 x2=7 y2=8".to_string(),
             "draw=select name=status".to_string(),
+            "draw=refresh mode=full".to_string(),
             "draw=image path=\"data/icon.bmp\" x=20 y=24".to_string()
         ]
     );

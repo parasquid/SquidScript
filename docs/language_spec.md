@@ -1955,6 +1955,24 @@ The runtime may clip drawing outside the logical screen.
 
 The runtime may reject excessive draw commands.
 
+service.display.refreshMode(mode)
+
+Sets the display refresh policy for the current render flush. Valid modes are:
+
+- `auto`: target default. On SSD1677 BinBook page turns this uses ordered-dither
+  differential partial refreshes between full cleanup refreshes.
+- `fast1bpp`: force a black/white fast refresh when the target supports it.
+- `full`: force the cleanest full refresh path available for the target.
+
+The override applies only to the current render pass.
+
+Example:
+
+```squid
+service.display.refreshMode("full")
+service.display.draw(page.drawable)
+```
+
 service.display.select(name)
 
 Selects the named display binding for subsequent draw commands in the current

@@ -9,6 +9,7 @@
 	.display_select = runtime_display_select,
 	.display_image = runtime_display_image,
 	.display_draw = runtime_display_draw,
+	.display_refresh_mode = runtime_display_refresh_mode,
 	.display_info = runtime_display_info,
 	.indicator_write = runtime_indicator_write,
 	.indicator_toggle = runtime_indicator_toggle,

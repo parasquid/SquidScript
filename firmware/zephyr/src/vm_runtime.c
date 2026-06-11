@@ -480,7 +480,8 @@ static void runtime_flush_display_if_dirty(struct sq_vm_runtime *runtime)
 	if (runtime == NULL || !runtime->display_dirty || runtime->display_op_count == 0) {
 		return;
 	}
-	int result = sq_display_backend_flush(runtime->display_ops, runtime->display_op_count);
+	int result = sq_display_backend_flush(runtime->display_ops, runtime->display_op_count,
+					      runtime->display_refresh_mode);
 	if (result != 0) {
 		char line[SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
 		int n = snprintf(line, sizeof(line), "display=flush code=%d (%s)", result,
@@ -491,6 +492,7 @@ static void runtime_flush_display_if_dirty(struct sq_vm_runtime *runtime)
 	}
 	memset(runtime->display_ops, 0, sizeof(runtime->display_ops));
 	runtime->display_op_count = 0;
+	runtime->display_refresh_mode = SQ_VM_RUNTIME_DISPLAY_REFRESH_AUTO;
 	runtime->display_dirty = false;
 }
 

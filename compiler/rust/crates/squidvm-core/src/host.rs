@@ -92,6 +92,7 @@ pub trait TraceSink {
     fn draw_select(&mut self, _name: &str) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
     }
+    fn draw_refresh_mode(&mut self, _mode: &str) {}
     fn draw_image(&mut self, _path: &str, _options: DisplayResourceOptions) {}
     fn draw_resource(
         &mut self,

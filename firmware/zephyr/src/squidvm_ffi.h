@@ -380,6 +380,9 @@ typedef void (*SqvmDisplayImageCallback)(void *user_data, const uint8_t *path,
 typedef void (*SqvmDisplayDrawCallback)(void *user_data, SqvmHandle drawable,
 					const SqvmDisplayResourceOptions *options);
 
+typedef void (*SqvmDisplayRefreshModeCallback)(void *user_data, const uint8_t *mode,
+						 size_t mode_len);
+
 typedef int32_t (*SqvmDisplayInfoCallback)(void *user_data, SqvmDisplayInfo *out);
 
 typedef struct {
@@ -755,6 +758,7 @@ typedef struct {
 	SqvmDisplaySelectCallback display_select;
 	SqvmDisplayImageCallback display_image;
 	SqvmDisplayDrawCallback display_draw;
+	SqvmDisplayRefreshModeCallback display_refresh_mode;
 	SqvmDisplayInfoCallback display_info;
 	SqvmIndicatorWriteCallback indicator_write;
 	SqvmIndicatorToggleCallback indicator_toggle;

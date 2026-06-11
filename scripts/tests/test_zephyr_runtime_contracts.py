@@ -79,6 +79,7 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
 
     def test_ssd1677_binbook_uses_fast_refresh_between_full_cadence_refreshes(self):
         display_c = self.read("firmware/zephyr/src/ssd1677_gdeq0426t82_display.c")
+        gray2_h = self.read("firmware/zephyr/src/ssd1677_gray2.h")
         target = self.read_json("targets/xiao-esp32c3-gdeq0426t82-sd.target.json")
 
         self.assertTrue(target["display"]["refresh"]["full"])
@@ -86,16 +87,22 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
         self.assertTrue(target["display"]["refresh"]["fast"])
         self.assertEqual(target["display"]["refresh"]["fullCadence"], 5)
         self.assertIn("SSD1677_BINBOOK_FULL_REFRESH_CADENCE", display_c)
-        self.assertIn("static uint32_t binbook_fast_refresh_count;", display_c)
-        self.assertIn("static bool binbook_previous_page_valid;", display_c)
+        self.assertIn("struct sq_ssd1677_binbook_refresh_state", display_c)
         self.assertIn("static struct sq_vm_runtime_binbook_page binbook_previous_page;", display_c)
-        self.assertIn("static bool binbook_should_full_refresh", display_c)
+        self.assertIn("SQ_SSD1677_BINBOOK_REFRESH_GRAY2_FULL", display_c)
+        self.assertIn("SQ_SSD1677_BINBOOK_REFRESH_BW_DIFFERENTIAL_PARTIAL", gray2_h)
         self.assertIn("stream_binbook_gray2_bw_page", display_c)
         self.assertIn("stream_binbook_gray2_bw_previous_page", display_c)
+        self.assertIn("sq_ssd1677_gray2_ordered_dither_bw_active_mask", display_c)
+        self.assertIn("sq_ssd1677_gray2_bw_active_mask", display_c)
+        self.assertIn("SQ_VM_RUNTIME_DISPLAY_REFRESH_FAST_1BPP", display_c)
+        self.assertIn("SQ_VM_RUNTIME_DISPLAY_REFRESH_FULL", display_c)
         self.assertIn("SSD1677_UPDATE_PARTIAL", display_c)
-        self.assertIn('refresh_mode = full_refresh ? "gray2-full" : "gray2-bw-partial"', display_c)
+        self.assertIn('"gray2-bw-dither-diff-partial"', display_c)
+        self.assertIn('"gray2-bw-diff-partial"', display_c)
         self.assertIn("refresh_binbook_bw_partial_display(&observed_busy)", display_c)
         self.assertIn("binbook_remember_previous_page(&binbook->binbook_page)", display_c)
+        self.assertIn("binbook_record_refresh(binbook_refresh)", display_c)
         self.assertIn('LOG_INF("display refresh complete mode=%s busy_observed=%d"', display_c)
 
     def test_content_binbook_list_uses_bounded_logical_refs_and_sd_books_directory(self):

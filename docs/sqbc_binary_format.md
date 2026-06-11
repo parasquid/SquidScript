@@ -127,6 +127,7 @@ be refreshed as capability boundaries become clearer.
 0x35 service.display.image
 0x36 service.display.draw
 0x37 service.display.info
+0x38 service.display.refreshMode
 
 0x40 hardware.gpio.write
 0x41 hardware.gpio.toggle

@@ -197,6 +197,8 @@ pub enum IrStatement {
     },
     #[serde(rename = "service.display.select")]
     DisplaySelect { name: String },
+    #[serde(rename = "service.display.refreshMode")]
+    DisplayRefreshMode { mode: String },
     #[serde(rename = "service.display.image")]
     DisplayImage {
         path: String,

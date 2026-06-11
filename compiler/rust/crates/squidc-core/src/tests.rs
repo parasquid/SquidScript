@@ -1286,6 +1286,7 @@ screen("main") {
   display.rect(0, 0, 100, 40, { fillColor: "gray4" })
   display.line(0, 40, 100, 40, { color: "black" })
   service.display.select("status")
+  service.display.refreshMode("full")
   service.display.image("data/icon.bmp", { x: 20, y: 24 })
   service.display.draw("drawable/page", { x: 0, y: 0 })
   service.display.draw("drawable/full-page")
@@ -1324,17 +1325,25 @@ screen("main") {
     ));
     assert!(matches!(
         screen.statements[5],
-        IrStatement::DisplayImage { ref path, .. } if path == "data/icon.bmp"
+        IrStatement::DisplayRefreshMode { ref mode } if mode == "full"
     ));
     assert!(matches!(
         screen.statements[6],
-        IrStatement::DisplayDraw { .. }
+        IrStatement::DisplayImage { ref path, .. } if path == "data/icon.bmp"
     ));
     assert!(matches!(
         screen.statements[7],
         IrStatement::DisplayDraw { .. }
     ));
+    assert!(matches!(
+        screen.statements[8],
+        IrStatement::DisplayDraw { .. }
+    ));
     let sqbc = sqbc::encode_sqbc(&ir).expect("display sugar should lower to display bytecode");
+    assert!(
+        sqbc.windows(2).any(|window| window == [50, 0x38]),
+        "expected service.display.refreshMode builtin in SQBC"
+    );
     assert!(
         sqbc.windows(2).any(|window| window == [50, 0x36]),
         "expected service.display.draw builtin in SQBC"

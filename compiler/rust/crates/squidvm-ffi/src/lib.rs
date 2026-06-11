@@ -3193,6 +3193,15 @@ impl TraceSink for FfiHost<'_> {
         callback_status(unsafe { display_select(self.user_data, name.as_ptr(), name.len()) })
     }
 
+    fn draw_refresh_mode(&mut self, mode: &str) {
+        let Some(display_refresh_mode) = self.callbacks.display_refresh_mode else {
+            return;
+        };
+        unsafe {
+            display_refresh_mode(self.user_data, mode.as_ptr(), mode.len());
+        }
+    }
+
     fn draw_image(&mut self, path: &str, options: DisplayResourceOptions) {
         let Some(display_image) = self.callbacks.display_image else {
             return;

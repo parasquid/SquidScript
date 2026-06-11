@@ -136,12 +136,19 @@ contains `fast redraw page 1`, `fast redraw page 2`, and `fast redraw page 0`,
 `device resources` responds after the repeated redraws. The expected visible
 sequence is gray bands -> chimp/image -> sharp geometry. The visual acceptance
 question is no full flash-style refresh between page changes. The SSD1677
-backend renders the cadence refresh with true GRAY2 and uses thresholded
-black/white partial DU updates for intermediate page turns. Each partial update
-streams the remembered old page to RED/previous RAM (`0x26`) and the new page to
-BW/current RAM (`0x24`) before activation so both black-to-white and
-white-to-black transitions are represented. Human or camera evidence is needed
-for the optical judgment; the serial checks prove app/runtime/display-path
+backend renders the first and cadence cleanup refreshes with true GRAY2. Fast
+intermediate page turns use a full-window ordered-dither black/white
+differential partial pass: firmware re-decodes the remembered previous BinBook
+page and streams its complete 1bpp dithered plane, including white and black
+pixels, to RED/previous RAM (`0x26`), then streams the requested page's complete
+1bpp dithered plane to BW/current RAM (`0x24`) before activation. This gives the
+SSD1677 both old and new pixels for black-to-white and white-to-black
+transitions without keeping a full-screen framebuffer, while preserving some
+GRAY2 edge texture on fast turns. A render may call
+`service.display.refreshMode("fast1bpp")` to force the same differential partial
+path with flat 1bpp thresholding, or `service.display.refreshMode("full")` to
+force the GRAY2 full refresh path for that render. Human or camera evidence is
+needed for the optical judgment; the serial checks prove app/runtime/display-path
 activity and report the selected firmware refresh mode, not final visible
 quality.
 

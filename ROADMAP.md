@@ -47,10 +47,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Display And Output
 
-- Tune SSD1677 BinBook fast page-turn quality: reduce residual ghosting from
-  GRAY2-to-BW partial transitions by establishing a clean black/white baseline
-  before partial mode, testing cadence/idle cleanup refreshes, and preserving
-  the low-RAM streaming path.
 - Add a GRAY2-aware streaming display compositor for
   `service.display.clear/text/rect/line` on SSD1677 targets, preserving
   source-order composition without a full-screen 2bpp framebuffer.

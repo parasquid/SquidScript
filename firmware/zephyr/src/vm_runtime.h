@@ -273,6 +273,12 @@ struct sq_vm_runtime_display_op {
 	struct sq_vm_runtime_binbook_page binbook_page;
 };
 
+enum sq_vm_runtime_display_refresh_mode {
+	SQ_VM_RUNTIME_DISPLAY_REFRESH_AUTO = 0,
+	SQ_VM_RUNTIME_DISPLAY_REFRESH_FAST_1BPP,
+	SQ_VM_RUNTIME_DISPLAY_REFRESH_FULL,
+};
+
 struct sq_vm_runtime_binbook_handle {
 	bool active;
 	char path[SQ_APP_STORE_PATH_MAX];
@@ -366,6 +372,7 @@ struct sq_vm_runtime {
 	uint8_t drawlog_count;
 	struct sq_vm_runtime_display_op display_ops[SQ_VM_RUNTIME_DISPLAY_OP_MAX];
 	uint8_t display_op_count;
+	enum sq_vm_runtime_display_refresh_mode display_refresh_mode;
 	bool display_dirty;
 	struct sq_vm_runtime_binbook_handle binbook;
 	struct sq_vm_runtime_drawable_handle drawable;

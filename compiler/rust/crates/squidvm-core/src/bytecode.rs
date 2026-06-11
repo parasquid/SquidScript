@@ -69,6 +69,7 @@ pub(crate) const BUILTIN_DISPLAY_SELECT: u8 = 0x34;
 pub(crate) const BUILTIN_DISPLAY_IMAGE: u8 = 0x35;
 pub(crate) const BUILTIN_DISPLAY_DRAW: u8 = 0x36;
 pub(crate) const BUILTIN_DISPLAY_INFO: u8 = 0x37;
+pub(crate) const BUILTIN_DISPLAY_REFRESH_MODE: u8 = 0x38;
 pub(crate) const BUILTIN_HARDWARE_GPIO_WRITE: u8 = 0x40;
 pub(crate) const BUILTIN_HARDWARE_GPIO_TOGGLE: u8 = 0x41;
 pub(crate) const BUILTIN_HARDWARE_GPIO_READ: u8 = 0x42;
