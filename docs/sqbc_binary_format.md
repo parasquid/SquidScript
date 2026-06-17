@@ -221,10 +221,10 @@ The preload hint is advisory. Firmware may use it to load or retain
 latency-sensitive handler chunks, but app correctness must not depend on it.
 Handler payload parameters are currently used for event records such as
 `event.on("ble.file.complete", ev)`. The BLE file-transfer completion event
-record carries an `upload` field (a `file.*` reference to the staging file).
-Profile records do not carry a `sink` field; firmware owns the file ref
-lifetime, and the app consumes (copy, install, log) the file inside the handler
-before returning.
+record carries `upload` (a `file.*` reference to the staging file), `name`,
+`bytesReceived`, `totalBytes`, and `id`. Profile records do not carry a `sink`
+field; firmware owns the file ref lifetime, and the app consumes (copy,
+install, log) the file inside the handler before returning.
 
 Trigger table entries are:
 

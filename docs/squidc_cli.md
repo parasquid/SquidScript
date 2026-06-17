@@ -133,6 +133,8 @@ completion notification.
 ```sh
 cargo run -p squidc -- device key SELECT
 cargo run -p squidc -- device content-put target/book.binbook --name book.binbook
+cargo run -p squidc -- device content-check book.binbook --size 83014 --crc32 deadbeef
+cargo run -p squidc -- device ble-put SquidScript target/book.binbook --name book.binbook
 cargo run -p squidc -- device output
 cargo run -p squidc -- device state
 cargo run -p squidc -- device drawlog
@@ -154,11 +156,19 @@ press a physical button; the firmware routes the event to the current app.
 
 `device content-put <file>` streams a host file into the target firmware's
 content volume over the framed serial protocol. The current firmware accepts
-safe `.binbook` names and writes them to the device-owned removable books
+safe simple file names and writes them to the device-owned removable books
 library, such as the XTEINK X4 SPI SD card mounted by firmware at runtime.
-Use `--name <file.binbook>` to choose the stored content name; otherwise the
-input basename is used. The host OS does not mount or directly inspect this
-device-owned SD card.
+Use `--name <file-name>` to choose the stored content name; otherwise the input
+basename is used. `device content-check <name> --size <bytes> --crc32 <hex>`
+asks firmware to read the stored file and verify the size and CRC32; this is
+intended for transfer regression tests and host/device measurement scripts.
+The host OS does not mount or directly inspect this device-owned SD card.
+
+`device ble-put <device-name-or-address> <file> --name <file-name>` streams a
+host file over the custom BLE file-transfer service using the supplied safe file
+name. The receiving app must already be running `service.ble.start("file-transfer", ...)`
+with an `accept` entry matching the file-name extension, and it decides whether
+to copy, install, or otherwise consume the uploaded file.
 
 `device drawlog` returns the current Zephyr headless display draw log. Records
 use the current firmware diagnostic text shape, such as
@@ -298,8 +308,10 @@ command; with `--json`, use `--print-plan` instead of starting the stream.
 checks selected from target metadata features. The XIAO ESP32-C3 default dev
 target currently selects portable app tests, BLE file-transfer install,
 installed BLE receiver routing, BLE reconnect, radio concurrency, and
-AP-after-station checks. It excludes display drawlog and SD-card checks until
-those capabilities are ready for this target.
+AP-after-station checks. The XTEINK X4 target also selects the serial, HTTP,
+and BLE transfer regression suite, which uploads a real BinBook fixture and
+verifies device-side size and CRC32 for each transport. It excludes display
+drawlog and SD-card checks until those capabilities are ready for this target.
 Use `--skip-flash` when the correct firmware is already flashed. Use
 `--ble-device <name-or-address>` to override BLE matching and
 `--host-wifi-iface <iface>` when Wi-Fi tests should use a specific host

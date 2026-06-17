@@ -17,6 +17,7 @@ LOG_MODULE_REGISTER(squidscript_ble_transfer, LOG_LEVEL_INF);
 
 #define SQ_BLE_FILE_TRANSFER_PROFILE_ID_MAX  32
 #define SQ_BLE_FILE_TRANSFER_PATH_MAX        SQ_APP_STORE_PATH_MAX
+#define SQ_BLE_FILE_TRANSFER_NAME_MAX        96
 
 #ifndef SQ_BLE_FILE_TRANSFER_STAGING_DIR
 #define SQ_BLE_FILE_TRANSFER_STAGING_DIR     "/sq/tmp"
@@ -27,7 +28,10 @@ struct sq_ble_file_transfer_session {
 	uint8_t app_slot;
 	char instance_id[SQ_BLE_FILE_TRANSFER_PROFILE_ID_MAX];
 	char complete_event[SQ_VM_RUNTIME_EVENT_LEN];
+	char file_name[SQ_BLE_FILE_TRANSFER_NAME_MAX];
 	char staging_path[SQ_BLE_FILE_TRANSFER_PATH_MAX];
+	struct fs_file_t staging_file;
+	bool staging_file_open;
 	size_t alloc_size;
 	size_t bytes_received;
 };
@@ -37,6 +41,7 @@ struct sq_ble_file_transfer_pending_event {
 	uint8_t app_slot;
 	char instance_id[SQ_BLE_FILE_TRANSFER_PROFILE_ID_MAX];
 	char event[SQ_VM_RUNTIME_EVENT_LEN];
+	char file_name[SQ_BLE_FILE_TRANSFER_NAME_MAX];
 	char staging_path[SQ_BLE_FILE_TRANSFER_PATH_MAX];
 	size_t bytes_received;
 	size_t total_bytes;
@@ -48,8 +53,6 @@ static const struct sq_app_registry *sq_ble_file_transfer_registry;
 static const char *sq_ble_file_transfer_fallback_app_id;
 static sq_ble_file_transfer_error_sink sq_ble_file_transfer_error_cb;
 static void *sq_ble_file_transfer_error_user_data;
-
-#define SQ_BLE_FILE_TRANSFER_NAME_MAX 96
 
 /* Framing state for the opcode transport: the file name arrives as a run of
  * name bytes (across NAME writes) followed by content bytes. */
@@ -119,6 +122,10 @@ static int sq_ble_file_transfer_format_staging_path(char *out, size_t out_len, u
 
 static void sq_ble_file_transfer_close_session_files(void)
 {
+	if (sq_ble_file_transfer_session.staging_file_open) {
+		(void)fs_close(&sq_ble_file_transfer_session.staging_file);
+		sq_ble_file_transfer_session.staging_file_open = false;
+	}
 	if (sq_ble_file_transfer_session.staging_path[0] != '\0') {
 		(void)fs_unlink(sq_ble_file_transfer_session.staging_path);
 		sq_ble_file_transfer_session.staging_path[0] = '\0';
@@ -127,34 +134,34 @@ static void sq_ble_file_transfer_close_session_files(void)
 
 int sq_ble_file_transfer_parse_file_name(const char *name, char *extension_out, size_t extension_cap)
 {
+	const char *extension;
+	size_t name_len;
 	size_t extension_len;
 
 	if (name == NULL || extension_out == NULL) {
 		return -EINVAL;
 	}
-	if (strchr(name, '/') != NULL) {
+	name_len = strlen(name);
+	if (name_len == 0 || name_len >= SQ_BLE_FILE_TRANSFER_NAME_MAX ||
+	    strchr(name, '/') != NULL || strchr(name, '\\') != NULL) {
 		return SQ_BLE_FILE_TRANSFER_RES_INV_PARAM;
 	}
-
-	extension_len = strlen(name);
-	if (extension_len == 0) {
+	extension = strrchr(name, '.');
+	if (extension == NULL || extension[1] == '\0') {
 		return SQ_BLE_FILE_TRANSFER_RES_INV_PARAM;
 	}
+	extension_len = strlen(extension);
 	if (extension_len >= extension_cap) {
 		return SQ_BLE_FILE_TRANSFER_RES_INV_PARAM;
 	}
-	if (name[0] != '.') {
-		return SQ_BLE_FILE_TRANSFER_RES_INV_PARAM;
-	}
 
-	memcpy(extension_out, name, extension_len + 1);
+	memcpy(extension_out, extension, extension_len + 1);
 
 	return 0;
 }
 
 static int sq_ble_file_transfer_open_staging_file(struct sq_ble_file_transfer_session *session)
 {
-	struct fs_file_t file;
 	const char *slash;
 	int result;
 
@@ -176,12 +183,14 @@ static int sq_ble_file_transfer_open_staging_file(struct sq_ble_file_transfer_se
 		}
 	}
 
-	fs_file_t_init(&file);
-	result = fs_open(&file, session->staging_path, FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC);
+	fs_file_t_init(&session->staging_file);
+	result = fs_open(&session->staging_file, session->staging_path,
+			 FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC);
 	if (result != 0) {
 		return result;
 	}
-	return fs_close(&file);
+	session->staging_file_open = true;
+	return 0;
 }
 
 static int sq_ble_file_transfer_begin_internal(const char *name, size_t alloc_size)
@@ -218,6 +227,8 @@ static int sq_ble_file_transfer_begin_internal(const char *name, size_t alloc_si
 		sizeof(sq_ble_file_transfer_session.instance_id) - 1);
 	strncpy(sq_ble_file_transfer_session.complete_event, profile->complete_event,
 		sizeof(sq_ble_file_transfer_session.complete_event) - 1);
+	strncpy(sq_ble_file_transfer_session.file_name, name,
+		sizeof(sq_ble_file_transfer_session.file_name) - 1);
 
 	result = sq_ble_file_transfer_format_staging_path(
 		sq_ble_file_transfer_session.staging_path,
@@ -245,7 +256,6 @@ static int sq_ble_file_transfer_begin_internal(const char *name, size_t alloc_si
 static int sq_ble_file_transfer_write_internal(const char *staging_path, const void *data, size_t len,
 					off_t offset, size_t rem)
 {
-	struct fs_file_t file;
 	ssize_t written;
 	int result;
 
@@ -262,20 +272,14 @@ static int sq_ble_file_transfer_write_internal(const char *staging_path, const v
 		return -EFBIG;
 	}
 
-	fs_file_t_init(&file);
-	result = fs_open(&file, staging_path, FS_O_WRITE);
+	if (!sq_ble_file_transfer_session.staging_file_open) {
+		return -EIO;
+	}
+	result = fs_seek(&sq_ble_file_transfer_session.staging_file, offset, FS_SEEK_SET);
 	if (result != 0) {
 		return result;
 	}
-	if (offset > 0) {
-		result = fs_seek(&file, offset, FS_SEEK_SET);
-		if (result != 0) {
-			(void)fs_close(&file);
-			return result;
-		}
-	}
-	written = fs_write(&file, data, len);
-	(void)fs_close(&file);
+	written = fs_write(&sq_ble_file_transfer_session.staging_file, data, len);
 	if (written < 0) {
 		return (int)written;
 	}
@@ -299,10 +303,16 @@ static int sq_ble_file_transfer_write_internal(const char *staging_path, const v
 			sizeof(sq_ble_file_transfer_pending.instance_id) - 1);
 		strncpy(sq_ble_file_transfer_pending.event, sq_ble_file_transfer_session.complete_event,
 			sizeof(sq_ble_file_transfer_pending.event) - 1);
+		strncpy(sq_ble_file_transfer_pending.file_name, sq_ble_file_transfer_session.file_name,
+			sizeof(sq_ble_file_transfer_pending.file_name) - 1);
 		strncpy(sq_ble_file_transfer_pending.staging_path, sq_ble_file_transfer_session.staging_path,
 			sizeof(sq_ble_file_transfer_pending.staging_path) - 1);
 		sq_ble_file_transfer_pending.bytes_received = sq_ble_file_transfer_session.bytes_received;
 		sq_ble_file_transfer_pending.total_bytes = sq_ble_file_transfer_session.alloc_size;
+		if (sq_ble_file_transfer_session.staging_file_open) {
+			(void)fs_close(&sq_ble_file_transfer_session.staging_file);
+			sq_ble_file_transfer_session.staging_file_open = false;
+		}
 		sq_ble_file_transfer_pending.active = true;
 		/* Ownership of the staging file moves to the pending event (the
 		 * consumer pipeline). Detach it from the session so session teardown
@@ -318,28 +328,12 @@ static int sq_ble_file_transfer_write_internal(const char *staging_path, const v
 
 void sq_ble_file_transfer_reset_session(void)
 {
-	/* A completed transfer publishes its pending event (active) right before
-	 * the client disconnects -- which fires this reset. The pending event and
-	 * its staging file are owned from that point by the consumer pipeline
-	 * (poll drain -> app install -> cleanup_staging). Clearing them here would
-	 * race that deferred install: it would drop the event and unlink the file
-	 * mid-install. So leave a completed pending untouched; only the consumer
-	 * clears it. */
-	bool completed_handoff = sq_ble_file_transfer_pending.active;
-
 	if (sq_ble_file_transfer_session.active) {
 		LOG_INF("reset_session: clearing in-flight app_slot=%u profile=%s",
 			(unsigned int)sq_ble_file_transfer_session.app_slot,
 			sq_ble_file_transfer_session.instance_id);
 	}
 	sq_ble_file_transfer_close_session_files();
-	/* An abandoned partial upload (started, never completed -> no handoff) has
-	 * no consumer, so remove its staging file. A completed transfer shares the
-	 * same staging_path but is owned by the consumer; leave that file alone. */
-	if (sq_ble_file_transfer_session.active && !completed_handoff &&
-	    sq_ble_file_transfer_session.staging_path[0] != '\0') {
-		(void)fs_unlink(sq_ble_file_transfer_session.staging_path);
-	}
 	memset(&sq_ble_file_transfer_session, 0, sizeof(sq_ble_file_transfer_session));
 	memset(&sq_ble_framed, 0, sizeof(sq_ble_framed));
 }
@@ -512,6 +506,11 @@ const char *sq_ble_file_transfer_pending_staging_path(void)
 const char *sq_ble_file_transfer_pending_profile_id(void)
 {
 	return sq_ble_file_transfer_pending.instance_id;
+}
+
+const char *sq_ble_file_transfer_pending_file_name(void)
+{
+	return sq_ble_file_transfer_pending.file_name;
 }
 
 size_t sq_ble_file_transfer_pending_bytes_received(void)

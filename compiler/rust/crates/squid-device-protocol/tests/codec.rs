@@ -9,7 +9,7 @@ use squid_device_protocol::{
     key_request, lifecycle_lines, output_lines, resource_values,
     resources_get_request_with_heap_reset, runtime_cap_clear_request, runtime_cap_get_request,
     runtime_cap_set_request, AppListEntry, DecodeError, Field, FieldValue, Frame, FrameKind,
-    LifecycleTimer, Opcode, ResourceMetric, Status,
+    LifecycleTimer, Opcode, ResourceMetric, Status, TransferCapabilities,
 };
 
 #[test]
@@ -65,7 +65,8 @@ fn decodes_hello_identity_from_shared_codec() {
         squid_device_protocol::HelloIdentity {
             target: "esp32c3-supermini".to_string(),
             firmware: "zephyr".to_string(),
-            diagnostic: true
+            diagnostic: true,
+            transfer_capabilities: TransferCapabilities::default_serial(),
         }
     );
 }
@@ -105,6 +106,7 @@ fn encodes_heap_free_hello_response() {
         "esp32c3-supermini",
         "squidscript-zephyr",
         true,
+        4096,
         &mut out,
     )
     .unwrap();
@@ -120,6 +122,7 @@ fn encodes_heap_free_hello_response() {
             Field::string(1, "esp32c3-supermini"),
             Field::string(2, "squidscript-zephyr"),
             Field::bool(3, true),
+            Field::u64(4, 4096),
         ]
     );
 }

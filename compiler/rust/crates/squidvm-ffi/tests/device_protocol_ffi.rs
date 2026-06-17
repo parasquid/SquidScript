@@ -44,6 +44,7 @@ fn ffi_encodes_hello_response_into_caller_buffer() {
             firmware.as_ptr(),
             firmware.len(),
             true,
+            4096,
             out.as_mut_ptr(),
             out.len(),
             &mut out_len,

@@ -2508,6 +2508,232 @@ ZTEST(squidscript_protocol, test_foreground_events_preserve_vm_memory_until_rela
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }
 
+static int content_response_status(const uint8_t *response, size_t response_len)
+{
+	struct sq_protocol_frame frame;
+	int result = sq_protocol_decode_frame(response, response_len, &frame);
+
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	return frame.status == SQ_STATUS_OK ? 0 : -EIO;
+}
+
+static int send_content_begin_request(const struct sq_device_protocol_context *context,
+				      const char *name, size_t total_len, uint32_t crc)
+{
+	uint8_t payload[128];
+	uint8_t request[192];
+	uint8_t response[256];
+	size_t payload_len = 0;
+	size_t response_len = 0;
+	int result;
+
+	result = sq_protocol_append_string_field(payload, sizeof(payload), &payload_len, 1, name);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	result = sq_protocol_append_u64_field(payload, sizeof(payload), &payload_len, 2, total_len);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	result = sq_protocol_append_u64_field(payload, sizeof(payload), &payload_len, 3, crc);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	result = sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_CONTENT_INSTALL_BEGIN,
+						 SQ_STATUS_OK, 88, payload, payload_len,
+						 request, sizeof(request));
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	memcpy(&request[SQ_PROTOCOL_HEADER_LEN], payload, payload_len);
+	result = sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN + payload_len,
+						  context, response, sizeof(response), &response_len);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	return content_response_status(response, response_len);
+}
+
+static int send_content_chunk_request(const struct sq_device_protocol_context *context,
+				      size_t offset, const uint8_t *bytes, size_t bytes_len)
+{
+	uint8_t payload[256];
+	uint8_t request[320];
+	uint8_t response[256];
+	size_t payload_len = 0;
+	size_t response_len = 0;
+	int result;
+
+	result = sq_protocol_append_u64_field(payload, sizeof(payload), &payload_len,
+					       SQ_DEVICE_CHUNK_FIELD_OFFSET, offset);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	result = sq_protocol_append_bytes_field(payload, sizeof(payload), &payload_len,
+						SQ_DEVICE_CHUNK_FIELD_BYTES, bytes, bytes_len);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	result = sq_protocol_append_bool_field(payload, sizeof(payload), &payload_len,
+					       SQ_DEVICE_CHUNK_FIELD_ACK_REQUESTED, true);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	result = sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_CONTENT_INSTALL_CHUNK,
+						 SQ_STATUS_OK, 89, payload, payload_len,
+						 request, sizeof(request));
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	memcpy(&request[SQ_PROTOCOL_HEADER_LEN], payload, payload_len);
+	result = sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN + payload_len,
+						  context, response, sizeof(response), &response_len);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	return content_response_status(response, response_len);
+}
+
+static int send_content_commit_request(const struct sq_device_protocol_context *context)
+{
+	uint8_t request[SQ_PROTOCOL_HEADER_LEN];
+	uint8_t response[256];
+	size_t response_len = 0;
+	int result;
+
+	result = sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_CONTENT_INSTALL_COMMIT,
+						 SQ_STATUS_OK, 90, NULL, 0, request,
+						 sizeof(request));
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	result = sq_device_protocol_handle_frame(request, sizeof(request), context, response,
+						  sizeof(response), &response_len);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	return content_response_status(response, response_len);
+}
+
+static int content_check_field_u64(const struct sq_protocol_frame *frame, uint8_t tag,
+				   uint64_t *out)
+{
+	size_t offset = 0;
+	struct sq_protocol_field field;
+	int result;
+
+	while ((result = sq_protocol_next_field(frame->payload, frame->payload_len, &offset,
+						 &field)) == SQ_PROTOCOL_OK) {
+		if (field.tag == tag && field.type == SQ_FIELD_U64 && field.len == sizeof(uint64_t)) {
+			*out = sq_protocol_read_u64_le(field.value);
+			return 0;
+		}
+	}
+	return -ENOENT;
+}
+
+static int send_content_check_request(const struct sq_device_protocol_context *context,
+				      const char *name, size_t *out_size, uint32_t *out_crc)
+{
+	uint8_t payload[128];
+	uint8_t request[192];
+	uint8_t response[256];
+	size_t payload_len = 0;
+	size_t response_len = 0;
+	struct sq_protocol_frame frame;
+	uint64_t size = 0;
+	uint64_t crc = 0;
+	int result;
+
+	result = sq_protocol_append_string_field(payload, sizeof(payload), &payload_len, 1, name);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	result = sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_CONTENT_CHECK,
+						 SQ_STATUS_OK, 91, payload, payload_len, request,
+						 sizeof(request));
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	memcpy(&request[SQ_PROTOCOL_HEADER_LEN], payload, payload_len);
+	result = sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN + payload_len,
+						  context, response, sizeof(response), &response_len);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	result = sq_protocol_decode_frame(response, response_len, &frame);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	if (frame.status != SQ_STATUS_OK || frame.opcode != SQ_OPCODE_CONTENT_CHECK) {
+		return -EIO;
+	}
+	result = content_check_field_u64(&frame, 2, &size);
+	if (result != 0) {
+		return result;
+	}
+	result = content_check_field_u64(&frame, 3, &crc);
+	if (result != 0) {
+		return result;
+	}
+	if (out_size != NULL) {
+		*out_size = (size_t)size;
+	}
+	if (out_crc != NULL) {
+		*out_crc = (uint32_t)crc;
+	}
+	return 0;
+}
+
+ZTEST(squidscript_protocol, test_content_install_keeps_staging_file_open_across_chunks)
+{
+	static struct sq_device_content_session content_session;
+	struct sq_device_identity identity = {
+		.target = "xteink-x4",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+		.store_mount_point = test_fs_mount.mnt_point,
+		.content_session = &content_session,
+	};
+	const uint8_t chunk_a[] = {'b', 'o', 'o', 'k'};
+	const uint8_t chunk_b[] = {'d', 'a', 't', 'a'};
+	const uint8_t book_bytes[] = {'b', 'o', 'o', 'k', 'd', 'a', 't', 'a'};
+	uint32_t crc = sq_protocol_crc32(book_bytes, sizeof(book_bytes));
+	char final_path[SQ_DEVICE_CONTENT_PATH_BYTES];
+	struct fs_dirent entry;
+
+	memset(&content_session, 0, sizeof(content_session));
+	zassert_equal(mount_test_sd(), 0, "sd mount failed");
+	(void)fs_unlink(SQ_VM_RUNTIME_CONTENT_BOOKS_DIR "/fast.dat.upload");
+	(void)fs_unlink(SQ_VM_RUNTIME_CONTENT_BOOKS_DIR "/fast.dat");
+	zassert_equal(send_content_begin_request(&context, "fast.dat",
+					       sizeof(chunk_a) + sizeof(chunk_b), crc),
+		      0);
+	zassert_false(content_session.staging_file_open);
+	zassert_equal(send_content_chunk_request(&context, 0, chunk_a, sizeof(chunk_a)), 0);
+	zassert_true(content_session.staging_file_open);
+	zassert_equal(send_content_chunk_request(&context, sizeof(chunk_a), chunk_b, sizeof(chunk_b)),
+		      0);
+	zassert_true(content_session.staging_file_open);
+	zassert_equal(send_content_commit_request(&context), 0);
+	zassert_false(content_session.staging_file_open);
+
+	snprintk(final_path, sizeof(final_path), SQ_VM_RUNTIME_CONTENT_BOOKS_DIR "/fast.dat");
+	zassert_equal(fs_stat(final_path, &entry), 0);
+	zassert_equal(entry.size, sizeof(book_bytes));
+	size_t checked_size = 0;
+	uint32_t checked_crc = 0;
+	zassert_equal(send_content_check_request(&context, "fast.dat", &checked_size, &checked_crc), 0);
+	zassert_equal(checked_size, sizeof(book_bytes));
+	zassert_equal(checked_crc, crc);
+	zassert_equal(unmount_test_sd(), 0, "sd unmount failed");
+}
+
 ZTEST(squidscript_protocol, test_event_dispatch_rejects_non_foreground_app_target)
 {
 	uint8_t payload[80];
@@ -6178,6 +6404,42 @@ ZTEST(squidscript_protocol, test_http_upload_resumes_partial_at_reported_offset)
 	zassert_equal(read_test_file(path, readback, sizeof(readback), &readback_len), 0);
 	zassert_equal(readback_len, sizeof(readback));
 	zassert_mem_equal(readback, "book-data", sizeof(readback));
+	sq_http_upload_cleanup_staging();
+	zassert_equal(unmount_test_sd(), 0, "sd unmount failed");
+}
+
+
+ZTEST(squidscript_protocol, test_http_upload_large_payload_reports_full_byte_count)
+{
+	static const char accept[1][SQVM_HTTP_PROFILE_TEXT_CAP] = {".binbook"};
+	static const SqvmHttpProfileEventRoute events[1] = {
+		{.kind = "complete", .event = "http.file.complete"},
+	};
+	static const char path[] = "/SD:/sq/tmp/binbook-upload.upload";
+	uint8_t chunk[1024];
+	size_t total = 83014;
+	size_t sent = 0;
+	struct fs_dirent entry;
+
+	zassert_equal(mount_test_sd(), 0, "sd mount failed");
+	(void)fs_unlink(path);
+	sq_http_upload_abort();
+	zassert_equal(sq_http_upload_start_profile("reader", "binbook-upload", accept, 1, events,
+						   1),
+		      0);
+	zassert_equal(sq_http_upload_test_begin("book.binbook", 0, total, total), 0);
+	memset(chunk, 0x5a, sizeof(chunk));
+	while (sent < total) {
+		size_t len = MIN(sizeof(chunk), total - sent);
+		zassert_equal(sq_http_upload_test_write(chunk, len), 0);
+		sent += len;
+	}
+	zassert_equal(sq_http_upload_test_finish(), 0);
+	zassert_true(sq_http_upload_pending_is_complete());
+	zassert_equal(sq_http_upload_pending_bytes_received(), total);
+	zassert_equal(sq_http_upload_pending_total_bytes(), total);
+	zassert_equal(fs_stat(path, &entry), 0);
+	zassert_equal(entry.size, total);
 	sq_http_upload_cleanup_staging();
 	zassert_equal(unmount_test_sd(), 0, "sd unmount failed");
 }

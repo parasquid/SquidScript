@@ -172,6 +172,23 @@ route, firmware staging file, resumable SD-backed upload, `file.copy`,
 `content.binbook.list("books")`, and BinBook display path work together on the
 device-owned X4 SD card.
 
+`scripts/xteink-x4-test-transfer-regression.sh` is the XTEINK X4 transfer regression
+suite for upload speed and data-integrity work. It runs the serial, HTTP, and
+BLE transfer checks sequentially against the same physical target. Each check
+uses a validator-compatible generated BinBook payload larger than the small
+firmware scratch buffers, stores it under a transport-specific safe file name,
+and verifies the final device-owned file with `device content-check <name>
+--size <bytes> --crc32 <hex>`. The direct scripts are
+`scripts/xteink-x4-test-serial-transfer.sh`,
+`scripts/xteink-x4-test-http-transfer.sh`, and
+`scripts/xteink-x4-test-ble-transfer.sh`; the HTTP and BLE checks install
+`tests/hardware/xteink-x4/file-transfer-regression`, which copies completed
+uploads into the `books` library before verification. Use `--payload
+<file.binbook>` to test a specific existing book, `--host-wifi-iface <iface>`
+for the HTTP AP association, and `--device <name-or-address>` for BLE matching.
+The scripts write command output, curl progress, and failure diagnostics under
+`target/hardware-tests/xteink-x4-transfer-*`.
+
 The default XIAO firmware also drives the SSD1677/GDEQ0426T82 display through
 the Zephyr SPI backend for `service.display.clear` and `service.display.text`.
 The target JSON is the source of truth for the default portrait logical

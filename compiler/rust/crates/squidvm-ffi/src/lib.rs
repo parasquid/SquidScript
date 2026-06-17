@@ -1992,6 +1992,7 @@ pub unsafe extern "C" fn sqdp_encode_hello_response(
     firmware: *const u8,
     firmware_len: usize,
     diagnostic: bool,
+    serial_max_frame_bytes: u64,
     out: *mut u8,
     out_cap: usize,
     out_len: *mut usize,
@@ -2010,7 +2011,15 @@ pub unsafe extern "C" fn sqdp_encode_hello_response(
         return SqdpStatus::InvalidArgument;
     };
     let out = slice::from_raw_parts_mut(out, out_cap);
-    match encode_hello_response_into(opcode, sequence, target, firmware, diagnostic, out) {
+    match encode_hello_response_into(
+        opcode,
+        sequence,
+        target,
+        firmware,
+        diagnostic,
+        serial_max_frame_bytes,
+        out,
+    ) {
         Ok(len) => {
             *out_len = len;
             SqdpStatus::Ok

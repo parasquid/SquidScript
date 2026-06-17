@@ -100,6 +100,35 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
         self.assertIn("INTERRUPT_UPLOAD=1", docs)
         self.assertIn("content.binbook.list", docs)
 
+
+    def test_x4_transfer_regression_scripts_cover_all_transports(self):
+        suite = self.read("scripts/xteink-x4-test-transfer-regression.sh")
+        serial = self.read("scripts/xteink-x4-test-serial-transfer.sh")
+        http = self.read("scripts/xteink-x4-test-http-transfer.sh")
+        ble = self.read("scripts/xteink-x4-test-ble-transfer.sh")
+        app = self.read("tests/hardware/xteink-x4/file-transfer-regression/main.squid")
+        cli = self.read("compiler/rust/crates/squidc-cli/src/main.rs")
+        docs = self.read("docs/hardware_target_tests.md")
+
+        self.assertIn("xteink-x4-test-serial-transfer.sh", suite)
+        self.assertIn("xteink-x4-test-http-transfer.sh", suite)
+        self.assertIn("xteink-x4-test-ble-transfer.sh", suite)
+        self.assertLess(suite.index("xteink-x4-test-serial-transfer.sh"), suite.index("xteink-x4-test-http-transfer.sh"))
+        self.assertLess(suite.index("xteink-x4-test-http-transfer.sh"), suite.index("xteink-x4-test-ble-transfer.sh"))
+        self.assertIn('source "${ROOT}/scripts/lib/hardware-command.sh"', serial)
+        self.assertIn("device content-put", serial)
+        self.assertIn("device content-check", serial)
+        self.assertIn("curl_args=(--max-time", http)
+        self.assertIn("device content-check", http)
+        self.assertIn("device ble-put", ble)
+        self.assertIn("device content-check", ble)
+        self.assertIn('service.http.start("file-upload"', app)
+        self.assertIn('service.ble.start("file-transfer"', app)
+        self.assertIn('name: ev.name', app)
+        self.assertIn('name: "transfer-regression"', cli)
+        self.assertIn("xteink-x4-test-transfer-regression.sh", cli)
+        self.assertIn("XTEINK X4 transfer regression", docs)
+
     def test_xiao_epaper_gray2_smoke_is_retained_hardware_display_check(self):
         script = self.read("scripts/xiao-esp32c3-test-epaper-gray2-smoke.sh")
         docs = self.read("docs/hardware_target_tests.md")

@@ -227,7 +227,7 @@
       "name": "sqdp_encode_hello_response",
       "family": "device-protocol",
       "direction": "rust_to_c",
-      "prototype": "SqdpStatus sqdp_encode_hello_response(\n\tuint8_t opcode,\n\tuint32_t sequence,\n\tconst uint8_t *target,\n\tsize_t target_len,\n\tconst uint8_t *firmware,\n\tsize_t firmware_len,\n\tbool diagnostic,\n\tuint8_t *out,\n\tsize_t out_cap,\n\tsize_t *out_len);"
+      "prototype": "SqdpStatus sqdp_encode_hello_response(\n\tuint8_t opcode,\n\tuint32_t sequence,\n\tconst uint8_t *target,\n\tsize_t target_len,\n\tconst uint8_t *firmware,\n\tsize_t firmware_len,\n\tbool diagnostic,\n\tuint64_t serial_max_frame_bytes,\n\tuint8_t *out,\n\tsize_t out_cap,\n\tsize_t *out_len);"
     },
     {
       "name": "sqdp_encode_error_response",

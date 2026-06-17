@@ -71,6 +71,7 @@ pub enum Opcode {
     ContentInstallBegin = 88,
     ContentInstallChunk = 89,
     ContentInstallCommit = 90,
+    ContentCheck = 91,
 }
 
 impl Opcode {
@@ -108,6 +109,7 @@ impl Opcode {
             "contentinstallbegin" => Ok(Self::ContentInstallBegin),
             "contentinstallchunk" => Ok(Self::ContentInstallChunk),
             "contentinstallcommit" => Ok(Self::ContentInstallCommit),
+            "contentcheck" => Ok(Self::ContentCheck),
             _ => Err(format!("unknown protocol opcode: {name}")),
         }
     }
@@ -149,6 +151,7 @@ impl TryFrom<u8> for Opcode {
             88 => Ok(Self::ContentInstallBegin),
             89 => Ok(Self::ContentInstallChunk),
             90 => Ok(Self::ContentInstallCommit),
+            91 => Ok(Self::ContentCheck),
             _ => Err(DecodeError::UnknownOpcode(value)),
         }
     }
@@ -925,6 +928,7 @@ pub struct HelloIdentity {
     pub target: String,
     pub firmware: String,
     pub diagnostic: bool,
+    pub transfer_capabilities: TransferCapabilities,
 }
 
 #[cfg(feature = "alloc")]
@@ -946,6 +950,14 @@ pub struct ResourceMetric<'a> {
     pub value: u64,
 }
 
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContentCheckResult {
+    pub name: String,
+    pub size: u64,
+    pub crc32: u64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TransferCapabilities {
     pub max_frame_bytes: usize,
@@ -955,12 +967,15 @@ pub struct TransferCapabilities {
 
 impl TransferCapabilities {
     pub fn default_serial() -> Self {
-        let max_payload_bytes =
-            transfer_chunk_payload_for_frame_budget(DEFAULT_SERIAL_MAX_FRAME_BYTES);
+        Self::from_serial_frame_budget(DEFAULT_SERIAL_MAX_FRAME_BYTES)
+    }
+
+    pub fn from_serial_frame_budget(max_frame_bytes: usize) -> Self {
+        let max_payload_bytes = transfer_chunk_payload_for_frame_budget(max_frame_bytes);
         Self {
-            max_frame_bytes: DEFAULT_SERIAL_MAX_FRAME_BYTES,
+            max_frame_bytes,
             max_payload_bytes,
-            ack_window_bytes: DEFAULT_TRANSFER_ACK_WINDOW_BYTES,
+            ack_window_bytes: max_payload_bytes,
         }
     }
 }
@@ -1302,6 +1317,11 @@ pub fn content_install_commit_request(sequence: u32) -> Frame {
 }
 
 #[cfg(feature = "alloc")]
+pub fn content_check_request(sequence: u32, name: impl Into<String>) -> Frame {
+    Frame::request(Opcode::ContentCheck, sequence, vec![Field::string(1, name)])
+}
+
+#[cfg(feature = "alloc")]
 pub fn app_launch_request(sequence: u32, app_id: impl Into<String>) -> Frame {
     Frame::request(Opcode::AppLaunch, sequence, vec![Field::string(1, app_id)])
 }
@@ -1369,19 +1389,25 @@ pub fn hello_identity(frame: &Frame) -> Option<HelloIdentity> {
     let mut target = None;
     let mut firmware = None;
     let mut diagnostic = None;
+    let mut serial_max_frame_bytes = None;
     for field in &frame.fields {
         match (field.tag, &field.value) {
             (1, FieldValue::String(value)) => target = Some(value.clone()),
             (2, FieldValue::String(value)) => firmware = Some(value.clone()),
             (3, FieldValue::Bool(value)) => diagnostic = Some(*value),
+            (4, FieldValue::U64(value)) => serial_max_frame_bytes = usize::try_from(*value).ok(),
             _ => {}
         }
     }
 
+    let transfer_capabilities = serial_max_frame_bytes
+        .map(TransferCapabilities::from_serial_frame_budget)
+        .unwrap_or_else(TransferCapabilities::default_serial);
     Some(HelloIdentity {
         target: target?,
         firmware: firmware?,
         diagnostic: diagnostic.unwrap_or(false),
+        transfer_capabilities,
     })
 }
 
@@ -1500,6 +1526,34 @@ pub fn resource_values(frame: &Frame) -> Option<Vec<(String, u64)>> {
 }
 
 #[cfg(feature = "alloc")]
+pub fn content_check_result(frame: &Frame) -> Option<ContentCheckResult> {
+    if frame.kind != FrameKind::Response
+        || frame.opcode != Opcode::ContentCheck
+        || frame.status != Status::Ok
+    {
+        return None;
+    }
+
+    let mut name = None;
+    let mut size = None;
+    let mut crc32 = None;
+    for field in &frame.fields {
+        match (field.tag, &field.value) {
+            (1, FieldValue::String(value)) => name = Some(value.clone()),
+            (2, FieldValue::U64(value)) => size = Some(*value),
+            (3, FieldValue::U64(value)) => crc32 = Some(*value),
+            _ => {}
+        }
+    }
+
+    Some(ContentCheckResult {
+        name: name?,
+        size: size?,
+        crc32: crc32?,
+    })
+}
+
+#[cfg(feature = "alloc")]
 pub fn protocol_error(frame: &Frame) -> Option<ProtocolError> {
     if frame.kind != FrameKind::Response || frame.status != Status::Error {
         return None;
@@ -1588,11 +1642,13 @@ pub fn encode_hello_response_into(
     target: &str,
     firmware: &str,
     diagnostic: bool,
+    serial_max_frame_bytes: u64,
     out: &mut [u8],
 ) -> Result<usize, DecodeError> {
     let payload_len = tlv_string_len(target)?
         .checked_add(tlv_string_len(firmware)?)
         .and_then(|len| len.checked_add(tlv_bool_len()))
+        .and_then(|len| len.checked_add(tlv_u64_len()))
         .ok_or(DecodeError::OutputTooSmall {
             needed: usize::MAX,
             capacity: out.len(),
@@ -1600,7 +1656,8 @@ pub fn encode_hello_response_into(
     encode_response_payload_into(opcode, Status::Ok, sequence, payload_len, out, |payload| {
         let rest = write_string_tlv(payload, 1, target)?;
         let rest = write_string_tlv(rest, 2, firmware)?;
-        write_bool_tlv(rest, 3, diagnostic)?;
+        let rest = write_bool_tlv(rest, 3, diagnostic)?;
+        write_u64_tlv(rest, 4, serial_max_frame_bytes)?;
         Ok(())
     })
 }
@@ -2364,7 +2421,8 @@ fn parse_hex_bytes(value: &str) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        app_install_chunk_request_with_ack, FieldValue, Opcode, Status, TransferCapabilities,
+        app_install_chunk_request_with_ack, content_check_request, content_check_result,
+        hello_identity, Field, FieldValue, Frame, Opcode, Status, TransferCapabilities,
     };
 
     #[test]
@@ -2379,11 +2437,63 @@ mod tests {
     }
 
     #[test]
+    fn hello_identity_carries_serial_transfer_budget() {
+        let response = Frame::response(
+            Opcode::Hello,
+            Status::Ok,
+            1,
+            vec![
+                Field::string(1, "xteink-x4"),
+                Field::string(2, "squidscript-zephyr"),
+                Field::bool(3, true),
+                Field::u64(4, 4096),
+            ],
+        );
+
+        let identity = hello_identity(&response).expect("hello identity decodes");
+        assert_eq!(identity.target, "xteink-x4");
+        assert_eq!(identity.transfer_capabilities.max_frame_bytes, 4096);
+        assert!(identity.transfer_capabilities.max_payload_bytes > 3900);
+        assert_eq!(
+            identity.transfer_capabilities.ack_window_bytes,
+            identity.transfer_capabilities.max_payload_bytes
+        );
+    }
+
+    #[test]
     fn transfer_capabilities_default_to_serial_window_limits() {
         let caps = TransferCapabilities::default_serial();
 
         assert_eq!(caps.max_frame_bytes, 1024);
         assert!(caps.max_payload_bytes > 900);
-        assert!(caps.ack_window_bytes >= caps.max_payload_bytes * 4);
+        assert_eq!(caps.ack_window_bytes, caps.max_payload_bytes);
+    }
+
+    #[test]
+    fn content_check_request_and_response_are_generic_file_verification() {
+        let request = content_check_request(91, "transfer-smoke.dat");
+
+        assert_eq!(request.opcode, Opcode::ContentCheck);
+        assert_eq!(request.fields, vec![Field::string(1, "transfer-smoke.dat")]);
+
+        let response = Frame::response(
+            Opcode::ContentCheck,
+            Status::Ok,
+            91,
+            vec![
+                Field::string(1, "transfer-smoke.dat"),
+                Field::u64(2, 8192),
+                Field::u64(3, 0x1234_abcd),
+            ],
+        );
+
+        let checked = content_check_result(&response).expect("content check response decodes");
+        assert_eq!(checked.name, "transfer-smoke.dat");
+        assert_eq!(checked.size, 8192);
+        assert_eq!(checked.crc32, 0x1234_abcd);
+
+        let wrong_opcode =
+            Frame::response(Opcode::ContentInstallCommit, Status::Ok, 91, Vec::new());
+        assert!(content_check_result(&wrong_opcode).is_none());
     }
 }

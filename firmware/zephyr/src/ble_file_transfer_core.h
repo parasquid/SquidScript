@@ -66,6 +66,8 @@ const char *sq_ble_file_transfer_pending_staging_path(void);
 
 const char *sq_ble_file_transfer_pending_profile_id(void);
 
+const char *sq_ble_file_transfer_pending_file_name(void);
+
 size_t sq_ble_file_transfer_pending_bytes_received(void);
 
 size_t sq_ble_file_transfer_pending_total_bytes(void);

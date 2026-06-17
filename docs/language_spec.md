@@ -2524,6 +2524,7 @@ firmware dispatch path for that event. The `ble.file.complete` event carries:
 
 ```text
 upload          file reference to the received staging file
+name            uploaded safe file name
 bytesReceived   string
 totalBytes      string
 id              the profile instance id
@@ -2544,7 +2545,8 @@ Rules:
   `ble.file.complete` event handler returns. The app must consume the file
   (copy, install, log) before returning from the handler.
 - A completed transfer is delivered to the foreground app profile whose
-  `accept` list contains the uploaded file extension, such as `.sqbc`.
+  `accept` list contains the uploaded file-name extension, such as `.sqbc` or
+  `.binbook`. The event exposes the full safe file name as `ev.name`.
 - The active route table must not contain multiple receivers for the same
   uploaded extension. Ambiguous or stale route-table state is a firmware
   invariant violation: firmware records an `invariant.ble.*` diagnostic and

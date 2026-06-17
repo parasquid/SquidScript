@@ -23,6 +23,9 @@ pub const STATUS_ROUTE_AMBIGUOUS: u8 = 0x11;
 const DEFAULT_CHUNK: usize = 180;
 const MAX_CHUNK: usize = 512;
 const NAME_CHUNK: usize = 18;
+const CONNECT_ATTEMPTS: usize = 3;
+const CONNECT_RETRY_DELAY: Duration = Duration::from_millis(1500);
+const SCAN_SETTLE: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlePushResult {
@@ -48,6 +51,12 @@ pub fn push_sqbc(selector: &str, source: &Path) -> Result<BlePushResult, String>
     runtime.block_on(push_sqbc_async(selector, source))
 }
 
+pub fn push_file(selector: &str, source: &Path, name: &str) -> Result<BlePushResult, String> {
+    let runtime = tokio::runtime::Runtime::new()
+        .map_err(|error| format!("failed to start BLE runtime: {error}"))?;
+    runtime.block_on(push_file_async(selector, source, name))
+}
+
 #[cfg(test)]
 pub fn push_sqbc_with_client<C: BleTransferClient>(
     client: &mut C,
@@ -57,11 +66,32 @@ pub fn push_sqbc_with_client<C: BleTransferClient>(
     if source.extension().and_then(|value| value.to_str()) != Some("sqbc") {
         return Err("BLE app push currently accepts only .sqbc files".to_string());
     }
+    push_file_with_client(client, selector, source, ".sqbc")
+}
+
+#[cfg(test)]
+pub fn push_file_with_client<C: BleTransferClient>(
+    client: &mut C,
+    selector: &str,
+    source: &Path,
+    name: &str,
+) -> Result<BlePushResult, String> {
+    validate_ble_file_name(name)?;
     let payload = fs::read(source)
         .map_err(|error| format!("failed to read {}: {error}", source.display()))?;
-    let file_name = b".sqbc";
+    push_payload_with_client(client, selector, &payload, name)
+}
+
+#[cfg(test)]
+fn push_payload_with_client<C: BleTransferClient>(
+    client: &mut C,
+    selector: &str,
+    payload: &[u8],
+    name: &str,
+) -> Result<BlePushResult, String> {
+    let file_name = name.as_bytes();
     let file_size = u32::try_from(payload.len())
-        .map_err(|_| format!("{} is too large for BLE file transfer", source.display()))?;
+        .map_err(|_| "payload is too large for BLE file transfer".to_string())?;
 
     client.find_device(selector)?;
     client.ensure_service(SVC_UUID)?;
@@ -94,7 +124,7 @@ pub fn push_sqbc_with_client<C: BleTransferClient>(
         Ok(STATUS_COMPLETE) => {
             client.stop_notify(STAT_UUID)?;
             Ok(BlePushResult {
-                extension: ".sqbc".to_string(),
+                extension: name.to_string(),
                 bytes_sent: payload.len(),
             })
         }
@@ -114,6 +144,15 @@ async fn push_sqbc_async(selector: &str, source: &Path) -> Result<BlePushResult,
     if source.extension().and_then(|value| value.to_str()) != Some("sqbc") {
         return Err("BLE app push currently accepts only .sqbc files".to_string());
     }
+    push_file_async(selector, source, ".sqbc").await
+}
+
+async fn push_file_async(
+    selector: &str,
+    source: &Path,
+    name: &str,
+) -> Result<BlePushResult, String> {
+    validate_ble_file_name(name)?;
     let payload = fs::read(source)
         .map_err(|error| format!("failed to read {}: {error}", source.display()))?;
     let file_size = u32::try_from(payload.len())
@@ -121,11 +160,8 @@ async fn push_sqbc_async(selector: &str, source: &Path) -> Result<BlePushResult,
 
     let adapter = first_adapter().await?;
     let peripheral = find_peripheral(&adapter, selector).await?;
-    peripheral
-        .connect()
-        .await
-        .map_err(|error| format!("failed to connect to BLE device: {error}"))?;
-    let result = push_connected_peripheral(&peripheral, &payload, file_size).await;
+    connect_peripheral(&peripheral).await?;
+    let result = push_connected_peripheral(&peripheral, &payload, file_size, name).await;
     let _ = peripheral.disconnect().await;
     result
 }
@@ -149,24 +185,75 @@ async fn find_peripheral(adapter: &Adapter, selector: &str) -> Result<Peripheral
         .start_scan(ScanFilter::default())
         .await
         .map_err(|error| format!("failed to start BLE scan: {error}"))?;
-    tokio::time::sleep(Duration::from_secs(3)).await;
+    tokio::time::sleep(SCAN_SETTLE).await;
     let peripherals = adapter
         .peripherals()
         .await
         .map_err(|error| format!("failed to list BLE peripherals: {error}"))?;
+    let stop_scan_result = adapter.stop_scan().await;
 
     for peripheral in peripherals {
         let address = peripheral.address().to_string();
-        let local_name = peripheral
-            .properties()
-            .await
-            .map_err(|error| format!("failed to read BLE peripheral properties: {error}"))?
-            .and_then(|properties| properties.local_name);
+        if ble_selector_matches(&address, None, selector) {
+            stop_scan_result
+                .map_err(|error| format!("failed to stop BLE scan before connect: {error}"))?;
+            return Ok(peripheral);
+        }
+        let local_name = match peripheral.properties().await {
+            Ok(properties) => properties.and_then(|properties| properties.local_name),
+            Err(error) if ble_property_error_is_stale_object(&error.to_string()) => continue,
+            Err(error) => {
+                return Err(format!("failed to read BLE peripheral properties: {error}"));
+            }
+        };
         if ble_selector_matches(&address, local_name.as_deref(), selector) {
+            stop_scan_result
+                .map_err(|error| format!("failed to stop BLE scan before connect: {error}"))?;
             return Ok(peripheral);
         }
     }
+    stop_scan_result.map_err(|error| format!("failed to stop BLE scan: {error}"))?;
     Err("BLE device not found".to_string())
+}
+
+async fn connect_peripheral(peripheral: &Peripheral) -> Result<(), String> {
+    let mut last_error = None;
+
+    for attempt in 1..=CONNECT_ATTEMPTS {
+        match peripheral.connect().await {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                let message = error.to_string();
+                if attempt == CONNECT_ATTEMPTS || !ble_connect_error_is_retryable(&message) {
+                    return Err(format!("failed to connect to BLE device: {message}"));
+                }
+                last_error = Some(message);
+                let _ = peripheral.disconnect().await;
+                tokio::time::sleep(CONNECT_RETRY_DELAY).await;
+            }
+        }
+    }
+
+    Err(format!(
+        "failed to connect to BLE device: {}",
+        last_error.unwrap_or_else(|| "unknown error".to_string())
+    ))
+}
+
+fn ble_connect_error_is_retryable(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("le-connection-abort-by-local")
+        || lower.contains("connection abort")
+        || lower.contains("software caused connection abort")
+        || lower.contains("connection timed out")
+        || lower.contains("already connected")
+}
+
+fn ble_property_error_is_stale_object(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("org.freedesktop.dbus.properties")
+        && lower.contains("getall")
+        && lower.contains("doesn't exist")
 }
 
 fn ble_selector_matches(address: &str, local_name: Option<&str>, selector: &str) -> bool {
@@ -191,6 +278,7 @@ async fn push_connected_peripheral(
     peripheral: &Peripheral,
     payload: &[u8],
     file_size: u32,
+    name: &str,
 ) -> Result<BlePushResult, String> {
     let svc_uuid = parse_uuid(SVC_UUID)?;
     let ctrl_uuid = parse_uuid(CTRL_UUID)?;
@@ -240,13 +328,13 @@ async fn push_connected_peripheral(
     let mut begin = Vec::with_capacity(7);
     begin.push(OP_BEGIN);
     begin.extend_from_slice(&file_size.to_le_bytes());
-    begin.extend_from_slice(&(b".sqbc".len() as u16).to_le_bytes());
+    begin.extend_from_slice(&(name.len() as u16).to_le_bytes());
     peripheral
         .write(&control, &begin, WriteType::WithResponse)
         .await
         .map_err(|error| format!("failed to send BLE BEGIN: {error}"))?;
 
-    for chunk in b".sqbc".chunks(NAME_CHUNK) {
+    for chunk in name.as_bytes().chunks(NAME_CHUNK) {
         let mut name = Vec::with_capacity(chunk.len() + 1);
         name.push(OP_NAME);
         name.extend_from_slice(chunk);
@@ -278,7 +366,7 @@ async fn push_connected_peripheral(
 
     match status_result {
         Ok(Some(STATUS_COMPLETE)) => Ok(BlePushResult {
-            extension: ".sqbc".to_string(),
+            extension: name.to_string(),
             bytes_sent: payload.len(),
         }),
         Ok(Some(status)) => Err(ble_status_error(status)),
@@ -290,6 +378,19 @@ async fn push_connected_peripheral(
             Err("timed out waiting for completion".to_string())
         }
     }
+}
+
+fn validate_ble_file_name(name: &str) -> Result<(), String> {
+    if name.is_empty() || name.len() > u16::MAX as usize || name.as_bytes().contains(&0) {
+        return Err(format!("invalid BLE file name: {name}"));
+    }
+    if name.contains('/') || name.contains('\\') {
+        return Err(format!("invalid BLE file name: {name}"));
+    }
+    if !name.starts_with('.') && !name.contains('.') {
+        return Err(format!("BLE file name must include an extension: {name}"));
+    }
+    Ok(())
 }
 
 fn negotiated_chunk_size(mtu: u16) -> usize {
@@ -437,6 +538,28 @@ mod tests {
     }
 
     #[test]
+    fn ble_connect_retry_classifier_covers_transient_host_abort_errors() {
+        assert!(ble_connect_error_is_retryable(
+            "le-connection-abort-by-local"
+        ));
+        assert!(ble_connect_error_is_retryable(
+            "Software caused connection abort"
+        ));
+        assert!(ble_connect_error_is_retryable("Connection timed out"));
+        assert!(!ble_connect_error_is_retryable("Authentication failed"));
+        assert!(!ble_connect_error_is_retryable("device not found"));
+    }
+
+    #[test]
+    fn ble_property_error_classifier_covers_stale_bluez_objects() {
+        assert!(ble_property_error_is_stale_object(
+            r#"Method "GetAll" with signature "s" on interface "org.freedesktop.DBus.Properties" doesn't exist"#
+        ));
+        assert!(!ble_property_error_is_stale_object("permission denied"));
+        assert!(!ble_property_error_is_stale_object("adapter powered off"));
+    }
+
+    #[test]
     fn push_sqbc_writes_begin_name_chunks_data_and_waits_for_complete() {
         let root = unique_test_dir("squidc-ble-push");
         fs::create_dir_all(&root).unwrap();
@@ -493,6 +616,49 @@ mod tests {
             payload.len()
         );
         assert!(data_writes.iter().all(|data| data.len() <= 244));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn push_file_writes_generic_file_name_and_payload_chunks() {
+        let root = unique_test_dir("squidc-ble-file-push");
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("transfer-smoke.dat");
+        let payload = vec![0x5au8; 1200];
+        fs::write(&source, &payload).unwrap();
+        let mut client = FakeClient::default();
+
+        let result =
+            push_file_with_client(&mut client, "SquidScript", &source, "transfer-smoke.dat")
+                .unwrap();
+
+        assert_eq!(
+            result,
+            BlePushResult {
+                extension: "transfer-smoke.dat".to_string(),
+                bytes_sent: payload.len()
+            }
+        );
+        let name = client
+            .writes
+            .iter()
+            .filter_map(|write| match write {
+                Write::Control(data) if data[0] == OP_NAME => Some(&data[1..]),
+                _ => None,
+            })
+            .flatten()
+            .copied()
+            .collect::<Vec<_>>();
+        assert_eq!(name, b"transfer-smoke.dat");
+        let data_len = client
+            .writes
+            .iter()
+            .filter_map(|write| match write {
+                Write::Data(data) => Some(data.len()),
+                Write::Control(_) => None,
+            })
+            .sum::<usize>();
+        assert_eq!(data_len, payload.len());
         fs::remove_dir_all(root).unwrap();
     }
 

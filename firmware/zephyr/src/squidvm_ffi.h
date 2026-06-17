@@ -1276,6 +1276,7 @@ SqdpStatus sqdp_encode_hello_response(
 	const uint8_t *firmware,
 	size_t firmware_len,
 	bool diagnostic,
+	uint64_t serial_max_frame_bytes,
 	uint8_t *out,
 	size_t out_cap,
 	size_t *out_len);

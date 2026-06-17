@@ -120,6 +120,8 @@ struct sq_device_content_session {
 	uint32_t running_crc;
 	char staging_path[SQ_DEVICE_CONTENT_PATH_BYTES];
 	char final_path[SQ_DEVICE_CONTENT_PATH_BYTES];
+	struct fs_file_t staging_file;
+	bool staging_file_open;
 	enum sq_device_transfer_phase phase;
 };
 

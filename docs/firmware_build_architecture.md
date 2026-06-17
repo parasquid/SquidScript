@@ -260,14 +260,13 @@ UUID entries, and the pending-event producer/consumer handoff
 `sq_ble_file_transfer_cleanup_staging`). BLE routing state stores installed-app
 registry slots, or the reserved target fallback slot, instead of duplicating
 app-id text; app-id strings are resolved from the app registry or fallback app
-metadata when constructing staging paths or dispatching completion events. On
-the XIAO ESP32-C3 e-paper target, the compact BLE route table is
-372 bytes and the in-flight/pending transfer slots are 196 bytes each. The
-bulk of the BLE RAM cost is in Zephyr's Bluetooth host/controller support and
-the custom GATT database. The current XIAO ESP32-C3 e-paper build uses 259,888
-bytes `dram0_0_seg` (68.64% of the 378 KiB region). If RAM becomes tight,
-audit Bluetooth buffer counts and connection limits before increasing
-SquidScript-owned static buffers.
+metadata when constructing staging paths or dispatching completion events. The
+transfer session and pending-event slots keep the safe uploaded file name so
+`ble.file.complete` can expose `ev.name`. Exact RAM sizes are tracked by the
+RAM budget tests and generated build reports. The bulk of the BLE RAM cost is
+in Zephyr's Bluetooth host/controller support and the custom GATT database. If
+RAM becomes tight, audit Bluetooth buffer counts and connection limits before
+increasing SquidScript-owned static buffers.
 Package resource install and staged-resource commit paths likewise reuse one
 path scratch buffer after validating the app's `main.sqbc` with an open/close
 check instead of a directory-entry stat, so each currently emits a 176-byte C

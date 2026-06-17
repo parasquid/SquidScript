@@ -10,7 +10,7 @@ use std::{
     io::{self, Read, Write},
     path::{Path, PathBuf},
     process::Command,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use app_id::{generated_app_id, source_app_id, source_for_compile};
@@ -20,8 +20,8 @@ use package::{package_app_dir, read_stored_zip_entries};
 use serde::Serialize;
 use serde_json::{json, Value};
 use serial::{
-    candidate_ports, detect_port, format_lines, format_raw_lines, format_state_bytes, OutputTail,
-    SerialDevice,
+    candidate_ports, content_install_progress_line, detect_port, format_lines, format_raw_lines,
+    format_state_bytes, OutputTail, SerialDevice,
 };
 use squid_device_protocol as protocol;
 use squidc_core::{
@@ -156,6 +156,8 @@ enum AppCommands {
 enum DeviceCommands {
     Key(DeviceKeyArgs),
     ContentPut(DeviceContentPutArgs),
+    ContentCheck(DeviceContentCheckArgs),
+    BlePut(DeviceBlePutArgs),
     WifiProfile(DeviceWifiProfileArgs),
     RuntimeCap(DeviceRuntimeCapArgs),
     Reset(DeviceOnlyArgs),
@@ -254,6 +256,14 @@ struct AppPushArgs {
 }
 
 #[derive(Args, Debug)]
+struct DeviceBlePutArgs {
+    device: String,
+    input: PathBuf,
+    #[arg(long)]
+    name: Option<String>,
+}
+
+#[derive(Args, Debug)]
 struct AppLaunchArgs {
     #[command(flatten)]
     device: DeviceOnlyOptions,
@@ -274,6 +284,17 @@ struct DeviceContentPutArgs {
     input: PathBuf,
     #[arg(long)]
     name: Option<String>,
+}
+
+#[derive(Args, Debug)]
+struct DeviceContentCheckArgs {
+    #[command(flatten)]
+    device: DeviceOnlyOptions,
+    name: String,
+    #[arg(long)]
+    size: u64,
+    #[arg(long)]
+    crc32: String,
 }
 
 #[derive(Args, Debug)]
@@ -511,6 +532,8 @@ fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String>
         Commands::Device { command } => match command {
             DeviceCommands::Key(args) => key(args, human),
             DeviceCommands::ContentPut(args) => content_put(args, human),
+            DeviceCommands::ContentCheck(args) => content_check(args, human),
+            DeviceCommands::BlePut(args) => device_ble_put(args, human),
             DeviceCommands::WifiProfile(args) => wifi_profile(args, human),
             DeviceCommands::RuntimeCap(args) => runtime_cap(args, human),
             DeviceCommands::Reset(args) => reset(args.device, human),
@@ -781,6 +804,31 @@ fn push_app_ble(args: AppPushArgs, human: bool) -> Result<Value, String> {
     }))
 }
 
+fn device_ble_put(args: DeviceBlePutArgs, human: bool) -> Result<Value, String> {
+    let name = match args.name {
+        Some(name) => name,
+        None => args
+            .input
+            .file_name()
+            .and_then(|value| value.to_str())
+            .ok_or_else(|| format!("input path has no UTF-8 filename: {}", args.input.display()))?
+            .to_string(),
+    };
+    if !is_safe_content_name(&name) {
+        return Err(format!("content name must be a simple filename: {name}"));
+    }
+    let result = ble_push::push_file(&args.device, &args.input, &name)?;
+    if human {
+        println!("BLE uploaded name={} bytes={}", name, result.bytes_sent);
+    }
+    Ok(json!({
+        "device": args.device,
+        "input": args.input,
+        "name": name,
+        "bytes": result.bytes_sent,
+    }))
+}
+
 fn read_installable_app(
     input: &Path,
     override_id: Option<&str>,
@@ -858,14 +906,26 @@ fn content_put(args: DeviceContentPutArgs, human: bool) -> Result<Value, String>
             .ok_or_else(|| format!("input path has no UTF-8 filename: {}", args.input.display()))?
             .to_string(),
     };
-    if !is_safe_binbook_content_name(&name) {
-        return Err(format!(
-            "content name must be a simple .binbook filename: {name}"
-        ));
+    if !is_safe_content_name(&name) {
+        return Err(format!("content name must be a simple filename: {name}"));
     }
     let port = resolve_port(&args.device)?;
     let mut device = SerialDevice::open(&port)?;
-    let response = device.install_content(&name, &args.input)?;
+    let response = if human {
+        let mut last_progress = Instant::now() - Duration::from_secs(1);
+        device.install_content_with_progress(&name, &args.input, |received, total, elapsed| {
+            let now = Instant::now();
+            if received == total || now.duration_since(last_progress) >= Duration::from_secs(1) {
+                eprintln!(
+                    "{}",
+                    content_install_progress_line(&name, received, total, elapsed)
+                );
+                last_progress = now;
+            }
+        })?
+    } else {
+        device.install_content(&name, &args.input)?
+    };
     if human {
         print!("{response}");
     }
@@ -877,12 +937,57 @@ fn content_put(args: DeviceContentPutArgs, human: bool) -> Result<Value, String>
     }))
 }
 
-fn is_safe_binbook_content_name(name: &str) -> bool {
+fn content_check(args: DeviceContentCheckArgs, human: bool) -> Result<Value, String> {
+    if !is_safe_content_name(&args.name) {
+        return Err(format!(
+            "content name must be a simple filename: {}",
+            args.name
+        ));
+    }
+    let expected_crc32 = parse_crc32_arg(&args.crc32)?;
+    let port = resolve_port(&args.device)?;
+    let mut device = SerialDevice::open(&port)?;
+    let result = device.content_check(&args.name)?;
+    if result.size != args.size {
+        return Err(format!(
+            "content {} size mismatch: expected {} got {}",
+            args.name, args.size, result.size
+        ));
+    }
+    if result.crc32 != expected_crc32 {
+        return Err(format!(
+            "content {} crc32 mismatch: expected {expected_crc32:08x} got {:08x}",
+            args.name, result.crc32
+        ));
+    }
+    if human {
+        println!(
+            "content-check {} size={} crc32={:08x}",
+            result.name, result.size, result.crc32
+        );
+    }
+    Ok(json!({
+        "port": port,
+        "name": result.name,
+        "size": result.size,
+        "crc32": format!("{:08x}", result.crc32),
+    }))
+}
+
+fn parse_crc32_arg(value: &str) -> Result<u64, String> {
+    let value = value.strip_prefix("0x").unwrap_or(value);
+    if value.is_empty() || value.len() > 8 || !value.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return Err(format!("invalid crc32 value: {value}"));
+    }
+    u64::from_str_radix(value, 16).map_err(|error| format!("invalid crc32 value {value}: {error}"))
+}
+
+fn is_safe_content_name(name: &str) -> bool {
     !name.is_empty()
         && !name.starts_with('.')
-        && name.ends_with(".binbook")
         && !name.contains('/')
         && !name.contains('\\')
+        && name.len() < squid_device_protocol::MAX_PATH_LEN
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1582,6 +1687,12 @@ fn hardware_test_checks_for_target(target: &target::TargetDefinition) -> Vec<Har
             script: Some("scripts/zephyr-test-ap-after-station.sh"),
         });
     }
+    if target.id == "xteink-x4" && has("service.ble.file-transfer") && has_ap_wifi {
+        checks.push(HardwareTestCheck {
+            name: "transfer-regression",
+            script: Some("scripts/xteink-x4-test-transfer-regression.sh"),
+        });
+    }
     checks
 }
 
@@ -1631,6 +1742,17 @@ fn run_hardware_script(
         "ap-after-station" => {
             if let Some(iface) = &args.host_wifi_iface {
                 command.env("HOST_WIFI_IFACE", iface);
+            }
+        }
+        "transfer-regression" => {
+            if let Some(port) = &args.port {
+                command.arg("--port").arg(port);
+            }
+            if let Some(device) = &args.ble_device {
+                command.arg("--device").arg(device);
+            }
+            if let Some(iface) = &args.host_wifi_iface {
+                command.arg("--host-wifi-iface").arg(iface);
             }
         }
         _ => {}
@@ -2903,6 +3025,68 @@ mod tests {
     }
 
     #[test]
+    fn parses_generic_content_put_and_check_commands() {
+        let put = Cli::try_parse_from([
+            "squidc",
+            "device",
+            "content-put",
+            "target/transfer-smoke.dat",
+            "--name",
+            "transfer-smoke.dat",
+        ])
+        .unwrap();
+        let Commands::Device {
+            command: DeviceCommands::ContentPut(put_args),
+        } = put.command
+        else {
+            panic!("expected device content-put");
+        };
+        assert_eq!(put_args.input, PathBuf::from("target/transfer-smoke.dat"));
+        assert_eq!(put_args.name.as_deref(), Some("transfer-smoke.dat"));
+
+        let check = Cli::try_parse_from([
+            "squidc",
+            "device",
+            "content-check",
+            "transfer-smoke.dat",
+            "--size",
+            "8192",
+            "--crc32",
+            "1234abcd",
+        ])
+        .unwrap();
+        let Commands::Device {
+            command: DeviceCommands::ContentCheck(check_args),
+        } = check.command
+        else {
+            panic!("expected device content-check");
+        };
+        assert_eq!(check_args.name, "transfer-smoke.dat");
+        assert_eq!(check_args.size, 8192);
+        assert_eq!(check_args.crc32, "1234abcd");
+
+        let ble = Cli::try_parse_from([
+            "squidc",
+            "device",
+            "ble-put",
+            "SquidScript-X4",
+            "target/transfer-smoke.dat",
+            "--name",
+            "transfer-smoke.dat",
+        ])
+        .unwrap();
+        let Commands::Device {
+            command: DeviceCommands::BlePut(ble_args),
+        } = ble.command
+        else {
+            panic!("expected device ble-put");
+        };
+        assert_eq!(ble_args.device, "SquidScript-X4");
+        assert_eq!(ble_args.input, PathBuf::from("target/transfer-smoke.dat"));
+        assert_eq!(ble_args.name.as_deref(), Some("transfer-smoke.dat"));
+    }
+
+    #[test]
     fn parses_hardware_test_command() {
         let cli = Cli::try_parse_from([
             "squidc",
@@ -2944,6 +3128,7 @@ mod tests {
             vec![
                 "portable-app-tests",
                 "ble-file-transfer-install",
+                "ble-installed-receiver",
                 "ble-reconnect",
                 "radio-concurrency",
                 "ap-after-station",
@@ -3183,7 +3368,8 @@ mod tests {
     #[test]
     fn target_without_zephyr_metadata_is_unsupported_for_build() {
         let root = target::repo_root();
-        let target = target::load_target_by_id(&root, "xteink-x4").unwrap();
+        let mut target = target::load_target_by_id(&root, "xteink-x4").unwrap();
+        target.zephyr = None;
         let error = target::plan_build_command(
             &root,
             &target,

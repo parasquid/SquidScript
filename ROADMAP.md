@@ -32,6 +32,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Storage And Content
 
+- Allow graceful BinBook page rendering degradation when the renderer supports a richer pixel format than the stored page uses. In particular, the X4 firmware renderer currently accepts GRAY2 packed pages but rejects GRAY1 packed pages as unsupported; convert or expand GRAY1 to the renderer-supported path so GRAY1 BinBooks can still display.
 - Add BLE/file-transfer delivery for `.binbook` resources and app-facing
   content selection once bundled-resource BinBook reading is exercised end to
   end.

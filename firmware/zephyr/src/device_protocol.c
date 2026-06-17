@@ -442,8 +442,8 @@ static int hello_response(const struct sq_protocol_request *request,
 	return sqdp_status_to_protocol_result(sqdp_encode_hello_response(
 		SQ_OPCODE_HELLO, request->sequence, (const uint8_t *)identity->target,
 		strlen(identity->target), (const uint8_t *)identity->firmware,
-		strlen(identity->firmware), identity->diagnostic, response, response_cap,
-		response_len));
+		strlen(identity->firmware), identity->diagnostic, SQ_SERIAL_MAX_FRAME_LEN,
+		response, response_cap, response_len));
 }
 
 static int app_list_response(const struct sq_protocol_request *request,
@@ -551,30 +551,59 @@ static uint32_t update_crc32(uint32_t crc, const uint8_t *bytes, size_t len)
 	return crc;
 }
 
-static int append_line_payload(uint8_t *payload, size_t payload_cap, size_t *payload_len,
-			       const char *line)
+static int append_string_field_payload(uint8_t *payload, size_t payload_cap, size_t *payload_len,
+				       uint8_t tag, const char *value)
 {
-	size_t line_len;
+	size_t value_len;
 	size_t needed;
 
-	if (payload == NULL || payload_len == NULL || line == NULL) {
+	if (payload == NULL || payload_len == NULL || value == NULL) {
 		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
 	}
-	line_len = strlen(line);
-	if (line_len > UINT16_MAX) {
+	value_len = strlen(value);
+	if (value_len > UINT16_MAX) {
 		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
 	}
-	needed = *payload_len + 4u + line_len;
+	needed = *payload_len + 4u + value_len;
 	if (needed > payload_cap) {
 		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
 	}
-	payload[*payload_len] = 1u;
+	payload[*payload_len] = tag;
 	payload[*payload_len + 1u] = SQ_DEVICE_FIELD_TYPE_STRING;
-	payload[*payload_len + 2u] = line_len & 0xffu;
-	payload[*payload_len + 3u] = (line_len >> 8) & 0xffu;
-	memcpy(&payload[*payload_len + 4u], line, line_len);
+	payload[*payload_len + 2u] = value_len & 0xffu;
+	payload[*payload_len + 3u] = (value_len >> 8) & 0xffu;
+	memcpy(&payload[*payload_len + 4u], value, value_len);
 	*payload_len = needed;
 	return SQ_PROTOCOL_OK;
+}
+
+static int append_u64_field_payload(uint8_t *payload, size_t payload_cap, size_t *payload_len,
+				    uint8_t tag, uint64_t value)
+{
+	size_t needed;
+
+	if (payload == NULL || payload_len == NULL) {
+		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
+	}
+	needed = *payload_len + 4u + sizeof(uint64_t);
+	if (needed > payload_cap) {
+		return SQ_PROTOCOL_ERR_BUFFER_TOO_SMALL;
+	}
+	payload[*payload_len] = tag;
+	payload[*payload_len + 1u] = SQ_DEVICE_FIELD_TYPE_U64;
+	payload[*payload_len + 2u] = sizeof(uint64_t);
+	payload[*payload_len + 3u] = 0u;
+	for (size_t i = 0; i < sizeof(uint64_t); i++) {
+		payload[*payload_len + 4u + i] = (value >> (i * 8u)) & 0xffu;
+	}
+	*payload_len = needed;
+	return SQ_PROTOCOL_OK;
+}
+
+static int append_line_payload(uint8_t *payload, size_t payload_cap, size_t *payload_len,
+			       const char *line)
+{
+	return append_string_field_payload(payload, payload_cap, payload_len, 1u, line);
 }
 
 static int append_resource_metric(uint8_t *payload, size_t payload_cap, size_t *payload_len,
@@ -906,16 +935,12 @@ static int __noinline commit_resource_install(const struct sq_protocol_request *
 static bool content_install_name_safe(const char *name)
 {
 	size_t len;
-	size_t ext_len = sizeof(".binbook") - 1U;
 
 	if (name == NULL || name[0] == '\0' || name[0] == '.') {
 		return false;
 	}
 	len = strlen(name);
-	if (len <= ext_len || len >= SQ_DEVICE_CONTENT_NAME_BYTES) {
-		return false;
-	}
-	if (strcmp(name + len - ext_len, ".binbook") != 0) {
+	if (len >= SQ_DEVICE_CONTENT_NAME_BYTES) {
 		return false;
 	}
 	for (size_t i = 0; i < len; i++) {
@@ -941,6 +966,54 @@ static int content_install_paths(const char *name, char *staging, size_t staging
 	written = snprintf(staging, staging_len, SQ_VM_RUNTIME_CONTENT_BOOKS_DIR "/%s.upload",
 			   name);
 	return written > 0 && (size_t)written < staging_len ? 0 : -ENAMETOOLONG;
+}
+
+static int content_final_path(const char *name, char *final, size_t final_len)
+{
+	int written;
+
+	if (!content_install_name_safe(name) || final == NULL) {
+		return -EINVAL;
+	}
+	written = snprintf(final, final_len, SQ_VM_RUNTIME_CONTENT_BOOKS_DIR "/%s", name);
+	return written > 0 && (size_t)written < final_len ? 0 : -ENAMETOOLONG;
+}
+
+static int fs_mkdir_if_missing(const char *path)
+{
+	struct fs_dirent entry;
+	int result;
+
+	if (path == NULL) {
+		return -EINVAL;
+	}
+	result = fs_stat(path, &entry);
+	if (result == 0) {
+		return entry.type == FS_DIR_ENTRY_DIR ? 0 : -ENOTDIR;
+	}
+	if (result != -ENOENT) {
+		return result;
+	}
+	result = fs_mkdir(path);
+	return result == -EEXIST ? 0 : result;
+}
+
+static int fs_unlink_if_exists(const char *path)
+{
+	struct fs_dirent entry;
+	int result;
+
+	if (path == NULL) {
+		return -EINVAL;
+	}
+	result = fs_stat(path, &entry);
+	if (result == -ENOENT) {
+		return 0;
+	}
+	if (result != 0) {
+		return result;
+	}
+	return fs_unlink(path);
 }
 
 static int parse_content_begin_request(const uint8_t *request_bytes, size_t request_len,
@@ -1098,6 +1171,42 @@ static int parse_content_chunk_request(const uint8_t *request_bytes, size_t requ
 	return out->has_offset && out->has_bytes ? 0 : -EINVAL;
 }
 
+static void content_session_close_staging(struct sq_device_content_session *session)
+{
+	if (session != NULL && session->staging_file_open) {
+		(void)fs_close(&session->staging_file);
+		session->staging_file_open = false;
+	}
+}
+
+static int content_session_prepare_staging(struct sq_device_content_session *session)
+{
+	int result;
+
+	if (session == NULL || session->staging_path[0] == '\0') {
+		return -EINVAL;
+	}
+	if (session->staging_file_open) {
+		return 0;
+	}
+	result = fs_mkdir_if_missing(SQ_VM_RUNTIME_CONTENT_BOOKS_DIR);
+	if (result != 0) {
+		return result;
+	}
+	result = fs_unlink_if_exists(session->staging_path);
+	if (result != 0) {
+		return result;
+	}
+	fs_file_t_init(&session->staging_file);
+	result = fs_open(&session->staging_file, session->staging_path,
+			 FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC);
+	if (result != 0) {
+		return result;
+	}
+	session->staging_file_open = true;
+	return 0;
+}
+
 static int __noinline begin_content_install(const struct sq_protocol_request *request,
 				 const uint8_t *request_bytes, size_t request_len,
 				 const struct sq_device_protocol_context *context,
@@ -1105,7 +1214,6 @@ static int __noinline begin_content_install(const struct sq_protocol_request *re
 {
 	struct sq_device_content_session *session = context->content_session;
 	struct sq_content_begin_request begin;
-	struct fs_file_t file;
 	int result;
 
 	if (session == NULL) {
@@ -1130,24 +1238,6 @@ static int __noinline begin_content_install(const struct sq_protocol_request *re
 		memset(session, 0, sizeof(*session));
 		return result;
 	}
-	result = fs_mkdir(SQ_VM_RUNTIME_CONTENT_BOOKS_DIR);
-	if (result != 0 && result != -EEXIST) {
-		memset(session, 0, sizeof(*session));
-		return result;
-	}
-	(void)fs_unlink(session->staging_path);
-	fs_file_t_init(&file);
-	result = fs_open(&file, session->staging_path, FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC);
-	if (result != 0) {
-		memset(session, 0, sizeof(*session));
-		return result;
-	}
-	result = fs_close(&file);
-	if (result != 0) {
-		(void)fs_unlink(session->staging_path);
-		memset(session, 0, sizeof(*session));
-		return result;
-	}
 	transfer_session_begin_receiving(session);
 	return ok_response(request, response, response_cap, response_len);
 }
@@ -1159,7 +1249,6 @@ static int __noinline append_content_chunk(const struct sq_protocol_request *req
 {
 	struct sq_device_content_session *session = context->content_session;
 	struct sq_content_chunk_request chunk;
-	struct fs_file_t file;
 	ssize_t written;
 	int result;
 
@@ -1175,26 +1264,18 @@ static int __noinline append_content_chunk(const struct sq_protocol_request *req
 	    chunk.bytes_len > session->total_len - session->received) {
 		return -EINVAL;
 	}
-	fs_file_t_init(&file);
-	result = fs_open(&file, session->staging_path, FS_O_WRITE);
-	if (result != 0) {
-		return result;
+	if (!session->staging_file_open) {
+		result = content_session_prepare_staging(session);
+		if (result != 0) {
+			return result;
+		}
 	}
-	result = fs_seek(&file, (off_t)chunk.offset, FS_SEEK_SET);
-	if (result != 0) {
-		(void)fs_close(&file);
-		return result;
-	}
-	written = fs_write(&file, chunk.bytes, chunk.bytes_len);
-	result = fs_close(&file);
+	written = fs_write(&session->staging_file, chunk.bytes, chunk.bytes_len);
 	if (written < 0) {
 		return (int)written;
 	}
 	if ((size_t)written != chunk.bytes_len) {
 		return -EIO;
-	}
-	if (result != 0) {
-		return result;
 	}
 	session->running_crc = update_crc32(session->running_crc, chunk.bytes, chunk.bytes_len);
 	session->received += chunk.bytes_len;
@@ -1213,6 +1294,7 @@ static int __noinline commit_content_install(const struct sq_protocol_request *r
 	    transfer_session_begin_committing(session) != 0) {
 		return -EINVAL;
 	}
+	content_session_close_staging(session);
 	if (session->received != session->total_len ||
 	    ~session->running_crc != session->expected_crc) {
 		(void)fs_unlink(session->staging_path);
@@ -1229,6 +1311,121 @@ static int __noinline commit_content_install(const struct sq_protocol_request *r
 	}
 	memset(session, 0, sizeof(*session));
 	return ok_response(request, response, response_cap, response_len);
+}
+
+static int parse_content_check_request(const uint8_t *request_bytes, size_t request_len,
+				       char *name_out, size_t name_cap)
+{
+	const uint8_t *payload;
+	uint32_t payload_len;
+	size_t offset = 0;
+
+	if (request_bytes == NULL || name_out == NULL || name_cap == 0 ||
+	    request_len < SQ_PROTOCOL_HEADER_LEN) {
+		return -EINVAL;
+	}
+	payload_len = read_u32_le_device(&request_bytes[12]);
+	if ((size_t)payload_len > request_len - SQ_PROTOCOL_HEADER_LEN) {
+		return -EINVAL;
+	}
+	payload = &request_bytes[SQ_PROTOCOL_HEADER_LEN];
+	name_out[0] = '\0';
+	while (offset < payload_len) {
+		const uint8_t *field;
+		uint8_t tag;
+		uint8_t type;
+		uint16_t len;
+		size_t next_offset;
+
+		if ((size_t)payload_len - offset < 4U) {
+			return -EINVAL;
+		}
+		field = &payload[offset];
+		tag = field[0];
+		type = field[1];
+		len = (uint16_t)field[2] | ((uint16_t)field[3] << 8);
+		next_offset = offset + 4U + len;
+		if (next_offset > payload_len) {
+			return -EINVAL;
+		}
+		if (tag == 1) {
+			if (type != SQ_DEVICE_FIELD_TYPE_STRING || len == 0U || len >= name_cap) {
+				return -EINVAL;
+			}
+			memcpy(name_out, &field[4], len);
+			name_out[len] = '\0';
+		} else {
+			return -EINVAL;
+		}
+		offset = next_offset;
+	}
+	return content_install_name_safe(name_out) ? 0 : -EINVAL;
+}
+
+static int content_check_response(const struct sq_protocol_request *request,
+				  const uint8_t *request_bytes, size_t request_len,
+				  uint8_t *response, size_t response_cap, size_t *response_len)
+{
+	char name[SQ_DEVICE_CONTENT_NAME_BYTES];
+	char path[SQ_DEVICE_CONTENT_PATH_BYTES];
+	struct fs_dirent entry;
+	struct fs_file_t file;
+	uint8_t buf[256];
+	uint32_t running_crc = 0xffffffffU;
+	size_t payload_len = 0;
+	ssize_t read;
+	int result;
+
+	result = parse_content_check_request(request_bytes, request_len, name, sizeof(name));
+	if (result != 0) {
+		return result;
+	}
+	result = content_final_path(name, path, sizeof(path));
+	if (result != 0) {
+		return result;
+	}
+	result = fs_stat(path, &entry);
+	if (result != 0) {
+		return result;
+	}
+	fs_file_t_init(&file);
+	result = fs_open(&file, path, FS_O_READ);
+	if (result != 0) {
+		return result;
+	}
+	while ((read = fs_read(&file, buf, sizeof(buf))) > 0) {
+		running_crc = update_crc32(running_crc, buf, (size_t)read);
+	}
+	(void)fs_close(&file);
+	if (read < 0) {
+		return (int)read;
+	}
+	uint8_t *payload = &response[SQ_PROTOCOL_HEADER_LEN];
+	result = append_string_field_payload(payload, response_cap - SQ_PROTOCOL_HEADER_LEN,
+					     &payload_len, 1u, name);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	result = append_u64_field_payload(payload, response_cap - SQ_PROTOCOL_HEADER_LEN,
+					  &payload_len, 2u, (uint64_t)entry.size);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	result = append_u64_field_payload(payload, response_cap - SQ_PROTOCOL_HEADER_LEN,
+					  &payload_len, 3u, (uint64_t)(~running_crc));
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	memcpy(response, "SQDP", 4);
+	response[4] = SQ_FRAME_RESPONSE;
+	response[5] = SQ_OPCODE_CONTENT_CHECK;
+	response[6] = SQ_STATUS_OK;
+	response[7] = 0;
+	write_u32_le_device(&response[8], request->sequence);
+	write_u32_le_device(&response[12], (uint32_t)payload_len);
+	write_u32_le_device(&response[16], sq_protocol_crc32(payload, payload_len));
+	*response_len = SQ_PROTOCOL_HEADER_LEN + payload_len;
+	return SQ_PROTOCOL_OK;
 }
 
 struct temp_storage_backend {
@@ -1871,7 +2068,7 @@ int sq_device_protocol_restore_planned_resume(const struct sq_device_protocol_co
  * on the VM worker thread after sq_device_protocol_poll returns. Single in-flight
  * transfer + main-thread-only writes make file-static storage safe.
  */
-static SqvmEventPayloadField ble_payload_fields[4];
+static SqvmEventPayloadField ble_payload_fields[5];
 static char ble_payload_bytes_buf[12];
 static char ble_payload_total_buf[12];
 static SqvmEventPayloadField http_payload_fields[5];
@@ -1952,6 +2149,7 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 			 */
 			const char *upload_path = sq_ble_file_transfer_pending_staging_path();
 			const char *profile_id = sq_ble_file_transfer_pending_profile_id();
+			const char *name = sq_ble_file_transfer_pending_file_name();
 
 			(void)snprintf(ble_payload_bytes_buf, sizeof(ble_payload_bytes_buf), "%zu",
 				       sq_ble_file_transfer_pending_bytes_received());
@@ -1961,17 +2159,19 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 				(const uint8_t *)"upload", 6, (const uint8_t *)upload_path,
 				strlen(upload_path)};
 			ble_payload_fields[1] = (SqvmEventPayloadField){
+				(const uint8_t *)"name", 4, (const uint8_t *)name, strlen(name)};
+			ble_payload_fields[2] = (SqvmEventPayloadField){
 				(const uint8_t *)"bytesReceived", 13,
 				(const uint8_t *)ble_payload_bytes_buf,
 				strlen(ble_payload_bytes_buf)};
-			ble_payload_fields[2] = (SqvmEventPayloadField){
+			ble_payload_fields[3] = (SqvmEventPayloadField){
 				(const uint8_t *)"totalBytes", 10,
 				(const uint8_t *)ble_payload_total_buf,
 				strlen(ble_payload_total_buf)};
-			ble_payload_fields[3] = (SqvmEventPayloadField){
+			ble_payload_fields[4] = (SqvmEventPayloadField){
 				(const uint8_t *)"id", 2, (const uint8_t *)profile_id,
 				strlen(profile_id)};
-			sq_vm_runtime_set_pending_event_payload(runtime, ble_payload_fields, 4);
+			sq_vm_runtime_set_pending_event_payload(runtime, ble_payload_fields, 5);
 			due_app_ptr = due_app;
 			due_event_ptr = due_event;
 		} else if (!runtime->dispatch_exited && sq_http_upload_pending_is_complete() &&
@@ -2560,6 +2760,7 @@ static int clear_runtime_context(const struct sq_device_protocol_context *contex
 		memset(context->resource_session, 0, sizeof(*context->resource_session));
 	}
 	if (context->content_session != NULL) {
+		content_session_close_staging(context->content_session);
 		if (context->content_session->active) {
 			(void)fs_unlink(context->content_session->staging_path);
 		}
@@ -3245,6 +3446,10 @@ int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 		break;
 	case SQ_OPCODE_CONTENT_INSTALL_COMMIT:
 		result = commit_content_install(&frame, context, response, response_cap,
+						response_len);
+		break;
+	case SQ_OPCODE_CONTENT_CHECK:
+		result = content_check_response(&frame, request, request_len, response, response_cap,
 						response_len);
 		break;
 	case SQ_OPCODE_TEMP_RUN_COMMIT:

@@ -128,6 +128,35 @@ ZTEST(ble_file_transfer_dispatch, test_completed_write_populates_pending_slot)
 	zassert_str_equal(sq_ble_file_transfer_pending_event_name(), "ble.file.complete");
 }
 
+ZTEST(ble_file_transfer_dispatch, test_full_file_name_routes_by_extension_and_is_exposed)
+{
+	static const char accept_exts[1][SQVM_BLE_PROFILE_TEXT_CAP] = {".dat"};
+	static const SqvmBleProfileEventRoute events[1] = {
+		{.kind = "complete", .event = "ble.file.ready"},
+	};
+	char staging_path[128] = {0};
+	const uint8_t chunk[] = {'d', 'a', 't', 'a'};
+	int result;
+
+	sq_ble_profile_table_reset();
+	sq_ble_file_transfer_cleanup_staging();
+	sq_ble_file_transfer_reset_session();
+	zassert_equal(sq_ble_profile_table_add(0, "generic-file", accept_exts, 1, events, 1), 0);
+
+	result = sq_ble_file_transfer_test_invoke_begin_with_name("transfer-smoke.dat",
+							    sizeof(chunk), staging_path,
+							    sizeof(staging_path));
+	zassert_equal(result, 0, "begin failed: %d", result);
+	result = sq_ble_file_transfer_test_invoke_write_with_path(staging_path, chunk, sizeof(chunk), 0,
+								    0);
+	zassert_equal(result, (int)sizeof(chunk), "write failed: %d", result);
+
+	zassert_true(sq_ble_file_transfer_pending_is_complete());
+	zassert_str_equal(sq_ble_file_transfer_pending_app_id(), "installed-app");
+	zassert_str_equal(sq_ble_file_transfer_pending_profile_id(), "generic-file");
+	zassert_str_equal(sq_ble_file_transfer_pending_file_name(), "transfer-smoke.dat");
+}
+
 ZTEST(ble_file_transfer_dispatch, test_completed_write_uses_configured_event_route)
 {
 	static const char accept_exts[1][SQVM_BLE_PROFILE_TEXT_CAP] = {".binbook"};

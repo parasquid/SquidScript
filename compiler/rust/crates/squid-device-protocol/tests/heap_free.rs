@@ -13,6 +13,7 @@ fn heap_free_encoders_write_framed_headers_without_alloc_feature() {
         "esp32c3-supermini",
         "squidscript-zephyr",
         true,
+        4096,
         &mut out,
     )
     .unwrap();
