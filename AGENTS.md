@@ -112,6 +112,10 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 
 - Do not invent SquidScript syntax, keywords, helpers, or simulator-only DSL conveniences.
 - Implement the documented language/spec as written. Use `docs/language_spec.md` as the primary reference.
+- When a clean SquidScript app design is blocked by missing compiler, runtime,
+  or firmware functionality, prefer implementing the missing capability over
+  adding app-level workarounds. Ask the user if the capability boundary or
+  scope is unclear.
 - Runtime resource caps (foreground timer slots, armed timer slots, event-name
   length, active bindings, input buttons, app store, wire-format limits) are
   bounded and live in `docs/runtime_limits.md` with the C macros as the

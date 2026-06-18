@@ -3,7 +3,7 @@
 use core::{
     ffi::c_void,
     fmt::{self, Write},
-    mem::{align_of, size_of, MaybeUninit},
+    mem::{align_of, size_of, ManuallyDrop, MaybeUninit},
     ptr, slice, str,
 };
 
@@ -3047,25 +3047,120 @@ const SQVM_FFI_APP_INSTALL_ID_CAP: usize = 40;
 const SQVM_FFI_BINBOOK_CHAPTER_CAP: usize = 8;
 const SQVM_FFI_CONTENT_BINBOOK_CAP: usize = 8;
 
+#[derive(Clone, Copy)]
+struct FfiAppRegistryScratch {
+    entries: [SqvmAppRegistryEntry; 8],
+    core_entries: [AppRegistryEntry<'static>; 8],
+    count: usize,
+}
+
+impl Default for FfiAppRegistryScratch {
+    fn default() -> Self {
+        Self {
+            entries: [SqvmAppRegistryEntry::default(); 8],
+            core_entries: [AppRegistryEntry {
+                id: "",
+                name: "",
+                build: "",
+                description: "",
+            }; 8],
+            count: 0,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct FfiBinBookChapterScratch {
+    entries: [SqvmBinBookChapterEntry; SQVM_FFI_BINBOOK_CHAPTER_CAP],
+    core_entries: [BinBookChapterEntry<'static>; SQVM_FFI_BINBOOK_CHAPTER_CAP],
+    count: usize,
+}
+
+impl Default for FfiBinBookChapterScratch {
+    fn default() -> Self {
+        Self {
+            entries: [SqvmBinBookChapterEntry::default(); SQVM_FFI_BINBOOK_CHAPTER_CAP],
+            core_entries: [BinBookChapterEntry {
+                index: 0,
+                title: "",
+                page_index: 0,
+                level: 0,
+                entry_type: 0,
+            }; SQVM_FFI_BINBOOK_CHAPTER_CAP],
+            count: 0,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct FfiContentBinBookScratch {
+    entries: [SqvmContentBinBookEntry; SQVM_FFI_CONTENT_BINBOOK_CAP],
+    core_entries: [ContentBinBookEntry<'static>; SQVM_FFI_CONTENT_BINBOOK_CAP],
+    count: usize,
+}
+
+impl Default for FfiContentBinBookScratch {
+    fn default() -> Self {
+        Self {
+            entries: [SqvmContentBinBookEntry::default(); SQVM_FFI_CONTENT_BINBOOK_CAP],
+            core_entries: [ContentBinBookEntry {
+                name: "",
+                reference: "",
+                size: 0,
+            }; SQVM_FFI_CONTENT_BINBOOK_CAP],
+            count: 0,
+        }
+    }
+}
+
+union FfiListScratch {
+    app_registry: ManuallyDrop<FfiAppRegistryScratch>,
+    binbook_chapters: ManuallyDrop<FfiBinBookChapterScratch>,
+    content_binbooks: ManuallyDrop<FfiContentBinBookScratch>,
+}
+
+impl Default for FfiListScratch {
+    fn default() -> Self {
+        Self {
+            app_registry: ManuallyDrop::new(FfiAppRegistryScratch::default()),
+        }
+    }
+}
+
+impl FfiListScratch {
+    fn app_registry(&mut self) -> &mut FfiAppRegistryScratch {
+        unsafe {
+            &mut *(&mut self.app_registry as *mut ManuallyDrop<FfiAppRegistryScratch>
+                as *mut FfiAppRegistryScratch)
+        }
+    }
+
+    fn binbook_chapters(&mut self) -> &mut FfiBinBookChapterScratch {
+        unsafe {
+            &mut *(&mut self.binbook_chapters as *mut ManuallyDrop<FfiBinBookChapterScratch>
+                as *mut FfiBinBookChapterScratch)
+        }
+    }
+
+    fn content_binbooks(&mut self) -> &mut FfiContentBinBookScratch {
+        unsafe {
+            &mut *(&mut self.content_binbooks as *mut ManuallyDrop<FfiContentBinBookScratch>
+                as *mut FfiContentBinBookScratch)
+        }
+    }
+}
+
 struct FfiHost<'a> {
     user_data: *mut c_void,
     callbacks: &'a SqvmCallbacks,
     defer_sqbc_reads: bool,
-    app_registry_entries: [SqvmAppRegistryEntry; 8],
-    app_registry_core_entries: [AppRegistryEntry<'static>; 8],
-    app_registry_count: usize,
+    list_scratch: FfiListScratch,
     app_stack_entries: [SqvmAppStackEntry; SQVM_FFI_APP_STACK_CAP],
     app_process_stack_apps: [&'static str; SQVM_FFI_APP_STACK_CAP],
     app_armed_stack_entries: [AppArmedStackEntry<'static>; SQVM_FFI_APP_STACK_CAP],
     app_stack_count: usize,
     app_install_id: [u8; SQVM_FFI_APP_INSTALL_ID_CAP],
     app_install_id_len: usize,
-    binbook_chapter_entries: [SqvmBinBookChapterEntry; SQVM_FFI_BINBOOK_CHAPTER_CAP],
-    binbook_chapter_core_entries: [BinBookChapterEntry<'static>; SQVM_FFI_BINBOOK_CHAPTER_CAP],
-    binbook_chapter_count: usize,
-    content_binbook_entries: [SqvmContentBinBookEntry; SQVM_FFI_CONTENT_BINBOOK_CAP],
-    content_binbook_core_entries: [ContentBinBookEntry<'static>; SQVM_FFI_CONTENT_BINBOOK_CAP],
-    content_binbook_count: usize,
 }
 
 impl<'a> FfiHost<'a> {
@@ -3074,14 +3169,7 @@ impl<'a> FfiHost<'a> {
             user_data,
             callbacks,
             defer_sqbc_reads,
-            app_registry_entries: [SqvmAppRegistryEntry::default(); 8],
-            app_registry_core_entries: [AppRegistryEntry {
-                id: "",
-                name: "",
-                build: "",
-                description: "",
-            }; 8],
-            app_registry_count: 0,
+            list_scratch: FfiListScratch::default(),
             app_stack_entries: [SqvmAppStackEntry::default(); SQVM_FFI_APP_STACK_CAP],
             app_process_stack_apps: [""; SQVM_FFI_APP_STACK_CAP],
             app_armed_stack_entries: [AppArmedStackEntry {
@@ -3091,24 +3179,6 @@ impl<'a> FfiHost<'a> {
             app_stack_count: 0,
             app_install_id: [0; SQVM_FFI_APP_INSTALL_ID_CAP],
             app_install_id_len: 0,
-            binbook_chapter_entries: [SqvmBinBookChapterEntry::default();
-                SQVM_FFI_BINBOOK_CHAPTER_CAP],
-            binbook_chapter_core_entries: [BinBookChapterEntry {
-                index: 0,
-                title: "",
-                page_index: 0,
-                level: 0,
-                entry_type: 0,
-            }; SQVM_FFI_BINBOOK_CHAPTER_CAP],
-            binbook_chapter_count: 0,
-            content_binbook_entries: [SqvmContentBinBookEntry::default();
-                SQVM_FFI_CONTENT_BINBOOK_CAP],
-            content_binbook_core_entries: [ContentBinBookEntry {
-                name: "",
-                reference: "",
-                size: 0,
-            }; SQVM_FFI_CONTENT_BINBOOK_CAP],
-            content_binbook_count: 0,
         }
     }
 }
@@ -3440,23 +3510,24 @@ impl TraceSink for FfiHost<'_> {
         let Some(app_registry_list) = self.callbacks.app_registry_list else {
             return Err(VmError::InvalidOperand);
         };
+        let scratch = self.list_scratch.app_registry();
         let mut count = 0usize;
-        self.app_registry_entries = [SqvmAppRegistryEntry::default(); 8];
+        scratch.entries = [SqvmAppRegistryEntry::default(); 8];
         callback_status(unsafe {
             app_registry_list(
                 self.user_data,
-                self.app_registry_entries.as_mut_ptr(),
-                self.app_registry_entries.len(),
+                scratch.entries.as_mut_ptr(),
+                scratch.entries.len(),
                 &mut count,
             )
         })?;
-        self.app_registry_count = count.min(self.app_registry_entries.len());
-        for index in 0..self.app_registry_count {
-            self.app_registry_core_entries[index] =
-                unsafe { app_registry_entry_from_ffi(&self.app_registry_entries[index])? };
+        scratch.count = count.min(scratch.entries.len());
+        for index in 0..scratch.count {
+            scratch.core_entries[index] =
+                unsafe { app_registry_entry_from_ffi(&scratch.entries[index])? };
         }
         Ok(AppRegistryList {
-            apps: &self.app_registry_core_entries[..self.app_registry_count],
+            apps: &scratch.core_entries[..scratch.count],
         })
     }
 
@@ -3864,32 +3935,29 @@ impl TraceSink for FfiHost<'_> {
         let Some(binbook_chapters) = self.callbacks.binbook_chapters else {
             return Ok(BinBookChapterListResult::unsupported());
         };
+        let scratch = self.list_scratch.binbook_chapters();
         let mut out = SqvmBinBookChapterListResult::default();
         let mut count = 0usize;
-        self.binbook_chapter_entries =
-            [SqvmBinBookChapterEntry::default(); SQVM_FFI_BINBOOK_CHAPTER_CAP];
+        scratch.entries = [SqvmBinBookChapterEntry::default(); SQVM_FFI_BINBOOK_CHAPTER_CAP];
         callback_status(unsafe {
             binbook_chapters(
                 self.user_data,
                 handle_to_ffi(book),
                 offset,
                 limit,
-                self.binbook_chapter_entries.as_mut_ptr(),
-                self.binbook_chapter_entries.len(),
+                scratch.entries.as_mut_ptr(),
+                scratch.entries.len(),
                 &mut count,
                 &mut out,
             )
         })?;
-        self.binbook_chapter_count = count.min(self.binbook_chapter_entries.len());
-        for index in 0..self.binbook_chapter_count {
-            self.binbook_chapter_core_entries[index] =
-                unsafe { binbook_chapter_entry_from_ffi(&self.binbook_chapter_entries[index])? };
+        scratch.count = count.min(scratch.entries.len());
+        for index in 0..scratch.count {
+            scratch.core_entries[index] =
+                unsafe { binbook_chapter_entry_from_ffi(&scratch.entries[index])? };
         }
         unsafe {
-            binbook_chapter_list_result_from_ffi(
-                &out,
-                &self.binbook_chapter_core_entries[..self.binbook_chapter_count],
-            )
+            binbook_chapter_list_result_from_ffi(&out, &scratch.core_entries[..scratch.count])
         }
     }
 
@@ -3917,10 +3985,10 @@ impl TraceSink for FfiHost<'_> {
         let Some(content_binbook_list) = self.callbacks.content_binbook_list else {
             return Ok(ContentBinBookListResult::unsupported());
         };
+        let scratch = self.list_scratch.content_binbooks();
         let mut out = SqvmContentBinBookListResult::default();
         let mut count = 0usize;
-        self.content_binbook_entries =
-            [SqvmContentBinBookEntry::default(); SQVM_FFI_CONTENT_BINBOOK_CAP];
+        scratch.entries = [SqvmContentBinBookEntry::default(); SQVM_FFI_CONTENT_BINBOOK_CAP];
         callback_status(unsafe {
             content_binbook_list(
                 self.user_data,
@@ -3928,22 +3996,19 @@ impl TraceSink for FfiHost<'_> {
                 library.len(),
                 offset,
                 limit,
-                self.content_binbook_entries.as_mut_ptr(),
-                self.content_binbook_entries.len(),
+                scratch.entries.as_mut_ptr(),
+                scratch.entries.len(),
                 &mut count,
                 &mut out,
             )
         })?;
-        self.content_binbook_count = count.min(self.content_binbook_entries.len());
-        for index in 0..self.content_binbook_count {
-            self.content_binbook_core_entries[index] =
-                unsafe { content_binbook_entry_from_ffi(&self.content_binbook_entries[index])? };
+        scratch.count = count.min(scratch.entries.len());
+        for index in 0..scratch.count {
+            scratch.core_entries[index] =
+                unsafe { content_binbook_entry_from_ffi(&scratch.entries[index])? };
         }
         unsafe {
-            content_binbook_list_result_from_ffi(
-                &out,
-                &self.content_binbook_core_entries[..self.content_binbook_count],
-            )
+            content_binbook_list_result_from_ffi(&out, &scratch.core_entries[..scratch.count])
         }
     }
 
@@ -5579,7 +5644,7 @@ mod tests {
     #[test]
     #[cfg(target_pointer_width = "32")]
     fn sqvm_context_still_fits_zephyr_runtime_context_buffer() {
-        const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 7_872;
+        const ZEPHYR_RUNTIME_CONTEXT_BYTES: usize = 9_216;
         assert!(
             sqvm_context_size() <= ZEPHYR_RUNTIME_CONTEXT_BYTES,
             "SqvmContext is {} bytes and must fit firmware/zephyr/src/vm_runtime.h context_words",

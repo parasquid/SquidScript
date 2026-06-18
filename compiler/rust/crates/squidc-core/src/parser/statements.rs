@@ -504,13 +504,21 @@ impl Parser<'_> {
                 Some(IrStatement::DisplayText { text, options })
             }
             "rect" => {
-                let x = self.consume_number(builder).unwrap_or(0);
+                let x = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
+                    value: serde_json::json!(0),
+                });
                 self.consume_comma(builder);
-                let y = self.consume_number(builder).unwrap_or(0);
+                let y = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
+                    value: serde_json::json!(0),
+                });
                 self.consume_comma(builder);
-                let w = self.consume_number(builder).unwrap_or(0);
+                let w = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
+                    value: serde_json::json!(0),
+                });
                 self.consume_comma(builder);
-                let h = self.consume_number(builder).unwrap_or(0);
+                let h = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
+                    value: serde_json::json!(0),
+                });
                 self.consume_comma(builder);
                 let options = self.parse_options_object(builder);
                 self.consume_call_tail(builder);

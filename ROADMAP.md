@@ -33,9 +33,12 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 ## Storage And Content
 
 - Allow graceful BinBook page rendering degradation when the renderer supports a richer pixel format than the stored page uses. In particular, the X4 firmware renderer currently accepts GRAY2 packed pages but rejects GRAY1 packed pages as unsupported; convert or expand GRAY1 to the renderer-supported path so GRAY1 BinBooks can still display.
-- Add BLE/file-transfer delivery for `.binbook` resources and app-facing
-  content selection once bundled-resource BinBook reading is exercised end to
-  end.
+- Add a storage-backed BinBook reading history API so the reader can remember
+  per-book page positions without spending fixed app-state slots or inventing
+  app-local history tables.
+- Investigate BinBook library metadata caching so the reader can show titles,
+  authors, page counts, and other metadata for folders of BinBooks without
+  opening every document during each library render.
 - Add a target-native BinBook output profile for the XIAO ESP32-C3 +
   GDEQ0426T82 SSD1677 backend so generated pages stream in physical panel
   order without requiring a full rotation framebuffer.
@@ -124,6 +127,15 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 - Audit compiler, SQBC, simulator, examples, and docs for invariant violations
   that should become explicit diagnostics instead of silent ambiguity.
+- Promote the XTEINK X4 serial/HTTP/BLE transfer regression scripts into the
+  target-aware `squidc hardware test --target xteink-x4` inventory so transfer
+  integrity checks are selectable, consistently reported, and harder to skip
+  during hardware verification.
+- Add transfer throughput regression reporting for XTEINK X4 serial, HTTP, and
+  BLE uploads. Record bytes, elapsed time, and effective bytes/sec for each
+  transport, keep thresholds advisory until enough hardware samples define
+  stable budgets, and use the data to catch speed regressions separately from
+  content-integrity failures.
 - Extend `squidc hardware test --target esp32c3-super-mini` so the Super Mini
   regression target uses the same target-aware hardware-test architecture as
   the XIAO default dev target, with checks selected from target metadata and

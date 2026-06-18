@@ -1,23 +1,37 @@
 # BinBook Reader Example
 
-Minimal BinBook display and page-turn app.
+Full XTEINK BinBook reader app.
 
-The app opens the first entry from `content.binbook.list("books")`, reads the
-current zero-based page index, and draws the returned drawable handle with
-`service.display.draw(page.drawable)`. `key.RIGHT` and `key.DOWN` advance one
-page; `key.LEFT` and `key.UP` go back one page. Page indexes clamp at the first
-and last page.
+The app lists `.binbook` files from `content.binbook.list("books")`, opens the
+selected content ref with `binbook.open(...)`, renders pages with
+`service.display.draw(page.drawable)`, and keeps firmware-owned BinBook handles
+transient. Uploaded books can arrive through serial, HTTP, or BLE transfer
+tools, but this reader app does not start upload services itself.
 
-`key.SELECT` opens the chapter list for the current book. `key.UP` and
-`key.DOWN` move the highlighted chapter row, `key.SELECT` jumps to that
-chapter's page, and `key.BACK` returns to the current page without jumping.
+Launch behavior:
+
+- If the app was interrupted while reading, it resumes the selected book and page.
+- If the last saved view was the library, menu, chapters, or an invalid/missing
+  book, it starts in the library.
+- Progress is stored for the current selected book only. Per-book reading
+  history belongs in a future storage-backed API.
+
+Controls:
+
+- In the library: `key.UP` / `key.DOWN` move selection, `key.SELECT` opens the
+  highlighted book, and `key.BACK` exits the app.
+- In the reader: `key.RIGHT` / `key.DOWN` advance a page, `key.LEFT` /
+  `key.UP` go back a page, and `key.SELECT` or `key.BACK` opens the reader menu.
+- In the reader menu: choose Continue, Chapters, Library, or Exit.
+- In chapters: `key.UP` / `key.DOWN` move selection, `key.SELECT` jumps to the
+  chapter, and `key.BACK` returns to the reader menu.
 
 Current Zephyr SSD1677 firmware support expects target-native full-panel GRAY2
 BinBook page data and streams it from the resource file without allocating a
-full-screen framebuffer. Cadence refreshes use true 4-gray output; intermediate
-page turns may use thresholded black/white partial refreshes for faster, less
-flashy redraws. The SSD1677 backend streams the old and new pages from storage
-for partial turns rather than retaining a full framebuffer in RAM.
+full-screen framebuffer. This reader requests the full refresh path for clean
+4-gray output. Faster partial redraw modes remain firmware capabilities, but
+this reader defaults to the higher-quality render until ghosting and cleanup
+cadence are good enough for routine reading.
 
 Hardware-independent event testing can dispatch logical keys directly:
 

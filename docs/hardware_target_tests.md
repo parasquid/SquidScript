@@ -172,6 +172,16 @@ route, firmware staging file, resumable SD-backed upload, `file.copy`,
 `content.binbook.list("books")`, and BinBook display path work together on the
 device-owned X4 SD card.
 
+`scripts/xteink-x4-test-binbook-reader.sh` is the XTEINK BinBook reader
+selection and interrupted-resume hardware check. It flashes the XTEINK firmware
+unless `--skip-flash` is passed, formats app/content storage for an isolated
+test run, installs two `.binbook` files into the `books` library, installs
+`examples/binbook-reader`, drives the library, reader, menu, and relaunch flows
+with serial `device key` events, and verifies `device drawlog` contains
+`draw=binbook`, `device errors` is empty, and resource metrics are available.
+This proves the promoted reader app can select uploaded content-library books
+and resumes only when the saved foreground view was the reader.
+
 `scripts/xteink-x4-test-transfer-regression.sh` is the XTEINK X4 transfer regression
 suite for upload speed and data-integrity work. It runs the serial, HTTP, and
 BLE transfer checks sequentially against the same physical target. Each check

@@ -3830,7 +3830,7 @@ Current reference VM limits:
 - operand stack values per event frame: 16
 - dynamic string references per event after state retention: 32
 - dynamic string byte arena per event after state retention: 512 bytes
-- maximum bytes in one dynamic string: 48 bytes
+- maximum bytes in one dynamic string: 128 bytes
 
 Direct string-returning built-ins and string concatenation produce dynamic
 interned strings unless the result exactly matches an SQBC literal or firmware

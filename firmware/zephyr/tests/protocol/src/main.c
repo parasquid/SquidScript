@@ -3594,7 +3594,7 @@ ZTEST(squidscript_protocol, test_links_squidvm_ffi_context_metadata)
 	zassert_true(sqvm_context_align() > 0);
 	zassert_true(sqvm_context_size() <= SQ_VM_RUNTIME_CONTEXT_BYTES);
 #if !defined(CONFIG_BOARD_NATIVE_SIM)
-	zassert_true(SQ_VM_RUNTIME_CONTEXT_BYTES <= 7872);
+	zassert_true(SQ_VM_RUNTIME_CONTEXT_BYTES <= 9216);
 #endif
 	zassert_true(SQ_VM_RUNTIME_WORK_STACK_SIZE <= 24576);
 }
@@ -3629,7 +3629,7 @@ ZTEST(squidscript_protocol, test_runtime_reuses_transfer_storage_for_init_scratc
 	zassert_true(sizeof(runtime.transfer) >= sizeof(runtime.transfer.completion));
 #if !defined(CONFIG_BOARD_NATIVE_SIM)
 	size_t runtime_static = sizeof(runtime);
-	zassert_true(runtime_static <= 12160, "runtime_static=%zu", runtime_static);
+	zassert_true(runtime_static <= 17600, "runtime_static=%zu", runtime_static);
 #endif
 }
 
@@ -3672,6 +3672,21 @@ ZTEST(squidscript_protocol, test_output_history_retains_current_lifecycle_assert
 	zassert_str_equal(runtime.outputs[3], "lifecycle line 4");
 	zassert_str_equal(runtime.outputs[4], "lifecycle line 5");
 	zassert_str_equal(runtime.outputs[5], "lifecycle line 6");
+}
+
+ZTEST(squidscript_protocol, test_runtime_reset_clears_device_error_history)
+{
+	struct sq_vm_runtime runtime = {0};
+
+	sq_vm_runtime_init(&runtime);
+	zassert_equal(sq_vm_runtime_record_device_error(&runtime, "display=flush code=-5 (EIO)"),
+		      0);
+	zassert_equal(runtime.device_error_count, 1);
+
+	sq_vm_runtime_reset(&runtime);
+
+	zassert_equal(runtime.device_error_count, 0);
+	zassert_equal(runtime.device_errors[0][0], '\0');
 }
 
 ZTEST(squidscript_protocol, test_runtime_active_caps_default_to_hard_caps_and_gate_runtime_tables)
@@ -6313,6 +6328,42 @@ ZTEST(squidscript_protocol, test_vm_runtime_file_copy_publishes_binbook)
 	zassert_equal(read_test_file(final_path, readback, sizeof(readback), &readback_len), 0);
 	zassert_equal(readback_len, sizeof(book));
 	zassert_mem_equal(readback, book, sizeof(book));
+	zassert_equal(unmount_test_sd(), 0, "sd unmount failed");
+}
+
+ZTEST(squidscript_protocol, test_vm_runtime_content_binbook_list_finds_sd_binbooks)
+{
+	static const char book_path[] = "/SD:/books/listed.binbook";
+	static const char ignored_path[] = "/SD:/books/ignored.txt";
+	static const uint8_t book_bytes[] = {'b', 'o', 'o', 'k'};
+	static const uint8_t ignored_bytes[] = {'t', 'x', 't'};
+	static struct sq_vm_runtime runtime;
+	SqvmContentBinBookEntry entries[2] = {0};
+	SqvmContentBinBookListResult result = {0};
+	size_t count = 0;
+	int mkdir_result;
+
+	memset(&runtime, 0, sizeof(runtime));
+	zassert_equal(mount_test_sd(), 0, "sd mount failed");
+	mkdir_result = fs_mkdir(SQ_VM_RUNTIME_CONTENT_BOOKS_DIR);
+	zassert_true(mkdir_result == 0 || mkdir_result == -EEXIST);
+	(void)fs_unlink(book_path);
+	(void)fs_unlink(ignored_path);
+	zassert_equal(write_test_file(book_path, book_bytes, sizeof(book_bytes)), 0);
+	zassert_equal(write_test_file(ignored_path, ignored_bytes, sizeof(ignored_bytes)), 0);
+
+	zassert_equal(runtime_content_binbook_list(&runtime, (const uint8_t *)"books",
+						  strlen("books"), 0, 2, entries,
+						  ARRAY_SIZE(entries), &count, &result),
+		      0);
+	zassert_true(result.ok);
+	zassert_equal(result.count, 1);
+	zassert_equal(count, 1);
+	zassert_equal(entries[0].size, sizeof(book_bytes));
+	zassert_mem_equal(entries[0].name, "listed.binbook", strlen("listed.binbook"));
+	zassert_mem_equal(entries[0].reference, "content:books/r/listed.binbook",
+			  strlen("content:books/r/listed.binbook"));
+
 	zassert_equal(unmount_test_sd(), 0, "sd unmount failed");
 }
 

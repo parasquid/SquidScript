@@ -100,6 +100,57 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
         self.assertIn("INTERRUPT_UPLOAD=1", docs)
         self.assertIn("content.binbook.list", docs)
 
+    def test_xteink_binbook_reader_script_drives_selection_and_resume(self):
+        script = self.read("scripts/xteink-x4-test-binbook-reader.sh")
+
+        self.assertIn("app package", script)
+        self.assertIn("device content-put", script)
+        self.assertIn("generate-test-binbook.py", script)
+        self.assertIn("run_key() {", script)
+        self.assertIn("run_key library-down DOWN", script)
+        self.assertIn("run_key open-selected SELECT", script)
+        self.assertIn("run_key open-menu BACK", script)
+        self.assertIn("device reset", script)
+        self.assertIn("drawlog-reader", script)
+        self.assertIn("device drawlog", script)
+        self.assertIn("device errors", script)
+        self.assertIn("draw=binbook", script)
+        self.assertIn("mode=full", script)
+        self.assertIn("proto_stack_unused_bytes", script)
+        self.assertIn("vm_stack_unused_bytes", script)
+
+    def test_generated_binbook_fixture_uses_firmware_section_layout(self):
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp) / "sample.binbook"
+            subprocess.run(
+                [sys.executable, str(ROOT / "scripts/generate-test-binbook.py"), str(out)],
+                cwd=ROOT,
+                check=True,
+            )
+
+            data = out.read_bytes()
+
+        self.assertEqual(data[:8], b"BINBOOK\0")
+        self.assertEqual(int.from_bytes(data[12:14], "little"), 256)
+        self.assertEqual(int.from_bytes(data[36:38], "little"), 40)
+        self.assertEqual(int.from_bytes(data[38:40], "little"), 5)
+
+        section = data[256:296]
+        self.assertEqual(int.from_bytes(section[0:2], "little"), 1)
+        self.assertEqual(int.from_bytes(section[4:12], "little"), 456)
+        self.assertEqual(int.from_bytes(section[12:20], "little"), len(b"Chapter OneChapter Two"))
+        self.assertEqual(int.from_bytes(section[20:24], "little"), 0)
+        self.assertEqual(int.from_bytes(section[24:28], "little"), 0)
+
+        page_index_offset = int.from_bytes(data[256 + 3 * 40 + 4:256 + 3 * 40 + 12], "little")
+        page_one = data[page_index_offset:page_index_offset + 76]
+        page_two = data[page_index_offset + 76:page_index_offset + 152]
+        self.assertEqual(int.from_bytes(page_one[24:28], "little"), 1500)
+        self.assertEqual(int.from_bytes(page_one[28:32], "little"), 96000)
+        self.assertEqual(int.from_bytes(page_two[16:24], "little"), 1500)
+        self.assertEqual(int.from_bytes(page_two[24:28], "little"), 1500)
+        self.assertEqual(int.from_bytes(page_two[28:32], "little"), 96000)
+
 
     def test_x4_transfer_regression_scripts_cover_all_transports(self):
         suite = self.read("scripts/xteink-x4-test-transfer-regression.sh")

@@ -148,7 +148,7 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
         self.assertIn("struct sq_vm_runtime_wifi_scan_scratch *scan =", runtime_c)
         self.assertIn("out->network = runtime->wifi_scan.networks[index]", runtime_c)
         self.assertNotIn("runtime->transfer.wifi_scan", runtime_c)
-        self.assertIn("runtime_static <= 12160", ztest)
+        self.assertIn("runtime_static <= 17600", ztest)
 
     def test_runtime_transfer_scratch_has_diagnostic_owner_checks(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")
@@ -301,7 +301,7 @@ class ZephyrRuntimeContractTests(ZephyrScriptTestCase):
         self.assertNotIn("SqvmStorageCompletion completion;", runtime_body)
         self.assertIn("sizeof(runtime.transfer.init_scratch)", ztest)
         self.assertIn(f"SQVM_STORAGE_TRANSFER_CAPACITY <= {transfer_capacity}", ztest)
-        self.assertIn("runtime_static <= 12160", ztest)
+        self.assertIn("runtime_static <= 17600", ztest)
 
     def test_runtime_does_not_keep_launch_binding_scratch_resident(self):
         runtime_h = self.read("firmware/zephyr/src/vm_runtime.h")

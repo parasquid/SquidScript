@@ -1052,14 +1052,10 @@ fn compile_statement(
             h,
             options,
         } => {
-            emit(&mut unit.code, OP_PUSH_INT);
-            write_i32(&mut unit.code, *x as i32);
-            emit(&mut unit.code, OP_PUSH_INT);
-            write_i32(&mut unit.code, *y as i32);
-            emit(&mut unit.code, OP_PUSH_INT);
-            write_i32(&mut unit.code, *w as i32);
-            emit(&mut unit.code, OP_PUSH_INT);
-            write_i32(&mut unit.code, *h as i32);
+            compile_expr(unit, frame, x)?;
+            compile_expr(unit, frame, y)?;
+            compile_expr(unit, frame, w)?;
+            compile_expr(unit, frame, h)?;
             emit_string_option(unit, options, "fillColor")?;
             emit_string_option(unit, options, "strokeColor")?;
             emit_builtin(&mut unit.code, BUILTIN_DISPLAY_RECT);

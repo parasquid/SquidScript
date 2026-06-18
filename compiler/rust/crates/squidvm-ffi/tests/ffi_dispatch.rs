@@ -3562,7 +3562,7 @@ fn callback_errors_surface_as_vm_error_status() {
 #[test]
 fn generated_callback_policy_cases_cover_manifest_inventory() {
     let cases = generated_ffi_dispatch_cases::callback_policy_cases();
-    assert_eq!(cases.len(), 61);
+    assert_eq!(cases.len(), 63);
     assert!(cases.contains(&("http_start", "required_vm_error")));
     assert!(cases.contains(&("http_stop", "required_vm_error")));
     assert!(cases.contains(&("file_copy", "unsupported_result")));

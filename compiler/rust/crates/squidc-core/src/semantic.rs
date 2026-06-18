@@ -734,6 +734,12 @@ fn validate_statement_names(
             IrStatement::DisplayText { text, .. } => {
                 validate_expr_names(text, state_names, visible, start, end, diagnostics);
             }
+            IrStatement::DisplayRect { x, y, w, h, .. } => {
+                validate_expr_names(x, state_names, visible, start, end, diagnostics);
+                validate_expr_names(y, state_names, visible, start, end, diagnostics);
+                validate_expr_names(w, state_names, visible, start, end, diagnostics);
+                validate_expr_names(h, state_names, visible, start, end, diagnostics);
+            }
             IrStatement::DisplayDraw { drawable, .. } => {
                 validate_expr_names(drawable, state_names, visible, start, end, diagnostics);
             }
@@ -747,7 +753,6 @@ fn validate_statement_names(
             | IrStatement::ServiceIndicatorToggle
             | IrStatement::ServiceIndicatorBreathe
             | IrStatement::DisplayClear { .. }
-            | IrStatement::DisplayRect { .. }
             | IrStatement::DisplayLine { .. }
             | IrStatement::DisplaySelect { .. }
             | IrStatement::DisplayRefreshMode { .. }
@@ -1284,6 +1289,12 @@ fn statement_uses_any_name(
             expr_uses_any_name(on_ms, names) || expr_uses_any_name(off_ms, names)
         }
         IrStatement::DisplayText { text, .. } => expr_uses_any_name(text, names),
+        IrStatement::DisplayRect { x, y, w, h, .. } => {
+            expr_uses_any_name(x, names)
+                || expr_uses_any_name(y, names)
+                || expr_uses_any_name(w, names)
+                || expr_uses_any_name(h, names)
+        }
         IrStatement::DisplayDraw { drawable, .. } => expr_uses_any_name(drawable, names),
         IrStatement::DebugBlock { .. }
         | IrStatement::StateLoad
@@ -1296,7 +1307,6 @@ fn statement_uses_any_name(
         | IrStatement::ServiceIndicatorToggle
         | IrStatement::ServiceIndicatorBreathe
         | IrStatement::DisplayClear { .. }
-        | IrStatement::DisplayRect { .. }
         | IrStatement::DisplayLine { .. }
         | IrStatement::DisplaySelect { .. }
         | IrStatement::DisplayRefreshMode { .. }

@@ -18,9 +18,9 @@ Caps that matter for loadability (see `squidvm-limits/src/lib.rs`):
 | Cap | Value | Why it bites |
 | --- | --- | --- |
 | `MAX_CODE_CHUNK_BYTES` | 640 | **Per-frame** code limit. The VM loads a whole handler/function/screen frame into one 640-byte code-chunk buffer. A single frame's compiled code over 640 bytes cannot execute (`ChunkTooLarge` → `-5`). Split logic across functions. |
-| `MAX_PROGRAM_STRING_BYTES` | 768 | Total interned string content. |
-| `MAX_STRINGS` | 64 | Distinct interned strings. |
-| `MAX_APP_BYTES` | 4096 | Whole SQBC container. |
+| `MAX_PROGRAM_STRING_BYTES` | 1536 | Total interned string content. |
+| `MAX_STRINGS` | 128 | Distinct interned strings. |
+| `MAX_APP_BYTES` | 8192 | Whole SQBC container. |
 | `MAX_FUNCTIONS`/`MAX_HANDLERS`/`MAX_SCREENS`/`MAX_STATE`/`MAX_TRIGGERS` | 16 | Table sizes. |
 
 Note: `display.text` etc. inside a `screen { ... }` compile into that screen's

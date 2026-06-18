@@ -1,6 +1,7 @@
 #include "vm_runtime_internal.h"
 
 #include "app_store.h"
+#include "sq_errno.h"
 
 #define BINBOOK_HEADER_SIZE 256U
 #define BINBOOK_SECTION_ENTRY_SIZE 40U
@@ -293,6 +294,11 @@ int32_t runtime_binbook_open(void *user_data, const uint8_t *path, size_t path_l
 	result = binbook_open_resource(runtime, path, path_len, &file, resolved_path,
 				       sizeof(resolved_path));
 	if (result != 0) {
+		char line[SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
+
+		(void)snprintf(line, sizeof(line), "binbook.open code=%d (%s)", result,
+			       sq_errno_name(result));
+		(void)sq_vm_runtime_record_device_error(runtime, line);
 		binbook_set_error("open failed", &out->error, &out->error_len);
 		return 0;
 	}
@@ -301,6 +307,11 @@ int32_t runtime_binbook_open(void *user_data, const uint8_t *path, size_t path_l
 						      &page_index, &nav_index, &chapter_index,
 						      &page_data);
 	if (result != 0) {
+		char line[SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
+
+		(void)snprintf(line, sizeof(line), "binbook.validate code=%d (%s)", result,
+			       sq_errno_name(result));
+		(void)sq_vm_runtime_record_device_error(runtime, line);
 		binbook_set_error("invalid binbook", &out->error, &out->error_len);
 		return 0;
 	}

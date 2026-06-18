@@ -80,20 +80,20 @@ extern "C" {
 #if defined(CONFIG_BOARD_NATIVE_SIM)
 #define SQ_VM_RUNTIME_CONTEXT_BYTES 65536
 #else
-#define SQ_VM_RUNTIME_CONTEXT_BYTES 7872
+#define SQ_VM_RUNTIME_CONTEXT_BYTES 9216
 #endif
 /*
  * Scratch passed to sqvm_context_init_in_place for program load. The VM reads
  * each whole SQBC section (strings, state, functions, handlers, screens) into
  * this buffer, so it must fit the largest single section. A section cannot
- * exceed the total app size, which squidvm-core caps at MAX_APP_BYTES (4 KiB),
+ * exceed the total app size, which squidvm-core caps at MAX_APP_BYTES (8 KiB),
  * so size the scratch to that bound. This is independent of
  * SQVM_STORAGE_TRANSFER_CAPACITY, which sizes the storage-transfer completion
  * buffer (one code chunk / saved-state read) and matches the VM's
  * MAX_STORAGE_TRANSFER_BYTES. context_init only requires scratch >=
  * MAX_CODE_CHUNK_BYTES, so a larger buffer is valid.
  */
-#define SQ_VM_RUNTIME_SCRATCH_BYTES 4096
+#define SQ_VM_RUNTIME_SCRATCH_BYTES 8192
 BUILD_ASSERT(SQ_VM_RUNTIME_SCRATCH_BYTES >= SQVM_STORAGE_TRANSFER_CAPACITY);
 #ifndef SQ_VM_RUNTIME_WORK_STACK_SIZE
 #define SQ_VM_RUNTIME_WORK_STACK_SIZE 16640

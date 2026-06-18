@@ -113,8 +113,19 @@ static int content_scan_dir(struct content_scan *scan, const char *dir_path, cha
 		if (result != 0 || entry.name[0] == '\0') {
 			break;
 		}
-		if (entry.type != FS_DIR_ENTRY_FILE || !content_name_safe(entry.name) ||
-		    entry.size > INT32_MAX) {
+		if (!content_name_safe(entry.name)) {
+			continue;
+		}
+		if (entry.type != FS_DIR_ENTRY_FILE) {
+			char path[SQ_APP_STORE_PATH_MAX];
+			int written = snprintf(path, sizeof(path), "%s/%s", dir_path, entry.name);
+
+			if (written <= 0 || (size_t)written >= sizeof(path) ||
+			    fs_stat(path, &entry) != 0 || entry.type != FS_DIR_ENTRY_FILE) {
+				continue;
+			}
+		}
+		if (entry.size > INT32_MAX) {
 			continue;
 		}
 		result = content_emit_entry(scan, source, entry.name, (int32_t)entry.size);

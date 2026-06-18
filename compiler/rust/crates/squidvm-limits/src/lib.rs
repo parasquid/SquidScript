@@ -9,7 +9,7 @@
 //! drift.
 
 /// Maximum number of distinct interned strings in a program's string table.
-pub const MAX_STRINGS: usize = 64;
+pub const MAX_STRINGS: usize = 128;
 /// Maximum number of declared state fields.
 pub const MAX_STATE: usize = 16;
 /// Maximum number of declared functions.
@@ -31,9 +31,9 @@ pub const MAX_CALL_DEPTH: usize = 4;
 /// Maximum VM instructions executed per dispatched event.
 pub const MAX_INSTRUCTIONS_PER_EVENT: usize = 1000;
 /// Maximum total compiled app (SQBC container) size in bytes.
-pub const MAX_APP_BYTES: usize = 4 * 1024;
+pub const MAX_APP_BYTES: usize = 8 * 1024;
 /// Maximum total bytes of interned program string content.
-pub const MAX_PROGRAM_STRING_BYTES: usize = 768;
+pub const MAX_PROGRAM_STRING_BYTES: usize = 1536;
 /// Maximum compiled code bytes for a single frame (handler/function/screen).
 /// The VM loads a whole frame into one code-chunk buffer, so a frame larger
 /// than this cannot be executed.

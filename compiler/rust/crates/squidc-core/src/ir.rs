@@ -181,10 +181,10 @@ pub enum IrStatement {
     },
     #[serde(rename = "service.display.rect")]
     DisplayRect {
-        x: i64,
-        y: i64,
-        w: i64,
-        h: i64,
+        x: IrExpr,
+        y: IrExpr,
+        w: IrExpr,
+        h: IrExpr,
         options: serde_json::Value,
     },
     #[serde(rename = "service.display.line")]

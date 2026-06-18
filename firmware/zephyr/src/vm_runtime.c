@@ -771,6 +771,8 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	memset(&runtime->input_event_queue, 0, sizeof(runtime->input_event_queue));
 	memset(runtime->outputs, 0, sizeof(runtime->outputs));
 	runtime->output_count = 0;
+	memset(runtime->device_errors, 0, sizeof(runtime->device_errors));
+	runtime->device_error_count = 0;
 	memset(runtime->drawlog, 0, sizeof(runtime->drawlog));
 	runtime->drawlog_count = 0;
 	memset(runtime->display_ops, 0, sizeof(runtime->display_ops));

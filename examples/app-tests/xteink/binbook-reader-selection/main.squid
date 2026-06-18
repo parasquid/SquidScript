@@ -1,0 +1,111 @@
+app "binbook-reader-selection-test"
+
+state {
+  view: string = "library"
+  pageIndex: int = 0
+  menuSelected: int = 0
+}
+
+event.on("app.start") {
+  state.load()
+  if (state.view == "reader") {
+    screen.open("reader")
+  }
+  else {
+    screen.open("library")
+  }
+}
+
+event.on("key.SELECT") {
+  if (state.view == "library") {
+    state.view = "reader"
+    state.pageIndex = 0
+    state.save()
+    screen.open("reader")
+  }
+  else {
+    if (state.view == "reader") {
+      state.view = "menu"
+      state.menuSelected = 0
+      state.save()
+      screen.open("menu")
+    }
+    else {
+      if (state.view == "menu") {
+        if (state.menuSelected == 0) {
+          state.view = "reader"
+          state.save()
+          screen.open("reader")
+        }
+        else {
+          state.view = "library"
+          state.save()
+          screen.open("library")
+        }
+      }
+    }
+  }
+}
+
+event.on("key.DOWN") {
+  if (state.view == "reader") {
+    state.pageIndex = state.pageIndex + 1
+    state.save()
+    screen.refresh()
+  }
+  else {
+    if (state.view == "menu") {
+      if (state.menuSelected < 1) {
+        state.menuSelected = state.menuSelected + 1
+        state.save()
+        screen.refresh()
+      }
+    }
+  }
+}
+
+event.on("key.BACK") {
+  if (state.view == "reader") {
+    state.view = "menu"
+    state.menuSelected = 0
+    state.save()
+    screen.open("menu")
+  }
+  else {
+    if (state.view == "menu") {
+      state.view = "reader"
+      state.save()
+      screen.open("reader")
+    }
+  }
+}
+
+screen("library") {
+  service.display.clear("white")
+  service.display.text("library", {
+    x: 0
+    y: 0
+    fontHeight: 20
+  })
+  debug.print("view", state.view, state.pageIndex)
+}
+
+screen("reader") {
+  service.display.clear("white")
+  service.display.text("reader", {
+    x: 0
+    y: 0
+    fontHeight: 20
+  })
+  debug.print("view", state.view, state.pageIndex)
+}
+
+screen("menu") {
+  service.display.clear("white")
+  service.display.text("menu", {
+    x: 0
+    y: 0
+    fontHeight: 20
+  })
+  debug.print("view", state.view, state.menuSelected)
+}

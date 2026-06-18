@@ -1,0 +1,22 @@
+:launch
+:expect-output view library 0
+:key SELECT
+:expect-output view reader 0
+:key DOWN
+:expect-output view reader 1
+:key BACK
+:expect-output view menu 0
+:key DOWN
+:expect-output view menu 1
+:key SELECT
+:expect-output view library 1
+:reset
+:reload
+:output
+:expect-output view library 1
+:key SELECT
+:expect-output view reader 0
+:reset
+:reload
+:output
+:expect-output view reader 0

@@ -1351,6 +1351,61 @@ screen("main") {
 }
 
 #[test]
+fn display_rect_accepts_variable_coordinates() {
+    let source = r#"app "rect-vars"
+state { selected: int = 0 }
+
+function row(y) {
+  service.display.rect(18, y, 424, 48, { strokeColor: "gray15" })
+}
+
+screen("main") {
+  row(76)
+}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let ir = output.ir.unwrap();
+    let function = ir
+        .functions
+        .iter()
+        .find(|function| function.name == "row")
+        .unwrap();
+    assert!(matches!(
+        function.statements[0],
+        IrStatement::DisplayRect {
+            ref y,
+            ..
+        } if matches!(y, IrExpr::Variable { name } if name == "y")
+    ));
+    sqbc::encode_sqbc(&ir).expect("rect variable coordinate should encode");
+}
+
+#[test]
+fn encodes_program_with_doubled_string_budget() {
+    let mut source =
+        String::from("app \"string-budget\"\nevent.on(\"app.start\") {\n  debug.print(");
+    for index in 0..70 {
+        if index > 0 {
+            source.push_str(", ");
+        }
+        source.push('"');
+        source.push_str(&format!("reader-label-{index:02}"));
+        source.push('"');
+    }
+    source.push_str(")\n}\nscreen(\"main\") {}\n");
+    let output = compile(CompileRequest {
+        source,
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(output.ok, "{:?}", output.diagnostics);
+    sqbc::encode_sqbc(&output.ir.unwrap()).expect("program string table should fit doubled budget");
+}
+
+#[test]
 fn compiles_binbook_handle_api_and_default_draw_options() {
     let source = r#"app "binbook-smoke"
 state { pageIndex: int = 0 }
