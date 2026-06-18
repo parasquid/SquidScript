@@ -51,6 +51,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Display And Output
 
+- Design a fast BinBook reader highlight refresh path that keeps enough
+  previous-frame state to update selection/highlight changes without
+  full-refresh flashing or ghosting, and verify it on XTEINK hardware.
 - Add a GRAY2-aware streaming display compositor for
   `service.display.clear/text/rect/line` on SSD1677 targets, preserving
   source-order composition without a full-screen 2bpp framebuffer.
