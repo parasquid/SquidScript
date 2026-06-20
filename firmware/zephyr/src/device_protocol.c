@@ -2568,6 +2568,28 @@ static int resources_request_reset_heap_max(const uint8_t *request_bytes, size_t
 	return 0;
 }
 
+static size_t heap_largest_free_block_probe(struct k_heap *heap, size_t free_bytes_cap)
+{
+	if (heap == NULL || free_bytes_cap == 0) {
+		return 0;
+	}
+	size_t lo = 0;
+	size_t hi = free_bytes_cap;
+
+	for (int i = 0; i < 32 && lo < hi; i++) {
+		size_t mid = lo + (hi - lo + 1) / 2;
+		void *block = k_heap_alloc(heap, mid, K_NO_WAIT);
+
+		if (block != NULL) {
+			k_heap_free(heap, block);
+			lo = mid;
+		} else {
+			hi = mid - 1;
+		}
+	}
+	return lo;
+}
+
 static int __noinline resources_response(const struct sq_protocol_request *request,
 			      const uint8_t *request_bytes, size_t request_len,
 			      const struct sq_device_protocol_context *context, uint8_t *response,
@@ -2642,6 +2664,7 @@ static int __noinline resources_response(const struct sq_protocol_request *reque
 	int heap_array_count = k_heap_array_get(&heaps);
 	if (heap_array_count > 0 && heaps != NULL) {
 		heap_count = (size_t)heap_array_count;
+		heap_largest_free_supported = 1u;
 		for (int i = 0; i < heap_array_count; i++) {
 			struct sys_memory_stats stats;
 
@@ -2652,6 +2675,12 @@ static int __noinline resources_response(const struct sq_protocol_request *reque
 				heap_free_bytes += stats.free_bytes;
 				heap_allocated_bytes += stats.allocated_bytes;
 				heap_max_allocated_bytes += stats.max_allocated_bytes;
+				size_t largest =
+					heap_largest_free_block_probe(&heaps[i], stats.free_bytes);
+
+				if (largest > heap_largest_free_bytes) {
+					heap_largest_free_bytes = largest;
+				}
 			}
 		}
 	}

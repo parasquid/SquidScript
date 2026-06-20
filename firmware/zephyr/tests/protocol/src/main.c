@@ -4071,6 +4071,7 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 	uint64_t protocol_stack_pre_resources_unused = 0;
 	uint64_t protocol_stack_pre_resources_used = 0;
 	uint64_t vm_sqbc_chunk = 0;
+	uint64_t heap_free_bytes = 99;
 	uint64_t heap_largest_free_supported = 99;
 	uint64_t heap_largest_free_bytes = 99;
 	uint64_t last_dispatch_sequence = 99;
@@ -4126,12 +4127,17 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 					   CONFIG_MAIN_STACK_SIZE));
 	zassert_true(resource_value_for_key(&frame, "vm_sqbc_chunk_bytes", &vm_sqbc_chunk));
 	zassert_equal(vm_sqbc_chunk, SQVM_STORAGE_TRANSFER_CAPACITY);
+	zassert_true(resource_value_for_key(&frame, "heap_free_bytes",
+					    &heap_free_bytes));
 	zassert_true(resource_value_for_key(&frame, "heap_largest_free_supported",
 					    &heap_largest_free_supported));
-	zassert_equal(heap_largest_free_supported, 0);
+	zassert_equal(heap_largest_free_supported, 1);
 	zassert_true(resource_value_for_key(&frame, "heap_largest_free_bytes",
 					    &heap_largest_free_bytes));
-	zassert_equal(heap_largest_free_bytes, 0);
+	zassert_true(heap_largest_free_bytes > 0,
+		     "largest free block must be positive with a live heap");
+	zassert_true(heap_largest_free_bytes <= heap_free_bytes,
+		     "largest free block must not exceed total free bytes");
 	zassert_true(resource_value_for_key(&frame, "last_dispatch_us",
 					    &last_dispatch_elapsed_us));
 	zassert_equal(last_dispatch_elapsed_us, 1234);
@@ -4240,7 +4246,7 @@ ZTEST(squidscript_protocol, test_resources_request_accepts_heap_max_reset_option
 	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
 	zassert_equal(frame.opcode, SQ_OPCODE_RESOURCES_GET);
 	zassert_equal(frame.status, SQ_STATUS_OK);
-	zassert_true(resource_value_equals(&frame, "heap_largest_free_supported", 0));
+	zassert_true(resource_value_equals(&frame, "heap_largest_free_supported", 1));
 }
 
 ZTEST(squidscript_protocol, test_exposes_resumable_squidvm_ffi_abi)
