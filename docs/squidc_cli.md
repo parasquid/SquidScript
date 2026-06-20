@@ -132,6 +132,7 @@ completion notification.
 
 ```sh
 cargo run -p squidc -- device key SELECT
+cargo run -p squidc -- device display-window-probe corners
 cargo run -p squidc -- device content-put target/book.binbook --name book.binbook
 cargo run -p squidc -- device content-check book.binbook --size 83014 --crc32 deadbeef
 cargo run -p squidc -- device ble-put SquidScript target/book.binbook --name book.binbook
@@ -153,6 +154,12 @@ cargo run -p squidc -- device monitor --max-lines 4
 
 `device key` sends a logical key event to Zephyr firmware. It does not
 press a physical button; the firmware routes the event to the current app.
+
+`device display-window-probe <pattern>` sends an SSD1677 physical display
+diagnostic request to firmware. Supported XTEINK/X4 probe patterns include
+`full-black`, `full-white`, `top-band`, `bottom-band`, `left-band`,
+`right-band`, and `corners`. This command is for firmware/display validation;
+it is not a SquidScript app API and it intentionally bypasses app render state.
 
 `device content-put <file>` streams a host file into the target firmware's
 content volume over the framed serial protocol. The current firmware accepts

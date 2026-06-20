@@ -28,10 +28,11 @@ Controls:
 
 Current Zephyr SSD1677 firmware support expects target-native full-panel GRAY2
 BinBook page data and streams it from the resource file without allocating a
-full-screen framebuffer. This reader requests the full refresh path for clean
-4-gray output. Faster partial redraw modes remain firmware capabilities, but
-this reader defaults to the higher-quality render until ghosting and cleanup
-cadence are good enough for routine reading.
+full-screen framebuffer. The reader keeps the page screen on the full GRAY2
+refresh path for clean book content. Library, menu, and chapter screens request
+`fast1bpp` so selection highlights can move through the SSD1677 differential
+partial path. The firmware still redraws these screens from app state; it
+retains previous composed frame state only as a private display optimization.
 
 Hardware-independent event testing can dispatch logical keys directly:
 

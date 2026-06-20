@@ -8,6 +8,7 @@
     "output_len": 54,
     "drawlog_max": 4,
     "drawlog_len": 48,
+    "display_op_max": 16,
     "device_error_max": 8,
     "device_error_len": 48,
     "timer_max": 4,

@@ -24,6 +24,16 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   could destroy or hide the user's work, stop and ask before running it. This
   applies even when the goal is to keep a commit "clean".
 
+## Local Environment Notes
+
+- If `.local-agents.md` exists at the repository root, read it at the start of
+  a session for environment-specific notes (attached hardware, host paths,
+  local tooling shortcuts, prior-session context). It is gitignored and never
+  committed; it carries personal setup for the maintainer's machine, not
+  project contract. Do not copy its contents into committed docs, and do not
+  repeat environment identifiers (USB serials, device paths) from it in chat
+  output or commit messages beyond what the placeholder-discipline rules allow.
+
 ## Roadmap Maintenance
 
 - `ROADMAP.md` is the repository issue tracker for agent-visible project work.

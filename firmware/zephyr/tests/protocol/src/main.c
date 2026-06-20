@@ -27,11 +27,19 @@
 
 #define SQ_PROTOCOL_DONE 1
 
+void sq_ssd1677_test_render_1bpp_row(uint8_t *line, size_t line_len, uint16_t physical_y,
+				     const struct sq_vm_runtime_display_op *ops,
+				     size_t op_count);
+bool sq_ssd1677_test_row_has_black_pixel(const uint8_t *line, size_t line_len,
+					 uint16_t physical_x);
+
 static struct k_sem test_display_flush_started;
 static struct k_sem test_display_flush_release;
 static bool test_display_flush_sems_ready;
 static bool test_display_flush_block;
 static uint32_t test_display_flush_count;
+static uint32_t test_display_backend_reset_count;
+static char test_display_window_probe_pattern[32];
 
 static void test_display_flush_reset(bool block)
 {
@@ -59,6 +67,22 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 		(void)k_sem_take(&test_display_flush_release, K_FOREVER);
 	}
 	return 0;
+}
+
+int sq_display_backend_window_probe(const char *pattern)
+{
+	if (pattern == NULL) {
+		return -EINVAL;
+	}
+	strncpy(test_display_window_probe_pattern, pattern,
+		sizeof(test_display_window_probe_pattern) - 1);
+	test_display_window_probe_pattern[sizeof(test_display_window_probe_pattern) - 1] = '\0';
+	return 0;
+}
+
+void sq_display_backend_reset(void)
+{
+	test_display_backend_reset_count++;
 }
 
 
@@ -1314,6 +1338,44 @@ ZTEST(squidscript_protocol, test_errors_get_reports_vm_status_label_and_errno)
 	/* The numeric code is paired with its errno name so the diagnostic is legible
 	 * without an external lookup. */
 	zassert_true(field_string_equals(&field, "runtime=invalid_argument code=-22 (EINVAL)"));
+}
+
+ZTEST(squidscript_protocol, test_display_window_probe_request_invokes_backend)
+{
+	uint8_t payload[32];
+	size_t payload_len = 0;
+	uint8_t request[SQ_PROTOCOL_HEADER_LEN + sizeof(payload)];
+	uint8_t response[128];
+	size_t response_len = 0;
+	struct sq_protocol_frame frame;
+	struct sq_device_identity identity = {
+		.target = "xteink-x4",
+		.firmware = "squidscript-zephyr",
+		.diagnostic = true,
+	};
+	struct sq_device_protocol_context context = {
+		.identity = &identity,
+	};
+
+	memset(test_display_window_probe_pattern, 0, sizeof(test_display_window_probe_pattern));
+	zassert_equal(sq_protocol_append_string_field(payload, sizeof(payload), &payload_len, 1,
+						      "corners"),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST,
+						      SQ_OPCODE_DISPLAY_WINDOW_PROBE,
+						      SQ_STATUS_OK, 85, payload, payload_len,
+						      request, sizeof(request)),
+		      SQ_PROTOCOL_OK);
+	memcpy(request + SQ_PROTOCOL_HEADER_LEN, payload, payload_len);
+
+	zassert_equal(sq_device_protocol_handle_frame(request, SQ_PROTOCOL_HEADER_LEN + payload_len,
+						      &context, response, sizeof(response),
+						      &response_len),
+		      SQ_PROTOCOL_OK);
+	zassert_equal(sq_protocol_decode_frame(response, response_len, &frame), SQ_PROTOCOL_OK);
+	zassert_equal(frame.opcode, SQ_OPCODE_DISPLAY_WINDOW_PROBE);
+	zassert_equal(frame.status, SQ_STATUS_OK);
+	zassert_str_equal(test_display_window_probe_pattern, "corners");
 }
 
 ZTEST(squidscript_protocol, test_errors_get_reports_retained_device_diagnostics_without_runtime_error)
@@ -6019,6 +6081,34 @@ ZTEST(squidscript_protocol, test_vm_runtime_records_physical_display_clear_and_t
 	zassert_equal(runtime.display_ops[1].font_height, 24);
 }
 
+ZTEST(squidscript_protocol, test_vm_runtime_records_physical_display_rect_ops)
+{
+	static struct sq_vm_runtime runtime;
+	const SqvmDisplayRectOptions options = {
+		.x = 18,
+		.y = 76,
+		.w = 424,
+		.h = 48,
+		.stroke_color = (const uint8_t *)"gray15",
+		.stroke_color_len = strlen("gray15"),
+	};
+
+	memset(&runtime, 0, sizeof(runtime));
+	runtime_display_rect(&runtime, &options);
+
+	zassert_equal(runtime.drawlog_count, 1);
+	zassert_str_equal(runtime.drawlog[0], "draw=rect x=18 y=76 w=424 h=48");
+	zassert_true(runtime.display_dirty);
+	zassert_equal(runtime.display_op_count, 1);
+	zassert_equal(runtime.display_ops[0].kind, SQ_VM_RUNTIME_DISPLAY_OP_RECT);
+	zassert_equal(runtime.display_ops[0].x, 18);
+	zassert_equal(runtime.display_ops[0].y, 76);
+	zassert_equal(runtime.display_ops[0].w, 424);
+	zassert_equal(runtime.display_ops[0].h, 48);
+	zassert_str_equal(runtime.display_ops[0].fill_color, "");
+	zassert_str_equal(runtime.display_ops[0].stroke_color, "gray15");
+}
+
 ZTEST(squidscript_protocol, test_vm_runtime_dispatches_binbook_resource_drawable)
 {
 	uint8_t book[TEST_BINBOOK_LEN];
@@ -6200,6 +6290,64 @@ ZTEST(squidscript_protocol, test_ssd1677_gray2_ordered_dither_preserves_bw_and_t
 	zassert_equal(sq_ssd1677_gray2_ordered_dither_bw_active_mask(0xaa, 0, 1), 0x00);
 }
 
+ZTEST(squidscript_protocol, test_ssd1677_1bpp_compositor_draws_stroked_rect)
+{
+	uint8_t line[100] = {0};
+	const struct sq_vm_runtime_display_op ops[] = {
+		{ .kind = SQ_VM_RUNTIME_DISPLAY_OP_CLEAR, .text = "white" },
+		{
+			.kind = SQ_VM_RUNTIME_DISPLAY_OP_RECT,
+			.x = 8,
+			.y = 4,
+			.w = 16,
+			.h = 6,
+			.stroke_color = "gray15",
+		},
+	};
+
+	sq_ssd1677_test_render_1bpp_row(line, sizeof(line), 4, ops, ARRAY_SIZE(ops));
+
+	zassert_true(sq_ssd1677_test_row_has_black_pixel(line, sizeof(line), 8));
+	zassert_true(sq_ssd1677_test_row_has_black_pixel(line, sizeof(line), 23));
+	zassert_false(sq_ssd1677_test_row_has_black_pixel(line, sizeof(line), 24));
+}
+
+ZTEST(squidscript_protocol, test_ssd1677_1bpp_compositor_moves_highlight_between_frames)
+{
+	uint8_t previous[100] = {0};
+	uint8_t current[100] = {0};
+	const struct sq_vm_runtime_display_op old_ops[] = {
+		{ .kind = SQ_VM_RUNTIME_DISPLAY_OP_CLEAR, .text = "white" },
+		{
+			.kind = SQ_VM_RUNTIME_DISPLAY_OP_RECT,
+			.x = 8,
+			.y = 4,
+			.w = 16,
+			.h = 6,
+			.stroke_color = "gray15",
+		},
+	};
+	const struct sq_vm_runtime_display_op new_ops[] = {
+		{ .kind = SQ_VM_RUNTIME_DISPLAY_OP_CLEAR, .text = "white" },
+		{
+			.kind = SQ_VM_RUNTIME_DISPLAY_OP_RECT,
+			.x = 8,
+			.y = 20,
+			.w = 16,
+			.h = 6,
+			.stroke_color = "gray15",
+		},
+	};
+
+	sq_ssd1677_test_render_1bpp_row(previous, sizeof(previous), 4, old_ops,
+				       ARRAY_SIZE(old_ops));
+	sq_ssd1677_test_render_1bpp_row(current, sizeof(current), 4, new_ops,
+				       ARRAY_SIZE(new_ops));
+
+	zassert_true(sq_ssd1677_test_row_has_black_pixel(previous, sizeof(previous), 8));
+	zassert_false(sq_ssd1677_test_row_has_black_pixel(current, sizeof(current), 8));
+}
+
 ZTEST(squidscript_protocol, test_ssd1677_binbook_refresh_policy_uses_bw_differential_between_full_refreshes)
 {
 	struct sq_ssd1677_binbook_refresh_state state = {0};
@@ -6224,6 +6372,143 @@ ZTEST(squidscript_protocol, test_ssd1677_binbook_refresh_policy_uses_bw_differen
 	sq_ssd1677_binbook_refresh_reset(&state);
 	zassert_false(state.previous_page_valid);
 	zassert_equal(state.fast_refresh_count, 0);
+}
+
+ZTEST(squidscript_protocol, test_ssd1677_fast_composed_refresh_requires_previous_frame)
+{
+	struct sq_ssd1677_composed_refresh_state state = {0};
+
+	zassert_equal(sq_ssd1677_composed_refresh_decide(&state,
+		      SQ_VM_RUNTIME_DISPLAY_REFRESH_FAST_1BPP),
+		      SQ_SSD1677_COMPOSED_REFRESH_FULL_SEED);
+
+	sq_ssd1677_composed_refresh_record(&state, SQ_SSD1677_COMPOSED_REFRESH_FULL_SEED);
+	zassert_equal(sq_ssd1677_composed_refresh_decide(&state,
+		      SQ_VM_RUNTIME_DISPLAY_REFRESH_FAST_1BPP),
+		      SQ_SSD1677_COMPOSED_REFRESH_BW_DIFFERENTIAL_PARTIAL);
+}
+
+ZTEST(squidscript_protocol, test_ssd1677_failed_composed_refresh_does_not_replace_previous_frame)
+{
+	struct sq_ssd1677_composed_refresh_state state = {0};
+
+	sq_ssd1677_composed_refresh_record(&state,
+					   SQ_SSD1677_COMPOSED_REFRESH_BW_DIFFERENTIAL_PARTIAL);
+	zassert_true(state.previous_ops_valid);
+	sq_ssd1677_composed_refresh_reset(&state);
+	zassert_false(state.previous_ops_valid);
+}
+
+ZTEST(squidscript_protocol, test_display_op_buffer_preserves_clear_for_library_like_screen)
+{
+	static struct sq_vm_runtime runtime;
+	const SqvmDisplayTextOptions header_options = {
+		.x = 24,
+		.y = 28,
+		.font_height = 28,
+	};
+
+	memset(&runtime, 0, sizeof(runtime));
+	runtime_display_clear(&runtime, (const uint8_t *)"white", strlen("white"));
+	runtime_display_text(&runtime, (const uint8_t *)"Library", strlen("Library"),
+			     &header_options);
+	for (int row = 0; row < 5; ++row) {
+		const SqvmDisplayRectOptions rect_options = {
+			.x = 18,
+			.y = 76 + row * 52,
+			.w = 424,
+			.h = 48,
+			.stroke_color = (const uint8_t *)"gray15",
+			.stroke_color_len = strlen("gray15"),
+		};
+		const SqvmDisplayTextOptions row_options = {
+			.x = 28,
+			.y = 76 + row * 52,
+			.font_height = 24,
+		};
+		char name[16];
+
+		snprintf(name, sizeof(name), "book%d", row);
+		runtime_display_rect(&runtime, &rect_options);
+		runtime_display_text(&runtime, (const uint8_t *)name, strlen(name),
+				     &row_options);
+	}
+
+	bool has_clear = false;
+
+	for (size_t i = 0; i < runtime.display_op_count; ++i) {
+		if (runtime.display_ops[i].kind == SQ_VM_RUNTIME_DISPLAY_OP_CLEAR) {
+			has_clear = true;
+			break;
+		}
+	}
+	zassert_true(has_clear,
+		     "CLEAR op was dropped when display op buffer filled; "
+		     "the compositor needs CLEAR to size the fast refresh window");
+}
+
+ZTEST(squidscript_protocol, test_vm_runtime_reset_clears_display_backend_previous_frame)
+{
+	static struct sq_vm_runtime runtime;
+
+	test_display_backend_reset_count = 0;
+	memset(&runtime, 0, sizeof(runtime));
+	sq_vm_runtime_reset(&runtime);
+	zassert_equal(test_display_backend_reset_count, 1,
+		      "sq_vm_runtime_reset must call sq_display_backend_reset so the "
+		      "first post-reset fast1bpp refresh uses FULL_SEED instead of a "
+		      "stale differential against the pre-reset screen");
+}
+
+ZTEST(squidscript_protocol, test_ssd1677_composed_dirty_window_tracks_changed_highlight_ops)
+{
+	struct sq_ssd1677_window window = {0};
+	const struct sq_vm_runtime_display_op previous_ops[] = {
+		{ .kind = SQ_VM_RUNTIME_DISPLAY_OP_CLEAR, .text = "white" },
+		{
+			.kind = SQ_VM_RUNTIME_DISPLAY_OP_TEXT,
+			.text = "Continue",
+			.x = 42,
+			.y = 92,
+			.font_height = 24,
+		},
+		{
+			.kind = SQ_VM_RUNTIME_DISPLAY_OP_RECT,
+			.x = 18,
+			.y = 76,
+			.w = 424,
+			.h = 48,
+			.stroke_color = "black",
+		},
+	};
+	const struct sq_vm_runtime_display_op current_ops[] = {
+		{ .kind = SQ_VM_RUNTIME_DISPLAY_OP_CLEAR, .text = "white" },
+		{
+			.kind = SQ_VM_RUNTIME_DISPLAY_OP_TEXT,
+			.text = "Continue",
+			.x = 42,
+			.y = 92,
+			.font_height = 24,
+		},
+		{
+			.kind = SQ_VM_RUNTIME_DISPLAY_OP_RECT,
+			.x = 18,
+			.y = 128,
+			.w = 424,
+			.h = 48,
+			.stroke_color = "black",
+		},
+	};
+
+	zassert_true(sq_ssd1677_composed_dirty_window(
+		previous_ops, ARRAY_SIZE(previous_ops), current_ops, ARRAY_SIZE(current_ops),
+		480, 800, 800, 480, 270, &window));
+
+	zassert_true(window.valid);
+	zassert_equal(window.x0, 624);
+	zassert_equal(window.x1, 727);
+	zassert_equal(window.y0, 18);
+	zassert_equal(window.y1, 441);
 }
 
 ZTEST(squidscript_protocol, test_vm_runtime_dispatches_wifi_action_stubs)

@@ -377,7 +377,6 @@ function drawRow(label, y, selected) {
 
 screen("library") {
   service.display.clear("white")
-  service.display.refreshMode("full")
   service.display.text("Library", {
     x: 24
     y: 28
@@ -429,11 +428,11 @@ screen("library") {
     })
     debug.print("library", "error", listing.error, listing.warning)
   }
+  service.display.refreshMode("fast1bpp")
 }
 
 screen("menu") {
   service.display.clear("white")
-  service.display.refreshMode("full")
   service.display.text(state.selectedBookName, {
     x: 24
     y: 28
@@ -446,6 +445,7 @@ screen("menu") {
   drawRow("Chapters", 128, state.menuSelected == 1)
   drawRow("Library", 180, state.menuSelected == 2)
   drawRow("Exit", 232, state.menuSelected == 3)
+  service.display.refreshMode("fast1bpp")
   debug.print("menu", state.selectedBookName, state.pageIndex, state.menuSelected)
 }
 
@@ -493,7 +493,6 @@ screen("reader") {
 
 screen("chapters") {
   service.display.clear("white")
-  service.display.refreshMode("full")
   service.display.text("Chapters", {
     x: 24
     y: 28
@@ -538,4 +537,5 @@ screen("chapters") {
       }
     }
   }
+  service.display.refreshMode("fast1bpp")
 }

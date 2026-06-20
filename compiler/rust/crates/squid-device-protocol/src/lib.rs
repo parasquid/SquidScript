@@ -68,6 +68,7 @@ pub enum Opcode {
     RuntimeCapGet = 82,
     RuntimeCapSet = 83,
     RuntimeCapClear = 84,
+    DisplayWindowProbe = 85,
     ContentInstallBegin = 88,
     ContentInstallChunk = 89,
     ContentInstallCommit = 90,
@@ -106,6 +107,7 @@ impl Opcode {
             "runtimecapget" => Ok(Self::RuntimeCapGet),
             "runtimecapset" => Ok(Self::RuntimeCapSet),
             "runtimecapclear" => Ok(Self::RuntimeCapClear),
+            "displaywindowprobe" => Ok(Self::DisplayWindowProbe),
             "contentinstallbegin" => Ok(Self::ContentInstallBegin),
             "contentinstallchunk" => Ok(Self::ContentInstallChunk),
             "contentinstallcommit" => Ok(Self::ContentInstallCommit),
@@ -148,6 +150,7 @@ impl TryFrom<u8> for Opcode {
             82 => Ok(Self::RuntimeCapGet),
             83 => Ok(Self::RuntimeCapSet),
             84 => Ok(Self::RuntimeCapClear),
+            85 => Ok(Self::DisplayWindowProbe),
             88 => Ok(Self::ContentInstallBegin),
             89 => Ok(Self::ContentInstallChunk),
             90 => Ok(Self::ContentInstallCommit),
@@ -1145,6 +1148,15 @@ pub fn runtime_cap_clear_request(sequence: u32, key: Option<&str>) -> Frame {
         .map(|key| vec![Field::string(1, key)])
         .unwrap_or_default();
     Frame::request(Opcode::RuntimeCapClear, sequence, fields)
+}
+
+#[cfg(feature = "alloc")]
+pub fn display_window_probe_request(sequence: u32, pattern: impl Into<String>) -> Frame {
+    Frame::request(
+        Opcode::DisplayWindowProbe,
+        sequence,
+        vec![Field::string(1, pattern)],
+    )
 }
 
 #[cfg(feature = "alloc")]
@@ -2422,7 +2434,8 @@ fn parse_hex_bytes(value: &str) -> Result<Vec<u8>, String> {
 mod tests {
     use super::{
         app_install_chunk_request_with_ack, content_check_request, content_check_result,
-        hello_identity, Field, FieldValue, Frame, Opcode, Status, TransferCapabilities,
+        display_window_probe_request, hello_identity, Field, FieldValue, Frame, Opcode, Status,
+        TransferCapabilities,
     };
 
     #[test]
@@ -2495,5 +2508,13 @@ mod tests {
         let wrong_opcode =
             Frame::response(Opcode::ContentInstallCommit, Status::Ok, 91, Vec::new());
         assert!(content_check_result(&wrong_opcode).is_none());
+    }
+
+    #[test]
+    fn display_window_probe_request_carries_pattern_name() {
+        let request = display_window_probe_request(85, "corners");
+
+        assert_eq!(request.opcode, Opcode::DisplayWindowProbe);
+        assert_eq!(request.fields, vec![Field::string(1, "corners")]);
     }
 }

@@ -18,6 +18,7 @@
 #include "protocol.h"
 #include "sq_errno.h"
 #include "squidvm_ffi.h"
+#include "vm_runtime_display_backend.h"
 #include "xteink_x4_button_probe.h"
 
 BUILD_ASSERT(sizeof(struct sq_app_registry_entry) == sizeof(SqdpAppListEntry));
@@ -53,6 +54,10 @@ enum sq_resources_request_field {
 enum sq_runtime_cap_request_field {
 	SQ_RUNTIME_CAP_FIELD_KEY = 1,
 	SQ_RUNTIME_CAP_FIELD_VALUE = 2,
+};
+
+enum sq_display_window_probe_request_field {
+	SQ_DISPLAY_WINDOW_PROBE_FIELD_PATTERN = 1,
 };
 
 struct sq_runtime_cap_request {
@@ -3384,6 +3389,71 @@ static int __noinline errors_response(const struct sq_protocol_request *request,
 					      response_cap, response_len);
 }
 
+static int parse_display_window_probe_pattern(const uint8_t *request_bytes, size_t request_len,
+					      char *pattern_out, size_t pattern_cap)
+{
+	const uint8_t *payload;
+	uint32_t payload_len;
+	size_t offset = 0;
+
+	if (request_bytes == NULL || pattern_out == NULL || pattern_cap == 0 ||
+	    request_len < SQ_PROTOCOL_HEADER_LEN) {
+		return -EINVAL;
+	}
+	payload_len = read_u32_le_device(&request_bytes[12]);
+	if ((size_t)payload_len > request_len - SQ_PROTOCOL_HEADER_LEN) {
+		return -EINVAL;
+	}
+	payload = &request_bytes[SQ_PROTOCOL_HEADER_LEN];
+	pattern_out[0] = '\0';
+	while (offset < payload_len) {
+		const uint8_t *field;
+		uint8_t tag;
+		uint8_t type;
+		uint16_t len;
+		size_t next_offset;
+
+		if ((size_t)payload_len - offset < 4U) {
+			return -EINVAL;
+		}
+		field = &payload[offset];
+		tag = field[0];
+		type = field[1];
+		len = (uint16_t)field[2] | ((uint16_t)field[3] << 8);
+		next_offset = offset + 4U + len;
+		if (next_offset > payload_len) {
+			return -EINVAL;
+		}
+		if (tag != SQ_DISPLAY_WINDOW_PROBE_FIELD_PATTERN ||
+		    type != SQ_DEVICE_FIELD_TYPE_STRING || len == 0U || len >= pattern_cap) {
+			return -EINVAL;
+		}
+		memcpy(pattern_out, &field[4], len);
+		pattern_out[len] = '\0';
+		offset = next_offset;
+	}
+	return pattern_out[0] == '\0' ? -EINVAL : 0;
+}
+
+static int display_window_probe(const struct sq_protocol_request *request,
+				const uint8_t *request_bytes, size_t request_len, uint8_t *response,
+				size_t response_cap, size_t *response_len)
+{
+	char pattern[32];
+	int result;
+
+	result = parse_display_window_probe_pattern(request_bytes, request_len, pattern,
+						   sizeof(pattern));
+	if (result != 0) {
+		return result;
+	}
+	result = sq_display_backend_window_probe(pattern);
+	if (result != 0) {
+		return result;
+	}
+	return ok_response(request, response, response_cap, response_len);
+}
+
 int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 				    const struct sq_device_protocol_context *context, uint8_t *response,
 				    size_t response_cap, size_t *response_len)
@@ -3507,6 +3577,10 @@ int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 	case SQ_OPCODE_RUNTIME_CAP_CLEAR:
 		result = runtime_cap_clear(&frame, request, request_len, context, response,
 					   response_cap, response_len);
+		break;
+	case SQ_OPCODE_DISPLAY_WINDOW_PROBE:
+		result = display_window_probe(&frame, request, request_len, response, response_cap,
+					      response_len);
 		break;
 	case SQ_OPCODE_EVENT_DISPATCH:
 		result = dispatch_event_request(&frame, request, request_len, context, response, response_cap,

@@ -33,6 +33,7 @@ The active foreground app has a single per-session runtime instance.
 | Output line length | 54 bytes | `SQ_VM_RUNTIME_OUTPUT_LEN` | no |
 | Drawlog record slots | 4 | `SQ_VM_RUNTIME_DRAWLOG_MAX` | yes |
 | Drawlog record length | 48 bytes | `SQ_VM_RUNTIME_DRAWLOG_LEN` | no |
+| Retained display ops per screen | 16 | `SQ_VM_RUNTIME_DISPLAY_OP_MAX` | no |
 | Retained device error slots | 8 | `SQ_VM_RUNTIME_DEVICE_ERROR_MAX` | no |
 | Device error line length | 48 bytes | `SQ_VM_RUNTIME_DEVICE_ERROR_LEN` | no |
 | Content library page entries | 8 | `SQ_VM_RUNTIME_CONTENT_LIST_MAX` | no |

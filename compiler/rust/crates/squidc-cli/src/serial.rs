@@ -11,14 +11,15 @@ use squid_device_protocol::{
     app_install_begin_request, app_install_chunk_request_with_ack, app_install_commit_request,
     app_launch_request, app_list_entries, app_list_request, content_check_request,
     content_check_result, content_install_begin_request, content_install_chunk_request_with_ack,
-    content_install_commit_request, decode_frame_from_stream, drawlog_get_request, drawlog_lines,
-    encode_frame, error_lines, errors_get_request, event_dispatch_request, hello_identity,
-    hello_request, key_request, lifecycle_get_request, lifecycle_lines, output_get_request,
-    output_lines, protocol_error, reset_request, resource_install_begin_request,
-    resource_install_chunk_request_with_ack, resource_install_commit_request, resource_values,
-    resources_get_request, resources_get_request_with_heap_reset, runtime_cap_clear_request,
-    runtime_cap_get_request, runtime_cap_lines, runtime_cap_set_request, state_bytes,
-    state_get_request, state_import_request, storage_format_request, temp_run_begin_request,
+    content_install_commit_request, decode_frame_from_stream, display_window_probe_request,
+    drawlog_get_request, drawlog_lines, encode_frame, error_lines, errors_get_request,
+    event_dispatch_request, hello_identity, hello_request, key_request, lifecycle_get_request,
+    lifecycle_lines, output_get_request, output_lines, protocol_error, reset_request,
+    resource_install_begin_request, resource_install_chunk_request_with_ack,
+    resource_install_commit_request, resource_values, resources_get_request,
+    resources_get_request_with_heap_reset, runtime_cap_clear_request, runtime_cap_get_request,
+    runtime_cap_lines, runtime_cap_set_request, state_bytes, state_get_request,
+    state_import_request, storage_format_request, temp_run_begin_request,
     temp_run_chunk_request_with_ack, temp_run_commit_request, trace_get_request, trace_lines,
     wifi_profile_set_request, AppEntry, ContentCheckResult, DecodeError, Frame, FrameKind, Status,
     TransferCapabilities, HEADER_LEN, MAGIC,
@@ -322,6 +323,11 @@ impl SerialDevice {
     pub fn send_key(&mut self, key: &str) -> Result<String, String> {
         self.send_protocol_expect_ok(&key_request(48, key))?;
         Ok(format!("key {key}\n"))
+    }
+
+    pub fn display_window_probe(&mut self, pattern: &str) -> Result<String, String> {
+        self.send_protocol_expect_ok(&display_window_probe_request(85, pattern))?;
+        Ok(format!("display window probe {pattern}\n"))
     }
 
     pub fn set_wifi_profile(

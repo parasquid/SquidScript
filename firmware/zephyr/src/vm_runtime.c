@@ -740,6 +740,7 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	if (runtime == NULL) {
 		return;
 	}
+	sq_display_backend_reset();
 	sq_vm_runtime_wifi_reset_target(runtime);
 	sq_vm_runtime_reset_vm_context(runtime);
 	memset(&runtime->job_backend, 0, sizeof(runtime->job_backend));

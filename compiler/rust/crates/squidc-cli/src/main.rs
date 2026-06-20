@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use app_id::{generated_app_id, source_app_id, source_for_compile};
+use app_id::{fnv1a, generated_app_id, source_app_id, source_for_compile};
 use clap::{error::ErrorKind, Args, Parser, Subcommand, ValueEnum};
 use compile::{compile_path_to_sqbc, compile_source_to_sqbc, compile_target_id};
 use package::{package_app_dir, read_stored_zip_entries};
@@ -155,6 +155,7 @@ enum AppCommands {
 #[derive(Subcommand, Debug)]
 enum DeviceCommands {
     Key(DeviceKeyArgs),
+    DisplayWindowProbe(DeviceDisplayWindowProbeArgs),
     ContentPut(DeviceContentPutArgs),
     ContentCheck(DeviceContentCheckArgs),
     BlePut(DeviceBlePutArgs),
@@ -275,6 +276,13 @@ struct DeviceKeyArgs {
     #[command(flatten)]
     device: DeviceOnlyOptions,
     key: String,
+}
+
+#[derive(Args, Debug)]
+struct DeviceDisplayWindowProbeArgs {
+    #[command(flatten)]
+    device: DeviceOnlyOptions,
+    pattern: String,
 }
 
 #[derive(Args, Debug)]
@@ -531,6 +539,7 @@ fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String>
         },
         Commands::Device { command } => match command {
             DeviceCommands::Key(args) => key(args, human),
+            DeviceCommands::DisplayWindowProbe(args) => display_window_probe(args, human),
             DeviceCommands::ContentPut(args) => content_put(args, human),
             DeviceCommands::ContentCheck(args) => content_check(args, human),
             DeviceCommands::BlePut(args) => device_ble_put(args, human),
@@ -1021,12 +1030,19 @@ fn app_test(args: AppTestArgs, human: bool) -> Result<Value, String> {
     let target = compile_target_id(args.target.as_deref(), args.check_target)?;
     let port = resolve_port(&args.device)?;
     let mut results = Vec::new();
-    for test in tests {
+    for (index, test) in tests.into_iter().enumerate() {
         let source = fs::read_to_string(&test.source)
             .map_err(|error| format!("failed to read {}: {error}", test.source.display()))?;
         let script = fs::read_to_string(&test.session)
             .map_err(|error| format!("failed to read {}: {error}", test.session.display()))?;
-        ReplSession::new(target.clone(), port.clone(), source, human).run_script(&script)?;
+        ReplSession::new_with_app_id(
+            target.clone(),
+            port.clone(),
+            source,
+            human,
+            app_test_session_app_id(&test.name, index),
+        )
+        .run_script(&script)?;
         if human {
             println!("app-test={} ok", test.name);
         }
@@ -1250,6 +1266,20 @@ fn key(args: DeviceKeyArgs, human: bool) -> Result<Value, String> {
     Ok(json!({
         "port": port,
         "key": args.key,
+        "response": response
+    }))
+}
+
+fn display_window_probe(args: DeviceDisplayWindowProbeArgs, human: bool) -> Result<Value, String> {
+    let port = resolve_port(&args.device)?;
+    let mut device = SerialDevice::open(&port)?;
+    let response = device.display_window_probe(&args.pattern)?;
+    if human {
+        print!("{response}");
+    }
+    Ok(json!({
+        "port": port,
+        "pattern": args.pattern,
         "response": response
     }))
 }
@@ -2547,6 +2577,7 @@ fn write_json_error(command: &str, error: String) {
 struct ReplSession {
     target: String,
     port: String,
+    session_app_id: String,
     profile: BuildProfile,
     mode: ReplMode,
     base_source: String,
@@ -2556,8 +2587,36 @@ struct ReplSession {
     last_output: String,
     last_drawlog: String,
     last_trace: String,
+    output_tail: OutputTail,
     temp_dir: PathBuf,
     echo: bool,
+}
+
+fn app_test_session_app_id(test_name: &str, index: usize) -> String {
+    format!(
+        "app-test-{:x}-{:08x}-{index:x}",
+        std::process::id(),
+        fnv1a(test_name.as_bytes())
+    )
+}
+
+fn repl_session_start_command(app_id: &str) -> [&str; 2] {
+    ["launch-app", app_id]
+}
+
+fn repl_session_format_new_output(tail: &mut OutputTail, lines: &[String]) -> String {
+    tail.next_lines(lines)
+        .into_iter()
+        .map(|line| format!("{line}\n"))
+        .collect()
+}
+
+fn repl_session_updated_output(previous: &str, next: &str) -> String {
+    if next.is_empty() {
+        previous.to_string()
+    } else {
+        next.to_string()
+    }
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -2568,11 +2627,22 @@ enum ReplMode {
 
 impl ReplSession {
     fn new(target: String, port: String, base_source: String, echo: bool) -> Self {
+        Self::new_with_app_id(target, port, base_source, echo, "repl-session".to_string())
+    }
+
+    fn new_with_app_id(
+        target: String,
+        port: String,
+        base_source: String,
+        echo: bool,
+        session_app_id: String,
+    ) -> Self {
         let state_block =
             extract_state_block(&base_source).unwrap_or_else(|| "state {}\n".to_string());
         Self {
             target,
             port,
+            session_app_id,
             profile: BuildProfile::Dev,
             mode: ReplMode::Event,
             base_source,
@@ -2582,6 +2652,7 @@ impl ReplSession {
             last_output: String::new(),
             last_drawlog: String::new(),
             last_trace: String::new(),
+            output_tail: OutputTail::new(),
             temp_dir: PathBuf::from("target/repl"),
             echo,
         }
@@ -2645,7 +2716,8 @@ impl ReplSession {
             }
             ":output" => {
                 self.flush_snippet()?;
-                self.last_output = self.serial_text(&["output"])?;
+                let output = self.output_text()?;
+                self.last_output = repl_session_updated_output(&self.last_output, &output);
                 Ok(())
             }
             ":drawlog" => {
@@ -2662,11 +2734,13 @@ impl ReplSession {
                 self.flush_snippet()?;
                 let key = parts.next().ok_or_else(|| "missing key".to_string())?;
                 self.serial_text(&["key", key])?;
+                self.last_output = self.output_text()?;
                 Ok(())
             }
             ":reset" => {
                 self.flush_snippet()?;
                 self.serial_text(&["reset"])?;
+                self.output_tail = OutputTail::new();
                 Ok(())
             }
             ":reload" => {
@@ -2713,19 +2787,20 @@ impl ReplSession {
         fs::write(&state_path, state_payload(&state_before))
             .map_err(|error| format!("failed to write {}: {error}", state_path.display()))?;
 
-        self.serial_text(&["install-app", "repl-session", path_str(&sqbc_path)?])?;
-        self.serial_text(&["run-app-event", "repl-session", "app.start"])?;
+        self.serial_text(&["install-app", &self.session_app_id, path_str(&sqbc_path)?])?;
+        self.discard_output()?;
+        self.serial_text(&repl_session_start_command(&self.session_app_id))?;
         if fs::metadata(&state_path).map(|m| m.len()).unwrap_or(0) > 0 {
             self.serial_text(&["state-import", path_str(&state_path)?])?;
         }
 
         match self.mode {
             ReplMode::Event => {
-                self.serial_text(&["run-app-event", "repl-session", "repl"])?;
-                self.last_output = self.serial_text(&["output"])?;
+                self.serial_text(&["run-app-event", &self.session_app_id, "repl"])?;
+                self.last_output = self.output_text()?;
             }
             ReplMode::Render => {
-                self.serial_text(&["run-app-event", "repl-session", "app.start"])?;
+                self.serial_text(&["run-app-event", &self.session_app_id, "app.start"])?;
                 self.last_drawlog = self.serial_text(&["drawlog"])?;
             }
         }
@@ -2745,9 +2820,10 @@ impl ReplSession {
         fs::write(&sqbc_path, sqbc)
             .map_err(|error| format!("failed to write {}: {error}", sqbc_path.display()))?;
 
-        self.serial_text(&["install-app", "repl-session", path_str(&sqbc_path)?])?;
-        self.serial_text(&["run-app-event", "repl-session", "app.start"])?;
-        self.last_output = self.serial_text(&["output"])?;
+        self.serial_text(&["install-app", &self.session_app_id, path_str(&sqbc_path)?])?;
+        self.discard_output()?;
+        self.serial_text(&repl_session_start_command(&self.session_app_id))?;
+        self.last_output = self.output_text()?;
         self.last_drawlog = self.serial_text(&["drawlog"])?;
         self.last_state = self.serial_text(&["state"])?;
         Ok(())
@@ -2755,7 +2831,8 @@ impl ReplSession {
 
     fn generated_source_with_state(&self, state_output: &str) -> String {
         let mut source = format!(
-            "app \"repl-session\"\n\n{}",
+            "app \"{}\"\n\n{}",
+            self.session_app_id,
             state_block_with_values(&self.state_block, state_output)
         );
         match self.mode {
@@ -2783,6 +2860,7 @@ impl ReplSession {
                     fs::read(path).map_err(|error| format!("failed to read {path}: {error}"))?;
                 device.install_app(app_id, &bytes)?
             }
+            ["launch-app", app_id] => device.run_app(app_id)?,
             ["run-app-event", app_id, event] => device.run_app_event(app_id, event)?,
             ["state-import", path] => {
                 let bytes =
@@ -2806,6 +2884,23 @@ impl ReplSession {
             print!("{output}");
         }
         Ok(output)
+    }
+
+    fn output_text(&mut self) -> Result<String, String> {
+        let mut device = SerialDevice::open(&self.port)?;
+        let lines = device.output_lines()?;
+        let output = repl_session_format_new_output(&mut self.output_tail, &lines);
+        if self.echo {
+            print!("{output}");
+        }
+        Ok(output)
+    }
+
+    fn discard_output(&mut self) -> Result<(), String> {
+        let mut device = SerialDevice::open(&self.port)?;
+        let lines = device.output_lines()?;
+        let _ = repl_session_format_new_output(&mut self.output_tail, &lines);
+        Ok(())
     }
 
     fn serial_text_allow_fail(&self, args: &[&str]) -> Result<String, String> {
@@ -3025,6 +3120,55 @@ mod tests {
     }
 
     #[test]
+    fn repl_session_foregrounds_installed_base_app_with_launch() {
+        assert_eq!(
+            repl_session_start_command("test-session"),
+            ["launch-app", "test-session"]
+        );
+    }
+
+    #[test]
+    fn repl_session_output_tail_ignores_prelaunch_output() {
+        let mut tail = OutputTail::new();
+        let stale = vec!["view menu 0".to_string(), "view menu 1".to_string()];
+        let _ = repl_session_format_new_output(&mut tail, &stale);
+
+        let current = vec![
+            "view menu 0".to_string(),
+            "view menu 1".to_string(),
+            "view library 0".to_string(),
+        ];
+        assert_eq!(
+            repl_session_format_new_output(&mut tail, &current),
+            "output=view library 0\n"
+        );
+    }
+
+    #[test]
+    fn app_test_session_app_id_is_unique_and_safe() {
+        let first = app_test_session_app_id("xteink/binbook-reader-selection", 0);
+        let second = app_test_session_app_id("xteink/binbook-reader-selection", 1);
+        assert_ne!(first, second);
+        assert!(first.starts_with("app-test-"));
+        assert!(first.len() < 40);
+        assert!(first
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-'));
+    }
+
+    #[test]
+    fn repl_session_preserves_last_output_when_no_new_lines_arrive() {
+        assert_eq!(
+            repl_session_updated_output("output=view library 1\n", ""),
+            "output=view library 1\n"
+        );
+        assert_eq!(
+            repl_session_updated_output("output=view library 1\n", "output=view reader 0\n"),
+            "output=view reader 0\n"
+        );
+    }
+
+    #[test]
     fn parses_generic_content_put_and_check_commands() {
         let put = Cli::try_parse_from([
             "squidc",
@@ -3084,6 +3228,19 @@ mod tests {
         assert_eq!(ble_args.device, "SquidScript-X4");
         assert_eq!(ble_args.input, PathBuf::from("target/transfer-smoke.dat"));
         assert_eq!(ble_args.name.as_deref(), Some("transfer-smoke.dat"));
+    }
+
+    #[test]
+    fn parses_display_window_probe_command() {
+        let cli =
+            Cli::try_parse_from(["squidc", "device", "display-window-probe", "corners"]).unwrap();
+        let Commands::Device {
+            command: DeviceCommands::DisplayWindowProbe(args),
+        } = cli.command
+        else {
+            panic!("expected device display-window-probe");
+        };
+        assert_eq!(args.pattern, "corners");
     }
 
     #[test]

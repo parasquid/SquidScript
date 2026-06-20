@@ -107,6 +107,9 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
         self.assertIn("device content-put", script)
         self.assertIn("generate-test-binbook.py", script)
         self.assertIn("run_key() {", script)
+        self.assertIn('timeout "${COMMAND_TIMEOUT_SECONDS}s" cargo run --quiet -p squidc -- device key', script)
+        self.assertIn('grep -Fq "busy (-16)"', script)
+        self.assertIn("return 0", script)
         self.assertIn("run_key library-down DOWN", script)
         self.assertIn("run_key open-selected SELECT", script)
         self.assertIn("run_key open-menu BACK", script)
@@ -116,6 +119,8 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
         self.assertIn("device errors", script)
         self.assertIn("draw=binbook", script)
         self.assertIn("mode=full", script)
+        self.assertIn("drawlog-selection", script)
+        self.assertIn("mode=fast1bpp", script)
         self.assertIn("proto_stack_unused_bytes", script)
         self.assertIn("vm_stack_unused_bytes", script)
 

@@ -1,4 +1,5 @@
-:launch
+:reset
+:reload
 :expect-output view library 0
 :key SELECT
 :expect-output view reader 0

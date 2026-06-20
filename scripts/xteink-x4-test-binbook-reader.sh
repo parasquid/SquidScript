@@ -91,6 +91,21 @@ assert_file_empty_command() {
 }
 
 wait_for_contains() {
+  local out
+  if out="$(try_wait_for_contains "$@")"; then
+    printf '%s\n' "${out}"
+    return 0
+  fi
+  local label="$1"
+  local expected="$2"
+  local file="${WORK_DIR}/${label}.out"
+  printf 'Timed out waiting for %s\n' "${expected}" >&2
+  printf '%s\n' "--- ${file} ---" >&2
+  sed -n '1,200p' "${file}" >&2
+  exit 1
+}
+
+try_wait_for_contains() {
   local label="$1"
   local expected="$2"
   shift 2
@@ -104,10 +119,7 @@ wait_for_contains() {
     fi
     sleep 0.2
   done
-  printf 'Timed out waiting for %s\n' "${expected}" >&2
-  printf '%s\n' "--- ${out} ---" >&2
-  sed -n '1,200p' "${out}" >&2
-  exit 1
+  return 1
 }
 
 run_key() {
@@ -117,12 +129,12 @@ run_key() {
   for attempt in $(seq 1 20); do
     printf '%s: cargo run --quiet -p squidc -- device key %s --port %s\n' \
       "${HARDWARE_COMMAND_LABEL}" "${key}" "${PORT}" >&2
-    if timeout 20s cargo run --quiet -p squidc -- device key "${key}" --port "${PORT}" >"${out}" 2>&1; then
+    if timeout "${COMMAND_TIMEOUT_SECONDS}s" cargo run --quiet -p squidc -- device key "${key}" --port "${PORT}" >"${out}" 2>&1; then
       return 0
     fi
     if grep -Fq "busy (-16)" "${out}"; then
       sleep 2
-      continue
+      return 0
     fi
     printf 'Command failed while sending key %s\n' "${key}" >&2
     printf '%s\n' "--- ${out} ---" >&2
@@ -133,6 +145,25 @@ run_key() {
   printf 'Timed out sending key %s after retries\n' "${key}" >&2
   printf '%s\n' "--- ${out} ---" >&2
   sed -n '1,200p' "${out}" >&2
+  capture_device_diagnostics "${label}-failure"
+  exit 1
+}
+
+press_key_until_output() {
+  local label="$1"
+  local key="$2"
+  local expected="$3"
+  local out
+  for attempt in $(seq 1 8); do
+    run_key "${label}-${attempt}" "${key}"
+    if out="$(try_wait_for_contains "output-${label}-${attempt}" "${expected}" cargo run --quiet -p squidc -- device output --port "${PORT}")"; then
+      printf '%s\n' "${out}"
+      return 0
+    fi
+  done
+  printf 'Timed out sending key %s for expected output %s\n' "${key}" "${expected}" >&2
+  printf '%s\n' "--- ${WORK_DIR}/output-${label}-8.out ---" >&2
+  sed -n '1,200p' "${WORK_DIR}/output-${label}-8.out" >&2
   capture_device_diagnostics "${label}-failure"
   exit 1
 }
@@ -214,10 +245,11 @@ assert_file_contains "${reader_drawlog_out}" "mode=full"
 run_key open-menu BACK
 menu_out="$(wait_for_contains output-menu "menu ${BOOK_TWO_NAME}" cargo run --quiet -p squidc -- device output --port "${PORT}")"
 assert_file_contains "${menu_out}" "${BOOK_TWO_NAME}"
-run_key menu-down-1 DOWN
-run_key menu-down-2 DOWN
-run_key menu-library SELECT
-library_again_out="$(wait_for_contains output-library-again "library" cargo run --quiet -p squidc -- device output --port "${PORT}")"
+press_key_until_output menu-down-1 DOWN "menu ${BOOK_TWO_NAME} 1 1" >/dev/null
+press_key_until_output menu-down-2 DOWN "menu ${BOOK_TWO_NAME} 1 2" >/dev/null
+selection_drawlog_out="$(run_capture drawlog-selection cargo run --quiet -p squidc -- device drawlog --port "${PORT}")"
+assert_file_contains "${selection_drawlog_out}" "draw=refresh mode=fast1bpp"
+library_again_out="$(press_key_until_output menu-library SELECT "library")"
 assert_file_contains "${library_again_out}" "library"
 
 run_capture reset-from-library cargo run --quiet -p squidc -- device reset --port "${PORT}" >/dev/null

@@ -96,6 +96,7 @@ void runtime_display_text(void *user_data, const uint8_t *text, size_t text_len,
 
 void runtime_display_rect(void *user_data, const SqvmDisplayRectOptions *options)
 {
+	struct sq_vm_runtime *runtime = user_data;
 	char line[SQ_VM_RUNTIME_DRAWLOG_LEN];
 
 	if (options == NULL) {
@@ -104,7 +105,19 @@ void runtime_display_rect(void *user_data, const SqvmDisplayRectOptions *options
 	int written = snprintf(line, sizeof(line), "draw=rect x=%d y=%d w=%d h=%d", options->x,
 			       options->y, options->w, options->h);
 	if (written > 0) {
-		(void)sq_vm_runtime_record_drawlog(user_data, line);
+		(void)sq_vm_runtime_record_drawlog(runtime, line);
+	}
+	struct sq_vm_runtime_display_op *op = runtime_display_append_op(runtime);
+	if (op != NULL) {
+		op->kind = SQ_VM_RUNTIME_DISPLAY_OP_RECT;
+		op->x = options->x;
+		op->y = options->y;
+		op->w = options->w;
+		op->h = options->h;
+		runtime_display_copy_text(op->fill_color, sizeof(op->fill_color),
+					  options->fill_color, options->fill_color_len);
+		runtime_display_copy_text(op->stroke_color, sizeof(op->stroke_color),
+					  options->stroke_color, options->stroke_color_len);
 	}
 }
 

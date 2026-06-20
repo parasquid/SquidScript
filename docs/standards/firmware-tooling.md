@@ -60,6 +60,28 @@ Discipline"; read both when doing firmware or hardware work.
   errors unrelated to the source.
 - Dry-run new scripts before calling them ready: run `bash -n`, verify required tools and Rust targets, check wrapped command help where practical, and confirm wrapper scripts forward user-supplied arguments.
 
+## Reproduction And Visual Verification
+
+- Hardware scripts that drive an end-to-end flow (for example
+  `scripts/xteink-x4-test-binbook-reader.sh`) double as reproduction harnesses:
+  they leave the device in a known screen state at the end of the run, which is
+  suitable for asking the user to inspect the panel visually.
+- A script's serial assertions (`draw=...` lines, `device output`, `device
+  errors`, `device resources`) are a *serial gate*. A passing serial gate does
+  not imply a clean panel: optical bugs such as ghosting, half-screen splits, or
+  stale regions only surface under visual inspection.
+- When reproducing an optical bug, run the relevant script, confirm the serial
+  gate still passes, then ask the user present at the device to describe what is
+  on the panel. Treat the visual report as a separate gate from the serial
+  assertions.
+- Capture `device drawlog` immediately after the user reports the visual state
+  and before driving further input. The drawlog shows the ops that produced the
+  visible frame and is the primary evidence for compositor and refresh bugs.
+- After the run, the captured `.out` files under
+  `target/hardware-tests/<script-name>/` are durable diagnostic artifacts;
+  read them instead of re-running the script when investigating a reported
+  optical regression from the same session.
+
 ## Hardware Target Tests
 
 - Hardware target tests are listed in `docs/hardware_target_tests.md`; use that inventory to identify real-device tests before running them.
