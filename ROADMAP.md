@@ -51,9 +51,21 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Display And Output
 
-- Design a fast BinBook reader highlight refresh path that keeps enough
-  previous-frame state to update selection/highlight changes without
-  full-refresh flashing or ghosting, and verify it on XTEINK hardware.
+- Validate the XTEINK BinBook reader fast highlight refresh path interactively
+  on hardware: move library/menu/chapter highlights repeatedly and confirm the
+  SSD1677 fast partial path avoids full-refresh flashing and unacceptable
+  ghosting.
+- Add a grid-cursor example app (`examples/grid-cursor/`) that renders a 5×5
+  grid of cells, each containing a distinct shape (filled rect, outlined rect,
+  cross pattern, diagonal lines, text glyph). A cursor highlights one cell at a
+  time by inverting its colors; UP/DOWN/LEFT/RIGHT moves the cursor. Uses
+  `fast1bpp` refresh so each cursor move exercises the SSD1677 differential
+  partial path. This isolates refresh correctness (ghost clearing, shape
+  restoration after cursor passes, no mangling) in a minimal visible test case
+  separate from the BinBook reader's complexity, and doubles as a user-facing
+  example. The hardware test script includes a mid-run device reset and
+  relaunch to verify the lifecycle reset (first post-reset refresh is full
+  seed, no stale differential).
 - Add a GRAY2-aware streaming display compositor for
   `service.display.clear/text/rect/line` on SSD1677 targets, preserving
   source-order composition without a full-screen 2bpp framebuffer.

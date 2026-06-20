@@ -91,6 +91,8 @@ void runtime_display_text(void *user_data, const uint8_t *text, size_t text_len,
 		op->x = options->x;
 		op->y = options->y;
 		op->font_height = options->font_height;
+		runtime_display_copy_text(op->fill_color, sizeof(op->fill_color),
+					  options->text_color, options->text_color_len);
 	}
 }
 

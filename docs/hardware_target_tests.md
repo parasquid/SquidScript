@@ -184,6 +184,17 @@ available. This proves the promoted reader app can select uploaded
 content-library books and resumes only when the saved foreground view was the
 reader.
 
+`scripts/xteink-x4-test-grid-cursor.sh` is the XTEINK grid cursor hardware
+check. It flashes the XTEINK firmware unless `--skip-flash` is passed, formats
+app storage, installs `examples/grid-cursor`, drives the cursor through all
+four directions (UP/DOWN/LEFT/RIGHT) with serial `device key` events, and
+verifies `device drawlog` contains `draw=refresh mode=fast1bpp`. A mid-run
+`device reset` and app relaunch verifies the lifecycle reset: the first
+post-reset refresh is a full seed with no stale differential. The script also
+asserts `device errors` is empty and resource metrics are available. This
+isolates the SSD1677 fast differential refresh in a minimal visible test case
+separate from the BinBook reader's complexity.
+
 `scripts/xteink-x4-test-transfer-regression.sh` is the XTEINK X4 transfer regression
 suite for upload speed and data-integrity work. It runs the serial, HTTP, and
 BLE transfer checks sequentially against the same physical target. Each check

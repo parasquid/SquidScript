@@ -124,6 +124,30 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
         self.assertIn("proto_stack_unused_bytes", script)
         self.assertIn("vm_stack_unused_bytes", script)
 
+    def test_xteink_grid_cursor_script_drives_cursor_and_lifecycle_reset(self):
+        script = self.read("scripts/xteink-x4-test-grid-cursor.sh")
+        app = self.read("examples/grid-cursor/main.squid")
+
+        self.assertIn("app package", script)
+        self.assertIn("run_key() {", script)
+        self.assertIn("run_key cursor-down DOWN", script)
+        self.assertIn("run_key cursor-right RIGHT", script)
+        self.assertIn("run_key cursor-up UP", script)
+        self.assertIn("run_key cursor-left LEFT", script)
+        self.assertIn("device reset", script)
+        self.assertIn("device drawlog", script)
+        self.assertIn("device errors", script)
+        self.assertIn("mode=fast1bpp", script)
+        self.assertIn("drawlog-after-reset", script)
+        self.assertIn("proto_stack_unused_bytes", script)
+        self.assertIn("vm_stack_unused_bytes", script)
+        self.assertNotIn("&&", app)
+        self.assertNotIn('80, 80, { strokeColor: "black" }', app)
+        self.assertIn('service.display.text("X:"', app)
+        self.assertIn('service.display.text(state.cursorCol', app)
+        self.assertIn('service.display.text("Y:"', app)
+        self.assertIn('service.display.text(state.cursorRow', app)
+
     def test_generated_binbook_fixture_uses_firmware_section_layout(self):
         with tempfile.TemporaryDirectory() as temp:
             out = Path(temp) / "sample.binbook"

@@ -889,6 +889,8 @@ static int stream_binbook_gray2_bw_previous_page(bool ordered_dither)
 static void draw_text_row(uint8_t line[ROW_BYTES], uint16_t y,
 			  const struct sq_vm_runtime_display_op *op)
 {
+	bool text_black = op->fill_color[0] == '\0' || ssd1677_color_is_black(op->fill_color);
+
 	if (op->kind != SQ_VM_RUNTIME_DISPLAY_OP_TEXT || op->font_height <= 0 ||
 	    op->x >= LOGICAL_WIDTH || op->y >= LOGICAL_HEIGHT) {
 		return;
@@ -920,7 +922,7 @@ static void draw_text_row(uint8_t line[ROW_BYTES], uint16_t y,
 						if (logical_to_physical(logical_x, logical_y,
 									&physical_x, &physical_y) &&
 						    physical_y == y) {
-							set_black_pixel(line, physical_x);
+							set_pixel(line, physical_x, text_black);
 						}
 					}
 				}
@@ -964,24 +966,71 @@ static void draw_rect_row(uint8_t line[ROW_BYTES], uint16_t y,
 	if (left >= right || top >= bottom) {
 		return;
 	}
-	for (int32_t logical_y = top; logical_y < bottom; ++logical_y) {
-		bool stroke_row = logical_y == op->y || logical_y == op->y + op->h - 1;
 
-		for (int32_t logical_x = left; logical_x < right; ++logical_x) {
-			bool stroke_col = logical_x == op->x || logical_x == op->x + op->w - 1;
-			uint16_t physical_x = 0;
-			uint16_t physical_y = 0;
+	uint16_t px0 = 0;
+	uint16_t px1 = 0;
+	bool is_edge_row = false;
+	uint16_t edge_col_a = 0;
+	uint16_t edge_col_b = 0;
 
-			if (!logical_to_physical((uint16_t)logical_x, (uint16_t)logical_y,
-						 &physical_x, &physical_y) ||
-			    physical_y != y) {
-				continue;
-			}
-			if (has_stroke && (stroke_row || stroke_col)) {
-				set_pixel(line, physical_x, stroke_black);
-			} else if (has_fill) {
-				set_pixel(line, physical_x, fill_black);
-			}
+	switch (LOGICAL_ROTATION) {
+	case 0:
+		if (y < (uint16_t)top || y >= (uint16_t)bottom) {
+			return;
+		}
+		px0 = (uint16_t)left;
+		px1 = (uint16_t)(right - 1);
+		is_edge_row = (y == (uint16_t)top || y == (uint16_t)(bottom - 1));
+		edge_col_a = (uint16_t)left;
+		edge_col_b = (uint16_t)(right - 1);
+		break;
+	case 90:
+		if (y < (uint16_t)(LOGICAL_WIDTH - right) ||
+		    y > (uint16_t)(LOGICAL_WIDTH - 1 - left)) {
+			return;
+		}
+		px0 = (uint16_t)top;
+		px1 = (uint16_t)(bottom - 1);
+		is_edge_row = (y == (uint16_t)(LOGICAL_WIDTH - right) ||
+			       y == (uint16_t)(LOGICAL_WIDTH - 1 - left));
+		edge_col_a = (uint16_t)top;
+		edge_col_b = (uint16_t)(bottom - 1);
+		break;
+	case 180:
+		if (y < (uint16_t)(LOGICAL_HEIGHT - bottom) ||
+		    y > (uint16_t)(LOGICAL_HEIGHT - 1 - top)) {
+			return;
+		}
+		px0 = (uint16_t)(LOGICAL_WIDTH - right);
+		px1 = (uint16_t)(LOGICAL_WIDTH - 1 - left);
+		is_edge_row = (y == (uint16_t)(LOGICAL_HEIGHT - bottom) ||
+			       y == (uint16_t)(LOGICAL_HEIGHT - 1 - top));
+		edge_col_a = (uint16_t)(LOGICAL_WIDTH - right);
+		edge_col_b = (uint16_t)(LOGICAL_WIDTH - 1 - left);
+		break;
+	case 270:
+		if (y < (uint16_t)left || y >= (uint16_t)right) {
+			return;
+		}
+		px0 = (uint16_t)(LOGICAL_HEIGHT - bottom);
+		px1 = (uint16_t)(LOGICAL_HEIGHT - 1 - top);
+		is_edge_row = (y == (uint16_t)left || y == (uint16_t)(right - 1));
+		edge_col_a = (uint16_t)(LOGICAL_HEIGHT - bottom);
+		edge_col_b = (uint16_t)(LOGICAL_HEIGHT - 1 - top);
+		break;
+	default:
+		return;
+	}
+
+	for (uint16_t px = px0;; ++px) {
+		bool is_edge_col = (px == edge_col_a || px == edge_col_b);
+		if (has_stroke && (is_edge_row || is_edge_col)) {
+			set_pixel(line, px, stroke_black);
+		} else if (has_fill) {
+			set_pixel(line, px, fill_black);
+		}
+		if (px == px1) {
+			break;
 		}
 	}
 }
@@ -1019,50 +1068,6 @@ static int stream_composed_1bpp_frame(uint8_t command,
 	for (uint16_t y = 0; y < PANEL_HEIGHT; ++y) {
 		render_row(row, y, ops, op_count);
 		ret = write_data(row, sizeof(row));
-		if (ret != 0) {
-			return ret;
-		}
-	}
-	return 0;
-}
-
-static int stream_composed_1bpp_window(uint8_t command,
-				       const struct sq_vm_runtime_display_op *ops,
-				       size_t op_count,
-				       const struct sq_ssd1677_window *window)
-{
-	uint16_t ram_x0;
-	uint16_t ram_x1;
-	size_t byte_offset;
-	size_t byte_len;
-	int ret;
-
-	if (window == NULL || !window->valid || window->x0 >= PANEL_WIDTH ||
-	    window->x1 >= PANEL_WIDTH || window->y0 >= PANEL_HEIGHT || window->y1 >= PANEL_HEIGHT ||
-	    window->x0 > window->x1 || window->y0 > window->y1) {
-		return -EINVAL;
-	}
-	ram_x0 = (uint16_t)(PANEL_WIDTH - 1U - window->x1);
-	ram_x1 = (uint16_t)(PANEL_WIDTH - 1U - window->x0);
-	if ((ram_x0 % 8U) != 0U || (ram_x1 % 8U) != 7U) {
-		return -EINVAL;
-	}
-	byte_offset = ram_x0 / 8U;
-	byte_len = (ram_x1 / 8U) - byte_offset + 1U;
-	if (byte_offset >= ROW_BYTES || byte_len == 0U || byte_offset + byte_len > ROW_BYTES) {
-		return -EINVAL;
-	}
-	ret = set_window(ram_x0, window->y0, ram_x1, window->y1);
-	if (ret != 0) {
-		return ret;
-	}
-	ret = write_command(command);
-	if (ret != 0) {
-		return ret;
-	}
-	for (uint16_t y = window->y0; y <= window->y1; ++y) {
-		render_row(row, y, ops, op_count);
-		ret = write_data(&row[byte_offset], byte_len);
 		if (ret != 0) {
 			return ret;
 		}
@@ -1443,21 +1448,12 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 		composed_refresh = sq_ssd1677_composed_refresh_decide(&composed_refresh_state,
 								      refresh_request);
 		if (composed_refresh == SQ_SSD1677_COMPOSED_REFRESH_BW_DIFFERENTIAL_PARTIAL) {
-			struct sq_ssd1677_window window = {0};
-
-			if (!sq_ssd1677_composed_dirty_window(
-				    previous_composed_ops, previous_composed_op_count, ops,
-				    op_count, LOGICAL_WIDTH, LOGICAL_HEIGHT, PANEL_WIDTH,
-				    PANEL_HEIGHT, LOGICAL_ROTATION, &window)) {
-				composed_refresh = SQ_SSD1677_COMPOSED_REFRESH_FULL_SEED;
-			} else {
-				ret = stream_composed_1bpp_frame(SSD1677_CMD_WRITE_RED_RAM,
-								  previous_composed_ops,
-								  previous_composed_op_count);
-				if (ret == 0) {
-					ret = stream_composed_1bpp_frame(SSD1677_CMD_WRITE_RAM,
-									  ops, op_count);
-				}
+			ret = stream_composed_1bpp_frame(SSD1677_CMD_WRITE_RED_RAM,
+							  previous_composed_ops,
+							  previous_composed_op_count);
+			if (ret == 0) {
+				ret = stream_composed_1bpp_frame(SSD1677_CMD_WRITE_RAM, ops,
+								  op_count);
 			}
 		}
 		if (composed_refresh == SQ_SSD1677_COMPOSED_REFRESH_FULL_SEED) {

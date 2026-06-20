@@ -6060,6 +6060,8 @@ ZTEST(squidscript_protocol, test_vm_runtime_records_physical_display_clear_and_t
 		.x = 10,
 		.y = 20,
 		.font_height = 24,
+		.text_color = (const uint8_t *)"white",
+		.text_color_len = strlen("white"),
 	};
 
 	memset(&runtime, 0, sizeof(runtime));
@@ -6079,6 +6081,7 @@ ZTEST(squidscript_protocol, test_vm_runtime_records_physical_display_clear_and_t
 	zassert_equal(runtime.display_ops[1].x, 10);
 	zassert_equal(runtime.display_ops[1].y, 20);
 	zassert_equal(runtime.display_ops[1].font_height, 24);
+	zassert_str_equal(runtime.display_ops[1].fill_color, "white");
 }
 
 ZTEST(squidscript_protocol, test_vm_runtime_records_physical_display_rect_ops)

@@ -1,0 +1,17 @@
+:reset
+:reload
+:expect-output cursor 0 0
+:key DOWN
+:expect-output cursor 1 0
+:key RIGHT
+:expect-output cursor 1 1
+:key UP
+:expect-output cursor 0 1
+:key LEFT
+:expect-output cursor 0 0
+:reset
+:reload
+:output
+:expect-output cursor 0 0
+:key DOWN
+:expect-output cursor 1 0

@@ -1,0 +1,49 @@
+app "grid-cursor-test"
+
+state {
+  cursorRow: int = 0
+  cursorCol: int = 0
+}
+
+event.on("app.start") {
+  state.load()
+  screen.open("grid")
+}
+
+event.on("key.UP") {
+  if (state.cursorRow > 0) {
+    state.cursorRow = state.cursorRow - 1
+    state.save()
+    screen.refresh()
+  }
+}
+
+event.on("key.DOWN") {
+  if (state.cursorRow < 4) {
+    state.cursorRow = state.cursorRow + 1
+    state.save()
+    screen.refresh()
+  }
+}
+
+event.on("key.LEFT") {
+  if (state.cursorCol > 0) {
+    state.cursorCol = state.cursorCol - 1
+    state.save()
+    screen.refresh()
+  }
+}
+
+event.on("key.RIGHT") {
+  if (state.cursorCol < 4) {
+    state.cursorCol = state.cursorCol + 1
+    state.save()
+    screen.refresh()
+  }
+}
+
+screen("grid") {
+  service.display.clear("white")
+  service.display.refreshMode("fast1bpp")
+  debug.print("cursor", state.cursorRow, state.cursorCol)
+}

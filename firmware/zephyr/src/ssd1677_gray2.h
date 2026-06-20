@@ -54,5 +54,4 @@ bool sq_ssd1677_composed_dirty_window(
 	const struct sq_vm_runtime_display_op *current_ops, size_t current_op_count,
 	uint16_t logical_width, uint16_t logical_height, uint16_t physical_width,
 	uint16_t physical_height, uint16_t rotation, struct sq_ssd1677_window *out);
-
 #endif

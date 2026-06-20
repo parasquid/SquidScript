@@ -1,0 +1,262 @@
+app "grid-cursor"
+
+state {
+  cursorRow: int = 0
+  cursorCol: int = 0
+}
+
+event.on("app.start") {
+  state.load()
+  screen.open("grid")
+}
+
+event.on("key.UP") {
+  if (state.cursorRow > 0) {
+    state.cursorRow = state.cursorRow - 1
+    state.save()
+    screen.refresh()
+  }
+}
+
+event.on("key.DOWN") {
+  if (state.cursorRow < 4) {
+    state.cursorRow = state.cursorRow + 1
+    state.save()
+    screen.refresh()
+  }
+}
+
+event.on("key.LEFT") {
+  if (state.cursorCol > 0) {
+    state.cursorCol = state.cursorCol - 1
+    state.save()
+    screen.refresh()
+  }
+}
+
+event.on("key.RIGHT") {
+  if (state.cursorCol < 4) {
+    state.cursorCol = state.cursorCol + 1
+    state.save()
+    screen.refresh()
+  }
+}
+
+event.on("key.BACK") {
+  app.exit()
+}
+
+function isSelected(row, col) {
+  if (state.cursorRow == row) {
+    if (state.cursorCol == col) {
+      return true
+    }
+  }
+  return false
+}
+
+function drawRow0() {
+  if (isSelected(0, 0)) {
+    service.display.rect(40, 200, 80, 80, { fillColor: "black" })
+    service.display.rect(48, 208, 64, 64, { fillColor: "white" })
+  }
+  else {
+    service.display.rect(48, 208, 64, 64, { fillColor: "gray15" })
+  }
+  if (isSelected(0, 1)) {
+    service.display.rect(120, 200, 80, 80, { fillColor: "black" })
+    service.display.rect(128, 208, 64, 64, { fillColor: "white" })
+  }
+  else {
+    service.display.rect(128, 208, 64, 64, { fillColor: "gray15" })
+  }
+  if (isSelected(0, 2)) {
+    service.display.rect(200, 200, 80, 80, { fillColor: "black" })
+    service.display.rect(208, 208, 64, 64, { fillColor: "white" })
+  }
+  else {
+    service.display.rect(208, 208, 64, 64, { fillColor: "gray15" })
+  }
+  if (isSelected(0, 3)) {
+    service.display.rect(280, 200, 80, 80, { fillColor: "black" })
+    service.display.rect(288, 208, 64, 64, { fillColor: "white" })
+  }
+  else {
+    service.display.rect(288, 208, 64, 64, { fillColor: "gray15" })
+  }
+  if (isSelected(0, 4)) {
+    service.display.rect(360, 200, 80, 80, { fillColor: "black" })
+    service.display.rect(368, 208, 64, 64, { fillColor: "white" })
+  }
+  else {
+    service.display.rect(368, 208, 64, 64, { fillColor: "gray15" })
+  }
+}
+
+function drawRow1() {
+  if (isSelected(1, 0)) {
+    service.display.rect(40, 280, 80, 80, { fillColor: "black" })
+    service.display.rect(44, 284, 72, 72, { strokeColor: "white" })
+  }
+  else {
+    service.display.rect(44, 284, 72, 72, { strokeColor: "gray15" })
+  }
+  if (isSelected(1, 1)) {
+    service.display.rect(120, 280, 80, 80, { fillColor: "black" })
+    service.display.rect(124, 284, 72, 72, { strokeColor: "white" })
+  }
+  else {
+    service.display.rect(124, 284, 72, 72, { strokeColor: "gray15" })
+  }
+  if (isSelected(1, 2)) {
+    service.display.rect(200, 280, 80, 80, { fillColor: "black" })
+    service.display.rect(204, 284, 72, 72, { strokeColor: "white" })
+  }
+  else {
+    service.display.rect(204, 284, 72, 72, { strokeColor: "gray15" })
+  }
+  if (isSelected(1, 3)) {
+    service.display.rect(280, 280, 80, 80, { fillColor: "black" })
+    service.display.rect(284, 284, 72, 72, { strokeColor: "white" })
+  }
+  else {
+    service.display.rect(284, 284, 72, 72, { strokeColor: "gray15" })
+  }
+  if (isSelected(1, 4)) {
+    service.display.rect(360, 280, 80, 80, { fillColor: "black" })
+    service.display.rect(364, 284, 72, 72, { strokeColor: "white" })
+  }
+  else {
+    service.display.rect(364, 284, 72, 72, { strokeColor: "gray15" })
+  }
+}
+
+function drawRow2() {
+  if (isSelected(2, 0)) {
+    service.display.rect(40, 360, 80, 80, { fillColor: "black" })
+    service.display.text("A", { x: 60, y: 376, fontHeight: 48, textColor: "white" })
+  }
+  else {
+    service.display.text("A", { x: 60, y: 376, fontHeight: 48, textColor: "gray15" })
+  }
+  if (isSelected(2, 1)) {
+    service.display.rect(120, 360, 80, 80, { fillColor: "black" })
+    service.display.text("A", { x: 140, y: 376, fontHeight: 48, textColor: "white" })
+  }
+  else {
+    service.display.text("A", { x: 140, y: 376, fontHeight: 48, textColor: "gray15" })
+  }
+  if (isSelected(2, 2)) {
+    service.display.rect(200, 360, 80, 80, { fillColor: "black" })
+    service.display.text("A", { x: 220, y: 376, fontHeight: 48, textColor: "white" })
+  }
+  else {
+    service.display.text("A", { x: 220, y: 376, fontHeight: 48, textColor: "gray15" })
+  }
+  if (isSelected(2, 3)) {
+    service.display.rect(280, 360, 80, 80, { fillColor: "black" })
+    service.display.text("A", { x: 300, y: 376, fontHeight: 48, textColor: "white" })
+  }
+  else {
+    service.display.text("A", { x: 300, y: 376, fontHeight: 48, textColor: "gray15" })
+  }
+  if (isSelected(2, 4)) {
+    service.display.rect(360, 360, 80, 80, { fillColor: "black" })
+    service.display.text("A", { x: 380, y: 376, fontHeight: 48, textColor: "white" })
+  }
+  else {
+    service.display.text("A", { x: 380, y: 376, fontHeight: 48, textColor: "gray15" })
+  }
+}
+
+function drawRow3() {
+  if (isSelected(3, 0)) {
+    service.display.rect(40, 440, 80, 80, { fillColor: "black" })
+    service.display.text("X", { x: 60, y: 456, fontHeight: 48, textColor: "white" })
+  }
+  else {
+    service.display.text("X", { x: 60, y: 456, fontHeight: 48, textColor: "gray15" })
+  }
+  if (isSelected(3, 1)) {
+    service.display.rect(120, 440, 80, 80, { fillColor: "black" })
+    service.display.text("X", { x: 140, y: 456, fontHeight: 48, textColor: "white" })
+  }
+  else {
+    service.display.text("X", { x: 140, y: 456, fontHeight: 48, textColor: "gray15" })
+  }
+  if (isSelected(3, 2)) {
+    service.display.rect(200, 440, 80, 80, { fillColor: "black" })
+    service.display.text("X", { x: 220, y: 456, fontHeight: 48, textColor: "white" })
+  }
+  else {
+    service.display.text("X", { x: 220, y: 456, fontHeight: 48, textColor: "gray15" })
+  }
+  if (isSelected(3, 3)) {
+    service.display.rect(280, 440, 80, 80, { fillColor: "black" })
+    service.display.text("X", { x: 300, y: 456, fontHeight: 48, textColor: "white" })
+  }
+  else {
+    service.display.text("X", { x: 300, y: 456, fontHeight: 48, textColor: "gray15" })
+  }
+  if (isSelected(3, 4)) {
+    service.display.rect(360, 440, 80, 80, { fillColor: "black" })
+    service.display.text("X", { x: 380, y: 456, fontHeight: 48, textColor: "white" })
+  }
+  else {
+    service.display.text("X", { x: 380, y: 456, fontHeight: 48, textColor: "gray15" })
+  }
+}
+
+function drawRow4() {
+  if (isSelected(4, 0)) {
+    service.display.rect(40, 520, 80, 80, { fillColor: "black" })
+    service.display.rect(60, 540, 40, 40, { fillColor: "white" })
+  }
+  else {
+    service.display.rect(60, 540, 40, 40, { fillColor: "gray15" })
+  }
+  if (isSelected(4, 1)) {
+    service.display.rect(120, 520, 80, 80, { fillColor: "black" })
+    service.display.rect(140, 540, 40, 40, { fillColor: "white" })
+  }
+  else {
+    service.display.rect(140, 540, 40, 40, { fillColor: "gray15" })
+  }
+  if (isSelected(4, 2)) {
+    service.display.rect(200, 520, 80, 80, { fillColor: "black" })
+    service.display.rect(220, 540, 40, 40, { fillColor: "white" })
+  }
+  else {
+    service.display.rect(220, 540, 40, 40, { fillColor: "gray15" })
+  }
+  if (isSelected(4, 3)) {
+    service.display.rect(280, 520, 80, 80, { fillColor: "black" })
+    service.display.rect(300, 540, 40, 40, { fillColor: "white" })
+  }
+  else {
+    service.display.rect(300, 540, 40, 40, { fillColor: "gray15" })
+  }
+  if (isSelected(4, 4)) {
+    service.display.rect(360, 520, 80, 80, { fillColor: "black" })
+    service.display.rect(380, 540, 40, 40, { fillColor: "white" })
+  }
+  else {
+    service.display.rect(380, 540, 40, 40, { fillColor: "gray15" })
+  }
+}
+
+screen("grid") {
+  service.display.clear("white")
+  service.display.text("Grid Cursor", { x: 24, y: 28, fontHeight: 28, textColor: "gray15" })
+  service.display.text("X:", { x: 300, y: 28, fontHeight: 28, textColor: "gray15" })
+  service.display.text(state.cursorCol, { x: 350, y: 28, fontHeight: 28, textColor: "gray15" })
+  service.display.text("Y:", { x: 390, y: 28, fontHeight: 28, textColor: "gray15" })
+  service.display.text(state.cursorRow, { x: 440, y: 28, fontHeight: 28, textColor: "gray15" })
+  drawRow0()
+  drawRow1()
+  drawRow2()
+  drawRow3()
+  drawRow4()
+  service.display.refreshMode("fast1bpp")
+  debug.print("cursor", state.cursorRow, state.cursorCol)
+}
