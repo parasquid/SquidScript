@@ -163,78 +163,78 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   inline shell-wrapper Python snippets can move to Rust over time so project
   tooling is easier to install, test, and keep consistent.
 
+## Test Hygiene
+
+- Restore the native protocol ztest suite (`scripts/zephyr-test-protocol.sh`)
+  to green. 33 pre-existing failures on `native_sim/native/64` stem from
+  `SQ_TARGET_INDICATOR_DEFAULT_HAS_GPIO=0` for the c3-super-mini native test
+  target. The indicator tests
+  (`test_indicator_pattern_state_machine_transitions`,
+  `test_device_protocol_poll_advances_running_runtime_poll`) fail in isolation
+  because `sq_vm_runtime_indicator_breathe` returns `-ENODEV` without an active
+  indicator GPIO binding, and their failure cascades into `mount_test_fs`
+  pollution for approximately 30 dependent storage/launch/lifecycle tests that
+  run after them in the suite. Fix by providing a `native_sim` indicator GPIO
+  overlay so the test target has `HAS_GPIO=1`, or by making the indicator tests
+  skip breathe/write assertions when no binding is active. The X4 hardware
+  target does not exhibit this because it has the indicator GPIO.
+
 ## ESP32-C3 RAM Hardening
 
 Current ESP32-C3 RAM baseline:
 
-- Latest observed linker DRAM from
-  `cargo run -p squidc -- target build --target esp32c3-super-mini`: 239,232
-  bytes.
-- Latest observed linker/audit DRAM from
-  `cargo run -p squidc -- target build --target xiao-esp32c3-gdeq0426t82-sd`:
-  261,008 / 260,988 bytes. The custom BLE file-transfer path keeps SquidScript-owned state
-  bounded: a small profile table, one pending event slot, and one in-flight
-  staging session. If RAM becomes tight, audit the target Bluetooth feature set
-  and connection/buffer counts before increasing firmware-owned static buffers.
-- Current target configuration: 4,864-byte protocol/main stack and
-  24,576-byte VM worker stack.
+- XTEINK X4 linker DRAM: 375,440 / 378,640 bytes (99.15%), 3,200 B headroom.
+- C3 Super Mini linker DRAM: 239,232 bytes.
+- XIAO ESP32-C3 linker DRAM: 261,008 / 260,988 bytes.
+- Current target configuration: 4,864-byte protocol/main stack,
+  24,576-byte VM worker stack, 4,096-byte display worker stack.
 - Stack harness guardrails: fail if protocol/main unused stack drops below 768
   bytes or VM worker unused stack drops below 384 bytes.
-- Current `device resources` reports allocation high-water data and
-  `heap_largest_free_supported` / `heap_largest_free_bytes`; ESP32-C3 currently
-  reports `0/0` for largest-free-block support because the public Zephyr heap
-  stats available in this build do not expose a safe non-mutating largest free
-  block query.
+- `device resources` reports `heap_largest_free_supported=1` and a real
+  `heap_largest_free_bytes` via a bounded `k_heap_alloc` binary-search probe,
+  plus display-worker stack high-water (IDs 53-55). See
+  `docs/specs/2026-06-20-x4-ram-reduction-design.md` for the full design.
+- Static buffer attribution (corrected classifier,
+  `scripts/zephyr-static-buffer-report.sh`): platform 133,234 B,
+  SquidScript 137,836 B, unknown 16,871 B. The four display-op arrays
+  (72,224 B) dominate the SquidScript group.
 
 RAM follow-up triggers:
 
-- Profile and reduce XTEINK X4 static DRAM from the current 375,232 / 378,640
-  byte linker result (99.10%). Attribute the largest platform-owned and
-  SquidScript-owned symbols from the linker map, distinguish static allocation
-  from runtime heap and stack demand, then reduce evidence-backed targets
-  without weakening resource caps or hardware coverage.
-- Revisit ESP32-C3 RAM optimization after runtime caps and diagnostics settle:
+- Compact the XTEINK X4 display-op representation (tagged union + out-of-band
+  BinBook page + typed color + page ring) to free ~55 KiB static DRAM and clear
+  the 48 KiB headroom target. Design at
+  `docs/specs/2026-06-20-x4-ram-reduction-design.md`; Plan 1 telemetry and
+  baseline are committed (`edd5ab8`); Plan 2 is the active reduction slice.
+- Revisit ESP32-C3 RAM optimization after the display-op compaction lands:
   remeasure linker DRAM, protocol response size, stack high-water, and
   SquidScript-owned static buffers; then decide whether to shrink response
   buffers, cap metrics, stacks, or subsystem feature buffers based on evidence.
-- Continue SquidScript-owned static DRAM reductions only when new evidence
-  identifies a larger target than the current measured groups: 123,310 bytes
-  platform-owned, 31,616 bytes SquidScript-owned, and 10,729 bytes unknown.
-  Current SquidScript-owned buffers are guarded by tests or protocol bounds:
-  `runtime.4` is 11,920 bytes, the protocol response buffer is 1,088 bytes,
-  and app-store/session/storage scratch buffers are explicitly capped.
 - Do not lower the 24,576-byte VM worker stack again without same-build
   input-button or equivalent logical-input fixture evidence proving the
   physical/input app path stays below the proposed budget. Before any future
-  stack reduction, build with `SQUID_ZEPHYR_STACK_USAGE=1` and run
-  `scripts/c3-supermini-stack-usage-report.sh`; check both per-function `.su`
-  size and real hardware high-water use because splitting helpers can increase
-  live stack if a larger callee remains active under its caller.
-- Keep heap fragmentation work evidence-driven. This Zephyr build does not
-  expose a safe non-mutating largest-free-block query, so current diagnostics
-  report heap allocation high-water plus explicit `heap_largest_free_supported`
-  / `heap_largest_free_bytes` fields. Future mitigation work should target a
-  concrete allocation failure, target-safe heap probe, or subsystem-specific
-  pool/slab redesign rather than adding speculative RAM counters.
+  stack reduction, build with `--stack-usage` and run the `.su` parser against
+  the target build dir; check both per-function `.su` size and real hardware
+  high-water use because splitting helpers can increase live stack if a larger
+  callee remains active under its caller.
+- Keep heap fragmentation work evidence-driven. The bounded `k_heap_alloc`
+  probe now reports a real largest-free-block value; future mitigation work
+  should target a concrete allocation failure or subsystem-specific pool/slab
+  redesign rather than adding speculative RAM counters.
 - Keep Zephyr kernel stacks, system heap, network packet pools, Wi-Fi/BLE
   driver storage, and other platform symbols separate unless platform RAM
   policy is explicitly in scope.
 
 RAM verification notes:
 
-- Use `scripts/c3-supermini-test-hardware-non-scan.sh` for the same-build
-  RAM-confidence path. `--skip-physical-input` is allowed only for unattended
-  stack/RAM coverage and does not validate the physical GPIO9 press row.
-- Logical input dispatch stack coverage can use host-injected
-  `device key SELECT` events. Physical GPIO9 tests validate the electrical and
-  binding path that queues the same logical event.
-- The XIAO RAM workload harness records storage-format, e-paper GRAY2,
-  system-resource, and Wi-Fi AP start/stop rows under
-  `target/hardware-tests/xiao-ram-workloads/summary.tsv`. Current same-build
-  XIAO evidence measured Wi-Fi AP stop at `heap_max_alloc_bytes=59776`
-  with 5,760 bytes of configured heap headroom, protocol/main stack at
-  2,356 bytes used with 2,508 bytes free, and VM worker stack at 16,192 bytes
-  used with 8,384 bytes free.
+- Use `scripts/xteink-x4-measure-ram-workloads.sh` for the X4 same-build
+  RAM-confidence path. The X4 workload harness records storage-format,
+  grid-cursor, binbook-reader, system-resources, and Wi-Fi AP start/stop rows
+  under `target/hardware-tests/x4-ram-workloads/summary.tsv`, including
+  display-stack and heap largest-free-block columns.
+- The XIAO RAM workload harness (`scripts/xiao-esp32c3-measure-ram-workloads.sh`)
+  records storage-format, e-paper GRAY2, system-resource, and Wi-Fi AP start/stop
+  rows under `target/hardware-tests/xiao-ram-workloads/summary.tsv`.
 - Real ESP32-C3 Zephyr Wi-Fi scan/list coverage passes through the driver scan
   callback with bounded redacted AP rows. Future Wi-Fi scan RAM work should
   focus on result pagination/cursor behavior and broader service-state modeling,
