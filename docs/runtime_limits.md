@@ -114,7 +114,7 @@ rather than app RAM.
 
 | Limit | Hard value | Macro |
 | --- | ---: | --- |
-| Device response bytes | 1088 B | `SQ_DEVICE_RESPONSE_BYTES` |
+| Device response bytes | 1280 B | `SQ_DEVICE_RESPONSE_BYTES` |
 | Staging path bytes | 80 B | `SQ_DEVICE_STAGING_PATH_BYTES` |
 | Resource path bytes | 80 B | `SQ_DEVICE_RESOURCE_PATH_BYTES` |
 | Install payload bytes | 65536 B | `SQ_DEVICE_INSTALL_MAX_BYTES` |

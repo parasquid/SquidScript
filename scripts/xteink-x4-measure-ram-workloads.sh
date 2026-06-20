@@ -13,7 +13,7 @@ GRID_CURSOR_PACKAGE="${WORK_DIR}/${GRID_CURSOR_APP_ID}.squid.zip"
 BINBOOK_READER_APP_ID="binbook-reader"
 BINBOOK_READER_APP_DIR="${ROOT}/examples/binbook-reader"
 BINBOOK_READER_PACKAGE="${WORK_DIR}/${BINBOOK_READER_APP_ID}.squid.zip"
-BINBOOK_FIXTURE="${BINBOOK_FIXTURE:-${ROOT}/tests/hardware/xiao-esp32c3/epaper-gray2-smoke/books/sample.binbook}"
+BINBOOK_FIXTURE="${WORK_DIR}/reader-one.generated.binbook"
 BINBOOK_NAME="${BINBOOK_NAME:-reader-one.binbook}"
 
 SYSTEM_APP="${ROOT}/tests/hardware/zephyr/system-resources/main.squid"
@@ -104,8 +104,9 @@ ram_snapshot_resources grid-cursor-after-launch
 
 ram_reset_runtime_between_workloads binbook-reader
 ram_reset_heap_max_attribution binbook-reader
+python3 "${ROOT}/scripts/generate-test-binbook.py" "${BINBOOK_FIXTURE}"
 if [[ ! -s "${BINBOOK_FIXTURE}" ]]; then
-  printf 'BinBook fixture not found or empty: %s\n' "${BINBOOK_FIXTURE}" >&2
+  printf 'BinBook fixture generation failed: %s\n' "${BINBOOK_FIXTURE}" >&2
   exit 2
 fi
 run_capture content-put-binbook \
