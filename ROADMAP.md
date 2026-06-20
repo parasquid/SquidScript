@@ -188,6 +188,11 @@ Current ESP32-C3 RAM baseline:
 
 RAM follow-up triggers:
 
+- Profile and reduce XTEINK X4 static DRAM from the current 375,232 / 378,640
+  byte linker result (99.10%). Attribute the largest platform-owned and
+  SquidScript-owned symbols from the linker map, distinguish static allocation
+  from runtime heap and stack demand, then reduce evidence-backed targets
+  without weakening resource caps or hardware coverage.
 - Revisit ESP32-C3 RAM optimization after runtime caps and diagnostics settle:
   remeasure linker DRAM, protocol response size, stack high-water, and
   SquidScript-owned static buffers; then decide whether to shrink response

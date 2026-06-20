@@ -27,10 +27,12 @@ physical filesystem operations must not hide those logical counters.
 
 ## Stage 1: Reusable SQBC File Handle
 
-`sq_vm_fs_storage` owns an initialized `fs_file_t`, an open-state flag, and an
-open counter used by storage tests. The first SQBC read opens the configured
-path. Later reads seek and read through the same handle instead of reopening
-the file.
+`vm_fs_storage` owns one initialized `fs_file_t` shared by serialized SQBC
+storage sessions. Each `sq_vm_fs_storage` object carries a session identifier
+without growing beyond its existing fixed-buffer budget. The first SQBC read
+for a session opens its configured path. Later reads seek and read through the
+same handle instead of reopening the file. Reading from a different session
+closes the prior handle before opening the new path.
 
 The storage module exposes an explicit release operation. Lifecycle code calls
 it only after the runtime is idle and before it clears a storage object,
@@ -40,8 +42,10 @@ closes the handle while returning the original operation error, allowing a
 later request to reopen cleanly.
 
 The app-store and temp-run storage owners remain responsible for their path
-buffers. The generic VM storage callback does not allocate app-sized memory or
-infer app lifecycle from path strings.
+buffers. The module handle tracks an owner pointer plus session identifier so a
+reused object address cannot inherit a stale handle. The generic VM storage
+callback does not allocate app-sized memory or infer app lifecycle from path
+strings.
 
 ### Stage 1 tests
 

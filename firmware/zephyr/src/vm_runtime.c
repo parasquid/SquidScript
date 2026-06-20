@@ -602,7 +602,7 @@ static void runtime_run_job(struct sq_vm_runtime *runtime)
 		return;
 	}
 
-	result = sq_vm_runtime_dispatch_slice(runtime, &runtime->job_backend, runtime->event, 1,
+	result = sq_vm_runtime_dispatch_slice(runtime, &runtime->job_backend, runtime->event, SIZE_MAX,
 					      &complete);
 
 	runtime->result_code = result;

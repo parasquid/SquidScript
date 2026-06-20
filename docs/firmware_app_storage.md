@@ -61,22 +61,32 @@ SQBC byte-range read, app state load, app state save, and app state reset. The
 adapter is bounded by the 768-byte FFI transfer capacity and is tested with an
 in-memory backend, including a native Zephyr ztest that runs real SQBC through
 the linked Rust VM and completes its state load/save flow through the adapter.
-Runtime dispatch does not drain an unbounded chain of pending storage requests
-in one worker pass. `sq_vm_runtime_dispatch_slice` starts or resumes one VM
-event and completes at most the caller-provided number of pending storage
-requests; the Zephyr async runtime worker uses a one-request slice and is
-rescheduled by `sq_vm_runtime_poll` / `sq_vm_runtime_wait_idle` until the event
-finishes. The synchronous `sq_vm_runtime_dispatch` helper remains available for
-native tests and other callers that already own execution; it drives slices
-until completion.
+`sq_vm_runtime_dispatch_slice` starts or resumes one VM event and completes at
+most the caller-provided number of pending storage requests. The Zephyr async
+runtime worker supplies `SIZE_MAX`, so one submitted worker job drives all
+storage completions required by that dispatch instead of requiring a
+main-loop resubmission for every SQBC read. The synchronous
+`sq_vm_runtime_dispatch` helper uses the same complete-dispatch budget for
+native tests and other callers that already own execution.
 
 `firmware/zephyr/src/vm_fs_storage` is the current file-backed implementation
 of that callback boundary. It uses Zephyr `fs_*` APIs to read byte ranges from
 an SQBC path and to load, save, and reset an app-state path. Native Zephyr
 ztests mount a host-backed filesystem through `FS_NATIVE_MOUNT` and verify the
 backend through `vm_storage`, so the behavior is covered without bypassing
-Zephyr's filesystem layer. The backend records SQBC read count, maximum read
-length, and total read length for tests and diagnostics-facing assertions.
+Zephyr's filesystem layer. A single module-owned SQBC file handle is lazily
+opened for the active storage session and reused across that session's bounded
+seek/read requests. Switching storage sessions closes the prior handle, and
+app replacement, temp-run replacement, reset, and storage format explicitly
+release it while the VM is idle. Session identifiers distinguish reused
+storage-object addresses without adding an `fs_file_t` to every resident app
+storage object. Seek, read, and short-read failures close the handle before a
+later request retries.
+
+The backend records logical SQBC read count and total read length on each
+storage object. Module diagnostics record filesystem open count and maximum
+read length for tests. These counters describe VM access and physical file-open
+behavior separately.
 Installed app launch/dispatch uses these file-backed reads through the
 `sq_app_store_vm_storage` backend; native Zephyr ztests install padded
 `main.sqbc` files larger than one storage transfer and verify dispatch reads
@@ -87,6 +97,8 @@ through the reader path.
 The resident installed-app VM storage keeps separate bounded path buffers for
 the fixed app bytecode and state-file path shapes: 64 bytes for
 `/apps/<app-id>/main.sqbc` and 60 bytes for `/state/<app-id>.state`.
+It does not reserve an app-sized bytecode cache; large apps remain streamed
+through the same caller-owned transfer window.
 Runtime output history is intentionally retained in a six-entry fixed
 window. This keeps the current lifecycle and hardware-test assertion window
 available through `device output` without making debug output an unbounded
