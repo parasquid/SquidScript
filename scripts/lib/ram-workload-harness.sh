@@ -132,44 +132,48 @@ ram_wait_for_contains() {
 }
 
 ram_init_summary() {
-  summary_out="${WORK_DIR}/summary.tsv"
-  {
-    printf 'workload\tproto_stack_pre_used_bytes\t'
-    printf 'proto_stack_used_bytes\t'
-    printf 'proto_stack_unused_bytes\t'
-    printf 'vm_stack_used_bytes\tvm_stack_unused_bytes\t'
-    printf 'heap_alloc_bytes\theap_max_alloc_bytes\t'
-    printf 'heap_max_headroom_bytes\t'
-    printf 'heap_largest_free_supported\theap_largest_free_bytes\t'
-    printf 'runtime_static_bytes\tlast_dispatch_seq\tlast_dispatch_us\n'
-  } >"${summary_out}"
+	summary_out="${WORK_DIR}/summary.tsv"
+	{
+		printf 'workload\tproto_stack_pre_used_bytes\t'
+		printf 'proto_stack_used_bytes\t'
+		printf 'proto_stack_unused_bytes\t'
+		printf 'vm_stack_used_bytes\tvm_stack_unused_bytes\t'
+		printf 'display_stack_used_bytes\tdisplay_stack_unused_bytes\t'
+		printf 'heap_alloc_bytes\theap_max_alloc_bytes\t'
+		printf 'heap_max_headroom_bytes\t'
+		printf 'heap_largest_free_supported\theap_largest_free_bytes\t'
+		printf 'runtime_static_bytes\tlast_dispatch_seq\tlast_dispatch_us\n'
+	} >"${summary_out}"
 }
 
 ram_snapshot_resources() {
   local label="$1"
   local file
   local heap_alloc heap_max_alloc
-  file="$(ram_run_device_capture "resources-${label}" resources)"
-  ram_assert_stack_accounting "$file" proto
-  ram_assert_stack_accounting "$file" vm
-  heap_alloc="$(ram_resource_value "$file" heap_alloc_bytes)"
-  heap_max_alloc="$(ram_resource_value "$file" heap_max_alloc_bytes)"
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$label" \
-    "$(ram_resource_value "$file" proto_stack_pre_used_bytes)" \
-    "$(ram_resource_value "$file" proto_stack_used_bytes)" \
-    "$(ram_resource_value "$file" proto_stack_unused_bytes)" \
-    "$(ram_resource_value "$file" vm_stack_used_bytes)" \
-    "$(ram_resource_value "$file" vm_stack_unused_bytes)" \
-    "$heap_alloc" \
-    "$heap_max_alloc" \
-    "$(( SYSTEM_HEAP_BYTES - heap_max_alloc ))" \
-    "$(ram_resource_value "$file" heap_largest_free_supported)" \
-    "$(ram_resource_value "$file" heap_largest_free_bytes)" \
-    "$(ram_resource_value "$file" runtime_static_bytes)" \
-    "$(ram_resource_value "$file" last_dispatch_seq)" \
-    "$(ram_resource_value "$file" last_dispatch_us)" \
-    >>"${summary_out}"
+	file="$(ram_run_device_capture "resources-${label}" resources)"
+	ram_assert_stack_accounting "$file" proto
+	ram_assert_stack_accounting "$file" vm
+	ram_assert_stack_accounting "$file" display
+	heap_alloc="$(ram_resource_value "$file" heap_alloc_bytes)"
+	heap_max_alloc="$(ram_resource_value "$file" heap_max_alloc_bytes)"
+	printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+		"$label" \
+		"$(ram_resource_value "$file" proto_stack_pre_used_bytes)" \
+		"$(ram_resource_value "$file" proto_stack_used_bytes)" \
+		"$(ram_resource_value "$file" proto_stack_unused_bytes)" \
+		"$(ram_resource_value "$file" vm_stack_used_bytes)" \
+		"$(ram_resource_value "$file" vm_stack_unused_bytes)" \
+		"$(ram_resource_value "$file" display_stack_used_bytes)" \
+		"$(ram_resource_value "$file" display_stack_unused_bytes)" \
+		"$heap_alloc" \
+		"$heap_max_alloc" \
+		"$(( SYSTEM_HEAP_BYTES - heap_max_alloc ))" \
+		"$(ram_resource_value "$file" heap_largest_free_supported)" \
+		"$(ram_resource_value "$file" heap_largest_free_bytes)" \
+		"$(ram_resource_value "$file" runtime_static_bytes)" \
+		"$(ram_resource_value "$file" last_dispatch_seq)" \
+		"$(ram_resource_value "$file" last_dispatch_us)" \
+		>>"${summary_out}"
 }
 
 ram_reset_heap_max_attribution() {
