@@ -17,6 +17,7 @@ struct sq_vm_fs_storage {
 
 int sq_vm_fs_storage_release(struct sq_vm_fs_storage *storage);
 bool sq_vm_fs_storage_is_open(const struct sq_vm_fs_storage *storage);
+bool sq_vm_fs_storage_has_open_file(void);
 size_t sq_vm_fs_storage_open_count(void);
 size_t sq_vm_fs_storage_max_read_len(void);
 

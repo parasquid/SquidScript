@@ -39,6 +39,11 @@ bool sq_vm_fs_storage_is_open(const struct sq_vm_fs_storage *storage)
 	       sqbc_open_file.owner_session_id == storage->sqbc_session_id;
 }
 
+bool sq_vm_fs_storage_has_open_file(void)
+{
+	return sqbc_open_file.owner != NULL;
+}
+
 size_t sq_vm_fs_storage_open_count(void)
 {
 	return sqbc_open_file.open_count;

@@ -69,6 +69,8 @@ int sq_app_store_mount_target_filesystem(void);
 
 const char *sq_app_store_mount_point(void);
 
+/* Storage must be zero-initialized before its first setup. Reusing an initialized
+ * object releases its active SQBC handle before replacing the paths. */
 int sq_app_store_vm_storage_for_app(const char *mount_point, const char *app_id,
 				    struct sq_app_store_vm_storage *storage);
 int sq_app_store_vm_storage_for_app_bytes(const char *mount_point, const uint8_t *app_id,

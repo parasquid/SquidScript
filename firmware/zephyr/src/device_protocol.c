@@ -1440,6 +1440,17 @@ struct temp_storage_backend {
 
 static struct temp_storage_backend temp_foreground_storage;
 
+static int release_foreground_storage(const struct sq_device_protocol_context *context)
+{
+	int result = 0;
+
+	if (context != NULL && context->launch_storage != NULL) {
+		result = sq_vm_fs_storage_release(&context->launch_storage->fs_storage);
+	}
+	int temp_result = sq_vm_fs_storage_release(&temp_foreground_storage.fs_storage);
+	return result != 0 ? result : temp_result;
+}
+
 static int temp_state_path_for_mount(const char *mount_point, char *out, size_t out_len)
 {
 	int written;
@@ -1471,6 +1482,14 @@ static int __noinline commit_temp_run(const struct sq_protocol_request *request,
 		return -EINVAL;
 	}
 
+	result = sq_vm_runtime_wait_idle(context->runtime, 250);
+	if (result != 0) {
+		return result;
+	}
+	result = release_foreground_storage(context);
+	if (result != 0) {
+		return result;
+	}
 	memset(&temp_foreground_storage, 0, sizeof(temp_foreground_storage));
 	result = temp_state_path_for_mount(context->store_mount_point,
 					   temp_foreground_storage.state_path,
@@ -1512,6 +1531,16 @@ static int __noinline commit_install(const struct sq_protocol_request *request,
 	}
 	if (transfer_session_begin_committing(session) != 0) {
 		return -EINVAL;
+	}
+	if (context->runtime != NULL) {
+		result = sq_vm_runtime_wait_idle(context->runtime, 250);
+		if (result != 0) {
+			return result;
+		}
+	}
+	result = release_foreground_storage(context);
+	if (result != 0) {
+		return result;
 	}
 
 	result = sq_app_store_commit_staged_install(context->store_mount_point, session->app_id,
@@ -1609,6 +1638,10 @@ static int start_installed_app_bytes(const struct sq_device_protocol_context *co
 			(void)sq_vm_runtime_record_device_error(context->runtime, l);
 			return result;
 		}
+		result = release_foreground_storage(context);
+		if (result != 0) {
+			return result;
+		}
 		sq_vm_runtime_reset_vm_context(context->runtime);
 	}
 
@@ -1701,6 +1734,10 @@ static int start_temp_app_bytes(const struct sq_device_protocol_context *context
 		if (result != 0) {
 			return result;
 		}
+		result = release_foreground_storage(context);
+		if (result != 0) {
+			return result;
+		}
 		sq_vm_runtime_reset_vm_context(context->runtime);
 	}
 
@@ -1784,6 +1821,10 @@ static int start_fallback_app(const struct sq_device_protocol_context *context,
 	if (set_current || context->runtime->current_app_temp ||
 	    strcmp(context->runtime->current_app, "main") != 0) {
 		result = sq_vm_runtime_wait_idle(context->runtime, 250);
+		if (result != 0) {
+			return result;
+		}
+		result = release_foreground_storage(context);
 		if (result != 0) {
 			return result;
 		}
@@ -2111,9 +2152,12 @@ int sq_device_protocol_poll(const struct sq_device_protocol_context *context)
 		 * VM (-EIO). This runs before any pending launch, so app.install +
 		 * app.launch in one handler installs first, then launches cleanly. */
 		runtime->pending_install.active = false;
-		result = sq_app_store_commit_external_file(context->store_mount_point,
-							   runtime->pending_install.app_id,
-							   runtime->pending_install.file_ref);
+		result = release_foreground_storage(context);
+		if (result == 0) {
+			result = sq_app_store_commit_external_file(context->store_mount_point,
+							       runtime->pending_install.app_id,
+							       runtime->pending_install.file_ref);
+		}
 		if (result == 0 && context->mutable_registry != NULL) {
 			char path[SQ_APP_STORE_PATH_MAX];
 			(void)sq_app_store_update_registry_entry_with_path(
@@ -2747,13 +2791,30 @@ static int __noinline resources_response(const struct sq_protocol_request *reque
 
 static int clear_runtime_context(const struct sq_device_protocol_context *context)
 {
+	int result;
+
 	if (context->runtime != NULL) {
-		int result = sq_vm_runtime_wait_idle(context->runtime, 250);
+		result = sq_vm_runtime_wait_idle(context->runtime, 250);
 
 		if (result != 0) {
 			return result;
 		}
+		result = release_foreground_storage(context);
+		if (result != 0) {
+			return result;
+		}
 		sq_vm_runtime_reset(context->runtime);
+	} else {
+		result = release_foreground_storage(context);
+		if (result != 0) {
+			return result;
+		}
+	}
+	if (context->trigger_storage != NULL) {
+		result = sq_vm_fs_storage_release(&context->trigger_storage->fs_storage);
+		if (result != 0) {
+			return result;
+		}
 	}
 	if (context->install_session != NULL) {
 		memset(context->install_session, 0, sizeof(*context->install_session));

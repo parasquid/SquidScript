@@ -502,14 +502,20 @@ const char *sq_app_store_mount_point(void)
 int sq_app_store_vm_storage_for_app(const char *mount_point, const char *app_id,
 				    struct sq_app_store_vm_storage *storage)
 {
+	int result;
+
 	if (storage == NULL || mount_point == NULL || !is_safe_app_id(app_id)) {
 		return -EINVAL;
 	}
 
+	result = sq_vm_fs_storage_release(&storage->fs_storage);
+	if (result != 0) {
+		return result;
+	}
 	memset(storage, 0, sizeof(*storage));
 
-	int result = format_app_path(storage->sqbc_path, sizeof(storage->sqbc_path), mount_point,
-				     app_id, "main.sqbc");
+	result = format_app_path(storage->sqbc_path, sizeof(storage->sqbc_path), mount_point,
+				 app_id, "main.sqbc");
 	if (result != 0) {
 		return result;
 	}
@@ -528,14 +534,20 @@ int sq_app_store_vm_storage_for_app_bytes(const char *mount_point, const uint8_t
 					  size_t app_id_len,
 					  struct sq_app_store_vm_storage *storage)
 {
+	int result;
+
 	if (storage == NULL || mount_point == NULL || !is_safe_app_id_bytes(app_id, app_id_len)) {
 		return -EINVAL;
 	}
 
+	result = sq_vm_fs_storage_release(&storage->fs_storage);
+	if (result != 0) {
+		return result;
+	}
 	memset(storage, 0, sizeof(*storage));
 
-	int result = format_app_path_bytes(storage->sqbc_path, sizeof(storage->sqbc_path),
-					   mount_point, app_id, app_id_len, "main.sqbc");
+	result = format_app_path_bytes(storage->sqbc_path, sizeof(storage->sqbc_path), mount_point,
+				       app_id, app_id_len, "main.sqbc");
 	if (result != 0) {
 		return result;
 	}

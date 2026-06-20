@@ -1649,6 +1649,13 @@ ZTEST(squidscript_protocol, test_storage_format_clears_runtime_before_erasing_fi
 		.store_mount_point = test_fs_mount.mnt_point,
 		.launch_storage = &launch_storage,
 	};
+	struct sq_vm_storage_backend backend;
+	SqvmStorageRequest read_request = {
+		.kind = SQVM_STORAGE_REQUEST_SQBC_READ,
+		.offset = 0,
+		.len = sizeof(sqbc),
+	};
+	SqvmStorageCompletion read_completion = {0};
 	int handle_result;
 
 	zassert_equal(mount_test_fs(), 0, "mount failed");
@@ -1661,6 +1668,9 @@ ZTEST(squidscript_protocol, test_storage_format_clears_runtime_before_erasing_fi
 	zassert_equal(sq_app_store_vm_storage_for_app(test_fs_mount.mnt_point, "main",
 						     &launch_storage),
 		      0);
+	backend = sq_app_store_vm_storage_backend(&launch_storage);
+	zassert_equal(sq_vm_storage_complete_request(&backend, &read_request, &read_completion), 0);
+	zassert_true(sq_vm_fs_storage_has_open_file());
 	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_STORAGE_FORMAT,
 						      SQ_STATUS_OK, 64, NULL, 0, request,
 						      sizeof(request)),
@@ -1679,6 +1689,7 @@ ZTEST(squidscript_protocol, test_storage_format_clears_runtime_before_erasing_fi
 	zassert_false(temp_session.active);
 	zassert_false(resource_session.active);
 	zassert_equal(launch_storage.sqbc_path[0], '\0');
+	zassert_false(sq_vm_fs_storage_has_open_file());
 
 	for (size_t i = 0; i < 32 && frame.status == SQ_STATUS_PENDING; i++) {
 		handle_result = sq_device_protocol_handle_frame(request, sizeof(request), &context,
@@ -4793,12 +4804,22 @@ ZTEST(squidscript_protocol, test_vm_fs_storage_reads_sqbc_and_persists_state)
 
 ZTEST(squidscript_protocol, test_app_store_derives_vm_storage_paths_from_mount)
 {
+	const uint8_t sqbc[] = {0x10, 0x11, 0x12, 0x13};
 	struct sq_app_store_vm_storage app_storage = {0};
 	struct sq_vm_storage_backend backend;
 	struct fs_dirent entry;
+	SqvmStorageRequest request = {
+		.kind = SQVM_STORAGE_REQUEST_SQBC_READ,
+		.offset = 0,
+		.len = sizeof(sqbc),
+	};
+	SqvmStorageCompletion completion = {0};
 
 	zassert_equal(mount_test_fs(), 0, "mount failed");
 	zassert_equal(format_test_app_store(), 0);
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "headless-counter", sqbc,
+					       sizeof(sqbc)),
+		      0);
 
 	zassert_equal(fs_stat("/sqtest/apps", &entry), 0);
 	zassert_equal(entry.type, FS_DIR_ENTRY_DIR);
@@ -4815,6 +4836,13 @@ ZTEST(squidscript_protocol, test_app_store_derives_vm_storage_paths_from_mount)
 	zassert_not_null(backend.read_sqbc);
 	zassert_not_null(backend.load_state);
 	zassert_equal(backend.user_data, &app_storage.fs_storage);
+	zassert_equal(sq_vm_storage_complete_request(&backend, &request, &completion), 0);
+	zassert_true(sq_vm_fs_storage_has_open_file());
+
+	zassert_equal(sq_app_store_vm_storage_for_app(test_fs_mount.mnt_point, "other",
+						     &app_storage),
+		      0);
+	zassert_false(sq_vm_fs_storage_has_open_file());
 
 	zassert_equal(sq_app_store_vm_storage_for_app(test_fs_mount.mnt_point,
 						      "../bad", &app_storage),
