@@ -18,6 +18,7 @@
 #include "squidscript_protocol_fixtures.h"
 #include "squidscript_target_defaults.h"
 #include "ssd1677_gray2.h"
+#include "sq_display_color.h"
 #include "vm_runtime.h"
 #include "vm_runtime_internal.h"
 #include "xteink_x4_button_probe.h"
@@ -6543,6 +6544,19 @@ ZTEST(squidscript_protocol, test_vm_runtime_reset_clears_display_backend_previou
 		      "sq_vm_runtime_reset must call sq_display_backend_reset so the "
 		      "first post-reset fast1bpp refresh uses FULL_SEED instead of a "
 		      "stale differential against the pre-reset screen");
+}
+
+ZTEST(squidscript_protocol, test_display_color_palette_parser)
+{
+	zassert_equal(sq_display_color_parse((const uint8_t *)"white", 5), SQ_DISPLAY_COLOR_WHITE);
+	zassert_equal(sq_display_color_parse((const uint8_t *)"black", 5), SQ_DISPLAY_COLOR_BLACK);
+	zassert_equal(sq_display_color_parse((const uint8_t *)"gray0", 5), 0);
+	zassert_equal(sq_display_color_parse((const uint8_t *)"gray15", 6), 15);
+	zassert_equal(sq_display_color_parse((const uint8_t *)"gray8", 5), 8);
+	zassert_equal(sq_display_color_parse(NULL, 0), SQ_DISPLAY_COLOR_UNSET);
+	zassert_equal(sq_display_color_parse((const uint8_t *)"", 0), SQ_DISPLAY_COLOR_UNSET);
+	zassert_equal(sq_display_color_parse((const uint8_t *)"bogus", 5), SQ_DISPLAY_COLOR_UNSET);
+	zassert_equal(sq_display_color_parse((const uint8_t *)"gray16", 6), SQ_DISPLAY_COLOR_UNSET);
 }
 
 ZTEST(squidscript_protocol, test_ssd1677_composed_dirty_window_tracks_changed_highlight_ops)
