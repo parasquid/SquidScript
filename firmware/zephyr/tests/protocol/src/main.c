@@ -905,6 +905,9 @@ static bool resource_value_for_key(const struct sq_protocol_frame *frame, const 
 		{50, "x4.input.power_raw"},
 		{51, "x4.input.power_pressed"},
 		{52, "x4.input.power_error"},
+		{53, "display_stack_size_bytes"},
+		{54, "display_stack_unused_bytes"},
+		{55, "display_stack_used_bytes"},
 	};
 	size_t offset = 0;
 	struct sq_protocol_field entry;
@@ -4066,6 +4069,8 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 	};
 	uint64_t stack_unused = 0;
 	uint64_t stack_used = 0;
+	uint64_t display_stack_unused = 0;
+	uint64_t display_stack_used = 0;
 	uint64_t protocol_stack_unused = 0;
 	uint64_t protocol_stack_used = 0;
 	uint64_t protocol_stack_pre_resources_unused = 0;
@@ -4210,6 +4215,15 @@ ZTEST(squidscript_protocol, test_resources_report_vm_worker_stack_diagnostics)
 	zassert_true(stack_used <= SQ_VM_RUNTIME_WORK_STACK_SIZE);
 	zassert_equal(stack_unused + stack_used, SQ_VM_RUNTIME_WORK_STACK_SIZE,
 		      "unused=%llu used=%llu", stack_unused, stack_used);
+	zassert_true(resource_value_equals(&frame, "display_stack_size_bytes",
+					   SQ_VM_RUNTIME_DISPLAY_WORK_STACK_SIZE));
+	zassert_true(resource_value_for_key(&frame, "display_stack_unused_bytes",
+					    &display_stack_unused));
+	zassert_true(resource_value_for_key(&frame, "display_stack_used_bytes",
+					    &display_stack_used));
+	zassert_equal(display_stack_unused + display_stack_used,
+		      SQ_VM_RUNTIME_DISPLAY_WORK_STACK_SIZE,
+		      "unused=%llu used=%llu", display_stack_unused, display_stack_used);
 }
 
 ZTEST(squidscript_protocol, test_resources_request_accepts_heap_max_reset_option)

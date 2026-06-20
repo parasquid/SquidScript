@@ -683,6 +683,29 @@ int sq_vm_runtime_work_stack_unused(size_t *unused)
 #endif
 }
 
+size_t sq_vm_runtime_display_work_stack_size(void)
+{
+	return K_THREAD_STACK_SIZEOF(sq_vm_runtime_display_work_stack);
+}
+
+int sq_vm_runtime_display_work_stack_unused(size_t *unused)
+{
+	if (unused == NULL) {
+		return -EINVAL;
+	}
+
+#if defined(CONFIG_INIT_STACKS) && defined(CONFIG_THREAD_STACK_INFO)
+	if (!sq_vm_runtime_display_work_thread_started) {
+		*unused = sq_vm_runtime_display_work_stack_size();
+		return 0;
+	}
+	return k_thread_stack_space_get(&sq_vm_runtime_display_work_thread, unused);
+#else
+	*unused = 0;
+	return -ENOTSUP;
+#endif
+}
+
 int sq_vm_runtime_wait_idle(struct sq_vm_runtime *runtime, int32_t timeout_ms)
 {
 	int64_t deadline_ms;

@@ -1036,6 +1036,9 @@ const RESOURCE_METRIC_NAMES: &[(u32, &str)] = &[
     (50, "x4.input.power_raw"),
     (51, "x4.input.power_pressed"),
     (52, "x4.input.power_error"),
+    (53, "display_stack_size_bytes"),
+    (54, "display_stack_unused_bytes"),
+    (55, "display_stack_used_bytes"),
 ];
 
 fn resource_metric_id_for_name(name: &str) -> Option<u32> {

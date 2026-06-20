@@ -138,6 +138,9 @@ enum sq_resource_metric_id {
 	SQ_RESOURCE_METRIC_X4_INPUT_POWER_RAW = 50,
 	SQ_RESOURCE_METRIC_X4_INPUT_POWER_PRESSED = 51,
 	SQ_RESOURCE_METRIC_X4_INPUT_POWER_ERROR = 52,
+	SQ_RESOURCE_METRIC_DISPLAY_STACK_SIZE_BYTES = 53,
+	SQ_RESOURCE_METRIC_DISPLAY_STACK_UNUSED_BYTES = 54,
+	SQ_RESOURCE_METRIC_DISPLAY_STACK_USED_BYTES = 55,
 };
 
 static int copy_app_id(char *out, size_t out_cap, const char *app_id)
@@ -2601,6 +2604,9 @@ static int __noinline resources_response(const struct sq_protocol_request *reque
 	size_t vm_worker_stack_unused = 0;
 	size_t vm_worker_stack_size = context->runtime == NULL ? 0 : sq_vm_runtime_work_stack_size();
 	size_t vm_worker_stack_used = 0;
+	size_t display_work_stack_unused = 0;
+	size_t display_work_stack_size = sq_vm_runtime_display_work_stack_size();
+	size_t display_work_stack_used = 0;
 	size_t protocol_stack_size = CONFIG_MAIN_STACK_SIZE;
 	size_t protocol_stack_pre_resources_unused = 0;
 	size_t protocol_stack_pre_resources_used = 0;
@@ -2657,6 +2663,13 @@ static int __noinline resources_response(const struct sq_protocol_request *reque
 	} else {
 		protocol_stack_unused = 0;
 		protocol_stack_used = 0;
+	}
+	if (sq_vm_runtime_display_work_stack_unused(&display_work_stack_unused) == 0 &&
+	    display_work_stack_unused <= display_work_stack_size) {
+		display_work_stack_used = display_work_stack_size - display_work_stack_unused;
+	} else {
+		display_work_stack_unused = 0;
+		display_work_stack_used = 0;
 	}
 
 #ifdef CONFIG_SYS_HEAP_RUNTIME_STATS
@@ -2790,6 +2803,9 @@ static int __noinline resources_response(const struct sq_protocol_request *reque
 	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_VM_STACK_SIZE_BYTES, vm_worker_stack_size);
 	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_VM_STACK_UNUSED_BYTES, vm_worker_stack_unused);
 	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_VM_STACK_USED_BYTES, vm_worker_stack_used);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_DISPLAY_STACK_SIZE_BYTES, display_work_stack_size);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_DISPLAY_STACK_UNUSED_BYTES, display_work_stack_unused);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_DISPLAY_STACK_USED_BYTES, display_work_stack_used);
 	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_APP_COUNT,
 			   context->registry == NULL ? 0 : context->registry->count);
 	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_INPUT_BUTTON_STATE, input_button_state);

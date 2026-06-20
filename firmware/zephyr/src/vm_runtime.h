@@ -592,6 +592,8 @@ int sq_vm_runtime_next_due_timer(struct sq_vm_runtime *runtime, char *event, siz
 int sq_vm_runtime_poll(struct sq_vm_runtime *runtime);
 size_t sq_vm_runtime_work_stack_size(void);
 int sq_vm_runtime_work_stack_unused(size_t *unused);
+size_t sq_vm_runtime_display_work_stack_size(void);
+int sq_vm_runtime_display_work_stack_unused(size_t *unused);
 int sq_vm_runtime_wifi_format_bssid(const uint8_t *mac, size_t mac_len, char *out, size_t out_len);
 void sq_vm_runtime_wifi_note_ap_sta_connected(struct sq_vm_runtime *runtime);
 void sq_vm_runtime_wifi_note_ap_sta_disconnected(struct sq_vm_runtime *runtime);
