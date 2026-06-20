@@ -27,3 +27,21 @@ use case, or implementation reason to make it actionable.
   staging session, object-name parser, pending-event handoff) was kept precisely
   so an OTS front-end could be re-added later beside the GATT one without
   touching the core.
+
+## Capability Demand-Loading
+
+- A `use <capability>` keyword (e.g. `use binbook`) that gates runtime RAM
+  allocation for a capability: the module's static/bound RAM is loaded when an
+  app declares use of it and freed when that app exits. Rationale: apps should
+  not pay RAM for capabilities they do not use. The pattern generalizes beyond
+  BinBook to the display composed fast-refresh previous frame
+  (`previous_composed_ops`, ~18 KiB), BLE, Wi-Fi, and HTTP, not just the BinBook
+  page metadata. Revive when designing the 1.0 capability/RAM-ownership model:
+  it needs a language spec for the keyword, a compiler lowering that records
+  declared capabilities, and a runtime that binds/unbinds capability-backed
+  state on app lifecycle. Surviving parts: the `binbook.*` capability direction
+  already in `docs/language_spec.md` §31B, and the firmware radio
+  demand-activation investigation (BLE `bt_disable` reclaim, Wi-Fi
+  `esp_wifi_deinit` seam absence) captured in
+  `docs/specs/2026-06-20-x4-ram-reduction-design.md` for the separate heap/stack
+  right-sizing plan.
