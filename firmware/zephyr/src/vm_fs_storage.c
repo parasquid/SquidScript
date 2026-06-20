@@ -3,36 +3,50 @@
 #include <errno.h>
 #include <zephyr/fs/fs.h>
 
-static int read_exact(const char *path, size_t offset, uint8_t *out, size_t len)
-{
+static struct {
 	struct fs_file_t file;
-	int result;
+	struct sq_vm_fs_storage *owner;
+	size_t owner_session_id;
+	size_t open_count;
+	size_t max_read_len;
+} sqbc_open_file;
 
-	if (path == NULL || out == NULL) {
+static size_t sqbc_next_session_id = 1;
+
+static int release_open_sqbc_file(void)
+{
+	sqbc_open_file.owner = NULL;
+	sqbc_open_file.owner_session_id = 0;
+	return fs_close(&sqbc_open_file.file);
+}
+
+int sq_vm_fs_storage_release(struct sq_vm_fs_storage *storage)
+{
+	if (storage == NULL) {
 		return -EINVAL;
 	}
-
-	fs_file_t_init(&file);
-	result = fs_open(&file, path, FS_O_READ);
-	if (result != 0) {
-		return result;
+	if (sqbc_open_file.owner != storage ||
+	    sqbc_open_file.owner_session_id != storage->sqbc_session_id) {
+		return 0;
 	}
 
-	result = fs_seek(&file, (off_t)offset, FS_SEEK_SET);
-	if (result != 0) {
-		(void)fs_close(&file);
-		return result;
-	}
+	return release_open_sqbc_file();
+}
 
-	ssize_t read = fs_read(&file, out, len);
-	result = fs_close(&file);
-	if (read < 0) {
-		return (int)read;
-	}
-	if ((size_t)read != len) {
-		return -EIO;
-	}
-	return result;
+bool sq_vm_fs_storage_is_open(const struct sq_vm_fs_storage *storage)
+{
+	return storage != NULL && sqbc_open_file.owner == storage &&
+	       sqbc_open_file.owner_session_id == storage->sqbc_session_id;
+}
+
+size_t sq_vm_fs_storage_open_count(void)
+{
+	return sqbc_open_file.open_count;
+}
+
+size_t sq_vm_fs_storage_max_read_len(void)
+{
+	return sqbc_open_file.max_read_len;
 }
 
 static int read_optional_file(const char *path, uint8_t *out, size_t out_len, size_t *len)
@@ -104,19 +118,54 @@ static int write_file(const char *path, const uint8_t *bytes, size_t len)
 static int fs_storage_read_sqbc(void *user_data, size_t offset, uint8_t *out, size_t len)
 {
 	struct sq_vm_fs_storage *storage = user_data;
+	ssize_t read;
+	int result;
 
-	if (storage == NULL) {
+	if (storage == NULL || storage->sqbc_path == NULL || out == NULL) {
 		return -EINVAL;
 	}
-	int result = read_exact(storage->sqbc_path, offset, out, len);
-	if (result == 0) {
-		storage->sqbc_read_count++;
-		if (len > storage->sqbc_max_read_len) {
-			storage->sqbc_max_read_len = len;
+
+	if (sqbc_open_file.owner != storage ||
+	    sqbc_open_file.owner_session_id != storage->sqbc_session_id) {
+		if (sqbc_open_file.owner != NULL) {
+			result = release_open_sqbc_file();
+			if (result != 0) {
+				return result;
+			}
 		}
-		storage->sqbc_total_read_len += len;
+		fs_file_t_init(&sqbc_open_file.file);
+		result = fs_open(&sqbc_open_file.file, storage->sqbc_path, FS_O_READ);
+		if (result != 0) {
+			return result;
+		}
+		sqbc_open_file.owner = storage;
+		sqbc_open_file.owner_session_id = storage->sqbc_session_id;
+		sqbc_open_file.open_count++;
+		sqbc_open_file.max_read_len = 0;
 	}
-	return result;
+
+	result = fs_seek(&sqbc_open_file.file, (off_t)offset, FS_SEEK_SET);
+	if (result != 0) {
+		(void)sq_vm_fs_storage_release(storage);
+		return result;
+	}
+
+	read = fs_read(&sqbc_open_file.file, out, len);
+	if (read < 0) {
+		(void)sq_vm_fs_storage_release(storage);
+		return (int)read;
+	}
+	if ((size_t)read != len) {
+		(void)sq_vm_fs_storage_release(storage);
+		return -EIO;
+	}
+
+	storage->sqbc_read_count++;
+	if (len > sqbc_open_file.max_read_len) {
+		sqbc_open_file.max_read_len = len;
+	}
+	storage->sqbc_total_read_len += len;
+	return 0;
 }
 
 static int fs_storage_load_state(void *user_data, uint8_t *out, size_t out_len, size_t *len)
@@ -165,6 +214,12 @@ static int fs_storage_reset_state(void *user_data)
 
 struct sq_vm_storage_backend sq_vm_fs_storage_backend(struct sq_vm_fs_storage *storage)
 {
+	if (storage != NULL && storage->sqbc_session_id == 0) {
+		storage->sqbc_session_id = sqbc_next_session_id++;
+		if (sqbc_next_session_id == 0) {
+			sqbc_next_session_id = 1;
+		}
+	}
 	return (struct sq_vm_storage_backend){
 		.user_data = storage,
 		.read_sqbc = fs_storage_read_sqbc,

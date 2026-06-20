@@ -4705,6 +4705,7 @@ ZTEST(squidscript_protocol, test_vm_fs_storage_reads_sqbc_and_persists_state)
 	const char *sqbc_path = "/sqtest/app.sqbc";
 	const char *state_path = "/sqtest/app.state";
 	const uint8_t sqbc[] = {0x10, 0x11, 0x12, 0x13, 0x14};
+	const uint8_t replacement_sqbc[] = {0x20, 0x21, 0x22, 0x23, 0x24};
 	const uint8_t saved_state[] = {0xa0, 0xa1, 0xa2, 0xa3};
 	struct sq_vm_fs_storage storage = {
 		.sqbc_path = sqbc_path,
@@ -4713,6 +4714,7 @@ ZTEST(squidscript_protocol, test_vm_fs_storage_reads_sqbc_and_persists_state)
 	struct sq_vm_storage_backend backend = sq_vm_fs_storage_backend(&storage);
 	SqvmStorageRequest request = {0};
 	SqvmStorageCompletion completion = {0};
+	size_t sqbc_open_count = sq_vm_fs_storage_open_count();
 
 	zassert_equal(mount_test_fs(), 0, "mount failed");
 	zassert_equal(unlink_test_file_if_exists(sqbc_path), 0);
@@ -4728,6 +4730,37 @@ ZTEST(squidscript_protocol, test_vm_fs_storage_reads_sqbc_and_persists_state)
 	zassert_true(completion.has_len);
 	zassert_equal(completion.len, 3);
 	zassert_mem_equal(completion.bytes, &sqbc[2], 3);
+
+	request.offset = 0;
+	request.len = 2;
+	memset(&completion, 0, sizeof(completion));
+	zassert_equal(sq_vm_storage_complete_request(&backend, &request, &completion), 0);
+	zassert_equal(completion.len, 2);
+	zassert_mem_equal(completion.bytes, sqbc, 2);
+	zassert_equal(sq_vm_fs_storage_open_count(), sqbc_open_count + 1,
+		      "one storage object must reuse one SQBC file handle");
+	zassert_true(sq_vm_fs_storage_is_open(&storage));
+
+	zassert_equal(sq_vm_fs_storage_release(&storage), 0);
+	zassert_false(sq_vm_fs_storage_is_open(&storage));
+	zassert_equal(write_test_file(sqbc_path, replacement_sqbc, sizeof(replacement_sqbc)), 0);
+	request.offset = 2;
+	request.len = 3;
+	memset(&completion, 0, sizeof(completion));
+	zassert_equal(sq_vm_storage_complete_request(&backend, &request, &completion), 0);
+	zassert_mem_equal(completion.bytes, &replacement_sqbc[2], 3);
+	zassert_equal(sq_vm_fs_storage_open_count(), sqbc_open_count + 2);
+
+	request.offset = sizeof(replacement_sqbc);
+	request.len = 1;
+	memset(&completion, 0, sizeof(completion));
+	zassert_equal(sq_vm_storage_complete_request(&backend, &request, &completion), -EIO);
+	zassert_false(sq_vm_fs_storage_is_open(&storage));
+	request.offset = 0;
+	request.len = 1;
+	zassert_equal(sq_vm_storage_complete_request(&backend, &request, &completion), 0);
+	zassert_equal(completion.bytes[0], replacement_sqbc[0]);
+	zassert_equal(sq_vm_fs_storage_open_count(), sqbc_open_count + 3);
 
 	request = (SqvmStorageRequest){
 		.kind = SQVM_STORAGE_REQUEST_STATE_SAVE,
@@ -4752,6 +4785,7 @@ ZTEST(squidscript_protocol, test_vm_fs_storage_reads_sqbc_and_persists_state)
 	zassert_false(completion.has_len);
 	zassert_equal(completion.len, 0);
 
+	zassert_equal(sq_vm_fs_storage_release(&storage), 0);
 	zassert_equal(unlink_test_file_if_exists(sqbc_path), 0);
 	zassert_equal(unlink_test_file_if_exists(state_path), 0);
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
@@ -4820,7 +4854,7 @@ ZTEST(squidscript_protocol, test_installed_app_launch_reads_sqbc_in_bounded_file
 	zassert_equal(runtime.result_code, 0);
 	zassert_equal(runtime.trace_count, 1);
 	zassert_true(launch_storage.fs_storage.sqbc_read_count > 0);
-	zassert_true(launch_storage.fs_storage.sqbc_max_read_len <= SQVM_STORAGE_TRANSFER_CAPACITY);
+	zassert_true(sq_vm_fs_storage_max_read_len() <= SQVM_STORAGE_TRANSFER_CAPACITY);
 	zassert_true(launch_storage.fs_storage.sqbc_total_read_len < sizeof(padded_sqbc));
 	zassert_equal(runtime.last_dispatch_sqbc_read_count,
 		      launch_storage.fs_storage.sqbc_read_count);
