@@ -16,6 +16,20 @@ now, a language-layer color-constant slice that removes the temporary firmware
 string parser, and a later heap/stack right-sizing + radio demand-activation
 plan informed by measured baselines.
 
+## Verified Outcome
+
+After Plan 2 display-op compaction (`153e251`):
+
+- Linker DRAM: 319,376 / 378,640 bytes (84.35%), **59,264 B headroom** (~58 KiB).
+  The 48 KiB headroom target is cleared with ~10 KiB surplus.
+- `runtime_static_bytes`: 29,224 (down from 43,248).
+- Static DRAM saved: 56,064 B (~55 KiB) from the four display-op arrays.
+- All 6 hardware workloads pass (storage-format, grid-cursor, binbook-reader,
+  system-resources, Wi-Fi AP start/stop).
+- Native protocol ztests: 110/145 pass, 35 pre-existing failures unchanged.
+- The 24 KiB free-heap target is not yet met (worst case: Wi-Fi AP stop at
+  ~5 B free). That target is deferred to the heap/stack right-sizing plan.
+
 ## Current Baseline
 
 After Stage 1 SQBC handle reuse (`9d74821`):

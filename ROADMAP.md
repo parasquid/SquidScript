@@ -192,7 +192,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 Current ESP32-C3 RAM baseline:
 
-- XTEINK X4 linker DRAM: 375,440 / 378,640 bytes (99.15%), 3,200 B headroom.
+- XTEINK X4 linker DRAM: 319,376 / 378,640 bytes (84.35%), 59,264 B headroom.
+  Display-op compaction (tagged union + typed colors + out-of-band BinBook
+  page) freed ~56 KiB static DRAM, clearing the 48 KiB headroom target.
 - C3 Super Mini linker DRAM: 239,232 bytes.
 - XIAO ESP32-C3 linker DRAM: 261,008 / 260,988 bytes.
 - Current target configuration: 4,864-byte protocol/main stack,
@@ -205,17 +207,24 @@ Current ESP32-C3 RAM baseline:
   `docs/specs/2026-06-20-x4-ram-reduction-design.md` for the full design.
 - Static buffer attribution (corrected classifier,
   `scripts/zephyr-static-buffer-report.sh`): platform 133,234 B,
-  SquidScript 137,836 B, unknown 16,871 B. The four display-op arrays
-  (72,224 B) dominate the SquidScript group.
+  SquidScript 81,612 B (down from 137,836 B after display-op compaction),
+  unknown 16,871 B. The four display-op arrays are now ~16 KiB total
+  (down from 72,224 B).
 
 RAM follow-up triggers:
 
-- Compact the XTEINK X4 display-op representation (tagged union + out-of-band
-  BinBook page + typed color + page ring) to free ~55 KiB static DRAM and clear
-  the 48 KiB headroom target. Design at
-  `docs/specs/2026-06-20-x4-ram-reduction-design.md`; Plan 1 telemetry and
-  baseline are committed (`edd5ab8`); Plan 2 is the active reduction slice.
-- Revisit ESP32-C3 RAM optimization after the display-op compaction lands:
+- BinBook page ring: add a 3-slot heap circular buffer for page-turn
+  prefetch in `runtime_binbook_read_page`, replacing the single-slot
+  `runtime->drawable.page`. Allocated lazily on first `binbook.readPage`,
+  freed on reset. Design at
+  `docs/specs/2026-06-20-x4-ram-reduction-design.md`; Plan 2
+  implementation commits `7a07045`..`153e251`.
+- Color constants: add `color.*` compile-time constants (`color.GRAY0`
+  through `color.GRAY15`, `color.WHITE`, `color.BLACK`) and replace
+  string color values entirely. The compiler emits typed `uint8` colors
+  in SQBC, the FFI carries typed colors instead of byte strings, and the
+  firmware passes them straight into the op. Plan 3 is the active slice.
+- Revisit ESP32-C3 RAM optimization after the color constants land:
   remeasure linker DRAM, protocol response size, stack high-water, and
   SquidScript-owned static buffers; then decide whether to shrink response
   buffers, cap metrics, stacks, or subsystem feature buffers based on evidence.
