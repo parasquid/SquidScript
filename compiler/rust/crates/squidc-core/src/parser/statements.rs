@@ -484,9 +484,9 @@ impl Parser<'_> {
         self.consume_ws(builder);
         match action {
             "clear" => {
-                let color = self
-                    .consume_string(builder)
-                    .unwrap_or_else(|| "white".to_string());
+                let color = self.parse_expr(builder).unwrap_or(IrExpr::Literal {
+                    value: serde_json::json!(0),
+                });
                 self.consume_call_tail(builder);
                 Some(IrStatement::DisplayClear { color })
             }

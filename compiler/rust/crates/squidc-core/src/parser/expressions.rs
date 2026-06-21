@@ -3,6 +3,25 @@ use rowan::GreenNodeBuilder;
 
 use super::Parser;
 
+fn parse_color_constant(name: &str) -> Option<i32> {
+    match name {
+        "WHITE" => Some(0),
+        "BLACK" => Some(15),
+        _ => {
+            if let Some(num) = name.strip_prefix("GRAY") {
+                let n: i32 = num.parse().ok()?;
+                if (0..=15).contains(&n) {
+                    Some(n)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+    }
+}
+
 impl Parser<'_> {
     pub(super) fn parse_expr(&mut self, builder: &mut GreenNodeBuilder) -> Option<IrExpr> {
         self.parse_comparison_expr(builder)
@@ -234,6 +253,18 @@ impl Parser<'_> {
                     IrExpr::Call {
                         name: format!("content.binbook.{action}"),
                         args: self.parse_call_args(builder),
+                    }
+                } else if name == "color" {
+                    let level = parse_color_constant(&namespace);
+                    if let Some(level) = level {
+                        IrExpr::Literal {
+                            value: serde_json::json!(level),
+                        }
+                    } else {
+                        IrExpr::Field {
+                            target: Box::new(IrExpr::Variable { name }),
+                            field: namespace,
+                        }
                     }
                 } else if name == "state" {
                     if self.at_kind(TokenKind::OpenParen) {
