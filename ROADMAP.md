@@ -140,6 +140,15 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Developer Tooling
 
+- Add a `device content-delete <name>` CLI command and protocol opcode
+  (`SQ_OPCODE_CONTENT_DELETE`) so stale content library entries can be removed
+  without a full device reflash. Today `content-put` adds files to
+  `/SD:/books` but no CLI command can remove them; `storage-format` only clears
+  app storage, not the content volume. This blocks test hygiene when stale
+  BinBooks with wrong panel dimensions accumulate from prior test runs.
+  Follow the `content-check` pattern: firmware handler unlinks the file at
+  `SQ_VM_RUNTIME_CONTENT_BOOKS_DIR/<name>`, Rust codec encodes/decodes, CLI
+  exposes `device content-delete <name> --port <port>`.
 - Audit compiler, SQBC, simulator, examples, and docs for invariant violations
   that should become explicit diagnostics instead of silent ambiguity.
 - Promote the XTEINK X4 serial/HTTP/BLE transfer regression scripts into the

@@ -16,7 +16,7 @@ BINBOOK_READER_PACKAGE="${WORK_DIR}/${BINBOOK_READER_APP_ID}.squid.zip"
 BINBOOK_FIXTURE="${WORK_DIR}/reader-one.generated.binbook"
 BINBOOK_NAME="${BINBOOK_NAME:-reader-one.binbook}"
 
-SYSTEM_APP="${ROOT}/tests/hardware/zephyr/system-resources/main.squid"
+SYSTEM_APP_DIR="${ROOT}/tests/hardware/zephyr/system-resources"
 SYSTEM_PACKAGE="${WORK_DIR}/system-resources.squid.zip"
 
 WIFI_AP_APP_DIR="${ROOT}/tests/hardware/zephyr/wifi-ap-summary"
@@ -119,6 +119,21 @@ ram_run_app_capture install-binbook-reader install "${BINBOOK_READER_PACKAGE}" >
 ram_run_app_capture launch-binbook-reader launch "${BINBOOK_READER_APP_ID}" >/dev/null
 ram_wait_for_device_contains binbook-library "library" \
   "device output" output >/dev/null
+sleep "${REFRESH_DELAY_SECONDS}"
+for _ in $(seq 1 20); do
+  for _retry in 1 2 3 4 5; do
+    if timeout "${COMMAND_TIMEOUT_SECONDS}s" cargo run --quiet -p squidc -- \
+      device key DOWN --port "${ESPFLASH_PORT}" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 2
+  done
+  sleep 0.5
+  if timeout "${COMMAND_TIMEOUT_SECONDS}s" cargo run --quiet -p squidc -- \
+    device output --port "${ESPFLASH_PORT}" 2>&1 | grep -Fq "${BINBOOK_NAME}"; then
+    break
+  fi
+done
 ram_run_device_capture binbook-open-select key SELECT >/dev/null
 ram_wait_for_device_contains binbook-page "reader" \
   "device output" output >/dev/null
@@ -130,7 +145,7 @@ ram_snapshot_resources binbook-reader-after-render
 ram_reset_runtime_between_workloads system
 ram_reset_heap_max_attribution system
 run_capture package-system \
-  cargo run --quiet -p squidc -- app package "${SYSTEM_APP}" \
+  cargo run --quiet -p squidc -- app package "${SYSTEM_APP_DIR}" \
     --target "${TARGET_ID}" --out "${SYSTEM_PACKAGE}" >/dev/null
 ram_run_app_capture install-system install "${SYSTEM_PACKAGE}" >/dev/null
 ram_run_app_capture launch-system launch system-resources >/dev/null
