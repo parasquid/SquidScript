@@ -15,12 +15,9 @@ LOG_MODULE_REGISTER(squidscript_ssd1677, LOG_LEVEL_INF);
 
 #define SSD1677_NODE DT_ALIAS(epaper0)
 
-static bool ssd1677_color_is_black(const char *color)
+static bool ssd1677_color_is_black(sq_display_color_t color)
 {
-	if (color == NULL) {
-		return false;
-	}
-	return strcmp(color, "black") == 0 || strcmp(color, "gray15") == 0;
+	return sq_display_color_is_black(color);
 }
 
 #if defined(CONFIG_ZTEST)
@@ -45,17 +42,17 @@ static void ssd1677_test_set_pixel(uint8_t *line, size_t line_len, uint16_t phys
 static void ssd1677_test_draw_rect_row(uint8_t *line, size_t line_len, uint16_t physical_y,
 				       const struct sq_vm_runtime_display_op *op)
 {
-	bool fill_black = ssd1677_color_is_black(op->fill_color);
-	bool stroke_black = ssd1677_color_is_black(op->stroke_color);
-	bool has_fill = op->fill_color[0] != '\0';
-	bool has_stroke = op->stroke_color[0] != '\0';
+	bool fill_black = ssd1677_color_is_black(op->u.rect.fill_color);
+	bool stroke_black = ssd1677_color_is_black(op->u.rect.stroke_color);
+	bool has_fill = sq_display_color_is_set(op->u.rect.fill_color);
+	bool has_stroke = sq_display_color_is_set(op->u.rect.stroke_color);
 	int32_t row_y = physical_y;
 	int32_t left = op->x;
 	int32_t top = op->y;
-	int32_t right = op->x + op->w;
-	int32_t bottom = op->y + op->h;
+	int32_t right = op->x + op->u.rect.w;
+	int32_t bottom = op->y + op->u.rect.h;
 
-	if (op->w <= 0 || op->h <= 0 || row_y < top || row_y >= bottom) {
+	if (op->u.rect.w <= 0 || op->u.rect.h <= 0 || row_y < top || row_y >= bottom) {
 		return;
 	}
 	if (left < 0) {
@@ -80,8 +77,8 @@ static void ssd1677_test_draw_rect_row(uint8_t *line, size_t line_len, uint16_t 
 		if (op->x >= 0 && op->x < (int32_t)(line_len * 8U)) {
 			ssd1677_test_set_pixel(line, line_len, (uint16_t)op->x, stroke_black);
 		}
-		if (op->x + op->w - 1 >= 0 && op->x + op->w - 1 < (int32_t)(line_len * 8U)) {
-			ssd1677_test_set_pixel(line, line_len, (uint16_t)(op->x + op->w - 1),
+		if (op->x + op->u.rect.w - 1 >= 0 && op->x + op->u.rect.w - 1 < (int32_t)(line_len * 8U)) {
+			ssd1677_test_set_pixel(line, line_len, (uint16_t)(op->x + op->u.rect.w - 1),
 					       stroke_black);
 		}
 	}
@@ -101,7 +98,7 @@ void sq_ssd1677_test_render_1bpp_row(uint8_t *line, size_t line_len, uint16_t ph
 	for (size_t i = 0; i < op_count; ++i) {
 		switch (ops[i].kind) {
 		case SQ_VM_RUNTIME_DISPLAY_OP_CLEAR:
-			memset(line, ssd1677_color_is_black(ops[i].text) ? 0x00 : 0xff, line_len);
+			memset(line, ssd1677_color_is_black(ops[i].u.clear.color) ? 0x00 : 0xff, line_len);
 			break;
 		case SQ_VM_RUNTIME_DISPLAY_OP_RECT:
 			ssd1677_test_draw_rect_row(line, line_len, physical_y, &ops[i]);
@@ -889,21 +886,22 @@ static int stream_binbook_gray2_bw_previous_page(bool ordered_dither)
 static void draw_text_row(uint8_t line[ROW_BYTES], uint16_t y,
 			  const struct sq_vm_runtime_display_op *op)
 {
-	bool text_black = op->fill_color[0] == '\0' || ssd1677_color_is_black(op->fill_color);
+	bool text_black = !sq_display_color_is_set(op->u.text.color) ||
+			  ssd1677_color_is_black(op->u.text.color);
 
-	if (op->kind != SQ_VM_RUNTIME_DISPLAY_OP_TEXT || op->font_height <= 0 ||
+	if (op->kind != SQ_VM_RUNTIME_DISPLAY_OP_TEXT || op->u.text.font_height <= 0 ||
 	    op->x >= LOGICAL_WIDTH || op->y >= LOGICAL_HEIGHT) {
 		return;
 	}
-	uint8_t scale = (uint8_t)(op->font_height / 7);
+	uint8_t scale = (uint8_t)(op->u.text.font_height / 7);
 	if (scale == 0) {
 		scale = 1;
 	}
 	uint16_t text_y = op->y < 0 ? 0 : (uint16_t)op->y;
 	uint16_t cursor_x = op->x < 0 ? 0 : (uint16_t)op->x;
 
-	for (size_t i = 0; op->text[i] != '\0'; ++i) {
-		const uint8_t *glyph = glyph_for(op->text[i]);
+	for (size_t i = 0; op->u.text.text[i] != '\0'; ++i) {
+		const uint8_t *glyph = glyph_for(op->u.text.text[i]);
 
 		for (uint8_t glyph_row = 0; glyph_row < 7U; ++glyph_row) {
 			for (uint8_t row = 0; row < scale; ++row) {
@@ -938,16 +936,16 @@ static void draw_text_row(uint8_t line[ROW_BYTES], uint16_t y,
 static void draw_rect_row(uint8_t line[ROW_BYTES], uint16_t y,
 			  const struct sq_vm_runtime_display_op *op)
 {
-	bool has_fill = op->fill_color[0] != '\0';
-	bool has_stroke = op->stroke_color[0] != '\0';
-	bool fill_black = ssd1677_color_is_black(op->fill_color);
-	bool stroke_black = ssd1677_color_is_black(op->stroke_color);
+	bool has_fill = sq_display_color_is_set(op->u.rect.fill_color);
+	bool has_stroke = sq_display_color_is_set(op->u.rect.stroke_color);
+	bool fill_black = ssd1677_color_is_black(op->u.rect.fill_color);
+	bool stroke_black = ssd1677_color_is_black(op->u.rect.stroke_color);
 	int32_t left = op->x;
 	int32_t top = op->y;
-	int32_t right = op->x + op->w;
-	int32_t bottom = op->y + op->h;
+	int32_t right = op->x + op->u.rect.w;
+	int32_t bottom = op->y + op->u.rect.h;
 
-	if (op->kind != SQ_VM_RUNTIME_DISPLAY_OP_RECT || op->w <= 0 || op->h <= 0 ||
+	if (op->kind != SQ_VM_RUNTIME_DISPLAY_OP_RECT || op->u.rect.w <= 0 || op->u.rect.h <= 0 ||
 	    (!has_fill && !has_stroke)) {
 		return;
 	}
@@ -1042,7 +1040,7 @@ static void render_row(uint8_t line[ROW_BYTES], uint16_t y,
 	for (size_t i = 0; i < op_count; ++i) {
 		switch (ops[i].kind) {
 		case SQ_VM_RUNTIME_DISPLAY_OP_CLEAR:
-			memset(line, ssd1677_color_is_black(ops[i].text) ? 0x00 : 0xff, ROW_BYTES);
+			memset(line, ssd1677_color_is_black(ops[i].u.clear.color) ? 0x00 : 0xff, ROW_BYTES);
 			break;
 		case SQ_VM_RUNTIME_DISPLAY_OP_RECT:
 			draw_rect_row(line, y, &ops[i]);
@@ -1244,7 +1242,7 @@ static int full_frame_probe(const char *color, bool *observed_busy)
 	if (color == NULL) {
 		return -EINVAL;
 	}
-	strncpy(op.text, color, sizeof(op.text) - 1U);
+	op.u.clear.color = sq_display_color_parse((const uint8_t *)color, strlen(color));
 	ret = set_full_window();
 	if (ret == 0) {
 		ret = stream_composed_1bpp_frame(SSD1677_CMD_WRITE_RAM, &op, 1);
@@ -1371,7 +1369,8 @@ void sq_display_backend_reset(void)
 }
 
 int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t op_count,
-			     enum sq_vm_runtime_display_refresh_mode refresh_request)
+			     enum sq_vm_runtime_display_refresh_mode refresh_request,
+			     const struct sq_vm_runtime_binbook_page *binbook_page)
 {
 	bool observed_busy = false;
 	enum sq_ssd1677_binbook_refresh_kind binbook_refresh =
@@ -1432,11 +1431,11 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 			return ret;
 		}
 		if (binbook_refresh == SQ_SSD1677_BINBOOK_REFRESH_GRAY2_FULL) {
-			ret = stream_binbook_gray2_page(&binbook->binbook_page);
+			ret = stream_binbook_gray2_page(binbook_page);
 		} else {
 			ret = stream_binbook_gray2_bw_previous_page(ordered_dither);
 			if (ret == 0) {
-				ret = stream_binbook_gray2_bw_page(&binbook->binbook_page,
+				ret = stream_binbook_gray2_bw_page(binbook_page,
 								   ordered_dither);
 			}
 		}
@@ -1511,7 +1510,7 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 		return ret;
 	}
 	if (use_binbook_page_path) {
-		binbook_remember_previous_page(&binbook->binbook_page);
+		binbook_remember_previous_page(binbook_page);
 		binbook_record_refresh(binbook_refresh);
 	} else {
 		composed_remember_previous_ops(ops, op_count);
@@ -1531,11 +1530,13 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 
 #if !defined(CONFIG_ZTEST)
 int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t op_count,
-			     enum sq_vm_runtime_display_refresh_mode refresh_mode)
+			     enum sq_vm_runtime_display_refresh_mode refresh_mode,
+			     const struct sq_vm_runtime_binbook_page *binbook_page)
 {
 	ARG_UNUSED(ops);
 	ARG_UNUSED(op_count);
 	ARG_UNUSED(refresh_mode);
+	ARG_UNUSED(binbook_page);
 	return 0;
 }
 

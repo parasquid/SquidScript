@@ -137,18 +137,33 @@ static bool composed_op_equal(const struct sq_vm_runtime_display_op *a,
 	if (a == NULL || b == NULL || a->kind != b->kind) {
 		return false;
 	}
-	return strcmp(a->text, b->text) == 0 && strcmp(a->fill_color, b->fill_color) == 0 &&
-	       strcmp(a->stroke_color, b->stroke_color) == 0 && a->x == b->x && a->y == b->y &&
-	       a->w == b->w && a->h == b->h && a->font_height == b->font_height;
+	if (a->x != b->x || a->y != b->y) {
+		return false;
+	}
+	switch (a->kind) {
+	case SQ_VM_RUNTIME_DISPLAY_OP_CLEAR:
+		return a->u.clear.color == b->u.clear.color;
+	case SQ_VM_RUNTIME_DISPLAY_OP_TEXT:
+		return strcmp(a->u.text.text, b->u.text.text) == 0 &&
+		       a->u.text.font_height == b->u.text.font_height &&
+		       a->u.text.color == b->u.text.color;
+	case SQ_VM_RUNTIME_DISPLAY_OP_RECT:
+		return a->u.rect.w == b->u.rect.w && a->u.rect.h == b->u.rect.h &&
+		       a->u.rect.fill_color == b->u.rect.fill_color &&
+		       a->u.rect.stroke_color == b->u.rect.stroke_color;
+	default:
+		return true;
+	}
 }
 
-static const char *last_clear_color(const struct sq_vm_runtime_display_op *ops, size_t op_count)
+static sq_display_color_t last_clear_color(const struct sq_vm_runtime_display_op *ops,
+					   size_t op_count)
 {
-	const char *color = NULL;
+	sq_display_color_t color = SQ_DISPLAY_COLOR_UNSET;
 
 	for (size_t i = 0; i < op_count; ++i) {
 		if (ops[i].kind == SQ_VM_RUNTIME_DISPLAY_OP_CLEAR) {
-			color = ops[i].text;
+			color = ops[i].u.clear.color;
 		}
 	}
 	return color;
@@ -318,17 +333,18 @@ static void window_include_op(struct sq_ssd1677_window *window,
 	}
 	switch (op->kind) {
 	case SQ_VM_RUNTIME_DISPLAY_OP_RECT:
-		window_include_logical_rect(window, op->x, op->y, op->w, op->h, logical_width,
-					    logical_height, physical_width, physical_height,
-					    rotation);
+		window_include_logical_rect(window, op->x, op->y, op->u.rect.w, op->u.rect.h,
+					    logical_width, logical_height, physical_width,
+					    physical_height, rotation);
 		break;
 	case SQ_VM_RUNTIME_DISPLAY_OP_TEXT: {
-		int32_t scale = op->font_height / 7;
+		int32_t scale = op->u.text.font_height / 7;
 		if (scale <= 0) {
 			scale = 1;
 		}
 		int32_t text_len = 0;
-		while (text_len < (int32_t)sizeof(op->text) && op->text[text_len] != '\0') {
+		while (text_len < (int32_t)sizeof(op->u.text.text) &&
+		       op->u.text.text[text_len] != '\0') {
 			text_len++;
 		}
 		window_include_logical_rect(window, op->x, op->y, text_len * 6 * scale,
@@ -350,8 +366,8 @@ bool sq_ssd1677_composed_dirty_window(
 	uint16_t logical_width, uint16_t logical_height, uint16_t physical_width,
 	uint16_t physical_height, uint16_t rotation, struct sq_ssd1677_window *out)
 {
-	const char *previous_clear = NULL;
-	const char *current_clear = NULL;
+	sq_display_color_t previous_clear = SQ_DISPLAY_COLOR_UNSET;
+	sq_display_color_t current_clear = SQ_DISPLAY_COLOR_UNSET;
 
 	if (out == NULL || previous_ops == NULL || current_ops == NULL) {
 		return false;
@@ -359,8 +375,8 @@ bool sq_ssd1677_composed_dirty_window(
 	memset(out, 0, sizeof(*out));
 	previous_clear = last_clear_color(previous_ops, previous_op_count);
 	current_clear = last_clear_color(current_ops, current_op_count);
-	if ((previous_clear == NULL) != (current_clear == NULL) ||
-	    (previous_clear != NULL && strcmp(previous_clear, current_clear) != 0)) {
+	if (sq_display_color_is_set(previous_clear) != sq_display_color_is_set(current_clear) ||
+	    (sq_display_color_is_set(previous_clear) && previous_clear != current_clear)) {
 		window_include_full(out, physical_width, physical_height);
 		return out->valid;
 	}

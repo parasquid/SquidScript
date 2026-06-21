@@ -27,6 +27,7 @@ struct sq_vm_runtime_display_flush_job {
 	struct sq_vm_runtime_display_op ops[SQ_VM_RUNTIME_DISPLAY_OP_MAX];
 	uint8_t op_count;
 	enum sq_vm_runtime_display_refresh_mode refresh_mode;
+	struct sq_vm_runtime_binbook_page *binbook_page;
 };
 
 static struct sq_vm_runtime_display_flush_job sq_vm_runtime_display_active_job;
@@ -515,6 +516,12 @@ static void runtime_display_copy_flush_job(struct sq_vm_runtime_display_flush_jo
 	job->refresh_mode = runtime->display_refresh_mode;
 	memcpy(job->ops, runtime->display_ops,
 	       runtime->display_op_count * sizeof(runtime->display_ops[0]));
+	if (runtime->drawable.active && runtime->drawable.page.path[0] != '\0') {
+		job->binbook_page = k_malloc(sizeof(*job->binbook_page));
+		if (job->binbook_page != NULL) {
+			*job->binbook_page = runtime->drawable.page;
+		}
+	}
 }
 
 static void runtime_display_flush_worker(void *arg1, void *arg2, void *arg3)
@@ -526,8 +533,13 @@ static void runtime_display_flush_worker(void *arg1, void *arg2, void *arg3)
 	while (true) {
 		int result = sq_display_backend_flush(sq_vm_runtime_display_active_job.ops,
 						      sq_vm_runtime_display_active_job.op_count,
-						      sq_vm_runtime_display_active_job.refresh_mode);
+						      sq_vm_runtime_display_active_job.refresh_mode,
+						      sq_vm_runtime_display_active_job.binbook_page);
 		runtime_display_record_flush_error(sq_vm_runtime_display_active_job.runtime, result);
+		if (sq_vm_runtime_display_active_job.binbook_page != NULL) {
+			k_free(sq_vm_runtime_display_active_job.binbook_page);
+			sq_vm_runtime_display_active_job.binbook_page = NULL;
+		}
 
 		k_mutex_lock(&sq_vm_runtime_display_work_lock, K_FOREVER);
 		if (sq_vm_runtime_display_pending) {
@@ -561,6 +573,10 @@ static void runtime_flush_display_if_dirty(struct sq_vm_runtime *runtime)
 	runtime_display_work_init();
 	k_mutex_lock(&sq_vm_runtime_display_work_lock, K_FOREVER);
 	if (sq_vm_runtime_display_active) {
+		if (sq_vm_runtime_display_pending &&
+		    sq_vm_runtime_display_pending_job.binbook_page != NULL) {
+			k_free(sq_vm_runtime_display_pending_job.binbook_page);
+		}
 		runtime_display_copy_flush_job(&sq_vm_runtime_display_pending_job, runtime);
 		sq_vm_runtime_display_pending = true;
 		k_mutex_unlock(&sq_vm_runtime_display_work_lock);

@@ -65,7 +65,7 @@ void runtime_display_clear(void *user_data, const uint8_t *color, size_t color_l
 	struct sq_vm_runtime_display_op *op = runtime_display_append_op(runtime);
 	if (op != NULL) {
 		op->kind = SQ_VM_RUNTIME_DISPLAY_OP_CLEAR;
-		runtime_display_copy_text(op->text, sizeof(op->text), color, color_len);
+		op->u.clear.color = sq_display_color_parse(color, color_len);
 	}
 }
 
@@ -87,12 +87,12 @@ void runtime_display_text(void *user_data, const uint8_t *text, size_t text_len,
 	struct sq_vm_runtime_display_op *op = runtime_display_append_op(runtime);
 	if (op != NULL) {
 		op->kind = SQ_VM_RUNTIME_DISPLAY_OP_TEXT;
-		runtime_display_copy_text(op->text, sizeof(op->text), text, text_len);
+		runtime_display_copy_text(op->u.text.text, sizeof(op->u.text.text), text, text_len);
 		op->x = options->x;
 		op->y = options->y;
-		op->font_height = options->font_height;
-		runtime_display_copy_text(op->fill_color, sizeof(op->fill_color),
-					  options->text_color, options->text_color_len);
+		op->u.text.font_height = options->font_height;
+		op->u.text.color =
+			sq_display_color_parse(options->text_color, options->text_color_len);
 	}
 }
 
@@ -114,12 +114,12 @@ void runtime_display_rect(void *user_data, const SqvmDisplayRectOptions *options
 		op->kind = SQ_VM_RUNTIME_DISPLAY_OP_RECT;
 		op->x = options->x;
 		op->y = options->y;
-		op->w = options->w;
-		op->h = options->h;
-		runtime_display_copy_text(op->fill_color, sizeof(op->fill_color),
-					  options->fill_color, options->fill_color_len);
-		runtime_display_copy_text(op->stroke_color, sizeof(op->stroke_color),
-					  options->stroke_color, options->stroke_color_len);
+		op->u.rect.w = options->w;
+		op->u.rect.h = options->h;
+		op->u.rect.fill_color =
+			sq_display_color_parse(options->fill_color, options->fill_color_len);
+		op->u.rect.stroke_color =
+			sq_display_color_parse(options->stroke_color, options->stroke_color_len);
 	}
 }
 
@@ -188,7 +188,6 @@ void runtime_display_draw(void *user_data, SqvmHandle drawable,
 		op->kind = SQ_VM_RUNTIME_DISPLAY_OP_BINBOOK_DRAWABLE;
 		op->x = options->x;
 		op->y = options->y;
-		op->binbook_page = runtime->drawable.page;
 	}
 }
 

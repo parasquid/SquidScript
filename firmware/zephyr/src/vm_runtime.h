@@ -16,6 +16,7 @@
 #include <stdbool.h>
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
+#include "sq_display_color.h"
 #if IS_ENABLED(CONFIG_NET_L2_WIFI_MGMT) && IS_ENABLED(CONFIG_NET_MGMT_EVENT) && \
 	IS_ENABLED(CONFIG_NET_MGMT_EVENT_INFO)
 #include <zephyr/net/net_mgmt.h>
@@ -282,15 +283,24 @@ struct sq_vm_runtime_binbook_page {
 
 struct sq_vm_runtime_display_op {
 	enum sq_vm_runtime_display_op_kind kind;
-	char text[SQ_VM_RUNTIME_DISPLAY_TEXT_LEN];
-	char fill_color[SQ_VM_RUNTIME_DISPLAY_TEXT_LEN];
-	char stroke_color[SQ_VM_RUNTIME_DISPLAY_TEXT_LEN];
 	int32_t x;
 	int32_t y;
-	int32_t w;
-	int32_t h;
-	int32_t font_height;
-	struct sq_vm_runtime_binbook_page binbook_page;
+	union {
+		struct {
+			sq_display_color_t color;
+		} clear;
+		struct {
+			char text[SQ_VM_RUNTIME_DISPLAY_TEXT_LEN];
+			int32_t font_height;
+			sq_display_color_t color;
+		} text;
+		struct {
+			int32_t w;
+			int32_t h;
+			sq_display_color_t fill_color;
+			sq_display_color_t stroke_color;
+		} rect;
+	} u;
 };
 
 enum sq_vm_runtime_display_refresh_mode {

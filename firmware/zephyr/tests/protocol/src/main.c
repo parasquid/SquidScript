@@ -57,11 +57,13 @@ static void test_display_flush_reset(bool block)
 }
 
 int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t op_count,
-			     enum sq_vm_runtime_display_refresh_mode refresh_mode)
+			     enum sq_vm_runtime_display_refresh_mode refresh_mode,
+			     const struct sq_vm_runtime_binbook_page *binbook_page)
 {
 	ARG_UNUSED(ops);
 	ARG_UNUSED(op_count);
 	ARG_UNUSED(refresh_mode);
+	ARG_UNUSED(binbook_page);
 	test_display_flush_count++;
 	if (test_display_flush_block) {
 		k_sem_give(&test_display_flush_started);
@@ -6158,13 +6160,13 @@ ZTEST(squidscript_protocol, test_vm_runtime_records_physical_display_clear_and_t
 	zassert_true(runtime.display_dirty);
 	zassert_equal(runtime.display_op_count, 2);
 	zassert_equal(runtime.display_ops[0].kind, SQ_VM_RUNTIME_DISPLAY_OP_CLEAR);
-	zassert_str_equal(runtime.display_ops[0].text, "white");
+	zassert_equal(runtime.display_ops[0].u.clear.color, SQ_DISPLAY_COLOR_WHITE);
 	zassert_equal(runtime.display_ops[1].kind, SQ_VM_RUNTIME_DISPLAY_OP_TEXT);
-	zassert_str_equal(runtime.display_ops[1].text, "Hello");
+	zassert_str_equal(runtime.display_ops[1].u.text.text, "Hello");
 	zassert_equal(runtime.display_ops[1].x, 10);
 	zassert_equal(runtime.display_ops[1].y, 20);
-	zassert_equal(runtime.display_ops[1].font_height, 24);
-	zassert_str_equal(runtime.display_ops[1].fill_color, "white");
+	zassert_equal(runtime.display_ops[1].u.text.font_height, 24);
+	zassert_equal(runtime.display_ops[1].u.text.color, SQ_DISPLAY_COLOR_WHITE);
 }
 
 ZTEST(squidscript_protocol, test_vm_runtime_records_physical_display_rect_ops)
@@ -6189,10 +6191,10 @@ ZTEST(squidscript_protocol, test_vm_runtime_records_physical_display_rect_ops)
 	zassert_equal(runtime.display_ops[0].kind, SQ_VM_RUNTIME_DISPLAY_OP_RECT);
 	zassert_equal(runtime.display_ops[0].x, 18);
 	zassert_equal(runtime.display_ops[0].y, 76);
-	zassert_equal(runtime.display_ops[0].w, 424);
-	zassert_equal(runtime.display_ops[0].h, 48);
-	zassert_str_equal(runtime.display_ops[0].fill_color, "");
-	zassert_str_equal(runtime.display_ops[0].stroke_color, "gray15");
+	zassert_equal(runtime.display_ops[0].u.rect.w, 424);
+	zassert_equal(runtime.display_ops[0].u.rect.h, 48);
+	zassert_equal(runtime.display_ops[0].u.rect.fill_color, SQ_DISPLAY_COLOR_UNSET);
+	zassert_equal(runtime.display_ops[0].u.rect.stroke_color, SQ_DISPLAY_COLOR_BLACK);
 }
 
 ZTEST(squidscript_protocol, test_vm_runtime_dispatches_binbook_resource_drawable)
@@ -6324,13 +6326,13 @@ ZTEST(squidscript_protocol, test_vm_runtime_records_binbook_drawable_display_op)
 	zassert_true(runtime.display_dirty);
 	zassert_equal(runtime.display_op_count, 1);
 	zassert_equal(runtime.display_ops[0].kind, SQ_VM_RUNTIME_DISPLAY_OP_BINBOOK_DRAWABLE);
-	zassert_str_equal(runtime.display_ops[0].binbook_page.path,
+	zassert_str_equal(runtime.drawable.page.path,
 			  "/sqtest/apps/binbook-reader/resources/books/sample.binbook");
-	zassert_equal(runtime.display_ops[0].binbook_page.blob_offset, 412);
-	zassert_equal(runtime.display_ops[0].binbook_page.compressed_size, 4);
-	zassert_equal(runtime.display_ops[0].binbook_page.uncompressed_size, 96000);
-	zassert_equal(runtime.display_ops[0].binbook_page.stored_width, 800);
-	zassert_equal(runtime.display_ops[0].binbook_page.stored_height, 480);
+	zassert_equal(runtime.drawable.page.blob_offset, 412);
+	zassert_equal(runtime.drawable.page.compressed_size, 4);
+	zassert_equal(runtime.drawable.page.uncompressed_size, 96000);
+	zassert_equal(runtime.drawable.page.stored_width, 800);
+	zassert_equal(runtime.drawable.page.stored_height, 480);
 }
 
 ZTEST(squidscript_protocol, test_display_refresh_mode_sets_render_override)
@@ -6380,14 +6382,14 @@ ZTEST(squidscript_protocol, test_ssd1677_1bpp_compositor_draws_stroked_rect)
 {
 	uint8_t line[100] = {0};
 	const struct sq_vm_runtime_display_op ops[] = {
-		{ .kind = SQ_VM_RUNTIME_DISPLAY_OP_CLEAR, .text = "white" },
+		{ .kind = SQ_VM_RUNTIME_DISPLAY_OP_CLEAR, .u.clear.color = SQ_DISPLAY_COLOR_WHITE },
 		{
 			.kind = SQ_VM_RUNTIME_DISPLAY_OP_RECT,
 			.x = 8,
 			.y = 4,
-			.w = 16,
-			.h = 6,
-			.stroke_color = "gray15",
+			.u.rect.w = 16,
+			.u.rect.h = 6,
+			.u.rect.stroke_color = SQ_DISPLAY_COLOR_BLACK,
 		},
 	};
 
@@ -6403,25 +6405,25 @@ ZTEST(squidscript_protocol, test_ssd1677_1bpp_compositor_moves_highlight_between
 	uint8_t previous[100] = {0};
 	uint8_t current[100] = {0};
 	const struct sq_vm_runtime_display_op old_ops[] = {
-		{ .kind = SQ_VM_RUNTIME_DISPLAY_OP_CLEAR, .text = "white" },
+		{ .kind = SQ_VM_RUNTIME_DISPLAY_OP_CLEAR, .u.clear.color = SQ_DISPLAY_COLOR_WHITE },
 		{
 			.kind = SQ_VM_RUNTIME_DISPLAY_OP_RECT,
 			.x = 8,
 			.y = 4,
-			.w = 16,
-			.h = 6,
-			.stroke_color = "gray15",
+			.u.rect.w = 16,
+			.u.rect.h = 6,
+			.u.rect.stroke_color = SQ_DISPLAY_COLOR_BLACK,
 		},
 	};
 	const struct sq_vm_runtime_display_op new_ops[] = {
-		{ .kind = SQ_VM_RUNTIME_DISPLAY_OP_CLEAR, .text = "white" },
+		{ .kind = SQ_VM_RUNTIME_DISPLAY_OP_CLEAR, .u.clear.color = SQ_DISPLAY_COLOR_WHITE },
 		{
 			.kind = SQ_VM_RUNTIME_DISPLAY_OP_RECT,
 			.x = 8,
 			.y = 20,
-			.w = 16,
-			.h = 6,
-			.stroke_color = "gray15",
+			.u.rect.w = 16,
+			.u.rect.h = 6,
+			.u.rect.stroke_color = SQ_DISPLAY_COLOR_BLACK,
 		},
 	};
 
@@ -6563,39 +6565,39 @@ ZTEST(squidscript_protocol, test_ssd1677_composed_dirty_window_tracks_changed_hi
 {
 	struct sq_ssd1677_window window = {0};
 	const struct sq_vm_runtime_display_op previous_ops[] = {
-		{ .kind = SQ_VM_RUNTIME_DISPLAY_OP_CLEAR, .text = "white" },
+		{ .kind = SQ_VM_RUNTIME_DISPLAY_OP_CLEAR, .u.clear.color = SQ_DISPLAY_COLOR_WHITE },
 		{
 			.kind = SQ_VM_RUNTIME_DISPLAY_OP_TEXT,
-			.text = "Continue",
+			.u.text.text = "Continue",
 			.x = 42,
 			.y = 92,
-			.font_height = 24,
+			.u.text.font_height = 24,
 		},
 		{
 			.kind = SQ_VM_RUNTIME_DISPLAY_OP_RECT,
 			.x = 18,
 			.y = 76,
-			.w = 424,
-			.h = 48,
-			.stroke_color = "black",
+			.u.rect.w = 424,
+			.u.rect.h = 48,
+			.u.rect.stroke_color = SQ_DISPLAY_COLOR_BLACK,
 		},
 	};
 	const struct sq_vm_runtime_display_op current_ops[] = {
-		{ .kind = SQ_VM_RUNTIME_DISPLAY_OP_CLEAR, .text = "white" },
+		{ .kind = SQ_VM_RUNTIME_DISPLAY_OP_CLEAR, .u.clear.color = SQ_DISPLAY_COLOR_WHITE },
 		{
 			.kind = SQ_VM_RUNTIME_DISPLAY_OP_TEXT,
-			.text = "Continue",
+			.u.text.text = "Continue",
 			.x = 42,
 			.y = 92,
-			.font_height = 24,
+			.u.text.font_height = 24,
 		},
 		{
 			.kind = SQ_VM_RUNTIME_DISPLAY_OP_RECT,
 			.x = 18,
 			.y = 128,
-			.w = 424,
-			.h = 48,
-			.stroke_color = "black",
+			.u.rect.w = 424,
+			.u.rect.h = 48,
+			.u.rect.stroke_color = SQ_DISPLAY_COLOR_BLACK,
 		},
 	};
 
