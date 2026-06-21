@@ -40,7 +40,7 @@ run_capture launch-display-drawlog cargo run --quiet -p squidc -- app launch dis
 
 sleep 0.2
 drawlog_out="$(run_capture drawlog cargo run --quiet -p squidc -- device drawlog)"
-assert_file_contains "${drawlog_out}" "draw=clear color=gray0"
+assert_file_contains "${drawlog_out}" "draw=clear color=0"
 assert_file_contains "${drawlog_out}" "draw=select name=status"
 assert_file_contains "${drawlog_out}" 'draw=image path="data/icon.bmp" x=20 y=24'
 assert_file_contains "${drawlog_out}" 'draw=resource drawable="drawable/page" x=0 y=0'

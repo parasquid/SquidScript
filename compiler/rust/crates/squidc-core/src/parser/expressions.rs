@@ -1,4 +1,4 @@
-use crate::{ir::IrExpr, lexer::TokenKind};
+use crate::{diagnostic::error, ir::IrExpr, lexer::TokenKind};
 use rowan::GreenNodeBuilder;
 
 use super::Parser;
@@ -255,16 +255,19 @@ impl Parser<'_> {
                         args: self.parse_call_args(builder),
                     }
                 } else if name == "color" {
-                    let level = parse_color_constant(&namespace);
-                    if let Some(level) = level {
-                        IrExpr::Literal {
-                            value: serde_json::json!(level),
-                        }
-                    } else {
-                        IrExpr::Field {
-                            target: Box::new(IrExpr::Variable { name }),
-                            field: namespace,
-                        }
+                    let level = parse_color_constant(&namespace).unwrap_or_else(|| {
+                        let end = self.previous_end().unwrap_or(0);
+                        let start = end.saturating_sub(namespace.len());
+                        self.diagnostics.push(error(
+                            "E_UNKNOWN_COLOR",
+                            format!("unknown color constant: color.{namespace}"),
+                            start,
+                            end,
+                        ));
+                        0
+                    });
+                    IrExpr::Literal {
+                        value: serde_json::json!(level),
                     }
                 } else if name == "state" {
                     if self.at_kind(TokenKind::OpenParen) {

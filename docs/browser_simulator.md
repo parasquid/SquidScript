@@ -207,7 +207,7 @@ event.on("key.DOWN") {
 }
 
 screen("main", { render: "compose" }) {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
   service.display.text("Hello Menu", { x: 20, y: 60, w: 440, h: 48, fontHeight: 32, align: "center" })
 }
 ```

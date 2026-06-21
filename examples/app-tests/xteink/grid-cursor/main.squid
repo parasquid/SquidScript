@@ -43,7 +43,7 @@ event.on("key.RIGHT") {
 }
 
 screen("grid") {
-  service.display.clear("white")
+  service.display.clear(color.WHITE)
   service.display.refreshMode("fast1bpp")
   debug.print("cursor", state.cursorRow, state.cursorCol)
 }

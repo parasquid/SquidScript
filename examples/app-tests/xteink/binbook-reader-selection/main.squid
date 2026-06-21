@@ -81,7 +81,7 @@ event.on("key.BACK") {
 }
 
 screen("library") {
-  service.display.clear("white")
+  service.display.clear(color.WHITE)
   service.display.text("library", {
     x: 0
     y: 0
@@ -91,7 +91,7 @@ screen("library") {
 }
 
 screen("reader") {
-  service.display.clear("white")
+  service.display.clear(color.WHITE)
   service.display.text("reader", {
     x: 0
     y: 0
@@ -101,7 +101,7 @@ screen("reader") {
 }
 
 screen("menu") {
-  service.display.clear("white")
+  service.display.clear(color.WHITE)
   service.display.text("menu", {
     x: 0
     y: 0

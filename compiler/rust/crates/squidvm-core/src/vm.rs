@@ -83,6 +83,14 @@ pub struct ChunkedVm {
     frame_count: usize,
 }
 
+fn display_color_from_i32(value: i32) -> Result<u8, VmError> {
+    if (0..=15).contains(&value) {
+        Ok(value as u8)
+    } else {
+        Err(VmError::InvalidOperand)
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct EventPayloadField<'a> {
     pub name: &'static str,
@@ -927,6 +935,20 @@ impl ChunkedVm {
         }
     }
 
+    fn pop_optional_i32(&mut self) -> Result<Option<i32>, VmError> {
+        match self.pop()? {
+            Value::Null => Ok(None),
+            Value::I32(value) => Ok(Some(value)),
+            _ => Err(VmError::InvalidOperand),
+        }
+    }
+
+    fn pop_optional_display_color(&mut self) -> Result<Option<u8>, VmError> {
+        self.pop_optional_i32()?
+            .map(display_color_from_i32)
+            .transpose()
+    }
+
     fn pop_sqbc_string_id(&mut self) -> Result<u16, VmError> {
         match self.pop()? {
             Value::String(StringRef::Sqbc(id)) => Ok(id),
@@ -1342,14 +1364,14 @@ impl ChunkedVm {
                 self.stack_len = start;
             }
             BUILTIN_DISPLAY_CLEAR => {
-                let color_id = self.pop_sqbc_string_id()?;
-                host.draw_clear(self.index.string(color_id)?);
+                let color = self.pop()?.expect_i32()?;
+                host.draw_clear(display_color_from_i32(color)?);
             }
             BUILTIN_DISPLAY_TEXT => {
                 let valign_id = self.pop_optional_string()?;
                 let align_id = self.pop_optional_string()?;
-                let background_color_id = self.pop_optional_string()?;
-                let text_color_id = self.pop_optional_string()?;
+                let background_color = self.pop_optional_display_color()?;
+                let text_color = self.pop_optional_display_color()?;
                 let font_height = self.pop()?.expect_i32()?;
                 let h = self.pop()?.expect_i32()?;
                 let w = self.pop()?.expect_i32()?;
@@ -1366,18 +1388,16 @@ impl ChunkedVm {
                         w,
                         h,
                         font_height,
-                        text_color: text_color_id.map(|id| self.index.string(id)).transpose()?,
-                        background_color: background_color_id
-                            .map(|id| self.index.string(id))
-                            .transpose()?,
+                        text_color,
+                        background_color,
                         align: align_id.map(|id| self.index.string(id)).transpose()?,
                         valign: valign_id.map(|id| self.index.string(id)).transpose()?,
                     },
                 );
             }
             BUILTIN_DISPLAY_RECT => {
-                let stroke_color_id = self.pop_optional_string()?;
-                let fill_color_id = self.pop_optional_string()?;
+                let stroke_color = self.pop_optional_display_color()?;
+                let fill_color = self.pop_optional_display_color()?;
                 let h = self.pop()?.expect_i32()?;
                 let w = self.pop()?.expect_i32()?;
                 let y = self.pop()?.expect_i32()?;
@@ -1387,14 +1407,12 @@ impl ChunkedVm {
                     y,
                     w,
                     h,
-                    fill_color: fill_color_id.map(|id| self.index.string(id)).transpose()?,
-                    stroke_color: stroke_color_id
-                        .map(|id| self.index.string(id))
-                        .transpose()?,
+                    fill_color,
+                    stroke_color,
                 });
             }
             BUILTIN_DISPLAY_LINE => {
-                let color_id = self.pop_optional_string()?;
+                let color = self.pop_optional_display_color()?;
                 let y2 = self.pop()?.expect_i32()?;
                 let x2 = self.pop()?.expect_i32()?;
                 let y1 = self.pop()?.expect_i32()?;
@@ -1404,7 +1422,7 @@ impl ChunkedVm {
                     y1,
                     x2,
                     y2,
-                    color: color_id.map(|id| self.index.string(id)).transpose()?,
+                    color,
                 });
             }
             BUILTIN_DISPLAY_SELECT => {
@@ -2333,7 +2351,7 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
         self.trace.debug_print(strings, values);
     }
 
-    fn draw_clear(&mut self, color: &str) {
+    fn draw_clear(&mut self, color: u8) {
         self.trace.draw_clear(color);
     }
 
@@ -2346,11 +2364,11 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
         self.trace.draw_text(strings, text, options);
     }
 
-    fn draw_rect(&mut self, options: DisplayRectOptions<'_>) {
+    fn draw_rect(&mut self, options: DisplayRectOptions) {
         self.trace.draw_rect(options);
     }
 
-    fn draw_line(&mut self, options: DisplayLineOptions<'_>) {
+    fn draw_line(&mut self, options: DisplayLineOptions) {
         self.trace.draw_line(options);
     }
 

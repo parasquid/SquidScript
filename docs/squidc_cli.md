@@ -179,7 +179,7 @@ to copy, install, or otherwise consume the uploaded file.
 
 `device drawlog` returns the current Zephyr headless display draw log. Records
 use the current firmware diagnostic text shape, such as
-`draw=clear color=gray0`, `draw=text text="Hello" x=10 y=20`,
+`draw=clear color=0`, `draw=text text="Hello" x=10 y=20`,
 `draw=rect x=1 y=2 w=3 h=4`, and `draw=line x1=5 y1=6 x2=7 y2=8`.
 
 `device lifecycle` returns current Zephyr app lifecycle diagnostics as lines

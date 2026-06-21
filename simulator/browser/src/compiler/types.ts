@@ -46,7 +46,7 @@ export type IrStatement =
   | { op: "call"; name: string; args: IrExpr[] }
   | { op: "debug.print"; args: IrExpr[] }
   | { op: "debug.block"; statements: IrStatement[] }
-  | { op: "service.display.clear"; color: string }
+  | { op: "service.display.clear"; color: IrExpr }
   | { op: "service.display.text"; text: IrExpr; options: Record<string, unknown> }
   | { op: "service.display.rect"; x: number; y: number; w: number; h: number; options: Record<string, unknown> }
   | { op: "service.display.line"; x1: number; y1: number; x2: number; y2: number; options: Record<string, unknown> };

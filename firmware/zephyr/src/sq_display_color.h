@@ -21,6 +21,4 @@ static inline bool sq_display_color_is_set(sq_display_color_t color)
 	return color != SQ_DISPLAY_COLOR_UNSET;
 }
 
-sq_display_color_t sq_display_color_parse(const uint8_t *name, size_t name_len);
-
 #endif

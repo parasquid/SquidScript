@@ -34,7 +34,7 @@ event.on("key.BACK") {
 }
 
 screen("main") {
-  display.clear("white")
+  display.clear(color.WHITE)
   display.text("Counter", { x: 20, y: 40, fontHeight: 32 })
   display.text(count, { x: 20, y: 120, fontHeight: 48 })
   display.text("SELECT increments  BACK exits", {

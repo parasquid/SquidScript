@@ -361,7 +361,7 @@ function jumpToSelectedChapter() {
 function drawRow(label, y, selected) {
   if (selected) {
     service.display.rect(18, y, 424, 48, {
-      strokeColor: "gray15"
+      strokeColor: color.GRAY15
     })
   }
   service.display.text(label, {
@@ -371,17 +371,17 @@ function drawRow(label, y, selected) {
     h: 48
     fontHeight: 20
     valign: "middle"
-    textColor: "gray15"
+    textColor: color.GRAY15
   })
 }
 
 screen("library") {
-  service.display.clear("white")
+  service.display.clear(color.WHITE)
   service.display.text("Library", {
     x: 24
     y: 28
     fontHeight: 28
-    textColor: "gray15"
+    textColor: color.GRAY15
   })
   let listing = content.binbook.list("books", {
     offset: state.libraryTop
@@ -393,13 +393,13 @@ screen("library") {
         x: 24
         y: 96
         fontHeight: 24
-        textColor: "gray15"
+        textColor: color.GRAY15
       })
       service.display.text("Use transfer", {
         x: 24
         y: 144
         fontHeight: 18
-        textColor: "gray15"
+        textColor: color.GRAY15
       })
       debug.print("library", "empty", listing.count)
     }
@@ -424,7 +424,7 @@ screen("library") {
       x: 24
       y: 96
       fontHeight: 24
-      textColor: "gray15"
+      textColor: color.GRAY15
     })
     debug.print("library", "error", listing.error, listing.warning)
   }
@@ -432,14 +432,14 @@ screen("library") {
 }
 
 screen("menu") {
-  service.display.clear("white")
+  service.display.clear(color.WHITE)
   service.display.text(state.selectedBookName, {
     x: 24
     y: 28
     w: 432
     h: 36
     fontHeight: 20
-    textColor: "gray15"
+    textColor: color.GRAY15
   })
   drawRow("Continue", 76, state.menuSelected == 0)
   drawRow("Chapters", 128, state.menuSelected == 1)
@@ -450,14 +450,14 @@ screen("menu") {
 }
 
 screen("reader") {
-  service.display.clear("white")
+  service.display.clear(color.WHITE)
   service.display.refreshMode("full")
   if (state.selectedBookRef == "") {
     service.display.text("Select a book", {
       x: 24
       y: 64
       fontHeight: 24
-      textColor: "gray15"
+      textColor: color.GRAY15
     })
   }
   else {
@@ -474,7 +474,7 @@ screen("reader") {
           x: 24
           y: 64
           fontHeight: 24
-          textColor: "gray15"
+          textColor: color.GRAY15
         })
         debug.print("reader", "page-error", page.error, state.pageIndex)
       }
@@ -484,7 +484,7 @@ screen("reader") {
         x: 24
         y: 64
         fontHeight: 24
-        textColor: "gray15"
+        textColor: color.GRAY15
       })
       debug.print("reader", "open-error", state.selectedBookName, opened.error)
     }
@@ -492,19 +492,19 @@ screen("reader") {
 }
 
 screen("chapters") {
-  service.display.clear("white")
+  service.display.clear(color.WHITE)
   service.display.text("Chapters", {
     x: 24
     y: 28
     fontHeight: 28
-    textColor: "gray15"
+    textColor: color.GRAY15
   })
   if (state.chapterCount == 0) {
     service.display.text("No chapters", {
       x: 24
       y: 96
       fontHeight: 24
-      textColor: "gray15"
+      textColor: color.GRAY15
     })
   }
   else {
@@ -531,7 +531,7 @@ screen("chapters") {
           x: 24
           y: 96
           fontHeight: 24
-          textColor: "gray15"
+          textColor: color.GRAY15
         })
         debug.print("chapters", "error", chapters.error)
       }

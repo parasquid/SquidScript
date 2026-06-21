@@ -31,6 +31,8 @@ use squidvm_core::{
     vm::{ChunkedVm, EventPayload, EventPayloadField},
 };
 
+const DISPLAY_COLOR_UNSET: u8 = u8::MAX;
+
 const SECTION_STRINGS: u16 = 1;
 const SECTION_BLE_TRIGGERS: u16 = 10;
 const SECTION_HTTP_PROFILES: u16 = 11;
@@ -688,10 +690,8 @@ pub struct SqvmDisplayTextOptions {
     pub w: i32,
     pub h: i32,
     pub font_height: i32,
-    pub text_color: *const u8,
-    pub text_color_len: usize,
-    pub background_color: *const u8,
-    pub background_color_len: usize,
+    pub text_color: u8,
+    pub background_color: u8,
     pub align: *const u8,
     pub align_len: usize,
     pub valign: *const u8,
@@ -705,10 +705,8 @@ pub struct SqvmDisplayRectOptions {
     pub y: i32,
     pub w: i32,
     pub h: i32,
-    pub fill_color: *const u8,
-    pub fill_color_len: usize,
-    pub stroke_color: *const u8,
-    pub stroke_color_len: usize,
+    pub fill_color: u8,
+    pub stroke_color: u8,
 }
 
 #[repr(C)]
@@ -718,8 +716,7 @@ pub struct SqvmDisplayLineOptions {
     pub y1: i32,
     pub x2: i32,
     pub y2: i32,
-    pub color: *const u8,
-    pub color_len: usize,
+    pub color: u8,
 }
 
 #[repr(C)]
@@ -3249,10 +3246,10 @@ impl TraceSink for FfiHost<'_> {
         }
     }
 
-    fn draw_clear(&mut self, color: &str) {
+    fn draw_clear(&mut self, color: u8) {
         if let Some(display_clear) = self.callbacks.display_clear {
             unsafe {
-                display_clear(self.user_data, color.as_ptr(), color.len());
+                display_clear(self.user_data, color);
             }
         }
     }
@@ -3274,10 +3271,8 @@ impl TraceSink for FfiHost<'_> {
             w: options.w,
             h: options.h,
             font_height: options.font_height,
-            text_color: option_ptr(options.text_color),
-            text_color_len: option_len(options.text_color),
-            background_color: option_ptr(options.background_color),
-            background_color_len: option_len(options.background_color),
+            text_color: options.text_color.unwrap_or(DISPLAY_COLOR_UNSET),
+            background_color: options.background_color.unwrap_or(DISPLAY_COLOR_UNSET),
             align: option_ptr(options.align),
             align_len: option_len(options.align),
             valign: option_ptr(options.valign),
@@ -3288,7 +3283,7 @@ impl TraceSink for FfiHost<'_> {
         }
     }
 
-    fn draw_rect(&mut self, options: DisplayRectOptions<'_>) {
+    fn draw_rect(&mut self, options: DisplayRectOptions) {
         let Some(display_rect) = self.callbacks.display_rect else {
             return;
         };
@@ -3297,17 +3292,15 @@ impl TraceSink for FfiHost<'_> {
             y: options.y,
             w: options.w,
             h: options.h,
-            fill_color: option_ptr(options.fill_color),
-            fill_color_len: option_len(options.fill_color),
-            stroke_color: option_ptr(options.stroke_color),
-            stroke_color_len: option_len(options.stroke_color),
+            fill_color: options.fill_color.unwrap_or(DISPLAY_COLOR_UNSET),
+            stroke_color: options.stroke_color.unwrap_or(DISPLAY_COLOR_UNSET),
         };
         unsafe {
             display_rect(self.user_data, &options);
         }
     }
 
-    fn draw_line(&mut self, options: DisplayLineOptions<'_>) {
+    fn draw_line(&mut self, options: DisplayLineOptions) {
         let Some(display_line) = self.callbacks.display_line else {
             return;
         };
@@ -3316,8 +3309,7 @@ impl TraceSink for FfiHost<'_> {
             y1: options.y1,
             x2: options.x2,
             y2: options.y2,
-            color: option_ptr(options.color),
-            color_len: option_len(options.color),
+            color: options.color.unwrap_or(DISPLAY_COLOR_UNSET),
         };
         unsafe {
             display_line(self.user_data, &options);

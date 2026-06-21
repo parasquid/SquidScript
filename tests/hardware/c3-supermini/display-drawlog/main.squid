@@ -5,7 +5,7 @@ event.on("app.start") {
 }
 
 screen("main") {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
   service.display.select("status")
   service.display.image("data/icon.bmp", {
     x: 20

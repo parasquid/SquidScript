@@ -1213,7 +1213,7 @@ ZTEST(squidscript_protocol, test_handles_trace_resources_and_wifi_error_frames)
 	struct sq_vm_runtime runtime = {
 		.traces = {"app.start", "state.save"},
 		.trace_count = 2,
-		.drawlog = {"draw=clear color=gray0", "draw=text text=\"Hello\" x=10 y=20",
+		.drawlog = {"draw=clear color=0", "draw=text text=\"Hello\" x=10 y=20",
 			    "draw=rect x=1 y=2 w=3 h=4", "draw=line x1=5 y1=6 x2=7 y2=8"},
 		.drawlog_count = 4,
 	};
@@ -1265,7 +1265,7 @@ ZTEST(squidscript_protocol, test_handles_trace_resources_and_wifi_error_frames)
 	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
 		      SQ_PROTOCOL_OK);
 	zassert_equal(field.tag, SQ_DEVICE_LINE_FIELD_VALUE);
-	zassert_mem_equal(field.value, "draw=clear color=gray0", strlen("draw=clear color=gray0"));
+	zassert_mem_equal(field.value, "draw=clear color=0", strlen("draw=clear color=0"));
 	zassert_equal(sq_protocol_next_field(frame.payload, frame.payload_len, &offset, &field),
 		      SQ_PROTOCOL_OK);
 	zassert_mem_equal(field.value, "draw=text text=\"Hello\" x=10 y=20",
@@ -6066,7 +6066,7 @@ ZTEST(squidscript_protocol, test_vm_runtime_dispatches_display_drawlog_callbacks
 	memset(&runtime, 0, sizeof(runtime));
 	zassert_equal(sq_vm_runtime_dispatch(&runtime, &backend, "app.start"), 0);
 	zassert_equal(runtime.drawlog_count, 3);
-	zassert_str_equal(runtime.drawlog[0], "draw=clear color=gray0");
+	zassert_str_equal(runtime.drawlog[0], "draw=clear color=0");
 	zassert_str_equal(runtime.drawlog[1], "draw=select name=status");
 	zassert_str_equal(runtime.drawlog[2], "draw=image path=\"data/icon.bmp\" x=20 y=24");
 
@@ -6075,7 +6075,7 @@ ZTEST(squidscript_protocol, test_vm_runtime_dispatches_display_drawlog_callbacks
 	memset(&runtime, 0, sizeof(runtime));
 	zassert_equal(sq_vm_runtime_dispatch(&runtime, &backend, "app.start"), 0);
 	zassert_equal(runtime.drawlog_count, 4);
-	zassert_str_equal(runtime.drawlog[0], "draw=clear color=gray0");
+	zassert_str_equal(runtime.drawlog[0], "draw=clear color=0");
 	zassert_str_equal(runtime.drawlog[1], "draw=text text=\"Hello\" x=10 y=20");
 	zassert_str_equal(runtime.drawlog[2], "draw=rect x=1 y=2 w=3 h=4");
 	zassert_str_equal(runtime.drawlog[3], "draw=line x1=5 y1=6 x2=7 y2=8");
@@ -6145,17 +6145,17 @@ ZTEST(squidscript_protocol, test_vm_runtime_records_physical_display_clear_and_t
 		.x = 10,
 		.y = 20,
 		.font_height = 24,
-		.text_color = (const uint8_t *)"white",
-		.text_color_len = strlen("white"),
+		.text_color = SQ_DISPLAY_COLOR_WHITE,
+		.background_color = SQ_DISPLAY_COLOR_UNSET,
 	};
 
 	memset(&runtime, 0, sizeof(runtime));
-	runtime_display_clear(&runtime, (const uint8_t *)"white", strlen("white"));
+	runtime_display_clear(&runtime, SQ_DISPLAY_COLOR_WHITE);
 	runtime_display_text(&runtime, (const uint8_t *)"Hello", strlen("Hello"),
 			     &text_options);
 
 	zassert_equal(runtime.drawlog_count, 2);
-	zassert_str_equal(runtime.drawlog[0], "draw=clear color=white");
+	zassert_str_equal(runtime.drawlog[0], "draw=clear color=0");
 	zassert_str_equal(runtime.drawlog[1], "draw=text text=\"Hello\" x=10 y=20");
 	zassert_true(runtime.display_dirty);
 	zassert_equal(runtime.display_op_count, 2);
@@ -6177,8 +6177,8 @@ ZTEST(squidscript_protocol, test_vm_runtime_records_physical_display_rect_ops)
 		.y = 76,
 		.w = 424,
 		.h = 48,
-		.stroke_color = (const uint8_t *)"gray15",
-		.stroke_color_len = strlen("gray15"),
+		.fill_color = SQ_DISPLAY_COLOR_UNSET,
+		.stroke_color = SQ_DISPLAY_COLOR_BLACK,
 	};
 
 	memset(&runtime, 0, sizeof(runtime));
@@ -6497,7 +6497,7 @@ ZTEST(squidscript_protocol, test_display_op_buffer_preserves_clear_for_library_l
 	};
 
 	memset(&runtime, 0, sizeof(runtime));
-	runtime_display_clear(&runtime, (const uint8_t *)"white", strlen("white"));
+	runtime_display_clear(&runtime, SQ_DISPLAY_COLOR_WHITE);
 	runtime_display_text(&runtime, (const uint8_t *)"Library", strlen("Library"),
 			     &header_options);
 	for (int row = 0; row < 5; ++row) {
@@ -6506,8 +6506,8 @@ ZTEST(squidscript_protocol, test_display_op_buffer_preserves_clear_for_library_l
 			.y = 76 + row * 52,
 			.w = 424,
 			.h = 48,
-			.stroke_color = (const uint8_t *)"gray15",
-			.stroke_color_len = strlen("gray15"),
+			.fill_color = SQ_DISPLAY_COLOR_UNSET,
+			.stroke_color = SQ_DISPLAY_COLOR_BLACK,
 		};
 		const SqvmDisplayTextOptions row_options = {
 			.x = 28,
@@ -6546,19 +6546,6 @@ ZTEST(squidscript_protocol, test_vm_runtime_reset_clears_display_backend_previou
 		      "sq_vm_runtime_reset must call sq_display_backend_reset so the "
 		      "first post-reset fast1bpp refresh uses FULL_SEED instead of a "
 		      "stale differential against the pre-reset screen");
-}
-
-ZTEST(squidscript_protocol, test_display_color_palette_parser)
-{
-	zassert_equal(sq_display_color_parse((const uint8_t *)"white", 5), SQ_DISPLAY_COLOR_WHITE);
-	zassert_equal(sq_display_color_parse((const uint8_t *)"black", 5), SQ_DISPLAY_COLOR_BLACK);
-	zassert_equal(sq_display_color_parse((const uint8_t *)"gray0", 5), 0);
-	zassert_equal(sq_display_color_parse((const uint8_t *)"gray15", 6), 15);
-	zassert_equal(sq_display_color_parse((const uint8_t *)"gray8", 5), 8);
-	zassert_equal(sq_display_color_parse(NULL, 0), SQ_DISPLAY_COLOR_UNSET);
-	zassert_equal(sq_display_color_parse((const uint8_t *)"", 0), SQ_DISPLAY_COLOR_UNSET);
-	zassert_equal(sq_display_color_parse((const uint8_t *)"bogus", 5), SQ_DISPLAY_COLOR_UNSET);
-	zassert_equal(sq_display_color_parse((const uint8_t *)"gray16", 6), SQ_DISPLAY_COLOR_UNSET);
 }
 
 ZTEST(squidscript_protocol, test_ssd1677_composed_dirty_window_tracks_changed_highlight_ops)

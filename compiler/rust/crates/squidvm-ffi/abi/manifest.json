@@ -401,7 +401,7 @@
       "field": "display_clear",
       "typedef": "SqvmDisplayClearCallback",
       "family": "display",
-      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void, color: *const u8, color_len: usize)>",
+      "rust_type": "Option<unsafe extern \"C\" fn(user_data: *mut c_void, color: u8)>",
       "missing_policy": "noop",
       "test_fixture": "compile_display_sqbc"
     },
@@ -1057,15 +1057,15 @@
     },
     {
       "name": "SqvmDisplayTextOptions",
-      "definition": "typedef struct {\n\tint32_t x;\n\tint32_t y;\n\tint32_t w;\n\tint32_t h;\n\tint32_t font_height;\n\tconst uint8_t *text_color;\n\tsize_t text_color_len;\n\tconst uint8_t *background_color;\n\tsize_t background_color_len;\n\tconst uint8_t *align;\n\tsize_t align_len;\n\tconst uint8_t *valign;\n\tsize_t valign_len;\n} SqvmDisplayTextOptions;"
+      "definition": "typedef struct {\n\tint32_t x;\n\tint32_t y;\n\tint32_t w;\n\tint32_t h;\n\tint32_t font_height;\n\tuint8_t text_color;\n\tuint8_t background_color;\n\tconst uint8_t *align;\n\tsize_t align_len;\n\tconst uint8_t *valign;\n\tsize_t valign_len;\n} SqvmDisplayTextOptions;"
     },
     {
       "name": "SqvmDisplayRectOptions",
-      "definition": "typedef struct {\n\tint32_t x;\n\tint32_t y;\n\tint32_t w;\n\tint32_t h;\n\tconst uint8_t *fill_color;\n\tsize_t fill_color_len;\n\tconst uint8_t *stroke_color;\n\tsize_t stroke_color_len;\n} SqvmDisplayRectOptions;"
+      "definition": "typedef struct {\n\tint32_t x;\n\tint32_t y;\n\tint32_t w;\n\tint32_t h;\n\tuint8_t fill_color;\n\tuint8_t stroke_color;\n} SqvmDisplayRectOptions;"
     },
     {
       "name": "SqvmDisplayLineOptions",
-      "definition": "typedef struct {\n\tint32_t x1;\n\tint32_t y1;\n\tint32_t x2;\n\tint32_t y2;\n\tconst uint8_t *color;\n\tsize_t color_len;\n} SqvmDisplayLineOptions;"
+      "definition": "typedef struct {\n\tint32_t x1;\n\tint32_t y1;\n\tint32_t x2;\n\tint32_t y2;\n\tuint8_t color;\n} SqvmDisplayLineOptions;"
     },
     {
       "name": "SqvmDisplayResourceOptions",
@@ -1093,7 +1093,7 @@
     },
     {
       "name": "SqvmDisplayClearCallback",
-      "definition": "typedef void (*SqvmDisplayClearCallback)(void *user_data, const uint8_t *color, size_t color_len);"
+      "definition": "typedef void (*SqvmDisplayClearCallback)(void *user_data, uint8_t color);"
     },
     {
       "name": "SqvmDisplayTextCallback",

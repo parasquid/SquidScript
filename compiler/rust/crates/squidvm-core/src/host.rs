@@ -79,7 +79,7 @@ pub enum VmDispatch {
 pub trait TraceSink {
     fn trace(&mut self, message: &str);
     fn debug_print(&mut self, _strings: &StringResolver<'_>, _values: &[Value]) {}
-    fn draw_clear(&mut self, _color: &str) {}
+    fn draw_clear(&mut self, _color: u8) {}
     fn draw_text(
         &mut self,
         _strings: &StringResolver<'_>,
@@ -87,8 +87,8 @@ pub trait TraceSink {
         _options: DisplayTextOptions<'_>,
     ) {
     }
-    fn draw_rect(&mut self, _options: DisplayRectOptions<'_>) {}
-    fn draw_line(&mut self, _options: DisplayLineOptions<'_>) {}
+    fn draw_rect(&mut self, _options: DisplayRectOptions) {}
+    fn draw_line(&mut self, _options: DisplayLineOptions) {}
     fn draw_select(&mut self, _name: &str) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
     }
@@ -593,29 +593,29 @@ pub struct DisplayTextOptions<'a> {
     pub w: i32,
     pub h: i32,
     pub font_height: i32,
-    pub text_color: Option<&'a str>,
-    pub background_color: Option<&'a str>,
+    pub text_color: Option<u8>,
+    pub background_color: Option<u8>,
     pub align: Option<&'a str>,
     pub valign: Option<&'a str>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct DisplayRectOptions<'a> {
+pub struct DisplayRectOptions {
     pub x: i32,
     pub y: i32,
     pub w: i32,
     pub h: i32,
-    pub fill_color: Option<&'a str>,
-    pub stroke_color: Option<&'a str>,
+    pub fill_color: Option<u8>,
+    pub stroke_color: Option<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct DisplayLineOptions<'a> {
+pub struct DisplayLineOptions {
     pub x1: i32,
     pub y1: i32,
     pub x2: i32,
     pub y2: i32,
-    pub color: Option<&'a str>,
+    pub color: Option<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

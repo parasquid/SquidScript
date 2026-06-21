@@ -142,9 +142,9 @@ impl TraceSink for BrowserHost {
         self.debug_output.push(parts.join(" "));
     }
 
-    fn draw_clear(&mut self, color: &str) {
+    fn draw_clear(&mut self, color: u8) {
         self.draw_commands
-            .push(serde_json::json!({ "op": "clear", "gray": color_to_gray(color) }));
+            .push(serde_json::json!({ "op": "clear", "gray": color }));
     }
 
     fn draw_text(
@@ -161,7 +161,7 @@ impl TraceSink for BrowserHost {
                     "y": options.y,
                     "width": options.w,
                     "height": options.h,
-                    "gray": color_to_gray(background),
+                    "gray": background,
                     "fill": true,
                 }));
             }
@@ -177,7 +177,7 @@ impl TraceSink for BrowserHost {
             "x": x,
             "y": options.y,
             "text": value_text(strings, text),
-            "gray": color_to_gray(options.text_color.unwrap_or("gray15")),
+            "gray": options.text_color.unwrap_or(15),
             "maxWidth": options.w,
         });
         if options.font_height > 0 {
@@ -195,31 +195,28 @@ impl TraceSink for BrowserHost {
         self.draw_commands.push(command);
     }
 
-    fn draw_rect(&mut self, options: DisplayRectOptions<'_>) {
+    fn draw_rect(&mut self, options: DisplayRectOptions) {
         let fill = options.fill_color.is_some();
-        let color = options
-            .fill_color
-            .or(options.stroke_color)
-            .unwrap_or("gray15");
+        let color = options.fill_color.or(options.stroke_color).unwrap_or(15);
         self.draw_commands.push(serde_json::json!({
             "op": "rect",
             "x": options.x,
             "y": options.y,
             "width": options.w,
             "height": options.h,
-            "gray": color_to_gray(color),
+            "gray": color,
             "fill": fill,
         }));
     }
 
-    fn draw_line(&mut self, options: DisplayLineOptions<'_>) {
+    fn draw_line(&mut self, options: DisplayLineOptions) {
         self.draw_commands.push(serde_json::json!({
             "op": "line",
             "x1": options.x1,
             "y1": options.y1,
             "x2": options.x2,
             "y2": options.y2,
-            "gray": color_to_gray(options.color.unwrap_or("gray15")),
+            "gray": options.color.unwrap_or(15),
         }));
     }
 
@@ -342,6 +339,7 @@ fn value_json(strings: &StringResolver<'_>, value: Value) -> serde_json::Value {
         }
         Value::Record(_) => serde_json::json!("<record>"),
         Value::List(_) => serde_json::json!("<list>"),
+        Value::Handle(_) => serde_json::json!("<handle>"),
     }
 }
 
@@ -353,21 +351,8 @@ fn value_text(strings: &StringResolver<'_>, value: Value) -> String {
         Value::String(_) => strings.value_str(value).unwrap_or("").to_string(),
         Value::Record(_) => "<record>".to_string(),
         Value::List(_) => "<list>".to_string(),
+        Value::Handle(_) => "<handle>".to_string(),
     }
-}
-
-fn color_to_gray(color: &str) -> i32 {
-    if color == "black" {
-        return 15;
-    }
-    if color == "white" {
-        return 0;
-    }
-    color
-        .strip_prefix("gray")
-        .and_then(|value| value.parse::<i32>().ok())
-        .unwrap_or(15)
-        .clamp(0, 15)
 }
 
 fn js_vm_error(error: VmError) -> JsValue {

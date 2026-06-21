@@ -14,127 +14,12 @@
 
 ---
 
-### Task 1: Typed color enum and palette parser
+### Task 1: Typed color representation
 
-**Files:**
-- Modify: `firmware/zephyr/src/vm_runtime.h`
-- Create: `firmware/zephyr/src/sq_display_color.h`
-- Test: `firmware/zephyr/tests/protocol/src/main.c`
-
-- [ ] **Step 1: Write the failing test**
-
-Add a test that exercises the palette parser for all spec-defined color names:
-
-```c
-ZTEST(squidscript_protocol, test_display_color_palette_parser)
-{
-	zassert_equal(sq_display_color_parse((const uint8_t *)"white", 5), SQ_DISPLAY_COLOR_WHITE);
-	zassert_equal(sq_display_color_parse((const uint8_t *)"black", 5), SQ_DISPLAY_COLOR_BLACK);
-	zassert_equal(sq_display_color_parse((const uint8_t *)"gray0", 5), 0);
-	zassert_equal(sq_display_color_parse((const uint8_t *)"gray15", 6), 15);
-	zassert_equal(sq_display_color_parse((const uint8_t *)"gray8", 5), 8);
-	zassert_equal(sq_display_color_parse(NULL, 0), SQ_DISPLAY_COLOR_UNSET);
-	zassert_equal(sq_display_color_parse((const uint8_t *)"", 0), SQ_DISPLAY_COLOR_UNSET);
-	zassert_equal(sq_display_color_parse((const uint8_t *)"bogus", 5), SQ_DISPLAY_COLOR_UNSET);
-}
-```
-
-- [ ] **Step 2: Run the protocol ztests and verify RED**
-
-Run `scripts/zephyr-test-protocol.sh`. Expected: compilation fails because
-`sq_display_color_parse` and `SQ_DISPLAY_COLOR_*` do not exist.
-
-- [ ] **Step 3: Create the typed color header**
-
-Create `firmware/zephyr/src/sq_display_color.h`:
-
-```c
-#ifndef SQ_DISPLAY_COLOR_H
-#define SQ_DISPLAY_COLOR_H
-
-#include <stdint.h>
-#include <stddef.h>
-
-typedef uint8_t sq_display_color_t;
-
-#define SQ_DISPLAY_COLOR_UNSET ((sq_display_color_t)0xFF)
-/* gray0 = white = 0, gray15 = black = 15, per docs/language_spec.md §26 */
-#define SQ_DISPLAY_COLOR_WHITE ((sq_display_color_t)0)
-#define SQ_DISPLAY_COLOR_BLACK ((sq_display_color_t)15)
-
-static inline bool sq_display_color_is_black(sq_display_color_t color)
-{
-	return color == SQ_DISPLAY_COLOR_BLACK;
-}
-
-static inline bool sq_display_color_is_set(sq_display_color_t color)
-{
-	return color != SQ_DISPLAY_COLOR_UNSET;
-}
-
-sq_display_color_t sq_display_color_parse(const uint8_t *name, size_t name_len);
-
-#endif
-```
-
-Implement `sq_display_color_parse` in a new `firmware/zephyr/src/sq_display_color.c`:
-
-```c
-#include "sq_display_color.h"
-#include <string.h>
-
-static bool str_eq(const uint8_t *a, size_t a_len, const char *b)
-{
-	size_t b_len = strlen(b);
-	return a_len == b_len && memcmp(a, b, a_len) == 0;
-}
-
-sq_display_color_t sq_display_color_parse(const uint8_t *name, size_t name_len)
-{
-	if (name == NULL || name_len == 0) {
-		return SQ_DISPLAY_COLOR_UNSET;
-	}
-	if (str_eq(name, name_len, "white")) {
-		return SQ_DISPLAY_COLOR_WHITE;
-	}
-	if (str_eq(name, name_len, "black")) {
-		return SQ_DISPLAY_COLOR_BLACK;
-	}
-	if (name_len >= 5 && name_len <= 6 && memcmp(name, "gray", 4) == 0) {
-		uint8_t value = 0;
-		for (size_t i = 4; i < name_len; i++) {
-			if (name[i] < '0' || name[i] > '9') {
-				return SQ_DISPLAY_COLOR_UNSET;
-			}
-			value = (uint8_t)(value * 10 + (name[i] - '0'));
-		}
-		if (value > 15) {
-			return SQ_DISPLAY_COLOR_UNSET;
-		}
-		return value;
-	}
-	return SQ_DISPLAY_COLOR_UNSET;
-}
-```
-
-Add `sq_display_color.c` to the firmware CMakeLists source list and to the
-test CMakeLists (`firmware/zephyr/tests/protocol/CMakeLists.txt`).
-
-- [ ] **Step 4: Run the protocol ztests and verify GREEN**
-
-Run `scripts/zephyr-test-protocol.sh`. Expected: the new test passes; the
-existing 33 pre-existing failures are unchanged.
-
-- [ ] **Step 5: Commit Task 1**
-
-```sh
-git add firmware/zephyr/src/sq_display_color.h \
-  firmware/zephyr/src/sq_display_color.c \
-  firmware/zephyr/tests/protocol/src/main.c \
-  firmware/zephyr/tests/protocol/CMakeLists.txt \
-  firmware/zephyr/CMakeLists.txt
-git commit -m "feat(display): add typed color palette parser"
-```
+The compact display-op slice established `sq_display_color_t` and the named
+white, black, and unset values in `sq_display_color.h`. Color names are now
+resolved by the compiler's `color.*` namespace and cross the VM/FFI boundary as
+typed palette indices, so firmware contains no string palette parser.
 
 ### Task 2: Compact display-op struct and update all producers and consumers
 
@@ -190,7 +75,7 @@ Update `runtime_display_clear` to store the typed color:
 
 ```c
 op->kind = SQ_VM_RUNTIME_DISPLAY_OP_CLEAR;
-op->u.clear.color = sq_display_color_parse(color, color_len);
+op->u.clear.color = color;
 ```
 
 Update `runtime_display_text`:
@@ -201,7 +86,7 @@ runtime_display_copy_text(op->u.text.text, sizeof(op->u.text.text), text, text_l
 op->x = options->x;
 op->y = options->y;
 op->u.text.font_height = options->font_height;
-op->u.text.color = sq_display_color_parse(options->text_color, options->text_color_len);
+op->u.text.color = options->text_color;
 ```
 
 Update `runtime_display_rect`:
@@ -212,8 +97,8 @@ op->x = options->x;
 op->y = options->y;
 op->u.rect.w = options->w;
 op->u.rect.h = options->h;
-op->u.rect.fill_color = sq_display_color_parse(options->fill_color, options->fill_color_len);
-op->u.rect.stroke_color = sq_display_color_parse(options->stroke_color, options->stroke_color_len);
+op->u.rect.fill_color = options->fill_color;
+op->u.rect.stroke_color = options->stroke_color;
 ```
 
 Update `runtime_display_draw` (BINBOOK_DRAWABLE):

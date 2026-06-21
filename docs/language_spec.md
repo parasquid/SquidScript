@@ -1526,7 +1526,7 @@ Example:
 
 ```squid
 screen("main") {
-  display.clear("white")
+  display.clear(color.WHITE)
   display.text("Count", { x: 20, y: 40, fontHeight: 32 })
   display.text(state.count, { x: 20, y: 120, fontHeight: 48 })
 }
@@ -1666,8 +1666,8 @@ Draw commands execute in source order. Later commands are composited over earlie
 Example:
 
 ```squid
-service.display.clear("gray0")
-service.display.rect(20, 120, 440, 48, { fillColor: "gray15" })
+service.display.clear(color.GRAY0)
+service.display.rect(20, 120, 440, 48, { fillColor: color.GRAY15 })
 service.display.text("Selected", {
   x: 20,
   y: 120,
@@ -1676,7 +1676,7 @@ service.display.text("Selected", {
   fontHeight: 22,
   align: "center",
   valign: "middle",
-  textColor: "gray0"
+  textColor: color.GRAY0
 })
 ```
 
@@ -1746,19 +1746,21 @@ display.clear(color)
 Example:
 
 ```squid
-display.clear("white")
+display.clear(color.WHITE)
 ```
 
-Supported colors in current draft:
-- "white"
-- "black"
-- "gray0" through "gray15"
+Colors are compile-time constants in the `color.*` namespace:
+- `color.GRAY0` through `color.GRAY15`
+- `color.WHITE`
+- `color.BLACK`
+
+String color values are not accepted.
 
 `gray0` is white. `gray15` is black. Intermediate values are perceptual grayscale steps from light to dark.
 
 Named aliases:
-- "white" is equivalent to "gray0"
-- "black" is equivalent to "gray15"
+- `color.WHITE` is equivalent to `color.GRAY0`
+- `color.BLACK` is equivalent to `color.GRAY15`
 
 The exact native gray support depends on display capabilities. Firmware should map requested grayscale values to the nearest supported display level. If the selected target and render mode support dithering, firmware may dither intermediate grays when the physical display has fewer native levels than SquidScript's 16-level logical grayscale.
 
@@ -1847,8 +1849,8 @@ service.display.text("Open Book", {
   fontHeight: 22,
   align: "center",
   valign: "middle",
-  textColor: "gray0",
-  backgroundColor: "gray15"
+  textColor: color.GRAY0,
+  backgroundColor: color.GRAY15
 })
 ```
 
@@ -1882,7 +1884,7 @@ Text defaults:
 - `fontHeight`: target text default
 - `align`: "left"
 - `valign`: "top"
-- `textColor`: "gray15"
+- `textColor`: color.GRAY15
 - `backgroundColor`: none
 - `wrap`: false
 
@@ -1898,7 +1900,7 @@ Example:
 
 ```squid
 display.line(20, 96, 460, 96)
-display.line(20, 96, 460, 96, { color: "gray15" })
+display.line(20, 96, 460, 96, { color: color.GRAY15 })
 ```
 
 Optional options:
@@ -1915,13 +1917,13 @@ display.rect(x, y, w, h, options)
 Example:
 
 ```squid
-display.rect(20, 100, 440, 80, { strokeColor: "gray15" })
+display.rect(20, 100, 440, 80, { strokeColor: color.GRAY15 })
 ```
 
 Example filled:
 
 ```squid
-display.rect(0, 0, 480, 40, { fillColor: "gray15" })
+display.rect(0, 0, 480, 40, { fillColor: color.GRAY15 })
 ```
 
 Optional options:
@@ -1982,8 +1984,8 @@ Example:
 
 ```squid
 service.display.select("status")
-service.display.clear("black")
-service.display.text("OK", { x: 0, y: 0, textColor: "white" })
+service.display.clear(color.BLACK)
+service.display.text("OK", { x: 0, y: 0, textColor: color.WHITE })
 ```
 
 Rules:
@@ -3600,16 +3602,16 @@ Example source:
 
 ```squid
 screen("main", { render: "compose" }) {
-  service.display.clear("white")
+  service.display.clear(color.WHITE)
   service.display.text(title, { x: 20, y: 40, fontHeight: 32 })
-  service.display.line(20, 96, 460, 96, { color: "gray15" })
+  service.display.line(20, 96, 460, 96, { color: color.GRAY15 })
 }
 ```
 
 Possible draw IR:
 
 ```text
-DRAW_CLEAR "white"
+DRAW_CLEAR 0
 DRAW_TEXT title x=20 y=40 size=large
 DRAW_LINE 20 96 460 96
 ```
@@ -4232,8 +4234,8 @@ function drawMenuRow(index, label, y) {
       fontHeight: 22,
       align: "center",
       valign: "middle",
-      textColor: "gray0",
-      backgroundColor: "gray15"
+      textColor: color.GRAY0,
+      backgroundColor: color.GRAY15
     })
   } else {
     service.display.text(label, {
@@ -4244,14 +4246,14 @@ function drawMenuRow(index, label, y) {
       fontHeight: 22,
       align: "center",
       valign: "middle",
-      textColor: "gray15",
-      backgroundColor: "gray0"
+      textColor: color.GRAY15,
+      backgroundColor: color.GRAY0
     })
   }
 }
 
 screen("menu", { render: "compose" }) {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
 
   service.display.text("Hello Menu", {
     x: 20,
@@ -4275,12 +4277,12 @@ screen("menu", { render: "compose" }) {
     fontHeight: 18,
     align: "center",
     valign: "middle",
-    textColor: "gray8"
+    textColor: color.GRAY8
   })
 }
 
 screen("hello") {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
   service.display.text("Hello, Squid!", {
     x: 20,
     y: 120,
@@ -4298,12 +4300,12 @@ screen("hello") {
     fontHeight: 18,
     align: "center",
     valign: "middle",
-    textColor: "gray8"
+    textColor: color.GRAY8
   })
 }
 
 screen("about") {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
   service.display.text("Selection is state.", {
     x: 32,
     y: 120,

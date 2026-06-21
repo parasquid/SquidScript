@@ -1789,7 +1789,7 @@ event.on("app.start") {
   debug.print("after")
 }
 screen("main") {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
 }
 "#;
     let compiled = compile(CompileRequest {
@@ -1850,7 +1850,7 @@ screen("main") {
         reader.events,
         vec![
             "app.start".to_string(),
-            "draw clear gray0".to_string(),
+            "draw clear 0".to_string(),
             "debug after".to_string(),
         ]
     );
@@ -2323,7 +2323,7 @@ impl TraceSink for CountingReader<'_> {
         Ok(())
     }
 
-    fn draw_clear(&mut self, color: &str) {
+    fn draw_clear(&mut self, color: u8) {
         self.events.push(format!("draw clear {color}"));
     }
 }

@@ -13,7 +13,7 @@ export
 screen("r", {
   render: "stream"
 }) {
-  service.display.clear("white")
+  service.display.clear(color.WHITE)
   service.display.text(state.title, {
     x: 32
     y: 120

@@ -618,13 +618,13 @@ fn collect_statement_strings(
             }
             IrStatement::DisplayText { text, options } => {
                 collect_expr_strings(text, strings)?;
-                collect_option_strings(options, strings)?;
+                collect_named_option_strings(options, &["align", "valign"], strings)?;
             }
             IrStatement::DisplayClear { color } => {
-                strings.intern(color)?;
+                collect_expr_strings(color, strings)?;
             }
             IrStatement::DisplayRect { options, .. } | IrStatement::DisplayLine { options, .. } => {
-                collect_option_strings(options, strings)?;
+                collect_named_option_strings(options, &[], strings)?;
             }
             IrStatement::DisplaySelect { name } => {
                 strings.intern(name)?;
@@ -681,6 +681,19 @@ fn collect_option_strings(
             }
         }
         _ => {}
+    }
+    Ok(())
+}
+
+fn collect_named_option_strings(
+    options: &serde_json::Value,
+    keys: &[&str],
+    strings: &mut StringTable,
+) -> Result<(), SqbcError> {
+    for key in keys {
+        if let Some(value) = options.get(key) {
+            collect_option_strings(value, strings)?;
+        }
     }
     Ok(())
 }
@@ -1027,9 +1040,7 @@ fn compile_statement(
             patch_u32(&mut unit.code, max_end_patch)?;
         }
         IrStatement::DisplayClear { color } => {
-            let color_id = unit.strings.intern(color)?;
-            emit(&mut unit.code, OP_PUSH_STRING);
-            write_u16(&mut unit.code, color_id);
+            compile_expr(unit, frame, color)?;
             emit_builtin(&mut unit.code, BUILTIN_DISPLAY_CLEAR);
         }
         IrStatement::DisplayText { text, options } => {
@@ -1039,8 +1050,8 @@ fn compile_statement(
             emit_i32_option(unit, frame, options, "w")?;
             emit_i32_option(unit, frame, options, "h")?;
             emit_i32_option(unit, frame, options, "fontHeight")?;
-            emit_string_option(unit, options, "textColor")?;
-            emit_string_option(unit, options, "backgroundColor")?;
+            emit_optional_i32_option(unit, frame, options, "textColor")?;
+            emit_optional_i32_option(unit, frame, options, "backgroundColor")?;
             emit_string_option(unit, options, "align")?;
             emit_string_option(unit, options, "valign")?;
             emit_builtin(&mut unit.code, BUILTIN_DISPLAY_TEXT);
@@ -1056,8 +1067,8 @@ fn compile_statement(
             compile_expr(unit, frame, y)?;
             compile_expr(unit, frame, w)?;
             compile_expr(unit, frame, h)?;
-            emit_string_option(unit, options, "fillColor")?;
-            emit_string_option(unit, options, "strokeColor")?;
+            emit_optional_i32_option(unit, frame, options, "fillColor")?;
+            emit_optional_i32_option(unit, frame, options, "strokeColor")?;
             emit_builtin(&mut unit.code, BUILTIN_DISPLAY_RECT);
         }
         IrStatement::DisplayLine {
@@ -1075,7 +1086,7 @@ fn compile_statement(
             write_i32(&mut unit.code, *x2 as i32);
             emit(&mut unit.code, OP_PUSH_INT);
             write_i32(&mut unit.code, *y2 as i32);
-            emit_string_option(unit, options, "color")?;
+            emit_optional_i32_option(unit, frame, options, "color")?;
             emit_builtin(&mut unit.code, BUILTIN_DISPLAY_LINE);
         }
         IrStatement::DisplaySelect { name } => {
@@ -1138,6 +1149,32 @@ fn emit_i32_option(
         .map_err(|_| SqbcError::new("display numeric option must be an expression"))?;
     compile_expr(unit, frame, &expr)?;
     Ok(())
+}
+
+fn emit_optional_i32_option(
+    unit: &mut CompileUnit,
+    frame: &FrameCompiler,
+    options: &serde_json::Value,
+    key: &str,
+) -> Result<(), SqbcError> {
+    let Some(value) = options.get(key) else {
+        emit(&mut unit.code, OP_PUSH_NULL);
+        return Ok(());
+    };
+
+    if let Some(literal) = expr_literal_i64(value) {
+        emit(&mut unit.code, OP_PUSH_INT);
+        write_i32(
+            &mut unit.code,
+            i32::try_from(literal)
+                .map_err(|_| SqbcError::new("display option out of i32 range"))?,
+        );
+        return Ok(());
+    }
+
+    let expr = serde_json::from_value::<IrExpr>(value.clone())
+        .map_err(|_| SqbcError::new("display numeric option must be an expression"))?;
+    compile_expr(unit, frame, &expr)
 }
 
 fn emit_string_option(

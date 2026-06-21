@@ -103,9 +103,8 @@ unsafe extern "C" fn debug_output(user_data: *mut c_void, message: *const u8, me
     host.output.push(message.to_string());
 }
 
-unsafe extern "C" fn display_clear(user_data: *mut c_void, color: *const u8, color_len: usize) {
+unsafe extern "C" fn display_clear(user_data: *mut c_void, color: u8) {
     let host = &mut *(user_data as *mut Host);
-    let color = std::str::from_utf8(std::slice::from_raw_parts(color, color_len)).unwrap();
     host.drawlog.push(format!("draw=clear color={color}"));
 }
 
@@ -119,8 +118,8 @@ unsafe extern "C" fn display_text(
     let text = std::str::from_utf8(std::slice::from_raw_parts(text, text_len)).unwrap();
     let options = *options;
     host.drawlog.push(format!(
-        "draw=text text=\"{text}\" x={} y={}",
-        options.x, options.y
+        "draw=text text=\"{text}\" x={} y={} text_color={} background_color={}",
+        options.x, options.y, options.text_color, options.background_color
     ));
 }
 
@@ -131,8 +130,8 @@ unsafe extern "C" fn display_rect(
     let host = &mut *(user_data as *mut Host);
     let options = *options;
     host.drawlog.push(format!(
-        "draw=rect x={} y={} w={} h={}",
-        options.x, options.y, options.w, options.h
+        "draw=rect x={} y={} w={} h={} fill_color={} stroke_color={}",
+        options.x, options.y, options.w, options.h, options.fill_color, options.stroke_color
     ));
 }
 
@@ -143,8 +142,8 @@ unsafe extern "C" fn display_line(
     let host = &mut *(user_data as *mut Host);
     let options = *options;
     host.drawlog.push(format!(
-        "draw=line x1={} y1={} x2={} y2={}",
-        options.x1, options.y1, options.x2, options.y2
+        "draw=line x1={} y1={} x2={} y2={} color={}",
+        options.x1, options.y1, options.x2, options.y2, options.color
     ));
 }
 
@@ -1909,10 +1908,10 @@ event.on("app.start") {
   screen.open("main")
 }
 screen("main") {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
   service.display.text("Hello", { x: 10, y: 20 })
-  service.display.rect(1, 2, 3, 4, { fillColor: "gray4" })
-  service.display.line(5, 6, 7, 8, { color: "gray15" })
+  service.display.rect(1, 2, 3, 4, { fillColor: color.GRAY4 })
+  service.display.line(5, 6, 7, 8, { color: color.GRAY15 })
   service.display.select("status")
   service.display.refreshMode("full")
   service.display.image("data/icon.bmp", { x: 20, y: 24 })
@@ -2517,10 +2516,10 @@ fn dispatches_display_service_callbacks() {
     assert_eq!(
         host.drawlog,
         vec![
-            "draw=clear color=gray0".to_string(),
-            "draw=text text=\"Hello\" x=10 y=20".to_string(),
-            "draw=rect x=1 y=2 w=3 h=4".to_string(),
-            "draw=line x1=5 y1=6 x2=7 y2=8".to_string(),
+            "draw=clear color=0".to_string(),
+            "draw=text text=\"Hello\" x=10 y=20 text_color=255 background_color=255".to_string(),
+            "draw=rect x=1 y=2 w=3 h=4 fill_color=4 stroke_color=255".to_string(),
+            "draw=line x1=5 y1=6 x2=7 y2=8 color=15".to_string(),
             "draw=select name=status".to_string(),
             "draw=refresh mode=full".to_string(),
             "draw=image path=\"data/icon.bmp\" x=20 y=24".to_string()

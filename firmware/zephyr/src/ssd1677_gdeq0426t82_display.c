@@ -1232,17 +1232,14 @@ static int stream_probe_windows(const struct ssd1677_probe_window *windows, size
 	return 0;
 }
 
-static int full_frame_probe(const char *color, bool *observed_busy)
+static int full_frame_probe(sq_display_color_t color, bool *observed_busy)
 {
 	struct sq_vm_runtime_display_op op = {
 		.kind = SQ_VM_RUNTIME_DISPLAY_OP_CLEAR,
 	};
 	int ret;
 
-	if (color == NULL) {
-		return -EINVAL;
-	}
-	op.u.clear.color = sq_display_color_parse((const uint8_t *)color, strlen(color));
+	op.u.clear.color = color;
 	ret = set_full_window();
 	if (ret == 0) {
 		ret = stream_composed_1bpp_frame(SSD1677_CMD_WRITE_RAM, &op, 1);
@@ -1317,9 +1314,9 @@ int sq_display_backend_window_probe(const char *pattern)
 		}
 	}
 	if (strcmp(pattern, "full-black") == 0) {
-		ret = full_frame_probe("black", &observed_busy);
+		ret = full_frame_probe(SQ_DISPLAY_COLOR_BLACK, &observed_busy);
 	} else if (strcmp(pattern, "full-white") == 0) {
-		ret = full_frame_probe("white", &observed_busy);
+		ret = full_frame_probe(SQ_DISPLAY_COLOR_WHITE, &observed_busy);
 	} else {
 		ret = clear_bw_display();
 		if (ret == 0) {

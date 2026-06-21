@@ -154,41 +154,41 @@ function jumpToSelectedChapter() {
 
 function drawChapterRow0(index, title) {
   if (state.chapterSelected == index) {
-    service.display.rect(18, 76, 424, 48, { strokeColor: "gray15" })
+    service.display.rect(18, 76, 424, 48, { strokeColor: color.GRAY15 })
   }
-  service.display.text(title, { x: 28, y: 76, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: "gray15" })
+  service.display.text(title, { x: 28, y: 76, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: color.GRAY15 })
 }
 
 function drawChapterRow1(index, title) {
   if (state.chapterSelected == index) {
-    service.display.rect(18, 128, 424, 48, { strokeColor: "gray15" })
+    service.display.rect(18, 128, 424, 48, { strokeColor: color.GRAY15 })
   }
-  service.display.text(title, { x: 28, y: 128, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: "gray15" })
+  service.display.text(title, { x: 28, y: 128, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: color.GRAY15 })
 }
 
 function drawChapterRow2(index, title) {
   if (state.chapterSelected == index) {
-    service.display.rect(18, 180, 424, 48, { strokeColor: "gray15" })
+    service.display.rect(18, 180, 424, 48, { strokeColor: color.GRAY15 })
   }
-  service.display.text(title, { x: 28, y: 180, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: "gray15" })
+  service.display.text(title, { x: 28, y: 180, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: color.GRAY15 })
 }
 
 function drawChapterRow3(index, title) {
   if (state.chapterSelected == index) {
-    service.display.rect(18, 232, 424, 48, { strokeColor: "gray15" })
+    service.display.rect(18, 232, 424, 48, { strokeColor: color.GRAY15 })
   }
-  service.display.text(title, { x: 28, y: 232, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: "gray15" })
+  service.display.text(title, { x: 28, y: 232, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: color.GRAY15 })
 }
 
 function drawChapterRow4(index, title) {
   if (state.chapterSelected == index) {
-    service.display.rect(18, 284, 424, 48, { strokeColor: "gray15" })
+    service.display.rect(18, 284, 424, 48, { strokeColor: color.GRAY15 })
   }
-  service.display.text(title, { x: 28, y: 284, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: "gray15" })
+  service.display.text(title, { x: 28, y: 284, w: 408, h: 48, fontHeight: 20, valign: "middle", textColor: color.GRAY15 })
 }
 
 screen("reader") {
-  service.display.clear("white")
+  service.display.clear(color.WHITE)
   let listing = content.binbook.list("books", { offset: 0, limit: 1 })
   if (listing.ok) {
     if (listing.count == 0) {
@@ -241,7 +241,7 @@ screen("reader") {
 }
 
 screen("chapters") {
-  service.display.clear("white")
+  service.display.clear(color.WHITE)
   service.display.refreshMode("fast1bpp")
   let listing = content.binbook.list("books", { offset: 0, limit: 1 })
   if (listing.ok) {

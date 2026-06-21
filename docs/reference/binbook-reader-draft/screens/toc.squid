@@ -12,7 +12,7 @@ state {
 export
 
 screen("t") {
-  service.display.clear("white")
+  service.display.clear(color.WHITE)
   chrome.drawTopBar("TOC")
   if (state.navCount == 0) {
     service.display.text("No TOC", {

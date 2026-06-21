@@ -105,13 +105,11 @@ it is copied from the flush job's page at flush completion
 
 ### Typed Color
 
-Colors are stored as a `uint8_t` encoding the 18-name palette
-(`white`, `black`, `gray0`..`gray15`) plus an unset sentinel. The palette is
-fixed by `docs/language_spec.md:1752-1761`. In this firmware-internal slice the
-conversion from the existing string API to the typed value happens at the FFI
-producer boundary (`runtime_display_clear/text/rect` in
-`vm_runtime_display.c`), which already receive the byte string and length. The
-public SquidScript API and the FFI option structs are unchanged in this slice.
+Colors are stored as a `uint8_t` encoding the `color.GRAY0` through
+`color.GRAY15` palette plus `color.WHITE`, `color.BLACK`, and an unset sentinel.
+The compiler resolves constants to integer literals. SQBC carries numeric color
+operands, the VM validates the 0 through 15 range, and the FFI carries typed
+bytes. `0xFF` represents an absent optional color at the FFI boundary.
 
 `ssd1677_color_is_black` (`ssd1677_gdeq0426t82_display.c:18-24`) becomes a typed
 comparison. `composed_op_equal` (`ssd1677_gray2.c:134`) compares typed colors
@@ -168,8 +166,7 @@ A compile-time color value namespace `color` is added with constants
 `color.GRAY0`..`color.GRAY15`, `color.WHITE`, and `color.BLACK`. The compiler
 resolves `color.*` references to the typed `uint8` value and emits typed colors
 in SQBC display options. The FFI display option structs carry the typed `uint8`
-instead of a byte string. Firmware passes the typed value straight into the op
-and the temporary Plan 2 string-to-uint8 conversion is removed.
+instead of a byte string. Firmware passes the typed value straight into the op.
 
 String color values (`"gray15"`, `"white"`, etc.) are replaced entirely. All
 examples and tests migrate to `color.*`. This follows the pre-1.0 direct

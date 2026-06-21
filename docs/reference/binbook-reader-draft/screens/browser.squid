@@ -13,11 +13,11 @@ state {
 export
 
 screen("b") {
-  service.display.clear("white")
+  service.display.clear(color.WHITE)
   chrome.drawTopBar("Books")
   if (state.browserIndex == 0) {
     service.display.rect(20, 120, 440, 72, {
-      fillColor: "gray4"
+      fillColor: color.GRAY4
     })
   }
   service.display.text("Browse", {
@@ -30,7 +30,7 @@ screen("b") {
   if (state.file != "") {
     if (state.browserIndex == 1) {
       service.display.rect(20, 220, 440, 112, {
-        fillColor: "gray4"
+        fillColor: color.GRAY4
       })
     }
     service.display.text("Resume", {

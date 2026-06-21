@@ -31,7 +31,7 @@ event.on("key.BACK") {
 screen("main", {
   render: "compose"
 }) {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
   service.display.text("BinBook Reader", {
     x: 20
     y: 60
@@ -75,7 +75,7 @@ screen("main", {
 }
 
 screen("detail") {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
   service.display.text("BinBook support is not implemented in browser-sim yet.", {
     x: 32
     y: 160

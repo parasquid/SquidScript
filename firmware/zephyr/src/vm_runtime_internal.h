@@ -39,7 +39,7 @@ static inline size_t bounded_strlen(const char *value, size_t cap)
 
 int32_t runtime_read_exact_at(void *user_data, size_t offset, uint8_t *out, size_t out_len);
 
-void runtime_display_clear(void *user_data, const uint8_t *color, size_t color_len);
+void runtime_display_clear(void *user_data, uint8_t color);
 void runtime_display_text(void *user_data, const uint8_t *text, size_t text_len,
 			  const SqvmDisplayTextOptions *options);
 void runtime_display_rect(void *user_data, const SqvmDisplayRectOptions *options);

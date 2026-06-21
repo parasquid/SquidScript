@@ -261,10 +261,8 @@ typedef struct {
 	int32_t w;
 	int32_t h;
 	int32_t font_height;
-	const uint8_t *text_color;
-	size_t text_color_len;
-	const uint8_t *background_color;
-	size_t background_color_len;
+	uint8_t text_color;
+	uint8_t background_color;
 	const uint8_t *align;
 	size_t align_len;
 	const uint8_t *valign;
@@ -276,10 +274,8 @@ typedef struct {
 	int32_t y;
 	int32_t w;
 	int32_t h;
-	const uint8_t *fill_color;
-	size_t fill_color_len;
-	const uint8_t *stroke_color;
-	size_t stroke_color_len;
+	uint8_t fill_color;
+	uint8_t stroke_color;
 } SqvmDisplayRectOptions;
 
 typedef struct {
@@ -287,8 +283,7 @@ typedef struct {
 	int32_t y1;
 	int32_t x2;
 	int32_t y2;
-	const uint8_t *color;
-	size_t color_len;
+	uint8_t color;
 } SqvmDisplayLineOptions;
 
 typedef struct {
@@ -358,7 +353,7 @@ typedef struct {
 	size_t event_len;
 } SqvmAppStackEntry;
 
-typedef void (*SqvmDisplayClearCallback)(void *user_data, const uint8_t *color, size_t color_len);
+typedef void (*SqvmDisplayClearCallback)(void *user_data, uint8_t color);
 
 typedef void (*SqvmDisplayTextCallback)(
 	void *user_data,

@@ -38,7 +38,7 @@ event.on("http.upload.complete", ev) {
 }
 
 screen("reader") {
-  service.display.clear("white")
+  service.display.clear(color.WHITE)
   let listing = content.binbook.list("books", { offset: 0, limit: 1 })
   debug.print("content", listing.ok, listing.count, listing.warning, state.uploaded)
   if (listing.ok) {

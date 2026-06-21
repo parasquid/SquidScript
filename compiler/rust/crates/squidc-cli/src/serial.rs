@@ -820,13 +820,13 @@ mod tests {
     #[test]
     fn formats_drawlog_lines_without_adding_a_second_draw_prefix() {
         let lines = vec![
-            "draw=clear color=gray0".to_string(),
+            "draw=clear color=0".to_string(),
             "draw=text text=\"Hello\" x=10 y=20".to_string(),
         ];
 
         assert_eq!(
             format_raw_lines(&lines),
-            "draw=clear color=gray0\ndraw=text text=\"Hello\" x=10 y=20\n"
+            "draw=clear color=0\ndraw=text text=\"Hello\" x=10 y=20\n"
         );
     }
 

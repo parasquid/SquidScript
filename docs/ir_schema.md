@@ -72,7 +72,7 @@ Consumers must reject unknown `format` values.
       "name": "main",
       "render": "compose",
       "statements": [
-        { "op": "service.display.clear", "color": "gray0" },
+        { "op": "service.display.clear", "color": { "op": "literal", "value": 0 } },
         {
           "op": "service.display.text",
           "text": { "op": "literal", "value": "Hello Menu" },

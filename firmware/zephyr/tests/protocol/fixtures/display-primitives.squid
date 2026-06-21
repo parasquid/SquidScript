@@ -9,15 +9,15 @@ event.on("key.SELECT") {
 }
 
 screen("main") {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
   service.display.text("Hello", {
     x: 10
     y: 20
   })
   service.display.rect(1, 2, 3, 4, {
-    fillColor: "gray4"
+    fillColor: color.GRAY4
   })
   service.display.line(5, 6, 7, 8, {
-    color: "gray15"
+    color: color.GRAY15
   })
 }

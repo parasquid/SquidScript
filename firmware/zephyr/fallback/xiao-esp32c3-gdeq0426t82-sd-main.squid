@@ -13,7 +13,7 @@ event.on("app.start") {
 }
 
 screen("main") {
-  service.display.clear("white")
+  service.display.clear(color.WHITE)
   service.display.text("XIAO ESP32-C3", {
     x: 24
     y: 48

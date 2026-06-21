@@ -56,7 +56,7 @@ event.on("key.LEFT") {
 }
 
 screen("reader") {
-  service.display.clear("white")
+  service.display.clear(color.WHITE)
   let listing = content.binbook.list("books", { offset: 0, limit: 1 })
   if (listing.ok) {
     if (listing.count == 0) {

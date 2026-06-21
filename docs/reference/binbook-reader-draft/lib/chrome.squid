@@ -2,7 +2,7 @@ export
 
 function drawTopBar(label) {
   service.display.rect(0, 0, 480, 36, {
-    fillColor: "gray0"
+    fillColor: color.GRAY0
   })
   service.display.text(label, {
     x: 12
@@ -12,7 +12,7 @@ function drawTopBar(label) {
     fontHeight: 18
   })
   service.display.line(0, 38, 480, 38, {
-    color: "gray15"
+    color: color.GRAY15
   })
 }
 
@@ -20,10 +20,10 @@ export
 
 function drawBottomBar(label) {
   service.display.rect(0, 758, 480, 42, {
-    fillColor: "gray0"
+    fillColor: color.GRAY0
   })
   service.display.line(0, 758, 480, 758, {
-    color: "gray15"
+    color: color.GRAY15
   })
   service.display.text(label, {
     x: 12

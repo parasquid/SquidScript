@@ -66,8 +66,8 @@ function drawMenuRow(index, label, y) {
       fontHeight: 22,
       align: "center",
       valign: "middle",
-      textColor: "gray0",
-      backgroundColor: "gray15"
+      textColor: color.GRAY0,
+      backgroundColor: color.GRAY15
     })
   } else {
     service.display.text(label, {
@@ -78,14 +78,14 @@ function drawMenuRow(index, label, y) {
       fontHeight: 22,
       align: "center",
       valign: "middle",
-      textColor: "gray15",
-      backgroundColor: "gray0"
+      textColor: color.GRAY15,
+      backgroundColor: color.GRAY0
     })
   }
 }
 
 screen("menu", { render: "compose" }) {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
 
   service.display.text("Hello Menu", {
     x: 20,
@@ -109,12 +109,12 @@ screen("menu", { render: "compose" }) {
     fontHeight: 18,
     align: "center",
     valign: "middle",
-    textColor: "gray8"
+    textColor: color.GRAY8
   })
 }
 
 screen("hello") {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
   service.display.text("Hello, Squid!", {
     x: 20,
     y: 120,
@@ -132,12 +132,12 @@ screen("hello") {
     fontHeight: 18,
     align: "center",
     valign: "middle",
-    textColor: "gray8"
+    textColor: color.GRAY8
   })
 }
 
 screen("about") {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
   service.display.text("Selection is state.", {
     x: 32,
     y: 120,

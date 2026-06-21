@@ -228,7 +228,7 @@ event.on("key.DOWN") {
   screen.refresh()
 }
 screen("main") {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
 }
 "#;
     let output = compile(CompileRequest {
@@ -523,12 +523,12 @@ app.exit()
 
 screen("main") {
   let label = "Hello"
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
   drawLabel(label)
 }
 
 screen("detail") {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
 }
 "#;
     let output = compile(CompileRequest {
@@ -598,7 +598,7 @@ screen.open("main")
   }
 }
 screen("main") {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
 }
 "#;
     let output = compile(CompileRequest {
@@ -1107,7 +1107,7 @@ screen("main") {
 let x = state.count
 debug.print("screen", x)
   }
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
 }
 "#;
     let output = compile(CompileRequest {
@@ -1210,7 +1210,7 @@ outer = 4
 value = 5
 screen.open("main")
 service.indicator.toggle()
-service.display.clear("gray0")
+service.display.clear(color.GRAY0)
 return x
   }
   debug.print(x)
@@ -1264,7 +1264,7 @@ event.on("app.start") {
   screen.open("main")
 }
 screen("main") {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
   service.display.text("Hello", { x: 10, y: 20 })
 }
 "#;
@@ -1281,10 +1281,10 @@ screen("main") {
 fn parses_display_namespace_as_display_service_sugar() {
     let source = r#"app "display-sugar"
 screen("main") {
-  display.clear("white")
+  display.clear(color.WHITE)
   display.text("Hello", { x: 10, y: 20 })
-  display.rect(0, 0, 100, 40, { fillColor: "gray4" })
-  display.line(0, 40, 100, 40, { color: "black" })
+  display.rect(0, 0, 100, 40, { fillColor: color.GRAY4 })
+  display.line(0, 40, 100, 40, { color: color.BLACK })
   service.display.select("status")
   service.display.refreshMode("full")
   service.display.image("data/icon.bmp", { x: 20, y: 24 })
@@ -1305,7 +1305,9 @@ screen("main") {
         .unwrap();
     assert!(matches!(
         screen.statements[0],
-        IrStatement::DisplayClear { ref color } if color == "white"
+        IrStatement::DisplayClear {
+            color: IrExpr::Literal { ref value }
+        } if value == &serde_json::json!(0)
     ));
     assert!(matches!(
         screen.statements[1],
@@ -1351,12 +1353,43 @@ screen("main") {
 }
 
 #[test]
+fn parses_color_constants_as_grayscale_integer_literals() {
+    let source = r#"app "color-constants"
+screen("main") {
+  display.clear(color.GRAY15)
+  display.text("Label", { textColor: color.WHITE, backgroundColor: color.BLACK })
+  display.rect(0, 0, 10, 10, { fillColor: color.GRAY8 })
+}
+"#;
+    let parsed = parse(source);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let screen = &parsed.ast.screens[0];
+    assert!(matches!(
+        screen.statements[0],
+        IrStatement::DisplayClear {
+            color: IrExpr::Literal { ref value }
+        } if value == &serde_json::json!(15)
+    ));
+}
+
+#[test]
+fn rejects_unknown_color_constant() {
+    let source = r#"app "bad-color"
+screen("main") {
+  display.clear(color.BOGUS)
+}
+"#;
+    let parsed = parse(source);
+    assert!(!parsed.diagnostics.is_empty());
+}
+
+#[test]
 fn display_rect_accepts_variable_coordinates() {
     let source = r#"app "rect-vars"
 state { selected: int = 0 }
 
 function row(y) {
-  service.display.rect(18, y, 424, 48, { strokeColor: "gray15" })
+  service.display.rect(18, y, 424, 48, { strokeColor: color.GRAY15 })
 }
 
 screen("main") {
@@ -1565,7 +1598,7 @@ device {
   input { use "gpio-button:GPIO9:key.SELECT:activeLow" }
 }
 screen("main") {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
 }
 "#;
     let output = compile(CompileRequest {
@@ -2275,13 +2308,13 @@ fn reports_real_semantic_diagnostics() {
 state { selected: int = 0 }
 event.on("app.start") {
   screen.open("missing")
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
 }
 screen("main", { render: "invalid" }) {
   state.selected = state.selected + 1
 }
 screen("main") {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
 }
 "#;
     let output = compile(CompileRequest {
@@ -2425,7 +2458,7 @@ debug.print(result.error)
   screen.open("main")
 }
 screen("main") {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
 }
 "#;
     let output = compile(CompileRequest {
@@ -2622,7 +2655,7 @@ event.on("app.start") {
   screen.open("main")
 }
 screen("main") {
-  service.display.clear("gray0")
+  service.display.clear(color.GRAY0)
 }
 "#;
     let output = compile(CompileRequest {
