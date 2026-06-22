@@ -201,6 +201,8 @@ static struct sq_vm_runtime_binbook_page binbook_previous_page;
 static struct sq_vm_runtime_display_op previous_composed_ops[SQ_VM_RUNTIME_DISPLAY_OP_MAX];
 static size_t previous_composed_op_count;
 static struct sq_vm_runtime_display_op sorted_ops[SQ_VM_RUNTIME_DISPLAY_OP_MAX];
+static uint16_t sorted_op_y_mins[SQ_VM_RUNTIME_DISPLAY_OP_MAX];
+static uint16_t sorted_op_y_maxs[SQ_VM_RUNTIME_DISPLAY_OP_MAX];
 
 static int configure_display(void);
 
@@ -791,17 +793,27 @@ static int validate_binbook_gray2_page(const struct sq_vm_runtime_binbook_page *
 
 static enum sq_ssd1677_binbook_refresh_kind binbook_refresh_kind(void)
 {
-	return sq_ssd1677_binbook_refresh_decide(&binbook_refresh_state,
-						 SSD1677_BINBOOK_FULL_REFRESH_CADENCE);
+	enum sq_ssd1677_binbook_refresh_kind kind =
+		sq_ssd1677_binbook_refresh_decide(&binbook_refresh_state,
+						  SSD1677_BINBOOK_FULL_REFRESH_CADENCE);
+	sq_debug_log_append("%lld:binbook_refresh_decide:prev_valid=%d:fast_count=%d:cadence=%d:result=%d",
+			    (long long)k_uptime_get(),
+			    (int)binbook_refresh_state.previous_page_valid,
+			    (int)binbook_refresh_state.fast_refresh_count,
+			    (int)SSD1677_BINBOOK_FULL_REFRESH_CADENCE,
+			    (int)kind);
+	return kind;
 }
 
 static void binbook_remember_previous_page(const struct sq_vm_runtime_binbook_page *page)
 {
 	if (page == NULL) {
+		sq_debug_log_append("%lld:binbook_prev_clear", (long long)k_uptime_get());
 		sq_ssd1677_binbook_refresh_reset(&binbook_refresh_state);
 		memset(&binbook_previous_page, 0, sizeof(binbook_previous_page));
 		return;
 	}
+	sq_debug_log_append("%lld:binbook_prev_set", (long long)k_uptime_get());
 	binbook_previous_page = *page;
 }
 
@@ -1155,19 +1167,22 @@ static int compare_op_y_min(const void *a, const void *b)
 }
 
 static void render_row(uint8_t line[ROW_BYTES], uint16_t y,
-		       const struct sq_vm_runtime_display_op *ops, size_t op_count)
+		       const struct sq_vm_runtime_display_op *ops, size_t op_count,
+		       const uint16_t *y_mins, const uint16_t *y_maxs, size_t start_op)
 {
 	memset(line, 0xff, ROW_BYTES);
-	for (size_t i = 0; i < op_count; ++i) {
-		if (op_y_min(&ops[i]) > y) {
+	for (size_t i = start_op; i < op_count; ++i) {
+		if (y_mins[i] > y) {
 			break;
 		}
-		if (y >= op_y_max(&ops[i])) {
+		if (y >= y_maxs[i]) {
 			continue;
 		}
 		switch (ops[i].kind) {
 		case SQ_VM_RUNTIME_DISPLAY_OP_CLEAR:
-			memset(line, ssd1677_color_is_black(ops[i].u.clear.color) ? 0x00 : 0xff, ROW_BYTES);
+			if (ssd1677_color_is_black(ops[i].u.clear.color)) {
+				memset(line, 0x00, ROW_BYTES);
+			}
 			break;
 		case SQ_VM_RUNTIME_DISPLAY_OP_RECT:
 			draw_rect_row(line, y, &ops[i]);
@@ -1186,12 +1201,24 @@ static int stream_composed_1bpp_frame(uint8_t command,
 				      size_t op_count)
 {
 	int ret;
+	size_t start_op = 0;
 
 	if (op_count > ARRAY_SIZE(sorted_ops)) {
 		op_count = ARRAY_SIZE(sorted_ops);
 	}
+	sq_debug_log_append("%lld:sort_start:ops=%d", (long long)k_uptime_get(),
+			    (int)op_count);
 	memcpy(sorted_ops, ops, op_count * sizeof(sorted_ops[0]));
 	qsort(sorted_ops, op_count, sizeof(sorted_ops[0]), compare_op_y_min);
+	for (size_t i = 0; i < op_count; ++i) {
+		sorted_op_y_mins[i] = op_y_min(&sorted_ops[i]);
+		sorted_op_y_maxs[i] = op_y_max(&sorted_ops[i]);
+	}
+	sq_debug_log_append("%lld:sort_done", (long long)k_uptime_get());
+	if (op_count > 0 && sorted_ops[0].kind == SQ_VM_RUNTIME_DISPLAY_OP_CLEAR &&
+	    !ssd1677_color_is_black(sorted_ops[0].u.clear.color)) {
+		start_op = 1;
+	}
 	sq_debug_log_append("%lld:stream_start:cmd=0x%02x", (long long)k_uptime_get(),
 			    (unsigned)command);
 	ret = write_command(command);
@@ -1200,10 +1227,14 @@ static int stream_composed_1bpp_frame(uint8_t command,
 	}
 	sq_debug_log_append("%lld:stream_render_start", (long long)k_uptime_get());
 	for (uint16_t y = 0; y < PANEL_HEIGHT; ++y) {
-		render_row(row, y, sorted_ops, op_count);
+		render_row(row, y, sorted_ops, op_count, sorted_op_y_mins, sorted_op_y_maxs, start_op);
 		ret = write_data(row, sizeof(row));
 		if (ret != 0) {
 			return ret;
+		}
+		if ((y + 1) % 48 == 0) {
+			sq_debug_log_append("%lld:rows_%03d_done", (long long)k_uptime_get(),
+					    (int)(y + 1));
 		}
 	}
 	sq_debug_log_append("%lld:stream_done", (long long)k_uptime_get());
@@ -1649,6 +1680,8 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 				"gray2-full" :
 				ordered_dither ? "gray2-bw-dither-diff-partial" :
 						 "gray2-bw-diff-partial";
+		sq_debug_log_append("%lld:binbook_refresh_type:%s", (long long)k_uptime_get(),
+				    refresh_mode);
 		if (binbook_refresh == SQ_SSD1677_BINBOOK_REFRESH_GRAY2_FULL) {
 			ret = refresh_grayscale_display(&observed_busy);
 		} else {

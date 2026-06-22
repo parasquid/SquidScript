@@ -181,6 +181,11 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   generators, markdown generation, serial helpers, Python unit tests, and small
   inline shell-wrapper Python snippets can move to Rust over time so project
   tooling is easier to install, test, and keep consistent.
+- **Unified constant definitions across C and Rust.** Identify constants
+  duplicated across C and Rust codebases and establish a single source of truth
+  to prevent drift. Options: generate C headers from Rust constants, use a
+  shared definition file both languages consume, or maintain one canonical set
+  with automated generation/validation of the other.
 
 ## ESP32-C3 RAM Hardening
 

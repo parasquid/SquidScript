@@ -13,7 +13,7 @@ pub const MAX_APP_ID_LEN: usize = 40;
 pub const MAX_PATH_LEN: usize = 128;
 pub const MAX_APP_BYTES: usize = 65_536;
 pub const MAX_RESOURCE_BYTES: usize = 1_048_576;
-pub const DEFAULT_SERIAL_MAX_FRAME_BYTES: usize = 1024;
+pub const DEFAULT_SERIAL_MAX_FRAME_BYTES: usize = 8192;
 pub const DEFAULT_TRANSFER_ACK_WINDOW_BYTES: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

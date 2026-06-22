@@ -23,6 +23,11 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - If a `git checkout` / `git restore` / `git reset` / `git stash` operation
   could destroy or hide the user's work, stop and ask before running it. This
   applies even when the goal is to keep a commit "clean".
+- Never commit code that hasn't been verified to work. Build, flash, and test
+  on hardware (or at minimum run relevant unit tests) before staging and
+  committing. An unverified change in the working tree is fine; an unverified
+  commit is a liability.
+
 ## Local Environment Notes
 
 - If `.local-agents.md` exists at the repository root, read it at the start

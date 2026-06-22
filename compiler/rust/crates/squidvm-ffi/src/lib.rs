@@ -2147,6 +2147,9 @@ pub unsafe extern "C" fn sqdp_encode_app_list_response(
     }
 }
 
+const SQDP_LINE_RESPONSE_MAX_FIXED_COUNT: usize = 64;
+const SQDP_LINE_RESPONSE_MAX_EXTRA_COUNT: usize = 8;
+
 #[no_mangle]
 pub unsafe extern "C" fn sqdp_encode_line_response(
     opcode: u8,
@@ -2172,7 +2175,9 @@ pub unsafe extern "C" fn sqdp_encode_line_response(
     let Ok(opcode) = Opcode::try_from(opcode) else {
         return SqdpStatus::InvalidArgument;
     };
-    if fixed_count > 32 || extra_count > 8 {
+    if fixed_count > SQDP_LINE_RESPONSE_MAX_FIXED_COUNT
+        || extra_count > SQDP_LINE_RESPONSE_MAX_EXTRA_COUNT
+    {
         return SqdpStatus::InvalidArgument;
     }
     let fixed = if fixed_count == 0 {

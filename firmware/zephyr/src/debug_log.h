@@ -4,8 +4,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define SQ_DEBUG_LOG_SIZE 4096
+#define SQ_DEBUG_LOG_SIZE 8192
 #define SQ_DEBUG_LOG_ENTRY_LEN 64
+#define SQ_DEBUG_LOG_MAX_RESPONSE_ENTRIES 64
 
 void sq_debug_log_init(void);
 void sq_debug_log_append(const char *fmt, ...);

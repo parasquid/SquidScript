@@ -1,0 +1,54 @@
+app "binbook-timing"
+
+state {
+  pageIndex: int = 0
+}
+
+event.on("app.start") {
+  state.load()
+  screen.open("reader")
+}
+
+event.on("key.RIGHT") {
+  let next = state.pageIndex + 1
+  if (next >= 4) {
+    next = 0
+  }
+  state.pageIndex = next
+  state.save()
+  screen.refresh()
+}
+
+event.on("key.LEFT") {
+  if (state.pageIndex > 0) {
+    state.pageIndex = state.pageIndex - 1
+    state.save()
+    screen.refresh()
+  }
+}
+
+event.on("key.BACK") {
+  app.exit()
+}
+
+screen("reader") {
+  let opened = binbook.open("content:books/r/test-timing.binbook")
+  if (opened.ok) {
+    let info = binbook.info(opened.book)
+    let page = binbook.readPage(opened.book, state.pageIndex)
+    if (page.ok) {
+      service.display.draw(page.drawable)
+      debug.print("reader", state.pageIndex, info.pageCount)
+    }
+    else {
+      service.display.clear(color.WHITE)
+      service.display.text("Page failed", { x: 24, y: 64, fontHeight: 24, textColor: color.GRAY15 })
+      debug.print("reader", "page-error", page.error, state.pageIndex)
+    }
+  }
+  else {
+    service.display.clear(color.WHITE)
+    service.display.text("Open failed", { x: 24, y: 64, fontHeight: 24, textColor: color.GRAY15 })
+    debug.print("reader", "open-error", opened.error)
+  }
+}

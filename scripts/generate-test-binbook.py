@@ -242,64 +242,116 @@ def build():
     chrome_policy = build_chrome_policy()
 
     nav_data = bytearray()
-    # Nav entry 0: "Chapter One", page 0
-    nav_data.extend(struct.pack("<IHH", 0, 3, 0))  # nav_index, nav_type, level
-    nav_data.extend(string_ref(REF_CH1))            # title
-    nav_data.extend(string_ref(REF_EMPTY))          # source_href
-    nav_data.extend(struct.pack("<I", 0xFFFFFFFF))  # source_spine_index
-    nav_data.extend(struct.pack("<I", 0))           # target_page_number
-    nav_data.extend(struct.pack("<III", 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF))  # parent, first_child, next_sibling
-    nav_data.extend(struct.pack("<I", 0))           # nav_flags
-    # Nav entry 1: "Chapter Two", page 1
-    nav_data.extend(struct.pack("<IHH", 1, 3, 0))
-    nav_data.extend(string_ref(REF_CH2))
-    nav_data.extend(string_ref(REF_EMPTY))
-    nav_data.extend(struct.pack("<I", 0xFFFFFFFF))
-    nav_data.extend(struct.pack("<I", 1))
-    nav_data.extend(struct.pack("<III", 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF))
-    nav_data.extend(struct.pack("<I", 0))
-
     chapter_data = bytearray()
-    # Chapter 0: index=0, nav_index=0, title="Chapter One", page=0
-    chapter_data.extend(struct.pack("<II", 0, 0))       # chapter_index, nav_index
-    chapter_data.extend(string_ref(REF_CH1))             # title
-    chapter_data.extend(struct.pack("<I", 0))            # target_page_number
-    chapter_data.extend(struct.pack("<HH", 0, 3))        # level, nav_type
-    chapter_data.extend(struct.pack("<II", 0xFFFFFFFF, 0))  # source_spine_index, chapter_flags
-    # Chapter 1: index=1, nav_index=1, title="Chapter Two", page=1
-    chapter_data.extend(struct.pack("<II", 1, 1))
-    chapter_data.extend(string_ref(REF_CH2))
-    chapter_data.extend(struct.pack("<I", 1))
-    chapter_data.extend(struct.pack("<HH", 0, 3))
-    chapter_data.extend(struct.pack("<II", 0xFFFFFFFF, 0))
+    page_entries = []
 
-    page_one_data = packbits_repeat(0xFF, UNCOMPRESSED_PAGE_BYTES)
-    page_two_data = packbits_repeat(0x00, UNCOMPRESSED_PAGE_BYTES)
-    page_data = page_one_data + page_two_data
+    # Page 0: "White" — all white
+    # Page 1: "Black" — all black
+    # Page 2: "Stripes" — vertical stripes (white/black columns)
+    # Page 3: "Bands" — horizontal bands (white/black rows)
+
+    page_names = ["White", "Black", "Stripes", "Bands"]
+
+    # Build string refs for page names
+    name_offsets = []
+    name_str = STRING_TABLE
+    for name in page_names:
+        name_offsets.append(len(name_str))
+        name_str += name.encode("utf-8") + b"\0"
+    # Also add "Page N" nav titles
+    nav_title_offsets = []
+    for i, name in enumerate(page_names):
+        nav_title_offsets.append(len(name_str))
+        title = f"Page {i + 1}: {name}"
+        name_str += title.encode("utf-8") + b"\0"
+
+    string_table_final = name_str
+
+    # Build nav entries (4 pages)
+    for i in range(4):
+        nav_data.extend(struct.pack("<IHH", i, 3, 0))
+        nav_data.extend(struct.pack("<II", nav_title_offsets[i], len(f"Page {i + 1}: {page_names[i]}".encode())))
+        nav_data.extend(string_ref(REF_EMPTY))
+        nav_data.extend(struct.pack("<I", 0xFFFFFFFF))
+        nav_data.extend(struct.pack("<I", i))
+        nav_data.extend(struct.pack("<III", 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF))
+        nav_data.extend(struct.pack("<I", 0))
+
+    # Build chapter entries (4 pages)
+    for i in range(4):
+        chapter_data.extend(struct.pack("<II", i, i))
+        chapter_data.extend(struct.pack("<II", nav_title_offsets[i], len(f"Page {i + 1}: {page_names[i]}".encode())))
+        chapter_data.extend(struct.pack("<I", i))
+        chapter_data.extend(struct.pack("<HH", 0, 3))
+        chapter_data.extend(struct.pack("<II", 0xFFFFFFFF, 0))
+
+    ROW_BYTES = 800 // 4  # 200 bytes per row for GRAY2 packed
+
+    # Page 0: all white
+    page0_raw = b"\xff" * UNCOMPRESSED_PAGE_BYTES
+    # Page 1: all black
+    page1_raw = b"\x00" * UNCOMPRESSED_PAGE_BYTES
+    # Page 2: vertical stripes (alternating white/black columns, 4px wide)
+    stripe_row = b"\xff\x00" * (ROW_BYTES // 2)
+    page2_raw = stripe_row * 480
+    # Page 3: horizontal bands (alternating white/black rows)
+    band_row_white = b"\xff" * ROW_BYTES
+    band_row_black = b"\x00" * ROW_BYTES
+    page3_raw = (band_row_white + band_row_black) * 240
+
+    page_raws = [page0_raw, page1_raw, page2_raw, page3_raw]
+
+    # RLE-encode each page
+    page_encoded = []
+    for raw in page_raws:
+        encoded = bytearray()
+        i = 0
+        while i < len(raw):
+            # Check for a run of identical bytes
+            run_start = i
+            run_byte = raw[i]
+            while i < len(raw) and raw[i] == run_byte and (i - run_start) < 128:
+                i += 1
+            run_len = i - run_start
+            if run_len >= 2:
+                # Literal run (packbits repeat)
+                encoded.extend((0x80 | (run_len - 1), run_byte))
+            else:
+                # Check for a literal sequence
+                lit_start = run_start
+                while i < len(raw):
+                    if i + 1 < len(raw) and raw[i] == raw[i + 1]:
+                        break
+                    i += 1
+                    if (i - lit_start) >= 128:
+                        break
+                lit_len = i - lit_start
+                encoded.extend((lit_len - 1,))
+                encoded.extend(raw[lit_start:lit_start + lit_len])
+        page_encoded.append(bytes(encoded))
+
+    # Build page blob
+    page_data = b""
+    for enc in page_encoded:
+        page_data += enc
 
     # Build page index
     page_index = bytearray()
-    page_index.extend(struct.pack("<IHHHHI", 0, 1, 2, 1, 0, 0))  # number, kind, pixel_fmt, compress, hint, flags
-    page_index.extend(struct.pack("<Q", 0))                        # relative_blob_offset
-    page_index.extend(struct.pack("<III", len(page_one_data), UNCOMPRESSED_PAGE_BYTES, 0))  # compressed, uncompressed, crc
-    page_index.extend(struct.pack("<HH", 800, 480))               # stored_width, stored_height
-    page_index.extend(struct.pack("<HH", 0, 0))                   # placement_x, placement_y
-    page_index.extend(struct.pack("<II", 0xFFFFFFFF, 0xFFFFFFFF)) # source_spine, chapter_nav
-    page_index.extend(struct.pack("<II", 0, 500000))              # progress_start_ppm, progress_end_ppm
-    page_index.extend(bytes(16))                                    # reserved
-
-    page_index.extend(struct.pack("<IHHHHI", 1, 1, 2, 1, 0, 0))
-    page_index.extend(struct.pack("<Q", len(page_one_data)))
-    page_index.extend(struct.pack("<III", len(page_two_data), UNCOMPRESSED_PAGE_BYTES, 0))
-    page_index.extend(struct.pack("<HH", 800, 480))
-    page_index.extend(struct.pack("<HH", 0, 0))
-    page_index.extend(struct.pack("<II", 0xFFFFFFFF, 0xFFFFFFFF))
-    page_index.extend(struct.pack("<II", 500000, 1000000))
-    page_index.extend(bytes(16))
+    blob_offset = 0
+    for i, enc in enumerate(page_encoded):
+        page_index.extend(struct.pack("<IHHHHI", i, 1, 2, 1, 0, 0))
+        page_index.extend(struct.pack("<Q", blob_offset))
+        page_index.extend(struct.pack("<III", len(enc), UNCOMPRESSED_PAGE_BYTES, 0))
+        page_index.extend(struct.pack("<HH", 800, 480))
+        page_index.extend(struct.pack("<HH", 0, 0))
+        page_index.extend(struct.pack("<II", 0xFFFFFFFF, 0xFFFFFFFF))
+        page_index.extend(struct.pack("<II", i * 250000, (i + 1) * 250000))
+        page_index.extend(bytes(16))
+        blob_offset += len(enc)
 
     # Section data in order
     section_data = [
-        STRING_TABLE,            # 1
+        string_table_final,      # 1
         display_profile,         # 10
         layout_profile,          # 11
         reader_requirements,     # 12
@@ -349,13 +401,13 @@ def build():
         record_count = 0
         if sid == 40:
             entry_size = PAGE_INDEX_ENTRY_SIZE
-            record_count = 2
+            record_count = 4
         elif sid == 41:
             entry_size = NAV_INDEX_ENTRY_SIZE
-            record_count = 2
+            record_count = 4
         elif sid == 43:
             entry_size = CHAPTER_INDEX_ENTRY_SIZE
-            record_count = 2
+            record_count = 4
         write_section(out, section_table + i * SECTION_ENTRY_SIZE, sid,
                       section_offsets[i], len(data), entry_size, record_count)
     # PAGE_DATA (50) section entry

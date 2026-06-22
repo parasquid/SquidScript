@@ -8,7 +8,7 @@
 #include "protocol.h"
 
 #ifndef SQ_SERIAL_MAX_FRAME_LEN
-#define SQ_SERIAL_MAX_FRAME_LEN 4096u
+#define SQ_SERIAL_MAX_FRAME_LEN 8192u
 #endif
 
 struct sq_serial_transport {

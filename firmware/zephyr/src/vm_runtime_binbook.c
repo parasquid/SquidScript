@@ -575,9 +575,9 @@ int32_t runtime_binbook_read_page(void *user_data, SqvmHandle book, int32_t page
 		return 0;
 	}
 	if (rust_binbook_page_meta(bytes, sizeof(bytes),
-				   runtime->binbook.page_index_offset,
+				   0,
 				   runtime->binbook.page_data_offset,
-				   (uint32_t)page_index, &meta) != 0 || !meta.ok) {
+				   0, &meta) != 0 || !meta.ok) {
 		binbook_set_error("parse failed", &out->error, &out->error_len);
 		return 0;
 	}
