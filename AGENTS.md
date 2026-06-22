@@ -486,6 +486,15 @@ work. The always-fire disciplines stay here:
   network access must run outside the Codex sandbox. If `gh` works on the host
   but fails in the sandbox, treat that as expected environment isolation, not as
   an auth problem to debug.
+- **Never use `git add -A` or `git add .`.** Always stage specific files by
+  path. Unrelated working-tree files (scratch scripts, experiment apps, local
+  test fixtures) must not be committed by accident. Use `git add <file>` for
+  each file that belongs in the commit, and `git status` before committing to
+  verify only intended files are staged.
+- **Never amend, force-push, or rewrite history without explicit user request.**
+  If a commit contains mistakes, ask the user how to handle it — do not
+  silently reset, revert, or amend. Reverts and resets make history harder
+  to follow and can destroy work.
 
 ## CLI Workflow Ergonomics
 

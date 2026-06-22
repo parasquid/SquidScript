@@ -2348,6 +2348,9 @@ static int repeated_runtime_lines_response(const struct sq_protocol_request *req
 	if (request->opcode == SQ_OPCODE_DEBUG_LOG_GET) {
 		fixed_lines = (const uint8_t *)sq_debug_log_buf;
 		fixed_count = sq_debug_log_line_count();
+		if (fixed_count > 32) {
+			fixed_count = 32;
+		}
 		fixed_stride = SQ_DEBUG_LOG_ENTRY_LEN;
 	}
 	if (extra_count > ARRAY_SIZE(extra_slices)) {
