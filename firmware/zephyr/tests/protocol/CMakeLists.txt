@@ -55,6 +55,7 @@ target_sources(app PRIVATE
   ../../src/app_store.c
   ../../src/ble_file_transfer_core.c
   ../../src/ble_profile_table.c
+  ../../src/debug_log.c
   ../../src/device_protocol.c
   ../../src/fallback_app.c
   ../../src/http_upload.c

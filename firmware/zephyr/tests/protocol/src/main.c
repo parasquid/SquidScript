@@ -58,18 +58,27 @@ static void test_display_flush_reset(bool block)
 
 int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t op_count,
 			     enum sq_vm_runtime_display_refresh_mode refresh_mode,
-			     const struct sq_vm_runtime_binbook_page *binbook_page)
+			     const struct sq_vm_runtime_binbook_page *binbook_page,
+			     bool *needs_phase2)
 {
 	ARG_UNUSED(ops);
 	ARG_UNUSED(op_count);
 	ARG_UNUSED(refresh_mode);
 	ARG_UNUSED(binbook_page);
+	if (needs_phase2 != NULL) {
+		*needs_phase2 = false;
+	}
 	test_display_flush_count++;
 	if (test_display_flush_block) {
 		k_sem_give(&test_display_flush_started);
 		(void)k_sem_take(&test_display_flush_release, K_FOREVER);
 	}
 	return 0;
+}
+
+void sq_display_backend_set_phase2(bool phase2)
+{
+	ARG_UNUSED(phase2);
 }
 
 int sq_display_backend_window_probe(const char *pattern)

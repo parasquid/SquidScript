@@ -182,22 +182,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   inline shell-wrapper Python snippets can move to Rust over time so project
   tooling is easier to install, test, and keep consistent.
 
-## Test Hygiene
-
-- Restore the native protocol ztest suite (`scripts/zephyr-test-protocol.sh`)
-  to green. 33 pre-existing failures on `native_sim/native/64` stem from
-  `SQ_TARGET_INDICATOR_DEFAULT_HAS_GPIO=0` for the c3-super-mini native test
-  target. The indicator tests
-  (`test_indicator_pattern_state_machine_transitions`,
-  `test_device_protocol_poll_advances_running_runtime_poll`) fail in isolation
-  because `sq_vm_runtime_indicator_breathe` returns `-ENODEV` without an active
-  indicator GPIO binding, and their failure cascades into `mount_test_fs`
-  pollution for approximately 30 dependent storage/launch/lifecycle tests that
-  run after them in the suite. Fix by providing a `native_sim` indicator GPIO
-  overlay so the test target has `HAS_GPIO=1`, or by making the indicator tests
-  skip breathe/write assertions when no binding is active. The X4 hardware
-  target does not exhibit this because it has the indicator GPIO.
-
 ## ESP32-C3 RAM Hardening
 
 Current ESP32-C3 RAM baseline:
