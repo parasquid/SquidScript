@@ -545,6 +545,7 @@ int32_t runtime_binbook_read_page(void *user_data, SqvmHandle book, int32_t page
 	struct sq_vm_runtime *runtime = user_data;
 	struct fs_file_t file;
 	uint8_t bytes[BINBOOK_PAGE_INDEX_ENTRY_SIZE];
+	struct rust_binbook_page_meta meta;
 	int result;
 
 	if (out == NULL) {
@@ -573,24 +574,25 @@ int32_t runtime_binbook_read_page(void *user_data, SqvmHandle book, int32_t page
 		binbook_set_error("read failed", &out->error, &out->error_len);
 		return 0;
 	}
+	if (rust_binbook_page_meta(bytes, sizeof(bytes),
+				   runtime->binbook.page_index_offset,
+				   runtime->binbook.page_data_offset,
+				   (uint32_t)page_index, &meta) != 0 || !meta.ok) {
+		binbook_set_error("parse failed", &out->error, &out->error_len);
+		return 0;
+	}
 	memset(&runtime->drawable, 0, sizeof(runtime->drawable));
 	runtime->drawable.active = true;
 	strncpy(runtime->drawable.page.path, runtime->binbook.path,
 		sizeof(runtime->drawable.page.path) - 1);
 	runtime->drawable.page.page_index = (uint32_t)page_index;
-	runtime->drawable.page.pixel_format = read_le16(&bytes[6]);
-	runtime->drawable.page.compression_method = read_le16(&bytes[8]);
-	runtime->drawable.page.blob_offset = runtime->binbook.page_data_offset + read_le64(&bytes[16]);
-	runtime->drawable.page.compressed_size = read_le32(&bytes[24]);
-	runtime->drawable.page.uncompressed_size = read_le32(&bytes[28]);
-	runtime->drawable.page.stored_width = read_le16(&bytes[36]);
-	runtime->drawable.page.stored_height = read_le16(&bytes[38]);
-	if (runtime->drawable.page.pixel_format != BINBOOK_PIXEL_FORMAT_GRAY2_PACKED ||
-	    runtime->drawable.page.compression_method != BINBOOK_COMPRESSION_RLE_PACKBITS) {
-		memset(&runtime->drawable, 0, sizeof(runtime->drawable));
-		binbook_set_error("unsupported page", &out->error, &out->error_len);
-		return 0;
-	}
+	runtime->drawable.page.pixel_format = meta.pixel_format;
+	runtime->drawable.page.compression_method = meta.compression_method;
+	runtime->drawable.page.blob_offset = meta.blob_offset;
+	runtime->drawable.page.compressed_size = meta.compressed_size;
+	runtime->drawable.page.uncompressed_size = meta.uncompressed_size;
+	runtime->drawable.page.stored_width = meta.stored_width;
+	runtime->drawable.page.stored_height = meta.stored_height;
 	out->ok = true;
 	binbook_set_error(NULL, &out->error, &out->error_len);
 	out->drawable = (SqvmHandle){

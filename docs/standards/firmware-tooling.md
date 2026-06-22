@@ -17,14 +17,13 @@ Discipline"; read both when doing firmware or hardware work.
   not work in this environment, check the relevant repository docs and wrapper
   scripts first. Prefer the documented wrapper command over ad hoc direct tool
   invocations, and only call something blocked after the documented path fails.
-- Use `cargo run -p squidc -- target build --target xiao-esp32c3-gdeq0426t82-sd`
-  to build or type-check the XIAO ESP32-C3 e-paper default dev firmware
+- Use `cargo run -p squidc -- target build --target xteink-x4`
+  to build or type-check the XTEINK X4 default dev firmware
   binary. `squidc target` resolves target JSON metadata, Zephyr board,
   overlay, fallback app, generated Kconfig path, and build directory.
-  The XIAO is the default dev target — `scripts/zephyr-env.sh` defaults
-  to it, `scripts/zephyr-test-radio-concurrency.sh` defaults to it, and
-  `docs/hardware_target_tests.md` documents it as the default. The
-  ESP32-C3 Super Mini (`esp32c3-super-mini`) remains a supported
+  The XTEINK X4 is the default dev target — `scripts/xteink-x4-test-binbook-reader.sh`
+  defaults to it, and `docs/hardware_target_tests.md` documents it as the default.
+  The ESP32-C3 Super Mini (`esp32c3-super-mini`) remains a supported
   regression hardware target, with its own scripts under
   `scripts/c3-supermini-*.sh` and its full suite
   `scripts/c3-supermini-test-hardware.sh`.
@@ -34,7 +33,7 @@ Discipline"; read both when doing firmware or hardware work.
   is auto-detected via `scripts/lib/serial-port.sh::resolve_esp.serial_port`
   and exported as `ESPFLASH_PORT`. `scripts/zephyr-test-ble-file-transfer.sh`
   is the reference for the full end-to-end flash + protocol + BLE flow.
-- For firmware flashing scripts, avoid auto-monitoring by default when USB reset or re-enumeration can break the serial session. Prefer `squidc device monitor` for XIAO ESP32-C3 SquidScript output, and use explicit opt-in monitoring such as `MONITOR_AFTER_FLASH=1` only when needed.
+- For firmware flashing scripts, avoid auto-monitoring by default when USB reset or re-enumeration can break the serial session. Prefer `squidc device monitor` for XTEINK X4 SquidScript output, and use explicit opt-in monitoring such as `MONITOR_AFTER_FLASH=1` only when needed.
 - Do not filter or suppress flashing tool stderr in firmware scripts. Surface warnings and errors directly, and document known harmless tool warnings instead of hiding them.
 
 ## Zephyr Environment & Test Wrappers

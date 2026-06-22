@@ -149,6 +149,25 @@ int32_t runtime_binbook_chapters(void *user_data, SqvmHandle book, int32_t offse
 int32_t runtime_binbook_chapter(void *user_data, SqvmHandle book, int32_t index,
 				SqvmBinBookChapterResult *out);
 int runtime_binbook_validate_path(const char *path);
+
+struct rust_binbook_page_meta {
+	bool ok;
+	uint16_t pixel_format;
+	uint16_t compression_method;
+	uint64_t blob_offset;
+	uint32_t compressed_size;
+	uint32_t uncompressed_size;
+	uint16_t stored_width;
+	uint16_t stored_height;
+};
+
+int32_t rust_binbook_page_meta(const uint8_t *data, size_t data_len,
+			       uint64_t page_index_offset, uint64_t page_data_offset,
+			       uint32_t page_index, struct rust_binbook_page_meta *out);
+int32_t rust_binbook_decompress_page(const uint8_t *compressed, size_t compressed_len,
+				     uint16_t compression_method, uint8_t *out,
+				     size_t out_len, size_t uncompressed_size);
+
 int32_t runtime_content_binbook_list(void *user_data, const uint8_t *library,
 				     size_t library_len, int32_t offset, int32_t limit,
 				     SqvmContentBinBookEntry *out, size_t out_cap,

@@ -6066,3 +6066,126 @@ fn panic(_info: &PanicInfo<'_>) -> ! {
 unsafe extern "C" {
     fn sqvm_ffi_panic_abort() -> !;
 }
+
+// BinBook Rust parsing — called from C shim in vm_runtime_binbook.c
+
+#[repr(C)]
+pub struct RustBinBookOpenResult {
+    pub ok: bool,
+    pub string_table_offset: u64,
+    pub string_table_length: u32,
+    pub page_index_offset: u64,
+    pub page_index_entry_size: u16,
+    pub nav_index_offset: u64,
+    pub nav_index_entry_size: u16,
+    pub chapter_index_offset: u64,
+    pub chapter_index_entry_size: u16,
+    pub page_data_offset: u64,
+    pub page_count: u32,
+    pub nav_count: u32,
+    pub chapter_count: u32,
+}
+
+#[repr(C)]
+pub struct RustBinBookPageMeta {
+    pub ok: bool,
+    pub pixel_format: u16,
+    pub compression_method: u16,
+    pub blob_offset: u64,
+    pub compressed_size: u32,
+    pub uncompressed_size: u32,
+    pub stored_width: u16,
+    pub stored_height: u16,
+}
+
+#[no_mangle]
+pub extern "C" fn rust_binbook_open(
+    data: *const u8,
+    len: usize,
+    out: *mut RustBinBookOpenResult,
+) -> i32 {
+    if data.is_null() || out.is_null() || len < 256 {
+        return -1;
+    }
+    let bytes = unsafe { slice::from_raw_parts(data, len) };
+    let scratch = [0u8; 4096];
+    let book = match binbook::BinBook::open(bytes, scratch) {
+        Ok(b) => b,
+        Err(_) => return -1,
+    };
+    let info = book.open_info();
+    unsafe {
+        *out = RustBinBookOpenResult {
+            ok: true,
+            string_table_offset: info.string_table_offset,
+            string_table_length: info.string_table_length,
+            page_index_offset: info.page_index_offset,
+            page_index_entry_size: info.page_index_entry_size,
+            nav_index_offset: info.nav_index_offset,
+            nav_index_entry_size: info.nav_index_entry_size,
+            chapter_index_offset: info.chapter_index_offset,
+            chapter_index_entry_size: info.chapter_index_entry_size,
+            page_data_offset: info.page_data_offset,
+            page_count: info.page_count,
+            nav_count: info.nav_count,
+            chapter_count: info.chapter_count,
+        };
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn rust_binbook_page_meta(
+    data: *const u8,
+    data_len: usize,
+    page_index_offset: u64,
+    page_data_offset: u64,
+    page_index: u32,
+    out: *mut RustBinBookPageMeta,
+) -> i32 {
+    if data.is_null() || out.is_null() {
+        return -1;
+    }
+    let bytes = unsafe { slice::from_raw_parts(data, data_len) };
+    let off = page_index_offset as usize + page_index as usize * 76;
+    if off + 76 > bytes.len() {
+        return -1;
+    }
+    let info = match binbook::page_index::parse_page_info_from_bytes(&bytes[off..off + 76], page_data_offset) {
+        Ok(i) => i,
+        Err(_) => return -1,
+    };
+    unsafe {
+        *out = RustBinBookPageMeta {
+            ok: true,
+            pixel_format: info.pixel_format,
+            compression_method: info.compression_method,
+            blob_offset: info.blob_offset,
+            compressed_size: info.compressed_size,
+            uncompressed_size: info.uncompressed_size,
+            stored_width: info.stored_width,
+            stored_height: info.stored_height,
+        };
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn rust_binbook_decompress_page(
+    compressed: *const u8,
+    compressed_len: usize,
+    compression_method: u16,
+    out: *mut u8,
+    out_len: usize,
+    uncompressed_size: usize,
+) -> i32 {
+    if compressed.is_null() || out.is_null() {
+        return -1;
+    }
+    let input = unsafe { slice::from_raw_parts(compressed, compressed_len) };
+    let output = unsafe { slice::from_raw_parts_mut(out, out_len) };
+    match binbook::decompress::decompress_bytes(compression_method, input, output, uncompressed_size) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
+}
