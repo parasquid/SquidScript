@@ -18,6 +18,10 @@
 #include "protocol.h"
 #include "sq_errno.h"
 #include "squidvm_ffi.h"
+#include "vm_fs_storage.h"
+#include "debug_log.h"
+
+extern uint64_t sq_vm_runtime_last_display_flush_us;
 #include "vm_runtime_display_backend.h"
 #include "xteink_x4_button_probe.h"
 
@@ -141,6 +145,9 @@ enum sq_resource_metric_id {
 	SQ_RESOURCE_METRIC_DISPLAY_STACK_SIZE_BYTES = 53,
 	SQ_RESOURCE_METRIC_DISPLAY_STACK_UNUSED_BYTES = 54,
 	SQ_RESOURCE_METRIC_DISPLAY_STACK_USED_BYTES = 55,
+	SQ_RESOURCE_METRIC_LAST_SQBC_READ_US = 56,
+	SQ_RESOURCE_METRIC_LAST_DISPLAY_FLUSH_US = 57,
+	SQ_RESOURCE_METRIC_LAST_STATE_SAVE_US = 58,
 };
 
 static int copy_app_id(char *out, size_t out_cap, const char *app_id)
@@ -2338,6 +2345,11 @@ static int repeated_runtime_lines_response(const struct sq_protocol_request *req
 		fixed_count = runtime->drawlog_count;
 		fixed_stride = SQ_VM_RUNTIME_DRAWLOG_LEN;
 	}
+	if (request->opcode == SQ_OPCODE_DEBUG_LOG_GET) {
+		fixed_lines = (const uint8_t *)sq_debug_log_buf;
+		fixed_count = sq_debug_log_line_count();
+		fixed_stride = SQ_DEBUG_LOG_ENTRY_LEN;
+	}
 	if (extra_count > ARRAY_SIZE(extra_slices)) {
 		return -EINVAL;
 	}
@@ -2828,6 +2840,12 @@ static int __noinline resources_response(const struct sq_protocol_request *reque
 		SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_X4_INPUT_POWER_ERROR,
 				   x4_probe.power_error);
 	}
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_LAST_SQBC_READ_US,
+			   context->runtime == NULL ? 0 : context->runtime->last_dispatch_sqbc_read_us);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_LAST_DISPLAY_FLUSH_US,
+			   sq_vm_runtime_last_display_flush_us);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_LAST_STATE_SAVE_US,
+			   context->runtime == NULL ? 0 : context->runtime->last_dispatch_state_save_us);
 #undef SQ_RESOURCE_METRIC
 
 	return encode_resource_metrics_header(request->sequence, response, response_cap,
@@ -3645,6 +3663,10 @@ int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 							 response, response_cap, response_len);
 		break;
 	case SQ_OPCODE_DRAWLOG_GET:
+		result = repeated_runtime_lines_response(&frame, context->runtime, NULL, 0,
+							 response, response_cap, response_len);
+		break;
+	case SQ_OPCODE_DEBUG_LOG_GET:
 		result = repeated_runtime_lines_response(&frame, context->runtime, NULL, 0,
 							 response, response_cap, response_len);
 		break;

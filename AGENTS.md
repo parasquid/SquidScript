@@ -23,16 +23,33 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - If a `git checkout` / `git restore` / `git reset` / `git stash` operation
   could destroy or hide the user's work, stop and ask before running it. This
   applies even when the goal is to keep a commit "clean".
-
 ## Local Environment Notes
 
-- If `.local-agents.md` exists at the repository root, read it at the start of
-  a session for environment-specific notes (attached hardware, host paths,
-  local tooling shortcuts, prior-session context). It is gitignored and never
-  committed; it carries personal setup for the maintainer's machine, not
-  project contract. Do not copy its contents into committed docs, and do not
-  repeat environment identifiers (USB serials, device paths) from it in chat
-  output or commit messages beyond what the placeholder-discipline rules allow.
+- If `.local-agents.md` exists at the repository root, read it at the start
+  of a session for environment-specific notes (attached hardware, host paths,
+  local tooling shortcuts, prior-session context). It is gitignored and
+  never committed; it carries personal setup for the maintainer's machine,
+  not project contract. Do not copy its contents into committed docs, and
+  do not repeat environment identifiers (USB serials, device paths) from it
+  in chat output or commit messages beyond what the placeholder-discipline
+  rules allow.
+
+- When starting any implementation work (including debugging, verification,
+  or any technical task), update `/var/home/tristan/Documents/parasquid/SquidScript/.current_agent_work`
+  with a concise summary of:
+  - What work is being done
+  - Current status and next steps
+  - Any relevant context from prior investigation or decisions
+  - What the next agent should expect
+- This file is gitignored and never committed; it serves as a durable
+  hand-off surface for quota/interruption scenarios.
+- The file should be updated before any code changes, test runs, or
+  hardware interactions so that a different agent can pick up the work
+  if the current agent runs out of quota or is interrupted.
+- Always append to the file with a clear header indicating the new work
+  being started, preserving previous entries for context.
+- When work is completed, add a completion note with the final outcome
+  and any follow-up items that should be tracked separately.
 
 ## Roadmap Maintenance
 

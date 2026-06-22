@@ -32,6 +32,13 @@ config SQ_TARGET_DISPLAY_ROTATION
 	int "SQ_TARGET_DISPLAY_ROTATION"
 	default 0
 
+config SQ_DISPLAY_SPI_MAX_FREQUENCY
+	int "Display SPI max frequency (Hz)"
+	default 4000000
+	help
+	  Maximum SPI clock frequency for display transfers.
+	  Derived from target metadata buses.spi.shared.maxFrequencyHz.
+
 config SQ_VM_RUNTIME_ACTIVE_BINDING_MAX
 	int "SQ_VM_RUNTIME_ACTIVE_BINDING_MAX"
 	default 3

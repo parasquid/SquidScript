@@ -1,6 +1,7 @@
 #include "xteink_x4_button_probe.h"
 
 #include "vm_runtime_internal.h"
+#include "debug_log.h"
 
 #include <errno.h>
 #include <stdbool.h>
@@ -235,6 +236,7 @@ static int sq_x4_poll_logical_button(struct sq_vm_runtime *runtime, size_t index
 
 		return queued == -ENOSPC ? 0 : queued;
 	}
+	sq_debug_log_append("%lld:btn:%s", (long long)k_uptime_get(), event);
 	return sq_vm_runtime_start(runtime, &runtime->job_backend, event);
 }
 

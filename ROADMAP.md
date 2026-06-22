@@ -51,6 +51,16 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Display And Output
 
+- Investigate dirty-region tracking for the composed display flush path: only
+  re-render rows that changed since last flush. Biggest win for static content
+  with small changes (e.g., cursor movement). Needs change detection between
+  successive op sets — compare current ops with previous ops to identify which
+  rows changed, then only stream and refresh those rows.
+- Investigate custom LUT (lookup table) for SSD1677 partial refresh to reduce
+  refresh time from ~506ms. Load a faster waveform via command 0x32 (105 bytes)
+  with shorter TP timing values, and change 0x22 from 0xFC to 0xEC (add LUT_LOAD
+  bit). Risk: increased ghosting or reduced contrast. Needs hardware
+  experimentation with different waveform tables.
 - Validate the XTEINK BinBook reader fast highlight refresh path interactively
   on hardware: move library/menu/chapter highlights repeatedly and confirm the
   SSD1677 fast partial path avoids full-refresh flashing and unacceptable

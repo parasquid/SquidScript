@@ -205,6 +205,14 @@ def main(argv):
             ]
         )
 
+    buses = target.get("buses", {})
+    spi = buses.get("spi", {}) if isinstance(buses, dict) else {}
+    shared = spi.get("shared", {}) if isinstance(spi, dict) else {}
+    spi_max_freq = shared.get("maxFrequencyHz") if isinstance(shared, dict) else None
+    if isinstance(spi_max_freq, int) and spi_max_freq > 0:
+        lines.append(f"CONFIG_SQ_DISPLAY_SPI_MAX_FREQUENCY={spi_max_freq}")
+        lines.append("")
+
     storage = target.get("storage", {})
     devices = target.get("devices", {})
     storage_device = storage.get("device") if isinstance(storage, dict) else None

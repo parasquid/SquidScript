@@ -2,6 +2,7 @@
 
 #include <errno.h>
 #include <zephyr/fs/fs.h>
+#include <zephyr/kernel.h>
 
 static struct {
 	struct fs_file_t file;
@@ -12,6 +13,23 @@ static struct {
 } sqbc_open_file;
 
 static size_t sqbc_next_session_id = 1;
+
+static uint64_t fs_storage_state_save_us_acc;
+static uint64_t fs_storage_sqbc_read_us_acc;
+
+uint64_t sq_vm_fs_storage_drain_state_save_us(void)
+{
+	uint64_t us = fs_storage_state_save_us_acc;
+	fs_storage_state_save_us_acc = 0;
+	return us;
+}
+
+uint64_t sq_vm_fs_storage_drain_sqbc_read_us(void)
+{
+	uint64_t us = fs_storage_sqbc_read_us_acc;
+	fs_storage_sqbc_read_us_acc = 0;
+	return us;
+}
 
 static int release_open_sqbc_file(void)
 {
@@ -130,17 +148,21 @@ static int fs_storage_read_sqbc(void *user_data, size_t offset, uint8_t *out, si
 		return -EINVAL;
 	}
 
+	uint64_t t0 = k_cycle_get_64();
+
 	if (sqbc_open_file.owner != storage ||
 	    sqbc_open_file.owner_session_id != storage->sqbc_session_id) {
 		if (sqbc_open_file.owner != NULL) {
 			result = release_open_sqbc_file();
 			if (result != 0) {
+				fs_storage_sqbc_read_us_acc += k_cyc_to_us_floor64(k_cycle_get_64() - t0);
 				return result;
 			}
 		}
 		fs_file_t_init(&sqbc_open_file.file);
 		result = fs_open(&sqbc_open_file.file, storage->sqbc_path, FS_O_READ);
 		if (result != 0) {
+			fs_storage_sqbc_read_us_acc += k_cyc_to_us_floor64(k_cycle_get_64() - t0);
 			return result;
 		}
 		sqbc_open_file.owner = storage;
@@ -152,16 +174,19 @@ static int fs_storage_read_sqbc(void *user_data, size_t offset, uint8_t *out, si
 	result = fs_seek(&sqbc_open_file.file, (off_t)offset, FS_SEEK_SET);
 	if (result != 0) {
 		(void)sq_vm_fs_storage_release(storage);
+		fs_storage_sqbc_read_us_acc += k_cyc_to_us_floor64(k_cycle_get_64() - t0);
 		return result;
 	}
 
 	read = fs_read(&sqbc_open_file.file, out, len);
 	if (read < 0) {
 		(void)sq_vm_fs_storage_release(storage);
+		fs_storage_sqbc_read_us_acc += k_cyc_to_us_floor64(k_cycle_get_64() - t0);
 		return (int)read;
 	}
 	if ((size_t)read != len) {
 		(void)sq_vm_fs_storage_release(storage);
+		fs_storage_sqbc_read_us_acc += k_cyc_to_us_floor64(k_cycle_get_64() - t0);
 		return -EIO;
 	}
 
@@ -170,6 +195,7 @@ static int fs_storage_read_sqbc(void *user_data, size_t offset, uint8_t *out, si
 		sqbc_open_file.max_read_len = len;
 	}
 	storage->sqbc_total_read_len += len;
+	fs_storage_sqbc_read_us_acc += k_cyc_to_us_floor64(k_cycle_get_64() - t0);
 	return 0;
 }
 
@@ -190,7 +216,10 @@ static int fs_storage_save_state(void *user_data, const uint8_t *bytes, size_t l
 	if (storage == NULL) {
 		return -EINVAL;
 	}
-	return write_file(storage->state_path, bytes, len);
+	uint64_t t0 = k_cycle_get_64();
+	int result = write_file(storage->state_path, bytes, len);
+	fs_storage_state_save_us_acc += k_cyc_to_us_floor64(k_cycle_get_64() - t0);
+	return result;
 }
 
 static int fs_storage_reset_state(void *user_data)

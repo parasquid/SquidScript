@@ -366,6 +366,9 @@ struct sq_vm_runtime {
 	uint64_t last_dispatch_elapsed_us;
 	uint32_t last_dispatch_sqbc_read_count;
 	uint32_t last_dispatch_sqbc_read_bytes;
+	uint64_t last_dispatch_sqbc_read_us;
+	uint64_t dispatch_sqbc_read_us_acc;
+	uint64_t last_dispatch_state_save_us;
 	uint32_t dispatch_sqbc_read_count;
 	uint32_t dispatch_sqbc_read_bytes;
 	bool dispatch_started;

@@ -72,6 +72,7 @@ target_sources(app PRIVATE
   src/vm_runtime_wifi.c
   src/vm_storage.c
   src/xteink_x4_button_probe.c
+  src/debug_log.c
   "${SQUID_ZEPHYR_FALLBACK_C}"
 )
 

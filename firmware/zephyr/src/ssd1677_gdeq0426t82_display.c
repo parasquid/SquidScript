@@ -1,7 +1,9 @@
 #include "vm_runtime_display_backend.h"
 #include "ssd1677_gray2.h"
+#include "debug_log.h"
 
 #include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <zephyr/devicetree.h>
@@ -131,7 +133,6 @@ bool sq_ssd1677_test_row_has_black_pixel(const uint8_t *line, size_t line_len,
 #define ROW_BYTES (PANEL_WIDTH / 8U)
 #define PANEL_LAST_Y (PANEL_HEIGHT - 1U)
 #define BUSY_TIMEOUT_MS 60000
-#define EPAPER_SPI_HZ 4000000U
 
 #if CONFIG_SQ_TARGET_DISPLAY_PHYSICAL_WIDTH != PANEL_WIDTH
 #error "target display physical width must match the SSD1677 devicetree width"
@@ -187,7 +188,7 @@ static const struct gpio_dt_spec dc_gpio = GPIO_DT_SPEC_GET(SSD1677_NODE, dc_gpi
 static const struct gpio_dt_spec reset_gpio = GPIO_DT_SPEC_GET(SSD1677_NODE, reset_gpios);
 static const struct gpio_dt_spec busy_gpio = GPIO_DT_SPEC_GET(SSD1677_NODE, busy_gpios);
 static const struct spi_config spi_cfg = {
-	.frequency = EPAPER_SPI_HZ,
+	.frequency = CONFIG_SQ_DISPLAY_SPI_MAX_FREQUENCY,
 	.operation = SPI_WORD_SET(8) | SPI_TRANSFER_MSB,
 	.slave = 0,
 };
@@ -199,6 +200,7 @@ static struct sq_ssd1677_composed_refresh_state composed_refresh_state;
 static struct sq_vm_runtime_binbook_page binbook_previous_page;
 static struct sq_vm_runtime_display_op previous_composed_ops[SQ_VM_RUNTIME_DISPLAY_OP_MAX];
 static size_t previous_composed_op_count;
+static struct sq_vm_runtime_display_op sorted_ops[SQ_VM_RUNTIME_DISPLAY_OP_MAX];
 
 static int configure_display(void);
 
@@ -1033,11 +1035,79 @@ static void draw_rect_row(uint8_t line[ROW_BYTES], uint16_t y,
 	}
 }
 
+static uint16_t op_y_min(const struct sq_vm_runtime_display_op *op)
+{
+	switch (op->kind) {
+	case SQ_VM_RUNTIME_DISPLAY_OP_CLEAR:
+		return 0;
+	case SQ_VM_RUNTIME_DISPLAY_OP_TEXT: {
+		if (op->u.text.font_height <= 0) {
+			return PANEL_HEIGHT;
+		}
+		uint8_t scale = (uint8_t)(op->u.text.font_height / 7);
+
+		if (scale == 0) {
+			scale = 1;
+		}
+		return op->y < 0 ? 0 : (uint16_t)op->y;
+	}
+	case SQ_VM_RUNTIME_DISPLAY_OP_RECT:
+		return op->y < 0 ? 0 : (uint16_t)op->y;
+	default:
+		return PANEL_HEIGHT;
+	}
+}
+
+static uint16_t op_y_max(const struct sq_vm_runtime_display_op *op)
+{
+	switch (op->kind) {
+	case SQ_VM_RUNTIME_DISPLAY_OP_CLEAR:
+		return PANEL_HEIGHT;
+	case SQ_VM_RUNTIME_DISPLAY_OP_TEXT: {
+		if (op->u.text.font_height <= 0) {
+			return 0;
+		}
+		uint8_t scale = (uint8_t)(op->u.text.font_height / 7);
+
+		if (scale == 0) {
+			scale = 1;
+		}
+		uint16_t text_y = op->y < 0 ? 0 : (uint16_t)op->y;
+		uint16_t h = (uint16_t)(7U * scale);
+
+		return text_y + h > PANEL_HEIGHT ? PANEL_HEIGHT : text_y + h;
+	}
+	case SQ_VM_RUNTIME_DISPLAY_OP_RECT: {
+		int32_t bottom = op->y + op->u.rect.h;
+
+		return bottom > PANEL_HEIGHT ? PANEL_HEIGHT : (uint16_t)bottom;
+	}
+	default:
+		return 0;
+	}
+}
+
+static int compare_op_y_min(const void *a, const void *b)
+{
+	const struct sq_vm_runtime_display_op *oa = a;
+	const struct sq_vm_runtime_display_op *ob = b;
+	uint16_t ya = op_y_min(oa);
+	uint16_t yb = op_y_min(ob);
+
+	return (int)ya - (int)yb;
+}
+
 static void render_row(uint8_t line[ROW_BYTES], uint16_t y,
 		       const struct sq_vm_runtime_display_op *ops, size_t op_count)
 {
 	memset(line, 0xff, ROW_BYTES);
 	for (size_t i = 0; i < op_count; ++i) {
+		if (op_y_min(&ops[i]) > y) {
+			break;
+		}
+		if (y >= op_y_max(&ops[i])) {
+			continue;
+		}
 		switch (ops[i].kind) {
 		case SQ_VM_RUNTIME_DISPLAY_OP_CLEAR:
 			memset(line, ssd1677_color_is_black(ops[i].u.clear.color) ? 0x00 : 0xff, ROW_BYTES);
@@ -1058,18 +1128,28 @@ static int stream_composed_1bpp_frame(uint8_t command,
 				      const struct sq_vm_runtime_display_op *ops,
 				      size_t op_count)
 {
-	int ret = write_command(command);
+	int ret;
 
+	if (op_count > ARRAY_SIZE(sorted_ops)) {
+		op_count = ARRAY_SIZE(sorted_ops);
+	}
+	memcpy(sorted_ops, ops, op_count * sizeof(sorted_ops[0]));
+	qsort(sorted_ops, op_count, sizeof(sorted_ops[0]), compare_op_y_min);
+	sq_debug_log_append("%lld:stream_start:cmd=0x%02x", (long long)k_uptime_get(),
+			    (unsigned)command);
+	ret = write_command(command);
 	if (ret != 0) {
 		return ret;
 	}
+	sq_debug_log_append("%lld:stream_render_start", (long long)k_uptime_get());
 	for (uint16_t y = 0; y < PANEL_HEIGHT; ++y) {
-		render_row(row, y, ops, op_count);
+		render_row(row, y, sorted_ops, op_count);
 		ret = write_data(row, sizeof(row));
 		if (ret != 0) {
 			return ret;
 		}
 	}
+	sq_debug_log_append("%lld:stream_done", (long long)k_uptime_get());
 	return 0;
 }
 
@@ -1092,9 +1172,11 @@ static int refresh_partial_display(bool *observed_busy)
 {
 	const uint8_t display_update[] = {0x00, 0x00};
 	const uint8_t update = SSD1677_UPDATE_PARTIAL;
-	int ret = write_command_data(SSD1677_CMD_DISPLAY_UPDATE_CTRL, display_update,
-				     sizeof(display_update));
+	int ret;
 
+	sq_debug_log_append("%lld:refresh_cmd_start", (long long)k_uptime_get());
+	ret = write_command_data(SSD1677_CMD_DISPLAY_UPDATE_CTRL, display_update,
+				 sizeof(display_update));
 	if (ret != 0) {
 		return ret;
 	}
@@ -1106,6 +1188,7 @@ static int refresh_partial_display(bool *observed_busy)
 	if (ret != 0) {
 		return ret;
 	}
+	sq_debug_log_append("%lld:refresh_wait_start", (long long)k_uptime_get());
 	return wait_ready("refresh-partial", observed_busy);
 }
 
@@ -1365,9 +1448,17 @@ void sq_display_backend_reset(void)
 	sq_ssd1677_binbook_refresh_reset(&binbook_refresh_state);
 }
 
+static bool in_phase2;
+
+void sq_display_backend_set_phase2(bool phase2)
+{
+	in_phase2 = phase2;
+}
+
 int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t op_count,
 			     enum sq_vm_runtime_display_refresh_mode refresh_request,
-			     const struct sq_vm_runtime_binbook_page *binbook_page)
+			     const struct sq_vm_runtime_binbook_page *binbook_page,
+			     bool *needs_phase2)
 {
 	bool observed_busy = false;
 	enum sq_ssd1677_binbook_refresh_kind binbook_refresh =
@@ -1443,13 +1534,36 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 	} else if (use_composed_fast_path) {
 		composed_refresh = sq_ssd1677_composed_refresh_decide(&composed_refresh_state,
 								      refresh_request);
+		LOG_INF("composed decide: refresh=%d request=%d prev_valid=%d prev_ops=%d ops=%d",
+			(int)composed_refresh, (int)refresh_request,
+			composed_refresh_state.previous_ops_valid,
+			(int)previous_composed_op_count, (int)op_count);
+		sq_debug_log_append("%lld:composed_decide:%d:ops=%d:prev=%d",
+				    (long long)k_uptime_get(),
+				    (int)composed_refresh,
+				    (int)op_count,
+				    (int)composed_refresh_state.previous_ops_valid);
 		if (composed_refresh == SQ_SSD1677_COMPOSED_REFRESH_BW_DIFFERENTIAL_PARTIAL) {
-			ret = stream_composed_1bpp_frame(SSD1677_CMD_WRITE_RED_RAM,
-							  previous_composed_ops,
-							  previous_composed_op_count);
-			if (ret == 0) {
+			if (!in_phase2) {
+				/* Phase 1: stream current frame only to BW_RAM */
 				ret = stream_composed_1bpp_frame(SSD1677_CMD_WRITE_RAM, ops,
 								  op_count);
+				if (ret == 0 && previous_composed_op_count > 0 &&
+				    needs_phase2 != NULL) {
+					*needs_phase2 = true;
+				}
+				composed_remember_previous_ops(ops, op_count);
+			} else {
+				/* Phase 2: stream previous + current for differential cleanup */
+				ret = stream_composed_1bpp_frame(SSD1677_CMD_WRITE_RED_RAM,
+								  previous_composed_ops,
+								  previous_composed_op_count);
+				if (ret == 0) {
+					ret = stream_composed_1bpp_frame(SSD1677_CMD_WRITE_RAM,
+									  ops, op_count);
+				}
+				composed_remember_previous_ops(ops, op_count);
+				in_phase2 = false;
 			}
 		}
 		if (composed_refresh == SQ_SSD1677_COMPOSED_REFRESH_FULL_SEED) {
@@ -1500,6 +1614,8 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 		}
 	}
 	if (ret != 0) {
+		LOG_WRN("display refresh error: %d mode=%s composed=%d", ret, refresh_mode,
+			(int)composed_refresh);
 		if (use_composed_fast_path &&
 		    composed_refresh == SQ_SSD1677_COMPOSED_REFRESH_FULL_SEED) {
 			composed_remember_previous_ops(NULL, 0);
@@ -1519,7 +1635,9 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 							   SQ_SSD1677_COMPOSED_REFRESH_FULL_SEED);
 		}
 	}
-	LOG_INF("display refresh complete mode=%s busy_observed=%d", refresh_mode, observed_busy);
+	LOG_INF("display refresh complete mode=%s busy_observed=%d prev_valid=%d",
+		refresh_mode, observed_busy,
+		composed_refresh_state.previous_ops_valid);
 	return 0;
 }
 
@@ -1528,13 +1646,22 @@ int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t 
 #if !defined(CONFIG_ZTEST)
 int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t op_count,
 			     enum sq_vm_runtime_display_refresh_mode refresh_mode,
-			     const struct sq_vm_runtime_binbook_page *binbook_page)
+			     const struct sq_vm_runtime_binbook_page *binbook_page,
+			     bool *needs_phase2)
 {
 	ARG_UNUSED(ops);
 	ARG_UNUSED(op_count);
 	ARG_UNUSED(refresh_mode);
 	ARG_UNUSED(binbook_page);
+	if (needs_phase2 != NULL) {
+		*needs_phase2 = false;
+	}
 	return 0;
+}
+
+void sq_display_backend_set_phase2(bool phase2)
+{
+	ARG_UNUSED(phase2);
 }
 
 int sq_display_backend_window_probe(const char *pattern)

@@ -19,6 +19,7 @@
 #include "serial_transport.h"
 #include "sq_errno.h"
 #include "squidscript_fallback_app.h"
+#include "debug_log.h"
 
 LOG_MODULE_REGISTER(squidscript, LOG_LEVEL_INF);
 
@@ -109,6 +110,7 @@ int main(void)
 		.fallback_app = &sq_zephyr_fallback_app,
 	};
 
+	sq_debug_log_init();
 	int storage_result = sq_app_store_mount_target_filesystem();
 	if (storage_result == 0) {
 		LOG_INF("Mounted SquidScript app store at %s", sq_app_store_mount_point());

@@ -73,6 +73,7 @@ pub enum Opcode {
     ContentInstallChunk = 89,
     ContentInstallCommit = 90,
     ContentCheck = 91,
+    DebugLogGet = 92,
 }
 
 impl Opcode {
@@ -112,6 +113,7 @@ impl Opcode {
             "contentinstallchunk" => Ok(Self::ContentInstallChunk),
             "contentinstallcommit" => Ok(Self::ContentInstallCommit),
             "contentcheck" => Ok(Self::ContentCheck),
+            "debuglogget" => Ok(Self::DebugLogGet),
             _ => Err(format!("unknown protocol opcode: {name}")),
         }
     }
@@ -155,6 +157,7 @@ impl TryFrom<u8> for Opcode {
             89 => Ok(Self::ContentInstallChunk),
             90 => Ok(Self::ContentInstallCommit),
             91 => Ok(Self::ContentCheck),
+            92 => Ok(Self::DebugLogGet),
             _ => Err(DecodeError::UnknownOpcode(value)),
         }
     }
@@ -1039,6 +1042,9 @@ const RESOURCE_METRIC_NAMES: &[(u32, &str)] = &[
     (53, "display_stack_size_bytes"),
     (54, "display_stack_unused_bytes"),
     (55, "display_stack_used_bytes"),
+    (56, "last_sqbc_read_us"),
+    (57, "last_display_flush_us"),
+    (58, "last_state_save_us"),
 ];
 
 fn resource_metric_id_for_name(name: &str) -> Option<u32> {
@@ -1096,6 +1102,11 @@ pub fn state_get_request(sequence: u32) -> Frame {
 #[cfg(feature = "alloc")]
 pub fn drawlog_get_request(sequence: u32) -> Frame {
     Frame::request(Opcode::DrawlogGet, sequence, Vec::new())
+}
+
+#[cfg(feature = "alloc")]
+pub fn debug_log_get_request(sequence: u32) -> Frame {
+    Frame::request(Opcode::DebugLogGet, sequence, Vec::new())
 }
 
 #[cfg(feature = "alloc")]
@@ -1485,6 +1496,11 @@ pub fn runtime_cap_lines(frame: &Frame) -> Option<Vec<String>> {
 #[cfg(feature = "alloc")]
 pub fn drawlog_lines(frame: &Frame) -> Option<Vec<String>> {
     repeated_string_fields(frame, Opcode::DrawlogGet, 1)
+}
+
+#[cfg(feature = "alloc")]
+pub fn debug_log_lines(frame: &Frame) -> Option<Vec<String>> {
+    repeated_string_fields(frame, Opcode::DebugLogGet, 1)
 }
 
 #[cfg(feature = "alloc")]

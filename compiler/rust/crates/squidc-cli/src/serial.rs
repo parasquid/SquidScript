@@ -13,6 +13,7 @@ use squid_device_protocol::{
     content_check_result, content_install_begin_request, content_install_chunk_request_with_ack,
     content_install_commit_request, decode_frame_from_stream, display_window_probe_request,
     drawlog_get_request, drawlog_lines, encode_frame, error_lines, errors_get_request,
+    debug_log_get_request, debug_log_lines,
     event_dispatch_request, hello_identity, hello_request, key_request, lifecycle_get_request,
     lifecycle_lines, output_get_request, output_lines, protocol_error, reset_request,
     resource_install_begin_request, resource_install_chunk_request_with_ack,
@@ -272,6 +273,11 @@ impl SerialDevice {
     pub fn drawlog_lines(&mut self) -> Result<Vec<String>, String> {
         let frame = self.send_protocol_request(&drawlog_get_request(5))?;
         drawlog_lines(&frame).ok_or_else(|| "not a successful drawlog response".to_string())
+    }
+
+    pub fn debug_log_lines(&mut self) -> Result<Vec<String>, String> {
+        let frame = self.send_protocol_request(&debug_log_get_request(10))?;
+        debug_log_lines(&frame).ok_or_else(|| "not a successful debug-log response".to_string())
     }
 
     pub fn error_lines(&mut self) -> Result<Vec<String>, String> {

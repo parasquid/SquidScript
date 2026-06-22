@@ -3,6 +3,8 @@
 
 #include "vm_storage.h"
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -22,6 +24,9 @@ size_t sq_vm_fs_storage_open_count(void);
 size_t sq_vm_fs_storage_max_read_len(void);
 
 struct sq_vm_storage_backend sq_vm_fs_storage_backend(struct sq_vm_fs_storage *storage);
+
+uint64_t sq_vm_fs_storage_drain_state_save_us(void);
+uint64_t sq_vm_fs_storage_drain_sqbc_read_us(void);
 
 #ifdef __cplusplus
 }

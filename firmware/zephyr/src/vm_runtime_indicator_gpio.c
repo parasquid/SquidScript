@@ -1,6 +1,7 @@
 #include "vm_runtime_internal.h"
 
 #include "squidscript_target_defaults.h"
+#include "debug_log.h"
 
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
@@ -550,6 +551,7 @@ int sq_vm_runtime_poll_input_buttons(struct sq_vm_runtime *runtime)
 
 				return queued == -ENOSPC ? 0 : queued;
 			}
+			sq_debug_log_append("%lld:btn:%s", (long long)k_uptime_get(), button->event);
 			return sq_vm_runtime_start(runtime, &runtime->job_backend, button->event);
 		}
 		button->phase = SQ_VM_RUNTIME_INPUT_RELEASED;
