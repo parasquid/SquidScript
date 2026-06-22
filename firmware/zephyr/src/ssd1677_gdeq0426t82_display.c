@@ -1037,6 +1037,8 @@ static void draw_rect_row(uint8_t line[ROW_BYTES], uint16_t y,
 
 static uint16_t op_y_min(const struct sq_vm_runtime_display_op *op)
 {
+	int32_t left, top;
+
 	switch (op->kind) {
 	case SQ_VM_RUNTIME_DISPLAY_OP_CLEAR:
 		return 0;
@@ -1049,10 +1051,34 @@ static uint16_t op_y_min(const struct sq_vm_runtime_display_op *op)
 		if (scale == 0) {
 			scale = 1;
 		}
-		return op->y < 0 ? 0 : (uint16_t)op->y;
+		switch (LOGICAL_ROTATION) {
+		case 0:
+			return op->y < 0 ? 0 : (uint16_t)op->y;
+		case 90:
+			return (uint16_t)(LOGICAL_WIDTH - (op->x + (int32_t)strlen(op->u.text.text) * 6 * scale));
+		case 180:
+			return (uint16_t)(LOGICAL_HEIGHT - (op->y + 7 * scale));
+		case 270:
+			return op->x < 0 ? 0 : (uint16_t)op->x;
+		default:
+			return PANEL_HEIGHT;
+		}
 	}
 	case SQ_VM_RUNTIME_DISPLAY_OP_RECT:
-		return op->y < 0 ? 0 : (uint16_t)op->y;
+		left = op->x;
+		top = op->y;
+		switch (LOGICAL_ROTATION) {
+		case 0:
+			return top < 0 ? 0 : (uint16_t)top;
+		case 90:
+			return (uint16_t)(LOGICAL_WIDTH - (left + op->u.rect.w));
+		case 180:
+			return (uint16_t)(LOGICAL_HEIGHT - (top + op->u.rect.h));
+		case 270:
+			return left < 0 ? 0 : (uint16_t)left;
+		default:
+			return PANEL_HEIGHT;
+		}
 	default:
 		return PANEL_HEIGHT;
 	}
@@ -1060,6 +1086,8 @@ static uint16_t op_y_min(const struct sq_vm_runtime_display_op *op)
 
 static uint16_t op_y_max(const struct sq_vm_runtime_display_op *op)
 {
+	int32_t left, top, val;
+
 	switch (op->kind) {
 	case SQ_VM_RUNTIME_DISPLAY_OP_CLEAR:
 		return PANEL_HEIGHT;
@@ -1072,15 +1100,44 @@ static uint16_t op_y_max(const struct sq_vm_runtime_display_op *op)
 		if (scale == 0) {
 			scale = 1;
 		}
-		uint16_t text_y = op->y < 0 ? 0 : (uint16_t)op->y;
-		uint16_t h = (uint16_t)(7U * scale);
+		switch (LOGICAL_ROTATION) {
+		case 0: {
+			uint16_t text_y = op->y < 0 ? 0 : (uint16_t)op->y;
+			uint16_t h = (uint16_t)(7U * scale);
 
-		return text_y + h > PANEL_HEIGHT ? PANEL_HEIGHT : text_y + h;
+			return text_y + h > PANEL_HEIGHT ? PANEL_HEIGHT : text_y + h;
+		}
+		case 90:
+			return (uint16_t)(LOGICAL_WIDTH - op->x);
+		case 180:
+			return (uint16_t)(LOGICAL_HEIGHT - op->y);
+		case 270: {
+			int32_t text_w = (int32_t)strlen(op->u.text.text) * 6 * scale;
+
+			val = op->x + text_w;
+			return val > PANEL_HEIGHT ? PANEL_HEIGHT : (uint16_t)val;
+		}
+		default:
+			return 0;
+		}
 	}
 	case SQ_VM_RUNTIME_DISPLAY_OP_RECT: {
-		int32_t bottom = op->y + op->u.rect.h;
-
-		return bottom > PANEL_HEIGHT ? PANEL_HEIGHT : (uint16_t)bottom;
+		left = op->x;
+		top = op->y;
+		switch (LOGICAL_ROTATION) {
+		case 0:
+			val = top + op->u.rect.h;
+			return val > PANEL_HEIGHT ? PANEL_HEIGHT : (uint16_t)val;
+		case 90:
+			return (uint16_t)(LOGICAL_WIDTH - left);
+		case 180:
+			return (uint16_t)(LOGICAL_HEIGHT - top);
+		case 270:
+			val = left + op->u.rect.w;
+			return val > PANEL_HEIGHT ? PANEL_HEIGHT : (uint16_t)val;
+		default:
+			return 0;
+		}
 	}
 	default:
 		return 0;
