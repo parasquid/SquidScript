@@ -82,6 +82,13 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 - Add a generic PWM-capable LED-like device output model beyond
   `service.indicator`, so future target-described GPIO/PWM endpoints can expose
   smooth brightness control without board-specific app code.
+- **Investigate SSD1677 ghosting on composed (fast1bpp) path.** Phase 2
+  differential cleanup is broken: the handler sees `display_dirty == false` and
+  skips writing the previous frame to RED_RAM (`vm_runtime.c:545`). The composed
+  path also has no cadence counter (unlike BinBook's every-5-partials full
+  refresh). Ghosting accumulates unchecked. Fix phase 2 and/or add a composed
+  cadence counter. Explore whether a black-to-white transition clears ghosting
+  without a full GRAY2 waveform cycle.
 
 ## Input, Triggers, And Power
 
