@@ -279,8 +279,6 @@ struct sq_vm_runtime_binbook_page {
 	uint16_t compression_method;
 	uint16_t stored_width;
 	uint16_t stored_height;
-	const uint8_t *compressed_data;
-	uint32_t compressed_data_len;
 };
 
 struct sq_vm_runtime_display_op {
