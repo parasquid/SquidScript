@@ -119,6 +119,27 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   markers. The guard ensures zero overhead in production while keeping
   instrumentation available for development and hardware debugging.
 
+## Lessons Learned
+
+- When tests fail after a format change, determine whether the tests are stale
+  (written for the old format) or whether the code is wrong before choosing a
+  fix. The user explicitly asked for this discipline: "don't work around tests
+  if they're provably wrong." Preserve test *intention* (what contract is being
+  verified) and update the test to match the new contract when the format changes.
+- When a debug test passes but integration tests fail with identical logic and
+  scratch size, check the binary output of the encoder (Python) against the
+  parser (Rust) field-by-field. In the binbook per-plane work, the debug test
+  happened to exercise a code path that masked the parser bug. A clean
+  `cargo clean && cargo test` is the reliable way to rule out stale builds.
+- When porting struct layouts between languages, verify the packed byte layout
+  matches the encoder exactly. The binbook plane directory uses `4I4I` (all
+  offsets, then all sizes), not interleaved `offset,size` pairs. Off-by-8-byte
+  layout mismatches produce plausible-looking but wrong values (e.g. a size
+  appearing in an offset field).
+- Compute expected output sizes from source metadata (pixel format, dimensions)
+  rather than relying on the output buffer length. Passing `out.len()` as the
+  expected decompression size makes size checks degenerate into `len < len`.
+
 ## Documentation Planning
 
 - When making implementation plans, include documentation work explicitly.
