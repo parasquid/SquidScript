@@ -158,11 +158,19 @@ struct rust_binbook_page_meta {
 	bool ok;
 	uint16_t pixel_format;
 	uint16_t compression_method;
-	uint64_t blob_offset;
-	uint32_t compressed_size;
-	uint32_t uncompressed_size;
+	uint32_t page_flags;
 	uint16_t stored_width;
 	uint16_t stored_height;
+	uint8_t plane_bitmap;
+	uint8_t plane_compression[4];
+	uint32_t offset_plane_0;
+	uint32_t size_plane_0;
+	uint32_t offset_plane_1;
+	uint32_t size_plane_1;
+	uint32_t offset_plane_2;
+	uint32_t size_plane_2;
+	uint32_t offset_plane_3;
+	uint32_t size_plane_3;
 };
 
 int32_t rust_binbook_page_meta(const uint8_t *data, size_t data_len,
