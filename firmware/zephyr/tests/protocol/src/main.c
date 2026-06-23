@@ -7428,3 +7428,68 @@ ZTEST(squidscript_protocol, test_binbook_read_page_allocates_buffer)
 	sq_vm_runtime_binbook_release();
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }
+
+ZTEST(squidscript_protocol, test_binbook_read_page_falls_back_on_alloc_failure)
+{
+	static struct sq_vm_runtime runtime;
+	const uint8_t path[] = "books/sample.binbook";
+	uint8_t book[TEST_BINBOOK_LEN];
+	SqvmBinBookOpenResult opened = {0};
+
+	build_test_binbook(book);
+	zassert_equal(mount_test_fs(), 0);
+	zassert_equal(format_test_app_store(), 0);
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "binbook-reader",
+					       binbook_reader_sqbc, sizeof(binbook_reader_sqbc)),
+		      0);
+	zassert_equal(sq_app_store_install_resource(test_fs_mount.mnt_point, "binbook-reader",
+						    "books/sample.binbook", book, sizeof(book)),
+		      0);
+
+	memset(&runtime, 0, sizeof(runtime));
+	sq_vm_runtime_set_store_mount_point(&runtime, test_fs_mount.mnt_point);
+	strncpy(runtime.current_app, "binbook-reader", sizeof(runtime.current_app) - 1);
+
+	int result = runtime_binbook_open(&runtime, path, strlen((const char *)path), &opened);
+	zassert_equal(result, 0);
+	zassert_true(opened.ok);
+
+	/* Exhaust heap after open, before read_page */
+	void *allocations[48];
+	int alloc_count = 0;
+
+	for (int i = 0; i < 32; i++) {
+		allocations[i] = k_malloc(512);
+		if (allocations[i] == NULL) {
+			break;
+		}
+		alloc_count = i + 1;
+	}
+	/* Fill remaining small fragments so no 4-byte alloc can succeed */
+	for (int i = alloc_count; i < 48; i++) {
+		allocations[i] = k_malloc(16);
+		if (allocations[i] == NULL) {
+			break;
+		}
+		alloc_count = i + 1;
+	}
+
+	SqvmBinBookReadPageResult page = {0};
+	result = runtime_binbook_read_page(&runtime, opened.book, 0, &page);
+	zassert_equal(result, 0);
+	zassert_true(page.ok, "readPage should succeed even with no heap");
+
+	/* Buffer should be NULL (allocation failed) */
+	zassert_is_null(runtime.drawable.page.compressed_data,
+			"compressed buffer should be NULL when heap exhausted");
+
+	/* Free test allocations */
+	for (int i = 0; i < alloc_count; i++) {
+		if (allocations[i] != NULL) {
+			k_free(allocations[i]);
+		}
+	}
+
+	sq_vm_runtime_binbook_release();
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
