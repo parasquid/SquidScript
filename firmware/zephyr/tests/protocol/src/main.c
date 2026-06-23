@@ -7388,3 +7388,43 @@ ZTEST(squidscript_protocol, test_device_protocol_poll_advances_running_runtime_p
 	runtime.status = SQ_VM_RUNTIME_IDLE;
 	sq_vm_runtime_reset(&runtime);
 }
+
+ZTEST(squidscript_protocol, test_binbook_read_page_allocates_buffer)
+{
+	static struct sq_vm_runtime runtime;
+	const uint8_t path[] = "books/sample.binbook";
+	uint8_t book[TEST_BINBOOK_LEN];
+	SqvmBinBookOpenResult opened = {0};
+
+	build_test_binbook(book);
+	zassert_equal(mount_test_fs(), 0);
+	zassert_equal(format_test_app_store(), 0);
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "binbook-reader",
+					       binbook_reader_sqbc, sizeof(binbook_reader_sqbc)),
+		      0);
+	zassert_equal(sq_app_store_install_resource(test_fs_mount.mnt_point, "binbook-reader",
+						    "books/sample.binbook", book, sizeof(book)),
+		      0);
+
+	memset(&runtime, 0, sizeof(runtime));
+	sq_vm_runtime_set_store_mount_point(&runtime, test_fs_mount.mnt_point);
+	strncpy(runtime.current_app, "binbook-reader", sizeof(runtime.current_app) - 1);
+
+	int result = runtime_binbook_open(&runtime, path, strlen((const char *)path), &opened);
+	zassert_equal(result, 0);
+	zassert_true(opened.ok);
+
+	SqvmBinBookReadPageResult page = {0};
+	result = runtime_binbook_read_page(&runtime, opened.book, 0, &page);
+	zassert_equal(result, 0);
+	zassert_true(page.ok, "readPage should succeed");
+
+	/* The compressed buffer should be allocated */
+	zassert_not_null(runtime.drawable.page.compressed_data,
+			 "compressed buffer should be allocated");
+	zassert_true(runtime.drawable.page.compressed_data_len > 0,
+		     "compressed buffer should have data");
+
+	sq_vm_runtime_binbook_release();
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
