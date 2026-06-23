@@ -59,9 +59,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   decompress pass, (b) whether the SSD1677's built-in LUT or command
   sequence can accept pre-formatted RAM writes that skip the framebuffer
   intermediate, (c) whether ESP32-C3's cache/alignment features improve
-  LZ4 throughput beyond the current ~50MB/s software rate. This is a
-  research spike — no implementation until the per-plane binbook format
-  lands and baseline numbers are established.
+  LZ4 throughput beyond the current ~50MB/s software rate. Per-plane
+  binbook format is now implemented; BW-only path decompresses only the
+  BW plane (~0.5s). Further optimization requires hardware investigation.
 - **Investigate binbook delta rendering.** Store XOR deltas between
   consecutive pages as separate compressed planes in the binbook format
   (plane slot 3). On page turn, decompress only the delta and XOR it into
@@ -70,8 +70,8 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   (a) delta plane encoding in the binbook writer, (b) delta decompression
   + XOR path in firmware, (c) keyframe interval strategy (full page every
   N deltas for random access), (d) measurement of delta size vs full page
-  for typical page transitions. Blocked on the per-plane binbook format
-  spec landing (plane slot 3 is reserved for deltas). Design intent
+  for typical page transitions. Per-plane binbook format is now implemented
+  (plane slot 3 is reserved for deltas). Design intent
   documented in `docs/specs/2026-06-23-binbook-per-plane-blob-format.md`.
 - Investigate dirty-region tracking for the composed display flush path: only
   re-render rows that changed since last flush. Biggest win for static content
