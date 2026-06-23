@@ -414,10 +414,9 @@ struct sq_vm_runtime {
 	char drawlog[SQ_VM_RUNTIME_DRAWLOG_MAX][SQ_VM_RUNTIME_DRAWLOG_LEN];
 	uint8_t active_drawlog_max;
 	uint8_t drawlog_count;
-	struct sq_vm_runtime_display_op display_ops[SQ_VM_RUNTIME_DISPLAY_OP_MAX];
-	uint8_t display_op_count;
 	enum sq_vm_runtime_display_refresh_mode display_refresh_mode;
 	bool display_dirty;
+	bool display_needs_flush;
 	struct sq_vm_runtime_binbook_handle binbook;
 	struct sq_vm_runtime_drawable_handle drawable;
 	SqvmBinBookChapterEntry binbook_chapter_entries[SQ_VM_RUNTIME_CONTENT_LIST_MAX];

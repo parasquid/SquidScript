@@ -29,7 +29,8 @@
     "wifi_profile_ssid_bytes": 32,
     "wifi_profile_password_bytes": 64,
     "work_stack_size": 24576,
-    "display_work_stack_size": 4096
+    "display_work_stack_size": 4096,
+    "framebuffer_bytes": 48000
   },
 
   "app_store": {

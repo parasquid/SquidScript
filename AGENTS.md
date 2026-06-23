@@ -262,6 +262,12 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   Do not collapse portable language/app checks into one huge script; prefer
   small unit-style examples that are useful to users and proven by the test
   runner.
+- `examples/app-tests/` are test fixtures, not full example apps. They may be
+  stripped-down versions of the corresponding `examples/` app (e.g.
+  `examples/grid-cursor/` has full 5×5 grid rendering while
+  `examples/app-tests/xteink/grid-cursor/` only tests input routing with no
+  visible drawing). When verifying display, rendering, or visual behavior, use
+  the full example app from `examples/`, not the app-test fixture.
 - Future Zephyr VM host ABI additions should move as one implemented slice:
   compiler lowering, SQBC builtin IDs, Rust VM callbacks, FFI, Zephyr runtime
   wiring, docs, Rust FFI equivalence tests, and Zephyr ztests. Keep

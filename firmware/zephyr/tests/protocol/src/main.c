@@ -42,6 +42,20 @@ static uint32_t test_display_flush_count;
 static uint32_t test_display_backend_reset_count;
 static char test_display_window_probe_pattern[32];
 
+static uint32_t test_rasterize_clear_count;
+static sq_display_color_t test_rasterize_clear_color;
+static uint32_t test_rasterize_text_count;
+static int32_t test_rasterize_text_last_x;
+static int32_t test_rasterize_text_last_y;
+static uint32_t test_rasterize_rect_count;
+static int32_t test_rasterize_rect_last_x;
+static int32_t test_rasterize_rect_last_y;
+static int32_t test_rasterize_rect_last_w;
+static int32_t test_rasterize_rect_last_h;
+static uint32_t test_rasterize_binbook_count;
+static uint32_t test_flush_framebuffer_count;
+static enum sq_vm_runtime_display_refresh_mode test_flush_framebuffer_last_mode;
+
 static void test_display_flush_reset(bool block)
 {
 	if (!test_display_flush_sems_ready) {
@@ -54,6 +68,12 @@ static void test_display_flush_reset(bool block)
 	}
 	test_display_flush_block = block;
 	test_display_flush_count = 0;
+	test_rasterize_clear_count = 0;
+	test_rasterize_clear_color = SQ_DISPLAY_COLOR_UNSET;
+	test_rasterize_text_count = 0;
+	test_rasterize_rect_count = 0;
+	test_rasterize_binbook_count = 0;
+	test_flush_framebuffer_count = 0;
 }
 
 int sq_display_backend_flush(const struct sq_vm_runtime_display_op *ops, size_t op_count,
@@ -95,6 +115,63 @@ int sq_display_backend_window_probe(const char *pattern)
 void sq_display_backend_reset(void)
 {
 	test_display_backend_reset_count++;
+}
+
+void sq_display_backend_rasterize_clear(sq_display_color_t color)
+{
+	test_rasterize_clear_count++;
+	test_rasterize_clear_color = color;
+}
+
+void sq_display_backend_rasterize_text(const char *text, int32_t x, int32_t y,
+				       int32_t font_height, sq_display_color_t color)
+{
+	ARG_UNUSED(text);
+	ARG_UNUSED(font_height);
+	ARG_UNUSED(color);
+	test_rasterize_text_count++;
+	test_rasterize_text_last_x = x;
+	test_rasterize_text_last_y = y;
+}
+
+void sq_display_backend_rasterize_rect(int32_t x, int32_t y, int32_t w, int32_t h,
+				       sq_display_color_t fill, sq_display_color_t stroke)
+{
+	ARG_UNUSED(fill);
+	ARG_UNUSED(stroke);
+	test_rasterize_rect_count++;
+	test_rasterize_rect_last_x = x;
+	test_rasterize_rect_last_y = y;
+	test_rasterize_rect_last_w = w;
+	test_rasterize_rect_last_h = h;
+}
+
+void sq_display_backend_rasterize_binbook(const struct sq_vm_runtime_binbook_page *page)
+{
+	ARG_UNUSED(page);
+	test_rasterize_binbook_count++;
+}
+
+int sq_display_backend_flush_framebuffer(enum sq_vm_runtime_display_refresh_mode mode)
+{
+	test_flush_framebuffer_count++;
+	test_flush_framebuffer_last_mode = mode;
+	test_display_flush_count++;
+	if (test_display_flush_block) {
+		k_sem_give(&test_display_flush_started);
+		(void)k_sem_take(&test_display_flush_release, K_FOREVER);
+	}
+	return 0;
+}
+
+const uint8_t *sq_display_backend_framebuffer(void)
+{
+	return NULL;
+}
+
+size_t sq_display_backend_framebuffer_size(void)
+{
+	return 0;
 }
 
 
@@ -6158,6 +6235,8 @@ ZTEST(squidscript_protocol, test_vm_runtime_records_physical_display_clear_and_t
 		.background_color = SQ_DISPLAY_COLOR_UNSET,
 	};
 
+	test_rasterize_clear_count = 0;
+	test_rasterize_text_count = 0;
 	memset(&runtime, 0, sizeof(runtime));
 	runtime_display_clear(&runtime, SQ_DISPLAY_COLOR_WHITE);
 	runtime_display_text(&runtime, (const uint8_t *)"Hello", strlen("Hello"),
@@ -6167,15 +6246,12 @@ ZTEST(squidscript_protocol, test_vm_runtime_records_physical_display_clear_and_t
 	zassert_str_equal(runtime.drawlog[0], "draw=clear color=0");
 	zassert_str_equal(runtime.drawlog[1], "draw=text text=\"Hello\" x=10 y=20");
 	zassert_true(runtime.display_dirty);
-	zassert_equal(runtime.display_op_count, 2);
-	zassert_equal(runtime.display_ops[0].kind, SQ_VM_RUNTIME_DISPLAY_OP_CLEAR);
-	zassert_equal(runtime.display_ops[0].u.clear.color, SQ_DISPLAY_COLOR_WHITE);
-	zassert_equal(runtime.display_ops[1].kind, SQ_VM_RUNTIME_DISPLAY_OP_TEXT);
-	zassert_str_equal(runtime.display_ops[1].u.text.text, "Hello");
-	zassert_equal(runtime.display_ops[1].x, 10);
-	zassert_equal(runtime.display_ops[1].y, 20);
-	zassert_equal(runtime.display_ops[1].u.text.font_height, 24);
-	zassert_equal(runtime.display_ops[1].u.text.color, SQ_DISPLAY_COLOR_WHITE);
+	zassert_true(runtime.display_needs_flush);
+	zassert_equal(test_rasterize_clear_count, 1);
+	zassert_equal(test_rasterize_clear_color, SQ_DISPLAY_COLOR_WHITE);
+	zassert_equal(test_rasterize_text_count, 1);
+	zassert_equal(test_rasterize_text_last_x, 10);
+	zassert_equal(test_rasterize_text_last_y, 20);
 }
 
 ZTEST(squidscript_protocol, test_vm_runtime_records_physical_display_rect_ops)
@@ -6190,20 +6266,19 @@ ZTEST(squidscript_protocol, test_vm_runtime_records_physical_display_rect_ops)
 		.stroke_color = SQ_DISPLAY_COLOR_BLACK,
 	};
 
+	test_rasterize_rect_count = 0;
 	memset(&runtime, 0, sizeof(runtime));
 	runtime_display_rect(&runtime, &options);
 
 	zassert_equal(runtime.drawlog_count, 1);
 	zassert_str_equal(runtime.drawlog[0], "draw=rect x=18 y=76 w=424 h=48");
 	zassert_true(runtime.display_dirty);
-	zassert_equal(runtime.display_op_count, 1);
-	zassert_equal(runtime.display_ops[0].kind, SQ_VM_RUNTIME_DISPLAY_OP_RECT);
-	zassert_equal(runtime.display_ops[0].x, 18);
-	zassert_equal(runtime.display_ops[0].y, 76);
-	zassert_equal(runtime.display_ops[0].u.rect.w, 424);
-	zassert_equal(runtime.display_ops[0].u.rect.h, 48);
-	zassert_equal(runtime.display_ops[0].u.rect.fill_color, SQ_DISPLAY_COLOR_UNSET);
-	zassert_equal(runtime.display_ops[0].u.rect.stroke_color, SQ_DISPLAY_COLOR_BLACK);
+	zassert_true(runtime.display_needs_flush);
+	zassert_equal(test_rasterize_rect_count, 1);
+	zassert_equal(test_rasterize_rect_last_x, 18);
+	zassert_equal(test_rasterize_rect_last_y, 76);
+	zassert_equal(test_rasterize_rect_last_w, 424);
+	zassert_equal(test_rasterize_rect_last_h, 48);
 }
 
 ZTEST(squidscript_protocol, test_vm_runtime_dispatches_binbook_resource_drawable)
@@ -6313,6 +6388,7 @@ ZTEST(squidscript_protocol, test_vm_runtime_records_binbook_drawable_display_op)
 		.id = 1,
 	};
 
+	test_rasterize_binbook_count = 0;
 	memset(&runtime, 0, sizeof(runtime));
 	runtime.drawable.active = true;
 	runtime.drawable.page = (struct sq_vm_runtime_binbook_page){
@@ -6333,8 +6409,8 @@ ZTEST(squidscript_protocol, test_vm_runtime_records_binbook_drawable_display_op)
 	zassert_equal(runtime.drawlog_count, 1);
 	zassert_str_equal(runtime.drawlog[0], "draw=binbook id=1 x=0 y=0");
 	zassert_true(runtime.display_dirty);
-	zassert_equal(runtime.display_op_count, 1);
-	zassert_equal(runtime.display_ops[0].kind, SQ_VM_RUNTIME_DISPLAY_OP_BINBOOK_DRAWABLE);
+	zassert_true(runtime.display_needs_flush);
+	zassert_equal(test_rasterize_binbook_count, 1);
 	zassert_str_equal(runtime.drawable.page.path,
 			  "/sqtest/apps/binbook-reader/resources/books/sample.binbook");
 	zassert_equal(runtime.drawable.page.blob_offset, 412);
@@ -6505,6 +6581,9 @@ ZTEST(squidscript_protocol, test_display_op_buffer_preserves_clear_for_library_l
 		.font_height = 28,
 	};
 
+	test_rasterize_clear_count = 0;
+	test_rasterize_rect_count = 0;
+	test_rasterize_text_count = 0;
 	memset(&runtime, 0, sizeof(runtime));
 	runtime_display_clear(&runtime, SQ_DISPLAY_COLOR_WHITE);
 	runtime_display_text(&runtime, (const uint8_t *)"Library", strlen("Library"),
@@ -6531,17 +6610,11 @@ ZTEST(squidscript_protocol, test_display_op_buffer_preserves_clear_for_library_l
 				     &row_options);
 	}
 
-	bool has_clear = false;
-
-	for (size_t i = 0; i < runtime.display_op_count; ++i) {
-		if (runtime.display_ops[i].kind == SQ_VM_RUNTIME_DISPLAY_OP_CLEAR) {
-			has_clear = true;
-			break;
-		}
-	}
-	zassert_true(has_clear,
-		     "CLEAR op was dropped when display op buffer filled; "
-		     "the compositor needs CLEAR to size the fast refresh window");
+	zassert_equal(test_rasterize_clear_count, 1,
+		      "CLEAR must be rasterized into the framebuffer for the compositor");
+	zassert_equal(test_rasterize_text_count, 6);
+	zassert_equal(test_rasterize_rect_count, 5);
+	zassert_true(runtime.display_needs_flush);
 }
 
 ZTEST(squidscript_protocol, test_vm_runtime_reset_clears_display_backend_previous_frame)

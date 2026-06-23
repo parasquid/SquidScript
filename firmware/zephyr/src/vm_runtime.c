@@ -27,8 +27,6 @@ uint64_t sq_vm_runtime_last_display_flush_us;
 
 struct sq_vm_runtime_display_flush_job {
 	struct sq_vm_runtime *runtime;
-	struct sq_vm_runtime_display_op ops[SQ_VM_RUNTIME_DISPLAY_OP_MAX];
-	uint8_t op_count;
 	enum sq_vm_runtime_display_refresh_mode refresh_mode;
 	struct sq_vm_runtime_binbook_page *binbook_page;
 };
@@ -37,10 +35,6 @@ static struct sq_vm_runtime_display_flush_job sq_vm_runtime_display_active_job;
 static struct sq_vm_runtime_display_flush_job sq_vm_runtime_display_pending_job;
 static bool sq_vm_runtime_display_active;
 static bool sq_vm_runtime_display_pending;
-static bool sq_vm_runtime_display_phase2_pending;
-static struct sq_vm_runtime_display_flush_job sq_vm_runtime_display_phase2_job;
-static struct k_work_delayable sq_vm_runtime_display_phase2_work;
-static bool sq_vm_runtime_display_phase2_work_initialized;
 
 static bool runtime_has_pending_storage(const struct sq_vm_runtime *runtime);
 static void runtime_flush_display_if_dirty(struct sq_vm_runtime *runtime);
@@ -522,28 +516,13 @@ static void runtime_display_copy_flush_job(struct sq_vm_runtime_display_flush_jo
 {
 	memset(job, 0, sizeof(*job));
 	job->runtime = runtime;
-	job->op_count = runtime->display_op_count;
 	job->refresh_mode = runtime->display_refresh_mode;
-	memcpy(job->ops, runtime->display_ops,
-	       runtime->display_op_count * sizeof(runtime->display_ops[0]));
 	if (runtime->drawable.active && runtime->drawable.page.path[0] != '\0') {
 		job->binbook_page = k_malloc(sizeof(*job->binbook_page));
 		if (job->binbook_page != NULL) {
 			*job->binbook_page = runtime->drawable.page;
 		}
 	}
-}
-
-static void runtime_display_phase2_handler(struct k_work *work)
-{
-	ARG_UNUSED(work);
-	if (!sq_vm_runtime_display_phase2_pending) {
-		return;
-	}
-	sq_debug_log_append("%lld:phase2_start", (long long)k_uptime_get());
-	sq_display_backend_set_phase2(true);
-	runtime_flush_display_if_dirty(sq_vm_runtime_display_phase2_job.runtime);
-	sq_display_backend_set_phase2(false);
 }
 
 static void runtime_display_flush_worker(void *arg1, void *arg2, void *arg3)
@@ -553,18 +532,12 @@ static void runtime_display_flush_worker(void *arg1, void *arg2, void *arg3)
 	ARG_UNUSED(arg3);
 
 	while (true) {
-		bool needs_phase2 = false;
-		sq_debug_log_append("%lld:flush_start:ops=%d:mode=%d:phase2=%d",
+		sq_debug_log_append("%lld:flush_start:mode=%d",
 				    (long long)k_uptime_get(),
-				    sq_vm_runtime_display_active_job.op_count,
-				    (int)sq_vm_runtime_display_active_job.refresh_mode,
-				    (int)sq_vm_runtime_display_phase2_pending);
+				    (int)sq_vm_runtime_display_active_job.refresh_mode);
 		uint64_t t0 = k_cycle_get_64();
-		int result = sq_display_backend_flush(sq_vm_runtime_display_active_job.ops,
-						      sq_vm_runtime_display_active_job.op_count,
-						      sq_vm_runtime_display_active_job.refresh_mode,
-						      sq_vm_runtime_display_active_job.binbook_page,
-						      &needs_phase2);
+		int result = sq_display_backend_flush_framebuffer(
+			sq_vm_runtime_display_active_job.refresh_mode);
 		sq_vm_runtime_last_display_flush_us = k_cyc_to_us_floor64(k_cycle_get_64() - t0);
 		sq_debug_log_append("%lld:flush_done:result=%d:us=%llu",
 				    (long long)k_uptime_get(), result,
@@ -573,17 +546,6 @@ static void runtime_display_flush_worker(void *arg1, void *arg2, void *arg3)
 		if (sq_vm_runtime_display_active_job.binbook_page != NULL) {
 			k_free(sq_vm_runtime_display_active_job.binbook_page);
 			sq_vm_runtime_display_active_job.binbook_page = NULL;
-		}
-		if (needs_phase2 && result == 0) {
-			sq_vm_runtime_display_phase2_job = sq_vm_runtime_display_active_job;
-			sq_vm_runtime_display_phase2_job.binbook_page = NULL;
-			sq_vm_runtime_display_phase2_pending = true;
-			if (!sq_vm_runtime_display_phase2_work_initialized) {
-				k_work_init_delayable(&sq_vm_runtime_display_phase2_work,
-						      runtime_display_phase2_handler);
-				sq_vm_runtime_display_phase2_work_initialized = true;
-			}
-			k_work_reschedule(&sq_vm_runtime_display_phase2_work, K_MSEC(50));
 		}
 
 		k_mutex_lock(&sq_vm_runtime_display_work_lock, K_FOREVER);
@@ -612,12 +574,8 @@ static void runtime_display_work_init(void)
 
 static void runtime_flush_display_if_dirty(struct sq_vm_runtime *runtime)
 {
-	if (runtime == NULL || !runtime->display_dirty || runtime->display_op_count == 0) {
+	if (runtime == NULL || !runtime->display_dirty || !runtime->display_needs_flush) {
 		return;
-	}
-	if (sq_vm_runtime_display_phase2_pending) {
-		k_work_cancel_delayable(&sq_vm_runtime_display_phase2_work);
-		sq_vm_runtime_display_phase2_pending = false;
 	}
 	runtime_display_work_init();
 	k_mutex_lock(&sq_vm_runtime_display_work_lock, K_FOREVER);
@@ -642,10 +600,9 @@ static void runtime_flush_display_if_dirty(struct sq_vm_runtime *runtime)
 		k_thread_name_set(&sq_vm_runtime_display_work_thread, "sq_vm_display");
 		sq_vm_runtime_display_work_thread_started = true;
 	}
-	memset(runtime->display_ops, 0, sizeof(runtime->display_ops));
-	runtime->display_op_count = 0;
 	runtime->display_refresh_mode = SQ_VM_RUNTIME_DISPLAY_REFRESH_AUTO;
 	runtime->display_dirty = false;
+	runtime->display_needs_flush = false;
 }
 
 static void runtime_run_job(struct sq_vm_runtime *runtime)
@@ -864,9 +821,8 @@ void sq_vm_runtime_reset(struct sq_vm_runtime *runtime)
 	runtime->device_error_count = 0;
 	memset(runtime->drawlog, 0, sizeof(runtime->drawlog));
 	runtime->drawlog_count = 0;
-	memset(runtime->display_ops, 0, sizeof(runtime->display_ops));
-	runtime->display_op_count = 0;
 	runtime->display_dirty = false;
+	runtime->display_needs_flush = false;
 	memset(runtime->timers, 0, sizeof(runtime->timers));
 	runtime->indicator_state = false;
 	runtime->indicator_pattern = SQ_VM_RUNTIME_INDICATOR_STEADY;

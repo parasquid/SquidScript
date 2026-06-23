@@ -2,6 +2,7 @@
 """Generate a minimal but valid .binbook test fixture with all required sections."""
 import struct
 import sys
+from PIL import Image, ImageDraw, ImageFont
 
 HEADER_SIZE = 256
 SECTION_ENTRY_SIZE = 40
@@ -250,7 +251,7 @@ def build():
     # Page 2: "Stripes" — vertical stripes (white/black columns)
     # Page 3: "Bands" — horizontal bands (white/black rows)
 
-    page_names = ["White", "Black", "Stripes", "Bands"]
+    page_names = ["Black", "Checkerboard", "Diagonals", "Lorem Ipsum"]
 
     # Build string refs for page names
     name_offsets = []
@@ -287,17 +288,90 @@ def build():
 
     ROW_BYTES = 800 // 4  # 200 bytes per row for GRAY2 packed
 
-    # Page 0: all white
-    page0_raw = b"\xff" * UNCOMPRESSED_PAGE_BYTES
-    # Page 1: all black
-    page1_raw = b"\x00" * UNCOMPRESSED_PAGE_BYTES
-    # Page 2: vertical stripes (alternating white/black columns, 4px wide)
-    stripe_row = b"\xff\x00" * (ROW_BYTES // 2)
-    page2_raw = stripe_row * 480
-    # Page 3: horizontal bands (alternating white/black rows)
-    band_row_white = b"\xff" * ROW_BYTES
-    band_row_black = b"\x00" * ROW_BYTES
-    page3_raw = (band_row_white + band_row_black) * 240
+    def pack_gray2_row(pixels):
+        """Pack 800 pixel values (0-3) into 200 bytes of GRAY2."""
+        out = bytearray(ROW_BYTES)
+        for x in range(800):
+            byte_idx = x // 4
+            shift = 6 - (x % 4) * 2
+            out[byte_idx] |= (pixels[x] & 0x03) << shift
+        return bytes(out)
+
+    def gray2_fill(value):
+        """Fill entire page with a single GRAY2 byte pattern."""
+        if value == 0:
+            return b"\x00" * UNCOMPRESSED_PAGE_BYTES
+        if value == 3:
+            return b"\xff" * UNCOMPRESSED_PAGE_BYTES
+        b = 0
+        for i in range(4):
+            b |= (value & 0x03) << (6 - i * 2)
+        return bytes([b]) * UNCOMPRESSED_PAGE_BYTES
+
+    def make_page_row_pixels(row_y, gen_fn):
+        """Build one row of 800 pixels via gen_fn(x, y)."""
+        return [gen_fn(x, row_y) for x in range(800)]
+
+    # Page 0: all black
+    page0_raw = gray2_fill(0)
+
+    # Page 1: checkerboard 40x24
+    cell_w = 20
+    cell_h = 20
+    page1_rows = []
+    for y in range(480):
+        cy = y // cell_h
+        row = []
+        for x in range(800):
+            cx = x // cell_w
+            row.append(3 if (cx + cy) % 2 == 0 else 0)
+        page1_rows.append(pack_gray2_row(row))
+    page1_raw = b"".join(page1_rows)
+
+    # Page 2: 40 diagonal stripes
+    page2_rows = []
+    for y in range(480):
+        row = []
+        for x in range(800):
+            stripe_idx = (x + y) // 20
+            row.append(3 if stripe_idx % 2 == 0 else 0)
+        page2_rows.append(pack_gray2_row(row))
+    page2_raw = b"".join(page2_rows)
+
+    # Page 3: lorem ipsum text rendered with Pillow
+    img = Image.new("L", (800, 480), 255)
+    draw = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf", 18)
+    except (IOError, OSError):
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf", 18)
+        except (IOError, OSError):
+            font = ImageFont.load_default()
+    lorem = (
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod "
+        "tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, "
+        "quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo "
+        "consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse "
+        "cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat "
+        "non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.\n\n"
+        "Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium "
+        "doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore "
+        "veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim "
+        "ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia "
+        "consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt.\n\n"
+        "At vero eos et accusamus et iusto odio dignissimos ducimus qui blanditiis "
+        "praesentium voluptatum deleniti atque corrupti quos dolores et quas molestias "
+        "excepturi sint occaecati cupiditate non provident, similique sunt in culpa qui "
+        "officia deserunt mollitia animi, id est laborum et dolorum fuga."
+    )
+    draw.text((40, 20), lorem, fill=0, font=font)
+    page3_pixels = list(img.tobytes())
+    page3_rows = []
+    for y in range(480):
+        row = [max(0, min(3, page3_pixels[y * 800 + x] * 3 // 255)) for x in range(800)]
+        page3_rows.append(pack_gray2_row(row))
+    page3_raw = b"".join(page3_rows)
 
     page_raws = [page0_raw, page1_raw, page2_raw, page3_raw]
 

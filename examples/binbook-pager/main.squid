@@ -1,0 +1,61 @@
+app "binbook-pager"
+
+state {
+  bookRef: string = ""
+  pageIndex: int = 0
+  pageCount: int = 0
+}
+
+event.on("app.start") {
+  state.bookRef = "content:books/r/reader-one.binbook"
+  let opened = binbook.open(state.bookRef)
+  if (opened.ok) {
+    let info = binbook.info(opened.book)
+    if (info.ok) {
+      state.pageCount = info.pageCount
+    }
+  }
+  state.save()
+  screen.open("page")
+}
+
+event.on("key.RIGHT") {
+  if (state.pageIndex + 1 < state.pageCount) {
+    state.pageIndex = state.pageIndex + 1
+    state.save()
+    screen.refresh()
+  }
+}
+
+event.on("key.LEFT") {
+  if (state.pageIndex > 0) {
+    state.pageIndex = state.pageIndex - 1
+    state.save()
+    screen.refresh()
+  }
+}
+
+event.on("key.BACK") {
+  app.exit()
+}
+
+screen("page") {
+  service.display.clear(color.WHITE)
+  let opened = binbook.open(state.bookRef)
+  if (opened.ok) {
+    let page = binbook.readPage(opened.book, state.pageIndex)
+    if (page.ok) {
+      service.display.draw(page.drawable)
+      debug.print("page", state.pageIndex, state.pageCount)
+    }
+    else {
+      service.display.text("Page failed", { x: 24, y: 64, fontHeight: 24, textColor: color.GRAY15 })
+      debug.print("page-error", page.error, state.pageIndex)
+    }
+  }
+  else {
+    service.display.text("Open failed", { x: 24, y: 64, fontHeight: 24, textColor: color.GRAY15 })
+    debug.print("open-error", opened.error)
+  }
+  service.display.refreshMode("fast1bpp")
+}

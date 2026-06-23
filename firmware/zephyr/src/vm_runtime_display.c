@@ -1,4 +1,5 @@
 #include "vm_runtime_internal.h"
+#include "vm_runtime_display_backend.h"
 
 #ifndef CONFIG_SQ_TARGET_DISPLAY_LOGICAL_WIDTH
 #define CONFIG_SQ_TARGET_DISPLAY_LOGICAL_WIDTH 0
@@ -16,42 +17,6 @@
 #define CONFIG_SQ_TARGET_DISPLAY_ROTATION 0
 #endif
 
-static void runtime_display_copy_text(char *out, size_t out_cap, const uint8_t *text,
-				      size_t text_len)
-{
-	if (out == NULL || out_cap == 0) {
-		return;
-	}
-	size_t len = text_len;
-	if (text == NULL) {
-		len = 0;
-	} else if (len >= out_cap) {
-		len = out_cap - 1;
-	}
-	if (len > 0) {
-		memcpy(out, text, len);
-	}
-	out[len] = '\0';
-}
-
-static struct sq_vm_runtime_display_op *runtime_display_append_op(struct sq_vm_runtime *runtime)
-{
-	if (runtime == NULL) {
-		return NULL;
-	}
-	size_t slot = runtime->display_op_count;
-	if (slot >= SQ_VM_RUNTIME_DISPLAY_OP_MAX) {
-		memmove(&runtime->display_ops[0], &runtime->display_ops[1],
-			(SQ_VM_RUNTIME_DISPLAY_OP_MAX - 1) * sizeof(runtime->display_ops[0]));
-		slot = SQ_VM_RUNTIME_DISPLAY_OP_MAX - 1;
-		runtime->display_op_count = SQ_VM_RUNTIME_DISPLAY_OP_MAX - 1;
-	}
-	memset(&runtime->display_ops[slot], 0, sizeof(runtime->display_ops[slot]));
-	runtime->display_op_count++;
-	runtime->display_dirty = true;
-	return &runtime->display_ops[slot];
-}
-
 void runtime_display_clear(void *user_data, uint8_t color)
 {
 	struct sq_vm_runtime *runtime = user_data;
@@ -61,10 +26,10 @@ void runtime_display_clear(void *user_data, uint8_t color)
 	if (written > 0) {
 		(void)sq_vm_runtime_record_drawlog(runtime, line);
 	}
-	struct sq_vm_runtime_display_op *op = runtime_display_append_op(runtime);
-	if (op != NULL) {
-		op->kind = SQ_VM_RUNTIME_DISPLAY_OP_CLEAR;
-		op->u.clear.color = color;
+	sq_display_backend_rasterize_clear(color);
+	if (runtime != NULL) {
+		runtime->display_needs_flush = true;
+		runtime->display_dirty = true;
 	}
 }
 
@@ -83,14 +48,18 @@ void runtime_display_text(void *user_data, const uint8_t *text, size_t text_len,
 	if (written > 0) {
 		(void)sq_vm_runtime_record_drawlog(runtime, line);
 	}
-	struct sq_vm_runtime_display_op *op = runtime_display_append_op(runtime);
-	if (op != NULL) {
-		op->kind = SQ_VM_RUNTIME_DISPLAY_OP_TEXT;
-		runtime_display_copy_text(op->u.text.text, sizeof(op->u.text.text), text, text_len);
-		op->x = options->x;
-		op->y = options->y;
-		op->u.text.font_height = options->font_height;
-		op->u.text.color = options->text_color;
+	char text_buf[SQ_VM_RUNTIME_DISPLAY_TEXT_LEN];
+	size_t copy_len = text_len < sizeof(text_buf) - 1 ? text_len : sizeof(text_buf) - 1;
+
+	if (text != NULL && copy_len > 0) {
+		memcpy(text_buf, text, copy_len);
+	}
+	text_buf[copy_len] = '\0';
+	sq_display_backend_rasterize_text(text_buf, options->x, options->y,
+					  options->font_height, options->text_color);
+	if (runtime != NULL) {
+		runtime->display_needs_flush = true;
+		runtime->display_dirty = true;
 	}
 }
 
@@ -107,15 +76,11 @@ void runtime_display_rect(void *user_data, const SqvmDisplayRectOptions *options
 	if (written > 0) {
 		(void)sq_vm_runtime_record_drawlog(runtime, line);
 	}
-	struct sq_vm_runtime_display_op *op = runtime_display_append_op(runtime);
-	if (op != NULL) {
-		op->kind = SQ_VM_RUNTIME_DISPLAY_OP_RECT;
-		op->x = options->x;
-		op->y = options->y;
-		op->u.rect.w = options->w;
-		op->u.rect.h = options->h;
-		op->u.rect.fill_color = options->fill_color;
-		op->u.rect.stroke_color = options->stroke_color;
+	sq_display_backend_rasterize_rect(options->x, options->y, options->w, options->h,
+					  options->fill_color, options->stroke_color);
+	if (runtime != NULL) {
+		runtime->display_needs_flush = true;
+		runtime->display_dirty = true;
 	}
 }
 
@@ -179,12 +144,9 @@ void runtime_display_draw(void *user_data, SqvmHandle drawable,
 	if (written > 0) {
 		(void)sq_vm_runtime_record_drawlog(runtime, line);
 	}
-	struct sq_vm_runtime_display_op *op = runtime_display_append_op(runtime);
-	if (op != NULL) {
-		op->kind = SQ_VM_RUNTIME_DISPLAY_OP_BINBOOK_DRAWABLE;
-		op->x = options->x;
-		op->y = options->y;
-	}
+	sq_display_backend_rasterize_binbook(&runtime->drawable.page);
+	runtime->display_needs_flush = true;
+	runtime->display_dirty = true;
 }
 
 void runtime_display_refresh_mode(void *user_data, const uint8_t *mode, size_t mode_len)
