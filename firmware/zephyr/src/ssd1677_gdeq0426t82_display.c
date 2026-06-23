@@ -175,6 +175,9 @@ bool sq_ssd1677_test_row_has_black_pixel(const uint8_t *line, size_t line_len,
 #define BINBOOK_COMPRESSION_RLE_PACKBITS 1U
 #define BINBOOK_GRAY2_ROW_BYTES (PANEL_WIDTH / 4U)
 #define BINBOOK_GRAY2_PAGE_BYTES (BINBOOK_GRAY2_ROW_BYTES * PANEL_HEIGHT)
+#define BINBOOK_PLANE_MSB 0x01U
+#define BINBOOK_PLANE_LSB 0x02U
+#define BINBOOK_PLANE_BW 0x04U
 
 enum ssd1677_display_mode {
 	SSD1677_DISPLAY_MODE_NONE,
@@ -719,6 +722,7 @@ static void apply_active_mask_to_row(uint8_t line[ROW_BYTES], uint16_t x, uint8_
 }
 
 static int stream_binbook_gray2_plane(const struct sq_vm_runtime_binbook_page *page,
+				      uint32_t plane_offset, uint32_t plane_size,
 				      uint8_t command, bool msb_plane)
 {
 	struct packbits_reader reader = {0};
@@ -729,7 +733,7 @@ static int stream_binbook_gray2_plane(const struct sq_vm_runtime_binbook_page *p
 	if (ret != 0) {
 		return ret;
 	}
-	ret = fs_seek(&reader.file, (off_t)page->blob_offset, FS_SEEK_SET);
+	ret = fs_seek(&reader.file, (off_t)(page->page_data_offset + plane_offset), FS_SEEK_SET);
 	if (ret != 0) {
 		(void)fs_close(&reader.file);
 		return ret;
@@ -739,7 +743,7 @@ static int stream_binbook_gray2_plane(const struct sq_vm_runtime_binbook_page *p
 		(void)fs_close(&reader.file);
 		return ret;
 	}
-	reader.compressed_left = page->compressed_size;
+	reader.compressed_left = plane_size;
 	for (uint16_t y = 0; y < PANEL_HEIGHT; ++y) {
 		memset(row, 0xff, sizeof(row));
 		for (uint16_t x = 0; x < PANEL_WIDTH; x += 4U) {
@@ -768,30 +772,44 @@ static int stream_binbook_gray2_plane(const struct sq_vm_runtime_binbook_page *p
 static int stream_binbook_gray2_page(const struct sq_vm_runtime_binbook_page *page)
 {
 	int ret;
+	bool per_plane = page->per_plane_compression;
+	uint8_t method;
 
 	if (page == NULL || page->path[0] == '\0' ||
 	    page->pixel_format != BINBOOK_PIXEL_FORMAT_GRAY2_PACKED ||
-	    page->compression_method != BINBOOK_COMPRESSION_RLE_PACKBITS ||
-	    page->stored_width != PANEL_WIDTH || page->stored_height != PANEL_HEIGHT ||
-	    page->uncompressed_size != BINBOOK_GRAY2_PAGE_BYTES || page->compressed_size == 0) {
+	    page->stored_width != PANEL_WIDTH || page->stored_height != PANEL_HEIGHT) {
 		return -ENOTSUP;
 	}
-	ret = stream_binbook_gray2_plane(page, SSD1677_CMD_WRITE_RED_RAM, true);
+	if (!(page->plane_bitmap & BINBOOK_PLANE_MSB) ||
+	    !(page->plane_bitmap & BINBOOK_PLANE_LSB)) {
+		return -ENOTSUP;
+	}
+	method = per_plane ? page->plane_compression[0] : page->compression_method;
+	if (method != BINBOOK_COMPRESSION_RLE_PACKBITS) {
+		return -ENOTSUP;
+	}
+	ret = stream_binbook_gray2_plane(page, page->offset_plane_0, page->size_plane_0,
+					 SSD1677_CMD_WRITE_RED_RAM, true);
 	if (ret != 0) {
 		return ret;
 	}
-	return stream_binbook_gray2_plane(page, SSD1677_CMD_WRITE_RAM, false);
+	method = per_plane ? page->plane_compression[1] : page->compression_method;
+	return stream_binbook_gray2_plane(page, page->offset_plane_1, page->size_plane_1,
+					  SSD1677_CMD_WRITE_RAM, false);
 }
 
 static int validate_binbook_gray2_page(const struct sq_vm_runtime_binbook_page *page)
 {
 	if (page == NULL || page->path[0] == '\0' ||
 	    page->pixel_format != BINBOOK_PIXEL_FORMAT_GRAY2_PACKED ||
-	    page->compression_method != BINBOOK_COMPRESSION_RLE_PACKBITS ||
-	    page->stored_width != PANEL_WIDTH || page->stored_height != PANEL_HEIGHT ||
-	    page->uncompressed_size != BINBOOK_GRAY2_PAGE_BYTES || page->compressed_size == 0) {
+	    page->stored_width != PANEL_WIDTH || page->stored_height != PANEL_HEIGHT) {
 		return -ENOTSUP;
 	}
+	if (!(page->plane_bitmap & BINBOOK_PLANE_MSB) ||
+	    !(page->plane_bitmap & BINBOOK_PLANE_LSB)) {
+		return -ENOTSUP;
+	}
+	return 0;
 	return 0;
 }
 
@@ -833,6 +851,7 @@ static void binbook_record_refresh(enum sq_ssd1677_binbook_refresh_kind refresh)
 }
 
 static int stream_binbook_gray2_bw_plane(const struct sq_vm_runtime_binbook_page *page,
+					 uint32_t plane_offset, uint32_t plane_size,
 					 uint8_t command, bool ordered_dither)
 {
 	struct packbits_reader reader = {0};
@@ -843,7 +862,7 @@ static int stream_binbook_gray2_bw_plane(const struct sq_vm_runtime_binbook_page
 	if (ret != 0) {
 		return ret;
 	}
-	ret = fs_seek(&reader.file, (off_t)page->blob_offset, FS_SEEK_SET);
+	ret = fs_seek(&reader.file, (off_t)(page->page_data_offset + plane_offset), FS_SEEK_SET);
 	if (ret != 0) {
 		(void)fs_close(&reader.file);
 		return ret;
@@ -853,7 +872,7 @@ static int stream_binbook_gray2_bw_plane(const struct sq_vm_runtime_binbook_page
 		(void)fs_close(&reader.file);
 		return ret;
 	}
-	reader.compressed_left = page->compressed_size;
+	reader.compressed_left = plane_size;
 	for (uint16_t y = 0; y < PANEL_HEIGHT; ++y) {
 		memset(row, 0xff, sizeof(row));
 		for (uint16_t x = 0; x < PANEL_WIDTH; x += 4U) {
@@ -885,11 +904,19 @@ static int stream_binbook_gray2_bw_page(const struct sq_vm_runtime_binbook_page 
 					bool ordered_dither)
 {
 	int ret = validate_binbook_gray2_page(page);
+	bool per_plane;
+	uint8_t method;
 
 	if (ret != 0) {
 		return ret;
 	}
-	return stream_binbook_gray2_bw_plane(page, SSD1677_CMD_WRITE_RAM, ordered_dither);
+	if (!(page->plane_bitmap & BINBOOK_PLANE_BW)) {
+		return -ENOTSUP;
+	}
+	per_plane = page->per_plane_compression;
+	method = per_plane ? page->plane_compression[2] : page->compression_method;
+	return stream_binbook_gray2_bw_plane(page, page->offset_plane_2, page->size_plane_2,
+					     SSD1677_CMD_WRITE_RAM, ordered_dither);
 }
 
 static int stream_binbook_gray2_bw_previous_page(bool ordered_dither)
@@ -903,8 +930,13 @@ static int stream_binbook_gray2_bw_previous_page(bool ordered_dither)
 	if (ret != 0) {
 		return ret;
 	}
-	return stream_binbook_gray2_bw_plane(&binbook_previous_page, SSD1677_CMD_WRITE_RED_RAM,
-					     ordered_dither);
+	if (!(binbook_previous_page.plane_bitmap & BINBOOK_PLANE_BW)) {
+		return -ENOTSUP;
+	}
+	return stream_binbook_gray2_bw_plane(&binbook_previous_page,
+					     binbook_previous_page.offset_plane_2,
+					     binbook_previous_page.size_plane_2,
+					     SSD1677_CMD_WRITE_RED_RAM, ordered_dither);
 }
 
 static void draw_text_row(uint8_t line[ROW_BYTES], uint16_t y,
@@ -1189,6 +1221,7 @@ void sq_display_backend_rasterize_rect(int32_t x, int32_t y, int32_t w, int32_t 
 }
 
 static int decompress_binbook_gray2_to_fb(const struct sq_vm_runtime_binbook_page *page,
+					  uint32_t plane_offset, uint32_t plane_size,
 					  bool msb_plane)
 {
 	struct packbits_reader reader = {0};
@@ -1199,12 +1232,12 @@ static int decompress_binbook_gray2_to_fb(const struct sq_vm_runtime_binbook_pag
 	if (ret != 0) {
 		return ret;
 	}
-	ret = fs_seek(&reader.file, (off_t)page->blob_offset, FS_SEEK_SET);
+	ret = fs_seek(&reader.file, (off_t)(page->page_data_offset + plane_offset), FS_SEEK_SET);
 	if (ret != 0) {
 		(void)fs_close(&reader.file);
 		return ret;
 	}
-	reader.compressed_left = page->compressed_size;
+	reader.compressed_left = plane_size;
 	for (uint16_t y = 0; y < PANEL_HEIGHT; ++y) {
 		size_t row_offset = (size_t)y * ROW_BYTES;
 
@@ -1240,6 +1273,7 @@ static int decompress_binbook_gray2_to_fb(const struct sq_vm_runtime_binbook_pag
 }
 
 static int decompress_binbook_gray2_bw_to_fb(const struct sq_vm_runtime_binbook_page *page,
+					     uint32_t plane_offset, uint32_t plane_size,
 					     bool ordered_dither)
 {
 	struct packbits_reader reader = {0};
@@ -1250,12 +1284,12 @@ static int decompress_binbook_gray2_bw_to_fb(const struct sq_vm_runtime_binbook_
 	if (ret != 0) {
 		return ret;
 	}
-	ret = fs_seek(&reader.file, (off_t)page->blob_offset, FS_SEEK_SET);
+	ret = fs_seek(&reader.file, (off_t)(page->page_data_offset + plane_offset), FS_SEEK_SET);
 	if (ret != 0) {
 		(void)fs_close(&reader.file);
 		return ret;
 	}
-	reader.compressed_left = page->compressed_size;
+	reader.compressed_left = plane_size;
 	for (uint16_t y = 0; y < PANEL_HEIGHT; ++y) {
 		size_t row_offset = (size_t)y * ROW_BYTES;
 
@@ -1294,26 +1328,41 @@ static int decompress_binbook_gray2_bw_to_fb(const struct sq_vm_runtime_binbook_
 
 void sq_display_backend_rasterize_binbook(const struct sq_vm_runtime_binbook_page *page)
 {
+	bool per_plane;
+	uint8_t method;
+
 	if (page == NULL || page->path[0] == '\0') {
 		return;
 	}
-	if (page->pixel_format == BINBOOK_PIXEL_FORMAT_GRAY2_PACKED &&
-	    page->compression_method == BINBOOK_COMPRESSION_RLE_PACKBITS &&
-	    page->stored_width == PANEL_WIDTH && page->stored_height == PANEL_HEIGHT &&
-	    page->uncompressed_size == BINBOOK_GRAY2_PAGE_BYTES && page->compressed_size > 0) {
+	if (page->pixel_format != BINBOOK_PIXEL_FORMAT_GRAY2_PACKED ||
+	    page->stored_width != PANEL_WIDTH || page->stored_height != PANEL_HEIGHT) {
+		return;
+	}
+	per_plane = page->per_plane_compression;
 #if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
-		sq_debug_log_append("%lld:decompress_start:cs=%lu", (long long)k_uptime_get(),
-				    (unsigned long)page->compressed_size);
+	sq_debug_log_append("%lld:decompress_start:bitmap=0x%02x", (long long)k_uptime_get(),
+			    (unsigned)page->plane_bitmap);
 #endif
-		(void)decompress_binbook_gray2_to_fb(page, true);
+	if (page->plane_bitmap & BINBOOK_PLANE_MSB) {
+		method = per_plane ? page->plane_compression[0] : page->compression_method;
+		(void)decompress_binbook_gray2_to_fb(page, page->offset_plane_0,
+						     page->size_plane_0, true);
 #if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
 		sq_debug_log_append("%lld:decompress_msb_done", (long long)k_uptime_get());
 #endif
-		(void)decompress_binbook_gray2_to_fb(page, false);
+	}
+	if (page->plane_bitmap & BINBOOK_PLANE_LSB) {
+		method = per_plane ? page->plane_compression[1] : page->compression_method;
+		(void)decompress_binbook_gray2_to_fb(page, page->offset_plane_1,
+						     page->size_plane_1, false);
 #if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
 		sq_debug_log_append("%lld:decompress_lsb_done", (long long)k_uptime_get());
 #endif
-		(void)decompress_binbook_gray2_bw_to_fb(page, true);
+	}
+	if (page->plane_bitmap & BINBOOK_PLANE_BW) {
+		method = per_plane ? page->plane_compression[2] : page->compression_method;
+		(void)decompress_binbook_gray2_bw_to_fb(page, page->offset_plane_2,
+							page->size_plane_2, true);
 #if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
 		sq_debug_log_append("%lld:decompress_bw_done", (long long)k_uptime_get());
 #endif

@@ -6392,14 +6392,20 @@ ZTEST(squidscript_protocol, test_vm_runtime_records_binbook_drawable_display_op)
 	memset(&runtime, 0, sizeof(runtime));
 	runtime.drawable.active = true;
 	runtime.drawable.page = (struct sq_vm_runtime_binbook_page){
-		.blob_offset = 412,
-		.compressed_size = 4,
-		.uncompressed_size = 96000,
+		.page_data_offset = 2544,
 		.page_index = 0,
 		.pixel_format = 2,
 		.compression_method = 1,
 		.stored_width = 800,
 		.stored_height = 480,
+		.plane_bitmap = 0x07,
+		.per_plane_compression = 0,
+		.offset_plane_0 = 0,
+		.size_plane_0 = 4,
+		.offset_plane_1 = 4,
+		.size_plane_1 = 4,
+		.offset_plane_2 = 8,
+		.size_plane_2 = 4,
 	};
 	strncpy(runtime.drawable.page.path, "/sqtest/apps/binbook-reader/resources/books/sample.binbook",
 		sizeof(runtime.drawable.page.path) - 1);
@@ -6413,9 +6419,9 @@ ZTEST(squidscript_protocol, test_vm_runtime_records_binbook_drawable_display_op)
 	zassert_equal(test_rasterize_binbook_count, 1);
 	zassert_str_equal(runtime.drawable.page.path,
 			  "/sqtest/apps/binbook-reader/resources/books/sample.binbook");
-	zassert_equal(runtime.drawable.page.blob_offset, 412);
-	zassert_equal(runtime.drawable.page.compressed_size, 4);
-	zassert_equal(runtime.drawable.page.uncompressed_size, 96000);
+	zassert_equal(runtime.drawable.page.plane_bitmap, 0x07);
+	zassert_equal(runtime.drawable.page.offset_plane_0, 0);
+	zassert_equal(runtime.drawable.page.size_plane_0, 4);
 	zassert_equal(runtime.drawable.page.stored_width, 800);
 	zassert_equal(runtime.drawable.page.stored_height, 480);
 }

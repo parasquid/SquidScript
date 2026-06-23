@@ -271,6 +271,7 @@ enum sq_vm_runtime_display_op_kind {
 
 struct sq_vm_runtime_binbook_page {
 	char path[SQ_APP_STORE_PATH_MAX];
+	uint64_t page_data_offset;
 	uint32_t page_index;
 	uint16_t pixel_format;
 	uint16_t compression_method;

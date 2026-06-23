@@ -650,6 +650,7 @@ int32_t runtime_binbook_read_page(void *user_data, SqvmHandle book, int32_t page
 	runtime->drawable.active = true;
 	strncpy(runtime->drawable.page.path, runtime->binbook.path,
 		sizeof(runtime->drawable.page.path) - 1);
+	runtime->drawable.page.page_data_offset = runtime->binbook.page_data_offset;
 	runtime->drawable.page.page_index = (uint32_t)page_index;
 	runtime->drawable.page.pixel_format = meta.pixel_format;
 	runtime->drawable.page.compression_method = meta.compression_method;
