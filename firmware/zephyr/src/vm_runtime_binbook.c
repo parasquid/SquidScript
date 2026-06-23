@@ -5,7 +5,7 @@
 
 #define BINBOOK_HEADER_SIZE 256U
 #define BINBOOK_SECTION_ENTRY_SIZE 40U
-#define BINBOOK_PAGE_INDEX_ENTRY_SIZE 76U
+#define BINBOOK_PAGE_INDEX_ENTRY_SIZE 128U
 #define BINBOOK_NAV_INDEX_ENTRY_SIZE 48U
 #define BINBOOK_CHAPTER_INDEX_ENTRY_SIZE 32U
 #define BINBOOK_MAGIC "BINBOOK"
@@ -653,11 +653,20 @@ int32_t runtime_binbook_read_page(void *user_data, SqvmHandle book, int32_t page
 	runtime->drawable.page.page_index = (uint32_t)page_index;
 	runtime->drawable.page.pixel_format = meta.pixel_format;
 	runtime->drawable.page.compression_method = meta.compression_method;
-	runtime->drawable.page.blob_offset = meta.blob_offset;
-	runtime->drawable.page.compressed_size = meta.compressed_size;
-	runtime->drawable.page.uncompressed_size = meta.uncompressed_size;
 	runtime->drawable.page.stored_width = meta.stored_width;
 	runtime->drawable.page.stored_height = meta.stored_height;
+	runtime->drawable.page.plane_bitmap = meta.plane_bitmap;
+	runtime->drawable.page.per_plane_compression = meta.page_flags & 1;
+	memcpy(runtime->drawable.page.plane_compression, meta.plane_compression,
+	       sizeof(meta.plane_compression));
+	runtime->drawable.page.offset_plane_0 = meta.offset_plane_0;
+	runtime->drawable.page.size_plane_0 = meta.size_plane_0;
+	runtime->drawable.page.offset_plane_1 = meta.offset_plane_1;
+	runtime->drawable.page.size_plane_1 = meta.size_plane_1;
+	runtime->drawable.page.offset_plane_2 = meta.offset_plane_2;
+	runtime->drawable.page.size_plane_2 = meta.size_plane_2;
+	runtime->drawable.page.offset_plane_3 = meta.offset_plane_3;
+	runtime->drawable.page.size_plane_3 = meta.size_plane_3;
 	binbook_read_page_us_acc += k_cyc_to_us_floor64(k_cycle_get_64() - t0);
 	out->ok = true;
 	binbook_set_error(NULL, &out->error, &out->error_len);
