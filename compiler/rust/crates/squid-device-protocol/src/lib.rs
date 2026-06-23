@@ -2498,7 +2498,7 @@ mod tests {
     fn transfer_capabilities_default_to_serial_window_limits() {
         let caps = TransferCapabilities::default_serial();
 
-        assert_eq!(caps.max_frame_bytes, 1024);
+        assert_eq!(caps.max_frame_bytes, 8192);
         assert!(caps.max_payload_bytes > 900);
         assert_eq!(caps.ack_window_bytes, caps.max_payload_bytes);
     }
