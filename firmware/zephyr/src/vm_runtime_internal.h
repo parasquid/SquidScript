@@ -149,6 +149,10 @@ int32_t runtime_binbook_chapters(void *user_data, SqvmHandle book, int32_t offse
 int32_t runtime_binbook_chapter(void *user_data, SqvmHandle book, int32_t index,
 				SqvmBinBookChapterResult *out);
 int runtime_binbook_validate_path(const char *path);
+uint64_t sq_vm_runtime_binbook_drain_open_us(void);
+uint64_t sq_vm_runtime_binbook_drain_read_page_us(void);
+int sq_vm_runtime_binbook_release(void);
+size_t test_binbook_open_count(void);
 
 struct rust_binbook_page_meta {
 	bool ok;

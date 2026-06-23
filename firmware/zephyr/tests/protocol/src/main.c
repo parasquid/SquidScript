@@ -7285,6 +7285,88 @@ ZTEST(squidscript_protocol, test_indicator_pattern_state_machine_transitions)
 	zassert_false(runtime.indicator_state);
 }
 
+ZTEST(squidscript_protocol, test_binbook_open_reuses_file_handle)
+{
+	static struct sq_vm_runtime runtime;
+	const uint8_t path[] = "books/sample.binbook";
+	uint8_t book[TEST_BINBOOK_LEN];
+	SqvmBinBookOpenResult open1 = {0};
+	SqvmBinBookOpenResult open2 = {0};
+
+	build_test_binbook(book);
+	zassert_equal(mount_test_fs(), 0);
+	zassert_equal(format_test_app_store(), 0);
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "binbook-reader",
+					       binbook_reader_sqbc, sizeof(binbook_reader_sqbc)),
+		      0);
+	zassert_equal(sq_app_store_install_resource(test_fs_mount.mnt_point, "binbook-reader",
+						    "books/sample.binbook", book, sizeof(book)),
+		      0);
+
+	memset(&runtime, 0, sizeof(runtime));
+	sq_vm_runtime_set_store_mount_point(&runtime, test_fs_mount.mnt_point);
+	strncpy(runtime.current_app, "binbook-reader", sizeof(runtime.current_app) - 1);
+
+	/* First open should succeed and open a file handle */
+	int result1 = runtime_binbook_open(&runtime, path, strlen((const char *)path), &open1);
+
+	zassert_equal(result1, 0);
+	zassert_true(open1.ok, "first binbook.open should succeed");
+
+	size_t open_count_after_first = test_binbook_open_count();
+
+	/* Second open with same path should reuse the handle */
+	int result2 = runtime_binbook_open(&runtime, path, strlen((const char *)path), &open2);
+
+	zassert_equal(result2, 0);
+	zassert_true(open2.ok, "second binbook.open should succeed");
+	zassert_equal(test_binbook_open_count(), open_count_after_first,
+		      "second open should reuse handle, not open new file");
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
+ZTEST(squidscript_protocol, test_binbook_release_closes_handle)
+{
+	static struct sq_vm_runtime runtime;
+	const uint8_t path[] = "books/sample.binbook";
+	uint8_t book[TEST_BINBOOK_LEN];
+	SqvmBinBookOpenResult open1 = {0};
+	SqvmBinBookOpenResult open2 = {0};
+
+	build_test_binbook(book);
+	zassert_equal(mount_test_fs(), 0);
+	zassert_equal(format_test_app_store(), 0);
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "binbook-reader",
+					       binbook_reader_sqbc, sizeof(binbook_reader_sqbc)),
+		      0);
+	zassert_equal(sq_app_store_install_resource(test_fs_mount.mnt_point, "binbook-reader",
+						    "books/sample.binbook", book, sizeof(book)),
+		      0);
+
+	memset(&runtime, 0, sizeof(runtime));
+	sq_vm_runtime_set_store_mount_point(&runtime, test_fs_mount.mnt_point);
+	strncpy(runtime.current_app, "binbook-reader", sizeof(runtime.current_app) - 1);
+
+	int result1 = runtime_binbook_open(&runtime, path, strlen((const char *)path), &open1);
+	zassert_equal(result1, 0);
+	zassert_true(open1.ok);
+
+	size_t count_before_release = test_binbook_open_count();
+
+	/* Release should close the handle */
+	zassert_equal(sq_vm_runtime_binbook_release(), 0);
+
+	/* Next open should require a new file open */
+	int result2 = runtime_binbook_open(&runtime, path, strlen((const char *)path), &open2);
+	zassert_equal(result2, 0);
+	zassert_true(open2.ok);
+	zassert_equal(test_binbook_open_count(), count_before_release + 1,
+		      "open after release must open a new file handle");
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
 ZTEST(squidscript_protocol, test_device_protocol_poll_advances_running_runtime_poll)
 {
 	struct sq_vm_runtime runtime = {0};
