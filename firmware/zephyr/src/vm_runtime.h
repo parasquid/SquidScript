@@ -279,6 +279,8 @@ struct sq_vm_runtime_binbook_page {
 	uint16_t compression_method;
 	uint16_t stored_width;
 	uint16_t stored_height;
+	const uint8_t *compressed_data;
+	uint32_t compressed_data_len;
 };
 
 struct sq_vm_runtime_display_op {
@@ -369,6 +371,8 @@ struct sq_vm_runtime {
 	uint64_t last_dispatch_sqbc_read_us;
 	uint64_t dispatch_sqbc_read_us_acc;
 	uint64_t last_dispatch_state_save_us;
+	uint64_t last_dispatch_binbook_open_us;
+	uint64_t last_dispatch_binbook_read_page_us;
 	uint32_t dispatch_sqbc_read_count;
 	uint32_t dispatch_sqbc_read_bytes;
 	bool dispatch_started;
