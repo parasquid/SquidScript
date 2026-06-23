@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 HEADER_SIZE = 256
 SECTION_ENTRY_SIZE = 40
-PAGE_INDEX_ENTRY_SIZE = 76
+PAGE_INDEX_ENTRY_SIZE = 128
 NAV_INDEX_ENTRY_SIZE = 48
 CHAPTER_INDEX_ENTRY_SIZE = 32
 
@@ -324,14 +324,21 @@ def build():
     page_index = bytearray()
     blob_offset = 0
     for i, enc in enumerate(encoded_pages):
-        page_index.extend(struct.pack("<IHHHHI", i, 1, 2, 1, 0, 0))
-        page_index.extend(struct.pack("<Q", blob_offset))
-        page_index.extend(struct.pack("<III", len(enc), UNCOMPRESSED_PAGE_BYTES, 0))
-        page_index.extend(struct.pack("<HH", PANEL_WIDTH, PANEL_HEIGHT))
-        page_index.extend(struct.pack("<HH", 0, 0))
-        page_index.extend(struct.pack("<II", 0xFFFFFFFF, 0xFFFFFFFF))
-        page_index.extend(struct.pack("<II", i * 250000, (i + 1) * 250000))
-        page_index.extend(bytes(16))
+        page_index.extend(struct.pack("<IHHHH I I HHHH II II",
+                                      i, 1, 2, 1, 0,
+                                      0, 0,
+                                      PANEL_WIDTH, PANEL_HEIGHT,
+                                      0, 0,
+                                      0xFFFFFFFF, i,
+                                      i * 250000, (i + 1) * 250000))
+        plane_bitmap = 0x01
+        plane_compression = bytes([1, 0, 0, 0])
+        page_index.extend(bytes([plane_bitmap]))
+        page_index.extend(plane_compression)
+        page_index.extend(bytes(3))
+        page_index.extend(struct.pack("<4I", blob_offset, 0, 0, 0))
+        page_index.extend(struct.pack("<4I", len(enc), 0, 0, 0))
+        page_index.extend(bytes(44))
         blob_offset += len(enc)
 
     section_data = [
