@@ -481,6 +481,8 @@ static void runtime_finish_dispatch_metrics(struct sq_vm_runtime *runtime, uint6
 	runtime->last_dispatch_sqbc_read_bytes = runtime->dispatch_sqbc_read_bytes;
 	runtime->last_dispatch_sqbc_read_us = sq_vm_fs_storage_drain_sqbc_read_us();
 	runtime->last_dispatch_state_save_us = sq_vm_fs_storage_drain_state_save_us();
+	runtime->last_dispatch_binbook_open_us = sq_vm_runtime_binbook_drain_open_us();
+	runtime->last_dispatch_binbook_read_page_us = sq_vm_runtime_binbook_drain_read_page_us();
 }
 
 static void runtime_debug_output(void *user_data, const uint8_t *message, size_t message_len)
@@ -532,16 +534,20 @@ static void runtime_display_flush_worker(void *arg1, void *arg2, void *arg3)
 	ARG_UNUSED(arg3);
 
 	while (true) {
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
 		sq_debug_log_append("%lld:flush_start:mode=%d",
 				    (long long)k_uptime_get(),
 				    (int)sq_vm_runtime_display_active_job.refresh_mode);
+#endif
 		uint64_t t0 = k_cycle_get_64();
 		int result = sq_display_backend_flush_framebuffer(
 			sq_vm_runtime_display_active_job.refresh_mode);
 		sq_vm_runtime_last_display_flush_us = k_cyc_to_us_floor64(k_cycle_get_64() - t0);
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
 		sq_debug_log_append("%lld:flush_done:result=%d:us=%llu",
 				    (long long)k_uptime_get(), result,
 				    (unsigned long long)sq_vm_runtime_last_display_flush_us);
+#endif
 		runtime_display_record_flush_error(sq_vm_runtime_display_active_job.runtime, result);
 		if (sq_vm_runtime_display_active_job.binbook_page != NULL) {
 			k_free(sq_vm_runtime_display_active_job.binbook_page);
@@ -1202,7 +1208,9 @@ int sq_vm_runtime_start_event(struct sq_vm_runtime *runtime,
 	runtime->dispatch_exited = false;
 	runtime->dispatch_started = false;
 	runtime->status = SQ_VM_RUNTIME_RUNNING;
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
 	sq_debug_log_append("%lld:dispatch_start:%s", (long long)k_uptime_get(), runtime->event);
+#endif
 	int submit_result = sq_vm_runtime_submit_work(runtime);
 	if (submit_result != 0) {
 		runtime->start_apply_bindings = false;

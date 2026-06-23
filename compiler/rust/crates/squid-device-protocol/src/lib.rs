@@ -1045,6 +1045,8 @@ const RESOURCE_METRIC_NAMES: &[(u32, &str)] = &[
     (56, "last_sqbc_read_us"),
     (57, "last_display_flush_us"),
     (58, "last_state_save_us"),
+    (59, "last_binbook_open_us"),
+    (60, "last_binbook_read_page_us"),
 ];
 
 fn resource_metric_id_for_name(name: &str) -> Option<u32> {

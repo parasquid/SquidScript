@@ -102,6 +102,22 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   compatibility bridges are allowed only while they protect an active removal
   decision. Keep them grouped and purposeful; do not let them accumulate as
   permanent "old value must not appear" tests.
+- For firmware performance work, build/flash/measure on hardware after each
+  independent slice, not after batching all changes together. Batching masks
+  which change introduced a regression. If a plan has two independent fixes
+  (e.g. handle reuse + buffer allocation), measure after the first fix before
+  starting the second. This was violated during binbook latency work: both
+  fixes were committed together, a 5.6x decompression regression went
+  undetected until final measurement, and isolating the cause required
+  undoing work.
+
+## Debug Instrumentation
+
+- Wrap all debug timing, measurement, and diagnostic logging with
+  `#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)` so they compile
+  out in release builds. Use `sq_debug_log_append` for timestamped trace
+  markers. The guard ensures zero overhead in production while keeping
+  instrumentation available for development and hardware debugging.
 
 ## Documentation Planning
 

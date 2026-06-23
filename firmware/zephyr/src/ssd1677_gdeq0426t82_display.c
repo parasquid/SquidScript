@@ -800,24 +800,30 @@ static enum sq_ssd1677_binbook_refresh_kind binbook_refresh_kind(void)
 	enum sq_ssd1677_binbook_refresh_kind kind =
 		sq_ssd1677_binbook_refresh_decide(&binbook_refresh_state,
 						  SSD1677_BINBOOK_FULL_REFRESH_CADENCE);
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
 	sq_debug_log_append("%lld:binbook_refresh_decide:prev_valid=%d:fast_count=%d:cadence=%d:result=%d",
 			    (long long)k_uptime_get(),
 			    (int)binbook_refresh_state.previous_page_valid,
 			    (int)binbook_refresh_state.fast_refresh_count,
 			    (int)SSD1677_BINBOOK_FULL_REFRESH_CADENCE,
 			    (int)kind);
+#endif
 	return kind;
 }
 
 static void binbook_remember_previous_page(const struct sq_vm_runtime_binbook_page *page)
 {
 	if (page == NULL) {
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
 		sq_debug_log_append("%lld:binbook_prev_clear", (long long)k_uptime_get());
+#endif
 		sq_ssd1677_binbook_refresh_reset(&binbook_refresh_state);
 		memset(&binbook_previous_page, 0, sizeof(binbook_previous_page));
 		return;
 	}
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
 	sq_debug_log_append("%lld:binbook_prev_set", (long long)k_uptime_get());
+#endif
 	binbook_previous_page = *page;
 }
 
@@ -1444,7 +1450,9 @@ static int refresh_partial_display(bool *observed_busy)
 	const uint8_t update = SSD1677_UPDATE_PARTIAL;
 	int ret;
 
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
 	sq_debug_log_append("%lld:refresh_cmd_start", (long long)k_uptime_get());
+#endif
 	ret = write_command_data(SSD1677_CMD_DISPLAY_UPDATE_CTRL, display_update,
 				 sizeof(display_update));
 	if (ret != 0) {
@@ -1458,7 +1466,9 @@ static int refresh_partial_display(bool *observed_busy)
 	if (ret != 0) {
 		return ret;
 	}
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
 	sq_debug_log_append("%lld:refresh_wait_start", (long long)k_uptime_get());
+#endif
 	return wait_ready("refresh-partial", observed_busy);
 }
 

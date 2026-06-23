@@ -551,7 +551,9 @@ int sq_vm_runtime_poll_input_buttons(struct sq_vm_runtime *runtime)
 
 				return queued == -ENOSPC ? 0 : queued;
 			}
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
 			sq_debug_log_append("%lld:btn:%s", (long long)k_uptime_get(), button->event);
+#endif
 			return sq_vm_runtime_start(runtime, &runtime->job_backend, button->event);
 		}
 		button->phase = SQ_VM_RUNTIME_INPUT_RELEASED;

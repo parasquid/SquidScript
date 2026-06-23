@@ -236,7 +236,9 @@ static int sq_x4_poll_logical_button(struct sq_vm_runtime *runtime, size_t index
 
 		return queued == -ENOSPC ? 0 : queued;
 	}
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
 	sq_debug_log_append("%lld:btn:%s", (long long)k_uptime_get(), event);
+#endif
 	return sq_vm_runtime_start(runtime, &runtime->job_backend, event);
 }
 
