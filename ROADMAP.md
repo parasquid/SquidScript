@@ -225,6 +225,13 @@ RAM follow-up triggers:
   freed on reset. Design at
   `docs/specs/2026-06-20-x4-ram-reduction-design.md`; Plan 2
   implementation commits `7a07045`..`153e251`.
+- Move binbook decompression out of the display driver
+  (`ssd1677_gdeq0426t82_display.c`). The PackBits decompression and
+  pixel-format translation currently live in the display backend alongside
+  SPI/e-paper logic. Extract them into `vm_runtime_binbook.c` or a
+  dedicated `binbook_decompress.c` so the display driver only handles
+  framebuffer writes. This keeps format-specific decompression testable
+  independently of display hardware.
 - Color constants: add `color.*` compile-time constants (`color.GRAY0`
   through `color.GRAY15`, `color.WHITE`, `color.BLACK`) and replace
   string color values entirely. The compiler emits typed `uint8` colors

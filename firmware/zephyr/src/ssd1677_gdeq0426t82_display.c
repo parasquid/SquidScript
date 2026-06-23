@@ -1295,14 +1295,22 @@ void sq_display_backend_rasterize_binbook(const struct sq_vm_runtime_binbook_pag
 	    page->compression_method == BINBOOK_COMPRESSION_RLE_PACKBITS &&
 	    page->stored_width == PANEL_WIDTH && page->stored_height == PANEL_HEIGHT &&
 	    page->uncompressed_size == BINBOOK_GRAY2_PAGE_BYTES && page->compressed_size > 0) {
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
 		sq_debug_log_append("%lld:decompress_start:cs=%lu", (long long)k_uptime_get(),
 				    (unsigned long)page->compressed_size);
+#endif
 		(void)decompress_binbook_gray2_to_fb(page, true);
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
 		sq_debug_log_append("%lld:decompress_msb_done", (long long)k_uptime_get());
+#endif
 		(void)decompress_binbook_gray2_to_fb(page, false);
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
 		sq_debug_log_append("%lld:decompress_lsb_done", (long long)k_uptime_get());
+#endif
 		(void)decompress_binbook_gray2_bw_to_fb(page, true);
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
 		sq_debug_log_append("%lld:decompress_bw_done", (long long)k_uptime_get());
+#endif
 	}
 }
 
