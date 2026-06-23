@@ -6096,11 +6096,19 @@ pub struct RustBinBookPageMeta {
     pub ok: bool,
     pub pixel_format: u16,
     pub compression_method: u16,
-    pub blob_offset: u64,
-    pub compressed_size: u32,
-    pub uncompressed_size: u32,
+    pub page_flags: u32,
     pub stored_width: u16,
     pub stored_height: u16,
+    pub plane_bitmap: u8,
+    pub plane_compression: [u8; 4],
+    pub offset_plane_0: u32,
+    pub size_plane_0: u32,
+    pub offset_plane_1: u32,
+    pub size_plane_1: u32,
+    pub offset_plane_2: u32,
+    pub size_plane_2: u32,
+    pub offset_plane_3: u32,
+    pub size_plane_3: u32,
 }
 
 #[no_mangle]
@@ -6144,7 +6152,7 @@ pub extern "C" fn rust_binbook_page_meta(
     data: *const u8,
     data_len: usize,
     page_index_offset: u64,
-    page_data_offset: u64,
+    _page_data_offset: u64,
     page_index: u32,
     out: *mut RustBinBookPageMeta,
 ) -> i32 {
@@ -6152,24 +6160,33 @@ pub extern "C" fn rust_binbook_page_meta(
         return -1;
     }
     let bytes = unsafe { slice::from_raw_parts(data, data_len) };
-    let off = page_index_offset as usize + page_index as usize * 76;
-    if off + 76 > bytes.len() {
+    let off = page_index_offset as usize + page_index as usize * 128;
+    if off + 128 > bytes.len() {
         return -1;
     }
-    let info = match binbook::page_index::parse_page_info_from_bytes(&bytes[off..off + 76], page_data_offset) {
+    let info = match binbook::page_index::parse_page_info_from_bytes(&bytes[off..off + 128]) {
         Ok(i) => i,
         Err(_) => return -1,
     };
+    let pd = &info.plane_dir;
     unsafe {
         *out = RustBinBookPageMeta {
             ok: true,
             pixel_format: info.pixel_format,
             compression_method: info.compression_method,
-            blob_offset: info.blob_offset,
-            compressed_size: info.compressed_size,
-            uncompressed_size: info.uncompressed_size,
+            page_flags: info.page_flags,
             stored_width: info.stored_width,
             stored_height: info.stored_height,
+            plane_bitmap: pd.bitmap,
+            plane_compression: pd.compression,
+            offset_plane_0: pd.offsets[0],
+            size_plane_0: pd.sizes[0],
+            offset_plane_1: pd.offsets[1],
+            size_plane_1: pd.sizes[1],
+            offset_plane_2: pd.offsets[2],
+            size_plane_2: pd.sizes[2],
+            offset_plane_3: pd.offsets[3],
+            size_plane_3: pd.sizes[3],
         };
     }
     0

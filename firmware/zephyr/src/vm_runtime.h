@@ -271,14 +271,22 @@ enum sq_vm_runtime_display_op_kind {
 
 struct sq_vm_runtime_binbook_page {
 	char path[SQ_APP_STORE_PATH_MAX];
-	uint64_t blob_offset;
-	uint32_t compressed_size;
-	uint32_t uncompressed_size;
 	uint32_t page_index;
 	uint16_t pixel_format;
 	uint16_t compression_method;
 	uint16_t stored_width;
 	uint16_t stored_height;
+	uint8_t plane_bitmap;
+	uint8_t per_plane_compression;
+	uint8_t plane_compression[4];
+	uint32_t offset_plane_0;
+	uint32_t size_plane_0;
+	uint32_t offset_plane_1;
+	uint32_t size_plane_1;
+	uint32_t offset_plane_2;
+	uint32_t size_plane_2;
+	uint32_t offset_plane_3;
+	uint32_t size_plane_3;
 };
 
 struct sq_vm_runtime_display_op {
