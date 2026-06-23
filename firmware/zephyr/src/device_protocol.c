@@ -19,6 +19,7 @@
 #include "sq_errno.h"
 #include "squidvm_ffi.h"
 #include "vm_fs_storage.h"
+#include "vm_runtime_internal.h"
 #include "debug_log.h"
 
 extern uint64_t sq_vm_runtime_last_display_flush_us;
@@ -148,6 +149,8 @@ enum sq_resource_metric_id {
 	SQ_RESOURCE_METRIC_LAST_SQBC_READ_US = 56,
 	SQ_RESOURCE_METRIC_LAST_DISPLAY_FLUSH_US = 57,
 	SQ_RESOURCE_METRIC_LAST_STATE_SAVE_US = 58,
+	SQ_RESOURCE_METRIC_LAST_BINBOOK_OPEN_US = 59,
+	SQ_RESOURCE_METRIC_LAST_BINBOOK_READ_PAGE_US = 60,
 };
 
 static int copy_app_id(char *out, size_t out_cap, const char *app_id)
@@ -1458,6 +1461,7 @@ static int release_foreground_storage(const struct sq_device_protocol_context *c
 		result = sq_vm_fs_storage_release(&context->launch_storage->fs_storage);
 	}
 	int temp_result = sq_vm_fs_storage_release(&temp_foreground_storage.fs_storage);
+	sq_vm_runtime_binbook_release();
 	return result != 0 ? result : temp_result;
 }
 
@@ -2849,6 +2853,10 @@ static int __noinline resources_response(const struct sq_protocol_request *reque
 			   sq_vm_runtime_last_display_flush_us);
 	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_LAST_STATE_SAVE_US,
 			   context->runtime == NULL ? 0 : context->runtime->last_dispatch_state_save_us);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_LAST_BINBOOK_OPEN_US,
+			   context->runtime == NULL ? 0 : context->runtime->last_dispatch_binbook_open_us);
+	SQ_RESOURCE_METRIC(SQ_RESOURCE_METRIC_LAST_BINBOOK_READ_PAGE_US,
+			   context->runtime == NULL ? 0 : context->runtime->last_dispatch_binbook_read_page_us);
 #undef SQ_RESOURCE_METRIC
 
 	return encode_resource_metrics_header(request->sequence, response, response_cap,
