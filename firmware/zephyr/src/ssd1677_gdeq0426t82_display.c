@@ -226,6 +226,9 @@ static const uint8_t ssd1677_lut_4g[] = {
 
 struct packbits_reader {
 	struct fs_file_t file;
+	const uint8_t *buf;
+	uint32_t buf_len;
+	uint32_t buf_pos;
 	uint32_t compressed_left;
 	uint8_t repeat_value;
 	uint8_t repeat_remaining;
@@ -652,6 +655,14 @@ static int packbits_read_raw(struct packbits_reader *reader, uint8_t *out)
 {
 	if (reader->compressed_left == 0) {
 		return -EIO;
+	}
+	if (reader->buf != NULL) {
+		if (reader->buf_pos >= reader->buf_len) {
+			return -EIO;
+		}
+		*out = reader->buf[reader->buf_pos++];
+		reader->compressed_left--;
+		return 0;
 	}
 	ssize_t read = fs_read(&reader->file, out, 1);
 
@@ -1175,15 +1186,21 @@ static int decompress_binbook_gray2_to_fb(const struct sq_vm_runtime_binbook_pag
 	struct packbits_reader reader = {0};
 	int ret;
 
-	fs_file_t_init(&reader.file);
-	ret = fs_open(&reader.file, page->path, FS_O_READ);
-	if (ret != 0) {
-		return ret;
-	}
-	ret = fs_seek(&reader.file, (off_t)page->blob_offset, FS_SEEK_SET);
-	if (ret != 0) {
-		(void)fs_close(&reader.file);
-		return ret;
+	if (page->compressed_data != NULL && page->compressed_data_len > 0) {
+		reader.buf = page->compressed_data;
+		reader.buf_len = page->compressed_data_len;
+		reader.buf_pos = 0;
+	} else {
+		fs_file_t_init(&reader.file);
+		ret = fs_open(&reader.file, page->path, FS_O_READ);
+		if (ret != 0) {
+			return ret;
+		}
+		ret = fs_seek(&reader.file, (off_t)page->blob_offset, FS_SEEK_SET);
+		if (ret != 0) {
+			(void)fs_close(&reader.file);
+			return ret;
+		}
 	}
 	reader.compressed_left = page->compressed_size;
 	for (uint16_t y = 0; y < PANEL_HEIGHT; ++y) {
@@ -1196,7 +1213,9 @@ static int decompress_binbook_gray2_to_fb(const struct sq_vm_runtime_binbook_pag
 
 			ret = packbits_next_byte(&reader, &packed);
 			if (ret != 0) {
-				(void)fs_close(&reader.file);
+				if (reader.buf == NULL) {
+					(void)fs_close(&reader.file);
+				}
 				return ret;
 			}
 			active_mask = msb_plane ? sq_ssd1677_gray2_msb_active_mask(packed)
@@ -1216,7 +1235,9 @@ static int decompress_binbook_gray2_to_fb(const struct sq_vm_runtime_binbook_pag
 			}
 		}
 	}
-	(void)fs_close(&reader.file);
+	if (reader.buf == NULL) {
+		(void)fs_close(&reader.file);
+	}
 	return 0;
 }
 
@@ -1226,15 +1247,21 @@ static int decompress_binbook_gray2_bw_to_fb(const struct sq_vm_runtime_binbook_
 	struct packbits_reader reader = {0};
 	int ret;
 
-	fs_file_t_init(&reader.file);
-	ret = fs_open(&reader.file, page->path, FS_O_READ);
-	if (ret != 0) {
-		return ret;
-	}
-	ret = fs_seek(&reader.file, (off_t)page->blob_offset, FS_SEEK_SET);
-	if (ret != 0) {
-		(void)fs_close(&reader.file);
-		return ret;
+	if (page->compressed_data != NULL && page->compressed_data_len > 0) {
+		reader.buf = page->compressed_data;
+		reader.buf_len = page->compressed_data_len;
+		reader.buf_pos = 0;
+	} else {
+		fs_file_t_init(&reader.file);
+		ret = fs_open(&reader.file, page->path, FS_O_READ);
+		if (ret != 0) {
+			return ret;
+		}
+		ret = fs_seek(&reader.file, (off_t)page->blob_offset, FS_SEEK_SET);
+		if (ret != 0) {
+			(void)fs_close(&reader.file);
+			return ret;
+		}
 	}
 	reader.compressed_left = page->compressed_size;
 	for (uint16_t y = 0; y < PANEL_HEIGHT; ++y) {
@@ -1247,7 +1274,9 @@ static int decompress_binbook_gray2_bw_to_fb(const struct sq_vm_runtime_binbook_
 
 			ret = packbits_next_byte(&reader, &packed);
 			if (ret != 0) {
-				(void)fs_close(&reader.file);
+				if (reader.buf == NULL) {
+					(void)fs_close(&reader.file);
+				}
 				return ret;
 			}
 			active_mask = ordered_dither ?
@@ -1269,7 +1298,9 @@ static int decompress_binbook_gray2_bw_to_fb(const struct sq_vm_runtime_binbook_
 			}
 		}
 	}
-	(void)fs_close(&reader.file);
+	if (reader.buf == NULL) {
+		(void)fs_close(&reader.file);
+	}
 	return 0;
 }
 
@@ -1282,9 +1313,18 @@ void sq_display_backend_rasterize_binbook(const struct sq_vm_runtime_binbook_pag
 	    page->compression_method == BINBOOK_COMPRESSION_RLE_PACKBITS &&
 	    page->stored_width == PANEL_WIDTH && page->stored_height == PANEL_HEIGHT &&
 	    page->uncompressed_size == BINBOOK_GRAY2_PAGE_BYTES && page->compressed_size > 0) {
+		sq_debug_log_append("%lld:decompress_start:cs=%lu", (long long)k_uptime_get(),
+				    (unsigned long)page->compressed_size);
 		(void)decompress_binbook_gray2_to_fb(page, true);
+		sq_debug_log_append("%lld:decompress_msb_done", (long long)k_uptime_get());
 		(void)decompress_binbook_gray2_to_fb(page, false);
+		sq_debug_log_append("%lld:decompress_lsb_done", (long long)k_uptime_get());
 		(void)decompress_binbook_gray2_bw_to_fb(page, true);
+		sq_debug_log_append("%lld:decompress_bw_done", (long long)k_uptime_get());
+		/* Free compressed buffer if allocated */
+		if ((void *)page->compressed_data != NULL) {
+			k_free((void *)page->compressed_data);
+		}
 	}
 }
 

@@ -658,6 +658,23 @@ int32_t runtime_binbook_read_page(void *user_data, SqvmHandle book, int32_t page
 	runtime->drawable.page.uncompressed_size = meta.uncompressed_size;
 	runtime->drawable.page.stored_width = meta.stored_width;
 	runtime->drawable.page.stored_height = meta.stored_height;
+
+	/* Allocate compressed data buffer for fast decompression */
+	void *buf = k_malloc(meta.compressed_size);
+
+	if (buf != NULL) {
+		int read_err = binbook_read_exact(&binbook_open_file.file,
+						  meta.blob_offset,
+						  (uint8_t *)buf, meta.compressed_size);
+
+		if (read_err == 0) {
+			runtime->drawable.page.compressed_data = (const uint8_t *)buf;
+			runtime->drawable.page.compressed_data_len = meta.compressed_size;
+		} else {
+			k_free(buf);
+		}
+	}
+
 	binbook_read_page_us_acc += k_cyc_to_us_floor64(k_cycle_get_64() - t0);
 	out->ok = true;
 	binbook_set_error(NULL, &out->error, &out->error_len);
