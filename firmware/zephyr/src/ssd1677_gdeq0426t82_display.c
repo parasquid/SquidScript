@@ -773,18 +773,29 @@ static int stream_binbook_gray2_plane(const struct sq_vm_runtime_binbook_page *p
 static int stream_binbook_gray2_page(const struct sq_vm_runtime_binbook_page *page)
 {
 	int ret;
-	bool per_plane = page->per_plane_compression;
+	bool per_plane;
 	uint8_t method;
 
 	if (page == NULL || page->path[0] == '\0' ||
-	    page->pixel_format != BINBOOK_PIXEL_FORMAT_GRAY2_PACKED ||
 	    page->stored_width != PANEL_WIDTH || page->stored_height != PANEL_HEIGHT) {
+		return -ENOTSUP;
+	}
+	if (binbook_page_is_gray1(page)) {
+		per_plane = page->per_plane_compression;
+		method = per_plane ? page->plane_compression[2] : page->compression_method;
+		if (method != BINBOOK_COMPRESSION_RLE_PACKBITS) {
+			return -ENOTSUP;
+		}
+		return stream_binbook_gray2_bw_page(page, false);
+	}
+	if (page->pixel_format != BINBOOK_PIXEL_FORMAT_GRAY2_PACKED) {
 		return -ENOTSUP;
 	}
 	if (!(page->plane_bitmap & BINBOOK_PLANE_MSB) ||
 	    !(page->plane_bitmap & BINBOOK_PLANE_LSB)) {
 		return -ENOTSUP;
 	}
+	per_plane = page->per_plane_compression;
 	method = per_plane ? page->plane_compression[0] : page->compression_method;
 	if (method != BINBOOK_COMPRESSION_RLE_PACKBITS) {
 		return -ENOTSUP;
@@ -799,18 +810,31 @@ static int stream_binbook_gray2_page(const struct sq_vm_runtime_binbook_page *pa
 					  SSD1677_CMD_WRITE_RAM, false);
 }
 
+static bool binbook_page_is_gray1(const struct sq_vm_runtime_binbook_page *page)
+{
+	return page != NULL && page->pixel_format == BINBOOK_PIXEL_FORMAT_GRAY1_PACKED &&
+	       (page->plane_bitmap & BINBOOK_PLANE_BW);
+}
+
 static int validate_binbook_gray2_page(const struct sq_vm_runtime_binbook_page *page)
 {
 	if (page == NULL || page->path[0] == '\0' ||
-	    page->pixel_format != BINBOOK_PIXEL_FORMAT_GRAY2_PACKED ||
 	    page->stored_width != PANEL_WIDTH || page->stored_height != PANEL_HEIGHT) {
+		return -ENOTSUP;
+	}
+	if (page->pixel_format == BINBOOK_PIXEL_FORMAT_GRAY1_PACKED) {
+		if (!(page->plane_bitmap & BINBOOK_PLANE_BW)) {
+			return -ENOTSUP;
+		}
+		return 0;
+	}
+	if (page->pixel_format != BINBOOK_PIXEL_FORMAT_GRAY2_PACKED) {
 		return -ENOTSUP;
 	}
 	if (!(page->plane_bitmap & BINBOOK_PLANE_MSB) ||
 	    !(page->plane_bitmap & BINBOOK_PLANE_LSB)) {
 		return -ENOTSUP;
 	}
-	return 0;
 	return 0;
 }
 
@@ -1335,8 +1359,24 @@ void sq_display_backend_rasterize_binbook(const struct sq_vm_runtime_binbook_pag
 	if (page == NULL || page->path[0] == '\0') {
 		return;
 	}
-	if (page->pixel_format != BINBOOK_PIXEL_FORMAT_GRAY2_PACKED ||
-	    page->stored_width != PANEL_WIDTH || page->stored_height != PANEL_HEIGHT) {
+	if (page->stored_width != PANEL_WIDTH || page->stored_height != PANEL_HEIGHT) {
+		return;
+	}
+	if (binbook_page_is_gray1(page)) {
+		per_plane = page->per_plane_compression;
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
+		sq_debug_log_append("%lld:decompress_start_gray1:bitmap=0x%02x",
+				    (long long)k_uptime_get(), (unsigned)page->plane_bitmap);
+#endif
+		method = per_plane ? page->plane_compression[2] : page->compression_method;
+		(void)decompress_binbook_gray2_bw_to_fb(page, page->offset_plane_2,
+							page->size_plane_2, false);
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
+		sq_debug_log_append("%lld:decompress_bw_done", (long long)k_uptime_get());
+#endif
+		return;
+	}
+	if (page->pixel_format != BINBOOK_PIXEL_FORMAT_GRAY2_PACKED) {
 		return;
 	}
 	per_plane = page->per_plane_compression;
