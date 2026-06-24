@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "debug_log.h"
+
 static int copy_app_id_bytes(char *out, size_t out_cap, const uint8_t *app, size_t app_len)
 {
 	if (out == NULL || out_cap == 0 || app == NULL || app_len == 0 || app_len >= out_cap) {
@@ -311,10 +313,19 @@ int sq_app_lifecycle_next_step(struct sq_vm_runtime *runtime, const char *due_ap
 	}
 	memset(out, 0, sizeof(*out));
 
+	if (runtime->lifecycle_phase != SQ_VM_RUNTIME_LIFECYCLE_IDLE ||
+	    runtime->dispatch_exited) {
+		sq_debug_log_append("%lld:ls_enter:ph=%d:ex=%d:arm=%d:stk=%zu",
+			(long long)k_uptime_get(), runtime->lifecycle_phase, runtime->dispatch_exited,
+			runtime->arm_phase, runtime->return_stack_count);
+	}
+
 	if (runtime->dispatch_exited &&
 	    runtime->lifecycle_phase == SQ_VM_RUNTIME_LIFECYCLE_IDLE) {
 		runtime->dispatch_exited = false;
 		runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_RETURN_REQUESTED;
+		sq_debug_log_append("%lld:ls_exit_ret:cur=%s:stk=%zu",
+			(long long)k_uptime_get(), runtime->current_app, runtime->return_stack_count);
 	}
 
 	switch (runtime->lifecycle_phase) {
@@ -331,6 +342,8 @@ int sq_app_lifecycle_next_step(struct sq_vm_runtime *runtime, const char *due_ap
 
 	case SQ_VM_RUNTIME_LIFECYCLE_EXIT_FOR_LAUNCH:
 		runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_IDLE;
+		sq_debug_log_append("%lld:ls_exit4launch:cur=%s:tgt=%s",
+			(long long)k_uptime_get(), runtime->current_app, runtime->lifecycle_target_app);
 		result = sq_app_lifecycle_push_return(runtime, runtime->current_app);
 		if (result != 0) {
 			memset(runtime->lifecycle_target_app, 0,
@@ -350,12 +363,17 @@ int sq_app_lifecycle_next_step(struct sq_vm_runtime *runtime, const char *due_ap
 		return result;
 
 	case SQ_VM_RUNTIME_LIFECYCLE_LAUNCH_REQUESTED:
+		sq_debug_log_append("%lld:ls_launch:tgt=%s:cur=%s:stk=%zu",
+			(long long)k_uptime_get(), runtime->lifecycle_target_app, runtime->current_app,
+			runtime->return_stack_count);
 		if (runtime->current_app[0] != '\0') {
 			runtime->lifecycle_phase = SQ_VM_RUNTIME_LIFECYCLE_EXIT_FOR_LAUNCH;
 			return set_step_start(out, runtime->current_app, "app.exit", false,
 					      runtime->current_app_temp);
 		}
 		if (!app_id_is_main(runtime->lifecycle_target_app)) {
+			sq_debug_log_append("%lld:ls_push_main",
+				(long long)k_uptime_get());
 			result = sq_app_lifecycle_push_return(runtime, "main");
 			if (result != 0) {
 				return result;
@@ -380,6 +398,9 @@ int sq_app_lifecycle_next_step(struct sq_vm_runtime *runtime, const char *due_ap
 		if (result != 0) {
 			return result;
 		}
+		sq_debug_log_append("%lld:ls_pop:app=%s:stk=%zu",
+			(long long)k_uptime_get(), runtime->lifecycle_target_app,
+			runtime->return_stack_count);
 		result = set_start_reason(runtime, "return");
 		if (result != 0) {
 			return result;

@@ -1673,6 +1673,16 @@ static int start_installed_app_bytes(const struct sq_device_protocol_context *co
 	if (app_id_len >= SQ_APP_STORE_APP_ID_MAX) {
 		return -EINVAL;
 	}
+
+	char app_id_str[SQ_APP_STORE_APP_ID_MAX];
+	if (app_id_len < sizeof(app_id_str)) {
+		memcpy(app_id_str, app_id, app_id_len);
+		app_id_str[app_id_len] = '\0';
+	} else {
+		app_id_str[0] = '\0';
+	}
+	sq_debug_log_append("%lld:start_installed_app:app_id=%s:set_current=%d",
+		(long long)k_uptime_get(), app_id_str, set_current);
 	current_app_changed = set_current &&
 			      (context->runtime->current_app_temp ||
 			       strlen(context->runtime->current_app) != app_id_len ||
@@ -1708,6 +1718,10 @@ static int start_installed_app_bytes(const struct sq_device_protocol_context *co
 		(void)sq_vm_runtime_record_device_error(context->runtime, l);
 		return result;
 	}
+	sq_debug_log_append("%lld:start_installed_storage:sqbc_path=%s:session=%zu",
+		(long long)k_uptime_get(),
+		context->launch_storage->fs_storage.sqbc_path,
+		context->launch_storage->fs_storage.sqbc_session_id);
 	context->runtime->job_backend = sq_app_store_vm_storage_backend(context->launch_storage);
 	if (set_current) {
 		strncpy(context->runtime->lifecycle_previous_app, context->runtime->current_app,

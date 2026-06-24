@@ -1,5 +1,6 @@
 #include "vm_runtime_internal.h"
 
+#include "debug_log.h"
 #include "squidscript_target_defaults.h"
 
 struct sq_vm_runtime_binding_scratch {
@@ -823,16 +824,27 @@ int __noinline sq_vm_runtime_prepare_app_start(struct sq_vm_runtime *runtime)
 	if (runtime == NULL) {
 		return -EINVAL;
 	}
+	sq_debug_log_append("%lld:prepare clear_bindings", (long long)k_uptime_get());
 	runtime_clear_active_bindings(runtime);
+	sq_debug_log_append("%lld:prepare apply_indicator", (long long)k_uptime_get());
 	result = sq_vm_runtime_apply_target_default_indicator_binding(runtime);
+	sq_debug_log_append("%lld:prepare indicator result=%d", (long long)k_uptime_get(), result);
 	if (result != 0) {
 		return result;
 	}
+	sq_debug_log_append("%lld:prepare apply_saved_config", (long long)k_uptime_get());
 	result = sq_vm_runtime_apply_saved_device_config(runtime);
+	sq_debug_log_append("%lld:prepare saved_config result=%d", (long long)k_uptime_get(), result);
 	if (result != 0) {
 		return result;
 	}
-	return sq_vm_runtime_apply_device_bindings(runtime);
+	sq_debug_log_append("%lld:prepare apply_device_bindings backend=%d current_app=%d",
+			   (long long)k_uptime_get(),
+			   runtime->backend != NULL ? 1 : 0,
+			   runtime->current_app[0] != '\0' ? 1 : 0);
+	result = sq_vm_runtime_apply_device_bindings(runtime);
+	sq_debug_log_append("%lld:prepare device_bindings result=%d", (long long)k_uptime_get(), result);
+	return result;
 }
 
 int32_t runtime_device_config_load(void *user_data, const uint8_t *source,
