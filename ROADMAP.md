@@ -8,6 +8,19 @@ Speculative ideas that are not currently actionable belong in `ICEBOX.md`.
 
 ## Current Track: Canonical Zephyr Firmware
 
+- Add native_sim dummy hardware mocks (indicator GPIO, display, SPI SD) so
+  protocol tests can assert on hardware interactions without real devices.
+  Currently the fallback app's `service.indicator.breathe()` returns -ENODEV
+  on native_sim, crashing the VM dispatch. Dummy hardware would succeed as
+  no-ops and allow tests to verify call sequences, pin assignments, and state
+  transitions.
+- Refactor protocol tests to use a proper native_sim target with mocked
+  hardware instead of repurposing `esp32c3-super-mini.target.json`. The
+  current approach leaks target-specific defaults (indicator GPIO, display
+  SPI) into tests that should be hardware-agnostic. A dedicated native_sim
+  target with stub hardware bindings would let tests control exactly which
+  devices are present and avoid false failures from missing target defaults.
+
 Goal: keep Zephyr as the canonical firmware architecture while Rust remains
 authoritative for compiler, SQBC tooling, and VM semantics.
 

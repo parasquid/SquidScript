@@ -121,6 +121,11 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 
 ## Lessons Learned
 
+- When debugging, prefer empirical evidence over code analysis. Add printk,
+  eprintln!, or similar diagnostics and run the code to see what actually
+  happens, rather than tracing through source files trying to predict behavior.
+  Code analysis is useful for generating hypotheses; instrumenting and running
+  is how you confirm or refute them.
 - When tests fail after a format change, determine whether the tests are stale
   (written for the old format) or whether the code is wrong before choosing a
   fix. The user explicitly asked for this discipline: "don't work around tests
@@ -455,6 +460,17 @@ venv paths, and the hardware-test inventory live in
 `docs/standards/firmware-tooling.md` — read it when doing firmware or hardware
 work. The always-fire disciplines stay here:
 
+- **DO NOT run firmware builds, Zephyr tests, hardware tests, or serial
+  commands in the sandbox. They will fail or waste time.** Run them outside
+  the sandbox immediately. If you find yourself typing a firmware/zephyr/hardware
+  command into the sandbox, STOP and escalate instead.
+
+- **NEVER ask the user to run a command outside the sandbox.** The agent has
+  the ability to run commands on the host — use it. Asking the user to run
+  `scripts/zephyr-test-protocol.sh` or any other host-only command is
+  unacceptable latency. Just run it. The user's time is for reviewing results,
+  not executing agent commands.
+
 - Treat known sandbox limitations as instructions to use escalated execution
   immediately, not as hypotheses to re-test. If AGENTS.md, saved memory, or the
   current conversation identifies a command category as sandbox-hostile, do not
@@ -468,6 +484,16 @@ work. The always-fire disciplines stay here:
   `docs/standards/firmware-tooling.md` as host-only, and
   commands that need host-visible USB devices, keyrings, sockets, or caches
   outside the workspace. Do not waste a turn on an expected sandbox failure.
+- **When in doubt, escalate.** If you are unsure whether a command needs
+  escalated execution, assume it does and run it outside the sandbox. The cost
+  of unnecessary escalation is one tool call. The cost of a wasted sandbox
+  failure is a full turn plus user frustration. Never surface a sandbox failure
+  to the user as a problem to solve — just rerun it with escalated execution.
+  This is especially true for:
+  `west build`, `west twister`, `west flash`, `scripts/zephyr-test-protocol.sh`,
+  `cargo run -p squidc -- hardware test`, `cargo run -p squidc -- target build`,
+  and any command that touches `/dev/ttyACM*`, `/dev/ttyUSB*`, or firmware
+  build directories.
 - Never run hardware scripts or serial commands in parallel against the same
   physical target. A single USB serial device is a shared mutable resource:
   concurrent flash, install, hardware-test, monitor, REPL, or `squidc device`
