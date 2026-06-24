@@ -158,6 +158,7 @@ enum DeviceCommands {
     DisplayWindowProbe(DeviceDisplayWindowProbeArgs),
     ContentPut(DeviceContentPutArgs),
     ContentCheck(DeviceContentCheckArgs),
+    ContentDelete(DeviceContentDeleteArgs),
     BlePut(DeviceBlePutArgs),
     WifiProfile(DeviceWifiProfileArgs),
     RuntimeCap(DeviceRuntimeCapArgs),
@@ -304,6 +305,13 @@ struct DeviceContentCheckArgs {
     size: u64,
     #[arg(long)]
     crc32: String,
+}
+
+#[derive(Args, Debug)]
+struct DeviceContentDeleteArgs {
+    #[command(flatten)]
+    device: DeviceOnlyOptions,
+    name: String,
 }
 
 #[derive(Args, Debug)]
@@ -543,6 +551,7 @@ fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String>
             DeviceCommands::DisplayWindowProbe(args) => display_window_probe(args, human),
             DeviceCommands::ContentPut(args) => content_put(args, human),
             DeviceCommands::ContentCheck(args) => content_check(args, human),
+            DeviceCommands::ContentDelete(args) => content_delete(args, human),
             DeviceCommands::BlePut(args) => device_ble_put(args, human),
             DeviceCommands::WifiProfile(args) => wifi_profile(args, human),
             DeviceCommands::RuntimeCap(args) => runtime_cap(args, human),
@@ -982,6 +991,25 @@ fn content_check(args: DeviceContentCheckArgs, human: bool) -> Result<Value, Str
         "name": result.name,
         "size": result.size,
         "crc32": format!("{:08x}", result.crc32),
+    }))
+}
+
+fn content_delete(args: DeviceContentDeleteArgs, human: bool) -> Result<Value, String> {
+    if !is_safe_content_name(&args.name) {
+        return Err(format!(
+            "content name must be a simple filename: {}",
+            args.name
+        ));
+    }
+    let port = resolve_port(&args.device)?;
+    let mut device = SerialDevice::open(&port)?;
+    let name = device.content_delete(&args.name)?;
+    if human {
+        println!("content-deleted {name}");
+    }
+    Ok(json!({
+        "port": port,
+        "name": name,
     }))
 }
 

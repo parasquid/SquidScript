@@ -10,7 +10,8 @@ use std::{
 use squid_device_protocol::{
     app_install_begin_request, app_install_chunk_request_with_ack, app_install_commit_request,
     app_launch_request, app_list_entries, app_list_request, content_check_request,
-    content_check_result, content_install_begin_request, content_install_chunk_request_with_ack,
+    content_check_result, content_delete_request, content_delete_result,
+    content_install_begin_request, content_install_chunk_request_with_ack,
     content_install_commit_request, decode_frame_from_stream, display_window_probe_request,
     drawlog_get_request, drawlog_lines, encode_frame, error_lines, errors_get_request,
     debug_log_get_request, debug_log_lines,
@@ -203,6 +204,15 @@ impl SerialDevice {
         let frame = self.send_protocol_request(&content_check_request(91, name))?;
         content_check_result(&frame)
             .ok_or_else(|| "not a successful content check response".to_string())
+    }
+
+    pub fn content_delete(&mut self, name: &str) -> Result<String, String> {
+        if !is_safe_content_name(name) {
+            return Err(format!("invalid content name: {name}"));
+        }
+        let frame = self.send_protocol_request(&content_delete_request(93, name))?;
+        content_delete_result(&frame)
+            .ok_or_else(|| "not a successful content delete response".to_string())
     }
 
     pub fn run_temp_app(&mut self, app_id: &str, bytes: &[u8]) -> Result<String, String> {

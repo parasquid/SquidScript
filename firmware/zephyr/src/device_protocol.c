@@ -1446,6 +1446,46 @@ static int content_check_response(const struct sq_protocol_request *request,
 	return SQ_PROTOCOL_OK;
 }
 
+static int content_delete_response(const struct sq_protocol_request *request,
+				   const uint8_t *request_bytes, size_t request_len,
+				   uint8_t *response, size_t response_cap, size_t *response_len)
+{
+	char name[SQ_DEVICE_CONTENT_NAME_BYTES];
+	char path[SQ_DEVICE_CONTENT_PATH_BYTES];
+	uint8_t *payload;
+	size_t payload_len = 0;
+	int result;
+
+	result = parse_content_check_request(request_bytes, request_len, name, sizeof(name));
+	if (result != 0) {
+		return result;
+	}
+	result = content_final_path(name, path, sizeof(path));
+	if (result != 0) {
+		return result;
+	}
+	result = fs_unlink_if_exists(path);
+	if (result != 0) {
+		return result;
+	}
+	payload = &response[SQ_PROTOCOL_HEADER_LEN];
+	result = append_string_field_payload(payload, response_cap - SQ_PROTOCOL_HEADER_LEN,
+					     &payload_len, 1u, name);
+	if (result != SQ_PROTOCOL_OK) {
+		return result;
+	}
+	memcpy(response, "SQDP", 4);
+	response[4] = SQ_FRAME_RESPONSE;
+	response[5] = SQ_OPCODE_CONTENT_DELETE;
+	response[6] = SQ_STATUS_OK;
+	response[7] = 0;
+	write_u32_le_device(&response[8], request->sequence);
+	write_u32_le_device(&response[12], (uint32_t)payload_len);
+	write_u32_le_device(&response[16], sq_protocol_crc32(payload, payload_len));
+	*response_len = SQ_PROTOCOL_HEADER_LEN + payload_len;
+	return SQ_PROTOCOL_OK;
+}
+
 struct temp_storage_backend {
 	struct sq_vm_fs_storage fs_storage;
 	char state_path[SQ_DEVICE_STAGING_PATH_BYTES];
@@ -3656,6 +3696,10 @@ int sq_device_protocol_handle_frame(const uint8_t *request, size_t request_len,
 	case SQ_OPCODE_CONTENT_CHECK:
 		result = content_check_response(&frame, request, request_len, response, response_cap,
 						response_len);
+		break;
+	case SQ_OPCODE_CONTENT_DELETE:
+		result = content_delete_response(&frame, request, request_len, response, response_cap,
+						 response_len);
 		break;
 	case SQ_OPCODE_TEMP_RUN_COMMIT:
 		result = commit_temp_run(&frame, request, request_len, context, response,

@@ -74,6 +74,7 @@ pub enum Opcode {
     ContentInstallCommit = 90,
     ContentCheck = 91,
     DebugLogGet = 92,
+    ContentDelete = 93,
 }
 
 impl Opcode {
@@ -114,6 +115,7 @@ impl Opcode {
             "contentinstallcommit" => Ok(Self::ContentInstallCommit),
             "contentcheck" => Ok(Self::ContentCheck),
             "debuglogget" => Ok(Self::DebugLogGet),
+            "contentdelete" => Ok(Self::ContentDelete),
             _ => Err(format!("unknown protocol opcode: {name}")),
         }
     }
@@ -158,6 +160,7 @@ impl TryFrom<u8> for Opcode {
             90 => Ok(Self::ContentInstallCommit),
             91 => Ok(Self::ContentCheck),
             92 => Ok(Self::DebugLogGet),
+            93 => Ok(Self::ContentDelete),
             _ => Err(DecodeError::UnknownOpcode(value)),
         }
     }
@@ -1587,6 +1590,28 @@ pub fn content_check_result(frame: &Frame) -> Option<ContentCheckResult> {
 }
 
 #[cfg(feature = "alloc")]
+pub fn content_delete_request(sequence: u32, name: impl Into<String>) -> Frame {
+    Frame::request(Opcode::ContentDelete, sequence, vec![Field::string(1, name)])
+}
+
+#[cfg(feature = "alloc")]
+pub fn content_delete_result(frame: &Frame) -> Option<String> {
+    if frame.kind != FrameKind::Response
+        || frame.opcode != Opcode::ContentDelete
+        || frame.status != Status::Ok
+    {
+        return None;
+    }
+
+    for field in &frame.fields {
+        if let (1, FieldValue::String(value)) = (field.tag, &field.value) {
+            return Some(value.clone());
+        }
+    }
+    None
+}
+
+#[cfg(feature = "alloc")]
 pub fn protocol_error(frame: &Frame) -> Option<ProtocolError> {
     if frame.kind != FrameKind::Response || frame.status != Status::Error {
         return None;
@@ -2455,8 +2480,8 @@ fn parse_hex_bytes(value: &str) -> Result<Vec<u8>, String> {
 mod tests {
     use super::{
         app_install_chunk_request_with_ack, content_check_request, content_check_result,
-        display_window_probe_request, hello_identity, Field, FieldValue, Frame, Opcode, Status,
-        TransferCapabilities,
+        content_delete_request, content_delete_result, display_window_probe_request,
+        hello_identity, Field, FieldValue, Frame, Opcode, Status, TransferCapabilities,
     };
 
     #[test]
@@ -2537,5 +2562,27 @@ mod tests {
 
         assert_eq!(request.opcode, Opcode::DisplayWindowProbe);
         assert_eq!(request.fields, vec![Field::string(1, "corners")]);
+    }
+
+    #[test]
+    fn content_delete_request_and_response() {
+        let request = content_delete_request(93, "old-book.binbook");
+
+        assert_eq!(request.opcode, Opcode::ContentDelete);
+        assert_eq!(request.fields, vec![Field::string(1, "old-book.binbook")]);
+
+        let response = Frame::response(
+            Opcode::ContentDelete,
+            Status::Ok,
+            93,
+            vec![Field::string(1, "old-book.binbook")],
+        );
+
+        let deleted = content_delete_result(&response).expect("content delete response decodes");
+        assert_eq!(deleted, "old-book.binbook");
+
+        let wrong_opcode =
+            Frame::response(Opcode::ContentCheck, Status::Ok, 93, Vec::new());
+        assert!(content_delete_result(&wrong_opcode).is_none());
     }
 }
