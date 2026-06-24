@@ -1,6 +1,7 @@
 #include "vm_runtime_internal.h"
 
 #include "app_store.h"
+#include "debug_log.h"
 #include "sq_errno.h"
 
 #define BINBOOK_HEADER_SIZE 256U
@@ -354,6 +355,10 @@ int32_t runtime_binbook_open(void *user_data, const uint8_t *path, size_t path_l
 	result = binbook_open_resource(runtime, path, path_len, &binbook_open_file.file,
 				       resolved_path, sizeof(resolved_path),
 				       binbook_open_file.path, &reused);
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
+	sq_debug_log_append("%lld:binbook_open result=%d reused=%d path=%.*s",
+			   (long long)k_uptime_get(), result, (int)reused, (int)path_len, path);
+#endif
 	if (result != 0) {
 		char line[SQ_VM_RUNTIME_DEVICE_ERROR_LEN];
 
@@ -400,6 +405,12 @@ int32_t runtime_binbook_open(void *user_data, const uint8_t *path, size_t path_l
 	runtime->binbook.nav_count = nav_index.record_count;
 	runtime->binbook.chapter_count = chapter_index.record_count;
 	memset(&runtime->drawable, 0, sizeof(runtime->drawable));
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
+	sq_debug_log_append("%lld:binbook_open OK pages=%u page_idx_off=%llu page_data_off=%llu entry_size=%u",
+			   (long long)k_uptime_get(), (unsigned)page_index.record_count,
+			   (unsigned long long)page_index.offset,
+			   (unsigned long long)page_data.offset, (unsigned)page_index.entry_size);
+#endif
 	binbook_open_us_acc += k_cyc_to_us_floor64(k_cycle_get_64() - t0);
 	out->ok = true;
 	binbook_set_error(NULL, &out->error, &out->error_len);
@@ -603,7 +614,7 @@ int32_t runtime_binbook_chapter(void *user_data, SqvmHandle book, int32_t index,
 	return 0;
 }
 
-int32_t runtime_binbook_read_page(void *user_data, SqvmHandle book, int32_t page_index,
+	int32_t runtime_binbook_read_page(void *user_data, SqvmHandle book, int32_t page_index,
 				  SqvmBinBookReadPageResult *out)
 {
 	struct sq_vm_runtime *runtime = user_data;
@@ -611,6 +622,11 @@ int32_t runtime_binbook_read_page(void *user_data, SqvmHandle book, int32_t page
 	struct rust_binbook_page_meta meta;
 	int result;
 	uint64_t t0 = k_cycle_get_64();
+
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
+	sq_debug_log_append("%lld:binbook_read_page page_index=%d",
+			   (long long)k_uptime_get(), (int)page_index);
+#endif
 
 	if (out == NULL) {
 		return -EINVAL;

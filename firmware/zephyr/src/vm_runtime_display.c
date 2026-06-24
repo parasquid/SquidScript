@@ -1,4 +1,5 @@
 #include "vm_runtime_internal.h"
+#include "debug_log.h"
 #include "vm_runtime_display_backend.h"
 
 #ifndef CONFIG_SQ_TARGET_DISPLAY_LOGICAL_WIDTH
@@ -145,6 +146,16 @@ void runtime_display_draw(void *user_data, SqvmHandle drawable,
 		(void)sq_vm_runtime_record_drawlog(runtime, line);
 	}
 	sq_display_backend_rasterize_binbook(&runtime->drawable.page);
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
+	sq_debug_log_append("%lld:display_draw rasterize bitmap=0x%02x method=%d planes=%u/%u/%u/%u",
+			   (long long)k_uptime_get(),
+			   (unsigned)runtime->drawable.page.plane_bitmap,
+			   (int)runtime->drawable.page.compression_method,
+			   (unsigned)runtime->drawable.page.size_plane_0,
+			   (unsigned)runtime->drawable.page.size_plane_1,
+			   (unsigned)runtime->drawable.page.size_plane_2,
+			   (unsigned)runtime->drawable.page.size_plane_3);
+#endif
 	runtime->display_needs_flush = true;
 	runtime->display_dirty = true;
 }
