@@ -1,0 +1,5 @@
+app "auto-exit-test"
+
+event.on("app.start") {
+  app.exit()
+}
