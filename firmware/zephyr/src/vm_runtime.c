@@ -620,7 +620,9 @@ static void runtime_run_job(struct sq_vm_runtime *runtime)
 		return;
 	}
 	if (runtime->start_apply_bindings) {
+		sq_debug_log_append("%lld:prepare_app_start BEGIN", (long long)k_uptime_get());
 		result = sq_vm_runtime_prepare_app_start(runtime);
+		sq_debug_log_append("%lld:prepare_app_start result=%d", (long long)k_uptime_get(), result);
 		runtime->start_apply_bindings = false;
 	}
 	if (result != 0) {
@@ -637,9 +639,15 @@ static void runtime_run_job(struct sq_vm_runtime *runtime)
 	if (result == 0 && !complete) {
 		return;
 	}
+	sq_debug_log_append("%lld:dispatch_slice result=%d complete=%d event=%s",
+			   (long long)k_uptime_get(), result, (int)complete,
+			   runtime->event);
 	sq_app_lifecycle_cancel_pending_after_dispatch_error(runtime, result);
 	runtime->dispatch_exited = result == 0 && runtime->result.exited;
 	runtime->status = result == 0 ? SQ_VM_RUNTIME_COMPLETE : SQ_VM_RUNTIME_ERROR;
+	if (complete) {
+		runtime->backend = NULL;
+	}
 }
 
 static void runtime_worker_thread(void *arg1, void *arg2, void *arg3)
@@ -1047,9 +1055,11 @@ int sq_vm_runtime_dispatch_slice(struct sq_vm_runtime *runtime,
 		runtime->pending_event_payload = NULL;
 		runtime->pending_event_payload_count = 0;
 		if (status != SQVM_STATUS_OK) {
+			sq_debug_log_append("%lld:dispatch_start FAILED status=%d", (long long)k_uptime_get(), (int)status);
 			runtime_finish_dispatch_metrics(runtime, runtime->dispatch_start_cycles);
 			return sq_vm_runtime_status_to_errno(status);
 		}
+		sq_debug_log_append("%lld:dispatch_start OK event=%s", (long long)k_uptime_get(), event);
 		runtime->dispatch_started = true;
 	} else {
 		runtime->backend = backend;
@@ -1060,6 +1070,10 @@ int sq_vm_runtime_dispatch_slice(struct sq_vm_runtime *runtime,
 		int transfer_result =
 			sq_vm_runtime_transfer_acquire(runtime, SQ_VM_RUNTIME_TRANSFER_COMPLETION);
 		if (transfer_result != 0) {
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
+			sq_debug_log_append("%lld:storage transfer_acquire FAILED code=%d",
+					   (long long)k_uptime_get(), transfer_result);
+#endif
 			runtime_finish_dispatch_metrics(runtime, runtime->dispatch_start_cycles);
 			return transfer_result;
 		}
@@ -1083,6 +1097,10 @@ int sq_vm_runtime_dispatch_slice(struct sq_vm_runtime *runtime,
 						      &runtime->transfer.completion,
 						      &runtime->result);
 		if (status != SQVM_STATUS_OK) {
+#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)
+			sq_debug_log_append("%lld:resume_storage FAILED status=%d",
+					   (long long)k_uptime_get(), (int)status);
+#endif
 			runtime_finish_dispatch_metrics(runtime, runtime->dispatch_start_cycles);
 			return sq_vm_runtime_status_to_errno(status);
 		}
@@ -1100,6 +1118,11 @@ int sq_vm_runtime_dispatch_slice(struct sq_vm_runtime *runtime,
 	}
 	runtime_finish_dispatch_metrics(runtime, runtime->dispatch_start_cycles);
 	*complete = runtime->result.outcome == SQVM_DISPATCH_COMPLETE;
+	if (!*complete) {
+		sq_debug_log_append("%lld:dispatch incomplete outcome=%d exited=%d status=%d",
+				   (long long)k_uptime_get(), (int)runtime->result.outcome,
+				   (int)runtime->result.exited, (int)runtime->status);
+	}
 	return *complete ? 0 : -EIO;
 }
 
