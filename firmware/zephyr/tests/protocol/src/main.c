@@ -950,6 +950,197 @@ static void build_test_binbook(uint8_t out[TEST_BINBOOK_LEN])
 	out[TEST_BINBOOK_PAGE_DATA_OFFSET + 7] = 0xff;
 }
 
+#define TEST_BINBOOK_GRAY1_PAGE_DATA_LEN 48000U
+#define TEST_BINBOOK_GRAY1_LEN \
+	(TEST_BINBOOK_PAGE_DATA_OFFSET + TEST_BINBOOK_GRAY1_PAGE_DATA_LEN)
+
+static void build_test_binbook_gray1(uint8_t out[TEST_BINBOOK_GRAY1_LEN])
+{
+	memset(out, 0, TEST_BINBOOK_GRAY1_LEN);
+	memcpy(&out[0], "BINBOOK", 7);
+	test_write_le16(&out[8], 0);
+	test_write_le16(&out[10], 0);
+	test_write_le16(&out[12], TEST_BINBOOK_HEADER_SIZE);
+	test_write_le64(&out[16], TEST_BINBOOK_GRAY1_LEN);
+	test_write_le64(&out[24], TEST_BINBOOK_HEADER_SIZE);
+	test_write_le32(&out[32], TEST_BINBOOK_SECTION_COUNT * TEST_BINBOOK_SECTION_ENTRY_SIZE);
+	test_write_le16(&out[36], TEST_BINBOOK_SECTION_ENTRY_SIZE);
+	test_write_le16(&out[38], TEST_BINBOOK_SECTION_COUNT);
+	test_write_le16(&out[40], TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE);
+	test_write_le16(&out[42], TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE);
+	test_write_le64(&out[44], TEST_BINBOOK_PAGE_DATA_OFFSET);
+	test_write_le64(&out[52], TEST_BINBOOK_GRAY1_PAGE_DATA_LEN);
+
+	test_write_binbook_section(&out[TEST_BINBOOK_HEADER_SIZE], 1,
+				   TEST_BINBOOK_STRING_TABLE_OFFSET, TEST_BINBOOK_STRING_TABLE_LEN,
+				   0, 0);
+	test_write_binbook_section(&out[TEST_BINBOOK_HEADER_SIZE + TEST_BINBOOK_SECTION_ENTRY_SIZE],
+				   41, TEST_BINBOOK_NAV_INDEX_OFFSET, TEST_BINBOOK_NAV_INDEX_LEN,
+				   TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE, TEST_BINBOOK_NAV_INDEX_COUNT);
+	test_write_binbook_section(
+		&out[TEST_BINBOOK_HEADER_SIZE + 2 * TEST_BINBOOK_SECTION_ENTRY_SIZE], 43,
+		TEST_BINBOOK_CHAPTER_INDEX_OFFSET, TEST_BINBOOK_CHAPTER_INDEX_LEN,
+		TEST_BINBOOK_CHAPTER_INDEX_ENTRY_SIZE, TEST_BINBOOK_CHAPTER_INDEX_COUNT);
+	test_write_binbook_section(
+		&out[TEST_BINBOOK_HEADER_SIZE + 3 * TEST_BINBOOK_SECTION_ENTRY_SIZE], 40,
+		TEST_BINBOOK_PAGE_INDEX_OFFSET, TEST_BINBOOK_PAGE_INDEX_LEN,
+		TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE, TEST_BINBOOK_PAGE_INDEX_COUNT);
+	test_write_binbook_section(
+		&out[TEST_BINBOOK_HEADER_SIZE + 4 * TEST_BINBOOK_SECTION_ENTRY_SIZE], 50,
+		TEST_BINBOOK_PAGE_DATA_OFFSET, TEST_BINBOOK_GRAY1_PAGE_DATA_LEN, 0, 0);
+
+	memcpy(&out[TEST_BINBOOK_STRING_TABLE_OFFSET], "Chapter OneChapter Two",
+	       TEST_BINBOOK_STRING_TABLE_LEN);
+
+	/* Nav entries */
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET], 0);
+	test_write_le16(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + 4], 3);
+	test_write_le16(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + 6], 0);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + 8], 0);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + 12], 11);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + 28], 0);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + 32], UINT32_MAX);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + 36], UINT32_MAX);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + 40], UINT32_MAX);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE], 1);
+	test_write_le16(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE + 4],
+			3);
+	test_write_le16(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE + 6],
+			0);
+	test_write_le32(&out[TEST_BINBOOK_NAV_INDEX_OFFSET + TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE + 8],
+			0);
+	test_write_le32(
+		&out[TEST_BINBOOK_NAV_INDEX_OFFSET + TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE + 12], 11);
+	test_write_le32(
+		&out[TEST_BINBOOK_NAV_INDEX_OFFSET + TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE + 28], 0);
+	test_write_le32(
+		&out[TEST_BINBOOK_NAV_INDEX_OFFSET + TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE + 32],
+		UINT32_MAX);
+	test_write_le32(
+		&out[TEST_BINBOOK_NAV_INDEX_OFFSET + TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE + 36],
+		UINT32_MAX);
+	test_write_le32(
+		&out[TEST_BINBOOK_NAV_INDEX_OFFSET + TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE + 40],
+		UINT32_MAX);
+
+	/* Chapter entries */
+	test_write_le32(&out[TEST_BINBOOK_CHAPTER_INDEX_OFFSET], 0);
+	test_write_le32(&out[TEST_BINBOOK_CHAPTER_INDEX_OFFSET + 4], 0);
+	test_write_le32(&out[TEST_BINBOOK_CHAPTER_INDEX_OFFSET + 8], 0);
+	test_write_le32(&out[TEST_BINBOOK_CHAPTER_INDEX_OFFSET + 12], 11);
+	test_write_le32(&out[TEST_BINBOOK_CHAPTER_INDEX_OFFSET + 16], 0);
+	test_write_le16(&out[TEST_BINBOOK_CHAPTER_INDEX_OFFSET + 20], 0);
+	test_write_le16(&out[TEST_BINBOOK_CHAPTER_INDEX_OFFSET + 22], 3);
+	test_write_le32(&out[TEST_BINBOOK_CHAPTER_INDEX_OFFSET + TEST_BINBOOK_CHAPTER_INDEX_ENTRY_SIZE],
+			1);
+	test_write_le32(
+		&out[TEST_BINBOOK_CHAPTER_INDEX_OFFSET + TEST_BINBOOK_CHAPTER_INDEX_ENTRY_SIZE + 4],
+		0);
+	test_write_le32(
+		&out[TEST_BINBOOK_CHAPTER_INDEX_OFFSET + TEST_BINBOOK_CHAPTER_INDEX_ENTRY_SIZE + 8],
+		0);
+	test_write_le32(
+		&out[TEST_BINBOOK_CHAPTER_INDEX_OFFSET + TEST_BINBOOK_CHAPTER_INDEX_ENTRY_SIZE + 12],
+		11);
+	test_write_le32(
+		&out[TEST_BINBOOK_CHAPTER_INDEX_OFFSET + TEST_BINBOOK_CHAPTER_INDEX_ENTRY_SIZE + 16],
+		0);
+	test_write_le16(
+		&out[TEST_BINBOOK_CHAPTER_INDEX_OFFSET + TEST_BINBOOK_CHAPTER_INDEX_ENTRY_SIZE + 20],
+		0);
+	test_write_le16(
+		&out[TEST_BINBOOK_CHAPTER_INDEX_OFFSET + TEST_BINBOOK_CHAPTER_INDEX_ENTRY_SIZE + 22],
+		3);
+
+	/* Page 0: GRAY1 (pixel_format=1), BW plane only (bitmap=0x04), RLE compressed */
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET], 0);
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 4], 1); /* page_kind=TEXT */
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 6], 1); /* pixel_format=GRAY1 */
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 8], 1); /* compression=RLE */
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 10], 0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 12], 0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 16], 0);
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 20], 800);
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 22], 480);
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 24], 0);
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 26], 0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 28], UINT32_MAX);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 32], 0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 36], 0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 40], 0);
+	out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 44] = 0x04; /* plane_bitmap: BW only */
+	out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 45] = 0;    /* plane_compression[0] */
+	out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 46] = 0;
+	out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 47] = 1; /* plane_compression[2]=RLE */
+	out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 48] = 0;
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 52], 0);  /* offset_plane_0 */
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 56], 0);  /* size_plane_0 */
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 60], 0);  /* offset_plane_1 */
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 64], 0);  /* size_plane_1 */
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 68], 0);  /* offset_plane_2 */
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 72], 0);  /* size_plane_2 */
+
+	/* Page 1: GRAY2 (pixel_format=2), MSB+LSB planes (bitmap=0x03), RLE compressed */
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE],
+			1);
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 4],
+			1);
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 6],
+			2); /* pixel_format=GRAY2 */
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 8],
+			1); /* compression=RLE */
+	test_write_le16(
+		&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 10], 0);
+	test_write_le32(
+		&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 12], 0);
+	test_write_le32(
+		&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 16], 0);
+	test_write_le16(
+		&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 20],
+		800);
+	test_write_le16(
+		&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 22],
+		480);
+	test_write_le16(
+		&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 24],
+		0);
+	test_write_le16(
+		&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 26],
+		0);
+	test_write_le32(
+		&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 28],
+		UINT32_MAX);
+	test_write_le32(
+		&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 32], 0);
+	test_write_le32(
+		&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 36], 0);
+	test_write_le32(
+		&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 40], 0);
+	out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 44] = 0x03;
+	out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 45] = 1;
+	out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 46] = 1;
+	out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 47] = 0;
+	out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 48] = 0;
+	test_write_le32(
+		&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 52], 0);
+	test_write_le32(
+		&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 56], 4);
+	test_write_le32(
+		&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 60], 0);
+	test_write_le32(
+		&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 64], 4);
+	test_write_le32(
+		&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 68], 0);
+	test_write_le32(
+		&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 72], 0);
+
+	/* Page data: 4 bytes RLE-compressed all-white for BW plane */
+	out[TEST_BINBOOK_PAGE_DATA_OFFSET] = 0x80 | 3; /* RLE: repeat 4 times */
+	out[TEST_BINBOOK_PAGE_DATA_OFFSET + 1] = 0xff; /* value: all bits set (white) */
+	out[TEST_BINBOOK_PAGE_DATA_OFFSET + 2] = 0x80 | 3;
+	out[TEST_BINBOOK_PAGE_DATA_OFFSET + 3] = 0xff;
+}
+
 static int read_test_file(const char *path, uint8_t *bytes, size_t cap, size_t *out_len)
 {
 	struct fs_dirent entry;
@@ -7441,6 +7632,53 @@ ZTEST(squidscript_protocol, test_binbook_release_closes_handle)
 	zassert_true(open2.ok);
 	zassert_equal(test_binbook_open_count(), count_before_release + 1,
 		      "open after release must open a new file handle");
+
+	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
+}
+
+ZTEST(squidscript_protocol, test_gray1_binbook_opens_and_lists_pages)
+{
+	uint8_t book[TEST_BINBOOK_GRAY1_LEN];
+	static struct sq_vm_runtime runtime;
+	SqvmBinBookOpenResult open_result;
+	SqvmBinBookInfoResult info;
+	SqvmBinBookReadPageResult page_result;
+
+	build_test_binbook_gray1(book);
+	zassert_equal(mount_test_fs(), 0);
+	zassert_equal(format_test_app_store(), 0);
+	zassert_equal(sq_app_store_install_app(test_fs_mount.mnt_point, "binbook-reader",
+					       binbook_reader_sqbc, sizeof(binbook_reader_sqbc)),
+		      0);
+	zassert_equal(sq_app_store_install_resource(test_fs_mount.mnt_point, "binbook-reader",
+						    "books/gray1.binbook", book, sizeof(book)),
+		      0);
+
+	memset(&runtime, 0, sizeof(runtime));
+	sq_vm_runtime_set_store_mount_point(&runtime, test_fs_mount.mnt_point);
+	strncpy(runtime.current_app, "binbook-reader", sizeof(runtime.current_app) - 1);
+
+	zassert_equal(runtime_binbook_open(&runtime, (const uint8_t *)"books/gray1.binbook",
+					   strlen("books/gray1.binbook"), &open_result),
+		      0);
+	zassert_true(open_result.ok, "gray1 binbook should open successfully");
+
+	memset(&info, 0, sizeof(info));
+	zassert_equal(runtime_binbook_info(&runtime, open_result.book, &info), 0);
+	zassert_true(info.ok);
+	zassert_equal(info.page_count, 2);
+
+	memset(&page_result, 0, sizeof(page_result));
+	zassert_equal(runtime_binbook_read_page(&runtime, open_result.book, 0, &page_result), 0);
+	zassert_true(page_result.ok);
+	zassert_equal(runtime.drawable.page.pixel_format, 1);
+	zassert_equal(runtime.drawable.page.plane_bitmap, 0x04);
+
+	memset(&page_result, 0, sizeof(page_result));
+	zassert_equal(runtime_binbook_read_page(&runtime, open_result.book, 1, &page_result), 0);
+	zassert_true(page_result.ok);
+	zassert_equal(runtime.drawable.page.pixel_format, 2);
+	zassert_equal(runtime.drawable.page.plane_bitmap, 0x03);
 
 	zassert_equal(fs_unmount(&test_fs_mount), 0, "unmount failed");
 }
