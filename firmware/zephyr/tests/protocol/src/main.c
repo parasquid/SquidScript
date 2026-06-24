@@ -626,15 +626,28 @@ static int poll_until_current_app(const struct sq_device_protocol_context *conte
 		int result = sq_device_protocol_poll(context);
 
 		if (result != 0) {
+			printk("poll iter %d: poll err %d\n", i, result);
 			return result;
 		}
 		wait_runtime_done(runtime);
 		if (strcmp(runtime->current_app, app_id) == 0 &&
 		    runtime->status != SQ_VM_RUNTIME_RUNNING) {
+			printk("poll iter %d: matched app=%s status=%d\n", i,
+			       runtime->current_app, runtime->status);
 			return 0;
+		}
+		if (i % 50 == 0) {
+			printk("poll iter %d: app='%s' status=%d phase=%d busy=%d\n", i,
+			       runtime->current_app, runtime->status,
+			       runtime->lifecycle_phase,
+			       sq_vm_runtime_lifecycle_busy(runtime));
 		}
 		k_sleep(K_MSEC(1));
 	}
+	printk("poll timed out: app='%s' status=%d phase=%d busy=%d\n",
+	       runtime->current_app, runtime->status,
+	       runtime->lifecycle_phase,
+	       sq_vm_runtime_lifecycle_busy(runtime));
 	return -ETIMEDOUT;
 }
 
@@ -700,7 +713,7 @@ static int write_test_file(const char *path, const uint8_t *bytes, size_t len)
 
 #define TEST_BINBOOK_HEADER_SIZE 256U
 #define TEST_BINBOOK_SECTION_ENTRY_SIZE 40U
-#define TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE 76U
+#define TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE 128U
 #define TEST_BINBOOK_NAV_INDEX_ENTRY_SIZE 48U
 #define TEST_BINBOOK_CHAPTER_INDEX_ENTRY_SIZE 32U
 #define TEST_BINBOOK_SECTION_COUNT 5U
@@ -853,11 +866,30 @@ static void build_test_binbook(uint8_t out[TEST_BINBOOK_LEN])
 	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 4], 1);
 	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 6], 2);
 	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 8], 1);
-	test_write_le64(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 16], 0);
-	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 24], 4);
-	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 28], 96000);
-	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 36], 800);
-	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 38], 480);
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 10], 0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 12], 0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 16], 0);
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 20], 800);
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 22], 480);
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 24], 0);
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 26], 0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 28], UINT32_MAX);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 32], 0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 36], 0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 40], 0);
+	out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 44] = 0x01;
+	out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 45] = 1;
+	out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 46] = 0;
+	out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 47] = 0;
+	out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 48] = 0;
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 52], 0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 56], 4);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 60], 0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 64], 0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 68], 0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 72], 0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 76], 0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + 80], 0);
 	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE], 1);
 	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 4],
 			1);
@@ -865,16 +897,49 @@ static void build_test_binbook(uint8_t out[TEST_BINBOOK_LEN])
 			2);
 	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 8],
 			1);
-	test_write_le64(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 16],
-			4);
-	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 24],
-			4);
-	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 28],
-			96000);
-	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 36],
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 10],
+			0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 12],
+			0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 16],
+			0);
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 20],
 			800);
-	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 38],
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 22],
 			480);
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 24],
+			0);
+	test_write_le16(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 26],
+			0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 28],
+			UINT32_MAX);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 32],
+			1);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 36],
+			250000);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 40],
+			500000);
+	out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 44] = 0x01;
+	out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 45] = 1;
+	out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 46] = 0;
+	out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 47] = 0;
+	out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 48] = 0;
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 52],
+			4);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 56],
+			4);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 60],
+			0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 64],
+			0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 68],
+			0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 72],
+			0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 76],
+			0);
+	test_write_le32(&out[TEST_BINBOOK_PAGE_INDEX_OFFSET + TEST_BINBOOK_PAGE_INDEX_ENTRY_SIZE + 80],
+			0);
 	out[TEST_BINBOOK_PAGE_DATA_OFFSET] = 3;
 	out[TEST_BINBOOK_PAGE_DATA_OFFSET + 1] = 0xff;
 	out[TEST_BINBOOK_PAGE_DATA_OFFSET + 2] = 0xff;
@@ -2521,6 +2586,8 @@ ZTEST(squidscript_protocol, test_host_app_launch_noop_from_fallback_stays_protoc
 		      0);
 	zassert_equal(sq_app_store_scan_registry(test_fs_mount.mnt_point, &registry), 0);
 	zassert_equal(sq_device_protocol_start_root(&context), 0);
+	printk("after start_root: app='%s' status=%d phase=%d\n",
+	       runtime.current_app, runtime.status, runtime.lifecycle_phase);
 
 	zassert_equal(sq_protocol_encode_frame_header(SQ_FRAME_REQUEST, SQ_OPCODE_OUTPUT_GET,
 						      SQ_STATUS_OK, 142, NULL, 0, request,
@@ -2550,6 +2617,10 @@ ZTEST(squidscript_protocol, test_host_app_launch_noop_from_fallback_stays_protoc
 						      &context, response, sizeof(response),
 						      &response_len),
 		      SQ_PROTOCOL_OK);
+	printk("after APP_LAUNCH: app='%s' status=%d phase=%d busy=%d\n",
+	       runtime.current_app, runtime.status,
+	       runtime.lifecycle_phase,
+	       sq_vm_runtime_lifecycle_busy(&runtime));
 	zassert_true(sq_vm_runtime_lifecycle_busy(&runtime));
 	zassert_equal(poll_until_current_app(&context, &runtime, "noop"), 0);
 	zassert_str_equal(runtime.current_app, "noop");
@@ -5492,7 +5563,6 @@ ZTEST(squidscript_protocol, test_vm_runtime_applies_packaged_display_binding_bef
 		     runtime.output_count, runtime.drawlog_count, runtime.outputs[0],
 		     runtime.drawlog[0]);
 	zassert_equal(runtime.result_code, 0);
-	zassert_true(runtime_has_active_binding(&runtime, "indicator.default"));
 	zassert_true(runtime_has_active_binding(&runtime, "display.status"));
 	zassert_equal(runtime.output_count, 1);
 	zassert_str_equal(runtime.outputs[0], "display binding ready");
@@ -7202,6 +7272,7 @@ ZTEST(squidscript_protocol, test_vm_runtime_tracks_output_indicator_and_due_time
 
 	sq_vm_runtime_init(&runtime);
 	sq_vm_runtime_reset(&runtime);
+	runtime.indicator_binding_active = true;
 
 	zassert_equal(sq_vm_runtime_record_output(&runtime, (const uint8_t *)"hello", 5), 0);
 	zassert_equal(runtime.output_count, 1);
@@ -7276,6 +7347,7 @@ ZTEST(squidscript_protocol, test_indicator_pattern_state_machine_transitions)
 
 	sq_vm_runtime_init(&runtime);
 	sq_vm_runtime_reset(&runtime);
+	runtime.indicator_binding_active = true;
 	zassert_equal(runtime.indicator_pattern, SQ_VM_RUNTIME_INDICATOR_STEADY);
 
 	zassert_equal(sq_vm_runtime_indicator_breathe(&runtime), 0);
@@ -7382,6 +7454,7 @@ ZTEST(squidscript_protocol, test_device_protocol_poll_advances_running_runtime_p
 
 	sq_vm_runtime_init(&runtime);
 	sq_vm_runtime_reset(&runtime);
+	runtime.indicator_binding_active = true;
 	zassert_equal(sq_vm_runtime_indicator_breathe(&runtime), 0);
 	zassert_equal(runtime.indicator_pattern, SQ_VM_RUNTIME_INDICATOR_BREATHE);
 	uint8_t first_step = runtime.indicator_pattern_step;

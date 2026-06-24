@@ -93,7 +93,7 @@ struct PageIndexEntry {
     u32  offset_plane_3;              // Byte offset from PAGE_DATA start (future)
     u32  size_plane_3;                // Compressed size in bytes
 
-    u8   reserved[20];                // Future use (plane delta offsets, etc.)
+    u8   reserved[44];                // Future use (plane delta offsets, etc.)
 };
 ```
 

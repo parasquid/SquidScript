@@ -72,7 +72,9 @@ int32_t runtime_indicator_read(void *user_data, bool *out)
 
 int32_t runtime_indicator_breathe(void *user_data)
 {
-	return sq_vm_runtime_indicator_breathe(user_data);
+	int result = sq_vm_runtime_indicator_breathe(user_data);
+
+	return result == -ENODEV ? 0 : result;
 }
 
 int32_t runtime_indicator_blink(void *user_data, int32_t on_ms, int32_t off_ms)

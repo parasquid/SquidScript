@@ -6151,20 +6151,16 @@ pub extern "C" fn rust_binbook_open(
 pub extern "C" fn rust_binbook_page_meta(
     data: *const u8,
     data_len: usize,
-    page_index_offset: u64,
+    _page_index_offset: u64,
     _page_data_offset: u64,
-    page_index: u32,
+    _page_index: u32,
     out: *mut RustBinBookPageMeta,
 ) -> i32 {
-    if data.is_null() || out.is_null() {
+    if data.is_null() || out.is_null() || data_len < 128 {
         return -1;
     }
     let bytes = unsafe { slice::from_raw_parts(data, data_len) };
-    let off = page_index_offset as usize + page_index as usize * 128;
-    if off + 128 > bytes.len() {
-        return -1;
-    }
-    let info = match binbook::page_index::parse_page_info_from_bytes(&bytes[off..off + 128]) {
+    let info = match binbook::page_index::parse_page_info_from_bytes(&bytes[..128]) {
         Ok(i) => i,
         Err(_) => return -1,
     };
