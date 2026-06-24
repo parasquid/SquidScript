@@ -8,12 +8,11 @@ Speculative ideas that are not currently actionable belong in `ICEBOX.md`.
 
 ## Current Track: Canonical Zephyr Firmware
 
-- Add native_sim dummy hardware mocks (indicator GPIO, display, SPI SD) so
-  protocol tests can assert on hardware interactions without real devices.
-  Currently the fallback app's `service.indicator.breathe()` returns -ENODEV
-  on native_sim, crashing the VM dispatch. Dummy hardware would succeed as
-  no-ops and allow tests to verify call sequences, pin assignments, and state
-  transitions.
+- Add native_sim dummy hardware mocks (display, SPI SD) so protocol tests
+  can assert on hardware interactions without real devices. Indicator GPIO
+  mock is done (`runtime_indicator_breathe` returns 0 for ENODEV); display
+  and SPI SD stubs remain so tests can verify call sequences, pin
+  assignments, and state transitions.
 - Refactor protocol tests to use a proper native_sim target with mocked
   hardware instead of repurposing `esp32c3-super-mini.target.json`. The
   current approach leaks target-specific defaults (indicator GPIO, display
@@ -100,17 +99,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   on hardware: move library/menu/chapter highlights repeatedly and confirm the
   SSD1677 fast partial path avoids full-refresh flashing and unacceptable
   ghosting.
-- Add a grid-cursor example app (`examples/grid-cursor/`) that renders a 5×5
-  grid of cells, each containing a distinct shape (filled rect, outlined rect,
-  cross pattern, diagonal lines, text glyph). A cursor highlights one cell at a
-  time by inverting its colors; UP/DOWN/LEFT/RIGHT moves the cursor. Uses
-  `fast1bpp` refresh so each cursor move exercises the SSD1677 differential
-  partial path. This isolates refresh correctness (ghost clearing, shape
-  restoration after cursor passes, no mangling) in a minimal visible test case
-  separate from the BinBook reader's complexity, and doubles as a user-facing
-  example. The hardware test script includes a mid-run device reset and
-  relaunch to verify the lifecycle reset (first post-reset refresh is full
-  seed, no stale differential).
 - Add a GRAY2-aware streaming display compositor for
   `service.display.clear/text/rect/line` on SSD1677 targets, preserving
   source-order composition without a full-screen 2bpp framebuffer.
@@ -192,15 +180,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Developer Tooling
 
-- Add a `device content-delete <name>` CLI command and protocol opcode
-  (`SQ_OPCODE_CONTENT_DELETE`) so stale content library entries can be removed
-  without a full device reflash. Today `content-put` adds files to
-  `/SD:/books` but no CLI command can remove them; `storage-format` only clears
-  app storage, not the content volume. This blocks test hygiene when stale
-  BinBooks with wrong panel dimensions accumulate from prior test runs.
-  Follow the `content-check` pattern: firmware handler unlinks the file at
-  `SQ_VM_RUNTIME_CONTENT_BOOKS_DIR/<name>`, Rust codec encodes/decodes, CLI
-  exposes `device content-delete <name> --port <port>`.
 - Audit compiler, SQBC, simulator, examples, and docs for invariant violations
   that should become explicit diagnostics instead of silent ambiguity.
 - Promote the XTEINK X4 serial/HTTP/BLE transfer regression scripts into the
