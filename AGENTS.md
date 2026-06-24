@@ -144,6 +144,13 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - Compute expected output sizes from source metadata (pixel format, dimensions)
   rather than relying on the output buffer length. Passing `out.len()` as the
   expected decompression size makes size checks degenerate into `len < len`.
+- Read the docs before experimenting. When investigating a bug or verifying
+  behavior, check `docs/`, existing tests, and `ROADMAP.md` first. Firmware
+  lifecycle, state machines, and protocol contracts are documented — use them
+  to understand the system rather than reproducing failures through ad-hoc
+  test harnesses. If a documented path explains the behavior, trust it; if
+  tests cover the path, run them; only build new test fixtures when the
+  documented coverage is genuinely missing.
 
 ## Documentation Planning
 
