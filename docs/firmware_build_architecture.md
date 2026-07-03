@@ -3,10 +3,16 @@
 Status: Current direction
 Purpose: Define the real-firmware build model for SquidScript targets.
 
-## Current Backend
+## Current Backends
 
-Zephyr is the only supported real-firmware backend. The primary firmware app is
-`firmware/zephyr`, built with Zephyr CMake/Kconfig through `west`.
+Zephyr remains the default real-firmware backend. The primary Zephyr firmware
+app is `firmware/zephyr`, built with Zephyr CMake/Kconfig through `west`.
+
+XTEINK X4 also has an explicit native backend under `firmware/native`. It is a
+`no_std` Rust firmware foundation for the migration away from Zephyr on that
+target. The native backend is selected explicitly with `--backend native`; it is
+not the default target backend while VM, display, storage, Wi-Fi, BLE, and
+BinBook gates are still being brought over.
 
 Rust remains part of the firmware architecture only at the VM boundary:
 
@@ -14,11 +20,13 @@ Rust remains part of the firmware architecture only at the VM boundary:
 - `squidvm-ffi` exposes VM behavior through a small C ABI/staticlib boundary.
 - Zephyr owns the real firmware host layer, scheduler integration, drivers,
   storage, serial/shell, logging, networking, Wi-Fi, power, and diagnostics.
+- The native X4 backend owns its own firmware entry point, target build, flash,
+  and early serial protocol foundation without the Zephyr C runtime host.
 
-There is no fallback Rust ESP firmware path and no compatibility shim for the
-old serial protocol or flash layout. If behavior fails on ESP32-C3 under
-Zephyr, treat it as a Zephyr implementation, driver, configuration, or
-workaround task.
+If behavior fails on ESP32-C3 under Zephyr, treat it as a Zephyr
+implementation, driver, configuration, or workaround task. If behavior fails on
+the native X4 backend, treat it as native firmware migration work and verify the
+same SquidScript host/device contract at the CLI boundary.
 
 The default XIAO ESP32-C3 e-paper firmware embeds a target-specific fallback
 SquidScript app from
@@ -43,6 +51,8 @@ cargo run -p squidc -- target inspect --target <target-id>
 cargo run -p squidc -- target build --target <target-id>
 cargo run -p squidc -- target flash --target <target-id>
 cargo run -p squidc -- target monitor --target <target-id>
+cargo run -p squidc -- target build --target xteink-x4 --backend native
+cargo run -p squidc -- target flash --target xteink-x4 --backend native
 ```
 
 `squidc target` resolves Zephyr board, overlay, fallback app, generated
@@ -50,6 +60,11 @@ Kconfig path, and build directory from target JSON. By default,
 `SQUID_ZEPHYR_HOME` is `target/zephyr`, with `west` installed in
 `target/zephyr/venv` and the Zephyr
 workspace in `target/zephyr/workspace`.
+
+For native target metadata, `squidc target` resolves the Rust package, working
+directory, target triple, feature list, release/debug mode, ELF path, chip, and
+Rust toolchain from target JSON. The X4 native backend builds from
+`firmware/native` and flashes the configured ELF with `espflash`.
 
 `scripts/zephyr-setup.sh` prepares that local tooling area. It may install
 generic host tools with Homebrew (`cmake`, `ninja`, `dtc`, `wget`, and `xz`),

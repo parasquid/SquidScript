@@ -67,6 +67,16 @@
       "fallbackSource": "firmware/zephyr/fallback/xteink-x4-main.squid",
       "targetKconfig": "target/zephyr/generated/xteink-x4-target.conf",
       "runtimeLimits": "targets/runtime-limits/esp32c3-zephyr.json"
+    },
+    "native": {
+      "package": "squidscript-fw-x4",
+      "workingDir": "firmware/native",
+      "target": "riscv32imc-unknown-none-elf",
+      "chip": "esp32c3",
+      "elf": "target/riscv32imc-unknown-none-elf/release/squidscript-fw-x4",
+      "features": ["firmware-bin"],
+      "release": true,
+      "rustupToolchain": "nightly"
     }
   },
   "radios": {

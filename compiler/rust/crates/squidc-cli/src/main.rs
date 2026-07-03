@@ -408,6 +408,8 @@ struct TargetOnlyArgs {
 struct TargetBuildArgs {
     #[arg(long)]
     target: Option<String>,
+    #[arg(long, value_enum, default_value_t = TargetBackendArg::Zephyr)]
+    backend: TargetBackendArg,
     #[arg(long)]
     stack_usage: bool,
     #[arg(long, value_enum, default_value_t = TargetPristineArg::Auto)]
@@ -422,6 +424,8 @@ struct TargetBuildArgs {
 struct TargetFlashArgs {
     #[arg(long)]
     target: Option<String>,
+    #[arg(long, value_enum, default_value_t = TargetBackendArg::Zephyr)]
+    backend: TargetBackendArg,
     #[arg(long)]
     monitor_after_flash: bool,
     #[arg(long)]
@@ -434,6 +438,8 @@ struct TargetFlashArgs {
 struct TargetMonitorArgs {
     #[arg(long)]
     target: Option<String>,
+    #[arg(long, value_enum, default_value_t = TargetBackendArg::Zephyr)]
+    backend: TargetBackendArg,
     #[arg(long)]
     port: Option<String>,
     #[arg(long)]
@@ -463,6 +469,21 @@ impl From<TargetPristineArg> for target::TargetPristine {
             TargetPristineArg::Auto => target::TargetPristine::Auto,
             TargetPristineArg::Always => target::TargetPristine::Always,
             TargetPristineArg::Never => target::TargetPristine::Never,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum TargetBackendArg {
+    Zephyr,
+    Native,
+}
+
+impl From<TargetBackendArg> for target::TargetBackend {
+    fn from(value: TargetBackendArg) -> Self {
+        match value {
+            TargetBackendArg::Zephyr => Self::Zephyr,
+            TargetBackendArg::Native => Self::Native,
         }
     }
 }
@@ -1491,10 +1512,12 @@ fn target_build(args: TargetBuildArgs, human: bool) -> Result<Value, String> {
         args.target.as_deref(),
         target::stdin_is_interactive(),
     )?;
+    let backend = target::TargetBackend::from(args.backend);
     let plan = target::plan_build_command(
         &root,
         &target_def,
         target::TargetBuildPlanOptions {
+            backend,
             stack_usage: args.stack_usage,
             pristine: args.pristine.into(),
             west_args: args.west_args,
@@ -1506,7 +1529,9 @@ fn target_build(args: TargetBuildArgs, human: bool) -> Result<Value, String> {
         }
         return Ok(json!({"target": target_def.summary_json(), "plan": plan.as_json()}));
     }
-    target::ensure_target_kconfig(&root, &target_def)?;
+    if backend == target::TargetBackend::Zephyr {
+        target::ensure_target_kconfig(&root, &target_def)?;
+    }
     if human {
         eprintln!("building target {}", target_def.id);
     }
@@ -1524,10 +1549,12 @@ fn target_flash(args: TargetFlashArgs, human: bool) -> Result<Value, String> {
         args.target.as_deref(),
         target::stdin_is_interactive(),
     )?;
+    let backend = target::TargetBackend::from(args.backend);
     let build_plan = target::plan_build_command(
         &root,
         &target_def,
         target::TargetBuildPlanOptions {
+            backend,
             stack_usage: false,
             pristine: target::TargetPristine::Auto,
             west_args: Vec::new(),
@@ -1537,6 +1564,7 @@ fn target_flash(args: TargetFlashArgs, human: bool) -> Result<Value, String> {
         &root,
         &target_def,
         target::TargetFlashPlanOptions {
+            backend,
             west_args: args.west_args,
         },
     )?;
@@ -1550,6 +1578,7 @@ fn target_flash(args: TargetFlashArgs, human: bool) -> Result<Value, String> {
             &root,
             &target_def,
             target::TargetMonitorPlanOptions {
+                backend,
                 port,
                 west_args: Vec::new(),
             },
@@ -1574,7 +1603,9 @@ fn target_flash(args: TargetFlashArgs, human: bool) -> Result<Value, String> {
             }
         }));
     }
-    target::ensure_target_kconfig(&root, &target_def)?;
+    if backend == target::TargetBackend::Zephyr {
+        target::ensure_target_kconfig(&root, &target_def)?;
+    }
     if human {
         eprintln!("building target {}", target_def.id);
     }
@@ -1626,6 +1657,7 @@ fn hardware_test(args: HardwareTestArgs, human: bool) -> Result<Value, String> {
         target_flash(
             TargetFlashArgs {
                 target: Some(target_def.id.clone()),
+                backend: TargetBackendArg::Zephyr,
                 monitor_after_flash: false,
                 print_plan: false,
                 west_args: Vec::new(),
@@ -1847,10 +1879,12 @@ fn target_monitor(args: TargetMonitorArgs, human: bool) -> Result<Value, String>
         args.target.as_deref(),
         target::stdin_is_interactive(),
     )?;
+    let backend = target::TargetBackend::from(args.backend);
     let plan = target::plan_monitor_command(
         &root,
         &target_def,
         target::TargetMonitorPlanOptions {
+            backend,
             port: match args.port {
                 Some(port) => Some(port),
                 None if args.print_plan => None,
@@ -3449,6 +3483,30 @@ mod tests {
     }
 
     #[test]
+    fn parses_target_build_with_native_backend() {
+        let cli = Cli::try_parse_from([
+            "squidc",
+            "target",
+            "build",
+            "--target",
+            "xteink-x4",
+            "--backend",
+            "native",
+            "--print-plan",
+        ])
+        .unwrap();
+        let Commands::Target {
+            command: TargetCommands::Build(args),
+        } = cli.command
+        else {
+            panic!("expected target build");
+        };
+        assert_eq!(args.target.as_deref(), Some("xteink-x4"));
+        assert_eq!(args.backend, TargetBackendArg::Native);
+        assert!(args.print_plan);
+    }
+
+    #[test]
     fn parses_target_flash_monitor_doctor_and_inspect_commands() {
         let flash = Cli::try_parse_from([
             "squidc",
@@ -3457,6 +3515,8 @@ mod tests {
             "--target",
             "esp32c3-super-mini",
             "--monitor-after-flash",
+            "--backend",
+            "native",
             "--",
             "--runner",
             "esp32",
@@ -3469,6 +3529,7 @@ mod tests {
             panic!("expected target flash");
         };
         assert_eq!(args.target.as_deref(), Some("esp32c3-super-mini"));
+        assert_eq!(args.backend, TargetBackendArg::Native);
         assert!(args.monitor_after_flash);
         assert_eq!(args.west_args, vec!["--runner", "esp32"]);
 
@@ -3478,6 +3539,8 @@ mod tests {
             "monitor",
             "--target",
             "esp32c3-super-mini",
+            "--backend",
+            "native",
             "--port",
             "/dev/ttyACM0",
         ])
@@ -3489,6 +3552,7 @@ mod tests {
             panic!("expected target monitor");
         };
         assert_eq!(args.target.as_deref(), Some("esp32c3-super-mini"));
+        assert_eq!(args.backend, TargetBackendArg::Native);
         assert_eq!(args.port.as_deref(), Some("/dev/ttyACM0"));
 
         let doctor = Cli::try_parse_from([
@@ -3534,6 +3598,7 @@ mod tests {
             &root,
             &target,
             target::TargetBuildPlanOptions {
+                backend: target::TargetBackend::Zephyr,
                 stack_usage: true,
                 pristine: target::TargetPristine::Always,
                 west_args: vec!["-DOVERLAY_CONFIG=extra.conf".to_string()],
@@ -3572,6 +3637,7 @@ mod tests {
             &root,
             &target,
             target::TargetBuildPlanOptions {
+                backend: target::TargetBackend::Zephyr,
                 stack_usage: false,
                 pristine: target::TargetPristine::Auto,
                 west_args: Vec::new(),
@@ -3579,6 +3645,66 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.contains("has no Zephyr firmware metadata"));
+    }
+
+    #[test]
+    fn loads_native_target_metadata_and_plans_build_command() {
+        let root = target::repo_root();
+        let target = target::load_target_by_id(&root, "xteink-x4").unwrap();
+        let native = target.native.as_ref().expect("x4 native metadata");
+        assert_eq!(native.package, "squidscript-fw-x4");
+        assert_eq!(native.chip, "esp32c3");
+
+        let plan = target::plan_build_command(
+            &root,
+            &target,
+            target::TargetBuildPlanOptions {
+                backend: target::TargetBackend::Native,
+                stack_usage: false,
+                pristine: target::TargetPristine::Auto,
+                west_args: Vec::new(),
+            },
+        )
+        .unwrap();
+        assert_eq!(plan.program, "cargo");
+        assert_eq!(plan.cwd, root.join("firmware/native"));
+        assert!(plan.args.starts_with(&[
+            "build".to_string(),
+            "-p".to_string(),
+            "squidscript-fw-x4".to_string(),
+        ]));
+        assert!(plan.args.contains(&"--features".to_string()));
+        assert!(plan.args.contains(&"firmware-bin".to_string()));
+        assert!(plan
+            .env
+            .iter()
+            .any(|(key, value)| key == "RUSTUP_TOOLCHAIN" && value == "nightly"));
+    }
+
+    #[test]
+    fn plans_native_flash_command_with_espflash() {
+        let root = target::repo_root();
+        let target = target::load_target_by_id(&root, "xteink-x4").unwrap();
+
+        let plan = target::plan_flash_command(
+            &root,
+            &target,
+            target::TargetFlashPlanOptions {
+                backend: target::TargetBackend::Native,
+                west_args: Vec::new(),
+            },
+        )
+        .unwrap();
+        assert!(plan.program.ends_with("espflash"));
+        assert!(plan.args.starts_with(&[
+            "flash".to_string(),
+            "--chip".to_string(),
+            "esp32c3".to_string(),
+            "--non-interactive".to_string(),
+        ]));
+        assert!(plan.args.iter().any(|arg| {
+            arg.ends_with("target/riscv32imc-unknown-none-elf/release/squidscript-fw-x4")
+        }));
     }
 
     #[test]

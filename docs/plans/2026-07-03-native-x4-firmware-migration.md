@@ -42,12 +42,12 @@ RAM retained after first radio use.
 
 ## Task 2: Native Firmware Runtime Foundation
 
-- [ ] Add target metadata for the native X4 backend while keeping Zephyr
+- [x] Add target metadata for the native X4 backend while keeping Zephyr
   metadata available as reference.
-- [ ] Add `squidc target build/flash --backend native` support without changing
+- [x] Add `squidc target build/flash --backend native` support without changing
   the default backend until native gates pass.
-- [ ] Port the serial identity and reset surfaces to the native firmware.
-- [ ] Run `squidc` serial identity/reset checks against flashed hardware.
+- [x] Port the serial identity and reset surfaces to the native firmware.
+- [x] Run `squidc` serial identity/reset checks against flashed hardware.
 
 ## Task 3: SQBC And Service Host Integration
 

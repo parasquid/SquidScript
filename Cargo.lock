@@ -2243,6 +2243,7 @@ dependencies = [
  "esp-println",
  "esp-radio",
  "esp-rtos",
+ "squid-device-protocol",
  "squidscript-fw-core",
  "static_cell",
 ]

@@ -4,8 +4,11 @@
 #[cfg(target_arch = "riscv32")]
 use esp_backtrace as _;
 
-#[cfg(target_arch = "riscv32")]
+#[cfg(all(target_arch = "riscv32", any(feature = "wifi", feature = "ble")))]
 use esp_println::println;
+
+#[cfg(all(target_arch = "riscv32", not(any(feature = "wifi", feature = "ble"))))]
+use esp_hal::usb_serial_jtag::UsbSerialJtag;
 
 #[cfg(all(target_arch = "riscv32", any(feature = "wifi", feature = "ble")))]
 use esp_hal::ram;
@@ -22,7 +25,7 @@ use squidscript_fw_core::radio_lifecycle::{
     format_cycle_snapshot, CycleSnapshot, RadioKind, ReclaimSummary,
 };
 
-#[cfg(target_arch = "riscv32")]
+#[cfg(all(target_arch = "riscv32", any(feature = "wifi", feature = "ble")))]
 use squidscript_fw_x4::radio_probe::radio_stack_metadata;
 
 #[cfg(target_arch = "riscv32")]
@@ -32,17 +35,20 @@ esp_bootloader_esp_idf::esp_app_desc!();
 #[esp_hal::main]
 fn main() -> ! {
     let peripherals = esp_hal::init(esp_hal::Config::default());
-    #[cfg(not(any(feature = "wifi", feature = "ble")))]
-    let _ = &peripherals;
 
-    let radio = radio_stack_metadata();
-    println!(
-        "squidscript native x4 radio_probe stack={} version={} features={:?}",
-        radio.stack, radio.version, radio.features
-    );
+    #[cfg(not(any(feature = "wifi", feature = "ble")))]
+    {
+        run_serial_protocol(UsbSerialJtag::new(peripherals.USB_DEVICE));
+    }
 
     #[cfg(any(feature = "wifi", feature = "ble"))]
     {
+        let radio = radio_stack_metadata();
+        println!(
+            "squidscript native x4 radio_probe stack={} version={} features={:?}",
+            radio.stack, radio.version, radio.features
+        );
+
         println!("radio_probe_stage allocator_init");
         esp_alloc::heap_allocator!(#[ram(reclaimed)] size: 64 * 1024);
         esp_alloc::heap_allocator!(size: 36 * 1024);
@@ -53,17 +59,114 @@ fn main() -> ! {
         println!("radio_probe_stage rtos_start");
         esp_rtos::start(timer.timer0, software_interrupt.software_interrupt0);
         println!("radio_probe_stage rtos_ready");
+
+        #[cfg(feature = "wifi")]
+        run_radio_probe(RadioKind::Wifi);
+
+        #[cfg(feature = "ble")]
+        run_radio_probe(RadioKind::Ble);
+
+        loop {
+            core::hint::spin_loop();
+        }
     }
+}
 
-    #[cfg(feature = "wifi")]
-    run_radio_probe(RadioKind::Wifi);
+#[cfg(all(target_arch = "riscv32", not(any(feature = "wifi", feature = "ble"))))]
+fn run_serial_protocol(mut serial: UsbSerialJtag<'static, esp_hal::Blocking>) -> ! {
+    use squid_device_protocol::{
+        encode_empty_response_into, encode_hello_response_into, DeviceRequest, Opcode, Status,
+        MAGIC,
+    };
 
-    #[cfg(feature = "ble")]
-    run_radio_probe(RadioKind::Ble);
+    const MAX_REQUEST_BYTES: usize = 256;
+    const MAX_RESPONSE_BYTES: usize = 256;
+    const SERIAL_MAX_FRAME_BYTES: u64 = 4096;
+
+    let mut request = [0u8; MAX_REQUEST_BYTES];
+    let mut request_len = 0usize;
+    let mut response = [0u8; MAX_RESPONSE_BYTES];
 
     loop {
-        core::hint::spin_loop();
+        match serial.read_byte() {
+            Ok(byte) => {
+                if request_len == request.len() {
+                    request_len = 0;
+                }
+                request[request_len] = byte;
+                request_len += 1;
+
+                if request_len >= MAGIC.len() && request[..MAGIC.len()] != MAGIC {
+                    if let Some(start) = find_magic(&request[..request_len]) {
+                        request.copy_within(start..request_len, 0);
+                        request_len -= start;
+                    } else {
+                        let keep = MAGIC.len().saturating_sub(1).min(request_len);
+                        request.copy_within(request_len - keep..request_len, 0);
+                        request_len = keep;
+                    }
+                    continue;
+                }
+
+                let Some(frame_len) = complete_request_len(&request[..request_len]) else {
+                    continue;
+                };
+                if frame_len > request_len {
+                    continue;
+                }
+
+                if let Ok(parsed) = DeviceRequest::decode(&request[..frame_len]) {
+                    let encoded = match parsed.opcode {
+                        Opcode::Hello => encode_hello_response_into(
+                            Opcode::Hello,
+                            parsed.sequence,
+                            "xteink-x4",
+                            "squidscript-native-x4",
+                            false,
+                            SERIAL_MAX_FRAME_BYTES,
+                            &mut response,
+                        ),
+                        Opcode::Reset => encode_empty_response_into(
+                            Opcode::Reset,
+                            Status::Ok,
+                            parsed.sequence,
+                            &mut response,
+                        ),
+                        opcode => encode_empty_response_into(
+                            opcode,
+                            Status::Error,
+                            parsed.sequence,
+                            &mut response,
+                        ),
+                    };
+                    if let Ok(len) = encoded {
+                        let _ = serial.write(&response[..len]);
+                    }
+                }
+
+                let remaining = request_len - frame_len;
+                request.copy_within(frame_len..request_len, 0);
+                request_len = remaining;
+            }
+            Err(_) => core::hint::spin_loop(),
+        }
     }
+}
+
+#[cfg(all(target_arch = "riscv32", not(any(feature = "wifi", feature = "ble"))))]
+fn complete_request_len(bytes: &[u8]) -> Option<usize> {
+    if bytes.len() < squid_device_protocol::HEADER_LEN {
+        return None;
+    }
+    let payload_len = u32::from_le_bytes(bytes[12..16].try_into().ok()?) as usize;
+    squid_device_protocol::HEADER_LEN.checked_add(payload_len)
+}
+
+#[cfg(all(target_arch = "riscv32", not(any(feature = "wifi", feature = "ble"))))]
+fn find_magic(bytes: &[u8]) -> Option<usize> {
+    bytes
+        .windows(squid_device_protocol::MAGIC.len())
+        .position(|window| window == squid_device_protocol::MAGIC)
 }
 
 #[cfg(all(target_arch = "riscv32", any(feature = "wifi", feature = "ble")))]

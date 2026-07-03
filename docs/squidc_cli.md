@@ -1,6 +1,6 @@
 # squidc CLI
 
-`squidc` is the host compiler and Zephyr-firmware control CLI.
+`squidc` is the host compiler and reference firmware control CLI.
 
 Normal SquidScript compilation and upload does not require a target definition.
 Apps compile against the portable language/runtime API. Device aliases and
@@ -282,8 +282,9 @@ operations are implemented in the host and Zephyr serial transport layers.
 ## Target Commands
 
 `target` commands are the canonical firmware-target workflow. They read
-repository target JSON metadata and resolve Zephyr board, build directory,
-overlay, fallback app, and generated Kconfig paths from that metadata.
+repository target JSON metadata. Build, flash, and monitor default to the
+Zephyr backend, which resolves Zephyr board, build directory, overlay, fallback
+app, and generated Kconfig paths from that metadata.
 
 ```sh
 cargo run -p squidc -- target list
@@ -296,12 +297,25 @@ cargo run -p squidc -- hardware test --target xiao-esp32c3-gdeq0426t82-sd
 cargo run -p squidc -- hardware test --target xiao-esp32c3-gdeq0426t82-sd --list
 ```
 
+Targets with native firmware metadata can opt into the native backend:
+
+```sh
+cargo run -p squidc -- target build --target xteink-x4 --backend native
+cargo run -p squidc -- target flash --target xteink-x4 --backend native
+cargo run -p squidc -- target monitor --target xteink-x4 --backend native
+```
+
+The native X4 backend builds `firmware/native` with the target's configured
+Rust package, target triple, feature set, and release/debug mode, then flashes
+the configured ELF with `espflash`.
+
 Use `target inspect` or `--print-plan` before side-effectful operations when
-automation needs to verify the resolved command without invoking Zephyr:
+automation needs to verify the resolved command without invoking the backend:
 
 ```sh
 cargo run -p squidc -- target build --target esp32c3-super-mini --print-plan
 cargo run -p squidc -- target flash --target esp32c3-super-mini --print-plan -- --runner esp32
+cargo run -p squidc -- target build --target xteink-x4 --backend native --print-plan
 ```
 
 When `--target` is omitted, interactive terminals show a target picker.
@@ -310,6 +324,8 @@ Noninteractive sessions fail and should pass `--target <target-id>` explicitly.
 `target flash` builds first, then flashes. It monitors only when
 `--monitor-after-flash` is passed. `target monitor` is a streaming hardware
 command; with `--json`, use `--print-plan` instead of starting the stream.
+`target build --stack-usage` and `--pristine always|never|auto` are Zephyr-only
+options.
 
 `hardware test --target <target-id>` runs the target-aware hardware regression
 checks selected from target metadata features. The XIAO ESP32-C3 default dev
