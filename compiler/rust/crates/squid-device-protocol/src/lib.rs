@@ -1591,7 +1591,11 @@ pub fn content_check_result(frame: &Frame) -> Option<ContentCheckResult> {
 
 #[cfg(feature = "alloc")]
 pub fn content_delete_request(sequence: u32, name: impl Into<String>) -> Frame {
-    Frame::request(Opcode::ContentDelete, sequence, vec![Field::string(1, name)])
+    Frame::request(
+        Opcode::ContentDelete,
+        sequence,
+        vec![Field::string(1, name)],
+    )
 }
 
 #[cfg(feature = "alloc")]
@@ -2476,7 +2480,7 @@ fn parse_hex_bytes(value: &str) -> Result<Vec<u8>, String> {
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "alloc"))]
 mod tests {
     use super::{
         app_install_chunk_request_with_ack, content_check_request, content_check_result,
@@ -2581,8 +2585,7 @@ mod tests {
         let deleted = content_delete_result(&response).expect("content delete response decodes");
         assert_eq!(deleted, "old-book.binbook");
 
-        let wrong_opcode =
-            Frame::response(Opcode::ContentCheck, Status::Ok, 93, Vec::new());
+        let wrong_opcode = Frame::response(Opcode::ContentCheck, Status::Ok, 93, Vec::new());
         assert!(content_delete_result(&wrong_opcode).is_none());
     }
 }

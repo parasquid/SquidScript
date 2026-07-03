@@ -27,6 +27,9 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   on hardware (or at minimum run relevant unit tests) before staging and
   committing. An unverified change in the working tree is fine; an unverified
   commit is a liability.
+- Do not waste time undoing formatting-only changes produced by the repository's
+  standard formatter during the current task. Keep them unless the user asks
+  for a surgical diff or the formatter touched unrelated user-owned work.
 
 ## Local Environment Notes
 

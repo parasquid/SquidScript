@@ -6111,6 +6111,106 @@ pub struct RustBinBookPageMeta {
     pub size_plane_3: u32,
 }
 
+struct BinBookSection {
+    offset: u64,
+    length: u64,
+    entry_size: u32,
+    record_count: u32,
+}
+
+struct BinBookOpenInfo {
+    string_table: BinBookSection,
+    page_index: BinBookSection,
+    nav_index: BinBookSection,
+    chapter_index: BinBookSection,
+    page_data_offset: u64,
+    page_count: u32,
+    nav_count: u32,
+    chapter_count: u32,
+}
+
+fn read_u16(bytes: &[u8], offset: usize) -> Option<u16> {
+    let data = bytes.get(offset..offset.checked_add(2)?)?;
+    Some(u16::from_le_bytes([data[0], data[1]]))
+}
+
+fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
+    let data = bytes.get(offset..offset.checked_add(4)?)?;
+    Some(u32::from_le_bytes([data[0], data[1], data[2], data[3]]))
+}
+
+fn read_u64(bytes: &[u8], offset: usize) -> Option<u64> {
+    let data = bytes.get(offset..offset.checked_add(8)?)?;
+    Some(u64::from_le_bytes([
+        data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+    ]))
+}
+
+fn parse_binbook_open_info(bytes: &[u8]) -> Option<BinBookOpenInfo> {
+    if bytes.get(..7)? != b"BINBOOK" {
+        return None;
+    }
+    let file_length = read_u64(bytes, 16)?;
+    if usize::try_from(file_length).ok()? > bytes.len() {
+        return None;
+    }
+    let section_table_offset = usize::try_from(read_u64(bytes, 24)?).ok()?;
+    let section_table_length = usize::try_from(read_u32(bytes, 32)?).ok()?;
+    let section_entry_size = usize::from(read_u16(bytes, 36)?);
+    let section_count = usize::from(read_u16(bytes, 38)?);
+    if section_entry_size < 32 {
+        return None;
+    }
+    let table_end = section_table_offset.checked_add(section_table_length)?;
+    let table = bytes.get(section_table_offset..table_end)?;
+    if section_count.checked_mul(section_entry_size)? > table.len() {
+        return None;
+    }
+    let mut string_table = None;
+    let mut page_index = None;
+    let mut nav_index = None;
+    let mut chapter_index = None;
+    let page_data_offset = read_u64(bytes, 44)?;
+
+    for index in 0..section_count {
+        let start = index.checked_mul(section_entry_size)?;
+        let entry = table.get(start..start.checked_add(section_entry_size)?)?;
+        let id = read_u16(entry, 0)?;
+        let section = BinBookSection {
+            offset: read_u64(entry, 4)?,
+            length: read_u64(entry, 12)?,
+            entry_size: read_u32(entry, 20)?,
+            record_count: read_u32(entry, 24)?,
+        };
+        let end = section.offset.checked_add(section.length)?;
+        if end > file_length {
+            return None;
+        }
+        match id {
+            1 => string_table = Some(section),
+            40 => page_index = Some(section),
+            41 => nav_index = Some(section),
+            43 => chapter_index = Some(section),
+            _ => {}
+        }
+    }
+
+    let string_table = string_table?;
+    let page_index = page_index?;
+    let nav_index = nav_index?;
+    let chapter_index = chapter_index?;
+    Some(BinBookOpenInfo {
+        page_data_offset,
+        page_count: page_index.record_count,
+        nav_count: nav_index.record_count,
+        chapter_count: chapter_index.record_count,
+        string_table,
+        page_index,
+        nav_index,
+        chapter_index,
+    })
+}
+
 #[no_mangle]
 pub extern "C" fn rust_binbook_open(
     data: *const u8,
@@ -6121,23 +6221,32 @@ pub extern "C" fn rust_binbook_open(
         return -1;
     }
     let bytes = unsafe { slice::from_raw_parts(data, len) };
-    let scratch = [0u8; 4096];
-    let book = match binbook::BinBook::open(bytes, scratch) {
-        Ok(b) => b,
-        Err(_) => return -1,
+    let Some(info) = parse_binbook_open_info(bytes) else {
+        return -1;
     };
-    let info = book.open_info();
+    let Ok(string_table_length) = u32::try_from(info.string_table.length) else {
+        return -1;
+    };
+    let Ok(page_index_entry_size) = u16::try_from(info.page_index.entry_size) else {
+        return -1;
+    };
+    let Ok(nav_index_entry_size) = u16::try_from(info.nav_index.entry_size) else {
+        return -1;
+    };
+    let Ok(chapter_index_entry_size) = u16::try_from(info.chapter_index.entry_size) else {
+        return -1;
+    };
     unsafe {
         *out = RustBinBookOpenResult {
             ok: true,
-            string_table_offset: info.string_table_offset,
-            string_table_length: info.string_table_length,
-            page_index_offset: info.page_index_offset,
-            page_index_entry_size: info.page_index_entry_size,
-            nav_index_offset: info.nav_index_offset,
-            nav_index_entry_size: info.nav_index_entry_size,
-            chapter_index_offset: info.chapter_index_offset,
-            chapter_index_entry_size: info.chapter_index_entry_size,
+            string_table_offset: info.string_table.offset,
+            string_table_length,
+            page_index_offset: info.page_index.offset,
+            page_index_entry_size,
+            nav_index_offset: info.nav_index.offset,
+            nav_index_entry_size,
+            chapter_index_offset: info.chapter_index.offset,
+            chapter_index_entry_size,
             page_data_offset: info.page_data_offset,
             page_count: info.page_count,
             nav_count: info.nav_count,
@@ -6160,29 +6269,73 @@ pub extern "C" fn rust_binbook_page_meta(
         return -1;
     }
     let bytes = unsafe { slice::from_raw_parts(data, data_len) };
-    let info = match binbook::page_index::parse_page_info_from_bytes(&bytes[..128]) {
-        Ok(i) => i,
-        Err(_) => return -1,
+    let Some(record) = bytes.get(..128) else {
+        return -1;
     };
-    let pd = &info.plane_dir;
+    let Some(pixel_format) = read_u16(record, 6) else {
+        return -1;
+    };
+    let Some(compression_method) = read_u16(record, 8) else {
+        return -1;
+    };
+    let Some(page_flags) = read_u32(record, 12) else {
+        return -1;
+    };
+    let Some(stored_width) = read_u16(record, 20) else {
+        return -1;
+    };
+    let Some(stored_height) = read_u16(record, 22) else {
+        return -1;
+    };
+    let Some(&plane_bitmap) = record.get(44) else {
+        return -1;
+    };
+    if plane_bitmap & !0x0f != 0 {
+        return -1;
+    }
+    let mut plane_compression = [0_u8; 4];
+    let mut offsets = [0_u32; 4];
+    let mut sizes = [0_u32; 4];
+    for index in 0..4 {
+        if plane_bitmap & (1 << index) == 0 {
+            continue;
+        }
+        let raw_compression = if page_flags & 1 == 0 {
+            u8::try_from(compression_method).unwrap_or(u8::MAX)
+        } else {
+            *record.get(45 + index).unwrap_or(&u8::MAX)
+        };
+        if binbook_core::CompressionMethod::try_from(raw_compression).is_err() {
+            return -1;
+        }
+        plane_compression[index] = raw_compression;
+        let Some(offset) = read_u32(record, 52 + index * 4) else {
+            return -1;
+        };
+        let Some(size) = read_u32(record, 68 + index * 4) else {
+            return -1;
+        };
+        offsets[index] = offset;
+        sizes[index] = size;
+    }
     unsafe {
         *out = RustBinBookPageMeta {
             ok: true,
-            pixel_format: info.pixel_format,
-            compression_method: info.compression_method,
-            page_flags: info.page_flags,
-            stored_width: info.stored_width,
-            stored_height: info.stored_height,
-            plane_bitmap: pd.bitmap,
-            plane_compression: pd.compression,
-            offset_plane_0: pd.offsets[0],
-            size_plane_0: pd.sizes[0],
-            offset_plane_1: pd.offsets[1],
-            size_plane_1: pd.sizes[1],
-            offset_plane_2: pd.offsets[2],
-            size_plane_2: pd.sizes[2],
-            offset_plane_3: pd.offsets[3],
-            size_plane_3: pd.sizes[3],
+            pixel_format,
+            compression_method,
+            page_flags,
+            stored_width,
+            stored_height,
+            plane_bitmap,
+            plane_compression,
+            offset_plane_0: offsets[0],
+            size_plane_0: sizes[0],
+            offset_plane_1: offsets[1],
+            size_plane_1: sizes[1],
+            offset_plane_2: offsets[2],
+            size_plane_2: sizes[2],
+            offset_plane_3: offsets[3],
+            size_plane_3: sizes[3],
         };
     }
     0
@@ -6202,7 +6355,13 @@ pub extern "C" fn rust_binbook_decompress_page(
     }
     let input = unsafe { slice::from_raw_parts(compressed, compressed_len) };
     let output = unsafe { slice::from_raw_parts_mut(out, out_len) };
-    match binbook::decompress::decompress_bytes(compression_method, input, output, uncompressed_size) {
+    if output.len() != uncompressed_size {
+        return -1;
+    }
+    let Ok(method) = binbook_core::CompressionMethod::try_from(compression_method) else {
+        return -1;
+    };
+    match binbook_decompress::decode_exact(method, input, output) {
         Ok(()) => 0,
         Err(_) => -1,
     }

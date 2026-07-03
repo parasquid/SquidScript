@@ -1,0 +1,60 @@
+[package]
+name = "squidscript-fw-x4"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+
+[dependencies]
+squidscript-fw-core = { path = "../squidscript-fw-core" }
+
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+esp-backtrace = { version = "0.19.0", features = ["esp32c3", "panic-handler", "println"], optional = true }
+esp-bootloader-esp-idf = { version = "0.5.0", features = ["esp32c3"], optional = true }
+esp-alloc = { version = "0.10.0", default-features = true, features = ["internal-heap-stats"], optional = true }
+esp-hal = { version = "1.1.1", features = ["esp32c3", "unstable"], optional = true }
+esp-println = { version = "0.17.0", default-features = false, features = ["esp32c3", "jtag-serial"], optional = true }
+esp-radio = { version = "=1.0.0-beta.0", default-features = false, optional = true }
+esp-rtos = { version = "0.3.0", features = ["esp32c3", "embassy"], optional = true }
+static_cell = { version = "2.1.1", default-features = false, optional = true }
+
+[features]
+default = []
+firmware-bin = [
+    "dep:esp-backtrace",
+    "dep:esp-bootloader-esp-idf",
+    "dep:esp-hal",
+    "dep:esp-println",
+    "dep:static_cell",
+]
+wifi = [
+    "firmware-bin",
+    "dep:esp-alloc",
+    "dep:esp-radio",
+    "dep:esp-rtos",
+    "esp-rtos/esp-alloc",
+    "esp-rtos/esp-radio",
+    "esp-radio/esp32c3",
+    "esp-radio/unstable",
+    "esp-radio/wifi",
+]
+ble = [
+    "firmware-bin",
+    "dep:esp-alloc",
+    "dep:esp-radio",
+    "dep:esp-rtos",
+    "esp-rtos/esp-alloc",
+    "esp-rtos/esp-radio",
+    "esp-radio/ble",
+    "esp-radio/esp32c3",
+    "esp-radio/unstable",
+]
+radio-probe = ["wifi", "ble", "esp-radio/coex"]
+alloc-trace = ["esp-alloc/alloc-hooks"]
+
+[[bin]]
+name = "squidscript-fw-x4"
+path = "src/main.rs"
+test = false
+doctest = false
+bench = false
+required-features = ["firmware-bin"]

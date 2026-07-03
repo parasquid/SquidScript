@@ -14,7 +14,8 @@ zephyr = []
 [dependencies]
 squid-device-protocol = { path = "../squid-device-protocol", default-features = false }
 squidvm-core = { path = "../squidvm-core" }
-binbook = { path = "../../../../../../parasquid/binbook/rust", default-features = false }
+binbook-core = { path = "../../../../../binbook/crates/binbook-core" }
+binbook-decompress = { path = "../../../../../binbook/crates/binbook-decompress" }
 
 [dev-dependencies]
 squid-device-protocol = { path = "../squid-device-protocol", features = ["alloc"] }

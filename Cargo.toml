@@ -6,6 +6,8 @@ members = [
   "compiler/rust/crates/squidvm-core",
   "compiler/rust/crates/squidvm-ffi",
   "compiler/rust/crates/squidc-cli",
-  "compiler/rust/crates/squidc-wasm"
+  "compiler/rust/crates/squidc-wasm",
+  "firmware/native/crates/squidscript-fw-core",
+  "firmware/native/crates/squidscript-fw-x4"
 ]
 resolver = "2"
