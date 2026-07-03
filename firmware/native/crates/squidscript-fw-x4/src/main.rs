@@ -10,6 +10,9 @@ use esp_println::println;
 #[cfg(all(target_arch = "riscv32", not(any(feature = "wifi", feature = "ble"))))]
 use esp_hal::usb_serial_jtag::UsbSerialJtag;
 
+#[cfg(all(target_arch = "riscv32", not(any(feature = "wifi", feature = "ble"))))]
+use squidscript_fw_core::native_runtime::NativeRuntime;
+
 #[cfg(all(target_arch = "riscv32", any(feature = "wifi", feature = "ble")))]
 use esp_hal::ram;
 
@@ -38,7 +41,12 @@ fn main() -> ! {
 
     #[cfg(not(any(feature = "wifi", feature = "ble")))]
     {
-        run_serial_protocol(UsbSerialJtag::new(peripherals.USB_DEVICE));
+        static RUNTIME: static_cell::StaticCell<NativeRuntime> = static_cell::StaticCell::new();
+        static BUFFERS: static_cell::StaticCell<SerialProtocolBuffers> =
+            static_cell::StaticCell::new();
+        let runtime = RUNTIME.init_with(NativeRuntime::new);
+        let buffers = BUFFERS.init_with(SerialProtocolBuffers::new);
+        run_serial_protocol(UsbSerialJtag::new(peripherals.USB_DEVICE), runtime, buffers);
     }
 
     #[cfg(any(feature = "wifi", feature = "ble"))]
@@ -73,49 +81,69 @@ fn main() -> ! {
 }
 
 #[cfg(all(target_arch = "riscv32", not(any(feature = "wifi", feature = "ble"))))]
-fn run_serial_protocol(mut serial: UsbSerialJtag<'static, esp_hal::Blocking>) -> ! {
+struct SerialProtocolBuffers {
+    request: [u8; 4096],
+    response: [u8; 1088],
+}
+
+#[cfg(all(target_arch = "riscv32", not(any(feature = "wifi", feature = "ble"))))]
+impl SerialProtocolBuffers {
+    const fn new() -> Self {
+        Self {
+            request: [0; 4096],
+            response: [0; 1088],
+        }
+    }
+}
+
+#[cfg(all(target_arch = "riscv32", not(any(feature = "wifi", feature = "ble"))))]
+fn run_serial_protocol(
+    mut serial: UsbSerialJtag<'static, esp_hal::Blocking>,
+    runtime: &'static mut NativeRuntime,
+    buffers: &'static mut SerialProtocolBuffers,
+) -> ! {
     use squid_device_protocol::{
-        encode_empty_response_into, encode_hello_response_into, DeviceRequest, Opcode, Status,
-        MAGIC,
+        encode_empty_response_into, encode_hello_response_into, encode_lifecycle_response_into,
+        encode_line_response_into, encode_resources_response_into, encode_state_response_into,
+        DeviceRequest, Opcode, ProtocolSessions, ResourceMetric, Status, MAGIC,
     };
 
-    const MAX_REQUEST_BYTES: usize = 256;
-    const MAX_RESPONSE_BYTES: usize = 256;
     const SERIAL_MAX_FRAME_BYTES: u64 = 4096;
 
-    let mut request = [0u8; MAX_REQUEST_BYTES];
     let mut request_len = 0usize;
-    let mut response = [0u8; MAX_RESPONSE_BYTES];
+    let mut sessions = ProtocolSessions::default();
 
     loop {
         match serial.read_byte() {
             Ok(byte) => {
-                if request_len == request.len() {
+                if request_len == buffers.request.len() {
                     request_len = 0;
                 }
-                request[request_len] = byte;
+                buffers.request[request_len] = byte;
                 request_len += 1;
 
-                if request_len >= MAGIC.len() && request[..MAGIC.len()] != MAGIC {
-                    if let Some(start) = find_magic(&request[..request_len]) {
-                        request.copy_within(start..request_len, 0);
+                if request_len >= MAGIC.len() && buffers.request[..MAGIC.len()] != MAGIC {
+                    if let Some(start) = find_magic(&buffers.request[..request_len]) {
+                        buffers.request.copy_within(start..request_len, 0);
                         request_len -= start;
                     } else {
                         let keep = MAGIC.len().saturating_sub(1).min(request_len);
-                        request.copy_within(request_len - keep..request_len, 0);
+                        buffers
+                            .request
+                            .copy_within(request_len - keep..request_len, 0);
                         request_len = keep;
                     }
                     continue;
                 }
 
-                let Some(frame_len) = complete_request_len(&request[..request_len]) else {
+                let Some(frame_len) = complete_request_len(&buffers.request[..request_len]) else {
                     continue;
                 };
                 if frame_len > request_len {
                     continue;
                 }
 
-                if let Ok(parsed) = DeviceRequest::decode(&request[..frame_len]) {
+                if let Ok(parsed) = DeviceRequest::decode(&buffers.request[..frame_len]) {
                     let encoded = match parsed.opcode {
                         Opcode::Hello => encode_hello_response_into(
                             Opcode::Hello,
@@ -124,32 +152,164 @@ fn run_serial_protocol(mut serial: UsbSerialJtag<'static, esp_hal::Blocking>) ->
                             "squidscript-native-x4",
                             false,
                             SERIAL_MAX_FRAME_BYTES,
-                            &mut response,
+                            &mut buffers.response,
                         ),
-                        Opcode::Reset => encode_empty_response_into(
-                            Opcode::Reset,
-                            Status::Ok,
+                        Opcode::Reset => {
+                            runtime.reset();
+                            sessions = ProtocolSessions::default();
+                            encode_empty_response_into(
+                                Opcode::Reset,
+                                Status::Ok,
+                                parsed.sequence,
+                                &mut buffers.response,
+                            )
+                        }
+                        Opcode::TempRunBegin | Opcode::TempRunChunk | Opcode::TempRunCommit => {
+                            handle_temp_run_request(
+                                runtime,
+                                &mut sessions,
+                                &parsed,
+                                &mut buffers.response,
+                            )
+                        }
+                        Opcode::OutputGet => encode_line_response_into(
+                            Opcode::OutputGet,
                             parsed.sequence,
-                            &mut response,
+                            runtime.output_lines().iter(),
+                            &mut buffers.response,
+                        ),
+                        Opcode::TraceGet => encode_line_response_into(
+                            Opcode::TraceGet,
+                            parsed.sequence,
+                            runtime.trace_lines().iter(),
+                            &mut buffers.response,
+                        ),
+                        Opcode::StateGet => encode_state_response_into(
+                            parsed.sequence,
+                            runtime.state_bytes(),
+                            &mut buffers.response,
+                        ),
+                        Opcode::ResourcesGet => {
+                            let metrics = runtime.resource_metrics();
+                            encode_resources_response_into(
+                                parsed.sequence,
+                                metrics.iter().map(|metric| ResourceMetric {
+                                    key: metric.key,
+                                    value: metric.value,
+                                }),
+                                &mut buffers.response,
+                            )
+                        }
+                        Opcode::LifecycleGet => encode_lifecycle_response_into(
+                            parsed.sequence,
+                            runtime.active_app(),
+                            core::iter::empty(),
+                            core::iter::empty(),
+                            &mut buffers.response,
                         ),
                         opcode => encode_empty_response_into(
                             opcode,
                             Status::Error,
                             parsed.sequence,
-                            &mut response,
+                            &mut buffers.response,
                         ),
                     };
                     if let Ok(len) = encoded {
-                        let _ = serial.write(&response[..len]);
+                        let _ = serial.write(&buffers.response[..len]);
                     }
                 }
 
                 let remaining = request_len - frame_len;
-                request.copy_within(frame_len..request_len, 0);
+                buffers.request.copy_within(frame_len..request_len, 0);
                 request_len = remaining;
             }
             Err(_) => core::hint::spin_loop(),
         }
+    }
+}
+
+#[cfg(all(target_arch = "riscv32", not(any(feature = "wifi", feature = "ble"))))]
+fn handle_temp_run_request(
+    runtime: &mut NativeRuntime,
+    sessions: &mut squid_device_protocol::ProtocolSessions,
+    request: &squid_device_protocol::DeviceRequest<'_>,
+    response: &mut [u8],
+) -> Result<usize, squid_device_protocol::DecodeError> {
+    use squid_device_protocol::{
+        encode_empty_response_into, encode_error_response_into, HostAction, Status,
+    };
+
+    match sessions.next_action(request) {
+        Ok(HostAction::BeginTempRun { app_id, total_len }) => {
+            if let Err(error) = runtime.begin_temp_run(app_id, total_len) {
+                return encode_error_response_into(
+                    request.opcode,
+                    request.sequence,
+                    -1,
+                    native_runtime_error_name(error),
+                    response,
+                );
+            }
+            let _ = sessions.complete_begin_temp_run("/sq/tmp/native-temp.sqbc");
+            encode_empty_response_into(request.opcode, Status::Ok, request.sequence, response)
+        }
+        Ok(HostAction::WriteTempRunChunk { offset, bytes, .. }) => {
+            if let Err(error) = runtime.write_temp_run_chunk(offset, bytes) {
+                return encode_error_response_into(
+                    request.opcode,
+                    request.sequence,
+                    -1,
+                    native_runtime_error_name(error),
+                    response,
+                );
+            }
+            let chunk_ptr = bytes.as_ptr();
+            let chunk_len = bytes.len();
+            let bytes = unsafe { core::slice::from_raw_parts(chunk_ptr, chunk_len) };
+            let _ = sessions.complete_temp_run_chunk(bytes);
+            encode_empty_response_into(request.opcode, Status::Ok, request.sequence, response)
+        }
+        Ok(HostAction::CommitTempRun { .. }) => {
+            if let Err(error) = runtime.commit_temp_run() {
+                return encode_error_response_into(
+                    request.opcode,
+                    request.sequence,
+                    -1,
+                    native_runtime_error_name(error),
+                    response,
+                );
+            }
+            sessions.complete_temp_run_commit();
+            encode_empty_response_into(request.opcode, Status::Ok, request.sequence, response)
+        }
+        Ok(_) => encode_error_response_into(
+            request.opcode,
+            request.sequence,
+            -1,
+            "unsupported_transfer_action",
+            response,
+        ),
+        Err(_) => encode_error_response_into(
+            request.opcode,
+            request.sequence,
+            -1,
+            "invalid_transfer_request",
+            response,
+        ),
+    }
+}
+
+#[cfg(all(target_arch = "riscv32", not(any(feature = "wifi", feature = "ble"))))]
+fn native_runtime_error_name(
+    error: squidscript_fw_core::native_runtime::NativeRuntimeError,
+) -> &'static str {
+    match error {
+        squidscript_fw_core::native_runtime::NativeRuntimeError::TooLarge => "too_large",
+        squidscript_fw_core::native_runtime::NativeRuntimeError::InvalidOffset => "invalid_offset",
+        squidscript_fw_core::native_runtime::NativeRuntimeError::IncompleteTempRun => {
+            "incomplete_temp_run"
+        }
+        squidscript_fw_core::native_runtime::NativeRuntimeError::Vm(_) => "vm_error",
     }
 }
 

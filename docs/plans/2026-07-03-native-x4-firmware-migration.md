@@ -51,12 +51,19 @@ RAM retained after first radio use.
 
 ## Task 3: SQBC And Service Host Integration
 
-- [ ] Host `squidvm-core` directly in native firmware without the Zephyr C FFI
+- [x] Host `squidvm-core` directly in native firmware without the Zephyr C FFI
   runtime layer.
 - [ ] Infer capability demand from SQBC builtin/service usage.
 - [ ] Implement service leases for Wi-Fi and BLE and release them on app abort,
   app exit, app replacement, storage format, and device reset.
 - [ ] Run temp app and installed app launch checks through `squidc`.
+
+Current native VM sub-slice result: native X4 firmware now supports serial
+temp-run into a bounded in-RAM SQBC buffer, direct `squidvm-core` dispatch for
+`app.start`, and serial `output`, `trace`, `state`, `lifecycle`, and
+`resources` responses. Hardware verification passed for temp-run, state save,
+trace, output, lifecycle, resources, and reset. Installed app persistence,
+capability inference, and Wi-Fi/BLE service leases remain pending.
 
 ## Task 4: BinBook Import Repair
 

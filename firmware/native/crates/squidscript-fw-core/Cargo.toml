@@ -5,3 +5,7 @@ edition = "2021"
 license = "AGPL-3.0-only"
 
 [dependencies]
+squidvm-core = { path = "../../../../compiler/rust/crates/squidvm-core" }
+
+[dev-dependencies]
+squidc-core = { path = "../../../../compiler/rust/crates/squidc-core" }

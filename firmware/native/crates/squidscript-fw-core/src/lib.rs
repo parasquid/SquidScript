@@ -1,5 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 
+pub mod native_runtime;
+
 pub mod radio_lifecycle {
     use core::fmt;
 
