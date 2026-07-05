@@ -74,7 +74,7 @@
       "target": "riscv32imc-unknown-none-elf",
       "chip": "esp32c3",
       "elf": "target/riscv32imc-unknown-none-elf/release/squidscript-fw-x4",
-      "features": ["firmware-bin"],
+      "features": ["firmware-bin", "x4-binbook", "native-radio-services"],
       "release": true,
       "rustupToolchain": "nightly"
     }

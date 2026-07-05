@@ -2,7 +2,33 @@ use core::{mem::MaybeUninit, ptr, str};
 
 use crate::{
     bytecode::{
-        read_i32, read_u16, read_u32, SECTION_CODE, SECTION_DEVICE_BINDINGS, SECTION_FUNCTIONS,
+        read_i32, read_u16, read_u32, BUILTIN_APP_ARM, BUILTIN_APP_ARMED_STACK,
+        BUILTIN_APP_ARMED_STACK_GET, BUILTIN_APP_DISARM, BUILTIN_APP_EXIT, BUILTIN_APP_INSTALL,
+        BUILTIN_APP_INSTALL_METADATA, BUILTIN_APP_LAUNCH, BUILTIN_APP_PROCESS_STACK,
+        BUILTIN_APP_REGISTRY_GET, BUILTIN_APP_REGISTRY_LIST, BUILTIN_BINBOOK_CHAPTER,
+        BUILTIN_BINBOOK_CHAPTERS, BUILTIN_BINBOOK_INFO, BUILTIN_BINBOOK_OPEN,
+        BUILTIN_BINBOOK_READ_PAGE, BUILTIN_CONTENT_BINBOOK_LIST, BUILTIN_DEBUG_PRINT,
+        BUILTIN_DEVICE_CONFIG_LOAD, BUILTIN_DEVICE_CONFIG_REBIND, BUILTIN_DEVICE_CONFIG_SAVE,
+        BUILTIN_DEVICE_CONFIG_SET, BUILTIN_DISPLAY_CLEAR, BUILTIN_DISPLAY_DRAW,
+        BUILTIN_DISPLAY_IMAGE, BUILTIN_DISPLAY_INFO, BUILTIN_DISPLAY_LINE, BUILTIN_DISPLAY_RECT,
+        BUILTIN_DISPLAY_REFRESH_MODE, BUILTIN_DISPLAY_SELECT, BUILTIN_DISPLAY_TEXT,
+        BUILTIN_FILE_COPY, BUILTIN_FILE_LIST, BUILTIN_FILE_PICK_FILE, BUILTIN_FILE_READ_LINES,
+        BUILTIN_FILE_READ_TEXT, BUILTIN_HARDWARE_GPIO_READ, BUILTIN_HARDWARE_GPIO_TOGGLE,
+        BUILTIN_HARDWARE_GPIO_WRITE, BUILTIN_SCREEN_OPEN, BUILTIN_SCREEN_REFRESH,
+        BUILTIN_SERVICE_BLE_START, BUILTIN_SERVICE_BLE_STOP, BUILTIN_SERVICE_HTTP_START,
+        BUILTIN_SERVICE_HTTP_STOP, BUILTIN_SERVICE_INDICATOR_BLINK,
+        BUILTIN_SERVICE_INDICATOR_BREATHE, BUILTIN_SERVICE_INDICATOR_READ,
+        BUILTIN_SERVICE_INDICATOR_TOGGLE, BUILTIN_SERVICE_INDICATOR_WRITE,
+        BUILTIN_SERVICE_POWER_SLEEP, BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY,
+        BUILTIN_SERVICE_WIFI_CANCEL, BUILTIN_SERVICE_WIFI_CONNECT, BUILTIN_SERVICE_WIFI_DISCONNECT,
+        BUILTIN_SERVICE_WIFI_GET_AP_IP, BUILTIN_SERVICE_WIFI_OPERATION,
+        BUILTIN_SERVICE_WIFI_RESULT, BUILTIN_SERVICE_WIFI_SCAN, BUILTIN_SERVICE_WIFI_SCAN_NETWORK,
+        BUILTIN_SERVICE_WIFI_START_AP, BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP,
+        BUILTIN_STATE_LOAD, BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, OP_ADD, OP_CALL_BUILTIN,
+        OP_CALL_FUNCTION, OP_EQ, OP_GET_FIELD, OP_GET_LOCAL, OP_GET_STATE, OP_GT, OP_GTE, OP_HALT,
+        OP_JUMP, OP_JUMP_IF_FALSE, OP_LIST_GET, OP_LIST_LEN, OP_LT, OP_LTE, OP_NE, OP_POP,
+        OP_PUSH_BOOL, OP_PUSH_INT, OP_PUSH_NULL, OP_PUSH_STRING, OP_RETURN, OP_SET_LOCAL,
+        OP_SET_STATE, OP_SUB, SECTION_CODE, SECTION_DEVICE_BINDINGS, SECTION_FUNCTIONS,
         SECTION_HANDLERS, SECTION_SCREENS, SECTION_STATE, SECTION_STRINGS, SECTION_TRIGGERS,
     },
     error::VmError,
@@ -33,6 +59,142 @@ pub struct Program<'a> {
     pub(crate) screens: [Screen; MAX_SCREENS],
     pub(crate) screen_count: usize,
     pub(crate) code: &'a [u8],
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CapabilityDemand {
+    pub wifi: bool,
+    pub ble: bool,
+    pub http: bool,
+    pub display: bool,
+    pub storage: bool,
+    pub binbook: bool,
+    pub hardware_gpio: bool,
+    pub indicator: bool,
+    pub timers: bool,
+    pub power: bool,
+    pub app_lifecycle: bool,
+    pub device_config: bool,
+}
+
+impl CapabilityDemand {
+    pub const fn none() -> Self {
+        Self {
+            wifi: false,
+            ble: false,
+            http: false,
+            display: false,
+            storage: false,
+            binbook: false,
+            hardware_gpio: false,
+            indicator: false,
+            timers: false,
+            power: false,
+            app_lifecycle: false,
+            device_config: false,
+        }
+    }
+
+    fn apply_builtin(&mut self, builtin: u8) {
+        match builtin {
+            BUILTIN_STATE_LOAD | BUILTIN_STATE_SAVE | BUILTIN_STATE_RESET => {
+                self.storage = true;
+            }
+            BUILTIN_APP_EXIT
+            | BUILTIN_APP_LAUNCH
+            | BUILTIN_APP_ARM
+            | BUILTIN_APP_DISARM
+            | BUILTIN_APP_REGISTRY_LIST
+            | BUILTIN_APP_REGISTRY_GET
+            | BUILTIN_APP_PROCESS_STACK
+            | BUILTIN_APP_ARMED_STACK
+            | BUILTIN_APP_ARMED_STACK_GET => {
+                self.app_lifecycle = true;
+            }
+            BUILTIN_APP_INSTALL | BUILTIN_APP_INSTALL_METADATA => {
+                self.app_lifecycle = true;
+                self.storage = true;
+            }
+            BUILTIN_SCREEN_OPEN
+            | BUILTIN_SCREEN_REFRESH
+            | BUILTIN_DISPLAY_CLEAR
+            | BUILTIN_DISPLAY_TEXT
+            | BUILTIN_DISPLAY_RECT
+            | BUILTIN_DISPLAY_LINE
+            | BUILTIN_DISPLAY_SELECT
+            | BUILTIN_DISPLAY_IMAGE
+            | BUILTIN_DISPLAY_DRAW
+            | BUILTIN_DISPLAY_INFO
+            | BUILTIN_DISPLAY_REFRESH_MODE => {
+                self.display = true;
+            }
+            BUILTIN_SERVICE_TIMER_EVERY | BUILTIN_SERVICE_TIMER_AFTER => {
+                self.timers = true;
+            }
+            BUILTIN_HARDWARE_GPIO_WRITE
+            | BUILTIN_HARDWARE_GPIO_TOGGLE
+            | BUILTIN_HARDWARE_GPIO_READ => {
+                self.hardware_gpio = true;
+            }
+            BUILTIN_SERVICE_INDICATOR_WRITE
+            | BUILTIN_SERVICE_INDICATOR_TOGGLE
+            | BUILTIN_SERVICE_INDICATOR_READ
+            | BUILTIN_SERVICE_INDICATOR_BREATHE
+            | BUILTIN_SERVICE_INDICATOR_BLINK => {
+                self.indicator = true;
+            }
+            BUILTIN_SERVICE_WIFI_START_AP
+            | BUILTIN_SERVICE_WIFI_STOP_AP
+            | BUILTIN_SERVICE_WIFI_STATUS
+            | BUILTIN_SERVICE_WIFI_GET_AP_IP
+            | BUILTIN_SERVICE_WIFI_CONNECT
+            | BUILTIN_SERVICE_WIFI_DISCONNECT
+            | BUILTIN_SERVICE_WIFI_SCAN
+            | BUILTIN_SERVICE_WIFI_OPERATION
+            | BUILTIN_SERVICE_WIFI_RESULT
+            | BUILTIN_SERVICE_WIFI_CANCEL
+            | BUILTIN_SERVICE_WIFI_SCAN_NETWORK => {
+                self.wifi = true;
+            }
+            BUILTIN_DEVICE_CONFIG_LOAD
+            | BUILTIN_DEVICE_CONFIG_SET
+            | BUILTIN_DEVICE_CONFIG_REBIND
+            | BUILTIN_DEVICE_CONFIG_SAVE => {
+                self.device_config = true;
+                self.storage = true;
+            }
+            BUILTIN_BINBOOK_OPEN
+            | BUILTIN_BINBOOK_INFO
+            | BUILTIN_BINBOOK_READ_PAGE
+            | BUILTIN_BINBOOK_CHAPTERS
+            | BUILTIN_BINBOOK_CHAPTER => {
+                self.binbook = true;
+                self.storage = true;
+            }
+            BUILTIN_CONTENT_BINBOOK_LIST => {
+                self.binbook = true;
+                self.storage = true;
+            }
+            BUILTIN_FILE_PICK_FILE
+            | BUILTIN_FILE_READ_TEXT
+            | BUILTIN_FILE_READ_LINES
+            | BUILTIN_FILE_COPY
+            | BUILTIN_FILE_LIST => {
+                self.storage = true;
+            }
+            BUILTIN_SERVICE_POWER_SLEEP => {
+                self.power = true;
+            }
+            BUILTIN_SERVICE_BLE_START | BUILTIN_SERVICE_BLE_STOP => {
+                self.ble = true;
+            }
+            BUILTIN_SERVICE_HTTP_START | BUILTIN_SERVICE_HTTP_STOP => {
+                self.http = true;
+            }
+            BUILTIN_DEBUG_PRINT => {}
+            _ => {}
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -169,6 +331,10 @@ impl<'a> Program<'a> {
 
     pub fn trigger_timers(&self) -> Result<TriggerTimers<'_>, VmError> {
         TriggerTimers::new(self, &self.trigger_timers, self.trigger_timer_count)
+    }
+
+    pub fn capability_demand(&self) -> Result<CapabilityDemand, VmError> {
+        capability_demand_from_code(self.code)
     }
 
     #[allow(dead_code)]
@@ -446,6 +612,18 @@ impl ProgramIndex {
 
     pub fn trigger_timers(&self) -> Result<TriggerTimers<'_>, VmError> {
         TriggerTimers::new(self, &self.trigger_timers, self.trigger_timer_count)
+    }
+
+    pub fn capability_demand_from_reader(
+        reader: &mut impl SqbcReader,
+        scratch: &mut [u8],
+    ) -> Result<CapabilityDemand, VmError> {
+        let code_section = code_reader_section(reader, scratch)?;
+        if code_section.len > scratch.len() {
+            return Err(VmError::InvalidSection);
+        }
+        reader.read_exact_at(code_section.offset, &mut scratch[..code_section.len])?;
+        capability_demand_from_code(&scratch[..code_section.len])
     }
 
     pub fn trigger_timer_count_from_reader(
@@ -958,6 +1136,66 @@ fn optional_section<'a>(
         Err(VmError::MissingSection) => Ok(None),
         Err(error) => Err(error),
     }
+}
+
+fn code_reader_section(
+    reader: &mut impl SqbcReader,
+    scratch: &mut [u8],
+) -> Result<SqbcSection, VmError> {
+    let mut fixed_header = [0u8; SQBC_HEADER_LEN];
+    reader.read_exact_at(0, &mut fixed_header)?;
+    let header = Program::parse_header(&fixed_header)?;
+    if header.header_len > scratch.len() {
+        return Err(VmError::InvalidHeader);
+    }
+    reader.read_exact_at(0, &mut scratch[..header.header_len])?;
+    validate_unique_section_kinds(&scratch[..header.header_len], header.section_count)?;
+
+    for index in 0..header.section_count {
+        let record = Program::parse_section_record(&scratch[..header.header_len], index)?;
+        if record.kind == SECTION_CODE {
+            return Ok(record);
+        }
+    }
+    Err(VmError::MissingSection)
+}
+
+fn capability_demand_from_code(code: &[u8]) -> Result<CapabilityDemand, VmError> {
+    let mut demand = CapabilityDemand::none();
+    let mut cursor = 0usize;
+    while cursor < code.len() {
+        let op = *code.get(cursor).ok_or(VmError::InvalidSection)?;
+        cursor += 1;
+        match op {
+            OP_PUSH_INT => skip_code_bytes(code, &mut cursor, 4)?,
+            OP_PUSH_BOOL => skip_code_bytes(code, &mut cursor, 1)?,
+            OP_PUSH_STRING | OP_GET_STATE | OP_SET_STATE | OP_GET_LOCAL | OP_SET_LOCAL
+            | OP_GET_FIELD => skip_code_bytes(code, &mut cursor, 2)?,
+            OP_PUSH_NULL | OP_ADD | OP_SUB | OP_EQ | OP_NE | OP_LT | OP_LTE | OP_GT | OP_GTE
+            | OP_RETURN | OP_HALT | OP_POP | OP_LIST_LEN | OP_LIST_GET => {}
+            OP_JUMP | OP_JUMP_IF_FALSE => skip_code_bytes(code, &mut cursor, 4)?,
+            OP_CALL_FUNCTION => skip_code_bytes(code, &mut cursor, 4)?,
+            OP_CALL_BUILTIN => {
+                let builtin = *code.get(cursor).ok_or(VmError::InvalidSection)?;
+                cursor += 1;
+                demand.apply_builtin(builtin);
+                if builtin == BUILTIN_DEBUG_PRINT {
+                    skip_code_bytes(code, &mut cursor, 1)?;
+                }
+            }
+            _ => return Err(VmError::UnknownOpcode),
+        }
+    }
+    Ok(demand)
+}
+
+fn skip_code_bytes(code: &[u8], cursor: &mut usize, len: usize) -> Result<(), VmError> {
+    let end = cursor.checked_add(len).ok_or(VmError::InvalidSection)?;
+    if end > code.len() {
+        return Err(VmError::InvalidSection);
+    }
+    *cursor = end;
+    Ok(())
 }
 
 fn trigger_reader_sections(

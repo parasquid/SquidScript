@@ -48,11 +48,14 @@ pub const MAX_RUNTIME_STRING_BYTES: usize = 128;
 pub const MAX_SERVICE_STRINGS: usize = 32;
 /// Maximum bytes per service-result string.
 pub const MAX_SERVICE_STRING_BYTES: usize = 512;
-/// Maximum runtime record values.
-pub const MAX_RUNTIME_RECORDS: usize = 8;
-/// Maximum fields per runtime record.
-pub const MAX_RUNTIME_RECORD_FIELDS: usize = 26;
 /// Maximum runtime list values.
 pub const MAX_RUNTIME_LISTS: usize = 2;
 /// Maximum items per runtime list.
 pub const MAX_RUNTIME_LIST_ITEMS: usize = 8;
+/// Maximum runtime record values.
+///
+/// A full service result page needs one summary record plus one record for
+/// each item in `MAX_RUNTIME_LIST_ITEMS`.
+pub const MAX_RUNTIME_RECORDS: usize = MAX_RUNTIME_LIST_ITEMS + 1;
+/// Maximum fields per runtime record.
+pub const MAX_RUNTIME_RECORD_FIELDS: usize = 26;

@@ -13,6 +13,7 @@ __pycache__/
 
 # Personal/environment-specific agent notes. Never committed.
 .local-agents.md
+AGENTS.local.md
 .current_agent_work
 .opencode/
 

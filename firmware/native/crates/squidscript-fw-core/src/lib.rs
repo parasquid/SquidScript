@@ -157,3 +157,89 @@ pub mod radio_lifecycle {
         }
     }
 }
+
+pub mod radio_service {
+    use crate::radio_lifecycle::RadioKind;
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum RadioLeaseState {
+        Inactive,
+        Active,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum ServiceLeaseError {
+        AlreadyActive,
+        NotActive,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct RadioLeaseManager {
+        wifi: RadioLeaseState,
+        ble: RadioLeaseState,
+    }
+
+    impl RadioLeaseManager {
+        pub const fn new() -> Self {
+            Self {
+                wifi: RadioLeaseState::Inactive,
+                ble: RadioLeaseState::Inactive,
+            }
+        }
+
+        pub fn acquire(&mut self, radio: RadioKind) -> Result<(), ServiceLeaseError> {
+            let state = self.state_mut(radio);
+            if *state == RadioLeaseState::Active {
+                return Err(ServiceLeaseError::AlreadyActive);
+            }
+            *state = RadioLeaseState::Active;
+            Ok(())
+        }
+
+        pub fn release(&mut self, radio: RadioKind) -> Result<(), ServiceLeaseError> {
+            let state = self.state_mut(radio);
+            if *state == RadioLeaseState::Inactive {
+                return Err(ServiceLeaseError::NotActive);
+            }
+            *state = RadioLeaseState::Inactive;
+            Ok(())
+        }
+
+        pub fn release_all(&mut self) {
+            self.wifi = RadioLeaseState::Inactive;
+            self.ble = RadioLeaseState::Inactive;
+        }
+
+        pub const fn state(&self, radio: RadioKind) -> RadioLeaseState {
+            match radio {
+                RadioKind::Wifi => self.wifi,
+                RadioKind::Ble => self.ble,
+            }
+        }
+
+        pub const fn active_count(&self) -> usize {
+            let wifi = match self.wifi {
+                RadioLeaseState::Inactive => 0,
+                RadioLeaseState::Active => 1,
+            };
+            let ble = match self.ble {
+                RadioLeaseState::Inactive => 0,
+                RadioLeaseState::Active => 1,
+            };
+            wifi + ble
+        }
+
+        fn state_mut(&mut self, radio: RadioKind) -> &mut RadioLeaseState {
+            match radio {
+                RadioKind::Wifi => &mut self.wifi,
+                RadioKind::Ble => &mut self.ble,
+            }
+        }
+    }
+
+    impl Default for RadioLeaseManager {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+}

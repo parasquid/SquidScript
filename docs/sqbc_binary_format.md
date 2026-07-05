@@ -168,6 +168,7 @@ be refreshed as capability boundaries become clearer.
 0x91 file.readText
 0x92 file.readLines
 0x93 file.copy
+0x94 file.list
 
 0xa0 reserved for service.storage
 0xb0 reserved for service.input

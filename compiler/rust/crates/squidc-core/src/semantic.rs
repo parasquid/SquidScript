@@ -13,6 +13,7 @@ fn is_fallible_builtin(name: &str) -> bool {
             | "file.readText"
             | "file.readLines"
             | "file.copy"
+            | "file.list"
             | "binbook.chapters"
             | "binbook.chapter"
             | "content.binbook.list"

@@ -11,7 +11,7 @@ use crate::{
         BUILTIN_DEVICE_CONFIG_SAVE, BUILTIN_DEVICE_CONFIG_SET, BUILTIN_DISPLAY_CLEAR,
         BUILTIN_DISPLAY_DRAW, BUILTIN_DISPLAY_IMAGE, BUILTIN_DISPLAY_INFO, BUILTIN_DISPLAY_LINE,
         BUILTIN_DISPLAY_RECT, BUILTIN_DISPLAY_REFRESH_MODE, BUILTIN_DISPLAY_SELECT,
-        BUILTIN_DISPLAY_TEXT, BUILTIN_FILE_COPY, BUILTIN_HARDWARE_GPIO_READ,
+        BUILTIN_DISPLAY_TEXT, BUILTIN_FILE_COPY, BUILTIN_FILE_LIST, BUILTIN_HARDWARE_GPIO_READ,
         BUILTIN_HARDWARE_GPIO_TOGGLE, BUILTIN_HARDWARE_GPIO_WRITE, BUILTIN_SCREEN_OPEN,
         BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_BLE_START, BUILTIN_SERVICE_BLE_STOP,
         BUILTIN_SERVICE_HTTP_START, BUILTIN_SERVICE_HTTP_STOP, BUILTIN_SERVICE_INDICATOR_BLINK,
@@ -33,13 +33,15 @@ use crate::{
     error::VmError,
     host::{
         AppArmedStack, AppArmedStackEntry, AppInstallResult, AppProcessStack, AppRegistryEntry,
-        AppRegistryList, BinBookChapterEntry, BinBookChapterListResult, BinBookChapterResult,
-        BinBookInfoResult, BinBookOpenResult, BinBookReadPageResult, ContentBinBookEntry,
-        ContentBinBookListResult, DeviceConfigResult, DisplayInfo, DisplayLineOptions,
-        DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions, FileCopyResult,
-        FilePickFileResult, FileReadLinesResult, FileReadTextResult, StorageCompletion,
-        StorageRequest, TraceSink, VmDispatch, WifiAccessPoint, WifiApIp, WifiOperation,
-        WifiOperationResult, WifiScanNetwork, WifiStatus,
+        AppRegistryList, BinBookChapterEntry, BinBookChapterListResult, BinBookChapterListSummary,
+        BinBookChapterListWriter, BinBookChapterResult, BinBookInfoResult, BinBookOpenResult,
+        BinBookReadPageResult, ContentBinBookEntry, ContentBinBookListResult,
+        ContentBinBookListSummary, ContentBinBookListWriter, DeviceConfigResult, DisplayInfo,
+        DisplayLineOptions, DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions,
+        FileCopyResult, FileListEntry, FileListSummary, FileListWriter, FilePickFileResult,
+        FileReadLinesResult, FileReadLinesSummary, FileReadLinesWriter, FileReadTextResult,
+        StorageCompletion, StorageRequest, TraceSink, VmDispatch, WifiAccessPoint, WifiApIp,
+        WifiOperation, WifiOperationResult, WifiScanNetwork, WifiStatus,
     },
     limits::{
         MAX_CALL_DEPTH, MAX_CODE_CHUNK_BYTES, MAX_FUNCTIONS, MAX_HANDLERS,
@@ -643,7 +645,7 @@ impl ChunkedVm {
             }
         })();
         if result.is_err() {
-            host.service_wifi_teardown()?;
+            host.service_teardown_all()?;
         }
         result
     }
@@ -1048,12 +1050,24 @@ impl ChunkedVm {
         Ok(())
     }
 
-    fn complete_resume_frame(&mut self, return_value: Option<Value>) -> Result<(), VmError> {
+    fn complete_resume_frame(
+        &mut self,
+        host: &mut impl ChunkedVmHost,
+        return_value: Option<Value>,
+    ) -> Result<(), VmError> {
         if self.frame_count == 0 {
             return Ok(());
         }
         let frame_index = self.frame_count - 1;
         let kind = self.frames[frame_index].kind;
+        if let ChunkedFrameKind::Screen(index) = kind {
+            let screen = self
+                .index
+                .screens
+                .get(index as usize)
+                .ok_or(VmError::InvalidSection)?;
+            host.screen_rendered(self.index.string(screen.name_id)?);
+        }
         self.chunk_cache.end_execute(kind.chunk_ref()).ok();
         self.frames[frame_index] = ChunkedResume::empty();
         self.frame_count -= 1;
@@ -1075,7 +1089,7 @@ impl ChunkedVm {
             let frame_start = self.frames[frame_index].start;
             let frame_end = self.frames[frame_index].end;
             if self.frames[frame_index].ip >= frame_end {
-                self.complete_resume_frame(None)?;
+                self.complete_resume_frame(host, None)?;
                 if self.frame_count > 0 {
                     continue;
                 }
@@ -1282,14 +1296,14 @@ impl ChunkedVm {
                 }
                 OP_RETURN => {
                     let value = self.pop()?;
-                    self.complete_resume_frame(Some(value))?;
+                    self.complete_resume_frame(host, Some(value))?;
                     if self.frame_count > 0 {
                         continue;
                     }
                     return Ok(VmDispatch::Complete);
                 }
                 OP_HALT => {
-                    self.complete_resume_frame(None)?;
+                    self.complete_resume_frame(host, None)?;
                     if self.frame_count > 0 {
                         continue;
                     }
@@ -1349,7 +1363,7 @@ impl ChunkedVm {
             | BUILTIN_SCREEN_OPEN
             | BUILTIN_SCREEN_REFRESH => return Err(VmError::InvalidOperand),
             BUILTIN_APP_EXIT => {
-                host.service_wifi_teardown()?;
+                host.service_teardown_all()?;
                 self.exited = true;
                 host.trace("app.exit");
             }
@@ -1723,8 +1737,8 @@ impl ChunkedVm {
                 let limit = self.pop()?.expect_i32()?;
                 let offset = self.pop()?.expect_i32()?;
                 let book = self.pop_handle()?;
-                let result = host.binbook_chapters(book, offset, limit)?;
-                let value = self.binbook_chapter_list_record(result)?;
+                let value =
+                    self.binbook_chapter_list_record_from_host(host, book, offset, limit)?;
                 self.push(value)?;
             }
             BUILTIN_BINBOOK_CHAPTER => {
@@ -1738,9 +1752,19 @@ impl ChunkedVm {
                 let limit = self.pop()?.expect_i32()?;
                 let offset = self.pop()?.expect_i32()?;
                 let library_id = self.pop_sqbc_string_id()?;
-                let result =
-                    host.content_binbook_list(self.index.string(library_id)?, offset, limit)?;
-                let value = self.content_binbook_list_record(result)?;
+                let mut library_buf = [0u8; MAX_RUNTIME_STRING_BYTES];
+                let library_len = {
+                    let library = self.index.string(library_id)?;
+                    if library.len() > library_buf.len() {
+                        return Err(VmError::InvalidOperand);
+                    }
+                    library_buf[..library.len()].copy_from_slice(library.as_bytes());
+                    library.len()
+                };
+                let library = str::from_utf8(&library_buf[..library_len])
+                    .map_err(|_| VmError::InvalidOperand)?;
+                let value =
+                    self.content_binbook_list_record_from_host(host, library, offset, limit)?;
                 self.push(value)?;
             }
             crate::bytecode::BUILTIN_FILE_PICK_FILE => {
@@ -1750,16 +1774,30 @@ impl ChunkedVm {
                 self.push(value)?;
             }
             crate::bytecode::BUILTIN_FILE_READ_TEXT => {
-                let path_id = self.pop_sqbc_string_id()?;
-                let result = host.file_read_text(self.index.string(path_id)?)?;
+                let path = self.pop()?;
+                let result = {
+                    let resolver = self.resolver();
+                    host.file_read_text(resolver.value_str(path)?)?
+                };
                 let value = self.file_read_text_result_record(result)?;
                 self.push(value)?;
             }
             crate::bytecode::BUILTIN_FILE_READ_LINES => {
                 let max_lines = self.pop()?.expect_i32()?;
-                let path_id = self.pop_sqbc_string_id()?;
-                let result = host.file_read_lines(self.index.string(path_id)?, max_lines)?;
-                let value = self.file_read_lines_result_record(result)?;
+                let path = self.pop()?;
+                let mut path_buf = [0u8; MAX_RUNTIME_STRING_BYTES];
+                let path_len = {
+                    let resolver = self.resolver();
+                    let path = resolver.value_str(path)?;
+                    if path.len() > path_buf.len() {
+                        return Err(VmError::InvalidOperand);
+                    }
+                    path_buf[..path.len()].copy_from_slice(path.as_bytes());
+                    path.len()
+                };
+                let path =
+                    str::from_utf8(&path_buf[..path_len]).map_err(|_| VmError::InvalidOperand)?;
+                let value = self.file_read_lines_result_record_from_host(host, path, max_lines)?;
                 self.push(value)?;
             }
             BUILTIN_FILE_COPY => {
@@ -1775,6 +1813,24 @@ impl ChunkedVm {
                     )?
                 };
                 let value = self.file_copy_result_record(result)?;
+                self.push(value)?;
+            }
+            BUILTIN_FILE_LIST => {
+                let limit = self.pop()?.expect_i32()?;
+                let offset = self.pop()?.expect_i32()?;
+                let library_id = self.pop_sqbc_string_id()?;
+                let mut library_buf = [0u8; MAX_RUNTIME_STRING_BYTES];
+                let library_len = {
+                    let library = self.index.string(library_id)?;
+                    if library.len() > library_buf.len() {
+                        return Err(VmError::InvalidOperand);
+                    }
+                    library_buf[..library.len()].copy_from_slice(library.as_bytes());
+                    library.len()
+                };
+                let library = str::from_utf8(&library_buf[..library_len])
+                    .map_err(|_| VmError::InvalidOperand)?;
+                let value = self.file_list_record_from_host(host, library, offset, limit)?;
                 self.push(value)?;
             }
             BUILTIN_SYSTEM_MEMORY => {
@@ -1881,22 +1937,19 @@ impl ChunkedVm {
         ])
     }
 
-    fn file_read_lines_result_record(
+    fn file_read_lines_result_record_from_host<H: TraceSink>(
         &mut self,
-        result: FileReadLinesResult<'_>,
+        host: &mut H,
+        path: &str,
+        max_lines: i32,
     ) -> Result<Value, VmError> {
-        let error = self.runtime_string_value(result.error)?;
-        let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
-        let count = result.lines.len().min(MAX_RUNTIME_LIST_ITEMS);
-        for (index, line) in result.lines.iter().take(count).enumerate() {
-            items[index] = self.runtime_string_value(Some(line))?;
-        }
-        let lines = self.runtime_lists.alloc(&items[..count])?;
-        self.runtime_records.alloc(&[
-            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
-            RuntimeRecordField::new(RuntimeFieldName::Error, error),
-            RuntimeRecordField::new(RuntimeFieldName::Lines, lines),
-        ])
+        let mut writer = RuntimeFileReadLinesWriter {
+            vm: self,
+            items: [Value::Null; MAX_RUNTIME_LIST_ITEMS],
+            len: 0,
+        };
+        let summary = host.file_read_lines_into(path, max_lines, &mut writer)?;
+        writer.finish(summary)
     }
 
     fn file_copy_result_record(&mut self, result: FileCopyResult<'_>) -> Result<Value, VmError> {
@@ -1965,24 +2018,20 @@ impl ChunkedVm {
         ])
     }
 
-    fn binbook_chapter_list_record(
+    fn binbook_chapter_list_record_from_host<H: TraceSink>(
         &mut self,
-        result: BinBookChapterListResult<'_>,
+        host: &mut H,
+        book: Handle,
+        offset: i32,
+        limit: i32,
     ) -> Result<Value, VmError> {
-        let error = self.runtime_string_value(result.error)?;
-        let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
-        let count = result.items.len().min(MAX_RUNTIME_LIST_ITEMS);
-        for (index, entry) in result.items.iter().take(count).enumerate() {
-            items[index] = self.binbook_chapter_entry_record(*entry)?;
-        }
-        let list = self.runtime_lists.alloc(&items[..count])?;
-        self.runtime_records.alloc(&[
-            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
-            RuntimeRecordField::new(RuntimeFieldName::Error, error),
-            RuntimeRecordField::new(RuntimeFieldName::Items, list),
-            RuntimeRecordField::new(RuntimeFieldName::Count, Value::I32(result.count)),
-            RuntimeRecordField::new(RuntimeFieldName::HasMore, Value::Bool(result.has_more)),
-        ])
+        let mut writer = RuntimeBinBookChapterListWriter {
+            vm: self,
+            items: [Value::Null; MAX_RUNTIME_LIST_ITEMS],
+            len: 0,
+        };
+        let summary = host.binbook_chapters_into(book, offset, limit, &mut writer)?;
+        writer.finish(summary)
     }
 
     fn binbook_chapter_result_record(
@@ -2009,6 +2058,32 @@ impl ChunkedVm {
         ])
     }
 
+    fn file_list_entry_record(&mut self, entry: FileListEntry<'_>) -> Result<Value, VmError> {
+        let name = self.runtime_string_value(Some(entry.name))?;
+        let reference = self.runtime_string_value(Some(entry.reference))?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new(RuntimeFieldName::Name, name),
+            RuntimeRecordField::new(RuntimeFieldName::Ref, reference),
+            RuntimeRecordField::new(RuntimeFieldName::Size, Value::I32(entry.size)),
+        ])
+    }
+
+    fn file_list_record_from_host<H: TraceSink>(
+        &mut self,
+        host: &mut H,
+        library: &str,
+        offset: i32,
+        limit: i32,
+    ) -> Result<Value, VmError> {
+        let mut writer = RuntimeFileListWriter {
+            vm: self,
+            items: [Value::Null; MAX_RUNTIME_LIST_ITEMS],
+            len: 0,
+        };
+        let summary = host.file_list_into(library, offset, limit, &mut writer)?;
+        writer.finish(summary)
+    }
+
     fn content_binbook_entry_record(
         &mut self,
         entry: ContentBinBookEntry<'_>,
@@ -2022,26 +2097,20 @@ impl ChunkedVm {
         ])
     }
 
-    fn content_binbook_list_record(
+    fn content_binbook_list_record_from_host<H: TraceSink>(
         &mut self,
-        result: ContentBinBookListResult<'_>,
+        host: &mut H,
+        library: &str,
+        offset: i32,
+        limit: i32,
     ) -> Result<Value, VmError> {
-        let error = self.runtime_string_value(result.error)?;
-        let warning = self.runtime_string_value(result.warning)?;
-        let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
-        let count = result.items.len().min(MAX_RUNTIME_LIST_ITEMS);
-        for (index, entry) in result.items.iter().take(count).enumerate() {
-            items[index] = self.content_binbook_entry_record(*entry)?;
-        }
-        let list = self.runtime_lists.alloc(&items[..count])?;
-        self.runtime_records.alloc(&[
-            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
-            RuntimeRecordField::new(RuntimeFieldName::Error, error),
-            RuntimeRecordField::new(RuntimeFieldName::Warning, warning),
-            RuntimeRecordField::new(RuntimeFieldName::Items, list),
-            RuntimeRecordField::new(RuntimeFieldName::Count, Value::I32(result.count)),
-            RuntimeRecordField::new(RuntimeFieldName::HasMore, Value::Bool(result.has_more)),
-        ])
+        let mut writer = RuntimeContentBinBookListWriter {
+            vm: self,
+            items: [Value::Null; MAX_RUNTIME_LIST_ITEMS],
+            len: 0,
+        };
+        let summary = host.content_binbook_list_into(library, offset, limit, &mut writer)?;
+        writer.finish(summary)
     }
 
     fn display_info_record(&mut self, result: DisplayInfo<'_>) -> Result<Value, VmError> {
@@ -2207,6 +2276,7 @@ impl ChunkedVm {
         let error = self.runtime_string_value(result.error)?;
         let network = result.network.unwrap_or_else(WifiAccessPoint::empty);
         let ssid = self.runtime_string_value(Some(network.ssid()?))?;
+        let bssid = self.runtime_string_value(network.bssid()?)?;
         let auth = self.runtime_string_value(network.auth)?;
         self.runtime_records.alloc(&[
             RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
@@ -2219,6 +2289,7 @@ impl ChunkedVm {
             RuntimeRecordField::new(RuntimeFieldName::Channel, Value::I32(network.channel)),
             RuntimeRecordField::new(RuntimeFieldName::Rssi, Value::I32(network.rssi)),
             RuntimeRecordField::new(RuntimeFieldName::Auth, auth),
+            RuntimeRecordField::new(RuntimeFieldName::Bssid, bssid),
             RuntimeRecordField::new(RuntimeFieldName::Hidden, Value::Bool(network.hidden)),
         ])
     }
@@ -2326,6 +2397,130 @@ impl<'a> Vm<'a> {
     }
 }
 
+struct RuntimeFileReadLinesWriter<'a> {
+    vm: &'a mut ChunkedVm,
+    items: [Value; MAX_RUNTIME_LIST_ITEMS],
+    len: usize,
+}
+
+impl FileReadLinesWriter for RuntimeFileReadLinesWriter<'_> {
+    fn push_line(&mut self, line: &str) -> Result<(), VmError> {
+        if self.len >= self.items.len() {
+            return Ok(());
+        }
+        self.items[self.len] = self.vm.runtime_string_value(Some(line))?;
+        self.len += 1;
+        Ok(())
+    }
+}
+
+impl RuntimeFileReadLinesWriter<'_> {
+    fn finish(self, summary: FileReadLinesSummary<'_>) -> Result<Value, VmError> {
+        let error = self.vm.runtime_string_value(summary.error)?;
+        let lines = self.vm.runtime_lists.alloc(&self.items[..self.len])?;
+        self.vm.runtime_records.alloc(&[
+            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(summary.ok)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
+            RuntimeRecordField::new(RuntimeFieldName::Lines, lines),
+        ])
+    }
+}
+
+struct RuntimeFileListWriter<'a> {
+    vm: &'a mut ChunkedVm,
+    items: [Value; MAX_RUNTIME_LIST_ITEMS],
+    len: usize,
+}
+
+impl FileListWriter for RuntimeFileListWriter<'_> {
+    fn push_entry(&mut self, entry: FileListEntry<'_>) -> Result<(), VmError> {
+        if self.len >= self.items.len() {
+            return Ok(());
+        }
+        self.items[self.len] = self.vm.file_list_entry_record(entry)?;
+        self.len += 1;
+        Ok(())
+    }
+}
+
+impl RuntimeFileListWriter<'_> {
+    fn finish(self, summary: FileListSummary<'_>) -> Result<Value, VmError> {
+        let error = self.vm.runtime_string_value(summary.error)?;
+        let list = self.vm.runtime_lists.alloc(&self.items[..self.len])?;
+        self.vm.runtime_records.alloc(&[
+            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(summary.ok)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
+            RuntimeRecordField::new(RuntimeFieldName::Items, list),
+            RuntimeRecordField::new(RuntimeFieldName::Count, Value::I32(summary.count)),
+            RuntimeRecordField::new(RuntimeFieldName::HasMore, Value::Bool(summary.has_more)),
+        ])
+    }
+}
+
+struct RuntimeContentBinBookListWriter<'a> {
+    vm: &'a mut ChunkedVm,
+    items: [Value; MAX_RUNTIME_LIST_ITEMS],
+    len: usize,
+}
+
+impl ContentBinBookListWriter for RuntimeContentBinBookListWriter<'_> {
+    fn push_entry(&mut self, entry: ContentBinBookEntry<'_>) -> Result<(), VmError> {
+        if self.len >= self.items.len() {
+            return Ok(());
+        }
+        self.items[self.len] = self.vm.content_binbook_entry_record(entry)?;
+        self.len += 1;
+        Ok(())
+    }
+}
+
+impl RuntimeContentBinBookListWriter<'_> {
+    fn finish(self, summary: ContentBinBookListSummary<'_>) -> Result<Value, VmError> {
+        let error = self.vm.runtime_string_value(summary.error)?;
+        let warning = self.vm.runtime_string_value(summary.warning)?;
+        let list = self.vm.runtime_lists.alloc(&self.items[..self.len])?;
+        self.vm.runtime_records.alloc(&[
+            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(summary.ok)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
+            RuntimeRecordField::new(RuntimeFieldName::Warning, warning),
+            RuntimeRecordField::new(RuntimeFieldName::Items, list),
+            RuntimeRecordField::new(RuntimeFieldName::Count, Value::I32(summary.count)),
+            RuntimeRecordField::new(RuntimeFieldName::HasMore, Value::Bool(summary.has_more)),
+        ])
+    }
+}
+
+struct RuntimeBinBookChapterListWriter<'a> {
+    vm: &'a mut ChunkedVm,
+    items: [Value; MAX_RUNTIME_LIST_ITEMS],
+    len: usize,
+}
+
+impl BinBookChapterListWriter for RuntimeBinBookChapterListWriter<'_> {
+    fn push_entry(&mut self, entry: BinBookChapterEntry<'_>) -> Result<(), VmError> {
+        if self.len >= self.items.len() {
+            return Ok(());
+        }
+        self.items[self.len] = self.vm.binbook_chapter_entry_record(entry)?;
+        self.len += 1;
+        Ok(())
+    }
+}
+
+impl RuntimeBinBookChapterListWriter<'_> {
+    fn finish(self, summary: BinBookChapterListSummary<'_>) -> Result<Value, VmError> {
+        let error = self.vm.runtime_string_value(summary.error)?;
+        let list = self.vm.runtime_lists.alloc(&self.items[..self.len])?;
+        self.vm.runtime_records.alloc(&[
+            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(summary.ok)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
+            RuntimeRecordField::new(RuntimeFieldName::Items, list),
+            RuntimeRecordField::new(RuntimeFieldName::Count, Value::I32(summary.count)),
+            RuntimeRecordField::new(RuntimeFieldName::HasMore, Value::Bool(summary.has_more)),
+        ])
+    }
+}
+
 struct InMemoryVmHost<'a, T: TraceSink> {
     code: &'a [u8],
     trace: &'a mut T,
@@ -2387,6 +2582,10 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
         options: DisplayResourceOptions,
     ) {
         self.trace.draw_resource(strings, drawable, options);
+    }
+
+    fn screen_rendered(&mut self, name: &str) {
+        self.trace.screen_rendered(name);
     }
 
     fn display_info<'b>(&'b mut self) -> Result<DisplayInfo<'b>, VmError> {
@@ -2601,6 +2800,15 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
         self.trace.file_read_lines(path, max_lines)
     }
 
+    fn file_read_lines_into<'b>(
+        &'b mut self,
+        path: &str,
+        max_lines: i32,
+        writer: &mut dyn FileReadLinesWriter,
+    ) -> Result<FileReadLinesSummary<'b>, VmError> {
+        self.trace.file_read_lines_into(path, max_lines, writer)
+    }
+
     fn file_copy<'b>(
         &'b mut self,
         source: &str,
@@ -2608,6 +2816,16 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
         name: &str,
     ) -> Result<FileCopyResult<'b>, VmError> {
         self.trace.file_copy(source, library, name)
+    }
+
+    fn file_list_into<'b>(
+        &'b mut self,
+        library: &str,
+        offset: i32,
+        limit: i32,
+        writer: &mut dyn FileListWriter,
+    ) -> Result<FileListSummary<'b>, VmError> {
+        self.trace.file_list_into(library, offset, limit, writer)
     }
 
     fn binbook_open<'b>(&'b mut self, path: &str) -> Result<BinBookOpenResult<'b>, VmError> {
@@ -2635,6 +2853,17 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
         self.trace.binbook_chapters(book, offset, limit)
     }
 
+    fn binbook_chapters_into<'b>(
+        &'b mut self,
+        book: Handle,
+        offset: i32,
+        limit: i32,
+        writer: &mut dyn BinBookChapterListWriter,
+    ) -> Result<BinBookChapterListSummary<'b>, VmError> {
+        self.trace
+            .binbook_chapters_into(book, offset, limit, writer)
+    }
+
     fn binbook_chapter<'b>(
         &'b mut self,
         book: Handle,
@@ -2650,6 +2879,17 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
         limit: i32,
     ) -> Result<ContentBinBookListResult<'b>, VmError> {
         self.trace.content_binbook_list(library, offset, limit)
+    }
+
+    fn content_binbook_list_into<'b>(
+        &'b mut self,
+        library: &str,
+        offset: i32,
+        limit: i32,
+        writer: &mut dyn ContentBinBookListWriter,
+    ) -> Result<ContentBinBookListSummary<'b>, VmError> {
+        self.trace
+            .content_binbook_list_into(library, offset, limit, writer)
     }
 
     fn state_load(&mut self, out: &mut [u8]) -> Result<Option<usize>, VmError> {

@@ -110,6 +110,7 @@ const BUILTIN_FILE_PICK_FILE: u8 = 0x90;
 const BUILTIN_FILE_READ_TEXT: u8 = 0x91;
 const BUILTIN_FILE_READ_LINES: u8 = 0x92;
 const BUILTIN_FILE_COPY: u8 = 0x93;
+const BUILTIN_FILE_LIST: u8 = 0x94;
 const BUILTIN_SERVICE_POWER_SLEEP: u8 = 0xc0;
 const BUILTIN_SERVICE_BLE_START: u8 = 0xc1;
 const BUILTIN_SERVICE_BLE_STOP: u8 = 0xc2;
@@ -1246,6 +1247,27 @@ fn compile_content_binbook_list(
     Ok(())
 }
 
+fn compile_file_list(
+    unit: &mut CompileUnit,
+    frame: &FrameCompiler,
+    args: &[IrExpr],
+) -> Result<(), SqbcError> {
+    validate_builtin_arg_count("file.list", args.len())?;
+    let library = args
+        .first()
+        .ok_or_else(|| SqbcError::new("file.list requires a library"))?;
+    compile_expr(unit, frame, library)?;
+    let options = match args.get(1) {
+        Some(IrExpr::Literal { value }) if value.is_object() => value.clone(),
+        Some(_) => return Err(SqbcError::new("file.list paging options must be an object")),
+        None => serde_json::json!({ "offset": 0, "limit": 8 }),
+    };
+    emit_i32_option(unit, frame, &options, "offset")?;
+    emit_i32_option(unit, frame, &options, "limit")?;
+    emit_builtin(&mut unit.code, BUILTIN_FILE_LIST);
+    Ok(())
+}
+
 fn compile_binbook_chapters(
     unit: &mut CompileUnit,
     frame: &FrameCompiler,
@@ -1401,6 +1423,10 @@ fn compile_expr(
                 compile_content_binbook_list(unit, frame, args)?;
                 return Ok(());
             }
+            if name == "file.list" {
+                compile_file_list(unit, frame, args)?;
+                return Ok(());
+            }
             if name == "file.copy" {
                 compile_file_copy(unit, frame, args)?;
                 return Ok(());
@@ -1536,6 +1562,7 @@ fn builtin_for_call(name: &str) -> Option<u8> {
         "file.readText" => Some(BUILTIN_FILE_READ_TEXT),
         "file.readLines" => Some(BUILTIN_FILE_READ_LINES),
         "file.copy" => Some(BUILTIN_FILE_COPY),
+        "file.list" => Some(BUILTIN_FILE_LIST),
         "service.display.info" => Some(BUILTIN_DISPLAY_INFO),
         _ => None,
     }
@@ -1570,6 +1597,7 @@ fn validate_builtin_arg_count(name: &str, count: usize) -> Result<(), SqbcError>
         "file.readText" => count == 1,
         "file.readLines" => count == 2,
         "file.copy" => count == 2,
+        "file.list" => count == 1 || count == 2,
         "service.display.info" => count == 0,
         _ => true,
     };

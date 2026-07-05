@@ -407,6 +407,25 @@ pub fn key_event_from_request_into(request: &[u8], out: &mut [u8]) -> Result<usi
     Ok(needed)
 }
 
+pub fn request_string_field<'a>(
+    request: &'a DeviceRequest<'a>,
+    tag: u8,
+) -> Result<Option<&'a str>, DecodeError> {
+    let Some(bytes) = payload_field_bytes(request.payload(), tag, 1)? else {
+        return Ok(None);
+    };
+    str::from_utf8(bytes)
+        .map(Some)
+        .map_err(|_| DecodeError::InvalidUtf8)
+}
+
+pub fn request_bytes_field<'a>(
+    request: &'a DeviceRequest<'a>,
+    tag: u8,
+) -> Result<Option<&'a [u8]>, DecodeError> {
+    payload_field_bytes(request.payload(), tag, 0)
+}
+
 fn payload_field_bytes<'a>(
     payload: &'a [u8],
     expected_tag: u8,
@@ -476,6 +495,19 @@ pub enum HostAction<'a> {
         app_id: &'a str,
         resource_path: &'a str,
         staging_path: &'a str,
+    },
+    BeginContentInstall {
+        name: &'a str,
+        total_len: usize,
+    },
+    WriteContentChunk {
+        path: &'a str,
+        offset: usize,
+        bytes: &'a [u8],
+    },
+    CommitContentInstall {
+        name: &'a str,
+        path: &'a str,
     },
 }
 
@@ -652,6 +684,7 @@ pub struct ProtocolSessions {
     install: TransferSession,
     temp_run: TransferSession,
     resource: ResourceSession,
+    content: TransferSession,
 }
 
 impl ProtocolSessions {
@@ -669,6 +702,9 @@ impl ProtocolSessions {
             Opcode::ResourceInstallBegin => self.begin_resource(request),
             Opcode::ResourceInstallChunk => self.resource_chunk(request),
             Opcode::ResourceInstallCommit => self.commit_resource(),
+            Opcode::ContentInstallBegin => self.begin_content(request),
+            Opcode::ContentInstallChunk => self.content_chunk(request),
+            Opcode::ContentInstallCommit => self.commit_content(),
             _ => Err(SessionError::InvalidRequest),
         }
     }
@@ -710,6 +746,18 @@ impl ProtocolSessions {
 
     pub fn complete_resource_commit(&mut self) {
         self.resource.clear();
+    }
+
+    pub fn complete_begin_content_install(&mut self, path: &str) -> Result<(), SessionError> {
+        self.content.complete_begin(path)
+    }
+
+    pub fn complete_content_chunk(&mut self, bytes: &[u8]) -> Result<(), SessionError> {
+        self.content.complete_chunk(bytes)
+    }
+
+    pub fn complete_content_commit(&mut self) {
+        self.content.clear();
     }
 
     fn begin_install<'a>(
@@ -819,6 +867,44 @@ impl ProtocolSessions {
             app_id: self.resource.transfer.app_id.as_str(),
             resource_path: self.resource.resource_path.as_str(),
             staging_path: self.resource.transfer.staging_path.as_str(),
+        })
+    }
+
+    fn begin_content<'a>(
+        &'a mut self,
+        request: &'a DeviceRequest<'a>,
+    ) -> Result<HostAction<'a>, SessionError> {
+        let name = string_field(request.payload, 1)?.ok_or(SessionError::MissingField)?;
+        let total_len = u64_field(request.payload, 2)?.ok_or(SessionError::MissingField)?;
+        let crc32 = u64_field(request.payload, 3)?.ok_or(SessionError::MissingField)?;
+        if crc32 > u32::MAX as u64 {
+            return Err(SessionError::InvalidRequest);
+        }
+        let total_len = usize::try_from(total_len).map_err(|_| SessionError::TooLarge)?;
+        self.content
+            .begin_with_limit(name, total_len, crc32 as u32, MAX_RESOURCE_BYTES)?;
+        Ok(HostAction::BeginContentInstall { name, total_len })
+    }
+
+    fn content_chunk<'a>(
+        &'a self,
+        request: &'a DeviceRequest<'a>,
+    ) -> Result<HostAction<'a>, SessionError> {
+        let offset = chunk_offset(request.payload)?;
+        let bytes = bytes_field(request.payload, 2)?.ok_or(SessionError::MissingField)?;
+        self.content.validate_chunk(offset, bytes)?;
+        Ok(HostAction::WriteContentChunk {
+            path: self.content.staging_path.as_str(),
+            offset,
+            bytes,
+        })
+    }
+
+    fn commit_content(&self) -> Result<HostAction<'_>, SessionError> {
+        self.content.validate_commit()?;
+        Ok(HostAction::CommitContentInstall {
+            name: self.content.app_id.as_str(),
+            path: self.content.staging_path.as_str(),
         })
     }
 }
@@ -1050,6 +1136,27 @@ const RESOURCE_METRIC_NAMES: &[(u32, &str)] = &[
     (58, "last_state_save_us"),
     (59, "last_binbook_open_us"),
     (60, "last_binbook_read_page_us"),
+    (61, "radio_active_leases"),
+    (62, "radio_wifi_active"),
+    (63, "radio_ble_active"),
+    (64, "serial_buffer_bytes"),
+    (65, "known_static_bytes"),
+    (66, "heap_pool_bytes"),
+    (67, "known_used_bytes"),
+    (68, "nonheap_remainder_bytes"),
+    (69, "display_pending_refreshes"),
+    (70, "display_recorded_draws"),
+    (71, "display_dropped_draws"),
+    (72, "demand_wifi"),
+    (73, "demand_ble"),
+    (74, "demand_http"),
+    (75, "demand_display"),
+    (76, "demand_storage"),
+    (77, "demand_binbook"),
+    (78, "ble_profile_active"),
+    (79, "ble_profile_id_len"),
+    (80, "ble_profile_start_events"),
+    (81, "ble_profile_stop_events"),
 ];
 
 fn resource_metric_id_for_name(name: &str) -> Option<u32> {
@@ -1952,6 +2059,54 @@ where
     )
 }
 
+pub fn encode_content_check_response_into(
+    sequence: u32,
+    name: &str,
+    size: u64,
+    crc32: u64,
+    out: &mut [u8],
+) -> Result<usize, DecodeError> {
+    let payload_len = tlv_string_len(name)?
+        .checked_add(tlv_u64_len())
+        .and_then(|len| len.checked_add(tlv_u64_len()))
+        .ok_or(DecodeError::OutputTooSmall {
+            needed: usize::MAX,
+            capacity: out.len(),
+        })?;
+    encode_response_payload_into(
+        Opcode::ContentCheck,
+        Status::Ok,
+        sequence,
+        payload_len,
+        out,
+        |payload| {
+            let rest = write_string_tlv(payload, 1, name)?;
+            let rest = write_u64_tlv(rest, 2, size)?;
+            write_u64_tlv(rest, 3, crc32)?;
+            Ok(())
+        },
+    )
+}
+
+pub fn encode_content_delete_response_into(
+    sequence: u32,
+    name: &str,
+    out: &mut [u8],
+) -> Result<usize, DecodeError> {
+    let payload_len = tlv_string_len(name)?;
+    encode_response_payload_into(
+        Opcode::ContentDelete,
+        Status::Ok,
+        sequence,
+        payload_len,
+        out,
+        |payload| {
+            write_string_tlv(payload, 1, name)?;
+            Ok(())
+        },
+    )
+}
+
 pub fn encode_error_response_into(
     opcode: Opcode,
     sequence: u32,
@@ -2485,8 +2640,10 @@ mod tests {
     use super::{
         app_install_chunk_request_with_ack, content_check_request, content_check_result,
         content_delete_request, content_delete_result, display_window_probe_request,
-        hello_identity, Field, FieldValue, Frame, Opcode, Status, TransferCapabilities,
+        encode_content_check_response_into, encode_content_delete_response_into, hello_identity,
+        Field, FieldValue, Frame, Opcode, Status, TransferCapabilities,
     };
+    use crate::decode_frame;
 
     #[test]
     fn transfer_chunk_requests_carry_ack_intent() {
@@ -2561,6 +2718,25 @@ mod tests {
     }
 
     #[test]
+    fn content_check_response_encoder_round_trips() {
+        let mut bytes = [0u8; 128];
+        let len = encode_content_check_response_into(
+            91,
+            "transfer-smoke.dat",
+            8192,
+            0x1234_abcd,
+            &mut bytes,
+        )
+        .unwrap();
+        let frame = decode_frame(&bytes[..len]).unwrap();
+        let checked = content_check_result(&frame).expect("content check response decodes");
+
+        assert_eq!(checked.name, "transfer-smoke.dat");
+        assert_eq!(checked.size, 8192);
+        assert_eq!(checked.crc32, 0x1234_abcd);
+    }
+
+    #[test]
     fn display_window_probe_request_carries_pattern_name() {
         let request = display_window_probe_request(85, "corners");
 
@@ -2587,5 +2763,15 @@ mod tests {
 
         let wrong_opcode = Frame::response(Opcode::ContentCheck, Status::Ok, 93, Vec::new());
         assert!(content_delete_result(&wrong_opcode).is_none());
+    }
+
+    #[test]
+    fn content_delete_response_encoder_round_trips() {
+        let mut bytes = [0u8; 128];
+        let len = encode_content_delete_response_into(93, "old-book.binbook", &mut bytes).unwrap();
+        let frame = decode_frame(&bytes[..len]).unwrap();
+        let deleted = content_delete_result(&frame).expect("content delete response decodes");
+
+        assert_eq!(deleted, "old-book.binbook");
     }
 }

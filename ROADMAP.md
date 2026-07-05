@@ -182,6 +182,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 - Audit compiler, SQBC, simulator, examples, and docs for invariant violations
   that should become explicit diagnostics instead of silent ambiguity.
+- Native X4 post-canonical Zephyr-surface parity: decide whether to implement
+  runtime-cap/device-config persistence, planned sleep/power resume, HTTP
+  upload, indicator APIs, broader timer/armed-app behavior, and wider Zephyr
+  target parity after native X4 Wi-Fi/BLE/reader gates are canonical.
 - Promote the XTEINK X4 serial/HTTP/BLE transfer regression scripts into the
   target-aware `squidc hardware test --target xteink-x4` inventory so transfer
   integrity checks are selectable, consistently reported, and harder to skip

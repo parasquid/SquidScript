@@ -101,6 +101,7 @@ pub trait TraceSink {
         _options: DisplayResourceOptions,
     ) {
     }
+    fn screen_rendered(&mut self, _name: &str) {}
     fn display_info<'a>(&'a mut self) -> Result<DisplayInfo<'a>, VmError> {
         Ok(DisplayInfo::unsupported())
     }
@@ -220,6 +221,9 @@ pub trait TraceSink {
     fn service_wifi_teardown(&mut self) -> Result<(), VmError> {
         Ok(())
     }
+    fn service_teardown_all(&mut self) -> Result<(), VmError> {
+        self.service_wifi_teardown()
+    }
     fn service_power_sleep(&mut self, _wake_after_ms: i32) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
     }
@@ -278,6 +282,21 @@ pub trait TraceSink {
     ) -> Result<FileReadLinesResult<'a>, VmError> {
         Ok(FileReadLinesResult::unsupported())
     }
+    fn file_read_lines_into<'a>(
+        &'a mut self,
+        path: &str,
+        max_lines: i32,
+        writer: &mut dyn FileReadLinesWriter,
+    ) -> Result<FileReadLinesSummary<'a>, VmError> {
+        let result = self.file_read_lines(path, max_lines)?;
+        for line in result.lines {
+            writer.push_line(line)?;
+        }
+        Ok(FileReadLinesSummary {
+            ok: result.ok,
+            error: result.error,
+        })
+    }
     fn file_copy<'a>(
         &'a mut self,
         _source: &str,
@@ -285,6 +304,20 @@ pub trait TraceSink {
         _name: &str,
     ) -> Result<FileCopyResult<'a>, VmError> {
         Ok(FileCopyResult::unsupported())
+    }
+    fn file_list_into<'a>(
+        &'a mut self,
+        _library: &str,
+        _offset: i32,
+        _limit: i32,
+        _writer: &mut dyn FileListWriter,
+    ) -> Result<FileListSummary<'a>, VmError> {
+        Ok(FileListSummary {
+            ok: false,
+            error: Some("unsupported"),
+            count: 0,
+            has_more: false,
+        })
     }
     fn binbook_open<'a>(&'a mut self, _path: &str) -> Result<BinBookOpenResult<'a>, VmError> {
         Ok(BinBookOpenResult::unsupported())
@@ -307,6 +340,24 @@ pub trait TraceSink {
     ) -> Result<BinBookChapterListResult<'a>, VmError> {
         Ok(BinBookChapterListResult::unsupported())
     }
+    fn binbook_chapters_into<'a>(
+        &'a mut self,
+        book: Handle,
+        offset: i32,
+        limit: i32,
+        writer: &mut dyn BinBookChapterListWriter,
+    ) -> Result<BinBookChapterListSummary<'a>, VmError> {
+        let result = self.binbook_chapters(book, offset, limit)?;
+        for entry in result.items {
+            writer.push_entry(*entry)?;
+        }
+        Ok(BinBookChapterListSummary {
+            ok: result.ok,
+            error: result.error,
+            count: result.count,
+            has_more: result.has_more,
+        })
+    }
     fn binbook_chapter<'a>(
         &'a mut self,
         _book: Handle,
@@ -321,6 +372,25 @@ pub trait TraceSink {
         _limit: i32,
     ) -> Result<ContentBinBookListResult<'a>, VmError> {
         Ok(ContentBinBookListResult::unsupported())
+    }
+    fn content_binbook_list_into<'a>(
+        &'a mut self,
+        library: &str,
+        offset: i32,
+        limit: i32,
+        writer: &mut dyn ContentBinBookListWriter,
+    ) -> Result<ContentBinBookListSummary<'a>, VmError> {
+        let result = self.content_binbook_list(library, offset, limit)?;
+        for entry in result.items {
+            writer.push_entry(*entry)?;
+        }
+        Ok(ContentBinBookListSummary {
+            ok: result.ok,
+            error: result.error,
+            warning: result.warning,
+            count: result.count,
+            has_more: result.has_more,
+        })
     }
     fn state_load(&mut self, _out: &mut [u8]) -> Result<Option<usize>, VmError> {
         Ok(None)
@@ -399,6 +469,35 @@ impl FileReadLinesResult<'_> {
             lines: &[],
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FileReadLinesSummary<'a> {
+    pub ok: bool,
+    pub error: Option<&'a str>,
+}
+
+pub trait FileReadLinesWriter {
+    fn push_line(&mut self, line: &str) -> Result<(), VmError>;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FileListEntry<'a> {
+    pub name: &'a str,
+    pub reference: &'a str,
+    pub size: i32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FileListSummary<'a> {
+    pub ok: bool,
+    pub error: Option<&'a str>,
+    pub count: i32,
+    pub has_more: bool,
+}
+
+pub trait FileListWriter {
+    fn push_entry(&mut self, entry: FileListEntry<'_>) -> Result<(), VmError>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -506,6 +605,18 @@ impl BinBookChapterListResult<'_> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BinBookChapterListSummary<'a> {
+    pub ok: bool,
+    pub error: Option<&'a str>,
+    pub count: i32,
+    pub has_more: bool,
+}
+
+pub trait BinBookChapterListWriter {
+    fn push_entry(&mut self, entry: BinBookChapterEntry<'_>) -> Result<(), VmError>;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BinBookChapterResult<'a> {
     pub ok: bool,
     pub error: Option<&'a str>,
@@ -550,6 +661,19 @@ impl ContentBinBookListResult<'_> {
             has_more: false,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ContentBinBookListSummary<'a> {
+    pub ok: bool,
+    pub error: Option<&'a str>,
+    pub warning: Option<&'a str>,
+    pub count: i32,
+    pub has_more: bool,
+}
+
+pub trait ContentBinBookListWriter {
+    fn push_entry(&mut self, entry: ContentBinBookEntry<'_>) -> Result<(), VmError>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

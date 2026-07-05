@@ -1,0 +1,36 @@
+app "xteink-radio-display-visual-bars"
+
+event.on("app.start") {
+  let ap = service.wifi.startAP("SquidScript-X4")
+  service.ble.start("file-transfer", {
+    id: "x4-rx"
+    accept: [".sqbc"]
+    events: {
+      complete: "ble.done"
+    }
+  })
+  screen.open("main")
+  debug.print("x4 radio visual", ap.ok, ap.error)
+}
+
+event.on("key.SELECT") {
+  let stop = service.wifi.stopAP()
+  service.ble.stop()
+  debug.print("x4 radio stop", stop.ok, stop.error)
+}
+
+screen("main") {
+  service.display.clear(color.WHITE)
+  service.display.rect(0, 0, 480, 320, {
+    fillColor: color.BLACK
+  })
+  service.display.rect(32, 352, 416, 96, {
+    fillColor: color.BLACK
+  })
+  service.display.text("XTEINK", {
+    x: 64
+    y: 376
+    fontHeight: 48
+    textColor: color.WHITE
+  })
+}

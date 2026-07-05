@@ -2659,6 +2659,41 @@ ESP32-C3 Zephyr canonical firmware, this API returns:
 { ok: false, error: "unsupported", lines: [] }
 ```
 
+file.list(library, { offset, limit })
+
+Lists a bounded page of firmware-owned file references in a logical content
+library. `library` is a logical library name such as `"books"`, not a physical
+volume path. `offset` and `limit` are optional paging fields; omitted paging
+defaults to the runtime's first page.
+
+Example:
+
+```squid
+let page = file.list("books", { offset: 0, limit: 8 })
+if (page.ok) {
+  for item in page.items max 8 {
+    debug.print(item.name, item.ref, item.size)
+  }
+}
+```
+
+Result:
+
+```text
+{ ok: bool, error: string?, items: list, count: int, hasMore: bool }
+```
+
+Each item has this shape:
+
+```text
+{ name: string, ref: string, size: int }
+```
+
+`name` is the library-local safe file name, `ref` is the firmware-owned file
+reference to pass back to `file.*` or content APIs, and `size` is the file size
+in bytes clamped to the runtime integer range. Normal error strings include
+`invalid-name`, `volume-missing`, `unsupported`, and `io-error`.
+
 file.copy(source, { library, name })
 
 Publishes a firmware-owned file reference into a logical content library.

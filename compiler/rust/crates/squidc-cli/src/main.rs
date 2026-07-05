@@ -3674,7 +3674,14 @@ mod tests {
             "squidscript-fw-x4".to_string(),
         ]));
         assert!(plan.args.contains(&"--features".to_string()));
-        assert!(plan.args.contains(&"firmware-bin".to_string()));
+        let features = plan
+            .args
+            .windows(2)
+            .find_map(|window| (window[0] == "--features").then_some(window[1].as_str()))
+            .expect("native feature argument");
+        assert!(features.contains("firmware-bin"));
+        assert!(features.contains("x4-binbook"));
+        assert!(features.contains("native-radio-services"));
         assert!(plan
             .env
             .iter()

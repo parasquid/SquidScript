@@ -36,8 +36,10 @@ The active foreground app has a single per-session runtime instance.
 | Framebuffer size | 48000 bytes | `FB_FRAMEBUFFER_SIZE` | yes (per target) |
 | Retained device error slots | 8 | `SQ_VM_RUNTIME_DEVICE_ERROR_MAX` | no |
 | Device error line length | 48 bytes | `SQ_VM_RUNTIME_DEVICE_ERROR_LEN` | no |
-| Content library page entries | 8 | `SQ_VM_RUNTIME_CONTENT_LIST_MAX` | no |
-| Content library ref length | 128 bytes | `SQ_VM_RUNTIME_CONTENT_REF_LEN` | no |
+| Runtime record values | 9 | `MAX_RUNTIME_RECORDS` | no |
+| Runtime list items | 8 | `MAX_RUNTIME_LIST_ITEMS` | no |
+| File/content library page entries | 8 | `SQ_VM_RUNTIME_CONTENT_LIST_MAX` | no |
+| File/content library ref length | 128 bytes | `SQ_VM_RUNTIME_CONTENT_REF_LEN` | no |
 
 `service.timer.every(...)`, `service.timer.after(...)`, and `app.triggers`
 share the foreground or armed timer caps. Registering one beyond the active cap
@@ -46,9 +48,15 @@ returns `-ENOSPC` to the VM. Physical input sampling can enqueue up to
 busy; overflow drops the newest input event and records `input_queue_overflow`
 in device errors. Display flushes run on a separate bounded worker so input and foreground event dispatch can continue while the e-paper controller is busy.
 
-`content.binbook.list(...)` materializes at most one content page of
-`SQ_VM_RUNTIME_CONTENT_LIST_MAX` entries per call. Each `ref` is an opaque
-logical identifier bounded by `SQ_VM_RUNTIME_CONTENT_REF_LEN`.
+`file.list(...)` and `content.binbook.list(...)` materialize at most one
+library page of `SQ_VM_RUNTIME_CONTENT_LIST_MAX` entries per call. Each `ref`
+is an opaque logical identifier bounded by `SQ_VM_RUNTIME_CONTENT_REF_LEN`.
+Content-specific lists are layered over the same generic file listing model
+instead of defining the firmware storage architecture.
+
+The runtime record arena must hold one result record plus every item record in
+a full page. `MAX_RUNTIME_RECORDS` is therefore at least
+`MAX_RUNTIME_LIST_ITEMS + 1`.
 
 `binbook.chapters(...)` materializes at most one chapter page of
 `SQ_VM_RUNTIME_CONTENT_LIST_MAX` entries per call. Chapter titles are copied

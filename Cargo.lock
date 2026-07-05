@@ -100,6 +100,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
+name = "az"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b7e4c2464d97fe331d41de9d5db0def0a96f4d823b8b32a2efd503578988973"
+
+[[package]]
 name = "base64"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -114,6 +120,14 @@ name = "binbook-decompress"
 version = "0.1.0"
 dependencies = [
  "binbook-core",
+]
+
+[[package]]
+name = "binbook-encode"
+version = "0.1.0"
+dependencies = [
+ "binbook-core",
+ "sha2",
 ]
 
 [[package]]
@@ -365,6 +379,15 @@ name = "countme"
 version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7704b5fdd17b18ae31c4c1da5a2e0305a2bf17b5249300a9ee9ed7b72114c636"
+
+[[package]]
+name = "cpufeatures"
+version = "0.2.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "crc32fast"
@@ -760,6 +783,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "embassy-time"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "592b0c143ec626e821d4d90da51a2bd91d559d6c442b7c74a47d368c9e23d97a"
+dependencies = [
+ "cfg-if",
+ "critical-section",
+ "document-features",
+ "embassy-time-driver",
+ "embedded-hal 0.2.7",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "futures-core",
+]
+
+[[package]]
 name = "embassy-time-driver"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -785,6 +824,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e9d2e857f87ac832df68fa498d18ddc679175cf3d2e4aa893988e5601baf9438"
 dependencies = [
  "nb 1.1.0",
+]
+
+[[package]]
+name = "embedded-graphics"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e8da660bb0c829b34a56a965490597f82a55e767b91f9543be80ce8ccb416fe"
+dependencies = [
+ "az",
+ "byteorder",
+ "embedded-graphics-core",
+ "float-cmp",
+ "micromath",
+]
+
+[[package]]
+name = "embedded-graphics-core"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95743bef3ff70fcba3930246c4e6872882bbea0dcc6da2ca860112e0cd4bd09f"
+dependencies = [
+ "az",
+ "byteorder",
 ]
 
 [[package]]
@@ -840,6 +902,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2564b9f813c544241430e147d8bc454815ef9ac998878d30cc3055449f7fd4c0"
 dependencies = [
  "embedded-io 0.7.1",
+]
+
+[[package]]
+name = "embedded-sd-storage"
+version = "0.1.0"
+dependencies = [
+ "binbook-core",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "embedded-sdmmc",
+ "heapless 0.8.0",
+ "lamfat",
+]
+
+[[package]]
+name = "embedded-sdmmc"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce3c7f9ea039eeafc4a49597b7bd5ae3a1c8e51b2803a381cb0f29ce90fe1ec6"
+dependencies = [
+ "byteorder",
+ "embedded-hal 1.0.0",
+ "embedded-io 0.6.1",
+ "heapless 0.8.0",
+ "log",
 ]
 
 [[package]]
@@ -1247,6 +1334,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "float-cmp"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98de4bbd547a563b716d8dfa9aad1cb19bfab00f4fa09a6a4ed21dbcf44ce9c4"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1389,6 +1485,10 @@ dependencies = [
  "typenum",
  "version_check",
 ]
+
+[[package]]
+name = "gray2-render"
+version = "0.1.0"
 
 [[package]]
 name = "hash32"
@@ -1576,6 +1676,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "lamfat"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e63196e3c4f2b76a2ed28ef28ac24b58ad09df12dda29be4ccc0ddf7090b0f53"
+dependencies = [
+ "bitflags 2.13.0",
+ "log",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1651,6 +1761,12 @@ name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
+
+[[package]]
+name = "micromath"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3c8dda44ff03a2f238717214da50f65d5a53b45cd213a7370424ffdb6fae815"
 
 [[package]]
 name = "miniz_oxide"
@@ -1879,6 +1995,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "profont"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "016681370a9dd6e7ddb4c1a959922fd59dc45e5ebaa5ff5b13090267898ced34"
+dependencies = [
+ "embedded-graphics",
 ]
 
 [[package]]
@@ -2126,6 +2251,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha2"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "digest",
+]
+
+[[package]]
 name = "sharded-slab"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2240,6 +2376,15 @@ dependencies = [
 name = "squidscript-fw-x4"
 version = "0.1.0"
 dependencies = [
+ "binbook-core",
+ "binbook-decompress",
+ "binbook-encode",
+ "embassy-futures",
+ "embassy-time",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "embedded-sd-storage",
+ "embedded-sdmmc",
  "esp-alloc",
  "esp-backtrace",
  "esp-bootloader-esp-idf",
@@ -2247,9 +2392,14 @@ dependencies = [
  "esp-println",
  "esp-radio",
  "esp-rtos",
+ "gray2-render",
+ "heapless 0.8.0",
  "squid-device-protocol",
  "squidscript-fw-core",
+ "squidvm-core",
+ "ssd1677-driver",
  "static_cell",
+ "xteink-x4-display",
 ]
 
 [[package]]
@@ -2275,6 +2425,14 @@ dependencies = [
 [[package]]
 name = "squidvm-limits"
 version = "0.1.0"
+
+[[package]]
+name = "ssd1677-driver"
+version = "0.1.0"
+dependencies = [
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+]
 
 [[package]]
 name = "stable_deref_trait"
@@ -2825,6 +2983,21 @@ name = "xml"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "636f85e5ca6488e96401b61eb7de54f4e44755c988af0f52cf90230c312a1a89"
+
+[[package]]
+name = "xteink-x4-display"
+version = "0.1.0"
+dependencies = [
+ "binbook-core",
+ "binbook-decompress",
+ "embedded-graphics",
+ "embedded-graphics-core",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "gray2-render",
+ "profont",
+ "ssd1677-driver",
+]
 
 [[package]]
 name = "xtensa-lx"

@@ -33,14 +33,21 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 
 ## Local Environment Notes
 
-- If `.local-agents.md` exists at the repository root, read it at the start
-  of a session for environment-specific notes (attached hardware, host paths,
-  local tooling shortcuts, prior-session context). It is gitignored and
-  never committed; it carries personal setup for the maintainer's machine,
-  not project contract. Do not copy its contents into committed docs, and
-  do not repeat environment identifiers (USB serials, device paths) from it
-  in chat output or commit messages beyond what the placeholder-discipline
-  rules allow.
+- If `AGENTS.local.md` exists at the repository root, read it after this file
+  for environment-specific notes: attached hardware, host paths, local tooling
+  shortcuts, webcam capture commands, crop coordinates, and prior-session
+  context. It is gitignored and never committed; it carries personal setup for
+  the maintainer's machine, not project contract.
+- Do not copy local overlay contents into committed docs, and do not repeat
+  environment identifiers (USB serials, device paths, webcam artifact paths,
+  crop calibration image paths, SSIDs, MACs, local IPs, credentials) in chat
+  output or commit messages beyond what the placeholder-discipline rules allow.
+- When display behavior needs hardware verification, local webcam guidance in
+  `AGENTS.local.md` is the visual evidence source. Take a fresh live capture,
+  inspect that captured image, and report what is actually visible before
+  claiming visual confirmation. Do not substitute decoded fixtures, simulator
+  renders, regenerated assets, old captures, or protocol acknowledgements for
+  live panel evidence.
 
 - When starting any implementation work (including debugging, verification,
   or any technical task), update `/var/home/tristan/Documents/parasquid/SquidScript/.current_agent_work`
@@ -50,14 +57,17 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   - Any relevant context from prior investigation or decisions
   - What the next agent should expect
 - This file is gitignored and never committed; it serves as a durable
-  hand-off surface for quota/interruption scenarios.
+  current hand-off surface for quota/interruption scenarios.
 - The file should be updated before any code changes, test runs, or
   hardware interactions so that a different agent can pick up the work
   if the current agent runs out of quota or is interrupted.
-- Always append to the file with a clear header indicating the new work
-  being started, preserving previous entries for context.
-- When work is completed, add a completion note with the final outcome
-  and any follow-up items that should be tracked separately.
+- Keep this file as current state, not a diary. Replace stale contents with the
+  present objective, status, evidence, blockers, and next steps instead of
+  appending chronological session entries.
+- Do not preserve old completed-work notes in `.current_agent_work` merely for
+  history. Durable project facts belong in tracked docs/plans when appropriate;
+  detailed transcripts and scratch evidence belong in `/tmp` or another
+  gitignored scratch file only while they are actively useful.
 
 ## Roadmap Maintenance
 
@@ -197,6 +207,13 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   Plans are execution checklists; durable design decisions belong in
   `docs/specs/`, and final current-state reference material belongs in the
   relevant top-level docs file.
+- Do not use implementation plans as diaries or handoff logs. Keep
+  `docs/plans/**` focused on acceptance gates, task checklists, current
+  blockers, and concise stable status needed to choose the next step. Put
+  temporary command transcripts, intermediate measurement details, false
+  starts, and "what happened today" evidence in `/tmp` or another gitignored
+  scratch file while they are actively useful; keep `.current_agent_work` as a
+  concise current-state handoff only.
 
 ## Language And Spec Discipline
 
@@ -382,6 +399,29 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - Reflashing the project's dev board is routine for this work; treat it like
   running a test, not a destructive action. Still redact environment
   identifiers per the placeholder-discipline rules above.
+- When the task targets XTEINK X4, verify with XTEINK X4 target commands and
+  XTEINK-specific fixtures under `tests/hardware/xteink-x4/` or
+  `examples/app-tests/xteink/`. Do not use `tests/hardware/c3-supermini/`,
+  `esp32c3-super-mini`, or Super Mini scripts as evidence for XTEINK behavior
+  just because the SquidScript source is portable. Super Mini fixtures are
+  useful examples only; XTEINK claims require XTEINK target metadata, the
+  attached XTEINK hardware, and XTEINK visual/radio evidence.
+- The sibling BinBook repository is the reference for XTEINK X4 verification
+  discipline and known-good panel-driving patterns. Use
+  `../binbook/docs/reference/xteink-x4-agent-device-verification.md` for the
+  verification model: one serial owner at a time, query state after mutating
+  commands, and treat an `ok` response as transport evidence only. For visible
+  display claims, take a fresh webcam capture and inspect the captured panel;
+  protocol acknowledgements, draw logs, simulator images, and decoded buffers
+  are supporting evidence, not visual proof. For display-driver questions,
+  compare against BinBook's XTEINK display code rather than guessing panel
+  plane polarity, row mapping, or refresh behavior.
+- For XTEINK Wi-Fi/BLE claims, report the verification level explicitly.
+  Firmware resource counters and radio leases show internal runtime state;
+  over-the-air proof requires host-visible Wi-Fi scan/association evidence or
+  BLE advertisement/GATT/transfer evidence, with SSIDs, BSSIDs, MAC addresses,
+  IPs, and credentials redacted. If host radio tooling or DBus access is
+  unavailable, say that the over-the-air portion was not proven.
 - The SD card used by the XTEINK X4/dev setup is owned by the device over its
   SPI SD interface. It will not appear as the same mounted filesystem on the
   host while it is inside the device. Do not infer that a host-visible

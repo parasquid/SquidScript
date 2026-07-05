@@ -23,7 +23,7 @@ impl StringTable for EmptyStringTable {
 
 #[test]
 fn runtime_record_field_limit_matches_largest_service_record() {
-    assert_eq!(MAX_RUNTIME_RECORDS, 8);
+    assert_eq!(MAX_RUNTIME_RECORDS, MAX_RUNTIME_LIST_ITEMS + 1);
     assert_eq!(MAX_RUNTIME_RECORD_FIELDS, 26);
 }
 
@@ -694,6 +694,49 @@ const CONTENT_TEST_BOOKS: [ContentBinBookEntry; 2] = [
     },
 ];
 
+const FILE_LIST_TEST_ENTRIES: [FileListEntry; 8] = [
+    FileListEntry {
+        name: "entry-0.txt",
+        reference: "books/entry-0.txt",
+        size: 100,
+    },
+    FileListEntry {
+        name: "entry-1.txt",
+        reference: "books/entry-1.txt",
+        size: 101,
+    },
+    FileListEntry {
+        name: "entry-2.txt",
+        reference: "books/entry-2.txt",
+        size: 102,
+    },
+    FileListEntry {
+        name: "entry-3.txt",
+        reference: "books/entry-3.txt",
+        size: 103,
+    },
+    FileListEntry {
+        name: "entry-4.txt",
+        reference: "books/entry-4.txt",
+        size: 104,
+    },
+    FileListEntry {
+        name: "entry-5.txt",
+        reference: "books/entry-5.txt",
+        size: 105,
+    },
+    FileListEntry {
+        name: "entry-6.txt",
+        reference: "books/entry-6.txt",
+        size: 106,
+    },
+    FileListEntry {
+        name: "entry-7.txt",
+        reference: "books/entry-7.txt",
+        size: 107,
+    },
+];
+
 const BINBOOK_TEST_CHAPTERS: [BinBookChapterEntry; 3] = [
     BinBookChapterEntry {
         index: 0,
@@ -785,6 +828,30 @@ impl TraceSink for RegistryTrace {
             items: &CONTENT_TEST_BOOKS,
             count: 7,
             has_more: true,
+        })
+    }
+
+    fn file_list_into<'a>(
+        &'a mut self,
+        library: &str,
+        offset: i32,
+        limit: i32,
+        writer: &mut dyn FileListWriter,
+    ) -> Result<FileListSummary<'a>, VmError> {
+        self.events
+            .push(format!("file.list {library} {offset} {limit}"));
+        let offset = offset.max(0) as usize;
+        let limit = limit.max(0) as usize;
+        let mut emitted = 0usize;
+        for entry in FILE_LIST_TEST_ENTRIES.iter().skip(offset).take(limit) {
+            writer.push_entry(*entry)?;
+            emitted += 1;
+        }
+        Ok(FileListSummary {
+            ok: true,
+            error: None,
+            count: FILE_LIST_TEST_ENTRIES.len() as i32,
+            has_more: offset + emitted < FILE_LIST_TEST_ENTRIES.len(),
         })
     }
 
@@ -1679,6 +1746,76 @@ screen("main") {}
 }
 
 #[test]
+fn program_infers_capability_demand_from_builtin_bytecode() {
+    let source = r#"app "cap-demand"
+event.on("app.start") {
+  let ap = service.wifi.startAP("SquidNative")
+  service.ble.start("file-transfer", {
+    id: "rx"
+    accept: [".sqbc"]
+    events: {
+      complete: "ble.done"
+    }
+  })
+  service.http.start("file-upload", {
+    id: "upload",
+    accept: [".binbook"],
+    events: { complete: "http.file.complete" }
+  })
+  let info = display.info()
+  let files = file.list("books", { offset: 0, limit: 8 })
+  let books = content.binbook.list("books", { offset: 0, limit: 8 })
+  debug.print(ap.ok, info.available, files.count, books.count)
+}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+
+    let demand = program.capability_demand().unwrap();
+
+    assert!(demand.wifi);
+    assert!(demand.ble);
+    assert!(demand.http);
+    assert!(demand.display);
+    assert!(demand.storage);
+    assert!(demand.binbook);
+}
+
+#[test]
+fn program_index_infers_capability_demand_from_reader_code_section() {
+    let source = r#"app "reader-demand"
+event.on("app.start") {
+  let status = service.wifi.status()
+  let info = display.info()
+  debug.print(status.active)
+}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let mut reader = CountingReader::new(&bytes);
+    let mut scratch = [0u8; MAX_APP_BYTES];
+
+    let demand = ProgramIndex::capability_demand_from_reader(&mut reader, &mut scratch).unwrap();
+
+    assert!(demand.wifi);
+    assert!(!demand.ble);
+    assert!(!demand.http);
+    assert!(demand.display);
+    assert!(!demand.storage);
+    assert!(!demand.binbook);
+    assert!(reader.reads.iter().all(|(_, len)| *len < bytes.len()));
+}
+
+#[test]
 fn chunked_vm_reads_handler_code_range_from_reader() {
     let bytes = fixture_counter_sqbc();
     let mut scratch = [0u8; MAX_APP_BYTES];
@@ -1851,6 +1988,7 @@ screen("main") {
         vec![
             "app.start".to_string(),
             "draw clear 0".to_string(),
+            "screen.rendered main".to_string(),
             "debug after".to_string(),
         ]
     );
@@ -2075,7 +2213,10 @@ screen("main") {
     vm.dispatch(&mut reader, "app.start").unwrap();
 
     assert_eq!(vm.state_value("count"), Ok(Value::I32(1)));
-    assert_eq!(reader.events, vec!["app.start", "debug screen 2"]);
+    assert_eq!(
+        reader.events,
+        vec!["app.start", "debug screen 2", "screen.rendered main"]
+    );
 }
 
 #[test]
@@ -2326,6 +2467,10 @@ impl TraceSink for CountingReader<'_> {
     fn draw_clear(&mut self, color: u8) {
         self.events.push(format!("draw clear {color}"));
     }
+
+    fn screen_rendered(&mut self, name: &str) {
+        self.events.push(format!("screen.rendered {name}"));
+    }
 }
 
 #[test]
@@ -2363,6 +2508,32 @@ screen("main") {}
             "timer.debug",
             "debug timer 0",
         ]
+    );
+}
+
+#[test]
+fn screen_render_completion_notifies_host_after_draw_callbacks() {
+    let bytes = compile_sqbc(
+        r#"app "screen-render"
+event.on("app.start") {
+  screen.open("main")
+}
+
+screen("main") {
+  service.display.clear(color.WHITE)
+}
+"#,
+    );
+    let mut scratch = [0u8; MAX_APP_BYTES];
+    let index = ProgramIndex::parse(&bytes, &mut scratch).unwrap();
+    let mut reader = CountingReader::new(&bytes);
+    let mut vm = ChunkedVm::new(index);
+
+    vm.dispatch(&mut reader, "app.start").unwrap();
+
+    assert_eq!(
+        reader.events,
+        vec!["app.start", "draw clear 0", "screen.rendered main"]
     );
 }
 
@@ -2945,6 +3116,47 @@ screen("main") {}
             "content.binbook.list books 0 8",
             "binbook.open content:books/p/alpha.binbook",
             "debug true null",
+        ]
+    );
+}
+
+#[test]
+fn runs_file_list_full_page_from_real_bytecode() {
+    let source = r#"app "file-list"
+event.on("app.start") {
+  let page = file.list("books", { offset: 0, limit: 8 })
+  debug.print(page.ok, page.error, page.count, page.hasMore)
+  for item in page.items max 8 {
+    debug.print(item.name, item.ref, item.size)
+  }
+}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+    let program = Program::parse(&bytes).unwrap();
+    let mut vm = Vm::new(program);
+    let mut trace = RegistryTrace::default();
+
+    vm.dispatch("app.start", &mut trace).unwrap();
+
+    assert_eq!(
+        trace.events,
+        vec![
+            "app.start",
+            "file.list books 0 8",
+            "debug true null 8 false",
+            "debug entry-0.txt books/entry-0.txt 100",
+            "debug entry-1.txt books/entry-1.txt 101",
+            "debug entry-2.txt books/entry-2.txt 102",
+            "debug entry-3.txt books/entry-3.txt 103",
+            "debug entry-4.txt books/entry-4.txt 104",
+            "debug entry-5.txt books/entry-5.txt 105",
+            "debug entry-6.txt books/entry-6.txt 106",
+            "debug entry-7.txt books/entry-7.txt 107",
         ]
     );
 }
@@ -3628,7 +3840,7 @@ event.on("app.start") {
   let result = wifi.result()
   let network = wifi.scanNetwork(0)
   debug.print(started.ok, result.error, result.count)
-  debug.print(network.ssid, network.ssidLength, network.channel, network.rssi, network.auth, network.hidden)
+  debug.print(network.ssid, network.ssidLength, network.channel, network.rssi, network.auth, network.bssid, network.hidden)
   debug.print(network.password)
   app.exit()
 }
@@ -3659,7 +3871,7 @@ screen("main") {}
             "wifi.result",
             "wifi.scanNetwork 0",
             "debug true null 2",
-            "debug LabNetwork 10 6 -42 wpa2 false",
+            "debug LabNetwork 10 6 -42 wpa2 00:11:22:33:44:55 false",
             "wifi.teardown",
         ]
     );

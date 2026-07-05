@@ -1549,6 +1549,30 @@ event.on("app.start") {
 }
 
 #[test]
+fn compiles_file_list_result_call_to_sqbc() {
+    let source = r#"app "file-list"
+
+event.on("app.start") {
+  let page = file.list("books", { offset: 0, limit: 8 })
+  debug.print(page.ok, page.error, page.count, page.hasMore)
+  for item in page.items max 8 {
+    debug.print(item.name, item.ref, item.size)
+  }
+}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let sqbc = sqbc::encode_sqbc(&output.ir.unwrap()).unwrap();
+    assert!(
+        sqbc.windows(2).any(|window| window == [50, 0x94]),
+        "expected file.list builtin in SQBC"
+    );
+}
+
+#[test]
 fn parses_display_info_as_display_service_sugar() {
     let source = r#"app "display-info"
 event.on("app.start") {

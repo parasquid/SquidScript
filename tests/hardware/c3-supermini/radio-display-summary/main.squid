@@ -1,0 +1,29 @@
+app "radio-display-summary"
+
+event.on("app.start") {
+  let ap = service.wifi.startAP("SquidScript")
+  service.ble.start("file-transfer", {
+    id: "rx"
+    accept: [".sqbc"]
+    events: {
+      complete: "ble.done"
+    }
+  })
+  screen.open("main")
+  debug.print("radio display", ap.ok, ap.error)
+}
+
+event.on("key.SELECT") {
+  let stop = service.wifi.stopAP()
+  service.ble.stop()
+  debug.print("radio stop", stop.ok, stop.error)
+}
+
+screen("main") {
+  service.display.clear(color.WHITE)
+  service.display.text("radio display", {
+    x: 0
+    y: 0
+    fontHeight: 20
+  })
+}
