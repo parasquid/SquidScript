@@ -195,6 +195,20 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   transport, keep thresholds advisory until enough hardware samples define
   stable budgets, and use the data to catch speed regressions separately from
   content-integrity failures.
+- Investigate native X4 BLE file-transfer terminal status over GATT. During
+  native BLE bring-up, uploads reached firmware, staged to `tmp/`, dispatched
+  the completion handler, copied into `books`, and passed serial
+  `content-check`, but `squidc device ble-put` could not reliably observe the
+  terminal status characteristic through BlueZ/btleplug. Firmware diagnostics
+  showed CCCD notify enabled and `notify-sent`; direct status-characteristic
+  reads timed out before the firmware read handler observed them. Current
+  verified behavior treats successful write-with-response transfer plus serial
+  byte-count/CRC checks as the reliable hardware gate. Future work: build a
+  minimal native X4 GATT status repro, determine whether the break is in
+  Trouble characteristic storage/read handling, CCCD/notify handling,
+  btleplug/BlueZ delivery, or the firmware event loop, then restore a real
+  terminal-status signal for `device ble-put` without weakening content
+  integrity checks.
 - Extend `squidc hardware test --target esp32c3-super-mini` so the Super Mini
   regression target uses the same target-aware hardware-test architecture as
   the XIAO default dev target, with checks selected from target metadata and

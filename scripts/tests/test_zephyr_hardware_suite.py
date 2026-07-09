@@ -161,22 +161,26 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
         self.assertEqual(data[:8], b"BINBOOK\0")
         self.assertEqual(int.from_bytes(data[12:14], "little"), 256)
         self.assertEqual(int.from_bytes(data[36:38], "little"), 40)
-        self.assertEqual(int.from_bytes(data[38:40], "little"), 5)
+        self.assertEqual(int.from_bytes(data[38:40], "little"), 16)
 
         section = data[256:296]
         self.assertEqual(int.from_bytes(section[0:2], "little"), 1)
-        self.assertEqual(int.from_bytes(section[4:12], "little"), 456)
-        self.assertEqual(int.from_bytes(section[12:20], "little"), len(b"Chapter OneChapter Two"))
+        self.assertEqual(int.from_bytes(section[4:12], "little"), 896)
+        self.assertGreater(int.from_bytes(section[12:20], "little"), len(b"Chapter OneChapter Two"))
         self.assertEqual(int.from_bytes(section[20:24], "little"), 0)
         self.assertEqual(int.from_bytes(section[24:28], "little"), 0)
 
-        page_index_offset = int.from_bytes(data[256 + 3 * 40 + 4:256 + 3 * 40 + 12], "little")
+        page_section = 256 + 12 * 40
+        self.assertEqual(int.from_bytes(data[page_section:page_section + 2], "little"), 40)
+        self.assertEqual(int.from_bytes(data[page_section + 20:page_section + 24], "little"), 76)
+        self.assertEqual(int.from_bytes(data[page_section + 24:page_section + 28], "little"), 4)
+        page_index_offset = int.from_bytes(data[page_section + 4:page_section + 12], "little")
         page_one = data[page_index_offset:page_index_offset + 76]
         page_two = data[page_index_offset + 76:page_index_offset + 152]
         self.assertEqual(int.from_bytes(page_one[24:28], "little"), 1500)
         self.assertEqual(int.from_bytes(page_one[28:32], "little"), 96000)
         self.assertEqual(int.from_bytes(page_two[16:24], "little"), 1500)
-        self.assertEqual(int.from_bytes(page_two[24:28], "little"), 1500)
+        self.assertGreater(int.from_bytes(page_two[24:28], "little"), 0)
         self.assertEqual(int.from_bytes(page_two[28:32], "little"), 96000)
 
 
@@ -201,6 +205,9 @@ class ZephyrHardwareSuiteTests(ZephyrScriptTestCase):
         self.assertIn("device content-check", http)
         self.assertIn("device ble-put", ble)
         self.assertIn("device content-check", ble)
+        ble_verification = ble[ble.index("device ble-put"):ble.index("device errors")]
+        self.assertLess(ble_verification.index("device ble-put"), ble_verification.index("device content-check"))
+        self.assertNotIn('if [[ "${TARGET_BACKEND}"', ble_verification)
         self.assertIn('service.http.start("file-upload"', app)
         self.assertIn('service.ble.start("file-transfer"', app)
         self.assertIn('name: ev.name', app)

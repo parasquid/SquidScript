@@ -212,6 +212,14 @@ for the HTTP AP association, and `--device <name-or-address>` for BLE matching.
 The scripts write command output, curl progress, and failure diagnostics under
 `target/hardware-tests/xteink-x4-transfer-*`.
 
+Native X4 BLE acceptance additionally runs 26-, 1024-, and 8982-byte payloads
+through receive, app copy, and uncached `device content-check`, comparing both
+size and CRC32. Run target-owning commands sequentially. An interrupted or
+aborted transfer must leave no reusable partial staging state: the same safe
+filename must upload successfully immediately afterward. The BLE client uses
+Write With Response as storage backpressure and does not add a fixed delay
+between chunks.
+
 The default XIAO firmware also drives the SSD1677/GDEQ0426T82 display through
 the Zephyr SPI backend for `service.display.clear` and `service.display.text`.
 The target JSON is the source of truth for the default portrait logical

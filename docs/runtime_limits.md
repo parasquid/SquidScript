@@ -69,6 +69,11 @@ chapter entry and uses one of the same bounded title buffers.
 | Limit | Hard value | Macro |
 | --- | ---: | --- |
 | Registered BLE profile entries | 2 | `SQ_VM_RUNTIME_BLE_PROFILE_MAX` |
+| Native X4 BLE transfer chunk | 192 bytes | `BLE_PIPELINE_CHUNK_BYTES` |
+| Native X4 queued transfer chunks | 4 | `BLE_PIPELINE_DEPTH` |
+| Native X4 transfer-buffer budget | 2048 bytes | `BLE_PIPELINE_BUFFER_BUDGET_BYTES` |
+| Native X4 Trouble Host packet pool | 32 × 27-byte packets | `trouble-host` feature selection |
+| Native BLE connection inactivity | 30000 ms by default | `firmware.native.bleConnectionWatchdogMs` |
 
 The BLE profile routing table is a static array of
 `SQ_VM_RUNTIME_BLE_PROFILE_MAX` entries. Each entry stores the installed-app
@@ -89,6 +94,14 @@ two active routes accept the same extension, or if a route points at a registry
 slot that no longer resolves, firmware records an `invariant.ble.*` diagnostic
 through `device errors` and rejects the transfer instead of selecting an
 arbitrary receiver.
+
+The native X4 receiver does not allocate storage proportional to the uploaded
+file. Its GATT producer queues at most four fixed 192-byte chunks. When those
+slots are occupied, the pending ATT Write With Response is not acknowledged
+until the SD consumer frees a slot. The 2048-byte budget covers the transfer
+queue, GATT producer and storage-consumer frames, and active session metadata;
+it excludes the radio stack's general packet pool and persistent app profile
+metadata.
 
 ## HTTP Upload Profile Metadata
 

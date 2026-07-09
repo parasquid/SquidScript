@@ -151,6 +151,36 @@ handler returns, validates the app id, and queues a rename-based install at
 `<mount>/apps/<id>/main.sqbc`. Single-session policy: only one BLE file transfer
 can be active in-flight at a time.
 
+The native X4 implementation preserves the same public GATT state machine but
+uses a bounded producer/consumer handoff. The GATT task queues four fixed
+192-byte chunk records, and a separate storage task performs one incremental
+staging operation per queue item. A full queue delays the ATT write response,
+providing protocol-level backpressure without host timing sleeps. Abort,
+disconnect, route failure, and storage failure cancel the session through a
+separate control lane, delete the partial staging file, and invalidate already
+queued chunks by session id. COMPLETE is emitted only after staging commit and
+completion-event dispatch succeed.
+
+The native table includes the standard GATT Service Changed characteristic so
+BlueZ and other caching clients do not retain an incomplete characteristic
+tree across firmware updates. The GATT write path accepts both its indication
+CCCD and the transfer-status notification CCCD.
+
+Trouble Host connection-parameter requests are answered explicitly with the
+peer-requested valid parameters. A failed response cancels any active transfer
+and closes the connection instead of leaving the controller waiting for a
+reply until its supervision timeout.
+
+An accepted native X4 BLE connection also has an inactivity watchdog. GATT
+events and outbound runtime status notifications reset it. If no such activity
+occurs before `firmware.native.bleConnectionWatchdogMs` expires, firmware
+cancels the current session through the storage control lane, drains stale
+status notifications, drops the GATT connection so the controller sends a
+clean disconnect request, and returns to advertising. Targets default to
+30 seconds when the metadata field is absent. The watchdog is not a transfer
+deadline: an active client can continue a larger transfer as long as protocol
+activity continues.
+
 ## Bounded Queues
 
 Trace lines, output lines, drawlog entries, and similar diagnostics are bounded

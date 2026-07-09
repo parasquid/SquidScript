@@ -234,6 +234,15 @@ For Zephyr-backed targets, `squidc target` reads `firmware.zephyr` to resolve
 the Zephyr board, build directory, overlay, fallback SquidScript app, and
 generated Kconfig fragment.
 
+For native targets, `firmware.native` describes the Rust package, toolchain,
+target triple, features, output ELF, and native runtime settings. The optional
+`bleConnectionWatchdogMs` field is a positive inactivity timeout in
+milliseconds for an accepted BLE connection. It defaults to `30000` when
+omitted. GATT activity and device-to-client status delivery reset the timeout;
+expiry cancels any active transfer, removes partial staged content, closes the
+connection, and resumes advertising. This is a connection-liveness limit, not
+a whole-transfer deadline.
+
 Example:
 
 ```json
@@ -250,6 +259,24 @@ Example:
 }
 ```
 
+Native example:
+
+```json
+{
+  "firmware": {
+    "native": {
+      "package": "squidscript-fw-x4",
+      "workingDir": ".",
+      "target": "riscv32imc-unknown-none-elf",
+      "chip": "esp32c3",
+      "elf": "target/riscv32imc-unknown-none-elf/debug/squidscript-fw-x4",
+      "features": ["native-radio-services", "ble"],
+      "bleConnectionWatchdogMs": 30000
+    }
+  }
+}
+```
+
 Rules:
 
 1. Paths are repository-relative unless absolute.
@@ -257,6 +284,9 @@ Rules:
 3. A target without `firmware.zephyr` may still be listed and inspected.
    Zephyr build, flash, and monitor commands fail with an unsupported-target
    error; `target doctor` reports a failed Zephyr metadata check.
+4. Native targets may omit `bleConnectionWatchdogMs` to use the 30-second
+   default. Set it explicitly when a target needs a different BLE inactivity
+   policy.
 
 If UF2 support is verified later, `formats` may include `uf2`, `preferredFormat` may become `uf2`, and a target-specific UF2 family ID or conversion rule should be added.
 
