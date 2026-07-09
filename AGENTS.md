@@ -126,14 +126,30 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 
 ## Debug Instrumentation
 
-- Wrap all debug timing, measurement, and diagnostic logging with
-  `#if IS_ENABLED(CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC)` so they compile
-  out in release builds. Use `sq_debug_log_append` for timestamped trace
-  markers. The guard ensures zero overhead in production while keeping
-  instrumentation available for development and hardware debugging.
+- Useful timing, measurement, trace, and diagnostic logging must be included
+  automatically in every normal development firmware build. "Gated" means
+  gated by the development-versus-release build profile, not hidden behind an
+  opt-in feature or configuration that a developer must discover and enable.
+- In Rust firmware, gate this instrumentation with `debug_assertions`. Normal
+  native target metadata must select the Cargo debug profile; only an explicit
+  release build may disable it. In Zephyr firmware, use
+  `CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC`, and keep that configuration enabled
+  in the normal development `prj.conf`; only a release configuration may turn
+  it off. Use `sq_debug_log_append` for timestamped Zephyr trace markers.
+- Keep useful debug-build logs and measurements in the codebase when they do
+  not change functional behavior, even if they add minor debug-build latency.
+  Do not delete them after hardware verification merely to make normal builds
+  quieter. Release builds must compile them out and pay zero runtime overhead.
 
 ## Lessons Learned
 
+- On Linux/BlueZ, keep one btleplug adapter alive for the full BLE operation,
+  including bounded connection or discovery retries. Do not create and drop a
+  scan event stream or adapter per attempt: btleplug 0.12 / bluez-async 0.8 can
+  race D-Bus match-rule teardown and panic with `No match with that id found`.
+  Treat `ServicesResolved` as potentially preceding complete characteristic
+  object visibility; use a bounded characteristic-resolution check without
+  recreating the adapter.
 - When debugging, prefer empirical evidence over code analysis. Add printk,
   eprintln!, or similar diagnostics and run the code to see what actually
   happens, rather than tracing through source files trying to predict behavior.
@@ -399,6 +415,11 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 - Reflashing the project's dev board is routine for this work; treat it like
   running a test, not a destructive action. Still redact environment
   identifiers per the placeholder-discipline rules above.
+- If another compatible MCU board is attached, use it as a second-opinion
+  control when debugging hardware, radio, transport, or library behavior. A
+  minimal known-good firmware or vendor example on the second board can separate
+  board/power/host issues from target-specific integration bugs; still keep the
+  canonical target's own hardware gate as the final proof.
 - When the task targets XTEINK X4, verify with XTEINK X4 target commands and
   XTEINK-specific fixtures under `tests/hardware/xteink-x4/` or
   `examples/app-tests/xteink/`. Do not use `tests/hardware/c3-supermini/`,

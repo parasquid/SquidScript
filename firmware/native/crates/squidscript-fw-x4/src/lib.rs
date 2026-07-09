@@ -1,5 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 
+pub mod ble_pipeline;
+
 pub mod radio_probe {
     use core::fmt;
 
@@ -397,6 +399,14 @@ pub mod x4_storage {
 
         fn flat_create_or_truncate(&mut self, name: &str) -> Result<(), NativeFileStorageError>;
 
+        fn flat_begin_write(
+            &mut self,
+            name: &str,
+            _expected_size: u64,
+        ) -> Result<(), NativeFileStorageError> {
+            self.flat_create_or_truncate(name)
+        }
+
         fn flat_write_at(
             &mut self,
             name: &str,
@@ -404,9 +414,86 @@ pub mod x4_storage {
             data: &[u8],
         ) -> Result<(), NativeFileStorageError>;
 
+        fn flat_write_chunk(
+            &mut self,
+            name: &str,
+            offset: u64,
+            data: &[u8],
+        ) -> Result<(), NativeFileStorageError> {
+            self.flat_write_at(name, offset, data)
+        }
+
         fn flat_flush(&mut self, name: &str) -> Result<(), NativeFileStorageError>;
 
+        fn flat_commit_write(&mut self, name: &str) -> Result<(), NativeFileStorageError> {
+            self.flat_flush(name)
+        }
+
         fn flat_delete(&mut self, name: &str) -> Result<(), NativeFileStorageError>;
+
+        fn tmp_file_size(&mut self, _name: &str) -> Result<u64, NativeFileStorageError> {
+            Err(NativeFileStorageError::NotFound)
+        }
+
+        fn tmp_read_at(
+            &mut self,
+            _name: &str,
+            _offset: u64,
+            _out: &mut [u8],
+        ) -> Result<(), NativeFileStorageError> {
+            Err(NativeFileStorageError::NotFound)
+        }
+
+        fn tmp_create_or_truncate(&mut self, _name: &str) -> Result<(), NativeFileStorageError> {
+            Err(NativeFileStorageError::Io)
+        }
+
+        fn tmp_begin_write(
+            &mut self,
+            name: &str,
+            _expected_size: u64,
+        ) -> Result<(), NativeFileStorageError> {
+            self.tmp_create_or_truncate(name)
+        }
+
+        fn tmp_write_at(
+            &mut self,
+            _name: &str,
+            _offset: u64,
+            _data: &[u8],
+        ) -> Result<(), NativeFileStorageError> {
+            Err(NativeFileStorageError::Io)
+        }
+
+        fn tmp_write_chunk(
+            &mut self,
+            name: &str,
+            offset: u64,
+            data: &[u8],
+        ) -> Result<(), NativeFileStorageError> {
+            self.tmp_write_at(name, offset, data)
+        }
+
+        fn tmp_flush(&mut self, _name: &str) -> Result<(), NativeFileStorageError> {
+            Ok(())
+        }
+
+        fn tmp_commit_write(&mut self, name: &str) -> Result<(), NativeFileStorageError> {
+            self.tmp_flush(name)
+        }
+
+        fn tmp_delete(&mut self, _name: &str) -> Result<(), NativeFileStorageError> {
+            Err(NativeFileStorageError::NotFound)
+        }
+
+        fn copy_tmp_to_flat(
+            &mut self,
+            _source_name: &str,
+            _destination_name: &str,
+            _scratch: &mut [u8],
+        ) -> Result<Option<u64>, NativeFileStorageError> {
+            Ok(None)
+        }
 
         fn flat_format(&mut self) -> Result<(), NativeFileStorageError> {
             const MAX_FORMAT_DELETE_STEPS: usize = 1024;
@@ -920,6 +1007,44 @@ pub mod x4_storage {
             self.files.storage_format()
         }
 
+        fn file_ref_size(&mut self, path: &str) -> Result<u64, &'static str> {
+            self.files.file_ref_size(path)
+        }
+
+        fn file_ref_read_at(
+            &mut self,
+            path: &str,
+            offset: u64,
+            out: &mut [u8],
+        ) -> Result<(), &'static str> {
+            self.files.file_ref_read_at(path, offset, out)
+        }
+
+        fn upload_stage_begin<'a>(
+            &'a mut self,
+            safe_name: &str,
+            total_len: usize,
+        ) -> Result<&'a str, &'static str> {
+            self.files.upload_stage_begin(safe_name, total_len)
+        }
+
+        fn upload_stage_chunk(
+            &mut self,
+            path: &str,
+            offset: usize,
+            bytes: &[u8],
+        ) -> Result<(), &'static str> {
+            self.files.upload_stage_chunk(path, offset, bytes)
+        }
+
+        fn upload_stage_commit(&mut self, path: &str) -> Result<(), &'static str> {
+            self.files.upload_stage_commit(path)
+        }
+
+        fn upload_stage_delete(&mut self, path: &str) -> Result<(), &'static str> {
+            self.files.upload_stage_delete(path)
+        }
+
         fn binbook_open<'a>(&'a mut self, path: &str) -> Result<BinBookOpenResult<'a>, VmError> {
             if !path.ends_with(".binbook") {
                 return Ok(BinBookOpenResult {
@@ -1362,8 +1487,10 @@ pub mod x4_storage {
         }
 
         fn file_size(&mut self, path: &str) -> Result<u64, NativeFileStorageError> {
-            let name = map_books_path(path)?;
-            self.storage.flat_file_size(name)
+            match map_x4_storage_path(path)? {
+                X4StoragePath::Book(name) => self.storage.flat_file_size(name),
+                X4StoragePath::Tmp(name) => self.storage.tmp_file_size(name),
+            }
         }
 
         fn read_at(
@@ -1372,13 +1499,28 @@ pub mod x4_storage {
             offset: u64,
             out: &mut [u8],
         ) -> Result<(), NativeFileStorageError> {
-            let name = map_books_path(path)?;
-            self.storage.flat_read_at(name, offset, out)
+            match map_x4_storage_path(path)? {
+                X4StoragePath::Book(name) => self.storage.flat_read_at(name, offset, out),
+                X4StoragePath::Tmp(name) => self.storage.tmp_read_at(name, offset, out),
+            }
         }
 
         fn create_or_truncate(&mut self, path: &str) -> Result<(), NativeFileStorageError> {
-            let name = map_books_path(path)?;
-            self.storage.flat_create_or_truncate(name)
+            match map_x4_storage_path(path)? {
+                X4StoragePath::Book(name) => self.storage.flat_create_or_truncate(name),
+                X4StoragePath::Tmp(name) => self.storage.tmp_create_or_truncate(name),
+            }
+        }
+
+        fn begin_write(
+            &mut self,
+            path: &str,
+            expected_size: u64,
+        ) -> Result<(), NativeFileStorageError> {
+            match map_x4_storage_path(path)? {
+                X4StoragePath::Book(name) => self.storage.flat_begin_write(name, expected_size),
+                X4StoragePath::Tmp(name) => self.storage.tmp_begin_write(name, expected_size),
+            }
         }
 
         fn write_at(
@@ -1387,22 +1529,66 @@ pub mod x4_storage {
             offset: u64,
             data: &[u8],
         ) -> Result<(), NativeFileStorageError> {
-            let name = map_books_path(path)?;
-            self.storage.flat_write_at(name, offset, data)
+            match map_x4_storage_path(path)? {
+                X4StoragePath::Book(name) => self.storage.flat_write_at(name, offset, data),
+                X4StoragePath::Tmp(name) => self.storage.tmp_write_at(name, offset, data),
+            }
+        }
+
+        fn write_chunk(
+            &mut self,
+            path: &str,
+            offset: u64,
+            data: &[u8],
+        ) -> Result<(), NativeFileStorageError> {
+            match map_x4_storage_path(path)? {
+                X4StoragePath::Book(name) => self.storage.flat_write_chunk(name, offset, data),
+                X4StoragePath::Tmp(name) => self.storage.tmp_write_chunk(name, offset, data),
+            }
         }
 
         fn flush(&mut self, path: &str) -> Result<(), NativeFileStorageError> {
-            let name = map_books_path(path)?;
-            self.storage.flat_flush(name)
+            match map_x4_storage_path(path)? {
+                X4StoragePath::Book(name) => self.storage.flat_flush(name),
+                X4StoragePath::Tmp(name) => self.storage.tmp_flush(name),
+            }
+        }
+
+        fn commit_write(&mut self, path: &str) -> Result<(), NativeFileStorageError> {
+            match map_x4_storage_path(path)? {
+                X4StoragePath::Book(name) => self.storage.flat_commit_write(name),
+                X4StoragePath::Tmp(name) => self.storage.tmp_commit_write(name),
+            }
         }
 
         fn delete(&mut self, path: &str) -> Result<(), NativeFileStorageError> {
-            let name = map_books_path(path)?;
-            self.storage.flat_delete(name)
+            match map_x4_storage_path(path)? {
+                X4StoragePath::Book(name) => self.storage.flat_delete(name),
+                X4StoragePath::Tmp(name) => self.storage.tmp_delete(name),
+            }
         }
 
         fn format(&mut self) -> Result<(), NativeFileStorageError> {
             self.storage.flat_format()
+        }
+
+        fn copy_file(
+            &mut self,
+            source: &str,
+            destination: &str,
+            scratch: &mut [u8],
+        ) -> Result<Option<u64>, NativeFileStorageError> {
+            match (
+                map_x4_storage_path(source)?,
+                map_x4_storage_path(destination)?,
+            ) {
+                (X4StoragePath::Tmp(source), X4StoragePath::Book(destination)) => {
+                    self.storage.copy_tmp_to_flat(source, destination, scratch)
+                }
+                (X4StoragePath::Book(_), X4StoragePath::Book(_))
+                | (X4StoragePath::Book(_), X4StoragePath::Tmp(_))
+                | (X4StoragePath::Tmp(_), X4StoragePath::Tmp(_)) => Ok(None),
+            }
         }
     }
 
@@ -1436,6 +1622,14 @@ pub mod x4_storage {
             SdStorage::create_or_truncate(self, name).map_err(map_storage_error)
         }
 
+        fn flat_begin_write(
+            &mut self,
+            name: &str,
+            expected_size: u64,
+        ) -> Result<(), NativeFileStorageError> {
+            SdStorage::begin_upload(self, name, expected_size).map_err(map_storage_error)
+        }
+
         fn flat_write_at(
             &mut self,
             name: &str,
@@ -1445,19 +1639,112 @@ pub mod x4_storage {
             SdStorage::write_at(self, name, offset, data).map_err(map_storage_error)
         }
 
+        fn flat_write_chunk(
+            &mut self,
+            name: &str,
+            offset: u64,
+            data: &[u8],
+        ) -> Result<(), NativeFileStorageError> {
+            SdStorage::write_upload_chunk(self, name, offset, data).map_err(map_storage_error)
+        }
+
         fn flat_flush(&mut self, name: &str) -> Result<(), NativeFileStorageError> {
             SdStorage::flush(self, name).map_err(map_storage_error)
+        }
+
+        fn flat_commit_write(&mut self, name: &str) -> Result<(), NativeFileStorageError> {
+            SdStorage::commit_upload(self, name).map_err(map_storage_error)
         }
 
         fn flat_delete(&mut self, name: &str) -> Result<(), NativeFileStorageError> {
             SdStorage::delete_file(self, name).map_err(map_storage_error)
         }
+
+        fn tmp_file_size(&mut self, name: &str) -> Result<u64, NativeFileStorageError> {
+            SdStorage::tmp_file_size(self, name).map_err(map_storage_error)
+        }
+
+        fn tmp_read_at(
+            &mut self,
+            name: &str,
+            offset: u64,
+            out: &mut [u8],
+        ) -> Result<(), NativeFileStorageError> {
+            SdStorage::tmp_read_at(self, name, offset, out).map_err(map_storage_error)
+        }
+
+        fn tmp_create_or_truncate(&mut self, name: &str) -> Result<(), NativeFileStorageError> {
+            SdStorage::tmp_create_or_truncate(self, name).map_err(map_storage_error)
+        }
+
+        fn tmp_begin_write(
+            &mut self,
+            name: &str,
+            expected_size: u64,
+        ) -> Result<(), NativeFileStorageError> {
+            SdStorage::tmp_begin_upload(self, name, expected_size).map_err(map_storage_error)
+        }
+
+        fn tmp_write_at(
+            &mut self,
+            name: &str,
+            offset: u64,
+            data: &[u8],
+        ) -> Result<(), NativeFileStorageError> {
+            SdStorage::tmp_write_at(self, name, offset, data).map_err(map_storage_error)
+        }
+
+        fn tmp_write_chunk(
+            &mut self,
+            name: &str,
+            offset: u64,
+            data: &[u8],
+        ) -> Result<(), NativeFileStorageError> {
+            SdStorage::tmp_write_upload_chunk(self, name, offset, data).map_err(map_storage_error)
+        }
+
+        fn tmp_flush(&mut self, name: &str) -> Result<(), NativeFileStorageError> {
+            SdStorage::tmp_flush(self, name).map_err(map_storage_error)
+        }
+
+        fn tmp_commit_write(&mut self, name: &str) -> Result<(), NativeFileStorageError> {
+            SdStorage::tmp_commit_upload(self, name).map_err(map_storage_error)
+        }
+
+        fn tmp_delete(&mut self, name: &str) -> Result<(), NativeFileStorageError> {
+            SdStorage::tmp_delete_file(self, name).map_err(map_storage_error)
+        }
+
+        fn copy_tmp_to_flat(
+            &mut self,
+            source_name: &str,
+            destination_name: &str,
+            scratch: &mut [u8],
+        ) -> Result<Option<u64>, NativeFileStorageError> {
+            SdStorage::copy_tmp_to_books(self, source_name, destination_name, scratch)
+                .map(Some)
+                .map_err(map_storage_error)
+        }
     }
 
-    fn map_books_path(path: &str) -> Result<&str, NativeFileStorageError> {
-        let Some(name) = path.strip_prefix("books/") else {
-            return Err(NativeFileStorageError::NotFound);
-        };
+    enum X4StoragePath<'a> {
+        Book(&'a str),
+        Tmp(&'a str),
+    }
+
+    fn map_x4_storage_path(path: &str) -> Result<X4StoragePath<'_>, NativeFileStorageError> {
+        if let Some(name) = path.strip_prefix("books/") {
+            validate_x4_flat_name(name)?;
+            return Ok(X4StoragePath::Book(name));
+        }
+        if let Some(name) = path.strip_prefix("tmp/") {
+            validate_x4_flat_name(name)?;
+            return Ok(X4StoragePath::Tmp(name));
+        }
+        Err(NativeFileStorageError::NotFound)
+    }
+
+    fn validate_x4_flat_name(name: &str) -> Result<(), NativeFileStorageError> {
         if name.is_empty()
             || name.starts_with('/')
             || name.contains('/')
@@ -1468,7 +1755,7 @@ pub mod x4_storage {
         {
             return Err(NativeFileStorageError::InvalidName);
         }
-        Ok(name)
+        Ok(())
     }
 
     fn map_storage_error<D>(error: StorageError<D>) -> NativeFileStorageError
@@ -1699,6 +1986,43 @@ pub mod x4_storage {
                     self.bytes.clear();
                     Ok(())
                 }
+
+                fn tmp_file_size(&mut self, name: &str) -> Result<u64, NativeFileStorageError> {
+                    self.flat_file_size(&format!("tmp/{name}"))
+                }
+
+                fn tmp_read_at(
+                    &mut self,
+                    name: &str,
+                    offset: u64,
+                    out: &mut [u8],
+                ) -> Result<(), NativeFileStorageError> {
+                    self.flat_read_at(&format!("tmp/{name}"), offset, out)
+                }
+
+                fn tmp_create_or_truncate(
+                    &mut self,
+                    name: &str,
+                ) -> Result<(), NativeFileStorageError> {
+                    self.flat_create_or_truncate(&format!("tmp/{name}"))
+                }
+
+                fn tmp_write_at(
+                    &mut self,
+                    name: &str,
+                    offset: u64,
+                    data: &[u8],
+                ) -> Result<(), NativeFileStorageError> {
+                    self.flat_write_at(&format!("tmp/{name}"), offset, data)
+                }
+
+                fn tmp_flush(&mut self, name: &str) -> Result<(), NativeFileStorageError> {
+                    self.flat_flush(&format!("tmp/{name}"))
+                }
+
+                fn tmp_delete(&mut self, name: &str) -> Result<(), NativeFileStorageError> {
+                    self.flat_delete(&format!("tmp/{name}"))
+                }
             }
 
             let storage = X4SdFileStorage::new(FakeContentStorage::default());
@@ -1717,6 +2041,21 @@ pub mod x4_storage {
 
             assert_eq!(backend.content_delete("proof.dat"), Ok("proof.dat"));
             assert_eq!(backend.files().storage().storage().deleted, ["proof.dat"]);
+
+            let upload_path = backend
+                .upload_stage_begin("upload.sqbc", 5)
+                .unwrap()
+                .to_string();
+            assert_eq!(upload_path, "tmp/upload.sqbc");
+            backend
+                .upload_stage_chunk(&upload_path, 0, b"ready")
+                .unwrap();
+            backend.upload_stage_commit(&upload_path).unwrap();
+            backend.upload_stage_delete(&upload_path).unwrap();
+            assert_eq!(
+                backend.files().storage().storage().deleted,
+                ["proof.dat", "tmp/upload.sqbc"]
+            );
         }
 
         #[cfg(feature = "x4-binbook")]
@@ -1976,6 +2315,132 @@ pub mod x4_storage {
             assert_eq!(chapter.level, 0);
             assert_eq!(chapter.entry_type, 3);
         }
+    }
+}
+
+pub trait NativeDisplayFlushDriver<D, FB>
+where
+    D: squidscript_fw_core::native_runtime::NativeDisplaySink,
+    FB: squidscript_fw_core::native_runtime::NativeFileBackend,
+{
+    fn request_flush(&mut self, display_sink: &mut D, file_backend: &mut FB)
+        -> Result<(), &'static str>;
+
+    fn step(&mut self) {}
+}
+
+pub fn request_pending_display_flush<D, FB, F>(
+    display_sink: &mut D,
+    file_backend: &mut FB,
+    display_flush: &mut F,
+) -> Result<bool, &'static str>
+where
+    D: squidscript_fw_core::native_runtime::NativeDisplaySink,
+    FB: squidscript_fw_core::native_runtime::NativeFileBackend,
+    F: NativeDisplayFlushDriver<D, FB>,
+{
+    if display_sink.pending_refreshes() == 0 {
+        return Ok(false);
+    }
+    match display_flush.request_flush(display_sink, file_backend) {
+        Ok(()) => Ok(true),
+        Err("display_flush_in_progress") => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(test)]
+mod display_flush_driver_tests {
+    use squidscript_fw_core::native_runtime::{
+        NativeDisplaySink, NoopFileBackend,
+    };
+
+    use super::{request_pending_display_flush, NativeDisplayFlushDriver};
+
+    #[derive(Default)]
+    struct PendingSink {
+        pending: u32,
+    }
+
+    impl NativeDisplaySink for PendingSink {
+        fn pending_refreshes(&self) -> u32 {
+            self.pending
+        }
+    }
+
+    struct RecordingFlush {
+        calls: u32,
+        result: Result<(), &'static str>,
+    }
+
+    impl Default for RecordingFlush {
+        fn default() -> Self {
+            Self {
+                calls: 0,
+                result: Ok(()),
+            }
+        }
+    }
+
+    impl NativeDisplayFlushDriver<PendingSink, NoopFileBackend> for RecordingFlush {
+        fn request_flush(
+            &mut self,
+            _display_sink: &mut PendingSink,
+            _file_backend: &mut NoopFileBackend,
+        ) -> Result<(), &'static str> {
+            self.calls += 1;
+            self.result
+        }
+    }
+
+    #[test]
+    fn request_pending_display_flush_enqueues_pending_refresh_once() {
+        let mut sink = PendingSink { pending: 1 };
+        let mut files = NoopFileBackend;
+        let mut flush = RecordingFlush::default();
+
+        assert_eq!(
+            request_pending_display_flush(&mut sink, &mut files, &mut flush),
+            Ok(true)
+        );
+        assert_eq!(flush.calls, 1);
+    }
+
+    #[test]
+    fn request_pending_display_flush_skips_idle_or_active_flush() {
+        let mut idle_sink = PendingSink { pending: 0 };
+        let mut files = NoopFileBackend;
+        let mut flush = RecordingFlush::default();
+
+        assert_eq!(
+            request_pending_display_flush(&mut idle_sink, &mut files, &mut flush),
+            Ok(false)
+        );
+        assert_eq!(flush.calls, 0);
+
+        let mut pending_sink = PendingSink { pending: 1 };
+        flush.result = Err("display_flush_in_progress");
+        assert_eq!(
+            request_pending_display_flush(&mut pending_sink, &mut files, &mut flush),
+            Ok(false)
+        );
+        assert_eq!(flush.calls, 1);
+    }
+
+    #[test]
+    fn request_pending_display_flush_reports_unexpected_errors() {
+        let mut sink = PendingSink { pending: 1 };
+        let mut files = NoopFileBackend;
+        let mut flush = RecordingFlush {
+            calls: 0,
+            result: Err("display_flush_task_unavailable"),
+        };
+
+        assert_eq!(
+            request_pending_display_flush(&mut sink, &mut files, &mut flush),
+            Err("display_flush_task_unavailable")
+        );
+        assert_eq!(flush.calls, 1);
     }
 }
 

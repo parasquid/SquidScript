@@ -205,6 +205,15 @@ pub trait NativeRadioBackend {
         Ok(())
     }
 
+    fn begin_start_wifi_ap(&mut self, ssid: &str) -> NativeWifiBackendOperation {
+        match self.start_wifi_ap(ssid) {
+            Ok(()) => NativeWifiBackendOperation::Done { count: 0 },
+            Err(()) => NativeWifiBackendOperation::Error {
+                error: "unavailable",
+            },
+        }
+    }
+
     fn start_ble_profile(&mut self, _id: &str) -> Result<(), ()> {
         Ok(())
     }
@@ -213,6 +222,19 @@ pub trait NativeRadioBackend {
 
     fn connect_wifi_station(&mut self, _ssid: &str, _password: &str) -> Result<(), ()> {
         Ok(())
+    }
+
+    fn begin_connect_wifi_station(
+        &mut self,
+        ssid: &str,
+        password: &str,
+    ) -> NativeWifiBackendOperation {
+        match self.connect_wifi_station(ssid, password) {
+            Ok(()) => NativeWifiBackendOperation::Done { count: 0 },
+            Err(()) => NativeWifiBackendOperation::Error {
+                error: "unavailable",
+            },
+        }
     }
 
     fn wifi_mode(&self) -> Option<&'static str> {
@@ -231,9 +253,23 @@ pub trait NativeRadioBackend {
         Err("unsupported")
     }
 
+    fn begin_scan_wifi(&mut self) -> NativeWifiBackendOperation {
+        match self.scan_wifi() {
+            Ok(count) => NativeWifiBackendOperation::Done { count },
+            Err(error) => NativeWifiBackendOperation::Error { error },
+        }
+    }
+
     fn wifi_scan_network(&self, _index: i32) -> Result<Option<WifiAccessPoint>, &'static str> {
         Err("unsupported")
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeWifiBackendOperation {
+    Pending,
+    Done { count: i32 },
+    Error { error: &'static str },
 }
 
 pub trait NativeDisplaySink {
@@ -1812,6 +1848,76 @@ impl<
         self.host.errors.clear();
     }
 
+    pub fn complete_wifi_scan(&mut self, count: i32) -> Result<(), NativeRuntimeError> {
+        if self.host.wifi_operation.kind != Some("scan") || !self.host.wifi_operation.active {
+            return Err(NativeRuntimeError::InvalidOffset);
+        }
+        self.host
+            .record_wifi_operation(NativeWifiOperationState::done_with_count("scan", count));
+        self.host.ensure_radio_inactive(RadioKind::Wifi)?;
+        Ok(())
+    }
+
+    pub fn fail_wifi_scan(&mut self, error: &'static str) -> Result<(), NativeRuntimeError> {
+        if self.host.wifi_operation.kind != Some("scan") || !self.host.wifi_operation.active {
+            return Err(NativeRuntimeError::InvalidOffset);
+        }
+        self.host
+            .record_wifi_operation(NativeWifiOperationState::error("scan", error));
+        self.host.ensure_radio_inactive(RadioKind::Wifi)?;
+        Ok(())
+    }
+
+    pub fn complete_wifi_connect(&mut self) -> Result<(), NativeRuntimeError> {
+        if self.host.wifi_operation.kind != Some("connect") || !self.host.wifi_operation.active {
+            return Err(NativeRuntimeError::InvalidOffset);
+        }
+        self.host
+            .record_wifi_operation(NativeWifiOperationState::done("connect"));
+        Ok(())
+    }
+
+    pub fn fail_wifi_connect(&mut self, error: &'static str) -> Result<(), NativeRuntimeError> {
+        if self.host.wifi_operation.kind != Some("connect") || !self.host.wifi_operation.active {
+            return Err(NativeRuntimeError::InvalidOffset);
+        }
+        self.host
+            .record_wifi_operation(NativeWifiOperationState::error("connect", error));
+        self.host.ensure_radio_inactive(RadioKind::Wifi)?;
+        Ok(())
+    }
+
+    pub fn complete_wifi_start_ap(&mut self) -> Result<(), NativeRuntimeError> {
+        if self.host.wifi_operation.kind != Some("startAP") || !self.host.wifi_operation.active {
+            return Err(NativeRuntimeError::InvalidOffset);
+        }
+        self.host
+            .record_wifi_operation(NativeWifiOperationState::done("startAP"));
+        Ok(())
+    }
+
+    pub fn fail_wifi_start_ap(&mut self, error: &'static str) -> Result<(), NativeRuntimeError> {
+        if self.host.wifi_operation.kind != Some("startAP") || !self.host.wifi_operation.active {
+            return Err(NativeRuntimeError::InvalidOffset);
+        }
+        self.host
+            .record_wifi_operation(NativeWifiOperationState::error("startAP", error));
+        self.host.ensure_radio_inactive(RadioKind::Wifi)?;
+        Ok(())
+    }
+
+    pub fn wifi_operation_result(&self) -> WifiOperationResult<'static> {
+        self.host.wifi_operation.result()
+    }
+
+    pub fn wifi_operation_active_kind(&self) -> Option<&'static str> {
+        if self.host.wifi_operation.active && !self.host.wifi_operation.done {
+            self.host.wifi_operation.kind
+        } else {
+            None
+        }
+    }
+
     pub fn state_bytes(&self) -> &[u8] {
         self.host.state_bytes()
     }
@@ -2975,13 +3081,14 @@ impl<
 
     fn service_wifi_start_ap<'a>(&'a mut self, _ssid: &str) -> Result<WifiOperation<'a>, VmError> {
         self.ensure_radio_active(RadioKind::Wifi)?;
-        if self.radio_backend.start_wifi_ap(_ssid).is_err() {
-            self.ensure_radio_inactive(RadioKind::Wifi)?;
-            let operation = NativeWifiOperationState::error("startAP", "unavailable");
-            self.record_wifi_operation(operation);
-            return Ok(operation.operation());
-        }
-        let operation = NativeWifiOperationState::done("startAP");
+        let operation = match self.radio_backend.begin_start_wifi_ap(_ssid) {
+            NativeWifiBackendOperation::Pending => NativeWifiOperationState::running("startAP"),
+            NativeWifiBackendOperation::Done { .. } => NativeWifiOperationState::done("startAP"),
+            NativeWifiBackendOperation::Error { error } => {
+                self.ensure_radio_inactive(RadioKind::Wifi)?;
+                NativeWifiOperationState::error("startAP", error)
+            }
+        };
         self.record_wifi_operation(operation);
         Ok(operation.operation())
     }
@@ -3007,23 +3114,21 @@ impl<
             return Ok(operation.operation());
         }
         self.ensure_radio_active(RadioKind::Wifi)?;
-        if self
-            .radio_backend
-            .connect_wifi_station(
-                self.wifi_profile_ssid.as_str(),
-                self.wifi_profile_password.as_str(),
-            )
-            .is_err()
-        {
-            self.ensure_radio_inactive(RadioKind::Wifi)?;
-            let operation = NativeWifiOperationState::error("connect", "unavailable");
-            self.record_wifi_operation(operation);
-            return Ok(operation.operation());
-        }
-        self.wifi_station_profile
-            .set(profile)
-            .map_err(|_| VmError::InvalidOperand)?;
-        let operation = NativeWifiOperationState::running("connect");
+        let operation = match self.radio_backend.begin_connect_wifi_station(
+            self.wifi_profile_ssid.as_str(),
+            self.wifi_profile_password.as_str(),
+        ) {
+            NativeWifiBackendOperation::Pending | NativeWifiBackendOperation::Done { .. } => {
+                self.wifi_station_profile
+                    .set(profile)
+                    .map_err(|_| VmError::InvalidOperand)?;
+                NativeWifiOperationState::running("connect")
+            }
+            NativeWifiBackendOperation::Error { error } => {
+                self.ensure_radio_inactive(RadioKind::Wifi)?;
+                NativeWifiOperationState::error("connect", error)
+            }
+        };
         self.record_wifi_operation(operation);
         Ok(operation.operation())
     }
@@ -3093,11 +3198,17 @@ impl<
             return Ok(operation.operation());
         }
         self.ensure_radio_active(RadioKind::Wifi)?;
-        let operation = match self.radio_backend.scan_wifi() {
-            Ok(count) => NativeWifiOperationState::done_with_count("scan", count),
-            Err(error) => NativeWifiOperationState::error("scan", error),
+        let operation = match self.radio_backend.begin_scan_wifi() {
+            NativeWifiBackendOperation::Pending => NativeWifiOperationState::running("scan"),
+            NativeWifiBackendOperation::Done { count } => {
+                self.ensure_radio_inactive(RadioKind::Wifi)?;
+                NativeWifiOperationState::done_with_count("scan", count)
+            }
+            NativeWifiBackendOperation::Error { error } => {
+                self.ensure_radio_inactive(RadioKind::Wifi)?;
+                NativeWifiOperationState::error("scan", error)
+            }
         };
-        self.ensure_radio_inactive(RadioKind::Wifi)?;
         self.record_wifi_operation(operation);
         Ok(operation.operation())
     }

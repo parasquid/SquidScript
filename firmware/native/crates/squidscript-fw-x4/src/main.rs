@@ -70,6 +70,7 @@ use squidscript_fw_x4::{
         X4StreamingDisplayFlushTask, CHUNK_COUNT, ROW_BYTES,
     },
     board::{DisplayDelay, FreqManagedSpiDevice, SharedSpi2},
+    request_pending_display_flush, NativeDisplayFlushDriver,
     x4_storage::{X4BinBookFileBackend, X4SdFileStorage, X4StorageTime},
 };
 
@@ -82,6 +83,7 @@ use squidscript_fw_x4::{
 ))]
 use squidscript_fw_core::native_runtime::{
     NativeBinBookBackend, NativeDisplaySink, NativeFileBackend, NativeRadioBackend,
+    NativeWifiBackendOperation,
 };
 
 #[cfg(all(target_arch = "riscv32", any(feature = "wifi", feature = "ble")))]
@@ -93,6 +95,13 @@ use esp_hal::ram;
     feature = "wifi"
 ))]
 use core::fmt::Write as _;
+
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "wifi"
+))]
+use core::net::Ipv4Addr;
 
 #[cfg(all(
     target_arch = "riscv32",
@@ -635,7 +644,58 @@ static WIFI_AP_CLIENT_COUNT: AtomicI32 = AtomicI32::new(0);
     feature = "native-radio-services",
     feature = "wifi"
 ))]
+static WIFI_DHCP_LEASE_COUNT: AtomicI32 = AtomicI32::new(0);
+
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "wifi"
+))]
 static WIFI_CONTROLLER_PTR: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "wifi"
+))]
+static WIFI_RUNTIME_PTR: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "wifi"
+))]
+static WIFI_COMMANDS: embassy_sync_07::channel::Channel<
+    embassy_sync_07::blocking_mutex::raw::CriticalSectionRawMutex,
+    NativeWifiCommand,
+    2,
+> = embassy_sync_07::channel::Channel::new();
+
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "wifi"
+))]
+static WIFI_SCAN_RESULTS: critical_section::Mutex<
+    core::cell::RefCell<heapless::Vec<squidvm_core::host::WifiAccessPoint, 8>>,
+> = critical_section::Mutex::new(core::cell::RefCell::new(heapless::Vec::new()));
+
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "wifi"
+))]
+#[derive(Clone)]
+enum NativeWifiCommand {
+    Scan,
+    Connect {
+        ssid: heapless::String<32>,
+        password: heapless::String<64>,
+    },
+    StartAp {
+        ssid: heapless::String<32>,
+    },
+}
 
 #[cfg(all(
     target_arch = "riscv32",
@@ -780,7 +840,7 @@ async fn native_ble_storage_task(runtime: &'static SharedX4NativeRuntime) {
     feature = "wifi"
 ))]
 #[embassy_executor::task]
-async fn native_wifi_event_task() {
+async fn native_wifi_event_task(runtime: &'static SharedX4NativeRuntime) {
     let subscriber = loop {
         let controller_ptr = WIFI_CONTROLLER_PTR.load(Ordering::Acquire);
         if controller_ptr == 0 {
@@ -816,7 +876,298 @@ async fn native_wifi_event_task() {
                     .saturating_sub(1);
                 WIFI_AP_CLIENT_COUNT.store(next, Ordering::Release);
             }
+            esp_radio::wifi::event::EventInfo::AccessPointStart => {
+                let mut runtime = runtime.lock().await;
+                runtime.radio_backend_mut().record_access_point_started();
+                let _ = runtime.complete_wifi_start_ap();
+            }
+            esp_radio::wifi::event::EventInfo::StationConnected {
+                ssid,
+                bssid,
+                authmode,
+                ..
+            } => {
+                let mut runtime = runtime.lock().await;
+                runtime
+                    .radio_backend_mut()
+                    .record_station_connected_event(
+                        ssid.as_str(),
+                        bssid,
+                        esp_radio::wifi::AuthenticationMethod::from_raw(authmode),
+                    );
+                let _ = runtime.complete_wifi_connect();
+            }
+            esp_radio::wifi::event::EventInfo::StationDisconnected {
+                ssid: _,
+                bssid,
+                reason,
+                ..
+            } => {
+                let mut runtime = runtime.lock().await;
+                runtime
+                    .radio_backend_mut()
+                    .record_station_disconnected_event(
+                        bssid,
+                        reason.into(),
+                        Some("connect-disconnected"),
+                    );
+                let _ = runtime.fail_wifi_connect("connect");
+            }
             _ => {}
+        }
+    }
+}
+
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "wifi"
+))]
+#[embassy_executor::task]
+async fn native_wifi_command_task(runtime: &'static SharedX4NativeRuntime) {
+    loop {
+        match WIFI_COMMANDS.receive().await {
+            NativeWifiCommand::Scan => {
+                let controller_ptr = loop {
+                    let ptr = WIFI_CONTROLLER_PTR.load(Ordering::Acquire);
+                    if ptr != 0 {
+                        break ptr;
+                    }
+                    embassy_time::Timer::after_millis(10).await;
+                };
+                let config = esp_radio::wifi::scan::ScanConfig::default().with_max(8);
+                // SAFETY: the runtime owns this controller for the process lifetime while
+                // the Wi-Fi lease is active. The command path is the only native code that
+                // mutably drives scan work.
+                let result = unsafe {
+                    let controller =
+                        &mut *(controller_ptr as *mut esp_radio::wifi::WifiController<'static>);
+                    let station_config = esp_radio::wifi::Config::Station(
+                        esp_radio::wifi::sta::StationConfig::default(),
+                    );
+                    match controller.set_config(&station_config) {
+                        Ok(()) => match controller.start() {
+                            Ok(()) => controller.scan_async(&config).await,
+                            Err(error) => Err(error),
+                        },
+                        Err(error) => Err(error),
+                    }
+                };
+                match result {
+                    Ok(results) => {
+                        let mut count = 0i32;
+                        critical_section::with(|cs| {
+                            let mut stored = WIFI_SCAN_RESULTS.borrow_ref_mut(cs);
+                            stored.clear();
+                            for info in results {
+                                if let Ok(network) = squidvm_core::host::WifiAccessPoint::new(
+                                    info.ssid.as_str().as_bytes(),
+                                    Some(info.bssid),
+                                    info.channel as i32,
+                                    info.signal_strength as i32,
+                                    wifi_auth_label(info.auth_method),
+                                    info.ssid.is_empty(),
+                                ) {
+                                    if stored.push(network).is_ok() {
+                                        count = count.saturating_add(1);
+                                    }
+                                }
+                            }
+                        });
+                        let mut runtime = runtime.lock().await;
+                        let _ = runtime.complete_wifi_scan(count);
+                    }
+                    Err(_) => {
+                        let mut runtime = runtime.lock().await;
+                        let _ = runtime.fail_wifi_scan("scan failed");
+                    }
+                }
+            }
+            NativeWifiCommand::Connect { ssid, password } => {
+                let controller_ptr = loop {
+                    let ptr = WIFI_CONTROLLER_PTR.load(Ordering::Acquire);
+                    if ptr != 0 {
+                        break ptr;
+                    }
+                    embassy_time::Timer::after_millis(10).await;
+                };
+                let config = esp_radio::wifi::Config::Station(
+                    esp_radio::wifi::sta::StationConfig::default()
+                        .with_ssid(ssid.as_str())
+                        .with_password(password.as_str().into()),
+                );
+                let result = unsafe {
+                    let controller =
+                        &mut *(controller_ptr as *mut esp_radio::wifi::WifiController<'static>);
+                    match controller.set_config(&config) {
+                        Ok(()) => match controller.start() {
+                            Ok(()) => controller.connect_station(),
+                            Err(error) => Err(error),
+                        },
+                        Err(error) => Err(error),
+                    }
+                };
+                match result {
+                    Ok(()) => {
+                        embassy_time::Timer::after_secs(20).await;
+                        let mut runtime = runtime.lock().await;
+                        if !runtime.wifi_operation_result().ready {
+                            runtime
+                                .radio_backend_mut()
+                                .record_station_connect_failure("connect-timeout");
+                            let _ = runtime.fail_wifi_connect("timeout");
+                        }
+                    }
+                    Err(_) => {
+                        let mut runtime = runtime.lock().await;
+                        runtime
+                            .radio_backend_mut()
+                            .record_station_connect_failure("connect");
+                        let _ = runtime.fail_wifi_connect("connect");
+                    }
+                }
+            }
+            NativeWifiCommand::StartAp { ssid } => {
+                let controller_ptr = loop {
+                    let ptr = WIFI_CONTROLLER_PTR.load(Ordering::Acquire);
+                    if ptr != 0 {
+                        break ptr;
+                    }
+                    embassy_time::Timer::after_millis(10).await;
+                };
+                let config = esp_radio::wifi::Config::AccessPoint(
+                    esp_radio::wifi::ap::AccessPointConfig::default().with_ssid(ssid.as_str()),
+                );
+                let result = unsafe {
+                    let controller =
+                        &mut *(controller_ptr as *mut esp_radio::wifi::WifiController<'static>);
+                    controller.set_config(&config)
+                };
+                match result {
+                    Ok(()) => {
+                        let mut runtime = runtime.lock().await;
+                        runtime.radio_backend_mut().record_access_point_start_ok();
+                        let _ = runtime.complete_wifi_start_ap();
+                    }
+                    Err(_) => {
+                        let mut runtime = runtime.lock().await;
+                        runtime
+                            .radio_backend_mut()
+                            .record_access_point_start_failure("set-config");
+                        let _ = runtime.fail_wifi_start_ap("set-config");
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "wifi"
+))]
+#[embassy_executor::task]
+async fn native_wifi_ap_stack_task(
+    mut runner: embassy_net::Runner<'static, esp_radio::wifi::Interface>,
+) -> ! {
+    runner.run().await
+}
+
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "wifi"
+))]
+#[embassy_executor::task]
+async fn native_wifi_sta_stack_task(
+    mut runner: embassy_net::Runner<'static, esp_radio::wifi::Interface>,
+) -> ! {
+    runner.run().await
+}
+
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "wifi"
+))]
+#[embassy_executor::task]
+async fn native_wifi_sta_ip_task(stack: embassy_net::Stack<'static>) {
+    loop {
+        let runtime_ptr = loop {
+            let ptr = WIFI_RUNTIME_PTR.load(Ordering::Acquire);
+            if ptr != 0 {
+                break ptr;
+            }
+            embassy_time::Timer::after_millis(25).await;
+        };
+        let ip = stack.config_v4().map(|config| config.address.address());
+        // SAFETY: the pointer is published after the static runtime is initialized,
+        // and that runtime lives for the firmware process lifetime.
+        let runtime = unsafe { &*(runtime_ptr as *const SharedX4NativeRuntime) };
+        {
+            let mut runtime = runtime.lock().await;
+            runtime.radio_backend_mut().record_station_ip(ip);
+        }
+        embassy_time::Timer::after_millis(500).await;
+    }
+}
+
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "wifi"
+))]
+#[embassy_executor::task]
+async fn native_wifi_ap_dhcp_task(stack: embassy_net::Stack<'static>) {
+    use edge_dhcp::{
+        Options, Packet,
+        server::{Server, ServerOptions},
+    };
+    use embassy_net::udp::{PacketMetadata, UdpSocket};
+
+    static RX_META: static_cell::StaticCell<[PacketMetadata; 4]> = static_cell::StaticCell::new();
+    static TX_META: static_cell::StaticCell<[PacketMetadata; 4]> = static_cell::StaticCell::new();
+    static RX_BUF: static_cell::StaticCell<[u8; 2048]> = static_cell::StaticCell::new();
+    static TX_BUF: static_cell::StaticCell<[u8; 2048]> = static_cell::StaticCell::new();
+    static WORK_BUF: static_cell::StaticCell<[u8; 1500]> = static_cell::StaticCell::new();
+    static REPLY_BUF: static_cell::StaticCell<[u8; 1500]> = static_cell::StaticCell::new();
+
+    let rx_meta = RX_META.init_with(|| [PacketMetadata::EMPTY; 4]);
+    let tx_meta = TX_META.init_with(|| [PacketMetadata::EMPTY; 4]);
+    let rx_buf = RX_BUF.init_with(|| [0; 2048]);
+    let tx_buf = TX_BUF.init_with(|| [0; 2048]);
+    let work_buf = WORK_BUF.init_with(|| [0; 1500]);
+    let reply_buf = REPLY_BUF.init_with(|| [0; 1500]);
+
+    let mut socket = UdpSocket::new(stack, rx_meta, rx_buf, tx_meta, tx_buf);
+    if socket.bind(67).is_err() {
+        return;
+    }
+
+    let server_ip = Ipv4Addr::new(192, 168, 4, 1);
+    let mut gateway = [server_ip];
+    let options = ServerOptions::new(server_ip, Some(&mut gateway));
+    let mut server = Server::<_, 4>::new(|| embassy_time::Instant::now().as_secs(), server_ip);
+
+    loop {
+        let Ok((len, _remote)) = socket.recv_from(work_buf).await else {
+            continue;
+        };
+        let Ok(request) = Packet::decode(&work_buf[..len]) else {
+            continue;
+        };
+        let mut opt_buf = Options::buf();
+        if let Some(reply) = server.handle_request(&mut opt_buf, &options, &request) {
+            let Ok(encoded_reply) = reply.encode(reply_buf) else {
+                continue;
+            };
+            WIFI_DHCP_LEASE_COUNT.store(server.leases.len() as i32, Ordering::Release);
+            let _ = socket
+                .send_to(encoded_reply, (embassy_net::Ipv4Address::BROADCAST, 68))
+                .await;
+        } else {
+            WIFI_DHCP_LEASE_COUNT.store(server.leases.len() as i32, Ordering::Release);
         }
     }
 }
@@ -918,17 +1269,59 @@ async fn main(spawner: embassy_executor::Spawner) {
         let runtime = RUNTIME.init_with(|| {
             SharedX4NativeRuntime::new(NativeRuntime::with_radio_backend(EspRadioBackend::new()))
         });
+        #[cfg(all(feature = "wifi", not(feature = "x4-binbook")))]
+        WIFI_RUNTIME_PTR.store(runtime as *const _ as usize, Ordering::Release);
         let buffers = BUFFERS.init_with(SerialProtocolBuffers::new);
         native_radio_log!("native_radio_services_stage serial_ready");
+        #[cfg(feature = "wifi")]
+        {
+            static STA_NET_RESOURCES: static_cell::StaticCell<embassy_net::StackResources<4>> =
+                static_cell::StaticCell::new();
+            static AP_NET_RESOURCES: static_cell::StaticCell<embassy_net::StackResources<4>> =
+                static_cell::StaticCell::new();
+            let sta_interface = esp_radio::wifi::Interface::station();
+            let (sta_stack, sta_runner) = embassy_net::new(
+                sta_interface,
+                embassy_net::Config::dhcpv4(Default::default()),
+                STA_NET_RESOURCES.init_with(embassy_net::StackResources::<4>::new),
+                0x5c17_5c4d_0000_0002,
+            );
+            match native_wifi_sta_stack_task(sta_runner) {
+                Ok(task) => spawner.spawn(task),
+                Err(_) => native_radio_log!("native_radio_services_error stage=sta_stack_spawn"),
+            }
+            match native_wifi_sta_ip_task(sta_stack) {
+                Ok(task) => spawner.spawn(task),
+                Err(_) => native_radio_log!("native_radio_services_error stage=sta_ip_spawn"),
+            }
+            let ap_interface = esp_radio::wifi::Interface::access_point();
+            let ap_config = embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
+                address: embassy_net::Ipv4Cidr::new(
+                    embassy_net::Ipv4Address::new(192, 168, 4, 1),
+                    24,
+                ),
+                gateway: None,
+                dns_servers: Default::default(),
+            });
+            let (ap_stack, ap_runner) = embassy_net::new(
+                ap_interface,
+                ap_config,
+                AP_NET_RESOURCES.init_with(embassy_net::StackResources::<4>::new),
+                0x5c17_5c4d_0000_0001,
+            );
+            match native_wifi_ap_stack_task(ap_runner) {
+                Ok(task) => spawner.spawn(task),
+                Err(_) => native_radio_log!("native_radio_services_error stage=ap_stack_spawn"),
+            }
+            match native_wifi_ap_dhcp_task(ap_stack) {
+                Ok(task) => spawner.spawn(task),
+                Err(_) => native_radio_log!("native_radio_services_error stage=ap_dhcp_spawn"),
+            }
+        }
         #[cfg(feature = "ble")]
         match native_ble_file_transfer_task(peripherals.BT) {
             Ok(task) => spawner.spawn(task),
             Err(_) => native_radio_log!("native_radio_services_error stage=ble_task_spawn"),
-        }
-        #[cfg(feature = "wifi")]
-        match native_wifi_event_task() {
-            Ok(task) => spawner.spawn(task),
-            Err(_) => native_radio_log!("native_radio_services_error stage=wifi_event_task_spawn"),
         }
         #[cfg(feature = "x4-binbook")]
         {
@@ -958,6 +1351,8 @@ async fn main(spawner: embassy_executor::Spawner) {
                     file_backend,
                 ))
             });
+            #[cfg(feature = "wifi")]
+            WIFI_RUNTIME_PTR.store(runtime as *const _ as usize, Ordering::Release);
             let display_spi = FreqManagedSpiDevice::new(
                 shared_spi,
                 Output::new(peripherals.GPIO21, Level::High, OutputConfig::default()),
@@ -983,6 +1378,20 @@ async fn main(spawner: embassy_executor::Spawner) {
                 Ok(task) => spawner.spawn(task),
                 Err(_) => native_radio_log!("native_radio_services_error stage=ble_storage_spawn"),
             }
+            #[cfg(feature = "wifi")]
+            match native_wifi_event_task(runtime) {
+                Ok(task) => spawner.spawn(task),
+                Err(_) => {
+                    native_radio_log!("native_radio_services_error stage=wifi_event_task_spawn")
+                }
+            }
+            #[cfg(feature = "wifi")]
+            match native_wifi_command_task(runtime) {
+                Ok(task) => spawner.spawn(task),
+                Err(_) => {
+                    native_radio_log!("native_radio_services_error stage=wifi_command_task_spawn")
+                }
+            }
             run_serial_protocol_cooperative(
                 UsbSerialJtag::new(peripherals.USB_DEVICE),
                 runtime,
@@ -1000,6 +1409,20 @@ async fn main(spawner: embassy_executor::Spawner) {
             match native_ble_storage_task(runtime) {
                 Ok(task) => spawner.spawn(task),
                 Err(_) => native_radio_log!("native_radio_services_error stage=ble_storage_spawn"),
+            }
+            #[cfg(feature = "wifi")]
+            match native_wifi_event_task(runtime) {
+                Ok(task) => spawner.spawn(task),
+                Err(_) => {
+                    native_radio_log!("native_radio_services_error stage=wifi_event_task_spawn")
+                }
+            }
+            #[cfg(feature = "wifi")]
+            match native_wifi_command_task(runtime) {
+                Ok(task) => spawner.spawn(task),
+                Err(_) => {
+                    native_radio_log!("native_radio_services_error stage=wifi_command_task_spawn")
+                }
             }
             run_serial_protocol_cooperative(
                 UsbSerialJtag::new(peripherals.USB_DEVICE),
@@ -1281,16 +1704,6 @@ impl SerialProtocolBuffers {
         feature = "native-radio-services"
     )
 ))]
-trait SerialDisplayFlushRequest<D: NativeDisplaySink, FB: NativeFileBackend> {
-    fn request_flush(
-        &mut self,
-        display_sink: &mut D,
-        file_backend: &mut FB,
-    ) -> Result<(), &'static str>;
-
-    fn step(&mut self) {}
-}
-
 #[cfg(all(
     target_arch = "riscv32",
     any(
@@ -1308,7 +1721,7 @@ struct NoDisplayFlushTask;
         feature = "native-radio-services"
     )
 ))]
-impl<D: NativeDisplaySink, FB: NativeFileBackend> SerialDisplayFlushRequest<D, FB>
+impl<D: NativeDisplaySink, FB: NativeFileBackend> NativeDisplayFlushDriver<D, FB>
     for NoDisplayFlushTask
 {
     fn request_flush(
@@ -1359,7 +1772,7 @@ impl<PANEL> StreamingDisplayFlushTask<PANEL> {
     feature = "x4-binbook",
     feature = "native-radio-services"
 ))]
-impl<SPI, DC, RST, BUSY> SerialDisplayFlushRequest<X4CommandDisplaySink, X4NativeFileBackend>
+impl<SPI, DC, RST, BUSY> NativeDisplayFlushDriver<X4CommandDisplaySink, X4NativeFileBackend>
     for StreamingDisplayFlushTask<X4Panel<SPI, DC, RST, BUSY>>
 where
     SPI: embedded_hal::spi::SpiDevice<u8>,
@@ -1477,7 +1890,7 @@ where
     D: NativeDisplaySink,
     C: NativeBinBookBackend,
     FB: NativeFileBackend,
-    F: SerialDisplayFlushRequest<D, FB>,
+    F: NativeDisplayFlushDriver<D, FB>,
 {
     use squid_device_protocol::{
         encode_app_list_response_into, encode_content_check_response_into,
@@ -1871,7 +2284,7 @@ where
     D: NativeDisplaySink,
     C: NativeBinBookBackend,
     FB: NativeFileBackend,
-    F: SerialDisplayFlushRequest<D, FB>,
+    F: NativeDisplayFlushDriver<D, FB>,
 {
     if *request_len == buffers.request.len() {
         *request_len = 0;
@@ -1954,7 +2367,7 @@ where
     D: NativeDisplaySink,
     C: NativeBinBookBackend,
     FB: NativeFileBackend,
-    F: SerialDisplayFlushRequest<D, FB>,
+    F: NativeDisplayFlushDriver<D, FB>,
 {
     let mut request_len = 0usize;
     let mut sessions = squid_device_protocol::ProtocolSessions::default();
@@ -1981,6 +2394,10 @@ where
             Err(_) => core::hint::spin_loop(),
         }
         content_check.step(runtime);
+        {
+            let (display_sink, file_backend) = runtime.display_sink_and_file_backend_mut();
+            let _ = request_pending_display_flush(display_sink, file_backend, display_flush);
+        }
         display_flush.step();
     }
 }
@@ -1999,7 +2416,7 @@ async fn run_serial_protocol_cooperative<B, D, C, FB, F>(
     D: NativeDisplaySink,
     C: NativeBinBookBackend,
     FB: NativeFileBackend,
-    F: SerialDisplayFlushRequest<D, FB>,
+    F: NativeDisplayFlushDriver<D, FB>,
 {
     let mut request_len = 0usize;
     let mut sessions = squid_device_protocol::ProtocolSessions::default();
@@ -2166,7 +2583,9 @@ async fn run_serial_protocol_cooperative<B, D, C, FB, F>(
                 reported_queue_high_water = high_water;
             }
         }
-        let _ = runtime.tick_timers(elapsed_ms.max(1));
+        if elapsed_ms > 0 && runtime.wifi_operation_active_kind() != Some("connect") {
+            let _ = runtime.tick_timers(elapsed_ms);
+        }
         if let Ok(byte) = serial.read_byte() {
             if let Some(response_len) = process_serial_byte(
                 byte,
@@ -2183,9 +2602,18 @@ async fn run_serial_protocol_cooperative<B, D, C, FB, F>(
             }
         }
         content_check.step(&mut runtime);
+        {
+            let (display_sink, file_backend) = runtime.display_sink_and_file_backend_mut();
+            if let Err(error) =
+                request_pending_display_flush(display_sink, file_backend, display_flush)
+            {
+                #[cfg(debug_assertions)]
+                runtime.record_error(error);
+            }
+        }
         display_flush.step();
         drop(runtime);
-        embassy_futures::yield_now().await;
+        embassy_time::Timer::after_millis(1).await;
     }
 }
 
@@ -3243,6 +3671,8 @@ struct EspRadioBackend {
     wifi_sta_ssid: heapless::String<32>,
     #[cfg(feature = "wifi")]
     wifi_sta_bssid: heapless::String<17>,
+    #[cfg(feature = "wifi")]
+    wifi_sta_ip: heapless::String<15>,
     #[cfg(feature = "ble")]
     ble_profile_id: heapless::String<32>,
     #[cfg(feature = "ble")]
@@ -3285,6 +3715,8 @@ impl EspRadioBackend {
             wifi_sta_ssid: heapless::String::new(),
             #[cfg(feature = "wifi")]
             wifi_sta_bssid: heapless::String::new(),
+            #[cfg(feature = "wifi")]
+            wifi_sta_ip: heapless::String::new(),
             #[cfg(feature = "ble")]
             ble_profile_id: heapless::String::new(),
             #[cfg(feature = "ble")]
@@ -3292,6 +3724,86 @@ impl EspRadioBackend {
             #[cfg(feature = "ble")]
             ble_profile_stop_events: 0,
         }
+    }
+
+    #[cfg(feature = "wifi")]
+    fn record_station_connected_event(
+        &mut self,
+        ssid: &str,
+        bssid: [u8; 6],
+        authmode: esp_radio::wifi::AuthenticationMethod,
+    ) {
+        self.wifi_sta_connected_events += 1;
+        self.wifi_sta_auth = wifi_auth_label(Some(authmode));
+        self.wifi_sta_ssid.clear();
+        let _ = self.wifi_sta_ssid.push_str(ssid);
+        write_bssid_text(&mut self.wifi_sta_bssid, bssid);
+        self.wifi_ap_active = false;
+        self.wifi_ap_ssid.clear();
+        self.wifi_sta_active = true;
+        self.wifi_last_disconnect_reason = None;
+        self.wifi_last_disconnect_reason_code = 0;
+        self.wifi_last_backend_code = None;
+    }
+
+    #[cfg(feature = "wifi")]
+    fn record_station_ip(&mut self, ip: Option<embassy_net::Ipv4Address>) {
+        self.wifi_sta_ip.clear();
+        if let Some(ip) = ip {
+            use core::fmt::Write;
+            let _ = write!(&mut self.wifi_sta_ip, "{ip}");
+        }
+    }
+
+    #[cfg(feature = "wifi")]
+    fn record_station_disconnected_event(
+        &mut self,
+        bssid: [u8; 6],
+        reason_code: u32,
+        backend_code: Option<&'static str>,
+    ) {
+        self.wifi_sta_disconnected_events += 1;
+        self.wifi_last_disconnect_reason = Some("disconnected");
+        self.wifi_last_disconnect_reason_code = reason_code as i32;
+        self.wifi_last_backend_code = backend_code;
+        write_bssid_text(&mut self.wifi_sta_bssid, bssid);
+        self.wifi_sta_ip.clear();
+    }
+
+    #[cfg(feature = "wifi")]
+    fn record_station_connect_failure(&mut self, backend_code: &'static str) {
+        self.wifi_sta_disconnected_events += 1;
+        self.wifi_last_disconnect_reason = Some("failed");
+        self.wifi_last_disconnect_reason_code = 0;
+        self.wifi_last_backend_code = Some(backend_code);
+        self.wifi_sta_ip.clear();
+    }
+
+    #[cfg(feature = "wifi")]
+    fn record_access_point_started(&mut self) {
+        self.wifi_ap_active = true;
+        self.wifi_sta_active = false;
+        self.wifi_sta_auth = None;
+        self.wifi_sta_ssid.clear();
+        self.wifi_sta_bssid.clear();
+        self.wifi_ap_start_events += 1;
+        self.wifi_last_backend_code = Some("ap-start-event");
+    }
+
+    #[cfg(feature = "wifi")]
+    fn record_access_point_start_ok(&mut self) {
+        self.wifi_ap_active = true;
+        self.wifi_sta_active = false;
+        self.wifi_sta_auth = None;
+        self.wifi_sta_ssid.clear();
+        self.wifi_sta_bssid.clear();
+        self.wifi_last_backend_code = Some("ap-start-ok");
+    }
+
+    #[cfg(feature = "wifi")]
+    fn record_access_point_start_failure(&mut self, backend_code: &'static str) {
+        self.wifi_ap_active = false;
+        self.wifi_last_backend_code = Some(backend_code);
     }
 }
 
@@ -3411,10 +3923,12 @@ impl NativeRadioBackend for EspRadioBackend {
                 self.wifi_sta_auth = None;
                 self.wifi_sta_ssid.clear();
                 self.wifi_sta_bssid.clear();
+                self.wifi_sta_ip.clear();
                 self.wifi_last_disconnect_reason = None;
                 self.wifi_last_disconnect_reason_code = 0;
                 WIFI_CONTROLLER_PTR.store(0, Ordering::Release);
                 WIFI_AP_CLIENT_COUNT.store(0, Ordering::Release);
+                WIFI_DHCP_LEASE_COUNT.store(0, Ordering::Release);
             }
             #[cfg(feature = "ble")]
             RadioKind::Ble => {
@@ -3488,6 +4002,48 @@ impl NativeRadioBackend for EspRadioBackend {
         }
     }
 
+    fn begin_start_wifi_ap(&mut self, ssid: &str) -> NativeWifiBackendOperation {
+        #[cfg(feature = "wifi")]
+        {
+            if self.wifi.is_none() {
+                return NativeWifiBackendOperation::Error {
+                    error: "unavailable",
+                };
+            }
+            let mut command_ssid = heapless::String::<32>::new();
+            if command_ssid.push_str(ssid).is_err() {
+                self.wifi_last_backend_code = Some("ap-ssid");
+                return NativeWifiBackendOperation::Error { error: "invalid" };
+            }
+            WIFI_AP_CLIENT_COUNT.store(0, Ordering::Release);
+            if WIFI_COMMANDS
+                .try_send(NativeWifiCommand::StartAp { ssid: command_ssid })
+                .is_err()
+            {
+                self.wifi_last_backend_code = Some("ap-queue");
+                NativeWifiBackendOperation::Error { error: "wifi busy" }
+            } else {
+                self.wifi_ap_ssid.clear();
+                let _ = self.wifi_ap_ssid.push_str(ssid);
+                self.wifi_ap_active = true;
+                self.wifi_sta_active = false;
+                self.wifi_sta_auth = None;
+                self.wifi_sta_ssid.clear();
+                self.wifi_sta_bssid.clear();
+                self.wifi_ap_start_events += 1;
+                self.wifi_last_backend_code = Some("ap-pending");
+                NativeWifiBackendOperation::Pending
+            }
+        }
+        #[cfg(not(feature = "wifi"))]
+        {
+            let _ = ssid;
+            NativeWifiBackendOperation::Error {
+                error: "unsupported",
+            }
+        }
+    }
+
     fn connect_wifi_station(&mut self, ssid: &str, password: &str) -> Result<(), ()> {
         #[cfg(feature = "wifi")]
         {
@@ -3541,6 +4097,54 @@ impl NativeRadioBackend for EspRadioBackend {
         }
     }
 
+    fn begin_connect_wifi_station(
+        &mut self,
+        ssid: &str,
+        password: &str,
+    ) -> NativeWifiBackendOperation {
+        #[cfg(feature = "wifi")]
+        {
+            if self.wifi.is_none() {
+                return NativeWifiBackendOperation::Error {
+                    error: "unavailable",
+                };
+            }
+            let mut command_ssid = heapless::String::<32>::new();
+            let mut command_password = heapless::String::<64>::new();
+            if command_ssid.push_str(ssid).is_err()
+                || command_password.push_str(password).is_err()
+            {
+                self.wifi_last_backend_code = Some("connect-credentials");
+                return NativeWifiBackendOperation::Error { error: "invalid" };
+            }
+            WIFI_AP_CLIENT_COUNT.store(0, Ordering::Release);
+            if WIFI_COMMANDS
+                .try_send(NativeWifiCommand::Connect {
+                    ssid: command_ssid,
+                    password: command_password,
+                })
+                .is_err()
+            {
+                self.wifi_last_backend_code = Some("connect-queue");
+                NativeWifiBackendOperation::Error { error: "wifi busy" }
+            } else {
+                self.wifi_ap_active = false;
+                self.wifi_ap_ssid.clear();
+                self.wifi_sta_active = true;
+                self.wifi_last_backend_code = Some("connect-pending");
+                NativeWifiBackendOperation::Pending
+            }
+        }
+        #[cfg(not(feature = "wifi"))]
+        {
+            let _ = ssid;
+            let _ = password;
+            NativeWifiBackendOperation::Error {
+                error: "unsupported",
+            }
+        }
+    }
+
     fn wifi_mode(&self) -> Option<&'static str> {
         #[cfg(feature = "wifi")]
         {
@@ -3561,34 +4165,17 @@ impl NativeRadioBackend for EspRadioBackend {
     fn wifi_status(&self) -> squidscript_fw_core::native_runtime::NativeWifiStatus<'_> {
         #[cfg(feature = "wifi")]
         {
-            let connected = self
-                .wifi
-                .as_ref()
-                .map(|controller| controller.is_connected())
-                .unwrap_or(false);
+            let connected = self.wifi_sta_connected_events > self.wifi_sta_disconnected_events;
             let clients = if self.wifi_ap_active {
-                wifi_ap_client_count().unwrap_or(0)
+                wifi_ap_client_count()
+                    .unwrap_or(0)
+                    .max(WIFI_DHCP_LEASE_COUNT.load(Ordering::Acquire))
             } else {
                 0
             };
-            let channel = self
-                .wifi
-                .as_ref()
-                .and_then(|controller| controller.channel().ok().map(|(channel, _)| channel as i32))
-                .unwrap_or(0);
-            let rssi = self
-                .wifi
-                .as_ref()
-                .and_then(|controller| controller.rssi().ok())
-                .unwrap_or(0);
-            let sta_info = self
-                .wifi
-                .as_ref()
-                .and_then(|controller| controller.ap_info().ok());
-            let auth = sta_info
-                .as_ref()
-                .and_then(|info| wifi_auth_label(info.auth_method))
-                .or(self.wifi_sta_auth);
+            let channel = if self.wifi_ap_active { 1 } else { 0 };
+            let rssi = 0;
+            let auth = self.wifi_sta_auth;
             squidscript_fw_core::native_runtime::NativeWifiStatus {
                 mode: self.wifi_mode(),
                 ssid: if self.wifi_ap_active {
@@ -3598,7 +4185,13 @@ impl NativeRadioBackend for EspRadioBackend {
                 } else {
                     None
                 },
-                ip_address: self.wifi_ap_active.then_some(wifi_ap_ip_text()),
+                ip_address: if self.wifi_ap_active {
+                    Some(wifi_ap_ip_text())
+                } else if connected && !self.wifi_sta_ip.is_empty() {
+                    Some(self.wifi_sta_ip.as_str())
+                } else {
+                    None
+                },
                 state: if self.wifi_ap_active {
                     "started"
                 } else if connected {
@@ -3610,8 +4203,8 @@ impl NativeRadioBackend for EspRadioBackend {
                 } else {
                     "idle"
                 },
-                driver_started: self.wifi_ap_active || self.wifi_sta_active,
-                configured: self.wifi_ap_active || self.wifi_sta_active,
+                driver_started: self.wifi_ap_active || self.wifi_sta_active || connected,
+                configured: self.wifi_ap_active || self.wifi_sta_active || connected,
                 channel,
                 clients,
                 ap_start_events: self.wifi_ap_start_events,
@@ -3621,7 +4214,9 @@ impl NativeRadioBackend for EspRadioBackend {
                 sta_disconnected_events: self.wifi_sta_disconnected_events,
                 last_backend_code: self.wifi_last_backend_code,
                 connected,
-                scan_matches: self.wifi_scan_results.len() as i32,
+                scan_matches: critical_section::with(|cs| {
+                    WIFI_SCAN_RESULTS.borrow_ref(cs).len() as i32
+                }),
                 rssi,
                 auth,
                 bssid: if self.wifi_sta_bssid.is_empty() {
@@ -3676,6 +4271,33 @@ impl NativeRadioBackend for EspRadioBackend {
         }
     }
 
+    fn begin_scan_wifi(&mut self) -> NativeWifiBackendOperation {
+        #[cfg(feature = "wifi")]
+        {
+            if self.wifi.is_none() {
+                return NativeWifiBackendOperation::Error {
+                    error: "unavailable",
+                };
+            }
+            critical_section::with(|cs| {
+                WIFI_SCAN_RESULTS.borrow_ref_mut(cs).clear();
+            });
+            if WIFI_COMMANDS.try_send(NativeWifiCommand::Scan).is_err() {
+                self.wifi_last_backend_code = Some("scan-queue");
+                NativeWifiBackendOperation::Error { error: "wifi busy" }
+            } else {
+                self.wifi_last_backend_code = Some("scan-pending");
+                NativeWifiBackendOperation::Pending
+            }
+        }
+        #[cfg(not(feature = "wifi"))]
+        {
+            NativeWifiBackendOperation::Error {
+                error: "unsupported",
+            }
+        }
+    }
+
     fn wifi_scan_network(
         &self,
         index: i32,
@@ -3685,7 +4307,9 @@ impl NativeRadioBackend for EspRadioBackend {
             if index < 0 {
                 return Ok(None);
             }
-            Ok(self.wifi_scan_results.get(index as usize).copied())
+            critical_section::with(|cs| {
+                Ok(WIFI_SCAN_RESULTS.borrow_ref(cs).get(index as usize).copied())
+            })
         }
         #[cfg(not(feature = "wifi"))]
         {

@@ -4,7 +4,7 @@ use squidscript_fw_core::{
         BoundedNativeFileBackend, NativeBinBookBackend, NativeBleRouteError, NativeDisplaySink,
         NativeFileBackend, NativeFileStorage, NativeFileStorageError, NativeRadioBackend,
         NativeRuntime, NativeRuntimeError, NativeWifiApIp, NativeWifiStatus, NoopBinBookBackend,
-        NoopRadioBackend,
+        NativeWifiBackendOperation, NoopRadioBackend,
     },
     radio_lifecycle::RadioKind,
 };
@@ -2038,6 +2038,71 @@ event.on("app.start") {
 }
 
 #[test]
+fn wifi_scan_starts_running_without_calling_backend_until_completion_step() {
+    let sqbc = compile_sqbc(
+        r#"app "native-wifi-scan-pending"
+event.on("app.start") {
+  let scan = service.wifi.scan()
+  let result = service.wifi.result()
+  debug.print("scan", scan.ok, scan.error, scan.active, scan.kind, scan.state, scan.done)
+  debug.print("result", result.ready, result.ok, result.error, result.kind, result.state, result.count)
+}
+"#,
+    );
+    let mut runtime = NativeRuntime::with_radio_backend(CountingRadioBackend {
+        scan_supported: true,
+        wifi_operations_deferred: true,
+        ..CountingRadioBackend::default()
+    });
+
+    run_temp_app(&mut runtime, "native-wifi-scan-pending", &sqbc);
+
+    assert_eq!(
+        runtime.output_lines().as_slice(),
+        &[
+            "scan true null true scan running false",
+            "result false true null scan running 0",
+        ]
+    );
+    let backend = runtime.radio_backend();
+    assert_eq!(backend.wifi_scan_count, 0);
+    assert_eq!(backend.pending_wifi_scan_count, 1);
+}
+
+#[test]
+fn wifi_scan_completion_records_count_and_releases_temporary_lease() {
+    let sqbc = compile_sqbc(
+        r#"app "native-wifi-scan-complete"
+event.on("app.start") {
+  service.wifi.scan()
+}
+"#,
+    );
+    let mut runtime = NativeRuntime::with_radio_backend(CountingRadioBackend {
+        scan_supported: true,
+        wifi_operations_deferred: true,
+        ..CountingRadioBackend::default()
+    });
+
+    run_temp_app(&mut runtime, "native-wifi-scan-complete", &sqbc);
+    runtime.complete_wifi_scan(3).unwrap();
+
+    let result = runtime.wifi_operation_result();
+    assert!(result.ready);
+    assert!(result.ok);
+    assert_eq!(result.kind, Some("scan"));
+    assert_eq!(result.state, "done");
+    assert_eq!(result.count, 3);
+    let resources = runtime.resource_metrics();
+    assert!(resources
+        .iter()
+        .any(|metric| metric.key == "radio_wifi_active" && metric.value == 0));
+    assert!(resources
+        .iter()
+        .any(|metric| metric.key == "radio_active_leases" && metric.value == 0));
+}
+
+#[test]
 fn wifi_scan_while_ap_active_reports_busy_and_keeps_ap_lease() {
     let sqbc = compile_sqbc(
         r#"app "native-wifi-busy-scan"
@@ -2175,7 +2240,7 @@ event.on("app.start") {
             "connect true null true connect running false",
             "operation true null true connect running false",
             "result false true null connect running 0",
-            "status true sta dev false",
+            "status true sta dev true",
         ]
     );
     let backend = runtime.radio_backend();
@@ -2185,6 +2250,194 @@ event.on("app.start") {
     assert!(resources
         .iter()
         .any(|metric| metric.key == "radio_wifi_active" && metric.value == 1));
+}
+
+#[test]
+fn wifi_connect_can_defer_backend_station_work() {
+    let sqbc = compile_sqbc(
+        r#"app "native-wifi-profile-deferred"
+event.on("app.start") {
+  let connect = service.wifi.connect("dev")
+  let result = service.wifi.result()
+  debug.print("connect", connect.ok, connect.error, connect.active, connect.kind, connect.state, connect.done)
+  debug.print("result", result.ready, result.ok, result.error, result.kind, result.state, result.count)
+}
+"#,
+    );
+    let mut runtime = NativeRuntime::with_radio_backend(CountingRadioBackend {
+        wifi_operations_deferred: true,
+        ..CountingRadioBackend::default()
+    });
+    runtime
+        .set_wifi_profile("dev", "SquidNet", "password")
+        .unwrap();
+
+    run_temp_app(&mut runtime, "native-wifi-profile-deferred", &sqbc);
+
+    assert_eq!(
+        runtime.output_lines().as_slice(),
+        &[
+            "connect true null true connect running false",
+            "result false true null connect running 0",
+        ]
+    );
+    let backend = runtime.radio_backend();
+    assert_eq!(backend.wifi_connect_count, 0);
+    assert_eq!(backend.pending_wifi_connect_count, 1);
+    assert_eq!(runtime.wifi_operation_active_kind(), Some("connect"));
+}
+
+#[test]
+fn wifi_connect_completion_marks_operation_done_and_keeps_station_lease() {
+    let sqbc = compile_sqbc(
+        r#"app "native-wifi-profile-complete"
+event.on("app.start") {
+  service.wifi.connect("dev")
+}
+"#,
+    );
+    let mut runtime = NativeRuntime::with_radio_backend(CountingRadioBackend {
+        wifi_operations_deferred: true,
+        ..CountingRadioBackend::default()
+    });
+    runtime
+        .set_wifi_profile("dev", "SquidNet", "password")
+        .unwrap();
+
+    run_temp_app(&mut runtime, "native-wifi-profile-complete", &sqbc);
+    runtime.complete_wifi_connect().unwrap();
+
+    let result = runtime.wifi_operation_result();
+    assert!(result.ready);
+    assert!(result.ok);
+    assert_eq!(result.kind, Some("connect"));
+    assert_eq!(result.state, "done");
+    assert_eq!(runtime.wifi_operation_active_kind(), None);
+    let resources = runtime.resource_metrics();
+    assert!(resources
+        .iter()
+        .any(|metric| metric.key == "radio_wifi_active" && metric.value == 1));
+    assert!(resources
+        .iter()
+        .any(|metric| metric.key == "radio_active_leases" && metric.value == 1));
+}
+
+#[test]
+fn wifi_station_status_reports_backend_provided_ip_address() {
+    let sqbc = compile_sqbc(
+        r#"app "native-wifi-sta-ip"
+event.on("app.start") {
+  let connect = service.wifi.connect("dev")
+  let status = service.wifi.status()
+  debug.print("station", connect.ok, status.connected, status.mode, status.ipAddress)
+}
+"#,
+    );
+    let mut runtime = NativeRuntime::with_radio_backend(CountingRadioBackend {
+        sta_ip_supported: true,
+        ..CountingRadioBackend::default()
+    });
+    runtime.set_wifi_profile("dev", "SquidNet", "password").unwrap();
+
+    run_temp_app(&mut runtime, "native-wifi-sta-ip", &sqbc);
+
+    assert_eq!(
+        runtime.output_lines().as_slice(),
+        &["station true true sta 198.51.100.23"]
+    );
+}
+
+#[test]
+fn wifi_start_ap_can_defer_backend_work() {
+    let sqbc = compile_sqbc(
+        r#"app "native-wifi-ap-deferred"
+event.on("app.start") {
+  let start = service.wifi.startAP("SquidNative")
+  let result = service.wifi.result()
+  debug.print("ap", start.ok, start.error, start.active, start.kind, start.state, start.done)
+  debug.print("result", result.ready, result.ok, result.error, result.kind, result.state, result.count)
+}
+"#,
+    );
+    let mut runtime = NativeRuntime::with_radio_backend(CountingRadioBackend {
+        wifi_operations_deferred: true,
+        ..CountingRadioBackend::default()
+    });
+
+    run_temp_app(&mut runtime, "native-wifi-ap-deferred", &sqbc);
+
+    assert_eq!(
+        runtime.output_lines().as_slice(),
+        &[
+            "ap true null true startAP running false",
+            "result false true null startAP running 0",
+        ]
+    );
+    let backend = runtime.radio_backend();
+    assert_eq!(backend.wifi_acquire_count, 1);
+    assert_eq!(backend.wifi_start_ap_count, 0);
+    assert_eq!(backend.pending_wifi_start_ap_count, 1);
+    assert_eq!(backend.wifi_release_count, 0);
+}
+
+#[test]
+fn wifi_start_ap_completion_marks_done_and_keeps_ap_lease() {
+    let sqbc = compile_sqbc(
+        r#"app "native-wifi-ap-complete"
+event.on("app.start") {
+  service.wifi.startAP("SquidNative")
+}
+
+event.on("ap.poll") {
+  let result = service.wifi.result()
+  let status = service.wifi.status()
+  debug.print("ap poll", result.ready, result.ok, result.kind, result.state, status.mode, status.state)
+}
+"#,
+    );
+    let mut runtime = NativeRuntime::with_radio_backend(CountingRadioBackend {
+        wifi_operations_deferred: true,
+        ..CountingRadioBackend::default()
+    });
+
+    run_temp_app(&mut runtime, "native-wifi-ap-complete", &sqbc);
+    {
+        let backend = runtime.radio_backend_mut();
+        backend.ap_mode = true;
+        backend.ap_ssid.clear();
+        backend.ap_ssid.push_str("SquidNative");
+    }
+    runtime.complete_wifi_start_ap().unwrap();
+
+    let result = runtime.wifi_operation_result();
+    assert!(result.ready);
+    assert!(result.ok);
+    assert_eq!(result.kind, Some("startAP"));
+    assert_eq!(result.state, "done");
+    let backend = runtime.radio_backend();
+    assert_eq!(backend.pending_wifi_start_ap_count, 1);
+    assert_eq!(backend.wifi_release_count, 0);
+    let resources = runtime.resource_metrics();
+    assert!(resources
+        .iter()
+        .any(|metric| metric.key == "radio_wifi_active" && metric.value == 1));
+    assert!(resources
+        .iter()
+        .any(|metric| metric.key == "radio_active_leases" && metric.value == 1));
+
+    runtime.dispatch_event("ap.poll").unwrap();
+
+    assert_eq!(
+        runtime.output_lines().as_slice(),
+        &["ap poll true true startAP done ap started"]
+    );
+    let resources = runtime.resource_metrics();
+    assert!(resources
+        .iter()
+        .any(|metric| metric.key == "radio_wifi_active" && metric.value == 1));
+    assert!(resources
+        .iter()
+        .any(|metric| metric.key == "radio_active_leases" && metric.value == 1));
 }
 
 #[test]
@@ -2565,7 +2818,12 @@ struct CountingRadioBackend {
     sta_mode: bool,
     ap_ssid: String,
     scan_supported: bool,
+    wifi_operations_deferred: bool,
+    pending_wifi_scan_count: usize,
+    pending_wifi_connect_count: usize,
+    pending_wifi_start_ap_count: usize,
     ap_ip_supported: bool,
+    sta_ip_supported: bool,
     connected_clients: i32,
     probe_events: i32,
 }
@@ -2606,6 +2864,21 @@ impl NativeRadioBackend for CountingRadioBackend {
         Ok(())
     }
 
+    fn begin_start_wifi_ap(&mut self, ssid: &str) -> NativeWifiBackendOperation {
+        if self.wifi_operations_deferred {
+            assert_eq!(ssid, "SquidNative");
+            self.pending_wifi_start_ap_count += 1;
+            NativeWifiBackendOperation::Pending
+        } else {
+            match self.start_wifi_ap(ssid) {
+                Ok(()) => NativeWifiBackendOperation::Done { count: 0 },
+                Err(()) => NativeWifiBackendOperation::Error {
+                    error: "unavailable",
+                },
+            }
+        }
+    }
+
     fn start_ble_profile(&mut self, id: &str) -> Result<(), ()> {
         self.ble_profile_start_count += 1;
         self.ble_profile_id.clear();
@@ -2636,11 +2909,37 @@ impl NativeRadioBackend for CountingRadioBackend {
         Ok(())
     }
 
+    fn begin_connect_wifi_station(
+        &mut self,
+        ssid: &str,
+        password: &str,
+    ) -> NativeWifiBackendOperation {
+        if self.wifi_operations_deferred {
+            assert_eq!(ssid, "SquidNet");
+            assert_eq!(password, "password");
+            self.pending_wifi_connect_count += 1;
+            NativeWifiBackendOperation::Pending
+        } else {
+            match self.connect_wifi_station(ssid, password) {
+                Ok(()) => NativeWifiBackendOperation::Done { count: 0 },
+                Err(()) => NativeWifiBackendOperation::Error {
+                    error: "unavailable",
+                },
+            }
+        }
+    }
+
     fn wifi_status(&self) -> NativeWifiStatus<'_> {
         NativeWifiStatus {
             mode: self.wifi_mode(),
             ssid: self.ap_mode.then_some(self.ap_ssid.as_str()),
-            ip_address: (self.ap_mode && self.ap_ip_supported).then_some("192.0.2.1"),
+            ip_address: if self.ap_mode && self.ap_ip_supported {
+                Some("192.0.2.1")
+            } else if self.sta_mode && self.sta_ip_supported {
+                Some("198.51.100.23")
+            } else {
+                None
+            },
             state: if self.ap_mode {
                 "started"
             } else if self.sta_mode {
@@ -2670,7 +2969,7 @@ impl NativeRadioBackend for CountingRadioBackend {
             sta_connected_events: if self.sta_mode { 1 } else { 0 },
             sta_disconnected_events: 0,
             last_backend_code: None,
-            connected: false,
+            connected: self.sta_mode,
             scan_matches: if self.scan_supported { 1 } else { 0 },
             rssi: 0,
             auth: None,
@@ -2699,6 +2998,18 @@ impl NativeRadioBackend for CountingRadioBackend {
             Ok(1)
         } else {
             Err("unsupported")
+        }
+    }
+
+    fn begin_scan_wifi(&mut self) -> NativeWifiBackendOperation {
+        if self.wifi_operations_deferred {
+            self.pending_wifi_scan_count += 1;
+            NativeWifiBackendOperation::Pending
+        } else {
+            match self.scan_wifi() {
+                Ok(count) => NativeWifiBackendOperation::Done { count },
+                Err(error) => NativeWifiBackendOperation::Error { error },
+            }
         }
     }
 
