@@ -622,6 +622,17 @@ work. The always-fire disciplines stay here:
   a separate branch or worktree.
 - For slice-based implementation work, commit and push each completed,
   verified slice before moving on to the next slice.
+- Write commit messages as durable project history, not scratch notes. Use a
+  concise imperative subject that names the real behavior changed, and avoid
+  vague subjects such as "WIP", "misc", "updates", "fix stuff", or "checkpoint"
+  for committed work. Treat commit messages as a searchable project log used to
+  answer what feature was done, why a design or scope decision was made, and
+  what evidence supported it. When a commit completes or drops a feature slice,
+  changes a protocol/API/storage format, or resolves a hardware gate, the
+  message must say so explicitly; include the intent, important decisions or
+  tradeoffs, and relevant verification in the body when the subject alone
+  cannot carry that context. Do not spend message space restating chronology
+  that Git already records through commit dates.
 - Git index-writing commands must run outside the Codex sandbox. Sandboxed
   staging and commits cannot reliably create or update `.git/index.lock` in
   this environment, so use escalated command execution for `git add`,
