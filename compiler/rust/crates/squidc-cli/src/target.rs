@@ -113,6 +113,12 @@ pub struct NativeFirmware {
     pub release: bool,
     #[serde(default)]
     pub rustup_toolchain: Option<String>,
+    #[serde(default = "default_ble_connection_watchdog_ms")]
+    pub ble_connection_watchdog_ms: u64,
+}
+
+const fn default_ble_connection_watchdog_ms() -> u64 {
+    30_000
 }
 
 impl NativeFirmware {
@@ -126,6 +132,7 @@ impl NativeFirmware {
             "features": self.features,
             "release": self.release,
             "rustupToolchain": self.rustup_toolchain,
+            "bleConnectionWatchdogMs": self.ble_connection_watchdog_ms,
         })
     }
 }
@@ -370,12 +377,57 @@ fn plan_native_build_command(
     }
     args.extend(options.west_args);
 
+    let (program, args, env) = match native.rustup_toolchain.as_deref() {
+        Some(toolchain) => {
+            let mut rustup_args = vec![
+                "run".to_string(),
+                toolchain.to_string(),
+                "cargo".to_string(),
+            ];
+            rustup_args.extend(args);
+            (
+                "rustup".to_string(),
+                rustup_args,
+                vec![
+                    ("RUSTC".to_string(), rustup_tool_path(toolchain, "rustc")?),
+                    (
+                        "SQUIDSCRIPT_BLE_CONNECTION_WATCHDOG_MS".to_string(),
+                        native.ble_connection_watchdog_ms.to_string(),
+                    ),
+                ],
+            )
+        }
+        None => (
+            "cargo".to_string(),
+            args,
+            vec![(
+                "SQUIDSCRIPT_BLE_CONNECTION_WATCHDOG_MS".to_string(),
+                native.ble_connection_watchdog_ms.to_string(),
+            )],
+        ),
+    };
+
     Ok(CommandPlan {
-        program: "cargo".to_string(),
+        program,
         args,
         cwd: resolve_repo_path(root, &native.working_dir),
-        env: native_env(native),
+        env,
     })
+}
+
+fn rustup_tool_path(toolchain: &str, tool: &str) -> Result<String, String> {
+    let output = Command::new("rustup")
+        .args(["which", "--toolchain", toolchain, tool])
+        .output()
+        .map_err(|error| format!("failed to query rustup {toolchain} {tool}: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "rustup could not locate {tool} for toolchain {toolchain}"
+        ));
+    }
+    String::from_utf8(output.stdout)
+        .map(|path| path.trim().to_string())
+        .map_err(|_| format!("rustup returned a non-UTF-8 path for {tool}"))
 }
 
 pub fn plan_flash_command(
@@ -696,14 +748,6 @@ fn zephyr_env(
     Ok(envs)
 }
 
-fn native_env(native: &NativeFirmware) -> Vec<(String, String)> {
-    native
-        .rustup_toolchain
-        .as_ref()
-        .map(|toolchain| vec![("RUSTUP_TOOLCHAIN".to_string(), toolchain.clone())])
-        .unwrap_or_default()
-}
-
 fn espflash_program() -> String {
     let path = env::var_os("PATH").unwrap_or_default();
     for dir in env::split_paths(&path) {
@@ -801,6 +845,20 @@ fn resolve_repo_path(root: &Path, path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_firmware_defaults_ble_connection_watchdog_when_omitted() {
+        let firmware: NativeFirmware = serde_json::from_value(json!({
+            "package": "firmware",
+            "workingDir": ".",
+            "target": "riscv32imc-unknown-none-elf",
+            "chip": "esp32c3",
+            "elf": "target/firmware"
+        }))
+        .unwrap();
+
+        assert_eq!(firmware.ble_connection_watchdog_ms, 30_000);
+    }
 
     #[test]
     fn command_check_uses_injected_environment_path() {

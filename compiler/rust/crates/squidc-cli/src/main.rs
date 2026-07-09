@@ -3666,9 +3666,12 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(plan.program, "cargo");
+        assert_eq!(plan.program, "rustup");
         assert_eq!(plan.cwd, root.join("firmware/native"));
         assert!(plan.args.starts_with(&[
+            "run".to_string(),
+            "nightly".to_string(),
+            "cargo".to_string(),
             "build".to_string(),
             "-p".to_string(),
             "squidscript-fw-x4".to_string(),
@@ -3682,10 +3685,10 @@ mod tests {
         assert!(features.contains("firmware-bin"));
         assert!(features.contains("x4-binbook"));
         assert!(features.contains("native-radio-services"));
-        assert!(plan
-            .env
-            .iter()
-            .any(|(key, value)| key == "RUSTUP_TOOLCHAIN" && value == "nightly"));
+        assert!(!plan.env.iter().any(|(key, _)| key == "RUSTUP_TOOLCHAIN"));
+        assert!(plan.env.iter().any(|(key, value)| {
+            key == "RUSTC" && value.contains("toolchains/nightly") && value.ends_with("/rustc")
+        }));
     }
 
     #[test]
@@ -3710,7 +3713,27 @@ mod tests {
             "--non-interactive".to_string(),
         ]));
         assert!(plan.args.iter().any(|arg| {
-            arg.ends_with("target/riscv32imc-unknown-none-elf/release/squidscript-fw-x4")
+            arg.ends_with("target/riscv32imc-unknown-none-elf/debug/squidscript-fw-x4")
+        }));
+    }
+
+    #[test]
+    fn native_build_plan_exports_configured_ble_connection_watchdog() {
+        let root = target::repo_root();
+        let target = target::load_target_by_id(&root, "xteink-x4").unwrap();
+        let plan = target::plan_build_command(
+            &root,
+            &target,
+            target::TargetBuildPlanOptions {
+                backend: target::TargetBackend::Native,
+                stack_usage: false,
+                pristine: target::TargetPristine::Auto,
+                west_args: Vec::new(),
+            },
+        )
+        .unwrap();
+        assert!(plan.env.iter().any(|(key, value)| {
+            key == "SQUIDSCRIPT_BLE_CONNECTION_WATCHDOG_MS" && value == "30000"
         }));
     }
 

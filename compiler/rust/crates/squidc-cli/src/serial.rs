@@ -200,9 +200,24 @@ impl SerialDevice {
         if !is_safe_content_name(name) {
             return Err(format!("invalid content name: {name}"));
         }
-        let frame = self.send_protocol_request(&content_check_request(91, name))?;
-        content_check_result(&frame)
-            .ok_or_else(|| "not a successful content check response".to_string())
+        let request = content_check_request(91, name);
+        let deadline = Instant::now() + default_timeout();
+        loop {
+            let frame = self.send_protocol_request(&request)?;
+            if frame.kind == FrameKind::Response
+                && frame.opcode == request.opcode
+                && frame.status == Status::Pending
+                && frame.sequence == request.sequence
+            {
+                if Instant::now() >= deadline {
+                    return Err("content check did not complete before timeout".to_string());
+                }
+                std::thread::sleep(Duration::from_millis(25));
+                continue;
+            }
+            return content_check_result(&frame)
+                .ok_or_else(|| "not a successful content check response".to_string());
+        }
     }
 
     pub fn content_delete(&mut self, name: &str) -> Result<String, String> {

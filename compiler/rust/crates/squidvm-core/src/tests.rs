@@ -1746,6 +1746,51 @@ screen("main") {}
 }
 
 #[test]
+fn program_index_parses_ble_profile_metadata_from_reader() {
+    let source = r#"app "ble-profile-index"
+event.on("app.start") {
+  service.ble.start("file-transfer", {
+    id: "rx"
+    accept: [".sqbc", ".binbook"]
+    events: {
+      complete: "ble.file.complete"
+    }
+  })
+}
+event.on("ble.file.complete", ev) {
+  debug.print(ev.name)
+}
+"#;
+    let compiled = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+
+    let mut reader = SliceSqbcReader::new(&bytes);
+    let mut scratch = [0u8; MAX_APP_BYTES];
+    assert_eq!(
+        ProgramIndex::ble_profile_count_from_reader(&mut reader, &mut scratch).unwrap(),
+        1
+    );
+
+    let mut reader = SliceSqbcReader::new(&bytes);
+    let profile = ProgramIndex::ble_profile_from_reader(&mut reader, &mut scratch, 0).unwrap();
+    assert_eq!(profile.profile, "file-transfer");
+    assert_eq!(profile.id, "rx");
+    assert_eq!(profile.role, "server");
+    assert_eq!(profile.accept, [".sqbc", ".binbook"]);
+    assert_eq!(
+        profile.events,
+        [BleProfileEventRoute {
+            kind: "complete",
+            event: "ble.file.complete",
+        }]
+    );
+}
+
+#[test]
 fn program_infers_capability_demand_from_builtin_bytecode() {
     let source = r#"app "cap-demand"
 event.on("app.start") {

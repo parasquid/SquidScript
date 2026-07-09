@@ -28,8 +28,9 @@ use crate::{
         OP_CALL_FUNCTION, OP_EQ, OP_GET_FIELD, OP_GET_LOCAL, OP_GET_STATE, OP_GT, OP_GTE, OP_HALT,
         OP_JUMP, OP_JUMP_IF_FALSE, OP_LIST_GET, OP_LIST_LEN, OP_LT, OP_LTE, OP_NE, OP_POP,
         OP_PUSH_BOOL, OP_PUSH_INT, OP_PUSH_NULL, OP_PUSH_STRING, OP_RETURN, OP_SET_LOCAL,
-        OP_SET_STATE, OP_SUB, SECTION_CODE, SECTION_DEVICE_BINDINGS, SECTION_FUNCTIONS,
-        SECTION_HANDLERS, SECTION_SCREENS, SECTION_STATE, SECTION_STRINGS, SECTION_TRIGGERS,
+        OP_SET_STATE, OP_SUB, SECTION_BLE_PROFILES, SECTION_CODE, SECTION_DEVICE_BINDINGS,
+        SECTION_FUNCTIONS, SECTION_HANDLERS, SECTION_SCREENS, SECTION_STATE, SECTION_STRINGS,
+        SECTION_TRIGGERS,
     },
     error::VmError,
     limits::{
@@ -44,6 +45,9 @@ use crate::{
 };
 
 const SQBC_HEADER_LEN: usize = 14;
+const MAX_BLE_PROFILES: usize = 16;
+const MAX_BLE_PROFILE_ACCEPT: usize = 4;
+const MAX_BLE_PROFILE_EVENTS: usize = 8;
 
 pub struct Program<'a> {
     pub(crate) strings: [&'a str; MAX_STRINGS],
@@ -626,6 +630,18 @@ impl ProgramIndex {
         capability_demand_from_code(&scratch[..code_section.len])
     }
 
+    pub fn app_id_from_reader<'a>(
+        reader: &mut impl SqbcReader,
+        scratch: &'a mut [u8],
+    ) -> Result<&'a str, VmError> {
+        let strings_section = strings_reader_section(reader, scratch)?;
+        if strings_section.len > scratch.len() {
+            return Err(VmError::InvalidSection);
+        }
+        reader.read_exact_at(strings_section.offset, &mut scratch[..strings_section.len])?;
+        string_from_section(&scratch[..strings_section.len], 0)
+    }
+
     pub fn trigger_timer_count_from_reader(
         reader: &mut impl SqbcReader,
         scratch: &mut [u8],
@@ -763,6 +779,142 @@ impl ProgramIndex {
         })
     }
 
+    pub fn ble_profile_count_from_reader(
+        reader: &mut impl SqbcReader,
+        scratch: &mut [u8],
+    ) -> Result<usize, VmError> {
+        let (_, profile_section) = ble_profile_reader_sections(reader, scratch)?;
+        let Some(profile_section) = profile_section else {
+            return Ok(0);
+        };
+        if profile_section.len > scratch.len() {
+            return Err(VmError::InvalidSection);
+        }
+        reader.read_exact_at(profile_section.offset, &mut scratch[..profile_section.len])?;
+        let count = read_u16(scratch, 0)? as usize;
+        if count > MAX_BLE_PROFILES {
+            return Err(VmError::InvalidSection);
+        }
+        validate_ble_profile_section(&scratch[..profile_section.len])?;
+        Ok(count)
+    }
+
+    pub fn ble_profile_from_reader<'a>(
+        reader: &mut impl SqbcReader,
+        scratch: &'a mut [u8],
+        profile_index: usize,
+    ) -> Result<BleProfile<'a>, VmError> {
+        let (strings_section, profile_section) = ble_profile_reader_sections(reader, scratch)?;
+        let profile_section = profile_section.ok_or(VmError::InvalidOperand)?;
+        if profile_section.len > scratch.len() || strings_section.len > scratch.len() {
+            return Err(VmError::InvalidSection);
+        }
+
+        reader.read_exact_at(profile_section.offset, &mut scratch[..profile_section.len])?;
+        let count = read_u16(scratch, 0)? as usize;
+        if count > MAX_BLE_PROFILES || profile_index >= count {
+            return Err(VmError::InvalidOperand);
+        }
+
+        let mut cursor = 2usize;
+        let mut selected = None;
+        for index in 0..count {
+            let profile_id = read_u16(scratch, cursor)?;
+            let id_id = read_u16(scratch, cursor + 2)?;
+            let role_id = read_u16(scratch, cursor + 4)?;
+            let accept_count = read_u16(scratch, cursor + 6)? as usize;
+            cursor = cursor.checked_add(8).ok_or(VmError::InvalidSection)?;
+            if accept_count > MAX_BLE_PROFILE_ACCEPT {
+                return Err(VmError::InvalidSection);
+            }
+            let accept_start = cursor;
+            cursor = cursor
+                .checked_add(accept_count.checked_mul(2).ok_or(VmError::InvalidSection)?)
+                .ok_or(VmError::InvalidSection)?;
+            let event_count = read_u16(scratch, cursor)? as usize;
+            cursor = cursor.checked_add(2).ok_or(VmError::InvalidSection)?;
+            if event_count > MAX_BLE_PROFILE_EVENTS {
+                return Err(VmError::InvalidSection);
+            }
+            let events_start = cursor;
+            cursor = cursor
+                .checked_add(event_count.checked_mul(4).ok_or(VmError::InvalidSection)?)
+                .ok_or(VmError::InvalidSection)?;
+            if cursor > profile_section.len {
+                return Err(VmError::InvalidSection);
+            }
+            if index == profile_index {
+                selected = Some((
+                    profile_id,
+                    id_id,
+                    role_id,
+                    accept_count,
+                    accept_start,
+                    event_count,
+                    events_start,
+                ));
+            }
+        }
+        if cursor != profile_section.len {
+            return Err(VmError::InvalidSection);
+        }
+
+        let Some((
+            profile_id,
+            id_id,
+            role_id,
+            accept_count,
+            accept_start,
+            event_count,
+            events_start,
+        )) = selected
+        else {
+            return Err(VmError::InvalidOperand);
+        };
+
+        let mut accept_ids = [0u16; MAX_BLE_PROFILE_ACCEPT];
+        for (index, slot) in accept_ids.iter_mut().enumerate().take(accept_count) {
+            *slot = read_u16(scratch, accept_start + index * 2)?;
+        }
+        let mut event_ids = [(0u16, 0u16); MAX_BLE_PROFILE_EVENTS];
+        for (index, slot) in event_ids.iter_mut().enumerate().take(event_count) {
+            let base = events_start + index * 4;
+            *slot = (read_u16(scratch, base)?, read_u16(scratch, base + 2)?);
+        }
+
+        reader.read_exact_at(strings_section.offset, &mut scratch[..strings_section.len])?;
+        let strings = &scratch[..strings_section.len];
+        let mut accept = [""; MAX_BLE_PROFILE_ACCEPT];
+        for (index, slot) in accept.iter_mut().enumerate().take(accept_count) {
+            *slot = string_from_section(strings, accept_ids[index])?;
+        }
+        let mut events = [BleProfileEventRoute {
+            kind: "",
+            event: "",
+        }; MAX_BLE_PROFILE_EVENTS];
+        for (index, slot) in events.iter_mut().enumerate().take(event_count) {
+            let (kind_id, event_id) = event_ids[index];
+            *slot = BleProfileEventRoute {
+                kind: string_from_section(strings, kind_id)?,
+                event: string_from_section(strings, event_id)?,
+            };
+        }
+
+        Ok(BleProfile {
+            profile: string_from_section(strings, profile_id)?,
+            id: string_from_section(strings, id_id)?,
+            role: string_from_section(strings, role_id)?,
+            accept: BleProfileTextList {
+                values: accept,
+                count: accept_count,
+            },
+            events: BleProfileEventRoutes {
+                values: events,
+                count: event_count,
+            },
+        })
+    }
+
     pub(crate) fn screen(&self, name: &str) -> Result<(usize, Screen), VmError> {
         for (index, screen) in self.screens.iter().take(self.screen_count).enumerate() {
             if self.string(screen.name_id)? == name {
@@ -804,6 +956,85 @@ pub struct DeviceBinding<'a> {
     pub service: &'a str,
     pub binding: &'a str,
     pub resource: &'a str,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BleProfileEventRoute<'a> {
+    pub kind: &'a str,
+    pub event: &'a str,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BleProfile<'a> {
+    pub profile: &'a str,
+    pub id: &'a str,
+    pub role: &'a str,
+    pub accept: BleProfileTextList<'a>,
+    pub events: BleProfileEventRoutes<'a>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BleProfileTextList<'a> {
+    values: [&'a str; MAX_BLE_PROFILE_ACCEPT],
+    count: usize,
+}
+
+impl<'a> BleProfileTextList<'a> {
+    pub const fn len(&self) -> usize {
+        self.count
+    }
+
+    pub fn get(&self, index: usize) -> Option<&'a str> {
+        if index < self.count {
+            Some(self.values[index])
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a, const N: usize> PartialEq<[&'a str; N]> for BleProfileTextList<'a> {
+    fn eq(&self, other: &[&'a str; N]) -> bool {
+        self.count == N
+            && self
+                .values
+                .iter()
+                .take(self.count)
+                .zip(other.iter())
+                .all(|(left, right)| left == right)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BleProfileEventRoutes<'a> {
+    values: [BleProfileEventRoute<'a>; MAX_BLE_PROFILE_EVENTS],
+    count: usize,
+}
+
+impl<'a> BleProfileEventRoutes<'a> {
+    pub const fn len(&self) -> usize {
+        self.count
+    }
+
+    pub fn get(&self, index: usize) -> Option<BleProfileEventRoute<'a>> {
+        if index < self.count {
+            Some(self.values[index])
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a, const N: usize> PartialEq<[BleProfileEventRoute<'a>; N]> for BleProfileEventRoutes<'a> {
+    fn eq(&self, other: &[BleProfileEventRoute<'a>; N]) -> bool {
+        self.count == N
+            && self
+                .values
+                .iter()
+                .take(self.count)
+                .zip(other.iter())
+                .all(|(left, right)| left == right)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1160,6 +1391,28 @@ fn code_reader_section(
     Err(VmError::MissingSection)
 }
 
+fn strings_reader_section(
+    reader: &mut impl SqbcReader,
+    scratch: &mut [u8],
+) -> Result<SqbcSection, VmError> {
+    let mut fixed_header = [0u8; SQBC_HEADER_LEN];
+    reader.read_exact_at(0, &mut fixed_header)?;
+    let header = Program::parse_header(&fixed_header)?;
+    if header.header_len > scratch.len() {
+        return Err(VmError::InvalidHeader);
+    }
+    reader.read_exact_at(0, &mut scratch[..header.header_len])?;
+    validate_unique_section_kinds(&scratch[..header.header_len], header.section_count)?;
+
+    for index in 0..header.section_count {
+        let record = Program::parse_section_record(&scratch[..header.header_len], index)?;
+        if record.kind == SECTION_STRINGS {
+            return Ok(record);
+        }
+    }
+    Err(VmError::MissingSection)
+}
+
 fn capability_demand_from_code(code: &[u8]) -> Result<CapabilityDemand, VmError> {
     let mut demand = CapabilityDemand::none();
     let mut cursor = 0usize;
@@ -1256,6 +1509,69 @@ fn device_binding_reader_sections(
         strings_section.ok_or(VmError::MissingSection)?,
         bindings_section,
     ))
+}
+
+fn ble_profile_reader_sections(
+    reader: &mut impl SqbcReader,
+    scratch: &mut [u8],
+) -> Result<(SqbcSection, Option<SqbcSection>), VmError> {
+    let mut fixed_header = [0u8; SQBC_HEADER_LEN];
+    reader.read_exact_at(0, &mut fixed_header)?;
+    let header = Program::parse_header(&fixed_header)?;
+    if header.header_len > scratch.len() {
+        return Err(VmError::InvalidHeader);
+    }
+    reader.read_exact_at(0, &mut scratch[..header.header_len])?;
+    validate_unique_section_kinds(&scratch[..header.header_len], header.section_count)?;
+
+    let mut strings_section = None;
+    let mut profile_section = None;
+    for index in 0..header.section_count {
+        let record = Program::parse_section_record(&scratch[..header.header_len], index)?;
+        match record.kind {
+            SECTION_STRINGS => strings_section = Some(record),
+            SECTION_BLE_PROFILES => profile_section = Some(record),
+            _ => {}
+        }
+    }
+
+    Ok((
+        strings_section.ok_or(VmError::MissingSection)?,
+        profile_section,
+    ))
+}
+
+fn validate_ble_profile_section(bytes: &[u8]) -> Result<(), VmError> {
+    let count = read_u16(bytes, 0)? as usize;
+    if count > MAX_BLE_PROFILES {
+        return Err(VmError::InvalidSection);
+    }
+    let mut cursor = 2usize;
+    for _ in 0..count {
+        let accept_count = read_u16(bytes, cursor + 6)? as usize;
+        cursor = cursor.checked_add(8).ok_or(VmError::InvalidSection)?;
+        if accept_count > MAX_BLE_PROFILE_ACCEPT {
+            return Err(VmError::InvalidSection);
+        }
+        cursor = cursor
+            .checked_add(accept_count.checked_mul(2).ok_or(VmError::InvalidSection)?)
+            .ok_or(VmError::InvalidSection)?;
+        let event_count = read_u16(bytes, cursor)? as usize;
+        cursor = cursor.checked_add(2).ok_or(VmError::InvalidSection)?;
+        if event_count > MAX_BLE_PROFILE_EVENTS {
+            return Err(VmError::InvalidSection);
+        }
+        cursor = cursor
+            .checked_add(event_count.checked_mul(4).ok_or(VmError::InvalidSection)?)
+            .ok_or(VmError::InvalidSection)?;
+        if cursor > bytes.len() {
+            return Err(VmError::InvalidSection);
+        }
+    }
+    if cursor != bytes.len() {
+        return Err(VmError::InvalidSection);
+    }
+    Ok(())
 }
 
 fn parse_strings(bytes: &[u8]) -> Result<([&str; MAX_STRINGS], usize), VmError> {

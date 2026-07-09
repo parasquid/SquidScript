@@ -650,6 +650,29 @@ impl ChunkedVm {
         result
     }
 
+    pub fn dispatch_with_payload(
+        &mut self,
+        host: &mut impl ChunkedVmHost,
+        event: &str,
+        payload: EventPayload<'_>,
+    ) -> Result<(), VmError> {
+        let result = (|| {
+            let mut dispatch = self.dispatch_resumable_with_payload(host, event, Some(payload))?;
+            loop {
+                match dispatch {
+                    VmDispatch::Complete => return Ok(()),
+                    VmDispatch::PendingStorage(request) => {
+                        dispatch = self.resume_immediate_storage(host, request)?;
+                    }
+                }
+            }
+        })();
+        if result.is_err() {
+            host.service_teardown_all()?;
+        }
+        result
+    }
+
     pub fn dispatch_resumable(
         &mut self,
         host: &mut impl ChunkedVmHost,
