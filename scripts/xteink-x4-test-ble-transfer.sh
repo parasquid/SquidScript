@@ -7,8 +7,9 @@ source "${ROOT}/scripts/lib/serial-port.sh"
 source "${ROOT}/scripts/lib/transfer-payload.sh"
 
 TARGET_ID="${TARGET_ID:-xteink-x4}"
-APP_ID="file-transfer-regression"
-APP_DIR="${ROOT}/tests/hardware/xteink-x4/file-transfer-regression"
+TARGET_BACKEND="${TARGET_BACKEND:-native}"
+APP_ID="ble-transfer-regression"
+APP_DIR="${ROOT}/tests/hardware/xteink-x4/ble-transfer-regression"
 WORK_DIR="${WORK_DIR:-${ROOT}/target/hardware-tests/xteink-x4-transfer-ble}"
 PACKAGE="${WORK_DIR}/${APP_ID}.squid.zip"
 PAYLOAD_SOURCE="${PAYLOAD_SOURCE:-}"
@@ -22,17 +23,18 @@ COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-240}"
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/xteink-x4-test-ble-transfer.sh [--target <id>] [--port <serial-port>] [--device <name-or-address>] [--skip-flash] [--payload <file.binbook>] [--name <file.binbook>]
+Usage: scripts/xteink-x4-test-ble-transfer.sh [--target <id>] [--backend <backend>] [--port <serial-port>] [--device <name-or-address>] [--skip-flash] [--payload <file.binbook>] [--name <file.binbook>]
 
-Installs the X4 transfer receiver, streams a validator-compatible generated
-BinBook payload over BLE file transfer, and verifies the copied file by size and
-CRC32. Use --payload to test a specific existing BinBook.
+Installs the X4 BLE transfer receiver, streams a validator-compatible generated
+BinBook payload over BLE file transfer, and verifies the copied file by size
+and CRC32. Use --payload to test a specific existing BinBook.
 USAGE
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --target) TARGET_ID="${2:-}"; shift 2 ;;
+    --backend) TARGET_BACKEND="${2:-}"; shift 2 ;;
     --port) PORT="${2:-}"; shift 2 ;;
     --device) DEVICE="${2:-}"; shift 2 ;;
     --skip-flash) SKIP_FLASH=1; shift ;;
@@ -65,6 +67,30 @@ wait_for_contains() {
   exit 1
 }
 
+run_ble_put() {
+  local out="${WORK_DIR}/ble-put.out"
+  local timeout_seconds="${COMMAND_TIMEOUT_SECONDS:-20}"
+
+  printf '%s: %s\n' "${HARDWARE_COMMAND_LABEL}" "$*" >&2
+  if timeout "${timeout_seconds}s" "$@" >"${out}" 2>&1; then
+    return 0
+  fi
+  local status="$?"
+  printf 'Command failed or timed out after %ss: %s\n' "${timeout_seconds}" "$*" >&2
+  printf '%s\n' "--- ${out} ---" >&2
+  sed -n '1,200p' "${out}" >&2
+  capture_device_diagnostics "ble-put-failure"
+  printf 'failure diagnostics: %s %s %s\n' \
+    "${WORK_DIR}/ble-put-failure-resources.out" \
+    "${WORK_DIR}/ble-put-failure-errors.out" \
+    "${WORK_DIR}/ble-put-failure-lifecycle.out" >&2
+  if [[ -e "${WORK_DIR}/ble-put-failure-raw-serial.out" ]]; then
+    printf 'raw serial diagnostics: %s\n' \
+      "${WORK_DIR}/ble-put-failure-raw-serial.out" >&2
+  fi
+  exit "${status}"
+}
+
 source "${ROOT}/scripts/zephyr-env.sh"
 if [[ -z "${PORT}" ]]; then
   PORT="$(resolve_esp_serial_port)"
@@ -92,8 +118,8 @@ fi
 read_transfer_payload_meta "${PAYLOAD}"
 
 if [[ "${SKIP_FLASH}" != "1" ]]; then
-  run_capture build-x4 cargo run --quiet -p squidc -- target build --target "${TARGET_ID}" >/dev/null
-  run_capture flash-x4 cargo run --quiet -p squidc -- target flash --target "${TARGET_ID}" >/dev/null
+  run_capture build-x4 cargo run --quiet -p squidc -- target build --target "${TARGET_ID}" --backend "${TARGET_BACKEND}" >/dev/null
+  run_capture flash-x4 cargo run --quiet -p squidc -- target flash --target "${TARGET_ID}" --backend "${TARGET_BACKEND}" >/dev/null
   sleep 2
 fi
 
@@ -102,11 +128,12 @@ run_capture storage-format cargo run --quiet -p squidc -- device storage-format 
 run_capture install-transfer cargo run --quiet -p squidc -- app install "${PACKAGE}" --port "${PORT}" >/dev/null
 run_capture launch-transfer cargo run --quiet -p squidc -- app launch "${APP_ID}" --port "${PORT}" >/dev/null
 wait_for_contains output-ready "transfer ready" cargo run --quiet -p squidc -- device output --port "${PORT}" >/dev/null
-run_capture ble-put cargo run --quiet -p squidc -- device ble-put "${DEVICE}" "${PAYLOAD}" --name "${UPLOAD_NAME}" >/dev/null
-wait_for_contains output-copy "ble copy true null" cargo run --quiet -p squidc -- device output --port "${PORT}" >/dev/null
+run_ble_put cargo run --quiet -p squidc -- device ble-put "${DEVICE}" "${PAYLOAD}" --name "${UPLOAD_NAME}" >/dev/null
+wait_for_contains output-done "ble done ${SIZE} ${SIZE}" cargo run --quiet -p squidc -- device output --port "${PORT}" >/dev/null
+wait_for_contains output-copy "ble copy true null ${SIZE}" cargo run --quiet -p squidc -- device output --port "${PORT}" >/dev/null
 run_capture content-check cargo run --quiet -p squidc -- device content-check "${UPLOAD_NAME}" --size "${SIZE}" --crc32 "${CRC32}" --port "${PORT}" >/dev/null
 errors_out="$(run_capture errors cargo run --quiet -p squidc -- device errors --port "${PORT}")"
-if [[ -s "${errors_out}" ]]; then
+if grep -v '^error=diag\.' "${errors_out}" | grep -q .; then
   printf 'Expected device errors to be empty\n' >&2
   sed -n '1,120p' "${errors_out}" >&2
   exit 1

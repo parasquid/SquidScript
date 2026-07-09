@@ -21,6 +21,7 @@ xteink-x4-display = { path = "../../../../../binbook/crates/xteink-x4-display", 
 
 [dev-dependencies]
 binbook-encode = { path = "../../../../../binbook/crates/binbook-encode" }
+embassy-sync-07 = { package = "embassy-sync", version = "0.7" }
 
 [target.'cfg(target_arch = "riscv32")'.dependencies]
 esp-backtrace = { version = "0.19.0", features = ["esp32c3", "panic-handler", "println"], optional = true }
@@ -31,8 +32,13 @@ esp-println = { version = "0.17.0", default-features = false, features = ["esp32
 esp-radio = { version = "=1.0.0-beta.0", default-features = false, optional = true }
 esp-rtos = { version = "0.3.0", features = ["esp32c3", "embassy"], optional = true }
 static_cell = { version = "2.1.1", default-features = false, optional = true }
+embassy-executor = { version = "0.10", optional = true }
 embassy-time = { version = "0.5.0", optional = true }
 embassy-futures = { version = "0.1.2", optional = true }
+embassy-sync-07 = { package = "embassy-sync", version = "0.7", optional = true }
+bt-hci = { version = "0.8", optional = true, features = ["uuid"] }
+trouble-host = { version = "0.6", default-features = false, optional = true, features = ["peripheral", "gatt", "derive", "connection-params-update", "default-packet-pool", "default-packet-pool-mtu-27", "default-packet-pool-size-32"] }
+heapless-09 = { package = "heapless", version = "0.9", optional = true }
 
 [features]
 default = []
@@ -47,6 +53,7 @@ firmware-bin = [
 ]
 wifi = [
     "firmware-bin",
+    "dep:embassy-executor",
     "dep:esp-alloc",
     "dep:esp-radio",
     "dep:esp-rtos",
@@ -58,9 +65,14 @@ wifi = [
 ]
 ble = [
     "firmware-bin",
+    "dep:bt-hci",
+    "dep:embassy-executor",
+    "dep:embassy-sync-07",
     "dep:esp-alloc",
     "dep:esp-radio",
     "dep:esp-rtos",
+    "dep:trouble-host",
+    "dep:heapless-09",
     "esp-rtos/esp-alloc",
     "esp-rtos/esp-radio",
     "esp-radio/ble",

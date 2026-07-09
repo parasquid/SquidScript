@@ -1,9 +1,9 @@
 use squidc_core::compile::{compile, CompileRequest};
 use squidscript_fw_core::{
     native_runtime::{
-        BoundedNativeFileBackend, NativeBinBookBackend, NativeDisplaySink, NativeFileBackend,
-        NativeFileStorage, NativeFileStorageError, NativeRadioBackend, NativeRuntime,
-        NativeRuntimeError, NativeWifiApIp, NativeWifiStatus, NoopBinBookBackend,
+        BoundedNativeFileBackend, NativeBinBookBackend, NativeBleRouteError, NativeDisplaySink,
+        NativeFileBackend, NativeFileStorage, NativeFileStorageError, NativeRadioBackend,
+        NativeRuntime, NativeRuntimeError, NativeWifiApIp, NativeWifiStatus, NoopBinBookBackend,
         NoopRadioBackend,
     },
     radio_lifecycle::RadioKind,
@@ -17,6 +17,7 @@ use squidvm_core::{
     },
     value::{Handle, HandleKind},
 };
+use std::collections::HashMap;
 use std::vec::Vec;
 
 fn compile_sqbc(source: &str) -> Vec<u8> {
@@ -206,6 +207,21 @@ fn fresh_runtime_reports_inactive_lifecycle() {
         runtime.lifecycle_lines().as_slice(),
         &["active=", "armed_stack="]
     );
+}
+
+#[test]
+fn runtime_retains_bounded_errors_until_explicitly_cleared() {
+    let mut runtime = NativeRuntime::new();
+    runtime.record_error("storage: io-error");
+    runtime.record_error("transfer: invalid-offset");
+
+    assert_eq!(
+        runtime.error_lines().iter().collect::<Vec<_>>(),
+        vec!["storage: io-error", "transfer: invalid-offset"]
+    );
+
+    runtime.clear_errors();
+    assert_eq!(runtime.error_lines().iter().count(), 0);
 }
 
 #[test]
@@ -425,6 +441,8 @@ struct StaticFileStorage {
     copied: Vec<u8>,
     published: Vec<u8>,
     published_path: Option<String>,
+    tmp: Vec<u8>,
+    tmp_path: Option<String>,
     deleted: Vec<String>,
     formatted: bool,
 }
@@ -446,6 +464,7 @@ impl NativeFileStorage for StaticFileStorage {
             "notes/list.txt" => Ok(17),
             "books/copied.txt" if !self.copied.is_empty() => Ok(self.copied.len() as u64),
             path if Some(path) == self.published_path.as_deref() => Ok(self.published.len() as u64),
+            path if Some(path) == self.tmp_path.as_deref() => Ok(self.tmp.len() as u64),
             _ => Err(NativeFileStorageError::NotFound),
         }
     }
@@ -462,6 +481,7 @@ impl NativeFileStorage for StaticFileStorage {
             "notes/list.txt" => b"alpha\nbeta\ngamma\n",
             "books/copied.txt" if !self.copied.is_empty() => &self.copied,
             path if Some(path) == self.published_path.as_deref() => &self.published,
+            path if Some(path) == self.tmp_path.as_deref() => &self.tmp,
             _ => return Err(NativeFileStorageError::NotFound),
         };
         let offset = offset as usize;
@@ -484,6 +504,11 @@ impl NativeFileStorage for StaticFileStorage {
             self.published.clear();
             return Ok(());
         }
+        if path.starts_with("tmp/") {
+            self.tmp_path = Some(path.to_string());
+            self.tmp.clear();
+            return Ok(());
+        }
         {
             return Err(NativeFileStorageError::InvalidName);
         }
@@ -503,13 +528,20 @@ impl NativeFileStorage for StaticFileStorage {
             self.published.extend_from_slice(data);
             return Ok(());
         }
+        if Some(path) == self.tmp_path.as_deref() && offset as usize == self.tmp.len() {
+            self.tmp.extend_from_slice(data);
+            return Ok(());
+        }
         {
             return Err(NativeFileStorageError::InvalidName);
         }
     }
 
     fn flush(&mut self, path: &str) -> Result<(), NativeFileStorageError> {
-        if path == "books/copied.txt" || Some(path) == self.published_path.as_deref() {
+        if path == "books/copied.txt"
+            || Some(path) == self.published_path.as_deref()
+            || Some(path) == self.tmp_path.as_deref()
+        {
             Ok(())
         } else {
             Err(NativeFileStorageError::InvalidName)
@@ -523,6 +555,12 @@ impl NativeFileStorage for StaticFileStorage {
             self.published.clear();
             return Ok(());
         }
+        if Some(path) == self.tmp_path.as_deref() {
+            self.deleted.push(path.to_string());
+            self.tmp_path = None;
+            self.tmp.clear();
+            return Ok(());
+        }
         Err(NativeFileStorageError::NotFound)
     }
 
@@ -531,8 +569,251 @@ impl NativeFileStorage for StaticFileStorage {
         self.copied.clear();
         self.published.clear();
         self.published_path = None;
+        self.tmp.clear();
+        self.tmp_path = None;
         Ok(())
     }
+}
+
+#[derive(Default)]
+struct SequentialUploadOnlyStorage {
+    expected_size: u64,
+    bytes: Vec<u8>,
+    tmp_path: Option<String>,
+    committed: bool,
+    calls: Vec<&'static str>,
+}
+
+impl NativeFileStorage for SequentialUploadOnlyStorage {
+    fn for_each_file(
+        &mut self,
+        _visit: &mut dyn FnMut(&str, u64),
+    ) -> Result<(), NativeFileStorageError> {
+        Ok(())
+    }
+
+    fn file_size(&mut self, path: &str) -> Result<u64, NativeFileStorageError> {
+        if self.committed && Some(path) == self.tmp_path.as_deref() {
+            Ok(self.bytes.len() as u64)
+        } else {
+            Err(NativeFileStorageError::NotFound)
+        }
+    }
+
+    fn read_at(
+        &mut self,
+        path: &str,
+        offset: u64,
+        out: &mut [u8],
+    ) -> Result<(), NativeFileStorageError> {
+        if !self.committed || Some(path) != self.tmp_path.as_deref() {
+            return Err(NativeFileStorageError::NotFound);
+        }
+        let offset = usize::try_from(offset).map_err(|_| NativeFileStorageError::Io)?;
+        let end = offset
+            .checked_add(out.len())
+            .ok_or(NativeFileStorageError::Io)?;
+        out.copy_from_slice(
+            self.bytes
+                .get(offset..end)
+                .ok_or(NativeFileStorageError::Io)?,
+        );
+        Ok(())
+    }
+
+    fn create_or_truncate(&mut self, _path: &str) -> Result<(), NativeFileStorageError> {
+        self.calls.push("legacy-create");
+        Err(NativeFileStorageError::Io)
+    }
+
+    fn begin_write(
+        &mut self,
+        path: &str,
+        expected_size: u64,
+    ) -> Result<(), NativeFileStorageError> {
+        self.calls.push("begin");
+        self.tmp_path = Some(path.to_string());
+        self.expected_size = expected_size;
+        self.bytes.clear();
+        self.committed = false;
+        Ok(())
+    }
+
+    fn write_at(
+        &mut self,
+        _path: &str,
+        _offset: u64,
+        _data: &[u8],
+    ) -> Result<(), NativeFileStorageError> {
+        self.calls.push("legacy-write");
+        Err(NativeFileStorageError::Io)
+    }
+
+    fn write_chunk(
+        &mut self,
+        path: &str,
+        offset: u64,
+        data: &[u8],
+    ) -> Result<(), NativeFileStorageError> {
+        self.calls.push("chunk");
+        if Some(path) != self.tmp_path.as_deref() || offset as usize != self.bytes.len() {
+            return Err(NativeFileStorageError::InvalidName);
+        }
+        self.bytes.extend_from_slice(data);
+        Ok(())
+    }
+
+    fn flush(&mut self, _path: &str) -> Result<(), NativeFileStorageError> {
+        self.calls.push("legacy-flush");
+        Err(NativeFileStorageError::Io)
+    }
+
+    fn commit_write(&mut self, path: &str) -> Result<(), NativeFileStorageError> {
+        self.calls.push("commit");
+        if Some(path) != self.tmp_path.as_deref() || self.bytes.len() as u64 != self.expected_size {
+            return Err(NativeFileStorageError::Io);
+        }
+        self.committed = true;
+        Ok(())
+    }
+
+    fn delete(&mut self, path: &str) -> Result<(), NativeFileStorageError> {
+        if Some(path) == self.tmp_path.as_deref() {
+            self.tmp_path = None;
+            self.bytes.clear();
+            self.committed = false;
+            Ok(())
+        } else {
+            Err(NativeFileStorageError::NotFound)
+        }
+    }
+
+    fn format(&mut self) -> Result<(), NativeFileStorageError> {
+        self.tmp_path = None;
+        self.bytes.clear();
+        self.committed = false;
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+struct ContentTrackingFileStorage {
+    files: HashMap<String, Vec<u8>>,
+    reads: usize,
+    file_size_calls: usize,
+    deleted: Vec<String>,
+}
+
+impl NativeFileStorage for ContentTrackingFileStorage {
+    fn for_each_file(
+        &mut self,
+        visit: &mut dyn FnMut(&str, u64),
+    ) -> Result<(), NativeFileStorageError> {
+        for (path, data) in &self.files {
+            visit(path.as_str(), data.len() as u64);
+        }
+        Ok(())
+    }
+
+    fn file_size(&mut self, path: &str) -> Result<u64, NativeFileStorageError> {
+        self.file_size_calls += 1;
+        self.files
+            .get(path)
+            .map(|data| data.len() as u64)
+            .ok_or(NativeFileStorageError::NotFound)
+    }
+
+    fn read_at(
+        &mut self,
+        path: &str,
+        offset: u64,
+        out: &mut [u8],
+    ) -> Result<(), NativeFileStorageError> {
+        self.reads += 1;
+        let Some(source) = self.files.get(path) else {
+            return Err(NativeFileStorageError::NotFound);
+        };
+        let offset = offset as usize;
+        if offset > source.len() {
+            return Err(NativeFileStorageError::InvalidName);
+        }
+        let available = source.len().saturating_sub(offset);
+        let read_len = available.min(out.len());
+        out[..read_len].copy_from_slice(&source[offset..offset + read_len]);
+        for byte in out.iter_mut().skip(read_len) {
+            *byte = 0;
+        }
+        Ok(())
+    }
+
+    fn create_or_truncate(&mut self, path: &str) -> Result<(), NativeFileStorageError> {
+        self.files.insert(path.to_string(), Vec::new());
+        Ok(())
+    }
+
+    fn write_at(
+        &mut self,
+        path: &str,
+        offset: u64,
+        data: &[u8],
+    ) -> Result<(), NativeFileStorageError> {
+        let file = self
+            .files
+            .get_mut(path)
+            .ok_or(NativeFileStorageError::NotFound)?;
+        let offset = offset as usize;
+        if offset > file.len() {
+            return Err(NativeFileStorageError::InvalidName);
+        }
+        if offset == file.len() {
+            file.extend_from_slice(data);
+            return Ok(());
+        }
+        let end = offset + data.len();
+        if end > file.len() {
+            return Err(NativeFileStorageError::InvalidName);
+        }
+        file[offset..end].copy_from_slice(data);
+        Ok(())
+    }
+
+    fn flush(&mut self, _path: &str) -> Result<(), NativeFileStorageError> {
+        Ok(())
+    }
+
+    fn delete(&mut self, path: &str) -> Result<(), NativeFileStorageError> {
+        if self.files.remove(path).is_none() {
+            return Err(NativeFileStorageError::NotFound);
+        }
+        self.deleted.push(path.to_string());
+        Ok(())
+    }
+
+    fn format(&mut self) -> Result<(), NativeFileStorageError> {
+        self.files.clear();
+        Ok(())
+    }
+}
+
+fn deterministic_payload(length: usize) -> Vec<u8> {
+    (0..length)
+        .map(|index| (index as u8).wrapping_mul(73).wrapping_add(17))
+        .collect()
+}
+
+fn crc32_ieee(bytes: &[u8]) -> u32 {
+    let mut hash = 0xFFFF_FFFFu32;
+    for byte in bytes {
+        hash ^= *byte as u32;
+        for _ in 0..8 {
+            let mask = hash & 1;
+            hash >>= 1;
+            if mask != 0 {
+                hash ^= 0xEDB8_8320;
+            }
+        }
+    }
+    !hash
 }
 
 #[test]
@@ -755,6 +1036,87 @@ fn bounded_native_file_backend_checks_published_content_size_and_crc32() {
 }
 
 #[test]
+fn bounded_native_file_backend_checks_copied_content_with_uncached_readback() {
+    let mut file_backend = BoundedNativeFileBackend::<ContentTrackingFileStorage, 64, 4, 16>::new(
+        ContentTrackingFileStorage::default(),
+    );
+    let source_path = "books/source.binbook";
+    let source_data = deterministic_payload(8982);
+    file_backend
+        .storage_mut()
+        .create_or_truncate(source_path)
+        .unwrap();
+    file_backend
+        .storage_mut()
+        .write_at(source_path, 0, &source_data)
+        .unwrap();
+    let destination = file_backend
+        .file_copy(source_path, "books", "copied.binbook")
+        .unwrap();
+    assert!(destination.ok);
+    assert_eq!(destination.bytes_written, 8982);
+    assert_eq!(
+        file_backend.storage().files.get(source_path),
+        Some(&source_data)
+    );
+
+    let (before_size_calls, before_reads) = {
+        let storage = file_backend.storage();
+        (storage.file_size_calls, storage.reads)
+    };
+
+    let (checked_name, checked_size, checked_crc) = {
+        let checked = file_backend.content_check("copied.binbook").unwrap();
+        (checked.name.to_string(), checked.size, checked.crc32)
+    };
+
+    let (after_size_calls, after_reads) = {
+        let storage = file_backend.storage();
+        (storage.file_size_calls, storage.reads)
+    };
+
+    assert_eq!(checked_name, "copied.binbook");
+    assert_eq!(checked_size, 8982);
+    assert_eq!(checked_crc, crc32_ieee(&source_data));
+    assert_eq!(after_size_calls, before_size_calls + 1);
+    assert!(after_reads > before_reads);
+}
+
+#[test]
+fn bounded_native_file_backend_content_check_reads_mutated_storage_data() {
+    let mut file_backend = BoundedNativeFileBackend::<ContentTrackingFileStorage, 32, 4, 16>::new(
+        ContentTrackingFileStorage::default(),
+    );
+    let source_path = "books/source.binbook";
+    let source_data = b"immutable-copy-seed".to_vec();
+    file_backend
+        .storage_mut()
+        .create_or_truncate(source_path)
+        .unwrap();
+    file_backend
+        .storage_mut()
+        .write_at(source_path, 0, &source_data)
+        .unwrap();
+    file_backend
+        .file_copy(source_path, "books", "copied.binbook")
+        .unwrap();
+
+    let destination_path = "books/copied.binbook";
+    let before_crc = file_backend.content_check("copied.binbook").unwrap().crc32;
+    assert_eq!(before_crc, crc32_ieee(&source_data));
+
+    {
+        let storage = file_backend.storage_mut();
+        storage.write_at(destination_path, 0, b"X").unwrap();
+    }
+    let after_crc = file_backend.content_check("copied.binbook").unwrap().crc32;
+    let mut mutated = source_data.clone();
+    mutated[0] = b'X';
+
+    assert_eq!(after_crc, crc32_ieee(&mutated));
+}
+
+#[test]
 fn bounded_native_file_backend_deletes_published_content_by_simple_name() {
     let mut file_backend =
         BoundedNativeFileBackend::<StaticFileStorage, 32, 4, 16>::new(StaticFileStorage::default());
@@ -776,6 +1138,242 @@ fn bounded_native_file_backend_deletes_published_content_by_simple_name() {
         file_backend.content_check("proof.binbook"),
         Err("not-found")
     );
+}
+
+#[test]
+fn native_upload_completion_exposes_ephemeral_tmp_file_only_during_handler() {
+    let sqbc = compile_sqbc(
+        r#"app "native-upload"
+event.on("app.start") {}
+
+event.on("ble.file.complete", ev) {
+  let text = file.readText(ev.upload)
+  debug.print("upload", ev.upload, ev.name, ev.bytesReceived, ev.totalBytes, ev.id)
+  debug.print("text", text.ok, text.error, text.text)
+}
+"#,
+    );
+    let file_backend =
+        BoundedNativeFileBackend::<StaticFileStorage, 32, 4, 16>::new(StaticFileStorage::default());
+    let mut runtime = NativeRuntime::with_radio_display_binbook_and_file(
+        NoopRadioBackend,
+        CountingDisplaySink::default(),
+        NoopBinBookBackend,
+        file_backend,
+    );
+
+    run_temp_app(&mut runtime, "native-upload", &sqbc);
+    let upload_path = runtime
+        .stage_ephemeral_upload("unsafe/../proof.txt", b"ready", "rx")
+        .unwrap()
+        .to_string();
+
+    assert_eq!(upload_path, "tmp/proof.txt");
+    runtime
+        .dispatch_upload_complete("native-upload", "ble.file.complete", upload_path.as_str())
+        .unwrap();
+
+    assert_eq!(
+        runtime.output_lines().as_slice(),
+        &[
+            "upload tmp/proof.txt proof.txt 5 5 rx",
+            "text true null ready",
+        ]
+    );
+    assert_eq!(runtime.file_backend().storage().tmp_path, None);
+    assert_eq!(runtime.file_backend().storage().deleted, ["tmp/proof.txt"]);
+}
+
+#[test]
+fn native_incremental_upload_staging_streams_chunks_into_ephemeral_tmp_file() {
+    let sqbc = compile_sqbc(
+        r#"app "native-upload-stream"
+event.on("app.start") {}
+
+event.on("ble.file.complete", ev) {
+  let text = file.readText(ev.upload)
+  debug.print("upload", ev.upload, ev.name, ev.bytesReceived, ev.totalBytes, ev.id)
+  debug.print("text", text.ok, text.error, text.text)
+}
+"#,
+    );
+    let file_backend =
+        BoundedNativeFileBackend::<StaticFileStorage, 32, 4, 16>::new(StaticFileStorage::default());
+    let mut runtime = NativeRuntime::with_radio_display_binbook_and_file(
+        NoopRadioBackend,
+        CountingDisplaySink::default(),
+        NoopBinBookBackend,
+        file_backend,
+    );
+
+    run_temp_app(&mut runtime, "native-upload-stream", &sqbc);
+    let upload_path = runtime
+        .begin_ephemeral_upload("unsafe/../proof.txt", 5, "rx")
+        .unwrap()
+        .to_string();
+
+    runtime
+        .write_ephemeral_upload_chunk(upload_path.as_str(), 0, b"re")
+        .unwrap();
+    runtime
+        .write_ephemeral_upload_chunk(upload_path.as_str(), 2, b"ady")
+        .unwrap();
+    runtime
+        .commit_ephemeral_upload(upload_path.as_str(), 5)
+        .unwrap();
+    runtime
+        .dispatch_upload_complete(
+            "native-upload-stream",
+            "ble.file.complete",
+            upload_path.as_str(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        runtime.output_lines().as_slice(),
+        &[
+            "upload tmp/proof.txt proof.txt 5 5 rx",
+            "text true null ready",
+        ]
+    );
+    assert_eq!(runtime.file_backend().storage().deleted, ["tmp/proof.txt"]);
+}
+
+#[test]
+fn native_incremental_upload_staging_uses_sequential_storage_stream() {
+    let sqbc = compile_sqbc(
+        r#"app "native-upload-sequential"
+event.on("app.start") {}
+
+event.on("ble.file.complete", ev) {
+  let text = file.readText(ev.upload)
+  debug.print("text", text.ok, text.error, text.text)
+}
+"#,
+    );
+    let file_backend = BoundedNativeFileBackend::<SequentialUploadOnlyStorage, 32, 4, 16>::new(
+        SequentialUploadOnlyStorage::default(),
+    );
+    let mut runtime = NativeRuntime::with_radio_display_binbook_and_file(
+        NoopRadioBackend,
+        CountingDisplaySink::default(),
+        NoopBinBookBackend,
+        file_backend,
+    );
+
+    run_temp_app(&mut runtime, "native-upload-sequential", &sqbc);
+    let upload_path = runtime
+        .begin_ephemeral_upload("unsafe/../proof.txt", 5, "rx")
+        .unwrap()
+        .to_string();
+    runtime
+        .write_ephemeral_upload_chunk(upload_path.as_str(), 0, b"re")
+        .unwrap();
+    runtime
+        .write_ephemeral_upload_chunk(upload_path.as_str(), 2, b"ady")
+        .unwrap();
+    runtime
+        .commit_ephemeral_upload(upload_path.as_str(), 5)
+        .unwrap();
+    runtime
+        .dispatch_upload_complete(
+            "native-upload-sequential",
+            "ble.file.complete",
+            upload_path.as_str(),
+        )
+        .unwrap();
+
+    assert_eq!(runtime.output_lines().as_slice(), &["text true null ready"]);
+    assert_eq!(
+        runtime.file_backend().storage().calls,
+        ["begin", "chunk", "chunk", "commit"]
+    );
+}
+
+#[test]
+fn native_upload_completion_can_install_and_defer_launch_from_tmp_file_ref() {
+    let receiver_sqbc = compile_sqbc(
+        r#"app "native-upload-installer"
+event.on("app.start") {}
+
+event.on("ble.file.complete", ev) {
+  let installed = app.install(ev.upload)
+  app.launch(installed.id)
+}
+"#,
+    );
+    let uploaded_sqbc = compile_sqbc(
+        r#"app "uploaded-from-ble"
+event.on("app.start") {
+  debug.print("uploaded started")
+}
+"#,
+    );
+    let file_backend = BoundedNativeFileBackend::<StaticFileStorage, 128, 4, 32>::new(
+        StaticFileStorage::default(),
+    );
+    let mut runtime = NativeRuntime::with_radio_display_binbook_and_file(
+        NoopRadioBackend,
+        CountingDisplaySink::default(),
+        NoopBinBookBackend,
+        file_backend,
+    );
+
+    run_temp_app(&mut runtime, "native-upload-installer", &receiver_sqbc);
+    let upload_path = runtime
+        .stage_ephemeral_upload("uploaded.sqbc", &uploaded_sqbc, "rx")
+        .unwrap()
+        .to_string();
+
+    runtime
+        .dispatch_upload_complete(
+            "native-upload-installer",
+            "ble.file.complete",
+            upload_path.as_str(),
+        )
+        .unwrap();
+
+    assert_eq!(runtime.active_app(), Some("uploaded-from-ble"));
+    assert_eq!(
+        runtime.installed_app(),
+        Some(("uploaded-from-ble", uploaded_sqbc.len()))
+    );
+    assert_eq!(runtime.output_lines().as_slice(), &["uploaded started"]);
+    assert_eq!(runtime.file_backend().storage().tmp_path, None);
+    assert_eq!(
+        runtime.file_backend().storage().deleted,
+        ["tmp/uploaded.sqbc"]
+    );
+}
+
+#[test]
+fn replacing_app_discards_staged_ephemeral_upload() {
+    let sqbc = compile_sqbc(
+        r#"app "native-upload-cleanup"
+event.on("app.start") {}
+"#,
+    );
+    let file_backend =
+        BoundedNativeFileBackend::<StaticFileStorage, 32, 4, 16>::new(StaticFileStorage::default());
+    let mut runtime = NativeRuntime::with_radio_display_binbook_and_file(
+        NoopRadioBackend,
+        CountingDisplaySink::default(),
+        NoopBinBookBackend,
+        file_backend,
+    );
+
+    run_temp_app(&mut runtime, "native-upload-cleanup", &sqbc);
+    assert_eq!(
+        runtime
+            .stage_ephemeral_upload("proof.txt", b"ready", "rx")
+            .unwrap(),
+        "tmp/proof.txt"
+    );
+
+    run_temp_app(&mut runtime, "native-upload-cleanup", &sqbc);
+
+    assert_eq!(runtime.file_backend().storage().tmp_path, None);
+    assert_eq!(runtime.file_backend().storage().deleted, ["tmp/proof.txt"]);
 }
 
 #[derive(Default)]
@@ -1707,6 +2305,38 @@ event.on("app.start") {
 }
 
 #[test]
+fn active_ble_upload_route_uses_compiled_profile_accept_and_complete_event() {
+    let sqbc = compile_sqbc(
+        r#"app "native-ble-route"
+event.on("app.start") {
+  service.ble.start("file-transfer", {
+    id: "rx"
+    accept: [".txt", ".binbook"]
+    events: {
+      complete: "ble.file.complete"
+    }
+  })
+  debug.print("ble ready")
+}
+event.on("ble.file.complete", ev) {
+  debug.print("upload", ev.id, ev.name)
+}
+"#,
+    );
+    let mut runtime = NativeRuntime::new();
+
+    run_temp_app(&mut runtime, "native-ble-route", &sqbc);
+
+    let route = runtime.resolve_ble_upload_route("proof.txt").unwrap();
+    assert_eq!(route.profile_id, "rx");
+    assert_eq!(route.complete_event, "ble.file.complete");
+    assert_eq!(
+        runtime.resolve_ble_upload_route("proof.jpg"),
+        Err(NativeBleRouteError::RouteMismatch)
+    );
+}
+
+#[test]
 fn wifi_and_ble_service_calls_can_hold_native_leases_together() {
     let sqbc = compile_sqbc(
         r#"app "native-radios"
@@ -2021,7 +2651,11 @@ impl NativeRadioBackend for CountingRadioBackend {
             driver_started: self.ap_mode || self.sta_mode,
             configured: self.ap_mode || self.sta_mode,
             channel: if self.ap_mode {
-                if self.ap_ip_supported { 6 } else { 1 }
+                if self.ap_ip_supported {
+                    6
+                } else {
+                    1
+                }
             } else {
                 0
             },

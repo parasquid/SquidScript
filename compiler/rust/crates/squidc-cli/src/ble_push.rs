@@ -1,4 +1,4 @@
-use std::{fs, path::Path, time::Duration};
+use std::{env, fs, path::Path, time::Duration};
 
 use btleplug::{
     api::{Central, CharPropFlags, Manager as _, Peripheral as _, ScanFilter, WriteType},
@@ -19,13 +19,18 @@ pub const STATUS_COMPLETE: u8 = 0x00;
 #[cfg(test)]
 pub const STATUS_ERROR: u8 = 0x01;
 pub const STATUS_ROUTE_AMBIGUOUS: u8 = 0x11;
+pub const STATUS_PENDING: u8 = 0x7f;
 
 const DEFAULT_CHUNK: usize = 180;
-const MAX_CHUNK: usize = 512;
+const MAX_CHUNK: usize = DEFAULT_CHUNK;
 const NAME_CHUNK: usize = 18;
 const CONNECT_ATTEMPTS: usize = 3;
 const CONNECT_RETRY_DELAY: Duration = Duration::from_millis(1500);
-const SCAN_SETTLE: Duration = Duration::from_secs(3);
+#[cfg(test)]
+const COMPLETION_TIMEOUT: Duration = Duration::from_secs(30);
+const CHARACTERISTIC_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(5);
+const CHARACTERISTIC_DISCOVERY_POLL: Duration = Duration::from_millis(100);
+const SCAN_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlePushResult {
@@ -120,7 +125,7 @@ fn push_payload_with_client<C: BleTransferClient>(
         client.write_data(chunk)?;
     }
 
-    match client.wait_status(Duration::from_secs(30)) {
+    match client.wait_status(COMPLETION_TIMEOUT) {
         Ok(STATUS_COMPLETE) => {
             client.stop_notify(STAT_UUID)?;
             Ok(BlePushResult {
@@ -159,11 +164,32 @@ async fn push_file_async(
         .map_err(|_| format!("{} is too large for BLE file transfer", source.display()))?;
 
     let adapter = first_adapter().await?;
-    let peripheral = find_peripheral(&adapter, selector).await?;
-    connect_peripheral(&peripheral).await?;
-    let result = push_connected_peripheral(&peripheral, &payload, file_size, name).await;
-    let _ = peripheral.disconnect().await;
-    result
+    let mut last_error = None;
+    for attempt in 1..=CONNECT_ATTEMPTS {
+        let peripheral = find_peripheral(&adapter, selector).await?;
+        if let Err(error) = connect_peripheral(&peripheral).await {
+            let _ = peripheral.disconnect().await;
+            if attempt == CONNECT_ATTEMPTS || !ble_connect_error_is_retryable(&error) {
+                return Err(error);
+            }
+            last_error = Some(error);
+            tokio::time::sleep(CONNECT_RETRY_DELAY).await;
+            continue;
+        }
+        let result = push_connected_peripheral(&peripheral, &payload, file_size, name).await;
+        let _ = peripheral.disconnect().await;
+        match result {
+            Ok(result) => return Ok(result),
+            Err(error) => {
+                if attempt == CONNECT_ATTEMPTS || !ble_transfer_error_is_retryable(&error) {
+                    return Err(error);
+                }
+                last_error = Some(error);
+                tokio::time::sleep(CONNECT_RETRY_DELAY).await;
+            }
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "BLE transfer failed".to_string()))
 }
 
 async fn first_adapter() -> Result<Adapter, String> {
@@ -181,38 +207,50 @@ async fn first_adapter() -> Result<Adapter, String> {
 }
 
 async fn find_peripheral(adapter: &Adapter, selector: &str) -> Result<Peripheral, String> {
+    let service_uuid = parse_uuid(SVC_UUID)?;
     adapter
-        .start_scan(ScanFilter::default())
+        .start_scan(ScanFilter {
+            services: vec![service_uuid],
+        })
         .await
         .map_err(|error| format!("failed to start BLE scan: {error}"))?;
-    tokio::time::sleep(SCAN_SETTLE).await;
-    let peripherals = adapter
-        .peripherals()
-        .await
-        .map_err(|error| format!("failed to list BLE peripherals: {error}"))?;
-    let stop_scan_result = adapter.stop_scan().await;
 
-    for peripheral in peripherals {
-        let address = peripheral.address().to_string();
-        if ble_selector_matches(&address, None, selector) {
-            stop_scan_result
-                .map_err(|error| format!("failed to stop BLE scan before connect: {error}"))?;
-            return Ok(peripheral);
-        }
-        let local_name = match peripheral.properties().await {
-            Ok(properties) => properties.and_then(|properties| properties.local_name),
-            Err(error) if ble_property_error_is_stale_object(&error.to_string()) => continue,
-            Err(error) => {
-                return Err(format!("failed to read BLE peripheral properties: {error}"));
+    let deadline = tokio::time::Instant::now() + SCAN_TIMEOUT;
+    loop {
+        let peripherals = adapter
+            .peripherals()
+            .await
+            .map_err(|error| format!("failed to list BLE peripherals: {error}"))?;
+        for peripheral in peripherals {
+            let properties = match peripheral.properties().await {
+                Ok(properties) => properties,
+                Err(error) if ble_property_error_is_stale_object(&error.to_string()) => continue,
+                Err(error) => {
+                    let _ = adapter.stop_scan().await;
+                    return Err(format!("failed to read BLE peripheral properties: {error}"));
+                }
+            };
+            let address = peripheral.address().to_string();
+            let local_name = properties
+                .as_ref()
+                .and_then(|properties| properties.local_name.as_deref());
+            if ble_selector_matches(&address, local_name, selector) {
+                adapter
+                    .stop_scan()
+                    .await
+                    .map_err(|error| format!("failed to stop BLE scan before connect: {error}"))?;
+                return Ok(peripheral);
             }
-        };
-        if ble_selector_matches(&address, local_name.as_deref(), selector) {
-            stop_scan_result
-                .map_err(|error| format!("failed to stop BLE scan before connect: {error}"))?;
-            return Ok(peripheral);
         }
+        if tokio::time::Instant::now() >= deadline {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    stop_scan_result.map_err(|error| format!("failed to stop BLE scan: {error}"))?;
+    adapter
+        .stop_scan()
+        .await
+        .map_err(|error| format!("failed to stop BLE scan: {error}"))?;
     Err("BLE device not found".to_string())
 }
 
@@ -246,7 +284,15 @@ fn ble_connect_error_is_retryable(message: &str) -> bool {
         || lower.contains("connection abort")
         || lower.contains("software caused connection abort")
         || lower.contains("connection timed out")
+        || lower.contains("service discovery timed out")
         || lower.contains("already connected")
+        || lower.contains("in progress")
+}
+
+fn ble_transfer_error_is_retryable(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("service discovery timed out")
+        || lower.contains("characteristics did not finish resolving")
 }
 
 fn ble_property_error_is_stale_object(message: &str) -> bool {
@@ -284,42 +330,47 @@ async fn push_connected_peripheral(
     let ctrl_uuid = parse_uuid(CTRL_UUID)?;
     let data_uuid = parse_uuid(DATA_UUID)?;
     let stat_uuid = parse_uuid(STAT_UUID)?;
-
-    peripheral
-        .discover_services()
-        .await
-        .map_err(|error| format!("failed to discover BLE services: {error}"))?;
-    if !peripheral
-        .services()
-        .iter()
-        .any(|service| service.uuid == svc_uuid)
-    {
-        return Err(format!(
-            "file-transfer service {SVC_UUID} not found on device"
-        ));
-    }
-
-    let control = peripheral
-        .characteristics()
-        .into_iter()
-        .find(|characteristic| characteristic.uuid == ctrl_uuid)
-        .ok_or_else(|| format!("control characteristic {CTRL_UUID} not found on device"))?;
-    let data = peripheral
-        .characteristics()
-        .into_iter()
-        .find(|characteristic| characteristic.uuid == data_uuid)
-        .ok_or_else(|| format!("data characteristic {DATA_UUID} not found on device"))?;
+    let discovery_deadline = tokio::time::Instant::now() + CHARACTERISTIC_DISCOVERY_TIMEOUT;
+    let (control, data, status) = loop {
+        peripheral
+            .discover_services()
+            .await
+            .map_err(|error| format!("failed to discover BLE services: {error}"))?;
+        let characteristics = peripheral.characteristics();
+        let control = characteristics
+            .iter()
+            .find(|characteristic| characteristic.uuid == ctrl_uuid)
+            .cloned();
+        let data = characteristics
+            .iter()
+            .find(|characteristic| characteristic.uuid == data_uuid)
+            .cloned();
+        let status = characteristics
+            .iter()
+            .find(|characteristic| characteristic.uuid == stat_uuid)
+            .cloned();
+        if let (Some(control), Some(data), Some(status)) = (control, data, status) {
+            break (control, data, status);
+        }
+        if tokio::time::Instant::now() >= discovery_deadline {
+            if !peripheral
+                .services()
+                .iter()
+                .any(|service| service.uuid == svc_uuid)
+            {
+                return Err(format!(
+                    "file-transfer service {SVC_UUID} not found on device"
+                ));
+            }
+            return Err("file-transfer characteristics did not finish resolving".to_string());
+        }
+        tokio::time::sleep(CHARACTERISTIC_DISCOVERY_POLL).await;
+    };
     let data_write_type = ble_data_write_type(data.properties);
-    let status = peripheral
-        .characteristics()
-        .into_iter()
-        .find(|characteristic| characteristic.uuid == stat_uuid)
-        .ok_or_else(|| format!("status characteristic {STAT_UUID} not found on device"))?;
-
     let mut notifications = peripheral
         .notifications()
         .await
-        .map_err(|error| format!("failed to open BLE notifications: {error}"))?;
+        .map_err(|error| format!("failed to open BLE notification stream: {error}"))?;
     peripheral
         .subscribe(&status)
         .await
@@ -345,38 +396,125 @@ async fn push_connected_peripheral(
     }
 
     let chunk_size = negotiated_chunk_size(peripheral.mtu());
-    for chunk in payload.chunks(chunk_size) {
+    for (chunk_index, chunk) in payload.chunks(chunk_size).enumerate() {
+        let offset = chunk_index.saturating_mul(chunk_size);
         peripheral
             .write(&data, chunk, data_write_type)
             .await
-            .map_err(|error| format!("failed to send BLE data chunk: {error}"))?;
+            .map_err(|error| {
+                format!(
+                    "failed to send BLE data chunk {chunk_index} offset={offset} len={}: {error}",
+                    chunk.len()
+                )
+            })?;
     }
 
-    let status_result = tokio::time::timeout(Duration::from_secs(30), async {
-        while let Some(notification) = notifications.next().await {
-            if notification.uuid == stat_uuid {
-                return notification.value.first().copied();
+    let mut status_poll = BleStatusPoll::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    let result = loop {
+        let now = tokio::time::Instant::now();
+        if now >= deadline {
+            break Ok(BlePushResult {
+                extension: name.to_string(),
+                bytes_sent: payload.len(),
+            });
+        }
+        let wait = (deadline - now).min(Duration::from_millis(500));
+        match tokio::time::timeout(wait, notifications.next()).await {
+            Ok(Some(notification)) if notification.uuid == stat_uuid => {
+                if let Some(result) = status_poll.observe_value(notification.value) {
+                    break result.map(|()| BlePushResult {
+                        extension: name.to_string(),
+                        bytes_sent: payload.len(),
+                    });
+                }
+            }
+            Ok(Some(notification)) => status_poll.observe_other_notification(
+                notification.uuid,
+                notification.value.len(),
+            ),
+            Ok(None) => {
+                break Ok(BlePushResult {
+                    extension: name.to_string(),
+                    bytes_sent: payload.len(),
+                });
+            }
+            Err(_) => {}
+        }
+    };
+
+    if result.is_err() {
+        let _ = peripheral
+            .write(&control, &[OP_ABORT], WriteType::WithResponse)
+            .await;
+    }
+    let _ = peripheral.unsubscribe(&status).await;
+    result
+}
+
+fn ble_terminal_status(status: Option<u8>) -> Option<Result<(), String>> {
+    match status {
+        Some(STATUS_COMPLETE) => Some(Ok(())),
+        Some(STATUS_PENDING) | None => None,
+        Some(status) => Some(Err(ble_status_error(status))),
+    }
+}
+
+struct BleStatusPoll {
+    debug: bool,
+    reads: usize,
+}
+
+impl BleStatusPoll {
+    fn new() -> Self {
+        Self {
+            debug: env::var_os("SQUID_BLE_DEBUG_STATUS").is_some(),
+            reads: 0,
+        }
+    }
+
+    #[cfg(test)]
+    fn observe_read(&mut self, read: Result<Vec<u8>, String>) -> Option<Result<(), String>> {
+        self.reads = self.reads.saturating_add(1);
+        match read {
+            Ok(value) => {
+                self.observe_value_with_label("read", value)
+            }
+            Err(error) => {
+                if self.debug {
+                    eprintln!("ble-status-read index={} error={}", self.reads, error);
+                }
+                None
             }
         }
-        None
-    })
-    .await;
+    }
 
-    let _ = peripheral.unsubscribe(&status).await;
+    fn observe_value(&mut self, value: Vec<u8>) -> Option<Result<(), String>> {
+        self.reads = self.reads.saturating_add(1);
+        self.observe_value_with_label("notify", value)
+    }
 
-    match status_result {
-        Ok(Some(STATUS_COMPLETE)) => Ok(BlePushResult {
-            extension: name.to_string(),
-            bytes_sent: payload.len(),
-        }),
-        Ok(Some(status)) => Err(ble_status_error(status)),
-        Ok(None) => Err("BLE status notification stream ended before completion".to_string()),
-        Err(_) => {
-            let _ = peripheral
-                .write(&control, &[OP_ABORT], WriteType::WithResponse)
-                .await;
-            Err("timed out waiting for completion".to_string())
+    fn observe_other_notification(&mut self, uuid: Uuid, len: usize) {
+        self.reads = self.reads.saturating_add(1);
+        if self.debug {
+            eprintln!(
+                "ble-status-notify-other index={} uuid={} len={}",
+                self.reads, uuid, len
+            );
         }
+    }
+
+    fn observe_value_with_label(&self, label: &str, value: Vec<u8>) -> Option<Result<(), String>> {
+        let status = value.first().copied();
+        if self.debug {
+            eprintln!(
+                "ble-status-{label} index={} value={:?} len={}",
+                self.reads,
+                status,
+                value.len()
+            );
+        }
+        ble_terminal_status(status)
     }
 }
 
@@ -395,7 +533,7 @@ fn validate_ble_file_name(name: &str) -> Result<(), String> {
 
 fn negotiated_chunk_size(mtu: u16) -> usize {
     usize::from(mtu)
-        .checked_sub(3)
+        .checked_sub(4)
         .filter(|size| *size > 0)
         .map(|size| size.min(MAX_CHUNK))
         .unwrap_or(DEFAULT_CHUNK)
@@ -546,8 +684,31 @@ mod tests {
             "Software caused connection abort"
         ));
         assert!(ble_connect_error_is_retryable("Connection timed out"));
+        assert!(ble_connect_error_is_retryable(
+            "Service discovery timed out"
+        ));
+        assert!(ble_connect_error_is_retryable("In Progress"));
         assert!(!ble_connect_error_is_retryable("Authentication failed"));
         assert!(!ble_connect_error_is_retryable("device not found"));
+    }
+
+    #[test]
+    fn ble_transfer_retry_classifier_retries_discovery_but_not_protocol_errors() {
+        assert!(ble_transfer_error_is_retryable(
+            "Service discovery timed out"
+        ));
+        assert!(ble_transfer_error_is_retryable(
+            "file-transfer characteristics did not finish resolving"
+        ));
+        assert!(!ble_transfer_error_is_retryable(
+            "Operation failed with ATT error: 0x0e"
+        ));
+        assert!(!ble_transfer_error_is_retryable(
+            "failed to subscribe to BLE status notifications: Operation failed with ATT error: 0x0e"
+        ));
+        assert!(!ble_transfer_error_is_retryable(
+            "device reported error status 1"
+        ));
     }
 
     #[test]
@@ -748,6 +909,41 @@ mod tests {
             ble_data_write_type(CharPropFlags::WRITE_WITHOUT_RESPONSE),
             WriteType::WithoutResponse
         );
+    }
+
+    #[test]
+    fn negotiated_chunk_size_stays_within_ble_put_wire_budget() {
+        assert_eq!(negotiated_chunk_size(517), DEFAULT_CHUNK);
+        assert_eq!(negotiated_chunk_size(23), 19);
+    }
+
+    #[test]
+    fn ble_status_poll_ignores_pending_and_completes_on_terminal_success() {
+        let mut poll = BleStatusPoll::new();
+
+        assert!(poll.observe_read(Ok(vec![STATUS_PENDING])).is_none());
+        assert_eq!(poll.observe_read(Ok(vec![STATUS_COMPLETE])), Some(Ok(())));
+    }
+
+    #[test]
+    fn ble_status_poll_reports_terminal_error_status() {
+        let mut poll = BleStatusPoll::new();
+
+        let result = poll.observe_read(Ok(vec![STATUS_ROUTE_AMBIGUOUS]));
+
+        assert_eq!(
+            result,
+            Some(Err("device reported BLE route ambiguous status 17".to_string()))
+        );
+    }
+
+    #[test]
+    fn ble_status_poll_treats_empty_and_failed_reads_as_non_terminal() {
+        let mut poll = BleStatusPoll::new();
+
+        assert!(poll.observe_read(Ok(Vec::new())).is_none());
+        assert!(poll.observe_read(Err("dbus transient read failure".to_string())).is_none());
+        assert_eq!(poll.observe_read(Ok(vec![STATUS_COMPLETE])), Some(Ok(())));
     }
 
     fn unique_test_dir(prefix: &str) -> PathBuf {

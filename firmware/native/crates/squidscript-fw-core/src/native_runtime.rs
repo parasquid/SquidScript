@@ -10,20 +10,20 @@ pub use squidvm_core::host::{
 use squidvm_core::{
     error::VmError,
     host::{
-        BinBookChapterListResult, BinBookChapterListSummary, BinBookChapterListWriter,
-        BinBookChapterResult, BinBookInfoResult, BinBookOpenResult, BinBookReadPageResult,
-        ContentBinBookEntry, ContentBinBookListResult, ContentBinBookListSummary,
-        ContentBinBookListWriter, DisplayInfo, FileCopyResult, FileListEntry, FileListSummary,
-        FileListWriter, FilePickFileResult, FileReadLinesResult, FileReadLinesSummary,
-        FileReadLinesWriter, FileReadTextResult, TraceSink, WifiAccessPoint, WifiApIp,
-        WifiOperation, WifiOperationResult, WifiScanNetwork, WifiStatus,
+        AppInstallResult, BinBookChapterListResult, BinBookChapterListSummary,
+        BinBookChapterListWriter, BinBookChapterResult, BinBookInfoResult, BinBookOpenResult,
+        BinBookReadPageResult, ContentBinBookEntry, ContentBinBookListResult,
+        ContentBinBookListSummary, ContentBinBookListWriter, DisplayInfo, FileCopyResult,
+        FileListEntry, FileListSummary, FileListWriter, FilePickFileResult, FileReadLinesResult,
+        FileReadLinesSummary, FileReadLinesWriter, FileReadTextResult, TraceSink, WifiAccessPoint,
+        WifiApIp, WifiOperation, WifiOperationResult, WifiScanNetwork, WifiStatus,
     },
     limits::{MAX_APP_BYTES, MAX_SAVED_STATE_BYTES},
     program::{CapabilityDemand, ProgramIndex},
     reader::{SliceSqbcReader, SqbcReader},
     strings::StringResolver,
     value::{Handle, Value},
-    vm::ChunkedVm,
+    vm::{ChunkedVm, EventPayload, EventPayloadField},
 };
 
 use crate::{
@@ -36,9 +36,51 @@ const MAX_LINE_COUNT: usize = 8;
 const MAX_LINE_BYTES: usize = 64;
 const MAX_APP_ID_BYTES: usize = 40;
 const MAX_BLE_PROFILE_ID_BYTES: usize = 32;
+const MAX_UPLOAD_NAME_BYTES: usize = 64;
+const MAX_UPLOAD_REF_BYTES: usize = 128;
+const MAX_UPLOAD_BYTES_TEXT_BYTES: usize = 20;
+const UPLOAD_STAGE_CHUNK_BYTES: usize = 512;
 const MAX_WIFI_PROFILE_NAME_BYTES: usize = 16;
 const MAX_WIFI_PROFILE_SSID_BYTES: usize = 32;
 const MAX_WIFI_PROFILE_PASSWORD_BYTES: usize = 64;
+const MAX_TIMER_EVENT_BYTES: usize = 24;
+const MAX_ACTIVE_TIMER_COUNT: usize = 8;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct NativeTimer {
+    event: [u8; MAX_TIMER_EVENT_BYTES],
+    event_len: usize,
+    interval_ms: u32,
+    remaining_ms: u32,
+    repeating: bool,
+    active: bool,
+}
+
+impl NativeTimer {
+    const fn empty() -> Self {
+        Self {
+            event: [0; MAX_TIMER_EVENT_BYTES],
+            event_len: 0,
+            interval_ms: 0,
+            remaining_ms: 0,
+            repeating: false,
+            active: false,
+        }
+    }
+
+    fn set_event(&mut self, event: &str) -> Result<(), VmError> {
+        if event.is_empty() || event.len() >= self.event.len() {
+            return Err(VmError::InvalidOperand);
+        }
+        self.event[..event.len()].copy_from_slice(event.as_bytes());
+        self.event_len = event.len();
+        Ok(())
+    }
+
+    fn event_as_str(&self) -> &str {
+        core::str::from_utf8(&self.event[..self.event_len]).unwrap_or("")
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NativeRuntimeError {
@@ -49,6 +91,38 @@ pub enum NativeRuntimeError {
     AppIdMismatch,
     Inactive,
     Vm(VmError),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeBleRouteError {
+    NoActiveProfile,
+    RouteMismatch,
+    RouteAmbiguous,
+    InvalidMetadata,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeBleUploadRoute {
+    pub profile_id: FixedText<MAX_BLE_PROFILE_ID_BYTES>,
+    pub complete_event: FixedText<MAX_LINE_BYTES>,
+}
+
+impl NativeBleUploadRoute {
+    fn new(profile_id: &str, complete_event: &str) -> Result<Self, NativeBleRouteError> {
+        let mut route = Self {
+            profile_id: FixedText::new(),
+            complete_event: FixedText::new(),
+        };
+        route
+            .profile_id
+            .set(profile_id)
+            .map_err(|_| NativeBleRouteError::InvalidMetadata)?;
+        route
+            .complete_event
+            .set(complete_event)
+            .map_err(|_| NativeBleRouteError::InvalidMetadata)?;
+        Ok(route)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -378,6 +452,44 @@ pub trait NativeFileBackend {
     fn storage_format(&mut self) -> Result<(), &'static str> {
         Err("unsupported")
     }
+
+    fn file_ref_size(&mut self, _path: &str) -> Result<u64, &'static str> {
+        Err("unsupported")
+    }
+
+    fn file_ref_read_at(
+        &mut self,
+        _path: &str,
+        _offset: u64,
+        _out: &mut [u8],
+    ) -> Result<(), &'static str> {
+        Err("unsupported")
+    }
+
+    fn upload_stage_begin<'a>(
+        &'a mut self,
+        _safe_name: &str,
+        _total_len: usize,
+    ) -> Result<&'a str, &'static str> {
+        Err("unsupported")
+    }
+
+    fn upload_stage_chunk(
+        &mut self,
+        _path: &str,
+        _offset: usize,
+        _bytes: &[u8],
+    ) -> Result<(), &'static str> {
+        Err("unsupported")
+    }
+
+    fn upload_stage_commit(&mut self, _path: &str) -> Result<(), &'static str> {
+        Err("unsupported")
+    }
+
+    fn upload_stage_delete(&mut self, _path: &str) -> Result<(), &'static str> {
+        Err("unsupported")
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -427,6 +539,14 @@ pub trait NativeFileStorage {
 
     fn create_or_truncate(&mut self, path: &str) -> Result<(), NativeFileStorageError>;
 
+    fn begin_write(
+        &mut self,
+        path: &str,
+        _expected_size: u64,
+    ) -> Result<(), NativeFileStorageError> {
+        self.create_or_truncate(path)
+    }
+
     fn write_at(
         &mut self,
         path: &str,
@@ -434,11 +554,33 @@ pub trait NativeFileStorage {
         data: &[u8],
     ) -> Result<(), NativeFileStorageError>;
 
+    fn write_chunk(
+        &mut self,
+        path: &str,
+        offset: u64,
+        data: &[u8],
+    ) -> Result<(), NativeFileStorageError> {
+        self.write_at(path, offset, data)
+    }
+
     fn flush(&mut self, path: &str) -> Result<(), NativeFileStorageError>;
+
+    fn commit_write(&mut self, path: &str) -> Result<(), NativeFileStorageError> {
+        self.flush(path)
+    }
 
     fn delete(&mut self, path: &str) -> Result<(), NativeFileStorageError>;
 
     fn format(&mut self) -> Result<(), NativeFileStorageError>;
+
+    fn copy_file(
+        &mut self,
+        _source: &str,
+        _destination: &str,
+        _scratch: &mut [u8],
+    ) -> Result<Option<u64>, NativeFileStorageError> {
+        Ok(None)
+    }
 }
 
 pub struct BoundedNativeFileBackend<
@@ -449,6 +591,10 @@ pub struct BoundedNativeFileBackend<
 > {
     storage: S,
     text: [u8; TEXT_BYTES],
+    upload_stage_path: [u8; TEXT_BYTES],
+    upload_stage_path_len: usize,
+    upload_stage_expected_len: usize,
+    upload_stage_received_len: usize,
 }
 
 impl<S, const TEXT_BYTES: usize, const LINE_COUNT: usize, const LINE_BYTES: usize>
@@ -458,6 +604,10 @@ impl<S, const TEXT_BYTES: usize, const LINE_COUNT: usize, const LINE_BYTES: usiz
         Self {
             storage,
             text: [0; TEXT_BYTES],
+            upload_stage_path: [0; TEXT_BYTES],
+            upload_stage_path_len: 0,
+            upload_stage_expected_len: 0,
+            upload_stage_received_len: 0,
         }
     }
 
@@ -534,6 +684,19 @@ where
             .storage
             .file_size(source)
             .map_err(NativeFileStorageError::as_file_error)?;
+        if let Some(copied) = self
+            .storage
+            .copy_file(source, destination, &mut self.text)
+            .map_err(NativeFileStorageError::as_file_error)?
+        {
+            if copied != source_len {
+                return Err("io-error");
+            }
+            self.text[..destination_len].copy_from_slice(&destination_buf[..destination_len]);
+            return usize::try_from(copied)
+                .map(|bytes| (destination_len, bytes))
+                .map_err(|_| "too-large");
+        }
         self.storage
             .create_or_truncate(destination)
             .map_err(NativeFileStorageError::as_file_error)?;
@@ -960,6 +1123,97 @@ where
     fn storage_format(&mut self) -> Result<(), &'static str> {
         self.storage_format()
     }
+
+    fn file_ref_size(&mut self, path: &str) -> Result<u64, &'static str> {
+        validate_file_ref(path)?;
+        self.storage
+            .file_size(path)
+            .map_err(NativeFileStorageError::as_file_error)
+    }
+
+    fn file_ref_read_at(
+        &mut self,
+        path: &str,
+        offset: u64,
+        out: &mut [u8],
+    ) -> Result<(), &'static str> {
+        validate_file_ref(path)?;
+        self.storage
+            .read_at(path, offset, out)
+            .map_err(NativeFileStorageError::as_file_error)
+    }
+
+    fn upload_stage_begin<'a>(
+        &'a mut self,
+        safe_name: &str,
+        total_len: usize,
+    ) -> Result<&'a str, &'static str> {
+        if total_len == 0 {
+            return Err("invalid-request");
+        }
+        let len = format_file_ref("tmp", safe_name, &mut self.upload_stage_path)?;
+        let path =
+            core::str::from_utf8(&self.upload_stage_path[..len]).map_err(|_| "invalid-name")?;
+        self.storage
+            .begin_write(path, total_len as u64)
+            .map_err(NativeFileStorageError::as_file_error)?;
+        self.upload_stage_path_len = len;
+        self.upload_stage_expected_len = total_len;
+        self.upload_stage_received_len = 0;
+        core::str::from_utf8(&self.upload_stage_path[..len]).map_err(|_| "invalid-name")
+    }
+
+    fn upload_stage_chunk(
+        &mut self,
+        path: &str,
+        offset: usize,
+        bytes: &[u8],
+    ) -> Result<(), &'static str> {
+        validate_file_ref(path)?;
+        let active_path =
+            core::str::from_utf8(&self.upload_stage_path[..self.upload_stage_path_len])
+                .map_err(|_| "invalid-name")?;
+        let received = offset.checked_add(bytes.len()).ok_or("too-large")?;
+        if path != active_path
+            || offset != self.upload_stage_received_len
+            || received > self.upload_stage_expected_len
+        {
+            return Err("invalid-offset");
+        }
+        self.storage
+            .write_chunk(path, offset as u64, bytes)
+            .map_err(NativeFileStorageError::as_file_error)?;
+        self.upload_stage_received_len = received;
+        Ok(())
+    }
+
+    fn upload_stage_commit(&mut self, path: &str) -> Result<(), &'static str> {
+        validate_file_ref(path)?;
+        let active_path =
+            core::str::from_utf8(&self.upload_stage_path[..self.upload_stage_path_len])
+                .map_err(|_| "invalid-name")?;
+        if path != active_path || self.upload_stage_received_len != self.upload_stage_expected_len {
+            return Err("invalid-offset");
+        }
+        self.storage
+            .commit_write(path)
+            .map_err(NativeFileStorageError::as_file_error)
+    }
+
+    fn upload_stage_delete(&mut self, path: &str) -> Result<(), &'static str> {
+        validate_file_ref(path)?;
+        let active_path =
+            core::str::from_utf8(&self.upload_stage_path[..self.upload_stage_path_len])
+                .unwrap_or("");
+        if path == active_path {
+            self.upload_stage_path_len = 0;
+            self.upload_stage_expected_len = 0;
+            self.upload_stage_received_len = 0;
+        }
+        self.storage
+            .delete(path)
+            .map_err(NativeFileStorageError::as_file_error)
+    }
 }
 
 struct Crc32 {
@@ -1043,6 +1297,14 @@ fn validate_file_segment(segment: &str) -> Result<(), &'static str> {
         return Err("invalid-name");
     }
     Ok(())
+}
+
+fn safe_upload_name(name: &str) -> Option<&str> {
+    let candidate = name
+        .rsplit(|ch| ch == '/' || ch == '\\')
+        .find(|segment| !segment.is_empty())?;
+    validate_file_segment(candidate).ok()?;
+    Some(candidate)
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -1336,6 +1598,19 @@ impl<
         self.host.file_backend.content_check(name)
     }
 
+    pub fn file_ref_size(&mut self, path: &str) -> Result<u64, &'static str> {
+        self.host.file_backend.file_ref_size(path)
+    }
+
+    pub fn file_ref_read_at(
+        &mut self,
+        path: &str,
+        offset: u64,
+        out: &mut [u8],
+    ) -> Result<(), &'static str> {
+        self.host.file_backend.file_ref_read_at(path, offset, out)
+    }
+
     pub fn delete_content(&mut self, name: &str) -> Result<&str, &'static str> {
         self.host.file_backend.content_delete(name)
     }
@@ -1343,6 +1618,56 @@ impl<
     pub fn storage_format(&mut self) -> Result<(), &'static str> {
         self.reset();
         self.host.file_backend.storage_format()
+    }
+
+    pub fn stage_ephemeral_upload(
+        &mut self,
+        name: &str,
+        bytes: &[u8],
+        id: &str,
+    ) -> Result<&str, NativeRuntimeError> {
+        self.host.stage_ephemeral_upload(name, bytes, id)
+    }
+
+    pub fn begin_ephemeral_upload(
+        &mut self,
+        name: &str,
+        total_len: usize,
+        id: &str,
+    ) -> Result<&str, NativeRuntimeError> {
+        self.host.begin_ephemeral_upload(name, total_len, id)
+    }
+
+    pub fn write_ephemeral_upload_chunk(
+        &mut self,
+        upload_path: &str,
+        offset: usize,
+        bytes: &[u8],
+    ) -> Result<(), NativeRuntimeError> {
+        self.host
+            .write_ephemeral_upload_chunk(upload_path, offset, bytes)
+    }
+
+    pub fn commit_ephemeral_upload(
+        &mut self,
+        upload_path: &str,
+        bytes_received: usize,
+    ) -> Result<(), NativeRuntimeError> {
+        self.host
+            .commit_ephemeral_upload(upload_path, bytes_received)
+    }
+
+    pub fn abort_ephemeral_upload(&mut self, upload_path: &str) -> Result<(), NativeRuntimeError> {
+        if upload_path != self.host.upload_path.as_str() {
+            return Err(NativeRuntimeError::InvalidOffset);
+        }
+        let _ = self.host.file_backend.upload_stage_delete(upload_path);
+        self.host.clear_upload();
+        Ok(())
+    }
+
+    pub fn abort_active_ephemeral_upload(&mut self) {
+        self.host.discard_upload_stage();
     }
 
     pub fn set_wifi_profile(
@@ -1431,6 +1756,7 @@ impl<
         }
         self.host.release_all_radios();
         self.host.clear_diagnostics();
+        self.host.clear_timers();
         self.host.app_id.set(app_id)?;
         self.host.active_sqbc = ActiveSqbc::Installed;
         self.host.set_active_lifecycle();
@@ -1474,6 +1800,18 @@ impl<
         }
     }
 
+    pub fn error_lines(&self) -> LineView<'_> {
+        self.host.errors.view()
+    }
+
+    pub fn record_error(&mut self, error: &str) {
+        self.host.errors.push(error);
+    }
+
+    pub fn clear_errors(&mut self) {
+        self.host.errors.clear();
+    }
+
     pub fn state_bytes(&self) -> &[u8] {
         self.host.state_bytes()
     }
@@ -1484,6 +1822,48 @@ impl<
 
     pub fn active_app(&self) -> Option<&str> {
         self.vm_active.then(|| self.host.app_id.as_str())
+    }
+
+    pub fn resolve_ble_upload_route(
+        &mut self,
+        name: &str,
+    ) -> Result<NativeBleUploadRoute, NativeBleRouteError> {
+        if !self.vm_active || self.host.ble_profile_id.as_str().is_empty() {
+            return Err(NativeBleRouteError::NoActiveProfile);
+        }
+        let active_profile_id = self.host.ble_profile_id;
+        let count = ProgramIndex::ble_profile_count_from_reader(&mut self.host, &mut self.scratch)
+            .map_err(|_| NativeBleRouteError::InvalidMetadata)?;
+        let mut matched = None;
+        for index in 0..count {
+            let profile =
+                ProgramIndex::ble_profile_from_reader(&mut self.host, &mut self.scratch, index)
+                    .map_err(|_| NativeBleRouteError::InvalidMetadata)?;
+            if profile.profile != "file-transfer"
+                || profile.role != "server"
+                || profile.id != active_profile_id.as_str()
+            {
+                continue;
+            }
+            let Some(complete_route) = (0..profile.events.len())
+                .filter_map(|event_index| profile.events.get(event_index))
+                .find(|event| event.kind == "complete")
+            else {
+                return Err(NativeBleRouteError::InvalidMetadata);
+            };
+            for accept_index in 0..profile.accept.len() {
+                let Some(extension) = profile.accept.get(accept_index) else {
+                    continue;
+                };
+                if !extension.is_empty() && name.ends_with(extension) {
+                    let route = NativeBleUploadRoute::new(profile.id, complete_route.event)?;
+                    if matched.replace(route).is_some() {
+                        return Err(NativeBleRouteError::RouteAmbiguous);
+                    }
+                }
+            }
+        }
+        matched.ok_or(NativeBleRouteError::RouteMismatch)
     }
 
     pub fn resource_metrics(&self) -> ResourceMetrics {
@@ -1597,6 +1977,19 @@ impl<
         }
         let vm = unsafe { self.vm.assume_init_mut() };
         vm.dispatch(&mut self.host, event)?;
+        self.complete_pending_launch()?;
+        Ok(())
+    }
+
+    pub fn tick_timers(&mut self, elapsed_ms: u32) -> Result<(), NativeRuntimeError> {
+        if !self.vm_active || elapsed_ms == 0 {
+            return Ok(());
+        }
+        let mut event = [0u8; MAX_TIMER_EVENT_BYTES];
+        while let Some(event_len) = self.host.tick_timers(elapsed_ms, &mut event) {
+            let event = core::str::from_utf8(&event[..event_len]).unwrap_or("");
+            self.dispatch_event(event)?;
+        }
         Ok(())
     }
 
@@ -1609,6 +2002,84 @@ impl<
             return Err(NativeRuntimeError::AppIdMismatch);
         }
         self.dispatch_event(event)
+    }
+
+    pub fn dispatch_upload_complete(
+        &mut self,
+        app_id: &str,
+        event: &str,
+        upload_path: &str,
+    ) -> Result<(), NativeRuntimeError> {
+        if self.active_app() != Some(app_id) {
+            return Err(NativeRuntimeError::AppIdMismatch);
+        }
+        if upload_path != self.host.upload_path.as_str() {
+            return Err(NativeRuntimeError::InvalidOffset);
+        }
+        let result = self.dispatch_upload_event(event);
+        let _ = self.host.file_backend.upload_stage_delete(upload_path);
+        self.host.clear_upload();
+        result
+    }
+
+    pub fn dispatch_active_upload_complete(
+        &mut self,
+        event: &str,
+        upload_path: &str,
+    ) -> Result<(), NativeRuntimeError> {
+        let mut app_id = FixedText::<MAX_APP_ID_BYTES>::new();
+        app_id.set(self.active_app().ok_or(NativeRuntimeError::Inactive)?)?;
+        self.dispatch_upload_complete(app_id.as_str(), event, upload_path)
+    }
+
+    fn complete_pending_launch(&mut self) -> Result<(), NativeRuntimeError> {
+        if let Some(app_id) = self.host.take_pending_launch()? {
+            self.launch_app(app_id.as_str())?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_upload_event(&mut self, event: &str) -> Result<(), NativeRuntimeError> {
+        if !self.vm_active {
+            return Err(NativeRuntimeError::Inactive);
+        }
+        let mut upload_path = FixedText::<MAX_UPLOAD_REF_BYTES>::new();
+        let mut upload_name = FixedText::<MAX_UPLOAD_NAME_BYTES>::new();
+        let mut upload_id = FixedText::<MAX_BLE_PROFILE_ID_BYTES>::new();
+        let mut upload_bytes = FixedText::<MAX_UPLOAD_BYTES_TEXT_BYTES>::new();
+        let mut upload_total_bytes = FixedText::<MAX_UPLOAD_BYTES_TEXT_BYTES>::new();
+        upload_path.set(self.host.upload_path.as_str())?;
+        upload_name.set(self.host.upload_name.as_str())?;
+        upload_id.set(self.host.upload_id.as_str())?;
+        upload_bytes.set(self.host.upload_received_bytes_text.as_str())?;
+        upload_total_bytes.set(self.host.upload_total_bytes_text.as_str())?;
+        let fields = [
+            EventPayloadField {
+                name: "upload",
+                value: upload_path.as_str(),
+            },
+            EventPayloadField {
+                name: "name",
+                value: upload_name.as_str(),
+            },
+            EventPayloadField {
+                name: "bytesReceived",
+                value: upload_bytes.as_str(),
+            },
+            EventPayloadField {
+                name: "totalBytes",
+                value: upload_total_bytes.as_str(),
+            },
+            EventPayloadField {
+                name: "id",
+                value: upload_id.as_str(),
+            },
+        ];
+        let payload = EventPayload { fields: &fields };
+        let vm = unsafe { self.vm.assume_init_mut() };
+        vm.dispatch_with_payload(&mut self.host, event, payload)?;
+        self.complete_pending_launch()?;
+        Ok(())
     }
 
     pub fn radio_backend(&self) -> &B {
@@ -1663,6 +2134,7 @@ struct RuntimeHost<
     installed_len: usize,
     installed_app_id: FixedText<MAX_APP_ID_BYTES>,
     pending_install_app_id: FixedText<MAX_APP_ID_BYTES>,
+    pending_launch_app_id: FixedText<MAX_APP_ID_BYTES>,
     active_sqbc: ActiveSqbc,
     app_id: FixedText<MAX_APP_ID_BYTES>,
     saved_state: [u8; MAX_SAVED_STATE_BYTES],
@@ -1671,6 +2143,7 @@ struct RuntimeHost<
     trace: LineStore,
     drawlog: LineStore,
     lifecycle: LineStore,
+    errors: LineStore,
     active_demand: CapabilityDemand,
     radio_leases: RadioLeaseManager,
     wifi_operation: NativeWifiOperationState,
@@ -1681,6 +2154,12 @@ struct RuntimeHost<
     ble_profile_id: FixedText<MAX_BLE_PROFILE_ID_BYTES>,
     ble_profile_start_events: u32,
     ble_profile_stop_events: u32,
+    timers: [NativeTimer; MAX_ACTIVE_TIMER_COUNT],
+    upload_path: FixedText<MAX_UPLOAD_REF_BYTES>,
+    upload_name: FixedText<MAX_UPLOAD_NAME_BYTES>,
+    upload_id: FixedText<MAX_BLE_PROFILE_ID_BYTES>,
+    upload_total_bytes_text: FixedText<MAX_UPLOAD_BYTES_TEXT_BYTES>,
+    upload_received_bytes_text: FixedText<MAX_UPLOAD_BYTES_TEXT_BYTES>,
     radio_backend: B,
     display_sink: D,
     binbook_backend: C,
@@ -1707,6 +2186,7 @@ impl<
             installed_len: 0,
             installed_app_id: FixedText::new(),
             pending_install_app_id: FixedText::new(),
+            pending_launch_app_id: FixedText::new(),
             active_sqbc: ActiveSqbc::Temp,
             app_id: FixedText::new(),
             saved_state: [0; MAX_SAVED_STATE_BYTES],
@@ -1715,6 +2195,7 @@ impl<
             trace: LineStore::new(),
             drawlog: LineStore::new(),
             lifecycle: LineStore::new(),
+            errors: LineStore::new(),
             active_demand: CapabilityDemand::none(),
             radio_leases: RadioLeaseManager::new(),
             wifi_operation: NativeWifiOperationState::idle(),
@@ -1725,6 +2206,12 @@ impl<
             ble_profile_id: FixedText::new(),
             ble_profile_start_events: 0,
             ble_profile_stop_events: 0,
+            timers: [NativeTimer::empty(); MAX_ACTIVE_TIMER_COUNT],
+            upload_path: FixedText::new(),
+            upload_name: FixedText::new(),
+            upload_id: FixedText::new(),
+            upload_total_bytes_text: FixedText::new(),
+            upload_received_bytes_text: FixedText::new(),
             radio_backend,
             display_sink,
             binbook_backend,
@@ -1738,13 +2225,16 @@ impl<
         self.temp_expected_len = 0;
         self.temp_received = 0;
         self.app_id.clear();
+        self.pending_launch_app_id.clear();
         self.active_demand = CapabilityDemand::none();
         self.wifi_operation = NativeWifiOperationState::idle();
         self.wifi_station_profile.clear();
         self.clear_ble_profile();
+        self.discard_upload_stage();
         if self.installed_len == 0 {
             self.saved_state_len = None;
         }
+        self.clear_timers();
         self.release_all_radios();
         self.clear_diagnostics();
         self.set_inactive_lifecycle();
@@ -1763,7 +2253,10 @@ impl<
         self.active_demand = CapabilityDemand::none();
         self.wifi_operation = NativeWifiOperationState::idle();
         self.wifi_station_profile.clear();
+        self.clear_timers();
         self.clear_ble_profile();
+        self.discard_upload_stage();
+        self.pending_launch_app_id.clear();
         self.temp_expected_len = total_len;
         self.temp_received = 0;
         self.active_sqbc = ActiveSqbc::Temp;
@@ -1800,6 +2293,7 @@ impl<
         self.installed_expected_len = total_len;
         self.installed_received = 0;
         self.pending_install_app_id.set(app_id)?;
+        self.clear_timers();
         Ok(())
     }
 
@@ -1832,6 +2326,22 @@ impl<
 
     fn installed_bytes(&self) -> &[u8] {
         &self.installed_sqbc[..self.installed_len]
+    }
+
+    fn request_app_launch(&mut self, app_id: &str) -> Result<(), NativeRuntimeError> {
+        self.pending_launch_app_id.set(app_id)
+    }
+
+    fn take_pending_launch(
+        &mut self,
+    ) -> Result<Option<FixedText<MAX_APP_ID_BYTES>>, NativeRuntimeError> {
+        if self.pending_launch_app_id.as_str().is_empty() {
+            return Ok(None);
+        }
+        let mut app_id = FixedText::<MAX_APP_ID_BYTES>::new();
+        app_id.set(self.pending_launch_app_id.as_str())?;
+        self.pending_launch_app_id.clear();
+        Ok(Some(app_id))
     }
 
     fn state_bytes(&self) -> &[u8] {
@@ -1944,6 +2454,211 @@ impl<
 
     fn clear_ble_profile(&mut self) {
         self.ble_profile_id.clear();
+    }
+
+    fn clear_upload(&mut self) {
+        self.upload_path.clear();
+        self.upload_name.clear();
+        self.upload_id.clear();
+        self.upload_total_bytes_text.clear();
+        self.upload_received_bytes_text.clear();
+    }
+
+    fn timer_event_index(&self, event: &str) -> Option<usize> {
+        self.timers
+            .iter()
+            .enumerate()
+            .find(|(_, timer)| timer.active && timer.event_as_str() == event)
+            .map(|(index, _)| index)
+    }
+
+    fn begin_timer(
+        &mut self,
+        event: &str,
+        interval_ms: u32,
+        repeating: bool,
+    ) -> Result<(), VmError> {
+        if let Some(index) = self.timer_event_index(event) {
+            let timer = &mut self.timers[index];
+            timer.interval_ms = interval_ms;
+            timer.remaining_ms = interval_ms;
+            timer.repeating = repeating;
+            timer.active = true;
+            return Ok(());
+        }
+        let Some(index) = self.timers.iter().position(|timer| !timer.active) else {
+            return Err(VmError::InvalidOperand);
+        };
+        let timer = &mut self.timers[index];
+        timer.interval_ms = interval_ms;
+        timer.remaining_ms = interval_ms;
+        timer.repeating = repeating;
+        timer.event_len = 0;
+        timer.set_event(event)?;
+        timer.active = true;
+        Ok(())
+    }
+
+    fn tick_timers(
+        &mut self,
+        elapsed_ms: u32,
+        out: &mut [u8; MAX_TIMER_EVENT_BYTES],
+    ) -> Option<usize> {
+        let mut due_event = None;
+
+        for timer in &mut self.timers {
+            if !timer.active {
+                continue;
+            }
+            if timer.remaining_ms <= elapsed_ms {
+                out[..timer.event_len].copy_from_slice(&timer.event[..timer.event_len]);
+                due_event.replace(timer.event_len);
+                if timer.repeating {
+                    timer.remaining_ms = timer.interval_ms;
+                } else {
+                    timer.active = false;
+                }
+                break;
+            }
+            timer.remaining_ms -= elapsed_ms;
+        }
+
+        if let Some(event_len) = due_event {
+            return Some(event_len);
+        }
+        None
+    }
+
+    fn discard_upload_stage(&mut self) {
+        if !self.upload_path.as_str().is_empty() {
+            let mut upload_path = FixedText::<MAX_UPLOAD_REF_BYTES>::new();
+            if upload_path.set(self.upload_path.as_str()).is_ok() {
+                let _ = self.file_backend.upload_stage_delete(upload_path.as_str());
+            }
+        }
+        self.clear_upload();
+    }
+
+    fn clear_timers(&mut self) {
+        for timer in &mut self.timers {
+            timer.active = false;
+            timer.repeating = false;
+            timer.interval_ms = 0;
+            timer.remaining_ms = 0;
+            timer.event_len = 0;
+        }
+    }
+
+    fn stage_ephemeral_upload(
+        &mut self,
+        name: &str,
+        bytes: &[u8],
+        id: &str,
+    ) -> Result<&str, NativeRuntimeError> {
+        let safe_name = safe_upload_name(name).ok_or(NativeRuntimeError::InvalidOffset)?;
+        let mut staged_path = FixedText::<MAX_UPLOAD_REF_BYTES>::new();
+        let path = match self.file_backend.upload_stage_begin(safe_name, bytes.len()) {
+            Ok(path) => path,
+            Err(error) => {
+                self.errors.push(error);
+                return Err(NativeRuntimeError::InvalidOffset);
+            }
+        };
+        staged_path.set(path)?;
+        for (index, chunk) in bytes.chunks(UPLOAD_STAGE_CHUNK_BYTES).enumerate() {
+            if let Err(error) = self.file_backend.upload_stage_chunk(
+                staged_path.as_str(),
+                index.saturating_mul(UPLOAD_STAGE_CHUNK_BYTES),
+                chunk,
+            ) {
+                self.errors.push(error);
+                return Err(NativeRuntimeError::InvalidOffset);
+            }
+        }
+        if let Err(error) = self.file_backend.upload_stage_commit(staged_path.as_str()) {
+            self.errors.push(error);
+            return Err(NativeRuntimeError::InvalidOffset);
+        }
+        self.upload_path = staged_path;
+        self.upload_name.set(safe_name)?;
+        self.upload_id.set(id)?;
+        self.upload_total_bytes_text.clear();
+        self.upload_received_bytes_text.clear();
+        write!(&mut self.upload_total_bytes_text, "{}", bytes.len())
+            .map_err(|_| NativeRuntimeError::TooLarge)?;
+        write!(&mut self.upload_received_bytes_text, "{}", bytes.len())
+            .map_err(|_| NativeRuntimeError::TooLarge)?;
+        Ok(self.upload_path.as_str())
+    }
+
+    fn begin_ephemeral_upload(
+        &mut self,
+        name: &str,
+        total_len: usize,
+        id: &str,
+    ) -> Result<&str, NativeRuntimeError> {
+        if total_len == 0 {
+            return Err(NativeRuntimeError::InvalidOffset);
+        }
+        self.discard_upload_stage();
+        let safe_name = safe_upload_name(name).ok_or(NativeRuntimeError::InvalidOffset)?;
+        let mut staged_path = FixedText::<MAX_UPLOAD_REF_BYTES>::new();
+        let path = match self.file_backend.upload_stage_begin(safe_name, total_len) {
+            Ok(path) => path,
+            Err(error) => {
+                self.errors.push(error);
+                return Err(NativeRuntimeError::InvalidOffset);
+            }
+        };
+        staged_path.set(path)?;
+        self.upload_path = staged_path;
+        self.upload_name.set(safe_name)?;
+        self.upload_id.set(id)?;
+        self.upload_total_bytes_text.clear();
+        self.upload_received_bytes_text.clear();
+        write!(&mut self.upload_total_bytes_text, "{}", total_len)
+            .map_err(|_| NativeRuntimeError::TooLarge)?;
+        Ok(self.upload_path.as_str())
+    }
+
+    fn write_ephemeral_upload_chunk(
+        &mut self,
+        upload_path: &str,
+        offset: usize,
+        bytes: &[u8],
+    ) -> Result<(), NativeRuntimeError> {
+        if upload_path != self.upload_path.as_str() || bytes.is_empty() {
+            return Err(NativeRuntimeError::InvalidOffset);
+        }
+        if let Err(error) = self
+            .file_backend
+            .upload_stage_chunk(upload_path, offset, bytes)
+        {
+            self.errors.push(error);
+            return Err(NativeRuntimeError::InvalidOffset);
+        }
+        let received = offset.saturating_add(bytes.len());
+        self.upload_received_bytes_text.clear();
+        write!(&mut self.upload_received_bytes_text, "{}", received)
+            .map_err(|_| NativeRuntimeError::TooLarge)?;
+        Ok(())
+    }
+
+    fn commit_ephemeral_upload(
+        &mut self,
+        upload_path: &str,
+        bytes_received: usize,
+    ) -> Result<(), NativeRuntimeError> {
+        if upload_path != self.upload_path.as_str() || bytes_received == 0 {
+            return Err(NativeRuntimeError::InvalidOffset);
+        }
+        if let Err(error) = self.file_backend.upload_stage_commit(upload_path) {
+            self.errors.push(error);
+            return Err(NativeRuntimeError::InvalidOffset);
+        }
+        self.upload_received_bytes_text.clear();
+        write!(&mut self.upload_received_bytes_text, "{}", bytes_received)
+            .map_err(|_| NativeRuntimeError::TooLarge)
     }
 
     fn record_wifi_operation(&mut self, operation: NativeWifiOperationState) {
@@ -2179,6 +2894,76 @@ impl<
         Ok(())
     }
 
+    fn service_timer_every(&mut self, event: &str, interval_ms: i32) -> Result<(), VmError> {
+        let Some(interval_ms) = interval_ms.try_into().ok().filter(|ms| *ms > 0) else {
+            return Err(VmError::InvalidOperand);
+        };
+        self.begin_timer(event, interval_ms, true)
+    }
+
+    fn service_timer_after(&mut self, event: &str, delay_ms: i32) -> Result<(), VmError> {
+        let Some(delay_ms) = delay_ms.try_into().ok().filter(|ms| *ms > 0) else {
+            return Err(VmError::InvalidOperand);
+        };
+        self.begin_timer(event, delay_ms, false)
+    }
+
+    fn app_launch(&mut self, app: &str) -> Result<(), VmError> {
+        self.request_app_launch(app)
+            .map_err(|_| VmError::InvalidOperand)
+    }
+
+    fn app_install<'a>(
+        &'a mut self,
+        file_ref: &str,
+        app_id: Option<&str>,
+    ) -> Result<AppInstallResult<'a>, VmError> {
+        let total_len = usize::try_from(
+            self.file_backend
+                .file_ref_size(file_ref)
+                .map_err(|_| VmError::ReadFailed)?,
+        )
+        .map_err(|_| VmError::TooLarge)?;
+        if total_len == 0 || total_len > self.installed_sqbc.len() {
+            return Err(VmError::TooLarge);
+        }
+
+        let mut offset = 0usize;
+        while offset < total_len {
+            let end = (offset + MAX_LINE_BYTES).min(total_len);
+            self.file_backend
+                .file_ref_read_at(
+                    file_ref,
+                    offset as u64,
+                    &mut self.installed_sqbc[offset..end],
+                )
+                .map_err(|_| VmError::ReadFailed)?;
+            offset = end;
+        }
+
+        let mut resolved_app_id = FixedText::<MAX_APP_ID_BYTES>::new();
+        if let Some(app_id) = app_id {
+            resolved_app_id
+                .set(app_id)
+                .map_err(|_| VmError::InvalidOperand)?;
+        } else {
+            let mut reader = SliceSqbcReader::new(&self.installed_sqbc[..total_len]);
+            let mut scratch = [0u8; 1024];
+            let app_id = ProgramIndex::app_id_from_reader(&mut reader, &mut scratch)?;
+            resolved_app_id
+                .set(app_id)
+                .map_err(|_| VmError::InvalidOperand)?;
+        }
+
+        self.begin_app_install(resolved_app_id.as_str(), total_len)
+            .map_err(|_| VmError::InvalidOperand)?;
+        self.installed_received = total_len;
+        self.commit_app_install();
+        Ok(AppInstallResult {
+            id: self.installed_app_id.as_str(),
+        })
+    }
+
     fn service_ble_start(&mut self, id: &str) -> Result<(), VmError> {
         self.start_ble_profile(id)
     }
@@ -2365,6 +3150,7 @@ impl<
     }
 
     fn service_teardown_all(&mut self) -> Result<(), VmError> {
+        self.clear_timers();
         self.release_all_radios();
         Ok(())
     }
@@ -2612,14 +3398,14 @@ fn inactive_lifecycle_view<'a>() -> LineView<'a> {
     LineView { lines, len: 2 }
 }
 
-#[derive(Clone, Copy)]
-struct FixedText<const N: usize> {
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct FixedText<const N: usize> {
     bytes: [u8; N],
     len: usize,
 }
 
 impl<const N: usize> FixedText<N> {
-    const fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             bytes: [0; N],
             len: 0,
@@ -2639,8 +3425,20 @@ impl<const N: usize> FixedText<N> {
         Ok(())
     }
 
-    fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         core::str::from_utf8(&self.bytes[..self.len]).unwrap_or("")
+    }
+}
+
+impl<const N: usize> fmt::Debug for FixedText<N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("FixedText").field(&self.as_str()).finish()
+    }
+}
+
+impl<const N: usize> PartialEq<&str> for FixedText<N> {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
     }
 }
 

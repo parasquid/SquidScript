@@ -1,0 +1,22 @@
+app "ble-transfer-regression"
+
+event.on("app.start") {
+  service.ble.start("file-transfer", {
+    id: "ble-transfer"
+    accept: [".binbook", ".sqbc"]
+    events: {
+      complete: "ble.transfer.complete"
+    }
+  })
+  debug.print("transfer ready")
+}
+
+event.on("ble.transfer.complete", ev) {
+  service.ble.stop()
+  debug.print("ble done", ev.bytesReceived, ev.totalBytes)
+  let copied = file.copy(ev.upload, {
+    library: "books"
+    name: ev.name
+  })
+  debug.print("ble copy", copied.ok, copied.error, copied.bytesWritten)
+}
