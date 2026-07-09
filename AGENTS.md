@@ -48,11 +48,12 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   claiming visual confirmation. Do not substitute decoded fixtures, simulator
   renders, regenerated assets, old captures, or protocol acknowledgements for
   live panel evidence.
-- Use `uv` for Python dependency isolation and ad-hoc Python test dependencies.
+- Use the repo-local `uv` virtual environment for Python dependency isolation.
   Do not install Python packages into the host system or user site merely to run
-  repository tests. Prefer commands such as
-  `uv run --with Pillow python -m unittest ...` when a test needs an optional
-  package that is not already present in the project environment.
+  repository tests. Create it with `uv venv .venv`, install recurring test
+  dependencies with `uv pip install --python .venv/bin/python <package>`, and
+  run Python tests through `.venv/bin/python ...`. The `.venv/` directory is
+  local environment state and must stay gitignored.
 
 - When starting any implementation work (including debugging, verification,
   or any technical task), update `/var/home/tristan/Documents/parasquid/SquidScript/.current_agent_work`

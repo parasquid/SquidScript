@@ -11,6 +11,7 @@ twister-out*/
 __pycache__/
 *.py[cod]
 .env
+.venv/
 
 # Personal/environment-specific agent notes. Never committed.
 .local-agents.md
