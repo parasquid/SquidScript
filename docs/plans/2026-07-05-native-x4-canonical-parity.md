@@ -22,8 +22,11 @@ input, storage/content, Wi-Fi, BLE file transfer, and resource cleanup.
 
 ## Tasks
 
-- [ ] Add host tests for Wi-Fi scan/status/AP-IP and BLE profile lifecycle
+- [x] Add host tests for Wi-Fi scan/status/AP-IP and BLE profile lifecycle
   behavior using fake native radio backends.
+- [x] Add native ephemeral upload staging host coverage: completed uploads are
+  exposed as `tmp/<safe-name>` during the completion handler and deleted after
+  the handler returns.
 - [ ] Extend native radio backend interfaces so `service.wifi.*` can expose
   scan results, STA connection details, AP IP/status, RSSI, BSSID, auth, and
   backend errors.
@@ -32,6 +35,13 @@ input, storage/content, Wi-Fi, BLE file transfer, and resource cleanup.
 - [x] Spike `trouble-host` over `esp-radio::ble::BleConnector`; `trouble-host`
   0.6.0 plus `bt_hci::controller::ExternalController<BleConnector, 4>`
   type-checks against the ESP HCI transport.
+- [x] Move radio-enabled native X4 firmware onto `#[esp_rtos::main]` with a
+  direct `embassy-executor` dependency, spawn the serial/runtime owner as an
+  executor task, and preserve the existing serial/runtime behavior as the
+  executor baseline.
+- [x] Flash native X4 executor baseline and verify serial reset/resources,
+  installed app launch/key dispatch, no active radio leases, and live webcam
+  evidence of the grid-cursor test screen.
 - [ ] Add a native async BLE runner integration point before GATT work:
   TrouBLE requires a continuously polled host runner plus GATT event loop, while
   the current native firmware loop is synchronous serial/VM polling with only
