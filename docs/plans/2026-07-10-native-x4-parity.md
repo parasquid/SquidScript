@@ -225,10 +225,10 @@ pass.
 **Owning layer:** X4 hardware storage adapter. This is a mandatory throwaway
 spike before app-store design is committed.
 
-- [ ] Add `esp-storage 0.9` and `littlefs2 0.8` behind a focused X4 feature.
-- [ ] Implement only a temporary partition-bounded block adapter and a serial
+- [x] Add `esp-storage 0.9` and `littlefs2 0.8` behind a focused X4 feature.
+- [x] Implement only a temporary partition-bounded block adapter and a serial
   diagnostic command/harness.
-- [ ] Prove on the real X4:
+- [x] Prove on the real X4:
   - invalid/blank filesystem detection;
   - explicit format;
   - mount and remount;
@@ -238,9 +238,9 @@ spike before app-store design is committed.
   - capacity/no-space reporting;
   - recovery after reset between temporary write and rename;
   - writes cannot cross the `squidscript` partition.
-- [ ] Measure static RAM, heap, stack high water, erase latency, write latency,
+- [x] Measure static RAM, heap, stack high water, erase latency, write latency,
   and serial responsiveness.
-- [ ] Delete the diagnostic command and spike-only code after recording the
+- [x] Delete the diagnostic command and spike-only code after recording the
   result in `/tmp` and `.current_agent_work`.
 
 **Blocking rule:** If the stack cannot pass without an unbounded allocator,
