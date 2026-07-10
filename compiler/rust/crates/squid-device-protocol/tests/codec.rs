@@ -292,7 +292,7 @@ fn encodes_heap_free_resources_response_from_metrics() {
 }
 
 #[test]
-fn encodes_radio_lease_resources_response_from_metrics() {
+fn encodes_radio_and_upload_resources_response_from_metrics() {
     let mut out = [0u8; 512];
     let metrics = [
         ResourceMetric {
@@ -308,20 +308,28 @@ fn encodes_radio_lease_resources_response_from_metrics() {
             value: 1,
         },
         ResourceMetric {
-            key: "ble_profile_active",
+            key: "upload_profile_active",
             value: 1,
         },
         ResourceMetric {
-            key: "ble_profile_id_len",
+            key: "upload_profile_id_len",
             value: 2,
         },
         ResourceMetric {
-            key: "ble_profile_start_events",
+            key: "upload_profile_start_events",
             value: 3,
         },
         ResourceMetric {
-            key: "ble_profile_stop_events",
+            key: "upload_profile_stop_events",
             value: 2,
+        },
+        ResourceMetric {
+            key: "upload_transport_http_active",
+            value: 0,
+        },
+        ResourceMetric {
+            key: "upload_transport_ble_active",
+            value: 1,
         },
         ResourceMetric {
             key: "serial_buffer_bytes",
@@ -354,10 +362,12 @@ fn encodes_radio_lease_resources_response_from_metrics() {
             ("radio_active_leases".to_string(), 2),
             ("radio_wifi_active".to_string(), 1),
             ("radio_ble_active".to_string(), 1),
-            ("ble_profile_active".to_string(), 1),
-            ("ble_profile_id_len".to_string(), 2),
-            ("ble_profile_start_events".to_string(), 3),
-            ("ble_profile_stop_events".to_string(), 2),
+            ("upload_profile_active".to_string(), 1),
+            ("upload_profile_id_len".to_string(), 2),
+            ("upload_profile_start_events".to_string(), 3),
+            ("upload_profile_stop_events".to_string(), 2),
+            ("upload_transport_http_active".to_string(), 0),
+            ("upload_transport_ble_active".to_string(), 1),
             ("serial_buffer_bytes".to_string(), 5_176),
             ("known_static_bytes".to_string(), 32_652),
             ("heap_pool_bytes".to_string(), 102_400),

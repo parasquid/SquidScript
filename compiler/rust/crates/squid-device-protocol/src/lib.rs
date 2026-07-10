@@ -1153,10 +1153,12 @@ const RESOURCE_METRIC_NAMES: &[(u32, &str)] = &[
     (75, "demand_display"),
     (76, "demand_storage"),
     (77, "demand_binbook"),
-    (78, "ble_profile_active"),
-    (79, "ble_profile_id_len"),
-    (80, "ble_profile_start_events"),
-    (81, "ble_profile_stop_events"),
+    (78, "upload_profile_active"),
+    (79, "upload_profile_id_len"),
+    (80, "upload_profile_start_events"),
+    (81, "upload_profile_stop_events"),
+    (82, "upload_transport_http_active"),
+    (83, "upload_transport_ble_active"),
 ];
 
 fn resource_metric_id_for_name(name: &str) -> Option<u32> {
