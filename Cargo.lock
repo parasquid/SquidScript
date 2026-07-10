@@ -2534,6 +2534,7 @@ dependencies = [
  "gray2-render",
  "heapless 0.8.0",
  "heapless 0.9.3",
+ "serde_json",
  "squid-device-protocol",
  "squidscript-fw-core",
  "squidvm-core",

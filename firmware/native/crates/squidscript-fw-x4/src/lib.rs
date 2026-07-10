@@ -1,6 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 
 pub mod ble_pipeline;
+pub mod target_input;
 
 pub mod radio_probe {
     use core::fmt;

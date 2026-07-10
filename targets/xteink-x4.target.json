@@ -323,6 +323,10 @@
   "input": {
     "type": "mixed",
     "debounceMs": 5,
+    "gestureTiming": {
+      "longTapMs": 350,
+      "doubleTapWindowMs": 350
+    },
     "buttons": [
       {
         "logical": "BACK",
@@ -384,29 +388,8 @@
         "gpio": "GPIO3",
         "mode": "input_pullup",
         "activeLow": true,
-        "wake": true
-      }
-    ],
-    "longPress": [
-      {
-        "logical": "POWER",
-        "durationMs": 2000,
-        "trigger": "threshold",
-        "owner": "system",
-        "action": "sleep",
-        "suppressShortKey": true
-      }
-    ],
-    "chords": [
-      {
-        "logical": ["POWER", "DOWN"],
-        "name": "force-refresh",
-        "owner": "system",
-        "action": "refresh-display",
-        "windowMs": 120,
-        "suppressComponentKeys": true,
-        "status": "reference",
-        "reason": "POWER is a direct GPIO and DOWN is on ADC GPIO2, so this combination is expected to be distinguishable by firmware."
+        "wake": true,
+        "gestures": ["longTap", "doubleTap"]
       }
     ]
   },

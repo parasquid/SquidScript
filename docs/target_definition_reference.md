@@ -631,78 +631,43 @@ Example:
 
 The target compiler should validate that ranges on the same ADC do not overlap and that logical key names are known.
 
-Targets may describe long-press behavior separately from the physical button definition.
-
-Example:
+Targets define gesture timing independently from physical buttons:
 
 ```json
 {
-  "longPress": [
-    {
-      "logical": "POWER",
-      "durationMs": 2000,
-      "owner": "system",
-      "action": "sleep"
-    }
-  ]
+  "gestureTiming": {
+    "longTapMs": 350,
+    "doubleTapWindowMs": 350
+  }
 }
 ```
 
-Fields:
+`longTapMs` is the hold threshold. `doubleTapWindowMs` is the maximum interval
+from the first release to the beginning of the second press. Both are positive
+millisecond values and may differ.
 
-- `logical`: logical key name.
-- `durationMs`: press duration threshold. The event/action fires when the button has been held for this duration; firmware must not wait for release.
-- `owner`: `"system"` or `"app"`.
-- `action`: optional system action name, such as `"sleep"`.
+Each button may opt into `longTap` and `doubleTap` event generation:
+
+```json
+{
+  "logical": "POWER",
+  "type": "gpio-button",
+  "gpio": "GPIO3",
+  "gestures": ["longTap", "doubleTap"]
+}
+```
 
 Rules:
 
-- Short and long key events are distinct.
-- A system-owned long press should not be delivered to app code unless firmware policy explicitly allows it.
-- A target may allow short `POWER` presses to reach foreground apps while reserving long `POWER` for sleep.
-- Firmware should document whether long press also emits a short press. The default should be no duplicate short press after a long press.
-- A threshold-triggered system action such as long-press sleep should execute as soon as the threshold is crossed, even if the user continues holding the button.
-- Long press is valid for GPIO buttons, key-matrix keys, and ADC ladder buttons when the input driver can report a stable pressed/released state over time.
-- Matrix-key long press depends on the matrix scanner's debounce, ghosting, and rollover behavior. Targets should document any combinations that cannot be detected reliably.
-- ADC-ladder long press depends on stable ADC ranges. If multiple simultaneous ADC-ladder buttons collapse into ambiguous values, firmware should treat long press as valid only for unambiguous single-key states.
-
-Targets may also describe key combinations, also called chords.
-
-Example:
-
-```json
-{
-  "chords": [
-    {
-      "logical": ["POWER", "DOWN"],
-      "name": "force-refresh",
-      "owner": "system",
-      "action": "refresh-display",
-      "windowMs": 120,
-      "suppressComponentKeys": true
-    }
-  ]
-}
-```
-
-Fields:
-
-- `logical`: list of logical key names in the chord.
-- `name`: stable chord ID for diagnostics, simulator UI, and generated firmware constants.
-- `owner`: `"system"` or `"app"`.
-- `action`: optional system action name.
-- `windowMs`: maximum interval between first and last key press for chord recognition.
-- `suppressComponentKeys`: whether recognized chords suppress individual short key events.
-
-Chord rules:
-
-- Chords are defined on logical keys, not GPIOs.
-- Firmware should emit a chord only when all listed keys are observed as pressed within the target's chord timing window.
-- Chords must be validated against what the input hardware can detect.
-- GPIO buttons can usually participate in chords when independently readable.
-- Matrix-key chords depend on rollover and ghosting behavior.
-- ADC-ladder chords are valid only when simultaneous button states produce unambiguous ADC values. If an ADC ladder can only identify one key at a time, chords between keys on that same ladder should be marked unsupported or omitted.
-- Chord and long-press precedence must be explicit. System-owned long press, such as long `POWER` sleep, should normally outrank app-owned chords.
+- Allowed gesture names are exactly `longTap` and `doubleTap`.
+- Firmware emits `key.<logical>.longTap` and `key.<logical>.doubleTap`; it does
+  not assign sleep, refresh, or other actions.
+- A long tap fires once at the threshold and suppresses the short key event.
+- A double tap fires when the second press begins and suppresses the pending
+  short key event.
+- Buttons without a `gestures` list emit only ordinary logical key events.
+- Gesture detection requires stable pressed/released state from the physical
+  input driver.
 
 ---
 

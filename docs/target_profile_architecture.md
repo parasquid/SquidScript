@@ -326,9 +326,9 @@ Logical keys:
 - `HOME`
 - `POWER`
 
-Input profiles may also define long-press behavior and key combinations for logical keys. Long press is threshold-triggered: firmware fires the long-press event or system action when the key has been held for the configured duration, without waiting for release. This can apply to GPIO buttons, matrix keys, and ADC ladder buttons when the input driver can report stable press/release state.
-
-Key combinations, or chords, are also target-defined. A chord such as `POWER+DOWN` should be emitted only when the input hardware can detect both logical keys reliably within the configured timing window.
+Input profiles may enable `longTap` and `doubleTap` event generation for
+individual logical keys. Timing is profile-owned, while actions remain
+SquidScript app behavior.
 
 Example input profile:
 
@@ -337,6 +337,10 @@ Example input profile:
   "format": "squid-target-input",
   "id": "dev-buttons-7key",
   "type": "gpio-buttons",
+  "gestureTiming": {
+    "longTapMs": 350,
+    "doubleTapWindowMs": 350
+  },
   "buttons": [
     { "logical": "UP", "gpio": 1, "activeLow": true },
     { "logical": "DOWN", "gpio": 2, "activeLow": true },
@@ -344,26 +348,11 @@ Example input profile:
     { "logical": "RIGHT", "gpio": 4, "activeLow": true },
     { "logical": "SELECT", "gpio": 5, "activeLow": true },
     { "logical": "BACK", "gpio": 6, "activeLow": true },
-    { "logical": "POWER", "gpio": 7, "activeLow": true }
-  ],
-  "longPress": [
     {
       "logical": "POWER",
-      "durationMs": 2000,
-      "trigger": "threshold",
-      "owner": "system",
-      "action": "sleep",
-      "suppressShortKey": true
-    }
-  ],
-  "chords": [
-    {
-      "logical": ["POWER", "DOWN"],
-      "name": "force-refresh",
-      "owner": "system",
-      "action": "refresh-display",
-      "windowMs": 120,
-      "suppressComponentKeys": true
+      "gpio": 7,
+      "activeLow": true,
+      "gestures": ["longTap", "doubleTap"]
     }
   ]
 }
