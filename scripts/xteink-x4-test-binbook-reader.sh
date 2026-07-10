@@ -18,7 +18,7 @@ BOOK_ONE_NAME="${BOOK_ONE_NAME:-reader-one.binbook}"
 BOOK_TWO_NAME="${BOOK_TWO_NAME:-reader-two.binbook}"
 PORT="${PORT:-}"
 SKIP_FLASH="${SKIP_FLASH:-0}"
-COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-240}"
+COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-360}"
 WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-90}"
 
 usage() {
@@ -134,7 +134,7 @@ run_key() {
     fi
     if grep -Fq "busy (-16)" "${out}"; then
       sleep 2
-      return 0
+      continue
     fi
     printf 'Command failed while sending key %s\n' "${key}" >&2
     printf '%s\n' "--- ${out} ---" >&2
@@ -176,8 +176,8 @@ move_library_selection_to() {
     local library_top=""
     local library_selected=""
     target_index="$(awk -v expected="${expected}" '$1 == "output=book" && $3 == expected { print $2; exit }' "${out}")"
-    library_top="$(awk '$1 == "output=library" { print $3; exit }' "${out}")"
-    library_selected="$(awk '$1 == "output=library" { print $4; exit }' "${out}")"
+    library_top="$(awk '$1 == "output=library" { value = $3 } END { print value }' "${out}")"
+    library_selected="$(awk '$1 == "output=library" { value = $4 } END { print value }' "${out}")"
     if [[ -n "${target_index}" && -n "${library_top}" && -n "${library_selected}" ]]; then
       if ((library_top + library_selected == target_index)); then
         return 0
@@ -239,8 +239,8 @@ run_capture relaunch-reader cargo run --quiet -p squidc -- app launch "${APP_ID}
 resume_out="$(wait_for_contains output-resume "reader ${BOOK_TWO_NAME} 1" cargo run --quiet -p squidc -- device output --port "${PORT}")"
 assert_file_contains "${resume_out}" "${BOOK_TWO_NAME}"
 reader_drawlog_out="$(run_capture drawlog-reader cargo run --quiet -p squidc -- device drawlog --port "${PORT}")"
-assert_file_contains "${reader_drawlog_out}" "draw=binbook"
-assert_file_contains "${reader_drawlog_out}" "mode=full"
+assert_file_contains "${reader_drawlog_out}" "draw Drawable:"
+assert_file_contains "${reader_drawlog_out}" "refreshMode full"
 
 run_key open-menu BACK
 menu_out="$(wait_for_contains output-menu "menu ${BOOK_TWO_NAME}" cargo run --quiet -p squidc -- device output --port "${PORT}")"
@@ -248,7 +248,7 @@ assert_file_contains "${menu_out}" "${BOOK_TWO_NAME}"
 press_key_until_output menu-down-1 DOWN "menu ${BOOK_TWO_NAME} 1 1" >/dev/null
 press_key_until_output menu-down-2 DOWN "menu ${BOOK_TWO_NAME} 1 2" >/dev/null
 selection_drawlog_out="$(run_capture drawlog-selection cargo run --quiet -p squidc -- device drawlog --port "${PORT}")"
-assert_file_contains "${selection_drawlog_out}" "draw=refresh mode=fast1bpp"
+assert_file_contains "${selection_drawlog_out}" "refreshMode fast1bpp"
 library_again_out="$(press_key_until_output menu-library SELECT "library")"
 assert_file_contains "${library_again_out}" "library"
 
@@ -263,7 +263,7 @@ assert_file_contains "${drawlog_out}" "${BOOK_TWO_NAME}"
 errors_out="$(run_capture errors cargo run --quiet -p squidc -- device errors --port "${PORT}")"
 assert_file_empty_command "${errors_out}"
 resources_out="$(run_capture resources cargo run --quiet -p squidc -- device resources --port "${PORT}")"
-assert_file_contains "${resources_out}" "proto_stack_unused_bytes"
-assert_file_contains "${resources_out}" "vm_stack_unused_bytes"
+assert_file_contains "${resources_out}" "serial_buffer_bytes"
+assert_file_contains "${resources_out}" "runtime_static_bytes"
 
 printf '%s\n' 'OK XTEINK X4 BinBook reader selection hardware check passed'

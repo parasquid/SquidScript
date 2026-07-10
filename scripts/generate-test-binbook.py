@@ -40,6 +40,16 @@ def write_pages(directory: Path) -> None:
     draw.text((48, 730), "SquidScript", fill=0, font=small_font)
     first.save(directory / "page-01.png")
 
+    second = Image.new("L", (WIDTH, HEIGHT), 255)
+    draw = ImageDraw.Draw(second)
+    draw.rectangle((16, 16, WIDTH - 17, HEIGHT - 17), outline=0, width=8)
+    draw.text((48, 80), "HTTP UPLOAD", fill=0, font=font)
+    draw.text((48, 150), "PAGE 2", fill=0, font=font)
+    for x in range(48, WIDTH - 48, 48):
+        draw.line((x, 260, x, 700), fill=0, width=8)
+    draw.text((48, 730), "SquidScript", fill=0, font=small_font)
+    second.save(directory / "page-02.png")
+
 
 def main() -> int:
     if len(sys.argv) != 2:
