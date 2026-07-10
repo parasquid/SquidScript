@@ -390,23 +390,23 @@ no lifecycle operation depends on Zephyr.
 **Owning layers:** pure firmware-core classifier, X4 ESP-HAL sampling task,
 lifecycle event queue.
 
-- [ ] Add pure tests for ADC range boundaries, no-button regions, active-low
+- [x] Add pure tests for ADC range boundaries, no-button regions, active-low
   POWER, debounce, press/release, long threshold, pending short timeout,
   double second-press recognition, and gesture-disabled buttons.
-- [ ] Implement a nonblocking Embassy input task:
+- [x] Implement a nonblocking Embassy input task:
   - use ADC1 one-shot reads for GPIO1 and GPIO2;
   - use active-low pull-up input for GPIO3;
   - sample at a bounded interval compatible with target debounce;
   - perform no display, storage, VM, or serial work while owning ADC/GPIO;
   - enqueue logical transitions through the shared runtime boundary.
-- [ ] Ordinary ADC buttons emit UP, DOWN, LEFT, RIGHT, SELECT, and BACK on
+- [x] Ordinary ADC buttons emit UP, DOWN, LEFT, RIGHT, SELECT, and BACK on
   debounced release.
-- [ ] POWER implements the exact target-configured 350/350 ms semantics from
+- [x] POWER implements the exact target-configured 350/350 ms semantics from
   the design spec.
-- [ ] Emit no automatic sleep or force-refresh action.
-- [ ] Add debug logs for raw redacted ADC bucket, debounced logical state,
+- [x] Emit no automatic sleep or force-refresh action.
+- [x] Add debug logs for raw redacted ADC bucket, debounced logical state,
   classification, and final route. Do not log environment identifiers.
-- [ ] Update `tests/hardware/xteink-x4/key-detector` to assert ordinary,
+- [x] Update `tests/hardware/xteink-x4/key-detector` to assert ordinary,
   `.longTap`, and `.doubleTap` events.
 - [ ] Add armed input example apps using `service.input.on`:
   - double tap launches a helper that exits, causing the previous app to start
