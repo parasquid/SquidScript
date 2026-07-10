@@ -1877,6 +1877,10 @@ impl<
         self.host.trace.view()
     }
 
+    pub fn record_trace(&mut self, message: &str) {
+        self.host.trace.push(message);
+    }
+
     pub fn drawlog_lines(&self) -> LineView<'_> {
         self.host.drawlog.view()
     }

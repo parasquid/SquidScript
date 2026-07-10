@@ -225,6 +225,18 @@ fn runtime_retains_bounded_errors_until_explicitly_cleared() {
 }
 
 #[test]
+fn runtime_diagnostics_do_not_pollute_retained_errors() {
+    let mut runtime = NativeRuntime::new();
+    runtime.record_trace("diag.content-check.start");
+
+    assert_eq!(
+        runtime.trace_lines().iter().collect::<Vec<_>>(),
+        vec!["diag.content-check.start"]
+    );
+    assert_eq!(runtime.error_lines().iter().count(), 0);
+}
+
+#[test]
 fn temp_run_rejects_oversize_payloads() {
     let mut runtime = NativeRuntime::new();
 

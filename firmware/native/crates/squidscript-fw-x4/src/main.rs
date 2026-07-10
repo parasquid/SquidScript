@@ -1918,7 +1918,7 @@ impl CooperativeContentCheck {
             | CooperativeContentCheckStatus::Failed(_) => {}
             CooperativeContentCheckStatus::NeedSize => {
                 #[cfg(debug_assertions)]
-                runtime.record_error("diag.content-check.size-start");
+                runtime.record_trace("diag.content-check.size-start");
                 let Some(path) = self.path() else {
                     self.status = CooperativeContentCheckStatus::Failed("invalid-name");
                     return;
@@ -1926,7 +1926,7 @@ impl CooperativeContentCheck {
                 match runtime.file_ref_size(path) {
                     Ok(size) => {
                         #[cfg(debug_assertions)]
-                        runtime.record_error("diag.content-check.size-ok");
+                        runtime.record_trace("diag.content-check.size-ok");
                         self.size = size;
                         self.offset = 0;
                         self.crc32 = SerialCrc32::new();
@@ -1950,7 +1950,7 @@ impl CooperativeContentCheck {
                         513..=1024 => "diag.content-check.read-1024",
                         _ => "diag.content-check.read-more",
                     };
-                    runtime.record_error(label);
+                    runtime.record_trace(label);
                 }
                 let mut path_buf = [0u8; 128];
                 path_buf[..self.path_len].copy_from_slice(&self.path[..self.path_len]);
@@ -1961,7 +1961,7 @@ impl CooperativeContentCheck {
                 match runtime.file_ref_read_at(path, self.offset, &mut self.read_buf[..read_len]) {
                     Ok(()) => {
                         #[cfg(debug_assertions)]
-                        runtime.record_error("diag.content-check.read-ok");
+                        runtime.record_trace("diag.content-check.read-ok");
                         self.crc32.update(&self.read_buf[..read_len]);
                         self.offset += read_len as u64;
                     }
@@ -2274,7 +2274,7 @@ where
         Opcode::ContentCheck => match request_string_field(parsed, 1).ok().flatten() {
             Some(name) => {
                 #[cfg(debug_assertions)]
-                runtime.record_error("diag.content-check.start");
+                runtime.record_trace("diag.content-check.start");
                 match content_check.status {
                     CooperativeContentCheckStatus::Idle => match content_check.start(name) {
                         Ok(()) => encode_empty_response_into(
@@ -2285,7 +2285,7 @@ where
                         ),
                         Err(error) => {
                             #[cfg(debug_assertions)]
-                            runtime.record_error("diag.content-check.error");
+                            runtime.record_trace("diag.content-check.error");
                             runtime.record_error(error);
                             encode_error_response_into(
                                 parsed.opcode,
@@ -2343,7 +2343,7 @@ where
                     }
                     CooperativeContentCheckStatus::Failed(error) => {
                         #[cfg(debug_assertions)]
-                        runtime.record_error("diag.content-check.error");
+                        runtime.record_trace("diag.content-check.error");
                         runtime.record_error(error);
                         content_check.clear();
                         encode_error_response_into(
@@ -2628,7 +2628,7 @@ where
                 Ok(response_len) => Some(response_len),
                 Err(_) => {
                     #[cfg(debug_assertions)]
-                    runtime.record_error("diag.serial.encode-error");
+                    runtime.record_trace("diag.serial.encode-error");
                     squid_device_protocol::encode_error_response_into(
                         parsed.opcode,
                         parsed.sequence,
@@ -2641,7 +2641,7 @@ where
             },
             Err(_) => {
                 #[cfg(debug_assertions)]
-                runtime.record_error("diag.serial.decode-error");
+                runtime.record_trace("diag.serial.decode-error");
                 None
             }
         };
@@ -2746,82 +2746,82 @@ async fn run_serial_protocol_cooperative<B, D, C, FB, F>(
                     5 => "diag.ble.connected",
                     _ => "diag.ble.unknown-stage",
                 };
-                runtime.record_error(label);
+                runtime.record_trace(label);
                 reported_ble_stage = stage;
             }
             let flags = BLE_DIAGNOSTIC_FLAGS.load(Ordering::Acquire);
             let new_flags = flags & !reported_ble_flags;
             if new_flags & BLE_DIAGNOSTIC_RUNNER_EXIT != 0 {
-                runtime.record_error("diag.ble.runner-exit");
+                runtime.record_trace("diag.ble.runner-exit");
             }
             if new_flags & BLE_DIAGNOSTIC_GATT_ATTACH_FAILURE != 0 {
-                runtime.record_error("diag.ble.gatt-attach-failure");
+                runtime.record_trace("diag.ble.gatt-attach-failure");
             }
             if new_flags & BLE_DIAGNOSTIC_GATT_EVENT != 0 {
-                runtime.record_error("diag.ble.gatt-event");
+                runtime.record_trace("diag.ble.gatt-event");
             }
             if new_flags & BLE_DIAGNOSTIC_BACKPRESSURE != 0 {
-                runtime.record_error("diag.ble.backpressure");
+                runtime.record_trace("diag.ble.backpressure");
             }
             if new_flags & BLE_DIAGNOSTIC_BEGIN_WRITE != 0 {
-                runtime.record_error("diag.ble.begin-write");
+                runtime.record_trace("diag.ble.begin-write");
             }
             if new_flags & BLE_DIAGNOSTIC_NAME_WRITE != 0 {
-                runtime.record_error("diag.ble.name-write");
+                runtime.record_trace("diag.ble.name-write");
             }
             if new_flags & BLE_DIAGNOSTIC_NAME_ACCEPTED != 0 {
-                runtime.record_error("diag.ble.name-accepted");
+                runtime.record_trace("diag.ble.name-accepted");
             }
             if new_flags & BLE_DIAGNOSTIC_WRITE_REJECTED != 0 {
-                runtime.record_error("diag.ble.write-rejected");
+                runtime.record_trace("diag.ble.write-rejected");
             }
             if new_flags & BLE_DIAGNOSTIC_ACCEPT_FAILED != 0 {
-                runtime.record_error("diag.ble.accept-failed");
+                runtime.record_trace("diag.ble.accept-failed");
             }
             if new_flags & BLE_DIAGNOSTIC_NOTIFY_SENT != 0 {
-                runtime.record_error("diag.ble.notify-sent");
+                runtime.record_trace("diag.ble.notify-sent");
             }
             if new_flags & BLE_DIAGNOSTIC_NOTIFY_FAILED != 0 {
-                runtime.record_error("diag.ble.notify-failed");
+                runtime.record_trace("diag.ble.notify-failed");
             }
             if new_flags & BLE_DIAGNOSTIC_CONNECTION_WATCHDOG != 0 {
-                runtime.record_error("diag.ble.connection-watchdog");
+                runtime.record_trace("diag.ble.connection-watchdog");
             }
             if new_flags & BLE_DIAGNOSTIC_DISCONNECTED != 0 {
-                runtime.record_error("diag.ble.disconnected");
+                runtime.record_trace("diag.ble.disconnected");
             }
             if new_flags & BLE_DIAGNOSTIC_CONNECTION_PARAMS_REQUEST != 0 {
-                runtime.record_error("diag.ble.connection-params-request");
+                runtime.record_trace("diag.ble.connection-params-request");
             }
             if new_flags & BLE_DIAGNOSTIC_GATT_OTHER != 0 {
-                runtime.record_error("diag.ble.gatt-other");
+                runtime.record_trace("diag.ble.gatt-other");
             }
             if new_flags & BLE_DIAGNOSTIC_DATA_WRITE != 0 {
-                runtime.record_error("diag.ble.data-write");
+                runtime.record_trace("diag.ble.data-write");
             }
             if new_flags & BLE_DIAGNOSTIC_CONNECTION_PARAMS_ACCEPTED != 0 {
-                runtime.record_error("diag.ble.connection-params-accepted");
+                runtime.record_trace("diag.ble.connection-params-accepted");
             }
             if new_flags & BLE_DIAGNOSTIC_CONNECTION_PARAMS_FAILED != 0 {
-                runtime.record_error("diag.ble.connection-params-failed");
+                runtime.record_trace("diag.ble.connection-params-failed");
             }
             if new_flags & BLE_DIAGNOSTIC_STATUS_CCCD_INDICATE != 0 {
-                runtime.record_error("diag.ble.status-cccd-indicate");
+                runtime.record_trace("diag.ble.status-cccd-indicate");
             }
             if new_flags & BLE_DIAGNOSTIC_STATUS_CCCD_NOTIFY != 0 {
-                runtime.record_error("diag.ble.status-cccd-notify");
+                runtime.record_trace("diag.ble.status-cccd-notify");
             }
             if new_flags & BLE_DIAGNOSTIC_STATUS_CCCD_DISABLED != 0 {
-                runtime.record_error("diag.ble.status-cccd-disabled");
+                runtime.record_trace("diag.ble.status-cccd-disabled");
             }
             if new_flags & BLE_DIAGNOSTIC_STATUS_INDICATE_ENABLED != 0 {
-                runtime.record_error("diag.ble.status-indicate-enabled");
+                runtime.record_trace("diag.ble.status-indicate-enabled");
             }
             if new_flags & BLE_DIAGNOSTIC_STATUS_INDICATE_DISABLED != 0 {
-                runtime.record_error("diag.ble.status-indicate-disabled");
+                runtime.record_trace("diag.ble.status-indicate-disabled");
             }
             if new_flags & BLE_DIAGNOSTIC_STATUS_NOTIFY_ENABLED != 0 {
-                runtime.record_error("diag.ble.status-notify-enabled");
+                runtime.record_trace("diag.ble.status-notify-enabled");
             }
             let gatt_other_count = BLE_DIAGNOSTIC_GATT_OTHER_COUNT.load(Ordering::Acquire);
             if gatt_other_count > 0 {
@@ -2831,7 +2831,7 @@ async fn run_serial_protocol_cooperative<B, D, C, FB, F>(
                     5..=8 => "diag.ble.gatt-other-count-5-8",
                     _ => "diag.ble.gatt-other-count-9-plus",
                 };
-                runtime.record_error(label);
+                runtime.record_trace(label);
                 BLE_DIAGNOSTIC_GATT_OTHER_COUNT.store(0, Ordering::Release);
             }
             let disconnect_reason = BLE_DIAGNOSTIC_DISCONNECT_REASON.load(Ordering::Acquire);
@@ -2843,7 +2843,7 @@ async fn run_serial_protocol_cooperative<B, D, C, FB, F>(
                     0x16 => "diag.ble.disconnect-local-host",
                     _ => "diag.ble.disconnect-other",
                 };
-                runtime.record_error(label);
+                runtime.record_trace(label);
             }
             let error_stage = BLE_DIAGNOSTIC_ERROR_STAGE.load(Ordering::Acquire);
             BLE_DIAGNOSTIC_ERROR_STAGE.store(0, Ordering::Release);
@@ -2865,7 +2865,7 @@ async fn run_serial_protocol_cooperative<B, D, C, FB, F>(
                     411 => "diag.ble.storage-dispatch-error",
                     _ => "diag.ble.unknown-error-stage",
                 };
-                runtime.record_error(label);
+                runtime.record_trace(label);
             }
             reported_ble_flags = flags;
             let high_water = BLE_DIAGNOSTIC_QUEUE_HIGH_WATER.load(Ordering::Acquire);
@@ -2876,7 +2876,7 @@ async fn run_serial_protocol_cooperative<B, D, C, FB, F>(
                     3 => "diag.ble.queue-high-water-3",
                     _ => "diag.ble.queue-high-water-4",
                 };
-                runtime.record_error(label);
+                runtime.record_trace(label);
                 reported_queue_high_water = high_water;
             }
         }
