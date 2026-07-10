@@ -91,7 +91,8 @@ fn collect_resource_entries(
             .to_str()
             .ok_or_else(|| format!("path is not UTF-8: {}", path.display()))?
             .replace('\\', "/");
-        if rel == "main.sqbc"
+        if rel == "README.md"
+            || rel == "main.sqbc"
             || rel == "source-map.json"
             || rel.ends_with(".squid")
             || rel.ends_with(".squid.zip")

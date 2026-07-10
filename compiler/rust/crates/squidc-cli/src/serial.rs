@@ -80,7 +80,8 @@ impl SerialDevice {
             app_id,
             bytes.len() as u64,
             crc32fast::hash(bytes) as u64,
-        ))?;
+        ))
+        .map_err(|error| format!("app install begin: {error}"))?;
         for (index, planned) in transfer.chunks.iter().enumerate() {
             let chunk = &bytes[planned.offset..planned.offset + planned.len];
             self.send_protocol_transfer_chunk(
@@ -91,11 +92,15 @@ impl SerialDevice {
                     planned.ack_requested,
                 ),
                 planned.ack_requested,
-            )?;
+            )
+            .map_err(|error| {
+                format!("app install chunk at offset {}: {error}", planned.offset)
+            })?;
         }
         self.send_protocol_expect_ok(&app_install_commit_request(
             11 + transfer.chunks.len() as u32,
-        ))?;
+        ))
+        .map_err(|error| format!("app install commit: {error}"))?;
         Ok(format!("installed app {app_id} len={}\n", bytes.len()))
     }
 

@@ -805,10 +805,15 @@ fn install_app_package(args: AppInstallArgs, human: bool) -> Result<Value, Strin
         .ok_or_else(|| "SQBC has no app id metadata".to_string())?;
 
     let port = resolve_port(&args.device.device)?;
-    let mut device = SerialDevice::open(&port)?;
+    let mut device = SerialDevice::open(&port)
+        .map_err(|error| format!("open device for app install: {error}"))?;
     let mut response = device.install_app(&app_id, &main.bytes)?;
     for entry in &entries {
-        response.push_str(&device.install_resource(&app_id, &entry.path, &entry.bytes)?);
+        response.push_str(
+            &device
+                .install_resource(&app_id, &entry.path, &entry.bytes)
+                .map_err(|error| format!("install resource {}: {error}", entry.path))?,
+        );
     }
     if human {
         print!("{response}");
@@ -3857,6 +3862,7 @@ screen("main") {}
         )
         .unwrap();
         fs::write(app_dir.join("static").join("index.html"), "<h1>Demo</h1>").unwrap();
+        fs::write(app_dir.join("README.md"), "# Package demo\n").unwrap();
         fs::write(app_dir.join(".env"), "SECRET=1").unwrap();
         fs::write(app_dir.join(".git").join("HEAD"), "ref: main").unwrap();
         fs::write(app_dir.join("old.squid.zip"), "old").unwrap();
