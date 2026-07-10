@@ -348,29 +348,30 @@ event.on("app.start") {
     }
 
     #[test]
-    fn formats_nested_objects_lists_and_ble_install_syntax() {
-        let source = r#"app "ble-install"
-event.on("app.start"){service.ble.start("file-transfer",{id:"sqbc-install",accept:[".sqbc",],events:{complete:"ble.file.complete",},})}
-event.on("ble.file.complete",ev){let installed=app.install(ev.upload)app.launch(installed.id)}
+    fn formats_nested_objects_lists_and_upload_syntax() {
+        let source = r#"app "upload-install"
+event.on("app.start"){service.upload.start({id:"sqbc-install",accept:[".sqbc",],transports:["ble",],events:{complete:"upload.complete",},})}
+event.on("upload.complete",ev){let installed=app.install(ev.upload)app.launch(installed.id)}
 "#;
 
         let formatted = format_source(source).unwrap();
 
         assert_eq!(
             formatted,
-            r#"app "ble-install"
+            r#"app "upload-install"
 
 event.on("app.start") {
-  service.ble.start("file-transfer", {
+  service.upload.start({
     id: "sqbc-install"
     accept: [".sqbc"]
+    transports: ["ble"]
     events: {
-      complete: "ble.file.complete"
+      complete: "upload.complete"
     }
   })
 }
 
-event.on("ble.file.complete", ev) {
+event.on("upload.complete", ev) {
   let installed = app.install(ev.upload)
   app.launch(installed.id)
 }
@@ -449,7 +450,7 @@ event.on("app.start") {
     #[test]
     fn keeps_object_field_after_list_on_own_line() {
         let source = r#"app "demo"
-event.on("app.start"){service.ble.start("file-transfer",{id:"sqbc-install",accept:[".sqbc"],events:{complete:"ble.file.complete"}})}
+event.on("app.start"){service.upload.start({id:"sqbc-install",accept:[".sqbc"],transports:["ble"],events:{complete:"upload.complete"}})}
 "#;
 
         let formatted = format_source(source).unwrap();
@@ -459,11 +460,12 @@ event.on("app.start"){service.ble.start("file-transfer",{id:"sqbc-install",accep
             r#"app "demo"
 
 event.on("app.start") {
-  service.ble.start("file-transfer", {
+  service.upload.start({
     id: "sqbc-install"
     accept: [".sqbc"]
+    transports: ["ble"]
     events: {
-      complete: "ble.file.complete"
+      complete: "upload.complete"
     }
   })
 }

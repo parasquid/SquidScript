@@ -26,8 +26,8 @@ fn is_fallible_builtin(name: &str) -> bool {
             | "service.wifi.scanNetwork"
             | "service.wifi.startAP"
             | "service.wifi.stopAP"
-            | "service.http.start"
-            | "service.http.stop"
+            | "service.upload.start"
+            | "service.upload.stop"
     )
 }
 
@@ -58,7 +58,7 @@ pub(crate) fn validate_semantics(
     validate_device_bindings(ast, diagnostics);
     validate_handler_events(ast, diagnostics);
     validate_trigger_routes(ast, diagnostics);
-    validate_ble_profile_ids(ast, diagnostics);
+    validate_upload_profiles(ast, diagnostics);
     let mut function_names = BTreeSet::new();
     for function in &ast.functions {
         if !function_names.insert(function.name.clone()) {
@@ -184,6 +184,178 @@ pub(crate) fn validate_semantics(
     validate_names(ast, &state_names, diagnostics);
 }
 
+const UPLOAD_PROFILE_MESSAGE: &str = "service.upload.start requires a non-empty id, accepted extensions, supported transports, and a complete event route";
+
+fn validate_upload_profiles(ast: &AstRoot, diagnostics: &mut Vec<Diagnostic>) {
+    let mut profiles = BTreeMap::new();
+    for function in &ast.functions {
+        validate_upload_profiles_in(
+            &function.statements,
+            &mut profiles,
+            function.span.start,
+            function.span.end,
+            diagnostics,
+        );
+    }
+    for handler in &ast.handlers {
+        validate_upload_profiles_in(
+            &handler.statements,
+            &mut profiles,
+            handler.span.start,
+            handler.span.end,
+            diagnostics,
+        );
+    }
+    for screen in &ast.screens {
+        validate_upload_profiles_in(
+            &screen.statements,
+            &mut profiles,
+            screen.span.start,
+            screen.span.end,
+            diagnostics,
+        );
+    }
+    for trigger_block in &ast.trigger_blocks {
+        validate_upload_profiles_in(
+            &trigger_block.statements,
+            &mut profiles,
+            trigger_block.span.start,
+            trigger_block.span.end,
+            diagnostics,
+        );
+    }
+}
+
+fn validate_upload_profiles_in(
+    statements: &[IrStatement],
+    profiles: &mut BTreeMap<String, serde_json::Value>,
+    start: usize,
+    end: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for statement in statements {
+        match statement {
+            IrStatement::Let { expr, .. }
+            | IrStatement::Assign { expr, .. }
+            | IrStatement::StateAssign { expr, .. } => {
+                validate_upload_profile_expr(expr, profiles, start, end, diagnostics);
+            }
+            IrStatement::Call { name, args } => {
+                validate_upload_profile_call(name, args, profiles, start, end, diagnostics);
+            }
+            IrStatement::If {
+                condition,
+                then_statements,
+                else_statements,
+            } => {
+                validate_upload_profile_expr(condition, profiles, start, end, diagnostics);
+                validate_upload_profiles_in(then_statements, profiles, start, end, diagnostics);
+                validate_upload_profiles_in(else_statements, profiles, start, end, diagnostics);
+            }
+            IrStatement::Repeat { count, statements } => {
+                validate_upload_profile_expr(count, profiles, start, end, diagnostics);
+                validate_upload_profiles_in(statements, profiles, start, end, diagnostics);
+            }
+            IrStatement::For {
+                list,
+                max,
+                statements,
+                ..
+            } => {
+                validate_upload_profile_expr(list, profiles, start, end, diagnostics);
+                if let Some(max) = max {
+                    validate_upload_profile_expr(max, profiles, start, end, diagnostics);
+                }
+                validate_upload_profiles_in(statements, profiles, start, end, diagnostics);
+            }
+            IrStatement::DebugBlock { statements } => {
+                validate_upload_profiles_in(statements, profiles, start, end, diagnostics);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn validate_upload_profile_expr(
+    expr: &IrExpr,
+    profiles: &mut BTreeMap<String, serde_json::Value>,
+    start: usize,
+    end: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if let IrExpr::Call { name, args } = expr {
+        validate_upload_profile_call(name, args, profiles, start, end, diagnostics);
+    }
+}
+
+fn validate_upload_profile_call(
+    name: &str,
+    args: &[IrExpr],
+    profiles: &mut BTreeMap<String, serde_json::Value>,
+    start: usize,
+    end: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if name != "service.upload.start" {
+        return;
+    }
+    let config = match args {
+        [IrExpr::Literal { value }] if value.is_object() => value,
+        _ => {
+            diagnostics.push(error(
+                "E_UPLOAD_PROFILE",
+                UPLOAD_PROFILE_MESSAGE,
+                start,
+                end,
+            ));
+            return;
+        }
+    };
+    let id = config
+        .get("id")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let accept_valid = config
+        .get("accept")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|values| {
+            !values.is_empty()
+                && values.iter().all(|value| {
+                    value
+                        .as_str()
+                        .is_some_and(|extension| extension.starts_with('.'))
+                })
+        });
+    let transports_valid = config
+        .get("transports")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|values| {
+            !values.is_empty()
+                && values
+                    .iter()
+                    .all(|value| matches!(value.as_str(), Some("http" | "ble")))
+        });
+    let event_valid = config
+        .get("events")
+        .and_then(serde_json::Value::as_object)
+        .and_then(|events| events.get("complete"))
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|event| !event.is_empty());
+    let conflicts = profiles.get(id).is_some_and(|existing| existing != config);
+    if id.is_empty() || !accept_valid || !transports_valid || !event_valid || conflicts {
+        diagnostics.push(error(
+            "E_UPLOAD_PROFILE",
+            UPLOAD_PROFILE_MESSAGE,
+            start,
+            end,
+        ));
+        return;
+    }
+    profiles
+        .entry(id.to_string())
+        .or_insert_with(|| config.clone());
+}
+
 fn validate_device_bindings(ast: &AstRoot, diagnostics: &mut Vec<Diagnostic>) {
     let mut bindings = BTreeSet::new();
     for binding in &ast.device_bindings {
@@ -246,93 +418,6 @@ fn validate_trigger_routes(ast: &AstRoot, diagnostics: &mut Vec<Diagnostic>) {
     }
 }
 
-fn validate_ble_profile_ids(ast: &AstRoot, diagnostics: &mut Vec<Diagnostic>) {
-    let mut ids = BTreeSet::new();
-    for function in &ast.functions {
-        validate_ble_profile_ids_in(
-            &function.statements,
-            &mut ids,
-            function.span.start,
-            function.span.end,
-            diagnostics,
-        );
-    }
-    for handler in &ast.handlers {
-        validate_ble_profile_ids_in(
-            &handler.statements,
-            &mut ids,
-            handler.span.start,
-            handler.span.end,
-            diagnostics,
-        );
-    }
-    for screen in &ast.screens {
-        validate_ble_profile_ids_in(
-            &screen.statements,
-            &mut ids,
-            screen.span.start,
-            screen.span.end,
-            diagnostics,
-        );
-    }
-    for trigger_block in &ast.trigger_blocks {
-        validate_ble_profile_ids_in(
-            &trigger_block.statements,
-            &mut ids,
-            trigger_block.span.start,
-            trigger_block.span.end,
-            diagnostics,
-        );
-    }
-}
-
-fn validate_ble_profile_ids_in(
-    statements: &[IrStatement],
-    ids: &mut BTreeSet<String>,
-    start: usize,
-    end: usize,
-    diagnostics: &mut Vec<Diagnostic>,
-) {
-    for statement in statements {
-        match statement {
-            IrStatement::ServiceBleStart { id, .. } => {
-                if !ids.insert(id.clone()) {
-                    diagnostics.push(error(
-                        "E_DUPLICATE_BLE_PROFILE_ID",
-                        "BLE profile ids must be unique",
-                        start,
-                        end,
-                    ));
-                }
-            }
-            IrStatement::ServiceHttpStart { id, .. } => {
-                if !ids.insert(id.clone()) {
-                    diagnostics.push(error(
-                        "E_DUPLICATE_HTTP_PROFILE_ID",
-                        "HTTP profile ids must be unique",
-                        start,
-                        end,
-                    ));
-                }
-            }
-            IrStatement::If {
-                then_statements,
-                else_statements,
-                ..
-            } => {
-                validate_ble_profile_ids_in(then_statements, ids, start, end, diagnostics);
-                validate_ble_profile_ids_in(else_statements, ids, start, end, diagnostics);
-            }
-            IrStatement::Repeat { statements, .. }
-            | IrStatement::For { statements, .. }
-            | IrStatement::DebugBlock { statements } => {
-                validate_ble_profile_ids_in(statements, ids, start, end, diagnostics);
-            }
-            _ => {}
-        }
-    }
-}
-
 fn validate_duplicate_params(
     function: &crate::ast::AstFunction,
     diagnostics: &mut Vec<Diagnostic>,
@@ -387,78 +472,6 @@ fn validate_trigger_statements(
                 end,
             )),
         }
-    }
-}
-
-fn validate_ble_start(
-    profile: &str,
-    id: &str,
-    accept: &[String],
-    events: &BTreeMap<String, String>,
-    start: usize,
-    end: usize,
-    diagnostics: &mut Vec<Diagnostic>,
-) {
-    let mut invalid = false;
-    if profile != "file-transfer" {
-        invalid = true;
-    }
-    if id.is_empty() {
-        invalid = true;
-    }
-    if accept.is_empty() || !accept.iter().all(|extension| extension.starts_with('.')) {
-        invalid = true;
-    }
-    if events
-        .get("complete")
-        .map_or(true, |event| event.is_empty())
-        || events.values().any(|event| event.is_empty())
-    {
-        invalid = true;
-    }
-    if invalid {
-        diagnostics.push(error(
-            "E_BLE_PROFILE",
-            "service.ble.start requires profile file-transfer, a non-empty id, accepted extensions, and a complete event route",
-            start,
-            end,
-        ));
-    }
-}
-
-fn validate_http_start(
-    profile: &str,
-    id: &str,
-    accept: &[String],
-    events: &BTreeMap<String, String>,
-    start: usize,
-    end: usize,
-    diagnostics: &mut Vec<Diagnostic>,
-) {
-    let mut invalid = false;
-    if profile != "file-upload" {
-        invalid = true;
-    }
-    if id.is_empty() {
-        invalid = true;
-    }
-    if accept.is_empty() || !accept.iter().all(|extension| extension.starts_with('.')) {
-        invalid = true;
-    }
-    if events
-        .get("complete")
-        .map_or(true, |event| event.is_empty())
-        || events.values().any(|event| event.is_empty())
-    {
-        invalid = true;
-    }
-    if invalid {
-        diagnostics.push(error(
-            "E_HTTP_PROFILE",
-            "service.http.start requires profile file-upload, a non-empty id, accepted extensions, and a complete event route",
-            start,
-            end,
-        ));
     }
 }
 
@@ -701,24 +714,6 @@ fn validate_statement_names(
             IrStatement::AppInstall { file_ref, .. } => {
                 validate_expr_names(file_ref, state_names, visible, start, end, diagnostics);
             }
-            IrStatement::ServiceBleStart {
-                profile,
-                id,
-                accept,
-                events,
-            } => {
-                validate_ble_start(profile, id, accept, events, start, end, diagnostics);
-            }
-            IrStatement::ServiceBleStop => {}
-            IrStatement::ServiceHttpStart {
-                profile,
-                id,
-                accept,
-                events,
-            } => {
-                validate_http_start(profile, id, accept, events, start, end, diagnostics);
-            }
-            IrStatement::ServiceHttpStop => {}
             IrStatement::ServicePowerSleep { wake_after_ms } => {
                 validate_expr_names(wake_after_ms, state_names, visible, start, end, diagnostics);
             }
@@ -955,10 +950,6 @@ fn statement_is_render_impure(
         | IrStatement::AppInstall { .. }
         | IrStatement::ServiceTimerEvery { .. }
         | IrStatement::ServiceTimerAfter { .. }
-        | IrStatement::ServiceBleStart { .. }
-        | IrStatement::ServiceBleStop
-        | IrStatement::ServiceHttpStart { .. }
-        | IrStatement::ServiceHttpStop
         | IrStatement::ServicePowerSleep { .. }
         | IrStatement::HardwareGpioWrite { .. }
         | IrStatement::HardwareGpioToggle { .. }
@@ -1164,10 +1155,6 @@ fn validate_debug_block_statements(
             | IrStatement::AppInstall { .. }
             | IrStatement::ServiceTimerEvery { .. }
             | IrStatement::ServiceTimerAfter { .. }
-            | IrStatement::ServiceBleStart { .. }
-            | IrStatement::ServiceBleStop
-            | IrStatement::ServiceHttpStart { .. }
-            | IrStatement::ServiceHttpStop
             | IrStatement::ServicePowerSleep { .. }
             | IrStatement::HardwareGpioWrite { .. }
             | IrStatement::HardwareGpioToggle { .. }
@@ -1277,10 +1264,6 @@ fn statement_uses_any_name(
         | IrStatement::AppArm { app }
         | IrStatement::AppDisarm { app } => expr_uses_any_name(app, names),
         IrStatement::AppInstall { file_ref, .. } => expr_uses_any_name(file_ref, names),
-        IrStatement::ServiceBleStart { .. }
-        | IrStatement::ServiceBleStop
-        | IrStatement::ServiceHttpStart { .. }
-        | IrStatement::ServiceHttpStop => false,
         IrStatement::ServicePowerSleep { wake_after_ms } => {
             expr_uses_any_name(wake_after_ms, names)
         }

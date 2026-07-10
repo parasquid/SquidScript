@@ -16,8 +16,7 @@ const SECTION_SCREENS: u16 = 6;
 const SECTION_APP_META: u16 = 7;
 const SECTION_DEVICE_BINDINGS: u16 = 8;
 const SECTION_TRIGGERS: u16 = 9;
-const SECTION_BLE_PROFILES: u16 = 10;
-const SECTION_HTTP_PROFILES: u16 = 11;
+const SECTION_UPLOAD_PROFILES: u16 = 10;
 
 const OP_PUSH_INT: u8 = 1;
 const OP_PUSH_BOOL: u8 = 2;
@@ -112,10 +111,9 @@ const BUILTIN_FILE_READ_LINES: u8 = 0x92;
 const BUILTIN_FILE_COPY: u8 = 0x93;
 const BUILTIN_FILE_LIST: u8 = 0x94;
 const BUILTIN_SERVICE_POWER_SLEEP: u8 = 0xc0;
-const BUILTIN_SERVICE_BLE_START: u8 = 0xc1;
-const BUILTIN_SERVICE_BLE_STOP: u8 = 0xc2;
-const BUILTIN_SERVICE_HTTP_START: u8 = 0xc3;
-const BUILTIN_SERVICE_HTTP_STOP: u8 = 0xc4;
+const BUILTIN_SERVICE_UPLOAD_START: u8 = 0xc1;
+const BUILTIN_SERVICE_UPLOAD_STOP: u8 = 0xc2;
+const BUILTIN_SERVICE_UPLOAD_STATUS: u8 = 0xc3;
 
 /*
  * Runtime load/execution caps, shared with the VM via the `squidvm-limits`
@@ -346,6 +344,35 @@ pub fn encode_sqbc_with_profile(
 
     check_program_limits(ir, &unit)?;
 
+    let upload_profiles = collect_upload_profiles(ir)?;
+    if !upload_profiles.is_empty() {
+        unit.strings.intern("server")?;
+        for profile in &upload_profiles {
+            unit.strings.intern(profile.id)?;
+            for extension in profile.accept {
+                unit.strings.intern(
+                    extension
+                        .as_str()
+                        .ok_or_else(|| SqbcError::new("upload extension must be a string"))?,
+                )?;
+            }
+            for transport in profile.transports {
+                unit.strings.intern(
+                    transport
+                        .as_str()
+                        .ok_or_else(|| SqbcError::new("upload transport must be a string"))?,
+                )?;
+            }
+            for (kind, event) in profile.events {
+                unit.strings.intern(kind)?;
+                unit.strings.intern(
+                    event
+                        .as_str()
+                        .ok_or_else(|| SqbcError::new("upload event route must be a string"))?,
+                )?;
+            }
+        }
+    }
     let sections = vec![
         (SECTION_APP_META, encode_app_meta(ir, &unit.strings)?),
         (
@@ -357,12 +384,8 @@ pub fn encode_sqbc_with_profile(
         (SECTION_FUNCTIONS, encode_functions(&unit.function_metas)),
         (SECTION_TRIGGERS, encode_triggers(ir, &unit.strings)?),
         (
-            SECTION_BLE_PROFILES,
-            encode_ble_profiles(&collect_ble_profiles(ir), &unit.strings)?,
-        ),
-        (
-            SECTION_HTTP_PROFILES,
-            encode_http_profiles(&collect_http_profiles(ir), &unit.strings)?,
+            SECTION_UPLOAD_PROFILES,
+            encode_upload_profiles(&upload_profiles, &unit.strings)?,
         ),
         (SECTION_HANDLERS, encode_handlers(&unit.handler_metas)),
         (SECTION_SCREENS, encode_screens(&unit.screen_metas)),
@@ -562,42 +585,6 @@ fn collect_statement_strings(
                 strings.intern(event)?;
                 collect_expr_strings(delay_ms, strings)?;
             }
-            IrStatement::ServiceBleStart {
-                profile,
-                id,
-                accept,
-                events,
-            } => {
-                strings.intern(profile)?;
-                strings.intern(id)?;
-                strings.intern("server")?;
-                for extension in accept {
-                    strings.intern(extension)?;
-                }
-                for (kind, event) in events {
-                    strings.intern(kind)?;
-                    strings.intern(event)?;
-                }
-            }
-            IrStatement::ServiceBleStop => {}
-            IrStatement::ServiceHttpStart {
-                profile,
-                id,
-                accept,
-                events,
-            } => {
-                strings.intern(profile)?;
-                strings.intern(id)?;
-                strings.intern("server")?;
-                for extension in accept {
-                    strings.intern(extension)?;
-                }
-                for (kind, event) in events {
-                    strings.intern(kind)?;
-                    strings.intern(event)?;
-                }
-            }
-            IrStatement::ServiceHttpStop => {}
             IrStatement::ServicePowerSleep { wake_after_ms } => {
                 collect_expr_strings(wake_after_ms, strings)?;
             }
@@ -848,6 +835,10 @@ fn compile_statement(
             emit(&mut unit.code, OP_RETURN);
         }
         IrStatement::Call { name, args } => {
+            if compile_upload_call(unit, name, args)? {
+                emit(&mut unit.code, OP_POP);
+                return Ok(());
+            }
             for arg in args {
                 compile_expr(unit, frame, arg)?;
             }
@@ -926,20 +917,6 @@ fn compile_statement(
             emit_string(unit, event)?;
             compile_expr(unit, frame, delay_ms)?;
             emit_builtin(&mut unit.code, BUILTIN_SERVICE_TIMER_AFTER);
-        }
-        IrStatement::ServiceBleStart { id, .. } => {
-            emit_string(unit, id)?;
-            emit_builtin(&mut unit.code, BUILTIN_SERVICE_BLE_START);
-        }
-        IrStatement::ServiceBleStop => {
-            emit_builtin(&mut unit.code, BUILTIN_SERVICE_BLE_STOP);
-        }
-        IrStatement::ServiceHttpStart { id, .. } => {
-            emit_string(unit, id)?;
-            emit_builtin(&mut unit.code, BUILTIN_SERVICE_HTTP_START);
-        }
-        IrStatement::ServiceHttpStop => {
-            emit_builtin(&mut unit.code, BUILTIN_SERVICE_HTTP_STOP);
         }
         IrStatement::ServicePowerSleep { wake_after_ms } => {
             compile_expr(unit, frame, wake_after_ms)?;
@@ -1411,6 +1388,9 @@ fn compile_expr(
             Ok(())
         }
         IrExpr::Call { name, args } => {
+            if compile_upload_call(unit, name, args)? {
+                return Ok(());
+            }
             if name == "binbook.chapters" {
                 compile_binbook_chapters(unit, frame, args)?;
                 return Ok(());
@@ -1456,6 +1436,34 @@ fn emit_string(unit: &mut CompileUnit, value: &str) -> Result<(), SqbcError> {
     emit(&mut unit.code, OP_PUSH_STRING);
     write_u16(&mut unit.code, id);
     Ok(())
+}
+
+fn compile_upload_call(
+    unit: &mut CompileUnit,
+    name: &str,
+    args: &[IrExpr],
+) -> Result<bool, SqbcError> {
+    match name {
+        "service.upload.start" => {
+            let profile = upload_profile_from_args(args)?;
+            emit_string(unit, profile.id)?;
+            emit_builtin(&mut unit.code, BUILTIN_SERVICE_UPLOAD_START);
+            Ok(true)
+        }
+        "service.upload.stop" if args.is_empty() => {
+            emit_builtin(&mut unit.code, BUILTIN_SERVICE_UPLOAD_STOP);
+            Ok(true)
+        }
+        "service.upload.status" if args.is_empty() => {
+            emit_builtin(&mut unit.code, BUILTIN_SERVICE_UPLOAD_STATUS);
+            Ok(true)
+        }
+        "service.upload.stop" | "service.upload.status" => Err(SqbcError::new(format!(
+            "{name} expects 0 arguments, got {}",
+            args.len()
+        ))),
+        _ => Ok(false),
+    }
 }
 
 fn compile_literal(
@@ -1718,200 +1726,190 @@ fn encode_triggers(ir: &IrProgram, strings: &StringTable) -> Result<Vec<u8>, Sqb
     Ok(out)
 }
 
-/// A BLE file-transfer profile registered by a `service.ble.start` statement.
-/// The config is a compile-time literal encoded into [`SECTION_BLE_PROFILES`];
-/// the firmware looks it up by `id` when the start builtin runs at runtime.
-struct BleProfile<'a> {
-    profile: &'a str,
+/// A transport-neutral upload profile declared by `service.upload.start`.
+struct UploadProfile<'a> {
     id: &'a str,
-    accept: &'a [String],
-    events: &'a BTreeMap<String, String>,
+    accept: &'a [serde_json::Value],
+    transports: &'a [serde_json::Value],
+    events: &'a serde_json::Map<String, serde_json::Value>,
 }
 
-struct HttpProfile<'a> {
-    profile: &'a str,
-    id: &'a str,
-    accept: &'a [String],
-    events: &'a BTreeMap<String, String>,
-}
-
-/// Walk every statement body in the program and collect the unique
-/// `service.ble.start` configs in document order, keyed by `id`. The firmware
-/// resolves a started profile by `id`, so a repeated `id` is encoded once.
-fn collect_ble_profiles(ir: &IrProgram) -> Vec<BleProfile<'_>> {
+fn collect_upload_profiles(ir: &IrProgram) -> Result<Vec<UploadProfile<'_>>, SqbcError> {
     let mut seen = BTreeSet::new();
     let mut out = Vec::new();
     for function in &ir.functions {
-        collect_ble_profiles_in(&function.statements, &mut seen, &mut out);
+        collect_upload_profiles_in(&function.statements, &mut seen, &mut out)?;
     }
     for handler in &ir.handlers {
-        collect_ble_profiles_in(&handler.statements, &mut seen, &mut out);
+        collect_upload_profiles_in(&handler.statements, &mut seen, &mut out)?;
     }
     for screen in &ir.screens {
-        collect_ble_profiles_in(&screen.statements, &mut seen, &mut out);
-    }
-    out
-}
-
-fn collect_ble_profiles_in<'a>(
-    statements: &'a [IrStatement],
-    seen: &mut BTreeSet<String>,
-    out: &mut Vec<BleProfile<'a>>,
-) {
-    for statement in statements {
-        match statement {
-            IrStatement::ServiceBleStart {
-                profile,
-                id,
-                accept,
-                events,
-            } => {
-                if seen.insert(id.clone()) {
-                    out.push(BleProfile {
-                        profile,
-                        id,
-                        accept,
-                        events,
-                    });
-                }
-            }
-            IrStatement::If {
-                then_statements,
-                else_statements,
-                ..
-            } => {
-                collect_ble_profiles_in(then_statements, seen, out);
-                collect_ble_profiles_in(else_statements, seen, out);
-            }
-            IrStatement::Repeat { statements, .. }
-            | IrStatement::For { statements, .. }
-            | IrStatement::DebugBlock { statements } => {
-                collect_ble_profiles_in(statements, seen, out);
-            }
-            _ => {}
-        }
-    }
-}
-
-fn collect_http_profiles(ir: &IrProgram) -> Vec<HttpProfile<'_>> {
-    let mut seen = BTreeSet::new();
-    let mut out = Vec::new();
-    for function in &ir.functions {
-        collect_http_profiles_in(&function.statements, &mut seen, &mut out);
-    }
-    for handler in &ir.handlers {
-        collect_http_profiles_in(&handler.statements, &mut seen, &mut out);
-    }
-    for screen in &ir.screens {
-        collect_http_profiles_in(&screen.statements, &mut seen, &mut out);
-    }
-    out
-}
-
-fn collect_http_profiles_in<'a>(
-    statements: &'a [IrStatement],
-    seen: &mut BTreeSet<String>,
-    out: &mut Vec<HttpProfile<'a>>,
-) {
-    for statement in statements {
-        match statement {
-            IrStatement::ServiceHttpStart {
-                profile,
-                id,
-                accept,
-                events,
-            } => {
-                if seen.insert(id.clone()) {
-                    out.push(HttpProfile {
-                        profile,
-                        id,
-                        accept,
-                        events,
-                    });
-                }
-            }
-            IrStatement::If {
-                then_statements,
-                else_statements,
-                ..
-            } => {
-                collect_http_profiles_in(then_statements, seen, out);
-                collect_http_profiles_in(else_statements, seen, out);
-            }
-            IrStatement::Repeat { statements, .. }
-            | IrStatement::For { statements, .. }
-            | IrStatement::DebugBlock { statements } => {
-                collect_http_profiles_in(statements, seen, out);
-            }
-            _ => {}
-        }
-    }
-}
-
-fn encode_ble_profiles(
-    profiles: &[BleProfile<'_>],
-    strings: &StringTable,
-) -> Result<Vec<u8>, SqbcError> {
-    let mut out = Vec::new();
-    write_u16(
-        &mut out,
-        u16::try_from(profiles.len()).map_err(|_| SqbcError::new("too many BLE profiles"))?,
-    );
-    for profile in profiles {
-        write_u16(&mut out, string_id(strings, profile.profile)?);
-        write_u16(&mut out, string_id(strings, profile.id)?);
-        // Server is the only role; encode it as a fixed string for the firmware reader.
-        write_u16(&mut out, string_id(strings, "server")?);
-        write_u16(
-            &mut out,
-            u16::try_from(profile.accept.len())
-                .map_err(|_| SqbcError::new("too many BLE accept extensions"))?,
-        );
-        for extension in profile.accept {
-            write_u16(&mut out, string_id(strings, extension)?);
-        }
-        write_u16(
-            &mut out,
-            u16::try_from(profile.events.len())
-                .map_err(|_| SqbcError::new("too many BLE event routes"))?,
-        );
-        for (kind, event) in profile.events {
-            write_u16(&mut out, string_id(strings, kind)?);
-            write_u16(&mut out, string_id(strings, event)?);
-        }
+        collect_upload_profiles_in(&screen.statements, &mut seen, &mut out)?;
     }
     Ok(out)
 }
 
-fn encode_http_profiles(
-    profiles: &[HttpProfile<'_>],
+fn collect_upload_profiles_in<'a>(
+    statements: &'a [IrStatement],
+    seen: &mut BTreeSet<String>,
+    out: &mut Vec<UploadProfile<'a>>,
+) -> Result<(), SqbcError> {
+    for statement in statements {
+        match statement {
+            IrStatement::Let { expr, .. }
+            | IrStatement::Assign { expr, .. }
+            | IrStatement::StateAssign { expr, .. } => {
+                collect_upload_profile_expr(expr, seen, out)?;
+            }
+            IrStatement::Call { name, args } if name == "service.upload.start" => {
+                let profile = upload_profile_from_args(args)?;
+                if seen.insert(profile.id.to_string()) {
+                    out.push(profile);
+                }
+            }
+            IrStatement::If {
+                condition,
+                then_statements,
+                else_statements,
+            } => {
+                collect_upload_profile_expr(condition, seen, out)?;
+                collect_upload_profiles_in(then_statements, seen, out)?;
+                collect_upload_profiles_in(else_statements, seen, out)?;
+            }
+            IrStatement::Repeat { count, statements } => {
+                collect_upload_profile_expr(count, seen, out)?;
+                collect_upload_profiles_in(statements, seen, out)?;
+            }
+            IrStatement::For {
+                list,
+                max,
+                statements,
+                ..
+            } => {
+                collect_upload_profile_expr(list, seen, out)?;
+                if let Some(max) = max {
+                    collect_upload_profile_expr(max, seen, out)?;
+                }
+                collect_upload_profiles_in(statements, seen, out)?;
+            }
+            IrStatement::DebugBlock { statements } => {
+                collect_upload_profiles_in(statements, seen, out)?
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn collect_upload_profile_expr<'a>(
+    expr: &'a IrExpr,
+    seen: &mut BTreeSet<String>,
+    out: &mut Vec<UploadProfile<'a>>,
+) -> Result<(), SqbcError> {
+    if let IrExpr::Call { name, args } = expr {
+        if name == "service.upload.start" {
+            let profile = upload_profile_from_args(args)?;
+            if seen.insert(profile.id.to_string()) {
+                out.push(profile);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn upload_profile_from_args(args: &[IrExpr]) -> Result<UploadProfile<'_>, SqbcError> {
+    let [IrExpr::Literal { value }] = args else {
+        return Err(SqbcError::new(
+            "service.upload.start requires one static config object",
+        ));
+    };
+    let object = value
+        .as_object()
+        .ok_or_else(|| SqbcError::new("service.upload.start requires one static config object"))?;
+    let id = object
+        .get("id")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| SqbcError::new("upload profile requires id"))?;
+    let accept = object
+        .get("accept")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| SqbcError::new("upload profile requires accepted extensions"))?;
+    let transports = object
+        .get("transports")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| SqbcError::new("upload profile requires transports"))?;
+    let events = object
+        .get("events")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| SqbcError::new("upload profile requires event routes"))?;
+    Ok(UploadProfile {
+        id,
+        accept,
+        transports,
+        events,
+    })
+}
+
+fn encode_upload_profiles(
+    profiles: &[UploadProfile<'_>],
     strings: &StringTable,
 ) -> Result<Vec<u8>, SqbcError> {
     let mut out = Vec::new();
     write_u16(
         &mut out,
-        u16::try_from(profiles.len()).map_err(|_| SqbcError::new("too many HTTP profiles"))?,
+        u16::try_from(profiles.len()).map_err(|_| SqbcError::new("too many upload profiles"))?,
     );
     for profile in profiles {
-        write_u16(&mut out, string_id(strings, profile.profile)?);
         write_u16(&mut out, string_id(strings, profile.id)?);
         write_u16(&mut out, string_id(strings, "server")?);
         write_u16(
             &mut out,
             u16::try_from(profile.accept.len())
-                .map_err(|_| SqbcError::new("too many HTTP accept extensions"))?,
+                .map_err(|_| SqbcError::new("too many upload accept extensions"))?,
         );
         for extension in profile.accept {
-            write_u16(&mut out, string_id(strings, extension)?);
+            write_u16(
+                &mut out,
+                string_id(
+                    strings,
+                    extension
+                        .as_str()
+                        .ok_or_else(|| SqbcError::new("upload extension must be a string"))?,
+                )?,
+            );
+        }
+        write_u16(
+            &mut out,
+            u16::try_from(profile.transports.len())
+                .map_err(|_| SqbcError::new("too many upload transports"))?,
+        );
+        for transport in profile.transports {
+            write_u16(
+                &mut out,
+                string_id(
+                    strings,
+                    transport
+                        .as_str()
+                        .ok_or_else(|| SqbcError::new("upload transport must be a string"))?,
+                )?,
+            );
         }
         write_u16(
             &mut out,
             u16::try_from(profile.events.len())
-                .map_err(|_| SqbcError::new("too many HTTP event routes"))?,
+                .map_err(|_| SqbcError::new("too many upload event routes"))?,
         );
         for (kind, event) in profile.events {
             write_u16(&mut out, string_id(strings, kind)?);
-            write_u16(&mut out, string_id(strings, event)?);
+            write_u16(
+                &mut out,
+                string_id(
+                    strings,
+                    event
+                        .as_str()
+                        .ok_or_else(|| SqbcError::new("upload event route must be a string"))?,
+                )?,
+            );
         }
     }
     Ok(out)

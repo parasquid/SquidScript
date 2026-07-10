@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IrProgram {
@@ -108,24 +107,6 @@ pub enum IrStatement {
     ServiceTimerEvery { event: String, interval_ms: IrExpr },
     #[serde(rename = "service.timer.after")]
     ServiceTimerAfter { event: String, delay_ms: IrExpr },
-    #[serde(rename = "service.ble.start")]
-    ServiceBleStart {
-        profile: String,
-        id: String,
-        accept: Vec<String>,
-        events: BTreeMap<String, String>,
-    },
-    #[serde(rename = "service.ble.stop")]
-    ServiceBleStop,
-    #[serde(rename = "service.http.start")]
-    ServiceHttpStart {
-        profile: String,
-        id: String,
-        accept: Vec<String>,
-        events: BTreeMap<String, String>,
-    },
-    #[serde(rename = "service.http.stop")]
-    ServiceHttpStop,
     #[serde(rename = "service.power.sleep")]
     ServicePowerSleep { wake_after_ms: IrExpr },
     #[serde(rename = "assign")]

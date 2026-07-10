@@ -220,6 +220,27 @@ impl Parser<'_> {
                         name: format!("service.wifi.{action}"),
                         args: self.parse_call_args(builder),
                     }
+                } else if name == "service" && namespace == "upload" && self.at_kind(TokenKind::Dot)
+                {
+                    self.bump(builder);
+                    self.consume_ws(builder);
+                    let action = self.consume_ident(builder).unwrap_or_default();
+                    self.consume_ws(builder);
+                    let args = if action == "start" {
+                        if self.at_kind(TokenKind::OpenParen) {
+                            self.bump(builder);
+                        }
+                        self.consume_ws(builder);
+                        let config = self.parse_static_options_object(builder);
+                        self.consume_call_tail(builder);
+                        vec![IrExpr::Literal { value: config }]
+                    } else {
+                        self.parse_call_args(builder)
+                    };
+                    IrExpr::Call {
+                        name: format!("service.upload.{action}"),
+                        args,
+                    }
                 } else if name == "device" && namespace == "config" && self.at_kind(TokenKind::Dot)
                 {
                     self.bump(builder);

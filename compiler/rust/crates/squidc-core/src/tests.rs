@@ -35,6 +35,28 @@ fn sqbc_sections(bytes: &[u8]) -> Vec<(u16, usize, usize)> {
         .collect()
 }
 
+fn sqbc_strings(bytes: &[u8]) -> Vec<String> {
+    let (_, offset, len) = sqbc_sections(bytes)
+        .into_iter()
+        .find(|(kind, _, _)| *kind == 1)
+        .expect("string section should be present");
+    let section = &bytes[offset..offset + len];
+    let count = u16::from_le_bytes(section[0..2].try_into().unwrap()) as usize;
+    let mut cursor = 2;
+    (0..count)
+        .map(|_| {
+            let string_len =
+                u16::from_le_bytes(section[cursor..cursor + 2].try_into().unwrap()) as usize;
+            cursor += 2;
+            let value = std::str::from_utf8(&section[cursor..cursor + string_len])
+                .unwrap()
+                .to_string();
+            cursor += string_len;
+            value
+        })
+        .collect()
+}
+
 fn unique_test_dir(prefix: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
     path.push(format!(
@@ -1050,7 +1072,7 @@ fn encodes_reference_sqbc_for_headless_counter() {
         u32::from_le_bytes(sqbc[6..10].try_into().unwrap()) as usize,
         sqbc.len()
     );
-    assert_eq!(u32::from_le_bytes(sqbc[10..14].try_into().unwrap()), 11);
+    assert_eq!(u32::from_le_bytes(sqbc[10..14].try_into().unwrap()), 10);
     assert_eq!(
         sqbc::read_app_id(&sqbc).unwrap().as_deref(),
         Some("headless-counter")
@@ -1274,7 +1296,7 @@ screen("main") {
     });
     assert!(output.ok, "{:?}", output.diagnostics);
     let sqbc = sqbc::encode_sqbc(&output.ir.unwrap()).unwrap();
-    assert_eq!(u32::from_le_bytes(sqbc[10..14].try_into().unwrap()), 11);
+    assert_eq!(u32::from_le_bytes(sqbc[10..14].try_into().unwrap()), 10);
 }
 
 #[test]
@@ -2051,23 +2073,20 @@ fn rejects_handler_code_block_over_vm_chunk_limit() {
 }
 
 #[test]
-fn parses_service_ble_start_and_stop_statements() {
-    let source = r#"app "ble-install"
+fn parses_service_upload_start_expression_and_bare_calls() {
+    let source = r#"app "upload-api"
 event.on("app.start") {
-  service.ble.start("file-transfer", {
-    id: "sqbc-install",
-    accept: [".sqbc"],
-    events: {
-      complete: "ble.file.complete",
-      error: "ble.file.error"
-    }
+  let started = service.upload.start({
+    id: "book-upload"
+    accept: [".binbook", ".sqbc"]
+    transports: ["http", "ble"]
+    events: { complete: "upload.complete" }
   })
+  debug.print(started.ok, started.httpPath)
+  service.upload.stop()
 }
-event.on("app.exit") {
-  service.ble.stop()
-}
-event.on("ble.file.complete", ev) {
-  debug.print(ev.id)
+event.on("upload.complete", ev) {
+  debug.print(ev.transport, ev.name, ev.bytesReceived, ev.totalBytes, ev.id)
 }
 screen("main") {}
 "#;
@@ -2077,169 +2096,99 @@ screen("main") {}
     });
     assert!(output.ok, "{:?}", output.diagnostics);
     let ir = output.ir.unwrap();
-    // service.ble.start/stop are statements, not triggers.
-    assert!(ir.triggers.is_empty());
-    assert_eq!(ir.handlers[0].event, "app.start");
-    match &ir.handlers[0].statements[0] {
-        IrStatement::ServiceBleStart {
-            profile,
-            id,
-            accept,
-            events,
-        } => {
-            assert_eq!(profile, "file-transfer");
-            assert_eq!(id, "sqbc-install");
-            assert_eq!(accept, &vec![".sqbc".to_string()]);
-            assert_eq!(
-                events.get("complete").map(String::as_str),
-                Some("ble.file.complete")
-            );
-        }
-        other => panic!("expected ServiceBleStart, got {other:?}"),
-    }
-    assert_eq!(ir.handlers[1].event, "app.exit");
+    let IrStatement::Let {
+        expr: IrExpr::Call { name, args },
+        ..
+    } = &ir.handlers[0].statements[0]
+    else {
+        panic!("expected service.upload.start let expression");
+    };
+    assert_eq!(name, "service.upload.start");
+    assert_eq!(args.len(), 1);
+    let IrExpr::Literal { value: config } = &args[0] else {
+        panic!("expected static upload config object");
+    };
+    assert_eq!(config["id"], "book-upload");
+    assert_eq!(config["accept"], serde_json::json!([".binbook", ".sqbc"]));
+    assert_eq!(config["transports"], serde_json::json!(["http", "ble"]));
+    assert_eq!(config["events"]["complete"], "upload.complete");
     assert!(matches!(
-        ir.handlers[1].statements[0],
-        IrStatement::ServiceBleStop
+        &ir.handlers[0].statements[2],
+        IrStatement::Call { name, args }
+            if name == "service.upload.stop" && args.is_empty()
     ));
 }
 
 #[test]
-fn parses_service_http_start_and_stop_statements() {
-    let source = r#"app "http-upload"
-event.on("app.start") {
-  service.http.start("file-upload", {
-    id: "binbook-upload",
-    accept: [".binbook"],
-    events: {
-      complete: "http.file.complete",
-      error: "http.file.error"
+fn rejects_invalid_service_upload_profiles() {
+    let invalid_configs = [
+        r#"{ id: "", accept: [".binbook"], transports: ["http"], events: { complete: "upload.complete" } }"#,
+        r#"{ id: "books", accept: [], transports: ["http"], events: { complete: "upload.complete" } }"#,
+        r#"{ id: "books", accept: ["binbook"], transports: ["http"], events: { complete: "upload.complete" } }"#,
+        r#"{ id: "books", accept: [".binbook"], transports: [], events: { complete: "upload.complete" } }"#,
+        r#"{ id: "books", accept: [".binbook"], transports: ["serial"], events: { complete: "upload.complete" } }"#,
+        r#"{ id: "books", accept: [".binbook"], transports: ["http"], events: {} }"#,
+        r#"{ id: "books", accept: [".binbook"], transports: ["http"], events: { complete: "" } }"#,
+    ];
+    for config in invalid_configs {
+        let source = format!(
+            "app \"upload-api\"\nevent.on(\"app.start\") {{ service.upload.start({config}) }}\nscreen(\"main\") {{}}\n"
+        );
+        let output = compile(CompileRequest {
+            source,
+            target_id: PORTABLE_TARGET_ID.to_string(),
+        });
+        assert!(
+            output.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "E_UPLOAD_PROFILE"
+                    && diagnostic.message == "service.upload.start requires a non-empty id, accepted extensions, supported transports, and a complete event route"
+            }),
+            "missing upload diagnostic for {config}: {:?}",
+            output.diagnostics
+        );
     }
-  })
-}
-event.on("app.exit") {
-  service.http.stop()
-}
-event.on("http.file.complete", ev) {
-  let copied = file.copy(ev.upload, { library: "books", name: ev.name })
-  debug.print(copied.ref)
-}
-screen("main") {}
-"#;
-    let output = compile(CompileRequest {
-        source: source.to_string(),
-        target_id: PORTABLE_TARGET_ID.to_string(),
-    });
-    assert!(output.ok, "{:?}", output.diagnostics);
-    let ir = output.ir.unwrap();
-    assert!(ir.triggers.is_empty());
-    assert_eq!(ir.handlers[0].event, "app.start");
-    match &ir.handlers[0].statements[0] {
-        IrStatement::ServiceHttpStart {
-            profile,
-            id,
-            accept,
-            events,
-        } => {
-            assert_eq!(profile, "file-upload");
-            assert_eq!(id, "binbook-upload");
-            assert_eq!(accept, &vec![".binbook".to_string()]);
-            assert_eq!(
-                events.get("complete").map(String::as_str),
-                Some("http.file.complete")
-            );
-        }
-        other => panic!("expected ServiceHttpStart, got {other:?}"),
-    }
-    assert_eq!(ir.handlers[1].event, "app.exit");
-    assert!(matches!(
-        ir.handlers[1].statements[0],
-        IrStatement::ServiceHttpStop
-    ));
 }
 
 #[test]
-fn rejects_service_ble_start_without_id() {
-    let source = r#"app "ble-install"
+fn rejects_service_upload_profile_id_reused_with_different_config() {
+    let source = r#"app "upload-api"
 event.on("app.start") {
-  service.ble.start("file-transfer", {
-    accept: [".sqbc"],
-    events: { complete: "ble.file.complete" }
-  })
+  service.upload.start({ id: "books", accept: [".binbook"], transports: ["http"], events: { complete: "upload.complete" } })
+  service.upload.start({ id: "books", accept: [".sqbc"], transports: ["ble"], events: { complete: "upload.complete" } })
 }
+event.on("upload.complete") {}
 screen("main") {}
 "#;
     let output = compile(CompileRequest {
         source: source.to_string(),
         target_id: PORTABLE_TARGET_ID.to_string(),
     });
-    assert!(!output.ok);
-    assert!(output
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == "E_BLE_PROFILE"));
+    assert!(output.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "E_UPLOAD_PROFILE"
+            && diagnostic.message == "service.upload.start requires a non-empty id, accepted extensions, supported transports, and a complete event route"
+    }), "{:?}", output.diagnostics);
 }
 
 #[test]
-fn rejects_service_ble_start_without_complete_event_route() {
-    let source = r#"app "ble-install"
+fn sqbc_upload_profile_uses_unified_section_and_builtins() {
+    let source = r#"app "upload-api"
 event.on("app.start") {
-  service.ble.start("file-transfer", {
-    id: "sqbc-install",
-    accept: [".sqbc"],
-    events: { error: "ble.file.error" }
+  let started = service.upload.start({
+    id: "book-upload"
+    accept: [".binbook", ".sqbc"]
+    transports: ["http", "ble"]
+    events: { complete: "upload.complete" }
   })
-}
-screen("main") {}
-"#;
-    let output = compile(CompileRequest {
-        source: source.to_string(),
-        target_id: PORTABLE_TARGET_ID.to_string(),
-    });
-    assert!(!output.ok);
-    assert!(output
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == "E_BLE_PROFILE"));
-}
-
-#[test]
-fn rejects_service_ble_start_in_app_triggers() {
-    let source = r#"app "ble-install"
-app.triggers {
-  service.ble.start("file-transfer", {
-    id: "sqbc-install",
-    accept: [".sqbc"],
-    events: { complete: "ble.file.complete" }
+  service.upload.start({
+    id: "book-upload"
+    accept: [".binbook", ".sqbc"]
+    transports: ["http", "ble"]
+    events: { complete: "upload.complete" }
   })
+  let status = service.upload.status()
+  service.upload.stop()
 }
-event.on("app.start") {}
-screen("main") {}
-"#;
-    let output = compile(CompileRequest {
-        source: source.to_string(),
-        target_id: PORTABLE_TARGET_ID.to_string(),
-    });
-    assert!(!output.ok);
-    assert!(output
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.code == "E_APP_TRIGGER_STATEMENT"));
-}
-
-#[test]
-fn encodes_ble_profile_metadata_from_start_statement() {
-    let source = r#"app "ble-install"
-event.on("app.start") {
-  service.ble.start("file-transfer", {
-    id: "sqbc-install",
-    accept: [".sqbc"],
-    events: {
-      complete: "ble.file.complete",
-      error: "ble.file.error"
-    }
-  })
-}
+event.on("upload.complete", ev) { debug.print(ev.transport) }
 screen("main") {}
 "#;
     let output = compile(CompileRequest {
@@ -2249,12 +2198,41 @@ screen("main") {}
     assert!(output.ok, "{:?}", output.diagnostics);
     let bytes = sqbc::encode_sqbc(&output.ir.unwrap()).expect("SQBC should encode");
     let sections = sqbc_sections(&bytes);
-    let ble = sections
+    let upload = sections
         .iter()
         .find(|(kind, _, _)| *kind == 10)
-        .expect("BLE profile section should be present");
-    // count (u16) == 1 profile encoded from the start statement.
-    assert!(ble.2 > 2);
+        .expect("upload profile section should be present");
+    assert!(sections.iter().all(|(kind, _, _)| *kind != 11));
+    let strings = sqbc_strings(&bytes);
+    let string = |id: u16| strings[id as usize].as_str();
+    let data = &bytes[upload.1..upload.1 + upload.2];
+    let u16_at = |offset: usize| u16::from_le_bytes(data[offset..offset + 2].try_into().unwrap());
+    assert_eq!(u16_at(0), 1);
+    assert_eq!(string(u16_at(2)), "book-upload");
+    assert_eq!(string(u16_at(4)), "server");
+    assert_eq!(u16_at(6), 2);
+    assert_eq!(string(u16_at(8)), ".binbook");
+    assert_eq!(string(u16_at(10)), ".sqbc");
+    assert_eq!(u16_at(12), 2);
+    assert_eq!(string(u16_at(14)), "http");
+    assert_eq!(string(u16_at(16)), "ble");
+    assert_eq!(u16_at(18), 1);
+    assert_eq!(string(u16_at(20)), "complete");
+    assert_eq!(string(u16_at(22)), "upload.complete");
+
+    let (_, code_offset, code_len) = sections
+        .iter()
+        .copied()
+        .find(|(kind, _, _)| *kind == 5)
+        .unwrap();
+    let code = &bytes[code_offset..code_offset + code_len];
+    assert_eq!(
+        code.windows(2).filter(|bytes| *bytes == [50, 0xc1]).count(),
+        2
+    );
+    assert!(code.windows(3).any(|bytes| bytes == [50, 0xc1, 60]));
+    assert!(code.windows(2).any(|bytes| bytes == [50, 0xc2]));
+    assert!(code.windows(2).any(|bytes| bytes == [50, 0xc3]));
 }
 
 #[test]
@@ -2428,45 +2406,6 @@ screen("main") {}
     assert!(codes.contains(&"E_DUPLICATE_TRIGGER_EVENT"), "{codes:?}");
     assert!(codes.contains(&"E_DUPLICATE_LOCAL"), "{codes:?}");
     assert!(codes.contains(&"E_DUPLICATE_PARAM"), "{codes:?}");
-}
-
-#[test]
-fn reports_trigger_without_handler_and_duplicate_ble_profile_ids() {
-    let source = r#"app "routes"
-app.triggers {
-  service.timer.every("timer.missing", 1000)
-}
-event.on("app.start") {
-  service.ble.start({
-    profile: "file-transfer",
-    id: "inbox",
-    accept: [".txt"],
-    events: { complete: "ble.file.complete" }
-  })
-  service.ble.start({
-    profile: "file-transfer",
-    id: "inbox",
-    accept: [".bin"],
-    events: { complete: "ble.file.complete" }
-  })
-}
-event.on("ble.file.complete", ev) {
-  debug.print(ev.path)
-}
-screen("main") {}
-"#;
-    let output = compile(CompileRequest {
-        source: source.to_string(),
-        target_id: PORTABLE_TARGET_ID.to_string(),
-    });
-    assert!(!output.ok);
-    let codes = output
-        .diagnostics
-        .iter()
-        .map(|diagnostic| diagnostic.code.as_str())
-        .collect::<Vec<_>>();
-    assert!(codes.contains(&"E_TRIGGER_HANDLER"), "{codes:?}");
-    assert!(codes.contains(&"E_DUPLICATE_BLE_PROFILE_ID"), "{codes:?}");
 }
 
 #[test]

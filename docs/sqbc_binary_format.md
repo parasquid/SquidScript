@@ -51,8 +51,7 @@ Initial section kinds:
 7  app metadata
 8  device binding table
 9  timer trigger table
-10 BLE profile trigger table
-11 HTTP profile trigger table
+10 upload profile table
 ```
 
 Initial value tags:
@@ -173,8 +172,9 @@ be refreshed as capability boundaries become clearer.
 0xa0 reserved for service.storage
 0xb0 reserved for service.input
 0xc0 service.power.sleep
-0xc3 service.http.start
-0xc4 service.http.stop
+0xc1 service.upload.start
+0xc2 service.upload.stop
+0xc3 service.upload.status
 0xd0 reserved for service.time
 ```
 
@@ -221,11 +221,11 @@ offset  size  field
 The preload hint is advisory. Firmware may use it to load or retain
 latency-sensitive handler chunks, but app correctness must not depend on it.
 Handler payload parameters are currently used for event records such as
-`event.on("ble.file.complete", ev)`. The BLE file-transfer completion event
+`event.on("upload.complete", ev)`. The upload completion event
 record carries `upload` (a `file.*` reference to the staging file), `name`,
-`bytesReceived`, `totalBytes`, and `id`. Profile records do not carry a `sink`
-field; firmware owns the file ref lifetime, and the app consumes (copy,
-install, log) the file inside the handler before returning.
+`bytesReceived`, `totalBytes`, `id`, and `transport`. Profile records do not
+carry a `sink` field; firmware owns the file ref lifetime, and the app consumes
+(copy, install, log) the file inside the handler before returning.
 
 Trigger table entries are:
 
@@ -241,7 +241,7 @@ The trigger table contains the compiled `app.triggers` declarations for timer
 sources. Firmware reads this section during `app.arm(appId)` and records the
 timer registrations directly.
 
-BLE profile trigger table payload:
+Upload profile table payload:
 
 ```text
 offset  size  field
@@ -253,44 +253,20 @@ Each profile record is:
 
 ```text
 offset  size  field
-0       2     little-endian u16 profile name string id
-2       2     little-endian u16 app-local profile id string id
-4       2     little-endian u16 role string id
-6       2     little-endian u16 accept count
-8       2*n   accepted extension string ids
+0       2     little-endian u16 app-local profile id string id
+2       2     little-endian u16 role string id, fixed string `server`
+4       2     little-endian u16 accept count
+6       2*n   accepted extension string ids
+...     2     little-endian u16 transport count
+...     2*n   transport string ids, `http` and/or `ble`
 ...     2     little-endian u16 event route count
 ...     4*n   event route pairs: kind string id, event string id
 ```
 
-Current BLE profile metadata is emitted for `service.ble.start("file-transfer",
-...)` calls. Firmware reads the profile table when the app starts receive and
-registers the active route under the running app.
-
-HTTP profile trigger table payload:
-
-```text
-offset  size  field
-0       2     little-endian u16 profile count
-...           variable profile records
-```
-
-Each HTTP profile record uses the same shape as a BLE profile record:
-
-```text
-offset  size  field
-0       2     little-endian u16 profile name string id
-2       2     little-endian u16 app-local profile id string id
-4       2     little-endian u16 role string id
-6       2     little-endian u16 accept count
-8       2*n   accepted extension string ids
-...     2     little-endian u16 event route count
-...     4*n   event route pairs: kind string id, event string id
-```
-
-Current HTTP profile metadata is emitted for
-`service.http.start("file-upload", ...)` calls. Zephyr firmware uses that
-metadata to register the app-owned `/upload/<name>` route and dispatch the
-configured completion event with an ephemeral `upload` file reference.
+Profile metadata is emitted for `service.upload.start({...})` calls. Firmware
+looks up the profile by id when the start builtin runs, activates only the
+listed transports, and dispatches the configured completion event with an
+ephemeral `upload` file reference.
 
 Zephyr firmware must install named SQBC apps, start `main`, arm trigger
 registrations, dispatch real timer events, and exercise app-stack behavior.
