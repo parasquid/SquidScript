@@ -129,7 +129,7 @@ run_capture install-transfer cargo run --quiet -p squidc -- app install "${PACKA
 run_capture launch-transfer cargo run --quiet -p squidc -- app launch "${APP_ID}" --port "${PORT}" >/dev/null
 wait_for_contains output-ready "transfer ready" cargo run --quiet -p squidc -- device output --port "${PORT}" >/dev/null
 run_ble_put cargo run --quiet -p squidc -- device ble-put "${DEVICE}" "${PAYLOAD}" --name "${UPLOAD_NAME}" >/dev/null
-wait_for_contains output-done "ble done ${SIZE} ${SIZE}" cargo run --quiet -p squidc -- device output --port "${PORT}" >/dev/null
+wait_for_contains output-done "ble done ${SIZE} ${SIZE} ble" cargo run --quiet -p squidc -- device output --port "${PORT}" >/dev/null
 wait_for_contains output-copy "ble copy true null ${SIZE}" cargo run --quiet -p squidc -- device output --port "${PORT}" >/dev/null
 run_capture content-check cargo run --quiet -p squidc -- device content-check "${UPLOAD_NAME}" --size "${SIZE}" --crc32 "${CRC32}" --port "${PORT}" >/dev/null
 errors_out="$(run_capture errors cargo run --quiet -p squidc -- device errors --port "${PORT}")"

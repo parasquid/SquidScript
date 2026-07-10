@@ -135,7 +135,7 @@ use squidscript_fw_core::radio_lifecycle::RadioKind;
     feature = "native-radio-services",
     feature = "ble"
 ))]
-use squidscript_fw_core::native_runtime::NativeBleRouteError;
+use squidscript_fw_core::native_runtime::{NativeUploadRouteError, NativeUploadTransport};
 
 #[cfg(all(
     target_arch = "riscv32",
@@ -2666,16 +2666,17 @@ async fn run_ble_storage_task(runtime: &'static SharedX4NativeRuntime) {
         match command {
             BleStorageCommand::Begin { session_id, route } => {
                 let mut runtime = runtime.lock().await;
-                let resolved = runtime.resolve_ble_upload_route(route.name.as_str());
+                let resolved =
+                    runtime.resolve_upload_route(route.name.as_str(), NativeUploadTransport::Ble);
                 let active_route = match resolved {
                     Ok(active_route) => active_route,
-                    Err(NativeBleRouteError::RouteAmbiguous) => {
-                        runtime.record_error("ble-route-ambiguous");
+                    Err(NativeUploadRouteError::RouteAmbiguous) => {
+                        runtime.record_error("upload-route-ambiguous");
                         ble_report_status(401, BLE_STATUS_ROUTE_AMBIGUOUS);
                         continue;
                     }
                     Err(_) => {
-                        runtime.record_error("ble-route-mismatch");
+                        runtime.record_error("upload-route-mismatch");
                         ble_report_status(402, BLE_STATUS_ERROR);
                         continue;
                     }
@@ -2686,7 +2687,7 @@ async fn run_ble_storage_task(runtime: &'static SharedX4NativeRuntime) {
                     active_route.complete_event.as_str(),
                     route.total_len,
                 ) else {
-                    runtime.record_error("ble-route-too-large");
+                    runtime.record_error("upload-route-too-large");
                     ble_report_status(403, BLE_STATUS_ERROR);
                     continue;
                 };
@@ -2694,6 +2695,7 @@ async fn run_ble_storage_task(runtime: &'static SharedX4NativeRuntime) {
                     active_route.name.as_str(),
                     active_route.total_len,
                     active_route.profile_id.as_str(),
+                    NativeUploadTransport::Ble,
                 ) {
                     Ok(path) => path,
                     Err(_) => {
@@ -3607,6 +3609,9 @@ fn native_runtime_error_name(
         }
         squidscript_fw_core::native_runtime::NativeRuntimeError::AppIdMismatch => "app_id_mismatch",
         squidscript_fw_core::native_runtime::NativeRuntimeError::Inactive => "inactive",
+        squidscript_fw_core::native_runtime::NativeRuntimeError::UploadSessionActive => {
+            "upload_session_active"
+        }
         squidscript_fw_core::native_runtime::NativeRuntimeError::Vm(_) => "vm_error",
     }
 }
