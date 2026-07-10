@@ -191,9 +191,9 @@ configuration.
   ```text
   nvs,data,nvs,0x9000,0x5000
   otadata,data,ota,0xe000,0x2000
-  app0,app,ota_0,0x10000,0x640000
-  app1,app,ota_1,0x650000,0x640000
-  squidscript,data,littlefs,0xc90000,0x360000
+  app0,app,ota_0,0x10000,0x280000
+  app1,app,ota_1,0x290000,0x280000
+  squidscript,data,littlefs,0x510000,0xae0000
   coredump,data,coredump,0xff0000,0x10000
   ```
 
@@ -204,7 +204,7 @@ configuration.
 - [x] Make `target flash` pass the table to `espflash` without exposing a
   backend selector.
 - [x] Generate a raw OTA-compatible application image from the ELF during
-  `target build` and fail if it exceeds `0x640000`.
+  `target build` and fail if it exceeds `0x280000`.
 - [x] Keep bootloader, table, ELF, and raw image artifacts distinct in printed
   plans and JSON output.
 - [x] Flash the table and current native image only after the Task 1 backup is
@@ -461,7 +461,7 @@ and lifecycle-correct on both wake sources.
 - [ ] Add `device firmware-info` and `device firmware-update` with progress,
   throughput, ETA, durable retry, and explicit image/slot/build reporting.
 - [ ] On firmware:
-  - identify the inactive `0x640000` OTA slot from the partition table;
+  - identify the inactive `0x280000` OTA slot from the partition table;
   - reject active-slot writes and oversized images;
   - erase/write in bounded sector steps with serial acknowledgements;
   - compute SHA-256 while writing and verify expected length/hash;

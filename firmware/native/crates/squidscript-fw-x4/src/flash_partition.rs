@@ -10,8 +10,8 @@ use littlefs2::{
 };
 use squidscript_fw_core::app_store::{AppStoreError, NativeAppStorage};
 
-pub const SQUIDSCRIPT_PARTITION_OFFSET: usize = 0xc90000;
-pub const SQUIDSCRIPT_PARTITION_SIZE: usize = 0x360000;
+pub const SQUIDSCRIPT_PARTITION_OFFSET: usize = 0x510000;
+pub const SQUIDSCRIPT_PARTITION_SIZE: usize = 0xae0000;
 pub const FLASH_ERASE_SIZE: usize = 4096;
 
 // littlefs 2.11 uses these libc helpers, but the ESP32-C3 no_std link has no libc.
@@ -632,7 +632,7 @@ mod tests {
             0xff0000
         );
         assert_eq!(SQUIDSCRIPT_PARTITION_SIZE % FLASH_ERASE_SIZE, 0);
-        assert_eq!(SQUIDSCRIPT_PARTITION_SIZE / FLASH_ERASE_SIZE, 864);
+        assert_eq!(SQUIDSCRIPT_PARTITION_SIZE / FLASH_ERASE_SIZE, 2784);
     }
 
     struct HeapFlash {

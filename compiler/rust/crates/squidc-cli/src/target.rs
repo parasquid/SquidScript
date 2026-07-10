@@ -142,7 +142,7 @@ impl NativeFirmware {
 }
 
 const ESP32C3_FLASH_BYTES: u64 = 16 * 1024 * 1024;
-const OTA_SLOT_BYTES: u64 = 0x640000;
+const OTA_SLOT_BYTES: u64 = 0x280000;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PartitionEntry {
@@ -211,8 +211,8 @@ fn validate_native_partition_table(path: &Path) -> Result<Vec<PartitionEntry>, S
         ("nvs", "data", "nvs", 0x9000, 0x5000),
         ("otadata", "data", "ota", 0xe000, 0x2000),
         ("app0", "app", "ota_0", 0x10000, OTA_SLOT_BYTES),
-        ("app1", "app", "ota_1", 0x650000, OTA_SLOT_BYTES),
-        ("squidscript", "data", "littlefs", 0xc90000, 0x360000),
+        ("app1", "app", "ota_1", 0x290000, OTA_SLOT_BYTES),
+        ("squidscript", "data", "littlefs", 0x510000, 0xae0000),
         ("coredump", "data", "coredump", 0xff0000, 0x10000),
     ];
     for (name, kind, subtype, offset, size) in required {

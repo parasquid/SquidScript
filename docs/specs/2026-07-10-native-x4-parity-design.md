@@ -178,20 +178,22 @@ Normal routing logs are compiled out of release firmware with
 
 ## Internal Flash And OTA Layout
 
-The native X4 uses the stock ESP-IDF bootloader and the CrossPoint-compatible
-16 MiB partition geometry:
+The native X4 uses the stock ESP-IDF bootloader with this 16 MiB partition
+geometry:
 
 | Name | Type/subtype | Offset | Size |
 | --- | --- | ---: | ---: |
 | `nvs` | data/nvs | `0x9000` | `0x5000` |
 | `otadata` | data/ota | `0xe000` | `0x2000` |
-| `app0` | app/ota_0 | `0x10000` | `0x640000` |
-| `app1` | app/ota_1 | `0x650000` | `0x640000` |
-| `squidscript` | data/littlefs | `0xc90000` | `0x360000` |
+| `app0` | app/ota_0 | `0x10000` | `0x280000` |
+| `app1` | app/ota_1 | `0x290000` | `0x280000` |
+| `squidscript` | data/littlefs | `0x510000` | `0xae0000` |
 | `coredump` | data/coredump | `0xff0000` | `0x10000` |
 
-The geometry matches the stock X3/X4 bootloader expectations used by
-CrossPoint. SquidScript uses LittleFS rather than SPIFFS in the data region.
+The equal 2.5 MiB application slots retain rollback-capable OTA and leave
+10.875 MiB for installed apps and internal content. The current native image
+must retain measured headroom within each slot. SquidScript uses a writable
+flash filesystem rather than SPIFFS in the data region.
 
 The intended storage stack is `esp-storage 0.9` plus `littlefs2 0.8`. A
 throwaway no-allocator hardware spike must prove mount, format, read, write,
@@ -276,7 +278,7 @@ erase/write steps and acknowledges durable progress.
 
 Before activation, host and firmware verify:
 
-- ESP image structure and size within `0x640000`;
+- ESP image structure and size within `0x280000`;
 - the declared byte count;
 - SHA-256 of the complete written image;
 - readback of written flash through the inactive partition boundary.
