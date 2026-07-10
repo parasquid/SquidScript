@@ -130,11 +130,7 @@ use squidscript_fw_core::radio_lifecycle::{
 #[cfg(all(target_arch = "riscv32", feature = "native-radio-services"))]
 use squidscript_fw_core::radio_lifecycle::RadioKind;
 
-#[cfg(all(
-    target_arch = "riscv32",
-    feature = "native-radio-services",
-    feature = "ble"
-))]
+#[cfg(all(target_arch = "riscv32", feature = "native-radio-services"))]
 use squidscript_fw_core::native_runtime::{NativeUploadRouteError, NativeUploadTransport};
 
 #[cfg(all(
@@ -1174,6 +1170,303 @@ async fn native_wifi_ap_dhcp_task(stack: embassy_net::Stack<'static>) {
 
 #[cfg(all(
     target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "wifi"
+))]
+#[embassy_executor::task]
+async fn native_http_upload_task(stack: embassy_net::Stack<'static>) {
+    use core::fmt::Write;
+    use embassy_net::tcp::TcpSocket;
+    use squidscript_fw_x4::http_upload::{header_end, parse_request, Method};
+
+    static RX_BUF: static_cell::StaticCell<[u8; 1024]> = static_cell::StaticCell::new();
+    static TX_BUF: static_cell::StaticCell<[u8; 512]> = static_cell::StaticCell::new();
+    static HEADER_BUF: static_cell::StaticCell<[u8; 1024]> = static_cell::StaticCell::new();
+    static BODY_BUF: static_cell::StaticCell<[u8; 512]> = static_cell::StaticCell::new();
+
+    let rx_buf = RX_BUF.init_with(|| [0; 1024]);
+    let tx_buf = TX_BUF.init_with(|| [0; 512]);
+    let header_buf = HEADER_BUF.init_with(|| [0; 1024]);
+    let body_buf = BODY_BUF.init_with(|| [0; 512]);
+    let mut socket = TcpSocket::new(stack, rx_buf, tx_buf);
+    socket.set_timeout(Some(embassy_time::Duration::from_secs(30)));
+    let runtime = loop {
+        let ptr = WIFI_RUNTIME_PTR.load(Ordering::Acquire);
+        if ptr != 0 {
+            // SAFETY: the published runtime is static and remains valid for firmware lifetime.
+            break unsafe { &*(ptr as *const SharedX4NativeRuntime) };
+        }
+        embassy_time::Timer::after_millis(25).await;
+    };
+
+    loop {
+        if socket.accept(80).await.is_err() {
+            socket.abort();
+            embassy_futures::yield_now().await;
+            continue;
+        }
+        let result = handle_native_http_upload(&mut socket, runtime, header_buf, body_buf).await;
+        if let Err(error) = result {
+            let mut runtime = runtime.lock().await;
+            runtime.record_error(error);
+        }
+        socket.close();
+        let _ = socket.flush().await;
+        socket.abort();
+        header_buf.fill(0);
+        body_buf.fill(0);
+        embassy_futures::yield_now().await;
+    }
+
+    async fn handle_native_http_upload(
+        socket: &mut TcpSocket<'_>,
+        runtime: &'static SharedX4NativeRuntime,
+        header_buf: &mut [u8; 1024],
+        body_buf: &mut [u8; 512],
+    ) -> Result<(), &'static str> {
+        let mut used = 0usize;
+        let header_len = loop {
+            if let Some(end) = header_end(&header_buf[..used]) {
+                break end;
+            }
+            if used == header_buf.len() {
+                send_http_response(socket, 400, "Bad Request", "bad request\n").await;
+                return Ok(());
+            }
+            let received = socket
+                .read(&mut header_buf[used..])
+                .await
+                .map_err(|_| "http-header-read")?;
+            if received == 0 {
+                return Ok(());
+            }
+            used += received;
+        };
+        let headers = core::str::from_utf8(&header_buf[..header_len]).map_err(|_| "http-header")?;
+        let request = match parse_request(headers) {
+            Ok(request) => request,
+            Err(_) => {
+                send_http_response(socket, 400, "Bad Request", "bad request\n").await;
+                return Ok(());
+            }
+        };
+        let mut name = heapless::String::<64>::new();
+        if name.push_str(request.name).is_err() {
+            send_http_response(socket, 400, "Bad Request", "bad name\n").await;
+            return Ok(());
+        }
+
+        let route = {
+            let mut runtime = runtime.lock().await;
+            match runtime.resolve_upload_route(name.as_str(), NativeUploadTransport::Http) {
+                Ok(route) => route,
+                Err(NativeUploadRouteError::RouteAmbiguous) => {
+                    drop(runtime);
+                    send_http_response(socket, 409, "Conflict", "route ambiguous\n").await;
+                    return Ok(());
+                }
+                Err(NativeUploadRouteError::NoActiveProfile)
+                | Err(NativeUploadRouteError::RouteMismatch) => {
+                    drop(runtime);
+                    send_http_response(socket, 404, "Not Found", "inactive\n").await;
+                    return Ok(());
+                }
+                Err(NativeUploadRouteError::InvalidMetadata) => {
+                    drop(runtime);
+                    send_http_response(socket, 500, "Internal Server Error", "metadata error\n")
+                        .await;
+                    return Err("http-upload-metadata");
+                }
+            }
+        };
+        let mut profile_id = heapless::String::<32>::new();
+        let mut complete_event = heapless::String::<64>::new();
+        if profile_id.push_str(route.profile_id.as_str()).is_err()
+            || complete_event
+                .push_str(route.complete_event.as_str())
+                .is_err()
+        {
+            send_http_response(socket, 500, "Internal Server Error", "route error\n").await;
+            return Err("http-upload-route-size");
+        }
+
+        if request.method == Method::Head {
+            let (offset, total) = {
+                let runtime = runtime.lock().await;
+                match runtime.active_upload_progress() {
+                    Some(progress)
+                        if progress.name == name.as_str()
+                            && progress.transport == NativeUploadTransport::Http =>
+                    {
+                        (progress.bytes_received, progress.total_bytes)
+                    }
+                    _ => (0, 0),
+                }
+            };
+            let mut response = heapless::String::<256>::new();
+            if total > 0 {
+                let _ = write!(
+                    response,
+                    "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nX-Squid-Upload-Offset: {offset}\r\nX-Squid-Upload-Total: {total}\r\nConnection: close\r\n\r\n"
+                );
+            } else {
+                let _ = write!(
+                    response,
+                    "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nX-Squid-Upload-Offset: 0\r\nConnection: close\r\n\r\n"
+                );
+            }
+            send_all(socket, response.as_bytes()).await;
+            return Ok(());
+        }
+
+        let (start, total) = request
+            .content_range
+            .map(|range| (range.start, range.total))
+            .unwrap_or((0, request.content_length));
+        let staged_path = {
+            let mut runtime = runtime.lock().await;
+            if let Some(progress) = runtime.active_upload_progress() {
+                let exact = progress.name == name.as_str()
+                    && progress.id == profile_id.as_str()
+                    && progress.transport == NativeUploadTransport::Http
+                    && progress.total_bytes == total
+                    && progress.bytes_received == start;
+                if !exact {
+                    drop(runtime);
+                    send_http_response(socket, 409, "Conflict", "offset mismatch\n").await;
+                    return Ok(());
+                }
+            } else if start != 0 {
+                drop(runtime);
+                send_http_response(socket, 409, "Conflict", "offset mismatch\n").await;
+                return Ok(());
+            }
+            match runtime.begin_ephemeral_upload(
+                name.as_str(),
+                total,
+                profile_id.as_str(),
+                NativeUploadTransport::Http,
+            ) {
+                Ok(path) => {
+                    let mut copied = heapless::String::<128>::new();
+                    if copied.push_str(path).is_err() {
+                        drop(runtime);
+                        send_http_response(socket, 413, "Content Too Large", "too large\n").await;
+                        return Ok(());
+                    }
+                    copied
+                }
+                Err(squidscript_fw_core::native_runtime::NativeRuntimeError::TooLarge) => {
+                    drop(runtime);
+                    send_http_response(socket, 413, "Content Too Large", "too large\n").await;
+                    return Ok(());
+                }
+                Err(
+                    squidscript_fw_core::native_runtime::NativeRuntimeError::UploadSessionActive,
+                ) => {
+                    drop(runtime);
+                    send_http_response(socket, 409, "Conflict", "upload busy\n").await;
+                    return Ok(());
+                }
+                Err(_) => {
+                    drop(runtime);
+                    send_http_response(socket, 500, "Internal Server Error", "storage error\n")
+                        .await;
+                    return Err("http-upload-begin");
+                }
+            }
+        };
+
+        let mut written = 0usize;
+        let initial = used.saturating_sub(header_len).min(request.content_length);
+        while written < initial {
+            let chunk_len = body_buf.len().min(initial - written);
+            {
+                let mut runtime = runtime.lock().await;
+                if runtime
+                    .write_ephemeral_upload_chunk(
+                        staged_path.as_str(),
+                        start + written,
+                        &header_buf[header_len + written..header_len + written + chunk_len],
+                    )
+                    .is_err()
+                {
+                    drop(runtime);
+                    send_http_response(socket, 500, "Internal Server Error", "storage error\n")
+                        .await;
+                    return Err("http-upload-write");
+                }
+            }
+            written += chunk_len;
+            embassy_futures::yield_now().await;
+        }
+        while written < request.content_length {
+            let want = body_buf.len().min(request.content_length - written);
+            let received = match socket.read(&mut body_buf[..want]).await {
+                Ok(0) | Err(_) => return Ok(()),
+                Ok(received) => received,
+            };
+            {
+                let mut runtime = runtime.lock().await;
+                if runtime
+                    .write_ephemeral_upload_chunk(
+                        staged_path.as_str(),
+                        start + written,
+                        &body_buf[..received],
+                    )
+                    .is_err()
+                {
+                    drop(runtime);
+                    send_http_response(socket, 500, "Internal Server Error", "storage error\n")
+                        .await;
+                    return Err("http-upload-write");
+                }
+            }
+            written += received;
+            embassy_futures::yield_now().await;
+        }
+
+        let completed = {
+            let mut runtime = runtime.lock().await;
+            runtime
+                .commit_ephemeral_upload(staged_path.as_str(), start + written)
+                .and_then(|()| {
+                    runtime.dispatch_active_upload_complete(
+                        complete_event.as_str(),
+                        staged_path.as_str(),
+                    )
+                })
+        };
+        if completed.is_err() {
+            send_http_response(socket, 500, "Internal Server Error", "dispatch error\n").await;
+            return Err("http-upload-dispatch");
+        }
+        send_http_response(socket, 200, "OK", "ok\n").await;
+        Ok(())
+    }
+
+    async fn send_http_response(socket: &mut TcpSocket<'_>, status: u16, reason: &str, body: &str) {
+        let mut response = heapless::String::<256>::new();
+        let _ = write!(
+            response,
+            "HTTP/1.1 {status} {reason}\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        send_all(socket, response.as_bytes()).await;
+    }
+
+    async fn send_all(socket: &mut TcpSocket<'_>, mut bytes: &[u8]) {
+        while !bytes.is_empty() {
+            match socket.write(bytes).await {
+                Ok(0) | Err(_) => return,
+                Ok(written) => bytes = &bytes[written..],
+            }
+        }
+    }
+}
+
+#[cfg(all(
+    target_arch = "riscv32",
     feature = "x4-binbook",
     feature = "native-radio-services"
 ))]
@@ -1316,6 +1609,10 @@ async fn main(spawner: embassy_executor::Spawner) {
             match native_wifi_ap_dhcp_task(ap_stack) {
                 Ok(task) => spawner.spawn(task),
                 Err(_) => native_radio_log!("native_radio_services_error stage=ap_dhcp_spawn"),
+            }
+            match native_http_upload_task(ap_stack) {
+                Ok(task) => spawner.spawn(task),
+                Err(_) => native_radio_log!("native_radio_services_error stage=http_upload_spawn"),
             }
         }
         #[cfg(feature = "ble")]

@@ -329,6 +329,191 @@ mod board_tests {
 }
 
 #[cfg(feature = "x4-storage")]
+pub mod http_upload {
+    const ROUTE_PREFIX: &str = "/upload/";
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum Method {
+        Head,
+        Put,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct ContentRange {
+        pub start: usize,
+        pub end: usize,
+        pub total: usize,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct Request<'a> {
+        pub method: Method,
+        pub name: &'a str,
+        pub content_length: usize,
+        pub content_range: Option<ContentRange>,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum ParseError {
+        Incomplete,
+        Invalid,
+    }
+
+    pub fn header_end(bytes: &[u8]) -> Option<usize> {
+        bytes
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+            .map(|index| index + 4)
+    }
+
+    pub fn parse_request(headers: &str) -> Result<Request<'_>, ParseError> {
+        let header_len = header_end(headers.as_bytes()).ok_or(ParseError::Incomplete)?;
+        let mut lines = headers[..header_len].split("\r\n");
+        let mut request_line = lines.next().ok_or(ParseError::Invalid)?.split(' ');
+        let method = match request_line.next() {
+            Some("HEAD") => Method::Head,
+            Some("PUT") => Method::Put,
+            _ => return Err(ParseError::Invalid),
+        };
+        let path = request_line.next().ok_or(ParseError::Invalid)?;
+        let version = request_line.next().ok_or(ParseError::Invalid)?;
+        if request_line.next().is_some() || !version.starts_with("HTTP/") {
+            return Err(ParseError::Invalid);
+        }
+        let name = path.strip_prefix(ROUTE_PREFIX).ok_or(ParseError::Invalid)?;
+        if !safe_name(name) {
+            return Err(ParseError::Invalid);
+        }
+
+        let mut content_length = None;
+        let mut content_range = None;
+        for line in lines {
+            if line.is_empty() {
+                break;
+            }
+            let Some((key, value)) = line.split_once(':') else {
+                return Err(ParseError::Invalid);
+            };
+            let value = value.trim_matches([' ', '\t']);
+            if key.eq_ignore_ascii_case("Content-Length") {
+                if content_length.is_some() {
+                    return Err(ParseError::Invalid);
+                }
+                content_length = Some(parse_usize(value)?);
+            } else if key.eq_ignore_ascii_case("Content-Range") {
+                if content_range.is_some() {
+                    return Err(ParseError::Invalid);
+                }
+                content_range = Some(parse_content_range(value)?);
+            }
+        }
+
+        let content_length = match method {
+            Method::Head => 0,
+            Method::Put => content_length
+                .filter(|length| *length > 0)
+                .ok_or(ParseError::Invalid)?,
+        };
+        if let Some(range) = content_range {
+            let range_len = range
+                .end
+                .checked_sub(range.start)
+                .and_then(|length| length.checked_add(1))
+                .ok_or(ParseError::Invalid)?;
+            if method != Method::Put || range_len != content_length {
+                return Err(ParseError::Invalid);
+            }
+        }
+        Ok(Request {
+            method,
+            name,
+            content_length,
+            content_range,
+        })
+    }
+
+    fn safe_name(name: &str) -> bool {
+        !name.is_empty()
+            && name != "."
+            && name != ".."
+            && !name.contains('/')
+            && !name.contains('\\')
+            && !name.contains(':')
+    }
+
+    fn parse_usize(value: &str) -> Result<usize, ParseError> {
+        if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(ParseError::Invalid);
+        }
+        value.parse().map_err(|_| ParseError::Invalid)
+    }
+
+    fn parse_content_range(value: &str) -> Result<ContentRange, ParseError> {
+        let value = value.strip_prefix("bytes ").ok_or(ParseError::Invalid)?;
+        let (bounds, total) = value.split_once('/').ok_or(ParseError::Invalid)?;
+        let (start, end) = bounds.split_once('-').ok_or(ParseError::Invalid)?;
+        let range = ContentRange {
+            start: parse_usize(start)?,
+            end: parse_usize(end)?,
+            total: parse_usize(total)?,
+        };
+        if range.total == 0 || range.end < range.start || range.end >= range.total {
+            return Err(ParseError::Invalid);
+        }
+        Ok(range)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{header_end, parse_request, ContentRange, Method, ParseError, Request};
+
+        #[test]
+        fn parses_head_and_put_upload_requests() {
+            assert_eq!(
+                parse_request("HEAD /upload/book.binbook HTTP/1.1\r\nHost: device\r\n\r\n"),
+                Ok(Request {
+                    method: Method::Head,
+                    name: "book.binbook",
+                    content_length: 0,
+                    content_range: None,
+                })
+            );
+            assert_eq!(
+                parse_request(
+                    "PUT /upload/book.binbook HTTP/1.1\r\ncontent-length: 4\r\nContent-Range: bytes 6-9/10\r\n\r\n"
+                ),
+                Ok(Request {
+                    method: Method::Put,
+                    name: "book.binbook",
+                    content_length: 4,
+                    content_range: Some(ContentRange {
+                        start: 6,
+                        end: 9,
+                        total: 10,
+                    }),
+                })
+            );
+        }
+
+        #[test]
+        fn rejects_unsafe_names_and_invalid_ranges() {
+            for request in [
+                "PUT /upload/../book HTTP/1.1\r\nContent-Length: 1\r\n\r\n",
+                "PUT /upload/book HTTP/1.1\r\nContent-Length: 3\r\nContent-Range: bytes 2-3/4\r\n\r\n",
+                "PUT /upload/book HTTP/1.1\r\nContent-Length: 1\r\nContent-Range: bytes 4-4/4\r\n\r\n",
+            ] {
+                assert_eq!(parse_request(request), Err(ParseError::Invalid));
+            }
+        }
+
+        #[test]
+        fn finds_headers_when_body_arrives_in_same_read() {
+            let bytes = b"PUT /upload/book HTTP/1.1\r\nContent-Length: 2\r\n\r\nok";
+            assert_eq!(header_end(bytes), Some(bytes.len() - 2));
+        }
+    }
+}
+
 pub mod x4_storage {
     use embedded_sd_storage::{sd_filesystem::StorageError, SdStorage};
     use embedded_sdmmc::{BlockDevice, TimeSource, Timestamp};

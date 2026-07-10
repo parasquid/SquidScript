@@ -36,7 +36,7 @@ embassy-executor = { version = "0.10", optional = true }
 embassy-time = { version = "0.5.0", optional = true }
 embassy-futures = { version = "0.1.2", optional = true }
 embassy-sync-07 = { package = "embassy-sync", version = "0.7", optional = true }
-embassy-net = { version = "0.9.1", default-features = false, features = ["medium-ethernet", "proto-ipv4", "dhcpv4", "udp"], optional = true }
+embassy-net = { version = "0.9.1", default-features = false, features = ["medium-ethernet", "proto-ipv4", "dhcpv4", "udp", "tcp"], optional = true }
 edge-dhcp = { version = "0.8.0", default-features = false, optional = true }
 bt-hci = { version = "0.8", optional = true, features = ["uuid"] }
 trouble-host = { version = "0.6", default-features = false, optional = true, features = ["peripheral", "gatt", "derive", "connection-params-update", "default-packet-pool", "default-packet-pool-mtu-27", "default-packet-pool-size-32"] }
