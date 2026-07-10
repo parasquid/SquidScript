@@ -1,5 +1,6 @@
 #![cfg_attr(not(test), no_std)]
 
+pub mod app_store;
 pub mod native_runtime;
 
 pub mod radio_lifecycle {
