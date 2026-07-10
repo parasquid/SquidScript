@@ -525,7 +525,7 @@ pub mod x4_storage {
     };
     #[cfg(feature = "x4-binbook")]
     use {
-        binbook_core::{Book, Error as BinBookError, ReadAt},
+        binbook_core::{Book, Error as BinBookError, PixelFormat, PlaneSlot, ReadAt},
         embedded_hal::{
             delay::DelayNs,
             digital::{InputPin, OutputPin},
@@ -987,6 +987,21 @@ pub mod x4_storage {
     where
         S: NativeFileStorage,
     {
+        fn normalize_binbook_path<'a>(
+            path: &'a str,
+            mapped: &'a mut heapless::String<TEXT_BYTES>,
+        ) -> Result<&'a str, &'static str> {
+            let content_name = path
+                .strip_prefix("content:books/r/")
+                .or_else(|| path.strip_prefix("content:books/p/"));
+            let Some(name) = content_name else {
+                return Ok(path);
+            };
+            mapped.push_str("books/").map_err(|_| "too-large")?;
+            mapped.push_str(name).map_err(|_| "too-large")?;
+            Ok(mapped.as_str())
+        }
+
         fn store_handle(&mut self, path: &str) -> Result<Handle, &'static str> {
             let bytes = path.as_bytes();
             if bytes.len() > TEXT_BYTES {
@@ -1080,7 +1095,6 @@ pub mod x4_storage {
             };
             let mut opened =
                 Book::open(source, &mut self.section_scratch).map_err(map_binbook_error)?;
-            panel.init_absolute_gray(delay).map_err(map_display_error)?;
             render_absolute_gray_with_bounded_settle(panel, &mut opened, page_index, buffers, delay)
                 .map_err(map_display_error)
         }
@@ -1103,6 +1117,78 @@ pub mod x4_storage {
         D: DelayNs,
     {
         let page = read_x4_page(book, page)?;
+        if page.pixel_format == PixelFormat::Gray1Packed {
+            panel.init_bw(delay)?;
+            let plane = page
+                .planes
+                .get(PlaneSlot::FastBase)
+                .ok_or(DisplayError::InvalidPage)?;
+            if buffers.compressed.is_empty() {
+                return Err(DisplayError::BufferTooSmall {
+                    required: 1,
+                    provided: 0,
+                });
+            }
+            require_row(buffers.decoded)?;
+
+            let mut decoder = PlaneDecoder::new(plane);
+            panel
+                .controller()
+                .set_window(0, 0, PHYSICAL_WIDTH, PHYSICAL_HEIGHT)?;
+            let mut error = None;
+            panel.controller().write_red_frame_rows::<ROW_BYTES>(
+                PHYSICAL_HEIGHT,
+                |_, output| {
+                    if error.is_some() {
+                        output.fill(0xff);
+                        return;
+                    }
+                    if let Err(value) =
+                        decoder.fill(book, buffers.compressed, &mut buffers.decoded[..ROW_BYTES])
+                    {
+                        error = Some(value);
+                        output.fill(0xff);
+                    } else {
+                        output.copy_from_slice(&buffers.decoded[..ROW_BYTES]);
+                    }
+                },
+            )?;
+            if let Some(error) = error {
+                return Err(error);
+            }
+            decoder.finish()?;
+
+            let mut decoder = PlaneDecoder::new(plane);
+            panel
+                .controller()
+                .set_window(0, 0, PHYSICAL_WIDTH, PHYSICAL_HEIGHT)?;
+            let mut error = None;
+            panel
+                .controller()
+                .write_frame_rows::<ROW_BYTES>(PHYSICAL_HEIGHT, |_, output| {
+                    if error.is_some() {
+                        output.fill(0xff);
+                        return;
+                    }
+                    if let Err(value) =
+                        decoder.fill(book, buffers.compressed, &mut buffers.decoded[..ROW_BYTES])
+                    {
+                        error = Some(value);
+                        output.fill(0xff);
+                    } else {
+                        output.copy_from_slice(&buffers.decoded[..ROW_BYTES]);
+                    }
+                })?;
+            if let Some(error) = error {
+                return Err(error);
+            }
+            decoder.finish()?;
+            panel.controller().trigger_refresh(RefreshMode::Full)?;
+            delay.delay_ms(8_000);
+            return Ok(());
+        }
+
+        panel.init_absolute_gray(delay)?;
         let (input0, input1, input2) = split_three(buffers.compressed)?;
         let (row0, row1, row2) = row_triplet(buffers.decoded)?;
         require_row(buffers.red)?;
@@ -1415,6 +1501,17 @@ pub mod x4_storage {
         }
 
         fn binbook_open<'a>(&'a mut self, path: &str) -> Result<BinBookOpenResult<'a>, VmError> {
+            let mut mapped = heapless::String::<TEXT_BYTES>::new();
+            let path = match Self::normalize_binbook_path(path, &mut mapped) {
+                Ok(path) => path,
+                Err(error) => {
+                    return Ok(BinBookOpenResult {
+                        ok: false,
+                        error: Some(error),
+                        book: None,
+                    })
+                }
+            };
             if !path.ends_with(".binbook") {
                 return Ok(BinBookOpenResult {
                     ok: false,
@@ -2651,7 +2748,9 @@ pub mod x4_storage {
             let storage = X4SdFileStorage::new(FakeBookStorage);
             let mut backend = X4BinBookFileBackend::<_, 512, 8, 128, 1024, 96, 2>::new(storage);
 
-            let opened = backend.binbook_open("books/book_a.binbook").unwrap();
+            let opened = backend
+                .binbook_open("content:books/r/book_a.binbook")
+                .unwrap();
             assert_eq!(opened.ok, true);
             assert_eq!(opened.book, Some(Handle::new(HandleKind::BinBook, 0)));
 
@@ -2670,7 +2769,12 @@ pub mod x4_storage {
             assert_eq!(page.error, None);
             assert_eq!(page.drawable, Some(Handle::new(HandleKind::Drawable, 0)));
 
-            assert!(backend.binbook_open("books/book_a.binbook").unwrap().ok);
+            assert!(
+                backend
+                    .binbook_open("content:books/p/book_a.binbook")
+                    .unwrap()
+                    .ok
+            );
             assert_eq!(
                 backend.binbook_open("books/book_a.binbook").unwrap().error,
                 Some("too-many-open")

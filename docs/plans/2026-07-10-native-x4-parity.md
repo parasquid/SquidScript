@@ -556,7 +556,7 @@ unified CLI receives authoritative completion for both.
 
 ## Task 11: Close Remaining X4 Contract Gaps
 
-- [ ] Add GRAY1 BinBook degradation/expansion into the supported streaming
+- [x] Add GRAY1 BinBook degradation/expansion into the supported streaming
   render path. Test current compiler output through host validation and live X4
   rendering.
 - [ ] Audit X4 target metadata against native hardware evidence. Narrow any
