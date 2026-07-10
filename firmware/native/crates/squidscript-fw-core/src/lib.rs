@@ -3,6 +3,7 @@
 pub mod app_store;
 pub mod lifecycle;
 pub mod native_runtime;
+pub mod power;
 
 pub mod radio_lifecycle {
     use core::fmt;

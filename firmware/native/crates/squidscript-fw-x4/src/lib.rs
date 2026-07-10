@@ -2965,6 +2965,10 @@ where
     ) -> Result<(), &'static str>;
 
     fn step(&mut self) {}
+
+    fn is_idle(&self) -> bool {
+        true
+    }
 }
 
 pub fn request_pending_display_flush<D, FB, F>(

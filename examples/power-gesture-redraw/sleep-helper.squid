@@ -1,0 +1,13 @@
+app "sleep-helper"
+
+app.triggers {
+  service.input.on("key.POWER.longTap")
+}
+
+event.on("key.POWER.longTap") {
+  service.power.sleep({ wakeAfterMs: 0 })
+}
+
+event.on("power.sleep") {
+  state.save()
+}

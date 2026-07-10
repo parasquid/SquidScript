@@ -408,7 +408,7 @@ lifecycle event queue.
   classification, and final route. Do not log environment identifiers.
 - [x] Update `tests/hardware/xteink-x4/key-detector` to assert ordinary,
   `.longTap`, and `.doubleTap` events.
-- [ ] Add armed input example apps using `service.input.on`:
+- [x] Add armed input example apps using `service.input.on`:
   - double tap launches a helper that exits, causing the previous app to start
     and redraw normally;
   - long tap launches a helper that requests planned sleep after Task 8 lands.
@@ -431,26 +431,26 @@ foreground and armed events with target-owned timing.
 **Owning layers:** native lifecycle request, app-store checkpoint, X4 RTC power
 driver.
 
-- [ ] Add a `NativePowerBackend` boundary so the VM records a pending sleep
+- [x] Add a `NativePowerBackend` boundary so the VM records a pending sleep
   request and the outer firmware task owns hardware sleep entry.
-- [ ] Implement `service.power.sleep` validation and reject temp foreground
+- [x] Implement `service.power.sleep` validation and reject temp foreground
   apps.
-- [ ] After the requesting event completes, dispatch `power.sleep`; abort sleep
+- [x] After the requesting event completes, dispatch `power.sleep`; abort sleep
   if the handler or checkpoint fails.
-- [ ] Persist a bounded CRC-protected checkpoint containing active installed app,
+- [x] Persist a bounded CRC-protected checkpoint containing active installed app,
   return stack, armed app ids, and requested wake duration. Do not add storage
   compatibility readers.
-- [ ] Flush app state/filesystem, pending display work, and serial responses;
+- [x] Flush app state/filesystem, pending display work, and serial responses;
   stop upload services and release radios before sleep.
-- [ ] Configure ESP-HAL deep sleep with POWER/GPIO3 wake and timer wake when
+- [x] Configure ESP-HAL deep sleep with POWER/GPIO3 wake and timer wake when
   requested.
-- [ ] On boot, inspect wake cause, validate/consume the checkpoint, rebuild
+- [x] On boot, inspect wake cause, validate/consume the checkpoint, rebuild
   registry and armed metadata, and start the saved app with reason `wake`.
-- [ ] Restore return behavior but not VM frames, screens, foreground timers,
+- [x] Restore return behavior but not VM frames, screens, foreground timers,
   handles, services, or temp apps.
-- [ ] Fall back to normal root boot on corrupt/missing app/checkpoint and retain
+- [x] Fall back to normal root boot on corrupt/missing app/checkpoint and retain
   a diagnostic.
-- [ ] Make `system.startReason()` return `boot`, `launch`, `return`, or `wake`
+- [x] Make `system.startReason()` return `boot`, `launch`, `return`, or `wake`
   from real lifecycle state.
 
 **Automated tests:** deferred request, cleanup handler, checkpoint codec/CRC,
@@ -460,12 +460,12 @@ return stack after wake.
 
 **Hardware gates:**
 
-1. Install an app that saves state in `power.sleep`, request a three-second
+- [x] Install an app that saves state in `power.sleep`, request a three-second
    timer wake, observe USB loss/reconnect, and verify `wake`, state, panel, and
    armed registrations.
-2. Enter sleep without a timer, wake with physical POWER, and verify the same
+- [ ] Enter sleep without a timer, wake with physical POWER, and verify the same
    restoration contract.
-3. Arm the long-tap helper, launch it with physical POWER long tap, let the app
+- [ ] Arm the long-tap helper, launch it with physical POWER long tap, let the app
    request sleep, and verify firmware itself assigned no action before the app
    ran.
 

@@ -230,6 +230,9 @@ fn state_temp_path(app_id: &str) -> core::result::Result<PathBuf, AppStoreError>
     dynamic_path(core::format_args!("/tmp/state-{app_id}.state"))
 }
 
+const POWER_CHECKPOINT_PATH: &Path = littlefs2::path!("/lifecycle/power-checkpoint");
+const POWER_CHECKPOINT_TEMP_PATH: &Path = littlefs2::path!("/tmp/power-checkpoint");
+
 fn content_path(path: &str) -> core::result::Result<PathBuf, NativeFileStorageError> {
     let (directory, name) = if let Some(name) = path.strip_prefix("books/") {
         ("books", name)
@@ -489,6 +492,52 @@ where
         })
     }
 
+    fn load_power_checkpoint(
+        &mut self,
+        out: &mut [u8],
+    ) -> core::result::Result<Option<usize>, AppStoreError> {
+        self.mount(|fs| {
+            let metadata = match fs.metadata(POWER_CHECKPOINT_PATH) {
+                Ok(metadata) => metadata,
+                Err(Error::NO_SUCH_ENTRY) => return Ok(None),
+                Err(error) => return Err(error),
+            };
+            if metadata.len() > out.len() {
+                return Err(Error::NO_MEMORY);
+            }
+            read_file_at(fs, POWER_CHECKPOINT_PATH, 0, &mut out[..metadata.len()])?;
+            Ok(Some(metadata.len()))
+        })
+    }
+
+    fn save_power_checkpoint_atomic(
+        &mut self,
+        bytes: &[u8],
+    ) -> core::result::Result<(), AppStoreError> {
+        self.mount(|fs| {
+            fs.create_file_and_then(POWER_CHECKPOINT_TEMP_PATH, |file| {
+                file.write_all(bytes)?;
+                file.sync()
+            })?;
+            match fs.remove(POWER_CHECKPOINT_PATH) {
+                Ok(()) | Err(Error::NO_SUCH_ENTRY) => {}
+                Err(error) => return Err(error),
+            }
+            fs.rename(POWER_CHECKPOINT_TEMP_PATH, POWER_CHECKPOINT_PATH)
+        })
+    }
+
+    fn delete_power_checkpoint(&mut self) -> core::result::Result<(), AppStoreError> {
+        self.mount(|fs| match fs.remove(POWER_CHECKPOINT_PATH) {
+            Ok(()) | Err(Error::NO_SUCH_ENTRY) => Ok(()),
+            Err(error) => Err(error),
+        })
+    }
+
+    fn flush_app_storage(&mut self) -> core::result::Result<(), AppStoreError> {
+        self.mount(|_| Ok(()))
+    }
+
     fn format(&mut self) -> core::result::Result<(), AppStoreError> {
         Filesystem::format(&mut self.storage).map_err(map_littlefs_error)?;
         self.mount(|fs| ensure_store_dirs(fs))
@@ -620,6 +669,28 @@ where
 
     fn delete_state(&mut self, app_id: &str) -> core::result::Result<(), AppStoreError> {
         self.with_mut(|storage| storage.delete_state(app_id))
+    }
+
+    fn load_power_checkpoint(
+        &mut self,
+        out: &mut [u8],
+    ) -> core::result::Result<Option<usize>, AppStoreError> {
+        self.with_mut(|storage| storage.load_power_checkpoint(out))
+    }
+
+    fn save_power_checkpoint_atomic(
+        &mut self,
+        bytes: &[u8],
+    ) -> core::result::Result<(), AppStoreError> {
+        self.with_mut(|storage| storage.save_power_checkpoint_atomic(bytes))
+    }
+
+    fn delete_power_checkpoint(&mut self) -> core::result::Result<(), AppStoreError> {
+        self.with_mut(NativeAppStorage::delete_power_checkpoint)
+    }
+
+    fn flush_app_storage(&mut self) -> core::result::Result<(), AppStoreError> {
+        self.with_mut(NativeAppStorage::flush_app_storage)
     }
 
     fn format(&mut self) -> core::result::Result<(), AppStoreError> {
@@ -1032,6 +1103,7 @@ mod tests {
             .unwrap();
         storage.publish_app_install("reader").unwrap();
         storage.save_state_atomic("reader", b"state").unwrap();
+        storage.save_power_checkpoint_atomic(b"checkpoint").unwrap();
         let (total, available) = storage.capacity().unwrap();
         assert_eq!(total, SQUIDSCRIPT_PARTITION_SIZE);
         assert!(available < total);
@@ -1055,6 +1127,17 @@ mod tests {
         let mut state = [0; 8];
         assert_eq!(remounted.load_state("reader", &mut state).unwrap(), Some(5));
         assert_eq!(&state[..5], b"state");
+        let mut checkpoint = [0; 16];
+        assert_eq!(
+            remounted.load_power_checkpoint(&mut checkpoint).unwrap(),
+            Some(10)
+        );
+        assert_eq!(&checkpoint[..10], b"checkpoint");
+        remounted.delete_power_checkpoint().unwrap();
+        assert_eq!(
+            remounted.load_power_checkpoint(&mut checkpoint).unwrap(),
+            None
+        );
         remounted.format().unwrap();
         let mut count = 0;
         remounted.for_each_app(&mut |_, _| count += 1).unwrap();

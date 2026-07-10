@@ -38,6 +38,7 @@ use crate::{
         ForegroundLifecycle, LifecycleError, LifecyclePhase, StartReason,
         TriggerTimer as LifecycleTriggerTimer, MAX_ARMED_INPUTS, MAX_ARMED_TIMERS,
     },
+    power::{DeferredNativePowerBackend, NativePowerBackend, NativePowerRequest, PowerCheckpoint},
     radio_lifecycle::RadioKind,
     radio_service::{RadioLeaseManager, RadioLeaseState, ServiceLeaseError},
 };
@@ -1747,6 +1748,141 @@ impl<
         self.vm_active = false;
     }
 
+    pub fn take_prepared_sleep_checkpoint(
+        &mut self,
+    ) -> Result<Option<PowerCheckpoint>, NativeRuntimeError> {
+        let Some(request) = self.host.power_backend.take_prepared_sleep() else {
+            return Ok(None);
+        };
+        if self.host.active_sqbc != ActiveSqbc::Installed {
+            return Err(NativeRuntimeError::Vm(VmError::InvalidOperand));
+        }
+        let active = self
+            .host
+            .foreground
+            .active()
+            .ok_or(NativeRuntimeError::Inactive)?;
+        let mut checkpoint = PowerCheckpoint::new(active, request.wake_after_ms)
+            .map_err(|_| NativeRuntimeError::TooLarge)?;
+        for index in 0..self.host.foreground.return_stack_len() {
+            checkpoint
+                .push_return_app(
+                    self.host
+                        .foreground
+                        .return_stack_at(index)
+                        .ok_or(NativeRuntimeError::InvalidOffset)?,
+                )
+                .map_err(|_| NativeRuntimeError::TooLarge)?;
+        }
+        for index in 0..self.host.foreground.armed_len() {
+            checkpoint
+                .push_armed_app(
+                    self.host
+                        .foreground
+                        .armed_at(index)
+                        .ok_or(NativeRuntimeError::InvalidOffset)?
+                        .app_id,
+                )
+                .map_err(|_| NativeRuntimeError::TooLarge)?;
+        }
+        Ok(Some(checkpoint))
+    }
+
+    pub fn restore_power_checkpoint(
+        &mut self,
+        checkpoint: &PowerCheckpoint,
+    ) -> Result<(), NativeRuntimeError> {
+        if self
+            .host
+            .app_store
+            .find(checkpoint.active_app.as_str())
+            .is_none()
+        {
+            return Err(NativeRuntimeError::AppNotInstalled);
+        }
+        self.host.foreground.reset();
+        let mut returns = [""; crate::lifecycle::MAX_RETURN_STACK];
+        for (index, app_id) in checkpoint.return_apps[..checkpoint.return_len]
+            .iter()
+            .enumerate()
+        {
+            let value = app_id.as_str();
+            if value != "main" && self.host.app_store.find(value).is_none() {
+                return Err(NativeRuntimeError::AppNotInstalled);
+            }
+            returns[index] = value;
+        }
+        self.host
+            .foreground
+            .restore_return_stack(&returns[..checkpoint.return_len])
+            .map_err(|_| NativeRuntimeError::TooLarge)?;
+        self.start_installed_app(checkpoint.active_app.as_str(), StartReason::Wake, false)?;
+        for app_id in &checkpoint.armed_apps[..checkpoint.armed_len] {
+            if self.host.app_store.find(app_id.as_str()).is_none() {
+                return Err(NativeRuntimeError::AppNotInstalled);
+            }
+            self.host.arm_app(app_id.as_str())?;
+        }
+        Ok(())
+    }
+
+    pub fn save_power_checkpoint(
+        &mut self,
+        checkpoint: &PowerCheckpoint,
+        out: &mut [u8],
+    ) -> Result<(), NativeRuntimeError> {
+        let len = checkpoint
+            .encode(out)
+            .map_err(|_| NativeRuntimeError::TooLarge)?;
+        self.host
+            .app_store
+            .storage_mut()
+            .save_power_checkpoint_atomic(&out[..len])
+            .map_err(native_app_store_error)
+    }
+
+    pub fn load_power_checkpoint(
+        &mut self,
+        buffer: &mut [u8],
+    ) -> Result<Option<PowerCheckpoint>, NativeRuntimeError> {
+        let Some(len) = self
+            .host
+            .app_store
+            .storage_mut()
+            .load_power_checkpoint(buffer)
+            .map_err(native_app_store_error)?
+        else {
+            return Ok(None);
+        };
+        PowerCheckpoint::decode(&buffer[..len])
+            .map(Some)
+            .map_err(|_| NativeRuntimeError::Vm(VmError::ReadFailed))
+    }
+
+    pub fn delete_power_checkpoint(&mut self) -> Result<(), NativeRuntimeError> {
+        self.host
+            .app_store
+            .storage_mut()
+            .delete_power_checkpoint()
+            .map_err(native_app_store_error)
+    }
+
+    pub fn flush_app_storage(&mut self) -> Result<(), NativeRuntimeError> {
+        self.host
+            .app_store
+            .storage_mut()
+            .flush_app_storage()
+            .map_err(native_app_store_error)
+    }
+
+    pub fn prepare_hardware_sleep(&mut self) -> Result<(), NativeRuntimeError> {
+        self.host.stop_upload_profile();
+        self.host.discard_upload_stage();
+        self.host.release_all_radios();
+        self.host.clear_timers();
+        self.flush_app_storage()
+    }
+
     pub fn begin_content_install(
         &mut self,
         name: &str,
@@ -2484,8 +2620,28 @@ impl<
         let result = vm.dispatch(&mut self.host, event);
         self.host.foreground.set_phase(LifecyclePhase::Idle);
         self.host.refresh_lifecycle_lines();
-        result?;
-        self.complete_pending_launch()?;
+        if let Err(error) = result {
+            self.host.power_backend.abort_sleep();
+            return Err(error.into());
+        }
+        if event != "power.sleep" {
+            if let Some(request) = self.host.power_backend.take_requested_sleep() {
+                let vm = unsafe { self.vm.assume_init_mut() };
+                match vm.dispatch(&mut self.host, "power.sleep") {
+                    Ok(()) | Err(VmError::HandlerNotFound) => {
+                        self.host.power_backend.prepare_sleep(request);
+                    }
+                    Err(error) => {
+                        self.host.power_backend.abort_sleep();
+                        return Err(error.into());
+                    }
+                }
+            }
+        }
+        if let Err(error) = self.complete_pending_launch() {
+            self.host.power_backend.abort_sleep();
+            return Err(error);
+        }
         Ok(())
     }
 
@@ -2777,6 +2933,7 @@ struct RuntimeHost<
     upload_received_bytes: usize,
     upload_total_bytes_text: FixedText<MAX_UPLOAD_BYTES_TEXT_BYTES>,
     upload_received_bytes_text: FixedText<MAX_UPLOAD_BYTES_TEXT_BYTES>,
+    power_backend: DeferredNativePowerBackend,
     radio_backend: B,
     display_sink: D,
     binbook_backend: C,
@@ -2856,6 +3013,7 @@ impl<
             upload_received_bytes: 0,
             upload_total_bytes_text: FixedText::new(),
             upload_received_bytes_text: FixedText::new(),
+            power_backend: DeferredNativePowerBackend::new(),
             radio_backend,
             display_sink,
             binbook_backend,
@@ -2939,6 +3097,7 @@ impl<
             write_field!(upload_received_bytes, 0);
             write_field!(upload_total_bytes_text, FixedText::new());
             write_field!(upload_received_bytes_text, FixedText::new());
+            write_field!(power_backend, DeferredNativePowerBackend::new());
             write_field!(radio_backend, radio_backend);
             write_field!(display_sink, display_sink);
             write_field!(binbook_backend, binbook_backend);
@@ -2963,6 +3122,7 @@ impl<
         self.wifi_operation = NativeWifiOperationState::idle();
         self.wifi_station_profile.clear();
         self.stop_upload_profile();
+        self.power_backend.abort_sleep();
         self.state_cache_len = None;
         self.foreground.reset();
         self.clear_timers();
@@ -3615,6 +3775,17 @@ impl<
 
     fn system_start_reason_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
         out.write_str(self.foreground.start_reason().as_str())
+            .map_err(|_| VmError::InvalidOperand)
+    }
+
+    fn service_power_sleep(&mut self, wake_after_ms: i32) -> Result<(), VmError> {
+        if self.active_sqbc != ActiveSqbc::Installed || wake_after_ms < 0 {
+            return Err(VmError::InvalidOperand);
+        }
+        self.power_backend
+            .request_sleep(NativePowerRequest {
+                wake_after_ms: wake_after_ms as u32,
+            })
             .map_err(|_| VmError::InvalidOperand)
     }
 

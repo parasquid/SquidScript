@@ -5,6 +5,7 @@ edition = "2021"
 license = "AGPL-3.0-only"
 
 [dependencies]
+crc32fast = { version = "1", default-features = false }
 squid-device-protocol = { path = "../../../../compiler/rust/crates/squid-device-protocol", default-features = false }
 squidvm-core = { path = "../../../../compiler/rust/crates/squidvm-core" }
 

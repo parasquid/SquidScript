@@ -267,6 +267,19 @@ impl ForegroundLifecycle {
         (index < self.return_len).then(|| self.return_stack[index].as_str())
     }
 
+    pub fn restore_return_stack(&mut self, apps: &[&str]) -> Result<(), LifecycleError> {
+        if apps.len() > self.return_stack.len() {
+            return Err(LifecycleError::ReturnStackFull);
+        }
+        self.return_stack = [AppId::empty(); MAX_RETURN_STACK];
+        self.return_len = 0;
+        for app_id in apps {
+            self.return_stack[self.return_len].set(app_id)?;
+            self.return_len += 1;
+        }
+        Ok(())
+    }
+
     pub fn disarm(&mut self, app_id: &str) {
         for timer in &mut self.armed_timers {
             if timer.active && timer.app_id.as_str() == app_id {

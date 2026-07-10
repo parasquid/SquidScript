@@ -344,6 +344,118 @@ fn installed_lifecycle_rejects_missing_target_and_return_stack_overflow() {
 }
 
 #[test]
+fn installed_sleep_request_defers_cleanup_and_builds_checkpoint() {
+    let sqbc = compile_sqbc(
+        r#"app "sleeper"
+event.on("app.start") {}
+event.on("key.POWER") {
+  debug.print("request")
+  service.power.sleep({ wakeAfterMs: 3000 })
+  debug.print("returned")
+}
+event.on("power.sleep") { debug.print("cleanup") }
+"#,
+    );
+    let mut runtime = multi_app_runtime();
+    install_app(&mut runtime, "sleeper", &sqbc);
+    runtime.boot_app("sleeper").unwrap();
+
+    runtime.dispatch_event("key.POWER").unwrap();
+
+    assert_eq!(
+        runtime.output_lines().as_slice(),
+        &["request", "returned", "cleanup"]
+    );
+    let checkpoint = runtime.take_prepared_sleep_checkpoint().unwrap().unwrap();
+    assert_eq!(checkpoint.active_app.as_str(), "sleeper");
+    assert_eq!(checkpoint.wake_after_ms, 3_000);
+    assert!(runtime.take_prepared_sleep_checkpoint().unwrap().is_none());
+}
+
+#[test]
+fn temp_app_cannot_request_planned_sleep() {
+    let sqbc = compile_sqbc(
+        r#"app "temp-sleeper"
+event.on("app.start") { service.power.sleep({ wakeAfterMs: 3000 }) }
+"#,
+    );
+    let mut runtime = NativeRuntime::new();
+    runtime.begin_temp_run("temp-sleeper", sqbc.len()).unwrap();
+    runtime.write_temp_run_chunk(0, &sqbc).unwrap();
+
+    assert_eq!(
+        runtime.commit_temp_run(),
+        Err(NativeRuntimeError::Vm(
+            squidvm_core::error::VmError::InvalidOperand
+        ))
+    );
+    assert!(runtime.take_prepared_sleep_checkpoint().unwrap().is_none());
+}
+
+#[test]
+fn failed_sleep_cleanup_aborts_prepared_checkpoint() {
+    let sqbc = compile_sqbc(
+        r#"app "bad-cleanup"
+event.on("app.start") {}
+event.on("key.POWER") { service.power.sleep({ wakeAfterMs: 3000 }) }
+event.on("power.sleep") { app.launch("missing") }
+"#,
+    );
+    let mut runtime = multi_app_runtime();
+    install_app(&mut runtime, "bad-cleanup", &sqbc);
+    runtime.boot_app("bad-cleanup").unwrap();
+
+    assert_eq!(
+        runtime.dispatch_event("key.POWER"),
+        Err(NativeRuntimeError::AppNotInstalled)
+    );
+    assert!(runtime.take_prepared_sleep_checkpoint().unwrap().is_none());
+}
+
+#[test]
+fn sleep_checkpoint_restores_wake_reason_return_stack_and_armed_apps() {
+    let main = compile_sqbc(
+        r#"app "main"
+event.on("app.start") { app.arm("wake-helper") }
+"#,
+    );
+    let helper = compile_sqbc(
+        r#"app "wake-helper"
+app.triggers { service.input.on("key.POWER.longTap") }
+event.on("key.POWER.longTap") {}
+"#,
+    );
+    let reader = compile_sqbc(
+        r#"app "reader"
+event.on("app.start") { debug.print("reader", system.startReason()) }
+event.on("key.POWER") { service.power.sleep({ wakeAfterMs: 0 }) }
+event.on("power.sleep") { state.save() }
+"#,
+    );
+    let mut runtime = multi_app_runtime();
+    install_app(&mut runtime, "main", &main);
+    install_app(&mut runtime, "wake-helper", &helper);
+    install_app(&mut runtime, "reader", &reader);
+    runtime.boot_app("main").unwrap();
+    runtime.launch_app("reader").unwrap();
+    runtime.dispatch_event("key.POWER").unwrap();
+    let checkpoint = runtime.take_prepared_sleep_checkpoint().unwrap().unwrap();
+
+    runtime.reset();
+    runtime.rebuild_app_registry().unwrap();
+    runtime.restore_power_checkpoint(&checkpoint).unwrap();
+
+    assert_eq!(runtime.active_app(), Some("reader"));
+    assert_eq!(runtime.lifecycle_start_reason(), "wake");
+    assert_eq!(runtime.lifecycle_process_at(0), Some("main"));
+    assert_eq!(
+        runtime.lifecycle_armed_at(0),
+        Some(("wake-helper", "key.POWER.longTap"))
+    );
+    assert_eq!(runtime.output_lines().as_slice(), &["reader wake"]);
+}
+
+#[test]
 fn armed_input_launches_owner_and_unmatched_input_stays_foreground() {
     let root = compile_sqbc(
         r#"app "main"

@@ -71,6 +71,18 @@ pub trait NativeAppStorage {
     fn load_state(&mut self, app_id: &str, out: &mut [u8]) -> Result<Option<usize>, AppStoreError>;
     fn save_state_atomic(&mut self, app_id: &str, bytes: &[u8]) -> Result<(), AppStoreError>;
     fn delete_state(&mut self, app_id: &str) -> Result<(), AppStoreError>;
+    fn load_power_checkpoint(&mut self, _out: &mut [u8]) -> Result<Option<usize>, AppStoreError> {
+        Ok(None)
+    }
+    fn save_power_checkpoint_atomic(&mut self, _bytes: &[u8]) -> Result<(), AppStoreError> {
+        Err(AppStoreError::Io)
+    }
+    fn delete_power_checkpoint(&mut self) -> Result<(), AppStoreError> {
+        Ok(())
+    }
+    fn flush_app_storage(&mut self) -> Result<(), AppStoreError> {
+        Ok(())
+    }
     fn format(&mut self) -> Result<(), AppStoreError>;
     /// Returns `(total_bytes, available_bytes)` for the app-store volume.
     fn capacity(&mut self) -> Result<(usize, usize), AppStoreError>;

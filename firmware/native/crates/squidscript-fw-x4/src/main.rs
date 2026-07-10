@@ -120,7 +120,7 @@ use core::net::Ipv4Addr;
     feature = "native-radio-services",
     feature = "wifi"
 ))]
-use core::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicUsize, Ordering};
 
 #[cfg(all(
     target_arch = "riscv32",
@@ -288,25 +288,53 @@ fn build_shared_x4_runtime(
             heap.current_usage,
             heap.size.saturating_sub(heap.current_usage),
         );
+        let wake_boot = matches!(
+            esp_hal::rtc_cntl::wakeup_cause(),
+            esp_hal::system::SleepSource::Timer | esp_hal::system::SleepSource::Gpio
+        );
+        let mut restored_wake = false;
         if !app_store_ready {
             runtime.record_error("app_store_mount_failed");
         } else if !registry_ready {
             runtime.record_error("app_store_registry_failed");
-        } else if runtime
-            .app_registry()
-            .iter()
-            .flatten()
-            .any(|entry| entry.app_id() == "main")
+        } else if wake_boot {
+            let mut checkpoint_bytes = [0_u8; squidscript_fw_core::power::POWER_CHECKPOINT_BYTES];
+            match runtime.load_power_checkpoint(&mut checkpoint_bytes) {
+                Ok(Some(checkpoint)) => {
+                    if runtime.delete_power_checkpoint().is_err() {
+                        runtime.record_error("power_wake_checkpoint_consume_failed");
+                    } else if runtime.restore_power_checkpoint(&checkpoint).is_ok() {
+                        restored_wake = true;
+                    } else {
+                        runtime.record_error("power_wake_restore_failed");
+                    }
+                }
+                Ok(None) => runtime.record_error("power_wake_checkpoint_missing"),
+                Err(_) => {
+                    let _ = runtime.delete_power_checkpoint();
+                    runtime.record_error("power_wake_checkpoint_corrupt");
+                }
+            }
+        }
+        if restored_wake {
+            native_radio_log!("power_wake_stage restored");
+        } else if registry_ready
+            && runtime
+                .app_registry()
+                .iter()
+                .flatten()
+                .any(|entry| entry.app_id() == "main")
         {
             if runtime.boot_app("main").is_err() {
                 runtime.record_error("installed_main_launch_failed");
             }
-        } else if runtime
-            .launch_fallback(include_bytes!(concat!(
-                env!("OUT_DIR"),
-                "/fallback-main.sqbc"
-            )))
-            .is_err()
+        } else if registry_ready
+            && runtime
+                .launch_fallback(include_bytes!(concat!(
+                    env!("OUT_DIR"),
+                    "/fallback-main.sqbc"
+                )))
+                .is_err()
         {
             runtime.record_error("fallback_main_launch_failed");
         }
@@ -414,6 +442,19 @@ const BLE_STATUS_PENDING: u8 = 0x7f;
     feature = "ble"
 ))]
 static BLE_PROFILE_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "x4-binbook",
+    feature = "native-radio-services"
+))]
+static POWER_SLEEP_READY: AtomicBool = AtomicBool::new(false);
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "x4-binbook",
+    feature = "native-radio-services"
+))]
+static POWER_SLEEP_WAKE_AFTER_MS: AtomicU32 = AtomicU32::new(0);
 
 #[cfg(all(
     target_arch = "riscv32",
@@ -913,6 +954,7 @@ async fn native_input_task(
     gpio1: esp_hal::peripherals::GPIO1<'static>,
     gpio2: esp_hal::peripherals::GPIO2<'static>,
     gpio3: esp_hal::peripherals::GPIO3<'static>,
+    lpwr: esp_hal::peripherals::LPWR<'static>,
     runtime: &'static SharedX4NativeRuntime,
 ) {
     let mut config = AdcConfig::new();
@@ -920,6 +962,7 @@ async fn native_input_task(
     let mut adc2_pin = config.enable_pin(gpio2, Attenuation::_11dB);
     let mut adc = Adc::new(adc1, config).into_async();
     let power = Input::new(gpio3, InputConfig::default().with_pull(Pull::Up));
+    let mut rtc = esp_hal::rtc_cntl::Rtc::new(lpwr);
     let mut classifier = InputClassifier::new();
     let mut previous_raw = ("none", "none", true);
     let mut previous_stable = 0u8;
@@ -927,6 +970,24 @@ async fn native_input_task(
 
     loop {
         embassy_time::Timer::after_millis(INPUT_DEBOUNCE_MS as u64).await;
+        if POWER_SLEEP_READY.load(Ordering::Acquire) {
+            POWER_SLEEP_READY.store(false, Ordering::Release);
+            let wake_after_ms = POWER_SLEEP_WAKE_AFTER_MS.load(Ordering::Acquire);
+            drop(power);
+            let mut wake_gpio = unsafe { esp_hal::peripherals::GPIO3::steal() };
+            let mut wakeup_pins: [(
+                &mut dyn esp_hal::gpio::RtcPinWithResistors,
+                esp_hal::rtc_cntl::sleep::WakeupLevel,
+            ); 1] = [(&mut wake_gpio, esp_hal::rtc_cntl::sleep::WakeupLevel::Low)];
+            let power_wakeup = esp_hal::rtc_cntl::sleep::RtcioWakeupSource::new(&mut wakeup_pins);
+            if wake_after_ms == 0 {
+                rtc.sleep_deep(&[&power_wakeup]);
+            }
+            let timer_wakeup = esp_hal::rtc_cntl::sleep::TimerWakeupSource::new(
+                core::time::Duration::from_millis(u64::from(wake_after_ms)),
+            );
+            rtc.sleep_deep(&[&power_wakeup, &timer_wakeup]);
+        }
         let adc1_value = adc.read_oneshot(&mut adc1_pin).await;
         let adc2_value = adc.read_oneshot(&mut adc2_pin).await;
         let power_high = power.is_high();
@@ -1874,6 +1935,7 @@ async fn main(spawner: embassy_executor::Spawner) {
                 peripherals.GPIO1,
                 peripherals.GPIO2,
                 peripherals.GPIO3,
+                peripherals.LPWR,
                 runtime,
             ) {
                 Ok(task) => {
@@ -2350,6 +2412,10 @@ where
                 self.task = X4StreamingDisplayFlushTask::new(CHUNK_COUNT);
             }
         }
+    }
+
+    fn is_idle(&self) -> bool {
+        !self.task.is_active()
     }
 }
 
@@ -2986,6 +3052,8 @@ async fn run_serial_protocol_cooperative<B, D, C, FB, AS, F>(
     let mut content_check = CooperativeContentCheck::new();
     let mut event_buf = [0u8; 64];
     let mut last_timer_tick = embassy_time::Instant::now();
+    let mut pending_sleep = None;
+    let mut checkpoint_bytes = [0_u8; squidscript_fw_core::power::POWER_CHECKPOINT_BYTES];
     #[cfg(all(feature = "ble", debug_assertions))]
     let mut reported_ble_stage = 0usize;
     #[cfg(all(feature = "ble", debug_assertions))]
@@ -3181,6 +3249,31 @@ async fn run_serial_protocol_cooperative<B, D, C, FB, AS, F>(
             }
         }
         display_flush.step();
+        if pending_sleep.is_none() {
+            match runtime.take_prepared_sleep_checkpoint() {
+                Ok(checkpoint) => pending_sleep = checkpoint,
+                Err(_) => runtime.record_error("power_sleep_checkpoint_build_failed"),
+            }
+        }
+        if let Some(checkpoint) = pending_sleep.as_ref() {
+            if runtime.display_sink().pending_refreshes() == 0 && display_flush.is_idle() {
+                let prepared = runtime.prepare_hardware_sleep().and_then(|()| {
+                    runtime.save_power_checkpoint(checkpoint, &mut checkpoint_bytes)
+                });
+                match prepared {
+                    Ok(()) => {
+                        POWER_SLEEP_WAKE_AFTER_MS
+                            .store(checkpoint.wake_after_ms, Ordering::Release);
+                        POWER_SLEEP_READY.store(true, Ordering::Release);
+                    }
+                    Err(_) => {
+                        let _ = runtime.delete_power_checkpoint();
+                        runtime.record_error("power_sleep_prepare_failed");
+                    }
+                }
+                pending_sleep = None;
+            }
+        }
         drop(runtime);
         embassy_time::Timer::after_millis(1).await;
     }
