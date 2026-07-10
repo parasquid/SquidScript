@@ -418,24 +418,34 @@ impl TraceSink for RuntimeTrace {
         Ok(())
     }
 
-    fn service_ble_start(&mut self, id: &str) -> Result<(), VmError> {
-        self.events.push(format!("service.ble.start {id}"));
+    fn service_upload_start<'a>(&'a mut self, id: &str) -> Result<UploadStartResult<'a>, VmError> {
+        self.events.push(format!("service.upload.start {id}"));
+        Ok(UploadStartResult {
+            ok: true,
+            error: None,
+            id: Some("book-upload"),
+            transports: &["http", "ble"],
+            http_path: Some("/upload/<safe-name>"),
+        })
+    }
+
+    fn service_upload_stop(&mut self) -> Result<(), VmError> {
+        self.events.push("service.upload.stop".to_string());
         Ok(())
     }
 
-    fn service_ble_stop(&mut self) -> Result<(), VmError> {
-        self.events.push("service.ble.stop".to_string());
-        Ok(())
-    }
-
-    fn service_http_start(&mut self, id: &str) -> Result<(), VmError> {
-        self.events.push(format!("service.http.start {id}"));
-        Ok(())
-    }
-
-    fn service_http_stop(&mut self) -> Result<(), VmError> {
-        self.events.push("service.http.stop".to_string());
-        Ok(())
+    fn service_upload_status<'a>(&'a mut self) -> Result<UploadStatus<'a>, VmError> {
+        self.events.push("service.upload.status".to_string());
+        Ok(UploadStatus {
+            active: true,
+            id: Some("book-upload"),
+            transports: &["http", "ble"],
+            http_path: Some("/upload/<safe-name>"),
+            in_flight: false,
+            bytes_received: None,
+            total_bytes: None,
+            error: None,
+        })
     }
 
     fn system_memory_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
@@ -1746,18 +1756,17 @@ screen("main") {}
 }
 
 #[test]
-fn program_index_parses_ble_profile_metadata_from_reader() {
-    let source = r#"app "ble-profile-index"
+fn program_index_parses_upload_profile_metadata_from_reader() {
+    let source = r#"app "upload-profile-index"
 event.on("app.start") {
-  service.ble.start("file-transfer", {
-    id: "rx"
-    accept: [".sqbc", ".binbook"]
-    events: {
-      complete: "ble.file.complete"
-    }
+  service.upload.start({
+    id: "book-upload"
+    accept: [".binbook", ".sqbc"]
+    transports: ["http", "ble"]
+    events: { complete: "upload.complete" }
   })
 }
-event.on("ble.file.complete", ev) {
+event.on("upload.complete", ev) {
   debug.print(ev.name)
 }
 "#;
@@ -1771,21 +1780,21 @@ event.on("ble.file.complete", ev) {
     let mut reader = SliceSqbcReader::new(&bytes);
     let mut scratch = [0u8; MAX_APP_BYTES];
     assert_eq!(
-        ProgramIndex::ble_profile_count_from_reader(&mut reader, &mut scratch).unwrap(),
+        ProgramIndex::upload_profile_count_from_reader(&mut reader, &mut scratch).unwrap(),
         1
     );
 
     let mut reader = SliceSqbcReader::new(&bytes);
-    let profile = ProgramIndex::ble_profile_from_reader(&mut reader, &mut scratch, 0).unwrap();
-    assert_eq!(profile.profile, "file-transfer");
-    assert_eq!(profile.id, "rx");
+    let profile = ProgramIndex::upload_profile_from_reader(&mut reader, &mut scratch, 0).unwrap();
+    assert_eq!(profile.id, "book-upload");
     assert_eq!(profile.role, "server");
-    assert_eq!(profile.accept, [".sqbc", ".binbook"]);
+    assert_eq!(profile.accept, [".binbook", ".sqbc"]);
+    assert_eq!(profile.transports, ["http", "ble"]);
     assert_eq!(
         profile.events,
-        [BleProfileEventRoute {
+        [UploadProfileEventRoute {
             kind: "complete",
-            event: "ble.file.complete",
+            event: "upload.complete",
         }]
     );
 }
@@ -1795,17 +1804,11 @@ fn program_infers_capability_demand_from_builtin_bytecode() {
     let source = r#"app "cap-demand"
 event.on("app.start") {
   let ap = service.wifi.startAP("SquidNative")
-  service.ble.start("file-transfer", {
-    id: "rx"
-    accept: [".sqbc"]
-    events: {
-      complete: "ble.done"
-    }
-  })
-  service.http.start("file-upload", {
-    id: "upload",
-    accept: [".binbook"],
-    events: { complete: "http.file.complete" }
+  service.upload.start({
+    id: "upload"
+    accept: [".sqbc", ".binbook"]
+    transports: ["ble", "http"]
+    events: { complete: "upload.complete" }
   })
   let info = display.info()
   let files = file.list("books", { offset: 0, limit: 8 })
@@ -1829,6 +1832,49 @@ event.on("app.start") {
     assert!(demand.display);
     assert!(demand.storage);
     assert!(demand.binbook);
+}
+
+fn assert_upload_transport_demand(transport: &str, expected_ble: bool, expected_http: bool) {
+    let source = format!(
+        r#"app "upload-demand"
+event.on("app.start") {{
+  service.upload.start({{
+    id: "upload"
+    accept: [".binbook"]
+    transports: ["{transport}"]
+    events: {{ complete: "upload.complete" }}
+  }})
+}}
+event.on("upload.complete") {{}}
+"#
+    );
+    let compiled = compile(CompileRequest {
+        source,
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(compiled.ok, "{:?}", compiled.diagnostics);
+    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
+
+    let program_demand = Program::parse(&bytes).unwrap().capability_demand().unwrap();
+    assert_eq!(program_demand.ble, expected_ble);
+    assert_eq!(program_demand.http, expected_http);
+
+    let mut reader = CountingReader::new(&bytes);
+    let mut scratch = [0u8; MAX_APP_BYTES];
+    let reader_demand =
+        ProgramIndex::capability_demand_from_reader(&mut reader, &mut scratch).unwrap();
+    assert_eq!(reader_demand.ble, expected_ble);
+    assert_eq!(reader_demand.http, expected_http);
+}
+
+#[test]
+fn upload_http_only_profile_demands_only_http() {
+    assert_upload_transport_demand("http", false, true);
+}
+
+#[test]
+fn upload_ble_only_profile_demands_only_ble() {
+    assert_upload_transport_demand("ble", true, false);
 }
 
 #[test]
@@ -2583,18 +2629,22 @@ screen("main") {
 }
 
 #[test]
-fn dispatch_handles_service_ble_start_and_stop() {
-    let source = r#"app "ble-install"
+fn dispatch_handles_service_upload_start_stop_and_status() {
+    let source = r#"app "upload-api"
 event.on("app.start") {
-  service.ble.start("file-transfer", {
-    id: "sqbc-install",
-    accept: [".sqbc"],
-    events: { complete: "ble.file.complete", error: "ble.file.error" }
+  let result = service.upload.start({
+    id: "book-upload"
+    accept: [".binbook"]
+    transports: ["http", "ble"]
+    events: { complete: "upload.complete" }
   })
+  let status = service.upload.status()
+  debug.print(result.ok, status.active, status.httpPath)
 }
 event.on("done") {
-  service.ble.stop()
+  service.upload.stop()
 }
+event.on("upload.complete", ev) { debug.print(ev.transport) }
 screen("main") {}
 "#;
     let compiled = compile(CompileRequest {
@@ -2614,48 +2664,11 @@ screen("main") {}
         trace.events,
         vec![
             "app.start",
-            "service.ble.start sqbc-install",
+            "service.upload.start book-upload",
+            "service.upload.status",
+            "debug true true /upload/<safe-name>",
             "done",
-            "service.ble.stop",
-        ]
-    );
-}
-
-#[test]
-fn dispatch_handles_service_http_start_and_stop() {
-    let source = r#"app "http-upload"
-event.on("app.start") {
-  service.http.start("file-upload", {
-    id: "binbook-upload",
-    accept: [".binbook"],
-    events: { complete: "http.file.complete" }
-  })
-}
-event.on("done") {
-  service.http.stop()
-}
-screen("main") {}
-"#;
-    let compiled = compile(CompileRequest {
-        source: source.to_string(),
-        target_id: PORTABLE_TARGET_ID.to_string(),
-    });
-    assert!(compiled.ok, "{:?}", compiled.diagnostics);
-    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
-    let program = Program::parse(&bytes).unwrap();
-    let mut vm = Vm::new(program);
-    let mut trace = RuntimeTrace::default();
-
-    vm.dispatch("app.start", &mut trace).unwrap();
-    vm.dispatch("done", &mut trace).unwrap();
-
-    assert_eq!(
-        trace.events,
-        vec![
-            "app.start",
-            "service.http.start binbook-upload",
-            "done",
-            "service.http.stop",
+            "service.upload.stop",
         ]
     );
 }

@@ -11,7 +11,7 @@ pub(crate) const SECTION_CODE: u16 = 5;
 pub(crate) const SECTION_SCREENS: u16 = 6;
 pub(crate) const SECTION_DEVICE_BINDINGS: u16 = 8;
 pub(crate) const SECTION_TRIGGERS: u16 = 9;
-pub(crate) const SECTION_BLE_PROFILES: u16 = 10;
+pub(crate) const SECTION_UPLOAD_PROFILES: u16 = 10;
 
 pub(crate) const OP_PUSH_INT: u8 = 1;
 pub(crate) const OP_PUSH_BOOL: u8 = 2;
@@ -106,10 +106,9 @@ pub(crate) const BUILTIN_FILE_READ_LINES: u8 = 0x92;
 pub(crate) const BUILTIN_FILE_COPY: u8 = 0x93;
 pub(crate) const BUILTIN_FILE_LIST: u8 = 0x94;
 pub(crate) const BUILTIN_SERVICE_POWER_SLEEP: u8 = 0xc0;
-pub(crate) const BUILTIN_SERVICE_BLE_START: u8 = 0xc1;
-pub(crate) const BUILTIN_SERVICE_BLE_STOP: u8 = 0xc2;
-pub(crate) const BUILTIN_SERVICE_HTTP_START: u8 = 0xc3;
-pub(crate) const BUILTIN_SERVICE_HTTP_STOP: u8 = 0xc4;
+pub(crate) const BUILTIN_SERVICE_UPLOAD_START: u8 = 0xc1;
+pub(crate) const BUILTIN_SERVICE_UPLOAD_STOP: u8 = 0xc2;
+pub(crate) const BUILTIN_SERVICE_UPLOAD_STATUS: u8 = 0xc3;
 
 pub(crate) const VALUE_NULL: u8 = 0;
 pub(crate) const VALUE_BOOL: u8 = 1;

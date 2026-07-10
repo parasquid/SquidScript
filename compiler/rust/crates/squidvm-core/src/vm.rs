@@ -13,16 +13,16 @@ use crate::{
         BUILTIN_DISPLAY_RECT, BUILTIN_DISPLAY_REFRESH_MODE, BUILTIN_DISPLAY_SELECT,
         BUILTIN_DISPLAY_TEXT, BUILTIN_FILE_COPY, BUILTIN_FILE_LIST, BUILTIN_HARDWARE_GPIO_READ,
         BUILTIN_HARDWARE_GPIO_TOGGLE, BUILTIN_HARDWARE_GPIO_WRITE, BUILTIN_SCREEN_OPEN,
-        BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_BLE_START, BUILTIN_SERVICE_BLE_STOP,
-        BUILTIN_SERVICE_HTTP_START, BUILTIN_SERVICE_HTTP_STOP, BUILTIN_SERVICE_INDICATOR_BLINK,
-        BUILTIN_SERVICE_INDICATOR_BREATHE, BUILTIN_SERVICE_INDICATOR_READ,
-        BUILTIN_SERVICE_INDICATOR_TOGGLE, BUILTIN_SERVICE_INDICATOR_WRITE,
-        BUILTIN_SERVICE_POWER_SLEEP, BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY,
-        BUILTIN_SERVICE_WIFI_CANCEL, BUILTIN_SERVICE_WIFI_CONNECT, BUILTIN_SERVICE_WIFI_DISCONNECT,
-        BUILTIN_SERVICE_WIFI_GET_AP_IP, BUILTIN_SERVICE_WIFI_OPERATION,
-        BUILTIN_SERVICE_WIFI_RESULT, BUILTIN_SERVICE_WIFI_SCAN, BUILTIN_SERVICE_WIFI_SCAN_NETWORK,
-        BUILTIN_SERVICE_WIFI_START_AP, BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP,
-        BUILTIN_STATE_LOAD, BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, BUILTIN_SYSTEM_MEMORY,
+        BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_INDICATOR_BLINK, BUILTIN_SERVICE_INDICATOR_BREATHE,
+        BUILTIN_SERVICE_INDICATOR_READ, BUILTIN_SERVICE_INDICATOR_TOGGLE,
+        BUILTIN_SERVICE_INDICATOR_WRITE, BUILTIN_SERVICE_POWER_SLEEP, BUILTIN_SERVICE_TIMER_AFTER,
+        BUILTIN_SERVICE_TIMER_EVERY, BUILTIN_SERVICE_UPLOAD_START, BUILTIN_SERVICE_UPLOAD_STATUS,
+        BUILTIN_SERVICE_UPLOAD_STOP, BUILTIN_SERVICE_WIFI_CANCEL, BUILTIN_SERVICE_WIFI_CONNECT,
+        BUILTIN_SERVICE_WIFI_DISCONNECT, BUILTIN_SERVICE_WIFI_GET_AP_IP,
+        BUILTIN_SERVICE_WIFI_OPERATION, BUILTIN_SERVICE_WIFI_RESULT, BUILTIN_SERVICE_WIFI_SCAN,
+        BUILTIN_SERVICE_WIFI_SCAN_NETWORK, BUILTIN_SERVICE_WIFI_START_AP,
+        BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP, BUILTIN_STATE_LOAD,
+        BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, BUILTIN_SYSTEM_MEMORY,
         BUILTIN_SYSTEM_START_REASON, BUILTIN_SYSTEM_STORAGE, OP_ADD, OP_CALL_BUILTIN,
         OP_CALL_FUNCTION, OP_EQ, OP_GET_FIELD, OP_GET_LOCAL, OP_GET_STATE, OP_GT, OP_GTE, OP_HALT,
         OP_JUMP, OP_JUMP_IF_FALSE, OP_LIST_GET, OP_LIST_LEN, OP_LT, OP_LTE, OP_NE, OP_POP,
@@ -40,8 +40,8 @@ use crate::{
         DisplayLineOptions, DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions,
         FileCopyResult, FileListEntry, FileListSummary, FileListWriter, FilePickFileResult,
         FileReadLinesResult, FileReadLinesSummary, FileReadLinesWriter, FileReadTextResult,
-        StorageCompletion, StorageRequest, TraceSink, VmDispatch, WifiAccessPoint, WifiApIp,
-        WifiOperation, WifiOperationResult, WifiScanNetwork, WifiStatus,
+        StorageCompletion, StorageRequest, TraceSink, UploadStartResult, UploadStatus, VmDispatch,
+        WifiAccessPoint, WifiApIp, WifiOperation, WifiOperationResult, WifiScanNetwork, WifiStatus,
     },
     limits::{
         MAX_CALL_DEPTH, MAX_CODE_CHUNK_BYTES, MAX_FUNCTIONS, MAX_HANDLERS,
@@ -206,10 +206,12 @@ enum RuntimeFieldName {
     Height,
     HasMore,
     Hidden,
+    HttpPath,
     Id,
     Ip,
     IpAddress,
     Index,
+    InFlight,
     Items,
     Kind,
     LastBackendCode,
@@ -249,6 +251,7 @@ enum RuntimeFieldName {
     Title,
     TotalBytes,
     Transport,
+    Transports,
     Type,
     Upload,
     Warning,
@@ -294,10 +297,12 @@ impl RuntimeFieldName {
             "height" => Self::Height,
             "hasMore" => Self::HasMore,
             "hidden" => Self::Hidden,
+            "httpPath" => Self::HttpPath,
             "id" => Self::Id,
             "ip" => Self::Ip,
             "ipAddress" => Self::IpAddress,
             "index" => Self::Index,
+            "inFlight" => Self::InFlight,
             "items" => Self::Items,
             "kind" => Self::Kind,
             "lastBackendCode" => Self::LastBackendCode,
@@ -337,6 +342,7 @@ impl RuntimeFieldName {
             "title" => Self::Title,
             "totalBytes" => Self::TotalBytes,
             "transport" => Self::Transport,
+            "transports" => Self::Transports,
             "type" => Self::Type,
             "upload" => Self::Upload,
             "warning" => Self::Warning,
@@ -1632,19 +1638,20 @@ impl ChunkedVm {
                 let event_id = self.pop_sqbc_string_id()?;
                 host.service_timer_after(self.index.string(event_id)?, delay_ms)?;
             }
-            BUILTIN_SERVICE_BLE_START => {
+            BUILTIN_SERVICE_UPLOAD_START => {
                 let id = self.pop_sqbc_string_id()?;
-                host.service_ble_start(self.index.string(id)?)?;
+                let result = host.service_upload_start(self.index.string(id)?)?;
+                let value = self.upload_start_record(result)?;
+                self.push(value)?;
             }
-            BUILTIN_SERVICE_BLE_STOP => {
-                host.service_ble_stop()?;
+            BUILTIN_SERVICE_UPLOAD_STOP => {
+                host.service_upload_stop()?;
+                self.push(Value::Null)?;
             }
-            BUILTIN_SERVICE_HTTP_START => {
-                let id = self.pop_sqbc_string_id()?;
-                host.service_http_start(self.index.string(id)?)?;
-            }
-            BUILTIN_SERVICE_HTTP_STOP => {
-                host.service_http_stop()?;
+            BUILTIN_SERVICE_UPLOAD_STATUS => {
+                let result = host.service_upload_status()?;
+                let value = self.upload_status_record(result)?;
+                self.push(value)?;
             }
             BUILTIN_SERVICE_POWER_SLEEP => {
                 let wake_after_ms = self.pop()?.expect_i32()?;
@@ -1899,6 +1906,50 @@ impl ChunkedVm {
             RuntimeRecordField::new(RuntimeFieldName::Done, Value::Bool(result.done)),
             RuntimeRecordField::new(RuntimeFieldName::Cancelled, Value::Bool(result.cancelled)),
             RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
+        ])
+    }
+
+    fn runtime_text_list(&mut self, values: &[&str]) -> Result<Value, VmError> {
+        if values.len() > MAX_RUNTIME_LIST_ITEMS {
+            return Err(VmError::InvalidOperand);
+        }
+        let mut items = [Value::Null; MAX_RUNTIME_LIST_ITEMS];
+        for (index, value) in values.iter().enumerate() {
+            items[index] = self.runtime_string_value(Some(value))?;
+        }
+        self.runtime_lists.alloc(&items[..values.len()])
+    }
+
+    fn upload_start_record(&mut self, result: UploadStartResult<'_>) -> Result<Value, VmError> {
+        let error = self.runtime_string_value(result.error)?;
+        let id = self.runtime_string_value(result.id)?;
+        let transports = self.runtime_text_list(result.transports)?;
+        let http_path = self.runtime_string_value(result.http_path)?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
+            RuntimeRecordField::new(RuntimeFieldName::Error, error),
+            RuntimeRecordField::new(RuntimeFieldName::Id, id),
+            RuntimeRecordField::new(RuntimeFieldName::Transports, transports),
+            RuntimeRecordField::new(RuntimeFieldName::HttpPath, http_path),
+        ])
+    }
+
+    fn upload_status_record(&mut self, result: UploadStatus<'_>) -> Result<Value, VmError> {
+        let id = self.runtime_string_value(result.id)?;
+        let transports = self.runtime_text_list(result.transports)?;
+        let http_path = self.runtime_string_value(result.http_path)?;
+        let bytes_received = self.runtime_string_value(result.bytes_received)?;
+        let total_bytes = self.runtime_string_value(result.total_bytes)?;
+        let error = self.runtime_string_value(result.error)?;
+        self.runtime_records.alloc(&[
+            RuntimeRecordField::new(RuntimeFieldName::Active, Value::Bool(result.active)),
+            RuntimeRecordField::new(RuntimeFieldName::Id, id),
+            RuntimeRecordField::new(RuntimeFieldName::Transports, transports),
+            RuntimeRecordField::new(RuntimeFieldName::HttpPath, http_path),
+            RuntimeRecordField::new(RuntimeFieldName::InFlight, Value::Bool(result.in_flight)),
+            RuntimeRecordField::new(RuntimeFieldName::BytesReceived, bytes_received),
+            RuntimeRecordField::new(RuntimeFieldName::TotalBytes, total_bytes),
             RuntimeRecordField::new(RuntimeFieldName::Error, error),
         ])
     }
@@ -2691,20 +2742,16 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
         self.trace.service_timer_after(event, delay_ms)
     }
 
-    fn service_ble_start(&mut self, id: &str) -> Result<(), VmError> {
-        self.trace.service_ble_start(id)
+    fn service_upload_start<'b>(&'b mut self, id: &str) -> Result<UploadStartResult<'b>, VmError> {
+        self.trace.service_upload_start(id)
     }
 
-    fn service_ble_stop(&mut self) -> Result<(), VmError> {
-        self.trace.service_ble_stop()
+    fn service_upload_stop(&mut self) -> Result<(), VmError> {
+        self.trace.service_upload_stop()
     }
 
-    fn service_http_start(&mut self, id: &str) -> Result<(), VmError> {
-        self.trace.service_http_start(id)
-    }
-
-    fn service_http_stop(&mut self) -> Result<(), VmError> {
-        self.trace.service_http_stop()
+    fn service_upload_status<'b>(&'b mut self) -> Result<UploadStatus<'b>, VmError> {
+        self.trace.service_upload_status()
     }
 
     fn service_wifi_start_ap<'b>(&'b mut self, ssid: &str) -> Result<WifiOperation<'b>, VmError> {

@@ -163,20 +163,13 @@ pub trait TraceSink {
     fn service_timer_after(&mut self, _event: &str, _delay_ms: i32) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
     }
-    /// Set the calling app's BLE object-receive profile to the one whose
-    /// compile-time `id` matches and begin advertising. Idempotent set/replace.
-    fn service_ble_start(&mut self, _id: &str) -> Result<(), VmError> {
+    fn service_upload_start<'a>(&'a mut self, _id: &str) -> Result<UploadStartResult<'a>, VmError> {
         Err(VmError::InvalidOperand)
     }
-    /// Clear the calling app's BLE profile, abort any in-flight transfer, and
-    /// stop advertising if no profiles remain.
-    fn service_ble_stop(&mut self) -> Result<(), VmError> {
+    fn service_upload_stop(&mut self) -> Result<(), VmError> {
         Err(VmError::InvalidOperand)
     }
-    fn service_http_start(&mut self, _id: &str) -> Result<(), VmError> {
-        Err(VmError::InvalidOperand)
-    }
-    fn service_http_stop(&mut self) -> Result<(), VmError> {
+    fn service_upload_status<'a>(&'a mut self) -> Result<UploadStatus<'a>, VmError> {
         Err(VmError::InvalidOperand)
     }
     fn service_wifi_start_ap<'a>(&'a mut self, _ssid: &str) -> Result<WifiOperation<'a>, VmError> {
@@ -687,6 +680,27 @@ pub struct AppRegistryEntry<'a> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AppInstallResult<'a> {
     pub id: &'a str,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UploadStartResult<'a> {
+    pub ok: bool,
+    pub error: Option<&'a str>,
+    pub id: Option<&'a str>,
+    pub transports: &'a [&'a str],
+    pub http_path: Option<&'a str>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UploadStatus<'a> {
+    pub active: bool,
+    pub id: Option<&'a str>,
+    pub transports: &'a [&'a str],
+    pub http_path: Option<&'a str>,
+    pub in_flight: bool,
+    pub bytes_received: Option<&'a str>,
+    pub total_bytes: Option<&'a str>,
+    pub error: Option<&'a str>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

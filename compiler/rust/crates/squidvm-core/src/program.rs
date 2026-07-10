@@ -15,22 +15,21 @@ use crate::{
         BUILTIN_FILE_COPY, BUILTIN_FILE_LIST, BUILTIN_FILE_PICK_FILE, BUILTIN_FILE_READ_LINES,
         BUILTIN_FILE_READ_TEXT, BUILTIN_HARDWARE_GPIO_READ, BUILTIN_HARDWARE_GPIO_TOGGLE,
         BUILTIN_HARDWARE_GPIO_WRITE, BUILTIN_SCREEN_OPEN, BUILTIN_SCREEN_REFRESH,
-        BUILTIN_SERVICE_BLE_START, BUILTIN_SERVICE_BLE_STOP, BUILTIN_SERVICE_HTTP_START,
-        BUILTIN_SERVICE_HTTP_STOP, BUILTIN_SERVICE_INDICATOR_BLINK,
-        BUILTIN_SERVICE_INDICATOR_BREATHE, BUILTIN_SERVICE_INDICATOR_READ,
-        BUILTIN_SERVICE_INDICATOR_TOGGLE, BUILTIN_SERVICE_INDICATOR_WRITE,
-        BUILTIN_SERVICE_POWER_SLEEP, BUILTIN_SERVICE_TIMER_AFTER, BUILTIN_SERVICE_TIMER_EVERY,
-        BUILTIN_SERVICE_WIFI_CANCEL, BUILTIN_SERVICE_WIFI_CONNECT, BUILTIN_SERVICE_WIFI_DISCONNECT,
-        BUILTIN_SERVICE_WIFI_GET_AP_IP, BUILTIN_SERVICE_WIFI_OPERATION,
-        BUILTIN_SERVICE_WIFI_RESULT, BUILTIN_SERVICE_WIFI_SCAN, BUILTIN_SERVICE_WIFI_SCAN_NETWORK,
-        BUILTIN_SERVICE_WIFI_START_AP, BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP,
-        BUILTIN_STATE_LOAD, BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, OP_ADD, OP_CALL_BUILTIN,
-        OP_CALL_FUNCTION, OP_EQ, OP_GET_FIELD, OP_GET_LOCAL, OP_GET_STATE, OP_GT, OP_GTE, OP_HALT,
-        OP_JUMP, OP_JUMP_IF_FALSE, OP_LIST_GET, OP_LIST_LEN, OP_LT, OP_LTE, OP_NE, OP_POP,
-        OP_PUSH_BOOL, OP_PUSH_INT, OP_PUSH_NULL, OP_PUSH_STRING, OP_RETURN, OP_SET_LOCAL,
-        OP_SET_STATE, OP_SUB, SECTION_BLE_PROFILES, SECTION_CODE, SECTION_DEVICE_BINDINGS,
-        SECTION_FUNCTIONS, SECTION_HANDLERS, SECTION_SCREENS, SECTION_STATE, SECTION_STRINGS,
-        SECTION_TRIGGERS,
+        BUILTIN_SERVICE_INDICATOR_BLINK, BUILTIN_SERVICE_INDICATOR_BREATHE,
+        BUILTIN_SERVICE_INDICATOR_READ, BUILTIN_SERVICE_INDICATOR_TOGGLE,
+        BUILTIN_SERVICE_INDICATOR_WRITE, BUILTIN_SERVICE_POWER_SLEEP, BUILTIN_SERVICE_TIMER_AFTER,
+        BUILTIN_SERVICE_TIMER_EVERY, BUILTIN_SERVICE_UPLOAD_START, BUILTIN_SERVICE_UPLOAD_STATUS,
+        BUILTIN_SERVICE_UPLOAD_STOP, BUILTIN_SERVICE_WIFI_CANCEL, BUILTIN_SERVICE_WIFI_CONNECT,
+        BUILTIN_SERVICE_WIFI_DISCONNECT, BUILTIN_SERVICE_WIFI_GET_AP_IP,
+        BUILTIN_SERVICE_WIFI_OPERATION, BUILTIN_SERVICE_WIFI_RESULT, BUILTIN_SERVICE_WIFI_SCAN,
+        BUILTIN_SERVICE_WIFI_SCAN_NETWORK, BUILTIN_SERVICE_WIFI_START_AP,
+        BUILTIN_SERVICE_WIFI_STATUS, BUILTIN_SERVICE_WIFI_STOP_AP, BUILTIN_STATE_LOAD,
+        BUILTIN_STATE_RESET, BUILTIN_STATE_SAVE, OP_ADD, OP_CALL_BUILTIN, OP_CALL_FUNCTION, OP_EQ,
+        OP_GET_FIELD, OP_GET_LOCAL, OP_GET_STATE, OP_GT, OP_GTE, OP_HALT, OP_JUMP,
+        OP_JUMP_IF_FALSE, OP_LIST_GET, OP_LIST_LEN, OP_LT, OP_LTE, OP_NE, OP_POP, OP_PUSH_BOOL,
+        OP_PUSH_INT, OP_PUSH_NULL, OP_PUSH_STRING, OP_RETURN, OP_SET_LOCAL, OP_SET_STATE, OP_SUB,
+        SECTION_CODE, SECTION_DEVICE_BINDINGS, SECTION_FUNCTIONS, SECTION_HANDLERS,
+        SECTION_SCREENS, SECTION_STATE, SECTION_STRINGS, SECTION_TRIGGERS, SECTION_UPLOAD_PROFILES,
     },
     error::VmError,
     limits::{
@@ -45,9 +44,9 @@ use crate::{
 };
 
 const SQBC_HEADER_LEN: usize = 14;
-const MAX_BLE_PROFILES: usize = 16;
-const MAX_BLE_PROFILE_ACCEPT: usize = 4;
-const MAX_BLE_PROFILE_EVENTS: usize = 8;
+const MAX_UPLOAD_PROFILES: usize = 16;
+const MAX_UPLOAD_PROFILE_TEXT_ITEMS: usize = 4;
+const MAX_UPLOAD_PROFILE_EVENTS: usize = 8;
 
 pub struct Program<'a> {
     pub(crate) strings: [&'a str; MAX_STRINGS],
@@ -63,6 +62,8 @@ pub struct Program<'a> {
     pub(crate) screens: [Screen; MAX_SCREENS],
     pub(crate) screen_count: usize,
     pub(crate) code: &'a [u8],
+    upload_ble: bool,
+    upload_http: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -189,12 +190,9 @@ impl CapabilityDemand {
             BUILTIN_SERVICE_POWER_SLEEP => {
                 self.power = true;
             }
-            BUILTIN_SERVICE_BLE_START | BUILTIN_SERVICE_BLE_STOP => {
-                self.ble = true;
-            }
-            BUILTIN_SERVICE_HTTP_START | BUILTIN_SERVICE_HTTP_STOP => {
-                self.http = true;
-            }
+            BUILTIN_SERVICE_UPLOAD_START
+            | BUILTIN_SERVICE_UPLOAD_STOP
+            | BUILTIN_SERVICE_UPLOAD_STATUS => {}
             BUILTIN_DEBUG_PRINT => {}
             _ => {}
         }
@@ -272,6 +270,7 @@ impl<'a> Program<'a> {
         let triggers = optional_section(bytes, section_count, SECTION_TRIGGERS)?;
         let screens = optional_section(bytes, section_count, SECTION_SCREENS)?;
         let code = section(bytes, section_count, SECTION_CODE)?;
+        let upload_profiles = optional_section(bytes, section_count, SECTION_UPLOAD_PROFILES)?;
 
         parse_owned_strings(strings)?;
         let (strings, string_count) = parse_strings(strings)?;
@@ -280,6 +279,8 @@ impl<'a> Program<'a> {
         let (handlers, handler_count) = parse_handlers(handlers, code.len())?;
         let (trigger_timers, trigger_timer_count) = parse_trigger_timers(triggers)?;
         let (screens, screen_count) = parse_screens(screens, code.len())?;
+        let (upload_ble, upload_http) =
+            upload_transport_demand(upload_profiles, &strings, string_count)?;
         validate_program_tables(
             &strings,
             string_count,
@@ -309,6 +310,8 @@ impl<'a> Program<'a> {
             screens,
             screen_count,
             code,
+            upload_ble,
+            upload_http,
         })
     }
 
@@ -338,7 +341,12 @@ impl<'a> Program<'a> {
     }
 
     pub fn capability_demand(&self) -> Result<CapabilityDemand, VmError> {
-        capability_demand_from_code(self.code)
+        let (mut demand, uses_upload) = capability_demand_from_code(self.code)?;
+        if uses_upload {
+            demand.ble = self.upload_ble;
+            demand.http = self.upload_http;
+        }
+        Ok(demand)
     }
 
     #[allow(dead_code)]
@@ -627,7 +635,21 @@ impl ProgramIndex {
             return Err(VmError::InvalidSection);
         }
         reader.read_exact_at(code_section.offset, &mut scratch[..code_section.len])?;
-        capability_demand_from_code(&scratch[..code_section.len])
+        let (mut demand, uses_upload) = capability_demand_from_code(&scratch[..code_section.len])?;
+        if uses_upload {
+            let count = Self::upload_profile_count_from_reader(reader, scratch)?;
+            for index in 0..count {
+                let profile = Self::upload_profile_from_reader(reader, scratch, index)?;
+                for transport_index in 0..profile.transports.len() {
+                    match profile.transports.get(transport_index) {
+                        Some("ble") => demand.ble = true,
+                        Some("http") => demand.http = true,
+                        _ => {}
+                    }
+                }
+            }
+        }
+        Ok(demand)
     }
 
     pub fn app_id_from_reader<'a>(
@@ -779,11 +801,11 @@ impl ProgramIndex {
         })
     }
 
-    pub fn ble_profile_count_from_reader(
+    pub fn upload_profile_count_from_reader(
         reader: &mut impl SqbcReader,
         scratch: &mut [u8],
     ) -> Result<usize, VmError> {
-        let (_, profile_section) = ble_profile_reader_sections(reader, scratch)?;
+        let (_, profile_section) = upload_profile_reader_sections(reader, scratch)?;
         let Some(profile_section) = profile_section else {
             return Ok(0);
         };
@@ -792,19 +814,19 @@ impl ProgramIndex {
         }
         reader.read_exact_at(profile_section.offset, &mut scratch[..profile_section.len])?;
         let count = read_u16(scratch, 0)? as usize;
-        if count > MAX_BLE_PROFILES {
+        if count > MAX_UPLOAD_PROFILES {
             return Err(VmError::InvalidSection);
         }
-        validate_ble_profile_section(&scratch[..profile_section.len])?;
+        validate_upload_profile_section(&scratch[..profile_section.len])?;
         Ok(count)
     }
 
-    pub fn ble_profile_from_reader<'a>(
+    pub fn upload_profile_from_reader<'a>(
         reader: &mut impl SqbcReader,
         scratch: &'a mut [u8],
         profile_index: usize,
-    ) -> Result<BleProfile<'a>, VmError> {
-        let (strings_section, profile_section) = ble_profile_reader_sections(reader, scratch)?;
+    ) -> Result<UploadProfile<'a>, VmError> {
+        let (strings_section, profile_section) = upload_profile_reader_sections(reader, scratch)?;
         let profile_section = profile_section.ok_or(VmError::InvalidOperand)?;
         if profile_section.len > scratch.len() || strings_section.len > scratch.len() {
             return Err(VmError::InvalidSection);
@@ -812,28 +834,40 @@ impl ProgramIndex {
 
         reader.read_exact_at(profile_section.offset, &mut scratch[..profile_section.len])?;
         let count = read_u16(scratch, 0)? as usize;
-        if count > MAX_BLE_PROFILES || profile_index >= count {
+        if count > MAX_UPLOAD_PROFILES || profile_index >= count {
             return Err(VmError::InvalidOperand);
         }
 
         let mut cursor = 2usize;
         let mut selected = None;
         for index in 0..count {
-            let profile_id = read_u16(scratch, cursor)?;
-            let id_id = read_u16(scratch, cursor + 2)?;
-            let role_id = read_u16(scratch, cursor + 4)?;
-            let accept_count = read_u16(scratch, cursor + 6)? as usize;
-            cursor = cursor.checked_add(8).ok_or(VmError::InvalidSection)?;
-            if accept_count > MAX_BLE_PROFILE_ACCEPT {
+            let id_id = read_u16(scratch, cursor)?;
+            let role_id = read_u16(scratch, cursor + 2)?;
+            let accept_count = read_u16(scratch, cursor + 4)? as usize;
+            cursor = cursor.checked_add(6).ok_or(VmError::InvalidSection)?;
+            if accept_count > MAX_UPLOAD_PROFILE_TEXT_ITEMS {
                 return Err(VmError::InvalidSection);
             }
             let accept_start = cursor;
             cursor = cursor
                 .checked_add(accept_count.checked_mul(2).ok_or(VmError::InvalidSection)?)
                 .ok_or(VmError::InvalidSection)?;
+            let transport_count = read_u16(scratch, cursor)? as usize;
+            cursor = cursor.checked_add(2).ok_or(VmError::InvalidSection)?;
+            if transport_count > MAX_UPLOAD_PROFILE_TEXT_ITEMS {
+                return Err(VmError::InvalidSection);
+            }
+            let transports_start = cursor;
+            cursor = cursor
+                .checked_add(
+                    transport_count
+                        .checked_mul(2)
+                        .ok_or(VmError::InvalidSection)?,
+                )
+                .ok_or(VmError::InvalidSection)?;
             let event_count = read_u16(scratch, cursor)? as usize;
             cursor = cursor.checked_add(2).ok_or(VmError::InvalidSection)?;
-            if event_count > MAX_BLE_PROFILE_EVENTS {
+            if event_count > MAX_UPLOAD_PROFILE_EVENTS {
                 return Err(VmError::InvalidSection);
             }
             let events_start = cursor;
@@ -845,11 +879,12 @@ impl ProgramIndex {
             }
             if index == profile_index {
                 selected = Some((
-                    profile_id,
                     id_id,
                     role_id,
                     accept_count,
                     accept_start,
+                    transport_count,
+                    transports_start,
                     event_count,
                     events_start,
                 ));
@@ -860,11 +895,12 @@ impl ProgramIndex {
         }
 
         let Some((
-            profile_id,
             id_id,
             role_id,
             accept_count,
             accept_start,
+            transport_count,
+            transports_start,
             event_count,
             events_start,
         )) = selected
@@ -872,11 +908,15 @@ impl ProgramIndex {
             return Err(VmError::InvalidOperand);
         };
 
-        let mut accept_ids = [0u16; MAX_BLE_PROFILE_ACCEPT];
+        let mut accept_ids = [0u16; MAX_UPLOAD_PROFILE_TEXT_ITEMS];
         for (index, slot) in accept_ids.iter_mut().enumerate().take(accept_count) {
             *slot = read_u16(scratch, accept_start + index * 2)?;
         }
-        let mut event_ids = [(0u16, 0u16); MAX_BLE_PROFILE_EVENTS];
+        let mut transport_ids = [0u16; MAX_UPLOAD_PROFILE_TEXT_ITEMS];
+        for (index, slot) in transport_ids.iter_mut().enumerate().take(transport_count) {
+            *slot = read_u16(scratch, transports_start + index * 2)?;
+        }
+        let mut event_ids = [(0u16, 0u16); MAX_UPLOAD_PROFILE_EVENTS];
         for (index, slot) in event_ids.iter_mut().enumerate().take(event_count) {
             let base = events_start + index * 4;
             *slot = (read_u16(scratch, base)?, read_u16(scratch, base + 2)?);
@@ -884,31 +924,38 @@ impl ProgramIndex {
 
         reader.read_exact_at(strings_section.offset, &mut scratch[..strings_section.len])?;
         let strings = &scratch[..strings_section.len];
-        let mut accept = [""; MAX_BLE_PROFILE_ACCEPT];
+        let mut accept = [""; MAX_UPLOAD_PROFILE_TEXT_ITEMS];
         for (index, slot) in accept.iter_mut().enumerate().take(accept_count) {
             *slot = string_from_section(strings, accept_ids[index])?;
         }
-        let mut events = [BleProfileEventRoute {
+        let mut transports = [""; MAX_UPLOAD_PROFILE_TEXT_ITEMS];
+        for (index, slot) in transports.iter_mut().enumerate().take(transport_count) {
+            *slot = string_from_section(strings, transport_ids[index])?;
+        }
+        let mut events = [UploadProfileEventRoute {
             kind: "",
             event: "",
-        }; MAX_BLE_PROFILE_EVENTS];
+        }; MAX_UPLOAD_PROFILE_EVENTS];
         for (index, slot) in events.iter_mut().enumerate().take(event_count) {
             let (kind_id, event_id) = event_ids[index];
-            *slot = BleProfileEventRoute {
+            *slot = UploadProfileEventRoute {
                 kind: string_from_section(strings, kind_id)?,
                 event: string_from_section(strings, event_id)?,
             };
         }
 
-        Ok(BleProfile {
-            profile: string_from_section(strings, profile_id)?,
+        Ok(UploadProfile {
             id: string_from_section(strings, id_id)?,
             role: string_from_section(strings, role_id)?,
-            accept: BleProfileTextList {
+            accept: UploadProfileTextList {
                 values: accept,
                 count: accept_count,
             },
-            events: BleProfileEventRoutes {
+            transports: UploadProfileTextList {
+                values: transports,
+                count: transport_count,
+            },
+            events: UploadProfileEventRoutes {
                 values: events,
                 count: event_count,
             },
@@ -959,27 +1006,27 @@ pub struct DeviceBinding<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BleProfileEventRoute<'a> {
+pub struct UploadProfileEventRoute<'a> {
     pub kind: &'a str,
     pub event: &'a str,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BleProfile<'a> {
-    pub profile: &'a str,
+pub struct UploadProfile<'a> {
     pub id: &'a str,
     pub role: &'a str,
-    pub accept: BleProfileTextList<'a>,
-    pub events: BleProfileEventRoutes<'a>,
+    pub accept: UploadProfileTextList<'a>,
+    pub transports: UploadProfileTextList<'a>,
+    pub events: UploadProfileEventRoutes<'a>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BleProfileTextList<'a> {
-    values: [&'a str; MAX_BLE_PROFILE_ACCEPT],
+pub struct UploadProfileTextList<'a> {
+    values: [&'a str; MAX_UPLOAD_PROFILE_TEXT_ITEMS],
     count: usize,
 }
 
-impl<'a> BleProfileTextList<'a> {
+impl<'a> UploadProfileTextList<'a> {
     pub const fn len(&self) -> usize {
         self.count
     }
@@ -993,7 +1040,7 @@ impl<'a> BleProfileTextList<'a> {
     }
 }
 
-impl<'a, const N: usize> PartialEq<[&'a str; N]> for BleProfileTextList<'a> {
+impl<'a, const N: usize> PartialEq<[&'a str; N]> for UploadProfileTextList<'a> {
     fn eq(&self, other: &[&'a str; N]) -> bool {
         self.count == N
             && self
@@ -1006,17 +1053,17 @@ impl<'a, const N: usize> PartialEq<[&'a str; N]> for BleProfileTextList<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BleProfileEventRoutes<'a> {
-    values: [BleProfileEventRoute<'a>; MAX_BLE_PROFILE_EVENTS],
+pub struct UploadProfileEventRoutes<'a> {
+    values: [UploadProfileEventRoute<'a>; MAX_UPLOAD_PROFILE_EVENTS],
     count: usize,
 }
 
-impl<'a> BleProfileEventRoutes<'a> {
+impl<'a> UploadProfileEventRoutes<'a> {
     pub const fn len(&self) -> usize {
         self.count
     }
 
-    pub fn get(&self, index: usize) -> Option<BleProfileEventRoute<'a>> {
+    pub fn get(&self, index: usize) -> Option<UploadProfileEventRoute<'a>> {
         if index < self.count {
             Some(self.values[index])
         } else {
@@ -1025,8 +1072,10 @@ impl<'a> BleProfileEventRoutes<'a> {
     }
 }
 
-impl<'a, const N: usize> PartialEq<[BleProfileEventRoute<'a>; N]> for BleProfileEventRoutes<'a> {
-    fn eq(&self, other: &[BleProfileEventRoute<'a>; N]) -> bool {
+impl<'a, const N: usize> PartialEq<[UploadProfileEventRoute<'a>; N]>
+    for UploadProfileEventRoutes<'a>
+{
+    fn eq(&self, other: &[UploadProfileEventRoute<'a>; N]) -> bool {
         self.count == N
             && self
                 .values
@@ -1413,8 +1462,9 @@ fn strings_reader_section(
     Err(VmError::MissingSection)
 }
 
-fn capability_demand_from_code(code: &[u8]) -> Result<CapabilityDemand, VmError> {
+fn capability_demand_from_code(code: &[u8]) -> Result<(CapabilityDemand, bool), VmError> {
     let mut demand = CapabilityDemand::none();
+    let mut uses_upload = false;
     let mut cursor = 0usize;
     while cursor < code.len() {
         let op = *code.get(cursor).ok_or(VmError::InvalidSection)?;
@@ -1432,6 +1482,12 @@ fn capability_demand_from_code(code: &[u8]) -> Result<CapabilityDemand, VmError>
                 let builtin = *code.get(cursor).ok_or(VmError::InvalidSection)?;
                 cursor += 1;
                 demand.apply_builtin(builtin);
+                uses_upload |= matches!(
+                    builtin,
+                    BUILTIN_SERVICE_UPLOAD_START
+                        | BUILTIN_SERVICE_UPLOAD_STOP
+                        | BUILTIN_SERVICE_UPLOAD_STATUS
+                );
                 if builtin == BUILTIN_DEBUG_PRINT {
                     skip_code_bytes(code, &mut cursor, 1)?;
                 }
@@ -1439,7 +1495,47 @@ fn capability_demand_from_code(code: &[u8]) -> Result<CapabilityDemand, VmError>
             _ => return Err(VmError::UnknownOpcode),
         }
     }
-    Ok(demand)
+    Ok((demand, uses_upload))
+}
+
+fn upload_transport_demand(
+    bytes: Option<&[u8]>,
+    strings: &[&str; MAX_STRINGS],
+    string_count: usize,
+) -> Result<(bool, bool), VmError> {
+    let Some(bytes) = bytes else {
+        return Ok((false, false));
+    };
+    validate_upload_profile_section(bytes)?;
+    let count = read_u16(bytes, 0)? as usize;
+    let mut cursor = 2usize;
+    let mut ble = false;
+    let mut http = false;
+    for _ in 0..count {
+        let accept_count = read_u16(bytes, cursor + 4)? as usize;
+        cursor = cursor
+            .checked_add(6 + accept_count * 2)
+            .ok_or(VmError::InvalidSection)?;
+        let transport_count = read_u16(bytes, cursor)? as usize;
+        cursor = cursor.checked_add(2).ok_or(VmError::InvalidSection)?;
+        for _ in 0..transport_count {
+            let id = read_u16(bytes, cursor)? as usize;
+            if id >= string_count {
+                return Err(VmError::InvalidSection);
+            }
+            match strings[id] {
+                "ble" => ble = true,
+                "http" => http = true,
+                _ => {}
+            }
+            cursor = cursor.checked_add(2).ok_or(VmError::InvalidSection)?;
+        }
+        let event_count = read_u16(bytes, cursor)? as usize;
+        cursor = cursor
+            .checked_add(2 + event_count * 4)
+            .ok_or(VmError::InvalidSection)?;
+    }
+    Ok((ble, http))
 }
 
 fn skip_code_bytes(code: &[u8], cursor: &mut usize, len: usize) -> Result<(), VmError> {
@@ -1511,7 +1607,7 @@ fn device_binding_reader_sections(
     ))
 }
 
-fn ble_profile_reader_sections(
+fn upload_profile_reader_sections(
     reader: &mut impl SqbcReader,
     scratch: &mut [u8],
 ) -> Result<(SqbcSection, Option<SqbcSection>), VmError> {
@@ -1530,7 +1626,7 @@ fn ble_profile_reader_sections(
         let record = Program::parse_section_record(&scratch[..header.header_len], index)?;
         match record.kind {
             SECTION_STRINGS => strings_section = Some(record),
-            SECTION_BLE_PROFILES => profile_section = Some(record),
+            SECTION_UPLOAD_PROFILES => profile_section = Some(record),
             _ => {}
         }
     }
@@ -1541,24 +1637,36 @@ fn ble_profile_reader_sections(
     ))
 }
 
-fn validate_ble_profile_section(bytes: &[u8]) -> Result<(), VmError> {
+fn validate_upload_profile_section(bytes: &[u8]) -> Result<(), VmError> {
     let count = read_u16(bytes, 0)? as usize;
-    if count > MAX_BLE_PROFILES {
+    if count > MAX_UPLOAD_PROFILES {
         return Err(VmError::InvalidSection);
     }
     let mut cursor = 2usize;
     for _ in 0..count {
-        let accept_count = read_u16(bytes, cursor + 6)? as usize;
-        cursor = cursor.checked_add(8).ok_or(VmError::InvalidSection)?;
-        if accept_count > MAX_BLE_PROFILE_ACCEPT {
+        let accept_count = read_u16(bytes, cursor + 4)? as usize;
+        cursor = cursor.checked_add(6).ok_or(VmError::InvalidSection)?;
+        if accept_count > MAX_UPLOAD_PROFILE_TEXT_ITEMS {
             return Err(VmError::InvalidSection);
         }
         cursor = cursor
             .checked_add(accept_count.checked_mul(2).ok_or(VmError::InvalidSection)?)
             .ok_or(VmError::InvalidSection)?;
+        let transport_count = read_u16(bytes, cursor)? as usize;
+        cursor = cursor.checked_add(2).ok_or(VmError::InvalidSection)?;
+        if transport_count > MAX_UPLOAD_PROFILE_TEXT_ITEMS {
+            return Err(VmError::InvalidSection);
+        }
+        cursor = cursor
+            .checked_add(
+                transport_count
+                    .checked_mul(2)
+                    .ok_or(VmError::InvalidSection)?,
+            )
+            .ok_or(VmError::InvalidSection)?;
         let event_count = read_u16(bytes, cursor)? as usize;
         cursor = cursor.checked_add(2).ok_or(VmError::InvalidSection)?;
-        if event_count > MAX_BLE_PROFILE_EVENTS {
+        if event_count > MAX_UPLOAD_PROFILE_EVENTS {
             return Err(VmError::InvalidSection);
         }
         cursor = cursor
