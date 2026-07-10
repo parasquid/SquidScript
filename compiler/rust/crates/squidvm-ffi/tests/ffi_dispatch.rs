@@ -14,10 +14,9 @@ use squidvm_ffi::{
     SqvmBinBookChapterEntry, SqvmBinBookChapterListResult, SqvmBinBookChapterResult,
     SqvmBinBookInfoResult, SqvmBinBookOpenResult, SqvmBinBookReadPageResult, SqvmBleProfileTrigger,
     SqvmCallbacks, SqvmContentBinBookEntry, SqvmContentBinBookListResult, SqvmDeviceBinding,
-    SqvmDeviceConfigResult, SqvmDeviceConfigValue, SqvmDeviceConfigValueKind, SqvmDispatchOutcome,
-    SqvmDispatchResult, SqvmDisplayInfo, SqvmEventPayloadField, SqvmFileCopyResult,
-    SqvmFilePickFileResult, SqvmFileReadLinesResult, SqvmFileReadTextResult, SqvmHandle,
-    SqvmHandleKind, SqvmHttpProfileTrigger, SqvmStatus, SqvmStorageCompletion,
+    SqvmDispatchOutcome, SqvmDispatchResult, SqvmDisplayInfo, SqvmEventPayloadField,
+    SqvmFileCopyResult, SqvmFilePickFileResult, SqvmFileReadLinesResult, SqvmFileReadTextResult,
+    SqvmHandle, SqvmHandleKind, SqvmHttpProfileTrigger, SqvmStatus, SqvmStorageCompletion,
     SqvmStorageRequestKind, SqvmTriggerTimer,
 };
 
@@ -46,7 +45,6 @@ struct Host {
     wifi_status_count: usize,
     wifi_scan_count: usize,
     wifi_ap_ip_count: usize,
-    device_config_actions: Vec<String>,
     file_pick_files: Vec<String>,
     file_read_texts: Vec<String>,
     file_read_lines: Vec<(String, i32)>,
@@ -700,97 +698,6 @@ unsafe extern "C" fn zephyr_wifi_scan_network(
     0
 }
 
-unsafe extern "C" fn device_config_load(
-    user_data: *mut c_void,
-    source: *const u8,
-    source_len: usize,
-    out: *mut SqvmDeviceConfigResult,
-) -> i32 {
-    let host = &mut *(user_data as *mut Host);
-    let source = std::str::from_utf8(std::slice::from_raw_parts(source, source_len)).unwrap();
-    host.device_config_actions.push(format!("load {source}"));
-    *out = SqvmDeviceConfigResult {
-        ok: true,
-        error: ptr::null(),
-        error_len: 0,
-        warning: b"loaded".as_ptr(),
-        warning_len: b"loaded".len(),
-    };
-    0
-}
-
-unsafe extern "C" fn device_config_set(
-    user_data: *mut c_void,
-    key: *const u8,
-    key_len: usize,
-    value: SqvmDeviceConfigValue,
-    out: *mut SqvmDeviceConfigResult,
-) -> i32 {
-    let host = &mut *(user_data as *mut Host);
-    let key = std::str::from_utf8(std::slice::from_raw_parts(key, key_len)).unwrap();
-    let value = match value.kind {
-        SqvmDeviceConfigValueKind::Null => "null".to_string(),
-        SqvmDeviceConfigValueKind::Bool => format!("bool:{}", value.bool_value),
-        SqvmDeviceConfigValueKind::I32 => format!("i32:{}", value.i32_value),
-        SqvmDeviceConfigValueKind::String => {
-            let text =
-                std::str::from_utf8(std::slice::from_raw_parts(value.string, value.string_len))
-                    .unwrap();
-            format!("string:{text}")
-        }
-    };
-    host.device_config_actions
-        .push(format!("set {key} {value}"));
-    *out = SqvmDeviceConfigResult {
-        ok: true,
-        error: ptr::null(),
-        error_len: 0,
-        warning: ptr::null(),
-        warning_len: 0,
-    };
-    0
-}
-
-unsafe extern "C" fn device_config_rebind(
-    user_data: *mut c_void,
-    alias: *const u8,
-    alias_len: usize,
-    out: *mut SqvmDeviceConfigResult,
-) -> i32 {
-    let host = &mut *(user_data as *mut Host);
-    let alias = std::str::from_utf8(std::slice::from_raw_parts(alias, alias_len)).unwrap();
-    host.device_config_actions.push(format!("rebind {alias}"));
-    *out = SqvmDeviceConfigResult {
-        ok: true,
-        error: ptr::null(),
-        error_len: 0,
-        warning: b"rebound".as_ptr(),
-        warning_len: b"rebound".len(),
-    };
-    0
-}
-
-unsafe extern "C" fn device_config_save(
-    user_data: *mut c_void,
-    destination: *const u8,
-    destination_len: usize,
-    out: *mut SqvmDeviceConfigResult,
-) -> i32 {
-    let host = &mut *(user_data as *mut Host);
-    let destination =
-        std::str::from_utf8(std::slice::from_raw_parts(destination, destination_len)).unwrap();
-    host.device_config_actions
-        .push(format!("save {destination}"));
-    *out = SqvmDeviceConfigResult {
-        ok: true,
-        error: ptr::null(),
-        error_len: 0,
-        warning: ptr::null(),
-        warning_len: 0,
-    };
-    0
-}
-
 unsafe extern "C" fn file_pick_file(
     user_data: *mut c_void,
     extension: *const u8,
@@ -1121,43 +1028,6 @@ unsafe extern "C" fn failing_wifi_status(
 unsafe extern "C" fn failing_wifi_scan(
     _user_data: *mut c_void,
     _out: *mut squidvm_ffi::SqvmWifiOperation,
-) -> i32 {
-    -22
-}
-
-unsafe extern "C" fn failing_device_config_load(
-    _user_data: *mut c_void,
-    _source: *const u8,
-    _source_len: usize,
-    _out: *mut SqvmDeviceConfigResult,
-) -> i32 {
-    -22
-}
-
-unsafe extern "C" fn failing_device_config_set(
-    _user_data: *mut c_void,
-    _key: *const u8,
-    _key_len: usize,
-    _value: SqvmDeviceConfigValue,
-    _out: *mut SqvmDeviceConfigResult,
-) -> i32 {
-    -22
-}
-
-unsafe extern "C" fn failing_device_config_rebind(
-    _user_data: *mut c_void,
-    _alias: *const u8,
-    _alias_len: usize,
-    _out: *mut SqvmDeviceConfigResult,
-) -> i32 {
-    -22
-}
-
-unsafe extern "C" fn failing_device_config_save(
-    _user_data: *mut c_void,
-    _destination: *const u8,
-    _destination_len: usize,
-    _out: *mut SqvmDeviceConfigResult,
 ) -> i32 {
     -22
 }
@@ -1644,10 +1514,6 @@ fn callbacks(_host: &mut Host) -> SqvmCallbacks {
         wifi_result: Some(wifi_result),
         wifi_cancel: Some(wifi_cancel),
         wifi_scan_network: Some(zephyr_wifi_scan_network),
-        device_config_load: Some(device_config_load),
-        device_config_set: Some(device_config_set),
-        device_config_rebind: Some(device_config_rebind),
-        device_config_save: Some(device_config_save),
         file_pick_file: Some(file_pick_file),
         file_read_text: Some(file_read_text),
         file_read_lines: Some(file_read_lines),
@@ -2071,22 +1937,6 @@ fn compile_power_lifecycle_sqbc() -> Vec<u8> {
 event.on("app.start") {
   debug.print(system.startReason())
   service.power.sleep({ wakeAfterMs: 30000 })
-}
-screen("main") {}
-"#,
-    )
-}
-
-fn compile_device_config_sqbc() -> Vec<u8> {
-    compile_sqbc(
-        r#"app "ffi-device-config"
-event.on("app.start") {
-  let loaded = device.config.load("package:device/indicator.sqdevice")
-  let set = device.config.set("mode", "gpio")
-  let rebound = device.config.rebind("indicator.default")
-  let saved = device.config.save("flash")
-  debug.print(loaded.ok, loaded.error, loaded.warning)
-  debug.print(set.ok, set.error, rebound.ok, rebound.warning, saved.ok)
 }
 screen("main") {}
 "#,
@@ -2947,54 +2797,6 @@ fn dispatches_wifi_action_service_callbacks() {
 }
 
 #[test]
-fn dispatches_device_config_callbacks() {
-    let mut host = Host {
-        sqbc: compile_device_config_sqbc(),
-        ..Host::default()
-    };
-    let mut scratch = vec![0u8; 4096];
-    let mut context = sqvm_context_init();
-
-    let status = unsafe {
-        sqvm_context_init_in_place(
-            &mut context,
-            callback_user_data(&mut host),
-            &callbacks(&mut host),
-            scratch.as_mut_ptr(),
-            scratch.len(),
-        )
-    };
-    assert_eq!(status, SqvmStatus::Ok);
-
-    let status = unsafe {
-        sqvm_dispatch(
-            &mut context,
-            callback_user_data(&mut host),
-            &callbacks(&mut host),
-            b"app.start".as_ptr(),
-            b"app.start".len(),
-        )
-    };
-    assert_eq!(status, SqvmStatus::Ok);
-    assert_eq!(
-        host.device_config_actions,
-        vec![
-            "load package:device/indicator.sqdevice".to_string(),
-            "set mode string:gpio".to_string(),
-            "rebind indicator.default".to_string(),
-            "save flash".to_string()
-        ]
-    );
-    assert_eq!(
-        host.output,
-        vec![
-            "true null loaded".to_string(),
-            "true null true rebound true".to_string()
-        ]
-    );
-}
-
-#[test]
 fn dispatches_file_pick_file_callback() {
     let mut host = Host {
         sqbc: compile_file_pick_file_sqbc(),
@@ -3690,52 +3492,6 @@ fn missing_optional_service_callbacks_return_unsupported_records() {
         vec![
             "stopped zephyr true unsupported".to_string(),
             "false unsupported 0".to_string()
-        ]
-    );
-}
-
-#[test]
-fn missing_device_config_callbacks_return_unsupported_records() {
-    let mut host = Host {
-        sqbc: compile_device_config_sqbc(),
-        ..Host::default()
-    };
-    let mut scratch = vec![0u8; 4096];
-    let mut context = sqvm_context_init();
-    let mut host_callbacks = callbacks(&mut host);
-    let host_user_data = callback_user_data(&mut host);
-    host_callbacks.device_config_load = None;
-    host_callbacks.device_config_set = None;
-    host_callbacks.device_config_rebind = None;
-    host_callbacks.device_config_save = None;
-
-    let status = unsafe {
-        sqvm_context_init_in_place(
-            &mut context,
-            host_user_data,
-            &host_callbacks,
-            scratch.as_mut_ptr(),
-            scratch.len(),
-        )
-    };
-    assert_eq!(status, SqvmStatus::Ok);
-
-    let status = unsafe {
-        sqvm_dispatch(
-            &mut context,
-            host_user_data,
-            &host_callbacks,
-            b"app.start".as_ptr(),
-            b"app.start".len(),
-        )
-    };
-
-    assert_eq!(status, SqvmStatus::Ok);
-    assert_eq!(
-        host.output,
-        vec![
-            "false unsupported null".to_string(),
-            "false unsupported false null false".to_string()
         ]
     );
 }

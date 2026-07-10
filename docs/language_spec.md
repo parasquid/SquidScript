@@ -249,8 +249,7 @@ Apps may not directly write to /sd/system.
 Installed `.sqdevice` files are read-only package resources. Installing a
 package stores those resources but does not activate them by itself. Runtime
 app launch activates device bindings from the app's top-level `device {}`
-declaration, and explicit `device.config.*` calls may import or persist active
-device configuration through firmware-owned storage.
+declaration.
 
 `app.resource(...)` is deferred in current draft. Concrete APIs consume safe
 package-relative paths directly until a handle-based resource API is specified.
@@ -1113,7 +1112,6 @@ The current draft uses these built-in namespaces:
 - `service.*` for target/firmware-backed runtime capability endpoints such as
   `service.display.*`, `service.indicator.*`, `service.wifi.*`, timers, power,
   and BLE profiles
-- `device.config.*` for loading, editing, rebinding, and saving active device service configuration
 - `hardware.*` for target-defined hardware capabilities such as GPIO
 - `state.*` for firmware-managed persistent state
 - `service.wifi.*` for firmware-owned Wi-Fi services; `wifi.*` is source sugar for the same calls
@@ -1202,8 +1200,6 @@ does not need to manually load, edit, or rebind device configuration in
 
 Target-defined default bindings are initialized through the same active binding
 model before app code runs. Active bindings are global until changed or reboot.
-A temp run may edit or rebind configuration in RAM, but those changes remain
-volatile unless app code explicitly calls `device.config.save("flash")`.
 
 Display bindings:
 
@@ -1804,11 +1800,8 @@ rotation, packed-pixel conversion, bus access, and driver execution. Apps should
 use `display.info()` when they need to adapt layout to the installed firmware's
 active display binding.
 
-`device.config.rebind("display.default")` is the explicit operation that
-validates, initializes, probes, and refreshes the active display binding after a
-display SQDEVICE draft changes. A valid binding may still report
-`available: false` when the configured physical display is absent or not
-responding.
+A valid display binding may report `available: false` when the configured
+physical display is absent or not responding.
 
 service.display.text(value, options)
 
@@ -3073,143 +3066,6 @@ event.on("key.SELECT") {
 
 ---
 
-## 33. Device Config Capability
-
-Device config support is provided by firmware/runtime services. SquidScript
-apps may load editable text SQDEVICE records, set draft values, transactionally
-rebind one service binding, and explicitly persist the active configuration.
-
-Suggested device config API identifiers:
-
-```text
-device.config.load
-device.config.set
-device.config.rebind
-device.config.save
-```
-
-Minimum device config capability shape:
-
-```text
-device.config.load(source)
-device.config.set(key, value)
-device.config.rebind(binding)
-device.config.save(destination)
-```
-
-All four calls return result records:
-
-```text
-{
-  ok: bool,
-  error: string,
-  warning: string
-}
-```
-
-`device.config.load(source)`
-
-Loads a SQDEVICE text resource into draft device configuration.
-
-Supported source forms:
-
-- `package:device/foo.sqdevice` for read-only package resources
-- `removable:/device/active.sqdevice` for editable removable text files
-
-Package-relative SQDEVICE resource paths may live under any safe path as long
-as they end with `.sqdevice`.
-
-`device.config.set(key, value)`
-
-Sets one key in the draft device configuration. `key` is a dotted string such
-as `spi.sck` or `display.width`. `value` may be a supported SQDEVICE primitive
-value: string, int, bool, or null.
-
-`device.config.rebind(binding)`
-
-Transactionally initializes the named active binding from draft configuration.
-Examples:
-
-```squid
-device.config.rebind("display.default")
-device.config.rebind("display.status")
-```
-
-If initialization fails, firmware keeps the old active binding. Known pin
-conflicts may return a warning while still succeeding. Unknown GPIO names,
-unknown display drivers, unsafe bus/pin choices, or missing required fields
-fail.
-
-For `display.default`, SQDEVICE may describe the active display binding with a
-firmware-supported driver name, a transport such as `spi` or `i2c`, transport
-fields such as bus/address/pins, logical and physical dimensions, rotation,
-color model, native pixel format, and text defaults. The executable display
-driver must already be present in the firmware image. SQDEVICE can select and
-describe a display binding; it does not load new driver code.
-
-Example display SQDEVICE:
-
-```text
-SQDEVICE
-service string 15:display.default
-driver string 7:ssd1306
-transport string 3:i2c
-i2c.bus string 4:i2c0
-i2c.address int 60
-width int 78
-height int 40
-physicalWidth int 78
-physicalHeight int 40
-rotation int 0
-colorModel string 4:mono
-nativeBpp int 1
-nativePixelFormat string 12:MONO1_PACKED
-defaultFontHeight int 8
-```
-
-`device.config.save(destination)`
-
-Persists active device configuration. The current draft supports:
-
-```squid
-device.config.save("flash")
-```
-
-This writes firmware-owned binary SQDC as the global active config. Active
-config is not app-scoped, and installed app resources are not modified.
-
-The current Zephyr canonical firmware exposes these calls through compiler
-lowering, SQBC builtins, the Rust VM host, FFI, and the Zephyr runtime callback
-table. The current Zephyr runtime supports package resource
-`device.config.load("package:...")` into a bounded draft and
-`device.config.set(...)` edits on that draft. It also validates and activates
-the current `indicator.default` GPIO binding through
-`device.config.rebind(...)`. Firmware-defined target defaults are exposed
-through the same SQDC draft shape, but a firmware backend may apply trusted
-generated defaults through a direct target-specific path when the generated
-metadata has already been validated against target metadata and hardware
-configuration. Author-provided, package-provided, and saved global device
-config still use the normal draft/rebind path. The runtime applies target
-defaults, applies saved global SQDC defaults before `app.start`, and then
-applies installed app top-level `device { indicator { use ... } }` package
-`.sqdevice` and inline `gpio:GPIO<n>` bindings so app-local declarations
-override saved defaults.
-`device.config.save("flash")` writes firmware-owned binary SQDC to the current
-target's active device-config storage.
-
-For normal static app bindings, prefer a top-level `device { ... }`
-declaration instead of explicit `device.config.load(...)` calls. Use
-`device.config.load(...)` when app code intentionally needs runtime device
-configuration control: conditional loading, editing values with
-`device.config.set(...)`, rebinding a service during execution, persisting a
-device-level hardware configuration with `device.config.save("flash")`, or
-running diagnostics that need to exercise the runtime configuration API.
-`device.config.save("flash")` persists active device configuration, not app
-state; use `state.save()` for app-owned counters, preferences, and other
-per-app data.
-
----
-
 ## 34. Runtime APIs And Target Support
 
 SquidScript does not use app-declared permissions. Built-ins are normal
@@ -3279,24 +3135,6 @@ app.lifecycle.inspect
 
 app.launch
 - Allows an app to request that firmware launch another installed app.
-
-device.config.load
-- Allows importing a SQDEVICE text resource into the runtime draft device
-  configuration. Supported sources are package resources such as
-  `package:device/foo.sqdevice` and removable text files such as
-  `removable:/device/active.sqdevice`.
-
-device.config.set
-- Allows setting one key in the runtime draft device configuration.
-
-device.config.rebind
-- Allows transactionally initializing a new active binding such as
-  `display.default` or `display.status` from draft configuration. Failure keeps
-  the old active binding.
-
-device.config.save
-- Allows persisting the active device configuration to firmware-owned storage.
-  current draft defines `device.config.save("flash")` as binary SQDC persistence.
 
 API availability checks happen during source compilation, bytecode validation,
 and runtime execution. If bytecode calls an unknown built-in, firmware must
@@ -4388,7 +4226,6 @@ Firmware:
 - service.power.sleep
 - service.wifi status, AP, station profile, and scan calls
 - app registry, launch, arm, disarm, process stack, and armed stack calls
-- device.config load, set, rebind, and save calls
 - BLE file-transfer trigger metadata
 - optional source-map loader
 - error/crash diagnostics

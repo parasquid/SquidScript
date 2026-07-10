@@ -233,32 +233,6 @@ pub trait TraceSink {
     fn system_start_reason_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
         out.write_str("boot").map_err(|_| VmError::InvalidOperand)
     }
-    fn device_config_load<'a>(
-        &'a mut self,
-        _source: &str,
-    ) -> Result<DeviceConfigResult<'a>, VmError> {
-        Ok(DeviceConfigResult::unsupported())
-    }
-    fn device_config_set<'a>(
-        &'a mut self,
-        _key: &str,
-        _value: Value,
-        _strings: &StringResolver<'_>,
-    ) -> Result<DeviceConfigResult<'a>, VmError> {
-        Ok(DeviceConfigResult::unsupported())
-    }
-    fn device_config_rebind<'a>(
-        &'a mut self,
-        _binding: &str,
-    ) -> Result<DeviceConfigResult<'a>, VmError> {
-        Ok(DeviceConfigResult::unsupported())
-    }
-    fn device_config_save<'a>(
-        &'a mut self,
-        _destination: &str,
-    ) -> Result<DeviceConfigResult<'a>, VmError> {
-        Ok(DeviceConfigResult::unsupported())
-    }
     fn file_pick_file<'a>(
         &'a mut self,
         _extension: &str,
@@ -393,23 +367,6 @@ pub trait TraceSink {
     }
     fn state_reset_persistent(&mut self) -> Result<(), VmError> {
         Ok(())
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct DeviceConfigResult<'a> {
-    pub ok: bool,
-    pub error: Option<&'a str>,
-    pub warning: Option<&'a str>,
-}
-
-impl DeviceConfigResult<'_> {
-    pub const fn unsupported() -> Self {
-        Self {
-            ok: false,
-            error: Some("unsupported"),
-            warning: None,
-        }
     }
 }
 

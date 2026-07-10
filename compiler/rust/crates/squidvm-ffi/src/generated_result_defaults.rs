@@ -93,18 +93,6 @@ impl Default for SqvmWifiScanNetworkResult {
     }
 }
 
-impl Default for SqvmDeviceConfigResult {
-    fn default() -> Self {
-        Self {
-            ok: false,
-            error: b"unsupported".as_ptr(),
-            error_len: b"unsupported".len(),
-            warning: ptr::null(),
-            warning_len: 0,
-        }
-    }
-}
-
 impl Default for SqvmFilePickFileResult {
     fn default() -> Self {
         Self {

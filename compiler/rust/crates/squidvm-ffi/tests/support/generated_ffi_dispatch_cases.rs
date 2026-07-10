@@ -129,26 +129,6 @@ pub(super) fn callback_error_cases() -> Vec<CallbackCase> {
             callbacks.wifi_scan = Some(failing_wifi_scan)
         }),
         (
-            "device config load",
-            compile_device_config_sqbc(),
-            |callbacks| callbacks.device_config_load = Some(failing_device_config_load),
-        ),
-        (
-            "device config set",
-            compile_device_config_sqbc(),
-            |callbacks| callbacks.device_config_set = Some(failing_device_config_set),
-        ),
-        (
-            "device config rebind",
-            compile_device_config_sqbc(),
-            |callbacks| callbacks.device_config_rebind = Some(failing_device_config_rebind),
-        ),
-        (
-            "device config save",
-            compile_device_config_sqbc(),
-            |callbacks| callbacks.device_config_save = Some(failing_device_config_save),
-        ),
-        (
             "file pick file",
             compile_file_pick_file_sqbc(),
             |callbacks| callbacks.file_pick_file = Some(failing_file_pick_file),
@@ -388,10 +368,6 @@ pub(super) fn callback_policy_cases() -> &'static [(&'static str, &'static str)]
         ("wifi_result", "unsupported_result"),
         ("wifi_cancel", "idle_result"),
         ("wifi_scan_network", "unsupported_result"),
-        ("device_config_load", "unsupported_result"),
-        ("device_config_set", "unsupported_result"),
-        ("device_config_rebind", "unsupported_result"),
-        ("device_config_save", "unsupported_result"),
         ("file_pick_file", "unsupported_result"),
         ("file_read_text", "unsupported_result"),
         ("file_read_lines", "unsupported_result"),

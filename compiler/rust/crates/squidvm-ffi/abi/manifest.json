@@ -762,42 +762,6 @@
       "test_fixture": "compile_wifi_scan_networks_sqbc"
     },
     {
-      "field": "device_config_load",
-      "typedef": "SqvmDeviceConfigLoadCallback",
-      "family": "device-config",
-      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, source: *const u8, source_len: usize, out: *mut SqvmDeviceConfigResult, ) -> i32, >",
-      "missing_policy": "unsupported_result",
-      "test_fixture": "compile_device_config_sqbc",
-      "failing_callback": "failing_device_config_load"
-    },
-    {
-      "field": "device_config_set",
-      "typedef": "SqvmDeviceConfigSetCallback",
-      "family": "device-config",
-      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, key: *const u8, key_len: usize, value: SqvmDeviceConfigValue, out: *mut SqvmDeviceConfigResult, ) -> i32, >",
-      "missing_policy": "unsupported_result",
-      "test_fixture": "compile_device_config_sqbc",
-      "failing_callback": "failing_device_config_set"
-    },
-    {
-      "field": "device_config_rebind",
-      "typedef": "SqvmDeviceConfigRebindCallback",
-      "family": "device-config",
-      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, alias: *const u8, alias_len: usize, out: *mut SqvmDeviceConfigResult, ) -> i32, >",
-      "missing_policy": "unsupported_result",
-      "test_fixture": "compile_device_config_sqbc",
-      "failing_callback": "failing_device_config_rebind"
-    },
-    {
-      "field": "device_config_save",
-      "typedef": "SqvmDeviceConfigSaveCallback",
-      "family": "device-config",
-      "rust_type": "Option< unsafe extern \"C\" fn( user_data: *mut c_void, destination: *const u8, destination_len: usize, out: *mut SqvmDeviceConfigResult, ) -> i32, >",
-      "missing_policy": "unsupported_result",
-      "test_fixture": "compile_device_config_sqbc",
-      "failing_callback": "failing_device_config_save"
-    },
-    {
       "field": "file_pick_file",
       "typedef": "SqvmFilePickFileCallback",
       "family": "file",
@@ -1148,18 +1112,6 @@
       "definition": "typedef struct {\n\tbool ok;\n\tconst uint8_t *error;\n\tsize_t error_len;\n\tSqvmWifiAccessPoint network;\n} SqvmWifiScanNetworkResult;"
     },
     {
-      "name": "SqvmDeviceConfigValueKind",
-      "definition": "typedef enum {\n\tSQVM_DEVICE_CONFIG_VALUE_NULL = 0,\n\tSQVM_DEVICE_CONFIG_VALUE_BOOL = 1,\n\tSQVM_DEVICE_CONFIG_VALUE_I32 = 2,\n\tSQVM_DEVICE_CONFIG_VALUE_STRING = 3,\n} SqvmDeviceConfigValueKind;"
-    },
-    {
-      "name": "SqvmDeviceConfigValue",
-      "definition": "typedef struct {\n\tSqvmDeviceConfigValueKind kind;\n\tbool bool_value;\n\tint32_t i32_value;\n\tconst uint8_t *string;\n\tsize_t string_len;\n} SqvmDeviceConfigValue;"
-    },
-    {
-      "name": "SqvmDeviceConfigResult",
-      "definition": "typedef struct {\n\tbool ok;\n\tconst uint8_t *error;\n\tsize_t error_len;\n\tconst uint8_t *warning;\n\tsize_t warning_len;\n} SqvmDeviceConfigResult;"
-    },
-    {
       "name": "SqvmFilePickFileResult",
       "definition": "typedef struct {\n\tbool ok;\n\tconst uint8_t *error;\n\tsize_t error_len;\n\tconst uint8_t *path;\n\tsize_t path_len;\n} SqvmFilePickFileResult;"
     },
@@ -1254,22 +1206,6 @@
     {
       "name": "SqvmWifiScanNetworkCallback",
       "definition": "typedef int32_t (*SqvmWifiScanNetworkCallback)(void *user_data, int32_t index,\n\t\t\t\t\t       SqvmWifiScanNetworkResult *out);"
-    },
-    {
-      "name": "SqvmDeviceConfigLoadCallback",
-      "definition": "typedef int32_t (*SqvmDeviceConfigLoadCallback)(void *user_data, const uint8_t *source,\n\t\t\t\t\t\tsize_t source_len, SqvmDeviceConfigResult *out);"
-    },
-    {
-      "name": "SqvmDeviceConfigSetCallback",
-      "definition": "typedef int32_t (*SqvmDeviceConfigSetCallback)(void *user_data, const uint8_t *key,\n\t\t\t\t\t       size_t key_len, SqvmDeviceConfigValue value,\n\t\t\t\t\t       SqvmDeviceConfigResult *out);"
-    },
-    {
-      "name": "SqvmDeviceConfigRebindCallback",
-      "definition": "typedef int32_t (*SqvmDeviceConfigRebindCallback)(void *user_data, const uint8_t *alias,\n\t\t\t\t\t\t  size_t alias_len, SqvmDeviceConfigResult *out);"
-    },
-    {
-      "name": "SqvmDeviceConfigSaveCallback",
-      "definition": "typedef int32_t (*SqvmDeviceConfigSaveCallback)(void *user_data, const uint8_t *destination,\n\t\t\t\t\t\tsize_t destination_len,\n\t\t\t\t\t\tSqvmDeviceConfigResult *out);"
     },
     {
       "name": "SqvmFilePickFileCallback",
@@ -1405,7 +1341,7 @@
     },
     {
       "name": "SqvmCallbacks",
-      "definition": "typedef struct {\n\tSqvmTraceCallback trace;\n\tSqvmReadExactAtCallback read_exact_at;\n\tSqvmDebugOutputCallback debug_output;\n\tSqvmDisplayClearCallback display_clear;\n\tSqvmDisplayTextCallback display_text;\n\tSqvmDisplayRectCallback display_rect;\n\tSqvmDisplayLineCallback display_line;\n\tSqvmDisplaySelectCallback display_select;\n\tSqvmDisplayImageCallback display_image;\n\tSqvmDisplayDrawCallback display_draw;\n\tSqvmDisplayRefreshModeCallback display_refresh_mode;\n\tSqvmDisplayInfoCallback display_info;\n\tSqvmIndicatorWriteCallback indicator_write;\n\tSqvmIndicatorToggleCallback indicator_toggle;\n\tSqvmIndicatorReadCallback indicator_read;\n\tSqvmIndicatorBreatheCallback indicator_breathe;\n\tSqvmIndicatorBlinkCallback indicator_blink;\n\tSqvmHardwareGpioWriteCallback hardware_gpio_write;\n\tSqvmHardwareGpioToggleCallback hardware_gpio_toggle;\n\tSqvmHardwareGpioReadCallback hardware_gpio_read;\n\tSqvmAppLifecycleCallback app_launch;\n\tSqvmAppLifecycleCallback app_arm;\n\tSqvmAppLifecycleCallback app_disarm;\n\tSqvmAppInstallFileCallback app_install_file;\n\tSqvmAppRegistryListCallback app_registry_list;\n\tSqvmAppRegistryGetCallback app_registry_get;\n\tSqvmAppStackCallback app_process_stack;\n\tSqvmAppStackCallback app_armed_stack;\n\tSqvmTimerEveryCallback timer_every;\n\tSqvmTimerAfterCallback timer_after;\n\tSqvmBleStartCallback ble_start;\n\tSqvmBleStopCallback ble_stop;\n\tSqvmHttpStartCallback http_start;\n\tSqvmHttpStopCallback http_stop;\n\tSqvmWifiStartApCallback wifi_start_ap;\n\tSqvmWifiStopApCallback wifi_stop_ap;\n\tSqvmWifiConnectCallback wifi_connect;\n\tSqvmWifiDisconnectCallback wifi_disconnect;\n\tSqvmWifiGetApIpCallback wifi_get_ap_ip;\n\tSqvmWifiStatusCallback wifi_status;\n\tSqvmWifiScanCallback wifi_scan;\n\tSqvmWifiOperationCallback wifi_operation;\n\tSqvmWifiResultCallback wifi_result;\n\tSqvmWifiCancelCallback wifi_cancel;\n\tSqvmWifiScanNetworkCallback wifi_scan_network;\n\tSqvmDeviceConfigLoadCallback device_config_load;\n\tSqvmDeviceConfigSetCallback device_config_set;\n\tSqvmDeviceConfigRebindCallback device_config_rebind;\n\tSqvmDeviceConfigSaveCallback device_config_save;\n\tSqvmFilePickFileCallback file_pick_file;\n\tSqvmFileReadTextCallback file_read_text;\n\tSqvmFileReadLinesCallback file_read_lines;\n\tSqvmFileCopyCallback file_copy;\n\tSqvmBinBookOpenCallback binbook_open;\n\tSqvmBinBookInfoCallback binbook_info;\n\tSqvmBinBookReadPageCallback binbook_read_page;\n\tSqvmBinBookChaptersCallback binbook_chapters;\n\tSqvmBinBookChapterCallback binbook_chapter;\n\tSqvmContentBinBookListCallback content_binbook_list;\n\tSqvmSystemMemoryTextCallback system_memory_text;\n\tSqvmSystemStorageTextCallback system_storage_text;\n\tSqvmSystemStartReasonTextCallback system_start_reason_text;\n\tSqvmPowerSleepCallback power_sleep;\n} SqvmCallbacks;"
+      "definition": "typedef struct {\n\tSqvmTraceCallback trace;\n\tSqvmReadExactAtCallback read_exact_at;\n\tSqvmDebugOutputCallback debug_output;\n\tSqvmDisplayClearCallback display_clear;\n\tSqvmDisplayTextCallback display_text;\n\tSqvmDisplayRectCallback display_rect;\n\tSqvmDisplayLineCallback display_line;\n\tSqvmDisplaySelectCallback display_select;\n\tSqvmDisplayImageCallback display_image;\n\tSqvmDisplayDrawCallback display_draw;\n\tSqvmDisplayRefreshModeCallback display_refresh_mode;\n\tSqvmDisplayInfoCallback display_info;\n\tSqvmIndicatorWriteCallback indicator_write;\n\tSqvmIndicatorToggleCallback indicator_toggle;\n\tSqvmIndicatorReadCallback indicator_read;\n\tSqvmIndicatorBreatheCallback indicator_breathe;\n\tSqvmIndicatorBlinkCallback indicator_blink;\n\tSqvmHardwareGpioWriteCallback hardware_gpio_write;\n\tSqvmHardwareGpioToggleCallback hardware_gpio_toggle;\n\tSqvmHardwareGpioReadCallback hardware_gpio_read;\n\tSqvmAppLifecycleCallback app_launch;\n\tSqvmAppLifecycleCallback app_arm;\n\tSqvmAppLifecycleCallback app_disarm;\n\tSqvmAppInstallFileCallback app_install_file;\n\tSqvmAppRegistryListCallback app_registry_list;\n\tSqvmAppRegistryGetCallback app_registry_get;\n\tSqvmAppStackCallback app_process_stack;\n\tSqvmAppStackCallback app_armed_stack;\n\tSqvmTimerEveryCallback timer_every;\n\tSqvmTimerAfterCallback timer_after;\n\tSqvmBleStartCallback ble_start;\n\tSqvmBleStopCallback ble_stop;\n\tSqvmHttpStartCallback http_start;\n\tSqvmHttpStopCallback http_stop;\n\tSqvmWifiStartApCallback wifi_start_ap;\n\tSqvmWifiStopApCallback wifi_stop_ap;\n\tSqvmWifiConnectCallback wifi_connect;\n\tSqvmWifiDisconnectCallback wifi_disconnect;\n\tSqvmWifiGetApIpCallback wifi_get_ap_ip;\n\tSqvmWifiStatusCallback wifi_status;\n\tSqvmWifiScanCallback wifi_scan;\n\tSqvmWifiOperationCallback wifi_operation;\n\tSqvmWifiResultCallback wifi_result;\n\tSqvmWifiCancelCallback wifi_cancel;\n\tSqvmWifiScanNetworkCallback wifi_scan_network;\n\tSqvmFilePickFileCallback file_pick_file;\n\tSqvmFileReadTextCallback file_read_text;\n\tSqvmFileReadLinesCallback file_read_lines;\n\tSqvmFileCopyCallback file_copy;\n\tSqvmBinBookOpenCallback binbook_open;\n\tSqvmBinBookInfoCallback binbook_info;\n\tSqvmBinBookReadPageCallback binbook_read_page;\n\tSqvmBinBookChaptersCallback binbook_chapters;\n\tSqvmBinBookChapterCallback binbook_chapter;\n\tSqvmContentBinBookListCallback content_binbook_list;\n\tSqvmSystemMemoryTextCallback system_memory_text;\n\tSqvmSystemStorageTextCallback system_storage_text;\n\tSqvmSystemStartReasonTextCallback system_start_reason_text;\n\tSqvmPowerSleepCallback power_sleep;\n} SqvmCallbacks;"
     }
   ],
   "result_defaults": [
@@ -1805,59 +1741,6 @@
             {
               "field": "network.hidden",
               "value": "false"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "SqvmDeviceConfigResult",
-      "rust_fields": [
-        {
-          "field": "ok",
-          "value": "false"
-        },
-        {
-          "field": "error",
-          "literal": "unsupported"
-        },
-        {
-          "field": "warning",
-          "null": true
-        }
-      ],
-      "c_helpers": [
-        {
-          "name": "sqvm_device_config_result_unsupported",
-          "fields": [
-            {
-              "field": "ok",
-              "value": "false"
-            },
-            {
-              "field": "error",
-              "literal": "unsupported"
-            },
-            {
-              "field": "warning",
-              "null": true
-            }
-          ]
-        },
-        {
-          "name": "sqvm_device_config_result_ok",
-          "fields": [
-            {
-              "field": "ok",
-              "value": "true"
-            },
-            {
-              "field": "error",
-              "null": true
-            },
-            {
-              "field": "warning",
-              "null": true
             }
           ]
         }
@@ -2516,26 +2399,6 @@
       "zephyr_tests": [
         "test_vm_runtime_dispatches_wifi_action_stubs",
         "test_vm_runtime_formats_wifi_bssid_without_heap"
-      ]
-    },
-    {
-      "family": "device-config",
-      "callbacks": [
-        "device_config_load",
-        "device_config_set",
-        "device_config_rebind",
-        "device_config_save"
-      ],
-      "rust": "Rust FFI dispatch device-config tests",
-      "zephyr": "device configuration ztests",
-      "rust_tests": [
-        "dispatches_device_config_callbacks",
-        "missing_device_config_callbacks_return_unsupported_records"
-      ],
-      "zephyr_tests": [
-        "test_sqdc_ffi_parses_and_encodes_device_config",
-        "test_vm_runtime_rebinds_display_device_config",
-        "test_vm_runtime_saves_device_config_draft_to_flash_sqdc"
       ]
     },
     {

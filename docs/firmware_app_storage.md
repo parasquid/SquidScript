@@ -207,61 +207,10 @@ resource directory creation, lookup-path derivation, file size metadata, and
 path traversal rejection. Framed device commands expose install, registry, and
 resource behavior through the Zephyr command surface.
 
-Device configuration parsing and SQDC encoding for firmware use a bounded
-Rust FFI core in `squidvm-ffi`, not ad hoc C parsing. The core operates on
-caller-owned fixed `SqdcConfig` records, validates safe package-relative
-`.sqdevice` paths, parses SQDEVICE text resources, applies primitive draft
-updates, and encodes/decodes binary SQDC without heap allocation. The current
-Zephyr runtime wires `device.config.load("package:...")` to installed
-read-only package resources for the foreground app and wires
-`device.config.set(...)` to the runtime draft config. The runtime can validate
-and activate the current `indicator.default` GPIO binding with
-`device.config.rebind(...)`, and `service.indicator.*` uses the active binding.
-The runtime also tracks non-indicator active bindings whose SQDEVICE draft
-declares a matching `service` alias, such as `display.status`, so package
-display bindings can be applied before app start. Rust FFI plans top-level app
-`device {}` declarations: it classifies supported package `.sqdevice`
-resources, inline `gpio:GPIO<n>` indicator resources, and inline
-`gpio-button:GPIO<n>:key.<KEY>:activeLow|activeHigh` input resources. The Rust
-planner normalizes inline resources to SQDC draft records. Zephyr C remains
-responsible for LittleFS reads, generated target-metadata checks, and hardware
-activation. Inline GPIO and `.sqdevice` GPIO bindings that drive physical GPIO
-must name a GPIO-capable pin from the selected target metadata before Zephyr
-activates them. Inline GPIO-button input bindings activate as polled GPIO
-inputs; a pressed edge dispatches the configured logical key event to the
-foreground app.
-On targets with firmware-defined defaults, runtime initialization and installed
-app start expose those defaults through the same in-memory SQDC draft shape
-that author/device config uses. Firmware may apply trusted generated defaults
-through a direct target-specific path instead of routing them through
-`device.config.rebind(...)`, provided the generated metadata has already been
-validated against the target definition and hardware overlay and the resulting
-active binding is equivalent. Author-provided, package-provided, and saved
-global device config still use the normal draft/rebind path.
-Installed app launch clears and rebuilds active logical bindings, applies
-target defaults, applies saved global SQDC defaults, then reads current SQBC
-top-level `device {}` metadata and applies packaged `indicator.default`
-`.sqdevice` bindings, packaged display `.sqdevice` bindings, and inline
-`gpio:GPIO<n>` indicator bindings before `event.on("app.start")`. Input
-`gpio-button` bindings are also activated before `event.on("app.start")`, so a
-physical button can dispatch the mapped logical key event after launch.
-App-local top-level `device {}` bindings run after target and saved global
-defaults, so app package bindings can override them. Inline GPIO bindings are
-normalized into the same in-memory SQDC draft/rebind path as packaged
-resources and do not install a package resource.
-
-For app authors, `device {}` is the default path for static app-owned
-bindings. It declares what the app needs, lets firmware activate the binding
-before `app.start`, and avoids manual runtime config calls in startup code.
-Use `device.config.load("package:...")` when the app deliberately controls
-device configuration at runtime, such as loading one of several package
-resources, editing the draft with `device.config.set(...)`, rebinding an
-active service, saving a device-level hardware choice, or running diagnostics
-against the device-config service path.
-Active config persistence through `device.config.save("flash")` writes
-firmware-owned binary SQDC at `/sq/system/device-config.sqdc` on the ESP32-C3
-reference target. This storage is for active hardware/service bindings, not
-app state; app data should use the normal `state.save()` path.
+Top-level `device {}` declarations are the app-facing contract for static
+app-owned bindings. Firmware resolves those declarations against generated
+target metadata before `event.on("app.start")`. Package `.sqdevice` resources
+remain read-only files and do not create a runtime configuration API.
 
 ## App State
 

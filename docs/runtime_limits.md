@@ -118,7 +118,6 @@ not an upload-size or duration limit; protocol activity resets it.
 | App ID storage | 40 bytes | `SQ_APP_STORE_APP_ID_MAX` |
 | App file path | 64 bytes | `SQ_APP_STORE_APP_FILE_PATH_MAX` |
 | App state path | 60 bytes | `SQ_APP_STORE_APP_STATE_PATH_MAX` |
-| Device-config path | 40 bytes | `SQ_APP_STORE_DEVICE_CONFIG_PATH_MAX` |
 | Runtime-config path | 40 bytes | `SQ_APP_STORE_RUNTIME_CONFIG_PATH_MAX` |
 | Planned-resume path | 48 bytes | `SQ_APP_STORE_PLANNED_RESUME_PATH_MAX` |
 

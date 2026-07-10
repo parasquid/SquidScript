@@ -2343,10 +2343,7 @@ pub mod x4_storage {
 
             assert!(backend.binbook_open("books/book_a.binbook").unwrap().ok);
             assert_eq!(
-                backend
-                    .binbook_open("books/book_a.binbook")
-                    .unwrap()
-                    .error,
+                backend.binbook_open("books/book_a.binbook").unwrap().error,
                 Some("too-many-open")
             );
 
@@ -2528,8 +2525,11 @@ where
     D: squidscript_fw_core::native_runtime::NativeDisplaySink,
     FB: squidscript_fw_core::native_runtime::NativeFileBackend,
 {
-    fn request_flush(&mut self, display_sink: &mut D, file_backend: &mut FB)
-        -> Result<(), &'static str>;
+    fn request_flush(
+        &mut self,
+        display_sink: &mut D,
+        file_backend: &mut FB,
+    ) -> Result<(), &'static str>;
 
     fn step(&mut self) {}
 }
@@ -2556,9 +2556,7 @@ where
 
 #[cfg(test)]
 mod display_flush_driver_tests {
-    use squidscript_fw_core::native_runtime::{
-        NativeDisplaySink, NoopFileBackend,
-    };
+    use squidscript_fw_core::native_runtime::{NativeDisplaySink, NoopFileBackend};
 
     use super::{request_pending_display_flush, NativeDisplayFlushDriver};
 

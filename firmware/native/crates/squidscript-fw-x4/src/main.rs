@@ -70,8 +70,9 @@ use squidscript_fw_x4::{
         X4StreamingDisplayFlushTask, CHUNK_COUNT, ROW_BYTES,
     },
     board::{DisplayDelay, FreqManagedSpiDevice, SharedSpi2},
-    request_pending_display_flush, NativeDisplayFlushDriver,
+    request_pending_display_flush,
     x4_storage::{X4BinBookFileBackend, X4SdFileStorage, X4StorageTime},
+    NativeDisplayFlushDriver,
 };
 
 #[cfg(all(
@@ -884,13 +885,11 @@ async fn native_wifi_event_task(runtime: &'static SharedX4NativeRuntime) {
                 ..
             } => {
                 let mut runtime = runtime.lock().await;
-                runtime
-                    .radio_backend_mut()
-                    .record_station_connected_event(
-                        ssid.as_str(),
-                        bssid,
-                        esp_radio::wifi::AuthenticationMethod::from_raw(authmode),
-                    );
+                runtime.radio_backend_mut().record_station_connected_event(
+                    ssid.as_str(),
+                    bssid,
+                    esp_radio::wifi::AuthenticationMethod::from_raw(authmode),
+                );
                 let _ = runtime.complete_wifi_connect();
             }
             esp_radio::wifi::event::EventInfo::StationDisconnected {
@@ -1117,8 +1116,8 @@ async fn native_wifi_sta_ip_task(stack: embassy_net::Stack<'static>) {
 #[embassy_executor::task]
 async fn native_wifi_ap_dhcp_task(stack: embassy_net::Stack<'static>) {
     use edge_dhcp::{
-        Options, Packet,
         server::{Server, ServerOptions},
+        Options, Packet,
     };
     use embassy_net::udp::{PacketMetadata, UdpSocket};
 
@@ -4413,8 +4412,7 @@ impl NativeRadioBackend for EspRadioBackend {
             }
             let mut command_ssid = heapless::String::<32>::new();
             let mut command_password = heapless::String::<64>::new();
-            if command_ssid.push_str(ssid).is_err()
-                || command_password.push_str(password).is_err()
+            if command_ssid.push_str(ssid).is_err() || command_password.push_str(password).is_err()
             {
                 self.wifi_last_backend_code = Some("connect-credentials");
                 return NativeWifiBackendOperation::Error { error: "invalid" };
@@ -4610,7 +4608,10 @@ impl NativeRadioBackend for EspRadioBackend {
                 return Ok(None);
             }
             critical_section::with(|cs| {
-                Ok(WIFI_SCAN_RESULTS.borrow_ref(cs).get(index as usize).copied())
+                Ok(WIFI_SCAN_RESULTS
+                    .borrow_ref(cs)
+                    .get(index as usize)
+                    .copied())
             })
         }
         #[cfg(not(feature = "wifi"))]

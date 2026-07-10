@@ -1695,24 +1695,27 @@ screen("main") {}
 }
 
 #[test]
-fn compiles_device_config_result_calls_to_sqbc() {
-    let source = r#"app "device-config"
+fn removed_device_config_calls_follow_the_unknown_function_path() {
+    for call in [
+        "device.config.load(\"flash\")",
+        "device.config.set(\"mode\", \"gpio\")",
+        "device.config.rebind(\"display.default\")",
+        "device.config.save(\"flash\")",
+    ] {
+        let output = compile(CompileRequest {
+            source: format!(
+                "app \"removed-device-config\"\nevent.on(\"app.start\") {{ let result = {call} }}\n"
+            ),
+            target_id: PORTABLE_TARGET_ID.to_string(),
+        });
+        assert!(output.ok, "{:?}", output.diagnostics);
 
-event.on("app.start") {
-  let loaded = device.config.load("package:device/indicator.sqdevice")
-  let set = device.config.set("mode", "gpio")
-  let rebound = device.config.rebind("indicator.default")
-  let saved = device.config.save("flash")
-  debug.print(loaded.ok, loaded.error, set.ok, rebound.warning, saved.ok)
-}
-"#;
-    let output = compile(CompileRequest {
-        source: source.to_string(),
-        target_id: PORTABLE_TARGET_ID.to_string(),
-    });
-
-    assert!(output.ok, "{:?}", output.diagnostics);
-    sqbc::encode_sqbc(&output.ir.unwrap()).expect("device config calls should encode");
+        let error = sqbc::encode_sqbc(&output.ir.unwrap()).unwrap_err();
+        assert_eq!(
+            error.message,
+            format!("unknown function {}", &call[..call.find('(').unwrap()])
+        );
+    }
 }
 
 #[test]

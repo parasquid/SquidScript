@@ -7,11 +7,10 @@ use crate::{
         BUILTIN_APP_PROCESS_STACK, BUILTIN_APP_REGISTRY_GET, BUILTIN_APP_REGISTRY_LIST,
         BUILTIN_BINBOOK_CHAPTER, BUILTIN_BINBOOK_CHAPTERS, BUILTIN_BINBOOK_INFO,
         BUILTIN_BINBOOK_OPEN, BUILTIN_BINBOOK_READ_PAGE, BUILTIN_CONTENT_BINBOOK_LIST,
-        BUILTIN_DEBUG_PRINT, BUILTIN_DEVICE_CONFIG_LOAD, BUILTIN_DEVICE_CONFIG_REBIND,
-        BUILTIN_DEVICE_CONFIG_SAVE, BUILTIN_DEVICE_CONFIG_SET, BUILTIN_DISPLAY_CLEAR,
-        BUILTIN_DISPLAY_DRAW, BUILTIN_DISPLAY_IMAGE, BUILTIN_DISPLAY_INFO, BUILTIN_DISPLAY_LINE,
-        BUILTIN_DISPLAY_RECT, BUILTIN_DISPLAY_REFRESH_MODE, BUILTIN_DISPLAY_SELECT,
-        BUILTIN_DISPLAY_TEXT, BUILTIN_FILE_COPY, BUILTIN_FILE_LIST, BUILTIN_HARDWARE_GPIO_READ,
+        BUILTIN_DEBUG_PRINT, BUILTIN_DISPLAY_CLEAR, BUILTIN_DISPLAY_DRAW, BUILTIN_DISPLAY_IMAGE,
+        BUILTIN_DISPLAY_INFO, BUILTIN_DISPLAY_LINE, BUILTIN_DISPLAY_RECT,
+        BUILTIN_DISPLAY_REFRESH_MODE, BUILTIN_DISPLAY_SELECT, BUILTIN_DISPLAY_TEXT,
+        BUILTIN_FILE_COPY, BUILTIN_FILE_LIST, BUILTIN_HARDWARE_GPIO_READ,
         BUILTIN_HARDWARE_GPIO_TOGGLE, BUILTIN_HARDWARE_GPIO_WRITE, BUILTIN_SCREEN_OPEN,
         BUILTIN_SCREEN_REFRESH, BUILTIN_SERVICE_INDICATOR_BLINK, BUILTIN_SERVICE_INDICATOR_BREATHE,
         BUILTIN_SERVICE_INDICATOR_READ, BUILTIN_SERVICE_INDICATOR_TOGGLE,
@@ -36,12 +35,12 @@ use crate::{
         AppRegistryList, BinBookChapterEntry, BinBookChapterListResult, BinBookChapterListSummary,
         BinBookChapterListWriter, BinBookChapterResult, BinBookInfoResult, BinBookOpenResult,
         BinBookReadPageResult, ContentBinBookEntry, ContentBinBookListResult,
-        ContentBinBookListSummary, ContentBinBookListWriter, DeviceConfigResult, DisplayInfo,
-        DisplayLineOptions, DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions,
-        FileCopyResult, FileListEntry, FileListSummary, FileListWriter, FilePickFileResult,
-        FileReadLinesResult, FileReadLinesSummary, FileReadLinesWriter, FileReadTextResult,
-        StorageCompletion, StorageRequest, TraceSink, UploadStartResult, UploadStatus, VmDispatch,
-        WifiAccessPoint, WifiApIp, WifiOperation, WifiOperationResult, WifiScanNetwork, WifiStatus,
+        ContentBinBookListSummary, ContentBinBookListWriter, DisplayInfo, DisplayLineOptions,
+        DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions, FileCopyResult,
+        FileListEntry, FileListSummary, FileListWriter, FilePickFileResult, FileReadLinesResult,
+        FileReadLinesSummary, FileReadLinesWriter, FileReadTextResult, StorageCompletion,
+        StorageRequest, TraceSink, UploadStartResult, UploadStatus, VmDispatch, WifiAccessPoint,
+        WifiApIp, WifiOperation, WifiOperationResult, WifiScanNetwork, WifiStatus,
     },
     limits::{
         MAX_CALL_DEPTH, MAX_CODE_CHUNK_BYTES, MAX_FUNCTIONS, MAX_HANDLERS,
@@ -1715,32 +1714,6 @@ impl ChunkedVm {
                 let value = self.wifi_scan_network_record(result)?;
                 self.push(value)?;
             }
-            BUILTIN_DEVICE_CONFIG_LOAD => {
-                let source_id = self.pop_sqbc_string_id()?;
-                let result = host.device_config_load(self.index.string(source_id)?)?;
-                let value = self.device_config_result_record(result)?;
-                self.push(value)?;
-            }
-            BUILTIN_DEVICE_CONFIG_SET => {
-                let value = self.pop()?;
-                let key_id = self.pop_sqbc_string_id()?;
-                let strings = self.resolver();
-                let result = host.device_config_set(self.index.string(key_id)?, value, &strings)?;
-                let value = self.device_config_result_record(result)?;
-                self.push(value)?;
-            }
-            BUILTIN_DEVICE_CONFIG_REBIND => {
-                let binding_id = self.pop_sqbc_string_id()?;
-                let result = host.device_config_rebind(self.index.string(binding_id)?)?;
-                let value = self.device_config_result_record(result)?;
-                self.push(value)?;
-            }
-            BUILTIN_DEVICE_CONFIG_SAVE => {
-                let destination_id = self.pop_sqbc_string_id()?;
-                let result = host.device_config_save(self.index.string(destination_id)?)?;
-                let value = self.device_config_result_record(result)?;
-                self.push(value)?;
-            }
             BUILTIN_BINBOOK_OPEN => {
                 let path = self.pop()?;
                 let result = {
@@ -1969,19 +1942,6 @@ impl ChunkedVm {
             RuntimeRecordField::new(RuntimeFieldName::Error, error),
             RuntimeRecordField::new(RuntimeFieldName::Cancelled, Value::Bool(result.cancelled)),
             RuntimeRecordField::new(RuntimeFieldName::Count, Value::I32(result.count)),
-        ])
-    }
-
-    fn device_config_result_record(
-        &mut self,
-        result: DeviceConfigResult<'_>,
-    ) -> Result<Value, VmError> {
-        let error = self.runtime_string_value(result.error)?;
-        let warning = self.runtime_string_value(result.warning)?;
-        self.runtime_records.alloc(&[
-            RuntimeRecordField::new(RuntimeFieldName::Ok, Value::Bool(result.ok)),
-            RuntimeRecordField::new(RuntimeFieldName::Error, error),
-            RuntimeRecordField::new(RuntimeFieldName::Warning, warning),
         ])
     }
 
@@ -2819,36 +2779,6 @@ impl<T: TraceSink> TraceSink for InMemoryVmHost<'_, T> {
 
     fn system_start_reason_text(&mut self, out: &mut dyn Write) -> Result<(), VmError> {
         self.trace.system_start_reason_text(out)
-    }
-
-    fn device_config_load<'b>(
-        &'b mut self,
-        source: &str,
-    ) -> Result<DeviceConfigResult<'b>, VmError> {
-        self.trace.device_config_load(source)
-    }
-
-    fn device_config_set<'b>(
-        &'b mut self,
-        key: &str,
-        value: Value,
-        strings: &StringResolver<'_>,
-    ) -> Result<DeviceConfigResult<'b>, VmError> {
-        self.trace.device_config_set(key, value, strings)
-    }
-
-    fn device_config_rebind<'b>(
-        &'b mut self,
-        binding: &str,
-    ) -> Result<DeviceConfigResult<'b>, VmError> {
-        self.trace.device_config_rebind(binding)
-    }
-
-    fn device_config_save<'b>(
-        &'b mut self,
-        destination: &str,
-    ) -> Result<DeviceConfigResult<'b>, VmError> {
-        self.trace.device_config_save(destination)
     }
 
     fn file_pick_file<'b>(

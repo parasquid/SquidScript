@@ -151,11 +151,6 @@ be refreshed as capability boundaries become clearer.
 
 0x60 reserved for service.ble/service.bluetooth
 
-0x70 device.config.load
-0x71 device.config.set
-0x72 device.config.rebind
-0x73 device.config.save
-
 0x80 binbook.open
 0x81 binbook.info
 0x82 binbook.readPage

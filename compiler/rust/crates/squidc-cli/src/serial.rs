@@ -93,9 +93,7 @@ impl SerialDevice {
                 ),
                 planned.ack_requested,
             )
-            .map_err(|error| {
-                format!("app install chunk at offset {}: {error}", planned.offset)
-            })?;
+            .map_err(|error| format!("app install chunk at offset {}: {error}", planned.offset))?;
         }
         self.send_protocol_expect_ok(&app_install_commit_request(
             11 + transfer.chunks.len() as u32,

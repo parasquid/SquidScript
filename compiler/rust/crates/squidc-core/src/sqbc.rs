@@ -95,10 +95,6 @@ const BUILTIN_SERVICE_WIFI_OPERATION: u8 = 0x57;
 const BUILTIN_SERVICE_WIFI_RESULT: u8 = 0x58;
 const BUILTIN_SERVICE_WIFI_CANCEL: u8 = 0x59;
 const BUILTIN_SERVICE_WIFI_SCAN_NETWORK: u8 = 0x5a;
-const BUILTIN_DEVICE_CONFIG_LOAD: u8 = 0x70;
-const BUILTIN_DEVICE_CONFIG_SET: u8 = 0x71;
-const BUILTIN_DEVICE_CONFIG_REBIND: u8 = 0x72;
-const BUILTIN_DEVICE_CONFIG_SAVE: u8 = 0x73;
 const BUILTIN_BINBOOK_OPEN: u8 = 0x80;
 const BUILTIN_BINBOOK_INFO: u8 = 0x81;
 const BUILTIN_BINBOOK_READ_PAGE: u8 = 0x82;
@@ -1556,10 +1552,6 @@ fn builtin_for_call(name: &str) -> Option<u8> {
         "app.processStack" => Some(BUILTIN_APP_PROCESS_STACK),
         "app.armedStack" => Some(BUILTIN_APP_ARMED_STACK),
         "app.armedStack.get" => Some(BUILTIN_APP_ARMED_STACK_GET),
-        "device.config.load" => Some(BUILTIN_DEVICE_CONFIG_LOAD),
-        "device.config.set" => Some(BUILTIN_DEVICE_CONFIG_SET),
-        "device.config.rebind" => Some(BUILTIN_DEVICE_CONFIG_REBIND),
-        "device.config.save" => Some(BUILTIN_DEVICE_CONFIG_SAVE),
         "binbook.open" => Some(BUILTIN_BINBOOK_OPEN),
         "binbook.info" => Some(BUILTIN_BINBOOK_INFO),
         "binbook.readPage" => Some(BUILTIN_BINBOOK_READ_PAGE),
@@ -1593,8 +1585,6 @@ fn validate_builtin_arg_count(name: &str, count: usize) -> Result<(), SqbcError>
         | "app.armedStack" => count == 0,
         "service.wifi.scanNetwork" => count == 1,
         "app.registry.get" | "app.armedStack.get" => count == 2,
-        "device.config.load" | "device.config.rebind" | "device.config.save" => count == 1,
-        "device.config.set" => count == 2,
         "binbook.open" => count == 1,
         "binbook.info" => count == 1,
         "binbook.readPage" => count == 2,

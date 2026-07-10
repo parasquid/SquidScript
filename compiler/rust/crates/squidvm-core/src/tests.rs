@@ -486,60 +486,6 @@ impl TraceSink for RuntimeTrace {
         })
     }
 
-    fn device_config_load<'a>(
-        &'a mut self,
-        source: &str,
-    ) -> Result<DeviceConfigResult<'a>, VmError> {
-        self.events.push(format!("device.config.load {source}"));
-        Ok(DeviceConfigResult {
-            ok: true,
-            error: None,
-            warning: Some("loaded"),
-        })
-    }
-
-    fn device_config_set<'a>(
-        &'a mut self,
-        key: &str,
-        value: Value,
-        strings: &StringResolver<'_>,
-    ) -> Result<DeviceConfigResult<'a>, VmError> {
-        self.events.push(format!(
-            "device.config.set {key} {}",
-            strings.value_str(value).unwrap_or("<value>")
-        ));
-        Ok(DeviceConfigResult {
-            ok: true,
-            error: None,
-            warning: None,
-        })
-    }
-
-    fn device_config_rebind<'a>(
-        &'a mut self,
-        binding: &str,
-    ) -> Result<DeviceConfigResult<'a>, VmError> {
-        self.events.push(format!("device.config.rebind {binding}"));
-        Ok(DeviceConfigResult {
-            ok: true,
-            error: None,
-            warning: Some("rebound"),
-        })
-    }
-
-    fn device_config_save<'a>(
-        &'a mut self,
-        destination: &str,
-    ) -> Result<DeviceConfigResult<'a>, VmError> {
-        self.events
-            .push(format!("device.config.save {destination}"));
-        Ok(DeviceConfigResult {
-            ok: true,
-            error: None,
-            warning: None,
-        })
-    }
-
     fn file_pick_file<'a>(
         &'a mut self,
         extension: &str,
@@ -2898,44 +2844,6 @@ screen("main") {}
             "service.power.sleep 30000",
             "power.sleep",
             "debug prep",
-        ]
-    );
-}
-
-#[test]
-fn runs_device_config_result_builtins_from_real_bytecode() {
-    let source = r#"app "device-config"
-event.on("app.start") {
-  let loaded = device.config.load("package:device/indicator.sqdevice")
-  let set = device.config.set("mode", "gpio")
-  let rebound = device.config.rebind("indicator.default")
-  let saved = device.config.save("flash")
-  debug.print(loaded.ok, loaded.error, loaded.warning)
-  debug.print(set.ok, set.error, rebound.ok, rebound.warning, saved.ok)
-}
-"#;
-    let compiled = compile(CompileRequest {
-        source: source.to_string(),
-        target_id: PORTABLE_TARGET_ID.to_string(),
-    });
-    assert!(compiled.ok, "{:?}", compiled.diagnostics);
-    let bytes = squidc_core::sqbc::encode_sqbc(&compiled.ir.unwrap()).unwrap();
-    let program = Program::parse(&bytes).unwrap();
-    let mut vm = Vm::new(program);
-    let mut trace = RuntimeTrace::default();
-
-    vm.dispatch("app.start", &mut trace).unwrap();
-
-    assert_eq!(
-        trace.events,
-        vec![
-            "app.start",
-            "device.config.load package:device/indicator.sqdevice",
-            "device.config.set mode gpio",
-            "device.config.rebind indicator.default",
-            "device.config.save flash",
-            "debug true null loaded",
-            "debug true null true rebound true",
         ]
     );
 }

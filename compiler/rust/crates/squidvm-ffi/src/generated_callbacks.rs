@@ -186,39 +186,6 @@ pub struct SqvmCallbacks {
             out: *mut SqvmWifiScanNetworkResult,
         ) -> i32,
     >,
-    pub device_config_load: Option<
-        unsafe extern "C" fn(
-            user_data: *mut c_void,
-            source: *const u8,
-            source_len: usize,
-            out: *mut SqvmDeviceConfigResult,
-        ) -> i32,
-    >,
-    pub device_config_set: Option<
-        unsafe extern "C" fn(
-            user_data: *mut c_void,
-            key: *const u8,
-            key_len: usize,
-            value: SqvmDeviceConfigValue,
-            out: *mut SqvmDeviceConfigResult,
-        ) -> i32,
-    >,
-    pub device_config_rebind: Option<
-        unsafe extern "C" fn(
-            user_data: *mut c_void,
-            alias: *const u8,
-            alias_len: usize,
-            out: *mut SqvmDeviceConfigResult,
-        ) -> i32,
-    >,
-    pub device_config_save: Option<
-        unsafe extern "C" fn(
-            user_data: *mut c_void,
-            destination: *const u8,
-            destination_len: usize,
-            out: *mut SqvmDeviceConfigResult,
-        ) -> i32,
-    >,
     pub file_pick_file: Option<
         unsafe extern "C" fn(
             user_data: *mut c_void,
@@ -390,10 +357,6 @@ impl Default for SqvmCallbacks {
             wifi_result: None,
             wifi_cancel: None,
             wifi_scan_network: None,
-            device_config_load: None,
-            device_config_set: None,
-            device_config_rebind: None,
-            device_config_save: None,
             file_pick_file: None,
             file_read_text: None,
             file_read_lines: None,

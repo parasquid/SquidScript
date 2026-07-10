@@ -16,12 +16,11 @@ use squidvm_core::{
         AppArmedStack, AppArmedStackEntry, AppInstallResult, AppProcessStack, AppRegistryEntry,
         AppRegistryList, BinBookChapterEntry, BinBookChapterListResult, BinBookChapterResult,
         BinBookInfoResult, BinBookOpenResult, BinBookReadPageResult, ContentBinBookEntry,
-        ContentBinBookListResult, DeviceConfigResult, DisplayInfo, DisplayLineOptions,
-        DisplayRectOptions, DisplayResourceOptions, DisplayTextOptions, FileCopyResult,
-        FilePickFileResult, FileReadLinesResult, FileReadTextResult,
-        StorageCompletion as CoreStorageCompletion, StorageRequest, TraceSink, VmDispatch,
-        WifiAccessPoint, WifiApIp, WifiOperation, WifiOperationResult, WifiScanNetwork, WifiStatus,
-        MAX_STORAGE_TRANSFER_BYTES,
+        ContentBinBookListResult, DisplayInfo, DisplayLineOptions, DisplayRectOptions,
+        DisplayResourceOptions, DisplayTextOptions, FileCopyResult, FilePickFileResult,
+        FileReadLinesResult, FileReadTextResult, StorageCompletion as CoreStorageCompletion,
+        StorageRequest, TraceSink, VmDispatch, WifiAccessPoint, WifiApIp, WifiOperation,
+        WifiOperationResult, WifiScanNetwork, WifiStatus, MAX_STORAGE_TRANSFER_BYTES,
     },
     limits::{MAX_APP_BYTES, MAX_CODE_CHUNK_BYTES, MAX_SAVED_STATE_BYTES},
     program::{Program, ProgramIndex, SqbcSection},
@@ -975,47 +974,6 @@ pub struct SqvmWifiScanNetworkResult {
     pub error: *const u8,
     pub error_len: usize,
     pub network: SqvmWifiAccessPoint,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SqvmDeviceConfigValueKind {
-    Null = 0,
-    Bool = 1,
-    I32 = 2,
-    String = 3,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SqvmDeviceConfigValue {
-    pub kind: SqvmDeviceConfigValueKind,
-    pub bool_value: bool,
-    pub i32_value: i32,
-    pub string: *const u8,
-    pub string_len: usize,
-}
-
-impl Default for SqvmDeviceConfigValue {
-    fn default() -> Self {
-        Self {
-            kind: SqvmDeviceConfigValueKind::Null,
-            bool_value: false,
-            i32_value: 0,
-            string: ptr::null(),
-            string_len: 0,
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SqvmDeviceConfigResult {
-    pub ok: bool,
-    pub error: *const u8,
-    pub error_len: usize,
-    pub warning: *const u8,
-    pub warning_len: usize,
 }
 
 #[repr(C)]
@@ -3609,34 +3567,6 @@ impl TraceSink for FfiHost<'_> {
         })
     }
 
-    fn service_ble_start(&mut self, id: &str) -> Result<(), VmError> {
-        let Some(ble_start) = self.callbacks.ble_start else {
-            return Err(VmError::InvalidOperand);
-        };
-        callback_status(unsafe { ble_start(self.user_data, id.as_ptr(), id.len()) })
-    }
-
-    fn service_ble_stop(&mut self) -> Result<(), VmError> {
-        let Some(ble_stop) = self.callbacks.ble_stop else {
-            return Err(VmError::InvalidOperand);
-        };
-        callback_status(unsafe { ble_stop(self.user_data) })
-    }
-
-    fn service_http_start(&mut self, id: &str) -> Result<(), VmError> {
-        let Some(http_start) = self.callbacks.http_start else {
-            return Err(VmError::InvalidOperand);
-        };
-        callback_status(unsafe { http_start(self.user_data, id.as_ptr(), id.len()) })
-    }
-
-    fn service_http_stop(&mut self) -> Result<(), VmError> {
-        let Some(http_stop) = self.callbacks.http_stop else {
-            return Err(VmError::InvalidOperand);
-        };
-        callback_status(unsafe { http_stop(self.user_data) })
-    }
-
     fn service_wifi_start_ap<'a>(&'a mut self, ssid: &str) -> Result<WifiOperation<'a>, VmError> {
         let Some(wifi_start_ap) = self.callbacks.wifi_start_ap else {
             return Ok(WifiOperation::unsupported());
@@ -3746,70 +3676,6 @@ impl TraceSink for FfiHost<'_> {
         let mut out = SqvmWifiScanNetworkResult::default();
         callback_status(unsafe { wifi_scan_network(self.user_data, index, &mut out) })?;
         wifi_scan_network_from_ffi(&out)
-    }
-
-    fn device_config_load<'a>(
-        &'a mut self,
-        source: &str,
-    ) -> Result<DeviceConfigResult<'a>, VmError> {
-        let Some(device_config_load) = self.callbacks.device_config_load else {
-            return Ok(DeviceConfigResult::unsupported());
-        };
-        let mut out = SqvmDeviceConfigResult::default();
-        callback_status(unsafe {
-            device_config_load(self.user_data, source.as_ptr(), source.len(), &mut out)
-        })?;
-        unsafe { device_config_result_from_ffi(&out) }
-    }
-
-    fn device_config_set<'a>(
-        &'a mut self,
-        key: &str,
-        value: Value,
-        strings: &StringResolver<'_>,
-    ) -> Result<DeviceConfigResult<'a>, VmError> {
-        let Some(device_config_set) = self.callbacks.device_config_set else {
-            return Ok(DeviceConfigResult::unsupported());
-        };
-        let value = device_config_value_to_ffi(value, strings)?;
-        let mut out = SqvmDeviceConfigResult::default();
-        callback_status(unsafe {
-            device_config_set(self.user_data, key.as_ptr(), key.len(), value, &mut out)
-        })?;
-        unsafe { device_config_result_from_ffi(&out) }
-    }
-
-    fn device_config_rebind<'a>(
-        &'a mut self,
-        alias: &str,
-    ) -> Result<DeviceConfigResult<'a>, VmError> {
-        let Some(device_config_rebind) = self.callbacks.device_config_rebind else {
-            return Ok(DeviceConfigResult::unsupported());
-        };
-        let mut out = SqvmDeviceConfigResult::default();
-        callback_status(unsafe {
-            device_config_rebind(self.user_data, alias.as_ptr(), alias.len(), &mut out)
-        })?;
-        unsafe { device_config_result_from_ffi(&out) }
-    }
-
-    fn device_config_save<'a>(
-        &'a mut self,
-        destination: &str,
-    ) -> Result<DeviceConfigResult<'a>, VmError> {
-        let Some(device_config_save) = self.callbacks.device_config_save else {
-            return Ok(DeviceConfigResult::unsupported());
-        };
-        let mut out = SqvmDeviceConfigResult::default();
-        callback_status(unsafe {
-            device_config_save(
-                self.user_data,
-                destination.as_ptr(),
-                destination.len(),
-                &mut out,
-            )
-        })?;
-        unsafe { device_config_result_from_ffi(&out) }
     }
 
     fn file_pick_file<'a>(
@@ -5481,16 +5347,6 @@ unsafe fn wifi_operation_result_from_ffi<'a>(
     })
 }
 
-unsafe fn device_config_result_from_ffi<'a>(
-    result: &SqvmDeviceConfigResult,
-) -> Result<DeviceConfigResult<'a>, VmError> {
-    Ok(DeviceConfigResult {
-        ok: result.ok,
-        error: optional_ffi_str(result.error, result.error_len)?,
-        warning: optional_ffi_str(result.warning, result.warning_len)?,
-    })
-}
-
 unsafe fn display_info_from_ffi<'a>(result: &SqvmDisplayInfo) -> Result<DisplayInfo<'a>, VmError> {
     Ok(DisplayInfo {
         ok: result.ok,
@@ -5591,38 +5447,6 @@ unsafe fn binbook_read_page_result_from_ffi<'a>(
         error: optional_ffi_str(result.error, result.error_len)?,
         drawable: handle_from_ffi(result.drawable)?,
     })
-}
-
-fn device_config_value_to_ffi(
-    value: Value,
-    strings: &StringResolver<'_>,
-) -> Result<SqvmDeviceConfigValue, VmError> {
-    match value {
-        Value::Null => Ok(SqvmDeviceConfigValue {
-            kind: SqvmDeviceConfigValueKind::Null,
-            ..SqvmDeviceConfigValue::default()
-        }),
-        Value::Bool(value) => Ok(SqvmDeviceConfigValue {
-            kind: SqvmDeviceConfigValueKind::Bool,
-            bool_value: value,
-            ..SqvmDeviceConfigValue::default()
-        }),
-        Value::I32(value) => Ok(SqvmDeviceConfigValue {
-            kind: SqvmDeviceConfigValueKind::I32,
-            i32_value: value,
-            ..SqvmDeviceConfigValue::default()
-        }),
-        Value::String(_) => {
-            let text = strings.value_str(value)?;
-            Ok(SqvmDeviceConfigValue {
-                kind: SqvmDeviceConfigValueKind::String,
-                string: text.as_ptr(),
-                string_len: text.len(),
-                ..SqvmDeviceConfigValue::default()
-            })
-        }
-        Value::Record(_) | Value::List(_) | Value::Handle(_) => Err(VmError::InvalidOperand),
-    }
 }
 
 #[cfg(test)]
