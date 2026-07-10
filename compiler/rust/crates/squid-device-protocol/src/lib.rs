@@ -2007,6 +2007,29 @@ where
     P: Clone + Iterator<Item = &'a str>,
     A: Clone + Iterator<Item = LifecycleTimer<'a>>,
 {
+    encode_lifecycle_response_with_details_into(
+        sequence,
+        active_app,
+        process_stack,
+        armed_timers,
+        core::iter::empty(),
+        out,
+    )
+}
+
+pub fn encode_lifecycle_response_with_details_into<'a, P, A, D>(
+    sequence: u32,
+    active_app: Option<&str>,
+    process_stack: P,
+    armed_timers: A,
+    details: D,
+    out: &mut [u8],
+) -> Result<usize, DecodeError>
+where
+    P: Clone + Iterator<Item = &'a str>,
+    A: Clone + Iterator<Item = LifecycleTimer<'a>>,
+    D: Clone + Iterator<Item = &'a str>,
+{
     let active = active_app.unwrap_or("");
     let mut payload_len = tlv_string_len_for_len("active=".len() + active.len())?;
     for (index, app_id) in process_stack.clone().enumerate() {
@@ -2040,6 +2063,14 @@ where
                 capacity: out.len(),
             })?;
     }
+    for detail in details.clone() {
+        payload_len = payload_len.checked_add(tlv_string_len(detail)?).ok_or(
+            DecodeError::OutputTooSmall {
+                needed: usize::MAX,
+                capacity: out.len(),
+            },
+        )?;
+    }
 
     encode_response_payload_into(
         Opcode::LifecycleGet,
@@ -2055,6 +2086,9 @@ where
             payload = write_string_tlv(payload, 1, "armed_stack=")?;
             for (index, timer) in armed_timers.enumerate() {
                 payload = write_armed_line_tlv(payload, index, timer.app_id, timer.event)?;
+            }
+            for detail in details {
+                payload = write_string_tlv(payload, 1, detail)?;
             }
             Ok(())
         },

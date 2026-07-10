@@ -55,7 +55,7 @@ prior directory. Boot recovery restores an interrupted prior-directory rename
 and removes incomplete install directories before rebuilding the registry.
 
 Relative `file.readText(...)` paths in an installed app resolve against that
-app's package resources first. Native resource text reads are bounded to 1 KiB;
+app's package resources first. Native resource text reads are bounded to 256 bytes;
 larger text resources return `too-large`. Target content references containing
 a namespace separator continue through the target content backend.
 

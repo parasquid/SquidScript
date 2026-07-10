@@ -5,13 +5,13 @@ use squid_device_protocol::{
     content_install_chunk_request, content_install_commit_request, decode_frame,
     encode_app_list_response_into, encode_empty_response_into, encode_error_response_into,
     encode_frame, encode_frame_into, encode_hello_response_into, encode_lifecycle_response_into,
-    encode_line_response_into, encode_resources_response_into, event_dispatch_request,
-    hello_identity, hello_request, key_event_from_request_into, key_request, lifecycle_lines,
-    output_lines, request_bytes_field, request_string_field, resource_values,
-    resources_get_request_with_heap_reset, runtime_cap_clear_request, runtime_cap_get_request,
-    runtime_cap_set_request, AppListEntry, DecodeError, DeviceRequest, Field, FieldValue, Frame,
-    FrameKind, HostAction, LifecycleTimer, Opcode, ProtocolSessions, ResourceMetric, Status,
-    TransferCapabilities,
+    encode_lifecycle_response_with_details_into, encode_line_response_into,
+    encode_resources_response_into, event_dispatch_request, hello_identity, hello_request,
+    key_event_from_request_into, key_request, lifecycle_lines, output_lines, request_bytes_field,
+    request_string_field, resource_values, resources_get_request_with_heap_reset,
+    runtime_cap_clear_request, runtime_cap_get_request, runtime_cap_set_request, AppListEntry,
+    DecodeError, DeviceRequest, Field, FieldValue, Frame, FrameKind, HostAction, LifecycleTimer,
+    Opcode, ProtocolSessions, ResourceMetric, Status, TransferCapabilities,
 };
 
 #[test]
@@ -253,6 +253,37 @@ fn encodes_heap_free_lifecycle_response_from_structured_inputs() {
             "process_stack[0]=main".to_string(),
             "armed_stack=".to_string(),
             "armed_stack[0]=break-reminder timer.break".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn encodes_native_lifecycle_details_after_structured_stacks() {
+    let mut out = [0u8; 256];
+    let details = [
+        "lifecycle=idle",
+        "start_reason=return",
+        "event_queue=0 overflow=0",
+    ];
+    let len = encode_lifecycle_response_with_details_into(
+        93,
+        Some("main"),
+        core::iter::empty(),
+        core::iter::empty(),
+        details.iter().copied(),
+        &mut out,
+    )
+    .unwrap();
+    let decoded = decode_frame(&out[..len]).unwrap();
+
+    assert_eq!(
+        lifecycle_lines(&decoded).unwrap(),
+        vec![
+            "active=main".to_string(),
+            "armed_stack=".to_string(),
+            "lifecycle=idle".to_string(),
+            "start_reason=return".to_string(),
+            "event_queue=0 overflow=0".to_string(),
         ]
     );
 }

@@ -394,6 +394,10 @@ impl<S: NativeAppStorage> NativeAppStore<S> {
             .map(AppRegistryEntry::app_id)
     }
 
+    pub fn pending_app_id(&self) -> Option<&str> {
+        (!self.pending_app.as_str().is_empty()).then(|| self.pending_app.as_str())
+    }
+
     pub fn rebuild(&mut self, scratch: &mut [u8]) -> Result<(), AppStoreError> {
         self.registry.fill(None);
         self.registry_len = 0;

@@ -313,29 +313,29 @@ flash.
 **Owning layer:** native firmware-core lifecycle state machine using the app
 store interface.
 
-- [ ] Port behavior, not C structure, from
+- [x] Port behavior, not C structure, from
   `docs/app_lifecycle_state_machine.md` into a Rust state machine.
-- [ ] Implement host callbacks for registry list/get, process stack, armed
+- [x] Implement host callbacks for registry list/get, process stack, armed
   stack/get, arm, disarm, launch, and start reason.
-- [ ] Implement a two-entry return stack with explicit overflow errors.
-- [ ] Dispatch `app.exit`, then start launch/return targets fresh with
+- [x] Implement a two-entry return stack with explicit overflow errors.
+- [x] Dispatch `app.exit`, then start launch/return targets fresh with
   `launch`/`return` reasons.
-- [ ] Read trigger metadata from installed SQBC through a separate bounded
+- [x] Read trigger metadata from installed SQBC through a separate bounded
   reader so arming cannot disturb the active foreground reader.
-- [ ] Register up to two armed timers and eight armed logical-input triggers.
-- [ ] Enforce one armed owner per input event. A duplicate arm fails, retains
+- [x] Register up to two armed timers and eight armed logical-input triggers.
+- [x] Enforce one armed owner per input event. A duplicate arm fails, retains
   the old owner, records a device diagnostic, and emits a debug-build routing
   log.
-- [ ] Add an eight-entry pending event queue shared by timer/input producers.
+- [x] Add an eight-entry pending event queue shared by timer/input producers.
   Use drop-newest overflow, retain an overflow diagnostic, and preserve queued
   order.
-- [ ] Drain only while lifecycle and VM dispatch are ready. Never invoke a
+- [x] Drain only while lifecycle and VM dispatch are ready. Never invoke a
   second VM job reentrantly.
-- [ ] Route matched armed input/timer events by pushing the current app,
+- [x] Route matched armed input/timer events by pushing the current app,
   launching the owner fresh, and dispatching the exact declared event. Do not
   also send it to the previous foreground app.
-- [ ] Route unmatched input/timer events to the current foreground session.
-- [ ] Update lifecycle/resources protocol output with real active, return,
+- [x] Route unmatched input/timer events to the current foreground session.
+- [x] Update lifecycle/resources protocol output with real active, return,
   armed, queue, and phase state.
 
 **Automated tests:** launch without/with foreground, exit return, missing app,

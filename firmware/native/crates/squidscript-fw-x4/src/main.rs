@@ -213,12 +213,17 @@ type X4NativeFileBackend = X4BinBookFileBackend<
 
 #[cfg(all(target_arch = "riscv32", feature = "native-radio-services"))]
 #[cfg(feature = "x4-binbook")]
+type X4NativeAppStorage =
+    squidscript_fw_x4::flash_partition::LittleFsAppStorage<esp_storage::FlashStorage<'static>>;
+
+#[cfg(all(target_arch = "riscv32", feature = "native-radio-services"))]
+#[cfg(feature = "x4-binbook")]
 type X4NativeRuntime = NativeRuntime<
     EspRadioBackend,
     X4CommandDisplaySink,
     NoopBinBookBackend,
     X4NativeFileBackend,
-    squidscript_fw_x4::flash_partition::LittleFsAppStorage<esp_storage::FlashStorage<'static>>,
+    X4NativeAppStorage,
 >;
 
 #[cfg(all(target_arch = "riscv32", feature = "native-radio-services"))]
@@ -228,8 +233,67 @@ type X4NativeRuntime = NativeRuntime<EspRadioBackend>;
 #[cfg(all(target_arch = "riscv32", feature = "native-radio-services"))]
 type SharedX4NativeRuntime = embassy_sync_07::mutex::Mutex<
     embassy_sync_07::blocking_mutex::raw::CriticalSectionRawMutex,
-    X4NativeRuntime,
+    &'static mut X4NativeRuntime,
 >;
+
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "x4-binbook"
+))]
+#[inline(never)]
+fn build_shared_x4_runtime(
+    cell: &'static static_cell::StaticCell<SharedX4NativeRuntime>,
+    runtime_cell: &'static static_cell::StaticCell<X4NativeRuntime>,
+    file_backend: X4NativeFileBackend,
+    app_storage: X4NativeAppStorage,
+    app_store_ready: bool,
+) -> &'static SharedX4NativeRuntime {
+    let runtime = runtime_cell.uninit();
+    unsafe {
+        NativeRuntime::init_in_place(
+            runtime.as_mut_ptr(),
+            EspRadioBackend::new(),
+            X4CommandDisplaySink::new(),
+            NoopBinBookBackend,
+            file_backend,
+            app_storage,
+        );
+    }
+    let runtime = unsafe { runtime.assume_init_mut() };
+    {
+        let registry_ready = app_store_ready && runtime.rebuild_app_registry().is_ok();
+        let heap = esp_alloc::HEAP.stats();
+        runtime.set_system_memory_metrics(
+            TOTAL_SRAM_BYTES,
+            heap.current_usage,
+            heap.size.saturating_sub(heap.current_usage),
+        );
+        if !app_store_ready {
+            runtime.record_error("app_store_mount_failed");
+        } else if !registry_ready {
+            runtime.record_error("app_store_registry_failed");
+        } else if runtime
+            .app_registry()
+            .iter()
+            .flatten()
+            .any(|entry| entry.app_id() == "main")
+        {
+            if runtime.boot_app("main").is_err() {
+                runtime.record_error("installed_main_launch_failed");
+            }
+        } else if runtime
+            .launch_fallback(include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/fallback-main.sqbc"
+            )))
+            .is_err()
+        {
+            runtime.record_error("fallback_main_launch_failed");
+        }
+    }
+    cell.init_with(|| SharedX4NativeRuntime::new(runtime))
+}
 
 #[cfg(all(
     target_arch = "riscv32",
@@ -1533,6 +1597,7 @@ async fn main(spawner: embassy_executor::Spawner) {
     let radio_leases = RADIO_LEASES.init_with(RadioLeaseManager::new);
     #[cfg(all(feature = "native-radio-services", not(feature = "vm-radio-measure")))]
     static RUNTIME: static_cell::StaticCell<SharedX4NativeRuntime> = static_cell::StaticCell::new();
+    static RUNTIME_VALUE: static_cell::StaticCell<X4NativeRuntime> = static_cell::StaticCell::new();
     #[cfg(all(feature = "native-radio-services", not(feature = "vm-radio-measure")))]
     static BUFFERS: static_cell::StaticCell<SerialProtocolBuffers> = static_cell::StaticCell::new();
     let radio = radio_stack_metadata();
@@ -1651,47 +1716,13 @@ async fn main(spawner: embassy_executor::Spawner) {
                 esp_storage::FlashStorage::new(peripherals.FLASH),
             );
             let app_store_ready = app_storage.initialize().is_ok();
-            let runtime = RUNTIME.init_with(|| {
-                let mut runtime = NativeRuntime::with_radio_display_binbook_file_and_app_store(
-                    EspRadioBackend::new(),
-                    X4CommandDisplaySink::new(),
-                    NoopBinBookBackend,
-                    file_backend,
-                    app_storage,
-                );
-                let registry_ready = app_store_ready && runtime.rebuild_app_registry().is_ok();
-                let heap = esp_alloc::HEAP.stats();
-                runtime.set_system_memory_metrics(
-                    TOTAL_SRAM_BYTES,
-                    heap.current_usage,
-                    heap.size.saturating_sub(heap.current_usage),
-                );
-                if !app_store_ready {
-                    runtime.record_error("app_store_mount_failed");
-                } else if !registry_ready {
-                    runtime.record_error("app_store_registry_failed");
-                } else if runtime
-                    .app_registry()
-                    .iter()
-                    .flatten()
-                    .any(|entry| entry.app_id() == "main")
-                {
-                    if runtime.launch_app("main").is_err() {
-                        runtime.record_error("installed_main_launch_failed");
-                    }
-                } else {
-                    if runtime
-                        .launch_fallback(include_bytes!(concat!(
-                            env!("OUT_DIR"),
-                            "/fallback-main.sqbc"
-                        )))
-                        .is_err()
-                    {
-                        runtime.record_error("fallback_main_launch_failed");
-                    }
-                }
-                SharedX4NativeRuntime::new(runtime)
-            });
+            let runtime = build_shared_x4_runtime(
+                &RUNTIME,
+                &RUNTIME_VALUE,
+                file_backend,
+                app_storage,
+                app_store_ready,
+            );
             #[cfg(feature = "wifi")]
             WIFI_RUNTIME_PTR.store(runtime as *const _ as usize, Ordering::Release);
             let display_spi = FreqManagedSpiDevice::new(
@@ -2238,10 +2269,9 @@ where
     use squid_device_protocol::{
         encode_app_list_response_into, encode_content_check_response_into,
         encode_content_delete_response_into, encode_empty_response_into,
-        encode_error_response_into, encode_hello_response_into, encode_lifecycle_response_into,
-        encode_line_response_into, encode_resources_response_into, encode_state_response_into,
-        key_event_from_request_into, request_bytes_field, request_string_field, AppListEntry,
-        Opcode, ResourceMetric, Status,
+        encode_error_response_into, encode_hello_response_into, encode_line_response_into,
+        encode_resources_response_into, encode_state_response_into, key_event_from_request_into,
+        request_bytes_field, request_string_field, AppListEntry, Opcode, ResourceMetric, Status,
     };
 
     const SERIAL_MAX_FRAME_BYTES: u64 = 4096;
@@ -2474,7 +2504,7 @@ where
                 .ok()
                 .and_then(|len| core::str::from_utf8(&event_buf[..len]).ok())
                 .ok_or(())
-                .and_then(|event| runtime.dispatch_event(event).map_err(|_| ()))
+                .and_then(|event| runtime.enqueue_input_event(event).map_err(|_| ()))
             {
                 Ok(()) => {
                     encode_empty_response_into(Opcode::Key, Status::Ok, parsed.sequence, response)
@@ -2580,13 +2610,37 @@ where
             });
             encode_resources_response_into(parsed.sequence, metric_iter, response)
         }
-        Opcode::LifecycleGet => encode_lifecycle_response_into(
-            parsed.sequence,
-            runtime.active_app(),
-            core::iter::empty(),
-            core::iter::empty(),
-            response,
-        ),
+        Opcode::LifecycleGet => {
+            use core::fmt::Write as _;
+            let process_len = runtime.lifecycle_process_len();
+            let armed_len = runtime.lifecycle_armed_len();
+            let process = (0..process_len).filter_map(|index| runtime.lifecycle_process_at(index));
+            let armed = (0..armed_len).filter_map(|index| {
+                runtime
+                    .lifecycle_armed_at(index)
+                    .map(|(app_id, event)| squid_device_protocol::LifecycleTimer { app_id, event })
+            });
+            let mut phase = heapless::String::<64>::new();
+            let mut reason = heapless::String::<64>::new();
+            let mut queue = heapless::String::<64>::new();
+            let _ = write!(phase, "lifecycle={}", runtime.lifecycle_phase());
+            let _ = write!(reason, "start_reason={}", runtime.lifecycle_start_reason());
+            let _ = write!(
+                queue,
+                "event_queue={} overflow={}",
+                runtime.lifecycle_queue_len(),
+                u8::from(runtime.lifecycle_queue_overflowed())
+            );
+            let details = [phase.as_str(), reason.as_str(), queue.as_str()];
+            squid_device_protocol::encode_lifecycle_response_with_details_into(
+                parsed.sequence,
+                runtime.active_app(),
+                process,
+                armed,
+                details.into_iter(),
+                response,
+            )
+        }
         Opcode::DisplayWindowProbe => match {
             let (display_sink, file_backend) = runtime.display_sink_and_file_backend_mut();
             display_flush.request_flush(display_sink, file_backend)
@@ -2756,7 +2810,7 @@ async fn run_serial_protocol_cooperative<B, D, C, FB, AS, F>(
     mut serial: UsbSerialJtag<'static, esp_hal::Blocking>,
     runtime: &'static embassy_sync_07::mutex::Mutex<
         embassy_sync_07::blocking_mutex::raw::CriticalSectionRawMutex,
-        NativeRuntime<B, D, C, FB, AS>,
+        &'static mut NativeRuntime<B, D, C, FB, AS>,
     >,
     buffers: &'static mut SerialProtocolBuffers,
     display_flush: &mut F,

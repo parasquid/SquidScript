@@ -1,10 +1,12 @@
 use squidc_core::compile::{compile, CompileRequest};
 use squidscript_fw_core::{
+    app_store::{AppStoreError, NativeAppStorage},
     native_runtime::{
         BoundedNativeFileBackend, NativeBinBookBackend, NativeDisplaySink, NativeFileBackend,
         NativeFileStorage, NativeFileStorageError, NativeRadioBackend, NativeRuntime,
         NativeRuntimeError, NativeUploadRouteError, NativeUploadTransport, NativeWifiApIp,
-        NativeWifiBackendOperation, NativeWifiStatus, NoopBinBookBackend, NoopRadioBackend,
+        NativeWifiBackendOperation, NativeWifiStatus, NoopBinBookBackend, NoopFileBackend,
+        NoopRadioBackend,
     },
     radio_lifecycle::RadioKind,
 };
@@ -34,8 +36,9 @@ fn run_temp_app<
     D: NativeDisplaySink,
     C: NativeBinBookBackend,
     F: NativeFileBackend,
+    A: NativeAppStorage,
 >(
-    runtime: &mut NativeRuntime<B, D, C, F>,
+    runtime: &mut NativeRuntime<B, D, C, F, A>,
     app_id: &str,
     sqbc: &[u8],
 ) {
@@ -49,14 +52,174 @@ fn install_app<
     D: NativeDisplaySink,
     C: NativeBinBookBackend,
     F: NativeFileBackend,
+    A: NativeAppStorage,
 >(
-    runtime: &mut NativeRuntime<B, D, C, F>,
+    runtime: &mut NativeRuntime<B, D, C, F, A>,
     app_id: &str,
     sqbc: &[u8],
 ) {
     runtime.begin_app_install(app_id, sqbc.len()).unwrap();
     runtime.write_app_install_chunk(0, sqbc).unwrap();
     runtime.commit_app_install().unwrap();
+}
+
+#[derive(Default)]
+struct MultiAppStorage {
+    apps: HashMap<String, Vec<u8>>,
+    pending_id: String,
+    pending: Vec<u8>,
+    states: HashMap<String, Vec<u8>>,
+}
+
+impl NativeAppStorage for MultiAppStorage {
+    fn for_each_app(&mut self, visit: &mut dyn FnMut(&str, usize)) -> Result<(), AppStoreError> {
+        for (id, bytes) in &self.apps {
+            visit(id, bytes.len());
+        }
+        Ok(())
+    }
+    fn app_size(&mut self, app_id: &str) -> Result<usize, AppStoreError> {
+        self.apps
+            .get(app_id)
+            .map(Vec::len)
+            .ok_or(AppStoreError::NotFound)
+    }
+    fn read_app_at(
+        &mut self,
+        app_id: &str,
+        offset: usize,
+        out: &mut [u8],
+    ) -> Result<(), AppStoreError> {
+        read_test_bytes(&self.apps, app_id, offset, out)
+    }
+    fn begin_app_install(&mut self, app_id: &str, _: usize) -> Result<(), AppStoreError> {
+        self.pending_id = app_id.into();
+        self.pending.clear();
+        Ok(())
+    }
+    fn write_app_install_chunk(
+        &mut self,
+        app_id: &str,
+        offset: usize,
+        bytes: &[u8],
+    ) -> Result<(), AppStoreError> {
+        if self.pending_id != app_id || self.pending.len() != offset {
+            return Err(AppStoreError::OutOfOrder);
+        }
+        self.pending.extend_from_slice(bytes);
+        Ok(())
+    }
+    fn read_app_install_at(
+        &mut self,
+        app_id: &str,
+        offset: usize,
+        out: &mut [u8],
+    ) -> Result<(), AppStoreError> {
+        if self.pending_id != app_id {
+            return Err(AppStoreError::NotFound);
+        }
+        out.copy_from_slice(
+            self.pending
+                .get(offset..offset + out.len())
+                .ok_or(AppStoreError::TooLarge)?,
+        );
+        Ok(())
+    }
+    fn publish_app_install(&mut self, app_id: &str) -> Result<(), AppStoreError> {
+        if self.pending_id != app_id {
+            return Err(AppStoreError::NotFound);
+        }
+        self.apps.insert(app_id.into(), self.pending.clone());
+        self.pending_id.clear();
+        self.pending.clear();
+        Ok(())
+    }
+    fn abort_app_install(&mut self, _: &str) -> Result<(), AppStoreError> {
+        self.pending_id.clear();
+        self.pending.clear();
+        Ok(())
+    }
+    fn begin_resource_install(&mut self, _: &str, _: &str, _: usize) -> Result<(), AppStoreError> {
+        Err(AppStoreError::Io)
+    }
+    fn write_resource_install_chunk(
+        &mut self,
+        _: &str,
+        _: &str,
+        _: usize,
+        _: &[u8],
+    ) -> Result<(), AppStoreError> {
+        Err(AppStoreError::Io)
+    }
+    fn publish_resource_install(&mut self, _: &str, _: &str) -> Result<(), AppStoreError> {
+        Err(AppStoreError::Io)
+    }
+    fn read_resource_at(
+        &mut self,
+        _: &str,
+        _: &str,
+        _: usize,
+        _: &mut [u8],
+    ) -> Result<(), AppStoreError> {
+        Err(AppStoreError::NotFound)
+    }
+    fn resource_size(&mut self, _: &str, _: &str) -> Result<usize, AppStoreError> {
+        Err(AppStoreError::NotFound)
+    }
+    fn load_state(&mut self, app_id: &str, out: &mut [u8]) -> Result<Option<usize>, AppStoreError> {
+        let Some(bytes) = self.states.get(app_id) else {
+            return Ok(None);
+        };
+        out[..bytes.len()].copy_from_slice(bytes);
+        Ok(Some(bytes.len()))
+    }
+    fn save_state_atomic(&mut self, app_id: &str, bytes: &[u8]) -> Result<(), AppStoreError> {
+        self.states.insert(app_id.into(), bytes.into());
+        Ok(())
+    }
+    fn delete_state(&mut self, app_id: &str) -> Result<(), AppStoreError> {
+        self.states.remove(app_id);
+        Ok(())
+    }
+    fn format(&mut self) -> Result<(), AppStoreError> {
+        self.apps.clear();
+        self.pending.clear();
+        self.states.clear();
+        Ok(())
+    }
+    fn capacity(&mut self) -> Result<(usize, usize), AppStoreError> {
+        Ok((1024 * 1024, 1024 * 1024))
+    }
+}
+
+fn read_test_bytes(
+    map: &HashMap<String, Vec<u8>>,
+    key: &str,
+    offset: usize,
+    out: &mut [u8],
+) -> Result<(), AppStoreError> {
+    out.copy_from_slice(
+        map.get(key)
+            .and_then(|bytes| bytes.get(offset..offset + out.len()))
+            .ok_or(AppStoreError::NotFound)?,
+    );
+    Ok(())
+}
+
+fn multi_app_runtime() -> NativeRuntime<
+    NoopRadioBackend,
+    CountingDisplaySink,
+    NoopBinBookBackend,
+    NoopFileBackend,
+    MultiAppStorage,
+> {
+    NativeRuntime::with_radio_display_binbook_file_and_app_store(
+        NoopRadioBackend,
+        CountingDisplaySink::default(),
+        NoopBinBookBackend,
+        NoopFileBackend,
+        MultiAppStorage::default(),
+    )
 }
 
 #[test]
@@ -82,10 +245,7 @@ event.on("app.start") {
     assert_eq!(trace.as_slice(), &["app.start", "state.load", "state.save"]);
     assert!(!runtime.state_bytes().is_empty());
     assert_eq!(runtime.active_app(), Some("native-temp"));
-    assert_eq!(
-        runtime.lifecycle_lines().as_slice()[0],
-        "active=native-temp"
-    );
+    assert_eq!(runtime.lifecycle_phase(), "idle");
     assert_eq!(runtime.app_storage_write_calls(), 0);
 }
 
@@ -122,6 +282,231 @@ event.on("app.start") { debug.print("installed start") }
     assert_eq!(runtime.output_lines().as_slice(), &["installed start"]);
     assert_eq!(runtime.active_app(), Some("installed"));
     assert_eq!(runtime.installed_app(), Some(("installed", sqbc.len())));
+}
+
+#[test]
+fn installed_lifecycle_launches_exits_and_returns_fresh() {
+    let main = compile_sqbc(
+        r#"app "main"
+event.on("app.start") { debug.print("main-start") }
+event.on("app.exit") { debug.print("main-exit") }
+"#,
+    );
+    let reader = compile_sqbc(
+        r#"app "reader"
+event.on("app.start") { debug.print("reader-start", system.startReason()) }
+event.on("key.BACK") { app.exit() }
+"#,
+    );
+    let mut runtime = multi_app_runtime();
+    install_app(&mut runtime, "main", &main);
+    install_app(&mut runtime, "reader", &reader);
+
+    runtime.boot_app("main").unwrap();
+    runtime.launch_app("reader").unwrap();
+    assert_eq!(runtime.active_app(), Some("reader"));
+    assert_eq!(runtime.lifecycle_process_at(0), Some("main"));
+    assert_eq!(runtime.lifecycle_start_reason(), "launch");
+    assert_eq!(runtime.output_lines().as_slice(), &["reader-start launch"]);
+
+    runtime.dispatch_event("key.BACK").unwrap();
+    assert_eq!(runtime.active_app(), Some("main"));
+    assert_eq!(runtime.lifecycle_start_reason(), "return");
+    assert_eq!(
+        runtime.output_lines().as_slice().last(),
+        Some(&"main-start")
+    );
+}
+
+#[test]
+fn installed_lifecycle_rejects_missing_target_and_return_stack_overflow() {
+    let mut runtime = multi_app_runtime();
+    for id in ["main", "one", "two", "three"] {
+        install_app(
+            &mut runtime,
+            id,
+            &compile_sqbc(&format!("app \"{id}\"\nevent.on(\"app.start\") {{}}\n")),
+        );
+    }
+    runtime.boot_app("main").unwrap();
+    assert_eq!(
+        runtime.launch_app("missing"),
+        Err(NativeRuntimeError::AppNotInstalled)
+    );
+    runtime.launch_app("one").unwrap();
+    runtime.launch_app("two").unwrap();
+    assert_eq!(
+        runtime.launch_app("three"),
+        Err(NativeRuntimeError::TooLarge)
+    );
+    assert_eq!(runtime.active_app(), Some("two"));
+    assert_eq!(runtime.lifecycle_phase(), "idle");
+}
+
+#[test]
+fn armed_input_launches_owner_and_unmatched_input_stays_foreground() {
+    let root = compile_sqbc(
+        r#"app "main"
+event.on("app.start") { app.arm("armed-input") }
+event.on("key.UP") { debug.print("root-up") }
+"#,
+    );
+    let armed = compile_sqbc(
+        r#"app "armed-input"
+app.triggers { service.input.on("key.POWER") }
+event.on("app.start") { debug.print("armed-start") }
+event.on("key.POWER") { debug.print("armed-power") }
+"#,
+    );
+    let mut runtime = multi_app_runtime();
+    install_app(&mut runtime, "armed-input", &armed);
+    install_app(&mut runtime, "main", &root);
+    runtime.boot_app("main").unwrap();
+
+    runtime.enqueue_input_event("key.UP").unwrap();
+    assert_eq!(runtime.active_app(), Some("main"));
+    assert_eq!(runtime.output_lines().as_slice(), &["root-up"]);
+
+    runtime.enqueue_input_event("key.POWER").unwrap();
+    assert_eq!(runtime.active_app(), Some("armed-input"));
+    assert_eq!(
+        runtime.output_lines().as_slice(),
+        &["armed-start", "armed-power"]
+    );
+    assert_eq!(runtime.lifecycle_process_at(0), Some("main"));
+}
+
+#[test]
+fn armed_timer_launches_owner_with_exact_declared_event() {
+    let root = compile_sqbc(
+        r#"app "main"
+event.on("app.start") { app.arm("armed-timer") }
+"#,
+    );
+    let armed = compile_sqbc(
+        r#"app "armed-timer"
+app.triggers { service.timer.after("timer.due", 10) }
+event.on("app.start") { debug.print("timer-start") }
+event.on("timer.due") { debug.print("timer-due") }
+"#,
+    );
+    let mut runtime = multi_app_runtime();
+    install_app(&mut runtime, "armed-timer", &armed);
+    install_app(&mut runtime, "main", &root);
+    runtime.boot_app("main").unwrap();
+
+    runtime.tick_timers(10).unwrap();
+
+    assert_eq!(runtime.active_app(), Some("armed-timer"));
+    assert_eq!(
+        runtime.output_lines().as_slice(),
+        &["timer-start", "timer-due"]
+    );
+}
+
+#[test]
+fn duplicate_armed_input_keeps_original_owner_and_records_error() {
+    let root = compile_sqbc(
+        r#"app "main"
+event.on("app.start") {
+  app.arm("first-owner")
+  app.arm("second-owner")
+}
+"#,
+    );
+    let first = compile_sqbc(
+        r#"app "first-owner"
+app.triggers { service.input.on("key.POWER") }
+event.on("key.POWER") { debug.print("first") }
+"#,
+    );
+    let second = compile_sqbc(
+        r#"app "second-owner"
+app.triggers { service.input.on("key.POWER") }
+event.on("key.POWER") { debug.print("second") }
+"#,
+    );
+    let mut runtime = multi_app_runtime();
+    install_app(&mut runtime, "first-owner", &first);
+    install_app(&mut runtime, "second-owner", &second);
+    install_app(&mut runtime, "main", &root);
+    assert!(runtime.boot_app("main").is_err());
+    assert!(runtime
+        .error_lines()
+        .as_slice()
+        .contains(&"armed_input_owner_conflict"));
+
+    runtime.enqueue_input_event("key.POWER").unwrap();
+    assert_eq!(runtime.active_app(), Some("first-owner"));
+    assert_eq!(runtime.output_lines().as_slice(), &["first"]);
+}
+
+#[test]
+fn replacing_app_removes_its_armed_routes() {
+    let root = compile_sqbc(
+        r#"app "main"
+event.on("app.start") { app.arm("replace-owner") }
+"#,
+    );
+    let armed = compile_sqbc(
+        r#"app "replace-owner"
+app.triggers { service.input.on("key.POWER") }
+event.on("key.POWER") {}
+"#,
+    );
+    let replacement = compile_sqbc(
+        r#"app "replace-owner"
+event.on("app.start") {}
+"#,
+    );
+    let mut runtime = multi_app_runtime();
+    install_app(&mut runtime, "replace-owner", &armed);
+    install_app(&mut runtime, "main", &root);
+    runtime.boot_app("main").unwrap();
+    assert_eq!(runtime.lifecycle_armed_len(), 1);
+
+    install_app(&mut runtime, "replace-owner", &replacement);
+
+    assert_eq!(runtime.lifecycle_armed_len(), 0);
+}
+
+#[test]
+fn squidscript_can_inspect_registry_process_and_armed_stacks() {
+    let root = compile_sqbc(
+        r#"app "main"
+event.on("app.start") { app.arm("armed-view") }
+"#,
+    );
+    let armed = compile_sqbc(
+        r#"app "armed-view"
+app.triggers { service.input.on("key.POWER") }
+event.on("app.start") {
+  let apps = app.registry()
+  let selected = app.registry.get(apps, 1)
+  debug.print("registry", selected.id)
+  let process = app.processStack()
+  for appId in process max 2 { debug.print("process", appId) }
+  let armedApps = app.armedStack()
+  for entry in armedApps max 8 { debug.print("armed", entry.appId, entry.event) }
+}
+event.on("key.POWER") {}
+"#,
+    );
+    let mut runtime = multi_app_runtime();
+    install_app(&mut runtime, "armed-view", &armed);
+    install_app(&mut runtime, "main", &root);
+    runtime.boot_app("main").unwrap();
+
+    runtime.enqueue_input_event("key.POWER").unwrap();
+
+    assert_eq!(
+        runtime.output_lines().as_slice(),
+        &[
+            "registry main",
+            "process main",
+            "armed armed-view key.POWER"
+        ]
+    );
 }
 
 #[test]
@@ -244,10 +629,11 @@ event.on("app.start") {
 fn fresh_runtime_reports_inactive_lifecycle() {
     let runtime = NativeRuntime::new();
 
-    assert_eq!(
-        runtime.lifecycle_lines().as_slice(),
-        &["active=", "armed_stack="]
-    );
+    assert_eq!(runtime.active_app(), None);
+    assert_eq!(runtime.lifecycle_process_len(), 0);
+    assert_eq!(runtime.lifecycle_armed_len(), 0);
+    assert_eq!(runtime.lifecycle_phase(), "idle");
+    assert_eq!(runtime.lifecycle_start_reason(), "boot");
 }
 
 #[test]

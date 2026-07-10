@@ -1,6 +1,7 @@
 use core::{
     fmt::{self, Write},
     mem::MaybeUninit,
+    ptr,
 };
 
 pub use squidvm_core::host::{
@@ -10,7 +11,8 @@ pub use squidvm_core::host::{
 use squidvm_core::{
     error::VmError,
     host::{
-        AppInstallResult, BinBookChapterListResult, BinBookChapterListSummary,
+        AppArmedStack, AppArmedStackEntry, AppInstallResult, AppProcessStack, AppRegistryEntry,
+        AppRegistryList, BinBookChapterListResult, BinBookChapterListSummary,
         BinBookChapterListWriter, BinBookChapterResult, BinBookInfoResult, BinBookOpenResult,
         BinBookReadPageResult, ContentBinBookEntry, ContentBinBookListResult,
         ContentBinBookListSummary, ContentBinBookListWriter, DisplayInfo, FileCopyResult,
@@ -32,12 +34,16 @@ use squidvm_core::{
 
 use crate::{
     app_store::{AppStoreError, NativeAppStorage, NativeAppStore, VolatileAppStorage},
+    lifecycle::{
+        ForegroundLifecycle, LifecycleError, LifecyclePhase, StartReason,
+        TriggerTimer as LifecycleTriggerTimer, MAX_ARMED_INPUTS, MAX_ARMED_TIMERS,
+    },
     radio_lifecycle::RadioKind,
     radio_service::{RadioLeaseManager, RadioLeaseState, ServiceLeaseError},
 };
 
 pub const MAX_TEMP_SQBC_BYTES: usize = MAX_APP_BYTES;
-const MAX_APP_RESOURCE_TEXT_BYTES: usize = 1024;
+const MAX_APP_RESOURCE_TEXT_BYTES: usize = 256;
 const MAX_LINE_COUNT: usize = 8;
 const MAX_LINE_BYTES: usize = 64;
 const MAX_BLE_PROFILE_ID_BYTES: usize = 32;
@@ -1455,7 +1461,7 @@ pub struct ResourceMetric {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ResourceMetrics {
-    metrics: [ResourceMetric; 24],
+    metrics: [ResourceMetric; 25],
     len: usize,
 }
 
@@ -1693,6 +1699,36 @@ impl<
         }
     }
 
+    /// Initializes a runtime directly at `out` without materializing the large
+    /// aggregate on the caller's stack.
+    ///
+    /// # Safety
+    ///
+    /// `out` must be valid, aligned, writable uninitialized storage for one
+    /// `Self`. The caller must not read or drop it unless this method returns.
+    pub unsafe fn init_in_place(
+        out: *mut Self,
+        radio_backend: B,
+        display_sink: D,
+        binbook_backend: C,
+        file_backend: F,
+        app_storage: A,
+    ) {
+        unsafe {
+            RuntimeHost::init_in_place(
+                ptr::addr_of_mut!((*out).host),
+                radio_backend,
+                display_sink,
+                binbook_backend,
+                file_backend,
+                app_storage,
+            );
+            ptr::write(ptr::addr_of_mut!((*out).vm), MaybeUninit::uninit());
+            ptr::write(ptr::addr_of_mut!((*out).vm_active), false);
+            ptr::write(ptr::addr_of_mut!((*out).scratch), [0; MAX_TEMP_SQBC_BYTES]);
+        }
+    }
+
     pub fn rebuild_app_registry(&mut self) -> Result<(), NativeRuntimeError> {
         self.host
             .app_store
@@ -1857,7 +1893,33 @@ impl<
         if self.host.temp_received != self.host.temp_expected_len {
             return Err(NativeRuntimeError::IncompleteTempRun);
         }
+        let push_active = self.vm_active && self.host.active_sqbc != ActiveSqbc::Temp;
+        if push_active && !self.host.foreground.can_push_active() {
+            return Err(NativeRuntimeError::TooLarge);
+        }
+        if self.vm_active {
+            self.host.foreground.set_phase(LifecyclePhase::Exiting);
+            self.host.refresh_lifecycle_lines();
+            let vm = unsafe { self.vm.assume_init_mut() };
+            match vm.dispatch(&mut self.host, "app.exit") {
+                Ok(()) | Err(VmError::HandlerNotFound) => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        self.host
+            .foreground
+            .begin_foreground(
+                self.host.temp_app_id.as_str(),
+                StartReason::Launch,
+                push_active,
+            )
+            .map_err(|_| NativeRuntimeError::TooLarge)?;
+        self.host.release_all_radios();
+        self.host.clear_timers();
+        self.host.clear_upload_profile();
+        self.host.discard_upload_stage();
         self.host.clear_diagnostics();
+        self.host.app_id = self.host.temp_app_id;
         self.host.state_cache_len = None;
         self.host.active_sqbc = ActiveSqbc::Temp;
         let mut reader = SliceSqbcReader::new(self.host.temp_bytes());
@@ -1872,7 +1934,13 @@ impl<
             )?;
         }
         self.vm_active = true;
-        self.dispatch_app_start()
+        match self.dispatch_app_start() {
+            Ok(()) | Err(NativeRuntimeError::Vm(VmError::HandlerNotFound)) => {}
+            Err(error) => return Err(error),
+        }
+        self.host.foreground.set_phase(LifecyclePhase::Idle);
+        self.host.refresh_lifecycle_lines();
+        Ok(())
     }
 
     pub fn begin_app_install(
@@ -1898,10 +1966,19 @@ impl<
     }
 
     pub fn commit_app_install(&mut self) -> Result<(), NativeRuntimeError> {
+        let mut replaced = FixedText::<MAX_APP_ID_BYTES>::new();
+        if let Some(app_id) = self.host.app_store.pending_app_id() {
+            replaced.set(app_id)?;
+        }
         self.host
             .app_store
             .commit_install(&mut self.scratch)
-            .map_err(native_app_store_error)
+            .map_err(native_app_store_error)?;
+        if !replaced.as_str().is_empty() {
+            self.host.foreground.disarm(replaced.as_str());
+            self.host.refresh_lifecycle_lines();
+        }
+        Ok(())
     }
 
     pub fn begin_resource_install(
@@ -1935,11 +2012,47 @@ impl<
     }
 
     pub fn launch_app(&mut self, app_id: &str) -> Result<(), NativeRuntimeError> {
+        if self.host.app_store.find(app_id).is_none() {
+            return Err(NativeRuntimeError::AppNotInstalled);
+        }
+        let push_active = self.vm_active;
+        if push_active && !self.host.foreground.can_push_active() {
+            return Err(NativeRuntimeError::TooLarge);
+        }
+        if push_active {
+            self.host.foreground.set_phase(LifecyclePhase::Exiting);
+            self.host.refresh_lifecycle_lines();
+            let vm = unsafe { self.vm.assume_init_mut() };
+            match vm.dispatch(&mut self.host, "app.exit") {
+                Ok(()) | Err(VmError::HandlerNotFound) => {}
+                Err(error) => return Err(error.into()),
+            }
+            if self.host.take_pending_launch()?.is_some() {
+                return Err(NativeRuntimeError::InvalidOffset);
+            }
+        }
+        self.start_installed_app(app_id, StartReason::Launch, push_active)
+    }
+
+    pub fn boot_app(&mut self, app_id: &str) -> Result<(), NativeRuntimeError> {
+        self.start_installed_app(app_id, StartReason::Boot, false)
+    }
+
+    fn start_installed_app(
+        &mut self,
+        app_id: &str,
+        reason: StartReason,
+        push_active: bool,
+    ) -> Result<(), NativeRuntimeError> {
         let installed = self
             .host
             .app_store
             .find(app_id)
             .ok_or(NativeRuntimeError::AppNotInstalled)?;
+        self.host
+            .foreground
+            .begin_foreground(app_id, reason, push_active)
+            .map_err(|_| NativeRuntimeError::TooLarge)?;
         self.host.release_all_radios();
         self.host.clear_diagnostics();
         self.host.clear_timers();
@@ -1950,7 +2063,7 @@ impl<
             .load_state(app_id, &mut self.host.state_cache)
             .map_err(native_app_store_error)?;
         self.host.active_sqbc = ActiveSqbc::Installed;
-        self.host.set_active_lifecycle();
+        self.host.refresh_lifecycle_lines();
         let mut reader =
             ActiveAppReader::new(&mut self.host.app_store, app_id, installed.sqbc_bytes);
         self.host.active_demand =
@@ -1965,10 +2078,29 @@ impl<
             )?;
         }
         self.vm_active = true;
-        self.dispatch_app_start()
+        match self.dispatch_app_start() {
+            Ok(()) | Err(NativeRuntimeError::Vm(VmError::HandlerNotFound)) => {}
+            Err(error) => return Err(error),
+        }
+        self.host.foreground.set_phase(LifecyclePhase::Idle);
+        self.host.refresh_lifecycle_lines();
+        Ok(())
     }
 
     pub fn launch_fallback(&mut self, sqbc: &'static [u8]) -> Result<(), NativeRuntimeError> {
+        self.start_fallback(sqbc, StartReason::Boot, false)
+    }
+
+    fn start_fallback(
+        &mut self,
+        sqbc: &'static [u8],
+        reason: StartReason,
+        push_active: bool,
+    ) -> Result<(), NativeRuntimeError> {
+        self.host
+            .foreground
+            .begin_foreground("main", reason, push_active)
+            .map_err(|_| NativeRuntimeError::TooLarge)?;
         self.host.release_all_radios();
         self.host.clear_diagnostics();
         self.host.clear_timers();
@@ -1976,7 +2108,7 @@ impl<
         self.host.state_cache_len = None;
         self.host.fallback_sqbc = sqbc;
         self.host.active_sqbc = ActiveSqbc::Fallback;
-        self.host.set_active_lifecycle();
+        self.host.refresh_lifecycle_lines();
         let mut reader = SliceSqbcReader::new(sqbc);
         self.host.active_demand =
             ProgramIndex::capability_demand_from_reader(&mut reader, &mut self.scratch)?;
@@ -1989,7 +2121,13 @@ impl<
             )?;
         }
         self.vm_active = true;
-        self.dispatch_app_start()
+        match self.dispatch_app_start() {
+            Ok(()) | Err(NativeRuntimeError::Vm(VmError::HandlerNotFound)) => {}
+            Err(error) => return Err(error),
+        }
+        self.host.foreground.set_phase(LifecyclePhase::Idle);
+        self.host.refresh_lifecycle_lines();
+        Ok(())
     }
 
     pub fn set_system_memory_metrics(
@@ -2015,6 +2153,41 @@ impl<
         self.host.app_store.registry()
     }
 
+    pub fn lifecycle_process_len(&self) -> usize {
+        self.host.foreground.return_stack_len()
+    }
+
+    pub fn lifecycle_process_at(&self, index: usize) -> Option<&str> {
+        self.host.foreground.return_stack_at(index)
+    }
+
+    pub fn lifecycle_armed_len(&self) -> usize {
+        self.host.foreground.armed_len()
+    }
+
+    pub fn lifecycle_armed_at(&self, index: usize) -> Option<(&str, &str)> {
+        self.host
+            .foreground
+            .armed_at(index)
+            .map(|route| (route.app_id, route.event))
+    }
+
+    pub fn lifecycle_phase(&self) -> &'static str {
+        self.host.foreground.phase().as_str()
+    }
+
+    pub fn lifecycle_start_reason(&self) -> &'static str {
+        self.host.foreground.start_reason().as_str()
+    }
+
+    pub fn lifecycle_queue_len(&self) -> usize {
+        self.host.foreground.queue_len()
+    }
+
+    pub fn lifecycle_queue_overflowed(&self) -> bool {
+        self.host.foreground.queue_overflowed()
+    }
+
     pub fn output_lines(&self) -> LineView<'_> {
         self.host.output.view()
     }
@@ -2029,14 +2202,6 @@ impl<
 
     pub fn drawlog_lines(&self) -> LineView<'_> {
         self.host.drawlog.view()
-    }
-
-    pub fn lifecycle_lines(&self) -> LineView<'_> {
-        if self.host.lifecycle.is_empty() {
-            inactive_lifecycle_view()
-        } else {
-            self.host.lifecycle.view()
-        }
     }
 
     pub fn error_lines(&self) -> LineView<'_> {
@@ -2201,6 +2366,10 @@ impl<
                 value: u64::from(self.vm_active),
             },
             ResourceMetric {
+                key: "runtime_lifecycle_phase",
+                value: self.host.foreground.phase().code(),
+            },
+            ResourceMetric {
                 key: "last_sqbc_reads",
                 value: self.host.sqbc_reads as u64,
             },
@@ -2299,9 +2468,44 @@ impl<
         if !self.vm_active {
             return Err(NativeRuntimeError::Inactive);
         }
+        self.host.foreground.set_phase(LifecyclePhase::Dispatching);
+        self.host.refresh_lifecycle_lines();
         let vm = unsafe { self.vm.assume_init_mut() };
-        vm.dispatch(&mut self.host, event)?;
+        let result = vm.dispatch(&mut self.host, event);
+        self.host.foreground.set_phase(LifecyclePhase::Idle);
+        self.host.refresh_lifecycle_lines();
+        result?;
         self.complete_pending_launch()?;
+        Ok(())
+    }
+
+    pub fn enqueue_input_event(&mut self, event: &str) -> Result<(), NativeRuntimeError> {
+        if let Err(error) = self.host.foreground.enqueue_input(event) {
+            if error == LifecycleError::EventQueueFull {
+                self.host.errors.push("lifecycle_event_queue_overflow");
+            }
+            return Err(NativeRuntimeError::TooLarge);
+        }
+        self.drain_pending_events()
+    }
+
+    fn drain_pending_events(&mut self) -> Result<(), NativeRuntimeError> {
+        while self.vm_active && self.host.foreground.phase() == LifecyclePhase::Idle {
+            let Some(pending) = self.host.foreground.pop_event() else {
+                break;
+            };
+            let mut owner = FixedText::<MAX_APP_ID_BYTES>::new();
+            if let Some(app_id) = pending.owner {
+                owner.set(app_id)?;
+            }
+            let mut event = FixedText::<MAX_EVENT_NAME_BYTES>::new();
+            event.set(pending.event)?;
+            if !owner.as_str().is_empty() && self.active_app() != Some(owner.as_str()) {
+                self.launch_app(owner.as_str())?;
+            }
+            self.dispatch_event(event.as_str())?;
+        }
+        self.host.refresh_lifecycle_lines();
         Ok(())
     }
 
@@ -2312,9 +2516,18 @@ impl<
         let mut event = [0u8; MAX_TIMER_EVENT_BYTES];
         while let Some(event_len) = self.host.tick_timers(elapsed_ms, &mut event) {
             let event = core::str::from_utf8(&event[..event_len]).unwrap_or("");
-            self.dispatch_event(event)?;
+            self.host
+                .foreground
+                .enqueue_foreground(event)
+                .map_err(|_| NativeRuntimeError::TooLarge)?;
         }
-        Ok(())
+        if let Err(error) = self.host.foreground.tick(elapsed_ms) {
+            if error == LifecycleError::EventQueueFull {
+                self.host.errors.push("lifecycle_event_queue_overflow");
+            }
+            return Err(NativeRuntimeError::TooLarge);
+        }
+        self.drain_pending_events()
     }
 
     pub fn dispatch_app_event(
@@ -2359,6 +2572,25 @@ impl<
     fn complete_pending_launch(&mut self) -> Result<(), NativeRuntimeError> {
         if let Some(app_id) = self.host.take_pending_launch()? {
             self.launch_app(app_id.as_str())?;
+        } else if self.vm_active && unsafe { self.vm.assume_init_ref() }.exited() {
+            let mut target = FixedText::<MAX_APP_ID_BYTES>::new();
+            target.set(
+                self.host
+                    .foreground
+                    .return_target()
+                    .map_err(|_| NativeRuntimeError::InvalidOffset)?
+                    .app_id,
+            )?;
+            if self.host.app_store.find(target.as_str()).is_some() {
+                self.start_installed_app(target.as_str(), StartReason::Return, false)?;
+            } else if target.as_str() == "main" && !self.host.fallback_sqbc.is_empty() {
+                self.start_fallback(self.host.fallback_sqbc, StartReason::Return, false)?;
+            } else if target.as_str() == "main" {
+                self.vm_active = false;
+                self.host.set_inactive_lifecycle();
+            } else {
+                return Err(NativeRuntimeError::AppNotInstalled);
+            }
         }
         Ok(())
     }
@@ -2496,6 +2728,7 @@ struct RuntimeHost<
     temp_sqbc: [u8; MAX_TEMP_SQBC_BYTES],
     temp_expected_len: usize,
     temp_received: usize,
+    temp_app_id: FixedText<MAX_APP_ID_BYTES>,
     pending_launch_app_id: FixedText<MAX_APP_ID_BYTES>,
     last_installed_app_id: FixedText<MAX_APP_ID_BYTES>,
     active_sqbc: ActiveSqbc,
@@ -2504,10 +2737,13 @@ struct RuntimeHost<
     state_cache: [u8; MAX_SAVED_STATE_BYTES],
     state_cache_len: Option<usize>,
     resource_text: [u8; MAX_APP_RESOURCE_TEXT_BYTES],
+    registry_view: [AppRegistryEntry<'static>; squidvm_core::limits::MAX_INSTALLED_APPS],
+    process_view: [&'static str; crate::lifecycle::MAX_RETURN_STACK],
+    armed_view: [AppArmedStackEntry<'static>; MAX_ARMED_TIMERS + MAX_ARMED_INPUTS],
     output: LineStore,
     trace: LineStore,
     drawlog: LineStore,
-    lifecycle: LineStore,
+    foreground: ForegroundLifecycle,
     errors: LineStore,
     active_demand: CapabilityDemand,
     radio_leases: RadioLeaseManager,
@@ -2563,6 +2799,7 @@ impl<
             temp_sqbc: [0; MAX_TEMP_SQBC_BYTES],
             temp_expected_len: 0,
             temp_received: 0,
+            temp_app_id: FixedText::new(),
             pending_launch_app_id: FixedText::new(),
             last_installed_app_id: FixedText::new(),
             active_sqbc: ActiveSqbc::Temp,
@@ -2571,10 +2808,21 @@ impl<
             state_cache: [0; MAX_SAVED_STATE_BYTES],
             state_cache_len: None,
             resource_text: [0; MAX_APP_RESOURCE_TEXT_BYTES],
+            registry_view: [AppRegistryEntry {
+                id: "",
+                name: "",
+                build: "",
+                description: "",
+            }; squidvm_core::limits::MAX_INSTALLED_APPS],
+            process_view: [""; crate::lifecycle::MAX_RETURN_STACK],
+            armed_view: [AppArmedStackEntry {
+                app_id: "",
+                event: "",
+            }; MAX_ARMED_TIMERS + MAX_ARMED_INPUTS],
             output: LineStore::new(),
             trace: LineStore::new(),
             drawlog: LineStore::new(),
-            lifecycle: LineStore::new(),
+            foreground: ForegroundLifecycle::new(),
             errors: LineStore::new(),
             active_demand: CapabilityDemand::none(),
             radio_leases: RadioLeaseManager::new(),
@@ -2611,10 +2859,94 @@ impl<
         }
     }
 
+    unsafe fn init_in_place(
+        out: *mut Self,
+        radio_backend: B,
+        display_sink: D,
+        binbook_backend: C,
+        file_backend: F,
+        app_storage: A,
+    ) {
+        macro_rules! write_field {
+            ($field:ident, $value:expr) => {
+                ptr::write(ptr::addr_of_mut!((*out).$field), $value)
+            };
+        }
+        unsafe {
+            write_field!(temp_sqbc, [0; MAX_TEMP_SQBC_BYTES]);
+            write_field!(temp_expected_len, 0);
+            write_field!(temp_received, 0);
+            write_field!(temp_app_id, FixedText::new());
+            write_field!(pending_launch_app_id, FixedText::new());
+            write_field!(last_installed_app_id, FixedText::new());
+            write_field!(active_sqbc, ActiveSqbc::Temp);
+            write_field!(fallback_sqbc, &[]);
+            write_field!(app_id, FixedText::new());
+            write_field!(state_cache, [0; MAX_SAVED_STATE_BYTES]);
+            write_field!(state_cache_len, None);
+            write_field!(resource_text, [0; MAX_APP_RESOURCE_TEXT_BYTES]);
+            write_field!(
+                registry_view,
+                [AppRegistryEntry {
+                    id: "",
+                    name: "",
+                    build: "",
+                    description: "",
+                }; squidvm_core::limits::MAX_INSTALLED_APPS]
+            );
+            write_field!(process_view, [""; crate::lifecycle::MAX_RETURN_STACK]);
+            write_field!(
+                armed_view,
+                [AppArmedStackEntry {
+                    app_id: "",
+                    event: "",
+                }; MAX_ARMED_TIMERS + MAX_ARMED_INPUTS]
+            );
+            write_field!(output, LineStore::new());
+            write_field!(trace, LineStore::new());
+            write_field!(drawlog, LineStore::new());
+            write_field!(foreground, ForegroundLifecycle::new());
+            write_field!(errors, LineStore::new());
+            write_field!(active_demand, CapabilityDemand::none());
+            write_field!(radio_leases, RadioLeaseManager::new());
+            write_field!(wifi_operation, NativeWifiOperationState::idle());
+            write_field!(wifi_profile_name, FixedText::new());
+            write_field!(wifi_profile_ssid, FixedText::new());
+            write_field!(wifi_profile_password, FixedText::new());
+            write_field!(wifi_station_profile, FixedText::new());
+            write_field!(upload_profile_id, FixedText::new());
+            write_field!(upload_profile_http, false);
+            write_field!(upload_profile_ble, false);
+            write_field!(upload_profile_start_events, 0);
+            write_field!(upload_profile_stop_events, 0);
+            write_field!(upload_last_error, FixedText::new());
+            write_field!(timers, [NativeTimer::empty(); MAX_FOREGROUND_TIMERS]);
+            write_field!(upload_path, FixedText::new());
+            write_field!(upload_name, FixedText::new());
+            write_field!(upload_id, FixedText::new());
+            write_field!(upload_transport, None);
+            write_field!(upload_total_bytes, 0);
+            write_field!(upload_received_bytes, 0);
+            write_field!(upload_total_bytes_text, FixedText::new());
+            write_field!(upload_received_bytes_text, FixedText::new());
+            write_field!(radio_backend, radio_backend);
+            write_field!(display_sink, display_sink);
+            write_field!(binbook_backend, binbook_backend);
+            write_field!(file_backend, file_backend);
+            write_field!(app_store, NativeAppStore::new(app_storage));
+            write_field!(sqbc_reads, 0);
+            write_field!(sqbc_bytes, 0);
+            write_field!(total_ram_bytes, 0);
+            write_field!(heap_used_bytes, 0);
+            write_field!(heap_free_bytes, 0);
+        }
+    }
+
     fn reset_runtime_state(&mut self) {
         self.file_backend.reset_runtime_state();
         self.temp_expected_len = 0;
         self.temp_received = 0;
+        self.temp_app_id.clear();
         self.app_id.clear();
         self.pending_launch_app_id.clear();
         self.active_demand = CapabilityDemand::none();
@@ -2622,6 +2954,7 @@ impl<
         self.wifi_station_profile.clear();
         self.stop_upload_profile();
         self.state_cache_len = None;
+        self.foreground.reset();
         self.clear_timers();
         self.release_all_radios();
         self.clear_diagnostics();
@@ -2637,19 +2970,9 @@ impl<
     }
 
     fn begin_temp_run(&mut self, app_id: &str, total_len: usize) -> Result<(), NativeRuntimeError> {
-        self.release_all_radios();
-        self.active_demand = CapabilityDemand::none();
-        self.wifi_operation = NativeWifiOperationState::idle();
-        self.wifi_station_profile.clear();
-        self.clear_timers();
-        self.clear_upload_profile();
-        self.discard_upload_stage();
-        self.pending_launch_app_id.clear();
         self.temp_expected_len = total_len;
         self.temp_received = 0;
-        self.active_sqbc = ActiveSqbc::Temp;
-        self.app_id.set(app_id)?;
-        self.set_active_lifecycle();
+        self.temp_app_id.set(app_id)?;
         Ok(())
     }
 
@@ -2675,6 +2998,88 @@ impl<
 
     fn request_app_launch(&mut self, app_id: &str) -> Result<(), NativeRuntimeError> {
         self.pending_launch_app_id.set(app_id)
+    }
+
+    fn arm_app(&mut self, app_id: &str) -> Result<(), VmError> {
+        let entry = self.app_store.find(app_id).ok_or(VmError::InvalidOperand)?;
+        let mut scratch = [0u8; 1024];
+        let mut timer_events = [FixedText::<MAX_EVENT_NAME_BYTES>::new(); MAX_ARMED_TIMERS];
+        let mut timer_intervals = [0u32; MAX_ARMED_TIMERS];
+        let mut timer_repeating = [false; MAX_ARMED_TIMERS];
+        let timer_count = {
+            let mut reader = ActiveAppReader::new(&mut self.app_store, app_id, entry.sqbc_bytes);
+            ProgramIndex::trigger_timer_count_from_reader(&mut reader, &mut scratch)?
+        };
+        if timer_count > MAX_ARMED_TIMERS {
+            return Err(VmError::TooLarge);
+        }
+        for index in 0..timer_count {
+            let trigger = {
+                let mut reader =
+                    ActiveAppReader::new(&mut self.app_store, app_id, entry.sqbc_bytes);
+                ProgramIndex::trigger_timer_from_reader(&mut reader, &mut scratch, index)?
+            };
+            timer_events[index]
+                .set(trigger.event)
+                .map_err(|_| VmError::InvalidOperand)?;
+            timer_intervals[index] = trigger
+                .interval_ms
+                .try_into()
+                .map_err(|_| VmError::InvalidOperand)?;
+            timer_repeating[index] = trigger.repeating;
+        }
+
+        let mut input_events = [FixedText::<MAX_EVENT_NAME_BYTES>::new(); MAX_ARMED_INPUTS];
+        let input_count = {
+            let mut reader = ActiveAppReader::new(&mut self.app_store, app_id, entry.sqbc_bytes);
+            ProgramIndex::trigger_input_count_from_reader(&mut reader, &mut scratch)?
+        };
+        if input_count > MAX_ARMED_INPUTS {
+            return Err(VmError::TooLarge);
+        }
+        for index in 0..input_count {
+            let trigger = {
+                let mut reader =
+                    ActiveAppReader::new(&mut self.app_store, app_id, entry.sqbc_bytes);
+                ProgramIndex::trigger_input_from_reader(&mut reader, &mut scratch, index)?
+            };
+            input_events[index]
+                .set(trigger.event)
+                .map_err(|_| VmError::InvalidOperand)?;
+        }
+
+        let mut timers = [LifecycleTriggerTimer {
+            event: "",
+            interval_ms: 0,
+            repeating: false,
+        }; MAX_ARMED_TIMERS];
+        for index in 0..timer_count {
+            timers[index] = LifecycleTriggerTimer {
+                event: timer_events[index].as_str(),
+                interval_ms: timer_intervals[index],
+                repeating: timer_repeating[index],
+            };
+        }
+        let mut inputs = [""; MAX_ARMED_INPUTS];
+        for index in 0..input_count {
+            inputs[index] = input_events[index].as_str();
+        }
+        match self
+            .foreground
+            .arm(app_id, &timers[..timer_count], &inputs[..input_count])
+        {
+            Ok(()) => {
+                self.refresh_lifecycle_lines();
+                Ok(())
+            }
+            Err(LifecycleError::DuplicateInputOwner) => {
+                self.errors.push("armed_input_owner_conflict");
+                #[cfg(debug_assertions)]
+                self.trace.push("diag.armed-input-owner-conflict");
+                Err(VmError::InvalidOperand)
+            }
+            Err(_) => Err(VmError::TooLarge),
+        }
     }
 
     fn take_pending_launch(
@@ -2734,20 +3139,10 @@ impl<
     }
 
     fn set_inactive_lifecycle(&mut self) {
-        self.lifecycle.clear();
-        self.lifecycle.push("active=");
-        self.lifecycle.push("armed_stack=");
+        self.foreground.reset();
     }
 
-    fn set_active_lifecycle(&mut self) {
-        let app_id = self.app_id;
-        self.lifecycle.clear();
-        self.lifecycle.push_fmt(|line| {
-            write!(line, "active={}", app_id.as_str())?;
-            Ok(())
-        });
-        self.lifecycle.push("armed_stack=");
-    }
+    fn refresh_lifecycle_lines(&mut self) {}
 
     fn ensure_radio_active(&mut self, radio: RadioKind) -> Result<(), VmError> {
         match self.radio_leases.acquire(radio) {
@@ -3208,6 +3603,11 @@ impl<
         write_human_bytes(out, "Apps", available)
     }
 
+    fn system_start_reason_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
+        out.write_str(self.foreground.start_reason().as_str())
+            .map_err(|_| VmError::InvalidOperand)
+    }
+
     fn draw_clear(&mut self, color: u8) {
         self.drawlog.push_fmt(|line| {
             write!(line, "clear {color}")?;
@@ -3414,6 +3814,85 @@ impl<
     fn app_launch(&mut self, app: &str) -> Result<(), VmError> {
         self.request_app_launch(app)
             .map_err(|_| VmError::InvalidOperand)
+    }
+
+    fn app_arm(&mut self, app: &str) -> Result<(), VmError> {
+        self.arm_app(app)
+    }
+
+    fn app_disarm(&mut self, app: &str) -> Result<(), VmError> {
+        self.foreground.disarm(app);
+        self.refresh_lifecycle_lines();
+        Ok(())
+    }
+
+    fn app_registry_list<'a>(&'a mut self) -> Result<AppRegistryList<'a>, VmError> {
+        let len = self.app_store.registry().len();
+        for index in 0..len {
+            let id = self
+                .app_store
+                .app_id_at(index)
+                .ok_or(VmError::InvalidSection)?;
+            let id = unsafe { core::mem::transmute::<&str, &'static str>(id) };
+            self.registry_view[index] = AppRegistryEntry {
+                id,
+                name: id,
+                build: "",
+                description: "",
+            };
+        }
+        Ok(AppRegistryList {
+            apps: &self.registry_view[..len],
+        })
+    }
+
+    fn app_registry_get<'a>(&'a mut self, app_id: &str) -> Result<AppRegistryEntry<'a>, VmError> {
+        let id = self
+            .app_store
+            .registry()
+            .iter()
+            .flatten()
+            .find(|entry| entry.app_id() == app_id)
+            .map(|entry| entry.app_id())
+            .ok_or(VmError::InvalidOperand)?;
+        Ok(AppRegistryEntry {
+            id,
+            name: id,
+            build: "",
+            description: "",
+        })
+    }
+
+    fn app_process_stack<'a>(&'a mut self) -> Result<AppProcessStack<'a>, VmError> {
+        let len = self.foreground.return_stack_len();
+        for index in 0..len {
+            let app_id = self
+                .foreground
+                .return_stack_at(index)
+                .ok_or(VmError::InvalidSection)?;
+            self.process_view[index] =
+                unsafe { core::mem::transmute::<&str, &'static str>(app_id) };
+        }
+        Ok(AppProcessStack {
+            apps: &self.process_view[..len],
+        })
+    }
+
+    fn app_armed_stack<'a>(&'a mut self) -> Result<AppArmedStack<'a>, VmError> {
+        let len = self.foreground.armed_len();
+        for index in 0..len {
+            let route = self
+                .foreground
+                .armed_at(index)
+                .ok_or(VmError::InvalidSection)?;
+            self.armed_view[index] = AppArmedStackEntry {
+                app_id: unsafe { core::mem::transmute::<&str, &'static str>(route.app_id) },
+                event: unsafe { core::mem::transmute::<&str, &'static str>(route.event) },
+            };
+        }
+        Ok(AppArmedStack {
+            entries: &self.armed_view[..len],
+        })
     }
 
     fn app_install<'a>(
@@ -3999,10 +4478,6 @@ impl LineStore {
         }
     }
 
-    fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
     fn push(&mut self, value: &str) {
         if self.len == self.lines.len() {
             self.lines.rotate_left(1);
@@ -4034,13 +4509,6 @@ impl LineStore {
             len: self.len,
         }
     }
-}
-
-fn inactive_lifecycle_view<'a>() -> LineView<'a> {
-    let mut lines = [""; MAX_LINE_COUNT];
-    lines[0] = "active=";
-    lines[1] = "armed_stack=";
-    LineView { lines, len: 2 }
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
