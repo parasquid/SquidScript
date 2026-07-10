@@ -721,6 +721,182 @@ pub mod x4_storage {
         }
     }
 
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum ContentWriteVolume {
+        Sd,
+        Internal,
+    }
+
+    pub struct X4ContentStorage<SD, INTERNAL> {
+        sd: SD,
+        internal: INTERNAL,
+        active_write: Option<ContentWriteVolume>,
+    }
+
+    impl<SD, INTERNAL> X4ContentStorage<SD, INTERNAL> {
+        pub const fn new(sd: SD, internal: INTERNAL) -> Self {
+            Self {
+                sd,
+                internal,
+                active_write: None,
+            }
+        }
+    }
+
+    impl<SD, INTERNAL> NativeFileStorage for X4ContentStorage<SD, INTERNAL>
+    where
+        SD: NativeFileStorage,
+        INTERNAL: NativeFileStorage,
+    {
+        fn for_each_file(
+            &mut self,
+            visit: &mut dyn FnMut(&str, u64),
+        ) -> Result<(), NativeFileStorageError> {
+            match self.sd.for_each_file(visit) {
+                Ok(()) | Err(NativeFileStorageError::VolumeMissing) => {}
+                Err(error) => return Err(error),
+            }
+            let sd = &mut self.sd;
+            let mut probe_error = None;
+            self.internal.for_each_file(&mut |path, size| {
+                if probe_error.is_some() {
+                    return;
+                }
+                match sd.file_size(path) {
+                    Ok(_) => {}
+                    Err(NativeFileStorageError::NotFound)
+                    | Err(NativeFileStorageError::VolumeMissing) => visit(path, size),
+                    Err(error) => probe_error = Some(error),
+                }
+            })?;
+            probe_error.map_or(Ok(()), Err)
+        }
+
+        fn file_size(&mut self, path: &str) -> Result<u64, NativeFileStorageError> {
+            match self.sd.file_size(path) {
+                Ok(size) => Ok(size),
+                Err(NativeFileStorageError::NotFound)
+                | Err(NativeFileStorageError::VolumeMissing) => self.internal.file_size(path),
+                Err(error) => Err(error),
+            }
+        }
+
+        fn read_at(
+            &mut self,
+            path: &str,
+            offset: u64,
+            out: &mut [u8],
+        ) -> Result<(), NativeFileStorageError> {
+            match self.sd.read_at(path, offset, out) {
+                Ok(()) => Ok(()),
+                Err(NativeFileStorageError::NotFound)
+                | Err(NativeFileStorageError::VolumeMissing) => {
+                    self.internal.read_at(path, offset, out)
+                }
+                Err(error) => Err(error),
+            }
+        }
+
+        fn create_or_truncate(&mut self, path: &str) -> Result<(), NativeFileStorageError> {
+            match self.sd.create_or_truncate(path) {
+                Ok(()) => {
+                    self.active_write = Some(ContentWriteVolume::Sd);
+                    Ok(())
+                }
+                Err(NativeFileStorageError::VolumeMissing) => {
+                    self.internal.create_or_truncate(path)?;
+                    self.active_write = Some(ContentWriteVolume::Internal);
+                    Ok(())
+                }
+                Err(error) => Err(error),
+            }
+        }
+
+        fn begin_write(
+            &mut self,
+            path: &str,
+            expected_size: u64,
+        ) -> Result<(), NativeFileStorageError> {
+            match self.sd.begin_write(path, expected_size) {
+                Ok(()) => {
+                    self.active_write = Some(ContentWriteVolume::Sd);
+                    Ok(())
+                }
+                Err(NativeFileStorageError::VolumeMissing) => {
+                    self.internal.begin_write(path, expected_size)?;
+                    self.active_write = Some(ContentWriteVolume::Internal);
+                    Ok(())
+                }
+                Err(error) => Err(error),
+            }
+        }
+
+        fn write_at(
+            &mut self,
+            path: &str,
+            offset: u64,
+            data: &[u8],
+        ) -> Result<(), NativeFileStorageError> {
+            match self.active_write {
+                Some(ContentWriteVolume::Sd) => self.sd.write_at(path, offset, data),
+                Some(ContentWriteVolume::Internal) => self.internal.write_at(path, offset, data),
+                None => Err(NativeFileStorageError::Io),
+            }
+        }
+
+        fn write_chunk(
+            &mut self,
+            path: &str,
+            offset: u64,
+            data: &[u8],
+        ) -> Result<(), NativeFileStorageError> {
+            match self.active_write {
+                Some(ContentWriteVolume::Sd) => self.sd.write_chunk(path, offset, data),
+                Some(ContentWriteVolume::Internal) => self.internal.write_chunk(path, offset, data),
+                None => Err(NativeFileStorageError::Io),
+            }
+        }
+
+        fn flush(&mut self, path: &str) -> Result<(), NativeFileStorageError> {
+            let result = match self.active_write {
+                Some(ContentWriteVolume::Sd) => self.sd.flush(path),
+                Some(ContentWriteVolume::Internal) => self.internal.flush(path),
+                None => Err(NativeFileStorageError::Io),
+            };
+            if result.is_ok() {
+                self.active_write = None;
+            }
+            result
+        }
+
+        fn commit_write(&mut self, path: &str) -> Result<(), NativeFileStorageError> {
+            let result = match self.active_write {
+                Some(ContentWriteVolume::Sd) => self.sd.commit_write(path),
+                Some(ContentWriteVolume::Internal) => self.internal.commit_write(path),
+                None => Err(NativeFileStorageError::Io),
+            };
+            if result.is_ok() {
+                self.active_write = None;
+            }
+            result
+        }
+
+        fn delete(&mut self, path: &str) -> Result<(), NativeFileStorageError> {
+            let sd = self.sd.delete(path);
+            let internal = self.internal.delete(path);
+            match (sd, internal) {
+                (Ok(()), _) | (_, Ok(())) => Ok(()),
+                (Err(NativeFileStorageError::VolumeMissing), error)
+                | (Err(NativeFileStorageError::NotFound), error) => error,
+                (Err(error), _) => Err(error),
+            }
+        }
+
+        fn format(&mut self) -> Result<(), NativeFileStorageError> {
+            Ok(())
+        }
+    }
+
     #[cfg(feature = "x4-binbook")]
     pub struct X4BinBookFileBackend<
         S,
@@ -1973,6 +2149,156 @@ pub mod x4_storage {
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        #[derive(Default)]
+        struct MemoryVolume {
+            available: bool,
+            path: Option<std::string::String>,
+            bytes: std::vec::Vec<u8>,
+        }
+
+        impl MemoryVolume {
+            fn available() -> Self {
+                Self {
+                    available: true,
+                    ..Self::default()
+                }
+            }
+
+            fn require_available(&self) -> Result<(), NativeFileStorageError> {
+                if self.available {
+                    Ok(())
+                } else {
+                    Err(NativeFileStorageError::VolumeMissing)
+                }
+            }
+        }
+
+        impl NativeFileStorage for MemoryVolume {
+            fn for_each_file(
+                &mut self,
+                visit: &mut dyn FnMut(&str, u64),
+            ) -> Result<(), NativeFileStorageError> {
+                self.require_available()?;
+                if let Some(path) = self.path.as_deref() {
+                    visit(path, self.bytes.len() as u64);
+                }
+                Ok(())
+            }
+
+            fn file_size(&mut self, path: &str) -> Result<u64, NativeFileStorageError> {
+                self.require_available()?;
+                (self.path.as_deref() == Some(path))
+                    .then_some(self.bytes.len() as u64)
+                    .ok_or(NativeFileStorageError::NotFound)
+            }
+
+            fn read_at(
+                &mut self,
+                path: &str,
+                offset: u64,
+                out: &mut [u8],
+            ) -> Result<(), NativeFileStorageError> {
+                self.require_available()?;
+                if self.path.as_deref() != Some(path) {
+                    return Err(NativeFileStorageError::NotFound);
+                }
+                let start = offset as usize;
+                out.copy_from_slice(
+                    self.bytes
+                        .get(start..start + out.len())
+                        .ok_or(NativeFileStorageError::Io)?,
+                );
+                Ok(())
+            }
+
+            fn create_or_truncate(&mut self, path: &str) -> Result<(), NativeFileStorageError> {
+                self.require_available()?;
+                self.path = Some(path.to_string());
+                self.bytes.clear();
+                Ok(())
+            }
+
+            fn write_at(
+                &mut self,
+                path: &str,
+                offset: u64,
+                data: &[u8],
+            ) -> Result<(), NativeFileStorageError> {
+                self.require_available()?;
+                if self.path.as_deref() != Some(path) || offset as usize != self.bytes.len() {
+                    return Err(NativeFileStorageError::Io);
+                }
+                self.bytes.extend_from_slice(data);
+                Ok(())
+            }
+
+            fn flush(&mut self, _path: &str) -> Result<(), NativeFileStorageError> {
+                self.require_available()
+            }
+
+            fn delete(&mut self, path: &str) -> Result<(), NativeFileStorageError> {
+                self.require_available()?;
+                if self.path.as_deref() != Some(path) {
+                    return Err(NativeFileStorageError::NotFound);
+                }
+                self.path = None;
+                self.bytes.clear();
+                Ok(())
+            }
+
+            fn format(&mut self) -> Result<(), NativeFileStorageError> {
+                Ok(())
+            }
+        }
+
+        #[test]
+        fn content_storage_uses_internal_volume_when_sd_is_missing() {
+            let mut storage =
+                X4ContentStorage::new(MemoryVolume::default(), MemoryVolume::available());
+
+            storage
+                .create_or_truncate("books/internal.binbook")
+                .unwrap();
+            storage
+                .write_at("books/internal.binbook", 0, b"book")
+                .unwrap();
+            storage.flush("books/internal.binbook").unwrap();
+
+            assert_eq!(storage.sd.path, None);
+            assert_eq!(
+                storage.internal.path.as_deref(),
+                Some("books/internal.binbook")
+            );
+            let mut out = [0; 4];
+            storage
+                .read_at("books/internal.binbook", 0, &mut out)
+                .unwrap();
+            assert_eq!(&out, b"book");
+        }
+
+        #[test]
+        fn content_storage_prefers_sd_for_new_uploads_and_falls_back_for_reads() {
+            let mut internal = MemoryVolume::available();
+            internal
+                .create_or_truncate("books/internal.binbook")
+                .unwrap();
+            internal
+                .write_at("books/internal.binbook", 0, b"old")
+                .unwrap();
+            let mut storage = X4ContentStorage::new(MemoryVolume::available(), internal);
+
+            storage.create_or_truncate("books/sd.binbook").unwrap();
+            storage.write_at("books/sd.binbook", 0, b"new").unwrap();
+            storage.flush("books/sd.binbook").unwrap();
+
+            assert_eq!(storage.sd.path.as_deref(), Some("books/sd.binbook"));
+            let mut out = [0; 3];
+            storage
+                .read_at("books/internal.binbook", 0, &mut out)
+                .unwrap();
+            assert_eq!(&out, b"old");
+        }
 
         #[derive(Default)]
         struct FakeFlatStorage {

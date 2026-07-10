@@ -63,7 +63,7 @@ impl TransferSessionId {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BleUploadRoute {
-    pub name: heapless::String<64>,
+    pub name: heapless::String<{ squid_device_protocol::MAX_CONTENT_NAME_BYTES }>,
     pub profile_id: heapless::String<32>,
     pub complete_event: heapless::String<64>,
     pub total_len: usize,

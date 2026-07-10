@@ -201,6 +201,13 @@ rename, remount, and interrupted-write recovery before production app-store
 work begins. Failure of that spike is a blocking architecture result, not a
 reason to add an ad hoc flash format.
 
+Internal LittleFS and SD FAT are separate physical volumes behind one logical
+content API. New uploads prefer SD and fall back to internal flash only when SD
+is missing. Reads search both volumes, with SD winning duplicate logical names.
+An upload remains pinned to one volume for its complete staging and publication
+lifecycle. Content names are simple ASCII filenames up to 121 bytes; UTF-8 name
+support is separate planned work.
+
 ## App Store And Lifecycle Persistence
 
 The native app store owns:
@@ -211,6 +218,8 @@ The native app store owns:
 /state/<app-id>.state
 /lifecycle/resume
 /tmp/install-<app-id>.sqbc
+/books/<content-name>
+/content-tmp/<content-name>
 ```
 
 Rules:
@@ -227,8 +236,8 @@ Rules:
   runs an embedded native fallback SQBC through the same VM contract.
 - Explicit `state.save/reset` use per-app atomic state records.
 - Temporary development runs remain RAM-backed and never write flash.
-- `device storage-format` clears app, state, lifecycle, and install-temp data,
-  but not firmware OTA slots or SD content.
+- `device storage-format` clears app, state, lifecycle, install-temp, and
+  internal content data, but not firmware OTA slots or SD content.
 
 Foreground lifecycle uses a two-entry return stack. Launch, exit/return, armed
 activation, and planned wake start fresh VM sessions. Ordinary foreground key

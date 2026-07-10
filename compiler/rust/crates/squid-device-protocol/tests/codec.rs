@@ -11,7 +11,8 @@ use squid_device_protocol::{
     request_string_field, resource_values, resources_get_request_with_heap_reset,
     runtime_cap_clear_request, runtime_cap_get_request, runtime_cap_set_request, AppListEntry,
     DecodeError, DeviceRequest, Field, FieldValue, Frame, FrameKind, HostAction, LifecycleTimer,
-    Opcode, ProtocolSessions, ResourceMetric, Status, TransferCapabilities,
+    Opcode, ProtocolSessions, ResourceMetric, SessionError, Status, TransferCapabilities,
+    MAX_CONTENT_NAME_BYTES,
 };
 
 #[test]
@@ -591,6 +592,29 @@ fn content_install_session_produces_host_actions() {
             path: "books/book.binbook",
         }
     );
+}
+
+#[test]
+fn content_install_session_accepts_full_portable_name_budget() {
+    let longest = format!("{}.binbook", "a".repeat(113));
+    let too_long = format!("{}.binbook", "a".repeat(114));
+    assert_eq!(longest.len(), MAX_CONTENT_NAME_BYTES);
+    let mut sessions = ProtocolSessions::default();
+
+    let begin = encode_frame(&content_install_begin_request(88, &longest, 1, 0));
+    let begin = DeviceRequest::decode(&begin).unwrap();
+    assert_eq!(
+        sessions.next_action(&begin).unwrap(),
+        HostAction::BeginContentInstall {
+            name: longest.as_str(),
+            total_len: 1,
+        }
+    );
+
+    let mut sessions = ProtocolSessions::default();
+    let begin = encode_frame(&content_install_begin_request(88, &too_long, 1, 0));
+    let begin = DeviceRequest::decode(&begin).unwrap();
+    assert_eq!(sessions.next_action(&begin), Err(SessionError::PathTooLong));
 }
 
 #[test]

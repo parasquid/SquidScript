@@ -11,6 +11,8 @@ pub const MAGIC: [u8; 4] = *b"SQDP";
 pub const HEADER_LEN: usize = 20;
 pub const MAX_APP_ID_LEN: usize = squidvm_limits::MAX_APP_ID_BYTES;
 pub const MAX_PATH_LEN: usize = 128;
+pub const CONTENT_LIBRARY_PREFIX: &str = "books/";
+pub const MAX_CONTENT_NAME_BYTES: usize = MAX_PATH_LEN - CONTENT_LIBRARY_PREFIX.len() - 1;
 pub const MAX_APP_BYTES: usize = 65_536;
 pub const MAX_RESOURCE_BYTES: usize = 1_048_576;
 pub const DEFAULT_SERIAL_MAX_FRAME_BYTES: usize = 8192;
@@ -552,9 +554,9 @@ impl<const N: usize> FixedStr<N> {
 }
 
 #[derive(Clone, Copy)]
-struct TransferSession {
+struct TransferSession<const ID_LEN: usize> {
     active: bool,
-    app_id: FixedStr<MAX_APP_ID_LEN>,
+    app_id: FixedStr<ID_LEN>,
     total_len: usize,
     received: usize,
     expected_crc: u32,
@@ -562,7 +564,7 @@ struct TransferSession {
     staging_path: FixedStr<MAX_PATH_LEN>,
 }
 
-impl Default for TransferSession {
+impl<const ID_LEN: usize> Default for TransferSession<ID_LEN> {
     fn default() -> Self {
         Self {
             active: false,
@@ -576,7 +578,7 @@ impl Default for TransferSession {
     }
 }
 
-impl TransferSession {
+impl<const ID_LEN: usize> TransferSession<ID_LEN> {
     fn begin(
         &mut self,
         app_id: &str,
@@ -654,7 +656,7 @@ impl TransferSession {
 
 #[derive(Clone, Copy, Default)]
 struct ResourceSession {
-    transfer: TransferSession,
+    transfer: TransferSession<MAX_APP_ID_LEN>,
     resource_path: FixedStr<MAX_PATH_LEN>,
 }
 
@@ -681,10 +683,10 @@ impl ResourceSession {
 
 #[derive(Default)]
 pub struct ProtocolSessions {
-    install: TransferSession,
-    temp_run: TransferSession,
+    install: TransferSession<MAX_APP_ID_LEN>,
+    temp_run: TransferSession<MAX_APP_ID_LEN>,
     resource: ResourceSession,
-    content: TransferSession,
+    content: TransferSession<{ MAX_CONTENT_NAME_BYTES + 1 }>,
 }
 
 impl ProtocolSessions {
@@ -2677,7 +2679,8 @@ mod tests {
         app_install_chunk_request_with_ack, content_check_request, content_check_result,
         content_delete_request, content_delete_result, display_window_probe_request,
         encode_content_check_response_into, encode_content_delete_response_into, hello_identity,
-        Field, FieldValue, Frame, Opcode, Status, TransferCapabilities,
+        Field, FieldValue, Frame, Opcode, Status, TransferCapabilities, CONTENT_LIBRARY_PREFIX,
+        MAX_CONTENT_NAME_BYTES, MAX_PATH_LEN,
     };
     use crate::decode_frame;
 
@@ -2751,6 +2754,15 @@ mod tests {
         let wrong_opcode =
             Frame::response(Opcode::ContentInstallCommit, Status::Ok, 91, Vec::new());
         assert!(content_check_result(&wrong_opcode).is_none());
+    }
+
+    #[test]
+    fn content_name_budget_leaves_room_for_library_prefix_and_terminator() {
+        assert_eq!(MAX_CONTENT_NAME_BYTES, 121);
+        assert_eq!(
+            CONTENT_LIBRARY_PREFIX.len() + MAX_CONTENT_NAME_BYTES,
+            MAX_PATH_LEN - 1
+        );
     }
 
     #[test]

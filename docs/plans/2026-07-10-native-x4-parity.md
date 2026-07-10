@@ -308,6 +308,37 @@ flash.
 
 ---
 
+## Task 5A: Add Internal Content Fallback And Long ASCII Names
+
+**Owning layers:** native file-storage abstraction, X4 LittleFS/FAT adapters,
+device protocol, host upload validation, and BinBook enumeration.
+
+- [x] Define a 121-byte ASCII content-name limit from the portable 128-byte
+  path budget and logical `books/` prefix.
+- [x] Raise serial, BLE, runtime, FAT, and BinBook enumeration buffers that
+  previously truncated valid names at 64 bytes.
+- [x] Share one mounted LittleFS owner between app storage and internal content
+  handles; do not create independent mounts over the flash partition.
+- [x] Add an SD-first logical content router with internal fallback on missing
+  SD, per-upload volume pinning, read fallback, merged enumeration, and
+  duplicate-name precedence.
+- [x] Add host tests for 121-byte success, 122-byte and non-ASCII rejection,
+  FAT round-trip, shared LittleFS app/content coexistence, missing-SD upload,
+  and SD-preferred upload.
+- [ ] On hardware without SD, upload, check, list, open, and delete a valid
+  long-named BinBook; cold reset and prove it persists.
+- [ ] On hardware with SD, prove new uploads use SD, internal-only content stays
+  readable, duplicate names resolve to SD, and formatting internal storage
+  preserves SD content.
+
+**Acceptance:** The same logical references and long ASCII names work on both
+volumes. Missing SD does not prevent BinBook upload or reading, and no physical
+filesystem path or backend selector reaches SquidScript.
+
+**Commit:** `feat: add native internal content fallback`
+
+---
+
 ## Task 6: Implement Full Foreground And Armed Lifecycle
 
 **Owning layer:** native firmware-core lifecycle state machine using the app

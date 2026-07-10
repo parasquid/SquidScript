@@ -1,4 +1,4 @@
-use core::fmt::Write as _;
+use core::{cell::RefCell, fmt::Write as _};
 use embedded_storage::nor_flash::{NorFlash, ReadNorFlash};
 use heapless::String;
 use littlefs2::{
@@ -8,7 +8,10 @@ use littlefs2::{
     io::{Error, Read as _, Result, SeekFrom, Write as _},
     path::{Path, PathBuf},
 };
-use squidscript_fw_core::app_store::{AppStoreError, NativeAppStorage};
+use squidscript_fw_core::{
+    app_store::{AppStoreError, NativeAppStorage},
+    native_runtime::{NativeFileStorage, NativeFileStorageError},
+};
 
 pub const SQUIDSCRIPT_PARTITION_OFFSET: usize = 0x510000;
 pub const SQUIDSCRIPT_PARTITION_SIZE: usize = 0xae0000;
@@ -83,6 +86,28 @@ pub struct LittleFsAppStorage<F> {
     storage: X4AppPartition<F>,
 }
 
+pub struct SharedLittleFsStorage<F: 'static> {
+    storage: &'static RefCell<LittleFsAppStorage<F>>,
+}
+
+impl<F: 'static> Clone for SharedLittleFsStorage<F> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<F: 'static> Copy for SharedLittleFsStorage<F> {}
+
+impl<F: 'static> SharedLittleFsStorage<F> {
+    pub const fn new(storage: &'static RefCell<LittleFsAppStorage<F>>) -> Self {
+        Self { storage }
+    }
+
+    fn with_mut<R>(&mut self, operation: impl FnOnce(&mut LittleFsAppStorage<F>) -> R) -> R {
+        operation(&mut self.storage.borrow_mut())
+    }
+}
+
 impl<F> LittleFsAppStorage<F>
 where
     F: NorFlash + ReadNorFlash,
@@ -122,7 +147,9 @@ fn ensure_store_dirs<S: littlefs2::driver::Storage>(fs: &Filesystem<'_, S>) -> R
     fs.create_dir_all(littlefs2::path!("/apps"))?;
     fs.create_dir_all(littlefs2::path!("/state"))?;
     fs.create_dir_all(littlefs2::path!("/lifecycle"))?;
-    fs.create_dir_all(littlefs2::path!("/tmp"))
+    fs.create_dir_all(littlefs2::path!("/tmp"))?;
+    fs.create_dir_all(littlefs2::path!("/books"))?;
+    fs.create_dir_all(littlefs2::path!("/content-tmp"))
 }
 
 fn partition_is_blank<S: littlefs2::driver::Storage>(
@@ -201,6 +228,29 @@ fn state_path(app_id: &str) -> core::result::Result<PathBuf, AppStoreError> {
 
 fn state_temp_path(app_id: &str) -> core::result::Result<PathBuf, AppStoreError> {
     dynamic_path(core::format_args!("/tmp/state-{app_id}.state"))
+}
+
+fn content_path(path: &str) -> core::result::Result<PathBuf, NativeFileStorageError> {
+    let (directory, name) = if let Some(name) = path.strip_prefix("books/") {
+        ("books", name)
+    } else if let Some(name) = path.strip_prefix("tmp/") {
+        ("content-tmp", name)
+    } else {
+        return Err(NativeFileStorageError::NotFound);
+    };
+    if name.is_empty()
+        || !name.is_ascii()
+        || name.len() > squid_device_protocol::MAX_CONTENT_NAME_BYTES
+        || name.starts_with('.')
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains(':')
+    {
+        return Err(NativeFileStorageError::InvalidName);
+    }
+    let mut text = String::<256>::new();
+    write!(text, "/{directory}/{name}").map_err(|_| NativeFileStorageError::InvalidName)?;
+    PathBuf::try_from(text.as_str()).map_err(|_| NativeFileStorageError::InvalidName)
 }
 
 fn dynamic_path(args: core::fmt::Arguments<'_>) -> core::result::Result<PathBuf, AppStoreError> {
@@ -446,6 +496,276 @@ where
 
     fn capacity(&mut self) -> core::result::Result<(usize, usize), AppStoreError> {
         self.mount(|fs| Ok((fs.total_space(), fs.available_space()?)))
+    }
+}
+
+impl<F> NativeAppStorage for SharedLittleFsStorage<F>
+where
+    F: NorFlash + ReadNorFlash + 'static,
+{
+    fn for_each_app(
+        &mut self,
+        visit: &mut dyn FnMut(&str, usize),
+    ) -> core::result::Result<(), AppStoreError> {
+        self.with_mut(|storage| storage.for_each_app(visit))
+    }
+
+    fn app_size(&mut self, app_id: &str) -> core::result::Result<usize, AppStoreError> {
+        self.with_mut(|storage| storage.app_size(app_id))
+    }
+
+    fn read_app_at(
+        &mut self,
+        app_id: &str,
+        offset: usize,
+        out: &mut [u8],
+    ) -> core::result::Result<(), AppStoreError> {
+        self.with_mut(|storage| storage.read_app_at(app_id, offset, out))
+    }
+
+    fn begin_app_install(
+        &mut self,
+        app_id: &str,
+        total_len: usize,
+    ) -> core::result::Result<(), AppStoreError> {
+        self.with_mut(|storage| storage.begin_app_install(app_id, total_len))
+    }
+
+    fn write_app_install_chunk(
+        &mut self,
+        app_id: &str,
+        offset: usize,
+        bytes: &[u8],
+    ) -> core::result::Result<(), AppStoreError> {
+        self.with_mut(|storage| storage.write_app_install_chunk(app_id, offset, bytes))
+    }
+
+    fn read_app_install_at(
+        &mut self,
+        app_id: &str,
+        offset: usize,
+        out: &mut [u8],
+    ) -> core::result::Result<(), AppStoreError> {
+        self.with_mut(|storage| storage.read_app_install_at(app_id, offset, out))
+    }
+
+    fn publish_app_install(&mut self, app_id: &str) -> core::result::Result<(), AppStoreError> {
+        self.with_mut(|storage| storage.publish_app_install(app_id))
+    }
+
+    fn abort_app_install(&mut self, app_id: &str) -> core::result::Result<(), AppStoreError> {
+        self.with_mut(|storage| storage.abort_app_install(app_id))
+    }
+
+    fn begin_resource_install(
+        &mut self,
+        app_id: &str,
+        path: &str,
+        total_len: usize,
+    ) -> core::result::Result<(), AppStoreError> {
+        self.with_mut(|storage| storage.begin_resource_install(app_id, path, total_len))
+    }
+
+    fn write_resource_install_chunk(
+        &mut self,
+        app_id: &str,
+        path: &str,
+        offset: usize,
+        bytes: &[u8],
+    ) -> core::result::Result<(), AppStoreError> {
+        self.with_mut(|storage| storage.write_resource_install_chunk(app_id, path, offset, bytes))
+    }
+
+    fn publish_resource_install(
+        &mut self,
+        app_id: &str,
+        path: &str,
+    ) -> core::result::Result<(), AppStoreError> {
+        self.with_mut(|storage| storage.publish_resource_install(app_id, path))
+    }
+
+    fn read_resource_at(
+        &mut self,
+        app_id: &str,
+        path: &str,
+        offset: usize,
+        out: &mut [u8],
+    ) -> core::result::Result<(), AppStoreError> {
+        self.with_mut(|storage| storage.read_resource_at(app_id, path, offset, out))
+    }
+
+    fn resource_size(
+        &mut self,
+        app_id: &str,
+        path: &str,
+    ) -> core::result::Result<usize, AppStoreError> {
+        self.with_mut(|storage| storage.resource_size(app_id, path))
+    }
+
+    fn load_state(
+        &mut self,
+        app_id: &str,
+        out: &mut [u8],
+    ) -> core::result::Result<Option<usize>, AppStoreError> {
+        self.with_mut(|storage| storage.load_state(app_id, out))
+    }
+
+    fn save_state_atomic(
+        &mut self,
+        app_id: &str,
+        bytes: &[u8],
+    ) -> core::result::Result<(), AppStoreError> {
+        self.with_mut(|storage| storage.save_state_atomic(app_id, bytes))
+    }
+
+    fn delete_state(&mut self, app_id: &str) -> core::result::Result<(), AppStoreError> {
+        self.with_mut(|storage| storage.delete_state(app_id))
+    }
+
+    fn format(&mut self) -> core::result::Result<(), AppStoreError> {
+        self.with_mut(NativeAppStorage::format)
+    }
+
+    fn capacity(&mut self) -> core::result::Result<(usize, usize), AppStoreError> {
+        self.with_mut(NativeAppStorage::capacity)
+    }
+}
+
+impl<F> NativeFileStorage for SharedLittleFsStorage<F>
+where
+    F: NorFlash + ReadNorFlash + 'static,
+{
+    fn for_each_file(
+        &mut self,
+        visit: &mut dyn FnMut(&str, u64),
+    ) -> core::result::Result<(), NativeFileStorageError> {
+        self.with_mut(|storage| {
+            storage
+                .mount(|fs| {
+                    fs.read_dir_and_then(littlefs2::path!("/books"), |entries| {
+                        let mut logical = String::<128>::new();
+                        for entry in entries {
+                            let entry = entry?;
+                            if !entry.file_type().is_file() {
+                                continue;
+                            }
+                            logical.clear();
+                            logical.push_str("books/").map_err(|_| Error::INVALID)?;
+                            logical
+                                .push_str(entry.file_name().as_str())
+                                .map_err(|_| Error::INVALID)?;
+                            visit(logical.as_str(), entry.metadata().len() as u64);
+                        }
+                        Ok(())
+                    })
+                })
+                .map_err(|error| match error {
+                    AppStoreError::NotFound => NativeFileStorageError::NotFound,
+                    AppStoreError::NoSpace => NativeFileStorageError::NoSpace,
+                    _ => NativeFileStorageError::Io,
+                })
+        })
+    }
+
+    fn file_size(&mut self, path: &str) -> core::result::Result<u64, NativeFileStorageError> {
+        let path = content_path(path)?;
+        self.with_mut(|storage| {
+            storage
+                .mount(|fs| {
+                    fs.metadata(path.as_path())
+                        .map(|metadata| metadata.len() as u64)
+                })
+                .map_err(|error| match error {
+                    AppStoreError::NotFound => NativeFileStorageError::NotFound,
+                    _ => NativeFileStorageError::Io,
+                })
+        })
+    }
+
+    fn read_at(
+        &mut self,
+        path: &str,
+        offset: u64,
+        out: &mut [u8],
+    ) -> core::result::Result<(), NativeFileStorageError> {
+        let path = content_path(path)?;
+        let offset = usize::try_from(offset).map_err(|_| NativeFileStorageError::Io)?;
+        self.with_mut(|storage| {
+            storage
+                .mount(|fs| read_file_at(fs, path.as_path(), offset, out))
+                .map_err(|error| match error {
+                    AppStoreError::NotFound => NativeFileStorageError::NotFound,
+                    _ => NativeFileStorageError::Io,
+                })
+        })
+    }
+
+    fn create_or_truncate(
+        &mut self,
+        path: &str,
+    ) -> core::result::Result<(), NativeFileStorageError> {
+        let path = content_path(path)?;
+        self.with_mut(|storage| {
+            storage
+                .mount(|fs| fs.create_file_and_then(path.as_path(), |_| Ok(())))
+                .map_err(|error| match error {
+                    AppStoreError::NoSpace => NativeFileStorageError::NoSpace,
+                    _ => NativeFileStorageError::Io,
+                })
+        })
+    }
+
+    fn write_at(
+        &mut self,
+        path: &str,
+        offset: u64,
+        data: &[u8],
+    ) -> core::result::Result<(), NativeFileStorageError> {
+        let path = content_path(path)?;
+        let offset = usize::try_from(offset).map_err(|_| NativeFileStorageError::Io)?;
+        self.with_mut(|storage| {
+            storage
+                .mount(|fs| write_file_at(fs, path.as_path(), offset, data))
+                .map_err(|error| match error {
+                    AppStoreError::NotFound => NativeFileStorageError::NotFound,
+                    AppStoreError::NoSpace => NativeFileStorageError::NoSpace,
+                    _ => NativeFileStorageError::Io,
+                })
+        })
+    }
+
+    fn flush(&mut self, path: &str) -> core::result::Result<(), NativeFileStorageError> {
+        let path = content_path(path)?;
+        self.with_mut(|storage| {
+            storage
+                .mount(|fs| {
+                    fs.open_file_with_options_and_then(
+                        |options| options.read(true).write(true),
+                        path.as_path(),
+                        |file| file.sync(),
+                    )
+                })
+                .map_err(|error| match error {
+                    AppStoreError::NotFound => NativeFileStorageError::NotFound,
+                    _ => NativeFileStorageError::Io,
+                })
+        })
+    }
+
+    fn delete(&mut self, path: &str) -> core::result::Result<(), NativeFileStorageError> {
+        let path = content_path(path)?;
+        self.with_mut(|storage| {
+            storage
+                .mount(|fs| fs.remove(path.as_path()))
+                .map_err(|error| match error {
+                    AppStoreError::NotFound => NativeFileStorageError::NotFound,
+                    _ => NativeFileStorageError::Io,
+                })
+        })
+    }
+
+    fn format(&mut self) -> core::result::Result<(), NativeFileStorageError> {
+        Ok(())
     }
 }
 
@@ -739,6 +1059,48 @@ mod tests {
         let mut count = 0;
         remounted.for_each_app(&mut |_, _| count += 1).unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn shared_littlefs_handles_store_apps_and_long_named_internal_content() {
+        let storage = std::boxed::Box::leak(std::boxed::Box::new(RefCell::new(
+            LittleFsAppStorage::new(HeapFlash::new()),
+        )));
+        storage.borrow_mut().initialize().unwrap();
+        let mut app_storage = SharedLittleFsStorage::new(storage);
+        let mut content_storage = SharedLittleFsStorage::new(storage);
+        let name = std::format!("{}.binbook", "a".repeat(113));
+        let path = std::format!("books/{name}");
+
+        content_storage.create_or_truncate(&path).unwrap();
+        content_storage.write_at(&path, 0, b"book").unwrap();
+        content_storage.flush(&path).unwrap();
+        app_storage.begin_app_install("reader", 4).unwrap();
+        app_storage
+            .write_app_install_chunk("reader", 0, b"sqbc")
+            .unwrap();
+        app_storage.publish_app_install("reader").unwrap();
+
+        assert_eq!(content_storage.file_size(&path), Ok(4));
+        assert_eq!(app_storage.app_size("reader"), Ok(4));
+        let mut entries = std::vec::Vec::new();
+        content_storage
+            .for_each_file(&mut |path, size| entries.push((path.to_string(), size)))
+            .unwrap();
+        assert_eq!(entries, [(path.clone(), 4)]);
+
+        content_storage.create_or_truncate(&path).unwrap();
+        content_storage.write_at(&path, 0, b"x").unwrap();
+        assert_eq!(content_storage.file_size(&path), Ok(1));
+
+        NativeAppStorage::format(&mut app_storage).unwrap();
+        assert_eq!(
+            content_storage.file_size(&path),
+            Err(NativeFileStorageError::NotFound)
+        );
+        content_storage
+            .create_or_truncate("books/after-format.binbook")
+            .unwrap();
     }
 
     #[test]

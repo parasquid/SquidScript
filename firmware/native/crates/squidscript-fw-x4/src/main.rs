@@ -71,7 +71,7 @@ use squidscript_fw_x4::{
     },
     board::{DisplayDelay, FreqManagedSpiDevice, SharedSpi2},
     request_pending_display_flush,
-    x4_storage::{X4BinBookFileBackend, X4SdFileStorage, X4StorageTime},
+    x4_storage::{X4BinBookFileBackend, X4ContentStorage, X4SdFileStorage, X4StorageTime},
     NativeDisplayFlushDriver,
 };
 
@@ -202,7 +202,10 @@ type X4SdBlockDevice = embedded_sdmmc::SdCard<X4SdSpiDevice, DisplayDelay>;
 #[cfg(all(target_arch = "riscv32", feature = "native-radio-services"))]
 #[cfg(feature = "x4-binbook")]
 type X4NativeFileBackend = X4BinBookFileBackend<
-    X4SdFileStorage<SdStorage<X4SdBlockDevice, X4StorageTime>>,
+    X4ContentStorage<
+        X4SdFileStorage<SdStorage<X4SdBlockDevice, X4StorageTime>>,
+        X4NativeAppStorage,
+    >,
     512,
     8,
     128,
@@ -213,8 +216,13 @@ type X4NativeFileBackend = X4BinBookFileBackend<
 
 #[cfg(all(target_arch = "riscv32", feature = "native-radio-services"))]
 #[cfg(feature = "x4-binbook")]
-type X4NativeAppStorage =
+type X4LittleFsStorage =
     squidscript_fw_x4::flash_partition::LittleFsAppStorage<esp_storage::FlashStorage<'static>>;
+
+#[cfg(all(target_arch = "riscv32", feature = "native-radio-services"))]
+#[cfg(feature = "x4-binbook")]
+type X4NativeAppStorage =
+    squidscript_fw_x4::flash_partition::SharedLittleFsStorage<esp_storage::FlashStorage<'static>>;
 
 #[cfg(all(target_arch = "riscv32", feature = "native-radio-services"))]
 #[cfg(feature = "x4-binbook")]
@@ -773,7 +781,7 @@ enum NativeWifiCommand {
 ))]
 #[derive(Clone)]
 struct BleGattTransferState {
-    name: heapless::String<64>,
+    name: heapless::String<{ squid_device_protocol::MAX_CONTENT_NAME_BYTES }>,
     expected_name_len: usize,
     total_len: usize,
     received: usize,
@@ -1710,12 +1718,21 @@ async fn main(spawner: embassy_executor::Spawner) {
             );
             let sd_storage =
                 X4SdFileStorage::new(SdStorage::new(sd_spi, DisplayDelay, X4StorageTime));
+            let flash = esp_storage::FlashStorage::new(peripherals.FLASH);
+            static FLASH_STORAGE: static_cell::StaticCell<core::cell::RefCell<X4LittleFsStorage>> =
+                static_cell::StaticCell::new();
+            let flash_storage = FLASH_STORAGE.init_with(|| {
+                core::cell::RefCell::new(
+                    squidscript_fw_x4::flash_partition::LittleFsAppStorage::new(flash),
+                )
+            });
+            let app_store_ready = flash_storage.borrow_mut().initialize().is_ok();
+            let app_storage =
+                squidscript_fw_x4::flash_partition::SharedLittleFsStorage::new(flash_storage);
+            let internal_storage = app_storage;
+            let content_storage = X4ContentStorage::new(sd_storage, internal_storage);
             let file_backend =
-                X4BinBookFileBackend::<_, 512, 8, 128, 1024, 128, 4>::new(sd_storage);
-            let mut app_storage = squidscript_fw_x4::flash_partition::LittleFsAppStorage::new(
-                esp_storage::FlashStorage::new(peripherals.FLASH),
-            );
-            let app_store_ready = app_storage.initialize().is_ok();
+                X4BinBookFileBackend::<_, 512, 8, 128, 1024, 128, 4>::new(content_storage);
             let runtime = build_shared_x4_runtime(
                 &RUNTIME,
                 &RUNTIME_VALUE,

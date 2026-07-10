@@ -1451,6 +1451,28 @@ fn bounded_native_file_backend_publishes_content_file_with_bounded_chunks() {
 }
 
 #[test]
+fn bounded_native_file_backend_enforces_portable_ascii_content_names() {
+    let mut file_backend = BoundedNativeFileBackend::<StaticFileStorage, 128, 4, 16>::new(
+        StaticFileStorage::default(),
+    );
+    let longest_name = std::format!("{}.binbook", "a".repeat(113));
+    let too_long_name = std::format!("{}.binbook", "a".repeat(114));
+
+    let path = file_backend
+        .content_install_begin(&longest_name, 1)
+        .expect("121-byte ASCII filename");
+    assert_eq!(path.len(), squid_device_protocol::MAX_PATH_LEN - 1);
+    assert_eq!(
+        file_backend.content_install_begin(&too_long_name, 1),
+        Err("invalid-name")
+    );
+    assert_eq!(
+        file_backend.content_install_begin("cafe\u{301}.binbook", 1),
+        Err("invalid-name")
+    );
+}
+
+#[test]
 fn bounded_native_file_backend_checks_published_content_size_and_crc32() {
     let mut file_backend =
         BoundedNativeFileBackend::<StaticFileStorage, 32, 4, 16>::new(StaticFileStorage::default());

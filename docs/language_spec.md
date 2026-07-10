@@ -2547,6 +2547,10 @@ Rules:
 - A completed transfer is delivered to the foreground app profile whose
   `accept` list contains the uploaded file-name extension, such as `.sqbc` or
   `.binbook`. The event exposes the full safe file name as `ev.name`.
+- Native content filenames are currently limited to 121 ASCII bytes. They are
+  simple names: empty names, leading `.`, separators, NUL, and non-ASCII bytes
+  are rejected. The logical file API does not reveal whether the file resides
+  on internal flash or SD.
 - The active route table must not contain multiple receivers for the same
   uploaded extension. Ambiguous or stale route-table state is a firmware
   invariant violation: firmware records an upload-route diagnostic and
@@ -2695,7 +2699,7 @@ in bytes clamped to the runtime integer range. Normal error strings include
 file.copy(source, { library, name })
 
 Publishes a firmware-owned file reference into a logical content library.
-The current Zephyr firmware supports copying a valid `.binbook` file into the
+The native firmware supports copying a valid `.binbook` file into the
 `"books"` library with a safe `.binbook` `name`.
 
 Example:

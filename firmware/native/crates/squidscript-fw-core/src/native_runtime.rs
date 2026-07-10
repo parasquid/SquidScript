@@ -1384,12 +1384,17 @@ fn validate_file_extension(extension: &str) -> Result<(), &'static str> {
 fn format_file_ref(library: &str, name: &str, out: &mut [u8]) -> Result<usize, &'static str> {
     validate_file_segment(library)?;
     validate_file_segment(name)?;
+    if library == "books"
+        && (name.starts_with('.') || name.len() > squid_device_protocol::MAX_CONTENT_NAME_BYTES)
+    {
+        return Err("invalid-name");
+    }
     let required = library
         .len()
         .checked_add(1)
         .and_then(|len| len.checked_add(name.len()))
         .ok_or("too-large")?;
-    if required > out.len() {
+    if required >= out.len() {
         return Err("too-large");
     }
     out[..library.len()].copy_from_slice(library.as_bytes());
@@ -1402,6 +1407,7 @@ fn format_file_ref(library: &str, name: &str, out: &mut [u8]) -> Result<usize, &
 
 fn validate_file_segment(segment: &str) -> Result<(), &'static str> {
     if segment.is_empty()
+        || !segment.is_ascii()
         || segment == "."
         || segment == ".."
         || segment.contains('/')

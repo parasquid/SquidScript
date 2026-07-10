@@ -1087,7 +1087,8 @@ fn is_safe_content_name(name: &str) -> bool {
         && !name.starts_with('.')
         && !name.contains('/')
         && !name.contains('\\')
-        && name.len() < squid_device_protocol::MAX_PATH_LEN
+        && name.is_ascii()
+        && name.len() <= squid_device_protocol::MAX_CONTENT_NAME_BYTES
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -3395,6 +3396,16 @@ mod tests {
 
     #[test]
     fn device_upload_requires_transport_destination_and_safe_name() {
+        let longest_name = format!("{}.binbook", "a".repeat(113));
+        let too_long_name = format!("{}.binbook", "a".repeat(114));
+        assert_eq!(
+            longest_name.len(),
+            squid_device_protocol::MAX_CONTENT_NAME_BYTES
+        );
+        assert!(is_safe_content_name(&longest_name));
+        assert!(!is_safe_content_name(&too_long_name));
+        assert!(!is_safe_content_name("cafe\u{301}.binbook"));
+
         let missing_host = device_upload(
             DeviceUploadArgs {
                 input: PathBuf::from("missing.binbook"),

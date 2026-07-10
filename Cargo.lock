@@ -137,6 +137,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "binbook-storage"
+version = "0.1.0"
+dependencies = [
+ "binbook-core",
+ "heapless 0.8.0",
+]
+
+[[package]]
 name = "bindgen"
 version = "0.70.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1029,6 +1037,7 @@ name = "embedded-sd-storage"
 version = "0.1.0"
 dependencies = [
  "binbook-core",
+ "binbook-storage",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
  "embedded-sdmmc",
@@ -2651,6 +2660,7 @@ dependencies = [
 name = "squidscript-fw-core"
 version = "0.1.0"
 dependencies = [
+ "squid-device-protocol",
  "squidc-core",
  "squidvm-core",
 ]

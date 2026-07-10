@@ -1,9 +1,9 @@
 # Firmware App Storage
 
-The native X4 firmware stores installed SquidScript apps in the internal-flash
-`squidscript` LittleFS partition. SD storage remains the content library for
-books and uploaded content; app-store formatting does not modify SD content or
-firmware OTA slots.
+The native X4 firmware stores installed SquidScript apps and capacity-bounded
+content in the internal-flash `squidscript` LittleFS partition. SD FAT storage
+is the preferred large removable content volume. When SD is absent, uploads and
+content reads use internal flash without changing app-facing file references.
 
 ## Logical Model
 
@@ -36,11 +36,21 @@ The X4 partition table reserves the internal-flash range documented in
 /lifecycle/resume
 /tmp/install-<app-id>/...
 /tmp/previous-<app-id>/...
+/books/<content-name>
+/content-tmp/<content-name>
 ```
 
 Physical paths are firmware details and are not returned to SquidScript apps.
 App IDs are at most 39 bytes. Resource paths are relative, non-empty safe path
 segments; absolute paths, empty segments, `.` and `..` are rejected.
+Content names are simple ASCII filenames of at most 121 bytes. This leaves room
+for the logical `books/` prefix within the 128-byte firmware path budget.
+
+New content uploads prefer SD when it is mounted and use internal LittleFS when
+SD is missing. Each upload is pinned to its selected volume from begin through
+commit. Reads search SD first and then internal flash. Library enumeration
+merges both volumes and suppresses an internal entry when SD has the same
+logical name.
 
 ## Atomic Installation
 
@@ -71,7 +81,7 @@ used/free values supplied by the ESP allocator.
 
 `device storage-format` resets the runtime, formats only the SquidScript
 LittleFS partition, recreates its root directories, and clears the resident
-registry. OTA partitions and SD content are preserved.
+registry plus internal content. OTA partitions and SD content are preserved.
 
 ## Bounded Access
 

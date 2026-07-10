@@ -44,6 +44,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Storage And Content
 
+- Support UTF-8 filenames consistently across internal LittleFS and SD FAT
+  storage, including transport validation, enumeration, lookup, and display
+  fallback for unavailable glyphs.
 - **Regenerate tracked BinBook fixtures for the current format.** The BinBook
   format and Rust compiler have changed, and the tracked `.binbook` files plus
   `scripts/generate-test-binbook.py` now fail validation through the current

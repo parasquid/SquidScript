@@ -759,7 +759,8 @@ fn is_safe_content_name(name: &str) -> bool {
         && !name.starts_with('.')
         && !name.contains('/')
         && !name.contains('\\')
-        && name.len() < squid_device_protocol::MAX_PATH_LEN
+        && name.is_ascii()
+        && name.len() <= squid_device_protocol::MAX_CONTENT_NAME_BYTES
 }
 
 fn configure_tty(port: &str) -> Result<(), String> {
