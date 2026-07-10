@@ -177,12 +177,11 @@ Arming terms used throughout this spec:
 - `armed-app metadata`: the compiled `app.triggers` records read from an
   installed app's SQBC when `app.arm(appId)` runs.
 
-BLE file transfer is not an armed trigger registration. It is an imperative
-foreground service started by `service.ble.start("file-transfer", ...)`; a
-completed transfer dispatches the configured completion event to the foreground
-receiver.
+File upload is not an armed trigger registration. It is an imperative
+foreground service started by `service.upload.start(...)`; an enabled HTTP or
+BLE transport feeds the same completion event to the foreground receiver.
 
-See sections 21, 30, 32, and 47 for lifecycle handlers, BLE file transfer,
+See sections 21, 30, 32, and 47 for lifecycle handlers, file upload,
 app registry/launch APIs, and runtime model details.
 
 ---
@@ -2459,70 +2458,66 @@ Rules:
 
 ---
 
-## 30. BLE File Transfer
+## 30. File Upload
 
-BLE file transfer is an imperative `service.ble.*` capability the app drives
-itself, consistent with `service.wifi.*` and `service.timer.*`. An app turns
-receive on with `service.ble.start` and off with `service.ble.stop`; it is not
-declared in `app.triggers`.
+File upload is an imperative `service.upload.*` capability owned by the
+foreground app. One profile selects accepted extensions, enabled transports,
+and a completion event; it is not declared in `app.triggers`.
 
 ```squid
 app "ble-install"
 
 event.on("app.start") {
-  service.ble.start("file-transfer", {
-    id: "sqbc-install",
-    accept: [".sqbc"],
+  service.upload.start({
+    id: "sqbc-install"
+    accept: [".sqbc"]
+    transports: ["ble"]
     events: {
-      complete: "ble.file.complete"
+      complete: "upload.complete"
     }
   })
 }
 
-event.on("ble.file.complete", ev) {
+event.on("upload.complete", ev) {
+  debug.print(ev.transport, ev.name)
   let installed = app.install(ev.upload)
   app.launch(installed.id)
 }
 ```
 
-`service.ble.start(profile, config)` sets the calling app's BLE receive to the
-given profile: it registers the profile in the routing table and begins
-advertising the transfer service UUID. `profile` is `"file-transfer"`.
-
-`config` options:
+`service.upload.start(config)` registers the calling app's receiver and returns
+`{ ok, error, id, transports, httpPath }`. Bare statement form discards this
+record. `config` fields are:
 - `id`: required string. The app-local profile instance identifier, exposed to
   handlers as `ev.id` and used by firmware diagnostics.
 - `accept`: required non-empty list of file-extension strings such as
   `".sqbc"`.
+- `transports`: required non-empty list containing `"http"`, `"ble"`, or both.
 - `events`: required object mapping transfer event kinds to SquidScript event
   names. Current event kinds: `complete`.
 
-`service.ble.stop()` clears the calling app's profile, aborts any in-flight
-transfer, and stops advertising once no profiles remain. It takes no arguments.
+`service.upload.status()` returns `{ active, id, transports, httpPath,
+inFlight, bytesReceived, totalBytes, error }`. `service.upload.stop()` clears
+the profile, aborts in-flight work, removes retained partial staging state, and
+disables its producers. Both take no arguments.
 
 Semantics:
-- **One receive per app.** `start` is idempotent set/replace: calling it again
-  re-applies the config (same config is a no-op; a changed config replaces the
-  prior one). It never errors on a second call, so placing `start` in
-  `app.start` is safe across re-launches.
+- **One active receiver.** `start` sets or replaces the foreground runtime's
+  active profile, so placing it in `app.start` is safe across re-launches.
 - **Foreground service.** `start` activates receive for the current foreground
-  app. Launching another foreground app clears the previous app's active BLE
-  receive profile.
-- **Installed apps and target fallback only.** Temp-run apps cannot start BLE
-  receive because completed transfers route through a stable app slot. Installed
-  apps use their registry slot; the target fallback app uses a reserved fallback
-  slot.
-- **Advertising is gated on active profiles.** The radio advertises the transfer
-  service UUID only while at least one profile is registered. A target fallback
-  app may start receive at boot, but receive otherwise becomes active only after
-  the foreground app runs `start`.
+  app. Launching another foreground app clears the previous app's active upload
+  profile.
+- **Transport activation is profile-gated.** BLE advertises the transfer
+  service UUID only while an active profile enables BLE. HTTP accepts
+  `/upload/...` only while an active profile enables HTTP. Upload start does
+  not start Wi-Fi or an access point.
 - **Activation requires running the app once.** The profile is created by
-  running `service.ble.start`, not by reading compiled metadata. After a device
-  reset, BLE receive is inactive until the owning app runs `start` again.
+  running `service.upload.start`, not by reading compiled metadata. After a
+  reset, receive is inactive until the owning app runs `start` again.
 
 Handler payload parameters are declared as the second argument to `event.on`.
 The parameter is a read-only event record whose fields are provided by the
-firmware dispatch path for that event. The `ble.file.complete` event carries:
+firmware dispatch path for that event. The configured completion event carries:
 
 ```text
 upload          file reference to the received staging file
@@ -2530,34 +2525,36 @@ name            uploaded safe file name
 bytesReceived   string
 totalBytes      string
 id              the profile instance id
+transport       "http" or "ble"
 ```
 
 `upload` is a `file.*` reference to the staging file. The reference is valid
-only inside the `ble.file.complete` handler — the firmware `fs_unlink`s the
-staging file after the handler returns. Failed, aborted, or rejected transfers
+only inside the completion handler: firmware removes the staging file after the
+handler returns. Failed, aborted, or rejected transfers
 do not dispatch a SquidScript event in the current firmware.
 
 Rules:
-- BLE file transfer does not grant raw GATT access to SquidScript apps.
-- Firmware must stream BLE chunks to staging storage rather than app RAM.
+- Upload does not grant raw HTTP socket or GATT access to SquidScript apps.
+- Firmware streams transport chunks to shared staging storage rather than app
+  RAM.
 - Firmware delivers the file as-is to the receiving app. Validation is the
   app's responsibility (e.g., via `app.install(ev.upload)` which validates the
   SQBC magic header).
 - The staging file is ephemeral: it is `fs_unlink`d after the
-  `ble.file.complete` event handler returns. The app must consume the file
+  completion event handler returns. The app must consume the file
   (copy, install, log) before returning from the handler.
 - A completed transfer is delivered to the foreground app profile whose
   `accept` list contains the uploaded file-name extension, such as `.sqbc` or
   `.binbook`. The event exposes the full safe file name as `ev.name`.
 - The active route table must not contain multiple receivers for the same
   uploaded extension. Ambiguous or stale route-table state is a firmware
-  invariant violation: firmware records an `invariant.ble.*` diagnostic and
+  invariant violation: firmware records an upload-route diagnostic and
   rejects the transfer without dispatching an app event.
-- App artifacts uploaded through BLE should use `.sqbc` until a resource
+- App artifacts uploaded through either transport should use `.sqbc` until a resource
   package format is specified, and they should follow the same installer rules
   as HTTP uploads.
-- A target may expose BLE radio hardware metadata without implementing
-  `service.ble.start("file-transfer", ...)` runtime support.
+- A target may expose radio or network hardware metadata without implementing
+  the corresponding upload transport.
 
 ---
 
@@ -2703,10 +2700,10 @@ The current Zephyr firmware supports copying a valid `.binbook` file into the
 Example:
 
 ```squid
-event.on("http.file.complete", ev) {
+event.on("upload.complete", ev) {
   let copied = file.copy(ev.upload, { library: "books", name: ev.name })
   if (copied.ok) {
-    debug.print(copied.ref)
+    debug.print(ev.transport, copied.ref)
   }
 }
 ```
@@ -2733,56 +2730,44 @@ Rules:
 
 ---
 
-## 31A. HTTP File Upload
+## 31A. HTTP Upload Transport
 
-HTTP upload is an imperative `service.http.*` capability for device-local
-content ingress over the target network service. An app starts the route when
-it wants to accept files and handles completed uploads as ordinary events.
+HTTP is one producer for the `service.upload.*` receiver. The app must start
+Wi-Fi station or AP networking separately; enabling HTTP upload does not change
+network state.
 
 ```squid
 app "content-uploader"
 
 event.on("app.start") {
   service.wifi.startAP("SquidScript-X4")
-  service.http.start("file-upload", {
-    id: "binbook-upload",
-    accept: [".binbook"],
+  service.upload.start({
+    id: "binbook-upload"
+    accept: [".binbook"]
+    transports: ["http"]
     events: {
-      complete: "http.file.complete"
+      complete: "upload.complete"
     }
   })
 }
 
-event.on("http.file.complete", ev) {
+event.on("upload.complete", ev) {
   let copied = file.copy(ev.upload, { library: "books", name: ev.name })
-  debug.print(copied.ok, copied.error, copied.ref, copied.bytesWritten)
+  debug.print(ev.transport, copied.ok, copied.error, copied.ref, copied.bytesWritten)
 }
 ```
 
-`service.http.start(profile, config)` supports `profile` `"file-upload"`.
-`config.id` is the app-local profile id, `config.accept` is a non-empty list
-of accepted file extensions, and `config.events.complete` is the event
-dispatched after a successful upload.
-
-`service.http.stop()` clears the calling app's HTTP upload route, aborts any
-in-flight upload, and discards any retained partial upload for that route.
-
-On Zephyr firmware, `PUT /upload/<safe-name>` streams the request body into a
-firmware staging file. A client may resume an interrupted upload by sending
+`PUT /upload/<safe-name>` streams the request body into the shared firmware
+staging path. A client may resume an interrupted upload by sending
 `HEAD /upload/<safe-name>` and reading `X-Squid-Upload-Offset` and
 `X-Squid-Upload-Total`. A resumed `PUT` sends `Content-Range: bytes
 <offset>-<end>/<total>` and a body that starts at the reported offset. The
 retained partial upload is process-local firmware state; rebooting the device
-or stopping the HTTP service discards the resume state. A completed upload
-dispatches the configured event with:
+or stopping `service.upload` discards the resume state. Completion dispatches
+the payload from section 30 with `transport == "http"`.
 
-```text
-upload          file reference to the received staging file
-name            uploaded safe file name
-bytesReceived   string
-totalBytes      string
-id              profile instance id
-```
+BLE preserves the custom GATT transfer wire protocol and feeds the same route,
+staging, dispatch, and cleanup core with `transport == "ble"`.
 
 The `upload` reference is ephemeral. The app should consume it inside the
 handler, normally by calling `file.copy(...)` for content or `app.install(...)`
@@ -3275,9 +3260,8 @@ service.wifi.accessPoint
 - Allows starting and stopping foreground-only firmware-owned Wi-Fi access points.
 
 service.ble.file-transfer
-- Allows declaring firmware-owned BLE file-transfer trigger profiles that
-  are encoded in installed SQBC metadata. Runtime chunk receive and install
-  support is target/firmware-specific and may still be unavailable.
+- Declares target support for the BLE producer used by `service.upload`.
+  Runtime chunk receive and staging support remains target-specific.
 
 system.info
 - Allows safe device info and resource-status queries such as

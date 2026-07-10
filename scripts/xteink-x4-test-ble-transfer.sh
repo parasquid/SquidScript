@@ -67,8 +67,8 @@ wait_for_contains() {
   exit 1
 }
 
-run_ble_put() {
-  local out="${WORK_DIR}/ble-put.out"
+run_ble_upload() {
+  local out="${WORK_DIR}/ble-upload.out"
   local timeout_seconds="${COMMAND_TIMEOUT_SECONDS:-20}"
 
   printf '%s: %s\n' "${HARDWARE_COMMAND_LABEL}" "$*" >&2
@@ -79,14 +79,14 @@ run_ble_put() {
   printf 'Command failed or timed out after %ss: %s\n' "${timeout_seconds}" "$*" >&2
   printf '%s\n' "--- ${out} ---" >&2
   sed -n '1,200p' "${out}" >&2
-  capture_device_diagnostics "ble-put-failure"
+  capture_device_diagnostics "ble-upload-failure"
   printf 'failure diagnostics: %s %s %s\n' \
-    "${WORK_DIR}/ble-put-failure-resources.out" \
-    "${WORK_DIR}/ble-put-failure-errors.out" \
-    "${WORK_DIR}/ble-put-failure-lifecycle.out" >&2
-  if [[ -e "${WORK_DIR}/ble-put-failure-raw-serial.out" ]]; then
+    "${WORK_DIR}/ble-upload-failure-resources.out" \
+    "${WORK_DIR}/ble-upload-failure-errors.out" \
+    "${WORK_DIR}/ble-upload-failure-lifecycle.out" >&2
+  if [[ -e "${WORK_DIR}/ble-upload-failure-raw-serial.out" ]]; then
     printf 'raw serial diagnostics: %s\n' \
-      "${WORK_DIR}/ble-put-failure-raw-serial.out" >&2
+      "${WORK_DIR}/ble-upload-failure-raw-serial.out" >&2
   fi
   exit "${status}"
 }
@@ -128,9 +128,9 @@ run_capture storage-format cargo run --quiet -p squidc -- device storage-format 
 run_capture install-transfer cargo run --quiet -p squidc -- app install "${PACKAGE}" --port "${PORT}" >/dev/null
 run_capture launch-transfer cargo run --quiet -p squidc -- app launch "${APP_ID}" --port "${PORT}" >/dev/null
 wait_for_contains output-ready "transfer ready" cargo run --quiet -p squidc -- device output --port "${PORT}" >/dev/null
-run_ble_put cargo run --quiet -p squidc -- device ble-put "${DEVICE}" "${PAYLOAD}" --name "${UPLOAD_NAME}" >/dev/null
-wait_for_contains output-done "ble done ${SIZE} ${SIZE} ble" cargo run --quiet -p squidc -- device output --port "${PORT}" >/dev/null
-wait_for_contains output-copy "ble copy true null ${SIZE}" cargo run --quiet -p squidc -- device output --port "${PORT}" >/dev/null
+run_ble_upload cargo run --quiet -p squidc -- device upload "${PAYLOAD}" --name "${UPLOAD_NAME}" --transport ble --device "${DEVICE}" >/dev/null
+wait_for_contains output-done "upload done ${SIZE} ${SIZE} ble" cargo run --quiet -p squidc -- device output --port "${PORT}" >/dev/null
+wait_for_contains output-copy "upload copy ble true null ${SIZE}" cargo run --quiet -p squidc -- device output --port "${PORT}" >/dev/null
 run_capture content-check cargo run --quiet -p squidc -- device content-check "${UPLOAD_NAME}" --size "${SIZE}" --crc32 "${CRC32}" --port "${PORT}" >/dev/null
 errors_out="$(run_capture errors cargo run --quiet -p squidc -- device errors --port "${PORT}")"
 if grep -v '^error=diag\.' "${errors_out}" | grep -q .; then

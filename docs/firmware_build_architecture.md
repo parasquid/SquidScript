@@ -277,7 +277,7 @@ registry slots, or the reserved target fallback slot, instead of duplicating
 app-id text; app-id strings are resolved from the app registry or fallback app
 metadata when constructing staging paths or dispatching completion events. The
 transfer session and pending-event slots keep the safe uploaded file name so
-`ble.file.complete` can expose `ev.name`. Exact RAM sizes are tracked by the
+`upload.complete` can expose `ev.name`. Exact RAM sizes are tracked by the
 RAM budget tests and generated build reports. The bulk of the BLE RAM cost is
 in Zephyr's Bluetooth host/controller support and the custom GATT database. If
 RAM becomes tight, audit Bluetooth buffer counts and connection limits before

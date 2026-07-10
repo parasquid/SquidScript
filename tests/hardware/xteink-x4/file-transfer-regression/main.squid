@@ -2,37 +2,22 @@ app "file-transfer-regression"
 
 event.on("app.start") {
   let ap = service.wifi.startAP("SquidScript-X4")
-  service.http.start("file-upload", {
-    id: "http-transfer"
-    accept: [".binbook"]
-    events: {
-      complete: "http.transfer.complete"
-    }
-  })
-  service.ble.start("file-transfer", {
-    id: "ble-transfer"
+  service.upload.start({
+    id: "file-transfer"
     accept: [".binbook", ".sqbc"]
+    transports: ["http", "ble"]
     events: {
-      complete: "ble.transfer.complete"
+      complete: "upload.complete"
     }
   })
   debug.print("transfer ready", ap.ok, ap.error)
 }
 
-event.on("http.transfer.complete", ev) {
-  debug.print("http done", ev.bytesReceived, ev.totalBytes)
+event.on("upload.complete", ev) {
+  debug.print("upload done", ev.transport, ev.bytesReceived, ev.totalBytes)
   let copied = file.copy(ev.upload, {
     library: "books"
     name: ev.name
   })
-  debug.print("http copy", copied.ok, copied.error, copied.bytesWritten)
-}
-
-event.on("ble.transfer.complete", ev) {
-  debug.print("ble done", ev.bytesReceived, ev.totalBytes)
-  let copied = file.copy(ev.upload, {
-    library: "books"
-    name: ev.name
-  })
-  debug.print("ble copy", copied.ok, copied.error, copied.bytesWritten)
+  debug.print("upload copy", ev.transport, copied.ok, copied.error, copied.bytesWritten)
 }

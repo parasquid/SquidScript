@@ -26,9 +26,9 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 ## Runtime Services
 
 - Decide service priority and target support for spec-recognized APIs that are
-  not yet SQBC-backed: broader `httpServer.*` server APIs beyond app-owned
-  `service.http.start("file-upload", ...)`, remaining `service.ble.*` runtime
-  pieces, and remaining `file.*` APIs beyond the current pick/read/copy
+  not yet SQBC-backed: broader `httpServer.*` server APIs, remaining
+  non-upload `service.ble.*` runtime pieces, and remaining `file.*` APIs beyond
+  the current pick/read/copy
   family. Add each API only as a real compiler/SQBC/VM/Zephyr slice with
   honest unsupported behavior until target support is implemented.
 - Add a `app.uninstall(appId)` builtin mirroring the new `app.install` shape:
@@ -44,6 +44,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Storage And Content
 
+- Add app-facing file management APIs: rename, move, copy, delete, and
+  related result records for firmware-owned file references and logical
+  libraries, so upload handlers can organize files beyond the current
+  content-specific `file.copy` path.
 - Allow graceful BinBook page rendering degradation when the renderer supports a richer pixel format than the stored page uses. In particular, the X4 firmware renderer currently accepts GRAY2 packed pages but rejects GRAY1 packed pages as unsupported; convert or expand GRAY1 to the renderer-supported path so GRAY1 BinBooks can still display.
 - Add a storage-backed BinBook reading history API so the reader can remember
   per-book page positions without spending fixed app-state slots or inventing
@@ -195,10 +199,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   transport, keep thresholds advisory until enough hardware samples define
   stable budgets, and use the data to catch speed regressions separately from
   content-integrity failures.
-- Investigate native X4 BLE file-transfer terminal status over GATT. During
+- Investigate native X4 BLE upload terminal status over GATT. During
   native BLE bring-up, uploads reached firmware, staged to `tmp/`, dispatched
   the completion handler, copied into `books`, and passed serial
-  `content-check`, but `squidc device ble-put` could not reliably observe the
+  `content-check`, but `squidc device upload --transport ble` could not reliably observe the
   terminal status characteristic through BlueZ/btleplug. Firmware diagnostics
   showed CCCD notify enabled and `notify-sent`; direct status-characteristic
   reads timed out before the firmware read handler observed them. Current
@@ -207,7 +211,7 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   minimal native X4 GATT status repro, determine whether the break is in
   Trouble characteristic storage/read handling, CCCD/notify handling,
   btleplug/BlueZ delivery, or the firmware event loop, then restore a real
-  terminal-status signal for `device ble-put` without weakening content
+  terminal-status signal for `device upload --transport ble` without weakening content
   integrity checks.
 - Extend `squidc hardware test --target esp32c3-super-mini` so the Super Mini
   regression target uses the same target-aware hardware-test architecture as

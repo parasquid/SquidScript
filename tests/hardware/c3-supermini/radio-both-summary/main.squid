@@ -2,11 +2,12 @@ app "radio-both-summary"
 
 event.on("app.start") {
   let ap = service.wifi.startAP("SquidScript")
-  service.ble.start("file-transfer", {
+  service.upload.start({
     id: "rx"
     accept: [".sqbc"]
+    transports: ["ble"]
     events: {
-      complete: "ble.done"
+      complete: "upload.complete"
     }
   })
   debug.print("radio both", ap.ok, ap.error)
@@ -14,6 +15,6 @@ event.on("app.start") {
 
 event.on("key.SELECT") {
   let stop = service.wifi.stopAP()
-  service.ble.stop()
+  service.upload.stop()
   debug.print("radio stop", stop.ok, stop.error)
 }

@@ -156,8 +156,9 @@ quality.
 upload hardware check. It flashes the X4 firmware, installs
 `tests/hardware/xteink-x4/http-binbook-upload`, launches a SquidScript app that
 starts the `SquidScript-X4` AP and registers
-`service.http.start("file-upload", ...)`, associates the host Wi-Fi to the
-device AP, and uploads a real `.binbook` with `curl -T` to
+`service.upload.start(...)` with the HTTP transport, associates the host Wi-Fi
+to the device AP, and uploads a real `.binbook` through both `squidc device
+upload --transport http` and raw `curl -T` to
 `http://192.168.4.1/upload/<name>.binbook`. The wrapper prints curl progress,
 records curl byte/speed totals, and resumes interrupted transfers by querying
 `HEAD /upload/<name>.binbook` for the device-reported upload offset before the
@@ -165,7 +166,7 @@ next `PUT`. Set `INTERRUPT_UPLOAD=1` with a large fixture to run the recovery
 variant: the script starts a rate-limited upload, interrupts it, requires the
 HTTP route to keep answering `HEAD` with a non-zero partial offset, then resumes
 and completes the upload. The unattended pass criteria are serial plus HTTP:
-curl receives `ok`, `device output` contains `http upload complete`,
+curl receives `ok`, `device output` contains `upload complete http`,
 `upload copy true null`, and the uploaded book name, `device drawlog` contains
 `draw=binbook`, and `device errors` is empty. This proves the app-owned HTTP
 route, firmware staging file, resumable SD-backed upload, `file.copy`,
@@ -689,7 +690,7 @@ It defaults to `--target xiao-esp32c3-gdeq0426t82-sd` and accepts
 `--target <id>`, `--skip-flash`, `--require-ble-reconnect`,
 `--device <name-or-address>`, and `--host-wifi-iface <iface>`. The script may temporarily take over the host
 Wi-Fi and Bluetooth controllers. It builds or flashes the selected target,
-formats app storage, launches fallback `main` so `service.ble.start` registers
+formats app storage, launches fallback `main` so `service.upload.start` registers
 an active file-transfer profile, discovers the target with host Bluetooth,
 connects to it, and keeps that BLE connection active while normal SquidScript
 Wi-Fi apps exercise scan/list, target AP
@@ -803,7 +804,7 @@ For non-Super-Mini ESP32-C3 targets such as
 `xiao-esp32c3-gdeq0426t82-sd`, run the same checks against the selected target:
 
 - build/flash the selected target
-- launch fallback `main` so `service.ble.start("file-transfer", ...)` registers
+- launch fallback `main` so `service.upload.start(...)` registers
   an active profile
 - use a host Bluetooth controller to scan for the advertised name
 - connect to the discovered peripheral
@@ -835,7 +836,7 @@ check for the BLE File Transfer work. It builds the XIAO ESP32-C3
 e-paper dev target firmware, flashes it via `west flash -d
 build/zephyr/xiao-esp32c3-gdeq0426t82-sd`, boots the default fallback
 installer, and then runs `squidc app push` to push a payload over the custom
-BLE GATT transfer service. The fallback starts `service.ble.start` on
+BLE GATT transfer service. The fallback starts `service.upload` with the BLE transport on
 `app.start`, receives `.sqbc`, calls `app.install(ev.upload)`, and launches
 the installed app.
 

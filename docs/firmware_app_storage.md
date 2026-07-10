@@ -181,7 +181,7 @@ the active foreground BLE profile that accepts the uploaded file extension.
 The staging file is `FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC` opened at
 transfer begin, written in bounded chunks, closed on the final chunk, and
 `fs_unlink`d after
-the `ble.file.complete` event handler returns. The `app.install`
+the `upload.complete` event handler returns. The `app.install`
 builtin consumes the staging file by reading SQBC metadata for the app id,
 validating the SQBC header, and renaming the already-written staging file into
 `<mount_point>/apps/<app_id>/main.sqbc`. Single in-flight session: a second

@@ -6,19 +6,20 @@ state {
 
 event.on("app.start") {
   let ap = service.wifi.startAP("SquidScript-X4")
-  service.http.start("file-upload", {
+  service.upload.start({
     id: "binbook-upload"
     accept: [".binbook"]
+    transports: ["http"]
     events: {
-      complete: "http.upload.complete"
+      complete: "upload.complete"
     }
   })
   debug.print("http upload ready", ap.ok, ap.error)
   screen.open("reader")
 }
 
-event.on("http.upload.complete", ev) {
-  debug.print("http upload complete", ev.name, ev.bytesReceived)
+event.on("upload.complete", ev) {
+  debug.print("upload complete", ev.transport, ev.name, ev.bytesReceived)
   let copied = file.copy(ev.upload, {
     library: "books"
     name: ev.name

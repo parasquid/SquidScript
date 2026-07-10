@@ -13,20 +13,21 @@ event.on("app.start") {
     state.stateVersion = 1
   }
   state.save()
-  service.ble.start("file-transfer", {
+  service.upload.start({
     id: "sqbc-install"
     accept: [".sqbc"]
+    transports: ["ble"]
     events: {
-      complete: "ble.file.complete"
+      complete: "upload.complete"
     }
   })
   debug.print("ble-install ready")
 }
 
-event.on("ble.file.complete", ev) {
+event.on("upload.complete", ev) {
   state.load()
   state.received = state.received + 1
-  debug.print("received file", state.received)
+  debug.print("received file", ev.transport, state.received)
   let installed = app.install(ev.upload)
   app.launch(installed.id)
   state.installed = state.installed + 1

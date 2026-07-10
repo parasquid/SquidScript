@@ -81,7 +81,7 @@ configured file-transfer completion handler and immediately call `app.launch` fo
 installed app. The firmware performs the queued install while the VM is idle,
 then runs the ordinary foreground launch chain. The accepted DoD flow is:
 
-1. Launch the receiver app so `service.ble.start` registers the receive profile.
+1. Launch the receiver app so `service.upload.start` registers the BLE receive profile.
 2. Push the payload over the custom BLE transfer service.
 3. The receiver handles the configured completion event, calls `app.install`, then
    `app.launch`.

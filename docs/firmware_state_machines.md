@@ -122,44 +122,42 @@ Pattern rules:
 - Indicator polling is best-effort from the main runtime poll path; errors do
   not block unrelated protocol polling.
 
-## BLE File Transfer (custom GATT)
+## App Upload Route And Staging
 
-The BLE file transfer service follows a different state machine than the
-serial begin/chunk/commit install path. The firmware's custom GATT service
-frames a small control stream and appends content chunks into a staging file.
+HTTP and BLE are producers for one app-owned upload route. The active
+`service.upload` profile supplies accepted extensions, enabled transports, and
+the completion event; both producers feed the same staged-file lifecycle.
 
 | Phase | Trigger | Action | Outcome |
 | --- | --- | --- | --- |
 | Idle | — | No in-flight transfer; `app_install_file` and `app_install_app` idle | Ready for new transfer |
-| Begin | Client writes file extension + content size | `sq_ble_file_transfer_begin_internal` parses the extension-only File name (such as `.sqbc`), matches it to the active foreground BLE profile, rejects with `BUSY` if busy, and opens a staging file under `/sq/tmp` | In-flight session active; staging file open |
-| Content | Client streams content chunks | `sq_ble_file_transfer_write_internal` `fs_seek`s to the chunk offset and `fs_write`s the chunk to the staging file | Staging file grows; `bytes_received` tracked |
-| Complete | Final content chunk reaches the declared size | Closes the staging file; populates `sq_ble_file_transfer_pending` with the configured `complete` route | Pending slot ready; poll path dispatches the app's completion event |
-| Abort | Client sends abort | Closes + `fs_unlink`s the staging file; clears the in-flight session; no event emitted | Idle; in-flight slot cleared |
-| BT disconnect (mid-stream) | `BT_CONN_CB` disconnect | Clears the in-flight session and removes the staging file; no event emitted | Idle; staging file `fs_unlink`d |
-| Reset / StorageFormat | Device protocol handler | `sq_ble_file_transfer_reset_session` closes + `fs_unlink`s the staging file, clears the in-flight session, clears BLE profile registrations; no event emitted | Idle; profile table empty |
+| Begin | Enabled producer supplies safe name + content size | Shared routing validates the transport and extension against the active foreground profile, rejects concurrent work as busy, and opens staging under firmware-owned `tmp/` | In-flight session active; staging file open |
+| Content | HTTP body or BLE chunks arrive | Producer advances bounded chunks into storage and updates `bytesReceived`; HTTP resume may seek to the retained offset | Staging file grows without file-sized app RAM |
+| Complete | Declared size is staged | Storage is finalized and the shared pending record receives app id, profile id, event, name, sizes, file ref, and transport | Poll path dispatches the configured completion event |
+| Handler | Foreground VM handles completion | App copies, installs, or otherwise consumes `ev.upload`; `ev.transport` identifies the producer | Staging reference remains valid during dispatch |
+| Cleanup | Handler returns | Shared cleanup removes the ephemeral staging file and clears pending/in-flight state | Idle |
+| BLE abort / disconnect | BLE producer aborts or disconnects | Closes and removes staging; clears in-flight state; no event emitted | Idle |
+| HTTP disconnect / timeout | HTTP body ends before the declared size | Closes the socket but retains the bounded stage metadata and current offset | Partial state is available to `HEAD` and exact `Content-Range` resume |
+| Stop / Reset / StorageFormat | Runtime or device protocol handler | Aborts in-flight work, removes retained partial state, clears the active profile and producers; no event emitted | Idle; route inactive |
 
-The producer/consumer handoff is a single-slot pending event queue
-(`sq_ble_file_transfer_pending`) that the GATT callbacks (BT context) populate and
-the device-protocol poll (main loop) drains. `sq_ble_file_transfer_drain_pending_event`
-copies the receiving foreground `app_id` and configured completion `event` into caller-owned
-buffers; the poll path then runs the event handler
-(via `start_resolved_app` + the existing lifecycle machinery). After the
-handler returns (detected via `lifecycle_phase == IDLE`),
-`sq_ble_file_transfer_cleanup_staging` `fs_unlink`s the staging file and clears the
-pending slot. The `app.install(fileRef)` builtin reads SQBC metadata before the
-handler returns, validates the app id, and queues a rename-based install at
-`<mount>/apps/<id>/main.sqbc`. Single-session policy: only one BLE file transfer
-can be active in-flight at a time.
+The producer/consumer handoff remains bounded and is drained by the main runtime
+poll path. The completion handler must consume the caller-owned file reference
+before it returns. `file.copy` publishes content into a logical library;
+`app.install` validates SQBC metadata and publishes the installed app. Upload
+cleanup never infers either action from the filename.
 
-The native X4 implementation preserves the same public GATT state machine but
-uses a bounded producer/consumer handoff. The GATT task queues four fixed
+The native X4 BLE adapter preserves the custom GATT wire state machine and uses
+a bounded producer/consumer handoff. The GATT task queues four fixed
 192-byte chunk records, and a separate storage task performs one incremental
 staging operation per queue item. A full queue delays the ATT write response,
 providing protocol-level backpressure without host timing sleeps. Abort,
-disconnect, route failure, and storage failure cancel the session through a
+disconnect, route failure, and storage failure cancel the BLE session through a
 separate control lane, delete the partial staging file, and invalidate already
 queued chunks by session id. COMPLETE is emitted only after staging commit and
-completion-event dispatch succeed.
+completion-event dispatch succeed. The HTTP adapter accepts `PUT` and `HEAD`
+at `/upload/<safe-name>`, streams through a fixed chunk buffer, and retains a
+bounded partial offset for `Content-Range` resume. Starting the HTTP transport
+does not start Wi-Fi or an access point.
 
 The native table includes the standard GATT Service Changed characteristic so
 BlueZ and other caching clients do not retain an incomplete characteristic

@@ -64,59 +64,50 @@ from BinBook `CHAPTER_INDEX` records into fixed per-entry firmware buffers
 bounded by `SQ_VM_RUNTIME_CONTENT_NAME_LEN`. `binbook.chapter(...)` reads one
 chapter entry and uses one of the same bounded title buffers.
 
-## BLE File-Transfer Profile Table
+## Upload Profiles And Transport Buffers
 
 | Limit | Hard value | Macro |
 | --- | ---: | --- |
-| Registered BLE profile entries | 2 | `SQ_VM_RUNTIME_BLE_PROFILE_MAX` |
+| SQBC upload profiles | 16 | `MAX_UPLOAD_PROFILES` |
+| Accepted extensions per profile | 4 | `SQVM_UPLOAD_PROFILE_ACCEPT_MAX` |
+| Transports per profile | 4 | `SQVM_UPLOAD_PROFILE_TRANSPORT_MAX` |
+| Event routes per profile | 8 | `SQVM_UPLOAD_PROFILE_EVENT_MAX` |
+| Upload profile text field length | 32 bytes | `SQVM_UPLOAD_PROFILE_TEXT_CAP` |
+| Zephyr HTTP socket-to-storage chunk buffer | 2048 bytes | `SQ_HTTP_UPLOAD_CHUNK_MAX` |
+| Native X4 HTTP body/storage chunk | 512 bytes | `BODY_BUF` / `UPLOAD_STAGE_CHUNK_BYTES` |
 | Native X4 BLE transfer chunk | 192 bytes | `BLE_PIPELINE_CHUNK_BYTES` |
 | Native X4 queued transfer chunks | 4 | `BLE_PIPELINE_DEPTH` |
 | Native X4 transfer-buffer budget | 2048 bytes | `BLE_PIPELINE_BUFFER_BUDGET_BYTES` |
 | Native X4 Trouble Host packet pool | 32 × 27-byte packets | `trouble-host` feature selection |
 | Native BLE connection inactivity | 30000 ms by default | `firmware.native.bleConnectionWatchdogMs` |
 
-The BLE profile routing table is a static array of
-`SQ_VM_RUNTIME_BLE_PROFILE_MAX` entries. Each entry stores the installed-app
-registry slot, the app-local profile instance id, accepted file extensions, and
-the complete-event name. App-id text lives in the app registry and is resolved
-only at dispatch or path-construction boundaries.
+SQBC carries unified upload profiles. Each profile stores the app-local id,
+accepted extensions, enabled transport names, and completion route. Native
+firmware retains one active foreground profile. Zephyr bounds the BLE adapter's
+registered route table to 2 entries with `SQ_VM_RUNTIME_BLE_PROFILE_MAX` and
+the HTTP adapter to one active foreground route; both adapters resolve unified
+profile metadata and feed the same app-facing completion contract.
 
-Profiles are registered imperatively when an installed foreground app or the
-target fallback app runs `service.ble.start("file-transfer", ...)`; one
-file-transfer profile per app is set or replaced. Temp-run apps cannot register
-BLE receive profiles because they do not have a stable app slot. The natural
-upper bound is `SQ_APP_STORE_MAX_APPS = 8` plus the reserved fallback slot, but
-the runtime cap of 2 is tighter and matches the current single-session GATT
-policy.
+Profiles are activated imperatively when the foreground app runs
+`service.upload.start(...)`; one profile is set or replaced for the active
+runtime. Each transport accepts one in-flight upload at a time.
 
-The route table must resolve an uploaded extension to exactly one receiver. If
+The route table must resolve a transport and uploaded extension to exactly one receiver. If
 two active routes accept the same extension, or if a route points at a registry
 slot that no longer resolves, firmware records an `invariant.ble.*` diagnostic
 through `device errors` and rejects the transfer instead of selecting an
 arbitrary receiver.
 
-The native X4 receiver does not allocate storage proportional to the uploaded
-file. Its GATT producer queues at most four fixed 192-byte chunks. When those
+Neither transport allocates storage proportional to the uploaded file. The
+Zephyr's HTTP producer streams through one fixed 2048-byte buffer; native X4
+uses 512-byte body/storage chunks. The native X4 GATT
+producer queues at most four fixed 192-byte chunks. When those
 slots are occupied, the pending ATT Write With Response is not acknowledged
 until the SD consumer frees a slot. The 2048-byte budget covers the transfer
 queue, GATT producer and storage-consumer frames, and active session metadata;
 it excludes the radio stack's general packet pool and persistent app profile
-metadata.
-
-## HTTP Upload Profile Metadata
-
-| Limit | Hard value | Macro |
-| --- | ---: | --- |
-| HTTP profile text field length | 32 bytes | `SQVM_HTTP_PROFILE_TEXT_CAP` |
-| Accepted HTTP upload extensions | 4 | `SQVM_HTTP_PROFILE_ACCEPT_MAX` |
-| HTTP upload event routes | 8 | `SQVM_HTTP_PROFILE_EVENT_MAX` |
-| HTTP upload socket-to-storage chunk buffer | 2048 bytes | `SQ_HTTP_UPLOAD_CHUNK_MAX` |
-
-The current HTTP upload runtime supports one active foreground route. Profile
-metadata uses the same compact field caps as BLE profile metadata. The active
-route stores the app id, profile id, accepted extensions, and completion event;
-the HTTP request body streams to storage through the fixed upload chunk buffer
-rather than app RAM.
+metadata. The native BLE inactivity watchdog is a connection-liveness bound,
+not an upload-size or duration limit; protocol activity resets it.
 
 ## App Store Limits
 

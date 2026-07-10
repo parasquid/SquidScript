@@ -8,23 +8,24 @@ state {
 event.on("app.start") {
   state.pageIndex = 0
   let ap = service.wifi.startAP("SquidScript-X4")
-  service.http.start("file-upload", {
+  service.upload.start({
     id: "binbook-upload"
     accept: [".binbook"]
+    transports: ["http"]
     events: {
-      complete: "http.file.complete"
+      complete: "upload.complete"
     }
   })
   debug.print("http upload ready", ap.ok, ap.error)
   screen.open("reader")
 }
 
-event.on("http.file.complete", ev) {
+event.on("upload.complete", ev) {
   let copied = file.copy(ev.upload, {
     library: "books"
     name: ev.name
   })
-  debug.print("http copied", copied.ok, copied.error, copied.ref, copied.bytesWritten)
+  debug.print("upload copied", ev.transport, copied.ok, copied.error, copied.ref, copied.bytesWritten)
   if (copied.ok) {
     state.uploaded = state.uploaded + 1
     state.pageIndex = 0

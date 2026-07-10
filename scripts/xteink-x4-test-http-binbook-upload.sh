@@ -12,6 +12,7 @@ WORK_DIR="${ROOT}/target/hardware-tests/xteink-x4-http-binbook-upload"
 PACKAGE="${WORK_DIR}/${APP_ID}.squid.zip"
 BINBOOK="${BINBOOK:-${ROOT}/tests/hardware/xiao-esp32c3/epaper-gray2-smoke/books/sample.binbook}"
 UPLOAD_NAME="${UPLOAD_NAME:-http-upload-smoke.binbook}"
+CLI_UPLOAD_NAME="${CLI_UPLOAD_NAME:-http-cli-upload-smoke.binbook}"
 DEVICE_AP_SSID="${DEVICE_AP_SSID:-SquidScript-X4}"
 DEVICE_AP_CONN="${DEVICE_AP_CONN:-squid-x4-http-upload}"
 HOST_WIFI_IFACE="${HOST_WIFI_IFACE:-}"
@@ -31,8 +32,8 @@ usage() {
 Usage: scripts/xteink-x4-test-http-binbook-upload.sh [--skip-flash] [--host-wifi-iface <iface>] [--binbook <file.binbook>]
 
 Flashes the XTEINK X4 firmware, installs the HTTP BinBook upload smoke app,
-associates the host Wi-Fi to the device AP, uploads a real .binbook with curl,
-and verifies the firmware copied it into content.binbook.list("books").
+associates the host Wi-Fi to the device AP, uploads a real .binbook through the
+unified CLI and raw curl, and verifies firmware publishes the uploaded content.
 USAGE
 }
 
@@ -329,12 +330,20 @@ if [[ "${INTERRUPT_UPLOAD}" == "1" ]]; then
   interrupt_upload_probe
 fi
 
+run_capture cli-http-upload \
+  cargo run --quiet -p squidc -- device upload "${BINBOOK}" --name "${CLI_UPLOAD_NAME}" \
+    --transport http --host 192.168.4.1 >/dev/null
+cli_copy_out="$(wait_for_contains output-cli-copy "${CLI_UPLOAD_NAME}" \
+  "device output" cargo run --quiet -p squidc -- device output --port "${ESPFLASH_PORT}")"
+assert_file_contains "${cli_copy_out}" "upload complete http ${CLI_UPLOAD_NAME}"
+
 curl_upload
 assert_file_contains "${WORK_DIR}/curl-upload.out" "ok"
 
 copy_out="$(wait_for_contains output-copy "upload copy true null" \
   "device output" cargo run --quiet -p squidc -- device output --port "${ESPFLASH_PORT}")"
 assert_file_contains "${copy_out}" "uploaded book page ${UPLOAD_NAME}"
+assert_file_contains "${copy_out}" "upload complete http ${UPLOAD_NAME}"
 
 drawlog_out="$(run_capture drawlog cargo run --quiet -p squidc -- device drawlog --port "${ESPFLASH_PORT}")"
 assert_file_contains "${drawlog_out}" "draw=binbook"
