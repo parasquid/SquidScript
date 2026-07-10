@@ -15,8 +15,9 @@ use squidvm_core::{
         BinBookReadPageResult, ContentBinBookEntry, ContentBinBookListResult,
         ContentBinBookListSummary, ContentBinBookListWriter, DisplayInfo, FileCopyResult,
         FileListEntry, FileListSummary, FileListWriter, FilePickFileResult, FileReadLinesResult,
-        FileReadLinesSummary, FileReadLinesWriter, FileReadTextResult, TraceSink, WifiAccessPoint,
-        WifiApIp, WifiOperation, WifiOperationResult, WifiScanNetwork, WifiStatus,
+        FileReadLinesSummary, FileReadLinesWriter, FileReadTextResult, TraceSink,
+        UploadStartResult, UploadStatus, WifiAccessPoint, WifiApIp, WifiOperation,
+        WifiOperationResult, WifiScanNetwork, WifiStatus,
     },
     limits::{MAX_APP_BYTES, MAX_SAVED_STATE_BYTES},
     program::{CapabilityDemand, ProgramIndex},
@@ -40,6 +41,11 @@ const MAX_UPLOAD_NAME_BYTES: usize = 64;
 const MAX_UPLOAD_REF_BYTES: usize = 128;
 const MAX_UPLOAD_BYTES_TEXT_BYTES: usize = 20;
 const UPLOAD_STAGE_CHUNK_BYTES: usize = 512;
+const UPLOAD_HTTP_PATH: &str = "/upload/<safe-name>";
+const NO_UPLOAD_TRANSPORTS: &[&str] = &[];
+const HTTP_UPLOAD_TRANSPORTS: &[&str] = &["http"];
+const BLE_UPLOAD_TRANSPORTS: &[&str] = &["ble"];
+const HTTP_BLE_UPLOAD_TRANSPORTS: &[&str] = &["http", "ble"];
 const MAX_WIFI_PROFILE_NAME_BYTES: usize = 16;
 const MAX_WIFI_PROFILE_SSID_BYTES: usize = 32;
 const MAX_WIFI_PROFILE_PASSWORD_BYTES: usize = 64;
@@ -90,11 +96,12 @@ pub enum NativeRuntimeError {
     AppNotInstalled,
     AppIdMismatch,
     Inactive,
+    UploadSessionActive,
     Vm(VmError),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum NativeBleRouteError {
+pub enum NativeUploadRouteError {
     NoActiveProfile,
     RouteMismatch,
     RouteAmbiguous,
@@ -102,13 +109,23 @@ pub enum NativeBleRouteError {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct NativeBleUploadRoute {
+pub struct NativeUploadRoute {
     pub profile_id: FixedText<MAX_BLE_PROFILE_ID_BYTES>,
     pub complete_event: FixedText<MAX_LINE_BYTES>,
 }
 
-impl NativeBleUploadRoute {
-    fn new(profile_id: &str, complete_event: &str) -> Result<Self, NativeBleRouteError> {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeUploadProgress<'a> {
+    pub path: &'a str,
+    pub name: &'a str,
+    pub id: &'a str,
+    pub transport: NativeUploadTransport,
+    pub bytes_received: usize,
+    pub total_bytes: usize,
+}
+
+impl NativeUploadRoute {
+    fn new(profile_id: &str, complete_event: &str) -> Result<Self, NativeUploadRouteError> {
         let mut route = Self {
             profile_id: FixedText::new(),
             complete_event: FixedText::new(),
@@ -116,12 +133,27 @@ impl NativeBleUploadRoute {
         route
             .profile_id
             .set(profile_id)
-            .map_err(|_| NativeBleRouteError::InvalidMetadata)?;
+            .map_err(|_| NativeUploadRouteError::InvalidMetadata)?;
         route
             .complete_event
             .set(complete_event)
-            .map_err(|_| NativeBleRouteError::InvalidMetadata)?;
+            .map_err(|_| NativeUploadRouteError::InvalidMetadata)?;
         Ok(route)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeUploadTransport {
+    Http,
+    Ble,
+}
+
+impl NativeUploadTransport {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Http => "http",
+            Self::Ble => "ble",
+        }
     }
 }
 
@@ -219,6 +251,10 @@ pub trait NativeRadioBackend {
     }
 
     fn stop_ble_profile(&mut self) {}
+
+    fn supports_upload_transport(&self, _transport: NativeUploadTransport) -> bool {
+        true
+    }
 
     fn connect_wifi_station(&mut self, _ssid: &str, _password: &str) -> Result<(), ()> {
         Ok(())
@@ -1383,7 +1419,7 @@ pub struct ResourceMetric {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ResourceMetrics {
-    metrics: [ResourceMetric; 22],
+    metrics: [ResourceMetric; 24],
     len: usize,
 }
 
@@ -1661,8 +1697,9 @@ impl<
         name: &str,
         bytes: &[u8],
         id: &str,
+        transport: NativeUploadTransport,
     ) -> Result<&str, NativeRuntimeError> {
-        self.host.stage_ephemeral_upload(name, bytes, id)
+        self.host.stage_ephemeral_upload(name, bytes, id, transport)
     }
 
     pub fn begin_ephemeral_upload(
@@ -1670,8 +1707,10 @@ impl<
         name: &str,
         total_len: usize,
         id: &str,
+        transport: NativeUploadTransport,
     ) -> Result<&str, NativeRuntimeError> {
-        self.host.begin_ephemeral_upload(name, total_len, id)
+        self.host
+            .begin_ephemeral_upload(name, total_len, id, transport)
     }
 
     pub fn write_ephemeral_upload_chunk(
@@ -1704,6 +1743,18 @@ impl<
 
     pub fn abort_active_ephemeral_upload(&mut self) {
         self.host.discard_upload_stage();
+    }
+
+    pub fn active_upload_progress(&self) -> Option<NativeUploadProgress<'_>> {
+        let transport = self.host.upload_transport?;
+        Some(NativeUploadProgress {
+            path: self.host.upload_path.as_str(),
+            name: self.host.upload_name.as_str(),
+            id: self.host.upload_id.as_str(),
+            transport,
+            bytes_received: self.host.upload_received_bytes,
+            total_bytes: self.host.upload_total_bytes,
+        })
     }
 
     pub fn set_wifi_profile(
@@ -1930,24 +1981,31 @@ impl<
         self.vm_active.then(|| self.host.app_id.as_str())
     }
 
-    pub fn resolve_ble_upload_route(
+    pub fn resolve_upload_route(
         &mut self,
         name: &str,
-    ) -> Result<NativeBleUploadRoute, NativeBleRouteError> {
-        if !self.vm_active || self.host.ble_profile_id.as_str().is_empty() {
-            return Err(NativeBleRouteError::NoActiveProfile);
+        transport: NativeUploadTransport,
+    ) -> Result<NativeUploadRoute, NativeUploadRouteError> {
+        if !self.vm_active
+            || self.host.upload_profile_id.as_str().is_empty()
+            || !self.host.upload_transport_enabled(transport)
+        {
+            return Err(NativeUploadRouteError::NoActiveProfile);
         }
-        let active_profile_id = self.host.ble_profile_id;
-        let count = ProgramIndex::ble_profile_count_from_reader(&mut self.host, &mut self.scratch)
-            .map_err(|_| NativeBleRouteError::InvalidMetadata)?;
+        let active_profile_id = self.host.upload_profile_id;
+        let count =
+            ProgramIndex::upload_profile_count_from_reader(&mut self.host, &mut self.scratch)
+                .map_err(|_| NativeUploadRouteError::InvalidMetadata)?;
         let mut matched = None;
         for index in 0..count {
             let profile =
-                ProgramIndex::ble_profile_from_reader(&mut self.host, &mut self.scratch, index)
-                    .map_err(|_| NativeBleRouteError::InvalidMetadata)?;
-            if profile.profile != "file-transfer"
-                || profile.role != "server"
-                || profile.id != active_profile_id.as_str()
+                ProgramIndex::upload_profile_from_reader(&mut self.host, &mut self.scratch, index)
+                    .map_err(|_| NativeUploadRouteError::InvalidMetadata)?;
+            if profile.role != "server" || profile.id != active_profile_id.as_str() {
+                continue;
+            }
+            if !(0..profile.transports.len())
+                .any(|index| profile.transports.get(index) == Some(transport.as_str()))
             {
                 continue;
             }
@@ -1955,21 +2013,21 @@ impl<
                 .filter_map(|event_index| profile.events.get(event_index))
                 .find(|event| event.kind == "complete")
             else {
-                return Err(NativeBleRouteError::InvalidMetadata);
+                return Err(NativeUploadRouteError::InvalidMetadata);
             };
             for accept_index in 0..profile.accept.len() {
                 let Some(extension) = profile.accept.get(accept_index) else {
                     continue;
                 };
                 if !extension.is_empty() && name.ends_with(extension) {
-                    let route = NativeBleUploadRoute::new(profile.id, complete_route.event)?;
+                    let route = NativeUploadRoute::new(profile.id, complete_route.event)?;
                     if matched.replace(route).is_some() {
-                        return Err(NativeBleRouteError::RouteAmbiguous);
+                        return Err(NativeUploadRouteError::RouteAmbiguous);
                     }
                 }
             }
         }
-        matched.ok_or(NativeBleRouteError::RouteMismatch)
+        matched.ok_or(NativeUploadRouteError::RouteMismatch)
     }
 
     pub fn resource_metrics(&self) -> ResourceMetrics {
@@ -2015,20 +2073,28 @@ impl<
                 ),
             },
             ResourceMetric {
-                key: "ble_profile_active",
-                value: u64::from(!self.host.ble_profile_id.as_str().is_empty()),
+                key: "upload_profile_active",
+                value: u64::from(!self.host.upload_profile_id.as_str().is_empty()),
             },
             ResourceMetric {
-                key: "ble_profile_id_len",
-                value: self.host.ble_profile_id.as_str().len() as u64,
+                key: "upload_profile_id_len",
+                value: self.host.upload_profile_id.as_str().len() as u64,
             },
             ResourceMetric {
-                key: "ble_profile_start_events",
-                value: self.host.ble_profile_start_events as u64,
+                key: "upload_profile_start_events",
+                value: self.host.upload_profile_start_events as u64,
             },
             ResourceMetric {
-                key: "ble_profile_stop_events",
-                value: self.host.ble_profile_stop_events as u64,
+                key: "upload_profile_stop_events",
+                value: self.host.upload_profile_stop_events as u64,
+            },
+            ResourceMetric {
+                key: "upload_transport_http_active",
+                value: u64::from(self.host.upload_profile_http),
+            },
+            ResourceMetric {
+                key: "upload_transport_ble_active",
+                value: u64::from(self.host.upload_profile_ble),
             },
             ResourceMetric {
                 key: "display_pending_refreshes",
@@ -2154,6 +2220,10 @@ impl<
         let mut upload_id = FixedText::<MAX_BLE_PROFILE_ID_BYTES>::new();
         let mut upload_bytes = FixedText::<MAX_UPLOAD_BYTES_TEXT_BYTES>::new();
         let mut upload_total_bytes = FixedText::<MAX_UPLOAD_BYTES_TEXT_BYTES>::new();
+        let upload_transport = self
+            .host
+            .upload_transport
+            .ok_or(NativeRuntimeError::InvalidOffset)?;
         upload_path.set(self.host.upload_path.as_str())?;
         upload_name.set(self.host.upload_name.as_str())?;
         upload_id.set(self.host.upload_id.as_str())?;
@@ -2179,6 +2249,10 @@ impl<
             EventPayloadField {
                 name: "id",
                 value: upload_id.as_str(),
+            },
+            EventPayloadField {
+                name: "transport",
+                value: upload_transport.as_str(),
             },
         ];
         let payload = EventPayload { fields: &fields };
@@ -2257,13 +2331,19 @@ struct RuntimeHost<
     wifi_profile_ssid: FixedText<MAX_WIFI_PROFILE_SSID_BYTES>,
     wifi_profile_password: FixedText<MAX_WIFI_PROFILE_PASSWORD_BYTES>,
     wifi_station_profile: FixedText<MAX_WIFI_PROFILE_NAME_BYTES>,
-    ble_profile_id: FixedText<MAX_BLE_PROFILE_ID_BYTES>,
-    ble_profile_start_events: u32,
-    ble_profile_stop_events: u32,
+    upload_profile_id: FixedText<MAX_BLE_PROFILE_ID_BYTES>,
+    upload_profile_http: bool,
+    upload_profile_ble: bool,
+    upload_profile_start_events: u32,
+    upload_profile_stop_events: u32,
+    upload_last_error: FixedText<MAX_LINE_BYTES>,
     timers: [NativeTimer; MAX_ACTIVE_TIMER_COUNT],
     upload_path: FixedText<MAX_UPLOAD_REF_BYTES>,
     upload_name: FixedText<MAX_UPLOAD_NAME_BYTES>,
     upload_id: FixedText<MAX_BLE_PROFILE_ID_BYTES>,
+    upload_transport: Option<NativeUploadTransport>,
+    upload_total_bytes: usize,
+    upload_received_bytes: usize,
     upload_total_bytes_text: FixedText<MAX_UPLOAD_BYTES_TEXT_BYTES>,
     upload_received_bytes_text: FixedText<MAX_UPLOAD_BYTES_TEXT_BYTES>,
     radio_backend: B,
@@ -2309,13 +2389,19 @@ impl<
             wifi_profile_ssid: FixedText::new(),
             wifi_profile_password: FixedText::new(),
             wifi_station_profile: FixedText::new(),
-            ble_profile_id: FixedText::new(),
-            ble_profile_start_events: 0,
-            ble_profile_stop_events: 0,
+            upload_profile_id: FixedText::new(),
+            upload_profile_http: false,
+            upload_profile_ble: false,
+            upload_profile_start_events: 0,
+            upload_profile_stop_events: 0,
+            upload_last_error: FixedText::new(),
             timers: [NativeTimer::empty(); MAX_ACTIVE_TIMER_COUNT],
             upload_path: FixedText::new(),
             upload_name: FixedText::new(),
             upload_id: FixedText::new(),
+            upload_transport: None,
+            upload_total_bytes: 0,
+            upload_received_bytes: 0,
             upload_total_bytes_text: FixedText::new(),
             upload_received_bytes_text: FixedText::new(),
             radio_backend,
@@ -2335,8 +2421,7 @@ impl<
         self.active_demand = CapabilityDemand::none();
         self.wifi_operation = NativeWifiOperationState::idle();
         self.wifi_station_profile.clear();
-        self.clear_ble_profile();
-        self.discard_upload_stage();
+        self.stop_upload_profile();
         if self.installed_len == 0 {
             self.saved_state_len = None;
         }
@@ -2360,7 +2445,7 @@ impl<
         self.wifi_operation = NativeWifiOperationState::idle();
         self.wifi_station_profile.clear();
         self.clear_timers();
-        self.clear_ble_profile();
+        self.clear_upload_profile();
         self.discard_upload_stage();
         self.pending_launch_app_id.clear();
         self.temp_expected_len = total_len;
@@ -2529,45 +2614,57 @@ impl<
             self.radio_backend.release(RadioKind::Wifi);
         }
         if self.radio_leases.state(RadioKind::Ble) == RadioLeaseState::Active {
-            self.stop_ble_profile();
-            self.radio_backend.release(RadioKind::Ble);
+            self.stop_upload_profile();
         }
         self.radio_leases.release_all();
     }
 
-    fn start_ble_profile(&mut self, id: &str) -> Result<(), VmError> {
-        self.ensure_radio_active(RadioKind::Ble)?;
-        if self.radio_backend.start_ble_profile(id).is_err() {
-            self.ensure_radio_inactive(RadioKind::Ble)?;
-            return Err(VmError::InvalidOperand);
+    fn stop_upload_profile(&mut self) {
+        if !self.upload_profile_id.as_str().is_empty() {
+            self.discard_upload_stage();
         }
-        if self.ble_profile_id.set(id).is_err() {
+        if self.upload_profile_ble {
             self.radio_backend.stop_ble_profile();
-            self.ensure_radio_inactive(RadioKind::Ble)?;
-            return Err(VmError::InvalidOperand);
+            let _ = self.ensure_radio_inactive(RadioKind::Ble);
         }
-        self.ble_profile_start_events = self.ble_profile_start_events.saturating_add(1);
-        Ok(())
+        if !self.upload_profile_id.as_str().is_empty() {
+            self.upload_profile_stop_events = self.upload_profile_stop_events.saturating_add(1);
+        }
+        self.clear_upload_profile();
     }
 
-    fn stop_ble_profile(&mut self) {
-        if !self.ble_profile_id.as_str().is_empty() {
-            self.radio_backend.stop_ble_profile();
-            self.ble_profile_id.clear();
-            self.ble_profile_stop_events = self.ble_profile_stop_events.saturating_add(1);
-        }
-    }
-
-    fn clear_ble_profile(&mut self) {
-        self.ble_profile_id.clear();
+    fn clear_upload_profile(&mut self) {
+        self.upload_profile_id.clear();
+        self.upload_profile_http = false;
+        self.upload_profile_ble = false;
+        self.upload_last_error.clear();
     }
 
     fn clear_upload(&mut self) {
         self.upload_path.clear();
         self.upload_name.clear();
         self.upload_id.clear();
+        self.upload_transport = None;
+        self.upload_total_bytes = 0;
+        self.upload_received_bytes = 0;
         self.upload_total_bytes_text.clear();
         self.upload_received_bytes_text.clear();
+    }
+
+    fn upload_transport_enabled(&self, transport: NativeUploadTransport) -> bool {
+        match transport {
+            NativeUploadTransport::Http => self.upload_profile_http,
+            NativeUploadTransport::Ble => self.upload_profile_ble,
+        }
+    }
+
+    fn upload_transports(&self) -> &'static [&'static str] {
+        match (self.upload_profile_http, self.upload_profile_ble) {
+            (true, true) => HTTP_BLE_UPLOAD_TRANSPORTS,
+            (true, false) => HTTP_UPLOAD_TRANSPORTS,
+            (false, true) => BLE_UPLOAD_TRANSPORTS,
+            (false, false) => NO_UPLOAD_TRANSPORTS,
+        }
     }
 
     fn timer_event_index(&self, event: &str) -> Option<usize> {
@@ -2660,6 +2757,7 @@ impl<
         name: &str,
         bytes: &[u8],
         id: &str,
+        transport: NativeUploadTransport,
     ) -> Result<&str, NativeRuntimeError> {
         let safe_name = safe_upload_name(name).ok_or(NativeRuntimeError::InvalidOffset)?;
         let mut staged_path = FixedText::<MAX_UPLOAD_REF_BYTES>::new();
@@ -2688,6 +2786,9 @@ impl<
         self.upload_path = staged_path;
         self.upload_name.set(safe_name)?;
         self.upload_id.set(id)?;
+        self.upload_transport = Some(transport);
+        self.upload_total_bytes = bytes.len();
+        self.upload_received_bytes = bytes.len();
         self.upload_total_bytes_text.clear();
         self.upload_received_bytes_text.clear();
         write!(&mut self.upload_total_bytes_text, "{}", bytes.len())
@@ -2702,12 +2803,22 @@ impl<
         name: &str,
         total_len: usize,
         id: &str,
+        transport: NativeUploadTransport,
     ) -> Result<&str, NativeRuntimeError> {
         if total_len == 0 {
             return Err(NativeRuntimeError::InvalidOffset);
         }
-        self.discard_upload_stage();
         let safe_name = safe_upload_name(name).ok_or(NativeRuntimeError::InvalidOffset)?;
+        if !self.upload_path.as_str().is_empty() {
+            if self.upload_name.as_str() == safe_name
+                && self.upload_id.as_str() == id
+                && self.upload_transport == Some(transport)
+                && self.upload_total_bytes == total_len
+            {
+                return Ok(self.upload_path.as_str());
+            }
+            return Err(NativeRuntimeError::UploadSessionActive);
+        }
         let mut staged_path = FixedText::<MAX_UPLOAD_REF_BYTES>::new();
         let path = match self.file_backend.upload_stage_begin(safe_name, total_len) {
             Ok(path) => path,
@@ -2720,6 +2831,9 @@ impl<
         self.upload_path = staged_path;
         self.upload_name.set(safe_name)?;
         self.upload_id.set(id)?;
+        self.upload_transport = Some(transport);
+        self.upload_total_bytes = total_len;
+        self.upload_received_bytes = 0;
         self.upload_total_bytes_text.clear();
         self.upload_received_bytes_text.clear();
         write!(&mut self.upload_total_bytes_text, "{}", total_len)
@@ -2733,7 +2847,11 @@ impl<
         offset: usize,
         bytes: &[u8],
     ) -> Result<(), NativeRuntimeError> {
-        if upload_path != self.upload_path.as_str() || bytes.is_empty() {
+        if upload_path != self.upload_path.as_str()
+            || bytes.is_empty()
+            || offset != self.upload_received_bytes
+            || offset.saturating_add(bytes.len()) > self.upload_total_bytes
+        {
             return Err(NativeRuntimeError::InvalidOffset);
         }
         if let Err(error) = self
@@ -2744,6 +2862,7 @@ impl<
             return Err(NativeRuntimeError::InvalidOffset);
         }
         let received = offset.saturating_add(bytes.len());
+        self.upload_received_bytes = received;
         self.upload_received_bytes_text.clear();
         write!(&mut self.upload_received_bytes_text, "{}", received)
             .map_err(|_| NativeRuntimeError::TooLarge)?;
@@ -2755,7 +2874,11 @@ impl<
         upload_path: &str,
         bytes_received: usize,
     ) -> Result<(), NativeRuntimeError> {
-        if upload_path != self.upload_path.as_str() || bytes_received == 0 {
+        if upload_path != self.upload_path.as_str()
+            || bytes_received == 0
+            || bytes_received != self.upload_received_bytes
+            || bytes_received != self.upload_total_bytes
+        {
             return Err(NativeRuntimeError::InvalidOffset);
         }
         if let Err(error) = self.file_backend.upload_stage_commit(upload_path) {
@@ -3070,13 +3193,109 @@ impl<
         })
     }
 
-    fn service_ble_start(&mut self, id: &str) -> Result<(), VmError> {
-        self.start_ble_profile(id)
+    fn service_upload_start<'a>(&'a mut self, id: &str) -> Result<UploadStartResult<'a>, VmError> {
+        let mut scratch = [0u8; 1024];
+        let count = ProgramIndex::upload_profile_count_from_reader(self, &mut scratch)?;
+        let mut found = false;
+        let mut http = false;
+        let mut ble = false;
+        for index in 0..count {
+            let profile = ProgramIndex::upload_profile_from_reader(self, &mut scratch, index)?;
+            if profile.id != id || profile.role != "server" {
+                continue;
+            }
+            if found {
+                return Err(VmError::InvalidSection);
+            }
+            found = true;
+            for transport_index in 0..profile.transports.len() {
+                match profile.transports.get(transport_index) {
+                    Some("http") => http = true,
+                    Some("ble") => ble = true,
+                    _ => return Err(VmError::InvalidSection),
+                }
+            }
+        }
+        if !found || (!http && !ble) {
+            return Err(VmError::InvalidOperand);
+        }
+        if (http
+            && !self
+                .radio_backend
+                .supports_upload_transport(NativeUploadTransport::Http))
+            || (ble
+                && !self
+                    .radio_backend
+                    .supports_upload_transport(NativeUploadTransport::Ble))
+        {
+            self.upload_last_error
+                .set("unsupported")
+                .map_err(|_| VmError::InvalidOperand)?;
+            return Ok(UploadStartResult {
+                ok: false,
+                error: Some(self.upload_last_error.as_str()),
+                id: None,
+                transports: NO_UPLOAD_TRANSPORTS,
+                http_path: None,
+            });
+        }
+
+        self.stop_upload_profile();
+        if ble {
+            self.ensure_radio_active(RadioKind::Ble)?;
+            if self.radio_backend.start_ble_profile(id).is_err() {
+                self.ensure_radio_inactive(RadioKind::Ble)?;
+                self.upload_last_error
+                    .set("unsupported")
+                    .map_err(|_| VmError::InvalidOperand)?;
+                return Ok(UploadStartResult {
+                    ok: false,
+                    error: Some(self.upload_last_error.as_str()),
+                    id: None,
+                    transports: NO_UPLOAD_TRANSPORTS,
+                    http_path: None,
+                });
+            }
+        }
+        if self.upload_profile_id.set(id).is_err() {
+            if ble {
+                self.radio_backend.stop_ble_profile();
+                self.ensure_radio_inactive(RadioKind::Ble)?;
+            }
+            return Err(VmError::InvalidOperand);
+        }
+        self.upload_profile_http = http;
+        self.upload_profile_ble = ble;
+        self.upload_profile_start_events = self.upload_profile_start_events.saturating_add(1);
+        self.upload_last_error.clear();
+        Ok(UploadStartResult {
+            ok: true,
+            error: None,
+            id: Some(self.upload_profile_id.as_str()),
+            transports: self.upload_transports(),
+            http_path: http.then_some(UPLOAD_HTTP_PATH),
+        })
     }
 
-    fn service_ble_stop(&mut self) -> Result<(), VmError> {
-        self.stop_ble_profile();
-        self.ensure_radio_inactive(RadioKind::Ble)
+    fn service_upload_stop(&mut self) -> Result<(), VmError> {
+        self.stop_upload_profile();
+        Ok(())
+    }
+
+    fn service_upload_status<'a>(&'a mut self) -> Result<UploadStatus<'a>, VmError> {
+        let active = !self.upload_profile_id.as_str().is_empty();
+        let in_flight = !self.upload_path.as_str().is_empty();
+        Ok(UploadStatus {
+            active,
+            id: active.then_some(self.upload_profile_id.as_str()),
+            transports: self.upload_transports(),
+            http_path: (active && self.upload_profile_http).then_some(UPLOAD_HTTP_PATH),
+            in_flight,
+            bytes_received: in_flight.then_some(self.upload_received_bytes_text.as_str()),
+            total_bytes: in_flight.then_some(self.upload_total_bytes_text.as_str()),
+            error: (!self.upload_last_error.as_str().is_empty())
+                .then_some(self.upload_last_error.as_str()),
+        })
     }
 
     fn service_wifi_start_ap<'a>(&'a mut self, _ssid: &str) -> Result<WifiOperation<'a>, VmError> {

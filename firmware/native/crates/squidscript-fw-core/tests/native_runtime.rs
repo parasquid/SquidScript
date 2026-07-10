@@ -1,10 +1,10 @@
 use squidc_core::compile::{compile, CompileRequest};
 use squidscript_fw_core::{
     native_runtime::{
-        BoundedNativeFileBackend, NativeBinBookBackend, NativeBleRouteError, NativeDisplaySink,
-        NativeFileBackend, NativeFileStorage, NativeFileStorageError, NativeRadioBackend,
-        NativeRuntime, NativeRuntimeError, NativeWifiApIp, NativeWifiStatus, NoopBinBookBackend,
-        NativeWifiBackendOperation, NoopRadioBackend,
+        BoundedNativeFileBackend, NativeBinBookBackend, NativeDisplaySink, NativeFileBackend,
+        NativeFileStorage, NativeFileStorageError, NativeRadioBackend, NativeRuntime,
+        NativeRuntimeError, NativeUploadRouteError, NativeUploadTransport, NativeWifiApIp,
+        NativeWifiBackendOperation, NativeWifiStatus, NoopBinBookBackend, NoopRadioBackend,
     },
     radio_lifecycle::RadioKind,
 };
@@ -1148,7 +1148,7 @@ event.on("app.start") {}
 
 event.on("ble.file.complete", ev) {
   let text = file.readText(ev.upload)
-  debug.print("upload", ev.upload, ev.name, ev.bytesReceived, ev.totalBytes, ev.id)
+  debug.print("upload", ev.upload, ev.name, ev.bytesReceived, ev.totalBytes, ev.id, ev.transport)
   debug.print("text", text.ok, text.error, text.text)
 }
 "#,
@@ -1164,7 +1164,12 @@ event.on("ble.file.complete", ev) {
 
     run_temp_app(&mut runtime, "native-upload", &sqbc);
     let upload_path = runtime
-        .stage_ephemeral_upload("unsafe/../proof.txt", b"ready", "rx")
+        .stage_ephemeral_upload(
+            "unsafe/../proof.txt",
+            b"ready",
+            "rx",
+            NativeUploadTransport::Ble,
+        )
         .unwrap()
         .to_string();
 
@@ -1176,7 +1181,7 @@ event.on("ble.file.complete", ev) {
     assert_eq!(
         runtime.output_lines().as_slice(),
         &[
-            "upload tmp/proof.txt proof.txt 5 5 rx",
+            "upload tmp/proof.txt proof.txt 5 5 rx ble",
             "text true null ready",
         ]
     );
@@ -1192,7 +1197,7 @@ event.on("app.start") {}
 
 event.on("ble.file.complete", ev) {
   let text = file.readText(ev.upload)
-  debug.print("upload", ev.upload, ev.name, ev.bytesReceived, ev.totalBytes, ev.id)
+  debug.print("upload", ev.upload, ev.name, ev.bytesReceived, ev.totalBytes, ev.id, ev.transport)
   debug.print("text", text.ok, text.error, text.text)
 }
 "#,
@@ -1208,7 +1213,7 @@ event.on("ble.file.complete", ev) {
 
     run_temp_app(&mut runtime, "native-upload-stream", &sqbc);
     let upload_path = runtime
-        .begin_ephemeral_upload("unsafe/../proof.txt", 5, "rx")
+        .begin_ephemeral_upload("unsafe/../proof.txt", 5, "rx", NativeUploadTransport::Ble)
         .unwrap()
         .to_string();
 
@@ -1232,7 +1237,7 @@ event.on("ble.file.complete", ev) {
     assert_eq!(
         runtime.output_lines().as_slice(),
         &[
-            "upload tmp/proof.txt proof.txt 5 5 rx",
+            "upload tmp/proof.txt proof.txt 5 5 rx ble",
             "text true null ready",
         ]
     );
@@ -1263,7 +1268,7 @@ event.on("ble.file.complete", ev) {
 
     run_temp_app(&mut runtime, "native-upload-sequential", &sqbc);
     let upload_path = runtime
-        .begin_ephemeral_upload("unsafe/../proof.txt", 5, "rx")
+        .begin_ephemeral_upload("unsafe/../proof.txt", 5, "rx", NativeUploadTransport::Ble)
         .unwrap()
         .to_string();
     runtime
@@ -1321,7 +1326,12 @@ event.on("app.start") {
 
     run_temp_app(&mut runtime, "native-upload-installer", &receiver_sqbc);
     let upload_path = runtime
-        .stage_ephemeral_upload("uploaded.sqbc", &uploaded_sqbc, "rx")
+        .stage_ephemeral_upload(
+            "uploaded.sqbc",
+            &uploaded_sqbc,
+            "rx",
+            NativeUploadTransport::Ble,
+        )
         .unwrap()
         .to_string();
 
@@ -1365,7 +1375,7 @@ event.on("app.start") {}
     run_temp_app(&mut runtime, "native-upload-cleanup", &sqbc);
     assert_eq!(
         runtime
-            .stage_ephemeral_upload("proof.txt", b"ready", "rx")
+            .stage_ephemeral_upload("proof.txt", b"ready", "rx", NativeUploadTransport::Ble,)
             .unwrap(),
         "tmp/proof.txt"
     );
@@ -1815,9 +1825,10 @@ fn temp_run_reports_capability_demand_from_sqbc_builtins() {
         r#"app "native-demand"
 event.on("app.start") {
   let status = service.wifi.status()
-  service.ble.start("file-transfer", {
+  service.upload.start({
     id: "rx"
     accept: [".sqbc"]
+    transports: ["ble"]
     events: { complete: "ble.done" }
   })
   let info = display.info()
@@ -2337,7 +2348,9 @@ event.on("app.start") {
         sta_ip_supported: true,
         ..CountingRadioBackend::default()
     });
-    runtime.set_wifi_profile("dev", "SquidNet", "password").unwrap();
+    runtime
+        .set_wifi_profile("dev", "SquidNet", "password")
+        .unwrap();
 
     run_temp_app(&mut runtime, "native-wifi-sta-ip", &sqbc);
 
@@ -2445,9 +2458,10 @@ fn ble_service_start_and_reset_release_native_radio_lease() {
     let sqbc = compile_sqbc(
         r#"app "native-ble"
 event.on("app.start") {
-  service.ble.start("file-transfer", {
+  service.upload.start({
     id: "rx"
     accept: [".sqbc"]
+    transports: ["ble"]
     events: {
       complete: "ble.done"
     }
@@ -2475,18 +2489,19 @@ event.on("app.start") {
 }
 
 #[test]
-fn ble_service_start_records_native_profile_state() {
+fn native_runtime_upload_start_records_profile_and_transport_state() {
     let sqbc = compile_sqbc(
         r#"app "native-ble-profile"
 event.on("app.start") {
-  service.ble.start("file-transfer", {
+  let started = service.upload.start({
     id: "rx"
     accept: [".sqbc"]
+    transports: ["ble"]
     events: {
       complete: "ble.done"
     }
   })
-  debug.print("ble ready")
+  debug.print("upload ready", started.ok, started.id)
 }
 "#,
     );
@@ -2494,20 +2509,26 @@ event.on("app.start") {
 
     run_temp_app(&mut runtime, "native-ble-profile", &sqbc);
 
-    assert_eq!(runtime.output_lines().as_slice(), &["ble ready"]);
+    assert_eq!(runtime.output_lines().as_slice(), &["upload ready true rx"]);
     let resources = runtime.resource_metrics();
     assert!(resources
         .iter()
-        .any(|metric| metric.key == "ble_profile_active" && metric.value == 1));
+        .any(|metric| metric.key == "upload_profile_active" && metric.value == 1));
     assert!(resources
         .iter()
-        .any(|metric| metric.key == "ble_profile_id_len" && metric.value == 2));
+        .any(|metric| metric.key == "upload_profile_id_len" && metric.value == 2));
     assert!(resources
         .iter()
-        .any(|metric| metric.key == "ble_profile_start_events" && metric.value == 1));
+        .any(|metric| metric.key == "upload_profile_start_events" && metric.value == 1));
     assert!(resources
         .iter()
-        .any(|metric| metric.key == "ble_profile_stop_events" && metric.value == 0));
+        .any(|metric| metric.key == "upload_profile_stop_events" && metric.value == 0));
+    assert!(resources
+        .iter()
+        .any(|metric| metric.key == "upload_transport_ble_active" && metric.value == 1));
+    assert!(resources
+        .iter()
+        .any(|metric| metric.key == "upload_transport_http_active" && metric.value == 0));
 
     let backend = runtime.radio_backend();
     assert_eq!(backend.ble_profile_start_count, 1);
@@ -2516,19 +2537,23 @@ event.on("app.start") {
 }
 
 #[test]
-fn ble_service_stop_clears_native_profile_state() {
+fn native_runtime_upload_status_and_stop_clear_profile_state() {
     let sqbc = compile_sqbc(
         r#"app "native-ble-profile-stop"
 event.on("app.start") {
-  service.ble.start("file-transfer", {
+  service.upload.start({
     id: "rx"
     accept: [".sqbc"]
+    transports: ["http", "ble"]
     events: {
       complete: "ble.done"
     }
   })
-  service.ble.stop()
-  debug.print("ble stopped")
+  let active = service.upload.status()
+  debug.print("active", active.active, active.httpPath)
+  service.upload.stop()
+  let stopped = service.upload.status()
+  debug.print("stopped", stopped.active)
 }
 "#,
     );
@@ -2536,20 +2561,23 @@ event.on("app.start") {
 
     run_temp_app(&mut runtime, "native-ble-profile-stop", &sqbc);
 
-    assert_eq!(runtime.output_lines().as_slice(), &["ble stopped"]);
+    assert_eq!(
+        runtime.output_lines().as_slice(),
+        &["active true /upload/<safe-name>", "stopped false"]
+    );
     let resources = runtime.resource_metrics();
     assert!(resources
         .iter()
-        .any(|metric| metric.key == "ble_profile_active" && metric.value == 0));
+        .any(|metric| metric.key == "upload_profile_active" && metric.value == 0));
     assert!(resources
         .iter()
-        .any(|metric| metric.key == "ble_profile_id_len" && metric.value == 0));
+        .any(|metric| metric.key == "upload_profile_id_len" && metric.value == 0));
     assert!(resources
         .iter()
-        .any(|metric| metric.key == "ble_profile_start_events" && metric.value == 1));
+        .any(|metric| metric.key == "upload_profile_start_events" && metric.value == 1));
     assert!(resources
         .iter()
-        .any(|metric| metric.key == "ble_profile_stop_events" && metric.value == 1));
+        .any(|metric| metric.key == "upload_profile_stop_events" && metric.value == 1));
 
     let backend = runtime.radio_backend();
     assert_eq!(backend.ble_profile_start_count, 1);
@@ -2558,13 +2586,14 @@ event.on("app.start") {
 }
 
 #[test]
-fn active_ble_upload_route_uses_compiled_profile_accept_and_complete_event() {
+fn native_runtime_upload_route_uses_transport_accept_and_complete_event() {
     let sqbc = compile_sqbc(
         r#"app "native-ble-route"
 event.on("app.start") {
-  service.ble.start("file-transfer", {
+  service.upload.start({
     id: "rx"
     accept: [".txt", ".binbook"]
+    transports: ["http", "ble"]
     events: {
       complete: "ble.file.complete"
     }
@@ -2580,13 +2609,162 @@ event.on("ble.file.complete", ev) {
 
     run_temp_app(&mut runtime, "native-ble-route", &sqbc);
 
-    let route = runtime.resolve_ble_upload_route("proof.txt").unwrap();
+    let route = runtime
+        .resolve_upload_route("proof.txt", NativeUploadTransport::Ble)
+        .unwrap();
     assert_eq!(route.profile_id, "rx");
     assert_eq!(route.complete_event, "ble.file.complete");
     assert_eq!(
-        runtime.resolve_ble_upload_route("proof.jpg"),
-        Err(NativeBleRouteError::RouteMismatch)
+        runtime.resolve_upload_route("proof.jpg", NativeUploadTransport::Http),
+        Err(NativeUploadRouteError::RouteMismatch)
     );
+}
+
+#[test]
+fn native_runtime_upload_http_start_does_not_acquire_wifi() {
+    let sqbc = compile_sqbc(
+        r#"app "native-http-upload"
+event.on("app.start") {
+  let started = service.upload.start({
+    id: "rx"
+    accept: [".txt"]
+    transports: ["http"]
+    events: { complete: "upload.complete" }
+  })
+  let status = service.upload.status()
+  debug.print(started.ok, started.httpPath, status.active)
+}
+"#,
+    );
+    let mut runtime = NativeRuntime::with_radio_backend(CountingRadioBackend::default());
+
+    run_temp_app(&mut runtime, "native-http-upload", &sqbc);
+
+    assert_eq!(
+        runtime.output_lines().as_slice(),
+        &["true /upload/<safe-name> true"]
+    );
+    assert_eq!(runtime.radio_backend().wifi_acquire_count, 0);
+    assert!(runtime
+        .resource_metrics()
+        .iter()
+        .any(|metric| metric.key == "upload_transport_http_active" && metric.value == 1));
+}
+
+#[test]
+fn native_runtime_upload_start_reports_unsupported_transport() {
+    let sqbc = compile_sqbc(
+        r#"app "native-http-unsupported"
+event.on("app.start") {
+  let started = service.upload.start({
+    id: "rx"
+    accept: [".txt"]
+    transports: ["http"]
+    events: { complete: "upload.complete" }
+  })
+  let status = service.upload.status()
+  debug.print(started.ok, started.error, status.active, status.error)
+}
+"#,
+    );
+    let mut backend = CountingRadioBackend::default();
+    backend.http_upload_unsupported = true;
+    let mut runtime = NativeRuntime::with_radio_backend(backend);
+
+    run_temp_app(&mut runtime, "native-http-unsupported", &sqbc);
+
+    assert_eq!(
+        runtime.output_lines().as_slice(),
+        &["false unsupported false unsupported"]
+    );
+}
+
+#[test]
+fn native_runtime_upload_resume_requires_exact_active_session() {
+    let file_backend =
+        BoundedNativeFileBackend::<StaticFileStorage, 32, 4, 16>::new(StaticFileStorage::default());
+    let mut runtime = NativeRuntime::with_radio_display_binbook_and_file(
+        NoopRadioBackend,
+        CountingDisplaySink::default(),
+        NoopBinBookBackend,
+        file_backend,
+    );
+    let path = runtime
+        .begin_ephemeral_upload("proof.txt", 5, "rx", NativeUploadTransport::Http)
+        .unwrap()
+        .to_string();
+    runtime
+        .write_ephemeral_upload_chunk(path.as_str(), 0, b"re")
+        .unwrap();
+    let progress = runtime.active_upload_progress().unwrap();
+    assert_eq!(progress.path, path);
+    assert_eq!(progress.name, "proof.txt");
+    assert_eq!(progress.id, "rx");
+    assert_eq!(progress.transport, NativeUploadTransport::Http);
+    assert_eq!(progress.bytes_received, 2);
+    assert_eq!(progress.total_bytes, 5);
+
+    assert_eq!(
+        runtime
+            .begin_ephemeral_upload("proof.txt", 5, "rx", NativeUploadTransport::Http)
+            .unwrap(),
+        path
+    );
+    assert_eq!(
+        runtime.begin_ephemeral_upload("other.txt", 5, "rx", NativeUploadTransport::Http),
+        Err(NativeRuntimeError::UploadSessionActive)
+    );
+    assert_eq!(
+        runtime.write_ephemeral_upload_chunk(path.as_str(), 0, b"xx"),
+        Err(NativeRuntimeError::InvalidOffset)
+    );
+    runtime
+        .write_ephemeral_upload_chunk(path.as_str(), 2, b"ady")
+        .unwrap();
+    runtime.commit_ephemeral_upload(path.as_str(), 5).unwrap();
+}
+
+#[test]
+fn native_runtime_upload_stop_deletes_in_flight_stage() {
+    let sqbc = compile_sqbc(
+        r#"app "native-upload-stop-cleanup"
+event.on("app.start") {
+  service.upload.start({
+    id: "rx"
+    accept: [".txt"]
+    transports: ["http"]
+    events: { complete: "upload.complete" }
+  })
+}
+event.on("stop", ev) { service.upload.stop() }
+"#,
+    );
+    let file_backend =
+        BoundedNativeFileBackend::<StaticFileStorage, 32, 4, 16>::new(StaticFileStorage::default());
+    let mut runtime = NativeRuntime::with_radio_display_binbook_and_file(
+        NoopRadioBackend,
+        CountingDisplaySink::default(),
+        NoopBinBookBackend,
+        file_backend,
+    );
+    run_temp_app(&mut runtime, "native-upload-stop-cleanup", &sqbc);
+    let path = runtime
+        .begin_ephemeral_upload("proof.txt", 5, "rx", NativeUploadTransport::Http)
+        .unwrap()
+        .to_string();
+    runtime
+        .write_ephemeral_upload_chunk(path.as_str(), 0, b"re")
+        .unwrap();
+
+    runtime.dispatch_event("stop").unwrap();
+
+    assert!(runtime
+        .begin_ephemeral_upload("other.txt", 3, "other", NativeUploadTransport::Http)
+        .is_ok());
+    assert!(runtime
+        .resource_metrics()
+        .iter()
+        .any(|metric| metric.key == "upload_profile_active" && metric.value == 0));
 }
 
 #[test]
@@ -2595,9 +2773,10 @@ fn wifi_and_ble_service_calls_can_hold_native_leases_together() {
         r#"app "native-radios"
 event.on("app.start") {
   let ap = service.wifi.startAP("SquidNative")
-  service.ble.start("file-transfer", {
+  service.upload.start({
     id: "rx"
     accept: [".sqbc"]
+    transports: ["ble"]
     events: {
       complete: "ble.done"
     }
@@ -2629,9 +2808,10 @@ fn app_exit_releases_all_native_radio_leases() {
         r#"app "native-exit-radios"
 event.on("app.start") {
   let ap = service.wifi.startAP("SquidNative")
-  service.ble.start("file-transfer", {
+  service.upload.start({
     id: "rx"
     accept: [".sqbc"]
+    transports: ["ble"]
     events: {
       complete: "ble.done"
     }
@@ -2668,9 +2848,10 @@ fn runtime_error_releases_all_native_radio_leases() {
         r#"app "native-error-radios"
 event.on("app.start") {
   let ap = service.wifi.startAP("SquidNative")
-  service.ble.start("file-transfer", {
+  service.upload.start({
     id: "rx"
     accept: [".sqbc"]
+    transports: ["ble"]
     events: {
       complete: "ble.done"
     }
@@ -2714,9 +2895,10 @@ fn storage_format_releases_radio_leases_and_formats_files() {
         r#"app "native-format-radios"
 event.on("app.start") {
   let ap = service.wifi.startAP("SquidNative")
-  service.ble.start("file-transfer", {
+  service.upload.start({
     id: "rx"
     accept: [".sqbc"]
+    transports: ["ble"]
     events: {
       complete: "ble.done"
     }
@@ -2760,9 +2942,10 @@ fn replacing_temp_app_releases_previous_native_radio_leases() {
         r#"app "native-radio"
 event.on("app.start") {
   let ap = service.wifi.startAP("SquidNative")
-  service.ble.start("file-transfer", {
+  service.upload.start({
     id: "rx"
     accept: [".sqbc"]
+    transports: ["ble"]
     events: {
       complete: "ble.done"
     }
@@ -2803,6 +2986,7 @@ event.on("app.start") {
 
 #[derive(Default)]
 struct CountingRadioBackend {
+    http_upload_unsupported: bool,
     wifi_acquire_count: usize,
     wifi_release_count: usize,
     wifi_start_ap_count: usize,
@@ -2829,6 +3013,10 @@ struct CountingRadioBackend {
 }
 
 impl NativeRadioBackend for CountingRadioBackend {
+    fn supports_upload_transport(&self, transport: NativeUploadTransport) -> bool {
+        transport != NativeUploadTransport::Http || !self.http_upload_unsupported
+    }
+
     fn acquire(&mut self, radio: RadioKind) -> Result<(), ()> {
         match radio {
             RadioKind::Wifi => self.wifi_acquire_count += 1,
@@ -3040,9 +3228,10 @@ fn service_calls_drive_physical_radio_backend_once_per_active_lease() {
         r#"app "native-radios"
 event.on("app.start") {
   let ap = service.wifi.startAP("SquidNative")
-  service.ble.start("file-transfer", {
+  service.upload.start({
     id: "rx"
     accept: [".sqbc"]
+    transports: ["ble"]
     events: {
       complete: "ble.done"
     }
@@ -3071,9 +3260,10 @@ fn app_replacement_drives_physical_radio_backend_release() {
         r#"app "native-radio"
 event.on("app.start") {
   let ap = service.wifi.startAP("SquidNative")
-  service.ble.start("file-transfer", {
+  service.upload.start({
     id: "rx"
     accept: [".sqbc"]
+    transports: ["ble"]
     events: {
       complete: "ble.done"
     }
