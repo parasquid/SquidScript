@@ -208,10 +208,10 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 - Audit compiler, SQBC, simulator, examples, and docs for invariant violations
   that should become explicit diagnostics instead of silent ambiguity.
-- Native X4 post-canonical Zephyr-surface parity: decide whether to implement
-  runtime-cap/device-config persistence, planned sleep/power resume, HTTP
-  upload, indicator APIs, broader timer/armed-app behavior, and wider Zephyr
-  target parity after native X4 Wi-Fi/BLE/reader gates are canonical.
+- Complete the remaining native X4 firmware surfaces: physical ADC-ladder and
+  POWER-button input, planned sleep/power resume, native runtime-cap authority,
+  app registry and armed-app lifecycle behavior, serial OTA with rollback, and
+  verified simultaneous Wi-Fi/BLE operation.
 - Promote the XTEINK X4 serial/HTTP/BLE transfer regression scripts into the
   target-aware `squidc hardware test --target xteink-x4` inventory so transfer
   integrity checks are selectable, consistently reported, and harder to skip
@@ -235,6 +235,11 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   btleplug/BlueZ delivery, or the firmware event loop, then restore a real
   terminal-status signal for `device upload --transport ble` without weakening content
   integrity checks.
+- Add authenticated network delivery for native X4 OTA images after serial OTA
+  is complete. Reuse the inactive-slot writer, image validation, health
+  confirmation, and rollback state machine; add signed-image policy, resumable
+  transfer, interrupted-download cleanup, and recovery hardware gates rather
+  than creating a separate firmware-update path.
 - Extend `squidc hardware test --target esp32c3-super-mini` so the Super Mini
   regression target uses the same target-aware hardware-test architecture as
   the XIAO default dev target, with checks selected from target metadata and
