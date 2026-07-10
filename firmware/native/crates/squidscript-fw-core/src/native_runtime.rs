@@ -1691,7 +1691,9 @@ impl<
 
     pub fn storage_format(&mut self) -> Result<(), &'static str> {
         self.reset();
-        self.host.file_backend.storage_format()
+        self.host.file_backend.storage_format()?;
+        self.host.clear_app_storage();
+        Ok(())
     }
 
     pub fn stage_ephemeral_upload(
@@ -2436,6 +2438,18 @@ impl<
         self.release_all_radios();
         self.clear_diagnostics();
         self.set_inactive_lifecycle();
+    }
+
+    fn clear_app_storage(&mut self) {
+        self.installed_sqbc.fill(0);
+        self.installed_expected_len = 0;
+        self.installed_received = 0;
+        self.installed_len = 0;
+        self.installed_app_id.clear();
+        self.pending_install_app_id.clear();
+        self.pending_launch_app_id.clear();
+        self.saved_state.fill(0);
+        self.saved_state_len = None;
     }
 
     fn clear_diagnostics(&mut self) {

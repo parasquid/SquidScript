@@ -158,7 +158,7 @@ cursor_out="$(wait_for_contains output-right "cursor 1 1" cargo run --quiet -p s
 assert_file_contains "${cursor_out}" "cursor 1 1"
 
 drawlog_out="$(run_capture drawlog-grid cargo run --quiet -p squidc -- device drawlog --port "${PORT}")"
-assert_file_contains "${drawlog_out}" "draw=refresh mode=fast1bpp"
+assert_file_contains "${drawlog_out}" "refreshMode fast1bpp"
 
 run_key cursor-up UP
 cursor_out="$(wait_for_contains output-up "cursor 0 1" cargo run --quiet -p squidc -- device output --port "${PORT}")"
@@ -195,12 +195,12 @@ cursor_out="$(wait_for_contains output-down-after-reset "cursor 1" cargo run --q
 assert_file_contains "${cursor_out}" "cursor 1 0"
 
 drawlog_after_reset="$(run_capture drawlog-after-reset cargo run --quiet -p squidc -- device drawlog --port "${PORT}")"
-assert_file_contains "${drawlog_after_reset}" "draw=refresh mode=fast1bpp"
+assert_file_contains "${drawlog_after_reset}" "refreshMode fast1bpp"
 
 errors_out="$(run_capture errors cargo run --quiet -p squidc -- device errors --port "${PORT}")"
 assert_file_empty_command "${errors_out}"
 resources_out="$(run_capture resources cargo run --quiet -p squidc -- device resources --port "${PORT}")"
-assert_file_contains "${resources_out}" "proto_stack_unused_bytes"
-assert_file_contains "${resources_out}" "vm_stack_unused_bytes"
+assert_file_contains "${resources_out}" "serial_buffer_bytes"
+assert_file_contains "${resources_out}" "runtime_static_bytes"
 
 printf '%s\n' 'OK XTEINK X4 grid cursor hardware check passed'

@@ -2936,6 +2936,7 @@ event.on("app.start") {
   })
   debug.print("format-ready", ap.ok)
 }
+
 "#,
     );
     let file_backend =
@@ -2965,6 +2966,37 @@ event.on("app.start") {
     let backend = runtime.radio_backend();
     assert_eq!(backend.wifi_release_count, 1);
     assert_eq!(backend.ble_release_count, 1);
+}
+
+#[test]
+fn storage_format_clears_installed_app_and_saved_state() {
+    let sqbc = compile_sqbc(
+        r#"app "native-format-app"
+state { count: int = 0 }
+event.on("app.start") {
+  state.load()
+  state.count = state.count + 1
+  state.save()
+}
+"#,
+    );
+    let file_backend =
+        BoundedNativeFileBackend::<StaticFileStorage, 32, 4, 16>::new(StaticFileStorage::default());
+    let mut runtime = NativeRuntime::with_radio_display_binbook_and_file(
+        NoopRadioBackend,
+        CountingDisplaySink::default(),
+        NoopBinBookBackend,
+        file_backend,
+    );
+    install_app(&mut runtime, "native-format-app", &sqbc);
+    runtime.launch_app("native-format-app").unwrap();
+    assert!(runtime.installed_app().is_some());
+    assert!(!runtime.state_bytes().is_empty());
+
+    runtime.storage_format().unwrap();
+
+    assert_eq!(runtime.installed_app(), None);
+    assert!(runtime.state_bytes().is_empty());
 }
 
 #[test]
