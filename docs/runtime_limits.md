@@ -41,9 +41,9 @@ The active foreground app has a single per-session runtime instance.
 | File/content library page entries | 8 | `SQ_VM_RUNTIME_CONTENT_LIST_MAX` | no |
 | File/content library ref length | 128 bytes | `SQ_VM_RUNTIME_CONTENT_REF_LEN` | no |
 
-`service.timer.every(...)`, `service.timer.after(...)`, and `app.triggers`
-share the foreground or armed timer caps. Registering one beyond the active cap
-returns `-ENOSPC` to the VM. Physical input sampling can enqueue up to
+`service.timer.every(...)` and `service.timer.after(...)` share the foreground
+or armed timer caps. Armed `service.input.on(...)` registrations use the armed
+input cap. Physical input sampling can enqueue up to
 `SQ_VM_RUNTIME_INPUT_EVENT_QUEUE_MAX` press events while the foreground VM is
 busy; overflow drops the newest input event and records `input_queue_overflow`
 in device errors. Display flushes run on a separate bounded worker so input and foreground event dispatch can continue while the e-paper controller is busy.

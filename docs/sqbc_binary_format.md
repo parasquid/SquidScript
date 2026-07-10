@@ -50,7 +50,7 @@ Initial section kinds:
 6  screen table
 7  app metadata
 8  device binding table
-9  timer trigger table
+9  armed trigger table
 10 upload profile table
 ```
 
@@ -227,14 +227,14 @@ Trigger table entries are:
 ```text
 offset  size  field
 0       2     little-endian u16 event string id
-2       1     repeating flag, 0 for one-shot and 1 for repeating
-3       1     reserved, must be 0
-4       4     little-endian i32 interval in milliseconds
+2       1     trigger kind: 0 timer, 1 input
+3       1     flags: timer repeating bit; 0 for input
+4       4     timer interval in milliseconds; 0 for input
 ```
 
-The trigger table contains the compiled `app.triggers` declarations for timer
-sources. Firmware reads this section during `app.arm(appId)` and records the
-timer registrations directly.
+The trigger table contains compiled timer and logical-input declarations from
+`app.triggers`. Firmware reads this section during `app.arm(appId)` and records
+the registrations directly without loading app code.
 
 Upload profile table payload:
 

@@ -1643,6 +1643,7 @@ event.on("app.start") {
 }
 app.triggers {
   service.timer.after("timer.break", 1500000)
+  service.input.on("key.POWER.doubleTap")
   service.timer.every("timer.stretch", 60000)
 }
 event.on("timer.break") {
@@ -1650,6 +1651,9 @@ event.on("timer.break") {
 }
 event.on("timer.stretch") {
   debug.print("stretch")
+}
+event.on("key.POWER.doubleTap") {
+  debug.print("power")
 }
 screen("main") {}
 "#;
@@ -1683,9 +1687,15 @@ screen("main") {}
             },
         ]
     );
+    assert_eq!(
+        index.trigger_inputs().unwrap(),
+        [TriggerInput {
+            event: "key.POWER.doubleTap",
+        }]
+    );
 
     let mut reader = SliceSqbcReader::new(&bytes);
-    let mut small_scratch = [0u8; 160];
+    let mut small_scratch = [0u8; 192];
     assert_eq!(
         ProgramIndex::trigger_timer_count_from_reader(&mut reader, &mut small_scratch).unwrap(),
         2
@@ -1697,6 +1707,18 @@ screen("main") {}
             event: "timer.stretch",
             interval_ms: 60000,
             repeating: true,
+        }
+    );
+    let mut reader = SliceSqbcReader::new(&bytes);
+    assert_eq!(
+        ProgramIndex::trigger_input_count_from_reader(&mut reader, &mut small_scratch).unwrap(),
+        1
+    );
+    let mut reader = SliceSqbcReader::new(&bytes);
+    assert_eq!(
+        ProgramIndex::trigger_input_from_reader(&mut reader, &mut small_scratch, 0).unwrap(),
+        TriggerInput {
+            event: "key.POWER.doubleTap",
         }
     );
 }

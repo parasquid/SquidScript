@@ -1,6 +1,6 @@
 use crate::{
     compile::{compile, compile_path_with_profile, compile_with_profile, CompileRequest},
-    ir::{encode_sqbc, IrDeviceBinding, IrExpr, IrStatement, SQBC_MAGIC},
+    ir::{encode_sqbc, IrDeviceBinding, IrExpr, IrStatement, IrTriggerKind, SQBC_MAGIC},
     parser::parse,
     profile::{BuildProfile, PORTABLE_TARGET_ID},
     sqbc,
@@ -2028,6 +2028,7 @@ fn parses_app_triggers_as_registration_declarations() {
 event.on("app.start") {
   app.arm("reminder")
 }
+
 app.triggers {
   service.timer.after("timer.break", 1500000)
 }
@@ -2048,6 +2049,72 @@ screen("main") {}
     assert_eq!(ir.triggers[0].event, "timer.break");
     assert_eq!(ir.triggers[0].interval_ms, 1500000);
     assert!(!ir.triggers[0].repeating);
+}
+
+#[test]
+fn parses_and_validates_armed_input_triggers() {
+    let source = r#"app "input-triggers"
+app.triggers {
+  service.input.on("key.POWER")
+  service.input.on("key.POWER.longTap")
+  service.input.on("key.POWER.doubleTap")
+}
+event.on("key.POWER") {}
+event.on("key.POWER.longTap") {}
+event.on("key.POWER.doubleTap") {}
+"#;
+    let output = compile(CompileRequest {
+        source: source.to_string(),
+        target_id: PORTABLE_TARGET_ID.to_string(),
+    });
+    assert!(output.ok, "{:?}", output.diagnostics);
+    let ir = output.ir.unwrap();
+    assert_eq!(ir.triggers.len(), 3);
+    assert!(ir
+        .triggers
+        .iter()
+        .all(|trigger| trigger.kind == IrTriggerKind::Input));
+    assert_eq!(ir.triggers[2].event, "key.POWER.doubleTap");
+}
+
+#[test]
+fn rejects_invalid_or_misplaced_armed_input_triggers() {
+    for (source, code) in [
+        (
+            "app \"bad-input\"\napp.triggers { service.input.on(\"button.POWER\") }\nevent.on(\"button.POWER\") {}\n",
+            "E_INPUT_TRIGGER_EVENT",
+        ),
+        (
+            "app \"long-input\"\napp.triggers { service.input.on(\"key.THIS_NAME_IS_TOO_LONG.doubleTap\") }\nevent.on(\"key.THIS_NAME_IS_TOO_LONG.doubleTap\") {}\n",
+            "E_EVENT_NAME_LENGTH",
+        ),
+        (
+            "app \"missing-handler\"\napp.triggers { service.input.on(\"key.POWER\") }\n",
+            "E_TRIGGER_HANDLER",
+        ),
+        (
+            "app \"duplicate-input\"\napp.triggers { service.input.on(\"key.POWER\") service.input.on(\"key.POWER\") }\nevent.on(\"key.POWER\") {}\n",
+            "E_DUPLICATE_TRIGGER_EVENT",
+        ),
+        (
+            "app \"foreground-input\"\nevent.on(\"app.start\") { service.input.on(\"key.POWER\") }\n",
+            "E_INPUT_TRIGGER_CONTEXT",
+        ),
+    ] {
+        let output = compile(CompileRequest {
+            source: source.to_string(),
+            target_id: PORTABLE_TARGET_ID.to_string(),
+        });
+        assert!(!output.ok, "{source}");
+        assert!(
+            output
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == code),
+            "{source}: {:?}",
+            output.diagnostics
+        );
+    }
 }
 
 #[test]

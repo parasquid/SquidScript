@@ -1,5 +1,5 @@
 use crate::{
-    ir::{IrExpr, IrProgram, IrStatement},
+    ir::{IrExpr, IrProgram, IrStatement, IrTriggerKind},
     profile::BuildProfile,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -581,6 +581,9 @@ fn collect_statement_strings(
                 strings.intern(event)?;
                 collect_expr_strings(delay_ms, strings)?;
             }
+            IrStatement::ServiceInputOn { event } => {
+                strings.intern(event)?;
+            }
             IrStatement::ServicePowerSleep { wake_after_ms } => {
                 collect_expr_strings(wake_after_ms, strings)?;
             }
@@ -914,6 +917,7 @@ fn compile_statement(
             compile_expr(unit, frame, delay_ms)?;
             emit_builtin(&mut unit.code, BUILTIN_SERVICE_TIMER_AFTER);
         }
+        IrStatement::ServiceInputOn { .. } => {}
         IrStatement::ServicePowerSleep { wake_after_ms } => {
             compile_expr(unit, frame, wake_after_ms)?;
             emit_builtin(&mut unit.code, BUILTIN_SERVICE_POWER_SLEEP);
@@ -1709,9 +1713,18 @@ fn encode_triggers(ir: &IrProgram, strings: &StringTable) -> Result<Vec<u8>, Sqb
             .copied()
             .ok_or_else(|| SqbcError::new("unknown trigger event"))?;
         write_u16(&mut out, event_id);
+        out.push(match trigger.kind {
+            IrTriggerKind::Timer => 0,
+            IrTriggerKind::Input => 1,
+        });
         out.push(u8::from(trigger.repeating));
-        out.push(0);
-        write_i32(&mut out, trigger.interval_ms);
+        write_i32(
+            &mut out,
+            match trigger.kind {
+                IrTriggerKind::Timer => trigger.interval_ms,
+                IrTriggerKind::Input => 0,
+            },
+        );
     }
     Ok(out)
 }

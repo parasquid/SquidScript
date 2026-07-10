@@ -3,7 +3,7 @@ use crate::{
     diagnostic::{error, Diagnostic},
     ir::{
         default_state_store, IrApp, IrExpr, IrFunction, IrHandler, IrProgram, IrScreen,
-        IrStatement, IrTrigger,
+        IrStatement, IrTrigger, IrTriggerKind,
     },
     parser::parse,
     profile::{BuildProfile, PORTABLE_TARGET_ID},
@@ -1005,6 +1005,7 @@ fn trigger_from_statement(statement: &IrStatement) -> Option<IrTrigger> {
         IrStatement::ServiceTimerEvery { event, interval_ms } => {
             literal_i32(interval_ms).map(|interval_ms| IrTrigger {
                 event: event.clone(),
+                kind: IrTriggerKind::Timer,
                 repeating: true,
                 interval_ms,
             })
@@ -1012,10 +1013,17 @@ fn trigger_from_statement(statement: &IrStatement) -> Option<IrTrigger> {
         IrStatement::ServiceTimerAfter { event, delay_ms } => {
             literal_i32(delay_ms).map(|interval_ms| IrTrigger {
                 event: event.clone(),
+                kind: IrTriggerKind::Timer,
                 repeating: false,
                 interval_ms,
             })
         }
+        IrStatement::ServiceInputOn { event } => Some(IrTrigger {
+            event: event.clone(),
+            kind: IrTriggerKind::Input,
+            repeating: false,
+            interval_ms: 0,
+        }),
         _ => None,
     }
 }

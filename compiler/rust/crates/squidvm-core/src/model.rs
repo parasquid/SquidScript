@@ -24,6 +24,7 @@ pub(crate) struct TriggerTimerMeta {
     pub(crate) event_id: u16,
     pub(crate) interval_ms: i32,
     pub(crate) repeating: bool,
+    pub(crate) input: bool,
 }
 
 #[derive(Clone, Copy)]

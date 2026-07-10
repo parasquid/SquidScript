@@ -330,6 +330,10 @@ impl<'a> Program<'a> {
         TriggerTimers::new(self, &self.trigger_timers, self.trigger_timer_count)
     }
 
+    pub fn trigger_inputs(&self) -> Result<TriggerInputs<'_>, VmError> {
+        TriggerInputs::new(self, &self.trigger_timers, self.trigger_timer_count)
+    }
+
     pub fn capability_demand(&self) -> Result<CapabilityDemand, VmError> {
         let (mut demand, uses_upload) = capability_demand_from_code(self.code)?;
         if uses_upload {
@@ -616,6 +620,10 @@ impl ProgramIndex {
         TriggerTimers::new(self, &self.trigger_timers, self.trigger_timer_count)
     }
 
+    pub fn trigger_inputs(&self) -> Result<TriggerInputs<'_>, VmError> {
+        TriggerInputs::new(self, &self.trigger_timers, self.trigger_timer_count)
+    }
+
     pub fn capability_demand_from_reader(
         reader: &mut impl SqbcReader,
         scratch: &mut [u8],
@@ -679,7 +687,14 @@ impl ProgramIndex {
         if expected_len != triggers_section.len {
             return Err(VmError::InvalidSection);
         }
-        Ok(count)
+        let mut timer_count = 0;
+        for index in 0..count {
+            let cursor = 2 + index * 8;
+            if *scratch.get(cursor + 2).ok_or(VmError::InvalidSection)? == 0 {
+                timer_count += 1;
+            }
+        }
+        Ok(timer_count)
     }
 
     pub fn trigger_timer_from_reader<'a>(
@@ -698,7 +713,7 @@ impl ProgramIndex {
             &mut scratch[..triggers_section.len],
         )?;
         let count = read_u16(scratch, 0)? as usize;
-        if count > MAX_TRIGGERS || timer_index >= count {
+        if count > MAX_TRIGGERS {
             return Err(VmError::InvalidOperand);
         }
         let expected_len = 2usize
@@ -707,14 +722,20 @@ impl ProgramIndex {
         if expected_len != triggers_section.len {
             return Err(VmError::InvalidSection);
         }
-        let cursor = 2 + timer_index * 8;
+        let cursor = (0..count)
+            .filter_map(|index| {
+                let cursor = 2 + index * 8;
+                (scratch.get(cursor + 2).copied() == Some(0)).then_some(cursor)
+            })
+            .nth(timer_index)
+            .ok_or(VmError::InvalidOperand)?;
         let event_id = read_u16(scratch, cursor)?;
-        let repeating = *scratch.get(cursor + 2).ok_or(VmError::InvalidSection)? != 0;
-        let reserved = *scratch.get(cursor + 3).ok_or(VmError::InvalidSection)?;
+        let flags = *scratch.get(cursor + 3).ok_or(VmError::InvalidSection)?;
         let interval_ms = read_i32(scratch, cursor + 4)?;
-        if reserved != 0 || interval_ms <= 0 {
+        if flags > 1 || interval_ms <= 0 {
             return Err(VmError::InvalidSection);
         }
+        let repeating = flags != 0;
 
         reader.read_exact_at(strings_section.offset, &mut scratch[..strings_section.len])?;
         let event = string_from_section(&scratch[..strings_section.len], event_id)?;
@@ -722,6 +743,67 @@ impl ProgramIndex {
             event,
             interval_ms,
             repeating,
+        })
+    }
+
+    pub fn trigger_input_count_from_reader(
+        reader: &mut impl SqbcReader,
+        scratch: &mut [u8],
+    ) -> Result<usize, VmError> {
+        let (_, triggers_section) = trigger_reader_sections(reader, scratch)?;
+        let Some(triggers_section) = triggers_section else {
+            return Ok(0);
+        };
+        if triggers_section.len > scratch.len() {
+            return Err(VmError::InvalidSection);
+        }
+        reader.read_exact_at(
+            triggers_section.offset,
+            &mut scratch[..triggers_section.len],
+        )?;
+        let count = read_u16(scratch, 0)? as usize;
+        if count > MAX_TRIGGERS || triggers_section.len != 2 + count * 8 {
+            return Err(VmError::InvalidSection);
+        }
+        Ok((0..count)
+            .filter(|index| scratch.get(2 + index * 8 + 2).copied() == Some(1))
+            .count())
+    }
+
+    pub fn trigger_input_from_reader<'a>(
+        reader: &mut impl SqbcReader,
+        scratch: &'a mut [u8],
+        input_index: usize,
+    ) -> Result<TriggerInput<'a>, VmError> {
+        let (strings_section, triggers_section) = trigger_reader_sections(reader, scratch)?;
+        let triggers_section = triggers_section.ok_or(VmError::InvalidOperand)?;
+        if triggers_section.len > scratch.len() || strings_section.len > scratch.len() {
+            return Err(VmError::InvalidSection);
+        }
+        reader.read_exact_at(
+            triggers_section.offset,
+            &mut scratch[..triggers_section.len],
+        )?;
+        let count = read_u16(scratch, 0)? as usize;
+        if count > MAX_TRIGGERS || triggers_section.len != 2 + count * 8 {
+            return Err(VmError::InvalidSection);
+        }
+        let cursor = (0..count)
+            .filter_map(|index| {
+                let cursor = 2 + index * 8;
+                (scratch.get(cursor + 2).copied() == Some(1)).then_some(cursor)
+            })
+            .nth(input_index)
+            .ok_or(VmError::InvalidOperand)?;
+        let event_id = read_u16(scratch, cursor)?;
+        let flags = *scratch.get(cursor + 3).ok_or(VmError::InvalidSection)?;
+        let value = read_i32(scratch, cursor + 4)?;
+        if flags != 0 || value != 0 {
+            return Err(VmError::InvalidSection);
+        }
+        reader.read_exact_at(strings_section.offset, &mut scratch[..strings_section.len])?;
+        Ok(TriggerInput {
+            event: string_from_section(&scratch[..strings_section.len], event_id)?,
         })
     }
 
@@ -989,6 +1071,11 @@ pub struct TriggerTimer<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TriggerInput<'a> {
+    pub event: &'a str,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DeviceBinding<'a> {
     pub service: &'a str,
     pub binding: &'a str,
@@ -1093,14 +1180,19 @@ impl<'a> TriggerTimers<'a> {
             interval_ms: 0,
             repeating: false,
         }; MAX_TRIGGERS];
-        for (index, meta) in metas.iter().take(count).enumerate() {
-            timers[index] = TriggerTimer {
+        let mut timer_count = 0;
+        for meta in metas.iter().take(count).filter(|meta| !meta.input) {
+            timers[timer_count] = TriggerTimer {
                 event: strings.string(meta.event_id)?,
                 interval_ms: meta.interval_ms,
                 repeating: meta.repeating,
             };
+            timer_count += 1;
         }
-        Ok(Self { timers, count })
+        Ok(Self {
+            timers,
+            count: timer_count,
+        })
     }
 
     pub const fn len(&self) -> usize {
@@ -1113,6 +1205,47 @@ impl<'a> TriggerTimers<'a> {
         } else {
             None
         }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TriggerInputs<'a> {
+    inputs: [TriggerInput<'a>; MAX_TRIGGERS],
+    count: usize,
+}
+
+impl<'a> TriggerInputs<'a> {
+    fn new(
+        strings: &'a impl StringTable,
+        metas: &[TriggerTimerMeta; MAX_TRIGGERS],
+        count: usize,
+    ) -> Result<Self, VmError> {
+        let mut inputs = [TriggerInput { event: "" }; MAX_TRIGGERS];
+        let mut input_count = 0;
+        for meta in metas.iter().take(count).filter(|meta| meta.input) {
+            inputs[input_count] = TriggerInput {
+                event: strings.string(meta.event_id)?,
+            };
+            input_count += 1;
+        }
+        Ok(Self {
+            inputs,
+            count: input_count,
+        })
+    }
+
+    pub const fn len(&self) -> usize {
+        self.count
+    }
+
+    pub fn get(&self, index: usize) -> Option<TriggerInput<'a>> {
+        (index < self.count).then_some(self.inputs[index])
+    }
+}
+
+impl<'a, const N: usize> PartialEq<[TriggerInput<'a>; N]> for TriggerInputs<'a> {
+    fn eq(&self, other: &[TriggerInput<'a>; N]) -> bool {
+        self.count == N && self.inputs[..self.count] == other[..]
     }
 }
 
@@ -1846,6 +1979,7 @@ fn parse_trigger_timers(
                 event_id: 0,
                 interval_ms: 0,
                 repeating: false,
+                input: false,
             }; MAX_TRIGGERS],
             0,
         ));
@@ -1858,21 +1992,28 @@ fn parse_trigger_timers(
         event_id: 0,
         interval_ms: 0,
         repeating: false,
+        input: false,
     }; MAX_TRIGGERS];
     let mut cursor = 2usize;
     for timer in timers.iter_mut().take(count) {
         let event_id = read_u16(bytes, cursor)?;
-        let repeating = *bytes.get(cursor + 2).ok_or(VmError::InvalidSection)? != 0;
-        let reserved = *bytes.get(cursor + 3).ok_or(VmError::InvalidSection)?;
+        let kind = *bytes.get(cursor + 2).ok_or(VmError::InvalidSection)?;
+        let flags = *bytes.get(cursor + 3).ok_or(VmError::InvalidSection)?;
         let interval_ms = read_i32(bytes, cursor + 4)?;
         cursor += 8;
-        if reserved != 0 || interval_ms <= 0 {
+        let (input, repeating) = match kind {
+            0 if flags <= 1 && interval_ms > 0 => (false, flags != 0),
+            1 if flags == 0 && interval_ms == 0 => (true, false),
+            _ => return Err(VmError::InvalidSection),
+        };
+        if !input && interval_ms <= 0 {
             return Err(VmError::InvalidSection);
         }
         *timer = TriggerTimerMeta {
             event_id,
             interval_ms,
             repeating,
+            input,
         };
     }
     if cursor != bytes.len() {

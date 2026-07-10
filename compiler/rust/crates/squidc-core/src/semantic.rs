@@ -102,6 +102,12 @@ pub(crate) fn validate_semantics(
             &impure_functions,
             diagnostics,
         );
+        validate_input_trigger_context(
+            &screen.statements,
+            screen.span.start,
+            screen.span.end,
+            diagnostics,
+        );
         validate_ignored_fallible_results(
             &screen.statements,
             screen.span.start,
@@ -140,6 +146,12 @@ pub(crate) fn validate_semantics(
             &screen_names,
             diagnostics,
         );
+        validate_input_trigger_context(
+            &handler.statements,
+            handler.span.start,
+            handler.span.end,
+            diagnostics,
+        );
         validate_debug_blocks(
             &handler.statements,
             &state_names,
@@ -171,6 +183,12 @@ pub(crate) fn validate_semantics(
             &screen_names,
             diagnostics,
         );
+        validate_input_trigger_context(
+            &function.statements,
+            function.span.start,
+            function.span.end,
+            diagnostics,
+        );
         validate_debug_blocks(
             &function.statements,
             &state_names,
@@ -182,6 +200,38 @@ pub(crate) fn validate_semantics(
     }
 
     validate_names(ast, &state_names, diagnostics);
+}
+
+fn validate_input_trigger_context(
+    statements: &[IrStatement],
+    start: usize,
+    end: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for statement in statements {
+        match statement {
+            IrStatement::ServiceInputOn { .. } => diagnostics.push(error(
+                "E_INPUT_TRIGGER_CONTEXT",
+                "service.input.on is only valid inside app.triggers",
+                start,
+                end,
+            )),
+            IrStatement::If {
+                then_statements,
+                else_statements,
+                ..
+            } => {
+                validate_input_trigger_context(then_statements, start, end, diagnostics);
+                validate_input_trigger_context(else_statements, start, end, diagnostics);
+            }
+            IrStatement::Repeat { statements, .. }
+            | IrStatement::For { statements, .. }
+            | IrStatement::DebugBlock { statements } => {
+                validate_input_trigger_context(statements, start, end, diagnostics);
+            }
+            _ => {}
+        }
+    }
 }
 
 const UPLOAD_PROFILE_MESSAGE: &str = "service.upload.start requires a non-empty id, accepted extensions, supported transports, and a complete event route";
@@ -395,7 +445,8 @@ fn validate_trigger_routes(ast: &AstRoot, diagnostics: &mut Vec<Diagnostic>) {
         for statement in &trigger_block.statements {
             let event = match statement {
                 IrStatement::ServiceTimerEvery { event, .. }
-                | IrStatement::ServiceTimerAfter { event, .. } => event,
+                | IrStatement::ServiceTimerAfter { event, .. }
+                | IrStatement::ServiceInputOn { event } => event,
                 _ => continue,
             };
             if !trigger_events.insert(event.clone()) {
@@ -465,14 +516,57 @@ fn validate_trigger_statements(
             IrStatement::ServiceTimerAfter { delay_ms, .. } => {
                 validate_trigger_interval(delay_ms, start, end, diagnostics);
             }
+            IrStatement::ServiceInputOn { event } => {
+                validate_input_trigger_event(event, start, end, diagnostics);
+            }
             _ => diagnostics.push(error(
                 "E_APP_TRIGGER_STATEMENT",
-                "app.triggers may only declare timer trigger registrations",
+                "app.triggers may only declare timer or input trigger registrations",
                 start,
                 end,
             )),
         }
     }
+}
+
+fn validate_input_trigger_event(
+    event: &str,
+    start: usize,
+    end: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let parts = event.split('.').collect::<Vec<_>>();
+    let valid_shape = matches!(parts.as_slice(), ["key", logical] if valid_logical_key(logical))
+        || matches!(
+            parts.as_slice(),
+            ["key", logical, "longTap" | "doubleTap"] if valid_logical_key(logical)
+        );
+    if !valid_shape {
+        diagnostics.push(error(
+            "E_INPUT_TRIGGER_EVENT",
+            "service.input.on requires key.<logical>, key.<logical>.longTap, or key.<logical>.doubleTap",
+            start,
+            end,
+        ));
+    }
+    if event.len() > squidvm_limits::MAX_EVENT_NAME_BYTES {
+        diagnostics.push(error(
+            "E_EVENT_NAME_LENGTH",
+            format!(
+                "input trigger event exceeds the {}-byte event-name limit",
+                squidvm_limits::MAX_EVENT_NAME_BYTES
+            ),
+            start,
+            end,
+        ));
+    }
+}
+
+fn valid_logical_key(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
 }
 
 fn validate_trigger_interval(
@@ -745,6 +839,7 @@ fn validate_statement_names(
             | IrStatement::ScreenOpen { .. }
             | IrStatement::ScreenRefresh
             | IrStatement::AppExit
+            | IrStatement::ServiceInputOn { .. }
             | IrStatement::HardwareGpioToggle { .. }
             | IrStatement::ServiceIndicatorToggle
             | IrStatement::ServiceIndicatorBreathe
@@ -950,6 +1045,7 @@ fn statement_is_render_impure(
         | IrStatement::AppInstall { .. }
         | IrStatement::ServiceTimerEvery { .. }
         | IrStatement::ServiceTimerAfter { .. }
+        | IrStatement::ServiceInputOn { .. }
         | IrStatement::ServicePowerSleep { .. }
         | IrStatement::HardwareGpioWrite { .. }
         | IrStatement::HardwareGpioToggle { .. }
@@ -1155,6 +1251,7 @@ fn validate_debug_block_statements(
             | IrStatement::AppInstall { .. }
             | IrStatement::ServiceTimerEvery { .. }
             | IrStatement::ServiceTimerAfter { .. }
+            | IrStatement::ServiceInputOn { .. }
             | IrStatement::ServicePowerSleep { .. }
             | IrStatement::HardwareGpioWrite { .. }
             | IrStatement::HardwareGpioToggle { .. }
@@ -1287,6 +1384,7 @@ fn statement_uses_any_name(
         | IrStatement::ScreenOpen { .. }
         | IrStatement::ScreenRefresh
         | IrStatement::AppExit
+        | IrStatement::ServiceInputOn { .. }
         | IrStatement::HardwareGpioToggle { .. }
         | IrStatement::ServiceIndicatorToggle
         | IrStatement::ServiceIndicatorBreathe

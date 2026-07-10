@@ -171,7 +171,7 @@ impl Parser<'_> {
         if first == "service"
             && matches!(
                 method.as_str(),
-                "timer" | "display" | "indicator" | "wifi" | "power" | "upload"
+                "timer" | "input" | "display" | "indicator" | "wifi" | "power" | "upload"
             )
         {
             if self.at_kind(TokenKind::Dot) {
@@ -243,6 +243,11 @@ impl Parser<'_> {
                     });
                     self.consume_call_tail(builder);
                     Some(IrStatement::ServiceTimerAfter { event, delay_ms })
+                }
+                ("input", "on") => {
+                    let event = self.consume_string(builder).unwrap_or_default();
+                    self.consume_call_tail(builder);
+                    Some(IrStatement::ServiceInputOn { event })
                 }
                 ("indicator", "write") => {
                     let value = self.parse_expr(builder).unwrap_or(IrExpr::Literal {

@@ -66,8 +66,16 @@ pub struct IrFunction {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IrTrigger {
     pub event: String,
+    pub kind: IrTriggerKind,
     pub repeating: bool,
     pub interval_ms: i32,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum IrTriggerKind {
+    Timer,
+    Input,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -107,6 +115,8 @@ pub enum IrStatement {
     ServiceTimerEvery { event: String, interval_ms: IrExpr },
     #[serde(rename = "service.timer.after")]
     ServiceTimerAfter { event: String, delay_ms: IrExpr },
+    #[serde(rename = "service.input.on")]
+    ServiceInputOn { event: String },
     #[serde(rename = "service.power.sleep")]
     ServicePowerSleep { wake_after_ms: IrExpr },
     #[serde(rename = "assign")]

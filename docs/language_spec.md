@@ -172,6 +172,9 @@ Arming terms used throughout this spec:
   registration.
 - `armed timer`: a timer event source registered from `app.triggers` rather
   than from a running foreground app session.
+- `armed input`: a logical key or key-gesture event registered from
+  `app.triggers`; firmware emits the event and the app owns the resulting
+  action.
 - `armed stack`: the bounded firmware list of app ids with active armed trigger
   registrations.
 - `armed-app metadata`: the compiled `app.triggers` records read from an
@@ -2201,11 +2204,16 @@ event.on("service.pageTurn.forward") {}
 ```squid
 app.triggers {
   service.timer.after("timer.break", 1500000)
+  service.input.on("key.POWER.doubleTap")
 }
 ```
 
 Each trigger event declared by `app.triggers` must be unique and must have a
-matching `event.on("<event>")` handler in the same app.
+matching `event.on("<event>")` handler in the same app. `service.input.on`
+requires a static `key.<logical>`, `key.<logical>.longTap`, or
+`key.<logical>.doubleTap` event name and is valid only inside `app.triggers`.
+It declares no firmware action beyond launching the armed app and dispatching
+that event.
 
 Break reminder example:
 

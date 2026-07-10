@@ -18,6 +18,8 @@ pub const MAX_FUNCTIONS: usize = 16;
 pub const MAX_HANDLERS: usize = 16;
 /// Maximum number of registered timer triggers.
 pub const MAX_TRIGGERS: usize = 16;
+/// Maximum UTF-8 byte length of an event name stored by constrained runtimes.
+pub const MAX_EVENT_NAME_BYTES: usize = 24;
 /// Maximum number of device bindings.
 pub const MAX_DEVICE_BINDINGS: usize = 8;
 /// Maximum number of screens.
