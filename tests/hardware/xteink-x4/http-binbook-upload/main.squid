@@ -15,7 +15,6 @@ event.on("app.start") {
     }
   })
   debug.print("http upload ready", ap.ok, ap.error)
-  screen.open("reader")
 }
 
 event.on("upload.complete", ev) {
@@ -27,20 +26,13 @@ event.on("upload.complete", ev) {
   debug.print("upload copy", copied.ok, copied.error, copied.bytesWritten)
   if (copied.ok) {
     state.uploaded = state.uploaded + 1
-    let opened = binbook.open(copied.ref)
-    debug.print("uploaded book open", ev.name, opened.ok, opened.error)
-    if (opened.ok) {
-      let info = binbook.info(opened.book)
-      let page = binbook.readPage(opened.book, 0)
-      debug.print("uploaded book page", ev.name, info.pageCount, page.ok, page.error)
-    }
     screen.open("reader")
   }
 }
 
 screen("reader") {
   service.display.clear(color.WHITE)
-  let listing = content.binbook.list("books", { offset: 0, limit: 1 })
+  let listing = content.binbook.list("books", { offset: state.uploaded - 1, limit: 1 })
   debug.print("content", listing.ok, listing.count, listing.warning, state.uploaded)
   if (listing.ok) {
     for item in listing.items max 1 {

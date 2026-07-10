@@ -426,6 +426,15 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   minimal known-good firmware or vendor example on the second board can separate
   board/power/host issues from target-specific integration bugs; still keep the
   canonical target's own hardware gate as the final proof.
+- When a second ESP32-C3 is attached, it may be used as the Wi-Fi peer for
+  station and access-point tests. Probe and identify both serial targets before
+  flashing, generate dedicated test SSIDs/passwords as needed, and keep those
+  credentials and device identifiers out of committed files and chat output.
+- The second ESP32-C3 may likewise act as a controlled BLE peripheral or
+  central for connection, discovery, GATT, transfer, reconnect, and failure
+  tests. Generate dedicated test identities, pairing material, or keys when
+  needed, redact them like Wi-Fi credentials, and keep the canonical target's
+  own BLE hardware gate as final proof.
 - When the task targets XTEINK X4, verify with XTEINK X4 target commands and
   XTEINK-specific fixtures under `tests/hardware/xteink-x4/` or
   `examples/app-tests/xteink/`. Do not use `tests/hardware/c3-supermini/`,

@@ -2,10 +2,14 @@ use std::{
     fs::File,
     io::{Seek, SeekFrom},
     path::Path,
+    thread,
+    time::Duration,
 };
 
 const OFFSET_HEADER: &str = "X-Squid-Upload-Offset";
 const TOTAL_HEADER: &str = "X-Squid-Upload-Total";
+const PUT_CONNECT_ATTEMPTS: usize = 10;
+const PUT_CONNECT_RETRY_DELAY: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct HttpUploadResult {
@@ -19,7 +23,7 @@ pub fn upload(
     source: &Path,
     name: &str,
 ) -> Result<HttpUploadResult, String> {
-    let mut file = File::open(source)
+    let file = File::open(source)
         .map_err(|error| format!("failed to open {}: {error}", source.display()))?;
     let total = file
         .metadata()
@@ -52,19 +56,8 @@ pub fn upload(
         });
     }
 
-    file.seek(SeekFrom::Start(offset))
-        .map_err(|error| format!("failed to seek {}: {error}", source.display()))?;
     let remaining = total - offset;
-    let mut request = ureq::put(&url).header("Content-Length", remaining.to_string());
-    if offset > 0 {
-        request = request.header(
-            "Content-Range",
-            format!("bytes {offset}-{}/{total}", total - 1),
-        );
-    }
-    let mut response = request
-        .send(file)
-        .map_err(|error| format!("upload PUT {url} failed: {error}"))?;
+    let mut response = send_put_with_retry(&url, source, offset, total)?;
     let body = response
         .body_mut()
         .read_to_string()
@@ -78,6 +71,53 @@ pub fn upload(
         resumed_bytes: usize::try_from(offset)
             .map_err(|_| "upload offset does not fit host usize".to_string())?,
     })
+}
+
+fn send_put_with_retry(
+    url: &str,
+    source: &Path,
+    offset: u64,
+    total: u64,
+) -> Result<ureq::http::Response<ureq::Body>, String> {
+    let remaining = total - offset;
+    for attempt in 0..PUT_CONNECT_ATTEMPTS {
+        let mut file = File::open(source)
+            .map_err(|error| format!("failed to open {}: {error}", source.display()))?;
+        file.seek(SeekFrom::Start(offset))
+            .map_err(|error| format!("failed to seek {}: {error}", source.display()))?;
+        let mut request = ureq::put(url).header("Content-Length", remaining.to_string());
+        if offset > 0 {
+            request = request.header(
+                "Content-Range",
+                format!("bytes {offset}-{}/{total}", total - 1),
+            );
+        }
+        match request.send(file) {
+            Ok(response) => return Ok(response),
+            Err(error)
+                if attempt + 1 < PUT_CONNECT_ATTEMPTS && transient_connection_error(&error) =>
+            {
+                thread::sleep(PUT_CONNECT_RETRY_DELAY);
+            }
+            Err(error) => return Err(format!("upload PUT {url} failed: {error}")),
+        }
+    }
+    unreachable!("PUT retry loop always returns on its final attempt")
+}
+
+fn transient_connection_error(error: &ureq::Error) -> bool {
+    match error {
+        ureq::Error::Io(error) => matches!(
+            error.kind(),
+            std::io::ErrorKind::ConnectionRefused
+                | std::io::ErrorKind::ConnectionReset
+                | std::io::ErrorKind::ConnectionAborted
+                | std::io::ErrorKind::NotConnected
+                | std::io::ErrorKind::TimedOut
+        ),
+        ureq::Error::ConnectionFailed | ureq::Error::Timeout(_) => true,
+        _ => false,
+    }
 }
 
 fn response_u64_header(
@@ -111,7 +151,8 @@ mod tests {
     #[test]
     fn resumes_http_upload_from_head_offset() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
+        let address = listener.local_addr().unwrap();
+        let port = address.port();
         let server = thread::spawn(move || {
             let (mut head, _) = listener.accept().unwrap();
             let head_request = read_request(&mut head);
@@ -120,7 +161,11 @@ mod tests {
                 b"HTTP/1.1 200 OK\r\nX-Squid-Upload-Offset: 3\r\nX-Squid-Upload-Total: 6\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
             )
             .unwrap();
+            drop(head);
+            drop(listener);
+            thread::sleep(std::time::Duration::from_millis(100));
 
+            let listener = TcpListener::bind(address).unwrap();
             let (mut put, _) = listener.accept().unwrap();
             let put_request = read_request(&mut put);
             assert!(put_request.starts_with("PUT /upload/book.binbook HTTP/1.1\r\n"));

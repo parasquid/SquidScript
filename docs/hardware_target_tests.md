@@ -119,7 +119,7 @@ test for the product firmware display path. It packages, installs, and launches
 `tests/hardware/xiao-esp32c3/epaper-gray2-smoke`, whose BinBook fixture
 exercises `service.display.draw` with packed 2bpp content. The
 unattended pass criteria are serial: `device output` contains `gray2 pages 1`,
-`device drawlog` contains `draw=binbook`, `device errors` is empty, and
+`device drawlog` contains `draw Drawable:`, `device errors` is empty, and
 `device resources` responds after the refresh. The expected visible image is
 native 800 x 480 panel content with black, dark gray, light gray, white bands.
 The script can capture a USB webcam frame as optional evidence; pass
@@ -132,7 +132,7 @@ It packages, installs, and launches
 `key.RIGHT` events to cycle the three-page GRAY2 fixture through
 `service.display.draw`. The unattended pass criteria are serial: `device output`
 contains `fast redraw page 1`, `fast redraw page 2`, and `fast redraw page 0`,
-`device drawlog` contains `draw=binbook`, `device errors` is empty, and
+`device drawlog` contains `draw Drawable:`, `device errors` is empty, and
 `device resources` responds after the repeated redraws. The expected visible
 sequence is gray bands -> chimp/image -> sharp geometry. The visual acceptance
 question is no full flash-style refresh between page changes. The SSD1677
@@ -168,7 +168,7 @@ HTTP route to keep answering `HEAD` with a non-zero partial offset, then resumes
 and completes the upload. The unattended pass criteria are serial plus HTTP:
 curl receives `ok`, `device output` contains `upload complete http`,
 `upload copy true null`, and the uploaded book name, `device drawlog` contains
-`draw=binbook`, and `device errors` is empty. This proves the app-owned HTTP
+`draw Drawable:`, and `device errors` is empty. This proves the app-owned HTTP
 route, firmware staging file, resumable SD-backed upload, `file.copy`,
 `content.binbook.list("books")`, and BinBook display path work together on the
 device-owned X4 SD card.

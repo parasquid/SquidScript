@@ -294,9 +294,8 @@ operations are implemented in the host and Zephyr serial transport layers.
 ## Target Commands
 
 `target` commands are the canonical firmware-target workflow. They read
-repository target JSON metadata. Build, flash, and monitor default to the
-Zephyr backend, which resolves Zephyr board, build directory, overlay, fallback
-app, and generated Kconfig paths from that metadata.
+repository target JSON metadata and resolve the configured Rust firmware
+package, target triple, features, artifact, chip, and flashing tool.
 
 ```sh
 cargo run -p squidc -- target list
@@ -309,25 +308,25 @@ cargo run -p squidc -- hardware test --target xiao-esp32c3-gdeq0426t82-sd
 cargo run -p squidc -- hardware test --target xiao-esp32c3-gdeq0426t82-sd --list
 ```
 
-Targets with native firmware metadata can opt into the native backend:
+Targets with native firmware metadata use the native firmware toolchain:
 
 ```sh
-cargo run -p squidc -- target build --target xteink-x4 --backend native
-cargo run -p squidc -- target flash --target xteink-x4 --backend native
-cargo run -p squidc -- target monitor --target xteink-x4 --backend native
+cargo run -p squidc -- target build --target xteink-x4
+cargo run -p squidc -- target flash --target xteink-x4
+cargo run -p squidc -- target monitor --target xteink-x4
 ```
 
-The native X4 backend builds `firmware/native` with the target's configured
+The X4 target builds `firmware/native` with the target's configured
 Rust package, target triple, feature set, and release/debug mode, then flashes
 the configured ELF with `espflash`.
 
 Use `target inspect` or `--print-plan` before side-effectful operations when
-automation needs to verify the resolved command without invoking the backend:
+automation needs to verify the resolved command without invoking the tool:
 
 ```sh
 cargo run -p squidc -- target build --target esp32c3-super-mini --print-plan
 cargo run -p squidc -- target flash --target esp32c3-super-mini --print-plan -- --runner esp32
-cargo run -p squidc -- target build --target xteink-x4 --backend native --print-plan
+cargo run -p squidc -- target build --target xteink-x4 --print-plan
 ```
 
 When `--target` is omitted, interactive terminals show a target picker.

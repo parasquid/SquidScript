@@ -7,7 +7,6 @@ source "${ROOT}/scripts/lib/serial-port.sh"
 source "${ROOT}/scripts/lib/transfer-payload.sh"
 
 TARGET_ID="${TARGET_ID:-xteink-x4}"
-TARGET_BACKEND="${TARGET_BACKEND:-native}"
 APP_ID="ble-transfer-regression"
 APP_DIR="${ROOT}/tests/hardware/xteink-x4/ble-transfer-regression"
 WORK_DIR="${WORK_DIR:-${ROOT}/target/hardware-tests/xteink-x4-transfer-ble}"
@@ -23,7 +22,7 @@ COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-240}"
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/xteink-x4-test-ble-transfer.sh [--target <id>] [--backend <backend>] [--port <serial-port>] [--device <name-or-address>] [--skip-flash] [--payload <file.binbook>] [--name <file.binbook>]
+Usage: scripts/xteink-x4-test-ble-transfer.sh [--target <id>] [--port <serial-port>] [--device <name-or-address>] [--skip-flash] [--payload <file.binbook>] [--name <file.binbook>]
 
 Installs the X4 BLE transfer receiver, streams a validator-compatible generated
 BinBook payload over BLE file transfer, and verifies the copied file by size
@@ -34,7 +33,6 @@ USAGE
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --target) TARGET_ID="${2:-}"; shift 2 ;;
-    --backend) TARGET_BACKEND="${2:-}"; shift 2 ;;
     --port) PORT="${2:-}"; shift 2 ;;
     --device) DEVICE="${2:-}"; shift 2 ;;
     --skip-flash) SKIP_FLASH=1; shift ;;
@@ -118,8 +116,8 @@ fi
 read_transfer_payload_meta "${PAYLOAD}"
 
 if [[ "${SKIP_FLASH}" != "1" ]]; then
-  run_capture build-x4 cargo run --quiet -p squidc -- target build --target "${TARGET_ID}" --backend "${TARGET_BACKEND}" >/dev/null
-  run_capture flash-x4 cargo run --quiet -p squidc -- target flash --target "${TARGET_ID}" --backend "${TARGET_BACKEND}" >/dev/null
+  run_capture build-x4 cargo run --quiet -p squidc -- target build --target "${TARGET_ID}" >/dev/null
+  run_capture flash-x4 cargo run --quiet -p squidc -- target flash --target "${TARGET_ID}" >/dev/null
   sleep 2
 fi
 

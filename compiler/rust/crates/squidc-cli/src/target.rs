@@ -138,6 +138,7 @@ impl NativeFirmware {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[allow(dead_code)]
 pub enum TargetBackend {
     Zephyr,
     Native,
@@ -545,6 +546,7 @@ fn plan_native_monitor_command(
     })
 }
 
+#[allow(dead_code)]
 pub fn ensure_target_kconfig(root: &Path, target: &TargetDefinition) -> Result<PathBuf, String> {
     let zephyr = target.zephyr()?;
     let out = resolve_repo_path(root, &zephyr.target_kconfig);

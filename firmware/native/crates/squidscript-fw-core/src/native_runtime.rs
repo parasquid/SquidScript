@@ -375,6 +375,8 @@ pub trait NativeBinBookBackend {
 }
 
 pub trait NativeFileBackend {
+    fn reset_runtime_state(&mut self) {}
+
     fn file_pick_file<'a>(
         &'a mut self,
         _extension: &str,
@@ -2414,6 +2416,7 @@ impl<
     }
 
     fn reset_runtime_state(&mut self) {
+        self.file_backend.reset_runtime_state();
         self.temp_expected_len = 0;
         self.temp_received = 0;
         self.app_id.clear();

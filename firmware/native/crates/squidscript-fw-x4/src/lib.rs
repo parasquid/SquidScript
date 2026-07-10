@@ -1098,6 +1098,11 @@ pub mod x4_storage {
     where
         S: NativeFileStorage,
     {
+        fn reset_runtime_state(&mut self) {
+            self.handle_lens.fill(0);
+            self.drawable_active.fill(false);
+        }
+
         fn file_pick_file<'a>(
             &'a mut self,
             extension: &str,
@@ -2335,6 +2340,21 @@ pub mod x4_storage {
             assert_eq!(page.ok, true);
             assert_eq!(page.error, None);
             assert_eq!(page.drawable, Some(Handle::new(HandleKind::Drawable, 0)));
+
+            assert!(backend.binbook_open("books/book_a.binbook").unwrap().ok);
+            assert_eq!(
+                backend
+                    .binbook_open("books/book_a.binbook")
+                    .unwrap()
+                    .error,
+                Some("too-many-open")
+            );
+
+            backend.reset_runtime_state();
+
+            let reopened = backend.binbook_open("books/book_a.binbook").unwrap();
+            assert!(reopened.ok);
+            assert_eq!(reopened.book, Some(Handle::new(HandleKind::BinBook, 0)));
         }
 
         #[cfg(feature = "x4-binbook")]

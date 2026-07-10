@@ -1388,6 +1388,7 @@ event.on("app.start") {}
 
 #[derive(Default)]
 struct FileBackedBinBookBackend {
+    reset_calls: usize,
     open_calls: usize,
     info_calls: usize,
     read_page_calls: usize,
@@ -1396,6 +1397,10 @@ struct FileBackedBinBookBackend {
 }
 
 impl NativeFileBackend for FileBackedBinBookBackend {
+    fn reset_runtime_state(&mut self) {
+        self.reset_calls += 1;
+    }
+
     fn binbook_open<'a>(
         &'a mut self,
         path: &str,
@@ -1492,6 +1497,20 @@ impl NativeFileBackend for FileBackedBinBookBackend {
             }),
         })
     }
+}
+
+#[test]
+fn runtime_reset_releases_file_backend_runtime_state() {
+    let mut runtime = NativeRuntime::with_radio_display_binbook_and_file(
+        NoopRadioBackend,
+        CountingDisplaySink::default(),
+        NoopBinBookBackend,
+        FileBackedBinBookBackend::default(),
+    );
+
+    runtime.reset();
+
+    assert_eq!(runtime.file_backend().reset_calls, 1);
 }
 
 #[test]

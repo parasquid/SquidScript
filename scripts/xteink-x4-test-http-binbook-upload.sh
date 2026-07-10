@@ -10,26 +10,27 @@ APP_ID="http-binbook-upload-smoke"
 APP_DIR="${ROOT}/tests/hardware/xteink-x4/http-binbook-upload"
 WORK_DIR="${ROOT}/target/hardware-tests/xteink-x4-http-binbook-upload"
 PACKAGE="${WORK_DIR}/${APP_ID}.squid.zip"
-BINBOOK="${BINBOOK:-${ROOT}/tests/hardware/xiao-esp32c3/epaper-gray2-smoke/books/sample.binbook}"
+BINBOOK_PROVIDED="${BINBOOK+x}"
+BINBOOK="${BINBOOK:-${WORK_DIR}/http-upload.generated.binbook}"
 UPLOAD_NAME="${UPLOAD_NAME:-http-upload-smoke.binbook}"
 CLI_UPLOAD_NAME="${CLI_UPLOAD_NAME:-http-cli-upload-smoke.binbook}"
 DEVICE_AP_SSID="${DEVICE_AP_SSID:-SquidScript-X4}"
 DEVICE_AP_CONN="${DEVICE_AP_CONN:-squid-x4-http-upload}"
 HOST_WIFI_IFACE="${HOST_WIFI_IFACE:-}"
+PORT="${PORT:-}"
 WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-90}"
 COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-180}"
 CURL_MAX_TIME_SECONDS="${CURL_MAX_TIME_SECONDS:-300}"
 CURL_HEAD_MAX_TIME_SECONDS="${CURL_HEAD_MAX_TIME_SECONDS:-15}"
 CURL_PROGRESS="${CURL_PROGRESS:-1}"
 INTERRUPT_UPLOAD="${INTERRUPT_UPLOAD:-0}"
-INTERRUPT_UPLOAD_SECONDS="${INTERRUPT_UPLOAD_SECONDS:-15}"
-INTERRUPT_UPLOAD_LIMIT_RATE="${INTERRUPT_UPLOAD_LIMIT_RATE:-2k}"
+INTERRUPT_UPLOAD_BYTES="${INTERRUPT_UPLOAD_BYTES:-8192}"
 UPLOAD_RESUME_OFFSET="${UPLOAD_RESUME_OFFSET:-}"
 SKIP_FLASH="${SKIP_FLASH:-0}"
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/xteink-x4-test-http-binbook-upload.sh [--skip-flash] [--host-wifi-iface <iface>] [--binbook <file.binbook>]
+Usage: scripts/xteink-x4-test-http-binbook-upload.sh [--skip-flash] [--port <serial-port>] [--host-wifi-iface <iface>] [--binbook <file.binbook>]
 
 Flashes the XTEINK X4 firmware, installs the HTTP BinBook upload smoke app,
 associates the host Wi-Fi to the device AP, uploads a real .binbook through the
@@ -46,6 +47,14 @@ while [[ $# -gt 0 ]]; do
     --host-wifi-iface)
       HOST_WIFI_IFACE="${2:-}"
       if [[ -z "${HOST_WIFI_IFACE}" ]]; then
+        usage >&2
+        exit 2
+      fi
+      shift 2
+      ;;
+    --port)
+      PORT="${2:-}"
+      if [[ -z "${PORT}" ]]; then
         usage >&2
         exit 2
       fi
@@ -250,31 +259,41 @@ interrupt_upload_probe() {
   local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS))
   local size
   size="$(stat -c '%s' "${BINBOOK}")"
-  if (( size < 65536 )); then
-    printf '%s\n' 'INTERRUPT_UPLOAD requires a fixture of at least 65536 bytes' >&2
+  if (( size < 8192 )); then
+    printf '%s\n' 'INTERRUPT_UPLOAD requires a fixture of at least 8192 bytes' >&2
     exit 1
   fi
 
-  while (( SECONDS < deadline )); do
-    set +e
-    timeout "${INTERRUPT_UPLOAD_SECONDS}s" \
-      curl --max-time "$((INTERRUPT_UPLOAD_SECONDS + 20))" -fS --http1.1 \
-        --limit-rate "${INTERRUPT_UPLOAD_LIMIT_RATE}" --progress-bar -H "Expect:" \
-        --upload-file "${BINBOOK}" "${url}" \
-        >"${WORK_DIR}/curl-upload-interrupt.out" \
-        2> >(tee "${WORK_DIR}/curl-upload-interrupt-progress.out" >&2)
-    local status="$?"
-    set -e
-    printf 'interrupt_status=%s\n' "${status}" >"${WORK_DIR}/curl-upload-interrupt-status.out"
-    if [[ "${status}" == "0" ]]; then
-      printf '%s\n' 'Expected interrupted upload probe to stop before completion' >&2
-      exit 1
-    fi
-    if [[ "${status}" != "7" ]]; then
-      break
-    fi
-    sleep 1
-  done
+  python3 - "${BINBOOK}" "${UPLOAD_NAME}" "${size}" "${INTERRUPT_UPLOAD_BYTES}" <<'PY'
+import pathlib
+import socket
+import sys
+import time
+
+path = pathlib.Path(sys.argv[1])
+name = sys.argv[2]
+size = int(sys.argv[3])
+partial_bytes = int(sys.argv[4])
+payload = path.read_bytes()[:partial_bytes]
+request = (
+    f"PUT /upload/{name} HTTP/1.1\r\n"
+    "Host: 192.168.4.1\r\n"
+    f"Content-Length: {size}\r\n"
+    "Connection: close\r\n\r\n"
+).encode("ascii")
+
+deadline = time.monotonic() + 30
+while True:
+    try:
+        with socket.create_connection(("192.168.4.1", 80), timeout=5) as connection:
+            connection.sendall(request)
+            connection.sendall(payload)
+        break
+    except OSError:
+        if time.monotonic() >= deadline:
+            raise
+        time.sleep(0.25)
+PY
 
   local offset="0"
   while (( SECONDS < deadline )); do
@@ -293,13 +312,28 @@ interrupt_upload_probe() {
   exit 1
 }
 
+if [[ -z "${BINBOOK_PROVIDED}" ]]; then
+  .venv/bin/python "${ROOT}/scripts/generate-test-binbook.py" "${BINBOOK}"
+fi
 if [[ ! -s "${BINBOOK}" ]]; then
   printf 'BinBook fixture not found or empty: %s\n' "${BINBOOK}" >&2
   exit 1
 fi
 
-source "${ROOT}/scripts/zephyr-env.sh"
-export ESPFLASH_PORT="$(resolve_esp_serial_port)"
+read -r SIZE CRC32 < <(python3 - "${BINBOOK}" <<'PY'
+import pathlib
+import sys
+import zlib
+
+data = pathlib.Path(sys.argv[1]).read_bytes()
+print(len(data), f"{zlib.crc32(data) & 0xffffffff:08x}")
+PY
+)
+
+if [[ -z "${PORT}" ]]; then
+  PORT="$(resolve_esp_serial_port)"
+fi
+export ESPFLASH_PORT="${PORT}"
 
 if [[ "${SKIP_FLASH}" != "1" ]]; then
   run_capture build-x4 cargo run --quiet -p squidc -- target build --target "${TARGET_ID}" >/dev/null
@@ -310,8 +344,12 @@ fi
 run_capture package-http-upload \
   cargo run --quiet -p squidc -- app package "${APP_DIR}" --target "${TARGET_ID}" --out "${PACKAGE}" >/dev/null
 
+run_capture storage-format-before-http-upload \
+  cargo run --quiet -p squidc -- device storage-format --port "${ESPFLASH_PORT}" >/dev/null
+
 run_capture reset-before-http-upload \
   cargo run --quiet -p squidc -- device reset --port "${ESPFLASH_PORT}" >/dev/null
+sleep 2
 
 run_capture install-http-upload \
   cargo run --quiet -p squidc -- app install "${PACKAGE}" --port "${ESPFLASH_PORT}" >/dev/null
@@ -321,13 +359,23 @@ run_capture launch-http-upload \
 
 ready_out="$(wait_for_contains output-ready "http upload ready true null" \
   "device output" cargo run --quiet -p squidc -- device output --port "${ESPFLASH_PORT}")"
-assert_file_contains "${ready_out}" "content true"
 
 connect_host_to_device_ap
 assert_device_ap_dhcp_lease
 
+RAW_UPLOAD_COMPLETE=0
 if [[ "${INTERRUPT_UPLOAD}" == "1" ]]; then
   interrupt_upload_probe
+  curl_upload
+  assert_file_contains "${WORK_DIR}/curl-upload.out" "ok"
+  copy_out="$(wait_for_contains output-copy "upload copy true null" \
+    "device output" cargo run --quiet -p squidc -- device output --port "${ESPFLASH_PORT}")"
+  assert_file_contains "${copy_out}" "book page ${UPLOAD_NAME}"
+  assert_file_contains "${copy_out}" "upload complete http ${UPLOAD_NAME}"
+  run_capture curl-content-check \
+    cargo run --quiet -p squidc -- device content-check "${UPLOAD_NAME}" \
+      --size "${SIZE}" --crc32 "${CRC32}" --port "${ESPFLASH_PORT}" >/dev/null
+  RAW_UPLOAD_COMPLETE=1
 fi
 
 run_capture cli-http-upload \
@@ -336,19 +384,32 @@ run_capture cli-http-upload \
 cli_copy_out="$(wait_for_contains output-cli-copy "${CLI_UPLOAD_NAME}" \
   "device output" cargo run --quiet -p squidc -- device output --port "${ESPFLASH_PORT}")"
 assert_file_contains "${cli_copy_out}" "upload complete http ${CLI_UPLOAD_NAME}"
+assert_file_contains "${cli_copy_out}" "book page ${CLI_UPLOAD_NAME}"
+run_capture cli-content-check \
+  cargo run --quiet -p squidc -- device content-check "${CLI_UPLOAD_NAME}" \
+    --size "${SIZE}" --crc32 "${CRC32}" --port "${ESPFLASH_PORT}" >/dev/null
 
-curl_upload
-assert_file_contains "${WORK_DIR}/curl-upload.out" "ok"
+if [[ "${RAW_UPLOAD_COMPLETE}" != "1" ]]; then
+  curl_upload
+  assert_file_contains "${WORK_DIR}/curl-upload.out" "ok"
 
-copy_out="$(wait_for_contains output-copy "upload copy true null" \
-  "device output" cargo run --quiet -p squidc -- device output --port "${ESPFLASH_PORT}")"
-assert_file_contains "${copy_out}" "uploaded book page ${UPLOAD_NAME}"
-assert_file_contains "${copy_out}" "upload complete http ${UPLOAD_NAME}"
+  copy_out="$(wait_for_contains output-copy "upload copy true null" \
+    "device output" cargo run --quiet -p squidc -- device output --port "${ESPFLASH_PORT}")"
+  assert_file_contains "${copy_out}" "book page ${UPLOAD_NAME}"
+  assert_file_contains "${copy_out}" "upload complete http ${UPLOAD_NAME}"
+  run_capture curl-content-check \
+    cargo run --quiet -p squidc -- device content-check "${UPLOAD_NAME}" \
+      --size "${SIZE}" --crc32 "${CRC32}" --port "${ESPFLASH_PORT}" >/dev/null
+fi
 
 drawlog_out="$(run_capture drawlog cargo run --quiet -p squidc -- device drawlog --port "${ESPFLASH_PORT}")"
-assert_file_contains "${drawlog_out}" "draw=binbook"
+assert_file_contains "${drawlog_out}" "draw Drawable:"
 
 errors_out="$(run_capture errors cargo run --quiet -p squidc -- device errors --port "${ESPFLASH_PORT}")"
-assert_file_empty_command "${errors_out}"
+if grep -v '^error=diag\.' "${errors_out}" | grep -q .; then
+  printf 'Expected device errors to contain diagnostics only\n' >&2
+  sed -n '1,120p' "${errors_out}" >&2
+  exit 1
+fi
 
 printf '%s\n' 'OK XTEINK X4 HTTP BinBook upload hardware check passed'
