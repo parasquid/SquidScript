@@ -166,7 +166,7 @@ curl "${curl_args[@]}" \
   "http://192.168.4.1/upload/${UPLOAD_NAME}" >"${WORK_DIR}/curl-upload.out" \
   2> >(tee "${WORK_DIR}/curl-upload-progress.out" >&2)
 grep -Fq "ok" "${WORK_DIR}/curl-upload.out"
-wait_for_contains output-copy "http copy true null" cargo run --quiet -p squidc -- device output --port "${PORT}" >/dev/null
+wait_for_contains output-copy "upload copy http true null" cargo run --quiet -p squidc -- device output --port "${PORT}" >/dev/null
 run_capture content-check cargo run --quiet -p squidc -- device content-check "${UPLOAD_NAME}" --size "${SIZE}" --crc32 "${CRC32}" --port "${PORT}" >/dev/null
 errors_out="$(run_capture errors cargo run --quiet -p squidc -- device errors --port "${PORT}")"
 if [[ -s "${errors_out}" ]]; then
