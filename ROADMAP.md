@@ -44,6 +44,28 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 ## Storage And Content
 
+- **Regenerate tracked BinBook fixtures for the current format.** The BinBook
+  format and Rust compiler have changed, and the tracked `.binbook` files plus
+  `scripts/generate-test-binbook.py` now fail validation through the current
+  `binbook-core` / `binbook inspect --validate --strict`. Replace the
+  hand-packed generator with the current BinBook compiler, inventory and
+  regenerate every tracked `.binbook`, then update affected tests, scripts,
+  and documentation. Verify each regenerated fixture with strict host
+  validation and rerun its owning SquidScript test or hardware workflow. Do
+  not weaken firmware content checks to accept stale files.
+- **Unify serial uploads under `device upload`.** `squidc device upload`
+  currently supports HTTP and BLE, while serial file transfer remains exposed
+  separately through `device content-put`. Add `--transport serial` with the
+  serial port as its destination and give it the same filename validation,
+  progress reporting, completion result, and error semantics as the other
+  transports. Route serial through the shared upload staging and publication
+  lifecycle where practical; review `content-put` and its storage path for
+  duplicated transfer or storage behavior and consolidate it rather than
+  maintaining parallel implementations. Preserve retry or resume behavior
+  where the serial protocol supports it, update CLI help, docs, scripts, and
+  tests, and verify byte-exact upload plus published-content behavior on
+  attached hardware. Start from the existing serial transfer protocol; do not
+  add another protocol unless it cannot satisfy the unified contract.
 - Add app-facing file management APIs: rename, move, copy, delete, and
   related result records for firmware-owned file references and logical
   libraries, so upload handlers can organize files beyond the current
