@@ -2690,6 +2690,7 @@ dependencies = [
  "littlefs2",
  "serde_json",
  "squid-device-protocol",
+ "squidc-core",
  "squidscript-fw-core",
  "squidvm-core",
  "ssd1677-driver",

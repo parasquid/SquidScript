@@ -72,7 +72,222 @@ pub trait NativeAppStorage {
     fn save_state_atomic(&mut self, app_id: &str, bytes: &[u8]) -> Result<(), AppStoreError>;
     fn delete_state(&mut self, app_id: &str) -> Result<(), AppStoreError>;
     fn format(&mut self) -> Result<(), AppStoreError>;
+    /// Returns `(total_bytes, available_bytes)` for the app-store volume.
     fn capacity(&mut self) -> Result<(usize, usize), AppStoreError>;
+}
+
+pub struct VolatileAppStorage {
+    app_id: AppId,
+    app: [u8; MAX_APP_BYTES],
+    app_len: usize,
+    pending_id: AppId,
+    pending: [u8; MAX_APP_BYTES],
+    pending_len: usize,
+    state: [u8; MAX_SAVED_STATE_BYTES],
+    state_len: Option<usize>,
+    storage_write_calls: usize,
+}
+
+impl VolatileAppStorage {
+    pub const fn new() -> Self {
+        Self {
+            app_id: AppId::empty(),
+            app: [0; MAX_APP_BYTES],
+            app_len: 0,
+            pending_id: AppId::empty(),
+            pending: [0; MAX_APP_BYTES],
+            pending_len: 0,
+            state: [0; MAX_SAVED_STATE_BYTES],
+            state_len: None,
+            storage_write_calls: 0,
+        }
+    }
+
+    pub const fn storage_write_calls(&self) -> usize {
+        self.storage_write_calls
+    }
+}
+
+impl Default for VolatileAppStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl NativeAppStorage for VolatileAppStorage {
+    fn for_each_app(&mut self, visit: &mut dyn FnMut(&str, usize)) -> Result<(), AppStoreError> {
+        if self.app_len != 0 {
+            visit(self.app_id.as_str(), self.app_len);
+        }
+        Ok(())
+    }
+
+    fn app_size(&mut self, app_id: &str) -> Result<usize, AppStoreError> {
+        (self.app_len != 0 && self.app_id.as_str() == app_id)
+            .then_some(self.app_len)
+            .ok_or(AppStoreError::NotFound)
+    }
+
+    fn read_app_at(
+        &mut self,
+        app_id: &str,
+        offset: usize,
+        out: &mut [u8],
+    ) -> Result<(), AppStoreError> {
+        if self.app_id.as_str() != app_id {
+            return Err(AppStoreError::NotFound);
+        }
+        out.copy_from_slice(
+            self.app
+                .get(offset..offset + out.len())
+                .filter(|_| offset + out.len() <= self.app_len)
+                .ok_or(AppStoreError::TooLarge)?,
+        );
+        Ok(())
+    }
+
+    fn begin_app_install(&mut self, app_id: &str, _total_len: usize) -> Result<(), AppStoreError> {
+        self.pending_id = AppId::parse(app_id)?;
+        self.pending_len = 0;
+        self.storage_write_calls += 1;
+        Ok(())
+    }
+
+    fn write_app_install_chunk(
+        &mut self,
+        app_id: &str,
+        offset: usize,
+        bytes: &[u8],
+    ) -> Result<(), AppStoreError> {
+        if self.pending_id.as_str() != app_id || offset != self.pending_len {
+            return Err(AppStoreError::OutOfOrder);
+        }
+        let end = offset
+            .checked_add(bytes.len())
+            .ok_or(AppStoreError::TooLarge)?;
+        self.pending
+            .get_mut(offset..end)
+            .ok_or(AppStoreError::TooLarge)?
+            .copy_from_slice(bytes);
+        self.pending_len = end;
+        self.storage_write_calls += 1;
+        Ok(())
+    }
+
+    fn read_app_install_at(
+        &mut self,
+        app_id: &str,
+        offset: usize,
+        out: &mut [u8],
+    ) -> Result<(), AppStoreError> {
+        if self.pending_id.as_str() != app_id {
+            return Err(AppStoreError::NotFound);
+        }
+        out.copy_from_slice(
+            self.pending
+                .get(offset..offset + out.len())
+                .filter(|_| offset + out.len() <= self.pending_len)
+                .ok_or(AppStoreError::TooLarge)?,
+        );
+        Ok(())
+    }
+
+    fn publish_app_install(&mut self, app_id: &str) -> Result<(), AppStoreError> {
+        if self.pending_id.as_str() != app_id {
+            return Err(AppStoreError::NotFound);
+        }
+        if self.app_id.as_str() != app_id {
+            self.state_len = None;
+        }
+        self.app[..self.pending_len].copy_from_slice(&self.pending[..self.pending_len]);
+        self.app_id = self.pending_id;
+        self.app_len = self.pending_len;
+        self.pending_id = AppId::empty();
+        self.pending_len = 0;
+        self.storage_write_calls += 1;
+        Ok(())
+    }
+
+    fn abort_app_install(&mut self, app_id: &str) -> Result<(), AppStoreError> {
+        if self.pending_id.as_str() == app_id {
+            self.pending_id = AppId::empty();
+            self.pending_len = 0;
+        }
+        Ok(())
+    }
+
+    fn begin_resource_install(&mut self, _: &str, _: &str, _: usize) -> Result<(), AppStoreError> {
+        Err(AppStoreError::Io)
+    }
+    fn write_resource_install_chunk(
+        &mut self,
+        _: &str,
+        _: &str,
+        _: usize,
+        _: &[u8],
+    ) -> Result<(), AppStoreError> {
+        Err(AppStoreError::Io)
+    }
+    fn publish_resource_install(&mut self, _: &str, _: &str) -> Result<(), AppStoreError> {
+        Err(AppStoreError::Io)
+    }
+    fn read_resource_at(
+        &mut self,
+        _: &str,
+        _: &str,
+        _: usize,
+        _: &mut [u8],
+    ) -> Result<(), AppStoreError> {
+        Err(AppStoreError::NotFound)
+    }
+    fn resource_size(&mut self, _: &str, _: &str) -> Result<usize, AppStoreError> {
+        Err(AppStoreError::NotFound)
+    }
+
+    fn load_state(&mut self, app_id: &str, out: &mut [u8]) -> Result<Option<usize>, AppStoreError> {
+        if self.app_id.as_str() != app_id {
+            return Err(AppStoreError::NotFound);
+        }
+        let Some(len) = self.state_len else {
+            return Ok(None);
+        };
+        out[..len].copy_from_slice(&self.state[..len]);
+        Ok(Some(len))
+    }
+
+    fn save_state_atomic(&mut self, app_id: &str, bytes: &[u8]) -> Result<(), AppStoreError> {
+        if self.app_id.as_str() != app_id || bytes.len() > self.state.len() {
+            return Err(AppStoreError::TooLarge);
+        }
+        self.state[..bytes.len()].copy_from_slice(bytes);
+        self.state_len = Some(bytes.len());
+        self.storage_write_calls += 1;
+        Ok(())
+    }
+
+    fn delete_state(&mut self, app_id: &str) -> Result<(), AppStoreError> {
+        if self.app_id.as_str() == app_id {
+            self.state_len = None;
+            self.storage_write_calls += 1;
+        }
+        Ok(())
+    }
+
+    fn format(&mut self) -> Result<(), AppStoreError> {
+        self.app_id = AppId::empty();
+        self.app_len = 0;
+        self.pending_id = AppId::empty();
+        self.pending_len = 0;
+        self.state_len = None;
+        self.storage_write_calls += 1;
+        Ok(())
+    }
+
+    fn capacity(&mut self) -> Result<(usize, usize), AppStoreError> {
+        let total = MAX_APP_BYTES + MAX_SAVED_STATE_BYTES;
+        let used = self.app_len + self.state_len.unwrap_or(0);
+        Ok((total, total.saturating_sub(used)))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -128,6 +343,11 @@ pub struct NativeAppStore<S> {
     pending_app: AppId,
     pending_expected: usize,
     pending_received: usize,
+    pending_resource_app: AppId,
+    pending_resource_path: [u8; MAX_APP_RESOURCE_PATH_BYTES],
+    pending_resource_path_len: usize,
+    pending_resource_expected: usize,
+    pending_resource_received: usize,
 }
 
 impl<S: NativeAppStorage> NativeAppStore<S> {
@@ -139,6 +359,11 @@ impl<S: NativeAppStorage> NativeAppStore<S> {
             pending_app: AppId::empty(),
             pending_expected: 0,
             pending_received: 0,
+            pending_resource_app: AppId::empty(),
+            pending_resource_path: [0; MAX_APP_RESOURCE_PATH_BYTES],
+            pending_resource_path_len: 0,
+            pending_resource_expected: 0,
+            pending_resource_received: 0,
         }
     }
 
@@ -160,6 +385,13 @@ impl<S: NativeAppStorage> NativeAppStore<S> {
             .flatten()
             .copied()
             .find(|entry| entry.app_id() == app_id)
+    }
+
+    pub fn app_id_at(&self, index: usize) -> Option<&str> {
+        self.registry
+            .get(index)
+            .and_then(Option::as_ref)
+            .map(AppRegistryEntry::app_id)
     }
 
     pub fn rebuild(&mut self, scratch: &mut [u8]) -> Result<(), AppStoreError> {
@@ -271,6 +503,72 @@ impl<S: NativeAppStorage> NativeAppStore<S> {
         self.storage.read_app_at(app_id, offset, out)
     }
 
+    pub fn begin_resource_install(
+        &mut self,
+        app_id: &str,
+        path: &str,
+        total_len: usize,
+    ) -> Result<(), AppStoreError> {
+        let app_id = AppId::parse(app_id)?;
+        validate_portable_resource_path(path)?;
+        if total_len == 0 {
+            return Err(AppStoreError::TooLarge);
+        }
+        if self.find(app_id.as_str()).is_none() && self.registry_len == self.registry.len() {
+            return Err(AppStoreError::RegistryFull);
+        }
+        self.storage
+            .begin_resource_install(app_id.as_str(), path, total_len)?;
+        self.pending_resource_app = app_id;
+        self.pending_resource_path[..path.len()].copy_from_slice(path.as_bytes());
+        self.pending_resource_path_len = path.len();
+        self.pending_resource_expected = total_len;
+        self.pending_resource_received = 0;
+        Ok(())
+    }
+
+    pub fn write_resource_chunk(
+        &mut self,
+        offset: usize,
+        bytes: &[u8],
+    ) -> Result<(), AppStoreError> {
+        if bytes.is_empty() || offset != self.pending_resource_received {
+            return Err(AppStoreError::OutOfOrder);
+        }
+        let end = offset
+            .checked_add(bytes.len())
+            .ok_or(AppStoreError::TooLarge)?;
+        if end > self.pending_resource_expected {
+            return Err(AppStoreError::TooLarge);
+        }
+        let path =
+            core::str::from_utf8(&self.pending_resource_path[..self.pending_resource_path_len])
+                .map_err(|_| AppStoreError::InvalidPath)?;
+        self.storage.write_resource_install_chunk(
+            self.pending_resource_app.as_str(),
+            path,
+            offset,
+            bytes,
+        )?;
+        self.pending_resource_received = end;
+        Ok(())
+    }
+
+    pub fn commit_resource_install(&mut self) -> Result<(), AppStoreError> {
+        if self.pending_resource_expected == 0
+            || self.pending_resource_received != self.pending_resource_expected
+        {
+            return Err(AppStoreError::Incomplete);
+        }
+        let path =
+            core::str::from_utf8(&self.pending_resource_path[..self.pending_resource_path_len])
+                .map_err(|_| AppStoreError::InvalidPath)?;
+        self.storage
+            .publish_resource_install(self.pending_resource_app.as_str(), path)?;
+        self.clear_pending_resource();
+        Ok(())
+    }
+
     pub fn save_state(&mut self, app_id: &str, bytes: &[u8]) -> Result<(), AppStoreError> {
         if bytes.len() > MAX_SAVED_STATE_BYTES || self.find(app_id).is_none() {
             return Err(AppStoreError::TooLarge);
@@ -291,6 +589,7 @@ impl<S: NativeAppStorage> NativeAppStore<S> {
         self.registry.fill(None);
         self.registry_len = 0;
         self.clear_pending();
+        self.clear_pending_resource();
         Ok(())
     }
 
@@ -344,6 +643,32 @@ impl<S: NativeAppStorage> NativeAppStore<S> {
         self.pending_expected = 0;
         self.pending_received = 0;
     }
+
+    fn clear_pending_resource(&mut self) {
+        self.pending_resource_app = AppId::empty();
+        self.pending_resource_path_len = 0;
+        self.pending_resource_expected = 0;
+        self.pending_resource_received = 0;
+    }
+}
+
+fn validate_portable_resource_path(path: &str) -> Result<(), AppStoreError> {
+    if path.is_empty()
+        || path.len() > MAX_APP_RESOURCE_PATH_BYTES
+        || path.starts_with('/')
+        || path.ends_with('/')
+        || path.split('/').any(|part| {
+            part.is_empty()
+                || matches!(part, "." | "..")
+                || !part
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+        })
+    {
+        Err(AppStoreError::InvalidPath)
+    } else {
+        Ok(())
+    }
 }
 
 fn validate_reader(
@@ -391,6 +716,9 @@ mod tests {
     struct MemoryStorage {
         apps: BTreeMap<std::string::String, Vec<u8>>,
         pending: BTreeMap<std::string::String, Vec<u8>>,
+        resources: BTreeMap<std::string::String, Vec<u8>>,
+        pending_resource: Option<(std::string::String, Vec<u8>)>,
+        staged_resources: BTreeMap<std::string::String, Vec<u8>>,
         states: BTreeMap<std::string::String, Vec<u8>>,
         fail_publish: bool,
     }
@@ -458,6 +786,16 @@ mod tests {
             }
             let bytes = self.pending.remove(app_id).ok_or(AppStoreError::NotFound)?;
             self.apps.insert(app_id.into(), bytes);
+            self.resources
+                .retain(|key, _| !key.starts_with(&std::format!("{app_id}/")));
+            let prefix = std::format!("{app_id}/");
+            for (key, bytes) in core::mem::take(&mut self.staged_resources) {
+                if key.starts_with(&prefix) {
+                    self.resources.insert(key, bytes);
+                } else {
+                    self.staged_resources.insert(key, bytes);
+                }
+            }
             Ok(())
         }
         fn abort_app_install(&mut self, app_id: &str) -> Result<(), AppStoreError> {
@@ -466,35 +804,67 @@ mod tests {
         }
         fn begin_resource_install(
             &mut self,
-            _: &str,
-            _: &str,
-            _: usize,
+            app_id: &str,
+            path: &str,
+            total_len: usize,
         ) -> Result<(), AppStoreError> {
+            self.pending_resource = Some((
+                std::format!("{app_id}/{path}"),
+                Vec::with_capacity(total_len),
+            ));
             Ok(())
         }
         fn write_resource_install_chunk(
             &mut self,
-            _: &str,
-            _: &str,
-            _: usize,
-            _: &[u8],
+            app_id: &str,
+            path: &str,
+            offset: usize,
+            bytes: &[u8],
         ) -> Result<(), AppStoreError> {
+            let (key, pending) = self
+                .pending_resource
+                .as_mut()
+                .ok_or(AppStoreError::NotFound)?;
+            if key != &std::format!("{app_id}/{path}") || pending.len() != offset {
+                return Err(AppStoreError::OutOfOrder);
+            }
+            pending.extend_from_slice(bytes);
             Ok(())
         }
-        fn publish_resource_install(&mut self, _: &str, _: &str) -> Result<(), AppStoreError> {
+        fn publish_resource_install(
+            &mut self,
+            app_id: &str,
+            path: &str,
+        ) -> Result<(), AppStoreError> {
+            let (key, bytes) = self
+                .pending_resource
+                .take()
+                .ok_or(AppStoreError::NotFound)?;
+            if key != std::format!("{app_id}/{path}") {
+                return Err(AppStoreError::OutOfOrder);
+            }
+            self.staged_resources.insert(key, bytes);
             Ok(())
         }
         fn read_resource_at(
             &mut self,
-            _: &str,
-            _: &str,
-            _: usize,
-            _: &mut [u8],
+            app_id: &str,
+            path: &str,
+            offset: usize,
+            out: &mut [u8],
         ) -> Result<(), AppStoreError> {
-            Err(AppStoreError::NotFound)
+            read_map(
+                &self.resources,
+                &std::format!("{app_id}/{path}"),
+                offset,
+                out,
+            )
         }
-        fn resource_size(&mut self, _: &str, _: &str) -> Result<usize, AppStoreError> {
-            Err(AppStoreError::NotFound)
+        fn resource_size(&mut self, app_id: &str, path: &str) -> Result<usize, AppStoreError> {
+            self.resources
+                .get(&std::format!("{app_id}/{path}"))
+                .map(Vec::len)
+                .ok_or(AppStoreError::NotFound)
         }
         fn load_state(
             &mut self,
@@ -518,6 +888,9 @@ mod tests {
         fn format(&mut self) -> Result<(), AppStoreError> {
             self.apps.clear();
             self.pending.clear();
+            self.resources.clear();
+            self.pending_resource = None;
+            self.staged_resources.clear();
             self.states.clear();
             Ok(())
         }
@@ -632,5 +1005,57 @@ mod tests {
         store.format().unwrap();
         assert!(store.registry().is_empty());
         assert_eq!(store.load_state("app-0", &mut state).unwrap(), None);
+    }
+
+    #[test]
+    fn publishes_resources_for_installed_apps_and_validates_paths() {
+        let mut store = NativeAppStore::new(MemoryStorage::default());
+        install(&mut store, "reader", &sqbc("reader")).unwrap();
+
+        for path in ["", "/root", "fonts/../body.bin", "fonts//body.bin"] {
+            assert_eq!(
+                store.begin_resource_install("reader", path, 4),
+                Err(AppStoreError::InvalidPath)
+            );
+        }
+
+        store
+            .begin_resource_install("reader", "fonts/body.bin", 4)
+            .unwrap();
+        store.write_resource_chunk(0, b"fo").unwrap();
+        assert_eq!(
+            store.write_resource_chunk(3, b"nt"),
+            Err(AppStoreError::OutOfOrder)
+        );
+        store.write_resource_chunk(2, b"nt").unwrap();
+        store.commit_resource_install().unwrap();
+        assert_eq!(
+            store.storage.resource_size("reader", "fonts/body.bin"),
+            Err(AppStoreError::NotFound)
+        );
+        install(&mut store, "reader", &sqbc("reader")).unwrap();
+
+        let storage = store.storage;
+        let mut rebuilt = NativeAppStore::new(storage);
+        rebuilt.rebuild(&mut [0; 1024]).unwrap();
+        assert_eq!(
+            rebuilt
+                .storage
+                .resource_size("reader", "fonts/body.bin")
+                .unwrap(),
+            4
+        );
+        let mut bytes = [0; 4];
+        rebuilt
+            .storage
+            .read_resource_at("reader", "fonts/body.bin", 0, &mut bytes)
+            .unwrap();
+        assert_eq!(&bytes, b"font");
+
+        rebuilt.format().unwrap();
+        assert_eq!(
+            rebuilt.storage.resource_size("reader", "fonts/body.bin"),
+            Err(AppStoreError::NotFound)
+        );
     }
 }

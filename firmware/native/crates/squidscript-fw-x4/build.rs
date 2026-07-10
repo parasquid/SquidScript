@@ -1,5 +1,7 @@
 use std::{env, fs, path::PathBuf};
 
+use squidc_core::compile::{compile, CompileRequest};
+
 fn main() {
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let target = manifest.join("../../../../targets/xteink-x4.target.json");
@@ -73,6 +75,25 @@ fn main() {
         generated,
     )
     .expect("write generated X4 input metadata");
+
+    let fallback = manifest.join("fallback/main.squid");
+    println!("cargo:rerun-if-changed={}", fallback.display());
+    let compiled = compile(CompileRequest {
+        source: fs::read_to_string(&fallback).expect("read native fallback source"),
+        target_id: "xteink-x4".into(),
+    });
+    assert!(
+        compiled.ok,
+        "native fallback compile failed: {:?}",
+        compiled.diagnostics
+    );
+    let sqbc = squidc_core::sqbc::encode_sqbc(&compiled.ir.expect("native fallback IR"))
+        .expect("encode native fallback SQBC");
+    fs::write(
+        PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("fallback-main.sqbc"),
+        sqbc,
+    )
+    .expect("write native fallback SQBC");
 }
 
 fn required_u64(value: &serde_json::Value, key: &str) -> u64 {

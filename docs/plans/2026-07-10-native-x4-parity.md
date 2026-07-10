@@ -260,16 +260,16 @@ unchanged.
 **Owning layers:** portable firmware-core app-store interface and X4 LittleFS
 adapter.
 
-- [ ] Add a storage interface supporting bounded directory scan, byte-range
+- [x] Add a storage interface supporting bounded directory scan, byte-range
   read, temporary write, flush, rename, delete, state records, and capacity
   reporting.
-- [ ] Implement the logical paths from the design spec. Keep physical paths
+- [x] Implement the logical paths from the design spec. Keep physical paths
   out of compiler core and app-visible results.
-- [ ] Rebuild an eight-entry resident registry from valid app directories at
+- [x] Rebuild an eight-entry resident registry from valid app directories at
   boot. Reject overflow visibly rather than truncating.
-- [ ] Stream SQBC reads from flash through the existing reader/chunk boundary;
+- [x] Stream SQBC reads from flash through the existing reader/chunk boundary;
   do not retain an app-sized bytecode array.
-- [ ] Implement atomic app installation:
+- [x] Implement atomic app installation:
   - begin a temporary file;
   - enforce app-id and size caps;
   - accept durable sequential chunks;
@@ -277,17 +277,17 @@ adapter.
     app-id metadata, and SQBC structure;
   - publish resources and `main.sqbc` atomically;
   - leave the previous installed app intact on any failure.
-- [ ] Persist package resources below the app directory and prove an installed
+- [x] Persist package resources below the app directory and prove an installed
   app can read one after cold boot.
-- [ ] Persist per-app state through atomic temporary-record replacement.
-- [ ] Keep `RUN.TEMP` and its state RAM-backed. Reset/replacement must reclaim
+- [x] Persist per-app state through atomic temporary-record replacement.
+- [x] Keep `RUN.TEMP` and its state RAM-backed. Reset/replacement must reclaim
   it without flash writes.
-- [ ] Compile and embed a native fallback SquidScript app. Boot installed
+- [x] Compile and embed a native fallback SquidScript app. Boot installed
   `main` when valid; otherwise run fallback `main` without publishing it in the
   registry.
-- [ ] Implement `system.storage("apps")` from real partition metrics and
+- [x] Implement `system.storage("apps")` from real partition metrics and
   `system.memory()` from native RAM/heap metrics.
-- [ ] Make `device storage-format` erase only SquidScript filesystem content,
+- [x] Make `device storage-format` erase only SquidScript filesystem content,
   remount it, clear registry/state/lifecycle data, and preserve OTA slots and SD
   books.
 

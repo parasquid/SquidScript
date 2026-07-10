@@ -1,0 +1,32 @@
+app "main"
+
+event.on("app.start") {
+  service.upload.start({
+    id: "sqbc-install"
+    accept: [".sqbc"]
+    transports: ["ble"]
+    events: {
+      complete: "upload.complete"
+    }
+  })
+  screen.open("main")
+}
+
+screen("main") {
+  service.display.clear(color.WHITE)
+  service.display.text("XTEINK X4", {
+    x: 24
+    y: 48
+    fontHeight: 24
+  })
+  service.display.text("SquidScript ready", {
+    x: 24
+    y: 88
+    fontHeight: 20
+  })
+}
+
+event.on("upload.complete", ev) {
+  let installed = app.install(ev.upload)
+  app.launch(installed.id)
+}

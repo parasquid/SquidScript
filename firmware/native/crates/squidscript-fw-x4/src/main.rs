@@ -176,6 +176,9 @@ macro_rules! native_radio_log {
 #[cfg(target_arch = "riscv32")]
 esp_bootloader_esp_idf::esp_app_desc!();
 
+#[cfg(target_arch = "riscv32")]
+use squidscript_fw_core::app_store::NativeAppStorage;
+
 #[cfg(all(target_arch = "riscv32", feature = "vm-radio-measure"))]
 use squidscript_fw_core::{
     radio_lifecycle::RadioKind,
@@ -210,8 +213,13 @@ type X4NativeFileBackend = X4BinBookFileBackend<
 
 #[cfg(all(target_arch = "riscv32", feature = "native-radio-services"))]
 #[cfg(feature = "x4-binbook")]
-type X4NativeRuntime =
-    NativeRuntime<EspRadioBackend, X4CommandDisplaySink, NoopBinBookBackend, X4NativeFileBackend>;
+type X4NativeRuntime = NativeRuntime<
+    EspRadioBackend,
+    X4CommandDisplaySink,
+    NoopBinBookBackend,
+    X4NativeFileBackend,
+    squidscript_fw_x4::flash_partition::LittleFsAppStorage<esp_storage::FlashStorage<'static>>,
+>;
 
 #[cfg(all(target_arch = "riscv32", feature = "native-radio-services"))]
 #[cfg(not(feature = "x4-binbook"))]
@@ -1639,13 +1647,50 @@ async fn main(spawner: embassy_executor::Spawner) {
                 X4SdFileStorage::new(SdStorage::new(sd_spi, DisplayDelay, X4StorageTime));
             let file_backend =
                 X4BinBookFileBackend::<_, 512, 8, 128, 1024, 128, 4>::new(sd_storage);
+            let mut app_storage = squidscript_fw_x4::flash_partition::LittleFsAppStorage::new(
+                esp_storage::FlashStorage::new(peripherals.FLASH),
+            );
+            let app_store_ready = app_storage.initialize().is_ok();
             let runtime = RUNTIME.init_with(|| {
-                SharedX4NativeRuntime::new(NativeRuntime::with_radio_display_binbook_and_file(
+                let mut runtime = NativeRuntime::with_radio_display_binbook_file_and_app_store(
                     EspRadioBackend::new(),
                     X4CommandDisplaySink::new(),
                     NoopBinBookBackend,
                     file_backend,
-                ))
+                    app_storage,
+                );
+                let registry_ready = app_store_ready && runtime.rebuild_app_registry().is_ok();
+                let heap = esp_alloc::HEAP.stats();
+                runtime.set_system_memory_metrics(
+                    TOTAL_SRAM_BYTES,
+                    heap.current_usage,
+                    heap.size.saturating_sub(heap.current_usage),
+                );
+                if !app_store_ready {
+                    runtime.record_error("app_store_mount_failed");
+                } else if !registry_ready {
+                    runtime.record_error("app_store_registry_failed");
+                } else if runtime
+                    .app_registry()
+                    .iter()
+                    .flatten()
+                    .any(|entry| entry.app_id() == "main")
+                {
+                    if runtime.launch_app("main").is_err() {
+                        runtime.record_error("installed_main_launch_failed");
+                    }
+                } else {
+                    if runtime
+                        .launch_fallback(include_bytes!(concat!(
+                            env!("OUT_DIR"),
+                            "/fallback-main.sqbc"
+                        )))
+                        .is_err()
+                    {
+                        runtime.record_error("fallback_main_launch_failed");
+                    }
+                }
+                SharedX4NativeRuntime::new(runtime)
             });
             #[cfg(feature = "wifi")]
             WIFI_RUNTIME_PTR.store(runtime as *const _ as usize, Ordering::Release);
@@ -1904,12 +1949,13 @@ impl CooperativeContentCheck {
         core::str::from_utf8(&self.path[..self.path_len]).ok()
     }
 
-    fn step<B, D, C, FB>(&mut self, runtime: &mut NativeRuntime<B, D, C, FB>)
+    fn step<B, D, C, FB, AS>(&mut self, runtime: &mut NativeRuntime<B, D, C, FB, AS>)
     where
         B: NativeRadioBackend,
         D: NativeDisplaySink,
         C: NativeBinBookBackend,
         FB: NativeFileBackend,
+        AS: NativeAppStorage,
     {
         match self.status {
             CooperativeContentCheckStatus::Idle
@@ -2118,11 +2164,11 @@ where
 }
 
 #[cfg(all(target_arch = "riscv32", feature = "native-radio-services"))]
-fn native_radio_resource_metrics<B, D, C, FB, F>(
+fn native_radio_resource_metrics<B, D, C, FB, AS, F>(
 ) -> [squid_device_protocol::ResourceMetric<'static>; 8] {
     let stats = esp_alloc::HEAP.stats();
     let heap_free_bytes = stats.size.saturating_sub(stats.current_usage);
-    let runtime_static_bytes = core::mem::size_of::<NativeRuntime<B, D, C, FB>>();
+    let runtime_static_bytes = core::mem::size_of::<NativeRuntime<B, D, C, FB, AS>>();
     let serial_buffer_bytes = core::mem::size_of::<SerialProtocolBuffers>();
     let display_flush_task_bytes = core::mem::size_of::<F>();
     let known_static_bytes = runtime_static_bytes + serial_buffer_bytes + display_flush_task_bytes;
@@ -2171,8 +2217,8 @@ fn native_radio_resource_metrics<B, D, C, FB, F>(
         feature = "native-radio-services"
     )
 ))]
-fn encode_serial_request<B, D, C, FB, F>(
-    runtime: &mut NativeRuntime<B, D, C, FB>,
+fn encode_serial_request<B, D, C, FB, AS, F>(
+    runtime: &mut NativeRuntime<B, D, C, FB, AS>,
     sessions: &mut squid_device_protocol::ProtocolSessions,
     content_check: &mut CooperativeContentCheck,
     parsed: &squid_device_protocol::DeviceRequest<'_>,
@@ -2186,6 +2232,7 @@ where
     D: NativeDisplaySink,
     C: NativeBinBookBackend,
     FB: NativeFileBackend,
+    AS: NativeAppStorage,
     F: NativeDisplayFlushDriver<D, FB>,
 {
     use squid_device_protocol::{
@@ -2264,6 +2311,11 @@ where
         }
         Opcode::AppInstallBegin | Opcode::AppInstallChunk | Opcode::AppInstallCommit => {
             handle_app_install_request(runtime, sessions, parsed, response)
+        }
+        Opcode::ResourceInstallBegin
+        | Opcode::ResourceInstallChunk
+        | Opcode::ResourceInstallCommit => {
+            handle_resource_install_request(runtime, sessions, parsed, response)
         }
         Opcode::ContentInstallBegin
         | Opcode::ContentInstallChunk
@@ -2406,16 +2458,15 @@ where
             let mut entries = [AppListEntry {
                 app_id: "",
                 sqbc_len: 0,
-            }];
-            let len = if let Some((app_id, sqbc_len)) = runtime.installed_app() {
-                entries[0] = AppListEntry {
-                    app_id,
-                    sqbc_len: sqbc_len as u64,
+            }; squidvm_core::limits::MAX_INSTALLED_APPS];
+            let mut len = 0;
+            for entry in runtime.app_registry().iter().flatten() {
+                entries[len] = AppListEntry {
+                    app_id: entry.app_id(),
+                    sqbc_len: entry.sqbc_bytes as u64,
                 };
-                1
-            } else {
-                0
-            };
+                len += 1;
+            }
             encode_app_list_response_into(parsed.sequence, entries[..len].iter().copied(), response)
         }
         Opcode::Key => {
@@ -2513,7 +2564,7 @@ where
         Opcode::ResourcesGet => {
             let metrics = runtime.resource_metrics();
             #[cfg(all(target_arch = "riscv32", feature = "native-radio-services"))]
-            let platform_metrics = native_radio_resource_metrics::<B, D, C, FB, F>();
+            let platform_metrics = native_radio_resource_metrics::<B, D, C, FB, AS, F>();
             #[cfg(all(target_arch = "riscv32", feature = "native-radio-services"))]
             let metric_iter = metrics
                 .iter()
@@ -2565,9 +2616,9 @@ where
         feature = "native-radio-services"
     )
 ))]
-fn process_serial_byte<B, D, C, FB, F>(
+fn process_serial_byte<B, D, C, FB, AS, F>(
     byte: u8,
-    runtime: &mut NativeRuntime<B, D, C, FB>,
+    runtime: &mut NativeRuntime<B, D, C, FB, AS>,
     sessions: &mut squid_device_protocol::ProtocolSessions,
     content_check: &mut CooperativeContentCheck,
     request_len: &mut usize,
@@ -2580,6 +2631,7 @@ where
     D: NativeDisplaySink,
     C: NativeBinBookBackend,
     FB: NativeFileBackend,
+    AS: NativeAppStorage,
     F: NativeDisplayFlushDriver<D, FB>,
 {
     if *request_len == buffers.request.len() {
@@ -2652,9 +2704,9 @@ where
 }
 
 #[cfg(all(target_arch = "riscv32", not(any(feature = "wifi", feature = "ble"))))]
-fn run_serial_protocol<B, D, C, FB, F>(
+fn run_serial_protocol<B, D, C, FB, AS, F>(
     mut serial: UsbSerialJtag<'static, esp_hal::Blocking>,
-    runtime: &'static mut NativeRuntime<B, D, C, FB>,
+    runtime: &'static mut NativeRuntime<B, D, C, FB, AS>,
     buffers: &'static mut SerialProtocolBuffers,
     display_flush: &mut F,
 ) -> !
@@ -2663,6 +2715,7 @@ where
     D: NativeDisplaySink,
     C: NativeBinBookBackend,
     FB: NativeFileBackend,
+    AS: NativeAppStorage,
     F: NativeDisplayFlushDriver<D, FB>,
 {
     let mut request_len = 0usize;
@@ -2699,11 +2752,11 @@ where
 }
 
 #[cfg(all(target_arch = "riscv32", feature = "native-radio-services"))]
-async fn run_serial_protocol_cooperative<B, D, C, FB, F>(
+async fn run_serial_protocol_cooperative<B, D, C, FB, AS, F>(
     mut serial: UsbSerialJtag<'static, esp_hal::Blocking>,
     runtime: &'static embassy_sync_07::mutex::Mutex<
         embassy_sync_07::blocking_mutex::raw::CriticalSectionRawMutex,
-        NativeRuntime<B, D, C, FB>,
+        NativeRuntime<B, D, C, FB, AS>,
     >,
     buffers: &'static mut SerialProtocolBuffers,
     display_flush: &mut F,
@@ -2712,6 +2765,7 @@ async fn run_serial_protocol_cooperative<B, D, C, FB, F>(
     D: NativeDisplaySink,
     C: NativeBinBookBackend,
     FB: NativeFileBackend,
+    AS: NativeAppStorage,
     F: NativeDisplayFlushDriver<D, FB>,
 {
     let mut request_len = 0usize;
@@ -2733,6 +2787,12 @@ async fn run_serial_protocol_cooperative<B, D, C, FB, F>(
             .min(u32::MAX as u64)) as u32;
         last_timer_tick = now;
         let mut runtime = runtime.lock().await;
+        let heap = esp_alloc::HEAP.stats();
+        runtime.set_system_memory_metrics(
+            TOTAL_SRAM_BYTES,
+            heap.current_usage,
+            heap.size.saturating_sub(heap.current_usage),
+        );
         #[cfg(all(feature = "ble", debug_assertions))]
         {
             let stage = BLE_DIAGNOSTIC_STAGE.load(Ordering::Acquire);
@@ -3640,8 +3700,9 @@ fn handle_app_install_request<
     D: NativeDisplaySink,
     C: NativeBinBookBackend,
     FB: NativeFileBackend,
+    AS: NativeAppStorage,
 >(
-    runtime: &mut NativeRuntime<B, D, C, FB>,
+    runtime: &mut NativeRuntime<B, D, C, FB, AS>,
     sessions: &mut squid_device_protocol::ProtocolSessions,
     request: &squid_device_protocol::DeviceRequest<'_>,
     response: &mut [u8],
@@ -3717,13 +3778,101 @@ fn handle_app_install_request<
         feature = "native-radio-services"
     )
 ))]
+fn handle_resource_install_request<
+    B: NativeRadioBackend,
+    D: NativeDisplaySink,
+    C: NativeBinBookBackend,
+    FB: NativeFileBackend,
+    AS: NativeAppStorage,
+>(
+    runtime: &mut NativeRuntime<B, D, C, FB, AS>,
+    sessions: &mut squid_device_protocol::ProtocolSessions,
+    request: &squid_device_protocol::DeviceRequest<'_>,
+    response: &mut [u8],
+) -> Result<usize, squid_device_protocol::DecodeError> {
+    use squid_device_protocol::{
+        encode_empty_response_into, encode_error_response_into, HostAction, Status,
+    };
+
+    match sessions.next_action(request) {
+        Ok(HostAction::BeginResourceInstall {
+            app_id,
+            resource_path,
+            total_len,
+        }) => {
+            if let Err(error) = runtime.begin_resource_install(app_id, resource_path, total_len) {
+                return encode_error_response_into(
+                    request.opcode,
+                    request.sequence,
+                    -1,
+                    native_runtime_error_name(error),
+                    response,
+                );
+            }
+            let _ = sessions.complete_begin_resource_install("/tmp/resource");
+            encode_empty_response_into(request.opcode, Status::Ok, request.sequence, response)
+        }
+        Ok(HostAction::WriteResourceChunk { offset, bytes, .. }) => {
+            if let Err(error) = runtime.write_resource_install_chunk(offset, bytes) {
+                return encode_error_response_into(
+                    request.opcode,
+                    request.sequence,
+                    -1,
+                    native_runtime_error_name(error),
+                    response,
+                );
+            }
+            let chunk_ptr = bytes.as_ptr();
+            let chunk_len = bytes.len();
+            let bytes = unsafe { core::slice::from_raw_parts(chunk_ptr, chunk_len) };
+            let _ = sessions.complete_resource_chunk(bytes);
+            encode_empty_response_into(request.opcode, Status::Ok, request.sequence, response)
+        }
+        Ok(HostAction::CommitResourceInstall { .. }) => {
+            if let Err(error) = runtime.commit_resource_install() {
+                return encode_error_response_into(
+                    request.opcode,
+                    request.sequence,
+                    -1,
+                    native_runtime_error_name(error),
+                    response,
+                );
+            }
+            sessions.complete_resource_commit();
+            encode_empty_response_into(request.opcode, Status::Ok, request.sequence, response)
+        }
+        Ok(_) => encode_error_response_into(
+            request.opcode,
+            request.sequence,
+            -1,
+            "unsupported_transfer_action",
+            response,
+        ),
+        Err(_) => encode_error_response_into(
+            request.opcode,
+            request.sequence,
+            -1,
+            "invalid_transfer_request",
+            response,
+        ),
+    }
+}
+
+#[cfg(all(
+    target_arch = "riscv32",
+    any(
+        not(any(feature = "wifi", feature = "ble")),
+        feature = "native-radio-services"
+    )
+))]
 fn handle_content_install_request<
     B: NativeRadioBackend,
     D: NativeDisplaySink,
     C: NativeBinBookBackend,
     FB: NativeFileBackend,
+    AS: NativeAppStorage,
 >(
-    runtime: &mut NativeRuntime<B, D, C, FB>,
+    runtime: &mut NativeRuntime<B, D, C, FB, AS>,
     sessions: &mut squid_device_protocol::ProtocolSessions,
     request: &squid_device_protocol::DeviceRequest<'_>,
     response: &mut [u8],
@@ -3814,8 +3963,9 @@ fn handle_temp_run_request<
     D: NativeDisplaySink,
     C: NativeBinBookBackend,
     FB: NativeFileBackend,
+    AS: NativeAppStorage,
 >(
-    runtime: &mut NativeRuntime<B, D, C, FB>,
+    runtime: &mut NativeRuntime<B, D, C, FB, AS>,
     sessions: &mut squid_device_protocol::ProtocolSessions,
     request: &squid_device_protocol::DeviceRequest<'_>,
     response: &mut [u8],

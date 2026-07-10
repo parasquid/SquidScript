@@ -807,7 +807,7 @@ fn install_app_package(args: AppInstallArgs, human: bool) -> Result<Value, Strin
     let port = resolve_port(&args.device.device)?;
     let mut device = SerialDevice::open(&port)
         .map_err(|error| format!("open device for app install: {error}"))?;
-    let mut response = device.install_app(&app_id, &main.bytes)?;
+    let mut response = String::new();
     for entry in &entries {
         response.push_str(
             &device
@@ -815,6 +815,7 @@ fn install_app_package(args: AppInstallArgs, human: bool) -> Result<Value, Strin
                 .map_err(|error| format!("install resource {}: {error}", entry.path))?,
         );
     }
+    response.push_str(&device.install_app(&app_id, &main.bytes)?);
     if human {
         print!("{response}");
     }

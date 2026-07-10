@@ -31,11 +31,13 @@ use squidvm_core::{
 };
 
 use crate::{
+    app_store::{AppStoreError, NativeAppStorage, NativeAppStore, VolatileAppStorage},
     radio_lifecycle::RadioKind,
     radio_service::{RadioLeaseManager, RadioLeaseState, ServiceLeaseError},
 };
 
 pub const MAX_TEMP_SQBC_BYTES: usize = MAX_APP_BYTES;
+const MAX_APP_RESOURCE_TEXT_BYTES: usize = 1024;
 const MAX_LINE_COUNT: usize = 8;
 const MAX_LINE_BYTES: usize = 64;
 const MAX_BLE_PROFILE_ID_BYTES: usize = 32;
@@ -99,6 +101,37 @@ pub enum NativeRuntimeError {
     Inactive,
     UploadSessionActive,
     Vm(VmError),
+}
+
+fn native_app_store_error(error: AppStoreError) -> NativeRuntimeError {
+    match error {
+        AppStoreError::TooLarge | AppStoreError::RegistryFull => NativeRuntimeError::TooLarge,
+        AppStoreError::Incomplete => NativeRuntimeError::IncompleteTempRun,
+        AppStoreError::OutOfOrder => NativeRuntimeError::InvalidOffset,
+        AppStoreError::AppIdMismatch => NativeRuntimeError::AppIdMismatch,
+        AppStoreError::NotFound => NativeRuntimeError::AppNotInstalled,
+        AppStoreError::InvalidAppId
+        | AppStoreError::InvalidPath
+        | AppStoreError::CorruptSqbc
+        | AppStoreError::NoSpace
+        | AppStoreError::Io => NativeRuntimeError::Vm(VmError::ReadFailed),
+    }
+}
+
+fn app_store_error_name(error: AppStoreError) -> &'static str {
+    match error {
+        AppStoreError::NotFound => "not-found",
+        AppStoreError::InvalidAppId => "invalid-app-id",
+        AppStoreError::InvalidPath => "invalid-path",
+        AppStoreError::TooLarge => "too-large",
+        AppStoreError::RegistryFull => "registry-full",
+        AppStoreError::Incomplete => "incomplete",
+        AppStoreError::OutOfOrder => "out-of-order",
+        AppStoreError::CorruptSqbc => "corrupt-sqbc",
+        AppStoreError::AppIdMismatch => "app-id-mismatch",
+        AppStoreError::NoSpace => "no-space",
+        AppStoreError::Io => "io-error",
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1556,61 +1589,76 @@ pub struct NativeRuntime<
     D = NoopDisplaySink,
     C = NoopBinBookBackend,
     F = NoopFileBackend,
+    A = VolatileAppStorage,
 > {
-    host: RuntimeHost<B, D, C, F>,
+    host: RuntimeHost<B, D, C, F, A>,
     vm: MaybeUninit<ChunkedVm>,
     vm_active: bool,
     scratch: [u8; MAX_TEMP_SQBC_BYTES],
 }
 
-impl NativeRuntime<NoopRadioBackend, NoopDisplaySink, NoopBinBookBackend, NoopFileBackend> {
+impl
+    NativeRuntime<
+        NoopRadioBackend,
+        NoopDisplaySink,
+        NoopBinBookBackend,
+        NoopFileBackend,
+        VolatileAppStorage,
+    >
+{
     pub const fn new() -> Self {
-        Self::with_radio_display_binbook_and_file(
+        Self::with_radio_display_binbook_file_and_app_store(
             NoopRadioBackend,
             NoopDisplaySink,
             NoopBinBookBackend,
             NoopFileBackend,
+            VolatileAppStorage::new(),
         )
     }
 }
 
-impl<B: NativeRadioBackend> NativeRuntime<B, NoopDisplaySink, NoopBinBookBackend, NoopFileBackend> {
+impl<B: NativeRadioBackend>
+    NativeRuntime<B, NoopDisplaySink, NoopBinBookBackend, NoopFileBackend, VolatileAppStorage>
+{
     pub const fn with_radio_backend(radio_backend: B) -> Self {
-        Self::with_radio_display_binbook_and_file(
+        Self::with_radio_display_binbook_file_and_app_store(
             radio_backend,
             NoopDisplaySink,
             NoopBinBookBackend,
             NoopFileBackend,
+            VolatileAppStorage::new(),
         )
     }
 }
 
 impl<B: NativeRadioBackend, D: NativeDisplaySink>
-    NativeRuntime<B, D, NoopBinBookBackend, NoopFileBackend>
+    NativeRuntime<B, D, NoopBinBookBackend, NoopFileBackend, VolatileAppStorage>
 {
     pub const fn with_radio_and_display(radio_backend: B, display_sink: D) -> Self {
-        Self::with_radio_display_binbook_and_file(
+        Self::with_radio_display_binbook_file_and_app_store(
             radio_backend,
             display_sink,
             NoopBinBookBackend,
             NoopFileBackend,
+            VolatileAppStorage::new(),
         )
     }
 }
 
 impl<B: NativeRadioBackend, D: NativeDisplaySink, C: NativeBinBookBackend>
-    NativeRuntime<B, D, C, NoopFileBackend>
+    NativeRuntime<B, D, C, NoopFileBackend, VolatileAppStorage>
 {
     pub const fn with_radio_display_and_binbook(
         radio_backend: B,
         display_sink: D,
         binbook_backend: C,
     ) -> Self {
-        Self::with_radio_display_binbook_and_file(
+        Self::with_radio_display_binbook_file_and_app_store(
             radio_backend,
             display_sink,
             binbook_backend,
             NoopFileBackend,
+            VolatileAppStorage::new(),
         )
     }
 }
@@ -1620,20 +1668,36 @@ impl<
         D: NativeDisplaySink,
         C: NativeBinBookBackend,
         F: NativeFileBackend,
-    > NativeRuntime<B, D, C, F>
+        A: NativeAppStorage,
+    > NativeRuntime<B, D, C, F, A>
 {
-    pub const fn with_radio_display_binbook_and_file(
+    #[inline(always)]
+    pub const fn with_radio_display_binbook_file_and_app_store(
         radio_backend: B,
         display_sink: D,
         binbook_backend: C,
         file_backend: F,
+        app_storage: A,
     ) -> Self {
         Self {
-            host: RuntimeHost::new(radio_backend, display_sink, binbook_backend, file_backend),
+            host: RuntimeHost::new(
+                radio_backend,
+                display_sink,
+                binbook_backend,
+                file_backend,
+                app_storage,
+            ),
             vm: MaybeUninit::uninit(),
             vm_active: false,
             scratch: [0; MAX_TEMP_SQBC_BYTES],
         }
+    }
+
+    pub fn rebuild_app_registry(&mut self) -> Result<(), NativeRuntimeError> {
+        self.host
+            .app_store
+            .rebuild(&mut self.scratch)
+            .map_err(native_app_store_error)
     }
 
     pub fn reset(&mut self) {
@@ -1692,8 +1756,7 @@ impl<
 
     pub fn storage_format(&mut self) -> Result<(), &'static str> {
         self.reset();
-        self.host.file_backend.storage_format()?;
-        self.host.clear_app_storage();
+        self.host.app_store.format().map_err(app_store_error_name)?;
         Ok(())
     }
 
@@ -1795,7 +1858,7 @@ impl<
             return Err(NativeRuntimeError::IncompleteTempRun);
         }
         self.host.clear_diagnostics();
-        self.host.saved_state_len = None;
+        self.host.state_cache_len = None;
         self.host.active_sqbc = ActiveSqbc::Temp;
         let mut reader = SliceSqbcReader::new(self.host.temp_bytes());
         self.host.active_demand =
@@ -1817,10 +1880,10 @@ impl<
         app_id: &str,
         total_len: usize,
     ) -> Result<(), NativeRuntimeError> {
-        if total_len == 0 || total_len > self.host.installed_sqbc.len() {
-            return Err(NativeRuntimeError::TooLarge);
-        }
-        self.host.begin_app_install(app_id, total_len)
+        self.host
+            .app_store
+            .begin_install(app_id, total_len)
+            .map_err(native_app_store_error)
     }
 
     pub fn write_app_install_chunk(
@@ -1828,34 +1891,72 @@ impl<
         offset: usize,
         bytes: &[u8],
     ) -> Result<(), NativeRuntimeError> {
-        self.host.write_app_install_chunk(offset, bytes)
+        self.host
+            .app_store
+            .write_install_chunk(offset, bytes)
+            .map_err(native_app_store_error)
     }
 
     pub fn commit_app_install(&mut self) -> Result<(), NativeRuntimeError> {
-        if self.host.installed_received != self.host.installed_expected_len {
-            return Err(NativeRuntimeError::IncompleteTempRun);
-        }
-        self.host.commit_app_install();
-        Ok(())
+        self.host
+            .app_store
+            .commit_install(&mut self.scratch)
+            .map_err(native_app_store_error)
+    }
+
+    pub fn begin_resource_install(
+        &mut self,
+        app_id: &str,
+        path: &str,
+        total_len: usize,
+    ) -> Result<(), NativeRuntimeError> {
+        self.host
+            .app_store
+            .begin_resource_install(app_id, path, total_len)
+            .map_err(native_app_store_error)
+    }
+
+    pub fn write_resource_install_chunk(
+        &mut self,
+        offset: usize,
+        bytes: &[u8],
+    ) -> Result<(), NativeRuntimeError> {
+        self.host
+            .app_store
+            .write_resource_chunk(offset, bytes)
+            .map_err(native_app_store_error)
+    }
+
+    pub fn commit_resource_install(&mut self) -> Result<(), NativeRuntimeError> {
+        self.host
+            .app_store
+            .commit_resource_install()
+            .map_err(native_app_store_error)
     }
 
     pub fn launch_app(&mut self, app_id: &str) -> Result<(), NativeRuntimeError> {
-        if self.host.installed_len == 0 {
-            return Err(NativeRuntimeError::AppNotInstalled);
-        }
-        if self.host.installed_app_id.as_str() != app_id {
-            return Err(NativeRuntimeError::AppIdMismatch);
-        }
+        let installed = self
+            .host
+            .app_store
+            .find(app_id)
+            .ok_or(NativeRuntimeError::AppNotInstalled)?;
         self.host.release_all_radios();
         self.host.clear_diagnostics();
         self.host.clear_timers();
         self.host.app_id.set(app_id)?;
+        self.host.state_cache_len = self
+            .host
+            .app_store
+            .load_state(app_id, &mut self.host.state_cache)
+            .map_err(native_app_store_error)?;
         self.host.active_sqbc = ActiveSqbc::Installed;
         self.host.set_active_lifecycle();
-        let mut reader = SliceSqbcReader::new(self.host.installed_bytes());
+        let mut reader =
+            ActiveAppReader::new(&mut self.host.app_store, app_id, installed.sqbc_bytes);
         self.host.active_demand =
             ProgramIndex::capability_demand_from_reader(&mut reader, &mut self.scratch)?;
-        let mut reader = SliceSqbcReader::new(self.host.installed_bytes());
+        let mut reader =
+            ActiveAppReader::new(&mut self.host.app_store, app_id, installed.sqbc_bytes);
         unsafe {
             ChunkedVm::init_in_place_from_reader(
                 self.vm.as_mut_ptr(),
@@ -1867,9 +1968,51 @@ impl<
         self.dispatch_app_start()
     }
 
+    pub fn launch_fallback(&mut self, sqbc: &'static [u8]) -> Result<(), NativeRuntimeError> {
+        self.host.release_all_radios();
+        self.host.clear_diagnostics();
+        self.host.clear_timers();
+        self.host.app_id.set("main")?;
+        self.host.state_cache_len = None;
+        self.host.fallback_sqbc = sqbc;
+        self.host.active_sqbc = ActiveSqbc::Fallback;
+        self.host.set_active_lifecycle();
+        let mut reader = SliceSqbcReader::new(sqbc);
+        self.host.active_demand =
+            ProgramIndex::capability_demand_from_reader(&mut reader, &mut self.scratch)?;
+        let mut reader = SliceSqbcReader::new(sqbc);
+        unsafe {
+            ChunkedVm::init_in_place_from_reader(
+                self.vm.as_mut_ptr(),
+                &mut reader,
+                &mut self.scratch,
+            )?;
+        }
+        self.vm_active = true;
+        self.dispatch_app_start()
+    }
+
+    pub fn set_system_memory_metrics(
+        &mut self,
+        total_ram_bytes: usize,
+        heap_used_bytes: usize,
+        heap_free_bytes: usize,
+    ) {
+        self.host.total_ram_bytes = total_ram_bytes;
+        self.host.heap_used_bytes = heap_used_bytes;
+        self.host.heap_free_bytes = heap_free_bytes;
+    }
+
     pub fn installed_app(&self) -> Option<(&str, usize)> {
-        (self.host.installed_len > 0)
-            .then(|| (self.host.installed_app_id.as_str(), self.host.installed_len))
+        let app_id = self.host.app_id.as_str();
+        self.host
+            .app_store
+            .find(app_id)
+            .map(|entry| (app_id, entry.sqbc_bytes))
+    }
+
+    pub fn app_registry(&self) -> &[Option<crate::app_store::AppRegistryEntry>] {
+        self.host.app_store.registry()
     }
 
     pub fn output_lines(&self) -> LineView<'_> {
@@ -2300,11 +2443,46 @@ impl<
     }
 }
 
+impl<
+        B: NativeRadioBackend,
+        D: NativeDisplaySink,
+        C: NativeBinBookBackend,
+        F: NativeFileBackend,
+    > NativeRuntime<B, D, C, F, VolatileAppStorage>
+{
+    pub const fn with_radio_display_binbook_and_file(
+        radio_backend: B,
+        display_sink: D,
+        binbook_backend: C,
+        file_backend: F,
+    ) -> Self {
+        Self::with_radio_display_binbook_file_and_app_store(
+            radio_backend,
+            display_sink,
+            binbook_backend,
+            file_backend,
+            VolatileAppStorage::new(),
+        )
+    }
+}
+
 impl Default
-    for NativeRuntime<NoopRadioBackend, NoopDisplaySink, NoopBinBookBackend, NoopFileBackend>
+    for NativeRuntime<
+        NoopRadioBackend,
+        NoopDisplaySink,
+        NoopBinBookBackend,
+        NoopFileBackend,
+        VolatileAppStorage,
+    >
 {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<B, D, C, F> NativeRuntime<B, D, C, F, VolatileAppStorage> {
+    pub fn app_storage_write_calls(&self) -> usize {
+        self.host.app_store.storage().storage_write_calls()
     }
 }
 
@@ -2313,21 +2491,19 @@ struct RuntimeHost<
     D = NoopDisplaySink,
     C = NoopBinBookBackend,
     F = NoopFileBackend,
+    A = VolatileAppStorage,
 > {
     temp_sqbc: [u8; MAX_TEMP_SQBC_BYTES],
     temp_expected_len: usize,
     temp_received: usize,
-    installed_sqbc: [u8; MAX_TEMP_SQBC_BYTES],
-    installed_expected_len: usize,
-    installed_received: usize,
-    installed_len: usize,
-    installed_app_id: FixedText<MAX_APP_ID_BYTES>,
-    pending_install_app_id: FixedText<MAX_APP_ID_BYTES>,
     pending_launch_app_id: FixedText<MAX_APP_ID_BYTES>,
+    last_installed_app_id: FixedText<MAX_APP_ID_BYTES>,
     active_sqbc: ActiveSqbc,
+    fallback_sqbc: &'static [u8],
     app_id: FixedText<MAX_APP_ID_BYTES>,
-    saved_state: [u8; MAX_SAVED_STATE_BYTES],
-    saved_state_len: Option<usize>,
+    state_cache: [u8; MAX_SAVED_STATE_BYTES],
+    state_cache_len: Option<usize>,
+    resource_text: [u8; MAX_APP_RESOURCE_TEXT_BYTES],
     output: LineStore,
     trace: LineStore,
     drawlog: LineStore,
@@ -2359,8 +2535,12 @@ struct RuntimeHost<
     display_sink: D,
     binbook_backend: C,
     file_backend: F,
+    app_store: NativeAppStore<A>,
     sqbc_reads: usize,
     sqbc_bytes: usize,
+    total_ram_bytes: usize,
+    heap_used_bytes: usize,
+    heap_free_bytes: usize,
 }
 
 impl<
@@ -2368,24 +2548,29 @@ impl<
         D: NativeDisplaySink,
         C: NativeBinBookBackend,
         F: NativeFileBackend,
-    > RuntimeHost<B, D, C, F>
+        A: NativeAppStorage,
+    > RuntimeHost<B, D, C, F, A>
 {
-    const fn new(radio_backend: B, display_sink: D, binbook_backend: C, file_backend: F) -> Self {
+    #[inline(always)]
+    const fn new(
+        radio_backend: B,
+        display_sink: D,
+        binbook_backend: C,
+        file_backend: F,
+        app_storage: A,
+    ) -> Self {
         Self {
             temp_sqbc: [0; MAX_TEMP_SQBC_BYTES],
             temp_expected_len: 0,
             temp_received: 0,
-            installed_sqbc: [0; MAX_TEMP_SQBC_BYTES],
-            installed_expected_len: 0,
-            installed_received: 0,
-            installed_len: 0,
-            installed_app_id: FixedText::new(),
-            pending_install_app_id: FixedText::new(),
             pending_launch_app_id: FixedText::new(),
+            last_installed_app_id: FixedText::new(),
             active_sqbc: ActiveSqbc::Temp,
+            fallback_sqbc: &[],
             app_id: FixedText::new(),
-            saved_state: [0; MAX_SAVED_STATE_BYTES],
-            saved_state_len: None,
+            state_cache: [0; MAX_SAVED_STATE_BYTES],
+            state_cache_len: None,
+            resource_text: [0; MAX_APP_RESOURCE_TEXT_BYTES],
             output: LineStore::new(),
             trace: LineStore::new(),
             drawlog: LineStore::new(),
@@ -2417,8 +2602,12 @@ impl<
             display_sink,
             binbook_backend,
             file_backend,
+            app_store: NativeAppStore::new(app_storage),
             sqbc_reads: 0,
             sqbc_bytes: 0,
+            total_ram_bytes: 0,
+            heap_used_bytes: 0,
+            heap_free_bytes: 0,
         }
     }
 
@@ -2432,25 +2621,11 @@ impl<
         self.wifi_operation = NativeWifiOperationState::idle();
         self.wifi_station_profile.clear();
         self.stop_upload_profile();
-        if self.installed_len == 0 {
-            self.saved_state_len = None;
-        }
+        self.state_cache_len = None;
         self.clear_timers();
         self.release_all_radios();
         self.clear_diagnostics();
         self.set_inactive_lifecycle();
-    }
-
-    fn clear_app_storage(&mut self) {
-        self.installed_sqbc.fill(0);
-        self.installed_expected_len = 0;
-        self.installed_received = 0;
-        self.installed_len = 0;
-        self.installed_app_id.clear();
-        self.pending_install_app_id.clear();
-        self.pending_launch_app_id.clear();
-        self.saved_state.fill(0);
-        self.saved_state_len = None;
     }
 
     fn clear_diagnostics(&mut self) {
@@ -2498,49 +2673,6 @@ impl<
         &self.temp_sqbc[..self.temp_expected_len]
     }
 
-    fn begin_app_install(
-        &mut self,
-        app_id: &str,
-        total_len: usize,
-    ) -> Result<(), NativeRuntimeError> {
-        self.installed_expected_len = total_len;
-        self.installed_received = 0;
-        self.pending_install_app_id.set(app_id)?;
-        self.clear_timers();
-        Ok(())
-    }
-
-    fn write_app_install_chunk(
-        &mut self,
-        offset: usize,
-        bytes: &[u8],
-    ) -> Result<(), NativeRuntimeError> {
-        let end = offset
-            .checked_add(bytes.len())
-            .ok_or(NativeRuntimeError::InvalidOffset)?;
-        if end > self.installed_expected_len || end > self.installed_sqbc.len() {
-            return Err(NativeRuntimeError::InvalidOffset);
-        }
-        self.installed_sqbc[offset..end].copy_from_slice(bytes);
-        self.installed_received = self.installed_received.max(end);
-        Ok(())
-    }
-
-    fn commit_app_install(&mut self) {
-        if self.installed_app_id.as_str() != self.pending_install_app_id.as_str() {
-            self.saved_state_len = None;
-        }
-        self.installed_app_id = self.pending_install_app_id;
-        self.installed_len = self.installed_expected_len;
-        self.installed_expected_len = 0;
-        self.installed_received = 0;
-        self.pending_install_app_id.clear();
-    }
-
-    fn installed_bytes(&self) -> &[u8] {
-        &self.installed_sqbc[..self.installed_len]
-    }
-
     fn request_app_launch(&mut self, app_id: &str) -> Result<(), NativeRuntimeError> {
         self.pending_launch_app_id.set(app_id)
     }
@@ -2558,8 +2690,8 @@ impl<
     }
 
     fn state_bytes(&self) -> &[u8] {
-        self.saved_state_len
-            .map(|len| &self.saved_state[..len])
+        self.state_cache_len
+            .map(|len| &self.state_cache[..len])
             .unwrap_or(&[])
     }
 
@@ -2582,11 +2714,22 @@ impl<
     }
 
     fn import_state(&mut self, bytes: &[u8]) -> Result<(), NativeRuntimeError> {
-        if bytes.len() > self.saved_state.len() {
+        if bytes.len() > self.state_cache.len() {
             return Err(NativeRuntimeError::TooLarge);
         }
-        self.saved_state[..bytes.len()].copy_from_slice(bytes);
-        self.saved_state_len = Some(bytes.len());
+        self.state_cache[..bytes.len()].copy_from_slice(bytes);
+        self.state_cache_len = Some(bytes.len());
+        let mut target = FixedText::<MAX_APP_ID_BYTES>::new();
+        if self.app_store.find(self.app_id.as_str()).is_some() {
+            target.set(self.app_id.as_str())?;
+        } else if let Some(app_id) = self.app_store.app_id_at(0) {
+            target.set(app_id)?;
+        }
+        if !target.as_str().is_empty() {
+            self.app_store
+                .save_state(target.as_str(), bytes)
+                .map_err(native_app_store_error)?;
+        }
         Ok(())
     }
 
@@ -2922,16 +3065,28 @@ impl<
         D: NativeDisplaySink,
         C: NativeBinBookBackend,
         F: NativeFileBackend,
-    > SqbcReader for RuntimeHost<B, D, C, F>
+        A: NativeAppStorage,
+    > SqbcReader for RuntimeHost<B, D, C, F, A>
 {
     fn read_exact_at(&mut self, offset: usize, out: &mut [u8]) -> Result<(), VmError> {
         let end = offset.checked_add(out.len()).ok_or(VmError::ReadFailed)?;
-        let bytes = match self.active_sqbc {
-            ActiveSqbc::Temp => self.temp_sqbc.get(offset..end),
-            ActiveSqbc::Installed => self.installed_sqbc.get(offset..end),
+        match self.active_sqbc {
+            ActiveSqbc::Temp => {
+                let bytes = self.temp_sqbc.get(offset..end).ok_or(VmError::ReadFailed)?;
+                out.copy_from_slice(bytes);
+            }
+            ActiveSqbc::Installed => self
+                .app_store
+                .read_app_at(self.app_id.as_str(), offset, out)
+                .map_err(|_| VmError::ReadFailed)?,
+            ActiveSqbc::Fallback => {
+                let bytes = self
+                    .fallback_sqbc
+                    .get(offset..end)
+                    .ok_or(VmError::ReadFailed)?;
+                out.copy_from_slice(bytes);
+            }
         }
-        .ok_or(VmError::ReadFailed)?;
-        out.copy_from_slice(bytes);
         self.sqbc_reads += 1;
         self.sqbc_bytes += out.len();
         Ok(())
@@ -2942,6 +3097,68 @@ impl<
 enum ActiveSqbc {
     Temp,
     Installed,
+    Fallback,
+}
+
+fn write_human_bytes(out: &mut dyn fmt::Write, label: &str, bytes: usize) -> Result<(), VmError> {
+    if bytes >= 1024 * 1024 {
+        write!(out, "{label} {} MiB", bytes / (1024 * 1024))
+    } else if bytes >= 1024 {
+        write!(out, "{label} {} KiB", bytes / 1024)
+    } else {
+        write!(out, "{label} {bytes} B")
+    }
+    .map_err(|_| VmError::InvalidOperand)
+}
+
+struct ActiveAppReader<'a, S> {
+    store: &'a mut NativeAppStore<S>,
+    app_id: &'a str,
+    size: usize,
+}
+
+impl<'a, S: NativeAppStorage> ActiveAppReader<'a, S> {
+    fn new(store: &'a mut NativeAppStore<S>, app_id: &'a str, size: usize) -> Self {
+        Self {
+            store,
+            app_id,
+            size,
+        }
+    }
+}
+
+impl<S: NativeAppStorage> SqbcReader for ActiveAppReader<'_, S> {
+    fn read_exact_at(&mut self, offset: usize, out: &mut [u8]) -> Result<(), VmError> {
+        if offset
+            .checked_add(out.len())
+            .is_none_or(|end| end > self.size)
+        {
+            return Err(VmError::ReadFailed);
+        }
+        self.store
+            .read_app_at(self.app_id, offset, out)
+            .map_err(|_| VmError::ReadFailed)
+    }
+}
+
+struct FileRefReader<'a, F> {
+    backend: &'a mut F,
+    file_ref: &'a str,
+    size: usize,
+}
+
+impl<F: NativeFileBackend> SqbcReader for FileRefReader<'_, F> {
+    fn read_exact_at(&mut self, offset: usize, out: &mut [u8]) -> Result<(), VmError> {
+        if offset
+            .checked_add(out.len())
+            .is_none_or(|end| end > self.size)
+        {
+            return Err(VmError::ReadFailed);
+        }
+        self.backend
+            .file_ref_read_at(self.file_ref, offset as u64, out)
+            .map_err(|_| VmError::ReadFailed)
+    }
 }
 
 impl<
@@ -2949,7 +3166,8 @@ impl<
         D: NativeDisplaySink,
         C: NativeBinBookBackend,
         F: NativeFileBackend,
-    > TraceSink for RuntimeHost<B, D, C, F>
+        A: NativeAppStorage,
+    > TraceSink for RuntimeHost<B, D, C, F, A>
 {
     fn trace(&mut self, message: &str) {
         self.trace.push(message);
@@ -2965,6 +3183,29 @@ impl<
             }
             Ok(())
         });
+    }
+
+    fn system_memory_text(&mut self, out: &mut dyn fmt::Write) -> Result<(), VmError> {
+        write!(
+            out,
+            "RAM {} KiB heap {} used {} free",
+            self.total_ram_bytes / 1024,
+            self.heap_used_bytes,
+            self.heap_free_bytes
+        )
+        .map_err(|_| VmError::InvalidOperand)
+    }
+
+    fn system_storage_text(&mut self, name: &str, out: &mut dyn fmt::Write) -> Result<(), VmError> {
+        if name != "apps" {
+            return Err(VmError::InvalidOperand);
+        }
+        let (_, available) = self
+            .app_store
+            .storage_mut()
+            .capacity()
+            .map_err(|_| VmError::ReadFailed)?;
+        write_human_bytes(out, "Apps", available)
     }
 
     fn draw_clear(&mut self, color: u8) {
@@ -3121,27 +3362,38 @@ impl<
     }
 
     fn state_load(&mut self, out: &mut [u8]) -> Result<Option<usize>, VmError> {
-        let Some(len) = self.saved_state_len else {
+        let Some(len) = self.state_cache_len else {
             return Ok(None);
         };
         if len > out.len() {
             return Err(VmError::StateTooLarge);
         }
-        out[..len].copy_from_slice(&self.saved_state[..len]);
+        out[..len].copy_from_slice(&self.state_cache[..len]);
         Ok(Some(len))
     }
 
     fn state_save(&mut self, bytes: &[u8]) -> Result<(), VmError> {
-        if bytes.len() > self.saved_state.len() {
+        if bytes.len() > self.state_cache.len() {
             return Err(VmError::StateTooLarge);
         }
-        self.saved_state[..bytes.len()].copy_from_slice(bytes);
-        self.saved_state_len = Some(bytes.len());
+        self.state_cache[..bytes.len()].copy_from_slice(bytes);
+        self.state_cache_len = Some(bytes.len());
+        if self.active_sqbc == ActiveSqbc::Installed {
+            self.app_store
+                .save_state(self.app_id.as_str(), bytes)
+                .map_err(|_| VmError::ReadFailed)?;
+        }
         Ok(())
     }
 
     fn state_reset_persistent(&mut self) -> Result<(), VmError> {
-        self.saved_state_len = None;
+        self.state_cache_len = None;
+        if self.active_sqbc == ActiveSqbc::Installed {
+            self.app_store
+                .storage_mut()
+                .delete_state(self.app_id.as_str())
+                .map_err(|_| VmError::ReadFailed)?;
+        }
         Ok(())
     }
 
@@ -3175,21 +3427,8 @@ impl<
                 .map_err(|_| VmError::ReadFailed)?,
         )
         .map_err(|_| VmError::TooLarge)?;
-        if total_len == 0 || total_len > self.installed_sqbc.len() {
+        if total_len == 0 || total_len > MAX_APP_BYTES {
             return Err(VmError::TooLarge);
-        }
-
-        let mut offset = 0usize;
-        while offset < total_len {
-            let end = (offset + MAX_LINE_BYTES).min(total_len);
-            self.file_backend
-                .file_ref_read_at(
-                    file_ref,
-                    offset as u64,
-                    &mut self.installed_sqbc[offset..end],
-                )
-                .map_err(|_| VmError::ReadFailed)?;
-            offset = end;
         }
 
         let mut resolved_app_id = FixedText::<MAX_APP_ID_BYTES>::new();
@@ -3198,7 +3437,11 @@ impl<
                 .set(app_id)
                 .map_err(|_| VmError::InvalidOperand)?;
         } else {
-            let mut reader = SliceSqbcReader::new(&self.installed_sqbc[..total_len]);
+            let mut reader = FileRefReader {
+                backend: &mut self.file_backend,
+                file_ref,
+                size: total_len,
+            };
             let mut scratch = [0u8; 1024];
             let app_id = ProgramIndex::app_id_from_reader(&mut reader, &mut scratch)?;
             resolved_app_id
@@ -3206,12 +3449,27 @@ impl<
                 .map_err(|_| VmError::InvalidOperand)?;
         }
 
-        self.begin_app_install(resolved_app_id.as_str(), total_len)
+        self.app_store
+            .begin_install(resolved_app_id.as_str(), total_len)
             .map_err(|_| VmError::InvalidOperand)?;
-        self.installed_received = total_len;
-        self.commit_app_install();
+        let mut offset = 0usize;
+        let mut chunk = [0u8; MAX_LINE_BYTES];
+        while offset < total_len {
+            let chunk_len = (total_len - offset).min(chunk.len());
+            self.file_backend
+                .file_ref_read_at(file_ref, offset as u64, &mut chunk[..chunk_len])
+                .map_err(|_| VmError::ReadFailed)?;
+            self.app_store
+                .write_install_chunk(offset, &chunk[..chunk_len])
+                .map_err(|_| VmError::ReadFailed)?;
+            offset += chunk_len;
+        }
+        self.app_store
+            .commit_install(&mut [0; 1024])
+            .map_err(|_| VmError::ReadFailed)?;
+        self.last_installed_app_id = resolved_app_id;
         Ok(AppInstallResult {
-            id: self.installed_app_id.as_str(),
+            id: self.last_installed_app_id.as_str(),
         })
     }
 
@@ -3515,6 +3773,41 @@ impl<
     }
 
     fn file_read_text<'a>(&'a mut self, path: &str) -> Result<FileReadTextResult<'a>, VmError> {
+        if self.active_sqbc == ActiveSqbc::Installed && !path.contains(':') {
+            match self
+                .app_store
+                .storage_mut()
+                .resource_size(self.app_id.as_str(), path)
+            {
+                Ok(len) if len <= self.resource_text.len() => {
+                    self.app_store
+                        .storage_mut()
+                        .read_resource_at(
+                            self.app_id.as_str(),
+                            path,
+                            0,
+                            &mut self.resource_text[..len],
+                        )
+                        .map_err(|_| VmError::ReadFailed)?;
+                    let text = core::str::from_utf8(&self.resource_text[..len])
+                        .map_err(|_| VmError::InvalidOperand)?;
+                    return Ok(FileReadTextResult {
+                        ok: true,
+                        error: None,
+                        text: Some(text),
+                    });
+                }
+                Ok(_) => {
+                    return Ok(FileReadTextResult {
+                        ok: false,
+                        error: Some("too-large"),
+                        text: None,
+                    });
+                }
+                Err(AppStoreError::NotFound) => {}
+                Err(_) => return Err(VmError::ReadFailed),
+            }
+        }
         self.file_backend.file_read_text(path)
     }
 

@@ -86,6 +86,7 @@ event.on("app.start") {
         runtime.lifecycle_lines().as_slice()[0],
         "active=native-temp"
     );
+    assert_eq!(runtime.app_storage_write_calls(), 0);
 }
 
 #[test]
@@ -121,6 +122,46 @@ event.on("app.start") { debug.print("installed start") }
     assert_eq!(runtime.output_lines().as_slice(), &["installed start"]);
     assert_eq!(runtime.active_app(), Some("installed"));
     assert_eq!(runtime.installed_app(), Some(("installed", sqbc.len())));
+}
+
+#[test]
+fn fallback_runs_from_read_only_sqbc_without_entering_registry_or_persisting_state() {
+    let sqbc = compile_sqbc(
+        r#"app "main"
+state { count: int = 0 }
+event.on("app.start") {
+  state.load()
+  state.count = state.count + 1
+  state.save()
+  debug.print("count", state.count)
+  debug.print(system.memory())
+  debug.print(system.storage("apps"))
+}
+"#,
+    );
+    let fallback = Box::leak(sqbc.into_boxed_slice());
+    let mut runtime = NativeRuntime::new();
+    runtime.set_system_memory_metrics(400 * 1024, 1024, 2048);
+
+    runtime.launch_fallback(fallback).unwrap();
+
+    assert_eq!(runtime.active_app(), Some("main"));
+    assert!(runtime.app_registry().iter().all(Option::is_none));
+    assert_eq!(runtime.installed_app(), None);
+    assert!(!runtime.state_bytes().is_empty());
+    assert_eq!(
+        runtime.output_lines().as_slice(),
+        &[
+            "count 1",
+            "RAM 400 KiB heap 1024 used 2048 free",
+            "Apps 8 KiB"
+        ]
+    );
+
+    runtime.reset();
+    runtime.launch_fallback(fallback).unwrap();
+    assert!(runtime.app_registry().iter().all(Option::is_none));
+    assert_eq!(runtime.output_lines().as_slice()[0], "count 1");
 }
 
 #[test]
@@ -2921,7 +2962,7 @@ event.on("app.start") {
 }
 
 #[test]
-fn storage_format_releases_radio_leases_and_formats_files() {
+fn storage_format_releases_radio_leases_and_preserves_content_files() {
     let sqbc = compile_sqbc(
         r#"app "native-format-radios"
 event.on("app.start") {
@@ -2961,7 +3002,7 @@ event.on("app.start") {
     assert!(resources
         .iter()
         .any(|metric| metric.key == "radio_active_leases" && metric.value == 0));
-    assert!(runtime.file_backend().storage().formatted);
+    assert!(!runtime.file_backend().storage().formatted);
 
     let backend = runtime.radio_backend();
     assert_eq!(backend.wifi_release_count, 1);
