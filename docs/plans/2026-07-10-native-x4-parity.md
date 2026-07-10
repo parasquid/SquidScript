@@ -119,19 +119,19 @@ non-local repository update.
 
 ### 2A. Remove runtime device configuration
 
-- [ ] Add compiler negative/unknown-API tests showing
+- [x] Add compiler negative/unknown-API tests showing
   `device.config.load/set/rebind/save` follow the ordinary unsupported symbol
   path.
-- [ ] Remove their AST/IR lowering, builtin IDs, VM host methods, result records,
+- [x] Remove their AST/IR lowering, builtin IDs, VM host methods, result records,
   fixtures, examples, and current documentation.
-- [ ] Remove generated ABI entries when they are derived from the manifest.
+- [x] Remove generated ABI entries when they are derived from the manifest.
   Do not repair the now-obsolete Zephyr implementation.
-- [ ] Do not retain aliases, migration diagnostics, old-name regression tests,
+- [x] Do not retain aliases, migration diagnostics, old-name regression tests,
   or compatibility readers.
 
 ### 2B. Add `service.input.on`
 
-- [ ] Add compiler tests for:
+- [x] Add compiler tests for:
   - valid use only inside `app.triggers`;
   - a required static string;
   - `key.<logical>`, `key.<logical>.longTap`, and
@@ -140,37 +140,37 @@ non-local repository update.
   - a required matching `event.on` handler;
   - duplicate declaration rejection;
   - rejection in normal handlers, screens, functions, and top-level code.
-- [ ] Add a typed input-trigger record to IR and the SQBC trigger section.
+- [x] Add a typed input-trigger record to IR and the SQBC trigger section.
   Replace directly; do not add an SQBC version or compatibility path.
-- [ ] Extend `ProgramIndex` reader tests so firmware can enumerate timer and
+- [x] Extend `ProgramIndex` reader tests so firmware can enumerate timer and
   input trigger records without loading the full app.
-- [ ] Keep timer trigger records unchanged except where a generic trigger-kind
+- [x] Keep timer trigger records unchanged except where a generic trigger-kind
   field removes duplication cleanly.
 
 ### 2C. Make target input policy authoritative
 
-- [ ] Update target schema/reference documentation for independent
+- [x] Update target schema/reference documentation for independent
   `gestureTiming.longTapMs` and `gestureTiming.doubleTapWindowMs` fields.
-- [ ] Add per-button `gestures` validation accepting `longTap` and
+- [x] Add per-button `gestures` validation accepting `longTap` and
   `doubleTap` only.
-- [ ] Set X4 values to 350 ms and enable both gestures only on POWER.
-- [ ] Remove the target-owned POWER sleep action and POWER+DOWN chord. Firmware
+- [x] Set X4 values to 350 ms and enable both gestures only on POWER.
+- [x] Remove the target-owned POWER sleep action and POWER+DOWN chord. Firmware
   must not assign actions to gesture events.
-- [ ] Generate Rust constants from target JSON for logical names, GPIO/ADC
+- [x] Generate Rust constants from target JSON for logical names, GPIO/ADC
   mappings, thresholds, debounce, gestures, and timing.
 
 ### 2D. Move parity caps out of Zephyr ownership
 
-- [ ] Define native/platform-neutral sources of truth for:
+- [x] Define native/platform-neutral sources of truth for:
   - 8 installed apps;
   - 2 process-stack entries;
   - 2 armed timer slots;
   - 8 armed input registrations;
   - 8 pending input/timer events;
   - existing event-name, app-id, state, and protocol limits.
-- [ ] Update `docs/runtime_limits.md` to identify the new source rather than C
+- [x] Update `docs/runtime_limits.md` to identify the new source rather than C
   macros.
-- [ ] Generate or import constants rather than hand-copying values between
+- [x] Generate or import constants rather than hand-copying values between
   compiler, protocol, and firmware.
 
 **Acceptance:** Compiler and VM tests prove the new trigger metadata and direct

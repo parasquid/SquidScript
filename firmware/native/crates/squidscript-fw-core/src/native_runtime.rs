@@ -19,7 +19,10 @@ use squidvm_core::{
         UploadStartResult, UploadStatus, WifiAccessPoint, WifiApIp, WifiOperation,
         WifiOperationResult, WifiScanNetwork, WifiStatus,
     },
-    limits::{MAX_APP_BYTES, MAX_SAVED_STATE_BYTES},
+    limits::{
+        MAX_APP_BYTES, MAX_APP_ID_BYTES, MAX_EVENT_NAME_BYTES, MAX_FOREGROUND_TIMERS,
+        MAX_SAVED_STATE_BYTES,
+    },
     program::{CapabilityDemand, ProgramIndex},
     reader::{SliceSqbcReader, SqbcReader},
     strings::StringResolver,
@@ -35,7 +38,6 @@ use crate::{
 pub const MAX_TEMP_SQBC_BYTES: usize = MAX_APP_BYTES;
 const MAX_LINE_COUNT: usize = 8;
 const MAX_LINE_BYTES: usize = 64;
-const MAX_APP_ID_BYTES: usize = 40;
 const MAX_BLE_PROFILE_ID_BYTES: usize = 32;
 const MAX_UPLOAD_NAME_BYTES: usize = 64;
 const MAX_UPLOAD_REF_BYTES: usize = 128;
@@ -49,8 +51,7 @@ const HTTP_BLE_UPLOAD_TRANSPORTS: &[&str] = &["http", "ble"];
 const MAX_WIFI_PROFILE_NAME_BYTES: usize = 16;
 const MAX_WIFI_PROFILE_SSID_BYTES: usize = 32;
 const MAX_WIFI_PROFILE_PASSWORD_BYTES: usize = 64;
-const MAX_TIMER_EVENT_BYTES: usize = 24;
-const MAX_ACTIVE_TIMER_COUNT: usize = 8;
+const MAX_TIMER_EVENT_BYTES: usize = MAX_EVENT_NAME_BYTES;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct NativeTimer {
@@ -75,7 +76,7 @@ impl NativeTimer {
     }
 
     fn set_event(&mut self, event: &str) -> Result<(), VmError> {
-        if event.is_empty() || event.len() >= self.event.len() {
+        if event.is_empty() || event.len() > self.event.len() {
             return Err(VmError::InvalidOperand);
         }
         self.event[..event.len()].copy_from_slice(event.as_bytes());
@@ -2345,7 +2346,7 @@ struct RuntimeHost<
     upload_profile_start_events: u32,
     upload_profile_stop_events: u32,
     upload_last_error: FixedText<MAX_LINE_BYTES>,
-    timers: [NativeTimer; MAX_ACTIVE_TIMER_COUNT],
+    timers: [NativeTimer; MAX_FOREGROUND_TIMERS],
     upload_path: FixedText<MAX_UPLOAD_REF_BYTES>,
     upload_name: FixedText<MAX_UPLOAD_NAME_BYTES>,
     upload_id: FixedText<MAX_BLE_PROFILE_ID_BYTES>,
@@ -2403,7 +2404,7 @@ impl<
             upload_profile_start_events: 0,
             upload_profile_stop_events: 0,
             upload_last_error: FixedText::new(),
-            timers: [NativeTimer::empty(); MAX_ACTIVE_TIMER_COUNT],
+            timers: [NativeTimer::empty(); MAX_FOREGROUND_TIMERS],
             upload_path: FixedText::new(),
             upload_name: FixedText::new(),
             upload_id: FixedText::new(),

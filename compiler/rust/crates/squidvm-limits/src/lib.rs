@@ -20,6 +20,22 @@ pub const MAX_HANDLERS: usize = 16;
 pub const MAX_TRIGGERS: usize = 16;
 /// Maximum UTF-8 byte length of an event name stored by constrained runtimes.
 pub const MAX_EVENT_NAME_BYTES: usize = 24;
+/// Maximum UTF-8 byte length of an app identifier.
+pub const MAX_APP_ID_BYTES: usize = 40;
+/// Maximum installed apps in the native app registry.
+pub const MAX_INSTALLED_APPS: usize = 8;
+/// Maximum suspended foreground app identifiers retained for return.
+pub const MAX_PROCESS_STACK: usize = 2;
+/// Maximum armed timer registrations across installed apps.
+pub const MAX_ARMED_TIMERS: usize = 2;
+/// Maximum armed logical-input registrations across installed apps.
+pub const MAX_ARMED_INPUTS: usize = 8;
+/// Maximum queued timer/input events awaiting bounded dispatch.
+pub const MAX_PENDING_EVENTS: usize = 8;
+/// Maximum foreground timer registrations in one app session.
+pub const MAX_FOREGROUND_TIMERS: usize = 4;
+/// Maximum physical logical-button slots exposed by a target.
+pub const MAX_INPUT_BUTTONS: usize = 8;
 /// Maximum number of device bindings.
 pub const MAX_DEVICE_BINDINGS: usize = 8;
 /// Maximum number of screens.
@@ -61,3 +77,21 @@ pub const MAX_RUNTIME_LIST_ITEMS: usize = 8;
 pub const MAX_RUNTIME_RECORDS: usize = MAX_RUNTIME_LIST_ITEMS + 1;
 /// Maximum fields per runtime record.
 pub const MAX_RUNTIME_RECORD_FIELDS: usize = 26;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_product_caps_match_the_runtime_contract() {
+        assert_eq!(MAX_INSTALLED_APPS, 8);
+        assert_eq!(MAX_PROCESS_STACK, 2);
+        assert_eq!(MAX_ARMED_TIMERS, 2);
+        assert_eq!(MAX_ARMED_INPUTS, 8);
+        assert_eq!(MAX_PENDING_EVENTS, 8);
+        assert_eq!(MAX_FOREGROUND_TIMERS, 4);
+        assert_eq!(MAX_INPUT_BUTTONS, 8);
+        assert_eq!(MAX_EVENT_NAME_BYTES, 24);
+        assert_eq!(MAX_APP_ID_BYTES, 40);
+    }
+}

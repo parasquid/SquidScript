@@ -9,7 +9,7 @@ use core::str;
 
 pub const MAGIC: [u8; 4] = *b"SQDP";
 pub const HEADER_LEN: usize = 20;
-pub const MAX_APP_ID_LEN: usize = 40;
+pub const MAX_APP_ID_LEN: usize = squidvm_limits::MAX_APP_ID_BYTES;
 pub const MAX_PATH_LEN: usize = 128;
 pub const MAX_APP_BYTES: usize = 65_536;
 pub const MAX_RESOURCE_BYTES: usize = 1_048_576;

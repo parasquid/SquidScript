@@ -11,3 +11,4 @@ alloc = []
 
 [dependencies]
 crc32fast = { version = "1", default-features = false }
+squidvm-limits = { path = "../squidvm-limits" }
