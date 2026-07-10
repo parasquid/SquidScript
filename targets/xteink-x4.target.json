@@ -79,6 +79,7 @@
       "features": [
         "firmware-bin",
         "x4-binbook",
+        "x4-flash-filesystem",
         "native-radio-services",
         "wifi",
         "ble"

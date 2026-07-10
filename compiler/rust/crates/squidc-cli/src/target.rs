@@ -520,7 +520,7 @@ fn plan_native_build_command(
     }
     args.extend(options.west_args);
 
-    let (program, args, env) = match native.rustup_toolchain.as_deref() {
+    let (program, args, mut env) = match native.rustup_toolchain.as_deref() {
         Some(toolchain) => {
             let mut rustup_args = vec![
                 "run".to_string(),
@@ -549,6 +549,24 @@ fn plan_native_build_command(
             )],
         ),
     };
+    if native
+        .features
+        .iter()
+        .any(|feature| feature == "x4-flash-filesystem")
+    {
+        let compiler = env::var("SQUIDSCRIPT_RISCV_CC")
+            .ok()
+            .filter(|value| !value.is_empty())
+            .or_else(detect_riscv_c_compiler);
+        if let Some(compiler) = compiler {
+            let target_key = native.target.replace('-', "_");
+            env.push((format!("CC_{target_key}"), compiler));
+            env.push((
+                format!("CFLAGS_{target_key}"),
+                "-march=rv32imc -mabi=ilp32".to_string(),
+            ));
+        }
+    }
 
     Ok(CommandPlan {
         program,
@@ -556,6 +574,22 @@ fn plan_native_build_command(
         cwd: resolve_repo_path(root, &native.working_dir),
         env,
     })
+}
+
+fn detect_riscv_c_compiler() -> Option<String> {
+    [
+        "riscv32-esp-elf-gcc",
+        "riscv32-unknown-elf-gcc",
+        "riscv64-elf-gcc",
+    ]
+    .into_iter()
+    .find(|candidate| {
+        Command::new(candidate)
+            .arg("--version")
+            .output()
+            .is_ok_and(|output| output.status.success())
+    })
+    .map(str::to_string)
 }
 
 fn rustup_tool_path(toolchain: &str, tool: &str) -> Result<String, String> {

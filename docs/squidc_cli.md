@@ -323,6 +323,12 @@ configured OTA slot. `target flash` passes the tracked partition table and the
 `app0` label to `espflash`; inspect and JSON plans report the ELF, OTA image,
 and partition table separately.
 
+The native flash-filesystem feature compiles LittleFS C sources. Install
+`riscv32-esp-elf-gcc`, `riscv32-unknown-elf-gcc`, or `riscv64-elf-gcc` on
+`PATH`. Set `SQUIDSCRIPT_RISCV_CC` to an explicit compiler path when the
+toolchain is installed outside `PATH`; `squidc` supplies the ESP32-C3
+`rv32imc/ilp32` flags.
+
 Use `target inspect` or `--print-plan` before side-effectful operations when
 automation needs to verify the resolved command without invoking the tool:
 

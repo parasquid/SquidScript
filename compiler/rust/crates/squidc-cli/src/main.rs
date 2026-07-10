@@ -3890,6 +3890,32 @@ mod tests {
     }
 
     #[test]
+    fn native_flash_filesystem_build_uses_explicit_riscv_compiler() {
+        let root = target::repo_root();
+        let target = target::load_target_by_id(&root, "xteink-x4").unwrap();
+        std::env::set_var("SQUIDSCRIPT_RISCV_CC", "/toolchain/riscv-gcc");
+        let plan = target::plan_build_command(
+            &root,
+            &target,
+            target::TargetBuildPlanOptions {
+                backend: target::TargetBackend::Native,
+                stack_usage: false,
+                pristine: target::TargetPristine::Auto,
+                west_args: Vec::new(),
+            },
+        )
+        .unwrap();
+        std::env::remove_var("SQUIDSCRIPT_RISCV_CC");
+
+        assert!(plan.env.iter().any(|(key, value)| {
+            key == "CC_riscv32imc_unknown_none_elf" && value == "/toolchain/riscv-gcc"
+        }));
+        assert!(plan.env.iter().any(|(key, value)| {
+            key == "CFLAGS_riscv32imc_unknown_none_elf" && value == "-march=rv32imc -mabi=ilp32"
+        }));
+    }
+
+    #[test]
     fn missing_target_fails_noninteractive() {
         let root = target::repo_root();
         let error = target::resolve_target_arg(&root, None, false).unwrap_err();

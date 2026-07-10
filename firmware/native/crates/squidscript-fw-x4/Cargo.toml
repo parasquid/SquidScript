@@ -10,7 +10,10 @@ squid-device-protocol = { path = "../../../../compiler/rust/crates/squid-device-
 squidvm-core = { path = "../../../../compiler/rust/crates/squidvm-core", default-features = false }
 embedded-hal = "1.0"
 embedded-hal-async = "1.0"
+embedded-storage = "0.3"
 heapless = "0.8"
+littlefs2 = { version = "0.8.0", default-features = false, features = ["c-stubs", "log-none"], optional = true }
+delog = { version = "0.1.8", features = ["portable-atomic"], optional = true }
 binbook-core = { path = "../../../../../binbook/crates/binbook-core", optional = true }
 binbook-decompress = { path = "../../../../../binbook/crates/binbook-decompress", optional = true }
 embedded-sd-storage = { path = "../../../../../binbook/crates/embedded-sd-storage", optional = true }
@@ -45,6 +48,7 @@ bt-hci = { version = "0.8", optional = true, features = ["uuid"] }
 trouble-host = { version = "0.6", default-features = false, optional = true, features = ["peripheral", "gatt", "derive", "connection-params-update", "default-packet-pool", "default-packet-pool-mtu-27", "default-packet-pool-size-32"] }
 heapless-09 = { package = "heapless", version = "0.9", optional = true }
 critical-section = { version = "1.2", optional = true }
+esp-storage = { version = "0.9.0", default-features = false, features = ["esp32c3", "critical-section"], optional = true }
 
 [features]
 default = []
@@ -103,6 +107,11 @@ x4-binbook = [
     "dep:ssd1677-driver",
     "dep:xteink-x4-display",
     "x4-storage",
+]
+x4-flash-filesystem = [
+    "dep:delog",
+    "dep:esp-storage",
+    "dep:littlefs2",
 ]
 
 [[bin]]
