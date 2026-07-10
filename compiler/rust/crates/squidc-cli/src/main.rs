@@ -1,6 +1,7 @@
 mod app_id;
 mod ble_push;
 mod compile;
+mod http_upload;
 mod package;
 mod serial;
 mod target;
@@ -159,7 +160,7 @@ enum DeviceCommands {
     ContentPut(DeviceContentPutArgs),
     ContentCheck(DeviceContentCheckArgs),
     ContentDelete(DeviceContentDeleteArgs),
-    BlePut(DeviceBlePutArgs),
+    Upload(DeviceUploadArgs),
     WifiProfile(DeviceWifiProfileArgs),
     RuntimeCap(DeviceRuntimeCapArgs),
     Reset(DeviceOnlyArgs),
@@ -259,11 +260,24 @@ struct AppPushArgs {
 }
 
 #[derive(Args, Debug)]
-struct DeviceBlePutArgs {
-    device: String,
+struct DeviceUploadArgs {
     input: PathBuf,
     #[arg(long)]
-    name: Option<String>,
+    name: String,
+    #[arg(long, value_enum)]
+    transport: UploadTransportArg,
+    #[arg(long)]
+    host: Option<String>,
+    #[arg(long)]
+    device: Option<String>,
+    #[arg(long)]
+    port: Option<u16>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum UploadTransportArg {
+    Http,
+    Ble,
 }
 
 #[derive(Args, Debug)]
@@ -573,7 +587,7 @@ fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String>
             DeviceCommands::ContentPut(args) => content_put(args, human),
             DeviceCommands::ContentCheck(args) => content_check(args, human),
             DeviceCommands::ContentDelete(args) => content_delete(args, human),
-            DeviceCommands::BlePut(args) => device_ble_put(args, human),
+            DeviceCommands::Upload(args) => device_upload(args, human),
             DeviceCommands::WifiProfile(args) => wifi_profile(args, human),
             DeviceCommands::RuntimeCap(args) => runtime_cap(args, human),
             DeviceCommands::Reset(args) => reset(args.device, human),
@@ -845,28 +859,69 @@ fn push_app_ble(args: AppPushArgs, human: bool) -> Result<Value, String> {
     }))
 }
 
-fn device_ble_put(args: DeviceBlePutArgs, human: bool) -> Result<Value, String> {
-    let name = match args.name {
-        Some(name) => name,
-        None => args
-            .input
-            .file_name()
-            .and_then(|value| value.to_str())
-            .ok_or_else(|| format!("input path has no UTF-8 filename: {}", args.input.display()))?
-            .to_string(),
-    };
-    if !is_safe_content_name(&name) {
-        return Err(format!("content name must be a simple filename: {name}"));
+fn device_upload(args: DeviceUploadArgs, human: bool) -> Result<Value, String> {
+    if !is_safe_content_name(&args.name) {
+        return Err(format!(
+            "upload name must be a simple filename: {}",
+            args.name
+        ));
     }
-    let result = ble_push::push_file(&args.device, &args.input, &name)?;
+    let started = Instant::now();
+    let (transport, destination, bytes, resumed_bytes) = match args.transport {
+        UploadTransportArg::Http => {
+            let host = args
+                .host
+                .as_deref()
+                .ok_or_else(|| "--host is required for --transport http".to_string())?;
+            if args.device.is_some() {
+                return Err("--device is only valid with --transport ble".to_string());
+            }
+            let port = args.port.unwrap_or(80);
+            let result = http_upload::upload(host, port, &args.input, &args.name)?;
+            (
+                "http",
+                format!("{host}:{port}"),
+                result.bytes_sent,
+                result.resumed_bytes,
+            )
+        }
+        UploadTransportArg::Ble => {
+            let device = args
+                .device
+                .as_deref()
+                .ok_or_else(|| "--device is required for --transport ble".to_string())?;
+            if args.host.is_some() {
+                return Err("--host is only valid with --transport http".to_string());
+            }
+            if args.port.is_some() {
+                return Err("--port is only valid with --transport http".to_string());
+            }
+            let result = ble_push::push_file(device, &args.input, &args.name)?;
+            ("ble", device.to_string(), result.bytes_sent, 0)
+        }
+    };
+    let elapsed = started.elapsed();
+    let elapsed_seconds = elapsed.as_secs_f64();
+    let bytes_per_second = if elapsed_seconds > 0.0 {
+        bytes as f64 / elapsed_seconds
+    } else {
+        bytes as f64
+    };
     if human {
-        println!("BLE uploaded name={} bytes={}", name, result.bytes_sent);
+        println!(
+            "uploaded transport={transport} name={} bytes={bytes} elapsed={elapsed_seconds:.3}s bytes_per_second={bytes_per_second:.0}",
+            args.name
+        );
     }
     Ok(json!({
-        "device": args.device,
+        "transport": transport,
+        "destination": destination,
         "input": args.input,
-        "name": name,
-        "bytes": result.bytes_sent,
+        "name": args.name,
+        "bytes": bytes,
+        "resumedBytes": resumed_bytes,
+        "elapsedSeconds": elapsed_seconds,
+        "bytesPerSecond": bytes_per_second,
     }))
 }
 
@@ -3284,25 +3339,95 @@ mod tests {
         assert_eq!(check_args.size, 8192);
         assert_eq!(check_args.crc32, "1234abcd");
 
-        let ble = Cli::try_parse_from([
+        let http = Cli::try_parse_from([
             "squidc",
             "device",
-            "ble-put",
-            "SquidScript-X4",
+            "upload",
             "target/transfer-smoke.dat",
             "--name",
             "transfer-smoke.dat",
+            "--transport",
+            "http",
+            "--host",
+            "192.168.4.1",
         ])
         .unwrap();
         let Commands::Device {
-            command: DeviceCommands::BlePut(ble_args),
+            command: DeviceCommands::Upload(http_args),
+        } = http.command
+        else {
+            panic!("expected HTTP device upload");
+        };
+        assert_eq!(http_args.transport, UploadTransportArg::Http);
+        assert_eq!(http_args.host.as_deref(), Some("192.168.4.1"));
+        assert_eq!(http_args.port, None);
+
+        let ble = Cli::try_parse_from([
+            "squidc",
+            "device",
+            "upload",
+            "target/transfer-smoke.dat",
+            "--name",
+            "transfer-smoke.dat",
+            "--transport",
+            "ble",
+            "--device",
+            "SquidScript-X4",
+        ])
+        .unwrap();
+        let Commands::Device {
+            command: DeviceCommands::Upload(ble_args),
         } = ble.command
         else {
-            panic!("expected device ble-put");
+            panic!("expected BLE device upload");
         };
-        assert_eq!(ble_args.device, "SquidScript-X4");
-        assert_eq!(ble_args.input, PathBuf::from("target/transfer-smoke.dat"));
-        assert_eq!(ble_args.name.as_deref(), Some("transfer-smoke.dat"));
+        assert_eq!(ble_args.transport, UploadTransportArg::Ble);
+        assert_eq!(ble_args.device.as_deref(), Some("SquidScript-X4"));
+    }
+
+    #[test]
+    fn device_upload_requires_transport_destination_and_safe_name() {
+        let missing_host = device_upload(
+            DeviceUploadArgs {
+                input: PathBuf::from("missing.binbook"),
+                name: "book.binbook".to_string(),
+                transport: UploadTransportArg::Http,
+                host: None,
+                device: None,
+                port: None,
+            },
+            false,
+        )
+        .unwrap_err();
+        assert_eq!(missing_host, "--host is required for --transport http");
+
+        let missing_device = device_upload(
+            DeviceUploadArgs {
+                input: PathBuf::from("missing.binbook"),
+                name: "book.binbook".to_string(),
+                transport: UploadTransportArg::Ble,
+                host: None,
+                device: None,
+                port: None,
+            },
+            false,
+        )
+        .unwrap_err();
+        assert_eq!(missing_device, "--device is required for --transport ble");
+
+        let unsafe_name = device_upload(
+            DeviceUploadArgs {
+                input: PathBuf::from("missing.binbook"),
+                name: "../book.binbook".to_string(),
+                transport: UploadTransportArg::Http,
+                host: Some("127.0.0.1".to_string()),
+                device: None,
+                port: None,
+            },
+            false,
+        )
+        .unwrap_err();
+        assert!(unsafe_name.contains("simple filename"));
     }
 
     #[test]

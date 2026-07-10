@@ -121,7 +121,7 @@ hardware.
 
 `app push <device-name-or-address> <file.sqbc>` uploads SQBC over the custom
 BLE GATT file-transfer service. The target app must already be running a
-`service.ble.start("file-transfer", ...)` profile that accepts `.sqbc`; the
+`service.upload.start({...})` profile with the `ble` transport that accepts `.sqbc`; the
 receiving app decides whether to call `app.install(ev.upload)` or handle the
 file another way. The CLI matches the BLE peripheral by advertised name or
 address, writes `.sqbc` as the transfer file name, uses write-without-response
@@ -135,7 +135,8 @@ cargo run -p squidc -- device key SELECT
 cargo run -p squidc -- device display-window-probe corners
 cargo run -p squidc -- device content-put target/book.binbook --name book.binbook
 cargo run -p squidc -- device content-check book.binbook --size 83014 --crc32 deadbeef
-cargo run -p squidc -- device ble-put SquidScript target/book.binbook --name book.binbook
+cargo run -p squidc -- device upload target/book.binbook --name book.binbook --transport ble --device SquidScript
+cargo run -p squidc -- device upload target/book.binbook --name book.binbook --transport http --host 192.168.4.1
 cargo run -p squidc -- device output
 cargo run -p squidc -- device state
 cargo run -p squidc -- device drawlog
@@ -171,11 +172,22 @@ asks firmware to read the stored file and verify the size and CRC32; this is
 intended for transfer regression tests and host/device measurement scripts.
 The host OS does not mount or directly inspect this device-owned SD card.
 
-`device ble-put <device-name-or-address> <file> --name <file-name>` streams a
-host file over the custom BLE file-transfer service using the supplied safe file
-name. The receiving app must already be running `service.ble.start("file-transfer", ...)`
-with an `accept` entry matching the file-name extension, and it decides whether
-to copy, install, or otherwise consume the uploaded file.
+`device upload <file> --name <file-name> --transport <http|ble>` streams a host
+file through an active `service.upload` receiver. The supplied name is required
+and must be a safe simple filename whose extension matches the app's `accept`
+list.
+
+HTTP upload requires `--host <address>` and uses port 80 by default; pass
+`--port <port>` for a non-default listener. The client sends `HEAD
+/upload/<file-name>` first, reads `X-Squid-Upload-Offset` and
+`X-Squid-Upload-Total`, then sends the remaining bytes with `PUT`. A resumed
+request includes `Content-Range`. This helper uses the same endpoint as normal
+`curl` clients and does not start Wi-Fi or the device AP.
+
+BLE upload requires `--device <name-or-address>` and preserves the custom GATT
+wire protocol used by `app push`. Both transports report bytes sent, elapsed
+seconds, and effective bytes per second. The receiving app decides whether to
+copy, install, or otherwise consume the uploaded file.
 
 `device drawlog` returns the current Zephyr headless display draw log. Records
 use the current firmware diagnostic text shape, such as
@@ -201,7 +213,7 @@ the response budget, firmware returns the newest lines that fit and includes
 Firmware invariant diagnostics also appear here. These lines begin with
 `invariant.` and indicate impossible or ambiguous runtime state, such as
 duplicate app registry ids, duplicate active binding rows, or ambiguous BLE
-file-transfer routes. `squidc app push` maps known BLE transfer status bytes to
+upload routes. `squidc app push` and `squidc device upload --transport ble` map known BLE transfer status bytes to
 readable messages such as `BLE route ambiguous`; inspect `device errors` for
 the retained firmware-side invariant line.
 

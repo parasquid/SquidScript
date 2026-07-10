@@ -429,10 +429,9 @@ async fn push_connected_peripheral(
                     });
                 }
             }
-            Ok(Some(notification)) => status_poll.observe_other_notification(
-                notification.uuid,
-                notification.value.len(),
-            ),
+            Ok(Some(notification)) => {
+                status_poll.observe_other_notification(notification.uuid, notification.value.len())
+            }
             Ok(None) => {
                 break Ok(BlePushResult {
                     extension: name.to_string(),
@@ -477,9 +476,7 @@ impl BleStatusPoll {
     fn observe_read(&mut self, read: Result<Vec<u8>, String>) -> Option<Result<(), String>> {
         self.reads = self.reads.saturating_add(1);
         match read {
-            Ok(value) => {
-                self.observe_value_with_label("read", value)
-            }
+            Ok(value) => self.observe_value_with_label("read", value),
             Err(error) => {
                 if self.debug {
                     eprintln!("ble-status-read index={} error={}", self.reads, error);
@@ -933,7 +930,9 @@ mod tests {
 
         assert_eq!(
             result,
-            Some(Err("device reported BLE route ambiguous status 17".to_string()))
+            Some(Err(
+                "device reported BLE route ambiguous status 17".to_string()
+            ))
         );
     }
 
@@ -942,7 +941,9 @@ mod tests {
         let mut poll = BleStatusPoll::new();
 
         assert!(poll.observe_read(Ok(Vec::new())).is_none());
-        assert!(poll.observe_read(Err("dbus transient read failure".to_string())).is_none());
+        assert!(poll
+            .observe_read(Err("dbus transient read failure".to_string()))
+            .is_none());
         assert_eq!(poll.observe_read(Ok(vec![STATUS_COMPLETE])), Some(Ok(())));
     }
 
