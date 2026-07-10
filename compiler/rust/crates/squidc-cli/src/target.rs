@@ -107,6 +107,8 @@ pub struct NativeFirmware {
     pub target: String,
     pub chip: String,
     pub elf: PathBuf,
+    pub ota_image: PathBuf,
+    pub partition_table: PathBuf,
     #[serde(default)]
     pub features: Vec<String>,
     #[serde(default)]
@@ -129,12 +131,104 @@ impl NativeFirmware {
             "target": self.target,
             "chip": self.chip,
             "elf": resolve_repo_path(root, &self.elf),
+            "otaImage": resolve_repo_path(root, &self.ota_image),
+            "partitionTable": resolve_repo_path(root, &self.partition_table),
             "features": self.features,
             "release": self.release,
             "rustupToolchain": self.rustup_toolchain,
             "bleConnectionWatchdogMs": self.ble_connection_watchdog_ms,
         })
     }
+}
+
+const ESP32C3_FLASH_BYTES: u64 = 16 * 1024 * 1024;
+const OTA_SLOT_BYTES: u64 = 0x640000;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PartitionEntry {
+    name: String,
+    kind: String,
+    subtype: String,
+    offset: u64,
+    size: u64,
+}
+
+fn parse_partition_number(value: &str) -> Result<u64, String> {
+    let value = value.trim();
+    if let Some(hex) = value.strip_prefix("0x") {
+        u64::from_str_radix(hex, 16).map_err(|_| format!("invalid partition number {value}"))
+    } else {
+        value
+            .parse()
+            .map_err(|_| format!("invalid partition number {value}"))
+    }
+}
+
+fn validate_native_partition_table(path: &Path) -> Result<Vec<PartitionEntry>, String> {
+    let text = fs::read_to_string(path)
+        .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    let mut entries = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let fields = line.split(',').map(str::trim).collect::<Vec<_>>();
+        if fields.len() < 5 {
+            return Err(format!(
+                "{}:{}: partition row requires five fields",
+                path.display(),
+                index + 1
+            ));
+        }
+        let entry = PartitionEntry {
+            name: fields[0].to_string(),
+            kind: fields[1].to_string(),
+            subtype: fields[2].to_string(),
+            offset: parse_partition_number(fields[3])?,
+            size: parse_partition_number(fields[4])?,
+        };
+        if entry.offset % 0x1000 != 0 || entry.size == 0 || entry.size % 0x1000 != 0 {
+            return Err(format!("partition {} is not 4 KiB aligned", entry.name));
+        }
+        if entry.offset.checked_add(entry.size).is_none()
+            || entry.offset + entry.size > ESP32C3_FLASH_BYTES
+        {
+            return Err(format!("partition {} exceeds 16 MiB flash", entry.name));
+        }
+        entries.push(entry);
+    }
+    entries.sort_by_key(|entry| entry.offset);
+    for pair in entries.windows(2) {
+        if pair[0].offset + pair[0].size > pair[1].offset {
+            return Err(format!(
+                "partitions {} and {} overlap",
+                pair[0].name, pair[1].name
+            ));
+        }
+    }
+    let required = [
+        ("nvs", "data", "nvs", 0x9000, 0x5000),
+        ("otadata", "data", "ota", 0xe000, 0x2000),
+        ("app0", "app", "ota_0", 0x10000, OTA_SLOT_BYTES),
+        ("app1", "app", "ota_1", 0x650000, OTA_SLOT_BYTES),
+        ("squidscript", "data", "littlefs", 0xc90000, 0x360000),
+        ("coredump", "data", "coredump", 0xff0000, 0x10000),
+    ];
+    for (name, kind, subtype, offset, size) in required {
+        if !entries.iter().any(|entry| {
+            entry.name == name
+                && entry.kind == kind
+                && entry.subtype == subtype
+                && entry.offset == offset
+                && entry.size == size
+        }) {
+            return Err(format!(
+                "partition table is missing required {name} geometry"
+            ));
+        }
+    }
+    Ok(entries)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -254,6 +348,9 @@ pub fn load_targets(root: &Path) -> Result<Vec<TargetDefinition>, String> {
             .as_ref()
             .and_then(|firmware| firmware.native.clone());
         target.path = path;
+        if let Some(native) = target.native.as_ref() {
+            validate_native_partition_table(&resolve_repo_path(root, &native.partition_table))?;
+        }
         targets.push(target);
     }
     targets.sort_by(|a, b| a.id.cmp(&b.id));
@@ -292,6 +389,51 @@ pub fn plan_build_command(
         TargetBackend::Zephyr => plan_zephyr_build_command(root, target, options),
         TargetBackend::Native => plan_native_build_command(root, target, options),
     }
+}
+
+pub fn plan_native_image_command(
+    root: &Path,
+    target: &TargetDefinition,
+) -> Result<CommandPlan, String> {
+    let native = target.native()?;
+    validate_native_partition_table(&resolve_repo_path(root, &native.partition_table))?;
+    Ok(CommandPlan {
+        program: espflash_program(),
+        args: vec![
+            "save-image".to_string(),
+            "--chip".to_string(),
+            native.chip.clone(),
+            "--flash-size".to_string(),
+            "16mb".to_string(),
+            "--partition-table".to_string(),
+            resolve_repo_path(root, &native.partition_table)
+                .display()
+                .to_string(),
+            "--target-app-partition".to_string(),
+            "app0".to_string(),
+            resolve_repo_path(root, &native.elf).display().to_string(),
+            resolve_repo_path(root, &native.ota_image)
+                .display()
+                .to_string(),
+        ],
+        cwd: root.to_path_buf(),
+        env: Vec::new(),
+    })
+}
+
+pub fn validate_native_ota_image(root: &Path, target: &TargetDefinition) -> Result<u64, String> {
+    let native = target.native()?;
+    let path = resolve_repo_path(root, &native.ota_image);
+    let size = fs::metadata(&path)
+        .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?
+        .len();
+    if size == 0 || size > OTA_SLOT_BYTES {
+        return Err(format!(
+            "OTA image {} is {size} bytes; app0 capacity is {OTA_SLOT_BYTES} bytes",
+            path.display()
+        ));
+    }
+    Ok(size)
 }
 
 fn plan_zephyr_build_command(
@@ -475,6 +617,14 @@ fn plan_native_flash_command(
         "--chip".to_string(),
         native.chip.clone(),
         "--non-interactive".to_string(),
+        "--flash-size".to_string(),
+        "16mb".to_string(),
+        "--partition-table".to_string(),
+        resolve_repo_path(root, &native.partition_table)
+            .display()
+            .to_string(),
+        "--target-app-partition".to_string(),
+        "app0".to_string(),
         resolve_repo_path(root, &native.elf).display().to_string(),
     ];
     args.extend(options.west_args);
@@ -855,11 +1005,34 @@ mod tests {
             "workingDir": ".",
             "target": "riscv32imc-unknown-none-elf",
             "chip": "esp32c3",
-            "elf": "target/firmware"
+            "elf": "target/firmware",
+            "otaImage": "target/firmware.bin",
+            "partitionTable": "targets/partitions/test.csv"
         }))
         .unwrap();
 
         assert_eq!(firmware.ble_connection_watchdog_ms, 30_000);
+    }
+
+    #[test]
+    fn x4_partition_table_matches_ota_geometry() {
+        let root = repo_root();
+        let entries =
+            validate_native_partition_table(&root.join("targets/partitions/xteink-x4.csv"))
+                .unwrap();
+
+        assert_eq!(entries.len(), 6);
+        let app_slots = entries
+            .iter()
+            .filter(|entry| entry.kind == "app")
+            .collect::<Vec<_>>();
+        assert_eq!(app_slots.len(), 2);
+        assert_eq!(app_slots[0].size, app_slots[1].size);
+        assert_eq!(app_slots[0].size, OTA_SLOT_BYTES);
+        assert_eq!(
+            entries.last().unwrap().offset + entries.last().unwrap().size,
+            ESP32C3_FLASH_BYTES
+        );
     }
 
     #[test]

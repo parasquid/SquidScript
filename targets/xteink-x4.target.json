@@ -74,6 +74,8 @@
       "target": "riscv32imc-unknown-none-elf",
       "chip": "esp32c3",
       "elf": "target/riscv32imc-unknown-none-elf/debug/squidscript-fw-x4",
+      "otaImage": "target/riscv32imc-unknown-none-elf/debug/squidscript-fw-x4-ota.bin",
+      "partitionTable": "targets/partitions/xteink-x4.csv",
       "features": [
         "firmware-bin",
         "x4-binbook",

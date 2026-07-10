@@ -316,9 +316,12 @@ cargo run -p squidc -- target flash --target xteink-x4
 cargo run -p squidc -- target monitor --target xteink-x4
 ```
 
-The X4 target builds `firmware/native` with the target's configured
-Rust package, target triple, feature set, and release/debug mode, then flashes
-the configured ELF with `espflash`.
+The X4 target builds `firmware/native` with the target's configured Rust
+package, target triple, feature set, and release/debug mode. It then generates
+a distinct raw OTA application image and rejects images larger than the
+configured OTA slot. `target flash` passes the tracked partition table and the
+`app0` label to `espflash`; inspect and JSON plans report the ELF, OTA image,
+and partition table separately.
 
 Use `target inspect` or `--print-plan` before side-effectful operations when
 automation needs to verify the resolved command without invoking the tool:

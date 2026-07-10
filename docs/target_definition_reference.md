@@ -235,7 +235,10 @@ the Zephyr board, build directory, overlay, fallback SquidScript app, and
 generated Kconfig fragment.
 
 For native targets, `firmware.native` describes the Rust package, toolchain,
-target triple, features, output ELF, and native runtime settings. The optional
+target triple, features, output ELF, OTA application image, partition table,
+and native runtime settings. `partitionTable` is a repository-relative ESP-IDF
+CSV. `otaImage` is the raw application image generated during `target build`.
+The optional
 `bleConnectionWatchdogMs` field is a positive inactivity timeout in
 milliseconds for an accepted BLE connection. It defaults to `30000` when
 omitted. GATT activity and device-to-client status delivery reset the timeout;
@@ -270,6 +273,8 @@ Native example:
       "target": "riscv32imc-unknown-none-elf",
       "chip": "esp32c3",
       "elf": "target/riscv32imc-unknown-none-elf/debug/squidscript-fw-x4",
+      "otaImage": "target/riscv32imc-unknown-none-elf/debug/squidscript-fw-x4-ota.bin",
+      "partitionTable": "targets/partitions/xteink-x4.csv",
       "features": ["native-radio-services", "ble"],
       "bleConnectionWatchdogMs": 30000
     }
@@ -287,6 +292,9 @@ Rules:
 4. Native targets may omit `bleConnectionWatchdogMs` to use the 30-second
    default. Set it explicitly when a target needs a different BLE inactivity
    policy.
+5. Native partition tables must be aligned, non-overlapping, within the target
+   flash, and contain the target's required OTA and data partitions. Build and
+   flash planning fails before invoking tooling when validation fails.
 
 If UF2 support is verified later, `formats` may include `uf2`, `preferredFormat` may become `uf2`, and a target-specific UF2 family ID or conversion rule should be added.
 

@@ -1540,6 +1540,14 @@ fn target_inspect(args: TargetOnlyArgs, human: bool) -> Result<Value, String> {
         } else {
             println!("zephyr.supported=false");
         }
+        if let Some(native) = &target.native {
+            println!("native.elf={}", root.join(&native.elf).display());
+            println!("native.otaImage={}", root.join(&native.ota_image).display());
+            println!(
+                "native.partitionTable={}",
+                root.join(&native.partition_table).display()
+            );
+        }
     }
     Ok(data)
 }
@@ -1562,17 +1570,33 @@ fn target_build(args: TargetBuildArgs, human: bool) -> Result<Value, String> {
             west_args: args.west_args,
         },
     )?;
+    let image_plan = target::plan_native_image_command(&root, &target_def)?;
     if args.print_plan {
         if human {
             print_command_plan(&plan);
+            print_command_plan(&image_plan);
         }
-        return Ok(json!({"target": target_def.summary_json(), "plan": plan.as_json()}));
+        return Ok(json!({
+            "target": target_def.summary_json(),
+            "plans": {"build": plan.as_json(), "otaImage": image_plan.as_json()}
+        }));
     }
     if human {
         eprintln!("building target {}", target_def.id);
     }
     target::run_plan(&plan)?;
-    Ok(json!({"target": target_def.summary_json(), "plan": plan.as_json()}))
+    target::run_plan(&image_plan)?;
+    let ota_image_bytes = target::validate_native_ota_image(&root, &target_def)?;
+    Ok(json!({
+        "target": target_def.summary_json(),
+        "plans": {"build": plan.as_json(), "otaImage": image_plan.as_json()},
+        "artifacts": {
+            "elf": root.join(&target_def.native()?.elf),
+            "otaImage": root.join(&target_def.native()?.ota_image),
+            "partitionTable": root.join(&target_def.native()?.partition_table),
+            "otaImageBytes": ota_image_bytes
+        }
+    }))
 }
 
 fn target_flash(args: TargetFlashArgs, human: bool) -> Result<Value, String> {
@@ -1604,6 +1628,7 @@ fn target_flash(args: TargetFlashArgs, human: bool) -> Result<Value, String> {
             west_args: args.west_args,
         },
     )?;
+    let image_plan = target::plan_native_image_command(&root, &target_def)?;
     let monitor_plan = if args.monitor_after_flash {
         let port = if args.print_plan {
             None
@@ -1625,6 +1650,7 @@ fn target_flash(args: TargetFlashArgs, human: bool) -> Result<Value, String> {
     if args.print_plan {
         if human {
             print_command_plan(&build_plan);
+            print_command_plan(&image_plan);
             print_command_plan(&flash_plan);
             if let Some(plan) = &monitor_plan {
                 print_command_plan(plan);
@@ -1634,6 +1660,7 @@ fn target_flash(args: TargetFlashArgs, human: bool) -> Result<Value, String> {
             "target": target_def.summary_json(),
             "plans": {
                 "build": build_plan.as_json(),
+                "otaImage": image_plan.as_json(),
                 "flash": flash_plan.as_json(),
                 "monitor": monitor_plan.as_ref().map(|plan| plan.as_json())
             }
@@ -1643,6 +1670,8 @@ fn target_flash(args: TargetFlashArgs, human: bool) -> Result<Value, String> {
         eprintln!("building target {}", target_def.id);
     }
     target::run_plan(&build_plan)?;
+    target::run_plan(&image_plan)?;
+    target::validate_native_ota_image(&root, &target_def)?;
     if human {
         eprintln!("flashing target {}", target_def.id);
     }
@@ -1654,6 +1683,7 @@ fn target_flash(args: TargetFlashArgs, human: bool) -> Result<Value, String> {
         "target": target_def.summary_json(),
         "plans": {
             "build": build_plan.as_json(),
+            "otaImage": image_plan.as_json(),
             "flash": flash_plan.as_json(),
             "monitor": monitor_plan.as_ref().map(|plan| plan.as_json())
         }
@@ -3808,6 +3838,35 @@ mod tests {
         assert!(plan.args.iter().any(|arg| {
             arg.ends_with("target/riscv32imc-unknown-none-elf/debug/squidscript-fw-x4")
         }));
+        assert!(plan.args.windows(2).any(|args| {
+            args[0] == "--partition-table" && args[1].ends_with("targets/partitions/xteink-x4.csv")
+        }));
+        assert!(plan
+            .args
+            .windows(2)
+            .any(|args| args == ["--target-app-partition", "app0"]));
+    }
+
+    #[test]
+    fn plans_distinct_native_ota_image_artifact() {
+        let root = target::repo_root();
+        let target = target::load_target_by_id(&root, "xteink-x4").unwrap();
+        let plan = target::plan_native_image_command(&root, &target).unwrap();
+
+        assert!(plan.program.ends_with("espflash"));
+        assert_eq!(plan.args.first().map(String::as_str), Some("save-image"));
+        assert!(plan
+            .args
+            .iter()
+            .any(|arg| arg.ends_with("squidscript-fw-x4")));
+        assert!(plan
+            .args
+            .iter()
+            .any(|arg| arg.ends_with("squidscript-fw-x4-ota.bin")));
+        assert!(plan
+            .args
+            .iter()
+            .any(|arg| arg.ends_with("targets/partitions/xteink-x4.csv")));
     }
 
     #[test]

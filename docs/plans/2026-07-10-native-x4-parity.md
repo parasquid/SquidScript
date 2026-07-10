@@ -186,7 +186,7 @@ all native builds pass.
 **Owning layers:** target metadata, target build/flash tooling, bootloader
 configuration.
 
-- [ ] Add a tracked ESP-IDF CSV with the exact design-spec geometry:
+- [x] Add a tracked ESP-IDF CSV with the exact design-spec geometry:
 
   ```text
   nvs,data,nvs,0x9000,0x5000
@@ -197,19 +197,19 @@ configuration.
   coredump,data,coredump,0xff0000,0x10000
   ```
 
-- [ ] Add table validation tests for alignment, overlap, total 16 MiB bounds,
+- [x] Add table validation tests for alignment, overlap, total 16 MiB bounds,
   equal OTA slots, app image size, and required labels/subtypes.
-- [ ] Reference the table from X4 target metadata and make `target inspect`
+- [x] Reference the table from X4 target metadata and make `target inspect`
   report the resolved table and OTA image path.
-- [ ] Make `target flash` pass the table to `espflash` without exposing a
+- [x] Make `target flash` pass the table to `espflash` without exposing a
   backend selector.
-- [ ] Generate a raw OTA-compatible application image from the ELF during
+- [x] Generate a raw OTA-compatible application image from the ELF during
   `target build` and fail if it exceeds `0x640000`.
-- [ ] Keep bootloader, table, ELF, and raw image artifacts distinct in printed
+- [x] Keep bootloader, table, ELF, and raw image artifacts distinct in printed
   plans and JSON output.
-- [ ] Flash the table and current native image only after the Task 1 backup is
+- [x] Flash the table and current native image only after the Task 1 backup is
   confirmed.
-- [ ] Verify boot, serial protocol, display, SD, Wi-Fi, and BLE before
+- [x] Verify boot, serial protocol, display, SD, Wi-Fi, and BLE before
   continuing. Do not start LittleFS work if repartitioned boot is unstable.
 
 **Acceptance:** X4 boots native firmware from `app0`; readback of the live
