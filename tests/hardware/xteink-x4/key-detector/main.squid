@@ -50,6 +50,14 @@ event.on("key.POWER") {
   recordKey("POWER")
 }
 
+event.on("key.POWER.longTap") {
+  recordKey("POWER.longTap")
+}
+
+event.on("key.POWER.doubleTap") {
+  recordKey("POWER.doubleTap")
+}
+
 function recordKey(name) {
   state.lastKey = name
   state.count = state.count + 1

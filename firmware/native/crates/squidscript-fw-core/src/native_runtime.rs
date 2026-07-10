@@ -2218,6 +2218,10 @@ impl<
         self.host.errors.push(error);
     }
 
+    pub fn record_debug_trace(&mut self, line: &str) {
+        self.host.trace.push(line);
+    }
+
     pub fn clear_errors(&mut self) {
         self.host.errors.clear();
     }

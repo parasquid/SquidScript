@@ -1,0 +1,9 @@
+app "redraw-helper"
+
+app.triggers {
+  service.input.on("key.POWER.doubleTap")
+}
+
+event.on("key.POWER.doubleTap") {
+  app.exit()
+}

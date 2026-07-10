@@ -64,6 +64,16 @@ use esp_hal::gpio::{Input, InputConfig, Level, Output, OutputConfig};
     feature = "x4-binbook",
     feature = "native-radio-services"
 ))]
+use esp_hal::{
+    analog::adc::{Adc, AdcConfig, Attenuation},
+    gpio::Pull,
+};
+
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "x4-binbook",
+    feature = "native-radio-services"
+))]
 use squidscript_fw_x4::{
     binbook_stack::{
         RenderBuffers, SdStorage, X4CooperativeDisplayTaskStatus, X4Panel,
@@ -71,6 +81,7 @@ use squidscript_fw_x4::{
     },
     board::{DisplayDelay, FreqManagedSpiDevice, SharedSpi2},
     request_pending_display_flush,
+    target_input::{adc_bucket, InputClassifier, INPUT_BUTTONS, INPUT_DEBOUNCE_MS},
     x4_storage::{X4BinBookFileBackend, X4ContentStorage, X4SdFileStorage, X4StorageTime},
     NativeDisplayFlushDriver,
 };
@@ -889,6 +900,124 @@ async fn native_radio_serial_task(
     display_flush: &'static mut NoDisplayFlushTask,
 ) {
     run_serial_protocol_cooperative(serial, runtime, buffers, display_flush).await;
+}
+
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "x4-binbook",
+    feature = "native-radio-services"
+))]
+#[embassy_executor::task]
+async fn native_input_task(
+    adc1: esp_hal::peripherals::ADC1<'static>,
+    gpio1: esp_hal::peripherals::GPIO1<'static>,
+    gpio2: esp_hal::peripherals::GPIO2<'static>,
+    gpio3: esp_hal::peripherals::GPIO3<'static>,
+    runtime: &'static SharedX4NativeRuntime,
+) {
+    let mut config = AdcConfig::new();
+    let mut adc1_pin = config.enable_pin(gpio1, Attenuation::_11dB);
+    let mut adc2_pin = config.enable_pin(gpio2, Attenuation::_11dB);
+    let mut adc = Adc::new(adc1, config).into_async();
+    let power = Input::new(gpio3, InputConfig::default().with_pull(Pull::Up));
+    let mut classifier = InputClassifier::new();
+    let mut previous_raw = ("none", "none", true);
+    let mut previous_stable = 0u8;
+    let mut last_sample = embassy_time::Instant::now();
+
+    loop {
+        embassy_time::Timer::after_millis(INPUT_DEBOUNCE_MS as u64).await;
+        let adc1_value = adc.read_oneshot(&mut adc1_pin).await;
+        let adc2_value = adc.read_oneshot(&mut adc2_pin).await;
+        let power_high = power.is_high();
+        let now = embassy_time::Instant::now();
+        let elapsed_ms = now
+            .duration_since(last_sample)
+            .as_millis()
+            .clamp(1, u32::MAX as u64) as u32;
+        last_sample = now;
+
+        let raw = (
+            adc_bucket(1, adc1_value),
+            adc_bucket(2, adc2_value),
+            power_high,
+        );
+        let mut events = [None; 8];
+        let mut event_len = 0usize;
+        classifier.sample(adc1_value, adc2_value, power_high, elapsed_ms, |event| {
+            if event_len < events.len() {
+                events[event_len] = Some(event);
+                event_len += 1;
+            }
+        });
+        let stable = classifier.stable_mask();
+
+        #[cfg(debug_assertions)]
+        if raw != previous_raw || stable != previous_stable || event_len != 0 {
+            let mut runtime = runtime.lock().await;
+            if raw != previous_raw {
+                let mut line = heapless::String::<128>::new();
+                let _ = core::fmt::write(
+                    &mut line,
+                    format_args!(
+                        "input.raw adc1={} adc2={} power={}",
+                        raw.0,
+                        raw.1,
+                        if raw.2 { "released" } else { "pressed" }
+                    ),
+                );
+                runtime.record_debug_trace(line.as_str());
+            }
+            if stable != previous_stable {
+                for (index, button) in INPUT_BUTTONS.iter().enumerate() {
+                    let bit = 1u8 << index;
+                    if (stable ^ previous_stable) & bit == 0 {
+                        continue;
+                    }
+                    let mut line = heapless::String::<128>::new();
+                    let _ = core::fmt::write(
+                        &mut line,
+                        format_args!(
+                            "input.debounced key={} state={}",
+                            button.logical,
+                            if stable & bit == 0 {
+                                "released"
+                            } else {
+                                "pressed"
+                            }
+                        ),
+                    );
+                    runtime.record_debug_trace(line.as_str());
+                }
+            }
+            for event in events[..event_len].iter().flatten() {
+                let mut line = heapless::String::<128>::new();
+                let _ = core::fmt::write(&mut line, format_args!("input.classified event={event}"));
+                runtime.record_debug_trace(line.as_str());
+            }
+        }
+
+        for event in events[..event_len].iter().flatten() {
+            let mut runtime = runtime.lock().await;
+            let routed = runtime.enqueue_input_event(event).is_ok();
+            #[cfg(debug_assertions)]
+            {
+                let mut line = heapless::String::<128>::new();
+                let _ = core::fmt::write(
+                    &mut line,
+                    format_args!(
+                        "input.route event={} result={}",
+                        event,
+                        if routed { "ok" } else { "error" }
+                    ),
+                );
+                runtime.record_debug_trace(line.as_str());
+            }
+            let _ = routed;
+        }
+        previous_raw = raw;
+        previous_stable = stable;
+    }
 }
 
 #[cfg(all(
@@ -1740,6 +1869,19 @@ async fn main(spawner: embassy_executor::Spawner) {
                 app_storage,
                 app_store_ready,
             );
+            match native_input_task(
+                peripherals.ADC1,
+                peripherals.GPIO1,
+                peripherals.GPIO2,
+                peripherals.GPIO3,
+                runtime,
+            ) {
+                Ok(task) => {
+                    spawner.spawn(task);
+                    native_radio_log!("native_input_stage task_ready");
+                }
+                Err(_) => native_radio_log!("native_input_error stage=task_spawn"),
+            }
             #[cfg(feature = "wifi")]
             WIFI_RUNTIME_PTR.store(runtime as *const _ as usize, Ordering::Release);
             let display_spi = FreqManagedSpiDevice::new(

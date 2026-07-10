@@ -1,0 +1,28 @@
+app "main"
+
+state {
+  starts: int = 0
+}
+
+event.on("app.start") {
+  state.starts = state.starts + 1
+  app.arm("redraw-helper")
+  screen.open("status")
+}
+
+screen("status") {
+  service.display.refreshMode("full")
+  service.display.clear(color.WHITE)
+  service.display.text("Redraw count", {
+    x: 32
+    y: 96
+    fontHeight: 28
+    textColor: color.GRAY15
+  })
+  service.display.text(state.starts, {
+    x: 32
+    y: 152
+    fontHeight: 42
+    textColor: color.GRAY15
+  })
+}
