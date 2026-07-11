@@ -2702,6 +2702,7 @@ dependencies = [
  "heapless 0.9.3",
  "littlefs2",
  "serde_json",
+ "sha2",
  "squid-device-protocol",
  "squidc-core",
  "squidscript-fw-core",

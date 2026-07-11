@@ -1,4 +1,5 @@
 use heapless::String;
+use sha2::{Digest, Sha256};
 use squid_device_protocol::FIRMWARE_SHA256_BYTES;
 
 pub const OTA_SLOT_BYTES: usize = 0x280000;
@@ -93,6 +94,190 @@ pub enum OtaError {
     Bounds,
     Incomplete,
     Checkpoint,
+    Flash,
+    Verify,
+}
+
+pub trait OtaSlotStorage {
+    fn erase(&mut self, slot: Slot, from: usize, to: usize) -> Result<(), OtaError>;
+    fn write(&mut self, slot: Slot, offset: usize, bytes: &[u8]) -> Result<(), OtaError>;
+    fn read(&mut self, slot: Slot, offset: usize, out: &mut [u8]) -> Result<(), OtaError>;
+    fn activate(&mut self, slot: Slot) -> Result<(), OtaError>;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CooperativeStatus {
+    Idle,
+    Erasing { erased: usize, total: usize },
+    Receiving { durable: usize, total: usize },
+    Verifying { verified: usize, total: usize },
+    ReadyToActivate,
+    Committed,
+    Aborted,
+    Failed,
+}
+
+pub struct OtaController {
+    state: TransferState,
+    erase_offset: usize,
+    verify_offset: usize,
+    verifier: Sha256,
+    verified: bool,
+}
+
+impl Default for OtaController {
+    fn default() -> Self {
+        Self {
+            state: TransferState::default(),
+            erase_offset: OTA_SLOT_BYTES,
+            verify_offset: 0,
+            verifier: Sha256::new(),
+            verified: false,
+        }
+    }
+}
+
+impl OtaController {
+    pub fn restore(state: TransferState) -> Self {
+        Self {
+            state,
+            erase_offset: OTA_SLOT_BYTES,
+            verify_offset: 0,
+            verifier: Sha256::new(),
+            verified: false,
+        }
+    }
+
+    pub fn begin(
+        &mut self,
+        active: Slot,
+        candidate: Slot,
+        expected_len: usize,
+        expected_sha256: &[u8],
+        build_id: &str,
+    ) -> Result<(), OtaError> {
+        self.state
+            .begin(active, candidate, expected_len, expected_sha256, build_id)?;
+        self.erase_offset = 0;
+        self.verify_offset = 0;
+        self.verifier = Sha256::new();
+        self.verified = false;
+        Ok(())
+    }
+
+    pub fn status(&self) -> CooperativeStatus {
+        match self.state.phase() {
+            TransferPhase::Idle => CooperativeStatus::Idle,
+            TransferPhase::Receiving if self.erase_offset < OTA_SLOT_BYTES => {
+                CooperativeStatus::Erasing {
+                    erased: self.erase_offset,
+                    total: OTA_SLOT_BYTES,
+                }
+            }
+            TransferPhase::Receiving => CooperativeStatus::Receiving {
+                durable: self.state.durable_offset(),
+                total: self.state.expected_len(),
+            },
+            TransferPhase::Ready if self.verified => CooperativeStatus::ReadyToActivate,
+            TransferPhase::Ready if self.verify_offset > 0 => CooperativeStatus::Verifying {
+                verified: self.verify_offset,
+                total: self.state.expected_len(),
+            },
+            TransferPhase::Ready => CooperativeStatus::Receiving {
+                durable: self.state.durable_offset(),
+                total: self.state.expected_len(),
+            },
+            TransferPhase::Committed => CooperativeStatus::Committed,
+            TransferPhase::Aborted => CooperativeStatus::Aborted,
+            TransferPhase::Failed => CooperativeStatus::Failed,
+        }
+    }
+
+    pub fn erase_step<S: OtaSlotStorage>(
+        &mut self,
+        storage: &mut S,
+        sector_bytes: usize,
+    ) -> Result<CooperativeStatus, OtaError> {
+        if self.state.phase() != TransferPhase::Receiving
+            || self.erase_offset >= OTA_SLOT_BYTES
+            || sector_bytes == 0
+            || OTA_SLOT_BYTES % sector_bytes != 0
+        {
+            return Err(OtaError::Inactive);
+        }
+        let end = self
+            .erase_offset
+            .saturating_add(sector_bytes)
+            .min(OTA_SLOT_BYTES);
+        storage.erase(self.state.candidate(), self.erase_offset, end)?;
+        self.erase_offset = end;
+        Ok(self.status())
+    }
+
+    pub fn write_chunk<S: OtaSlotStorage>(
+        &mut self,
+        storage: &mut S,
+        offset: usize,
+        bytes: &[u8],
+    ) -> Result<ChunkDisposition, OtaError> {
+        if self.erase_offset != OTA_SLOT_BYTES {
+            return Err(OtaError::Inactive);
+        }
+        let disposition = self.state.classify_chunk(offset, bytes.len())?;
+        if disposition == ChunkDisposition::Write {
+            storage.write(self.state.candidate(), offset, bytes)?;
+            self.state.mark_chunk_durable(offset, bytes.len())?;
+        }
+        Ok(disposition)
+    }
+
+    pub fn verify_step<S: OtaSlotStorage>(
+        &mut self,
+        storage: &mut S,
+        buffer: &mut [u8],
+    ) -> Result<CooperativeStatus, OtaError> {
+        if self.state.phase() != TransferPhase::Ready || self.verified || buffer.is_empty() {
+            return Err(OtaError::Inactive);
+        }
+        let read_len = buffer
+            .len()
+            .min(self.state.expected_len().saturating_sub(self.verify_offset));
+        storage.read(
+            self.state.candidate(),
+            self.verify_offset,
+            &mut buffer[..read_len],
+        )?;
+        self.verifier.update(&buffer[..read_len]);
+        self.verify_offset += read_len;
+        if self.verify_offset == self.state.expected_len() {
+            let digest: [u8; 32] = self.verifier.clone().finalize().into();
+            if &digest != self.state.expected_sha256() {
+                self.state.fail();
+                return Err(OtaError::Verify);
+            }
+            self.verified = true;
+        }
+        Ok(self.status())
+    }
+
+    pub fn activate<S: OtaSlotStorage>(&mut self, storage: &mut S) -> Result<(), OtaError> {
+        if !self.verified || self.state.phase() != TransferPhase::Ready {
+            return Err(OtaError::Incomplete);
+        }
+        storage.activate(self.state.candidate())?;
+        self.state.mark_committed()
+    }
+
+    pub fn abort(&mut self) {
+        self.state.abort();
+        self.erase_offset = OTA_SLOT_BYTES;
+        self.verify_offset = 0;
+        self.verified = false;
+    }
+
+    pub const fn transfer_state(&self) -> &TransferState {
+        &self.state
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -285,6 +470,48 @@ impl TransferState {
 mod tests {
     use super::*;
 
+    struct MockSlot {
+        bytes: std::vec::Vec<u8>,
+        activated: Option<Slot>,
+        erases: usize,
+        writes: usize,
+    }
+
+    impl MockSlot {
+        fn new() -> Self {
+            Self {
+                bytes: vec![0; OTA_SLOT_BYTES],
+                activated: None,
+                erases: 0,
+                writes: 0,
+            }
+        }
+    }
+
+    impl OtaSlotStorage for MockSlot {
+        fn erase(&mut self, _slot: Slot, from: usize, to: usize) -> Result<(), OtaError> {
+            self.bytes[from..to].fill(0xff);
+            self.erases += 1;
+            Ok(())
+        }
+
+        fn write(&mut self, _slot: Slot, offset: usize, bytes: &[u8]) -> Result<(), OtaError> {
+            self.bytes[offset..offset + bytes.len()].copy_from_slice(bytes);
+            self.writes += 1;
+            Ok(())
+        }
+
+        fn read(&mut self, _slot: Slot, offset: usize, out: &mut [u8]) -> Result<(), OtaError> {
+            out.copy_from_slice(&self.bytes[offset..offset + out.len()]);
+            Ok(())
+        }
+
+        fn activate(&mut self, slot: Slot) -> Result<(), OtaError> {
+            self.activated = Some(slot);
+            Ok(())
+        }
+    }
+
     fn receiving() -> TransferState {
         let mut state = TransferState::default();
         state
@@ -357,5 +584,78 @@ mod tests {
         assert_eq!(state.durable_offset(), 0);
         assert_eq!(state.build_id(), "");
         assert_eq!(state.classify_chunk(0, 1), Err(OtaError::Inactive));
+    }
+
+    #[test]
+    fn controller_erases_cooperatively_and_activates_only_after_readback_hash() {
+        let image = b"firmware-image";
+        let hash: [u8; 32] = Sha256::digest(image).into();
+        let mut controller = OtaController::default();
+        let mut storage = MockSlot::new();
+        controller
+            .begin(Slot::App0, Slot::App1, image.len(), &hash, "build")
+            .unwrap();
+        assert_eq!(
+            controller.status(),
+            CooperativeStatus::Erasing {
+                erased: 0,
+                total: OTA_SLOT_BYTES
+            }
+        );
+        while matches!(controller.status(), CooperativeStatus::Erasing { .. }) {
+            controller.erase_step(&mut storage, 4096).unwrap();
+        }
+        assert_eq!(storage.erases, OTA_SLOT_BYTES / 4096);
+        assert_eq!(
+            controller
+                .write_chunk(&mut storage, 0, &image[..4])
+                .unwrap(),
+            ChunkDisposition::Write
+        );
+        assert_eq!(
+            controller
+                .write_chunk(&mut storage, 0, &image[..4])
+                .unwrap(),
+            ChunkDisposition::AlreadyDurable
+        );
+        controller
+            .write_chunk(&mut storage, 4, &image[4..])
+            .unwrap();
+        assert_eq!(storage.writes, 2);
+        let mut readback = [0u8; 4];
+        while !matches!(controller.status(), CooperativeStatus::ReadyToActivate) {
+            controller.verify_step(&mut storage, &mut readback).unwrap();
+        }
+        assert_eq!(storage.activated, None);
+        controller.activate(&mut storage).unwrap();
+        assert_eq!(storage.activated, Some(Slot::App1));
+        assert_eq!(controller.status(), CooperativeStatus::Committed);
+    }
+
+    #[test]
+    fn controller_hash_failure_never_changes_activation_metadata() {
+        let image = b"firmware-image";
+        let hash: [u8; 32] = Sha256::digest(image).into();
+        let mut controller = OtaController::default();
+        let mut storage = MockSlot::new();
+        controller
+            .begin(Slot::App1, Slot::App0, image.len(), &hash, "build")
+            .unwrap();
+        while matches!(controller.status(), CooperativeStatus::Erasing { .. }) {
+            controller.erase_step(&mut storage, 4096).unwrap();
+        }
+        controller.write_chunk(&mut storage, 0, image).unwrap();
+        storage.bytes[3] ^= 1;
+        let mut readback = [0u8; 8];
+        let error = loop {
+            match controller.verify_step(&mut storage, &mut readback) {
+                Ok(_) => continue,
+                Err(error) => break error,
+            }
+        };
+        assert_eq!(error, OtaError::Verify);
+        assert_eq!(controller.status(), CooperativeStatus::Failed);
+        assert_eq!(storage.activated, None);
+        assert_eq!(controller.activate(&mut storage), Err(OtaError::Incomplete));
     }
 }
