@@ -268,6 +268,7 @@ pub struct TargetBuildPlanOptions {
 #[derive(Clone, Debug)]
 pub struct TargetFlashPlanOptions {
     pub backend: TargetBackend,
+    pub port: Option<String>,
     pub west_args: Vec<String>,
 }
 
@@ -671,6 +672,10 @@ fn plan_native_flash_command(
         "app0".to_string(),
         resolve_repo_path(root, &native.elf).display().to_string(),
     ];
+    if let Some(port) = options.port {
+        args.push("--port".to_string());
+        args.push(port);
+    }
     args.extend(options.west_args);
     Ok(CommandPlan {
         program: espflash_program(),

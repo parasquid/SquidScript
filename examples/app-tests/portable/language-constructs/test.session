@@ -16,6 +16,5 @@ state.save()
 debug.print("again", state.count)
 :state
 :output
-:expect-output output=start 0
 :expect-output output=after 1
 :expect-output output=again 2

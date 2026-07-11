@@ -15,7 +15,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use app_id::{fnv1a, generated_app_id, source_app_id, source_for_compile};
+use app_id::{fnv1a, generated_app_id, source_app_id, source_for_app_id, source_for_compile};
 use clap::{error::ErrorKind, Args, Parser, Subcommand, ValueEnum};
 use compile::{compile_path_to_sqbc, compile_source_to_sqbc, compile_target_id};
 use package::{package_app_dir, read_stored_zip_entries};
@@ -446,6 +446,8 @@ struct TargetBuildArgs {
 struct TargetFlashArgs {
     #[arg(long)]
     target: Option<String>,
+    #[arg(long)]
+    port: Option<String>,
     #[arg(long)]
     monitor_after_flash: bool,
     #[arg(long)]
@@ -1796,6 +1798,7 @@ fn target_flash(args: TargetFlashArgs, human: bool) -> Result<Value, String> {
         &target_def,
         target::TargetFlashPlanOptions {
             backend,
+            port: args.port.clone(),
             west_args: args.west_args,
         },
     )?;
@@ -1891,6 +1894,7 @@ fn hardware_test(args: HardwareTestArgs, human: bool) -> Result<Value, String> {
         target_flash(
             TargetFlashArgs {
                 target: Some(target_def.id.clone()),
+                port: args.port.clone(),
                 monitor_after_flash: false,
                 print_plan: false,
                 west_args: Vec::new(),
@@ -1899,6 +1903,13 @@ fn hardware_test(args: HardwareTestArgs, human: bool) -> Result<Value, String> {
         )?;
         wait_for_hardware_test_device_reset(args.port.as_deref())?;
     }
+
+    storage_format(
+        DeviceOnlyOptions {
+            port: args.port.clone(),
+        },
+        human,
+    )?;
 
     let mut results = Vec::new();
     for check in &checks {
@@ -3171,7 +3182,8 @@ impl ReplSession {
         }
         fs::create_dir_all(&self.temp_dir)
             .map_err(|error| format!("failed to create {}: {error}", self.temp_dir.display()))?;
-        let sqbc = compile_source_to_sqbc(&self.base_source, &self.target, self.profile)?;
+        let source = source_for_app_id(&self.base_source, &self.session_app_id);
+        let sqbc = compile_source_to_sqbc(&source, &self.target, self.profile)?;
         let sqbc_path = self.temp_dir.join("repl-base.sqbc");
         fs::write(&sqbc_path, sqbc)
             .map_err(|error| format!("failed to write {}: {error}", sqbc_path.display()))?;
@@ -3935,6 +3947,8 @@ mod tests {
             "flash",
             "--target",
             "esp32c3-super-mini",
+            "--port",
+            "/dev/ttyACM0",
             "--monitor-after-flash",
             "--",
             "--runner",
@@ -3948,6 +3962,7 @@ mod tests {
             panic!("expected target flash");
         };
         assert_eq!(args.target.as_deref(), Some("esp32c3-super-mini"));
+        assert_eq!(args.port.as_deref(), Some("/dev/ttyACM0"));
         assert!(args.monitor_after_flash);
         assert_eq!(args.west_args, vec!["--runner", "esp32"]);
 
@@ -4116,6 +4131,7 @@ mod tests {
             &target,
             target::TargetFlashPlanOptions {
                 backend: target::TargetBackend::Native,
+                port: Some("/dev/ttyACM0".to_string()),
                 west_args: Vec::new(),
             },
         )
@@ -4137,6 +4153,10 @@ mod tests {
             args[0] == "--bootloader"
                 && args[1].ends_with("firmware/native/bootloader/xteink-x4/bootloader.bin")
         }));
+        assert!(plan
+            .args
+            .windows(2)
+            .any(|args| args == ["--port", "/dev/ttyACM0"]));
         assert!(plan
             .args
             .windows(2)

@@ -130,6 +130,7 @@ assert_device_ap_dhcp_lease() {
 }
 
 export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-stable}"
+export DBUS_SYSTEM_BUS_ADDRESS="${DBUS_SYSTEM_BUS_ADDRESS:-unix:path=/run/host/run/dbus/system_bus_socket}"
 if [[ -z "${PORT}" ]]; then
   PORT="$(resolve_esp_serial_port)"
 fi

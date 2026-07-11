@@ -17,6 +17,17 @@ pub fn source_for_compile(source: &str, app_id: &str) -> String {
     }
 }
 
+pub fn source_for_app_id(source: &str, app_id: &str) -> String {
+    match source_app_id(source) {
+        Some(declared_id) => source.replacen(
+            &format!("app \"{declared_id}\""),
+            &format!("app \"{app_id}\""),
+            1,
+        ),
+        None => source_for_compile(source, app_id),
+    }
+}
+
 pub fn generated_app_id(path: &Path, source: &str) -> String {
     let stem = path
         .file_stem()
@@ -89,6 +100,18 @@ mod tests {
         assert_eq!(
             source_for_compile("app \"named\"\nstate {}\n", "ignored"),
             "app \"named\"\nstate {}\n"
+        );
+    }
+
+    #[test]
+    fn source_for_app_id_owns_declared_and_undeclared_sources() {
+        assert_eq!(
+            source_for_app_id("app \"named\"\nstate {}\n", "session"),
+            "app \"session\"\nstate {}\n"
+        );
+        assert_eq!(
+            source_for_app_id("state {}\n", "session"),
+            "app \"session\"\n\nstate {}\n"
         );
     }
 }

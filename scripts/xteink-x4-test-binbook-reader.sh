@@ -60,8 +60,8 @@ mkdir -p "${WORK_DIR}"
 if [[ -z "${BOOK_ONE_PROVIDED}" && -z "${BOOK_TWO_PROVIDED}" ]]; then
   BOOK_ONE="${WORK_DIR}/reader-one.generated.binbook"
   BOOK_TWO="${WORK_DIR}/reader-two.generated.binbook"
-  python3 "${ROOT}/scripts/generate-test-binbook.py" "${BOOK_ONE}"
-  python3 "${ROOT}/scripts/generate-test-binbook.py" "${BOOK_TWO}"
+  "${ROOT}/.venv/bin/python" "${ROOT}/scripts/generate-test-binbook.py" "${BOOK_ONE}"
+  "${ROOT}/.venv/bin/python" "${ROOT}/scripts/generate-test-binbook.py" "${BOOK_TWO}"
 fi
 export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-stable}"
 if [[ -z "${PORT}" ]]; then
