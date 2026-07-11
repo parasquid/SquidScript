@@ -4,7 +4,7 @@ use squid_device_protocol::FIRMWARE_SHA256_BYTES;
 pub const OTA_SLOT_BYTES: usize = 0x280000;
 pub const OTA_BUILD_ID_BYTES: usize = 32;
 const CHECKPOINT_MAGIC: [u8; 4] = *b"SQOT";
-const CHECKPOINT_BYTES: usize =
+pub const OTA_CHECKPOINT_BYTES: usize =
     4 + 1 + 1 + 8 + 8 + FIRMWARE_SHA256_BYTES + 1 + OTA_BUILD_ID_BYTES + 4;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -227,7 +227,7 @@ impl TransferState {
 
     pub fn encode_checkpoint(&self, out: &mut [u8]) -> Result<usize, OtaError> {
         let out = out
-            .get_mut(..CHECKPOINT_BYTES)
+            .get_mut(..OTA_CHECKPOINT_BYTES)
             .ok_or(OtaError::Checkpoint)?;
         out.fill(0);
         out[..4].copy_from_slice(&CHECKPOINT_MAGIC);
@@ -238,18 +238,21 @@ impl TransferState {
         out[22..54].copy_from_slice(&self.expected_sha256);
         out[54] = self.build_id.len() as u8;
         out[55..55 + self.build_id.len()].copy_from_slice(self.build_id.as_bytes());
-        let crc = crc32fast::hash(&out[..CHECKPOINT_BYTES - 4]);
-        out[CHECKPOINT_BYTES - 4..].copy_from_slice(&crc.to_le_bytes());
-        Ok(CHECKPOINT_BYTES)
+        let crc = crc32fast::hash(&out[..OTA_CHECKPOINT_BYTES - 4]);
+        out[OTA_CHECKPOINT_BYTES - 4..].copy_from_slice(&crc.to_le_bytes());
+        Ok(OTA_CHECKPOINT_BYTES)
     }
 
     pub fn decode_checkpoint(bytes: &[u8]) -> Result<Self, OtaError> {
-        let bytes = bytes.get(..CHECKPOINT_BYTES).ok_or(OtaError::Checkpoint)?;
+        let bytes = bytes
+            .get(..OTA_CHECKPOINT_BYTES)
+            .ok_or(OtaError::Checkpoint)?;
         if bytes[..4] != CHECKPOINT_MAGIC {
             return Err(OtaError::Checkpoint);
         }
-        let expected_crc = u32::from_le_bytes(bytes[CHECKPOINT_BYTES - 4..].try_into().unwrap());
-        if crc32fast::hash(&bytes[..CHECKPOINT_BYTES - 4]) != expected_crc {
+        let expected_crc =
+            u32::from_le_bytes(bytes[OTA_CHECKPOINT_BYTES - 4..].try_into().unwrap());
+        if crc32fast::hash(&bytes[..OTA_CHECKPOINT_BYTES - 4]) != expected_crc {
             return Err(OtaError::Checkpoint);
         }
         let build_len = bytes[54] as usize;
@@ -335,7 +338,7 @@ mod tests {
     fn checkpoint_round_trip_preserves_reconnect_status_and_rejects_corruption() {
         let mut state = receiving();
         state.mark_chunk_durable(0, 4).unwrap();
-        let mut bytes = [0u8; CHECKPOINT_BYTES];
+        let mut bytes = [0u8; OTA_CHECKPOINT_BYTES];
         let len = state.encode_checkpoint(&mut bytes).unwrap();
         assert_eq!(TransferState::decode_checkpoint(&bytes[..len]), Ok(state));
         bytes[20] ^= 1;

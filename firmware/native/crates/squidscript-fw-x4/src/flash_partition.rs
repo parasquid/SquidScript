@@ -117,6 +117,33 @@ impl<F: 'static> SharedLittleFsStorage<F> {
     {
         self.with_mut(|storage| storage.with_raw_flash_mut(operation))
     }
+
+    pub fn load_ota_checkpoint(
+        &mut self,
+        out: &mut [u8],
+    ) -> core::result::Result<Option<usize>, AppStoreError>
+    where
+        F: NorFlash + ReadNorFlash,
+    {
+        self.with_mut(|storage| storage.load_ota_checkpoint(out))
+    }
+
+    pub fn save_ota_checkpoint_atomic(
+        &mut self,
+        bytes: &[u8],
+    ) -> core::result::Result<(), AppStoreError>
+    where
+        F: NorFlash + ReadNorFlash,
+    {
+        self.with_mut(|storage| storage.save_ota_checkpoint_atomic(bytes))
+    }
+
+    pub fn delete_ota_checkpoint(&mut self) -> core::result::Result<(), AppStoreError>
+    where
+        F: NorFlash + ReadNorFlash,
+    {
+        self.with_mut(LittleFsAppStorage::delete_ota_checkpoint)
+    }
 }
 
 impl<F> LittleFsAppStorage<F>
@@ -148,6 +175,48 @@ where
 
     pub fn with_raw_flash_mut<R>(&mut self, operation: impl FnOnce(&mut F) -> R) -> R {
         operation(self.storage.flash_mut())
+    }
+
+    pub fn load_ota_checkpoint(
+        &mut self,
+        out: &mut [u8],
+    ) -> core::result::Result<Option<usize>, AppStoreError> {
+        self.mount(|fs| {
+            let metadata = match fs.metadata(OTA_CHECKPOINT_PATH) {
+                Ok(metadata) => metadata,
+                Err(Error::NO_SUCH_ENTRY) => return Ok(None),
+                Err(error) => return Err(error),
+            };
+            if metadata.len() > out.len() {
+                return Err(Error::NO_MEMORY);
+            }
+            read_file_at(fs, OTA_CHECKPOINT_PATH, 0, &mut out[..metadata.len()])?;
+            Ok(Some(metadata.len()))
+        })
+    }
+
+    pub fn save_ota_checkpoint_atomic(
+        &mut self,
+        bytes: &[u8],
+    ) -> core::result::Result<(), AppStoreError> {
+        self.mount(|fs| {
+            fs.create_file_and_then(OTA_CHECKPOINT_TEMP_PATH, |file| {
+                file.write_all(bytes)?;
+                file.sync()
+            })?;
+            match fs.remove(OTA_CHECKPOINT_PATH) {
+                Ok(()) | Err(Error::NO_SUCH_ENTRY) => {}
+                Err(error) => return Err(error),
+            }
+            fs.rename(OTA_CHECKPOINT_TEMP_PATH, OTA_CHECKPOINT_PATH)
+        })
+    }
+
+    pub fn delete_ota_checkpoint(&mut self) -> core::result::Result<(), AppStoreError> {
+        self.mount(|fs| match fs.remove(OTA_CHECKPOINT_PATH) {
+            Ok(()) | Err(Error::NO_SUCH_ENTRY) => Ok(()),
+            Err(error) => Err(error),
+        })
     }
 
     fn mount<R>(
@@ -247,6 +316,8 @@ fn state_temp_path(app_id: &str) -> core::result::Result<PathBuf, AppStoreError>
 
 const POWER_CHECKPOINT_PATH: &Path = littlefs2::path!("/lifecycle/power-checkpoint");
 const POWER_CHECKPOINT_TEMP_PATH: &Path = littlefs2::path!("/tmp/power-checkpoint");
+const OTA_CHECKPOINT_PATH: &Path = littlefs2::path!("/lifecycle/ota-checkpoint");
+const OTA_CHECKPOINT_TEMP_PATH: &Path = littlefs2::path!("/tmp/ota-checkpoint");
 
 fn content_path(path: &str) -> core::result::Result<PathBuf, NativeFileStorageError> {
     let (directory, name) = if let Some(name) = path.strip_prefix("books/") {
@@ -1119,6 +1190,7 @@ mod tests {
         storage.publish_app_install("reader").unwrap();
         storage.save_state_atomic("reader", b"state").unwrap();
         storage.save_power_checkpoint_atomic(b"checkpoint").unwrap();
+        storage.save_ota_checkpoint_atomic(b"ota-state").unwrap();
         let (total, available) = storage.capacity().unwrap();
         assert_eq!(total, SQUIDSCRIPT_PARTITION_SIZE);
         assert!(available < total);
@@ -1148,6 +1220,16 @@ mod tests {
             Some(10)
         );
         assert_eq!(&checkpoint[..10], b"checkpoint");
+        assert_eq!(
+            remounted.load_ota_checkpoint(&mut checkpoint).unwrap(),
+            Some(9)
+        );
+        assert_eq!(&checkpoint[..9], b"ota-state");
+        remounted.delete_ota_checkpoint().unwrap();
+        assert_eq!(
+            remounted.load_ota_checkpoint(&mut checkpoint).unwrap(),
+            None
+        );
         remounted.delete_power_checkpoint().unwrap();
         assert_eq!(
             remounted.load_power_checkpoint(&mut checkpoint).unwrap(),
