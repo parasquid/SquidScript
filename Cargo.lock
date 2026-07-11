@@ -2675,6 +2675,7 @@ dependencies = [
  "binbook-decompress",
  "binbook-encode",
  "bt-hci",
+ "crc32fast",
  "critical-section",
  "delog",
  "edge-dhcp",

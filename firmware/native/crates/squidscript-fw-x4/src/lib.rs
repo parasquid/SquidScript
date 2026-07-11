@@ -3,6 +3,7 @@
 pub mod ble_pipeline;
 #[cfg(feature = "x4-flash-filesystem")]
 pub mod flash_partition;
+pub mod ota;
 pub mod target_input;
 
 pub mod radio_probe {

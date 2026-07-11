@@ -65,6 +65,10 @@ impl<F, const OFFSET: usize, const SIZE: usize> PartitionStorage<F, OFFSET, SIZE
         self.flash
     }
 
+    fn flash_mut(&mut self) -> &mut F {
+        &mut self.flash
+    }
+
     fn absolute_range(off: usize, len: usize) -> Result<(u32, u32)> {
         let end = off.checked_add(len).ok_or(Error::IO)?;
         if end > SIZE {
@@ -106,6 +110,13 @@ impl<F: 'static> SharedLittleFsStorage<F> {
     fn with_mut<R>(&mut self, operation: impl FnOnce(&mut LittleFsAppStorage<F>) -> R) -> R {
         operation(&mut self.storage.borrow_mut())
     }
+
+    pub fn with_raw_flash_mut<R>(&mut self, operation: impl FnOnce(&mut F) -> R) -> R
+    where
+        F: NorFlash + ReadNorFlash,
+    {
+        self.with_mut(|storage| storage.with_raw_flash_mut(operation))
+    }
 }
 
 impl<F> LittleFsAppStorage<F>
@@ -133,6 +144,10 @@ where
 
     pub fn into_inner(self) -> F {
         self.storage.into_inner()
+    }
+
+    pub fn with_raw_flash_mut<R>(&mut self, operation: impl FnOnce(&mut F) -> R) -> R {
+        operation(self.storage.flash_mut())
     }
 
     fn mount<R>(
