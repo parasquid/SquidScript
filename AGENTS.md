@@ -540,6 +540,35 @@ probe attached devices before use, and execute the relevant X4 hardware inventor
 after firmware-impacting changes. Protocol acknowledgements are not visual display
 evidence; use a fresh inspected live capture when visual confirmation is required.
 
+- **One physical device means one confirmed process owner.** A hardware-owning
+  command includes its entire descendant process tree: shell wrapper, `cargo`,
+  `squidc`, flashing tool, monitor, timeout helper, and any child it launches.
+  Never start another command against the same port while any part of the prior
+  process tree may still be alive.
+- Tool-cell completion, empty output, a yielded session, a closed polling cell,
+  timeout output, interruption, or an `Unknown process id` response does **not**
+  prove that the underlying command or its children exited. Track the original
+  unified process/session through its real exit status. If the orchestration
+  layer loses that session, treat device ownership as unknown, not free.
+- Before every retry, phase transition, or new hardware command, confirm that
+  no earlier wrapper, `cargo`, `squidc`, flash, monitor, timeout, or test process
+  still owns or targets the port. Inspect the relevant process trees, not just
+  the top-level PID. If ownership is ambiguous, stop; terminate or otherwise
+  reconcile the stale process tree, verify the port is free, and only then run
+  one clean replacement command.
+- Never use detached, parallel, or overlapping execution for interactive
+  physical gates. Run exactly one phase in one foreground session, poll that
+  same session until its command and descendants have exited, and wait for the
+  user's physical action before beginning the next phase.
+- After a turn abort, quota interruption, tool timeout, or user interruption,
+  assume any hardware command may still be running in the background. The next
+  agent action must reconcile process and port ownership before issuing any
+  hardware command. Do not infer safety from the previous transcript's final
+  tool status.
+- When stopping stale work, target only the confirmed hardware-owning process
+  tree. Do not use broad process-kill patterns that could terminate unrelated
+  user work or another device's independent session.
+
 ## Git Workflow
 
 - Work on the current branch and checkout unless the user specifically asks for
