@@ -627,6 +627,21 @@ button, and drive the armed long/double-tap examples with physical presses.
 Serial event injection verifies firmware dispatch but does not substitute for
 those electrical and gesture-timing checks.
 
+Run the storage gate in three physical phases:
+
+```bash
+scripts/xteink-x4-test-storage-volumes.sh --phase prepare
+scripts/xteink-x4-test-storage-volumes.sh --phase absent
+scripts/xteink-x4-test-storage-volumes.sh --phase present
+```
+
+Run the prompted physical input, gesture, redraw, timerless sleep, and POWER
+wake gate from an interactive terminal:
+
+```bash
+scripts/xteink-x4-test-physical-input-power.sh
+```
+
 **Final acceptance matrix:**
 
 | Capability | Required evidence |

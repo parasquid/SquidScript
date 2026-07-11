@@ -5,6 +5,7 @@ app.triggers {
 }
 
 event.on("key.POWER.longTap") {
+  debug.print("sleep-helper")
   service.power.sleep({ wakeAfterMs: 0 })
 }
 

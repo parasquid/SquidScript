@@ -3,6 +3,7 @@ build/
 target/device-discovery/
 target/device-backups/
 .device-backups/
+.device-tests/
 node_modules/
 dist/
 test-results/

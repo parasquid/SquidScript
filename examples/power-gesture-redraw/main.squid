@@ -6,6 +6,7 @@ state {
 
 event.on("app.start") {
   state.starts = state.starts + 1
+  debug.print("redraw", state.starts)
   app.arm("redraw-helper")
   app.arm("sleep-helper")
   screen.open("status")
