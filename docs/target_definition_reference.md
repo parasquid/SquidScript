@@ -593,7 +593,10 @@ XTEINK X4 has seven buttons:
 - `BACK`, `SELECT`, `LEFT`, and `RIGHT` are read from an ADC ladder on GPIO1.
 - `UP` and `DOWN` are read from an ADC ladder on GPIO2.
 
-The ADC ranges in `targets/xteink-x4.target.json` are sourced from Papyrix `InputManager`. They are firmware calibration values. If hardware variation causes unreliable detection, the target compiler should preserve the values but firmware may need a calibration or tolerance strategy.
+The ADC ranges in `targets/xteink-x4.target.json` match the calibrated native
+X4 input implementation. Firmware must configure GPIO1 and GPIO2 with basic ADC
+calibration before applying these values. Hardware variants may require a
+target-specific calibration or tolerance strategy.
 
 Range semantics:
 

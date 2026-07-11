@@ -65,7 +65,7 @@ use esp_hal::gpio::{Input, InputConfig, Level, Output, OutputConfig};
     feature = "native-radio-services"
 ))]
 use esp_hal::{
-    analog::adc::{Adc, AdcConfig, Attenuation},
+    analog::adc::{Adc, AdcCalBasic, AdcConfig, Attenuation},
     gpio::Pull,
 };
 
@@ -81,7 +81,9 @@ use squidscript_fw_x4::{
     },
     board::{DisplayDelay, FreqManagedSpiDevice, SharedSpi2},
     request_pending_display_flush,
-    target_input::{adc_bucket, InputClassifier, INPUT_BUTTONS, INPUT_DEBOUNCE_MS},
+    target_input::{
+        adc_bucket, power_sleep_may_begin, InputClassifier, INPUT_BUTTONS, INPUT_DEBOUNCE_MS,
+    },
     x4_storage::{X4BinBookFileBackend, X4ContentStorage, X4SdFileStorage, X4StorageTime},
     NativeDisplayFlushDriver,
 };
@@ -984,19 +986,20 @@ async fn native_input_task(
     runtime: &'static SharedX4NativeRuntime,
 ) {
     let mut config = AdcConfig::new();
-    let mut adc1_pin = config.enable_pin(gpio1, Attenuation::_11dB);
-    let mut adc2_pin = config.enable_pin(gpio2, Attenuation::_11dB);
+    let mut adc1_pin = config.enable_pin_with_cal::<_, AdcCalBasic<_>>(gpio1, Attenuation::_11dB);
+    let mut adc2_pin = config.enable_pin_with_cal::<_, AdcCalBasic<_>>(gpio2, Attenuation::_11dB);
     let mut adc = Adc::new(adc1, config).into_async();
     let power = Input::new(gpio3, InputConfig::default().with_pull(Pull::Up));
     let mut rtc = esp_hal::rtc_cntl::Rtc::new(lpwr);
     let mut classifier = InputClassifier::new();
     let mut previous_raw = ("none", "none", true);
     let mut previous_stable = 0u8;
+    let mut previous_adc = (u16::MAX, u16::MAX, true);
     let mut last_sample = embassy_time::Instant::now();
 
     loop {
         embassy_time::Timer::after_millis(INPUT_DEBOUNCE_MS as u64).await;
-        if POWER_SLEEP_READY.load(Ordering::Acquire) {
+        if power_sleep_may_begin(POWER_SLEEP_READY.load(Ordering::Acquire), power.is_high()) {
             POWER_SLEEP_READY.store(false, Ordering::Release);
             let wake_after_ms = POWER_SLEEP_WAKE_AFTER_MS.load(Ordering::Acquire);
             drop(power);
@@ -1018,6 +1021,7 @@ async fn native_input_task(
         let adc2_value = adc.read_oneshot(&mut adc2_pin).await;
         let power_high = power.is_high();
         let now = embassy_time::Instant::now();
+        let now_ms = now.as_millis();
         let elapsed_ms = now
             .duration_since(last_sample)
             .as_millis()
@@ -1040,6 +1044,27 @@ async fn native_input_task(
         let stable = classifier.stable_mask();
 
         #[cfg(debug_assertions)]
+        if adc1_value.abs_diff(previous_adc.0) >= 32
+            || adc2_value.abs_diff(previous_adc.1) >= 32
+            || power_high != previous_adc.2
+        {
+            let mut runtime = runtime.lock().await;
+            let mut line = heapless::String::<128>::new();
+            let _ = core::fmt::write(
+                &mut line,
+                format_args!(
+                    "input.sample t_ms={} adc1={} adc2={} power={}",
+                    now_ms,
+                    adc1_value,
+                    adc2_value,
+                    if power_high { "released" } else { "pressed" }
+                ),
+            );
+            runtime.record_debug_trace(line.as_str());
+            previous_adc = (adc1_value, adc2_value, power_high);
+        }
+
+        #[cfg(debug_assertions)]
         if raw != previous_raw || stable != previous_stable || event_len != 0 {
             let mut runtime = runtime.lock().await;
             if raw != previous_raw {
@@ -1047,7 +1072,8 @@ async fn native_input_task(
                 let _ = core::fmt::write(
                     &mut line,
                     format_args!(
-                        "input.raw adc1={} adc2={} power={}",
+                        "input.raw t_ms={} adc1={} adc2={} power={}",
+                        now_ms,
                         raw.0,
                         raw.1,
                         if raw.2 { "released" } else { "pressed" }
@@ -1065,7 +1091,8 @@ async fn native_input_task(
                     let _ = core::fmt::write(
                         &mut line,
                         format_args!(
-                            "input.debounced key={} state={}",
+                            "input.debounced t_ms={} key={} state={}",
+                            now_ms,
                             button.logical,
                             if stable & bit == 0 {
                                 "released"
@@ -1079,7 +1106,10 @@ async fn native_input_task(
             }
             for event in events[..event_len].iter().flatten() {
                 let mut line = heapless::String::<128>::new();
-                let _ = core::fmt::write(&mut line, format_args!("input.classified event={event}"));
+                let _ = core::fmt::write(
+                    &mut line,
+                    format_args!("input.classified t_ms={now_ms} event={event}"),
+                );
                 runtime.record_debug_trace(line.as_str());
             }
         }
@@ -1093,7 +1123,8 @@ async fn native_input_task(
                 let _ = core::fmt::write(
                     &mut line,
                     format_args!(
-                        "input.route event={} result={}",
+                        "input.route t_ms={} event={} result={}",
+                        now_ms,
                         event,
                         if routed { "ok" } else { "error" }
                     ),

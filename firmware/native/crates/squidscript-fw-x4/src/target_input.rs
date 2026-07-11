@@ -151,6 +151,10 @@ pub fn adc_bucket(adc: u8, value: u16) -> &'static str {
         .unwrap_or("none")
 }
 
+pub const fn power_sleep_may_begin(requested: bool, power_high: bool) -> bool {
+    requested && power_high
+}
+
 impl Default for InputClassifier {
     fn default() -> Self {
         Self::new()
@@ -214,6 +218,13 @@ mod tests {
             .all(|button| !button.long_tap && !button.double_tap));
     }
 
+    #[test]
+    fn power_sleep_waits_for_the_triggering_press_to_be_released() {
+        assert!(!power_sleep_may_begin(true, false));
+        assert!(power_sleep_may_begin(true, true));
+        assert!(!power_sleep_may_begin(false, true));
+    }
+
     fn sample(
         classifier: &mut InputClassifier,
         adc1: u16,
@@ -230,30 +241,16 @@ mod tests {
 
     #[test]
     fn adc_ranges_use_exclusive_minimum_and_inclusive_maximum() {
-        let right = INPUT_BUTTONS
-            .iter()
-            .find(|item| item.logical == "RIGHT")
-            .unwrap();
-        let left = INPUT_BUTTONS
-            .iter()
-            .find(|item| item.logical == "LEFT")
-            .unwrap();
-        let select = INPUT_BUTTONS
-            .iter()
-            .find(|item| item.logical == "SELECT")
-            .unwrap();
-        let back = INPUT_BUTTONS
-            .iter()
-            .find(|item| item.logical == "BACK")
-            .unwrap();
-        assert!(raw_button_pressed(right, 750, 4095, true));
-        assert!(!raw_button_pressed(left, 750, 4095, true));
-        assert!(raw_button_pressed(left, 1600, 4095, true));
-        assert!(!raw_button_pressed(select, 1600, 4095, true));
-        assert!(raw_button_pressed(select, 2200, 4095, true));
-        assert!(!raw_button_pressed(back, 2200, 4095, true));
-        assert!(raw_button_pressed(back, 2500, 4095, true));
-        assert!(!raw_button_pressed(back, 2501, 4095, true));
+        for button in INPUT_BUTTONS.iter().filter(|button| button.adc.is_some()) {
+            if let Some(min) = button.min_exclusive {
+                let min = u16::try_from(min).unwrap();
+                assert!(!raw_button_pressed(button, min, min, true));
+                assert!(raw_button_pressed(button, min + 1, min + 1, true));
+            }
+            let max = u16::try_from(button.max_inclusive.unwrap()).unwrap();
+            assert!(raw_button_pressed(button, max, max, true));
+            assert!(!raw_button_pressed(button, max + 1, max + 1, true));
+        }
     }
 
     #[test]

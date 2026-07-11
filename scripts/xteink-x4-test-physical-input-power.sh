@@ -105,8 +105,9 @@ read -r
 lifecycle="$(run_capture lifecycle-double cargo run --quiet -p squidc -- device lifecycle --port "${PORT}")"
 grep -Fq 'active=main' "${lifecycle}"
 output="$(run_capture output-double cargo run --quiet -p squidc -- device output --port "${PORT}")"
-grep -Fq 'output=redraw-helper' "${output}"
 grep -Fq 'output=redraw 2' "${output}"
+trace="$(run_capture trace-double cargo run --quiet -p squidc -- device trace --port "${PORT}")"
+grep -Fq 'event=key.POWER.doubleTap result=ok' "${trace}"
 ffmpeg -hide_banner -loglevel error -f video4linux2 -video_size 1920x1080 \
   -i /dev/video1 -frames:v 1 "${WORK_DIR}/double-tap-redraw.jpg"
 

@@ -3803,7 +3803,14 @@ impl<
         text: Value,
         options: DisplayTextOptions<'_>,
     ) {
-        let text = strings.value_str(text).unwrap_or("<text>");
+        let mut formatted = FixedText::<128>::new();
+        let text = if let Ok(text) = strings.value_str(text) {
+            text
+        } else if write_value(&mut formatted, strings, text).is_ok() {
+            formatted.as_str()
+        } else {
+            "<text>"
+        };
         self.drawlog.push_fmt(|line| {
             write!(
                 line,

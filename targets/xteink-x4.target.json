@@ -321,8 +321,8 @@
         "type": "adc-ladder-button",
         "adc": "GPIO1",
         "range": {
-          "minExclusive": 2200,
-          "maxInclusive": 2500
+          "minExclusive": 3000,
+          "maxInclusive": 3800
         }
       },
       {
@@ -330,8 +330,8 @@
         "type": "adc-ladder-button",
         "adc": "GPIO1",
         "range": {
-          "minExclusive": 1600,
-          "maxInclusive": 2200
+          "minExclusive": 1750,
+          "maxInclusive": 3000
         }
       },
       {
@@ -340,7 +340,7 @@
         "adc": "GPIO1",
         "range": {
           "minExclusive": 750,
-          "maxInclusive": 1600
+          "maxInclusive": 1750
         }
       },
       {
@@ -358,7 +358,7 @@
         "adc": "GPIO2",
         "range": {
           "minExclusive": 750,
-          "maxInclusive": 2200
+          "maxInclusive": 2400
         }
       },
       {

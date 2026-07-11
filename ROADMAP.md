@@ -129,12 +129,12 @@ aligned as the sole firmware architecture.
 
 ## Input, Triggers, And Power
 
-- Run deferred native X4 physical parity checks: remove/reinsert SD and verify
-  missing-SD fallback plus mixed-volume precedence; exercise all six ADC keys
-  and POWER short/long/double gestures; verify timerless sleep with physical
-  POWER wake; capture live panel evidence for armed input-trigger redraw. Use
-  the existing opt-in hardware runners and record observed evidence without
-  changing firmware-owned event-only policy.
+- Make physical-input policy fully SquidScript-controlled. Firmware should
+  report press, release, timing, chord, and hardware-wake facts and expose
+  power/lifecycle services; triggered SquidScript apps decide whether to sleep,
+  remain awake, return to sleep, launch another app, redraw, or perform another
+  action. Document unavoidable hardware boot constraints separately from app
+  policy.
 - Add a bounded queued event-delivery path so trigger events are not dropped
   when the VM is busy. Today the main loop (`main.c:148-171`) is the sole event
   dispatcher and only checks armed timers / input when the VM is `IDLE`

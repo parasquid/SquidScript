@@ -132,6 +132,9 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 
 ## Debug Instrumentation
 
+- Give timing, state-transition, and hardware-event debug logs a monotonic
+  timestamp so ordering and elapsed behavior can be reconstructed. Deduplicate
+  repeated unchanged idle samples instead of flooding bounded diagnostic logs.
 - Useful timing, measurement, trace, and diagnostic logging must be included
   automatically in every normal development firmware build. "Gated" means
   gated by the development-versus-release build profile, not hidden behind an
@@ -309,6 +312,12 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
 
 ## Architecture Boundary Discipline
 
+- Firmware exposes hardware capabilities and reports physical events;
+  SquidScript handlers own user-facing policy and actions. Do not assign
+  intrinsic behavior to inputs such as POWER—sleep, wake continuation,
+  shutdown, gesture meaning, and app selection belong to SquidScript unless
+  hardware safety or an unavoidable boot constraint requires firmware
+  intervention.
 - When planning or adding a feature, research existing libraries, established
   patterns, and relevant existing repositories before designing a custom
   implementation. Present viable options with tradeoffs, and explain why the

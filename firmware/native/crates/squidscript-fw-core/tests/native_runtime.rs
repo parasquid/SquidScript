@@ -831,6 +831,11 @@ screen("main") {
     textColor: color.BLACK
     backgroundColor: color.WHITE
   })
+  service.display.text(42, {
+    x: 4
+    y: 32
+    fontHeight: 16
+  })
   service.display.rect(1, 2, 30, 40, {
     fillColor: color.GRAY8
     strokeColor: color.BLACK
@@ -850,6 +855,7 @@ screen("main") {
         &[
             "clear 0",
             "text hello x=4 y=8 w=120 h=24 font=16 fg=15 bg=0",
+            "text 42 x=4 y=32 w=0 h=0 font=16",
             "rect x=1 y=2 w=30 h=40 fill=8 stroke=15",
             "line x1=5 y1=6 x2=7 y2=8 color=4",
         ]

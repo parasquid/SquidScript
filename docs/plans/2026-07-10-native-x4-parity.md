@@ -466,16 +466,13 @@ return stack after wake.
 - [x] Install an app that saves state in `power.sleep`, request a three-second
    timer wake, observe USB loss/reconnect, and verify `wake`, state, panel, and
    armed registrations.
-- [x] Skip timerless sleep plus physical POWER wake by explicit owner decision.
-  Automated checkpoint/POWER-wake tests and live timer-wake restoration remain
-  the readiness evidence.
-- [x] Skip physical long-tap helper activation by explicit owner decision.
-  Target classification, armed routing, app-owned sleep request, and absence of
-  firmware-owned gesture actions remain covered by automated tests.
+- [x] Verify timerless app-requested sleep plus physical POWER wake, including
+  release-gating the initiating press before deep-sleep entry.
+- [x] Verify physical long-tap helper activation and restored lifecycle state.
 
 **Acceptance:** Planned sleep is app-requested, physically real on timer wake,
 recoverable, and lifecycle-correct in automated coverage for timer and POWER
-wake. Direct physical POWER wake was explicitly waived for parity readiness.
+wake. Direct physical POWER wake is verified on the X4.
 
 **Commit:** `feat: add native x4 planned sleep and wake`
 
@@ -607,15 +604,14 @@ target-aware command selects every parity hardware gate.
 - [x] Run all target-aware X4 hardware tests sequentially on the final image.
 - [x] Verify an idle final state: no active app operation, upload, staged file,
   pending event, radio lease, display flush, or device error.
-- [x] Skip the physical cold boot with SD removed by explicit owner decision.
-  Cold boot with SD present passes; host tests cover missing-SD internal
-  app/content fallback and honest SD-dependent failure.
+- [x] Cold boot with SD removed and verify internal content fallback; reinsert
+  SD and verify mixed-volume precedence and format isolation.
 - [x] Repeat storage-format and prove OTA slots plus SD content are preserved.
 - [x] Repeat a serial OTA after all parity features are enabled so final image
   RAM/stack/storage behavior is covered.
-- [x] Accept fresh grid, wake, and GRAY1 panel captures as final visual evidence.
-  Physical input-trigger redraw was explicitly waived; HTTP/BLE transfer apps
-  are headless and have no distinct visible result to capture.
+- [x] Accept fresh grid, wake, GRAY1, and physical input-trigger redraw panel
+  captures as final visual evidence. HTTP/BLE transfer apps are headless and
+  have no distinct visible result to capture.
 - [x] Search current native code, targets, docs, examples, tests, and scripts for
   dependencies on Zephyr implementation paths or backend selectors.
 - [x] Remove completed parity roadmap entries. Keep the separately approved
@@ -628,10 +624,8 @@ target-aware command selects every parity hardware gate.
   - Zephyr-only tests, fixtures, build directories, and docs;
   - internal CLI backend planning types that no longer have multiple values.
 
-Physical SD removal/reinsertion and real ADC/POWER gesture checks were
-explicitly waived for parity readiness. Serial injection and automated tests
-are not described as physical evidence. The runners below remain optional
-confidence checks and do not block Zephyr removal.
+Physical SD removal/reinsertion, real ADC/POWER gesture checks, timerless sleep,
+physical wake, and triggered redraw are verified with the runners below.
 
 Run the storage gate in three physical phases:
 
@@ -668,18 +662,18 @@ scripts/xteink-x4-test-physical-input-power.sh
 | Build/flash | selector-free X4 build, recovery flash, OTA image |
 | App store | eight-app bound, resources, state, atomic failure, cold boot |
 | Lifecycle | launch, exit/return, registry, arm/disarm, timer/input activation |
-| Input | target policy tests, logical short/long/double dispatch, queue/ownership diagnostics; physical presses waived |
-| Power | app-requested sleep, live timer wake, automated POWER wake/checkpoint restoration; physical wake waived |
+| Input | target policy tests, physical short/long/double dispatch, queue/ownership diagnostics |
+| Power | app-requested sleep, live timer wake, physical POWER wake/checkpoint restoration |
 | OTA | both directions, integrity rejection, interruption, rollback, health |
 | Display | primitives, GRAY1/GRAY2 BinBook, fast/full paths, live panel |
-| Storage | internal app LittleFS, live SD content/format isolation, automated missing-SD routing; card removal waived |
+| Storage | internal app LittleFS, physical missing-SD fallback, mixed-volume precedence, format isolation |
 | Radio | AP, station, scan, simultaneous Wi-Fi/BLE, terminal BLE status |
 | Transfers | serial, resumable HTTP, BLE, exact size/CRC, cleanup |
 | Tooling/docs | target-aware native tests, no current Zephyr dependency |
 
 **Readiness:** Native X4 meets the owner-approved product-parity contract and is
-ready for the dedicated Zephyr removal plan. Physical-access-only gates are
-waived as recorded above and are not claimed as observed evidence.
+ready for the dedicated Zephyr removal plan. Deferred physical storage,
+input, redraw, timerless sleep, and POWER-wake gates are observed and complete.
 
 **Push gate:** Commit and push only after every required automated and hardware
 row is green or the user explicitly changes the product contract. Do not mark
