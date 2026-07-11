@@ -481,17 +481,17 @@ and lifecycle-correct on both wake sources.
 **Owning layers:** device protocol codec/session, X4 inactive-slot writer,
 `squidc` CLI.
 
-- [ ] Add heap-free firmware-update protocol messages for info,
+- [x] Add heap-free firmware-update protocol messages for info,
   begin/chunk/commit/status/abort. Include active slot, slot sizes, build id,
   durable offset, and terminal status.
-- [ ] Add protocol tests for framing, bounds, offset/order errors, retry,
+- [x] Add protocol tests for framing, bounds, offset/order errors, retry,
   abort, reconnect status, and response capacity.
-- [ ] Extend target build to produce and inspect the raw ESP app image.
-- [ ] Implement host validation using established ESP image parsing where
+- [x] Extend target build to produce and inspect the raw ESP app image.
+- [x] Implement host validation using established ESP image parsing where
   available; do not hand-parse with ad hoc string/byte scanning.
-- [ ] Add `device firmware-info` and `device firmware-update` with progress,
+- [x] Add `device firmware-info` and `device firmware-update` with progress,
   throughput, ETA, durable retry, and explicit image/slot/build reporting.
-- [ ] On firmware:
+- [x] On firmware:
   - identify the inactive `0x280000` OTA slot from the partition table;
   - reject active-slot writes and oversized images;
   - erase/write in bounded sector steps with serial acknowledgements;
@@ -499,17 +499,24 @@ and lifecycle-correct on both wake sources.
   - read back the written region before activation;
   - leave OTA metadata unchanged on every failure;
   - mark the candidate pending and activate it only after successful commit.
-- [ ] Reboot after the final response is durably sent.
-- [ ] At new-image boot, mark the slot valid only after LittleFS mount,
+- [x] Reboot after the final response is durably sent.
+- [x] At new-image boot, mark the slot valid only after LittleFS mount,
   registry scan, runtime init, and serial readiness.
-- [ ] Let the target-owned bootloader roll back a candidate that resets or fails before
+- [x] Let the target-owned bootloader roll back a candidate that resets or fails before
   the health gate.
-- [ ] Preserve app-store LittleFS and SD content across slot changes.
+- [x] Preserve app-store LittleFS and SD content across slot changes.
 
 **Hardware gates:** valid app0-to-app1 update, valid app1-to-app0 update,
 corrupt/truncated image rejected before activation, interrupted serial transfer
 resumed/aborted safely, forced pre-health failure rolls back, build/slot identity
 verified after reconnect, and recovery flash path remains usable.
+
+Hardware verification covered both slot directions at approximately 13.2 KiB/s,
+post-boot `valid` health state, host-side truncated-image rejection without slot
+activation, and an interrupted transfer resumed from its durable checkpoint after
+reconnect. A forced pre-health reset marked the candidate `aborted` and returned
+to the prior build. Erasing OTA metadata and using the normal target flash path
+recovered the device without erasing LittleFS or SD content.
 
 **Acceptance:** A trusted serial client can update either inactive slot without
 bootloader mode, corrupt images never activate, and a non-healthy candidate
