@@ -235,6 +235,32 @@ type X4LittleFsStorage =
 type X4NativeAppStorage =
     squidscript_fw_x4::flash_partition::SharedLittleFsStorage<esp_storage::FlashStorage<'static>>;
 
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "x4-binbook"
+))]
+struct X4OtaRuntime {
+    storage: X4NativeAppStorage,
+    controller: squidscript_fw_x4::ota::OtaController,
+    partition_table: [u8; esp_bootloader_esp_idf::partitions::PARTITION_TABLE_MAX_LEN],
+    candidate_base: u32,
+    candidate_size: usize,
+}
+
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "x4-binbook"
+))]
+static OTA_RUNTIME_PTR: AtomicUsize = AtomicUsize::new(0);
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "x4-binbook"
+))]
+static OTA_REBOOT_PENDING: AtomicBool = AtomicBool::new(false);
+
 #[cfg(all(target_arch = "riscv32", feature = "native-radio-services"))]
 #[cfg(feature = "x4-binbook")]
 type X4NativeRuntime = NativeRuntime<
@@ -1917,8 +1943,37 @@ async fn main(spawner: embassy_executor::Spawner) {
                 )
             });
             let app_store_ready = flash_storage.borrow_mut().initialize().is_ok();
-            let app_storage =
+            let mut app_storage =
                 squidscript_fw_x4::flash_partition::SharedLittleFsStorage::new(flash_storage);
+            static OTA_RUNTIME: static_cell::StaticCell<core::cell::RefCell<X4OtaRuntime>> =
+                static_cell::StaticCell::new();
+            let mut checkpoint = [0u8; squidscript_fw_x4::ota::OTA_CHECKPOINT_BYTES];
+            let controller = match app_storage
+                .load_ota_checkpoint(&mut checkpoint)
+                .ok()
+                .flatten()
+                .and_then(|len| {
+                    squidscript_fw_x4::ota::TransferState::decode_checkpoint(&checkpoint[..len])
+                        .ok()
+                }) {
+                Some(state) => squidscript_fw_x4::ota::OtaController::restore(state),
+                None => {
+                    let mut cleanup = app_storage;
+                    let _ = cleanup.delete_ota_checkpoint();
+                    squidscript_fw_x4::ota::OtaController::default()
+                }
+            };
+            let ota_runtime = OTA_RUNTIME.init_with(|| {
+                core::cell::RefCell::new(X4OtaRuntime {
+                    storage: app_storage,
+                    controller,
+                    partition_table: [0;
+                        esp_bootloader_esp_idf::partitions::PARTITION_TABLE_MAX_LEN],
+                    candidate_base: 0,
+                    candidate_size: 0,
+                })
+            });
+            OTA_RUNTIME_PTR.store(ota_runtime as *const _ as usize, Ordering::Release);
             let internal_storage = app_storage;
             let content_storage = X4ContentStorage::new(sd_storage, internal_storage);
             let file_backend =
@@ -2468,6 +2523,405 @@ fn native_radio_resource_metrics<B, D, C, FB, AS, F>(
 
 #[cfg(all(
     target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "x4-binbook"
+))]
+fn with_x4_ota<R>(operation: impl FnOnce(&mut X4OtaRuntime) -> R) -> Result<R, &'static str> {
+    let pointer = OTA_RUNTIME_PTR.load(Ordering::Acquire);
+    if pointer == 0 {
+        return Err("ota-unavailable");
+    }
+    let cell = unsafe { &*(pointer as *const core::cell::RefCell<X4OtaRuntime>) };
+    Ok(operation(&mut cell.borrow_mut()))
+}
+
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "x4-binbook"
+))]
+fn current_build_id() -> heapless::String<32> {
+    use core::fmt::Write as _;
+    let mut id = heapless::String::new();
+    for byte in &ESP_APP_DESC.app_elf_sha256()[..8] {
+        let _ = write!(id, "{byte:02x}");
+    }
+    id
+}
+
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "x4-binbook"
+))]
+fn persist_ota_state(runtime: &mut X4OtaRuntime) -> Result<(), &'static str> {
+    let mut checkpoint = [0u8; squidscript_fw_x4::ota::OTA_CHECKPOINT_BYTES];
+    let len = runtime
+        .controller
+        .transfer_state()
+        .encode_checkpoint(&mut checkpoint)
+        .map_err(|_| "ota-checkpoint-encode")?;
+    runtime
+        .storage
+        .save_ota_checkpoint_atomic(&checkpoint[..len])
+        .map_err(|_| "ota-checkpoint-write")
+}
+
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "x4-binbook"
+))]
+fn ensure_ota_candidate_geometry(runtime: &mut X4OtaRuntime) -> Result<(), &'static str> {
+    if runtime.candidate_size != 0 {
+        return Ok(());
+    }
+    let candidate = runtime.controller.transfer_state().candidate();
+    let X4OtaRuntime {
+        storage,
+        partition_table,
+        candidate_base,
+        candidate_size,
+        ..
+    } = runtime;
+    let (base, size) = storage
+        .with_raw_flash_mut(|flash| {
+            squidscript_fw_x4::ota::EspOtaSlotStorage::new(flash, partition_table)
+                .inactive_geometry(candidate)
+        })
+        .map_err(|_| "ota-geometry")?;
+    *candidate_base = base;
+    *candidate_size = size;
+    Ok(())
+}
+
+#[cfg(all(
+    target_arch = "riscv32",
+    feature = "native-radio-services",
+    feature = "x4-binbook"
+))]
+fn encode_x4_ota_request(
+    parsed: &squid_device_protocol::DeviceRequest<'_>,
+    response: &mut [u8],
+) -> Result<usize, squid_device_protocol::DecodeError> {
+    use squid_device_protocol::{
+        encode_empty_response_into, encode_error_response_into, encode_firmware_info_response_into,
+        encode_firmware_update_status_response_into, request_bytes_field, request_string_field,
+        request_u64_field, FirmwareInfoRef, FirmwareUpdateStatusRef, Opcode, Status,
+    };
+    use squidscript_fw_x4::ota::{CooperativeStatus, EspOtaSlotStorage, OtaError, Slot};
+
+    let error_response = |message: &'static str, response: &mut [u8]| {
+        encode_error_response_into(parsed.opcode, parsed.sequence, -1, message, response)
+    };
+    match parsed.opcode {
+        Opcode::FirmwareInfo => {
+            #[cfg(debug_assertions)]
+            esp_println::println!("native_ota_stage info-start");
+            let result = with_x4_ota(|runtime| {
+                let X4OtaRuntime {
+                    storage,
+                    controller,
+                    partition_table,
+                    ..
+                } = runtime;
+                storage.with_raw_flash_mut(|flash| {
+                    let mut storage = EspOtaSlotStorage::new(flash, partition_table);
+                    #[cfg(debug_assertions)]
+                    esp_println::println!("native_ota_stage info-active");
+                    let active = storage.active_slot()?;
+                    #[cfg(debug_assertions)]
+                    esp_println::println!("native_ota_stage info-inactive");
+                    let inactive = storage.inactive_slot()?;
+                    let boot_state = if matches!(
+                        controller.transfer_state().phase(),
+                        squidscript_fw_x4::ota::TransferPhase::Ready
+                            | squidscript_fw_x4::ota::TransferPhase::Committed
+                    ) {
+                        #[cfg(debug_assertions)]
+                        esp_println::println!("native_ota_stage info-state");
+                        storage.boot_state()?
+                    } else {
+                        "undefined"
+                    };
+                    Ok::<_, OtaError>((active, inactive, boot_state))
+                })
+            });
+            #[cfg(debug_assertions)]
+            esp_println::println!("native_ota_stage info-done");
+            match result {
+                Ok(Ok((active, inactive, boot_state))) => {
+                    let build_id = current_build_id();
+                    encode_firmware_info_response_into(
+                        parsed.sequence,
+                        FirmwareInfoRef {
+                            active_slot: active.name(),
+                            active_slot_size: squidscript_fw_x4::ota::OTA_SLOT_BYTES as u64,
+                            inactive_slot: inactive.name(),
+                            inactive_slot_size: squidscript_fw_x4::ota::OTA_SLOT_BYTES as u64,
+                            build_id: build_id.as_str(),
+                            boot_state,
+                        },
+                        response,
+                    )
+                }
+                _ => error_response("ota-info", response),
+            }
+        }
+        Opcode::FirmwareUpdateBegin => {
+            let total_len = request_u64_field(parsed, 1)
+                .ok()
+                .flatten()
+                .and_then(|value| usize::try_from(value).ok());
+            let hash = request_bytes_field(parsed, 2).ok().flatten();
+            let build_id = request_string_field(parsed, 3).ok().flatten();
+            let Some((total_len, hash, build_id)) = total_len
+                .zip(hash)
+                .zip(build_id)
+                .map(|((total_len, hash), build_id)| (total_len, hash, build_id))
+            else {
+                return error_response("invalid-request", response);
+            };
+            let result = with_x4_ota(|runtime| {
+                let X4OtaRuntime {
+                    storage,
+                    controller,
+                    partition_table,
+                    ..
+                } = runtime;
+                let slots = storage
+                    .with_raw_flash_mut(|flash| {
+                        let mut storage = EspOtaSlotStorage::new(flash, partition_table);
+                        Ok::<_, OtaError>((storage.active_slot()?, storage.inactive_slot()?))
+                    })
+                    .map_err(|_| "ota-slots")?;
+                controller
+                    .begin(slots.0, slots.1, total_len, hash, build_id)
+                    .map_err(|_| "ota-begin")?;
+                runtime.candidate_size = 0;
+                ensure_ota_candidate_geometry(runtime)
+            });
+            match result {
+                Ok(Ok(())) => {
+                    encode_empty_response_into(parsed.opcode, Status::Ok, parsed.sequence, response)
+                }
+                _ => error_response("ota-begin", response),
+            }
+        }
+        Opcode::FirmwareUpdateStatus => {
+            let result = with_x4_ota(|runtime| {
+                if matches!(
+                    runtime.controller.status(),
+                    CooperativeStatus::Erasing { .. }
+                ) {
+                    ensure_ota_candidate_geometry(runtime)?;
+                    let X4OtaRuntime {
+                        storage,
+                        controller,
+                        partition_table,
+                        candidate_base,
+                        candidate_size,
+                    } = runtime;
+                    storage
+                        .with_raw_flash_mut(|flash| {
+                            let mut flash = squidscript_fw_x4::ota::CachedEspOtaSlotStorage::new(
+                                flash,
+                                partition_table,
+                                controller.transfer_state().candidate(),
+                                *candidate_base,
+                                *candidate_size,
+                            );
+                            controller.erase_step(&mut flash, 4096)
+                        })
+                        .map_err(|_| "ota-erase")?;
+                    if !matches!(
+                        runtime.controller.status(),
+                        CooperativeStatus::Erasing { .. }
+                    ) {
+                        persist_ota_state(runtime)?;
+                    }
+                }
+                Ok::<_, &'static str>(runtime.controller.status())
+            });
+            let Ok(Ok(status)) = result else {
+                return error_response("ota-status", response);
+            };
+            let (state, progress) = match status {
+                CooperativeStatus::Idle => ("idle", 0),
+                CooperativeStatus::Erasing { erased, .. } => ("erasing", erased),
+                CooperativeStatus::Receiving { durable, .. } => ("receiving", durable),
+                CooperativeStatus::Verifying { verified, .. } => ("verifying", verified),
+                CooperativeStatus::ReadyToActivate => ("ready", 0),
+                CooperativeStatus::Committed => ("committed", 0),
+                CooperativeStatus::Aborted => ("aborted", 0),
+                CooperativeStatus::Failed => ("failed", 0),
+            };
+            let result = with_x4_ota(|runtime| {
+                let transfer = runtime.controller.transfer_state();
+                let candidate = if status == CooperativeStatus::Idle {
+                    let X4OtaRuntime {
+                        storage,
+                        partition_table,
+                        ..
+                    } = runtime;
+                    storage
+                        .with_raw_flash_mut(|flash| {
+                            EspOtaSlotStorage::new(flash, partition_table).inactive_slot()
+                        })
+                        .unwrap_or(Slot::App1)
+                } else {
+                    transfer.candidate()
+                };
+                let mut build_id = heapless::String::<32>::new();
+                let _ = build_id.push_str(transfer.build_id());
+                (
+                    candidate,
+                    transfer.expected_len(),
+                    build_id,
+                    *transfer.expected_sha256(),
+                )
+            });
+            let Ok((candidate, expected_len, build_id, hash)) = result else {
+                return error_response("ota-status", response);
+            };
+            encode_firmware_update_status_response_into(
+                parsed.sequence,
+                if matches!(
+                    status,
+                    CooperativeStatus::Committed | CooperativeStatus::Aborted
+                ) {
+                    Status::Ok
+                } else {
+                    Status::Pending
+                },
+                FirmwareUpdateStatusRef {
+                    state,
+                    candidate_slot: candidate.name(),
+                    expected_len: expected_len as u64,
+                    durable_offset: progress as u64,
+                    build_id: build_id.as_str(),
+                    expected_sha256: &hash,
+                },
+                response,
+            )
+        }
+        Opcode::FirmwareUpdateChunk => {
+            let offset = request_u64_field(parsed, 1)
+                .ok()
+                .flatten()
+                .and_then(|value| usize::try_from(value).ok());
+            let bytes = request_bytes_field(parsed, 2).ok().flatten();
+            let Some((offset, bytes)) = offset.zip(bytes) else {
+                return error_response("invalid-request", response);
+            };
+            let result = with_x4_ota(|runtime| {
+                ensure_ota_candidate_geometry(runtime)?;
+                let X4OtaRuntime {
+                    storage,
+                    controller,
+                    partition_table,
+                    candidate_base,
+                    candidate_size,
+                } = runtime;
+                storage
+                    .with_raw_flash_mut(|flash| {
+                        let mut flash = squidscript_fw_x4::ota::CachedEspOtaSlotStorage::new(
+                            flash,
+                            partition_table,
+                            controller.transfer_state().candidate(),
+                            *candidate_base,
+                            *candidate_size,
+                        );
+                        controller.write_chunk(&mut flash, offset, bytes)
+                    })
+                    .map_err(|_| "ota-write")?;
+                let durable = runtime.controller.transfer_state().durable_offset();
+                if offset / (64 * 1024) != durable / (64 * 1024)
+                    || runtime.controller.transfer_state().phase()
+                        == squidscript_fw_x4::ota::TransferPhase::Ready
+                {
+                    persist_ota_state(runtime)?;
+                }
+                Ok::<_, &'static str>(())
+            });
+            match result {
+                Ok(Ok(())) => {
+                    encode_empty_response_into(parsed.opcode, Status::Ok, parsed.sequence, response)
+                }
+                _ => error_response("ota-chunk", response),
+            }
+        }
+        Opcode::FirmwareUpdateCommit => {
+            let result = with_x4_ota(|runtime| {
+                ensure_ota_candidate_geometry(runtime).map_err(|_| OtaError::Flash)?;
+                let mut readback = [0u8; 4096];
+                let X4OtaRuntime {
+                    storage,
+                    controller,
+                    partition_table,
+                    candidate_base,
+                    candidate_size,
+                } = runtime;
+                let status = storage.with_raw_flash_mut(|flash| {
+                    let mut flash = squidscript_fw_x4::ota::CachedEspOtaSlotStorage::new(
+                        flash,
+                        partition_table,
+                        controller.transfer_state().candidate(),
+                        *candidate_base,
+                        *candidate_size,
+                    );
+                    controller.verify_step(&mut flash, &mut readback)
+                })?;
+                if status == CooperativeStatus::ReadyToActivate {
+                    storage.with_raw_flash_mut(|flash| {
+                        let mut flash = squidscript_fw_x4::ota::CachedEspOtaSlotStorage::new(
+                            flash,
+                            partition_table,
+                            controller.transfer_state().candidate(),
+                            *candidate_base,
+                            *candidate_size,
+                        );
+                        controller.activate(&mut flash)
+                    })?;
+                    persist_ota_state(runtime).map_err(|_| OtaError::Checkpoint)?;
+                    OTA_REBOOT_PENDING.store(true, Ordering::Release);
+                }
+                Ok::<_, OtaError>(status)
+            });
+            match result {
+                Ok(Ok(CooperativeStatus::ReadyToActivate)) => {
+                    encode_empty_response_into(parsed.opcode, Status::Ok, parsed.sequence, response)
+                }
+                Ok(Ok(_)) => encode_empty_response_into(
+                    parsed.opcode,
+                    Status::Pending,
+                    parsed.sequence,
+                    response,
+                ),
+                _ => error_response("ota-verify", response),
+            }
+        }
+        Opcode::FirmwareUpdateAbort => {
+            let result = with_x4_ota(|runtime| {
+                runtime.controller.abort();
+                runtime
+                    .storage
+                    .delete_ota_checkpoint()
+                    .map_err(|_| "ota-abort")
+            });
+            match result {
+                Ok(Ok(())) => {
+                    encode_empty_response_into(parsed.opcode, Status::Ok, parsed.sequence, response)
+                }
+                _ => error_response("ota-abort", response),
+            }
+        }
+        _ => error_response("invalid-request", response),
+    }
+}
+
+#[cfg(all(
+    target_arch = "riscv32",
     any(
         not(any(feature = "wifi", feature = "ble")),
         feature = "native-radio-services"
@@ -2687,6 +3141,13 @@ where
                 response,
             ),
         },
+        #[cfg(feature = "x4-binbook")]
+        Opcode::FirmwareInfo
+        | Opcode::FirmwareUpdateBegin
+        | Opcode::FirmwareUpdateChunk
+        | Opcode::FirmwareUpdateCommit
+        | Opcode::FirmwareUpdateStatus
+        | Opcode::FirmwareUpdateAbort => encode_x4_ota_request(parsed, response),
         Opcode::AppLaunch => {
             match request_string_field(parsed, 1)
                 .ok()
@@ -3060,6 +3521,35 @@ async fn run_serial_protocol_cooperative<B, D, C, FB, AS, F>(
     let mut reported_ble_flags = 0usize;
     #[cfg(all(feature = "ble", debug_assertions))]
     let mut reported_queue_high_water = 0usize;
+    #[cfg(feature = "x4-binbook")]
+    let health_pending = with_x4_ota(|ota| {
+        matches!(
+            ota.controller.transfer_state().phase(),
+            squidscript_fw_x4::ota::TransferPhase::Ready
+                | squidscript_fw_x4::ota::TransferPhase::Committed
+        )
+    })
+    .unwrap_or(false);
+    #[cfg(feature = "x4-binbook")]
+    if health_pending {
+        let health_result = with_x4_ota(|ota| {
+            let X4OtaRuntime {
+                storage,
+                partition_table,
+                ..
+            } = ota;
+            storage.with_raw_flash_mut(|flash| {
+                squidscript_fw_x4::ota::EspOtaSlotStorage::new(flash, partition_table)
+                    .mark_running_valid()
+            })?;
+            storage
+                .delete_ota_checkpoint()
+                .map_err(|_| squidscript_fw_x4::ota::OtaError::Checkpoint)
+        });
+        if !matches!(health_result, Ok(Ok(()))) {
+            native_radio_log!("native_ota_error stage=health-confirm");
+        }
+    }
     loop {
         let now = embassy_time::Instant::now();
         let elapsed_ms = (now
@@ -3223,19 +3713,29 @@ async fn run_serial_protocol_cooperative<B, D, C, FB, AS, F>(
         if elapsed_ms > 0 && runtime.wifi_operation_active_kind() != Some("connect") {
             let _ = runtime.tick_timers(elapsed_ms);
         }
-        if let Ok(byte) = serial.read_byte() {
-            if let Some(response_len) = process_serial_byte(
-                byte,
-                &mut runtime,
-                &mut sessions,
-                &mut content_check,
-                &mut request_len,
-                &mut event_buf,
-                display_flush,
-                buffers,
-            ) {
-                let _ = serial.write(&buffers.response[..response_len]);
-                let _ = serial.flush_tx();
+        for _ in 0..256 {
+            match serial.read_byte() {
+                Ok(byte) => {
+                    if let Some(response_len) = process_serial_byte(
+                        byte,
+                        &mut runtime,
+                        &mut sessions,
+                        &mut content_check,
+                        &mut request_len,
+                        &mut event_buf,
+                        display_flush,
+                        buffers,
+                    ) {
+                        let _ = serial.write(&buffers.response[..response_len]);
+                        let _ = serial.flush_tx();
+                        #[cfg(feature = "x4-binbook")]
+                        if OTA_REBOOT_PENDING.load(Ordering::Acquire) {
+                            OTA_REBOOT_PENDING.store(false, Ordering::Release);
+                            esp_hal::system::software_reset();
+                        }
+                    }
+                }
+                Err(_) => break,
             }
         }
         content_check.step(&mut runtime);

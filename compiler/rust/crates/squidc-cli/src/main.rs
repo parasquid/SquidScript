@@ -1134,9 +1134,9 @@ fn firmware_update_command(args: DeviceFirmwareUpdateArgs, human: bool) -> Resul
         && status.build_id == build_id
         && status.candidate_slot == info.inactive_slot;
     if status.state != "idle" && !matches {
-        status = device.firmware_update_abort()?;
-    }
-    if status.state == "idle" {
+        device.firmware_update_abort()?;
+        status = device.firmware_update_begin(image.image_len, &image.sha256, &build_id)?;
+    } else if status.state == "idle" {
         status = device.firmware_update_begin(image.image_len, &image.sha256, &build_id)?;
     }
     if status.expected_len != image.image_len as u64

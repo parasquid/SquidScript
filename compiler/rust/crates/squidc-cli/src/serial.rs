@@ -280,11 +280,26 @@ impl SerialDevice {
     }
 
     pub fn firmware_update_commit(&mut self) -> Result<(), String> {
-        self.send_protocol_expect_ok(&firmware_update_commit_request(99))
+        let request = firmware_update_commit_request(99);
+        for _ in 0..4096 {
+            let frame = self.send_protocol_request(&request)?;
+            if frame.kind != FrameKind::Response
+                || frame.opcode != request.opcode
+                || frame.sequence != request.sequence
+            {
+                return Err(format!("unexpected protocol response: {frame:?}"));
+            }
+            match frame.status {
+                Status::Ok => return Ok(()),
+                Status::Pending => continue,
+                Status::Error => return Err(format!("unexpected protocol response: {frame:?}")),
+            }
+        }
+        Err("firmware verification did not complete after 4096 bounded steps".to_string())
     }
 
     pub fn firmware_update_chunk_bytes(&self) -> usize {
-        self.transfer_capabilities.max_payload_bytes.max(1)
+        (self.transfer_capabilities.max_payload_bytes & !3).max(4)
     }
 
     pub fn run_temp_app(&mut self, app_id: &str, bytes: &[u8]) -> Result<String, String> {

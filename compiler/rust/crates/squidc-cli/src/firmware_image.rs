@@ -15,12 +15,13 @@ pub struct FirmwareImage {
     pub project_name: String,
     pub image_len: usize,
     pub sha256: [u8; 32],
+    pub elf_sha256: [u8; 32],
 }
 
 impl FirmwareImage {
     pub fn build_id(&self) -> String {
         let mut id = String::with_capacity(16);
-        for byte in &self.sha256[..8] {
+        for byte in &self.elf_sha256[..8] {
             use fmt::Write as _;
             write!(&mut id, "{byte:02x}").expect("writing to String cannot fail");
         }
@@ -134,16 +135,17 @@ pub fn validate(bytes: &[u8]) -> Result<FirmwareImage, ImageError> {
     if computed.as_slice() != stored_digest {
         return Err(ImageError::Digest);
     }
-    let (version, project_name) = descriptor.ok_or(ImageError::InvalidAppDescriptor)?;
+    let (version, project_name, elf_sha256) = descriptor.ok_or(ImageError::InvalidAppDescriptor)?;
     Ok(FirmwareImage {
         version,
         project_name,
         image_len: bytes.len(),
         sha256: Sha256::digest(bytes).into(),
+        elf_sha256,
     })
 }
 
-fn parse_descriptor(segment: &[u8]) -> Result<(String, String), ImageError> {
+fn parse_descriptor(segment: &[u8]) -> Result<(String, String, [u8; 32]), ImageError> {
     let descriptor = segment
         .get(..APP_DESCRIPTOR_LEN)
         .ok_or(ImageError::InvalidAppDescriptor)?;
@@ -154,6 +156,9 @@ fn parse_descriptor(segment: &[u8]) -> Result<(String, String), ImageError> {
     Ok((
         descriptor_text(&descriptor[16..48], "version")?,
         descriptor_text(&descriptor[48..80], "project name")?,
+        descriptor[144..176]
+            .try_into()
+            .expect("fixed descriptor slice"),
     ))
 }
 
@@ -184,6 +189,7 @@ mod tests {
         descriptor[..4].copy_from_slice(&APP_DESCRIPTOR_MAGIC.to_le_bytes());
         descriptor[16..21].copy_from_slice(b"1.2.3");
         descriptor[48..59].copy_from_slice(b"squidscript");
+        descriptor[144..176].fill(0x5a);
         bytes.extend_from_slice(&0x3c00_0020u32.to_le_bytes());
         bytes.extend_from_slice(&(descriptor.len() as u32).to_le_bytes());
         bytes.extend_from_slice(&descriptor);
@@ -205,7 +211,7 @@ mod tests {
         assert_eq!(parsed.version, "1.2.3");
         assert_eq!(parsed.project_name, "squidscript");
         assert_eq!(parsed.image_len, bytes.len());
-        assert_eq!(parsed.build_id().len(), 16);
+        assert_eq!(parsed.build_id(), "5a5a5a5a5a5a5a5a");
     }
 
     #[test]
