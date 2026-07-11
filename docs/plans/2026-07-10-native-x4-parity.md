@@ -575,18 +575,18 @@ unified CLI receives authoritative completion for both.
 - [x] Add GRAY1 BinBook degradation/expansion into the supported streaming
   render path. Test current compiler output through host validation and live X4
   rendering.
-- [ ] Audit X4 target metadata against native hardware evidence. Narrow any
+- [x] Audit X4 target metadata against native hardware evidence. Narrow any
   unimplemented display, refresh, storage, input, power, or radio claim rather
   than preserving aspirational metadata as fact.
-- [ ] Keep display optimization, file-management expansion, reading history,
+- [x] Keep display optimization, file-management expansion, reading history,
   metadata caching, and throughput tuning as separate roadmap work.
-- [ ] Promote native X4 app-store, lifecycle, input, sleep, OTA, serial, HTTP,
+- [x] Promote native X4 app-store, lifecycle, input, sleep, OTA, serial, HTTP,
   BLE, SD, reader, and display gates into the target-aware
   `squidc hardware test --target xteink-x4` inventory.
-- [ ] Ensure target-aware runs select only X4-native checks and never invoke
+- [x] Ensure target-aware runs select only X4-native checks and never invoke
   Zephyr setup, west, Twister, Kconfig, FFI ABI generation, XIAO, or Super Mini
   wrappers.
-- [ ] Update current docs as native facts. Remove current-state claims that
+- [x] Update current docs as native facts. Remove current-state claims that
   Zephyr is canonical or that target commands select a backend.
 
 **Acceptance:** Target metadata is honest, GRAY1 content renders, and one

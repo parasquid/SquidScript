@@ -57,7 +57,7 @@ The screen block is render work. Input handlers update state and ask the runtime
 - `squidvm-core`, the shared bytecode VM and runtime semantics used by host tools and firmware-facing code.
 - SQBC support for the compact bytecode container loaded by runtimes.
 - `simulator/browser`, the browser simulator, TypeScript runtime, and WASM compiler bridge.
-- `firmware/`, including the Zephyr real-firmware work.
+- `firmware/`, including the native Rust firmware for the Xteink X4.
 - `targets/`, target definitions for device capabilities and simulator metadata.
 - `examples/`, sample SquidScript apps and workflows.
 - `docs/`, the language, bytecode, simulator, target, CLI, and firmware documentation.
@@ -143,10 +143,10 @@ npm run build
 npm run test:e2e
 ```
 
-Build the ESP32-C3 Super Mini Zephyr firmware through target metadata:
+Build the native Xteink X4 firmware through target metadata:
 
 ```sh
-cargo run -p squidc -- target build --target esp32c3-super-mini
+cargo run -p squidc -- target build --target xteink-x4
 ```
 
 ## License

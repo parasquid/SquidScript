@@ -19,49 +19,48 @@ diagnostic captures are empty, the helper also records bounded raw serial
 diagnostics so a failure can distinguish a live firmware log stream from a
 silent USB/protocol path.
 
-## Current Targets
+## Current Target
 
-The default real firmware target is Zephyr-backed XIAO ESP32-C3 directly wired
-to the Good Display DESPI-C02 connector board and GDEQ0426T82/SSD1677 panel.
-The ESP32-C3 Super Mini remains a supported regression hardware target.
-
-Default XIAO build and flash:
+The Xteink X4 is the current real-firmware target. Its Rust firmware is built,
+flashed, and exercised through target metadata:
 
 ```sh
-cargo run -p squidc -- target build --target xiao-esp32c3-gdeq0426t82-sd
-SQUID_ZEPHYR_TARGET_JSON=targets/xiao-esp32c3-gdeq0426t82-sd.target.json \
-  ./scripts/zephyr-ram-audit.sh build/zephyr/xiao-esp32c3-gdeq0426t82-sd/zephyr/zephyr.elf
-cargo run -p squidc -- target flash --target xiao-esp32c3-gdeq0426t82-sd
+cargo run -p squidc -- target build --target xteink-x4
+cargo run -p squidc -- target flash --target xteink-x4
+cargo run -p squidc -- target monitor --target xteink-x4
 ```
 
-XIAO monitor:
+List or run the native X4 hardware inventory with:
 
 ```sh
-cargo run -p squidc -- target monitor --target xiao-esp32c3-gdeq0426t82-sd
-```
-
-Super Mini regression build and flash:
-
-```sh
-cargo run -p squidc -- target build --target esp32c3-super-mini
-SQUID_ZEPHYR_TARGET_JSON=targets/esp32c3-super-mini.target.json \
-  ./scripts/zephyr-ram-audit.sh
-cargo run -p squidc -- target flash --target esp32c3-super-mini
-```
-
-Super Mini monitor:
-
-```sh
-cargo run -p squidc -- target monitor --target esp32c3-super-mini
+cargo run -p squidc -- hardware test --target xteink-x4 --list
+cargo run -p squidc -- hardware test --target xteink-x4
 ```
 
 Pass `--target` explicitly in scripts and CI. `squidc target` resolves the
-Zephyr board, overlay, fallback app, generated Kconfig path, and build
-directory from target JSON.
+firmware project, generated target configuration, image paths, and flashing
+settings from target JSON.
 
 ## Test Inventory
 
-The default Zephyr-only hardware suite covers the current required inventory:
+The native X4 suite covers the parity inventory through these checks:
+
+- `portable-app-tests`
+- `app-runtime`
+- `input-events`
+- `planned-sleep`
+- `serial-ota`
+- `sd-card`
+- `binbook-reader`
+- `grid-cursor-display`
+- `transfer-regression`
+- `radio-coexistence`
+
+The XIAO and ESP32-C3 Super Mini material below documents legacy test fixtures
+that remain in the tree pending the planned removal sweep. It is not the
+current firmware or hardware-test path.
+
+The legacy suite covered:
 
 - Build and flash the Zephyr diagnostic firmware.
 - Check Zephyr RAM budget output before flashing.

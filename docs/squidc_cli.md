@@ -23,7 +23,7 @@ cargo run -p squidc -- repl --script tests/repl/default-dev.session
 cargo run -p squidc -- doctor
 ```
 
-`app run` compiles the input app, uploads it through the Zephyr temp-run
+`app run` compiles the input app, uploads it through the device temp-run
 command, and launches it as a temporary foreground app. Firmware stages the
 temp SQBC as a temporary app-store file instead of buffering the payload in
 RAM. It does not publish an installed app, does not overwrite `main`, and keeps
@@ -153,7 +153,7 @@ cargo run -p squidc -- device wifi-profile dev --ssid-env SQUID_WIFI_STATION_SSI
 cargo run -p squidc -- device monitor --max-lines 4
 ```
 
-`device key` sends a logical key event to Zephyr firmware. It does not
+`device key` sends a logical key event to device firmware. It does not
 press a physical button; the firmware routes the event to the current app.
 
 `device display-window-probe <pattern>` sends an SSD1677 physical display
@@ -189,12 +189,12 @@ wire protocol used by `app push`. Both transports report bytes sent, elapsed
 seconds, and effective bytes per second. The receiving app decides whether to
 copy, install, or otherwise consume the uploaded file.
 
-`device drawlog` returns the current Zephyr headless display draw log. Records
+`device drawlog` returns the current firmware display draw log. Records
 use the current firmware diagnostic text shape, such as
 `draw=clear color=0`, `draw=text text="Hello" x=10 y=20`,
 `draw=rect x=1 y=2 w=3 h=4`, and `draw=line x1=5 y1=6 x2=7 y2=8`.
 
-`device lifecycle` returns current Zephyr app lifecycle diagnostics as lines
+`device lifecycle` returns current app lifecycle diagnostics as lines
 such as `active=reader`, `process_stack[0]=launcher`, and `armed_stack=`.
 When armed timers are registered, additional lines use
 `armed_stack[0]=break-reminder timer.break`.
@@ -203,7 +203,7 @@ parsed into `data.active`, `data.processStack`, and `data.armedStack`. Armed
 stack entries are objects with `appId` and `event` fields.
 
 `device errors` is empty when no firmware runtime error is active. If a VM
-dispatch fails, Zephyr reports a line such as
+dispatch fails, firmware reports a line such as
 `runtime=vm_error code=-5 (EIO)` or
 `runtime=invalid_argument code=-22 (EINVAL)`, preserving both the FFI status
 class and the mapped errno. When the retained diagnostic ring is larger than
@@ -217,10 +217,10 @@ upload routes. `squidc app push` and `squidc device upload --transport ble` map 
 readable messages such as `BLE route ambiguous`; inspect `device errors` for
 the retained firmware-side invariant line.
 
-`device resources` reads Zephyr firmware resource diagnostics and reports
+`device resources` reads firmware resource diagnostics and reports
 raw target-specific RAM and app-storage byte counts. `ram_total_bytes` is
 static board context; `vm_stack_*` fields expose the configured VM work
-queue stack size and Zephyr stack high-water usage when stack initialization is
+queue stack size and platform stack high-water usage when stack initialization is
 enabled; `heap_*` fields are live allocator telemetry from the running
 firmware; `runtime_static_bytes` is the resident VM runtime object after
 internal buffer sharing; `vm_sqbc_chunk_bytes` is the bounded SQBC read/code
@@ -228,7 +228,7 @@ window used for file-backed installed app dispatch.
 Use `--count` with `--interval-ms` to sample repeatedly over one open serial
 session. Human output prefixes repeated samples with `sample_epoch_ms=...`.
 Use `device resources --reset-heap-max` at a workload boundary to reset
-Zephyr's heap allocation high-water statistic to the current allocated bytes
+the platform heap allocation high-water statistic to the current allocated bytes
 before measuring later work.
 `last_dispatch_seq`, `last_dispatch_us`,
 `last_sqbc_reads`, and `last_sqbc_bytes` report
@@ -258,14 +258,14 @@ app, foreground stack, pending launches, trigger/timer registrations, and debug
 buffers, then boots installed `main` when present. It does not erase installed
 apps.
 
-`device storage-format` erases Zephyr app storage, including installed apps,
+`device storage-format` erases app storage, including installed apps,
 resources, temp app staging, and app state files, then recreates the expected
 storage directories. Firmware may report bounded pending progress internally;
 the CLI repeats the framed command until the final success response so callers
 still see one completed command.
 
 `device wifi-profile` provisions a volatile Wi-Fi station profile through the
-current framed Zephyr command surface. It reads the SSID and password from
+current framed command surface. It reads the SSID and password from
 environment variable names passed with `--ssid-env` and `--password-env` so
 normal command output can report only the profile name and byte lengths. Do not
 use `protocol raw` for credentials unless raw request hex is explicitly needed
@@ -282,14 +282,14 @@ cargo run -p squidc -- protocol raw hello --seq 1 --string 1=esp32c3-supermini
 cargo run -p squidc -- protocol raw resources-get --u32 1=409600
 ```
 
-Use `protocol raw` for low-level Zephyr protocol troubleshooting only. It sends
+Use `protocol raw` for low-level device protocol troubleshooting only. It sends
 one binary framed request, not a text command. Field options are typed TLV
 entries: `--string TAG=VALUE`, `--bytes TAG=HEX`, `--bool TAG=true|false`,
 `--u32 TAG=VALUE`, `--u64 TAG=VALUE`, and `--i64 TAG=VALUE`. Prefer grouped `app` and `device`
 commands for normal workflows.
 
 Framed command, app lifecycle, diagnostics, state, resources, and storage
-operations are implemented in the host and Zephyr serial transport layers.
+operations are implemented in the host and device serial transport layers.
 
 ## Target Commands
 
@@ -320,10 +320,12 @@ The X4 target builds `firmware/native` with the target's configured Rust
 package, target triple, feature set, and release/debug mode. It then generates
 a distinct raw OTA application image and rejects images larger than the
 configured OTA slot. `target flash` passes the tracked partition table and the
-`app0` label to `espflash`; inspect and JSON plans report the ELF, OTA image,
-and partition table separately.
+`app0` label and target-owned rollback bootloader to `espflash`; inspect and
+JSON plans report the ELF, OTA image, bootloader, and partition table
+separately.
 
-The native flash-filesystem feature compiles LittleFS C sources. Install
+The native flash-filesystem feature uses LittleFS2 for internal app and content
+storage. Install
 `riscv32-esp-elf-gcc`, `riscv32-unknown-elf-gcc`, or `riscv64-elf-gcc` on
 `PATH`. Set `SQUIDSCRIPT_RISCV_CC` to an explicit compiler path when the
 toolchain is installed outside `PATH`; `squidc` supplies the ESP32-C3
@@ -344,17 +346,14 @@ Noninteractive sessions fail and should pass `--target <target-id>` explicitly.
 `target flash` builds first, then flashes. It monitors only when
 `--monitor-after-flash` is passed. `target monitor` is a streaming hardware
 command; with `--json`, use `--print-plan` instead of starting the stream.
-`target build --stack-usage` and `--pristine always|never|auto` are Zephyr-only
-options.
+Legacy-only build flags are not part of the native X4 workflow.
 
 `hardware test --target <target-id>` runs the target-aware hardware regression
-checks selected from target metadata features. The XIAO ESP32-C3 default dev
-target currently selects portable app tests, BLE file-transfer install,
-installed BLE receiver routing, BLE reconnect, radio concurrency, and
-AP-after-station checks. The XTEINK X4 target also selects the serial, HTTP,
-and BLE transfer regression suite, which uploads a real BinBook fixture and
-verifies device-side size and CRC32 for each transport. It excludes display
-drawlog and SD-card checks until those capabilities are ready for this target.
+inventory. XTEINK X4 selects only native checks: portable apps, app runtime and
+state, logical input events, planned sleep, serial OTA, SD persistence, BinBook
+reader, display refresh, serial/HTTP/BLE transfers, and Wi-Fi/BLE coexistence.
+The transfer checks upload real BinBook fixtures and verify device-side size
+and CRC32.
 Use `--skip-flash` when the correct firmware is already flashed. Use
 `--ble-device <name-or-address>` to override BLE matching and
 `--host-wifi-iface <iface>` when Wi-Fi tests should use a specific host
