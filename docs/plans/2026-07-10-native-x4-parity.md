@@ -101,7 +101,7 @@ the partition table or storage ownership.
 - [x] Prove the backup/recovery instructions by generating the exact commands
   needed to restore bootloader, partition table, and application. Do not erase
   the live board in this task.
-- [ ] Confirm the current table is the factory layout and the chip reports
+- [x] Confirm the current table is the factory layout and the chip reports
   16 MiB flash.
 
 **Acceptance:** Existing native tests and hardware gates pass, a complete
