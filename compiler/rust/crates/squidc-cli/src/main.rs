@@ -1,6 +1,7 @@
 mod app_id;
 mod ble_push;
 mod compile;
+mod firmware_image;
 mod http_upload;
 mod package;
 mod serial;
@@ -160,6 +161,8 @@ enum DeviceCommands {
     ContentPut(DeviceContentPutArgs),
     ContentCheck(DeviceContentCheckArgs),
     ContentDelete(DeviceContentDeleteArgs),
+    FirmwareInfo(DeviceOnlyArgs),
+    FirmwareUpdate(DeviceFirmwareUpdateArgs),
     Upload(DeviceUploadArgs),
     WifiProfile(DeviceWifiProfileArgs),
     RuntimeCap(DeviceRuntimeCapArgs),
@@ -358,6 +361,13 @@ enum RuntimeCapCommands {
 struct DeviceOnlyArgs {
     #[command(flatten)]
     device: DeviceOnlyOptions,
+}
+
+#[derive(Args, Debug)]
+struct DeviceFirmwareUpdateArgs {
+    #[command(flatten)]
+    device: DeviceOnlyOptions,
+    image: PathBuf,
 }
 
 #[derive(Args, Debug)]
@@ -566,6 +576,8 @@ fn run(command: Commands, human: bool, json_mode: bool) -> Result<Value, String>
             DeviceCommands::ContentPut(args) => content_put(args, human),
             DeviceCommands::ContentCheck(args) => content_check(args, human),
             DeviceCommands::ContentDelete(args) => content_delete(args, human),
+            DeviceCommands::FirmwareInfo(args) => firmware_info_command(args, human),
+            DeviceCommands::FirmwareUpdate(args) => firmware_update_command(args, human),
             DeviceCommands::Upload(args) => device_upload(args, human),
             DeviceCommands::WifiProfile(args) => wifi_profile(args, human),
             DeviceCommands::RuntimeCap(args) => runtime_cap(args, human),
@@ -1072,6 +1084,146 @@ fn content_delete(args: DeviceContentDeleteArgs, human: bool) -> Result<Value, S
         "port": port,
         "name": name,
     }))
+}
+
+fn firmware_info_command(args: DeviceOnlyArgs, human: bool) -> Result<Value, String> {
+    let port = resolve_port(&args.device)?;
+    let mut device = SerialDevice::open(&port)?;
+    let info = device.firmware_info()?;
+    if human {
+        println!(
+            "firmware active={} size={} inactive={} size={} build={} boot={}",
+            info.active_slot,
+            info.active_slot_size,
+            info.inactive_slot,
+            info.inactive_slot_size,
+            info.build_id,
+            info.boot_state
+        );
+    }
+    Ok(json!({
+        "port": port,
+        "activeSlot": info.active_slot,
+        "activeSlotSize": info.active_slot_size,
+        "inactiveSlot": info.inactive_slot,
+        "inactiveSlotSize": info.inactive_slot_size,
+        "buildId": info.build_id,
+        "bootState": info.boot_state,
+    }))
+}
+
+fn firmware_update_command(args: DeviceFirmwareUpdateArgs, human: bool) -> Result<Value, String> {
+    let bytes = fs::read(&args.image)
+        .map_err(|error| format!("failed to read {}: {error}", args.image.display()))?;
+    let image = firmware_image::validate(&bytes)
+        .map_err(|error| format!("invalid firmware image {}: {error}", args.image.display()))?;
+    let build_id = image.build_id();
+    let port = resolve_port(&args.device)?;
+    let mut device = SerialDevice::open(&port)?;
+    let info = device.firmware_info()?;
+    if image.image_len as u64 > info.inactive_slot_size {
+        return Err(format!(
+            "firmware image is {} bytes but inactive slot {} holds {} bytes",
+            image.image_len, info.inactive_slot, info.inactive_slot_size
+        ));
+    }
+
+    let mut status = device.firmware_update_status()?;
+    let matches = status.expected_len == image.image_len as u64
+        && status.expected_sha256.as_slice() == image.sha256
+        && status.build_id == build_id
+        && status.candidate_slot == info.inactive_slot;
+    if status.state != "idle" && !matches {
+        status = device.firmware_update_abort()?;
+    }
+    if status.state == "idle" {
+        status = device.firmware_update_begin(image.image_len, &image.sha256, &build_id)?;
+    }
+    if status.expected_len != image.image_len as u64
+        || status.expected_sha256.as_slice() != image.sha256
+        || status.build_id != build_id
+        || status.candidate_slot != info.inactive_slot
+    {
+        return Err("device did not retain the requested firmware update identity".to_string());
+    }
+
+    let mut offset = usize::try_from(status.durable_offset)
+        .map_err(|_| "device durable firmware offset does not fit this host".to_string())?;
+    if offset > bytes.len() {
+        return Err(format!(
+            "device durable firmware offset {offset} exceeds image length {}",
+            bytes.len()
+        ));
+    }
+    let resumed_from = offset;
+    let chunk_bytes = device.firmware_update_chunk_bytes();
+    let started = Instant::now();
+    let mut last_progress = started - Duration::from_secs(1);
+    while offset < bytes.len() {
+        let end = offset.saturating_add(chunk_bytes).min(bytes.len());
+        status = device.firmware_update_chunk(offset, &bytes[offset..end])?;
+        let durable = usize::try_from(status.durable_offset)
+            .map_err(|_| "device durable firmware offset does not fit this host".to_string())?;
+        if durable != end {
+            return Err(format!(
+                "firmware chunk at {offset} ended at {end}, device confirmed {durable}"
+            ));
+        }
+        offset = durable;
+        if human && (offset == bytes.len() || last_progress.elapsed() >= Duration::from_secs(1)) {
+            eprintln!(
+                "{}",
+                firmware_update_progress_line(
+                    offset - resumed_from,
+                    bytes.len() - resumed_from,
+                    started.elapsed()
+                )
+            );
+            last_progress = Instant::now();
+        }
+    }
+    device.firmware_update_commit()?;
+    if human {
+        println!(
+            "firmware-update image={} project={} version={} build={} slot={} bytes={} resumed={}",
+            args.image.display(),
+            image.project_name,
+            image.version,
+            build_id,
+            info.inactive_slot,
+            image.image_len,
+            resumed_from
+        );
+    }
+    Ok(json!({
+        "port": port,
+        "image": args.image,
+        "project": image.project_name,
+        "version": image.version,
+        "buildId": build_id,
+        "candidateSlot": info.inactive_slot,
+        "bytes": image.image_len,
+        "resumedFrom": resumed_from,
+    }))
+}
+
+fn firmware_update_progress_line(received: usize, total: usize, elapsed: Duration) -> String {
+    let percent = if total == 0 {
+        100.0
+    } else {
+        received as f64 * 100.0 / total as f64
+    };
+    let seconds = elapsed.as_secs_f64().max(0.001);
+    let rate = received as f64 / seconds;
+    let eta = if rate > 0.0 {
+        ((total.saturating_sub(received) as f64 / rate).ceil()) as u64
+    } else {
+        0
+    };
+    format!(
+        "firmware {percent:.1}% {received}/{total} {:.1} KiB/s eta {eta}s",
+        rate / 1024.0
+    )
 }
 
 fn parse_crc32_arg(value: &str) -> Result<u64, String> {
@@ -3392,6 +3544,38 @@ mod tests {
         };
         assert_eq!(ble_args.transport, UploadTransportArg::Ble);
         assert_eq!(ble_args.device.as_deref(), Some("SquidScript-X4"));
+    }
+
+    #[test]
+    fn parses_firmware_info_and_update_commands() {
+        let info =
+            Cli::try_parse_from(["squidc", "device", "firmware-info", "--port", "/dev/test"])
+                .unwrap();
+        let Commands::Device {
+            command: DeviceCommands::FirmwareInfo(args),
+        } = info.command
+        else {
+            panic!("expected firmware info");
+        };
+        assert_eq!(args.device.port.as_deref(), Some("/dev/test"));
+
+        let update = Cli::try_parse_from([
+            "squidc",
+            "device",
+            "firmware-update",
+            "firmware.bin",
+            "--port",
+            "/dev/test",
+        ])
+        .unwrap();
+        let Commands::Device {
+            command: DeviceCommands::FirmwareUpdate(args),
+        } = update.command
+        else {
+            panic!("expected firmware update");
+        };
+        assert_eq!(args.image, PathBuf::from("firmware.bin"));
+        assert_eq!(args.device.port.as_deref(), Some("/dev/test"));
     }
 
     #[test]

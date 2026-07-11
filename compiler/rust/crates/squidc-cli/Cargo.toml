@@ -16,6 +16,7 @@ dbus = { version = "0.9", features = ["vendored"] }
 futures = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 squid-device-protocol = { path = "../squid-device-protocol" }
 squidc-core = { path = "../squidc-core" }
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }

@@ -14,16 +14,19 @@ use squid_device_protocol::{
     content_install_begin_request, content_install_chunk_request_with_ack,
     content_install_commit_request, debug_log_get_request, debug_log_lines,
     decode_frame_from_stream, display_window_probe_request, drawlog_get_request, drawlog_lines,
-    encode_frame, error_lines, errors_get_request, event_dispatch_request, hello_identity,
-    hello_request, key_request, lifecycle_get_request, lifecycle_lines, output_get_request,
-    output_lines, protocol_error, reset_request, resource_install_begin_request,
-    resource_install_chunk_request_with_ack, resource_install_commit_request, resource_values,
-    resources_get_request, resources_get_request_with_heap_reset, runtime_cap_clear_request,
-    runtime_cap_get_request, runtime_cap_lines, runtime_cap_set_request, state_bytes,
-    state_get_request, state_import_request, storage_format_request, temp_run_begin_request,
+    encode_frame, error_lines, errors_get_request, event_dispatch_request, firmware_info,
+    firmware_info_request, firmware_update_abort_request, firmware_update_begin_request,
+    firmware_update_chunk_request, firmware_update_commit_request, firmware_update_status,
+    firmware_update_status_request, hello_identity, hello_request, key_request,
+    lifecycle_get_request, lifecycle_lines, output_get_request, output_lines, protocol_error,
+    reset_request, resource_install_begin_request, resource_install_chunk_request_with_ack,
+    resource_install_commit_request, resource_values, resources_get_request,
+    resources_get_request_with_heap_reset, runtime_cap_clear_request, runtime_cap_get_request,
+    runtime_cap_lines, runtime_cap_set_request, state_bytes, state_get_request,
+    state_import_request, storage_format_request, temp_run_begin_request,
     temp_run_chunk_request_with_ack, temp_run_commit_request, trace_get_request, trace_lines,
-    wifi_profile_set_request, AppEntry, ContentCheckResult, DecodeError, Frame, FrameKind, Status,
-    TransferCapabilities, HEADER_LEN, MAGIC,
+    wifi_profile_set_request, AppEntry, ContentCheckResult, DecodeError, FirmwareInfo,
+    FirmwareUpdateStatus, Frame, FrameKind, Status, TransferCapabilities, HEADER_LEN, MAGIC,
 };
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 60;
@@ -230,6 +233,58 @@ impl SerialDevice {
         let frame = self.send_protocol_request(&content_delete_request(93, name))?;
         content_delete_result(&frame)
             .ok_or_else(|| "not a successful content delete response".to_string())
+    }
+
+    pub fn firmware_info(&mut self) -> Result<FirmwareInfo, String> {
+        let frame = self.send_protocol_request(&firmware_info_request(96))?;
+        firmware_info(&frame).ok_or_else(|| "not a successful firmware info response".to_string())
+    }
+
+    pub fn firmware_update_status(&mut self) -> Result<FirmwareUpdateStatus, String> {
+        let frame = self.send_protocol_request(&firmware_update_status_request(100))?;
+        firmware_update_status(&frame)
+            .ok_or_else(|| "not a successful firmware update status response".to_string())
+    }
+
+    pub fn firmware_update_abort(&mut self) -> Result<FirmwareUpdateStatus, String> {
+        self.send_protocol_expect_ok(&firmware_update_abort_request(101))?;
+        self.firmware_update_status()
+    }
+
+    pub fn firmware_update_begin(
+        &mut self,
+        total_len: usize,
+        sha256: &[u8; 32],
+        build_id: &str,
+    ) -> Result<FirmwareUpdateStatus, String> {
+        self.send_protocol_expect_ok(&firmware_update_begin_request(
+            97,
+            total_len as u64,
+            sha256.to_vec(),
+            build_id,
+        ))?;
+        self.firmware_update_status()
+    }
+
+    pub fn firmware_update_chunk(
+        &mut self,
+        offset: usize,
+        bytes: &[u8],
+    ) -> Result<FirmwareUpdateStatus, String> {
+        self.send_protocol_expect_ok(&firmware_update_chunk_request(
+            98,
+            offset as u64,
+            bytes.to_vec(),
+        ))?;
+        self.firmware_update_status()
+    }
+
+    pub fn firmware_update_commit(&mut self) -> Result<(), String> {
+        self.send_protocol_expect_ok(&firmware_update_commit_request(99))
+    }
+
+    pub fn firmware_update_chunk_bytes(&self) -> usize {
+        self.transfer_capabilities.max_payload_bytes.max(1)
     }
 
     pub fn run_temp_app(&mut self, app_id: &str, bytes: &[u8]) -> Result<String, String> {

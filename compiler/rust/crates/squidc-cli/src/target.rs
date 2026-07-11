@@ -433,6 +433,10 @@ pub fn validate_native_ota_image(root: &Path, target: &TargetDefinition) -> Resu
             path.display()
         ));
     }
+    let bytes =
+        fs::read(&path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    crate::firmware_image::validate(&bytes)
+        .map_err(|error| format!("invalid native OTA image {}: {error}", path.display()))?;
     Ok(size)
 }
 
