@@ -30,6 +30,7 @@ use squid_device_protocol::{
 };
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 60;
+const READY_PROBE_TIMEOUT: Duration = Duration::from_secs(1);
 
 fn default_timeout() -> Duration {
     env::var("SQUID_SERIAL_RESPONSE_TIMEOUT_SECONDS")
@@ -342,9 +343,17 @@ impl SerialDevice {
     }
 
     pub fn send_bytes_until_quiet(&mut self, bytes: &[u8]) -> Result<Vec<u8>, String> {
+        self.send_bytes_until_quiet_with_timeout(bytes, default_timeout())
+    }
+
+    fn send_bytes_until_quiet_with_timeout(
+        &mut self,
+        bytes: &[u8],
+        timeout: Duration,
+    ) -> Result<Vec<u8>, String> {
         self.drain();
         self.write_all(bytes)?;
-        self.read_bytes_until_quiet(default_timeout())
+        self.read_bytes_until_quiet(timeout)
     }
 
     pub fn app_list(&mut self) -> Result<Vec<AppEntry>, String> {
@@ -502,7 +511,8 @@ impl SerialDevice {
         let request = encode_frame(&hello_request(1));
         let mut last_error = None;
         for _ in 0..10 {
-            let response = self.send_bytes_until_quiet(&request)?;
+            let response =
+                self.send_bytes_until_quiet_with_timeout(&request, READY_PROBE_TIMEOUT)?;
             match decode_frame_from_stream(&response) {
                 Ok(frame) => {
                     if let Some(identity) = hello_identity(&frame) {
