@@ -11,6 +11,8 @@ fn main() {
         serde_json::from_str(&fs::read_to_string(&target).expect("read X4 target JSON"))
             .expect("parse X4 target JSON");
     let input = value.get("input").expect("target input object");
+    let devices = value.get("devices").expect("target devices object");
+    let sd = devices.get("storage.sd").expect("target storage.sd device");
     let timing = input.get("gestureTiming").expect("input gestureTiming");
     let buttons = input
         .get("buttons")
@@ -75,6 +77,14 @@ fn main() {
         generated,
     )
     .expect("write generated X4 input metadata");
+    fs::write(
+        PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("target_config.rs"),
+        format!(
+            "pub const SD_SPI_FREQUENCY_HZ: u32 = {};\n",
+            required_u64(sd, "frequencyHz")
+        ),
+    )
+    .expect("write generated X4 target config");
 
     let fallback = manifest.join("fallback/main.squid");
     println!("cargo:rerun-if-changed={}", fallback.display());

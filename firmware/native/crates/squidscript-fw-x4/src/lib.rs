@@ -4,6 +4,7 @@ pub mod ble_pipeline;
 #[cfg(feature = "x4-flash-filesystem")]
 pub mod flash_partition;
 pub mod ota;
+pub mod target_config;
 pub mod target_input;
 
 pub mod radio_probe {
@@ -895,6 +896,22 @@ pub mod x4_storage {
 
         fn format(&mut self) -> Result<(), NativeFileStorageError> {
             Ok(())
+        }
+
+        fn copy_file(
+            &mut self,
+            source: &str,
+            destination: &str,
+            scratch: &mut [u8],
+        ) -> Result<Option<u64>, NativeFileStorageError> {
+            match self.sd.copy_file(source, destination, scratch) {
+                Ok(result) => Ok(result),
+                Err(NativeFileStorageError::NotFound)
+                | Err(NativeFileStorageError::VolumeMissing) => {
+                    self.internal.copy_file(source, destination, scratch)
+                }
+                Err(error) => Err(error),
+            }
         }
     }
 
@@ -2253,6 +2270,7 @@ pub mod x4_storage {
             available: bool,
             path: Option<std::string::String>,
             bytes: std::vec::Vec<u8>,
+            copy_calls: usize,
         }
 
         impl MemoryVolume {
@@ -2348,6 +2366,21 @@ pub mod x4_storage {
             fn format(&mut self) -> Result<(), NativeFileStorageError> {
                 Ok(())
             }
+
+            fn copy_file(
+                &mut self,
+                source: &str,
+                destination: &str,
+                _scratch: &mut [u8],
+            ) -> Result<Option<u64>, NativeFileStorageError> {
+                self.require_available()?;
+                if self.path.as_deref() != Some(source) {
+                    return Err(NativeFileStorageError::NotFound);
+                }
+                self.path = Some(destination.to_string());
+                self.copy_calls += 1;
+                Ok(Some(self.bytes.len() as u64))
+            }
         }
 
         #[test]
@@ -2396,6 +2429,43 @@ pub mod x4_storage {
                 .read_at("books/internal.binbook", 0, &mut out)
                 .unwrap();
             assert_eq!(&out, b"old");
+        }
+
+        #[test]
+        fn content_storage_delegates_same_volume_copy_to_sd() {
+            let mut sd = MemoryVolume::available();
+            sd.create_or_truncate("tmp/upload.binbook").unwrap();
+            sd.write_at("tmp/upload.binbook", 0, b"book").unwrap();
+            let mut storage = X4ContentStorage::new(sd, MemoryVolume::available());
+
+            let mut scratch = [0; 8];
+            assert_eq!(
+                storage.copy_file("tmp/upload.binbook", "books/upload.binbook", &mut scratch),
+                Ok(Some(4))
+            );
+            assert_eq!(storage.sd.copy_calls, 1);
+            assert_eq!(storage.internal.copy_calls, 0);
+            assert_eq!(storage.sd.path.as_deref(), Some("books/upload.binbook"));
+        }
+
+        #[test]
+        fn content_storage_delegates_copy_to_internal_when_sd_is_missing() {
+            let mut internal = MemoryVolume::available();
+            internal.create_or_truncate("tmp/upload.binbook").unwrap();
+            internal.write_at("tmp/upload.binbook", 0, b"book").unwrap();
+            let mut storage = X4ContentStorage::new(MemoryVolume::default(), internal);
+
+            let mut scratch = [0; 8];
+            assert_eq!(
+                storage.copy_file("tmp/upload.binbook", "books/upload.binbook", &mut scratch),
+                Ok(Some(4))
+            );
+            assert_eq!(storage.sd.copy_calls, 0);
+            assert_eq!(storage.internal.copy_calls, 1);
+            assert_eq!(
+                storage.internal.path.as_deref(),
+                Some("books/upload.binbook")
+            );
         }
 
         #[derive(Default)]

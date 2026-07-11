@@ -1671,7 +1671,6 @@ async fn native_http_upload_task(stack: embassy_net::Stack<'static>) {
                 }
             }
         };
-
         let mut written = 0usize;
         let initial = used.saturating_sub(header_len).min(request.content_length);
         while written < initial {
@@ -1930,7 +1929,7 @@ async fn main(spawner: embassy_executor::Spawner) {
             let sd_spi = FreqManagedSpiDevice::new(
                 shared_spi,
                 Output::new(peripherals.GPIO12, Level::High, OutputConfig::default()),
-                400_000,
+                squidscript_fw_x4::target_config::SD_SPI_FREQUENCY_HZ,
             );
             let sd_storage =
                 X4SdFileStorage::new(SdStorage::new(sd_spi, DisplayDelay, X4StorageTime));

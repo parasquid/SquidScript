@@ -212,6 +212,7 @@
       "type": "spi-sdcard",
       "bus": "spi.shared",
       "mount": "/SD:",
+      "frequencyHz": 4000000,
       "pins": {
         "cs": "GPIO12",
         "miso": "GPIO7"
