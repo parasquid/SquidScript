@@ -325,11 +325,12 @@ device protocol, host upload validation, and BinBook enumeration.
 - [x] Add host tests for 121-byte success, 122-byte and non-ASCII rejection,
   FAT round-trip, shared LittleFS app/content coexistence, missing-SD upload,
   and SD-preferred upload.
-- [ ] On hardware without SD, upload, check, list, open, and delete a valid
-  long-named BinBook; cold reset and prove it persists.
-- [ ] On hardware with SD, prove new uploads use SD, internal-only content stays
-  readable, duplicate names resolve to SD, and formatting internal storage
-  preserves SD content.
+- [x] Skip the physical missing-SD upload/list/open/delete/cold-reset gate by
+  explicit owner decision. Host tests cover internal fallback and long-name
+  behavior; the opt-in phase runner remains available for later confidence.
+- [x] Skip the physical SD reinsertion, duplicate precedence, and mixed-volume
+  gate by explicit owner decision. Live SD upload/CRC and format isolation pass;
+  host tests cover routing and duplicate precedence.
 
 **Acceptance:** The same logical references and long ASCII names work on both
 volumes. Missing SD does not prevent BinBook upload or reading, and no physical
@@ -413,14 +414,16 @@ lifecycle event queue.
     and redraw normally;
   - long tap launches a helper that requests planned sleep after Task 8 lands.
 
-**Physical hardware gate:** With the real X4, press all six ADC keys and POWER,
+**Physical hardware gate (waived for parity):** With the real X4, press all six ADC keys and POWER,
 hold POWER beyond 350 ms, perform a POWER double tap, and deliberately wait out
 a single POWER tap. Verify exact event counts, suppression, ordering, armed
 launch behavior, lifecycle logs, and no serial starvation. Capture fresh panel
 evidence for the launch/return redraw example.
 
-**Acceptance:** Physical X4 input, not serial injection, drives portable
-foreground and armed events with target-owned timing.
+**Acceptance:** Target-owned classification and portable foreground/armed event
+routing are covered by unit tests and live logical-event injection. Direct
+physical-button timing was explicitly waived for parity readiness; the opt-in
+interactive runner remains for later confidence testing.
 
 **Commit:** `feat: add native x4 physical input gestures`
 
@@ -463,14 +466,16 @@ return stack after wake.
 - [x] Install an app that saves state in `power.sleep`, request a three-second
    timer wake, observe USB loss/reconnect, and verify `wake`, state, panel, and
    armed registrations.
-- [ ] Enter sleep without a timer, wake with physical POWER, and verify the same
-   restoration contract.
-- [ ] Arm the long-tap helper, launch it with physical POWER long tap, let the app
-   request sleep, and verify firmware itself assigned no action before the app
-   ran.
+- [x] Skip timerless sleep plus physical POWER wake by explicit owner decision.
+  Automated checkpoint/POWER-wake tests and live timer-wake restoration remain
+  the readiness evidence.
+- [x] Skip physical long-tap helper activation by explicit owner decision.
+  Target classification, armed routing, app-owned sleep request, and absence of
+  firmware-owned gesture actions remain covered by automated tests.
 
-**Acceptance:** Planned sleep is app-requested, physically real, recoverable,
-and lifecycle-correct on both wake sources.
+**Acceptance:** Planned sleep is app-requested, physically real on timer wake,
+recoverable, and lifecycle-correct in automated coverage for timer and POWER
+wake. Direct physical POWER wake was explicitly waived for parity readiness.
 
 **Commit:** `feat: add native x4 planned sleep and wake`
 
@@ -602,13 +607,15 @@ target-aware command selects every parity hardware gate.
 - [x] Run all target-aware X4 hardware tests sequentially on the final image.
 - [x] Verify an idle final state: no active app operation, upload, staged file,
   pending event, radio lease, display flush, or device error.
-- [ ] Repeat cold boot with and without SD inserted. Internal apps/lifecycle
-  must remain available; SD-dependent content must fail honestly.
+- [x] Skip the physical cold boot with SD removed by explicit owner decision.
+  Cold boot with SD present passes; host tests cover missing-SD internal
+  app/content fallback and honest SD-dependent failure.
 - [x] Repeat storage-format and prove OTA slots plus SD content are preserved.
 - [x] Repeat a serial OTA after all parity features are enabled so final image
   RAM/stack/storage behavior is covered.
-- [ ] Capture fresh panel evidence after input-trigger launch, wake restore,
-  GRAY1 render, HTTP upload, and BLE upload where the visible result differs.
+- [x] Accept fresh grid, wake, and GRAY1 panel captures as final visual evidence.
+  Physical input-trigger redraw was explicitly waived; HTTP/BLE transfer apps
+  are headless and have no distinct visible result to capture.
 - [x] Search current native code, targets, docs, examples, tests, and scripts for
   dependencies on Zephyr implementation paths or backend selectors.
 - [x] Remove completed parity roadmap entries. Keep the separately approved
@@ -621,11 +628,10 @@ target-aware command selects every parity hardware gate.
   - Zephyr-only tests, fixtures, build directories, and docs;
   - internal CLI backend planning types that no longer have multiple values.
 
-Remaining physical gates require direct access to the X4: boot and exercise
-content with the SD card removed, wake timerless sleep with the real POWER
-button, and drive the armed long/double-tap examples with physical presses.
-Serial event injection verifies firmware dispatch but does not substitute for
-those electrical and gesture-timing checks.
+Physical SD removal/reinsertion and real ADC/POWER gesture checks were
+explicitly waived for parity readiness. Serial injection and automated tests
+are not described as physical evidence. The runners below remain optional
+confidence checks and do not block Zephyr removal.
 
 Run the storage gate in three physical phases:
 
@@ -649,14 +655,18 @@ scripts/xteink-x4-test-physical-input-power.sh
 | Build/flash | selector-free X4 build, recovery flash, OTA image |
 | App store | eight-app bound, resources, state, atomic failure, cold boot |
 | Lifecycle | launch, exit/return, registry, arm/disarm, timer/input activation |
-| Input | six ADC keys, POWER short/long/double, queue/ownership diagnostics |
-| Power | app-requested sleep, timer wake, POWER wake, checkpoint restoration |
+| Input | target policy tests, logical short/long/double dispatch, queue/ownership diagnostics; physical presses waived |
+| Power | app-requested sleep, live timer wake, automated POWER wake/checkpoint restoration; physical wake waived |
 | OTA | both directions, integrity rejection, interruption, rollback, health |
 | Display | primitives, GRAY1/GRAY2 BinBook, fast/full paths, live panel |
-| Storage | internal app LittleFS, SD content, format isolation, missing SD |
+| Storage | internal app LittleFS, live SD content/format isolation, automated missing-SD routing; card removal waived |
 | Radio | AP, station, scan, simultaneous Wi-Fi/BLE, terminal BLE status |
 | Transfers | serial, resumable HTTP, BLE, exact size/CRC, cleanup |
 | Tooling/docs | target-aware native tests, no current Zephyr dependency |
+
+**Readiness:** Native X4 meets the owner-approved product-parity contract and is
+ready for the dedicated Zephyr removal plan. Physical-access-only gates are
+waived as recorded above and are not claimed as observed evidence.
 
 **Push gate:** Commit and push only after every required automated and hardware
 row is green or the user explicitly changes the product contract. Do not mark
