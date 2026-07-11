@@ -1147,6 +1147,23 @@ fn firmware_update_command(args: DeviceFirmwareUpdateArgs, human: bool) -> Resul
         return Err("device did not retain the requested firmware update identity".to_string());
     }
 
+    while status.state == "erasing" {
+        if human {
+            eprintln!(
+                "firmware erase slot={} {}/{}",
+                status.candidate_slot, status.durable_offset, info.inactive_slot_size
+            );
+        }
+        std::thread::sleep(Duration::from_millis(10));
+        status = device.firmware_update_status()?;
+    }
+    if !matches!(status.state.as_str(), "receiving" | "ready") {
+        return Err(format!(
+            "device firmware update entered unexpected state {}",
+            status.state
+        ));
+    }
+
     let mut offset = usize::try_from(status.durable_offset)
         .map_err(|_| "device durable firmware offset does not fit this host".to_string())?;
     if offset > bytes.len() {
