@@ -129,7 +129,7 @@ assert_device_ap_dhcp_lease() {
   exit 1
 }
 
-source "${ROOT}/scripts/zephyr-env.sh"
+export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-stable}"
 if [[ -z "${PORT}" ]]; then
   PORT="$(resolve_esp_serial_port)"
 fi

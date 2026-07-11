@@ -89,7 +89,7 @@ run_ble_upload() {
   exit "${status}"
 }
 
-source "${ROOT}/scripts/zephyr-env.sh"
+export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-stable}"
 if [[ -z "${PORT}" ]]; then
   PORT="$(resolve_esp_serial_port)"
 fi

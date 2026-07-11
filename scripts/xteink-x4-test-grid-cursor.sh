@@ -51,7 +51,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 mkdir -p "${WORK_DIR}"
-source "${ROOT}/scripts/zephyr-env.sh"
+export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-stable}"
 if [[ -z "${PORT}" ]]; then
   PORT="$(resolve_esp_serial_port)"
 fi

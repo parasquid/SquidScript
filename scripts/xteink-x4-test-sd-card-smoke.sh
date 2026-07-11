@@ -2,98 +2,48 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${ROOT}/scripts/lib/hardware-command.sh"
+source "${ROOT}/scripts/lib/serial-port.sh"
+source "${ROOT}/scripts/lib/transfer-payload.sh"
 TARGET_ID="${TARGET_ID:-xteink-x4}"
-APP_DIR="${ROOT}/tests/hardware/xteink-x4/sd-card-smoke"
-BUILD_DIR="${ROOT}/target/hardware-tests/xteink-x4-sd-card-smoke/build"
-WORK_DIR="${ROOT}/target/hardware-tests/xteink-x4-sd-card-smoke"
-MONITOR_TIMEOUT_SECONDS="${SQUID_SD_CARD_SMOKE_MONITOR_TIMEOUT_SECONDS:-90}"
-SKIP_FLASH=0
-
-usage() {
-	cat <<'USAGE'
-Usage: scripts/xteink-x4-test-sd-card-smoke.sh [--skip-flash]
-
-Builds and flashes a diagnostic-only XTEINK X4 SPI SD-card smoke-test app.
-The app bypasses SquidScript SD storage, initializes the card through Zephyr's
-SPI SDHC/SDMMC stack, performs read-only sector reads, parses the existing FAT
-root directory, lists root entries, and prints SD_CARD_SMOKE_READY after the
-wiring and directory read checks succeed.
-USAGE
-}
+PORT="${PORT:-}"
+SKIP_FLASH="${SKIP_FLASH:-0}"
+WORK_DIR="${WORK_DIR:-${ROOT}/target/hardware-tests/xteink-x4-sd-card-smoke}"
+PAYLOAD="${WORK_DIR}/sd-persistence.binbook"
+NAME="sd-persistence.binbook"
+COMMAND_TIMEOUT_SECONDS="${COMMAND_TIMEOUT_SECONDS:-300}"
 
 while [[ $# -gt 0 ]]; do
-	case "$1" in
-		--skip-flash)
-			SKIP_FLASH=1
-			shift
-			;;
-		-h|--help)
-			usage
-			exit 0
-			;;
-		*)
-			usage >&2
-			exit 2
-			;;
-	esac
+  case "$1" in
+    --target) TARGET_ID="${2:-}"; shift 2 ;;
+    --port) PORT="${2:-}"; shift 2 ;;
+    --skip-flash) SKIP_FLASH=1; shift ;;
+    -h|--help) printf 'Usage: %s [--target <id>] [--port <port>] [--skip-flash]\n' "$0"; exit 0 ;;
+    *) exit 2 ;;
+  esac
 done
-
-export ZEPHYR_BOARD="${ZEPHYR_BOARD:-esp32c3_devkitm}"
-source "${ROOT}/scripts/zephyr-env.sh"
-source "${ROOT}/scripts/lib/serial-port.sh"
-
-mkdir -p "$WORK_DIR"
-
-export ZEPHYR_PRISTINE="${ZEPHYR_PRISTINE:-always}"
-
-west build \
-	-b "${ZEPHYR_BOARD}" \
-	-d "${BUILD_DIR}" \
-	-p "${ZEPHYR_PRISTINE}" \
-	"${APP_DIR}" \
-	-- -DDTC_OVERLAY_FILE="${APP_DIR}/boards/esp32c3_devkitm.overlay"
-
-if [[ "$SKIP_FLASH" != "1" ]]; then
-	export ESPFLASH_PORT="$(resolve_esp_serial_port)"
-	west flash -d "$BUILD_DIR"
-	sleep 2
+mkdir -p "${WORK_DIR}"
+export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-stable}"
+if [[ -z "${PORT}" ]]; then
+  PORT="$(resolve_esp_serial_port)"
 fi
+export ESPFLASH_PORT="${PORT}"
+create_transfer_binbook_payload "${PAYLOAD}"
+read_transfer_payload_meta "${PAYLOAD}"
 
-PORT="$(resolve_esp_serial_port)"
-monitor_log="${WORK_DIR}/monitor.log"
-monitor_cmd=(cargo run --quiet -p squidc -- target monitor --target "$TARGET_ID" --port "$PORT")
-monitor_shell_command="$(printf '%q ' "${monitor_cmd[@]}")"
-
-set +e
-if command -v script >/dev/null 2>&1; then
-	(
-		cd "$ROOT"
-		timeout "${MONITOR_TIMEOUT_SECONDS}s" script -q -e -c "$monitor_shell_command" /dev/null
-	) 2>&1 | tee "$monitor_log" | grep -F -m 1 "SD_CARD_SMOKE_READY" >/dev/null
-	pipeline_status=("${PIPESTATUS[@]}")
-else
-	(
-		cd "$ROOT"
-		timeout "${MONITOR_TIMEOUT_SECONDS}s" "${monitor_cmd[@]}"
-	) 2>&1 | tee "$monitor_log" | grep -F -m 1 "SD_CARD_SMOKE_READY" >/dev/null
-	pipeline_status=("${PIPESTATUS[@]}")
+if [[ "${SKIP_FLASH}" != 1 ]]; then
+  run_capture flash cargo run --quiet -p squidc -- target flash --target "${TARGET_ID}" >/dev/null
+  sleep 2
 fi
-monitor_status="${pipeline_status[0]}"
-grep_status="${pipeline_status[2]}"
-set -e
-
-if [[ "$grep_status" != "0" ]]; then
-	printf 'Expected SD_CARD_SMOKE_READY not found within %ss on %s.\n' \
-		"$MONITOR_TIMEOUT_SECONDS" "$PORT" >&2
-	printf 'Monitor log: %s\n' "$monitor_log" >&2
-	exit 1
-fi
-
-if [[ "$monitor_status" != "0" && "$monitor_status" != "124" && "$grep_status" != "0" ]]; then
-	printf 'SD-card smoke monitor exited with status %s after log capture.\n' \
-		"$monitor_status" >&2
-	printf 'Monitor log: %s\n' "$monitor_log" >&2
-	exit "$monitor_status"
-fi
-
-printf '%s\n' 'OK XTEINK X4 SD-card smoke serial marker reached; card initialized, block 0 read, and FAT root listed'
+run_capture format-before cargo run --quiet -p squidc -- device storage-format --port "${PORT}" >/dev/null
+run_capture upload cargo run --quiet -p squidc -- device content-put "${PAYLOAD}" \
+  --name "${NAME}" --port "${PORT}" >/dev/null
+run_capture check-before cargo run --quiet -p squidc -- device content-check "${NAME}" \
+  --size "${SIZE}" --crc32 "${CRC32}" --port "${PORT}" >/dev/null
+run_capture format-after cargo run --quiet -p squidc -- device storage-format --port "${PORT}" >/dev/null
+run_capture check-after cargo run --quiet -p squidc -- device content-check "${NAME}" \
+  --size "${SIZE}" --crc32 "${CRC32}" --port "${PORT}" >/dev/null
+errors="$(run_capture errors cargo run --quiet -p squidc -- device errors --port "${PORT}")"
+[[ ! -s "${errors}" ]]
+printf 'OK XTEINK X4 SD content survived internal storage format size=%s crc32=%s\n' \
+  "${SIZE}" "${CRC32}"

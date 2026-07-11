@@ -12,8 +12,8 @@ WORK_DIR="${ROOT}/target/hardware-tests/xteink-x4-binbook-reader"
 PACKAGE="${WORK_DIR}/${APP_ID}.squid.zip"
 BOOK_ONE_PROVIDED="${BOOK_ONE+x}"
 BOOK_TWO_PROVIDED="${BOOK_TWO+x}"
-BOOK_ONE="${BOOK_ONE:-${ROOT}/tests/hardware/xiao-esp32c3/epaper-gray2-smoke/books/sample.binbook}"
-BOOK_TWO="${BOOK_TWO:-${ROOT}/tests/hardware/xiao-esp32c3/epaper-fast-redraw-smoke/books/sample.binbook}"
+BOOK_ONE="${BOOK_ONE:-${ROOT}/target/hardware-tests/xteink-x4-binbook-reader/reader-one.generated.binbook}"
+BOOK_TWO="${BOOK_TWO:-${ROOT}/target/hardware-tests/xteink-x4-binbook-reader/reader-two.generated.binbook}"
 BOOK_ONE_NAME="${BOOK_ONE_NAME:-reader-one.binbook}"
 BOOK_TWO_NAME="${BOOK_TWO_NAME:-reader-two.binbook}"
 PORT="${PORT:-}"
@@ -63,7 +63,7 @@ if [[ -z "${BOOK_ONE_PROVIDED}" && -z "${BOOK_TWO_PROVIDED}" ]]; then
   python3 "${ROOT}/scripts/generate-test-binbook.py" "${BOOK_ONE}"
   python3 "${ROOT}/scripts/generate-test-binbook.py" "${BOOK_TWO}"
 fi
-source "${ROOT}/scripts/zephyr-env.sh"
+export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-stable}"
 if [[ -z "${PORT}" ]]; then
   PORT="$(resolve_esp_serial_port)"
 fi

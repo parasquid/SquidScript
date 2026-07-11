@@ -1976,6 +1976,50 @@ fn hardware_test_reset_error_is_retryable(error: &str) -> bool {
 }
 
 fn hardware_test_checks_for_target(target: &target::TargetDefinition) -> Vec<HardwareTestCheck> {
+    if target.id == "xteink-x4" {
+        return vec![
+            HardwareTestCheck {
+                name: "portable-app-tests",
+                script: None,
+            },
+            HardwareTestCheck {
+                name: "app-runtime",
+                script: Some("scripts/xteink-x4-test-app-runtime.sh"),
+            },
+            HardwareTestCheck {
+                name: "input-events",
+                script: Some("scripts/xteink-x4-test-input-events.sh"),
+            },
+            HardwareTestCheck {
+                name: "planned-sleep",
+                script: Some("scripts/xteink-x4-test-planned-sleep.sh"),
+            },
+            HardwareTestCheck {
+                name: "serial-ota",
+                script: Some("scripts/xteink-x4-test-serial-ota.sh"),
+            },
+            HardwareTestCheck {
+                name: "sd-card",
+                script: Some("scripts/xteink-x4-test-sd-card-smoke.sh"),
+            },
+            HardwareTestCheck {
+                name: "binbook-reader",
+                script: Some("scripts/xteink-x4-test-binbook-reader.sh"),
+            },
+            HardwareTestCheck {
+                name: "grid-cursor-display",
+                script: Some("scripts/xteink-x4-test-grid-cursor.sh"),
+            },
+            HardwareTestCheck {
+                name: "transfer-regression",
+                script: Some("scripts/xteink-x4-test-transfer-regression.sh"),
+            },
+            HardwareTestCheck {
+                name: "radio-coexistence",
+                script: Some("scripts/xteink-x4-test-radio-coexistence.sh"),
+            },
+        ];
+    }
     let has = |feature: &str| target.features.iter().any(|value| value == feature);
     let mut checks = Vec::new();
     if has("squidscript.serial-install") || has("squidscript.bytecode.v2.reference") {
@@ -2010,12 +2054,6 @@ fn hardware_test_checks_for_target(target: &target::TargetDefinition) -> Vec<Har
         checks.push(HardwareTestCheck {
             name: "ap-after-station",
             script: Some("scripts/zephyr-test-ap-after-station.sh"),
-        });
-    }
-    if target.id == "xteink-x4" && has("service.ble.file-transfer") && has_ap_wifi {
-        checks.push(HardwareTestCheck {
-            name: "transfer-regression",
-            script: Some("scripts/xteink-x4-test-transfer-regression.sh"),
         });
     }
     checks
@@ -2069,15 +2107,25 @@ fn run_hardware_script(
                 command.env("HOST_WIFI_IFACE", iface);
             }
         }
-        "transfer-regression" => {
+        "app-runtime"
+        | "input-events"
+        | "planned-sleep"
+        | "serial-ota"
+        | "sd-card"
+        | "binbook-reader"
+        | "grid-cursor-display"
+        | "transfer-regression"
+        | "radio-coexistence" => {
             if let Some(port) = &args.port {
                 command.arg("--port").arg(port);
             }
-            if let Some(device) = &args.ble_device {
-                command.arg("--device").arg(device);
-            }
-            if let Some(iface) = &args.host_wifi_iface {
-                command.arg("--host-wifi-iface").arg(iface);
+            if matches!(check.name, "transfer-regression" | "radio-coexistence") {
+                if let Some(device) = &args.ble_device {
+                    command.arg("--device").arg(device);
+                }
+                if let Some(iface) = &args.host_wifi_iface {
+                    command.arg("--host-wifi-iface").arg(iface);
+                }
             }
         }
         _ => {}
@@ -3713,6 +3761,37 @@ mod tests {
         );
         assert!(!names.contains(&"display-drawlog"));
         assert!(!names.contains(&"sd-card"));
+    }
+
+    #[test]
+    fn x4_hardware_test_selection_is_native_and_complete() {
+        let root = target::repo_root();
+        let target = target::load_target_by_id(&root, "xteink-x4").unwrap();
+        let checks = hardware_test_checks_for_target(&target);
+        let names = checks.iter().map(|check| check.name).collect::<Vec<_>>();
+
+        assert_eq!(
+            names,
+            vec![
+                "portable-app-tests",
+                "app-runtime",
+                "input-events",
+                "planned-sleep",
+                "serial-ota",
+                "sd-card",
+                "binbook-reader",
+                "grid-cursor-display",
+                "transfer-regression",
+                "radio-coexistence",
+            ]
+        );
+        for script in checks.iter().filter_map(|check| check.script) {
+            assert!(script.starts_with("scripts/xteink-x4-test-"));
+            assert!(!script.contains("zephyr"));
+            assert!(!script.contains("xiao"));
+            assert!(!script.contains("super-mini"));
+            assert!(root.join(script).is_file(), "missing runner {script}");
+        }
     }
 
     #[test]

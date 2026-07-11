@@ -105,14 +105,14 @@
         "service.wifi.connect",
         "service.wifi.disconnect"
       ],
-      "reason": "XTEINK X4 uses an ESP32-C3 radio. SquidScript runtime support follows the ESP32-C3 Zephyr reference path; X4 hardware validation remains target bring-up work."
+      "reason": "Native X4 firmware has hardware-verified scan, station, access-point, DHCP, HTTP upload, and Wi-Fi/BLE coexistence paths."
     },
     "ble": {
       "type": "bluetooth-le",
       "standard": "Bluetooth LE",
       "status": "runtime-supported-reference",
       "runtimeFeatures": ["service.ble.file-transfer"],
-      "reason": "XTEINK X4 uses the ESP32-C3 Bluetooth LE radio class. File-transfer validation on this board is separate from enabling the Zephyr build target."
+      "reason": "Native X4 firmware has hardware-verified advertising, GATT file transfer, terminal completion status, and Wi-Fi coexistence."
     }
   },
   "pins": {
@@ -289,8 +289,7 @@
     "device": "storage.sd",
     "mount": "/SD:",
     "filesystem": {
-      "required": ["fat32"],
-      "optional": ["exfat"]
+      "required": ["fat32"]
     },
     "removable": true,
     "cardDetect": null,
@@ -308,20 +307,14 @@
         "primary": true
       },
       {
-        "id": "apps-inbox",
-        "volume": "sd",
-        "path": "/inbox/apps",
-        "contentTypes": ["sqbc"],
-        "primary": true
-      },
-      {
-        "id": "flash-library",
+        "id": "books-fallback",
         "volume": "flash",
-        "status": "deferred",
-        "reason": "Requires an explicit writable flash filesystem partition; it is not implicit unused firmware flash."
+        "path": "/books",
+        "contentTypes": ["binbook"],
+        "primary": false
       }
     ],
-    "supportsApps": true,
+    "supportsApps": false,
     "supportsFile": true,
     "maxFileReadSize": 65536
   },
@@ -444,21 +437,28 @@
     "pixel-format.GRAY2_PACKED"
   ],
   "features": [
+    "console.serial",
+    "firmware.flash-test",
+    "squidscript.apps.persistent",
+    "squidscript.state.persistent",
+    "squidscript.serial-install",
     "sdcard",
     "buttons",
     "adc-button-ladder",
-    "battery.adc",
-    "usb-detect",
     "service.display.draw",
     "display.epaper.ssd1677",
     "service.ble.file-transfer",
+    "service.wifi.status",
+    "service.wifi.scan",
+    "service.wifi.startAP",
+    "service.wifi.stopAP",
+    "service.wifi.getAPIP",
+    "service.wifi.connect",
+    "service.wifi.disconnect",
     "squidscript.bytecode",
     "state.read",
     "state.write",
     "file.pick",
-    "file.read",
-    "service.wifi.connect",
-    "service.wifi.scan",
-    "service.wifi.accessPoint"
+    "file.read"
   ]
 }
