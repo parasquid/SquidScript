@@ -648,6 +648,19 @@ wake gate from an interactive terminal:
 scripts/xteink-x4-test-physical-input-power.sh
 ```
 
+### Deferred physical storage gate follow-up
+
+- [x] Run the SD-present prepare phase and verify the on-card sentinel.
+- [x] Remove the SD card and prove the sentinel is unavailable after cold boot.
+- [x] Add automated native storage tests for SD-unavailable fallback, covering
+  a payload larger than the transfer scratch/chunk size, maximum-length
+  filenames, begin/chunk/commit responses, interrupted-upload cleanup, and
+  internal LittleFS publication.
+- [x] Fix the absent-card internal upload failure exposed by those tests and
+  the physical gate; preserve stage/offset-specific host diagnostics.
+- [x] Complete the absent phase, reinsert the SD card, and complete the present
+  phase before removing the physical-storage item from `ROADMAP.md`.
+
 **Final acceptance matrix:**
 
 | Capability | Required evidence |

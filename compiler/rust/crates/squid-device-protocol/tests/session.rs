@@ -1,12 +1,69 @@
 #![cfg(feature = "alloc")]
 
 use squid_device_protocol::{
-    app_install_begin_request, app_install_chunk_request, app_install_commit_request, encode_frame,
-    resource_install_begin_request, resource_install_chunk_request,
+    app_install_begin_request, app_install_chunk_request, app_install_commit_request,
+    content_install_begin_request, content_install_chunk_request, content_install_commit_request,
+    encode_frame, resource_install_begin_request, resource_install_chunk_request,
     resource_install_commit_request, temp_run_begin_request, temp_run_chunk_request,
     temp_run_commit_request, DeviceRequest, HostAction, ProtocolSessions, SessionError,
-    MAX_APP_BYTES, MAX_APP_ID_LEN, MAX_RESOURCE_BYTES,
+    MAX_APP_BYTES, MAX_APP_ID_LEN, MAX_CONTENT_NAME_BYTES, MAX_RESOURCE_BYTES,
 };
+
+#[test]
+fn rust_session_engine_drives_large_max_name_content_begin_chunk_commit() {
+    let mut sessions = ProtocolSessions::default();
+    let name = format!("{}.binbook", "a".repeat(MAX_CONTENT_NAME_BYTES - 8));
+    let bytes = vec![0x5a; 2048];
+    let crc = crc32fast::hash(&bytes);
+
+    let begin = encode_frame(&content_install_begin_request(
+        40,
+        &name,
+        bytes.len() as u64,
+        crc as u64,
+    ));
+    let request = DeviceRequest::decode(&begin).unwrap();
+    assert_eq!(
+        sessions.next_action(&request).unwrap(),
+        HostAction::BeginContentInstall {
+            name: &name,
+            total_len: bytes.len(),
+        }
+    );
+    let path = format!("books/{name}");
+    sessions.complete_begin_content_install(&path).unwrap();
+
+    for (index, chunk) in bytes.chunks(512).enumerate() {
+        let offset = index * 512;
+        let frame = encode_frame(&content_install_chunk_request(
+            41 + index as u32,
+            offset as u64,
+            chunk.to_vec(),
+        ));
+        let request = DeviceRequest::decode(&frame).unwrap();
+        assert_eq!(
+            sessions.next_action(&request).unwrap(),
+            HostAction::WriteContentChunk {
+                path: &path,
+                offset,
+                bytes: chunk,
+            }
+        );
+        sessions.complete_content_chunk(chunk).unwrap();
+    }
+
+    let commit = encode_frame(&content_install_commit_request(45));
+    let request = DeviceRequest::decode(&commit).unwrap();
+    assert_eq!(
+        sessions.next_action(&request).unwrap(),
+        HostAction::CommitContentInstall {
+            name: &name,
+            path: &path,
+        }
+    );
+    sessions.complete_content_commit();
+    assert_eq!(sessions.next_action(&request), Err(SessionError::Inactive));
+}
 
 #[test]
 fn rust_session_engine_drives_installed_app_begin_chunk_commit() {

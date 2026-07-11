@@ -849,7 +849,7 @@ where
         let destination = core::str::from_utf8(&destination_buf[..destination_len])
             .map_err(|_| "invalid-name")?;
         self.storage
-            .create_or_truncate(destination)
+            .begin_write(destination, total_len as u64)
             .map_err(NativeFileStorageError::as_file_error)?;
         self.text[..destination_len].copy_from_slice(&destination_buf[..destination_len]);
         Ok(destination_len)
@@ -1210,14 +1210,14 @@ where
     ) -> Result<(), &'static str> {
         validate_file_ref(path)?;
         self.storage
-            .write_at(path, offset as u64, bytes)
+            .write_chunk(path, offset as u64, bytes)
             .map_err(NativeFileStorageError::as_file_error)
     }
 
     fn content_install_commit(&mut self, path: &str) -> Result<(), &'static str> {
         validate_file_ref(path)?;
         self.storage
-            .flush(path)
+            .commit_write(path)
             .map_err(NativeFileStorageError::as_file_error)
     }
 

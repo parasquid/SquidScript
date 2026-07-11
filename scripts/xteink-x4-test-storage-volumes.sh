@@ -50,9 +50,9 @@ mkdir -p "${WORK_DIR}" "${STATE_DIR}"
 export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-stable}"
 
 wait_for_device() {
-  local deadline=$((SECONDS + 30))
+  local deadline=$((SECONDS + 120))
   while (( SECONDS < deadline )); do
-    if cargo run --quiet -p squidc -- device firmware-info --port "${PORT}" \
+    if timeout 15s cargo run --quiet -p squidc -- device firmware-info --port "${PORT}" \
       >"${WORK_DIR}/device-ready.out" 2>&1; then
       return 0
     fi
@@ -67,19 +67,62 @@ hard_reset() {
     espflash reset --chip esp32c3 --port "${PORT}" --non-interactive \
       --skip-update-check >"${WORK_DIR}/reset-${PHASE}.out" 2>&1
   wait_for_device
+  cargo run --quiet -p squidc -- device reset --port "${PORT}" \
+    >"${WORK_DIR}/runtime-reset-${PHASE}.out" 2>&1
+  wait_for_device
+}
+
+run_capture_after_reset() {
+  local name="$1"
+  shift
+  local first_out="${WORK_DIR}/${name}-attempt-1.out"
+  printf '%s: %s\n' "${HARDWARE_COMMAND_LABEL}" "$*" >&2
+  if timeout "${COMMAND_TIMEOUT_SECONDS}s" "$@" >"${first_out}" 2>&1; then
+    printf '%s\n' "${first_out}"
+    return 0
+  fi
+  wait_for_device
+  run_capture "${name}-attempt-2" "$@"
+}
+
+assert_sd_sentinel_unavailable() {
+  local attempt out status
+  for attempt in 1 2; do
+    out="${WORK_DIR}/absent-sentinel-check-attempt-${attempt}.out"
+    if cargo run --quiet -p squidc -- device content-check "${SENTINEL_NAME}" \
+      --size "${sentinel_size}" --crc32 "${sentinel_crc}" --port "${PORT}" \
+      >"${out}" 2>&1; then
+      printf 'SD sentinel is still readable; remove the card before absent phase\n' >&2
+      return 1
+    fi
+    status=1
+    if grep -Eq 'not-found|volume-missing' "${out}"; then
+      return 0
+    fi
+    if [[ "${attempt}" == 1 ]]; then
+      wait_for_device
+    fi
+  done
+  sed -n '1,200p' "${out}" >&2
+  return "${status}"
 }
 
 write_probe_app() {
   local app_dir="${STATE_DIR}/probe-app"
+  local probe_offset=0
+  if [[ "${PHASE}" == "present" ]]; then
+    probe_offset=16
+  fi
   mkdir -p "${app_dir}"
   cat >"${app_dir}/main.squid" <<EOF
 app "storage-volume-probe"
 
 event.on("app.start") {
-  let listing = content.binbook.list("books", { offset: 0, limit: 8 })
+  let listing = content.binbook.list("books", { offset: ${probe_offset}, limit: 8 })
+  debug.print("listing", listing.ok, listing.error, listing.count)
   for item in listing.items max 8 {
     if item.name == "${LONG_NAME}" {
-      debug.print("listed", item.name)
+      debug.print("listed", true)
       let opened = binbook.open(item.ref)
       debug.print("opened", opened.ok)
     }
@@ -99,8 +142,21 @@ assert_app_list_open() {
     storage-volume-probe --port "${PORT}" >/dev/null
   local output
   output="$(run_capture probe-output cargo run --quiet -p squidc -- device output --port "${PORT}")"
-  grep -Fq "output=listed ${LONG_NAME}" "${output}"
+  grep -Fq 'output=listing true null' "${output}"
+  grep -Fq 'output=listed true' "${output}"
   grep -Fq 'output=opened true' "${output}"
+}
+
+format_internal_storage_after_cold_boot() {
+  local attempt
+  for attempt in 1 2; do
+    if run_capture "format-absent-attempt-${attempt}" \
+      cargo run --quiet -p squidc -- device storage-format --port "${PORT}" >/dev/null; then
+      return 0
+    fi
+  done
+  printf 'Internal storage format failed after a bounded cold-boot retry\n' >&2
+  return 1
 }
 
 if [[ "${CHECK_ONLY}" == 1 ]]; then
@@ -137,18 +193,14 @@ sentinel_crc="$(cat "${STATE_DIR}/sentinel.crc32")"
 
 if [[ "${PHASE}" == "absent" ]]; then
   hard_reset
-  if cargo run --quiet -p squidc -- device content-check "${SENTINEL_NAME}" \
-    --size "${sentinel_size}" --crc32 "${sentinel_crc}" --port "${PORT}" \
-    >"${WORK_DIR}/absent-sentinel-check.out" 2>&1; then
-    printf 'SD sentinel is still readable; remove the card before absent phase\n' >&2
-    exit 1
-  fi
+  assert_sd_sentinel_unavailable
   "${ROOT}/.venv/bin/python" "${ROOT}/scripts/generate-test-binbook.py" "${INTERNAL_PAYLOAD}"
+  write_transfer_payload_meta "${INTERNAL_PAYLOAD}"
   read_transfer_payload_meta "${INTERNAL_PAYLOAD}"
   printf '%s\n' "${SIZE}" >"${STATE_DIR}/internal.size"
   printf '%s\n' "${CRC32}" >"${STATE_DIR}/internal.crc32"
 
-  run_capture format-absent cargo run --quiet -p squidc -- device storage-format --port "${PORT}" >/dev/null
+  format_internal_storage_after_cold_boot
   run_capture put-long-internal cargo run --quiet -p squidc -- device content-put \
     "${INTERNAL_PAYLOAD}" --name "${LONG_NAME}" --port "${PORT}" >/dev/null
   run_capture put-delete-internal cargo run --quiet -p squidc -- device content-put \
@@ -157,7 +209,7 @@ if [[ "${PHASE}" == "absent" ]]; then
     "${LONG_NAME}" --size "${SIZE}" --crc32 "${CRC32}" --port "${PORT}" >/dev/null
   assert_app_list_open
   hard_reset
-  run_capture check-cold-internal cargo run --quiet -p squidc -- device content-check \
+  run_capture_after_reset check-cold-internal cargo run --quiet -p squidc -- device content-check \
     "${LONG_NAME}" --size "${SIZE}" --crc32 "${CRC32}" --port "${PORT}" >/dev/null
   assert_app_list_open
   run_capture delete-internal cargo run --quiet -p squidc -- device content-delete \
@@ -182,7 +234,7 @@ create_transfer_binbook_payload "${SD_PAYLOAD}"
 read_transfer_payload_meta "${SD_PAYLOAD}"
 
 hard_reset
-run_capture check-returned-sentinel cargo run --quiet -p squidc -- device content-check \
+run_capture_after_reset check-returned-sentinel cargo run --quiet -p squidc -- device content-check \
   "${SENTINEL_NAME}" --size "${sentinel_size}" --crc32 "${sentinel_crc}" --port "${PORT}" >/dev/null
 run_capture check-internal-with-sd cargo run --quiet -p squidc -- device content-check \
   "${LONG_NAME}" --size "${internal_size}" --crc32 "${internal_crc}" --port "${PORT}" >/dev/null

@@ -177,7 +177,8 @@ impl SerialDevice {
             name,
             total_len as u64,
             expected_crc as u64,
-        ))?;
+        ))
+        .map_err(|error| format!("content install begin: {error}"))?;
 
         let started = Instant::now();
         let mut file = File::open(source)
@@ -194,12 +195,14 @@ impl SerialDevice {
                     planned.ack_requested,
                 ),
                 planned.ack_requested,
-            )?;
+            )
+            .map_err(|error| format_content_chunk_error(planned.offset, &error))?;
             progress(planned.offset + planned.len, total_len, started.elapsed());
         }
         self.send_protocol_expect_ok(&content_install_commit_request(
             89 + transfer.chunks.len() as u32,
-        ))?;
+        ))
+        .map_err(|error| format!("content install commit: {error}"))?;
         Ok(format!("installed content {name} len={total_len}\n"))
     }
 
@@ -687,6 +690,10 @@ struct SerialTransferChunk {
     ack_requested: bool,
 }
 
+fn format_content_chunk_error(offset: usize, error: &str) -> String {
+    format!("content install chunk at offset {offset}: {error}")
+}
+
 pub fn content_install_progress_line(
     name: &str,
     received: usize,
@@ -921,7 +928,7 @@ mod tests {
 
     use super::{
         complete_frame_end_from_stream, configure_tty_args, content_install_progress_line,
-        format_lines, format_raw_lines, max_transfer_chunk_size,
+        format_content_chunk_error, format_lines, format_raw_lines, max_transfer_chunk_size,
         max_transfer_chunk_size_for_frame_budget, retryable_protocol_decode_error,
         serial_transfer_plan, OutputTail, FIRMWARE_SERIAL_FRAME_BUDGET,
     };
@@ -1077,6 +1084,14 @@ mod tests {
         assert!(chunk_size < max_transfer_chunk_size());
         let frame = app_install_chunk_request(11, 0, vec![0; chunk_size]);
         assert!(encoded_frame_len(&frame).unwrap() <= small_budget);
+    }
+
+    #[test]
+    fn content_chunk_errors_include_the_failed_offset() {
+        assert_eq!(
+            format_content_chunk_error(8192, "invalid protocol response frame: BadMagic"),
+            "content install chunk at offset 8192: invalid protocol response frame: BadMagic"
+        );
     }
 
     #[test]
