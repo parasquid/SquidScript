@@ -1,6 +1,0 @@
-app "main"
-
-event.on("app.start") {
-  debug.print("launch-only main")
-  app.launch("reader")
-}

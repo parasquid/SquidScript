@@ -1,5 +1,0 @@
-app "debugplain"
-
-event.on("app.start") {
-  debug.print("plain ready")
-}

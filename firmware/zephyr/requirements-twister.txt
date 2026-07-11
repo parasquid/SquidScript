@@ -1,7 +1,0 @@
-# Additional lightweight Python packages needed by this repository's Zephyr
-# Twister protocol ztests. Zephyr's full requirements-run-test.txt includes
-# heavier hardware/runtime-test tooling that is not required for native protocol
-# ztest execution.
-natsort
-tabulate
-pyusb

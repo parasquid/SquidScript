@@ -2968,7 +2968,7 @@ mod tests {
             1,
             vec![
                 Field::string(1, "xteink-x4"),
-                Field::string(2, "squidscript-zephyr"),
+                Field::string(2, "squidscript-native"),
                 Field::bool(3, true),
                 Field::u64(4, 4096),
             ],

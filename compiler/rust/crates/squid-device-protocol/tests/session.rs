@@ -205,7 +205,7 @@ fn rust_session_engine_covers_temp_run_and_resource_sessions() {
 }
 
 #[test]
-fn rust_session_engine_rejects_oversized_install_before_zephyr_storage_work() {
+fn rust_session_engine_rejects_oversized_install_before_storage_work() {
     let mut sessions = ProtocolSessions::default();
     let begin = encode_frame(&app_install_begin_request(
         1,

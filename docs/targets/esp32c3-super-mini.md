@@ -1,6 +1,8 @@
 # ESP32-C3 Super Mini
 
-Generated from `targets/esp32c3-super-mini.target.json`. Do not hand-edit this file; update the target JSON and regenerate it.
+Hardware research retained for a possible future native target. This board has
+no current SquidScript firmware target; verify clone-specific facts on the
+physical board before reusing them.
 
 ## Pin Availability
 

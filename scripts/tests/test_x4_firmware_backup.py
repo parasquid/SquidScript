@@ -5,11 +5,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.tests.zephyr_test_utils import ROOT
+ROOT = Path(__file__).resolve().parents[2]
 
 
 class X4FirmwareBackupTests(unittest.TestCase):
-    def test_backup_script_passes_numeric_flash_size_to_esptool(self):
+    def test_backup_script_passes_numeric_flash_size_to_espflash(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             port = tmp_path / "ttyACM0"
@@ -17,9 +17,9 @@ class X4FirmwareBackupTests(unittest.TestCase):
 
             fake_bin = tmp_path / "bin"
             fake_bin.mkdir()
-            args_log = tmp_path / "esptool-args.txt"
-            fake_esptool = fake_bin / "esptool"
-            fake_esptool.write_text(
+            args_log = tmp_path / "espflash-args.txt"
+            fake_espflash = fake_bin / "espflash"
+            fake_espflash.write_text(
                 "\n".join(
                     [
                         "#!/usr/bin/env python3",
@@ -30,7 +30,7 @@ class X4FirmwareBackupTests(unittest.TestCase):
                 )
                 + "\n"
             )
-            fake_esptool.chmod(0o755)
+            fake_espflash.chmod(0o755)
 
             env = os.environ.copy()
             env["ESPFLASH_PORT"] = str(port)

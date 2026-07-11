@@ -133,7 +133,7 @@ When a phone or laptop joins, the log should show:
 ## Interpretation
 
 - SSID visible and devices join: the board RF path is probably fine; focus back
-  on SquidScript Zephyr firmware, driver configuration, and scheduler/network
+  on SquidScript native firmware, driver configuration, and scheduler/network
   integration.
 - SSID invisible with this ESP-IDF test too: suspect board/RF/antenna,
   placement, power, or environment.
@@ -145,7 +145,7 @@ When a phone or laptop joins, the log should show:
   complete. Suspect router security compatibility, password handling, or a weak
   transmit/RF path before blaming SquidScript.
 - Station gets IP: station RX/TX/auth/DHCP are probably working; focus back on
-  SquidScript Zephyr firmware, driver configuration, and scheduler/network
+  SquidScript native firmware, driver configuration, and scheduler/network
   integration.
 - Station joins but DHCP or traffic fails: auth works; next isolate IP stack,
   DHCP, or AP configuration.

@@ -10,5 +10,5 @@ let result = service.wifi.result()
 debug.print("wifi-status", status.state, status.backend, status.driverStarted, status.error)
 debug.print("wifi-scan", result.ok, result.error, result.count)
 :output
-:expect-output wifi-status stopped zephyr false unsupported
+:expect-output wifi-status stopped native false unsupported
 :expect-output wifi-scan false unsupported 0

@@ -45,3 +45,13 @@ use case, or implementation reason to make it actionable.
   `esp_wifi_deinit` seam absence) captured in
   `docs/specs/2026-06-20-x4-ram-reduction-design.md` for the separate heap/stack
   right-sizing plan.
+
+## Future ESP32-C3 Boards
+
+- Reintroduce XIAO ESP32-C3 e-paper and ESP32-C3 Super Mini support only as
+  fresh native firmware targets. Their prior target support was removed because
+  native XTEINK X4 is the sole maintained firmware product. Revive a board when
+  attached hardware and a concrete product or regression use case justify a
+  complete native port and target-aware verification. The retained board pinout
+  and wiring documents remain the starting evidence; no old firmware, target
+  configuration, examples, or hardware suites survive.

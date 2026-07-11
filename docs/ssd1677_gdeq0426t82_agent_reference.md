@@ -3,7 +3,7 @@
 This note is a controller and panel integration reference for SquidScript
 display work. It is intentionally MCU-agnostic: use it to reason about an
 SSD1677-driven Good Display GDEQ0426T82-class panel regardless of whether the
-host firmware is Zephyr, C, Rust, ESP-IDF, or another runtime.
+host firmware is native Rust, C, Rust, ESP-IDF, or another runtime.
 
 Keep three facts separate:
 
@@ -191,7 +191,7 @@ acceptable only when it directly supports a SquidScript firmware or service
 implementation. Do not create a separate Rust firmware project, board demo, or
 display app as an end in itself. If Rust crates are evaluated, treat them as
 driver research for SquidScript's firmware path; the current canonical
-ESP32-C3 firmware lives under `firmware/zephyr`, so a Rust crate is not
+ESP32-C3 firmware lives under `firmware/native`, so a Rust crate is not
 automatically a drop-in target dependency.
 
 Use this driver shape for the target backend:
@@ -321,9 +321,7 @@ Current bench wire colors:
 | grey | e-paper `RST`/`RES` | `D0` | `GPIO2` | verified display wiring |
 | white | e-paper `BUSY` | `D2` | `GPIO4` | verified display wiring |
 
-The confirmed smoke-test command path is implemented in
-`tests/hardware/xiao-esp32c3/epaper-hello`. It uses direct GPIO bit-banged SPI
-rather than the Zephyr SPI peripheral so the smoke test can isolate display
+Historical XIAO bring-up used direct GPIO bit-banged SPI to isolate display
 wiring, panel command sequencing, and BUSY behavior. The working initialization
 sequence uses software reset (`0x12`), temperature sensor selection (`0x18`
 with `0x80`), booster soft start (`0x0c` with
@@ -335,7 +333,7 @@ master activation (`0x20`). The smoke test writes one row buffer at a time and
 maps logical X to panel RAM X in reverse so rendered text is not mirrored.
 `BUSY` is active-high at the tested adapter pin.
 
-The default XIAO firmware uses the Zephyr SPI driver with `CS`, `D/C`, `RST`,
+The default XIAO firmware uses the native Rust SPI driver with `CS`, `D/C`, `RST`,
 and `BUSY` as GPIOs. The primitive display path renders
 `service.display.clear` and `service.display.text` to physical pixels and keeps
 other primitives drawlog-only. The primitive renderer keeps a row-sized buffer,

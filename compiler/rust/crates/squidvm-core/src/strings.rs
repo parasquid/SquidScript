@@ -38,7 +38,7 @@ const STATIC_STRINGS: [&str; 28] = [
     "mono",
     "MONO1_PACKED",
     "sim",
-    "zephyr",
+    "native",
     "esp",
     "ap",
     "sta",

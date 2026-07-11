@@ -1,9 +1,0 @@
-app "radio-wifi-status"
-
-state {
-}
-
-event.on("app.start") {
-  let status = service.wifi.status()
-  debug.print("radio wifi status", status.state, status.backend, status.driverStarted, status.error)
-}

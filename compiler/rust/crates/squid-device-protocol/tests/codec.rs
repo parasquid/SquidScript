@@ -39,7 +39,7 @@ fn reports_output_buffer_capacity_without_partial_success() {
         9,
         vec![
             Field::string(1, "esp32c3-supermini"),
-            Field::string(2, "zephyr"),
+            Field::string(2, "native"),
             Field::bool(3, true),
         ],
     );
@@ -62,7 +62,7 @@ fn decodes_hello_identity_from_shared_codec() {
         11,
         vec![
             Field::string(1, "esp32c3-supermini"),
-            Field::string(2, "zephyr"),
+            Field::string(2, "native"),
             Field::bool(3, true),
         ],
     );
@@ -71,7 +71,7 @@ fn decodes_hello_identity_from_shared_codec() {
         hello_identity(&decode_frame(&encode_frame(&response)).unwrap()).unwrap(),
         squid_device_protocol::HelloIdentity {
             target: "esp32c3-supermini".to_string(),
-            firmware: "zephyr".to_string(),
+            firmware: "native".to_string(),
             diagnostic: true,
             transfer_capabilities: TransferCapabilities::default_serial(),
         }
@@ -139,7 +139,7 @@ fn encodes_heap_free_hello_response() {
         Opcode::Hello,
         42,
         "esp32c3-supermini",
-        "squidscript-zephyr",
+        "squidscript-native",
         true,
         4096,
         &mut out,
@@ -155,7 +155,7 @@ fn encodes_heap_free_hello_response() {
         decoded.fields,
         vec![
             Field::string(1, "esp32c3-supermini"),
-            Field::string(2, "squidscript-zephyr"),
+            Field::string(2, "squidscript-native"),
             Field::bool(3, true),
             Field::u64(4, 4096),
         ]

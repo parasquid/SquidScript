@@ -1,9 +1,0 @@
-app "double-lifecycle-request"
-
-event.on("repl") {
-  app.launch("reader")
-  app.launch("reader")
-}
-
-screen("main") {
-}

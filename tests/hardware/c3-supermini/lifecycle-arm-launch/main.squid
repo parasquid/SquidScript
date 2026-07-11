@@ -1,7 +1,0 @@
-app "main"
-
-event.on("app.start") {
-  debug.print("arm-launch main")
-  app.arm("break-reminder")
-  app.launch("reader")
-}

@@ -433,13 +433,9 @@ struct TargetBuildArgs {
     #[arg(long)]
     target: Option<String>,
     #[arg(long)]
-    stack_usage: bool,
-    #[arg(long, value_enum, default_value_t = TargetPristineArg::Auto)]
-    pristine: TargetPristineArg,
-    #[arg(long)]
     print_plan: bool,
     #[arg(last = true)]
-    west_args: Vec<String>,
+    tool_args: Vec<String>,
 }
 
 #[derive(Args, Debug)]
@@ -453,7 +449,7 @@ struct TargetFlashArgs {
     #[arg(long)]
     print_plan: bool,
     #[arg(last = true)]
-    west_args: Vec<String>,
+    tool_args: Vec<String>,
 }
 
 #[derive(Args, Debug)]
@@ -465,7 +461,7 @@ struct TargetMonitorArgs {
     #[arg(long)]
     print_plan: bool,
     #[arg(last = true)]
-    west_args: Vec<String>,
+    tool_args: Vec<String>,
 }
 
 #[derive(Args, Debug)]
@@ -474,23 +470,6 @@ struct TargetDoctorArgs {
     target: Option<String>,
     #[arg(long)]
     port: Option<String>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-enum TargetPristineArg {
-    Auto,
-    Always,
-    Never,
-}
-
-impl From<TargetPristineArg> for target::TargetPristine {
-    fn from(value: TargetPristineArg) -> Self {
-        match value {
-            TargetPristineArg::Auto => target::TargetPristine::Auto,
-            TargetPristineArg::Always => target::TargetPristine::Always,
-            TargetPristineArg::Never => target::TargetPristine::Never,
-        }
-    }
 }
 
 #[derive(Args, Debug)]
@@ -1667,17 +1646,11 @@ fn target_list(_args: TargetListArgs, human: bool) -> Result<Value, String> {
     let targets = target::load_targets(&root)?;
     if human {
         for target in &targets {
-            let zephyr = if target.zephyr.is_some() {
-                " zephyr=true"
-            } else {
-                " zephyr=false"
-            };
             println!(
-                "target={} name=\"{}\" status={}{}",
+                "target={} name=\"{}\" status={}",
                 target.id,
                 target.name,
-                target.status.as_deref().unwrap_or(""),
-                zephyr
+                target.status.as_deref().unwrap_or("")
             );
         }
     }
@@ -1698,27 +1671,15 @@ fn target_inspect(args: TargetOnlyArgs, human: bool) -> Result<Value, String> {
         println!("target={}", target.id);
         println!("name={}", target.name);
         println!("status={}", target.status.as_deref().unwrap_or(""));
-        if let Some(zephyr) = &target.zephyr {
-            println!("zephyr.board={}", zephyr.board);
-            println!("zephyr.buildDir={}", root.join(&zephyr.build_dir).display());
-            println!("zephyr.overlay={}", root.join(&zephyr.overlay).display());
+        if let Some(firmware) = &target.firmware {
+            println!("firmware.elf={}", root.join(&firmware.elf).display());
             println!(
-                "zephyr.fallbackSource={}",
-                root.join(&zephyr.fallback_source).display()
+                "firmware.otaImage={}",
+                root.join(&firmware.ota_image).display()
             );
             println!(
-                "zephyr.targetKconfig={}",
-                root.join(&zephyr.target_kconfig).display()
-            );
-        } else {
-            println!("zephyr.supported=false");
-        }
-        if let Some(native) = &target.native {
-            println!("native.elf={}", root.join(&native.elf).display());
-            println!("native.otaImage={}", root.join(&native.ota_image).display());
-            println!(
-                "native.partitionTable={}",
-                root.join(&native.partition_table).display()
+                "firmware.partitionTable={}",
+                root.join(&firmware.partition_table).display()
             );
         }
     }
@@ -1732,15 +1693,11 @@ fn target_build(args: TargetBuildArgs, human: bool) -> Result<Value, String> {
         args.target.as_deref(),
         target::stdin_is_interactive(),
     )?;
-    let backend = target::TargetBackend::Native;
     let plan = target::plan_build_command(
         &root,
         &target_def,
         target::TargetBuildPlanOptions {
-            backend,
-            stack_usage: args.stack_usage,
-            pristine: args.pristine.into(),
-            west_args: args.west_args,
+            tool_args: args.tool_args,
         },
     )?;
     let image_plan = target::plan_native_image_command(&root, &target_def)?;
@@ -1764,9 +1721,9 @@ fn target_build(args: TargetBuildArgs, human: bool) -> Result<Value, String> {
         "target": target_def.summary_json(),
         "plans": {"build": plan.as_json(), "otaImage": image_plan.as_json()},
         "artifacts": {
-            "elf": root.join(&target_def.native()?.elf),
-            "otaImage": root.join(&target_def.native()?.ota_image),
-            "partitionTable": root.join(&target_def.native()?.partition_table),
+            "elf": root.join(&target_def.firmware()?.elf),
+            "otaImage": root.join(&target_def.firmware()?.ota_image),
+            "partitionTable": root.join(&target_def.firmware()?.partition_table),
             "otaImageBytes": ota_image_bytes
         }
     }))
@@ -1782,24 +1739,19 @@ fn target_flash(args: TargetFlashArgs, human: bool) -> Result<Value, String> {
         args.target.as_deref(),
         target::stdin_is_interactive(),
     )?;
-    let backend = target::TargetBackend::Native;
     let build_plan = target::plan_build_command(
         &root,
         &target_def,
         target::TargetBuildPlanOptions {
-            backend,
-            stack_usage: false,
-            pristine: target::TargetPristine::Auto,
-            west_args: Vec::new(),
+            tool_args: Vec::new(),
         },
     )?;
     let flash_plan = target::plan_flash_command(
         &root,
         &target_def,
         target::TargetFlashPlanOptions {
-            backend,
             port: args.port.clone(),
-            west_args: args.west_args,
+            tool_args: args.tool_args,
         },
     )?;
     let image_plan = target::plan_native_image_command(&root, &target_def)?;
@@ -1813,9 +1765,8 @@ fn target_flash(args: TargetFlashArgs, human: bool) -> Result<Value, String> {
             &root,
             &target_def,
             target::TargetMonitorPlanOptions {
-                backend,
                 port,
-                west_args: Vec::new(),
+                tool_args: Vec::new(),
             },
         )?)
     } else {
@@ -1897,7 +1848,7 @@ fn hardware_test(args: HardwareTestArgs, human: bool) -> Result<Value, String> {
                 port: args.port.clone(),
                 monitor_after_flash: false,
                 print_plan: false,
-                west_args: Vec::new(),
+                tool_args: Vec::new(),
             },
             human,
         )?;
@@ -2031,43 +1982,7 @@ fn hardware_test_checks_for_target(target: &target::TargetDefinition) -> Vec<Har
             },
         ];
     }
-    let has = |feature: &str| target.features.iter().any(|value| value == feature);
-    let mut checks = Vec::new();
-    if has("squidscript.serial-install") || has("squidscript.bytecode.v2.reference") {
-        checks.push(HardwareTestCheck {
-            name: "portable-app-tests",
-            script: None,
-        });
-    }
-    if has("service.ble.file-transfer") {
-        checks.push(HardwareTestCheck {
-            name: "ble-file-transfer-install",
-            script: Some("scripts/zephyr-test-ble-file-transfer.sh"),
-        });
-        checks.push(HardwareTestCheck {
-            name: "ble-installed-receiver",
-            script: Some("scripts/zephyr-test-ble-installed-receiver.sh"),
-        });
-        checks.push(HardwareTestCheck {
-            name: "ble-reconnect",
-            script: Some("scripts/zephyr-test-ble-reconnect.sh"),
-        });
-    }
-    let has_station_wifi = has("service.wifi.connect") && has("service.wifi.disconnect");
-    let has_ap_wifi = has("service.wifi.startAP") && has("service.wifi.stopAP");
-    if has("service.ble.file-transfer") && has_station_wifi {
-        checks.push(HardwareTestCheck {
-            name: "radio-concurrency",
-            script: Some("scripts/zephyr-test-radio-concurrency.sh"),
-        });
-    }
-    if has_station_wifi && has_ap_wifi {
-        checks.push(HardwareTestCheck {
-            name: "ap-after-station",
-            script: Some("scripts/zephyr-test-ap-after-station.sh"),
-        });
-    }
-    checks
+    Vec::new()
 }
 
 fn run_hardware_script(
@@ -2171,18 +2086,16 @@ fn target_monitor(args: TargetMonitorArgs, human: bool) -> Result<Value, String>
         args.target.as_deref(),
         target::stdin_is_interactive(),
     )?;
-    let backend = target::TargetBackend::Native;
     let plan = target::plan_monitor_command(
         &root,
         &target_def,
         target::TargetMonitorPlanOptions {
-            backend,
             port: match args.port {
                 Some(port) => Some(port),
                 None if args.print_plan => None,
                 None => Some(detect_port()?),
             },
-            west_args: args.west_args,
+            tool_args: args.tool_args,
         },
     )?;
     if args.print_plan {
@@ -2567,7 +2480,6 @@ fn doctor(args: DoctorArgs, human: bool) -> Result<Value, String> {
     checks.push(espflash_check());
     checks.push(espflash_ports_check());
     checks.push(command_check("riscv64-elf-size", &["--version"], false));
-    checks.push(script_check("scripts/c3-supermini-test-hardware.sh"));
     checks.push(serial_visibility_check(args.port.as_deref()));
     checks.push(firmware_probe_check(args.port.as_deref()));
 
@@ -2826,7 +2738,7 @@ fn riscv_c_toolchain_check() -> DoctorCheck {
                 details: json!({
                     "required": true,
                     "path": candidate,
-                    "note": "riscv64-elf-gcc is used with -march=rv32imc -mabi=ilp32 by `squidc target build --target esp32c3-super-mini`"
+                    "note": "riscv64-elf-gcc is used with -march=rv32imc -mabi=ilp32 by `squidc target build --target xteink-x4`"
                 }),
             };
         }
@@ -2836,20 +2748,6 @@ fn riscv_c_toolchain_check() -> DoctorCheck {
         status: "fail",
         message: "missing RISC-V ELF GCC required by littlefs2-sys; install riscv32-unknown-elf-gcc, put riscv64-elf-gcc on PATH, or install Homebrew riscv64-elf-gcc".to_string(),
         details: json!({"required": true}),
-    }
-}
-
-fn script_check(path: &'static str) -> DoctorCheck {
-    let exists = Path::new(path).exists();
-    DoctorCheck {
-        name: "hardware-test-script",
-        status: if exists { "ok" } else { "fail" },
-        message: if exists {
-            format!("{path} exists")
-        } else {
-            format!("{path} is missing")
-        },
-        details: json!({"path": path}),
     }
 }
 
@@ -3380,7 +3278,7 @@ mod tests {
             "install",
             "--as",
             "main",
-            "examples/blinky-supermini/main.squid",
+            "examples/hello-menu/main.squid",
         ])
         .unwrap();
         let Commands::App {
@@ -3390,10 +3288,7 @@ mod tests {
             panic!("expected app install");
         };
         assert_eq!(args.app_id_override.as_deref(), Some("main"));
-        assert_eq!(
-            args.input,
-            PathBuf::from("examples/blinky-supermini/main.squid")
-        );
+        assert_eq!(args.input, PathBuf::from("examples/hello-menu/main.squid"));
     }
 
     #[test]
@@ -3402,9 +3297,9 @@ mod tests {
             "squidc",
             "app",
             "build",
-            "examples/blinky-supermini/main.squid",
+            "examples/hello-menu/main.squid",
             "--out",
-            "target/blinky.sqbc",
+            "target/hello-menu.sqbc",
         ])
         .unwrap();
         let Commands::App {
@@ -3413,11 +3308,8 @@ mod tests {
         else {
             panic!("expected app build");
         };
-        assert_eq!(
-            args.input,
-            PathBuf::from("examples/blinky-supermini/main.squid")
-        );
-        assert_eq!(args.out, PathBuf::from("target/blinky.sqbc"));
+        assert_eq!(args.input, PathBuf::from("examples/hello-menu/main.squid"));
+        assert_eq!(args.out, PathBuf::from("target/hello-menu.sqbc"));
     }
 
     #[test]
@@ -3436,23 +3328,15 @@ mod tests {
 
     #[test]
     fn parses_grouped_app_run_command() {
-        let cli = Cli::try_parse_from([
-            "squidc",
-            "app",
-            "run",
-            "examples/blinky-supermini/main.squid",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["squidc", "app", "run", "examples/hello-menu/main.squid"])
+            .unwrap();
         let Commands::App {
             command: AppCommands::Run(args),
         } = cli.command
         else {
             panic!("expected app run");
         };
-        assert_eq!(
-            args.input,
-            PathBuf::from("examples/blinky-supermini/main.squid")
-        );
+        assert_eq!(args.input, PathBuf::from("examples/hello-menu/main.squid"));
     }
 
     #[test]
@@ -3730,7 +3614,7 @@ mod tests {
             "hardware",
             "test",
             "--target",
-            "xiao-esp32c3-gdeq0426t82-sd",
+            "xteink-x4",
             "--skip-flash",
             "--port",
             "/dev/ttyACM0",
@@ -3746,33 +3630,11 @@ mod tests {
         else {
             panic!("expected hardware test");
         };
-        assert_eq!(args.target.as_deref(), Some("xiao-esp32c3-gdeq0426t82-sd"));
+        assert_eq!(args.target.as_deref(), Some("xteink-x4"));
         assert!(args.skip_flash);
         assert_eq!(args.port.as_deref(), Some("/dev/ttyACM0"));
         assert_eq!(args.ble_device.as_deref(), Some("SquidScript"));
         assert_eq!(args.host_wifi_iface.as_deref(), Some("wlan0"));
-    }
-
-    #[test]
-    fn xiao_hardware_test_selection_includes_current_supported_checks_only() {
-        let root = target::repo_root();
-        let target = target::load_target_by_id(&root, "xiao-esp32c3-gdeq0426t82-sd").unwrap();
-        let checks = hardware_test_checks_for_target(&target);
-        let names = checks.iter().map(|check| check.name).collect::<Vec<_>>();
-
-        assert_eq!(
-            names,
-            vec![
-                "portable-app-tests",
-                "ble-file-transfer-install",
-                "ble-installed-receiver",
-                "ble-reconnect",
-                "radio-concurrency",
-                "ap-after-station",
-            ]
-        );
-        assert!(!names.contains(&"display-drawlog"));
-        assert!(!names.contains(&"sd-card"));
     }
 
     #[test]
@@ -3799,9 +3661,6 @@ mod tests {
         );
         for script in checks.iter().filter_map(|check| check.script) {
             assert!(script.starts_with("scripts/xteink-x4-test-"));
-            assert!(!script.contains("zephyr"));
-            assert!(!script.contains("xiao"));
-            assert!(!script.contains("super-mini"));
             assert!(root.join(script).is_file(), "missing runner {script}");
         }
     }
@@ -3882,8 +3741,7 @@ mod tests {
     fn rejects_removed_top_level_app_commands() {
         for command in ["build", "package", "run"] {
             assert!(
-                Cli::try_parse_from(["squidc", command, "examples/blinky-supermini/main.squid"])
-                    .is_err(),
+                Cli::try_parse_from(["squidc", command, "examples/hello-menu/main.squid"]).is_err(),
                 "{command} should only exist under squidc app"
             );
         }
@@ -3896,13 +3754,10 @@ mod tests {
             "target",
             "build",
             "--target",
-            "esp32c3-super-mini",
-            "--stack-usage",
-            "--pristine",
-            "always",
+            "xteink-x4",
             "--print-plan",
             "--",
-            "-DOVERLAY_CONFIG=extra.conf",
+            "--locked",
         ])
         .unwrap();
         let Commands::Target {
@@ -3911,11 +3766,9 @@ mod tests {
         else {
             panic!("expected target build");
         };
-        assert_eq!(args.target.as_deref(), Some("esp32c3-super-mini"));
-        assert!(args.stack_usage);
+        assert_eq!(args.target.as_deref(), Some("xteink-x4"));
         assert!(args.print_plan);
-        assert_eq!(args.pristine, TargetPristineArg::Always);
-        assert_eq!(args.west_args, vec!["-DOVERLAY_CONFIG=extra.conf"]);
+        assert_eq!(args.tool_args, vec!["--locked"]);
     }
 
     #[test]
@@ -3946,7 +3799,7 @@ mod tests {
             "target",
             "flash",
             "--target",
-            "esp32c3-super-mini",
+            "xteink-x4",
             "--port",
             "/dev/ttyACM0",
             "--monitor-after-flash",
@@ -3961,17 +3814,17 @@ mod tests {
         else {
             panic!("expected target flash");
         };
-        assert_eq!(args.target.as_deref(), Some("esp32c3-super-mini"));
+        assert_eq!(args.target.as_deref(), Some("xteink-x4"));
         assert_eq!(args.port.as_deref(), Some("/dev/ttyACM0"));
         assert!(args.monitor_after_flash);
-        assert_eq!(args.west_args, vec!["--runner", "esp32"]);
+        assert_eq!(args.tool_args, vec!["--runner", "esp32"]);
 
         let monitor = Cli::try_parse_from([
             "squidc",
             "target",
             "monitor",
             "--target",
-            "esp32c3-super-mini",
+            "xteink-x4",
             "--port",
             "/dev/ttyACM0",
         ])
@@ -3982,17 +3835,11 @@ mod tests {
         else {
             panic!("expected target monitor");
         };
-        assert_eq!(args.target.as_deref(), Some("esp32c3-super-mini"));
+        assert_eq!(args.target.as_deref(), Some("xteink-x4"));
         assert_eq!(args.port.as_deref(), Some("/dev/ttyACM0"));
 
-        let doctor = Cli::try_parse_from([
-            "squidc",
-            "target",
-            "doctor",
-            "--target",
-            "esp32c3-super-mini",
-        ])
-        .unwrap();
+        let doctor =
+            Cli::try_parse_from(["squidc", "target", "doctor", "--target", "xteink-x4"]).unwrap();
         assert!(matches!(
             doctor.command,
             Commands::Target {
@@ -4000,14 +3847,8 @@ mod tests {
             }
         ));
 
-        let inspect = Cli::try_parse_from([
-            "squidc",
-            "target",
-            "inspect",
-            "--target",
-            "esp32c3-super-mini",
-        ])
-        .unwrap();
+        let inspect =
+            Cli::try_parse_from(["squidc", "target", "inspect", "--target", "xteink-x4"]).unwrap();
         assert!(matches!(
             inspect.command,
             Commands::Target {
@@ -4017,82 +3858,18 @@ mod tests {
     }
 
     #[test]
-    fn loads_zephyr_target_metadata_and_plans_build_command() {
-        let root = target::repo_root();
-        let target = target::load_target_by_id(&root, "esp32c3-super-mini").unwrap();
-        assert_eq!(target.id, "esp32c3-super-mini");
-        let zephyr = target.zephyr.as_ref().expect("super mini zephyr metadata");
-        assert_eq!(zephyr.board, "esp32c3_supermini");
-
-        let plan = target::plan_build_command(
-            &root,
-            &target,
-            target::TargetBuildPlanOptions {
-                backend: target::TargetBackend::Zephyr,
-                stack_usage: true,
-                pristine: target::TargetPristine::Always,
-                west_args: vec!["-DOVERLAY_CONFIG=extra.conf".to_string()],
-            },
-        )
-        .unwrap();
-        assert_eq!(plan.program, "west");
-        assert!(plan.args.starts_with(&[
-            "build".to_string(),
-            "--build-dir".to_string(),
-            root.join("build/zephyr/c3-supermini").display().to_string(),
-            "--board".to_string(),
-            "esp32c3_supermini".to_string(),
-            "--pristine".to_string(),
-            "always".to_string(),
-        ]));
-        assert!(plan
-            .env
-            .iter()
-            .any(|(key, value)| { key == "SQUID_ZEPHYR_STACK_USAGE" && value == "1" }));
-        assert!(plan.env.iter().any(|(key, value)| {
-            key == "SQUID_ZEPHYR_TARGET_JSON"
-                && value.ends_with("targets/esp32c3-super-mini.target.json")
-        }));
-        assert!(plan
-            .args
-            .contains(&"-DOVERLAY_CONFIG=extra.conf".to_string()));
-    }
-
-    #[test]
-    fn target_without_zephyr_metadata_is_unsupported_for_build() {
-        let root = target::repo_root();
-        let mut target = target::load_target_by_id(&root, "xteink-x4").unwrap();
-        target.zephyr = None;
-        let error = target::plan_build_command(
-            &root,
-            &target,
-            target::TargetBuildPlanOptions {
-                backend: target::TargetBackend::Zephyr,
-                stack_usage: false,
-                pristine: target::TargetPristine::Auto,
-                west_args: Vec::new(),
-            },
-        )
-        .unwrap_err();
-        assert!(error.contains("has no Zephyr firmware metadata"));
-    }
-
-    #[test]
     fn loads_native_target_metadata_and_plans_build_command() {
         let root = target::repo_root();
         let target = target::load_target_by_id(&root, "xteink-x4").unwrap();
-        let native = target.native.as_ref().expect("x4 native metadata");
-        assert_eq!(native.package, "squidscript-fw-x4");
-        assert_eq!(native.chip, "esp32c3");
+        let firmware = target.firmware.as_ref().expect("x4 native metadata");
+        assert_eq!(firmware.package, "squidscript-fw-x4");
+        assert_eq!(firmware.chip, "esp32c3");
 
         let plan = target::plan_build_command(
             &root,
             &target,
             target::TargetBuildPlanOptions {
-                backend: target::TargetBackend::Native,
-                stack_usage: false,
-                pristine: target::TargetPristine::Auto,
-                west_args: Vec::new(),
+                tool_args: Vec::new(),
             },
         )
         .unwrap();
@@ -4130,9 +3907,8 @@ mod tests {
             &root,
             &target,
             target::TargetFlashPlanOptions {
-                backend: target::TargetBackend::Native,
                 port: Some("/dev/ttyACM0".to_string()),
-                west_args: Vec::new(),
+                tool_args: Vec::new(),
             },
         )
         .unwrap();
@@ -4193,10 +3969,7 @@ mod tests {
             &root,
             &target,
             target::TargetBuildPlanOptions {
-                backend: target::TargetBackend::Native,
-                stack_usage: false,
-                pristine: target::TargetPristine::Auto,
-                west_args: Vec::new(),
+                tool_args: Vec::new(),
             },
         )
         .unwrap();
@@ -4214,10 +3987,7 @@ mod tests {
             &root,
             &target,
             target::TargetBuildPlanOptions {
-                backend: target::TargetBackend::Native,
-                stack_usage: false,
-                pristine: target::TargetPristine::Auto,
-                west_args: Vec::new(),
+                tool_args: Vec::new(),
             },
         )
         .unwrap();

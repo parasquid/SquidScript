@@ -13,12 +13,8 @@ Speculative ideas that are not currently actionable belong in `ICEBOX.md`.
   mock is done (`runtime_indicator_breathe` returns 0 for ENODEV); display
   and SPI SD stubs remain so tests can verify call sequences, pin
   assignments, and state transitions.
-- Refactor protocol tests to use a proper native_sim target with mocked
-  hardware instead of repurposing `esp32c3-super-mini.target.json`. The
-  current approach leaks target-specific defaults (indicator GPIO, display
-  SPI) into tests that should be hardware-agnostic. A dedicated native_sim
-  target with stub hardware bindings would let tests control exactly which
-  devices are present and avoid false failures from missing target defaults.
+- Refactor protocol tests to use a proper native_sim target with controlled
+  mocked hardware bindings so tests do not leak X4-specific defaults.
 
 Goal: keep the native Rust firmware, compiler, SQBC tooling, and VM semantics
 aligned as the sole firmware architecture.
@@ -78,15 +74,6 @@ aligned as the sole firmware architecture.
 - Investigate BinBook library metadata caching so the reader can show titles,
   authors, page counts, and other metadata for folders of BinBooks without
   opening every document during each library render.
-- Add a target-native BinBook output profile for the XIAO ESP32-C3 +
-  GDEQ0426T82 SSD1677 backend so generated pages stream in physical panel
-  order without requiring a full rotation framebuffer.
-- Promote the XIAO ESP32-C3 e-paper target's external SPI SD reader from
-  metadata-only to mounted app/content storage after jumper wiring is
-  confirmed. Define card-missing boot policy, retained diagnostics, app-store
-  recovery behavior, content volume semantics, and shared install validation
-  before advertising SD-backed `supportsApps`, `supportsFile`, `sdcard`, or
-  file APIs.
 
 ## Display And Output
 
@@ -204,13 +191,6 @@ aligned as the sole firmware architecture.
   cap or get separate per-type caps depending on storage shape. Fix the
   doc-code gap by either delivering the feature or downgrading the docs to
   say "GPIO-only" until readers land.
-- Use the GPIO input configuration affordance to make ESP32-C3 Super Mini
-  diagnostic scans less noisy without changing the confirmed GPIO9 BOOT binding
-  from active-low pull-up behavior. Use Espruino's split between pin mode
-  (`input_pullup`/`input_pulldown`) and watches (`edge: rising/falling/both`,
-  `debounce`) as design inspiration, adapted to SquidScript's explicit
-  device/input binding model instead of global auto-mode side effects.
-
 ## Developer Tooling
 
 - Audit compiler, SQBC, simulator, examples, and docs for invariant violations
@@ -235,80 +215,3 @@ aligned as the sole firmware architecture.
   to prevent drift. Options: generate C headers from Rust constants, use a
   shared definition file both languages consume, or maintain one canonical set
   with automated generation/validation of the other.
-
-## ESP32-C3 RAM Hardening
-
-Current ESP32-C3 RAM baseline:
-
-- XTEINK X4 linker DRAM: 319,376 / 378,640 bytes (84.35%), 59,264 B headroom.
-  Display-op compaction (tagged union + typed colors + out-of-band BinBook
-  page) freed ~56 KiB static DRAM, clearing the 48 KiB headroom target.
-- C3 Super Mini linker DRAM: 239,232 bytes.
-- XIAO ESP32-C3 linker DRAM: 261,008 / 260,988 bytes.
-- Current target configuration: 4,864-byte protocol/main stack,
-  24,576-byte VM worker stack, 4,096-byte display worker stack.
-- Stack harness guardrails: fail if protocol/main unused stack drops below 768
-  bytes or VM worker unused stack drops below 384 bytes.
-- `device resources` reports `heap_largest_free_supported=1` and a real
-  `heap_largest_free_bytes` via a bounded `k_heap_alloc` binary-search probe,
-  plus display-worker stack high-water (IDs 53-55). See
-  `docs/specs/2026-06-20-x4-ram-reduction-design.md` for the full design.
-- Static buffer attribution (corrected classifier,
-  `scripts/zephyr-static-buffer-report.sh`): platform 133,234 B,
-  SquidScript 81,612 B (down from 137,836 B after display-op compaction),
-  unknown 16,871 B. The four display-op arrays are now ~16 KiB total
-  (down from 72,224 B).
-
-RAM follow-up triggers:
-
-- BinBook page ring: add a 3-slot heap circular buffer for page-turn
-  prefetch in `runtime_binbook_read_page`, replacing the single-slot
-  `runtime->drawable.page`. Allocated lazily on first `binbook.readPage`,
-  freed on reset. Design at
-  `docs/specs/2026-06-20-x4-ram-reduction-design.md`; Plan 2
-  implementation commits `7a07045`..`153e251`.
-- Move binbook decompression out of the display driver
-  (`ssd1677_gdeq0426t82_display.c`). The PackBits decompression and
-  pixel-format translation currently live in the display backend alongside
-  SPI/e-paper logic. Extract them into `vm_runtime_binbook.c` or a
-  dedicated `binbook_decompress.c` so the display driver only handles
-  framebuffer writes. This keeps format-specific decompression testable
-  independently of display hardware.
-- Color constants: add `color.*` compile-time constants (`color.GRAY0`
-  through `color.GRAY15`, `color.WHITE`, `color.BLACK`) and replace
-  string color values entirely. The compiler emits typed `uint8` colors
-  in SQBC, the FFI carries typed colors instead of byte strings, and the
-  firmware passes them straight into the op. Plan 3 is the active slice.
-- Revisit ESP32-C3 RAM optimization after the color constants land:
-  remeasure linker DRAM, protocol response size, stack high-water, and
-  SquidScript-owned static buffers; then decide whether to shrink response
-  buffers, cap metrics, stacks, or subsystem feature buffers based on evidence.
-- Do not lower the 24,576-byte VM worker stack again without same-build
-  input-button or equivalent logical-input fixture evidence proving the
-  physical/input app path stays below the proposed budget. Before any future
-  stack reduction, build with `--stack-usage` and run the `.su` parser against
-  the target build dir; check both per-function `.su` size and real hardware
-  high-water use because splitting helpers can increase live stack if a larger
-  callee remains active under its caller.
-- Keep heap fragmentation work evidence-driven. The bounded `k_heap_alloc`
-  probe now reports a real largest-free-block value; future mitigation work
-  should target a concrete allocation failure or subsystem-specific pool/slab
-  redesign rather than adding speculative RAM counters.
-- Keep Zephyr kernel stacks, system heap, network packet pools, Wi-Fi/BLE
-  driver storage, and other platform symbols separate unless platform RAM
-  policy is explicitly in scope.
-
-RAM verification notes:
-
-- Use `scripts/xteink-x4-measure-ram-workloads.sh` for the X4 same-build
-  RAM-confidence path. The X4 workload harness records storage-format,
-  grid-cursor, binbook-reader, system-resources, and Wi-Fi AP start/stop rows
-  under `target/hardware-tests/x4-ram-workloads/summary.tsv`, including
-  display-stack and heap largest-free-block columns.
-- The XIAO RAM workload harness (`scripts/xiao-esp32c3-measure-ram-workloads.sh`)
-  records storage-format, e-paper GRAY2, system-resource, and Wi-Fi AP start/stop
-  rows under `target/hardware-tests/xiao-ram-workloads/summary.tsv`.
-- Real ESP32-C3 Zephyr Wi-Fi scan/list coverage passes through the driver scan
-  callback with bounded redacted AP rows. Future Wi-Fi scan RAM work should
-  focus on result pagination/cursor behavior and broader service-state modeling,
-  not the old unsupported scan path.

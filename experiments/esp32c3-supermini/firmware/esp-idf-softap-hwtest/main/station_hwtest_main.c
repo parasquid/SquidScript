@@ -3,7 +3,7 @@
  *
  * This intentionally uses Espressif's ESP-IDF Wi-Fi station path to check
  * whether the board can receive and join an existing AP independently of
- * SquidScript's Zephyr firmware path.
+ * SquidScript native firmware path.
  */
 
 #include <string.h>

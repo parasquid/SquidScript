@@ -1,8 +1,0 @@
-app "display-info-summary"
-
-event.on("app.start") {
-  let info = display.info()
-  debug.print("display", info.ok, info.available, info.status, info.driver)
-  debug.print("geometry", info.width, info.height, info.physicalWidth, info.physicalHeight, info.rotation)
-  debug.print("format", info.colorModel, info.nativePixelFormat, info.defaultFontHeight)
-}

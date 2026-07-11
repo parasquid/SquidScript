@@ -60,35 +60,25 @@
     }
   },
   "firmware": {
-    "zephyr": {
-      "board": "esp32c3_devkitm",
-      "buildDir": "build/zephyr/xteink-x4",
-      "overlay": "firmware/zephyr/boards/xteink_x4.overlay",
-      "fallbackSource": "firmware/zephyr/fallback/xteink-x4-main.squid",
-      "targetKconfig": "target/zephyr/generated/xteink-x4-target.conf",
-      "runtimeLimits": "targets/runtime-limits/esp32c3-zephyr.json"
-    },
-    "native": {
-      "package": "squidscript-fw-x4",
-      "workingDir": "firmware/native",
-      "target": "riscv32imc-unknown-none-elf",
-      "chip": "esp32c3",
-      "elf": "target/riscv32imc-unknown-none-elf/debug/squidscript-fw-x4",
-      "otaImage": "target/riscv32imc-unknown-none-elf/debug/squidscript-fw-x4-ota.bin",
-      "partitionTable": "targets/partitions/xteink-x4.csv",
-      "bootloader": "firmware/native/bootloader/xteink-x4/bootloader.bin",
-      "features": [
-        "firmware-bin",
-        "x4-binbook",
-        "x4-flash-filesystem",
-        "native-radio-services",
-        "wifi",
-        "ble"
-      ],
-      "release": false,
-      "rustupToolchain": "nightly",
-      "bleConnectionWatchdogMs": 30000
-    }
+    "package": "squidscript-fw-x4",
+    "workingDir": "firmware/native",
+    "target": "riscv32imc-unknown-none-elf",
+    "chip": "esp32c3",
+    "elf": "target/riscv32imc-unknown-none-elf/debug/squidscript-fw-x4",
+    "otaImage": "target/riscv32imc-unknown-none-elf/debug/squidscript-fw-x4-ota.bin",
+    "partitionTable": "targets/partitions/xteink-x4.csv",
+    "bootloader": "firmware/native/bootloader/xteink-x4/bootloader.bin",
+    "features": [
+      "firmware-bin",
+      "x4-binbook",
+      "x4-flash-filesystem",
+      "native-radio-services",
+      "wifi",
+      "ble"
+    ],
+    "release": false,
+    "rustupToolchain": "nightly",
+    "bleConnectionWatchdogMs": 30000
   },
   "radios": {
     "wifi": {

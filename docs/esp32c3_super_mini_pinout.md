@@ -5,10 +5,9 @@ SquidScript firmware bring-up. ESP32-C3 Super Mini boards are clone-heavy, so
 verify against the silkscreen on the physical board before wiring power,
 displays, sensors, or straps.
 
-The canonical target metadata is `targets/esp32c3-super-mini.target.json`.
-Generated pin and logical-device tables live in
-`docs/targets/esp32c3-super-mini.md`; update the target JSON and regenerate that
-file rather than hand-editing a second copy of the table.
+This is retained hardware research for a possible future native target. The
+board has no current SquidScript firmware target. A condensed pin and device
+table lives in `docs/targets/esp32c3-super-mini.md`.
 
 ## Top-Side Hardware Layout
 
@@ -113,22 +112,6 @@ those pins more than serial access.
 Some public examples wire e-paper reset to `GPIO2`. That can work on a specific
 board, but `GPIO10` is the preferred reset pin for this repo's Super Mini
 bring-up notes because it avoids a boot strapping pin.
-
-## Current Zephyr Indicator Binding
-
-The ESP32-C3 Super Mini Zephyr overlay binds the logical `indicator0` device to
-the common-clone GPIO8 active-low onboard LED. The runtime consumes that logical
-indicator binding for `service.indicator.*`; GPIO8 is board metadata, not a
-portable SquidScript indicator rule.
-
-`service.indicator.breathe()` drives `indicator0` through ESP32-C3 LEDC PWM on
-channel 0 with a 1 kHz period. `service.indicator.blink(...)` uses the same
-logical indicator binding and non-blocking runtime polling. The overlay keeps
-`led0` as GPIO metadata for the same physical LED so raw `hardware.gpio.*`
-checks can identify when GPIO8 is the indicator endpoint. If the serial blinky,
-breathe, or blink checks report output but the onboard blue LED does not change,
-verify the physical board LED mapping before changing portable SquidScript
-indicator semantics.
 
 ## Source Notes
 

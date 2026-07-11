@@ -1,5 +1,0 @@
-app "debug-two-strings"
-
-event.on("app.start") {
-  debug.print("left", "right")
-}

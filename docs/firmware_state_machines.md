@@ -10,7 +10,7 @@ testable.
 
 Installed app uploads, temporary app runs, and resource uploads use the same
 session phases. The wire protocol remains begin/chunk/commit. Rust FFI helpers
-validate TLV fields, lengths, offsets, CRC32, and commit readiness; Zephyr C
+validate TLV fields, lengths, offsets, CRC32, and commit readiness; native Rust C
 advances the explicit phase only after the corresponding storage operation has
 been accepted.
 
@@ -171,7 +171,7 @@ reply until its supervision timeout.
 
 An accepted native X4 BLE connection also has an inactivity watchdog. GATT
 events and outbound runtime status notifications reset it. If no such activity
-occurs before `firmware.native.bleConnectionWatchdogMs` expires, firmware
+occurs before `firmware.bleConnectionWatchdogMs` expires, firmware
 cancels the current session through the storage control lane, drains stale
 status notifications, drops the GATT connection so the controller sends a
 clean disconnect request, and returns to advertising. Targets default to

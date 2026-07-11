@@ -12,9 +12,9 @@ configuration, firmware build metadata, docs, and autocomplete.
 ## Common Commands
 
 ```sh
-cargo run -p squidc -- app build examples/blinky-supermini/main.squid --out target/blinky.sqbc
-cargo run -p squidc -- app package examples/blinky-supermini
-cargo run -p squidc -- app run examples/blinky-supermini/main.squid
+cargo run -p squidc -- app build examples/hello-menu/main.squid --out target/hello-menu.sqbc
+cargo run -p squidc -- app package examples/hello-menu
+cargo run -p squidc -- app run examples/hello-menu/main.squid
 cargo run -p squidc -- app test examples/app-tests/portable
 cargo run -p squidc -- app test --negative tests/app-tests/negative
 cargo run -p squidc -- fmt examples
@@ -74,17 +74,17 @@ scripted hardware checks.
 ## App Commands
 
 ```sh
-cargo run -p squidc -- app build examples/blinky-supermini/main.squid --out target/blinky.sqbc
-cargo run -p squidc -- app package examples/blinky-supermini
-cargo run -p squidc -- app package examples/blinky-supermini --out target/blinky-supermini.squid.zip
-cargo run -p squidc -- app run examples/blinky-supermini/main.squid
+cargo run -p squidc -- app build examples/hello-menu/main.squid --out target/hello-menu.sqbc
+cargo run -p squidc -- app package examples/hello-menu
+cargo run -p squidc -- app package examples/hello-menu --out target/hello-menu.squid.zip
+cargo run -p squidc -- app run examples/hello-menu/main.squid
 cargo run -p squidc -- app test examples/app-tests/portable
 cargo run -p squidc -- app test --negative tests/app-tests/negative
 cargo run -p squidc -- app test --list examples/app-tests/portable
-cargo run -p squidc -- app install examples/blinky-supermini/main.squid
-cargo run -p squidc -- app install blinky-supermini.squid.zip
+cargo run -p squidc -- app install examples/hello-menu/main.squid
+cargo run -p squidc -- app install hello-menu.squid.zip
 cargo run -p squidc -- app push SquidScript target/installed-app.sqbc
-cargo run -p squidc -- app install --as reader tests/hardware/c3-supermini/generic-events/reader-clock.squid
+cargo run -p squidc -- app install --as reader examples/break-reminder/main.squid
 cargo run -p squidc -- app launch reader
 cargo run -p squidc -- app list
 ```
@@ -278,7 +278,7 @@ when literal serial bytes are needed. JSON monitor output must be bounded with
 ## Protocol Escape Hatch
 
 ```sh
-cargo run -p squidc -- protocol raw hello --seq 1 --string 1=esp32c3-supermini
+cargo run -p squidc -- protocol raw hello --seq 1 --string 1=xteink-x4
 cargo run -p squidc -- protocol raw resources-get --u32 1=409600
 ```
 
@@ -299,13 +299,13 @@ package, target triple, features, artifact, chip, and flashing tool.
 
 ```sh
 cargo run -p squidc -- target list
-cargo run -p squidc -- target inspect --target xiao-esp32c3-gdeq0426t82-sd
-cargo run -p squidc -- target build --target xiao-esp32c3-gdeq0426t82-sd
-cargo run -p squidc -- target flash --target xiao-esp32c3-gdeq0426t82-sd
-cargo run -p squidc -- target monitor --target xiao-esp32c3-gdeq0426t82-sd
-cargo run -p squidc -- target doctor --target xiao-esp32c3-gdeq0426t82-sd
-cargo run -p squidc -- hardware test --target xiao-esp32c3-gdeq0426t82-sd
-cargo run -p squidc -- hardware test --target xiao-esp32c3-gdeq0426t82-sd --list
+cargo run -p squidc -- target inspect --target xteink-x4
+cargo run -p squidc -- target build --target xteink-x4
+cargo run -p squidc -- target flash --target xteink-x4
+cargo run -p squidc -- target monitor --target xteink-x4
+cargo run -p squidc -- target doctor --target xteink-x4
+cargo run -p squidc -- hardware test --target xteink-x4
+cargo run -p squidc -- hardware test --target xteink-x4 --list
 ```
 
 Targets with native firmware metadata use the native firmware toolchain:
@@ -335,8 +335,8 @@ Use `target inspect` or `--print-plan` before side-effectful operations when
 automation needs to verify the resolved command without invoking the tool:
 
 ```sh
-cargo run -p squidc -- target build --target esp32c3-super-mini --print-plan
-cargo run -p squidc -- target flash --target esp32c3-super-mini --print-plan -- --runner esp32
+cargo run -p squidc -- target build --target xteink-x4 --print-plan
+cargo run -p squidc -- target flash --target xteink-x4 --print-plan -- --runner esp32
 cargo run -p squidc -- target build --target xteink-x4 --print-plan
 ```
 
@@ -366,7 +366,7 @@ All commands accept global `--json`:
 ```sh
 cargo run -p squidc -- --json doctor
 cargo run -p squidc -- --json app list
-cargo run -p squidc -- --json target inspect --target esp32c3-super-mini
+cargo run -p squidc -- --json target inspect --target xteink-x4
 ```
 
 JSON output uses a stable envelope:
@@ -397,13 +397,10 @@ tests.
 Checks include:
 
 - `cargo`, `rustc`, and `rustup`
-- `west` and Zephyr workspace readiness
-- Zephyr SDK/toolchain support for the selected board
+- the configured Rust toolchain and compilation target
 - visible serial ports
-- optional Zephyr image/map size tooling
 - firmware identity when exactly one candidate device is visible or `--port` is
   supplied
-- hardware target test script presence
 
 Hardware target tests and serial/flashing commands must run outside the Codex
 sandbox.
@@ -413,13 +410,13 @@ sandbox.
 Normal compile/upload:
 
 ```sh
-cargo run -p squidc -- app run examples/blinky-supermini/main.squid
+cargo run -p squidc -- app run examples/hello-menu/main.squid
 ```
 
 Explicit target check:
 
 ```sh
-cargo run -p squidc -- app run examples/blinky-supermini/main.squid \
-  --target targets/esp32c3-super-mini.target.json \
+cargo run -p squidc -- app run examples/hello-menu/main.squid \
+  --target targets/xteink-x4.target.json \
   --check-target
 ```

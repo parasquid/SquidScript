@@ -38,16 +38,16 @@ keeps a bounded runtime and firmware-owned service surface.
 Common serial workflows:
 
 ```bash
-cargo run -p squidc -- app build examples/blinky-supermini/main.squid --out target/blinky.sqbc
-cargo run -p squidc -- app run examples/blinky-supermini/main.squid
-cargo run -p squidc -- app install examples/blinky-supermini/main.squid
-cargo run -p squidc -- app launch blinky-supermini
+cargo run -p squidc -- app build examples/hello-menu/main.squid --out target/hello-menu.sqbc
+cargo run -p squidc -- app run examples/hello-menu/main.squid
+cargo run -p squidc -- app install examples/hello-menu/main.squid
+cargo run -p squidc -- app launch hello-menu
 cargo run -p squidc -- device output
 cargo run -p squidc -- device resources
 ```
 
 `app run` is the fast host-compiled temp-app path: `squidc` compiles the source
-on the host, uploads the resulting SQBC through the Zephyr temp-run protocol,
+on the host, uploads the resulting SQBC through the native Rust temp-run protocol,
 and launches it as a temporary foreground app through the normal lifecycle
 handoff path. The temp app is not published into the installed app registry and
 does not overwrite `main`. `app install` is the persistent path: source input

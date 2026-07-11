@@ -2722,18 +2722,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "squidvm-ffi"
-version = "0.1.0"
-dependencies = [
- "binbook-core",
- "binbook-decompress",
- "crc32fast",
- "squid-device-protocol",
- "squidc-core",
- "squidvm-core",
-]
-
-[[package]]
 name = "squidvm-limits"
 version = "0.1.0"
 

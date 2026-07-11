@@ -137,11 +137,8 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   gated by the development-versus-release build profile, not hidden behind an
   opt-in feature or configuration that a developer must discover and enable.
 - In Rust firmware, gate this instrumentation with `debug_assertions`. Normal
-  native target metadata must select the Cargo debug profile; only an explicit
-  release build may disable it. In Zephyr firmware, use
-  `CONFIG_SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC`, and keep that configuration enabled
-  in the normal development `prj.conf`; only a release configuration may turn
-  it off. Use `sq_debug_log_append` for timestamped Zephyr trace markers.
+  target metadata must select the Cargo debug profile; only an explicit release
+  build may disable it.
 - Keep useful debug-build logs and measurements in the codebase when they do
   not change functional behavior, even if they add minor debug-build latency.
   Do not delete them after hardware verification merely to make normal builds
@@ -359,18 +356,6 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   `examples/app-tests/xteink/grid-cursor/` only tests input routing with no
   visible drawing). When verifying display, rendering, or visual behavior, use
   the full example app from `examples/`, not the app-test fixture.
-- Future Zephyr VM host ABI additions should move as one implemented slice:
-  compiler lowering, SQBC builtin IDs, Rust VM callbacks, FFI, Zephyr runtime
-  wiring, docs, Rust FFI equivalence tests, and Zephyr ztests. Keep
-  `docs/zephyr_vm_host_abi_coverage.md` current when callbacks are added, and
-  prefer caller-owned buffers over hidden allocation across the FFI boundary.
-- When C helpers, defaults, callback initializers, or result-shape utilities
-  are mechanically derived from the SquidVM FFI ABI, generate them from
-  `compiler/rust/crates/squidvm-ffi/abi/manifest.json` through
-  `scripts/check-squidvm-ffi-abi.py` instead of hand-duplicating equivalent C
-  logic. Hand-written C should be reserved for behavior that cannot reasonably
-  be expressed as ABI metadata, and that exception should be explicit in the
-  code or plan.
 
 ## Hardware And Placeholder Discipline
 
@@ -437,8 +422,7 @@ This repository implements SquidScript, its compiler/runtime pieces, target defi
   own BLE hardware gate as final proof.
 - When the task targets XTEINK X4, verify with XTEINK X4 target commands and
   XTEINK-specific fixtures under `tests/hardware/xteink-x4/` or
-  `examples/app-tests/xteink/`. Do not use `tests/hardware/c3-supermini/`,
-  `esp32c3-super-mini`, or Super Mini scripts as evidence for XTEINK behavior
+  `examples/app-tests/xteink/`. Do not use unrelated board research as evidence for XTEINK behavior
   just because the SquidScript source is portable. Super Mini fixtures are
   useful examples only; XTEINK claims require XTEINK target metadata, the
   attached XTEINK hardware, and XTEINK visual/radio evidence.
@@ -541,95 +525,11 @@ lists the per-area check commands and the Hello Menu proof.
 
 ## Script And Firmware Tooling Discipline
 
-Exact build/flash/serial commands, Zephyr env + test wrappers, target names,
-venv paths, and the hardware-test inventory live in
-`docs/standards/firmware-tooling.md` — read it when doing firmware or hardware
-work. The always-fire disciplines stay here:
-
-- **DO NOT run firmware builds, Zephyr tests, hardware tests, or serial
-  commands in the sandbox. They will fail or waste time.** Run them outside
-  the sandbox immediately. If you find yourself typing a firmware/zephyr/hardware
-  command into the sandbox, STOP and escalate instead.
-
-- **NEVER ask the user to run a command outside the sandbox.** The agent has
-  the ability to run commands on the host — use it. Asking the user to run
-  `scripts/zephyr-test-protocol.sh` or any other host-only command is
-  unacceptable latency. Just run it. The user's time is for reviewing results,
-  not executing agent commands.
-
-- Treat known sandbox limitations as instructions to use escalated execution
-  immediately, not as hypotheses to re-test. If AGENTS.md, saved memory, or the
-  current conversation identifies a command category as sandbox-hostile, do not
-  run it in the sandbox first just to confirm the failure. Request escalated
-  execution up front, cite the known limitation, and continue with the actual
-  task.
-- This immediate-escalation rule covers, at minimum, `gh`/GitHub API commands
-  that need the host credential store or network, `git add`/`git commit` and
-  other commands that must update `.git/index`, hardware/serial/flashing
-  commands, Zephyr/Twister/build wrappers documented in
-  `docs/standards/firmware-tooling.md` as host-only, and
-  commands that need host-visible USB devices, keyrings, sockets, or caches
-  outside the workspace. Do not waste a turn on an expected sandbox failure.
-- **When in doubt, escalate.** If you are unsure whether a command needs
-  escalated execution, assume it does and run it outside the sandbox. The cost
-  of unnecessary escalation is one tool call. The cost of a wasted sandbox
-  failure is a full turn plus user frustration. Never surface a sandbox failure
-  to the user as a problem to solve — just rerun it with escalated execution.
-  This is especially true for:
-  `west build`, `west twister`, `west flash`, `scripts/zephyr-test-protocol.sh`,
-  `cargo run -p squidc -- hardware test`, `cargo run -p squidc -- target build`,
-  and any command that touches `/dev/ttyACM*`, `/dev/ttyUSB*`, or firmware
-  build directories.
-- Never run hardware scripts or serial commands in parallel against the same
-  physical target. A single USB serial device is a shared mutable resource:
-  concurrent flash, install, hardware-test, monitor, REPL, or `squidc device`
-  commands can interleave bytes, reset the board, steal foreground app state,
-  or leave hardware in a misleading state. Run hardware commands sequentially,
-  wait for each command to exit, and do not start a second monitor or helper
-  while another command owns the port.
-- Do not put any hardware-owning command in `multi_tool_use.parallel`. This
-  includes `squidc device ...`, `squidc app ...` when it talks to attached
-  hardware, `cargo run ... -- device ...`, `cargo run ... -- app ...`,
-  firmware flash scripts, monitor scripts, hardware test scripts, and hardware
-  benchmark scripts. Use one standalone tool call per hardware command.
-- When firmware work changes behavior that has hardware coverage and a relevant
-  hardware target is attached or reasonably available, run the relevant
-  hardware target tests. Sandbox isolation is not a reason to skip them; use
-  escalated command execution for serial visibility checks and the hardware
-  test command, and report the result. The XIAO ESP32-C3 e-paper target is the
-  default dev target; the ESP32-C3 Super Mini is a regression target, not the
-  only SquidScript hardware target.
-- Prefer `cargo run -p squidc -- hardware test --target <target-id>` when the
-  target-aware wrapper covers the changed path. On the XIAO ESP32-C3 default
-  dev target, this currently exercises portable app tests, BLE file-transfer
-  install, BLE reconnect, radio concurrency, and AP-after-station; display and
-  SD checks remain out of scope until those target capabilities are ready.
-- For unattended XIAO e-paper smoke tests, the serial marker or documented BUSY
-  activity evidence is sufficient. Require visual confirmation only when the
-  task explicitly asks to verify rendered pixels or the user is present to
-  inspect the panel.
-- Treat changes under `firmware/zephyr/**`, generated Zephyr C includes,
-  target metadata consumed by firmware, serial protocol behavior, app
-  lifecycle/runtime callbacks, storage/runtime state, and hardware-facing
-  scripts as firmware-impacting changes for hardware-test decisions. Generated
-  firmware artifacts count the same as handwritten C; moving C wiring into a
-  generated include still requires the same hardware-test decision.
-- Native Zephyr ztests are the pre-hardware gate for firmware-impacting
-  changes, not a replacement for relevant hardware checks when hardware is
-  available. For low-risk firmware refactors, the minimum hardware check is
-  build/flash/boot without hanging on an attached target that exercises the
-  changed firmware path; run the broader hardware suite when runtime behavior
-  paths changed or when the target test inventory indicates coverage.
-- When a hardware command timeout produces empty protocol diagnostics
-  (`device resources`, `device errors`, and `device lifecycle`), capture bounded
-  raw serial evidence before calling the test flaky or assuming host timing.
-  This is especially important at the reset boundary between XIAO
-  `radio-concurrency` and `ap-after-station`, where firmware recovery, USB
-  serial visibility, and Wi-Fi/BLE target state must be distinguished.
-- If hardware tests are skipped for firmware-impacting work, explicitly report
-  that hardware tests were not run, why they were skipped, what native/host
-  checks were run instead, and whether the change still needs hardware
-  confirmation.
+Exact native build, flash, monitor, and target-aware hardware commands live in
+`docs/standards/firmware-tooling.md`. Run hardware-owning commands sequentially,
+probe attached devices before use, and execute the relevant X4 hardware inventory
+after firmware-impacting changes. Protocol acknowledgements are not visual display
+evidence; use a fresh inspected live capture when visual confirmation is required.
 
 ## Git Workflow
 

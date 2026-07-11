@@ -2,7 +2,7 @@
  * ESP32-C3 SuperMini SoftAP hardware test.
  *
  * This intentionally follows Espressif's ESP-IDF SoftAP example shape so it can
- * isolate board/RF behavior from SquidScript's Zephyr firmware path.
+ * isolate board/RF behavior from SquidScript native firmware path.
  */
 
 #include <string.h>

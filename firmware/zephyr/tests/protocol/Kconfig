@@ -1,9 +1,0 @@
-menu "SquidScript protocol test firmware"
-
-config SQUIDSCRIPT_ZEPHYR_DIAGNOSTIC
-	bool "Enable SquidScript diagnostic test paths"
-	default y
-
-endmenu
-
-source "Kconfig.zephyr"

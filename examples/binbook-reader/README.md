@@ -26,7 +26,7 @@ Controls:
 - In chapters: `key.UP` / `key.DOWN` move selection, `key.SELECT` jumps to the
   chapter, and `key.BACK` returns to the reader menu.
 
-Current Zephyr SSD1677 firmware support expects target-native full-panel GRAY2
+Current native X4 firmware expects target-native full-panel GRAY2
 BinBook page data and streams it from the resource file without allocating a
 full-screen framebuffer. The reader keeps the page screen on the full GRAY2
 refresh path for clean book content. Library, menu, and chapter screens request

@@ -102,7 +102,7 @@ fn builds_hello_request_and_extracts_identity_response() {
         9,
         vec![
             Field::string(1, "esp32c3-supermini"),
-            Field::string(2, "squidscript-zephyr"),
+            Field::string(2, "squidscript-native"),
             Field::bool(3, true),
         ],
     );
@@ -110,7 +110,7 @@ fn builds_hello_request_and_extracts_identity_response() {
     let identity = hello_identity(&decode_frame(&encode_frame(&response)).unwrap()).unwrap();
 
     assert_eq!(identity.target, "esp32c3-supermini");
-    assert_eq!(identity.firmware, "squidscript-zephyr");
+    assert_eq!(identity.firmware, "squidscript-native");
     assert!(identity.diagnostic);
 }
 

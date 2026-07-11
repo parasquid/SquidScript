@@ -34,9 +34,7 @@ should keep the app as real SquidScript but pad each screen block with enough
 non-optimized statements to make each lazy screen-code read approach the
 target's `vm_sqbc_chunk_bytes` limit without exceeding it.
 
-The ESP32-C3 Super Mini runner is
-`scripts/c3-supermini-benchmark-lazy-load-screen.sh`. Future nRF52 and RP2350
-runners should install an equivalent app, drive the same logical transitions,
-and report the same fields. If a target cannot expose firmware-owned dispatch
-timing yet, the runner should fail clearly rather than substituting host
-wall-clock timing.
+Future runners should install an equivalent app, drive the same logical
+transitions, and report the same fields. If a target cannot expose
+firmware-owned dispatch timing, the runner should fail clearly rather than
+substituting host wall-clock timing.

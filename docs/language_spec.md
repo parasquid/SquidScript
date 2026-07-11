@@ -2084,10 +2084,8 @@ foreground timers, armed timers, and other runtime-dispatched event names.
 Runtime resources are bounded; the full table of caps (foreground timer slots,
 armed timer slots, active device-binding slots, input button slots, output
 line slots, drawlog record slots, app store limits, and wire-format limits)
-lives in `docs/runtime_limits.md`. Zephyr target JSON selects a build-time
-runtime-limits profile under `targets/runtime-limits/`, and
-`firmware/zephyr/src/runtime_limits.h` bridges generated Kconfig symbols to C
-macros. Registering a foreground timer beyond the active cap returns `-ENOSPC`
+lives in `docs/runtime_limits.md`. Native Rust crates and generated X4 target
+constants are the implementation sources of truth. Registering a foreground timer beyond the active cap returns `-ENOSPC`
 to the VM.
 
 Example:
@@ -2118,7 +2116,7 @@ Example:
 service.display.text(system.memory(), { x: 0, y: 0 })
 ```
 
-The exact metric is target-specific. On Zephyr firmware it should include
+The exact metric is target-specific. On native Rust firmware it should include
 static board RAM context plus live allocator/heap numbers that the target can
 measure. The display string is for human diagnostics; scripts that need raw
 diagnostics, including heap fragmentation probe availability, should use the
@@ -2142,7 +2140,7 @@ and reload it from `app.start`.
 
 system.storage(name)
 
-Returns a display-oriented string for a firmware storage area. Zephyr firmware
+Returns a display-oriented string for a firmware storage area. native Rust firmware
 supports:
 
 ```squid
@@ -2150,7 +2148,7 @@ system.storage("apps")
 ```
 
 `"apps"` means firmware-managed writable SquidScript app storage. The physical
-Zephyr flash-map, NVS, and LittleFS layout is target-specific firmware detail.
+native Rust flash-map, NVS, and LittleFS layout is target-specific firmware detail.
 
 service.power.sleep({ wakeAfterMs })
 
@@ -2370,7 +2368,7 @@ scan can have `operation().state == "done"` while `status().state == "idle"`.
 - `error`: string or null
 - `state`: string, one of `unavailable`, `idle`, `configuring`, `starting`,
   `started`, `stopping`, `stopped`, or `error`
-- `backend`: string, currently `zephyr`, `sim`, or `unavailable`
+- `backend`: string, currently `native`, `sim`, or `unavailable`
 - `driverStarted`: bool
 - `configured`: bool
 - `driverMode`: string or null
@@ -2413,7 +2411,7 @@ if (ap.ok && status.active) {
 }
 ```
 
-For Zephyr firmware, AP defaults are target/runtime
+For native Rust firmware, AP defaults are target/runtime
 chosen: open AP, target-chosen channel, conventional AP address
 `192.168.4.1/24`, a bounded DHCPv4 lease pool on that subnet, and bounded
 target-clamped client count. A successful `startAP` and
@@ -2430,7 +2428,7 @@ host tooling, or target setup outside SquidScript. Firmware must not expose
 configured station SSIDs or passwords in SquidScript source, state, records,
 logs, diagnostics, or source maps. Current ESP32-C3 development firmware
 supports Wi-Fi status, bounded redacted scan/list snapshots, AP start/stop,
-volatile station profiles, and station connect/disconnect through Zephyr. When
+volatile station profiles, and station connect/disconnect through native Rust. When
 the station interface has a preferred DHCP IPv4 address,
 `service.wifi.status().ipAddress` reports it.
 
@@ -2608,7 +2606,7 @@ if (picked.ok) {
 ```
 
 On runtimes without a firmware-controlled picker, including the current
-ESP32-C3 Zephyr canonical firmware, this API returns a result record rather than
+ESP32-C3 native Rust canonical firmware, this API returns a result record rather than
 crashing the app:
 
 ```text
@@ -2635,7 +2633,7 @@ if (result.ok) {
 ```
 
 On runtimes without bounded external file reads, including the current
-ESP32-C3 Zephyr canonical firmware, this API returns:
+ESP32-C3 native Rust canonical firmware, this API returns:
 
 ```text
 { ok: false, error: "unsupported", text: null }
@@ -2655,7 +2653,7 @@ if (result.ok) {
 ```
 
 On runtimes without bounded external file reads, including the current
-ESP32-C3 Zephyr canonical firmware, this API returns:
+ESP32-C3 native Rust canonical firmware, this API returns:
 
 ```text
 { ok: false, error: "unsupported", lines: [] }
@@ -2790,7 +2788,7 @@ and result records; it does not parse BinBook bytes.
 `binbook.open(path)`
 
 Opens and validates a `.binbook` resource for the current app. The current
-Zephyr firmware supports safe package resource paths such as
+native Rust firmware supports safe package resource paths such as
 `"books/sample.binbook"` and opaque content refs returned by
 `content.binbook.list`.
 
@@ -2813,7 +2811,7 @@ Result:
 `binbook.readPage(book, pageIndex)`
 
 Resolves a page from an opened book handle into a display-ready drawable
-handle. The page index is zero-based. The current SSD1677 Zephyr backend
+handle. The page index is zero-based. The current SSD1677 native Rust backend
 accepts target-native full-panel GRAY2 BinBook page data and streams it from
 the resource file into the controller's two display planes without allocating a
 full-screen framebuffer.
@@ -2893,7 +2891,7 @@ paths.
 
 `content.binbook.list("books", { offset: int, limit: int })`
 
-Lists BinBook documents in the logical `books` library. The current Zephyr
+Lists BinBook documents in the logical `books` library. The current native Rust
 firmware merges package resources under `resources/books` with removable
 storage content under the target's `books` library. The VM materializes at most
 the runtime list item cap in `items`; `count` reports the total matching rows
@@ -3164,7 +3162,7 @@ settings, not source-declared privileges.
 
 Initial profiles:
 
-- `dev`: default for Zephyr firmware and `squidc repl`
+- `dev`: default for native Rust firmware and `squidc repl`
 - `release`: strips debug output and is intended for smaller, less debuggable
   app artifacts
 
@@ -3675,7 +3673,7 @@ The runtime may reject apps or stop execution if limits are exceeded.
 
 ### Reference VM String References
 
-The current Rust VM and Zephyr firmware use one string value model. A string
+The current Rust VM and native Rust firmware use one string value model. A string
 value references one of three sources:
 
 - an SQBC string-pool literal compiled into the app

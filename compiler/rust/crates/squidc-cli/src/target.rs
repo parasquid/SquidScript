@@ -15,28 +15,18 @@ pub struct TargetDefinition {
     #[serde(default)]
     pub status: Option<String>,
     #[serde(default)]
-    pub firmware: Option<TargetFirmware>,
+    pub firmware: Option<Firmware>,
     #[serde(default)]
     pub features: Vec<String>,
-    #[serde(skip)]
-    pub zephyr: Option<ZephyrFirmware>,
-    #[serde(skip)]
-    pub native: Option<NativeFirmware>,
     #[serde(skip)]
     pub path: PathBuf,
 }
 
 impl TargetDefinition {
-    pub fn zephyr(&self) -> Result<&ZephyrFirmware, String> {
-        self.zephyr
+    pub fn firmware(&self) -> Result<&Firmware, String> {
+        self.firmware
             .as_ref()
-            .ok_or_else(|| format!("target {} has no Zephyr firmware metadata", self.id))
-    }
-
-    pub fn native(&self) -> Result<&NativeFirmware, String> {
-        self.native
-            .as_ref()
-            .ok_or_else(|| format!("target {} has no native firmware metadata", self.id))
+            .ok_or_else(|| format!("target {} has no firmware metadata", self.id))
     }
 
     pub fn summary_json(&self) -> Value {
@@ -46,10 +36,7 @@ impl TargetDefinition {
             "status": self.status,
             "features": self.features,
             "path": self.path,
-            "zephyrSupported": self.zephyr.is_some(),
-            "zephyrBoard": self.zephyr.as_ref().map(|zephyr| zephyr.board.clone()),
-            "nativeSupported": self.native.is_some(),
-            "nativePackage": self.native.as_ref().map(|native| native.package.clone())
+            "firmwarePackage": self.firmware.as_ref().map(|firmware| firmware.package.clone())
         })
     }
 
@@ -60,48 +47,14 @@ impl TargetDefinition {
             "status": self.status,
             "features": self.features,
             "path": self.path,
-            "zephyr": self.zephyr.as_ref().map(|zephyr| zephyr.resolved_json(root)),
-            "native": self.native.as_ref().map(|native| native.resolved_json(root))
-        })
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct TargetFirmware {
-    #[serde(default)]
-    pub zephyr: Option<ZephyrFirmware>,
-    #[serde(default)]
-    pub native: Option<NativeFirmware>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ZephyrFirmware {
-    pub board: String,
-    pub build_dir: PathBuf,
-    pub overlay: PathBuf,
-    pub fallback_source: PathBuf,
-    pub target_kconfig: PathBuf,
-    #[serde(default)]
-    pub runtime_limits: Option<PathBuf>,
-}
-
-impl ZephyrFirmware {
-    fn resolved_json(&self, root: &Path) -> Value {
-        json!({
-            "board": self.board,
-            "buildDir": resolve_repo_path(root, &self.build_dir),
-            "overlay": resolve_repo_path(root, &self.overlay),
-            "fallbackSource": resolve_repo_path(root, &self.fallback_source),
-            "targetKconfig": resolve_repo_path(root, &self.target_kconfig),
-            "runtimeLimits": self.runtime_limits.as_ref().map(|path| resolve_repo_path(root, path)),
+            "firmware": self.firmware.as_ref().map(|firmware| firmware.resolved_json(root))
         })
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NativeFirmware {
+pub struct Firmware {
     pub package: String,
     pub working_dir: PathBuf,
     pub target: String,
@@ -124,7 +77,7 @@ const fn default_ble_connection_watchdog_ms() -> u64 {
     30_000
 }
 
-impl NativeFirmware {
+impl Firmware {
     fn resolved_json(&self, root: &Path) -> Value {
         json!({
             "package": self.package,
@@ -233,50 +186,21 @@ fn validate_native_partition_table(path: &Path) -> Result<Vec<PartitionEntry>, S
     Ok(entries)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[allow(dead_code)]
-pub enum TargetBackend {
-    Zephyr,
-    Native,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum TargetPristine {
-    Auto,
-    Always,
-    Never,
-}
-
-impl TargetPristine {
-    fn as_str(&self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::Always => "always",
-            Self::Never => "never",
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct TargetBuildPlanOptions {
-    pub backend: TargetBackend,
-    pub stack_usage: bool,
-    pub pristine: TargetPristine,
-    pub west_args: Vec<String>,
+    pub tool_args: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
 pub struct TargetFlashPlanOptions {
-    pub backend: TargetBackend,
     pub port: Option<String>,
-    pub west_args: Vec<String>,
+    pub tool_args: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
 pub struct TargetMonitorPlanOptions {
-    pub backend: TargetBackend,
     pub port: Option<String>,
-    pub west_args: Vec<String>,
+    pub tool_args: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -342,17 +266,9 @@ pub fn load_targets(root: &Path) -> Result<Vec<TargetDefinition>, String> {
                 .map_err(|error| format!("failed to read {}: {error}", path.display()))?,
         )
         .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
-        target.zephyr = target
-            .firmware
-            .as_ref()
-            .and_then(|firmware| firmware.zephyr.clone());
-        target.native = target
-            .firmware
-            .as_ref()
-            .and_then(|firmware| firmware.native.clone());
         target.path = path;
-        if let Some(native) = target.native.as_ref() {
-            validate_native_partition_table(&resolve_repo_path(root, &native.partition_table))?;
+        if let Some(firmware) = target.firmware.as_ref() {
+            validate_native_partition_table(&resolve_repo_path(root, &firmware.partition_table))?;
         }
         targets.push(target);
     }
@@ -388,34 +304,31 @@ pub fn plan_build_command(
     target: &TargetDefinition,
     options: TargetBuildPlanOptions,
 ) -> Result<CommandPlan, String> {
-    match options.backend {
-        TargetBackend::Zephyr => plan_zephyr_build_command(root, target, options),
-        TargetBackend::Native => plan_native_build_command(root, target, options),
-    }
+    plan_native_build_command(root, target, options)
 }
 
 pub fn plan_native_image_command(
     root: &Path,
     target: &TargetDefinition,
 ) -> Result<CommandPlan, String> {
-    let native = target.native()?;
-    validate_native_partition_table(&resolve_repo_path(root, &native.partition_table))?;
+    let firmware = target.firmware()?;
+    validate_native_partition_table(&resolve_repo_path(root, &firmware.partition_table))?;
     Ok(CommandPlan {
         program: espflash_program(),
         args: vec![
             "save-image".to_string(),
             "--chip".to_string(),
-            native.chip.clone(),
+            firmware.chip.clone(),
             "--flash-size".to_string(),
             "16mb".to_string(),
             "--partition-table".to_string(),
-            resolve_repo_path(root, &native.partition_table)
+            resolve_repo_path(root, &firmware.partition_table)
                 .display()
                 .to_string(),
             "--target-app-partition".to_string(),
             "app0".to_string(),
-            resolve_repo_path(root, &native.elf).display().to_string(),
-            resolve_repo_path(root, &native.ota_image)
+            resolve_repo_path(root, &firmware.elf).display().to_string(),
+            resolve_repo_path(root, &firmware.ota_image)
                 .display()
                 .to_string(),
         ],
@@ -425,8 +338,8 @@ pub fn plan_native_image_command(
 }
 
 pub fn validate_native_ota_image(root: &Path, target: &TargetDefinition) -> Result<u64, String> {
-    let native = target.native()?;
-    let path = resolve_repo_path(root, &native.ota_image);
+    let firmware = target.firmware()?;
+    let path = resolve_repo_path(root, &firmware.ota_image);
     let size = fs::metadata(&path)
         .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?
         .len();
@@ -443,91 +356,29 @@ pub fn validate_native_ota_image(root: &Path, target: &TargetDefinition) -> Resu
     Ok(size)
 }
 
-fn plan_zephyr_build_command(
-    root: &Path,
-    target: &TargetDefinition,
-    options: TargetBuildPlanOptions,
-) -> Result<CommandPlan, String> {
-    let zephyr = target.zephyr()?;
-    let build_dir = resolve_repo_path(root, &zephyr.build_dir);
-    let overlay = resolve_repo_path(root, &zephyr.overlay);
-    let fallback = resolve_repo_path(root, &zephyr.fallback_source);
-    let target_json = target.path.clone();
-    let kconfig = resolve_repo_path(root, &zephyr.target_kconfig);
-    let extra_conf = match env::var("ZEPHYR_EXTRA_CONF_FILE") {
-        Ok(extra) if !extra.is_empty() => format!("{};{}", kconfig.display(), extra),
-        _ => kconfig.display().to_string(),
-    };
-
-    let mut args = vec![
-        "build".to_string(),
-        "--build-dir".to_string(),
-        build_dir.display().to_string(),
-        "--board".to_string(),
-        zephyr.board.clone(),
-        "--pristine".to_string(),
-        options.pristine.as_str().to_string(),
-        root.join("firmware/zephyr").display().to_string(),
-    ];
-    args.extend(options.west_args);
-    args.push("--".to_string());
-    args.push(format!("-DDTC_OVERLAY_FILE={}", overlay.display()));
-    args.push(format!(
-        "-DSQUID_ZEPHYR_TARGET_JSON={}",
-        target_json.display()
-    ));
-    args.push(format!(
-        "-DSQUID_ZEPHYR_TARGET_OVERLAY={}",
-        overlay.display()
-    ));
-    args.push(format!(
-        "-DSQUID_ZEPHYR_FALLBACK_SOURCE={}",
-        fallback.display()
-    ));
-    args.push(format!("-DEXTRA_CONF_FILE={extra_conf}"));
-    if options.stack_usage {
-        args.push("-DSQUID_ZEPHYR_STACK_USAGE=ON".to_string());
-    }
-
-    Ok(CommandPlan {
-        program: "west".to_string(),
-        args,
-        cwd: root.to_path_buf(),
-        env: zephyr_env(root, target, options.stack_usage)?,
-    })
-}
-
 fn plan_native_build_command(
     root: &Path,
     target: &TargetDefinition,
     options: TargetBuildPlanOptions,
 ) -> Result<CommandPlan, String> {
-    let native = target.native()?;
-    if options.stack_usage {
-        return Err(
-            "target build --stack-usage is only supported for the Zephyr backend".to_string(),
-        );
-    }
-    if options.pristine != TargetPristine::Auto {
-        return Err("target build --pristine is only supported for the Zephyr backend".to_string());
-    }
+    let firmware = target.firmware()?;
     let mut args = vec![
         "build".to_string(),
         "-p".to_string(),
-        native.package.clone(),
+        firmware.package.clone(),
         "--target".to_string(),
-        native.target.clone(),
+        firmware.target.clone(),
     ];
-    if !native.features.is_empty() {
+    if !firmware.features.is_empty() {
         args.push("--features".to_string());
-        args.push(native.features.join(","));
+        args.push(firmware.features.join(","));
     }
-    if native.release {
+    if firmware.release {
         args.push("--release".to_string());
     }
-    args.extend(options.west_args);
+    args.extend(options.tool_args);
 
-    let (program, args, mut env) = match native.rustup_toolchain.as_deref() {
+    let (program, args, mut env) = match firmware.rustup_toolchain.as_deref() {
         Some(toolchain) => {
             let mut rustup_args = vec![
                 "run".to_string(),
@@ -542,7 +393,7 @@ fn plan_native_build_command(
                     ("RUSTC".to_string(), rustup_tool_path(toolchain, "rustc")?),
                     (
                         "SQUIDSCRIPT_BLE_CONNECTION_WATCHDOG_MS".to_string(),
-                        native.ble_connection_watchdog_ms.to_string(),
+                        firmware.ble_connection_watchdog_ms.to_string(),
                     ),
                 ],
             )
@@ -552,11 +403,11 @@ fn plan_native_build_command(
             args,
             vec![(
                 "SQUIDSCRIPT_BLE_CONNECTION_WATCHDOG_MS".to_string(),
-                native.ble_connection_watchdog_ms.to_string(),
+                firmware.ble_connection_watchdog_ms.to_string(),
             )],
         ),
     };
-    if native
+    if firmware
         .features
         .iter()
         .any(|feature| feature == "x4-flash-filesystem")
@@ -566,7 +417,7 @@ fn plan_native_build_command(
             .filter(|value| !value.is_empty())
             .or_else(detect_riscv_c_compiler);
         if let Some(compiler) = compiler {
-            let target_key = native.target.replace('-', "_");
+            let target_key = firmware.target.replace('-', "_");
             env.push((format!("CC_{target_key}"), compiler));
             env.push((
                 format!("CFLAGS_{target_key}"),
@@ -578,7 +429,7 @@ fn plan_native_build_command(
     Ok(CommandPlan {
         program,
         args,
-        cwd: resolve_repo_path(root, &native.working_dir),
+        cwd: resolve_repo_path(root, &firmware.working_dir),
         env,
     })
 }
@@ -619,32 +470,7 @@ pub fn plan_flash_command(
     target: &TargetDefinition,
     options: TargetFlashPlanOptions,
 ) -> Result<CommandPlan, String> {
-    match options.backend {
-        TargetBackend::Zephyr => plan_zephyr_flash_command(root, target, options),
-        TargetBackend::Native => plan_native_flash_command(root, target, options),
-    }
-}
-
-fn plan_zephyr_flash_command(
-    root: &Path,
-    target: &TargetDefinition,
-    options: TargetFlashPlanOptions,
-) -> Result<CommandPlan, String> {
-    let zephyr = target.zephyr()?;
-    let mut args = vec![
-        "flash".to_string(),
-        "--build-dir".to_string(),
-        resolve_repo_path(root, &zephyr.build_dir)
-            .display()
-            .to_string(),
-    ];
-    args.extend(options.west_args);
-    Ok(CommandPlan {
-        program: "west".to_string(),
-        args,
-        cwd: root.to_path_buf(),
-        env: zephyr_env(root, target, false)?,
-    })
+    plan_native_flash_command(root, target, options)
 }
 
 fn plan_native_flash_command(
@@ -652,31 +478,31 @@ fn plan_native_flash_command(
     target: &TargetDefinition,
     options: TargetFlashPlanOptions,
 ) -> Result<CommandPlan, String> {
-    let native = target.native()?;
+    let firmware = target.firmware()?;
     let mut args = vec![
         "flash".to_string(),
         "--chip".to_string(),
-        native.chip.clone(),
+        firmware.chip.clone(),
         "--non-interactive".to_string(),
         "--flash-size".to_string(),
         "16mb".to_string(),
         "--partition-table".to_string(),
-        resolve_repo_path(root, &native.partition_table)
+        resolve_repo_path(root, &firmware.partition_table)
             .display()
             .to_string(),
         "--bootloader".to_string(),
-        resolve_repo_path(root, &native.bootloader)
+        resolve_repo_path(root, &firmware.bootloader)
             .display()
             .to_string(),
         "--target-app-partition".to_string(),
         "app0".to_string(),
-        resolve_repo_path(root, &native.elf).display().to_string(),
+        resolve_repo_path(root, &firmware.elf).display().to_string(),
     ];
     if let Some(port) = options.port {
         args.push("--port".to_string());
         args.push(port);
     }
-    args.extend(options.west_args);
+    args.extend(options.tool_args);
     Ok(CommandPlan {
         program: espflash_program(),
         args,
@@ -690,34 +516,7 @@ pub fn plan_monitor_command(
     target: &TargetDefinition,
     options: TargetMonitorPlanOptions,
 ) -> Result<CommandPlan, String> {
-    match options.backend {
-        TargetBackend::Zephyr => plan_zephyr_monitor_command(root, target, options),
-        TargetBackend::Native => plan_native_monitor_command(root, target, options),
-    }
-}
-
-fn plan_zephyr_monitor_command(
-    root: &Path,
-    target: &TargetDefinition,
-    options: TargetMonitorPlanOptions,
-) -> Result<CommandPlan, String> {
-    let zephyr = target.zephyr()?;
-    let port = options.port.unwrap_or_else(|| "<auto-detect>".to_string());
-    let mut args = vec![
-        "espressif".to_string(),
-        "monitor".to_string(),
-        "-p".to_string(),
-        port,
-        "-e".to_string(),
-        "zephyr/zephyr.elf".to_string(),
-    ];
-    args.extend(options.west_args);
-    Ok(CommandPlan {
-        program: "west".to_string(),
-        args,
-        cwd: resolve_repo_path(root, &zephyr.build_dir),
-        env: zephyr_env(root, target, false)?,
-    })
+    plan_native_monitor_command(root, target, options)
 }
 
 fn plan_native_monitor_command(
@@ -725,49 +524,24 @@ fn plan_native_monitor_command(
     target: &TargetDefinition,
     options: TargetMonitorPlanOptions,
 ) -> Result<CommandPlan, String> {
-    let native = target.native()?;
+    let firmware = target.firmware()?;
     let mut args = vec![
         "monitor".to_string(),
         "--chip".to_string(),
-        native.chip.clone(),
+        firmware.chip.clone(),
         "--non-interactive".to_string(),
     ];
     if let Some(port) = options.port {
         args.push("--port".to_string());
         args.push(port);
     }
-    args.extend(options.west_args);
+    args.extend(options.tool_args);
     Ok(CommandPlan {
         program: espflash_program(),
         args,
         cwd: root.to_path_buf(),
         env: Vec::new(),
     })
-}
-
-#[allow(dead_code)]
-pub fn ensure_target_kconfig(root: &Path, target: &TargetDefinition) -> Result<PathBuf, String> {
-    let zephyr = target.zephyr()?;
-    let out = resolve_repo_path(root, &zephyr.target_kconfig);
-    if let Some(parent) = out.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
-    }
-    let script = root.join("scripts/generate-zephyr-target-kconfig.py");
-    let output = Command::new(&script)
-        .arg(&target.path)
-        .arg(&out)
-        .current_dir(root)
-        .output()
-        .map_err(|error| format!("failed to run {}: {error}", script.display()))?;
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr)
-            .lines()
-            .next()
-            .unwrap_or("target Kconfig generation failed")
-            .to_string());
-    }
-    Ok(out)
 }
 
 pub fn run_plan(plan: &CommandPlan) -> Result<(), String> {
@@ -815,41 +589,36 @@ pub fn run_plan_streaming(plan: &CommandPlan) -> Result<(), String> {
 pub fn doctor_checks(root: &Path, target: &TargetDefinition, port: Option<&str>) -> Vec<Value> {
     let mut checks = Vec::new();
     checks.push(check_path("target-json", &target.path));
-    match target.zephyr() {
-        Ok(zephyr) => {
-            checks.push(check_path(
-                "zephyr-overlay",
-                &resolve_repo_path(root, &zephyr.overlay),
-            ));
-            checks.push(check_path(
-                "fallback-source",
-                &resolve_repo_path(root, &zephyr.fallback_source),
-            ));
-            let envs = zephyr_env(root, target, false).unwrap_or_default();
-            checks.push(check_command_with_env("west", &["--version"], &envs));
-            checks.push(check_path("firmware-dir", &root.join("firmware/zephyr")));
-            let candidates = match port {
-                Some(port) => vec![port.to_string()],
-                None => crate::serial::candidate_ports(),
-            };
-            checks.push(json!({
-                "name": "serial-visibility",
-                "status": if candidates.is_empty() { "warn" } else { "ok" },
-                "message": if candidates.is_empty() {
-                    "no serial candidates visible"
-                } else {
-                    "serial candidates visible"
-                },
-                "details": {"candidates": candidates}
-            }));
-        }
-        Err(error) => checks.push(json!({
-            "name": "zephyr-metadata",
-            "status": "fail",
-            "message": error,
-            "details": {}
-        })),
+    if let Ok(firmware) = target.firmware() {
+        checks.push(check_path(
+            "firmware-working-dir",
+            &resolve_repo_path(root, &firmware.working_dir),
+        ));
+        checks.push(check_path(
+            "partition-table",
+            &resolve_repo_path(root, &firmware.partition_table),
+        ));
+        checks.push(check_path(
+            "bootloader",
+            &resolve_repo_path(root, &firmware.bootloader),
+        ));
+        checks.push(check_command_with_env("rustup", &["--version"], &[]));
+        checks.push(check_command_with_env(
+            &espflash_program(),
+            &["--version"],
+            &[],
+        ));
     }
+    let candidates = match port {
+        Some(port) => vec![port.to_string()],
+        None => crate::serial::candidate_ports(),
+    };
+    checks.push(json!({
+        "name": "serial-visibility",
+        "status": if candidates.is_empty() { "warn" } else { "ok" },
+        "message": if candidates.is_empty() { "no serial candidates visible" } else { "serial candidates visible" },
+        "details": {"candidates": candidates}
+    }));
     checks
 }
 
@@ -884,71 +653,6 @@ pub fn stdin_is_interactive() -> bool {
     io::stdin().is_terminal()
 }
 
-fn zephyr_env(
-    root: &Path,
-    target: &TargetDefinition,
-    stack_usage: bool,
-) -> Result<Vec<(String, String)>, String> {
-    let zephyr = target.zephyr()?;
-    let zephyr_home = env::var("SQUID_ZEPHYR_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| root.join("target/zephyr"));
-    let mut path = format!(
-        "{}:{}",
-        zephyr_home.join("venv/bin").display(),
-        env::var("PATH").unwrap_or_default()
-    );
-    if path.ends_with(':') {
-        path.pop();
-    }
-    let mut envs = vec![
-        (
-            "SQUID_ZEPHYR_HOME".to_string(),
-            zephyr_home.display().to_string(),
-        ),
-        ("PATH".to_string(), path),
-        ("ZEPHYR_BOARD".to_string(), zephyr.board.clone()),
-        (
-            "ZEPHYR_BUILD_DIR".to_string(),
-            resolve_repo_path(root, &zephyr.build_dir)
-                .display()
-                .to_string(),
-        ),
-        (
-            "SQUID_ZEPHYR_TARGET_JSON".to_string(),
-            target.path.display().to_string(),
-        ),
-        (
-            "SQUID_ZEPHYR_TARGET_OVERLAY".to_string(),
-            resolve_repo_path(root, &zephyr.overlay)
-                .display()
-                .to_string(),
-        ),
-        (
-            "SQUID_ZEPHYR_FALLBACK_SOURCE".to_string(),
-            resolve_repo_path(root, &zephyr.fallback_source)
-                .display()
-                .to_string(),
-        ),
-    ];
-    let zephyr_base = zephyr_home.join("workspace/zephyr");
-    if zephyr_base.is_dir() {
-        envs.push(("ZEPHYR_BASE".to_string(), zephyr_base.display().to_string()));
-    }
-    if stack_usage {
-        envs.push(("SQUID_ZEPHYR_STACK_USAGE".to_string(), "1".to_string()));
-    }
-    if env::var_os("ZEPHYR_SDK_INSTALL_DIR").is_none() {
-        if let Some(sdk) = find_zephyr_sdk(root, &zephyr_home) {
-            envs.push((
-                "ZEPHYR_SDK_INSTALL_DIR".to_string(),
-                sdk.display().to_string(),
-            ));
-        }
-    }
-    Ok(envs)
-}
-
 fn espflash_program() -> String {
     let path = env::var_os("PATH").unwrap_or_default();
     for dir in env::split_paths(&path) {
@@ -964,35 +668,6 @@ fn espflash_program() -> String {
         }
     }
     "espflash".to_string()
-}
-
-fn find_zephyr_sdk(root: &Path, zephyr_home: &Path) -> Option<PathBuf> {
-    let mut candidates = Vec::new();
-    candidates.push(zephyr_home.to_path_buf());
-    candidates.push(zephyr_home.join("sdk"));
-    if let Some(home) = env::var_os("HOME") {
-        candidates.push(PathBuf::from(home));
-    }
-    candidates.push(PathBuf::from("/opt"));
-    candidates.push(root.join("target/zephyr"));
-
-    for base in candidates {
-        let Ok(entries) = fs::read_dir(base) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir()
-                && path
-                    .file_name()
-                    .and_then(|value| value.to_str())
-                    .is_some_and(|name| name.starts_with("zephyr-sdk-"))
-            {
-                return Some(path);
-            }
-        }
-    }
-    None
 }
 
 fn check_path(name: &str, path: &Path) -> Value {
@@ -1048,8 +723,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn native_firmware_defaults_ble_connection_watchdog_when_omitted() {
-        let firmware: NativeFirmware = serde_json::from_value(json!({
+    fn firmware_defaults_ble_connection_watchdog_when_omitted() {
+        let firmware: Firmware = serde_json::from_value(json!({
             "package": "firmware",
             "workingDir": ".",
             "target": "riscv32imc-unknown-none-elf",
@@ -1090,21 +765,21 @@ mod tests {
         let scratch = repo_root().join("target/squidc-cli-test-doctor-env");
         let bin = scratch.join("bin");
         fs::create_dir_all(&bin).unwrap();
-        let west = bin.join("west");
-        fs::write(&west, "#!/bin/sh\nprintf 'west 1.2.3\\n'\n").unwrap();
+        let tool = bin.join("test-tool");
+        fs::write(&tool, "#!/bin/sh\nprintf 'tool 1.2.3\\n'\n").unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&west, fs::Permissions::from_mode(0o755)).unwrap();
+            fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).unwrap();
         }
 
         let check = check_command_with_env(
-            "west",
+            "test-tool",
             &["--version"],
             &[("PATH".to_string(), bin.display().to_string())],
         );
 
         assert_eq!(check["status"].as_str(), Some("ok"));
-        assert_eq!(check["message"].as_str(), Some("west 1.2.3"));
+        assert_eq!(check["message"].as_str(), Some("tool 1.2.3"));
     }
 }

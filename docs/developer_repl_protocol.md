@@ -3,17 +3,17 @@
 Status: shared host/firmware codec established; command, lifecycle,
 diagnostics, state, resources, and storage helpers use framed requests.
 
-The current real firmware path is Zephyr. The developer device protocol is the
-Zephyr-owned command surface used by `squidc app run`, other `squidc app ...`
+The current real firmware path is native Rust. The developer device protocol is the
+native Rust-owned command surface used by `squidc app run`, other `squidc app ...`
 commands, `squidc repl`, and `squidc device`.
 
 The old ESP32-C3 Rust firmware line protocol is obsolete reference material.
 Do not preserve its command names, response markers, or storage behavior unless
-the same shape is deliberately implemented as the current Zephyr protocol.
+the same shape is deliberately implemented as the current native Rust protocol.
 
 ## Required Commands
 
-The Zephyr command surface must cover:
+The native Rust command surface must cover:
 
 - firmware hello/identity and target diagnostics
 - app install, temp run, launch, app list, and reset
@@ -48,14 +48,14 @@ unsigned 64-bit integer, `6` unsigned 32-bit integer, and `32` nested record.
 Repeated records are preserved as repeated TLV fields with the same tag.
 
 The authoritative host codec lives in the shared Rust
-`squid-device-protocol` crate. Zephyr links that code through `squidvm-ffi`
+`squid-device-protocol` crate. Native firmware uses that crate directly
 for heap-free response encoders and install/temp/resource session validators
 exposed with the `sqdp_` C ABI. Rust owns TLV field extraction, byte-count
 limits, chunk offset checks, incremental CRC32 progress, and commit readiness
-for large writes. Zephyr C still owns UART, LittleFS, VM runtime, GPIO/Wi-Fi
+for large writes. native Rust C still owns UART, LittleFS, VM runtime, GPIO/Wi-Fi
 drivers, work queues, timers, and ztest glue, and only advances a Rust-validated
-session after the corresponding Zephyr storage operation succeeds. Production
-Zephyr C keeps only frame decode and payload CRC validation in its local
+session after the corresponding native Rust storage operation succeeds. Production
+native Rust C keeps only frame decode and payload CRC validation in its local
 protocol module; C TLV builders/readers are test-local harness helpers.
 
 Large writes use begin/chunk/commit opcode groups for installed apps, temp
@@ -81,7 +81,7 @@ only for low-level protocol troubleshooting. `squidc protocol raw` builds one
 binary request frame from an opcode name plus typed TLV fields and prints hex
 request/response data.
 
-The current implemented Zephyr command handler covers framed `hello` identity,
+The current implemented native Rust command handler covers framed `hello` identity,
 installed-app begin/chunk/commit, resource begin/chunk/commit, temp-run
 begin/chunk/commit, app launch, app list, key dispatch, generic event dispatch,
 output, trace, draw log, state export/import, errors, resources, reset, and
@@ -103,8 +103,8 @@ launches. The launch command enqueues the lifecycle transition and returns a
 protocol OK response once the request is accepted; later app-start failures such
 as target-rejected device bindings remain visible through `device errors`.
 
-The ESP32-C3 Zephyr reference firmware accepts app IDs up to 39 bytes. The
-shared Rust host protocol, Rust FFI validator, and Zephyr app-store buffers use
+The ESP32-C3 native Rust reference firmware accepts app IDs up to 39 bytes. The
+shared Rust host protocol, Rust FFI validator, and native Rust app-store buffers use
 the same 40-byte storage capacity including the terminating NUL byte.
 
 Install commit verifies byte count and CRC32 before publishing
@@ -114,25 +114,25 @@ CRC32, stages `/sq/tmp/temp-run.sqbc.tmp`, resets volatile temp state, and
 queues the temporary foreground app through the normal lifecycle path.
 
 Installed-app, temp-run, and resource begin/chunk/commit commands use
-caller-owned buffers across the C/Rust boundary. Zephyr passes the received
+caller-owned buffers across the C/Rust boundary. native Rust passes the received
 frame and its fixed session storage to Rust; Rust returns a bounded action with
-borrowed byte slices or stored session strings; Zephyr performs the filesystem
+borrowed byte slices or stored session strings; native Rust performs the filesystem
 or VM operation and then calls the completion function so Rust updates progress.
 Host tooling derives upload chunk payload size from the target serial frame
 budget so install, resource, and temp-run chunk frames fit the firmware's fixed
-serial receive buffer. The ESP32-C3 Zephyr profile uses a 1024-byte frame
+serial receive buffer. The ESP32-C3 native Rust profile uses a 1024-byte frame
 budget and a 4096-byte acknowledgement window. Current transfer chunk frames
 carry offset, bytes, and acknowledgement intent, leaving 983 upload bytes per
 chunk on that profile.
 Rust also encodes `app-list`, lifecycle diagnostics, state export responses,
-and protocol error responses directly into Zephyr's caller-owned response
-buffer so Zephyr C does not stage duplicate TLV payload arrays for those command
+and protocol error responses directly into native Rust's caller-owned response
+buffer so native Rust C does not stage duplicate TLV payload arrays for those command
 responses. Repeated diagnostic line responses use the same Rust encoder path.
-Zephyr C directly encodes resource diagnostics into the same caller-owned
+native Rust C directly encodes resource diagnostics into the same caller-owned
 response buffer because those values are already native runtime measurements;
 it does not keep a resident metric staging array. App launch, generic event
 dispatch, state import, and Wi-Fi profile requests are parsed by Rust `sqdp_`
-FFI helpers, which return borrowed field slices to Zephyr C for runtime/storage
+FFI helpers, which return borrowed field slices to native Rust C for runtime/storage
 actions.
 
 `app-list` responses use repeated record fields: response field tag `1` is one
@@ -147,7 +147,7 @@ error lines include the mapped VM FFI status label and errno, for example
 `runtime=vm_error code=-5 (EIO)` or
 `runtime=invalid_argument code=-22 (EINVAL)`.
 `state-import` request TLV parsing is owned by the Rust `sqdp_` FFI helper and
-returns a borrowed state byte slice to Zephyr C for storage. `resources-get`
+returns a borrowed state byte slice to native Rust C for storage. `resources-get`
 returns repeated record fields: response field tag `1` is one resource record,
 record field tag `1` is the compact unsigned 32-bit metric ID, and record field
 tag `2` is the value as an unsigned 32-bit or unsigned 64-bit integer. Host
@@ -167,8 +167,8 @@ currently active entries, persist non-default active caps to firmware-owned
 runtime config, and return an empty OK response on success.
 
 Wi-Fi profile provisioning uses the framed opcode to store one volatile,
-bounded station profile in Zephyr runtime memory. Rust `sqdp_` FFI code owns
-the request TLV parsing and returns borrowed field slices to Zephyr C, which
+bounded station profile in native Rust runtime memory. Rust `sqdp_` FFI code owns
+the request TLV parsing and returns borrowed field slices to native Rust C, which
 only applies the validated profile to the runtime. The command response is
 empty on success and must not echo SSIDs or passwords.
 SquidScript VM calls to `service.wifi.status()`, `service.wifi.startAP(...)`,
@@ -176,21 +176,21 @@ SquidScript VM calls to `service.wifi.status()`, `service.wifi.startAP(...)`,
 `service.wifi.disconnect()`, `service.wifi.scan()`,
 `service.wifi.operation()`, `service.wifi.result()`,
 `service.wifi.cancel()`, `service.wifi.scanNetwork(index)`, and
-`service.wifi.getAPIP()` are connected to Zephyr Wi-Fi management callbacks.
+`service.wifi.getAPIP()` are connected to native Rust Wi-Fi management callbacks.
 Operation-starting calls return immediately; apps poll operation/result records
 from timers instead of blocking serial/runtime progress. Station connect and
-disconnect use the provisioned volatile profile and Zephyr station requests.
+disconnect use the provisioned volatile profile and native Rust station requests.
 Wi-Fi command output and hardware checks must stay redacted unless the user
 explicitly requests raw identifiers.
 `system.memory()` and `system.storage("apps")` are connected through the same
-Zephyr VM FFI host boundary as other runtime services. `system.memory()` returns
+native Rust VM FFI host boundary as other runtime services. `system.memory()` returns
 a display-oriented RAM/heap diagnostic string. `system.storage("apps")` returns
 a display-oriented free-space string for the mounted SquidScript app store.
 SquidScript VM calls to `app.launch`, `app.arm`, and `app.disarm` are also
-connected through the Zephyr FFI host. The `app-launch` and generic
+connected through the native Rust FFI host. The `app-launch` and generic
 `event-dispatch` command requests are parsed by Rust `sqdp_` FFI helpers before
-Zephyr starts or dispatches the installed app.
-`app.launch`, host `app-launch`, and `app.exit` drive the Zephyr foreground
+native Rust starts or dispatches the installed app.
+`app.launch`, host `app-launch`, and `app.exit` drive the native Rust foreground
 return stack for installed apps and clear foreground timers when a different
 foreground app becomes active. Host `app-launch` follows the same lifecycle
 chain as an in-app `app.launch`: if there is no current foreground app, firmware
@@ -212,7 +212,7 @@ failure cases, fallback `main` behavior, and reset versus storage-format test
 isolation guidance. See `docs/firmware_state_machines.md` for the protocol
 transfer, scratch ownership, input button, indicator pattern, and bounded-queue
 state models.
-Zephyr preserves the active foreground VM's in-memory state across
+native Rust preserves the active foreground VM's in-memory state across
 non-lifecycle foreground event dispatches, such as key and foreground timer
 handlers, so apps do not need to call `state.load()` for every event. App
 launch, app-exit returns, and armed trigger activations start fresh VM sessions
@@ -222,11 +222,11 @@ registrations, and exposes them through `lifecycle-get`. Trigger registration
 uses a dedicated installed-app VM storage backend so metadata reads cannot
 overwrite the active foreground app backend. It does not keep a background VM
 resident and does not dispatch a synthetic foreground event. When an armed
-timer fires, Zephyr starts the armed app as foreground and dispatches the
+timer fires, native Rust starts the armed app as foreground and dispatches the
 registered event. `app.disarm` removes that app's armed timer registrations.
 
 Planned sleep is requested from SquidScript with
-`service.power.sleep({ wakeAfterMs })`. Zephyr waits until the current VM event
+`service.power.sleep({ wakeAfterMs })`. native Rust waits until the current VM event
 returns, dispatches `power.sleep` to the current foreground app, writes the
 planned-resume lifecycle record, configures the target wake source, and then
 enters sleep. On ESP32-C3 the first supported wake source is timer wake from
@@ -245,19 +245,10 @@ Resource diagnostics should report RAM numbers separately from flash storage
 numbers. When the user asks for "memory" without qualification, report RAM by
 default.
 
-Zephyr builds should keep RAM usage visible with `scripts/zephyr-ram-audit.sh`.
-The default guard for the ESP32-C3 Zephyr slice is `266240` bytes in
-`dram0_0_seg`; override it only with `SQUID_ZEPHYR_DRAM_LIMIT_BYTES` when a
-change intentionally changes the measured budget. The audit also emits
-structured `ram_symbol[N]=size=... addr=... type=... name=...` lines for the
-largest static DRAM symbols; adjust the count with
-`SQUID_ZEPHYR_RAM_SYMBOL_COUNT` when investigating RAM optimization candidates.
-When `SQUID_ZEPHYR_TARGET_JSON` is supplied, the RAM audit derives its default
-limit from target SRAM metadata and `SQUID_ZEPHYR_RAM_PROFILE_PERCENT`, which
-defaults to 65. For the ESP32-C3 Super Mini target, the metadata declares
-400 KiB internal SRAM, so the 65% profile limit is 266240 bytes. The audit
-still reports the Zephyr linker section bytes, because `dram0_0_seg` placement
-is the immediate firmware build constraint.
+Native X4 builds expose static and live RAM diagnostics through the linker,
+firmware resource response, and target-aware hardware workloads. Budget values
+must come from native runtime or target metadata rather than historical board
+profiles.
 `resources-get` reports `proto_stack_size_bytes`,
 `proto_stack_unused_bytes`, `proto_stack_used_bytes`,
 `vm_stack_size_bytes`, `vm_stack_unused_bytes`, and
@@ -267,17 +258,17 @@ representative real-device high-water data. It also reports
 `runtime_work_submitted`, `runtime_current_app_present`,
 `runtime_lifecycle_phase`, and `runtime_arm_phase` so a responsive serial
 protocol can distinguish a running or wedged VM dispatch from an idle runtime
-while triaging lockups. It also reports live Zephyr heap
+while triaging lockups. It also reports live native Rust heap
 telemetry as `heap_count`, `heap_free_bytes`,
 `heap_alloc_bytes`, `heap_max_alloc_bytes`,
 `heap_largest_free_supported`, and `heap_largest_free_bytes`, so system-heap
 budget reductions can be based on allocator high-water data and explicit
 fragmentation-probe availability instead of static map size alone. A
 `resources-get` request may include bool field tag `1` set to `true` to reset
-Zephyr's heap allocation high-water statistic to the current allocated bytes
+native Rust's heap allocation high-water statistic to the current allocated bytes
 before the response is sampled; the CLI exposes this as
 `device resources --reset-heap-max` for workload-boundary attribution. Current
-Zephyr public heap stats do not expose a safe non-mutating largest-free-block
+native Rust public heap stats do not expose a safe non-mutating largest-free-block
 query: `sys_heap_runtime_stats_get()` returns only free, allocated, and
 max-allocated bytes, while `sys_heap_print_info()` prints bucket details instead
 of returning a bounded numeric value. The heap listener API reports allocation
@@ -285,16 +276,16 @@ and free events, not the current largest free block. ESP32-C3 firmware therefore
 reports `heap_largest_free_supported=0` and `heap_largest_free_bytes=0` until a
 safe probe or allocation-failure mitigation is added. `system.memory()`
 remains a display-oriented summary; use `device resources` for raw heap
-diagnostics. `runtime_static_bytes` includes the Zephyr VM runtime object;
+diagnostics. `runtime_static_bytes` includes the native Rust VM runtime object;
 the runtime shares its VM initialization scratch buffer with later storage
 completion transfer storage because those buffers are not live at the same
 time. `vm_sqbc_chunk_bytes` reports the bounded 768-byte SQBC code/read
 transfer window used for file-backed installed app dispatch; the full installed
 `main.sqbc` payload is not resident in that window. Use
-`scripts/zephyr-static-buffer-report.sh` for static ownership attribution: the
+`scripts/native-static-buffer-report.sh` for static ownership attribution: the
 current report separates SquidScript-owned runtime/protocol buffers from
-Zephyr, ESP, network, Wi-Fi, heap, and stack symbols. The ESP32-C3 Zephyr
-canonical configuration keeps Zephyr's system heap at 65,536 bytes.
+native Rust, ESP, network, Wi-Fi, heap, and stack symbols. The ESP32-C3 native Rust
+canonical configuration keeps native Rust's system heap at 65,536 bytes.
 Representative app, display, system-resource, and Wi-Fi AP start/stop workloads
 with reset-bounded heap high-water rows measured Wi-Fi AP start at
 `heap_max_alloc_bytes=36432` and Wi-Fi AP stop at `heap_max_alloc_bytes=36460`,
@@ -302,5 +293,5 @@ leaving at least 8,596 bytes below the configured heap ceiling. Remeasure before
 adding TCP, AP client throughput, BLE coexistence, or larger Wi-Fi workloads.
 
 Wi-Fi diagnostics should distinguish internal firmware/driver state from
-external RF proof. A successful Zephyr Wi-Fi status record does not by itself
+external RF proof. A successful native Rust Wi-Fi status record does not by itself
 prove that another device can see or join an AP.

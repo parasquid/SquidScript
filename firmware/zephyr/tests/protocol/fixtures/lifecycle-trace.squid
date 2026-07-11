@@ -1,8 +1,0 @@
-app "lifecycle"
-
-event.on("repl") {
-  app.launch("reader")
-}
-
-screen("main") {
-}

@@ -1,9 +1,0 @@
-app "content-picker"
-
-event.on("app.start") {
-  let picked = file.pickFile(".binbook")
-  debug.print(picked.ok, picked.error, picked.path)
-}
-
-screen("main") {
-}

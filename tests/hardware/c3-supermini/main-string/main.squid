@@ -1,5 +1,0 @@
-app "main"
-
-event.on("app.start") {
-  debug.print("main ready")
-}

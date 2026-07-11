@@ -25,7 +25,7 @@ offset  size  field
 ...     n     section payloads
 ```
 
-This is the current real bytecode format used by Zephyr firmware. It is
+This is the current real bytecode format used by native Rust firmware. It is
 intentionally small and exists to exercise the SquidScript language spec on
 constrained hardware while moving installed apps toward metadata-first loading.
 
@@ -183,7 +183,7 @@ around `0xd0` once their portable SquidScript contracts are specified.
 
 The current format supports the headless VM subset. Display draw commands are
 emitted as headless draw-log records by firmware hosts that implement the
-display service. The current Zephyr draw-log records cover clear, text, rect,
+display service. The current native Rust draw-log records cover clear, text, rect,
 line, select, image, and draw commands. `service.display.info` returns the
 active display service descriptor as a read-only result record. GPIO builtins dispatch to target firmware hardware modules;
 unsupported names return a VM operand error. The canonical lifecycle surface is
@@ -263,9 +263,9 @@ looks up the profile by id when the start builtin runs, activates only the
 listed transports, and dispatches the configured completion event with an
 ephemeral `upload` file reference.
 
-Zephyr firmware must install named SQBC apps, start `main`, arm trigger
+native Rust firmware must install named SQBC apps, start `main`, arm trigger
 registrations, dispatch real timer events, and exercise app-stack behavior.
-Installed SQBC payloads live in Zephyr-owned app storage. Startup registry
+Installed SQBC payloads live in native Rust-owned app storage. Startup registry
 rebuilds validate installed apps from the header and section table with bounded
 reads rather than mirroring full app bodies in RAM.
 
@@ -308,13 +308,13 @@ evicted at any time. Preloaded chunks have higher cache priority but are not
 pinned. Dropping a chunk is not app lifecycle behavior and does not dispatch
 `event.on("app.exit")`.
 
-Installed-app and temp-run execution use bounded indexed reads from Zephyr-owned
+Installed-app and temp-run execution use bounded indexed reads from native Rust-owned
 storage rather than assuming a memory-mapped contiguous app image. Use LittleFS
 where a file layout is needed and NVS or LittleFS records for app state based on
 implementation tests. `RUN.TEMP` stages bytecode as a temporary app-store file
 but keeps temp app state volatile.
 
-The current Zephyr implementation stores installed `main.sqbc` files in
+The current native Rust implementation stores installed `main.sqbc` files in
 LittleFS and dispatches them through the `SqvmStorageRequest::SqbcRead`
 boundary. The resident runtime holds the parsed metadata/index, VM state, and
 one bounded SQBC code/read window; it does not need to keep the full installed

@@ -1,9 +1,0 @@
-app "blink-supermini" target "esp32c3-super-mini"
-
-event.on("app.start") {
-  service.indicator.blink(120, 80)
-  debug.print("blink ready")
-}
-
-screen("main") {
-}

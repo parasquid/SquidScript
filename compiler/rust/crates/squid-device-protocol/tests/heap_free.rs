@@ -11,7 +11,7 @@ fn heap_free_encoders_write_framed_headers_without_alloc_feature() {
         Opcode::Hello,
         42,
         "esp32c3-supermini",
-        "squidscript-zephyr",
+        "squidscript-native",
         true,
         4096,
         &mut out,

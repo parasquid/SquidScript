@@ -230,11 +230,7 @@ Example:
 ## 6.1 Firmware Tooling Section
 
 `firmware` describes repository firmware build metadata for concrete targets.
-For Zephyr-backed targets, `squidc target` reads `firmware.zephyr` to resolve
-the Zephyr board, build directory, overlay, fallback SquidScript app, and
-generated Kconfig fragment.
-
-For native targets, `firmware.native` describes the Rust package, toolchain,
+`squidc target` reads the direct `firmware` object. It describes the Rust package, toolchain,
 target triple, features, output ELF, OTA application image, partition table,
 and native runtime settings. `partitionTable` is a repository-relative ESP-IDF
 CSV. `otaImage` is the raw application image generated during `target build`.
@@ -251,33 +247,15 @@ Example:
 ```json
 {
   "firmware": {
-    "zephyr": {
-      "board": "xiao_esp32c3",
-      "buildDir": "build/zephyr/xiao-esp32c3-gdeq0426t82-sd",
-      "overlay": "firmware/zephyr/boards/xiao_esp32c3_gdeq0426t82_sd.overlay",
-      "fallbackSource": "firmware/zephyr/fallback/xiao-esp32c3-gdeq0426t82-sd-main.squid",
-      "targetKconfig": "target/zephyr/generated/xiao-esp32c3-gdeq0426t82-sd-target.conf"
-    }
-  }
-}
-```
-
-Native example:
-
-```json
-{
-  "firmware": {
-    "native": {
-      "package": "squidscript-fw-x4",
-      "workingDir": ".",
-      "target": "riscv32imc-unknown-none-elf",
-      "chip": "esp32c3",
-      "elf": "target/riscv32imc-unknown-none-elf/debug/squidscript-fw-x4",
+    "package": "squidscript-fw-x4",
+    "workingDir": "firmware/native",
+    "target": "riscv32imc-unknown-none-elf",
+    "chip": "esp32c3",
+    "elf": "target/riscv32imc-unknown-none-elf/debug/squidscript-fw-x4",
       "otaImage": "target/riscv32imc-unknown-none-elf/debug/squidscript-fw-x4-ota.bin",
       "partitionTable": "targets/partitions/xteink-x4.csv",
       "features": ["native-radio-services", "ble"],
       "bleConnectionWatchdogMs": 30000
-    }
   }
 }
 ```
@@ -286,9 +264,9 @@ Rules:
 
 1. Paths are repository-relative unless absolute.
 2. Scripts and CI should pass target IDs explicitly to `squidc target`.
-3. A target without `firmware.zephyr` may still be listed and inspected.
-   Zephyr build, flash, and monitor commands fail with an unsupported-target
-   error; `target doctor` reports a failed Zephyr metadata check.
+3. An executable target must include a direct `firmware` object.
+   native Rust build, flash, and monitor commands fail with an unsupported-target
+   error; `target doctor` reports a failed native Rust metadata check.
 4. Native targets may omit `bleConnectionWatchdogMs` to use the 30-second
    default. Set it explicitly when a target needs a different BLE inactivity
    policy.
@@ -507,7 +485,7 @@ SquidScript apps request text size through `fontHeight` in logical pixels. Firmw
 
 Screen render policy is app-visible SquidScript intent. `compose` means normal UI composition. `stream` means page- or image-dominant rendering. Display render mode is a firmware/display initialization choice. `strip` means the display service renders into bounded strips and transfers those strips to the EPD. `single` means the display service keeps one full framebuffer for composition before transfer.
 
-If a SquidScript screen omits `render`, firmware should use `rendering.defaultPolicy`. For XTEINK X4 that default is `compose`. Zephyr firmware should initialize the display service with `strip` as the low-RAM default mode, while allowing `single` for debug builds or workflows where the extra RAM is justified. `policyModeMap` is a firmware preference order for mapping app-visible policy to target-supported display modes.
+If a SquidScript screen omits `render`, firmware should use `rendering.defaultPolicy`. For XTEINK X4 that default is `compose`. native Rust firmware should initialize the display service with `strip` as the low-RAM default mode, while allowing `single` for debug builds or workflows where the extra RAM is justified. `policyModeMap` is a firmware preference order for mapping app-visible policy to target-supported display modes.
 
 ---
 
@@ -785,7 +763,7 @@ The target compiler must not silently guess missing values. Missing required val
 
 ## 17. Generated Firmware Interface
 
-Initial generated firmware configuration should include constants equivalent to the following. Zephyr firmware may emit these as C headers, devicetree overlays, or Kconfig fragments as appropriate.
+Generated native firmware configuration should include constants equivalent to the following Rust values.
 
 ```c
 #define DEVICE_TARGET_ID "xteink-x4"

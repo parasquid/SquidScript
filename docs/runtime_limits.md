@@ -65,7 +65,7 @@ uses the VM image-size limit and remains RAM-backed.
 | Native X4 BLE transfer chunk | 192 bytes | `BLE_PIPELINE_CHUNK_BYTES` |
 | Native X4 queued BLE chunks | 4 | `BLE_PIPELINE_DEPTH` |
 | Native X4 BLE transfer-buffer budget | 2048 bytes | `BLE_PIPELINE_BUFFER_BUDGET_BYTES` |
-| Native BLE connection inactivity | 30000 ms by default | `firmware.native.bleConnectionWatchdogMs` |
+| Native BLE connection inactivity | 30000 ms by default | `firmware.bleConnectionWatchdogMs` |
 
 Upload storage is bounded independently of total file size. HTTP streams in
 fixed chunks. BLE backpressure delays acknowledgement when its fixed queue is
