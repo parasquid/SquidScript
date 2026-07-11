@@ -105,6 +105,119 @@ pub trait OtaSlotStorage {
     fn activate(&mut self, slot: Slot) -> Result<(), OtaError>;
 }
 
+#[cfg(target_arch = "riscv32")]
+pub struct EspOtaSlotStorage<'a, F> {
+    flash: &'a mut F,
+    partition_table: [u8; esp_bootloader_esp_idf::partitions::PARTITION_TABLE_MAX_LEN],
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<'a, F> EspOtaSlotStorage<'a, F>
+where
+    F: embedded_storage::Storage + embedded_storage::nor_flash::NorFlash,
+{
+    pub fn new(flash: &'a mut F) -> Self {
+        Self {
+            flash,
+            partition_table: [0; esp_bootloader_esp_idf::partitions::PARTITION_TABLE_MAX_LEN],
+        }
+    }
+
+    fn inactive_geometry(&mut self, expected: Slot) -> Result<(u32, usize), OtaError> {
+        use esp_bootloader_esp_idf::partitions::{read_partition_table, PartitionType};
+
+        let subtype = {
+            let mut updater = esp_bootloader_esp_idf::ota_updater::OtaUpdater::new(
+                self.flash,
+                &mut self.partition_table,
+            )
+            .map_err(|_| OtaError::Flash)?;
+            let (region, subtype) = updater.next_partition().map_err(|_| OtaError::Flash)?;
+            if region.partition_size() != OTA_SLOT_BYTES {
+                return Err(OtaError::Bounds);
+            }
+            subtype
+        };
+        if slot_from_subtype(subtype)? != expected {
+            return Err(OtaError::ActiveSlot);
+        }
+        let table = read_partition_table(self.flash, &mut self.partition_table)
+            .map_err(|_| OtaError::Flash)?;
+        let entry = table
+            .find_partition(PartitionType::App(subtype))
+            .map_err(|_| OtaError::Flash)?
+            .ok_or(OtaError::Flash)?;
+        if entry.len() as usize != OTA_SLOT_BYTES {
+            return Err(OtaError::Bounds);
+        }
+        Ok((entry.offset(), entry.len() as usize))
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<F> OtaSlotStorage for EspOtaSlotStorage<'_, F>
+where
+    F: embedded_storage::Storage + embedded_storage::nor_flash::NorFlash,
+{
+    fn erase(&mut self, slot: Slot, from: usize, to: usize) -> Result<(), OtaError> {
+        let (base, size) = self.inactive_geometry(slot)?;
+        if from >= to || to > size {
+            return Err(OtaError::Bounds);
+        }
+        let from = base.checked_add(from as u32).ok_or(OtaError::Bounds)?;
+        let to = base.checked_add(to as u32).ok_or(OtaError::Bounds)?;
+        embedded_storage::nor_flash::NorFlash::erase(self.flash, from, to)
+            .map_err(|_| OtaError::Flash)
+    }
+
+    fn write(&mut self, slot: Slot, offset: usize, bytes: &[u8]) -> Result<(), OtaError> {
+        let (base, size) = self.inactive_geometry(slot)?;
+        if bytes.is_empty() || offset.saturating_add(bytes.len()) > size {
+            return Err(OtaError::Bounds);
+        }
+        let offset = base.checked_add(offset as u32).ok_or(OtaError::Bounds)?;
+        embedded_storage::nor_flash::NorFlash::write(self.flash, offset, bytes)
+            .map_err(|_| OtaError::Flash)
+    }
+
+    fn read(&mut self, slot: Slot, offset: usize, out: &mut [u8]) -> Result<(), OtaError> {
+        let (base, size) = self.inactive_geometry(slot)?;
+        if out.is_empty() || offset.saturating_add(out.len()) > size {
+            return Err(OtaError::Bounds);
+        }
+        let offset = base.checked_add(offset as u32).ok_or(OtaError::Bounds)?;
+        embedded_storage::nor_flash::ReadNorFlash::read(self.flash, offset, out)
+            .map_err(|_| OtaError::Flash)
+    }
+
+    fn activate(&mut self, slot: Slot) -> Result<(), OtaError> {
+        let mut updater = esp_bootloader_esp_idf::ota_updater::OtaUpdater::new(
+            self.flash,
+            &mut self.partition_table,
+        )
+        .map_err(|_| OtaError::Flash)?;
+        let (_, subtype) = updater.next_partition().map_err(|_| OtaError::Flash)?;
+        if slot_from_subtype(subtype)? != slot {
+            return Err(OtaError::ActiveSlot);
+        }
+        updater
+            .activate_next_partition()
+            .map_err(|_| OtaError::Flash)
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+fn slot_from_subtype(
+    subtype: esp_bootloader_esp_idf::partitions::AppPartitionSubType,
+) -> Result<Slot, OtaError> {
+    use esp_bootloader_esp_idf::partitions::AppPartitionSubType;
+    match subtype {
+        AppPartitionSubType::Ota0 => Ok(Slot::App0),
+        AppPartitionSubType::Ota1 => Ok(Slot::App1),
+        _ => Err(OtaError::Bounds),
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CooperativeStatus {
     Idle,
