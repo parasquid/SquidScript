@@ -1528,13 +1528,10 @@ async fn native_http_upload_task(stack: embassy_net::Stack<'static>) {
                 send_http_response(socket, 400, "Bad Request", "bad request\n").await;
                 return Ok(());
             }
-            let received = socket
-                .read(&mut header_buf[used..])
-                .await
-                .map_err(|_| "http-header-read")?;
-            if received == 0 {
-                return Ok(());
-            }
+            let received = match socket.read(&mut header_buf[used..]).await {
+                Ok(0) | Err(_) => return Ok(()),
+                Ok(received) => received,
+            };
             used += received;
         };
         let headers = core::str::from_utf8(&header_buf[..header_len]).map_err(|_| "http-header")?;

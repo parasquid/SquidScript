@@ -213,6 +213,16 @@ for the HTTP AP association, and `--device <name-or-address>` for BLE matching.
 The scripts write command output, curl progress, and failure diagnostics under
 `target/hardware-tests/xteink-x4-transfer-*`.
 
+`scripts/xteink-x4-test-radio-coexistence.sh` is the native X4 combined-radio
+gate. It installs the unified `http` and `ble` upload profile, associates the
+host with the X4 access point, holds a live GATT connection during HTTP upload,
+and issues repeated HTTP `HEAD` requests while the CLI uploads over BLE. The
+gate requires terminal BLE completion, exact size and CRC for both copied
+files, active Wi-Fi and BLE leases during the test, zero leases after reset,
+and recovered heap. Raw NetworkManager and BLE details stay in the local
+hardware-test work directory; the script reports only transfer and probe
+counts.
+
 Native X4 BLE acceptance additionally runs 26-, 1024-, and 8982-byte payloads
 through receive, app copy, and uncached `device content-check`, comparing both
 size and CRC32. Run target-owning commands sequentially. An interrupted or

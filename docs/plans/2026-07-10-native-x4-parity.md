@@ -531,28 +531,37 @@ automatically returns to the prior image.
 **Owning layers:** existing `esp-radio`/TrouBLE integration, BLE status
 characteristic, CLI client, target hardware tests.
 
-- [ ] Start with a throwaway hardware spike using the actual host and, where
+- [x] Start with a throwaway hardware spike using the actual host and, where
   useful, the second attached ESP32-C3. Answer whether AP association, HTTP,
   BLE advertising, a live GATT connection, and data transfer coexist with the
   current `esp-radio/coex` feature.
-- [ ] Save temporary evidence outside tracked docs; remove spike code before
+- [x] Save temporary evidence outside tracked docs; remove spike code before
   the implementation commit.
-- [ ] If coexistence fails, instrument and fix or upgrade the owning
+- [x] If coexistence fails, instrument and fix or upgrade the owning
   `esp-radio`/TrouBLE boundary. Do not serialize the services behind the API or
   claim lease-level tests prove over-the-air coexistence.
-- [ ] Build one app with a unified profile enabling both `http` and `ble`.
-- [ ] Restore a real terminal BLE status that BlueZ/btleplug can observe after
+- [x] Build one app with a unified profile enabling both `http` and `ble`.
+- [x] Restore a real terminal BLE status that BlueZ/btleplug can observe after
   durable commit and handler completion. Preserve one adapter for the entire
   operation and bounded characteristic-resolution retries.
-- [ ] Make CLI success require terminal status; serial CRC remains independent
+- [x] Make CLI success require terminal status; serial CRC remains independent
   content-integrity proof, not a completion substitute.
-- [ ] Test stop/reset/app replacement/runtime error cleanup for both radios and
+- [x] Test stop/reset/app replacement/runtime error cleanup for both radios and
   staged files.
 
 **Hardware stress gate:** associate host to X4 AP while BLE advertises, keep a
 BLE connection open while HTTP uploads, issue repeated HTTP `HEAD` requests
 during BLE upload, complete both transfers with exact CRC, observe terminal
 GATT status, then stop/reset and verify zero leases and reusable memory.
+
+Hardware verification used the unified `file-transfer-regression` profile.
+GATT remained connected through HTTP upload, the host completed 79 HTTP `HEAD`
+requests during BLE upload, and the CLI observed terminal BLE completion after
+the app handler. Both 8,982-byte files matched CRC32 `5290be40`. Runtime reset
+released both radio leases and the upload profile, and recovered reusable heap.
+The spike isolated the initial timeout to SD promotion rather than RF
+coexistence; target-frequency SD traffic and the single-mount copy path removed
+that bottleneck.
 
 **Acceptance:** HTTP and BLE are simultaneously usable over the air and the
 unified CLI receives authoritative completion for both.
