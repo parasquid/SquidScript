@@ -76,6 +76,7 @@
       "elf": "target/riscv32imc-unknown-none-elf/debug/squidscript-fw-x4",
       "otaImage": "target/riscv32imc-unknown-none-elf/debug/squidscript-fw-x4-ota.bin",
       "partitionTable": "targets/partitions/xteink-x4.csv",
+      "bootloader": "firmware/native/bootloader/xteink-x4/bootloader.bin",
       "features": [
         "firmware-bin",
         "x4-binbook",

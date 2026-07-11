@@ -502,7 +502,7 @@ and lifecycle-correct on both wake sources.
 - [ ] Reboot after the final response is durably sent.
 - [ ] At new-image boot, mark the slot valid only after LittleFS mount,
   registry scan, runtime init, and serial readiness.
-- [ ] Let the stock bootloader roll back a candidate that resets or fails before
+- [ ] Let the target-owned bootloader roll back a candidate that resets or fails before
   the health gate.
 - [ ] Preserve app-store LittleFS and SD content across slot changes.
 

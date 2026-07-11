@@ -109,6 +109,7 @@ pub struct NativeFirmware {
     pub elf: PathBuf,
     pub ota_image: PathBuf,
     pub partition_table: PathBuf,
+    pub bootloader: PathBuf,
     #[serde(default)]
     pub features: Vec<String>,
     #[serde(default)]
@@ -133,6 +134,7 @@ impl NativeFirmware {
             "elf": resolve_repo_path(root, &self.elf),
             "otaImage": resolve_repo_path(root, &self.ota_image),
             "partitionTable": resolve_repo_path(root, &self.partition_table),
+            "bootloader": resolve_repo_path(root, &self.bootloader),
             "features": self.features,
             "release": self.release,
             "rustupToolchain": self.rustup_toolchain,
@@ -661,6 +663,10 @@ fn plan_native_flash_command(
         resolve_repo_path(root, &native.partition_table)
             .display()
             .to_string(),
+        "--bootloader".to_string(),
+        resolve_repo_path(root, &native.bootloader)
+            .display()
+            .to_string(),
         "--target-app-partition".to_string(),
         "app0".to_string(),
         resolve_repo_path(root, &native.elf).display().to_string(),
@@ -1045,7 +1051,8 @@ mod tests {
             "chip": "esp32c3",
             "elf": "target/firmware",
             "otaImage": "target/firmware.bin",
-            "partitionTable": "targets/partitions/test.csv"
+            "partitionTable": "targets/partitions/test.csv",
+            "bootloader": "firmware/bootloader.bin"
         }))
         .unwrap();
 

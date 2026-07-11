@@ -178,7 +178,7 @@ Normal routing logs are compiled out of release firmware with
 
 ## Internal Flash And OTA Layout
 
-The native X4 uses the stock ESP-IDF bootloader with this 16 MiB partition
+The native X4 uses a target-owned ESP-IDF rollback bootloader with this 16 MiB partition
 geometry:
 
 | Name | Type/subtype | Offset | Size |
@@ -295,7 +295,7 @@ Before activation, host and firmware verify:
 Firmware then selects the inactive slot, marks it pending verification, and
 reboots. The new image marks itself valid only after LittleFS mount, registry
 rebuild, runtime initialization, and serial protocol readiness. Failure to
-reach that gate leaves rollback to the stock bootloader.
+reach that gate leaves rollback to the target-owned bootloader.
 
 Serial is the only delivery transport in this design. Authenticated network
 delivery is separate roadmap work and must include signed-image policy,

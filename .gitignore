@@ -24,3 +24,8 @@ AGENTS.local.md
 experiments/**/esp-idf-*/build/
 experiments/**/esp-idf-*/sdkconfig
 experiments/**/esp-idf-*/sdkconfig.old
+
+# Target-owned ESP-IDF bootloader build outputs. The resulting bootloader.bin is tracked.
+firmware/native/bootloader/**/build/
+firmware/native/bootloader/**/sdkconfig
+firmware/native/bootloader/**/sdkconfig.old

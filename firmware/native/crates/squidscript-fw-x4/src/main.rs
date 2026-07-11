@@ -3532,6 +3532,10 @@ async fn run_serial_protocol_cooperative<B, D, C, FB, AS, F>(
     .unwrap_or(false);
     #[cfg(feature = "x4-binbook")]
     if health_pending {
+        if option_env!("SQUIDSCRIPT_X4_FORCE_PREHEALTH_RESET") == Some("1") {
+            native_radio_log!("native_ota_test stage=forced-prehealth-reset");
+            esp_hal::system::software_reset();
+        }
         let health_result = with_x4_ota(|ota| {
             let X4OtaRuntime {
                 storage,

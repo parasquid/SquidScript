@@ -4054,6 +4054,10 @@ mod tests {
         assert!(plan.args.windows(2).any(|args| {
             args[0] == "--partition-table" && args[1].ends_with("targets/partitions/xteink-x4.csv")
         }));
+        assert!(plan.args.windows(2).any(|args| {
+            args[0] == "--bootloader"
+                && args[1].ends_with("firmware/native/bootloader/xteink-x4/bootloader.bin")
+        }));
         assert!(plan
             .args
             .windows(2)
