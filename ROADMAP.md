@@ -193,6 +193,10 @@ aligned as the sole firmware architecture.
   say "GPIO-only" until readers land.
 ## Developer Tooling
 
+- Add a target authoring assistant that scaffolds and validates target JSON
+  from registered MCU, device, and driver catalogs, including pin/bus conflict
+  checks and simulator layout guidance; target JSON remains the sole per-target
+  artifact.
 - Audit compiler, SQBC, simulator, examples, and docs for invariant violations
   that should become explicit diagnostics instead of silent ambiguity.
 - Add transfer throughput regression reporting for XTEINK X4 serial, HTTP, and
