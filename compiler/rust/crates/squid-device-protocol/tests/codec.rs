@@ -4,15 +4,19 @@ use squid_device_protocol::{
     app_launch_request, app_list_entries, content_install_begin_request,
     content_install_chunk_request, content_install_commit_request, decode_frame,
     encode_app_list_response_into, encode_empty_response_into, encode_error_response_into,
-    encode_frame, encode_frame_into, encode_hello_response_into, encode_lifecycle_response_into,
+    encode_firmware_info_response_into, encode_firmware_update_status_response_into, encode_frame,
+    encode_frame_into, encode_hello_response_into, encode_lifecycle_response_into,
     encode_lifecycle_response_with_details_into, encode_line_response_into,
-    encode_resources_response_into, event_dispatch_request, hello_identity, hello_request,
-    key_event_from_request_into, key_request, lifecycle_lines, output_lines, request_bytes_field,
-    request_string_field, resource_values, resources_get_request_with_heap_reset,
-    runtime_cap_clear_request, runtime_cap_get_request, runtime_cap_set_request, AppListEntry,
-    DecodeError, DeviceRequest, Field, FieldValue, Frame, FrameKind, HostAction, LifecycleTimer,
-    Opcode, ProtocolSessions, ResourceMetric, SessionError, Status, TransferCapabilities,
-    MAX_CONTENT_NAME_BYTES,
+    encode_resources_response_into, event_dispatch_request, firmware_info, firmware_info_request,
+    firmware_update_abort_request, firmware_update_begin_request, firmware_update_chunk_request,
+    firmware_update_commit_request, firmware_update_status, firmware_update_status_request,
+    hello_identity, hello_request, key_event_from_request_into, key_request, lifecycle_lines,
+    output_lines, request_bytes_field, request_string_field, request_u64_field, resource_values,
+    resources_get_request_with_heap_reset, runtime_cap_clear_request, runtime_cap_get_request,
+    runtime_cap_set_request, AppListEntry, DecodeError, DeviceRequest, Field, FieldValue,
+    FirmwareInfoRef, FirmwareUpdateStatusRef, Frame, FrameKind, HostAction, LifecycleTimer, Opcode,
+    ProtocolSessions, ResourceMetric, SessionError, Status, TransferCapabilities,
+    FIRMWARE_SHA256_BYTES, MAX_CONTENT_NAME_BYTES,
 };
 
 #[test]
@@ -637,4 +641,122 @@ fn encodes_heap_free_error_response() {
             Field::string(251, "invalid request"),
         ]
     );
+}
+
+#[test]
+fn firmware_update_requests_round_trip_with_typed_fields() {
+    let hash = vec![0x5a; FIRMWARE_SHA256_BYTES];
+    let requests = [
+        firmware_info_request(1),
+        firmware_update_commit_request(4),
+        firmware_update_status_request(5),
+        firmware_update_abort_request(6),
+    ];
+    assert_eq!(
+        requests.map(|request| request.opcode),
+        [
+            Opcode::FirmwareInfo,
+            Opcode::FirmwareUpdateCommit,
+            Opcode::FirmwareUpdateStatus,
+            Opcode::FirmwareUpdateAbort,
+        ]
+    );
+
+    let begin = encode_frame(&firmware_update_begin_request(
+        2,
+        123_456,
+        hash.clone(),
+        "build-a",
+    ));
+    let begin = DeviceRequest::decode(&begin).unwrap();
+    assert_eq!(begin.opcode, Opcode::FirmwareUpdateBegin);
+    assert_eq!(request_u64_field(&begin, 1).unwrap(), Some(123_456));
+    assert_eq!(
+        request_bytes_field(&begin, 2).unwrap(),
+        Some(hash.as_slice())
+    );
+    assert_eq!(request_string_field(&begin, 3).unwrap(), Some("build-a"));
+
+    let chunk = encode_frame(&firmware_update_chunk_request(3, 4096, vec![1, 2, 3]));
+    let chunk = DeviceRequest::decode(&chunk).unwrap();
+    assert_eq!(chunk.opcode, Opcode::FirmwareUpdateChunk);
+    assert_eq!(request_u64_field(&chunk, 1).unwrap(), Some(4096));
+    assert_eq!(
+        request_bytes_field(&chunk, 2).unwrap(),
+        Some(&[1, 2, 3][..])
+    );
+}
+
+#[test]
+fn firmware_info_and_status_responses_round_trip() {
+    let mut out = [0u8; 384];
+    let len = encode_firmware_info_response_into(
+        10,
+        FirmwareInfoRef {
+            active_slot: "app0",
+            active_slot_size: 0x280000,
+            inactive_slot: "app1",
+            inactive_slot_size: 0x280000,
+            build_id: "build-a",
+            boot_state: "valid",
+        },
+        &mut out,
+    )
+    .unwrap();
+    let info = firmware_info(&decode_frame(&out[..len]).unwrap()).unwrap();
+    assert_eq!(info.active_slot, "app0");
+    assert_eq!(info.inactive_slot, "app1");
+    assert_eq!(info.inactive_slot_size, 0x280000);
+    assert_eq!(info.build_id, "build-a");
+    assert_eq!(info.boot_state, "valid");
+
+    let hash = [0xa5; FIRMWARE_SHA256_BYTES];
+    let len = encode_firmware_update_status_response_into(
+        11,
+        Status::Pending,
+        FirmwareUpdateStatusRef {
+            state: "receiving",
+            candidate_slot: "app1",
+            expected_len: 123_456,
+            durable_offset: 8192,
+            build_id: "build-b",
+            expected_sha256: &hash,
+        },
+        &mut out,
+    )
+    .unwrap();
+    let status = firmware_update_status(&decode_frame(&out[..len]).unwrap()).unwrap();
+    assert_eq!(status.state, "receiving");
+    assert_eq!(status.candidate_slot, "app1");
+    assert_eq!(status.expected_len, 123_456);
+    assert_eq!(status.durable_offset, 8192);
+    assert_eq!(status.build_id, "build-b");
+    assert_eq!(status.expected_sha256, hash);
+}
+
+#[test]
+fn firmware_response_encoders_enforce_capacity_and_hash_shape() {
+    let hash = [0u8; FIRMWARE_SHA256_BYTES];
+    let status = FirmwareUpdateStatusRef {
+        state: "idle",
+        candidate_slot: "app1",
+        expected_len: 0,
+        durable_offset: 0,
+        build_id: "",
+        expected_sha256: &hash,
+    };
+    assert!(
+        encode_firmware_update_status_response_into(12, Status::Ok, status, &mut [0u8; 16])
+            .is_err()
+    );
+    assert!(encode_firmware_update_status_response_into(
+        12,
+        Status::Ok,
+        FirmwareUpdateStatusRef {
+            expected_sha256: &hash[..31],
+            ..status
+        },
+        &mut [0u8; 256]
+    )
+    .is_err());
 }

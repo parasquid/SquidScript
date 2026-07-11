@@ -77,6 +77,12 @@ pub enum Opcode {
     ContentCheck = 91,
     DebugLogGet = 92,
     ContentDelete = 93,
+    FirmwareInfo = 96,
+    FirmwareUpdateBegin = 97,
+    FirmwareUpdateChunk = 98,
+    FirmwareUpdateCommit = 99,
+    FirmwareUpdateStatus = 100,
+    FirmwareUpdateAbort = 101,
 }
 
 impl Opcode {
@@ -118,6 +124,12 @@ impl Opcode {
             "contentcheck" => Ok(Self::ContentCheck),
             "debuglogget" => Ok(Self::DebugLogGet),
             "contentdelete" => Ok(Self::ContentDelete),
+            "firmwareinfo" => Ok(Self::FirmwareInfo),
+            "firmwareupdatebegin" => Ok(Self::FirmwareUpdateBegin),
+            "firmwareupdatechunk" => Ok(Self::FirmwareUpdateChunk),
+            "firmwareupdatecommit" => Ok(Self::FirmwareUpdateCommit),
+            "firmwareupdatestatus" => Ok(Self::FirmwareUpdateStatus),
+            "firmwareupdateabort" => Ok(Self::FirmwareUpdateAbort),
             _ => Err(format!("unknown protocol opcode: {name}")),
         }
     }
@@ -163,6 +175,12 @@ impl TryFrom<u8> for Opcode {
             91 => Ok(Self::ContentCheck),
             92 => Ok(Self::DebugLogGet),
             93 => Ok(Self::ContentDelete),
+            96 => Ok(Self::FirmwareInfo),
+            97 => Ok(Self::FirmwareUpdateBegin),
+            98 => Ok(Self::FirmwareUpdateChunk),
+            99 => Ok(Self::FirmwareUpdateCommit),
+            100 => Ok(Self::FirmwareUpdateStatus),
+            101 => Ok(Self::FirmwareUpdateAbort),
             _ => Err(DecodeError::UnknownOpcode(value)),
         }
     }
@@ -426,6 +444,18 @@ pub fn request_bytes_field<'a>(
     tag: u8,
 ) -> Result<Option<&'a [u8]>, DecodeError> {
     payload_field_bytes(request.payload(), tag, 0)
+}
+
+pub fn request_u64_field(request: &DeviceRequest<'_>, tag: u8) -> Result<Option<u64>, DecodeError> {
+    let Some(bytes) = payload_field_bytes(request.payload(), tag, 5)? else {
+        return Ok(None);
+    };
+    if bytes.len() != 8 {
+        return Err(DecodeError::InvalidIntegerLength(bytes.len()));
+    }
+    Ok(Some(u64::from_le_bytes(
+        bytes.try_into().expect("length checked"),
+    )))
 }
 
 fn payload_field_bytes<'a>(
@@ -1053,6 +1083,50 @@ pub struct ContentCheckResult {
     pub name: String,
     pub size: u64,
     pub crc32: u64,
+}
+
+pub const FIRMWARE_SHA256_BYTES: usize = 32;
+
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FirmwareInfo {
+    pub active_slot: String,
+    pub active_slot_size: u64,
+    pub inactive_slot: String,
+    pub inactive_slot_size: u64,
+    pub build_id: String,
+    pub boot_state: String,
+}
+
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FirmwareUpdateStatus {
+    pub state: String,
+    pub candidate_slot: String,
+    pub expected_len: u64,
+    pub durable_offset: u64,
+    pub build_id: String,
+    pub expected_sha256: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FirmwareInfoRef<'a> {
+    pub active_slot: &'a str,
+    pub active_slot_size: u64,
+    pub inactive_slot: &'a str,
+    pub inactive_slot_size: u64,
+    pub build_id: &'a str,
+    pub boot_state: &'a str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FirmwareUpdateStatusRef<'a> {
+    pub state: &'a str,
+    pub candidate_slot: &'a str,
+    pub expected_len: u64,
+    pub durable_offset: u64,
+    pub build_id: &'a str,
+    pub expected_sha256: &'a [u8],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1727,6 +1801,122 @@ pub fn content_delete_result(frame: &Frame) -> Option<String> {
 }
 
 #[cfg(feature = "alloc")]
+pub fn firmware_info_request(sequence: u32) -> Frame {
+    Frame::request(Opcode::FirmwareInfo, sequence, Vec::new())
+}
+
+#[cfg(feature = "alloc")]
+pub fn firmware_update_begin_request(
+    sequence: u32,
+    total_len: u64,
+    sha256: Vec<u8>,
+    build_id: impl Into<String>,
+) -> Frame {
+    Frame::request(
+        Opcode::FirmwareUpdateBegin,
+        sequence,
+        vec![
+            Field::u64(1, total_len),
+            Field::bytes(2, sha256),
+            Field::string(3, build_id),
+        ],
+    )
+}
+
+#[cfg(feature = "alloc")]
+pub fn firmware_update_chunk_request(sequence: u32, offset: u64, bytes: Vec<u8>) -> Frame {
+    Frame::request(
+        Opcode::FirmwareUpdateChunk,
+        sequence,
+        vec![Field::u64(1, offset), Field::bytes(2, bytes)],
+    )
+}
+
+#[cfg(feature = "alloc")]
+pub fn firmware_update_commit_request(sequence: u32) -> Frame {
+    Frame::request(Opcode::FirmwareUpdateCommit, sequence, Vec::new())
+}
+
+#[cfg(feature = "alloc")]
+pub fn firmware_update_status_request(sequence: u32) -> Frame {
+    Frame::request(Opcode::FirmwareUpdateStatus, sequence, Vec::new())
+}
+
+#[cfg(feature = "alloc")]
+pub fn firmware_update_abort_request(sequence: u32) -> Frame {
+    Frame::request(Opcode::FirmwareUpdateAbort, sequence, Vec::new())
+}
+
+#[cfg(feature = "alloc")]
+pub fn firmware_info(frame: &Frame) -> Option<FirmwareInfo> {
+    if frame.kind != FrameKind::Response
+        || frame.opcode != Opcode::FirmwareInfo
+        || frame.status != Status::Ok
+    {
+        return None;
+    }
+    Some(FirmwareInfo {
+        active_slot: frame_string(frame, 1)?,
+        active_slot_size: frame_u64(frame, 2)?,
+        inactive_slot: frame_string(frame, 3)?,
+        inactive_slot_size: frame_u64(frame, 4)?,
+        build_id: frame_string(frame, 5)?,
+        boot_state: frame_string(frame, 6)?,
+    })
+}
+
+#[cfg(feature = "alloc")]
+pub fn firmware_update_status(frame: &Frame) -> Option<FirmwareUpdateStatus> {
+    if frame.kind != FrameKind::Response
+        || frame.opcode != Opcode::FirmwareUpdateStatus
+        || frame.status == Status::Error
+    {
+        return None;
+    }
+    Some(FirmwareUpdateStatus {
+        state: frame_string(frame, 1)?,
+        candidate_slot: frame_string(frame, 2)?,
+        expected_len: frame_u64(frame, 3)?,
+        durable_offset: frame_u64(frame, 4)?,
+        build_id: frame_string(frame, 5)?,
+        expected_sha256: frame_bytes(frame, 6)?,
+    })
+}
+
+#[cfg(feature = "alloc")]
+fn frame_string(frame: &Frame, tag: u8) -> Option<String> {
+    frame
+        .fields
+        .iter()
+        .find_map(|field| match (field.tag, &field.value) {
+            (actual, FieldValue::String(value)) if actual == tag => Some(value.clone()),
+            _ => None,
+        })
+}
+
+#[cfg(feature = "alloc")]
+fn frame_u64(frame: &Frame, tag: u8) -> Option<u64> {
+    frame
+        .fields
+        .iter()
+        .find_map(|field| match (field.tag, &field.value) {
+            (actual, FieldValue::U64(value)) if actual == tag => Some(*value),
+            _ => None,
+        })
+}
+
+#[cfg(feature = "alloc")]
+fn frame_bytes(frame: &Frame, tag: u8) -> Option<Vec<u8>> {
+    frame
+        .fields
+        .iter()
+        .find_map(|field| match (field.tag, &field.value) {
+            (actual, FieldValue::Bytes(value)) if actual == tag => Some(value.clone()),
+            _ => None,
+        })
+}
+
+#[cfg(feature = "alloc")]
 pub fn protocol_error(frame: &Frame) -> Option<ProtocolError> {
     if frame.kind != FrameKind::Response || frame.status != Status::Error {
         return None;
@@ -2140,6 +2330,81 @@ pub fn encode_content_delete_response_into(
         out,
         |payload| {
             write_string_tlv(payload, 1, name)?;
+            Ok(())
+        },
+    )
+}
+
+pub fn encode_firmware_info_response_into(
+    sequence: u32,
+    info: FirmwareInfoRef<'_>,
+    out: &mut [u8],
+) -> Result<usize, DecodeError> {
+    let payload_len = tlv_string_len(info.active_slot)?
+        .checked_add(tlv_u64_len())
+        .and_then(|len| len.checked_add(tlv_string_len(info.inactive_slot).ok()?))
+        .and_then(|len| len.checked_add(tlv_u64_len()))
+        .and_then(|len| len.checked_add(tlv_string_len(info.build_id).ok()?))
+        .and_then(|len| len.checked_add(tlv_string_len(info.boot_state).ok()?))
+        .ok_or(DecodeError::OutputTooSmall {
+            needed: usize::MAX,
+            capacity: out.len(),
+        })?;
+    encode_response_payload_into(
+        Opcode::FirmwareInfo,
+        Status::Ok,
+        sequence,
+        payload_len,
+        out,
+        |payload| {
+            let rest = write_string_tlv(payload, 1, info.active_slot)?;
+            let rest = write_u64_tlv(rest, 2, info.active_slot_size)?;
+            let rest = write_string_tlv(rest, 3, info.inactive_slot)?;
+            let rest = write_u64_tlv(rest, 4, info.inactive_slot_size)?;
+            let rest = write_string_tlv(rest, 5, info.build_id)?;
+            write_string_tlv(rest, 6, info.boot_state)?;
+            Ok(())
+        },
+    )
+}
+
+pub fn encode_firmware_update_status_response_into(
+    sequence: u32,
+    status: Status,
+    update: FirmwareUpdateStatusRef<'_>,
+    out: &mut [u8],
+) -> Result<usize, DecodeError> {
+    if status == Status::Error {
+        return Err(DecodeError::UnknownStatus(status as u8));
+    }
+    if update.expected_sha256.len() != FIRMWARE_SHA256_BYTES {
+        return Err(DecodeError::InvalidIntegerLength(
+            update.expected_sha256.len(),
+        ));
+    }
+    let payload_len = tlv_string_len(update.state)?
+        .checked_add(tlv_string_len(update.candidate_slot)?)
+        .and_then(|len| len.checked_add(tlv_u64_len()))
+        .and_then(|len| len.checked_add(tlv_u64_len()))
+        .and_then(|len| len.checked_add(tlv_string_len(update.build_id).ok()?))
+        .and_then(|len| len.checked_add(tlv_bytes_len(update.expected_sha256).ok()?))
+        .ok_or(DecodeError::OutputTooSmall {
+            needed: usize::MAX,
+            capacity: out.len(),
+        })?;
+    encode_response_payload_into(
+        Opcode::FirmwareUpdateStatus,
+        status,
+        sequence,
+        payload_len,
+        out,
+        |payload| {
+            let rest = write_string_tlv(payload, 1, update.state)?;
+            let rest = write_string_tlv(rest, 2, update.candidate_slot)?;
+            let rest = write_u64_tlv(rest, 3, update.expected_len)?;
+            let rest = write_u64_tlv(rest, 4, update.durable_offset)?;
+            let rest = write_string_tlv(rest, 5, update.build_id)?;
+            write_bytes_tlv(rest, 6, update.expected_sha256)?;
             Ok(())
         },
     )
