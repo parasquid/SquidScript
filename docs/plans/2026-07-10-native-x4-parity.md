@@ -84,21 +84,21 @@ unrelated files merely to silence existing drift.
 **Purpose:** Establish a recoverable hardware and test baseline before changing
 the partition table or storage ownership.
 
-- [ ] Update `.current_agent_work` with the exact task, current commit, attached
+- [x] Update `.current_agent_work` with the exact task, current commit, attached
   ports, and next recovery step.
-- [ ] Probe serial ports, Bluetooth controller, Wi-Fi interface, webcam, flash
+- [x] Probe serial ports, Bluetooth controller, Wi-Fi interface, webcam, flash
   size, and X4 identity without publishing identifiers.
-- [ ] Run the standard native verification commands and record pass/fail counts
+- [x] Run the standard native verification commands and record pass/fail counts
   in `/tmp/native-x4-parity-baseline.md`.
-- [ ] Run existing X4 serial, BLE, HTTP, reader, grid-cursor, and SD gates.
-- [ ] Capture fresh `device resources`, `device lifecycle`, and `device errors`
+- [x] Run existing X4 serial, BLE, HTTP, reader, grid-cursor, and SD gates.
+- [x] Capture fresh `device resources`, `device lifecycle`, and `device errors`
   from an idle reset.
-- [ ] Capture a fresh webcam frame and verify the current panel state.
-- [ ] Back up the complete 16 MiB X4 flash with
+- [x] Capture a fresh webcam frame and verify the current panel state.
+- [x] Back up the complete 16 MiB X4 flash with
   `scripts/x4-firmware-backup.sh` or `espflash read-flash`; store it only under
   the gitignored hardware-test directory.
-- [ ] Read and save the current bootloader and partition table separately.
-- [ ] Prove the backup/recovery instructions by generating the exact commands
+- [x] Read and save the current bootloader and partition table separately.
+- [x] Prove the backup/recovery instructions by generating the exact commands
   needed to restore bootloader, partition table, and application. Do not erase
   the live board in this task.
 - [ ] Confirm the current table is the factory layout and the chip reports
@@ -598,28 +598,34 @@ target-aware command selects every parity hardware gate.
 
 ## Task 12: Final Parity Audit And Zephyr-Removal Handoff
 
-- [ ] Run the complete standard verification bundle from a clean build.
-- [ ] Run all target-aware X4 hardware tests sequentially on the final image.
-- [ ] Verify an idle final state: no active app operation, upload, staged file,
+- [x] Run the complete standard verification bundle from a clean build.
+- [x] Run all target-aware X4 hardware tests sequentially on the final image.
+- [x] Verify an idle final state: no active app operation, upload, staged file,
   pending event, radio lease, display flush, or device error.
 - [ ] Repeat cold boot with and without SD inserted. Internal apps/lifecycle
   must remain available; SD-dependent content must fail honestly.
-- [ ] Repeat storage-format and prove OTA slots plus SD content are preserved.
-- [ ] Repeat a serial OTA after all parity features are enabled so final image
+- [x] Repeat storage-format and prove OTA slots plus SD content are preserved.
+- [x] Repeat a serial OTA after all parity features are enabled so final image
   RAM/stack/storage behavior is covered.
 - [ ] Capture fresh panel evidence after input-trigger launch, wake restore,
   GRAY1 render, HTTP upload, and BLE upload where the visible result differs.
-- [ ] Search current native code, targets, docs, examples, tests, and scripts for
+- [x] Search current native code, targets, docs, examples, tests, and scripts for
   dependencies on Zephyr implementation paths or backend selectors.
-- [ ] Remove completed parity roadmap entries. Keep the separately approved
+- [x] Remove completed parity roadmap entries. Keep the separately approved
   authenticated network OTA delivery item.
-- [ ] Write a new implementation plan dedicated to deleting:
+- [x] Write a new implementation plan dedicated to deleting:
   - `firmware/zephyr`;
   - `squidvm-ffi` and generated C ABI glue if no non-Zephyr owner remains;
   - XIAO/Super Mini target definitions and generated docs;
   - west/Twister/Kconfig scripts and dependencies;
   - Zephyr-only tests, fixtures, build directories, and docs;
   - internal CLI backend planning types that no longer have multiple values.
+
+Remaining physical gates require direct access to the X4: boot and exercise
+content with the SD card removed, wake timerless sleep with the real POWER
+button, and drive the armed long/double-tap examples with physical presses.
+Serial event injection verifies firmware dispatch but does not substitute for
+those electrical and gesture-timing checks.
 
 **Final acceptance matrix:**
 

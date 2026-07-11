@@ -6,7 +6,7 @@ it from this file in the same change or in the next cleanup commit.
 
 Speculative ideas that are not currently actionable belong in `ICEBOX.md`.
 
-## Current Track: Canonical Zephyr Firmware
+## Current Track: Native Firmware
 
 - Add native_sim dummy hardware mocks (display, SPI SD) so protocol tests
   can assert on hardware interactions without real devices. Indicator GPIO
@@ -20,8 +20,8 @@ Speculative ideas that are not currently actionable belong in `ICEBOX.md`.
   target with stub hardware bindings would let tests control exactly which
   devices are present and avoid false failures from missing target defaults.
 
-Goal: keep Zephyr as the canonical firmware architecture while Rust remains
-authoritative for compiler, SQBC tooling, and VM semantics.
+Goal: keep the native Rust firmware, compiler, SQBC tooling, and VM semantics
+aligned as the sole firmware architecture.
 
 ## Runtime Services
 
@@ -29,12 +29,11 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   not yet SQBC-backed: broader `httpServer.*` server APIs, remaining
   non-upload `service.ble.*` runtime pieces, and remaining `file.*` APIs beyond
   the current pick/read/copy
-  family. Add each API only as a real compiler/SQBC/VM/Zephyr slice with
+  family. Add each API only as a real compiler/SQBC/VM/native-firmware slice with
   honest unsupported behavior until target support is implemented.
 - Add a `app.uninstall(appId)` builtin mirroring the new `app.install` shape:
-  `IrStatement::AppUninstall { app_id }` → `BUILTIN_APP_UNINSTALL` → FFI
-  callback `app_uninstall_file` → Zephyr `sq_app_store_uninstall_app` →
-  rm the app directory under `/sd/apps/<app_id>/` and clear the registry
+  `IrStatement::AppUninstall { app_id }` → `BUILTIN_APP_UNINSTALL` → native
+  app-store removal, then clear the registry
   entry. Use case: an installer app replaces itself with a newer version
   without a full device reset, or a manager app removes a misbehaving
   child app. Reject with `-ENOENT` if the app is not installed; reject
@@ -73,7 +72,6 @@ authoritative for compiler, SQBC tooling, and VM semantics.
   related result records for firmware-owned file references and logical
   libraries, so upload handlers can organize files beyond the current
   content-specific `file.copy` path.
-- Allow graceful BinBook page rendering degradation when the renderer supports a richer pixel format than the stored page uses. In particular, the X4 firmware renderer currently accepts GRAY2 packed pages but rejects GRAY1 packed pages as unsupported; convert or expand GRAY1 to the renderer-supported path so GRAY1 BinBooks can still display.
 - Add a storage-backed BinBook reading history API so the reader can remember
   per-book page positions without spending fixed app-state slots or inventing
   app-local history tables.
@@ -211,49 +209,21 @@ authoritative for compiler, SQBC tooling, and VM semantics.
 
 - Audit compiler, SQBC, simulator, examples, and docs for invariant violations
   that should become explicit diagnostics instead of silent ambiguity.
-- Complete the remaining native X4 firmware surfaces: physical ADC-ladder and
-  POWER-button input, planned sleep/power resume, native runtime-cap authority,
-  app registry and armed-app lifecycle behavior, serial OTA with rollback, and
-  verified simultaneous Wi-Fi/BLE operation.
-- Promote the XTEINK X4 serial/HTTP/BLE transfer regression scripts into the
-  target-aware `squidc hardware test --target xteink-x4` inventory so transfer
-  integrity checks are selectable, consistently reported, and harder to skip
-  during hardware verification.
 - Add transfer throughput regression reporting for XTEINK X4 serial, HTTP, and
   BLE uploads. Record bytes, elapsed time, and effective bytes/sec for each
   transport, keep thresholds advisory until enough hardware samples define
   stable budgets, and use the data to catch speed regressions separately from
   content-integrity failures.
-- Investigate native X4 BLE upload terminal status over GATT. During
-  native BLE bring-up, uploads reached firmware, staged to `tmp/`, dispatched
-  the completion handler, copied into `books`, and passed serial
-  `content-check`, but `squidc device upload --transport ble` could not reliably observe the
-  terminal status characteristic through BlueZ/btleplug. Firmware diagnostics
-  showed CCCD notify enabled and `notify-sent`; direct status-characteristic
-  reads timed out before the firmware read handler observed them. Current
-  verified behavior treats successful write-with-response transfer plus serial
-  byte-count/CRC checks as the reliable hardware gate. Future work: build a
-  minimal native X4 GATT status repro, determine whether the break is in
-  Trouble characteristic storage/read handling, CCCD/notify handling,
-  btleplug/BlueZ delivery, or the firmware event loop, then restore a real
-  terminal-status signal for `device upload --transport ble` without weakening content
-  integrity checks.
 - Add authenticated network delivery for native X4 OTA images after serial OTA
   is complete. Reuse the inactive-slot writer, image validation, health
   confirmation, and rollback state machine; add signed-image policy, resumable
   transfer, interrupted-download cleanup, and recovery hardware gates rather
   than creating a separate firmware-update path.
-- Extend `squidc hardware test --target esp32c3-super-mini` so the Super Mini
-  regression target uses the same target-aware hardware-test architecture as
-  the XIAO default dev target, with checks selected from target metadata and
-  exclusions for capabilities that require unavailable hardware.
 - Reduce repo-owned Python tooling by folding generators and serial helpers into
-  `squidc` Rust subcommands while keeping Zephyr `west`/`twister` Python as an
-  external firmware toolchain dependency. Context: Python remains unavoidable
-  for the Zephyr build/test stack, but repo-owned scripts such as target/code
-  generators, markdown generation, serial helpers, Python unit tests, and small
-  inline shell-wrapper Python snippets can move to Rust over time so project
-  tooling is easier to install, test, and keep consistent.
+  `squidc` Rust subcommands. Repo-owned scripts such as target/code generators,
+  markdown generation, serial helpers, Python unit tests, and small inline
+  shell-wrapper Python snippets can move to Rust over time so project tooling
+  is easier to install, test, and keep consistent.
 - **Unified constant definitions across C and Rust.** Identify constants
   duplicated across C and Rust codebases and establish a single source of truth
   to prevent drift. Options: generate C headers from Rust constants, use a
